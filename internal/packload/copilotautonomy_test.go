@@ -19,29 +19,17 @@ import (
 // jail-bypass keys onto a real machine. It was harmless only because `cli.hostExec` injects
 // no flags at all today, which is a fact about that function and not about the declaration.
 //
-// THIS FAILS IF THE FLAG MOVES BACK. The `plain` assertion is the one that does the work: the
-// notch pair below would still pass with `--yolo` back in `launch.flags`, because the guarded
-// posture declares no copilot entry to overwrite it with — see TestCopilotHasNoGuardedPosture
-// for why that emptiness is the right declaration. Together they say the flag is gated at the
-// notch AND gated by being declared where the notch can see it.
-//
-// copilot's `launch` contribution — which existed only to carry the `-y` alias map — went with
-// that map, so the pack no longer declares this kind at all.
+// THE KIND THAT ALLOWED THE MISTAKE IS GONE, which is what makes the notch pair below a
+// sufficient test rather than half of one. `kind: "launch"` was retired precisely because it
+// was an ungated channel — a flag declared there was one no notch could withhold — so there is
+// no longer a second place `--yolo` could be declared from. packdecl refuses the spelling with
+// the migration named (TestTheRetiredLaunchKindRefusesWithItsReplacement); this test asserts
+// the composed result, at both notches, off render's own policy table.
 func TestCopilotYoloIsDeclaredUnderAutonomyNotAsAPlainLaunchFlag(t *testing.T) {
 	packs := loadAll(t)
-	copilot := packNamed(t, packs, "copilot")
 
-	// 1. No plain launch contribution carries the flag: a `launch` contribution is outside
-	//    the notch policy, so a permission bypass declared there is one no notch can withhold.
-	plain := copilot.Decl.LaunchFlagContributions()["copilot"]
-	if len(plain) != 0 {
-		t.Errorf("copilot's plain launch flags = %v, want none — a permission-bypass flag "+
-			"declared here escapes the autonomy notch policy entirely; it belongs in the "+
-			"autonomy contribution's autonomous posture", plain)
-	}
-
-	// 2. The notch pair, read off render's ONE notch→preset table rather than a literal
-	//    true/false, so flipping HostProfile's policy bit fails here too.
+	// The notch pair, read off render's ONE notch→preset table rather than a literal
+	// true/false, so flipping HostProfile's policy bit fails here too.
 	jail := packload.LaunchFlagsFor(packs, render.ProfileFor(render.KindJail).AgentAutonomy)["copilot"]
 	if strings.Join(jail, " ") != "--yolo" {
 		t.Errorf("at the JAIL notch copilot's flags = %v, want [--yolo]", jail)
@@ -63,11 +51,10 @@ func TestCopilotYoloIsDeclaredUnderAutonomyNotAsAPlainLaunchFlag(t *testing.T) {
 // launch from this table, so NOT selecting it is the whole of the tightening. There is nothing
 // for a guarded posture to undo.
 //
-// Nor may it be spelled as an empty `guarded.launch` entry for copilot. A posture entry
-// REPLACES the binary's plain flags (LaunchFlagsFor), so `{"bin":"copilot"}` under `guarded`
-// would strip every ordinary launch flag at the host notch too — a different and wrong claim,
-// since a plain launch flag is one no notch gates. It would also hide exactly the regression
-// the sibling test above catches.
+// Nor is it worth spelling as an empty `guarded.launch` entry for copilot. An absent posture
+// and a posture naming the bin with no flags compose the same empty flag list — since the
+// `launch` kind was retired there is no ungated list underneath for an entry to subtract
+// from — so the entry would assert nothing the absence does not already assert.
 //
 // packdecl requires only "at least one of autonomous or guarded", so this is valid; `yolo pack
 // footprint` reports it as "autonomous posture only", which is the honest disclosure.

@@ -83,17 +83,17 @@ func TestTwoPacksDeclaringOneAgentIdentityIsACollision(t *testing.T) {
 	}
 }
 
-// ONE PACK claiming its own name in several kinds is one pack owning one name — §4.2 names
-// packs/copilot, which declares `copilot` on both `program` and `launch`.
-func TestOnePackClaimingItsOwnNameInFourKindsIsLegal(t *testing.T) {
+// ONE PACK claiming its own name through EVERY claiming kind is one pack owning one name —
+// packs/copilot is the shipped shape, declaring `copilot` on `program`, `briefing` and
+// `skills` (it declared `launch` too, until that kind was retired).
+func TestOnePackClaimingItsOwnNameInEveryKindIsLegal(t *testing.T) {
 	solo := claimPack(t, "copilot",
 		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "copilot", Via: "npm", Package: "x"},
-		packdecl.Contribution{Kind: packdecl.KindLaunch, Bin: "copilot", Flags: []string{"--yolo"}},
 		packdecl.Contribution{Kind: packdecl.KindBriefing, Into: ".copilot/x.md", Agent: "copilot"},
 		packdecl.Contribution{Kind: packdecl.KindSkills, Into: ".copilot/skills", Agent: "copilot"},
 	)
 	if cols := AgentNameCollisions([]*Pack{solo}); len(cols) != 0 {
-		t.Fatalf("one pack owning one name through four kinds must be legal; got %+v", cols)
+		t.Fatalf("one pack owning one name through every claiming kind must be legal; got %+v", cols)
 	}
 }
 

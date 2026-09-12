@@ -217,10 +217,10 @@ func Run(opts Options) (rc int) {
 
 	// PACK LAUNCH FLAGS, ABOVE THE DISPATCH — the same B-0 move pack staging made, for
 	// the same reason. The injection used to sit inside runContainer, which the
-	// macos-user arm returns before reaching, so on that backend a `launch`
-	// contribution did nothing at all. copilot's `--yolo` was a 100% drop — a plain
-	// launch contribution, with no config half to fall back on (it is an autonomy
-	// contribution now, which changes where it is declared and not whether it is
+	// macos-user arm returns before reaching, so on that backend a pack's declared
+	// launch flags did nothing at all. copilot's `--yolo` was a 100% drop — it had no
+	// config half to fall back on (it was a plain `launch` contribution then and is an
+	// autonomy posture's now, which changes where it is declared and not whether it is
 	// injected); claude's `--dangerously-skip-permissions` fell back to
 	// defaultMode: acceptEdits, which auto-accepts EDITS and not Bash or WebFetch.
 	//
@@ -231,7 +231,7 @@ func Run(opts Options) (rc int) {
 	// is what a bare `yolo -- <bin>` gets" was the cheapest true sentence available. It
 	// stopped being the right sentence the moment staging hoisted: the embedded set is
 	// NOT what the jail runs, the staged set is, and the difference is every configured
-	// pack — whose launch contributions an embedded-set injection drops, silently. It
+	// pack — whose declared launch flags an embedded-set injection drops, silently. It
 	// is also the set the jail's own alias fold reads (LoadJailPacks over the staged
 	// tree), so using it here is what keeps the two spellings of one launch — the
 	// interactive alias and `yolo -- <bin>` — from disagreeing; they agree by

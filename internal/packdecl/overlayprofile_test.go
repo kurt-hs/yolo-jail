@@ -48,7 +48,7 @@ func TestProfileFieldRefusedOffConfigOverlay(t *testing.T) {
 		name string
 		raw  string
 	}{
-		{"launch", `{"kind": "launch", "profile": "zai", "bin": "claude"}`},
+		{"requires", `{"kind": "requires", "profile": "zai", "bin": "claude"}`},
 		{"profile", `{"kind": "profile", "profile": "zai", "name": "zai", "provider": "zai"}`},
 		{"provider", `{"kind": "provider", "profile": "zai", "name": "zai"}`},
 		{"program", `{"kind": "program", "profile": "zai", "bin": "fzf", "via": "npm", "package": "fzf"}`},
@@ -78,7 +78,7 @@ func TestProfileFieldRefusedOffConfigOverlay(t *testing.T) {
 // one-class-of-malformed both builds understand.
 func TestProfileFieldRefusedOnTolerantPath(t *testing.T) {
 	_, problems, _ := DecodeTolerant([]byte(`{"name": "p", "contributes": [
-		{"kind": "launch", "profile": "zai", "bin": "claude"}]}`))
+		{"kind": "requires", "profile": "zai", "bin": "claude"}]}`))
 	joined := strings.Join(problems, "\n")
 	if !strings.Contains(joined, "does not take \"profile\"") {
 		t.Errorf("the tolerant path must refuse the field off config-overlay too, got: %q", joined)

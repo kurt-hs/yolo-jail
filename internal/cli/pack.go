@@ -85,8 +85,6 @@ effect, with a "kind" from a closed set:
                    surface's own twin — that is the surface's "readsHost")
   mount            mount a host-home dir :ro
   env              set static env vars in the jail
-  launch           inject launch flags after a binary; a flag already in your argv is
-                   not injected a second time, and every injection is printed at launch
   hook             a named capability (shared_credentials, …)
   autonomy         the agent's autonomous/guarded permission postures (notch-selected)
   profile          a named selection over a provider — name plus provider, and the

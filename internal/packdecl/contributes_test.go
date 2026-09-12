@@ -16,7 +16,6 @@ func TestProjectionsFromContributes(t *testing.T) {
 		{Kind: KindState, At: ".claude", Scope: "workspace"},
 		{Kind: KindState, At: ".creds", Scope: "machine", Why: "shared creds"},
 		{Kind: KindReadsHost, Host: ".claude/settings.json", Into: "host-claude/settings.json"},
-		{Kind: KindLaunch, Bin: "claude", Flags: []string{"--yolo"}},
 		{Kind: KindHook, Hook: "shared_credentials", From: ".claude/.credentials.json", At: ".creds"},
 	}}
 
@@ -32,9 +31,6 @@ func TestProjectionsFromContributes(t *testing.T) {
 	}
 	if sd := m.SharedDirContributions(); len(sd) != 1 || sd[0] != ".creds" {
 		t.Errorf("SharedDirContributions wrong: %+v", sd)
-	}
-	if lf := m.LaunchFlagContributions(); len(lf["claude"]) != 1 || lf["claude"][0] != "--yolo" {
-		t.Errorf("LaunchFlagContributions wrong: %+v", lf)
 	}
 	if hk := m.HookContributions(); len(hk) != 1 || hk[0].Name != "shared_credentials" {
 		t.Errorf("HookContributions wrong: %+v", hk)
@@ -119,7 +115,6 @@ func TestValidateContributes(t *testing.T) {
 		{"program colon bin", Contribution{Kind: KindProgram, Bin: "a:b", Via: "npm", Package: "p"},
 			"bare program name"},
 		{"requires escaping bin", Contribution{Kind: KindRequires, Bin: "../x"}, "bare program name"},
-		{"launch escaping bin", Contribution{Kind: KindLaunch, Bin: "../x"}, "bare program name"},
 		{"autonomy escaping launch bin", Contribution{Kind: KindAutonomy,
 			Autonomous: &AutonomyPosture{Launch: []AutonomyLaunch{{Bin: "../x"}}}},
 			"bare program name"},

@@ -212,15 +212,15 @@ func TestSkewSkipKeepsOriginalIndicesInProblems(t *testing.T) {
 	manifest := []byte(`{"name":"acme","contributes":[
 		{"kind":"future-kind"},
 		{"kind":"skills","from":"skills","into":".acme/skills"},
-		{"kind":"launch"}]}`)
+		{"kind":"requires"}]}`)
 	_, problems, skipped := DecodeTolerant(manifest)
 	if len(skipped) != 1 || !strings.Contains(skipped[0], "contributes[0]") {
 		t.Fatalf("want one skip note for contributes[0], got %v", skipped)
 	}
-	// launch with no bin is malformed in a way both builds understand — still loud, and
+	// requires with no bin is malformed in a way both builds understand — still loud, and
 	// still labeled with the index the author sees.
 	if len(problems) != 1 || !strings.Contains(problems[0], "contributes[2]") {
-		t.Errorf("the launch problem must keep its ORIGINAL index contributes[2]: %v", problems)
+		t.Errorf("the requires problem must keep its ORIGINAL index contributes[2]: %v", problems)
 	}
 }
 

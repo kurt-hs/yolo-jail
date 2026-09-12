@@ -89,7 +89,7 @@ func TestAudienceFieldsRefusedOnOtherKinds(t *testing.T) {
 		{`{"kind":"program","bin":"claude","via":"npm","package":"c","agent":"claude"}`, "agent"},
 		{`{"kind":"program","bin":"claude","via":"npm","package":"c","agents":["claude"]}`, "agents"},
 		{`{"kind":"files","from":"tree","into":"x","agents":["claude"]}`, "agents"},
-		{`{"kind":"launch","bin":"claude","flags":["--x"],"agent":"claude"}`, "agent"},
+		{`{"kind":"requires","bin":"claude","agent":"claude"}`, "agent"},
 		{`{"kind":"state","at":".acme","agents":["claude"]}`, "agents"},
 		{`{"kind":"env","vars":{"A":"1"},"agent":"claude"}`, "agent"},
 	}

@@ -866,17 +866,17 @@ func union(packs []*Pack, pick func(*Pack) []string) []string {
 	return out
 }
 
-// LaunchFlagsFor merges every pack's launch contributions, keyed by binary name — a later
-// pack wins on a conflicting binary, matching the "later entries win" rule packs already
-// use — with the §4.2 autonomy policy applied: on top of each pack's plain `launch`
-// contributions it folds the selected autonomy posture's per-binary launch flags. So the
-// `--dangerously-*` flags live in the autonomous posture and vanish at the host notch
-// (autonomy=false), where the guarded posture (usually no flags) applies.
+// LaunchFlagsFor merges every pack's launch flags for one notch, keyed by binary name — a
+// later pack wins on a conflicting binary, matching the "later entries win" rule packs
+// already use.
 //
-// No profile folds here, and that is the OQ-PT8 shrink rather than an omission: the
-// variant flags this used to take from a selected profile moved to `kind: "launch"`
-// contributions with `profile` set, and that modifier has NO CONSUMER yet — the schema
-// still refuses it — so a profile contributes no launch flag until one ships. Taking the
+// EVERY FLAG IS NOTCH-GATED, because the §4.2 autonomy posture is the only place a flag
+// can be declared: the `--dangerously-*` flags live in the autonomous posture and vanish
+// at the host notch (autonomy=false), where the guarded posture — usually no flags —
+// applies. There is no ungated channel left to escape that policy through.
+//
+// No profile folds here either, which is the OQ-PT8 shrink: a profile is a SELECTION over
+// a provider and carries no body, so it contributes no launch flag at all. Taking the
 // table as a parameter it could not read would be the accepted-and-ignored plumbing this
 // package refuses everywhere else.
 func LaunchFlagsFor(packs []*Pack, autonomy bool) map[string][]string {
@@ -902,19 +902,25 @@ type launchFlagClaim struct {
 }
 
 // launchFlagClaims folds every pack's launch flags for the given notch, later packs
-// winning a repeated binary — the kind's flags first, then the selected posture's, which
-// REPLACE rather than extend them (the `autonomy` schema's ⚠ states why).
+// winning a repeated binary.
+//
+// ONE SOURCE: the selected autonomy posture's nested `launch` block. There used to be a
+// second — a top-level `kind: "launch"` contribution, folded first and then REPLACED by
+// any posture entry for the same binary — and its removal is the point rather than a
+// simplification. A flag declared outside a posture was a flag no notch could withhold,
+// which is exactly what the confinement policy exists to prevent, and copilot's `--yolo`
+// spent a while declared that way. The kind is retired with the migration named
+// (packdecl.RetiredKind).
 func launchFlagClaims(packs []*Pack, autonomy bool) map[string]launchFlagClaim {
 	out := map[string]launchFlagClaim{}
 	for _, p := range packs {
-		for bin, flags := range p.Decl.LaunchFlagContributions() {
-			out[bin] = launchFlagClaim{pack: p.Name, flags: flags}
+		posture := p.Decl.PostureFor(autonomy)
+		if posture == nil {
+			continue
 		}
-		if posture := p.Decl.PostureFor(autonomy); posture != nil {
-			for _, l := range posture.Launch {
-				if l.Bin != "" {
-					out[l.Bin] = launchFlagClaim{pack: p.Name, flags: l.Flags}
-				}
+		for _, l := range posture.Launch {
+			if l.Bin != "" {
+				out[l.Bin] = launchFlagClaim{pack: p.Name, flags: l.Flags}
 			}
 		}
 	}
@@ -971,11 +977,10 @@ type LaunchInjection struct {
 //
 // The direct `yolo -- <bin>` invocation and the interactive alias the entrypoint writes
 // are two spellings of one launch, and they agree BY CONSTRUCTION rather than by both
-// folding the same table: LaunchFlagsFor reads static and posture flags only, since the
-// OQ-PT8 shrink, so there is no per-launch input left for either spelling to disagree
-// about. (A profile-gated launch contribution has no consumer yet — see
-// LaunchFlagsFor — and whoever ships one re-introduces this function's old `profiles`
-// parameter and BOTH callers' threading of it in the same commit.)
+// folding the same table: LaunchFlagsFor reads the selected autonomy posture and nothing
+// else, so there is no per-launch input left for either spelling to disagree about.
+// (Whoever gives a flag a per-launch source again re-introduces this function's old
+// `profiles` parameter and BOTH callers' threading of it in the same commit.)
 //
 // Flags are inserted in reverse (each at index 1) so their declared order is preserved,
 // a flag ALREADY PRESENT in the argv is skipped, and a binary no pack declares is

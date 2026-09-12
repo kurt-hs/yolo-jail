@@ -121,7 +121,7 @@ func TestProfileModifierTakesConfigOverlayAndEnvOnly(t *testing.T) {
 
 	refused := []string{
 		`{"kind":"program","profile":"dev","bin":"claude","via":"npm","package":"claude"}`,
-		`{"kind":"launch","profile":"dev","bin":"claude","flags":["--x"]}`,
+		`{"kind":"requires","profile":"dev","bin":"claude"}`,
 		`{"kind":"provider","profile":"dev","name":"zai"}`,
 		`{"kind":"config","profile":"dev","config":[{"agent":"claude","name":"settings"}]}`,
 	}

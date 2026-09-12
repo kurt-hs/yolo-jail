@@ -144,7 +144,8 @@ func TestUnionsDedupeAcrossPacks(t *testing.T) {
 // passed — the IDENTICAL flag, which is the only suppression the injector has left.
 func TestInjectLaunchFlags(t *testing.T) {
 	p := &Pack{Name: "p", Decl: declFrom(t,
-		`{"contributes":[{"kind":"launch","bin":"tool","flags":["--yolo","--no-update"]}]}`)}
+		`{"contributes":[{"kind":"autonomy","autonomous":{"launch":[`+
+			`{"bin":"tool","flags":["--yolo","--no-update"]}]}}]}`)}
 	loaded := []*Pack{p}
 
 	got, _ := InjectLaunchFlags(loaded, []string{"tool", "sub"})

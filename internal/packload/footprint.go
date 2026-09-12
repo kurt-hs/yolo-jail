@@ -245,7 +245,7 @@ const ExecutablesClaimKind = packdecl.Kind("executables")
 //
 // A DISPLAY LABEL, not a packdecl.Kind in the closed registry — the same shape and for the
 // same three reasons as SupersedesClaimKind above. It is emphatically not a contribution
-// kind: an agent name is claimed THROUGH four existing kinds (`program`/`launch` by `bin`,
+// kind: an agent name is claimed THROUGH three existing kinds (`program` by `bin`,
 // `briefing`/`skills` by `agent`), so `kind: "agent"` in a manifest stays an unknown kind,
 // Collisions' generic loop skips the label, and the per-kind exhaustiveness tests that walk
 // packdecl.KnownKinds() need no entry for it.
@@ -370,8 +370,6 @@ func FootprintOf(p *Pack) Footprint {
 			for _, k := range sortedMapKeys(c.Vars) {
 				add(packdecl.KindEnv, k, "="+c.Vars[k], false)
 			}
-		case packdecl.KindLaunch:
-			add(packdecl.KindLaunch, c.Bin, strings.Join(c.Flags, " "), false)
 		case packdecl.KindHook:
 			add(packdecl.KindHook, c.Hook, "", false)
 		case packdecl.KindAutonomy:
@@ -860,8 +858,8 @@ type agentNameClaim struct {
 //
 // ONE GATHERING FOR TWO CALLERS, and that is the point of splitting it out: AgentNameCollisions
 // asks "does one name have two owners" and AgentNames asks "which names does this jail have",
-// and both are questions about the same claim set. Two loops over the same four kinds is how a
-// name becomes an owner for the collision check and a stranger to the audience check.
+// and both are questions about the same claim set. Two loops over the same claiming kinds is how
+// a name becomes an owner for the collision check and a stranger to the audience check.
 //
 // Which kinds claim a name, and why `requires` does not, is AgentNameCollisions' docstring.
 func agentNameClaims(packs []*Pack) (map[string][]agentNameClaim, []string) {
@@ -882,7 +880,7 @@ func agentNameClaims(packs []*Pack) (map[string][]agentNameClaim, []string) {
 		}
 		for _, c := range p.Decl.Contributions() {
 			switch c.Kind {
-			case packdecl.KindProgram, packdecl.KindLaunch:
+			case packdecl.KindProgram:
 				claim(c.Bin, p.Name, string(c.Kind))
 			case packdecl.KindBriefing, packdecl.KindSkills:
 				claim(c.Agent, p.Name, string(c.Kind)+".agent")
@@ -917,7 +915,7 @@ func AgentNames(packs []*Pack) []string {
 // # Why it is its own pass
 //
 // The third instance of the shape pluginNameCollisions and LoopholeNameCollisions already
-// are, and the widest: it spans FOUR kinds rather than sitting inside one. The generic
+// are, and the widest: it spans THREE kinds rather than sitting inside one. The generic
 // exclusive loop keys claims by `(kind, target)` and skips every kind that is not
 // CombineExclusive, and `briefing`/`skills` are CombineConcat/CombineMerge by design —
 // several packs contributing prose at one path is the whole point — so an `agent` claim
@@ -928,8 +926,9 @@ func AgentNames(packs []*Pack) []string {
 //
 // A pack claims a name by OWNING part of that agent's plumbing:
 //
-//   - `program` / `launch` by `bin` — it installs the launcher, or it injects that
-//     launcher's flags.
+//   - `program` by `bin` — it installs the launcher. (`launch` claimed a name this way
+//     too, until that kind was retired; an autonomy posture names a bin and does NOT
+//     claim, which is unchanged — tuning another pack's agent is not owning its name.)
 //   - `briefing` / `skills` by `agent` — it declares where that agent READS, which is the
 //     identity an `agents: [...]` selector resolves against (borrowedDestinations).
 //
@@ -947,8 +946,8 @@ func AgentNames(packs []*Pack) []string {
 //
 // # Single-pack groups are SKIPPED, unlike ConfigSurfaceCollisions
 //
-// One pack claiming its own name in four kinds is one pack owning one name (§4.2 names
-// packs/copilot, which declares `copilot` on both `program` and `launch`). That is the
+// One pack claiming its own name in several kinds is one pack owning one name (packs/claude
+// declares `claude` on `program` and on both its `briefing` and `skills`). That is the
 // generic loop's rule and it is the right question here, which is why this pass groups by
 // pack the way the generic loop does rather than reporting per declaration the way a config
 // surface must.
@@ -986,7 +985,7 @@ func AgentNameCollisions(packs []*Pack) []Collision {
 }
 
 // agentNameCollisionReason is the message a user sees. It has to name every claim WITH the
-// field it came through — an author told only "two packs claim claude" has four kinds and
+// field it came through — an author told only "two packs claim claude" has three kinds and
 // two manifests to search — and it has to end in the remedy, which for this rule is not
 // "rename one" (a name is not the pack author's to rename; it is the command the user types)
 // but "these two packs cannot both be selected".

@@ -330,6 +330,17 @@ func DecodeTolerant(data []byte) (m *Manifest, problems, skipped []string) {
 	kept := make([]Contribution, 0, len(man.Contributes))
 	for i, c := range man.Contributes {
 		if c.Kind != "" && !KnownKind(c.Kind) {
+			// A RETIRED kind is skipped exactly like an unknown one — the boot must not
+			// fail on either — but its note says the truth about it. "a build that knows
+			// the kind will render it" is a promise no build can keep once the kind is
+			// gone, and a note that sends a reader looking for a newer yolo is worse than
+			// none. ValidateKind carries the same text on the authoring path.
+			if msg := RetiredKind(c.Kind); msg != "" {
+				skipped = append(skipped, fmt.Sprintf(
+					"contributes[%d]: skipping retired kind %q — this contribution is not "+
+						"rendered, and no build will render it again. %s", i, c.Kind, msg))
+				continue
+			}
 			skipped = append(skipped, fmt.Sprintf(
 				"contributes[%d]: skipping unknown kind %q — this build does not know it, "+
 					"so the contribution is not rendered (version skew; a build that "+

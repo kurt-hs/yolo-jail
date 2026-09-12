@@ -286,6 +286,24 @@ not know still boots the jail, warning by name.
 > build would read as a *restriction* must not be dropped, or core validates a value against
 > half a rule. `TestUnknownSettingDeclarationKeyIsRefusedByBOTHDecoders` pins it.
 
+### Retired kinds
+
+A kind can also **leave** the set, and it is then neither known nor unknown but **retired**:
+refused at authoring with its *replacement named*, skipped across the version boundary like
+any other kind this build cannot render. `packdecl`'s `retiredKinds` is the registry, and it
+is the same pattern the repo uses for a removed top-level config key (`journal`,
+`host_processes`) and a removed contribution field (`tier`, `requires_provider`).
+
+The generic *"unknown kind (expected one of …)"* would be the wrong answer: it reads
+identically whether the kind never existed or was deliberately taken away, and it tells an
+author nothing about what to write instead. The skip note differs too — it must not repeat
+the version-skew promise that *"a build that knows the kind will render it"*, because no
+build will.
+
+| Retired kind | Replacement |
+| :--- | :--- |
+| `launch` | the `autonomy` kind's `autonomous`/`guarded` postures, whose nested `launch` block is a **different thing** and is where launch flags are declared. A flag declared as a top-level `launch` contribution was one **no notch could withhold** — exactly what the confinement policy exists to prevent. The kind's other half, a flag-ALIAS map, is gone with no replacement: a table of other spellings of one switch restates the tool's own flag parser in a place that cannot notice it drift. |
+
 ## The kinds and how two claims combine
 
 The kind set is closed and core-owned. **`packdecl`'s `footprints` map is the authority for
@@ -299,7 +317,7 @@ the semantic axis, and it is short:
 
 | Combine | Meaning | Kinds that use it |
 | :--- | :--- | :--- |
-| **Exclusive** | one owner per target; a second claim is an error | `program` (by bin) · `files` (by path) · `config` (by surface identity) · `launch` (by bin) · `autonomy` · `loophole` (by loophole name) · `service` (by service name) · `provider` (by provider name) · `blocked-tool` (by bin) · `profile` (by pack + name) |
+| **Exclusive** | one owner per target; a second claim is an error | `program` (by bin) · `files` (by path) · `config` (by surface identity) · `autonomy` · `loophole` (by loophole name) · `service` (by service name) · `provider` (by provider name) · `blocked-tool` (by bin) · `profile` (by pack + name) |
 | **Shared** | many independent claimants are the ordinary case | `requires` · `reads-host` · `mount` |
 | **Merge** | many inputs into one target is the feature | `skills` · `env` (a key claimed twice collides) |
 | **Concat** | ordered concatenation | `briefing` |
@@ -329,11 +347,10 @@ The generic loop keys collisions by `(kind, target)`. Four things need their own
 because they do not fit that shape, and all four live in `internal/packload/footprint.go`:
 
 - **`AgentNameCollisions`** — the AGENT NAME is exclusive **across kinds**, and it is the
-  only namespace that is. A pack claims one by installing its launcher (`program`),
-  injecting that launcher's flags (`launch`), or declaring where that agent reads
-  (`briefing`/`skills` `agent`). Two packs claiming one name is fatal at launch, at `yolo
-  host apply` and at `yolo check` — and two of the four claiming kinds merge by design, so
-  the generic loop cannot express it. `requires` is deliberately **not** a claim on the
+  only namespace that is. A pack claims one by installing its launcher (`program`) or by
+  declaring where that agent reads (`briefing`/`skills` `agent`). Two packs claiming one
+  name is fatal at launch, at `yolo host apply` and at `yolo check` — and two of the three
+  claiming kinds merge by design, so the generic loop cannot express it. `requires` is deliberately **not** a claim on the
   name: it is Shared for a reason, and a content pack asserting `claude` beside the pack
   that provides it is an ordinary dependency.
 - **`ConfigSurfaceCollisions`** — see [config surfaces](#config-surfaces-and-the-compose-engine);
@@ -766,9 +783,8 @@ where the universe is known, at `packload.ResolveNeeds`. Four rules govern it, a
 
 Principle 1 restated concretely. There are two ways a file reaches the jail:
 
-- **Sole ownership.** `files`, `program`, `launch`, and a pack's own `skills`/`briefing`
-  tree — the pack owns the target, and two packs claiming one path is an error before
-  anything runs.
+- **Sole ownership.** `files`, `program`, and a pack's own `skills`/`briefing` tree — the
+  pack owns the target, and two packs claiming one path is an error before anything runs.
 
 - **Shared production via a neutral owner.** When two packs affect one file, no pack writes
   it. Each emits typed contributions and a **core-owned assembler** consumes all of them and

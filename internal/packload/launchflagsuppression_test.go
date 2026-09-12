@@ -47,10 +47,13 @@ func TestTypingTheShortSpellingNoLongerSuppressesTheInjectedFlag(t *testing.T) {
 
 // AND THE MANIFEST MAY NOT CARRY ONE AGAIN. Deleting the field without pinning its absence
 // leaves `"aliases"` as prose a pack author can still write: the strict decoder refuses it
-// today, and this is what says that refusal is intended rather than incidental.
+// today, and this is what says that refusal is intended rather than incidental. Declared on
+// `autonomy`, the kind that now owns every launch flag — the kind `aliases` used to sit on is
+// itself retired, and its own refusal would otherwise be what this test measured.
 func TestAliasesIsNotAManifestFieldAnyMore(t *testing.T) {
 	_, problems := packdecl.Decode([]byte(
-		`{"name":"x","contributes":[{"kind":"launch","bin":"x","flags":["--f"],"aliases":{"--f":["-f"]}}]}`,
+		`{"name":"x","contributes":[{"kind":"autonomy","autonomous":{"launch":[` +
+			`{"bin":"x","flags":["--f"]}]},"aliases":{"--f":["-f"]}}]}`,
 	))
 	if len(problems) == 0 {
 		t.Fatal("a manifest declaring `aliases` was accepted — the flag-alias map is deleted, " +

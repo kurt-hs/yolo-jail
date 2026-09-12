@@ -120,7 +120,6 @@ func writeCensusPack(t *testing.T, dir string) {
 		packdecl.KindReadsHost: `{"kind":"reads-host","host":".census/hostfile","into":"hostfile"}`,
 		packdecl.KindMount:     `{"kind":"mount","host":".census/hostdir","into":"census-hostdir"}`,
 		packdecl.KindEnv:       `{"kind":"env","vars":{"CENSUS_VAR":"1"}}`,
-		packdecl.KindLaunch:    `{"kind":"launch","bin":"censusbin","flags":["--census"]}`,
 		packdecl.KindHook:      `{"kind":"hook","hook":"per_jail_history","from":".census/history"}`,
 		packdecl.KindAutonomy: `{"kind":"autonomy","autonomous":{"launch":[{"bin":"censusbin",` +
 			`"flags":["--yolo"]}]},"guarded":{"launch":[{"bin":"censusbin"}]}}`,

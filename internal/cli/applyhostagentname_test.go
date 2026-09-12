@@ -85,7 +85,6 @@ func TestApplyHostAcceptsOnePackOwningItsOwnName(t *testing.T) {
 	writeFile(t, filepath.Join(solo, "pack.json"),
 		`{"name":"solocli","description":"s","contributes":[`+
 			`{"kind":"program","bin":"solocli","via":"npm","package":"solocli"},`+
-			`{"kind":"launch","bin":"solocli","flags":["--yes"]},`+
 			`{"kind":"briefing","into":".solo/AGENTS.md","agent":"solocli"}]}`)
 	writeFile(t, filepath.Join(solo, "AGENTS.md"), "Solo prose.\n")
 	selectPacks(t, home, `{"source":"file://`+solo+`","name":"solocli"}`)
@@ -98,7 +97,7 @@ func TestApplyHostAcceptsOnePackOwningItsOwnName(t *testing.T) {
 
 	rc, report := applyWith(t, true, strings.NewReader("y\n"))
 	if rc != 0 {
-		t.Fatalf("one pack owning one name through three kinds must apply; rc=%d\n%s", rc, report)
+		t.Fatalf("one pack owning one name through two kinds must apply; rc=%d\n%s", rc, report)
 	}
 	got, err := os.ReadFile(filepath.Join(home, ".solo", "AGENTS.md"))
 	if err != nil {

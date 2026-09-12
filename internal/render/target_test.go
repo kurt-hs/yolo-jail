@@ -312,18 +312,22 @@ func TestLoopholeIsExcludedFromTheJailSetExplicitly(t *testing.T) {
 	}
 }
 
-// `env` and `launch` are unbuilt because `yolo host apply` NEVER LAUNCHES A PROCESS — a limit of
-// the command, not of the notch (plan §6b D3). The distinction is not pedantry: at `guest`
-// yolo already execs the agent, and `yolo --at host -- <cmd>` would give the host notch the
-// same verb, so a reason phrased as "off-container" or "below jail" would refuse two kinds
-// that are in fact honorable and send a reader looking for a confinement fix to a problem that
-// is a missing command.
+// `env` is unbuilt because `yolo host apply` NEVER LAUNCHES A PROCESS — a limit of the
+// command, not of the notch (plan §6b D3). The distinction is not pedantry: at `guest` yolo
+// already execs the agent, and `yolo --at host -- <cmd>` would give the host notch the same
+// verb, so a reason phrased as "off-container" or "below jail" would refuse a kind that is in
+// fact honorable and send a reader looking for a confinement fix to a problem that is a
+// missing command.
+//
+// `launch` was the second kind here and its retirement did not retire the rule: the loop stays
+// a loop, because the next kind that needs a process yolo starts inherits this reasoning
+// rather than restating it.
 //
 // Asserted on the SHAPE of the reason, not its exact prose, so rewording stays free while the
 // two claims that must not come back are pinned: the reason has to name the command, and must
 // not blame the notch.
 func TestEnvAndLaunchRefusalsBlameTheCommandNotTheNotch(t *testing.T) {
-	for _, k := range []packdecl.Kind{packdecl.KindEnv, packdecl.KindLaunch} {
+	for _, k := range []packdecl.Kind{packdecl.KindEnv} {
 		why, unbuilt := HostUnimplemented(k)
 		if !unbuilt {
 			// Implemented is a fine outcome — delete this kind's row rather than the test.

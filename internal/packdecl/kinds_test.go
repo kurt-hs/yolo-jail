@@ -13,7 +13,7 @@ func TestKnownKindsCoverEveryConstant(t *testing.T) {
 	for _, k := range []Kind{
 		KindProgram, KindRequires, KindSkills, KindBriefing, KindFiles, KindConfig,
 		KindConfigOverlay, KindState, KindReadsHost, KindMount, KindEnv,
-		KindLaunch, KindHook, KindAutonomy, KindProfile, KindProvider, KindLoophole,
+		KindHook, KindAutonomy, KindProfile, KindProvider, KindLoophole,
 		KindService,
 	} {
 		fp, ok := FootprintOf(k)
@@ -28,8 +28,8 @@ func TestKnownKindsCoverEveryConstant(t *testing.T) {
 			t.Errorf("kind %q has an empty Claims description", k)
 		}
 	}
-	if got := len(KnownKinds()); got != 19 {
-		t.Errorf("KnownKinds() has %d entries, want 19 — a kind was added/removed without updating the test", got)
+	if got := len(KnownKinds()); got != 18 {
+		t.Errorf("KnownKinds() has %d entries, want 18 — a kind was added/removed without updating the test", got)
 	}
 }
 
@@ -73,7 +73,6 @@ func TestCombineRulesMatchDesign(t *testing.T) {
 		KindProgram:       CombineExclusive,
 		KindFiles:         CombineExclusive,
 		KindConfig:        CombineExclusive,
-		KindLaunch:        CombineExclusive,
 		KindSkills:        CombineMerge,
 		KindBriefing:      CombineConcat,
 		KindConfigOverlay: CombineOverlay,

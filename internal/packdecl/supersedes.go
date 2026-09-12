@@ -4,10 +4,10 @@ package packdecl
 // (docs/reference/pack-system.md §2): a pack's claim that some capability's job
 // no longer needs doing, so whichever loophole serves it can stop.
 //
-// # Why it is a TOP-LEVEL key and not a 16th contribution kind
+// # Why it is a TOP-LEVEL key and not one more contribution kind
 //
 // The design's OQ-CAP says top-level, and the code agrees for a reason the design
-// only gestures at. Every one of the 15 kinds is a CONTRIBUTION — something the
+// only gestures at. Every kind in the closed set is a CONTRIBUTION — something the
 // pack DELIVERS at a target — and kinds.go types that literally: each has a
 // `Footprint` carrying a `Combine` rule for "how two claims on the SAME target
 // resolve", which is what `packload.Collisions` keys on. Supersession delivers

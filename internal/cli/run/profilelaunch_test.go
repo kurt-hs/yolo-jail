@@ -26,9 +26,9 @@ import (
 )
 
 // profileLaunchLocalPack writes the conventional LOCAL pack (paths.LocalPackDir, so no
-// `packs` config entry is needed) that installs `acme` with one static launch flag, plus
-// a profile declaration that contributes no flag of its own — the shrunken kind's whole
-// point.
+// `packs` config entry is needed) that installs `acme` and gives its autonomous posture one
+// launch flag, plus a profile declaration that contributes no flag of its own — the shrunken
+// kind's whole point.
 func profileLaunchLocalPack(t *testing.T, home string) {
 	t.Helper()
 	dir := filepath.Join(home, ".config", "yolo-jail", "local")
@@ -37,14 +37,14 @@ func profileLaunchLocalPack(t *testing.T, home string) {
 	}
 	manifest := `{"name":"local","contributes":[` +
 		`{"kind":"program","bin":"acme","via":"npm","package":"@acme/acme"},` +
-		`{"kind":"launch","bin":"acme","flags":["--static"]},` +
+		`{"kind":"autonomy","autonomous":{"launch":[{"bin":"acme","flags":["--static"]}]}},` +
 		`{"kind":"profile","name":"bedrock","provider":"bedrock"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// The selected profile's flag list is the static baseline: a profile is a selection, so
+// The selected profile's flag list is the posture's baseline: a profile is a selection, so
 // the argv it produces is the pack's own. Asserted through Run on the macos-user arm,
 // whose handler seam exposes the argv.
 func TestRunInjectsNoFlagForASelectedProfile(t *testing.T) {
@@ -66,7 +66,7 @@ func TestRunInjectsNoFlagForASelectedProfile(t *testing.T) {
 		t.Fatalf("Run() = %d, want 0\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
 	if len(got) != 3 || got[0] != "acme" || got[1] != "--static" || got[2] != "user-arg" {
-		t.Fatalf("a selected profile contributes no flag, so the argv must be the static "+
+		t.Fatalf("a selected profile contributes no flag, so the argv must be the posture's "+
 			"baseline plus the user's own arguments, got %v", got)
 	}
 }
@@ -92,6 +92,6 @@ func TestRunWithoutAProfileSelectionInjectsTheStaticFlags(t *testing.T) {
 		t.Fatalf("Run() = %d, want 0\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
 	if len(got) != 2 || got[0] != "acme" || got[1] != "--static" {
-		t.Fatalf("an unprofiled launch must inject the static flags, got %v", got)
+		t.Fatalf("an unprofiled launch must inject the posture's flags, got %v", got)
 	}
 }

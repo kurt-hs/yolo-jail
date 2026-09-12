@@ -70,7 +70,6 @@ func TestLaunchAcceptsTwoPacksOwningDifferentAgentNames(t *testing.T) {
 	o := twoLocalPacks(t,
 		"alpha", `{"contributes":[
 			{"kind":"program","bin":"alphacli","via":"npm","package":"alphacli"},
-			{"kind":"launch","bin":"alphacli","flags":["--yes"]},
 			{"kind":"briefing","into":".alpha/AGENTS.md","agent":"alphacli"}]}`,
 		"beta", `{"contributes":[
 			{"kind":"program","bin":"betacli","via":"npm","package":"betacli"},

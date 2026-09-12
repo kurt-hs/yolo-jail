@@ -1,6 +1,7 @@
 package packload
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -19,9 +20,9 @@ func profileFixture(t *testing.T) *Pack {
 	  {"kind":"config","config":[{"agent":"claude","name":"settings","codec":"json",
 	     "path":"~/.claude/settings.json","managed":{"base":"surface"}}]},
 	  {"kind":"env","vars":{"STATIC":"from-env","SHARED":"from-env"}},
-	  {"kind":"launch","bin":"claude","flags":["--static"]},
 	  {"kind":"autonomy",
-	   "autonomous":{"config":[{"agent":"claude","name":"settings","codec":"json","path":"~/.claude/settings.json",
+	   "autonomous":{"launch":[{"bin":"claude","flags":["--auto"]}],
+	    "config":[{"agent":"claude","name":"settings","codec":"json","path":"~/.claude/settings.json",
 	     "managed":{"auto":"yes"}}]},
 	   "guarded":{"config":[{"agent":"claude","name":"settings","codec":"json","path":"~/.claude/settings.json",
 	     "managed":{"auto":"no"}}]}},
@@ -154,23 +155,28 @@ func TestEnvFoldIsPerPack(t *testing.T) {
 	}
 }
 
-// A profile contributes no launch flag, and the shrink is why: the variant flags this
-// fold used to take from a selected profile moved to a `profile`-modified kind:launch
-// contribution, which the schema refuses today because nothing consumes it. The static
-// flags and the autonomy posture's are the whole answer.
+// A profile contributes no launch flag: since the OQ-PT8 shrink a profile is a SELECTION over
+// a provider and carries no body at all, so the selected notch's autonomy posture is the whole
+// answer — the same flags whichever profile is active.
 func TestLaunchFlagsTakeNoProfileBody(t *testing.T) {
 	p := profileFixture(t)
 
-	if got := LaunchFlagsFor([]*Pack{p}, true)["claude"]; len(got) != 1 || got[0] != "--static" {
-		t.Errorf("the static flags stand whatever is selected, got %v", got)
+	for _, profiles := range []string{"no selection", "bedrock selected"} {
+		if got := LaunchFlagsFor([]*Pack{p}, true)["claude"]; len(got) != 1 || got[0] != "--auto" {
+			t.Errorf("%s: the posture's flags stand whatever is selected, got %v", profiles, got)
+		}
 	}
-	// And the schema really does refuse the modifier on this kind — the sentence the
-	// comment above rests on. (The schema half is packdecl's; this end keeps the two
-	// honest together.)
-	if _, probs := packdecl.Decode([]byte(`{"name":"acme","contributes":[
+	// And the kind a variant's flags used to live on is gone rather than merely unconsumed:
+	// `launch` is refused with its replacement named, on the authoring path. (The schema half
+	// is packdecl's; this end keeps the two honest together.)
+	_, probs := packdecl.Decode([]byte(`{"name":"acme","contributes":[
 	  {"kind":"profile","name":"p","provider":"z"},
-	  {"kind":"launch","profile":"p","bin":"claude","flags":["--bedrock"]}]}`)); len(probs) == 0 {
-		t.Errorf("a profile-gated launch contribution must be refused until a consumer exists")
+	  {"kind":"launch","profile":"p","bin":"claude","flags":["--bedrock"]}]}`))
+	if len(probs) == 0 {
+		t.Fatal("a `kind: \"launch\"` contribution must be refused — the kind is retired")
+	}
+	if !strings.Contains(strings.Join(probs, "\n"), "autonomy") {
+		t.Errorf("the refusal must name the replacement kind, got %v", probs)
 	}
 }
 

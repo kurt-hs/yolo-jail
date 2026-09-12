@@ -31,11 +31,11 @@ type Contribution struct {
 	Kind Kind `json:"kind"`
 
 	// --- program (install) / requires (assertion) ---
-	Bin     string   `json:"bin,omitempty"`     // program/requires/launch: the binary name
+	Bin     string   `json:"bin,omitempty"`     // program/requires: the binary name
 	Via     string   `json:"via,omitempty"`     // program: "npm" | "installer"
 	Package string   `json:"package,omitempty"` // program via npm: the npm package
 	URL     string   `json:"url,omitempty"`     // program via installer: the curl-to-shell URL
-	Flags   []string `json:"flags,omitempty"`   // program: extra install flags; launch: the injected flags
+	Flags   []string `json:"flags,omitempty"`   // program: extra install flags
 	// Update is the argv that makes the program update ITSELF, with the bin omitted:
 	// `"update": ["install"]` for claude, `["update", "--self"]` for pi. Read only on
 	// `program`, and refused on every other kind.
@@ -164,9 +164,9 @@ type Contribution struct {
 	//     pack's gated env reachable, packs/zai being the shipped case). Env has no
 	//     surface to name an agent, so it asks the table itself.
 	//
-	// REFUSED ON EVERY OTHER KIND (validateContribution): `launch` is contemplated and has
-	// no consumer, and a field silently doing nothing on the kinds it does not gate is the
-	// accepted-and-ignored defect this schema refuses everywhere else.
+	// REFUSED ON EVERY OTHER KIND (validateContribution): a field silently doing nothing on
+	// the kinds it does not gate is the accepted-and-ignored defect this schema refuses
+	// everywhere else.
 	Profile string `json:"profile,omitempty"`
 
 	// --- state ---
@@ -188,8 +188,8 @@ type Contribution struct {
 
 	// blocked-tool: the refusal text, the alternative to print, and the binary that
 	// alternative NAMES. `bin` carries the tool being blocked and `flags` the argv
-	// patterns that trigger it, both reusing the fields program/launch already use for
-	// the same shapes — a blocked tool is a bin plus flags, which is why it needs no
+	// patterns that trigger it, both reusing the fields `program` already uses for the
+	// same shapes — a blocked tool is a bin plus flags, which is why it needs no
 	// spelling of its own.
 	//
 	// Replacement is the one that does work at render time rather than being text: a
@@ -218,10 +218,12 @@ type Contribution struct {
 	// is needed when the autonomous one writes something that OUTLIVES the render, which is
 	// a config key and never a flag.
 	//
-	// ⚠ An empty `guarded.launch` entry is NOT how to spell "no flags in this posture". A
-	// posture entry REPLACES that binary's plain `launch` flags rather than adding to them
-	// (LaunchFlagsFor), so it would strip the binary's ORDINARY flags at the host notch
-	// too — flags no notch gates.
+	// A POSTURE IS THE ONLY PLACE A LAUNCH FLAG CAN BE DECLARED. There was a top-level
+	// `kind: "launch"` until it was retired (kinds.go's retiredKinds), and its whole problem
+	// was that a flag declared there was one NO notch could withhold — the case this policy
+	// exists for. With it gone, "the flags this binary gets" is answered entirely by which
+	// posture the notch selects, and an ABSENT posture entry is how a posture spells "none":
+	// there is no longer an ungated list underneath for an empty entry to subtract from.
 	Autonomous *AutonomyPosture `json:"autonomous,omitempty"`
 	Guarded    *AutonomyPosture `json:"guarded,omitempty"`
 
@@ -1264,21 +1266,6 @@ func (m *Manifest) stateDirs(scope string) []string {
 	return out
 }
 
-// LaunchFlagContributions returns the launch contributions as the legacy per-bin map,
-// later entries winning a repeated bin.
-func (m *Manifest) LaunchFlagContributions() map[string][]string {
-	out := map[string][]string{}
-	for _, c := range m.Contributions() {
-		if c.Kind == KindLaunch && c.Bin != "" {
-			out[c.Bin] = c.Flags
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 // HookContributions returns the hook contributions as legacy Hooks.
 func (m *Manifest) HookContributions() []Hook {
 	var out []Hook
@@ -1699,9 +1686,6 @@ func validateContribution(label string, c Contribution) []string {
 				problems = append(problems, label+": env has an empty variable name")
 			}
 		}
-	case KindLaunch:
-		req("bin", c.Bin)
-		problems = binProblem(problems, label+".bin", c.Bin)
 	case KindHook:
 		if c.Hook == "" {
 			problems = append(problems, label+": hook needs a \"hook\" name")

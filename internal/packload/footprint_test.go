@@ -40,7 +40,6 @@ func TestFootprintMapsCurrentFields(t *testing.T) {
 		{Kind: packdecl.KindState, At: ".claude", Scope: "workspace"},
 		{Kind: packdecl.KindState, At: ".claude-shared-credentials", Scope: "machine", Why: "shared creds"},
 		{Kind: packdecl.KindReadsHost, Host: ".claude/settings.json"},
-		{Kind: packdecl.KindLaunch, Bin: "claude", Flags: []string{"--dangerously-skip-permissions"}},
 		{Kind: packdecl.KindHook, Hook: "shared_credentials"},
 		{Kind: packdecl.KindConfig, Raw: surface},
 	}}
@@ -74,9 +73,6 @@ func TestFootprintMapsCurrentFields(t *testing.T) {
 	// hostFiles → reads-host (review-worthy) only because MayAccessHost.
 	if c, ok := cs["reads-host .claude/settings.json"]; !ok || !c.ReviewWorthy {
 		t.Errorf("hostFiles not mapped to review-worthy reads-host: %+v", c)
-	}
-	if _, ok := cs["launch claude"]; !ok {
-		t.Error("launchFlags not mapped to KindLaunch")
 	}
 	if _, ok := cs["hook shared_credentials"]; !ok {
 		t.Error("hook not mapped to KindHook")

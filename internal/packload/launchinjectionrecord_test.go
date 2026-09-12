@@ -15,7 +15,8 @@ import (
 //     without deciding for itself what "nothing happened" means.
 func TestTheInjectionRecordNamesWhatWasActuallyAdded(t *testing.T) {
 	p := &Pack{Name: "acme", Decl: declFrom(t,
-		`{"contributes":[{"kind":"launch","bin":"tool","flags":["--one","--two"]}]}`)}
+		`{"contributes":[{"kind":"autonomy","autonomous":{"launch":[`+
+			`{"bin":"tool","flags":["--one","--two"]}]}}]}`)}
 	packs := []*Pack{p}
 
 	out, inj := InjectLaunchFlags(packs, []string{"tool", "sub"})

@@ -80,22 +80,21 @@ var refusalReasons = map[packdecl.Kind]string{
 // (HostRenderResult.Overlays) and names an ownerless overlay in its own line, so the kind
 // still produces output on every path; it just is not this map's kind of output.
 var hostUnimplemented = map[packdecl.Kind]string{
-	// `launch` and `env` are honored by the census and unbuilt for ONE reason, and the
-	// wording has to name it precisely (plan §6b D3): `yolo host apply` never launches a
-	// process. It is a limit of this COMMAND, not of the notch. The old text — "launch flags
-	// need a launcher", "the only place to set these off-container is your shell profile" —
-	// read as facts about being off-container, which they are not: at `guest` yolo already
-	// execs the agent (macos-user does it today), and `yolo --at host -- <cmd>` (design §4.1)
-	// would make both renderable at the host notch too, because then yolo is the one
-	// spawning the process and can carry an argv and an environment. A `guest` target
-	// inheriting the old sentences would refuse two kinds it can honor, which is exactly the
-	// silent-inheritance failure the explicit Kind exists to stop.
+	// `env` is honored by the census and unbuilt for ONE reason, and the wording has to name
+	// it precisely (plan §6b D3): `yolo host apply` never launches a process. It is a limit
+	// of this COMMAND, not of the notch. The old text — "the only place to set these
+	// off-container is your shell profile" — read as a fact about being off-container, which
+	// it is not: at `guest` yolo already execs the agent (macos-user does it today), and
+	// `yolo --at host -- <cmd>` (design §4.1) would make it renderable at the host notch too,
+	// because then yolo is the one spawning the process and can carry an environment. A
+	// `guest` target inheriting the old sentence would refuse a kind it can honor, which is
+	// exactly the silent-inheritance failure the explicit Kind exists to stop.
 	//
-	// So both say the same thing about the same missing VERB, and the remedy is the same
-	// one — which is why they are two entries with one reason rather than two reasons.
-	packdecl.KindLaunch: "launch flags apply to a process yolo starts, and `yolo host apply` " +
-		"only configures your tools — it never runs them, so there is no argv to inject " +
-		"them into. `yolo host -- <program>` is the notch that does the launching",
+	// `launch` used to sit here saying the same thing about the same missing verb, since its
+	// flags also need a process. The KIND is retired — launch flags are declared inside an
+	// `autonomy` posture now — and `autonomy` is not honored-but-unbuilt at a host target: it
+	// is the kind the host notch SELECTS (the guarded posture), which is a different answer
+	// and lives in the notch policy rather than in this table.
 	packdecl.KindEnv: "env vars apply to a process yolo starts, and `yolo host apply` only " +
 		"configures your tools — it never runs them. Setting them for your whole session " +
 		"would mean editing your shell rc, a much larger claim than a pack's env " +
@@ -178,10 +177,9 @@ var jailRenderedElsewhere = map[packdecl.Kind]bool{
 // gates it — the FieldSet says it applies); the provisioning kinds are refused. This
 // is §2.1's census as executable data.
 //
-// config-overlay tracks config (it lands in a composed surface). launch and hook are
-// notch-dependent in degree, not applicability, so they are honored here and the caller
-// narrows them (e.g. only 1 of 3 hooks on host); keeping them in the set means "this
-// target can express them," which is true.
+// config-overlay tracks config (it lands in a composed surface). hook is notch-dependent in
+// degree, not applicability, so it is honored here and the caller narrows it (only 1 of 3
+// hooks on host); keeping it in the set means "this target can express it," which is true.
 func HostFields() FieldSet {
 	honored := map[packdecl.Kind]bool{
 		packdecl.KindConfig:        true,
@@ -189,7 +187,6 @@ func HostFields() FieldSet {
 		packdecl.KindSkills:        true,
 		packdecl.KindBriefing:      true,
 		packdecl.KindEnv:           true,
-		packdecl.KindLaunch:        true,
 		packdecl.KindHook:          true,
 		packdecl.KindProgram:       true, // honored but confirm-gated by the caller (OQ-6/7)
 		// requires is honored, and REPORTED with its hints — that is the kind's entire

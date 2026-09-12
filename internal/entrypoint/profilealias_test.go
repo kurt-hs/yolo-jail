@@ -3,14 +3,14 @@ package entrypoint
 // profilealias_test.go pins the SHELL half of a pack's launch flags against the fold, and
 // pins the CALL SITE that does the folding.
 //
-// Two consumers read one pack's launch list, and they must agree because shell.go says so:
+// Two consumers read one pack's launch flags, and they must agree because shell.go says so:
 // packAliases exists so "an interactive shell gets the same flags a `yolo -- <bin>`
-// invocation does". Both read LaunchFlagContributions plus the selected autonomy posture.
-// Before OQ-PT8 shrank the kind they ALSO read a profile table, because a kind:profile body
-// could carry launch flags; that body is gone (a profile-gated kind:launch has no consumer),
-// so the two spellings now agree by construction rather than by both folding the same
-// table — and the parity pin below is what would catch a second consumer growing a third
-// source of flags on one side only.
+// invocation does". Both read the selected autonomy posture, which since the `launch` kind
+// was retired is the ONLY source there is. Before OQ-PT8 they ALSO read a profile table,
+// because a kind:profile body could carry launch flags; that body is gone, so the two
+// spellings now agree by construction rather than by both folding the same table — and the
+// parity pin below is what would catch a second consumer growing a third source of flags on
+// one side only.
 //
 // The fixture is a real pack on disk read by LoadJailPacks, not a hand-built struct:
 // the alias derivation starts from the loaded set, and a test that bypassed the loader
@@ -28,9 +28,10 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-// profileLaunchPack writes a pack that installs `acme` and gives it one static launch flag,
-// plus a profile declaration to make the point the shrink makes: a declared profile
-// contributes no flag at all, because the launch body it used to carry has nowhere to live.
+// profileLaunchPack writes a pack that installs `acme` and gives its autonomous posture one
+// launch flag, plus a profile declaration to make the point the shrink makes: a declared
+// profile contributes no flag at all, because the launch body it used to carry has nowhere
+// to live.
 // Returned is the staging root the pack was written into, ready to hand to YOLO_PACK_ROOT.
 func profileLaunchPack(t *testing.T) string {
 	t.Helper()
@@ -41,7 +42,7 @@ func profileLaunchPack(t *testing.T) string {
 	}
 	manifest := `{"name":"acme","contributes":[` +
 		`{"kind":"program","bin":"acme","via":"npm","package":"@acme/acme"},` +
-		`{"kind":"launch","bin":"acme","flags":["--static"]},` +
+		`{"kind":"autonomy","autonomous":{"launch":[{"bin":"acme","flags":["--static"]}]}},` +
 		`{"kind":"profile","name":"bedrock","provider":"bedrock"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -61,8 +62,8 @@ func aliasEnv(t *testing.T, root, profiles string) *Env {
 	})
 }
 
-// The alias is derived from the pack's launch contributions THROUGH packAliases — not from
-// a hand-built map — so deleting the LaunchFlagsFor call from packAliases fails this test
+// The alias is derived from the pack's declared flags THROUGH packAliases — not from a
+// hand-built map — so deleting the LaunchFlagsFor call from packAliases fails this test
 // rather than leaving the alias silently empty while the fold stays green.
 func TestPackAliasesFoldTheLaunchContributions(t *testing.T) {
 	root := profileLaunchPack(t)
@@ -127,7 +128,8 @@ func TestAliasWithAQuotedFlagStaysValidShell(t *testing.T) {
 	}
 	manifest := `{"name":"quotepack","contributes":[` +
 		`{"kind":"program","bin":"quotepack","via":"npm","package":"@acme/quotepack"},` +
-		`{"kind":"launch","bin":"quotepack","flags":["--opt='a b'"]}]}`
+		`{"kind":"autonomy","autonomous":{"launch":[` +
+		`{"bin":"quotepack","flags":["--opt='a b'"]}]}}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}

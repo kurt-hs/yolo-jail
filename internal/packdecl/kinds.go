@@ -14,6 +14,11 @@ package packdecl
 // only a newer build knows is skew, not structure, and refusing it failed the
 // boot (loophole-packaging §3.3a: an author must hear; a jail must boot).
 //
+// A kind can also LEAVE the set. It is then neither known nor unknown but RETIRED, and
+// says so with its replacement named — see retiredKinds, which is this file's half of the
+// pattern `validate.go` uses for a removed config key and `retiredFieldProblems` for a
+// removed contribution field.
+//
 // The vocabulary lives here — dependency-free on the rest of the repo, beside the
 // Manifest it types — following the placement rule packdecl already follows (see
 // the package doc): both the host CLI and the in-jail entrypoint read it, so it
@@ -104,8 +109,6 @@ const (
 	// strings only (no interpolation, no host reads), so it is NOT origin-gated. A
 	// key claimed by two packs collides.
 	KindEnv Kind = "env"
-	// KindLaunch: flags injected after a binary at launch. Sole-owned by bin name.
-	KindLaunch Kind = "launch"
 	// KindHook: a named imperative capability from core's closed hook set
 	// (KnownHooks). Conflict resolution is per-hook, not generic.
 	KindHook Kind = "hook"
@@ -347,10 +350,6 @@ var footprints = map[Kind]Footprint{
 		Kind: KindEnv, Combine: CombineMerge,
 		Claims: "static environment variables set in the jail",
 	},
-	KindLaunch: {
-		Kind: KindLaunch, Combine: CombineExclusive,
-		Claims: "launch flags for a binary",
-	},
 	KindHook: {
 		Kind: KindHook, Combine: CombinePerHook,
 		Claims: "a named imperative capability from core's closed hook set",
@@ -426,12 +425,54 @@ func KnownKinds() []Kind {
 	return out
 }
 
+// retiredKinds names a kind this build has REMOVED, and the migration that replaces it.
+//
+// A RETIRED KIND IS NOT AN UNKNOWN ONE, and the difference is the whole reason this table
+// exists rather than a plain deletion. "unknown kind (expected one of …)" is the right
+// answer for a typo and the wrong answer for vocabulary that was real last release: it
+// tells an author their declaration is wrong and nothing about what to write instead, and
+// it reads identically whether the kind never existed or was deliberately taken away. The
+// repo already answers a retired top-level CONFIG key by naming its replacement
+// (validate.go's `journal` and `host_processes`) and a retired contribution FIELD the same
+// way (retiredFieldProblems); a retired kind is the third member of that set.
+//
+// AUTHORING-LOUD, JAIL-TOLERANT, exactly like the other two. ValidateKind runs on the
+// strict path, so an author hears the migration; DecodeTolerant SKIPS an entry whose kind
+// this build does not know — retired or merely newer — before any validation runs, so a
+// jail whose staged tree still carries one boots and says so. The asymmetry is the `tier`
+// incident's lesson: an author must hear, and a jail must boot.
+//
+// An entry stays here until no manifest anyone could stage still carries the kind.
+var retiredKinds = map[Kind]string{
+	"launch": `kind "launch" has been REMOVED — its flags now live in the ` +
+		`"autonomy" kind's postures, where the confinement notch can withhold them: ` +
+		`{"kind": "autonomy", "autonomous": {"launch": [{"bin": "<bin>", ` +
+		`"flags": ["<flag>"]}]}}. A launch flag declared outside a posture was one no ` +
+		`notch could take away, which is what that policy exists to prevent; the ` +
+		`nested "launch" block inside a posture is a different thing and is the ` +
+		`replacement. (The kind's other half, the flag-ALIAS map, is gone with no ` +
+		`replacement: a table of other spellings of one switch restates the tool's own ` +
+		`flag parser in a place that cannot notice it drift.)`,
+}
+
+// RetiredKind returns the migration message for a kind this build has removed, or "" for
+// any other kind — including a known one and a name that was never a kind here.
+func RetiredKind(k Kind) string { return retiredKinds[k] }
+
 // ValidateKind reports the standard problem string for an unknown kind, or "" if
 // k is known — matching the "unknown X (expected …)" shape knownModes/knownCodecs
 // use, so a pack author gets one consistent diagnostic across the manifest.
+//
+// A RETIRED kind gets its own message instead, naming the replacement rather than the
+// whole vocabulary (retiredKinds). One message, not two: the retirement text is returned
+// in place of the generic one so a manifest that has not been migrated yet reads as the
+// migration it needs and not as a typo beside a list of fifteen names.
 func ValidateKind(k Kind) string {
 	if KnownKind(k) {
 		return ""
+	}
+	if msg := RetiredKind(k); msg != "" {
+		return msg
 	}
 	names := make([]string, len(footprints))
 	for i, kk := range KnownKinds() {

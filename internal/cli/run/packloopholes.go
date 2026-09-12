@@ -109,9 +109,17 @@ var disclosureClasses = map[packdecl.Kind]disclosureClass{
 	packdecl.KindFiles:         disclosureSkip,
 	packdecl.KindConfig:        disclosureSkip,
 	packdecl.KindConfigOverlay: disclosureSkip,
-	packdecl.KindLaunch:        disclosureSkip,
 	packdecl.KindHook:          disclosureSkip,
-	packdecl.KindAutonomy:      disclosureSkip,
+	// autonomy declares LAUNCH FLAGS, and the tempting reading — "a permission bypass must
+	// be disclosed" — picks the wrong instrument. This classifier prints per DECLARATION, so
+	// a read row here would announce `--yolo` on every launch of a jail that selected the
+	// copilot pack, including `yolo -- bash` and `yolo -- claude`, where no copilot process
+	// exists. The flag is disclosed where it actually happens instead: the argv rewrite is
+	// printed by run.injectLaunchFlagsDisclosed, with both command lines, and only when
+	// something was really added (launchflagdisclosure.go). Same OQ-10 reasoning as
+	// `profile` below — a disclosure that overclaims is the silent-skip failure wearing a
+	// badge — reached from the other side.
+	packdecl.KindAutonomy: disclosureSkip,
 	// profile is the same call as autonomy, with one more reason on top: the variant the
 	// user can NAME here is the one they SELECTED, and that selection already prints by
 	// name in the launch's profile line (noteUseProfiles, DECLARED/RECEIVED, never

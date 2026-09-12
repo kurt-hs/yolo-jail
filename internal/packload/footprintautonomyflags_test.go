@@ -32,7 +32,7 @@ func TestEveryInjectedLaunchFlagIsNamedInTheFootprint(t *testing.T) {
 	for _, p := range loadAll(t) {
 		var claimed []string
 		for _, c := range packload.FootprintOf(p).Claims {
-			if c.Kind == packdecl.KindLaunch || c.Kind == packdecl.KindAutonomy {
+			if c.Kind == packdecl.KindAutonomy {
 				claimed = append(claimed, c.Detail)
 			}
 		}
@@ -45,7 +45,7 @@ func TestEveryInjectedLaunchFlagIsNamedInTheFootprint(t *testing.T) {
 					if strings.Contains(disclosure, flag) {
 						continue
 					}
-					t.Errorf("pack %q injects %q after `%s` at the %v notch, and no launch or "+
+					t.Errorf("pack %q injects %q after `%s` at the %v notch, and no "+
 						"autonomy claim in its footprint names it.\nfootprint details: %s\n"+
 						"A flag yolo puts on an agent's command line is disclosed by this "+
 						"report or by nothing.", p.Name, flag, bin, notch, disclosure)
@@ -74,12 +74,11 @@ func TestCopilotFootprintNamesTheYoloFlagUnderItsAutonomousPosture(t *testing.T)
 }
 
 // A posture entry carrying a bin and NO flags injects nothing, so the claim must not say it
-// injects something. The shape is reachable — a posture entry replaces that binary's plain
-// launch flags, so `{"bin":"x"}` under `guarded` is how a pack would SUBTRACT them — and
-// "injects `x`" would be a false sentence about it.
+// injects something. The shape is reachable — the schema takes `flags` as optional, and a
+// pack naming a bin under `guarded` with nothing to give it is spelling "this notch adds
+// none" explicitly — and "injects `x`" would be a false sentence about it.
 func TestAFlaglessPostureEntryClaimsNoInjection(t *testing.T) {
 	m, probs := packdecl.Decode([]byte(`{"name":"x","contributes":[` +
-		`{"kind":"launch","bin":"x","flags":["--plain"]},` +
 		`{"kind":"autonomy","autonomous":{"launch":[{"bin":"x","flags":["--go"]}]},` +
 		`"guarded":{"launch":[{"bin":"x"}]}}]}`))
 	if len(probs) != 0 {
