@@ -94,8 +94,12 @@ func attachLaunchLog(o *Options) *launchLog {
 	if o.Workspace == "" {
 		return nil
 	}
-	dir := paths.WorkspaceStateDir(o.Workspace)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// EnsureWorkspaceStateDir rather than a bare MkdirAll: this is the EARLIEST thing in a
+	// launch that creates <workspace>/.yolo — before staging, before the config load, in
+	// every backend and on a launch that goes on to refuse — so it is where the directory
+	// gets the .gitignore that keeps the secrets below out of the user's next commit.
+	dir, err := paths.EnsureWorkspaceStateDir(o.Workspace)
+	if err != nil {
 		return nil
 	}
 	path := filepath.Join(dir, LaunchLogName)

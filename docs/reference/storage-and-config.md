@@ -216,7 +216,17 @@ correct only once that is either serialized or ruled out.
 
 ## Per-workspace state
 
-Each workspace carries a gitignored `.yolo/` directory. Its two documented halves:
+Each workspace carries a `.yolo/` directory, and yolo makes it **un-committable as it creates
+it**: `paths.EnsureWorkspaceStateDir` writes a self-ignoring `.gitignore` — a bare `*`, which
+ignores that file too — so the directory stays invisible to git in a repo that has never heard
+of yolo. It is written whenever the file is absent rather than only on a first creation, so a
+workspace launched before the feature existed gets one too; a `.gitignore` already there is
+never overwritten, whatever it says.
+
+That matters because this is not a directory of noise. `launch.log` carries everything the
+launcher printed, `archive/config/` holds verbatim copies of your own pre-yolo agent config
+files, and `home/` is the jail's whole home overlay — credentials in all three. Its two
+documented halves:
 
 - **`.yolo/home/`** — the writable overlays bind-mounted over the `:ro` base. One
   subdirectory per rw home path, one file per single-file bind, one backing dir per

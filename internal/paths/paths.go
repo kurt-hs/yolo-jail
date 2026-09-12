@@ -382,7 +382,73 @@ func GlobalStorageUnder(home string) string { return filepath.Join(home, globalS
 
 // WorkspaceStateDir returns <workspace>/.yolo — the per-workspace directory yolo owns
 // inside a user's project (boot log, assembled config, the receipt log, the home overlay).
+//
+// CREATING it goes through EnsureWorkspaceStateDir, which is the only thing that also makes
+// it un-committable. This function is path arithmetic and creates nothing.
 func WorkspaceStateDir(workspace string) string { return filepath.Join(workspace, ".yolo") }
+
+// WorkspaceStateIgnoreName is the file that makes <workspace>/.yolo un-committable.
+const WorkspaceStateIgnoreName = ".gitignore"
+
+// WorkspaceStateIgnore is that file's content, and the bare `*` is the whole mechanism: it
+// ignores every path under this directory INCLUDING this file, so .yolo/ is invisible to git
+// however the repo's own .gitignore is written.
+//
+// WHY IT IS NOT OPTIONAL. What lands under .yolo is not merely noise. `launch.log` tees
+// everything the launcher printed, and a --dry-run's printed argv IS its env list, provider
+// secrets and all (docs/plans/handoff-macos-user-open-threads.md §6). `archive/config/` holds
+// VERBATIM copies of the user's own pre-yolo agent config files — exactly where credentials
+// live — and render.Target.ArchivePath is shaped to keep them forever. `home/` is the jail's
+// entire home overlay. This repo happens to ignore .yolo/ by a hand-written line in its own
+// .gitignore, and until this function existed that accident was the only thing making
+// docs/reference/storage-and-config.md's description of the directory as "gitignored" true.
+//
+// NOTHING under .yolo is meant to be committed, `handover.md` included — the one file worth
+// asking about, since a human may want to hand one to a teammate. The handoff design already
+// answers it: the durable context is filed in a committed file ELSEWHERE in the workspace and
+// .yolo/ holds only the one-time POINTER, which the next launch consumes by renaming it
+// (docs/reference/host-to-jail-handoff.md). A committed pointer would be a file that is stale
+// by design.
+const WorkspaceStateIgnore = `# yolo-jail's per-workspace state. None of it belongs in version control:
+# home/ is the jail's home overlay, archive/ holds verbatim copies of your own
+# agent config files, and the logs record a launch's full argv.
+#
+# The bare '*' below ignores this file too, so .yolo/ stays invisible to git
+# however the repo's own .gitignore is written. yolo writes this file once and
+# never overwrites it - edit it, or delete it, if you mean to commit any of this.
+*
+`
+
+// EnsureWorkspaceStateDir creates <workspace>/.yolo and leaves it un-committable, returning
+// the directory so a caller can join a filename onto it.
+//
+// THE FILE IS THE IDEMPOTENCY KEY, NOT THE DIRECTORY, and that is the whole reason this is a
+// function rather than two lines at the one call site that creates the dir first. Gating the
+// write on "did I just create .yolo?" would leave every workspace yolo has ever launched
+// without the file forever — and those are precisely the ones already holding a launch.log.
+// So: MkdirAll every time, then write when the file is absent, however old the directory is.
+//
+// A .gitignore that is already there is NEVER touched, whatever it says. A user who edited it,
+// emptied it, or deliberately un-ignored something owns it from then on.
+//
+// The write is best-effort and its failure is NOT returned: no launch should die because it
+// could not ignore itself, and a workspace yolo cannot write into is one where the launch is
+// about to fail for a better reason. Only MkdirAll's error reaches the caller, because every
+// caller already refuses on it.
+func EnsureWorkspaceStateDir(workspace string) (string, error) {
+	dir := WorkspaceStateDir(workspace)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir, err
+	}
+	p := filepath.Join(dir, WorkspaceStateIgnoreName)
+	// Lstat, not Stat: a DANGLING symlink is still a file the user put here, and
+	// os.WriteFile follows one — it would create whatever the link points at.
+	if _, err := os.Lstat(p); err == nil {
+		return dir, nil
+	}
+	_ = os.WriteFile(p, []byte(WorkspaceStateIgnore), 0o644)
+	return dir, nil
+}
 
 // WorkspaceHomeState returns <workspace>/.yolo/home — the HOST side of the jail home's
 // per-workspace binds. Its children are the HomeSurface.Subtree names, bound into the jail

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // bootlog.go persists what the entrypoint says at boot, because until now it said
@@ -79,8 +81,13 @@ type bootLog struct {
 func attachBootLog(e *Env, stderr io.Writer) *bootLog {
 	e.Stderr = stderr
 
-	dir := filepath.Join(e.WorkspaceDir(), ".yolo")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// The JAIL half of the same ensure the host launcher does (paths.EnsureWorkspaceStateDir):
+	// the launcher always gets here first, so this matters only when the two halves are skewed
+	// — a host `yolo` older than the mounted entrypoint, which AGENTS.md records as the default
+	// state of a machine between `just install`s. Both spellings of "create <ws>/.yolo" going
+	// through one function is also what keeps the directory's name written down once.
+	dir, err := paths.EnsureWorkspaceStateDir(e.WorkspaceDir())
+	if err != nil {
 		return nil
 	}
 	path := filepath.Join(dir, bootLogName)

@@ -54,8 +54,8 @@ import (
 // Best-effort: a launch must never fail because housekeeping could not write a
 // note about itself.
 func (o *Options) housekeepingNote(format string, args ...any) {
-	dir := paths.WorkspaceStateDir(o.Workspace)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := paths.EnsureWorkspaceStateDir(o.Workspace)
+	if err != nil {
 		return
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "housekeeping.log"),
