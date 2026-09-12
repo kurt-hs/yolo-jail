@@ -881,14 +881,39 @@ func union(packs []*Pack, pick func(*Pack) []string) []string {
 // package refuses everywhere else.
 func LaunchFlagsFor(packs []*Pack, autonomy bool) map[string][]string {
 	out := map[string][]string{}
+	for bin, c := range launchFlagClaims(packs, autonomy) {
+		out[bin] = c.flags
+	}
+	return out
+}
+
+// launchFlagClaim is one binary's launch flags AND the pack that declared them.
+//
+// The provenance half exists for the disclosure: a launch that rewrites the user's argv
+// says which pack asked for the flags, and "which pack" is the fact the merge below
+// destroys — later pack wins, and by the time the map is a map[string][]string nothing
+// can say who won. So the walk records it and LaunchFlagsFor PROJECTS the record down,
+// rather than a second walk deriving the same answer beside this one: two walks over
+// packs × postures is exactly the pair that drifts, and the one that drifted would be the
+// one nothing executes except at print time.
+type launchFlagClaim struct {
+	pack  string
+	flags []string
+}
+
+// launchFlagClaims folds every pack's launch flags for the given notch, later packs
+// winning a repeated binary — the kind's flags first, then the selected posture's, which
+// REPLACE rather than extend them (the `autonomy` schema's ⚠ states why).
+func launchFlagClaims(packs []*Pack, autonomy bool) map[string]launchFlagClaim {
+	out := map[string]launchFlagClaim{}
 	for _, p := range packs {
 		for bin, flags := range p.Decl.LaunchFlagContributions() {
-			out[bin] = flags
+			out[bin] = launchFlagClaim{pack: p.Name, flags: flags}
 		}
 		if posture := p.Decl.PostureFor(autonomy); posture != nil {
 			for _, l := range posture.Launch {
 				if l.Bin != "" {
-					out[l.Bin] = l.Flags
+					out[l.Bin] = launchFlagClaim{pack: p.Name, flags: l.Flags}
 				}
 			}
 		}
@@ -916,8 +941,33 @@ func RetireMiseTools(_ []*Pack) []string {
 	return append([]string(nil), RetiredMiseTools...)
 }
 
+// LaunchInjection is the record of ONE argv rewrite: the pack whose declaration asked for
+// it, the flags actually added, and the argv on either side.
+//
+// It is RETURNED rather than re-derived by whoever discloses the rewrite. "Which flags did
+// yolo add" is derivable from Before and After by anyone willing to diff two slices — and a
+// diff written at the print site is a second implementation of this function's skip rules,
+// which would agree with it right up until one of them changed. The injector is the only
+// thing that knows; it says so.
+//
+// Nil means NOTHING WAS REWRITTEN, which is a different fact from "the binary declares no
+// flags": a user who already typed every declared flag gets a nil record too, because
+// nothing about their command line changed and a disclosure of an empty rewrite is the
+// line-on-every-launch noise a disclosure surface dies of.
+type LaunchInjection struct {
+	// Pack is the name of the pack whose declaration won this binary.
+	Pack string
+	// Flags are the flags yolo added, in the order they now appear in After.
+	Flags []string
+	// Before and After are the whole argv on either side of the rewrite. There is
+	// deliberately no `Bin` beside them: the binary is Before[0], and a field carrying a
+	// second copy of it is one the two could disagree about.
+	Before []string
+	After  []string
+}
+
 // InjectLaunchFlags returns fullCommand with the flags declared for its leading binary
-// injected right after it.
+// injected right after it, and the record of what it did (nil when it did nothing).
 //
 // The direct `yolo -- <bin>` invocation and the interactive alias the entrypoint writes
 // are two spellings of one launch, and they agree BY CONSTRUCTION rather than by both
@@ -942,24 +992,36 @@ func RetireMiseTools(_ []*Pack) []string {
 // The cost is named rather than hidden: a user who types `copilot -y` now gets
 // `copilot --yolo -y`. Both spell one switch, so copilot's own parser — the only parser
 // that has ever actually known that — resolves them, and the duplication stands in the
-// argv rather than being absorbed here by a table that only guessed.
-func InjectLaunchFlags(packs []*Pack, fullCommand []string) []string {
+// argv rather than being absorbed here by a table that only guessed. The launch prints
+// both argvs (run.noteLaunchFlagInjection), so the pair is something the user sees rather
+// than something they discover from copilot.
+func InjectLaunchFlags(packs []*Pack, fullCommand []string) ([]string, *LaunchInjection) {
 	if len(fullCommand) == 0 {
-		return fullCommand
+		return fullCommand, nil
 	}
-	flags := LaunchFlagsFor(packs, true)[filepath.Base(fullCommand[0])]
-	if len(flags) == 0 {
-		return fullCommand
+	claim := launchFlagClaims(packs, true)[filepath.Base(fullCommand[0])]
+	if len(claim.flags) == 0 {
+		return fullCommand, nil
 	}
 	out := append([]string{}, fullCommand...)
-	for i := len(flags) - 1; i >= 0; i-- {
-		flag := flags[i]
+	var added []string
+	for i := len(claim.flags) - 1; i >= 0; i-- {
+		flag := claim.flags[i]
 		if hasFlag(out, flag) {
 			continue
 		}
 		out = append(out[:1], append([]string{flag}, out[1:]...)...)
+		added = append([]string{flag}, added...)
 	}
-	return out
+	if len(added) == 0 {
+		return out, nil
+	}
+	return out, &LaunchInjection{
+		Pack:   claim.pack,
+		Flags:  added,
+		Before: append([]string{}, fullCommand...),
+		After:  append([]string{}, out...),
+	}
 }
 
 func hasFlag(argv []string, flag string) bool {

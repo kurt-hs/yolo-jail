@@ -1,0 +1,93 @@
+package run
+
+import (
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+)
+
+// launchflagdisclosure.go is the disclosure for the one thing a launch does to the user's
+// OWN COMMAND LINE: `packload.InjectLaunchFlags` inserts a pack's declared launch flags
+// after the binary the user named, and until this file the rewrite happened in silence.
+//
+// It is the same trust boundary the two pack disclosures sit on, reached from the other
+// side. `packhostgrants.go` states it: "the boundary today is DISCLOSURE, not consent."
+// What a pack may do is bounded by user-scope config access; what makes that bound
+// trustworthy is that every crossing is NAMED at the launch that makes it. An injected
+// flag crosses no host boundary — it is why `launch`-shaped claims are `disclosureSkip` in
+// packloopholes.go — but it changes what the agent inside the jail is permitted to do
+// without asking, which is the other thing a reader checks a launch for. copilot's
+// `--yolo` is `--allow-all-tools --allow-all-paths --allow-all-urls` in copilot's own help
+// text; a user who typed `copilot` and got that has a right to read the sentence.
+
+// injectLaunchFlagsDisclosed injects the packs' declared launch flags into argv and
+// discloses the rewrite.
+//
+// A WRAPPER, not two adjacent statements, for the reason startLoopholesDisclosed is one:
+// it makes the injection reachable through exactly one path that has already disclosed,
+// so the invariant cannot be broken by moving a line. TestLaunchFlagInjectionHasOneDisclosedCallSite
+// pins that there is no second call site.
+//
+// WHY THE DISCLOSURE HAPPENS HERE rather than beside notePackHostAccess at the banner, and
+// the position is the better one on both counts.
+//
+// STRUCTURALLY: Run resolves the argv ABOVE the backend dispatch (the B-0 hoist), and all
+// three spellings of a launch consume that one result — the container's fresh path, the
+// attach into a running jail (whose targetCmd is built from it), and the macos-user native
+// sandbox, which returns before the banner block exists. A printer at the banner would be
+// absent from two of the three unless triplicated, which is the shape noteUseProfiles
+// already has: three call sites and no structural reason they agree.
+//
+// IN TIME: this lands between `Flake source:` and the nix build, which is the same slot
+// probes.go gives that line and for the same stated reason — "naming what the next few
+// gigabytes are being built from while there is still time to Ctrl-C". A permission bypass
+// the user did not type is exactly what belongs in that window, not thirty seconds later
+// beside a banner they have stopped watching. Everything the launcher prints is teed to
+// <workspace>/.yolo/launch.log either way.
+//
+// THE SHELL-ALIAS PATH IS DELIBERATELY NOT DISCLOSED HERE. entrypoint.packAliases folds the
+// same table into a `.bashrc` alias so an interactive `copilot` matches `yolo -- copilot`,
+// and that spelling discloses itself by a mechanism bash already owns and the user already
+// trusts: `type copilot` and `alias` print the definition, and the alias is a legible line
+// in a file inside the jail. It is also not a per-launch rewrite of a command someone typed
+// at yolo — it is jail configuration, which is what the boot writes and boot.log records. A
+// second sentence about it on the host's launch stream would describe something that has
+// not happened yet and may never.
+func (o *Options) injectLaunchFlagsDisclosed(packs []*packload.Pack, argv []string) []string {
+	out, inj := packload.InjectLaunchFlags(packs, argv)
+	o.noteLaunchFlagInjection(inj)
+	return out
+}
+
+// noteLaunchFlagInjection prints, to stderr, the argv rewrite this launch performed.
+//
+// NOT SUPPRESSIBLE, and there is no flag that could make it so: a launch has no quiet mode
+// by ruling (OQ-RO3), and `TestTheLaunchHasNoQuietFlag` guards the list you would add one
+// to. YOLO_NO_BANNER covers the version line and nothing else.
+//
+// SILENT WHEN NOTHING WAS REWRITTEN, which is most launches — `yolo -- bash`, `yolo --
+// claude` with no declared flags, and a user who already typed every flag yolo would add.
+// A disclosure that prints "nothing" on every launch is how a disclosure surface becomes
+// wallpaper (OQ-BP-3), and the nil record is what makes the silence exact rather than a
+// judgement call at the print site.
+//
+// BOLD YELLOW, not the [dim] register notePackHostAccess uses, and for notePackHostExec's
+// reason: this is not an inventory of what the environment contains, it is a change to the
+// command about to run, and this is the last moment at which reading the line can change
+// what the user does.
+//
+// The BEFORE/AFTER pair is the whole design. A single line naming the added flags asks the
+// reader to reconstruct their own command line from memory to see the difference; two
+// quoted argvs, one above the other, let them see it. Both are rendered through the same
+// shell quoting the container arm uses for the real command, so a line is copy-pasteable
+// and an argument containing a space cannot masquerade as two.
+func (o *Options) noteLaunchFlagInjection(inj *packload.LaunchInjection) {
+	if inj == nil {
+		return
+	}
+	out := o.pr(o.Stderr)
+	out.print("[bold yellow]yolo CHANGED the command you asked for:[/bold yellow]")
+	out.print("[yellow]  you asked for: " + shquoteJoin(inj.Before) + "[/yellow]")
+	out.print("[yellow]  yolo will run: " + shquoteJoin(inj.After) + "[/yellow]")
+	out.print("[yellow]  added by pack " + inj.Pack + ": " + strings.Join(inj.Flags, " ") + "[/yellow]")
+}

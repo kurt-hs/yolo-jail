@@ -147,23 +147,23 @@ func TestInjectLaunchFlags(t *testing.T) {
 		`{"contributes":[{"kind":"launch","bin":"tool","flags":["--yolo","--no-update"]}]}`)}
 	loaded := []*Pack{p}
 
-	got := InjectLaunchFlags(loaded, []string{"tool", "sub"})
+	got, _ := InjectLaunchFlags(loaded, []string{"tool", "sub"})
 	want := []string{"tool", "--yolo", "--no-update", "sub"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	// The identical flag is not doubled.
-	got = InjectLaunchFlags(loaded, []string{"tool", "--yolo"})
+	got, _ = InjectLaunchFlags(loaded, []string{"tool", "--yolo"})
 	if n := strings.Count(strings.Join(got, " "), "--yolo"); n != 1 {
 		t.Errorf("--yolo appears %d times, want 1: %v", n, got)
 	}
 	// Nor is its `--flag=value` spelling, which is the same flag carrying an argument.
-	got = InjectLaunchFlags(loaded, []string{"tool", "--yolo=always"})
+	got, _ = InjectLaunchFlags(loaded, []string{"tool", "--yolo=always"})
 	if n := strings.Count(strings.Join(got, " "), "--yolo"); n != 1 {
 		t.Errorf("--yolo=always must count as --yolo already present: %v", got)
 	}
 	// A binary no pack declares is untouched.
-	if got := InjectLaunchFlags(loaded, []string{"ls", "-la"}); len(got) != 2 {
+	if got, _ := InjectLaunchFlags(loaded, []string{"ls", "-la"}); len(got) != 2 {
 		t.Errorf("undeclared binary must be untouched: %v", got)
 	}
 }

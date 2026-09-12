@@ -678,7 +678,7 @@ without the report layout. What changes and what does not, line by line
 | :--- | :--- | :--- |
 | version banner; `Flake source:`; `Jail binaries:`; `Jail:` | provenance (a decision) | **unchanged.** Each answers a different question and two carry docstrings for staying. The only edit worth making is cosmetic and belongs to the polish plan: three vocabularies on three adjacent lines |
 | nix build, image delivery, `📦 Provisioning tools...`, `↳ …`, `⚡ Executing:` | progress | **unchanged**; a stream needs its progress |
-| pack read/exec disclosures, cache alias, loopback verdict, passthrough | **disclosure** | **unchanged, and un-gate-able by construction** (P4) |
+| pack read/exec disclosures, the argv rewrite, cache alias, loopback verdict, passthrough | **disclosure** | **unchanged, and un-gate-able by construction** (P4) |
 | the config-change diff and prompt | disclosure (approval) | unchanged — [`config-safety.md`](../reference/config-safety.md)'s |
 | `boot catalog: …` ×8 | notch fact with state | **one line**: *8 installed programs are declared by no selected pack (boot.log lists them; `programs.autoprune` removes them)* — the list already lands in `boot.log` through the same tee ([`OQ-RO3`](#11-decision-ledger)) |
 | `<file>: N keys from captured in-jail edits (yolo config diff <agent>)` ×5 | run fact **with a remedy** | unchanged — it already meets P2, and five surfaces are five facts |

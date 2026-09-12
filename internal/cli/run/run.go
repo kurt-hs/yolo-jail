@@ -264,7 +264,7 @@ func Run(opts Options) (rc int) {
 	}
 	injectedArgs := o.Args
 	if len(injectedArgs) > 0 {
-		injectedArgs = packload.InjectLaunchFlags(staged.packs, injectedArgs)
+		injectedArgs = o.injectLaunchFlagsDisclosed(staged.packs, injectedArgs)
 	}
 
 	// macos-user native branch: route to the injected handler,

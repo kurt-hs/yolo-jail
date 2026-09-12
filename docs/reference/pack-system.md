@@ -1358,6 +1358,24 @@ Reads and executions print in different places, and the split is not cosmetic.
 boundary, *before* the daemon starts (`startLoopholesDisclosed`), because for an exec a banner
 line would be a notification that something already happened.
 
+A third disclosure answers a question the other two cannot: **what did this launch do to the
+command line I typed?** A pack's launch flags are injected after the binary the user named, so
+`yolo -- copilot chat` runs `copilot --yolo chat` — and `--yolo` is `--allow-all-tools
+--allow-all-paths --allow-all-urls` in copilot's own help. `run.injectLaunchFlagsDisclosed`
+prints both argvs, one above the other, plus the pack that asked, and it is a WRAPPER around the
+injector rather than a line beside it so the two cannot be separated by an edit. It prints
+**only when something was actually added** — a flag the user already typed is not injected, and
+a launch that rewrote nothing says nothing, because a disclosure that appears on every launch
+saying "nothing" is how a disclosure surface becomes wallpaper. It is unsuppressible like the
+other two ([`OQ-RO3`](../design/report-tiers.md#11-decision-ledger): a launch has no quiet mode).
+
+> [!NOTE]
+> The in-jail shell alias `entrypoint.packAliases` writes from the same table — so that an
+> interactive `copilot` matches `yolo -- copilot` — gets **no launch-stream line of its own**,
+> deliberately. It is jail configuration rather than a rewrite of a command someone typed, and it
+> discloses itself through a mechanism the user already has: `type copilot` and `alias` print the
+> definition, and the alias is a legible line in the jail's own `.bashrc`.
+
 > [!IMPORTANT]
 > **Which kinds the disclosure covers is DATA, not a switch at the print site.**
 > `disclosureClasses` in `internal/cli/run/packloopholes.go` classifies every kind in
