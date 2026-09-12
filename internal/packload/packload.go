@@ -896,17 +896,6 @@ func LaunchFlagsFor(packs []*Pack, autonomy bool) map[string][]string {
 	return out
 }
 
-// FlagAliases merges every pack's flagAliases.
-func FlagAliases(packs []*Pack) map[string][]string {
-	out := map[string][]string{}
-	for _, p := range packs {
-		for flag, aliases := range p.Decl.FlagAliasContributions() {
-			out[flag] = aliases
-		}
-	}
-	return out
-}
-
 // RetiredMiseTools is the fixed list of mise tool tokens yolo used to install for
 // its shipped agents and no longer does — a one-shot cleanup of yolo's OWN past
 // (OQ11). It is a CORE constant, not a pack manifest field: it describes yolo's
@@ -938,10 +927,22 @@ func RetireMiseTools(_ []*Pack) []string {
 // LaunchFlagsFor — and whoever ships one re-introduces this function's old `profiles`
 // parameter and BOTH callers' threading of it in the same commit.)
 //
-// Moved out of internal/agents unchanged in behavior: flags are inserted in reverse
-// (each at index 1) so their declared order is preserved, and a flag already present —
-// or a declared alias of one — is skipped, so a user who passed `-y` does not also get
-// `--yolo`. A binary no pack declares is returned untouched.
+// Flags are inserted in reverse (each at index 1) so their declared order is preserved,
+// a flag ALREADY PRESENT in the argv is skipped, and a binary no pack declares is
+// returned untouched.
+//
+// THE ONLY SUPPRESSION IS AN IDENTICAL FLAG. A manifest could once declare an alias map —
+// `{"--yolo": ["-y"]}` — and a flag whose alias the user had typed was skipped too. That
+// is a pack restating a fact about a TOOL'S OWN FLAG PARSER, in a second place, where it
+// drifts the day the tool renames a short option and nothing here can notice: the map is
+// read only to NOT do something, so a stale entry produces silence rather than an error.
+// The identical-flag skip needs no such knowledge — it compares the flag yolo is about to
+// add against the ones already in the argv — which is why it stays and the map does not.
+//
+// The cost is named rather than hidden: a user who types `copilot -y` now gets
+// `copilot --yolo -y`. Both spell one switch, so copilot's own parser — the only parser
+// that has ever actually known that — resolves them, and the duplication stands in the
+// argv rather than being absorbed here by a table that only guessed.
 func InjectLaunchFlags(packs []*Pack, fullCommand []string) []string {
 	if len(fullCommand) == 0 {
 		return fullCommand
@@ -950,21 +951,10 @@ func InjectLaunchFlags(packs []*Pack, fullCommand []string) []string {
 	if len(flags) == 0 {
 		return fullCommand
 	}
-	aliases := FlagAliases(packs)
 	out := append([]string{}, fullCommand...)
 	for i := len(flags) - 1; i >= 0; i-- {
 		flag := flags[i]
 		if hasFlag(out, flag) {
-			continue
-		}
-		skip := false
-		for _, alias := range aliases[flag] {
-			if hasFlag(out, alias) {
-				skip = true
-				break
-			}
-		}
-		if skip {
 			continue
 		}
 		out = append(out[:1], append([]string{flag}, out[1:]...)...)

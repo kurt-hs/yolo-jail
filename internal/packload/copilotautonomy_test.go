@@ -24,20 +24,20 @@ import (
 // posture declares no copilot entry to overwrite it with — see TestCopilotHasNoGuardedPosture
 // for why that emptiness is the right declaration. Together they say the flag is gated at the
 // notch AND gated by being declared where the notch can see it.
+//
+// copilot's `launch` contribution — which existed only to carry the `-y` alias map — went with
+// that map, so the pack no longer declares this kind at all.
 func TestCopilotYoloIsDeclaredUnderAutonomyNotAsAPlainLaunchFlag(t *testing.T) {
 	packs := loadAll(t)
 	copilot := packNamed(t, packs, "copilot")
 
-	// 1. The plain launch contribution carries the ALIAS and no flags.
+	// 1. No plain launch contribution carries the flag: a `launch` contribution is outside
+	//    the notch policy, so a permission bypass declared there is one no notch can withhold.
 	plain := copilot.Decl.LaunchFlagContributions()["copilot"]
 	if len(plain) != 0 {
 		t.Errorf("copilot's plain launch flags = %v, want none — a permission-bypass flag "+
 			"declared here escapes the autonomy notch policy entirely; it belongs in the "+
 			"autonomy contribution's autonomous posture", plain)
-	}
-	if aliases := copilot.Decl.FlagAliasContributions()["--yolo"]; len(aliases) == 0 {
-		t.Error("the copilot pack stopped declaring the --yolo alias — a user who types `-y` " +
-			"now gets `--yolo` injected beside it (InjectLaunchFlags reads FlagAliases)")
 	}
 
 	// 2. The notch pair, read off render's ONE notch→preset table rather than a literal

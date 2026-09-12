@@ -200,16 +200,14 @@ func TestEveryShippedPacksHostFilesAreHonored(t *testing.T) {
 // shipped copilot pack.
 //
 // TestInjectLaunchFlags already covers the MECHANISM with a synthetic pack; this covers the
-// DECLARATION, which is the half that can silently rot. The alias entry is the case worth
-// pinning: `-y` and `--yolo` are the same switch, so a user who typed `-y` must not also get
-// `--yolo`, and that only works if the copilot pack still declares the alias alongside the
-// flag. A pack that dropped flagAliases would keep passing a synthetic-fixture test.
+// DECLARATION, which is the half that can silently rot — `--yolo` is declared under
+// `autonomy`, three kinds and one notch policy away from the injector that delivers it, so
+// nothing about a synthetic fixture says the shipped pack still reaches it.
 //
-// THE ALIAS IS WHY THE `launch` CONTRIBUTION SURVIVES its own flags. `--yolo` moved into the
-// autonomy contribution's autonomous posture, and `AutonomyLaunch` is {bin, flags} with
-// nowhere to put an alias — so the pack keeps a `launch` entry carrying `aliases` and no
-// `flags`, and the two halves meet in InjectLaunchFlags. Delete the flagless launch entry and
-// this test fails on the `-y` case, not on the first one.
+// THE `-y` CASE IS GONE ON PURPOSE, and its absence is pinned next door by
+// TestTypingTheShortSpellingNoLongerSuppressesTheInjectedFlag: the alias map that made `-y`
+// suppress `--yolo` was deleted, so this file must not quietly keep asserting the behaviour
+// under a different name.
 //
 // The exact-match `want` is also what pins `--no-auto-update` GONE: the flag is dropped, so a
 // jail's copilot polls for its own updates again (docs/plans/native-installer-migration.md,
@@ -221,11 +219,6 @@ func TestCopilotFlagsInjectFromItsRealDeclaration(t *testing.T) {
 	want := "copilot --yolo sub"
 	if strings.Join(got, " ") != want {
 		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
-	}
-	// Alias suppression against the real declaration.
-	got = packload.InjectLaunchFlags(packs, []string{"copilot", "-y", "chat"})
-	if strings.Contains(strings.Join(got, " "), "--yolo") {
-		t.Errorf("-y must suppress --yolo: %v", got)
 	}
 	// A binary no pack declares passes through.
 	if got := packload.InjectLaunchFlags(packs, []string{"bash", "-c", "echo"}); len(got) != 3 {

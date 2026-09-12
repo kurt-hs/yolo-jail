@@ -71,15 +71,6 @@
       "scope": "workspace"
     },
     {
-      "aliases": {
-        "--yolo": [
-          "-y"
-        ]
-      },
-      "bin": "copilot",
-      "kind": "launch"
-    },
-    {
       "autonomous": {
         "launch": [
           {

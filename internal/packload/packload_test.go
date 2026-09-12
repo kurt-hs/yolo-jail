@@ -141,10 +141,10 @@ func TestUnionsDedupeAcrossPacks(t *testing.T) {
 }
 
 // Launch-flag injection must preserve declared order and skip a flag the user already
-// passed — including via a declared ALIAS, so `-y` suppresses `--yolo`.
+// passed — the IDENTICAL flag, which is the only suppression the injector has left.
 func TestInjectLaunchFlags(t *testing.T) {
 	p := &Pack{Name: "p", Decl: declFrom(t,
-		`{"contributes":[{"kind":"launch","bin":"tool","flags":["--yolo","--no-update"],"aliases":{"--yolo":["-y"]}}]}`)}
+		`{"contributes":[{"kind":"launch","bin":"tool","flags":["--yolo","--no-update"]}]}`)}
 	loaded := []*Pack{p}
 
 	got := InjectLaunchFlags(loaded, []string{"tool", "sub"})
@@ -152,10 +152,15 @@ func TestInjectLaunchFlags(t *testing.T) {
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	// Alias suppression.
-	got = InjectLaunchFlags(loaded, []string{"tool", "-y"})
-	if strings.Contains(strings.Join(got, " "), "--yolo") {
-		t.Errorf("-y must suppress --yolo: %v", got)
+	// The identical flag is not doubled.
+	got = InjectLaunchFlags(loaded, []string{"tool", "--yolo"})
+	if n := strings.Count(strings.Join(got, " "), "--yolo"); n != 1 {
+		t.Errorf("--yolo appears %d times, want 1: %v", n, got)
+	}
+	// Nor is its `--flag=value` spelling, which is the same flag carrying an argument.
+	got = InjectLaunchFlags(loaded, []string{"tool", "--yolo=always"})
+	if n := strings.Count(strings.Join(got, " "), "--yolo"); n != 1 {
+		t.Errorf("--yolo=always must count as --yolo already present: %v", got)
 	}
 	// A binary no pack declares is untouched.
 	if got := InjectLaunchFlags(loaded, []string{"ls", "-la"}); len(got) != 2 {
