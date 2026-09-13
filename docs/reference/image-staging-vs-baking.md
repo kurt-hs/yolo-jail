@@ -344,7 +344,9 @@ flowchart TD
     skew -->|"host yolo older than the tree"| refuse1["refuse — YOLO_ALLOW_SOURCE_SKEW=1 overrules"]
     skew -->|"no provable skew"| prefix["resolveJailPrefix — prebuilt bin/linux-arch, else nix build .#installPrefix"]
     prefix -->|"build failed, or unreachable from the macOS VM"| refuse2["refuse"]
-    prefix -->|"prints Jail binaries"| plan["planStorePackages — YOLO_STORE_PACKAGES eligible?"]
+    prefix -->|"prints Jail binaries"| stock{"stock launch? nix eval .#imageIdentity,<br/>image inspect yolo-jail:stock-hex"}
+    stock -->|"present: Image build skipped"| runstock["run it — no build, no store path"]
+    stock -->|"absent, or not a stock launch"| plan["planStorePackages — YOLO_STORE_PACKAGES eligible?"]
     plan -->|"baked"| build["nix build .#ociImage --impure with YOLO_EXTRA_PACKAGES"]
     plan -->|"store-delivered"| buildLean["nix build .#ociImageLean --impure, no YOLO_EXTRA_PACKAGES"]
     build --> failed{"store path?"}
@@ -356,14 +358,17 @@ flowchart TD
     copier -->|"empty: refuse, naming the attr"| fatal
     copier -->|"podman"| copy["skopeo copy nix:image.json containers-storage:yolo-jail:sha16"]
     copier -->|"Apple Container"| copyoci["skopeo copy nix:image.json oci-archive:tmp:yolo-jail:sha16, then container image load -i, then rm"]
-    copy --> alias["point :latest at the new image, best-effort"] --> record
+    copy --> alias["point :latest at the new image, best-effort;<br/>tag stock-hex too when the launch was a stock one"] --> record
     copyoci --> record
     record --> argv["podman run … -v bin:/opt/yolo-jail/bin:ro -v bundle:/opt/yolo-jail/share/yolo-jail:ro … ref /opt/yolo-jail/bin/yolo-entrypoint"]
 ```
 
-Every container launch runs the nix build; the run path never skips it (`SkipBuild` is a dormant
-seam). When the derivation's output already exists the build is a no-op evaluation costing
-low single-digit seconds, so a warm launch pays only that. Every flake-evaluating nix call
+A container launch runs the nix build **unless the stock image it wants is already in the
+runtime** — the pre-build question below, added 2026-09-13. A launch that is not a stock one, or
+whose stock image is absent, builds exactly as before: `SkipBuild` remains a dormant seam and no
+flag suppresses anything. When the derivation's output already exists the build is a no-op
+evaluation costing low single-digit seconds, so a warm launch that does build pays only that.
+Every flake-evaluating nix call
 carries `NixFlakeFlags` — the experimental-features flags and `--accept-flake-config`, so the
 flake's own declared binary cache is honoured — and every build goes through one argv builder,
 so a `yolo check` preflight and a run cannot drift on flags. `--impure` is passed for every
@@ -382,7 +387,9 @@ the same image and to different prefixes. The bundle path and a source checkout 
 image byte for byte.
 
 A **reload** happens only when the runtime lacks the image for the resulting store path. The
-decision is `image inspect <content ref>`; the load sentinel only explains *why*.
+decision is `image inspect <content ref>`; the load sentinel only explains *why*. A launch that
+matched [the stock tag](#the-stock-tag-and-the-question-asked-before-the-build) reaches neither:
+it has no store path to evaluate a ref from, having built nothing.
 
 ### A failed build is fatal
 
@@ -470,6 +477,46 @@ and the global keep-window of the day could select nothing (that window is gone 
 image, so the same change deduplicated by image ID and added a liveness veto read from the
 sentinel, later hardened to decline when the ledger cannot be read. The retention *number* and
 its trigger belong to [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md).
+
+### The stock tag, and the question asked before the build
+
+**Stock image** *(coined in `internal/image/stockimage.go`)* — the jail image a flake describes on
+its own: the default `.#ociImage` variant, built with no `packages:` extras. It is what a launch
+gets unless the workspace adds packages or the launch opts into store-delivered packages.
+
+Until 2026-09-13 `AutoLoadImage`'s first act was the nix build, unconditionally. That was not a
+policy: the store path the build returned was how the content ref got computed, so "is the image
+already here?" could not be *asked* until after the build the question exists to avoid. A launch
+now asks a cheaper question first — `nix eval --raw .#imageIdentity` (measured 0.49 s in this
+jail; it touches no nixpkgs), then `image inspect <repo>:stock-<the identity's 64 hex chars>`.
+A hit runs that image and builds nothing; every miss falls through to the build, which is what
+every launch did before.
+
+The identity is the right key for this and only for this. It is a hash of `flake.nix` +
+`flake.lock` alone, which is the stock image's *entire* input set — so two stock images with the
+same identity are the same image, whichever host built them. It is also deliberately invariant
+across the full/minimal/lean trio and across every `packages:` list, which is why the check is
+keyed on a **tag** and never on the identity label: an image carrying a matching identity may
+still be a lean one, and accepting it for a stock launch would be the silent-staleness defect
+[a failed build is fatal](#a-failed-build-is-fatal) exists to prevent, wearing a new costume.
+Only code that knows it is looking at a stock image writes the tag — `AutoLoadImage` right after
+delivering an image it built from the default attr with no extras, and the macOS nightly's
+`Load jail image` step after loading the archive its Linux `build-image` job produced.
+
+> [!IMPORTANT]
+> **A stock-matched launch has no store path, and that is honest rather than lossy.** It built
+> nothing, so `LoadResult.StorePath` is empty exactly as on the degraded branches: it registers no
+> GC root and appends no load-sentinel entry. Both are cache bookkeeping — a lost root costs a
+> rebuild and never a running container — and the workspace's current-image pointer keeps naming
+> the store path the launch that first loaded this image recorded, because an unchanged identity
+> means an unchanged store path on that host.
+
+This is what lets a **darwin** host run an image another machine built. A Mac cannot realise
+`.#ociImage` without a Linux builder (the closure holds derivations no public cache serves), so
+every darwin launch used to need one; now it needs one only when the image it wants is genuinely
+absent. That is the second link of the chain in
+[`darwin-image-provenance.md`](../design/darwin-image-provenance.md), and the link that survived
+making the identity content-addressed.
 
 ### Delivering into the runtime
 

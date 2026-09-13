@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/image"
 )
 
 // Image-skew detection: refuse to test a freshly built host CLI against a stale
@@ -424,6 +426,40 @@ func TestImageIdentityIsSystemInvariant(t *testing.T) {
 				"built anywhere else (docs/design/darwin-image-provenance.md, OQ-IP1).",
 				sys, got, want)
 		}
+	}
+}
+
+// TestTheLauncherAndTheHarnessAgreeOnTheIdentity pins the two INDEPENDENT
+// implementations of "what identity does this source tree describe" against each
+// other: this file's `nix eval` and internal/image's EvalImageIdentity, which is
+// what the launcher now asks before deciding whether to build at all
+// (internal/image/stockimage.go).
+//
+// It does NOT make the launcher's answer this guard's oracle — the header's
+// independence rule stands, and the check at TestMain still runs its own eval.
+// Comparing them is the opposite of coupling them: if the launcher's invocation
+// ever drifts (a dropped --impure, a different attr spelling, a flag that makes
+// nix write the value somewhere else), the launcher silently stops recognising
+// images it was handed and goes back to rebuilding from source on every launch —
+// which on a Mac with no Linux builder is the macOS nightly's entire 2026-09-09
+// failure, and it would come back with every unit test green.
+func TestTheLauncherAndTheHarnessAgreeOnTheIdentity(t *testing.T) {
+	requireJail(t)
+	want, err := expectedImageIdentity()
+	if err != nil {
+		t.Skipf("this file's own oracle is unavailable (%v); nothing to compare", err)
+	}
+	got, ok := image.EvalImageIdentity(repoRoot)
+	if !ok {
+		t.Fatalf("image.EvalImageIdentity(%q) could not answer, but this file's eval "+
+			"of the same attribute returned %s.\nThe launcher will now rebuild the "+
+			"image on every launch — fatal on a host with no Linux builder.",
+			repoRoot, want)
+	}
+	if got != want {
+		t.Fatalf("the launcher evaluates this tree's identity as %s; this file's "+
+			"eval says %s.\nThey must be the same string or the launcher cannot "+
+			"recognise an image built from this commit.", got, want)
 	}
 }
 

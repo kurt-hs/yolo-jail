@@ -1,17 +1,27 @@
 ---
 title: "The macOS nightly has been red for six runs, and neither ruling is wrong"
-date: 2026-09-12
+date: 2026-09-13
 status: accepted
 tags: [design, ci, macos, image, provenance]
-summary: "The nightly macOS integration job failed every run because a darwin host could not vouch for a Linux-built image: `imageIdentity` was a `runCommand`, so its store path varied by system even though its content did not. Every launch therefore demanded a rebuild, the rebuild needed a Linux builder the runner has never been able to start, and the harness correctly refused to report a result from an image it could not verify. Shipped 2026-09-12: the identity is a content hash any host can compute, and the whole chain dissolves."
+summary: "The nightly macOS integration job failed every run on one chain: a forced image rebuild, a Linux builder the runner cannot start, and a harness that correctly refuses a result from an image it could not verify. Two fixes, a day apart. 2026-09-12 made the image identity a content hash any host can compute, which fixed the harness's oracle and left the nightly red. 2026-09-13 found why: the launcher's nix build was UNCONDITIONAL and compared nothing at all, so there was no identity decision to fix. It now asks the runtime for a stock-tagged image before building."
 vantage:
   status-chip: true
 ---
 
 # The macOS nightly has been red for six runs, and neither ruling is wrong
 
-**Status:** BUILT, 2026-09-12 — MEASURED: against runs `34687723913`, `34590383317` and
-`34467461758`. All three questions are ruled and compacted into the [Decision Ledger](#decision-ledger); resolution **A** is built. Evidence verified against the tree and against runs `34687723913`, `34590383317`, `34467461758`.
+**Status:** BUILT in two parts — 2026-09-12 ([OQ-IP1](#OQ-IP1)) and 2026-09-13
+([OQ-IP4](#OQ-IP4)). Resolution **A** shipped and did NOT turn the nightly green:
+[§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060) is the correction, measured on run
+`34753694060`. Evidence verified against the tree and against runs `34753694060`, `34687723913`,
+`34590383317`, `34467461758`.
+
+> [!WARNING]
+> **The chain below mis-attributes L2, and that error cost a day.** L1→L2 reads as "the identity
+> varies, *therefore* every launch demands a rebuild". There was no *therefore*: the launcher
+> compared no identity, no store path and no sentinel — it simply built, first thing, every time.
+> Fixing L1 fixed the harness's oracle and left L2 untouched.
+> [§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060) has the measurement.
 
 > **In short.** This is not an infrastructure flake. It is two correct safety rulings
 > colliding over a third fact neither of them knows: the image the job is testing
@@ -19,13 +29,13 @@ vantage:
 
 **Why it matters.** The nightly is the only automated instrument pointed at macOS, and it has produced no signal since at least 2026-09-09 — six consecutive scheduled runs, one identical cause. Every macOS design in the tree is stamped NOT MEASURED, and this is the machine that was supposed to change that.
 
-**The shape.** A four-link chain — arch-varying identity → forced rebuild → absent Linux builder → harness refusal — where breaking the **first** link dissolves the other three.
+**The shape.** A four-link chain — arch-varying identity → forced rebuild → absent Linux builder → harness refusal. L1 and L2 turned out to be INDEPENDENT, and each needed its own break ([§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060)).
 
 **Cost.** The fix changes what `imageIdentity` *is*, and that value is compared by a shipped test and baked into every image. Existing images stop matching once, on the commit that lands it — ruled acceptable ([OQ-IP3](#OQ-IP3)).
 
 **Start at [§3](#3-the-chain-and-the-one-link-worth-breaking)** — the chain. Which link you break is the whole decision.
 
-**Ruled:** [OQ-IP1](#OQ-IP1), [OQ-IP2](#OQ-IP2), [OQ-IP3](#OQ-IP3) — see the [Decision Ledger](#decision-ledger).
+**Ruled:** [OQ-IP1](#OQ-IP1), [OQ-IP2](#OQ-IP2), [OQ-IP3](#OQ-IP3), [OQ-IP4](#OQ-IP4) — see the [Decision Ledger](#decision-ledger).
 
 **Reads with:** [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (what the image must bake, and the rebuild cost model), [`macos-user-provisioning.md`](macos-user-provisioning.md) (the designs whose claims this instrument was meant to measure).
 
@@ -34,6 +44,9 @@ vantage:
 ## 1. Verdict
 
 **Break the first link: make the image's identity content-addressed rather than store-path-addressed.** Then a darwin host can vouch for a Linux-built image by inspection, no launch demands a rebuild it cannot perform, the Linux builder stops being on the critical path, and **no safety ruling is weakened to get there.**
+
+> [!IMPORTANT]
+> **Half of that was wrong, and the measurement is [§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060).** A darwin host CAN now vouch for a Linux-built image — that part shipped and holds. But "no launch demands a rebuild it cannot perform" did not follow, because the launch demanded one for a reason that had nothing to do with the identity: it built before asking anything. Breaking L1 was necessary and it was not sufficient. The second break is [`OQ-IP4`](#OQ-IP4), and it needs L1's invariant to work — so the order was right even though the causal claim was not.
 
 The two rulings that currently collide are both correct and both should survive:
 
@@ -49,6 +62,7 @@ Every fix that widens a hatch weakens P2. Every fix that suppresses the build we
 | **OQ-IP1** | **A REQUIREMENT.** *"An identity a second host cannot compute is not an identity; it is a local cache key wearing one."* **BUILT 2026-09-12**: `imageIdentity` is a `sha256:` over `flake.nix` + `flake.lock`, computed with `builtins.hashFile` and declared **outside `eachDefaultSystem`**, so neither `system` nor `pkgs` is in scope to leak in. The image carries it as the CONTENTS of `/etc/yolo-jail-image-identity` (read with `cat`, not `readlink`) and as the `org.yolo-jail.image-identity` label; the oracle is `nix eval --raw .#imageIdentity`, still an eval and now ~0.1s because nixpkgs is never touched. **The darwin downgrade in `integration/imageskew_test.go` is deleted**, which was the point. The guard against a relapse is `TestImageIdentityIsSystemInvariant`, which evaluates the identity under all four default systems and requires agreement | 2026-09-12 | [§4](#4-the-three-candidate-resolutions), [`OQ-IP1`](#OQ-IP1) |
 | **OQ-IP2** | **FILED SEPARATELY, not coupled.** Only A is on the critical path, and coupling would keep the nightly red until both land. Nothing in this work touches `containerbuilder`, the builder image, or the nightly's `podman machine` setup. ⚠ **A mac that cannot offload a Linux build still cannot BUILD an image** — this change means such a mac no longer needs to, for a job that was handed one | 2026-09-12 | [§4 row B](#4-the-three-candidate-resolutions) |
 | **OQ-IP3** | **ACCEPT THE ONE-TIME REBUILD.** No dual-spelling window: the comparison knows exactly one spelling. What was added instead is a DIAGNOSTIC — the in-image probe falls back to `readlink`, so an image built before this commit answers with its old store path and the failure message says *"this image predates the identity becoming content-addressed"* rather than leaving a bare failed probe. That recognises the old shape; it never accepts it, and it expires on its own because nothing can produce that shape again | 2026-09-12 | [`identityHint`](#OQ-IP3) (`integration/imageskew_test.go`) |
+| **OQ-IP4** | **ASK THE RUNTIME BEFORE BUILDING — a STOCK TAG, not a hatch. BUILT 2026-09-13.** L2 has a cause this doc never named: the build was UNCONDITIONAL ([§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060)). `AutoLoadImage` now asks first — `nix eval --raw .#imageIdentity` (0.49 s measured), then `image inspect <repo>:stock-<64 hex>` — and runs that image without building. The identity is a complete key for the **stock image** (the default `.#ociImage` variant with no `packages:` extras) because flake.nix + flake.lock are that image's entire input set; it is deliberately invariant across the lean/minimal variants and every `packages:` list, so the check is keyed on a TAG only stock-aware code writes, never on the label. Every miss — wrong identity, lean attr, any `packages:` entry, an ambient `YOLO_EXTRA_PACKAGES`, an unanswerable `nix eval` — falls through to the build that used to happen unconditionally. **`YOLO_ALLOW_STALE_IMAGE` is removed from the nightly**: with no build there is nothing to allow past, and the hatch never stopped the build in the first place | 2026-09-13 | [§3.1](#31-l2-was-not-caused-by-l1-measured-on-run-34753694060), [`OQ-IP4`](#OQ-IP4) |
 
 ## 2. What is actually failing
 
@@ -98,6 +112,51 @@ imageIdentity = pkgs.runCommand "yolo-jail-image-identity" { } ''
 Its **content** is two copied files and is identical on every system. Its **store path** is a `runCommand` output, so it carries the builder's `system` and differs between `x86_64-linux` and any darwin. The comment above it claims invariance across the full/minimal variants, across `packages:` lib-farm images, and across every Go change — all true, and all about *inputs*. Nobody wrote down that it is **not** invariant across the host doing the evaluating, which is the axis this job lives on.
 
 `integration/imageskew_test.go` already knows, and says so when it downgrades itself on darwin: *"on darwin the image may have been built on a Linux runner, whose imageIdentity legitimately differs from a local eval."* **That downgrade is the existing workaround for L1, applied at one of the two places that needs it.** The launcher's own rebuild decision never got the same treatment.
+
+### 3.1 L2 was not caused by L1 (measured on run `34753694060`)
+
+The sentence above — *"the launcher's own rebuild decision never got the same treatment"* — is the
+error in this document, and it is the wrong kind: **the launcher had no rebuild decision to treat.**
+
+Run `34753694060` (2026-09-13, the first nightly after [OQ-IP1](#OQ-IP1) shipped) failed on all four
+shards with the identical chain, and the same logs carry the proof that link 1 is fixed:
+
+```
+imageskew_test.go:385: source tree wants sha256:816a3ee9…04fb20; yolo-jail:latest has sha256:816a3ee9…04fb20
+[integration] yolo-jail:latest matches this source tree (sha256:816a3ee9…04fb20)
+```
+
+The darwin host and the ubuntu runner agree on the identity, exactly as [`OQ-IP1`](#OQ-IP1) promised — and every
+launch still built. The cause, read off the code rather than inferred:
+
+| Claim | Evidence |
+| :--- | :--- |
+| `AutoLoadImage`'s first act was `BuildStorePath`, gated only by `SkipBuild` | `internal/image/autoload.go`, the `if !o.SkipBuild` block — nothing is probed before it |
+| The run path hardcodes `SkipBuild: false` and calls it "a dormant seam" | `internal/cli/run/imageload.go`, `autoLoadImage` |
+| The build is how the content ref is computed, so the presence probe *cannot* come first | `contentRef := JailImageRef(o.Runtime, currentPath)`, after the build |
+| `YOLO_ALLOW_STALE_IMAGE=1` WAS reached and did work | the job's own output: `YOLO_ALLOW_STALE_IMAGE is set — CONTINUING ON A STALE IMAGE.` then `Using existing localhost/yolo-jail:latest image.` |
+| …and the harness failed anyway, as designed (P2) | `image.BuildFailedMarker` is printed on both report branches; `failIfImageBuildFailed` matches the marker, not the outcome |
+
+So the hatch was never the problem and neither was the skew check. **L2's cause is that the build
+was unconditional**, and it would have been unconditional whatever the identity said.
+
+Two facts about the darwin half are worth stating plainly, because they make this a capability
+gap rather than a CI quirk: the image closure contains derivations **no public cache serves**
+(`nix-ld` is an `overrideAttrs` of nixpkgs', and this project's own cachix is unconfigured —
+`publish.yml` is a no-op without `CACHIX_AUTH_TOKEN`), so a darwin `nix build .#ociImage` must
+build an `x86_64-linux` derivation *every time the image is not already in the local store*. Any
+Mac without a working Linux builder therefore could not launch a jail at all, nightly or not.
+
+> [!NOTE]
+> **The `exit code: 125` beside every failure is a SECOND, unexplained symptom, and this doc does
+> not close it.** 125 is podman's code for its own failures, so the container did not start. The
+> launch got past the image (`Using existing …`) and past the prefix
+> (`Jail binaries: /nix/store/h9wr…-yolo-jail-install-prefix/opt/yolo-jail/bin (built from the
+> flake source)` — so `.#installPrefix` builds fine on darwin, as `internal/image/prefix.go`
+> says it must), and then died with nothing quoted: the harness caps its report at 60 lines
+> measured from the marker, and podman's own words fell past the cap.
+> `integration/imagebuildfailure_test.go` now also quotes the END of a truncated run, so the next
+> red nightly says what 125 was. Expect this one to survive [OQ-IP4](#OQ-IP4).
 
 ## 4. The three candidate resolutions
 
@@ -166,6 +225,27 @@ So the roadmap's *"every runtime claim in both macos-user designs is NOT MEASURE
    > **What was added instead is a diagnostic, and the distinction is the whole of it.** An image built before this commit has `/etc/yolo-jail-image-identity` as a symlink to a directory, so `cat` fails on it — which would have surfaced as a *failed probe*, and a failed probe is reported as a degraded harness and the check is SKIPPED. That is the wrong answer on the one commit where every image mismatches. So the in-image read falls back to `readlink`, the old store path comes back as a plain string, it is rejected like any other non-identity, and `identityHint` names it: *"That is a STORE PATH, not an identity. This image predates the identity becoming content-addressed (2026-09-12)… EVERY image built before that commit mismatches exactly once, and the rebuild below is the whole fix."*
    >
    > Measured 2026-09-12 against a real pre-cutover image in this jail's podman: the probe returns `/nix/store/8r4ypm7z9qxmxvfhba7nxhkyhxm2qkzn-yolo-jail-image-identity`, which is exactly the shape the hint fires on. It recognises the old spelling and never accepts it, and it expires on its own — nothing can produce that shape again.
+
+4. ✅ <a id="OQ-IP4"></a>**OQ-IP4: What actually demands the rebuild, once the identity agrees?** — **RESOLVED (2026-09-13), BUILT** Run `34753694060` is the counter-example to this doc's own chain: both sides of the identity agree, and every launch still built. The question the resolution had to answer is not "how does the launcher learn the image is current" but "why does the launcher not ask" — and the answer is that it had nowhere to ask *from*, because the store path it would have compared is the build's output.
+
+   <!-- vantage: oq id=OQ-IP4 leaning="Nothing about identity. The build is unconditional, and the launcher has to be given a question it can answer before building." -->
+
+   _Leaning:_ **Nothing about identity.** The build is unconditional and always was. Any fix has to give the launcher a question it can answer *before* the build, out of values that survive crossing hosts.
+
+   **Answer:**
+   > **A stock tag, written only by code that knows it is looking at a stock image.**
+   >
+   > **The term.** *Stock image* — the jail image a flake describes on its own: the default `.#ociImage` variant, no `packages:` extras. Coined in `internal/image/stockimage.go`, where the rest of this lives.
+   >
+   > **Why the identity is the right key here and nowhere else.** flake.nix + flake.lock are the stock image's entire input set, which is exactly what `imageIdentity` hashes — so two stock images with the same identity are the same image, whichever host built them. It is also *deliberately* invariant across the full/minimal/lean trio and across every `packages:` list (flake.nix says so where it declares the label). A matching identity on an arbitrary image therefore proves nothing about the variant, which is why the check is keyed on a **tag**: only `AutoLoadImage` after delivering a default-attr, no-extras image, and the nightly's `Load jail image` step after loading what `nix build .#ociImage` produced, ever write it. Accepting a lean image for a stock launch would be `buildfailure.go`'s own defect in a new costume.
+   >
+   > **Not resolution C.** C was rejected as *"a CI-trusts-this-image signal"* — an assertion that suppresses a check. Nothing is suppressed: the tag carries a claim (*this image's identity is X*), and the launch VERIFIES it against its own `nix eval` of its own checkout. An image from another commit carries that commit's identity and matches nothing. There is no new environment variable, and one existing one is removed.
+   >
+   > **`YOLO_ALLOW_STALE_IMAGE` leaves the nightly**, per this repo's escape-hatch rule (hatches are for broken user config, never for yolo bugs). It never stopped the build; it let a FAILED one proceed, and the harness fails on the report either way — so it bought nothing and hid that a build was running at all.
+   >
+   > **What a match gives up, stated rather than discovered.** A stock-matched launch built nothing and has no store path: `LoadResult.StorePath` is empty, no GC root is registered, no load-sentinel entry is appended. All of that is cache bookkeeping ([`the-load-sentinel-is-not-a-liveness-oracle.md`](./the-load-sentinel-is-not-a-liveness-oracle.md) [§4](./the-load-sentinel-is-not-a-liveness-oracle.md#4-two-consumers-two-different-questions), Consumer A), and the workspace's current-image pointer keeps naming the store path the launch that first loaded this image recorded. One sentence elsewhere goes stale by it: `internal/prune/imageroots.go` justifies its age cutoff with *"AutoLoadImage re-registers the root on every success rather than only on a load"*, which is now true only of launches that built.
+   >
+   > **Measured, and the boundary of what was measured.** In this jail: `nix eval --impure --raw .#imageIdentity` → `sha256:816a3ee9…04fb20` in 0.49 s, equal to what run `34753694060`'s darwin runner computed; the loaded image's `org.yolo-jail.image-identity` label carries the same value; `podman tag` accepts the 70-character stock tag and `podman image inspect` answers rc 0 on it. The decision itself is pinned on Linux by ten unit tests driving the real `AutoLoadImage`, and deleting either call site was measured to fail exactly the two tests that pin them. **What is NOT measured is the macOS runner.** Nobody here has a Mac, a nested jail is blind to this by construction, and the next scheduled nightly is the only instrument that can report it green.
 
 ## 8. What the roadmap needs
 

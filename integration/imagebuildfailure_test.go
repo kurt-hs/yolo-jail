@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,6 +55,34 @@ func imageBuildFailureSection(combined string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// runTailAfterReport is the last few lines of a run whose report the 60-line cap
+// above truncated, or "" when nothing was cut.
+//
+// THE CAP HID THE SECOND FAILURE. On the 2026-09-13 nightly every shard reported
+// this marker AND `exit code: 125` — podman's code for "the runtime could not
+// start the container", which is a different failure from the build the report
+// names, and which happens LATER in the same launch. The report is ~55 lines, the
+// cap is 60, so the five lines that survived were the start of the next phase and
+// whatever podman said was cut. The diagnosis stopped at "something else also
+// went wrong" for want of twelve lines.
+//
+// So a truncated report gets a tail as well as a head. It is deliberately not a
+// bigger cap: the head is the build's own words, which is what the marker is for,
+// and the END of the output is where an unrelated later failure lands. The middle
+// is a jail launch, which is exactly what nobody needs to read.
+func runTailAfterReport(combined string) string {
+	i := strings.Index(combined, image.BuildFailedMarker)
+	if i < 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(combined[i:], "\n"), "\n")
+	if len(lines) <= 60 {
+		return "" // nothing was cut; the section already ends the output
+	}
+	tail := lines[len(lines)-12:]
+	return strings.TrimSpace(strings.Join(tail, "\n"))
+}
+
 // failIfImageBuildFailed aborts the calling test when the CLI reported a failed
 // image build, quoting the report. Called by runCommand, so every run* helper
 // inherits it and no test has to remember.
@@ -63,11 +92,16 @@ func failIfImageBuildFailed(t *testing.T, args []string, r result) {
 	if section == "" {
 		return
 	}
+	tail := ""
+	if end := runTailAfterReport(r.combined()); end != "" {
+		tail = "\n\n  …and the run ENDED like this (the report above is capped, and a " +
+			"second failure lands here):\n" + end
+	}
 	t.Fatalf("THE JAIL IMAGE BUILD FAILED — this test never ran against the image it "+
 		"asked for.\nEvery assertion below it would describe some OTHER image, so the "+
 		"failure is reported here, at its cause.\n\n"+
-		"  command : yolo %s\n  exit code: %d\n\n%s",
-		strings.Join(args, " "), r.rc, section)
+		"  command : yolo %s\n  exit code: %d\n\n%s%s",
+		strings.Join(args, " "), r.rc, section, tail)
 }
 
 // TestImageBuildFailureSectionMatchesWhatTheCLIPrints is the load-bearing test
@@ -112,6 +146,43 @@ func TestImageBuildFailureSectionMatchesWhatTheCLIPrints(t *testing.T) {
 	if !strings.Contains(section, nixSaid) {
 		t.Errorf("the extracted section drops nix's own error, which is the only line "+
 			"that explains anything:\n%s", section)
+	}
+}
+
+// TestATruncatedReportKeepsTheEndOfTheRun is the guard on runTailAfterReport.
+// Without it the harness quotes a fixed window that happens to end where the
+// launch's NEXT phase begins, and a second, unrelated failure — the `exit code:
+// 125` every shard of the 2026-09-13 nightly reported alongside the build
+// failure — is cut off with no sign it existed.
+func TestATruncatedReportKeepsTheEndOfTheRun(t *testing.T) {
+	// A report longer than the cap, with the real failure at the very end.
+	var b strings.Builder
+	b.WriteString("Flake source: /x\n")
+	b.WriteString(image.BuildFailedMarker + " — the jail image was NOT rebuilt.\n")
+	for i := 0; i < 80; i++ {
+		fmt.Fprintf(&b, "  | filler line %d\n", i)
+	}
+	const realCause = "Error: statfs /nix/store/abc/opt/yolo-jail/bin: no such file or directory"
+	b.WriteString(realCause + "\n")
+	combined := b.String()
+
+	if got := imageBuildFailureSection(combined); strings.Contains(got, realCause) {
+		t.Fatalf("the capped section already reaches the end of the run; this test "+
+			"no longer models truncation:\n%s", got)
+	}
+	tail := runTailAfterReport(combined)
+	if !strings.Contains(tail, realCause) {
+		t.Fatalf("the tail dropped the line that explains the run's exit code.\n"+
+			"got:\n%s", tail)
+	}
+	// A report that was NOT truncated must add nothing — a duplicated tail under
+	// every failure is noise that teaches the reader to skip the section.
+	short := image.BuildFailedMarker + " — short report\n  | nix said something\n"
+	if got := runTailAfterReport(short); got != "" {
+		t.Errorf("an untruncated report grew a tail: %q", got)
+	}
+	if got := runTailAfterReport("an ordinary run\n"); got != "" {
+		t.Errorf("output with no report grew a tail: %q", got)
 	}
 }
 

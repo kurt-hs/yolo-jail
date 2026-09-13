@@ -121,10 +121,11 @@ type AutoLoadOptions struct {
 	//
 	// A SEPARATE SEAM FROM BuildStorePath, and not folded into it, because the
 	// two builds have different LIFETIMES and different triggers: the image is
-	// built on every launch (it is how the content ref is computed), while the
-	// copier is built only on a launch that is about to copy — a launch whose
-	// image is already loaded must build nothing. Folding them would put a
-	// potential 2m27s skopeo compile in front of every warm start.
+	// built whenever the launch needs a content ref (which is how one is
+	// computed), while the copier is built only on a launch that is about to
+	// copy — a launch whose image is already loaded must build nothing. Folding
+	// them would put a potential 2m27s skopeo compile in front of every warm
+	// start.
 	BuildCopier func(repoRoot string) (string, []string)
 	// PresentDigests reports the layer digests the runtime's store already holds,
 	// for the copied/skipped line the launch prints. nil => the real probe.
@@ -167,6 +168,16 @@ type AutoLoadOptions struct {
 	// locking, which is the right default for a caller that has no host-side
 	// lock (tests, and the in-jail path where nothing else is reaping).
 	LockHousekeeping func() func()
+	// EvalIdentity evaluates (never builds) the image identity the flake at
+	// repoRoot describes — the oracle behind the pre-build stock-image check
+	// (stockimage.go). nil => the real `nix eval --raw .#imageIdentity`.
+	//
+	// A seam because it is the ONE input to "must this launch build at all?"
+	// that cannot be faked with a Run answer, and because the check has to be
+	// drivable in both directions from a unit test: a host whose nix answers and
+	// a host whose nix does not are different behaviors, and the fall-back one
+	// is the one a wrong implementation would silently take forever.
+	EvalIdentity func(repoRoot string) (string, bool)
 	// copier is the skopeo path BuildCopier resolved, cached for the duration of
 	// one AutoLoadImage call. It is not a seam: the seam is BuildCopier, and this
 	// is the one place its answer is remembered so the delivery does not build
@@ -260,6 +271,12 @@ func (o *AutoLoadOptions) fill() {
 	if o.LookupEnv == nil {
 		o.LookupEnv = os.LookupEnv
 	}
+	// AFTER LookupEnv, not before: stockInputs reads the environment through it,
+	// so a nil seam here would be dereferenced by the very first thing
+	// AutoLoadImage does.
+	if o.EvalIdentity == nil {
+		o.EvalIdentity = EvalImageIdentity
+	}
 }
 
 // staleImageAllowed reports whether the operator has EXPLICITLY consented to
@@ -329,6 +346,37 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 		if s, err := jsonx.DumpsCompact(o.ExtraPackages); err == nil {
 			pkgJSON = s
 		}
+	}
+
+	// ASK THE RUNTIME BEFORE BUILDING ANYTHING (stockimage.go).
+	//
+	// Until 2026-09-13 this function's first act was `nix build`, unconditionally
+	// — the store path it returned was how the content ref got computed, so "is
+	// the image already here?" could not be asked until after the build that
+	// question exists to avoid. That is L2 of the chain in
+	// docs/design/darwin-image-provenance.md, and it is NOT caused by L1: making
+	// the identity content-addressed fixed the integration harness's oracle and
+	// left this alone, because nothing here ever compared an identity.
+	//
+	// The stock check is a real short-circuit and not a hatch: it runs the image
+	// only when the runtime holds one TAGGED as the stock image of the identity
+	// this checkout evaluates to. A mismatch, an unanswerable oracle, a lean
+	// attr, any `packages:` entry — every one of them falls through to the build
+	// below, which is what happened unconditionally before.
+	//
+	// It is also what a darwin host has needed since the binaries left the image:
+	// the image closure holds derivations no public cache serves, so a darwin
+	// launch that must build needs a Linux builder it may not have. Now it only
+	// needs one when the image it wants is genuinely absent.
+	identity := o.stockIdentity()
+	if ref := o.stockImageLoaded(identity); ref != "" {
+		// A DISCLOSURE, not progress: this is the launch saying which image it is
+		// about to run and on what evidence, and the launch stream has no quiet
+		// mode (docs/reference/report-tiers.md, OQ-RO3).
+		fmt.Fprintln(out, "Image build skipped: "+ref+" already carries this source "+
+			"tree's identity ("+identity+").")
+		_ = os.Remove(outLink)
+		return LoadResult{OK: true, Ref: ref}
 	}
 
 	var currentPath string
@@ -508,9 +556,16 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	//
 	// The sentinel survives, demoted from authority to two jobs it is still the
 	// right instrument for: the human-readable diagnosis below (which path this
-	// machine used last, so "load needed" says WHY), and prune's liveness ledger —
-	// internal/prune/imageroots_probe.go reads it to protect a live jail's closure
-	// from a store GC, and it is guard #2 of PruneOrphanImageRoots' three.
+	// machine used last, so "load needed" says WHY), and the store-GC REFUSAL —
+	// internal/prune/imageroots_probe.go's ProtectedImagePaths, read by
+	// prunecmd.go's UnrootedProtectedPaths, declines to collect the store while a
+	// recently-loaded closure lacks a durable root. It is NOT liveness evidence
+	// anywhere: PruneOrphanImageRoots lost its protected set to OQ-LS1 and image
+	// retention lost it to OQ-LS3 (docs/design/the-load-sentinel-is-not-a-liveness-
+	// oracle.md).
+	//
+	// It is also not written by every success any more: a launch that matched the
+	// stock tag above built nothing and has no path to append (stockimage.go).
 	contentRef := JailImageRef(o.Runtime, currentPath)
 	// SERIALISED AGAINST THE REAPER (disk-levers-and-backfill.md OQ-BF5). The
 	// window this closes is narrow and real: this launch inspects, decides the
@@ -651,6 +706,11 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 		}
 		if o.Runtime != "container" {
 			o.pointLatestAt(contentRef)
+			// The SECOND name, and the one that lets the next launch skip the
+			// build entirely. identity is non-empty only when this launch's
+			// inputs were the stock ones (stockimage.go, stockIdentity), so a
+			// lean or extra-packages image can never acquire a stock tag.
+			o.tagStockImage(contentRef, identity)
 		}
 		fmt.Fprintln(out, "Done: loaded image")
 	}

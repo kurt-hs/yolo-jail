@@ -77,7 +77,7 @@ AddLoadedPath(sentinel, storePath):
 | :--- | :--- | :--- |
 | Capacity | 10 entries, per runtime | `AddLoadedPath`, `image.go` |
 | Order | most-recent-last; dedupe-then-append | `AddLoadedPath`, `image.go` |
-| Written by | `AutoLoadImage`, on every SUCCESS (not only on a load) | `autoload.go` |
+| Written by | `AutoLoadImage`, on every success that BUILT (not only on a load) | `autoload.go` |
 | Read as | an unordered SET (`map[string]struct{}`) | `ReadLoadedPaths`, `image.go` |
 | Write errors | discarded (`_ =`) | `autoload.go` |
 | One writer | `AutoLoadImage` only; no locking between concurrent launches | — |
@@ -91,6 +91,32 @@ is unavailable to a consumer even though the file encodes it.
 > family of bug (`autoload.go:562-574`): before it, an already-loaded image was never
 > re-appended, so a jail relaunching daily still aged out. That fix is real and made the
 > window wider — it did not make it unbounded, which is the gap this doc is about.
+
+> [!NOTE]
+> **"Every success" acquired an exception on 2026-09-13, and it is a SECOND reason the
+> file cannot be liveness evidence.** `AutoLoadImage` now answers a question before it
+> builds: is the runtime already holding the STOCK image this source tree describes
+> (`internal/image/stockimage.go`,
+> [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-stock-tag-and-the-question-asked-before-the-build))?
+> A launch that matches built nothing and has no store path, so it appends nothing —
+> and on an unchanged flake that is now the COMMON case, not a degraded one. The ledger
+> was already a bounded MRU that a running jail cannot refresh; it is now one that a
+> *relaunching* jail need not refresh either.
+>
+> Two consumers still read it and neither is a liveness gate, which is why this is
+> survivable: `ProtectedImagePaths` (`internal/prune/imageroots_probe.go`) feeds the
+> store-GC REFUSAL — recency answering a cache question, [OQ-LS1](#111-decision-ledger)'s
+> own ruling — and the three-way "why did this load?" diagnosis. Image retention has not
+> read it since [OQ-LS3](#111-decision-ledger).
+>
+> ⚠ **What DOES need re-deriving is the GC-root reaper's mtime premise, and it is not in
+> this doc.** `internal/prune/imageroots.go` justifies its pure age cutoff with "the mtime
+> is the last time a launch USED this image … AutoLoadImage re-registers the root on every
+> success rather than only on a load." A stock-matched launch registers nothing, so that
+> mtime now means *the last time a launch BUILT and delivered* the image. The consequence
+> is benign and arguably what LS1 wanted — the store copy of an image the runtime already
+> holds is pure cache, and reaping its root frees 3.3 GB nothing needs — but the sentence
+> in that file is now false and should be corrected where it is written.
 
 ## 3. What it was originally for
 
