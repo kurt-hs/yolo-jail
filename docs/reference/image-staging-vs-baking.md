@@ -252,10 +252,24 @@ is under `/nix/store` and `YOLO_NIX_HOST_DAEMON` is not truthy — naming both f
 with the VM (`podman machine init -v /nix:/nix`, a fresh machine) and set the variable, or
 launch from an installed bundle, which stages prebuilt binaries under `$HOME` and builds nothing
 in the store. The variable is reused rather than a new dial added because it already means
-precisely "my runtime VM shares `/nix`", and setting it also turns the nix-delegation mounts on —
-the same claim about the same VM. The macOS nightly initialises its machine with `-v /nix:/nix`
-and sets the variable, so CI exercises the documented fix rather than routing around it. An
-installed bundle is unaffected, which is every Homebrew and `just install` user.
+precisely "my runtime VM shares `/nix`". The macOS nightly initialises its machine with
+`-v /nix:/nix` and sets the variable, so CI exercises the documented fix rather than routing
+around it. An installed bundle is unaffected, which is every Homebrew and `just install` user.
+
+> [!CAUTION]
+> **Setting it no longer turns the nix-delegation mounts on, and the sentence claiming it did
+> was wrong.** This paragraph used to end "setting it also turns the nix-delegation mounts on —
+> the same claim about the same VM". Those are two claims about two machines. Reachability asks
+> whether a bind *source* under `/nix` resolves; delegation mounts the host store **at**
+> `/nix/store`, replacing the tree the image's own `/bin` symlinks point into
+> (`flake.nix`: `ln -s ${imagePkgs.bashInteractive}/bin/bash $out/bin/bash`). A Mac's store
+> holds darwin paths, so on the 2026-09-13 nightly (run 34778464086) every launch died as
+> `yolo-entrypoint: exec: "bash": executable file not found in $PATH` — the image having been
+> built by an ubuntu job and shipped as a tar, its closure was in the image layers and nowhere
+> else. Delegation on macOS now takes its own claim, `YOLO_NIX_HOST_STORE_LINUX`, and the
+> nightly deliberately does not make it. `storepackages.go` had already reasoned this way about
+> the same store — it refuses macOS because "the jail's packages are Linux builds" — and that
+> argument simply had not reached the mount.
 
 The refusal is keyed on darwin, not on the runtime, so Apple Container gets it too. That
 backend's prefix mount has **not** been exercised on hardware; podman on Linux (including the
@@ -837,7 +851,8 @@ values themselves are stated.
 | Package-profile GC roots | `build/package-roots/` (`extras-<sha16>` for the image extras) | `paths.PackageRootsDir`; `rootExtrasProfile` (`internal/cli/run/storepackages.go`) |
 | Legacy tar cache (read-only on podman now) | `~/.local/share/yolo-jail/cache/images/<sha16>.tar` | `image.ImageCachePath`, `paths.GlobalCache` |
 | Host nix mounts | `/nix/var/nix/daemon-socket` (rw), `/nix/store` (`:ro`), `NIX_REMOTE=daemon` | `hostNixSocket`, `hostNixStore` (`internal/cli/run/hostprobes.go`) |
-| macOS "the VM shares `/nix`" | `YOLO_NIX_HOST_DAEMON` truthy (`1`, `true`, `yes`) | `shouldMountHostNix`, `envTruthy` |
+| macOS "the VM shares `/nix`" (reachability; gates the prefix mount) | `YOLO_NIX_HOST_DAEMON` truthy (`1`, `true`, `yes`) | `prefixUnreachableFromVM`, `envTruthy` |
+| macOS "my store holds the jail's Linux closure" (gates delegation, additionally) | `YOLO_NIX_HOST_STORE_LINUX` truthy | `shouldMountHostNix`, `nixHostStoreLinuxEnv` |
 | Store-delivery opt-in | `YOLO_STORE_PACKAGES` truthy | `StorePackagesOptInEnv` (`internal/cli/run/storepackages.go`) |
 | Launch → boot profile list | `YOLO_STORE_PROFILES`, colon-separated, precedence-ordered | `entrypoint.StoreProfilesEnv` |
 | The farm | `/run/yolo/packages/{bin,lib,lib/pkgconfig}`; `bin` sits immediately before `/bin` in `BootPath` | `entrypoint.StorePackagesRoot`, `BootPath` |

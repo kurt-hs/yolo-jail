@@ -320,12 +320,29 @@ jobs:
         env:
           YOLO_RUNTIME: podman
           # The other half of the -v /nix:/nix above: this is yolo's ONE spelling
-          # of "my runtime VM does share /nix into the container" (hostprobes.go's
-          # shouldMountHostNix, docs/guides/macos.md). Without it the launcher
+          # of "my runtime VM does share /nix into the container"
+          # (prefixUnreachableFromVM, docs/guides/macos.md). Without it the launcher
           # refuses a store-path install prefix on darwin outright — deliberately,
-          # since the alternative is podman's unattributable statfs error — and it
-          # also keeps skipping the nix daemon-socket + store mounts this machine
-          # can now actually carry. Setting it is the claim, not a workaround.
+          # since the alternative is podman's unattributable statfs error.
+          #
+          # ⚠ IT ONCE MEANT A SECOND THING TOO, AND THAT COST THIS JOB EVERY LAUNCH
+          # IT MADE. Until 2026-09-13 the same variable also bind-mounted the host's
+          # /nix/store into the jail. The image's /bin is symlinks INTO the store
+          # (flake.nix: `ln -s ${imagePkgs.bashInteractive}/bin/bash`), and this
+          # runner's image is built by the ubuntu build-image job above and shipped
+          # as a tar — so its closure lives only in the image's layers, never in this
+          # Mac's darwin store. Mounting that store on top hid the image's own, and
+          # every launch on run 34778464086 died as
+          #
+          #   yolo-entrypoint: exec: "bash": executable file not found in $PATH
+          #
+          # with rg gone from the same jail and pid1 running fine (it is bind-mounted
+          # from /opt/yolo-jail/bin and never resolves through /nix/store).
+          #
+          # The delegation half now needs its own claim — YOLO_NIX_HOST_STORE_LINUX —
+          # and this job deliberately does NOT make it: nothing here runs nix inside
+          # a jail, and this store cannot serve one. The launch prints one dim line
+          # saying so, which is expected output rather than a warning.
           YOLO_NIX_HOST_DAEMON: "1"
           # NO YOLO_ALLOW_STALE_IMAGE, and its removal is the other half of the
           # stock tag. It was set here with the reasoning "this job asserts its

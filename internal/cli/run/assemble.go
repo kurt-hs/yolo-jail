@@ -409,6 +409,8 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 			"-v", hostNixSocket+":"+hostNixSocket,
 			"-v", hostNixStore+":"+hostNixStore+":ro",
 			"-e", "NIX_REMOTE=daemon")
+	} else if msg := o.nixDelegationSkipNotice(rt); msg != "" {
+		out.print(msg)
 	}
 
 	// --- network mode flag ---

@@ -402,7 +402,10 @@ func TestEnvTruthyMatchesTheOtherOptInDials(t *testing.T) {
 		if !envTruthy(yes) {
 			t.Errorf("envTruthy(%q) = false", yes)
 		}
-		if !shouldMountHostNix("podman", true, true, true, yes) {
+		// BOTH macOS dials get the same spelling, which is the point of the row: the
+		// second claim (YOLO_NIX_HOST_STORE_LINUX) was added later and an inconsistent
+		// truthiness switch there would be the same bug in a new place.
+		if !shouldMountHostNix("podman", true, true, true, yes, yes) {
 			t.Errorf("shouldMountHostNix disagrees about %q", yes)
 		}
 	}

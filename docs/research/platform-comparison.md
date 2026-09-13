@@ -205,7 +205,7 @@ and needs **no macOS changes**. Only `cli.py` (host-side) is platform-aware.
 | Bind mounts | ✅ | ✅ | ⚠️⁴ | ⁴Max ~22 per container (VZ limit) |
 | tmpfs mounts | ✅ | ✅ | ✅ | No options syntax on AC |
 | `/dev/fuse` passthrough | ✅ | ✅ | ❌ | |
-| Nix store mount (`/nix`) | ✅ | ⚠️⁵ | ❌ | ⁵macOS: skipped by default (runtime VM doesn't share `/nix`); set `YOLO_NIX_HOST_DAEMON=1` to opt in. AC: always skipped. |
+| Nix store mount (`/nix`) | ✅ | ⚠️⁵ | ❌ | ⁵macOS: skipped by default, and opting in takes **two** variables — `YOLO_NIX_HOST_DAEMON=1` (the VM shares `/nix`) *and* `YOLO_NIX_HOST_STORE_LINUX=1` (that store holds the jail's Linux closure). The second exists because mounting a darwin store at `/nix/store` hides the image's own, where `/bin/bash` lives. AC: always skipped. |
 
 **Legend:** ✅ = fully supported, ⚠️ = partially supported / needs config,
 ❌ = not available (gracefully skipped with warning), N/A = not applicable

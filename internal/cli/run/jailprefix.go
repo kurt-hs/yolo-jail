@@ -264,8 +264,18 @@ func describeJailPrefix(p jailPrefix) string {
 // container" (hostprobes.go, docs/guides/macos.md). A second dial for one fact
 // is the shape shouldMountHostNix warns about: two dials that disagree about
 // what counts as true turn "I set the variable and nothing happened" into a
-// legitimate bug report. Setting it here also turns the nix delegation mounts
-// on, which is not a side effect — it is the same claim about the same VM.
+// legitimate bug report.
+//
+// ⚠ THAT PARAGRAPH USED TO END "Setting it here also turns the nix delegation
+// mounts on, which is not a side effect — it is the same claim about the same
+// VM." IT WAS FALSE, and it cost the 2026-09-13 macOS nightly (run 34778464086)
+// every one of its launches. Reachability and delegation are two facts, not one:
+// "the VM can see /nix" is about whether a bind SOURCE resolves, while "mount the
+// host store AT /nix/store in the jail" replaces the view where every baked
+// /bin/* symlink points — so it needs the host store to hold the jail's LINUX
+// closure, which a Mac's darwin store generally does not. The delegation half now
+// takes its own claim (hostprobes.go, YOLO_NIX_HOST_STORE_LINUX); the reachability
+// half read here is unchanged, and is still the only thing this refusal asks about.
 func prefixUnreachableFromVM(p jailPrefix, isMacOS bool, nixOptIn string) string {
 	if !isMacOS {
 		return ""

@@ -283,17 +283,36 @@ typically does **not** share `/nix` from the host, so the bind mount would
 fail with a `statfs` error at startup. YOLO Jail therefore skips this mount
 on macOS by default.
 
-If your runtime VM *does* share `/nix` into the container (e.g. a custom
-virtiofs mount of `/nix` in Podman Machine), opt back in:
+Opting back in takes **two** claims on macOS, because they are two different
+facts and only the first one is about the VM:
 
 ```bash
-export YOLO_NIX_HOST_DAEMON=1
+export YOLO_NIX_HOST_DAEMON=1      # my runtime VM shares /nix
+export YOLO_NIX_HOST_STORE_LINUX=1 # ...and my store holds the jail's Linux closure
 yolo
 ```
 
-With the variable set, YOLO Jail will bind-mount `/nix/var/nix/daemon-socket`
-and `/nix/store:ro` into the jail and export `NIX_REMOTE=daemon`, exactly as
-on Linux.
+With both set, YOLO Jail bind-mounts `/nix/var/nix/daemon-socket` and
+`/nix/store:ro` into the jail and exports `NIX_REMOTE=daemon`, exactly as on
+Linux. With only the first, it mounts neither and says so in one line.
+
+> [!WARNING]
+> **The second claim is not a formality, and getting it wrong bricks the jail.**
+> The image's `/bin` is symlinks *into* the store — `flake.nix` writes
+> `ln -s ${imagePkgs.bashInteractive}/bin/bash $out/bin/bash`, and the same for
+> `sh`, `awk`, `sed`, `grep` and `find` — so `/nix/store` is where every baked
+> binary actually lives. Bind-mounting the host's store on top **replaces that
+> view**, and a Mac's store holds darwin paths: the jail is Linux. Every one of
+> those symlinks then dangles and pid1 dies as
+> `yolo-entrypoint: exec: "bash": executable file not found in $PATH`.
+>
+> Measured on the 2026-09-13 macOS nightly (run 34778464086), where one variable
+> still meant both things and took all eight shards with it.
+>
+> Set `YOLO_NIX_HOST_STORE_LINUX` only if your Mac's store really does hold the
+> jail's Linux closure — a `linux-builder` VM realized it there, or a substituter
+> served it. yolo cannot check this for you: the image it runs may have arrived as
+> a tar with no store path to compare against.
 
 ### The same rule now decides whether a live checkout can launch at all
 
@@ -322,10 +341,18 @@ export YOLO_NIX_HOST_DAEMON=1
 YOLO_REPO_ROOT=~/code/yolo-jail yolo
 ```
 
-`YOLO_NIX_HOST_DAEMON` is deliberately the same variable as above: it means "my
-runtime VM shares `/nix`", and that one fact decides both the nested-Nix mounts
-and the install prefix. Otherwise unset `YOLO_REPO_ROOT` and launch from the
-installed bundle, which needs no machine changes.
+`YOLO_NIX_HOST_DAEMON` is deliberately the same variable as above, and it is the
+**only** one this recipe needs: it means "my runtime VM shares `/nix`", which is
+what makes a `/nix/store` bind *source* resolve. Do **not** add
+`YOLO_NIX_HOST_STORE_LINUX` to get a live checkout running — that is the separate
+claim about your store's contents described above, and asserting it falsely is
+what hides the image's own store. Otherwise unset `YOLO_REPO_ROOT` and launch
+from the installed bundle, which needs no machine changes.
+
+The two used to be one variable, on the reasoning that "the VM shares `/nix`"
+decided both. It does not: reachability is about whether a path resolves, while
+delegation replaces the tree the jail's own `/bin` points into. Splitting them is
+what the 2026-09-13 nightly bought.
 
 ## Installation
 
