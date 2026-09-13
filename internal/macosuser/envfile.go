@@ -122,10 +122,26 @@ func SandboxEnvFileContent(sandboxEnv *jsonx.OrderedMap) string {
 			continue
 		}
 		v, _ := sandboxEnv.Get(k)
-		b.WriteString("export " + k + "='" +
-			strings.ReplaceAll(asStr(v), "'", `'\''`) + "'\n")
+		b.WriteString(exportLine(k, asStr(v)))
 	}
 	return b.String()
+}
+
+// exportLine renders one `export K='v'` line. Factored out of the renderer so the
+// invariant that asks "did this exact value reach the file?" can ask through the SAME
+// escaping rather than through a second copy of it — a check that quoted differently
+// from the writer would pass or fail on the quoting instead of on the value.
+func exportLine(key, value string) string {
+	return "export " + key + "='" + strings.ReplaceAll(value, "'", `'\''`) + "'\n"
+}
+
+// SandboxEnvFileSets reports whether a rendered env file exports key with exactly value.
+//
+// Rendered bytes rather than the source map, for SandboxEnvFileKeys' reason: the question
+// is what the sandbox will READ, and a second pass over the map could answer it
+// differently from what was written.
+func SandboxEnvFileSets(content, key, value string) bool {
+	return strings.Contains(content, exportLine(key, value))
 }
 
 // SandboxEnvFileKeys returns the variable names a rendered env file sets, in file order.

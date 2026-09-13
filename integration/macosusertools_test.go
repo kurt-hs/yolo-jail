@@ -35,17 +35,20 @@ import (
 // network, so asking four questions in four launches would cost four of those. A subtest
 // inherits the TestMacosUser… prefix the gate requires, so the CI filter still selects it.
 //
-// ⚠ ONE SUBTEST IS PREDICTED TO FAIL ON THE FIRST MAC RUN — `lsp_servers`, and the
-// prediction is a SOURCE READING made on 2026-09-12 while writing this test, never a
-// measurement. NOTHING on this backend sets YOLO_LSP_NPM_INSTALL or YOLO_LSP_GO_INSTALL,
-// the two variables the generated bootstrap script's install loop reads
-// (internal/entrypoint/shell.go); their only producer in the tree is the container's
-// podman argv (internal/cli/run/assemble.go). So the stage execs the script, the loop
-// iterates an empty list, and the stage exits 0 having installed no LSP server.
+// ⚠ THE `lsp_servers` SUBTEST WAS PREDICTED TO FAIL, AND THE GAP IT PREDICTED HAS SINCE
+// BEEN WIRED (2026-09-13). The prediction was a SOURCE READING made on 2026-09-12 while
+// writing this test, never a measurement: nothing on this backend set
+// YOLO_LSP_NPM_INSTALL or YOLO_LSP_GO_INSTALL, the two variables the generated bootstrap
+// script's install loop reads (internal/entrypoint/shell.go), so the stage execed the
+// script, the loop iterated an empty list, and the stage exited 0 having installed no LSP
+// server. Both now cross — into the bootstrap env and into the session env file the
+// confined stage reads — resolved through the same config.LSPInstalls the container's
+// podman argv uses (internal/macosuser/runplan.go; macosuser.PlanInvariants fails if
+// either crossing is deleted, and internal/macosuser/lspinstall_test.go is the Linux half).
 //
-// The assertion is written against the SPEC rather than against that reading, which is
-// the point: a Mac is what turns the prediction into a fact either way. IF IT PASSES,
-// THIS PARAGRAPH IS WHAT IS WRONG — delete it, and leave the test.
+// THE ASSERTION IS UNCHANGED, and that is the point: it was written against the SPEC
+// rather than against the reading, so it is still the thing a Mac has to answer. Nothing
+// above is a measurement either — a real launch is what turns the wiring into an install.
 func TestMacosUserDeclaredToolsArrive(t *testing.T) {
 	requireMacosUser(t)
 
@@ -58,7 +61,7 @@ func TestMacosUserDeclaredToolsArrive(t *testing.T) {
 	// item 9 is about ARRIVAL, and `mise ls` plus the store directory are what answer it.
 	const miseTool = "jq"
 	// The declared LSP server is `python`, whose recipe is the single npm package
-	// `pyright` (internal/cli/run/lsp.go lspInstallRecipes). It is the cheapest entry in
+	// `pyright` (internal/config/lsp.go lspInstallRecipes). It is the cheapest entry in
 	// that table — one package, no `go install`, no compiler — and `command`/
 	// `fileExtensions` are spelled because config.validateLSPServers requires both.
 	const lspServer = "python"
@@ -200,17 +203,17 @@ func TestMacosUserDeclaredToolsArrive(t *testing.T) {
 		if !lineSetHas(bins, lspBin) {
 			t.Errorf("`lsp_servers` declares %q and ~/.npm-global/bin holds no %q, so the "+
 				"server was never installed (runbook item 9).\n\n"+
-				"WHAT TO CHECK FIRST, because this was predicted from source when the test "+
-				"was written and never measured: the generated bootstrap script's install "+
-				"loop reads $YOLO_LSP_NPM_INSTALL and $YOLO_LSP_GO_INSTALL "+
-				"(internal/entrypoint/shell.go), and the ONLY producer of either in the "+
-				"tree is the container's podman argv (internal/cli/run/assemble.go). "+
-				"Neither the macos-user bootstrap env (macosuser.buildBootstrapEnv) nor "+
-				"the provisioning stage env (macosuser.ProvisionArgv, which takes the "+
-				"launch env) carries them — so the stage execs the script, the loop "+
-				"iterates an empty list, and the stage exits 0 having installed nothing. "+
-				"If that is what the log below shows, §10.6 retired the `lsp_servers` "+
-				"warning over a gap that was never closed.\n\n"+
+				"WHAT TO CHECK FIRST: the generated bootstrap script's install loop reads "+
+				"$YOLO_LSP_NPM_INSTALL and $YOLO_LSP_GO_INSTALL "+
+				"(internal/entrypoint/shell.go), and this backend crosses both in TWO "+
+				"places — the bootstrap env (macosuser.buildBootstrapEnv) and the session "+
+				"env file the confined stage sources (macosuser.BuildRunPlan; "+
+				"ProvisionArgv carries only the identity quartet and the file's name). "+
+				"`yolo run --dry-run` prints the bootstrap argv and the env file's KEYS, "+
+				"so start there: a missing name is a regression the unit tests should have "+
+				"caught (internal/macosuser/lspinstall_test.go), and a name that is "+
+				"present means the list arrived and the INSTALL failed — which the "+
+				"startup log below records.\n\n"+
 				"ls ~/.npm-global/bin:\n%s", lspServer, lspBin, bins)
 		}
 	})
