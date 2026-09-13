@@ -277,8 +277,8 @@ func TestStageTakesFourOfTheSixSteps(t *testing.T) {
 func provisionPlan(t *testing.T) RunPlan {
 	t.Helper()
 	return BuildRunPlan("/Users/Shared/yolo/proj", provisionCfg(), []string{"claude"},
-		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", jsonx.NewOrderedMap(),
-		mockDarwin(), nil)
+		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", HostContext{},
+		jsonx.NewOrderedMap(), mockDarwin(), nil)
 }
 
 // hasProblem reports whether any invariant violation mentions sub.

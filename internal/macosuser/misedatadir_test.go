@@ -47,7 +47,7 @@ func TestMiseDataDirIsMachineWideEverywhereItAppears(t *testing.T) {
 	// absent value there is exactly the silent default.
 	plan := BuildRunPlan("/Users/Shared/yolo/proj", jsonx.NewOrderedMap(),
 		[]string{"claude"}, []string{"claude"}, "/usr/local/bin/yolo", "", "",
-		jsonx.NewOrderedMap(), nil, nil)
+		HostContext{}, jsonx.NewOrderedMap(), nil, nil)
 	if !containsArg(plan.BootstrapArgv, "MISE_DATA_DIR="+want) {
 		t.Errorf("the bootstrap argv does not set MISE_DATA_DIR=%s:\n%v", want, plan.BootstrapArgv)
 	}

@@ -39,7 +39,8 @@ func TestBothBackendsResolveTheSameLSPInstallSet(t *testing.T) {
 	}
 
 	plan := macosuser.BuildRunPlan("/Users/Shared/proj", cfg, []string{"claude"},
-		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", jsonx.NewOrderedMap(), nil, nil)
+		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", macosuser.HostContext{},
+		jsonx.NewOrderedMap(), nil, nil)
 
 	// The bootstrap env — where the macos-user generators read the declared set.
 	bootstrap := strings.Join(plan.BootstrapArgv, " ")

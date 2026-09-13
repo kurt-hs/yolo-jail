@@ -136,11 +136,16 @@ func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
 	ConfigurePackSurfaces(e, jailPacks)
 	RunPackHooks(e, jailPacks)
 
-	// Stage host_files (YOLO_HOST_FILES), after the builtin agent surfaces, same
-	// as the Linux boot loop. On macos-user the launcher passes only the
-	// source-less entries (config.SourceLessHostFiles): there is no /ctx/host-user
-	// mount to carry a source into — the design's accepted macos-user deficiency,
-	// kept explicit rather than half-working (docs/plans/host-file-staging.md).
+	// Stage host_files (YOLO_HOST_FILES), after the builtin agent surfaces, same as the
+	// Linux boot loop.
+	//
+	// ⚠ THE macos-user CARVE-OUT THAT STOOD HERE IS GONE (DP-L1, 2026-09-13). It read: the
+	// launcher passes only the SOURCE-LESS entries, because there is no /ctx/host-user
+	// mount to carry a source into. There is no mount now either — what changed is that
+	// the launcher COPIES each source-bearing entry's bytes into a root-owned tree and
+	// names it with YOLO_CTX_ROOT, which `hostUserPath` resolves through. So this step reads
+	// the same wire and the same directory it does under a container; the relocation is
+	// the only difference, and it is the one Apple Container already uses.
 	genStep(e, "configure_host_files", func() error { return ConfigureHostFiles(e) })
 
 	// CONTENT — skills and pack briefings — copied over the home from the staged

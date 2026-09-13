@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -30,6 +31,7 @@ func TestMacosUserLaunchComposesAndPassesTheHomeOverlay(t *testing.T) {
 
 	var gotOverlay string
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _, overlay string,
+		_ macosuser.HostContext,
 		_ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool) int {
 		gotOverlay = overlay
 		return 0
@@ -77,6 +79,7 @@ func TestMacosUserDryRunStillComposesTheOverlay(t *testing.T) {
 	var gotOverlay string
 	var gotDryRun bool
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _, overlay string,
+		_ macosuser.HostContext,
 		dryRun bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool) int {
 		gotOverlay, gotDryRun = overlay, dryRun
 		return 0

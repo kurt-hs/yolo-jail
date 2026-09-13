@@ -63,25 +63,20 @@ func backendLimits(rt string, packs []*packload.Pack, cfg *jsonx.OrderedMap) []s
 			"visible outside this project, and expect to see history that is not yours.")
 	}
 
-	// Agent config surfaces rendered from DEFAULTS rather than the user's bytes. An
-	// agent reading its own settings.json will otherwise take it for the human's
-	// preferences and act on them.
-	var ungranted []string
-	for _, p := range packs {
-		if p == nil {
-			continue
-		}
-		granted, _ := p.HonoredHostFiles()
-		for _, hf := range granted {
-			ungranted = append(ungranted, "~/"+hf.From)
-		}
-	}
-	if len(ungranted) > 0 {
-		out = append(out, "Your agent config files were rendered from DEFAULTS, not from the "+
-			"human's own — "+strings.Join(ungranted, ", ")+" did not cross into this "+
-			"environment. Do not read them as a statement of their preferences, and do not "+
-			"reason from settings you find there as though they chose them.")
-	}
+	// ⚠ A PARAGRAPH WAS DELETED HERE ON 2026-09-13, and deleting it is the point. It told
+	// the agent "your agent config files were rendered from DEFAULTS, not from the human's
+	// own", naming every pack `reads-host` grant, and instructed it not to reason from the
+	// settings it found. That was true while the bytes crossed on a /ctx mount this
+	// backend does not have; since DP-L1 they cross by COPY into a root-owned tree and the
+	// surface composes the human's real file (internal/cli/run/macosctxtree.go).
+	//
+	// Leaving it would be strictly worse than never having written it. The human-facing
+	// warnings it paired with are retired on the same evidence (noteMacosUserHostByteGaps),
+	// and an agent told its config is not the human's would discount preferences that ARE
+	// theirs — a standing constraint that is false is acted on for the whole session, with
+	// no moment of use to correct it at. The remaining asymmetry is the one every backend
+	// has: a grant whose host file does not exist composes from defaults, which needs no
+	// line here because it is not this backend's fact.
 
 	// Content is a writable copy rather than a read-only mount.
 	if len(packs) > 0 {

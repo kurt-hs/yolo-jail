@@ -25,7 +25,8 @@ import (
 
 // hostUserCtxDir is the read-only mount root under which each source-bearing
 // entry's host file (or directory) is bound, keyed by the entry's slug. The
-// entrypoint reads the same path (internal/entrypoint.hostUserDir).
+// entrypoint reads the same path (internal/entrypoint.hostUserPath, which resolves it
+// through that package's ctxRoot so a relocated /ctx moves both readers together).
 const hostUserCtxDir = "/ctx/host-user"
 
 // hostFilesEnv returns the `-e YOLO_HOST_FILES=<json>` pair, or nil when there

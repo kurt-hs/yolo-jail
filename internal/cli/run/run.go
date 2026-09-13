@@ -443,9 +443,34 @@ func Run(opts Options) (rc int) {
 			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
 			return 1
 		}
+		// THE HOST BYTES, on this arm and only on this arm (DP-L1, macosctxtree.go).
+		// Composed here for the same three reasons the overlay above is: the container
+		// path delivers this content by MOUNTING it and returns below, the composition
+		// needs the resolved pack set this function already holds, and a --dry-run must
+		// describe the launch a user would really get rather than a smaller one.
+		//
+		// FATAL on failure, unlike the overlay's own sources: a `reads-host` grant whose
+		// bytes exist and could not be copied would compose the agent a settings file
+		// that looks like the human's and is not, which is the exact failure OQ-CO10
+		// made the jail's read fail closed over. An ABSENT source is not a failure and
+		// does not reach here.
+		ctxDelivery, err := o.buildMacosCtxTree(staging, staged.packs, cfg)
+		if err != nil {
+			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", err.Error())
+			return 1
+		}
+		// AND THE DISCLOSURE THAT MUST TRAVEL WITH THEM. Until DP-L1 nothing crossed
+		// here, so nothing had to be disclosed; now a pack reads the human's home on
+		// this backend exactly as it does on every other one, and the banner is the
+		// whole trust boundary (packhostgrants.go: "the boundary today is DISCLOSURE,
+		// not consent"). The container path prints this inside runContainer, below the
+		// return above — the same B-0 shape as pack staging, launch flags and the
+		// channel, and the same fix: the arm prints its own.
+		o.notePackHostAccess(staged.packs)
+		o.noteMacosUserHostByteGaps(ctxDelivery)
 		return o.MacosUserRun(cfg, o.Workspace, config.SelectedAgents(cfg), agentArgv,
-			repoRoot, staged.root, homeOverlay, o.DryRun, channel.launchEnv(),
-			packload.BlockedTools(staged.packs))
+			repoRoot, staged.root, homeOverlay, ctxDelivery.ctx, o.DryRun,
+			channel.launchEnv(), packload.BlockedTools(staged.packs))
 	}
 	// AUTO-CAPTURE, the last host-side act before the container arm starts anything
 	// (OQ-PD18, install-capture.md slice 7). Every selected pack's `via: "installer"`

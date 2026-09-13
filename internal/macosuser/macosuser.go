@@ -50,6 +50,9 @@ const (
 	// homeOverlayLeaf is the state-dir subdir holding each session's staged CONTENT
 	// tree — skills and briefings, laid out at their home-relative destinations.
 	homeOverlayLeaf = "home-overlay"
+	// ctxLeaf is the state-dir subdir holding each session's staged CONTEXT tree —
+	// the HOST BYTES a `/ctx` mount carries on every other backend.
+	ctxLeaf = "ctx"
 )
 
 // SandboxHome is /Users/_yolojail.
@@ -301,6 +304,83 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 		{mkdirBin, "-p", filepath.Join(sd, homeOverlayLeaf)},
 		{rmBin, "-rf", tmp},
 		{cpBin, "-R", hostOverlay, tmp},
+		{chmodBin, "-R", "a+rX", tmp},
+		{rmBin, "-rf", dst},
+		{mvBin, "-f", tmp, dst},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Staging the /ctx CONTEXT TREE into the root-owned state dir
+// ---------------------------------------------------------------------------
+// StagedCtxRoot returns where this session's CONTEXT TREE is staged for the
+// sandbox user to read: <stateDir>/ctx/<cname>. It is what $YOLO_CTX_ROOT names,
+// and it is the macos-user analogue of the container's /ctx mounts — one leaf over
+// from the packs and the home overlay, staged the same way and for the same reasons.
+//
+// WHY NOT /ctx ITSELF. A new TOP-LEVEL directory on macOS needs an /etc/synthetic.conf
+// entry and a reboot; the repo already knows this for /nix (check.checkNixStore's hint).
+// Per-machine root-dir creation is off the table, so the jail is TOLD where the tree
+// landed (entrypoint's YOLO_CTX_ROOT) rather than assuming a constant — the same rule
+// YOLO_PACK_ROOT and entrypoint.CapturesDirEnv already follow.
+//
+// WHY NOT THE HOME TIERS. The per-workspace tier resolves to <workspace>/.yolo/home
+// (docs/design/macos-user-home-tiers.md), which is inside the profile's `(subpath ws)`
+// and therefore AGENT-WRITABLE. A context tree the agent can rewrite is not a context
+// tree: it is an input to config composition, so an agent able to edit one composes its
+// own next launch. Under /var it is root-owned AND outside the profile's enumerated
+// writable set, which is where the read-only half comes from for free.
+//
+// THE `:ro` HALF COSTS NO SBPL, AND THAT IS MEASURED. SeatbeltProfile is
+// `(deny file-write* (subpath "/"))` followed by an enumerated allow — workspace,
+// sandbox home, /tmp, /private/tmp, /var/folders, /private/var/folders, /dev — and
+// /var/yolo-jail is in none of them, while reads land on `(allow default)`. Measured on
+// hardware 2026-09-13 (macOS 26.5, arm64): under a real session profile over this tree,
+// `head -c 4 /var/yolo-jail/yolo` succeeded and `touch /var/yolo-jail/canary` gave
+// `Operation not permitted`, where the same touch UNSANDBOXED gives `Permission denied`.
+// EPERM vs EACCES is what proves the MAC half is doing the work rather than the
+// directory's owner — which is stronger than the container backends' `host_files
+// readonly`, whose own reference text concedes "0444 is DAC, not kernel enforcement".
+func StagedCtxRoot(cname, sd string) string {
+	if sd == "" {
+		sd = stateDir
+	}
+	return filepath.Join(sd, ctxLeaf, cname)
+}
+
+// StageCtxCommands returns the sudo argv that copy the host-side composed context tree
+// into the root-owned state dir, world-readable, for the bootstrap to compose from.
+// Empty hostCtxTree → no commands, so a launch with no host bytes to carry pays nothing.
+//
+// Same rm-then-mv shape as the packs and the home overlay, and here the reason is the
+// sharpest of the three: a grant the user REVOKED — a pack dropped from `packs`, a
+// `host_files` entry deleted from their config — must stop being delivered, and a `cp`
+// over a live directory would leave the union of both launches. A stale settings.json
+// that keeps composing into the agent's config is exactly the "config file that looks
+// correct and is missing the user's own settings" OQ-CO10 refuses.
+//
+// NOT A SYMLINK FARM, and Seatbelt was never the reason. Measured 2026-09-13, probe 1:
+// a profile denying reads under one directory also denies a `cat` of a symlink in an
+// ALLOWED directory pointing into it, for an absolute link and a relative one alike —
+// so Seatbelt evaluates the TARGET, and a link into the invoking user's home would need
+// a per-source allow. That half is fixable; the DAC half is not fixable by any profile.
+// The sandbox runs as a foreign uid (SandboxUser, via LaunchArgv's `sudo -u`) and a
+// macOS home is not required to be world-traversable, so the link would fail at the
+// POSIX layer before the profile was ever consulted — StagedPackRoot's doc comment
+// already ruled this exact question for the neighbouring feature.
+func StageCtxCommands(hostCtxTree, cname, sd string) [][]string {
+	if hostCtxTree == "" {
+		return nil
+	}
+	if sd == "" {
+		sd = stateDir
+	}
+	dst := StagedCtxRoot(cname, sd)
+	tmp := dst + ".new"
+	return [][]string{
+		{mkdirBin, "-p", filepath.Join(sd, ctxLeaf)},
+		{rmBin, "-rf", tmp},
+		{cpBin, "-R", hostCtxTree, tmp},
 		{chmodBin, "-R", "a+rX", tmp},
 		{rmBin, "-rf", dst},
 		{mvBin, "-f", tmp, dst},

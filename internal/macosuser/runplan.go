@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -27,7 +28,13 @@ type RunPlan struct {
 	StageCommands [][]string
 	// PackRoot is the root-owned staged pack tree this session's bootstrap renders
 	// from (YOLO_PACK_ROOT in BootstrapArgv), or "" when the launch staged no packs.
-	PackRoot      string
+	PackRoot string
+	// CtxRoot is the root-owned staged CONTEXT tree this session's bootstrap reads host
+	// bytes out of (YOLO_CTX_ROOT in BootstrapArgv), or "" when the host CLI composed
+	// none. Absence is the honest way to say "this launch carried no host bytes"; it is
+	// also what makes the host-layer report say `unsupported`, so the two can never
+	// disagree about whether this backend delivered.
+	CtxRoot       string
 	BootstrapArgv []string
 	// ProvisionArgv is the CONFINED provisioning stage, run between the bootstrap and
 	// the agent — nil when this config gives it nothing to do (ProvisionNeeded), which
@@ -57,6 +64,61 @@ type RunPlan struct {
 	DarwinEnv             *jsonx.OrderedMap
 	DarwinSkipped         []string
 	DarwinMaterialized    bool
+}
+
+// HostContext is what the HOST CLI composed for this launch's `/ctx` delivery: the tree
+// of host bytes, and the record of what went into it. It is the macos-user answer to
+// "the bytes cross on a /ctx mount and this backend has no mounts" — the mechanism is a
+// COPY (docs/design/declaration-parity.md DP-L1 / §6.1, ruled by OQ-DP4).
+//
+// ⚠ EVERY FIELD IS COMPOSED BY THE CALLER AND NEVER BY THIS PACKAGE, and that is a
+// credential-boundary constraint rather than a layering preference. Filling it means
+// reading the invoking user's own config (config.LoadHostFiles reads ~/.config/yolo-jail
+// DIRECTLY, which is what makes a source-bearing entry user-scope-only) and stat'ing
+// paths in the invoking user's home. The plan builder is PURE — the dry-run plan must
+// touch no disk — so the read lives in the host CLI's run pipeline
+// (internal/cli/run/macosctxtree.go) and only its RESULT crosses here. OQ-DP4's ledger
+// row states this in as many words and the ruling does not override it.
+//
+// The zero value is a launch that carried no host bytes, which is exactly the state
+// every macos-user launch was in before DP-L1: no tree to stage, no YOLO_CTX_ROOT, and
+// a host-layer report of `unsupported`.
+type HostContext struct {
+	// Tree is the host-side root the caller composed, laid out at the /ctx-relative
+	// paths the jail reads (`host-<staged slug>/<basename>` for a pack `reads-host`
+	// grant, `host-user/<slug>` for a source-bearing `host_files` entry). "" means the
+	// caller composed nothing.
+	//
+	// It crosses as a TREE rather than as a mapping for macoshomeoverlay.go's reason:
+	// the container path's mapping lives in its mount list, and re-sending it as data
+	// would put one mapping in two implementations. Laying it out by DESTINATION makes
+	// delivery one `cp -R` and one env var — the paths ARE the manifest.
+	Tree string
+	// Delivered is the /ctx destination (packload.CtxPath) of every pack `reads-host`
+	// grant whose bytes are in Tree. It becomes the launcher's half of the jail's
+	// FAIL-CLOSED host-layer read (packload.HostLayerReport): the jail cannot tell "the
+	// user has no such file" from "it did not arrive", so the launcher says which.
+	//
+	// It is the caller's list rather than a walk of Tree on purpose. A walk would make
+	// the jail's check tautological — it would re-derive the same answer from the same
+	// bytes — and the bug that read is for is precisely a host side that wrote the
+	// right file at the WRONG path (measured 2026-09-05, a pack whose staged directory
+	// name was escaped).
+	Delivered []string
+	// HostFiles are the user's SOURCE-BEARING `host_files` entries this launch RESOLVED —
+	// additive to the source-less ones the plan builder reads from the merged config,
+	// which is the only half a pure function may see.
+	//
+	// ⚠ RESOLVED, not "delivered", and the difference is deliberate. An entry whose host
+	// file does not exist yet belongs here: the destination then renders from its
+	// `defaults`/`content` layers, which is what every other backend does (the container
+	// emits the entry and skips only the bind). Only the BYTES are conditional on the
+	// source existing; the declaration crosses either way.
+	//
+	// Directory-shaped entries are NOT here and must not be: a copy does not scale to
+	// an arbitrary user-named tree, which is why the directory-shaped cells stayed with
+	// DP-D15 (refuse) rather than joining DP-L1 (deliver).
+	HostFiles []config.HostFileEntry
 }
 
 // Darwin carries the already-materialized native `packages:` result threaded
@@ -139,10 +201,12 @@ func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap
 // to self-exec as the bootstrap; `hostPackRoot` is the host-side staged pack tree
 // the run pipeline produced before dispatching here (""=no packs); `hostHomeOverlay`
 // is the host-side composed CONTENT tree — skills and briefings, already laid out at
-// their home-relative destinations (""=nothing to deliver); `blockedTools` are the
+// their home-relative destinations (""=nothing to deliver); `hostCtx` is the host-side
+// composed CONTEXT tree and the record of what the host CLI put in it (HostContext, and
+// see it for why this package may not compose one itself); `blockedTools` are the
 // selected packs' own blocked-tool declarations, merged with the config's security
 // section (core blocks nothing by default). `darwin` may be nil.
-func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []string, selfExe, hostPackRoot, hostHomeOverlay string, sandboxEnv *jsonx.OrderedMap, darwin *Darwin, blockedTools []packload.BlockedTool) RunPlan {
+func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []string, selfExe, hostPackRoot, hostHomeOverlay string, hostCtx HostContext, sandboxEnv *jsonx.OrderedMap, darwin *Darwin, blockedTools []packload.BlockedTool) RunPlan {
 	// SYMLINK-RESOLVED ONCE, HERE, BECAUSE THE KERNEL RESOLVES BEFORE THE POLICY IS CONSULTED.
 	// Measured on hardware 2026-09-13 (declaration-parity.md §6.1's probe 2): a profile denying
 	// `(subpath "/tmp")` does not stop `touch /tmp/canary`, while one denying
@@ -255,13 +319,23 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 	if hostHomeOverlay != "" {
 		homeOverlay = StagedHomeOverlay(cname, "")
 	}
+	// AND THE THIRD, on the same rule: the CONTEXT tree (DP-L1). The host CLI composed it
+	// — it is the only half that may read the invoking user's config and home — and this
+	// resolves where it will land. "" when the caller composed nothing, which is what the
+	// host-layer report below turns into `unsupported`, so a launch that delivered no host
+	// bytes and a backend that cannot deliver them remain the same statement.
+	ctxRoot := ""
+	if hostCtx.Tree != "" {
+		ctxRoot = StagedCtxRoot(cname, "")
+	}
 	// THE WORKSPACE SIDECAR — <workspace>/.yolo/home, the same directory the podman argv
 	// binds the jail home's per-workspace dirs from (paths.WorkspaceHomeState, one spelling
 	// for both backends). Naming it is what turns the tier collapse off: the bootstrap
 	// symlinks the account home's per-workspace dirs into it
 	// (entrypoint.InstallDarwinHomeLayout). A capture passes none — see the parameter.
 	bootstrapEnv := buildBootstrapEnv(workspace, cfg, gitIdentity, sandboxEnv, packRoot,
-		homeOverlay, paths.WorkspaceHomeState(workspace), SandboxHome(), darwinPrefix, blockedTools)
+		homeOverlay, ctxRoot, hostCtx, paths.WorkspaceHomeState(workspace), SandboxHome(),
+		darwinPrefix, blockedTools)
 
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(workspace, "")
@@ -299,13 +373,15 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 		Seatbelt:    SeatbeltProfile(workspace, SandboxHome(), cfgStrList(cfg, "workspace_readonly")),
 		StagedDir:   stateDir,
 		StagedYolo:  stagedYolo,
-		// Binary first, then the pack trees, then the content overlay: all three are
-		// prerequisites of the bootstrap the caller runs immediately after this list,
-		// and the binary is the one that fails most cheaply.
-		StageCommands: append(append(StageBinaryCommands(selfExe, ""),
+		// Binary first, then the pack trees, then the content overlay, then the context
+		// tree: all four are prerequisites of the bootstrap the caller runs immediately
+		// after this list, and the binary is the one that fails most cheaply.
+		StageCommands: append(append(append(StageBinaryCommands(selfExe, ""),
 			StagePackCommands(hostPackRoot, cname, "")...),
 			StageHomeOverlayCommands(hostHomeOverlay, cname, "")...),
+			StageCtxCommands(hostCtx.Tree, cname, "")...),
 		PackRoot:            packRoot,
+		CtxRoot:             ctxRoot,
 		BootstrapArgv:       DarwinBootstrapArgv(stagedYolo, SandboxHome(), bootstrapEnv, ""),
 		ProvisionArgv:       provisionArgv,
 		ProvisionScriptPath: provisionScriptPath,
@@ -340,10 +416,16 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 // generated against the home the capture is about to run in. It is used for the login-rc PATH;
 // the HOME/JAIL_HOME pair is baked by DarwinBootstrapArgv, which takes the same value.
 //
-// `packRoot` and `homeOverlay` are the ALREADY-STAGED destinations (StagedPackRoot,
-// StagedHomeOverlay), not their host-side sources, and "" means the caller staged nothing of
-// that kind. They are resolved by the caller rather than here because the caller is also what
-// emits the commands that stage them, and the two must not be able to disagree.
+// `packRoot`, `homeOverlay` and `ctxRoot` are the ALREADY-STAGED destinations
+// (StagedPackRoot, StagedHomeOverlay, StagedCtxRoot), not their host-side sources, and ""
+// means the caller staged nothing of that kind. They are resolved by the caller rather than
+// here because the caller is also what emits the commands that stage them, and the two must
+// not be able to disagree.
+//
+// `hostCtx` is the caller's RECORD of what went into that tree (HostContext). Two variables
+// read it — the host-layer report and the source-bearing half of YOLO_HOST_FILES — and both
+// are statements about delivery, so neither may be derived from the config: a wire naming a
+// host file nobody staged is the silent-wrong-composition this whole path exists to end.
 //
 // `homeSidecar` is <workspace>/.yolo/home, the per-workspace tier the bootstrap symlinks the
 // account home into. "" means LAY NO LAYOUT, and the caller that passes it is the install
@@ -356,8 +438,8 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 // config's security section alone would render an empty YOLO_BLOCK_CONFIG and the generated
 // home would carry no blockers at all.
 func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.OrderedMap,
-	packRoot, homeOverlay, homeSidecar, home string, darwinPrefix []string,
-	blockedTools []packload.BlockedTool) *jsonx.OrderedMap {
+	packRoot, homeOverlay, ctxRoot string, hostCtx HostContext, homeSidecar, home string,
+	darwinPrefix []string, blockedTools []packload.BlockedTool) *jsonx.OrderedMap {
 	bootstrapEnv := jsonx.NewOrderedMap()
 	bootstrapEnv.Set("YOLO_HOST_DIR", resolvePathAbs(workspace))
 	blockJSON, _ := jsonx.DumpsCompact(config.NormalizeBlockedToolsWith(securitySection(cfg), blockedTools))
@@ -403,40 +485,65 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		v, _ := gitIdentity.Get(k)
 		bootstrapEnv.Set(k, v)
 	}
-	// host_files: SOURCE-LESS entries only (config.SourceLessHostFiles). There is
-	// no /ctx/host-user mount on this backend — there are no bind mounts at all —
-	// so a source-bearing entry would render with an empty host layer and silently
-	// serve its defaults instead of the host file the user named. Filtering them
-	// out here keeps that an explicit, recorded deficiency
-	// (docs/plans/host-file-staging.md "macos-user — accepted deficiencies")
-	// rather than a half-working surprise.
+	// host_files, IN TWO HALVES THAT COME FROM DIFFERENT PLACES, and the split is the
+	// credential boundary rather than a structure.
 	//
-	// Read from the config map handed in, NOT via config.LoadHostFiles: the plan
-	// builder is pure, and a source-less entry is legal at any scope so the merged
-	// map is the right source for exactly this subset.
-	if wire := sourceLessHostFilesWire(cfg); wire != "" {
+	// The SOURCE-LESS half is read from the config map handed in, never via
+	// config.LoadHostFiles: the plan builder is pure, and a source-less entry is legal at
+	// any scope, so the merged map is the right source for exactly that subset.
+	//
+	// The SOURCE-BEARING half cannot be read here AT ALL — it lives in the user config
+	// and its bytes live in the user's home, which is what makes it user-scope-only — so
+	// it arrives as hostCtx.HostFiles, already RESOLVED by the host CLI. That is DP-L1:
+	// until 2026-09-13 this backend DROPPED the source-bearing half outright, because the
+	// bytes cross on a /ctx mount and there were no mounts; they now cross by COPY into
+	// the root-owned tree ctxRoot names, so the entries cross with them.
+	//
+	// ⚠ RESOLVED, not "staged": an entry is on the wire whether or not its host file
+	// EXISTS. An absent dotfile is a normal state, the destination then renders from its
+	// `defaults`/`content` layers, and that is what the container path does too — it
+	// emits the entry and skips only the bind. Gating the wire on the copy would leave
+	// this backend answering differently in exactly that state.
+	if wire := hostFilesWire(cfg, hostCtx); wire != "" {
 		bootstrapEnv.Set("YOLO_HOST_FILES", wire)
 	}
 
-	// YOLO_HOST_LAYERS — the host-layer report, "unsupported" on this backend and only on
-	// this one (packload.HostLayerReport).
+	// YOLO_CTX_ROOT — where the host bytes actually landed. Both of the entrypoint's /ctx
+	// readers resolve through it (entrypoint.ctxRoot for a pack's `readsHost` surface,
+	// entrypoint.hostUserPath for the user's own host_files), which is the SAME seam
+	// Apple Container already uses for the same reason: a backend that cannot present
+	// /ctx at the constant path is TOLD the path instead of assuming one.
 	//
-	// THE CARVE-OUT, DECLARED. A `readsHost` surface's bytes cross on a /ctx mount and this
-	// backend has no mounts, so every host layer is missing here by construction — and the
-	// jail's read fails CLOSED, which would refuse every launch that selects the claude or
-	// pi pack on a Mac with a settings.json. It does not, because severity belongs to the
-	// DISPOSITION: "this backend cannot" is not a delivery fault, it is a backend fact the
-	// launcher knows before it starts, and refusing a user for what yolo cannot do here is
-	// the shape the reachability witness's OQ-R3 already ruled against. What the fail-closed
-	// read is for is the launch that said it delivered and did not.
+	// Set only when the launch staged a tree, so a launch carrying no host bytes says so
+	// by ABSENCE — a variable naming a directory that is not there would make an empty
+	// delivery indistinguishable from a broken one, which is YOLO_PACK_ROOT's rule and
+	// the reason the report below reads off the same condition.
+	if ctxRoot != "" {
+		bootstrapEnv.Set("YOLO_CTX_ROOT", ctxRoot)
+	}
+
+	// YOLO_HOST_LAYERS — the host-layer report (packload.HostLayerReport), and since
+	// DP-L1 this backend can answer `supported` like every other one.
 	//
-	// The deficiency stays SAID, which is the parity half: the launch names each grant that
-	// did not cross (run.noteMacosUserHostByteGaps) and the agent's own briefing says its
-	// config was rendered from DEFAULTS rather than the human's (run.backendLimits). This
-	// line adds the third reader — the jail itself now knows, instead of inferring it from
-	// an absent file. The same treatment a source-bearing `host_files` entry already gets a
-	// few lines above: filtered with a recorded deficiency, never a refused launch.
-	bootstrapEnv.Set(packload.HostLayerEnvVar, packload.HostLayersUnsupportedWire())
+	// ⚠ THE CARVE-OUT THAT STOOD HERE IS RETIRED, and retiring it is the whole point
+	// rather than a side effect. It read: a `readsHost` surface's bytes cross on a /ctx
+	// mount, this backend has no mounts, so every host layer is missing by construction —
+	// and since the jail's read fails CLOSED (OQ-CO10), reporting `supported` would have
+	// refused every launch selecting the claude or pi pack on a Mac with a settings.json.
+	// The premise is now false: the bytes cross by COPY into ctxRoot, so a delivered file
+	// is a file the jail can really open, and `unsupported` would be the lie.
+	//
+	// WHAT THE REPORT IS GATED ON IS DELIVERY, NOT THE PLATFORM. `supported` the moment
+	// the host CLI composed a tree; `unsupported` when it composed none, which is both the
+	// pre-DP-L1 state and the state of a caller that cannot compose one (a capture, a unit
+	// test). Keeping the two readings on ONE condition — ctxRoot, which is itself derived
+	// from hostCtx.Tree — is what stops a launch from claiming a delivery mechanism it did
+	// not use, and OQ-R3's rule survives intact for the `unsupported` case: a backend that
+	// did not deliver is still not REFUSED for it.
+	//
+	// Delivered is the launcher's own list, never a walk of the staged tree: a witness
+	// that re-derives its expectation from the evidence is not a witness.
+	bootstrapEnv.Set(packload.HostLayerEnvVar, hostLayerWire(ctxRoot, hostCtx))
 
 	// YOLO_PACK_ROOT — the same generator-contract variable the container entrypoint
 	// reads off its /ctx/packs mount, pointed at the root-owned staged copy. Without it
@@ -570,7 +677,7 @@ func PlanInvariants(plan RunPlan) []string {
 					plan.StagedDir+"; the sandbox could rewrite a pack manifest and grant "+
 					"itself host access on the next launch")
 		}
-		if !stagesPackRoot(plan.StageCommands, plan.PackRoot) {
+		if !stagesTreeAt(plan.StageCommands, plan.PackRoot) {
 			problems = append(problems,
 				"nothing stages the pack tree at "+plan.PackRoot+
 					"; the bootstrap would render zero pack surfaces")
@@ -580,6 +687,80 @@ func PlanInvariants(plan RunPlan) []string {
 				"YOLO_PACK_ROOT="+plan.PackRoot+" is not baked into the bootstrap env; "+
 					"LoadJailPacks would find no packs and every surface/hook loop would "+
 					"iterate an empty list")
+		}
+	}
+
+	// THE CONTEXT TREE, on the pack tree's rule and for a sharper failure (DP-L1). Three
+	// halves, because any one alone is silently useless or actively wrong:
+	//
+	//   - staged somewhere the sandbox cannot REWRITE, or an agent edits the very bytes
+	//     its own config is composed from on the next launch — the same argument that
+	//     makes the pack root root-owned, one step closer to the credential;
+	//   - actually COPIED, or the bootstrap opens an empty directory;
+	//   - NAMED to the bootstrap, or the entrypoint's readers stay pointed at the literal
+	//     /ctx, which does not exist on macOS at all, and every surface silently composes
+	//     from its defaults layer while the launch reports a delivery.
+	if plan.CtxRoot != "" {
+		if !strings.HasPrefix(plan.CtxRoot, plan.StagedDir+"/") {
+			problems = append(problems,
+				"staged context root "+plan.CtxRoot+" is not under the root-owned state dir "+
+					plan.StagedDir+"; the sandbox could rewrite the host bytes its own config "+
+					"surfaces are composed from")
+		}
+		if !stagesTreeAt(plan.StageCommands, plan.CtxRoot) {
+			problems = append(problems,
+				"nothing stages the context tree at "+plan.CtxRoot+
+					"; every `reads-host` surface and every source-bearing host_files entry "+
+					"would compose from an empty directory")
+		}
+		if !containsArg(plan.BootstrapArgv, "YOLO_CTX_ROOT="+plan.CtxRoot) {
+			problems = append(problems,
+				"YOLO_CTX_ROOT="+plan.CtxRoot+" is not baked into the bootstrap env; the "+
+					"entrypoint would read host layers from the literal /ctx, which does not "+
+					"exist on macOS, and every surface would compose from its defaults layer")
+		}
+	}
+
+	// THE REPORT AND THE TREE ARE ONE FACT, checked against each other rather than each
+	// against itself. The jail's read fails CLOSED (OQ-CO10), so a report claiming
+	// `supported` with nothing staged refuses every host layer on the machine, and a
+	// report claiming `unsupported` while a tree IS staged silently un-delivers bytes the
+	// launch really did copy. Both are reachable by editing one of the two lines in
+	// buildBootstrapEnv, and neither shows up in any rendered artifact.
+	if got, ok := argvEnvValue(plan.BootstrapArgv, packload.HostLayerEnvVar); !ok {
+		problems = append(problems,
+			packload.HostLayerEnvVar+" is not baked into the bootstrap env; the jail's "+
+				"fail-closed host-layer read would have no disposition and would silently "+
+				"compose every `readsHost` surface without the user's own file")
+	} else if report, parsed := packload.ParseHostLayerReport(got); !parsed {
+		problems = append(problems,
+			packload.HostLayerEnvVar+"="+got+" is not the report shape the jail parses; it "+
+				"would be read as UNKNOWN, restoring the fail-open behaviour OQ-CO10 ended")
+	} else if (report.Delivery == packload.HostLayersSupported) != (plan.CtxRoot != "") {
+		problems = append(problems,
+			"the host-layer report says delivery is "+report.Delivery+" while the staged "+
+				"context root is "+quoteOrNone(plan.CtxRoot)+"; the two are one fact and the "+
+				"jail refuses a launch that claims a delivery it did not make")
+	}
+
+	// AND THE WIRE MUST BE DECODABLE BY THE HALF THAT READS IT. A YOLO_HOST_FILES the
+	// entrypoint cannot parse makes ConfigureHostFiles skip EVERY entry at once — the
+	// user's whole `host_files` key, silently, from one malformed value — and nothing else
+	// in the plan shows it, because the wire is a JSON blob on an argv.
+	//
+	// ⚠ THERE IS DELIBERATELY NO "a source-bearing entry must have been staged" CHECK, and
+	// an earlier cut of this block had one that was WRONG. A source that does not exist yet
+	// is a normal state (a dotfile the user has not written), the entry still crosses so the
+	// destination renders from its `defaults`/`content` layers, and that is exactly what the
+	// container path does — it emits the entry and skips only the bind. Refusing the launch
+	// for it would have made this backend answer differently in the one state nobody would
+	// think to test. The defect that check was reaching for — bytes staged and the root not
+	// named — is caught above, against the tree rather than against an entry.
+	if wire, ok := argvEnvValue(plan.BootstrapArgv, "YOLO_HOST_FILES"); ok {
+		if _, err := config.UnmarshalHostFiles(wire); err != nil {
+			problems = append(problems,
+				"YOLO_HOST_FILES is not decodable by the entrypoint ("+err.Error()+
+					"); every declared host_files entry would be skipped at once")
 		}
 	}
 
@@ -852,18 +1033,33 @@ func containsArg(argv []string, arg string) bool {
 	return false
 }
 
-// stagesPackRoot reports whether the stage commands finish by moving a tree INTO
-// packRoot — the last command StagePackCommands emits. Checking the destination of
-// the final `mv` rather than merely "packRoot appears somewhere" is what makes the
-// invariant meaningful: the path also appears in the preceding `rm -rf`, so a
-// substring test would pass for a plan that deleted the tree and staged nothing.
-func stagesPackRoot(cmds [][]string, packRoot string) bool {
+// stagesTreeAt reports whether the stage commands finish by moving a tree INTO dest —
+// the last command each of the three tree stagers emits (StagePackCommands,
+// StageHomeOverlayCommands, StageCtxCommands). Checking the destination of the final `mv`
+// rather than merely "dest appears somewhere" is what makes the invariant meaningful: the
+// path also appears in the preceding `rm -rf`, so a substring test would pass for a plan
+// that deleted the tree and staged nothing.
+//
+// It was stagesPackRoot until the context tree joined the list. One predicate for all
+// three deliberately: they share a shape, and a per-tree copy is three places for the
+// `rm -rf` confusion above to be reintroduced one at a time.
+func stagesTreeAt(cmds [][]string, dest string) bool {
 	for _, c := range cmds {
-		if len(c) >= 4 && c[0] == mvBin && c[len(c)-1] == packRoot {
+		if len(c) >= 4 && c[0] == mvBin && c[len(c)-1] == dest {
 			return true
 		}
 	}
 	return false
+}
+
+// quoteOrNone renders a path for a problem message, or the word for its absence — so a
+// mismatch message reads "the staged context root is none" rather than trailing an empty
+// pair of quotes the reader has to interpret.
+func quoteOrNone(p string) string {
+	if p == "" {
+		return "none"
+	}
+	return p
 }
 
 // stageCommandsUseFreshInode reports whether the stage commands end with an
@@ -973,12 +1169,91 @@ func orderedMapToAny(m *jsonx.OrderedMap) any { return m }
 
 // sourceLessHostFilesWire renders the merged config's SOURCE-LESS host_files
 // entries as the YOLO_HOST_FILES wire string, or "" when there are none. The
-// source-bearing half is deliberately excluded — see the call site.
+// source-bearing half is deliberately excluded — it is unreachable from a pure
+// function; see hostFilesWire.
 func sourceLessHostFilesWire(cfg *jsonx.OrderedMap) string {
 	wire, err := config.MarshalHostFiles(config.SourceLessHostFilesFrom(cfg))
 	if err != nil {
 		return ""
 	}
+	return wire
+}
+
+// hostFilesWire renders the WHOLE YOLO_HOST_FILES wire for this launch: the source-less
+// entries this package can read from the merged config, plus the source-bearing entries
+// the host CLI resolved (DP-L1), whose bytes it staged into the context tree when they
+// existed.
+//
+// THE TWO HALVES CANNOT COME FROM ONE PLACE, and that is the feature. A source-less entry
+// copies nothing from the host, so it is legal at any scope and the merged map is its
+// proper source. A source-bearing entry names a host path — it can forward
+// ~/.ssh/id_ed25519 — so it is read from the USER config directly and is inexpressible at
+// workspace scope (config.SourceBearing). Reading the second half here would put a
+// credential-boundary read inside a function whose contract is purity.
+//
+// SOURCE-BEARING WINS A DESTINATION COLLISION, which is config.LoadHostFiles' own rule
+// for the same pair: it is the more specific declaration and it is the one the user wrote
+// in their own config. Without the dedupe the same destination would be staged twice and
+// the LAST loop iteration would decide, silently.
+//
+// Sorted by destination Path, like every other producer of this wire, so the bootstrap
+// argv is deterministic.
+func hostFilesWire(cfg *jsonx.OrderedMap, hostCtx HostContext) string {
+	byPath := map[string]config.HostFileEntry{}
+	var order []string
+	for _, e := range config.SourceLessHostFilesFrom(cfg) {
+		if _, seen := byPath[e.Path]; !seen {
+			order = append(order, e.Path)
+		}
+		byPath[e.Path] = e
+	}
+	for _, e := range hostCtx.HostFiles {
+		if !e.SourceBearing() {
+			// Not reachable from the shipped caller, and dropped rather than trusted:
+			// this field's contract is "entries whose SOURCE this launch staged", and a
+			// source-less entry in it would be a second, unordered path to the same
+			// destination the merged config already owns.
+			continue
+		}
+		if _, seen := byPath[e.Path]; !seen {
+			order = append(order, e.Path)
+		}
+		byPath[e.Path] = e
+	}
+	if len(order) == 0 {
+		return ""
+	}
+	sort.Strings(order)
+	entries := make([]config.HostFileEntry, 0, len(order))
+	for _, p := range order {
+		entries = append(entries, byPath[p])
+	}
+	wire, err := config.MarshalHostFiles(entries)
+	if err != nil {
+		return ""
+	}
+	return wire
+}
+
+// hostLayerWire is this launch's host-layer report, as the environment carries it.
+//
+// ONE PRODUCER FOR BOTH ANSWERS, keyed on the staged context root, because the two are a
+// single fact seen from two sides: a launch that staged a tree DELIVERS host layers and
+// must list what it put there, and a launch that staged none delivers nothing and must
+// say the backend did not. Splitting them across two call sites is how a launch comes to
+// claim `supported` while staging nothing — and the jail's read fails CLOSED on exactly
+// that combination, so it would refuse every launch on this backend.
+//
+// Error-free for packload.HostLayersUnsupportedWire's reason: the report is a string and
+// a []string, which cannot fail to marshal.
+func hostLayerWire(ctxRoot string, hostCtx HostContext) string {
+	if ctxRoot == "" {
+		return packload.HostLayersUnsupportedWire()
+	}
+	wire, _ := packload.HostLayerReport{
+		Delivery:  packload.HostLayersSupported,
+		Delivered: hostCtx.Delivered,
+	}.Marshal()
 	return wire
 }
 

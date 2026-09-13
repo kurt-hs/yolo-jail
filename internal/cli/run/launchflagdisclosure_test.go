@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	officialpacks "github.com/mschulkind-oss/yolo-jail/packs"
 )
@@ -33,7 +34,7 @@ func TestALaunchDisclosesTheArgvItRewrote(t *testing.T) {
 	o.Args = []string{"copilot", "chat"}
 	var gotArgv []string
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _ []string, agentArgv []string,
-		_, _, _ string, _ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool) int {
+		_, _, _ string, _ macosuser.HostContext, _ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool) int {
 		gotArgv = agentArgv
 		return 0
 	}

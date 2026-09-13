@@ -251,8 +251,15 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 	// and be deleted, and naming a tree StageCommands below does not stage would point the
 	// bootstrap's copy at a directory that is not there. Absence is the honest input, the
 	// same way "" means no packs above.
+	//
+	// AND NO CONTEXT TREE (the "" and the zero HostContext), on the same reasoning one step
+	// further: a capture runs a vendor INSTALLER, not an agent, so it has no use for the
+	// human's ~/.claude/settings.json and no business carrying it into a home whose whole
+	// contract is that everything written under it is the installer's output. The zero value
+	// makes the host-layer report `unsupported`, which is the true statement about a capture
+	// — it delivered no host layers — and keeps the bytes out of the delta walk.
 	bootstrapEnv := buildBootstrapEnv(stagingRoot, opts.Config, gitIdentity, opts.SandboxEnv,
-		packRoot, "", "", stagingHome, darwinPrefix, opts.BlockedTools)
+		packRoot, "", "", HostContext{}, "", stagingHome, darwinPrefix, opts.BlockedTools)
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(stagingRoot, "")
 
@@ -530,7 +537,7 @@ func CapturePlanInvariants(plan CapturePlan) []string {
 				"staged pack root "+plan.PackRoot+" is not under the root-owned state dir "+
 					plan.StagedDir+"; the sandbox could rewrite a pack manifest")
 		}
-		if !stagesPackRoot(plan.StageCommands, plan.PackRoot) {
+		if !stagesTreeAt(plan.StageCommands, plan.PackRoot) {
 			problems = append(problems,
 				"nothing stages the pack tree at "+plan.PackRoot+
 					"; the bootstrap would render zero pack surfaces and no launcher for "+

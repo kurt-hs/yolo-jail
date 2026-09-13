@@ -60,7 +60,7 @@ func TestTheFloorReachesBothPATHsThePlanCarries(t *testing.T) {
 	storeBin := "/nix/store/000mock-yolo-noncontainer-profile/bin"
 	plan := BuildRunPlan("/Users/Shared/yolo/proj", jsonx.NewOrderedMap(),
 		[]string{"claude"}, []string{"claude"}, "/usr/local/bin/yolo", "", "",
-		jsonx.NewOrderedMap(), mockDarwin(), nil)
+		HostContext{}, jsonx.NewOrderedMap(), mockDarwin(), nil)
 
 	if !strings.Contains(strings.Join(plan.LaunchArgv, " "), storeBin) {
 		t.Errorf("the floor's bin dir never reached the launch PATH:\n%v", plan.LaunchArgv)
@@ -94,7 +94,7 @@ func TestTheFloorReachesBothPATHsThePlanCarries(t *testing.T) {
 func TestPlanInvariantsCatchAFloorThatNeverReachedTheBootstrap(t *testing.T) {
 	plan := BuildRunPlan("/Users/Shared/yolo/proj", jsonx.NewOrderedMap(),
 		[]string{"claude"}, []string{"claude"}, "/usr/local/bin/yolo", "", "",
-		jsonx.NewOrderedMap(), mockDarwin(), nil)
+		HostContext{}, jsonx.NewOrderedMap(), mockDarwin(), nil)
 
 	// Strip the store bin out of the bootstrap env, leaving the launch PATH intact.
 	for i, a := range plan.BootstrapArgv {

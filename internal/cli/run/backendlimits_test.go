@@ -67,11 +67,6 @@ func TestBackendLimitsTellTheAgentWhatStderrTellsTheHuman(t *testing.T) {
 	if !strings.Contains(got, "SHARED by every workspace") {
 		t.Errorf("does not say the home is shared:\n%s", got)
 	}
-	// Config rendered from DEFAULTS: an agent reading its own settings.json otherwise
-	// takes it for the human's preferences and acts on them.
-	if !strings.Contains(got, "DEFAULTS") {
-		t.Errorf("does not say the agent config is not the human's:\n%s", got)
-	}
 	// Content is a writable copy: a skill the agent edits is silently overwritten.
 	if !strings.Contains(got, "writable COPY") {
 		t.Errorf("does not say content is a writable copy:\n%s", got)
@@ -91,8 +86,35 @@ func TestBackendLimitsScaleWithWhatIsActuallyThere(t *testing.T) {
 	if strings.Contains(joined, "SHARED by every workspace") {
 		t.Errorf("claimed shared state dirs for a jail with no packs:\n%s", joined)
 	}
-	if strings.Contains(joined, "DEFAULTS") {
-		t.Errorf("claimed ungranted host files for a jail with no packs:\n%s", joined)
+}
+
+// ⚠ THE INVERSION, and the negative half of DP-L1. This briefing used to tell the agent
+// its config files "were rendered from DEFAULTS, not from the human's own", naming every
+// pack `reads-host` grant. That was true while the bytes crossed on a /ctx mount this
+// backend does not have; since DP-L1 they cross by COPY into a root-owned tree
+// (macosctxtree.go) and the surface composes the human's real file.
+//
+// The same move TestMacosUserNoLongerWarnsThatToolsAreUninstallable made, and for a
+// sharper reason: a stderr warning is read once, while a briefing line is a STANDING
+// constraint an agent reasons from all session. Told its settings are not the human's, an
+// agent discounts preferences that are — and there is no moment of use at which anything
+// corrects it.
+//
+// ⚠ NEGATIVE HALF ONLY. That the bytes really arrive is pinned where it can be observed
+// rather than inferred from silence: TestMacosUserLaunchDeliversAPackReadsHostGrant drives
+// a real Run() and reads the composed tree. Absence of a warning is not evidence of a
+// feature.
+func TestBackendLimitsNoLongerCallTheAgentConfigADefault(t *testing.T) {
+	got := strings.Join(backendLimits("macos-user",
+		[]*packload.Pack{limitPack(t)}, jsonx.NewOrderedMap()), "\n")
+
+	if strings.Contains(got, "DEFAULTS") {
+		t.Errorf("the briefing still tells the agent its config was rendered from defaults, "+
+			"but a pack `reads-host` grant is now copied into the sandbox's context tree "+
+			"and composed like it is on every other backend:\n%s", got)
+	}
+	if strings.Contains(got, ".acme/settings.json") {
+		t.Errorf("the briefing still names a reads-host grant as undelivered:\n%s", got)
 	}
 }
 

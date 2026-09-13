@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -75,7 +76,7 @@ func TestMacosUserNoLongerClaimsMachineWideWorkspaceState(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
-	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
+	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
 		return 0
 	}
 	if rc := Run(*o); rc != 0 {
@@ -101,7 +102,7 @@ func TestMacosUserNotesContentGaps(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
-	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
+	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
 		return 0
 	}
 	if rc := Run(*o); rc != 0 {
@@ -148,64 +149,18 @@ func TestConfigDeclaredLoopholesAreReportedInert(t *testing.T) {
 	}
 }
 
-// The other half of the same silence, found by the release-notes pass rather than by
-// the sweep: the two channels that carry HOST BYTES into a config surface both fail
-// open on macos-user, so the user's own file is replaced by a default and nothing says
-// which one they got.
+// ⚠ TestMacosUserNotesHostByteGaps STOOD HERE AND IS GONE (2026-09-13), because the two
+// gaps it asserted are CLOSED rather than because it became inconvenient. It required the
+// launch to say that a pack `reads-host` grant "cannot cross on macos-user" and that a
+// source-bearing `host_files` entry "is dropped from the wire": both were true while the
+// bytes crossed on a /ctx mount this backend does not have, and both are false now that
+// they cross by COPY into a root-owned tree (DP-L1, macosctxtree.go).
 //
-//   - a pack's `reads-host` grant is read from its /ctx mount (hostSurfaceBytes), and
-//     that read is deliberately fail-open — an absent mount means "the user never
-//     configured this tool", which must not refuse a launch. On a backend with no /ctx
-//     at all, every grant takes that path.
-//   - a source-bearing `host_files` entry is FILTERED OUT of the wire before the
-//     bootstrap sees it (runplan.go), which is the more honest of the two — it renders
-//     nothing rather than a default — but is equally quiet.
-//
-// Neither is fixed here and neither can be cheaply: both need a delivery mechanism this
-// backend does not have. The requirement is only that a user who declared the file
-// learns their file was not used, since the failure otherwise looks like the tool
-// ignoring its own config.
-func TestMacosUserNotesHostByteGaps(t *testing.T) {
-	home := packHome(t)
-	dir := filepath.Join(home, ".config", "yolo-jail")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// The claude pack's settings surface declares `readsHost` — disclosed, here and on the
-	// banner, in the `reads-host` vocabulary the kind still owns (OQ-CO10 moved the
-	// declaration, not the word) — and the config adds a source-bearing host_files entry.
-	// Both grants exist on paper, neither can arrive.
-	//
-	// THIS IS ALSO THE macos-user CARVE-OUT'S OTHER HALF. The jail's host-layer read fails
-	// closed, and the reason a launch here is not refused is that the backend declares its
-	// host layers `unsupported` — which is only defensible while the launch SAYS what did
-	// not cross. These two assertions are that condition.
-	body := `{"packs": ["claude"], "host_files": [{"path": ".npmrc", "source": "~/.npmrc"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout, stderr bytes.Buffer
-	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
-	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
-		return 0
-	}
-	if rc := Run(*o); rc != 0 {
-		t.Fatalf("Run() = %d\nstderr:\n%s", rc, stderr.String())
-	}
-	got := stdout.String() + stderr.String()
-
-	if !strings.Contains(got, "reads-host") {
-		t.Errorf("a pack's reads-host grant cannot cross on macos-user and the launch did not "+
-			"say so — the surface renders from its DEFAULTS layer, so the agent runs on a "+
-			"config the user did not write.\noutput:\n%s", got)
-	}
-	if !strings.Contains(got, ".npmrc") {
-		t.Errorf("a source-bearing host_files entry is dropped from the wire on macos-user and "+
-			"the launch did not name it. The user declared a file by path; the jail has no "+
-			"file at that path and no reason given.\noutput:\n%s", got)
-	}
-}
+// Its replacement is not a deletion. TestMacosUserLaunchNoLongerWarnsThatHostBytesCannotCross
+// is the same requirement inverted, and it sits beside the two tests that read the bytes
+// out of the composed tree — because absence of a warning is not evidence of a feature,
+// which is the rule TestMacosUserNoLongerWarnsThatToolsAreUninstallable below already
+// states and the reason all three live together.
 
 // mise_tools and lsp_servers BOTH warned that they install nothing on macos-user, and
 // both gaps are CLOSED as of 2026-09-12: the floor puts mise and node on the sandbox
@@ -238,6 +193,7 @@ func TestMacosUserNoLongerWarnsThatToolsAreUninstallable(t *testing.T) {
 	// approval with no terminal to prompt on. The flag is the non-interactive grant.
 	o.AcceptConfigChanges = true
 	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, string,
+		macosuser.HostContext,
 		bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
 		return 0
 	}

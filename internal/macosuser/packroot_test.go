@@ -22,7 +22,8 @@ const hostStaged = "/Users/matt/.local/share/yolo-jail/agents/proj/packs"
 func planWithPacks(t *testing.T, hostPackRoot string) RunPlan {
 	t.Helper()
 	return BuildRunPlan("/Users/Shared/yolo/proj", jsonx.NewOrderedMap(), []string{"claude"},
-		[]string{"/bin/zsh", "-l"}, "/usr/local/bin/yolo", hostPackRoot, "", jsonx.NewOrderedMap(), nil, nil)
+		[]string{"/bin/zsh", "-l"}, "/usr/local/bin/yolo", hostPackRoot, "", HostContext{},
+		jsonx.NewOrderedMap(), nil, nil)
 }
 
 // TestRunPlanStagesAndNamesThePackRoot: the end-to-end shape of the fix, at the plan

@@ -863,10 +863,10 @@ func runRun(args []string) int {
 	// composed profile/provider channel, which run.Run composes above the backend
 	// dispatch and passes to whichever arm runs — forwarded verbatim.
 	opts.MacosUserRun = func(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string,
-		repoRoot, packRoot, homeOverlay string, dryRun bool, packEnv *jsonx.OrderedMap,
-		blocked []packload.BlockedTool) int {
+		repoRoot, packRoot, homeOverlay string, hostCtx macosuser.HostContext, dryRun bool,
+		packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool) int {
 		return macosUserRun(cfg, workspace, agents, agentArgv, repoRoot, packRoot, homeOverlay,
-			dryRun, packEnv, blocked)
+			hostCtx, dryRun, packEnv, blocked)
 	}
 	// Wire E3's capture-on-terminate. Same injection shape and same reason: the
 	// capture engine lives in THIS package, which imports run, so run cannot call it
@@ -933,8 +933,8 @@ var launchRunPipeline = run.Run
 // profile/provider channel it composed before dispatching there too. macos-hardware-gated;
 // on Linux macosuser fails closed at its IsMacOS precondition (dry-run works anywhere).
 func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string,
-	repoRoot, packRoot, homeOverlay string, dryRun bool, packEnv *jsonx.OrderedMap,
-	blocked []packload.BlockedTool) int {
+	repoRoot, packRoot, homeOverlay string, hostCtx macosuser.HostContext, dryRun bool,
+	packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool) int {
 	runProxy := run.RunWithProxy
 	materialize := func(nixRoot string, packages []any) (*macosuser.Darwin, bool, error) {
 		// system "" → darwinpkg.NativeSystem(), the running platform. NOT a
@@ -977,6 +977,7 @@ func macosUserRun(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []s
 			RepoRoot:        repoRoot,
 			HostPackRoot:    packRoot,
 			HostHomeOverlay: homeOverlay,
+			HostCtx:         hostCtx,
 			BlockedTools:    blocked,
 			PackEnv:         packEnv,
 			DryRun:          dryRun,

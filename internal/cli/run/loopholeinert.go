@@ -40,7 +40,6 @@ import (
 
 	"sort"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -312,65 +311,57 @@ func (o *Options) noteMacosUserContentGaps(packs []*packload.Pack, cfg *jsonx.Or
 	// preset wrappers are Linux-absolute, so the bootstrap skips them and warns from
 	// inside itself (entrypoint.RunDarwinBootstrap), and the stage installs none of the
 	// npm packages behind them either (Env.SkipMCPPresets).
-	o.noteMacosUserHostByteGaps(packs, cfg)
+	//
+	// ⚠ THE HOST-BYTE WARNINGS USED TO BE CALLED FROM HERE and are now a separate call
+	// on the arm, below the composition they describe. That is not tidying: what they
+	// have left to say depends on what the launch actually staged (DP-L1), and this
+	// function runs long before the context tree is composed. A printer that ran first
+	// would be back to describing the config rather than the delivery, which is the
+	// whole failure mode both of them were written under.
 }
 
-// noteMacosUserHostByteGaps names the grants that carry HOST BYTES into a config
-// surface, every one of which is inert here for the same structural reason: the bytes
-// cross on a /ctx mount, and this backend has no mounts.
+// noteMacosUserHostByteGaps names what carries HOST BYTES into a config surface and did
+// NOT cross on this launch. Since DP-L1 that is one shape only, and the shrinking is the
+// story of this function rather than a detail of it.
 //
-// The two halves fail differently, and the difference is worth stating because only
-// one of them is honest. A `reads-host` grant renders anyway, from its DEFAULTS layer
-// — so the agent runs on a settings file the user did not write and has no way to
-// distinguish from one they did. A source-bearing `host_files` entry is filtered out
-// of the wire before the bootstrap sees it (macosuser/runplan.go), which at least
-// leaves nothing rather than a plausible substitute.
+// ⚠ TWO WARNINGS WERE RETIRED HERE ON 2026-09-13, and what retired them is that the gap
+// they named is CLOSED rather than that they became inconvenient. One said pack
+// `reads-host` grants do not cross, so each surface renders from its DEFAULTS layer and
+// "the agent gets a working config file that is not yours". The other said source-bearing
+// `host_files` entries are dropped from the wire entirely. Both were true because the
+// bytes crossed on a /ctx mount and this backend has none; both are now false, because
+// the bytes cross by COPY into a root-owned tree under /var/yolo-jail
+// (internal/cli/run/macosctxtree.go, macosuser.StageCtxCommands). Leaving either would be
+// the failure this file's own rule names: a warning that describes a gap yolo has closed
+// teaches the reader to distrust the warnings that are still true.
 //
-// Both are warned rather than fixed: the fix is a delivery mechanism (materialize into
-// the sandbox home, the way Apple Container's .yolo-ctx copies work), which is a design
-// change and not a launch-time patch. What is NOT acceptable is the prior state, where
-// a user pointed at a host file by path and the jail neither used it nor mentioned it.
+// ⚠ AND THE CARVE-OUT THEY PROPPED UP IS GONE WITH THEM. The old text said this warning
+// was "half of why the jail does not refuse here": the jail's host-layer read fails closed
+// (OQ-CO10), this backend reported `unsupported`, and that was defensible only while the
+// deficiency was SAID. The report now says `supported` whenever a tree was staged
+// (macosuser.hostLayerWire), so a delivered file that the jail cannot read REFUSES the
+// launch here exactly as it does everywhere else. Nothing is being excused any more, so
+// nothing has to be said to excuse it.
 //
-// THIS WARNING IS HALF OF WHY THE JAIL DOES NOT REFUSE HERE. The host-layer read fails
-// closed since OQ-CO10, and this backend reports its host layers `unsupported`
-// (macosuser/runplan.go) so that a launch is not refused for what the backend cannot do.
-// That carve-out is only defensible while the deficiency is SAID — here, and in the
-// agent's own briefing (backendLimits) — so this line is load-bearing rather than a
-// courtesy: deleting it would leave the user feature-detecting the backend to learn
-// whether their settings arrived, which is the parity defect (P5) the ruling names.
-func (o *Options) noteMacosUserHostByteGaps(packs []*packload.Pack, cfg *jsonx.OrderedMap) {
-	var grants []string
-	for _, p := range packs {
-		granted, _ := p.HonoredHostFiles()
-		for _, hf := range granted {
-			grants = append(grants, p.Name+": ~/"+hf.From)
-		}
-	}
-	if len(grants) > 0 {
-		o.pr(o.Stderr).print("[yellow]Warning: pack reads-host grants do not cross on macos-user[/yellow] — " +
-			strings.Join(grants, ", ") + ". The bytes arrive on a /ctx mount and this backend has " +
-			"none, so each surface renders from its DEFAULTS layer instead. The agent gets a " +
-			"working config file that is not yours.")
-	}
-
-	// Read fail-open: LoadHostFiles is the same call the container path makes, and a
-	// malformed user config is already reported there. This is a report, not a gate.
-	entries, err := config.LoadHostFiles(cfg, nil, false)
-	if err != nil {
+// WHAT SURVIVES is the directory-shaped `host_files` entry, which is DP-D15 rather than
+// DP-L1: it names an arbitrary user tree, a copy does not scale to one, and the ruling
+// there is that a delivery yolo cannot make is stated rather than half-performed. ONE
+// LINE, only when the user declared one — a launch that declared none says nothing, which
+// is what keeps this from being the warning OQ-BP-3 says people learn to skip.
+func (o *Options) noteMacosUserHostByteGaps(delivery macosCtxDelivery) {
+	if len(delivery.undeliveredDirs) == 0 {
 		return
 	}
-	var named []string
-	for _, e := range entries {
-		if e.SourceBearing() {
-			named = append(named, "~/"+e.Path)
-		}
+	named := make([]string, 0, len(delivery.undeliveredDirs))
+	for _, p := range delivery.undeliveredDirs {
+		named = append(named, "~/"+p)
 	}
-	if len(named) > 0 {
-		o.pr(o.Stderr).print("[yellow]Warning: host_files entries with a `source` are dropped on macos-user[/yellow] — " +
-			strings.Join(named, ", ") + ". There is no /ctx/host-user mount to carry the host " +
-			"bytes, so these entries are filtered out of the launch entirely and no file appears " +
-			"at those paths. Entries with `content`/`defaults` and no `source` are unaffected.")
-	}
+	o.pr(o.Stderr).print("[yellow]Warning: a host_files entry whose `source` is a DIRECTORY " +
+		"does not cross on macos-user[/yellow] — " + strings.Join(named, ", ") + ". This " +
+		"backend has no bind mounts, so host bytes arrive by COPY, and a copy does not " +
+		"scale to an arbitrary tree. Single FILE entries are delivered normally; split the " +
+		"directory into the files you need, or use the Apple Container runtime " +
+		"(runtime: \"container\"), which binds it.")
 }
 
 // noteMacosUserPlatformGaps names the three PLATFORM keys this backend reads nowhere:

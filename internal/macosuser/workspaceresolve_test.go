@@ -50,7 +50,8 @@ func TestBuildRunPlanResolvesTheWorkspaceIntoTheSeatbeltProfile(t *testing.T) {
 	}
 
 	plan := BuildRunPlan(link, jsonx.NewOrderedMap(), nil, []string{"true"},
-		"/opt/yolo-jail/dist-go/darwin-arm64/yolo", "", "", jsonx.NewOrderedMap(), nil, nil)
+		"/opt/yolo-jail/dist-go/darwin-arm64/yolo", "", "", HostContext{},
+		jsonx.NewOrderedMap(), nil, nil)
 
 	if strings.Contains(plan.Seatbelt, link) {
 		t.Errorf("the Seatbelt profile names the SYMLINK %q, which the kernel resolves before "+

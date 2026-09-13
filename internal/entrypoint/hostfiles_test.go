@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // mustJSON marshals v or fails the test.
@@ -21,20 +22,28 @@ func mustJSON(t *testing.T, v any) []byte {
 	return b
 }
 
-// hostFilesTestEnv builds an Env with a fake jail home, a fake /ctx/host-user
-// mount (via the overridable hostUserDir), and a writable workspace for the §5
-// sidecars. It returns the env and the mount dir so a test can seed the host
-// source bytes at <mount>/<slug>.
+// hostFilesTestEnv builds an Env with a fake jail home, a fake /ctx/host-user mount, and a
+// writable workspace for the §5 sidecars. It returns the env and the mount dir so a test
+// can seed the host source bytes at <mount>/<slug>.
+//
+// It relocates ctxRoot — the ONE root both /ctx readers resolve through — and DERIVES the
+// mount dir through hostUserPath, rather than pointing a second var straight at the
+// fixture. The old shape could put the two readers in different places, which is exactly
+// the divergence the derivation exists to prevent (see hostUserPath).
 func hostFilesTestEnv(t *testing.T) (*Env, string) {
 	t.Helper()
 	home := t.TempDir()
-	ctx := t.TempDir()
+	root := t.TempDir()
 	ws := t.TempDir()
 
-	orig := hostUserDir
-	hostUserDir = ctx
-	t.Cleanup(func() { hostUserDir = orig })
+	orig := ctxRoot
+	ctxRoot = root
+	t.Cleanup(func() { ctxRoot = orig })
 
+	ctx := filepath.Dir(hostUserPath("probe"))
+	if err := os.MkdirAll(ctx, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return &Env{Home: home, Workspace: ws, Vars: map[string]string{}}, ctx
 }
 
@@ -625,5 +634,41 @@ func TestHostFilesNonExecutableStaysLocked(t *testing.T) {
 	if fi.Mode().Perm() != 0o444 {
 		t.Errorf("mode = %o, want 444: a non-executable source must stay non-executable",
 			fi.Mode().Perm())
+	}
+}
+
+// THE TWO /ctx READERS MOVE TOGETHER OR THE RELOCATION IS BROKEN, and nothing pinned it
+// until the relocation became load-bearing on a second backend.
+//
+// There are two of them — packsurfaces.go's, for a pack's `reads-host` grant, and this
+// file's, for the user's own `host_files` — and both must follow YOLO_CTX_ROOT. A reader
+// left behind is silent in the worst way: the pack's settings.json composes from the
+// relocated tree while the user's own declared file is looked for at a literal /ctx.
+//
+// ⚠ THIS ASSERTS UNDER A RELOCATED ROOT, which is the only way it means anything. The
+// first cut compared the derived dir against `ctxRoot + "/host-user"` at their DEFAULT
+// values — where both are "/ctx" — and rewriting production as the literal
+// "/ctx/host-user" passed it (measured). Relocating first is what makes the two spellings
+// distinguishable at all.
+//
+// The relocation was Apple Container's alone (one backend, one copy of the bug to find).
+// Since DP-L1 it is also macos-user's, where /ctx is not merely unmounted but ABSENT — a
+// new top-level directory on macOS needs /etc/synthetic.conf and a reboot — so a reader
+// left behind names a path that cannot be made to exist.
+func TestBothCtxReadersFollowARelocatedRoot(t *testing.T) {
+	orig := ctxRoot
+	ctxRoot = "/var/yolo-jail/ctx/proj"
+	t.Cleanup(func() { ctxRoot = orig })
+
+	// Reader 1: the user's own host_files.
+	if got, want := hostUserPath("npmrc"), "/var/yolo-jail/ctx/proj/host-user/npmrc"; got != want {
+		t.Errorf("hostUserPath = %q, want %q — a relocated launch would look for the "+
+			"user's declared file at a /ctx that does not exist on this backend", got, want)
+	}
+	// Reader 2: a pack's reads-host grant.
+	got := remapCtx(packload.CtxRoot + "/host-claude/settings.json")
+	if want := "/var/yolo-jail/ctx/proj/host-claude/settings.json"; got != want {
+		t.Errorf("remapCtx = %q, want %q; a host layer the launcher staged under the "+
+			"relocated root would be read from a path nothing wrote", got, want)
 	}
 }

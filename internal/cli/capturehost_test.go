@@ -13,6 +13,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -488,7 +489,8 @@ func TestCaptureWiresTheMacosUserBackend(t *testing.T) {
 	// Drive the real closure on its dry-run path. The act sets deps.Out to captureHost's
 	// own stdout writer, so the plan lands in `out`.
 	before := out.Len()
-	_ = seen.MacosUserRun(jsonx.NewOrderedMap(), "", nil, nil, "", "", "" /*homeOverlay*/, true, /*dryRun*/
+	_ = seen.MacosUserRun(jsonx.NewOrderedMap(), "", nil, nil, "", "", "", /*homeOverlay*/
+		macosuser.HostContext{} /*hostCtx*/, true, /*dryRun*/
 		jsonx.NewOrderedMap(), []packload.BlockedTool{{Name: "probeblocker", Suggestion: "use rg"}})
 	plan := out.String()[before:]
 

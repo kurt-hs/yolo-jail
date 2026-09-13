@@ -70,13 +70,15 @@ func TestHostLayerComposesWithoutRefusingWhenNothingWasDelivered(t *testing.T) {
 		{
 			name: "the backend delivers no host layers",
 			wire: `{"delivery":"unsupported"}`,
-			why: "THE macos-user CARVE-OUT: that backend has no bind mounts and no /ctx, so " +
-				"every host layer is missing by construction. Severity belongs to the " +
-				"disposition (the reachability witness's OQ-R3, same sentence): a launch is " +
-				"not refused for what yolo cannot do on that backend. The deficiency is said " +
-				"— run.noteMacosUserHostByteGaps names each grant and run.backendLimits tells " +
-				"the agent its config came from DEFAULTS — which is what keeps this from " +
-				"being the feature-detection P5 forbids",
+			why: "A LAUNCH THAT DELIVERED NOTHING, which since DP-L1 (2026-09-13) is no " +
+				"longer a claim about a BACKEND. macos-user used to report this " +
+				"unconditionally because its host bytes crossed on a /ctx mount it does not " +
+				"have; they now cross by copy into a root-owned tree, so it reports " +
+				"`supported` whenever it staged one (macosuser.hostLayerWire) and this wire " +
+				"is what a caller that staged NO tree emits — the install capture is the " +
+				"shipped one. Severity still belongs to the disposition (the reachability " +
+				"witness's OQ-R3, same sentence): a launch is not refused for a delivery " +
+				"nobody attempted",
 		},
 		{
 			name: "a garbled report",

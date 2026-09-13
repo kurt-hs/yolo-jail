@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -42,7 +43,7 @@ func macosUserNoticeRun(t *testing.T, cfg string) string {
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
 	o.DryRun = true
 	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string,
-		string, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
+		string, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool) int {
 		return 0
 	}
 	if rc := Run(*o); rc != 0 {

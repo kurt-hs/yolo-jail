@@ -303,12 +303,16 @@ func splitColon(s string) []string {
 	return out
 }
 
-// TestSourceLessHostFilesWireExcludesSourceBearing is the macos-user accepted
-// deficiency, pinned: this backend has no bind mounts at all, so there is no
-// /ctx/host-user to carry a host source into. A source-bearing entry must be
-// FILTERED OUT rather than passed through to render with an empty host layer,
-// which would silently serve its defaults in place of the host file the user
-// named (docs/plans/host-file-staging.md, "macos-user — accepted deficiencies").
+// TestSourceLessHostFilesWireExcludesSourceBearing pins the CREDENTIAL BOUNDARY, which is
+// what this function's exclusion is now about.
+//
+// It used to pin an accepted deficiency — a source-bearing entry was filtered out because
+// no /ctx/host-user mount existed to carry its bytes. DP-L1 closed that: the bytes cross by
+// copy and the entries reach the wire through hostFilesWire. What survives unchanged, and
+// is the reason this function still refuses them, is that a source-bearing entry lives in
+// the USER config and is unreachable from a pure read of the merged map
+// (config.SourceLessHostFilesFrom). A source-bearing entry appearing here would mean this
+// package had grown the user-config read that OQ-DP4 keeps in the host CLI.
 func TestSourceLessHostFilesWireExcludesSourceBearing(t *testing.T) {
 	cfg := jsonx.NewOrderedMap()
 	cfg.Set("host_files", []any{
@@ -330,9 +334,10 @@ func TestSourceLessHostFilesWireExcludesSourceBearing(t *testing.T) {
 	}
 }
 
-// TestSourceLessHostFilesWireEmpty: no host_files (or only source-bearing ones)
-// means no YOLO_HOST_FILES at all, so the bootstrap env is unchanged for every
-// existing macos-user launch.
+// TestSourceLessHostFilesWireEmpty: no host_files, or only entries this pure read cannot
+// see, means no wire from THIS function. The launch's actual variable is hostFilesWire's,
+// which folds in the staged source-bearing entries the host CLI resolved — see
+// TestRunPlanCarriesBothHalvesOfHostFiles for the composed result.
 func TestSourceLessHostFilesWireEmpty(t *testing.T) {
 	if got := sourceLessHostFilesWire(jsonx.NewOrderedMap()); got != "" {
 		t.Errorf("no host_files produced wire %q, want empty", got)
@@ -354,7 +359,8 @@ func TestBuildRunPlanCarriesSourceLessHostFiles(t *testing.T) {
 		mapOf("path", "~/.config/seed.json", "content", "x\n"),
 	})
 	plan := BuildRunPlan("/Users/Shared/proj", cfg, []string{"claude"},
-		[]string{"/bin/zsh", "-l"}, "/usr/local/bin/yolo", "", "", jsonx.NewOrderedMap(), nil, nil)
+		[]string{"/bin/zsh", "-l"}, "/usr/local/bin/yolo", "", "", HostContext{},
+		jsonx.NewOrderedMap(), nil, nil)
 
 	var found bool
 	for _, a := range plan.BootstrapArgv {

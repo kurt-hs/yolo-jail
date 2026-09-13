@@ -111,6 +111,19 @@ type Options struct {
 	// than as a mapping the bootstrap would have to re-implement.
 	HostHomeOverlay string
 
+	// HostCtx is the host-side composed CONTEXT tree and the record of what the run
+	// pipeline put in it: pack `reads-host` grants and the user's source-bearing
+	// `host_files` entries, laid out at the /ctx-relative paths the jail reads. The
+	// container backends carry those bytes on a `:ro` mount; this one has no mounts, so
+	// the tree is staged root-owned beside the packs and named to the bootstrap as
+	// YOLO_CTX_ROOT (DP-L1, docs/design/declaration-parity.md §6.1).
+	//
+	// A PARAMETER and not something this package composes, for the reason HostContext
+	// states: composing it is a read of the invoking user's own config and home, which is
+	// the credential boundary, and the plan builder below it is pure. The zero value is a
+	// launch that carried no host bytes.
+	HostCtx HostContext
+
 	// RepoRoot is the yolo-jail checkout root — passed to MaterializeDarwin as
 	// the nix build root when `packages:` is non-empty. The native bootstrap
 	// needs no source tree, only the flake root for darwin packages.
@@ -272,7 +285,8 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 		selfExe = deps.SelfExe()
 	}
 	return BuildRunPlan(opts.Workspace, opts.Config, opts.Agents, opts.AgentArgv,
-		selfExe, opts.HostPackRoot, opts.HostHomeOverlay, env, darwin, opts.BlockedTools)
+		selfExe, opts.HostPackRoot, opts.HostHomeOverlay, opts.HostCtx, env, darwin,
+		opts.BlockedTools)
 }
 
 // RunMacosUser launches agent_argv in the dedicated-user + Seatbelt sandbox.
@@ -639,6 +653,23 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.print("packs:       [dim]none staged — no pack surfaces will be rendered[/dim]")
 	} else {
 		p.printf("packs:       %s", plan.PackRoot)
+	}
+	// THE HOST BYTES, named on the same rule and for the same defect one step over
+	// (DP-L1). "this launch carried no host bytes" and "host bytes cannot cross on this
+	// backend" were indistinguishable from the outside for as long as this backend
+	// existed, and that indistinguishability IS the row the delivery closes — so a dry run
+	// that simply omitted the tree when there was nothing in it would preserve it.
+	//
+	// It names the STAGED path, never the config's /ctx half: the destination is not a
+	// constant either half may assume (entrypoint.CapturesDirEnv and YOLO_PACK_ROOT are the
+	// same pattern), and on macOS the /ctx spelling names a directory that cannot be made
+	// to exist without /etc/synthetic.conf and a reboot.
+	if plan.CtxRoot == "" {
+		p.print("host bytes:  [dim]none staged — `reads-host` surfaces and source-bearing " +
+			"host_files compose from their lower layers[/dim]")
+	} else {
+		p.printf("host bytes:  %s [dim](root-owned; the sandbox reads it and cannot "+
+			"write it)[/dim]", plan.CtxRoot)
 	}
 	p.printf("git identity: %s", gitIdentityRepr(plan.GitIdentity))
 	// THE ENV FILE IS DISCLOSED BY NAME AND BY KEY, NEVER BY VALUE — and that is the

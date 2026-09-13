@@ -28,16 +28,29 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 )
 
-// hostUserDir is the read-only mount root under which the CLI binds each
-// source-bearing host_files entry at /ctx/host-user/<slug> — the entry's slug
-// (config.HostFileEntry.Slug) is the leaf. A var so tests can point it at a temp
-// dir, mirroring hostPiDir / hostClaudeDir.
-// Derived from ctxRoot rather than written out, so the YOLO_CTX_ROOT relocation that
-// Apple Container needs reaches BOTH host-file readers. They are separate vars because
-// tests override them independently; they are not separate ROOTS, and writing "/ctx"
-// twice is what would let one move without the other. (packsurfaces.go's ctxRoot for the
-// per-pack `reads-host` grants; this one for the user's own `host_files`.)
-var hostUserDir = ctxRoot + "/host-user"
+// hostUserPath is where the CLI put one source-bearing host_files entry's host bytes:
+// <ctx root>/host-user/<slug>, the slug being config.HostFileEntry.Slug.
+//
+// ⚠ IT READS ctxRoot AT EVERY CALL, and that is the whole design rather than a style.
+// There are TWO /ctx readers — packsurfaces.go's, for a pack's `reads-host` grant, and
+// this one, for the user's own `host_files` — and the YOLO_CTX_ROOT relocation has to
+// reach both or a relocated launch composes the pack's file from the moved tree while
+// looking for the user's at a path nothing wrote.
+//
+// It was `var hostUserDir = ctxRoot + "/host-user"` until 2026-09-13, which derived the
+// root correctly and still left the two SEPARATELY OVERRIDABLE: a test could point one at
+// a temp dir and leave the other at /ctx, so nothing observed the property the derivation
+// existed to guarantee, and rewriting the var as the literal "/ctx/host-user" passed the
+// whole suite (measured). Resolving through the one var makes the divergence
+// unrepresentable instead of checked — a test that relocates ctxRoot relocates both
+// readers by construction.
+//
+// The relocation is not Apple Container's alone any more. On macos-user /ctx is not merely
+// unmounted but ABSENT — a new top-level directory on macOS needs /etc/synthetic.conf and
+// a reboot — so a reader left behind names a path that cannot be made to exist (DP-L1).
+func hostUserPath(slug string) string {
+	return filepath.Join(ctxRoot, "host-user", slug)
+}
 
 // ConfigureHostFiles stages every host_files entry declared in YOLO_HOST_FILES.
 // It is the boot step (and, via RunDarwinBootstrap, the macos-user step) that
@@ -74,7 +87,7 @@ func stageHostFile(e *Env, entry config.HostFileEntry) error {
 		// dir with no source), so its tree lives at the /ctx/host-user/<slug> mount.
 		// A missing mount (source absent on the host, or macos-user with no /ctx)
 		// leaves nothing to copy — fail-open, matching a missing file source.
-		src := filepath.Join(hostUserDir, entry.Slug())
+		src := hostUserPath(entry.Slug())
 		if _, err := os.Stat(src); err != nil {
 			return nil
 		}
@@ -171,7 +184,7 @@ func hostSourceIsExecutable(entry config.HostFileEntry) bool {
 	if !entry.SourceBearing() {
 		return false
 	}
-	fi, err := os.Stat(filepath.Join(hostUserDir, entry.Slug()))
+	fi, err := os.Stat(hostUserPath(entry.Slug()))
 	if err != nil {
 		return false
 	}
@@ -205,7 +218,7 @@ func hostFileSurface(entry config.HostFileEntry) manifest.Surface {
 func hostFileLayerBytes(entry config.HostFileEntry) []byte {
 	switch {
 	case entry.SourceBearing():
-		b, _ := os.ReadFile(filepath.Join(hostUserDir, entry.Slug()))
+		b, _ := os.ReadFile(hostUserPath(entry.Slug()))
 		return b
 	case entry.HasContent:
 		return []byte(entry.Content)

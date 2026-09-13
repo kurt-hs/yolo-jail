@@ -50,7 +50,7 @@ func lspPlan(t *testing.T) RunPlan {
 	cfg := jsonx.NewOrderedMap()
 	cfg.Set("lsp_servers", servers)
 	return BuildRunPlan("/Users/Shared/proj", cfg, []string{"claude"}, []string{"claude"},
-		"/opt/yolo-jail/bin/yolo", "", "", jsonx.NewOrderedMap(), nil, nil)
+		"/opt/yolo-jail/bin/yolo", "", "", HostContext{}, jsonx.NewOrderedMap(), nil, nil)
 }
 
 func TestDeclaredLSPServersReachBothEnvironments(t *testing.T) {
@@ -154,7 +154,7 @@ func TestPlanInvariantsRejectAHalfWiredLSPInstall(t *testing.T) {
 // and still writes no root-owned session file.
 func TestNoDeclaredLSPServersComposesNothing(t *testing.T) {
 	plan := BuildRunPlan("/Users/Shared/proj", jsonx.NewOrderedMap(), []string{"claude"},
-		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", jsonx.NewOrderedMap(), nil, nil)
+		[]string{"claude"}, "/opt/yolo-jail/bin/yolo", "", "", HostContext{}, jsonx.NewOrderedMap(), nil, nil)
 
 	for _, want := range []string{"YOLO_LSP_NPM_INSTALL=", "YOLO_LSP_GO_INSTALL="} {
 		if !containsArg(plan.BootstrapArgv, want) {

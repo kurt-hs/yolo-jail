@@ -20,6 +20,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/perf"
@@ -321,7 +322,14 @@ type Options struct {
 	// plan env and relays the wire tables to its bootstrap. Making it an argument means a
 	// `-p` launch cannot be dispatched to this backend without the environment it
 	// selected being decided.
-	MacosUserRun func(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string, repoRoot, packRoot, homeOverlay string, dryRun bool, packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool) int
+	//
+	// hostCtx is the third of that family and the one that carries HOST BYTES: the
+	// composed /ctx context tree plus the record of what went into it (DP-L1,
+	// macosctxtree.go). It is a PARAMETER for the strongest version of packRoot's reason
+	// — composing it requires reading the invoking user's own config and home, which the
+	// backend must not do (macosuser.HostContext states why), so the backend cannot be
+	// dispatched without the host CLI having decided what crosses.
+	MacosUserRun func(cfg *jsonx.OrderedMap, workspace string, agents, agentArgv []string, repoRoot, packRoot, homeOverlay string, hostCtx macosuser.HostContext, dryRun bool, packEnv *jsonx.OrderedMap, blocked []packload.BlockedTool) int
 	// CaptureOnTerminate folds this session's in-jail edits to capture-mode surfaces
 	// into their overlay sidecars once the jail is down (E3). It receives the
 	// workspace and the resolved runtime, and reads only HOST-side dirs — by
