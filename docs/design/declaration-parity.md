@@ -10,7 +10,7 @@ vantage:
 
 # One declaration, many mechanisms — and the four inputs that decide which one runs
 
-**Status:** DESIGN + CATALOG, amended 2026-09-13.
+**Status:** DESIGN, 2026-09-12 — a catalog, amended after review. Nothing built.
 [OQ-DP1](#decision-ledger) through [OQ-DP4](#decision-ledger) are ruled and compacted, and
 [OQ-DP6](#decision-ledger) dissolved rather than being answered; **[OQ-DP5](#OQ-DP5) and
 [OQ-DP7](#OQ-DP7) are live.** Every code claim below was re-verified against the tree on

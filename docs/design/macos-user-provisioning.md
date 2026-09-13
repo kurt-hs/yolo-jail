@@ -8,7 +8,7 @@ summary: "Almost every imperative provisioning step the container path runs — 
 
 # macos-user has no floor and no provisioning stage
 
-**Status:** **BOTH HALVES BUILT, 2026-09-12** — the floor in
+**Status:** BUILT, 2026-09-12 — UNMEASURED: every runtime claim; both halves were implemented from a Linux jail, where there is no `sandbox-exec` and no `_yolojail` account, and a Mac has to settle it ([§10.8](#108-what-a-mac-has-to-settle)).
 [§9](#9-what-shipped-half-one), the stage in [§10](#10-what-shipped-half-two). DESIGN
 2026-09-11, DESIGN SKETCH 2026-09-04. All four questions are ruled and compacted into the
 [Decision Ledger](#decision-ledger).

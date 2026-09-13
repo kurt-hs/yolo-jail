@@ -1,5 +1,8 @@
 # What only a Mac can verify
 
+**Status:** CURRENT — what only a Mac can verify; six of the ten items now run unattended on the nightly CI job.
+
+
 **Audience:** whoever has a Mac and five minutes — and, since 2026-09-12, a nightly CI
 job that stands in for them on six of the ten items below.
 

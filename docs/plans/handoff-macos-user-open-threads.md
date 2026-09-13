@@ -1,6 +1,6 @@
 ---
 title: "Handoff: what the first macos-user hardware run left open"
-status: handoff
+status: in-review
 date: 2026-09-12
 tags: [macos-user, handoff, lsp, integration, provisioning]
 summary: "The macos-user manual-checks runbook was run end to end on hardware for the first time on 2026-09-12. All ten items now have a measurement, three defects were found and fixed that day, and seven threads were opened. Five are left: one test-suite design flaw that only bites a persistent Mac, one logging gap, and three automation gaps that are work nobody has done rather than problems. Two are closed: provider credentials on every argv this backend builds, and the one product defect (lsp_servers installed nothing here) — ruled and wired on 2026-09-13, leaving one Mac run of its integration subtest."
@@ -11,7 +11,7 @@ summary: "The macos-user manual-checks runbook was run end to end on hardware fo
 **Audience:** the next agent working on `macos-user`, on a Mac or off it. Each thread below
 says which it needs.
 
-**Status:** **HANDOFF.** Written 2026-09-12, at the end of the session that ran
+**Status:** DESIGN, 2026-09-12 — a handoff; one ruling is owed and the rest is work nobody has done.
 [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) end to end on
 the maintainer's Apple Silicon Mac (macOS 26.5, arm64) — the first time items 5-10 or any of
 their automated twins had executed anywhere. **Nothing here is speculative about whether the
