@@ -128,7 +128,7 @@ clause of the principle, not an exception to it.
 | Term | Status | What it is, and what it is not |
 | :--- | :--- | :--- |
 | **notch** | existing | `jail` / `guest` / `host` — the confinement dial. `render.Kind`, `config.Confinement`. NOT a runtime. |
-| **mechanism** | existing, promoted | `podman` / `container` (Apple Container) / `macos-user`. Already the parameter name in `cli.confinementProfile`; [OQ-DP1](#decision-ledger) ruled it one of this doc's two words. Elsewhere in the tree it is spelled "backend" or "runtime" and those spellings are not being chased. NOT a container: `macos-user` runs no runtime. |
+| **mechanism** | existing, promoted | `podman` / `container` (Apple Container) / `macos-user`. Already the parameter name in `jailcontent.ConfinementProfile`; [OQ-DP1](#decision-ledger) ruled it one of this doc's two words. Elsewhere in the tree it is spelled "backend" or "runtime" and those spellings are not being chased. NOT a container: `macos-user` runs no runtime. |
 | **primitive vector** | **existing — never this doc's to promote** | the composed set the inputs yield: `PrimNamespaces`, `PrimVM`, `PrimSeatbelt`, `PrimLandlock`, `PrimSeparateUser`, `PrimBakedImage` — the contents of a `render.Profile`, ordered by `render.PrimitiveOrder`. ⚠ The phrase is already written in three packages (`render/confinement.go`, `cli/describe.go`, `jailcontent/briefing.go`), so an earlier draft of this table marking it "promoted here" was wrong. It names what the composition OUTPUTS, never the pair of inputs, which is exactly why it is not the umbrella [OQ-DP1](#decision-ledger) refused. It is what [P1](#1-the-principle-and-what-it-does-not-say) quantifies over. NOT a config surface — only the three named presets are selectable. |
 | **entry point** | **not a term — plain words** | which verb is running: `yolo -- cmd`, `yolo apply`, `yolo host -- cmd`, `yolo config diff`. A real input ([§2](#2-four-inputs-not-two-axes)) that [OQ-DP1](#decision-ledger) ruled stays unnamed; the doc says "which verb is running" and means nothing more by it. |
 | **site** | *(coined here — a table key, not an axis)* | one combination of the four inputs: the thing a declaration is honored or not honored AT, and the catalog's row key. It names a CELL, which is why it survives [OQ-DP1](#decision-ledger)'s refusal to name the notch-and-mechanism PAIR; if it ever reads as architecture rather than bookkeeping, delete it and write "one row". NOT a synonym for "backend": `yolo apply` at `guest` and `yolo -- cmd` at `guest` are two sites. |
@@ -191,7 +191,19 @@ The last is **briefing prose only**. The actual enforcement — `render.FieldSet
 So a `(notch, mechanism)` matrix would mark `confinement` *Honored* on all three mechanisms and
 be wrong about all three.
 
-### 2.3 `NoContainer` is the mechanism input smuggled into a notch-shaped function
+### 2.3 `NoContainer` was the mechanism input smuggled into a notch-shaped function — FIXED 2026-09-13
+
+> [!NOTE]
+> **Built 2026-09-13, and further than the ruling asked.** `cli.confinementProfile` is
+> DELETED rather than aligned: its body is now `jailcontent.ConfinementProfile(notch,
+> mechanism, isMacOS)`, called by both `describeMain` and `confinementHeader`, so the two
+> surfaces are literally one function and divergence is unrepresentable rather than merely
+> tested. `BriefingInput.NoContainer` is replaced by `Mechanism` + `IsMacOS`.
+>
+> ⚠ **The unification surfaced a fail-open the ruling did not mention.** The old `default:`
+> arm handed an UNKNOWN notch `JailProfile` with autonomy ON. `cli.describe` errors out
+> before an unresolvable notch reaches it; the briefing does not. `KindUnset` now resolves to
+> the host preset, pinned by `TestBriefingUnknownNotchFailsClosedWhateverTheMechanism`.
 
 `jailcontent.confinementHeader(confinement string, noContainer bool)` takes both inputs and
 acts on the second in exactly one of five arms (`known && notch == render.KindJail && noContainer`).
@@ -228,7 +240,7 @@ These are rows [DP-B17](#53-both-axes-at-once-the-notch-the-briefing-and-the-ren
 [DP-B18](#53-both-axes-at-once-the-notch-the-briefing-and-the-render-target) and
 [DP-B19](#53-both-axes-at-once-the-notch-the-briefing-and-the-render-target), and they are
 settled. **[OQ-DP2](#decision-ledger) ruled MECHANISM FIRST on 2026-09-12**, exactly as
-`cli.confinementProfile` already decides it, *and* ruled that the mechanism be threaded into the
+`jailcontent.ConfinementProfile` already decides it, *and* ruled that the mechanism be threaded into the
 briefing so both printing surfaces read one function. `run.prepare` already computes the
 mechanism — it is what sets `NoContainer` — so this is a threading change, not a new input.
 
@@ -283,13 +295,13 @@ The analogy is the argument, and it holds up when pushed on. Nobody names (archi
 what *does* get a name is what the pair YIELDS — a target, a platform. **The tree already has
 that word, and I had not noticed I was re-coining it.** *Primitive vector* is written in
 `render/confinement.go`, `cli/describe.go` and `jailcontent/briefing.go`; the maintainer's own
-*"confinement profile"* is `render.Profile`, the value `cli.confinementProfile` returns. So the
+*"confinement profile"* is `render.Profile`, the value `jailcontent.ConfinementProfile` returns. So the
 vocabulary settles by subtraction rather than by invention:
 
 | What it is | What we call it | Where the word comes from |
 | :--- | :--- | :--- |
 | the confinement dial | **notch** | `render.Kind`, `config.Confinement` |
-| what actually runs | **mechanism** | `cli.confinementProfile`'s own parameter name |
+| what actually runs | **mechanism** | `jailcontent.ConfinementProfile`'s own parameter name |
 | the machine | *platform* — a plain word, nothing to decide | — |
 | which verb is running | *nothing, deliberately* | — |
 | what those compose to | **primitive vector**, i.e. a `render.Profile` | already written in three packages |
@@ -306,7 +318,7 @@ the tree that takes both inputs. It is also the one that is WRONG, which is what
 [OQ-DP2](#decision-ledger) deletes.
 
 The function that is right resolves them by **precedence, never as a cell.**
-`cli.confinementProfile`'s four arms are decided by the host notch, then by a native mechanism,
+`jailcontent.ConfinementProfile`'s four arms are decided by the host notch, then by a native mechanism,
 then by the guest notch, then by a mechanism sub-choice — **every arm reads one input, and the
 other only breaks the tie.** Two things follow, and the second is why this is not a vocabulary
 quibble: the premise holds on the data, and a word for the pair would have had exactly one
@@ -516,8 +528,8 @@ vocabulary has no word for.
 | :--- | :--- | :--- | :--- |
 | **DP-B16** | `confinement: guest` or `host`, at LAUNCH | Accepted, validated, never dispatched on — a container starts anyway — and **⚠ asserts the opposite**: the briefing tells the agent *"a restricted account on the real machine, NOT a disposable container … your home is real and persists."* Every sentence is false of what ran. | `config.ResolveConfinement`'s only run-pipeline caller is `run.prepare`'s `BriefingInput.Confinement`; `run.Run` branches on `rt` alone. `yolo apply` refuses the identical value with rc 1 ([DP-A12](#4-aligned-and-why-the-catalog-leads-with-it)). Ruled by [OQ-DP3](#decision-ledger): refuse. **[Phase 7]** |
 | **DP-B17** | the mechanism input, in the briefing | `NoContainer` is accepted as a parameter and acted on in one of five arms. MEASURED: `confinementHeader("guest", true)` and `("guest", false)` are byte-identical; same for `host`. | `jailcontent.confinementHeader`. The field's own doc says the two are *"separate axes"*; only one branch acts on it. Ruled by [OQ-DP2](#decision-ledger): mechanism first. |
-| **DP-B18** | the `guest` primitive vector, in the briefing | Always the LINUX spelling — *"namespaces"*, *"Landlock"* — regardless of platform, sourced from the one table whose doc comment forbids it for a printed vector. | `jailcontent.enforcementLines(render.ProfileFor(notch))`. `cli.confinementProfile` is the platform-aware twin and honors the instruction; the briefing does not. Ruled by [OQ-DP2](#decision-ledger): mechanism first. **[Phase 7]** |
-| **DP-B19** | the `jail` notch on macos-user | **⚠ asserts the opposite** inside one paragraph: *"not by a container"*, then *"Enforced by: namespaces … a baked image"*, and the "Jail tooling" line printed twice. MEASURED — see [§2.3](#23-nocontainer-is-the-mechanism-input-smuggled-into-a-notch-shaped-function). | `jailcontent.confinementHeader`'s `noContainer` arm plus `jailcontent.enforcementLines`. Ruled by [OQ-DP2](#decision-ledger): mechanism first. |
+| **DP-B18** | the `guest` primitive vector, in the briefing | Always the LINUX spelling — *"namespaces"*, *"Landlock"* — regardless of platform, sourced from the one table whose doc comment forbids it for a printed vector. | `jailcontent.enforcementLines(render.ProfileFor(notch))`. `jailcontent.ConfinementProfile` is the platform-aware twin and honors the instruction; the briefing does not. Ruled by [OQ-DP2](#decision-ledger): mechanism first. **[Phase 7]** |
+| **DP-B19** | the `jail` notch on macos-user | **⚠ asserts the opposite** inside one paragraph: *"not by a container"*, then *"Enforced by: namespaces … a baked image"*, and the "Jail tooling" line printed twice. MEASURED — see [§2.3](#23-nocontainer-was-the-mechanism-input-smuggled-into-a-notch-shaped-function--fixed-2026-09-13). | `jailcontent.confinementHeader`'s `noContainer` arm plus `jailcontent.enforcementLines`. Ruled by [OQ-DP2](#decision-ledger): mechanism first. |
 | **DP-B20** | `autonomy`, at `confinement: host` | Two halves of one boot state opposite policies, with nothing comparing them. The briefing says *"Agent autonomy is **OFF** … Do not try to disable them"* while the same boot renders every pack's AUTONOMOUS posture into that agent's config files. | `entrypoint.ConfigurePackSurfaces` takes `e.renderTarget().Profile().AgentAutonomy`, and `(*Env).renderTarget` returns `render.Jail(…)` for every non-`hostTarget` Env → `render.JailProfile(false)` → `AgentAutonomy: true`, unconditionally. The briefing's line comes from `jailcontent.enforcementLines(render.ProfileFor(notch))` with the notch parsed from the config string. |
 | **DP-B34** | the guest FieldSet | `render.Target.Fields()` has **no production caller** — `cli.applyHostSurveyed` calls `render.HostFields()` directly — so the guest census is inert today. Separately, its `Refuse("mount")` text (*"unavailable without a container"*) is contradicted by `render.GuestProfileLinux()`, which composes `PrimNamespaces`. `render.refusalReasons` is a `map[Kind]string` with no notch dimension. | `render.Target.Fields`, `render.refusalReasons`, `render.GuestProfileLinux`. **[Phase 7]** for the inertness; the reason TEXT is fixable now. |
 
@@ -882,7 +894,7 @@ ordering risk this phase now carries."* Nobody closed the door the config left o
 > [!IMPORTANT]
 > **The shipped `macos-user` backend IS the guest notch by another name, and runs at
 > `confinement: jail`.** `internal/cli/config_ref.txt` says so of the `runtime` key; so does
-> `cli.confinementProfile`'s `NativeRuntimes` arm, which fires ahead of the notch test; so does
+> `jailcontent.ConfinementProfile`'s `NativeRuntimes` arm, which fires ahead of the notch test; so does
 > `internal/macosuser`, which reasons from `render.GuestProfileMacOS()` directly
 > (`macosuser.EndpointGrantCommands`: *"GuestProfileMacOS() carries PrimSeparateUser and
 > macos-user runs the sandbox as SandboxUser"*). Any census keyed on
@@ -971,6 +983,30 @@ is missing `service` and `blocked-tool`; `cli.registry` really does map `"stop"`
 
 ## 11. What I would build, in order
 
+> [!IMPORTANT]
+> **Steps 1, 2, 3 and 6 were built on 2026-09-13.** What remains is step 5 (the materialize
+> mechanism, gated on a measurement nobody has made — see
+> [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)), step 7 (everything
+> waiting on a Mac), and two user-facing doc deletions inside step 3. Step 4 is moot:
+> [`OQ-DP6`](#decision-ledger) dissolved and `DP-L5` was withdrawn with it.
+>
+> ⚠ **Per-row status markers in [§5](#5-silently-broken) and
+> [§6](#6-alignable-with-the-mechanism-and-its-cost) are NOT all updated to match.** The rows
+> closed by that wave are DP-B1 (briefing half), DP-B3, DP-B4, DP-B6, DP-B8, DP-B11, DP-B16,
+> DP-B17, DP-B18, DP-B19, DP-B21, DP-B22, DP-B27, DP-B33, DP-B43 and DP-B44, via DP-L2, DP-L4,
+> DP-L6, DP-L7, DP-L8, DP-L9, DP-L10 and DP-L14. Two carry a caveat that survives the fix:
+> **DP-B27/DP-L6 is closed in the DATA only** — `FieldSet.Refuse` still has no production
+> caller, so nothing prints either reason, which is DP-B34's half — and **DP-L10's "the
+> sentences are written" cost was wrong**: the container path's *"not supported on macOS"* is a
+> PLATFORM claim, false on macos-user where the key is read by nothing, so new text was needed
+> and a test pins the container claim's absence.
+>
+> **A defect this catalog has no row for, found the same day:** on macos-user the briefing's
+> `## Environment` block is false in three places at once — `/workspace` described as a bind
+> mount, **Home** as `/home/agent`, **OS** as *"NixOS-based minimal container"* — contradicting
+> the header three lines above it. It is a fifth direction the constraint sentence below never
+> counted, and it needs a wording ruling before anyone can fix it.
+
 **Constraint that shapes the order:** the briefing is composed from several independent
 sources and three of them are currently wrong in different directions. Wiring
 [DP-L9](#6-alignable-with-the-mechanism-and-its-cost) alone would give a macos-user jail an
@@ -986,7 +1022,7 @@ three. So the briefing fixes land together or not at all.
    [DP-B11](#51-macos-user-read-by-nobody-warned-by-nobody) narrowing
    (`packload.WritableDirs` → `packload.SharedDirs`, and flip its test), and — per
    [OQ-DP2](#decision-ledger), mechanism first — threading the mechanism into
-   `jailcontent.enforcementLines` so it and `cli.confinementProfile` are one function. The
+   `jailcontent.enforcementLines` so it and `jailcontent.ConfinementProfile` are one function. The
    DP-L2 half also carries the per-key notice for non-empty `ports` / `forward_host_ports`
    ([§5.1.1](#511-dp-b3-by-entry-form-and-why-the-remedy-is-not-refusal)). Closes [DP-B3](#51-macos-user-read-by-nobody-warned-by-nobody),
    [DP-B6](#51-macos-user-read-by-nobody-warned-by-nobody),
@@ -1177,7 +1213,7 @@ approval, not a decision — see [§3](#3-the-four-dispositions-and-how-to-walk-
 | ID | Ruling / Decision | Date | Settled in |
 | :--- | :--- | :--- | :--- |
 | OQ-DP1 | **Name nothing new.** `notch` and `mechanism` are the two words; no umbrella for the pair, and the fourth input stays "which verb is running". *"We don't have a name for architecture and operating system combined."* ⚠ `primitive vector` is NOT this doc's coinage — it is already written in `render/confinement.go`, `cli/describe.go` and `jailcontent/briefing.go`, and it names the composition's OUTPUT, never the pair. Confirmed against the catalog: the only rows that look like `(notch × mechanism)` cells are all one function, and the function that is right resolves by precedence. | 2026-09-12 | [§2.6](#26-the-two-words-and-why-the-pair-is-not-named), [Defined terms](#defined-terms) |
-| OQ-DP2 | **Mechanism first**, as `cli.confinementProfile` already rules — and thread the mechanism into the briefing so both printing surfaces read one function. `run.prepare` already computes it, to set `NoContainer`. | 2026-09-12 | [§2.3](#23-nocontainer-is-the-mechanism-input-smuggled-into-a-notch-shaped-function), [§11](#11-what-i-would-build-in-order) step 1 |
+| OQ-DP2 | **Mechanism first**, as `jailcontent.ConfinementProfile` already rules — and thread the mechanism into the briefing so both printing surfaces read one function. `run.prepare` already computes it, to set `NoContainer`. | 2026-09-12 | [§2.3](#23-nocontainer-was-the-mechanism-input-smuggled-into-a-notch-shaped-function--fixed-2026-09-13), [§11](#11-what-i-would-build-in-order) step 1 |
 | OQ-DP3 | **Refuse**, reusing `cli.applyMain`'s existing Phase 7 sentence verbatim, and consume `--at` in `cli.parseRunArgs`. ~10 lines; the alternative (honor the notch) IS Phase 7. Briefing-only was the weaker option and was not taken. | 2026-09-12 | [§10](#10-what-this-does-not-propose), [§11](#11-what-i-would-build-in-order) step 2 |
 | OQ-DP4 | **Build the delivery** — *"yes, build, however we can make it work … let's make it work."* Mechanism is the implementer's; [`macos-user-home-tiers.md` §5.4](macos-user-home-tiers.md#54-seatbelt-can-replace-more-mounts-than-this-one) wins over `render.refusalReasons`' *"a copy goes silently stale"*, which survives only for a LIVE `mount` and is honored there as a stated delta. ⚠ The copy must run in the host CLI, never in the pure plan builder — a credential-boundary constraint the ruling does not override. | 2026-09-12 | [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured), [DP-L1](#6-alignable-with-the-mechanism-and-its-cost), [DP-D12](#7-ruled-divergent-and-the-ones-i-would-re-open) |
 | OQ-DP5 | **No warning — adopt the three shapes that already ship, and extend the census vocabulary to config keys.** (a) a coded decline with one banner line for what yolo decides (`hostcas`), (b) a user-declarable expected absence wherever the USER can decide it (`platforms: ["linux"]`), (c) a third disposition held as DATA for anything genuinely unbuilt (`render.hostUnimplemented`, whose own comment says *"an empty map is the end state"*). This keeps faith with [`OQ-BP-3`](backend-parity.md#open-questions) — *"a warning people learn to skip is worse than none"* — which every "add a line" in [§6](#6-alignable-with-the-mechanism-and-its-cost) collided with. ⚠ (c) has the best track record of the three: four of its five entries were found by the no-silent-skip test rather than by a human. The second half is ruled with it and is not separable: the machinery is keyed on `packdecl.Kind` and blind to `packages`/`mounts`/`network`/`resources` ([DP-B31](#54-the-host-notch-and-the-entry-point)), so it extends to config keys on `internal/config/inherit.go`'s shape — a per-key classification table with a drift test. Until that lands [DP-L16](#6-alignable-with-the-mechanism-and-its-cost) is not expressible at all. | 2026-09-13 | [OQ-DP5](#OQ-DP5), [§6](#6-alignable-with-the-mechanism-and-its-cost), [DP-B31](#54-the-host-notch-and-the-entry-point) |
