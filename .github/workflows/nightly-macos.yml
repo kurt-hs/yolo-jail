@@ -74,11 +74,32 @@ jobs:
     # duration infrastructure noise dominates whatever the suite is trying to
     # say, and a lost runner takes the diagnosis with it.
     #
-    # FOUR shards: the full suite is ~90 min of tests, so a shard is ~22 min
-    # plus ~5 min of setup and ~3 min of TestMain warm-up, which is comfortably
-    # under the cap below and well clear of where the runner has been dying.
-    # The warm-up is paid PER SHARD — ~12 min of duplicated work total, which is
-    # the price of not losing the whole run to one wedged test.
+    # EIGHT shards, doubled 2026-09-13, and the reason is a MEASUREMENT rather
+    # than the estimate below it.
+    #
+    # That estimate ("~90 min of tests, so a shard is ~22 min … comfortably under
+    # the cap") was already wrong when it was written and is kept here only so the
+    # correction has something to point at. At four shards the OBSERVED durations
+    # were 27/28/41/46 min on run 34774210302 — already brushing the 50-minute cap
+    # while most launches were dying instantly at `rc 125` on the missing machine
+    # shares. Once those were restored the suite started doing real work and two of
+    # four shards ran 50m18s and 50m21s, were CANCELLED by the cap, and took half
+    # the run's evidence with them (run 34778464086: the surviving two shards
+    # reported, the other two reported nothing at all).
+    #
+    # So the fix that made the suite work is what made it exceed the cap, and the
+    # cap's job is to make a HANG reportable rather than to bound cost — nobody is
+    # paying per runner here. Doubling the shards halves the per-shard test time
+    # instead of raising the ceiling, which keeps the cap meaningful: a shard that
+    # now hits 50 minutes is genuinely wedged rather than merely busy.
+    #
+    # The warm-up is paid PER SHARD — ~3 min each, so ~24 min of duplicated work
+    # across eight, up from ~12. That is the price of not losing the whole run to
+    # one wedged test, and it doubled with the shard count on purpose.
+    #
+    # NOTHING BELOW NEEDS EDITING TO MATCH. The partition is computed from
+    # `strategy.job-total`, so the shard list is the only place the count is
+    # written — which is what makes doubling it a one-line change.
     #
     # THIS IS NOT `t.Parallel()`, which AGENTS.md forbids in this package and
     # still forbids. That rule is about WORKERS INSIDE one job — real containers
@@ -93,7 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     # A CAP, so a wedged shard fails with its log instead of losing the runner.
     # The suite itself still runs with `-timeout 0` — its own per-command
     # deadlines (YOLO_TEST_JAIL_TIMEOUT) are the inner bound; this is the outer
