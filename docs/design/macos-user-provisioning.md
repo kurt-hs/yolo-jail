@@ -764,6 +764,13 @@ fails if the stage's call site is deleted.
 > `integration/TestMacosUserDeclaredToolsArrive/lsp_servers` is unchanged and is still the
 > oracle: **the wiring is a source fact and the install is a hardware one.**
 >
+> ⚠ **THE FIRST RED NIGHTLY IS OLDER THAN THE FIX.** The `macos-user backend` workflow's
+> run `34757074558` failed `lsp_servers` at 2026-09-13T12:26Z with the symptom this note
+> describes, and it ran on `7475b26b` — six commits *before* the commit that wired both
+> variables. The fix was committed at 04:35Z and pushed after the scheduled checkout, so
+> that run measured the pre-fix tree. It corroborates the diagnosis and says nothing about
+> the repair; the first verdict on the wiring is the next scheduled run.
+>
 > **The rule this section states survives the error intact, and is what made the error
 > legible.** What failed was not the rule but its premise: the warning was retired on the
 > strength of code that had never run, so *"this gap is closed"* was itself unmeasured. The

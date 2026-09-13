@@ -1,10 +1,14 @@
 package macosuser
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // THE LINUX HALF OF RUNBOOK ITEM 9's `lsp_servers` SUBTEST.
@@ -165,5 +169,183 @@ func TestNoDeclaredLSPServersComposesNothing(t *testing.T) {
 	}
 	if problems := PlanInvariants(plan); len(problems) > 0 {
 		t.Fatalf("a plan with no lsp_servers is not viable: %v", problems)
+	}
+}
+
+// THE CONSUMER SIDE OF THE SAME WIRE, asked of THIS BACKEND'S OWN SCRIPT.
+//
+// ⚠ WHAT THIS IS NOT FOR, because the obvious reading of it is already covered and saying
+// so is cheaper than the next reader re-deriving it. Renaming a variable inside the
+// SHARED `bootstrapTemplate` (internal/entrypoint/shell.go) is caught without this test:
+// MEASURED 2026-09-13 by mutating each arm in an isolated copy of the tree, the npm
+// rename fails `TestLSPInstallsLeaveReceipts` and
+// `TestLSPSentinelBytesAreUnchangedByTheReceiptHook`, and the go rename those two plus
+// `TestLSPGoReceiptOmitsAnUnreadableVersion` and
+// `TestLSPReceiptsAreNotWrittenAfterAFailedInstall` — all in internal/entrypoint, all
+// driving the script with fakes. The producer half is covered too, by PlanInvariants and
+// by the checks above.
+//
+// WHAT NOTHING ELSE COVERS is a DARWIN-ONLY divergence: the script the macos-user stage
+// execs losing the install loop while the container's keeps it. Those receipt tests build
+// a CONTAINER-shaped Env, so a `SkipMCPPresets`-style seam that empties an arm on this
+// backend alone leaves every one of them green. That is not a hypothetical seam — it is
+// the one this very file's header describes, and `SkipMCPPresets` is already exactly it
+// for the MCP arm, three lines away in the same generator. MEASURED the same way: making
+// the LSP npm loop read a dead variable when `SkipMCPPresets` is set fails THIS test and
+// no other test in the tree.
+//
+// Which is why `SkipMCPPresets: true` in the helper below is load-bearing rather than
+// scene-setting: it is what makes the generated script this backend's rather than the
+// container's.
+//
+// It is deliberately a NAME check and not a value check. What the loop does with the list
+// is the hardware oracle's question
+// (integration/TestMacosUserDeclaredToolsArrive/lsp_servers); what is answerable from
+// Linux is whether the two halves are still spelling the same variable at each other.
+//
+// Both ends are DERIVED. The names come out of the plan's own env file rather than from
+// the literals above, so deleting the composition empties the set and fails here too
+// instead of passing against a constant that no longer describes anything; and the script
+// comes out of the real generator, fed the real bootstrap env this plan bakes.
+func TestTheStagesScriptReadsTheInstallListsThePlanComposes(t *testing.T) {
+	plan := lspPlan(t)
+
+	var names []string
+	for _, k := range SandboxEnvFileKeys(plan.EnvFileContent) {
+		if strings.HasPrefix(k, "YOLO_LSP_") && strings.HasSuffix(k, "_INSTALL") {
+			names = append(names, k)
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("the session env file exports %d LSP install list(s), not the pair this "+
+			"backend composes (%v). Either BuildRunPlan stopped composing them — in which "+
+			"case the stage installs nothing and the checks above say why — or a THIRD "+
+			"list was added and nothing here knows to look for it in the script.\n%s",
+			len(names), names, plan.EnvFileContent)
+	}
+
+	// Keeps the temp sidecar below honest: the script this test generates is only evidence
+	// about the stage if the stage resolves its script through the same function.
+	if want := entrypoint.DarwinBootstrapScriptPath(paths.WorkspaceHomeState(plan.Workspace)); plan.ProvisionScriptPath != want {
+		t.Fatalf("the stage execs %s, not the generator's path %s; the script generated "+
+			"below is not the one that runs", plan.ProvisionScriptPath, want)
+	}
+
+	script := darwinStageScript(t, plan)
+	for _, name := range names {
+		if !shellReadsVar(script, name) {
+			t.Errorf("the generated bootstrap script never reads $%s, which this launch's "+
+				"session env file exports. The stage would source the file, exec the "+
+				"script, and its install loop would iterate an empty list — the stage "+
+				"exits 0 having installed no LSP server while the agent's config names "+
+				"them. The loop is in internal/entrypoint/shell.go's bootstrapTemplate; "+
+				"the producer is BuildRunPlan.", name)
+		}
+	}
+}
+
+// darwinStageScript generates the bootstrap script THIS PLAN's stage would exec, through
+// the real generator (entrypoint.GenerateDarwinBootstrapScript) and out of the real
+// bootstrap env the plan bakes onto its self-exec argv — which is the environment
+// RunDarwinBootstrap builds its Env from on a Mac.
+//
+// The sidecar is redirected to a temp dir because the plan's is under /Users/Shared,
+// which no test may write. That substitution is what the ProvisionScriptPath check in the
+// caller guards.
+func darwinStageScript(t *testing.T, plan RunPlan) string {
+	t.Helper()
+	// Resolved where the path is MINTED, per AGENTS.md's darwin PATH-RESOLUTION rule:
+	// t.TempDir() is a /var/folders symlink on darwin and the generator does not resolve.
+	sidecar, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolving the temp sidecar: %v", err)
+	}
+	vars := map[string]string{}
+	for _, a := range plan.BootstrapArgv {
+		if k, v, ok := strings.Cut(a, "="); ok && isShellName(k) {
+			vars[k] = v
+		}
+	}
+	vars[entrypoint.DarwinHomeSidecarEnv] = sidecar
+
+	// SkipMCPPresets is what RunDarwinBootstrap sets on this backend, and it changes what
+	// the template renders — so a script generated without it is not this backend's.
+	e := &entrypoint.Env{
+		Home:           SandboxHome(),
+		Workspace:      plan.Workspace,
+		SkipMCPPresets: true,
+		Vars:           vars,
+	}
+	if err := entrypoint.GenerateDarwinBootstrapScript(e); err != nil {
+		t.Fatalf("generating the stage's bootstrap script: %v", err)
+	}
+	b, err := os.ReadFile(entrypoint.DarwinBootstrapScriptPath(sidecar))
+	if err != nil {
+		t.Fatalf("the generator wrote no script for the stage to exec: %v", err)
+	}
+	return string(b)
+}
+
+// shellReadsVar reports whether script dereferences the shell variable name, as `$name`
+// or `${name…}`.
+//
+// The trailing-byte check is the whole of it: a plain substring search accepts
+// `$YOLO_LSP_NPM_INSTALLED` for `YOLO_LSP_NPM_INSTALL`, and a near-miss spelling is
+// exactly the regression this is here to catch rather than the one it should tolerate.
+func shellReadsVar(script, name string) bool {
+	for _, ref := range []string{"$" + name, "${" + name} {
+		for i := 0; ; {
+			j := strings.Index(script[i:], ref)
+			if j < 0 {
+				break
+			}
+			end := i + j + len(ref)
+			if end >= len(script) || !isShellNameByte(script[end]) {
+				return true
+			}
+			i = end
+		}
+	}
+	return false
+}
+
+// isShellName reports whether s is a shell variable name, which is how an argv word is
+// told from an environment assignment.
+func isShellName(s string) bool {
+	if s == "" || (s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !isShellNameByte(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isShellNameByte(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// Proves the check above is not vacuous — that it can tell the name it wants from the
+// near-miss an incautious rename leaves behind. Without this, a shellReadsVar that
+// returned true unconditionally would keep the test above green forever.
+func TestShellReadsVarDistinguishesANearMiss(t *testing.T) {
+	const name = "YOLO_LSP_NPM_INSTALL"
+	for _, tc := range []struct {
+		script string
+		want   bool
+	}{
+		{`for pkg in $(printf '%s\n' "${YOLO_LSP_NPM_INSTALL:-}"); do`, true},
+		{`echo $YOLO_LSP_NPM_INSTALL`, true},
+		{`echo "${YOLO_LSP_NPM_INSTALL}"`, true},
+		{`echo "${YOLO_LSP_NPM_INSTALLED:-}"`, false},
+		{`echo $YOLO_LSP_NPM_INSTALL2`, false},
+		{`# YOLO_LSP_NPM_INSTALL is only named in a comment`, false},
+		{``, false},
+	} {
+		if got := shellReadsVar(tc.script, name); got != tc.want {
+			t.Errorf("shellReadsVar(%q, %q) = %v, want %v", tc.script, name, got, tc.want)
+		}
 	}
 }

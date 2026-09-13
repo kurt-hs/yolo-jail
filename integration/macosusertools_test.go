@@ -46,6 +46,16 @@ import (
 // podman argv uses (internal/macosuser/runplan.go; macosuser.PlanInvariants fails if
 // either crossing is deleted, and internal/macosuser/lspinstall_test.go is the Linux half).
 //
+// ⚠ THE FIRST RED NIGHTLY IS OLDER THAN THE FIX, AND SAYS SO NOWHERE A READER WILL LOOK.
+// The `macos-user backend` workflow's run 34757074558 failed this subtest at
+// 2026-09-13T12:26Z with exactly the symptom above — `ls: /Users/_yolojail/.npm-global/bin:
+// No such file or directory` — and a reader who finds it will reasonably conclude the
+// wiring did not work. It ran on `7475b26b`, which `git merge-base --is-ancestor` puts SIX
+// commits BEFORE `885a7dcc`, the commit that wired both variables: the fix was committed
+// locally at 04:35Z and pushed after the scheduled checkout, so the nightly measured the
+// pre-fix tree. It is evidence FOR the diagnosis, not against the repair, and the next
+// scheduled run is the first one whose verdict is about the wiring at all.
+//
 // THE ASSERTION IS UNCHANGED, and that is the point: it was written against the SPEC
 // rather than against the reading, so it is still the thing a Mac has to answer. Nothing
 // above is a measurement either — a real launch is what turns the wiring into an install.
