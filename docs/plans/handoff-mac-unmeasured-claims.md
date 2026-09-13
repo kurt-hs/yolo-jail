@@ -123,7 +123,7 @@ says otherwise about this backend is wrong; this one is the authority"*, the shi
 | Probe 1 result | What follows |
 | :--- | :--- |
 | `Operation not permitted` | The three statements stand, the symlink half is dead, `DP-L1`'s mechanism is a copy, and [§6.1](../design/declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured) is confirmed as written. |
-| **Success** | **[§6.1](../design/declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured) inverts.** A staged symlink becomes legitimate, and *both* `cache_relocations` warnings plus `macos-user-home-tiers.md` [§5.3](../design/macos-user-home-tiers.md#53-what-the-credential-tier-then-needs-precisely)'s VFS claim need retracting. |
+| **Success** *(did not happen — probe 1 came back denied, both spellings)* | **[§6.1](../design/declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured) inverts.** A staged symlink becomes legitimate, and *both* `cache_relocations` warnings plus `macos-user-home-tiers.md` [§5.3](../design/macos-user-home-tiers.md#53-what-the-credential-tier-then-needs-precisely)'s VFS claim need retracting. |
 
 Report the raw command output either way, not a verdict — the second row rewrites shipped
 warnings, so the evidence has to outlive the conclusion.

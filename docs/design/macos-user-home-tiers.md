@@ -455,10 +455,13 @@ here — these "no mounts" claims **survive** the audit:
   (`internal/macosuser/orchestrator.go`, warned).
 - `cache_relocations` — a bind onto other storage; the "just symlink it" workaround
   is refuted by the profile's own `/Volumes` read-deny (`orchestrator.go`,
-  warned). ⚠ Two in-tree docs still repeat the refuted workaround
-  (`internal/cli/config_ref.txt`, the `cache_relocations` entry, and
-  [`cache-relocation.md`](../plans/cache-relocation.md)); they are not this doc's to
-  fix and are listed for the roadmap.
+  warned), and since 2026-09-13 by measurement rather than by reading the SBPL:
+  Seatbelt judges a symlink's **target**, so a link out of an allowed directory
+  into a denied one is `Operation not permitted`
+  ([`declaration-parity.md` §6.1](declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)).
+  The two in-tree docs that repeated the refuted workaround — `internal/cli/config_ref.txt`'s
+  `cache_relocations` entry and [`cache-relocation.md`](../plans/cache-relocation.md) — were
+  corrected the same day.
 - `writable_home_dirs` — not a gap: the home is natively writable, so the knob has
   no target ([`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md),
   *No bind mounts*).

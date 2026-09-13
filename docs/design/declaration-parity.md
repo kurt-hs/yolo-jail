@@ -862,7 +862,7 @@ These hold. They are here so the maintainer can walk past them quickly, and so n
 | :--- | :--- | :--- |
 | **DP-D1** | `resources` — macos-user | Both substitutes evaluated and rejected **by name**: `RLIMIT_AS` is address space, not RSS (it breaks JITs and the Go runtime); `RLIMIT_NPROC` is per-USER and would collide across concurrent sessions on the shared `_yolojail` account. *"A cap a user believes in but that does not hold is worse than a documented absence."* The cleanest terminal ruling in the tree. |
 | **DP-D2** | `per_side_paths` — macos-user | *"Seatbelt filters permissions and cannot fork a path."* Two contents at one path is a mount-namespace capability with no SBPL spelling and no prospect of one. |
-| **DP-D3** | `cache_relocations` — macos-user | Rules out the WORKAROUND as well as the feature, which is stronger than "unbuilt": `macosuser.SeatbeltProfile` denies writes outside the workspace, the sandbox home, `/tmp` and `/var/folders`, so the documented symlink trick leaves the cache exactly where the feature exists to move it from. (The two docs that still recommend it are [DP-B37](#55-doc-drift-the-same-failure-in-a-different-file) and [DP-B38](#55-doc-drift-the-same-failure-in-a-different-file).) |
+| **DP-D3** | `cache_relocations` — macos-user | Rules out the WORKAROUND as well as the feature, which is stronger than "unbuilt": `macosuser.SeatbeltProfile` denies writes outside the workspace, the sandbox home, `/tmp` and `/var/folders`, so the documented symlink trick leaves the cache exactly where the feature exists to move it from. (Both docs that recommended it — `internal/cli/config_ref.txt`'s entry and [`cache-relocation.md`](../plans/cache-relocation.md) — were corrected 2026-09-13 on the strength of the probe rather than the argument; [DP-B37](#55-doc-drift-the-same-failure-in-a-different-file) and [DP-B38](#55-doc-drift-the-same-failure-in-a-different-file) are closed.) |
 | **DP-D4** | `:ro` binds — Apple Container | A CONSENT argument, not a capability one: a grant a human approved against the word *read-only* must not be honored writably. `run.roBindsUnsupported` was hoisted into `backendcaps.go` specifically so a third caller cannot miss it, after the pack `mount` kind silently did. |
 | **DP-D5** | `workspace_readonly` — Apple Container | The one place refuse-don't-downgrade is deliberately NOT applied, and the reason is sound: the paths are inside the writable `/workspace` bind, so skipping them buys nothing. Warn-and-emit. |
 | **DP-D6** | pack `loophole` — host notch | Counterparty missing, not mechanism — plus a trust argument: keeping *"selecting this pack runs a daemon"* attached to a command the user runs deliberately. |
@@ -1021,8 +1021,9 @@ is missing `service` and `blocked-tool`; `cli.registry` really does map `"stop"`
 - **Not a doc-fix sprint.** The five [§5.5](#55-doc-drift-the-same-failure-in-a-different-file)
   rows are listed because they are the same failure in a different file, not because this doc
   will fix them. Two of them ([DP-B37](#55-doc-drift-the-same-failure-in-a-different-file),
-  [DP-B38](#55-doc-drift-the-same-failure-in-a-different-file)) are user-facing and should be
-  deleted regardless of everything else here.
+  [DP-B38](#55-doc-drift-the-same-failure-in-a-different-file)) were user-facing and are
+  **CORRECTED 2026-09-13** — not deleted: `cache-relocation.md`'s dated retraction is kept as
+  evidence of what was believed and when, and the measurement is recorded beside it.
 - **Not uniform behavior at every notch.** [P4](#1-the-principle-and-what-it-does-not-say) is
   part of the principle, not an exception to it.
 

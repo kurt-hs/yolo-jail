@@ -121,9 +121,12 @@ In-jail, `~/.cache/huggingface` is an ordinary writable directory. `HF_HOME`
 and every other tool's cache path stay exactly as they are — nothing downstream
 needs to know.
 
-**Scope:** podman only. Apple Container warns and skips (work item 6); the
-`macos-user` backend is unaffected — it has no container and no bind mounts (no
-`GlobalCache()` reference outside `assemble_parts.go`).
+**Scope:** podman only. Apple Container warns and skips (work item 6);
+`macos-user` has no container and no bind mounts, so the mechanism has nowhere to
+attach and the launch warns there too (`buildPlan`,
+`internal/macosuser/orchestrator.go`). That is an absence, not an exemption — the
+cache stays where it was, and the paragraph used to end by naming a workaround
+that does not exist:
 
 > [!WARNING]
 > **⚠ Retracted 2026-08-24: "a plain host symlink already works there" is FALSE.** This
@@ -134,6 +137,17 @@ needs to know.
 > path the sandbox cannot use. There is no user-side workaround on that backend today; the
 > launch now warns instead of implying one exists. Found by the backend-parity sweep —
 > 📄 [`../design/backend-parity.md`](../design/backend-parity.md).
+
+> [!NOTE]
+> **MEASURED 2026-09-13 (macOS 26.5, arm64) — the retraction above no longer rests on
+> reading the profile.** Under a profile denying reads beneath one subpath, `cat` through a
+> symlink sited in an *allowed* directory returned `Operation not permitted` for **both** an
+> absolute and a relative link, with three controls behaving: the unsandboxed read of the
+> same link succeeded, the deny demonstrably bit the target when named directly, and a
+> sibling file in the allowed directory still read. So Seatbelt evaluates the **target**, not
+> the link, and the symlink half is dead at the MAC layer as well as at DAC. Raw console
+> output:
+> [`../design/declaration-parity.md` §6.1](../design/declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured).
 
 ### Why keys are subdir names, not paths
 
@@ -356,7 +370,15 @@ _Leaning was:_ implement for podman, warn-and-skip on `container`.
 > hardware**. Skipping loudly beats half-applying, so the skip stands (work item
 > 6), but it is an untested-therefore-unimplemented, not a limitation. The
 > warning text and `docs/guides/macos.md` were corrected to say so. `macos-user`
-> genuinely needs nothing — it has no bind mounts, so a plain symlink works.
+> has no bind mounts either, so the mechanism has nowhere to attach there — but
+> that is an absence, not a non-need, and nothing substitutes for it.
+>
+> ⚠ **Corrected 2026-09-13.** This answer ended *"`macos-user` genuinely needs
+> nothing — it has no bind mounts, so a plain symlink works"* until that date: the
+> second surviving copy of the sentence [retracted on 2026-08-24](#design), which
+> had been written in three places and struck out in one. Seatbelt evaluates a
+> symlink's target, measured on hardware — see the retraction and the measurement
+> note under [Design](#design).
 
 ### Whether relocation should be per-subdir or a whole-cache root override
 
