@@ -1,6 +1,6 @@
 # Active plans & designs
 
-**Status:** INDEX — **rebuilt against the tree 2026-08-23.** The rows for the macOS track, the
+**Status:** CURRENT — the index, **rebuilt against the tree 2026-08-23.** The rows for the macOS track, the
 guest-notch handoff, `pack-system`, `environment-manager-plan`, `agent-config-packs`,
 `antigravity-agy-support` and `cli-color-audit` were re-checked against the code that day, and
 **four were wrong in the direction that matters** (D1 retired, D2 reverted, D3 superseded, and
@@ -41,7 +41,8 @@ for the classification and `git log --follow` to recover any).
 The 2026-08-23 audit ran the first five by hand; four of them found something, and the fifth is
 worth keeping because it is now clean and would not stay that way silently. The 2026-09-12 sprint
 close-out ran all five again and added a **sixth**, which found a class the other five are
-structurally unable to see. They are not wired into `just`
+structurally unable to see. A **seventh** was added on 2026-09-13, when a census of the status slot
+found twelve different words in it. They are not wired into `just`
 yet — that proposal, with the allowlists it needs, is
 [`further-roadmap-ideas.md`](further-roadmap-ideas.md) §I1. Until then, run them when a sprint
 closes; the drift clusters there rather than spreading evenly.
@@ -57,6 +58,10 @@ $ git rev-parse --verify --quiet <sha>^{commit}
 #    GitHub maps each space to its own hyphen, so an em-dash heading yields `--`. A naive
 #    slugger collapses them and reports 67 false positives.)
 # 6. Every file:line citation points where it says. (no one-liner — see below)
+# 7. Every status is in vocabulary.                 (found: 79 of 87 docs — 58 off-vocabulary
+#    status lines, 21 docs with no status line at all, 8 frontmatter values — see below)
+$ rg -n '^\*\*Status:\*\* ' docs/design docs/plans | rg -v \
+  '\*\*Status:\*\* (SKETCH|DESIGN|DECIDED|BUILT|GRADUATED|SUPERSEDED), \d{4}-\d{2}-\d{2}|CURRENT —'
 ```
 
 **Checks 3 and 4 need an allowlist or they cry wolf**: upstream `flake.lock` revs and other
@@ -120,6 +125,123 @@ the concentration, not the count.
 stages. A scratchpad does not survive its session, which is why the method is written above as prose
 precise enough to rebuild from: a check that lives only in a scratchpad is not re-runnable, and this
 file carries no scripts for the other five either.
+
+### Check 7 — the status vocabulary, and the one thing a `BUILT` line must say
+
+Added 2026-09-13, after a census of the status slot. `docs/reference/` has exactly **one** status
+value across all 41 files (`status: current`) and nobody ever wrote that down — evergreen could only
+ever have one state. The planning tree is the opposite: the prose `**Status:**` line held **twelve**
+distinct words, two of which (`STORIES`, `INVENTORY`) are **genre** labels rather than lifecycle
+states, and `BUILT` and `SHIPPED` were exact synonyms split across six docs by nothing but which
+agent typed the line.
+
+#### The vocabulary — seven words, and the word names what is **owed**
+
+That is the whole rule, and it is why there are four states and not a percentage: a reader opening a
+planning doc is asking *"is there something here for me?"*, and the first word answers it.
+
+| First word | The doc is | What is owed |
+| :--- | :--- | :--- |
+| `SKETCH` | exploratory — it may be abandoned whole, and nobody builds from it | nothing yet |
+| `DESIGN` | a live proposal | a **ruling** |
+| `DECIDED` | settled and unbuilt, wholly or in part | **work** |
+| `BUILT` | in the tree, with no unbuilt step left | nothing |
+| `GRADUATED` | a stub — the settled body moved to [`../reference/`](../reference), and what stays is the residue | nothing (terminal) |
+| `SUPERSEDED` | replaced by another doc, and kept for the argument it still carries | nothing (terminal) |
+| `CURRENT` | not a proposal at all — an index, a roadmap, a living record, a runbook | it is kept true (evergreen) |
+
+**The form is `**Status:** WORD, YYYY-MM-DD — …`,** on its own line under the H1, because a check
+cannot find a status that is buried mid-sentence in a `·`-separated metadata line. `CURRENT` is the
+one word that takes **no** date: an evergreen doc has no moment, and
+[`retired-decisions.md`](retired-decisions.md) had already reasoned its way there on its own — *"a
+link pass or a typo fix moves the file without changing a single retirement, so the form was always
+going to be wrong, and a wrong date on a history file is worse than none."*
+
+**How much already shipped is prose, never the word.** `DECIDED` is where a partly-built design
+lives, and its line says which part: *"nine of ten rulings built"* tells a reader more than
+`MOSTLY BUILT` did, because it says there is work left **and** how much.
+
+**The tie-breaker, because the ladder would otherwise be wrong twice.** A question the doc has
+explicitly **parked** — deferred to a later slice by its own ruling, handed to a successor, or filed
+against a sibling's subject — is not a ruling *this* design owes, so it does not hold the doc at
+`DESIGN`. The line names the parked question anyway, so a reader can check the judgement rather than
+take it.
+
+**`CURRENT` is the one word that is not a lifecycle state**, and it is here because the genre exists:
+[`roadmap.md`](roadmap.md), [`BACKLOG.md`](BACKLOG.md), [`retired-decisions.md`](retired-decisions.md),
+this file, and the [`runbooks/`](runbooks) all describe no proposal and never settle. It is
+deliberately the same word [`../reference/`](../reference) uses, for the same reason.
+
+#### A `BUILT` line says whether anyone has watched it run
+
+This is the distinction the `BUILT`/`SHIPPED` synonym pair was smuggling, and a word choice is the
+worst way to carry it — nothing enforces it and no reader can tell which sense was meant. On
+2026-09-12 the two macOS designs sat at `BUILT` with **zero runtime observation** (implemented from a
+Linux jail, where there is no `sandbox-exec` and no `_yolojail` account) while
+[`../design/report-tiers.md`](../design/report-tiers.md) said `SHIPPED` with its central claim
+measured against a control — 30 lines where the same run had printed 278.
+
+So: **every `BUILT` line carries a `MEASURED:` or `UNMEASURED:` clause** naming what has and has not
+been observed running.
+
+```markdown
+**Status:** BUILT, 2026-09-12 — MEASURED: the default report is 30 lines where it was 278.
+**Status:** BUILT, 2026-09-12 — UNMEASURED: every runtime claim; both halves were implemented
+from a Linux jail, and a Mac has to run them.
+```
+
+`UNMEASURED` is not a defect — it is the honest state of anything host-gated, and it is the label
+that lets a graduation assessment sort the queue without reopening each doc.
+`\bMEASURED\b` does not match inside `UNMEASURED`, so the check below reads them apart.
+
+#### Frontmatter is a second axis, not a second spelling
+
+The frontmatter `status:` answers a different question — *is the argument closed?* — and its
+vocabulary is Vantage's own, because Vantage renders it as a chip:
+`draft | in-review | accepted | deprecated`. The rule is mechanical:
+
+- **one or more unanswered `💬` → `draft`** (a sketch) **or `in-review`** (everything else);
+- **zero → `accepted`**, or **`deprecated`** for a doc that has been retired or superseded.
+
+`DECIDED`, `BUILT` and `GRADUATED` therefore all sit under `accepted`, and the two axes are allowed
+to disagree in exactly one informative way: a `BUILT` line over an `in-review` frontmatter is a doc
+that is in the tree **and** still owes one ruling. That pair is legal, and the line must name the
+question.
+
+Two defects the census found, worth naming because both are invisible to a reader:
+
+- **Prose appended to the machine-readable value** — `status: accepted # BUILT 2026-09-12; see …`.
+  YAML keeps it as part of the value, so the chip silently stops rendering. Prose belongs in the
+  status **line**.
+- **A genre word in the lifecycle slot** — `STORIES`, `INVENTORY`, `HANDOFF`, `RUNBOOK`, `HISTORY`,
+  `INDEX`. The genre goes in the title or in `tags:`; the slot gets a real state.
+
+⚠ **`status: superseded` and `status: current` render no chip** (Vantage's set is the four above), so
+`vantage-check` reports `vantage/status-chip-stale` if either appears under `status-chip: true`.
+
+#### Running it
+
+```console
+# 7a. Every status LINE is in vocabulary, and every doc has one.
+$ rg -n '^\*\*Status:\*\* ' docs/design docs/plans | rg -v \
+  '\*\*Status:\*\* (SKETCH|DESIGN|DECIDED|BUILT|GRADUATED|SUPERSEDED), \d{4}-\d{2}-\d{2}|CURRENT —'
+$ for f in docs/design/*.md docs/plans/*.md docs/plans/runbooks/*.md; do
+    rg -q '^\*\*Status:\*\* ' "$f" || echo "no status line: $f"; done
+
+# 7b. Every BUILT line says whether anyone watched it run.
+$ rg -n '^\*\*Status:\*\* BUILT' docs/ | rg -v '\b(MEASURED|UNMEASURED)\b'
+
+# 7c. No prose in a frontmatter status value, and the value is in vocabulary.
+$ rg -n '^status: ' docs/design docs/plans \
+    | rg -v '^[^:]+:[0-9]+:status: (draft|in-review|accepted|deprecated|current)$'
+```
+
+**7a and 7c are findings; 7b is a finding; the state itself is not checkable by any of them.** A
+status line is a **claim**, and this repo's own lesson is that it is the one nobody re-checks —
+[`doc-triage.md`](doc-triage.md) found *~20 status lines that were FALSE against the code, in both
+directions*. So the sweep that introduced this check re-verified every doc it moved to `BUILT`
+against the tree rather than re-spelling what the line said, and that is the part of the check a
+person has to do.
 
 ### Check 2 has two known errors, and a convention question under each
 
