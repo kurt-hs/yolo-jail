@@ -1136,22 +1136,38 @@ approval, not a decision — see [§3](#3-the-four-dispositions-and-how-to-walk-
    [§3](#3-the-four-dispositions-and-how-to-walk-the-catalog) reserves for exactly this.
 
    **Answer:**
-   > **RULED CONDITIONAL, and the condition is the whole ruling: close the third spelling only
-   > with the installer/wrapper split (b) paid for, and never as the SOLE injector.** The host
-   > argv rewrite stays in every outcome. A partial injector is the one result that is worse
-   > than doing nothing: it would deliver the bypass for most packs and silently drop it for
-   > the ones the image bakes, because
+   > **UNIFY ALL PATHS** — *"yes, unify all paths."* Close the third spelling, and pay for the
+   > installer/wrapper split (b) that closing it requires. **The conditional is spent and the
+   > divergent escape is withdrawn:** ruling the third spelling DIVERGENT is no longer an
+   > available outcome, so "is the split worth its cost?" stops being a question and becomes a
+   > line item.
+   >
+   > **What "all paths" means here, because it is the one reading the tree allows.** Unify the
+   > INJECTOR and the RECORD, not the spellings: all three keep existing and all three inject
+   > from one place, which is what
+   > [DP-B42](#562-the-rows) already did for the first two on 2026-09-13. It cannot mean "one
+   > spelling replaces the others" — the host argv rewrite is the only producer reaching every
+   > backend and every entry point, and the only one whose disclosure lands while the user can
+   > still Ctrl-C ([§5.6.1](#561-can-they-be-one-path) (3)); and the shell alias cannot serve
+   > macos-user at all, whose account shell is zsh
+   > ([DP-B43](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias)). A
+   > single injection POINT is refused by those two facts; a single injection SOURCE is not.
+   >
+   > **The split is the whole cost, and it is why this was ever conditional.**
    > [`entrypoint.launcherShadows`](../../internal/entrypoint/launchercollision.go) writes no
-   > launcher for a name `/bin` or a declared `mise_tools` entry already provides — a
+   > launcher for a name `/bin` or a declared `mise_tools` entry already provides, so today a
+   > pack whose binary the image bakes would get no flags. Splitting installer from wrapper is
+   > what lets a wrapper be written for such a name without also installing a second copy of a
+   > binary the image ships. Until that split lands, **no partial injector may ship** — it
+   > would deliver the bypass for most packs and silently drop it for the baked ones, a
    > divergence keyed on something the user cannot see, which is the exact *"accepted and not
    > honored"* shape this catalog exists to name.
    >
-   > **If the split is not worth its cost, the third spelling is RULED DIVERGENT and the
-   > briefing says so.** That is the honest terminal state
-   > [§3](#3-the-four-dispositions-and-how-to-walk-the-catalog) reserves, and it is a real
-   > outcome here rather than a formality — leaving the gap unnamed is what makes it read as an
-   > oversight. Either way this question is closed: what is left is an implementation decision
-   > about (b)'s cost, not an open design question.
+   > ⚠ **Two costs this ruling accepts rather than dissolves.** The flags reach commands nobody
+   > typed at yolo — a build script calling `claude` gets the permission bypass — which is
+   > consistent with the notch (autonomy is ON at `jail`) and is still a widening of who gets
+   > it. And [DP-B23](#54-the-host-notch-and-the-entry-point) is sharpened, not fixed: there is
+   > exactly one production fold of launch flags and it hardcodes the autonomous posture.
 
 
 ---
@@ -1166,4 +1182,4 @@ approval, not a decision — see [§3](#3-the-four-dispositions-and-how-to-walk-
 | OQ-DP4 | **Build the delivery** — *"yes, build, however we can make it work … let's make it work."* Mechanism is the implementer's; [`macos-user-home-tiers.md` §5.4](macos-user-home-tiers.md#54-seatbelt-can-replace-more-mounts-than-this-one) wins over `render.refusalReasons`' *"a copy goes silently stale"*, which survives only for a LIVE `mount` and is honored there as a stated delta. ⚠ The copy must run in the host CLI, never in the pure plan builder — a credential-boundary constraint the ruling does not override. | 2026-09-12 | [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured), [DP-L1](#6-alignable-with-the-mechanism-and-its-cost), [DP-D12](#7-ruled-divergent-and-the-ones-i-would-re-open) |
 | OQ-DP5 | **No warning — adopt the three shapes that already ship, and extend the census vocabulary to config keys.** (a) a coded decline with one banner line for what yolo decides (`hostcas`), (b) a user-declarable expected absence wherever the USER can decide it (`platforms: ["linux"]`), (c) a third disposition held as DATA for anything genuinely unbuilt (`render.hostUnimplemented`, whose own comment says *"an empty map is the end state"*). This keeps faith with [`OQ-BP-3`](backend-parity.md#open-questions) — *"a warning people learn to skip is worse than none"* — which every "add a line" in [§6](#6-alignable-with-the-mechanism-and-its-cost) collided with. ⚠ (c) has the best track record of the three: four of its five entries were found by the no-silent-skip test rather than by a human. The second half is ruled with it and is not separable: the machinery is keyed on `packdecl.Kind` and blind to `packages`/`mounts`/`network`/`resources` ([DP-B31](#54-the-host-notch-and-the-entry-point)), so it extends to config keys on `internal/config/inherit.go`'s shape — a per-key classification table with a drift test. Until that lands [DP-L16](#6-alignable-with-the-mechanism-and-its-cost) is not expressible at all. | 2026-09-13 | [OQ-DP5](#OQ-DP5), [§6](#6-alignable-with-the-mechanism-and-its-cost), [DP-B31](#54-the-host-notch-and-the-entry-point) |
 | OQ-DP6 | **DISSOLVED, not answered — there was no decision left to take.** Two rulings on 2026-09-12 removed it from both ends: *"all agents take their default at the host notch by default"*, so the host posture contributes no flags by design (`render.HostProfile()` already returns `AgentAutonomy: false`); and *"let's get rid of the launch kind then, it's messy and no longer needed"*. Its one shipped consumer was copilot's `--yolo`, which was mis-declared as a plain `launch` contribution and so escaped the autonomy notch policy entirely — it moved under `autonomy`, where that policy governs it, and `--no-auto-update` was dropped outright (*"let agents be agents"*). ⚠ The maintainer's instinct that a host-shim ruling already covered this was HALF right and worth keeping: `host-agent-environment.md`'s [`HE-P2`](../reference/host-agent-environment.md#he-p2)/[`OQ-5`](../reference/host-agent-environment.md#oq-5) did ship, but a wrapper injects ENVIRONMENT, not flags (`hostwrap.Body` is `exec yolo host -- <bin> "$@"`), so it never answered this. What answered it was deleting the vocabulary. | 2026-09-12 | [DP-L5](#6-alignable-with-the-mechanism-and-its-cost) (withdrawn), [DP-B23](#54-the-host-notch-and-the-entry-point), [DP-B24](#54-the-host-notch-and-the-entry-point) |
-| OQ-DP7 | **CLOSED CONDITIONAL — close the third spelling only with the installer/wrapper split paid for, never as the SOLE injector; otherwise rule it DIVERGENT and say so in the briefing.** The host argv rewrite stays in every outcome: it is the only producer reaching every backend and entry point, and the only one whose disclosure lands while the user can still Ctrl-C. A PARTIAL injector is worse than none — [`entrypoint.launcherShadows`](../../internal/entrypoint/launchercollision.go) writes no launcher for a name `/bin` or a declared `mise_tools` entry provides, so the bypass would reach most packs and silently skip the ones the image bakes, keyed on something the user cannot see. ⚠ **Do not read this as the unification question: that one shipped.** The two mechanisms of [§5.6](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias) were unified behind one disclosing mechanism on 2026-09-13 ([DP-B42](#562-the-rows)) — the alias now states each rewrite at the boot that writes it, from the injector's own record. What remained was the THIRD spelling (`~/.yolo/bin/launch`), and what is left now is an implementation decision about that split's cost, not an open design question. | 2026-09-13 | [§5.6.1](#561-can-they-be-one-path), [DP-B42](#562-the-rows), [DP-B44](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias) |
+| OQ-DP7 | **UNIFY ALL PATHS** — *"yes, unify all paths."* Close the third spelling (`~/.yolo/bin/launch`) and pay for the installer/wrapper split it requires. The conditional is spent: ruling the spelling DIVERGENT is withdrawn as an outcome, so the split is a line item rather than a question. ⚠ **Unify the INJECTOR and the RECORD, not the spellings** — all three keep existing and all three inject from one place, extending what [DP-B42](#562-the-rows) did for the first two on 2026-09-13. A single injection POINT is refused by two facts: the host argv rewrite is the only producer reaching every backend and entry point and the only one disclosing while the user can still Ctrl-C, and the shell alias cannot serve macos-user, whose account shell is zsh ([DP-B43](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias)). ⚠ **No partial injector may ship before the split**: [`entrypoint.launcherShadows`](../../internal/entrypoint/launchercollision.go) writes no launcher for a name `/bin` or a declared `mise_tools` entry provides, so shipping early would deliver the bypass for most packs and silently drop it for the baked ones. Accepted costs, not dissolved: the flags reach commands nobody typed at yolo, and [DP-B23](#54-the-host-notch-and-the-entry-point) is sharpened — one production fold, hardcoded autonomous posture. | 2026-09-13 | [§5.6.1](#561-can-they-be-one-path), [DP-B42](#562-the-rows), [DP-B44](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias) |
