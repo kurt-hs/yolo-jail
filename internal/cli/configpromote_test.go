@@ -218,7 +218,7 @@ func TestPromotePlanRefusesACredentialNamedKeyAndNamesTheForce(t *testing.T) {
 	}
 }
 
-// THE PLAN NAMES KEYS AND NEVER PRINTS VALUES (docs/design/report-tiers.md §4.4's first
+// THE PLAN NAMES KEYS AND NEVER PRINTS VALUES (docs/reference/report-tiers.md's first
 // forbidden thing). It is load-bearing here rather than inherited: the values are captured
 // config, one of them is a live-looking API key in this repo's own jail, and a plan is the
 // output most likely to be pasted into a bug report or handed to another agent.

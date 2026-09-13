@@ -1,7 +1,8 @@
 package cli
 
-// applyhostdepgate_test.go pins docs/design/report-tiers.md §4.9's dependency gate: on
-// `--assert` a missing declared dependency STOPS the run, at the prompt, with nothing written.
+// applyhostdepgate_test.go pins docs/reference/report-tiers.md's dependency rule's dependency
+// gate: on `--assert` a missing declared dependency STOPS the run, at the prompt, with nothing
+// written.
 //
 // EVERY TEST HERE GOES THROUGH applyHost, not through gateHostDeps. That is the rule this
 // repo's test discipline turns on — "does it fail if I delete the CALL SITE?" — and it is
@@ -31,7 +32,8 @@ const gateConfigJSON = `{"kind":"config","config":[{"agent":"gp","name":"setting
 //
 // THE WRITTEN DESTINATIONS ARE THE INSTRUMENT. A refusal that says "nothing was written" is
 // checkable only against a run that would otherwise have written something, so every fixture
-// here has destinations whose presence or absence answers the question the report merely claims.
+// here has destinations whose presence or absence answers the question the report merely
+// claims.
 //
 // TWO OF THEM, EITHER SIDE OF THE RENDER LOOP, and that is the point rather than thoroughness.
 // The briefing alone was the instrument until 2026-09-11, and applyHostBriefings runs AFTER the
@@ -110,13 +112,14 @@ func watchInstalls(t *testing.T, then func(cmd string) error) *[]string {
 	return &ran
 }
 
-// A DECLINED INSTALL IS FATAL, AT THE PROMPT, WITH NOTHING WRITTEN — §4.9's `--assert` row, and
-// the reversal of env-manager plan OQ-9's "a decline is non-fatal" for this verb (§6 protects
-// the reversal; the reason is that an --assert's promise is a READY environment).
+// A DECLINED INSTALL IS FATAL, AT THE PROMPT, WITH NOTHING WRITTEN — the dependency rule's
+// `--assert` row, and the reversal of env-manager plan OQ-9's "a decline is non-fatal" for this
+// verb (what this does not license protects the reversal; the reason is that an --assert's
+// promise is a READY environment).
 //
-// The briefing is the measurement: the gate runs before the first render, so a `n` leaves a home
-// the apply never touched. An end-of-run refusal would pass every assertion about the exit code
-// and fail this one.
+// The briefing is the measurement: the gate runs before the first render, so a `n` leaves a
+// home the apply never touched. An end-of-run refusal would pass every assertion about the exit
+// code and fail this one.
 func TestApplyHostAssertRefusesADeclinedInstall(t *testing.T) {
 	home, briefing, cfgDest, _ := depGateFixtureWithConfig(t,
 		`{"kind":"program","bin":"gatebin","via":"npm","package":"gatebin"}`)
@@ -138,17 +141,17 @@ func TestApplyHostAssertRefusesADeclinedInstall(t *testing.T) {
 	if !strings.Contains(report, "Nothing was written") {
 		t.Errorf("the refusal must state that nothing was written:\n%s", report)
 	}
-	// The command is printed ABOVE the prompt, whatever the answer — §4.9 point 4's whole
-	// protection, since promptYesNo has no terminal check by contract.
+	// The command is printed ABOVE the prompt, whatever the answer — the dependency rule, point
+	// 4's whole protection, since promptYesNo has no terminal check by contract.
 	if !strings.Contains(report, "npm install -g gatebin") {
 		t.Errorf("the exact install command must be shown before the prompt:\n%s", report)
 	}
 	wroteNothing(t, home, briefing, cfgDest, report)
 }
 
-// SILENCE IS NO (§4.9 point 4). promptYesNo reads a nil stdin as NO, so an unattended --assert
-// — CI, a script, a cron — refuses rather than installing a package on a machine nobody is
-// watching.
+// SILENCE IS NO (the dependency rule, point 4). promptYesNo reads a nil stdin as NO, so an
+// unattended --assert — CI, a script, a cron — refuses rather than installing a package on a
+// machine nobody is watching.
 func TestApplyHostAssertRefusesAnUnattendedInstall(t *testing.T) {
 	home, briefing, cfgDest, _ := depGateFixtureWithConfig(t,
 		`{"kind":"program","bin":"gatebin","via":"npm","package":"gatebin"}`)
@@ -202,11 +205,11 @@ func TestApplyHostAssertRefusesAMissingRequiresWithoutOfferingAnInstall(t *testi
 }
 
 // A MISSING `program` IS OFFERED, AND A YES INSTALLS IT AND CONTINUES — the other half of
-// OQ-RO7, and §4.3's "Installed `rg`; applied: …" row.
+// OQ-RO7, and the verdict block's "Installed `rg`; applied: …" row.
 //
-// The stdin is a PIPE, which is the point of §4.9 point 4: promptYesNo has no terminal check by
-// contract and §4.9 rules that none is added here, so a scripted `y` installs. That is the
-// ruling being pinned, not an accident of the fixture.
+// The stdin is a PIPE, which is the point of the dependency rule, point 4: promptYesNo has no
+// terminal check by contract and the dependency rule rules that none is added here, so a
+// scripted `y` installs. That is the ruling being pinned, not an accident of the fixture.
 func TestApplyHostAssertInstallsAnOfferedProgramAndCarriesOn(t *testing.T) {
 	_, briefing, cfgDest, binDir := depGateFixtureWithConfig(t,
 		`{"kind":"program","bin":"gatebin","via":"npm","package":"gatebin"}`)
@@ -228,7 +231,7 @@ func TestApplyHostAssertInstallsAnOfferedProgramAndCarriesOn(t *testing.T) {
 		t.Fatalf("the pack's own declared command is what runs; got %v\n%s", *ran, report)
 	}
 	// The VERDICT leads with it: an apply that changed the machine's toolchain said something
-	// no count below it can express (§4.3).
+	// no count below it can express (the verdict block).
 	if !strings.Contains(report, "Installed `gatebin`") {
 		t.Errorf("the verdict must name what it installed:\n%s", report)
 	}
@@ -252,7 +255,7 @@ func TestApplyHostAssertInstallsAnOfferedProgramAndCarriesOn(t *testing.T) {
 		t.Errorf("`MISSING` appears %d times, want the blocker line only:\n%s", n, report)
 	}
 	// The per-contribution line says present too, with the path the re-probe resolved — it is
-	// the --verbose view's now (§4.5), which is why this half asks for that view.
+	// the --verbose view's now (detail on demand), which is why this half asks for that view.
 	verboseReport(t)
 	var vout, verrw bytes.Buffer
 	if rc := applyHost(&vout, &verrw, false, true, strings.NewReader("y\n")); rc != 0 {
@@ -269,9 +272,10 @@ func TestApplyHostAssertInstallsAnOfferedProgramAndCarriesOn(t *testing.T) {
 	}
 }
 
-// AN INSTALL THAT RUNS AND LEAVES THE BINARY MISSING IS A DECLINE (§4.9 point 5). The command's
-// exit code is not the evidence — an installer that exits 0 and delivers nothing leaves the
-// environment exactly as unready as one that failed loudly — so the RE-PROBE decides.
+// AN INSTALL THAT RUNS AND LEAVES THE BINARY MISSING IS A DECLINE (the dependency rule, point
+// 5). The command's exit code is not the evidence — an installer that exits 0 and delivers
+// nothing leaves the environment exactly as unready as one that failed loudly — so the RE-PROBE
+// decides.
 func TestApplyHostAssertRefusesWhenTheInstallProducesNothing(t *testing.T) {
 	home, briefing, cfgDest, _ := depGateFixtureWithConfig(t,
 		`{"kind":"program","bin":"gatebin","via":"npm","package":"gatebin"}`)
@@ -294,7 +298,8 @@ func TestApplyHostAssertRefusesWhenTheInstallProducesNothing(t *testing.T) {
 }
 
 // THE DRY RUN IS UNCHANGED: it reports the same blocker, never prompts, never installs, and
-// exits 0 (OQ-RO5, whose pin §4.9 keeps deliberately). Its whole output IS the finding.
+// exits 0 (OQ-RO5, whose pin the dependency rule keeps deliberately). Its whole output IS the
+// finding.
 func TestApplyHostDryRunReportsAMissingDepAndNeverPrompts(t *testing.T) {
 	_, briefing, _ := depGateFixture(t,
 		`{"kind":"program","bin":"gatebin","via":"npm","package":"gatebin"}`)
@@ -327,8 +332,8 @@ func TestApplyHostDryRunReportsAMissingDepAndNeverPrompts(t *testing.T) {
 }
 
 // THE RUNNER RUNS A COMMAND, NOT AN ARGV. A pack's install hint is a line a user would type —
-// depcheck turns an `installer` program into `curl -fsSL <url> | sh` — so splitting it on spaces
-// would mangle exactly the remedy the pack wrote down.
+// depcheck turns an `installer` program into `curl -fsSL <url> | sh` — so splitting it on
+// spaces would mangle exactly the remedy the pack wrote down.
 //
 // This is the one test that calls the real runner (the seam is disarmed package-wide, see
 // hostdepstub_test.go), and it stays inside a temp dir: the commands here write a file and

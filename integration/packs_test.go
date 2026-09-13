@@ -463,11 +463,11 @@ func TestHostComposedBriefingIsNotDeliveredTwice(t *testing.T) {
 
 	dir := writeProject(t, `{}`)
 	packHome(t, `{"packs": ["claude", "file://`+pack+`"]}`)
-	// The claude pack declares `program claude`, and since the dependency gate landed a
-	// declared binary that is MISSING refuses a writing host apply outright
-	// (docs/design/report-tiers.md §4.9). Whether the machine running the suite has an agent
-	// CLI installed is not this test's subject and must not decide its result: a developer
-	// jail has all six and a CI runner has none.
+	// The claude pack declares `program claude`, and since the dependency gate landed a declared
+	// binary that is MISSING refuses a writing host apply outright
+	// (docs/reference/report-tiers.md's dependency rule). Whether the machine running the suite
+	// has an agent CLI installed is not this test's subject and must not decide its result: a
+	// developer jail has all six and a CI runner has none.
 	stubHostBins(t, "claude")
 
 	// The host notch first: this is what makes ~/.claude/CLAUDE.md yolo's own output rather

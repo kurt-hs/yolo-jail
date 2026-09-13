@@ -1,7 +1,8 @@
 package cli
 
-// hostapplyremedy_test.go pins docs/design/report-tiers.md §9 step 4: tier 3 is grouped by
-// REMEDY KEY, each group states its remedy ONCE, and every group is represented in the verdict.
+// hostapplyremedy_test.go pins docs/reference/report-tiers.md's remedy contract: tier 3 is
+// grouped by REMEDY KEY, each group states its remedy ONCE, and every group is represented in
+// the verdict.
 //
 // The three assertions are three different failures, and the middle one is the defect that
 // prompted the step: three surfaces dropping one hand-added MCP server printed three `⚠` lines
@@ -9,8 +10,8 @@ package cli
 // So the counts here are counts, never Contains.
 //
 // All of it goes through applyHostSurveyed, which is the call site: deleting printRemedyGroups
-// from apply.go leaves the remedies unprinted and fails the first two, and dropping a class from
-// hostApplyCounts fails the third.
+// from apply.go leaves the remedies unprinted and fails the first two, and dropping a class
+// from hostApplyCounts fails the third.
 
 import (
 	"bytes"
@@ -53,7 +54,7 @@ func TestHostApplyGroupsOneEntryLossAcrossAgentsUnderOneRemedy(t *testing.T) {
 		t.Errorf("the remedy must name the scope it covers — one entry reaching every agent "+
 			"is why this is one group: %q", remedy)
 	}
-	// §4.4: grouping compresses the LINES, never the SET.
+	// the remedy contract: grouping compresses the LINES, never the SET.
 	for _, name := range survey.DroppedEntryNames() {
 		if !strings.Contains(report, name) {
 			t.Errorf("entry %q is in no line of the default view — grouping may not drop a "+
@@ -82,7 +83,7 @@ func TestHostApplyStatesTheMCPRemedyFromOnePlace(t *testing.T) {
 	// never two different things. It used to be two sentences that had already diverged.
 	if n := strings.Count(declined, mcpEntryRemedy(fresh)); n < 2 {
 		t.Errorf("the prompt trailer and the abort message must both carry the ONE remedy — "+
-			"three copies of this sentence had already drifted apart (§3.3); it appears %d "+
+			"three copies of this sentence had already drifted apart (P1); it appears %d "+
 			"time(s):\n%s", n, declined)
 	}
 	// And the per-surface line no longer carries its own copy: that is what made three
@@ -92,17 +93,17 @@ func TestHostApplyStatesTheMCPRemedyFromOnePlace(t *testing.T) {
 	}
 }
 
-// TestHostApplyVerdictRepresentsEveryRemedyGroup is §4.3's rule that grouping may compress the
-// lines above the verdict and may never leave the verdict silent about a class.
+// TestHostApplyVerdictRepresentsEveryRemedyGroup is the verdict block's rule that grouping may
+// compress the lines above the verdict and may never leave the verdict silent about a class.
 //
 // Asserted over whatever groups the run produced rather than a written-down list, because the
 // list is the thing that goes stale: a class added later joins this test by existing, and one
 // that stops being counted fails it.
 func TestHostApplyVerdictRepresentsEveryRemedyGroup(t *testing.T) {
 	home, _ := multiAgentMCPFixture(t)
-	// A second class, so "every group" is a claim about more than one: a hand-edited managed
-	// key is a REPLACED VALUE, which is the §4.4 class with no remedy at all — the one most
-	// at risk of being dropped from a verdict, since nothing about it is actionable.
+	// A second class, so "every group" is a claim about more than one: a hand-edited managed key
+	// is a REPLACED VALUE, which is the remedy contract's class with no remedy at all — the one
+	// most at risk of being dropped from a verdict, since nothing about it is actionable.
 	settings := filepath.Join(home, ".claude", "settings.json")
 	data, err := os.ReadFile(settings)
 	if err != nil {
@@ -133,11 +134,11 @@ func TestHostApplyVerdictRepresentsEveryRemedyGroup(t *testing.T) {
 	for _, g := range groups {
 		if !strings.Contains(verdict, g.VerdictTerm) {
 			t.Errorf("the %q group is not represented in the verdict block — a reader who "+
-				"stops at the result would never learn this class happened (§4.3).\ngroup: "+
+				"stops at the result would never learn this class happened (the verdict block).\ngroup: "+
 				"%s\nverdict block:\n%s", g.Key, g.Headline, verdict)
 		}
 	}
-	// A group states a remedy OR says there is none; never neither, and never both. §3.5: a
+	// A group states a remedy OR says there is none; never neither, and never both. P2: a
 	// loss with no remedy says so rather than wearing a `⚠` it cannot cash.
 	for _, g := range groups {
 		switch {
@@ -145,7 +146,7 @@ func TestHostApplyVerdictRepresentsEveryRemedyGroup(t *testing.T) {
 			t.Errorf("group %q carries both a remedy and a reason there is none: %+v", g.Key, g)
 		case g.Remedy == "" && g.NoRemedy == "":
 			t.Errorf("group %q carries neither a remedy nor a reason there is none — that is "+
-				"the `⚠` with nothing behind it §3.5 names: %+v", g.Key, g)
+				"the `⚠` with nothing behind it P2 names: %+v", g.Key, g)
 		case g.Remedy == "" && g.Warn:
 			t.Errorf("group %q has no remedy and still warns: %+v", g.Key, g)
 		}
@@ -162,8 +163,8 @@ func TestHostApplyGroupsOneMissingBinaryAcrossPacks(t *testing.T) {
 	survey, report := surveyApply(t)
 
 	// THE FIXTURE'S OWN EVIDENCE — two declarations of one binary — is read off the
-	// per-contribution lines, which §4.5 moved behind the flag. So it is measured in the
-	// verbose view and everything below is measured in the DEFAULT one: the whole claim is
+	// per-contribution lines, which detail on demand moved behind the flag. So it is measured in
+	// the verbose view and everything below is measured in the DEFAULT one: the whole claim is
 	// that two lines up there become one group down here, and reading both from the compressed
 	// view would leave the "two" unproven.
 	func() {

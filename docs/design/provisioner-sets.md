@@ -36,7 +36,7 @@ gating [`OQ-PS10`](#OQ-PS10).
 **Why it matters.** At the host `program` and `requires` collapse into one report line because
 there is nothing for either to drive; a user cannot say *"install claude from brew here"* because
 the pack picks the backend; and a missing dependency is about to become fatal under `--assert`
-([`OQ-RO7`](report-tiers.md#11-decision-ledger)) with the install offer it presupposes unbuilt.
+([`OQ-RO7`](../reference/report-tiers.md#why-its-this-way)) with the install offer it presupposes unbuilt.
 
 **The shape.** A **need** the pack declares once (a binary, plus the recipes that can produce
 it); a **provisioner set** each environment has; a **resolution** that walks an ordered
@@ -92,7 +92,7 @@ guest's missing floor and stage),
 [`../reference/nix-across-backends.md`](../reference/nix-across-backends.md) (what each backend's
 nix path produces, as built),
 [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) (Phase 6.4 and 4.3, both
-unbuilt), [`report-tiers.md`](report-tiers.md) (the `--assert` fatal), and
+unbuilt), [`../reference/report-tiers.md`](../reference/report-tiers.md) (the `--assert` fatal), and
 [`../reference/pack-system.md`](../reference/pack-system.md) (the kinds). **No companion sketch
 yet** — nothing here is settled enough to hold one; it opens with the first ruling that picks a
 mechanism.
@@ -235,7 +235,7 @@ Then it stops. **MEASURED negative:** no reader of a remedy ever executes it —
 elevation class, sudo first* — and that plan's own audit says its resolution *"has no
 consumer at all today"*. What the roadmap's thread 29 did on 2026-09-10 was **authorise** Phase
 6.4 and 4.3 as the mechanism for the `--assert` fatal, not design them, and
-[`OQ-RO7`](report-tiers.md#11-decision-ledger) — whether the fatal covers `program` as well as `requires` — was
+[`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) — whether the fatal covers `program` as well as `requires` — was
 RULED on 2026-09-11: **both fatal, only `program` gets the offer**, which is the predicate
 [`OQ-PS3`](#decision-ledger)'s recipe model reinforces rather than disturbs (a `requires` is a need with no
 runnable recipe, so there is nothing to offer). ⚠ **And the shipped precedence has the pack choosing.** `depcheck.Check` ranks the
@@ -396,7 +396,7 @@ where it does not, it is left alone.
   (`:1589-1592`, re-resolved 2026-09-11). Evidence for [`OQ-PS11`](#OQ-PS11) — whether the pair
   collapses — which is where the verb/verb relation now lives.
 - **`optdepends`.** No kind has an `optional` field (READ FROM CODE, every kind's field set), so
-  yolo has no declared-but-optional category. [`OQ-RO7`](report-tiers.md#11-decision-ledger)'s fatal implicitly
+  yolo has no declared-but-optional category. [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way)'s fatal implicitly
   assumes that category does not exist; if a pack ever needs it, the assumption becomes a
   question. One sentence, because nothing in the tree needs it yet.
 - **`depends` vs `makedepends`** — runtime versus build-time. Nothing in the tree expresses the
@@ -1208,7 +1208,7 @@ shipped status so nobody re-opens a settled fork.
 - **The Linux guest** (env-manager Phase 7.2). No code, no row — though
   [§6.4](#64-not-orthogonal-to-confinement-the-provisioning-primitive-below-jail) is the argument
   that it must not get a second package layer of its own.
-- **The wording of the host report** — [`report-tiers.md`](report-tiers.md). This doc supplies the
+- **The wording of the host report** — [`../reference/report-tiers.md`](../reference/report-tiers.md). This doc supplies the
   dispositions; that one decides how they print.
 - **The `/lib` farm's darwin analogue** — there is none worth building
   ([§6.6](#66-the-lib-farm-has-no-darwin-analogue-worth-building)), and that is a conclusion, not
@@ -1231,7 +1231,7 @@ shipped status so nobody re-opens a settled fork.
 | [`macos-user-home-tiers.md`](macos-user-home-tiers.md) | the guest's one-home defect and the A′ symlink layout | Nothing directly, but [§15](#15-what-a-mac-session-should-measure) M4 is its measurement, because a provisioner that stages into the sandbox home depends on that layout resolving. |
 | [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) | *declare once, check once, hand off* ([§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)); [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1) | Generalises [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) from "the host hands off" to "each environment resolves". ⚠ [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1) and the plan's Phase 4 warning both say `FieldSet` *refuses* `program` at host citing `fieldset.go:38`; `HostFields()` honours it (`internal/render/fieldset.go`, *"honored but confirm-gated by the caller"*), so that refusal string is unreachable for `program` and the shipped rule is *report, do not install*. ⚠ Its promised `✗ packages   yolo does not manage packages here` line is contradicted by shipped `describe` and should be retired — [`OQ-NX8`](#OQ-NX8). |
 | [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) | Phase 6.4 and 4.3, [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) | Both unbuilt. **[`OQ-PS2`](#decision-ledger) ruled 2026-09-11 that they get built** — as *the host's driven provisioner*, behind that plan's own already-ruled confirm, and sequenced after the print-only precedence order. That plan's audit says [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase)'s resolution *"has no consumer at all today"*; this ruling is its consumer. |
-| [`report-tiers.md`](report-tiers.md) | the `--assert` fatal, [`OQ-RO7`](report-tiers.md#11-decision-ledger) | **RO7 was RULED 2026-09-11** — *both kinds fatal, only `program` gets the offer* — and [`OQ-PS3`](#decision-ledger)'s recipe model **reinforces** that predicate rather than disturbing it ([§3.1](#31-five-findings-the-table-forces) F2): a `requires` is a need with no runnable recipe, so there is nothing to offer. ⚠ What is still unsettled is the *spelling*: RO7's rule keys on the **kind**, and under P1 the offer keys on *whether a provisioner covers this binary here*. [`OQ-PS11`](#OQ-PS11) decides whether there is still a kind to key on. |
+| [`../reference/report-tiers.md`](../reference/report-tiers.md) | the `--assert` fatal, [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) | **RO7 was RULED 2026-09-11** — *both kinds fatal, only `program` gets the offer* — and [`OQ-PS3`](#decision-ledger)'s recipe model **reinforces** that predicate rather than disturbing it ([§3.1](#31-five-findings-the-table-forces) F2): a `requires` is a need with no runnable recipe, so there is nothing to offer. ⚠ What is still unsettled is the *spelling*: RO7's rule keys on the **kind**, and under P1 the offer keys on *whether a provisioner covers this binary here*. [`OQ-PS11`](#OQ-PS11) decides whether there is still a kind to key on. |
 | [`host-render-target.md`](host-render-target.md) | the host as a reduced render target | ⚠ Its [§2.2](host-render-target.md#22-so-which-is-it-a-command-or-a-mode) table marks `macos-user · program: ✅ (native nix)`; that cell describes `packages:`, not `program` — no `program` is provisioned by nix on any notch. |
 | [`boundary-broker.md`](boundary-broker.md), [`workspace-path-mirroring.md`](workspace-path-mirroring.md), [`../plans/proposed-fixes-open-findings.md`](../plans/proposed-fixes-open-findings.md) | — | All three cited the retired doc's ledger and were repointed here on 2026-09-11. |
 | [`../reference/pack-system.md`](../reference/pack-system.md) | the kinds and their combine rules | Its [`requires`](../reference/pack-system.md#requires) section is the *install vs presence* frame ([§2](#2-two-frames-that-failed-in-review)); correct about the jail, silent about why the host differs. |
@@ -1839,7 +1839,7 @@ recommendation the doc rests on.
    `via`/`package`/`url` by name (`internal/packdecl/contributes.go:1589-1592`, read 2026-09-11) or
    becomes the degenerate case of one kind; whether F3's nine jail-side differences become
    properties of *whether a recipe exists* rather than of the kind label; and whether
-   [`OQ-RO7`](report-tiers.md#11-decision-ledger)'s kind-keyed `--assert` predicate still has a kind
+   [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way)'s kind-keyed `--assert` predicate still has a kind
    to key on. **Upstream of [`OQ-PS5`](#OQ-PS5)** — rule this one first, because it decides whether
    there is one kind to name or two.
 

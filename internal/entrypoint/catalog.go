@@ -147,12 +147,12 @@ func InstalledOrphans(e *Env) []Orphan {
 //
 // # Why the list moved off the terminal
 //
-// These are docs/design/report-tiers.md §4.7's NOTCH FACTS WITH A STATE DEPENDENCY: true
-// until the user does something, and repeated until then. This jail has printed the same
-// eight lines at every launch since the packages were installed (measured 2026-09-10, §2.4)
-// — a launch stream where a third of the boot's lines never change is one where the lines
-// that DO change are skimmed past. §4.7 rules the compression: one line, with the list going
-// to boot.log through the split e.note already exists for (Env.LogOnly).
+// These are docs/reference/report-tiers.md's NOTCH FACTS WITH A STATE DEPENDENCY: true until
+// the user does something, and repeated until then. This jail has printed the same eight lines
+// at every launch since the packages were installed (measured 2026-09-10) — a launch stream
+// where a third of the boot's lines never change is one where the lines that DO change are
+// skimmed past. The launch stream rules the compression: one line, with the list going to
+// boot.log through the split e.note already exists for (Env.LogOnly).
 //
 // THE SET IS NOT COMPRESSED, only the lines. Every orphan is still named, in the file that
 // the very same launch writes, and the summary says where — which is what keeps this a
@@ -161,8 +161,8 @@ func InstalledOrphans(e *Env) []Orphan {
 // invariant lines were failing to deliver.
 //
 // NO QUIET FLAG FOLLOWS FROM THIS (OQ-RO3). The compression IS the density control for the
-// launch stream; a flag that could hide a line is refused by P4, which §4.7 promotes from
-// three docstrings that each reached it independently to the written rule.
+// launch stream; a flag that could hide a line is refused by P4, which the launch stream
+// promotes from three docstrings that each reached it independently to the written rule.
 func CatalogInstalledOrphans(e *Env) {
 	orphans := InstalledOrphans(e)
 	if len(orphans) > 0 {

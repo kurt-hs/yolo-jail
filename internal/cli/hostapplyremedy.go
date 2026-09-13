@@ -1,9 +1,9 @@
 package cli
 
-// hostapplyremedy.go is docs/design/report-tiers.md §4.4's REMEDY CONTRACT: every tier-3 loss
+// hostapplyremedy.go is docs/reference/report-tiers.md's REMEDY CONTRACT: every tier-3 loss
 // and blocker this run found, grouped by the fix rather than by the emitter, each group stating
 // **what** is lost or blocked, **whose** it is, **where**, and **the remedy in a form that can
-// be pasted**, once (§9 step 4).
+// be pasted**, once (the remedy contract).
 //
 // GROUPING IS BY REMEDY KEY — the config key, the local-pack path, the missing binary, or none
 // — and never by text similarity. That is the whole mechanism: two facts that share a fix are
@@ -11,7 +11,7 @@ package cli
 // The measured report had the inverse property, because the group boundary was a loop
 // boundary: three surfaces dropping the same three MCP servers printed three `⚠` lines with
 // three copies of one remedy, "three problems with three fixes, when they are one problem with
-// one fix" (§3.3's third row).
+// one fix" (P1's third row).
 //
 // THE MCP REMEDY HAD THREE COPIES, not two, and the third is the reason a "unify the two" fix
 // would have left the defect standing: the per-surface `⚠` (apply.go), the not-confirmed abort
@@ -21,17 +21,17 @@ package cli
 // FILE the declaration goes in as well as the scope it covers (P2: copy-paste form, and the
 // scope the remedy covers).
 //
-// A GROUP WITH NO REMEDY SAYS SO (§3.5, §4.4). A replaced scalar has no fix at this notch — a
+// A GROUP WITH NO REMEDY SAYS SO (P2). A replaced scalar has no fix at this notch — a
 // config overlay folds BELOW the owner's managed layer, which still wins — and a dropped
 // comment has none possible. Both state the fact and stop, rather than wearing a `⚠` that
 // implies a fix the reader will go looking for.
 //
-// EVERY GROUP IS REPRESENTED IN THE VERDICT (§4.3). Grouping compresses the LINES, never the
-// SET: each group carries the term the verdict block must contain for its class, which is what
-// hostapplyremedy_test.go asserts against the verdict the survey independently produces. That
-// is the half that keeps compression honest — a class that stops reaching the verdict is a
-// class the reader can miss by reading only the last line, which is the reading P7 promises is
-// enough.
+// EVERY GROUP IS REPRESENTED IN THE VERDICT (the verdict block). Grouping compresses the LINES,
+// never the SET: each group carries the term the verdict block must contain for its class,
+// which is what hostapplyremedy_test.go asserts against the verdict the survey independently
+// produces. That is the half that keeps compression honest — a class that stops reaching the
+// verdict is a class the reader can miss by reading only the last line, which is the reading P7
+// promises is enough.
 
 import (
 	"fmt"
@@ -44,21 +44,22 @@ import (
 
 // remedyGroup is one tier-3 group: a set of losses or blockers that share a fix.
 type remedyGroup struct {
-	// Class is WHICH of §4.4's classes this group is — the one field that is not in the
-	// rendered line, and the one a machine consumer branches on (§4.8: "losses and blockers
-	// with class, names and remedy key"). It is carried rather than recovered from the
-	// headline's wording for the reason the tier is: the class is known where the group is
+	// Class is WHICH of the remedy contract's classes this group is — the one field that is not in
+	// the rendered line, and the one a machine consumer branches on (machine consumers: "losses
+	// and blockers with class, names and remedy key"). It is carried rather than recovered from
+	// the headline's wording for the reason the tier is: the class is known where the group is
 	// built, and prose is not a type.
 	Class string
-	// Key is §4.4's REMEDY KEY — the config key, the local-pack path, the missing binary, or
-	// "" for a group whose fix does not exist. It is what the grouping is ON, and it is
-	// carried rather than derived so a test can assert that two facts with one fix produced
-	// one group.
+	// Key is the remedy contract's REMEDY KEY — the config key, the local-pack path, the missing
+	// binary, or "" for a group whose fix does not exist. It is what the grouping is ON, and it is
+	// carried rather than derived so a test can assert that two facts with one fix produced one
+	// group.
 	Key string
-	// Headline is what is lost or blocked and whose it is, in §4.6's vocabulary.
+	// Headline is what is lost or blocked and whose it is, in the report vocabulary.
 	Headline string
-	// Items are the NAMES. §4.4: grouping compresses the lines, never the set — every dropped
-	// entry, adopted skill and missing binary appears in the default view, in its group.
+	// Items are the NAMES, per the remedy contract: grouping compresses the lines, never the set —
+	// every dropped entry, adopted skill and missing binary appears in the default view, in its
+	// group.
 	Items []string
 	// Remedy is the pasteable fix, stated ONCE for every item in the group. Empty when none
 	// exists, in which case NoRemedy says why.
@@ -71,22 +72,22 @@ type remedyGroup struct {
 	NoRemedy string
 	// Note is one trailing fact about the class, printed under the last group of its kind.
 	Note string
-	// VerdictTerm is the word §4.3 requires the verdict block to carry for this group. It
+	// VerdictTerm is the word the verdict block requires for this group. It
 	// travels WITH the group so the contract is checkable: the verdict is produced from the
 	// survey independently, and a class that stops being counted there fails the assertion
 	// rather than quietly disappearing from the one line a reader is promised is enough.
 	VerdictTerm string
 	// Warn is whether the group leads with a `⚠`. A loss with a remedy warns; a loss with
-	// none states a fact (§3.5 — a `⚠` it cannot cash).
+	// none states a fact (P2 — a `⚠` it cannot cash).
 	Warn bool
 }
 
 // hostApplyRemedyGroups is every tier-3 group this run found, in report order: BLOCKERS FIRST,
 // then losses.
 //
-// Blockers lead because a blocker is what decides the outcome — §4.9's whole argument is that a
-// missing dependency makes the rest of the apply pointless — and a reader who stops at the
-// first `⚠` should have stopped at that one.
+// Blockers lead because a blocker is what decides the outcome — the dependency rule's whole
+// argument is that a missing dependency makes the rest of the apply pointless — and a reader
+// who stops at the first `⚠` should have stopped at that one.
 func hostApplyRemedyGroups(s *hostApplySurvey, home string, write bool) []remedyGroup {
 	if s == nil {
 		return nil
@@ -108,9 +109,9 @@ func hostApplyRemedyGroups(s *hostApplySurvey, home string, write bool) []remedy
 	return out
 }
 
-// missingDepGroups is the DRY RUN's rendering of every missing binary — one group each (§4.4's
-// key for this class is the binary, "across packs"), plus the one note that is a property of the
-// posture rather than of any dependency.
+// missingDepGroups is the DRY RUN's rendering of every missing binary — one group each (the
+// remedy contract's key for this class is the binary, "across packs"), plus the one note that
+// is a property of the posture rather than of any dependency.
 //
 // The note trails the LAST group because repeating it under every binary is noise and printing
 // it under the first wedges it between two groups.
@@ -130,7 +131,7 @@ func missingDepGroups(s *hostApplySurvey) []remedyGroup {
 }
 
 // depBlockerGroups renders missing dependencies as tier-3 groups — ONE group per binary, which
-// is §4.4's remedy key for this class.
+// is the remedy contract's remedy key for this class.
 //
 // Shared by the dry run's report and the --assert gate's prompt, and that sharing is the point:
 // the lines a user reads before answering `y` are the same lines the dry run showed them, so
@@ -213,9 +214,9 @@ func adoptedSkillGroup(s *hostApplySurvey, home string, write bool) (remedyGroup
 	return g, true
 }
 
-// replacedValueGroup is §4.4's no-remedy class, and the one §3.5 singles out: a managed key
-// overwriting a value of the user's has no fix at this notch, so the group says which pack owns
-// the keys and stops.
+// replacedValueGroup is the remedy contract's no-remedy class, and the one P2 singles out: a
+// managed key overwriting a value of the user's has no fix at this notch, so the group says
+// which pack owns the keys and stops.
 //
 // No `⚠`. A config overlay folds BELOW the owner's managed layer, which still wins a conflict,
 // so the user cannot re-declare their value — the remedy is
@@ -269,7 +270,7 @@ func droppedCommentGroup(s *hostApplySurvey, write bool) (remedyGroup, bool) {
 // printRemedyGroups renders the groups, once per run, above the verdict block.
 //
 // The remedy is INDENTED UNDER its group and arrowed, so the eye can find the pasteable half
-// without reading the loss: the launch gate's refusal is the model §3.5 names — two commands,
+// without reading the loss: the launch gate's refusal is the model P2 names — two commands,
 // copy-paste, the key and its file — and this is the same shape for a report.
 func printRemedyGroups(pr richtext.Printer, groups []remedyGroup) {
 	for _, g := range groups {
@@ -297,9 +298,10 @@ func printRemedyGroups(pr richtext.Printer, groups []remedyGroup) {
 	}
 }
 
-// The §4.4 classes. A BLOCKER stands between this home and a completed apply; a LOSS takes
-// something of the user's. They share tier 3 because they want the same rendering, and they
-// are told apart here because a consumer acting on the document needs to know which it is.
+// The remedy contract's classes. A BLOCKER stands between this home and a completed apply; a
+// LOSS takes something of the user's. They share tier 3 because they want the same rendering,
+// and they are told apart here because a consumer acting on the document needs to know which it
+// is.
 const (
 	// remedyClassDependency — a declared dependency is missing on this host. A blocker.
 	remedyClassDependency = "missing_dependency"
@@ -314,8 +316,9 @@ const (
 )
 
 // mcpEntryRemedyKey is the config key that keeps a hand-added MCP server through a wholesale
-// table regeneration. It is the GROUP KEY as well as the text, which is the point of §4.4's
-// "group by remedy key": the key is what makes three agents' worth of losses one fix.
+// table regeneration. It is the GROUP KEY as well as the text, which is the point of the remedy
+// contract's "group by remedy key": the key is what makes three agents' worth of losses one
+// fix.
 const mcpEntryRemedyKey = "mcp_servers"
 
 // mcpEntryRemedy is THE remedy for a dropped named entry, in one place. Three copies of it used

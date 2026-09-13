@@ -1,7 +1,8 @@
 package cli
 
-// hostapplyjson_test.go pins docs/design/report-tiers.md §4.8: the DRY RUN emits the survey as
-// a document, `--assert` refuses the flag, and the two spellings of the verb agree.
+// hostapplyjson_test.go pins docs/reference/report-tiers.md machine consumers: the DRY RUN
+// emits the survey as a document, `--assert` refuses the flag, and the two spellings of the
+// verb agree.
 //
 // EVERY TEST HERE GOES THROUGH A COMMAND ENTRY POINT — hostApply or applyMain, with the real
 // argv — never through buildHostApplyDoc. The flag family is parsed in one file and consumed in
@@ -80,9 +81,9 @@ func TestHostApplyDryRunEmitsTheSurveyAsADocument(t *testing.T) {
 	}
 }
 
-// TestHostApplyJSONCarriesEveryLossWithItsClassAndRemedy is §4.4 in the machine form: grouping
-// compresses the LINES, never the SET, so every name the text report shows is in the document
-// — with the class a consumer branches on and the remedy key it was grouped by.
+// TestHostApplyJSONCarriesEveryLossWithItsClassAndRemedy is the remedy contract in the machine
+// form: grouping compresses the LINES, never the SET, so every name the text report shows is in
+// the document — with the class a consumer branches on and the remedy key it was grouped by.
 //
 // The fixture is the one that produces a real loss: a pack contributing an MCP server the user
 // already added by hand, which is the entry-level collision only a wholesale table render can
@@ -99,7 +100,8 @@ func TestHostApplyJSONCarriesEveryLossWithItsClassAndRemedy(t *testing.T) {
 		if g.Class == "" {
 			t.Errorf("a group carries no class, which is the field a consumer branches on: %+v", g)
 		}
-		// §4.4: a group states a remedy or says why there is none — never both, never neither.
+		// the remedy contract: a group states a remedy or says why there is none — never both, never
+		// neither.
 		if (g.Remedy == "") == (g.NoRemedy == "") {
 			t.Errorf("group %q states %d of {remedy, no_remedy}, want exactly 1: %+v",
 				g.Class, boolsSet(g.Remedy != "", g.NoRemedy != ""), g)
@@ -121,8 +123,8 @@ func TestHostApplyJSONCarriesEveryLossWithItsClassAndRemedy(t *testing.T) {
 	if doc.Counts.EntriesDropped != 1 {
 		t.Errorf("entries_dropped = %d, want 1", doc.Counts.EntriesDropped)
 	}
-	// THE USER'S OWN VALUE IS NEVER IN ANY VIEW (§4.4's first forbidden thing): a document is
-	// pasted into a bug report exactly as a transcript is.
+	// THE USER'S OWN VALUE IS NEVER IN ANY VIEW (the remedy contract's first forbidden thing): a
+	// document is pasted into a bug report exactly as a transcript is.
 	if strings.Contains(raw, "SECRET") {
 		t.Errorf("the document carries the user's existing value:\n%s", raw)
 	}
@@ -160,7 +162,7 @@ func TestHostApplyJSONStdoutCarriesTheDocumentAndNothingElse(t *testing.T) {
 // TestHostApplyJSONAndTextAreOneAnswer: the token, the sentence and the counts are produced
 // from ONE observe pass's survey, so the document and the report cannot disagree about how the
 // run went. Without this the two forms are two models of the same apply, which is the drift
-// §4.8 rules the recording shape to avoid.
+// machine consumers rules the recording shape to avoid.
 func TestHostApplyJSONAndTextAreOneAnswer(t *testing.T) {
 	shippedPacksFixture(t)
 
@@ -185,10 +187,10 @@ func TestHostApplyJSONAndTextAreOneAnswer(t *testing.T) {
 	}
 }
 
-// TestHostApplyJSONNamesTheInapplicableKindsAndCarriesNoProse is §4.6's half of §4.8: the
-// document states WHICH kinds do not apply at this notch and none of their reasons, because
-// rationale is not data. The prose is read from internal/render rather than retyped, so a
-// reason that changes wording cannot quietly start passing.
+// TestHostApplyJSONNamesTheInapplicableKindsAndCarriesNoProse is the report vocabulary's half
+// of machine consumers: the document states WHICH kinds do not apply at this notch and none of
+// their reasons, because rationale is not data. The prose is read from internal/render rather
+// than retyped, so a reason that changes wording cannot quietly start passing.
 func TestHostApplyJSONNamesTheInapplicableKindsAndCarriesNoProse(t *testing.T) {
 	shippedPacksFixture(t)
 
@@ -211,7 +213,7 @@ func TestHostApplyJSONNamesTheInapplicableKindsAndCarriesNoProse(t *testing.T) {
 			continue // a kind whose reason render does not carry has no prose to leak
 		}
 		if strings.Contains(raw, reason) {
-			t.Errorf("the document carries %s's prose reason — rationale is not data (§4.6):\n%s",
+			t.Errorf("the document carries %s's prose reason — rationale is not data (the report vocabulary):\n%s",
 				name, reason)
 		}
 	}
@@ -332,8 +334,8 @@ func TestHostApplyRefusesAFormatItCannotEmit(t *testing.T) {
 }
 
 // TestHostApplyJSONWithNoPacksIsStillADocument: *"nothing to report must still be a document"*
-// (§4.8). The zero-packs branch returns early — it is the branch that used to end with no
-// verdict, no counts and no footer at all — so it is the one most likely to end with no
+// (machine consumers). The zero-packs branch returns early — it is the branch that used to end
+// with no verdict, no counts and no footer at all — so it is the one most likely to end with no
 // document either.
 func TestHostApplyJSONWithNoPacksIsStillADocument(t *testing.T) {
 	home := t.TempDir()
@@ -358,10 +360,10 @@ func TestHostApplyJSONWithNoPacksIsStillADocument(t *testing.T) {
 	}
 }
 
-// TestHostApplyJSONNamesAMissingDependencyAsABlocker: §4.9's dry-run row, in the machine form.
-// The blocker decides the outcome, so a consumer that reads only `outcome` still learns that an
-// --assert would not complete — and the group carries the binary as its remedy key, which is
-// what a consumer would act on.
+// TestHostApplyJSONNamesAMissingDependencyAsABlocker: the dependency rule's dry-run row, in the
+// machine form. The blocker decides the outcome, so a consumer that reads only `outcome` still
+// learns that an --assert would not complete — and the group carries the binary as its remedy
+// key, which is what a consumer would act on.
 func TestHostApplyJSONNamesAMissingDependencyAsABlocker(t *testing.T) {
 	home, briefing, _ := depGateFixture(t,
 		`{"kind":"program","bin":"jsonbin","via":"npm","package":"jsonbin"}`)

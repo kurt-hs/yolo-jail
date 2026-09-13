@@ -1,11 +1,12 @@
 package cli
 
-// hostapplydetail_test.go pins docs/design/report-tiers.md §4.5's split: what a `yolo host
-// apply` prints by default, and what `--verbose` adds.
+// hostapplydetail_test.go pins docs/reference/report-tiers.md detail on demand's split: what a
+// `yolo host apply` prints by default, and what `--verbose` adds.
 //
 // TWO PROPERTIES, and the second is the one with a trap in it:
 //
-//   - THE DEFAULT VIEW DROPS NO LOSS AND NO BLOCKER (§4.4). Compression is allowed to take the
+//   - THE DEFAULT VIEW DROPS NO LOSS AND NO BLOCKER (the remedy contract). Compression is
+//     allowed to take the
 //     per-destination LINES and never the SET, so the assertions below are about names —
 //     every dropped entry, every adopted skill, every missing binary — rather than about line
 //     counts.
@@ -27,9 +28,9 @@ import (
 // verboseReport points a test at the `--verbose` view.
 //
 // Many tests in this package pin a per-destination line — a dep probe, a composed-from line, a
-// per-entry skills action, an inferred destination — that §4.5 moved behind the flag. The FACT
-// each of them asserts is unchanged; only the view carrying it moved, so those tests ask for
-// that view here rather than being rewritten to assert something weaker.
+// per-entry skills action, an inferred destination — that detail on demand moved behind the
+// flag. The FACT each of them asserts is unchanged; only the view carrying it moved, so those
+// tests ask for that view here rather than being rewritten to assert something weaker.
 //
 // The inherited spelling, deliberately: it is the one OQ-RO2 rules must work, and using it
 // everywhere means the whole suite would notice a gate that only honored the typed flag.
@@ -40,11 +41,11 @@ func verboseReport(t *testing.T) {
 
 // detailFixture is one pack whose contributions produce a line in each class the split sorts.
 //
-// FIVE CLASSES, and the last two were added on 2026-09-11 because they were the two §4.5
-// moved with nothing watching. The fixture declared only skills and a briefing, so
-// `detail(pr, packDeps.depLine(c))` and `reportDestination(..., configResultTier(r), ...)` could
-// each be restored to an unconditional pr.Printf with the whole package green (measured by
-// mutation, both independently). A compression test can only see the classes its fixture
+// FIVE CLASSES, and the last two were added on 2026-09-11 because they were the two detail on
+// demand moved with nothing watching. The fixture declared only skills and a briefing, so
+// `detail(pr, packDeps.depLine(c))` and `reportDestination(..., configResultTier(r), ...)`
+// could each be restored to an unconditional pr.Printf with the whole package green (measured
+// by mutation, both independently). A compression test can only see the classes its fixture
 // produces, which makes the fixture the pin.
 //
 // The dependency is a `requires` whose binary is STUBBED PRESENT: a present dep is the tier-2
@@ -90,7 +91,7 @@ func TestHostApplyDefaultViewCompressesAndVerboseItemizes(t *testing.T) {
 		t.Errorf("the composed-from line is tier-2 detail and must not print by default:\n%s", plain)
 	}
 	if strings.Contains(plain, "in sync, ") {
-		t.Errorf("the destination roll-up counts what a loop visited (§3.4) and is detail:\n%s",
+		t.Errorf("the destination roll-up counts what a loop visited (P6) and is detail:\n%s",
 			plain)
 	}
 
@@ -115,7 +116,7 @@ func TestHostApplyDefaultViewCompressesAndVerboseItemizes(t *testing.T) {
 }
 
 // TestHostApplyCompressesTheDependencyAndSettledSurfaceLines is the other two classes of
-// §4.5's move, over a SETTLED home — which is the state they are visible in.
+// detail on demand's move, over a SETTLED home — which is the state they are visible in.
 //
 // A config surface only reaches the compressible tier once it is in sync: a first apply has
 // WouldChange set and reportDestination prints it at every verbosity, deliberately (a change
@@ -146,11 +147,11 @@ func TestHostApplyCompressesTheDependencyAndSettledSurfaceLines(t *testing.T) {
 		"detailbin-pkg", // and its remedy, which only a blocker states
 	} {
 		if strings.Contains(plain, absent) {
-			t.Errorf("%q is tier-2 detail and must not print by default (§4.5):\n%s", absent, plain)
+			t.Errorf("%q is tier-2 detail and must not print by default (detail on demand):\n%s", absent, plain)
 		}
 	}
-	// The COUNT survives the compression — §4.4's rule is that the default view may drop the
-	// lines and never the set, so a reader still learns the dep was probed.
+	// The COUNT survives the compression — the remedy contract's rule is that the default view may
+	// drop the lines and never the set, so a reader still learns the dep was probed.
 	if !strings.Contains(plain, "declared dependency present") {
 		t.Errorf("the default view dropped the dependency COUNT, not just its lines:\n%s", plain)
 	}

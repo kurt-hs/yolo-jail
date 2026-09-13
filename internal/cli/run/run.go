@@ -47,7 +47,7 @@ func Run(opts Options) (rc int) {
 		return 1
 	}
 
-	// PERSIST THE LAUNCHER'S HALF (report-tiers.md §4.7). Everything this process
+	// PERSIST THE LAUNCHER'S HALF (report-tiers.md, the launch stream). Everything this process
 	// prints from here on is teed into <workspace>/.yolo/launch.log, beside the
 	// entrypoint's boot.log, so the half of a launch that used to vanish when the
 	// terminal scrolled is readable afterwards — including after a launch that

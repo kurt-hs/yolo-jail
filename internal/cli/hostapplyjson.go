@@ -1,7 +1,7 @@
 package cli
 
 // hostapplyjson.go is `yolo host apply --format json`: the dry run's report as data
-// (docs/design/report-tiers.md §4.8, §9 step 8).
+// (docs/reference/report-tiers.md machine consumers, machine consumers).
 //
 // # Why an acting verb emits one at all
 //
@@ -28,13 +28,13 @@ package cli
 // # What it deliberately does not carry
 //
 // THE KIND-REFUSAL PROSE. The document names the kinds that do not apply at this notch and
-// stops there, because rationale is not data (§4.6): the reasons live in the manual, under a
-// drift gate, and no terminal view prints them at any verbosity either.
+// stops there, because rationale is not data (the report vocabulary): the reasons live in the
+// manual, under a drift gate, and no terminal view prints them at any verbosity either.
 //
-// THE USER'S OWN VALUES. §4.4's first forbidden thing, in every view: a config value can be a
-// credential, and a document gets pasted into a bug report exactly as a transcript does. The
-// document names the KEYS that would be replaced and the ENTRIES that would be dropped, never
-// what is in them.
+// THE USER'S OWN VALUES — the remedy contract's first forbidden thing, in every view: a config
+// value can be a credential, and a document gets pasted into a bug report exactly as a
+// transcript does. The document names the KEYS that would be replaced and the ENTRIES that
+// would be dropped, never what is in them.
 
 import (
 	"encoding/json"
@@ -52,8 +52,8 @@ type hostApplyDoc struct {
 	// it is what keeps a consumer from having to remember that.
 	Posture string `json:"posture"`
 	Home    string `json:"home"`
-	// Outcome is §4.3's verdict as a stable token (hostApplyOutcome); Verdict is the same
-	// decision as the sentence the text form prints. Both, because the token is what a
+	// Outcome is the verdict block's verdict as a stable token (hostApplyOutcome); Verdict is the
+	// same decision as the sentence the text form prints. Both, because the token is what a
 	// consumer branches on and the sentence is what it shows a human when it stops.
 	Outcome string `json:"outcome"`
 	Verdict string `json:"verdict"`
@@ -75,13 +75,14 @@ type hostApplyDoc struct {
 	// them: the survey holds a tally, not a list (70 of the measured home's 76 "changes" were
 	// fourteen skills counted once per agent directory).
 	Destinations []hostApplyDocDestination `json:"destinations"`
-	// Groups are §4.4's tier-3 groups — every loss and blocker, grouped by remedy key, each
-	// with its class and its pasteable fix.
+	// Groups are the remedy contract's tier-3 groups — every loss and blocker, grouped by remedy
+	// key, each with its class and its pasteable fix.
 	Groups []hostApplyDocGroup `json:"groups"`
 }
 
-// hostApplyDocCounts is §4.3's count block. Every field counts what the reader cares about
-// (P6) — files, skills, keys, entries, binaries — and never the destinations a loop visited.
+// hostApplyDocCounts is the verdict block's count block. Every field counts what the reader
+// cares about (P6) — files, skills, keys, entries, binaries — and never the destinations a loop
+// visited.
 type hostApplyDocCounts struct {
 	ConfigFilesChanged int `json:"config_files_changed"`
 	SkillsAdopted      int `json:"skills_adopted"`
@@ -93,7 +94,7 @@ type hostApplyDocCounts struct {
 	// InSync is the survey's own count and carries the survey's own meaning: destinations an
 	// --assert would leave exactly as they are, INCLUDING ones the render skipped or refused.
 	// Named as the survey names it rather than "compared and unchanged", which would be a
-	// claim the render did not make (§3.4).
+	// claim the render did not make (P6).
 	InSync                     int `json:"destinations_in_sync"`
 	ValuesReplaced             int `json:"values_replaced"`
 	FilesWithReplacedValues    int `json:"files_with_replaced_values"`
@@ -103,7 +104,7 @@ type hostApplyDocCounts struct {
 	DependenciesPresent        int `json:"dependencies_present"`
 	DependenciesMissing        int `json:"dependencies_missing"`
 	// DependenciesNotProbed is its own number and never folds into missing: yolo may not call
-	// an environment unready on evidence it does not have (§4.9 point 6).
+	// an environment unready on evidence it does not have (the dependency rule, point 6).
 	DependenciesNotProbed int `json:"dependencies_not_probed"`
 }
 
@@ -112,16 +113,16 @@ type hostApplyDocDestination struct {
 	Kind    string `json:"kind"`
 	Surface string `json:"surface"`
 	Path    string `json:"path"`
-	// Tier is §4.1's report tier as a number: 2 for a run fact, 3 for a loss.
+	// Tier is the report tier as a number: 2 for a run fact, 3 for a loss.
 	Tier int `json:"tier"`
-	// Action is §4.6's vocabulary word. Always "would change" here — the document is the dry
+	// Action is the report vocabulary's word. Always "would change" here — the document is the dry
 	// run's, and these are the destinations that would.
 	Action string `json:"action"`
 }
 
 // hostApplyDocGroup is one tier-3 group: what is lost or blocked, whose it is, and the fix.
 type hostApplyDocGroup struct {
-	// Class is which of §4.4's classes this is (remedyClass*).
+	// Class is which of the remedy contract's classes this is (remedyClass*).
 	Class string `json:"class"`
 	// Key is the remedy key the group is grouped ON — the config key, the local-pack path,
 	// the missing binary — or absent for a group whose fix does not exist.
@@ -174,7 +175,7 @@ func buildHostApplyDoc(s *hostApplySurvey) hostApplyDoc {
 		},
 		// `[]`, never `null`, for every list: a consumer looping over one should not have to
 		// special-case the run that found nothing — which is the same rule that makes a
-		// zero-packs run emit a document at all rather than nothing (§4.8).
+		// zero-packs run emit a document at all rather than nothing (machine consumers).
 		InapplicableKinds: emptyIfNil(s.InapplicableKinds()),
 		FailedPacks:       emptyIfNil(s.FailedPacks()),
 		Destinations:      []hostApplyDocDestination{},
@@ -186,7 +187,7 @@ func buildHostApplyDoc(s *hostApplySurvey) hostApplyDoc {
 			Tier: int(c.Tier), Action: "would change",
 		})
 	}
-	// THE SAME GROUPS THE TEXT REPORT PRINTS, from the same builder: §4.4's contract is that
+	// THE SAME GROUPS THE TEXT REPORT PRINTS, from the same builder: the remedy contract is that
 	// no default view omits a loss or a blocker, and a document assembling its own groups
 	// would be a second place for that contract to hold or fail.
 	for _, g := range hostApplyRemedyGroups(s, home, false) {

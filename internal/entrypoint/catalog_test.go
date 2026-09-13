@@ -157,9 +157,9 @@ func TestCatalogSkipsNpmStagingDirsAtBothLevels(t *testing.T) {
 				"declaration can ever match it:\n%s", staging, got)
 		}
 	}
-	// The LIST is where one-line-per-orphan lives now (§4.7 moved it to boot.log), so this
-	// is the half that says a staging dir produced no finding — and the count on the
-	// terminal is the other half of the same claim.
+	// The LIST is where one-line-per-orphan lives now (the launch stream moved it to boot.log), so
+	// this is the half that says a staging dir produced no finding — and the count on the terminal
+	// is the other half of the same claim.
 	if lines := strings.Split(strings.TrimSpace(listed), "\n"); len(lines) != 1 {
 		t.Errorf("want exactly the one real orphan, got %d lines:\n%s", len(lines), listed)
 	}
@@ -469,18 +469,18 @@ func TestCatalogLinesReadAsACatalog(t *testing.T) {
 	}
 }
 
-// TestBootCatalogSaysHowManyAndLogsWhich is docs/design/report-tiers.md §4.7's compression,
+// TestBootCatalogSaysHowManyAndLogsWhich is docs/reference/report-tiers.md's compression,
 // and the ONE test that pins which sink each half goes to.
 //
-// The eight lines this jail printed at every launch (§2.4) are notch facts with a state
-// dependency: true until the user acts, repeated until then. §4.7 compresses them to one —
-// the count, and where the names are — with the list going to boot.log through the split
+// The eight lines this jail printed at every launch are notch facts with a state dependency:
+// true until the user acts, repeated until then. The launch stream compresses them to one — the
+// count, and where the names are — with the list going to boot.log through the split
 // Env.LogOnly already exists for.
 //
 // BOTH HALVES ARE ASSERTED, because each is a way to get this wrong that the other cannot
 // catch. A terminal that names an orphan is the repetition coming back; a boot log that does
-// not name one is the compression having DELETED the set rather than the lines, which §4.7
-// forbids in as many words.
+// not name one is the compression having DELETED the set rather than the lines, which the
+// launch stream forbids in as many words.
 //
 // MUTATION: change the loop body back to e.warn and this goes red on the terminal half;
 // change it to e.warn AND drop the summary and it goes red on the log half.
@@ -518,7 +518,7 @@ func TestBootCatalogSaysHowManyAndLogsWhich(t *testing.T) {
 // TestBootCatalogIsSilentOnBothSinksWithNoOrphans: a clean home says nothing at all, which
 // is what keeps the one line above worth reading. The old shape got this for free (an empty
 // loop prints nothing); a summary line does not, and "0 installed programs are declared by
-// no pack" on every healthy launch is exactly the noise §4.7 is removing.
+// no pack" on every healthy launch is exactly the noise the launch stream is removing.
 func TestBootCatalogIsSilentOnBothSinksWithNoOrphans(t *testing.T) {
 	home, packRoot := catalogHome(t)
 	seedNpm(t, home, "@scope/declared") // declared by the fixture pack: not an orphan

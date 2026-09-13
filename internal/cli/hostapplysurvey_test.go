@@ -4,9 +4,9 @@ package cli
 // `yolo host apply --dry-run` uses (docs/reference/host-apply-staleness.md §3.4, §10 step 1).
 //
 // THE FIRST PROPERTY IS R3, the design's highest-consequence failure: *"a freshly-applied home
-// prompts not at all, ever, until something actually changes."* Everything §4.3 builds on top of
-// this reads the predicate, so a predicate that always says "changed" turns the launch gate into
-// a prompt on every launch — worse than the silent drift it replaces.
+// prompts not at all, ever, until something actually changes."* Everything the verdict block
+// builds on top of this reads the predicate, so a predicate that always says "changed" turns
+// the launch gate into a prompt on every launch — worse than the silent drift it replaces.
 //
 // EVERY TEST HERE GOES THROUGH applyHostSurveyed, never through a kind's own render, and each
 // asserts InSync > 0 as well as the changed set. That second assertion is the CALL-SITE half:
@@ -41,9 +41,9 @@ func surveyApply(t *testing.T) (*hostApplySurvey, string) {
 // `would render` unconditionally, so this assertion could not be made at all.
 func TestHostApplySurveySeesNothingToChangeAfterAnAssert(t *testing.T) {
 	shippedPacksFixture(t)
-	// The DESTINATION ROLL-UP the second half of this test reads off the report is the
-	// --verbose view's since §4.5: it counts what a loop visited, which is the launch gate's
-	// question and not the operator's (§3.4). The survey it verifies is unchanged.
+	// The DESTINATION ROLL-UP the second half of this test reads off the report is the --verbose
+	// view's since detail on demand: it counts what a loop visited, which is the launch gate's
+	// question and not the operator's (P6). The survey it verifies is unchanged.
 	verboseReport(t)
 
 	if rc, report := applyWith(t, true, nil); rc != 0 {
@@ -182,7 +182,7 @@ func TestHostApplySurveyCoversBriefingAndFiles(t *testing.T) {
 	}
 
 	// The per-destination lines this test reads as its fixture check are the --verbose view's
-	// since §4.5 — a settled destination is a run fact the verdict counts.
+	// since detail on demand — a settled destination is a run fact the verdict counts.
 	verboseReport(t)
 	survey, report := surveyApply(t)
 	if survey.Changes() {
@@ -258,11 +258,11 @@ func TestHostApplySurveySeesADeletedSkill(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// docs/design/report-tiers.md §4.3 — the verdict block, and the counts under it.
+// docs/reference/report-tiers.md — the verdict block, and the counts under it.
 //
 // THE COUNTS ARE THE POINT OF THESE TESTS, not the sentences. The measured report said
 // "8 in sync, 76 would change" about a home where six files and fourteen skills would change
-// (§3.4): seventy of the seventy-six were fourteen skills counted once per agent directory,
+// (P6): seventy of the seventy-six were fourteen skills counted once per agent directory,
 // and nine "damaged entry" lines were three MCP servers counted once per agent. Every test
 // below is written so that deleting the CALL SITE that feeds the survey — not the counting
 // method — turns it red, which is the shape AGENTS.md requires and this repo has shipped
@@ -276,8 +276,8 @@ func applyAt(t *testing.T, write bool) (int, string) {
 	return rc, report
 }
 
-// TestHostApplyVerdictPrintsOnAllFourPaths is §4.3's first rule — *it prints on every path* —
-// against the four the command actually has: two postures times two branches.
+// TestHostApplyVerdictPrintsOnAllFourPaths is the verdict block's first rule — *it prints on
+// every path* — against the four the command actually has: two postures times two branches.
 //
 // BOTH HALVES WERE BROKEN, in different ways, and neither is reachable from the other's fix.
 // The roll-up sat inside `if !write`, so an --assert — the posture that writes into a real
@@ -307,10 +307,10 @@ func TestHostApplyVerdictPrintsOnAllFourPaths(t *testing.T) {
 			}
 			if !strings.Contains(report, tc.want) {
 				t.Errorf("the run must END in a verdict stating its RESULT; want a line "+
-					"containing %q (§4.3, P7 — the reader never computes the outcome)\n%s",
+					"containing %q (the verdict block, P7 — the reader never computes the outcome)\n%s",
 					tc.want, report)
 			}
-			// The POSTURE FOOTER, on every path too: §4.2's last line, and the only thing
+			// The POSTURE FOOTER, on every path too: the default view's last line, and the only thing
 			// that tells a reader of a dry run that nothing happened.
 			footer := "dry run — nothing was written"
 			if tc.write {
@@ -323,9 +323,10 @@ func TestHostApplyVerdictPrintsOnAllFourPaths(t *testing.T) {
 	}
 }
 
-// TestHostApplyVerdictSaysNothingToDoOnASettledHome pins the degenerate row of §4.3's table.
-// It is the row an operator meets most often — a home already applied — and the one where the
-// old tail was least useful: "8 in sync, 0 would change" is arithmetic, not an answer.
+// TestHostApplyVerdictSaysNothingToDoOnASettledHome pins the degenerate row of the verdict
+// block's table. It is the row an operator meets most often — a home already applied — and the
+// one where the old tail was least useful: "8 in sync, 0 would change" is arithmetic, not an
+// answer.
 func TestHostApplyVerdictSaysNothingToDoOnASettledHome(t *testing.T) {
 	shippedPacksFixture(t)
 	if rc, report := applyWith(t, true, nil); rc != 0 {
@@ -338,7 +339,7 @@ func TestHostApplyVerdictSaysNothingToDoOnASettledHome(t *testing.T) {
 }
 
 // multiAgentSkillFixture puts ONE skill of the user's own into several agent skill
-// directories — the shape §3.3's worst repetition axis measures, at fixture scale.
+// directories — the shape P1's worst repetition axis measures, at fixture scale.
 //
 // Five agent packs, so the composed destinations are five real directories; the skill is
 // written into three of them, which is enough for "counted per destination" and "counted per
@@ -358,12 +359,12 @@ func multiAgentSkillFixture(t *testing.T) (home string, dirs []string) {
 	return home, dirs
 }
 
-// TestHostApplySurveyCountsSkillsByNameNotDestination is §4.3's skills count: *skills, not
-// destinations, deduplicated by name*.
+// TestHostApplySurveyCountsSkillsByNameNotDestination is the verdict block's skills count:
+// *skills, not destinations, deduplicated by name*.
 //
 // THE MEASUREMENT BEHIND IT: fourteen skills in five agent directories produced seventy
 // changed destinations, seventy per-entry lines and seventy paths — 210 of the report's 277
-// lines stating one fact three times (§3.3). The destination count is still collected, and is
+// lines stating one fact three times (P1). The destination count is still collected, and is
 // still right for the launch gate, which asks a yes/no question; it is simply not a count a
 // human asked for.
 func TestHostApplySurveyCountsSkillsByNameNotDestination(t *testing.T) {
@@ -390,7 +391,7 @@ func TestHostApplySurveyCountsSkillsByNameNotDestination(t *testing.T) {
 	}
 	if !strings.Contains(report, "1 skill would move into your local pack") {
 		t.Errorf("the counts must state the SKILL count, not the destination count "+
-			"(§4.3: fourteen, not seventy)\n%s", report)
+			"(the verdict block: fourteen, not seventy)\n%s", report)
 	}
 	// And the destination roll-up must NOT be the number the reader is handed as the answer.
 	if strings.Contains(report, fmt.Sprintf("%d skills would move", destinations)) {
@@ -398,8 +399,8 @@ func TestHostApplySurveyCountsSkillsByNameNotDestination(t *testing.T) {
 	}
 }
 
-// TestHostApplySurveyTiersASkillAdoptionAsALoss pins §4.1's tier at the skills call site: an
-// adoption takes something of the user's and is tier 3, a plain composition is tier 2.
+// TestHostApplySurveyTiersASkillAdoptionAsALoss pins the report tier at the skills call site:
+// an adoption takes something of the user's and is tier 3, a plain composition is tier 2.
 //
 // It fails if printSkillResult passes a constant tier — which is the whole failure mode a
 // "tier" is meant to prevent, since a constant is exactly what a log level degenerates into.
@@ -411,7 +412,7 @@ func TestHostApplySurveyTiersASkillAdoptionAsALoss(t *testing.T) {
 		switch {
 		case c.Kind == "skills" && c.Surface == "mine":
 			if c.Tier != tierLoss {
-				t.Errorf("an ADOPTED skill is a §4.1 tier-3 loss — it moves content of the "+
+				t.Errorf("an ADOPTED skill is a tier-3 loss — it moves content of the "+
 					"user's out of %s; got tier %d\n%s", c.Path, c.Tier, report)
 			}
 			seenLoss = true
@@ -432,10 +433,10 @@ func TestHostApplySurveyTiersASkillAdoptionAsALoss(t *testing.T) {
 // three agent surfaces that own an MCP table — and each spells the table differently
 // (`mcp_servers` in codex's TOML, `mcp` in opencode's JSON, `mcpServers` in agy's).
 //
-// That spelling is the whole reason §4.3 counts entry losses by NAME: the raw loss strings are
-// table-qualified, so three agents holding one server the user added produce three strings,
-// and the measured home produced NINE for three servers (§3.3's third row — *"three lines
-// read as three problems with three fixes, when they are one problem with one fix"*).
+// That spelling is the whole reason the verdict block counts entry losses by NAME: the raw loss
+// strings are table-qualified, so three agents holding one server the user added produce three
+// strings, and the measured home produced NINE for three servers (P1's third row — *"three
+// lines read as three problems with three fixes, when they are one problem with one fix"*).
 func multiAgentMCPFixture(t *testing.T) (home string, surfaces int) {
 	t.Helper()
 	home = shippedPacksFixture(t)
@@ -466,8 +467,9 @@ func multiAgentMCPFixture(t *testing.T) (home string, surfaces int) {
 	return home, len(edits)
 }
 
-// TestHostApplySurveyCountsOneMCPEntryOnceAcrossAgents is §4.3's entry-loss count: *servers ×
-// agents, said as N servers from M agents*, against the multi-agent fixture §9 step 1 names.
+// TestHostApplySurveyCountsOneMCPEntryOnceAcrossAgents is the verdict block's entry-loss count:
+// *servers × agents, said as N servers from M agents*, against the multi-agent fixture the
+// verdict block names.
 func TestHostApplySurveyCountsOneMCPEntryOnceAcrossAgents(t *testing.T) {
 	_, surfaces := multiAgentMCPFixture(t)
 
@@ -514,7 +516,7 @@ func TestHostApplySurveyTiersASurfaceWithLossesAsATier3(t *testing.T) {
 		if c.Path == lossy {
 			found = true
 			if c.Tier != tierLoss {
-				t.Errorf("%s would DROP an entry of the user's — §4.1 tier 3; got tier %d\n%s",
+				t.Errorf("%s would DROP an entry of the user's — tier 3; got tier %d\n%s",
 					lossy, c.Tier, report)
 			}
 			continue
@@ -527,14 +529,14 @@ func TestHostApplySurveyTiersASurfaceWithLossesAsATier3(t *testing.T) {
 		t.Fatalf("fixture bug: %s is not in the changed set\n%s", lossy, report)
 	}
 	if !others {
-		t.Errorf("%s would change and loses nothing, so it is a §4.1 tier-2 RUN FACT; it did "+
+		t.Errorf("%s would change and loses nothing, so it is a tier-2 RUN FACT; it did "+
 			"not come back as one, which makes the tier-3 assertion above vacuous\n%s",
 			clean, report)
 	}
 }
 
-// TestHostApplySurveyCountsReplacedValuesWithTheirFileCount is §4.3's *values of yours
-// replaced — keys, with the file count*. Two keys in two files, so a count that collapsed
+// TestHostApplySurveyCountsReplacedValuesWithTheirFileCount is the verdict block's *values of
+// yours replaced — keys, with the file count*. Two keys in two files, so a count that collapsed
 // either dimension would be visible.
 func TestHostApplySurveyCountsReplacedValuesWithTheirFileCount(t *testing.T) {
 	home := shippedPacksFixture(t)
@@ -574,8 +576,8 @@ func TestHostApplySurveyCountsReplacedValuesWithTheirFileCount(t *testing.T) {
 	}
 }
 
-// TestHostApplyVerdictNamesAMissingDependency is §4.9 in the dry run: a missing declared
-// dependency is a tier-3 BLOCKER that decides the verdict.
+// TestHostApplyVerdictNamesAMissingDependency is the dependency rule in the dry run: a missing
+// declared dependency is a tier-3 BLOCKER that decides the verdict.
 //
 // Before it, a missing host dep printed correctly — which binary, and the command that would
 // install it — and then changed nothing: not the exit code, and not the roll-up, which counted
@@ -637,11 +639,11 @@ func TestHostApplySurveyCountsPresentDependencies(t *testing.T) {
 	}
 }
 
-// TestHostApplyVerdictNamesAPackThatFailedToRender is §4.3's render-failure row, and the
-// reason it outranks every other verdict: the pack's surfaces are absent from every count
-// below the sentence, so a verdict drawn from those counts alone would report a completed
-// apply out of a traversal that lost a pack. The error itself stays on stderr, where it is,
-// and the exit code stays 1.
+// TestHostApplyVerdictNamesAPackThatFailedToRender is the verdict block's render-failure row,
+// and the reason it outranks every other verdict: the pack's surfaces are absent from every
+// count below the sentence, so a verdict drawn from those counts alone would report a completed
+// apply out of a traversal that lost a pack. The error itself stays on stderr, where it is, and
+// the exit code stays 1.
 func TestHostApplyVerdictNamesAPackThatFailedToRender(t *testing.T) {
 	home := t.TempDir()
 	packDir := filepath.Join(t.TempDir(), "bust")
@@ -669,19 +671,20 @@ func TestHostApplyVerdictNamesAPackThatFailedToRender(t *testing.T) {
 	}
 }
 
-// TestHostApplyHeaderSaysTheApplyInPlainWords pins §4.3 item 1 and §4.6 together: the report's
-// FIRST line names the posture in words the reader already has, and the word `observe` — the
-// posture's name at the call site and in the design doc — never reaches the user at all.
+// TestHostApplyHeaderSaysTheApplyInPlainWords pins the verdict block item 1 and the report
+// vocabulary together: the report's FIRST line names the posture in words the reader already
+// has, and the word `observe` — the posture's name at the call site and in the design doc —
+// never reaches the user at all.
 //
 // The header read `host apply  home <path>  posture observe (dry-run)`, which is the exact
-// string §4.3 item 1 names as the thing not to print, and it printed BOTH of the two words
-// §4.6 rules down to one. The footer had already been rewritten to say `dry run`; the header
-// it sits opposite had not, so the two ends of the same report disagreed about what a reader
-// should call the posture they had just run.
+// string the verdict block item 1 names as the thing not to print, and it printed BOTH of the
+// two words the report vocabulary rules down to one. The footer had already been rewritten to
+// say `dry run`; the header it sits opposite had not, so the two ends of the same report
+// disagreed about what a reader should call the posture they had just run.
 //
-// The home path is asserted PRESENT, not incidentally: §4.3 item 1 keeps it deliberately,
-// because it is the fact an in-jail reader needs — this command renders into *this* jail's
-// home when it is run from inside one.
+// The home path is asserted PRESENT, not incidentally: the verdict block item 1 keeps it
+// deliberately, because it is the fact an in-jail reader needs — this command renders into
+// *this* jail's home when it is run from inside one.
 func TestHostApplyHeaderSaysTheApplyInPlainWords(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -701,24 +704,25 @@ func TestHostApplyHeaderSaysTheApplyInPlainWords(t *testing.T) {
 			first, _, _ := strings.Cut(report, "\n")
 			if !strings.HasPrefix(first, tc.want+home) {
 				t.Errorf("the first line must name the posture in plain words and keep the "+
-					"home (§4.3 item 1); want a prefix of %q, got %q", tc.want+home, first)
+					"home (the verdict block item 1); want a prefix of %q, got %q", tc.want+home, first)
 			}
-			// §4.6: `observe` stays in the code and the design; ONE word reaches the user.
+			// the report vocabulary: `observe` stays in the code and the design; ONE word reaches the
+			// user.
 			if strings.Contains(report, "observe") || strings.Contains(report, "OBSERVE") {
-				t.Errorf("the word `observe` reached the user — §4.6 rules the posture's "+
+				t.Errorf("the word `observe` reached the user — the report vocabulary rules the posture's "+
 					"user-facing name down to one word, `dry run`:\n%s", report)
 			}
 		})
 	}
 }
 
-// TestHostApplyHelpSaysDryRunNotObserve carries §4.6 into the HELP, which is where a reader
-// meets the vocabulary before they ever run the command. A report that says `dry run` while
-// `--help` says the command "OBSERVES" is still two words reaching one user.
+// TestHostApplyHelpSaysDryRunNotObserve carries the report vocabulary into the HELP, which is
+// where a reader meets the vocabulary before they ever run the command. A report that says `dry
+// run` while `--help` says the command "OBSERVES" is still two words reaching one user.
 func TestHostApplyHelpSaysDryRunNotObserve(t *testing.T) {
 	for name, usage := range map[string]string{"yolo host": hostUsage, "yolo apply": applyUsage} {
 		if strings.Contains(usage, "OBSERVE") || strings.Contains(usage, "observe") {
-			t.Errorf("%s --help still calls the posture `observe`; §4.6's user-facing word "+
+			t.Errorf("%s --help still calls the posture `observe`; the report vocabulary's user-facing word "+
 				"is `dry run`:\n%s", name, usage)
 		}
 		if !strings.Contains(usage, "dry run") && !strings.Contains(usage, "DRY RUN") {

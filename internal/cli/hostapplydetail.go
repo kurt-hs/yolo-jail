@@ -1,12 +1,12 @@
 package cli
 
-// hostapplydetail.go is docs/design/report-tiers.md §4.5's DETAIL ON DEMAND: which lines the
+// hostapplydetail.go is docs/reference/report-tiers.md's DETAIL ON DEMAND: which lines the
 // report prints by default, and which ones `--verbose` adds.
 //
-// THE RULE IS THE TIER, NOT THE EMITTER (§4.1). A tier-2 RUN FACT — a destination that would
-// render, one already in sync, a dependency probe, a composed-from line — is *counted in the
-// verdict* and itemized only on demand; a tier-3 LOSS OR BLOCKER is never hidden, because
-// §4.4's contract is that grouping compresses the LINES and never the SET. The one tier-2
+// THE RULE IS THE TIER, NOT THE EMITTER (the tiers). A tier-2 RUN FACT — a destination that
+// would render, one already in sync, a dependency probe, a composed-from line — is *counted in
+// the verdict* and itemized only on demand; a tier-3 LOSS OR BLOCKER is never hidden, because
+// the remedy contract is that grouping compresses the LINES and never the SET. The one tier-2
 // exception the design names explicitly is a would-change CONFIG surface, which stays itemized:
 // there are few of them and they are the auditor's core.
 //
@@ -52,10 +52,10 @@ func detail(pr richtext.Printer, format string, args ...any) {
 // reportDestination prints one destination's line at the tier it states: a change or a loss
 // prints always, a settled run fact prints under `--verbose`.
 //
-// The TIER is passed rather than derived for §4.1's reason — the class of a fact is known where
-// the fact is produced, and is unrecoverable from the formatted string that arrives here. Every
-// call site already passes the same tier to survey.note, which is what keeps the count and the
-// line agreeing about what this destination is.
+// The TIER is passed rather than derived for the tiers' reason — the class of a fact is known
+// where the fact is produced, and is unrecoverable from the formatted string that arrives here.
+// Every call site already passes the same tier to survey.note, which is what keeps the count
+// and the line agreeing about what this destination is.
 func reportDestination(pr richtext.Printer, tier reportTier, wouldChange bool,
 	format string, args ...any) {
 	if tier == tierLoss || wouldChange {

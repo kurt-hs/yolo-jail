@@ -446,7 +446,7 @@ from declared inputs, and its `--hash` is a reproducibility pin.
 > `program`'s install — but behind **one** prompt listing every missing dependency, not one per
 > elevation class, and **a decline is FATAL at the prompt** where [OQ-9](#open-questions-to-resolve-before-their-phase) made the manifest a
 > floor the run continued over. The gate's own docstring names the reversal and
-> [`report-tiers.md`](../design/report-tiers.md#11-decision-ledger)'s [`OQ-RO6`](../design/report-tiers.md#11-decision-ledger)/[`OQ-RO7`](../design/report-tiers.md#11-decision-ledger) carry the
+> [`report-tiers.md`](../reference/report-tiers.md#why-its-this-way)'s [`OQ-RO6`](../reference/report-tiers.md#why-its-this-way)/[`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) carry the
 > reasoning: an `--assert`'s promise is a ready environment, so a posture that exits 0 having
 > left it unready has stated a result it did not achieve. **The elevation-class batching is
 > still unbuilt** — what shipped is the offer, not [OQ-9](#open-questions-to-resolve-before-their-phase)'s shape for it. `yolo check-deps`
@@ -804,7 +804,7 @@ the call site.
   Design doc [§3.5](../design/yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest).
 - **[OQ-9](#open-questions-to-resolve-before-their-phase) — Offer-to-run confirm UX → RESOLVED: batch by elevation class, minimize
   interaction (2026-08-01).** ⚠ **Half-reversed 2026-09-12 by
-  [`report-tiers.md`](../design/report-tiers.md#11-decision-ledger)** for `yolo host apply
+  [`report-tiers.md`](../reference/report-tiers.md#why-its-this-way)** for `yolo host apply
   --assert` only: one prompt rather than one per elevation class, and a decline is FATAL rather
   than falling back to the manifest floor. See the Phase 6 status box above. Not per-command (my earlier split was too interactive) and not
   one blind confirm. **Confirm everything, batched:** group the remedies by elevation class

@@ -2,7 +2,7 @@ package cli
 
 // hostapplysurvey.go accumulates THE CHANGE PREDICATE across one whole host apply
 // (docs/reference/host-apply-staleness.md §3.4, §10 step 1) AND the counts the report's
-// verdict block is evidenced by (docs/design/report-tiers.md §4.3, §9 step 1).
+// verdict block is evidenced by (docs/reference/report-tiers.md's verdict block).
 //
 // Each of the four written kinds computes the predicate for its own destinations — see
 // entrypoint.HostRenderResult.WouldChange and hostskills.Result.WouldChange — and each already
@@ -16,11 +16,11 @@ package cli
 // output discarded and reads the survey it filled in. A second traversal of the four kinds
 // would be a second thing to drift out of step with the apply it is supposed to describe.
 //
-// ONE WRITER for the counts, for the same reason (report-tiers.md §5, *One writer*): the
-// survey is the only thing that knows them and the printer reads it, so no emitter computes
-// its own total. The counts are what they are because the DESTINATION count answers a
+// ONE WRITER for the counts, for the same reason (report-tiers.md: the survey is the one
+// writer): the survey is the only thing that knows them and the printer reads it, so no emitter
+// computes its own total. The counts are what they are because the DESTINATION count answers a
 // question nobody asked — 76 of them in the measured home, 70 being fourteen skills counted
-// once per agent directory (§3.4). Everything below counts files, keys, entries, skills and
+// once per agent directory (P6). Everything below counts files, keys, entries, skills and
 // binaries instead.
 
 import (
@@ -31,7 +31,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
-// reportTier is docs/design/report-tiers.md §4.1's REPORT TIER: the class of fact a line
+// reportTier is docs/reference/report-tiers.md's REPORT TIER: the class of fact a line
 // states, assigned WHERE THE FACT IS PRODUCED and read by the printer to decide whether a
 // line prints, how many times, and under which flag.
 //
@@ -43,14 +43,14 @@ import (
 //
 // Tiers 1 (notch facts) and 4 (launch disclosures) have no per-destination representative and
 // so have no constant here: a notch fact is true of the NOTCH rather than of a destination
-// (§9 step 3 collapses those lines), and a disclosure belongs to a launch (§9 step 7).
+// (the tiers collapses those lines), and a disclosure belongs to a launch (the launch stream).
 type reportTier int
 
 const (
-	// tierRun is §4.1's tier 2: varies with the home, needs no action — a destination that
+	// tierRun is tier 2: varies with the home, needs no action — a destination that
 	// would render, one already in sync, a declared dependency that is present.
 	tierRun reportTier = 2
-	// tierLoss is §4.1's tier 3, which has TWO members and one treatment. A loss takes
+	// tierLoss is tier 3, which has TWO members and one treatment. A loss takes
 	// something of the user's (a value replaced, a named entry dropped, a skill moved into
 	// the local pack); a blocker stands between this home and a completed apply (a missing
 	// declared dependency, a refusal, a pack that failed to render). They share a tier
@@ -69,7 +69,7 @@ type hostChange struct {
 	Surface string
 	// Path is the absolute destination in the home.
 	Path string
-	// Tier is the class of fact this destination states (§4.1). tierLoss means THIS RUN
+	// Tier is the class of fact this destination states (the tiers). tierLoss means THIS RUN
 	// would take something of the user's here; everything else is tierRun.
 	Tier reportTier
 }
@@ -77,7 +77,7 @@ type hostChange struct {
 // skillFate is what an apply would do to one SKILL — by NAME, across every destination that
 // skill reaches. The name is the unit because the destination is not: fourteen skills in five
 // agent directories are seventy destinations and fourteen facts, and the seventy is most of
-// why the measured count line was useless (§3.3, §3.4).
+// why the measured count line was useless (P1, P6).
 //
 // Ordered by precedence, so a skill that is adopted in one directory and merely composed in
 // another reports the adoption: the bigger claim on the user's content wins.
@@ -90,8 +90,8 @@ const (
 	// moves (their own skills live in the local pack), so this is not an adoption; it is
 	// still content leaving a directory they look at.
 	skillRetired
-	// skillAdopted — a skill of the USER's moves or unions into their local pack and is
-	// composed back. §4.4's loss class with a remedy, and the one the verdict names.
+	// skillAdopted — a skill of the USER's moves or unions into their local pack and is composed
+	// back. the remedy contract's loss class with a remedy, and the one the verdict names.
 	skillAdopted
 )
 
@@ -105,16 +105,16 @@ type hostApplySurvey struct {
 	// "As they are" is the literal claim, and it deliberately includes a surface the render
 	// REFUSES to touch: the report gives every refusal its own loud line, and folding them into
 	// the changed set instead would make a launch gate stop on a condition applying cannot fix
-	// — a prompt whose remedy does not exist (§4.4's cannot-determine class).
+	// — a prompt whose remedy does not exist (the remedy contract's cannot-determine class).
 	InSync int
 	// Changed lists the destinations the render would alter, in report order.
 	Changed []hostChange
 
-	// replacedKeys are the dotted managed keys that would overwrite a value of the user's,
-	// and replacedFiles the destinations they sit in — §4.3's "values of yours replaced,
-	// keys, with the file count". Two sets rather than one count because the operator's
-	// first question is how many of THEIR values move, and the file count is what makes
-	// that number locatable.
+	// replacedKeys are the dotted managed keys that would overwrite a value of the user's, and
+	// replacedFiles the destinations they sit in — the verdict block's "values of yours replaced,
+	// keys, with the file count". Two sets rather than one count because the operator's first
+	// question is how many of THEIR values move, and the file count is what makes that number
+	// locatable.
 	replacedKeys  map[string]bool
 	replacedFiles map[string]bool
 	// droppedEntries are the NAMES of named-table entries that would be dropped or replaced
@@ -124,9 +124,9 @@ type hostApplySurvey struct {
 	droppedFrom    map[string]bool
 	// skills is every skill this run touches, keyed by NAME (see skillFate).
 	skills map[string]skillFate
-	// commentSurfaces are the surfaces whose comments a canonical re-emit would drop — the
-	// one §4.4 loss class with no remedy possible, and the one the verdict used to be silent
-	// about while configResultTier was already counting it as a loss.
+	// commentSurfaces are the surfaces whose comments a canonical re-emit would drop — the one the
+	// remedy contract loss class with no remedy possible, and the one the verdict used to be
+	// silent about while configResultTier was already counting it as a loss.
 	commentSurfaces map[string]bool
 	// adoptedSurfaces are the surfaces THIS RUN ADOPTED — composed wholesale out of what the
 	// file already held, with the pre-existing file copied into the one-time archive
@@ -134,17 +134,17 @@ type hostApplySurvey struct {
 	// set above is: a surface adopts once per home, so the surface is the fact and the count
 	// is one per file rather than one per write the adoption performed.
 	adoptedSurfaces map[string]bool
-	// deps is every declared dependency's FINDING keyed by BINARY — the probed state and,
-	// for a missing one, the remedy the tier-3 group states once (§4.4 groups a blocker by
-	// its remedy key, and for a dependency that key is the binary, across packs). depsNoBin
-	// counts the contributions that named no binary at all: those cannot be deduplicated by
-	// one, and they are not missing either — they were never probed (§4.9 point 6).
+	// deps is every declared dependency's FINDING keyed by BINARY — the probed state and, for a
+	// missing one, the remedy the tier-3 group states once (the remedy contract groups a blocker
+	// by its remedy key, and for a dependency that key is the binary, across packs). depsNoBin
+	// counts the contributions that named no binary at all: those cannot be deduplicated by one,
+	// and they are not missing either — they were never probed (the dependency rule point 6).
 	deps      map[string]hostDepFinding
 	depsNoBin int
 	// installedDeps are the binaries THIS RUN installed, at the user's y, before anything
 	// was rendered (applyhostdepgate.go). The verdict leads with them — "Installed `rg`;
 	// applied: …" — because an apply that changed the host's toolchain did something the
-	// counts below cannot express (§4.3).
+	// counts below cannot express (the verdict block).
 	installedDeps []string
 	firstApply    bool
 	failedPacks   []string
@@ -157,8 +157,8 @@ type hostApplySurvey struct {
 	// nothing" with a different next action, which an empty Changed set cannot distinguish.
 	home      string
 	zeroPacks bool
-	// notch is the tier-1 half of the report: the kinds this notch does nothing with and
-	// whether any pack declares `autonomy`. Recorded for the machine document (§4.8), which
+	// notch is the tier-1 half of the report: the kinds this notch does nothing with and whether
+	// any pack declares `autonomy`. Recorded for the machine document (machine consumers), which
 	// names the kinds and carries none of their prose — rationale is not data.
 	notch notchFacts
 }
@@ -197,8 +197,8 @@ func (s *hostApplySurvey) Home() string {
 func (s *hostApplySurvey) ZeroPacks() bool { return s != nil && s.zeroPacks }
 
 // InapplicableKinds names the contribution kinds this notch does nothing with, sorted as the
-// census collected them. The NAMES only: their reasons live in the manual (§4.6), and no
-// terminal view or document prints them.
+// census collected them. The NAMES only: their reasons live in the manual (the report
+// vocabulary), and no terminal view or document prints them.
 func (s *hostApplySurvey) InapplicableKinds() []string {
 	if s == nil {
 		return nil
@@ -226,9 +226,9 @@ func (s *hostApplySurvey) AutonomyPosture() string {
 // bucket.
 //
 // The TIER is the caller's to decide and is passed rather than derived, which is the whole
-// point of §4.1: the class of a fact is known where the fact is produced (the result struct
-// carrying the losses, the typed skills Action) and is unrecoverable from the three strings
-// that arrive here.
+// point of the tiers: the class of a fact is known where the fact is produced (the result
+// struct carrying the losses, the typed skills Action) and is unrecoverable from the three
+// strings that arrive here.
 func (s *hostApplySurvey) note(tier reportTier, kind, surface, path string, wouldChange bool) {
 	if s == nil || path == "" {
 		return
@@ -261,8 +261,8 @@ func (s *hostApplySurvey) noteConfig(r entrypoint.HostRenderResult) {
 		s.mark(&s.droppedFrom, r.Surface)
 	}
 	if len(r.Formatting) > 0 {
-		// The SURFACE is the unit §4.4 groups comment loss by, and the strings are not
-		// recorded: a comment is the user's prose, and §4.4's first forbidden thing is
+		// The SURFACE is the unit the remedy contract groups comment loss by, and the strings are not
+		// recorded: a comment is the user's prose, and the remedy contract's first forbidden thing is
 		// printing the user's own content back at them (a terminal transcript gets pasted
 		// into bug reports). The count and the file are the whole fact.
 		s.mark(&s.commentSurfaces, r.Surface)
@@ -280,8 +280,8 @@ func (s *hostApplySurvey) noteConfig(r entrypoint.HostRenderResult) {
 	}
 }
 
-// configResultTier is §4.1 applied to one config surface: tier 3 when this render would take
-// something of the user's here, tier 2 otherwise.
+// configResultTier is the tiers applied to one config surface: tier 3 when this render would
+// take something of the user's here, tier 2 otherwise.
 //
 // `Formatting` counts, and it is the one entry that is not obvious. Nothing the user
 // CONFIGURED changes when a comment is dropped — which is why it is not an overwrite — but a
@@ -319,7 +319,7 @@ func configResultTier(r entrypoint.HostRenderResult) reportTier {
 // The strings are built by entrypoint's tableLosses as "<table>.<entry> (<what happened>)",
 // and the TABLE is the half that differs between agents for one server: claude spells the
 // table `mcpServers`, codex `mcp_servers`, opencode `mcp`. Counting the raw strings therefore
-// reports three servers the user added by hand as nine losses — §3.3's worst repetition axis,
+// reports three servers the user added by hand as nine losses — P1's worst repetition axis,
 // and the only reason this reduction exists.
 //
 // The format is pinned by going through the real multi-agent render rather than by a literal
@@ -380,7 +380,8 @@ func (s *hostApplySurvey) noteDep(bin string, f hostDepFinding) {
 // The WORSE state wins — two packs disagreeing about `rg` is one missing dependency on one
 // host. At equal states two tie-breaks, in order:
 //
-//   - an INSTALLABLE finding wins (§4.9 / OQ-RO7). One pack declaring `rg` as a `program` and
+//   - an INSTALLABLE finding wins (the dependency rule / OQ-RO7). One pack declaring `rg`
+//     as a `program` and
 //     another as a `requires` means yolo does have an install to offer, and dropping to the
 //     `requires` would refuse the run over a remedy it was holding.
 //   - otherwise a finding carrying a REMEDY wins: a group stating "no remedy" while a selected
@@ -421,9 +422,9 @@ func (s *hostApplySurvey) InstalledDeps() []string {
 	return s.installedDeps
 }
 
-// noteRenderFailure records a pack whose render errored. It is a §4.1 blocker: its surfaces
-// are absent from every count above, so a verdict that did not name it would be claiming a
-// completed apply out of counts that silently lost a pack.
+// noteRenderFailure records a pack whose render errored. It is a the tiers blocker: its
+// surfaces are absent from every count above, so a verdict that did not name it would be
+// claiming a completed apply out of counts that silently lost a pack.
 func (s *hostApplySurvey) noteRenderFailure(pack string) {
 	if s == nil {
 		return
@@ -439,12 +440,13 @@ func (s *hostApplySurvey) mark(set *map[string]bool, key string) {
 }
 
 // Changes reports whether an --assert would alter anything at all. This is the whole question
-// §4.3's table branches on.
+// the verdict block's table branches on.
 func (s *hostApplySurvey) Changes() bool { return s != nil && len(s.Changed) > 0 }
 
 // Summary is the DESTINATION roll-up, which is the launch gate's question and not the
-// operator's: it counts the destinations a traversal visited (docs/reference/host-apply-staleness.md
-// §3.4). The reader's counts are the ones below it — see hostapplyverdict.go.
+// operator's: it counts the destinations a traversal visited
+// (docs/reference/host-apply-staleness.md P6). The reader's counts are the ones below it — see
+// hostapplyverdict.go.
 func (s *hostApplySurvey) Summary() string {
 	if s == nil {
 		return "0 in sync, 0 would change"
@@ -466,7 +468,8 @@ func (s *hostApplySurvey) ChangedOfKind(kind string) int {
 	return n
 }
 
-// ReplacedValues is §4.3's "values of yours replaced": how many keys, in how many files.
+// ReplacedValues is the verdict block's "values of yours replaced": how many keys, in how many
+// files.
 func (s *hostApplySurvey) ReplacedValues() (keys, files int) {
 	if s == nil {
 		return 0, 0
@@ -474,7 +477,8 @@ func (s *hostApplySurvey) ReplacedValues() (keys, files int) {
 	return len(s.replacedKeys), len(s.replacedFiles)
 }
 
-// DroppedEntries is §4.3's "MCP entries dropped", said as N entries from M surfaces.
+// DroppedEntries is the verdict block's "MCP entries dropped", said as N entries from M
+// surfaces.
 func (s *hostApplySurvey) DroppedEntries() (entries, surfaces int) {
 	if s == nil {
 		return 0, 0
@@ -482,9 +486,9 @@ func (s *hostApplySurvey) DroppedEntries() (entries, surfaces int) {
 	return len(s.droppedEntries), len(s.droppedFrom)
 }
 
-// SkillNames lists the skills with this fate, sorted — NAMES, because §4.4 forbids a default
-// view that drops a name from a loss group, and a sorted list is the only form a report can
-// print twice and get the same answer.
+// SkillNames lists the skills with this fate, sorted — NAMES, because the remedy contract
+// forbids a default view that drops a name from a loss group, and a sorted list is the only
+// form a report can print twice and get the same answer.
 func (s *hostApplySurvey) SkillNames(fate skillFate) []string {
 	if s == nil {
 		return nil
@@ -499,9 +503,9 @@ func (s *hostApplySurvey) SkillNames(fate skillFate) []string {
 	return out
 }
 
-// Deps is §4.3's dependency count, three ways. "Not probed" is its own number and never folds
-// into missing: §4.9 point 6 rules that yolo may not call an environment unready on evidence
-// it does not have.
+// Deps is the verdict block's dependency count, three ways. "Not probed" is its own number and
+// never folds into missing: the dependency rule point 6 rules that yolo may not call an
+// environment unready on evidence it does not have.
 func (s *hostApplySurvey) Deps() (present, missing, notProbed int) {
 	if s == nil {
 		return 0, 0, 0
@@ -520,8 +524,8 @@ func (s *hostApplySurvey) Deps() (present, missing, notProbed int) {
 }
 
 // MissingDeps names the binaries that are declared and absent, sorted. The verdict line names
-// them rather than counting them (§4.3): a blocker contributes its NAME, because the reader's
-// next action is about that binary.
+// them rather than counting them (the verdict block): a blocker contributes its NAME, because
+// the reader's next action is about that binary.
 func (s *hostApplySurvey) MissingDeps() []string {
 	if s == nil {
 		return nil
@@ -547,17 +551,17 @@ func (s *hostApplySurvey) MissingDepFinding(bin string) hostDepFinding {
 }
 
 // ReplacedKeyNames lists the managed keys that would overwrite a value of the user's, sorted.
-// The NAMES, because §4.4 forbids a default view that drops a name from a loss group — and the
-// user's own VALUES are never printed, at any verbosity, which is that section's other
-// forbidden thing.
+// The NAMES, because the remedy contract forbids a default view that drops a name from a loss
+// group — and the user's own VALUES are never printed, at any verbosity, which is that
+// section's other forbidden thing.
 func (s *hostApplySurvey) ReplacedKeyNames() []string { return sortedSet(s, s.replacedKeys) }
 
 // DroppedEntryNames lists the named-table entries that would be dropped, sorted and
 // deduplicated across agents (see entryLossName for why the raw strings cannot be the unit).
 func (s *hostApplySurvey) DroppedEntryNames() []string { return sortedSet(s, s.droppedEntries) }
 
-// DroppedComments is §4.4's comment class: how many surfaces would lose a comment. A loss with
-// no remedy possible, and the one the verdict had no term for.
+// DroppedComments is the remedy contract's comment class: how many surfaces would lose a
+// comment. A loss with no remedy possible, and the one the verdict had no term for.
 func (s *hostApplySurvey) DroppedComments() int {
 	if s == nil {
 		return 0
@@ -568,15 +572,15 @@ func (s *hostApplySurvey) DroppedComments() int {
 // CommentSurfaces names those surfaces, sorted.
 func (s *hostApplySurvey) CommentSurfaces() []string { return sortedSet(s, s.commentSurfaces) }
 
-// Adoptions is how many surfaces this run ADOPTED: §4.4's one-way door, and the one tier-3
-// class the verdict block had no term for at all (OQ-CO7 D3). It is the count the verdict
-// needs to stop reporting an adopting run as a run that did nothing.
+// Adoptions is how many surfaces this run ADOPTED: the remedy contract's one-way door, and the
+// one tier-3 class the verdict block had no term for at all (OQ-CO7 D3). It is the count the
+// verdict needs to stop reporting an adopting run as a run that did nothing.
 //
 // IT IS NOT A SECOND SPELLING OF Changes(), and the two are kept apart deliberately
-// (report-tiers.md §6: the survey grows fields, it does not change what Changes() means). The
-// launch gate reads Changes() to decide whether a home needs an apply; an adoption is
-// something a completed apply DID, so folding it in would make a settled home look pending to
-// the gate forever.
+// (report-tiers.md's non-licence: the survey grows fields, it does not change what Changes()
+// means). The launch gate reads Changes() to decide whether a home needs an apply; an adoption
+// is something a completed apply DID, so folding it in would make a settled home look pending
+// to the gate forever.
 //
 // ASSERT-ONLY, which is why the dry run's machine document carries no field for it: a render
 // that writes nothing archives nothing (see HostRenderResult.Archived's own docstring), so a

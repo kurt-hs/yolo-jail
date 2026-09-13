@@ -483,9 +483,9 @@ there is no sync step.
 - **Use `shquote.Join`** (`internal/shquote`) for anything crossing into the
   container's `bash -c`.
 - **A LAUNCH HAS NO QUIET MODE, by ruling**
-  ([`OQ-RO3`](./docs/design/report-tiers.md#11-decision-ledger);
-  [P4](./docs/design/report-tiers.md#1-verdict-and-the-principles-it-rests-on) and
-  [§4.7](./docs/design/report-tiers.md#47-the-launch-stream-under-the-same-tiers)).
+  ([`OQ-RO3`](./docs/reference/report-tiers.md#why-its-this-way);
+  [P4](./docs/reference/report-tiers.md#principles) and
+  [the launch stream](./docs/reference/report-tiers.md#the-launch-stream)).
   Progress and provenance may be COMPRESSED to a line — the boot
   catalog's eight `boot catalog:` lines are one line plus a list in `boot.log`, and that
   compression is the whole density control a launch gets — but a **disclosure is never

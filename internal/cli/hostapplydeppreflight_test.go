@@ -1,7 +1,7 @@
 package cli
 
-// hostapplydeppreflight_test.go pins docs/design/report-tiers.md §9 step 5: the dependency
-// probe is a PRE-FLIGHT over the whole run, not a loop body.
+// hostapplydeppreflight_test.go pins docs/reference/report-tiers.md's dependency rule: the
+// dependency probe is a PRE-FLIGHT over the whole run, not a loop body.
 //
 // WHY IT NEEDS A TEST AT ALL, given the step changes no output: that is precisely why. A probe
 // hoisted out of the loop and a probe left in it produce byte-identical reports (verified by
@@ -24,10 +24,10 @@ import (
 
 func TestHostApplyProbesEveryPackBeforeTheFirstReportLine(t *testing.T) {
 	shippedPacksFixture(t)
-	// THE MEASUREMENT NEEDS THE LINES. The observation here is TIMING — no report line may
-	// precede any probe — and §4.5 moved the per-contribution dep lines behind `--verbose`, so
-	// the compressed view has nothing for a probe to land between. The property under test is
-	// the probe's POSITION, which no verbosity changes.
+	// THE MEASUREMENT NEEDS THE LINES. The observation here is TIMING — no report line may precede
+	// any probe — and detail on demand moved the per-contribution dep lines behind `--verbose`, so
+	// the compressed view has nothing for a probe to land between. The property under test is the
+	// probe's POSITION, which no verbosity changes.
 	verboseReport(t)
 
 	var out, errw bytes.Buffer
@@ -62,7 +62,7 @@ func TestHostApplyProbesEveryPackBeforeTheFirstReportLine(t *testing.T) {
 		if snap != snapshots[0] {
 			t.Fatalf("probe %d of %d saw %d bytes of report where the first saw %d — the "+
 				"probes are not happening together, so an abort at one of them would find "+
-				"some packs already written (§4.9 point 1)\n%s",
+				"some packs already written (the dependency rule, point 1)\n%s",
 				i+1, len(snapshots), len(snap), len(snapshots[0]), report)
 		}
 	}

@@ -1588,19 +1588,19 @@ overlay absent" is an anomaly yolo could report even if it cannot net it.
 > that adopted a file printed the surface's own line, printed the unsuppressible archive
 > disclosure under it, and then closed on *"Nothing to apply — this home is up to date"*: two
 > surfaces disagreeing about one run, which is the defect
-> [`report-tiers.md`](report-tiers.md) exists to prevent, over the one line
-> [`OQ-RO3`](report-tiers.md#11-decision-ledger) forbids hiding. Measured on the BUILT binary —
+> [`../reference/report-tiers.md`](../reference/report-tiers.md) exists to prevent, over the one line
+> [`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) forbids hiding. Measured on the BUILT binary —
 > the baked `yolo` on PATH is many commits behind and shows the old report.
 >
 > **The obstacle recorded here was real and is untouched.** `hostApplySurvey.InSync` still counts
 > an adopting destination, `Changes()` still means exactly what it meant, and the
 > `host_apply_on_launch` gate therefore still stops for the homes it stopped for before
 > ([`hostapplygate.go`](../../internal/cli/hostapplygate.go) reads `Changes()` and nothing else) —
-> which is also [`report-tiers.md` §6](report-tiers.md#6-what-this-does-not-propose)'s rule that
+> which is also [`../reference/report-tiers.md`](../reference/report-tiers.md#what-this-does-not-license)'s rule that
 > the survey grows fields rather than changing what `Changes()` means. What closed it is a count
 > the gate does not read: `hostApplySurvey.Adoptions()`, marked from `HostRenderResult.Archived`
 > in `noteConfig`, which makes an adoption a class of its own in
-> [§4.3](report-tiers.md#43-the-verdict-block)'s verdict block. The run now ends on
+> [the verdict block](../reference/report-tiers.md#the-verdict-block). The run now ends on
 > *"Applied: 1 surface adopted (archived first)"*, and a home with nothing to adopt still ends on
 > *"Nothing to apply"*.
 >

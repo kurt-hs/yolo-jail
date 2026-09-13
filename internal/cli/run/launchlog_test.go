@@ -13,8 +13,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 )
 
-// launchlog_test.go covers docs/design/report-tiers.md §4.7's *Persist the launcher's
-// half*: the launcher's own output, which used to exist only on a terminal, lands in
+// launchlog_test.go covers docs/reference/report-tiers.md the launch stream's *Persist the
+// launcher's half*: the launcher's own output, which used to exist only on a terminal, lands in
 // <workspace>/.yolo/launch.log beside the entrypoint's boot.log.
 
 // readLaunchLog returns the log's content, or fails.
@@ -152,10 +152,10 @@ func TestLaunchLogHeaderNamesTheVersionAndTheEnvironmentHatches(t *testing.T) {
 	}
 }
 
-// TestLaunchLogTrimsToTheSameBoundThePerfLogHas: the file is per workspace and appended
-// once per launch, so without a bound it is a disk-exhaustion bug on a directory the
-// user cannot see into from the jail. §4.7 rules the retention by precedent — the perf
-// log's — which is why this asserts against perf.MaxRuns rather than a local number.
+// TestLaunchLogTrimsToTheSameBoundThePerfLogHas: the file is per workspace and appended once
+// per launch, so without a bound it is a disk-exhaustion bug on a directory the user cannot see
+// into from the jail. the launch stream rules the retention by precedent — the perf log's —
+// which is why this asserts against perf.MaxRuns rather than a local number.
 func TestLaunchLogTrimsToTheSameBoundThePerfLogHas(t *testing.T) {
 	ws := t.TempDir()
 	for i := 0; i < perf.MaxRuns+5; i++ {
@@ -179,10 +179,10 @@ func TestLaunchLogTrimsToTheSameBoundThePerfLogHas(t *testing.T) {
 	}
 }
 
-// TestLaunchLogFailureLeavesTheLaunchAlone: a logger that can stop a launch is a worse
-// bug than the blindness it fixes, and one that announces its own failure adds a line to
-// the stream §4.7 is compressing. An unwritable state dir degrades to the writers the
-// launch already had, silently.
+// TestLaunchLogFailureLeavesTheLaunchAlone: a logger that can stop a launch is a worse bug than
+// the blindness it fixes, and one that announces its own failure adds a line to the stream the
+// launch stream is compressing. An unwritable state dir degrades to the writers the launch
+// already had, silently.
 func TestLaunchLogFailureLeavesTheLaunchAlone(t *testing.T) {
 	ws := t.TempDir()
 	// A FILE where the state dir goes: MkdirAll fails, which is the shape a read-only

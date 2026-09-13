@@ -93,12 +93,12 @@ Global options are listed by 'yolo --help'; the full config reference is
 // list someone reaches for to add `--quiet`, so the rule is written here rather than
 // argued again in the docstring of whichever line the flag would have hidden.
 //
-// P4, docs/design/report-tiers.md §1: DISCLOSURES ARE NEVER SUPPRESSIBLE. Progress and
-// provenance may be COMPRESSED to a line — that is what the boot catalog's one-liner is
-// (§4.7), and it is the whole density control a launch gets — but the decision a
-// disclosure reports stays visible on every launch. A flag that could hide the
-// host-access banner would delete the one thing trust-paths.md's OQ-TP9 kept when it
-// deleted the approval gate; a flag that could hide only progress would save four lines.
+// P4, docs/reference/report-tiers.md's principles: DISCLOSURES ARE NEVER SUPPRESSIBLE. Progress
+// and provenance may be COMPRESSED to a line — that is what the boot catalog's one-liner is
+// (the launch stream), and it is the whole density control a launch gets — but the decision a
+// disclosure reports stays visible on every launch. A flag that could hide the host-access
+// banner would delete the one thing trust-paths.md's OQ-TP9 kept when it deleted the approval
+// gate; a flag that could hide only progress would save four lines.
 //
 // It is a RULE now rather than three independent conclusions: the version banner, the
 // flake-source line and the jail line each carried their own docstring arguing they must

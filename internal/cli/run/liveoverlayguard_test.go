@@ -144,7 +144,7 @@ func TestRunCallsTheLiveOverlayGuardBeforeAnyWork(t *testing.T) {
 	}
 	if logPos == token.NoPos {
 		t.Fatal("Run no longer calls attachLaunchLog — the launcher's half of a launch " +
-			"stopped being persisted (report-tiers.md §4.7).")
+			"stopped being persisted (report-tiers.md, the launch stream).")
 	}
 	if guardPos > logPos {
 		t.Fatal("attachLaunchLog sits ABOVE the live-overlay guard — the refusal would " +

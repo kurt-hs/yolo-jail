@@ -18,7 +18,7 @@ package cli
 //
 // # The plan NAMES KEYS AND NEVER PRINTS VALUES
 //
-// docs/design/report-tiers.md §4.4's first forbidden thing, and here it is load-bearing
+// docs/reference/report-tiers.md's first forbidden thing, and here it is load-bearing
 // twice over rather than a convention inherited: the values in question are CAPTURED
 // CONFIG, this repo has one measured in a live overlay
 // (`mcp.tavily.environment.TAVILY_API_KEY`, §5.3), and a plan is the output most likely to

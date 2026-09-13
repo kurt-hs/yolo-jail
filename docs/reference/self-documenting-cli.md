@@ -193,8 +193,8 @@ Three properties matter more than the flag existing:
   the rule above. The argument for the reporting half is this requirement's own rationale: agents
   are the primary operators, the jail is credential-isolated, and the one report telling an in-jail
   agent what a host render would do to its own home must not be prose to scrape. Ruled as
-  [`OQ-RO4`](../design/report-tiers.md#11-decision-ledger), and stated in
-  [`report-tiers.md` §4.8](../design/report-tiers.md#48-machine-consumers).
+  [`OQ-RO4`](report-tiers.md#why-its-this-way), and stated in
+  [`report-tiers.md`](report-tiers.md#machine-consumers).
 
 ## Items the CLI already meets or exceeds
 

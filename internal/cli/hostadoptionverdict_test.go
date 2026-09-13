@@ -1,7 +1,8 @@
 package cli
 
 // hostadoptionverdict_test.go is OQ-CO7's D3: the VERDICT half of the byte-identical adoption
-// (docs/design/config-ownership-and-promotion.md §6.3.3, docs/design/report-tiers.md §4.3).
+// (docs/design/config-ownership-and-promotion.md §6.3.3, docs/reference/report-tiers.md's
+// verdict block).
 //
 // hostadoptionarchivetier_test.go pinned the HEADING — an adopting render is a tier-3
 // destination whether or not it reproduced the bytes, so the archive disclosure has a surface
@@ -14,7 +15,7 @@ package cli
 //	Nothing to apply — this home is up to date.
 //
 // A one-way, once-ever event, disclosed in the one line OQ-RO3 forbids hiding, under a verdict
-// saying nothing happened. §4.3's rule is that every tier-3 class is represented in the verdict
+// saying nothing happened. The verdict block's rule is that every tier-3 class is represented
 // block; adoption was the class contributing nothing to it.
 
 import (
@@ -93,7 +94,7 @@ func TestHostApplyVerdictNamesAnAdoptionThatChangedNoBytes(t *testing.T) {
 	}
 	if !strings.Contains(verdict, "adopted") {
 		t.Errorf("the verdict does not name the adoption:\n\t%s\n\nfull report:\n%s\n\n"+
-			"§4.3: every tier-3 class is represented in the verdict block, a loss by its "+
+			"the verdict block: every tier-3 class is represented in it, a loss by its "+
 			"count. Without the class in hostApplyWorkItems the outcome is `applied` over an "+
 			"empty work list, which states the run did something and then declines to say "+
 			"what.", verdict, report)

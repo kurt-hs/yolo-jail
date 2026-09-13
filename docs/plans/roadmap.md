@@ -904,11 +904,12 @@ twelve questions are live with no home**, two of which stand whether or not mirr
 **Answer:**
 > _(empty — fill in when decided; [`OQ-WP2`](../design/workspace-path-mirroring.md#open-questions) and [`OQ-WP4`](../design/workspace-path-mirroring.md#open-questions) can be ruled without touching the mirroring verdict)_
 
-### ✅ 29 — One report, three readers: SHIPPED, and the report went 278 lines to 30
+### ✅ 29 — One report, three readers: SHIPPED, and GRADUATED to the reference tree
 
-📄 [`report-tiers.md`](../design/report-tiers.md) — **all seven RULED**, the last on 2026-09-11 ·
-**BUILT 2026-09-11, all eight steps of [§9](../design/report-tiers.md#9-what-i-would-build-in-order)**; measured 2026-09-12 ·
-`status: accepted` · written 2026-09-10, **routed here the same day**
+📄 **GRADUATED 2026-09-13** to [`../reference/report-tiers.md`](../reference/report-tiers.md), which is now the
+authority — all seven RULED, the last on 2026-09-11; BUILT 2026-09-11 and measured 2026-09-12.
+Written 2026-09-10, **routed here the same day**. This row is history; the design doc's old path is a
+redirect stub.
 
 The maintainer's complaint — *"hard to read, not intuitive, and not so actionable"* — was measured at
 **277 lines, about sixteen of them actionable**, for one observe-posture `yolo apply --at host` over
@@ -941,7 +942,7 @@ thing that falsified it:
   is the easy thing to copy wrong — `explicitVerbose()` is the narrower accessor and the wrong one
   here.
 - *"there is no quiet mode anywhere"* — that is now a **ruling**, not an observation.
-  [`OQ-RO3`](../design/report-tiers.md#11-decision-ledger) and P4 say a launch has no quiet mode;
+  [`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) and P4 say a launch has no quiet mode;
   progress and provenance may be COMPRESSED to a line, but a **disclosure is never suppressible**,
   because the pack read/exec banners are the entire trust boundary today. `TestTheLaunchHasNoQuietFlag`
   fails if a flag appears on `runFlags`, everything the launcher prints is teed to
@@ -953,7 +954,7 @@ it**, carried by **P7** (the result) and **P8** (*facts, not rationale*), which 
 repeated 40-word kind-refusal paragraphs into a manual entry.
 
 ✅ **A missing host dependency became a blocker, and that authorized env-manager Phases 6.4 + 4.3
-rather than designing them.** [`OQ-RO7`](../design/report-tiers.md#11-decision-ledger) ruled both
+rather than designing them.** [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) ruled both
 kinds fatal with only `program` getting the offer — a missing `requires` refuses with the remedy
 named, because offering to install one would contradict the kind's own definition. ⚠ **The shipped
 gate is a one-prompt shape, and env-manager [`OQ-9`](environment-manager-plan.md#open-questions-to-resolve-before-their-phase)
@@ -1123,7 +1124,7 @@ C4 and C5 are deliberately NOT here: their go/no-go is an explicit 🧊 row.
   which is what made the gap recoverable from the doc at all.
   [`the-load-sentinel-is-not-a-liveness-oracle.md`](../design/the-load-sentinel-is-not-a-liveness-oracle.md)
   and [`disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md) were the models. Still
-  worth adding to [`report-tiers.md`](../design/report-tiers.md)'s.
+  worth adding to [`report-tiers.md`](../reference/report-tiers.md)'s.
 
 ### 💬 31 — Which package manager an environment actually has, and who picks it
 

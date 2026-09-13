@@ -1,10 +1,10 @@
 package cli
 
 // applyhostdeps.go resolves a pack's `program` AND `requires` contributions into the invoking
-// host's REAL dep state for `yolo host apply` (pack-host-management-plan.md Phase 8). It replaces
-// a static line — "install below jail is confirm-gated; not run by apply --host yet" — which
-// was true and useless: the gate is real, but the line never said WHICH binary was missing or
-// what would fix it, and that is the only part the user can act on today.
+// host's REAL dep state for `yolo host apply` (pack-host-management-plan.md Phase 8). It
+// replaces a static line — "install below jail is confirm-gated; not run by apply --host yet" —
+// which was true and useless: the gate is real, but the line never said WHICH binary was
+// missing or what would fix it, and that is the only part the user can act on today.
 //
 // Both kinds share this path because below the jail notch they ask the host the same question
 // (yolo bakes no image there, so every dep is the host's); they differ in what they do to a
@@ -21,11 +21,11 @@ package cli
 // plan OQ-8).
 //
 // WHAT THE ANSWER IS NOW ACTED ON WITH is applyhostdepgate.go, and this file stops at the
-// probe. A missing declared dependency is a tier-3 BLOCKER (docs/design/report-tiers.md §4.9):
-// the dry run reports it and exits 0, and an --assert offers to install a `program`, refuses a
-// decline at the prompt, and writes nothing. `yolo check-deps` is still the non-interactive
-// probe half — it runs this same checker over these same hints and exits non-zero — which is
-// the precedent the fatal adopts rather than invents (checkdeps.go:86-87).
+// probe. A missing declared dependency is a tier-3 BLOCKER (docs/reference/report-tiers.md's
+// dependency rule): the dry run reports it and exits 0, and an --assert offers to install a
+// `program`, refuses a decline at the prompt, and writes nothing. `yolo check-deps` is still
+// the non-interactive probe half — it runs this same checker over these same hints and exits
+// non-zero — which is the precedent the fatal adopts rather than invents (checkdeps.go:86-87).
 
 import (
 	"fmt"
@@ -47,10 +47,11 @@ type hostDeps struct {
 }
 
 // hostDepState is the three-way answer about one declared dependency, and THREE is the point:
-// docs/design/report-tiers.md §4.9 point 6 rules that a dependency yolo could not probe is NOT
-// missing — yolo may not call an environment unready on evidence it does not have — so "not
-// probed" is a state of its own rather than a missing one with an excuse. The ordering is by
-// consequence, so a survey deduplicating one binary across two packs keeps the worse answer.
+// docs/reference/report-tiers.md's dependency rule, point 6 rules that a dependency yolo could
+// not probe is NOT missing — yolo may not call an environment unready on evidence it does not
+// have — so "not probed" is a state of its own rather than a missing one with an excuse. The
+// ordering is by consequence, so a survey deduplicating one binary across two packs keeps the
+// worse answer.
 type hostDepState int
 
 const (
@@ -105,7 +106,8 @@ func resolveHostDeps(p *packload.Pack) *hostDeps {
 }
 
 // hostDepPreflight is the WHOLE RUN's dep probe: every configured pack's binaries, resolved
-// once, BEFORE the first render (docs/design/report-tiers.md §4.9 point 1, §9 step 5).
+// once, BEFORE the first render (docs/reference/report-tiers.md's dependency rule, point 1, the
+// dependency rule).
 //
 // The probe used to run per pack INSIDE the render loop, and the position is not a detail. The
 // next step makes a declined install fatal at the prompt, and a fatal that fires in the middle
@@ -184,8 +186,8 @@ func (pf hostDepPreflight) markInstalled(bin, path string) {
 
 // of returns one pack's probed deps. Nil-safe in both directions — an empty pre-flight, or a
 // pack it never saw — because the answer for an unprobed pack is "not probed", which
-// hostDeps.state already produces for an empty table (§4.9 point 6: yolo may not call an
-// environment unready on evidence it does not have).
+// hostDeps.state already produces for an empty table (the dependency rule, point 6: yolo may
+// not call an environment unready on evidence it does not have).
 func (pf hostDepPreflight) of(p *packload.Pack) *hostDeps {
 	if h := pf.byPack[p]; h != nil {
 		return h
@@ -213,15 +215,15 @@ func packDepRequirements(p *packload.Pack) []depcheck.Requirement {
 
 // hostDepFinding is everything one declared binary contributes to the report: the probed
 // state, and — for a missing one — the REMEDY, which is now the tier-3 group's to state
-// (docs/design/report-tiers.md §4.4, §9 step 4) rather than this line's.
+// (docs/reference/report-tiers.md's remedy contract) rather than this line's.
 //
-// The split is the step. §4.4 groups a blocker by its remedy key, and for a dependency the key
-// is the BINARY, across packs: two packs declaring `rg` are one missing dependency on one host
-// with one install command, and printing the command under each declaration is the same
-// remedy-per-emitter repetition the MCP line had three copies of. So the per-contribution line
-// keeps what varies per contribution — which kind asked, which binary, present or missing —
-// and the command, its package-manager alternative, and the reason there is none travel to the
-// group through this struct.
+// The split is the step: the remedy contract groups a blocker by its remedy key, and for a
+// dependency the key is the BINARY, across packs: two packs declaring `rg` are one missing
+// dependency on one host with one install command, and printing the command under each
+// declaration is the same remedy-per-emitter repetition the MCP line had three copies of. So
+// the per-contribution line keeps what varies per contribution — which kind asked, which
+// binary, present or missing — and the command, its package-manager alternative, and the reason
+// there is none travel to the group through this struct.
 type hostDepFinding struct {
 	// State is the three-way answer (see hostDepState).
 	State hostDepState
@@ -240,8 +242,8 @@ type hostDepFinding struct {
 	// installer. Second rather than first because a first-party installer carries a
 	// first-party updater while a distro package pins whatever that repo has.
 	Alt string
-	// NoRemedy is why a missing binary has none, when Remedy is empty. §4.4: a loss with no
-	// remedy says so rather than borrowing a `⚠` it cannot cash.
+	// NoRemedy is why a missing binary has none, when Remedy is empty. Per the remedy contract: a
+	// loss with no remedy says so rather than borrowing a `⚠` it cannot cash.
 	NoRemedy string
 }
 

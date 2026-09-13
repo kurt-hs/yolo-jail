@@ -899,7 +899,7 @@ renderer is allowed to do*. This is `Target.Posture` from [§3.3](#33-what-each-
 > `host_management` key**, never as a per-surface opt-in, and it is an OWNERSHIP axis rather
 > than a third value of `Target.Posture` — the posture dial that reaches the user is the
 > two-valued dry-run/`--assert` one, and the word `observe` no longer appears in the report
-> at all ([`report-tiers.md`](report-tiers.md#46-the-report-vocabulary-and-where-the-rationale-goes)). Read
+> at all ([`../reference/report-tiers.md`](../reference/report-tiers.md#the-report-vocabulary)). Read
 > [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#4-declaring-ownership--the-host_management-key)
 > for the key and [its §6](config-ownership-and-promotion.md#6-the-host-as-a-notch-like-any-other)
 > for what `own` composes; this table is the shape the argument arrived at, not the shipped

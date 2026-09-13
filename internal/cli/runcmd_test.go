@@ -425,13 +425,13 @@ func TestParseRunArgsBareProfileSelectsNothing(t *testing.T) {
 	}
 }
 
-// TestRunHelpNeverClaimsAHelpTokenAfterProfileName drives the REAL entry point,
-// because the pure scanner's verdict is worthless if runRun never consults it — the
-// exact callee-pinned/call-site-unpinned shape this repo keeps shipping. A help
-// token directly after -p is a profile named "-h" (see TestParseRunArgsProfileTakesTheNextToken),
-// so run must NOT answer with its own usage; the fixture config is unparseable so
-// that a runRun which DID answer help (exit 0, usage printed) is distinguishable
-// from the run.Run failure (non-zero, the config error on stderr, no container).
+// TestRunHelpNeverClaimsAHelpTokenAfterProfileName drives the REAL entry point, because the
+// pure scanner's verdict is worthless if runRun never consults it — the exact
+// callee-pinned/call-site-unpinned shape this repo keeps shipping. A help token directly after
+// -p is a profile named "-h" (see TestParseRunArgsProfileTakesTheNextToken), so run must NOT
+// answer with its own usage; the fixture config is unparseable so that a runRun which DID
+// answer help (exit 0, usage printed) is distinguishable from the run.Run failure (non-zero,
+// the config error on stderr, no container).
 func TestRunHelpNeverClaimsAHelpTokenAfterProfileName(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "yolo-jail.jsonc"),
@@ -564,7 +564,7 @@ func TestProfileFlagTakesBothGrammars(t *testing.T) {
 	}
 }
 
-// TestTheLaunchHasNoQuietFlag is docs/design/report-tiers.md's P4 as a gate: a launch has no
+// TestTheLaunchHasNoQuietFlag is docs/reference/report-tiers.md's P4 as a gate: a launch has no
 // quiet mode, by ruling (OQ-RO3, 2026-09-11), and this is what stops the next author deciding
 // otherwise in a docstring.
 //
@@ -574,8 +574,8 @@ func TestProfileFlagTakesBothGrammars(t *testing.T) {
 // kept when it deleted the approval gate. Before the ruling, the case for each unconditional
 // line lived in that line's own docstring, three of them, reached independently; a policy in
 // that shape is one edit away from being made differently. The compression IS the density
-// control: the boot catalog's eight lines became one (§4.7), the list moved to boot.log, and
-// that is the whole of what a launch gets.
+// control: the boot catalog's eight lines became one (the launch stream), the list moved to
+// boot.log, and that is the whole of what a launch gets.
 //
 // IF THIS FAILS, the flag is the thing to reconsider, not the test. A launch density control
 // that is genuinely needed goes through the design doc first, because the question it has to
@@ -583,7 +583,7 @@ func TestProfileFlagTakesBothGrammars(t *testing.T) {
 func TestTheLaunchHasNoQuietFlag(t *testing.T) {
 	for _, spelling := range []string{"--quiet", "--silent", "--no-progress"} {
 		if slices.Contains(runFlags, spelling) {
-			t.Errorf("the launch parses %s — P4 (report-tiers.md §1, OQ-RO3) says a launch has "+
+			t.Errorf("the launch parses %s — P4 (report-tiers.md, OQ-RO3) says a launch has "+
 				"no quiet mode: progress may be COMPRESSED to a line, a disclosure may never "+
 				"be hidden, and the disclosures are the whole trust boundary a launch has",
 				spelling)

@@ -1383,7 +1383,7 @@ injector rather than a line beside it so the two cannot be separated by an edit.
 **only when something was actually added** — a flag the user already typed is not injected, and
 a launch that rewrote nothing says nothing, because a disclosure that appears on every launch
 saying "nothing" is how a disclosure surface becomes wallpaper. It is unsuppressible like the
-other two ([`OQ-RO3`](../design/report-tiers.md#11-decision-ledger): a launch has no quiet mode).
+other two ([`OQ-RO3`](report-tiers.md#why-its-this-way): a launch has no quiet mode).
 
 > [!NOTE]
 > The in-jail shell alias `entrypoint.packAliases` writes from the same table — so that an

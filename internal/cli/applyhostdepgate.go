@@ -1,18 +1,19 @@
 package cli
 
-// applyhostdepgate.go is docs/design/report-tiers.md §4.9's DEPENDENCY GATE: on `--assert`, a
+// applyhostdepgate.go is docs/reference/report-tiers.md's DEPENDENCY GATE: on `--assert`, a
 // declared dependency that is missing STOPS the run — at the prompt, with nothing written.
 //
 // WHAT IT REVERSES, and this is worth stating because a sibling doc rules the opposite for a
 // sibling verb: env-manager plan OQ-9 ruled a declined install NON-FATAL, on the grounds that
-// the manifest is only written and never run. §6 protects the reversal explicitly for THIS
-// verb, and §4.9 gives the reason — an `--assert`'s promise is a ready environment, so a
-// posture that returns 0 having left it unready has stated a result it did not achieve. The
-// tree already agreed with the fatal half elsewhere: `yolo check-deps` exits non-zero over the
-// same probe of the same declared hints (checkdeps.go), so one verb called it a line and the
-// other called it a failure.
+// the manifest is only written and never run. the reference's non-licence protects the reversal
+// explicitly for THIS verb, and the dependency rule gives the reason — an `--assert`'s promise
+// is a ready environment, so a posture that returns 0 having left it unready has stated a
+// result it did not achieve. The tree already agreed with the fatal half elsewhere: `yolo
+// check-deps` exits non-zero over the same probe of the same declared hints (checkdeps.go), so
+// one verb called it a line and the other called it a failure.
 //
-// FIVE PROPERTIES, each of which §4.9 decides outright rather than leaving to the implementer:
+// FIVE PROPERTIES, each of which the dependency rule decides outright rather than leaving to
+// the implementer:
 //
 //   - FATAL AT THE PROMPT, NOT AT THE END. A later stage of the apply may come to rely on the
 //     tool, so continuing past a NO is continuing into an environment already known to be
@@ -25,9 +26,10 @@ package cli
 //     is disclosed; it never refines whether a decline is fatal.
 //   - SILENCE IS NO. promptYesNo reads a nil or EOF stdin as NO, so an unattended --assert
 //     refuses rather than installing. It deliberately does NOT test for a terminal — its
-//     docstring makes that a contract — and §4.9 point 4 rules that NO TERMINAL GATE IS ADDED
-//     HERE: a deliberately piped `y` installs, and what protects the user is that the commands
-//     are the packs' own declared hints, printed above the prompt before it is answered.
+//     docstring makes that a contract — and the dependency rule, point 4 rules that NO TERMINAL
+//     GATE IS ADDED HERE: a deliberately piped `y` installs, and what protects the user is that
+//     the commands are the packs' own declared hints, printed above the prompt before it is
+//     answered.
 //   - AN INSTALL THAT RUNS AND LEAVES THE BINARY MISSING IS A DECLINE. Re-probe after each
 //     install; still-missing is the same fatal, named in the refusal.
 //   - ONLY `program` IS OFFERED AN INSTALL (OQ-RO7). Both kinds are fatal — a missing
@@ -54,8 +56,8 @@ import (
 )
 
 // hostDepBlocker is one missing declared dependency, merged across every pack that declares it
-// — §4.4's remedy key for this class is the BINARY, across packs, so two packs declaring `rg`
-// are one blocker with one install command.
+// — the remedy contract's remedy key for this class is the BINARY, across packs, so two packs
+// declaring `rg` are one blocker with one install command.
 type hostDepBlocker struct {
 	// Bin is the binary, and the group key.
 	Bin string
@@ -114,9 +116,9 @@ func runDepInstallCommand(cmd string, out io.Writer) error {
 // and 0 to carry on — so the caller's one line reads as the refusal it is.
 //
 // It is called ONLY in the --assert posture. The dry run reports a missing dependency as a
-// tier-3 blocker, names it in the verdict, exits 0 and never prompts (§4.9's posture table,
-// OQ-RO5): its whole output IS the finding, and a posture that writes nothing has nothing to
-// gate.
+// tier-3 blocker, names it in the verdict, exits 0 and never prompts (the dependency rule's
+// posture table, OQ-RO5): its whole output IS the finding, and a posture that writes nothing
+// has nothing to gate.
 func gateHostDeps(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	deps hostDepPreflight, survey *hostApplySurvey) int {
 	blockers := hostDepBlockers(survey)
@@ -124,9 +126,9 @@ func gateHostDeps(pr richtext.Printer, out io.Writer, stdin io.Reader,
 		return 0
 	}
 	// The BLOCKER GROUPS FIRST, in the same shape the dry run prints them (hostapplyremedy.go):
-	// what is missing, and the exact command each install would run. §4.9 point 4 rests on
-	// this — the protection against a piped `y` is that the commands are visible above the
-	// prompt, which means they are printed whether the answer is yes, no or nobody's.
+	// what is missing, and the exact command each install would run. the dependency rule, point 4
+	// rests on this — the protection against a piped `y` is that the commands are visible above
+	// the prompt, which means they are printed whether the answer is yes, no or nobody's.
 	printRemedyGroups(pr, depBlockerGroups(blockers))
 
 	var offer, unoffered []hostDepBlocker
@@ -161,7 +163,7 @@ func gateHostDeps(pr richtext.Printer, out io.Writer, stdin io.Reader,
 			pr.Printf("  [red]%s: %v[/red]", b.Bin, err)
 		}
 		// RE-PROBE, and it is the command's answer rather than its exit code that decides
-		// (§4.9 point 5): an installer that exits 0 and delivers nothing leaves the
+		// (the dependency rule, point 5): an installer that exits 0 and delivers nothing leaves the
 		// environment exactly as unready as one that failed loudly.
 		//
 		// AND IT STOPS HERE, not after the rest of the set: "we cannot continue" is the same
@@ -181,9 +183,9 @@ func gateHostDeps(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	return 0
 }
 
-// depBlockerPhrase names the blockers the way the refusal sentence needs them: `rg` is
-// missing / `rg`, `fd` are missing. The NAMES, because §4.3 requires a blocker to contribute
-// its name to the result — the reader's next action is about those binaries.
+// depBlockerPhrase names the blockers the way the refusal sentence needs them: `rg` is missing
+// / `rg`, `fd` are missing. The NAMES, because the verdict block requires a blocker to
+// contribute its name to the result — the reader's next action is about those binaries.
 func depBlockerPhrase(blockers []hostDepBlocker) string {
 	names := make([]string, 0, len(blockers))
 	for _, b := range blockers {

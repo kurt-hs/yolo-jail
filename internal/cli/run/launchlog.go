@@ -13,7 +13,7 @@ package run
 // launch SPANS rather than the text. So the diagnoser's evidence for the first half of
 // a launch was gone the moment it scrolled, which is worst exactly where it is needed —
 // a launch that REFUSED, where there is no jail left to read anything from
-// (docs/design/report-tiers.md §3.6, §4.7 *Persist the launcher's half*).
+// (docs/reference/report-tiers.md's launch stream *Persist the launcher's half*).
 //
 // # Where, and why here
 //

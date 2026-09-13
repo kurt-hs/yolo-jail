@@ -1,8 +1,8 @@
 package cli
 
 // hostdepstub_test.go is the package's TEST-SIDE PROTECTION for the host dependency gate
-// (docs/design/report-tiers.md §4.9), and it exists because the gate turned two properties of
-// the MACHINE into properties of the suite.
+// (docs/reference/report-tiers.md's dependency rule), and it exists because the gate turned two
+// properties of the MACHINE into properties of the suite.
 //
 //  1. A MISSING DECLARED BINARY NOW REFUSES A WRITING APPLY. Before the gate, whether `claude`
 //     was on the PATH of the machine running the tests changed one dim line in a report nobody

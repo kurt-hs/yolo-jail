@@ -1,6 +1,6 @@
 package cli
 
-// hostapplyverdict.go is docs/design/report-tiers.md §4.3's VERDICT BLOCK: the sentence a host
+// hostapplyverdict.go is docs/reference/report-tiers.md's VERDICT BLOCK: the sentence a host
 // apply ends with, the counts that evidence it, and the posture footer.
 //
 // IT IS THE THESIS (P7). The command used to hand over 277 true lines and leave the arithmetic
@@ -15,23 +15,23 @@ package cli
 //   - IT PRINTS ON EVERY PATH, IN BOTH POSTURES. The roll-up it replaces sat inside
 //     `if !write`, so an --assert run ended with no summary at all; and the zero-packs branch
 //     returns before it, so an empty `packs` dry run ended with no count, no verdict and no
-//     footer (§5, verified 2026-09-11). Both are now callers of printHostApplyVerdict.
+//     footer (verified 2026-09-11). Both are now callers of printHostApplyVerdict.
 //   - IT STATES THE OUTCOME, NEVER THE WORK. "6 config files would change" is an
 //     observation; "an --assert would complete" is a result. The counts may say the former
 //     only after the verdict has said the latter.
-//   - EVERY TIER-3 CLASS IS REPRESENTED IN IT (§4.4). A loss contributes a count, a blocker
-//     contributes its NAME — grouping may compress the lines above the verdict, it may never
-//     leave the verdict silent about a class. ADOPTION is the class that was missing (OQ-CO7
-//     D3): it reproduces the file's bytes on the `assert` -> `own` switch, so it reaches here
-//     as a destination that would not change and it used to contribute nothing at all, under
-//     an unsuppressible line naming the copy the run had just taken. Two surfaces disagreeing
-//     about one run is what this block exists to make impossible.
+//   - EVERY TIER-3 CLASS IS REPRESENTED IN IT (the remedy contract). A loss contributes
+//     a count, a blocker contributes its NAME — grouping may compress the lines above the
+//     verdict, it may never leave the verdict silent about a class. ADOPTION is the class that
+//     was missing (OQ-CO7 D3): it reproduces the file's bytes on the `assert` -> `own` switch,
+//     so it reaches here as a destination that would not change and it used to contribute
+//     nothing at all, under an unsuppressible line naming the copy the run had just taken. Two
+//     surfaces disagreeing about one run is what this block exists to make impossible.
 //
 // WHAT IT DELIBERATELY DOES NOT COVER: the early refusals (an `agents` selector naming nobody,
 // a doubly-owned surface, a name claimed twice, a declined loss confirmation). Each already
-// ends in its own result sentence naming that nothing was written, which is exactly §4.3's
-// last table row — "today's refusal lines, unchanged" — so a second verdict there would be a
-// second sentence about one outcome.
+// ends in its own result sentence naming that nothing was written, which is exactly the verdict
+// block's last table row — "today's refusal lines, unchanged" — so a second verdict there would
+// be a second sentence about one outcome.
 
 import (
 	"fmt"
@@ -43,7 +43,7 @@ import (
 // printHostApplyVerdict ends one apply with the verdict line, the counts and the footer.
 //
 // The home and the no-packs branch are READ FROM THE SURVEY rather than passed, because
-// there is a second consumer now — the machine document (§4.8) — and two consumers each
+// there is a second consumer now — the machine document — and two consumers each
 // given their own copy of a fact is how the two come to disagree about it. The survey still
 // cannot DERIVE either one (both a zero-packs run and a settled home reach it as an empty
 // changed set, which is why they are recorded at the one place each is known), and that is
@@ -62,15 +62,15 @@ func printHostApplyVerdict(pr richtext.Printer, s *hostApplySurvey, write bool) 
 			"run.[/dim]", home)
 		return
 	}
-	// The footer names the DETAIL FLAG as well as the writing posture (§4.2): the default
-	// view counts what it does not itemize, so the reader who wants the destinations has to
-	// be told the one word that produces them.
+	// The footer names the DETAIL FLAG as well as the writing posture (the default view): the
+	// default view counts what it does not itemize, so the reader who wants the destinations has
+	// to be told the one word that produces them.
 	pr.Printf("[dim]dry run — nothing was written into %s. `--assert` applies; `--verbose` "+
 		"lists every destination.[/dim]", home)
 }
 
-// hostApplyOutcome is §4.3's verdict as a STABLE TOKEN — the machine document's answer to
-// "how did it go" (§4.8), and the thing the sentence below is rendered from.
+// hostApplyOutcome is the verdict as a STABLE TOKEN — the machine document's answer to
+// "how did it go", and the thing the sentence below is rendered from.
 //
 // THE ORDER OF THE CASES IS THE RULING, and it lives here rather than in the sentence
 // builder so that the two forms cannot disagree about the outcome they are reporting. A
@@ -125,14 +125,14 @@ const (
 	outcomeWouldComplete = "would_complete"
 )
 
-// hostApplyVerdict is §4.3's verdict line: one sentence, in every posture, on every path,
+// hostApplyVerdict is the verdict line: one sentence, in every posture, on every path,
 // including the degenerate ones. One case per outcome above, in the same order, so a reader
 // comparing the two sees the same list twice.
 func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 	switch hostApplyOutcome(s, write) {
 	case outcomeNoPacks:
-		// §4.3's zero-packs row. The retire passes still run here (emptying `packs` is the
-		// most complete drop there is), so the number they retired is the whole result.
+		// the verdict block's zero-packs row. The retire passes still run here (emptying `packs` is
+		// the most complete drop there is), so the number they retired is the whole result.
 		n := 0
 		if s != nil {
 			n = len(s.Changed)
@@ -154,8 +154,8 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 		return fmt.Sprintf("An --assert would be incomplete — %d pack(s) failed to render "+
 			"(%s); see stderr.", len(failed), strings.Join(failed, ", "))
 	case outcomeBlocked:
-		// §4.9: in the DRY RUN a missing declared dependency is a tier-3 blocker that decides
-		// the verdict and changes nothing else — exit 0, nothing written, nothing installed.
+		// the dependency rule: in the DRY RUN a missing declared dependency is a tier-3 blocker that
+		// decides the verdict and changes nothing else — exit 0, nothing written, nothing installed.
 		// The names, not a count: the reader's next action is about those binaries.
 		missing := s.MissingDeps()
 		return fmt.Sprintf("An --assert would NOT complete: %d declared %s missing (%s).",
@@ -179,8 +179,9 @@ func hostApplyVerdict(s *hostApplySurvey, write bool) string {
 	}
 }
 
-// installedPrefix is §4.3's "Installed `rg`; applied: …" — the clause an --assert leads with
-// when the dependency gate installed something before the render (applyhostdepgate.go).
+// installedPrefix is the verdict line's "Installed `rg`; applied: …" — the clause an --assert
+// leads with when the dependency gate installed something before the render
+// (applyhostdepgate.go).
 //
 // It LEADS rather than trails because it is the half the counts cannot express: every other
 // number in the verdict is about this home, and this one is about the machine's toolchain.
@@ -203,8 +204,9 @@ func installedPrefix(s *hostApplySurvey) string {
 	return fmt.Sprintf("Installed %s; ", strings.Join(names, ", "))
 }
 
-// workItem is one class of work this apply did or would do, in the units §4.3's count table
-// specifies — files, skills, destinations; never the number of destinations a loop visited.
+// workItem is one class of work this apply did or would do, in the units the verdict block's
+// count table specifies — files, skills, destinations; never the number of destinations a loop
+// visited.
 //
 // TWO RENDERINGS of one count, because the verdict and the counts are different sentences.
 // The verdict reads "Applied: 6 config files, 14 skills moved into your local pack" — one verb
@@ -283,15 +285,15 @@ func hostApplyWork(s *hostApplySurvey, wrote bool) string {
 	return strings.Join(parts, ", ")
 }
 
-// hostApplyCounts is §4.3's COUNTS: the evidence for the sentence above, in the units the
-// reader cares about (P6). Two lines at most — what this apply moves, then what it costs —
-// and a term appears only when its count is non-zero, because a row of zeroes is the
+// hostApplyCounts is the verdict block's COUNTS: the evidence for the sentence above, in the
+// units the reader cares about (P6). Two lines at most — what this apply moves, then what it
+// costs — and a term appears only when its count is non-zero, because a row of zeroes is the
 // arithmetic the verdict was supposed to replace.
 //
 // "In sync" is reported as the survey defines it and NOT as "compared and unchanged": the
 // count deliberately includes destinations a render skipped or refused (see
 // hostApplySurvey.InSync), so claiming they were compared would be a claim the render did not
-// make (§3.4). Splitting the two is its own change, in the kinds' result structs.
+// make (P6). Splitting the two is its own change, in the kinds' result structs.
 func hostApplyCounts(s *hostApplySurvey, write bool) []string {
 	if s == nil {
 		return nil
@@ -340,10 +342,10 @@ func hostApplyCounts(s *hostApplySurvey, write bool) []string {
 		cost = append(cost, dep)
 	}
 	if n := s.DroppedComments(); n > 0 {
-		// §4.4's other no-remedy class, and the one the verdict was silent about: a dropped
-		// comment already counted as a tier-3 loss (configResultTier) with no term anywhere
-		// in this block, so the one class whose loss cannot be undone was the one a reader
-		// of the last line could miss entirely.
+		// the remedy contract's other no-remedy class, and the one the verdict was silent about: a
+		// dropped comment already counted as a tier-3 loss (configResultTier) with no term anywhere
+		// in this block, so the one class whose loss cannot be undone was the one a reader of the
+		// last line could miss entirely.
 		verb := "would lose"
 		if write {
 			verb = "lost"

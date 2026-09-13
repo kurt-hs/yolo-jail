@@ -26,7 +26,7 @@ import (
 // depNoteMark is the stable half of the one note the dep block carries: the POSTURE fact that
 // a dry run installs nothing. Named once here because three tests pin it and it moved once
 // already — it said "the confirm-gated install is env-manager plan Phase 4.3" until the install
-// was built (docs/design/report-tiers.md §9 step 6).
+// was built (docs/reference/report-tiers.md detail on demand).
 const depNoteMark = "a dry run installs nothing"
 
 // TestApplyHostReportsPresentDep: a declared bin that is on PATH reports present, with the
@@ -81,9 +81,9 @@ func TestApplyHostReportsMissingDepWithRemedy(t *testing.T) {
 		t.Errorf("the remedy must be for the DETECTED manager only, not every hint:\n%s", report)
 	}
 	// The note used to say the install was DEFERRED to a later increment ("Phase 4.3"). It is
-	// built now, so the note states the POSTURE SPLIT instead: this dry run installs nothing,
-	// and an --assert offers to run the command and stops if you decline (§4.9's table). Same
-	// property under test — the reader is told what this run did and did not do.
+	// built now, so the note states the POSTURE SPLIT instead: this dry run installs nothing, and
+	// an --assert offers to run the command and stops if you decline (the dependency rule's
+	// table). Same property under test — the reader is told what this run did and did not do.
 	if !strings.Contains(report, depNoteMark) {
 		t.Errorf("the output must say a dry run installs nothing:\n%s", report)
 	}
@@ -110,11 +110,11 @@ func TestApplyHostPrefersThePacksOwnInstaller(t *testing.T) {
 
 	// The npm program: its own `npm install -g` leads; the apt hint trails as an alternative.
 	//
-	// ONCE, not merely present. The remedy left the per-contribution line for the tier-3
-	// group when report-tiers.md §9 step 4 landed — §4.4 groups a blocker by its remedy key,
-	// and for a dependency the key is the BINARY across packs, so the command is stated once
-	// however many packs declare it. Counting is what keeps that true: the assertion this
-	// replaced was a Contains on "MISSING → <cmd>", which passed just as well when every
+	// ONCE, not merely present. The remedy left the per-contribution line for the tier-3 group
+	// when report-tiers.md the remedy contract landed — the remedy contract groups a blocker by
+	// its remedy key, and for a dependency the key is the BINARY across packs, so the command is
+	// stated once however many packs declare it. Counting is what keeps that true: the assertion
+	// this replaced was a Contains on "MISSING → <cmd>", which passed just as well when every
 	// declaration carried its own copy.
 	if n := strings.Count(report, "npm install -g @org/npmtool"); n != 1 {
 		t.Errorf("an npm program's remedy should be its OWN npm install, stated once; got %d:\n%s",
@@ -268,11 +268,11 @@ func runApplyHostForDeps(t *testing.T, contributions ...string) string {
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	// THE PER-CONTRIBUTION DEP LINES ARE THE --verbose VIEW's (§4.5): the default view counts
-	// every probed dependency in the verdict and itemizes a MISSING one as a tier-3 group with
-	// its remedy, so the line naming which kind asked and where the binary resolved is the
-	// auditor's third copy. Every assertion in this file is about that line's CONTENT, which
-	// did not change — only the view carrying it did.
+	// THE PER-CONTRIBUTION DEP LINES ARE THE --verbose VIEW's (detail on demand): the default view
+	// counts every probed dependency in the verdict and itemizes a MISSING one as a tier-3 group
+	// with its remedy, so the line naming which kind asked and where the binary resolved is the
+	// auditor's third copy. Every assertion in this file is about that line's CONTENT, which did
+	// not change — only the view carrying it did.
 	verboseReport(t)
 
 	var out, errw bytes.Buffer

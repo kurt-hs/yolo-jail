@@ -267,10 +267,10 @@ func reportHostApplyGateChanges(errw io.Writer, bin string, survey *hostApplySur
 	for _, c := range survey.Changed {
 		fmt.Fprintf(errw, "  %-14s %-24s %s\n", c.Kind, c.Surface, c.Path)
 	}
-	// The pointer names --verbose because the DEFAULT dry run now counts what it would
-	// change and itemizes only the changed config surfaces and the losses
-	// (docs/design/report-tiers.md §4.5). "Exactly what changes in each" is the detail view's
-	// promise, and this line is the one place that promise is made in someone else's words.
+	// The pointer names --verbose because the DEFAULT dry run now counts what it would change and
+	// itemizes only the changed config surfaces and the losses (docs/reference/report-tiers.md,
+	// detail on demand). "Exactly what changes in each" is the detail view's promise, and this
+	// line is the one place that promise is made in someone else's words.
 	fmt.Fprintf(errw, "  (`yolo host apply --dry-run --verbose` shows exactly what changes "+
 		"in each.)\n")
 }

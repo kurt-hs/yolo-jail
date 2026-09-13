@@ -286,8 +286,9 @@ func TestHostWrappersEnableThenApplyAssertIsOneFlow(t *testing.T) {
 	home := wrappersTestHome(t)
 	userCfg(t, home, `{"packs": ["claude"]}`)
 	// The claude pack declares `program claude`, and a writing apply refuses over a declared
-	// binary that is missing (docs/design/report-tiers.md §4.9). wrappersTestHome empties PATH
-	// on purpose, so this fixture has to say that the tool the wrapper wraps is installed.
+	// binary that is missing (docs/reference/report-tiers.md's dependency rule). wrappersTestHome
+	// empties PATH on purpose, so this fixture has to say that the tool the wrapper wraps is
+	// installed.
 	stubBins(t, "claude")
 	dir := paths.WrapDirUnder(home)
 	wrapper := filepath.Join(dir, "claude")

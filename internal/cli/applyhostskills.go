@@ -4,27 +4,29 @@ package cli
 // COMPOSES WHOLESALE at every notch (maintainer ruling 2026-08-04, roadmap.md §6a-2).
 //
 // It is the second host kind whose call site is PACK-SET-WIDE rather than per-pack, and for the
-// same reason applyhostbriefings.go is: a destination's content is the union of every contributing
-// pack's skills, so a per-pack pass would have to either leave an earlier pack's stale entry behind
-// or refuse to overwrite it — the latter being §6a-5, where the local pack lost a flat-tier
-// collision to a shared pack because the ownership record forbade any pack overwriting another's
-// recorded name whatever the order.
+// same reason applyhostbriefings.go is: a destination's content is the union of every
+// contributing pack's skills, so a per-pack pass would have to either leave an earlier pack's
+// stale entry behind or refuse to overwrite it — the latter being §6a-5, where the local pack
+// lost a flat-tier collision to a shared pack because the ownership record forbade any pack
+// overwriting another's recorded name whatever the order.
 //
 // The order below is load-bearing, and it is the briefing kind's order because the lifecycle is
 // the same one:
 //
-//  1. ADOPT — ask which entries at these destinations yolo cannot prove it composed, and CONFIRM.
-//     The first apply that takes over a hand-written ~/.claude/skills/mine is a one-way door, so it
-//     rides the same warn-and-confirm gate confirmHostLosses established, with the same
+//  1. ADOPT — ask which entries at these destinations yolo cannot prove it composed, and
+//  CONFIRM.
+//     The first apply that takes over a hand-written ~/.claude/skills/mine is a one-way door,
+//     so it rides the same warn-and-confirm gate confirmHostLosses established, with the same
 //     fail-closed-on-nil-stdin contract.
-//  2. MIGRATE — MOVE those entries into the local pack's skills/, so each one still reaches every
+//  2. MIGRATE — MOVE those entries into the local pack's skills/, so each one still reaches
+//  every
 //     agent. Archive is the fallback, never the first answer.
 //  3. RENDER — compose and write, retiring this destination's own stale entries as it goes.
 //  4. RETIRE — archive the composed output at a destination no active pack contributes to any
 //     more, so dropping the last contributing pack does not leave an orphan.
 //
-// Steps 1 and 2 must not run in observe: a dry run writes nothing, so there is nothing to confirm,
-// and the migration is reported as `would move` instead.
+// Steps 1 and 2 must not run in observe: a dry run writes nothing, so there is nothing to
+// confirm, and the migration is reported as `would move` instead.
 //
 // The two host-notch decisions that predate composition and survive it:
 //
@@ -32,9 +34,9 @@ package cli
 //     diagnosing-the-jail) are about being inside a jail; on the host they
 //     are noise at best and misleading at worst. The jail still stages them as its layer 1.
 //   - The user's OWN skills tree is not a source. In a jail, PrepareSkills layers the host's
-//     ~/.<agent>/skills in last so a local skill outranks a pack's. At the host that tree IS the
-//     destination — and since §6a-2 it is not a layer at all: it MOVES into the local pack, which
-//     is composed last and therefore holds exactly the precedence that layer used to.
+//     ~/.<agent>/skills in last so a local skill outranks a pack's. At the host that tree IS
+//     the destination — and since §6a-2 it is not a layer at all: it MOVES into the local pack,
+//     which is composed last and therefore holds exactly the precedence that layer used to.
 
 import (
 	"io"
@@ -48,27 +50,27 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-// hostSkillsManifestPath is where the pre-composition PER-ENTRY provenance record lives. Under the
-// state dir (not the config dir) because it is yolo's own bookkeeping about what it did, not
-// something a user edits or commits.
+// hostSkillsManifestPath is where the pre-composition PER-ENTRY provenance record lives. Under
+// the state dir (not the config dir) because it is yolo's own bookkeeping about what it did,
+// not something a user edits or commits.
 //
-// Still read, and still written by the `files` kind which shares it. The skills composition reads
-// it for one purpose only: a path this record names is yolo's own output from BEFORE composition,
-// so the first apply after an upgrade must not offer to migrate it into the user's local pack as
-// though they had written it.
+// Still read, and still written by the `files` kind which shares it. The skills composition
+// reads it for one purpose only: a path this record names is yolo's own output from BEFORE
+// composition, so the first apply after an upgrade must not offer to migrate it into the user's
+// local pack as though they had written it.
 func hostSkillsManifestPath() string {
 	return filepath.Join(paths.GlobalStorage(), "host-skills-manifest.json")
 }
 
-// hostComposedSkillsManifestPath is where the COMPOSITION's ownership record lives — its OWN file,
-// beside the per-entry one and the briefing one.
+// hostComposedSkillsManifestPath is where the COMPOSITION's ownership record lives — its OWN
+// file, beside the per-entry one and the briefing one.
 //
-// Separate, not shared, and the reason is a defect the shared version produced immediately in the
-// sibling kind (§6a-6 defect 1): every composed path's owner is a pseudo-owner
-// (hostskills.ComposedOwner) because the content belongs to the pack SET, while droppedPackOrphans
-// reads every owner in the per-entry record as a PACK NAME and archives the paths of any owner
-// absent from `packs`. So every composed skill would be retired as a dropped pack's output on the
-// very next apply. Three questions, three key spaces, three files.
+// Separate, not shared, and the reason is a defect the shared version produced immediately in
+// the sibling kind (§6a-6 defect 1): every composed path's owner is a pseudo-owner
+// (hostskills.ComposedOwner) because the content belongs to the pack SET, while
+// droppedPackOrphans reads every owner in the per-entry record as a PACK NAME and archives the
+// paths of any owner absent from `packs`. So every composed skill would be retired as a dropped
+// pack's output on the very next apply. Three questions, three key spaces, three files.
 func hostComposedSkillsManifestPath(home string) string {
 	return filepath.Join(paths.GlobalStorageUnder(home), "host-composed-skills.json")
 }
@@ -110,8 +112,8 @@ const archiveBucketRetired = "retired"
 //
 // Derived from the home this apply is rendering into, not from paths.LocalPackDir(), and that
 // distinction is load-bearing for the same reason localPackBriefingPath states it:
-// paths.LocalPackDir() reads $HOME, so a test (or any caller rendering into a home it was handed)
-// would migrate the user's skills into their REAL config dir.
+// paths.LocalPackDir() reads $HOME, so a test (or any caller rendering into a home it was
+// handed) would migrate the user's skills into their REAL config dir.
 func localPackSkillsPath(home string) string {
 	rel, err := filepath.Rel(paths.Home(), paths.LocalPackDir())
 	if err != nil || rel == "" || rel == "." {
@@ -122,18 +124,18 @@ func localPackSkillsPath(home string) string {
 
 // applyHostSkills runs the four steps for the whole pack set and returns an rc contribution.
 //
-// The parameters mirror applyHostBriefings exactly, because the two kinds now share a lifecycle:
-// `loaded` is the ACTIVE set (post-ResolveDestinations, so a zero-ceremony pack already declares
-// its destinations); `candidates` adds every pack yolo ships, because a dropped pack's destination
-// must still be visited; `active` names the packs whose destinations are legitimate; `complete`
-// says every pack the config NAMES resolved this run.
+// The parameters mirror applyHostBriefings exactly, because the two kinds now share a
+// lifecycle: `loaded` is the ACTIVE set (post-ResolveDestinations, so a zero-ceremony pack
+// already declares its destinations); `candidates` adds every pack yolo ships, because a
+// dropped pack's destination must still be visited; `active` names the packs whose destinations
+// are legitimate; `complete` says every pack the config NAMES resolved this run.
 //
 // `reload` re-resolves the pack set, and is called ONCE, after a confirmed migration. The
 // migration creates the conventional local pack, which is included by convention rather than by
 // config — so the set resolved before it ran cannot contain it, and the render would otherwise
-// drop the user's just-migrated skills for exactly one apply (§6a-6 defect 2, found in the sibling
-// kind by asserting idempotency). nil means "no reload available", which is correct for the
-// no-packs-configured caller and fails safe everywhere else.
+// drop the user's just-migrated skills for exactly one apply (§6a-6 defect 2, found in the
+// sibling kind by asserting idempotency). nil means "no reload available", which is correct for
+// the no-packs-configured caller and fails safe everywhere else.
 func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	loaded, candidates []*packload.Pack, active, configured map[string]bool, complete bool,
 	home, stamp string, write bool, reload func() []*packload.Pack, survey *hostApplySurvey) int {
@@ -196,7 +198,7 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 			// OBSERVE reports the adoption and the migration WITHOUT prompting — which is how the
 			// user learns what the write would take over before any prompt exists.
 			//
-			// UNDER --verbose ONLY (§4.5). The measured home spent 72 lines here — a header,
+			// UNDER --verbose ONLY (detail on demand). The measured home spent 72 lines here — a header,
 			// seventy paths and a sixty-word explanation — to state one fact the tier-3 group
 			// now states by name with its remedy (hostapplyremedy.go's adoptedSkillGroup). The
 			// PROMPT's copy of this block is untouched: a confirmation must show what it is
@@ -285,8 +287,8 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	}
 
 	// Persist the record only after a real write. Saving in observe posture would record
-	// compositions that never happened, manufacturing exactly the stale record the adoption gate is
-	// built to survive.
+	// compositions that never happened, manufacturing exactly the stale record the adoption gate
+	// is built to survive.
 	if write {
 		if err := composed.Save(composedPath); err != nil {
 			pr.Printf("  [yellow]⚠ skills: could not save the ownership record: %v[/yellow]", err)
@@ -297,8 +299,9 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	return rc
 }
 
-// reportSkillAdoptions names every entry about to become yolo-owned and what becomes of it. Shared
-// by the observe path and the prompt so the preview and the confirmation say the same thing.
+// reportSkillAdoptions names every entry about to become yolo-owned and what becomes of it.
+// Shared by the observe path and the prompt so the preview and the confirmation say the same
+// thing.
 func reportSkillAdoptions(pr richtext.Printer, adoptions []hostskills.Adoption, localPack string) {
 	pr.Printf("[bold yellow]⚠ yolo COMPOSES these skills directories wholesale, and they "+
 		"currently hold %d skill(s) yolo did not write:[/bold yellow]", len(adoptions))
@@ -317,12 +320,13 @@ func reportSkillAdoptions(pr richtext.Printer, adoptions []hostskills.Adoption, 
 		"hand will not survive the next apply — add it to the local pack instead.[/dim]", localPack)
 }
 
-// warnSkillRenames is the union caveat's LOUD half, printed once at the migration and never again.
+// warnSkillRenames is the union caveat's LOUD half, printed once at the migration and never
+// again.
 //
 // The migration is the only moment the user has the context to fix a conflict — they know which
-// agent held which version — so a warning on every later apply would train them to ignore it. Two
-// skills sharing a name with DIFFERENT bodies is the only migration outcome yolo cannot resolve
-// correctly on its own, so it is the only one that gets this.
+// agent held which version — so a warning on every later apply would train them to ignore it.
+// Two skills sharing a name with DIFFERENT bodies is the only migration outcome yolo cannot
+// resolve correctly on its own, so it is the only one that gets this.
 func warnSkillRenames(pr richtext.Printer, results []hostskills.Result, localPack string) {
 	var renamed []hostskills.Result
 	for _, r := range results {
@@ -343,14 +347,15 @@ func warnSkillRenames(pr richtext.Printer, results []hostskills.Result, localPac
 		"survive.[/dim]", localPack)
 }
 
-// confirmSkillAdoption is the one-way door for wholesale skills ownership. Returns true to proceed.
+// confirmSkillAdoption is the one-way door for wholesale skills ownership. Returns true to
+// proceed.
 //
 // It shares confirmHostLosses' three properties, and for the same reasons:
 //
 //   - ONLY WHEN SOMETHING IS ACTUALLY AT STAKE. The caller reaches here only with at least one
-//     entry yolo cannot prove it composed — an empty destination, or one holding only yolo's own
-//     output, never prompts. A confirmation that fires every run is one people learn to answer
-//     blind.
+//     entry yolo cannot prove it composed — an empty destination, or one holding only yolo's
+//     own output, never prompts. A confirmation that fires every run is one people learn to
+//     answer blind.
 //   - OBSERVE NEVER REACHES HERE. A dry run writes nothing, so it reports the same entries as
 //     `would move` lines instead.
 //   - FAIL-CLOSED on stdin. promptYesNo reads a nil or EOF stdin as NO, so a scripted
@@ -365,8 +370,8 @@ func confirmSkillAdoption(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	return promptYesNo(out, stdin, "  "+verb+" these directories? [y/N] ")
 }
 
-// printSkillResult renders one entry's outcome, colored by whether it is a write, a hands-off, or
-// a problem, and records its change predicate in the apply's roll-up.
+// printSkillResult renders one entry's outcome, colored by whether it is a write, a hands-off,
+// or a problem, and records its change predicate in the apply's roll-up.
 //
 // THE SURVEY IS FED HERE, at the one place every skills result is printed, rather than at the
 // six loops that print them. That is what makes the kind's coverage structural: a stage that
@@ -380,7 +385,7 @@ func printSkillResult(pr richtext.Printer, survey *hostApplySurvey, r hostskills
 		// BY NAME, not by destination. One skill reaching five agent dirs is five results
 		// here and ONE fact — and counting the results instead is most of why the measured
 		// roll-up said "76 would change" about six files and fourteen skills
-		// (docs/design/report-tiers.md §3.3, §3.4).
+		// (docs/reference/report-tiers.md, P1 and P6).
 		survey.noteSkill(r.Name, fate)
 	}
 	color := "yellow"
@@ -393,15 +398,15 @@ func printSkillResult(pr richtext.Printer, survey *hostApplySurvey, r hostskills
 		hostskills.ActionUnioned, hostskills.ActionWouldUnion:
 		color = "cyan"
 	}
-	// THE PER-ENTRY LINE IS DETAIL (§4.5), with ONE exception. Every other outcome reaches the
-	// default view already: a composed, retired or already-yours entry is in the verdict's
-	// counts, and an ADOPTED one is named in its tier-3 group with the remedy — which is the
-	// whole point of grouping by name rather than by destination, since fourteen skills in five
-	// agent dirs are seventy of these lines and fourteen facts (§3.3).
+	// THE PER-ENTRY LINE IS DETAIL (detail on demand), with ONE exception. Every other outcome
+	// reaches the default view already: a composed, retired or already-yours entry is in the
+	// verdict's counts, and an ADOPTED one is named in its tier-3 group with the remedy — which is
+	// the whole point of grouping by name rather than by destination, since fourteen skills in
+	// five agent dirs are seventy of these lines and fourteen facts (P1).
 	//
 	// The exception is a REFUSAL, which no count and no group states: yolo declined to deliver
 	// this entry, and a reader who never sees the line never learns it. A loss with no other
-	// representation is not compressible (§4.4).
+	// representation is not compressible (the remedy contract).
 	if r.Action == hostskills.ActionRefused {
 		pr.Printf("  ["+color+"]skills[/"+color+"]     %-24s %s  [dim]%s[/dim]",
 			r.Name, r.Action, r.Detail)
@@ -411,10 +416,10 @@ func printSkillResult(pr richtext.Printer, survey *hostApplySurvey, r hostskills
 		r.Name, r.Action, r.Detail)
 }
 
-// skillFateOf classifies one skills action into §4.4's loss classes, or composition, or
-// nothing at all. The second return is whether this result counts toward the verdict: a skill
-// yolo left alone, one already in sync, and one whose delivery was refused all change nothing,
-// so counting them would inflate every number the verdict rests on.
+// skillFateOf classifies one skills action into the remedy contract's loss classes, or
+// composition, or nothing at all. The second return is whether this result counts toward the
+// verdict: a skill yolo left alone, one already in sync, and one whose delivery was refused all
+// change nothing, so counting them would inflate every number the verdict rests on.
 //
 // It switches on the TYPED action rather than on the printed line, which is the whole reason
 // the classification lives at this call site: hostskills has the vocabulary (moved, unioned,
@@ -434,9 +439,9 @@ func skillFateOf(a hostskills.Action) (skillFate, bool) {
 	return skillComposed, false
 }
 
-// skillResultTier is §4.1 applied to one skills entry. An ADOPTION and a RETIREMENT move
-// content out of a directory the user looks at, and a REFUSAL is a blocker — one of the two
-// members of tier 3 — so all three are itemized; a plain composition is a run fact.
+// skillResultTier is the report tier applied to one skills entry. An ADOPTION and a RETIREMENT
+// move content out of a directory the user looks at, and a REFUSAL is a blocker — one of the
+// two members of tier 3 — so all three are itemized; a plain composition is a run fact.
 func skillResultTier(a hostskills.Action, fate skillFate, counted bool) reportTier {
 	if a == hostskills.ActionRefused || (counted && fate != skillComposed) {
 		return tierLoss
@@ -466,13 +471,13 @@ func reportSkillCollisions(pr richtext.Printer, dests []hostskills.Destination) 
 // reportSkillDestinations names each composed destination and its contributing packs, once per
 // apply, before the per-entry lines.
 //
-// It exists because composition made the per-entry lines ambiguous in one specific way: an entry
-// says which skill landed and where, but not which packs the DIRECTORY is now a function of — and
-// "why did my hand-added skill disappear from ~/.codex/skills?" is answered by the destination
-// being composed, not by any one entry's line.
+// It exists because composition made the per-entry lines ambiguous in one specific way: an
+// entry says which skill landed and where, but not which packs the DIRECTORY is now a function
+// of — and "why did my hand-added skill disappear from ~/.codex/skills?" is answered by the
+// destination being composed, not by any one entry's line.
 func reportSkillDestinations(pr richtext.Printer, dests []hostskills.Destination) {
 	for _, d := range dests {
-		// DETAIL (§4.5's tier-2 list names the composed-from lines by name): it answers "which
+		// DETAIL (detail on demand names the composed-from lines): it answers "which
 		// packs is this directory a function of", which is the diagnoser's question and not the
 		// operator's, and it is one line per destination on every run.
 		detail(pr, "  [dim]skills     %s composed from: %s[/dim]", d.Dir,

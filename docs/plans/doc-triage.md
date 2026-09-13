@@ -307,7 +307,7 @@ that route them keep resolving. That is the precedent, and it is what
 
 | Doc | Fully built? | Verifiable here? | Verdict |
 | :--- | :--- | :--- | :--- |
-| [`report-tiers.md`](../design/report-tiers.md) | **Yes** — all eight steps | **Yes, and measured with a control** | ✅ **Graduate first** |
+| [`report-tiers.md`](../reference/report-tiers.md) | **Yes** — all eight steps | **Yes, and measured with a control** | ✅ **GRADUATED 2026-09-13** |
 | [`config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md) | **Yes** — the named hole closed 2026-09-12 | Yes | ⏸ **Graduate second, and both named blockers are spent.** What gates it now is [`OQ-DT1`](#open-question) and the size of the rewrite, not a fact about the doc |
 | [`lua-transform-removal.md`](../design/lua-transform-removal.md) | **Yes** | Yes | ↩ **Do not graduate — archive.** There is no system to describe |
 | [`macos-user-home-tiers.md`](../design/macos-user-home-tiers.md) | Code yes, behavior unrun | **No** | ⛔ Blocked on a Mac |
@@ -317,7 +317,7 @@ that route them keep resolving. That is the precedent, and it is what
 
 ### 1. `report-tiers.md` — graduate first, and it is not close
 
-All eight steps of [§9](../design/report-tiers.md#9-what-i-would-build-in-order) are in the tree.
+All eight steps of its build order are in the tree.
 Walked by symbol: the tier vocabulary (`reportTier`, `tierRun`, `tierLoss`) and the survey that
 carries it in `internal/cli`; `printHostApplyVerdict` and `hostApplyVerdict`; the grouped remedies;
 the default/detail split; the dependency pre-flight and its gate (`hostDepBlockers`, `gateHostDeps`);
@@ -333,13 +333,13 @@ sprint — so it is a free before-image. Against the same home, measured 2026-09
 | Baked `/bin/yolo` (pre-sprint) | **278 lines** | none — closes `observe only — nothing written` | inert, still 278 |
 | Fresh `dist-go` build at `HEAD` | **30 lines** | `An --assert would complete.` | **267 lines** |
 
-That is [the doc's own claim](../design/report-tiers.md) — *"the default report is 30 lines where
+That is [the doc's own claim](../reference/report-tiers.md) — *"the default report is 30 lines where
 it was 278, and `--verbose` carries the 267-line detail view"* — reproduced exactly, including the
 `--assert --format json` refusal. **No other doc of the five offers a measurement like this**, and
 it is the difference between a reference that asserts behavior and one that has watched it.
 
 Its principles are already load-bearing outside the doc: [`AGENTS.md`](../../AGENTS.md) cites
-`P4` and [`OQ-RO3`](../design/report-tiers.md#11-decision-ledger) as the rule that *a launch has no quiet mode*, and `TestTheLaunchHasNoQuietFlag`
+`P4` and [`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) as the rule that *a launch has no quiet mode*, and `TestTheLaunchHasNoQuietFlag`
 in `internal/cli` pins it. Those are exactly the near-immortal lines a reference exists to hold —
 and they currently resolve into the planning tree.
 
@@ -352,13 +352,12 @@ verbatim; and the machine-consumer boundary — `--format json` belongs to the d
 verb refuses it rather than growing a second output mode. Six `OQ-RO` ids are cited from Go
 (`RO1`, `RO2`, `RO3`, `RO4`, `RO5`, `RO7`) and must survive in a `## Why it's this way` appendix.
 
-⚠ **The one real editorial cost:** [§2](../design/report-tiers.md#2-what-exists-today-measured)
-and [§3](../design/report-tiers.md#3-the-diagnosis) are a line-by-line measurement of a report that
+⚠ **The one real editorial cost:** its measured-state and diagnosis sections are a line-by-line measurement of a report that
 no longer exists. They are the best evidence in the doc and they are precisely what `system-doc`
 says to cut as *the before-and-after framing*. The 278 → 30 pair belongs in the commit message and
 in the roadmap row being closed, not in the reference.
 
-[`report-tiers-plan.md`](../design/report-tiers-plan.md) — self-declared **CONSUMED** — archives
+`report-tiers-plan.md` — self-declared **CONSUMED** — archives
 alongside it. It is an `implementation-plan` artifact, and its whole subject shipped.
 
 ### 2. `config-ownership-and-promotion.md` — both named blockers are closed, and the rewrite is larger than they were
@@ -595,7 +594,7 @@ not after it.
 2. **Graduate [`report-tiers.md`](../design/report-tiers.md), alone.** It is the only one of the
    five whose behavior was reproduced with a control, its principles are already cited as law from
    [`AGENTS.md`](../../AGENTS.md), and it carries no unbuilt step. Archive
-   [`report-tiers-plan.md`](../design/report-tiers-plan.md) in the same commit.
+   `report-tiers-plan.md` in the same commit.
 3. **Then [`config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md)**, and
    **nothing about the doc gates it any more** — both named blockers closed on 2026-09-12, and its
    last Open Question was compacted the same day, so
@@ -630,4 +629,102 @@ in both directions across three runs.
    times.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Graduate, and do not hold the set.** Answered 2026-09-13 by doing it:
+   > [`report-tiers.md`](../reference/report-tiers.md) graduated alone, and the coupling argument
+   > died on measurement rather than on judgement. The macOS pair turned out **not** to be blocked
+   > on hardware at all — the runbook records a full ten-item hardware session on 2026-09-12 — so
+   > the thing the set would have been waiting for had already happened, and holding would have
+   > bought nothing. The shared-sweep argument for batching also inverts: the re-pointing sweep is
+   > per-doc and the docs share almost no inbound references, so batching buys one `AGENTS.md` edit
+   > and risks the missed anchor this file has now recorded in both directions across three runs.
+
+---
+
+## The 2026-09-13 graduation — one doc moved, and three verdicts above it are now stale
+
+**[`report-tiers.md`](../reference/report-tiers.md) graduated.** The assessment above recommended
+it first and nothing found since disagreed: all eight build steps in the tree, every symbol in its
+Decision Ledger's **Built** column verified by name, zero live questions, and its `P4` cited from
+[`../../AGENTS.md`](../../AGENTS.md) as law. The reference is 472 lines against the design's 1,038;
+the before-and-after measurement and the build order were cut as the genre requires, and the seven
+`OQ-RO` ids survive in a `## Why it's this way` appendix.
+
+**What the move actually cost, measured rather than estimated:** 38 Go files and 14 doc files. The
+Go half was the real work and it was **not** a path rewrite — see the finding below.
+
+### Three findings that change the verdicts above
+
+> [!IMPORTANT]
+> **1. The macOS pair is no longer blocked, and this file's ⛔ is stale.**
+> [The runbook](runbooks/macos-user-manual-checks.md) records **all ten items measured on hardware
+> on 2026-09-12** — one session on an Apple Silicon Mac with the host `yolo` taken to HEAD first.
+> Items 3, 5, 6, 7 and 9 pass, three defects were found and fixed the same day, and the twin suite
+> is green with one predicted subtest red. The assessment above says *"not one runtime claim about
+> either has been observed"*; that was true when it was written and is false now.
+>
+> **They still should not graduate yet, for a different and smaller reason.**
+> [`macos-user-home-tiers.md`](../design/macos-user-home-tiers.md)'s own *What shipped* still
+> separates what a test pins from what is *"reasoned and still owed a Mac"* — the `SharedDirs`
+> mirror ordering has no test and the section says so. That is a partial-measurement problem, not a
+> hardware one, and it is a much shorter distance to close than this file assumed.
+
+> [!WARNING]
+> **2. Graduating breaks numbered-section citations in Go comments, and the repo has never fixed them.**
+> Reference docs here drop numbered sections — **9 of the 10 most-cited carry none** — while Go
+> comments go on citing them by number. Measured 2026-09-13: **211 dangling numbered-section citations from
+> the Go tree into reference docs that have no numbered sections**, across 17 docs, led by
+> `pack-system.md` (49) and `wire-bridge.md` (51). Every prior graduation left its own behind.
+> `vantage-check` cannot see Go comments, so nothing catches this.
+>
+> `report-tiers.md`'s 52 were repaired by hand rather than by `sed`, and the reason is worth
+> recording: **a mechanical substitution corrupts citations to other docs.** One section number in
+> `hostapplysurvey.go` means *two different docs on two lines of one file*; the section-11 citation
+> there is `config-ownership-and-promotion.md`'s success criteria and not this doc's ledger; and
+> `configpromote_test.go`'s twelve section-5 citations belong entirely to a doc it never names.
+> Attribution is per line, by reading.
+>
+> **The open decision this leaves is not this file's to take:** whether Go comments should cite a
+> reference doc by *named section*, and whether the other 211 get the same treatment.
+> [`self-documenting-cli.md`](../reference/self-documenting-cli.md) is the one reference that kept
+> numbered sections, so the house currently has both conventions.
+
+> [!NOTE]
+> **3. [`darwin-image-provenance.md`](../design/darwin-image-provenance.md) is a sixth candidate
+> the assessment above predates, and it must not graduate into a reference of its own.**
+> It is BUILT and measured against three named CI runs, with all three questions ruled, and it is
+> by far the cheapest to move — **5 doc references and 2 Go files**, and the Go half cites
+> [`OQ-IP1`](../design/darwin-image-provenance.md#decision-ledger) by id rather than by section, so
+> none of finding 2 applies.
+>
+> But [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md)
+> **already owns the image identity**: it names `imageIdentity` in its components table, describes
+> it as a sha256 over the flake inputs, calls it *"the one output with no system in its path"* —
+> which is that ruling — and carries it twice in its Current values. Graduating would mint a
+> second authority for one subsystem, which is the failure
+> [the 2026-09-09 run](#where-the-work-was-hardest-and-why) named. The correct disposition is
+> [`lua-transform-removal.md`](../design/lua-transform-removal.md)'s: **fold what is not yet
+> absorbed — `P1`, `P2`, and [`OQ-IP1`](../design/darwin-image-provenance.md#decision-ledger) as a
+> stated invariant — into that reference's why-appendix,
+> then archive.** Its separate finding, that no CI job exercises `macos-user` at all, belongs in
+> the roadmap rather than in either doc.
+
+### What did not move, and why
+
+| Doc | Disposition | Reason |
+| :--- | :--- | :--- |
+| [`config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md) | **Not yet** | Unchanged from above: seven residue items to re-state in present tense, and **one tombstone defect with a data-loss path that should be fixed as code before the move**, not documented as behavior. 11 doc files and 46 Go files — the largest of the set. |
+| [`lua-transform-removal.md`](../design/lua-transform-removal.md) | **Fold, do not graduate** | Unchanged: a removal doc has no system to describe, and `pack-system.md` already owns the surviving derive sandbox. |
+| [`macos-user-home-tiers.md`](../design/macos-user-home-tiers.md) | **Not yet** | Finding 1: hardware-measured now, but its own *What shipped* still owes a Mac on the mirror ordering. |
+| [`macos-user-provisioning.md`](../design/macos-user-provisioning.md) | **Not assessable** | Held by another workflow throughout this pass. Assessed, not touched. |
+| [`darwin-image-provenance.md`](../design/darwin-image-provenance.md) | **Fold, do not graduate** | Finding 3. |
+
+### The one loose end this graduation leaves
+
+The design doc's path is a **redirect stub** rather than a deletion, because two
+[`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) citations
+live in [`handoff-macos-user-open-threads.md`](handoff-macos-user-open-threads.md), which another
+workflow held for the whole pass. Point them at
+[`../reference/report-tiers.md#why-its-this-way`](../reference/report-tiers.md#why-its-this-way)
+and delete [`../design/report-tiers.md`](../design/report-tiers.md). Every other inbound
+reference — Go, docs, [`../../AGENTS.md`](../../AGENTS.md) and this file — already resolves into
+the reference tree.

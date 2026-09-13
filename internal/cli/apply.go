@@ -186,9 +186,9 @@ func applyHost(out, errw io.Writer, color bool, write bool, stdin io.Reader) int
 	return applyHostSurveyed(out, errw, color, write, stdin, nil)
 }
 
-// applyHostFormatted is applyHost plus the output-format family (report-tiers.md §4.8,
-// self-documenting-cli.md item 7). Both spellings of the verb route through it, because
-// `yolo host apply` and `yolo apply --at host` are one operation and only differ in how
+// applyHostFormatted is applyHost plus the output-format family (report-tiers.md's machine
+// consumers, self-documenting-cli.md item 7). Both spellings of the verb route through it,
+// because `yolo host apply` and `yolo apply --at host` are one operation and only differ in how
 // they are typed (OQ-7) — a flag that worked at one of them would be a flag an agent has to
 // guess about.
 //
@@ -271,15 +271,15 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		return 1
 	}
 	if len(entries) == 0 {
-		// "Nothing to apply" is not "nothing to clean up" — emptying `packs` is the MOST
-		// complete drop there is, and returning here left every pack's delivered output in the
-		// home with nothing that would ever ask about it again. So the retire pass still runs,
-		// against an empty configured set. Nothing else does: with no pack to render there is
-		// no surface, no briefing, and no candidate whose destination to visit, which is why
-		// this is a narrow second call rather than a fall-through into the loop below.
-		// A HEADER for the retire passes below, not the result — the result is the verdict
-		// this branch now ends with (report-tiers.md §4.3). It says what is about to happen
-		// rather than repeating the verdict's own sentence two lines ahead of it.
+		// "Nothing to apply" is not "nothing to clean up" — emptying `packs` is the MOST complete
+		// drop there is, and returning here left every pack's delivered output in the home with
+		// nothing that would ever ask about it again. So the retire pass still runs, against an empty
+		// configured set. Nothing else does: with no pack to render there is no surface, no briefing,
+		// and no candidate whose destination to visit, which is why this is a narrow second call
+		// rather than a fall-through into the loop below. A HEADER for the retire passes below, not
+		// the result — the result is the verdict this branch now ends with (report-tiers.md's verdict
+		// block). It says what is about to happen rather than repeating the verdict's own sentence
+		// two lines ahead of it.
 		pr.Printf("[dim]No packs configured — nothing to apply, so this run only retires " +
 			"what dropped packs left behind.[/dim]")
 		// The BRANCH, recorded: "no packs are configured" and "every configured pack changed
@@ -320,13 +320,13 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		if wrc := applyHostWrappers(pr, errw, home, nil, write, survey); wrc != 0 {
 			rc = wrc
 		}
-		// THE TIER-3 GROUPS, HERE TOO. This branch can retire content, and §4.4's rule is
-		// that no default view omits a loss — a branch that cannot currently produce one
-		// must still be a caller, or the first loss it learns to produce is silent.
+		// THE TIER-3 GROUPS, HERE TOO. This branch can retire content, and the remedy contract's rule
+		// is that no default view omits a loss — a branch that cannot currently produce one must
+		// still be a caller, or the first loss it learns to produce is silent.
 		printRemedyGroups(pr, hostApplyRemedyGroups(survey, home, write))
 		// THE VERDICT, HERE TOO. This branch returns before the tail below, so an empty
 		// `packs` ended with no count, no verdict and no "nothing written" line at all
-		// (§5's first hole, verified 2026-09-11) — the one posture in which the reader has
+		// (verified 2026-09-11) — the one posture in which the reader has
 		// least context got the least output.
 		printHostApplyVerdict(pr, survey, write)
 		return rc
@@ -336,12 +336,12 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// directory and the user can undo a whole apply rather than hunting per-file.
 	stamp := time.Now().UTC().Format("20060102-150405")
 
-	// THE HEADER SAYS IT IN PLAIN WORDS (§4.3 item 1, §4.6). It used to read
-	// `host apply  home <path>  posture observe (dry-run)` — `posture` is a word the reader
-	// has never met, and `observe (dry-run)` is the two-word spelling §4.6 rules against:
-	// `observe` is the posture's name at the CALL SITE and in the design, and exactly one
-	// word reaches the user. The home path stays — it is the fact an in-jail reader needs,
-	// because this command renders into *this* jail's home when run from inside one.
+	// THE HEADER SAYS IT IN PLAIN WORDS (the verdict block, the report vocabulary). It used to
+	// read `host apply  home <path>  posture observe (dry-run)` — `posture` is a word the reader
+	// has never met, and `observe (dry-run)` is the two-word spelling the report vocabulary rules
+	// against: `observe` is the posture's name at the CALL SITE and in the design, and exactly one
+	// word reaches the user. The home path stays — it is the fact an in-jail reader needs, because
+	// this command renders into *this* jail's home when run from inside one.
 	posture := fmt.Sprintf("dry run into %s; nothing is written", home)
 	if write {
 		posture = fmt.Sprintf("applying into %s", home)
@@ -498,12 +498,12 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 			orphan.Reason(), orphan.Pack)
 	}
 
-	// THE DEPENDENCY PRE-FLIGHT (report-tiers.md §4.9 point 1, §9 step 5). Every configured
+	// THE DEPENDENCY PRE-FLIGHT (report-tiers.md's dependency rule, point 1). Every configured
 	// pack's declared binaries, probed once, BEFORE anything is written — including before
 	// the one-way door below, which is the other thing that can stop this run.
 	//
 	// It used to be one `resolveHostDeps(p)` inside the render loop. That position is fine
-	// while the answer is only a line, and wrong the moment it can stop the run: §9 step 6
+	// while the answer is only a line, and wrong the moment it can stop the run: detail on demand
 	// makes a declined install fatal, and a fatal from inside the loop would leave the packs
 	// already visited written and the rest not. "We cannot continue" has to also mean
 	// "nothing was written", and only a pre-flight delivers both.
@@ -513,7 +513,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// of one answer rather than three walks that could disagree about which binary is missing.
 	deps := probeHostDeps(loaded, hostFields, survey)
 
-	// THE DEPENDENCY GATE (§4.9, §9 step 5), and it comes FIRST — before the one-way door, and
+	// THE DEPENDENCY GATE (the dependency rule), and it comes FIRST — before the one-way door, and
 	// before anything is written.
 	//
 	// Before the loss confirmation because a decline here is fatal: asking the user to approve
@@ -542,7 +542,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		return 1
 	}
 
-	// THE TIER-1 FACTS, ONCE FOR THE WHOLE RUN (report-tiers.md §4.1, §9 step 3). Which kinds
+	// THE TIER-1 FACTS, ONCE FOR THE WHOLE RUN (report-tiers.md's tiers). Which kinds
 	// this notch does nothing with, and which autonomy posture it renders, are properties of
 	// the NOTCH: the same sentences in every home on every machine. They used to print per
 	// CONTRIBUTION — nineteen ~40-word refusal paragraphs naming seven kinds, plus five
@@ -576,11 +576,11 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 			// (pack-host-management-plan.md Phase 8). `requires` shares this path because
 			// below the jail notch the two kinds ask the host the same question.
 			//
-			// The SURVEY is not fed here any more: the pre-flight above records every finding,
-			// because the gate needs the merged answer before this loop runs at all. What is
-			// left here is the line — and the line is DETAIL (§4.5): the verdict counts every
-			// probed dependency, a missing one is itemized by its tier-3 group with its
-			// remedy, and this per-contribution rendering is the auditor's third copy.
+			// The SURVEY is not fed here any more: the pre-flight above records every finding, because
+			// the gate needs the merged answer before this loop runs at all. What is left here is the
+			// line — and the line is DETAIL (detail on demand): the verdict counts every probed
+			// dependency, a missing one is itemized by its tier-3 group with its remedy, and this
+			// per-contribution rendering is the auditor's third copy.
 			detail(pr, "%s", packDeps.depLine(c))
 		}
 		if frc := applyHostFiles(pr, errw, p, home, stamp, write, survey); frc != 0 {
@@ -591,7 +591,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		results, rerr := entrypoint.RenderHostPack(p, home, hostOwnership(), !write, overlays)
 		if rerr != nil {
 			fmt.Fprintf(errw, "yolo host apply: %s: %v\n", p.Name, rerr)
-			// A §4.1 BLOCKER, and it has to reach the verdict: this pack's surfaces are
+			// A tier-3 BLOCKER, and it has to reach the verdict: this pack's surfaces are
 			// absent from every count below, so a verdict built from those counts alone
 			// would claim a completed apply out of a traversal that lost a pack.
 			survey.noteRenderFailure(p.Name)
@@ -599,11 +599,11 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 			continue
 		}
 		for _, r := range results {
-			// ONE call, carrying the predicate, the §4.1 tier and every loss the verdict
+			// ONE call, carrying the predicate, the report tier and every loss the verdict
 			// counts: they are facts about the same render, and splitting them at the call
 			// site is how one of them comes to be forgotten at the next one.
 			survey.noteConfig(r)
-			// THE ONE TIER-2 LINE THE DEFAULT VIEW KEEPS (§4.1's tier-2 row, §4.2): a config
+			// THE ONE TIER-2 LINE THE DEFAULT VIEW KEEPS (the tiers' tier-2 row): a config
 			// surface that would change is itemized — there are few of them and they are what
 			// the auditor came for — while one that is unchanged, skipped or refused is a
 			// settled run fact the verdict counts and `--verbose` lists.
@@ -648,7 +648,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 				}
 				// The REMEDY is not here any more: this line fires once per surface, and the
 				// same three servers dropped from three agents produced three copies of one
-				// fix (§3.3). The fix is stated once, for every entry that shares it, in the
+				// fix (P1). The fix is stated once, for every entry that shares it, in the
 				// tier-3 group below (hostapplyremedy.go). What stays is the fact that is
 				// true of THIS surface — yolo owns this table, so an undeclared entry goes.
 				pr.Printf("    [bold yellow]⚠ %s your existing entry: %s[/bold yellow] "+
@@ -670,19 +670,18 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 					"[dim](once, before adopting it)[/dim]", r.Archived)
 			}
 			// The ${workspace}-keyed keys this render DROPPED, by name — a TIER-2 fact under
-			// its surface, so the --verbose view's since §4.5 ("every tier-2 destination
+			// its surface, so the --verbose view's since detail on demand ("every tier-2 destination
 			// itemized: the skipped surfaces and why").
 			//
-			// NOT the carve-out a refusal gets. This comment used to argue the opposite —
-			// "a line for the same reason a refusal does" — while the line below it was moved
-			// behind detail(), which is a written argument, in this file, for reverting the
-			// code or for generalising detail() onto a real refusal by the analogy. The two
-			// are different classes: a pruned key has another representation (the key is
-			// still in the pack that declared it, and `yolo config-ref` says why the host
-			// notch does not honor it), where a refused skill adoption has none — which is
-			// why THAT one is explicitly exempted from detail() (applyhostskills.go, §4.4).
-			// The no-silent-drop rule is unchanged: the key is still named, in the view that
-			// itemizes a destination's keys at all.
+			// NOT the carve-out a refusal gets. This comment used to argue the opposite — "a line for
+			// the same reason a refusal does" — while the line below it was moved behind detail(), which
+			// is a written argument, in this file, for reverting the code or for generalising detail()
+			// onto a real refusal by the analogy. The two are different classes: a pruned key has
+			// another representation (the key is still in the pack that declared it, and `yolo
+			// config-ref` says why the host notch does not honor it), where a refused skill adoption has
+			// none — which is why THAT one is explicitly exempted from detail() (applyhostskills.go, the
+			// remedy contract). The no-silent-drop rule is unchanged: the key is still named, in the
+			// view that itemizes a destination's keys at all.
 			if len(r.Pruned) > 0 {
 				detail(pr, "    [dim]skipped ${workspace}-keyed (no host referent): %s[/dim]",
 					strings.Join(r.Pruned, ", "))
@@ -705,8 +704,8 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// Compose the SKILLS and BRIEFING destinations, for the WHOLE pack set at once. After the
 	// per-pack loop because each destination's content is the union of every contributing pack's
 	// (§6a, §6a-2): rendering inside the loop would either accumulate or let the last pack's write
-	// erase the others' — and for `skills` it would additionally have to negotiate a name two packs
-	// both claim, which is the negotiation composition deletes (§6a-5).
+	// erase the others' — and for `skills` it would additionally have to negotiate a name two
+	// packs both claim, which is the negotiation composition deletes (§6a-5).
 	candidates := append(loaded, embeddedPacksForPrune()...)
 	// Skills FIRST, deliberately. Both migrations create the local pack and both re-resolve after
 	// a confirmed one, so either order converges — but a user answering two prompts should be
@@ -744,7 +743,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		rc = wrc
 	}
 
-	// THE TIER-3 GROUPS (report-tiers.md §4.4, §9 step 4): every loss and blocker this run
+	// THE TIER-3 GROUPS (report-tiers.md's remedy contract): every loss and blocker this run
 	// found, grouped by the FIX rather than by the emitter that noticed it, each group stating
 	// its remedy once and every group represented in the verdict below. See
 	// hostapplyremedy.go.
@@ -758,9 +757,9 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		// THE DESTINATION ROLL-UP, and it is the point of the change predicate at this surface:
 		// an observe pass over an already-applied home used to end in N identical `would render`
 		// lines with nothing saying they were all no-ops (§10 step 1). It counts DESTINATIONS,
-		// which is the launch gate's question and not the reader's (report-tiers.md §3.4), so it
+		// which is the launch gate's question and not the reader's (report-tiers.md, P6), so it
 		// sits above the verdict as the detail it is — and it IS detail now: a tier-2
-		// itemization, moved behind --verbose by §9 step 6, which is what this block's own
+		// itemization, moved behind --verbose by detail on demand, which is what this block's own
 		// comment predicted one step ago. 70 of the measured home's 76 lines were fourteen
 		// skills counted once per agent directory.
 		detail(pr, "[bold]%s[/bold]", survey.Summary())
@@ -769,7 +768,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 				c.Kind, c.Surface, c.Path)
 		}
 	}
-	// THE VERDICT, OUTSIDE THE POSTURE GUARD. §4.3 requires it on every path in every
+	// THE VERDICT, OUTSIDE THE POSTURE GUARD. The verdict block requires it on every path in every
 	// posture, and the block above used to be the whole tail: an --assert therefore ended
 	// with no summary at all, having just written into a real home.
 	printHostApplyVerdict(pr, survey, write)
@@ -887,14 +886,14 @@ func confirmHostLosses(pr richtext.Printer, out io.Writer, stdin io.Reader,
 // A pack that after resolution declares NOTHING is the other case, and it is finding F1 reached
 // by the other route: a zero-ceremony content pack selected with no agent pack renders nothing,
 // silently, which is the whole defect. `len(Contributions()) == 0` is the honest test for it
-// rather than a heuristic — after ResolveDestinations a pack's declaration is everything it will
-// ever be asked to do, so an empty one means it will do nothing.
-// An ADDRESSED contribution is the third half, added by briefing-audiences.md, and it needed
-// its own line rather than a wider one: "declares no destination" is FALSE of it. A pack
-// saying `agents: ["claude"]` declared exactly who its prose is for and deliberately not where
-// that prose goes (P4), so reporting it as silence describes the opposite of what the author
-// did — and leaves them unable to tell a working selector from a typo, since both produce the
-// same line. The audience is named, so the report answers "did my selector reach claude?".
+// rather than a heuristic — after ResolveDestinations a pack's declaration is everything it
+// will ever be asked to do, so an empty one means it will do nothing. An ADDRESSED contribution
+// is the third half, added by briefing-audiences.md, and it needed its own line rather than a
+// wider one: "declares no destination" is FALSE of it. A pack saying `agents: ["claude"]`
+// declared exactly who its prose is for and deliberately not where that prose goes (P4), so
+// reporting it as silence describes the opposite of what the author did — and leaves them
+// unable to tell a working selector from a typo, since both produce the same line. The audience
+// is named, so the report answers "did my selector reach claude?".
 func reportInferredDestinations(pr richtext.Printer, d packload.Destinations) int {
 	// Destinations an ADDRESSED contribution accounted for. Subtracted from the silent-inference
 	// line below so one delivery is not reported twice, in two voices — a pack MAY carry both a
@@ -908,7 +907,7 @@ func reportInferredDestinations(pr richtext.Printer, d packload.Destinations) in
 		if len(a.Into) == 0 {
 			continue // R1 — reported by the orphan branch below, which carries the severity
 		}
-		// DETAIL (§4.5): "where did this land, and why there" is the auditor's and the
+		// DETAIL (detail on demand): "where did this land, and why there" is the auditor's and the
 		// diagnoser's question about a destination that resolved correctly. The ORPHAN
 		// branches below are not this — they report content that reached NOTHING, which is a
 		// tier-3 fact and prints at every verbosity.

@@ -1,6 +1,6 @@
 package cli
 
-// hostapplynotch_test.go pins docs/design/report-tiers.md §9 step 3: a tier-1 fact is named
+// hostapplynotch_test.go pins docs/reference/report-tiers.md the tiers: a tier-1 fact is named
 // EXACTLY ONCE per run, however many contributions declare it.
 //
 // The assertion has to be "exactly once", not "at least once", and the difference is the whole
@@ -11,8 +11,8 @@ package cli
 // free.
 //
 // Both go through applyHostSurveyed, which is the call site: deleting printNotchFacts from
-// apply.go leaves the kinds unnamed and fails the first test, and restoring the per-contribution
-// prints fails the count in both.
+// apply.go leaves the kinds unnamed and fails the first test, and restoring the
+// per-contribution prints fails the count in both.
 
 import (
 	"path/filepath"
@@ -34,7 +34,7 @@ func TestHostApplyNamesEachInapplicableKindOnce(t *testing.T) {
 	kinds, contributions := inapplicableKindsInConfig(t)
 	if len(kinds) == 0 {
 		t.Fatalf("fixture bug: the shipped packs declare no kind this notch skips, so there "+
-			"is nothing for §9 step 3 to collapse\n%s", report)
+			"is nothing for the tiers to collapse\n%s", report)
 	}
 	// The collapse is only worth asserting while there is something to collapse: the measured
 	// home had 19 contributions across 7 kinds. A set where the two numbers agree would make
@@ -56,15 +56,15 @@ func TestHostApplyNamesEachInapplicableKindOnce(t *testing.T) {
 				k, n, lines[0])
 		}
 	}
-	// §4.6's closed vocabulary: `refused` belongs to an apply that STOPPED, and a kind with no
+	// the report vocabulary: `refused` belongs to an apply that STOPPED, and a kind with no
 	// meaning off-container stopped nothing.
 	if strings.Contains(lines[0], "refused") {
-		t.Errorf("a notch fact says `does not apply`, never `refused` (§4.6): %q", lines[0])
+		t.Errorf("a notch fact says `does not apply`, never `refused` (the report vocabulary): %q", lines[0])
 	}
 	// P8: the ~40-word reasons stay in internal/render and reach no terminal view. One of them,
 	// picked because its wording is the most distinctive of the seven.
 	if strings.Contains(report, "off-container the home simply") {
-		t.Errorf("the kind rationale must not print — it is the manual's (§4.6):\n%s", report)
+		t.Errorf("the kind rationale must not print — it is the manual's (the report vocabulary):\n%s", report)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestHostApplyNamesTheAutonomyPostureOnce(t *testing.T) {
 }
 
 // notchKindLines returns the report lines stating which kinds do not apply. Matched on the
-// vocabulary §4.6 fixes rather than on the whole sentence, so re-wording the line does not
-// silently turn this test into a tautology over zero lines.
+// vocabulary the report vocabulary fixes rather than on the whole sentence, so re-wording the
+// line does not silently turn this test into a tautology over zero lines.
 func notchKindLines(report string) []string {
 	var out []string
 	for _, l := range strings.Split(report, "\n") {

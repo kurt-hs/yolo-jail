@@ -212,9 +212,9 @@ func TestBrewCaskHint(t *testing.T) {
 //
 // The seam is the assertion, not a detail of the test. `yolo host apply`'s dependency gate
 // re-probes after running a remedy and refuses when the binary still is not there
-// (docs/design/report-tiers.md §4.9 point 5), so a Present that reached exec.LookPath directly
-// would be a second opinion about one PATH — with the first one stubbed and the second one
-// reading the developer's real machine.
+// (docs/reference/report-tiers.md's dependency rule, point 5), so a Present that reached
+// exec.LookPath directly would be a second opinion about one PATH — with the first one stubbed
+// and the second one reading the developer's real machine.
 func TestPresentReprobesThroughTheSeam(t *testing.T) {
 	real := LookPath
 	t.Cleanup(func() { LookPath = real })

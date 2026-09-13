@@ -1,6 +1,6 @@
 package cli
 
-// hostapplynotch.go says docs/design/report-tiers.md §4.1's TIER-1 facts ONCE per run: which
+// hostapplynotch.go says docs/reference/report-tiers.md's TIER-1 facts ONCE per run: which
 // contribution kinds DO NOT APPLY at the host notch, and which autonomy posture this notch
 // renders.
 //
@@ -8,7 +8,7 @@ package cli
 // every machine — and the report printed it per CONTRIBUTION. Measured in this jail on
 // 2026-09-10: nineteen refusal paragraphs naming seven kinds (`state` ×6, `hook` ×4,
 // `loophole` ×4, `reads-host` ×2, `env`/`provider`/`profile` ×1) and five identical autonomy
-// lines, ~40 words each, byte-identical in any home that selects the same packs (§2.1, §3.2).
+// lines, ~40 words each, byte-identical in any home that selects the same packs (§2.1, P1).
 // P1 says a property of the notch is stated once per run; this file is that once.
 //
 // THE CENSUS INVARIANT IS UNCHANGED, and P5 is why: it is *named*, not *itemized* — "a kind
@@ -26,16 +26,16 @@ package cli
 // your home or it is not. Collapsing only one of the two maps would have collapsed eleven of
 // the nineteen lines and left the rest.
 //
-// WHAT LEFT ALTOGETHER IS THE RATIONALE (P8, §4.6): the ~40-word reasons stay in
-// internal/render — they are still what the code decides by — and NO TERMINAL VIEW PRINTS
+// WHAT LEFT ALTOGETHER IS THE RATIONALE (P8, the report vocabulary): the ~40-word reasons stay
+// in internal/render — they are still what the code decides by — and NO TERMINAL VIEW PRINTS
 // THEM, at any verbosity. They live in the manual now, as list entries in config_ref.txt's
-// host-notch section under a drift gate that reads both of render's maps (§9 step 6). This
-// line names the kinds and points there.
+// host-notch section under a drift gate that reads both of render's maps (detail on demand).
+// This line names the kinds and points there.
 //
-// THE WORD IS `does not apply`, NEVER `refused` (§4.6's closed vocabulary). `refused` belongs
+// THE WORD IS `does not apply`, NEVER `refused` (the report vocabulary). `refused` belongs
 // to an apply that STOPPED — a doubly-owned surface, an `agents` selector naming nobody — and
 // a kind that has no meaning off-container stopped nothing. The old line offered a remedy
-// ("Launch a jail to run it") for a problem the reader does not have, which §3.5 calls a notch
+// ("Launch a jail to run it") for a problem the reader does not have, which P2 calls a notch
 // fact wearing a warning's word.
 
 import (
@@ -54,7 +54,7 @@ import (
 type notchFacts struct {
 	// Inapplicable is every declared kind this notch does nothing with, deduplicated and
 	// sorted. Deduplicated because the kind is the unit: which pack declared it is a
-	// property of the pack, and §4.1 puts that behind --verbose (§9 step 6).
+	// property of the pack, and the tiers puts that behind --verbose (detail on demand).
 	Inapplicable []packdecl.Kind
 	// Autonomy is whether any pack declares the kind at all. The POSTURE is the notch's and
 	// cannot differ between packs in one run — render.Host(...).Profile().AgentAutonomy
@@ -117,12 +117,12 @@ func notchInapplicable(fields render.FieldSet, k packdecl.Kind) bool {
 // set's size.
 //
 // Both lines point somewhere rather than explaining themselves (P3/P8). The kinds line names
-// `yolo config-ref`, which is where §4.6 moved the REASONS — as list entries under a drift gate
-// of their own (TestEveryHostNotchInapplicableKindHasItsReasonDocumented, which reads BOTH of
-// render's maps, so a refused kind and an honored-but-unbuilt one are covered alike); the
-// autonomy line names what it did to the surfaces, because
-// "did my jail-bypass keys reach my real home?" is the single most consequential question this
-// command answers and the answer is one word.
+// `yolo config-ref`, which is where the report vocabulary moved the REASONS — as list entries
+// under a drift gate of their own (TestEveryHostNotchInapplicableKindHasItsReasonDocumented,
+// which reads BOTH of render's maps, so a refused kind and an honored-but-unbuilt one are
+// covered alike); the autonomy line names what it did to the surfaces, because "did my
+// jail-bypass keys reach my real home?" is the single most consequential question this command
+// answers and the answer is one word.
 func printNotchFacts(pr richtext.Printer, f notchFacts) {
 	if len(f.Inapplicable) > 0 {
 		names := make([]string, len(f.Inapplicable))

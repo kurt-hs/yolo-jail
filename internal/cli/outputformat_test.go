@@ -83,10 +83,10 @@ var formatFamily = []struct {
 	{"loopholes list", []string{"loopholes", "list"}},
 	{"loopholes status", []string{"loopholes", "status"}},
 	{"broker status", []string{"broker", "status"}},
-	// `host apply` joins the family by POSTURE rather than by verb (report-tiers.md §4.8 /
-	// OQ-RO4): its default is a dry run whose whole output is "what would change", which is a
-	// state report however much the verb's name says otherwise. Its ACTING posture is in
-	// TestActingVerbsRefuseJSONRatherThanIgnoreIt below, which is the other half of that
+	// `host apply` joins the family by POSTURE rather than by verb (report-tiers.md's machine
+	// consumers / OQ-RO4): its default is a dry run whose whole output is "what would change",
+	// which is a state report however much the verb's name says otherwise. Its ACTING posture is
+	// in TestActingVerbsRefuseJSONRatherThanIgnoreIt below, which is the other half of that
 	// ruling.
 	{"host apply", []string{"host", "apply"}},
 }
@@ -171,10 +171,10 @@ func TestActingVerbsRefuseJSONRatherThanIgnoreIt(t *testing.T) {
 	for _, argv := range [][]string{
 		{"loopholes", "enable", "journal"},
 		{"loopholes", "disable", "journal"},
-		// The POSTURE half of the same rule: `yolo host apply` reports in its default
-		// posture and ACTS with --assert, so the refusal is keyed on the posture rather
-		// than on the verb (report-tiers.md §4.8). Nothing is written here — the refusal is
-		// above the render, which "exit 2 with empty stdout" is the visible half of.
+		// The POSTURE half of the same rule: `yolo host apply` reports in its default posture and
+		// ACTS with --assert, so the refusal is keyed on the posture rather than on the verb
+		// (report-tiers.md's machine consumers). Nothing is written here — the refusal is above the
+		// render, which "exit 2 with empty stdout" is the visible half of.
 		{"host", "apply", "--assert"},
 	} {
 		t.Run(strings.Join(argv, " "), func(t *testing.T) {

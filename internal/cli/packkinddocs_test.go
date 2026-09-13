@@ -209,18 +209,18 @@ func sortedByPosition(pos map[string]int) []string {
 }
 
 // hostNotchDocMarker is the header of config_ref.txt's host-notch list — the section
-// docs/design/report-tiers.md §4.6 moved the kind-refusal RATIONALE into when P8 took it out of
-// the report ("the report states facts, not rationale"). The tests below are the condition that
-// move was made on.
+// docs/reference/report-tiers.md's report vocabulary moved the kind-refusal RATIONALE when P8
+// took it out of the report ("the report states facts, not rationale"). The tests below are the
+// condition that move was made on.
 const hostNotchDocMarker = "AT THE HOST NOTCH"
 
 // TestEveryHostNotchInapplicableKindHasItsReasonDocumented is the DRIFT GATE on that move, and
 // it is the only reason moving prose out of a mechanism and into a hand-written doc is safe
-// here: retyped text drifts from the thing it describes, so §4.6 made the move conditional on
-// this test existing.
+// here: retyped text drifts from the thing it describes, so that section made the move
+// conditional on this test existing.
 //
 // ⚠ IT READS BOTH MAPS IN internal/render, through notchInapplicable — the same predicate the
-// report's tier-1 line is built from. §4.6's own wording names only the FieldSet's refusals,
+// report's tier-1 line is built from. Its own wording names only the FieldSet's refusals,
 // and stopping there would have covered five kinds and silently dropped the other six: `env`,
 // `launch`, `hook`, `profile` and `provider` are HONORED by the host FieldSet and unbuilt
 // (render.HostUnimplemented), and `service`/`blocked-tool` fall to the generic refusal with no
@@ -309,7 +309,7 @@ func hostNotchDocSection(t *testing.T, doc string) string {
 	}
 	if start < 0 {
 		t.Fatalf("config_ref.txt has no %q section at all — the host notch's kind reasons "+
-			"live nowhere a user can read them (docs/design/report-tiers.md §4.6)",
+			"live nowhere a user can read them (docs/reference/report-tiers.md, the report vocabulary)",
 			hostNotchDocMarker)
 	}
 	indent := len(lines[start]) - len(strings.TrimLeft(lines[start], " "))
