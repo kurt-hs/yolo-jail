@@ -3,7 +3,7 @@ title: "Handoff: the claims that shipped on reading, and the Mac that can settle
 status: in-review
 date: 2026-09-13
 tags: [macos-user, handoff, seatbelt, declaration-parity, ci, image]
-summary: "Seven threads landed on 2026-09-13 whose correctness is read off source rather than observed, and one measurement settles three of them at once. The three Seatbelt probes in the parity catalog's DP-L1 section need a Mac and about twenty minutes, two of them need no yolo at all, and one of the three can invert a whole section of that catalog. Everything else here is cheaper and less consequential."
+summary: "Seven threads landed on 2026-09-13 whose correctness was read off source rather than observed. All of them are now measured on hardware except the nightly's unexplained exit 125: the three Seatbelt probes ran (nothing inverted — Seatbelt evaluates the target, so DP-L1's mechanism stays a copy), and one launch settled the briefing batch and both notice sets. Two defects were found in the process, both fixed: the workspace reached SeatbeltProfile un-resolved, which made its rules dead and was masking a bypass of the neutral-ground refusal, and the briefing's Packages section offered a resources cap this backend ignores by ruling."
 ---
 
 # Handoff: the claims that shipped on reading, and the Mac that can settle them
@@ -27,9 +27,17 @@ changed on 2026-09-13 that is now waiting on hardware, in the order that buys th
 > bug **reachable**, and fixing it exposed a second defect it had been masking: a symlinked
 > workspace evaded the neutral-ground refusal. Both fixed in `e63d4aef`.
 >
-> **Start now at [§2](#2-the-briefing-batch-on-the-arm-no-test-executes)** — one launch reads that
-> section and [§3](#3-the-new-stderr-notices-in-real-output) together, and it needs a password, so it is a
-> human's or an agent's-with-a-human's-keyboard.
+> **[§2](#2-the-briefing-batch-on-the-arm-no-test-executes) and
+> [§3](#3-the-new-stderr-notices-in-real-output) are DONE TOO** — one launch, 2026-09-13. The
+> macos-user arm of `run.Run` is reached and every briefing expectation holds; both notice sets
+> read correctly and a config declaring none of those keys prints none of the lines. That section's ⚠ was
+> fixed by `0d0c26da` before the run, and that run found a **fourth** false place one section lower
+> (`## Packages & Resource Limits`, offering a `resources` cap this backend ignores by ruling),
+> fixed in `8027814e`.
+>
+> **What is left in this file: the nightly ([§4](#4-the-nightly-and-the-exit-125-nobody-has-explained)) only** —
+> the nightly was re-dispatched 2026-09-13 (run `34774761002`) and its `exit 125` is still
+> unexplained. That needs no Mac.
 
 > [!IMPORTANT]
 > **The original lead, kept for its reasoning.** *(Superseded above 2026-09-13.)* **Start at
@@ -135,13 +143,44 @@ So: launch macos-user once and read `.yolo/`'s composed briefing. Expect the net
 to say *"this environment shares the host's network stack"*, **no** ports sections, **no**
 `/ctx` mounts, **no** resource limits, and a header describing Seatbelt rather than namespaces.
 
-⚠ **While you have that briefing open, read the `## Environment` block** — it is a defect the
-catalog does not yet have a row for, found on 2026-09-13 and deliberately not fixed. On
-macos-user it is false in three places at once: `/workspace` described as a bind mount (there
-is none — the workspace is at its real path), **Home** as `/home/agent` (it is
-`/Users/_yolojail`), and **OS** as *"NixOS-based minimal container"* — contradicting the header
-three lines above it. **This needs a wording ruling before anyone can fix it**, specifically
-for the workspace line, and that ruling is the maintainer's.
+> [!NOTE]
+> **MEASURED 2026-09-13 — the arm IS reached, and every expectation above holds.** One launch in
+> `/Users/Shared/yolo/mac-hand`, reading the briefing the sandbox actually got
+> (`<ws>/.yolo/home/claude/CLAUDE.md`, 7793 bytes, written by that launch):
+>
+> | Expectation | Observed |
+> | :--- | :--- |
+> | the network paragraph | *"**Network**: Host networking — this environment shares the host's network stack. `localhost` / `127.0.0.1` resolves directly to the host. No port mapping needed."* |
+> | no ports sections | none |
+> | no `/ctx` mounts | none — the string does not occur |
+> | no resource limits in the block | none |
+> | a Seatbelt header | *"# YOLO Environment — jail (native, no container)"* / *"You are confined by a Seatbelt sandbox on the human's REAL machine, not by a container."* |
+>
+> The macos-user-specific sections are all correct and well-aimed too — the shared-home warning
+> names `.claude-shared-credentials` and `.gemini-shared-credentials` one by one, the
+> rendered-from-DEFAULTS warning names both settings files, and the no-network-namespace
+> paragraph says *"every port you bind is bound on the human's REAL machine … listed in
+> `network.ports` or not."*
+
+~~⚠ **While you have that briefing open, read the `## Environment` block**~~ — **FIXED
+2026-09-13 (`0d0c26da`), and the measurement above is of the fixed block.** It was false in three
+places at once: `/workspace` described as a bind mount (there is none — the workspace is at its
+real path), **Home** as `/home/agent` (it is `/Users/_yolojail`), and **OS** as *"NixOS-based
+minimal container"* — contradicting the header three lines above it. The wording ruling it was
+waiting on came down as **name the absence, keep `/workspace` canonical**: the three built-in
+skills carry 25 `/workspace` references as static markdown, so the bullet became the one place a
+macos-user agent is told those references mean its own path.
+
+> [!IMPORTANT]
+> **A FOURTH FALSE PLACE, one section lower, which that fix did not reach — now also fixed
+> (`8027814e`).** `## Packages & Resource Limits` told the agent to request a *"container-limit
+> change"* by editing `resources`: no container, and `resources` is read and IGNORED here by
+> ruling ([DP-D1](../design/declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open)).
+> Worse than a wrong path — an agent that follows it asks its human for a cap nothing delivers,
+> the human grants it, and the limit does not exist. DP-D1's own sentence decided the shape
+> (*"a cap a user believes in but that does not hold is worse than a documented absence"*), so
+> the native arm is `## Packages`, names only `packages`, and states the absence. `/workspace` is
+> kept on both arms so the convention above is not forked.
 
 ---
 
@@ -163,6 +202,41 @@ What to check is not that they appear — Linux proves that — but that they re
 a real launch's other output, and that a config declaring **none** of these keys produces
 **none** of these lines. A warning people learn to skip is worse than none
 ([`OQ-BP-3`](../design/backend-parity.md#open-questions)), and that is the failure mode here.
+
+> [!NOTE]
+> **MEASURED 2026-09-13, both halves.** The negative half first, because it is the one
+> [`OQ-BP-3`](../design/backend-parity.md#open-questions) cares about: the real launch above
+> declares none of these keys and printed **none** of these lines. The positive half came from a
+> throwaway workspace declaring all five (a `--dry-run`, so no password) — every notice fired,
+> and none of them reuses the container path's *"not supported on macOS"* string:
+>
+> ```
+> Warning: `devices` is not read on macos-user — usb probe device. Device passthrough attaches a
+>   host device to a CONTAINER, and this backend starts none; the sandboxed process reaches
+>   devices under ordinary macOS permissions instead, so yolo neither attaches nor restricts
+>   anything here.
+> Warning: `gpu.enabled` is not read on macos-user — GPU passthrough is a CDI device plus
+>   NVIDIA/ROCm environment on a container, and this backend starts none. …
+> Warning: `kvm` is not read on macos-user — it asks for /dev/kvm inside a container, and there
+>   is neither a container nor a /dev/kvm on macOS.
+> Warning: `network.ports` is not honored on macos-user — 18080:8080. … 18080:8080 asks for a
+>   port REMAP, which needs a second stack to land on and cannot be delivered at all: the
+>   process is reachable on the port it binds.
+> Warning: `network.forward_host_ports` is not honored on macos-user — 5432:5432. There is no hop
+>   to make: the sandbox is already on this machine's stack, so `localhost:<port>` inside it is
+>   this machine's port.
+> ```
+>
+> `DP-L2`'s remap half reads exactly as designed — the entry is named twice, once for what is
+> true anyway (the port is published on real interfaces regardless) and once as the
+> **not-satisfiable** half. And each `DP-L10` line says *read by nothing* rather than
+> *platform-refused*, which is the distinction that section required.
+>
+> ⚠ **Incidental, and worth knowing before writing a probe config:** `forward_host_ports` is
+> `network.forward_host_ports`, not top-level — a top-level spelling is refused as an unknown
+> key. The port-shape refusal is one of the better messages in the tree: *"expected
+> '&lt;host&gt;:&lt;jail&gt;' or '&lt;ip&gt;:&lt;host&gt;:&lt;jail&gt;' (host side FIRST — the reverse of
+> network.forward_host_ports)"*.
 
 ---
 
