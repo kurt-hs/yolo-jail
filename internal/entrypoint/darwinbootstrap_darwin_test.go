@@ -30,16 +30,37 @@ import (
 // two shows up here as a generator that reads nothing.
 func bootstrapEnv(t *testing.T, home string, extra map[string]string) *Env {
 	t.Helper()
+	// A REAL TEMPDIR FOR THE WORKSPACE, never a literal under /Users/Shared/yolo. These two
+	// keys name a directory the boot MkdirAlls (ConfigureMisePrism writes into the workspace),
+	// so a hardcoded absolute path is not a fixture — it is a side effect on the machine
+	// running the test. It left `/Users/Shared/yolo/proj/.yolo/prism` behind on the
+	// maintainer's Mac, dated the day the suite last ran there.
+	//
+	// AND IT BROKE THE ONE ENVIRONMENT THIS BACKEND IS FOR. Measured 2026-09-13: under a real
+	// macos-user session profile these four tests fail with
+	// `generate_mise_config: mkdir /Users/Shared/yolo/proj: file exists`, because the profile
+	// re-allows reads for the WORKSPACE subpath and nothing else under /Users — so `Stat` on a
+	// sibling directory is denied, `MkdirAll` falls through to `mkdir`, and that returns EEXIST.
+	// `just test-fast` — the pre-commit gate — was therefore red inside a macos-user jail while
+	// green on the same Mac outside one, which is the drift that stops this backend being usable
+	// for developing yolo itself. A tempdir is inside TMPDIR, which the profile grants.
+	//
+	// Resolved where it is MINTED, per AGENTS.md's darwin rule: t.TempDir() hands back
+	// /var/folders/…, itself a symlink to /private/var/folders/…, and the generators resolve.
+	ws := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(ws); err == nil {
+		ws = resolved
+	}
 	vars := map[string]string{
 		"HOME":                   home,
 		"JAIL_HOME":              home,
-		"YOLO_HOST_DIR":          "/Users/Shared/yolo/proj",
+		"YOLO_HOST_DIR":          ws,
 		"YOLO_BLOCK_CONFIG":      `[]`,
 		"YOLO_MISE_TOOLS":        `{}`,
 		"YOLO_LSP_SERVERS":       `{}`,
 		"YOLO_MCP_SERVERS":       `{}`,
 		"YOLO_MCP_PRESETS":       `[]`,
-		"YOLO_DARWIN_WORKSPACE":  "/Users/Shared/yolo/proj",
+		"YOLO_DARWIN_WORKSPACE":  ws,
 		"YOLO_DARWIN_MACOS_LOG":  "off",
 		"YOLO_DARWIN_LOGIN_PATH": "/usr/bin:/bin",
 	}
