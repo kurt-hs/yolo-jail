@@ -45,12 +45,15 @@ import (
 // beside a banner they have stopped watching. Everything the launcher prints is teed to
 // <workspace>/.yolo/launch.log either way.
 //
-// THE SHELL-ALIAS PATH IS DISCLOSED BY ITS OWN WRITER, not here, and the reason is the one
+// THE IN-JAIL PATHS ARE DISCLOSED BY THEIR OWN WRITERS, not here, and the reason is the one
 // this file's wrapper rests on: the producer of a rewrite is the only thing that knows it
-// happened. entrypoint.packAliases runs THIS SAME INJECTOR over the bare argv `<bin>` and
-// writes the result as a `.bashrc` alias, then states what it wrote
-// (entrypoint.discloseShellAliases). That line is silent for a year of launches until a pack
-// declares a flag, and it is written where the fact becomes true.
+// happened. There are two of them, and both run THIS SAME INJECTOR over the bare argv
+// `<bin>`: entrypoint.packAliases writes the result as a `.bashrc` alias and states what it
+// wrote (entrypoint.discloseShellAliases), and entrypoint.DeliverLaunchFlags guarantees a
+// script in ~/.yolo/bin/launch for every flagged binary — the carrier that reaches a
+// NON-INTERACTIVE shell, which neither this file nor the alias can (DP-B44, closed
+// 2026-09-13) — and states the reach. Both lines are silent for a year of launches until a
+// pack declares a flag, and each is written where its fact becomes true.
 //
 // It used to be disclosed NOWHERE, on the argument that `type copilot` prints the definition
 // and the alias is a legible line in a file — self-disclosure by a mechanism bash already

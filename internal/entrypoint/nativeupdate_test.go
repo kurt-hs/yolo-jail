@@ -66,7 +66,7 @@ func newUpdateProbe(t *testing.T, verb []string, updates bool, install bool) *up
 		filepath.Join(home, "ws", ".yolo", "receipts.jsonl"),
 		"", // no capture store
 		updates, launcherServers{},
-	)
+		nil)
 	if err := os.WriteFile(p.script, []byte(launcher), 0o755); err != nil {
 		t.Fatal(err)
 	}

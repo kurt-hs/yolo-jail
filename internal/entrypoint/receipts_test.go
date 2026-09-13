@@ -509,7 +509,7 @@ func TestNativeLauncherVendorSelfUpdateEmitsNoReceipt(t *testing.T) {
 			UpdateVerb: []string{"update"},
 		},
 		"/stamps", "/tmp/receipts.jsonl", "", true, launcherServers{},
-	)
+		nil)
 	verbCalls := 0
 	for _, line := range strings.Split(body, "\n") {
 		if !strings.Contains(line, `_bounded "$REAL_BIN" "${UPDATE_VERB[@]}"`) {
@@ -867,9 +867,9 @@ func TestBootstrapReceiptPathIsBakedNotRead(t *testing.T) {
 func TestLauncherReceiptPathIsBakedNotRead(t *testing.T) {
 	for name, body := range map[string]string{
 		"npm": npmAgentLauncher(&packdecl.Install{Kind: "npm", Bin: "t", Package: "t"},
-			"/stamps", "/ws/.yolo/receipts.jsonl", true, launcherServers{}),
+			"/stamps", "/ws/.yolo/receipts.jsonl", true, launcherServers{}, nil),
 		"native": nativeAgentLauncher(&packdecl.Install{Kind: "native", Bin: "t", InstallerURL: "u"},
-			"/stamps", "/ws/.yolo/receipts.jsonl", "", true, launcherServers{}),
+			"/stamps", "/ws/.yolo/receipts.jsonl", "", true, launcherServers{}, nil),
 	} {
 		if !strings.Contains(body, "_YOLO_RECEIPTS=/ws/.yolo/receipts.jsonl") {
 			t.Errorf("%s launcher does not bake the receipts path:\n%s", name, body)

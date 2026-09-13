@@ -70,9 +70,11 @@ func DarwinEnvFrom(vars map[string]string, home string) *Env {
 // plus the two macOS-only pieces (yolo-log helper, login-rc PATH re-prepend).
 //
 // A12: a generator failure is FATAL here too, and returning it is the whole point
-// — this path is easy to miss (it has its OWN nine genStep sites and its own
+// — this path is easy to miss (it has its OWN genStep sites and its own
 // configureAgent loop, so an earlier count of the fail-open sites missed it
-// entirely) and its caller used to print "bootstrap ok" unconditionally. Every
+// entirely) and its caller used to print "bootstrap ok" unconditionally. The
+// count is deliberately not restated: it moves whenever a generator is added,
+// and the fact that matters is that this list is a SECOND one. Every
 // step still runs, so one invocation reports every problem; see genStep.
 func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
 	// THE HOME LAYOUT, ABOVE EVERY GENERATOR — the workspace tier this backend otherwise
@@ -94,6 +96,13 @@ func RunDarwinBootstrap(e *Env, opts DarwinBootstrapOptions) error {
 	genStep(e, "generate_shims", func() error { return GenerateShims(e) })
 	genStep(e, "generate_agent_launchers", func() error { return GenerateAgentLaunchers(e) })
 	genStep(e, "generate_package_manager_launchers", func() error { return GeneratePackageManagerLaunchers(e) })
+	// LAST of the three launch-dir steps (launchwrapper.go), and on THIS backend it is
+	// also what delivers a pack's launch flags to the prompt at all: the account's login
+	// shell is zsh, which reads none of the bash rc files the aliases are written into
+	// (DP-B43). The launch dir is second on macosuser.SandboxPath and is re-prepended by
+	// WriteLoginRC, so a launcher — installer or wrapper — is on the path a typed name
+	// takes here, and the alias never was.
+	genStep(e, "deliver_launch_flags", func() error { return DeliverLaunchFlags(e) })
 	// Warn about any absent `requires` binary (generates nothing, so not a genStep). It
 	// matters MORE here than in a container: macos-user bakes no image at all, so a
 	// required tool comes from the user's own machine or not at all.

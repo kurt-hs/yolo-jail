@@ -177,6 +177,9 @@ func generateAll(t *testing.T, e *Env) {
 	must(GenerateShims(e))
 	must(GenerateAgentLaunchers(e))
 	must(GeneratePackageManagerLaunchers(e))
+	// The third launch-dir step (launchwrapper.go). A wrapper is generated bash like any
+	// other script here, and this gate is the cheap total one over the set.
+	must(DeliverLaunchFlags(e))
 	if _, err := GenerateCABundle(e); err != nil {
 		t.Fatal(err)
 	}

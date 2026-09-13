@@ -106,7 +106,10 @@ func TestGeneratedLauncherCallsTheServerRefresh(t *testing.T) {
 			// Ordering is the design's ONE hard constraint (§3.5): the refresh must
 			// complete before the exec, because the agent spawns its servers itself.
 			call := strings.Index(got, "if [ \"$SERVERS_ENABLED\" = \"1\" ]")
-			execAt := strings.LastIndex(got, `exec "$REAL_BIN" "$@"`)
+			// The exec is matched by its HEAD, not by the whole line: since DP-B44 the
+			// argv is ${YOLO_ARGV[@]…} rather than "$@", and pinning the tail would make
+			// this cell fail for a reason that has nothing to do with the refresh order.
+			execAt := strings.LastIndex(got, `exec "$REAL_BIN"`)
 			if call < 0 || execAt < 0 || call > execAt {
 				t.Errorf("the %s launcher does not order the refresh before the exec "+
 					"(call=%d exec=%d) — a half-updated server set at connect time is "+
@@ -556,7 +559,7 @@ fi`)
 		&packdecl.Install{Kind: "npm", Bin: "tool", Package: "tool"},
 		filepath.Join(home, "stamps"),
 		filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true,
-		launcherServers{npm: npmList, gomods: goList})
+		launcherServers{npm: npmList, gomods: goList}, nil)
 
 	out, rc := runLauncher(t, home, "tool", body, fakeBin)
 	if rc != 0 {

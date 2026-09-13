@@ -11,9 +11,12 @@ import (
 // packAliases writes a shell alias for each pack whose install binary has launchFlags,
 // so an interactive shell gets the same flags a `yolo -- <bin>` invocation does.
 //
-// ONE PRODUCER, TWO MECHANISMS. The alias body is now packload.InjectLaunchFlags applied
-// to the bare argv `<bin>` — literally the call the host makes on `yolo -- <bin>`, not a
-// second fold of the same table beside it. It used to read LaunchFlagsFor and re-assemble
+// ONE PRODUCER, THREE MECHANISMS. The alias body is launchFlagsFor — this package's single
+// call into packload.InjectLaunchFlags, over the bare argv `<bin>`, which is literally the
+// call the host makes on `yolo -- <bin>` rather than a second fold of the same table beside
+// it. The generated launchers (launchflags.go, launchwrapper.go) are the third mechanism and
+// come from the same call, so the alias and the script PATH resolves cannot disagree about
+// which flags exist. It used to read LaunchFlagsFor and re-assemble
 // the argv here, which agreed with the injector only for as long as nobody changed one of
 // them; the skip rules in particular (a flag the user already typed) lived in the injector
 // alone and were re-implemented nowhere, because the alias's argv is always bare. The two
@@ -57,10 +60,11 @@ func packAliases(e *Env) string {
 			// a bin another pack gives the flags to is still aliased here, and the record
 			// names THAT pack: the merge is "later pack wins", so the pack that installs a
 			// binary and the pack that claims its flags need not be the same one.
-			argv, inj := packload.InjectLaunchFlags(packs, []string{inst.Bin})
+			inj := launchFlagsFor(packs, inst.Bin)
 			if inj == nil {
 				continue
 			}
+			argv := inj.After
 			// Quoted, not interpolated into a '…' pair. The alias line is shell source the
 			// jail sources on every interactive shell, so a pack-declared flag is code this
 			// file emits; a flag carrying a quote used to terminate the enclosing quotes
@@ -116,24 +120,35 @@ func discloseShellAliases(e *Env, rewrites []*packload.LaunchInjection) {
 		// existing proof: the PATH half of this same .bashrc had to be re-emitted into
 		// .zprofile/.zshrc for exactly this reason, and the alias half was never ported.
 		//
-		// So the honest line is a warning rather than a disclosure — "absent and loud"
-		// beats "absent and silent" (docs/reference/macos-user-nix-and-features.md), and a
-		// disclosure copied here verbatim would assert a rewrite that does not happen.
-		// It names the one spelling that DOES carry the flags on this backend, because a
-		// warning whose remedy is unstated reads as a defect report rather than a fact
-		// about the environment.
+		// WHAT CHANGED IS THE CONSEQUENCE, NOT THE FACT (DP-B43, closed with DP-B44 rather
+		// than by porting the aliases to a zsh rc). The flags now ride on the LAUNCHER —
+		// an installer for a name a pack installs, a wrapper for one it does not — and
+		// ~/.yolo/bin/launch is second on macosuser.SandboxPath, which WriteLoginRC
+		// re-prepends into .zprofile and .zshrc. So a name typed at this backend's zsh
+		// prompt resolves through the launch dir and DOES carry its flags; the undelivered
+		// aliases are a redundant second carrier rather than a hole. Saying "run WITHOUT
+		// them" here would now be the false sentence.
+		//
+		// It is still said out loud rather than dropped: a file yolo writes and nothing
+		// reads is a fact about this environment a reader is entitled to, and "absent and
+		// loud" beats "absent and silent" (docs/reference/macos-user-nix-and-features.md).
 		var bins []string
 		for _, inj := range rewrites {
 			bins = append(bins, inj.Before[0])
 		}
 		e.warn("pack launch flags are written as bash aliases in " + e.BashrcPath() +
-			", and this account's login shell is zsh, which does not read it: " +
-			strings.Join(bins, ", ") + " typed at the prompt here run WITHOUT them" +
-			" (`yolo -- <bin>` still injects them, and says so). Start `bash` to get the aliases.")
+			", and this account's login shell is zsh, which does not read it. They reach " +
+			strings.Join(bins, ", ") + " at this prompt anyway, through " + e.LaunchDir() +
+			"/<name>, which is on this account's PATH — the alias is the redundant carrier " +
+			"here, not the delivering one.")
 		return
 	}
+	// `\<name>` is NOT the escape any more, and naming it would be the one false sentence
+	// in this block: since DP-B44 the launcher in ~/.yolo/bin/launch injects the same flags
+	// for every spelling, so bypassing the alias reaches a carrier that adds them back.
+	// NoLaunchFlagsEnv is the escape that survives both.
 	e.warn("yolo CHANGED what these commands mean in this jail's interactive shell " +
-		"(`type <name>` prints the alias; `\\<name>` runs the binary without it):")
+		"(`type <name>` prints the alias; " + NoLaunchFlagsEnv + "=1 runs one without the flags):")
 	for _, inj := range rewrites {
 		// shquote.Join on the AFTER side for the reason the host's block quotes both of
 		// its argvs: the line is meant to be copy-pasteable, and an argument containing a

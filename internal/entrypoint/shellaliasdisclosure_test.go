@@ -103,7 +103,13 @@ func TestTheDisclosedCommandIsTheAliasThatWasWritten(t *testing.T) {
 }
 
 // macos-user WRITES the aliases into a file its login shell never reads, so the disclosure
-// there would be a false sentence. The boot says the opposite instead: absent and loud.
+// there would be a false sentence. The boot says so instead: absent and loud.
+//
+// WHAT IT MAY NO LONGER SAY IS THAT THE FLAGS ARE GONE (DP-B43, closed alongside DP-B44).
+// The launcher carries them now, and ~/.yolo/bin/launch is second on this backend's own
+// PATH (macosuser.SandboxPath, re-prepended by WriteLoginRC), so a name typed at the zsh
+// prompt runs WITH its flags. This cell therefore pins both halves: the undelivered file is
+// still reported, and the claim that the prompt loses the flags is gone.
 //
 // The discriminator is $YOLO_DARWIN_LOGIN_PATH, the same one agentPath and imageProbePath
 // use to decide which PATH counts — set only by the macos-user launcher.
@@ -117,11 +123,16 @@ func TestMacosUserSaysTheAliasIsNotDelivered(t *testing.T) {
 	got := out.String()
 	if strings.Contains(got, "bash runs:") {
 		t.Errorf("this backend's login shell does not read the .bashrc, so the boot must "+
-			"not claim the rewrite happens; got:\n%s", got)
+			"not claim the ALIAS is what rewrites the command; got:\n%s", got)
 	}
-	for _, want := range []string{"acme", "zsh", "WITHOUT"} {
+	if strings.Contains(got, "WITHOUT") {
+		t.Errorf("the flags reach this prompt through the launch dir since DP-B44, so "+
+			"telling the user they run without them is now the false sentence; got:\n%s", got)
+	}
+	for _, want := range []string{"acme", "zsh", e.LaunchDir()} {
 		if !strings.Contains(got, want) {
-			t.Errorf("the undelivered alias must be reported and must name %q; got:\n%s", want, got)
+			t.Errorf("the undelivered alias must be reported and must name %q — the file "+
+				"nothing reads, and the carrier that does deliver; got:\n%s", want, got)
 		}
 	}
 }

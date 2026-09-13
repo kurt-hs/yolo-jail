@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -409,10 +410,10 @@ func GenerateAgentLaunchers(e *Env) error {
 			switch inst.Kind {
 			case "npm":
 				launcher = npmAgentLauncher(inst, stampDir, receiptsFile(e),
-					agentUpdatesAllows(e, p.Name), servers)
+					agentUpdatesAllows(e, p.Name), servers, launchFlagsFor(packs, inst.Bin))
 			case "native":
 				launcher = nativeAgentLauncher(inst, stampDir, receiptsFile(e), capturesDir(e),
-					agentUpdatesAllows(e, p.Name), servers)
+					agentUpdatesAllows(e, p.Name), servers, launchFlagsFor(packs, inst.Bin))
 			default:
 				// UNREACHABLE from the boot path: LoadJailPacks reads manifests tolerantly,
 				// and DecodeTolerant drops a `program` whose `via` this build does not know
@@ -456,7 +457,7 @@ func GenerateAgentLaunchers(e *Env) error {
 // the contract has no exemptions for a reader to memorize; a mutation run will report it as
 // a survivor, and that report is correct.
 func npmAgentLauncher(inst *packdecl.Install, stampDir, receiptsPath string,
-	updates bool, servers launcherServers) string {
+	updates bool, servers launcherServers, flags *packload.LaunchInjection) string {
 	binName := inst.Bin
 	pkgName, pkgVersion := splitNpmSpec(inst.Package)
 	pinned := "0"
@@ -467,7 +468,10 @@ func npmAgentLauncher(inst *packdecl.Install, stampDir, receiptsPath string,
 	if extraFlags != "" {
 		extraFlags += " "
 	}
-	r := strings.NewReplacer(
+	// launchFlagSplices rides on the END of every pair list rather than being spelled out
+	// three times: DP-B44's two sentinels are the same in all three templates, and a
+	// carrier that forgot one would drop a pack's flags silently.
+	r := strings.NewReplacer(append([]string{
 		"__YOLO_BIN__", shquote.Quote(binName),
 		"__YOLO_PKG__", shquote.Quote(pkgName),
 		"__YOLO_SPEC__", shquote.Quote(npmInstallSpec(pkgName, pkgVersion)),
@@ -486,7 +490,7 @@ func npmAgentLauncher(inst *packdecl.Install, stampDir, receiptsPath string,
 		"__YOLO_SERVERS_ENABLED__", shquote.Quote(boolFlag(!servers.empty())),
 		"__YOLO_SERVERS_NPM__", shquote.Quote(servers.npm),
 		"__YOLO_SERVERS_GO__", shquote.Quote(servers.gomods),
-	)
+	}, launchFlagSplices(flags)...)...)
 	return r.Replace(npmLauncherTemplate)
 }
 
@@ -527,10 +531,10 @@ func capturesDir(e *Env) string {
 }
 
 func nativeAgentLauncher(inst *packdecl.Install, stampDir, receiptsPath, capturesPath string,
-	updates bool, servers launcherServers) string {
+	updates bool, servers launcherServers, flags *packload.LaunchInjection) string {
 	binName := inst.Bin
 	installerURL := inst.InstallerURL
-	r := strings.NewReplacer(
+	r := strings.NewReplacer(append([]string{
 		"__YOLO_BIN__", shquote.Quote(binName),
 		"__YOLO_URL__", shquote.Quote(installerURL),
 		"__YOLO_STAMP_DIR__", shquote.Quote(stampDir),
@@ -550,7 +554,7 @@ func nativeAgentLauncher(inst *packdecl.Install, stampDir, receiptsPath, capture
 		"__YOLO_SERVERS_ENABLED__", shquote.Quote(boolFlag(!servers.empty())),
 		"__YOLO_SERVERS_NPM__", shquote.Quote(servers.npm),
 		"__YOLO_SERVERS_GO__", shquote.Quote(servers.gomods),
-	)
+	}, launchFlagSplices(flags)...)...)
 	return r.Replace(nativeLauncherTemplate)
 }
 
@@ -588,6 +592,15 @@ func GeneratePackageManagerLaunchers(e *Env) error {
 	}
 	stampDir := filepath.Join(e.Home, ".cache", "yolo-package-manager-stamps")
 
+	// The packs are read for ONE reason: a pack may declare `launch` flags for a name it
+	// does not install, and pnpm is a name core installs. A carrier that dropped those
+	// flags would be the partial injector OQ-DP7 forbids — the flags would reach
+	// `yolo -- pnpm` and the interactive prompt and vanish from a script.
+	packs, err := LoadJailPacks(e)
+	if err != nil {
+		return err
+	}
+
 	// The only lazily-installed package manager is pnpm. The package string goes through
 	// the same split as a pack's, so `pnpm` still renders `pnpm@latest` byte-for-byte
 	// while a future entry that names a version would be honoured instead of corrupted —
@@ -610,7 +623,8 @@ func GeneratePackageManagerLaunchers(e *Env) error {
 		if pathExists(launcherPath) {
 			continue // a pack already claimed this bin name
 		}
-		body := pkgManagerLauncher(pm.bin, pm.pkg, stampDir, receiptsFile(e))
+		body := pkgManagerLauncher(pm.bin, pm.pkg, stampDir, receiptsFile(e),
+			launchFlagsFor(packs, pm.bin))
 		if err := writeExecutable(launcherPath, body); err != nil {
 			return err
 		}
@@ -627,9 +641,10 @@ func GeneratePackageManagerLaunchers(e *Env) error {
 // seam that takes bin and pkg as arguments is what makes the splice contract measurable on
 // those two sentinels — see TestPkgManagerLauncherQuotesItsBinAndSpec. The production call
 // site stays pinned by every test that reads the emitted pnpm launcher.
-func pkgManagerLauncher(bin, pkg, stampDir, receiptsPath string) string {
+func pkgManagerLauncher(bin, pkg, stampDir, receiptsPath string,
+	flags *packload.LaunchInjection) string {
 	pkgName, pkgVersion := splitNpmSpec(pkg)
-	r := strings.NewReplacer(
+	r := strings.NewReplacer(append([]string{
 		"__YOLO_BIN__", shquote.Quote(bin),
 		"__YOLO_SPEC__", shquote.Quote(npmInstallSpec(pkgName, pkgVersion)),
 		"__YOLO_STAMP_DIR__", shquote.Quote(stampDir),
@@ -640,7 +655,7 @@ func pkgManagerLauncher(bin, pkg, stampDir, receiptsPath string) string {
 		// that distinction; a reader looking for "which resolver do I ask about this
 		// package" has every use for the kind.
 		"__YOLO_RECEIPT_HEAD__", shquote.Quote(receiptPrefix("npm", bin, pkg)),
-	)
+	}, launchFlagSplices(flags)...)...)
 	return r.Replace(pkgManagerLauncherTemplate)
 }
 
@@ -871,10 +886,12 @@ _yolo_receipt() {
 // tail into shell source; the file's own name in ~/.yolo/bin/launch/ says it instead).
 //
 // The values arrive from a pack manifest a human already approved, so this is hardening, not
-// a live exploit. There are 18 value splices across the three replacers (8 + 5 + 5, counted
-// 2026-09-03), and 7 of them were ALREADY correct before this contract was written: both
-// receipt fields in all three templates, plus the package-manager stamp dir. That is what
-// made the other 11 legible as a mistake rather than as a decision.
+// a live exploit. When the contract was written (2026-09-03) MOST of the splices were raw
+// and 7 were already correct — both receipt fields in all three templates, plus the
+// package-manager stamp dir — and that minority is what made the others legible as a mistake
+// rather than as a decision. The running total is deliberately not restated here: it moves
+// whenever a sentinel is added (launch flags added two per template on 2026-09-13), and a
+// number in prose is a claim that goes stale without anything failing.
 //
 // THE LAUNCHER RESOLVES A NEW VERSION FOR AN UNPINNED PACKAGE, at most once per
 // UPDATE_INTERVAL, when the jail's agent_updates policy allows it (program-delivery.md
@@ -927,6 +944,11 @@ _YOLO_RECEIPTS=__YOLO_RECEIPTS_FILE__
 SERVERS_ENABLED=__YOLO_SERVERS_ENABLED__
 SERVERS_NPM=__YOLO_SERVERS_NPM__
 SERVERS_GO=__YOLO_SERVERS_GO__
+# The pack's declared LAUNCH FLAGS, baked (launchflags.go, DP-B44). HAS_LAUNCH_FLAGS gates
+# every expansion of the array for HAS_UPDATE_VERB's reason: bash 3.2 under "set -u".
+HAS_LAUNCH_FLAGS=__YOLO_HAS_LAUNCH_FLAGS__
+LAUNCH_FLAGS=(__YOLO_LAUNCH_FLAGS__)
+` + launchFlagsShellFn + `
 
 # --- re-entry ----------------------------------------------------------------------
 # B2 PUT THE LAUNCH DIR AHEAD OF THE INSTALL PREFIXES, so a BARE-NAME call of this program
@@ -939,7 +961,10 @@ SERVERS_GO=__YOLO_SERVERS_GO__
 # carry characters no shell identifier may (- and .).
 case ":${_YOLO_LAUNCHER_ACTIVE:-}:" in
     *":$BIN:"*)
-        if [ -x "$REAL_BIN" ]; then exec "$REAL_BIN" "$@"; fi
+        if [ -x "$REAL_BIN" ]; then
+            _yolo_launch_argv "$@"
+            exec "$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}
+        fi
         echo "  ⚠ $BIN not available" >&2
         exit 1
         ;;
@@ -1218,7 +1243,8 @@ if [ "$SERVERS_ENABLED" = "1" ]; then
 fi
 
 if [ -x "$REAL_BIN" ]; then
-    exec "$REAL_BIN" "$@"
+    _yolo_launch_argv "$@"
+    exec "$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}
 else
     echo "  ⚠ $BIN not available" >&2
     exit 1
@@ -1311,6 +1337,11 @@ CAPTURES_DIR=__YOLO_CAPTURES_DIR__
 SERVERS_ENABLED=__YOLO_SERVERS_ENABLED__
 SERVERS_NPM=__YOLO_SERVERS_NPM__
 SERVERS_GO=__YOLO_SERVERS_GO__
+# The pack's declared LAUNCH FLAGS, baked (launchflags.go, DP-B44). HAS_LAUNCH_FLAGS gates
+# every expansion of the array for HAS_UPDATE_VERB's reason: bash 3.2 under "set -u".
+HAS_LAUNCH_FLAGS=__YOLO_HAS_LAUNCH_FLAGS__
+LAUNCH_FLAGS=(__YOLO_LAUNCH_FLAGS__)
+` + launchFlagsShellFn + `
 # ONE lock per INSTALL PREFIX, not per program: §3.5's contention rule is about who may
 # write into $HOME/.local, and two vendor updaters running there at once is what it
 # forbids. On the container backends the prefix is a per-workspace bind and nothing can
@@ -1334,7 +1365,10 @@ _ACT=install
 # not always a name that can be assigned at all.
 case ":${_YOLO_LAUNCHER_ACTIVE:-}:" in
     *":$BIN:"*)
-        if [ -x "$REAL_BIN" ]; then exec "$REAL_BIN" "$@"; fi
+        if [ -x "$REAL_BIN" ]; then
+            _yolo_launch_argv "$@"
+            exec "$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}
+        fi
         echo "  ⚠ $BIN not available" >&2
         exit 1
         ;;
@@ -1664,7 +1698,8 @@ fi
 
 
 if [ -x "$REAL_BIN" ]; then
-    exec "$REAL_BIN" "$@"
+    _yolo_launch_argv "$@"
+    exec "$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}
 else
     echo "  ⚠ $BIN not available" >&2
     exit 1
@@ -1690,6 +1725,13 @@ SPEC=__YOLO_SPEC__  # what npm install is handed: name@<selector>
 RETRY_INTERVAL=3600  # seconds before retrying a failed install
 # Baked, never read from the environment: see receiptsFile.
 _YOLO_RECEIPTS=__YOLO_RECEIPTS_FILE__
+# A pack's declared LAUNCH FLAGS for this name, baked (launchflags.go, DP-B44). No SHIPPED
+# pack declares a flag for a package manager, so this is "0" in every jail today — and a
+# carrier that silently dropped a flag SOME pack could declare is the partial injector
+# OQ-DP7 forbids, which is why the switch is here rather than reasoned away.
+HAS_LAUNCH_FLAGS=__YOLO_HAS_LAUNCH_FLAGS__
+LAUNCH_FLAGS=(__YOLO_LAUNCH_FLAGS__)
+` + launchFlagsShellFn + `
 
 mkdir -p "$STAMP_DIR"
 ` + stampMtimeFn + receiptShellFns + `
@@ -1726,7 +1768,8 @@ if [ ! -x "$REAL_BIN" ]; then
 fi
 
 if [ -x "$REAL_BIN" ]; then
-    exec "$REAL_BIN" "$@"
+    _yolo_launch_argv "$@"
+    exec "$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}
 else
     echo "  ⚠ $BIN not available" >&2
     exit 1

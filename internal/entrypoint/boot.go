@@ -489,6 +489,10 @@ func Main(args []string) error {
 	p.mark("generate_agent_launchers")
 	genStep(e, "generate_package_manager_launchers", func() error { return GeneratePackageManagerLaunchers(e) })
 	p.mark("generate_package_manager_launchers")
+	// LAST of the three launch-dir steps, and it must stay last: it fills the gap the two
+	// above leave, which is only a gap once they have both run (launchwrapper.go).
+	genStep(e, "deliver_launch_flags", func() error { return DeliverLaunchFlags(e) })
+	p.mark("deliver_launch_flags")
 	// `requires` asserts presence and generates nothing, so it is not a genStep: an absent
 	// required binary is a WARNING naming the bin, not a boot failure (see
 	// AssertRequiredBins). Run after the launchers so a `program` the same set of packs

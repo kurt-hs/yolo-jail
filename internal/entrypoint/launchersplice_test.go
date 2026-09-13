@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // launchersplice_test.go guards the SPLICE CONTRACT written on npmLauncherTemplate: every
@@ -21,8 +22,10 @@ import (
 // all three templates, plus the package-manager stamp dir) were correctly quoted. The values
 // come from a pack manifest a human approved, so that was hardening rather than a live
 // exploit; it is also exactly the shape that stops being hardening the day a value stops
-// being approved. There are 19 splices as of 2026-09-04: slice 4 of install-capture added
-// __YOLO_CAPTURES_DIR__ to the native template.
+// being approved. The set GROWS: install-capture added __YOLO_CAPTURES_DIR__ to the native
+// template (2026-09-04), and DP-B44 added __YOLO_HAS_LAUNCH_FLAGS__ + __YOLO_LAUNCH_FLAGS__
+// to all three plus the wrapper (2026-09-13), so this file asserts over the templates rather
+// than against a count.
 //
 // THE TESTS BELOW ARE WRITTEN TO FAIL IF A shquote CALL IS DELETED, not merely to describe
 // the current output (AGENTS.md, "a test that pins the CALLEE while the CALL SITE is
@@ -31,11 +34,21 @@ import (
 // regenerated raw splice does not merely mangle a string, it RUNS those two commands, and
 // the witness assertions catch it even in the cases where bash would still parse the script.
 //
-// MEASURED, by deleting each of the 18 calls in turn: 17 go red. The one survivor is
-// __YOLO_PINNED__, where Quote is the identity on the only two inputs that reach it ("0" and
-// "1", derived from a bool in the generator) — see npmAgentLauncher's docstring. Re-run that
-// check if you add a sentinel. Re-run for the 19th (__YOLO_CAPTURES_DIR__, 2026-09-04): it goes
-// RED, so the tally is 18 of 19.
+// MEASURED, by deleting each quoting call in turn (2026-09-03): all but one go red. The
+// survivor is __YOLO_PINNED__, where Quote is the identity on the only two inputs that reach
+// it ("0" and "1", derived from a bool in the generator) — see npmAgentLauncher's docstring.
+// Re-run that check when you add a sentinel. __YOLO_CAPTURES_DIR__ was re-run on 2026-09-04
+// and goes red. __YOLO_LAUNCH_FLAGS__ was re-run on 2026-09-13 and goes red TWICE — the raw
+// splice fails `bash -n` in the cell below and kills the launcher in
+// TestTheWrapperPassesAHostileFlagAsDATA, which is the pair that matters, since a value can
+// parse and still be code. Its sibling __YOLO_HAS_LAUNCH_FLAGS__ is an identity-Quote
+// survivor by construction, for __YOLO_PINNED__'s exact reason ("0"/"1", from a bool).
+//
+// ⚠ ONE THING THIS FILE CANNOT SEE, measured the same day: the launch flag also lands in a
+// `case` PATTERN, where the quoting that matters is INSIDE the pattern rather than at the
+// splice. Deleting it there leaves every cell here green — a hostile value with no glob
+// character behaves identically — and the cell that fails is the differential in
+// launchflagsdelivery_test.go, which declares a flag carrying a `*`.
 
 // Witness basenames. Relative, not absolute, because one of the values fed through this
 // harness is a BIN NAME, and ValidBinName refuses a "/" — the payload therefore has to be
@@ -133,13 +146,27 @@ func TestLauncherTemplatesParseWithHostileValues(t *testing.T) {
 	// shape most likely to be spliced raw by someone reading the template rather than the
 	// contract.
 	srv := launcherServers{npm: v + " second-pkg", gomods: v + "/mod@latest"}
+	// A pack's LAUNCH FLAGS are values from the same manifest (DP-B44), and they land in
+	// two places at once: a bare `LAUNCH_FLAGS=(…)` and a `case` PATTERN. The pattern is
+	// the one a reader would not think to quote, since it is the one position in these
+	// templates where a glob is meant.
+	inj := &packload.LaunchInjection{
+		Pack:   v,
+		Flags:  []string{v, "--plain"},
+		Before: []string{v},
+		After:  []string{v, v, "--plain"},
+	}
 	assertParses(t, npmAgentLauncher(
 		&packdecl.Install{Kind: "npm", Bin: v, Package: v, Flags: []string{v, "--plain"},
 			UpdateVerb: []string{v, "--self"}},
-		v, v, true, srv), "npm launcher")
+		v, v, true, srv, inj), "npm launcher")
 	assertParses(t, nativeAgentLauncher(
 		&packdecl.Install{Kind: "native", Bin: v, InstallerURL: v, UpdateVerb: []string{v, "--self"}},
-		v, v, v, true, srv), "native launcher")
+		v, v, v, true, srv, inj), "native launcher")
+	// The wrapper is the fourth carrier and obeys the same contract; its own two values
+	// (the dir it must skip and the fallback it may exec) are paths derived from $HOME,
+	// which a hostile workspace name reaches.
+	assertParses(t, launchWrapper(v, v, v, v, inj), "launch-flag wrapper")
 
 	// The package-manager launcher takes no per-pack input at all: its bin and package are
 	// a hardcoded list, so the only value that can be hostile is the stamp dir, which is
@@ -263,7 +290,7 @@ fi`)
 	receipts := hostileReceiptsPath(home, "-nativereceipts")
 	body := nativeAgentLauncher(
 		&packdecl.Install{Kind: "native", Bin: "probetool", InstallerURL: url},
-		filepath.Join(home, "stamps"), receipts, "", true, launcherServers{})
+		filepath.Join(home, "stamps"), receipts, "", true, launcherServers{}, nil)
 
 	out, rc := runLauncher(t, home, "probetool", body, fakeBin)
 	if rc != 0 {
@@ -314,7 +341,7 @@ if [ "${1:-}" = view ]; then echo 9.9.9; fi`)
 	receipts := hostileReceiptsPath(home, "-npmreceipts")
 	body := npmAgentLauncher(
 		&packdecl.Install{Kind: "npm", Bin: "tool", Package: spec, Flags: []string{flag, "--plain"}},
-		filepath.Join(home, "stamps"), receipts, true, launcherServers{})
+		filepath.Join(home, "stamps"), receipts, true, launcherServers{}, nil)
 
 	out, rc := runLauncher(t, home, "tool", body, fakeBin)
 	if rc != 0 {
@@ -372,7 +399,7 @@ func TestNpmLauncherQuotesThePackageName(t *testing.T) {
 	body := npmAgentLauncher(
 		&packdecl.Install{Kind: "npm", Bin: "tool", Package: pkg},
 		filepath.Join(home, "stamps"),
-		filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true, launcherServers{})
+		filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true, launcherServers{}, nil)
 	out, rc := runLauncher(t, home, "tool", body, fakeBin)
 	if rc != 0 {
 		t.Errorf("launcher failed (rc=%d) — a hostile package name must be data:\n%s", rc, out)
@@ -414,7 +441,7 @@ fi`)
 
 	pkg := "mgr@1.0.0-" + hostileValue("-pmspec")
 	receipts := hostileReceiptsPath(home, "-pmreceipts")
-	body := pkgManagerLauncher(bin, pkg, filepath.Join(home, "stamps"), receipts)
+	body := pkgManagerLauncher(bin, pkg, filepath.Join(home, "stamps"), receipts, nil)
 	assertParses(t, body, "package-manager launcher")
 
 	out, rc := runLauncher(t, home, "pm-run", body, fakeBin)
@@ -467,7 +494,7 @@ func TestLaunchersQuoteTheBinNameAndStampDir(t *testing.T) {
 
 		body := npmAgentLauncher(
 			&packdecl.Install{Kind: "npm", Bin: bin, Package: "pkg@1.0.0"},
-			stamps, filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true, launcherServers{})
+			stamps, filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true, launcherServers{}, nil)
 		out, rc := runLauncher(t, home, "launcher", body, filepath.Join(home, "nonexistent-bin"))
 		if rc != 0 || !strings.Contains(out, "LAUNCHED") {
 			t.Errorf("npm launcher did not exec $NPM_CONFIG_PREFIX/bin/<bin> for a hostile "+
@@ -485,7 +512,7 @@ func TestLaunchersQuoteTheBinNameAndStampDir(t *testing.T) {
 
 		body := nativeAgentLauncher(
 			&packdecl.Install{Kind: "native", Bin: bin, InstallerURL: "https://example.invalid/i.sh"},
-			stamps, filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), "", true, launcherServers{})
+			stamps, filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), "", true, launcherServers{}, nil)
 		out, rc := runLauncher(t, home, "launcher", body, filepath.Join(home, "nonexistent-bin"))
 		if rc != 0 || !strings.Contains(out, "LAUNCHED") {
 			t.Errorf("native launcher did not exec $HOME/.local/bin/<bin> for a hostile bin "+
@@ -555,5 +582,58 @@ func seedFreshStamp(t *testing.T, stampDir, bin string) {
 	now := time.Now()
 	if err := os.Chtimes(stamp, now, now); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestTheWrapperPassesAHostileFlagAsDATA is the behavioural half of the DP-B44 sentinels,
+// and it is needed for the reason assertReceiptLanded is: `bash -n` accepts plenty of
+// scripts whose values have already become code by the time they run.
+//
+// A pack-declared launch flag reaches TWO positions in every carrier — a bare
+// `LAUNCH_FLAGS=(…)` and a `case` PATTERN — and the pattern is the interesting one: it is
+// the single place in these templates where a glob is intended, so an author reaching for
+// "quote it" has to quote exactly the halves that are data and leave the `*` alone.
+func TestTheWrapperPassesAHostileFlagAsDATA(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not found")
+	}
+	home := t.TempDir()
+	flag := hostileValue("-flag")
+	inj := &packload.LaunchInjection{
+		Pack:   "hostile",
+		Flags:  []string{flag},
+		Before: []string{"wrapped"},
+		After:  []string{"wrapped", flag},
+	}
+	realDir := filepath.Join(home, "real")
+	logPath := filepath.Join(home, "argv.log")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argvLogger(t, realDir, "wrapped", logPath, "")
+
+	launchDir := filepath.Join(home, "launch")
+	if err := os.MkdirAll(launchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := launchWrapper("wrapped", launchDir, "", "a test", inj)
+	script := filepath.Join(launchDir, "wrapped")
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(script, "sub")
+	cmd.Dir = home
+	cmd.Env = []string{"HOME=" + home, "PATH=" + launchDir + ":" + realDir + ":/usr/bin:/bin"}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("the wrapper failed: %v\n%s", err, out)
+	}
+	assertNoWitness(t, home, "-flag", "launch flag")
+	log := logLines(t, logPath)
+	if !hasExactArg(log, flag) {
+		t.Errorf("the declared flag must reach the program as ONE argument, byte-identical "+
+			"to the declaration.\n got: %q\nwant one of them to be: %q", log, flag)
+	}
+	if len(log) != 2 || log[1] != "sub" {
+		t.Errorf("the user's own argv must survive beside it, got %q", log)
 	}
 }
