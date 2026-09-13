@@ -73,12 +73,23 @@ func PruneOrphanImageRoots(rootsDir string, olderThan time.Duration, apply bool,
 		if st.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
-		// AGE — the only test. The mtime is the last time a launch USED this
-		// image: nix-store --add-root refreshes the symlink's own mtime even when
-		// the link already points at the same store path, and AutoLoadImage
-		// re-registers the root on every success rather than only on a load. So
-		// "older than the horizon" already means "no launch has wanted this for
-		// that long", with no bookkeeping of its own.
+		// AGE — the only test, and it is a weaker signal than it used to be.
+		// nix-store --add-root refreshes the symlink's own mtime even when the link
+		// already points at the same store path, so the mtime is the last time a
+		// launch BUILT AND DELIVERED this image. It is no longer the last time a
+		// launch USED it: since the stock short-circuit landed, a launch that finds
+		// a matching stock image already in the runtime returns before the build and
+		// registers no root at all (internal/image/stockimage.go). A stock image
+		// used nightly can therefore age past the horizon untouched.
+		//
+		// That is survivable, and it is why this stayed a pure age cutoff rather
+		// than growing a liveness veto. What the root protects is the NIX STORE copy
+		// of an image the container runtime already holds its own copy of, so
+		// reaping one costs a rebuild on the next cache miss and never a broken
+		// launch. The ruling that chose age over liveness (OQ-LS1) did so because
+		// liveness is a wrong predictor in BOTH directions here — a jail stopped
+		// five seconds ago is not live, and a jail up three weeks pins a closure
+		// nobody will rebuild — and that reasoning is untouched by the above.
 		if now.Sub(st.ModTime()) < olderThan {
 			continue
 		}

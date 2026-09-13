@@ -154,10 +154,22 @@ func warmJail() {
 	// A warmup shells out to `yolo run`, which calls AutoLoadImage, and the run path never
 	// sets SkipBuild — it is a dormant seam by design ("a missing flake is fatal, not a
 	// degraded cached-image launch", run/imageload.go). So a launch that needs an image
-	// REALISES one, and on darwin it always needs one: the image identity there is a darwin
-	// derivation whose store path a Linux-runner-built image can never carry, which is the
-	// very reason the skew check downgrades itself to a warning on this platform
-	// (imageskew_test.go). The workflow's own `podman load` step does not change that.
+	// REALISES one, and on darwin it always needed one.
+	//
+	// ⚠ THE REASON THAT USED TO BE TRUE IS NOW FALSE, and the skip is kept on evidence
+	// rather than on it. The old reason was that the image identity was a darwin derivation
+	// whose store path a Linux-runner-built image could never carry — which is why the skew
+	// check downgraded itself to a warning here. Both halves are gone: OQ-IP1 made the
+	// identity a content hash any host computes (darwin-image-provenance.md), the downgrade
+	// is deleted, and the stock short-circuit now returns before the build when the runtime
+	// already holds a matching stock image (internal/image/stockimage.go). A darwin warmup
+	// may therefore be cheap now.
+	//
+	// It is NOT re-enabled here, because nothing has measured that. The two measurements
+	// below are what this skip rests on, and they were taken against the old behavior; the
+	// honest state is "the premise changed, the measurement has not been redone". Redo it on
+	// a nightly that gets past the image chain, and delete this skip if the warmup earns its
+	// place — do not delete it on the strength of the paragraph above.
 	//
 	// Measured, twice: on the 2026-08-22 nightly the warmup burned 20m7s before being killed,
 	// and on 2026-08-23 — with the budget already bounded — exactly 12m0s, its darwin ceiling.
@@ -172,10 +184,12 @@ func warmJail() {
 	// 2026-08-23 nightly. Twelve minutes a night for nothing is worse than an honest
 	// attribution gap on one platform.
 	if goruntime.GOOS == "darwin" {
-		log.Printf("[integration] skipping the jail warmup on darwin: every launch here " +
-			"realises an image (the loaded one can never match a darwin eval), so a warmup " +
-			"is a full nix build rather than a container start — measured at 12m0s of waste " +
-			"on 2026-08-23. The first container test absorbs the cost instead.")
+		log.Printf("[integration] skipping the jail warmup on darwin: measured at 12m0s of " +
+			"waste on 2026-08-23, when a warmup here was a full nix build rather than a " +
+			"container start. The first container test absorbs the cost instead. NOTE: the " +
+			"reason that cost was unavoidable (a darwin host could not vouch for a " +
+			"Linux-built image) no longer holds — this skip is now awaiting a re-measurement, " +
+			"not a standing verdict.")
 		return
 	}
 	dir, err := os.MkdirTemp("", "yolo-warmup-")
