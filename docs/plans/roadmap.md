@@ -1613,9 +1613,11 @@ left to decide now sits. The thirteen do not block equally, and
   the launch mangled every forwarded command; and a stale layout link from a deleted workspace
   bricked every later launch whose packs did not declare that path. `2a4ac34e`, `28caa116`,
   `92244306`. **What is left is collected in
-  [`handoff-macos-user-open-threads.md`](handoff-macos-user-open-threads.md)** — one confirmed
-  product defect (`lsp_servers` installs nothing here), the twin suite's self-poisoning on a
-  persistent Mac, and the four automation gaps. Original entry follows, for the record. 📄
+  [`handoff-macos-user-open-threads.md`](handoff-macos-user-open-threads.md)** — the twin suite's
+  self-poisoning on a persistent Mac, and the four automation gaps. The one confirmed product
+  defect (`lsp_servers` installed nothing here) was ruled and wired on 2026-09-13
+  ([`OQ-P5`](../design/macos-user-provisioning.md#decision-ledger)), leaving one Mac run of its
+  subtest. Original entry follows, for the record. 📄
   [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) items 5-10. **Filed
   as its own row 2026-09-12**, out of the ✅ bullet above, because a never-run check recorded inside
   a closed item is invisible to this file's counts — the same reason C4/C5 was promoted from a

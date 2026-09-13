@@ -46,10 +46,11 @@ What remains needs either root, a kernel, or a human at a password prompt.
 > **THE TWIN SUITE IS GREEN ON HARDWARE**, re-run after the three fixes: `executed=6 skipped=0`,
 > every twin passing, and **one** subtest red —
 > `TestMacosUserDeclaredToolsArrive/lsp_servers`, which item 9's ⚠ predicted from a source
-> reading and this run confirms. That is
-> [§0.4](#04-reading-a-red-job) shape 3, not a Mac problem. Its three siblings pass. The open
-> threads it leaves — that ruling included — are collected in
-> [`../handoff-macos-user-open-threads.md`](../handoff-macos-user-open-threads.md).
+> reading and this run confirmed. That was
+> [§0.4](#04-reading-a-red-job) shape 3, not a Mac problem. Its three siblings passed. ⚠ **The
+> wiring defect behind it was closed on 2026-09-13** and the subtest has not been re-run since,
+> so its next Mac run is the measurement, not this paragraph. The remaining open threads are
+> collected in [`../handoff-macos-user-open-threads.md`](../handoff-macos-user-open-threads.md).
 >
 > ⚠ **Defect 2 is why "single-line is immune" was wrong** (it was published in
 > `provisioner-sets.md` [§15](../../design/provisioner-sets.md#15-what-a-mac-session-should-measure)): single-line survives the newline half only. Any forwarded command
@@ -113,7 +114,7 @@ rather than by a list somebody maintains.
 | 6 | `TestMacosUserFloorReachesTheSandboxPath` | nothing |
 | 7 | `TestMacosUserProvisioningStageRunsAndRecordsItself` | nothing that can be spelled — its ⚠ cwd sub-item is **struck**, its ⚠ timing sub-item is now a logged number |
 | 8 | `TestMacosUserAFailingProvisioningStageDoesNotAbortTheLaunch`, which covers a third half the item only implied | **both halves the item names**: the exec-layer fault injection and the interactive veto |
-| 9 | `TestMacosUserDeclaredToolsArrive` (four subtests, one launch) | nothing — but ⚠ one subtest is **predicted to fail**; see the item |
+| 9 | `TestMacosUserDeclaredToolsArrive` (four subtests, one launch) | nothing — but ⚠ the `lsp_servers` subtest was red on 2026-09-12 and its defect was wired shut on 2026-09-13, un-re-run; see the item |
 | 10 | (a) `TestMacosUserLayoutRefusesAnOccupiedSidecarMirror` | (b) never, deliberately: it poisons an account home permanently |
 
 Six of the ten run unattended. **Four do not, and two of those four are the ones that
@@ -195,7 +196,9 @@ Three shapes, and they want different readers:
    consequences. The job deliberately does not stop at the first failure: `go test` orders by
    source position, not by that chain, so failing fast would stop at an arbitrary one and hide
    the items that do not depend on it.
-3. **Only the `lsp_servers` subtest failed.** Known, and not a Mac problem — see item 9's ⚠.
+3. **Only the `lsp_servers` subtest failed.** This was the known 2026-09-12 state and not a Mac
+   problem. Its wiring defect was closed on 2026-09-13, so a red here is now a real finding —
+   see item 9's ⚠ for what to read first.
 
 ### 0.5 What would close items 1-4
 
@@ -724,9 +727,11 @@ this run cannot distinguish the predicted wiring defect from an empty declaratio
 declares its own, and is the instrument.
 
 **Settles:** the two launch warnings retired on 2026-09-12 — which were removed on the
-strength of code that had never run. If either tool is absent, that retirement was premature
-and both warnings should come back
-([§10.6](../../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)).
+strength of code that had never run. The `mise_tools` retirement is measured and correct. The
+`lsp_servers` one was premature, and the gap it described was **wired shut on 2026-09-13**
+rather than papered over with the warning again
+([`OQ-P5`](../../design/macos-user-provisioning.md#decision-ledger)), so an absence here is now
+a bug worth reporting rather than a documented limitation.
 
 ⚠ **Check the TIER while you are here**, because it is the one thing a later launch cannot
 undo: `~/.yolo/mise` must be a real directory in `/Users/_yolojail`, **not** a symlink into any
@@ -742,25 +747,28 @@ workspace's launch is what would reveal it.
 > "not a symlink" also passes on a launch where the layout never ran at all. Every failure
 > attaches `<workspace>/.yolo/startup.log`, which on a CI run is all its reader gets.
 
-> [!WARNING]
-> **The `lsp_servers` half is expected to FAIL, and the failure is wiring rather than hardware.**
-> A source reading made 2026-09-12, not a measurement: the generated bootstrap script installs
-> from `$YOLO_LSP_NPM_INSTALL` / `$YOLO_LSP_GO_INSTALL`, and the **only** producer of either
-> variable in the whole tree is the container's podman `-e` lines
-> (`internal/cli/run/assemble.go`). macos-user sets `YOLO_LSP_SERVERS` — the table that renders
-> agent config — and nothing else, so the stage execs the script, finds an empty install list,
-> and **exits 0 having installed nothing**: precisely the "reports success having provisioned
-> nothing" mode the stage was warned about.
+> [!IMPORTANT]
+> **The `lsp_servers` half WAS expected to fail, was measured red on 2026-09-12, and the wiring
+> defect behind it was closed on 2026-09-13.** The generated bootstrap script installs from
+> `$YOLO_LSP_NPM_INSTALL` / `$YOLO_LSP_GO_INSTALL`, and the only producer of either in the tree
+> was the container's podman `-e` lines. macos-user set `YOLO_LSP_SERVERS` — the table that
+> renders agent config — and nothing else, so the stage execed the script, found an empty
+> install list, and **exited 0 having installed nothing**: precisely the "reports success having
+> provisioned nothing" mode the stage was warned about.
 >
-> Three published claims are therefore false today —
-> [`../../guides/macos.md`](../../guides/macos.md)'s `lsp_servers | installed, since 2026-09-12`,
-> the same row in [`../../design/provisioner-sets.md`](../../design/provisioner-sets.md), and
-> [§10.6](../../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)'s
-> retirement of the `lsp_servers` warning. **The `mise_tools` half is unaffected** and is the one
-> this item's verdict should turn on. A fix has to set both variables into the stage env AND into
-> the bootstrap env, since the same three readers live in both processes; it was left undone
-> deliberately, because [§10.6](../../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)
-> frames the outcome as a maintainer's choice — bring the warning back, or wire the variable.
+> Both variables now cross into the bootstrap env **and** into the session env file the confined
+> stage sources, resolved through the one recipe table both backends share
+> ([`OQ-P5`](../../design/macos-user-provisioning.md#decision-ledger);
+> `macosuser.PlanInvariants` refuses a plan carrying only one of the two crossings). The three
+> published rows that had said *installed* and were corrected to *MEASURED FALSE* have moved
+> again — [`../../guides/macos.md`](../../guides/macos.md),
+> [`../../design/provisioner-sets.md`](../../design/provisioner-sets.md), and
+> [§10.6](../../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them).
+>
+> ⚠ **That is a source fact and not an install.** Nothing off a Mac can run the loop, so this
+> subtest is still the oracle: a green run is what retires the caveat, and a red one now means
+> the install failed rather than that it was never asked for. Read
+> `<workspace>/.yolo/startup.log`, which every failure attaches.
 
 ---
 
@@ -833,11 +841,11 @@ route.
   provisioning stage runs `mise install` and the generated bootstrap script before the agent
   starts. Until a Mac says otherwise, treat an absence here as a bug WORTH reporting, with the
   contents of `<workspace>/.yolo/startup.log`.
-- **`lsp_servers` are STILL not installed** — the strike-through this entry carried from
-  2026-09-12 was **restored on 2026-09-12** the same day, on a source reading rather than a
-  measurement: nothing on this backend sets the two variables the install loop reads. Item 9's
-  ⚠ has the whole chain and the two places a fix has to land. Report an absence here only if it
-  is still absent **after** those variables are wired.
+- ~~**`lsp_servers` are not installed.**~~ **WIRED 2026-09-13, and unverified on hardware** —
+  this entry was struck through on 2026-09-12, restored the same day on a source reading, and
+  measured red that evening. Both variables the install loop reads now cross, in the two places
+  item 9's ⚠ named. Until a Mac says otherwise, treat an absence here as a bug WORTH reporting,
+  with the contents of `<workspace>/.yolo/startup.log`.
 - **`per_side_paths`, `resources`, `cache_relocations`** are read and ignored, each
   for a structural reason (no mount namespace, no cgroups, no binds). Each warns.
 - ~~**One home for every workspace.**~~ **FIXED 2026-09-12, and unverified on hardware** —

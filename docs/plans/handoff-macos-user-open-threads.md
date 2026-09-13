@@ -3,7 +3,7 @@ title: "Handoff: what the first macos-user hardware run left open"
 status: handoff
 date: 2026-09-12
 tags: [macos-user, handoff, lsp, integration, provisioning]
-summary: "The macos-user manual-checks runbook was run end to end on hardware for the first time on 2026-09-12. All ten items now have a measurement, three defects were found and fixed that day, and seven threads were opened. Six are left: one confirmed product defect with three false published claims riding on it (lsp_servers installs nothing here), one test-suite design flaw that only bites a persistent Mac, one newly-found logging gap, and three automation gaps that are work nobody has done rather than problems. The seventh — provider credentials on every argv this backend builds — was fixed on 2026-09-13."
+summary: "The macos-user manual-checks runbook was run end to end on hardware for the first time on 2026-09-12. All ten items now have a measurement, three defects were found and fixed that day, and seven threads were opened. Five are left: one test-suite design flaw that only bites a persistent Mac, one logging gap, and three automation gaps that are work nobody has done rather than problems. Two are closed: provider credentials on every argv this backend builds, and the one product defect (lsp_servers installed nothing here) — ruled and wired on 2026-09-13, leaving one Mac run of its integration subtest."
 ---
 
 # Handoff: what the first macos-user hardware run left open
@@ -15,14 +15,15 @@ says which it needs.
 [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) end to end on
 the maintainer's Apple Silicon Mac (macOS 26.5, arm64) — the first time items 5-10 or any of
 their automated twins had executed anywhere. **Nothing here is speculative about whether the
-backend works:** it does, and the run says so. What is left is one product defect, one
-test-design flaw, one logging gap, and three pieces of automation nobody has written —
+backend works:** it does, and the run says so. What is left is one test-design flaw, one
+logging gap, and three pieces of automation nobody has written —
 [§6](#6-provider-secrets-rode-the-launch-argv--fixed-2026-09-13-and-the-framing-below-it-was-wrong)
-was a seventh thread and is now closed.
+was a seventh thread and is now closed, and the product defect
+([§1](#1-lsp_servers-installs-nothing-on-this-backend--ruled-and-wired-2026-09-13)) was ruled and wired on 2026-09-13, leaving one Mac run of its subtest.
 
 **What the session settled, so you do not re-do it:** every item of that runbook passes on
-hardware, the six automated twins run `executed=6 skipped=0` with **one** subtest red
-([§1](#1-lsp_servers-installs-nothing-on-this-backend--confirmed-and-three-published-claims-ride-on-it)),
+hardware, the six automated twins ran `executed=6 skipped=0` with **one** subtest red
+([§1](#1-lsp_servers-installs-nothing-on-this-backend--ruled-and-wired-2026-09-13)),
 and [`OQ-P1`](../design/macos-user-provisioning.md#decision-ledger)'s floor claim — the
 runbook's own "single largest unmeasured claim of the whole pair" — is measured. Three defects
 were found and fixed the same day (`2a4ac34e`, `28caa116`, `92244306`); each is recorded at the
@@ -32,69 +33,72 @@ runbook item that found it, and none is open work.
 (the spec, and the results), [`../design/macos-user-provisioning.md`](../design/macos-user-provisioning.md)
 (the floor and the stage; [§1.1](../design/macos-user-provisioning.md#11-the-forwarded-command-is-not-passed-through-faithfully)
 is the forwarding defect, now fixed, and [§10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)
-owns the ruling [§1](#1-lsp_servers-installs-nothing-on-this-backend--confirmed-and-three-published-claims-ride-on-it)
-below needs from you), [`../design/macos-user-home-tiers.md` §10](../design/macos-user-home-tiers.md#10-what-shipped)
+carries the ruling [§1](#1-lsp_servers-installs-nothing-on-this-backend--ruled-and-wired-2026-09-13)
+below was waiting on), [`../design/macos-user-home-tiers.md` §10](../design/macos-user-home-tiers.md#10-what-shipped)
 (the layout, and the sixth ordering rule the run added), and
 [`../research/macos-support-matrix.md`](../research/macos-support-matrix.md) (the cells this
 session moved).
 
 ---
 
-## 1. `lsp_servers` installs nothing on this backend — CONFIRMED, and three published claims ride on it
+## 1. `lsp_servers` installs nothing on this backend — RULED AND WIRED 2026-09-13
 
-**The one red in an otherwise green suite**, and the only open PRODUCT defect here.
-`TestMacosUserDeclaredToolsArrive/lsp_servers` fails; its three sibling subtests
-(`mise_tools`, `mise_store_is_machine_tier`, `npm_prefix_is_workspace_tier`) pass. Predicted
-from a source reading on 2026-09-12 by runbook item 9's ⚠, and **now measured** on hardware.
+**This thread is closed as far as the source goes, and open only on hardware.**
+`TestMacosUserDeclaredToolsArrive/lsp_servers` was the one red in an otherwise green suite on
+2026-09-12; its three sibling subtests (`mise_tools`, `mise_store_is_machine_tier`,
+`npm_prefix_is_workspace_tier`) passed. Predicted from a source reading by runbook item 9's ⚠,
+measured red on hardware, and the gap it named is now wired shut. **What is left is one Mac
+run of that subtest** — nothing below asserts it is green, because nothing off a Mac can.
 
-**The chain, verified against the tree 2026-09-12.** The generated bootstrap script installs
-from two variables, and the **only producer of either in the whole tree** is the container's
-podman `-e` lines:
+**The defect, for the record.** The generated bootstrap script installs from two variables,
+and the only producer of either in the tree was the container's podman `-e` lines.
+`macos-user` set `YOLO_LSP_SERVERS` — the table that RENDERS agent config — and neither
+install variable, so the confined stage execed the script, found an empty install list, and
+**exited 0 having installed nothing**: precisely the "reports success having provisioned
+nothing" mode the stage was warned about.
+
+**The ruling was the maintainer's, and it was *wire*, not *restore***
+([`OQ-P5`](../design/macos-user-provisioning.md#decision-ledger), recorded at
+[§10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)).
+The retired launch warning stays retired; the gap it described is closed instead.
+
+**What shipped.** The recipe table that turns `lsp_servers` keys into install lists moved out
+of the container launcher into `internal/config` (`config.LSPInstalls`) — `internal/macosuser`
+could not import `internal/cli/run`, which is why only one backend could compute the set at
+all — and `macosuser.BuildRunPlan` now carries both variables into **both** environments the
+readers live in:
 
 | Role | Site |
 | :--- | :--- |
-| producer (container only) | `internal/cli/run/assemble.go:866-867` — `-e YOLO_LSP_NPM_INSTALL=…`, `-e YOLO_LSP_GO_INSTALL=…` |
-| reader — the generated script | `internal/entrypoint/shell.go:368,371` |
-| reader — the boot catalog | `internal/entrypoint/catalog.go:243,396` |
-| reader — the refresh path | `internal/entrypoint/serverrefresh.go:212,215` |
+| producer — shared by both backends | `internal/config/lsp.go` — `config.LSPInstalls` |
+| crossing — container | `internal/cli/run/assemble.go` — `-e YOLO_LSP_NPM_INSTALL=…`, `-e YOLO_LSP_GO_INSTALL=…` |
+| crossing — macos-user, bootstrap env | `internal/macosuser/runplan.go` — `buildBootstrapEnv` |
+| crossing — macos-user, stage env | `internal/macosuser/runplan.go` — the session env file, which is the stage's whole environment |
+| reader — the generated script | `internal/entrypoint/shell.go` |
+| reader — the boot catalog | `internal/entrypoint/catalog.go` |
+| reader — the refresh path | `internal/entrypoint/serverrefresh.go` |
 
-`macos-user` sets `YOLO_LSP_SERVERS` — the table that RENDERS agent config — and neither
-install variable. So the confined stage execs the script, finds an empty install list, and
-**exits 0 having installed nothing**: precisely the "reports success having provisioned
-nothing" mode the stage was warned about.
+Setting one of the two crossings is a half-fix that still leaves a green-looking launch, so
+`macosuser.PlanInvariants` refuses a plan that has only one of them, and
+`internal/macosuser/lspinstall_test.go` deletes each in turn and asserts the refusal.
+`internal/cli/run/lspinstallparity_test.go` is the cross-backend half: one config, and both
+backends must resolve it to the same two lists.
 
-**What a fix has to do.** Set both variables into **the stage env AND the bootstrap env** — the
-readers above live in two different processes, so setting one is a half-fix that still leaves a
-green-looking launch. `internal/macosuser/runplan.go` builds both env lists;
-`macosuser.SandboxPath`'s `~/.npm-global/bin` is already on PATH and is already a
-workspace-tier symlink (the passing `npm_prefix_is_workspace_tier` subtest proves the
-destination is ready), so this is a wiring change, not a plumbing one.
+**The published claims move with this, and they are the doc work this thread leaves.** Each
+was corrected to *MEASURED FALSE* on 2026-09-12 and is corrected again here:
 
-> [!IMPORTANT]
-> **THE RULING IS THE MAINTAINER'S, AND IT IS NOT "OBVIOUSLY FIX IT".**
-> [§10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)
-> frames the outcome as a choice: **wire the variables, or bring the retired launch warning
-> back.** It retired two warnings on the strength of code that had never run; the `mise_tools`
-> half of that retirement is now measured and correct, and the `lsp_servers` half is measured
-> and wrong. Do not pick for the maintainer.
+| Doc | Now says |
+| :--- | :--- |
+| [`../guides/macos.md`](../guides/macos.md) | wired 2026-09-13, install unmeasured on hardware |
+| [`../design/provisioner-sets.md`](../design/provisioner-sets.md) row 4 | **drives**, with the same hardware caveat |
+| [`../design/macos-user-provisioning.md` §10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them) | the retirement was premature, the gap is wired, and the rule that retired it stands |
 
-**The three published claims that said otherwise are ALREADY CORRECTED (2026-09-12) — you do not
-have a doc sweep to do, you have a ruling to get.** Each now records the measurement and points
-here:
+⚠ **Both rows had hedged with "NOT MEASURED on hardware", and the hedge was honest while the
+claim beside it was wrong** — a reader who trusted the row got a feature that did not exist.
+The rows above carry the same hedge again, and it means the same thing: **a source fact, not an
+install.** Only `TestMacosUserDeclaredToolsArrive/lsp_servers` going green on a Mac retires it.
 
-| Doc | Was | Is |
-| :--- | :--- | :--- |
-| [`../guides/macos.md`](../guides/macos.md) | `lsp_servers \| installed, since 2026-09-12 … ⚠ NOT MEASURED` | **NOT installed — MEASURED FALSE**, with the chain |
-| [`../design/provisioner-sets.md`](../design/provisioner-sets.md) row 4 | `lsp_servers drives, since 2026-09-12 … ⚠ NOT MEASURED` | **does NOT drive — MEASURED FALSE** |
-| [`../design/macos-user-provisioning.md` §10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them) | two warnings retired | one retirement **was wrong**, and [§10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)'s own rule cuts the other way for that half |
-
-⚠ **Both rows had hedged with "NOT MEASURED on hardware", which is the tell worth noticing:** the
-hedge was honest and the claim beside it was still wrong, so a reader who trusted the row got a
-feature that does not exist. When you close this, the rows move again — to *installed* with a
-date, or to *absent and warned*.
-
-The runbook's item 9 and its *Known-absent* entry already describe the absence and name this
-chain; they move in the same pass.
+The runbook's item 9 result records the same thing, and its *Known-absent* entry moved with it.
 
 ---
 
@@ -327,15 +331,11 @@ and have no pipeline to take writers from, so whatever seam is added has to leav
 
 ## What to do first, if you want an order
 
-1. **[§1](#1-lsp_servers-installs-nothing-on-this-backend--confirmed-and-three-published-claims-ride-on-it)** — ask the maintainer for the
-   [§10.6](../design/macos-user-provisioning.md#106-two-warnings-retired-and-the-rule-that-retired-them)
-   ruling first, since it decides whether you write code or restore a warning. Either way the
-   three false doc rows move in the same commit.
-2. **[§2](#2-the-twin-suite-poisons-itself-in-test-order--a-persistent-mac-only)** — cheap, off-Mac
+1. **[§2](#2-the-twin-suite-poisons-itself-in-test-order--a-persistent-mac-only)** — cheap, off-Mac
    thinking, and it is what makes a second local suite run trustworthy.
-3. **[§3](#3-items-1-2-and-4-have-no-automated-twin)** — the highest coverage-per-hour left: three
+2. **[§3](#3-items-1-2-and-4-have-no-automated-twin)** — the highest coverage-per-hour left: three
    items, one launch, and item 2 is the one that establishes the backend is a sandbox at all.
-4. **[§7](#7-nothing-the-macos-user-backend-prints-reaches-launchlog)** — off-Mac, small, and it
+3. **[§7](#7-nothing-the-macos-user-backend-prints-reaches-launchlog)** — off-Mac, small, and it
    is what makes every OTHER thread here reviewable after the fact.
    [§6](#6-provider-secrets-rode-the-launch-argv--fixed-2026-09-13-and-the-framing-below-it-was-wrong)
    is closed; what it leaves for a Mac is three lines on the next hardware pass (the file's mode,

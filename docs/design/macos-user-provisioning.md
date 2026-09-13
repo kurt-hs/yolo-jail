@@ -732,23 +732,44 @@ Their test inverted with them. ⚠ **The absence of a warning is not evidence of
 the positive half lives where it can be observed: a test that drives the orchestrator and
 fails if the stage's call site is deleted.
 
-> [!WARNING]
-> **ONE OF THE TWO RETIREMENTS WAS WRONG, measured on hardware 2026-09-12.** `mise_tools` is
-> correct — two declared tools installed from scratch into the machine-tier store. `lsp_servers`
-> is not: the stage execs the generated script, but the script installs from
-> `$YOLO_LSP_NPM_INSTALL` / `$YOLO_LSP_GO_INSTALL`, and the **only producer of either in the
-> tree** is the container's podman `-e` lines (`internal/cli/run/assemble.go:866-867`). This
-> backend sets `YOLO_LSP_SERVERS` — the table that RENDERS config — and neither install
-> variable, so the list is empty and the stage **exits 0 having installed nothing**.
-> `integration/TestMacosUserDeclaredToolsArrive/lsp_servers` is red on hardware and is the
-> witness; its three sibling subtests pass.
+> [!IMPORTANT]
+> **ONE OF THE TWO RETIREMENTS WAS PREMATURE — measured wrong on hardware 2026-09-12, and
+> WIRED SHUT on 2026-09-13.** `mise_tools` was correct: two declared tools installed from
+> scratch into the machine-tier store. `lsp_servers` was not. The stage did exec the generated
+> script, but the script installs from `$YOLO_LSP_NPM_INSTALL` / `$YOLO_LSP_GO_INSTALL`, and
+> the only producer of either in the tree was the container's podman `-e` lines. This backend
+> set `YOLO_LSP_SERVERS` — the table that RENDERS an agent's config — and neither install
+> variable, so the list was empty and the stage **exited 0 having installed nothing**, while
+> the config it had just rendered named servers that were not on disk.
 >
-> **So the rule this section states cuts the other way for that half:** the warning described a
-> gap that was NOT closed, and retiring it left a launch that silently provisions nothing where
-> it used to say so. **The maintainer's choice, unmade:** wire both variables into the stage env
-> AND the bootstrap env (the readers live in two processes, so one is a half-fix), or restore the
-> `lsp_servers` warning. Collected with the rest of the session's open threads in
-> [the handoff](../plans/handoff-macos-user-open-threads.md#1-lsp_servers-installs-nothing-on-this-backend--confirmed-and-three-published-claims-ride-on-it).
+> **The maintainer ruled WIRE, not restore** ([`OQ-P5`](#decision-ledger)). Both variables now
+> cross, resolved through the one recipe table both backends share (`config.LSPInstalls`, moved
+> out of the container launcher so this backend could reach it at all), into **both** of the
+> environments the readers live in:
+>
+> | Reader | Process | Environment it reads |
+> | :--- | :--- | :--- |
+> | the generated script's install loop | the confined provisioning stage | the session env file |
+> | the boot catalog's orphan finders | the darwin bootstrap | the bootstrap env |
+> | the evergreen server refresh | the agent's launcher | the session env file |
+>
+> ⚠ The third row is the wiring, not a working feature: the refresh is baked into every
+> generated launcher and is independently inert on this backend for a reason of its own
+> (`command -v yolo` finds nothing on the sandbox's PATH — [`DP-B8`](declaration-parity.md#51-macos-user-read-by-nobody-warned-by-nobody)).
+> It now reads the same list the other two do if that is ever fixed.
+>
+> Setting one of those two environments is a half-fix that still installs nothing, so
+> `macosuser.PlanInvariants` fails when either crossing is deleted, and
+> `internal/macosuser/lspinstall_test.go` is the Linux half of the witness.
+> `integration/TestMacosUserDeclaredToolsArrive/lsp_servers` is unchanged and is still the
+> oracle: **the wiring is a source fact and the install is a hardware one.**
+>
+> **The rule this section states survives the error intact, and is what made the error
+> legible.** What failed was not the rule but its premise: the warning was retired on the
+> strength of code that had never run, so *"this gap is closed"* was itself unmeasured. The
+> ⚠ above — **the absence of a warning is not evidence of a feature** — is the corrective, and
+> the reason the defect surfaced as one red subtest in a green suite rather than as a user
+> reporting a missing language server.
 
 ### 10.7 The failure policy the code did not implement
 
@@ -836,8 +857,10 @@ That is the instrument; this is the argument.
 
 ## Open Questions
 
-**None — both closed 2026-09-11.** The rulings are in the [Decision Ledger](#decision-ledger) and
-folded into [§4](#4-the-proposed-shape).
+**None.** The two design questions were closed 2026-09-11 and
+[§10.6](#106-two-warnings-retired-and-the-rule-that-retired-them)'s retirement choice was ruled
+2026-09-13. Every ruling is in the [Decision Ledger](#decision-ledger); the first four are folded
+into [§4](#4-the-proposed-shape).
 
 
 ## Decision Ledger
@@ -848,6 +871,7 @@ folded into [§4](#4-the-proposed-shape).
 | OQ-P2 | **No GNU userland.** This backend's proposition is *"your Mac, confined"* — an agent whose `sed -i` behaves differently from the human's is a surprise in the direction that costs more, and yolo's own darwin shims already speak BSD (`GNUStat=false`). Revisit if a pack turns out to depend on GNU behavior. | 2026-09-11 | [§4](#4-the-proposed-shape) |
 | OQ-P3 | The container's own partition: mise **data** machine-wide with `MISE_DATA_DIR` set **explicitly**, because the unset default would land inside the per-workspace `~/.local` symlink; mise config, the npm prefix and `~/.local` per-workspace through the home split's sidecar symlinks. A per-workspace `MISE_DATA_DIR` is rejected twice over. | 2026-09-11 | [§4](#4-the-proposed-shape), [§5](#5-what-this-does-not-propose) |
 | OQ-P4 | Unconditional, before the agent, matching the container. [§4](#4-the-proposed-shape)'s own skip rule already delivers on-demand's only benefit, and on-demand would be a second dialect of "when are my tools there". | 2026-09-11 | [§4](#4-the-proposed-shape), [§6 row E](#6-alternatives) |
+| OQ-P5 | **Wire the two LSP install variables; do not restore the retired warning.** [§10.6](#106-two-warnings-retired-and-the-rule-that-retired-them)'s `lsp_servers` retirement described a gap that was not closed, and the choice it left open was wire-or-restore. Ruled *wire*: `YOLO_LSP_NPM_INSTALL` and `YOLO_LSP_GO_INSTALL` now cross into **both** the bootstrap env and the session env file the confined stage reads, from the one recipe table both backends share. A warning is what you leave when the gap stays; this one did not have to. | 2026-09-13 | [§10.6](#106-two-warnings-retired-and-the-rule-that-retired-them) |
 
 
 > [!IMPORTANT]
