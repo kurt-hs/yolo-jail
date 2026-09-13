@@ -36,3 +36,10 @@ commit. Point them at
 and **delete this file**, which is what the graduation would otherwise have done here.
 
 Every reference in the Go tree already points at the reference doc, as does every other doc.
+
+## 11. Decision Ledger
+
+**Moved.** Every `OQ-RO` ruling now lives in
+[`../reference/report-tiers.md`](../reference/report-tiers.md#why-its-this-way)'s
+*Why it's this way* appendix, with its original id. This heading survives only so that the two
+citations named above keep resolving until they are repointed; it goes with the rest of this file.
