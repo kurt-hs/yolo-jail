@@ -1005,7 +1005,17 @@ is missing `service` and `blocked-tool`; `cli.registry` really does map `"stop"`
 > `## Environment` block is false in three places at once — `/workspace` described as a bind
 > mount, **Home** as `/home/agent`, **OS** as *"NixOS-based minimal container"* — contradicting
 > the header three lines above it. It is a fifth direction the constraint sentence below never
-> counted, and it needs a wording ruling before anyone can fix it.
+> counted. **RULED AND BUILT 2026-09-13: name the absence, keep `/workspace` canonical.** The
+> block gains a native-backend arm giving the real workspace path, the sandbox home and a macOS
+> line, plus an explicit *"There is no `/workspace` on this backend"* — because the three
+> built-in skills carry **25** `/workspace` references between them as static markdown, and this
+> bullet is the one place a macos-user agent learns they mean its own path. The two alternatives
+> were priced and declined: templating those skills is the larger change, and making
+> `/workspace` real (an `/etc/synthetic.conf` entry, the mechanism nix uses for `/nix`) is a
+> host-level mutation gated on [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)'s
+> unmeasured symlink question. Container bytes are unchanged, and `Home` is threaded from the
+> run path because `jailcontent` cannot import `macosuser` without a cycle through
+> `entrypoint`.
 
 **Constraint that shapes the order:** the briefing is composed from several independent
 sources and three of them are currently wrong in different directions. Wiring

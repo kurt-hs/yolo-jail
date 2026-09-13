@@ -3,6 +3,7 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -10,6 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -154,6 +156,11 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 		// enforcing the boundary — where `NoContainer: rt == "macos-user"` could only
 		// carry the first, so a Seatbelt sandbox was handed the container's own vector.
 		Mechanism: rt,
+		// The agent's home, which the briefing cannot derive: internal/jailcontent cannot
+		// import internal/macosuser without routing through internal/entrypoint, whose
+		// tests import jailcontent back. Empty for every container backend, which renders
+		// /home/agent exactly as before.
+		Home: nativeHomeFor(rt),
 		// The platform this launch runs ON, for the one answer the mechanism does not
 		// carry: a `guest` notch has no backend yet, so its Seatbelt-vs-Landlock spelling
 		// comes from here. `yolo describe` passes paths.IsMacOS for the same input; this
@@ -571,4 +578,17 @@ func (o *Options) noteHandoffConsumed() {
 	}
 	o.pr(o.Stderr).printf("[dim]Handoff: .yolo/%s surfaced in this jail's briefing and consumed "+
 		"(restore with `mv .yolo/%s .yolo/%s`).[/dim]", handoffPointer, handoffConsumed, handoffPointer)
+}
+
+// nativeHomeFor is the agent's home directory for a backend that runs no container,
+// and "" for one that does — which the briefing reads as the container's /home/agent.
+//
+// It exists so internal/jailcontent never has to import internal/macosuser: that path
+// runs through internal/entrypoint, whose tests import jailcontent, and the cycle it
+// would create is only avoided today by accident of which files are test files.
+func nativeHomeFor(rt string) string {
+	if slices.Contains(paths.NativeRuntimes, rt) {
+		return macosuser.SandboxHome()
+	}
+	return ""
 }

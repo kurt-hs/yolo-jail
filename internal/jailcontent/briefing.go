@@ -113,6 +113,16 @@ type BriefingInput struct {
 	// Every other combination is decided by Mechanism and ignores this.
 	IsMacOS bool
 
+	// Home is the agent's home directory. Empty means `/home/agent`, the container
+	// answer and what every jail rendered before macos-user had a briefing worth
+	// reading — so no caller that has not resolved a backend changes behaviour.
+	//
+	// A FIELD rather than a macosuser import: this package cannot reach
+	// internal/macosuser without routing through internal/entrypoint, whose tests
+	// import this package back. The caller that already knows the mechanism is the
+	// one that knows the home.
+	Home string
+
 	// Handoff is the content of a fresh .yolo/handover.md pointer, read by the run
 	// pipeline at launch. Empty in the common case, where the task comes from the user.
 	// When non-empty it is rendered as a prominent Handoff section near the top — the
@@ -467,18 +477,47 @@ func BriefingContent(in BriefingInput) string {
 			"",
 		)
 	}
-	lines = append(lines,
-		"## Environment",
-		"",
-		"- **Workspace**: `/workspace` is the host directory `"+in.Workspace+"`,",
-		"  bind-mounted LIVE — the same files, not a copy. Host-side edits are",
-		"  instantly visible here and vice versa; there is never a git",
-		"  pull/push, fetch, or any sync step between the jail and the host",
-		"  for this directory.",
-		"- **Home**: `/home/agent` (persistent across sessions)",
-		"- **OS**: NixOS-based minimal container (no systemd, no sudo)",
-		networkLine,
-	)
+	home := in.Home
+	if home == "" {
+		home = "/home/agent"
+	}
+	// THE WORKSPACE BULLET EXISTS TO EXPLAIN AN ALIAS, AND ON A NATIVE BACKEND THERE IS
+	// NONE. A container binds the host directory at `/workspace`, so the paragraph's job
+	// is to say that the two are one thing and no sync step stands between them. A
+	// macos-user launch mounts nothing: the agent is in the host directory, at its real
+	// path, and `/workspace` does not exist at all.
+	//
+	// RULED 2026-09-13: name the absence and keep `/workspace` canonical. The three
+	// built-in skills carry 25 references to `/workspace` and are static markdown with no
+	// templating, so substituting the real path everywhere was the larger change and
+	// making `/workspace` real (an /etc/synthetic.conf entry, the mechanism nix uses for
+	// /nix) was not taken. The consequence is that this bullet is the ONE place a
+	// macos-user agent is told those references mean its own path — so it says so
+	// explicitly rather than leaving the reader to infer it from a path that looks
+	// different.
+	envLines := []string{"## Environment", ""}
+	if slices.Contains(paths.NativeRuntimes, in.Mechanism) {
+		envLines = append(envLines,
+			"- **Workspace**: `"+in.Workspace+"` — the host directory itself, not a",
+			"  copy and not a mount. Edits here ARE the host's; there is never a git",
+			"  pull/push, fetch, or any sync step for this directory.",
+			"  ⚠ There is no `/workspace` on this backend. Skills and docs that name",
+			"  `/workspace` — including the built-in ones — mean the path above.",
+			"- **Home**: `"+home+"` (persistent across sessions)",
+			"- **OS**: macOS, Seatbelt-confined (no container, no systemd, no sudo)",
+		)
+	} else {
+		envLines = append(envLines,
+			"- **Workspace**: `/workspace` is the host directory `"+in.Workspace+"`,",
+			"  bind-mounted LIVE — the same files, not a copy. Host-side edits are",
+			"  instantly visible here and vice versa; there is never a git",
+			"  pull/push, fetch, or any sync step between the jail and the host",
+			"  for this directory.",
+			"- **Home**: `"+home+"` (persistent across sessions)",
+			"- **OS**: NixOS-based minimal container (no systemd, no sudo)",
+		)
+	}
+	lines = append(lines, append(envLines, networkLine)...)
 	lines = append(lines, publishedPorts...)
 	lines = append(lines, forwardedPorts...)
 	lines = append(lines, resourceLine...)
