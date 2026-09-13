@@ -348,11 +348,68 @@ func TestWindowAUntilIsNeverInTheFuture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--until %q is not RFC3339: %v", until, err)
 	}
-	// Second-granularity RFC3339 rounds down, so "now" can format up to a
-	// second behind; anything beyond that is a real future wait.
+	// `--until` is now formatted at nanosecond precision, so it IS "now" rather
+	// than up to a second behind it (TestWindowAUntilIncludesADieInItsOwnSecond
+	// is why). The tolerance stays a full second regardless: what this test
+	// exists to catch is a reintroduced future OFFSET, which was +5s when it
+	// shipped, never a sub-second formatting difference.
 	if slack := time.Until(got); slack > time.Second {
 		t.Errorf("--until is %v in the future (%s) — podman will BLOCK until then, "+
 			"adding that wait to every timed shutdown", slack.Round(time.Millisecond), until)
+	}
+}
+
+// THE OTHER HALF OF THE SAME CONSTRAINT, and the bug it hid for two releases.
+// `--until` must never be in the FUTURE (above) — but formatting it at SECOND
+// granularity truncates it into the past, and `podman events --until` bounds an
+// instant, not a second. A query fired at 16:51:07.676 asking `--until
+// 16:51:07Z` therefore excludes every event in its own second, and the die it
+// is hunting is always in that second: attribution runs immediately after the
+// container dies.
+//
+// So a FAST Window A was unattributable BY CONSTRUCTION, while a slow one — the
+// only kind anyone cares about — attributed fine. The symptom was a `no_die`
+// mark on every quick shutdown (2 of 2 in the real host perf log, 2026-09-12
+// and 2026-09-13), which reads as a broken instrument and is really the query
+// excluding its own answer. Pinning the precision here does not weaken the
+// future-guard above: `--until` is still exactly now, never later.
+func TestWindowAUntilIncludesADieInItsOwnSecond(t *testing.T) {
+	ws := t.TempDir()
+	o := goldenOptions(ws, t.TempDir())
+	o.Timing = true
+	o.initPerf("yolo-ws-test0000")
+
+	var until string
+	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+		for i, a := range argv {
+			if a == "--until" && i+1 < len(argv) {
+				until = argv[i+1]
+			}
+		}
+		return ExecResult{Ran: true}
+	}
+
+	// Start well clear of a second boundary, or truncation loses nothing and this
+	// passes for the wrong reason.
+	for time.Now().Nanosecond() < int(200*time.Millisecond) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	podmanExited := time.Now()
+	o.attributeWindowA("yolo-ws-test0000", "podman", podmanExited.Add(-time.Minute), podmanExited)
+
+	if until == "" {
+		t.Fatal("no --until on the events argv; the query would stream unbounded")
+	}
+	got, err := time.Parse(time.RFC3339, until)
+	if err != nil {
+		t.Fatalf("--until %q is not RFC3339: %v", until, err)
+	}
+	if got.Before(podmanExited) {
+		t.Errorf("--until is %s, %v BEFORE the podman exit at %s. A die in that gap is "+
+			"excluded from the query, so every fast Window A reports no_die and the "+
+			"cost is never priced. Format --until with sub-second precision.",
+			until, podmanExited.Sub(got).Round(time.Millisecond),
+			podmanExited.Format(time.RFC3339Nano))
 	}
 }
 

@@ -78,6 +78,23 @@ func (o *Options) attributeWindowA(cname, rt string, since, podmanExited time.Ti
 	// No slack is needed: attribution runs AFTER the whole teardown chain, so
 	// "now" is already later than the podman exit and later than any cleanup
 	// event conmon has written. Pinned by TestWindowAUntilIsNeverInTheFuture.
+	// SUB-SECOND PRECISION ON --until, and it is not cosmetic. `--until` bounds an
+	// INSTANT, not a second, while RFC3339 carries no fractional part and Format
+	// TRUNCATES — so a query fired at 16:51:07.676 asked `--until 16:51:07Z` and
+	// excluded every event in its own second. The die is always in that second,
+	// because attribution runs immediately after the container dies, so a FAST
+	// Window A was unattributable by construction and reported `no_die` while a
+	// slow one attributed fine. That is backwards: the fast case is the one we can
+	// afford to lose. Measured on the real host perf log — 2 of 2 recorded
+	// shutdowns `no_die` (2026-09-12, 2026-09-13), both sub-second.
+	//
+	// This does NOT reintroduce the 3-second bug above: Nano formatting makes
+	// `until` exactly now rather than later, and the future-wait that cost 3.002s
+	// per launch needed an OFFSET. Both halves are pinned —
+	// TestWindowAUntilIsNeverInTheFuture and TestWindowAUntilIncludesADieInItsOwnSecond.
+	//
+	// `--since` stays at second granularity on purpose: truncating the START of a
+	// window downward only widens it, which can never hide an event.
 	until := time.Now()
 	if podmanExited.After(until) {
 		until = podmanExited // clock skew only; still never a future wait
@@ -85,7 +102,7 @@ func (o *Options) attributeWindowA(cname, rt string, since, podmanExited time.Ti
 	argv := []string{
 		"podman", "events",
 		"--since", since.UTC().Format(time.RFC3339),
-		"--until", until.UTC().Format(time.RFC3339),
+		"--until", until.UTC().Format(time.RFC3339Nano),
 		"--filter", "container=" + cname,
 		"--format", "{{.Time}} {{.Status}}",
 	}
@@ -105,9 +122,14 @@ func (o *Options) attributeWindowA(cname, rt string, since, podmanExited time.Ti
 	}
 	dieAt, cleanupAt, ok := parseDieAndCleanup(res.Stdout)
 	if !ok {
-		// The ordinary case on a host whose events backend keeps nothing (the
-		// rootless file backend expires them), so it is stated plainly rather
-		// than as a fault.
+		// A host whose events backend keeps nothing (the rootless file backend
+		// expires them), so it is stated plainly rather than as a fault.
+		//
+		// ⚠ This was ALSO what a truncated `--until` produced on every fast
+		// shutdown until 2026-09-13 — see the formatting note above. That cause
+		// is fixed; if `no_die` becomes common again, suspect the query before
+		// the backend, because the backend explanation is the one that sounds
+		// right and was wrong for two releases.
 		return windowAResult{token: "no_die",
 			reason: "Window A unattributed: no container `die` event in podman's log for this jail"}
 	}

@@ -362,8 +362,16 @@ Every failure mode is a dim one-line **reason** beneath the table — timed out,
 could not run, non-zero exit, no `die` event in the log — rather than silence:
 two real-host launches produced no attribution and no way to tell why, and an
 observability feature that cannot explain its own blank is the failure it exists
-to remove. "No `die` event" is the ordinary case on a host whose rootless
-file-backed event log keeps nothing, and is worded as such. A quiet launch prints
+to remove. "No `die` event" happens on a host whose rootless file-backed event
+log keeps nothing, and is worded as such. ⚠ **It was ALSO the symptom of a bug in
+the query itself until 2026-09-13, and that is worth knowing before trusting the
+token**: `--until` was formatted at RFC3339 second granularity, which truncates,
+so a query fired at `…07.676` asked `--until …07Z` and excluded every event in
+its own second — including the `die` it was hunting, which lands there on every
+fast shutdown. A sub-second Window A was therefore unattributable by
+construction while a slow one attributed fine. `--until` now carries nanoseconds
+(`run.attributeWindowA`, pinned by `TestWindowAUntilIncludesADieInItsOwnSecond`).
+A `no_die` recorded before that commit says nothing about the host. A quiet launch prints
 no reason at all, so the same rule puts the failure CLASS in the file instead, as
 a `shutdown.window_a_unattributed.<token>` mark — `timeout`, `not_run`, `rc`,
 `no_die`. The token is short and stable on purpose: the prose is for a human
