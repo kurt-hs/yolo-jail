@@ -1,6 +1,31 @@
 package render
 
-import "github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+import (
+	"fmt"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+)
+
+// NotchUnbuilt is the ONE sentence yolo says when a verb is asked to act at the `guest`
+// notch, with `verb` naming the verb the user typed ("apply", "launch").
+//
+// IT LIVES HERE BECAUSE TWO PACKAGES SAY IT AND NEITHER CAN IMPORT THE OTHER.
+// `cli.applyMain` has printed it since Phase 2 (`yolo apply --at guest` → rc 1); the launch
+// gate in `run.Run` says the same thing for the same reason, and internal/cli imports
+// internal/cli/run, so the string cannot live in either. internal/render is where it
+// belongs on its own merits: this package already owns the notch vocabulary (Kind,
+// KindGuest, ProfileFor) and the other notch-keyed user-facing reason text in this file,
+// and render.KindGuest's own doc comment carries the same Phase 7 story.
+//
+// A SECOND COPY IS THE DEFECT, not an inconvenience. docs/design/declaration-parity.md
+// exists to name declarations a surface accepts and does not honor, and the two surfaces
+// disagreeing about one notch by one word is that defect wearing a smaller hat — which is
+// why OQ-DP3 ruled the launch gate must reuse this sentence VERBATIM rather than write its
+// own. TestGuestNotchRefusalsShareOneSentence pins the two call sites to this function.
+func NotchUnbuilt(verb string) string {
+	return fmt.Sprintf("%s at the guest notch is not built yet (env-manager plan Phase 7 "+
+		"— the LSM-confined backend).", verb)
+}
 
 // FieldSet declares which contribution kinds a target can honor, so an inapplicable
 // kind produces a refusal that NAMES the kind rather than a silent skip (BACKLOG G5,
@@ -56,6 +81,26 @@ var refusalReasons = map[packdecl.Kind]string{
 	packdecl.KindLoophole: "a loophole is a host daemon whose only client is a container: " +
 		"with no jail there is no client, no --add-host, no YOLO_JAIL_DAEMONS, and nothing " +
 		"for its endpoint file to be mounted into. Launch a jail to run it",
+	// `service` and `blocked-tool` had NO entry here until 2026-09-13, so both fell to
+	// Refuse's generic fallback — "<kind> is not applicable at this confinement level",
+	// which names the kind and says nothing about it. The real reasons were not missing,
+	// only misplaced: they had been written by hand into internal/cli/config_ref.txt's
+	// host-notch list, where TestEveryHostNotchInapplicableKindHasItsReasonDocumented
+	// keeps them READABLE without making them the thing the code decides by. These two
+	// entries are those rows, word for word (unwrapped, and without the manual's trailing
+	// full stop — the five entries above set that convention).
+	//
+	// docs/design/declaration-parity.md DP-B27 / DP-L6. ⚠ Nothing PRINTS either string
+	// today: FieldSet.Refuse has no production caller (DP-B34 — Target.Fields() has none
+	// either), and the host apply's tier-1 line names kinds and points at `yolo
+	// config-ref` rather than quoting a reason. What this closes is the census being
+	// wrong in its own data; the display half is DP-B34's.
+	packdecl.KindBlockedTool: "a blocker is a shim at the head of a JAIL's PATH. " +
+		"Off-container yolo owns no PATH entry to put one in, and editing your shell rc " +
+		"to take one over is a far larger claim than a pack's contribution makes",
+	packdecl.KindService: "a service is a daemon pair plus an endpoint file under the " +
+		"jail's /run. With no jail there is nothing to supervise the jail half and " +
+		"nothing to read the endpoint",
 }
 
 // hostUnimplemented names the kinds a host target's FieldSet HONORS but whose renderer is

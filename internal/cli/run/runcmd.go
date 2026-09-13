@@ -47,6 +47,20 @@ type ExecResult struct {
 type Options struct {
 	// --- CLI surface (typer options + ctx.args) ---
 	Network string
+	// Notch is `--at <jail|guest|host>` as typed on THIS launch: the confinement
+	// notch this invocation asks for, overriding the config's `confinement` key.
+	// "" means the flag was not given and the config decides.
+	//
+	// A LAUNCH HONORS ONLY `jail`, and the other two are REFUSED rather than
+	// ignored (refuseUnbuiltNotch, run.go; OQ-DP3 in
+	// docs/design/declaration-parity.md). Before this field existed
+	// cli.parseRunArgs had no `--at` case at all, so the token fell to its
+	// default arm and STARTED THE COMMAND: `yolo --at guest -- claude` launched a
+	// jail and then failed inside it with `--at: command not found` (DP-B22).
+	// `--at host` never reaches here — cli.RewriteArgv turns it into the `host`
+	// subcommand — except in the explicit `yolo run --at host -- …` spelling,
+	// which this field carries to the same refusal.
+	Notch string
 	// NeverAttach skips the attach-to-running-container branch entirely. NOT a
 	// CLI flag (the old --new was removed 2026-09-06): it is the capture jail's
 	// programmatic "this launch must boot, never re-enter" — a capture runs its

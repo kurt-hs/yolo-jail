@@ -44,6 +44,12 @@ running session is never yanked out from under you. Ending it is deliberate and
 two-stepped: 'yolo stop' (from the workspace), then an ordinary launch.
 
 Flags:
+  --at <notch>       Run at this confinement notch (jail|guest|host), overriding
+                     the config's 'confinement' key for this launch (also
+                     --at=<notch>). Only 'jail' launches: 'guest' is not built
+                     (env-manager plan Phase 7) and 'host' has its own verbs
+                     ('yolo host -- <cmd>'), so both are refused rather than
+                     silently downgraded to a jail.
   --network <mode>   Override the network mode for this launch
                      (also --network=<mode>).
   --profile <sel>   Select the active profile for this launch (also -p <sel>,
@@ -106,7 +112,7 @@ Global options are listed by 'yolo --help'; the full config reference is
 // before the fourth author makes it differently. Ruled by OQ-RO3, 2026-09-11; pinned by
 // TestTheLaunchHasNoQuietFlag. `YOLO_NO_BANNER` is the one pre-existing hatch and it is
 // deliberately narrow — it silences the version line and nothing else.
-var runFlags = []string{"--profile", "--timing", "--dry-run", "--network", "--accept-config-changes"}
+var runFlags = []string{"--profile", "--timing", "--dry-run", "--network", "--accept-config-changes", "--at"}
 
 // applyProfileValue reads one -p/--profile value: "cli=name" (comma-separated,
 // repeatable) merges into the per-CLI selection table, anything else is a bare
@@ -159,7 +165,7 @@ func runHelpRequested(args []string) bool {
 			return true
 		case a == "run" && !sawRun:
 			sawRun = true // the injected/leading subcommand token
-		case a == "--network" || a == "--profile" || a == "-p":
+		case a == "--network" || a == "--profile" || a == "-p" || a == "--at":
 			i++ // its value, whatever it looks like
 		case len(a) > 1 && a[0] == '-':
 			// Another flag (a run flag, or a stray one runRun ignores). Keep scanning:
@@ -250,6 +256,24 @@ func parseRunArgs(args []string, opts *run.Options) {
 		// is the flag this parser accepts.
 		case a == "--accept-config-changes":
 			opts.AcceptConfigChanges = true
+		// THE NOTCH, CONSUMED RATHER THAN SWALLOWED. Without this case `--at` fell to
+		// the default arm below, which treats the first unrecognized bare token as the
+		// start of the command — so `yolo --at guest -- claude` handed the jail
+		// ["--at", "guest", "run", "--", "claude"] as its argv and died inside it with
+		// `--at: command not found`. A flag the front door already knows about
+		// (cli.valueTakingFlags carries "--at") must not be argv to the inner command.
+		//
+		// The VALUE is not validated here: the fold makes no refusal, by the rule this
+		// function's header states. run.refuseUnbuiltNotch is the one place a notch is
+		// judged, so `--at` and the config's `confinement` key cannot disagree about
+		// what is launchable (docs/design/declaration-parity.md DP-B16/DP-B22).
+		case a == "--at":
+			if i+1 < len(args) {
+				i++
+				opts.Notch = args[i]
+			}
+		case len(a) > len("--at=") && strings.HasPrefix(a, "--at="):
+			opts.Notch = strings.TrimPrefix(a, "--at=")
 		case a == "--network":
 			if i+1 < len(args) {
 				i++

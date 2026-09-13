@@ -111,7 +111,10 @@ func TestSubcommandSkipsFlagValues(t *testing.T) {
 // added there and not here, `yolo --newflag host -- bash` silently relocates again.
 func TestValueTakingFlagsCoverRunHelpSkips(t *testing.T) {
 	// The flags runHelpRequested consumes a value for, transcribed from its switch.
-	runHelpSkips := []string{"--network", "--profile", "-p"}
+	// `--at` joined them when parseRunArgs grew its own `--at` case (DP-B22): a notch
+	// token is a VALUE, so `yolo run --at -h -- x` must read `-h` as the notch and not
+	// as a help request, exactly as `--network -h` reads it as a mode.
+	runHelpSkips := []string{"--network", "--profile", "-p", "--at"}
 	for _, f := range runHelpSkips {
 		if !valueTakingFlags[f] {
 			t.Errorf("runHelpRequested skips %q's value but valueTakingFlags does not — "+

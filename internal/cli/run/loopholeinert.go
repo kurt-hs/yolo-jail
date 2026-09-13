@@ -372,3 +372,178 @@ func (o *Options) noteMacosUserHostByteGaps(packs []*packload.Pack, cfg *jsonx.O
 			"at those paths. Entries with `content`/`defaults` and no `source` are unaffected.")
 	}
 }
+
+// noteMacosUserPlatformGaps names the three PLATFORM keys this backend reads nowhere:
+// `devices`, `gpu` and `kvm` (docs/design/declaration-parity.md DP-B4, fixed by DP-L10).
+//
+// WHY IT IS NOT THE CONTAINER PATH'S SENTENCE, REUSED. run.deviceArgs, run.kvmArgs and
+// assembleRunCmd's GPU line all warn on macOS already — and every one of them is reached
+// only from run.assembleRunCmd, below the `rt == "macos-user"` return in run.Run, so on
+// this backend all three keys were SILENT. Not merely unhonored: silent, while
+// docs/guides/macos.md told the user each was "skipped with a warning" (DP-B36).
+//
+// The reason those strings could not simply be moved here is that they state a DIFFERENT
+// FACT. "not supported on macOS" is a claim about the platform, and it is the container
+// backends' honest answer: podman and Apple Container on macOS run a Linux VM that cannot
+// see a host USB device. Here there is no container and no VM at all, so the key is not
+// refused by a platform limit — it is READ BY NOTHING. Copying the container sentence
+// would assert the wrong reason on the one backend whose reason is structural, which is
+// the doc-drift shape §5.5 is a list of.
+//
+// ⚠ THE CALL SITE IS THE BACKEND GATE. This is called from the macos-user arm of run.Run
+// and nowhere else, deliberately: hoisting it above the dispatch would double-warn on a
+// macOS podman or Apple Container launch, where assembleRunCmd's own three warnings still
+// fire. One backend, one printer.
+//
+// ONE LINE PER DECLARED KEY, and none for a key the config never mentions — so a user who
+// declares nothing sees nothing, which is what keeps this from being the warning
+// OQ-BP-3 says people learn to skip.
+func (o *Options) noteMacosUserPlatformGaps(cfg *jsonx.OrderedMap) {
+	out := o.pr(o.Stderr)
+
+	if devs := cfgList(cfg, "devices"); len(devs) > 0 {
+		out.print("[yellow]Warning: `devices` is not read on macos-user[/yellow] — " +
+			strings.Join(deviceLabels(devs), ", ") + ". Device passthrough attaches a host " +
+			"device to a CONTAINER, and this backend starts none; the sandboxed process " +
+			"reaches devices under ordinary macOS permissions instead, so yolo neither " +
+			"attaches nor restricts anything here.")
+	}
+
+	if gpuSec := cfgMap(cfg, "gpu"); gpuSec != nil && mapBoolOr(gpuSec, "enabled", false) {
+		out.print("[yellow]Warning: `gpu.enabled` is not read on macos-user[/yellow] — " +
+			"GPU passthrough is a CDI device plus NVIDIA/ROCm environment on a container, " +
+			"and this backend starts none. yolo passes nothing through and gates nothing; " +
+			"whatever the sandboxed process can reach through macOS, it reaches.")
+	}
+
+	if cfgTrue(cfg, "kvm") {
+		out.print("[yellow]Warning: `kvm` is not read on macos-user[/yellow] — it asks for " +
+			"/dev/kvm inside a container, and there is neither a container nor a /dev/kvm " +
+			"on macOS.")
+	}
+}
+
+// deviceLabels renders `devices` entries for a report the way run.deviceArgs renders them
+// for a warning: the raw path, the USB description (or its id), or the cgroup rule.
+//
+// A shared LABELLING, not a shared sentence — see noteMacosUserPlatformGaps for why the
+// sentences must differ. What a reader needs from both surfaces is the same: which entry
+// of theirs is being talked about.
+func deviceLabels(entries []any) []string {
+	var out []string
+	for _, devAny := range entries {
+		switch dev := devAny.(type) {
+		case string:
+			out = append(out, dev)
+		case *jsonx.OrderedMap:
+			if usbV, ok := dev.Get("usb"); ok {
+				label := pyStrCoerce(usbV)
+				if d := mapStr(dev, "description"); d != "" {
+					label = d
+				}
+				out = append(out, "usb "+label)
+			} else if rule := mapStr(dev, "cgroup_rule"); rule != "" {
+				out = append(out, "cgroup rule "+rule)
+			}
+		}
+	}
+	return out
+}
+
+// noteMacosUserPortKeys is the human half of DP-L2 (docs/design/declaration-parity.md
+// §5.1.1 (2)): one stderr line per non-empty `network.ports` / `network.forward_host_ports`.
+//
+// WHAT IT PAIRS WITH. The AGENT already learns this — sharesLauncherNetns answers true for
+// this backend, so appliedNetMode is "host", both port sections fall out of the briefing and
+// backendLimits states the network fact. The human learned nothing at all, which
+// backendlimits.go's header records as the one entry breaking its "one source, two
+// renderings" rule. This is that rendering.
+//
+// REFUSED AS A KEY, NEVER AS A LAUNCH — run.roBindsUnsupported's shape (refuse the
+// declaration, print the reason, continue). Its force does not carry, and the difference is
+// worth knowing: refusing an Apple Container `:ro` mount REMOVES an exposure, whereas
+// nothing here removes anything, because the sandboxed process binds host ports regardless.
+// The message is the whole deliverable.
+//
+// ⚠ ONLY WHEN NON-EMPTY, and that is what makes this safe where a `network.mode` refusal
+// would not be. Neither key has a default (run.NewDefaultOptions sets Network: "bridge",
+// which is why `mode` is APPLIED as host rather than refused), so this cannot fire on a
+// launch that never mentioned networking.
+func (o *Options) noteMacosUserPortKeys(cfg *jsonx.OrderedMap) {
+	netSec := cfgMap(cfg, "network")
+	if netSec == nil {
+		return
+	}
+	out := o.pr(o.Stderr)
+
+	if ports := asAnyList(mapGet(netSec, "ports")); len(ports) > 0 {
+		msg := "[yellow]Warning: `network.ports` is not honored on macos-user[/yellow] — " +
+			strings.Join(portLabels(ports), ", ") + ". The sandbox runs on the launcher's " +
+			"own network stack, so a port it binds IS published on this machine's real " +
+			"interfaces — listed here or not. Nothing is mapped and nothing is confined " +
+			"to a bind address."
+		if remapped := remappedPorts(ports); len(remapped) > 0 {
+			msg += " " + strings.Join(remapped, ", ") + " asks for a port REMAP, which " +
+				"needs a second stack to land on and cannot be delivered at all: the " +
+				"process is reachable on the port it binds."
+		}
+		out.print(msg)
+	}
+
+	if fwd := asAnyList(mapGet(netSec, "forward_host_ports")); len(fwd) > 0 {
+		msg := "[yellow]Warning: `network.forward_host_ports` is not honored on " +
+			"macos-user[/yellow] — " + strings.Join(portLabels(fwd), ", ") + ". There is " +
+			"no hop to make: the sandbox is already on this machine's stack, so " +
+			"`localhost:<port>` inside it is this machine's port."
+		if remapped := remappedPorts(fwd); len(remapped) > 0 {
+			msg += " " + strings.Join(remapped, ", ") + " asks for a port REMAP, which " +
+				"needs a second loopback to land on and is not delivered."
+		}
+		out.print(msg)
+	}
+}
+
+// portLabels renders port entries as the user wrote them.
+func portLabels(entries []any) []string {
+	var out []string
+	for _, e := range entries {
+		out = append(out, pyStrCoerce(e))
+	}
+	return out
+}
+
+// remappedPorts names the entries whose two port numbers DIFFER — the only entries that are
+// not vacuously satisfied by a shared stack (§5.1.1's entry-form table).
+//
+// ONE CLASSIFIER FOR BOTH KEYS, and it is correct for both despite their opposite orders:
+// `ports` is [IP:]HOST:JAIL and `forward_host_ports` is JAIL:HOST, but this asks only
+// whether the two numbers differ, which is order-free. An entry with one number, or with a
+// non-numeric field, is not a remap and is not named.
+func remappedPorts(entries []any) []string {
+	var out []string
+	for _, e := range entries {
+		s := pyStrCoerce(e)
+		fields := strings.Split(s, ":")
+		if len(fields) < 2 {
+			continue
+		}
+		a, b := fields[len(fields)-2], fields[len(fields)-1]
+		if a != b && isAllDigits(a) && isAllDigits(b) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}

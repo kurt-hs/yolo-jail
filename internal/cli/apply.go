@@ -156,8 +156,11 @@ func applyMain(args []string, out, errw io.Writer, color bool, stdin io.Reader) 
 		}
 		return applyHostFormatted(out, errw, color, assert && !dryRun, stdin, format)
 	case config.ConfinementGuest:
-		pr.Printf("[yellow]apply at the guest notch is not built yet (env-manager plan " +
-			"Phase 7 — the LSM-confined backend).[/yellow]")
+		// render.NotchUnbuilt is the sentence, not a literal: `run.Run` refuses a guest
+		// LAUNCH with the same words (OQ-DP3), and two spellings of one notch's status is
+		// the drift docs/design/declaration-parity.md exists to name. The bytes this verb
+		// printed before the move are unchanged — the verb is the parameter.
+		pr.Printf("[yellow]%s[/yellow]", render.NotchUnbuilt("apply"))
 		return 1
 	default: // jail
 		_ = dryRun
@@ -1069,10 +1072,17 @@ func applySealed(out, errw io.Writer, color bool) int {
 	// (2) any capture surface carrying outstanding overlay keys.
 	for _, s := range surfaceManifest().Surfaces() {
 		if n := overlayKeyCount(s.Agent, s.Name); n > 0 {
+			// BOTH EXITS ARE NAMED AS COMMANDS. This line said "promote them into a
+			// pack" in English while `yolo config promote` shipped (configpromote.go),
+			// so the one remedy a reader could act on was the DISCARDING one — a
+			// refusal steering toward data loss by being vaguer about the alternative.
+			// docs/design/declaration-parity.md DP-B33 / DP-L14; §9 records the sweep
+			// row that claimed the verb did not exist.
 			refusals = append(refusals, fmt.Sprintf(
 				"%s/%s has %d captured in-jail edit(s) outranking the definition — "+
-					"promote them into a pack or `yolo config reset %s --surface %s` to discard.",
-				s.Agent, s.Name, n, s.Agent, s.Name))
+					"`yolo config promote %s --surface %s` to declare them, or "+
+					"`yolo config reset %s --surface %s` to discard.",
+				s.Agent, s.Name, n, s.Agent, s.Name, s.Agent, s.Name))
 		}
 	}
 
