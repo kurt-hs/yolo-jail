@@ -136,7 +136,7 @@ func TestNeitherArgvForwardsThroughSudoLogin(t *testing.T) {
 func TestLaunchArgvCarriesAForwardedCommandVerbatim(t *testing.T) {
 	const cmd = "echo A\necho B; X=inner; echo got=$X"
 	argv := LaunchArgv([]string{"bash", "-lc", cmd}, "/var/yolo-jail/p.sb",
-		jsonx.NewOrderedMap(), "/Users/Shared/yolo/ws", "", "", nil)
+		"", "/Users/Shared/yolo/ws", "", "", nil)
 	last := argv[len(argv)-1]
 	if !strings.Contains(last, cmd) {
 		t.Errorf("the forwarded command is not in the final argument intact.\ngot:  %q\nwant it to contain: %q",

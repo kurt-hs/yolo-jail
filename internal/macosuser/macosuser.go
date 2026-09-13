@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 )
 
@@ -517,17 +516,24 @@ func SandboxPath(home string, prefix []string) string {
 }
 
 // LaunchArgv builds the `sudo -u … env -i … sandbox-exec -f … -- <agent>` argv.
-// `sandboxEnv` is the fully-resolved launch env as an ordered map (git identity
-// + TERM + provider keys); the HOME/USER/SHELL/PATH quartet is not
-// order, and the workspace-centric `cd … && exec …` inner shell).
-func LaunchArgv(agentArgv []string, profilePath string, sandboxEnv *jsonx.OrderedMap, workspace, user, home string, pathPrefix []string) []string {
+//
+// `envFile` is the session env file (SandboxEnvFile) carrying everything the launch
+// composed — git identity, TERM, the profile/provider channel, the hydrated env_sources.
+// IT IS A PATH, NOT THE VALUES: this builder never receives the composed environment, so
+// it cannot put a credential on a command line even by accident (envfile.go states why).
+// "" means nothing was composed and the argv is unwrapped.
+//
+// What is left on the argv is the identity quartet, which is not a secret and which the
+// sandbox must have before the file is read (sandboxEnvPairs, and the workspace-centric
+// `cd … && exec …` inner shell).
+func LaunchArgv(agentArgv []string, profilePath, envFile string, workspace, user, home string, pathPrefix []string) []string {
 	if user == "" {
 		user = SandboxUser
 	}
 	if home == "" {
 		home = SandboxHome()
 	}
-	envPairs := sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), sandboxEnv)
+	envPairs := sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)
 	// Run the agent from the workspace: a zsh cd's in, then execs the agent so it inherits
 	// the TTY and PID.
 	quotedAgent := make([]string, len(agentArgv))
@@ -564,31 +570,29 @@ func LaunchArgv(agentArgv []string, profilePath string, sandboxEnv *jsonx.Ordere
 		"-i",
 	}
 	out = append(out, envPairs...)
-	out = append(out,
-		"/usr/bin/sandbox-exec",
-		"-f",
-		profilePath,
-		"--",
-		"/bin/zsh",
-		"-c",
-		inner,
-	)
+	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
+	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/zsh", "-c", inner})...)
 	return out
 }
 
-// sandboxEnvPairs renders the `env -i` K=V list for a process run AS the sandbox user: the
-// HOME/USER/SHELL/PATH quartet this backend owns, then everything the caller composed.
+// sandboxEnvPairs renders the `env -i` K=V list for a process run AS the sandbox user, and
+// it is now a CLOSED LIST: the HOME/USER/SHELL/PATH quartet this backend owns, the mise
+// store and login PATH that travel with it, and one word naming the session env file.
 //
-// The quartet is PROTECTED — a caller's own HOME or PATH is dropped, never merged — because
-// these four are what make the process the sandbox user's rather than a copy of whatever the
-// invoking shell had. Shared by the agent launch (LaunchArgv) and the install-capture driver
-// (CaptureDriverArgv), which differ in what they exec and in nothing about the environment they
-// exec it in; two spellings of that would be two ways for a capture to stop resembling a launch.
-func sandboxEnvPairs(home, user, pathValue string, sandboxEnv *jsonx.OrderedMap) []string {
-	protected := map[string]struct{}{
-		"HOME": {}, "USER": {}, "SHELL": {}, "PATH": {}, "MISE_DATA_DIR": {},
-		entrypoint.DarwinLoginPathEnv: {},
-	}
+// EVERYTHING A CALLER COMPOSED CROSSES IN THE FILE INSTEAD (envfile.go). This function used
+// to append the caller's whole env, which is how `env_sources` credentials and the profile
+// channel's provider tokens came to ride three command lines in cleartext. The composed map
+// is no longer a parameter, so the leak cannot come back by someone re-adding a loop.
+//
+// The quartet stays PROTECTED on both crossings — dropped from the file by
+// SandboxEnvFileContent and absent from this list by construction — because these are what
+// make the process the sandbox user's rather than a copy of whatever the invoking shell had.
+//
+// Shared by the agent launch (LaunchArgv), the provisioning stage (ProvisionArgv) and the
+// install-capture driver (CaptureDriverArgv), which differ in what they exec and in nothing
+// about the environment they exec it in; two spellings of that would be two ways for a
+// capture to stop resembling a launch.
+func sandboxEnvPairs(home, user, pathValue, envFile string) []string {
 	envPairs := []string{
 		"HOME=" + home,
 		"USER=" + user,
@@ -608,14 +612,11 @@ func sandboxEnvPairs(home, user, pathValue string, sandboxEnv *jsonx.OrderedMap)
 		// value is one workspace's store dirs in another's login shell.
 		entrypoint.DarwinLoginPathEnv + "=" + pathValue,
 	}
-	if sandboxEnv != nil {
-		for _, k := range sandboxEnv.Keys() {
-			if _, ok := protected[k]; ok {
-				continue // never let a caller override the identity/PATH quartet
-			}
-			v, _ := sandboxEnv.Get(k)
-			envPairs = append(envPairs, k+"="+asStr(v))
-		}
+	// The file's PATH, so a human reading `ps` or a dry run can find the environment the
+	// command line no longer shows. The reader that consumes it is ExecWithEnvFile's `sh -c`
+	// wrapper, which is handed the same path as an argument.
+	if envFile != "" {
+		envPairs = append(envPairs, SandboxEnvFileEnv+"="+envFile)
 	}
 	return envPairs
 }
@@ -625,13 +626,6 @@ func sandboxEnvPairs(home, user, pathValue string, sandboxEnv *jsonx.OrderedMap)
 // ---------------------------------------------------------------------------
 // (scoped), full (passthrough).
 var macosLogModes = map[string]struct{}{"off": {}, "user": {}, "full": {}}
-
-// endpointReadRights is the ACE right-set a host service's published endpoint
-// file needs, and nothing more. READ, never write: a Unix socket needed write to
-// connect(2), a file needs only read, and the sandbox has no reason to rewrite
-// its own endpoint (loophole-transport.md OQ-T5 — it gains nothing by doing so,
-// since the file already holds its own token).
-const endpointReadRights = "read,readattr,readextattr,readsecurity"
 
 // EndpointGrantCommands returns the `chmod +a` argv letting the sandbox USER read
 // one published endpoint file.
@@ -646,7 +640,10 @@ const endpointReadRights = "read,readattr,readextattr,readsecurity"
 //
 // Two ACEs, and the shape is the point:
 //
-//   - read on the FILE (endpointReadRights).
+//   - read on the FILE (sandboxFileReadAce, shared with the session env file — READ, never
+//     write: a Unix socket needed write to connect(2), a file needs only read, and the
+//     sandbox has no reason to rewrite its own endpoint, which already holds its own token —
+//     loophole-transport.md OQ-T5).
 //   - search — traverse, not list — on the file's own directory, which is the
 //     ONLY ancestor that blocks the sandbox: yolo creates that one 0700 and every
 //     ancestor above it (/private/tmp at 1777, /private, /) is already
@@ -676,7 +673,7 @@ func EndpointGrantCommands(endpointPath, user string) [][]string {
 		user = SandboxUser
 	}
 	return [][]string{
-		{chmodBin, "+a", "user:" + user + " allow " + endpointReadRights, endpointPath},
+		sandboxFileReadAce(endpointPath, user),
 		{chmodBin, "+a", "user:" + user + " allow search", pathParent(endpointPath)},
 	}
 }

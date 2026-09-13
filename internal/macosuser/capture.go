@@ -191,8 +191,18 @@ type CapturePlan struct {
 	// BootstrapArgv generates the STAGING HOME's shims, launchers and pack surfaces.
 	BootstrapArgv []string
 	// DriverArgv runs `yolo internal capture-run` under sandbox-exec as the sandbox user.
-	DriverArgv       []string
-	DarwinPathPrefix []string
+	DriverArgv []string
+	// EnvFile is this capture's session env file — the same mechanism a launch uses
+	// (envfile.go), for the same reason: the capture's composed env is the launch's
+	// profile/provider channel, and that channel carries hydrated provider CREDENTIALS
+	// (internal/cli/run/profilechannel.go's shape vars). They rode the driver argv in
+	// cleartext until 2026-09-13. EnvFileContent is what to write into it; the two are ""
+	// together, and the three command lists keep the same before/after ordering RunPlan's do.
+	EnvFile              string
+	EnvFileContent       string
+	EnvFileCommands      [][]string
+	EnvFileGrantCommands [][]string
+	DarwinPathPrefix     []string
 	// OffendingHome is the user home containing StagingRoot, when there is one — the same
 	// neutral-ground check a launch makes about its workspace, applied to the staging tree.
 	OffendingHome    string
@@ -246,6 +256,16 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(stagingRoot, "")
 
+	// The session env file, keyed on this capture's own cname — never a launch's, which is
+	// what keeps a capture from reading (or sweeping) the environment of a session running
+	// beside it. Its REMOVAL rides CaptureCleanupCommands rather than a list of its own,
+	// because a capture already sweeps everything it created in one deferred call.
+	envFile := ""
+	envFileContent := SandboxEnvFileContent(opts.SandboxEnv)
+	if envFileContent != "" {
+		envFile = SandboxEnvFile(cname, "")
+	}
+
 	return CapturePlan{
 		Bin:             opts.Bin,
 		Cname:           cname,
@@ -260,12 +280,18 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 		PrepareCommands: CaptureStagingCommands(stagingRoot, opts.HostUser),
 		StageCommands: append(StageBinaryCommands(opts.SelfExe, ""),
 			StagePackCommands(opts.HostPackRoot, cname, "")...),
-		CleanupCommands:  CaptureCleanupCommands(stagingRoot, profilePath),
-		BootstrapArgv:    DarwinBootstrapArgv(stagedYolo, stagingHome, bootstrapEnv, ""),
-		DriverArgv:       CaptureDriverArgv(stagedYolo, stagingHome, outDir, opts.Bin, profilePath, opts.SandboxEnv, darwinPrefix),
-		DarwinPathPrefix: darwinPrefix,
-		OffendingHome:    offendingHome,
-		OffendingHomeSet: offendingSet,
+		CleanupCommands: append(CaptureCleanupCommands(stagingRoot, profilePath),
+			SandboxEnvRemoveCommands(envFile)...),
+		BootstrapArgv: DarwinBootstrapArgv(stagedYolo, stagingHome, bootstrapEnv, ""),
+		DriverArgv: CaptureDriverArgv(stagedYolo, stagingHome, outDir, opts.Bin, profilePath,
+			envFile, darwinPrefix),
+		EnvFile:              envFile,
+		EnvFileContent:       envFileContent,
+		EnvFileCommands:      SandboxEnvDirCommands(envFile, ""),
+		EnvFileGrantCommands: SandboxEnvGrantCommands(envFile, ""),
+		DarwinPathPrefix:     darwinPrefix,
+		OffendingHome:        offendingHome,
+		OffendingHomeSet:     offendingSet,
 	}
 }
 
@@ -333,19 +359,19 @@ func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 //
 // No `--login` and no `zsh -c`: there is nothing to cd into and no login rc to re-assert PATH
 // against macOS path_helper, because path_helper never runs on this argv.
-func CaptureDriverArgv(stagedYolo, stagingHome, outDir, bin, profilePath string,
-	sandboxEnv *jsonx.OrderedMap, pathPrefix []string) []string {
+func CaptureDriverArgv(stagedYolo, stagingHome, outDir, bin, profilePath, envFile string,
+	pathPrefix []string) []string {
 	out := []string{"sudo", "--user=" + SandboxUser, "/usr/bin/env", "-i"}
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
-		SandboxPath(stagingHome, pathPrefix), sandboxEnv)...)
+		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
-	out = append(out,
+	out = append(out, ExecWithEnvFile(envFile, []string{
 		stagedYolo, "internal", "capture-run",
-		"--home="+stagingHome,
-		"--out="+outDir,
+		"--home=" + stagingHome,
+		"--out=" + outDir,
 		captureScanFlag,
-		"--", "/usr/bin/env", captureInstallOnlyVar+"=1", bin,
-	)
+		"--", "/usr/bin/env", captureInstallOnlyVar + "=1", bin,
+	})...)
 	return out
 }
 
@@ -412,6 +438,24 @@ func CapturePlanInvariants(plan CapturePlan) []string {
 			"staged yolo "+plan.StagedYolo+" is not under the root-owned state dir "+
 				plan.StagedDir+"; the sandbox could rewrite its own capture binary")
 	}
+	// The driver argv is under the same two-sided env-file contract a launch's argvs are
+	// (envfile.go): no composed value as a command-line word, and the file actually read.
+	// It matters here for a reason a launch does not have — a capture runs a VENDOR
+	// INSTALLER, so a credential on this argv is visible to the very program yolo is
+	// running for the first time.
+	problems = append(problems, SandboxArgvEnvProblems("capture driver", plan.DriverArgv)...)
+	if !SandboxArgvReadsEnvFile(plan.EnvFile, plan.DriverArgv) {
+		problems = append(problems,
+			"the capture driver argv never reads the session env file ("+plan.EnvFile+
+				"); the installer would run under a different environment than the launch "+
+				"whose bytes the capture claims to record")
+	}
+	if plan.EnvFile != "" && !strings.HasPrefix(plan.EnvFile, plan.StagedDir+"/") {
+		problems = append(problems,
+			"session env file "+plan.EnvFile+" is not under the root-owned state dir "+
+				plan.StagedDir+"; the sandbox could rewrite the environment it is launched with")
+	}
+
 	for _, pair := range [][2]string{{"bootstrap", strings.Join(plan.BootstrapArgv, " ")},
 		{"capture driver", strings.Join(plan.DriverArgv, " ")}} {
 		if !strings.Contains(pair[1], plan.StagedYolo) {
@@ -615,6 +659,12 @@ func RunCapturePlan(deps Deps, plan CapturePlan) int {
 			plan.ProfilePath)
 		return 1
 	}
+	// The session env file, on the same terms a launch installs it (envfile.go): the
+	// capture's composed env is the launch's profile/provider channel, hydrated credentials
+	// included. Its removal is already in CleanupCommands, which RunCaptureAct defers.
+	if !installSandboxEnvFile(deps, out, plan) {
+		return 1
+	}
 	if deps.Run(plan.BootstrapArgv) != 0 {
 		out.print("[bold red]capture bootstrap failed[/bold red] — the staging home has no " +
 			"generated launcher, so there is nothing for the capture to run. Aborting.")
@@ -655,9 +705,28 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 	} else {
 		p.printf("packs:       %s", plan.PackRoot)
 	}
+	// Names, never values — PrintPlan's rule, and it bites harder here: a capture runs a
+	// vendor installer, so the environment it runs under is exactly what a reader is
+	// checking when they read this plan before letting it run.
+	if plan.EnvFile == "" {
+		p.print("env file:    [dim]none — this capture composed no environment[/dim]")
+	} else {
+		p.printf("env file:    %s [dim](0600, root-owned, read by %s only)[/dim]",
+			plan.EnvFile, SandboxUser)
+		p.printf("  [dim]sets, values not shown:[/dim] %s",
+			strings.Join(SandboxEnvFileKeys(plan.EnvFileContent), ", "))
+	}
 	p.print("")
 	p.print("[bold]── privileged commands (run via sudo) ──[/bold]")
-	for _, cmd := range append(append([][]string{}, plan.PrepareCommands...), plan.StageCommands...) {
+	for _, cmd := range append(append(append([][]string{}, plan.PrepareCommands...),
+		plan.StageCommands...), plan.EnvFileCommands...) {
+		p.print("  sudo " + strings.Join(cmd, " "))
+	}
+	if plan.EnvFile != "" {
+		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, plan.EnvFile)
+		p.printf("  sudo %s 0600 %s", chmodBin, plan.EnvFile)
+	}
+	for _, cmd := range plan.EnvFileGrantCommands {
 		p.print("  sudo " + strings.Join(cmd, " "))
 	}
 	p.print("")
@@ -757,4 +826,10 @@ func moveCaptureOut(src, dest string) error {
 			src, dest, CaptureRootDefault(), err)
 	}
 	return err
+}
+
+// envFile and envFileCommands make a CapturePlan a sandboxEnvPlan (envfile.go).
+func (p CapturePlan) envFile() (string, string) { return p.EnvFile, p.EnvFileContent }
+func (p CapturePlan) envFileCommands() ([][]string, [][]string) {
+	return p.EnvFileCommands, p.EnvFileGrantCommands
 }

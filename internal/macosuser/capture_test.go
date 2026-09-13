@@ -328,8 +328,13 @@ func TestRunCapturePlanRunsTheStepsInOrder(t *testing.T) {
 	if rc := RunCapturePlan(c.deps(), plan); rc != 0 {
 		t.Fatalf("RunCapturePlan = %d, want 0\n%s", rc, c.out.String())
 	}
-	if len(c.files) != 1 || c.files[0] != plan.ProfilePath {
-		t.Errorf("the capture profile was not installed at %s: %v", plan.ProfilePath, c.files)
+	// Two root-owned files, in this order: the Seatbelt profile the driver is confined by,
+	// then the session env file it reads its composed environment out of (envfile.go). The
+	// order is the contract — the env file's directory is prepared by a sudo step, and a
+	// write before that step would land in a world-readable directory.
+	if len(c.files) != 2 || c.files[0] != plan.ProfilePath || c.files[1] != plan.EnvFile {
+		t.Errorf("want the profile at %s then the env file at %s, got %v",
+			plan.ProfilePath, plan.EnvFile, c.files)
 	}
 	joined := strings.Join(c.ran, "\n")
 	prepare := strings.Index(joined, "sudo "+rmBin+" -rf "+plan.StagingRoot)

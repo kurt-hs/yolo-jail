@@ -38,7 +38,7 @@ func TestMiseDataDirIsMachineWideEverywhereItAppears(t *testing.T) {
 
 	// 2. The launch env, as it is actually baked onto the argv.
 	launch := strings.Join(LaunchArgv([]string{"claude"}, "/var/yolo-jail/p.sb",
-		jsonx.NewOrderedMap(), "/Users/Shared/yolo/proj", "", "", nil), " ")
+		"", "/Users/Shared/yolo/proj", "", "", nil), " ")
 	if !strings.Contains(launch, "MISE_DATA_DIR="+want) {
 		t.Errorf("the launch argv does not set MISE_DATA_DIR=%s:\n%s", want, launch)
 	}
@@ -56,13 +56,16 @@ func TestMiseDataDirIsMachineWideEverywhereItAppears(t *testing.T) {
 // A caller's own MISE_DATA_DIR is dropped, like the HOME/USER/SHELL/PATH quartet: which
 // tier a store belongs to is the backend's decision, and the value a caller could set is
 // the per-workspace default this exists to replace.
+//
+// It is asserted on the SESSION ENV FILE because that is where a caller's composed values
+// cross now (envfile.go). The argv cannot carry an override at all — it no longer receives
+// the composed map — so filtering the file is the half that can still be got wrong, and
+// leaving it out would let a dotenv silently relocate the tool store.
 func TestMiseDataDirIsNotOverridableFromTheLaunchEnv(t *testing.T) {
 	env := jsonx.NewOrderedMap()
 	env.Set("MISE_DATA_DIR", "/tmp/someone-elses-store")
-	launch := strings.Join(LaunchArgv([]string{"claude"}, "/var/yolo-jail/p.sb", env,
-		"/Users/Shared/yolo/proj", "", "", nil), " ")
-	if strings.Contains(launch, "/tmp/someone-elses-store") {
-		t.Errorf("a caller overrode MISE_DATA_DIR:\n%s", launch)
+	if content := SandboxEnvFileContent(env); strings.Contains(content, "/tmp/someone-elses-store") {
+		t.Errorf("a caller overrode MISE_DATA_DIR through the session env file:\n%s", content)
 	}
 }
 

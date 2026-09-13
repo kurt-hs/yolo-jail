@@ -515,6 +515,25 @@ func RunMacosUser(deps Deps, opts Options) int {
 		}
 	}
 
+	// 2.5 THE SESSION ENV FILE — everything this launch composed, delivered as a root-owned
+	// 0600 file the sandbox account may read, instead of as words on three command lines
+	// (envfile.go). Before the bootstrap, because the provisioning stage is the next thing
+	// after it that reads the file.
+	//
+	// SWEPT ON EVERY EXIT PATH BELOW THIS LINE, including the failures: the file holds this
+	// launch's credentials, and a launch that died at the bootstrap has no more use for them
+	// than one whose agent exited. Best-effort — a session must not be reported as failed
+	// because its env file could not be removed, and the next launch of this workspace
+	// rewrites the same path.
+	if !installSandboxEnvFile(deps, out, plan) {
+		return 1
+	}
+	defer func() {
+		for _, cmd := range plan.EnvFileRemoveCommands {
+			_ = deps.Run(append([]string{"sudo"}, cmd...))
+		}
+	}()
+
 	// 3. Bootstrap the sandbox user's home via the staged-yolo self-exec; ABORT
 	// on failure. The binary was staged (fresh inode) by the StageCommands above;
 	// no bootstrap FILE to install — the sandbox runs `yolo internal
@@ -613,6 +632,21 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.printf("packs:       %s", plan.PackRoot)
 	}
 	p.printf("git identity: %s", gitIdentityRepr(plan.GitIdentity))
+	// THE ENV FILE IS DISCLOSED BY NAME AND BY KEY, NEVER BY VALUE — and that is the
+	// disclosure this dry run owes its reader rather than a redaction (envfile.go).
+	// Everything the launch composed used to be visible on the argvs below; it now crosses
+	// in this file, so a plan that simply stopped mentioning it would have made the dry run
+	// LESS truthful about the launch, which is the failure this whole change exists to
+	// avoid. Names, not values: a variable's name is a fact about the launch, its value is
+	// the credential, and stdout is teed into <workspace>/.yolo/launch.log.
+	if plan.EnvFile == "" {
+		p.print("env file:    [dim]none — this launch composed no environment[/dim]")
+	} else {
+		p.printf("env file:    %s [dim](0600, root-owned, read by %s only)[/dim]",
+			plan.EnvFile, SandboxUser)
+		p.printf("  [dim]sets, values not shown:[/dim] %s",
+			strings.Join(SandboxEnvFileKeys(plan.EnvFileContent), ", "))
+	}
 	if plan.DarwinMaterialized {
 		p.printf("darwin pkgs: %d store bin dir(s) on PATH", len(plan.DarwinPathPrefix))
 		if len(plan.DarwinSkipped) > 0 {
@@ -627,6 +661,19 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		"[dim]sudo may prompt for your password; it's forwarded through the " +
 		"TTY proxy so you can answer inline.[/dim]")
 	for _, cmd := range plan.StageCommands {
+		p.print("  sudo " + strings.Join(cmd, " "))
+	}
+	// The env-file steps, in the order they run and NAMED — the directory's mode and the
+	// sandbox's read ACE are the whole of what keeps this file private, so a dry run that
+	// hid them would hide the security property it is being read to check.
+	for _, cmd := range plan.EnvFileCommands {
+		p.print("  sudo " + strings.Join(cmd, " "))
+	}
+	if plan.EnvFile != "" {
+		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, plan.EnvFile)
+		p.printf("  sudo %s 0600 %s", chmodBin, plan.EnvFile)
+	}
+	for _, cmd := range plan.EnvFileGrantCommands {
 		p.print("  sudo " + strings.Join(cmd, " "))
 	}
 	p.print("  sudo " + strings.Join(plan.BootstrapArgv[1:], " "))

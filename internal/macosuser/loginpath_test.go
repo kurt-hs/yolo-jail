@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
 // loginpath_test.go pins the export half of the login-rc indirection.
@@ -17,7 +16,7 @@ import (
 // of the same name in any login shell — silently, since the non-login launch PATH is fine.
 func TestLaunchArgvExportsThePathTheLoginRCReadsBack(t *testing.T) {
 	store := []string{"/nix/store/abc-env/bin"}
-	argv := LaunchArgv([]string{"claude"}, "/var/yolo-jail/p.sb", jsonx.NewOrderedMap(),
+	argv := LaunchArgv([]string{"claude"}, "/var/yolo-jail/p.sb", "",
 		"/Users/Shared/yolo/proj", "", "", store)
 	want := SandboxPath(SandboxHome(), store)
 

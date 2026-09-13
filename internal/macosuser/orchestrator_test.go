@@ -87,16 +87,18 @@ func newOpts(ws string) Options {
 // The negative half is the load-bearing one: the value must be the WORKSPACE, not a blanket
 // "trust anything", or the fix trades a prompt for a hole.
 func TestSandboxPlanTrustsTheWorkspaceMiseConfigs(t *testing.T) {
-	// The launch env is baked onto LaunchArgv, so that is where the assertion belongs — a
-	// value that never reaches the argv never reaches the agent.
-	argv := strings.Join(buildPlan(mockDeps(nil), newOpts("/Users/Shared/proj"), nil).LaunchArgv, " ")
-	if !strings.Contains(argv, "MISE_TRUSTED_CONFIG_PATHS=/Users/Shared/proj") {
-		t.Errorf("macos-user must trust the workspace's mise configs; LaunchArgv = %s", argv)
+	// The launch env crosses in the SESSION ENV FILE, so that is where the assertion
+	// belongs — a value that never reaches the file never reaches the agent. It used to be
+	// asserted on LaunchArgv, which is exactly where composed values no longer go
+	// (envfile.go).
+	env := buildPlan(mockDeps(nil), newOpts("/Users/Shared/proj"), nil).EnvFileContent
+	if !strings.Contains(env, "MISE_TRUSTED_CONFIG_PATHS='/Users/Shared/proj'") {
+		t.Errorf("macos-user must trust the workspace's mise configs; env file = %s", env)
 	}
 	// A wider value would trust configs outside the tree yolo was pointed at.
-	if strings.Contains(argv, "MISE_TRUSTED_CONFIG_PATHS=/ ") ||
-		strings.Contains(argv, "MISE_TRUSTED_CONFIG_PATHS=$HOME") {
-		t.Errorf("the trust path must be the WORKSPACE, not a blanket root: %s", argv)
+	if strings.Contains(env, "MISE_TRUSTED_CONFIG_PATHS='/'") ||
+		strings.Contains(env, "MISE_TRUSTED_CONFIG_PATHS='$HOME'") {
+		t.Errorf("the trust path must be the WORKSPACE, not a blanket root: %s", env)
 	}
 }
 
@@ -106,9 +108,9 @@ func TestSandboxTrustPathIsOverridable(t *testing.T) {
 	opts := newOpts("/Users/Shared/proj")
 	opts.SandboxEnv = jsonx.NewOrderedMap()
 	opts.SandboxEnv.Set("MISE_TRUSTED_CONFIG_PATHS", "/Users/Shared/proj/only-here")
-	argv := strings.Join(buildPlan(mockDeps(nil), opts, nil).LaunchArgv, " ")
-	if !strings.Contains(argv, "MISE_TRUSTED_CONFIG_PATHS=/Users/Shared/proj/only-here") {
-		t.Errorf("an explicit sandbox_env value must win: %s", argv)
+	env := buildPlan(mockDeps(nil), opts, nil).EnvFileContent
+	if !strings.Contains(env, "MISE_TRUSTED_CONFIG_PATHS='/Users/Shared/proj/only-here'") {
+		t.Errorf("an explicit sandbox_env value must win: %s", env)
 	}
 }
 
@@ -517,23 +519,32 @@ func TestPackEnvReachesTheLaunchEnvAheadOfEnvSources(t *testing.T) {
 	opts.PackEnv.Set("YOLO_PROVIDERS", `{"zai": {}}`)
 	opts.PackEnv.Set("YOLO_USE_PROFILES", `{"claude": "zai"}`)
 
-	argv := strings.Join(buildPlan(mockDeps(nil), opts, nil).LaunchArgv, " ")
+	plan := buildPlan(mockDeps(nil), opts, nil)
+	env := plan.EnvFileContent
 	for _, want := range []string{
-		"ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic",
-		"YOLO_PROVIDERS={\"zai\": {}}",
-		"YOLO_USE_PROFILES={\"claude\": \"zai\"}",
+		"ANTHROPIC_BASE_URL='https://api.z.ai/api/anthropic'",
+		"YOLO_PROVIDERS='{\"zai\": {}}'",
+		"YOLO_USE_PROFILES='{\"claude\": \"zai\"}'",
 	} {
-		if !strings.Contains(argv, want) {
-			t.Errorf("the composed channel never reached the launch env; LaunchArgv = %s", argv)
+		if !strings.Contains(env, want) {
+			t.Errorf("the composed channel never reached the launch env; env file = %s", env)
 		}
 	}
 	// The precedence half: env_sources wins over the channel, as yolo-user-env.sh wins
-	// over the container's `-e` base env.
-	if !strings.Contains(argv, "ZAI_API_KEY=from-envsource") {
-		t.Errorf("env_sources must still win over the channel; LaunchArgv = %s", argv)
+	// over the container's `-e` base env. Order in the file IS the precedence, because a
+	// later `export` overwrites an earlier one — so the last value must be the dotenv's.
+	if !strings.Contains(env, "ZAI_API_KEY='from-envsource'") {
+		t.Errorf("env_sources must still win over the channel; env file = %s", env)
 	}
-	if strings.Contains(argv, "ZAI_API_KEY=from-pack") {
-		t.Errorf("the channel must not override a user's own env_sources entry: %s", argv)
+	if strings.LastIndex(env, "ZAI_API_KEY='from-pack'") > strings.LastIndex(env, "ZAI_API_KEY='from-envsource'") {
+		t.Errorf("the channel must not override a user's own env_sources entry: %s", env)
+	}
+	// AND NONE OF IT IS ON A COMMAND LINE. The delivery moved for a reason; a test that
+	// only followed it to the file would pass for a launch that put the values in BOTH
+	// places, which is the shape that ships the leak with the fix.
+	if argv := strings.Join(plan.LaunchArgv, " "); strings.Contains(argv, "from-envsource") ||
+		strings.Contains(argv, "from-pack") {
+		t.Errorf("a composed credential is on the launch argv: %s", argv)
 	}
 }
 

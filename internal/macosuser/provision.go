@@ -122,7 +122,7 @@ func ProvisionScript(workspace, bootstrapScript string) string {
 // and the guardrails pack refuses both with exit 127 — while the agent, a separate
 // process, does not; and the script is free to embed an absolute path without nesting
 // quotes inside a single-quoted `sh -c`.
-func ProvisionArgv(script, profilePath string, sandboxEnv *jsonx.OrderedMap,
+func ProvisionArgv(script, profilePath, envFile string,
 	workspace, user, home string, pathPrefix []string) []string {
 	if user == "" {
 		user = SandboxUser
@@ -137,21 +137,20 @@ func ProvisionArgv(script, profilePath string, sandboxEnv *jsonx.OrderedMap,
 		"-i",
 		"YOLO_BYPASS_SHIMS=1",
 	}
-	// The AGENT'S OWN environment, from the same function the launch argv uses. The stage
-	// installs into the prefixes the agent resolves through (~/.npm-global, ~/.local, the
-	// mise store named by MISE_DATA_DIR), so a stage that composed its environment
-	// separately could install into a prefix the agent never looks in — and the two
-	// spellings would be free to drift apart one key at a time.
-	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), sandboxEnv)...)
-	out = append(out,
-		"/usr/bin/sandbox-exec",
-		"-f",
-		profilePath,
-		"--",
-		"/bin/bash",
-		"-c",
-		script,
-	)
+	// The AGENT'S OWN environment, from the same function the launch argv uses — now the
+	// identity quartet plus the session env file's PATH, with the composed values inside
+	// the file (envfile.go). The stage installs into the prefixes the agent resolves
+	// through (~/.npm-global, ~/.local, the mise store named by MISE_DATA_DIR), so a stage
+	// that composed its environment separately could install into a prefix the agent never
+	// looks in — and the two spellings would be free to drift apart one key at a time.
+	//
+	// ⚠ THE STAGE NEEDS THE COMPOSED VALUES AS MUCH AS THE AGENT DOES: `mise install` and
+	// the bootstrap script read registry tokens and proxy settings out of env_sources, so
+	// wrapping it in the env-file reader is not belt-and-braces — a stage that skipped the
+	// wrap would install against a different environment than the agent then runs in.
+	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
+	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
+	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/bash", "-c", script})...)
 	return out
 }
 

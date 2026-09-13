@@ -36,13 +36,27 @@ type RunPlan struct {
 	ProvisionArgv       []string
 	ProvisionScriptPath string
 	LaunchArgv          []string
-	GitIdentity         *jsonx.OrderedMap
-	OffendingHome       string // "" when on neutral ground
-	OffendingHomeSet    bool   // true when a home contains the workspace
-	DarwinPathPrefix    []string
-	DarwinEnv           *jsonx.OrderedMap
-	DarwinSkipped       []string
-	DarwinMaterialized  bool
+	// EnvFile is the per-session, root-owned 0600 file carrying everything this launch
+	// COMPOSED — git identity, TERM, the profile/provider channel, the hydrated
+	// env_sources. The three sandboxed argvs above name it and read it; none of them
+	// carries its values (envfile.go states why, and PlanInvariants checks it).
+	// EnvFileContent is what to write into it; the two are "" together.
+	//
+	// EnvFileCommands prepare the 0700 directory and MUST run BEFORE the write;
+	// EnvFileGrantCommands add the sandbox account's read ACE and MUST run after;
+	// EnvFileRemoveCommands sweep it when the session ends.
+	EnvFile               string
+	EnvFileContent        string
+	EnvFileCommands       [][]string
+	EnvFileGrantCommands  [][]string
+	EnvFileRemoveCommands [][]string
+	GitIdentity           *jsonx.OrderedMap
+	OffendingHome         string // "" when on neutral ground
+	OffendingHomeSet      bool   // true when a home contains the workspace
+	DarwinPathPrefix      []string
+	DarwinEnv             *jsonx.OrderedMap
+	DarwinSkipped         []string
+	DarwinMaterialized    bool
 }
 
 // Darwin carries the already-materialized native `packages:` result threaded
@@ -206,12 +220,22 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 	// the honest representation: a plan carrying a stage the launch will not run describes
 	// a launch nobody performs, and every invariant below is written to say nothing about
 	// an empty argv rather than to demand one.
+	// THE SESSION ENV FILE, resolved before the two argvs that read it. It is named
+	// whenever this launch composed anything at all — a workspace with no env_sources, no
+	// profile and no git identity composes an empty map, and then there is no file, no
+	// directory to prepare and no wrapper on either argv.
+	envFile := ""
+	envFileContent := SandboxEnvFileContent(sandboxEnv)
+	if envFileContent != "" {
+		envFile = SandboxEnvFile(cname, "")
+	}
+
 	var provisionArgv []string
 	provisionScriptPath := ""
 	if ProvisionNeeded(cfg) {
 		provisionScriptPath = ProvisionBootstrapScript(workspace)
 		provisionArgv = ProvisionArgv(ProvisionScript(workspace, provisionScriptPath),
-			profilePath, sandboxEnv, workspace, "", "", darwinPrefix)
+			profilePath, envFile, workspace, "", "", darwinPrefix)
 	}
 
 	return RunPlan{
@@ -231,14 +255,21 @@ func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []s
 		BootstrapArgv:       DarwinBootstrapArgv(stagedYolo, SandboxHome(), bootstrapEnv, ""),
 		ProvisionArgv:       provisionArgv,
 		ProvisionScriptPath: provisionScriptPath,
-		LaunchArgv:          LaunchArgv(agentArgv, profilePath, sandboxEnv, workspace, "", "", darwinPrefix),
-		GitIdentity:         gitIdentity,
-		OffendingHome:       offendingHome,
-		OffendingHomeSet:    offendingSet,
-		DarwinPathPrefix:    darwinPrefix,
-		DarwinEnv:           darwinEnv,
-		DarwinSkipped:       darwinSkipped,
-		DarwinMaterialized:  darwin != nil,
+		LaunchArgv:          LaunchArgv(agentArgv, profilePath, envFile, workspace, "", "", darwinPrefix),
+
+		EnvFile:               envFile,
+		EnvFileContent:        envFileContent,
+		EnvFileCommands:       SandboxEnvDirCommands(envFile, ""),
+		EnvFileGrantCommands:  SandboxEnvGrantCommands(envFile, ""),
+		EnvFileRemoveCommands: SandboxEnvRemoveCommands(envFile),
+
+		GitIdentity:        gitIdentity,
+		OffendingHome:      offendingHome,
+		OffendingHomeSet:   offendingSet,
+		DarwinPathPrefix:   darwinPrefix,
+		DarwinEnv:          darwinEnv,
+		DarwinSkipped:      darwinSkipped,
+		DarwinMaterialized: darwin != nil,
 	}
 }
 
@@ -643,6 +674,37 @@ func PlanInvariants(plan RunPlan) []string {
 				"from the sandbox — see docs/design/macos-user-provisioning.md")
 	}
 
+	// NO COMPOSED VALUE ON A COMMAND LINE, AND THE FILE ACTUALLY READ. The two halves of
+	// envfile.go's contract, checked together because either alone passes for a plan that is
+	// wrong in the other way: an argv with no pairs and no reader is a sandbox with no
+	// credentials, and an argv that reads the file and still carries the pairs has moved
+	// nothing. Both are applied to every argv the sandbox user runs UNDER SEATBELT — the
+	// bootstrap is excluded, and SandboxArgvEnvProblems says why.
+	for _, pair := range [][2]any{
+		{"launch", plan.LaunchArgv},
+		{"provisioning stage", plan.ProvisionArgv},
+	} {
+		label, argv := pair[0].(string), pair[1].([]string)
+		if len(argv) == 0 {
+			continue
+		}
+		problems = append(problems, SandboxArgvEnvProblems(label, argv)...)
+		if !SandboxArgvReadsEnvFile(plan.EnvFile, argv) {
+			problems = append(problems,
+				"the "+label+" argv never reads the session env file ("+plan.EnvFile+
+					"); it would run with the identity quartet and nothing this launch "+
+					"composed — no provider credentials, no env_sources, no git identity")
+		}
+	}
+	// The file itself must sit under the root-owned state dir, for the staged binary's
+	// reason: a file the sandbox could REWRITE is a sandbox that chooses its own
+	// environment, and this one is sourced by the shell that execs the agent.
+	if plan.EnvFile != "" && !strings.HasPrefix(plan.EnvFile, plan.StagedDir+"/") {
+		problems = append(problems,
+			"session env file "+plan.EnvFile+" is not under the root-owned state dir "+
+				plan.StagedDir+"; the sandbox could rewrite the environment it is launched with")
+	}
+
 	return problems
 }
 
@@ -821,4 +883,10 @@ func cfgStrList(cfg *jsonx.OrderedMap, key string) []string {
 		}
 	}
 	return out
+}
+
+// envFile and envFileCommands make a RunPlan a sandboxEnvPlan (envfile.go).
+func (p RunPlan) envFile() (string, string) { return p.EnvFile, p.EnvFileContent }
+func (p RunPlan) envFileCommands() ([][]string, [][]string) {
+	return p.EnvFileCommands, p.EnvFileGrantCommands
 }

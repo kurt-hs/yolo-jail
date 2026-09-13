@@ -117,13 +117,8 @@ func TestSeatbeltEscapesPath(t *testing.T) {
 }
 
 func TestLaunchArgv(t *testing.T) {
-	env := jsonx.NewOrderedMap()
-	env.Set("HOME", "/evil")
-	env.Set("USER", "root")
-	env.Set("SHELL", "/x")
-	env.Set("PATH", "/evil/bin")
-	env.Set("OK", "1")
-	argv := LaunchArgv([]string{"claude", "--x"}, "/var/yolo-jail/p.sb", env,
+	const envFile = "/var/yolo-jail/env/yolo-ws-abcd1234.env"
+	argv := LaunchArgv([]string{"claude", "--x"}, "/var/yolo-jail/p.sb", envFile,
 		"/Users/Shared/proj", "", "", []string{"/nix/store/a-jq/bin"})
 	if argv[0] != "sudo" || !inSlice(argv, "--user=_yolojail") {
 		t.Error("must run as sandbox via sudo")
@@ -132,14 +127,17 @@ func TestLaunchArgv(t *testing.T) {
 	if i < 0 || argv[i+1] != "-i" {
 		t.Error("env -i must follow /usr/bin/env")
 	}
-	if !inSlice(argv, "HOME=/Users/_yolojail") || inSlice(argv, "HOME=/evil") {
-		t.Error("HOME must be protected")
+	if !inSlice(argv, "HOME=/Users/_yolojail") {
+		t.Error("the sandbox home must be set on the argv")
 	}
-	if inSlice(argv, "USER=root") || inSlice(argv, "PATH=/evil/bin") {
-		t.Error("USER/PATH must be protected")
+	// The composed environment is NOT on the argv, and the file that carries it is named
+	// and read. Both halves, because either alone passes for an argv that is wrong in the
+	// other way (envfile.go).
+	if !inSlice(argv, SandboxEnvFileEnv+"="+envFile) {
+		t.Errorf("the argv does not name the session env file:\n%v", argv)
 	}
-	if !inSlice(argv, "OK=1") {
-		t.Error("non-protected env passes through")
+	if !SandboxArgvReadsEnvFile(envFile, argv) {
+		t.Errorf("the argv never reads the session env file:\n%v", argv)
 	}
 	// PATH order: blocker shims < darwin prefix < /usr/bin < lazy-installer launchers.
 	var pathVal string
