@@ -605,13 +605,9 @@ func BriefingContent(in BriefingInput) string {
 		"  such jail-local credentials do authenticated operations fail.",
 		noSudoLine,
 		"",
-		"## Packages & Resource Limits",
-		"",
-		"To request a tool or a container-limit change: edit `/workspace/yolo-jail.jsonc`",
-		"(`packages` / `resources`), ALWAYS run `yolo check` after every config edit",
-		"(`yolo check --no-build` is fine inside a running jail), then ask the human to",
-		"restart the jail. Reference: `yolo config-ref`.",
-		"",
+	)
+	lines = append(lines, packagesSection(in.Mechanism)...)
+	lines = append(lines,
 		"## Skills",
 		"",
 		"User-level skills dirs (`~/.<agent>/skills/`) are **read-only** in-jail",
@@ -633,6 +629,48 @@ func BriefingContent(in BriefingInput) string {
 	}
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// packagesSection is how an agent asks for a tool — and, on a container, for a bigger cap.
+//
+// IT BRANCHES BECAUSE THE SECOND HALF IS FALSE OFF-CONTAINER, which the `## Environment` fix
+// above did not reach: it told every agent to request a "container-limit change" by editing
+// `resources`, on a backend with no container where `resources` is read and IGNORED by ruling
+// (DP-D1 — RLIMIT_AS is address space rather than RSS, RLIMIT_NPROC is per-USER and collides
+// across concurrent sessions on the shared account, both rejected by name). Instructing an
+// agent to ask its human for a limit nothing can deliver is worse than a wrong path: the human
+// grants it, the config carries it, and the cap does not exist. DP-D1's own words are the rule
+// applied here — "a cap a user believes in but that does not hold is worse than a documented
+// absence" — so the absence is NAMED rather than left as silence, the same disposition every
+// other unreadable declaration on this backend gets.
+//
+// ⚠ `/workspace` IS KEPT ON BOTH ARMS, deliberately. The 2026-09-13 ruling made it canonical
+// and spends the Environment bullet explaining that it means the real path on a native backend;
+// a second spelling here would fork the convention that bullet exists to establish, and this
+// section is not the one place an agent learns its paths.
+func packagesSection(mechanism string) []string {
+	if MechanismHasNoContainer(mechanism) {
+		return []string{
+			"## Packages",
+			"",
+			"To request a tool: edit `/workspace/yolo-jail.jsonc` (`packages`), ALWAYS run",
+			"`yolo check` after every config edit (`yolo check --no-build` is fine inside a",
+			"running jail), then ask the human to restart the jail. Reference: `yolo config-ref`.",
+			"⚠ `resources` is not enforced here — there is no container to cap, so a memory or",
+			"CPU limit in the config is read and ignored. Do not plan around one, and do not ask",
+			"for one: it cannot be delivered on this backend.",
+			"",
+		}
+	}
+	return []string{
+		"## Packages & Resource Limits",
+		"",
+		"To request a tool or a container-limit change: edit `/workspace/yolo-jail.jsonc`",
+		"(`packages` / `resources`), ALWAYS run `yolo check` after every config edit",
+		"(`yolo check --no-build` is fine inside a running jail), then ask the human to",
+		"restart the jail. Reference: `yolo config-ref`.",
+		"",
+	}
 }
 
 // ComposeBriefing appends agents_md_extra to the jail content:
