@@ -252,15 +252,71 @@ test:
 test-fast:
     go test -short ./...
 
-# Run linter (Go: vet + staticcheck)
+# Run linter (Go: vet + staticcheck) ONCE PER BUILD CONFIGURATION THIS TREE
+# TARGETS — not once per machine.
+#
+# A `//go:build !linux` FILE IS INVISIBLE TO A SINGLE-GOOS GATE. Platform
+# primitives here are split `_linux.go` / `_other.go`, and the toolchain
+# type-checks and analyzes only the half the current GOOS selects. One pass on a
+# Linux machine therefore never reads the non-linux halves, nor any darwin-only
+# file (`internal/macosuser`'s darwin tests included), so findings in them
+# accumulate silently until a from-source contributor on macOS meets the backlog
+# on their first `just check` — which is GitHub issue #42. Both GOOS values are
+# named explicitly so `just lint` means the same thing on a Mac as it does here;
+# the bare `staticcheck ./...` it replaced meant "whichever half my laptop
+# compiles".
+#
+# THE GATE IS HERE AND NOT IN ci.yml's `check-macos` JOB because the class needs
+# a GOOS, not a Mac: `GOOS=darwin staticcheck ./...` reproduces issue #42 from
+# Linux. Putting it on the macOS runner would mean installing `just` and
+# staticcheck there to buy coverage this pass already has, and would leave the
+# pre-commit hook — the gate a contributor hits first, before any runner — still
+# blind. ci.yml needs no change at all: `check-go` runs `just check-ci`, so it
+# inherits whatever this recipe grows.
+#
+# WHY THESE TWO GOOS VALUES AND NO MORE. They are the two this tree compiles
+# under. `GOOS=windows go build ./...` does not (syscall.Kill, syscall.Stat_t,
+# unix.Faccessat and unix.TIOCGETA are all absent there), so a third pass would
+# report a broken build rather than a lint finding. The one file outside both
+# worlds is `internal/serialdaemon/serial_other.go` (`!linux && !darwin`), the
+# completeness arm of a constraint set rather than a target; it is named as
+# unanalyzed in internal/capture/lintgate_pin_test.go rather than left for
+# someone to discover. GOARCH stays the host's — nothing here is
+# arch-conditional, and both GOOS values support both arches yolo ships on.
+#
+# WHY THE DARWIN PASS DROPS SA4023. SA4023 ("impossible comparison of interface
+# value with untyped nil") is a claim about ONE build configuration. A caller
+# that checks the error from a split primitive is correct — the linux half can
+# succeed — but under GOOS=darwin the `_other.go` half is an unconditional
+# refusal, so the check fires on the SPLIT, at every such call site, on code with
+# nothing wrong with it. Dropping it here rather than annotating each call site
+# keeps the fix from having to be re-applied for every `_other.go` refusal added
+# later, and leaves SA4023 fully live under GOOS=linux, where the real
+# implementations are in view and it can still find something. The cost, stated
+# plainly: a genuine SA4023 reachable only on darwin would go unreported.
+#
+# COST: the darwin pass roughly doubles a COLD `just lint`, because it type-checks
+# the tree a second time. Warm it is close to free — the darwin object cache is
+# built once and reused, and only changed packages are re-analyzed. No figure is
+# written here on purpose: it would be a measurement of one machine's cache state
+# on one day, and the next reader would have no way to tell a stale number from a
+# regression.
+#
+# Run linter (Go: vet + staticcheck), once per GOOS this tree targets.
 lint:
-    go vet ./...
-    staticcheck ./...
+    GOOS=linux go vet ./...
+    GOOS=linux staticcheck ./...
+    GOOS=darwin go vet ./...
+    GOOS=darwin staticcheck -checks=inherit,-SA4023 ./...
 
-# Lint without auto-fix (CI mode — fails on violations, doesn't modify files).
-lint-ci:
-    go vet ./...
-    staticcheck ./...
+# ONE COPY OF THE LINT COMMANDS, reached by dependency rather than restated: the
+# hook (`check-ci`) and the interactive recipe (`check`) have to run the same
+# passes, and two hand-kept lists is exactly how a gate ends up applied on one
+# path and not the other. `lint` modifies nothing, so there is nothing for a
+# "CI mode" to withhold; what this recipe adds is the gofmt cleanliness check.
+#
+# Lint (CI mode — every `lint` pass, plus a gofmt cleanliness check).
+lint-ci: lint
     @dirty="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"; test -z "$dirty" || { echo "gofmt needs to run on:"; echo "$dirty"; exit 1; }
 
 # Format code (Go: gofmt on tracked files)

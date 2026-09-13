@@ -31,8 +31,10 @@ jobs:
           extra_args: --only-verified
 
   # The Go tree gets its own job, running the SAME gate as the local
-  # pre-commit hook: `just check-ci` = go vet + staticcheck + a gofmt
-  # cleanliness check + the short test suite.  Invoking the Justfile recipe
+  # pre-commit hook: `just check-ci` = go vet + staticcheck, once per GOOS the
+  # tree targets (linux and darwin — see the `lint` recipe for why the darwin
+  # pass runs on this Linux runner rather than on check-macos), plus a gofmt
+  # cleanliness check and the short test suite.  Invoking the Justfile recipe
   # rather than inlining the commands is deliberate — it's the only way CI
   # and the hook can't drift, and it was drift that let staticcheck/gofmt go
   # unenforced on any push from a machine without the hook.  The short suite
@@ -97,6 +99,12 @@ jobs:
       - name: Quality gate (vet + staticcheck + gofmt + short tests)
         run: just check-ci
 
+  # Deliberately tests only — no lint.  The darwin STATIC analysis a from-source
+  # macOS contributor would hit runs in check-go under `GOOS=darwin` (Justfile,
+  # `lint` recipe), from Linux, where the pre-commit hook reaches it too.  What
+  # this job is for is the half a cross-GOOS analysis cannot give: darwin-only
+  # code actually RUNNING — including the PATH-resolution class AGENTS.md
+  # describes, where /var/folders is a symlink and Linux cannot disagree.
   check-macos:
     runs-on: macos-latest
     if: >

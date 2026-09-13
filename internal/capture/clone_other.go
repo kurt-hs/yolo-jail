@@ -18,6 +18,13 @@ import (
 // hardware, and the one place a capture also has to be RELOCATED before it can be
 // materialized at all. Wiring a clone here that nothing can exercise would be a second
 // unverified mechanism sitting under the first.
+//
+// A CALLER MUST STILL CHECK THE ERROR, even though this half never returns nil:
+// clone_linux.go's cloneFile can succeed, and reflinkOne is compiled against whichever
+// half the GOOS selects. That makes `cerr != nil` provably true under GOOS=darwin and
+// only there, which is why the darwin lint pass in the Justfile's `lint` recipe drops
+// SA4023 — the reasoning is written out there. Nothing here needs changing for it, and
+// nothing here may be restructured to placate it.
 
 // errCloneUnsupported reports that this platform, filesystem or mount pair cannot reflink.
 var errCloneUnsupported = fmt.Errorf("reflink is not supported here")
