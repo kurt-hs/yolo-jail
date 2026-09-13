@@ -2,6 +2,7 @@ package image
 
 import (
 	"context"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -247,4 +248,18 @@ func (o *AutoLoadOptions) tagStockImage(contentRef, identity string) {
 			" — this launch is unaffected; the next one will rebuild the image " +
 			"instead of finding it.\n"))
 	}
+}
+
+// reportWriter is where a launch-stream DISCLOSURE goes: Report when the caller
+// supplied one, else the progress writer it already had.
+//
+// The fallback is what keeps this change small — every caller that never set
+// Report behaves exactly as before — but the run path DOES set it, because Out
+// there is the jail command's stdout and a disclosure written to it corrupts the
+// output of whatever the user asked the jail to run. See AutoLoadOptions.Out.
+func (o *AutoLoadOptions) reportWriter(out io.Writer) io.Writer {
+	if o.Report != nil {
+		return o.Report
+	}
+	return out
 }

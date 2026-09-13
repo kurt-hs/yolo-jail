@@ -65,8 +65,16 @@ func (o *Options) autoLoadImage(cfg *jsonx.OrderedMap, rt, repoRoot string, sp s
 		ExtraPackages: extra,
 		Attr:          attr,
 		Out:           o.Stdout,
-		IsMacOS:       o.IsMacOS,
-		Getpid:        o.Getpid,
+		// THE LAUNCH STREAM IS STDERR, and a disclosure must not be written to the
+		// jail command's stdout. `yolo -- <cmd>` passes the command's output through
+		// untouched, and callers compare it exactly — two integration tests assert
+		// `r.stdout == want` on an `env | grep` — so a provenance line on Out turns
+		// into corrupted command output rather than a message. Every other launch
+		// line ("Flake source:", "Jail binaries:") is already on stderr for this
+		// reason; Report is how the image half reaches the same place.
+		Report:  o.Stderr,
+		IsMacOS: o.IsMacOS,
+		Getpid:  o.Getpid,
 		DiagnoseFailure: func(tail []string) (string, string) {
 			return nixdiag.DiagnoseNixBuildFailure(tail, o.IsMacOS, remedy)
 		},

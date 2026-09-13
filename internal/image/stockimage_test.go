@@ -350,3 +350,54 @@ func TestNightlyWorkflowTagsTheStockImage(t *testing.T) {
 			"a Linux builder that job has never been able to start.", path, want)
 	}
 }
+
+// THE REGRESSION THIS FILE EXISTS TO PREVENT A SECOND TIME. The stock-skip line
+// is the only disclosure on the WARM path — the path every ordinary launch takes
+// — and it was first written to Out. On the run path Out is the jail command's
+// own stdout, so `yolo -- bash -c "env | grep ..."` came back with a provenance
+// sentence glued to the front of the command's output. Two integration tests that
+// compare stdout EXACTLY went red on main within hours
+// (TestProvidersRenderInTheAgentsOwnVocabulary and
+// TestHostComposedBriefingIsNotDeliveredTwice), and NO -short gate could have
+// caught it: both are integration tests, and `just check-ci` does not run them.
+//
+// Routing the line back to Out fails this test; deleting the Report wiring in
+// run.imageLoadOptions fails TestTheRunPathSendsImageDisclosuresToStderr.
+func TestTheStockSkipDisclosureStaysOffTheCommandsStdout(t *testing.T) {
+	withBuildDir(t)
+	var out, report bytes.Buffer
+	stockRef := StockImageRef("podman", testIdentity)
+	o := stockOpts(t, newFakeRuntime(stockRef), &out, testIdentity)
+	o.Report = &report
+
+	if res := AutoLoadImage(o); !res.OK {
+		t.Fatalf("AutoLoadImage refused a launch whose image is already present:\n%s", report.String())
+	}
+
+	if got := out.String(); strings.Contains(got, "Image build skipped") {
+		t.Errorf("the disclosure reached Out, which on the run path IS the jail command's "+
+			"stdout — it corrupts the output of whatever the user asked the jail to run.\nOut:\n%s", got)
+	}
+	if got := report.String(); !strings.Contains(got, stockRef) || !strings.Contains(got, testIdentity) {
+		t.Errorf("the disclosure did not reach Report with its ref and identity, so the "+
+			"launch ran an image it never named. OQ-RO3: a disclosure may be compressed, "+
+			"never suppressed.\nReport:\n%s", got)
+	}
+}
+
+// The fallback is what keeps this change small: every caller that never sets
+// Report — including the sibling tests in this file — behaves exactly as before.
+func TestReportFallsBackToOutWhenUnset(t *testing.T) {
+	withBuildDir(t)
+	var out bytes.Buffer
+	stockRef := StockImageRef("podman", testIdentity)
+	o := stockOpts(t, newFakeRuntime(stockRef), &out, testIdentity)
+	o.Report = nil
+
+	if res := AutoLoadImage(o); !res.OK {
+		t.Fatalf("AutoLoadImage refused a launch whose image is already present:\n%s", out.String())
+	}
+	if got := out.String(); !strings.Contains(got, "Image build skipped") {
+		t.Errorf("with Report unset the disclosure must still reach Out; got:\n%s", got)
+	}
+}

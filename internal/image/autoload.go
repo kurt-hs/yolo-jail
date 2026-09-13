@@ -61,7 +61,24 @@ type AutoLoadOptions struct {
 	// Out receives the human progress/status lines (rich markup already
 	// stripped by the caller's printer; here we write plain text). nil =>
 	// io.Discard.
+	//
+	// ⚠ ON THE RUN PATH THIS IS THE JAIL COMMAND'S OWN STDOUT (`run.imageLoadOptions`
+	// passes `o.Stdout`), NOT the launch report stream — which is stderr, where
+	// "Flake source:" and "Jail binaries:" go. Everything written here therefore
+	// lands in the output of whatever the user asked the jail to run. That is
+	// survivable only because every existing line below is on a COLD path (a build
+	// failure, a cache load, a first-ever load), so a warm launch writes nothing.
+	// A line on the warm path belongs on Report instead: one was added here on
+	// 2026-09-13 and broke two integration tests that compare a command's stdout
+	// exactly, within hours.
 	Out io.Writer
+	// Report receives launch-stream DISCLOSURES — the lines a launch owes the user
+	// about what it is about to run, which OQ-RO3 says may be compressed but never
+	// suppressed. Separate from Out precisely because those two streams have
+	// different readers: Out is consumed by whoever is reading the jail command's
+	// output, Report by the human watching the launch. nil => Out, which keeps
+	// every existing caller and test unchanged.
+	Report io.Writer
 	// IsMacOS overrides the platform for the build-offload branch.
 	IsMacOS bool
 	// Getpid names the PID-unique out-link. nil => os.Getpid.
@@ -373,8 +390,8 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 		// A DISCLOSURE, not progress: this is the launch saying which image it is
 		// about to run and on what evidence, and the launch stream has no quiet
 		// mode (docs/reference/report-tiers.md, OQ-RO3).
-		fmt.Fprintln(out, "Image build skipped: "+ref+" already carries this source "+
-			"tree's identity ("+identity+").")
+		fmt.Fprintln(o.reportWriter(out), "Image build skipped: "+ref+" already carries "+
+			"this source tree's identity ("+identity+").")
 		_ = os.Remove(outLink)
 		return LoadResult{OK: true, Ref: ref}
 	}
