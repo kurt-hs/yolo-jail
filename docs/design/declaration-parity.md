@@ -668,7 +668,7 @@ Ordered by rows-closed per unit of work.
 
 | id | Declaration and site | Mechanism | Cost | Closes |
 | :--- | :--- | :--- | :--- | :--- |
-| **DP-L1** | macos-user: pack `reads-host`, source-bearing `host_files` — **the FILE-shaped cells only** (see [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open) for the directory-shaped ones) | **One host-side COPY into a root-owned staged tree** — `macosuser.StagePackCommands`' shape, sited one leaf over at `/var/yolo-jail/ctx/<cname>/<name>`, named to the jail by an env var and by the briefing. **Not a symlink, and Seatbelt was never the blocker** ([§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)) | **Lower than this row claimed before review.** The `:ro` half is FREE for the four `/ctx`-shaped cells: the profile is already deny-writes-everywhere plus an enumerated allow, and `/var/yolo-jail` is outside that set. A `readonlyDenies`-style deny is needed only for the skills-and-briefings cell, which lands inside the sandbox home. ⚠ The copy must run in the host CLI, never in the pure plan builder: the source-bearing read IS the credential boundary (`config.HostFileStaging`) | **Two cells, one mechanism** — the two host-byte rows that are today merely warned. ⚠ **Narrowed 2026-09-12**: it used to claim five, including [DP-B1](#51-macos-user-read-by-nobody-warned-by-nobody) and [DP-B2](#51-macos-user-read-by-nobody-warned-by-nobody). A copy cannot carry a `mounts` entry — those trees are arbitrary and large — so the three directory-shaped cells left this row for [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open). **[OQ-DP4](#decision-ledger): build it** |
+| **DP-L1** ✅ **BUILT 2026-09-13** (`ed69c593`) | macos-user: pack `reads-host`, source-bearing `host_files` — **the FILE-shaped cells only** (see [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open) for the directory-shaped ones) | **One host-side COPY into a root-owned staged tree** — `macosuser.StagePackCommands`' shape, sited one leaf over at `/var/yolo-jail/ctx/<cname>/<name>`, named to the jail by an env var and by the briefing. **Not a symlink, and Seatbelt was never the blocker** ([§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)) | **Lower than this row claimed before review.** The `:ro` half is FREE for the four `/ctx`-shaped cells: the profile is already deny-writes-everywhere plus an enumerated allow, and `/var/yolo-jail` is outside that set. A `readonlyDenies`-style deny is needed only for the skills-and-briefings cell, which lands inside the sandbox home. ⚠ The copy must run in the host CLI, never in the pure plan builder: the source-bearing read IS the credential boundary (`config.HostFileStaging`) | **Two cells, one mechanism** — the two host-byte rows that are today merely warned. ⚠ **Narrowed 2026-09-12**: it used to claim five, including [DP-B1](#51-macos-user-read-by-nobody-warned-by-nobody) and [DP-B2](#51-macos-user-read-by-nobody-warned-by-nobody). A copy cannot carry a `mounts` entry — those trees are arbitrary and large — so the three directory-shaped cells left this row for [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open). **[OQ-DP4](#decision-ledger): build it** |
 | **DP-L2** | `run.sharesLauncherNetns("macos-user") → true`, plus a per-key notice for non-empty `ports` / `forward_host_ports` | Makes `run.appliedNetMode` answer `"host"`, which already suppresses both port sections in `jailcontent.BriefingContent` and swaps the bridge paragraph for *"`localhost` / `127.0.0.1` resolves directly to the host"* | One predicate, one wording fix (that line opens *"the container shares the host network stack"* and there is no container), and one stderr line per non-empty port key. ⚠ **Safety proof, since `sharesLauncherNetns`' doc comment reads as an objection to widening it** (*"it has two readers and they must never disagree"*): it has THREE — `advertiseHostFor`, `assembleRunCmd`, and `appliedNetMode`, which the comment does not list — and only the unlisted one is live on this backend. `advertiseHostFor` is reached only from `startLoopholes`, which the macos-user arm returns above (`run/run.go:273` vs `:1065`, and that arm calls `notePackLoopholesInert` directly for exactly this reason); `assembleRunCmd`'s `paths.HostLoopbackShared` is below the same return. So the widening cannot move an advertise address or a reachability disposition. ⚠ Test shape: `briefingPortsFor` + `BriefingContent`, never argv ([§5.1.1](#511-dp-b3-by-entry-form-and-why-the-remedy-is-not-refusal)) | **Three keys at once** — `mode`, `ports` and `forward_host_ports`: [DP-B3](#51-macos-user-read-by-nobody-warned-by-nobody) |
 | **DP-L3** | macos-user pack `service` `jail_daemon` | Hoist `run.serviceJailDaemons` above the backend dispatch and have `macosuser.buildBootstrapEnv` set `YOLO_JAIL_DAEMONS` — a native process can run a jail daemon as an ordinary child | Small. The same hoist `stagePacks` and pack-`launch` injection already made | [DP-B7](#51-macos-user-read-by-nobody-warned-by-nobody) |
 | **DP-L4** | macos-user's staged `yolo` | Put the staged prefix on `macosuser.SandboxPath`, or teach the two shell functions its absolute path | Two lines | [DP-B8](#51-macos-user-read-by-nobody-warned-by-nobody), and the materialize half of install-capture |
@@ -773,6 +773,25 @@ it) and a delivery mechanism resting on it reproduces DP-L1's own silent-failure
 
 > [!NOTE]
 > **MEASURED 2026-09-13 (macOS 26.5, arm64) — all three probes run, and this section stands as written.**
+>
+> **BUILT the same day (`ed69c593`), and the build amends this section in three places.**
+>
+> 1. **Only the env var was needed, not "an env var AND a briefing that prints the staged
+>    path".** These two cells are *composition inputs* — the agent never opens them by path, it
+>    reads the composed result in its own home — so a briefing line would name a path it has no
+>    use for. The staged path is disclosed in the `--dry-run` plan's `host bytes:` line, which is
+>    the surface that answers "what will this launch do". The `mounts` cell, which the agent DOES
+>    read at `/ctx/<name>`, is [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open)'s.
+> 2. **The `unsupported` host-layer carve-out is RETIRED, which this section did not anticipate.**
+>    `YOLO_HOST_LAYERS` said `unsupported` because the backend had no mechanism; it now reports
+>    `supported` plus the delivered list whenever a tree was staged — so macos-user **refuses a
+>    launch when a delivered file is unreadable**, like every other backend. That fail-closed read
+>    is new on this backend and is the highest-risk behaviour a Mac should exercise. [`OQ-R3`](../reference/loopback-tls-reachability.md#oq-r3) is
+>    intact: `unsupported` survives for a caller that staged nothing.
+> 3. **A directory-shaped `host_files` entry is a FOURTH directory-shaped cell**, and
+>    [DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open) names only three (config `mounts`,
+>    pack `mount`, host nvim config). It is refused for the same size reason and is now warned by
+>    name rather than skipped in silence; DP-D15's row should carry it.
 > Raw output, because two of the three outcomes could have retracted something shipped:
 >
 > ```console
@@ -1032,10 +1051,12 @@ is missing `service` and `blocked-tool`; `cli.registry` really does map `"stop"`
 ## 11. What I would build, in order
 
 > [!IMPORTANT]
-> **Steps 1, 2, 3 and 6 were built on 2026-09-13.** What remains is step 5 (the materialize
-> mechanism, gated on a measurement nobody has made — see
-> [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)), step 7 (everything
-> waiting on a Mac), and two user-facing doc deletions inside step 3. Step 4 is moot:
+> **Steps 1, 2, 3, 5 and 6 were all built on 2026-09-13** — step 5 last, once the measurement
+> it was gated on existed. [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)'s
+> three probes ran on hardware that afternoon, probe 1 confirmed TARGET evaluation, and `DP-L1`
+> was built as the copy that section had reasoned its way to. Step 3's two user-facing doc
+> corrections landed the same day. What remains is step 7 — everything waiting on a Mac —
+> and `DP-D15`, the directory-shaped cells a copy cannot carry. Step 4 is moot:
 > [`OQ-DP6`](#decision-ledger) dissolved and `DP-L5` was withdrawn with it.
 >
 > ⚠ **Per-row status markers in [§5](#5-silently-broken) and
