@@ -17,8 +17,23 @@ procedure — [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manua
 the spec for what only a Mac can verify and stays the spec. What this doc adds is **what
 changed on 2026-09-13 that is now waiting on hardware, in the order that buys the most.**
 
+> [!NOTE]
+> **[§1](#1-the-three-seatbelt-probes--do-these-first) IS DONE — all three probes run on hardware
+> 2026-09-13, raw output recorded at
+> [`../design/declaration-parity.md` §6.1](../design/declaration-parity.md#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured).**
+> Nothing inverted: Seatbelt evaluates the TARGET, so `DP-L1`'s mechanism stays a copy, and
+> `DP-L4`'s read is real (EPERM for the write, EACCES for the same write unsandboxed — the two
+> errnos are what prove it is the profile and not the directory's owner). Probe 2 found the latent
+> bug **reachable**, and fixing it exposed a second defect it had been masking: a symlinked
+> workspace evaded the neutral-ground refusal. Both fixed in `e63d4aef`.
+>
+> **Start now at [§2](#2-the-briefing-batch-on-the-arm-no-test-executes)** — one launch reads that
+> section and [§3](#3-the-new-stderr-notices-in-real-output) together, and it needs a password, so it is a
+> human's or an agent's-with-a-human's-keyboard.
+
 > [!IMPORTANT]
-> **Start at [§1](#1-the-three-seatbelt-probes--do-these-first). One measurement settles three
+> **The original lead, kept for its reasoning.** *(Superseded above 2026-09-13.)* **Start at
+> [§1](#1-the-three-seatbelt-probes--do-these-first). One measurement settles three
 > threads**, two of its three probes need no yolo, and one of them can invert an entire section
 > of the parity catalog. Nothing else in this file is close.
 
@@ -73,6 +88,21 @@ It is the only measurement in this file that unblocks more than itself:
    `macosuser.BuildRunPlan` passes `workspace` **raw** into `SeatbeltProfile` while
    `YOLO_HOST_DIR` gets `resolvePathAbs(workspace)` a few lines later. Latent only because
    `HomeContaining` normally pushes workspaces onto a non-symlinked shared root.
+
+### RESULT, 2026-09-13 — all three run, nothing inverted, two defects fixed
+
+| Probe | Result | What followed |
+| :--- | :--- | :--- |
+| 1 — the crux | `Operation not permitted` for an absolute AND a relative link, with three controls behaving | Target evaluation. The three statements stand, the symlink half is dead, `DP-L1` stays a copy. **No retraction.** |
+| 2 — canonicalization | deny `(subpath "/tmp")` → `touch /tmp/canary` **succeeded**; deny `(subpath "/private/tmp")` → the same write **denied** | The latent bug is REACHABLE (Go's `os.Getwd` honours `$PWD`, so an ordinary `cd` reaches it). Measured consequence: the workspace is unwritable under the profile yolo built. **Fixed `e63d4aef`** — plus the bypass below. |
+| 3 — the staged tree | read OK; write `Operation not permitted` sandboxed vs `Permission denied` unsandboxed | The free `:ro` is observed, not predicted. `DP-L4`'s read is real. |
+
+⚠ **Probe 2's fix could not be made alone, and that is the part worth carrying forward.**
+`HomeContaining` — the neutral-ground refusal ([DP-D15](../design/declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open)) — read the raw path too, so
+`/Users/Shared/yolo/homelink` → `/Users/matt/…` passed with `✓ all plan invariants hold`,
+measured. The dead profile was the only thing making that fail-closed. **A reader who "just
+resolves the path for the profile" converts a confusing launch failure into a live grant into the
+invoking user's home.** One resolution, both consumers.
 
 ### The stakes on probe 1
 

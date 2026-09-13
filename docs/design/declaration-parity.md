@@ -771,8 +771,55 @@ it) and a delivery mechanism resting on it reproduces DP-L1's own silent-failure
 **Verdict: copy first. Revisit only if the snapshot delta proves intolerable for a live
 `mount`.**
 
+> [!NOTE]
+> **MEASURED 2026-09-13 (macOS 26.5, arm64) — all three probes run, and this section stands as written.**
+> Raw output, because two of the three outcomes could have retracted something shipped:
+>
+> ```console
+> $ cat > /tmp/p1.sb <<'EOF'
+> (version 1)
+> (allow default)
+> (deny file-read* (subpath "/Users/Shared/yolo/sbprobe/secret"))
+> EOF
+> $ cat /Users/Shared/yolo/sbprobe/open/abslink            # control: unsandboxed
+> SECRET-BYTES
+> $ sandbox-exec -f /tmp/p1.sb cat …/secret/file.txt       # control: the deny bites the target
+> cat: …/secret/file.txt: Operation not permitted
+> $ sandbox-exec -f /tmp/p1.sb cat …/open/plain.txt        # control: a sibling read still works
+> OPEN-BYTES
+> $ sandbox-exec -f /tmp/p1.sb cat …/open/abslink          # PROBE 1, absolute link
+> cat: …/open/abslink: Operation not permitted
+> $ sandbox-exec -f /tmp/p1.sb cat …/open/rellink          # PROBE 1, relative link
+> cat: …/open/rellink: Operation not permitted
+> ```
+>
+> **Probe 1: TARGET evaluation, both spellings.** The three in-tree statements stand, the symlink
+> half is dead at the MAC layer as well as at DAC, and this section's copy verdict is confirmed
+> rather than inverted. The three controls are what make that a measurement: an unsandboxed read
+> succeeds, the deny demonstrably bites the target directly, and an allowed file in the same
+> directory still reads — so "denied" cannot be the profile failing to load.
+>
+> **Probe 2: canonicalization confirmed, and the latent bug was REACHABLE.** A profile denying
+> `(subpath "/tmp")` did **not** stop `touch /tmp/canary` (rc=0, file created); denying
+> `(subpath "/private/tmp")` denied the same write with `Operation not permitted`. So a rule
+> naming an unresolved path matches nothing. **Fixed** the same day (`e63d4aef`) — and the fix had
+> to move a second call site, because `HomeContaining` was fed the raw path too and
+> `/Users/Shared/yolo/homelink` → `/Users/matt/…` passed the neutral-ground refusal
+> ([DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open)) with `✓ all plan invariants hold`.
+> The dead profile was the only thing making that fail-closed, so resolving for the profile alone
+> would have turned it into a live grant into the invoking user's home.
+>
+> **Probe 3: the free `:ro` is now OBSERVED, and the two errnos are the evidence.** Under a real
+> session profile over the staged tree: `head -c 4 /var/yolo-jail/yolo` succeeded, and
+> `touch /var/yolo-jail/canary` gave **`Operation not permitted`** — where the same touch
+> *unsandboxed* gives **`Permission denied`**. EPERM vs EACCES separates the profile's root write
+> deny from the root-owned directory's DAC, so it is the MAC half that is doing the work, which is
+> exactly what this section predicted from the SBPL text. `/var/yolo-jail/` and
+> `/var/yolo-jail/packs/` both list under the profile, so `DP-L4`'s read is real.
+
 > [!CAUTION]
-> **NOT MEASURED, anywhere: that Seatbelt evaluates the TARGET rather than the link.** Three
+> **The original caution, kept because it is the reasoning the probes were designed against.**
+> *(Superseded 2026-09-13 by the note above; every "NOT MEASURED" below is now measured.)* Three
 > in-tree statements agree and none of them is an observation —
 > [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md)'s *"Any doc
 > that says otherwise about this backend is wrong; this one is the authority"*, the shipped
