@@ -31,7 +31,7 @@ import (
 // Harness
 // ---------------------------------------------------------------------------
 
-// privateDir returns a 0700 temp dir.
+// privateDir returns a 0700 temp dir with a UNIQUELY NAMED leaf.
 //
 // MEASURED, not assumed: t.TempDir()'s numbered subdirectory is created with mode
 // 0777&^umask — 0755 under the default umask — which ensurePrivateDir rightly
@@ -40,16 +40,54 @@ import (
 // per-jail host-services dir have to become 0700 or Listen will fail closed there
 // exactly as it does here.
 //
+// THE LEAF IS MkdirTemp'd RATHER THAN t.TempDir() ITSELF, and that is not cosmetic:
+// crossingIdentity derives a Crossing's JAIL from this directory's BASE NAME
+// (crossing.go), and the crossing recorders isolate one test from another by
+// filtering on exactly that name (captureCrossings, crossing_test.go). t.TempDir()
+// numbers its directories PER TEST — 001, 002, … — so every test's first temp dir
+// was called "001", and a publication under it produced crossings whose jail was
+// "001" in EVERY such test. MEASURED before this change, not inferred: two tests
+// were handed directories with the identical base "001", so the isolation filter
+// could not tell their crossings apart. MkdirTemp's leaf is unique system-wide,
+// which is the property the filter needs and
+// TestPrivateDirNamesAreUniqueAcrossTests pins.
+//
 // It is t.TempDir()-rooted, which is fine for an ENDPOINT FILE (an ordinary file, no
 // path limit) and NOT fine for an AF_UNIX socket. A test that binds one wants
 // privateSocketDir below.
 func privateDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp(t.TempDir(), "yj-ep-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Explicit rather than relying on MkdirTemp's 0700: the mode is the whole
+	// reason this helper exists, and a umask cannot widen what is set here.
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// TestPrivateDirNamesAreUniqueAcrossTests pins the property the crossing recorders'
+// isolation filter rests on, DETERMINISTICALLY — the race it prevents is not.
+//
+// Two subtests stand in for two tests: each gets its own t.TempDir(), and before
+// this helper MkdirTemp'd its leaf both of them were named "001", so a recorder
+// scoped to one jail accepted the other's records in full.
+func TestPrivateDirNamesAreUniqueAcrossTests(t *testing.T) {
+	seen := map[string]string{}
+	for _, name := range []string{"first", "second"} {
+		t.Run(name, func(t *testing.T) {
+			base := filepath.Base(privateDir(t))
+			if prev, dup := seen[base]; dup {
+				t.Fatalf("subtest %q and %q both got a directory named %q — "+
+					"crossingIdentity turns that into the same jail name, so the "+
+					"crossing recorders cannot tell the two tests apart", prev, name, base)
+			}
+			seen[base] = name
+		})
+	}
 }
 
 // sunPathMax is the longest AF_UNIX path that binds on the tighter of the two platforms:
@@ -98,8 +136,15 @@ func privateSocketDir(t *testing.T) string {
 // proves the reproduction is real, and proves the helper is immune to it — the permanent
 // regression test for the latent overrun this guard closes.
 func TestPrivateSocketDirIgnoresALongTMPDIR(t *testing.T) {
-	long := filepath.Join("/tmp", "yj-svc-tmpdir-"+strings.Repeat("x", 60))
-	if err := os.MkdirAll(long, 0o700); err != nil {
+	// MkdirTemp, not a fixed name. The path only has to be LONG; making it a
+	// constant also made it SHARED, so two svcendpoint test binaries running at once
+	// each removed the other's TMPDIR at cleanup and the survivor died as
+	// "TempDir: stat /tmp/yj-svc-tmpdir-xxx…: no such file or directory". Measured
+	// at 4 failures in 160 concurrent runs; `go test` gives a package one process,
+	// so CI never saw it, but a fixed path under a world-writable /tmp is the same
+	// shared-global-state hazard this file's crossing recorders exist to avoid.
+	long, err := os.MkdirTemp("/tmp", "yj-svc-tmpdir-"+strings.Repeat("x", 50)+"-")
+	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(long) })

@@ -17,13 +17,13 @@ import (
 // Harness
 // ---------------------------------------------------------------------------
 
-// crossingRecorder collects everything the process-wide sink is handed, and
+// crossingRecorder collects the crossings of ONE publication directory, and
 // restores the previous sink at cleanup. Every test here installs one: the sink
 // is package state, so leaving one behind would leak into the next test.
 type crossingRecorder struct {
 	mu sync.Mutex
-	// mine is the publication-directory name this recorder accepts, or "" for
-	// everything. See captureCrossings for why a filter is required at all.
+	// mine is the publication-directory name this recorder accepts. It is EMPTY
+	// until scopeTo, and an empty scope keeps NOTHING — see captureCrossings.
 	mine string
 	seen []Crossing
 }
@@ -33,13 +33,21 @@ type crossingRecorder struct {
 // The sink is PROCESS-WIDE, and a crossing is emitted when a connection closes —
 // which can happen after the test that opened it has returned and restored the
 // sink, by which point the next test has installed its own. That is not
-// hypothetical: it turned CI red once already (run 32037731872), asserting one
-// test's front against another test's expectations.
+// hypothetical: it turned CI red twice, on two different tests (runs 32037731872
+// and 34738535819), each time asserting one test's connection against another
+// test's expectations.
 //
 // So the recorder filters on the JAIL name, which crossingIdentity derives from the
-// endpoint file's parent directory — unique per test by MkdirTemp. A recorder with
-// no directory yet accepts everything; a test asserting an exact COUNT must call
-// scopeTo once its front is up.
+// endpoint file's parent directory — unique per test because BOTH directory
+// helpers now MkdirTemp their leaf (privateDir, privateSocketDir).
+//
+// AN UNSCOPED RECORDER KEEPS NOTHING, and that is the fix for the second outage
+// rather than a detail. It used to accept EVERYTHING until scopeTo narrowed it,
+// which made "call scopeTo" a rule a test could silently forget — and all but two
+// of the tests holding a recorder had forgotten it, each one asserting on whichever
+// crossing happened to land first. Keeping nothing turns that omission into a
+// deterministic, immediate failure (await says so by name) instead of an
+// intermittent red CI run against somebody else's connection.
 func captureCrossings(t *testing.T) *crossingRecorder {
 	t.Helper()
 	r := &crossingRecorder{}
@@ -47,8 +55,10 @@ func captureCrossings(t *testing.T) *crossingRecorder {
 	SetCrossingSink(func(c Crossing) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.mine != "" && c.Jail != r.mine {
-			return // another test's connection closing late
+		// "" is unreachable for a real crossing — crossingName maps the degenerate
+		// paths to "unknown" — so an unscoped recorder matches nothing at all.
+		if c.Jail != r.mine {
+			return // another test's connection closing late, or we are not scoped yet
 		}
 		r.seen = append(r.seen, c)
 	})
@@ -56,19 +66,12 @@ func captureCrossings(t *testing.T) *crossingRecorder {
 	return r
 }
 
-// scopeTo narrows a recorder to one publication directory, DROPPING anything already
-// recorded from elsewhere — safe to call after the front is up.
+// scopeTo names the publication directory this recorder accepts. Call it as soon
+// as the listener under test is up: nothing is recorded before it.
 func (r *crossingRecorder) scopeTo(dir string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.mine = filepath.Base(dir)
-	kept := r.seen[:0]
-	for _, c := range r.seen {
-		if c.Jail == r.mine {
-			kept = append(kept, c)
-		}
-	}
-	r.seen = kept
 }
 
 func (r *crossingRecorder) all() []Crossing {
@@ -82,6 +85,13 @@ func (r *crossingRecorder) all() []Crossing {
 // every assertion here needs a bounded wait rather than a bare read.
 func (r *crossingRecorder) await(t *testing.T, n int) []Crossing {
 	t.Helper()
+	r.mu.Lock()
+	scoped := r.mine != ""
+	r.mu.Unlock()
+	if !scoped {
+		t.Fatalf("this recorder was never scoped, so it kept nothing: call " +
+			"rec.scopeTo(<the publication directory>) once the listener is up")
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if got := r.all(); len(got) >= n {
@@ -220,6 +230,7 @@ func startEchoFront(t *testing.T) (string, *upstreamLog) {
 func TestFrontRecordsAcceptedCrossing(t *testing.T) {
 	rec := captureCrossings(t)
 	endpoint, _ := startEchoFront(t)
+	rec.scopeTo(filepath.Dir(endpoint))
 
 	conn, err := Dial(endpoint, 5*time.Second)
 	if err != nil {
@@ -273,6 +284,9 @@ func TestFrontRecordsAcceptedCrossing(t *testing.T) {
 func TestRejectedCrossingIsRecorded(t *testing.T) {
 	rec := captureCrossings(t)
 	s := startServer(t)
+	// The LISTENER's directory, not the bogus endpoint file dialled below: the
+	// record is attributed host-side, which is the property this test asserts.
+	rec.scopeTo(filepath.Dir(s.path))
 
 	ep, err := Read(s.path)
 	if err != nil {
@@ -314,6 +328,7 @@ func TestRejectedCrossingIsRecorded(t *testing.T) {
 func TestOversizedTokenFrameRecordedAsBadFrame(t *testing.T) {
 	rec := captureCrossings(t)
 	s := startServer(t)
+	rec.scopeTo(filepath.Dir(s.path))
 
 	conn := dialPinnedRaw(t, s.path)
 	writeRawTokenFrame(t, conn, tokenFrameMax+1, nil)
@@ -340,6 +355,7 @@ func TestUnreachableUpstreamRecorded(t *testing.T) {
 	defer close(stop)
 	go func() { _ = ServeFront(endpoint, "127.0.0.1", upstream, stop) }()
 	waitProbe(t, endpoint)
+	rec.scopeTo(dir)
 
 	conn, err := Dial(endpoint, 5*time.Second)
 	if err != nil {
@@ -382,6 +398,7 @@ func TestUnreachableUpstreamRecorded(t *testing.T) {
 func TestPreambleIsNotCountedAsJailTraffic(t *testing.T) {
 	rec := captureCrossings(t)
 	endpoint, seen := startEchoFront(t)
+	rec.scopeTo(filepath.Dir(endpoint))
 
 	const payload = "ping"
 	conn, err := Dial(endpoint, 5*time.Second)
@@ -422,6 +439,7 @@ func TestPreambleIsNotCountedAsJailTraffic(t *testing.T) {
 func TestPreambleNeverAppearsInTheResponseDirection(t *testing.T) {
 	rec := captureCrossings(t)
 	endpoint, seen := startEchoFront(t)
+	rec.scopeTo(filepath.Dir(endpoint))
 
 	conn, err := Dial(endpoint, 5*time.Second)
 	if err != nil {
@@ -574,6 +592,10 @@ func TestBothServerShapesSeeTheSamePreambleBytes(t *testing.T) {
 func TestRejectedConnectionNeverReachesADaemon(t *testing.T) {
 	rec := captureCrossings(t)
 	endpoint, seen := startEchoFront(t)
+	// The FRONT's directory. The rejected connection is attributed to the listener
+	// that refused it, never to the bogus endpoint file the client read — which is
+	// the same host-side attribution TestRejectedCrossingIsRecorded pins.
+	rec.scopeTo(filepath.Dir(endpoint))
 
 	ep, err := Read(endpoint)
 	if err != nil {
@@ -590,8 +612,17 @@ func TestRejectedConnectionNeverReachesADaemon(t *testing.T) {
 	if _, err := Dial(bad, 5*time.Second); !errors.Is(err, ErrAuthRejected) {
 		t.Fatalf("Dial with the wrong token: %v, want ErrAuthRejected", err)
 	}
-	if got := rec.await(t, 1)[0]; got.Outcome != CrossingRejected {
-		t.Fatalf("Outcome = %q, want %q", got.Outcome, CrossingRejected)
+	// THE WHOLE RECORDED SET, not got[0]. Exactly one connection has ever been made
+	// to this front and the line above just proved it was refused, so "the first
+	// record that happened to arrive" was never the assertion anyone meant — and in
+	// CI run 34738535819 the record at index 0 said "accepted" while that same
+	// ErrAuthRejected check passed, i.e. index 0 was not this connection at all.
+	// Asserting the set is also STRICTLY MORE teeth than the index was: it fails a
+	// build that records a rejection AND an acceptance for one refused connection,
+	// which got[0] could not see.
+	got := rec.await(t, 1)
+	if len(got) != 1 || got[0].Outcome != CrossingRejected {
+		t.Fatalf("crossings = %+v, want exactly one %q", got, CrossingRejected)
 	}
 	if n := seen.conns(); n != 0 {
 		t.Errorf("the upstream daemon was reached %d times by a REJECTED connection", n)
@@ -689,6 +720,7 @@ func TestNoSinkIsTheDefault(t *testing.T) {
 func TestCrossingCarriesNoSecret(t *testing.T) {
 	rec := captureCrossings(t)
 	endpoint, _ := startEchoFront(t)
+	rec.scopeTo(filepath.Dir(endpoint))
 	ep, err := Read(endpoint)
 	if err != nil {
 		t.Fatal(err)
@@ -769,5 +801,29 @@ func TestRecorderIgnoresAnotherTestsCrossing(t *testing.T) {
 	}
 	if got[0].Service != "mine" {
 		t.Errorf("kept Service = %q, want %q", got[0].Service, "mine")
+	}
+}
+
+// TestAnUnscopedRecorderKeepsNothing pins the second half of the same isolation
+// fix, and it is the half that turned CI red a second time (run 34738535819).
+//
+// A recorder used to accept EVERY crossing until scopeTo narrowed it, so a test
+// that forgot to scope asserted on whichever record the process happened to emit
+// first — its own on a quiet machine, a neighbour's under load. Keeping nothing
+// makes the omission deterministic: await fails by name instead of the assertion
+// failing once in a hundred runs against someone else's connection.
+func TestAnUnscopedRecorderKeepsNothing(t *testing.T) {
+	rec := captureCrossings(t) // deliberately NOT scoped
+
+	sink := CrossingSink()
+	if sink == nil {
+		t.Fatal("captureCrossings did not install a sink")
+	}
+	sink(Crossing{Service: "theirs", Jail: "yj-theirs-99999", Outcome: CrossingAccepted})
+	sink(Crossing{Service: "also-theirs", Jail: "yj-other-11111", Outcome: CrossingRejected})
+
+	if got := rec.all(); len(got) != 0 {
+		t.Fatalf("an unscoped recorder kept %d crossings (%+v), want none — scoping "+
+			"must be what OPENS the recorder, not what narrows an open one", len(got), got)
 	}
 }

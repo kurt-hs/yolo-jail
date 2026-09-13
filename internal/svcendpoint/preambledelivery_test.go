@@ -68,6 +68,7 @@ func TestEndpointDaemonMayWriteBeforeItReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ln.Close() })
+	rec.scopeTo(dir)
 
 	const greeting = "HELLO\n"
 	const payload = "ping"
