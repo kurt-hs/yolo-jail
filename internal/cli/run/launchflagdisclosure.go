@@ -45,14 +45,20 @@ import (
 // beside a banner they have stopped watching. Everything the launcher prints is teed to
 // <workspace>/.yolo/launch.log either way.
 //
-// THE SHELL-ALIAS PATH IS DELIBERATELY NOT DISCLOSED HERE. entrypoint.packAliases folds the
-// same table into a `.bashrc` alias so an interactive `copilot` matches `yolo -- copilot`,
-// and that spelling discloses itself by a mechanism bash already owns and the user already
-// trusts: `type copilot` and `alias` print the definition, and the alias is a legible line
-// in a file inside the jail. It is also not a per-launch rewrite of a command someone typed
-// at yolo — it is jail configuration, which is what the boot writes and boot.log records. A
-// second sentence about it on the host's launch stream would describe something that has
-// not happened yet and may never.
+// THE SHELL-ALIAS PATH IS DISCLOSED BY ITS OWN WRITER, not here, and the reason is the one
+// this file's wrapper rests on: the producer of a rewrite is the only thing that knows it
+// happened. entrypoint.packAliases runs THIS SAME INJECTOR over the bare argv `<bin>` and
+// writes the result as a `.bashrc` alias, then states what it wrote
+// (entrypoint.discloseShellAliases). That line is silent for a year of launches until a pack
+// declares a flag, and it is written where the fact becomes true.
+//
+// It used to be disclosed NOWHERE, on the argument that `type copilot` prints the definition
+// and the alias is a legible line in a file — self-disclosure by a mechanism bash already
+// owns. That is a way to CHECK the fact, not a way to be told it, and a permission bypass
+// nobody was told about is the gap the maintainer closed. What stays true is the half that
+// argued against putting it HERE: the host would be describing a file it has not written
+// yet, on the attach path does not rewrite at all, and on macos-user writes into a shell rc
+// that backend's login zsh never reads. See docs/design/declaration-parity.md §5.6.
 func (o *Options) injectLaunchFlagsDisclosed(packs []*packload.Pack, argv []string) []string {
 	out, inj := packload.InjectLaunchFlags(packs, argv)
 	o.noteLaunchFlagInjection(inj)

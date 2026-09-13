@@ -1386,11 +1386,17 @@ saying "nothing" is how a disclosure surface becomes wallpaper. It is unsuppress
 other two ([`OQ-RO3`](report-tiers.md#why-its-this-way): a launch has no quiet mode).
 
 > [!NOTE]
-> The in-jail shell alias `entrypoint.packAliases` writes from the same table — so that an
-> interactive `copilot` matches `yolo -- copilot` — gets **no launch-stream line of its own**,
-> deliberately. It is jail configuration rather than a rewrite of a command someone typed, and it
-> discloses itself through a mechanism the user already has: `type copilot` and `alias` print the
-> definition, and the alias is a legible line in the jail's own `.bashrc`.
+> **The same declaration has a second mechanism, and it discloses itself from inside the jail.**
+> `entrypoint.packAliases` writes a `.bashrc` alias so an interactive `copilot` matches
+> `yolo -- copilot`, and it builds that alias by running THIS INJECTOR over the bare argv
+> `copilot` — the same function, the same `packload.LaunchInjection` record. It then states
+> what it wrote (`entrypoint.discloseShellAliases`), at the boot that wrote it, because the
+> host cannot: on the attach path it does not regenerate the file, and on macos-user it writes
+> into a shell rc that backend's login zsh never reads. So there is no launch-stream line for
+> the alias, and there is a boot line. Until 2026-09-13 there was neither, on the argument
+> that `type copilot` prints the definition — a way to check the fact, never a way to be told
+> it. Why the two mechanisms cannot become one:
+> [`declaration-parity.md` §5.6](../design/declaration-parity.md#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias).
 
 > [!IMPORTANT]
 > **Which kinds the disclosure covers is DATA, not a switch at the print site.**

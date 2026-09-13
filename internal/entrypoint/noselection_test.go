@@ -86,8 +86,9 @@ func TestConfigurePackSurfacesWithNoPacksWritesNothing(t *testing.T) {
 // two places to change, so a pack updating one would get a shell alias that silently
 // disagreed with the launcher.
 //
-// It is also the interactive half of the notch pin: packAliases folds the AUTONOMOUS posture
-// (LaunchFlagsFor(packs, true)), which is where copilot's `--yolo` now lives, so an
+// It is also the interactive half of the notch pin: packAliases runs the injector at the
+// AUTONOMOUS posture (packload.InjectLaunchFlags, which hardcodes it), which is where
+// copilot's `--yolo` now lives, so an
 // interactive shell in the jail gets the same permission bypass `yolo -- copilot` does. The
 // pack declares no other launch flag — `--no-auto-update` was dropped — so the whole alias is
 // the one flag.

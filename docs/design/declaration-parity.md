@@ -3,19 +3,25 @@ title: "One declaration, many mechanisms — and the four inputs that decide whi
 date: 2026-09-12
 status: in-review
 tags: [confinement, notches, backends, macos-user, guest, parity, silent-drop]
-summary: "The maintainer's principle already holds where it is built: `packages:` ships three mechanisms behind one key. But it quantifies over a composed primitive vector, not over a backend, and that vector has FOUR inputs — notch, mechanism, platform, and which verb is running — of which two are now named, one is a plain word, and one is deliberately nameless. This is the catalog of every declaration a site accepts and does not honor, sorted into four dispositions. Four of its six questions were ruled in review on 2026-09-12; two remain live."
+summary: "The maintainer's principle already holds where it is built: `packages:` ships three mechanisms behind one key. But it quantifies over a composed primitive vector, not over a backend, and that vector has FOUR inputs — notch, mechanism, platform, and which verb is running — of which two are now named, one is a plain word, and one is deliberately nameless. This is the catalog of every declaration a site accepts and does not honor, sorted into four dispositions. Four of its questions were ruled in review on 2026-09-12 and a fifth dissolved; two are live."
 vantage:
   status-chip: true
 ---
 
 # One declaration, many mechanisms — and the four inputs that decide which one runs
 
-**Status:** DESIGN + CATALOG, amended 2026-09-12 after review. Nothing built.
+**Status:** DESIGN + CATALOG, amended 2026-09-13.
 [OQ-DP1](#decision-ledger) through [OQ-DP4](#decision-ledger) are ruled and compacted, and
-[OQ-DP6](#decision-ledger) dissolved rather than being answered; **[OQ-DP5](#open-questions) alone
-remains live.** Every code claim below was re-verified against the tree on 2026-09-12 at
-`55a77e79`, by symbol; three sweep rows that the tree contradicts are corrected in
-[§9](#9-where-the-sweep-was-wrong).
+[OQ-DP6](#decision-ledger) dissolved rather than being answered; **[OQ-DP5](#OQ-DP5) and
+[OQ-DP7](#OQ-DP7) are live.** Every code claim below was re-verified against the tree on
+2026-09-12 at `55a77e79`, by symbol; three sweep rows that the tree contradicts are corrected
+in [§9](#9-where-the-sweep-was-wrong).
+
+**ONE HALF IS BUILT.** The catalog proposed nothing until
+[§5.6](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias) was added on
+2026-09-13: its [DP-B42](#562-the-rows) shipped with it — the in-jail shell alias now discloses
+itself, from the same injector and the same record the host's argv rewrite uses. Everything
+else here is still a catalog.
 
 > **In short.** The principle holds, and the tree proves it — but it quantifies over a
 > composed **primitive vector**, not over a backend, and that vector is computed from
@@ -39,8 +45,9 @@ host-exec call. Nothing here builds the `guest` notch.
 **Start at [§5](#5-silently-broken)** — the bucket that is a defect whichever way the
 principle is settled.
 
-**Needs your ruling:** [OQ-DP5](#OQ-DP5), [OQ-DP6](#decision-ledger). The other four were ruled on
-2026-09-12 and live in the [Decision Ledger](#decision-ledger).
+**Needs your ruling:** [OQ-DP5](#OQ-DP5), [OQ-DP7](#OQ-DP7). The other four were ruled on
+2026-09-12 and live in the [Decision Ledger](#decision-ledger), where [OQ-DP6](#decision-ledger)
+was dissolved.
 
 **Reads with:** [`backend-parity.md`](backend-parity.md) (the same idea on ONE input; it owns
 the backend census and its own questions, which this doc does not re-open),
@@ -235,7 +242,9 @@ is running:
   agent it is not in one. One notch, one mechanism, two verbs, and one of them lies.
 - `packdecl.KindLaunch` at the host notch → `yolo host apply` refuses with a reason that names
   `yolo host -- <program>` as the remedy; `cli.hostExec` — that very verb — does not call
-  `packload.InjectLaunchFlags`, whose only production call site is `run.Run`.
+  `packload.InjectLaunchFlags` at all. Its two production call sites are `run.Run` and
+  `entrypoint.packAliases`, and both are inside the jail's own story
+  ([§5.6](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias)).
 - `render.hostUnimplemented`'s own doc comment concedes the axis in as many words:
   *"It is a limit of this COMMAND, not of the notch."*
 
@@ -518,8 +527,8 @@ vocabulary has no word for.
 | :--- | :--- | :--- | :--- |
 | **DP-B21** | every macos-user disclosure the AGENT would read | `run.backendLimits` has **no production call site**. The briefing section it feeds — *"What this environment does NOT do for you"* — has never rendered. | The sole production `jailcontent.BriefingInput{…}` literal, in `run.refreshJailBriefings`, does not set `BackendLimits`. **This is a stated precondition of a shipped ruling**: `run.noteMacosUserHostByteGaps` says the no-refusal carve-out *"is only defensible while the deficiency is SAID — here, and in the agent's own briefing (backendLimits) — so this line is load-bearing rather than a courtesy."* Half of that precondition does not execute. |
 | **DP-B22** | `yolo --at guest -- <cmd>` (and `--at jail`) | Does not select a notch, does not refuse — **corrupts the argv**. A jail starts, then fails with "command not found" on a token the user typed as a flag. | `cli.stripHostNotch` keeps non-host notches; `cli.parseRunArgs` has no `--at` case, so its `default:` arm treats `--at` as the start of the command. The existing test asserts `RewriteArgv`'s output only and never runs `parseRunArgs` — the callee pinned, the call site not. Ruled by [OQ-DP3](#decision-ledger): refuse. |
-| **DP-B23** | the guarded launch-flag posture | `packload.LaunchFlagsFor(packs, false)` — the documented path by which `--dangerously-skip-permissions` *"vanishes at the host notch"* — has no production caller. Both production callers hardcode `true`. The claim is true of the function and false of the system. | `packload.InjectLaunchFlags` and `entrypoint.writeShellAliases`-side code both pass `true`; the only `false` in the tree is `packload/autonomy_test.go`. Settled by [OQ-DP6](#decision-ledger), still live. |
-| **DP-B24** | pack `launch` contributions at `yolo host -- <cmd>` | Silently absent, with a misdirecting remedy: the host-apply refusal for that kind names *"`yolo host -- <program>` is the notch that does the launching"*, and that verb execs the user's argv unmodified. | `cli.hostExec` builds `argv` and calls `syscall.Exec`; `packload.InjectLaunchFlags`'s only production call site is `run.Run`. Contrast the sibling kinds, which ARE delivered there: `env` through `launch.environ()`, `provider` through `launch.credentialGaps`. Settled by [OQ-DP6](#decision-ledger), still live. |
+| **DP-B23** | the guarded launch-flag posture | `packload.LaunchFlagsFor(packs, false)` — the documented path by which `--dangerously-skip-permissions` *"vanishes at the host notch"* — has no production caller. The claim is true of the function and false of the system. **Sharper since 2026-09-13, not fixed:** there is now exactly ONE production fold of launch flags and it hardcodes the autonomous posture. | `packload.launchFlagClaims(packs, true)`, inside `packload.InjectLaunchFlags`, which both mechanisms in [§5.6](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias) now reach. `LaunchFlagsFor` keeps the posture parameter and is called only from `packload`'s own tests, where the guarded posture is asserted. Settled by [OQ-DP6](#decision-ledger), still live. |
+| **DP-B24** | pack `launch` contributions at `yolo host -- <cmd>` | Silently absent, with a misdirecting remedy: the host-apply refusal for that kind names *"`yolo host -- <program>` is the notch that does the launching"*, and that verb execs the user's argv unmodified. | `cli.hostExec` builds `argv` and calls `syscall.Exec`; neither of `packload.InjectLaunchFlags`'s two production call sites (`run.Run`, `entrypoint.packAliases`) is on the host-exec path. Contrast the sibling kinds, which ARE delivered there: `env` through `launch.environ()`, `provider` through `launch.credentialGaps`. Settled by [OQ-DP6](#decision-ledger), still live. |
 | **DP-B25** | the autonomy posture, in the config reporters | `packload.(*Pack).Surfaces()` hardcodes `SurfacesFor(true)`. `cli.packSurfacesForAgent` calls it with no posture, while its caller `cli.overlayContributionRows` — in the same function — resolves the notch and passes `render.ProfileFor(notch).AgentAutonomy` to `packoverlay.Collect`. One report folds surfaces at the autonomous posture beside an overlay set collected at the guarded one. | `packload.(*Pack).Surfaces`, `cli.packSurfacesForAgent`, `cli.overlayContributionRows`. Half of a migration: `entrypoint.ConfigurePackSurfaces` was converted to read the Target and `Surfaces()` kept the literal for fingerprint stability. |
 | **DP-B26** | a `briefing` contribution's `after: "host:<path>"` | Silently ignored at the host notch. The declaration validates, `yolo pack footprint` reports it, and nothing happens — the kind is honored and one FIELD of it is not, which is one level finer than the no-silent-skip net catches. | `packdecl.Contribution.After`'s only BEHAVIOURAL readers are on the jail path (`run.briefingDestinations`, `run.briefingHostOverlay`); the third, `packdecl`'s manifest transform, only surfaces it as `packdecl.Mount.HostOverlay` for `packload.footprint` to print. The kind is not in `render.hostUnimplemented`, so `cli.notchInapplicable` reports nothing either. The RULING is sound (a host briefing destination is generated wholesale, so there is no user file to prepend); the mechanism is the worst available. |
 | **DP-B27** | pack `service` and `blocked-tool` at the host notch | Refused by name, with a reason that says nothing: *"<kind> is not applicable at this confinement level."* The real reasons exist only in a hand-written manual. | `render.refusalReasons` contains exactly five entries — program, mount, reads-host, state, loophole. `internal/cli/config_ref.txt`'s "AT THE HOST NOTCH" list carries both real reasons and is kept alive by `TestEveryHostNotchInapplicableKindHasItsReasonDocumented`, which makes the reason READABLE without making it true of what the code decides by. Fix: [DP-L6](#6-alignable-with-the-mechanism-and-its-cost). |
@@ -546,6 +555,93 @@ investigation.
 | **DP-B39** | `internal/cli/config_ref.txt`, the `resources` entry | `cpus` *"Default: no limit."* False on Apple Container, which applies half the host's CPUs (min 2) when the key is unset (`run.appliedResourceLimits`, `limitBackendDefault`). |
 | **DP-B40** | [`macos.md`](../guides/macos.md), the backend matrix and the prose beneath it | `network.mode` on macos-user is listed *"❌ not read at all"*, `network.ports` / `forward_host_ports` as *"❌ not wired"*, and the prose says it a third time (*"`macos-user` reads none of the network or scratch-storage keys at all"*). ⚠ **False in the direction that matters.** The keys ARE read — `resolveNetMode` → `run.appliedNetMode` → the briefing — and what they are wired to is the agent's own briefing, which is why [DP-B3](#51-macos-user-read-by-nobody-warned-by-nobody) is a lie rather than an absence. A matrix saying "not read" invites exactly the wrong fix. [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md)'s "Networking, devices, GPU" is again the careful version and is correct. |
 | **DP-B41** | [`macos.md`](../guides/macos.md), twice in the ✅ list and once as an Apple Container row | Advertises a `network.mode: "none"` — *"Network modes (bridge, host, none) on Podman"*, the matrix's *"✅ all three"*, and a dedicated *"`network.mode: "none"` … not honored, silently"* row. ⚠ **`"none"` is a hard config error**: `config.validateNetwork` accepts `{"bridge","host"}` and emits `config.network.mode: expected 'bridge' or 'host'`. The shipped vocabulary is two values; the guide documents three. It matters here because *"reject anything that is not host"* presumes a mode vocabulary, and half of the documented one does not exist. |
+
+### 5.6 One declaration, two mechanisms: the argv rewrite and the shell alias
+
+Every other row in [§5](#5-silently-broken) is a declaration a site accepts and does not
+honor. This one is the inverse, and it belongs in the same bucket: a declaration honored
+**twice**, by two mechanisms, only one of which said what it did.
+[P3](#1-the-principle-and-what-it-does-not-say) is about silence, not about absence — *a
+second mechanism that does not disclose is a parity defect in its own right* — and this is
+the declaration where it costs the most, because what the mechanisms deliver is a permission
+bypass (`--yolo` is `--allow-all-tools --allow-all-paths --allow-all-urls` in copilot's own
+help text).
+
+| | Producer | Runs | Delivers | Disclosed |
+| :--- | :--- | :--- | :--- | :--- |
+| **argv rewrite** | [`run.injectLaunchFlagsDisclosed`](../../internal/cli/run/launchflagdisclosure.go) → `packload.InjectLaunchFlags` | on the HOST, above the backend dispatch, before the container exists | `yolo -- copilot` → `copilot --yolo` | **yes**, since the file exists: a before/after pair naming the pack, in the pre-build window |
+| **shell alias** | [`entrypoint.packAliases`](../../internal/entrypoint/shell.go) → the generated `.bashrc` | IN THE JAIL, at boot (`GenerateBashrc`, a `genStep` of both `entrypoint.Main` and the darwin bootstrap) | typing `copilot` at the jail prompt → `copilot --yolo` | **no** — the gap this section closes |
+
+#### 5.6.1 Can they be ONE path?
+
+The maintainer asked exactly that: *"didn't we decide to simplify this so that there is only
+one path? why can't we have the launch just call whatever is inside the jail as well?"*
+
+**The producer can be one function, and now is. The mechanism cannot be, and what forbids it
+is the entry point** ([§2.4](#24-the-entry-point-is-an-axis-and-it-has-no-name)) **rather than
+a missing abstraction.** The two mechanisms serve two disjoint entry points: an argv the host
+composes for a process that does not exist yet, and a name typed inside a jail by a process
+the host has long since stopped watching. Nothing can compose the second from the first.
+
+Three collapses were examined. The first two are refused by measurable behaviour; the third is
+reachable and is a bigger change than it looks.
+
+**(1) The host stops rewriting argv and lets the alias serve both.** Refused by bash.
+[`entrypoint.execBash`](../../internal/entrypoint/boot.go) runs every launch as
+`bash --rcfile ~/.bashrc -c <command>`. `-c` makes that shell NON-interactive, which means it
+reads no rcfile — the `--rcfile` is inert there — and expands no aliases. The aliases exist for
+a different shell entirely: the second, interactive `bash` that a bare `yolo` ends in. Forcing
+the issue (`shopt -s expand_aliases` plus an explicit `.` of the rcfile in the `-c` string)
+would make every `yolo -- <cmd>` subject to interactive-shell configuration, and would still
+deliver nothing on macos-user, whose account shell is zsh ([DP-B43](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias)).
+
+**(2) The alias moves to the host.** Not a collapse at all — it is the same two mechanisms with
+the second one composed by the wrong process. The host would be writing a file it cannot see
+the effect of, on the attach path does not rewrite at all (the entrypoint regenerates it, from
+inside), and on macos-user writes into a shell rc the login shell does not read. This is also
+why the disclosure this section adds is emitted by the writer rather than by the launcher.
+
+**(3) A generated wrapper in `~/.yolo/bin/launch` becomes the single injection point.**
+Reachable, strictly MORE than either mechanism delivers today — it would catch the
+non-interactive in-jail spelling neither covers
+([DP-B44](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias)) — and it
+carries three costs that have to be paid deliberately rather than discovered:
+
+- **It collides with a shipped ruling.**
+  [`entrypoint.launcherShadows`](../../internal/entrypoint/launchercollision.go) declines to
+  write a launcher for a name `/bin`, `/usr/bin`, the store-package farm or a declared
+  `mise_tools` entry already provides. If the launcher is the only injector, every such pack
+  loses its flags, and the existing warning reports a missing INSTALLER rather than a dropped
+  permission bypass. The relaxation is not free either: today one script is both installer and
+  wrapper, so "write it anyway when it carries flags" also installs a second copy of a binary
+  the image already ships. Splitting the two jobs is the real cost. ⚠ And the other
+  relaxation — spelling the check as *"is this name already resolvable on PATH?"* — is
+  forbidden outright by [`../../AGENTS.md`](../../AGENTS.md): it folds in the dirs a launcher
+  installs INTO, so evergreen delivery works exactly once per home and then goes silent.
+- **The disclosure would have to stay at generation time.** A wrapper that prints on every
+  invocation is the wallpaper [OQ-BP-3](backend-parity.md#open-questions) names. So the
+  boot-time line this section adds is what a wrapper would need too — the delivery moves, the
+  disclosure does not.
+- **The host rewrite would still have to exist.** It is the only producer that reaches every
+  backend and every entry point, and the only one whose disclosure lands in the
+  pre-build window where reading it can still change what the user does.
+
+**Recommendation: keep two mechanisms, share the producer and the record — which is what
+shipped here — and treat the wrapper as its own decision
+([OQ-DP7](#OQ-DP7)).** `packAliases` now calls `packload.InjectLaunchFlags` over the bare argv
+`<bin>`: literally the call the host makes, returning the same `packload.LaunchInjection`
+record, which both disclosures render. The fold that used to sit beside the injector
+(`packload.LaunchFlagsFor`) is gone from the alias path, so the two spellings can no longer
+disagree about which flags exist, in which order, or under which pack's name.
+
+#### 5.6.2 The rows
+
+| id | Declaration | What actually happens | Evidence, by symbol |
+| :--- | :--- | :--- | :--- |
+| **DP-B42** | a pack's autonomous `launch` flags, at the jail PROMPT | **FIXED 2026-09-13.** The alias was written in silence: a user who typed `copilot` got `--allow-all-tools --allow-all-paths --allow-all-urls` with no surface saying so, while the same flags on `yolo -- copilot` got a bold before/after block. The old argument — *"`type copilot` prints the definition"* — is a way to CHECK the fact, not a way to be told it. | `entrypoint.discloseShellAliases` now states each rewrite at the boot that writes it, from the injector's own record. Pinned by `TestShellAliasesAreDisclosed` and `TestTheDisclosedCommandIsTheAliasThatWasWritten`, both driven through `GenerateBashrc` so deleting the call site fails them. |
+| **DP-B43** | the alias mechanism, on macos-user | Accepted, rendered, and **not delivered**: `GenerateBashrc` is a `genStep` of the darwin bootstrap too, and this backend's account shell is zsh, which reads no bash rc file. So the aliases are written into a file nothing on the login path opens. Now LOUD rather than silent — the boot says the flags do not reach the prompt and names the spelling that does — but still undelivered. | `entrypoint.RunDarwinBootstrap`'s `generate_bashrc` step; `macosuser.CreateUserCommands` sets the account `UserShell` to `/bin/zsh` and `run.Run`'s macos-user arm defaults to `/bin/zsh -l`. `entrypoint.WriteLoginRC` is the precedent and the proof: the PATH half of this same `.bashrc` had to be re-emitted into `.zprofile`/`.zshrc` for exactly this reason, and the alias half was never ported. |
+| **DP-B44** | a pack's autonomous `launch` flags, to a NON-INTERACTIVE in-jail shell | Absent, silently, and it is the one spelling no mechanism covers: an agent's own `bash -c claude` expands no alias and passes through no host argv. The generated lazy launcher would be the natural carrier and `exec`s the real binary bare. | `entrypoint.npmLauncherTemplate` and `nativeLauncherTemplate` both end `exec "$REAL_BIN" "$@"`. Named as step 2 of [`agent-auth-modes.md` §7.2](agent-auth-modes.md#72-the-fix), which never shipped. Whether it should is [OQ-DP7](#OQ-DP7) — it is a behaviour change, not a refactor. |
+
 
 ---
 
@@ -825,7 +921,8 @@ false.
 
 Everything else that this doc leans on was re-verified by symbol on 2026-09-12 and held:
 `run.backendLimits` really has zero production callers; `packload.LaunchFlagsFor(_, false)`
-really has none; `render.Target.Fields()` really has none; `macosuser.EndpointGrantCommands`
+really has none — and since 2026-09-13 neither does `LaunchFlagsFor` at either posture
+([DP-B23](#54-the-host-notch-and-the-entry-point)); `render.Target.Fields()` really has none; `macosuser.EndpointGrantCommands`
 really has none; `cli.parseRunArgs` really has no `--at` case; `render.refusalReasons` really
 is missing `service` and `blocked-tool`; `cli.registry` really does map `"stop"`.
 
@@ -916,7 +1013,11 @@ three. So the briefing fixes land together or not at all.
    piece of work in this catalog. Read [§6.1](#61-dp-l1-the-mechanism-is-a-copy-and-what-nobody-has-measured)
    first: the mechanism is a copy under `/var/yolo-jail`, the `:ro` half is free for four of the
    five cells, and probe 3 there is the measurement that has never been made.
-6. **Everything gated on an instrument** — [DP-L15](#6-alignable-with-the-mechanism-and-its-cost)
+6. **The third launch spelling**, if [OQ-DP7](#OQ-DP7) says close it:
+   [DP-B44](#562-the-rows), which is a behaviour change and a launcher split rather than an
+   edit. [DP-B43](#562-the-rows) — macos-user's undelivered aliases — rides with it or with
+   step 1, since a zsh rc is the alternative mechanism there.
+7. **Everything gated on an instrument** — [DP-L15](#6-alignable-with-the-mechanism-and-its-cost)
    and every macos-user row — waits for a Mac.
 
 > [!CAUTION]
@@ -935,7 +1036,9 @@ three. So the briefing fixes land together or not at all.
 
 ## Open Questions
 
-Two. The review of 2026-09-12 ruled four; those are compacted into the
+Two: [OQ-DP5](#OQ-DP5) from the original catalog, and [OQ-DP7](#OQ-DP7) raised by
+[§5.6](#56-one-declaration-two-mechanisms-the-argv-rewrite-and-the-shell-alias). The review of
+2026-09-12 ruled four and dissolved a fifth; those are compacted into the
 [Decision Ledger](#decision-ledger). Everything else in this catalog is an approval, not a
 decision — see [§3](#3-the-four-dispositions-and-how-to-walk-the-catalog).
 
@@ -972,6 +1075,39 @@ decision — see [§3](#3-the-four-dispositions-and-how-to-walk-the-catalog).
    found by the no-silent-skip test rather than by a human. On the second half, **yes, extend to
    config keys** — `internal/config/inherit.go` already maintains a per-key classification table
    with a drift test, which is the shape to copy.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+2. 💬 **OQ-DP7: Should the generated launcher inject the flags too, closing the third spelling?**
+   [DP-B44](#562-the-rows) is the one spelling of a launch that carries no pack-declared flags
+   at all: a NON-INTERACTIVE shell inside the jail — an agent's own `bash -c claude`, a build
+   script, anything not typed at the prompt. It expands no alias and passes through no host
+   argv. `~/.yolo/bin/launch/<bin>` is the natural carrier, already first-on-PATH after the
+   blockers, already generated on both backends, and today it `exec`s the real binary bare.
+
+   **What makes this a decision rather than a fix**, from
+   [§5.6.1](#561-can-they-be-one-path):
+
+   | | The cost | Why it is not incidental |
+   | :--- | :--- | :--- |
+   | **(a)** | [`entrypoint.launcherShadows`](../../internal/entrypoint/launchercollision.go) writes no launcher for a name `/bin` or a declared `mise_tools` entry provides | a pack whose binary the image bakes would get NO flags, reported as a missing installer. Coverage would be partial — the *"accepted and not honored"* shape this whole catalog exists to name |
+   | **(b)** | one script is both installer and wrapper | "write it anyway when it carries flags" also installs a second copy of a binary the image ships. Closing (a) means SPLITTING the two jobs |
+   | **(c)** | the flags would reach commands nobody typed at yolo | a build script calling `claude` gets a permission bypass. Consistent with the notch (autonomy is ON at `jail`), and still a widening of who gets it |
+
+   **What it does NOT decide:** whether the host keeps rewriting argv. It does
+   ([§5.6.1](#561-can-they-be-one-path) (3)): it is the only producer that reaches every backend
+   and every entry point, and the only one whose disclosure lands while the user can still
+   Ctrl-C.
+
+   <!-- vantage: oq id=OQ-DP7 leaning="Close it, but not by making the launcher the sole injector — keep the host argv rewrite either way, and add injection to the wrapper only if the installer/wrapper split is paid for, so a name the image bakes still gets its flags. If that split is not worth it, rule the third spelling DIVERGENT and say so in the briefing, rather than leaving it looking like an oversight." -->
+
+   _Leaning:_ **close it, but never as the SOLE injector, and only with (b) paid for.** A
+   partial injector is worse than none here: it would deliver the bypass for most packs and
+   drop it for the ones the image bakes, which is a silent divergence keyed on something the
+   user cannot see. If the split is not worth its cost, the honest alternative is to rule the
+   third spelling divergent and SAY so — the disposition
+   [§3](#3-the-four-dispositions-and-how-to-walk-the-catalog) reserves for exactly this.
 
    **Answer:**
    > _(empty — fill in when decided)_

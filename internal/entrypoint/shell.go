@@ -11,6 +11,16 @@ import (
 // packAliases writes a shell alias for each pack whose install binary has launchFlags,
 // so an interactive shell gets the same flags a `yolo -- <bin>` invocation does.
 //
+// ONE PRODUCER, TWO MECHANISMS. The alias body is now packload.InjectLaunchFlags applied
+// to the bare argv `<bin>` — literally the call the host makes on `yolo -- <bin>`, not a
+// second fold of the same table beside it. It used to read LaunchFlagsFor and re-assemble
+// the argv here, which agreed with the injector only for as long as nobody changed one of
+// them; the skip rules in particular (a flag the user already typed) lived in the injector
+// alone and were re-implemented nowhere, because the alias's argv is always bare. The two
+// mechanisms cannot be collapsed further — the host rewrite happens before the container
+// exists and the alias only exists inside it — so what is shared is the producer and its
+// record. See docs/design/declaration-parity.md §5.6.
+//
 // NO profile table. It took one until OQ-PT8 shrank the kind: a kind:profile body could
 // carry launch flags, and a selected variant's contribution had to reach the alias or the
 // two spellings of one launch would disagree — the variant's flags on the alias, gone from
@@ -23,27 +33,32 @@ import (
 // to change, and a pack shipping only one of them would get a shell alias silently
 // disagreeing with the launcher.
 //
-// THE `true` IS THE NOTCH, not a default: an interactive shell only exists inside the jail,
-// so the AUTONOMOUS posture is the right one to fold, and a pack's permission-bypass flag
+// THE AUTONOMOUS POSTURE IS THE NOTCH, not a default: an interactive shell only exists
+// inside the jail, so it is the right one to fold, and a pack's permission-bypass flag
 // (claude's --dangerously-skip-permissions, copilot's --yolo) reaches the alias for the same
-// reason it reaches `yolo -- <bin>`. Nothing here may grow a host spelling: the host notch
-// injects no flags at all, and an alias written from this function would be the one path that
-// did.
+// reason it reaches `yolo -- <bin>`. The injector hardcodes that posture, which is what
+// makes it the right call here and would make it the WRONG one at the host notch: nothing
+// in this file may grow a host spelling.
 func packAliases(e *Env) string {
 	packs, err := LoadJailPacks(e)
 	if err != nil {
 		return ""
 	}
-	flagsByBin := packload.LaunchFlagsFor(packs, true)
 	var lines []string
+	var rewrites []*packload.LaunchInjection
 	for _, p := range packs {
 		// Every honored install, not the first: a pack declaring two programs with
 		// launchFlags for both needs two aliases, for the same reason it needs two
 		// launchers (shims.go).
 		installs, _ := p.HonoredInstalls()
 		for _, inst := range installs {
-			flags := flagsByBin[inst.Bin]
-			if len(flags) == 0 {
+			// Nil means the injector added nothing — this binary has no declared flags,
+			// the same skip the old `len(flags) == 0` made. A pack whose install declares
+			// a bin another pack gives the flags to is still aliased here, and the record
+			// names THAT pack: the merge is "later pack wins", so the pack that installs a
+			// binary and the pack that claims its flags need not be the same one.
+			argv, inj := packload.InjectLaunchFlags(packs, []string{inst.Bin})
+			if inj == nil {
 				continue
 			}
 			// Quoted, not interpolated into a '…' pair. The alias line is shell source the
@@ -53,11 +68,79 @@ func packAliases(e *Env) string {
 			// shell word that expands back to exactly the argv the direct invocation
 			// passes — byte-identical to the old rendering for the common all-safe case,
 			// where Join quotes nothing and Quote wraps the spaces.
-			argv := append([]string{inst.Bin}, flags...)
 			lines = append(lines, "alias "+inst.Bin+"="+shquote.Quote(shquote.Join(argv)))
+			rewrites = append(rewrites, inj)
 		}
 	}
+	discloseShellAliases(e, rewrites)
 	return strings.Join(lines, "\n")
+}
+
+// discloseShellAliases states what the aliases above change, on the launch terminal.
+//
+// THE DISCLOSURE THE ALIAS PATH DID NOT HAVE. A launch that rewrites the argv you typed at
+// yolo says so (run.noteLaunchFlagInjection: "yolo CHANGED the command you asked for"), and
+// until this function the OTHER half of the same declaration — the alias that changes what
+// `copilot` means at the jail prompt — was written in silence. The boundary is the one
+// packhostgrants.go names: "the boundary today is DISCLOSURE, not consent", and copilot's
+// `--yolo` is `--allow-all-tools --allow-all-paths --allow-all-urls` in copilot's own help.
+// A user who types `copilot` and gets that has a right to read the sentence, and `type
+// copilot` is not a sentence anyone reads unprompted.
+//
+// HERE, AND NOT ON THE HOST'S LAUNCH STREAM. The host could fold the same table — it has the
+// staged packs — but it would be describing a file it has not written yet, from a process
+// that on the attach path does not rebuild it at all. The writer is the only thing that
+// knows, so the writer says so; that is the same argument packload.LaunchInjection makes for
+// returning the record rather than letting the print site re-derive it.
+//
+// NOT IN THE BRIEFING, which is the other surface that suggested itself, because the
+// briefing's reader is the one party this mechanism cannot reach. An agent spawns `copilot`
+// through `bash -c`, which is non-interactive: bash reads no rcfile and expands no aliases
+// there (it is why `yolo -- copilot` needs the host rewrite at all). A briefing section
+// would describe, to the only reader it is written for, a thing that never happens to them.
+//
+// COMPRESSED, NEVER SUPPRESSED (OQ-RO3). The entrypoint runs on attach as well as on a
+// fresh boot, so these lines print on every entry into the jail; that is the cadence every
+// other boot disclosure has, and the compression — one header carrying the inspect-and-
+// bypass hint, one line per changed command — is the density control a launch stream gets
+// instead of a quiet flag. Silent when no pack declared a flag, which is most jails: a
+// disclosure that prints "nothing" is how a disclosure surface becomes wallpaper (OQ-BP-3).
+func discloseShellAliases(e *Env, rewrites []*packload.LaunchInjection) {
+	if len(rewrites) == 0 {
+		return
+	}
+	if e.Vars[DarwinLoginPathEnv] != "" {
+		// macos-user: the aliases are written and NOT delivered. This backend's account
+		// shell is zsh (macosuser.go's dscl UserShell, and the launch's own `/bin/zsh -l`
+		// for a bare `yolo`), and zsh reads none of the bash rc files. WriteLoginRC is the
+		// existing proof: the PATH half of this same .bashrc had to be re-emitted into
+		// .zprofile/.zshrc for exactly this reason, and the alias half was never ported.
+		//
+		// So the honest line is a warning rather than a disclosure — "absent and loud"
+		// beats "absent and silent" (docs/reference/macos-user-nix-and-features.md), and a
+		// disclosure copied here verbatim would assert a rewrite that does not happen.
+		// It names the one spelling that DOES carry the flags on this backend, because a
+		// warning whose remedy is unstated reads as a defect report rather than a fact
+		// about the environment.
+		var bins []string
+		for _, inj := range rewrites {
+			bins = append(bins, inj.Before[0])
+		}
+		e.warn("pack launch flags are written as bash aliases in " + e.BashrcPath() +
+			", and this account's login shell is zsh, which does not read it: " +
+			strings.Join(bins, ", ") + " typed at the prompt here run WITHOUT them" +
+			" (`yolo -- <bin>` still injects them, and says so). Start `bash` to get the aliases.")
+		return
+	}
+	e.warn("yolo CHANGED what these commands mean in this jail's interactive shell " +
+		"(`type <name>` prints the alias; `\\<name>` runs the binary without it):")
+	for _, inj := range rewrites {
+		// shquote.Join on the AFTER side for the reason the host's block quotes both of
+		// its argvs: the line is meant to be copy-pasteable, and an argument containing a
+		// space must not be able to masquerade as two.
+		e.warn("  you type: " + inj.Before[0] + "  →  bash runs: " + shquote.Join(inj.After) +
+			"  (added by pack " + inj.Pack + ")")
+	}
 }
 
 // YOLO_HOST_DIR (default "unknown"); mise_shims is the MISE_SHIMS path.

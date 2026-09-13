@@ -3,14 +3,13 @@ package entrypoint
 // profilealias_test.go pins the SHELL half of a pack's launch flags against the fold, and
 // pins the CALL SITE that does the folding.
 //
-// Two consumers read one pack's launch flags, and they must agree because shell.go says so:
-// packAliases exists so "an interactive shell gets the same flags a `yolo -- <bin>`
-// invocation does". Both read the selected autonomy posture, which since the `launch` kind
-// was retired is the ONLY source there is. Before OQ-PT8 they ALSO read a profile table,
-// because a kind:profile body could carry launch flags; that body is gone, so the two
-// spellings now agree by construction rather than by both folding the same table — and the
-// parity pin below is what would catch a second consumer growing a third source of flags on
-// one side only.
+// Two MECHANISMS deliver one pack's launch flags, and they must agree because shell.go says
+// so: packAliases exists so "an interactive shell gets the same flags a `yolo -- <bin>`
+// invocation does". They now share a PRODUCER — both are packload.InjectLaunchFlags, one
+// over the user's argv and one over the bare `<bin>` — so the agreement below is close to
+// tautological, and that is the point: it is what fails if the alias ever goes back to
+// assembling its own argv beside the injector. Before OQ-PT8 they ALSO read a profile
+// table, because a kind:profile body could carry launch flags; that body is gone.
 //
 // The fixture is a real pack on disk read by LoadJailPacks, not a hand-built struct:
 // the alias derivation starts from the loaded set, and a test that bypassed the loader
@@ -63,7 +62,7 @@ func aliasEnv(t *testing.T, root, profiles string) *Env {
 }
 
 // The alias is derived from the pack's declared flags THROUGH packAliases — not from a
-// hand-built map — so deleting the LaunchFlagsFor call from packAliases fails this test
+// hand-built map — so deleting the injector call from packAliases fails this test
 // rather than leaving the alias silently empty while the fold stays green.
 func TestPackAliasesFoldTheLaunchContributions(t *testing.T) {
 	root := profileLaunchPack(t)
@@ -87,11 +86,12 @@ func TestPackAliasesFoldTheLaunchContributions(t *testing.T) {
 	}
 }
 
-// THE PARITY: both consumers of a pack's launch list must produce the same flags. The
-// direct invocation is represented by packload's injection — the same call the host CLI
-// makes — and the alias by packAliases. Before the shrink this test took a profile table on
-// both sides, which is what made it a parity pin; now it pins the weaker (and sufficient)
-// fact that neither side has a second source the other lacks.
+// THE PARITY: both mechanisms must produce the same flags. The direct invocation is
+// represented by packload's injection — the same call the host CLI makes — and the alias by
+// packAliases, which now makes that very call over the bare `acme`. So this asserts the
+// rendering around it: the alias must be the injected argv, shell-quoted, with the user's
+// own arguments belonging to the direct path alone. It fails the moment either side
+// re-derives the flag list instead of taking the injector's.
 func TestAliasAndDirectInvocationAgree(t *testing.T) {
 	root := profileLaunchPack(t)
 	e := aliasEnv(t, root, `{"acme":"bedrock"}`)

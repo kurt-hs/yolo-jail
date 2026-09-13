@@ -89,12 +89,20 @@ func TestTheArgvDisclosureIsSilentWhenNothingChanged(t *testing.T) {
 	}
 }
 
-// TestLaunchFlagInjectionHasOneDisclosedCallSite: packload.InjectLaunchFlags is reachable
-// from production code through injectLaunchFlagsDisclosed and nowhere else.
+// TestLaunchFlagInjectionHasOneDisclosedCallSite: in THIS package, packload.InjectLaunchFlags
+// is reachable through injectLaunchFlagsDisclosed and nowhere else.
 //
 // The wrapper exists so the disclosure cannot be separated from the rewrite by moving a
-// line; that is only true while it is the sole caller. Same instrument, same reason, as
+// line; that is only true while it is the sole caller HERE. Same instrument, same reason, as
 // TestStartLoopholesHasOneDisclosedCallSite.
+//
+// THE PACKAGE BOUND IS DELIBERATE, and it is not a weakening. The injector has a second
+// production caller by design — entrypoint.packAliases runs it over the bare `<bin>` to build
+// the jail's shell alias — and that call site carries its own disclosure, pinned by its own
+// deletion test (entrypoint/shellaliasdisclosure_test.go). One producer, two mechanisms, one
+// disclosure each: docs/design/declaration-parity.md §5.6. A tree-wide scan here would fail
+// on that call site and the fix would be to delete the second disclosure's own pin, which is
+// backwards.
 func TestLaunchFlagInjectionHasOneDisclosedCallSite(t *testing.T) {
 	files, err := os.ReadDir(".")
 	if err != nil {
