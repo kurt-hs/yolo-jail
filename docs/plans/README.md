@@ -51,8 +51,11 @@ closes; the drift clusters there rather than spreading evenly.
 # 1. Every relative doc link resolves.              (found: 5, now 0)
 # 2. Every live open question is countable.         (found: 6 invisible to the first regex)
 $ rg -c '^(#{2,4} |\s*[0-9]+[a-z]?\. |\s*[-*] )(<a id="[^"]*"></a> ?)?💬' docs/ --sort path
-# 3. Every backticked SHA resolves in THIS repo.    (found: 3 phantoms cited as evidence)
-$ git rev-parse --verify --quiet <sha>^{commit}
+# 3. Every backticked SHA resolves in THIS repo.    (found: 3 phantoms cited as evidence
+#    on 2026-08-23; 2 more on 2026-09-13 — see the note below for why it keeps finding them)
+$ for s in $(rg -o '`[0-9a-f]{7,40}`' docs/ internal/ -g '!.claude' \
+    | sed 's/.*`\([0-9a-f]*\)`.*/\1/' | grep -v '^[0-9]*$' | sort -u); do   # drop CI run ids
+    git rev-parse --verify --quiet "$s^{commit}" >/dev/null || echo "UNRESOLVED: $s"; done
 # 4. Every backticked code path exists.             (found: 1 real rot among 15 hits)
 # 5. Every in-doc heading link resolves.            (clean — but only with a CORRECT slugger:
 #    GitHub maps each space to its own hyphen, so an em-dash heading yields `--`. A naive
@@ -67,6 +70,25 @@ $ rg -n '^\*\*Status:\*\* ' docs/design docs/plans | rg -v \
 **Checks 3 and 4 need an allowlist or they cry wolf**: upstream `flake.lock` revs and other
 projects' source are legitimately unresolvable, and a doc *recording a deletion* is supposed to name
 the thing it deleted. The signal is a path or SHA offered as **evidence**, not one named as history.
+
+**What check 3's allowlist actually holds**, swept 2026-09-13: four kinds, and only the first two
+are the ones the paragraph above anticipated. Upstream revs (nixpkgs, via `flake.lock`); other
+projects' commits quoted in research (opencode, the boundary broker); **git *tree* hashes**
+(`kubernetes/kubernetes`' `master:hack` in
+[`agent-config-distribution.md`](../research/agent-config-distribution.md)), which fail `^{commit}`
+by construction rather than by rot; and **podman image IDs** in
+[`minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) and
+[`disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md), which are not git objects at
+all. The last two are why the check prints a hex string it cannot classify instead of calling one a
+defect.
+
+**Why the class recurs — the half worth knowing.** Commits here are rewritten between being authored
+in a jail and landing on the remote, so a SHA can be **correct when typed and dead by the time
+anyone reads it**. No amount of author care removes it, which is what makes check 3 a standing sweep
+rather than a one-off cleanup. The 2026-09-13 run is the evidence: both phantoms it found were
+written on 2026-09-04, *after* the 2026-08-23 sweep had pronounced the corpus clean — a doc cited
+`8631caeb` and `04b3f039` for two `packs/zai` fixes that had landed as `3d9b1aa2` and `8e901423`.
+Everything else it flagged was allowlist.
 
 **`uvx vantage-check docs/` subsumes checks 1 and 5** and is the gate a doc commit passes:
 `link/missing-target` is check 1, and `link/dead-section-anchor` is check 5 for both same-document

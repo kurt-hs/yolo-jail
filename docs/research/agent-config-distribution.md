@@ -619,8 +619,13 @@ pinned OID.
 Three consequences worth naming:
 
 1. **In a monorepo the tree hash is the *right* pin.** `origin/main` moves
-   constantly; `main:skills/python` usually doesn't. Measured divergence:
-   `master:hack` = `55915fb0`, `release-1.30:hack` = `bd9477ee`.
+   constantly; `main:skills/python` usually doesn't. Measured divergence in
+   `kubernetes/kubernetes`, the same repo the clone benchmarks above use — these are
+   **tree** hashes, so they resolve with `git rev-parse <ref>:<path>` against *that*
+   remote and never against this one: `master:hack` = `55915fb0` at the time of
+   measurement, `release-1.30:hack` = `bd9477ee`. **Re-checked 2026-09-13** and the
+   row argues itself: the frozen release branch still reads `bd9477ee`, while
+   `master:hack` has moved on to `01fa2497`.
 2. **Free no-op detector.** Ref moved but subtree hash unchanged → skip
    re-materializing entirely.
 3. **A commit SHA *is* fetchable directly** — verified against GitHub for both a

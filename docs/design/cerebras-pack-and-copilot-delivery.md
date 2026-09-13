@@ -13,7 +13,7 @@ checked is the pack as built, read back against this doc on 2026-09-05, which co
 (the warning below). Accepted 2026-09-04, and **re-stamped because "this doc designs what
 remains" was false: both halves shipped within a day of acceptance.** The zai-side fix this
 workstream also produced (the recommended-env alignment and the wire-true alias correction)
-shipped as `8631caeb` and `04b3f039`; `packs/cerebras` landed as `29aa0925` and the copilot
+shipped as `3d9b1aa2` and `8e901423`; `packs/cerebras` landed as `29aa0925` and the copilot
 `yolo.env` derive as `033eccc5`, both 2026-09-04.
 
 > [!WARNING]
@@ -122,7 +122,7 @@ A `yolo.env("copilot", …)` producer, same rules as claude's:
   arm it).
 - **Key**: `COPILOT_PROVIDER_API_KEY` from the hydrated `api_key`, when present.
 - **WIRE_MODEL note**: the ids are sent verbatim (copilot has no `[1m]`-style syntax),
-  which the wire-true alias rule (04b3f039) already guarantees.
+  which the wire-true alias rule (`8e901423`) already guarantees.
 
 Census consequences: copilot's README row in every provider pack's delivery table stops
 saying "no provider delivery"; providers.md's per-agent table gains the copilot row and

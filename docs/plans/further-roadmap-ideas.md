@@ -82,6 +82,12 @@ anchors** in a single doc — no claim wrong, every pointer off.
    and **three are the corrected phantoms being *named as* phantoms** in the prose that fixes them.
    A checker that cannot tell "cited as evidence" from "cited as a known-bad value" reports 9 where
    the answer is 0, and gets switched off in a week.
+   **That 0 is a result for this date, not a steady state** — re-running the rule on 2026-09-13
+   found two fresh phantoms, both authored on 2026-09-04, *after* this sweep. Commits are rewritten
+   between being authored in a jail and landing on the remote, so the corpus re-dirties on its own;
+   see [`README.md`](README.md#keeping-this-corpus-honest--the-five-checks-so-they-are-re-runnable)
+   check 3, which now carries the sweep as a runnable loop. It strengthens this verdict rather than
+   softening it: the rule pays out on new work, not just once on a backlog.
 
 Rule 2 is the valuable half: it is a link checker for decisions rather than URLs. Rule 3 is the one
 this session would have needed. **Rules 4 and 5 were both run by hand on 2026-08-23 before being
