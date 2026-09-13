@@ -802,7 +802,7 @@ it) and a delivery mechanism resting on it reproduces DP-L1's own silent-failure
 > **Probe 2: canonicalization confirmed, and the latent bug was REACHABLE.** A profile denying
 > `(subpath "/tmp")` did **not** stop `touch /tmp/canary` (rc=0, file created); denying
 > `(subpath "/private/tmp")` denied the same write with `Operation not permitted`. So a rule
-> naming an unresolved path matches nothing. **Fixed** the same day (`e63d4aef`) — and the fix had
+> naming an unresolved path matches nothing. **Fixed** the same day (`4b25d7b9`) — and the fix had
 > to move a second call site, because `HomeContaining` was fed the raw path too and
 > `/Users/Shared/yolo/homelink` → `/Users/matt/…` passed the neutral-ground refusal
 > ([DP-D15](#7-ruled-divergent-and-the-ones-i-would-re-open)) with `✓ all plan invariants hold`.

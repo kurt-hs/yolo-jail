@@ -25,7 +25,7 @@ changed on 2026-09-13 that is now waiting on hardware, in the order that buys th
 > `DP-L4`'s read is real (EPERM for the write, EACCES for the same write unsandboxed — the two
 > errnos are what prove it is the profile and not the directory's owner). Probe 2 found the latent
 > bug **reachable**, and fixing it exposed a second defect it had been masking: a symlinked
-> workspace evaded the neutral-ground refusal. Both fixed in `e63d4aef`.
+> workspace evaded the neutral-ground refusal. Both fixed in `4b25d7b9`.
 >
 > **[§2](#2-the-briefing-batch-on-the-arm-no-test-executes) and
 > [§3](#3-the-new-stderr-notices-in-real-output) are DONE TOO** — one launch, 2026-09-13. The
@@ -102,7 +102,7 @@ It is the only measurement in this file that unblocks more than itself:
 | Probe | Result | What followed |
 | :--- | :--- | :--- |
 | 1 — the crux | `Operation not permitted` for an absolute AND a relative link, with three controls behaving | Target evaluation. The three statements stand, the symlink half is dead, `DP-L1` stays a copy. **No retraction.** |
-| 2 — canonicalization | deny `(subpath "/tmp")` → `touch /tmp/canary` **succeeded**; deny `(subpath "/private/tmp")` → the same write **denied** | The latent bug is REACHABLE (Go's `os.Getwd` honours `$PWD`, so an ordinary `cd` reaches it). Measured consequence: the workspace is unwritable under the profile yolo built. **Fixed `e63d4aef`** — plus the bypass below. |
+| 2 — canonicalization | deny `(subpath "/tmp")` → `touch /tmp/canary` **succeeded**; deny `(subpath "/private/tmp")` → the same write **denied** | The latent bug is REACHABLE (Go's `os.Getwd` honours `$PWD`, so an ordinary `cd` reaches it). Measured consequence: the workspace is unwritable under the profile yolo built. **Fixed `4b25d7b9`** — plus the bypass below. |
 | 3 — the staged tree | read OK; write `Operation not permitted` sandboxed vs `Permission denied` unsandboxed | The free `:ro` is observed, not predicted. `DP-L4`'s read is real. |
 
 ⚠ **Probe 2's fix could not be made alone, and that is the part worth carrying forward.**
