@@ -195,7 +195,7 @@ Installed into `~/.npm-global/bin` (`NPM_CONFIG_PREFIX`, set in
     `@modelcontextprotocol/server-sequential-thinking` (`shell.go:169-175`).
   - LSP servers, gated on configured `lsp_servers`: `pyright` (python),
     `typescript-language-server` + `typescript` (typescript) —
-    `internal/cli/run/lsp.go:15-19`, installed in `shell.go:194-222`.
+    `internal/config/lsp.go`, installed in `shell.go`.
 - **Lazy per-agent launchers** in `~/.yolo-shims/` (`internal/entrypoint/shims.go:247`):
   agent CLIs are **not** installed at boot ("Agent CLIs … are NOT updated here …
   Lazy-update launchers … handle install/update on first use", `shell.go:164-166`).
@@ -425,7 +425,7 @@ before restarting.
 - mise store mount: `internal/cli/run/assemble.go:19,368`, `assemble_parts.go:24`.
 - Provisioning (`mise install`): `internal/cli/run/command.go:19-29`.
 - Bootstrap (npm/go/pip installs): `internal/entrypoint/shell.go:148-256`.
-- LSP install recipes: `internal/cli/run/lsp.go:15-23`.
+- LSP install recipes: `internal/config/lsp.go` (`config.LSPInstalls`, shared by both backends).
 - Agent install specs (npm + native claude): `internal/agents/agents.go:57-154`.
 - Lazy agent launchers: `internal/entrypoint/shims.go:247-340`.
 - MCP node/npx wrappers: `internal/entrypoint/mcp_wrappers.go:7-77`.

@@ -441,15 +441,6 @@ func touchFile(p string) {
 	}
 }
 
-// lspServerNames returns the lsp_servers config keys in load order.
-func lspServerNames(cfg *jsonx.OrderedMap) []string {
-	m := cfgMap(cfg, "lsp_servers")
-	if m == nil {
-		return nil
-	}
-	return m.Keys()
-}
-
 // briefingHostOverlay returns the host-home path a briefing `after` prepends (its
 // `after: "host:<path>"`), or "" for none. Replaces the old filename-based
 // magic-string dispatch (isBriefingMount) — a briefing is now a kind, not a mount

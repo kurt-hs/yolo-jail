@@ -65,7 +65,7 @@ type assembleInput struct {
 	yoloVersion  string // _git_describe_version() or "unknown"
 	mountTargets map[string]struct{}
 	// lspNPMInstall / lspGoInstall are the resolved YOLO_LSP_*_INSTALL values
-	// (ResolveLSPInstalls over the lsp_servers keys).
+	// (config.LSPInstalls over the lsp_servers keys).
 	lspNPMInstall string
 	lspGoInstall  string
 	// storePruneOK is true when the host CLI proved no other jail is live and

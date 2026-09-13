@@ -272,7 +272,7 @@ func seedGoBin(t *testing.T, home string, size int, names ...string) {
 // was invisible: the catalog walked node_modules and ~/.local/bin and never $GOBIN, so a go
 // tool the bootstrap's LSP arm installed under a declaration that has since gone had no line
 // anywhere. MEASURED in this jail on 2026-09-02: ~/go/bin held gopls AND mcp-language-server,
-// the latter's only consumer deleted with the gemini agent (internal/cli/run/lsp.go:50-55),
+// the latter's only consumer deleted with the gemini agent (internal/config/lsp.go),
 // and the boot catalog named five orphans — none of them either one.
 //
 // A missing finder is worse than an unreported directory once an explicit removal act reads

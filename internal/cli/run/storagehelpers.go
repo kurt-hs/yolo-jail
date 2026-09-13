@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/storage"
@@ -12,8 +13,12 @@ import (
 
 // resolveLSPInstalls resolves the config's lsp_servers keys into the
 // newline-joined (npm, go) install lists.
+//
+// The recipe table it resolves through lives in `internal/config` (config/lsp.go) rather
+// than here, because macos-user composes the same two values into its own bootstrap and
+// stage environments and cannot import this package — it is imported BY it.
 func resolveLSPInstalls(cfg *jsonx.OrderedMap) (npm, goPkgs string) {
-	return ResolveLSPInstalls(lspServerNames(cfg))
+	return config.LSPInstalls(cfg)
 }
 
 // jailMiseStoreDir returns /mise inside a jail (nested), else GLOBAL_MISE.

@@ -822,7 +822,7 @@ Two consequences worth stating separately:
 - **The LSP sentinel is the only install/uninstall reconciliation loop in the system, and it is one
   field short of being a receipt** — it stores `kind:identifier` lines (`npm:pyright`,
   `go:golang.org/x/tools/gopls@latest`; the format beside `SENTINEL` in
-  `internal/entrypoint/shell.go`, the recipes in `internal/cli/run/lsp.go`) and never what the
+  `internal/entrypoint/shell.go`, the recipes in `internal/config/lsp.go`) and never what the
   install *resolved to*. That makes
   it the cheapest available prototype for P3.
 

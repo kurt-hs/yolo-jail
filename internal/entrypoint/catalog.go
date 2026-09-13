@@ -487,7 +487,7 @@ func RenderSize(n int64) string {
 }
 
 // splitLSPInstallList splits a YOLO_LSP_*_INSTALL value, which is newline-separated with
-// empty lines allowed (internal/cli/run/lsp.go joins the recipe packages with "\n").
+// empty lines allowed (internal/config/lsp.go joins the recipe packages with "\n").
 func splitLSPInstallList(v string) []string {
 	var out []string
 	for _, line := range strings.Split(v, "\n") {
