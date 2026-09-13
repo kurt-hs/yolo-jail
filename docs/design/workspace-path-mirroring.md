@@ -8,7 +8,7 @@ summary: "Two questions, one verdict. Mirroring just the workspace is a good ide
 
 # Should the jail mount the workspace at the host's own path?
 
-**Status:** DESIGN SKETCH, 2026-09-04. **Reopened and extended the same day** — see the
+**Status:** SKETCH, 2026-09-04. **Reopened and extended the same day** — see the
 postscript. Nothing built, and my recommendation is still that nothing should be, but the
 reason has changed completely. This doc exists to make the *no* checkable rather than
 reflexive — the question was asked once before, answered no for reasons that have since

@@ -1,8 +1,8 @@
 # AGY (Google Antigravity CLI) Support Plan
 
-**Date:** 2026-07-22. **Status:** ✅ Done — born directly on the prism; all eight
-touchpoints landed (registry, manifest surface, `AgyDir`, `ConfigureAgyPrism`,
-boot wiring, preflight, docs, tests).
+**Status:** BUILT, 2026-07-22 — UNMEASURED: no runtime observation is recorded. Born directly on
+the prism; all eight touchpoints landed (registry, manifest surface, `AgyDir`,
+`ConfigureAgyPrism`, boot wiring, preflight, docs, tests).
 
 > [!WARNING]
 > **The mechanism this plan targets no longer exists (noted 2026-08-23).** `agy` shipped and is now

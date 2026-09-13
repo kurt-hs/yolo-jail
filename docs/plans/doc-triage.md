@@ -1,7 +1,8 @@
 # Documentation triage — proposed reorganization (for review)
 
-**Status:** ✅ EXECUTED 2026-07-03 (`5eb1643`, `9721660`) — kept as the record of what was archived
-and why, not as a pending proposal.
+**Status:** DESIGN, 2026-07-03 — the triage itself was ✅ EXECUTED that day (`5eb1643`, `9721660`)
+and is kept as the record of what was archived and why, not as a pending proposal; the 2026-09-12
+graduation assessment appended to it holds **one live ruling**.
 
 > [!NOTE]
 > **RE-RUN 2026-09-09, and this file's taxonomy is what it ran on.** Every doc in `docs/design/` was

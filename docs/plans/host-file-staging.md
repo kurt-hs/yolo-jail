@@ -1,7 +1,7 @@
 # Host-file staging — a user-extensible set of host files, one engine
 
-**Status: ✅ SHIPPED 2026-07-25.** All four phases are implemented, unit-tested,
-and verified end-to-end in a nested jail. **Read [What is built, and what is
+**Status:** BUILT, 2026-07-25 — MEASURED: verified end-to-end in a nested jail. All four phases
+are implemented and unit-tested. **Read [What is built, and what is
 not](#what-is-built-and-what-is-not) first** — the body of this doc is the original
 DESIGN and still reads in the future tense; that section is the authority on what
 the code actually does and what remains open.

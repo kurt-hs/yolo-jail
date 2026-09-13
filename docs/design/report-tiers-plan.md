@@ -1,14 +1,14 @@
 ---
 title: "Report tiers — implementation sketch"
 date: 2026-09-10
-status: draft
+status: deprecated
 tags: [plan, sketch, cli, host-apply, reporting]
 summary: "Parking lot for the implementation material that surfaced while writing report-tiers.md — what the tests pin, where the survey grows, which pointers move with the default view. A sketch: not a hand-off, and nothing here decides behavior; the design wins on any disagreement."
 ---
 
 # Report tiers — implementation sketch
 
-**Status:** CONSUMED — the design shipped on 2026-09-12 and this sketch is history. Opened 2026-09-10
+**Status:** SUPERSEDED, 2026-09-12 — consumed: the design shipped and this sketch is history. Opened 2026-09-10
 beside [`report-tiers.md`](report-tiers.md), which owns every behavioral decision and is the doc to
 read; where the two disagree, **the design wins**. It is kept for the traps it names, not as a
 hand-off: the build order it points at is [§9](report-tiers.md#9-what-i-would-build-in-order) of the

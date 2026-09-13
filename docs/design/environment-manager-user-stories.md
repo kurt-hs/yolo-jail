@@ -1,6 +1,6 @@
 # User Stories: meeting yolo when it manages the environment, not just the box
 
-**Status:** STORIES + OPEN QUESTIONS, written 2026-07-27; **re-verified against the tree
+**Status:** DESIGN, 2026-07-27 — user stories, with their open questions; **re-verified against the tree
 2026-08-23, anchors repinned 2026-09-02.** Most of the verbs the stories exercise **have since
 shipped** (`apply`, `yolo host apply` — the `apply --host` spelling this line used to name was
 REMOVED outright by `e23df4aa`, 2026-08-30 — `apply --sealed`, `describe`, `check-deps`, the

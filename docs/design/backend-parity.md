@@ -8,7 +8,7 @@ summary: "Issue #39 was not one bug. A 48-agent sweep found 42 candidates and co
 
 # Three backends, one pipeline, and no census — why a mechanism goes missing quietly
 
-**Status:** DIAGNOSIS + PROPOSAL, 2026-08-24. **Fourteen fixes are shipped** ([§5](#5-what-is-already-fixed-2026-08-24)); the census
+**Status:** DESIGN, 2026-08-24 — a diagnosis and a proposal. **Fourteen fixes are shipped** ([§5](#5-what-is-already-fixed-2026-08-24)); the census
 in [§4](#4-the-proposal--a-backend-census-sibling-to-renderfieldset) is proposed and unbuilt. Every code claim was verified against the tree on 2026-08-24
 unless dated otherwise.
 

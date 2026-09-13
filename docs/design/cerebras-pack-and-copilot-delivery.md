@@ -8,8 +8,10 @@ summary: "A second purely-declarative provider pack (Cerebras, one key, qwen-3.8
 
 # The cerebras pack, and closing the copilot delivery gap
 
-**Status:** ACCEPTED, 2026-09-04; **BUILT — re-stamped 2026-09-09, because "this doc designs
-what remains" was false: both halves shipped within a day of acceptance.** The zai-side fix this
+**Status:** BUILT, 2026-09-09 — UNMEASURED: nothing is recorded as observed running; what was
+checked is the pack as built, read back against this doc on 2026-09-05, which contradicts it twice
+(the warning below). Accepted 2026-09-04, and **re-stamped because "this doc designs what
+remains" was false: both halves shipped within a day of acceptance.** The zai-side fix this
 workstream also produced (the recommended-env alignment and the wire-true alias correction)
 shipped as `8631caeb` and `04b3f039`; `packs/cerebras` landed as `29aa0925` and the copilot
 `yolo.env` derive as `033eccc5`, both 2026-09-04.

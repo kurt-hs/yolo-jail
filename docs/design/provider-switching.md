@@ -8,7 +8,7 @@ summary: "Why moving claude between Teams and Bedrock, or codex between two Bedr
 
 # The same model has a different name in every provider — and switching leaves the old one behind
 
-**Status:** DESIGN SKETCH, 2026-09-04. Nothing built. Code claims verified against
+**Status:** SKETCH, 2026-09-04. Nothing built. Code claims verified against
 `f604c6b2`.
 
 **The short version.** A model id is provider-local — `claude-opus-5` on the first-party

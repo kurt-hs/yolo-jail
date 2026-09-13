@@ -1,10 +1,11 @@
 # Plan: capture-and-repackage for the installer class
 
 **Design:** [`program-delivery.md` §6.3](../design/program-delivery.md#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package)
-(ruled [OQ-PD10](../design/program-delivery.md#decision-ledger)) · **Status:** landed —
-every slice is built; the sequencing below was reversed by
-[OQ-CP1](../reference/agent-cli-copies.md#oq-cp1) ·
+(ruled [OQ-PD10](../design/program-delivery.md#decision-ledger)) ·
 Written against `839d0745`, 2026-09-03.
+
+**Status:** BUILT, 2026-09-04 — MEASURED that day. Every slice is built; the sequencing below was
+reversed by [OQ-CP1](../reference/agent-cli-copies.md#oq-cp1).
 
 **Precedence:** the design wins on behavior; the tree wins on fact; this file is advice and is
 the first thing to be wrong. Never twist code to match it — correct it in the commit.

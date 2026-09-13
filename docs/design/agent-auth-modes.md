@@ -1,14 +1,14 @@
 ---
 title: "Auth modes and cloud provider swapping — declarative profiles across agents"
 date: 2026-08-29
-status: superseded
+status: in-review
 tags: [auth, providers, config, prism, agents, superseded]
 summary: "SUPERSEDED IN PART 2026-09-12. The provider/profile half (§4, §5) shipped and is described by reference/providers.md — cite that, not this. The body is kept, not stubbed, because four of its arguments were never absorbed by that successor: the measured evidence that a mode is a bundle (§2-§3), capability resolution and web-search suppression (§6, half of it still unbuilt), the deferred-failover ruling plus the measured subscription-bearer leak (§8), and the credential traps (§9). OQ-9 is still open."
 ---
 
 # Auth modes and cloud provider swapping — declarative profiles across agents
 
-**Status:** SUPERSEDED IN PART (2026-09-12) — accepted 2026-08-29, expanded from the 2026-08-05
+**Status:** SUPERSEDED, 2026-09-12 — in part. Accepted 2026-08-29, expanded from the 2026-08-05
 sketch, and half of it replaced by a shipped reference. Read the banner before the body.
 
 > [!IMPORTANT]

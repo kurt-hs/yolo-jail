@@ -8,7 +8,7 @@ summary: "How GPT-5.6 (and anything else Bedrock serves) reaches codex, pi and o
 
 # Bedrock plumbing: one service, four agents, two arms
 
-**Status:** DESIGN SKETCH, 2026-09-04. Nothing built. Every code claim verified against
+**Status:** SKETCH, 2026-09-04. Nothing built. Every code claim verified against
 `4c60a220`; every vendor claim carries its source and date in [§14](#14-evidence-and-how-to-re-check-it).
 
 **The short version.** Bedrock reaches an agent two ways, and yolo should build the first

@@ -1,6 +1,6 @@
 # Plan: bounded parallelism for the integration suite
 
-**Status:** OPEN (2026-07-20), **re-checked 2026-08-23 and still parked** — only the
+**Status:** DECIDED, 2026-07-20 — deliberately parked, **re-checked 2026-08-23** — only the
 bounded-parallelism refactor remains (the launch-merges landed in `c4ae68a`). `integration/` still
 carries the explicit rule that nothing in it may call `t.Parallel()`, so this is a deliberate
 non-decision rather than a forgotten one. Deferred deliberately:

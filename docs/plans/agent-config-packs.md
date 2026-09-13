@@ -1,6 +1,7 @@
 # Agent config packs — sharing agent environment configuration by git repo
 
-**Status:** PROPOSAL, 2026-07-25 — **and largely OVERTAKEN by what shipped.** Re-checked
+**Status:** DESIGN, 2026-07-25 — a proposal, **largely OVERTAKEN by what shipped**, and four
+questions are still live. Re-checked
 2026-08-23: the `packs` key, host-side fetch, the lockfile, the origin gate and `yolo pack
 {install,status,lint,footprint}` are all in the tree, so read this for its **landscape research and
 its scope verdict**, not as a plan. What is still live is four open questions, now named

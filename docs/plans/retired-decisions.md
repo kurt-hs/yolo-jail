@@ -1,6 +1,6 @@
 # Retired decisions
 
-**Status:** LIVING RECORD. Append-only in practice: an entry leaves only if the decision is
+**Status:** CURRENT — a living record. Append-only in practice: an entry leaves only if the decision is
 *reversed*, and then it leaves with a note saying so. There is deliberately no "last touched" stamp —
 a link pass or a typo fix moves the file without changing a single retirement, so the form was always
 going to be wrong, and a wrong date on a history file is worse than none. Each entry carries its own

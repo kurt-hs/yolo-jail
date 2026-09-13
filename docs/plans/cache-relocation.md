@@ -1,6 +1,6 @@
 # Cache relocation — let a cache subdir live on other storage
 
-**Status:** **Implemented 2026-07-21** — work items 1–10 landed. The host-gated
+**Status:** DESIGN, 2026-07-21 — **built**, and three questions are still live. Work items 1–10 landed. The host-gated
 acceptance step is now **done**: a real cross-filesystem HuggingFace-cache move
 to cold storage was verified on the maintainer's host (2026-07-22). Item 11
 (`yolo cache relocate`) is **held pending a design question, not merely

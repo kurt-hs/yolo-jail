@@ -10,7 +10,9 @@ vantage:
 
 # The image ships 3.47 GB to move 27 MB — layer-aware delivery
 
-**Status:** ✅ **SHIPPED 2026-09-09**, in one commit, on podman/Linux, plus one same-day fix. Every
+**Status:** BUILT, 2026-09-09 — MEASURED: in this jail, `podman --root` over a virgin overlay
+store — and **not** on a Mac, where the darwin path is written and unverified. Landed in one
+commit on podman/Linux, plus one same-day fix. Every
 design question is ruled and compacted into [§9.1](#91-decision-ledger); the gate
 ([OQ-LI6](#92-open-questions)) cleared, and the build is done.
 

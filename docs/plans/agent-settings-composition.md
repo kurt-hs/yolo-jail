@@ -1,6 +1,6 @@
 # Generated-config composition — layered regeneration + Lua transforms
 
-**Status:** Design of record — **FINALIZED 2026-07-20** (all [§9](#9-decisions-all-settled) *composition*
+**Status:** DECIDED, 2026-07-20 — the design of record, **finalized** that day (all [§9](#9-decisions-all-settled) *composition*
 questions resolved). Supersedes the exploratory RFC that carried a menu of models
 and a data-filter vocabulary — this is the line in the sand. Retiring the
 `host_*_files` keys was **decided 2026-07-23** ([§10](#10-retiring-the-host__files-keys-decided---implemented-2026-07-23)) and **landed** (commit

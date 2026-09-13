@@ -1,5 +1,8 @@
 # RUNBOOK — macos-user backend end-to-end (you-drive, agent-advises)
 
+**Status:** CURRENT — the repeatable procedure, and the M1 gate: PASSED on real hardware
+2026-07-21.
+
 **Who runs this:** YOU, on the Mac. The agent interprets output; **you run each
 `yolo` command** (they self-escalate — each privileged step prompts for your
 password). **Run them as your normal admin user, NOT under `sudo`.**

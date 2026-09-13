@@ -1,6 +1,6 @@
 # Host↔jail state separation — the one open question
 
-**Status:** the design SHIPPED (2026-07-03) and its as-built account is
+**Status:** GRADUATED, 2026-07-03 — the design shipped and its as-built account is
 [`../reference/jail-state-separation-design.md`](../reference/jail-state-separation-design.md) —
 read that for the split mise store, the neutral `/mise` path, per-side venv shadows, the
 jail↔jail store residue and its gated prune, the migration, and the `SS-1`…`SS-5` rulings.

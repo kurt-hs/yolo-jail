@@ -1,6 +1,6 @@
 # Plan: macOS revival + source-distribution fix (post-ejection)
 
-**Status:** IN PROGRESS — restamped **2026-09-11** (written 2026-07-21; body
+**Status:** DECIDED, 2026-07-21 — in progress, restamped **2026-09-11** (body
 below is the original plan except where a dated annotation says otherwise).
 Tracks J and M are done. Track D's engineering is done, but **two of its four
 steps were later reverted or superseded** and the header this line replaces did

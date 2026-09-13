@@ -1,7 +1,7 @@
 ---
 title: "Plan: agent CLIs from npm to their vendors' native installers"
 date: 2026-09-03
-status: shipped-in-part
+status: accepted
 tags: [packs, program-delivery, installers, evergreen]
 summary: "Implementation plan for OQ-PD13. Shipped 2026-09-04: codex flipped and claude's dead autoUpdaterStatus is gone. copilot did NOT flip — its installer picks PREFIX=/usr/local under root and the jail's rootfs is read-only, so the flip would make it uninstallable. Its --no-auto-update question was ruled separately on 2026-09-12 (option A: the flag is dropped, without the flip). opencode stays deferred; pi's 'native installer' is an npm wrapper and must not be flipped."
 ---
@@ -9,7 +9,10 @@ summary: "Implementation plan for OQ-PD13. Shipped 2026-09-04: codex flipped and
 # Plan: agent CLIs from npm to their vendors' native installers
 
 **Design:** [`program-delivery.md` §3.5](../design/program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03),
-ruling **[OQ-PD13](../design/program-delivery.md#decision-ledger)** · **Status:** shipped in part · Written against `a25e718b`, 2026-09-03.
+ruling **[OQ-PD13](../design/program-delivery.md#decision-ledger)** · Written against `a25e718b`, 2026-09-03.
+
+**Status:** DECIDED, 2026-09-04 — shipped in part: codex flipped and claude's dead
+`autoUpdaterStatus` is gone; **copilot did not flip**, and that is the work left.
 
 > [!IMPORTANT]
 > **OUTCOME, 2026-09-04. Steps 1 and 2 shipped; step 3 does not exist as written.**

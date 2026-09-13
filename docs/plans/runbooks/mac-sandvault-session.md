@@ -1,7 +1,7 @@
 # Mac SandVault session — the M0 working recipe
 
-**Date:** 2026-07-21. **Status:** M0 **PASSED** + M1 **PASSED** on real Apple
-Silicon (M1 results in §[6b](#6b-m1-results--macos-user-e2e-observed-on-hardware-2026-07-21)).
+**Status:** CURRENT — the M0 working recipe. M0 **PASSED** and M1 **PASSED** on real Apple
+Silicon, 2026-07-21 (M1 results in §[6b](#6b-m1-results--macos-user-e2e-observed-on-hardware-2026-07-21)).
 **Audience:** an agent (or human) bootstrapping the Track-M verification loop on
 a Mac. **Role:** this is the M0 deliverable called for by the plan
 ([../macos-revival-and-distribution-plan.md](../macos-revival-and-distribution-plan.md)

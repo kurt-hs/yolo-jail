@@ -10,7 +10,9 @@ vantage:
 
 # Who owns the config file — declared host management, and the way out of capture
 
-**Status:** BUILT, 2026-09-12 — [§10](#10-what-i-would-build-in-order)'s eight steps all
+**Status:** BUILT, 2026-09-12 — MEASURED: verification after it landed measured four gaps, and a
+second pass over [`OQ-CO12`](#13-decision-ledger) found six more things.
+[§10](#10-what-i-would-build-in-order)'s eight steps all
 landed: the `host_management` key, `own`'s composing render and its capture store, host-side
 `reset`, `yolo config promote`, `yolo host apply --revert`, and — last, on 2026-09-12 —
 step 8's **one-time adoption archive** ([§6.3.3](#633-what-survives-as-a-guard),

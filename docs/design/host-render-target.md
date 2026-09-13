@@ -1,6 +1,6 @@
 # Managing host agent configs from yolo — the host as a reduced render target
 
-**Status:** LARGELY IMPLEMENTED — steps 1, 4, 5 and 6 of [§8](#8-what-i-would-actually-do-in-order) shipped; step 3 shipped
+**Status:** DESIGN, 2026-07-27 — largely implemented, and three questions still live: steps 1, 4, 5 and 6 of [§8](#8-what-i-would-actually-do-in-order) shipped; step 3 shipped
 **half** (the `Target` abstraction exists and [§3.4](#34-what-this-buys-immediately-before-any-host-target-exists)'s payoff has now landed, but the two render paths were
 never collapsed).
 Written as design 2026-07-27, fact-checked 2026-07-30, **re-verified against the tree

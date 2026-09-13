@@ -1,12 +1,16 @@
 ---
 title: "Loophole packaging — the two questions still open"
 date: 2026-08-13
-status: open-questions-only
+status: in-review
 tags: [loopholes, packs, config, guest]
 summary: "A stub. The loophole packaging design is built and its as-built account is docs/reference/loophole-system.md; what stays here are the two questions that never got a ruling — whether a pack-shipped loophole may declare conditional jail environment, and whether the `guest` notch gets a field census of its own."
 ---
 
 # Loophole packaging — the two questions still open
+
+**Status:** GRADUATED, 2026-08-13 — the design is built and its as-built account is
+[`../reference/loophole-system.md`](../reference/loophole-system.md). What stays here is the two
+questions that never got a ruling.
 
 > [!IMPORTANT]
 > **The design is BUILT, and this file is no longer where it is described.**

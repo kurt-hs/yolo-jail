@@ -1,6 +1,7 @@
 # Implementation plan — pack-managed host briefings, skills, and files
 
-**Status:** **ALL PHASES SHIPPED** 2026-08-02. Sequences
+**Status:** DESIGN, 2026-08-02 — **all phases shipped** that day, and **one question is still
+live** ([OQ-B](#open-questions), on the host `files` mode). Sequences
 [`handoff-pack-host-management-gaps.md`](handoff-pack-host-management-gaps.md) (the gap
 report — five gaps, each verified by running the binary) into buildable phases.
 

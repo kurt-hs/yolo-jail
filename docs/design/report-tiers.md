@@ -10,7 +10,8 @@ vantage:
 
 # One report, three readers — why `yolo host apply` says everything and tells you nothing
 
-**Status:** SHIPPED, 2026-09-12. All eight steps of [§9](#9-what-i-would-build-in-order) landed and
+**Status:** BUILT, 2026-09-12 — MEASURED, in this jail: the default report is **30 lines where it
+was 278**, with the 267-line detail view behind `--verbose`. All eight steps of [§9](#9-what-i-would-build-in-order) landed and
 all seven questions are ruled — and every one of them is built, which
 [§11](#11-decision-ledger)'s **Built** column states row by row rather than leaving to be
 inferred from this line. **Measured after the build, in this jail:

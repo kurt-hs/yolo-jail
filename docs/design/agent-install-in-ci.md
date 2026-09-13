@@ -8,7 +8,8 @@ summary: "The integration suite installs agent CLIs from the live npm registry n
 
 # Nine cold installs a run — what CI buys by downloading six agent CLIs
 
-**Status:** DECIDED 2026-08-21; **BUILT and MEASURED IN CI 2026-08-22.** Steps 1–3 landed on the
+**Status:** BUILT, 2026-08-22 — MEASURED IN CI: install cost attributed to tests fell 218s to 89s.
+Decided 2026-08-21. Steps 1–3 landed on the
 21st (`0890a80`, `6e536c5`, `e09f039`); `packs.yml` ran for real on the 22nd (run 32589066448, 12
 install cells green across both arches, triggered by a `packs/**` edit exactly as designed), and run
 32597479510 supplied the numbers step six was waiting on ([§11](#11-build-order--what-shipped-and-what-is-left)). All six questions are settled and compacted into the

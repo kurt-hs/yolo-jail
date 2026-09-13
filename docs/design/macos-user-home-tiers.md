@@ -1,14 +1,16 @@
 ---
 title: "The macos-user Home: One Account, Three Tiers That Collapsed Into It"
 date: 2026-09-03
-status: accepted # BUILT 2026-09-12; see "What shipped" below
+status: accepted
 tags: [macos-user, jail-home, backend-parity, design]
 summary: "macos-user has one sandbox home, /Users/_yolojail, so the machine tier, the workspace tier and the session tier are the same directory. The machine tier is right; the other two collapsing into it is the defect, and since content delivery landed it is a write-write race. The fix keeps HOME where it is and symlinks every directory the container backends bind from <workspace>/.yolo/home/ into that same sidecar — the credential-sharing mechanism already runs here unchanged, and needs only its shared dir mirrored so its relative link resolves."
 ---
 
 # The macos-user home: one account, three tiers that collapsed into it
 
-**Status:** BUILT, 2026-09-12 (design 2026-09-11; sketch 2026-09-03). All four questions are
+**Status:** BUILT, 2026-09-12 — UNMEASURED: implemented from a Linux jail, so no runtime claim has
+been observed; [§10](#10-what-shipped) separates what a test pins from what is owed a Mac.
+Designed 2026-09-11, sketched 2026-09-03. All four questions are
 settled and compacted into the [Decision Ledger](#decision-ledger). What landed, and what of it
 is still unmeasured, is [§10](#10-what-shipped).
 

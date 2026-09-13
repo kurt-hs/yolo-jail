@@ -8,8 +8,8 @@ summary: "A ten-entry list of recently-loaded nix store paths protects two diffe
 
 # The load sentinel is not a liveness oracle
 
-**Status:** ACCEPTED, 2026-09-09 — **all three rulings are now BUILT** (`93f21f07`, `3c9e8de9`,
-`ae190ac4`). **No open questions.** LS3's mechanism shipped as
+**Status:** BUILT, 2026-09-09 — MEASURED: on the maintainer's jail-local podman store. All three
+rulings landed (`93f21f07`, `3c9e8de9`, `ae190ac4`). **No open questions.** LS3's mechanism shipped as
 [§6.2](#62-retention-after-the-two-rulings) describes it, after being blocked for a day on a
 grouping key that turned out not to be needed. All three are compacted into
 [§11.1](#111-decision-ledger).

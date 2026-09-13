@@ -1,6 +1,7 @@
 # Handoff — publish the prebuilt image to a Cachix cache
 
-**Status:** **WORKING** — the push has happened and the cache is being read.
+**Status:** DECIDED, 2026-09-02 — **working**: the push has happened and the cache is being read,
+and only the Mac-side download proof is left.
 **Settled 2026-09-02 from the Actions log**, which closes the disagreement this doc
 carried against [`README.md`](README.md): README's *"CI has already pushed data"* was
 the correct sentence. Remaining: only the Mac-side download proof ("Final test" below),

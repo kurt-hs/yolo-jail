@@ -1,7 +1,7 @@
 # The four open rulings — context for a decision
 
-**Status: ALL FOUR ANSWERED 2026-07-26.** Every stage in [BACKLOG.md](BACKLOG.md) is now
-unblocked. This doc keeps the facts and options that led to each answer; the answers are in the
+**Status:** BUILT, 2026-07-26 — UNMEASURED: this doc's product is four rulings, not code.
+All four are answered and every stage in [BACKLOG.md](BACKLOG.md) is now unblocked. This doc keeps the facts and options that led to each answer; the answers are in the
 `DECIDED` blocks.
 
 | # | Ruling | Answer |

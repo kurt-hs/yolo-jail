@@ -3,8 +3,9 @@
 **Audience:** the next agent picking up `docs/examples/claude-fzf-pack/` (or the maintainer
 adopting it by hand).
 **Written:** 2026-08-02, after the pack was built and verified at both notches.
-**Status of the pack itself:** **works, committed, verified.** This handoff is about the four
-things that are *not* done, plus the context that changed while it was being built.
+**Status:** DECIDED, 2026-08-02 — the pack itself **works, is committed and was verified at both
+notches**. This handoff is about the four things that are *not* done, plus the context that
+changed while it was being built.
 
 The pack's own README (`docs/examples/claude-fzf-pack/README.md`) covers what it contains and
 how to adopt it — read that first, and do not duplicate it here. This doc is only what a

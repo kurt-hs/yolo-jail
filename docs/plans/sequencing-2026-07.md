@@ -1,5 +1,8 @@
 # Sequencing snapshot, 2026-07-22 — SUPERSEDED
 
+**Status:** SUPERSEDED, 2026-08-17 — by [`roadmap.md`](roadmap.md), which took the forward-plan
+role that day. Kept as the 2026-07-22 dependency-ordering snapshot.
+
 > [!IMPORTANT]
 > **This is a historical snapshot, not the forward plan.** It was renamed out of `ROADMAP.md` on
 > 2026-08-17 when [`roadmap.md`](roadmap.md) took that role — partly because two roadmap-shaped docs

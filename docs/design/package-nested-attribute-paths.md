@@ -8,7 +8,7 @@ summary: "A `packages` entry like `rocmPackages.clr` fails because yolo reads an
 
 # Nested nixpkgs attribute paths in `packages` — and why output selection is the same operation
 
-**Status:** DESIGN SKETCH, 2026-08-22. Nothing built. **Re-verified 2026-08-23: still nothing
+**Status:** SKETCH, 2026-08-22. Nothing built. **Re-verified 2026-08-23: still nothing
 built**, and `60376fed` does not invalidate any premise below — see the postscript.
 
 > [!NOTE]

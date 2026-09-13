@@ -2,7 +2,8 @@
 
 **Audience:** an agent or maintainer working on yolo-jail's pack/host-render surface.
 **Written:** 2026-08-04, against `0.7.1+380.ga3d6d4e`.
-**Status 2026-08-05: ALL SEVEN FINDINGS CLOSED.** F1/F2/F4/F6 fixed in the pack batch, F3 and F5
+**Status:** BUILT, 2026-08-05 — MEASURED: every finding was verified by running the binary against
+a real `$HOME`. All seven are closed: F1/F2/F4/F6 fixed in the pack batch, F3 and F5
 dissolved by rulings rather than patched, F7 (a regression this doc caught against the batch
 itself) fixed 2026-08-05. Kept as the record of what real adoption found — the *diagnosis* in the
 last section is the reusable part. Nothing here is open; for open work see

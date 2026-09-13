@@ -1,6 +1,6 @@
 # A stateful broker on the jail boundary — approvals for what crosses
 
-**Status:** DESIGN SKETCH, 2026-08-05. Nothing built. Where the answer is "this already exists,"
+**Status:** SKETCH, 2026-08-05. Nothing built. Where the answer is "this already exists,"
 it says so.
 
 **The thesis, from the maintainer:**

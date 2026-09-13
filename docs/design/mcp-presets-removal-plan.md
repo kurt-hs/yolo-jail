@@ -10,7 +10,7 @@ vantage:
 
 # MCP presets removal — implementation sketch
 
-**Status:** SKETCH — incomplete, and unstable while questions are open.
+**Status:** SKETCH, 2026-09-12 — incomplete, and unstable while questions are open.
 
 **The design wins on behaviour.** This file holds settled-but-boring material only; every design
 decision lives in [`mcp-presets-removal.md`](mcp-presets-removal.md), and nothing here may decide

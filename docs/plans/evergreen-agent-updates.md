@@ -1,8 +1,11 @@
 # Plan: evergreen agent updates — the launcher does the work
 
 **Design:** [`../design/program-delivery.md` §3.5](../design/program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03)
-([OQ-PD11](../design/program-delivery.md#decision-ledger)–PD14, PD12a) · **Status:** ✅ **FULLY BUILT** — steps 1-6 and 8 on 2026-09-04, step 7 on 2026-09-09 ·
+([OQ-PD11](../design/program-delivery.md#decision-ledger)–PD14, PD12a) ·
 Written against `a25e718b`, 2026-09-03.
+
+**Status:** BUILT, 2026-09-09 — MEASURED: the launcher position was measured to work here.
+Steps 1–6 and 8 landed 2026-09-04, step 7 on 2026-09-09.
 
 **Precedence:** the design wins on behavior; the tree wins on fact; this file is advice and
 is the first thing to be wrong. Never twist the code to match it.

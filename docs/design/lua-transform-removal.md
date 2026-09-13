@@ -10,7 +10,8 @@ vantage:
 
 # The config transform is an escape hatch nobody uses, on a VM everybody does
 
-**Status:** SHIPPED, 2026-09-12. Both questions are ruled ([§13](#13-decision-ledger)) and the
+**Status:** BUILT, 2026-09-12 — MEASURED: the derive path renders every shipped pack at boot.
+Both questions are ruled ([§13](#13-decision-ledger)) and the
 removal landed in [§10](#10-what-i-would-do-in-order)'s order — `internal/agentcfg` no longer links
 gopher-lua, `internal/packload` still does, and the derive path renders every shipped pack at boot.
 Claims about the tree below were verified on 2026-09-10 at `4975df07` and describe the tree the

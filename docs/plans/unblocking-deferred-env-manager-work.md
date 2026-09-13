@@ -1,6 +1,6 @@
 # Unblocking the deferred environment-manager work
 
-**Status:** HANDOVER — still live, re-checked **2026-08-23**. All four items below remain unbuilt,
+**Status:** DECIDED, 2026-08-23 — a handover, still live. All four items below remain unbuilt,
 and the reason is unchanged for each: three need hardware or a terminal this jail does not have, and
 the fourth is in-jail work nobody has picked up. **One correction to the sentence below:** Phase 9
 (agent autonomy as a notch policy) has shipped too, so the plan's built set is Phases **0–6, 8 and

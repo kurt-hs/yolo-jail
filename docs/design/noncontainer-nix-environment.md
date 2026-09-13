@@ -10,6 +10,10 @@ vantage:
 
 # RETIRED: merged into [`provisioner-sets.md`](provisioner-sets.md) (2026-09-11)
 
+**Status:** SUPERSEDED, 2026-09-11 — merged whole into
+[`provisioner-sets.md`](provisioner-sets.md); its questions keep their numbers there under an `NX`
+prefix.
+
 > [!IMPORTANT]
 > **This document is retired. It was merged into
 > [`provisioner-sets.md`](provisioner-sets.md) on 2026-09-11 and holds no content of its own.**

@@ -1,6 +1,6 @@
 # yolo as an environment manager — the shape I would want
 
-**Status:** DESIGN, high level, written 2026-07-27; fact-checked 2026-07-30; **re-verified against
+**Status:** DESIGN, 2026-07-27 — high level; fact-checked 2026-07-30; **re-verified against
 the code 2026-08-23 — most of it is now IMPLEMENTED.** The vision is unchanged and the verbs are
 real: `apply`, `apply --at host`, `apply --sealed`, `describe`, `check-deps` and the `confinement`
 key all ship (env-manager plan Phases 0–6, 8, 9). Two live questions remain ([§10](#10-open-questions)), one of which is

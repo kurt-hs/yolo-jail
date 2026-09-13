@@ -4,7 +4,7 @@
 inside a Linux jail, which is exactly why this document exists: everything below was either
 verified by reading code or is explicitly marked as unverifiable from here.
 
-**Status:** **HANDOFF — HOST-GATED, restamped 2026-08-23** (written 2026-08-03; [§§1](#1-what-the-three-notches-are-and-why-the-middle-one-matters), 3, 7, 8
+**Status:** DESIGN, 2026-08-03 — a handoff, **host-gated, restamped 2026-08-23** (written 2026-08-03; [§§1](#1-what-the-three-notches-are-and-why-the-middle-one-matters), 3, 7, 8
 are unchanged from that date). `guest` is the one notch of three that does not work. Phases
 0–6, 8, and 9 of [`environment-manager-plan.md`](environment-manager-plan.md) are shipped;
 **Phase 7 is not built**, and it is host/Mac-gated rather than blocked on any design

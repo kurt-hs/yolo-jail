@@ -1,6 +1,7 @@
 # Plan: CLI color audit — render rich markup, don't strip it
 
-**Status:** DONE (2026-07-22). The confirmed bug class is closed and every
+**Status:** BUILT, 2026-07-22 — UNMEASURED: nothing is recorded as observed rendering; what is
+recorded is the per-command classification below. The confirmed bug class is closed and every
 command is classified: `prune`/`builder`/`macosuser` fixed (2026-07-20),
 `broker` (`8e5302f`) and `ps` (`d71dba3`) folded in since, the last rich→ANSI
 duplicate (`run/console.go`) consolidated onto `internal/richtext` (`67454a8`),

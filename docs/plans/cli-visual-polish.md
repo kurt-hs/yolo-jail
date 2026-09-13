@@ -1,6 +1,6 @@
 # Plan: CLI visual polish — color to guide the eye
 
-**Status:** IN PROGRESS (2026-07-20), **not touched since — re-checked 2026-08-23.** One item in
+**Status:** DECIDED, 2026-07-20 — in progress, **not touched since — re-checked 2026-08-23.** One item in
 the "remaining" list below is now unbuildable as written: `builder` polish, because `yolo builder`
 and `internal/builder` were **deleted** on 2026-07-23 when the container builder became the sole
 builder. Audit complete (2026-07-20); top surfaces landed

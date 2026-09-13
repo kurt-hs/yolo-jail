@@ -8,7 +8,7 @@ summary: "The OAuth broker mints its CA by shelling out to openssl. The jail ima
 
 # A daemon that never started, and the three layers that did not notice
 
-**Status:** DIAGNOSIS, 2026-08-18; **re-stamped 2026-08-23** — two of the four sequenced items in [§8](#8-sequencing)
+**Status:** DESIGN, 2026-08-18 — a diagnosis; **re-stamped 2026-08-23** — two of the four sequenced items in [§8](#8-sequencing)
 have since shipped, and the third ([OQ-3](#7-open-questions)) is the one still live. The three questions in [§7](#7-open-questions) remain
 open.
 

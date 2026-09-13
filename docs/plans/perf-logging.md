@@ -1,7 +1,9 @@
 # Plan: performance logging behind `--timing` / `--verbose`
 
-**Reference (the design, distilled as built):** [`../reference/perf-logging.md`](../reference/perf-logging.md) · **Status:** BUILT 2026-09-06 ·
+**Reference (the design, distilled as built):** [`../reference/perf-logging.md`](../reference/perf-logging.md) ·
 Written against `6580186c`, landed through `03b18afb`.
+
+**Status:** BUILT, 2026-09-06 — MEASURED: verified in a nested jail.
 
 **Precedence:** the design wins on behavior; the tree wins on fact; this file is advice and is
 the first thing to be wrong. Never twist code to match it — correct it in the commit.

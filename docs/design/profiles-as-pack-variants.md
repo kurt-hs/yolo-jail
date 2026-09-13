@@ -8,7 +8,9 @@ summary: "Counter-design to pack-profiles.md. Most of what that doc proposes is 
 
 # A profile is a pack's own variant, not a cross-pack fragment
 
-**Status:** DECIDED, 2026-09-01 — every open question settled (ledger, [§14](#14-decision-ledger)). **Re-stamped
+**Status:** BUILT, 2026-09-09 — MEASURED: a post-build review re-measured this doc's claims clean
+(the credential boundary, the three-level skew handling, the backend-parity repairs). Decided
+2026-09-01, every open question settled (ledger, [§14](#14-decision-ledger)). **Re-stamped
 2026-09-09: implementation is no longer "underway", it is COMPLETE — [§12](#12-what-i-would-build-in-order)'s build order has no
 unbuilt step**, all six verified against the tree (the `use_profiles` rename with the old key
 refused by name, the `kind: "profile"` contribution, Bedrock moved wholly into `packs/claude`'s

@@ -1,6 +1,6 @@
 # Threat model: the macos-user host-side nix build step
 
-**Status:** DRAFT (2026-07-22), re-verified 2026-08-23 — **and OVERTAKEN on its sharpest vector on
+**Status:** DESIGN, 2026-07-22 — a threat model, re-verified 2026-08-23 — **and OVERTAKEN on its sharpest vector on
 2026-08-31.** `46655873` (*"stop letting the cwd choose which flake yolo builds"*) removed the
 cwd walk-up from `internal/reporoot` entirely, for source-skew hygiene rather than for this threat
 model — resolution is now `YOLO_REPO_ROOT` env → exe-relative bundle → staged install bundle, with

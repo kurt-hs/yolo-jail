@@ -8,7 +8,7 @@ summary: "Twenty-six paths, enumerated from the code, each with when trust is ex
 
 # Every path by which someone else's content runs in your jail
 
-**Status:** INVENTORY, 2026-08-17; **compacted 2026-09-06.** Ten questions filed, **nine settled**
+**Status:** DESIGN, 2026-08-17 — an inventory; **compacted 2026-09-06.** Ten questions filed, **nine settled**
 (six ruled, three retired) and **one open** —
 [`OQ-TP10`](#-oq-tp10--a-wrapped-plugins-hooks-reach-the-agents-lifecycle-and-appear-in-no-launch-banner).
 Every code anchor below was re-checked against the tree on 2026-09-06: the ones that had drifted are

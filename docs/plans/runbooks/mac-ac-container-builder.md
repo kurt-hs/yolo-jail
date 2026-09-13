@@ -1,6 +1,9 @@
 # RUNBOOK — prove the Apple Container Linux builder (zero sudo)
 
-> **STATUS 2026-07-17: ✅ PROVEN on real hardware — this test PASSED.**
+**Status:** CURRENT — the repeatable procedure, with the fixes found on the proving run applied
+inline.
+
+> **PROVEN 2026-07-17: ✅ PROVEN on real hardware — this test PASSED.**
 > Run on macOS 26.5 arm64, AC 0.12.3, nix 2.34.7. §[2a](#2a-preferred--pull-from-ghcr--live--public-verified-2026-07-17) pull from GHCR worked
 > (no build/scp). AC ran the container with an internal-network IP
 > `192.168.64.2:22`; host nix `store info` → **`Trusted: 1`**; the proof build

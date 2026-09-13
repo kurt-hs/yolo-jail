@@ -8,7 +8,8 @@ summary: "Four delivery classes, one of which kept no record and was never re-de
 
 # How executable content gets into a jail — and what makes two jails the same
 
-**Status:** DECIDED 2026-08-24, amended 2026-09-03, **largely IMPLEMENTED by 2026-09-04**;
+**Status:** DESIGN, 2026-08-24 — decided then, amended 2026-09-03, **largely implemented by
+2026-09-04**, and one question is still live;
 compacted 2026-09-06. Nineteen rulings sit in the [Decision Ledger](#decision-ledger) and **one
 question is open** — [OQ-PD19](#-oq-pd19--do-steps-three-and-five-still-have-a-subject-after-the-agentproject-split), which asks whether two ruled-but-unbuilt steps of
 [§10](#10-what-i-would-build-in-order) still have a subject. **In the tree:** the receipts and the boot orphan catalog

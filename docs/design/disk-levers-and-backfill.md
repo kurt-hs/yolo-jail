@@ -1,7 +1,7 @@
 ---
 title: "Disk levers and backfill — the bytes the fixes left behind, and whether yolo deletes them or offers to"
 date: 2026-09-06
-status: accepted # re-stamped 2026-09-09: ruled 2026-09-08 and nine of ten rulings built, so it is no longer in review
+status: accepted
 tags: [design, disk, prune, podman, nix, backfill]
 summary: "Two questions the maintainer asked together: what are the big space-reduction levers, ranked and costed; and how does yolo clean up — or offer to clean up — the stores that already grew before each fix. Nine of the ten rulings shipped 2026-09-08/09 — including the finding that yolo's own nix outputs were never collected, which now has a collector. OQ-BF10, host-CAS aliasing, is the deferred slice."
 vantage:
@@ -10,7 +10,7 @@ vantage:
 
 # Disk levers and backfill — the bytes the fixes left behind, and whether yolo deletes them or offers to
 
-**Status:** RULED 2026-09-08, and MOSTLY BUILT 2026-09-09 — see [§11.1](#111-decision-ledger)'s
+**Status:** DECIDED, 2026-09-08 — nine of the ten rulings were built on 2026-09-09; see [§11.1](#111-decision-ledger)'s
 Built column for which rulings shipped and which did not ([OQ-BF10](#OQ-BF10) is a later slice by
 its own ruling; [OQ-BF9](#OQ-BF9)'s sibling [OQ-LS3](./the-load-sentinel-is-not-a-liveness-oracle.md#111-decision-ledger)
 is blocked on a key that does not exist yet). Written as a design sketch on 2026-09-06, when nothing

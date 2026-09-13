@@ -1,6 +1,7 @@
 # Response to the host-agent review of the pack-migration guide
 
-**Status:** RESPONSE RECORD, 2026-08-01 — **all of it either shipped or was superseded**; re-checked
+**Status:** BUILT, 2026-08-01 — UNMEASURED: no runtime observation is recorded; this is the record
+of one review round, **all of it either shipped or was superseded**; re-checked
 2026-08-23. The autonomy design it defers (§D-something below, "Not implemented") **shipped the same
 day as env-manager Phase 9**, and D3's "these verbs are unreleased" stopped being true at **v0.8.0**
 (2026-08-13). Read it as a record of a review round, not as outstanding work.

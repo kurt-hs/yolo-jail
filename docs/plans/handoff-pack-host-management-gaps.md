@@ -1,5 +1,9 @@
 # Handoff — close the pack/host gaps that block packifying a real user config
 
+**Status:** BUILT, 2026-08-02 — MEASURED: every gap here was verified by running the binary, and
+all of them closed when [`pack-host-management-plan.md`](pack-host-management-plan.md)'s phases
+shipped.
+
 **Audience:** an agent working in the yolo-jail repo.
 **Requester's goal (verbatim intent):** *"fully manage my host briefings and skills and
 associated files"* from packs, including *"packify my fzf customized file finder"* for

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status: 19 needing you · 0 ready · 0 in progress · 7 waiting · 0 broken · 3 icebox.**
+**Status:** CURRENT — 19 needing you · 0 ready · 0 in progress · 7 waiting · 0 broken · 3 icebox.
 
 Last updated **2026-09-12**. Counts are tallied from this file's contents, not asserted — one per
 `### 💬` heading, one per top-level bullet elsewhere, and each bullet's glyph matches its section.

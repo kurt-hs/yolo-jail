@@ -1,6 +1,7 @@
 # Retiring a pack's host output
 
-**Status:** ALL FOUR RULINGS SHIPPED 2026-08-03. R1/R2/R4 in
+**Status:** BUILT, 2026-08-03 — UNMEASURED: no runtime observation is recorded. All four rulings
+shipped that day. R1/R2/R4 in
 `internal/cli/applyhostprune.go`; R3's second sentence (the laundering) in
 `internal/entrypoint/prism.go`; R3's first sentence (dropping the keys) in
 `internal/entrypoint/hostoverlayprune.go` + `internal/cli/applyhostoverlaykeys.go`, riding

@@ -8,7 +8,7 @@ summary: "A stub. The taxonomy, the postures, the 0o444 finding and the writer-c
 
 # Composed-file postures — the three questions left open
 
-**Status:** the settled body of this doc **graduated 2026-09-09** to
+**Status:** GRADUATED, 2026-09-09 — the settled body of this doc moved to
 [`../reference/composed-file-permissions.md`](../reference/composed-file-permissions.md) — the
 Derived/Shared/State taxonomy, the host-linked axis, the `0o444` asymmetry finding, the model,
 the `host_files` mode collapse, the home-root symlink decision, the program-operation /

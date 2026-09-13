@@ -1,6 +1,6 @@
 # Storage / cache / image lifecycle — make GC safe at any moment
 
-**Status:** [§1](#1-root-the-running-images-closure--first-everything-depends-on-it)–[§4](#4-log--overlay--cache-lifecycle--independent-lower-priority) IMPLEMENTED (2026-07-22); host-gated residuals remain (see
+**Status:** DECIDED, 2026-07-22 — [§1](#1-root-the-running-images-closure--first-everything-depends-on-it)–[§4](#4-log--overlay--cache-lifecycle--independent-lower-priority) implemented; host-gated residuals remain (see
 below). Anchored on a real incident: a host `nix-collect-garbage` reclaiming
 ~2.5 TiB swept the **running jail image's own store closure**, leaving 235 of
 467 `/bin` symlinks pointing at dead targets (git, gh, curl, gcc, rg, fd, node,

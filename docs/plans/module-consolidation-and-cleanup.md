@@ -1,6 +1,7 @@
 # Plan: module consolidation + "always-Go" cleanup
 
-**Status:** DONE (2026-07-21) — the cleanup landed (comment sweep, native-Go
+**Status:** BUILT, 2026-07-21 — UNMEASURED: a refactor with no behavior of its own to observe.
+The cleanup landed (comment sweep, native-Go
 filenames, parity-cruft removal, shared renderer). Package-merging + daemon-fold
 were assessed and deliberately declined as churn-without-value (see "The work").
 Pulled out of the archived `go-port-post-transition.md` — its module-consolidation

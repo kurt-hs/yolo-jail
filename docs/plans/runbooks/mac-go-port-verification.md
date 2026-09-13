@@ -1,5 +1,9 @@
 # Mac runbook — verify the Go port on real Apple hardware
 
+**Status:** SUPERSEDED, 2026-08-23 — its diff-against-Python method died when the Python tree was
+wiped; recommended for archival (`git rm`) at that audit. The live Mac gates are the other two
+runbooks here.
+
 > ⚠️ **STALE — recommended for archival (git rm).** This runbook's method is
 > "Python is still installed; run each Go command, diff it against
 > `uv run python -m src.cli …`, bail back to Python if it misbehaves." That

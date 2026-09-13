@@ -1,7 +1,7 @@
 ---
 title: "Pack Profiles: Typed Providers, Cross-Pack Fragments, and Generic Merging"
 date: 2026-08-29
-status: superseded
+status: deprecated
 tags: [packs, config, profiles, providers, prism, architecture, secrets]
 summary: "Replaces the inverted agent_profiles schema with a dual-layer architecture: (1) a strictly-typed ProviderSpec extension point for universal LLM endpoints, and (2) generic pack-fragment adapters for tool-specific configuration. Solves the secrets issue by decoupling git-tracked configuration from credentials via api_key_env and env_sources. Unifies profile activation and standardized runtime projection while eliminating agent-specific residue in core."
 ---
@@ -24,7 +24,7 @@ summary: "Replaces the inverted agent_profiles schema with a dual-layer architec
 > those answers, and still spells the key `api_key_env`, renamed `api_key_env_name`; of the
 > three, only [§5.1](#51-the-typed-provider-schema-kind-provider)'s `wire_api` row was already corrected in place (2026-09-02, `a01dbda5`).
 
-**Status:** DRAFT, 2026-08-29 — **re-stamped 2026-09-09: "Nothing built" is true of this doc's
+**Status:** SUPERSEDED, 2026-09-02 — it never left draft (2026-08-29). **Re-stamped 2026-09-09: "Nothing built" is true of this doc's
 SCHEMAS and false of the machinery it argued for.** `kind: "provider"` shipped
 (`internal/packdecl/kinds.go:157`, in the parent's per-protocol `endpoints` shape rather than
 [§5.1](#51-the-typed-provider-schema-kind-provider)'s flat `base_url`/`wire_api`), and [§4](#4-the-secrets-issue-decoupling-configuration-from-credentials)'s `api_key_env` shipped as

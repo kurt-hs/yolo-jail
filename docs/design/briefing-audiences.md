@@ -8,7 +8,9 @@ summary: "A pack's briefing prose and skills reach every agent in the jail, so c
 
 # Audiences: a pack's content should be able to name who it is for
 
-**Status:** BUILT, 2026-09-03. All seven questions are settled (Decision Ledger, at the foot)
+**Status:** BUILT, 2026-09-03 — UNMEASURED: no runtime observation is recorded, and what building
+it produced is five corrections to this document (the note below).
+All seven questions are settled (Decision Ledger, at the foot)
 and all seven steps of [§9](#9-what-i-would-build-in-order) have landed. What each step cost, and what building it corrected, is
 in the note below; the body still describes the design as decided rather than as built, so read
 it with that note beside it.

@@ -10,7 +10,8 @@ vantage:
 
 # The macOS nightly has been red for six runs, and neither ruling is wrong
 
-**Status:** ✅ **SHIPPED 2026-09-12.** All three questions are ruled and compacted into the [Decision Ledger](#decision-ledger); resolution **A** is built. Evidence verified against the tree and against runs `34687723913`, `34590383317`, `34467461758`.
+**Status:** BUILT, 2026-09-12 — MEASURED: against runs `34687723913`, `34590383317` and
+`34467461758`. All three questions are ruled and compacted into the [Decision Ledger](#decision-ledger); resolution **A** is built. Evidence verified against the tree and against runs `34687723913`, `34590383317`, `34467461758`.
 
 > **In short.** This is not an infrastructure flake. It is two correct safety rulings
 > colliding over a third fact neither of them knows: the image the job is testing

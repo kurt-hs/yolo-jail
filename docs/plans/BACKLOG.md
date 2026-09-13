@@ -1,7 +1,8 @@
 # Backlog — the one implementable list
 
-**Status:** the single entry point for *what to build next* on the composed-config / packs
-cluster. Created 2026-07-26; **restamped 2026-08-23** (header + Stage E + Stage G).
+**Status:** CURRENT — the single entry point for *what to build next* on the composed-config /
+packs cluster, and **seven questions are live** in its stages. Created 2026-07-26; **restamped
+2026-08-23** (header + Stage E + Stage G).
 
 **Why this exists.** The design work produced 8 docs / ~4,800 lines, and the actionable items
 ended up spread across three of them. This file is the only place that answers *"what do I

@@ -1,6 +1,6 @@
 # Environment-manager implementation plan
 
-**Status:** plan, written 2026-07-31; **build status re-verified against the tree 2026-08-23.**
+**Status:** DECIDED, 2026-07-31 — a plan; **build status re-verified against the tree 2026-08-23.**
 Sequences [`../design/yolo-as-environment-manager.md`](../design/yolo-as-environment-manager.md)
 (the vision — finalized, the maintainer is happy with it) into buildable phases.
 

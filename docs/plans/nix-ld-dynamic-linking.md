@@ -1,6 +1,6 @@
 # Plan: nix-ld — kill the `LD_LIBRARY_PATH` whack-a-mole
 
-**Status:** IMPLEMENTED (2026-07-22) — shipped as **Variant A** (a custom
+**Status:** BUILT, 2026-07-22 — MEASURED: verified in a nested jail that day. Shipped as **Variant A** (a custom
 `nix-ld.overrideAttrs` with `DEFAULT_NIX_LD` baked to the real glibc loader).
 Commits: `e05666a` (flake: adopt nix-ld as the FHS interpreter), `1d614e1`
 (drop the MCP-wrapper `LD_LIBRARY_PATH` exports), `d38463a` (keep + document the

@@ -1,5 +1,8 @@
 # Handoff — a pack cannot install Claude MCP servers on the host
 
+**Status:** BUILT, 2026-08-03 — MEASURED: verified end-to-end (the transcript below). Shipped in
+`4d1aa68`.
+
 > ## ✅ FIXED — re-verified 2026-08-03 against `0.7.1+380.ga3d6d4e`
 >
 > Shipped in `4d1aa68` ("a pack can install MCP servers on the host"), implemented exactly as
