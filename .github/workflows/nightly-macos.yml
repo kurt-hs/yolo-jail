@@ -128,16 +128,86 @@ jobs:
           sudo installer -pkg /tmp/podman.pkg -target /
           echo "/opt/podman/bin" >> "$GITHUB_PATH"
           export PATH="/opt/podman/bin:$PATH"
-          # -v /nix:/nix is LOAD-BEARING, not tuning. Since 2026-09-06 yolo's own
-          # binaries are BIND-MOUNTED into the jail rather than baked into the
-          # image, and a live checkout (which is what this job runs) has to build
-          # them — so the mount source is a /nix/store path. Podman Machine shares
-          # the user's home and /private, never /nix, so every launch died as
-          # `Error: statfs /nix/store/…-yolo-jail-install-prefix/opt/yolo-jail/bin:
-          # no such file or directory` with rc 125, taking ~30 tests down on the
-          # 2026-09-07 nightly (run 34117863296). `-v` can only be set at init.
-          podman machine init --cpus 2 --memory 4096 --disk-size 30 -v /nix:/nix
+          # EVERY `-v` HERE IS LOAD-BEARING, AND THE LIST HAS TO BE COMPLETE:
+          # `--volume` REPLACES podman's default share set, it does not add to it.
+          #
+          # podman registers the flag with the containers.conf machine volumes as
+          # its DEFAULT value, and on darwin that default is three entries —
+          # `/Users:/Users`, `/private:/private`, `/var/folders:/var/folders`
+          # (containers/common, pkg/config/default_darwin.go). pflag's StringArray
+          # then CLEARS that default the first time the flag is set:
+          #
+          #     func (s *stringArrayValue) Set(val string) error {
+          #             if !s.changed { *s.value = []string{val}; s.changed = true }
+          #             else          { *s.value = append(*s.value, val) }
+          #
+          # So a lone `-v /nix:/nix` does not mean "also share /nix". It means
+          # "share /nix and NOTHING ELSE", and it silently took the three defaults
+          # away. Both halves of that are measured on this runner:
+          #
+          #  * 2026-09-04 (run 33864347239), no `-v` at all: 86 PASS / 0 FAIL, with
+          #    every workspace under /var/folders — so the defaults did cover it.
+          #  * 2026-09-13 (run 34774210302), `-v /nix:/nix` alone: 47 tests failed,
+          #    44 of them at rc 125. `Error: statfs …: no such file or directory` is
+          #    the ONLY `Error:` shape anywhere in the four shards, 59 times, and
+          #    every one of the 59 paths is under /var/folders, /private/var/folders
+          #    or /private/tmp — none under /nix. (The other 3 are the expected
+          #    packages_test.go residue, which is non-stock and must build.) Same
+          #    machine-os blob in both runs (sha256:778ba664…), so the VM image is
+          #    not the variable — this flag is.
+          #
+          # The failure is unattributable at the call site, which is why it cost two
+          # nightlies to find: podman statfs's each bind SOURCE inside the VM, so a
+          # path the host created correctly and the VM cannot see reports as though
+          # yolo never made it.
+          #
+          # Why each entry, in the suite's own terms:
+          #  * /var/folders  — `t.TempDir()`, which is where writeProject puts a
+          #    workspace and isolateHome puts a redirected HOME. RAW spelling: the
+          #    HOME-derived store paths (<home>/.local/share/yolo-jail/…) are passed
+          #    unresolved.
+          #  * /private      — the SAME temp tree resolved (/var is a symlink to
+          #    /private/var, and run/mounts.go's resolvePath EvalSymlinks's the
+          #    workspace), plus /private/tmp, which paths.HostServicesDir resolves
+          #    to on macOS by construction. Both spellings appear in one run, so
+          #    sharing either root alone leaves the other class broken.
+          #  * /Users        — the runner's HOME: the machine's real yolo store, the
+          #    podman graphroot and the podman CONNECTIONS dir every isolated home
+          #    symlinks back to (integration/packs_test.go, packHomeSharedStores).
+          #  * /nix          — since 2026-09-06 yolo's own binaries are BIND-MOUNTED
+          #    into the jail rather than baked into the image, and a live checkout
+          #    has to build them, so the mount source is a /nix/store path. Without
+          #    it every launch died as `Error: statfs /nix/store/…-yolo-jail-install-
+          #    prefix/opt/yolo-jail/bin: no such file or directory`, taking ~30 tests
+          #    down on the 2026-09-07 nightly (run 34117863296).
+          #
+          # `-v` can only be set at init — there is no `podman machine set --volume`.
+          # integration/macosmachineshares_test.go pins this list, on Linux, on every
+          # push.
+          podman machine init --cpus 2 --memory 4096 --disk-size 30 \
+            -v /Users:/Users \
+            -v /private:/private \
+            -v /var/folders:/var/folders \
+            -v /nix:/nix
           podman machine start
+
+          # ASSERT THE SHARES, because the failure they cause names no cause.
+          # A missing share does not fail here, it fails 40 minutes later as 47
+          # tests reporting a statfs on a path that demonstrably exists — twice now
+          # (2026-09-07 for /nix, 2026-09-13 for the rest). One `test -d` per root
+          # converts that into a named step failure before a single test runs.
+          #
+          # $TMPDIR is checked as itself rather than folded into /var/folders: it is
+          # where `t.TempDir()` actually lands, and if a future runner image moves it
+          # the share list has to move with it. This is the probe that would say so.
+          for share in /Users /private /private/tmp /var/folders /nix/store "${TMPDIR:-}"; do
+            [ -n "$share" ] || continue
+            share=${share%/}
+            if ! podman machine ssh -- test -d "$share"; then
+              echo "::error::the podman machine cannot see $share. Every bind source under it makes \`podman run\` exit 125 with \`Error: statfs <path>: no such file or directory\`, naming a path the host created correctly — so the tests report it as a yolo bug. \`--volume\` REPLACES podman's default share set (/Users, /private, /var/folders on darwin) rather than adding to it: whatever \`podman machine init\` passes above is the COMPLETE list."
+              exit 1
+            fi
+          done
 
       - name: Download jail image
         uses: actions/download-artifact@v8
