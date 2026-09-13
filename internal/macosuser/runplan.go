@@ -143,6 +143,27 @@ func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap
 // selected packs' own blocked-tool declarations, merged with the config's security
 // section (core blocks nothing by default). `darwin` may be nil.
 func BuildRunPlan(workspace string, cfg *jsonx.OrderedMap, agents, agentArgv []string, selfExe, hostPackRoot, hostHomeOverlay string, sandboxEnv *jsonx.OrderedMap, darwin *Darwin, blockedTools []packload.BlockedTool) RunPlan {
+	// SYMLINK-RESOLVED ONCE, HERE, BECAUSE THE KERNEL RESOLVES BEFORE THE POLICY IS CONSULTED.
+	// Measured on hardware 2026-09-13 (declaration-parity.md §6.1's probe 2): a profile denying
+	// `(subpath "/tmp")` does not stop `touch /tmp/canary`, while one denying
+	// `(subpath "/private/tmp")` does. So an SBPL rule naming an unresolved path matches
+	// NOTHING, and `SeatbeltProfile` used to be handed `workspace` raw while `YOLO_HOST_DIR`
+	// (:341) and `MISE_TRUSTED_CONFIG_PATHS` (orchestrator.go) both resolved it. A workspace
+	// reached through a symlink therefore got a profile whose workspace rules were dead — no
+	// writes, no reads, fail-closed and confusing.
+	//
+	// ⚠ AND THE SAME LINE CLOSES A POLICY BYPASS, which is why it is one assignment rather than
+	// a fix at the profile call site. `HomeContaining` below decides the neutral-ground refusal
+	// (DP-D15: the agent shares only neutral ground, never a path inside your home), and it is
+	// only as good as the spelling it is given: `/Users/Shared/yolo/link` → `/Users/matt/proj`
+	// passed it, measured through a real `--dry-run`. The dead profile was all that stood
+	// between that and a live grant into the invoking user's home, so resolving for the profile
+	// ALONE would have unmasked it. Both consumers read this one value.
+	//
+	// Go's os.Getwd honours $PWD when it stats to the same inode, so the launcher really does
+	// receive a shell's logical spelling — this is reachable from an ordinary `cd`, not only
+	// from an argument somebody constructed.
+	workspace = resolvePathAbs(workspace)
 	darwinPrefix := []string{}
 	darwinEnv := jsonx.NewOrderedMap()
 	darwinSkipped := []string{}

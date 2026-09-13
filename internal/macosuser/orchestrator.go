@@ -285,6 +285,15 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 func RunMacosUser(deps Deps, opts Options) int {
 	out := printer{w: deps.Out, color: deps.Color}
 
+	// ONE SPELLING OF THE WORKSPACE FOR THE WHOLE BACKEND. BuildRunPlan resolves it too, and
+	// has to — it is called directly — but the checks in THIS function run before it and would
+	// otherwise judge a different path than the plan they gate. The ACL probe below is the one
+	// that matters: given a symlink it reports on the target while naming the link in its
+	// remedy, which is the "a remedy that cannot reach the path it names" shape this backend has
+	// already been bitten by twice. See BuildRunPlan for the measurement and for the policy
+	// bypass the same resolution closes.
+	opts.Workspace = resolvePathAbs(opts.Workspace)
+
 	// 0. Dry-run: build the plan, print it + invariants, execute nothing. Pure
 	// (darwin=nil → no nix build), so CI and a Mac agent can both inspect it.
 	// The plan (and the env-source warnings intermixed with it) is byte-pinned
