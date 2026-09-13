@@ -386,3 +386,188 @@ func TestBriefedResourceLimitsAreASubsetOfTheEmittedFlags(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// macos-user: the briefing batch (docs/design/declaration-parity.md §11 step 1)
+// ---------------------------------------------------------------------------
+//
+// THESE ROWS ASSERT THE BRIEFING ONLY, AND THAT IS FORCED. Every test above drives the
+// argv and the briefing from one config, because for a container backend the two are the
+// pair that must not disagree. macos-user reaches no argv at all — run.Run returns on its
+// own arm, hundreds of lines above assembleRunCmd — so a row shaped like the ones above
+// could not be written for it, which is exactly why the defects below survived:
+// TestBriefingAndArgvAgreeOnTheAppliedNetMode has four rows and structurally cannot have a
+// fifth (§5.1.1). The call site that does exist is refreshJailBriefings, on that arm, and
+// appliedBriefing drives it — so every assertion here fails if the field it pins is deleted
+// from the BriefingInput literal.
+
+// macosUserBriefing composes the jail briefing for a macos-user launch of one config.
+func macosUserBriefing(t *testing.T, cfg *jsonx.OrderedMap) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	emptyLoopholeDirs(t)
+	o := appliedOptions(t, t.TempDir(), home, false)
+	o.IsMacOS, o.IsLinux = true, false
+	return appliedBriefing(t, o, "macos-user", cfg)
+}
+
+// briefingHeaderOf returns everything before "## Environment" — the confinement header.
+func briefingHeaderOf(t *testing.T, briefing string) string {
+	t.Helper()
+	i := strings.Index(briefing, "## Environment")
+	if i < 0 {
+		t.Fatalf("briefing has no ## Environment section:\n%s", briefing)
+	}
+	return briefing[:i]
+}
+
+// DP-B3 / DP-L2. A macos-user sandbox is an ordinary child of the launcher on the
+// launcher's own stack — neither Seatbelt profile yolo emits contains a `network*`
+// operation at all — so `host` is the mode it HAS, not one it can be put into. The
+// briefing told it the opposite in four directions at once: bridge mode, a
+// `host.containers.internal` address to reach the host at, a port map that was never
+// wired, and the caveat that "a `127.0.0.1` listener in here is not publishable" exactly
+// inverted, since here a loopback listener IS the host's.
+//
+// Driven from a config that asks for BRIDGE and declares both port keys, because that is
+// the live shape: run.NewDefaultOptions is `Network: "bridge"`, so the wrong answer is the
+// default one and a launch that never mentioned networking got it.
+func TestMacosUserBriefingSaysHostNetworkingAndAdvertisesNoPorts(t *testing.T) {
+	netSec := jsonx.NewOrderedMap()
+	netSec.Set("mode", "bridge")
+	netSec.Set("ports", []any{"8000:3000"})
+	netSec.Set("forward_host_ports", []any{5432})
+	got := macosUserBriefing(t, appliedTestConfig("network", netSec))
+
+	if para := networkParagraph(got); !strings.Contains(para, "Host networking") ||
+		strings.Contains(para, "Bridge mode") {
+		t.Errorf("the jail is told %q — this backend is always on the launcher's own "+
+			"network stack, so bridge mode is never what ran", para)
+	}
+	if strings.Contains(got, "host.containers.internal") {
+		t.Errorf("named the podman gateway to a jail whose localhost IS the host's:\n%s", got)
+	}
+	// Both port sections describe forwarding, and nothing forwards here: `-p` and the
+	// socat hop both sit below the macos-user return.
+	for _, section := range []string{"**Published Ports**", "**Forwarded Host Ports**"} {
+		if strings.Contains(got, section) {
+			t.Errorf("advertised %s on a backend that publishes and forwards nothing:\n%s",
+				section, got)
+		}
+	}
+	// The `8000:3000` row is the sharpest case: the mapping is not merely unwired, it is
+	// unsatisfiable — the agent's port 3000 is 3000 on the machine, not 8000.
+	if strings.Contains(got, "8000") {
+		t.Errorf("stated a port mapping nothing performs:\n%s", got)
+	}
+}
+
+// DP-B1 / DP-L7, BOTH briefing sites. macos-user binds nothing — it has no container to
+// mount into — so a section headed "Additional Context Mounts (read-only)" is a file-path
+// map of a filesystem that does not exist. The second site is the `## Limitations` bullet,
+// which was unconditional: a jail with no `mounts` at all was still told `/ctx/` existed
+// and was read-only. Fixing one and not the other leaves the agent a reason to go looking.
+func TestMacosUserBriefingListsNoContextMounts(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sysadmin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := macosUserBriefing(t, appliedTestConfig("mounts", []any{dir}))
+
+	if strings.Contains(got, "## Additional Context Mounts") {
+		t.Errorf("listed context mounts on a backend that binds none:\n%s", got)
+	}
+	if strings.Contains(got, "sysadmin") {
+		t.Errorf("named an unbound mount source:\n%s", got)
+	}
+	if strings.Contains(got, "/ctx/") {
+		t.Errorf("the Limitations bullet still describes a /ctx tree nothing mounted:\n%s", got)
+	}
+}
+
+// DP-B6 / DP-L8. `resources` is read on this backend and IGNORED — the launch says so to
+// the human in the same breath the briefing told the agent the caps were kernel-enforced,
+// and pointed it at `yolo-cglimit`, which has no delegate to talk to here. Two audiences,
+// opposite answers, one launch.
+func TestMacosUserBriefingStatesNoResourceLimits(t *testing.T) {
+	res := jsonx.NewOrderedMap()
+	res.Set("memory", "4g")
+	res.Set("cpus", 3)
+	got := macosUserBriefing(t, appliedTestConfig("resources", res))
+
+	if line := resourceLine(got); line != "" {
+		t.Errorf("the jail is told %q, but this backend passes no resource flag at all — "+
+			"describing a cap as kernel-enforced when nothing enforces it is the §6 defect", line)
+	}
+	// The remedy the line carries is as wrong as the line: `yolo-cglimit` talks to the
+	// cgroup delegate, and this backend starts no host service at all. (The limits
+	// section names the same binary on purpose — to say it is INERT, which is the
+	// opposite claim.)
+	if strings.Contains(got, "Sub-limit your own processes") {
+		t.Errorf("pointed the agent at a client with no delegate to talk to:\n%s", got)
+	}
+}
+
+// DP-B21 / DP-L9, THE CALL SITE. backendLimits had no production caller for its whole
+// life, so "What this environment does NOT do for you" — the section carrying every
+// macos-user constraint an agent reasons wrongly without — had never rendered once. That
+// is a stated precondition of a shipped ruling: noteMacosUserHostByteGaps' no-refusal
+// carve-out says it "is only defensible while the deficiency is SAID — here, and in the
+// agent's own briefing (backendLimits)".
+//
+// Asserted through the WRITTEN briefing rather than through backendLimits, which is the
+// whole point: the unit tests in backendlimits_test.go were green throughout, because the
+// function was never wrong — it was never called.
+func TestMacosUserBriefingCarriesTheBackendLimits(t *testing.T) {
+	got := macosUserBriefing(t, appliedTestConfig())
+	if !strings.Contains(got, "## What this environment does NOT do for you") {
+		t.Errorf("the section backendLimits feeds did not render:\n%s", got)
+	}
+	for _, want := range []string{"writable COPY", "no network namespace", "yolo-ps"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the section does not carry %q:\n%s", want, got)
+		}
+	}
+
+	// And a container backend does not gain it: these are this backend's constraints, and
+	// a section that renders everywhere is one readers learn to skip.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	emptyLoopholeDirs(t)
+	o := appliedOptions(t, t.TempDir(), home, false)
+	if podman := appliedBriefing(t, o, "podman", appliedTestConfig()); strings.Contains(
+		podman, "What this environment does NOT do for you") {
+		t.Errorf("a podman jail gained a limits section it has no limits for:\n%s", podman)
+	}
+}
+
+// DP-B19 / OQ-DP2, THE CALL SITE for the mechanism. `Mechanism: rt` in refreshJailBriefings
+// is what carries the backend into the header; with the boolean it replaced, the header
+// could deny a container and then print the container's own primitive vector three lines
+// below it — "namespaces", "a baked image" — inside a Seatbelt sandbox with no image.
+// The "Jail tooling" line printed twice for the same reason: the branch carried its own
+// copy of the line enforcementLines appends.
+func TestMacosUserBriefingHeaderDescribesSeatbeltNotNamespaces(t *testing.T) {
+	header := briefingHeaderOf(t, macosUserBriefing(t, appliedTestConfig()))
+
+	if strings.Contains(header, "sandboxed container") {
+		t.Errorf("claimed a container on a backend that has none:\n%s", header)
+	}
+	for _, want := range []string{"Seatbelt", "a separate OS user"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("the enforcement vector omits %q — this is what actually confines the "+
+				"agent here:\n%s", want, header)
+		}
+	}
+	for _, not := range []string{"namespaces", "a baked image"} {
+		if strings.Contains(header, not) {
+			t.Errorf("the enforcement vector claims %q, which no part of this backend "+
+				"composes — it is the LINUX preset, printed under a paragraph saying there "+
+				"is no container:\n%s", not, header)
+		}
+	}
+	if n := strings.Count(header, "Jail tooling:"); n != 1 {
+		t.Errorf("the `Jail tooling` line appears %d times, want 1:\n%s", n, header)
+	}
+}

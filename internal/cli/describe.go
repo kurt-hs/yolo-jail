@@ -20,10 +20,10 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"slices"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/darwinpkg"
+	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
@@ -90,7 +90,14 @@ func describeMain(args []string, out, errw io.Writer, color bool) int {
 		return 1
 	}
 	pr.Printf("[bold]environment[/bold]  confinement [cyan]%s[/cyan]", notch)
-	prof := confinementProfile(notch, resolvedMechanism(cfg), paths.IsMacOS)
+	// jailcontent.ConfinementProfile, which is ALSO what the agent's briefing header
+	// reads (OQ-DP2, docs/design/declaration-parity.md §2.3). This was `confinementProfile`,
+	// a private twin of the briefing's own lookup, and the two disagreed: describe honored
+	// render.ProfileFor's instruction to source a printed vector from the backend that knows
+	// the platform and the briefing did not, so the human and the agent were told different
+	// things about one boundary. One function is the fix; it lives in jailcontent because
+	// internal/render cannot host it (a render Target carries neither platform nor mechanism).
+	prof := jailcontent.ConfinementProfile(notch, resolvedMechanism(cfg), paths.IsMacOS)
 	printConfinementVector(pr, prof)
 	// Reports what THIS machine would get, so it filters on the running platform —
 	// a linux-only package listed on a Mac would be a description of someone else's
@@ -193,41 +200,6 @@ func printPackageProfile(pr richtext.Printer, prof render.Profile, packages []an
 	pr.Printf("[bold]packages[/bold]     %d declared, resolved to [cyan]%s[/cyan]", len(packages), target)
 	pr.Printf("%s[dim]add %s/bin to PATH to use them outside a launch; "+
 		"GC-rooted at %s[/dim]", confinementLabelPad, target, rootLink)
-}
-
-// confinementProfile is the notch → primitive vector lookup for DISPLAY. It is not
-// render.ProfileFor: that table is deliberately platform-blind (a render Target carries no
-// platform) and returns the Linux spelling of each preset, which is fine for the policy bit
-// it feeds but would print a false vector here — "namespaces" on an Apple Container jail
-// that actually runs a VM. confinement.go's ProfileFor comment says exactly this: when
-// describe prints the vector it must source it from the backend that knows the platform.
-//
-// It takes a render.Kind rather than the config's own string type (plan §6c step 3): the name
-// was resolved once at the boundary in describeMain, so this switch is over the notch as core
-// models it. Same three branches, one less vocabulary in the middle of the pipeline.
-//
-// MECHANISM FIRST, platform only as the fallback, because `runtime` is what a launch will
-// actually use and a primitive is a property of the backend, not of the machine reading the
-// config. So `container` prints the VM, and a NATIVE runtime (macos-user) prints the macOS
-// guest vector — separate user + Seatbelt is what that backend composes by definition, and
-// it is the guest notch by another name (no container, no image) whatever the notch is
-// called. isMacOS decides only the guest variant no mechanism names: a `guest` notch has no
-// backend of its own yet (env-manager Phase 7), so the platform's spelling is the best
-// available answer.
-func confinementProfile(notch render.Kind, mechanism string, isMacOS bool) render.Profile {
-	switch {
-	case notch == render.KindHost:
-		return render.HostProfile()
-	case slices.Contains(paths.NativeRuntimes, mechanism):
-		return render.GuestProfileMacOS()
-	case notch == render.KindGuest:
-		if isMacOS {
-			return render.GuestProfileMacOS()
-		}
-		return render.GuestProfileLinux()
-	default: // jail — Apple Container gives each container its own VM; podman gives namespaces.
-		return render.JailProfile(mechanism == "container")
-	}
 }
 
 // resolvedMechanism resolves the `runtime` a launch would pick, with run()'s own precedence

@@ -146,12 +146,28 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 		IsYoloSourceTree:   isSrc,
 		ProvisioningFailed: jailcontent.ReadProvisioningFailed(o.Workspace),
 		Confinement:        string(config.ResolveConfinement(cfg)),
-		// The backend, not the notch: macos-user confines with Seatbelt around a real
-		// account and has no container at all, so the jail-notch header must not claim
-		// one. Read from `rt` rather than from the config, for the same reason the
-		// network and resource fields are: this describes what the launch APPLIES.
-		NoContainer: rt == "macos-user",
-		Handoff:     handoff,
+		// THE MECHANISM, which is the second axis of the header and was a boolean until
+		// OQ-DP2 (docs/design/declaration-parity.md §2.3). `rt` rather than the config,
+		// for the same reason the network, resource and mount fields above are: this
+		// describes what the launch APPLIES. The header derives both answers from it —
+		// whether there is a container at all, and which primitives are actually
+		// enforcing the boundary — where `NoContainer: rt == "macos-user"` could only
+		// carry the first, so a Seatbelt sandbox was handed the container's own vector.
+		Mechanism: rt,
+		// The platform this launch runs ON, for the one answer the mechanism does not
+		// carry: a `guest` notch has no backend yet, so its Seatbelt-vs-Landlock spelling
+		// comes from here. `yolo describe` passes paths.IsMacOS for the same input; this
+		// path takes the injectable seam so the briefing stays deterministic in tests.
+		IsMacOS: o.IsMacOS,
+		// THE STANDING CONSTRAINTS OF THIS BACKEND, in the agent's voice. Unset for the
+		// whole life of the field (DP-B21): backendLimits had no production call site, so
+		// the "What this environment does NOT do for you" section never rendered once —
+		// while run.noteMacosUserHostByteGaps' no-refusal carve-out says in as many words
+		// that it "is only defensible while the deficiency is SAID — here, and in the
+		// agent's own briefing (backendLimits)". Half of a shipped ruling's stated
+		// precondition did not execute.
+		BackendLimits: backendLimits(rt, staged.packs, cfg),
+		Handoff:       handoff,
 	}
 	briefingBody := jailcontent.BriefingContent(in)
 	briefingBody = jailcontent.ComposeBriefing(briefingBody, cfgStr(cfg, "agents_md_extra"))
@@ -218,9 +234,19 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	//     carve-out).
 	//   - podman's own `--pids-limit 32768` is applied and not briefed, on purpose —
 	//     briefedResourceLimits says why.
-	//   - macos-user reaches none of this: Run() returns before runContainer, so that
-	//     backend gets no briefing at all (OQ-BP-2), which is a delivery gap rather than
-	//     a false sentence.
+	//   - macos-user REACHES ALL OF THIS, and the sentence that stood here saying it
+	//     reached none of it ("Run() returns before runContainer, so that backend gets no
+	//     briefing at all — a delivery gap rather than a false sentence") was true until
+	//     the B-0 content fix put this function on that backend's arm of Run, and exactly
+	//     inverted afterwards: the briefing was delivered and four of its sections were
+	//     false. The four are closed together (declaration-parity.md §11 step 1) — net
+	//     mode and both port lists through appliedNetMode, the /ctx list through
+	//     appliedCtxMounts, the resource line through briefedResourceLimits, and the
+	//     enforcement vector plus the standing-constraints section through Mechanism and
+	//     BackendLimits above. What remains open there is the ## Environment block, which
+	//     is still written in the container's own vocabulary — `/workspace`,
+	//     `/home/agent`, "NixOS-based minimal container" — and is none of those things on
+	//     this backend. It has no catalog row yet.
 	//   - The startup BANNER keeps its own spelling of the resource rule (resPartsFor in
 	//     run.go), so on Apple Container it prints only what the config set while the
 	//     backend caps anyway. Same shape, a different surface: that line is the human's,

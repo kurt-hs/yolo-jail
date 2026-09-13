@@ -17,9 +17,11 @@ package jailcontent
 import (
 	"bytes"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
@@ -84,14 +86,32 @@ type BriefingInput struct {
 	// of the briefing already describes.
 	BackendLimits []string
 
-	// NoContainer is true when the backend running this jail has no container around
-	// it — macos-user today, and every notch below `jail` when they land.
+	// Mechanism is the RUNTIME this launch uses — "podman", "container" (Apple
+	// Container) or "macos-user" — and it is the second of the two axes the header
+	// reads. The notch dial says how much the environment is restricted; the mechanism
+	// says by WHAT, and the two are independent: macos-user runs at `confinement: jail`
+	// with no container in it, and the header that pairing produced claimed a container
+	// that does not exist.
 	//
-	// It is a separate input from Confinement because they are separate axes: the
-	// notch dial says how much the environment is restricted, and this says by WHAT.
-	// macos-user runs at `confinement: jail` with no container in it, and the header
-	// that pairing produced claimed a container that does not exist.
-	NoContainer bool
+	// IT REPLACED A BOOLEAN, and that is the whole of OQ-DP2
+	// (docs/design/declaration-parity.md §2.3). The field used to be `NoContainer bool`,
+	// which is the mechanism smuggled in as one of its own consequences: it could say
+	// "there is no container" but not "a Seatbelt profile around a separate account is
+	// what there is instead", so every notch still printed the LINUX primitive vector
+	// off render.ProfileFor — "namespaces", "a baked image" — three lines under a
+	// paragraph saying there was no container. ConfinementProfile below takes the
+	// mechanism and answers both questions from it, and `yolo describe` calls the same
+	// function, so the human's vector and the agent's cannot drift.
+	//
+	// Empty means "the caller has not resolved a backend", which reads as a container
+	// runtime — the historical behaviour, and what every jail renders today.
+	Mechanism string
+
+	// IsMacOS is the platform the launch runs ON, used for the one answer no mechanism
+	// carries: a `guest` notch has no backend of its own yet (env-manager Phase 7), so
+	// the platform picks between the Seatbelt and the Landlock spelling of that preset.
+	// Every other combination is decided by Mechanism and ignores this.
+	IsMacOS bool
 
 	// Handoff is the content of a fresh .yolo/handover.md pointer, read by the run
 	// pipeline at launch. Empty in the common case, where the task comes from the user.
@@ -110,11 +130,65 @@ type BriefingInput struct {
 // or removed without regenerating a golden. The network mode is AppliedNetMode
 // when set, else NetMode, else "bridge".
 
+// ConfinementProfile is the (notch, mechanism, platform) → primitive vector lookup that
+// BOTH printing surfaces read: this package's briefing header, for the agent, and
+// cli.describe's `enforced by` block, for the human. OQ-DP2 ruled them one function
+// (docs/design/declaration-parity.md §2.3); before that they were two, and the agent's
+// copy was the wrong one.
+//
+// IT IS NOT render.ProfileFor, which is deliberately platform-blind — a render Target
+// carries no platform, so that table returns the LINUX spelling of every preset and its own
+// doc comment says a printed vector must come from the caller that knows the backend. This
+// is that caller. It lives HERE rather than in internal/render for exactly that reason: the
+// platform and the mechanism are inputs render does not have.
+//
+// MECHANISM FIRST, platform only as the fallback, because `runtime` is what a launch
+// actually uses and a primitive is a property of the backend, not of the machine reading
+// the config. So `container` prints the VM, and a NATIVE runtime (macos-user) prints the
+// macOS guest vector — a separate user plus Seatbelt is what that backend composes by
+// definition, and it is the guest notch by another name (no container, no image) whatever
+// the notch is called. isMacOS decides only the guest variant no mechanism names: a `guest`
+// notch has no backend of its own yet (env-manager Phase 7), so the platform's spelling is
+// the best available answer.
+//
+// KindUnset FAILS CLOSED, to the host preset — no primitives, autonomy OFF. The briefing
+// reaches this with an unresolvable notch name (config validation rejects one, so getting
+// here means something bypassed it) where `describe` errors out first, and the asymmetry is
+// the reason: guessing toward `jail` tells an agent on a real machine that its permission
+// prompts are off, and guessing toward `host` only shows prompts a contained agent did not
+// need. render.ProfileFor takes the same direction for the same reason.
+func ConfinementProfile(notch render.Kind, mechanism string, isMacOS bool) render.Profile {
+	switch {
+	case notch == render.KindHost || notch == render.KindUnset:
+		return render.HostProfile()
+	case MechanismHasNoContainer(mechanism):
+		return render.GuestProfileMacOS()
+	case notch == render.KindGuest:
+		if isMacOS {
+			return render.GuestProfileMacOS()
+		}
+		return render.GuestProfileLinux()
+	default: // jail — Apple Container gives each container its own VM; podman gives namespaces.
+		return render.JailProfile(mechanism == "container")
+	}
+}
+
+// MechanismHasNoContainer reports whether a runtime puts no container around the jail —
+// paths.NativeRuntimes, which is `macos-user` today.
+//
+// It is a function over the mechanism rather than a BriefingInput field because the two
+// answers a caller used to supply separately ("there is no container" and "what is there
+// instead") are one fact, and supplying them apart is how a header came to deny a container
+// and then list the container's own primitives (DP-B19).
+func MechanismHasNoContainer(mechanism string) bool {
+	return slices.Contains(paths.NativeRuntimes, mechanism)
+}
+
 // confinementHeader is the briefing's opening block for the notch this environment runs
 // at (env-manager plan Phase 8, C2).
 //
-// It reads the notch's PROFILE, not just its name. The name still picks the title and the
-// framing sentence — that prose genuinely differs per notch, a human reads it, and no
+// It reads the notch's PROFILE and the MECHANISM, not just the notch's name. The name still
+// picks the title and the framing sentence — that prose genuinely differs per notch, a human reads it, and no
 // generated sentence would say "this is the human's REAL machine" as usefully — but the
 // two facts an agent most needs are DERIVED: which primitives actually enforce the
 // boundary, and whether agent autonomy is on. That is what makes the header correct for a
@@ -132,16 +206,23 @@ type BriefingInput struct {
 // tell them something the next two lines of the briefing already say ("a sandboxed
 // container", "no systemd, no sudo"). The notches that gain the primitive vector are the
 // ones whose prose was thin and whose enforcement is genuinely ambiguous — so
-// enforcementLines is appended on the guest/host/unknown paths only, and the jail branch
-// returns its historical literal.
-func confinementHeader(confinement string, noContainer bool) []string {
+// enforcementLines is appended on the guest/host/unknown paths and on the jail-WITHOUT-a-
+// container path, whose prose was rewritten for macos-user and never had historical bytes to
+// protect; the jail-with-a-container branch returns its historical literal and no vector.
+func confinementHeader(confinement, mechanism string, isMacOS bool) []string {
 	notch, known := render.KindForNotch(confinement)
 	if confinement == "" {
 		// Empty means the default, which is jail — the historical behavior, preserved so a
 		// caller that has not resolved the notch renders exactly what it always did.
 		notch, known = render.KindJail, true
 	}
-	prof := render.ProfileFor(notch)
+	// ConfinementProfile, not render.ProfileFor: the second reads the notch alone and
+	// returns the LINUX spelling of every preset, which is the table's own documented
+	// limitation and was printing "namespaces" and "a baked image" to an agent inside a
+	// Seatbelt sandbox with no image at all (OQ-DP2). `yolo describe` calls this same
+	// function for the human's copy of the vector.
+	prof := ConfinementProfile(notch, mechanism, isMacOS)
+	noContainer := MechanismHasNoContainer(mechanism)
 
 	switch {
 	case known && notch == render.KindHost:
@@ -173,14 +254,30 @@ func confinementHeader(confinement string, noContainer bool) []string {
 		// arriving through the one branch that was allowed to keep asserting it. An
 		// agent told it is in a disposable container reasons about its home as
 		// throwaway; here it is neither disposable nor its own.
+		//
+		// TWO LINES OF IT WERE ALSO WRONG, and both were wrong because the mechanism
+		// stopped at this branch instead of reaching enforcementLines (DP-B19, DP-B11):
+		// the vector under it read "namespaces … a baked image" one line after the
+		// paragraph said there was no container, and the "Jail tooling" line printed
+		// twice because this literal carried its own copy of the line enforcementLines
+		// appends. The tooling line is gone from here; the vector is now this
+		// mechanism's.
+		//
+		// The home sentence is narrowed to what is still true of it. Every workspace on
+		// the machine does share the ACCOUNT, but a pack's `scope: workspace` state dirs
+		// are symlinked into <workspace>/.yolo/home by entrypoint.DeriveDarwinHomeLayout,
+		// so "state you write there is not yours alone" stopped being true of the
+		// directories an agent actually writes. What remains machine-wide is the
+		// `scope: machine` set, which backendLimits names one by one.
 		return append([]string{
 			"# YOLO Environment — jail (native, no container)",
 			"",
 			"You are confined by a Seatbelt sandbox on the human's REAL machine, not by a",
 			"container. There is no image and no jail to restart.",
-			"Your home is a real account's home, it PERSISTS between launches, and every",
-			"workspace on this machine shares it — so state you write there is not yours alone.",
-			"Jail tooling: `yolo --help`; config reference: `yolo config-ref`.",
+			"Your home is a real account's home and it PERSISTS between launches. The account",
+			"is shared by every workspace on this machine; the state directories your packs",
+			"declare at `scope: workspace` are linked into THIS workspace's own sidecar, and",
+			"anything else you write in the home is not yours alone.",
 		}, enforcementLines(prof)...)
 	case known && notch == render.KindJail:
 		// Byte-identical to the historical briefing — see the doc comment.
@@ -269,7 +366,10 @@ func BriefingContent(in BriefingInput) string {
 
 	var networkLine string
 	if netMode == "host" {
-		networkLine = "- **Network**: Host networking — the container shares the host network stack. `localhost` / `127.0.0.1` resolves directly to the host. No port mapping needed."
+		// "this environment", not "the container": host networking is also what the
+		// macos-user backend applies, and there is no container anywhere in it
+		// (DP-B3 / DP-L2). The sentence has to be true of both, so it names neither.
+		networkLine = "- **Network**: Host networking — this environment shares the host's network stack. `localhost` / `127.0.0.1` resolves directly to the host. No port mapping needed."
 	} else {
 		networkLine = "- **Network**: Bridge mode. `localhost` in here is the JAIL's loopback. Reach the host at " +
 			"`host.containers.internal` (169.254.1.2) — including host services bound to the host's own " +
@@ -340,7 +440,7 @@ func BriefingContent(in BriefingInput) string {
 		}
 	}
 
-	lines := append([]string{}, confinementHeader(in.Confinement, in.NoContainer)...)
+	lines := append([]string{}, confinementHeader(in.Confinement, in.Mechanism, in.IsMacOS)...)
 	lines = append(lines, provisioningFailed...)
 	// The handoff, if one was handed over for this launch: a one-time transition task,
 	// surfaced once (the run pipeline consumes the pointer once this briefing is written,
@@ -445,6 +545,16 @@ func BriefingContent(in BriefingInput) string {
 		lines = append(lines, "")
 	}
 
+	// DP-B1's SECOND briefing site. The `/ctx` clause was unconditional, so a jail with no
+	// `mounts` at all — and every macos-user jail, which binds none whatever the config says
+	// (run.appliedCtxMounts) — was told a read-only filesystem existed that nothing had
+	// mounted. The "Additional Context Mounts" section above lists what was BOUND; this line
+	// describes the same thing, so the two have to appear and disappear together. Fixing one
+	// and not the other is how the first fix was found to be half a fix.
+	noSudoLine := "- No sudo/root."
+	if len(in.MountDescriptions) > 0 {
+		noSudoLine = "- No sudo/root; context mounts under `/ctx/` are read-only."
+	}
 	lines = append(lines,
 		"## Limitations",
 		"",
@@ -454,7 +564,7 @@ func BriefingContent(in BriefingInput) string {
 		"  push/pull and API calls succeed whenever the jail has its own credentials",
 		"  (e.g. a workspace-specific deploy key or a token in `.env`). Only without",
 		"  such jail-local credentials do authenticated operations fail.",
-		"- No sudo/root; context mounts under `/ctx/` are read-only.",
+		noSudoLine,
 		"",
 		"## Packages & Resource Limits",
 		"",

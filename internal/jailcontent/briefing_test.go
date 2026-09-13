@@ -248,7 +248,7 @@ func TestJailBriefingDoesNotClaimAContainerWhenThereIsNone(t *testing.T) {
 	got := BriefingContent(BriefingInput{
 		Workspace:   "/Users/Shared/yolo/proj",
 		Confinement: "jail",
-		NoContainer: true,
+		Mechanism:   "macos-user",
 	})
 
 	if strings.Contains(got, "sandboxed container") {
@@ -257,7 +257,7 @@ func TestJailBriefingDoesNotClaimAContainerWhenThereIsNone(t *testing.T) {
 	// An agent told it is in a disposable container reasons about its home as
 	// throwaway. Here it is neither disposable nor exclusively its own, and both
 	// halves have to be said.
-	for _, want := range []string{"Seatbelt", "PERSISTS", "shares it"} {
+	for _, want := range []string{"Seatbelt", "PERSISTS", "shared by every workspace"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the header does not say %q — an agent would still assume a "+
 				"disposable home:\n%s", want, got)

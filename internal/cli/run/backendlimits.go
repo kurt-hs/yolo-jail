@@ -27,6 +27,15 @@ import (
 // printers use, so a limit cannot be reported to one audience and not the other. The
 // PROSE differs on purpose — the human gets an explanation at launch, the agent gets
 // a standing constraint — but the conditions do not.
+//
+// ⚠ ONE ENTRY BREAKS THAT TODAY, stated rather than hidden: the network sentence at the
+// bottom has no note* counterpart, because nothing on the launch path says anything about
+// `network.ports` or `forward_host_ports` on this backend at all. The per-key stderr
+// notice that pairs with it is the other half of DP-L2
+// (docs/design/declaration-parity.md §5.1.1 (2)) and is NOT built — it needs a call site
+// beside noteMacosUserContentGaps on the macos-user arm of run.Run. Until it lands the
+// agent is told this and the human is not, which is the right direction to be wrong in
+// (the agent is the one that binds the port) and is still an asymmetry.
 
 // backendLimits returns the standing constraints of `rt` for the agent's briefing,
 // or nil when the backend imposes none (every container backend today).
@@ -39,7 +48,15 @@ func backendLimits(rt string, packs []*packload.Pack, cfg *jsonx.OrderedMap) []s
 	// The home is machine-wide. This is the one that conditions the most: an agent
 	// that believes its home is its own will write state there expecting it to be
 	// private to this project, and it is visible to every workspace on the machine.
-	if dirs := packload.WritableDirs(packs); len(dirs) > 0 {
+	//
+	// SharedDirs, NOT WritableDirs, and the narrowing is a correction rather than a
+	// tightening (DP-B11). WritableDirs is the `scope: workspace` tier, and since
+	// entrypoint.InstallDarwinHomeLayout every one of those directories is symlinked into
+	// <workspace>/.yolo/home — so the line named exactly the directories that are NOT
+	// shared and stayed silent about the ones that are. SharedDirs is `scope: machine`,
+	// which the layout deliberately leaves real in the account home and mirrors into the
+	// sidecar, and it is the tier this sentence has always been describing.
+	if dirs := packload.SharedDirs(packs); len(dirs) > 0 {
 		out = append(out, "Your home is SHARED by every workspace on this machine, not "+
 			"scoped to this project — "+strings.Join(dirs, ", ")+" are the same directories "+
 			"another workspace's session reads and writes. Treat anything you put there as "+
@@ -78,5 +95,18 @@ func backendLimits(rt string, packs []*packload.Pack, cfg *jsonx.OrderedMap) []s
 		out = append(out, "No loophole host services are running, so their in-jail clients "+
 			"(`yolo-ps`, `yolo-journalctl`, `yolo-cglimit`) have nothing to talk to here.")
 	}
+
+	// THE ONE NETWORK SENTENCE NEITHER PARAGRAPH SAYS, and this is the only surface with
+	// a place to put it (docs/design/declaration-parity.md §5.1.1 (3)). The briefing's
+	// host-networking paragraph is true here and incomplete: it says `localhost` reaches
+	// the host and that no port mapping is needed, which leaves an agent to assume the
+	// usual container reading — that a listener is confined until something publishes it.
+	// There is no namespace on this backend, so binding IS publishing, and `network.ports`
+	// pins nothing: every port this agent opens is open on the machine's real interfaces,
+	// whether or not the config ever mentioned it.
+	out = append(out, "There is no network namespace here: every port you bind is bound on "+
+		"the human's REAL machine, on its real interfaces, listed in `network.ports` or not. "+
+		"Nothing publishes a port and nothing confines one — bind to `127.0.0.1` when you do "+
+		"not mean to expose a service to their network.")
 	return out
 }

@@ -71,14 +71,17 @@ func (o *Options) advertiseHostFor(rt string, cfg *jsonx.OrderedMap) string {
 }
 
 // sharesLauncherNetns reports whether the jail being launched will share THIS
-// process's network namespace. It has two readers and they must never disagree:
+// process's network namespace. It has THREE readers and they must never disagree:
 //
 //   - advertiseHostFor, above, to decide what every loopback-TLS daemon PUBLISHES.
 //   - assembleRunCmd, to tell the jail paths.HostLoopbackShared — the disposition
 //     under which an unreachable service has no host-stack excuse, because with one
 //     namespace there is no forwarding hop to have got wrong (OQ-R5).
+//   - appliedNetMode (backendcaps.go), which reads it as a MODE: one namespace with
+//     the launcher IS host networking, and that is what the agent's briefing says
+//     `localhost` means.
 //
-// Which is exactly why it is one function and not two spellings of a predicate. The
+// Which is exactly why it is one function and not three spellings of a predicate. The
 // pair that drifts apart produces a jail told to escalate a failure at an address
 // its daemons never published — a refused launch manufactured out of a healthy host,
 // which is the one outcome the whole host-loopback path is built to avoid.
@@ -86,9 +89,29 @@ func (o *Options) advertiseHostFor(rt string, cfg *jsonx.OrderedMap) string {
 // Apple Container is excluded before the mode is read at all: it does its own
 // networking, takes no network selector from the assembler and gets no host-service
 // bind mount, so its jail never shares this namespace whatever `network.mode` says.
+//
+// MACOS-USER IS ALWAYS TRUE, and it is the only runtime here that is true by
+// CONSTRUCTION rather than by configuration (DP-L2, docs/design/declaration-parity.md
+// §5.1.1). Neither Seatbelt profile yolo emits contains a single `network*` operation —
+// `(allow default)` covers it — and nothing in internal/macosuser touches a port, a bind
+// or a listener. A sandboxed process is an ordinary child of the launcher on the
+// launcher's own stack, so `host` is not a mode it can be put into, it is the only mode
+// it has. The briefing said "Bridge mode … reach the host at host.containers.internal"
+// to an agent whose `localhost` already WAS the host's.
+//
+// THE WIDENING CANNOT MOVE AN ADVERTISE ADDRESS OR A DISPOSITION, which is what the
+// paragraph above would otherwise put at risk. Of the three readers only appliedNetMode
+// is live on this backend: advertiseHostFor is reached only from startLoopholes, whose
+// one caller (startLoopholesDisclosed) runs inside runContainer, and assembleRunCmd's
+// paths.HostLoopbackShared is written in the same function — and run.Run returns on the
+// macos-user arm several hundred lines above both. That arm calls notePackLoopholesInert
+// directly for exactly this reason: no host service starts here to publish anything.
 func sharesLauncherNetns(rt, netMode string, inContainer bool) bool {
 	if rt == "container" {
 		return false
+	}
+	if inStrSlice(paths.NativeRuntimes, rt) {
+		return true
 	}
 	// `network.mode: "host"` is the explicit form; podman-in-podman is the forced
 	// one — netavark cannot create a netns without NET_ADMIN, so the assembler emits

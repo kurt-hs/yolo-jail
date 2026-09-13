@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // backendcaps.go holds the predicates that answer "can this backend do X?" for the
@@ -70,8 +71,12 @@ func roBindsUnsupported(rt string) string {
 // the key is set. "bridge" is what that backend has always rendered and what its warning
 // tells the user to expect; nothing here escalates it (§7).
 //
-// macos-user is deliberately absent: Run() returns before runContainer, so neither
-// caller ever sees that runtime.
+// macos-user is NOT absent, and the comment that used to stand here saying it was
+// ("Run() returns before runContainer, so neither caller ever sees that runtime") named
+// a call site that does exist: refreshJailBriefings runs on the macos-user arm of Run,
+// above the dispatch, which is what made DP-B3 a false sentence rather than an absence.
+// That backend shares the launcher's stack by construction (sharesLauncherNetns), so this
+// answers "host" for it and both port sections fall away with the bridge paragraph.
 func appliedNetMode(rt, netMode string, inContainer bool) string {
 	if rt == "container" {
 		return "bridge"
@@ -91,8 +96,17 @@ func appliedNetMode(rt, netMode string, inContainer bool) string {
 // and it prints why), and the agent was then handed a list of /ctx paths that do not exist.
 // The rule is not restated here — this is roBindsUnsupported's briefing-side projection,
 // which is the whole point of that predicate having a home.
+//
+// The macos-user arm is the SECOND backend that binds none of them, and it gets its own
+// clause rather than joining roBindsUnsupported because the two facts are different: Apple
+// Container refuses a `:ro` bind it would otherwise make, and macos-user makes no bind at
+// all — it has no container to mount anything into. Folding it into the `:ro` predicate
+// would have that predicate answer a question nobody asked it (DP-B1 / DP-L7).
 func appliedCtxMounts(rt string, descriptions []string) []string {
 	if roBindsUnsupported(rt) != "" {
+		return nil
+	}
+	if inStrSlice(paths.NativeRuntimes, rt) {
 		return nil
 	}
 	return descriptions
@@ -204,6 +218,17 @@ const appleContainerDefaultMemoryDesc = "half of host RAM (min 4g)"
 // it would add a standing line to every existing briefing to report a constant. What the
 // line must never do is the opposite — claim a limit the backend never passed.
 func briefedResourceLimits(rt string, resCfg *jsonx.OrderedMap) map[string]any {
+	// NOTHING IS ENFORCED ON macos-user, so nothing is stated (DP-B6 / DP-L8). That
+	// backend passes no flag at all — there is no container to cap — and the launch
+	// already warns the HUMAN that `resources` is read and ignored. The agent was being
+	// told the same numbers were "kernel-enforced", and pointed at `yolo-cglimit`, which
+	// has no delegate to talk to here: the two audiences were given opposite answers in
+	// one launch. The argv-side appliedResourceLimits is deliberately left alone — it is
+	// never reached on this backend, and a briefing-only defect is fixed in the
+	// briefing's own projection.
+	if inStrSlice(paths.NativeRuntimes, rt) {
+		return nil
+	}
 	out := map[string]any{}
 	for _, lim := range appliedResourceLimits(rt, resCfg, func() string { return appleContainerDefaultMemoryDesc }) {
 		if lim.source == limitPipelineDefault {

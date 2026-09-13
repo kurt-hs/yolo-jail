@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -138,8 +139,14 @@ func TestDescribePrintsConfinementVector(t *testing.T) {
 // Seatbelt) whatever the notch is called — printing "namespaces, baked image" for a backend
 // that composes neither is the failure this output exists to remove.
 func TestDescribeVectorFollowsMechanism(t *testing.T) {
-	// A conf.notch/mechanism table rather than three CLI runs: confinementProfile is the
+	// A conf.notch/mechanism table rather than three CLI runs: ConfinementProfile is the
 	// whole decision, and asserting it directly covers the darwin rows a Linux CI cannot run.
+	//
+	// It lives in jailcontent now and describe CALLS it (OQ-DP2): the briefing header reads
+	// the same function, so this table is simultaneously the pin for what an AGENT is told
+	// its boundary is. The row that used to be impossible is the reason — a macos-user jail
+	// printed "separate user + Seatbelt" to the human here and "namespaces + a baked image"
+	// to the agent three lines into its own briefing.
 	// The notch is a render.Kind here, not the config string: describeMain resolves the name
 	// once at the boundary (render.KindForNotch) and everything below reasons about the Kind.
 	cases := []struct {
@@ -157,7 +164,7 @@ func TestDescribeVectorFollowsMechanism(t *testing.T) {
 		{render.KindHost, "macos-user", true, nil},
 	}
 	for _, tc := range cases {
-		prof := confinementProfile(tc.notch, tc.mechanism, tc.isMacOS)
+		prof := jailcontent.ConfinementProfile(tc.notch, tc.mechanism, tc.isMacOS)
 		for _, prim := range tc.want {
 			if !prof.Has(prim) {
 				t.Errorf("%s/%s: vector should compose primitive %d", tc.notch, tc.mechanism, prim)
