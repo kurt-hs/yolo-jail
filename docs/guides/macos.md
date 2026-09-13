@@ -446,8 +446,8 @@ are the whole list.
 | `loopholes` (incl. the Claude OAuth broker) | ✅ | ❌ none start | ❌ none start |
 | `mounts` (context mounts under `/ctx`) | ✅ | ❌ skipped, warns | ❌ skipped, **silent** |
 | Pack `mount` grants (under `/ctx`) | ✅ | ❌ skipped, warns *(since 2026-08-24)* | ❌ skipped, **silent** |
-| Pack `reads-host` grants | ✅ | ✅ copied *(since 2026-08-24)* | ❌ renders defaults, warns *(since 2026-08-24)* |
-| `host_files` entries with a `source` | ✅ | ✅ copied *(since 2026-08-24)* | ❌ dropped, warns *(since 2026-08-24)* |
+| Pack `reads-host` grants | ✅ | ✅ copied *(since 2026-08-24)* | ✅ copied *(since 2026-09-13)* |
+| `host_files` entries with a `source` | ✅ | ✅ copied *(since 2026-08-24)* | ⚠️ a **file** source is copied *(since 2026-09-13)*; a **directory** source is skipped, warns |
 | Host `~/.config/nvim` → `/ctx/host-nvim-config` | ✅ | ❌ skipped, warns *(since 2026-08-24)* | ❌ not read at all |
 | `cache_relocations` | ⚠️ wired, [untested on a Mac](#cache-relocation-cache_relocations) | ❌ skipped, warns | ❌ skipped, warns |
 | `ephemeral_storage` | ✅ | ❌ always `tmpfs` | ❌ not read at all |
@@ -548,8 +548,8 @@ It is the fastest backend and the one that delivers the least.
 | `lsp_servers` | **installed, since 2026-09-13.** ⚠ NOT MEASURED on hardware — it was **MEASURED FALSE** there on 2026-09-12, when this backend set `YOLO_LSP_SERVERS` (the table that renders config) and neither of the two install variables the generated script's loop reads, so the stage exited 0 having installed nothing. Both now cross — into the bootstrap env and into the session env file the confined stage sources — from the recipe table both backends share (`config.LSPInstalls`); the ruling to wire rather than re-warn is [`OQ-P5`](../design/macos-user-provisioning.md#decision-ledger) | `macosuser/runplan.go` → `BuildRunPlan`; `macosuser/provision.go` → `ProvisionArgv` |
 | `mise_tools` | **installed**, since 2026-09-12: `mise` is on the floor and the stage runs `mise install` into a machine-wide `MISE_DATA_DIR`. Also warned until that landed. ⚠ NOT MEASURED on hardware | `macosuser/provision.go` → `ProvisionSetup` |
 | `mcp_presets` | config renders, wrappers are **not delivered** — **warns** from inside the bootstrap. The preset wrappers are Linux-absolute, and the stage installs none of the npm packages behind them | `entrypoint/darwin.go` → `RunDarwinBootstrap` |
-| Pack `reads-host` grants | **do not cross** — **warns** (since 2026-08-24). The bytes arrive on a `/ctx` mount and there is none, so each surface renders from its *defaults* layer instead. The agent gets a working config file that is not yours — the more dangerous of the two host-byte gaps, because nothing about the result looks wrong | `run/loopholeinert.go` → `noteMacosUserHostByteGaps` |
-| `host_files` entries with a `source` | **dropped from the launch entirely** — **warns** (since 2026-08-24). No file appears at those paths. Filtering them out is deliberate: rendering them would serve the entry's defaults in place of the host file you named. Entries with `content`/`defaults` and no `source` are unaffected | `macosuser/runplan.go` → `sourceLessHostFilesWire` |
+| Pack `reads-host` grants | **delivered by COPY, since 2026-09-13.** ⚠ NOT MEASURED on hardware — the delivery is unit-tested only; what *was* measured on a Mac (2026-09-13) is the probe that ruled out the cheaper alternative, a symlink, because Seatbelt evaluates the link's TARGET. The launcher copies each granted file into a root-owned tree under `/var/yolo-jail` that the sandbox can read and cannot write, and names it with `YOLO_CTX_ROOT`, so each surface composes *your* file. From 2026-08-24 until then they **did not cross** and warned: every surface rendered from its *defaults* layer, which was the more dangerous of the two host-byte gaps because nothing about the result looked wrong | `run/macosctxtree.go` → `buildMacosCtxTree`; `macosuser/macosuser.go` → `StageCtxCommands` |
+| `host_files` entries with a `source` | **a FILE source is delivered by COPY, since 2026-09-13** — into the same tree as the row above, and with the same measurement caveat. A **DIRECTORY** source is still not delivered, and is now skipped with a **warning that names it**: a copy does not scale to an arbitrary tree, so split it into the files you need or use `runtime: "container"`, which binds it. Every source was **dropped from the launch entirely** (warning since 2026-08-24) until then — no file appeared at those paths at all. Entries with `content`/`defaults` and no `source` were never affected | `macosuser/runplan.go` → `hostFilesWire`; `run/loopholeinert.go` → `noteMacosUserHostByteGaps` |
 | Pack `state` at `scope: workspace` | **per-workspace**, as everywhere else. The sandbox home is still the constant `/Users/_yolojail`, but each state dir in it is a **symlink** into `<workspace>/.yolo/home` — the same host directory podman binds from. It was shared across every workspace on the machine, and warned about, until the home layout landed | `entrypoint/darwinhomelayout.go` → `DeriveDarwinHomeLayout` |
 | cgroups / resource limits | unavailable (no cgroups on macOS) | as [Cgroup Delegation](#cgroup-delegation-resource-limits) below |
 
@@ -557,12 +557,20 @@ The `mounts` row is the sharp one: it fails **silently**, so a config that
 declares context mounts appears to work and delivers nothing. Pack `mount`
 grants take the same path and are equally quiet.
 
-The two host-byte rows were added on 2026-08-24 and were silent before it. They
-are worth reading together, because they fail differently and only one of them is
-honest about it: a dropped `host_files` source leaves *nothing* at the path, while
-a `reads-host` grant leaves a plausible substitute. Neither is fixed — the fix is a
-delivery mechanism (materialize into the sandbox home, the way Apple Container's
-copies work), which is a design change rather than a launch-time patch.
+The two host-byte rows are worth reading together, because for a year they were the
+two halves of one gap and they failed differently: a dropped `host_files` source left
+*nothing* at the path, while a `reads-host` grant left a plausible substitute. Only the
+first was honest. Both were silent until 2026-08-24, warned from then, and **both are
+delivered from 2026-09-13** — by exactly the mechanism this section used to name as the
+outstanding fix: materialize the bytes host-side, the way Apple Container's copies
+already worked. One difference from a bind survives and is worth knowing: a copy is a
+snapshot taken at launch, so a host-side edit reaches the sandbox on the *next* launch
+rather than live.
+
+What is left of the gap is directory-shaped, and deliberately so. A config `mounts`
+entry, a pack `mount` grant and a `host_files` entry whose `source` is a directory all
+name an arbitrary user tree that a copy does not scale to. The first two are still
+**silent**; the third now warns by name.
 
 `workspace_readonly` is the row that changed. It was a **silent no-op** on
 `macos-user` until commit `d0961f2c` (2026-08-23) — the key validated, the

@@ -217,7 +217,7 @@ directory listing again.
 
 | Config key | Container | macos-user | Told? |
 | :--- | :--- | :--- | :--- |
-| `mise_tools` | installed by the stage | nothing; shims dir on PATH so it *looks* provisioned; `~/.config/mise/config.toml` written to the shared home | warns, host-side (`noteMacosUserHostByteGaps`'s caller in `internal/cli/run/loopholeinert.go`, since 2026-09-04) |
+| `mise_tools` | installed by the stage | ⚠ **ROW SUPERSEDED 2026-09-12.** It said *nothing* was installed — shims on PATH so it only *looked* provisioned. All three grounds for that are now false: the floor puts `mise` on the sandbox PATH, the stage runs `mise install`, and the sandbox home has a mise data dir (`internal/cli/run/loopholeinert.go`, the `noteMacosUserContentGaps` rewrite) | no longer warned, for the same reason. ⚠ The old citation named `noteMacosUserHostByteGaps`'s caller; the mise text lives in the sibling `noteMacosUserContentGaps`, and `ed69c593` severed that indirection |
 | `lsp_servers` | npm-installed by the stage | config renders, binaries absent | warns, host-side (`loopholeinert.go`) |
 | `mcp_presets` | npm-installed by the stage | wrappers skipped | warns — **in the bootstrap only** (`RunDarwinBootstrap`, `darwin.go`), so `--dry-run` never shows it |
 | agent CLIs (lazy launchers), `via: installer` | launcher execs the vendor installer | **works** — `curl` and `bash` are at `/usr/bin`; MEASURED 2026-09-11, three of three packs, two installing from scratch | n/a — nothing to tell |

@@ -542,9 +542,15 @@ func (p *Pack) HostFileConflicts() []string {
 // EVERY host file this pack reads, from BOTH declarations that can ask for one: its
 // `reads-host` contributions, and the `readsHost` field of its own config surfaces
 // (OQ-CO10, 2026-09-12). ONE accessor rather than two, because every consumer wants the
-// same thing — the mount argv, the /ctx collision check, the macos-user deficiency notice,
-// the briefing that names what did not cross — and a second accessor is a call site that
-// will be written against the wrong half. The footprint is the one exception, and only
+// same thing — what this pack asks to read off the host — and a second accessor is a call
+// site that will be written against the wrong half. Two consumers ship: the container
+// path's `:ro` mount argv (run.hostFileArgs) and the macos-user COPY that puts the same
+// bytes at the same /ctx destinations with no mount at all (run.buildMacosCtxTree).
+//
+// ⚠ THIS USED TO NAME TWO MORE — "the macos-user deficiency notice" and "the briefing that
+// names what did not cross" — and DP-L1 removed both on 2026-09-13 rather than renaming
+// them. Each existed only to say the bytes could not cross on that backend; the copy above
+// is what they were replaced by. The footprint is the one exception, and only
 // because it reports per DECLARATION (FootprintOf walks the contributions and the surfaces
 // separately, and emits the same reads-host claim from either).
 func (p *Pack) HonoredHostFiles() (granted []packdecl.HostFile, refused []string) {

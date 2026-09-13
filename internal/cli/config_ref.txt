@@ -590,8 +590,13 @@
     ~/.gitconfig, the yolo-* single-file mounts) or any yolo-composed agent
     surface (~/.claude/settings.json, ~/.config/mise/config.toml, …).
     Runtime support: podman gets everything.  "macos-user" has no bind mounts,
-    so only SOURCE-LESS entries are staged there — a source-bearing one is
-    skipped rather than silently rendering without its host layer.
+    so host bytes arrive by COPY into a root-owned tree the sandbox reads
+    instead (since 2026-09-13).  A `source` naming a single FILE is delivered
+    there normally.  A `source` naming a DIRECTORY is not — a copy does not
+    scale to an arbitrary tree — so it is skipped and NAMED in a warning; split
+    it into the files you need, or use the Apple Container runtime
+    (runtime: "container"), which binds it.  Source-LESS entries are unaffected
+    on every backend: they copy nothing from the host to begin with.
     Example (~/.config/yolo-jail/config.jsonc):
       "host_files": [
         "~/.npmrc",                    // raw, readonly

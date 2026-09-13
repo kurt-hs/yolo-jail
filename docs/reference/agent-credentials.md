@@ -201,9 +201,17 @@ call: their machine, their decision, and a blocklist would be unenforceable anyw
 symlinks. The boundary is that the *repo* cannot make that choice on their behalf.
 
 The resolved entry list travels to the entrypoint in an environment variable, so the host CLI is
-the single source of truth and the entrypoint never re-reads config. `macos-user` carries only the
-source-less entries: with no bind mounts there is no `/ctx/host-user` to carry a source into, and
-a source-bearing entry is **skipped** rather than silently rendering without its host layer.
+the single source of truth and the entrypoint never re-reads config. `macos-user` carries the same
+list, in two halves that come from different places: the source-less entries are read out of the
+merged config by the pure plan builder, and the source-bearing ones are resolved by the host CLI,
+which also **copies each file source** into a root-owned tree the sandbox reads and names it with
+`YOLO_CTX_ROOT`. There is still no bind mount anywhere on that backend; the bytes arrive by copy.
+
+> **⚠ Changed 2026-09-13.** Until then that backend carried **only** the source-less entries: with
+> no bind mounts there was no `/ctx/host-user` to carry a source into, so a source-bearing entry
+> was **skipped** rather than silently rendered without its host layer. One shape is still
+> skipped — a `source` naming a **directory**, which a copy does not scale to — and it is now
+> named in a warning instead of dropped in silence.
 
 ### The Claude OAuth broker
 
@@ -346,7 +354,7 @@ fully open.
 | git identity, global gitignore | composed file, `:ro` bind | composed file, **materialized** (no nested `:ro`) | forwarded as env, replayed with `git config --global` |
 | `env_sources` | file mounted, sourced | file **materialized**, sourced | baked onto the launch argv via `env -i` |
 | Per-agent host settings grant | `/ctx/host-<pack>/` `:ro` mount, then boot compose | materialized copy, then boot compose | boot compose, fail-open — no `/ctx`, same pure generators |
-| User `host_files` | source-bearing: `/ctx/host-user/<slug>` `:ro`; source-less: composed | source-less composes; single-file `:ro` for `/ctx/host-user` unhandled upstream | **source-less only** |
+| User `host_files` | source-bearing: `/ctx/host-user/<slug>` `:ro`; source-less: composed | source-less composes; single-file `:ro` for `/ctx/host-user` unhandled upstream | source-less composes; a **file** `source` is copied into a root-owned `/ctx` tree (2026-09-13); a **directory** `source` is skipped and warned |
 | Claude shared credentials | shared bind + relative symlink | not mounted — one whole-home bind, so creds live in that per-workspace home | free — one real credentials file in the shared home |
 | claude-oauth-broker | active when the `claude` pack is selected | **skipped** — it declares `intercepts`, which need `--add-host` | skipped by default; the shared home is already one creds file |
 | Host-service loopholes | endpoint file + `YOLO_SERVICE_*_ENDPOINT` | how the endpoint file crosses into an AC guest is an unmade mount decision | not wired — the loophole runtime lives in the container launch path |

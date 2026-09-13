@@ -110,10 +110,17 @@ unmeasured at all.
 > **Confirmed still true 2026-08-23, and now with a line number.** This backend has **no bind
 > mounts of any kind** — `internal/macosuser/runplan.go:186` and
 > `internal/macosuser/seatbelt.go:25` both say so, and
-> `internal/macosuser/macosuser_test.go:294-300` pins it as an *accepted deficiency*: a
-> `host_files` entry that carries a `source` is FILTERED OUT rather than rendered with an
+> a `host_files` entry that carries a `source` is FILTERED OUT rather than rendered with an
 > empty host layer, because there is no `/ctx/host-user` to carry it. The same absence is why
 > config `mounts` (`/ctx/...`) does not reach this backend either.
+>
+> **⚠ Superseded in part, 2026-09-13 — kept because it is a dated record of what was
+> confirmed.** The mount half stands: this backend still has none. The *consequence* does
+> not. DP-L1 delivers a source-bearing `host_files` entry, and every pack `reads-host`
+> grant, by a host-side COPY into a root-owned tree the sandbox reads
+> (`internal/cli/run/macosctxtree.go`) — no mount involved — so the filter is no longer
+> an accepted deficiency for a FILE source. A DIRECTORY source is still undelivered, now
+> with a warning that names it, and config `mounts` is still silent.
 
 > The old version of this section warned that `macos-user-nix-and-features.md:174` claimed
 > pack selection worked here when it did not. That row now reads ⚠️ with the Mac-unverified

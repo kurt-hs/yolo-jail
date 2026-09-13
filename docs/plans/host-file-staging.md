@@ -30,6 +30,29 @@ the code actually does and what remains open.
 > claim about `transform` — the field table and the shipped-capability table — are edited rather
 > than annotated, because a reference row is read as fact.
 
+> [!IMPORTANT]
+> **Postscript, 2026-09-13 — a source-bearing `host_files` entry now CROSSES on `macos-user`.**
+> It was an accepted deficiency from the day this doc was written: that backend has no bind
+> mounts, so there was no `/ctx/host-user` to carry a source into, and `SourceLessHostFilesFrom`
+> filtered every source-bearing entry out of `YOLO_HOST_FILES` rather than render it with an
+> empty host layer. DP-L1 built the mechanism the deficiency was waiting on — a host-side COPY
+> into a root-owned tree under `/var/yolo-jail`, named to the sandbox by `YOLO_CTX_ROOT`
+> (`internal/cli/run/macosctxtree.go`) — so `macosuser.hostFilesWire` emits both halves now and
+> the entry composes from the user's real file.
+>
+> - **A `source` naming a single FILE is delivered.** The filter is not gone, but its reason
+>   changed: it is the PURE half of a two-half read, kept by the credential boundary rather than
+>   by a missing mechanism — a source-bearing entry is legible only from the user's own config,
+>   which the pure plan builder may not read.
+> - **A `source` naming a DIRECTORY is still not delivered**, and is now skipped with a warning
+>   that NAMES it instead of in silence. A copy does not scale to an arbitrary user tree; use
+>   `runtime: "container"`, which binds it.
+> - **Two reference rows are edited rather than annotated** — the Shipped table's `macos-user`
+>   row and the Out table's source-bearing row — for the reason the postscript above gives: a
+>   reference row is read as fact. What stays annotated is
+>   [macos-user — accepted deficiencies](#macos-user--accepted-deficiencies-not-design-constraints),
+>   which is a record of what was BELIEVED and keeps it.
+
 **Supersedes:** the `## 10` retirement decisions in
 [agent-settings-composition.md](agent-settings-composition.md) — specifically
 **D4** ("hard-error, as if it never existed"). This plan reopens a user-scope
@@ -55,7 +78,7 @@ yolo-declared; this plan adds a **user** path beside them, it does not touch the
 | **1** — config schema | `host_files` key, `HostFileEntry`, `LoadHostFiles`, `checkHostFiles`, `validateHostFiles`, the per-entry scope rule | `internal/config/hostfiles.go` |
 | **2** — de-sugar + render | the four modes, directory copy, `/ctx/host-user/<slug>` reads, `YOLO_HOST_FILES` wire form | `internal/entrypoint/hostfiles.go` |
 | **2** — host-side wiring | `YOLO_HOST_FILES` emission, `:ro` source mounts, destination staging | `internal/cli/run/hostfiles.go` |
-| **2** — macos-user | source-less entries only (`SourceLessHostFilesFrom`) | `internal/macosuser/runplan.go` |
+| **2** — macos-user | source-less entries from the merged config, plus the source-bearing entries the host CLI staged into the context tree (`hostFilesWire`); a directory `source` is skipped and warned | `internal/macosuser/runplan.go`, `internal/cli/run/macosctxtree.go` |
 | **3** — visibility | `yolo config ls` / `diff` / `reset` + a boot-time divergence notice | `internal/cli/config{ls,diff}.go`, `internal/entrypoint/prism.go` |
 | **4** — docs | `host_files` block in `config-ref`; `agent-credentials.md` [§2.4](../reference/agent-credentials.md#user-declared-host-files-host_files); `jail-home.md` [§2.8](../reference/jail-home.md#extra-mounts-a-config-declares); D4 annotated | — |
 | **tests** | unit coverage per phase, plus 4 real-container tests | `integration/hostfiles_test.go` |
@@ -122,7 +145,7 @@ design of record for the `host_files` key itself and is **closed** to new scope.
 | **In-jail-added comments captured back** | Never captured, never reverted; documented as one-way host→jail. | #3 |
 | **`managed`/`defaults` array-append pinning** | Object merge only; an array in `managed` replaces rather than appends. Shape-checked at config time, so no surprise at render. | #3 |
 | **`readonly` as a kernel-enforced `:ro` mount** | It is `0o444` DAC. Documented in config-ref as "a strong signal and a speed bump, not a sandbox", with the root-bypass called out. | #3 |
-| **Source-bearing entries on `macos-user`** | Filtered out (`SourceLessHostFilesFrom`) rather than rendered without their host layer. | accepted deficiency |
+| **A directory `source` on `macos-user`** | Skipped and NAMED in a warning: a copy does not scale to an arbitrary user tree, and this backend has no bind mount to use instead. A FILE `source` is delivered by copy since 2026-09-13 — see the postscript. | accepted deficiency |
 | **Single-file `:ro` on Apple Container** | apple/container#1089; source-less entries compose fine. | accepted deficiency |
 | **Arbitrary host→container paths** | Destinations are `$HOME`-relative; an absolute path is a `yolo check` error pointing at `mounts`. | won't do (by design) |
 
@@ -1002,6 +1025,14 @@ revisited when `macos-user` is shaped up:
 - **Host `source` entries can't bind-mount** (no `/ctx`), so they **fail-open to
   `defaults`** — a source-less managed entry still works via the pure generator; a
   source-bearing one degrades. Accepted.
+  > **✅ Closed 2026-09-13 (DP-L1).** Kept rather than deleted because the prediction
+  > above was wrong twice, and both ways are worth knowing. What shipped was not a
+  > fail-open to `defaults`: `SourceLessHostFilesFrom` dropped the entry from the wire
+  > outright, so *nothing* appeared at the destination — which the Out table recorded
+  > correctly while this bullet did not. And *"can't bind-mount"* was never the same
+  > claim as *"can't deliver"*; the bytes cross now by a host-side COPY into a
+  > root-owned tree, with no mount anywhere. A directory `source` is the one shape
+  > still undelivered — see the postscript at the top.
 
 ## Worked examples
 
@@ -1325,7 +1356,8 @@ surfaces too, which have carried silent capture overlays since the prism cutover
   gap that exists for the builtin surfaces today.
 - **macos-user is not a design constraint** — composition runs there; the gaps
   (not read-only, no sidecar isolation, source fail-open) are recorded
-  deficiencies to revisit during the `macos-user` pass, not schema limits.
+  deficiencies to revisit during the `macos-user` pass, not schema limits. The
+  third was revisited and closed on 2026-09-13; see the postscript at the top.
 
 **Resolved during implementation** (both were the "still open" forks):
 

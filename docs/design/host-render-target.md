@@ -352,12 +352,21 @@ stating as a rule, because "degrade `mounts` to copies off-container" is the obv
 answer and it is the one this doc reached for first. The shipped code already rules it out,
 twice:
 
-- **macos-user filters rather than degrades.** A source-bearing `host_files` entry is
-  *dropped* on that backend, with the reason recorded in code: there is no `/ctx/host-user`,
-  so passing it through "would render with an empty host layer and silently serve its
-  defaults instead of the host file the user named"
-  (`macosuser/runplan.go:160-166`, pinned by `TestSourceLessHostFilesWireExcludesSourceBearing`).
-  **Filtering out is the precedent, not copying.**
+- **macos-user refuses the DIRECTORY-shaped delivery rather than degrading it.** A
+  `host_files` entry whose `source` is a directory is *not* copied on that backend: it names
+  an arbitrary user tree, a copy does not scale to one, and it is left undelivered and named
+  in a warning instead (`run/macosctxtree.go`). Config `mounts` and pack `mount` grants are
+  the same shape and get the same answer. **Refusing is the precedent for a mount, not
+  copying.**
+
+  > **⚠ Updated 2026-09-13 — read the original form of this bullet as superseded.** It cited
+  > the *source-bearing `host_files`* filter, which dropped every such entry on that backend
+  > because there was no `/ctx/host-user` to carry one into. DP-L1 delivers the FILE-shaped
+  > half by copy now, so that is no longer an instance of this rule. The rule itself is
+  > unchanged, and the line DP-L1 drew is the line it always implied: what a copy cannot
+  > substitute for is a **live tree**. A single `host_files` file is re-rendered at boot on
+  > the container path too (`yolo config-ref`, *Modes*), so a launch-time snapshot of it is
+  > equivalent rather than degraded; a mounted directory is not, and stays refused.
 - **The one place yolo does copy, it copies into something still bind-mounted.**
   `acMaterialize` (`cli/run/helpers.go`) exists only because Apple Container trips on
   *single-file* mounts (apple/container#1089); it writes into `ws_state`, which is itself a
@@ -760,10 +769,13 @@ Two reasons to insist on the naming rather than the skipping:
 
 - [§9.7](#9-open-questions--the-discussion-part) is what a silent skip looks like after a year in production — a backend rendering zero
   surfaces every launch, with nothing in the output to say so.
-- macos-user's `host_files` filter already does it the right way, and the reason is written in
-  the code: a passed-through entry "would render with an empty host layer and silently serve
-  its defaults instead of the host file the user named" (`macosuser/runplan.go:160-166`).
-  Refusing loudly is the shipped precedent; the failure mode of not doing so is documented.
+- macos-user's own undeliverable shape already does it the right way: a `host_files` entry
+  whose `source` is a DIRECTORY is left undelivered and NAMED in a warning rather than
+  half-performed, because a copy does not scale to an arbitrary tree (`run/macosctxtree.go`,
+  `run/loopholeinert.go`). Refusing loudly is the shipped precedent; the failure mode of not
+  doing so is documented. ⚠ This bullet used to cite the *source-bearing* filter, which
+  dropped every `host_files` source on that backend; DP-L1 delivers the file-shaped half by
+  copy since 2026-09-13, so the surviving instance is the directory one.
 
 ### 6.3 The structural problem: on a host target, the `host` layer *is* the output
 
@@ -857,7 +869,9 @@ That has a crisp consequence worth stating as a rule:
   filesystem. Honoring it would be a copy the user did not ask for.
 - **`mount` is unavailable, and must be refused rather than emulated** ([§2.2](#22-so-which-is-it-a-command-or-a-mode)). No mount
   namespace means no `:ro`, and a copy goes silently stale — a pack update that appears to
-  apply and doesn't. macos-user's `reads-host`/`host_files` filter is the precedent. The
+  apply and doesn't. macos-user's refusal of a DIRECTORY `host_files` source is the precedent
+  (it delivers the file-shaped `reads-host`/`host_files` half by copy since 2026-09-13, and
+  refuses exactly the tree-shaped one this bullet is about). The
   *composed* artifacts a pack delivers — the merged skills tree, `AGENTS.md` — are a separate
   question: those are composition results (their own `skills`/`briefing` kinds now) and port
   like config surfaces do, which is why [§7.3](#73-one-pack-three-environments)'s walkthrough writes them and [§6.5](#65-the-posture-stated-as-a-table)'s `assert`

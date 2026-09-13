@@ -117,8 +117,15 @@ func (o *Options) hostFileArgs(in *assembleInput) []string {
 //
 // This is the CONTAINER path, so Delivery is always "supported" — every backend that
 // reaches here can carry a host file, Apple Container by copying it into the home rather
-// than binding it. The macos-user arm reports "unsupported" from its own plan builder
-// (internal/macosuser/runplan.go), which is the one backend with no mechanism at all.
+// than binding it. The macos-user arm produces its own report from its plan builder
+// (internal/macosuser/runplan.go): "supported" with the delivered list when the host CLI
+// staged a context tree, "unsupported" only when it staged none.
+//
+// ⚠ NO BACKEND REPORTS "unsupported" UNCONDITIONALLY since DP-L1 shipped (2026-09-13).
+// This comment used to call macos-user "the one backend with no mechanism at all"; that
+// was a fact about a missing mechanism, and the mechanism now exists — a host-side copy
+// into /var/yolo-jail/ctx. "unsupported" is a statement about a LAUNCH that delivered
+// nothing, never about a backend that cannot.
 func (o *Options) hostLayerEnv(in *assembleInput) []string {
 	wire, err := packload.HostLayerReport{
 		Delivery:  packload.HostLayersSupported,

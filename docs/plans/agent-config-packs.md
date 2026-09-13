@@ -1392,12 +1392,20 @@ is the cheap slice.
 as `:ro` mounts, so the story differs per backend: podman is the reference path;
 Apple Container cannot bind-mount a single file and needs `acMaterialize`
 (`assemble.go:189,361`), which the existing briefing path already uses; and
-**macos-user has no mount concept and no `/ctx` at all** — `SourceLessHostFiles`
-(`internal/config/hostfiles.go:918-926`) filters source-bearing `host_files`
-entries out on that backend *specifically so the deficiency stays explicit rather
-than half-working*. Packs are source-bearing by definition, so macos-user needs a
-copy-based staging fallback, tracked as the same known gap and Mac-gated. Phase 0's
-`file://` sources make this tractable: the source is already a local host path.
+**macos-user has no mount concept and no `/ctx` mount at all**, so it needs a
+copy-based staging fallback — which it has had since 2026-09-13. The launcher
+composes a context tree host-side and stages it root-owned under `/var/yolo-jail`,
+named to the sandbox by `YOLO_CTX_ROOT` (`internal/cli/run/macosctxtree.go`); pack
+`reads-host` grants and file-shaped source-bearing `host_files` entries ride it.
+Phase 0's `file://` sources are tractable for the same reason that made the fallback
+tractable: the source is already a local host path. ⚠ What a copy still cannot carry
+is a DIRECTORY-shaped source, which is left undelivered and named in a warning.
+
+> This paragraph used to say the fallback was an unbuilt known gap, Mac-gated, and
+> that `SourceLessHostFiles` filtered source-bearing entries out *"specifically so the
+> deficiency stays explicit rather than half-working"*. That filter still exists and
+> its reason changed: it is now the PURE half of a two-half read, kept by the
+> credential boundary rather than by a missing mechanism.
 
 **Phase 1 — git sources (~1 week, ~260 lines in one dependency-free package).**
 `internal/packsrc`: `ParseAddr`, `Store.Sync` (blobless promisor mirror,

@@ -31,8 +31,8 @@ package packload
 //     deploy on different cadences (AGENTS.md, "the two halves deploy on different
 //     cadences"), so absence has to be survivable.
 //   - SEVERITY IS THE DISPOSITION'S ALONE. `unsupported` and absent never escalate — a
-//     backend that cannot carry host bytes is not refused for what it cannot do (the
-//     reachability witness's OQ-R3, same sentence).
+//     launch that carried no host bytes is not refused for a delivery nobody attempted
+//     (the reachability witness's OQ-R3, same sentence).
 //   - THE JAIL IS A WITNESS, NOT A SECOND DECIDER. It compares what it was told against
 //     what it finds; it does not re-derive the decision.
 
@@ -47,9 +47,19 @@ const HostLayerEnvVar = "YOLO_HOST_LAYERS"
 // HostLayerReport is that report: whether this backend delivers host layers at all, and
 // which /ctx destinations this launch actually put there.
 type HostLayerReport struct {
-	// Delivery is the BACKEND's capability: "supported" when this launch can carry a host
-	// file into the jail, "unsupported" when the backend has no mechanism for it at all
-	// (macos-user, which has no bind mounts and no /ctx).
+	// Delivery is what THIS LAUNCH did: "supported" when it had a mechanism for carrying a
+	// host file into the jail and used it, "unsupported" when it carried none and so
+	// delivered nothing.
+	//
+	// ⚠ IT WAS A BACKEND CAPABILITY UNTIL 2026-09-13, and macos-user was the entire
+	// reason: host bytes crossed on a /ctx mount, that backend has none, so its plan
+	// builder reported "unsupported" unconditionally. DP-L1 gave it a mechanism — a
+	// host-side COPY into a root-owned tree named to the jail by YOLO_CTX_ROOT — and the
+	// premise went with it. It now answers "supported" the moment the host CLI composed a
+	// tree and "unsupported" when it composed none (macosuser.hostLayerWire), so the value
+	// is keyed on the delivery rather than on the platform. No backend reports
+	// "unsupported" unconditionally any more; what still emits it is a caller that staged
+	// no tree at all — the install capture is the shipped one.
 	Delivery string `json:"delivery"`
 	// Delivered lists the /ctx destinations the launcher delivered, as packload.CtxPath
 	// computes them — the exact strings the entrypoint opens. A surface's destination
@@ -58,7 +68,8 @@ type HostLayerReport struct {
 	Delivered []string `json:"delivered,omitempty"`
 }
 
-// The two Delivery values. A third would be a new fact about a backend, not a new severity.
+// The two Delivery values. A third would be a new fact about what a launch delivered, not
+// a new severity.
 const (
 	HostLayersSupported   = "supported"
 	HostLayersUnsupported = "unsupported"
@@ -75,9 +86,18 @@ const (
 	// HostLayerNoHostFile: the launch could have delivered it and there was nothing to
 	// deliver. The user has not created the file. Composes without the host layer.
 	HostLayerNoHostFile HostLayerDisposition = "no-host-file"
-	// HostLayerUnsupported: this backend carries no host layers at all. Composes without
-	// one, and the launch says so by name on the host side (run.noteMacosUserHostByteGaps)
-	// and in the agent's own briefing (run.backendLimits).
+	// HostLayerUnsupported: this LAUNCH carried no host layers at all, so there is nothing
+	// to have arrived. Composes without one and refuses nothing, which is OQ-R3's rule
+	// unchanged: a delivery nobody attempted is not a delivery that failed.
+	//
+	// ⚠ NOBODY NAMES A BACKEND HERE ANY MORE, and the two printers this comment used to
+	// send the reader to are the evidence rather than a casualty of it. Both still exist.
+	// run.noteMacosUserHostByteGaps was NARROWED on 2026-09-13 to the one shape DP-L1 did
+	// not deliver — a `host_files` entry whose source is a DIRECTORY, which is DP-D15 —
+	// and run.backendLimits had its host-byte paragraph ("your agent config files were
+	// rendered from DEFAULTS, not from the human's own") DELETED outright. What retired
+	// both texts is that macos-user now delivers host bytes by copy, so neither the human
+	// nor the agent can still be told the backend carries none.
 	HostLayerUnsupported HostLayerDisposition = "unsupported"
 	// HostLayerUnknown: no report in the environment — a launcher older than this variable.
 	// Composes without refusing, which is exactly the behaviour that shipped before it.
@@ -94,7 +114,7 @@ func (r HostLayerReport) Marshal() (string, error) {
 	return string(b), nil
 }
 
-// HostLayersUnsupportedWire is the entire report a backend with no delivery mechanism
+// HostLayersUnsupportedWire is the entire report a launch that carried no host bytes
 // emits. A function rather than a literal so the wire has ONE producer, and error-free
 // because a two-field struct of a string and a nil slice cannot fail to marshal.
 func HostLayersUnsupportedWire() string {

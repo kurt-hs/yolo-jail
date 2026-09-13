@@ -85,8 +85,10 @@ func stageHostFile(e *Env, entry config.HostFileEntry) error {
 	if entry.IsDir {
 		// A directory entry is always source-bearing (checkHostFileObject rejects a
 		// dir with no source), so its tree lives at the /ctx/host-user/<slug> mount.
-		// A missing mount (source absent on the host, or macos-user with no /ctx)
-		// leaves nothing to copy — fail-open, matching a missing file source.
+		// Nothing there (source absent on the host, or macos-user, which delivers
+		// FILE sources by copy since DP-L1 and still refuses a DIRECTORY one — a copy
+		// does not scale to an arbitrary tree) leaves nothing to copy: fail-open,
+		// matching a missing file source.
 		src := hostUserPath(entry.Slug())
 		if _, err := os.Stat(src); err != nil {
 			return nil
@@ -208,9 +210,12 @@ func hostFileSurface(entry config.HostFileEntry) manifest.Surface {
 
 // hostFileLayerBytes resolves the `host` layer bytes for a file entry:
 //
-//   - a source-bearing entry reads its /ctx/host-user/<slug> mount, fail-open —
-//     a missing mount (host source absent, or macos-user with no /ctx) yields
-//     nil and the surface falls back to defaults<managed;
+//   - a source-bearing entry reads its /ctx/host-user/<slug> path, fail-open —
+//     nothing there (the host source does not exist, or this launch delivered no
+//     host bytes) yields nil and the surface falls back to defaults<managed. ⚠ That
+//     parenthetical named macos-user until 2026-09-13, when DP-L1 gave it a copy into
+//     a root-owned tree hostUserPath resolves through; a FILE source arrives there
+//     like anywhere else now;
 //   - a content entry uses the inline literal verbatim (HasContent distinguishes
 //     an explicit empty file from an absent one);
 //   - a layers-only entry (defaults/managed, no source/content) has no host

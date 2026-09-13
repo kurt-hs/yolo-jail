@@ -67,8 +67,12 @@ func LoadJailPacks(e *Env) ([]*packload.Pack, error) {
 
 	root := e.Getenv("YOLO_PACK_ROOT")
 	if root == "" {
-		// No packs mounted. Legitimate: an older host launcher, macos-user, or a jail
-		// started with no packs at all. Renders nothing rather than failing.
+		// No packs mounted. Legitimate: an older host launcher, or a jail started with
+		// no packs at all. Renders nothing rather than failing.
+		//
+		// ⚠ macos-user was in that list and is not a reason any more: it sets
+		// YOLO_PACK_ROOT from its own staged tree (macosuser/runplan.go). An empty root
+		// on that backend means the same thing it means everywhere else — no packs.
 		return nil, nil
 	}
 	var packs []*packload.Pack
@@ -483,10 +487,19 @@ func renderDeclaredSurface(e *Env, surface manifest.Surface, tables map[string]m
 // and the jail cannot read it there.
 //
 // The other three compose without the host layer and say nothing, each for its own reason:
-// the user has no such file (normal); this backend carries no host layers at all
-// (macos-user, whose deficiency the launch and the briefing both name); or there is no
-// report, which means only that the host half is older than this variable and never that
-// nothing was delivered.
+// the user has no such file (normal); this LAUNCH carried no host layers at all, so there
+// was never anything to arrive; or there is no report, which means only that the host half
+// is older than this variable and never that nothing was delivered.
+//
+// ⚠ THE SECOND OF THOSE USED TO NAME A BACKEND — "macos-user, whose deficiency the launch
+// and the briefing both name" — and both halves of that sentence expired on 2026-09-13.
+// DP-L1 gave macos-user a delivery mechanism (a host-side copy into a root-owned tree), so
+// it reports `supported` whenever a tree was staged and a delivered file it cannot read
+// refuses the launch here like anywhere else; the launch warning was narrowed to the one
+// shape that still does not cross (a directory `host_files` source) and the briefing
+// paragraph was deleted outright. `unsupported` is now a fact about a launch that staged
+// nothing — the install capture is the shipped one — and OQ-R3 still says such a launch
+// is not refused for a delivery nobody attempted.
 func hostSurfaceBytes(e *Env, surface manifest.Surface) ([]byte, error) {
 	// Through Surface.HasHostLayer rather than an inline HostSource test: the host-side
 	// `config` verbs decide the same thing about the same surfaces, and this is the call

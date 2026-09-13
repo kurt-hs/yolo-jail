@@ -968,12 +968,19 @@ func UnmarshalHostFiles(s string) ([]HostFileEntry, error) {
 }
 
 // SourceLessHostFiles returns the source-less entries — the ones that cross no
-// host file into the jail. The macos-user backend passes only these through
-// YOLO_HOST_FILES: it has no /ctx/host-user mount to carry a source into, so a
-// source-bearing entry there would silently render with no host layer. Filtering
-// them out (rather than letting them fall back to defaults) keeps the deficiency
-// explicit — source-bearing host_files on macos-user are a known gap to revisit,
-// not a half-working surprise.
+// host file into the jail. They are the half a PURE reader can have: a source-less
+// entry copies nothing from the host, so the merged config is its proper source,
+// while a source-bearing entry names a host path and is legible only through the
+// user-config-only read that IS the credential boundary (see SourceBearing).
+//
+// ⚠ THIS IS NO LONGER THE WHOLE WIRE ON macos-user, and the change is 2026-09-13
+// (DP-L1). That backend used to pass ONLY these through YOLO_HOST_FILES, because a
+// source crossed on a /ctx mount it does not have and a source-bearing entry would
+// have rendered with no host layer; filtering kept the deficiency explicit rather
+// than half-working. The bytes cross now, by a host-side COPY into a root-owned tree
+// the sandbox reads, so macosuser.hostFilesWire emits BOTH halves: these entries from
+// the merged config, plus the source-bearing entries the host CLI resolved and staged.
+// What survives of the old split is the purity contract above, not a missing mechanism.
 func SourceLessHostFiles(entries []HostFileEntry) []HostFileEntry {
 	out := make([]HostFileEntry, 0, len(entries))
 	for _, e := range entries {

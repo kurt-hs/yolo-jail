@@ -420,21 +420,31 @@ the *unwritable* half is missing — the copy is agent-writable, which
 half is one `readonlyDenies`-shaped `(deny file-write* …)` per delivered path.
 
 So two features already took the copy route. The census of what could follow,
-corrected against the tree 2026-09-11:
+corrected against the tree 2026-09-11 and re-checked 2026-09-13:
+
+> **Two rows of it shipped on 2026-09-13, built exactly as the last column proposed** —
+> the launcher composes the bytes host-side and stages them root-owned, and the sandbox
+> reads a tree it cannot write. That makes **four** features on the copy route, not two,
+> and it is the reason the two `✅ BUILT` rows below still carry their old *"macos-user
+> today"* text: what a row predicted and what shipped are the same sentence, and dropping
+> the prediction would delete the evidence that the argument above held.
 
 | Feature | Container mechanism | macos-user today | Copy + Seatbelt equivalent |
 | :--- | :--- | :--- | :--- |
 | skills, briefings | `:ro` bind per staged dir | **copied, writable** — warned | add a write deny per delivered path; precedent `SeatbeltCaptureProfile`'s post-allow home deny in `seatbeltcapture.go` |
 | `host_files`, source-less (`content`/`defaults`, any of the four modes) | rendered by `ConfigureHostFiles` under a `:ro` base | **already works** — `darwin.go` runs the same generator; `readonly` chmods `0444` here too | add a `(deny file-write* (literal <dest>))` for `mode: readonly` |
-| `host_files`, source-bearing | `:ro` `/ctx/host-user` bind carries the host bytes | **dropped, warned** (`loopholeinert.go:365-370`; `SourceLessHostFiles`, `internal/config/hostfiles.go`) | launcher copies the host file into the root-owned staging tree; ⚠ the source-bearing read is the user-config-only read that *is* the credential boundary (`HostFileStaging`, `hostfiles.go`), so the copy must happen in the host CLI, never in the pure plan builder |
-| pack `reads-host` (the host layer) | `:ro` `/ctx` mount | **renders from DEFAULTS, warned** — *"a working config file that is not yours"* (`loopholeinert.go:349-352`) | same as the row above; the most urgent, because its failure looks like success |
+| `host_files`, source-bearing | `:ro` `/ctx/host-user` bind carries the host bytes | **✅ BUILT 2026-09-13** — a FILE `source` is copied into the root-owned tree; a DIRECTORY `source` is left undelivered and named in a warning (`run/macosctxtree.go`, `run/loopholeinert.go`). It was *dropped, warned* before that | shipped as written, including the ⚠: the source-bearing read is the user-config-only read that *is* the credential boundary, so the copy runs in the host CLI (`internal/cli/run/`) and never in the pure plan builder |
+| pack `reads-host` (the host layer) | `:ro` `/ctx` mount | **✅ BUILT 2026-09-13** — every granted file is copied into the same tree, so the surface composes the user's own bytes. It *rendered from DEFAULTS, warned* before that — *"a working config file that is not yours"* | same as the row above; it was the most urgent, because its failure looked like success |
 | pack `mount`, config `mounts` | `:ro` bind under `/ctx` | **silently ignored, no warning** — the only row with none (`docs/guides/macos.md`, `mounts` row) | copy into the root-owned staging tree as the pack tree already is (`StagePackCommands`); at minimum, warn |
 
 ⚠ **The first draft's row "`mode: once` / `copy` — already possible, it is a copy"
-was wrong.** Entries are dropped by *source-bearing-ness*, not by mode
-(`SourceLessHostFilesFrom`, `hostfiles.go`): a `mode: copy` entry with a `source` is dropped today, and
-a `mode: readonly` entry without one works today. There are four modes, not three —
-`readonly`, `once`, `copy`, `capture` (`hostfiles.go:59-62`).
+was wrong**, and kept here because the reason it was wrong outlived it. Entries were never
+selected by mode: the axis was *source-bearing-ness* (`SourceLessHostFilesFrom`,
+`hostfiles.go`), so a `mode: copy` entry WITH a `source` was dropped while a
+`mode: readonly` entry without one worked. There are four modes, not three — `readonly`,
+`once`, `copy`, `capture`. Since 2026-09-13 the axis is source SHAPE rather than
+source-bearing-ness: a file `source` is delivered under every mode, a directory `source`
+under none.
 
 ⚠ **And on `readonly` this would be STRONGER than the container backends, not a
 degraded port.** `yolo config-ref` says of the container path: *"0444 is DAC, not
