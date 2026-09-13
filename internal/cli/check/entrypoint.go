@@ -70,9 +70,19 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 
 	e := entrypoint.NewEnv(vars)
 
+	// IN BOOT'S ORDER, AND COMPLETE — both halves matter, and this list was neither.
+	// The preflight's whole claim is "what the real boot would generate", so a
+	// generator missing here makes `yolo check` report on a jail that differs from the
+	// one that boots. It omitted GeneratePackageManagerLaunchers for as long as that
+	// step has existed and DeliverLaunchFlags from the day it landed (2026-09-13) —
+	// silently, because a shorter list cannot fail. All three of the launcher-dir
+	// generators are here now; TestThePreflightRunsEveryBootGenerator is what notices
+	// the next one.
 	generators := []func(*entrypoint.Env) error{
 		entrypoint.GenerateShims,
 		entrypoint.GenerateAgentLaunchers,
+		entrypoint.GeneratePackageManagerLaunchers,
+		entrypoint.DeliverLaunchFlags,
 		entrypoint.GenerateBashrc,
 		entrypoint.GenerateBootstrapScript,
 		entrypoint.GenerateVenvPrecreateScript,
