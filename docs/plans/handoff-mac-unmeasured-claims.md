@@ -35,7 +35,7 @@ changed on 2026-09-13 that is now waiting on hardware, in the order that buys th
 > (`## Packages & Resource Limits`, offering a `resources` cap this backend ignores by ruling),
 > fixed in `8027814e`.
 >
-> **What is left in this file: the nightly ([§4](#4-the-nightly-and-the-exit-125-nobody-has-explained)) only** —
+> **What is left in this file: the nightly ([§4](#4-the-nightly--five-links-all-now-named)) only** —
 > the nightly was re-dispatched 2026-09-13 (run `34774761002`) and its `exit 125` is still
 > unexplained. That needs no Mac.
 
@@ -67,7 +67,7 @@ one Mac run of its integration subtest"* has now happened and passed. Six of the
 items therefore have a passing automated twin on a schedule.
 
 ⚠ **The `Nightly macOS Integration` workflow is a different job and is still not a signal.** See
-[§4](#4-the-nightly-and-the-exit-125-nobody-has-explained).
+[§4](#4-the-nightly--five-links-all-now-named).
 
 ---
 
@@ -240,7 +240,7 @@ a real launch's other output, and that a config declaring **none** of these keys
 
 ---
 
-## 4. The nightly, and the exit 125 nobody has explained
+## 4. The nightly — five links, all now named
 
 **Needs:** no Mac — this is CI. Listed here because it is macOS-gated in practice.
 
@@ -257,11 +257,32 @@ named, and [`OQ-IP4`](../design/darwin-image-provenance.md#decision-ledger) now 
 > unreliable. Re-dispatch on a commit that includes the fix
 > (`gh workflow run nightly-macos.yml --repo mschulkind-oss/yolo-jail --ref main`).
 
-**`exit code: 125` is a separate, still-unexplained symptom**, deliberately not guessed at. It
-is podman's own "could not start", so the container never started, and the harness's 60-line
-report cap swallowed podman's words. The report now quotes the last lines when it truncates,
-so **the next red nightly should finally say what 125 was.** Expect it to survive the stock-tag
-fix; if it does not appear at all, say so, because that is information too.
+> [!NOTE]
+> **RESOLVED 2026-09-13, and `exit 125` was two more links rather than one.** The report cap was
+> widened exactly as planned, the next red nightly said what 125 was, and clearing it exposed
+> another cause underneath. The whole chain, in the order each became visible — each was hidden
+> by the one before it, which is the thing worth carrying forward about this failure:
+>
+> | # | Cause | Symptom it presented as | Fixed |
+> | :--- | :--- | :--- | :--- |
+> | 1 | `imageIdentity` varied by system, so a darwin host could not vouch for a Linux-built image | every launch demanded a rebuild | [`OQ-IP1`](../design/darwin-image-provenance.md#decision-ledger), 2026-09-12 |
+> | 2 | the launcher built the image **unconditionally** — there was no rebuild *decision* to fix | `IMAGE BUILD FAILED` | [`OQ-IP4`](../design/darwin-image-provenance.md#decision-ledger) |
+> | 3 | `podman machine init -v` REPLACES the default share set, so `-v /nix:/nix` deleted `/Users`, `/private` and `/var/folders` | `exit 125` → `Error: statfs <path>` | `1e55f321` |
+> | 4 | two of four shards exceeded `timeout-minutes: 50` once launches did real work | half the run's evidence silently missing | eight shards, `178fa9f2` |
+> | 5 | `-v /nix/store:/nix/store:ro` shadowed the image's own store; `/bin/*` are symlinks BY VALUE into it, and a darwin store holds no Linux closure | `exec: "bash": executable file not found` — 50 times, 41 tests | `8f59c674` |
+>
+> **Link 3's fix is what made link 5 visible**, and link 5 had been latent since 2026-09-08.
+> Nothing was flaky; every one was deterministic and each only surfaced once its predecessor
+> stopped failing first.
+>
+> ⚠ **What is NOT fixed, and is expected:** three tests (`TestExtraPackageLibFarm`,
+> `TestExtraPackagesFromMountedStore`, `TestDevPackageLinksRuntimeLib`) declare `packages:`, which
+> makes them genuinely NON-STOCK, so they correctly build — and this runner has no Linux builder.
+> That is the designed behaviour, not a bug. Whether they should SKIP on a builder-less runner
+> rather than fail is an open question nobody has ruled.
+>
+> **Still open:** the run proving link 5 had not finished when this was written. Confirm with
+> `exec: "bash"` → 0, `IMAGE BUILD FAILED` → still 3, and the other 38 green.
 
 ---
 
@@ -287,7 +308,7 @@ is currently undeclared — and the second outcome is the one worth going lookin
    probe 3 — the read `DP-L4` already depends on.
 3. One macos-user launch, reading [§2](#2-the-briefing-batch-on-the-arm-no-test-executes) and
    [§3](#3-the-new-stderr-notices-in-real-output) off the same run.
-4. Re-dispatch the nightly ([§4](#4-the-nightly-and-the-exit-125-nobody-has-explained)) — it
+4. Re-dispatch the nightly ([§4](#4-the-nightly--five-links-all-now-named)) — it
    needs no Mac and can run while you do the rest.
 
 **Report raw output, not verdicts.** Three of these threads can retract something already
