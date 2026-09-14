@@ -101,38 +101,120 @@ func pySplitMax(s string, maxsplit int) []string {
 	return out
 }
 
-// inspectMountSource returns the host Source bound at `dest` for container
-// `name`, or ("", false) on any inspect failure / absence. It runs
-// `inspect --format {{json .Mounts}}` and decodes the mounts array via a
-// type-guarded walk (a non-array top-level or a non-object element is skipped,
-// never crashes), returning the first matching non-empty Source. Its callers pass
-// dest=/workspace (InspectWorkspaceMount) and dest=/opt/yolo-jail/bin
-// (InspectPrefixBinMount).
-func inspectMountSource(rt, name, dest string, run RunFunc) (string, bool) {
+// mountsArrayFrom decodes an `inspect --format {{json .Mounts}}` payload into
+// the mounts it describes, and reports whether the payload is RECOGNISABLE as a
+// mounts array at all. It is the "could I ask?" half of inspectMountSourceKnown's
+// tri-state, and its strictness is the whole safety argument for that tri-state.
+//
+// MEASURED 2026-09-13, podman 5.x, on this repo's own jail: a container with no
+// mounts prints exactly "[]" — a well-formed EMPTY ARRAY, not "null" and not an
+// error — and a container with mounts prints an array of objects each carrying a
+// string "Destination" and "Source". So an empty array is a COMPLETE answer
+// ("this container has no mounts"), which is precisely the distinction that was
+// missing: see inspectMountSourceKnown.
+//
+// ⚠ THE "Destination" REQUIREMENT IS NOT A PARANOIA TAX, it is what stops an
+// UNMEASURED runtime being read as "no mounts". The concrete worry is Apple
+// Container: every `container inspect` call site in this repo omits `--format`
+// (internal/cli/ps.go, internal/cli/check/probes.go) and
+// runtime.WorkspaceFromContainerInspectJSON documents its output as a container
+// document — "a single object or a list" — whose env is at `config.env`. What AC
+// does when handed podman's `--format` is NOT MEASURED here; if it errors we
+// decline on RC anyway, but if it ignores the flag and prints that list, the
+// payload decodes to a JSON array perfectly well and without this check every AC
+// container would answer "no mount at <dest>" with known=true — turning a
+// decline into a sweep on a runtime nothing here has measured. An element that
+// is not an object, or an object with no string "Destination", therefore means
+// this is not a mounts array and yolo does not know the answer.
+func mountsArrayFrom(stdout string) ([]map[string]any, bool) {
+	var top any
+	if err := json.Unmarshal([]byte(stdout), &top); err != nil {
+		return nil, false
+	}
+	arr, ok := top.([]any)
+	if !ok {
+		// Covers `null` as well as an object or a scalar: nil is not an answer.
+		return nil, false
+	}
+	mounts := make([]map[string]any, 0, len(arr))
+	for _, mi := range arr {
+		m, ok := mi.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if _, ok := m["Destination"].(string); !ok {
+			return nil, false
+		}
+		mounts = append(mounts, m)
+	}
+	return mounts, true
+}
+
+// inspectMountSourceKnown is the TRI-STATE mount lookup, and the distinction it
+// draws is the one this package's reapers are built on:
+//
+//   - ("", false)  — yolo COULD NOT ASK. The binary did not run, the runtime
+//     returned non-zero (a container that vanished between enumeration and
+//     inspect answers here: `no such object`, rc=125, MEASURED), or the payload
+//     is not a mounts array. Callers must decline.
+//   - ("", true)   — yolo ASKED, and this container has NO MOUNT AT `dest`.
+//     A COMPLETE answer, not a failure.
+//   - (src, true)  — this container binds `src` at `dest`.
+//
+// # WHY THE MIDDLE STATE HAD TO EXIST
+//
+// It did not, and collapsing it into the first one silently disabled the two
+// biggest reapers yolo has. Every live container is asked this question by
+// LivePrefixSources, and the set of live `yolo-*` containers is WIDER than the
+// set of jails: `yolo-linux-builder` (internal/containerbuilder) wears the same
+// name prefix and mounts nothing at all, and any jail launched before the
+// mounted prefix shipped has no /opt/yolo-jail/bin mount either. Each of those
+// answers "no mount at dest" — a fact, fully known — and while that was spelled
+// the same way as "the runtime is down", ONE of them anywhere on the machine
+// made the whole answer unusable and every prefix root and superseded store
+// output immortal. MEASURED in this repo's own jail 2026-09-13: one live
+// `yolo-linux-builder`, `.Mounts == []`, and both sweeps skipped.
+//
+// A container that answers "no mount at /opt/yolo-jail/bin" is not executing
+// pid1 out of a mounted prefix — the launcher ALWAYS binds it there
+// (prefixBinMountDest, pinned to the launcher by
+// TestPrefixBinMountDestMatchesTheLauncher) — so it holds no prefix root and
+// protects nothing. Dropping it from the live set therefore cannot delete
+// anything it needs. That is why this widening is not a weakening of the
+// decline: the decline still fires, unchanged, for every container yolo could
+// not ask.
+func inspectMountSourceKnown(rt, name, dest string, run RunFunc) (string, bool) {
 	res := run([]string{rt, "inspect", "--format", "{{json .Mounts}}", name}, inspectTimeout)
 	if !res.Ran || res.RC != 0 {
 		return "", false
 	}
-	var top any
-	if err := json.Unmarshal([]byte(res.Stdout), &top); err != nil {
-		return "", false
-	}
-	mounts, ok := top.([]any)
+	mounts, ok := mountsArrayFrom(res.Stdout)
 	if !ok {
 		return "", false
 	}
-	for _, mi := range mounts {
-		m, ok := mi.(map[string]any)
-		if !ok {
-			continue
-		}
+	for _, m := range mounts {
 		if d, _ := m["Destination"].(string); d == dest {
 			if src, ok := m["Source"].(string); ok && src != "" {
 				return src, true
 			}
 		}
 	}
-	return "", false
+	return "", true
+}
+
+// inspectMountSource returns the host Source bound at `dest` for container
+// `name`, or ("", false) when there is no such mount OR the lookup failed. It is
+// the FOUND/NOT-FOUND wrapper over inspectMountSourceKnown, for the two callers
+// that only ever ask about one container and have nothing to decline: its
+// callers pass dest=/workspace (InspectWorkspaceMount) and dest=/opt/yolo-jail/bin
+// (InspectPrefixBinMount).
+//
+// Anything making a DESTRUCTIVE decision must use inspectMountSourceKnown
+// instead, because this signature cannot express "asked, and the answer is no" —
+// which is the exact conflation that disabled the prefix reapers.
+func inspectMountSource(rt, name, dest string, run RunFunc) (string, bool) {
+	src, known := inspectMountSourceKnown(rt, name, dest, run)
+	return src, known && src != ""
 }
 
 // InspectWorkspaceMount returns the host path bound at /workspace for `name`, or

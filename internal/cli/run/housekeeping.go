@@ -296,7 +296,7 @@ func (o *Options) reapSupersededStoreOutputs(rt string) {
 	// this closes. "No running jails" and "I cannot tell" must not be the same
 	// answer when the action is deleting a store path.
 	live := prune.LiveYoloContainers(rt, run)
-	inUseSources, srcKnown := prune.LivePrefixSources(rt, live, prune.PrefixBinMountDest, run)
+	inUseSources, srcKnown, _ := prune.LivePrefixSources(rt, live, prune.PrefixBinMountDest, run)
 	if !srcKnown {
 		return // not stamped: the next launch retries
 	}
@@ -436,7 +436,7 @@ func (o *Options) reapFlakeBundleGenerations(rt string) {
 	}
 	run := o.pruneRunFunc()
 	live := prune.LiveYoloContainers(rt, run)
-	sources, known := prune.LivePrefixSources(rt, live, prune.PrefixBinMountDest, run)
+	sources, known, _ := prune.LivePrefixSources(rt, live, prune.PrefixBinMountDest, run)
 	if !known {
 		return // not stamped: the next launch retries
 	}

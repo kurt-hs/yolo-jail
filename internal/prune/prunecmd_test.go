@@ -877,3 +877,110 @@ func TestImageCacheKeepUnsetIsNotZero(t *testing.T) {
 			"builds Options before any runtime is detected, so it must not bake a number", got)
 	}
 }
+
+// TestPrefixRootSweepSurvivesTheLinuxBuilder is the END-TO-END pin for the
+// defect, driven through Run() so it fails if the call site goes away as well as
+// if the logic regresses.
+//
+// THE FIXTURE IS THE MAINTAINER'S HOST. `yolo-linux-builder`
+// (internal/containerbuilder) matches the `yolo-` prefix ParsePodmanLive filters
+// on, so it is in the live set beside the real jails, and it mounts nothing —
+// podman answers `[]`, rc=0 (MEASURED 2026-09-13 in this repo's own jail). While
+// that was spelled the same as "could not inspect", this whole section printed
+// "skipped" on every run and 36.4 GiB across 572 store paths had no collector.
+//
+// It asserts the three things that were wrong at once: the section does NOT
+// skip, it reaps exactly the root no jail is on, and it leaves the live jail's
+// root alone.
+func TestPrefixRootSweepSurvivesTheLinuxBuilder(t *testing.T) {
+	o, gs := baseOpts(t)
+	o.Now = time.Now
+	const livePath = "/nix/store/aaaa-yolo-jail-install-prefix"
+	const deadPath = "/nix/store/bbbb-yolo-jail-install-prefix"
+	rootsDir := filepath.Join(gs, "build", "prefix-roots")
+	liveLink := mkPrefixRoot(t, rootsDir, livePath, 30*24*time.Hour)
+	deadLink := mkPrefixRoot(t, rootsDir, deadPath, 30*24*time.Hour)
+
+	inspect := map[string]string{
+		"yolo-linux-builder": "[]",
+		"yolo-ws-deadbeef":   mountsJSON(livePath+"/"+image.JailPrefixSubdir+"/bin", PrefixBinMountDest),
+	}
+	o.Exec = func(argv []string, _ time.Duration) ProbeResult {
+		switch {
+		case len(argv) >= 3 && argv[1] == "ps" && argv[2] == "-a":
+			return ProbeResult{Ran: true, Stdout: "yolo-linux-builder running\nyolo-ws-deadbeef running\n"}
+		case len(argv) == 5 && argv[1] == "inspect":
+			if out, ok := inspect[argv[4]]; ok {
+				return ProbeResult{Ran: true, Stdout: out}
+			}
+			return ProbeResult{Ran: true, RC: 125}
+		}
+		return ProbeResult{Ran: true}
+	}
+
+	var buf bytes.Buffer
+	o.Out = &buf
+	o.Apply = true
+	if rc := Run(o); rc != 0 {
+		t.Fatalf("rc=%d\n%s", rc, buf.String())
+	}
+
+	for _, l := range lines(&buf) {
+		if strings.HasPrefix(l, "  skipped —") && strings.Contains(l, "prefix") {
+			t.Fatalf("the prefix sweep skipped:\n%s\nA live `yolo-linux-builder` mounts nothing and "+
+				"podman says so with `[]`. That is an ANSWER. Treating it as missing evidence is "+
+				"what left every prefix root and superseded store output immortal.", l)
+		}
+	}
+	if !hasLine(&buf, "  removed: 1 root(s)  (no running jail is executing from these)") {
+		t.Fatalf("expected exactly one root reaped:\n%s", buf.String())
+	}
+	if _, err := os.Lstat(liveLink); err != nil {
+		t.Error("the RUNNING jail's prefix root was reaped — that is the file behind its own pid1")
+	}
+	if _, err := os.Lstat(deadLink); err == nil {
+		t.Error("the orphaned root survived --apply")
+	}
+}
+
+// TestPrefixSweepSkipNamesWhatFailed: when the sweep really cannot ask, the line
+// must say WHICH evidence was missing. The old message was one string for three
+// different machines — podman down, one odd container, nothing running — and a
+// reader comparing `yolo stores` against `yolo prune` had no way to tell which
+// they had. That ambiguity is why this went unnoticed for weeks.
+func TestPrefixSweepSkipNamesWhatFailed(t *testing.T) {
+	o, gs := baseOpts(t)
+	o.Now = time.Now
+	mkPrefixRoot(t, filepath.Join(gs, "build", "prefix-roots"),
+		"/nix/store/cccc-yolo-jail-install-prefix", 30*24*time.Hour)
+	o.Exec = func(argv []string, _ time.Duration) ProbeResult {
+		switch {
+		case len(argv) >= 3 && argv[1] == "ps" && argv[2] == "-a":
+			return ProbeResult{Ran: true, Stdout: "yolo-ws-cafebabe running\n"}
+		case len(argv) == 5 && argv[1] == "inspect":
+			return ProbeResult{Ran: true, RC: 125} // vanished between ps and inspect
+		}
+		return ProbeResult{Ran: true}
+	}
+	var buf bytes.Buffer
+	o.Out = &buf
+	Run(o)
+
+	if !hasLine(&buf, "  skipped — could not read running container yolo-ws-cafebabe's mounts "+
+		"from podman; declining to sweep") {
+		t.Fatalf("the skip line must name the container and the runtime:\n%s", buf.String())
+	}
+}
+
+// TestPrefixSweepDistinguishesNothingRunningFromNothingToDo: the third reading of
+// a bare "none". A machine with no jails up and a machine whose every root is in
+// use both printed the same word.
+func TestPrefixSweepDistinguishesNothingRunningFromNothingToDo(t *testing.T) {
+	o, _ := baseOpts(t)
+	var buf bytes.Buffer
+	o.Out = &buf
+	Run(o)
+	if !hasLine(&buf, "  none  (0 running jail(s) consulted, 0 executing from a prefix)") {
+		t.Fatalf("the empty prefix-root section should report what it consulted:\n%s", buf.String())
+	}
+}

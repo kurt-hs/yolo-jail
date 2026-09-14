@@ -697,7 +697,7 @@ func Run(opts Options) int {
 		// Same in-use guard as the launch path's pass: a prefix a live jail is
 		// executing from is not superseded, whether or not anything rooted it.
 		// An unenumerable runtime declines the section rather than proceeding.
-		inUseSources, srcKnown := LivePrefixSources(rt, live, PrefixBinMountDest, opts.Exec)
+		inUseSources, srcKnown, why := LivePrefixSources(rt, live, PrefixBinMountDest, opts.Exec)
 		inUse := map[string]bool{}
 		for src := range inUseSources {
 			if sp := PrefixStorePathOf(src); sp != "" {
@@ -711,8 +711,11 @@ func Run(opts Options) int {
 		}
 		switch {
 		case !srcKnown:
-			p.line(fmt.Sprintf("  [dim]skipped — could not ask %s which prefix each running jail "+
-				"executes from; declining to delete store paths[/dim]", rt))
+			// THE REASON IS NAMED, because the undifferentiated version of this
+			// line hid a standing fault for weeks: it read identically whether
+			// podman was down, one odd container had poisoned the answer, or
+			// nothing was running. See LivePrefixDecline.
+			p.line(fmt.Sprintf("  [dim]skipped — %s; declining to delete store paths[/dim]", why))
 		case len(candidates) == 0:
 			p.line("  [dim]none[/dim]")
 		default:
@@ -734,18 +737,22 @@ func Run(opts Options) int {
 	if !opts.NoImageRoots {
 		p.line("")
 		p.line("[bold]Orphaned prefix GC roots[/bold]  [dim](the jail's own binaries)[/dim]")
-		sources, srcKnown := LivePrefixSources(rt, live, prefixBinMountDest, opts.Exec)
+		sources, srcKnown, why := LivePrefixSources(rt, live, prefixBinMountDest, opts.Exec)
 		if !srcKnown {
-			p.line(fmt.Sprintf("  [dim]skipped — could not ask %s which prefix each running jail "+
-				"executes from; declining to sweep[/dim]", rt))
+			p.line(fmt.Sprintf("  [dim]skipped — %s; declining to sweep[/dim]", why))
 		} else {
 			reaped := PruneOrphanPrefixRoots(joinPath(opts.BuildDir(), "prefix-roots"),
 				sources, srcKnown, apply, opts.Now())
+			// THE THIRD AMBIGUITY, answered on the SUCCESS path: "nothing to reap"
+			// and "nothing was running to reap against" printed the same bare
+			// "none". The consulted count separates them without a second line.
+			consulted := fmt.Sprintf("  [dim](%s running jail(s) consulted, %s executing from a prefix)[/dim]",
+				fmtComma(len(live.Names)), fmtComma(len(sources)))
 			if len(reaped) > 0 {
 				p.line(fmt.Sprintf("  %s: %s root(s)  [dim](no running jail is executing from these)[/dim]",
 					verb(apply, "would remove", "removed"), fmtComma(len(reaped))))
 			} else {
-				p.line("  [dim]none[/dim]")
+				p.line("  [dim]none[/dim]" + consulted)
 			}
 		}
 	}
