@@ -3,7 +3,7 @@ title: "Handoff: the claims that shipped on reading, and the Mac that can settle
 status: in-review
 date: 2026-09-13
 tags: [macos-user, handoff, seatbelt, declaration-parity, ci, image]
-summary: "Seven threads landed on 2026-09-13 whose correctness was read off source rather than observed. All of them are now measured on hardware except the nightly's unexplained exit 125: the three Seatbelt probes ran (nothing inverted — Seatbelt evaluates the target, so DP-L1's mechanism stays a copy), and one launch settled the briefing batch and both notice sets. Two defects were found in the process, both fixed: the workspace reached SeatbeltProfile un-resolved, which made its rules dead and was masking a bypass of the neutral-ground refusal, and the briefing's Packages section offered a resources cap this backend ignores by ruling. DP-L1 (the largest cell, shipped unit-tested-only) now has its READ half measured too: `--dry-run` composes the real context tree host-side with no sudo, so byte selection, layout and destination are observed — only the privileged crossing still needs a human at a terminal."
+summary: "Seven threads landed on 2026-09-13 whose correctness was read off source rather than observed. All of them are now measured on hardware except the nightly's unexplained exit 125: the three Seatbelt probes ran (nothing inverted — Seatbelt evaluates the target, so DP-L1's mechanism stays a copy), and one launch settled the briefing batch and both notice sets. Two defects were found in the process, both fixed: the workspace reached SeatbeltProfile un-resolved, which made its rules dead and was masking a bypass of the neutral-ground refusal, and the briefing's Packages section offered a resources cap this backend ignores by ruling. DP-L1 (the largest cell, shipped unit-tested-only) is now measured END TO END: `--dry-run` composes the real context tree host-side with no sudo, so byte selection, layout and destination were observed without a password, and the privileged crossing then passed on hardware — all four §6 items, including the fail-closed read — whose stated procedure had to be corrected first, because the per-launch restage re-creates any file removed from the staged tree."
 ---
 
 # Handoff: the claims that shipped on reading, and the Mac that can settle them
@@ -369,6 +369,47 @@ darwin bootstrap.
 > forwarded through the TTY proxy so you can answer inline"* — so this needs a human at a
 > terminal, not a change to the machine.
 
+> [!NOTE]
+> **[§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) IS CLOSED — all four items measured on hardware 2026-09-13** (macOS 26.5, arm64,
+> `0.8.0+1546.gd14124b7`), a human answering the sudo prompt. **`DP-L1` no longer has an
+> unexercised half.**
+>
+> | Item | Result |
+> | :--- | :--- |
+> | 6a fail-closed read | **PASS** — refused, `rc=1`. Procedure had to be corrected first; see below |
+> | 6b the copy happens | **PASS** — `root:wheel`, dirs `drwxr-xr-x`, files `-rw-r--r--` (`a+rX` adds no `x` to a non-executable file) |
+> | 6c end-to-end composition | **PASS** — `/Users/_yolojail/.dpl1-probe.json`, `-r--r--r--`, owned `_yolojail`, bytes verbatim |
+> | 6d the `:ro` half | **PASS** — `ls -laR` of the tree worked; `touch` → `Operation not permitted`. Observed, no longer inferred |
+>
+> The 6a refusal is **stronger than this section asked for** — it names the surface, the
+> staged path, the errno, the destination it declined to write, and the ruling:
+>
+> ```text
+> Error: configure_pi_settings: surface pi/settings: the launch delivered the user's own
+> copy of this file to /var/yolo-jail/ctx/<cname>/host-pi/settings.json and it cannot be
+> read there: open …: permission denied.
+> Refusing rather than composing ~/.pi/agent/settings.json without the host layer — the
+> result would be a config file that looks correct and is missing the user's own settings
+> (OQ-CO10, docs/design/config-ownership-and-promotion.md)
+> …
+> yolo-jail macos-user bootstrap: refusing to start the jail: 1 config generator(s) failed
+> ```
+>
+> ⚠ **Two procedural corrections, both worth carrying forward.**
+>
+> 1. **A `/tmp` workspace cannot be used at all.** The launch pre-flights the workspace for
+>    a usable `_yolojail` group ACL and refuses without one, before staging anything. Put
+>    the probe workspace under `/Users/Shared/yolo` — that root carries the ACL with
+>    `directory_inherit`, so a fresh subdir inherits it and no `macos-fix-permissions` step
+>    is needed. (The refusal's *"most likely this project was MOVED"* guess is wrong for
+>    this case — a directory created outside the shared root never had the ACL to lose —
+>    though the fix it names is still the right one.)
+> 2. **`cd` into that workspace.** The cwd selects the workspace and a `--user-layer` entry
+>    applies regardless, so a drifted launch still reads the probe file and looks correct;
+>    the first 6a run silently exercised the `yolo-jail` repo workspace instead, and only
+>    the refusal's cname gave it away. The measurement was still valid, the blast radius
+>    was not what it claimed. Same shape as the cwd-drift rule in `AGENTS.md`.
+
 ### 6a. The fail-closed read — do this one first
 
 **`YOLO_HOST_LAYERS` no longer reports `unsupported` on this backend.** It reports
@@ -378,12 +419,43 @@ backend. That behaviour has never existed here before and nothing has executed i
 
 1. Launch with a source-bearing `host_files` entry (or a pack declaring `reads-host`)
    and confirm the file reaches the agent.
-2. `sudo rm` one file out of `/var/yolo-jail/ctx/<cname>/` and launch again.
+2. ~~`sudo rm` one file out of `/var/yolo-jail/ctx/<cname>/` and launch again.~~
+   **This step cannot work — see the correction below.**
 3. **Expect a REFUSAL naming the missing file**, not a degraded launch and not a launch
    that silently composes from defaults.
 
 ⚠ If it degrades instead of refusing, that is the defect — and it is worse than the gap
 it replaced, because the old behaviour at least announced itself as `unsupported`.
+
+> [!CAUTION]
+> **STEP 2 IS SELF-DEFEATING, measured 2026-09-13. It was run as written, it reported
+> `rc=0`, and that `rc=0` was CORRECT.** Every launch rebuilds the context tree from the
+> host source (`buildMacosCtxTree` `os.RemoveAll`s its staging dir) and then replaces the
+> staged copy wholesale — `rm -rf <cname>.new` → `cp -R` → `chmod -R a+rX` →
+> `rm -rf <cname>` → `mv -f`. So the launch that is supposed to notice the missing file
+> **re-creates it first**. Verified after the fact: the removed `host-pi/settings.json` was
+> back, byte-identical, same mtime as its siblings.
+>
+> That rebuild is a feature, not an oversight — it is what makes a *revoked* grant stop
+> being delivered, which `macosctxtree.go` calls out by name. The consequence is that the
+> staged tree cannot be falsified by hand between launches, so no amount of tampering with
+> `<cname>/` tests anything.
+>
+> **WHAT ACTUALLY REACHES THE REFUSAL.** `internal/entrypoint/packsurfaces.go` refuses when
+> four things hold at once: the surface declares `readsHost`; `os.ReadFile` of the staged
+> path fails; `YOLO_HOST_LAYERS` parses; and the report says that path was **delivered**.
+> The error *kind* is not examined, so any read failure qualifies — which is the opening.
+>
+> The one lever the restage cannot undo is the mode of **`/var/yolo-jail/ctx` itself**:
+> `chmod -R a+rX` is applied to `<cname>.new` only, while the parent is merely `mkdir -p`'d.
+> So `sudo chmod 0700 /var/yolo-jail/ctx` survives a relaunch, leaves root's staging working
+> (it runs as root), and leaves `packs/` and `home-overlay/` readable since they sit under
+> different parents. It isolates exactly the read under test. **Restore the mode afterwards
+> in a trap** — left at `0700` it breaks every later launch that delivers host bytes.
+>
+> Replace step 2 with that, and this section passes. A step 2 that produces `ENOENT` rather
+> than `EACCES` would be closer to the original wording and nobody has found one that
+> survives the restage; the code does not distinguish them, so it is not worth hunting.
 
 ### 6b. The copy actually happens
 
