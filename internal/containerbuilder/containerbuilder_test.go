@@ -136,12 +136,6 @@ func TestEncodeHostKey(t *testing.T) {
 	}
 }
 
-func TestNixSSHOpts(t *testing.T) {
-	if NixSSHOpts() != "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" {
-		t.Errorf("opts = %q", NixSSHOpts())
-	}
-}
-
 func TestReachableAddressFromContainerLs(t *testing.T) {
 	stdout := "ID                  IMAGE  STATE    ADDR\n" +
 		"yolo-linux-builder  img    running  192.168.64.2/24\n" +

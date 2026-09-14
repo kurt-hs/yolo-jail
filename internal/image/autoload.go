@@ -1088,9 +1088,24 @@ func buildImageWithContainerBuilder(runtime, attr, repoRoot string, extra []any,
 	// SYSTEM — Linux out to the builder, darwin here — which is what the offload
 	// always meant. Measured 2026-09-10: the nightly's shards 1 and 4 failed with
 	// the error above and took 2 and 3 with them on fail-fast.
+	//
+	// NO NIX_SSHOPTS, AND ITS ABSENCE IS THE POINT. This used to export
+	// containerbuilder.NixSSHOpts() — `StrictHostKeyChecking=no
+	// UserKnownHostsFile=/dev/null` — to stop root meeting an unknown host key.
+	// It never worked HERE: `builders` is a RESTRICTED nix setting, so the
+	// nix-daemon consumes it and forks ssh in the DAEMON's environment, which
+	// this one is not (macOS's org.nixos.nix-daemon.plist declares no
+	// EnvironmentVariables). The real fix is the host key pinned in the builders
+	// line's 8th field, which Session.BuildersLine now supplies.
+	//
+	// ⚠ AND IT ACTIVELY DEFEATED THAT PIN wherever it DID apply. ssh takes the
+	// FIRST occurrence of an option and nix appends NIX_SSHOPTS ahead of its own
+	// -oUserKnownHostsFile=, so `StrictHostKeyChecking=no` outranked the pinned
+	// key: MEASURED 2026-09-13, a deliberately WRONG key in field 8 still
+	// connected. A pin that can be overridden is not a pin, so the override is
+	// gone and verification is authoritative on every path.
 	extraArgs := []string{"--builders", buildersLine}
-	extraEnv := []string{"NIX_SSHOPTS=" + containerbuilder.NixSSHOpts()}
-	return buildImageStorePathArgs(attr, repoRoot, extra, outLink, out, extraArgs, extraEnv)
+	return buildImageStorePathArgs(attr, repoRoot, extra, outLink, out, extraArgs, nil)
 }
 
 // newestTars returns *.tar files in dir sorted newest-first by mtime. Empty when

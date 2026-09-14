@@ -216,25 +216,20 @@ func EncodeHostKey(keyscanStdout string) string {
 	return ""
 }
 
-// NixSSHOpts is the NIX_SSHOPTS for talking to an ephemeral container.
+// NIX_SSHOPTS IS GONE, AND ITS ABSENCE IS LOAD-BEARING. A helper here used to
+// return `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`, exported by
+// internal/image/autoload.go onto the `nix` child. It never worked for a
+// `--builders` build — that setting is RESTRICTED, so the nix-daemon consumes it and
+// forks ssh in the daemon's own environment — and wherever it DID apply it defeated
+// the host-key pin, because ssh takes the first occurrence of an option and nix
+// appends NIX_SSHOPTS ahead of its own `-oUserKnownHostsFile=`. MEASURED 2026-09-13:
+// a deliberately WRONG eighth field still connected with those options set, and
+// failed without them.
 //
-// ⚠ IT IS NO LONGER WHAT MAKES THE OFFLOAD WORK, and on the configuration that
-// matters it never was. NIX_SSHOPTS is read by getenv() in whichever process forks
-// ssh, and for a `--builders` build that process is the nix-daemon — see
-// BuildersLine, where the host key that replaced this is passed instead. This
-// survives for the one case where the CLIENT does fork ssh (a single-user nix, or a
-// build against a client-owned `--store`), and there it is strictly redundant with
-// the pinned key.
-//
-// It is also not INERT there: ssh takes the first occurrence of an option, and nix
-// appends NIX_SSHOPTS ahead of its own `-oUserKnownHostsFile=`, so wherever this is
-// set the pinned key is ignored. Measured 2026-09-13: a deliberately WRONG eighth
-// field still connected with these options set, and failed without them. Dropping
-// the caller's `NIX_SSHOPTS=` env would make the pin authoritative everywhere; the
-// call site is internal/image/autoload.go.
-func NixSSHOpts() string {
-	return "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-}
+// Deleted 2026-09-13 rather than kept for the client-forks-ssh case, because nothing
+// called it for that case: a helper with no production caller and a test asserting
+// its string reads as covered while pinning nothing. BuildersLine's eighth field is
+// the mechanism now.
 
 // ReachableAddressFromContainerLs parses `container ls` stdout for the running
 // builder's VM IP:22 (Apple Container has no host port-publish).
