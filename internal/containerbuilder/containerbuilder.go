@@ -10,8 +10,10 @@
 package containerbuilder
 
 import (
+	"encoding/base64"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -126,7 +128,31 @@ func nixLinuxSystem(goarch string) string {
 // "ssh-ng://user@host:port <system> key maxjobs", where <system> is BuilderSystem() —
 // the Linux system for this host's arch, NOT a constant. keyPath falls back
 // to BuilderKey() when empty; port 0 / maxJobs 0 fall back to defaults.
-func BuildersLine(host string, port, maxJobs int, keyPath string) string {
+//
+// publicHostKey is nix's EIGHTH field, and it is the whole reason this offload can
+// work at all on a normal macOS install. `builders` is a RESTRICTED nix setting: a
+// client that passes it does not act on it — the setting crosses the daemon socket
+// and the NIX-DAEMON, running as root, forks `ssh` itself. So the NIX_SSHOPTS the
+// caller exports never reaches that ssh (the launchd plist sets no environment, and
+// a fork inherits the daemon's), and root meets an unknown host key — this builder
+// regenerates one on every boot — with StrictHostKeyChecking at OpenSSH's default
+// `ask`, no tty and no askpass. That is a deterministic
+//
+//	Host key verification failed.
+//	cannot build on 'ssh-ng://root@127.0.0.1:31022': error: failed to start SSH connection
+//
+// and, because nix wires ssh's stderr to a log fd only for the legacy `ssh://` scheme,
+// the first of those two lines lands in /var/log/nix-daemon.log and never in the
+// caller's output. Both halves measured 2026-09-13 against nix 2.34.8 and reproduced
+// byte-for-byte from the macOS nightly's logs.
+//
+// Filling field 8 replaces the option nix cannot deliver with one it can: nix writes
+// "<host> <key>" to a temp file and passes `-oUserKnownHostsFile=<that>`, so the
+// connection is VERIFIED rather than unchecked, in the daemon's process, with nothing
+// to configure on the host. Fields 5-7 (speedFactor, supported, mandatory) have to be
+// spelled to reach it, and "-" is nix's own "default" token. Empty publicHostKey keeps
+// the historical 4-field line.
+func BuildersLine(host string, port, maxJobs int, keyPath, publicHostKey string) string {
 	if port == 0 {
 		port = BuilderHostPort
 	}
@@ -136,13 +162,76 @@ func BuildersLine(host string, port, maxJobs int, keyPath string) string {
 	if keyPath == "" {
 		keyPath = BuilderKey()
 	}
-	return fmt.Sprintf("ssh-ng://%s@%s:%d %s %s %d",
+	line := fmt.Sprintf("ssh-ng://%s@%s:%d %s %s %d",
 		BuilderSSHUser, host, port, BuilderSystem(), keyPath, maxJobs)
+	if publicHostKey != "" {
+		line += " 1 - - " + publicHostKey
+	}
+	return line
 }
 
-// NixSSHOpts is the NIX_SSHOPTS for talking to an ephemeral container (no
-// host-key pinning — the container regenerates its key each boot). Mirrors
-// nix_ssh_opts byte-for-byte.
+// HostKeyScanArgv reads the builder's SSH host key off the wire, from the same
+// address nix is about to be pointed at.
+//
+// It is deliberately NOT `podman exec cat /etc/ssh/ssh_host_ed25519_key.pub`, which
+// would be a stronger provenance claim and a WEAKER probe: this runs end to end over
+// the address that has to work, so it fails when the path to the builder is broken
+// even though the container is healthy — which is the failure this offload actually
+// has on macOS. It also needs no per-runtime argv, so podman and Apple Container share
+// one spelling.
+//
+// ed25519 only, because that is the one HostKey the builder image's sshd config
+// declares. Asking for a type the server does not have returns nothing rather than a
+// wrong key, and Start treats "nothing" as "not ready yet".
+func HostKeyScanArgv(host string, port int) []string {
+	if port == 0 {
+		port = BuilderHostPort
+	}
+	return []string{"ssh-keyscan", "-T", "5", "-t", "ed25519", "-p", strconv.Itoa(port), host}
+}
+
+// EncodeHostKey turns ssh-keyscan stdout into the base64 blob BuildersLine's eighth
+// field wants: base64 of "<type> <key>", which is what nix base64-DECODES and writes
+// after the hostname into the known-hosts file it hands ssh. Returns "" when the
+// output carries no key line — ssh-keyscan prints a "# host:port SSH-2.0-…" banner
+// comment on stderr AND stdout, and prints nothing at all when the far end never
+// answers.
+//
+// The comment the scan emits alongside the key ("root@<container id>") is dropped:
+// nix writes the decoded bytes verbatim, and a known-hosts line is <host> <type>
+// <key>, with anything after the key ignored — but keeping it would put a
+// container-id into a launch's argv for no gain.
+func EncodeHostKey(keyscanStdout string) string {
+	for _, line := range strings.Split(keyscanStdout, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 3 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		// fields: <[host]:port> <keytype> <base64 key> [comment]
+		if !strings.Contains(fields[1], "-") || fields[2] == "" {
+			continue
+		}
+		return base64.StdEncoding.EncodeToString([]byte(fields[1] + " " + fields[2]))
+	}
+	return ""
+}
+
+// NixSSHOpts is the NIX_SSHOPTS for talking to an ephemeral container.
+//
+// ⚠ IT IS NO LONGER WHAT MAKES THE OFFLOAD WORK, and on the configuration that
+// matters it never was. NIX_SSHOPTS is read by getenv() in whichever process forks
+// ssh, and for a `--builders` build that process is the nix-daemon — see
+// BuildersLine, where the host key that replaced this is passed instead. This
+// survives for the one case where the CLIENT does fork ssh (a single-user nix, or a
+// build against a client-owned `--store`), and there it is strictly redundant with
+// the pinned key.
+//
+// It is also not INERT there: ssh takes the first occurrence of an option, and nix
+// appends NIX_SSHOPTS ahead of its own `-oUserKnownHostsFile=`, so wherever this is
+// set the pinned key is ignored. Measured 2026-09-13: a deliberately WRONG eighth
+// field still connected with these options set, and failed without them. Dropping
+// the caller's `NIX_SSHOPTS=` env would make the pin authoritative everywhere; the
+// call site is internal/image/autoload.go.
 func NixSSHOpts() string {
 	return "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 }

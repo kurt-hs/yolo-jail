@@ -131,8 +131,26 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
         with:
+          # `builders-use-substitutes` IS FOR THE THREE `packages:` TESTS, and it has
+          # to be written into nix.conf rather than passed on a command line, because
+          # it is a RESTRICTED setting: like `builders` itself, a client that passes
+          # it is only ASKING the nix-daemon, which is where the remote build actually
+          # runs (the daemon forks `ssh`, as root, in its own environment).
+          #
+          # What it changes: without it the Mac copies every build INPUT into the
+          # builder container over ssh. The input closure of the image's root
+          # derivation is the whole image — ~3.3 GB — so an offloaded `packages:`
+          # build would push that through a loopback-forwarded ssh into an ephemeral
+          # container, per test, per shard, onto a 30 GB machine disk. With it the
+          # builder fetches its own inputs from cache.nixos.org, which is what every
+          # other Linux-builder arrangement does. The builder image already carries
+          # NIX_SSL_CERT_FILE for exactly these fetches (flake.nix, builderImage).
+          #
+          # NOT MEASURED ON THIS RUNNER — the offload has never completed here. The
+          # cost above is arithmetic on a measured closure size, not a timing.
           extra_nix_config: |
             experimental-features = nix-command flakes
+            builders-use-substitutes = true
 
       - uses: actions/setup-go@v7
         with:
@@ -364,3 +382,27 @@ jobs:
           # 5-15 minutes — the 300s default killed ten tests
           # sequentially while they warmed shared caches.
           YOLO_TEST_JAIL_TIMEOUT: "1200"
+
+      # THE ONE PLACE THE LINUX-BUILDER OFFLOAD'S REAL ERROR IS WRITTEN, and it is not
+      # in the test output above.
+      #
+      # A `--builders` build is performed by the nix-DAEMON, not by the `nix` the test
+      # ran, and for the `ssh-ng://` scheme nix attaches ssh's stderr to a log fd only
+      # on the legacy `ssh://` path (libstore/machines.cc sets log-fd exclusively for
+      # `scheme == "ssh"`). So ssh's own diagnosis — `Host key verification failed.`,
+      # `Connection reset by peer`, `Permission denied (publickey)` — goes to the
+      # daemon's stderr, which launchd points at /var/log/nix-daemon.log, while the
+      # test sees only nix's generic
+      #
+      #     cannot build on 'ssh-ng://root@127.0.0.1:31022': error: failed to start SSH
+      #     connection to '127.0.0.1'
+      #
+      # That message is the same string for a refused connection, a rejected host key
+      # and a missing ssh binary, which is why four nightlies could not tell them
+      # apart. This step is how the next one can.
+      #
+      # `if: always()` and `|| true`: a diagnostic must never decide the job, and on a
+      # shard that ran no offload the file is simply uninteresting.
+      - name: nix-daemon log (the builder offload's ssh errors land here, not in the test output)
+        if: always()
+        run: sudo tail -n 200 /var/log/nix-daemon.log || true

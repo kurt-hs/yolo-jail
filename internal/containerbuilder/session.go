@@ -3,6 +3,8 @@ package containerbuilder
 import (
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 )
 
 // session.go is the on-demand builder lifecycle (J3): when a macOS `packages:`
@@ -21,11 +23,12 @@ import (
 type Deps struct {
 	// Run runs argv (inherit stdio) and returns the return code.
 	Run func(argv []string) int
-	// Output runs argv and returns (stdout, rc) — used for `container ls` ADDR
-	// discovery on Apple Container.
+	// Output runs argv and returns (stdout, rc) — `container ls` ADDR discovery on
+	// Apple Container, and the `ssh-keyscan` readiness probe on BOTH runtimes.
 	Output func(argv []string) (string, int)
-	// Reachable reports whether host:port accepts a TCP connection (the builder
-	// sshd is up).
+	// Reachable reports whether host:port accepts a TCP connection. A cheap negative
+	// filter ONLY: on podman machine an accepted connection says nothing about
+	// whether sshd exists behind it (see Start).
 	Reachable func(host string, port int) bool
 	// Sleep pauses for the given seconds (poll backoff). Injectable for tests.
 	Sleep func(seconds float64)
@@ -40,6 +43,13 @@ type Session struct {
 	Runtime string // "podman" | "container"
 	Pubkey  string // authorized_keys public half baked into the container
 	Deps    Deps
+
+	// hostKey is the builder's SSH host key, base64'd for the eighth field of the
+	// --builders line (see BuildersLine for why that field is load-bearing). Start
+	// sets it; BuildersLine reads it. Unexported because it is an observation Start
+	// makes, not a knob: a caller that supplied one would be pinning a key it has
+	// no way to have seen, since the container mints a fresh one every boot.
+	hostKey string
 }
 
 // reachableTimeout is how long Start polls for the builder sshd before giving up.
@@ -73,17 +83,52 @@ func (s *Session) Start() (host string, port int, ok bool) {
 		return "", 0, false
 	}
 
-	// Poll until sshd accepts a connection (or the deadline passes).
+	// Poll until an SSH SERVER answers at that address — not merely until something
+	// accepts a TCP connection there.
+	//
+	// ⚠ THE TCP CHECK ALONE IS A GUARANTEED FALSE POSITIVE ON podman machine, which is
+	// the only configuration this offload exists for. A published port is forwarded by
+	// gvproxy, whose proxy listens on the Mac, ACCEPTS, and only then dials the VM
+	// (inetaf/tcpproxy: Accept() precedes dialContext()) — and podman registers that
+	// forward as the FIRST statement of configureNetNS, before the netns is built and
+	// long before sshd could bind. So `podman run -d` returns, a TCP dial succeeds
+	// immediately, and the far end is nothing. The dial is kept as a cheap negative
+	// filter (it costs one syscall where the scan costs a process), but it can never be
+	// the readiness answer.
+	//
+	// Reading the host key IS the readiness answer, and it is the same observation the
+	// builders line needs anyway: a key comes back only once sshd has completed a
+	// version exchange, so one probe settles "is it up" and "what do I pin".
 	deadline := s.Deps.Now() + reachableTimeout
 	for s.Deps.Now() < deadline {
 		if s.Deps.Reachable(host, port) {
-			return host, port, true
+			if key := s.scanHostKey(host, port); key != "" {
+				s.hostKey = key
+				return host, port, true
+			}
 		}
 		s.Deps.Sleep(1.0)
 	}
 	s.Stop()
-	fmt.Fprintln(out, "the Linux builder container did not become reachable in time")
+	fmt.Fprintln(out, "the Linux builder container's sshd never answered at "+
+		net.JoinHostPort(host, strconv.Itoa(port))+
+		" — the container started, so the address is reachable but nothing is serving SSH behind it")
 	return "", 0, false
+}
+
+// scanHostKey returns the builder's host key, base64'd for the builders line, or ""
+// when nothing answered. A nil Output seam (a caller that wired only Run) yields "",
+// which the poll reads as "not ready" — so a half-wired Deps fails loudly at the
+// deadline instead of handing nix a builder it cannot authenticate.
+func (s *Session) scanHostKey(host string, port int) string {
+	if s.Deps.Output == nil {
+		return ""
+	}
+	stdout, rc := s.Deps.Output(HostKeyScanArgv(host, port))
+	if rc != 0 {
+		return ""
+	}
+	return EncodeHostKey(stdout)
 }
 
 // reachableAddress returns the (host, port) the builder sshd listens on:
@@ -105,9 +150,11 @@ func (s *Session) reachableAddress() (string, int) {
 }
 
 // BuildersLine returns the nix --builders spec for this session's resolved
-// address (convenience wrapper over the pure constructor).
+// address, carrying the host key Start observed (convenience wrapper over the pure
+// constructor). Called before Start, it yields the unpinned four-field line — which
+// is the line that cannot authenticate against a daemon nix, so do not.
 func (s *Session) BuildersLine(host string, port, maxJobs int) string {
-	return BuildersLine(host, port, maxJobs, "")
+	return BuildersLine(host, port, maxJobs, "", s.hostKey)
 }
 
 // Stop tears the builder container down (best-effort; --rm means a stopped

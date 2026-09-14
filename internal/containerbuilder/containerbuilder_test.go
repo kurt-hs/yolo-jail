@@ -1,6 +1,7 @@
 package containerbuilder
 
 import (
+	"encoding/base64"
 	"reflect"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestBuilderURIAndLine(t *testing.T) {
 	// an x86_64 Mac serves x86_64-linux, and advertising aarch64-linux there made nix
 	// decline to offload while the builder looked healthy (BACKLOG E8). The rest of the
 	// line stays a byte-exact contract, so it is asserted around the one variable field.
-	line := BuildersLine("192.168.64.2", 22, 4, "/keys/id_ed25519")
+	line := BuildersLine("192.168.64.2", 22, 4, "/keys/id_ed25519", "")
 	want := "ssh-ng://root@192.168.64.2:22 " + BuilderSystem() + " /keys/id_ed25519 4"
 	if line != want {
 		t.Errorf("builders line = %q, want %q", line, want)
@@ -71,6 +72,66 @@ func TestNixLinuxSystem(t *testing.T) {
 	} {
 		if got := nixLinuxSystem(goarch); got != want {
 			t.Errorf("nixLinuxSystem(%q) = %q, want %q", goarch, got, want)
+		}
+	}
+}
+
+// The PINNED form of the line, which is the only form that authenticates against a
+// daemon nix (BuildersLine says why). Byte-exact because nix parses `builders` by
+// WHITESPACE POSITION: the host key is field 8, so fields 5-7 have to be spelled even
+// though they are defaults, and getting the count wrong feeds the key to
+// mandatoryFeatures — where nix would silently require a feature named after a base64
+// blob and never offload at all.
+func TestBuildersLinePinsTheHostKeyInFieldEight(t *testing.T) {
+	const key = "c3NoLWVkMjU1MTkgQUFBQQ=="
+	line := BuildersLine("127.0.0.1", 31022, 4, "/keys/id_ed25519", key)
+	want := "ssh-ng://root@127.0.0.1:31022 " + BuilderSystem() + " /keys/id_ed25519 4 1 - - " + key
+	if line != want {
+		t.Errorf("pinned builders line =\n %q\nwant\n %q", line, want)
+	}
+	if got := len(strings.Fields(line)); got != 8 {
+		t.Errorf("a pinned builders line has 8 whitespace-separated fields, got %d: %q", got, line)
+	}
+}
+
+func TestHostKeyScanArgv(t *testing.T) {
+	want := []string{"ssh-keyscan", "-T", "5", "-t", "ed25519", "-p", "31022", "127.0.0.1"}
+	if got := HostKeyScanArgv("127.0.0.1", 0); !reflect.DeepEqual(got, want) {
+		t.Errorf("HostKeyScanArgv default port = %v, want %v", got, want)
+	}
+	// Apple Container reaches the VM IP on the guest port, with no publish.
+	got := HostKeyScanArgv("192.168.64.2", BuilderGuestPort)
+	if !reflect.DeepEqual(got[len(got)-3:], []string{"-p", "22", "192.168.64.2"}) {
+		t.Errorf("HostKeyScanArgv AC = %v", got)
+	}
+}
+
+// EncodeHostKey feeds field 8, and nix base64-DECODES it and writes the bytes straight
+// into a known-hosts file after the hostname. So the encoded payload must be exactly
+// "<type> <key>" — a comment, a banner line, or an empty scan must not become one.
+func TestEncodeHostKey(t *testing.T) {
+	const keyType = "ssh-ed25519"
+	const keyBody = "AAAAC3NzaC1lZDI1NTE5AAAAIMMliNkaI/Rxhwgydhf+nbofjaDXF95s2hLG15wEktA3"
+	// Real `ssh-keyscan -p 31022 -t ed25519 127.0.0.1` output, banner comment included.
+	scan := "# 127.0.0.1:31022 SSH-2.0-OpenSSH_10.4\n" +
+		"[127.0.0.1]:31022 " + keyType + " " + keyBody + " root@75d91260e0ce\n"
+	got := EncodeHostKey(scan)
+	decoded, err := base64.StdEncoding.DecodeString(got)
+	if err != nil {
+		t.Fatalf("EncodeHostKey produced non-base64 %q: %v", got, err)
+	}
+	if string(decoded) != keyType+" "+keyBody {
+		t.Errorf("decoded = %q, want %q", decoded, keyType+" "+keyBody)
+	}
+	// Nothing answered, or only the banner did: no key, and the caller must be able to
+	// tell that apart from a key rather than pin the empty string.
+	for name, in := range map[string]string{
+		"empty":       "",
+		"banner only": "# 127.0.0.1:31022 SSH-2.0-OpenSSH_10.4\n",
+		"truncated":   "[127.0.0.1]:31022 ssh-ed25519\n",
+	} {
+		if got := EncodeHostKey(in); got != "" {
+			t.Errorf("EncodeHostKey(%s) = %q, want \"\"", name, got)
 		}
 	}
 }
