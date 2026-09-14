@@ -3,7 +3,7 @@ title: "Handoff: the claims that shipped on reading, and the Mac that can settle
 status: in-review
 date: 2026-09-13
 tags: [macos-user, handoff, seatbelt, declaration-parity, ci, image]
-summary: "Seven threads landed on 2026-09-13 whose correctness was read off source rather than observed. All of them are now measured on hardware except the nightly's unexplained exit 125: the three Seatbelt probes ran (nothing inverted — Seatbelt evaluates the target, so DP-L1's mechanism stays a copy), and one launch settled the briefing batch and both notice sets. Two defects were found in the process, both fixed: the workspace reached SeatbeltProfile un-resolved, which made its rules dead and was masking a bypass of the neutral-ground refusal, and the briefing's Packages section offered a resources cap this backend ignores by ruling."
+summary: "Seven threads landed on 2026-09-13 whose correctness was read off source rather than observed. All of them are now measured on hardware except the nightly's unexplained exit 125: the three Seatbelt probes ran (nothing inverted — Seatbelt evaluates the target, so DP-L1's mechanism stays a copy), and one launch settled the briefing batch and both notice sets. Two defects were found in the process, both fixed: the workspace reached SeatbeltProfile un-resolved, which made its rules dead and was masking a bypass of the neutral-ground refusal, and the briefing's Packages section offered a resources cap this backend ignores by ruling. DP-L1 (the largest cell, shipped unit-tested-only) now has its READ half measured too: `--dry-run` composes the real context tree host-side with no sudo, so byte selection, layout and destination are observed — only the privileged crossing still needs a human at a terminal."
 ---
 
 # Handoff: the claims that shipped on reading, and the Mac that can settle them
@@ -38,6 +38,13 @@ changed on 2026-09-13 that is now waiting on hardware, in the order that buys th
 > **What is left in this file: the nightly ([§4](#4-the-nightly--five-links-all-now-named)) only** —
 > the nightly was re-dispatched 2026-09-13 (run `34774761002`) and its `exit 125` is still
 > unexplained. That needs no Mac.
+>
+> ⚠ **That last sentence was true when written and is not any more, twice over.** [§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) was
+> added to this file *after* this block, so "the nightly only" never covered it; and
+> [§4](#4-the-nightly--five-links-all-now-named)'s `exit 125` is no longer unexplained — it
+> was two more links, both fixed, and that section now carries the whole five-link chain.
+> Read [§4](#4-the-nightly--five-links-all-now-named) and [§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) for the current state; this block is kept for the same
+> reason the one below it is.
 
 > [!IMPORTANT]
 > **The original lead, kept for its reasoning.** *(Superseded above 2026-09-13.)* **Start at
@@ -304,6 +311,64 @@ source-bearing `host_files` entries now reach the sandbox by a host-side copy in
 **unit-tested only**. No test in this repo executes `sudo cp -R`, `sandbox-exec`, or the
 darwin bootstrap.
 
+> [!NOTE]
+> **THE SUDO-FREE HALF IS MEASURED 2026-09-13, and it is more than expected: `--dry-run`
+> composes the real tree on the host.** The copy is what needs a password; *composing what
+> would be copied* does not, and `--dry-run` does it. So the whole read side of DP-L1 —
+> which bytes are selected, from where, laid out at which destination — is observable with
+> no `sudo` at all. What is left for a password is genuinely only the crossing.
+>
+> Probe: a throwaway workspace, one source-bearing `host_files` entry passed at user scope
+> through `--user-layer` (so nothing touched the real user config), source deliberately
+> outside `$HOME` so nothing was written to a home directory either.
+>
+> ```text
+> host bytes:  /var/yolo-jail/ctx/yolo-yolo-dpl1-probe-32c78128 (root-owned; the sandbox
+>              reads it and cannot write it)
+> ```
+>
+> and the tree that line names, composed under the staging dir and readable without sudo:
+>
+> ```console
+> $ find …/agents/yolo-yolo-dpl1-probe-32c78128/ctx-tree -type f
+> …/ctx-tree/host-pi/settings.json
+> …/ctx-tree/host-user/.dpl1-probe.json
+> $ cat …/ctx-tree/host-user/.dpl1-probe.json
+> { "dpl1_probe": "these bytes must reach the sandbox" }
+> ```
+>
+> Three things that were claims and are now observations: the plan's `host bytes:` line is
+> **reached** and names a staged tree rather than the `none staged` branch; a source-bearing
+> `host_files` entry composes **verbatim** at `host-user/<slug>`; and a pack `reads-host`
+> grant composes beside it at `host-<slug>/`, keyed on `StagedSlug` as
+> [`macosctxtree.go`](../../internal/cli/run/macosctxtree.go) requires. The argv
+> [the copy itself](#6b-the-copy-actually-happens) asks about is readable from the same run — the plan prints the
+> `cp -R` → `chmod -R a+rX` → `rm -rf` → `mv -f` replace-by-rename sequence in full, under
+> `── privileged commands (run via sudo) ──`.
+>
+> ⚠ **FAIL-OPEN WAS EXERCISED BY ACCIDENT, AND IT IS WHY THAT TREE HAS NO `host-claude/`.**
+> On this Mac `~/.claude/settings.json` is a symlink to `~/.dotfiles/claude/settings.json`
+> and **that target does not exist**, so `isFile` (`os.Stat`, which follows the link)
+> returns false and the grant is skipped — exactly the documented "fail-open on a source
+> that is not there" half, observed rather than reasoned about. `pi`'s identical
+> declaration delivered because *its* symlink resolves. **This is not a yolo defect**: at
+> pack level the two are indistinguishable — both report `readsHost=true` with a
+> `/ctx/host-<slug>/settings.json` source under either autonomy posture, measured directly
+> against `SurfacesFor`.
+>
+> It does mean **whoever runs [end-to-end composition](#6c-end-to-end-composition-which-is-the-whole-point) on this machine must repair that symlink first**, or the one
+> sentence DP-L1 exists to make true will be tested against a grant that correctly delivers
+> nothing.
+
+> [!IMPORTANT]
+> **What still needs a password, and it is only the crossing.** The refusal in
+> [the fail-closed read](#6a-the-fail-closed-read--do-this-one-first), the *execution* of [the copy itself](#6b-the-copy-actually-happens) (its argv is
+> already read, above), [end-to-end composition](#6c-end-to-end-composition-which-is-the-whole-point) and [the `:ro` half](#6d-the-ro-half-one-leaf-deeper-than-probe-3-measured) all need a real launch, and
+> `sudo -n` fails on this Mac (`/etc/sudoers.d/matt` is `ALL = (ALL) ALL`, no `NOPASSWD`).
+> The plan says the prompt is survivable — *"sudo may prompt for your password; it's
+> forwarded through the TTY proxy so you can answer inline"* — so this needs a human at a
+> terminal, not a change to the machine.
+
 ### 6a. The fail-closed read — do this one first
 
 **`YOLO_HOST_LAYERS` no longer reports `unsupported` on this backend.** It reports
@@ -375,6 +440,13 @@ is currently undeclared — and the second outcome is the one worth going lookin
 > reasoning and is superseded by one line: **[§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) is the only section nothing has
 > exercised, and [the fail-closed read](#6a-the-fail-closed-read--do-this-one-first) is the only place a launch can now REFUSE where it never could
 > before.** Start there. [§4](#4-the-nightly--five-links-all-now-named) needs no Mac and is running on its own.
+>
+> **AMENDED 2026-09-13 — [§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them)'s READ HALF IS NOW MEASURED, so "nothing has exercised it" is
+> no longer true of the whole section.** `--dry-run` composes the real context tree on the
+> host without touching `sudo`, which turned selection, layout and destination into
+> observations. **What is left needs a human at a terminal, not a Mac** — the four remaining
+> items are all the same one launch, and the password prompt is the only reason an agent
+> cannot run it. Do that launch and [§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) closes.
 
 1. [§1](#1-the-three-seatbelt-probes--do-these-first) probes 1 and 2 — no yolo, no account, no
    password. Twenty minutes, and probe 1 can invert a section.
