@@ -267,7 +267,20 @@ func isolateHome(t *testing.T, userConfig string) {
 		hostHome = os.Getenv("HOME")
 		t.Cleanup(func() { hostHome = "" })
 	}
-	home := t.TempDir()
+	// RESOLVED WHERE IT IS MINTED, which is the rule AGENTS.md states for this class:
+	// on macOS `t.TempDir()` returns `/var/folders/…` and `/var` IS a symlink to
+	// `/private/var`. Anything that resolves symlinks — or refuses them — then sees a
+	// different path than the fixture handed out, and it passes on Linux either way.
+	//
+	// MEASURED 2026-09-14: nix refuses outright. The macOS nightly's only remaining
+	// failure was `error: the path "/var" is a symlink; this is not allowed for the Nix
+	// store and its parent directories`, because the builder's ssh key lives under this
+	// HOME and its path goes into a `--builders` line. Resolving here fixes every test
+	// that isolates a home, rather than the one that happened to notice.
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := seedPackHome(home, hostHome, userConfig); err != nil {
 		t.Fatal(err)
 	}
