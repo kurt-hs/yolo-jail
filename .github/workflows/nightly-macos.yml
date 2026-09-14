@@ -28,6 +28,55 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      # PUSH TO CACHIX ON EVERY RUN, not only on a release tag.
+      #
+      # `cachix-action` auto-pushes every path realized while it is active, so
+      # placing it BEFORE the build is the whole mechanism — the build step below
+      # is unchanged.
+      #
+      # WHY THIS IS NOT A COST. The image's entire input set is flake.nix +
+      # flake.lock (that is what `imageIdentity` hashes), so the closure is
+      # IDENTICAL across every commit that touches neither — which is nearly all of
+      # them. A per-run push therefore re-pushes nothing almost every time; it is
+      # incremental by construction, not a full upload per commit.
+      #
+      # WHAT IT BUYS, and it is the whole macOS story. A darwin evaluation and a
+      # Linux evaluation of this flake produce IDENTICAL Linux .drv paths — MEASURED
+      # 2026-09-13, an in-jail eval produced
+      # `w77lrjfj5dkri0q0g1gln3z5jcfb9qjm-nix-ld-2.0.6.drv`, the exact path the
+      # macOS nightly's own log asked its absent builder for. So a closure pushed
+      # from this ubuntu job is bit-for-bit what a Mac asks for, and a Mac that can
+      # substitute it needs NO Linux builder at all. Of ~600 derivations in this
+      # image only five are x86_64-linux; the rest come from the host `pkgs` and
+      # build natively on darwin.
+      #
+      # The push was release-gated until 2026-09-13 and `handoff-cachix-cache.md`
+      # called that a "scope caveat worth keeping" without ever stating a reason —
+      # it was how the first push was scoped, and nobody revisited it. The cache
+      # consequently held v0.8.0's closure and nothing newer, so HEAD's `nix-ld`
+      # 404'd and every macOS launch had to build it.
+      #
+      # GATED ON THE TOKEN ALONE, like publish.yml: the cache NAME is not a secret.
+      # A fork without the secret skips the push and builds normally — losing this
+      # cache must cost TIME only, never function.
+      - name: Check Cachix is configured
+        id: cachix
+        run: |
+          if [ -n "${{ secrets.CACHIX_AUTH_TOKEN }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "cache=${CACHIX_CACHE:-yolo-jail}" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Cachix not configured (no CACHIX_AUTH_TOKEN). Skipping the push."
+          fi
+
+      - name: Set up Cachix
+        if: steps.cachix.outputs.enabled == 'true'
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ steps.cachix.outputs.cache }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       - name: Build jail image
         # --accept-flake-config: honor the flake's yolo-jail.cachix.org
         # substituter. Without it nix discards it with a warning and this job
@@ -50,6 +99,26 @@ jobs:
           ./result-1/bin/skopeo --insecure-policy copy \
             "nix:$(readlink -f ./result)" \
             "docker-archive:/tmp/jail-image.tar:localhost/yolo-jail:latest"
+
+          # THE TWO NON-STOCK VARIANTS THE macOS SUITE CANNOT BUILD FOR ITSELF.
+          # TestExtraPackageLibFarm and TestDevPackageLinksRuntimeLib declare
+          # `packages: ["zbar"]`; TestExtraPackagesFromMountedStore declares
+          # `["libsodium.dev"]`. Those are genuinely NON-STOCK, so the stock-tag
+          # short-circuit correctly declines to skip and each must BUILD an image —
+          # which a runner with no Linux builder cannot do. Realizing them HERE and
+          # pushing them means the Mac substitutes instead of building.
+          #
+          # Cheap: MEASURED 2026-09-13, stock is 16 derivations to build and zbar is
+          # 18, differing only in `bin-path-links` and `yolo-jail-root`. These two
+          # lines add two derivations each, not two images.
+          #
+          # They are NOT uploaded as artifacts — only the stock image is, because
+          # only it is what the shards `podman load`. These exist purely to populate
+          # the cache.
+          YOLO_EXTRA_PACKAGES='["zbar"]' \
+            nix build --impure --accept-flake-config --no-link .#ociImage
+          YOLO_EXTRA_PACKAGES='["libsodium.dev"]' \
+            nix build --impure --accept-flake-config --no-link .#ociImage
 
       - name: Upload jail image
         uses: actions/upload-artifact@v7
@@ -279,9 +348,13 @@ jobs:
         # decided by that launch, from its own checkout. An image from another
         # commit would carry that commit's identity and match nothing.
         #
-        # The variant half is asserted here and is true by construction: the
-        # `build-image` job above runs `nix build … .#ociImage` with no
-        # YOLO_EXTRA_PACKAGES, three steps up in this same file.
+        # The variant half is asserted here and is true by construction, though it
+        # needs saying more carefully since 2026-09-13: the `build-image` job realizes
+        # THREE images — the stock one and two `packages:` variants whose only purpose
+        # is to populate Cachix — but the tar it UPLOADS is the first, built with no
+        # YOLO_EXTRA_PACKAGES set. The variant builds pass `--no-link` and are never
+        # uploaded, so the image these shards `podman load` is stock whatever else that
+        # job realized.
         #
         # `stock-` and the `#sha256:` strip are pinned against Go's
         # image.StockImageTagPrefix by TestNightlyWorkflowTagsTheStockImage.
