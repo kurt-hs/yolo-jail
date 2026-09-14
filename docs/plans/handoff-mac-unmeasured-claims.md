@@ -286,6 +286,74 @@ named, and [`OQ-IP4`](../design/darwin-image-provenance.md#decision-ledger) now 
 
 ---
 
+## 6. `DP-L1` — host bytes on a backend that has never carried them
+
+**Needs:** a Mac with `_yolojail`. **Time:** two launches and one `sudo rm`.
+**Added 2026-09-13, AFTER the run that closed [§1](#1-the-three-seatbelt-probes--do-these-first)–[§3](#3-the-new-stderr-notices-in-real-output)** — so nothing in this section has been
+exercised by anything.
+
+**This is now the highest-risk unmeasured thing in the tree**, and it is a different KIND of
+risk from the rest of this file. Everything above was a claim about what a launch SAYS;
+this is a claim about what it DOES with bytes from your home directory, and about a
+launch that can now REFUSE.
+
+`DP-L1` shipped the parity catalog's largest cell: pack `reads-host` grants and
+source-bearing `host_files` entries now reach the sandbox by a host-side copy into
+`/var/yolo-jail/ctx/<cname>`, named by `YOLO_CTX_ROOT`. It was built on the strength of
+[§1](#1-the-three-seatbelt-probes--do-these-first)'s probe 1 — Seatbelt evaluates the target, so the mechanism had to be a copy — and it is
+**unit-tested only**. No test in this repo executes `sudo cp -R`, `sandbox-exec`, or the
+darwin bootstrap.
+
+### 6a. The fail-closed read — do this one first
+
+**`YOLO_HOST_LAYERS` no longer reports `unsupported` on this backend.** It reports
+`supported` plus the delivered list whenever a tree was staged, which means **macos-user
+now refuses a launch when a delivered file is unreadable**, exactly like every other
+backend. That behaviour has never existed here before and nothing has executed it.
+
+1. Launch with a source-bearing `host_files` entry (or a pack declaring `reads-host`)
+   and confirm the file reaches the agent.
+2. `sudo rm` one file out of `/var/yolo-jail/ctx/<cname>/` and launch again.
+3. **Expect a REFUSAL naming the missing file**, not a degraded launch and not a launch
+   that silently composes from defaults.
+
+⚠ If it degrades instead of refusing, that is the defect — and it is worse than the gap
+it replaced, because the old behaviour at least announced itself as `unsupported`.
+
+### 6b. The copy actually happens
+
+The unit tests pin the **argv**, never its execution. So confirm that `sudo cp -R`,
+`chmod -R a+rX` and the replace-by-rename actually run, and that the tree lands
+root-owned and `a+rX`:
+
+```console
+$ ls -la /var/yolo-jail/ctx/<cname>/
+$ stat -f '%Su %Sp' /var/yolo-jail/ctx/<cname>/host-user/<slug>
+```
+
+### 6c. End-to-end composition, which is the whole point
+
+Put a real `~/.claude/settings.json` on the Mac, launch, and confirm the agent's composed
+`~/.claude/settings.json` inside the sandbox carries its content. This is the sentence
+`DP-L1` exists to make true and no machine has ever run it.
+
+### 6d. The `:ro` half, one leaf deeper than probe 3 measured
+
+[§1](#1-the-three-seatbelt-probes--do-these-first)'s probe 3 observed read-OK / write-EPERM for `/var/yolo-jail/` and
+`/var/yolo-jail/packs/`. The new tree is `/var/yolo-jail/ctx/`, under the same root deny
+with no re-allow — so it is a **sound inference from a measurement, not a measurement**.
+One `touch` inside the sandbox settles it.
+
+### What it would mean if 6a fails
+
+`DP-L1` retired the `unsupported` carve-out on the strength of the mechanism existing. If
+the fail-closed read does not work, that retirement was premature and
+[`OQ-R3`](../reference/loopback-tls-reachability.md#oq-r3)'s "a host yolo cannot fix degrades
+and launches" needs re-reading against this backend specifically — which is a ruling, not a
+patch.
+
+---
+
 ## 5. What a green run would let us delete
 
 Not work — a consequence worth knowing, because it changes what the next reader trusts.
@@ -301,6 +369,12 @@ is currently undeclared — and the second outcome is the one worth going lookin
 ---
 
 ## What to do first, if you want an order
+
+> [!IMPORTANT]
+> **Everything in [§1](#1-the-three-seatbelt-probes--do-these-first)–[§3](#3-the-new-stderr-notices-in-real-output) is DONE (2026-09-13).** The order below is kept for its
+> reasoning and is superseded by one line: **[§6](#6-dp-l1--host-bytes-on-a-backend-that-has-never-carried-them) is the only section nothing has
+> exercised, and [the fail-closed read](#6a-the-fail-closed-read--do-this-one-first) is the only place a launch can now REFUSE where it never could
+> before.** Start there. [§4](#4-the-nightly--five-links-all-now-named) needs no Mac and is running on its own.
 
 1. [§1](#1-the-three-seatbelt-probes--do-these-first) probes 1 and 2 — no yolo, no account, no
    password. Twenty minutes, and probe 1 can invert a section.
