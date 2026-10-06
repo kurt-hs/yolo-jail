@@ -66,7 +66,7 @@ import (
 // this jail's requests. So a FRESH launch whose loophole still has such a copy alive REFUSES, by
 // OQ-HD11's own reason, the maintainer's "don't want to launch without a feature that is
 // promised", naming broker.StopHostWideCommand and what that stop costs the older yolo's jails
-// (HD-D21). It is keyed on the fact, a live copy at the name-keyed rendezvous
+// (HD-D21). It is keyed on the fact, a live copy of this home's at the name-keyed rendezvous
 // (broker.LegacyDeps), and never on the loophole's name.
 //
 //   - AN ATTACH NEVER REFUSES (HD-D5 (1)): it starts nothing, so refusing it would leave the
@@ -181,9 +181,14 @@ func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload [
 }
 
 // olderHostWideAlive reports whether the loophole called name still has a machine-wide copy an
-// older yolo left running: a live PID file and a socket that accepts at the name-keyed rendezvous
-// (broker.LegacyDeps), which no yolo since HD-R1 writes.
-func olderHostWideAlive(name string) bool { return broker.BrokerIsAlive(broker.LegacyDeps(name)) }
+// older yolo left running for THIS home: a live PID file and a socket that accepts at the
+// name-keyed rendezvous (broker.LegacyDeps), which no yolo since HD-R1 writes, whose process runs
+// under this launch's home (broker.LegacyCopyServesHome). A copy under another home shares the
+// rendezvous paths, which are keyed by the name in /tmp, but none of this launch's credentials.
+func olderHostWideAlive(name string) bool {
+	deps := broker.LegacyDeps(name)
+	return broker.BrokerIsAlive(deps) && broker.LegacyCopyServesHome(deps, paths.Home())
+}
 
 // olderDaemonRefusal is the refusal of a fresh launch beside an older yolo's machine-wide copies
 // (see the file comment): each by loophole name, in the order this launch started its own.
