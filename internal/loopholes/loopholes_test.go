@@ -881,7 +881,7 @@ func TestHostDaemonFieldsSurviveLoad(t *testing.T) {
 		"Publishes":   "socket",
 		"RequestEnd":  "framed",
 		"Preamble":    true,
-		"Scope":       "host",
+		"Scope":       "jail",
 		"LaunchCheck": true,
 		"Detach":      true,
 	}

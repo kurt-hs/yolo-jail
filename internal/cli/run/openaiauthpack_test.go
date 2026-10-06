@@ -116,7 +116,7 @@ func TestCodexRoutesRefreshesToTheJailAdapter(t *testing.T) {
 	}
 }
 
-func TestShippedOpenAIAuthPackOwnsOneHostSingletonAndAdapter(t *testing.T) {
+func TestShippedOpenAIAuthPackOwnsOneHostDaemonAndAdapter(t *testing.T) {
 	p := officialPack(t, "openai-auth")
 	mods := packLoopholeModules([]*packload.Pack{p})
 	if len(mods) != 1 {
@@ -136,8 +136,8 @@ func TestShippedOpenAIAuthPackOwnsOneHostSingletonAndAdapter(t *testing.T) {
 		"--socket", "{socket}", "--state-file", stateFile,
 	}
 	if lp.HostDaemon == nil || !reflect.DeepEqual(lp.HostDaemon.Cmd, wantHost) ||
-		lp.HostDaemon.Scope != "host" || lp.HostDaemon.Publishes != "socket" {
-		t.Errorf("host daemon = %+v, want one host-scoped socket publisher %v", lp.HostDaemon, wantHost)
+		!lp.HostDaemon.Detach || lp.HostDaemon.Publishes != "socket" {
+		t.Errorf("host daemon = %+v, want a detaching socket publisher %v", lp.HostDaemon, wantHost)
 	}
 	wantDoctor := []string{
 		"yolo", "internal", "daemon", "openai-auth-broker",

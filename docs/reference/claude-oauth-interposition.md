@@ -71,7 +71,7 @@ long answer that lives in the vendor binary, not in this tree.
 | `yolo check`'s `[SKIP]` level | `internal/cli/check` (`reporter.skip`, `reporter.hostFact`) |
 | The shared-credentials symlink | `internal/entrypoint/packhooks.go` (`linkSharedCredential`); `packs/claude/pack.json` |
 | The OpenSSL-family CA bundle | `internal/entrypoint/system.go` (`GenerateCABundle`), `boot.go`, `shell.go` |
-| Backend scope | `internal/loopholes/runtime.go` (`admitsJailSideEffects`); `internal/cli/run` (`startLoopholes`, `hostScopedEndpointIsUnpublishable`, `jaildaemondecline.go`) |
+| Backend scope | `internal/loopholes/runtime.go` (`admitsJailSideEffects`); `internal/cli/run` (`startLoopholes`, `promisedEndpointIsUnpublishable`, `jaildaemondecline.go`) |
 
 **Reads with:** [`agent-credentials.md`](agent-credentials.md) — the enumeration of every credential
 channel across the jail boundary, of which this is one; it owns the broker's *rulings*, the 90/300
@@ -388,9 +388,9 @@ difference the repo names it and keeps it small (`--userns=host`, `--net=host`; 
 Measured 2026-09-18, not re-run for this stamp: a nested launch minted its own P-256 CA, mounted the
 trio, and published `/run/yolo-services/claude-oauth-broker.endpoint`, and `openssl verify
 -verify_hostname platform.claude.com` returned OK against the real mounted files. The record lives in
-`hostScopedEndpointIsUnpublishable`'s doc comment in `internal/cli/run`.
+`promisedEndpointIsUnpublishable`'s doc comment in `internal/cli/run`.
 
-So `hostScopedEndpointIsUnpublishable` withholds a host-scoped endpoint variable on **one** launch
+So `promisedEndpointIsUnpublishable` withholds a host-scoped endpoint variable on **one** launch
 shape only — Apple Container, which has no publisher for anything but the OpenAI service (see
 [where the interposition exists](#where-the-interposition-exists-at-all)). It has no nested-jail arm,
 and it reads no socket. `TestBrokerEnvEmittedInANestedJailWithNoSingleton` pins the nested case:
@@ -783,7 +783,7 @@ targets a different directory.
 
 > [!NOTE]
 > **Two source comments overstate this.** `cert.go:51-53` and
-> [`singletondeps_test.go:32-34`](../../internal/broker/singletondeps_test.go) both say `BrokerDir()`
+> `singletondeps_test.go:32-34` (since deleted, with the singleton) both said `BrokerDir()`
 > *"is a function of `$HOME` alone"*; `cert.go:23` checks `YOLO_BROKER_STATE_DIR` first. That
 > override has no production writer, so the conclusion holds —
 > [`host-daemon-ownership.md:121`](../design/host-daemon-ownership.md) already carries the right
@@ -818,7 +818,7 @@ survives with one backend behind it rather than two, which is how that section n
   module mount, no `state_files` and no jail-daemon payload entry. `startLoopholes` narrows the
   host-daemon allow list to the OpenAI service on that runtime
   ([`loopholesruntime.go:170-175`](../../internal/cli/run/loopholesruntime.go)) and
-  `hostScopedEndpointIsUnpublishable` suppresses the endpoint variable for every other host-scoped
+  `promisedEndpointIsUnpublishable` suppresses the endpoint variable for every other host-scoped
   loophole ([`assemble_parts.go:612-617`](../../internal/cli/run/assemble_parts.go)).
 - **`macos-user`** declines the terminator **permanently**, by name, at every launch: its default port
   is 443 and its interception needs an `--add-host` this backend cannot emit, and `yolo-jaild` is not
@@ -1097,7 +1097,7 @@ together, and nothing warns ahead of it until something reads `refreshTokenExpir
 | **yolo's broker errors are never the string `invalid_grant`** | The vendor's dead-token classifier fires on that string at status 400/401, and the terminator already answers 400. Passing the upstream error through verbatim would blank the machine-wide credential file. |
 | [**`OQ-CI1`**](#oq-ci1) — **one Claude login per machine, which `yolo host -- claude` joins through a credential view once the view's measures pass; a host claude yolo did not start keeps its own.** Ruled in review 2026-10-05. **Built: pending**, waiting on [the view's measures](../plans/runbooks/claude-credential-view-measures.md) | One `/login` about every four weeks serves every jail and the host's yolo-started claude, and a view carries no refresh token, so the host races nothing. It is how `yolo host -- codex` already shares the OpenAI login ([OQ-OA3](agent-credentials.md#oq-oa3)), and a host behaving like every other notch is the plan's thesis ([notch convergence §1](../plans/notch-convergence.md#1-the-thesis)) |
 | <a id="oq-1"></a>[**`OQ-1`**](#oq-1) (broker-ca) — **bake `openssl` *and* port the mint to `crypto/x509`, both** | The bake is not a substitute for retiring the dependency: a host-wide daemon that shells out to a tool fails on any host lacking it, and a nested launch's host is a jail. The port also takes the CA private key off disk. The bake stays regardless, for two consumers this ruling was never about ([why](#why-the-image-still-bakes-openssl)). |
-| <a id="oq-2"></a>[**`OQ-2`**](#oq-2) (broker-ca) — **a nested jail runs its own broker singleton**, like any other host | Nesting earns affordances, not exemptions: a jail that behaves differently cannot test the thing it is nested inside, and a special case here is one carried forever. So the endpoint-withholding gate has no nested arm ([how](#a-nested-jail-runs-its-own-broker)). |
+| <a id="oq-2"></a>[**`OQ-2`**](#oq-2) (broker-ca) — **a nested jail runs its own broker**, like any other host (a singleton until [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) gave every jail its own) | Nesting earns affordances, not exemptions: a jail that behaves differently cannot test the thing it is nested inside, and a special case here is one carried forever. So the endpoint-withholding gate has no nested arm ([how](#a-nested-jail-runs-its-own-broker)). |
 | <a id="oq-3"></a>[**`OQ-3`**](#oq-3) (broker-ca) — **a check that did not look must not be counted as a pass** | The principle is the ruling and the token was delegated: `[SKIP]` with its own counter, excluded from the pass tally, plus `hostFact` for a fact about the host rather than the reader. An all-green in-jail run that includes areas nobody examined offers them as evidence ([how](#yolo-check-does-not-count-a-skip-as-a-pass)). |
 
 ## Current values
@@ -1122,8 +1122,8 @@ offset for re-measurement.
 | Serials, CA subject | 128-bit random; `O=yolo-jail, OU=local, CN=yolo-jail-claude-oauth-broker` | `internal/oauthbroker/cert.go` (`randomSerial`, `caCommonName`) |
 | Mint lock | `cert.lock` under `BrokerDir()`, exclusive `flock`; never mounted into a jail | `internal/oauthbroker/cert.go` (`certLockPath`, `withCertLock`) |
 | Swept legacy artifacts | `ca.key`, `ca.srl`, `leaf.cnf`, `server.csr`; a surviving `ca.key` forces a re-mint | `internal/oauthbroker/cert.go` (`legacyOpensslArtifacts`, `caAndLeafAreCurrent`) |
-| Mint entry points | daemon start; `--init-ca` (idempotent), `--force-init-ca` (rotates both halves) | `internal/oauthbroker/oauthbrokercmd.go` |
-| Spawn deadline | 5s for a just-spawned singleton to bind its socket, then the failed-spawn warning | `internal/broker/brokerlifecycle.go` (`BrokerSpawnTimeout`) |
+| Mint entry points | a launch, before its argv names the mounts (`mintBrokerCertificates`); daemon start; `--init-ca` (idempotent), `--force-init-ca` (rotates both halves) | `internal/cli/run/brokercerts.go`; `internal/oauthbroker/oauthbrokercmd.go` |
+| Spawn deadline | 5s for a jail's just-spawned broker to bind its socket, then the failed-spawn warning (it was a host-wide singleton's until [`HD-R1`](../design/host-daemon-ownership.md#HD-R1)) | `internal/cli/run/loopholesruntime.go` (`serviceReadyTimeoutDefault`) |
 | Node/Bun trust var | `NODE_EXTRA_CA_CERTS`, one path — ⚠ joined as a list by yolo, read as a single filename by the consumer ([why that matters](#how-the-handshake-is-trusted)) | `internal/loopholes/runtime.go`; Claude Code 2.1.278 (`node:tls` compat, offset 22158845) |
 | OpenSSL-family trust vars | `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` → `$HOME/.yolo-ca-bundle.crt` | `internal/entrypoint/system.go` (`GenerateCABundle`), `boot.go`, `shell.go`; bound from the workspace in `internal/cli/run/assemble_parts.go` |
 | Vendor credential path | `CLAUDE_SECURESTORAGE_CONFIG_DIR ?? CLAUDE_CONFIG_DIR ?? ~/.claude` + `.credentials.json`; yolo sets `CLAUDE_SECURESTORAGE_CONFIG_DIR` to the machine-scope directory on every jail launch but a view launch, and never `CLAUDE_CONFIG_DIR` | Claude Code 2.1.278 (`Wb()`, offset 191037919), 2.1.284 (`ev()`); `packs/claude/pack.json`, `internal/cli/run/claudesecurestorage.go` |

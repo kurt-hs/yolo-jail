@@ -61,7 +61,7 @@ func launchCheckPack(t *testing.T) *packload.Pack {
 		"transport": "loopback-tls",
 		"lifecycle": "spawned",
 		"host_daemon": {"cmd": `+string(cmd)+`, "publishes": "socket",
-			"scope": "host", "launch_check": true, "detach": true},
+			"launch_check": true, "detach": true},
 		"jail_daemon": {"cmd": ["yolo-jaild", "fixture-adapter"]}
 	}`)
 }

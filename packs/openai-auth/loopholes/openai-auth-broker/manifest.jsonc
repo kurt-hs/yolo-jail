@@ -10,9 +10,11 @@
   "transport": "loopback-tls",
   "lifecycle": "spawned",
 
-  // The host singleton is the only process allowed to submit the canonical
-  // refresh token to OpenAI. The framework publishes a distinct authenticated
-  // loopback-TLS front for each jail over this host-wide AF_UNIX socket.
+  // One daemon per jail, started by the launch and stopped with it
+  // (docs/design/host-daemon-ownership.md, HD-R1). Every copy reads one state file and
+  // takes the refresh flock beside it before it submits the canonical refresh token to
+  // OpenAI. The framework publishes this jail's authenticated loopback-TLS front over
+  // the daemon's AF_UNIX socket.
   "host_daemon": {
     "cmd": [
       "yolo", "internal", "daemon", "openai-auth-broker",
@@ -20,7 +22,6 @@
       "--state-file", "{state}/credentials.json"
     ],
     "publishes": "socket",
-    "scope": "host",
     // A jail's end SIGTERMs this daemon and leaves it to finish a refresh in flight,
     // which writes the shared state file (docs/design/host-daemon-ownership.md §1.3).
     "detach": true

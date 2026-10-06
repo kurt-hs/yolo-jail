@@ -14,12 +14,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 )
 
 func hostUnservedHome(t *testing.T, cfg string) {
@@ -92,8 +87,8 @@ func TestAHostLaunchThatServesThePointerItselfDoesNotNameIt(t *testing.T) {
 // same conditions keeps HS-D22's clause: no managed launch of pi's serves that URL.
 //
 // Through the real hostMain and the real prelaunch, against the real OpenAI credential service
-// holding no login in this test's home (spawned in this package's private singleton dir, and
-// stopped here), so deleting the reason where the prelaunch decides or where the host prints
+// holding no login in this test's home (a private daemon of the launch's own, which ends with
+// the process it serves), so deleting the reason where the prelaunch decides or where the host prints
 // fails it. No login starts: there is no terminal.
 func TestAHostLaunchWhoseManagedLaunchDidNotStartSaysWhy(t *testing.T) {
 	for _, tc := range []struct {
@@ -103,9 +98,6 @@ func TestAHostLaunchWhoseManagedLaunchDidNotStartSaysWhy(t *testing.T) {
 		t.Run(tc.agent, func(t *testing.T) {
 			hostUnservedHome(t, `{"packs": ["codex", "pi"]}`)
 			setGateTTY(t, false)
-			t.Cleanup(func() {
-				broker.BrokerKill(broker.SingletonDeps(openaiauthhost.BrokerName, nil), syscall.SIGTERM, 5*time.Second)
-			})
 			rc, execed, errs := hostExecRun(t, tc.agent, "-p", "codex")
 			if rc != 0 || !execed {
 				t.Fatalf("yolo host -p codex -- %s: rc=%d exec'd=%v\n%s", tc.agent, rc, execed, errs)

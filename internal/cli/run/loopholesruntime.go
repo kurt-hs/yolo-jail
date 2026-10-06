@@ -34,9 +34,11 @@ type loopholeDaemon struct {
 	stop       func()
 	// launchCheck is the manifest's `host_daemon.launch_check`, and hasJailDaemon whether the
 	// loophole declares a jail_daemon: together they decide whether the launch asks this
-	// daemon the launch check (launchcheck.go). hostWide is `host_daemon.scope: "host"`, which
-	// decides what the launch says of a daemon that does not know the check. Set by
-	// markLaunchCheck.
+	// daemon the launch check (launchcheck.go). Set by markLaunchCheck. hostWide is the launch
+	// check's word for a daemon an earlier yolo shared machine-wide; since HD-R1 retired
+	// `host_daemon.scope: "host"` no launch starts one, so nothing sets it, and the launch
+	// check's branch over it (launchcheck.go, another build's file) is unreachable until that
+	// file drops it.
 	launchCheck   bool
 	hasJailDaemon bool
 	hostWide      bool
@@ -51,14 +53,13 @@ type loopholeDaemon struct {
 	log string
 }
 
-// markLaunchCheck copies the two facts the launch check reads from lp onto h.
+// markLaunchCheck copies the facts the launch check reads from lp onto h.
 func markLaunchCheck(h loopholeDaemon, lp *loopholes.Loophole) loopholeDaemon {
 	if lp == nil || lp.HostDaemon == nil {
 		return h
 	}
 	h.launchCheck = lp.HostDaemon.LaunchCheck
 	h.hasJailDaemon = lp.JailDaemon != nil
-	h.hostWide = lp.HostDaemon.Scope == loopholes.ScopeHost
 	return h
 }
 
@@ -258,7 +259,7 @@ func (o *Options) loopholeAllow(rt string, cfg *jsonx.OrderedMap) func(string) b
 		// AND THE CLAUDE BROKER WHEN THE LAUNCH DELIVERS THE CREDENTIAL VIEW (CL-D11). Nothing
 		// in an Apple Container jail dials it, and nothing needs to: the singleton is the host
 		// process that writes this workspace's view into the wsState the guest binds, so its
-		// endpoint stays unpublished to the jail (hostScopedEndpointIsUnpublishable), which is
+		// endpoint stays unpublished to the jail (promisedEndpointIsUnpublishable), which is
 		// right rather than a gap.
 		if o.claudeCredentialView(rt, cfg) {
 			allow = func(name string) bool {
@@ -441,9 +442,6 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 				h.envVarName = ""
 			}
 			h = markLaunchCheck(h, recordOf[name])
-			// THIS JAIL'S OWN DAEMON, whatever the record's scope says: this launch started it,
-			// so it cannot predate this yolo, and the launch check names no restart for it.
-			h.hostWide = false
 			handles = append(handles, h)
 		}
 	}
@@ -562,8 +560,8 @@ func (o *Options) cgroupDelegateHonored(set loopholes.Set) bool {
 // SIGTERM-and-wait on a pid file, an unlink of the relay's own socket, and an
 // ordering comment about doing both before the rmtree. Nothing replaced it,
 // because the front that took the relay's place is a goroutine in THIS process
-// whose stop() ran in the loop above — and the one daemon behind it is host-wide
-// and must survive this jail (startHostSingleton).
+// whose stop() ran in the loop above, and the daemon behind it is this jail's own,
+// stopped (or detached) by that same stop() since HD-R1.
 func (o *Options) stopLoopholes(handles []loopholeDaemon, socketsDir, cname, rt string) {
 	out := o.pr(o.Stdout)
 	for _, h := range handles {
@@ -1174,7 +1172,7 @@ func (o *Options) startExternalService(
 		// Not fatal — the jail still starts. But it IS the state in which every
 		// in-jail client of this loophole fails, and the failure is otherwise
 		// silent until the agent hits it, so say so here and name the log that
-		// has the reason (the same shape startHostSingleton's two warnings take).
+		// has the reason.
 		o.pr(o.Stdout).print("[yellow]Warning: host service '" + name + "' " + failure +
 			" — " + o.unreachableBy() + " cannot reach it. Expected " + awaited +
 			"; see " + logPath + "[/yellow]")
@@ -1307,12 +1305,11 @@ const hostServicesDirPrefix = "yolo-host-services-"
 // is what retiring it forbids — and would let the jail unlink the daemon's own
 // socket. That directory holds endpoint files and nothing else.
 //
-// A HOST-SCOPED daemon's socket is NOT one of these. It is keyed by loophole name
-// (paths.HostSingletonSocket) rather than by a jail's hash, precisely so every
-// jail's front and every `yolo broker` invocation rendezvous on one file — which
-// is also why retireFrontSockets below cannot reach it.
+// Since HD-R1 every host daemon a launch starts binds one of these (paths.FrontSocketFile).
+// A machine-wide daemon an OLDER yolo left running binds paths.HostSingletonSocket instead,
+// keyed by loophole name, which is also why retireFrontSockets below cannot reach it.
 func frontSocketFile(shortHash, name string) string {
-	return "/tmp/yolo-front-" + shortHash + "-" + name + ".sock"
+	return paths.FrontSocketFile(shortHash, name)
 }
 
 // frontShortHash keys a fronted daemon's upstream socket to its jail. The
@@ -1353,10 +1350,10 @@ func isJailShortHash(s string) bool {
 // with EADDRINUSE (the pre-spawn unlink in startExternalService covers relaunch;
 // this covers a jail that simply ends).
 //
-// The glob is keyed by the jail's hash, so a host-scoped daemon's socket is
-// unreachable from here BY CONSTRUCTION rather than by a check somebody has to
-// remember — which is the property that keeps one jail ending from cutting off
-// every other jail's credential path.
+// The glob is keyed by the jail's hash, so another jail's daemon socket (and an older
+// yolo's host-wide one) is unreachable from here BY CONSTRUCTION rather than by a check
+// somebody has to remember — which is the property that keeps one jail ending from cutting
+// off every other jail's credential path.
 //
 // BOTH ERRORS ARE DISCARDED, and both are safe. Glob's only error is
 // ErrBadPattern, which a pattern built from frontSocketFile cannot be. A failed
@@ -1436,8 +1433,8 @@ func frontRun(publishPath, advertiseHost, upstreamPath string, stop <-chan struc
 
 // frontPublishFailure waits for a front to publish a COMPLETE endpoint file and
 // returns "" when it does, else a clause naming WHY — its caller prefixes the
-// service and appends the log. Both spawn paths use it: the per-jail one in
-// startExternalService and the host-wide one in startHostSingleton.
+// service and appends the log. startExternalService uses it (the host-wide spawn path
+// that also did, startHostSingleton, was deleted with HD-R1).
 //
 // Content, not existence (svcendpoint.Probe): the file is written temp+rename so a
 // reader cannot see a torn line, but an older or crashed publisher can still leave

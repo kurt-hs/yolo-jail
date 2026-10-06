@@ -195,7 +195,7 @@ version at startup.
 
 `internal/hostservice` owns the accept loop and the request harness but **not** a
 transport — it owns three, and each caller names the one it wants. There is deliberately
-**no `Serve`**: the unqualified name is what carried the host-wide broker singleton across
+**no `Serve`**: the unqualified name is what carried the broker (then a host-wide singleton) across
 a transport boundary by accident, with its signature preserved and every test still green.
 
 | Entry point | Binds / publishes | Who dials it | Tier 2? |
@@ -481,13 +481,12 @@ never refuses a launch, and no flag hides what it prints. `budget_ms` is how lon
 waits for the answer. The daemon answers within it, from what it already knows when that is
 enough, and clamps it to a cap whoever sends it. A non-zero exit, a malformed answer or no answer
 within the budget plus a short margin prints one dim line saying the daemon could not be asked.
-One non-zero exit is a warning instead: a `scope: "host"` daemon whose first stderr line starts
-`unknown action:` and names `launch-check`, the answer yolo's daemons give an action they do not
-know. That daemon was started by an earlier yolo and kept running through the upgrade, since
-nothing restarts one when yolo changes, so the yellow line says it predates this yolo and names
-`yolo host-daemon restart <name>`. Ruled 2026-10-05 and not built
-([OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)): a fresh launch is to refuse on that
-answer instead, naming the same command; an attach keeps the line.
+A host-wide daemon an earlier yolo started could answer `unknown action:` here, and the launch had
+a line naming `yolo host-daemon restart <name>` for it, which
+[OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11) ruled a refusal. Since
+[`HD-R1`](../design/host-daemon-ownership.md#HD-R1) every daemon a launch asks is one that launch
+started from its own manifest, so that answer can no longer come from a daemon older than the
+launch, and the branch is unreachable.
 The first daemon to declare it is `aws-auth`
 ([`agent-credentials.md`](agent-credentials.md#when-the-sso-session-lapses)).
 

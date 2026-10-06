@@ -357,12 +357,14 @@ that get re-derived:
   escalation set at all: publish fails, readiness fails, and the variable is never wired.
 
 > [!WARNING]
-> **A host-wide singleton with no publish gate refuses every jail on the host.** The OAuth
-> broker's endpoint variable is wired on the loophole being active alone, because it is a
-> host-wide singleton rather than a per-jail daemon — so "broker configured, singleton down"
-> reaches the jail as *unpublished*, and under this rule that refuses **every** jail on that host,
-> not just one. Accepted deliberately: a jail with no agent auth is the case closest to fatal
-> anyway. **Any future service wired without a publish gate owes this same question** — an
+> **A promised endpoint with no publish gate refuses its jail when its daemon fails.** The
+> credential daemons' endpoint variables are wired on the loophole being active alone, before the
+> daemon starts (`endpointPromisedAtAssembly`, the records that declare `detach`) — so "broker
+> configured, broker failed to start" reaches the jail as *unpublished*, and under this rule that
+> refuses the launch. Since [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) each jail starts
+> its own daemon, so a failure refuses that launch alone rather than every jail on a host whose
+> one shared daemon was down. Accepted deliberately: a jail with no agent auth is the case
+> closest to fatal anyway. **Any future service wired without a publish gate owes this same question** — an
 > endpoint variable is a *promise*, and the fatal turns every unbackable promise into a refused
 > launch.
 

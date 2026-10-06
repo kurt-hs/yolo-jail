@@ -3,20 +3,17 @@ package check
 import (
 	"encoding/binary"
 	"net"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
-// brokerLoopholeName is the Claude broker's loophole name. Its socket and PID file are
-// DERIVED (paths.HostSingleton*), never spelled here, so this section and the daemon
-// that binds them cannot drift apart.
+// brokerLoopholeName is the Claude broker's loophole name. Where its copies run is DERIVED
+// (broker.RunningInstances, over paths.FrontSocketFile and an older yolo's
+// paths.HostSingleton*), never spelled here, so this section and the daemons that bind them
+// cannot drift apart.
 const brokerLoopholeName = "claude-oauth-broker"
 
 // hostServiceDefaultJailEndpoint returns the in-jail path of a host service's
@@ -32,68 +29,6 @@ func hostServiceDefaultJailEndpoint(name string) string {
 // the other two agree.
 func hostServiceSocketsDir(cname string, isMacOS bool) string {
 	return paths.HostServicesDir(cname, isMacOS)
-}
-
-// brokerStatus holds the broker liveness snapshot: pid, pid_live, socket_exists,
-// socket_accepts.
-type brokerStatus struct {
-	pid           int
-	pidPresent    bool
-	pidLive       bool
-	socketExists  bool
-	socketAccepts bool
-}
-
-func (o *Options) brokerStatus() brokerStatus {
-	pid, present := brokerReadPID()
-	pidLive := present && execx.IsAlive(pid)
-	sockExists := o.PathExists(paths.HostSingletonSocket(brokerLoopholeName))
-	accepts := sockExists && brokerSocketAccepts(paths.HostSingletonSocket(brokerLoopholeName), 2*time.Second)
-	return brokerStatus{
-		pid:           pid,
-		pidPresent:    present,
-		pidLive:       pidLive,
-		socketExists:  sockExists,
-		socketAccepts: accepts,
-	}
-}
-
-// brokerReadPID returns (pid, present).
-func brokerReadPID() (int, bool) {
-	data, err := os.ReadFile(paths.HostSingletonPIDFile(brokerLoopholeName))
-	if err != nil {
-		return 0, false
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0, false
-	}
-	return n, true
-}
-
-// brokerSocketAccepts reports whether the host-wide singleton's socket accepts a
-// connection. Connect, then close — nothing is written and nothing is read.
-//
-// IT USED TO BE A PROTOCOL PING on this socket and cannot be one any more, for the
-// reason spelled out at broker.SingletonReachable: the singleton sits behind
-// yolo's front now (`publishes: "socket"` + `scope: "host"`), so its first read on
-// every connection is yolo's CONNECTION PREAMBLE, and a bare `{"action":"ping"}`
-// is rejected as a preamble with no version. Writing a forged preamble from here
-// would mean `yolo check` asserting a jail identity for a connection that belongs
-// to no jail.
-//
-// The protocol round trip is not lost — it moved to the probe that can still
-// legitimately make it. checkBrokerEndpoint dials the per-jail ENDPOINT, so the
-// front writes a real preamble and brokerPingConn's ping reaches the handler
-// exactly as a jail's would. That probe is also the one that tests the hop a jail
-// actually travels, which is why it is the one worth having.
-func brokerSocketAccepts(socketPath string, timeout time.Duration) bool {
-	conn, err := net.DialTimeout("unix", socketPath, timeout)
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
 }
 
 // brokerPingConn sends the length-prefixed {"action":"ping"} request over a

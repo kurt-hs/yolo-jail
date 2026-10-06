@@ -2,262 +2,285 @@ package broker
 
 import (
 	"bytes"
-	"io"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 )
 
-// fixtureDaemon is the host-scoped daemon the command-layer tests act on. It is
-// NOT claude-oauth-broker, so a body that names the broker rather than its
-// Singleton fails here rather than passing by coincidence.
+// fixtureDaemon is the host daemon the command-layer tests act on. It is NOT
+// claude-oauth-broker, so a body that names the broker rather than the name it was handed fails
+// here rather than passing by coincidence.
 const fixtureDaemon = "fixture-daemon"
 
-// lifeState is a controllable Deps backed by a temp dir.
-type lifeState struct {
-	alive     map[int]bool
-	reachOK   bool
-	killed    []int
-	spawnPID  int
-	spawnBind bool // does the spawned daemon bind the socket?
+// verbState is what the stubbed seams of CLIDeps saw.
+type verbState struct {
+	running    []Instance
+	stragglers []int
+	terminated []int
+	killed     []int
+	hostWide   bool // StopHostWide's answer
+	hostWideAt []string
+	tailArgv   []string
+	removed    []string
 }
 
-func newLifeDeps(t *testing.T, st *lifeState) Deps {
+func newDeps(t *testing.T, st *verbState) (CLIDeps, *bytes.Buffer) {
 	t.Helper()
-	dir := t.TempDir()
-	if st.alive == nil {
-		st.alive = map[int]bool{}
-	}
-	return Deps{
-		SocketPath:  filepath.Join(dir, "broker.sock"),
-		PIDFilePath: filepath.Join(dir, "broker.pid"),
-		LockPath:    filepath.Join(dir, "broker.lock"),
-		LogPath:     filepath.Join(dir, "broker.log"),
-		// See newFakeDeps: a fixture argv, because the engine is general and what
-		// these tests drive is the COMMAND layer, not the broker's own argv.
-		Argv:       []string{"/fixture/daemon", "--socket", filepath.Join(dir, "broker.sock")},
-		Now:        time.Now,
-		Sleep:      func(time.Duration) {},
-		PathExists: func(p string) bool { _, err := os.Lstat(p); return err == nil },
-		Reachable:  func(string, time.Duration) bool { return st.reachOK },
-		Alive:      func(pid int) bool { return st.alive[pid] },
-		Kill: func(pid int, _ syscall.Signal) error {
-			st.killed = append(st.killed, pid)
-			st.alive[pid] = false
-			return nil
-		},
-		Pgrep: func() []int { return nil },
-		Spawn: func(argv []string, _ string) (int, func() bool, error) {
-			if st.spawnBind {
-				_ = os.WriteFile(filepath.Join(dir, "broker.sock"), nil, 0o644)
-				st.alive[st.spawnPID] = true
-			}
-			return st.spawnPID, func() bool { return !st.spawnBind }, nil
-		},
-		// Discarded, not stderr: the non-binding cases below now make
-		// BrokerSpawn emit its failed-spawn warning, and a passing test must not
-		// print one. The command layer's own verdict line still lands in the
-		// CLIDeps buffer, which is what these tests assert.
-		Out: io.Discard,
-	}
-}
-
-func newDeps(t *testing.T, st *lifeState) (CLIDeps, *bytes.Buffer) {
-	t.Helper()
-	life := newLifeDeps(t, st)
 	var buf bytes.Buffer
+	logDir := t.TempDir()
 	return CLIDeps{
-		// A NON-BROKER fixture name, deliberately: every assertion below then
-		// fails if a body goes back to spelling "broker" (or the Claude loophole
-		// name) instead of reading the Singleton it was handed.
-		Singleton: Singleton{Name: fixtureDaemon, Declared: true, Argv: life.Argv},
-		Life:      life,
-		Out:       &buf,
-		Err:       &buf,
-		Color:     false,
-		LogPath:   life.LogPath,
-		LogIsFile: func(p string) bool { info, err := os.Stat(p); return err == nil && info.Mode().IsRegular() },
-		RunTail:   func([]string) error { return nil },
+		Out: &buf, Err: &buf,
+		Running: func(name string) []Instance {
+			var out []Instance
+			for _, i := range st.running {
+				if name == "" || i.Name == name {
+					out = append(out, i)
+				}
+			}
+			return out
+		},
+		Stragglers: func(string) []int { return st.stragglers },
+		Terminate: func(pids []int, _ time.Duration) []int {
+			st.terminated = append(st.terminated, pids...)
+			return st.killed
+		},
+		StopHostWide: func(name string) bool {
+			st.hostWideAt = append(st.hostWideAt, name)
+			return st.hostWide
+		},
+		RemoveStale: func(s string) { st.removed = append(st.removed, s) },
+		LogPath:     func(name string) string { return filepath.Join(logDir, name+".log") },
+		LogIsFile:   func(p string) bool { info, err := os.Stat(p); return err == nil && info.Mode().IsRegular() },
+		RunTail:     func(argv []string) error { st.tailArgv = argv; return nil },
 	}, &buf
 }
 
-func TestStatusHealthy(t *testing.T) {
-	st := &lifeState{alive: map[int]bool{77: true}, reachOK: true}
+func jailCopy(jail string, pid int, accepting bool) Instance {
+	return Instance{Name: fixtureDaemon, Jail: jail, Socket: "/tmp/yolo-front-" + jail + "-" + fixtureDaemon + ".sock",
+		PIDs: []int{pid}, Accepting: accepting}
+}
+
+// STATUS LISTS EVERY JAIL'S OWN COPY, by its jail, and exits 0 while each accepts.
+func TestStatusListsEachJailsCopy(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true), jailCopy("bbbbbbbb", 9, true)}}
 	deps, buf := newDeps(t, st)
-	// pid file + socket present.
-	_ = os.WriteFile(deps.Life.PIDFilePath, []byte("77\n"), 0o644)
-	_ = os.WriteFile(deps.Life.SocketPath, nil, 0o644)
-	rc := PrintStatus(deps)
-	if rc != 0 {
-		t.Errorf("healthy status rc = %d, want 0", rc)
+	if rc := PrintStatus(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("rc = %d, want 0 for copies that all accept\n%s", rc, buf.String())
 	}
 	out := buf.String()
-	for _, want := range []string{
-		"Host-wide daemon: " + fixtureDaemon,
-		"pid:          77  live",
-		"socket:       " + deps.Life.SocketPath + "  present",
-		"socket accept: accepting",
-		"pid file:     " + deps.Life.PIDFilePath,
-		fixtureDaemon + " is healthy.",
-	} {
+	for _, want := range []string{"Host daemon: " + fixtureDaemon, "jail aaaaaaaa: pid 7",
+		"jail bbbbbbbb: pid 9", "accepting"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
+			t.Errorf("status lacks %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestStatusNotRunning(t *testing.T) {
-	st := &lifeState{}
+// A COPY THAT DOES NOT ACCEPT fails the status and names the next step: relaunch that jail.
+func TestStatusNamesTheRelaunchForACopyThatDoesNotAccept(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, false)}}
 	deps, buf := newDeps(t, st)
-	rc := PrintStatus(deps)
-	if rc != 1 {
-		t.Errorf("not-running status rc = %d, want 1", rc)
+	if rc := PrintStatus(deps, fixtureDaemon); rc != 1 {
+		t.Errorf("rc = %d, want 1 for a copy that does not accept", rc)
 	}
-	out := buf.String()
-	if !strings.Contains(out, "not running") || !strings.Contains(out, "(no PID file)") {
-		t.Errorf("missing not-running line:\n%s", out)
-	}
-	if !strings.Contains(out, "socket:") || !strings.Contains(out, "missing") {
-		t.Errorf("missing socket-missing line:\n%s", out)
-	}
-	if !strings.Contains(out, "socket accept:") || !strings.Contains(out, "not accepting") {
-		t.Errorf("missing socket-accept line:\n%s", out)
-	}
-	// THE CYCLE HINT MUST NAME THIS DAEMON. It read `yolo broker restart`
-	// unconditionally, which for any singleton but the Claude one cycles a
-	// different process and leaves this one broken (OQ-HD2).
-	if !strings.Contains(out, fixtureDaemon+" is not fully healthy.") ||
-		!strings.Contains(out, "yolo host-daemon restart "+fixtureDaemon) {
-		t.Errorf("missing cycle hint naming %s:\n%s", fixtureDaemon, out)
+	for _, want := range []string{"not accepting", "leave the jail and launch it again",
+		"yolo host-daemon logs " + fixtureDaemon, "yolo host-daemon stop " + fixtureDaemon + "` clears"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("status lacks %q:\n%s", want, buf.String())
+		}
 	}
 }
 
-func TestStatusDeadPIDExit1(t *testing.T) {
-	// PID present but not live → degraded → exit 1.
-	st := &lifeState{alive: map[int]bool{5: false}}
-	deps, buf := newDeps(t, st)
-	_ = os.WriteFile(deps.Life.PIDFilePath, []byte("5\n"), 0o644)
-	rc := PrintStatus(deps)
-	if rc != 1 {
-		t.Errorf("dead-pid status rc = %d, want 1", rc)
+// NOTHING RUNNING IS AN ANSWER, exit 0, and it says why: no copy runs while no jail uses it.
+func TestStatusOfNothingRunningSaysWhy(t *testing.T) {
+	deps, buf := newDeps(t, &verbState{})
+	if rc := PrintStatus(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("rc = %d, want 0", rc)
 	}
-	if !strings.Contains(buf.String(), "pid:          5  dead") {
-		t.Errorf("missing dead mark:\n%s", buf.String())
+	if !strings.Contains(buf.String(), "No "+fixtureDaemon+" is running") ||
+		!strings.Contains(buf.String(), "starts a copy of its own") {
+		t.Errorf("the empty status does not say why:\n%s", buf.String())
 	}
-}
-
-func TestStopRunning(t *testing.T) {
-	st := &lifeState{alive: map[int]bool{42: true}}
-	deps, buf := newDeps(t, st)
-	_ = os.WriteFile(deps.Life.PIDFilePath, []byte("42\n"), 0o644)
-	rc := Stop(deps)
-	if rc != 0 {
-		t.Errorf("stop rc = %d, want 0", rc)
-	}
-	if !strings.Contains(buf.String(), "Stopped "+fixtureDaemon+".") {
-		t.Errorf("missing stopped line:\n%s", buf.String())
-	}
-	if len(st.killed) != 1 || st.killed[0] != 42 {
-		t.Errorf("expected SIGTERM to 42, got %v", st.killed)
+	buf.Reset()
+	if rc := PrintStatus(deps, ""); rc != 0 || !strings.Contains(buf.String(), "No host daemon is running") {
+		t.Errorf("the bare status of nothing: rc %d\n%s", rc, buf.String())
 	}
 }
 
-func TestStopNothingRunning(t *testing.T) {
-	st := &lifeState{}
+// A HOST-WIDE COPY AN OLDER YOLO LEFT is reported as that, with what to do about it.
+func TestStatusReportsAnOlderYolosHostWideCopy(t *testing.T) {
+	st := &verbState{running: []Instance{{Name: fixtureDaemon, HostWide: true,
+		Socket: "/tmp/yolo-" + fixtureDaemon + ".sock", PIDs: []int{3}, Accepting: true}}}
 	deps, buf := newDeps(t, st)
-	rc := Stop(deps)
-	if rc != 0 {
-		t.Errorf("stop rc = %d, want 0", rc)
-	}
-	if !strings.Contains(buf.String(), "No host-wide daemon was running for "+fixtureDaemon+".") {
-		t.Errorf("missing no-broker line:\n%s", buf.String())
+	PrintStatus(deps, fixtureDaemon)
+	for _, want := range []string{"host-wide, left by an older yolo: pid 3",
+		"relaunch those jails with this yolo", "yolo host-daemon stop " + fixtureDaemon} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("status lacks %q:\n%s", want, buf.String())
+		}
 	}
 }
 
-func TestRestartSuccess(t *testing.T) {
-	// Old broker (pid 1) running; kill it, spawn pid 2 which binds + becomes live.
-	st := &lifeState{alive: map[int]bool{1: true}, reachOK: true, spawnPID: 2, spawnBind: true}
+// THE JSON IS THE INSTANCES, an empty array for none, and the exit code is the same verdict.
+func TestStatusJSONIsTheInstances(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, false)}}
 	deps, buf := newDeps(t, st)
-	_ = os.WriteFile(deps.Life.PIDFilePath, []byte("1\n"), 0o644)
-	_ = os.WriteFile(deps.Life.SocketPath, nil, 0o644)
-	rc := Restart(deps)
-	if rc != 0 {
-		t.Errorf("restart rc = %d, want 0", rc)
+	deps.Format = outfmt.JSON
+	if rc := PrintStatus(deps, ""); rc != 1 {
+		t.Errorf("rc = %d, want 1", rc)
 	}
-	out := buf.String()
-	if !strings.Contains(out, "Restarted "+fixtureDaemon+".") {
-		t.Errorf("missing restarted line:\n%s", out)
+	var got []Instance
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil || len(got) != 1 || got[0].Jail != "aaaaaaaa" ||
+		got[0].Accepting {
+		t.Errorf("json = %s (%v)", buf.String(), err)
 	}
-	if !strings.Contains(out, "socket="+deps.Life.SocketPath) {
-		t.Errorf("missing socket= hint:\n%s", out)
-	}
-	if len(st.killed) == 0 {
-		t.Error("old broker should have been killed")
+	empty, buf2 := newDeps(t, &verbState{})
+	empty.Format = outfmt.JSON
+	PrintStatus(empty, fixtureDaemon)
+	if strings.TrimSpace(buf2.String()) != "[]" {
+		t.Errorf("json for nothing running = %q, want []", buf2.String())
 	}
 }
 
-func TestRestartFailure(t *testing.T) {
-	// Spawn does not bind → not alive after spawn → exit 1 + log-path hint.
-	st := &lifeState{spawnPID: 9, spawnBind: false}
+// STOP ENDS EVERY JAIL'S COPY, and the stragglers still finishing after their jail, and names
+// what those jails must do next.
+func TestStopEndsEveryCopyAndNamesTheRelaunch(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true), jailCopy("bbbbbbbb", 9, true)},
+		stragglers: []int{9, 11}}
 	deps, buf := newDeps(t, st)
-	rc := Restart(deps)
-	if rc != 1 {
-		t.Errorf("failed restart rc = %d, want 1", rc)
+	if rc := Stop(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("rc = %d, want 0", rc)
 	}
-	out := buf.String()
-	if !strings.Contains(out, fixtureDaemon+" failed to become live after spawn.") {
-		t.Errorf("missing failure line:\n%s", out)
+	if !reflect.DeepEqual(st.terminated, []int{7, 9, 11}) {
+		t.Errorf("terminated %v, want every copy's pid once, stragglers included", st.terminated)
 	}
-	if !strings.Contains(out, "Check "+deps.LogPath) {
-		t.Errorf("missing log-path hint:\n%s", out)
+	for _, want := range []string{"Stopped " + fixtureDaemon + " for jails aaaaaaaa, bbbbbbbb",
+		"leave that jail and launch it again"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("stop lacks %q:\n%s", want, buf.String())
+		}
+	}
+	if len(st.hostWideAt) != 0 {
+		t.Errorf("stop reached for a host-wide copy that is not running: %v", st.hostWideAt)
+	}
+}
+
+// A COPY THAT OUTLIVES THE WAIT IS KILLED, and the stop says so.
+func TestStopSaysWhichCopiesItHadToKill(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true)}, killed: []int{7}}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	if !strings.Contains(buf.String(), "pid 7 did not exit within") {
+		t.Errorf("stop does not say it killed pid 7:\n%s", buf.String())
+	}
+}
+
+// AN OLDER YOLO'S HOST-WIDE COPY is stopped by its own PID file, and the stop says whose jails lose it.
+func TestStopEndsAnOlderYolosHostWideCopy(t *testing.T) {
+	st := &verbState{running: []Instance{{Name: fixtureDaemon, HostWide: true, PIDs: []int{3}}}, hostWide: true}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	if !reflect.DeepEqual(st.hostWideAt, []string{fixtureDaemon}) || len(st.terminated) != 0 {
+		t.Errorf("host-wide stop %v, terminated %v; want the legacy stop alone", st.hostWideAt, st.terminated)
+	}
+	if !strings.Contains(buf.String(), "Stopped the host-wide "+fixtureDaemon+" an older yolo left") ||
+		!strings.Contains(buf.String(), "relaunch them with this yolo") {
+		t.Errorf("stop lacks the host-wide lines:\n%s", buf.String())
+	}
+}
+
+// A SOCKET NOTHING SERVES — no process names it, nothing accepts on it — is what a dead daemon or
+// a jail that ended without its teardown left, and stop removes it, saying so, so the status line
+// it caused clears.
+func TestStopRemovesASocketNothingServes(t *testing.T) {
+	st := &verbState{running: []Instance{{Name: fixtureDaemon, Jail: "aaaaaaaa", Socket: "/s"}}}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	if !reflect.DeepEqual(st.removed, []string{"/s"}) || len(st.terminated) != 0 {
+		t.Errorf("removed %v, terminated %v; want the socket removed and nothing signaled",
+			st.removed, st.terminated)
+	}
+	for _, want := range []string{"Removed " + fixtureDaemon + "'s socket for jail aaaaaaaa",
+		"leave it and launch it again"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("stop lacks %q:\n%s", want, buf.String())
+		}
+	}
+}
+
+// A SOCKET THAT ACCEPTS WITH NO PROCESS FOUND BEHIND IT (no pgrep on this host) is neither
+// stopped, removed, nor "nothing running": the stop says what it found and what to do.
+func TestStopOfASocketWithNoProcessSaysWhatItFound(t *testing.T) {
+	st := &verbState{running: []Instance{{Name: fixtureDaemon, Jail: "aaaaaaaa", Socket: "/s", Accepting: true}}}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	if len(st.terminated) != 0 || len(st.removed) != 0 {
+		t.Errorf("terminated %v, removed %v, for a socket something accepts on", st.terminated, st.removed)
+	}
+	for _, want := range []string{"no process serving it", "next launch of that workspace replaces it",
+		"install procps"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("stop lacks %q:\n%s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), "is running on this machine") {
+		t.Errorf("stop says nothing runs beside a socket status lists:\n%s", buf.String())
+	}
+}
+
+func TestStopOfNothingRunning(t *testing.T) {
+	deps, buf := newDeps(t, &verbState{})
+	if rc := Stop(deps, fixtureDaemon); rc != 0 || !strings.Contains(buf.String(), "No "+fixtureDaemon+" is running") {
+		t.Errorf("rc = %d\n%s", rc, buf.String())
+	}
+}
+
+// RESTART RESTARTS NOTHING (HD-R1: a jail's daemon restarts with its jail), refuses with exit 1,
+// and names both next steps: the relaunch, and stop for the copies running now.
+func TestRestartRefusesWithTheRelaunch(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true)}}
+	deps, buf := newDeps(t, st)
+	if rc := Restart(deps, fixtureDaemon); rc != 1 {
+		t.Errorf("rc = %d, want 1", rc)
+	}
+	if len(st.terminated) != 0 || len(st.hostWideAt) != 0 {
+		t.Errorf("restart stopped something: terminated %v, host-wide %v", st.terminated, st.hostWideAt)
+	}
+	for _, want := range []string{"Nothing to restart", "it restarts with its jail",
+		"leave that jail and launch it again", "1 copies run now", "yolo host-daemon stop " + fixtureDaemon} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("restart lacks %q:\n%s", want, buf.String())
+		}
 	}
 }
 
 func TestLogsNoFile(t *testing.T) {
-	st := &lifeState{}
+	st := &verbState{}
 	deps, buf := newDeps(t, st)
-	ran := false
-	deps.RunTail = func([]string) error { ran = true; return nil }
-	rc := Logs(deps, 50, false)
-	if rc != 0 {
-		t.Errorf("logs rc = %d, want 0", rc)
+	if rc := Logs(deps, fixtureDaemon, 50, false); rc != 0 {
+		t.Errorf("rc = %d", rc)
 	}
-	if ran {
-		t.Error("tail should not run when the log file is absent")
-	}
-	if !strings.Contains(buf.String(), "No log file yet for "+fixtureDaemon+" at "+deps.LogPath) {
-		t.Errorf("missing no-log line:\n%s", buf.String())
+	if !strings.Contains(buf.String(), "No log file yet for "+fixtureDaemon) || st.tailArgv != nil {
+		t.Errorf("logs of no file: %q, tail %v", buf.String(), st.tailArgv)
 	}
 }
 
-func TestLogsTailArgv(t *testing.T) {
-	st := &lifeState{}
+func TestLogsTailsTheSharedLog(t *testing.T) {
+	st := &verbState{}
 	deps, _ := newDeps(t, st)
-	_ = os.WriteFile(deps.LogPath, []byte("line\n"), 0o644)
-	var gotArgv []string
-	deps.RunTail = func(argv []string) error { gotArgv = argv; return nil }
-
-	rc := Logs(deps, 120, false)
-	if rc != 0 {
-		t.Errorf("rc = %d", rc)
+	path := deps.LogPath(fixtureDaemon)
+	if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	want := []string{"tail", "-n120", deps.LogPath}
-	if !reflect.DeepEqual(gotArgv, want) {
-		t.Errorf("argv = %v, want %v", gotArgv, want)
-	}
-
-	// -f appends before the path.
-	rc = Logs(deps, 10, true)
-	if rc != 0 {
-		t.Errorf("rc = %d", rc)
-	}
-	wantF := []string{"tail", "-n10", "-f", deps.LogPath}
-	if !reflect.DeepEqual(gotArgv, wantF) {
-		t.Errorf("follow argv = %v, want %v", gotArgv, wantF)
+	Logs(deps, fixtureDaemon, 100, true)
+	if want := []string{"tail", "-n100", "-f", path}; !reflect.DeepEqual(st.tailArgv, want) {
+		t.Errorf("tail argv = %v, want %v", st.tailArgv, want)
 	}
 }
 
@@ -272,79 +295,37 @@ func TestBuildTailArgv(t *testing.T) {
 		{0, false, []string{"tail", "-n0", "/l"}},
 	}
 	for _, c := range cases {
-		got := BuildTailArgv(c.lines, c.follow, "/l")
-		if !reflect.DeepEqual(got, c.want) {
+		if got := BuildTailArgv(c.lines, c.follow, "/l"); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("BuildTailArgv(%d,%v) = %v, want %v", c.lines, c.follow, got, c.want)
 		}
 	}
 }
 
-func TestColorMarkupRendersANSI(t *testing.T) {
-	st := &lifeState{alive: map[int]bool{1: true}, reachOK: true}
-	deps, buf := newDeps(t, st)
-	deps.Color = true
-	deps.IsTTYStdout = func() bool { return true }
-	_ = os.WriteFile(deps.Life.PIDFilePath, []byte("1\n"), 0o644)
-	_ = os.WriteFile(deps.Life.SocketPath, nil, 0o644)
-	PrintStatus(deps)
-	out := buf.String()
-	if !strings.Contains(out, "\x1b[") {
-		t.Errorf("color mode should emit ANSI escapes:\n%q", out)
-	}
-	// No raw markup tags should leak through.
-	if strings.Contains(out, "[green]") || strings.Contains(out, "[/green]") {
-		t.Errorf("raw markup leaked:\n%q", out)
-	}
-}
-
-// TestColorMarkupHonorsNoColor is TestColorMarkupRendersANSI with NO_COLOR set:
-// the same `status` report, requested and on a terminal, stays plain when the
-// NO_COLOR convention (https://no-color.org) asks. The unset run is the control.
-//
-// MUTATION: restore `deps.Color && deps.IsTTYStdout()` in newPrinter and the
-// NO_COLOR run fails.
+// TestColorMarkupHonorsNoColor: the status report, requested and on a terminal, carries ANSI,
+// and stays plain when NO_COLOR asks. The unset run is the control.
 func TestColorMarkupHonorsNoColor(t *testing.T) {
 	for _, tc := range []struct {
 		noColor  string
 		wantANSI bool
 	}{{"", true}, {"1", false}} {
 		t.Setenv("NO_COLOR", tc.noColor)
-		st := &lifeState{alive: map[int]bool{1: true}, reachOK: true}
-		deps, buf := newDeps(t, st)
+		deps, buf := newDeps(t, &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true)}})
 		deps.Color = true
 		deps.IsTTYStdout = func() bool { return true }
-		_ = os.WriteFile(deps.Life.PIDFilePath, []byte("1\n"), 0o644)
-		_ = os.WriteFile(deps.Life.SocketPath, nil, 0o644)
-		PrintStatus(deps)
+		PrintStatus(deps, fixtureDaemon)
 		if got := strings.Contains(buf.String(), "\x1b["); got != tc.wantANSI {
 			t.Errorf("NO_COLOR=%q: status carries ANSI = %v, want %v:\n%q",
 				tc.noColor, got, tc.wantANSI, buf.String())
 		}
+		if strings.Contains(buf.String(), "[green]") {
+			t.Errorf("raw markup leaked:\n%q", buf.String())
+		}
 	}
 }
 
-// TestSingletonDepsColorHonorsNoColor pins the OTHER broker gate: SingletonDeps
-// resolves the lifecycle engine's Color once, at construction, and that decision
-// must go through tty.Color too — a terminal colors, NO_COLOR does not.
-func TestSingletonDepsColorHonorsNoColor(t *testing.T) {
-	saved := isTTYStdoutReal
-	isTTYStdoutReal = func() bool { return true }
-	t.Cleanup(func() { isTTYStdoutReal = saved })
-
-	t.Setenv("NO_COLOR", "")
-	if !SingletonDeps("yjtest-color", nil).Color {
-		t.Fatal("control: on a terminal with NO_COLOR unset, SingletonDeps did not request color")
-	}
-	t.Setenv("NO_COLOR", "1")
-	if SingletonDeps("yjtest-color", nil).Color {
-		t.Error("NO_COLOR=1: SingletonDeps still requested color — its gate no longer consults tty.Color")
-	}
-}
-
-// TestColorGate exercises the TTY gate on the printer directly: markup renders
-// to ANSI only when Color AND IsTTYStdout() are both true; otherwise style tags
-// are stripped to plain text with NO escapes, and literal brackets like [y/N]
-// survive verbatim in both modes.
+// TestColorGate exercises the TTY gate on the printer directly: markup renders to ANSI only when
+// Color AND IsTTYStdout() are both true; otherwise style tags are stripped, and literal brackets
+// like [y/N] survive in both modes.
 func TestColorGate(t *testing.T) {
 	const msg = "[green]ready[/green] proceed? [y/N]"
 	cases := []struct {
@@ -356,7 +337,7 @@ func TestColorGate(t *testing.T) {
 		{"color+tty", true, func() bool { return true }, true},
 		{"color-no-tty", true, func() bool { return false }, false},
 		{"no-color-tty", false, func() bool { return true }, false},
-		{"nil-tty-seam", true, nil, false}, // zero-value gate = not a TTY = stripped
+		{"nil-tty-seam", true, nil, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -364,20 +345,11 @@ func TestColorGate(t *testing.T) {
 			out := newPrinter(CLIDeps{Out: &buf, Color: c.color, IsTTYStdout: c.tty})
 			out.print(msg)
 			got := buf.String()
-			hasANSI := strings.Contains(got, "\x1b[")
-			if hasANSI != c.wantANSI {
+			if hasANSI := strings.Contains(got, "\x1b["); hasANSI != c.wantANSI {
 				t.Errorf("ANSI present = %v, want %v:\n%q", hasANSI, c.wantANSI, got)
 			}
-			// Style tags must never leak literally.
-			if strings.Contains(got, "[green]") || strings.Contains(got, "[/green]") {
-				t.Errorf("style tag leaked:\n%q", got)
-			}
-			// The literal [y/N] bracket is preserved in every mode.
-			if !strings.Contains(got, "[y/N]") {
-				t.Errorf("literal [y/N] not preserved:\n%q", got)
-			}
-			if !c.wantANSI && !strings.Contains(got, "ready proceed? [y/N]") {
-				t.Errorf("stripped plain text wrong:\n%q", got)
+			if strings.Contains(got, "[green]") || !strings.Contains(got, "[y/N]") {
+				t.Errorf("markup handling wrong:\n%q", got)
 			}
 		})
 	}

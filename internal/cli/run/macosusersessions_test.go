@@ -120,7 +120,7 @@ func TestAMacosUserSessionsExitLeavesAConcurrentSessionsEndpointsWorking(t *test
 	writeLocalLoopholeModules(t, home, map[string]string{
 		broker: `{"name": "` + broker + `", "description": "formerly host-wide fixture",
 			"default_enabled": true, "transport": "loopback-tls",
-			"host_daemon": {"publishes": "socket", "scope": "host", "preamble": false,
+			"host_daemon": {"publishes": "socket", "preamble": false,
 				"detach": true, "cmd": ` + testHostDaemonCmdJSON("hd10-broker") + `}}`,
 		proxy: `{"name": "` + proxy + `", "description": "per-jail fixture",
 			"default_enabled": true, "transport": "loopback-tls",
@@ -408,7 +408,7 @@ func TestADryRunNamesTheSessionDirsShapeAndItsGrant(t *testing.T) {
 	writeLocalLoopholePack(t, home, openAIAuthBrokerName, `{"name": "`+openAIAuthBrokerName+`",
 		"description": "credential service fixture", "default_enabled": true,
 		"transport": "loopback-tls",
-		"host_daemon": {"publishes": "socket", "scope": "host", "cmd": ["/bin/true"]}}`)
+		"host_daemon": {"publishes": "socket", "detach": true, "cmd": ["/bin/true"]}}`)
 	writeUserConfigJSON(t, home, `{"packs": []}`)
 
 	var stdout, stderr bytes.Buffer

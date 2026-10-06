@@ -169,19 +169,13 @@ type HostDaemon struct {
 	// is a silent DOWNGRADE. A test pins the round trip; an inverted spelling
 	// would have made the drop the safe direction and the bug invisible.
 	Preamble bool
-	// Scope is who the daemon belongs to: ScopeJail (the default — one per jail,
-	// spawned and reaped with it) or ScopeHost (one per HOST, ensured rather than
-	// spawned, fronted per jail, never killed when a jail ends). Always one of the
-	// two after a successful decode.
-	//
-	// The zero value of the FIELD is "", not ScopeJail, and every reader must
-	// therefore compare against ScopeHost rather than against ScopeJail — a
-	// struct built by hand (internal/loopholes' discover.go synthesizes one for a
-	// `loopholes:` config entry) then defaults to per-jail, which is the direction
-	// where a dropped field costs a spawn rather than a shared daemon nobody
-	// ensured. The opposite comparison would turn the same drop into "this config
-	// entry is a host-wide singleton", which is the one answer no config entry may
-	// ever give.
+	// Scope is who the daemon belongs to, and it has one value left: ScopeJail, one
+	// per jail, spawned with it and stopped when it ends. Always ScopeJail after a
+	// successful decode. The retired "host" (one daemon per HOST, ensured, fronted per
+	// jail, never stopped by a jail's end) is refused at load with its migration
+	// (retiredScopeHint; docs/design/host-daemon-ownership.md, HD-R1). Nothing reads
+	// the field to decide anything any more; it survives so a manifest that spells
+	// the default decodes, and so the record says what it was told.
 	Scope string
 	// LaunchCheck is `launch_check`: the daemon answers the LAUNCH CHECK, a term coined
 	// in internal/hostservice/launchcheck.go for the one framed request a launch sends a
@@ -1056,24 +1050,16 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 	if sv, ok := m.Get(keyScope); ok {
 		scope = Str(sv)
 	}
+	// 'host' is RETIRED, and refused with the migration rather than as an unknown value: the
+	// reader wrote what the docs told them to, and the refusal makes the loophole vanish
+	// (retiredTransportHint's argument, one key over).
+	if scope == RetiredScopeHost {
+		return nil, Errorf("%s: 'host_daemon.scope' = %s is no longer a value%s",
+			manifestPath, pytext.Repr(scope), retiredScopeHint())
+	}
 	if !inList(scope, validScopes) {
 		return nil, Errorf("%s: 'host_daemon.scope' = %s not in %s",
 			manifestPath, pytext.Repr(scope), sortedListRepr(validScopes))
-	}
-	// A host-wide daemon cannot publish its own endpoint file, and this is refused
-	// rather than documented because the failure it prevents is a CREDENTIAL one.
-	// An endpoint file carries one jail's bearer token (svcendpoint), so a single
-	// daemon publishing one would either hand every jail the same credential or
-	// hand all but one of them a credential minted for another jail. Under
-	// PublishesSocket the daemon binds one socket and yolo gives each jail its own
-	// front — which is the only shape in which "one daemon, N jails" and
-	// "one credential per jail" are both true.
-	if scope == ScopeHost && publishes != PublishesSocket {
-		return nil, Errorf(
-			"%s: 'host_daemon.scope' = 'host' requires 'publishes': 'socket' (got %s) —"+
-				" a host-wide daemon serves every jail on the machine, and an endpoint"+
-				" file carries ONE jail's bearer token; bind the socket and let yolo"+
-				" publish a front per jail", manifestPath, pytext.Repr(publishes))
 	}
 	cmd := StringSlice(cmdList)
 	if err := refuseControlCharsIn(manifestPath, "'host_daemon.cmd'", cmd); err != nil {

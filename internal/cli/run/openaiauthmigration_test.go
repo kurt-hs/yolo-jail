@@ -36,7 +36,7 @@ func TestLegacyOpenAIStateIsMovedOutOfTheWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacyDir, "refresh.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deps := broker.SingletonDeps(openaiauth.LoopholeName, []string{"/bin/true"})
+	deps := broker.LegacyDeps(openaiauth.LoopholeName)
 	deps.PIDFilePath = filepath.Join(t.TempDir(), "absent.pid")
 
 	afterStop, err := prepareLegacyOpenAIAuthState(workspace, deps)()
@@ -95,7 +95,7 @@ func TestLivingLegacyOpenAIDaemonIsDetectedBeforeItCanCreateRelativeState(t *tes
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	})
-	deps := broker.SingletonDeps(openaiauth.LoopholeName, nil)
+	deps := broker.LegacyDeps(openaiauth.LoopholeName)
 	deps.PIDFilePath = filepath.Join(t.TempDir(), "singleton.pid")
 	if err := os.WriteFile(deps.PIDFilePath, []byte(fmt.Sprint(cmd.Process.Pid)), 0o600); err != nil {
 		t.Fatal(err)

@@ -24,7 +24,7 @@ const (
 // (the spawn's warning) says what failed, and the next launch spawns afresh.
 func openAIServiceRefusal() string {
 	return "[bold red]OpenAI credential service did not start; refusing the macos-user launch.[/bold red]\n" +
-		"  The warning above says why; its log is " + broker.SingletonLogPath(openAIAuthBrokerName) +
+		"  The warning above says why; its log is " + broker.HostServiceLogPath(openAIAuthBrokerName) +
 		". Fix what it names, then launch again: each launch starts its own."
 }
 

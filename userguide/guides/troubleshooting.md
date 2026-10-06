@@ -94,8 +94,8 @@ mise tool's PATH in the current shell, run `eval "$(mise hook-env -s bash)"`.
 
 **Claude keeps logging out across jails.** Claude's refresh token works only once, so two jails
 refreshing at the same moment can log each other out. On Podman, the Claude login service that comes
-with the `claude` pack prevents this: check it with `yolo broker status`, and restart it with
-`yolo broker restart`. On Apple Container and `macos-user` that service does not work yet, so log
+with the `claude` pack prevents this. Each jail runs its own copy: check them with
+`yolo broker status`, and restart a jail's copy by leaving that jail and starting it again. On Apple Container and `macos-user` that service does not work yet, so log
 in again when it happens, or use Podman for several Claude jails at once.
 [Logins](authentication.md#when-a-login-keeps-failing) has more.
 

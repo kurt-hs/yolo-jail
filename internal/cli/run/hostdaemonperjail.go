@@ -120,10 +120,19 @@ func hostDaemonSpawnGuardRefusal(cname string, err error) string {
 // endpointPromisedAtAssembly reports whether the jail-facing variable of lp's host service is the
 // ASSEMBLER's to emit (hostServicesMountArgs, optimistically, before any front exists), so the
 // handle a spawn returns for it must carry none: insertHostServiceEnv would otherwise put the
-// same `-e` in the argv twice. One predicate for both readers, the assembler's set and the
-// spawn's blanking, so they cannot drift.
+// same `-e` in the argv twice. One predicate for both readers, the assembler's set
+// (promisedEndpoints) and the spawn's blanking, so they cannot drift.
+//
+// THE MEMBERSHIP IS UNCHANGED BY HD-R1, AND RE-KEYED: it was every record declaring
+// `host_daemon.scope: "host"`, which HD-R1 retires, and those three records are exactly the ones
+// that declare `detach` — the credential daemons whose refresh must outlive the jail. Keying it on
+// `detach` keeps each of them promised as before, so a credential daemon that fails to start still
+// leaves the jail a variable the reachability witness refuses the launch over, rather than a jail
+// that runs without it. Whether the promise should cover more daemons, or be its own manifest
+// fact, is a ruling about argv assembly the design leaves open
+// (docs/design/host-daemon-ownership.md §9, and HD-D8 there).
 func endpointPromisedAtAssembly(lp *loopholes.Loophole) bool {
-	return lp != nil && lp.HostDaemon != nil && lp.HostDaemon.Scope == loopholes.ScopeHost
+	return lp != nil && lp.HostDaemon != nil && lp.HostDaemon.Detach
 }
 
 // detachService is a jail's end for a daemon whose manifest declares `detach`: SIGTERM to the
@@ -185,8 +194,7 @@ func removeSocketSiblings(socketPath string) {
 // login it cannot see.
 func (o *Options) migrateLegacyOpenAIAuthState() bool {
 	out := o.pr(o.Stdout)
-	legacy := broker.SingletonDeps(openaiauth.LoopholeName, nil)
-	legacy.Out = o.Stdout
+	legacy := broker.LegacyDeps(openaiauth.LoopholeName)
 	lock, err := takeStrictLock(legacy.LockPath)
 	if err != nil {
 		out.printf("[yellow]Warning: could not take %s to check for a legacy OpenAI credential "+
