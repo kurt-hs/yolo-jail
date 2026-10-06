@@ -343,7 +343,7 @@ func TestStartLoopholesRoutesByScope(t *testing.T) {
 
 	// On a backend that still ensures the machine-wide daemon (hostWideDaemonsStillSharedOn);
 	// TestOnPodmanAHostScopedRecordRunsAsTheJailsOwnDaemon pins the other half of the dispatch.
-	handles := o.startLoopholes("yolo-scope-test", "macos-user", jsonx.NewOrderedMap())
+	handles := o.startLoopholes("yolo-scope-test", hostNotchRuntime, jsonx.NewOrderedMap())
 	t.Cleanup(func() { o.endServicesSession(handles) })
 
 	if fileExists(marker) {

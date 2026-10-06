@@ -18,12 +18,14 @@ const (
 )
 
 // openAIServiceRefusal is what the macos-user arm prints when it refuses a launch whose OpenAI
-// credential service did not start, and it names the next step: the one command that starts the
-// shared service, which says it started or names the daemon's log when it cannot.
+// credential service did not start, and it names the next step: the daemon's log, which holds
+// the reason, and a launch again. Each session starts its own daemon (HD-R1,
+// hostdaemonperjail.go), so there is no shared one for a command to restart: the line above it
+// (the spawn's warning) says what failed, and the next launch spawns afresh.
 func openAIServiceRefusal() string {
 	return "[bold red]OpenAI credential service did not start; refusing the macos-user launch.[/bold red]\n" +
-		"  Start it with: " + broker.CycleCommand(openAIAuthBrokerName) +
-		" (it names the daemon's log if it cannot), then launch again."
+		"  The warning above says why; its log is " + broker.SingletonLogPath(openAIAuthBrokerName) +
+		". Fix what it names, then launch again: each launch starts its own."
 }
 
 func openAIAuthLoopholeActive(cfg *jsonx.OrderedMap) bool {
