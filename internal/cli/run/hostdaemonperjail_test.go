@@ -125,18 +125,6 @@ func processLive(pid int) bool {
 	return alive && state != "Z"
 }
 
-// waitFor polls cond every 10ms until it holds or d passes, and says whether it held.
-func waitFor(d time.Duration, cond func() bool) bool {
-	for deadline := time.Now().Add(d); ; time.Sleep(10 * time.Millisecond) {
-		if cond() {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-	}
-}
-
 // THE DETACH DISPOSITION AT THE JAIL'S END (docs/design/host-daemon-ownership.md §1.3, "detach,
 // do not drain, do not reap"): a daemon whose manifest declares `detach` gets its front closed
 // and one SIGTERM, and the teardown neither waits for it nor kills it. The grace is set to thirty
@@ -425,9 +413,9 @@ func TestOnAppleContainerTheOpenAIServiceRunsAsTheJailsOwnDaemon(t *testing.T) {
 }
 
 // HD-D4'S PER-WORKSPACE SPAWN GUARD, THROUGH THE ARM: a macos-user launch whose workspace's guard
-// is held, as another session of the workspace holds it while its daemons start, waits for it,
-// says so, and starts its own host services only once it is free. Delete the guard's take from
-// the macos-user arm and the launch runs straight through.
+// is held, as a `yolo host` launch of the workspace holds it while its daemons start, waits for
+// it, says so, and its keeper starts the workspace's host services only once it is free. Delete
+// the guard's take from the macos-user keeper (keeper.go) and the launch runs straight through.
 func TestTheMacosUserArmWaitsForTheWorkspacesSpawnGuard(t *testing.T) {
 	o, _, seen := codexNativeLaunch(t)
 	observeDoorways(t)
@@ -472,8 +460,9 @@ func TestTheMacosUserArmWaitsForTheWorkspacesSpawnGuard(t *testing.T) {
 	}
 }
 
-// A GUARD IT CANNOT TAKE REFUSES THE LAUNCH, before any host service starts, naming the lock and
-// what to do: the guard is a real one, unlike the courtesy launch lock, which warns and goes on.
+// A GUARD ITS KEEPER CANNOT TAKE REFUSES THE LAUNCH, before any host service starts, naming the
+// lock and what to do: the guard is a real one, unlike the courtesy launch lock, which warns and
+// goes on.
 // A directory where the lock file goes makes the open fail.
 func TestTheMacosUserArmRefusesWhenItCannotTakeTheSpawnGuard(t *testing.T) {
 	o, stderr, seen := codexNativeLaunch(t)

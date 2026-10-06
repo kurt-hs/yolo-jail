@@ -3,7 +3,7 @@ title: "Plan sketch: host-daemon ownership"
 date: 2026-09-19
 status: deprecated
 stage: SKETCH
-next: "Nothing: HD-R1 is built (2026-10-06). Its build decisions are HD-D6 to HD-D19 in the design's ledger, which answer this sketch's table row by row, and the merge with the OQ-HD11 build added HD-D20 to HD-D22"
+next: "Nothing: HD-R1 is built (2026-10-06). Its build decisions are HD-D6 to HD-D19 in the design's ledger, which answer this sketch's table row by row, and its merges with main added HD-D20 to HD-D24"
 depends-on:
   - host-daemon-ownership.md#OQ-HD10
 tags: [plan, sketch, daemons, loopholes, lifecycle]

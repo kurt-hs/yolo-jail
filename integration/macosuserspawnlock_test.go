@@ -15,53 +15,75 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // OQ-HD10'S MEASUREMENT, NOW HD-R1'S CHECK ON A MAC: TWO macos-user LAUNCHES OF ONE WORKSPACE,
 // AT ONCE (docs/design/host-daemon-ownership.md#OQ-HD10, HD-D4, HD-R1).
 //
-// THE QUESTION IT ANSWERED. Retiring `host_daemon.scope: "host"` (HD-R1) removes the spawn
-// flock, paths.HostSingletonLock, along with the singleton it guarded. On macos-user there is
-// no container, and per-jail identity is per-WORKSPACE (the cname hashes the resolved workspace
-// path), so two simultaneous launches of one workspace are one identity. Three scheduled runs
-// (2026-09-28 to 2026-09-30) saw ONE BROKER per pair, credited to that flock, so HD-D4 gave
-// per-session daemons a per-workspace spawn guard of their own. HD-R1 is built on macos-user
-// now, and what this records is what the build promises there.
+// THE QUESTION. Retiring `host_daemon.scope: "host"` (HD-R1) removes the spawn flock,
+// paths.HostSingletonLock, along with the singleton it guards. On macos-user there is no
+// container, and per-jail identity is per-WORKSPACE (the cname hashes the resolved workspace
+// path), so two simultaneous launches of one workspace are one jail as far as every per-jail
+// path is concerned. The leaning is "measure two concurrent launches before removing
+// anything"; this is that measurement. It asserts nothing about the answer.
 //
 // WHAT IT RECORDS, one `HD10 …` line each, so one grep of the job log recovers the record:
 //
 //   - SPAWN: how many claude-oauth-broker processes of the PAIR existed while both launches
-//     ran — sampled from the host by pgrep every 100 ms, counting only a SESSION'S broker (its
-//     argv names a /tmp/yolo-front-… socket: hd10SessionBrokerPIDs) that was not alive before
-//     the pair started. ASSERTED: two at once, one per session. A machine-wide broker an older
-//     yolo left, or a developer's real one, is neither counted nor stopped: no session of this
-//     build adopts it or touches it.
-//   - SPAWN-GUARD: whether either launch printed the guard's waiting notice (HD-D4,
-//     takeHostDaemonSpawnGuard): a launch that did waited while the other's host services came
-//     up. Either answer passes; it depends on how close together the two starts landed.
-//   - WORKSPACE-LOCK: whether either launch printed the per-workspace courtesy lock's waiting
-//     notice. That lock is taken AFTER the host-daemon start, before content staging
-//     (refreshJailBriefings), so a wait there is a wait on the other's staging and bootstrap.
+//     ran — sampled from the host by pgrep every 100 ms, counting only a JAIL'S broker (its argv
+//     names a /tmp/yolo-front-… socket: hd10SessionBrokerPIDs) that was not alive before the pair
+//     started. ASSERTED: one, the workspace's keeper's, which both sessions share (HD-R1 gives
+//     every host daemon to its jail, and on macos-user the keeper is the workspace's jail). A
+//     machine-wide broker an older yolo left, or a developer's real one, is neither counted nor
+//     stopped: no launch of this build adopts it or touches it.
+//   - WORKSPACE-LOCK: whether either launch printed a lock's waiting notice. READ FROM CODE: a
+//     launch first takes its key's ARRIVAL LOCK (internal/cli/run's keeperspawn.go), which the
+//     launch that spawns the workspace's keeper hands it and the keeper lets go once its host
+//     services are up, so the second launch waits there for the first one's keeper and then joins
+//     it. The workspace launch lock comes after, before the content staging (refreshJailBriefings),
+//     and is held until the orchestrator releases it before the agent. Both are courtesy locks
+//     that warn and continue when they cannot be taken, which is why neither answers OQ-HD10 alone.
 //   - ENDPOINT DURING: what each session's claude-oauth-broker endpoint variable named, and
 //     whether the file was readable and its host:port dialable while both sessions were up.
 //   - ENDPOINT AFTER: the same probe in the LONGER session after the shorter one's `yolo`
-//     process had exited. ASSERTED. The second run (scheduled macos-user run 36319436117,
-//     f937d0fd) measured it GONE: both sessions published into ONE per-workspace host-services
-//     dir, and the shorter session's teardown removed it under the survivor. Each session
-//     publishes into a dir of its own and tears down only that one (servicessession.go), and
-//     since HD-R1 its own broker behind its own front, so the survivor's endpoint must answer.
-//   - STRAGGLERS: whether the pair's brokers had exited once both launches returned. ASSERTED,
-//     within hd10StragglerBound: a jail's end SIGTERMs its broker and does not wait (the
-//     manifest's `detach`, §1.3), and a broker with no refresh in flight exits at once; one in
-//     flight is bounded by its thirty-second upstream deadline.
+//     process had exited. This one is ASSERTED, below. The second run (scheduled macos-user run
+//     36319436117, f937d0fd) measured it GONE: both sessions published into ONE per-workspace
+//     host-services dir, the second session's front replaced the first's endpoint file, and the
+//     shorter session's teardown removed the dir under the survivor. Since the keeper
+//     (docs/design/jail-lifetime-last-session-wins.md §9.9) the workspace's macos-user host
+//     services are ONE KEEPER'S, for every session of the workspace: so the survivor's endpoint
+//     must still answer, the keeper's front, which ends with the last session.
+//   - KEEPER: ASSERTED too (hd10KeeperFailure). One launch spawned the keeper and said so, the
+//     other joined it and said so, both sandboxes were told the one endpoint file and its token
+//     (§8 item 14's pointers and tokens, compared without an agent turn), and after the last
+//     session nothing of the keeper is left: its process, and its host-services dir.
+//   - SESSION FILES: which session env file each session read ($YOLO_DARWIN_ENV_FILE), and
+//     whether the longer session's was still there after the shorter one's `yolo` had exited.
+//     ASSERTED too (hd10SessionFileFailure). Until each session named its files by a session id
+//     of its own (internal/macosuser/sessionfiles.go) both read <cname>.env, and the shorter
+//     session's teardown removed it under the survivor
+//     (docs/design/jail-lifetime-last-session-wins.md §9.9.10, row 6).
 //
-// # What is red
+// # What is red, besides the assertions above
 //
-// Neither launch running its probe, or the two sessions never being up at the same time (then
-// nothing about concurrency was observed — the single-launch tests are the control). And the
-// three claims HD-R1 makes here: a broker per session, the survivor's endpoint still answering,
-// and no broker of the pair alive past the bound.
+// The pair's brokers still alive past hd10StragglerBound once both launches returned: the
+// keeper's end SIGTERMs its broker and does not wait (the manifest's `detach`, §1.3), and a
+// broker with no refresh in flight exits at once; one in flight is bounded by its thirty-second
+// upstream deadline. And a pair that ran other than ONE BROKER.
+//
+// # Every answer about SPAWN used to pass. Only an experiment not conducted is red, and the survivor
+//
+// TestAppleContainerReachesHostLoopback's rule, for the spawn question OQ-HD10 still asks. What
+// fails: neither launch running its probe (then nothing about concurrency was observed — the
+// single-launch tests are the control and say why), or the two sessions never being up at the
+// same time (then there was no concurrency to observe). Two failures are about the MACHINE, not
+// the answer: the refusal to run beside an undeclared live broker, and a broker the pair spawned
+// still alive after the cleanup stopped it. And one is a DEFECT, the teardown defect the second
+// run measured, which is not OQ-HD10's to rule and is fixed: a survivor whose endpoint does not
+// answer after the other session exited, or a run that could not observe it (hd10SurvivorFailure).
 //
 // ONE LAUNCH PAIR, and the pair's sessions coordinate through marker files in the workspace
 // (which both the sandbox account and this process can write), so the overlap is arranged
@@ -71,7 +93,7 @@ import (
 func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 	requireMacosUser(t)
 	// The claude pack is the subject: its claude-oauth-broker is the daemon that used to be
-	// one per host, which each session now starts for itself.
+	// one per host, which the workspace's keeper now starts for its sessions.
 	packHome(t, `{"packs": ["claude"]}`)
 	ws := macosUserWorkspace(t, `{}`)
 	syncDir := filepath.Join(ws, "hd10-sync")
@@ -84,8 +106,8 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Session brokers already alive (another workspace's session, on a shared runner) are not
-	// the pair's: only one that appears during the pair is counted.
+	// Jail brokers already alive (another workspace's, on a shared runner) are not the pair's:
+	// only one that appears during the pair is counted.
 	pre := hd10SessionBrokerPIDs()
 
 	envVar := macosUserServiceEnvVar(hd10Broker)
@@ -132,8 +154,8 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 	}
 	close(stopSampling)
 	samplerDone.Wait()
-	// THE STRAGGLER BOUND: every broker the pair ran was SIGTERMed by its session's end, and is
-	// left to finish whatever refresh it had in flight (§1.3). Polled, never killed here.
+	// THE STRAGGLER BOUND: the broker the pair ran was SIGTERMed by the keeper's end, and is left
+	// to finish whatever refresh it had in flight (§1.3). Polled, never killed here.
 	var left []int
 	for deadline := time.Now().Add(hd10StragglerBound); ; time.Sleep(200 * time.Millisecond) {
 		left = hd10StillAlive(samples.distinct(), hd10SessionBrokerPIDs())
@@ -163,30 +185,26 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
 	}
 
-	waitedOn := func(r hd10Result, notice string) bool { return strings.Contains(r.combined(), notice) }
-	const guardNotice = "Waiting for another launch of this workspace to start its host services"
-	const lockNotice = "Waiting for concurrent jail launch in workspace"
+	waited := func(r hd10Result) bool {
+		return strings.Contains(r.combined(), "Waiting for concurrent jail launch in workspace")
+	}
 	spawn := hd10SpawnVerdict(samples.distinct(), samples.max)
 
 	t.Logf("HD10 LAUNCHES: A rc=%d ran=%v, B rc=%d ran=%v (B's yolo exited %s after the pair started)",
 		rA.rc, ranA, rB.rc, ranB, bExited.Round(time.Second))
-	t.Logf("HD10 SPAWN: %s. Session brokers alive before the pair (not counted): %v; the pair's "+
+	t.Logf("HD10 SPAWN: %s. Jail brokers alive before the pair (not counted): %v; the pair's "+
 		"seen: %v (at most %d at once); machine-wide rendezvous %s present: %v",
 		spawn, pre, samples.distinct(), samples.max, paths.HostSingletonSocket(hd10Broker),
 		hd10Exists(paths.HostSingletonSocket(hd10Broker)))
-	t.Logf("HD10 SPAWN-GUARD: A printed the guard's waiting notice: %v; B printed it: %v "+
-		"(a wait means one launch's host services started after the other's were up)",
-		waitedOn(rA, guardNotice), waitedOn(rB, guardNotice))
 	t.Logf("HD10 WORKSPACE-LOCK: A printed the waiting notice: %v; B printed it: %v "+
-		"(taken after the host-daemon start, before content staging: a wait means one launch "+
-		"waited for the other's staging and bootstrap, not for its spawn)",
-		waitedOn(rA, lockNotice), waitedOn(rB, lockNotice))
+		"(a key's arrival lock and the workspace launch lock both print it: a wait means one launch "+
+		"waited for the other's keeper to be ready, or for its staging and bootstrap)", waited(rA), waited(rB))
 	t.Logf("HD10 ENDPOINT DURING: A %s | B %s | one file for both: %v", hd10Probe(fa, "A_DURING"),
 		hd10Probe(fb, "B_DURING"), fa["A_DURING_VAR"] != "" && fa["A_DURING_VAR"] == fb["B_DURING_VAR"])
 	t.Logf("HD10 ENDPOINT AFTER B EXITED: A saw the exit marker: %s; A %s",
 		fa["A_SAW_B_EXIT"], hd10Probe(fa, "A_AFTER"))
-	t.Logf("HD10 STRAGGLERS: %s", hd10StragglerVerdict(left))
 	t.Logf("HD10 WARNINGS: A:\n%s\nB:\n%s", hd10Warnings(rA.combined()), hd10Warnings(rB.combined()))
+	t.Logf("HD10 STRAGGLERS: %s", hd10StragglerVerdict(left))
 	t.Logf("HD10 VERDICT: %s; the survivor's endpoint after the other session ended: %s; %s. "+
 		"Record them in docs/design/host-daemon-ownership.md#OQ-HD10.",
 		spawn, hd10AfterVerdict(fa), hd10StragglerVerdict(left))
@@ -194,40 +212,117 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
 			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
 	}
+	if len(left) > 0 {
+		t.Errorf("HD10: %s", hd10StragglerVerdict(left))
+	}
 	if failure := hd10SurvivorFailure(fa); failure != "" {
 		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
 			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
 	}
-	if len(left) > 0 {
-		t.Errorf("HD10: %s", hd10StragglerVerdict(left))
+	t.Logf("HD10 SESSION FILES: A read %s (there: %s) | B read %s (there: %s) | A's after B exited: "+
+		"%s (there: %s)", orNone(fa["A_DURING_ENVFILE"]), orNone(fa["A_DURING_ENVFILE_EXISTS"]),
+		orNone(fb["B_DURING_ENVFILE"]), orNone(fb["B_DURING_ENVFILE_EXISTS"]),
+		orNone(fa["A_AFTER_ENVFILE"]), orNone(fa["A_AFTER_ENVFILE_EXISTS"]))
+	if failure := hd10SessionFileFailure(fa, fb); failure != "" {
+		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
+			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
+	}
+	// ONE KEEPER FOR BOTH, AND NOTHING OF IT AFTER THE LAST (JL-D37 to JL-D41).
+	t.Logf("HD10 KEEPER: A %s | B %s | endpoint A %s B %s | token A %s B %s",
+		hd10KeeperRole(rA.combined()), hd10KeeperRole(rB.combined()), orNone(fa["A_DURING_VAR"]),
+		orNone(fb["B_DURING_VAR"]), orNone(fa["A_DURING_TOKENHASH"]), orNone(fb["B_DURING_TOKENHASH"]))
+	if failure := hd10KeeperFailure(rA.combined(), rB.combined(), fa, fb); failure != "" {
+		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
+			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
+	}
+	if ep := fa["A_DURING_VAR"]; ep != "" && ep != "UNSET" {
+		if _, err := os.Stat(filepath.Dir(ep)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("HD10: the keeper's host-services dir %s outlived the last session (%v)", filepath.Dir(ep), err)
+		}
+	}
+	for _, out := range []string{rA.combined(), rB.combined()} {
+		if pid := hd10KeeperPID(out); pid > 0 && processAlive(pid) {
+			t.Errorf("HD10: the keeper (pid %d) is still running after the last session", pid)
+		}
 	}
 }
 
-// hd10StragglerBound is how long the pair's brokers may run past both launches' return: the
-// upstream request deadline a refresh in flight is bounded by (oauthbroker's httpClient, thirty
-// seconds), with margin. A broker with nothing in flight exits within milliseconds of its SIGTERM.
-const hd10StragglerBound = 45 * time.Second
-
-// hd10SpawnFailure is "" when the pair ran a broker per session, two at once, and otherwise why
-// that is a failure. PURE, and pinned with the verdicts.
-func hd10SpawnFailure(verdict string) string {
-	if strings.HasPrefix(verdict, "ONE PER SESSION") {
-		return ""
+// hd10KeeperRole is what one launch's output says it did about the workspace's keeper: "spawned",
+// "joined", or "none".
+func hd10KeeperRole(out string) string {
+	switch {
+	case strings.Contains(out, "keeper: yolo internal daemon jail-keeper will hold this workspace's macos-user host services"):
+		return "spawned"
+	case strings.Contains(out, "keeper: joined yolo internal daemon jail-keeper (pid "):
+		return "joined"
 	}
-	return "HD10: the pair's brokers were " + verdict + ". Under HD-R1 each macos-user session " +
-		"starts its own " + hd10Broker + " (internal/cli/run/hostdaemonperjail.go), so two " +
-		"overlapping sessions run two at once"
+	return "none"
 }
 
-// hd10StragglerVerdict names whether the pair's brokers were gone by the bound.
-func hd10StragglerVerdict(left []int) string {
-	if len(left) == 0 {
-		return "NONE LEFT — every broker of the pair exited once its session ended"
+// hd10KeeperPID is the pid the spawning launch's "keeper: started, pid N" line names, 0 for none.
+func hd10KeeperPID(out string) int {
+	const lead = "keeper: started, pid "
+	i := strings.Index(out, lead)
+	if i < 0 {
+		return 0
 	}
-	return fmt.Sprintf("STILL RUNNING after %s — the pair's brokers %v outlived their sessions "+
-		"past the upstream deadline a refresh in flight is bounded by; a jail's end SIGTERMs its "+
-		"broker (the manifest's `detach`), and one that does not exit is the stuck lock holder "+
-		"docs/design/host-daemon-ownership.md §1.3 names", hd10StragglerBound, left)
+	n, _ := strconv.Atoi(strings.Fields(out[i+len(lead):] + " ")[0])
+	return n
+}
+
+// processAlive reports whether pid names a live process.
+func processAlive(pid int) bool {
+	return exec.Command("kill", "-0", strconv.Itoa(pid)).Run() == nil
+}
+
+// hd10KeeperFailure is the experiment's assertion about the keeper: "" when one launch spawned it
+// and the other joined it, and both sessions were told the one endpoint file and the one token, and
+// otherwise why that is a failure. PURE, and pinned with the verdicts.
+func hd10KeeperFailure(outA, outB string, fa, fb map[string]string) string {
+	roles := hd10KeeperRole(outA) + "+" + hd10KeeperRole(outB)
+	if roles != "spawned+joined" && roles != "joined+spawned" {
+		return "HD10: the two launches did not share one keeper (A " + hd10KeeperRole(outA) + ", B " +
+			hd10KeeperRole(outB) + "): one must spawn the workspace's macos-user keeper and the other join it " +
+			"(docs/design/jail-lifetime-last-session-wins.md JL-D41)"
+	}
+	a, b := fa["A_DURING_VAR"], fb["B_DURING_VAR"]
+	if a == "" || a == "UNSET" || a != b {
+		return fmt.Sprintf("HD10: the two sandboxes were told different endpoint files (A %q, B %q); every "+
+			"session of a workspace is told its keeper's (JL-D38)", a, b)
+	}
+	ta, tb := fa["A_DURING_TOKENHASH"], fb["B_DURING_TOKENHASH"]
+	if ta == "" || ta != tb {
+		return fmt.Sprintf("HD10: the two sandboxes read different tokens from the endpoint file (A %q, B %q)", ta, tb)
+	}
+	return ""
+}
+
+// hd10SessionFileFailure is the experiment's assertion about the per-session files: "" when the
+// two sessions read two different env files and the longer session's was still there after the
+// shorter one's `yolo` had exited, and otherwise why that is a failure. PURE, and pinned with the
+// verdicts. NOT OBSERVED fails, for hd10SurvivorFailure's reason.
+func hd10SessionFileFailure(fa, fb map[string]string) string {
+	a, b := fa["A_DURING_ENVFILE"], fb["B_DURING_ENVFILE"]
+	switch {
+	case a == "" || a == "UNSET" || b == "" || b == "UNSET":
+		return fmt.Sprintf("HD10: NOT OBSERVED — a session did not name its env file (A %q, B %q), "+
+			"so whether two sessions share one was not shown", a, b)
+	case a == b:
+		return "HD10: both sessions read ONE env file, " + a + ". Each macos-user session must name " +
+			"its env file, daemons env file and Seatbelt profile by a session id of its own, or one " +
+			"session's launch hands the other's sandbox its environment and its exit removes the " +
+			"file under it (internal/macosuser/sessionfiles.go)"
+	case fa["A_SAW_B_EXIT"] != "yes":
+		return "HD10: NOT OBSERVED — the longer session never saw the shorter one exit, so whether " +
+			"its env file survived that exit was not shown"
+	case fa["A_AFTER_ENVFILE"] != a:
+		return fmt.Sprintf("HD10: the longer session's env file changed during its own session "+
+			"(%q, then %q)", a, fa["A_AFTER_ENVFILE"])
+	case fa["A_AFTER_ENVFILE_EXISTS"] != "yes":
+		return "HD10: the shorter session's exit removed the longer session's env file " + a +
+			"; a session's teardown must remove only its own files (internal/macosuser/sessionfiles.go)"
+	}
+	return ""
 }
 
 // hd10SurvivorFailure is the experiment's one assertion about its answer: "" when the longer
@@ -243,9 +338,9 @@ func hd10SurvivorFailure(fa map[string]string) string {
 	}
 	return "HD10: after the shorter session exited, the longer session's " + hd10Broker +
 		" endpoint was " + verdict + ". One macos-user session's exit must never remove or " +
-		"invalidate an endpoint another live session of the same workspace uses: each session " +
-		"publishes into a host-services dir of its own and removes only that one " +
-		"(internal/cli/run/servicessession.go; docs/design/host-daemon-ownership.md#OQ-HD10)"
+		"invalidate an endpoint another live session of the same workspace uses: the workspace's " +
+		"keeper holds them until its last session leaves " +
+		"(docs/design/jail-lifetime-last-session-wins.md §9.9; docs/design/host-daemon-ownership.md#OQ-HD10)"
 }
 
 // hd10Broker is the host-scoped loophole whose spawn this measures.
@@ -270,6 +365,8 @@ func hd10Script(dir, envVar, self, other string, longer bool) string {
 	}
 	lines := []string{
 		`probe() {`,
+		`  ef="${YOLO_DARWIN_ENV_FILE-}"; echo "$1_ENVFILE=${ef:-UNSET}"`,
+		`  if [ -n "$ef" ] && [ -e "$ef" ]; then echo "$1_ENVFILE_EXISTS=yes"; else echo "$1_ENVFILE_EXISTS=no"; fi`,
 		`  ep="${` + envVar + `-}"`,
 		`  echo "$1_VAR=${ep:-UNSET}"`,
 		`  if [ -z "$ep" ]; then return; fi`,
@@ -277,6 +374,8 @@ func hd10Script(dir, envVar, self, other string, longer bool) string {
 		`  if ! head -c 1 "$ep" >/dev/null 2>&1; then echo "$1_FILE=UNREADABLE"; return; fi`,
 		`  echo "$1_FILE=READABLE"`,
 		`  hp="$(cut -d' ' -f1 "$ep")"; echo "$1_HOSTPORT=$hp"`,
+		// The token is the file's last field; only a checksum of it is printed.
+		`  th="$(awk '{print $NF}' "$ep" | cksum | cut -d' ' -f1)"; echo "$1_TOKENHASH=$th"`,
 		`  if [ -n "$hp" ] && (exec 3<>"/dev/tcp/${hp%:*}/${hp##*:}") 2>/dev/null; then echo "$1_DIAL=OK"; else echo "$1_DIAL=FAILED"; fi`,
 		`}`,
 		fmt.Sprintf(`touch %s/%s-up`, dir, self),
@@ -360,15 +459,42 @@ func hd10Launch(t *testing.T, dir, script string, env []string) <-chan hd10Resul
 	return ch
 }
 
-// hd10SessionBrokerPattern is the pgrep pattern of a SESSION'S claude-oauth-broker: its argv
-// names the upstream socket its launch keyed by the session (internal/cli/run's frontSocketFile,
+// hd10StragglerBound is how long the pair's broker may run past both launches' return: the
+// upstream request deadline a refresh in flight is bounded by (oauthbroker's httpClient, thirty
+// seconds), with margin. A broker with nothing in flight exits within milliseconds of its SIGTERM.
+const hd10StragglerBound = 45 * time.Second
+
+// hd10SpawnFailure is "" when the pair ran the one broker of the workspace's keeper, and
+// otherwise why that is a failure. PURE, and pinned with the verdicts.
+func hd10SpawnFailure(verdict string) string {
+	if strings.HasPrefix(verdict, "ONE BROKER") {
+		return ""
+	}
+	return "HD10: the pair's brokers were " + verdict + ". Under HD-R1 every host daemon is its " +
+		"jail's, and on macos-user the jail of a workspace's sessions is its keeper " +
+		"(docs/design/jail-lifetime-last-session-wins.md §9.9), so the pair runs one " + hd10Broker
+}
+
+// hd10StragglerVerdict names whether the pair's brokers were gone by the bound.
+func hd10StragglerVerdict(left []int) string {
+	if len(left) == 0 {
+		return "NONE LEFT — every broker of the pair exited once the last session ended"
+	}
+	return fmt.Sprintf("STILL RUNNING after %s — the pair's brokers %v outlived the last session "+
+		"past the upstream deadline a refresh in flight is bounded by; the keeper's end SIGTERMs "+
+		"its broker (the manifest's `detach`), and one that does not exit is the stuck lock holder "+
+		"docs/design/host-daemon-ownership.md §1.3 names", hd10StragglerBound, left)
+}
+
+// hd10SessionBrokerPattern is the pgrep pattern of a JAIL'S claude-oauth-broker: its argv names
+// the upstream socket its launch or keeper keyed by the jail (internal/cli/run's frontSocketFile,
 // /tmp/yolo-front-<key>-<name>.sock). A machine-wide broker an older yolo left answers on
 // /tmp/yolo-<name>.sock and never matches, so a developer's real one is neither counted nor
 // touched.
 const hd10SessionBrokerPattern = "internal daemon " + hd10Broker + " --socket /tmp/yolo-front-"
 
-// hd10SessionBrokerPIDs lists the live session brokers on this host. pgrep exits 1 on no
-// match, which is the empty answer rather than a fault.
+// hd10SessionBrokerPIDs lists the live jail brokers on this host. pgrep exits 1 on no match,
+// which is the empty answer rather than a fault.
 func hd10SessionBrokerPIDs() []int {
 	out, _ := exec.Command("pgrep", "-f", hd10SessionBrokerPattern).Output()
 	return hd10ParsePIDs(string(out))
@@ -452,23 +578,25 @@ func (s *hd10Sampler) distinct() []int {
 }
 
 // hd10SpawnVerdict names what the samples say about the pair's brokers. PURE, and pinned under
-// -short (TestMacosUserHD10VerdictsNameEachCase). Under HD-R1 the answer to expect is ONE PER
-// SESSION: each session starts its own, and they share the credentials file and its refresh
-// flock rather than a process (docs/design/host-daemon-ownership.md §1.1).
+// -short (TestMacosUserHD10VerdictsNameEachCase). Under HD-R1 and the macos-user keeper the
+// answer to expect is ONE BROKER: the keeper starts the host services for every session of the
+// workspace, a launch that joins it starts none, and the copies of a loophole share the
+// credentials file and its refresh flock rather than a process (docs/design/host-daemon-ownership.md
+// §1.1).
 func hd10SpawnVerdict(distinct []int, maxAtOnce int) string {
 	switch {
 	case len(distinct) == 0:
-		return "NO BROKER — neither session left a claude-oauth-broker of its own running long " +
-			"enough to sample, so its spawn failed or was skipped; read the WARNINGS line"
+		return "NO BROKER — neither session left a jail claude-oauth-broker running long enough to " +
+			"sample, so its spawn failed or was skipped; read the WARNINGS line"
 	case len(distinct) == 1:
-		return "ONE BROKER — exactly one session broker was ever seen, so one session ran none " +
-			"of its own: its spawn failed, or it fronted another's"
+		return "ONE BROKER — exactly one jail broker was ever seen, the workspace's keeper's, which " +
+			"both sessions share (docs/design/jail-lifetime-last-session-wins.md §9.9)"
 	case maxAtOnce >= 2:
-		return fmt.Sprintf("ONE PER SESSION — %d session brokers were alive together while both "+
-			"sessions were up, each its own session's", maxAtOnce)
+		return fmt.Sprintf("TWO AT ONCE — %d jail brokers were alive together: the second session "+
+			"did not join the first's keeper and started host services of its own", maxAtOnce)
 	default:
-		return fmt.Sprintf("%d BROKERS IN SEQUENCE — never two at once, so the sessions' brokers "+
-			"did not overlap although the sessions did: one died and another started", len(distinct))
+		return fmt.Sprintf("%d BROKERS IN SEQUENCE — never two at once, so one replaced the "+
+			"other: a keeper that died and was respawned, or a broker that died", len(distinct))
 	}
 }
 
@@ -547,20 +675,20 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 		want     string
 	}{
 		{"nothing ever ran", nil, 0, "NO BROKER"},
-		{"one daemon", []int{7}, 1, "ONE BROKER"},
-		{"one per session", []int{7, 9}, 2, "ONE PER SESSION"},
+		{"the keeper's", []int{7}, 1, "ONE BROKER"},
+		{"two at once", []int{7, 9}, 2, "TWO AT ONCE"},
 		{"a replacement", []int{7, 9}, 1, "2 BROKERS IN SEQUENCE"},
 	} {
 		got := hd10SpawnVerdict(tc.distinct, tc.max)
 		if !strings.HasPrefix(got, tc.want) {
 			t.Errorf("%s: hd10SpawnVerdict = %q, want it to start %q", tc.name, got, tc.want)
 		}
-		// The spawn assertion passes on a broker per session alone.
+		// The spawn assertion passes on the keeper's one broker alone.
 		failure := hd10SpawnFailure(got)
 		switch {
-		case tc.want == "ONE PER SESSION" && failure != "":
-			t.Errorf("%s: hd10SpawnFailure = %q, want \"\" for a broker per session", tc.name, failure)
-		case tc.want != "ONE PER SESSION" && !strings.Contains(failure, tc.want):
+		case tc.want == "ONE BROKER" && failure != "":
+			t.Errorf("%s: hd10SpawnFailure = %q, want \"\" for the keeper's one broker", tc.name, failure)
+		case tc.want != "ONE BROKER" && !strings.Contains(failure, tc.want):
 			t.Errorf("%s: hd10SpawnFailure = %q, want a failure naming %q", tc.name, failure, tc.want)
 		}
 	}
@@ -576,12 +704,14 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 	if got := hd10StillAlive([]int{3, 7}, []int{7, 11}); len(got) != 1 || got[0] != 7 {
 		t.Errorf("hd10StillAlive = %v, want [7]", got)
 	}
-	// A session's broker names its session-keyed socket; an older yolo's machine-wide one does not.
+	// A jail's broker names its jail-keyed socket; an older yolo's machine-wide one does not.
 	if !strings.Contains("yolo internal daemon claude-oauth-broker --socket /tmp/yolo-front-0b472111-claude-oauth-broker.sock",
-		hd10SessionBrokerPattern) ||
-		strings.Contains("yolo internal daemon claude-oauth-broker --socket /tmp/yolo-claude-oauth-broker.sock",
-			hd10SessionBrokerPattern) {
-		t.Errorf("hd10SessionBrokerPattern %q does not tell a session's broker from a machine-wide one",
+		hd10SessionBrokerPattern) {
+		t.Errorf("hd10SessionBrokerPattern %q does not match a jail's broker argv", hd10SessionBrokerPattern)
+	}
+	if strings.Contains("yolo internal daemon claude-oauth-broker --socket /tmp/yolo-claude-oauth-broker.sock",
+		hd10SessionBrokerPattern) {
+		t.Errorf("hd10SessionBrokerPattern %q matches a machine-wide broker's argv",
 			hd10SessionBrokerPattern)
 	}
 
@@ -611,6 +741,57 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 		}
 	}
 
+	for _, tc := range []struct {
+		name, a, b string
+		want       string
+	}{
+		{"one file for both", "A_DURING_ENVFILE=/e/x.env\nA_SAW_B_EXIT=yes\nA_AFTER_ENVFILE=/e/x.env\nA_AFTER_ENVFILE_EXISTS=yes",
+			"B_DURING_ENVFILE=/e/x.env", "ONE env file"},
+		{"removed under the survivor", "A_DURING_ENVFILE=/e/a.env\nA_SAW_B_EXIT=yes\nA_AFTER_ENVFILE=/e/a.env\nA_AFTER_ENVFILE_EXISTS=no",
+			"B_DURING_ENVFILE=/e/b.env", "removed the longer session's env file"},
+		{"unnamed", "A_DURING_ENVFILE=UNSET", "B_DURING_ENVFILE=/e/b.env", "NOT OBSERVED"},
+		{"exit unseen", "A_DURING_ENVFILE=/e/a.env\nA_SAW_B_EXIT=no", "B_DURING_ENVFILE=/e/b.env", "NOT OBSERVED"},
+		{"each its own, and kept", "A_DURING_ENVFILE=/e/a.env\nA_SAW_B_EXIT=yes\nA_AFTER_ENVFILE=/e/a.env\nA_AFTER_ENVFILE_EXISTS=yes",
+			"B_DURING_ENVFILE=/e/b.env", ""},
+	} {
+		got := hd10SessionFileFailure(hd10Fields(tc.a), hd10Fields(tc.b))
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("%s: hd10SessionFileFailure = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if s := hd10Script("/s", "V", "A", "B", true); !strings.Contains(s, "_ENVFILE=${ef:-UNSET}") ||
+		!strings.Contains(s, "_ENVFILE_EXISTS=") {
+		t.Errorf("the probe does not record the session env file:\n%s", s)
+	}
+
+	// The keeper assertion: one spawns and one joins, and the two are told one file and one token.
+	spawned := "keeper: yolo internal daemon jail-keeper will hold this workspace's macos-user host services (x)"
+	joined := "keeper: joined yolo internal daemon jail-keeper (pid 7), which holds"
+	same := map[string]string{"A_DURING_VAR": "/tmp/s/x.endpoint", "A_DURING_TOKENHASH": "11"}
+	sameB := map[string]string{"B_DURING_VAR": "/tmp/s/x.endpoint", "B_DURING_TOKENHASH": "11"}
+	for _, tc := range []struct {
+		name, a, b string
+		fb         map[string]string
+		want       string
+	}{
+		{"one keeper, one file", spawned, joined, sameB, ""},
+		{"two keepers", spawned, spawned, sameB, "did not share one keeper"},
+		{"no keeper", "", "", sameB, "did not share one keeper"},
+		{"two files", joined, spawned, map[string]string{"B_DURING_VAR": "/tmp/t/x.endpoint", "B_DURING_TOKENHASH": "11"}, "different endpoint files"},
+		{"two tokens", spawned, joined, map[string]string{"B_DURING_VAR": "/tmp/s/x.endpoint", "B_DURING_TOKENHASH": "22"}, "different tokens"},
+	} {
+		got := hd10KeeperFailure(tc.a, tc.b, same, tc.fb)
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("%s: hd10KeeperFailure = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if pid := hd10KeeperPID("x\nkeeper: started, pid 4242\ny"); pid != 4242 {
+		t.Errorf("hd10KeeperPID = %d, want 4242", pid)
+	}
+	if s := hd10Script("/s", "V", "A", "B", true); !strings.Contains(s, "_TOKENHASH=") {
+		t.Errorf("the probe does not record the endpoint's token:\n%s", s)
+	}
+
 	if got := hd10ParsePIDs("123\n45\n\n"); len(got) != 2 || got[0] != 45 || got[1] != 123 {
 		t.Errorf("hd10ParsePIDs = %v, want [45 123]", got)
 	}
@@ -638,7 +819,7 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 // TestMacosUserHD10GuardsTheMachineWideBroker is the CALL-SITE half of the experiment's rules,
 // read from the source for warmupgate_test.go's reason: the experiment runs only on a macos-user
 // host, so no -short test can drive it, and the rules' own cases pass whether or not the
-// experiment consults them. It fails if the experiment counts any broker but a session's (a
+// experiment consults them. It fails if the experiment counts any broker but a jail's (a
 // developer's machine-wide one would then read as the pair's), if it regains a `host-daemon
 // stop` (under HD-R1 the one daemon that verb stops by name is a machine-wide one an older
 // yolo's jails are using), or if it stops asserting what HD-R1 promises there.
@@ -658,12 +839,12 @@ func TestMacosUserHD10GuardsTheMachineWideBroker(t *testing.T) {
 	}
 	fn := body[i : i+1+j]
 	if !strings.Contains(fn, "samples.observe(hd10NewPIDs(hd10SessionBrokerPIDs(), pre))") {
-		t.Error("the experiment no longer samples only the session brokers that appeared during " +
+		t.Error("the experiment no longer samples only the jail brokers that appeared during " +
 			"the pair; a machine-wide broker an older yolo left would read as the pair's")
 	}
 	if strings.Contains(fn, `"host-daemon", "stop"`) || strings.Contains(fn, `"host-daemon", "restart"`) {
 		t.Error("the experiment runs `yolo host-daemon` against a daemon by name; under HD-R1 the " +
-			"pair's brokers end with their sessions, and the daemon that verb names is a " +
+			"pair's broker ends with the keeper, and the daemon that verb names is a " +
 			"machine-wide one an older yolo's jails may be using")
 	}
 	for _, call := range []string{"if failure := hd10SpawnFailure(spawn); failure != \"\" {\n\t\tt.Errorf(",
@@ -679,5 +860,91 @@ func TestMacosUserHD10GuardsTheMachineWideBroker(t *testing.T) {
 		t.Error("the experiment no longer fails when the surviving session's endpoint stops " +
 			"answering after the other session exits (hd10SurvivorFailure); it would go back to " +
 			"recording the macos-user teardown defect instead of catching it")
+	}
+}
+
+// TestMacosUserSweepsAKilledSessionsFiles: A SESSION KILLED BEFORE ITS TEARDOWN LEAVES ITS
+// ROOT-OWNED FILES AND ITS LIVENESS RECORD, AND THE NEXT LAUNCH SWEEPS BOTH
+// (internal/macosuser/sessionfiles.go). The first launch writes the env file it was handed into
+// the workspace and sleeps; this process SIGKILLs its `yolo`, so no deferred teardown runs, and
+// checks, as root, that the session's env file and profile are still there (the control: a kill
+// that left nothing shows nothing). A second launch of the same workspace must then remove every
+// one of them and the record, while the first session's sandbox, stopped here too, no longer
+// holds anything.
+func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
+	requireMacosUser(t)
+	ws := macosUserWorkspace(t, `{}`)
+	marker := filepath.Join(ws, "killed-session-envfile")
+	// A sleep no other process on the runner runs, so the cleanup's pkill stops only this one.
+	const nap = "sleep 3607"
+	script := `printf '%s\n' "$YOLO_DARWIN_ENV_FILE" > ` + shquote.Quote(marker) + `; ` + nap
+	ctx, cancel := context.WithTimeout(context.Background(), macosUserTimeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, yoloBin, append(jailRunArgs(), "--", "bash", "-lc", script)...)
+	cmd.Dir = ws
+	cmd.Env = hd10LaunchEnv()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	awaitDetachedWriters(t, ws, launchHome(cmd.Env))
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting the first launch: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	stopSandbox := func() {
+		_ = runQuiet(time.Minute, "sudo", "-n", "/usr/bin/pkill", "-u", macosuser.SandboxUser, "-f", nap)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-exited
+		stopSandbox()
+	})
+
+	envFile := ""
+	for envFile == "" {
+		if b, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(b)) != "" {
+			envFile = strings.TrimSpace(string(b))
+			break
+		}
+		select {
+		case <-exited:
+			t.Fatalf("the first launch exited before its session wrote %s:\nstdout:\n%s\nstderr:\n%s",
+				marker, lastLines(stdout.String(), 40), lastLines(stderr.String(), 40))
+		case <-ctx.Done():
+			t.Fatalf("the first launch did not reach its session within %s", macosUserTimeout())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("SIGKILL of the first launch: %v", err)
+	}
+	<-exited
+	stopSandbox()
+
+	key := strings.TrimSuffix(filepath.Base(envFile), ".env")
+	files := macosuser.SessionFilePaths(key, "")
+	record := filepath.Join(macosuser.SessionRecordsDir(), key+".lock")
+	present := func(p string) bool { return runQuiet(time.Minute, "sudo", "-n", "/bin/test", "-e", p) }
+	if !present(envFile) || !present(macosuser.SessionProfilePath(key, "")) {
+		t.Fatalf("NOT OBSERVED: the killed session left no env file (%s: %v) or profile (%v), so "+
+			"there was nothing for the next launch to sweep", envFile, present(envFile),
+			present(macosuser.SessionProfilePath(key, "")))
+	}
+	if _, err := os.Lstat(record); err != nil {
+		t.Fatalf("the killed session left no liveness record at %s (%v), so nothing could tell the "+
+			"next launch that its files are an ended session's", record, err)
+	}
+
+	r := runMacosUser(t, ws, "true")
+	if r.rc != 0 {
+		t.Fatalf("the second launch failed (rc %d):\n%s", r.rc, lastLines(r.combined(), 40))
+	}
+	for _, f := range files {
+		if present(f) {
+			t.Errorf("the second launch did not sweep the killed session's %s", f)
+		}
+	}
+	if _, err := os.Lstat(record); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the killed session's record %s survived the next launch's sweep (%v)", record, err)
 	}
 }

@@ -36,6 +36,8 @@ func Main(argv []string) int {
 	logFile := fs.String("log-file", "", "append the operational log here (default: stderr)")
 	verbose := fs.Bool("verbose", false, "Verbose logging")
 	verboseShort := fs.Bool("v", false, "Verbose logging")
+	endWithPID := fs.Int("end-with-pid", 0,
+		"Exit once this process is gone, and remove the socket: a jail-less launch's own broker")
 	_ = fs.Parse(argv)
 
 	// Configure the operational log. Matches the cgd/journald --log-file
@@ -126,6 +128,17 @@ func Main(argv []string) int {
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo-claude-oauth-broker-host: watch the state directory:", err)
 		return 1
+	}
+	// A JAIL-LESS LAUNCH'S OWN BROKER (HD-R1, HD-D23; internal/cli's startHostViewBroker, which
+	// keeps a `yolo host -- claude` credential view current): it ends with the launch's process,
+	// which may have exec'd Claude in its place, and its socket is that launch's alone, so it
+	// removes it as it goes. The exit still waits for a refresh in flight (the deferred wait above).
+	if *endWithPID > 0 {
+		defer func() { _ = os.Remove(*socket) }()
+		hostservice.WatchProcess(*endWithPID, stop, func(reason string) {
+			logInfo("%s", hostservice.ProcessGoneExitLine("yolo-claude-oauth-broker-host", reason))
+			shutdown()
+		})
 	}
 
 	// ServeFrontedUnix, and the third name is the whole point — see the no-`Serve`
