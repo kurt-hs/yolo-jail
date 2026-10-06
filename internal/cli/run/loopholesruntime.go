@@ -411,30 +411,11 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 		if placementRefused[name] {
 			continue
 		}
-		// THE NAME TEST IS GONE, and the declaration that replaced it is the point
-		// of this branch rather than a tidier spelling of it.
+		// NO DAEMON IS ENSURED HERE ANY MORE (HD-R1, hostdaemonperjail.go). A record declaring
+		// `host_daemon.scope: "host"` used to be fronted over the one machine-wide daemon
+		// (startHostSingleton, deleted); every host daemon is now this jail's own, spawned
+		// below like any other and ended with the jail.
 		//
-		// It used to read `if name == broker.BrokerLoopholeName { o.brokerEnsure();
-		// continue }` — core knowing one loophole by name, ensuring yolo's own
-		// singleton, and returning NO handle, so the front over it did not exist and
-		// a whole per-jail relay had to be supervised beside this loop instead. The
-		// question that test was really asking is "is this daemon shared across
-		// jails?", and `host_daemon.scope` is now the manifest's way to answer it
-		// (loopholedecl.ScopeHost). Compared against ScopeHost rather than ScopeJail
-		// deliberately: a record with no scope at all is per-jail, which is the
-		// direction where a dropped field costs a spawn instead of silently
-		// declining to start a daemon somebody asked for.
-		//
-		// HD-R1 RETIRES THAT ANSWER one backend at a time (hostdaemonperjail.go): where it is
-		// built, a `scope: "host"` record's daemon is this jail's own, spawned below like any
-		// other, and only the backends still listed by hostWideDaemonsStillSharedOn ensure the
-		// machine-wide one.
-		if hd := daemonOf[name]; hd != nil && hd.Scope == loopholes.ScopeHost && hostWideDaemonsStillSharedOn(rt) {
-			if h, ok := o.startHostSingleton(name, external[name], socketsDir, advertise, hd); ok {
-				handles = append(handles, markLaunchCheck(h, recordOf[name]))
-			}
-			continue
-		}
 		// MIGRATE, THEN SPAWN: the OpenAI legacy-state migration, under the lock it always ran
 		// under, before this launch's own OpenAI daemon reads the state (hostdaemonperjail.go).
 		if name == openaiauth.LoopholeName && !o.migrateLegacyOpenAIAuthState() {
@@ -1005,176 +986,6 @@ func (o *Options) resolveDaemonArgv(name string, spec *jsonx.OrderedMap, daemonP
 	return o.selfExecArgv(cmdArgs), true
 }
 
-// startHostSingleton is the `host_daemon.scope: "host"` path: ONE daemon per
-// host, N fronts — one per jail — over its single socket.
-//
-// It is deliberately NOT startExternalService with a flag. Three of that
-// function's four jobs are wrong here, and each one is wrong in a way that would
-// be a real fault rather than a wasted step:
-//
-//   - it SPAWNS. This daemon may already be running for another jail, and a second
-//     copy of the broker is not a second daemon, it is the concurrent single-use
-//     refresh-token race the flock exists to prevent (agent-credentials.md §2.5).
-//     So the daemon is ENSURED — liveness first, then a spawn under the host-wide
-//     flock, with the loser of that race observing the winner (internal/broker).
-//   - it binds the upstream at a PER-JAIL path (frontSocketFile). The whole point
-//     of a singleton is one rendezvous every jail's front and every `yolo broker`
-//     invocation agree on, so the path is derived from the loophole NAME
-//     (paths.HostSingletonSocket) and from nothing else.
-//   - its stop() KILLS the daemon's process group and unlinks the socket. Here
-//     that would tear down a daemon other live jails are still using. stop() below
-//     closes THIS JAIL'S FRONT and touches nothing else — which is what makes
-//     "one singleton, N jails, one lock" survive a jail ending.
-//
-// What it does share is the half that is genuinely the same: the front. The
-// endpoint file, its 0600 per-jail bearer token, the publication wait and the
-// unlink-on-close are svcendpoint's exactly as they are for any other
-// `publishes: "socket"` daemon.
-//
-// The returned handle carries NO env var name. The jail-facing variable for a
-// host-scoped loophole is emitted at ARGV-ASSEMBLY time instead
-// (hostServicesMountArgs), optimistically and before this function has run at all
-// — deliberately, so that a launch whose front never publishes is REFUSED by the
-// in-jail reachability witness rather than quietly becoming a jail that was never
-// told the service exists (loopback-tls-reachability.md §7.3). Emitting it from
-// here as well would put the same `-e` in the argv twice.
-func (o *Options) startHostSingleton(
-	name string, spec *jsonx.OrderedMap, socketsDir, advertiseHost string,
-	hd *loopholes.HostDaemon,
-) (loopholeDaemon, bool) {
-	if spec == nil {
-		return loopholeDaemon{}, false
-	}
-	hostPath := filepath.Join(socketsDir, name+paths.ServiceEndpointExt)
-	// A dead predecessor's endpoint file names a port nobody is on; leaving it
-	// would satisfy the publication wait below instantly. Same removal, same
-	// reason, as the spawned path's.
-	o.reportStaleRemoval("endpoint file", name, hostPath)
-	daemonPath := paths.HostSingletonSocket(name)
-	// NO pre-emptive unlink of daemonPath here, and the asymmetry with the spawned
-	// path is the point: that socket may belong to a LIVE daemon serving another
-	// jail. A stale one is the ensure's problem, and internal/broker already clears
-	// it inside the flock, after deciding nothing is alive.
-	cmdArgs, ok := o.resolveDaemonArgv(name, spec, daemonPath)
-	if !ok {
-		return loopholeDaemon{}, false
-	}
-	deps := broker.SingletonDeps(name, cmdArgs)
-	deps.Out = o.Stdout
-	if name == openaiauth.LoopholeName {
-		deps.PrepareLocked = prepareLegacyOpenAIAuthState(o.Workspace, deps)
-	}
-	// Always enter the ensure: it owns the singleton flock and returns quickly
-	// for a healthy daemon, while one-time state migrations must run under that
-	// lock even when the old daemon is still alive.
-	//
-	// It is also where a live daemon running settings this launch just replaced is
-	// RESTARTED rather than reused (broker.EnsureSingleton, host-daemon-ownership.md
-	// HD-D2). The file writeLoopholeSettings wrote above is what it compares against.
-	//
-	// AND IT RUNS AT MOST TWICE. The daemon an ensure finds alive can stop accepting before
-	// this launch dials it: a concurrent `yolo host-daemon restart`, another launch replacing
-	// it, or the daemon leaving because its state dir was retired or deleted
-	// (hostservice.WatchStateDir) all land in that gap, and a slow or loaded machine widens
-	// it. The readiness probe is the first to see the daemon gone, so a refused probe ensures
-	// once more, under the same flock, which then finds no live daemon and starts a fresh one.
-	// Giving up at the first refusal left the jail without the service, and refused the
-	// macos-user launch outright when it was the OpenAI credential service. Only once: a
-	// daemon that will not stay up is its log's to explain.
-	//
-	// ONLY AFTER AN ENSURE THAT REUSED A DAEMON. One this ensure STARTED and that still
-	// refuses has either exited, which its log explains, or not bound yet (the spawn warns
-	// about both when the socket never appeared). In the second case ensuring again starts a
-	// second copy beside a first that is still alive and may yet bind, because the ensure
-	// stops nothing it finds alive with no socket: whichever binds last takes the socket path,
-	// and the other runs on unreachable, with the PID file naming only the second.
-	for attempt := 1; ; attempt++ {
-		ensured := broker.EnsureSingleton(deps)
-		if ensured.Stale != nil {
-			// THE ONE OUTCOME THAT REFUSES THE FRONT: a daemon known to be serving other
-			// settings, which the ensure could not replace (it could not take the spawn lock,
-			// and killing a singleton without it races another launch's spawn). Fronting it
-			// anyway would hand this jail the settings its config no longer says, silently —
-			// the defect HD-D2 exists to end. Keys only, never values.
-			o.pr(o.Stdout).print("[red]Refusing to use the host-wide daemon for '" + name +
-				"': it is running with settings other than the configured ones (" +
-				strings.Join(ensured.Stale.Changed, ", ") + ") and yolo could not restart it. " +
-				"Clear the lock problem above, then run: " + broker.CycleCommand(name) + "[/red]")
-			return loopholeDaemon{}, false
-		}
-		// The daemon's readiness is its socket ACCEPTING A CONNECT — never bare
-		// existence, which a stale file satisfies instantly. A spawning ensure has already
-		// waited and already warned if the daemon never bound; this re-asks because the
-		// ensure may have been a no-op that observed a daemon which has since stopped.
-		if hostSingletonAccepting(daemonPath, time.Second) {
-			break
-		}
-		if ensured.Started || attempt == 2 {
-			o.pr(o.Stdout).print("[yellow]Warning: the host-wide daemon for '" + name +
-				"' " + hostSingletonRefusal(daemonPath, attempt, ensured.Started) + " — " +
-				o.unreachableBy() + " cannot reach it. See " + deps.LogPath + "[/yellow]")
-			return loopholeDaemon{}, false
-		}
-	}
-	if broker.BrokerIsAlive(deps) && !broker.SingletonSpeaksPreamble(deps) {
-		// ALIVE BUT INCOMPATIBLE — the one state every other surface calls healthy.
-		// A daemon started before this loophole moved behind a front is still
-		// listening at the same path, and it will consume the front's preamble as
-		// the client's request: every refresh fails while connect-based liveness,
-		// including the in-jail witness, reports green. We do not kill it (two yolo
-		// versions on one host would take turns restarting each other's daemon);
-		// we say so, and name the one command that fixes it.
-		//
-		// THE COMMAND IS DERIVED FROM THE NAME, and that is the defect OQ-HD2 was
-		// ruled to close. This sentence interpolated `name` into every clause but
-		// the last, which read `Fix it with: yolo broker restart` — a wrong
-		// instruction inside the sentence presenting itself as the fix, since for
-		// any singleton but the Claude one that command cycles a DIFFERENT daemon
-		// and leaves the broken one running. broker.CycleCommand is the one place
-		// that spelling lives now.
-		o.pr(o.Stdout).print("[yellow]Warning: the host-wide daemon for '" + name +
-			"' predates this yolo and does not speak the connection preamble.\n" +
-			"  It will accept connections and fail every request — for a credential daemon\n" +
-			"  that means token refresh is broken on this host, silently.\n" +
-			"  Fix it with: " + broker.CycleCommand(name) + "[/yellow]")
-	}
-	frontStop := make(chan struct{})
-	frontDone, frontFailed := frontRun(hostPath, advertiseHost, daemonPath, frontStop,
-		svcendpoint.FrontOptions{
-			HalfCloseUpstream: hd.RequestEnd == loopholes.RequestEndEOF,
-			NoPreamble:        !hd.Preamble,
-		})
-	if failure := frontPublishFailure(hostPath, o.serviceReadyTimeout(), frontFailed); failure != "" {
-		close(frontStop)
-		// The DAEMON is not killed on this failure either. It was already running
-		// (or was just ensured for everyone, not for us), and our front failing to
-		// publish says nothing about whether another jail's is fine.
-		o.pr(o.Stdout).print("[yellow]Warning: the front for host-wide service '" + name +
-			"' " + failure + " — " + o.unreachableBy() + " cannot reach it. See " +
-			deps.LogPath + "[/yellow]")
-		return loopholeDaemon{}, false
-	}
-	return loopholeDaemon{
-		name:     name,
-		hostPath: hostPath,
-		jailPath: hostServiceEndpointPath(name),
-		upstream: daemonPath,
-		// THE FRONT'S END, and only the front's: the daemon behind it is the machine's, serving
-		// other jails, and no keeper's child, so a keeper watches only the half it runs.
-		end: frontEnd(frontDone, frontFailed),
-		log: deps.LogPath,
-		stop: func() {
-			// Close the front and WAIT for its listener's Close, which unlinks the
-			// endpoint file and retires this jail's credential. Bounded, for the
-			// spawned path's reason: a wedged front must not hold up teardown, and
-			// the sockets-dir rmtree is the backstop — reported when it expires, which
-			// is awaitFrontClosed's whole job.
-			close(frontStop)
-			o.awaitFrontClosed("host-wide service", name, hostPath, frontDone, frontStopGrace)
-		},
-	}, true
-}
-
 // reportStaleRemoval unlinks a dead predecessor's artifact before a spawn and
 // reports the one outcome that changes what happens next: a file that is still
 // there.
@@ -1486,55 +1297,6 @@ func (o *Options) startExternalService(
 	return h, true
 }
 
-// --- the broker singleton, ensured before the argv is built ---
-
-// brokerEnsure is a no-op if the host-wide broker singleton is alive; else it
-// spawns it under a flock. The spawn/liveness/launcher/path-constant
-// implementation lives ONCE in internal/broker — run just drives it via
-// RealDeps (BrokerSpawn re-checks liveness inside its own flock). Best-effort;
-// never fails the caller.
-//
-// IT IS NOT REDUNDANT WITH startHostSingleton, which ensures the same daemon from
-// the loophole record a few phases later. The second ensure is idempotent by
-// construction (liveness, then a flock whose loser observes the winner), so the
-// cost of both is one Lstat.
-//
-// WHY IT RUNS BEFORE assembleRunCmd. The stated reason used to be that the
-// assembler READ THIS SOCKET to decide whether the argv could promise the jail an
-// endpoint. It does not: the jail-facing variable is emitted OPTIMISTICALLY, from
-// the record alone, precisely so that a launch whose front never publishes is
-// REFUSED by the in-jail reachability witness instead of quietly becoming a jail
-// that was never told the service exists (hostScopedEndpoints,
-// loopback-tls-reachability.md §7.3). Nothing about the argv is a function of
-// whether this ensure succeeded.
-//
-// What makes the position right is that the SPAWN GATE AND THE ARGV WIRING ARE ONE
-// PREDICATE: brokerLoopholeActive is a membership test on hostScopedEndpoints, the
-// same derived list the assembler emits from (assemble_parts.go). Ensuring here
-// puts the daemon's bind window before the container starts, under the gate that
-// decides the wiring — so a jail that is told the address has had the daemon
-// ensured for it, and a jail that is not leaves no daemon running on the host.
-// Both halves used to be decided separately and disagreed in both directions
-// (run.go, at the call).
-//
-// This is also the one caller with NO record IN HAND, which is why RealDeps still
-// carries the broker's own argv: the gate above it consults the derived list, but
-// the ensure itself is handed nothing but yolo's own constants — the same position
-// `yolo host-daemon restart <name>` and its `broker` alias are in, with no launch
-// at all.
-func (o *Options) brokerEnsure() {
-	deps := broker.RealDeps()
-	if broker.BrokerIsAlive(deps) {
-		return
-	}
-	// A spawn waits for the new broker's socket (seconds, bounded), and it happens
-	// once per boot of the host, on whichever launch comes first — so it says so.
-	o.withStderrProgress("Starting the Claude OAuth broker", func() bool {
-		broker.BrokerSpawn(deps)
-		return true
-	})
-}
-
 // hostServicesDirPrefix names the per-jail host-services dir:
 // <prefix><8hex-of-cname>. See paths.HostServicesDirName.
 const hostServicesDirPrefix = "yolo-host-services-"
@@ -1708,26 +1470,6 @@ func frontPublishFailure(endpointPath string, timeout time.Duration, failed <-ch
 			return "did not publish " + endpointPath + " within " + timeout.String()
 		}
 		time.Sleep(servicePollInterval)
-	}
-}
-
-// hostSingletonAccepting is startHostSingleton's readiness probe on the host-wide daemon's
-// socket: socketConnectable, a variable so a test can make the daemon exit at the one instant
-// a real machine cannot be made to, between the ensure and this probe.
-var hostSingletonAccepting = socketConnectable
-
-// hostSingletonRefusal says what startHostSingleton found at the daemon's socket on its last
-// try, and only what it knows: on a second try, whether the ensure before it started a fresh
-// daemon or found one alive again (or could start none, which the ensure has already said).
-func hostSingletonRefusal(daemonPath string, attempt int, started bool) string {
-	switch {
-	case attempt < 2:
-		return "is not accepting connections at " + daemonPath
-	case started:
-		return "stopped accepting connections at " + daemonPath +
-			", and the copy yolo started in its place is not accepting either"
-	default:
-		return "is still not accepting connections at " + daemonPath + " on a second try"
 	}
 }
 

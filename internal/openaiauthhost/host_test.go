@@ -22,7 +22,7 @@ func codexViewFixture() json.RawMessage {
 
 func TestPreparePiUsesHostSocketWithoutStartingAdapter(t *testing.T) {
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			return json.RawMessage(`{"logged_in":true}`), nil
 		},
@@ -51,7 +51,7 @@ func TestManagedCodexHomeLeavesOrdinaryAuthUntouchedAndAdapterFollowsAgent(t *te
 		t.Fatal(err)
 	}
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			action := request.(map[string]any)["action"]
 			if action == "status" {
@@ -112,7 +112,7 @@ func TestManagedCodexHomeLeavesOrdinaryAuthUntouchedAndAdapterFollowsAgent(t *te
 func TestPrepareStartsBrowserLoginOnlyWhenStatusRequiresIt(t *testing.T) {
 	var actions []string
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			action := request.(map[string]any)["action"].(string)
 			actions = append(actions, action)
@@ -143,7 +143,7 @@ func TestManagedEnvironmentOverridesHaveStableOrder(t *testing.T) {
 
 func TestHostSocketWaitRetriesDuringDaemonStartup(t *testing.T) {
 	attempts := 0
-	err := waitHostSocket("/tmp/broker.host", time.Second,
+	err := waitPrivate("/tmp/broker.host", make(chan struct{}),
 		func(string, any, io.Writer) (json.RawMessage, error) {
 			attempts++
 			if attempts < 3 {
@@ -152,7 +152,22 @@ func TestHostSocketWaitRetriesDuringDaemonStartup(t *testing.T) {
 			return json.RawMessage(`{"pong":true}`), nil
 		})
 	if err != nil || attempts != 3 {
-		t.Fatalf("waitHostSocket = %v after %d attempts, want success after retry", err, attempts)
+		t.Fatalf("waitPrivate = %v after %d attempts, want success after retry", err, attempts)
+	}
+}
+
+// A DAEMON THAT EXITS AT STARTUP IS REPORTED AT ONCE, not after the whole wait.
+func TestHostSocketWaitReportsADaemonThatExited(t *testing.T) {
+	exited := make(chan struct{})
+	close(exited)
+	start := time.Now()
+	err := waitPrivate("/tmp/broker.host", exited,
+		func(string, any, io.Writer) (json.RawMessage, error) { return nil, os.ErrNotExist })
+	if err == nil || !strings.Contains(err.Error(), "exited at startup") {
+		t.Fatalf("waitPrivate = %v, want the daemon's exit named", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("waitPrivate took %s to see an exited daemon", took)
 	}
 }
 
@@ -167,7 +182,7 @@ func TestTheHostCodexAdapterServesOnlyTheMarkerItWrote(t *testing.T) {
 	token := strings.Repeat("5a", 32)
 	refreshes := 0
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			switch request.(map[string]any)["action"] {
 			case "status":
@@ -252,7 +267,7 @@ func TestConcurrentHostCodexLaunchesBothRefreshThroughTheSharedAuthFile(t *testi
 	minted := []string{strings.Repeat("aa", 32), strings.Repeat("bb", 32), strings.Repeat("cc", 32)}
 	mints := 0
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			switch request.(map[string]any)["action"] {
 			case "status":

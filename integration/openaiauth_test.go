@@ -6,31 +6,21 @@ package integration
 // every hop it crosses is a different process on a different side of the jail boundary:
 //
 //	curl (in the jail) → yolo-jaild openai-auth-adapter on its served address (in the jail)
-//	  → the loopback-TLS front the launch published (host) → the machine-wide
-//	  openai-auth-broker singleton (host) → its credentials.json (host, never mounted)
+//	  → the loopback-TLS front the launch published (host) → the JAIL'S OWN
+//	  openai-auth-broker daemon (host) → its credentials.json (host, never mounted)
 //
 // and, for pi's route, `yolo internal openai-auth-client token` (in the jail) straight to that
 // same front, with no adapter in between.
 //
-// # What "never the developer's real grant" costs
+// # Why a private state dir is now enough to keep the developer's real grant out
 //
-// The singleton is keyed by NAME alone: its socket, PID file and spawn lock are fixed paths
-// under /tmp (paths.HostSingletonSocket), shared by every HOME on the machine, and a launch that
-// finds one alive REUSES it whatever state file it was started with. So a private state dir is
-// necessary and not sufficient — an import into "the" singleton goes to whichever one is alive.
-// The test therefore owns the singleton for its duration, and every step is guarded:
-//
-//   - if the machine's own state file exists (a possible real grant), the test skips, whether or
-//     not a singleton is alive: owning the slot would hand every concurrent launch the forged
-//     token and send any concurrent login into the private state this test deletes;
-//   - a live singleton whose state file EXISTS may hold a real grant: the test skips and touches
-//     nothing. One whose state file is absent holds no grant (every earlier codex-selecting test
-//     in this suite leaves one), so it is stopped, by the PID its own PID file names;
-//   - the test starts its own singleton with a no-op `status`, and imports only after proving,
-//     from /proc/<pid>/cmdline, that the daemon answering is the one started with THIS test's
-//     private --state-file;
-//   - it is stopped afterwards, by that PID, so no later launch reuses a daemon whose state dir
-//     has been deleted.
+// Since HD-R1 (docs/design/host-daemon-ownership.md) every OpenAI daemon is the launch's own:
+// `yolo openai-auth import` starts one for the verb, the jail's keeper starts one for the jail,
+// each under this test's HOME and so against its private --state-file, and each ends with its
+// launch. Nothing is adopted. The test used to OWN the machine-wide singleton for its duration,
+// with guards that skipped beside a real grant and stopped a grantless daemon, because a launch
+// reused whichever singleton was alive whatever state file it served. What it checks now in that
+// place is that no daemon of its HOME outlives the launch (awaitHomeHostDaemons).
 //
 // # What a nested jail can and cannot tell
 //
@@ -56,9 +46,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -119,110 +107,6 @@ func forgeCodexLogin(t *testing.T) forgedCodexLogin {
 		t.Fatal(err)
 	}
 	return f
-}
-
-// singletonPID is the PID the openai-auth-broker singleton's PID file names, or 0.
-func singletonPID() int { return hostDaemonPID(openaiauth.LoopholeName) }
-
-// daemonStateFile returns the --state-file the process pid was started with, read from its
-// command line. ok is false when the process is not an openai-auth-broker daemon at all, or its
-// command line cannot be read or carries no --state-file.
-func daemonStateFile(pid int) (string, bool) {
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return "", false
-	}
-	args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
-	isBroker := false
-	state := ""
-	for i, a := range args {
-		switch {
-		case a == openaiauth.LoopholeName:
-			isBroker = true
-		case a == "--state-file" && i+1 < len(args):
-			state = args[i+1]
-		case strings.HasPrefix(a, "--state-file="):
-			state = strings.TrimPrefix(a, "--state-file=")
-		}
-	}
-	return state, isBroker && state != ""
-}
-
-// stopSingletonPID stops the openai-auth-broker singleton process pid and removes its
-// rendezvous files while its PID file still names it — homedaemons_test.go's stopHostDaemonPID,
-// which never falls back to a process search.
-func stopSingletonPID(pid int) error { return stopHostDaemonPID(openaiauth.LoopholeName, pid) }
-
-// skipIfMachineHoldsAGrant skips the test when the machine's OWN broker state file exists, live
-// singleton or not. With none alive, clearGrantlessSingleton has nothing to judge, and this test
-// then starts THE machine-wide singleton on its private state and holds it for a whole launch:
-// any codex or pi jail the developer launches meanwhile is served the forged token
-// (startHostSingleton reuses a live daemon), and a `yolo openai-auth import` or login run
-// meanwhile lands in the private state dir this test deletes. On a machine with no grant the
-// worst case left is the first; a real grant is never put in that window.
-//
-// The machine's path is the private one re-rooted at the machine home requireJail recorded, so
-// it follows loopholes.StateDirFor rather than restating its layout.
-func skipIfMachineHoldsAGrant(t *testing.T, privateState string) {
-	t.Helper()
-	rel, err := filepath.Rel(paths.GlobalStorage(), privateState)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		t.Fatalf("broker state %s is not under the private state dir %s (%v)", privateState,
-			paths.GlobalStorage(), err)
-	}
-	machine := filepath.Join(paths.GlobalStorageUnder(hostHome), rel)
-	if _, err := os.Lstat(machine); !errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("this machine's openai-auth-broker state %s exists (%v) — it may hold a real "+
-			"OpenAI grant, and while this test owns the machine-wide singleton every other "+
-			"launch and `yolo openai-auth` command on the machine would use the test's forged "+
-			"state instead. Refusing to run; ci.yml's integration job runs this test", machine, err)
-	}
-}
-
-// clearGrantlessSingleton makes the singleton slot free for this test, or skips it. See the file
-// header for the rule; the short form is that a singleton is stopped only when it demonstrably
-// holds no grant.
-func clearGrantlessSingleton(t *testing.T) {
-	t.Helper()
-	pid := singletonPID()
-	if pid == 0 || processGone(pid) {
-		return
-	}
-	state, ok := daemonStateFile(pid)
-	if !ok {
-		t.Skipf("an openai-auth-broker singleton is alive (pid %d) and its state file cannot be "+
-			"read from its command line, so whether it holds a real grant is unknown; this test "+
-			"would have to replace it, and will not", pid)
-	}
-	if _, err := os.Lstat(state); !errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("an openai-auth-broker singleton is alive (pid %d) with state at %s, which exists "+
-			"(%v) — it may hold this machine's real OpenAI grant, and a launch reuses whichever "+
-			"singleton is alive. Refusing to touch it; ci.yml's integration job runs this test",
-			pid, state, err)
-	}
-	t.Logf("stopping a grantless openai-auth-broker singleton (pid %d, state %s absent) so this "+
-		"test can own the slot; the next launch that needs one starts it again", pid, state)
-	if err := stopSingletonPID(pid); err != nil {
-		t.Skipf("could not stop the grantless singleton: %v", err)
-	}
-}
-
-// requireOwnSingleton returns the PID of the live singleton after proving it was started with
-// wantState — the precondition for importing anything into it.
-func requireOwnSingleton(t *testing.T, wantState string) int {
-	t.Helper()
-	pid := singletonPID()
-	if pid == 0 || processGone(pid) {
-		t.Fatalf("no live openai-auth-broker singleton after `yolo openai-auth status` started one "+
-			"(see %s)", filepath.Join(paths.GlobalStorage(), "logs"))
-	}
-	got, ok := daemonStateFile(pid)
-	if !ok || got != wantState {
-		t.Fatalf("the live openai-auth-broker singleton (pid %d) was started with state %q, not "+
-			"this test's %q — something else started it, and importing into it would replace "+
-			"its grant. Refusing", pid, got, wantState)
-	}
-	return pid
 }
 
 // openaiBrokerProbeScript is the in-jail half of the round trip, over BOTH routes a client in
@@ -309,17 +193,17 @@ func kvLine(out, key string) string {
 //     no agent receives or submits the canonical token.
 //   - the client route returns the same hash with decision `cached`: the endpoint serves a client
 //     that bypasses the adapter, and the broker answered from its cache.
-//   - the canonical state is byte-for-byte unchanged afterwards, and the same daemon is still the
-//     singleton: no upstream redemption happened, and the launch reused the daemon rather than
-//     starting a second one.
+//   - the canonical state is byte-for-byte unchanged afterwards: no upstream redemption happened.
+//   - no openai-auth-broker daemon of this test's HOME is left once the launch has returned: the
+//     verb's and the jail's own each ended with their launch (HD-R1), the cleanup's wait bounding
+//     the detach.
 func TestOpenAIAuthBrokerRoundTripsAnImportedToken(t *testing.T) {
-	// EXCLUSIVE: this test owns the machine's openai-auth-broker singleton for its duration,
-	// and another run's claude, codex or pi launch would adopt it, or be the live singleton
-	// this test stops (machinelock_test.go).
-	requireJailExclusive(t, "TestOpenAIAuthBrokerRoundTripsAnImportedToken owns the "+
-		"openai-auth-broker host singleton")
+	// EXCLUSIVE, for the codex adapter's declared port on a bridged jail and the /proc reads
+	// (machinelock_test.go).
+	requireJailExclusive(t, "TestOpenAIAuthBrokerRoundTripsAnImportedToken reads its HOME's "+
+		"host daemons from /proc")
 	if rt := detectRuntime(); rt != "podman" || goruntime.GOOS != "linux" {
-		t.Skipf("this test proves singleton ownership from /proc and runs on podman on Linux — "+
+		t.Skipf("this test reads its daemons from /proc and runs on podman on Linux — "+
 			"ci.yml's rootless integration job, the instrument step 12 names; this is %q on %s",
 			rt, goruntime.GOOS)
 	}
@@ -336,27 +220,20 @@ func TestOpenAIAuthBrokerRoundTripsAnImportedToken(t *testing.T) {
 		t.Fatalf("broker state %s is not under the private state dir %s", statePath, paths.GlobalStorage())
 	}
 
-	skipIfMachineHoldsAGrant(t, statePath)
-	clearGrantlessSingleton(t)
+	home := os.Getenv("HOME")
 
-	// A no-op first, so the daemon exists and can be identified BEFORE anything is imported.
+	// A no-op first: the verb's own daemon answers on a machine with no login.
 	if r := runYoloCLI(t, dir, "openai-auth", "status"); r.rc != 0 {
 		t.Fatalf("`yolo openai-auth status` failed: rc %d\n%s", r.rc, r.combined())
 	}
-	pid := requireOwnSingleton(t, statePath)
-	t.Cleanup(func() {
-		if err := stopSingletonPID(pid); err != nil {
-			t.Errorf("stopping this test's openai-auth-broker singleton: %v — a later launch "+
-				"would reuse a daemon whose state dir is gone", err)
-		}
-	})
-
 	forged := forgeCodexLogin(t)
 	if r := runYoloCLI(t, dir, "openai-auth", "import", "--from", forged.path); r.rc != 0 {
 		t.Fatalf("`yolo openai-auth import` failed: rc %d\n%s", r.rc, r.combined())
 	}
-	if got := requireOwnSingleton(t, statePath); got != pid {
-		t.Fatalf("the singleton changed from pid %d to %d during the import", pid, got)
+	// THE VERBS' DAEMONS ENDED WITH THE VERBS (HD-R1): nothing of this HOME is left for the
+	// launch below to meet, so the daemon it reaches is its own.
+	if left := awaitHomeHostDaemons(home, homeDaemonBound); len(left) > 0 {
+		t.Fatalf("the `yolo openai-auth` verbs' own daemons outlived them: %s", strings.Join(left, ", "))
 	}
 	before, err := openaiauth.ReadState(statePath)
 	if err != nil {
@@ -447,8 +324,9 @@ func TestOpenAIAuthBrokerRoundTripsAnImportedToken(t *testing.T) {
 			"state, when it should have served its cache", before.Generation, after.Generation,
 			openaiauth.TokenFingerprint(before.AccessToken), openaiauth.TokenFingerprint(after.AccessToken))
 	}
-	if got := singletonPID(); got != pid {
-		t.Errorf("the singleton is pid %d after the launch, not this test's %d — the launch "+
-			"replaced the daemon instead of reusing it", got, pid)
+	// THE JAIL'S OWN DAEMON ENDED WITH THE JAIL: SIGTERMed by the keeper's teardown, with nothing
+	// in flight, it exits at once (the manifest's `detach`).
+	if left := awaitHomeHostDaemons(home, homeDaemonBound); len(left) > 0 {
+		t.Errorf("host daemons of this test's HOME outlived the jail: %s", strings.Join(left, ", "))
 	}
 }

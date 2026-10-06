@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -241,7 +242,7 @@ func perJailFixture(t *testing.T, name string) {
 // HD-R1 ON PODMAN, THE DISPATCH (docs/design/host-daemon-ownership.md): a record declaring
 // `scope: "host"` gets a daemon of this jail's own, keyed by the jail, and nothing at the
 // machine-wide rendezvous the old singleton used. Its endpoint variable stays the assembler's,
-// so the handle carries none. Drop the hostWideDaemonsStillSharedOn test from startLoopholesMatching
+// so the handle carries none. Ensure a machine-wide daemon for it again (startLoopholesMatching)
 // and the daemon is ensured at /tmp/yolo-<name>.sock instead.
 func TestOnPodmanAHostScopedRecordRunsAsTheJailsOwnDaemon(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -388,8 +389,8 @@ func TestAMigrationThatCannotCompleteStartsNoOpenAIDaemonAndSaysWhy(t *testing.T
 }
 
 // HD-R1 ON APPLE CONTAINER: the one credential service its allow list admits is the jail's own
-// daemon too, keyed by the jail, with nothing at the machine-wide rendezvous. Drop "container"
-// from what hostWideDaemonsStillSharedOn excludes and it is ensured at /tmp/yolo-<name>.sock.
+// daemon too, keyed by the jail, with nothing at the machine-wide rendezvous. Take
+// the per-jail spawn from Apple Container and it is ensured at /tmp/yolo-<name>.sock.
 func TestOnAppleContainerTheOpenAIServiceRunsAsTheJailsOwnDaemon(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("spawns a host process")
@@ -491,5 +492,92 @@ func TestTheMacosUserArmRefusesWhenItCannotTakeTheSpawnGuard(t *testing.T) {
 	}
 	if len(doors.plans) != 0 {
 		t.Errorf("the refused launch opened %d doorways", len(doors.plans))
+	}
+}
+
+// THE REAL BROKER, AS A JAIL'S OWN DAEMON, ANSWERS THROUGH ITS FRONT: the shipped argv spawned per
+// jail (startExternalService, under the manifest's `publishes: "socket"` with the preamble on and
+// `detach`), and a framed ping sent as a jail sends it — through the endpoint, so the front writes
+// its connection preamble ahead of these bytes — comes back as a pong. A daemon that read the
+// preamble AS the request (hostservice.ServeUnix) would answer something else, and every Claude
+// OAuth refresh would fail on a connection both ends believe is healthy. Its end is the detach:
+// the daemon is gone shortly after the stop, its socket with it.
+//
+// The loophole is named `yjtest-broker`, not `claude-oauth-broker`, so nothing this test runs
+// is ever mistaken for a developer's own broker; the argv is the shipped one, and TestMain
+// dispatches it to the real oauthbroker.Main.
+func TestAJailsOwnBrokerDaemonAnswersThroughItsFront(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("spawns a host process")
+	}
+	name := "yjtest-broker"
+	// Dummy CA/leaf so EnsureCAAndLeaf short-circuits; the daemon never reads them on the ping path.
+	state := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"ca.crt", "ca.key", "server.crt", "server.key"} {
+		if err := os.WriteFile(filepath.Join(state, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("YOLO_BROKER_STATE_DIR", state)
+	socketsDir := t.TempDir()
+	if err := os.Chmod(socketsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spec := jsonx.NewOrderedMap()
+	spec.Set("command", []any{"yolo", "internal", "daemon", "claude-oauth-broker",
+		"--socket", "{socket}", "--no-background-refresh"})
+	var buf strings.Builder
+	o := &Options{}
+	fillDefaults(o)
+	o.Stdout = &buf
+	h, ok := o.startExternalService(name, spec, socketsDir, loopholes.TransportLoopbackTLS, "127.0.0.1",
+		&loopholes.HostDaemon{Publishes: loopholes.PublishesSocket, RequestEnd: loopholes.RequestEndFramed,
+			Preamble: true, Detach: true})
+	if !ok {
+		t.Fatalf("the broker daemon did not come up behind its front; output: %q", buf.String())
+	}
+	stopped := false
+	defer func() {
+		if !stopped {
+			h.stop()
+		}
+	}()
+	conn, err := svcendpoint.DialLocal(h.hostPath, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dialing %s: %v", h.hostPath, err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	req := []byte(`{"action":"ping"}`)
+	frame := make([]byte, 4+len(req))
+	binary.BigEndian.PutUint32(frame[:4], uint32(len(req)))
+	copy(frame[4:], req)
+	if _, err := conn.Write(frame); err != nil {
+		t.Fatalf("writing the ping: %v", err)
+	}
+	// Response framing is <1-byte stream_id><4-byte BE length><payload>.
+	hdr := make([]byte, 5)
+	if _, err := io.ReadFull(conn, hdr); err != nil {
+		t.Fatalf("no response frame through the front: %v; output: %q", err, buf.String())
+	}
+	n := binary.BigEndian.Uint32(hdr[1:5])
+	if n > 1<<20 {
+		t.Fatalf("implausible response frame length %d", n)
+	}
+	payload := make([]byte, n)
+	if _, err := io.ReadFull(conn, payload); err != nil {
+		t.Fatalf("short response frame: %v", err)
+	}
+	_ = conn.Close()
+	if !strings.Contains(string(payload), "pong") {
+		t.Errorf("the broker did not pong through its front: %q — it read yolo's connection "+
+			"preamble as the request", string(payload))
+	}
+	h.stop()
+	stopped = true
+	if !waitFor(10*time.Second, func() bool { return !fileExists(h.upstream) }) {
+		t.Errorf("the broker's socket %s outlived its jail's end", h.upstream)
 	}
 }

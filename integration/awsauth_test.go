@@ -6,13 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // THE aws-auth CREDENTIAL CHANNEL, END TO END, OVER THE REAL LOOPBACK HOP.
@@ -64,12 +60,11 @@ import (
 // mise downloads stay warm. YOLO_NO_AUTO_IMAGE_REAP=1 rides along for that helper's reason: a
 // private state dir knows only this test's workspaces, so a reap would take every other image.
 //
-// ⚠ THE HOST SINGLETON'S SOCKET, PID FILE AND LOCK ARE NOT IN THE STATE DIR. They are
-// /tmp/yolo-aws-auth.{sock,pid,lock} (paths.HostSingletonSocket), one per MACHINE, so a
-// private state dir does not stop a launch from ADOPTING an aws-auth daemon that is already
-// running — the developer's real one, serving real credentials. So each test refuses to run
-// while one is alive (`yolo host-daemon status aws-auth`), and stops the one it spawned when
-// it ends, so the next test's launch spawns afresh against its own fake.
+// EACH LAUNCH RUNS ITS OWN aws-auth DAEMON (HD-R1, docs/design/host-daemon-ownership.md): spawned
+// with the jail, under this test's HOME and so against its fake `aws` and private state, and
+// ended with the jail. A machine-wide one the developer's older yolo left running is neither
+// adopted nor touched, so the fixture neither refuses beside one nor stops one by name; the
+// cleanup's wait (awaitHomeHostDaemons) is what sees the test's own gone.
 //
 // # A nested jail beside an aws-auth jail
 //
@@ -170,9 +165,9 @@ func awsAuthUserConfig(packs, agent, extra string) string {
 func newAWSAuthFixtureWith(t *testing.T, userConfig string, podman bool,
 	configure func(bin string) string) awsAuthFixture {
 	t.Helper()
-	// EXCLUSIVE: the fixture owns the machine's aws-auth host singleton and its adapter port
+	// EXCLUSIVE: the fixture owns the aws-auth adapter port on a bridged jail
 	// for the test's duration (the file header, and machinelock_test.go).
-	requireJailExclusive(t, "the aws-auth tests own the aws-auth host singleton")
+	requireJailExclusive(t, "the aws-auth tests own the adapter port and the fake `aws` on PATH")
 	if rt := detectRuntime(); podman && rt != "podman" {
 		t.Skipf("aws-auth's chain needs podman, and this runtime is %q: Apple Container is "+
 			"inert for loopback-tls loopholes and macos-user declines the jail-side adapter", rt)
@@ -181,25 +176,6 @@ func newAWSAuthFixtureWith(t *testing.T, userConfig string, podman bool,
 	dir := writeProject(t, `{}`)
 	packHome(t, userConfig)
 	macArchivePrivateState(t)
-
-	// Refuse to run beside a live aws-auth daemon: the launch would adopt it (see the
-	// header), and its answer would be whatever that daemon serves. `status` exits 0 only
-	// for a FULLY healthy daemon, so a live process behind a stale socket is caught by its
-	// PID file instead — the launch's ensure would see it alive either way.
-	if r := runYoloCLI(t, dir, "host-daemon", "status", "aws-auth"); r.rc == 0 || awsAuthDaemonAlive() {
-		t.Fatalf("an aws-auth host daemon is already running on this machine, and a launch "+
-			"here would adopt it instead of spawning one against this test's fake `aws` — "+
-			"its socket is machine-wide (%s), not in the private state dir. Stop it with "+
-			"`yolo host-daemon stop aws-auth` (the next launch that wants it starts it again) "+
-			"and rerun.\n%s", paths.HostSingletonSocket("aws-auth"), r.combined())
-	}
-	// Registered AFTER macArchivePrivateState's cleanup so it runs FIRST: the daemon is
-	// stopped before the state dir it writes into is removed.
-	t.Cleanup(func() {
-		if r := runYoloCLI(t, dir, "host-daemon", "stop", "aws-auth"); r.rc != 0 {
-			t.Logf("stopping this test's aws-auth daemon: rc=%d\n%s", r.rc, r.combined())
-		}
-	})
 
 	bin := t.TempDir()
 	argvLog := filepath.Join(bin, "argv.log")
@@ -289,22 +265,6 @@ func runAWSAuthCurl(t *testing.T, fx awsAuthFixture) (string, []byte, result) {
 	}
 	_ = os.Remove(filepath.Join(fx.dir, "awsauth-body.json"))
 	return status, body, r
-}
-
-// awsAuthDaemonAlive reports whether the machine-wide aws-auth PID file names a live
-// process. Signal 0 delivers nothing; it only asks whether the PID exists — and EPERM is
-// an answer too: the process exists and belongs to someone else.
-func awsAuthDaemonAlive() bool {
-	raw, err := os.ReadFile(paths.HostSingletonPIDFile("aws-auth"))
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil || pid <= 0 {
-		return false
-	}
-	err = syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
 }
 
 // awsAuthDaemonLog is the host daemon's log, for a failure message: the host half of the

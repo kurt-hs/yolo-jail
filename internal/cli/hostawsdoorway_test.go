@@ -355,7 +355,7 @@ func TestHostDoorwayFrontsInASessionDirNotTheWorkspacesJailDir(t *testing.T) {
 		t.Errorf("the host launch touched the workspace jail's aws-auth endpoint in %s: %q, %v",
 			jailDir, got, err)
 	}
-	const using = `using the host-wide "aws-auth" service for this launch, through a front of its own that closes when pi exits: `
+	const using = `started the "aws-auth" service for this launch, behind a front of its own; both end when pi exits: `
 	i := strings.Index(l.errs, using)
 	if i < 0 {
 		t.Fatalf("the launch must name the front it published:\n%s", l.errs)

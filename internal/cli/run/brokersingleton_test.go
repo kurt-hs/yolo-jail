@@ -329,79 +329,9 @@ func TestSocketDirIgnoresALongTMPDIR(t *testing.T) {
 	_ = ln.Close()
 }
 
-// TestBrokerLifecycleIsGatedOnTheLoopholeRecord is OQ-A11 at the CALL SITE that
-// decides whether the host singleton runs at all.
-//
-// # Why this is a source assertion and not a behavioural one
-//
-// `brokerEnsure` spawns a detached host process under a flock; it is not injectable,
-// and driving `runNormal` needs a container. What CAN be driven is the predicate —
-// the two tests below do that — and what a predicate's own tests cannot see is the
-// call going missing, which is exactly the state this ruling found:
-// `brokerLoopholeActive` already existed and was already correct, and the run
-// pipeline called `brokerEnsure()` beside it with no lookup at all. So the host
-// singleton ran for EVERYBODY, including a user with `packs: []` who has never heard
-// of claude, while the jail was wired to it only when the loophole was Active — both
-// halves failing, in opposite directions (loophole-activation.md §1.1, §1.3's first
-// table row).
-//
-// # The property, stated so a reader knows what may be edited
-//
-// ONE predicate governs the spawn AND the wiring. `hostServicesMountArgs` already
-// consults `brokerLoopholeActive`; the lifecycle site must consult the same function
-// rather than a second spelling of it. A jail that is not given the broker's address
-// must not leave a broker running on the host either — which is a stronger
-// requirement than "it is gated", because two gates that agree today are two gates
-// that can disagree tomorrow.
-//
-// THE ATTACH HALF OF THIS TEST IS GONE with the per-jail relay it guarded. An attach
-// used to re-ensure a relay behind the same gate; there is no per-jail broker process
-// left to heal, and the front that replaced it belongs to the yolo process that
-// launched the jail. What survives is the launch gate, which is the one that governs
-// a host daemon.
-func TestBrokerLifecycleIsGatedOnTheLoopholeRecord(t *testing.T) {
-	body, err := os.ReadFile("run.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(body)
-	// The LAUNCH path: the ensure sits behind the gate.
-	if !strings.Contains(src, `hostWideDaemonsStillSharedOn(rt) && brokerLoopholeActive(cfg)`) {
-		t.Error("the launch path no longer gates the broker singleton on " +
-			"brokerLoopholeActive(cfg). Ungated, yolo spawns a host daemon on every launch " +
-			"for every user — including one with `packs: []` — while the jail is wired to it " +
-			"only when the loophole is Active (OQ-A11)")
-	}
-	if !strings.Contains(src, "o.brokerEnsure()") {
-		t.Error("run.go no longer ensures the host-wide broker singleton on the launch path. " +
-			"⚠ THE REASON IT RUNS THIS EARLY IS SPENT: it ran before assembleRunCmd because " +
-			"brokerEndpointIsUnpublishable read the singleton socket to decide whether the " +
-			"argv could promise the jail an endpoint, and that arm was deleted 2026-09-20 " +
-			"(OQ-2: a nested jail runs its own broker). Nothing on the argv path reads the " +
-			"socket now, so what this still holds is the ENSURE, not its position")
-	}
-	// The services DIR is not this gate's business at all any more. It used to be created
-	// on both arms here, and this test counted the two calls so that nobody folded the
-	// creation into the broker gate. The creation moved to startLoopholesMatching, which
-	// makes it on every launch, broker or not, and nowhere else may
-	// (TestOnlyTheSpawnCreatesTheHostServicesDir): a creation up here leaked an empty dir
-	// on every refusal between this line and the spawn.
-	if strings.Contains(src, "mkdirHostServicesDir(") {
-		t.Error("run.go creates the host-services dir again. The spawn (startLoopholesMatching) " +
-			"creates it on every launch; a second, earlier creation leaves an empty " +
-			"/tmp/yolo-host-services-<8hex> behind every refusal that lands before the spawn")
-	}
-	// AND NOTHING SPAWNS A RELAY. The deletion is asserted rather than assumed: a
-	// resurrected per-jail relay would splice the same endpoint file the front now
-	// publishes, and the loser of that race is the jail's credential path.
-	if strings.Contains(src, "ensureBrokerRelay") || strings.Contains(src, "relayReapOrphans") {
-		t.Error("run.go references the per-jail broker relay, which is deleted " +
-			"(docs/design/broker-as-a-pack.md §7)")
-	}
-}
-
 // The predicate itself, in the direction that used to be unreachable: a DISABLED
-// broker loophole answers false, so the gate above suppresses the spawn.
+// broker loophole answers false, so nothing wires the jail to it (the credential view's gate,
+// and the assembler's endpoint emission, read the same list).
 //
 // Driven through the same fixture the env-emission tests use, so the record this reads
 // is built the way discovery builds one rather than by hand.

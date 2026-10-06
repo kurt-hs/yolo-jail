@@ -49,6 +49,10 @@ func (setsVarManagedLaunch) Argv(argv []string) ([]string, []string) { return ar
 
 func (setsVarManagedLaunch) NotServed(string) string { return "" }
 
+func (setsVarManagedLaunch) HostSocket() string { return "" }
+
+func (setsVarManagedLaunch) Close() {}
+
 func (setsVarManagedLaunch) Run(string, []string, []string, io.Reader, io.Writer, io.Writer) (int, bool) {
 	return 23, true
 }

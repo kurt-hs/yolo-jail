@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 )
 
 // THE DETACH DISPOSITION, through the real Main (docs/design/host-daemon-ownership.md §1.3,
@@ -93,5 +96,66 @@ func TestASIGTERMedDaemonFinishesTheRefreshInFlight(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "rt-after") {
 		t.Errorf("the refresh in flight at the SIGTERM wrote nothing: %s still holds the old grant", statePath)
+	}
+}
+
+// A JAIL-LESS LAUNCH'S OWN DAEMON ENDS WITH THE LAUNCH (HD-R1; openaiauthhost's startPrivate):
+// with --end-with-pid, Main exits once that process is gone, a launch that exec'd its agent in
+// its own place included, and removes the two sockets that were that launch's alone. Delete the
+// WatchProcess call in Main and it serves on past the deadline.
+func TestADaemonEndingWithItsLaunchExitsAndRemovesItsSockets(t *testing.T) {
+	prev := hostservice.ProcessPollInterval
+	hostservice.ProcessPollInterval = 20 * time.Millisecond
+	t.Cleanup(func() { hostservice.ProcessPollInterval = prev })
+
+	launch := exec.Command("sleep", "30")
+	if err := launch.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = launch.Process.Kill() })
+	exited := make(chan struct{})
+	go func() { _ = launch.Wait(); close(exited) }()
+
+	sock := filepath.Join(shortSocketDir(t), "fronted.sock")
+	statePath := filepath.Join(t.TempDir(), "state", "openai-auth-broker", "credentials.json")
+	rc := make(chan int, 1)
+	go func() {
+		rc <- Main([]string{"--socket", sock, "--state-file", statePath, "--no-background-refresh",
+			"--end-with-pid", strconv.Itoa(launch.Process.Pid)})
+	}()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(HostSocketPath(sock)); err == nil {
+			break
+		}
+		select {
+		case code := <-rc:
+			t.Fatalf("Main returned %d before serving", code)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Main never bound its private socket")
+		}
+	}
+	select {
+	case code := <-rc:
+		t.Fatalf("Main returned %d while the launch it serves was still running", code)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := launch.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	<-exited
+	select {
+	case code := <-rc:
+		if code != 0 {
+			t.Errorf("Main returned %d once its launch was gone, want a clean 0", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Main is still serving 10s after the launch it serves exited")
+	}
+	for _, p := range []string{sock, HostSocketPath(sock)} {
+		if _, err := os.Lstat(p); err == nil {
+			t.Errorf("the daemon left its socket %s behind", p)
+		}
 	}
 }

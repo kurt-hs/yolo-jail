@@ -32,23 +32,15 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// hostWideDaemonsStillSharedOn reports the backends HD-R1 is NOT built on yet, where a record
-// declaring `host_daemon.scope: "host"` still gets the one machine-wide daemon (startHostSingleton).
-// The ruling is built one backend at a time, the two container backends first, then macos-user,
-// and this predicate is the seam between the two halves until the host notch moves and it is
-// deleted with the key.
-//
-// APPLE CONTAINER takes the container arm's keeper like podman, so its jail's own daemons are
-// the keeper's children too. What it starts is unchanged: its allow list (loopholeAllow) admits
-// the OpenAI credential service, and the Claude broker when the launch delivers the credential
-// view, which that jail's own broker now keeps current for as long as the jail runs.
-//
-// MACOS-USER gives each SESSION its own daemons, in the session's own host-services dir and
-// keyed by it (servicessession.go, HD-D1), and serializes two sessions' starts of them with a
-// per-workspace spawn guard (takeHostDaemonSpawnGuard, HD-D4).
-func hostWideDaemonsStillSharedOn(rt string) bool {
-	return rt == hostNotchRuntime // parity: HonoredBy — the host notch still reaches the shared credential state through the machine-wide daemon (startHostSingleton) until HD-R1 is built there
-}
+// EVERY BACKEND, the same way. PODMAN and APPLE CONTAINER take the container arm's keeper, so a
+// jail's own daemons are the keeper's children; what Apple Container starts is unchanged (its
+// allow list, loopholeAllow, admits the OpenAI credential service, and the Claude broker when the
+// launch delivers the credential view, which that jail's own broker keeps current while the jail
+// runs). MACOS-USER and the HOST NOTCH give each SESSION its own, in the session's own
+// host-services dir and keyed by it (servicessession.go, HD-D1), and serialize two sessions'
+// starts of them with a per-workspace spawn guard (takeHostDaemonSpawnGuard, HD-D4). A launch
+// with no jail at all (`yolo host -- pi`, `yolo openai-auth`) spawns the OpenAI daemon it needs
+// itself (internal/openaiauthhost's privatedaemon.go).
 
 // openAIHostSocket is the private host-to-host socket of the OpenAI credential daemon this launch
 // started, which a host-side consumer dials (a doorway outside the sandbox, a launch-owned
@@ -75,7 +67,9 @@ func hostDaemonSpawnGuardPath(cname string) string {
 // starts its host services, and releases once they are up. On that backend two launches of one
 // workspace are one identity (the container name is a hash of the workspace path) and run at
 // once, since nothing attaches; the measured Mac runs credited one broker per pair to the
-// machine-wide spawn flock, so per-session daemons owe that backend a guard of their own.
+// machine-wide spawn flock, so per-session daemons owe that backend a guard of their own. A
+// `yolo host` launch that starts host services for its doorways is a session of the same
+// shape, and takes the same guard (HostDoorways.Start).
 //
 // WHAT IT SERIALIZES is the start, not a daemon's life: the settings file the session's daemons
 // read once at their startup, which a second session of the workspace writes too
@@ -108,13 +102,19 @@ func (o *Options) takeHostDaemonSpawnGuard(cname string) (*workspaceLock, error)
 	return &workspaceLock{f: f}, nil
 }
 
+// hostDaemonSpawnGuardProblem says why a launch could not take the guard, and what to do.
+func hostDaemonSpawnGuardProblem(cname string, err error) string {
+	path := hostDaemonSpawnGuardPath(cname)
+	return fmt.Sprintf("could not take this workspace's host-service spawn lock %s (%v), which "+
+		"keeps two launches of one workspace from starting their host services at the same "+
+		"moment. Make %s a directory you can write, with no directory at the lock's own path, "+
+		"then launch again", path, err, filepath.Dir(path))
+}
+
 // hostDaemonSpawnGuardRefusal is the macos-user launch's refusal when the guard cannot be taken.
 func hostDaemonSpawnGuardRefusal(cname string, err error) string {
-	path := hostDaemonSpawnGuardPath(cname)
-	return fmt.Sprintf("[bold red]Refusing the macos-user launch: could not take this workspace's "+
-		"host-service spawn lock %s (%v), which keeps two launches of one workspace from starting "+
-		"their host services at the same moment. Make %s a directory you can write, then launch "+
-		"again.[/bold red]", path, err, filepath.Dir(path))
+	return "[bold red]Refusing the macos-user launch: " + hostDaemonSpawnGuardProblem(cname, err) +
+		".[/bold red]"
 }
 
 // endpointPromisedAtAssembly reports whether the jail-facing variable of lp's host service is the
