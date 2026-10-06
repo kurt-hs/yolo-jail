@@ -811,7 +811,7 @@ func Run(opts Options) (rc int) {
 		// and a grant it could not deliver refused the launch above (planMacosUserCtxMounts),
 		// so no banner line on this arm describes a read that does not happen beyond what the
 		// container arm's does for an absent source.
-		o.notePackHostAccess(staged.packs, channel)
+		o.notePackHostAccess(staged.packs, channel, nil)
 		o.noteMacosUserHostByteGaps(ctxDelivery)
 		// THE CONTEXT MOUNTS cross inside the host context, and each read-write one is
 		// disclosed at the same point (§2.4), so the backend is never handed one unsaid.
@@ -1011,7 +1011,9 @@ func (o *Options) warnIfNoPacks() {
 // runs are listed (sealKeepsClaim), and the rest are counted in one line naming their packs
 // (sealedWithheldLine). A pack a base `needs` can declare a credential pointer (aws-auth does),
 // and listing its `{caller_token}` for a jail that gets no token was that worse-than-silence.
-func (o *Options) notePackHostAccess(loadedPacks []*packload.Pack, channel *packChannel) {
+// The same line counts miseWithheld, the user's `mise_tools` the build jail was not handed
+// (assembleInput.jailMiseTools, FP-D19); nil on the macos-user arm, which runs no sealed build.
+func (o *Options) notePackHostAccess(loadedPacks []*packload.Pack, channel *packChannel, miseWithheld []string) {
 	served := packload.NothingServed()
 	if channel != nil {
 		served = channel.served
@@ -1030,7 +1032,8 @@ func (o *Options) notePackHostAccess(loadedPacks []*packload.Pack, channel *pack
 	if !o.Sealed {
 		return
 	}
-	if line := sealedWithheldLine(disclosedClaimsWhere(loadedPacks, disclosureRead, served, sealWithholdsClaim)); line != "" {
+	if line := sealedWithheldLine(disclosedClaimsWhere(loadedPacks, disclosureRead, served, sealWithholdsClaim),
+		miseWithheld); line != "" {
 		out.print("[dim]" + richtext.Escape(line) + "[/dim]")
 	}
 }
@@ -1688,6 +1691,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		miseStore:        miseStore,
 		cacheDir:         cacheDir,
 		sealed:           o.Sealed,
+		captureJail:      o.captureJail(),
 		sealedTree:       o.SealedTree,
 		hostTZ:           detectHostTZ(),
 		yoloVersion:      o.yoloVersion(repoRoot),
@@ -1911,7 +1915,8 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	//
 	// The READ half only. Host EXECUTION was disclosed above, before the keeper's spawn, and
 	// deliberately not repeated here.
-	o.notePackHostAccess(loadedPacks, channel)
+	_, miseWithheld := in.jailMiseTools()
+	o.notePackHostAccess(loadedPacks, channel, miseWithheld)
 
 	// And beside it, for the same reason: a WRITABLE bind of the host user's own
 	// cache is host access, so L9's decision is disclosed at every launch that
