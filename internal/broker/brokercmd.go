@@ -8,7 +8,9 @@
 //
 //   - status reports every copy, and exits non-zero when one does not accept;
 //   - stop ends every copy of a name, waiting out a request in flight (the daemon's own upstream
-//     deadline) before it kills, and names what the jails it served must do next;
+//     deadline) before it kills, and names what the jails it served must do next; with
+//     --host-wide it ends only the machine-wide copy an older yolo left (StopHostWide), the
+//     upgrade's last step, which runs after the jails are relaunched with their own;
 //   - restart restarts nothing: a jail's daemon restarts with the jail (§6, mode 2), so it says
 //     how to relaunch, and that stop is there for the copies running now;
 //   - logs tails the one log every copy appends to.
@@ -153,7 +155,7 @@ func PrintStatus(deps CLIDeps, name string) int {
 				pidList(i.PIDs), i.Socket, mark)
 			out.printf("    [dim]It serves only the jails that yolo launched, and no launch of this "+
 				"yolo uses it: relaunch those jails with this yolo, which gives each its own, then "+
-				"`yolo %s stop %s`.[/dim]", HostDaemonVerb, i.Name)
+				"`%s`, which leaves every jail's own copy running.[/dim]", StopHostWideCommand(i.Name))
 			continue
 		}
 		out.printf("  jail %s: pid %s, socket %s, %s", i.Jail, pidList(i.PIDs), i.Socket, mark)
@@ -273,6 +275,41 @@ func Stop(deps CLIDeps, name string) int {
 	if !stopped {
 		out.printf("[dim]No %s is running on this machine.[/dim]", name)
 	}
+	return 0
+}
+
+// HostWideFlag is stop's flag for acting on an older yolo's host-wide copy alone.
+const HostWideFlag = "--host-wide"
+
+// StopHostWideCommand is the upgrade's last step for name, as status, `yolo check` and the
+// changelog spell it: stop the host-wide copy an older yolo left, and nothing else.
+func StopHostWideCommand(name string) string {
+	return "yolo " + HostDaemonVerb + " stop " + HostWideFlag + " " + name
+}
+
+// StopHostWide ends the machine-wide copy of name an older yolo left, and NOTHING ELSE: no jail's
+// own copy and no straggler. It is the upgrade's last step, which the user runs after relaunching
+// the jails that copy served (HD-D14); by then each of those jails runs its own copy, and
+// Stop, which ends every copy, would cut off the very jails it had just been told to relaunch.
+// Always exits 0, like Stop.
+func StopHostWide(deps CLIDeps, name string) int {
+	out := newPrinter(deps)
+	hostWide := false
+	for _, i := range deps.Running(name) {
+		if i.HostWide {
+			hostWide = true
+		}
+	}
+	if hostWide && deps.StopHostWide(name) {
+		out.printf("[green]Stopped the host-wide %s an older yolo left.[/green]", name)
+		out.print("  Every jail's own copy is still running. A jail that older yolo launched and " +
+			"that is still running loses it: leave that jail and launch it again with this yolo, " +
+			"which gives it its own.")
+		return 0
+	}
+	out.printf("[dim]No host-wide %s an older yolo left is running on this machine; every "+
+		"jail's own copy is untouched.[/dim]", name)
+	out.printf("  [dim]`yolo %s status %s` lists the copies running now.[/dim]", HostDaemonVerb, name)
 	return 0
 }
 

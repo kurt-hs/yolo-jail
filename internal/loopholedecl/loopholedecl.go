@@ -172,8 +172,9 @@ type HostDaemon struct {
 	// Scope is who the daemon belongs to, and it has one value left: ScopeJail, one
 	// per jail, spawned with it and stopped when it ends. Always ScopeJail after a
 	// successful decode. The retired "host" (one daemon per HOST, ensured, fronted per
-	// jail, never stopped by a jail's end) is refused at load with its migration
-	// (retiredScopeHint; docs/design/host-daemon-ownership.md, HD-R1). Nothing reads
+	// jail, never stopped by a jail's end) is refused by the strict decoder with its
+	// migration (retiredScopeHint; docs/design/host-daemon-ownership.md, HD-R1), and read
+	// as ScopeJail, with a skew note, by the tolerant one (readRetiredScopeAsJail). Nothing reads
 	// the field to decide anything any more; it survives so a manifest that spells
 	// the default decodes, and so the record says what it was told.
 	Scope string
@@ -488,11 +489,46 @@ func decode(data []byte, dir string, strict bool) (*Manifest, []string, error) {
 		return nil, nil, Errorf("%s: manifest must be a JSON object", manifestPath)
 	}
 
+	var notes []string
+	if !strict {
+		if note := readRetiredScopeAsJail(data0, manifestPath); note != "" {
+			notes = append(notes, note)
+		}
+	}
 	m, err := walk(data0, manifestPath, filepath.Base(dir))
 	if err != nil {
 		return nil, nil, err
 	}
-	return m, unknownKeyNotes(data0, manifestPath, strict), nil
+	return m, append(notes, unknownKeyNotes(data0, manifestPath, strict)...), nil
+}
+
+// readRetiredScopeAsJail is the TOLERANT read of the retired `host_daemon.scope: "host"`: it
+// rewrites the value to ScopeJail in data (decode's own freshly decoded copy) and returns the
+// skew note saying so, or "" when the manifest does not declare it. The strict decoder never
+// calls it, so authoring (`yolo pack lint`) still refuses the value in parseHostDaemon.
+//
+// WHY THE VERSION BOUNDARY READS IT. Every jail an older yolo launched booted shipped manifests
+// declaring it, and an attach to that jail reads the jail's own frozen pack tree for every
+// host-side reader. Refused there, the jail's credential loopholes vanished from the records its
+// briefing is refreshed from, and the warning told the user to edit a shipped manifest inside a
+// running jail's tree. Unlike a retired top-level key (walk's `enabled` refusal), reading this
+// one as the new default keeps what the manifest asked for — a host daemon its jail can reach —
+// and changes only the daemon's lifetime, which HD-R1 ruled is the same for every daemon.
+func readRetiredScopeAsJail(data *jsonx.OrderedMap, manifestPath string) string {
+	hd, ok := getOrNil(data, keyHostDaemon).(*jsonx.OrderedMap)
+	if !ok {
+		return ""
+	}
+	if sv, ok := hd.Get(keyScope); !ok || Str(sv) != RetiredScopeHost {
+		return ""
+	}
+	hd.Set(keyScope, ScopeJail)
+	return fmt.Sprintf("%s: 'host_daemon.scope' = %s was retired (docs/design/host-daemon-ownership.md, "+
+		"HD-R1) and is read as one per jail, which every host daemon now is. In a jail launched "+
+		"by an older yolo this is its shipped manifest, and relaunching that jail with this yolo "+
+		"replaces it. In a manifest of yours, Delete 'scope' (`yolo pack lint` refuses it), and "+
+		"declare 'detach': true if the daemon's work in flight must finish when its jail ends.",
+		manifestPath, pytext.Repr(RetiredScopeHost))
 }
 
 // walk validates and lowers the decoded object. Every check here is STATIC: type
@@ -1051,8 +1087,9 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 		scope = Str(sv)
 	}
 	// 'host' is RETIRED, and refused with the migration rather than as an unknown value: the
-	// reader wrote what the docs told them to, and the refusal makes the loophole vanish
-	// (retiredTransportHint's argument, one key over).
+	// reader wrote what the docs told them to (retiredTransportHint's argument, one key over).
+	// Only the STRICT decoder gets here with it: the tolerant one has already read it as
+	// ScopeJail (readRetiredScopeAsJail), so a jail an older yolo launched keeps its loopholes.
 	if scope == RetiredScopeHost {
 		return nil, Errorf("%s: 'host_daemon.scope' = %s is no longer a value%s",
 			manifestPath, pytext.Repr(scope), retiredScopeHint())

@@ -117,7 +117,7 @@ func TestCheckWarnsOfAnOlderYolosHostWideBroker(t *testing.T) {
 		t.Errorf("a host-wide broker an older yolo left is not a warning:\n%s", out)
 	}
 	for _, want := range []string{"a host-wide daemon an older yolo left is running",
-		"Relaunch those jails with this yolo", "yolo host-daemon stop " + brokerLoopholeName} {
+		"Relaunch those jails with this yolo", "yolo host-daemon stop --host-wide " + brokerLoopholeName} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the row lacks %q:\n%s", want, out)
 		}

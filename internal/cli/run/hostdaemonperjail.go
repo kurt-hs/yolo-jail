@@ -131,8 +131,16 @@ func hostDaemonSpawnGuardRefusal(cname string, err error) string {
 // that runs without it. Whether the promise should cover more daemons, or be its own manifest
 // fact, is a ruling about argv assembly the design leaves open
 // (docs/design/host-daemon-ownership.md §9, and HD-D8 there).
+//
+// AND ONLY ON LOOPBACK-TLS. `detach` is a key any manifest may declare, and it says how a jail's
+// end stops the daemon, not how the jail reaches it. The promised variable names the endpoint file
+// at hostServiceEndpointPath, which only a loopback-tls service gets (startExternalService); a
+// detaching daemon on `transport: "none"` binds a plain socket and keeps its own `_SOCKET`
+// variable, so promising it an endpoint would hand its jail a file that never appears, which the
+// reachability witness refuses the launch over, and blank the variable it really needs.
 func endpointPromisedAtAssembly(lp *loopholes.Loophole) bool {
-	return lp != nil && lp.HostDaemon != nil && lp.HostDaemon.Detach
+	return lp != nil && lp.HostDaemon != nil && lp.HostDaemon.Detach &&
+		lp.Transport == loopholes.TransportLoopbackTLS
 }
 
 // detachService is a jail's end for a daemon whose manifest declares `detach`: SIGTERM to the

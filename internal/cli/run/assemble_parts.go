@@ -495,9 +495,9 @@ func (o *Options) fwdSocketDir(cname string) string {
 // jail: the reachability witness walks YOLO_SERVICE_*_ENDPOINT, and the fault was that
 // no such variable existed for it to walk. A third name would have been the same defect
 // with a longer fuse. What the two branches actually computed — ACTIVE and MAY-RUN-HOST-
-// CODE — is a predicate, and promisedEndpoints applies it to every record declaring
-// `host_daemon.detach: true` (endpointPromisedAtAssembly says why that key, since HD-R1
-// retired `scope: "host"`). `rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc` is
+// CODE — is a predicate, and promisedEndpoints applies it to every loopback-tls record
+// declaring `host_daemon.detach: true` (endpointPromisedAtAssembly says why that key, since
+// HD-R1 retired `scope: "host"`, and why loopback-tls). `rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc` is
 // the whole census; nothing here counts it or spells it.
 //
 // THE ENV IS GATED ON THE LOOPHOLE BEING ACTIVE, not on a daemon's socket existing at

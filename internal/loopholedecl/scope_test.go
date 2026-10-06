@@ -115,3 +115,31 @@ func TestValidScopesIsTheClosedSet(t *testing.T) {
 		t.Error("ValidScopes() hands out the package's own slice")
 	}
 }
+
+// THE VERSION BOUNDARY READS THE RETIRED VALUE, the authoring decoder still refuses it. Every
+// jail an older yolo launched booted shipped manifests declaring `scope: "host"`, and an attach
+// to one reads that jail's own frozen tree: refusing the value there made the jail's credential
+// loopholes vanish from the host-side records and told the user to edit a shipped manifest in a
+// running jail's tree. Read tolerantly, the value means what every daemon now is — one per jail
+// — and a skew note says so, naming both next steps.
+func TestTheTolerantDecoderReadsTheRetiredHostScopeAsPerJail(t *testing.T) {
+	m, skipped, err := loopholedecl.DecodeTolerant(
+		manifestBytes(t, scopedManifest(map[string]any{"scope": loopholedecl.RetiredScopeHost})),
+		"/loopholes/scoped")
+	if err != nil || m == nil {
+		t.Fatalf("the tolerant decode refused the retired scope=\"host\": %v", err)
+	}
+	if m.HostDaemon.Scope != loopholedecl.ScopeJail {
+		t.Errorf("Scope = %q, want it read as %q", m.HostDaemon.Scope, loopholedecl.ScopeJail)
+	}
+	note := strings.Join(skipped, "\n")
+	for _, want := range []string{"host_daemon.scope", "retired", "one per jail", "Delete 'scope'",
+		"launched by an older yolo"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the skew note lacks %q: %q", want, note)
+		}
+	}
+	if _, err := decodeMap(t, "scoped", scopedManifest(map[string]any{"scope": loopholedecl.RetiredScopeHost})); err == nil {
+		t.Error("the strict (authoring) decoder now accepts scope=\"host\"; it must still refuse it")
+	}
+}
