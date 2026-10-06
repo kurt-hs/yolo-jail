@@ -90,9 +90,22 @@ func Main(argv []string) int {
 		fmt.Fprintln(os.Stderr, "yolo-openai-auth-host: watch the state directory:", err)
 		return 1
 	}
-	if !*noBackground {
-		go runProactive(broker, *refreshInterval, stop)
+	// THE EXIT WAITS FOR A REFRESH IN FLIGHT, the proactive one included. A jail's end
+	// SIGTERMs this daemon and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3), so the daemon itself is what lets a refresh
+	// that has already redeemed the refresh token upstream write its replacement before the
+	// process goes. Its bound is the upstream request's own deadline. Serving stops first,
+	// and serveSockets already waits for every handler it accepted.
+	background := make(chan struct{})
+	if *noBackground {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			runProactive(broker, *refreshInterval, stop)
+		}()
 	}
+	defer func() { shutdown(); <-background }()
 	handlerConfig := HandlerConfig{
 		Broker: broker, Upstream: upstream, AuthorizeURL: *authorizeURL,
 		LoginTimeout: *loginTimeout,

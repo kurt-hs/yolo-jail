@@ -89,6 +89,18 @@ func (m *mintTracker) begin(broker awsauth.Broker, caller string) *mintAttempt {
 	return a
 }
 
+// settle waits for the mint in flight, if there is one: the one a launch check began and stopped
+// waiting for keeps running past its handler, and the daemon's exit waits for it so its cache
+// write lands (Main). Bounded by the minter's own timeout.
+func (m *mintTracker) settle() {
+	m.mu.Lock()
+	a := m.inflight
+	m.mu.Unlock()
+	if a != nil {
+		<-a.done
+	}
+}
+
 // previous is the last mint to finish, nil before any has.
 func (m *mintTracker) previous() *mintAttempt {
 	m.mu.Lock()

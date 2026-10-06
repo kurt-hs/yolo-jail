@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"os"
@@ -41,18 +42,26 @@ import (
 const launchCheckFixtureName = "yjtest-launchcheck"
 
 // launchCheckPack is a pack shipping one host-wide loophole that declares the launch check
-// and a jail daemon, the shape of aws-auth's manifest. Its host argv never runs: the daemon
-// is already up (serveLaunchCheckDaemon), so the launch ensures it rather than spawning.
+// and a jail daemon, the shape of aws-auth's manifest. Where the machine-wide daemon is still
+// ensured its host argv never runs: the daemon is already up (serveLaunchCheckDaemon). Where
+// HD-R1 is built (hostWideDaemonsStillSharedOn) the launch spawns that argv as the jail's own
+// daemon, a relay to the handler serveLaunchCheckDaemon serves (spliceChildMain), so the words
+// asserted are still the real handler's.
 func launchCheckPack(t *testing.T) *packload.Pack {
 	t.Helper()
+	cmd, err := json.Marshal([]string{os.Args[0], "-splice-child", "{socket}",
+		paths.HostSingletonSocket(launchCheckFixtureName)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return writeRealLoopholePack(t, "yjtest-launchcheck-pack", launchCheckFixtureName, `{
 		"name": "`+launchCheckFixtureName+`",
 		"description": "a host service that answers the launch check",
 		"default_enabled": true,
 		"transport": "loopback-tls",
 		"lifecycle": "spawned",
-		"host_daemon": {"cmd": ["/bin/false", "{socket}"], "publishes": "socket",
-			"scope": "host", "launch_check": true},
+		"host_daemon": {"cmd": `+string(cmd)+`, "publishes": "socket",
+			"scope": "host", "launch_check": true, "detach": true},
 		"jail_daemon": {"cmd": ["yolo-jaild", "fixture-adapter"]}
 	}`)
 }
@@ -295,7 +304,9 @@ func TestAHostWideDaemonOlderThanTheLaunchCheckIsNamedWithItsRestart(t *testing.
 		s.Stderr("unknown action: launch-check\n")
 		s.Exit(2)
 	})
-	got := launchWithCheckedService(t, "podman", servedPayload())
+	// On a backend that still ensures the machine-wide daemon (hostWideDaemonsStillSharedOn):
+	// where HD-R1 is built the launch spawns the jail's own, which cannot predate it.
+	got := launchWithCheckedService(t, "macos-user", servedPayload())
 	var line string
 	for _, l := range strings.Split(got, "\n") {
 		if strings.Contains(l, "loophole "+launchCheckFixtureName+": ") {

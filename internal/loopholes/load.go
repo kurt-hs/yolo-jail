@@ -255,6 +255,7 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 			Preamble:    m.HostDaemon.Preamble,
 			Scope:       m.HostDaemon.Scope,
 			LaunchCheck: m.HostDaemon.LaunchCheck,
+			Detach:      m.HostDaemon.Detach,
 		}
 	}
 

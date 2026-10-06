@@ -366,7 +366,7 @@ func TestBrokerLifecycleIsGatedOnTheLoopholeRecord(t *testing.T) {
 	}
 	src := string(body)
 	// The LAUNCH path: the ensure sits behind the gate.
-	if !strings.Contains(src, `rt != "container" && brokerLoopholeActive(cfg)`) {
+	if !strings.Contains(src, `hostWideDaemonsStillSharedOn(rt) && brokerLoopholeActive(cfg)`) {
 		t.Error("the launch path no longer gates the broker singleton on " +
 			"brokerLoopholeActive(cfg). Ungated, yolo spawns a host daemon on every launch " +
 			"for every user — including one with `packs: []` — while the jail is wired to it " +

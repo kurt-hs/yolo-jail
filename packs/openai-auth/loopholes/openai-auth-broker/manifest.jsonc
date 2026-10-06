@@ -20,7 +20,10 @@
       "--state-file", "{state}/credentials.json"
     ],
     "publishes": "socket",
-    "scope": "host"
+    "scope": "host",
+    // A jail's end SIGTERMs this daemon and leaves it to finish a refresh in flight,
+    // which writes the shared state file (docs/design/host-daemon-ownership.md §1.3).
+    "detach": true
   },
 
   // Codex can override only its refresh URL, not the transport used to reach a

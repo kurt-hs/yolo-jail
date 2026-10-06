@@ -195,6 +195,20 @@ type HostDaemon struct {
 	// declares it, so a launch says when its SSO session cannot mint
 	// (docs/design/sso-backed-bedrock.md SSO-D1).
 	LaunchCheck bool
+	// Detach is `detach`: how the jail's end stops this daemon. DEFAULTS TO FALSE, which is
+	// every daemon's teardown since loopholes existed: SIGTERM to its process group, a grace,
+	// then SIGKILL. True says the daemon's in-flight work has an upstream side effect worth
+	// completing, so yolo closes the jail's front, sends the daemon alone SIGTERM, and neither
+	// waits for it nor kills it. A request already in flight finishes and writes what it was
+	// going to write, and the daemon then exits on its own. The term is
+	// docs/design/host-daemon-ownership.md's DETACHED STRAGGLER (§1.3, "detach, do not drain,
+	// do not reap"), ruled with HD-R1 for the credential daemons that used to be one per host:
+	// a token refresh cut mid-flight can have redeemed a single-use refresh token upstream and
+	// lost its replacement. A daemon that declares it must exit on SIGTERM once its in-flight
+	// work is done, and its own upstream deadline is the only bound on that: nothing in yolo
+	// waits for it, hunts it or reaps it. The SIGTERM reaches only the daemon, not its group,
+	// so a child it runs for that work (aws-auth's `aws` CLI) finishes too.
+	Detach bool
 }
 
 // HostBindMount is one host path made visible in the container. Readonly
@@ -1027,6 +1041,17 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 			"the launch check is one framed request", manifestPath,
 			pytext.Repr(RequestEndFramed), pytext.Repr(requestEnd))
 	}
+	// TYPE-CHECKED for `launch_check`'s reason: Truthy("false") is true, and a quoted
+	// "false" would leave a daemon running past its jail that nothing ever reaps.
+	detach := false
+	if dv, ok := m.Get(keyDetach); ok {
+		b, isBool := dv.(bool)
+		if !isBool {
+			return nil, Errorf("%s: 'host_daemon.detach' must be a boolean (got %s)",
+				manifestPath, pytext.Repr(Str(dv)))
+		}
+		detach = b
+	}
 	scope := ScopeJail
 	if sv, ok := m.Get(keyScope); ok {
 		scope = Str(sv)
@@ -1074,7 +1099,7 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 	}
 	return &HostDaemon{
 		Cmd: cmd, Env: env, Publishes: publishes, RequestEnd: requestEnd,
-		Preamble: preamble, Scope: scope, LaunchCheck: launchCheck,
+		Preamble: preamble, Scope: scope, LaunchCheck: launchCheck, Detach: detach,
 	}, nil
 }
 
