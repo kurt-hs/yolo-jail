@@ -292,35 +292,43 @@ func TestADaemonThatCannotAnswerIsSaidSo(t *testing.T) {
 	}
 }
 
-// TestAHostWideDaemonOlderThanTheLaunchCheckIsNamedWithItsRestart: nothing restarts a host-wide
-// daemon when yolo is upgraded, so after an upgrade the one a previous yolo started keeps
-// running, answers `unknown action: launch-check` (its handler's default case) and exits 2.
-// That is the upgraded user the check exists for, and a generic "could not ask" would leave
-// every warning off with no way out named: the launch says the daemon predates this yolo and
-// names the command that restarts it, as the preamble warning beside it does.
-func TestAHostWideDaemonOlderThanTheLaunchCheckIsNamedWithItsRestart(t *testing.T) {
-	launchCheckIsolation(t)
-	serveLaunchCheckDaemon(t, func(s *hostservice.Session) {
-		s.Stderr("unknown action: launch-check\n")
-		s.Exit(2)
-	})
-	// On a backend that still ensures the machine-wide daemon (hostWideDaemonsStillSharedOn):
-	// where HD-R1 is built the launch spawns the jail's own, which cannot predate it.
-	got := launchWithCheckedService(t, "macos-user", servedPayload())
-	var line string
-	for _, l := range strings.Split(got, "\n") {
-		if strings.Contains(l, "loophole "+launchCheckFixtureName+": ") {
-			if line != "" {
-				t.Fatalf("the launch printed more than one launch-check line:\n%s", got)
+// TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart: the case OQ-HD11 ruled on,
+// a host-wide daemon an earlier yolo started that answers `unknown action: launch-check`, is
+// not one a fresh launch can meet under HD-R1 (docs/design/host-daemon-ownership.md): every
+// jail backend spawns the jail's own daemon, so the daemon asked is this launch's build. One
+// that still answers that way has a manifest declaring a check its daemon lacks, and the line
+// says so in the daemon's words, naming no restart and no older yolo. Mark the per-jail spawn's
+// handle host-wide again (markLaunchCheck) and the line names a restart that fixes nothing.
+func TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart(t *testing.T) {
+	for _, rt := range []string{"podman", "macos-user"} {
+		t.Run(rt, func(t *testing.T) {
+			launchCheckIsolation(t)
+			serveLaunchCheckDaemon(t, func(s *hostservice.Session) {
+				s.Stderr("unknown action: launch-check\n")
+				s.Exit(2)
+			})
+			got := launchWithCheckedService(t, rt, servedPayload())
+			var line string
+			for _, l := range strings.Split(got, "\n") {
+				if strings.Contains(l, "loophole "+launchCheckFixtureName+": ") {
+					if line != "" {
+						t.Fatalf("the launch printed more than one launch-check line:\n%s", got)
+					}
+					line = l
+				}
 			}
-			line = l
-		}
-	}
-	for _, want := range []string{"predates this yolo", "does not answer the launch check",
-		broker.CycleCommand(launchCheckFixtureName)} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the launch-check line does not say %q:\n%s", want, got)
-		}
+			for _, want := range []string{"does not answer the launch check its manifest declares",
+				"unknown action: launch-check"} {
+				if !strings.Contains(line, want) {
+					t.Errorf("the launch-check line does not say %q:\n%s", want, got)
+				}
+			}
+			for _, not := range []string{"predates this yolo", broker.CycleCommand(launchCheckFixtureName)} {
+				if strings.Contains(line, not) {
+					t.Errorf("the launch-check line says %q of a daemon this launch started:\n%s", not, got)
+				}
+			}
+		})
 	}
 }
 

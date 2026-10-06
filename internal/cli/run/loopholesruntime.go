@@ -40,6 +40,10 @@ type loopholeDaemon struct {
 	launchCheck   bool
 	hasJailDaemon bool
 	hostWide      bool
+	// upstream is the host-only AF_UNIX socket a fronted daemon binds behind the front, "" for
+	// any other service. A host-side consumer of the daemon's own private socket beside it (the
+	// OpenAI credential service's, openAIHostSocket) finds it from here.
+	upstream string
 	// end is how the keeper sees this service go, by its own fault or by its stop, and log the file
 	// the service writes, which the keeper's record of an end it did not cause names
 	// (keeperwatch.go, JL-D19). A zero end watches nothing; log is "" for none.
@@ -1154,6 +1158,7 @@ func (o *Options) startHostSingleton(
 		name:     name,
 		hostPath: hostPath,
 		jailPath: hostServiceEndpointPath(name),
+		upstream: daemonPath,
 		// THE FRONT'S END, and only the front's: the daemon behind it is the machine's, serving
 		// other jails, and no keeper's child, so a keeper watches only the half it runs.
 		end: frontEnd(frontDone, frontFailed),
@@ -1466,7 +1471,7 @@ func (o *Options) startExternalService(
 			removeSocketSiblings(daemonPath)
 		}
 	}
-	return loopholeDaemon{
+	h := loopholeDaemon{
 		name:       name,
 		hostPath:   hostPath,
 		jailPath:   jailPath,
@@ -1474,7 +1479,11 @@ func (o *Options) startExternalService(
 		stop:       stop,
 		end:        end,
 		log:        serviceLog,
-	}, true
+	}
+	if fronted {
+		h.upstream = daemonPath
+	}
+	return h, true
 }
 
 // --- the broker singleton, ensured before the argv is built ---

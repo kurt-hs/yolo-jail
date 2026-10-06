@@ -19,6 +19,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauth"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -419,5 +420,76 @@ func TestOnAppleContainerTheOpenAIServiceRunsAsTheJailsOwnDaemon(t *testing.T) {
 		if fileExists(p) {
 			t.Errorf("the Apple Container launch touched the machine-wide rendezvous %s", p)
 		}
+	}
+}
+
+// HD-D4'S PER-WORKSPACE SPAWN GUARD, THROUGH THE ARM: a macos-user launch whose workspace's guard
+// is held, as another session of the workspace holds it while its daemons start, waits for it,
+// says so, and starts its own host services only once it is free. Delete the guard's take from
+// the macos-user arm and the launch runs straight through.
+func TestTheMacosUserArmWaitsForTheWorkspacesSpawnGuard(t *testing.T) {
+	o, _, seen := codexNativeLaunch(t)
+	observeDoorways(t)
+	var stderr syncBuffer
+	o.Stderr = &stderr
+	cname := yoloruntime.FromWorkspace(o.Workspace)
+	held, err := o.takeHostDaemonSpawnGuard(cname)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	defer func() {
+		if !released {
+			held.Close()
+		}
+	}()
+	rc := make(chan int, 1)
+	go func() { rc <- Run(*o) }()
+	if !waitFor(30*time.Second, func() bool {
+		return strings.Contains(stderr.String(), "Waiting for another launch of this workspace to start its host services")
+	}) {
+		held.Close()
+		released = true
+		<-rc
+		t.Fatalf("the launch never waited for the held spawn guard:\n%s", stderr.String())
+	}
+	select {
+	case code := <-rc:
+		t.Fatalf("the launch returned %d while the workspace's spawn guard was held:\n%s", code, stderr.String())
+	case <-time.After(300 * time.Millisecond):
+	}
+	held.Close()
+	released = true
+	select {
+	case code := <-rc:
+		if code != 0 || !seen.reached {
+			t.Fatalf("Run() = %d (reached the command: %v) once the guard was free:\n%s",
+				code, seen.reached, stderr.String())
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("the launch did not finish within 60s of the guard's release")
+	}
+}
+
+// A GUARD IT CANNOT TAKE REFUSES THE LAUNCH, before any host service starts, naming the lock and
+// what to do: the guard is a real one, unlike the courtesy launch lock, which warns and goes on.
+// A directory where the lock file goes makes the open fail.
+func TestTheMacosUserArmRefusesWhenItCannotTakeTheSpawnGuard(t *testing.T) {
+	o, stderr, seen := codexNativeLaunch(t)
+	doors := observeDoorways(t)
+	path := hostDaemonSpawnGuardPath(yoloruntime.FromWorkspace(o.Workspace))
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if rc := Run(*o); rc != 1 || seen.reached {
+		t.Fatalf("Run() = %d (reached the command: %v), want the launch refused\n%s", rc, seen.reached, stderr.String())
+	}
+	for _, want := range []string{"Refusing the macos-user launch", path, "then launch again"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, stderr.String())
+		}
+	}
+	if len(doors.plans) != 0 {
+		t.Errorf("the refused launch opened %d doorways", len(doors.plans))
 	}
 }

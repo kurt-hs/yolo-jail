@@ -557,12 +557,23 @@ func Run(opts Options) (rc int) {
 			// (servicessession.go). Two sessions of one workspace used to share the dir the
 			// workspace's cname selects, and this deferred teardown, which takes no container
 			// guard, removed it under the other session (OQ-HD10's second run, measured).
+			//
+			// EACH SESSION STARTS ITS OWN HOST DAEMONS (HD-R1, hostdaemonperjail.go), under the
+			// per-workspace spawn guard HD-D4 owes this backend: two sessions of one workspace
+			// are one identity here and start at once, so one waits while the other's
+			// daemons come up. A guard it cannot take refuses the launch, naming the fix.
+			guard, gerr := o.takeHostDaemonSpawnGuard(cname)
+			if gerr != nil {
+				o.pr(o.Stderr).print(hostDaemonSpawnGuardRefusal(cname, gerr))
+				return 1
+			}
 			handles := o.startLoopholesDisclosed(cname, rt, cfg, staged.packs, jailDaemons)
+			guard.Close()
 			defer o.endServicesSession(handles)
 			// THE CREDENTIAL VIEW, opt-in until a Mac measures it (CL-D11): the
-			// workspace's view registered and written now that the broker singleton is up, and
-			// the resolved switch handed to the bootstrap, which then does not link the shared
-			// file.
+			// workspace's view registered and written now that the session's own broker is up,
+			// and the resolved switch handed to the bootstrap, which then does not link the
+			// shared file.
 			o.registerClaudeCredentialView(rt, cname, cfg)
 			if o.claudeCredentialView(rt, cfg) {
 				launchEnv.Set(claudeview.SwitchEnv, claudeview.ResolvedValue(true))
@@ -584,10 +595,13 @@ func Run(opts Options) (rc int) {
 				o.pr(o.Stderr).print(openAIServiceRefusal())
 				return 1
 			}
+			// THE SESSION'S OWN OpenAI DAEMON's private socket, for the doorways and the
+			// launch-owned services below, which reach it host to host.
+			openAISocket := openAIHostSocket(handles)
 			// THE DOORWAYS (macosuserdoorways.go), once the host services they forward to are up
 			// and their endpoint files are on launchEnv, and stopped when the command returns. One
 			// that does not start refuses the launch before the command runs.
-			stopDoorways, err := o.startMacosUserDoorways(doorways, launchEnv)
+			stopDoorways, err := o.startMacosUserDoorways(doorways, launchEnv, openAISocket)
 			if err != nil {
 				o.pr(o.Stderr).printf("[bold red]Refusing the macos-user launch: %s[/bold red]", err.Error())
 				return 1
@@ -597,7 +611,7 @@ func Run(opts Options) (rc int) {
 			// service a profiled agent's pairing needs, started after the credential service
 			// it may ask for a view, and stopped when the sandboxed command exits. One that does
 			// not start refuses the launch before the command runs.
-			stopServices, err := o.startMacosUserServices(channel)
+			stopServices, err := o.startMacosUserServices(channel, openAISocket)
 			if err != nil {
 				o.pr(o.Stderr).printf("[bold red]Refusing the macos-user launch: %s[/bold red]", err.Error())
 				return 1

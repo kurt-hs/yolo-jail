@@ -40,7 +40,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -95,8 +94,15 @@ func (o *Options) planMacosUserDoorways(rt string, specs []loopholes.JailDaemonS
 // this session published (the front the guest's copy would have dialed, which is how aws-auth's
 // adapter forwards) and the OpenAI service's private socket (HS-D3's route, which the Codex
 // adapter `yolo host -- codex` serves takes). The caller token is added by launchservice.Start.
-func doorwayInput(launchEnv *jsonx.OrderedMap) map[string]string {
-	env := map[string]string{openauthclient.HostSocketEnv: openaiauthhost.HostSocketPath()}
+//
+// THE PRIVATE SOCKET IS THIS SESSION'S OWN DAEMON'S (openAIHostSocket), never a machine-wide
+// one: under HD-R1 each session runs its own (hostdaemonperjail.go). hostSocket is "" when the
+// session started none, and then the variable is not set rather than naming another launch's.
+func doorwayInput(launchEnv *jsonx.OrderedMap, hostSocket string) map[string]string {
+	env := map[string]string{}
+	if hostSocket != "" {
+		env[openauthclient.HostSocketEnv] = hostSocket
+	}
 	if launchEnv != nil {
 		for _, k := range launchEnv.Keys() {
 			if isServiceEndpointEnv(k) {
@@ -114,8 +120,10 @@ func doorwayInput(launchEnv *jsonx.OrderedMap) map[string]string {
 // startMacosUserDoorways opens every planned doorway and says so, one line each, on every
 // launch: this is host code running outside Seatbelt, and a launch has no quiet mode. It returns
 // the stop for the arm to defer, or the refusal naming the doorway that did not start, which the
-// launch-owned mechanism's contract makes a refusal before the command runs (§4.5).
-func (o *Options) startMacosUserDoorways(plans []*launchservice.Plan, launchEnv *jsonx.OrderedMap) (func(), error) {
+// launch-owned mechanism's contract makes a refusal before the command runs (§4.5). hostSocket
+// is the session's own OpenAI daemon's private socket (doorwayInput).
+func (o *Options) startMacosUserDoorways(plans []*launchservice.Plan, launchEnv *jsonx.OrderedMap,
+	hostSocket string) (func(), error) {
 	var running []launchedService
 	stop := func() {
 		for _, r := range running {
@@ -123,7 +131,7 @@ func (o *Options) startMacosUserDoorways(plans []*launchservice.Plan, launchEnv 
 		}
 	}
 	for _, plan := range plans {
-		r, log, err := startMacosUserDoorway(plan, doorwayInput(launchEnv))
+		r, log, err := startMacosUserDoorway(plan, doorwayInput(launchEnv, hostSocket))
 		if err != nil {
 			stop()
 			return func() {}, err
