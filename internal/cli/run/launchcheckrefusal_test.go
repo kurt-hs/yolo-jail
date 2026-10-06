@@ -1,68 +1,65 @@
 package run
 
-// launchcheckrefusal_test.go pins OQ-HD11's ruling (docs/design/host-daemon-ownership.md, ruled
-// 2026-10-05) and HD-D5 THROUGH Run(): a host-wide daemon that predates the launching yolo REFUSES
-// a fresh launch on both arms that start host services, whether it answers the launch check
-// `unknown action: launch-check` or does not speak the connection preamble at all. An attach keeps
-// the yellow line and enters the jail (HD-D5 (1)), and a daemon this yolo started whose program
-// lacks the check keeps the line too (HD-D6). No launch restarts the daemon.
+// launchcheckrefusal_test.go pins OQ-HD11's refusal as HD-D21 keeps it under HD-R1
+// (docs/design/host-daemon-ownership.md) THROUGH Run(): the one host-wide daemon that can still
+// exist is a machine-wide copy an older yolo left running through the upgrade, and while it is
+// alive a fresh launch on either arm that starts host services REFUSES, naming its stop. A fresh
+// launch's own copy that lacks the check keeps the yellow line, and an attach never refuses
+// (HD-D5 (1)). No launch stops the older copy itself.
 //
 // Each test drives a whole launch, not the boundary launchcheck_test.go drives, so deleting the
 // refusal at one call site fails the test for that site: the keeper's (the container arm) or the
-// macos-user arm's. Each has a control beside it, the same launch against a daemon that does
-// answer the check, which proceeds; without it the refusal tests would pass on a harness that
-// never reached the check at all.
+// macos-user arm's. Each has a control beside it, the same launch with no older copy running,
+// which proceeds; without it the refusal tests would pass on a harness that never reached the
+// check at all.
 //
-// The daemon is launchcheck_test.go's fixture, served at the host-wide singleton path with a pid
-// file naming this process, so every launch ENSURES it rather than spawning one. Its loophole
-// declares no jail daemon, so every launch of it is asked (runLaunchChecks' served rule).
+// The daemon is launchcheck_test.go's fixture: each launch spawns its own copy, a relay to the
+// handler served at launchCheckFixtureSocket, and leaveAnOlderCopyRunning stands up the older
+// yolo's copy at the name-keyed rendezvous. Its loophole declares no jail daemon, so every launch
+// of it is asked (runLaunchChecks' served rule).
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
-// askedEveryLaunchManifest is the fixture loophole as a local pack ships it: host-wide, declaring
-// the launch check, and with no jail daemon, so no payload decides whether it is asked.
-const askedEveryLaunchManifest = `{
+// askedEveryLaunchManifest is the fixture loophole as a local pack ships it: one copy per jail,
+// declaring the launch check, and with no jail daemon, so no payload decides whether it is asked.
+func askedEveryLaunchManifest(t *testing.T) string {
+	t.Helper()
+	cmd, err := json.Marshal([]string{os.Args[0], "-splice-child", "{socket}", launchCheckFixtureSocket()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return `{
 	"name": "` + launchCheckFixtureName + `",
-	"description": "a host-wide service that is asked the launch check",
+	"description": "a host service that is asked the launch check",
 	"default_enabled": true,
 	"transport": "loopback-tls",
 	"lifecycle": "spawned",
-	"host_daemon": {"cmd": ["/bin/false", "{socket}"], "publishes": "socket",
-		"scope": "host", "launch_check": true}
+	"host_daemon": {"cmd": ` + string(cmd) + `, "publishes": "socket",
+		"launch_check": true, "detach": true}
 }`
-
-// olderThanTheCheck is a daemon a yolo older than the launch check started: its handler's default
-// case answers the action it does not know.
-func olderThanTheCheck(s *hostservice.Session) {
-	s.Stderr("unknown action: launch-check\n")
-	s.Exit(2)
 }
 
-// answersTheCheck is the control's daemon: it knows the check and has one note to give.
-func answersTheCheck(s *hostservice.Session) {
-	_ = s.AnswerLaunchCheck(hostservice.LaunchCheckReport{Notes: []string{"checked by the control"}})
-}
-
-// controlNote is the line the control's daemon makes every launch print.
+// controlNote is the line the control's daemon makes every launch print (answersTheCheck).
 const controlNote = "loophole " + launchCheckFixtureName + ": checked by the control"
+
+// anOlderCopy is the prep that leaves the older yolo's machine-wide copy running.
+func anOlderCopy(t *testing.T) { leaveAnOlderCopyRunning(t, olderThanTheCheck) }
 
 // launchCheckRefusalHome isolates a whole launch with the fixture loophole in the conventional local pack.
 func launchCheckRefusalHome(t *testing.T) string {
@@ -71,64 +68,23 @@ func launchCheckRefusalHome(t *testing.T) string {
 		t.Skip("binds host-wide singleton paths")
 	}
 	home := packHome(t)
-	writeLocalLoopholePack(t, home, launchCheckFixtureName, askedEveryLaunchManifest)
+	writeLocalLoopholePack(t, home, launchCheckFixtureName, askedEveryLaunchManifest(t))
 	writeUserPacks(t, home, `[]`)
 	return home
 }
 
-// assertTheRefusal checks the refusal's words: who refused, the daemon, the one command that fixes
-// it, and that the jails already running are safe from that command.
-func assertTheRefusal(t *testing.T, out, headline string) {
+// assertTheOlderCopyWasNotStopped: the older copy is still alive afterwards, since only the user
+// may stop it.
+func assertTheOlderCopyWasNotStopped(t *testing.T) {
 	t.Helper()
-	line := ""
-	for _, l := range strings.Split(out, "\n") {
-		if strings.Contains(l, headline) {
-			line = l
-		}
-	}
-	if line == "" {
-		t.Fatalf("nothing says %q:\n%s", headline, out)
-	}
-	for _, want := range []string{"'" + launchCheckFixtureName + "'", "predates this yolo",
-		"does not answer the launch check", broker.CycleCommand(launchCheckFixtureName),
-		"reconnect", "Then launch again"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the refusal does not say %q:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "Restarting the host-wide daemon") {
-		t.Errorf("the launch restarted the daemon itself, which no launch may do:\n%s", out)
-	}
-}
-
-// assertThePreambleRefusal is assertTheRefusal's twin for a daemon that predates the preamble.
-func assertThePreambleRefusal(t *testing.T, out, headline string) {
-	t.Helper()
-	for _, want := range []string{headline, "'" + launchCheckFixtureName + "' predates this yolo",
-		"does not speak the connection preamble", broker.CycleCommand(launchCheckFixtureName),
-		"reconnect", "Then launch again"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the refusal does not say %q:\n%s", want, out)
-		}
-	}
-}
-
-// assertTheDaemonWasNotRestarted: the fixture's pid file still names this process, which a launch
-// that killed and respawned it would have replaced, and its socket still answers.
-func assertTheDaemonWasNotRestarted(t *testing.T) {
-	t.Helper()
-	raw, err := os.ReadFile(paths.HostSingletonPIDFile(launchCheckFixtureName))
-	if err != nil || strings.TrimSpace(string(raw)) != strconv.Itoa(os.Getpid()) {
-		t.Errorf("the daemon's pid file now reads %q (%v): something restarted it", raw, err)
-	}
-	if !hostSingletonAccepting(paths.HostSingletonSocket(launchCheckFixtureName), time.Second) {
-		t.Error("the daemon no longer accepts: the launch stopped it")
+	if !olderHostWideAlive(launchCheckFixtureName) {
+		t.Error("the older yolo's copy is no longer alive: the launch stopped it")
 	}
 }
 
 // containerLaunch runs a fresh podman launch, its keeper in-process, to its container's start, and
 // reports what it printed, its status, and whether the runtime was asked to run the container.
-// Each of prep runs once the daemon is up (spawnedByThisYolo, predatesThePreamble).
+// Each of prep runs once the daemon is up (anOlderCopy).
 func containerLaunch(t *testing.T, handler hostservice.Handler,
 	prep ...func(*testing.T)) (out string, rc int, ranContainer bool) {
 	t.Helper()
@@ -171,22 +127,23 @@ func containerLaunch(t *testing.T, handler hostservice.Handler,
 	return stdout.String() + stderr.String(), rc, err == nil
 }
 
-// TestAFreshContainerLaunchRefusesADaemonOlderThanTheLaunchCheck is the container arm, whose host
-// services its keeper starts: the keeper refuses before the container, and the launch exits 1.
-func TestAFreshContainerLaunchRefusesADaemonOlderThanTheLaunchCheck(t *testing.T) {
-	out, rc, ran := containerLaunch(t, olderThanTheCheck)
+// TestAFreshContainerLaunchRefusesBesideAnOlderYolosCopy is the container arm, whose host services
+// its keeper starts: with an older yolo's machine-wide copy alive, the keeper refuses before the
+// container, and the launch exits 1.
+func TestAFreshContainerLaunchRefusesBesideAnOlderYolosCopy(t *testing.T) {
+	out, rc, ran := containerLaunch(t, answersTheCheck, anOlderCopy)
 	if ran {
-		t.Errorf("the launch started its container past a daemon that predates the check:\n%s", out)
+		t.Errorf("the launch started its container beside an older yolo's machine-wide copy:\n%s", out)
 	}
 	if rc != 1 {
 		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
 	}
-	assertTheRefusal(t, out, "Refusing this launch")
-	assertTheDaemonWasNotRestarted(t)
+	assertTheOlderCopyRefusal(t, out, "Refusing this launch")
+	assertTheOlderCopyWasNotStopped(t)
 }
 
-// TestAFreshContainerLaunchProceedsPastADaemonThatAnswers is its control: the same launch reaches
-// the check, prints the daemon's note, and starts its container.
+// TestAFreshContainerLaunchProceedsPastADaemonThatAnswers is its control: the same launch with no
+// older copy reaches the check, prints the daemon's note, and starts its container.
 func TestAFreshContainerLaunchProceedsPastADaemonThatAnswers(t *testing.T) {
 	out, _, ran := containerLaunch(t, answersTheCheck)
 	if !strings.Contains(out, controlNote) {
@@ -200,27 +157,12 @@ func TestAFreshContainerLaunchProceedsPastADaemonThatAnswers(t *testing.T) {
 	}
 }
 
-// TestAFreshContainerLaunchRefusesADaemonThatPredatesThePreamble is HD-D5 (3) on the container
-// arm: a host-wide daemon started before yolo's front would accept the jail's connections and fail
-// every request, so the keeper refuses before the container, as it does for the launch check.
-func TestAFreshContainerLaunchRefusesADaemonThatPredatesThePreamble(t *testing.T) {
-	out, rc, ran := containerLaunch(t, answersTheCheck, predatesThePreamble)
-	if ran {
-		t.Errorf("the launch started its container past a daemon that predates the preamble:\n%s", out)
-	}
-	if rc != 1 {
-		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
-	}
-	assertThePreambleRefusal(t, out, "Refusing this launch")
-	assertTheDaemonWasNotRestarted(t)
-}
-
-// TestAFreshContainerLaunchWarnsWhenThisYolosDaemonLacksTheCheck is HD-D6 through Run(): the
-// daemon this yolo spawned answers `unknown action: launch-check` because its program lacks what
-// its manifest declares. A restart starts the same program, so a refusal naming it would refuse
-// again after it, with no step that works; the launch warns and starts its container.
-func TestAFreshContainerLaunchWarnsWhenThisYolosDaemonLacksTheCheck(t *testing.T) {
-	out, _, ran := containerLaunch(t, olderThanTheCheck, spawnedByThisYolo)
+// TestAFreshContainerLaunchWarnsWhenItsOwnDaemonLacksTheCheck: the daemon a fresh launch asks is
+// its own copy, this yolo's build, so `unknown action: launch-check` means its manifest declares a
+// check its program lacks. No restart or stop fixes that, so the launch warns, naming none, and
+// starts its container.
+func TestAFreshContainerLaunchWarnsWhenItsOwnDaemonLacksTheCheck(t *testing.T) {
+	out, _, ran := containerLaunch(t, olderThanTheCheck)
 	if strings.Contains(out, "Refusing") {
 		t.Errorf("the launch refused a daemon no restart can fix:\n%s", out)
 	}
@@ -255,18 +197,18 @@ func macosUserLaunchAgainst(t *testing.T, handler hostservice.Handler,
 	return stdout.String() + stderr.String(), rc, started
 }
 
-// TestAMacosUserLaunchRefusesADaemonOlderThanTheLaunchCheck is the arm that starts its own host
-// services: it refuses before the sandboxed command runs.
-func TestAMacosUserLaunchRefusesADaemonOlderThanTheLaunchCheck(t *testing.T) {
-	out, rc, started := macosUserLaunchAgainst(t, olderThanTheCheck)
+// TestAMacosUserLaunchRefusesBesideAnOlderYolosCopy is the arm that starts its own host services:
+// it refuses before the sandboxed command runs.
+func TestAMacosUserLaunchRefusesBesideAnOlderYolosCopy(t *testing.T) {
+	out, rc, started := macosUserLaunchAgainst(t, answersTheCheck, anOlderCopy)
 	if started {
-		t.Errorf("the macos-user launch ran its command past a daemon that predates the check:\n%s", out)
+		t.Errorf("the macos-user launch ran its command beside an older yolo's machine-wide copy:\n%s", out)
 	}
 	if rc != 1 {
 		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
 	}
-	assertTheRefusal(t, out, "Refusing the macos-user launch")
-	assertTheDaemonWasNotRestarted(t)
+	assertTheOlderCopyRefusal(t, out, "Refusing the macos-user launch")
+	assertTheOlderCopyWasNotStopped(t)
 }
 
 // TestAMacosUserLaunchProceedsPastADaemonThatAnswers is its control.
@@ -280,23 +222,11 @@ func TestAMacosUserLaunchProceedsPastADaemonThatAnswers(t *testing.T) {
 	}
 }
 
-// TestAMacosUserLaunchRefusesADaemonThatPredatesThePreamble is HD-D5 (3) on the macos-user arm.
-func TestAMacosUserLaunchRefusesADaemonThatPredatesThePreamble(t *testing.T) {
-	out, rc, started := macosUserLaunchAgainst(t, answersTheCheck, predatesThePreamble)
-	if started {
-		t.Errorf("the macos-user launch ran its command past a daemon that predates the preamble:\n%s", out)
-	}
-	if rc != 1 {
-		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
-	}
-	assertThePreambleRefusal(t, out, "Refusing the macos-user launch")
-	assertTheDaemonWasNotRestarted(t)
-}
-
 // attachAgainst runs an attach into a running jail whose launch published a front to the fixture
-// daemon, as a jail an older yolo launched did: that yolo only warned about the daemon. The jail's
-// pack tree is this workspace's own staging, so the attach reads the fixture loophole from it.
-func attachAgainst(t *testing.T, handler hostservice.Handler) packSkewRun {
+// daemon. Each of prep runs once that front is up, so an older copy it leaves stands for one the
+// jail's own launch never met. The jail's pack tree is this workspace's own staging, so the attach
+// reads the fixture loophole from it.
+func attachAgainst(t *testing.T, handler hostservice.Handler, prep ...func(*testing.T)) packSkewRun {
 	t.Helper()
 	launchCheckRefusalHome(t)
 	serveLaunchCheckDaemon(t, handler)
@@ -334,15 +264,19 @@ func attachAgainst(t *testing.T, handler hostservice.Handler) packSkewRun {
 	if !startedLoophole(handles, launchCheckFixtureName) {
 		t.Fatalf("the running jail's front was never published:\n%s", launchOut.String())
 	}
+	for _, p := range prep {
+		p(t)
+	}
 	current := "YOLO_VERSION=9.9.9-test\n" + entrypointContractTagsLine() + "\n"
 	return runPackSkew(t, ws, current, false, "", nil, nil)
 }
 
-// TestAnAttachKeepsTheLineAndEntersPastADaemonOlderThanTheLaunchCheck is HD-D5 (1) through Run():
-// an attach starts nothing and restarts nothing, and refusing it would leave the running jail as
-// it is, so it prints the yellow line naming the restart, delivers its channel and enters the jail.
-func TestAnAttachKeepsTheLineAndEntersPastADaemonOlderThanTheLaunchCheck(t *testing.T) {
-	r := attachAgainst(t, olderThanTheCheck)
+// TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy is HD-D5 (1) through Run(): an attach
+// starts nothing, and refusing it would leave the running jail as it is, so beside an older yolo's
+// copy that does not answer the check it prints the yellow line naming that copy's stop and the
+// relaunch, delivers its channel and enters the jail.
+func TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy(t *testing.T) {
+	r := attachAgainst(t, olderThanTheCheck, anOlderCopy)
 	out := r.stdout + r.stderr
 	if !r.execed || r.rc != 0 {
 		t.Errorf("the attach did not enter the jail (rc %d):\n%s", r.rc, out)
@@ -353,13 +287,13 @@ func TestAnAttachKeepsTheLineAndEntersPastADaemonOlderThanTheLaunchCheck(t *test
 	if _, err := os.Stat(r.envFile); err != nil {
 		t.Errorf("the attach did not deliver its channel (%v)", err)
 	}
-	for _, want := range []string{"loophole " + launchCheckFixtureName + ": ", "predates this yolo",
-		broker.CycleCommand(launchCheckFixtureName)} {
+	for _, want := range []string{"loophole " + launchCheckFixtureName + ": this jail was launched by an older yolo",
+		"launch it again with this yolo"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the attach does not say %q:\n%s", want, out)
 		}
 	}
-	assertTheDaemonWasNotRestarted(t)
+	assertTheOlderCopyWasNotStopped(t)
 }
 
 // TestAnAttachProceedsPastADaemonThatAnswers is its control: the attach asks, delivers its channel

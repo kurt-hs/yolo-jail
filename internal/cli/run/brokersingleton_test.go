@@ -12,7 +12,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthterminator"
-	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -68,7 +67,7 @@ func brokerFixtureModule(t *testing.T, enabled, approved bool) {
 	  "transport": "` + loopholes.TransportLoopbackTLS + `", "lifecycle": "spawned",
 	  "intercepts": [{"host": "platform.claude.com"}], "broker_ip": "127.0.0.1",
 	  "host_daemon": {"cmd": ["yolo", "internal", "daemon", "` + broker.BrokerLoopholeName + `", "--socket", "{socket}"],
-	    "publishes": "socket", "scope": "host"},
+	    "publishes": "socket", "detach": true},
 	  "jail_daemon": {"cmd": ["yolo-jaild", "oauth-terminator"], "restart": "on-failure"}}`
 	if err := os.WriteFile(filepath.Join(lp, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -329,79 +328,9 @@ func TestSocketDirIgnoresALongTMPDIR(t *testing.T) {
 	_ = ln.Close()
 }
 
-// TestBrokerLifecycleIsGatedOnTheLoopholeRecord is OQ-A11 at the CALL SITE that
-// decides whether the host singleton runs at all.
-//
-// # Why this is a source assertion and not a behavioural one
-//
-// `brokerEnsure` spawns a detached host process under a flock; it is not injectable,
-// and driving `runNormal` needs a container. What CAN be driven is the predicate —
-// the two tests below do that — and what a predicate's own tests cannot see is the
-// call going missing, which is exactly the state this ruling found:
-// `brokerLoopholeActive` already existed and was already correct, and the run
-// pipeline called `brokerEnsure()` beside it with no lookup at all. So the host
-// singleton ran for EVERYBODY, including a user with `packs: []` who has never heard
-// of claude, while the jail was wired to it only when the loophole was Active — both
-// halves failing, in opposite directions (loophole-activation.md §1.1, §1.3's first
-// table row).
-//
-// # The property, stated so a reader knows what may be edited
-//
-// ONE predicate governs the spawn AND the wiring. `hostServicesMountArgs` already
-// consults `brokerLoopholeActive`; the lifecycle site must consult the same function
-// rather than a second spelling of it. A jail that is not given the broker's address
-// must not leave a broker running on the host either — which is a stronger
-// requirement than "it is gated", because two gates that agree today are two gates
-// that can disagree tomorrow.
-//
-// THE ATTACH HALF OF THIS TEST IS GONE with the per-jail relay it guarded. An attach
-// used to re-ensure a relay behind the same gate; there is no per-jail broker process
-// left to heal, and the front that replaced it belongs to the yolo process that
-// launched the jail. What survives is the launch gate, which is the one that governs
-// a host daemon.
-func TestBrokerLifecycleIsGatedOnTheLoopholeRecord(t *testing.T) {
-	body, err := os.ReadFile("run.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(body)
-	// The LAUNCH path: the ensure sits behind the gate.
-	if !strings.Contains(src, `rt != "container" && brokerLoopholeActive(cfg)`) {
-		t.Error("the launch path no longer gates the broker singleton on " +
-			"brokerLoopholeActive(cfg). Ungated, yolo spawns a host daemon on every launch " +
-			"for every user — including one with `packs: []` — while the jail is wired to it " +
-			"only when the loophole is Active (OQ-A11)")
-	}
-	if !strings.Contains(src, "o.brokerEnsure()") {
-		t.Error("run.go no longer ensures the host-wide broker singleton on the launch path. " +
-			"⚠ THE REASON IT RUNS THIS EARLY IS SPENT: it ran before assembleRunCmd because " +
-			"brokerEndpointIsUnpublishable read the singleton socket to decide whether the " +
-			"argv could promise the jail an endpoint, and that arm was deleted 2026-09-20 " +
-			"(OQ-2: a nested jail runs its own broker). Nothing on the argv path reads the " +
-			"socket now, so what this still holds is the ENSURE, not its position")
-	}
-	// The services DIR is not this gate's business at all any more. It used to be created
-	// on both arms here, and this test counted the two calls so that nobody folded the
-	// creation into the broker gate. The creation moved to startLoopholesMatching, which
-	// makes it on every launch, broker or not, and nowhere else may
-	// (TestOnlyTheSpawnCreatesTheHostServicesDir): a creation up here leaked an empty dir
-	// on every refusal between this line and the spawn.
-	if strings.Contains(src, "mkdirHostServicesDir(") {
-		t.Error("run.go creates the host-services dir again. The spawn (startLoopholesMatching) " +
-			"creates it on every launch; a second, earlier creation leaves an empty " +
-			"/tmp/yolo-host-services-<8hex> behind every refusal that lands before the spawn")
-	}
-	// AND NOTHING SPAWNS A RELAY. The deletion is asserted rather than assumed: a
-	// resurrected per-jail relay would splice the same endpoint file the front now
-	// publishes, and the loser of that race is the jail's credential path.
-	if strings.Contains(src, "ensureBrokerRelay") || strings.Contains(src, "relayReapOrphans") {
-		t.Error("run.go references the per-jail broker relay, which is deleted " +
-			"(docs/design/broker-as-a-pack.md §7)")
-	}
-}
-
 // The predicate itself, in the direction that used to be unreachable: a DISABLED
-// broker loophole answers false, so the gate above suppresses the spawn.
+// broker loophole answers false, so nothing wires the jail to it (the credential view's gate,
+// and the assembler's endpoint emission, read the same list).
 //
 // Driven through the same fixture the env-emission tests use, so the record this reads
 // is built the way discovery builds one rather than by hand.
@@ -423,96 +352,8 @@ func TestBrokerLoopholeActiveIsTrueWhenEnabled(t *testing.T) {
 	}
 }
 
-// TestTheTwoBrokerArgvSourcesAgree ties the launch path's TWO spawners of one daemon
-// together, which nothing else does.
-//
-// # There really are two, and both can spawn
-//
-// `brokerEnsure` (run.go, before the argv is assembled) spawns
-// `broker.RealDeps().Argv` — a HARDCODED argv composed in internal/broker from
-// BrokerSpawnArgv. `startHostSingleton` (the `host_daemon.scope: "host"` path, a few
-// phases later) spawns `resolveDaemonArgv`'s expansion of the MANIFEST's
-// `host_daemon.cmd`. Both call broker.BrokerSpawn against the same
-// paths.HostSingleton* files, so which one's argv actually runs is decided by whether
-// the first ensure left a live daemon behind: normally brokerEnsure wins and the
-// manifest's argv is never executed, but when its spawn does not bind in time
-// (BrokerSpawnTimeout, a slow or failing daemon) startHostSingleton's `if
-// !BrokerIsAlive { BrokerSpawn }` runs the manifest's instead. Two sources for one
-// daemon is exactly the "half the broker" shape docs/design/broker-as-a-pack.md §5.1
-// warns about, and the sprint left it in place deliberately (brokerEnsure has no
-// record to read: it is reached before discovery, and from `yolo broker restart`,
-// which has no launch at all).
-//
-// # Why the two existing pins are not this pin
-//
-// Each side is asserted against its own literal, in its own package:
-// broker/singletondeps_test.go pins RealDeps().Argv, and
-// loopholedecl/shipped_test.go pins the manifest's `cmd`. MEASURED by mutation —
-// adding a flag to BrokerSpawnArgv fails those two tests and NOTHING ELSE, and both
-// failures print the literal to change. An author following them updates the two
-// literals, ships a tree where the manifest declares one argv and the launch path
-// executes another, and the divergence surfaces only on the rare failure path above,
-// as a daemon started with flags nobody wrote down.
-//
-// # What this asserts
-//
-// The SHIPPED manifest (packload.Embedded, not a fixture — a fixture would only prove
-// the fixture agrees with itself) resolved through the exact call startHostSingleton
-// makes, equal to the exact argv brokerEnsure spawns. If they must differ one day,
-// that is a decision to record here rather than a drift to discover in a log.
-func TestTheTwoBrokerArgvSourcesAgree(t *testing.T) {
-	var claudePack *packload.Pack
-	for _, p := range packload.Embedded() {
-		if p.Name == "claude" {
-			claudePack = p
-		}
-	}
-	if claudePack == nil {
-		t.Skip("no embedded packs registered in this test binary")
-	}
-	decls := packLoopholeDecls([]*packload.Pack{claudePack})
-	if len(decls) != 1 || decls[0].Name != broker.BrokerLoopholeName {
-		t.Fatalf("packs/claude must contribute exactly the %s loophole, got %+v",
-			broker.BrokerLoopholeName, decls)
-	}
-	// Register the SHIPPED module as this process's pack record, approved — the gate
-	// has to admit it or ManifestHostDaemonSpecs drops the daemon and the comparison
-	// below would silently have nothing to compare.
-	loopholes.SetPackModuleResolver(nil)
-	loopholes.SetPackModules([]loopholes.PackModule{{Dir: decls[0].Dir, HostExecApproved: true}})
-	t.Cleanup(func() {
-		loopholes.ResetPackModules()
-		loopholes.SetPackModuleResolver(resolvePackLoopholeModules)
-	})
-
-	// The spec exactly as startLoopholes builds it.
-	set := loopholes.NewHostSet(jsonx.NewOrderedMap())
-	specs := set.ManifestHostDaemonSpecs(set.Enabled())
-	v, _ := specs.Get(broker.BrokerLoopholeName)
-	spec, _ := v.(*jsonx.OrderedMap)
-	if spec == nil {
-		t.Fatalf("the shipped broker manifest contributed no host_daemon spec; "+
-			"startHostSingleton would never run. specs=%v", specs.Keys())
-	}
-
-	// The workspace is a path the argv cannot be inside, so the placement rule in
-	// resolveDaemonArgv judges the argv on its merits rather than refusing the test
-	// binary's own location.
-	o := goldenOptions(filepath.Join(t.TempDir(), "ws"), t.TempDir())
-	got, ok := o.resolveDaemonArgv(broker.BrokerLoopholeName, spec,
-		paths.HostSingletonSocket(broker.BrokerLoopholeName))
-	if !ok {
-		t.Fatal("resolveDaemonArgv refused the SHIPPED broker manifest's host_daemon.cmd — " +
-			"startHostSingleton would return without fronting the singleton, so every jail " +
-			"selecting packs: [\"claude\"] loses its credential path")
-	}
-	want := broker.RealDeps().Argv
-	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-		t.Errorf("the two broker argv sources have drifted.\n"+
-			"  startHostSingleton (manifest host_daemon.cmd): %v\n"+
-			"  brokerEnsure       (broker.RealDeps().Argv):   %v\n"+
-			"One daemon, one socket, one pid file — but which argv starts it depends on "+
-			"whether brokerEnsure's spawn bound in time. Change both, or record why they "+
-			"must differ.", got, want)
-	}
-}
+// TestTheTwoBrokerArgvSourcesAgree IS DELETED, with the second source it compared. It tied
+// brokerEnsure's hardcoded `broker.RealDeps().Argv` to the shipped manifest's
+// `host_daemon.cmd`, because both could spawn the one host-wide broker. HD-R1 deleted
+// brokerEnsure and the singleton: the manifest's `cmd`, through startExternalService, is the
+// only argv any launch spawns the broker with, and loopholedecl/shipped_test.go pins it.

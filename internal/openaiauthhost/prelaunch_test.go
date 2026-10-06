@@ -21,9 +21,9 @@ var (
 // loggedOutDeps is a broker that has no login, recording every action it is asked.
 func loggedOutDeps(actions *[]string) deps {
 	return deps{
-		ensure: func(io.Writer) (string, error) {
+		ensure: func(io.Writer) (string, func(), error) {
 			*actions = append(*actions, "ensure")
-			return "/tmp/broker.host", nil
+			return "/tmp/broker.host", func() {}, nil
 		},
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			action := request.(map[string]any)["action"].(string)
@@ -125,7 +125,7 @@ func TestPrepareRefusesAViewTheHostDoesNotServe(t *testing.T) {
 func TestPrepareServesOpencodeTheHostSocket(t *testing.T) {
 	var actions []string
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			action := request.(map[string]any)["action"].(string)
 			actions = append(actions, action)
@@ -183,7 +183,7 @@ func TestPrepareTellsTheHostsOpencodeWhichLoginItRunsOn(t *testing.T) {
 				}
 			}
 			d := deps{
-				ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+				ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 				request: func(string, any, io.Writer) (json.RawMessage, error) {
 					return json.RawMessage(`{"logged_in":true}`), nil
 				},
@@ -218,7 +218,7 @@ func TestPrepareTellsTheHostsOpencodeWhichLoginItRunsOn(t *testing.T) {
 func TestManagedCodexHomeIsKeyedOnTheDeclaringPack(t *testing.T) {
 	root := t.TempDir()
 	d := deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			if request.(map[string]any)["action"] == "status" {
 				return json.RawMessage(`{"logged_in":true}`), nil
@@ -254,5 +254,59 @@ func TestPrelaunchVarSpellsTheJailLaunchersName(t *testing.T) {
 		if got := PrelaunchVar(bin, "FLAG"); got != want {
 			t.Errorf("PrelaunchVar(%q) = %q, want %q", bin, got, want)
 		}
+	}
+}
+
+// THE PRELAUNCH'S OWN DAEMON (HD-R1, privatedaemon.go) is kept only by a launch that hands it on,
+// and ended on every other way out: a launch with no login, a login alone, and a launch that
+// keeps it ends it at Close, once. Drop the deferred stop in prepare and the first two leave a
+// daemon running for nobody; drop Close's and the third does.
+func TestThePrelaunchsOwnDaemonEndsUnlessALaunchKeepsIt(t *testing.T) {
+	counting := func(stops *int, loggedIn bool) deps {
+		return deps{
+			ensure: func(io.Writer) (string, func(), error) {
+				return "/tmp/broker.host", func() { *stops++ }, nil
+			},
+			request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
+				if request.(map[string]any)["action"] == "status" {
+					return json.RawMessage(`{"logged_in":` + map[bool]string{true: "true", false: "false"}[loggedIn] + `}`), nil
+				}
+				return json.RawMessage(`{"ok":true}`), nil
+			},
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		loggedIn bool
+		p        Prelaunch
+	}{
+		{"no login and no terminal", false, Prelaunch{Bin: "pi", Flag: PiViewFlag, Pack: "pi"}},
+		{"a login alone", true, Prelaunch{Bin: "claude", Login: true, Interactive: true}},
+	} {
+		stops := 0
+		launch, err := prepare(counting(&stops, tc.loggedIn), tc.p, io.Discard)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if launch.HostSocket() != "" {
+			t.Errorf("%s: the launch hands on a daemon socket %q it does not keep", tc.name, launch.HostSocket())
+		}
+		if stops != 1 {
+			t.Errorf("%s: the daemon was stopped %d times, want once, by prepare", tc.name, stops)
+		}
+	}
+	stops := 0
+	launch, err := prepare(counting(&stops, true), piPrelaunch, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stops != 0 || launch.HostSocket() != "/tmp/broker.host" {
+		t.Fatalf("pi's view: stops %d, socket %q; want the daemon kept and its socket handed on",
+			stops, launch.HostSocket())
+	}
+	launch.Close()
+	launch.Close()
+	if stops != 1 {
+		t.Errorf("pi's view: Close stopped the daemon %d times, want once", stops)
 	}
 }

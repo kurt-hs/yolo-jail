@@ -133,9 +133,22 @@ func Main(argv []string) int {
 	// ONE TRACKER for the proactive minter and the launch check, so a launch arriving while
 	// the spawn-time mint runs waits for that mint instead of starting another (launchcheck.go).
 	mints := newMintTracker(os.Stderr)
-	if !*noBackground {
-		go runProactive(broker, mints, *refreshInterval, stop)
+	// THE EXIT WAITS FOR A MINT IN FLIGHT, the proactive one included. A jail's end SIGTERMs
+	// this daemon alone and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3); the `aws` child is not signaled, so its mint
+	// completes, and waiting here is what lets the cache it fills be written for the next jail.
+	// Its bound is the minter's own timeout. Serving stops first, and serveSockets already
+	// waits for every handler it accepted, a launch check's mint among them.
+	background := make(chan struct{})
+	if *noBackground {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			runProactive(broker, mints, *refreshInterval, stop)
+		}()
 	}
+	defer func() { shutdown(); <-background; mints.settle() }()
 	handler := BuildHandler(HandlerConfig{Broker: broker, ConfigPath: awsauth.DefaultConfigPath(),
 		Mints: mints, ModelLists: modelListSourceFor(broker, os.Stderr)})
 	if err := serveSockets(handler, *socket, HostSocketPath(*socket), stop, shutdown); err != nil {

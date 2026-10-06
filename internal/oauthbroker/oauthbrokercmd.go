@@ -92,10 +92,23 @@ func Main(argv []string) int {
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	shutdown := func() { stopOnce.Do(func() { close(stop) }) }
-	if !*noBgRefresh {
-		go RunBackgroundRefresher(*credsFile, stop,
-			BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+	// THE EXIT WAITS FOR A REFRESH IN FLIGHT, the background one included. A jail's end
+	// SIGTERMs this daemon and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3), so the daemon itself is what lets a refresh
+	// that has already redeemed the single-use refresh token upstream write its replacement
+	// before the process goes. Its bound is the upstream request's own deadline (httpClient).
+	// Serving stops first, and ServeFrontedUnix already waits for every handler it accepted.
+	background := make(chan struct{})
+	if *noBgRefresh {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			RunBackgroundRefresher(*credsFile, stop,
+				BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+		}()
 	}
+	defer func() { shutdown(); <-background }()
 
 	// hostservice.ServeUnix installs its own SIGTERM/SIGINT handler; wire a stop
 	// channel too so the background refresher goroutine exits with the process.
@@ -119,11 +132,11 @@ func Main(argv []string) int {
 	// note in internal/hostservice for the outage a signature-preserving change to
 	// a shared helper caused here once.
 	//
-	// This used to be ServeUnix, on the true premise that the singleton was
+	// This used to be ServeUnix, on the true premise that the daemon was
 	// host-to-host: the per-jail relay dialed it and stamped a jail_id into the
 	// request. The relay is GONE (docs/design/broker-as-a-pack.md §7). The manifest
-	// now declares `publishes: "socket"` + `scope: "host"`, so yolo runs one
-	// svcendpoint front PER JAIL over this one socket, and every connection that
+	// declares `publishes: "socket"`, so yolo runs the jail's svcendpoint front over
+	// this socket (one daemon per jail since HD-R1), and every connection that
 	// arrives here has crossed a jail boundary and carries yolo's CONNECTION
 	// PREAMBLE. Reading it is what replaces the relay's stamp: the jail_id on this
 	// daemon's audit line stays host-asserted (invariant I1), and the ~100 lines

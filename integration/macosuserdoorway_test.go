@@ -123,8 +123,8 @@ func requireDoorwayRanOutsideAndStopped(t *testing.T, argv, saw, me, uid, diag s
 // env file, as claude's launcher does, and speaks the protocol with curl.
 //
 // The host `aws` is a stand-in on the launcher's PATH, which the host daemon inherits, as in
-// awsauth_test.go, and the aws-auth host daemon is a machine-wide singleton: the test refuses to
-// run beside a live one, which the launch would adopt, and stops the one it started.
+// awsauth_test.go, and the aws-auth host daemon is the session's own (HD-R1): spawned against the
+// stand-in and ended with the session, so a machine-wide one is neither adopted nor touched.
 //
 // The user config is the container chain's own (awsAuthUserConfig), so it carries the provider
 // region a `bedrock` launch with none is refused for before the sandbox starts (OQ-BR6,
@@ -133,22 +133,11 @@ func requireDoorwayRanOutsideAndStopped(t *testing.T, argv, saw, me, uid, diag s
 // so the region's value is never used.
 func TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox(t *testing.T) {
 	requireMacosUser(t)
-	holdMachineLock(t, true, "the macos-user AWS doorway test owns the aws-auth host singleton")
+	holdMachineLock(t, true, "the macos-user AWS doorway test owns the fake `aws` and the doorway port")
 	packHome(t, awsAuthUserConfig(`["claude", "aws-auth"]`, "claude", ""))
 	ws := macosUserWorkspace(t, `{}`)
 	uid := sandboxUID(t)
 	me := strconv.Itoa(os.Getuid())
-	if r := runYoloCLI(t, ws, "host-daemon", "status", "aws-auth"); r.rc == 0 || awsAuthDaemonAlive() {
-		t.Fatalf("an aws-auth host daemon is already running on this machine, and the launch would "+
-			"adopt it instead of spawning one against this test's stand-in `aws`. Stop it with "+
-			"`yolo host-daemon stop aws-auth` and rerun.\n%s", r.combined())
-	}
-	t.Cleanup(func() {
-		if r := runYoloCLI(t, ws, "host-daemon", "stop", "aws-auth"); r.rc != 0 {
-			t.Logf("stopping this test's aws-auth daemon: rc=%d\n%s", r.rc, r.combined())
-		}
-	})
-
 	bin := resolvedTempDir(t)
 	expires := time.Now().Add(time.Hour).UTC().Truncate(time.Second).Format(time.RFC3339)
 	process := `{"Version": 1, "AccessKeyId": "ASIAYOLODOORWAY", "SecretAccessKey": "yolo-doorway-secret", ` +

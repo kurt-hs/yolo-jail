@@ -1,142 +1,110 @@
 package integration
 
-// homedaemons_test.go stops, at the end of every test that launched yolo, the host-wide
-// daemons that launch left running under the test's temp HOME.
+// homedaemons_test.go makes the end of every test that launched yolo WAIT for the host daemons
+// that launch ran under the test's temp HOME, before the HOME is removed.
 //
 // # What a launch leaves behind
 //
-// A host-wide daemon (`host_daemon.scope: "host"` — claude-oauth-broker, openai-auth-broker and
-// aws-auth today) is spawned DETACHED by the launch that first needs it (internal/broker's
-// EnsureSingleton), and outlives that launch by design: it serves every jail on the machine.
-// Its rendezvous files are machine-wide /tmp paths keyed by loophole name
-// (paths.HostSingletonPIDFile), but the process runs with the SPAWNING launch's environment —
-// in this suite, a temp HOME that t.TempDir deletes when the test ends. Inventoried on
-// 2026-09-28 by listing every process whose HOME is an integration temp dir after
-// `go test -run 'TestPackRendersConfigAndLauncher|TestWorkspaceSkillsReachAContainerJail|
-// TestAWSAuthServesTheFourKeysOverTheLoopbackHop'`:
+// Since HD-R1 (docs/design/host-daemon-ownership.md) every host-side daemon is the launch's own:
+// a jail's keeper, a macos-user session or a `yolo host` launch spawns it, and the launch's end
+// SIGTERMs it. A credential daemon declares `detach` (the manifest key), so that SIGTERM is not
+// waited for: the daemon finishes a refresh in flight and exits on its own, bounded by its
+// thirty-second upstream deadline (§1.3, mode 6). In this suite there is never a refresh in
+// flight, so it exits within milliseconds — but "within milliseconds of the launch returning"
+// is still after the launch returned, and t.TempDir's RemoveAll of the HOME the daemon writes
+// into can land first (the "directory not empty" failure detachedwriters_test.go describes).
 //
-//   - an openai-auth-broker spawned by TestPackRendersConfigAndLauncher/claude (the claude pack
-//     `needs` openai-auth), alive with its HOME deleted and --state-file under it. The pi and
-//     codex subtests after it spawned none: they ADOPTED it, a daemon serving a deleted HOME;
-//   - a claude-oauth-broker from an earlier run, alive for hours with its HOME and cwd deleted,
-//     which the claude subtest had likewise adopted instead of spawning its own;
-//   - no aws-auth daemon, only because its fixture stops it (awsauth_test.go);
-//   - no per-jail host service and no scratch remover: the launcher tears the first down with
-//     the jail, and awaitDetachedWriters already waits for the second.
-//
-// With this file's stop in place the same run's -v output reads, per subtest, "stopped the
-// host-wide daemons left running under this test's HOME …": claude-oauth-broker and
-// openai-auth-broker for claude, openai-auth-broker for pi and for codex — each subtest now
-// spawns its own, and nothing is left alive afterwards.
-//
-// A daemon like that writes into a HOME that is being deleted (recreating a directory under
-// t.TempDir's RemoveAll is the "directory not empty" failure detachedwriters_test.go
-// describes), holds the singleton slot every later test then ADOPTS instead of starting its
-// own — which is why several tests stop "a grantless openai-auth-broker singleton … so this
-// test can own the slot" — and accumulates across runs. The daemons now also exit on their own
-// when their state dir goes (internal/hostservice/statedir.go), but that is a poll, not a
-// barrier: this file is what makes the cleanup ORDERED, the daemon gone before the HOME is
-// removed.
+// The suite used to STOP host-wide daemons here instead: one daemon per machine, adopted by every
+// later launch, spawned under whichever test's HOME came first. No launch of this build starts
+// one, so there is nothing to stop, and stopping by name would now reach a machine-wide daemon
+// an older yolo's jails on the developer's machine are using.
 //
 // # How a daemon is identified as this test's
 //
-// Through its PID FILE, the way `yolo host-daemon stop` finds it, and never by a process search
-// by name (a search matches daemons this test never started, including the developer's own).
-// Then by its HOME: a pid is this test's only if the process runs with HOME set to the test's
-// temp home. That dir is unique to the test, so a match cannot be anyone else's process, and a
-// stale PID file naming a recycled pid does not match. The HOME is read from
-// /proc/<pid>/environ, so on a host without /proc (darwin) nothing is identified and nothing is
-// stopped — there the daemon's own exit when its state dir goes is the whole remedy.
+// By its HOME and its command line, both read from /proc: a process whose environment carries
+// HOME=<this test's temp home> and whose argv holds `internal daemon <name>` (the self-exec'd
+// form every yolo host daemon runs as). The HOME is unique to the test, so a match cannot be
+// anyone else's process. The jail keeper is excluded: WaitForKeeper waits for it first. On a host
+// without /proc (darwin) nothing is identified, and the daemon's own exit when its state dir goes
+// (internal/hostservice/statedir.go) is the whole remedy.
 //
-// The stop runs under the singleton's SPAWN LOCK (paths.HostSingletonLock), the flock every
-// ensure takes, so no launch — of this run or an overlapping one — is between "the daemon is
-// alive" and fronting it while it goes. The rendezvous files are removed only while the PID
-// file still names the stopped process, as internal/broker's BrokerKill does.
+// # The bound
+//
+// homeDaemonBound is the upstream deadline with margin. A daemon still alive past it is a
+// straggler HD-R1 does not allow, so it is killed (so the HOME can go) and the test fails naming
+// it.
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/awsauthdaemon"
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthdaemon"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// hostDaemonLockWait bounds the wait for a singleton's spawn lock. An ensure holds it for a
-// spawn plus its socket wait (broker.BrokerSpawnTimeout) and, when it restarts a stale daemon,
-// a kill (broker.BrokerKillTimeout) before that; this is both with margin.
-const hostDaemonLockWait = 30 * time.Second
+// homeDaemonBound is how long a launch's host daemons may outlive it: the thirty-second upstream
+// deadline a refresh in flight is bounded by, with margin.
+const homeDaemonBound = 45 * time.Second
 
-// stopHomeHostDaemons stops every host-wide daemon whose process runs with HOME=home, waiting
-// for each to exit, and names the ones it stopped ("<name> pid <n>"). See the file header for
-// how a daemon is identified and why.
-func stopHomeHostDaemons(home string) ([]string, error) {
-	if home == "" {
-		return nil, nil
+// homeHostDaemons lists the live host daemons running under home: pid → daemon name.
+func homeHostDaemons(home string) map[int]string {
+	out := map[int]string{}
+	if home == "" || goruntime.GOOS != "linux" {
+		return out
 	}
-	var stopped []string
-	var errs []error
-	for _, name := range broker.RendezvousSingletonNames() {
-		pid, err := stopHomeHostDaemon(name, home)
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid == os.Getpid() {
+			continue
+		}
+		args, err := processArgs(pid)
 		if err != nil {
-			errs = append(errs, err)
+			continue
 		}
-		if pid != 0 {
-			stopped = append(stopped, fmt.Sprintf("%s pid %d", name, pid))
+		for i := 0; i+2 < len(args); i++ {
+			if args[i] == "internal" && args[i+1] == "daemon" && args[i+2] != "jail-keeper" {
+				if !processGone(pid) && processRunsWithHome(pid, home) {
+					out[pid] = args[i+2]
+				}
+				break
+			}
 		}
 	}
-	return stopped, errors.Join(errs...)
+	return out
 }
 
-// stopHomeHostDaemon stops the singleton called name if its process runs with HOME=home, and
-// returns the pid it stopped, or 0.
-func stopHomeHostDaemon(name, home string) (int, error) {
-	// Cheap first look, outside the lock: almost every launch left nothing of its own here.
-	if pid := hostDaemonPID(name); pid == 0 || processGone(pid) || !processRunsWithHome(pid, home) {
-		return 0, nil
+// awaitHomeHostDaemons waits up to bound for every host daemon running under home to exit, and
+// returns the ones that did not ("<name> pid <n>"), each of which it has killed so the HOME can
+// be removed.
+func awaitHomeHostDaemons(home string, bound time.Duration) []string {
+	var left map[int]string
+	for deadline := time.Now().Add(bound); ; time.Sleep(50 * time.Millisecond) {
+		left = homeHostDaemons(home)
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
 	}
-	unlock, err := lockHostDaemonSlot(name)
-	if err != nil {
-		return 0, err
+	var named []string
+	for pid, name := range left {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		named = append(named, fmt.Sprintf("%s pid %d", name, pid))
 	}
-	defer unlock()
-	// Again under the lock: an ensure may have replaced the daemon while this waited for it.
-	pid := hostDaemonPID(name)
-	if pid == 0 || processGone(pid) || !processRunsWithHome(pid, home) {
-		return 0, nil
-	}
-	if err := stopHostDaemonPID(name, pid); err != nil {
-		return 0, err
-	}
-	return pid, nil
-}
-
-// hostDaemonPID is the PID the singleton name's PID file names, or 0.
-func hostDaemonPID(name string) int {
-	raw, err := os.ReadFile(paths.HostSingletonPIDFile(name))
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil || pid <= 0 {
-		return 0
-	}
-	return pid
+	slices.Sort(named)
+	return named
 }
 
 // processRunsWithHome reports that pid's environment carries HOME=home. False whenever that
-// cannot be read, which is the direction that stops nothing.
+// cannot be read, which is the direction that waits for nothing.
 func processRunsWithHome(pid int, home string) bool {
 	if goruntime.GOOS != "linux" {
 		return false // no /proc: see the file header
@@ -154,88 +122,19 @@ func processRunsWithHome(pid int, home string) bool {
 	return false
 }
 
-// lockHostDaemonSlot takes the singleton's spawn lock, polling rather than blocking so a lock
-// held past hostDaemonLockWait is reported instead of hanging the cleanup.
-func lockHostDaemonSlot(name string) (func(), error) {
-	f, err := os.OpenFile(paths.HostSingletonLock(name), os.O_RDONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("opening %s's spawn lock: %w", name, err)
-	}
-	for deadline := time.Now().Add(hostDaemonLockWait); ; time.Sleep(50 * time.Millisecond) {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return func() {
-				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-				_ = f.Close()
-			}, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
-			_ = f.Close()
-			return nil, fmt.Errorf("taking %s's spawn lock %s: %v", name,
-				paths.HostSingletonLock(name), err)
-		}
-	}
-}
-
-// stopHostDaemonPID stops the singleton name's process pid — TERM, then KILL after a grace —
-// and then removes the rendezvous files it owned, but only while the PID file still names it,
-// so a successor some launch started in between is never unlinked. It never falls back to a
-// process search: BrokerKill does, and a search could match a daemon this test never started.
-func stopHostDaemonPID(name string, pid int) error {
-	_ = syscall.Kill(pid, syscall.SIGTERM)
-	for deadline := time.Now().Add(5 * time.Second); !processGone(pid) && time.Now().Before(deadline); {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !processGone(pid) {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
-		for deadline := time.Now().Add(2 * time.Second); !processGone(pid) && time.Now().Before(deadline); {
-			time.Sleep(50 * time.Millisecond)
-		}
-	}
-	if !processGone(pid) {
-		return fmt.Errorf("%s pid %d survived SIGTERM and SIGKILL", name, pid)
-	}
-	if hostDaemonPID(name) != pid {
-		return nil
-	}
-	// The socket, the private host socket beside it (the openai-auth and aws-auth daemons
-	// each derive one), and the PID file's `.capability` and `.launch-check` stamps and
-	// `.settings` record: what BrokerKill removes, plus the sibling it does not know about. The
-	// PID file goes last, so a reader that still finds it finds the rest.
-	socket := paths.HostSingletonSocket(name)
-	pidFile := paths.HostSingletonPIDFile(name)
-	for _, p := range []string{socket, openaiauthdaemon.HostSocketPath(socket),
-		awsauthdaemon.HostSocketPath(socket), pidFile + ".capability", pidFile + ".launch-check",
-		pidFile + ".settings", pidFile} {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-	return nil
-}
-
 // --- the tests ---
 
-// isolateHostSingletons points this process's view of the singleton rendezvous at a private
-// directory for one test, so a fake daemon's files never touch the machine's /tmp slots.
-func isolateHostSingletons(t *testing.T) {
-	t.Helper()
-	saved := paths.HostSingletonDir
-	paths.HostSingletonDir = t.TempDir()
-	t.Cleanup(func() { paths.HostSingletonDir = saved })
-}
-
-// fakeHostDaemon starts a stand-in singleton called name, running with HOME=home, and writes
-// the rendezvous files an ensure would: the spawn lock, the PID file, a socket path and the
-// two PID-file sidecars. It is `sleep`, because what is under test is how the harness FINDS
-// and stops a daemon, not anything a daemon does.
-func fakeHostDaemon(t *testing.T, name, home string) *exec.Cmd {
+// fakeHomeDaemon starts a stand-in host daemon called name, running with HOME=home, whose argv
+// carries `internal daemon <name>` as a real one's does. It exits on its own after life. It is
+// a shell list, so the shell keeps the argv rather than exec'ing `sleep` in its place.
+func fakeHomeDaemon(t *testing.T, name, home string, life time.Duration) *exec.Cmd {
 	t.Helper()
 	if goruntime.GOOS != "linux" {
 		t.Skip("the harness identifies a daemon's HOME through /proc, which this host lacks " +
-			"(homedaemons_test.go's header); it stops nothing here, so there is nothing to test")
+			"(homedaemons_test.go's header); it waits for nothing here, so there is nothing to test")
 	}
-	cmd := exec.Command("sleep", "600")
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("sleep %.1f; :", life.Seconds()),
+		"internal", "daemon", name)
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -246,104 +145,58 @@ func fakeHostDaemon(t *testing.T, name, home string) *exec.Cmd {
 		_ = cmd.Process.Kill()
 		<-exited
 	})
-	// Start returns once the child's execve has closed its close-on-exec fds, which the kernel
-	// does BEFORE it records where the new image's environment lives, so for a moment
-	// /proc/<pid>/environ reads empty and the process "runs with no HOME". A real daemon is
-	// long past that window when the harness looks; this stand-in is looked at at once, so
-	// wait until it shows the HOME it was given (a CI flake, 1 in ~400 under load, until this).
-	for deadline := time.Now().Add(10 * time.Second); !processRunsWithHome(cmd.Process.Pid, home); {
+	// Until the exec lands, /proc shows neither the argv nor the HOME (see the comment this
+	// replaced in TestTheProcessProbesSeeALiveChildAndItsEnd): wait until the harness would see it.
+	for deadline := time.Now().Add(10 * time.Second); homeHostDaemons(home)[cmd.Process.Pid] != name; {
 		if time.Now().After(deadline) {
-			t.Fatalf("the stand-in %s (pid %d) never showed HOME=%s in /proc/%d/environ",
-				name, cmd.Process.Pid, home, cmd.Process.Pid)
+			t.Fatalf("the stand-in %s (pid %d) never showed as a host daemon under %s", name,
+				cmd.Process.Pid, home)
 		}
 		time.Sleep(time.Millisecond)
-	}
-	pidFile := paths.HostSingletonPIDFile(name)
-	for p, body := range map[string]string{
-		paths.HostSingletonLock(name):   "",
-		pidFile:                         strconv.Itoa(cmd.Process.Pid) + "\n",
-		pidFile + ".capability":         "fake\n",
-		pidFile + ".launch-check":       "fake\n",
-		pidFile + ".settings":           "{}\n",
-		paths.HostSingletonSocket(name): "",
-	} {
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return cmd
 }
 
-// TestStopHomeHostDaemonsStopsOnlyTheHomesOwn runs under -short: a stand-in daemon under the
-// test's home is stopped and its rendezvous files removed, and one under another home — the
-// developer's own, as far as this test can tell — is left running with its files intact.
-func TestStopHomeHostDaemonsStopsOnlyTheHomesOwn(t *testing.T) {
-	isolateHostSingletons(t)
+// TestAwaitHomeHostDaemonsWaitsForOnlyTheHomesOwn runs under -short: a stand-in daemon under the
+// test's home that exits on its own is waited for and not reported; one that outlives the bound
+// is killed and reported by name; one under ANOTHER home is neither waited for nor touched.
+func TestAwaitHomeHostDaemonsWaitsForOnlyTheHomesOwn(t *testing.T) {
 	mine, theirs := t.TempDir(), t.TempDir()
-	own := fakeHostDaemon(t, "fake-own", mine)
-	other := fakeHostDaemon(t, "fake-other", theirs)
+	quick := fakeHomeDaemon(t, "fake-quick", mine, 300*time.Millisecond)
+	stuck := fakeHomeDaemon(t, "fake-stuck", mine, 600*time.Second)
+	other := fakeHomeDaemon(t, "fake-other", theirs, 600*time.Second)
 
-	stopped, err := stopHomeHostDaemons(mine)
-	if err != nil {
-		t.Fatal(err)
+	left := awaitHomeHostDaemons(mine, 2*time.Second)
+	if want := fmt.Sprintf("fake-stuck pid %d", stuck.Process.Pid); len(left) != 1 || left[0] != want {
+		t.Errorf("left = %v, want [%s]: the one that outlived the bound, and only it", left, want)
 	}
-	if want := fmt.Sprintf("fake-own pid %d", own.Process.Pid); len(stopped) != 1 || stopped[0] != want {
-		t.Errorf("stopped = %v, want [%s]", stopped, want)
+	if !processGone(quick.Process.Pid) {
+		t.Errorf("the daemon that exits on its own (pid %d) was not waited for", quick.Process.Pid)
 	}
-	if !processGone(own.Process.Pid) {
-		t.Errorf("the daemon running under %s is still alive", mine)
+	if !awaitProcessGone(stuck.Process.Pid, 5*time.Second) {
+		t.Errorf("the daemon that outlived the bound (pid %d) is still alive", stuck.Process.Pid)
 	}
-	for _, p := range []string{paths.HostSingletonPIDFile("fake-own"),
-		paths.HostSingletonSocket("fake-own"), paths.HostSingletonPIDFile("fake-own") + ".capability",
-		paths.HostSingletonPIDFile("fake-own") + ".launch-check",
-		paths.HostSingletonPIDFile("fake-own") + ".settings"} {
-		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
-			t.Errorf("%s survived the stop (%v)", p, err)
-		}
-	}
-	if _, err := os.Lstat(paths.HostSingletonLock("fake-own")); err != nil {
-		t.Errorf("the spawn lock is the one rendezvous file that stays (broker.RendezvousSingletonNames "+
-			"lists a singleton by it): %v", err)
-	}
-
 	if processGone(other.Process.Pid) {
 		t.Errorf("the daemon running under ANOTHER home (%s) was stopped", theirs)
 	}
-	if hostDaemonPID("fake-other") != other.Process.Pid {
-		t.Error("the other home's PID file was touched")
-	}
 }
 
-// A PID file naming a process that is NOT this home's — a recycled pid, or a successor some
-// other launch spawned — is left alone, file and process both.
-func TestStopHomeHostDaemonsLeavesAPidFileNamingSomeoneElse(t *testing.T) {
-	isolateHostSingletons(t)
-	mine := t.TempDir()
-	stranger := fakeHostDaemon(t, "fake", t.TempDir())
-	if stopped, err := stopHomeHostDaemons(mine); err != nil || len(stopped) != 0 {
-		t.Fatalf("stopped %v (%v), want nothing", stopped, err)
-	}
-	if processGone(stranger.Process.Pid) || hostDaemonPID("fake") != stranger.Process.Pid {
-		t.Error("a daemon that is not this home's was stopped, or its PID file removed")
-	}
-}
-
-// THE CALL SITE, BY BEHAVIOR: a runCommand launch's cleanup stops a host-wide daemon running
-// under the launch's HOME. The daemon is a stand-in in a private rendezvous dir, and the launch
-// is `yolo --version`, since what is pinned is the harness's stop and not the spawn. Delete the
-// stopHomeHostDaemons call from awaitDetachedWriters and the stand-in outlives the subtest.
-func TestALaunchesCleanupStopsItsHomesHostDaemons(t *testing.T) {
+// THE CALL SITE, BY BEHAVIOR: a runCommand launch's cleanup waits for a host daemon still
+// running under the launch's HOME. The daemon is a stand-in that exits a second after the launch
+// returns, and the launch is `yolo --version`, since what is pinned is the harness's wait and not
+// the spawn. Delete the awaitHomeHostDaemons call from awaitDetachedWriters and the stand-in is
+// still running when the subtest returns.
+func TestALaunchesCleanupWaitsForItsHomesHostDaemons(t *testing.T) {
 	requireJail(t)
-	isolateHostSingletons(t)
 	ws := t.TempDir()
-	daemon := fakeHostDaemon(t, "fake-launch", os.Getenv("HOME"))
+	daemon := fakeHomeDaemon(t, "fake-launch", os.Getenv("HOME"), time.Second)
 	t.Run("launch", func(t *testing.T) {
 		if res := runYoloCLI(t, ws, "--version"); res.rc != 0 {
 			t.Fatalf("yolo --version: rc=%d\n%s", res.rc, res.combined())
 		}
 	})
 	if !processGone(daemon.Process.Pid) {
-		t.Error("a host-wide daemon running under the launch's HOME outlived the launch's " +
-			"cleanup: awaitDetachedWriters no longer calls stopHomeHostDaemons")
+		t.Error("a host daemon running under the launch's HOME outlived the launch's cleanup: " +
+			"awaitDetachedWriters no longer calls awaitHomeHostDaemons")
 	}
 }

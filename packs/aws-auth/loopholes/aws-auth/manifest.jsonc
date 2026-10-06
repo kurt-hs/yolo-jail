@@ -96,20 +96,20 @@
       "scope": "user",
       "default": false,
       "description": "serve the profile's permission set as-is, with no AssumeRole. The one widening, asked for by name and disclosed wherever this service reports",
-      // Printed by EVERY launch while this is true (OQ-SSO10): the daemon is a host
-      // singleton, so its own spawn line prints once and then serves later launches in
-      // silence. Wording kept beside awsauth.Narrowing.DisclosureLine's, which the daemon
+      // Printed by EVERY launch while this is true (OQ-SSO10), by the launch rather than
+      // the daemon: a launch's own line is the disclosure whatever the daemon prints. Wording kept beside awsauth.Narrowing.DisclosureLine's, which the daemon
       // prints at spawn and the self-check grades as a NOTE.
       "disclose": "serving UN-NARROWED credentials — the jail holds whatever the configured profile's permission set grants (settings.unnarrowed is true)"
     }
   },
 
-  // ONE PER MACHINE (`scope: "host"`), with the cache keyed BY PROFILE so one process
-  // still serves several AWS identities (OQ-SSO2). A per-jail daemon would be legal
-  // — P2 removes the single-use-token race that forced the other two brokers to be
-  // singletons — and loses on the warm credential cache, which the design's R1 makes
-  // load-bearing because the mint is the slow step and the adapter's serve budget is
-  // under 200 ms.
+  // ONE PER JAIL, started by the launch and stopped with it
+  // (docs/design/host-daemon-ownership.md, HD-R1, which retired the machine-wide
+  // `scope: "host"` this declared). The cache is keyed BY PROFILE so one process serves
+  // several AWS identities (OQ-SSO2), and it is the shared `{state}/credentials.json`,
+  // so a jail's copy starts warm from what another jail's copy minted: the design's R1
+  // makes that load-bearing, because the mint is the slow step and the adapter's serve
+  // budget is under 200 ms.
   //
   // `publishes: "socket"` is REQUIRED of a pack-shipped loophole
   // (internal/loopholedecl/packshipped.go): the daemon binds a plain AF_UNIX socket at
@@ -143,8 +143,11 @@
       "--settings", "{settings}"
     ],
     "publishes": "socket",
-    "scope": "host",
-    "launch_check": true
+    "launch_check": true,
+    // A jail's end SIGTERMs this daemon alone and leaves it to finish a mint in flight,
+    // whose `aws` child is not signaled, so the cache it fills is warm for the next jail
+    // (docs/design/host-daemon-ownership.md §1.3).
+    "detach": true
   },
 
   // The jail half: an HTTP endpoint on jail loopback speaking the protocol every AWS

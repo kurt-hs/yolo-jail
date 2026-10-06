@@ -18,59 +18,50 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// OQ-HD10'S MEASUREMENT: TWO macos-user LAUNCHES OF ONE WORKSPACE, AT ONCE
-// (docs/design/host-daemon-ownership.md#OQ-HD10).
+// OQ-HD10'S MEASUREMENT, NOW HD-R1'S CHECK ON A MAC: TWO macos-user LAUNCHES OF ONE WORKSPACE,
+// AT ONCE (docs/design/host-daemon-ownership.md#OQ-HD10, HD-D4, HD-R1).
 //
-// THE QUESTION. Retiring `host_daemon.scope: "host"` (HD-R1) removes the spawn flock,
-// paths.HostSingletonLock, along with the singleton it guards. On macos-user there is no
-// container, and per-jail identity is per-WORKSPACE (the cname hashes the resolved workspace
-// path), so two simultaneous launches of one workspace are one jail as far as every per-jail
-// path is concerned. The leaning is "measure two concurrent launches before removing
-// anything"; this is that measurement. It asserts nothing about the answer.
+// THE QUESTION IT ANSWERED. Retiring `host_daemon.scope: "host"` (HD-R1) removes the spawn
+// flock, paths.HostSingletonLock, along with the singleton it guarded. On macos-user there is
+// no container, and per-jail identity is per-WORKSPACE (the cname hashes the resolved workspace
+// path), so two simultaneous launches of one workspace are one identity. Three scheduled runs
+// (2026-09-28 to 2026-09-30) saw ONE BROKER per pair, credited to that flock, so HD-D4 gave
+// per-session daemons a per-workspace spawn guard of their own. HD-R1 is built on macos-user
+// now, and what this records is what the build promises there.
 //
 // WHAT IT RECORDS, one `HD10 …` line each, so one grep of the job log recovers the record:
 //
-//   - SPAWN: how many claude-oauth-broker processes existed while both launches ran — sampled
-//     from the host by pgrep every 100 ms, so a count of one is a LOWER bound on spawns and a
-//     count of two is proof of a second spawn. It is only an answer if no broker was alive
-//     when the pair started (a live one short-circuits BrokerSpawn before the flock matters).
-//     So a live broker is stopped first with `yolo host-daemon stop`, and the line says
-//     whether that worked — but ONLY in a run that declared itself the macos-user job
-//     (YOLO_TEST_MACOS_USER). Anywhere else the live broker is a developer's real one, and
-//     the test refuses rather than kill it (hd10PreBrokerPlan; awsauth_test.go's precedent).
-//     Whatever the answer, the broker the pair spawned is stopped at cleanup, because it runs
-//     under this test's temp HOME but answers on the machine-wide socket.
-//   - WORKSPACE-LOCK: whether either launch printed the per-workspace lock's waiting notice.
-//     READ FROM CODE: since per-launch pack trees (docs/reference/pack-system.md#oq-pk2) that
-//     lock is taken on this backend AFTER run.go's native arm's startLoopholesDisclosed and
-//     before its content staging (refreshJailBriefings), and held until the orchestrator
-//     releases it before the agent. Each launch's host daemons run from that launch's own pack
-//     tree, so nothing they read is shared, and the two launches' spawns CAN contend the spawn
-//     flock again, as they could before the staging-race fix (2026-09-26) put the lock ahead of
-//     staging. A launch that printed the notice waited on the other's content staging and
-//     sandbox bootstrap, not on its daemon start. It is still the courtesy lock that warns and
-//     continues when it cannot be taken, which is why it does not by itself answer OQ-HD10.
+//   - SPAWN: how many claude-oauth-broker processes of the PAIR existed while both launches
+//     ran — sampled from the host by pgrep every 100 ms, counting only a SESSION'S broker (its
+//     argv names a /tmp/yolo-front-… socket: hd10SessionBrokerPIDs) that was not alive before
+//     the pair started. ASSERTED: two at once, one per session. A machine-wide broker an older
+//     yolo left, or a developer's real one, is neither counted nor stopped: no session of this
+//     build adopts it or touches it.
+//   - SPAWN-GUARD: whether either launch printed the guard's waiting notice (HD-D4,
+//     takeHostDaemonSpawnGuard): a launch that did waited while the other's host services came
+//     up. Either answer passes; it depends on how close together the two starts landed.
+//   - WORKSPACE-LOCK: whether either launch printed the per-workspace courtesy lock's waiting
+//     notice. That lock is taken AFTER the host-daemon start, before content staging
+//     (refreshJailBriefings), so a wait there is a wait on the other's staging and bootstrap.
 //   - ENDPOINT DURING: what each session's claude-oauth-broker endpoint variable named, and
 //     whether the file was readable and its host:port dialable while both sessions were up.
 //   - ENDPOINT AFTER: the same probe in the LONGER session after the shorter one's `yolo`
-//     process had exited. This one is ASSERTED, below. The second run (scheduled macos-user run
-//     36319436117, f937d0fd) measured it GONE: both sessions published into ONE per-workspace
-//     host-services dir, the second session's front replaced the first's endpoint file, and the
-//     shorter session's teardown removed the dir under the survivor. Each session now publishes
-//     into a dir of its own and tears down only that one (internal/cli/run/servicessession.go),
-//     so the survivor's endpoint must still answer: its own front, in its own yolo process, over
-//     the host-wide broker that no session's teardown stops.
+//     process had exited. ASSERTED. The second run (scheduled macos-user run 36319436117,
+//     f937d0fd) measured it GONE: both sessions published into ONE per-workspace host-services
+//     dir, and the shorter session's teardown removed it under the survivor. Each session
+//     publishes into a dir of its own and tears down only that one (servicessession.go), and
+//     since HD-R1 its own broker behind its own front, so the survivor's endpoint must answer.
+//   - STRAGGLERS: whether the pair's brokers had exited once both launches returned. ASSERTED,
+//     within hd10StragglerBound: a jail's end SIGTERMs its broker and does not wait (the
+//     manifest's `detach`, §1.3), and a broker with no refresh in flight exits at once; one in
+//     flight is bounded by its thirty-second upstream deadline.
 //
-// # Every answer about SPAWN passes. Only an experiment not conducted is red, and the survivor
+// # What is red
 //
-// TestAppleContainerReachesHostLoopback's rule, for the spawn question OQ-HD10 still asks. What
-// fails: neither launch running its probe (then nothing about concurrency was observed — the
-// single-launch tests are the control and say why), or the two sessions never being up at the
-// same time (then there was no concurrency to observe). Two failures are about the MACHINE, not
-// the answer: the refusal to run beside an undeclared live broker, and a broker the pair spawned
-// still alive after the cleanup stopped it. And one is a DEFECT, the teardown defect the second
-// run measured, which is not OQ-HD10's to rule and is fixed: a survivor whose endpoint does not
-// answer after the other session exited, or a run that could not observe it (hd10SurvivorFailure).
+// Neither launch running its probe, or the two sessions never being up at the same time (then
+// nothing about concurrency was observed — the single-launch tests are the control). And the
+// three claims HD-R1 makes here: a broker per session, the survivor's endpoint still answering,
+// and no broker of the pair alive past the bound.
 //
 // ONE LAUNCH PAIR, and the pair's sessions coordinate through marker files in the workspace
 // (which both the sandbox account and this process can write), so the overlap is arranged
@@ -79,8 +70,8 @@ import (
 // `yolo` has exited before probing again.
 func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 	requireMacosUser(t)
-	// The claude pack is the subject: its claude-oauth-broker is the host-scoped singleton
-	// whose spawn the flock serializes.
+	// The claude pack is the subject: its claude-oauth-broker is the daemon that used to be
+	// one per host, which each session now starts for itself.
 	packHome(t, `{"packs": ["claude"]}`)
 	ws := macosUserWorkspace(t, `{}`)
 	syncDir := filepath.Join(ws, "hd10-sync")
@@ -93,36 +84,9 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pre := hd10BrokerPIDs()
-	stopFirst, refusal := hd10PreBrokerPlan(pre, os.Getenv(macosUserDeclareEnv) != "")
-	if refusal != "" {
-		t.Fatal(refusal)
-	}
-	// The pair's broker is spawned under this test's isolated HOME — its default credentials
-	// path is derived from os.UserHomeDir — yet it answers on the MACHINE-WIDE /tmp socket
-	// (paths.HostSingletonSocket, keyed by loophole name alone). Left running, it outlives the
-	// temp HOME, and every later launch on this machine adopts a broker whose credentials file
-	// has been deleted. Registered after requireMacosUser's HOME isolation, so it runs FIRST,
-	// while the HOME it was spawned under still exists.
-	t.Cleanup(func() {
-		if r := runYoloCLI(t, ws, "host-daemon", "stop", hd10Broker); r.rc != 0 {
-			t.Logf("stopping the broker this test's launches spawned: rc=%d\n%s", r.rc, r.combined())
-		}
-		if left := hd10BrokerPIDs(); len(left) > 0 {
-			t.Errorf("a %s is still alive after this test stopped it (pids %v); it was spawned "+
-				"under a temp HOME that is about to be deleted, so stop it by hand with "+
-				"`yolo host-daemon stop %s` before the next launch adopts it", hd10Broker, left, hd10Broker)
-		}
-	})
-	stopNote := "no broker was alive beforehand"
-	if stopFirst {
-		r := runCommand(t, ws, []string{"host-daemon", "stop", hd10Broker})
-		post := hd10BrokerPIDs()
-		stopNote = fmt.Sprintf("a broker was alive beforehand (pids %v); `yolo host-daemon stop %s` "+
-			"rc=%d; alive after it: %v", pre, hd10Broker, r.rc, post)
-		pre = post
-	}
-	exercised := len(pre) == 0
+	// Session brokers already alive (another workspace's session, on a shared runner) are not
+	// the pair's: only one that appears during the pair is counted.
+	pre := hd10SessionBrokerPIDs()
 
 	envVar := macosUserServiceEnvVar(hd10Broker)
 	scriptA := hd10Script(syncDir, envVar, "A", "B", true)
@@ -136,7 +100,7 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 	go func() {
 		defer samplerDone.Done()
 		for {
-			samples.observe(hd10BrokerPIDs())
+			samples.observe(hd10NewPIDs(hd10SessionBrokerPIDs(), pre))
 			select {
 			case <-stopSampling:
 				return
@@ -168,7 +132,15 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 	}
 	close(stopSampling)
 	samplerDone.Wait()
-	final := hd10BrokerPIDs()
+	// THE STRAGGLER BOUND: every broker the pair ran was SIGTERMed by its session's end, and is
+	// left to finish whatever refresh it had in flight (§1.3). Polled, never killed here.
+	var left []int
+	for deadline := time.Now().Add(hd10StragglerBound); ; time.Sleep(200 * time.Millisecond) {
+		left = hd10StillAlive(samples.distinct(), hd10SessionBrokerPIDs())
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
+	}
 
 	ranA := strings.Contains(rA.stdout, "=== END ===")
 	ranB := strings.Contains(rB.stdout, "=== END ===")
@@ -191,32 +163,71 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
 	}
 
-	waited := func(r hd10Result) bool {
-		return strings.Contains(r.combined(), "Waiting for concurrent jail launch in workspace")
-	}
-	pidFile, _ := os.ReadFile(paths.HostSingletonPIDFile(hd10Broker))
-	spawn := hd10SpawnVerdict(exercised, samples.distinct(), samples.max)
+	waitedOn := func(r hd10Result, notice string) bool { return strings.Contains(r.combined(), notice) }
+	const guardNotice = "Waiting for another launch of this workspace to start its host services"
+	const lockNotice = "Waiting for concurrent jail launch in workspace"
+	spawn := hd10SpawnVerdict(samples.distinct(), samples.max)
 
 	t.Logf("HD10 LAUNCHES: A rc=%d ran=%v, B rc=%d ran=%v (B's yolo exited %s after the pair started)",
 		rA.rc, ranA, rB.rc, ranB, bExited.Round(time.Second))
-	t.Logf("HD10 SPAWN: %s. Pre-state: %s. Broker pids seen during the pair: %v (at most %d at "+
-		"once); alive after both exited: %v; pid file now: %q",
-		spawn, stopNote, samples.distinct(), samples.max, final, strings.TrimSpace(string(pidFile)))
+	t.Logf("HD10 SPAWN: %s. Session brokers alive before the pair (not counted): %v; the pair's "+
+		"seen: %v (at most %d at once); machine-wide rendezvous %s present: %v",
+		spawn, pre, samples.distinct(), samples.max, paths.HostSingletonSocket(hd10Broker),
+		hd10Exists(paths.HostSingletonSocket(hd10Broker)))
+	t.Logf("HD10 SPAWN-GUARD: A printed the guard's waiting notice: %v; B printed it: %v "+
+		"(a wait means one launch's host services started after the other's were up)",
+		waitedOn(rA, guardNotice), waitedOn(rB, guardNotice))
 	t.Logf("HD10 WORKSPACE-LOCK: A printed the waiting notice: %v; B printed it: %v "+
 		"(taken after the host-daemon start, before content staging: a wait means one launch "+
-		"waited for the other's staging and bootstrap, not for its spawn)", waited(rA), waited(rB))
+		"waited for the other's staging and bootstrap, not for its spawn)",
+		waitedOn(rA, lockNotice), waitedOn(rB, lockNotice))
 	t.Logf("HD10 ENDPOINT DURING: A %s | B %s | one file for both: %v", hd10Probe(fa, "A_DURING"),
 		hd10Probe(fb, "B_DURING"), fa["A_DURING_VAR"] != "" && fa["A_DURING_VAR"] == fb["B_DURING_VAR"])
 	t.Logf("HD10 ENDPOINT AFTER B EXITED: A saw the exit marker: %s; A %s",
 		fa["A_SAW_B_EXIT"], hd10Probe(fa, "A_AFTER"))
+	t.Logf("HD10 STRAGGLERS: %s", hd10StragglerVerdict(left))
 	t.Logf("HD10 WARNINGS: A:\n%s\nB:\n%s", hd10Warnings(rA.combined()), hd10Warnings(rB.combined()))
-	t.Logf("HD10 VERDICT: %s; the survivor's endpoint after the other session ended: %s. "+
-		"Record both in docs/design/host-daemon-ownership.md#OQ-HD10.",
-		spawn, hd10AfterVerdict(fa))
+	t.Logf("HD10 VERDICT: %s; the survivor's endpoint after the other session ended: %s; %s. "+
+		"Record them in docs/design/host-daemon-ownership.md#OQ-HD10.",
+		spawn, hd10AfterVerdict(fa), hd10StragglerVerdict(left))
+	if failure := hd10SpawnFailure(spawn); failure != "" {
+		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
+			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
+	}
 	if failure := hd10SurvivorFailure(fa); failure != "" {
 		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
 			rA.rc, lastLines(rA.combined(), 40), rB.rc, lastLines(rB.combined(), 40))
 	}
+	if len(left) > 0 {
+		t.Errorf("HD10: %s", hd10StragglerVerdict(left))
+	}
+}
+
+// hd10StragglerBound is how long the pair's brokers may run past both launches' return: the
+// upstream request deadline a refresh in flight is bounded by (oauthbroker's httpClient, thirty
+// seconds), with margin. A broker with nothing in flight exits within milliseconds of its SIGTERM.
+const hd10StragglerBound = 45 * time.Second
+
+// hd10SpawnFailure is "" when the pair ran a broker per session, two at once, and otherwise why
+// that is a failure. PURE, and pinned with the verdicts.
+func hd10SpawnFailure(verdict string) string {
+	if strings.HasPrefix(verdict, "ONE PER SESSION") {
+		return ""
+	}
+	return "HD10: the pair's brokers were " + verdict + ". Under HD-R1 each macos-user session " +
+		"starts its own " + hd10Broker + " (internal/cli/run/hostdaemonperjail.go), so two " +
+		"overlapping sessions run two at once"
+}
+
+// hd10StragglerVerdict names whether the pair's brokers were gone by the bound.
+func hd10StragglerVerdict(left []int) string {
+	if len(left) == 0 {
+		return "NONE LEFT — every broker of the pair exited once its session ended"
+	}
+	return fmt.Sprintf("STILL RUNNING after %s — the pair's brokers %v outlived their sessions "+
+		"past the upstream deadline a refresh in flight is bounded by; a jail's end SIGTERMs its "+
+		"broker (the manifest's `detach`), and one that does not exit is the stuck lock holder "+
+		"docs/design/host-daemon-ownership.md §1.3 names", hd10StragglerBound, left)
 }
 
 // hd10SurvivorFailure is the experiment's one assertion about its answer: "" when the longer
@@ -349,37 +360,54 @@ func hd10Launch(t *testing.T, dir, script string, env []string) <-chan hd10Resul
 	return ch
 }
 
-// hd10PreBrokerPlan decides what the test may do about claude-oauth-brokers alive before the
-// pair starts: stop them first, or refuse to run. PURE, and pinned under -short
-// (TestMacosUserHD10VerdictsNameEachCase).
-//
-// The broker is a machine-wide singleton — its pid, lock and socket files are /tmp paths keyed
-// by loophole name alone (paths.HostSingletonPIDFile and siblings) — so a live one on a
-// developer's Mac is the one that developer's real jails refresh Claude OAuth through. Stopping
-// it would hand those jails, until someone noticed, a replacement spawned under this test's
-// temp HOME. Only a run that DECLARED itself the macos-user job (declared) is on a machine
-// whose broker is disposable; everywhere else the answer is to refuse and say how to proceed,
-// as awsauth_test.go's fixture does for aws-auth.
-func hd10PreBrokerPlan(pre []int, declared bool) (stopFirst bool, refusal string) {
-	switch {
-	case len(pre) == 0:
-		return false, ""
-	case declared:
-		return true, ""
-	}
-	return false, fmt.Sprintf("a %[1]s is already running on this machine (pids %[2]v), and this "+
-		"experiment needs none alive when its launch pair starts. It is machine-wide (%[3]s), so it "+
-		"is almost certainly the one your real jails use, and this test will not kill it for you. "+
-		"Stop it with `yolo host-daemon stop %[1]s` (the next launch that wants it starts it again) "+
-		"and rerun; or set %[4]s=1 on a disposable machine to let the test stop it itself.",
-		hd10Broker, pre, paths.HostSingletonSocket(hd10Broker), macosUserDeclareEnv)
+// hd10SessionBrokerPattern is the pgrep pattern of a SESSION'S claude-oauth-broker: its argv
+// names the upstream socket its launch keyed by the session (internal/cli/run's frontSocketFile,
+// /tmp/yolo-front-<key>-<name>.sock). A machine-wide broker an older yolo left answers on
+// /tmp/yolo-<name>.sock and never matches, so a developer's real one is neither counted nor
+// touched.
+const hd10SessionBrokerPattern = "internal daemon " + hd10Broker + " --socket /tmp/yolo-front-"
+
+// hd10SessionBrokerPIDs lists the live session brokers on this host. pgrep exits 1 on no
+// match, which is the empty answer rather than a fault.
+func hd10SessionBrokerPIDs() []int {
+	out, _ := exec.Command("pgrep", "-f", hd10SessionBrokerPattern).Output()
+	return hd10ParsePIDs(string(out))
 }
 
-// hd10BrokerPIDs lists the live claude-oauth-broker daemons on this host. pgrep exits 1 on
-// no match, which is the empty answer rather than a fault.
-func hd10BrokerPIDs() []int {
-	out, _ := exec.Command("pgrep", "-f", "internal daemon "+hd10Broker).Output()
-	return hd10ParsePIDs(string(out))
+// hd10NewPIDs is pids less the ones in pre, which were alive before the pair started. PURE.
+func hd10NewPIDs(pids, pre []int) []int {
+	old := map[int]bool{}
+	for _, p := range pre {
+		old[p] = true
+	}
+	var out []int
+	for _, p := range pids {
+		if !old[p] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// hd10Exists reports whether anything is at path, for the record line.
+func hd10Exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// hd10StillAlive is the pair's brokers (seen) that are among the live ones (live). PURE.
+func hd10StillAlive(seen, live []int) []int {
+	alive := map[int]bool{}
+	for _, p := range live {
+		alive[p] = true
+	}
+	var out []int
+	for _, p := range seen {
+		if alive[p] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // hd10ParsePIDs reads pgrep's one-pid-per-line output, sorted.
@@ -423,27 +451,24 @@ func (s *hd10Sampler) distinct() []int {
 	return out
 }
 
-// hd10SpawnVerdict names what the samples say about spawn. PURE, and pinned under -short
-// (TestMacosUserHD10VerdictsNameEachCase).
-func hd10SpawnVerdict(exercised bool, distinct []int, maxAtOnce int) string {
+// hd10SpawnVerdict names what the samples say about the pair's brokers. PURE, and pinned under
+// -short (TestMacosUserHD10VerdictsNameEachCase). Under HD-R1 the answer to expect is ONE PER
+// SESSION: each session starts its own, and they share the credentials file and its refresh
+// flock rather than a process (docs/design/host-daemon-ownership.md §1.1).
+func hd10SpawnVerdict(distinct []int, maxAtOnce int) string {
 	switch {
-	case !exercised:
-		return "NOT EXERCISED — a broker was still alive when the pair started, so both " +
-			"launches found it and neither reached the spawn under the flock"
 	case len(distinct) == 0:
-		return "NO BROKER — neither launch left a claude-oauth-broker running long enough to " +
-			"sample, so the spawn itself failed or was skipped; read the WARNINGS line"
+		return "NO BROKER — neither session left a claude-oauth-broker of its own running long " +
+			"enough to sample, so its spawn failed or was skipped; read the WARNINGS line"
 	case len(distinct) == 1:
-		return "ONE BROKER — exactly one daemon was ever seen; each launch starts its host " +
-			"daemons BEFORE it takes the workspace launch lock (per-launch pack trees moved the " +
-			"lock after the daemon start), so the spawn flock (paths.HostSingletonLock) or the " +
-			"liveness re-check inside it kept the pair to one"
+		return "ONE BROKER — exactly one session broker was ever seen, so one session ran none " +
+			"of its own: its spawn failed, or it fronted another's"
 	case maxAtOnce >= 2:
-		return fmt.Sprintf("TWO SPAWNS AT ONCE — %d brokers were alive together: the spawn was "+
-			"NOT serialized, and two daemons share one single-use refresh token", maxAtOnce)
+		return fmt.Sprintf("ONE PER SESSION — %d session brokers were alive together while both "+
+			"sessions were up, each its own session's", maxAtOnce)
 	default:
-		return fmt.Sprintf("%d BROKERS IN SEQUENCE — never two at once, so one replaced the "+
-			"other: a spawn after a kill, or a daemon that died and was respawned", len(distinct))
+		return fmt.Sprintf("%d BROKERS IN SEQUENCE — never two at once, so the sessions' brokers "+
+			"did not overlap although the sessions did: one died and another started", len(distinct))
 	}
 }
 
@@ -499,8 +524,8 @@ func hd10Warnings(out string) string {
 	for _, line := range strings.Split(out, "\n") {
 		l := strings.ToLower(line)
 		if strings.Contains(l, "warning") || strings.Contains(l, "refus") ||
-			strings.Contains(l, "waiting for concurrent") || strings.Contains(l, "could not") ||
-			strings.Contains(l, hd10Broker) {
+			strings.Contains(l, "waiting for concurrent") || strings.Contains(l, "waiting for another launch") ||
+			strings.Contains(l, "could not") || strings.Contains(l, hd10Broker) {
 			keep = append(keep, "  "+strings.TrimSpace(line))
 		}
 	}
@@ -516,21 +541,48 @@ func hd10Warnings(out string) string {
 // the experiment also checks them; not behind requireMacosUser.
 func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		exercised bool
-		distinct  []int
-		max       int
-		want      string
+		name     string
+		distinct []int
+		max      int
+		want     string
 	}{
-		{"a live broker beforehand", false, []int{7}, 1, "NOT EXERCISED"},
-		{"nothing ever ran", true, nil, 0, "NO BROKER"},
-		{"one daemon", true, []int{7}, 1, "ONE BROKER"},
-		{"two at once", true, []int{7, 9}, 2, "TWO SPAWNS AT ONCE"},
-		{"a replacement", true, []int{7, 9}, 1, "2 BROKERS IN SEQUENCE"},
+		{"nothing ever ran", nil, 0, "NO BROKER"},
+		{"one daemon", []int{7}, 1, "ONE BROKER"},
+		{"one per session", []int{7, 9}, 2, "ONE PER SESSION"},
+		{"a replacement", []int{7, 9}, 1, "2 BROKERS IN SEQUENCE"},
 	} {
-		if got := hd10SpawnVerdict(tc.exercised, tc.distinct, tc.max); !strings.HasPrefix(got, tc.want) {
+		got := hd10SpawnVerdict(tc.distinct, tc.max)
+		if !strings.HasPrefix(got, tc.want) {
 			t.Errorf("%s: hd10SpawnVerdict = %q, want it to start %q", tc.name, got, tc.want)
 		}
+		// The spawn assertion passes on a broker per session alone.
+		failure := hd10SpawnFailure(got)
+		switch {
+		case tc.want == "ONE PER SESSION" && failure != "":
+			t.Errorf("%s: hd10SpawnFailure = %q, want \"\" for a broker per session", tc.name, failure)
+		case tc.want != "ONE PER SESSION" && !strings.Contains(failure, tc.want):
+			t.Errorf("%s: hd10SpawnFailure = %q, want a failure naming %q", tc.name, failure, tc.want)
+		}
+	}
+	if got := hd10StragglerVerdict(nil); !strings.HasPrefix(got, "NONE LEFT") {
+		t.Errorf("hd10StragglerVerdict(none) = %q, want NONE LEFT", got)
+	}
+	if got := hd10StragglerVerdict([]int{7}); !strings.HasPrefix(got, "STILL RUNNING") || !strings.Contains(got, "[7]") {
+		t.Errorf("hd10StragglerVerdict([7]) = %q, want STILL RUNNING naming the pid", got)
+	}
+	if got := hd10NewPIDs([]int{3, 5, 7}, []int{5}); len(got) != 2 || got[0] != 3 || got[1] != 7 {
+		t.Errorf("hd10NewPIDs = %v, want [3 7]: a broker alive before the pair is not the pair's", got)
+	}
+	if got := hd10StillAlive([]int{3, 7}, []int{7, 11}); len(got) != 1 || got[0] != 7 {
+		t.Errorf("hd10StillAlive = %v, want [7]", got)
+	}
+	// A session's broker names its session-keyed socket; an older yolo's machine-wide one does not.
+	if !strings.Contains("yolo internal daemon claude-oauth-broker --socket /tmp/yolo-front-0b472111-claude-oauth-broker.sock",
+		hd10SessionBrokerPattern) ||
+		strings.Contains("yolo internal daemon claude-oauth-broker --socket /tmp/yolo-claude-oauth-broker.sock",
+			hd10SessionBrokerPattern) {
+		t.Errorf("hd10SessionBrokerPattern %q does not tell a session's broker from a machine-wide one",
+			hd10SessionBrokerPattern)
 	}
 
 	for _, tc := range []struct {
@@ -559,20 +611,6 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 		}
 	}
 
-	// The pre-state rule: a developer's live broker is refused, never killed; only a declared
-	// CI run may stop one; and nothing alive means nothing to decide.
-	if stop, why := hd10PreBrokerPlan(nil, false); stop || why != "" {
-		t.Errorf("no live broker: hd10PreBrokerPlan = (%v, %q), want (false, \"\")", stop, why)
-	}
-	if stop, why := hd10PreBrokerPlan([]int{7}, false); stop || !strings.Contains(why, "host-daemon stop "+hd10Broker) ||
-		!strings.Contains(why, macosUserDeclareEnv) {
-		t.Errorf("an undeclared run beside a live broker: hd10PreBrokerPlan = (%v, %q), want a "+
-			"refusal naming the stop command and %s, and no stop", stop, why, macosUserDeclareEnv)
-	}
-	if stop, why := hd10PreBrokerPlan([]int{7}, true); !stop || why != "" {
-		t.Errorf("a declared run beside a live broker: hd10PreBrokerPlan = (%v, %q), want (true, \"\")", stop, why)
-	}
-
 	if got := hd10ParsePIDs("123\n45\n\n"); len(got) != 2 || got[0] != 45 || got[1] != 123 {
 		t.Errorf("hd10ParsePIDs = %v, want [45 123]", got)
 	}
@@ -597,12 +635,13 @@ func TestMacosUserHD10VerdictsNameEachCase(t *testing.T) {
 	}
 }
 
-// TestMacosUserHD10GuardsTheMachineWideBroker is the CALL-SITE half of hd10PreBrokerPlan, read
-// from the source for warmupgate_test.go's reason: the experiment runs only on a macos-user
-// host, so no -short test can drive it, and the rule's own cases pass whether or not the
-// experiment consults it. It fails if the experiment stops asking the rule, if it regains an
-// unconditional stop of whatever broker is alive, or if it stops cleaning up the broker its
-// own pair spawned under a temp HOME.
+// TestMacosUserHD10GuardsTheMachineWideBroker is the CALL-SITE half of the experiment's rules,
+// read from the source for warmupgate_test.go's reason: the experiment runs only on a macos-user
+// host, so no -short test can drive it, and the rules' own cases pass whether or not the
+// experiment consults them. It fails if the experiment counts any broker but a session's (a
+// developer's machine-wide one would then read as the pair's), if it regains a `host-daemon
+// stop` (under HD-R1 the one daemon that verb stops by name is a machine-wide one an older
+// yolo's jails are using), or if it stops asserting what HD-R1 promises there.
 func TestMacosUserHD10GuardsTheMachineWideBroker(t *testing.T) {
 	src, err := os.ReadFile("macosuserspawnlock_test.go")
 	if err != nil {
@@ -618,26 +657,21 @@ func TestMacosUserHD10GuardsTheMachineWideBroker(t *testing.T) {
 		t.Fatal("could not find the end of TestMacosUserTwoConcurrentLaunchesOfOneWorkspace")
 	}
 	fn := body[i : i+1+j]
-	if !strings.Contains(fn, "hd10PreBrokerPlan(pre, os.Getenv(macosUserDeclareEnv) != \"\")") {
-		t.Error("the experiment no longer asks hd10PreBrokerPlan, with the run's declaration, " +
-			"what to do about a live broker — on a developer's Mac it would kill the real one")
+	if !strings.Contains(fn, "samples.observe(hd10NewPIDs(hd10SessionBrokerPIDs(), pre))") {
+		t.Error("the experiment no longer samples only the session brokers that appeared during " +
+			"the pair; a machine-wide broker an older yolo left would read as the pair's")
 	}
-	if strings.Contains(fn, "if len(pre) > 0 {") {
-		t.Error("the experiment stops a live broker on the bare fact that one is alive again; " +
-			"only a declared run may (hd10PreBrokerPlan)")
+	if strings.Contains(fn, `"host-daemon", "stop"`) || strings.Contains(fn, `"host-daemon", "restart"`) {
+		t.Error("the experiment runs `yolo host-daemon` against a daemon by name; under HD-R1 the " +
+			"pair's brokers end with their sessions, and the daemon that verb names is a " +
+			"machine-wide one an older yolo's jails may be using")
 	}
-	// The cleanup BLOCK, not the rest of the function: the pre-state stop spells the same
-	// argv, and a search past the block's end would find that one instead.
-	cleanup := ""
-	if k := strings.Index(fn, "t.Cleanup(func() {"); k >= 0 {
-		if e := strings.Index(fn[k:], "\n\t})\n"); e >= 0 {
-			cleanup = fn[k : k+e]
+	for _, call := range []string{"if failure := hd10SpawnFailure(spawn); failure != \"\" {\n\t\tt.Errorf(",
+		"if len(left) > 0 {\n\t\tt.Errorf("} {
+		if !strings.Contains(fn, call) {
+			t.Errorf("the experiment no longer asserts %q: HD-R1's claim on a Mac would go back to "+
+				"being recorded instead of checked", call)
 		}
-	}
-	if !strings.Contains(cleanup, `"host-daemon", "stop", hd10Broker`) {
-		t.Error("the experiment no longer stops, at cleanup, the broker its launch pair spawned; " +
-			"that broker outlives the temp HOME it was spawned under and every later launch on " +
-			"the machine adopts it")
 	}
 	// The survivor ASSERTION, not just its verdict line: hd10SurvivorFailure's cases pass whether
 	// or not the experiment consults it, and the teardown fix it checks can only be seen on a Mac.

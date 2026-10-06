@@ -24,7 +24,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
@@ -96,15 +95,18 @@ func (o *Options) planMacosUserService(err error, packs []*packload.Pack) (bool,
 }
 
 // launchServiceInput is what a macos-user launch hands each launch-owned service: the channel's
-// three wire tables, the host broker's private socket, and the env_sources the credential gate
-// delivers to the agents whose pairing needed it, for their providers only
+// three wire tables, the private socket of this session's own OpenAI credential daemon
+// (openAIHostSocket; unset when the session started none), and the env_sources the credential
+// gate delivers to the agents whose pairing needed it, for their providers only
 // (AgentDelivery.EnvSources). The caller token is added by launchservice.Start.
-func (c *packChannel) launchServiceInput(agents []string) map[string]string {
+func (c *packChannel) launchServiceInput(agents []string, hostSocket string) map[string]string {
 	env := map[string]string{
 		entrypoint.ProvidersWireEnv:   jsonDumpsOrEmptyObj(c.providers),
 		entrypoint.ProfilesWireEnv:    jsonDumpsOrEmptyObj(packload.ProfilesWireTable(c.resolvedProfiles)),
 		entrypoint.UseProfilesWireEnv: jsonDumpsOrEmptyObj(c.profiles),
-		openauthclient.HostSocketEnv:  openaiauthhost.HostSocketPath(),
+	}
+	if hostSocket != "" {
+		env[openauthclient.HostSocketEnv] = hostSocket
 	}
 	for _, agent := range agents {
 		d := c.scope.Agent(agent)
@@ -125,7 +127,8 @@ func (c *packChannel) launchServiceInput(agents []string) map[string]string {
 // startMacosUserServices starts every planned launch-owned service and says so, one line each,
 // on every launch (a launch has no quiet mode, and this is host code running outside Seatbelt).
 // It returns the stop for the arm to defer, or the refusal naming the service that did not start.
-func (o *Options) startMacosUserServices(channel *packChannel) (func(), error) {
+// hostSocket is the session's own OpenAI daemon's private socket (launchServiceInput).
+func (o *Options) startMacosUserServices(channel *packChannel, hostSocket string) (func(), error) {
 	var running []launchedService
 	stop := func() {
 		for _, r := range running {
@@ -133,7 +136,8 @@ func (o *Options) startMacosUserServices(channel *packChannel) (func(), error) {
 		}
 	}
 	for _, plan := range o.launchServices {
-		r, log, err := startMacosUserService(plan, channel.launchServiceInput(o.launchServiceAgents[plan.Service]))
+		r, log, err := startMacosUserService(plan,
+			channel.launchServiceInput(o.launchServiceAgents[plan.Service], hostSocket))
 		if err != nil {
 			stop()
 			return func() {}, err

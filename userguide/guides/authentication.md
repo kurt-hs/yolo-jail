@@ -48,14 +48,17 @@ Claude's login uses a refresh token that works only once. When two jails share o
 refresh it at the same moment, one of them loses and is logged out. The `claude` pack solves this
 with the **Claude OAuth broker**, a small service on your host that takes the refreshes one at a
 time and refreshes the shared login ahead of expiry, so an idle jail or a laptop waking from sleep
-does not find itself logged out.
+does not find itself logged out. Each jail starts its own copy and stops it when the jail ends; the
+copies share one login file and take turns refreshing it.
 
 It is part of the `claude` pack and needs no setup. Check on it with:
 
 ```bash
-yolo broker status     # is it running, and what state is the shared login in?
-yolo broker restart    # restart it, for example after upgrading yolo
+yolo broker status     # which jails run one, and is each answering?
+yolo broker logs       # what the brokers have done
 ```
+
+To restart a jail's broker, for example after upgrading yolo, leave that jail and start it again.
 
 The broker never touches your host's own `~/.claude/.credentials.json`, so logging in inside a jail
 does not log in Claude Code on your host, and the reverse.

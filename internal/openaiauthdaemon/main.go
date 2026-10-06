@@ -50,6 +50,8 @@ func Main(argv []string) int {
 	refreshInterval := fs.Duration("refresh-interval", time.Minute, "Proactive refresh check interval")
 	loginTimeout := fs.Duration("login-timeout", 15*time.Minute, "Browser callback timeout")
 	selfCheckFlag := fs.Bool("self-check", false, "Validate and report canonical state without refreshing")
+	endWithPID := fs.Int("end-with-pid", 0,
+		"Exit once this process is gone, and remove the sockets: a jail-less launch's own daemon")
 	if err := fs.Parse(argv); err != nil {
 		return 2
 	}
@@ -90,9 +92,36 @@ func Main(argv []string) int {
 		fmt.Fprintln(os.Stderr, "yolo-openai-auth-host: watch the state directory:", err)
 		return 1
 	}
-	if !*noBackground {
-		go runProactive(broker, *refreshInterval, stop)
+	// A JAIL-LESS LAUNCH'S OWN DAEMON (HD-R1; internal/openaiauthhost's startPrivate): it ends with
+	// the launch's process, which may have exec'd the agent in its place, and its sockets are that
+	// launch's alone, so it removes them as it goes. Registered before the exit wait below, so the
+	// removal comes after any refresh in flight has finished.
+	if *endWithPID > 0 {
+		defer func() {
+			_ = os.Remove(*socket)
+			_ = os.Remove(HostSocketPath(*socket))
+		}()
+		hostservice.WatchProcess(*endWithPID, stop, func(reason string) {
+			fmt.Fprintln(os.Stderr, hostservice.ProcessGoneExitLine("yolo-openai-auth-host", reason))
+			shutdown()
+		})
 	}
+	// THE EXIT WAITS FOR A REFRESH IN FLIGHT, the proactive one included. A jail's end
+	// SIGTERMs this daemon and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3), so the daemon itself is what lets a refresh
+	// that has already redeemed the refresh token upstream write its replacement before the
+	// process goes. Its bound is the upstream request's own deadline. Serving stops first,
+	// and serveSockets already waits for every handler it accepted.
+	background := make(chan struct{})
+	if *noBackground {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			runProactive(broker, *refreshInterval, stop)
+		}()
+	}
+	defer func() { shutdown(); <-background }()
 	handlerConfig := HandlerConfig{
 		Broker: broker, Upstream: upstream, AuthorizeURL: *authorizeURL,
 		LoginTimeout: *loginTimeout,

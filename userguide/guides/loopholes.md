@@ -107,7 +107,7 @@ has the per-loophole detail.
 yolo loopholes list      # every loophole your config selects, and whether it is on
 yolo loopholes status    # on the host: run each loophole's own self-check
 yolo loopholes enable serial    # on the host: on for this project only
-yolo host-daemon status  # the host services shared by every jail, and whether each is healthy
+yolo host-daemon status  # the host services each running jail started, and whether each answers
 yolo pack footprint serial   # what a pack's loophole touches, before you select it
 ```
 

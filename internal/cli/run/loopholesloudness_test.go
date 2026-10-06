@@ -148,17 +148,18 @@ func TestFrontCloseGraceReportsWhatOutlivesTheJail(t *testing.T) {
 	}
 }
 
-// TestBothFrontedStopPathsReportTheFrontCloseGrace pins the two CALL SITES of that
+// TestTheFrontedStopPathReportsTheFrontCloseGrace pins the CALL SITE of that
 // report, and it reads the source because nothing else can.
 //
 // A front closes when its listener closes, so there is no in-process way to wedge
 // one: svcendpoint's accept loop returns as soon as Close lands, which makes the
 // expiry branch unreachable from a test that drives the real teardown. The
 // behavioural test above therefore pins the message, and this pins the fact that
-// both stop() closures still route their bounded wait through it — the exact
+// the fronted stop() still routes its bounded wait through it — the exact
 // pairing AGENTS.md demands, since a test of the helper alone would stay green with
-// the two stop paths back on a bare, empty `select` (which is what they were).
-func TestBothFrontedStopPathsReportTheFrontCloseGrace(t *testing.T) {
+// the stop path back on a bare, empty `select` (which is what it was). The second stop path,
+// the machine-wide daemon's front, went with HD-R1.
+func TestTheFrontedStopPathReportsTheFrontCloseGrace(t *testing.T) {
 	const src = "loopholesruntime.go"
 	b, err := os.ReadFile(src)
 	if err != nil {
@@ -192,7 +193,7 @@ func TestBothFrontedStopPathsReportTheFrontCloseGrace(t *testing.T) {
 		}
 		return true
 	})
-	for _, fn := range []string{"startHostSingleton", "startExternalService"} {
+	for _, fn := range []string{"startExternalService"} {
 		var decl *ast.FuncDecl
 		for _, d := range f.Decls {
 			if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == fn {
