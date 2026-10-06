@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -116,19 +117,32 @@ func serveFrontedFixture(t *testing.T, handler hostservice.Handler, sock string)
 
 // leaveAnOlderCopyRunning stands up what an older yolo leaves behind for the fixture loophole
 // when it is upgraded with its machine-wide daemon still running: a socket that accepts at the
-// name-keyed rendezvous (paths.HostSingletonSocket) and a PID file naming a live process (this
-// one). handler is what that copy answers.
+// name-keyed rendezvous (paths.HostSingletonSocket), and a PID file naming a live process running
+// under this test's HOME, as the older copy of this home's would. handler is what that copy
+// answers.
 func leaveAnOlderCopyRunning(t *testing.T, handler hostservice.Handler) {
 	t.Helper()
-	serveFrontedFixture(t, handler, paths.HostSingletonSocket(launchCheckFixtureName))
-	pidFile := paths.HostSingletonPIDFile(launchCheckFixtureName)
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(pidFile) })
+	leaveAnOlderCopyRunningUnder(t, handler, os.Getenv("HOME"))
 	if !olderHostWideAlive(launchCheckFixtureName) {
 		t.Fatal("the fixture does not read as an older yolo's machine-wide copy")
 	}
+}
+
+// leaveAnOlderCopyRunningUnder is leaveAnOlderCopyRunning with the copy's process under home.
+func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, home string) {
+	t.Helper()
+	serveFrontedFixture(t, handler, paths.HostSingletonSocket(launchCheckFixtureName))
+	proc := exec.Command("sleep", "120")
+	proc.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	if err := proc.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = proc.Process.Kill(); _ = proc.Wait() })
+	pidFile := paths.HostSingletonPIDFile(launchCheckFixtureName)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(proc.Process.Pid)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(pidFile) })
 }
 
 // olderThanTheCheck answers as a daemon a yolo older than the launch check does: its handler's
@@ -415,6 +429,18 @@ func TestWithNoOlderCopyAFreshLaunchIsNotRefused(t *testing.T) {
 	if got, refused := launchCheckedService(t, "podman", servedPayload()); refused != nil {
 		t.Fatalf("a socket with no live PID file beside it was read as an older copy: %s\n%s",
 			refused.text(), got)
+	}
+}
+
+// TestAnOlderCopyUnderAnotherHomeDoesNotRefuse: the rendezvous paths are keyed by the loophole's
+// name in /tmp, but a copy running under another home (another user's, or another test run's
+// private one) shares none of this launch's credentials, so it is not refused for.
+func TestAnOlderCopyUnderAnotherHomeDoesNotRefuse(t *testing.T) {
+	launchCheckIsolation(t)
+	serveLaunchCheckDaemon(t, answersTheCheck)
+	leaveAnOlderCopyRunningUnder(t, olderThanTheCheck, t.TempDir())
+	if got, refused := launchCheckedService(t, "podman", servedPayload()); refused != nil {
+		t.Fatalf("a copy under another home was refused for: %s\n%s", refused.text(), got)
 	}
 }
 
