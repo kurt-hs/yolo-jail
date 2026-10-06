@@ -98,7 +98,7 @@ func TestPatchedExtensionIsBuiltMountedReadOnlyAndHeldAtAConflict(t *testing.T) 
 	record := (&packsrc.Store{Dir: filepath.Join(state, "packs")}).CheckRecordPath(owner)
 	_ = os.Remove(record)
 	t.Cleanup(func() {
-		removeNewCaptureEntries(t, store, before)
+		removeNewCaptureEntries(t, store, before, patchTreeName)
 		_ = os.Remove(record)
 	})
 
@@ -136,7 +136,7 @@ echo "SETTINGS=$(tr -d ' \n' < "$HOME/.ptreeagent/settings.json")"`
 	if !strings.Contains(out, "TREES=") || !strings.Contains(out[strings.Index(out, "TREES="):], owner) {
 		t.Errorf("the jail was not handed the extension's build in YOLO_PATCHED_TREES:\n%s", out)
 	}
-	if live := liveCaptureEntries(t, store, newCaptureEntries(t, store, before)); len(live) != 1 {
+	if live := liveCaptureEntries(t, store, newCaptureEntries(t, store, before, patchTreeName)); len(live) != 1 {
 		t.Errorf("the first launch added %d live entries, want the tree's one: %v", len(live), live)
 	}
 	userConfig := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "config.jsonc")
