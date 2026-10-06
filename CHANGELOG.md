@@ -24,6 +24,20 @@ what a yolo can read. See [Follow an upstream with a patch series](userguide/gui
 into a jail, and what each launch shows about the code it runs. See
 [Claude Code plugins and mods](userguide/guides/claude-plugins-and-mods.md).
 
+### Changed
+
+**Each jail runs its own login services.** The Claude, OpenAI and AWS login services now start with
+each jail and stop when it ends, instead of one copy shared by the whole machine, and a login
+refresh still in flight when a jail ends is finished first. `yolo host-daemon status` lists each
+jail's copy, and `restart` now tells you to relaunch the jail. See
+[Logins](userguide/guides/authentication.md#a-shared-claude-login-that-stays-fresh).
+
+- After upgrading, relaunch your running jails, then stop the shared services the previous version
+  left with `yolo host-daemon stop <name>`; `yolo host-daemon status` lists them as host-wide.
+- A loophole whose `host_daemon` says `"scope": "host"` is now refused: delete that line, and add
+  `"detach": true` if its program must finish its work when a jail ends. See
+  [Writing loopholes](userguide/guides/writing-loopholes.md).
+
 ### Fixed
 
 - When `yolo host` has no container runtime to capture an agent with, it now says to install one.

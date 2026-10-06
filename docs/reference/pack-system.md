@@ -3286,7 +3286,10 @@ longer waits for the other launch's staging.
   singleton that reads its module dir after it starts (a lazy import, a data file) then loses it;
   under the shared tree the dir lasted until the pack left `packs`. No shipped pack is affected:
   the shipped singletons self-exec `yolo internal daemon …`, and the one shipped `{loophole_dir}`,
-  the audio pack's, is a per-jail bind.
+  the audio pack's, is a per-jail bind. ⚠ [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) (built
+  2026-10-06) retired that singleton: every host daemon now ends with the jail that started it.
+  What is left is narrower, a daemon declaring `detach` still finishing a request after its jail
+  ended, which outlives its launch's tree by at most its upstream deadline.
 - 💬 <a id="oq-pk3"></a>**[`OQ-PK3`](#oq-pk3) — a host-scoped singleton that names `{loophole_dir}` in its `host_daemon.cmd` resolves it
   inside the launch's own tree**, and that tree goes once the launch's container is known gone,
   while the singleton, by design, outlives the jail that started it (`internal/broker`). What it

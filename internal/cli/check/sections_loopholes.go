@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -198,9 +199,6 @@ func (o *Options) checkLoopholes(r *reporter) {
 			r.ok("loophole " + lp.Name + ": inactive (" + reason + ")")
 			continue
 		}
-		// BEFORE the doctor_cmd gate, so a host-wide daemon that declares no self-check is
-		// still graded on whether it runs the configured settings (HD-D2).
-		reportSingletonSettings(r, lp, userSwitches)
 		if len(lp.DoctorCmd) == 0 {
 			r.ok("loophole " + lp.Name + ": no self-check declared")
 			continue
@@ -253,55 +251,6 @@ func (o *Options) checkLoopholes(r *reporter) {
 			o.reportBrokerDaemon(r)
 		}
 	}
-}
-
-// reportSingletonSettings grades a RUNNING host-wide daemon against the settings the merged
-// config resolves to (docs/design/host-daemon-ownership.md HD-D2): a [WARN] naming the keys
-// that differ — never a value, since a setting can be a credential — or a pass. Silent for a
-// loophole with no running host-wide daemon that is handed settings: nothing to compare.
-//
-// `yolo check` only REPORTS. The remedy it names is a fresh launch, which restarts the
-// daemon after the config-change approval; `yolo host-daemon restart` would not do, because
-// it respawns from the settings file the LAST launch wrote, which predates this config.
-func reportSingletonSettings(r *reporter, lp *loopholes.Loophole, loopCfg *jsonx.OrderedMap) {
-	drift, applicable := broker.ConfiguredSettingsDrift(lp, loopholeSettingsBlock(loopCfg, lp.Name))
-	switch {
-	case !applicable:
-	case drift.Unrecorded:
-		r.warn("loophole "+lp.Name+": running daemon's settings are unknown",
-			"It was started by a yolo that did not record the settings a host-wide daemon is "+
-				"handed, so check cannot tell whether it runs the configured ones. The next "+
-				"launch restarts it with them; it is shared, so every jail using it gets them.")
-	case len(drift.Changed) > 0:
-		r.warn("loophole "+lp.Name+": running daemon's settings differ from config ("+
-			strings.Join(drift.Changed, ", ")+")",
-			"It was started with other values for these keys (values are never shown: a "+
-				"setting can be a credential). The next launch restarts it with the configured "+
-				"ones; it is shared, so every jail using it gets them.")
-	default:
-		r.ok("loophole " + lp.Name + ": running daemon's settings match config")
-	}
-}
-
-// loopholeSettingsBlock returns `<name>.settings` from a merged `loopholes` block, or nil.
-func loopholeSettingsBlock(loopCfg *jsonx.OrderedMap, name string) *jsonx.OrderedMap {
-	if loopCfg == nil {
-		return nil
-	}
-	entryV, ok := loopCfg.Get(name)
-	if !ok {
-		return nil
-	}
-	entry, isMap := entryV.(*jsonx.OrderedMap)
-	if !isMap {
-		return nil
-	}
-	settingsV, ok := entry.Get("settings")
-	if !ok {
-		return nil
-	}
-	settings, _ := settingsV.(*jsonx.OrderedMap)
-	return settings
 }
 
 // inertReason reports why a loophole whose switch is ON still does nothing here, or
@@ -379,54 +328,65 @@ func reportSelfCheckLines(r *reporter, name, output string) int {
 	return len(lines)
 }
 
-// reportBrokerDaemon reports the broker liveness block (after a green
-// self-check): live / not running / stale PID / unreachable.
+// reportBrokerDaemon reports the Claude broker's running copies: one row per jail's own copy,
+// and a warning for a host-wide one an older yolo left.
 //
-// LIVENESS HERE IS "the socket accepts", not a protocol round trip — see
-// brokerSocketAccepts for why the host side can no longer speak the singleton's
-// protocol. The round trip survives one row down, in checkBrokerEndpoint, which
-// reaches the daemon through a jail's own front.
+// NOTHING RUNNING IS A PASS since HD-R1 (docs/design/host-daemon-ownership.md §5.2): each jail
+// starts its own broker and ends it with the jail, so with no jail running there is no daemon,
+// and "nothing to report" is the correct answer rather than the blind spot it was while one
+// shared daemon was meant to be up whether or not a jail used it.
+//
+// LIVENESS HERE IS "the socket accepts" (broker.SingletonReachable, which writes nothing), not
+// a protocol round trip: the daemon's first read on every connection is yolo's connection
+// preamble, which a host-side check belonging to no jail must not forge. The round trip
+// survives one row down, in checkBrokerEndpoint, which reaches a daemon through a jail's own
+// front.
 func (o *Options) reportBrokerDaemon(r *reporter) {
-	status := o.brokerStatus()
-	switch {
-	case status.pidLive && status.socketAccepts:
-		r.ok(fmt.Sprintf("loophole claude-oauth-broker: daemon live (pid=%d, socket accepting)", status.pid))
-	case !status.pidPresent:
-		r.warn("loophole claude-oauth-broker: daemon not running",
-			"First `yolo run` will spawn it; "+
-				"`yolo broker status` reports state, "+
-				"`yolo broker restart` cycles.")
-	case !status.pidLive:
-		// A WARN, like the row above, because it is the same state: nothing is serving and
-		// the next launch spawns a broker, over this file (EnsureSingleton reads a dead pid
-		// as "not alive"). The file only says a broker RAN and stopped. Since the broker
-		// exits by design when its state dir goes (hostservice.WatchStateDir) and its PID
-		// file is the SPAWNER's to write, a clean exit leaves one every time — grading it a
-		// FAIL failed `yolo check` for every workspace on the machine until the next launch.
-		//
-		// Reported, never removed: a launch racing this check may have just spawned a
-		// broker and rewritten the file, and deleting it then would orphan that daemon.
-		r.warn(fmt.Sprintf("loophole claude-oauth-broker: daemon not running (its PID file "+
-			"names pid %d, which has exited)", status.pid),
-			"It stopped — its state directory was removed, or it crashed (see "+
-				broker.BrokerLogPath()+"). The first `yolo run` that selects claude spawns "+
-				"a fresh one over the stale file; `yolo broker restart` does it now.")
-	default:
-		socketState := "missing"
-		if status.socketExists {
-			socketState = "present"
+	insts := broker.RunningInstances(brokerLoopholeName)
+	if len(insts) == 0 {
+		r.ok("loophole " + brokerLoopholeName + ": no daemon running (each jail starts its own " +
+			"and ends it with the jail)")
+		return
+	}
+	for _, i := range insts {
+		pids := "unknown"
+		if len(i.PIDs) > 0 {
+			ps := make([]string, len(i.PIDs))
+			for k, p := range i.PIDs {
+				ps[k] = strconv.Itoa(p)
+			}
+			pids = strings.Join(ps, ",")
 		}
-		r.fail(fmt.Sprintf("loophole claude-oauth-broker: daemon unreachable (pid=%d, socket %s, not accepting)", status.pid, socketState),
-			"Run `yolo broker restart` — typical after a "+
-				"binary upgrade; old code still loaded in memory.")
+		switch {
+		case i.HostWide:
+			r.warn(fmt.Sprintf("loophole %s: a host-wide daemon an older yolo left is running "+
+				"(pid=%s)", brokerLoopholeName, pids),
+				"No launch of this yolo uses it; it serves only the jails that yolo launched. "+
+					"Relaunch those jails with this yolo, which gives each its own, then run `yolo "+
+					broker.HostDaemonVerb+" stop "+brokerLoopholeName+"`.")
+		case i.Accepting:
+			r.ok(fmt.Sprintf("loophole %s: jail %s's daemon live (pid=%s, socket accepting)",
+				brokerLoopholeName, i.Jail, pids))
+		default:
+			// A WARN, not a FAIL: a jail that ended without its teardown (a SIGKILLed launcher)
+			// leaves exactly this socket, which is an ordinary state on a machine and not a
+			// verdict that should fail `yolo check` for every workspace on it.
+			r.warn(fmt.Sprintf("loophole %s: jail %s's daemon not accepting (socket %s)",
+				brokerLoopholeName, i.Jail, i.Socket),
+				"Its daemon died, or its jail ended without stopping it. If that jail is still "+
+					"running, its Claude refreshes fail: leave it and launch it again, which "+
+					"starts a fresh copy (`yolo "+broker.HostDaemonVerb+" logs "+brokerLoopholeName+
+					"` shows why). If it is not, `yolo "+broker.HostDaemonVerb+" stop "+brokerLoopholeName+
+					"` clears the socket it left, as does the next launch of that workspace.")
+		}
 	}
 }
 
 // checkBrokerEndpoint probes one jail's broker endpoint end-to-end THROUGH THE HOP
 // THE JAIL USES — read the endpoint file, pin its certificate, present its token,
-// then ping the singleton behind it — naming the failing LAYER.
+// then ping the jail's broker behind it — naming the failing LAYER.
 //
-// Probing the singleton's own Unix socket instead would test a path no jail
+// Probing the daemon's own Unix socket instead would test a path no jail
 // travels: that socket is host-only, so it can be perfectly healthy while the
 // jail's half is unpublished, stale, or mismatched. It is now also the ONLY probe
 // in the tree that can still make the protocol round trip at all — going through
@@ -445,7 +405,7 @@ func (o *Options) checkBrokerEndpoint(r *reporter, label, endpointPath, rt, cnam
 	if !o.PathExists(endpointPath) {
 		r.fail(label+": broker endpoint missing",
 			fmt.Sprintf("Expected %s.  This jail's front failed to publish, the "+
-				"host-wide broker never came up, or the host-services dir was "+
+				"jail's own broker never came up, or the host-services dir was "+
 				"removed.  Relaunch the jail to republish it.", endpointPath))
 		return
 	}
@@ -495,9 +455,9 @@ func (o *Options) checkBrokerEndpoint(r *reporter, label, endpointPath, rt, cnam
 		}
 	} else {
 		r.fail(label+": front up, broker unreachable",
-			"The front authenticated and accepted, but the host-wide singleton did "+
-				"not answer the spliced ping.  Check `yolo broker status` / "+
-				"`yolo broker restart`.")
+			"The front authenticated and accepted, but this jail's broker did not "+
+				"answer the spliced ping.  `yolo broker logs` shows why; leave the jail "+
+				"and launch it again, which starts a fresh broker.")
 	}
 }
 

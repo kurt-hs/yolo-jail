@@ -2238,7 +2238,7 @@ func (o *Options) hostForwardPorts(cfg *jsonx.OrderedMap, rt string) []any {
 func insertHostServiceEnv(runCmd []string, imageRef string, services []loopholeDaemon) []string {
 	for _, svc := range services {
 		// An EMPTY envVarName means "this handle has no variable to insert", which
-		// today is the HOST-SCOPED loophole's front (startHostSingleton). Its
+		// today is a credential daemon's front (endpointPromisedAtAssembly). Its
 		// variable is emitted much earlier, by hostServicesMountArgs at argv-assembly
 		// time, and deliberately OPTIMISTICALLY: a jail told about a service whose
 		// front never published is refused by the in-jail reachability witness, where
@@ -2270,14 +2270,15 @@ func insertHostServiceEnv(runCmd []string, imageRef string, services []loopholeD
 // socket, and hostServiceEnvVar/hostServiceSocketEnvVar exist so a client cannot read the
 // wrong kind of path out of the right-looking variable.
 //
-// AN EMPTY NAME IS THE HOST-SCOPED FRONT (startHostSingleton), which carries none because the
+// AN EMPTY NAME IS A CREDENTIAL DAEMON'S FRONT (endpointPromisedAtAssembly), which carries none because the
 // container path emits its variable much earlier, at argv-assembly time
 // (hostServicesMountArgs), optimistically and before the front has published. This backend
 // assembles no argv and has no in-jail reachability witness to refuse a broken promise, so the
 // handle is both the only source it has and the honest one: the variable is emitted for a
 // service that really did publish. Falling back to hostServiceEnvVar rather than skipping is
-// what keeps the credential daemons — the broker and the OpenAI service, both host-scoped —
-// from being the two this arm silently omits.
+// what keeps the credential daemons — the broker and the OpenAI service, both promised at
+// assembly on the container path (endpointPromisedAtAssembly) — from being the two this arm
+// silently omits.
 func hostServiceLaunchEnvVar(h loopholeDaemon) string {
 	if h.envVarName != "" {
 		return h.envVarName

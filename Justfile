@@ -218,10 +218,10 @@ deploy: install
         echo "✓ claude-oauth-broker state primed at $HOME/.local/share/yolo-jail/state/claude-oauth-broker"
     fi
 
-    # Restart the singleton broker so this deploy's binary is live immediately.
-    if command -v yolo >/dev/null 2>&1; then
-        yolo broker restart 2>&1 | sed 's/^/  /' || true
-    fi
+    # Nothing to restart: each jail starts its own host daemons and ends them with it (HD-R1,
+    # docs/design/host-daemon-ownership.md), so a running jail keeps the ones it started and the
+    # next launch starts this deploy's.
+    echo "  Running jails keep the host daemons they started; launch a jail again to use this build's. \`yolo host-daemon status\` lists them."
 
     echo "yolo-jail deployed. Verify: yolo loopholes list"
 

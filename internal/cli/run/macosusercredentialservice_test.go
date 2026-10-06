@@ -96,7 +96,7 @@ func TestTheMacosUserArmRefusesWhenItsOwnOpenAIServiceDoesNotStart(t *testing.T)
 	}
 	out := stderr.String()
 	for _, want := range []string{"OpenAI credential service did not start; refusing the macos-user launch.",
-		broker.SingletonLogPath(openAIAuthBrokerName), "then launch again"} {
+		broker.HostServiceLogPath(openAIAuthBrokerName), "then launch again"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, out)
 		}

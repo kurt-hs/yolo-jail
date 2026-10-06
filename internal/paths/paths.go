@@ -346,26 +346,34 @@ func JailShortHash(cname string) string {
 // holding a container name.
 func HostServicesDirName(shortHash string) string { return hostServicesDirPrefix + shortHash }
 
+// FrontSocketDir is where a fronted host daemon's upstream socket lives: host-only, outside
+// the jail's mounted services dir. /tmp in production; a variable only so a test can stand
+// such sockets up in a private dir. Nothing in production writes it.
+var FrontSocketDir = "/tmp"
+
+// FrontSocketFile is the upstream AF_UNIX socket a jail's fronted host daemon binds:
+// <FrontSocketDir>/yolo-front-<key>-<name>.sock, where key is the jail's own (the container
+// name's JailShortHash, or a hash of a macos-user session's dir). Since HD-R1
+// (docs/design/host-daemon-ownership.md) every host daemon is one of these, so they are what
+// `yolo host-daemon` finds running (internal/broker's RunningInstances).
+func FrontSocketFile(key, name string) string {
+	return FrontSocketDir + "/yolo-front-" + key + "-" + name + ".sock"
+}
+
+// FrontSocketGlob matches every jail's fronted host-daemon socket on this machine.
+func FrontSocketGlob() string { return FrontSocketDir + "/yolo-front-*.sock" }
+
 // HostSingletonSocket / HostSingletonPIDFile / HostSingletonLock are the fixed
-// host-wide paths a `host_daemon.scope: "host"` loophole's ONE daemon owns
-// (loopholedecl.ScopeHost). They are keyed by the LOOPHOLE NAME and nothing else:
-// a singleton has no jail to be keyed by, and deriving them from the name is what
-// makes two yolo processes launching two different jails at the same moment agree
-// on which file to flock and which socket to ensure.
+// host-wide paths the ONE daemon of a retired `host_daemon.scope: "host"` loophole owned.
+// No launch of this build creates them (HD-R1, docs/design/host-daemon-ownership.md): every
+// host daemon is a jail's own, at a FrontSocketFile. They are kept because an OLDER yolo's
+// singleton may still be running at them, serving the jails that yolo launched, and
+// `yolo host-daemon` reports and stops such a daemon by them; and because two migrations
+// still serialize on the lock an older yolo took around the same step (the OpenAI legacy
+// state, internal/cli/run's migrateLegacyOpenAIAuthState).
 //
-// THE FRAMEWORK OWNS THESE PATHS, not the manifest, for the reason
-// startExternalService already states about `{socket}`: yolo decides what the path
-// IS, which is the whole point of owning the transport. A manifest naming its own
-// host-wide socket would be a host path claim yolo would then have to gate, and
-// two manifests could name the same one.
-//
-// They live under /tmp so AF_UNIX sun_path limits are never a concern (108 bytes
-// on Linux, 104 on darwin) and a host reboot leaves a clean slate — the same
-// reasoning, and for claude-oauth-broker the same BYTES, as the broker singleton
-// constants these replaced: internal/broker's BrokerSingleton* now derive from these
-// functions, so `yolo broker status`, `yolo check` and the run pipeline's front reach
-// one file by construction, and a test pins the production bytes an older yolo on the
-// same host still spells.
+// They are keyed by the LOOPHOLE NAME and nothing else, under /tmp, the bytes an older yolo
+// on the same host still spells.
 func HostSingletonSocket(loopholeName string) string {
 	return HostSingletonDir + "/yolo-" + loopholeName + ".sock"
 }

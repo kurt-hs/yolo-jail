@@ -2,92 +2,88 @@ package cli
 
 import (
 	"encoding/json"
+	"net"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// The management surface OQ-HD2 ruled into existence: `yolo host-daemon` over the
-// host-scoped set, with `broker` retained as an alias.
+// The management surface OQ-HD2 ruled into existence: `yolo host-daemon` over what the jails
+// are running (HD-R1), with `broker` retained as an alias.
 //
 // Every test here drives dispatchNative, so it fails if the registry entry, the
 // argv parse or the resolution is removed — a test that reached the command
 // bodies directly would stay green with the whole verb unregistered, which is the
 // callee-pinned/call-site-unpinned shape AGENTS.md documents this repo shipping.
 //
-// NOTHING HERE STARTS A DAEMON. `status` reads a PID file, stats a socket and
-// (only if that socket exists) connects and closes; the acting verbs are driven
-// only down their refusal paths.
+// NOTHING HERE STARTS A DAEMON. `status` globs sockets and connects and closes; the acting
+// verbs are driven only down their refusal paths.
 
-// TestTheBrokerAliasStillResolvesToTheClaudeSingleton is the compatibility half of
-// the ruling: `yolo broker <verb>` must keep meaning exactly
-// `yolo host-daemon <verb> claude-oauth-broker`, because that spelling is in
-// muscle memory, in the release notes, in `yolo check`'s remedies and in this
-// tree's own docs.
+// TestTheBrokerAliasStillResolvesToTheClaudeBroker is the compatibility half of the ruling:
+// `yolo broker <verb>` must keep meaning exactly `yolo host-daemon <verb> claude-oauth-broker`,
+// because that spelling is in muscle memory, in the release notes and in this tree's own docs.
 //
-// It compares the two DOCUMENTS rather than asserting a constant, so it fails
-// both ways: if the alias stops resolving to the Claude singleton, and if the
-// general verb resolves that name to something else.
-func TestTheBrokerAliasStillResolvesToTheClaudeSingleton(t *testing.T) {
+// Since HD-R1 the answer is every jail's running copy, so the fixture is two jails' sockets —
+// one the broker's, one another daemon's — and the test compares the two DOCUMENTS: it fails if
+// the alias stops naming the broker, and if the general verb names it differently.
+//
+// THE WHOLE TEST RUNS WITH DISCOVERY EMPTY (withNoPackDiscovery), which is the state the alias
+// exists for: in a jail, in any process that resolved no packs, on a host whose `packs` list does
+// not name claude. An alias that resolved only through declared loopholes would go dark exactly
+// where a user still needs it.
+func TestTheBrokerAliasStillResolvesToTheClaudeBroker(t *testing.T) {
 	withNoPackDiscovery(t)
-	_, aliasOut, _ := captureDispatchRC(t, []string{"broker", "status", "--format", "json"})
+	dir, err := os.MkdirTemp("/tmp", "yj-hd-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	saved := paths.FrontSocketDir
+	paths.FrontSocketDir = dir
+	t.Cleanup(func() { paths.FrontSocketDir = saved })
+	for _, n := range []string{broker.BrokerLoopholeName, "aws-auth"} {
+		ln, err := net.Listen("unix", paths.FrontSocketFile("aaaaaaaa", n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+	}
+
+	_, aliasOut, aliasErr := captureDispatchRC(t, []string{"broker", "status", "--format", "json"})
 	_, verbOut, _ := captureDispatchRC(t,
 		[]string{"host-daemon", "status", broker.BrokerLoopholeName, "--format", "json"})
-
-	var alias, verb map[string]any
+	var alias []map[string]any
 	if err := json.Unmarshal([]byte(aliasOut), &alias); err != nil {
-		t.Fatalf("`yolo broker status --format json` is not one JSON object: %v\n%s", err, aliasOut)
+		t.Fatalf("`yolo broker status --format json` is not a JSON array: %v\nstdout: %s\nstderr: %s",
+			err, aliasOut, aliasErr)
 	}
-	if err := json.Unmarshal([]byte(verbOut), &verb); err != nil {
-		t.Fatalf("`yolo host-daemon status <name> --format json` is not one JSON object: %v\n%s",
-			err, verbOut)
+	if len(alias) != 1 || alias[0]["loophole"] != broker.BrokerLoopholeName || alias[0]["jail"] != "aaaaaaaa" {
+		t.Errorf("the alias reports %v, want the one jail's %s copy and nothing else", alias,
+			broker.BrokerLoopholeName)
 	}
-	if alias["socket"] != broker.BrokerSingletonSocket() {
-		t.Errorf("the alias reports socket %v, want the Claude singleton's %s — "+
-			"`yolo broker` must resolve to the broker whatever else is running",
-			alias["socket"], broker.BrokerSingletonSocket())
-	}
-	if alias["pid_file"] != broker.BrokerSingletonPIDFile() {
-		t.Errorf("the alias reports pid_file %v, want %s", alias["pid_file"], broker.BrokerSingletonPIDFile())
-	}
-	if !reflect.DeepEqual(alias, verb) {
+	if aliasOut != verbOut {
 		t.Errorf("`yolo broker status` and `yolo host-daemon status %s` describe different daemons:\n"+
-			"alias: %v\nverb:  %v", broker.BrokerLoopholeName, alias, verb)
+			"alias: %s\nverb:  %s", broker.BrokerLoopholeName, aliasOut, verbOut)
 	}
+}
 
-	// THE WHOLE TEST RUNS WITH DISCOVERY EMPTY (withNoPackDiscovery), which is the
-	// state the alias exists for: in a jail, in any process that resolved no
-	// packs, on a host whose `packs` list does not name claude. The daemon is
-	// still at a path that has not moved, so an alias that resolved only through
-	// the derived set would go dark exactly where a user still needs it.
-	_, darkOut, darkErr := captureDispatchRC(t, []string{"broker", "status", "--format", "json"})
-	var dark map[string]any
-	if err := json.Unmarshal([]byte(darkOut), &dark); err != nil {
-		t.Fatalf("with discovery empty, `yolo broker status` no longer reports the broker: "+
-			"%v\nstdout: %s\nstderr: %s", err, darkOut, darkErr)
+// RESTART RESTARTS NOTHING (HD-R1): a jail's copy restarts with its jail, so the verb refuses,
+// exit 1, and names the relaunch — through the dispatch, so deleting the restart arm fails here.
+func TestRestartRefusesAndNamesTheRelaunch(t *testing.T) {
+	withNoPackDiscovery(t)
+	rc, out, _ := captureDispatchRC(t, []string{"broker", "restart"})
+	if rc != 1 {
+		t.Errorf("`yolo broker restart` exited %d, want 1 (a refusal)", rc)
 	}
-	if dark["socket"] != broker.BrokerSingletonSocket() {
-		t.Errorf("with discovery empty the alias reports socket %v, want %s",
-			dark["socket"], broker.BrokerSingletonSocket())
-	}
-	// AND IT RESOLVES TO A RESTARTABLE RECORD. Reporting is the easy half: every
-	// path is a function of the name, so even a record derived from a stray PID
-	// file reports the right socket. The argv is the half that can go missing, and
-	// `yolo broker restart` is the command the incompatible-daemon warning names.
-	// MEASURED in this repo's own jail: /tmp/yolo-claude-oauth-broker.pid exists
-	// with no claude pack resolved in the test process, so the set holds a
-	// rendezvous-only member and an alias that took it verbatim would refuse to
-	// restart the broker on the machine the broker is running on.
-	s, ok := resolveHostDaemon("broker", broker.BrokerLoopholeName)
-	if !ok {
-		t.Fatal("`yolo broker` resolves to nothing with discovery empty")
-	}
-	if len(s.Argv) == 0 {
-		t.Errorf("the alias resolves to %+v — no spawn argv, so `yolo broker restart` "+
-			"refuses instead of cycling the daemon", s)
+	for _, want := range []string{"Nothing to restart", "leave that jail and launch it again"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("`yolo broker restart` lacks %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -130,7 +126,7 @@ func TestActingVerbsRefuseWithoutANameAndSayWhichOnesExist(t *testing.T) {
 			t.Errorf("`yolo host-daemon %s` with no name exited 0 — it acted on something "+
 				"nobody named:\n%s", verb, out)
 		}
-		if !strings.Contains(errOut, "name the host-wide daemon") {
+		if !strings.Contains(errOut, "name the host daemon") {
 			t.Errorf("`yolo host-daemon %s` with no name does not ask for one:\n%s", verb, errOut)
 		}
 	}

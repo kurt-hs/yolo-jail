@@ -210,8 +210,8 @@ func TestADaemonWithoutDetachIsStillKilledAfterItsGrace(t *testing.T) {
 	}
 }
 
-// perJailFixture records one pack module, named name, declaring a `scope: "host"` daemon that
-// runs the "line" child, with the preamble off because that child reads its request first.
+// perJailFixture records one pack module, named name, declaring a detaching daemon (what the
+// three credential daemons declare since they lost `scope: "host"`) that runs the "line" child, with the preamble off because that child reads its request first.
 func perJailFixture(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -226,7 +226,7 @@ func perJailFixture(t *testing.T, name string) {
 	manifest := `{"name": "` + name + `", "description": "fixture", "version": 1,
 	  "default_enabled": true, "transport": "` + loopholes.TransportLoopbackTLS + `",
 	  "lifecycle": "spawned",
-	  "host_daemon": {"cmd": ` + string(cmd) + `, "publishes": "socket", "scope": "host",
+	  "host_daemon": {"cmd": ` + string(cmd) + `, "publishes": "socket",
 	                  "preamble": false, "detach": true}}`
 	if err := os.WriteFile(filepath.Join(lp, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -239,12 +239,12 @@ func perJailFixture(t *testing.T, name string) {
 	})
 }
 
-// HD-R1 ON PODMAN, THE DISPATCH (docs/design/host-daemon-ownership.md): a record declaring
-// `scope: "host"` gets a daemon of this jail's own, keyed by the jail, and nothing at the
-// machine-wide rendezvous the old singleton used. Its endpoint variable stays the assembler's,
-// so the handle carries none. Ensure a machine-wide daemon for it again (startLoopholesMatching)
-// and the daemon is ensured at /tmp/yolo-<name>.sock instead.
-func TestOnPodmanAHostScopedRecordRunsAsTheJailsOwnDaemon(t *testing.T) {
+// HD-R1 ON PODMAN, THE DISPATCH (docs/design/host-daemon-ownership.md): a credential daemon's
+// record gets a daemon of this jail's own, keyed by the jail, and nothing at the machine-wide
+// rendezvous the old singleton used. Its endpoint variable stays the assembler's
+// (endpointPromisedAtAssembly), so the handle carries none. Ensure a machine-wide daemon for it
+// again (startLoopholesMatching) and the daemon is ensured at /tmp/yolo-<name>.sock instead.
+func TestOnPodmanACredentialDaemonRunsAsTheJailsOwn(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("spawns a host process")
 	}
@@ -268,7 +268,7 @@ func TestOnPodmanAHostScopedRecordRunsAsTheJailsOwnDaemon(t *testing.T) {
 	}
 	if h == nil {
 		o.stopLoopholes(handles, socketsDir, "", "")
-		t.Fatalf("no handle for the host-scoped record on podman; output:\n%s", buf.String())
+		t.Fatalf("no handle for the credential daemon's record on podman; output:\n%s", buf.String())
 	}
 	upstream := frontSocketFile(frontShortHash(socketsDir), name)
 	if !fileExists(upstream) {

@@ -84,21 +84,17 @@
   // in internal/oauthbroker/cert.go.  ca.key, ca.srl, leaf.cnf and
   // refresh.lock are all host-side bookkeeping and stay host-side.
   "state_files": ["ca.crt", "server.crt", "server.key"],
-  // The host-wide SINGLETON broker.  `scope: "host"` is the declaration that says
-  // so: ONE daemon per machine serving every jail on it, ensured under a host-wide
-  // flock rather than spawned per jail.  That is not a preference — the flock this
-  // daemon holds is what stops two jails burning the same single-use refresh token
-  // (docs/reference/agent-credentials.md §2.5), so a second copy of it IS the race the
-  // loophole exists to prevent.  The run pipeline used to express this by testing
-  // the loophole's NAME; `scope` is what replaced that.
+  // ONE BROKER PER JAIL, started by the launch and stopped with it
+  // (docs/design/host-daemon-ownership.md, HD-R1).  This was a host-wide singleton,
+  // `scope: "host"`, which that ruling retired.  What stops two jails burning the same
+  // single-use refresh token (docs/reference/agent-credentials.md §2.5) is not one
+  // process: it is the one credentials file every copy reads and the refresh flock
+  // beside it, which every copy takes before it redeems the token.
   //
-  // `publishes: "socket"` is required of a host-scoped daemon and is refused
-  // otherwise at load: an endpoint file carries ONE jail's bearer token, so a
-  // single daemon publishing one would hand every jail the same credential.  The
-  // daemon binds {socket} — the fixed host-wide path yolo derives from this
-  // loophole's name — and yolo runs a loopback-TLS FRONT per jail over it.  The
-  // per-jail relay that used to do that job is deleted
-  // (docs/design/broker-as-a-pack.md §7).
+  // `publishes: "socket"` is required of a pack-shipped loophole: the daemon binds
+  // {socket}, a path yolo derives from this jail and this loophole's name, and yolo runs
+  // the jail's loopback-TLS FRONT over it.  The per-jail relay that used to do that job
+  // is deleted (docs/design/broker-as-a-pack.md §7).
   //
   // The jail-facing hop is therefore that front's ENDPOINT FILE at
   // /run/yolo-services/claude-oauth-broker.endpoint, named by
@@ -119,7 +115,6 @@
   "host_daemon": {
     "cmd": ["yolo", "internal", "daemon", "claude-oauth-broker", "--socket", "{socket}"],
     "publishes": "socket",
-    "scope": "host",
     "detach": true
   },
   "jail_daemon": {

@@ -484,8 +484,8 @@ type RegisterResult struct {
 
 // RegisterView records that a launch selected the credential view for loc, and writes loc's
 // view from the machine's login now, so the jail starts with one (CL-D3). It needs the store
-// configured (ConfigureStore) and the broker's state directory to exist, which the launch's
-// ensure of the singleton provides; it creates neither.
+// configured (ConfigureStore) and the broker's state directory to exist, which the start of the
+// launch's own broker provides; it creates neither.
 func RegisterView(loc claudeview.Location, runtime, container string) (RegisterResult, error) {
 	var res RegisterResult
 	if ViewRegistryDir == "" || CanonicalPath == "" {

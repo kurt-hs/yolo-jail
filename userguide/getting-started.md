@@ -558,7 +558,6 @@ covers Mac-specific problems.
 ```bash
 yolo update --check     # is a newer yolo out?
 yolo update             # install it the same way yolo was installed
-yolo host-daemon status # restart any it reports unhealthy: yolo host-daemon restart <name>
 ```
 
 `yolo update` runs `brew upgrade yolo-jail` for a Homebrew install. For a from-source install it
@@ -572,8 +571,10 @@ afterwards. If you moved or re-cloned the repository, `yolo update --from <clone
 new place. Both work only for a from-source install.
 
 A jail that is already running keeps working through a Homebrew or from-source update, and uses the
-new version once you exit it and start it again. From source, `just deploy` restarts the shared
-Claude login service, so a running jail loses it for a moment.
+new version once you exit it and start it again. Each jail runs its own login services and keeps the
+ones it started, so nothing needs restarting. If you upgraded from a yolo that ran one shared login
+service for the whole machine, relaunch your jails, then stop the old shared ones with
+`yolo host-daemon stop <name>` (`yolo host-daemon status` lists them as host-wide).
 
 yolo checks for a new release once a day and prints one line when there is one, and it tells you the
 first time, before it checks. A from-source install is checked only when you run `yolo update`. When
@@ -585,8 +586,9 @@ or `git pull && just deploy` in your clone, and then `yolo broker restart`.
 
 ## Uninstall
 
-1. **Exit every jail**, then stop yolo's host services: `yolo host-daemon status` lists them, and
-   `yolo host-daemon stop <name>` stops one (on yolo 0.10.0, `yolo broker stop`). If you set up
+1. **Exit every jail**, which stops the host services each one started. `yolo host-daemon status`
+   lists any still running, and `yolo host-daemon stop <name>` stops one (on yolo 0.10.0,
+   `yolo broker stop`). If you set up
    `macos-user`, run `yolo macos-teardown`.
 2. **Remove yolo:** `brew uninstall yolo-jail`, or delete the release archive's folder, or remove
    `yolo` from Go's bin directory.

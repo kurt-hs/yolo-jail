@@ -160,9 +160,8 @@ func mintWarning(err error) string {
 // Every mint shells out afresh, so a fix made outside yolo (a login, the host's ~/.aws/config,
 // the `aws` CLI installed, a role's policy in AWS, the network) is found by the next mint, with
 // no relaunch. A change to loopholes.aws-auth.settings is not: this daemon reads its settings
-// once, at spawn (prepare), and what restarts it on a settings change is a launch
-// (broker.EnsureSingleton's settings-drift restart; an attach reports the drift and restarts
-// nothing). So "no relaunch" is promised outright only for the failures whose every named fix is
+// once, at spawn (prepare), and each jail's launch spawns its own (HD-R1), so a settings change
+// reaches the next jail launched; a running jail keeps the daemon it started with. So "no relaunch" is promised outright only for the failures whose every named fix is
 // outside yolo: a session to log in to, and a CLI to install. Every other failure, including one
 // this package did not classify, can be fixed by a setting, and gets both halves.
 func fixPickup(mintErr *awsauth.MintError) string {
@@ -172,5 +171,5 @@ func fixPickup(mintErr *awsauth.MintError) string {
 	}
 	return ". A fix made outside yolo is picked up with no relaunch; a change to " +
 		awsauth.SettingsScope + ", which the service reads only when it starts, takes effect " +
-		"when the next launch of a new jail restarts it"
+		"at the next launch, since each jail starts its own"
 }

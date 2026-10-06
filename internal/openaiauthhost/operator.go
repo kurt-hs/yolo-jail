@@ -9,8 +9,8 @@ package openaiauthhost
 // serveSockets gives to that path alone (openaiauthdaemon's two handlers; a `Session.JailID`
 // check could never do this job, because on that socket the field falls back to the client's
 // own self-asserted value). So a caller needs the socket's PATH, and getting it means
-// resolving the singleton's layout and making sure the daemon is even running. This package
-// already does exactly that for a managed `yolo host -- codex` launch (ensureSingleton), and
+// starting a daemon of the operator's own (StartPrivate, HD-R1: no shared daemon is left to
+// find). This package already does exactly that for a managed `yolo host -- codex` launch, and
 // the client cannot: openaiauthhost imports openauthclient, so the dependency only runs one
 // way. One resolver, two callers.
 //

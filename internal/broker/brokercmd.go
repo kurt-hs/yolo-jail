@@ -1,24 +1,20 @@
-// The `yolo host-daemon {status,stop,restart,logs}` command bodies, and the
-// `yolo broker` alias over the Claude singleton. A host-wide daemon is a
-// singleton — one process for every running jail on the machine — and this group
-// manages it: inspect health, stop it, cycle it after a binary upgrade, tail its
-// log.
+// The `yolo host-daemon {status,stop,restart,logs}` command bodies, and the `yolo broker` alias
+// over the Claude broker.
 //
-// THE BODIES TAKE A SINGLETON RATHER THAN BEING THE BROKER'S. They used to wire
-// CLIRealDeps() to the broker's own RealDeps(), with the name and the argv
-// hardcoded — which was true of the one loophole that declared `scope: "host"`
-// when they were written, and became a wrong instruction the moment there were
-// three (OQ-HD2, docs/design/host-daemon-ownership.md). Every sentence they print
-// names the daemon it is about, for the same reason reportFailedSpawn does: a
-// generic verb that loses the name reintroduces the defect somewhere new.
-// The lifecycle engine (BrokerStatus/IsAlive/Kill/Spawn/Ping) lives alongside
-// these command bodies in this package, behind an injectable Deps seam; the
-// command layer is the thin body over it. Output is rich-console → INFO-parity
-// (same information, Go-native color) per the approved output-contract OQ; the
-// EXIT CODES and the socket/pid/log PATH strings are byte-exact vs Python.
-// Wiring is the orchestrator's job (a one-line runBroker dispatcher in
-// cmd/yolo/native.go). This file exposes clean importable funcs
-// (PrintStatus/Stop/Restart/Logs) + CLIRealDeps.
+// WHAT THE VERB ACTS ON IS WHAT THE JAILS ARE RUNNING (docs/design/host-daemon-ownership.md
+// §5.2). Since HD-R1 every host daemon is a launch's own, so a name has as many running copies as
+// there are jails using it, each keyed by its jail, plus any machine-wide one an older yolo left
+// (hostdaemons.go). What each verb does with them:
+//
+//   - status reports every copy, and exits non-zero when one does not accept;
+//   - stop ends every copy of a name, waiting out a request in flight (the daemon's own upstream
+//     deadline) before it kills, and names what the jails it served must do next;
+//   - restart restarts nothing: a jail's daemon restarts with the jail (§6, mode 2), so it says
+//     how to relaunch, and that stop is there for the copies running now;
+//   - logs tails the one log every copy appends to.
+//
+// Every message names the daemon it is about and the next step (the happy-path principle,
+// docs/reference/happy-path-principle.md).
 package broker
 
 import (
@@ -27,63 +23,68 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
-// CLIDeps are the injectable seams for the command bodies. Singleton names WHICH
-// host-wide daemon they are about; Life is the lifecycle engine's Deps for that
-// daemon; the command layer wraps it. Out/Err are the console writers;
-// Color enables ANSI markup rendering (info-parity, not rich byte-parity).
-// RunTail runs the `tail` argv attached to the terminal (logs -f blocks); a
-// test substitutes a no-op. LogIsFile reports whether the broker log exists as a
-// regular file).
-//
-// Color requests ANSI markup, but it only reaches the writer when IsTTYStdout()
-// is also true — a pipe/redirect stays clean. IsTTYStdout is an injectable seam:
-// CLIRealDeps wires the os.Stdout char-device probe (mirroring builder/macosuser
-// real-Deps); nil is treated as "not a TTY", so zero-value CLIDeps strips.
+// StopWait is how long stop waits for a jail's copy to exit after its SIGTERM before it kills it:
+// a credential daemon finishes the request in flight first, bounded by its thirty-second upstream
+// deadline (the manifest's `detach`), so a kill sooner could cut a refresh that already redeemed
+// a single-use token upstream. A copy with nothing in flight exits at once.
+const StopWait = 35 * time.Second
+
+// CLIDeps are the seams for the command bodies. Out/Err are the console writers; Color requests
+// ANSI markup, which reaches the writer only when IsTTYStdout is also true.
 type CLIDeps struct {
-	// Singleton is the host-scoped daemon these bodies act on. Every message they
-	// print names Singleton.Name, and Restart refuses by name when Argv is empty.
-	Singleton   Singleton
-	Life        Deps
 	Out, Err    io.Writer
 	Color       bool
 	IsTTYStdout func() bool
-	LogPath     string
-	LogIsFile   func(path string) bool
-	RunTail     func(argv []string) error
-	// Format is the output format for the reporting verbs: "" / outfmt.Text (the
-	// human report, unchanged) or outfmt.JSON. Only `status` reports state; the
-	// CLI front door refuses the flag on the three verbs that ACT (stop, restart,
-	// logs) rather than accepting it and ignoring it.
+	// Format is "" / outfmt.Text or outfmt.JSON. Only status reports; the CLI front door refuses
+	// the flag on the verbs that act.
 	Format string
+	// Running lists the running copies of a host daemon, "" for every one (RunningInstances).
+	Running func(name string) []Instance
+	// Stragglers lists the processes still serving a jail's copy of name whose socket is gone
+	// (jailStragglers).
+	Stragglers func(name string) []int
+	// Terminate ends pids: SIGTERM, a wait of up to wait, then SIGKILL; it returns the ones it had
+	// to kill (terminate).
+	Terminate func(pids []int, wait time.Duration) (killed []int)
+	// StopHostWide ends the machine-wide copy an older yolo left for name, and reports whether
+	// one was running (BrokerKill over LegacyDeps).
+	StopHostWide func(name string) bool
+	// RemoveStale removes a jail's socket that nothing serves, and the daemon's private
+	// sibling beside it (removeStaleSocket).
+	RemoveStale func(socket string)
+	// LogPath is the log of a name (HostServiceLogPath); LogIsFile and RunTail serve logs.
+	LogPath   func(name string) string
+	LogIsFile func(path string) bool
+	RunTail   func(argv []string) error
 }
 
-// CLIRealDeps returns CLIDeps for the CLAUDE singleton — the `yolo broker` alias's
-// target, and nothing else's. New callers want CLIDepsFor.
-func CLIRealDeps() CLIDeps { return CLIDepsFor(BrokerSingleton()) }
-
-// CLIDepsFor returns CLIDeps for one host-scoped daemon, backed by the real
-// lifecycle engine, stdout/stderr, and a `tail` that inherits the terminal.
-//
-// Every path comes from s.Name through SingletonDeps, so this function knows no
-// loophole by name — the half of the generalization the CLI was missing.
-func CLIDepsFor(s Singleton) CLIDeps {
-	life := SingletonDeps(s.Name, s.Argv)
+// CLIRealDeps returns CLIDeps backed by this machine.
+func CLIRealDeps() CLIDeps {
 	return CLIDeps{
-		Singleton:   s,
-		Life:        life,
 		Out:         os.Stdout,
 		Err:         os.Stderr,
 		Color:       true,
 		IsTTYStdout: isTTYStdoutReal,
-		LogPath:     life.LogPath,
+		Running:     RunningInstances,
+		Stragglers:  jailStragglers,
+		Terminate:   terminate,
+		StopHostWide: func(name string) bool {
+			return BrokerKill(LegacyDeps(name), syscall.SIGTERM, BrokerKillTimeout)
+		},
+		RemoveStale: removeStaleSocket,
+		LogPath:     HostServiceLogPath,
 		LogIsFile: func(p string) bool {
 			info, err := os.Stat(p)
 			return err == nil && info.Mode().IsRegular()
@@ -98,170 +99,255 @@ func CLIDepsFor(s Singleton) CLIDeps {
 	}
 }
 
-// subject is the daemon these bodies are talking about, for the messages. It
-// degrades an unnamed Singleton — reachable only from a hand-built CLIDeps, since
-// both constructors fill it — to the generic phrase rather than to a blank, the
-// same degradation Deps.Name takes in reportFailedSpawn. A sentence with a hole
-// where the name should be is worse than one that admits it does not know.
-func (d CLIDeps) subject() string {
-	if d.Singleton.Name != "" {
-		return d.Singleton.Name
+// PrintStatus reports every running copy of the host daemon called name, or of every host daemon
+// when name is "", and exits 1 when one of them does not accept, else 0. Nothing running is an
+// answer, not a failure: no copy runs while no jail uses the daemon.
+func PrintStatus(deps CLIDeps, name string) int {
+	insts := deps.Running(name)
+	rc := 0
+	for _, i := range insts {
+		if !i.Healthy() {
+			rc = 1
+		}
 	}
-	return "the host-wide daemon"
-}
-
-// PrintStatus prints one daemon's health snapshot, then exits 0 when it is
-// healthy (pid_live AND socket accepting), else prints the cycle hint and exits 1.
-// The snapshot line CONTENT is info-parity; the exit code is exact.
-//
-// THE HINT NAMES THIS DAEMON, through cycleCommand. It said `yolo broker restart`
-// unconditionally, which for two of the three host-scoped daemons cycles a
-// different process and leaves the broken one running.
-func PrintStatus(deps CLIDeps) int {
-	st := BrokerStatus(deps.Life)
-	// The document is the Status struct itself (see its json tags), and the exit
-	// code below is unchanged: 0 healthy, 1 not. A consumer gets the same verdict
-	// from st.Healthy without having to read the process's exit status.
 	if outfmt.IsJSON(deps.Format) {
-		enc, err := json.MarshalIndent(st, "", "  ")
+		if insts == nil {
+			insts = []Instance{}
+		}
+		enc, err := json.MarshalIndent(insts, "", "  ")
 		if err != nil {
-			// Loud, never a silent empty stdout — the one outcome a machine
-			// consumer cannot diagnose.
-			fmt.Fprintf(deps.Err, "status for %s: encoding the report failed: %v\n",
-				deps.subject(), err)
+			fmt.Fprintf(deps.Err, "host-daemon status: encoding the report failed: %v\n", err)
 			return 1
 		}
 		fmt.Fprintln(deps.Out, string(enc))
-		if st.Healthy {
-			return 0
-		}
-		return 1
+		return rc
 	}
 	out := newPrinter(deps)
-
-	// THE HEADER IS THE NAME. A management report whose heading says "the broker"
-	// while the numbers below it belong to aws-auth is the whole defect this verb
-	// exists to close, one layer up from the wrong remedy.
-	out.printf("[bold]Host-wide daemon: %s[/bold]", deps.subject())
-	if deps.Singleton.Description != "" {
-		out.printf("  [dim]%s[/dim]", deps.Singleton.Description)
-	}
-	if !st.PIDPresent {
-		out.print("  [dim]not running[/dim] (no PID file)")
-	} else {
-		mark := "[red]dead[/red]"
-		if st.PIDLive {
-			mark = "[green]live[/green]"
+	if len(insts) == 0 {
+		if name == "" {
+			out.print("[dim]No host daemon is running on this machine.[/dim]")
+			out.print("  [dim]Each jail starts its own host daemons and ends them with it, so none " +
+				"run while no jail does; `yolo loopholes list` names the ones a launch starts.[/dim]")
+		} else {
+			out.printf("[dim]No %s is running on this machine.[/dim]", name)
+			out.print("  [dim]Each jail that uses it starts a copy of its own and ends it with the " +
+				"jail; a launch that selects its pack starts one.[/dim]")
 		}
-		out.printf("  pid:          %d  %s", st.PID, mark)
-	}
-	sockMark := "[red]missing[/red]"
-	if st.SocketExists {
-		sockMark = "[green]present[/green]"
-	}
-	out.printf("  socket:       %s  %s", st.Socket, sockMark)
-	// "accepting", not "ping": the singleton sits behind yolo's front now, so the
-	// host side can no longer speak its protocol without forging a jail identity
-	// (broker.SingletonReachable). The column says what was measured.
-	reachMark := "[red]not accepting[/red]"
-	if st.Reachable {
-		reachMark = "[green]accepting[/green]"
-	}
-	out.printf("  socket accept: %s", reachMark)
-	out.printf("  pid file:     %s", st.PIDFile)
-	out.print("")
-
-	if st.Healthy {
-		out.printf("[green]%s is healthy.[/green]", deps.subject())
 		return 0
 	}
-	out.printf("[yellow]%s is not fully healthy.[/yellow]  Run [cyan]%s[/cyan] to cycle.",
-		deps.subject(), CycleCommand(deps.Singleton.Name))
-	return 1
+	last := ""
+	for _, i := range insts {
+		if i.Name != last {
+			if last != "" {
+				out.print("")
+			}
+			out.printf("[bold]Host daemon: %s[/bold]", i.Name)
+			last = i.Name
+		}
+		mark := "[green]accepting[/green]"
+		if !i.Accepting {
+			mark = "[red]not accepting[/red]"
+		}
+		if i.HostWide {
+			out.printf("  host-wide, left by an older yolo: pid %s, socket %s, %s",
+				pidList(i.PIDs), i.Socket, mark)
+			out.printf("    [dim]It serves only the jails that yolo launched, and no launch of this "+
+				"yolo uses it: relaunch those jails with this yolo, which gives each its own, then "+
+				"`yolo %s stop %s`.[/dim]", HostDaemonVerb, i.Name)
+			continue
+		}
+		out.printf("  jail %s: pid %s, socket %s, %s", i.Jail, pidList(i.PIDs), i.Socket, mark)
+		if !i.Accepting {
+			out.printf("    [yellow]Its daemon died, or its jail ended without stopping it. If that "+
+				"jail is still running, its %s requests fail: leave the jail and launch it again, "+
+				"which starts a fresh copy (`yolo %s logs %s` shows why this one stopped). If it "+
+				"is not, `yolo %s stop %s` clears the socket it left.[/yellow]",
+				i.Name, HostDaemonVerb, i.Name, HostDaemonVerb, i.Name)
+		}
+	}
+	return rc
 }
 
-// Stop kills this daemon's running singleton (if any). The next launch that wants
-// it ensures it again. Always exits 0 — "nothing was running" is the requested
-// state, not a failure.
+// pidList renders pids for a status line, "unknown" when none could be found.
+func pidList(pids []int) string {
+	if len(pids) == 0 {
+		return "unknown"
+	}
+	s := make([]string, len(pids))
+	for i, p := range pids {
+		s[i] = strconv.Itoa(p)
+	}
+	return strings.Join(s, ",")
+}
+
+// Stop ends every running copy of the host daemon called name: each jail's own, any copy still
+// finishing a request after its jail ended, and a machine-wide one an older yolo left. Always
+// exits 0 — "nothing was running" is the requested state.
 //
-// It needs no declaration: BrokerKill works from the PID file (or pgrep) and the
-// rendezvous paths, all of which are functions of the NAME. That is what lets a
-// user stop a daemon whose pack they have since deselected — the one act
-// host-daemon-ownership.md §6 mode 5 says nothing in the system offers.
-func Stop(deps CLIDeps) int {
-	stopped := BrokerKill(deps.Life, syscall.SIGTERM, BrokerKillTimeout)
+// A JAIL'S COPY IS WAITED FOR, then killed: SIGTERM, up to StopWait for a request in flight to
+// finish, then SIGKILL, which is how a human ends a copy stuck holding the refresh lock
+// (docs/design/host-daemon-ownership.md §1.3: "killing a stuck lock holder is a thing a human may
+// have to do").
+func Stop(deps CLIDeps, name string) int {
 	out := newPrinter(deps)
-	if stopped {
-		out.printf("[green]Stopped %s.[/green]", deps.subject())
-	} else {
-		out.printf("[dim]No host-wide daemon was running for %s.[/dim]", deps.subject())
+	pidSet := map[int]bool{}
+	var jails, cleared []string
+	hostWide := false
+	for _, i := range deps.Running(name) {
+		if i.HostWide {
+			hostWide = true
+			continue
+		}
+		if len(i.PIDs) == 0 && !i.Accepting {
+			// NOTHING SERVES IT: no process names the socket and nothing accepts on it, so it is
+			// what a daemon that died, or a jail that ended without its teardown, left behind.
+			// Removing it is what clears the status line, and it can cut no one off.
+			deps.RemoveStale(i.Socket)
+			cleared = append(cleared, i.Jail)
+			continue
+		}
+		jails = append(jails, i.Jail)
+		for _, p := range i.PIDs {
+			pidSet[p] = true
+		}
+	}
+	for _, p := range deps.Stragglers(name) {
+		pidSet[p] = true
+	}
+	pids := make([]int, 0, len(pidSet))
+	for p := range pidSet {
+		pids = append(pids, p)
+	}
+	sort.Ints(pids)
+	stopped := false
+	if len(pids) > 0 {
+		stopped = true
+		killed := deps.Terminate(pids, StopWait)
+		what := "jail"
+		if len(jails) != 1 {
+			what = "jails"
+		}
+		if len(jails) > 0 {
+			out.printf("[green]Stopped %s for %s %s (pid %s).[/green]", name, what,
+				strings.Join(jails, ", "), pidList(pids))
+		} else {
+			out.printf("[green]Stopped %s (pid %s), still finishing after its jail ended.[/green]",
+				name, pidList(pids))
+		}
+		if len(killed) > 0 {
+			out.printf("  [yellow]pid %s did not exit within %s of its SIGTERM and was killed.[/yellow]",
+				pidList(killed), StopWait)
+		}
+		if len(jails) > 0 {
+			out.printf("  Each jail it served fails its %s requests until it is launched again: "+
+				"leave that jail and launch it again, which starts a fresh copy.", name)
+		}
+	}
+	if len(cleared) > 0 {
+		stopped = true
+		which := "jail"
+		if len(cleared) != 1 {
+			which = "jails"
+		}
+		out.printf("[green]Removed %s's socket for %s %s, which nothing was serving.[/green]", name,
+			which, strings.Join(cleared, ", "))
+		out.print("  Its daemon had died, or its jail ended without stopping it. If that jail is " +
+			"still running, leave it and launch it again, which starts a fresh copy.")
+	}
+	if len(jails) > 0 && len(pids) == 0 {
+		// A socket and no process found behind it: nothing to signal, and not "nothing is
+		// running" either, since status lists it.
+		stopped = true
+		out.printf("[yellow]Found %s's socket for %s but no process serving it, so nothing "+
+			"was stopped.[/yellow]", name, strings.Join(jails, ", "))
+		out.print("  A jail that ended without stopping its daemon leaves this socket, and the " +
+			"next launch of that workspace replaces it. If a process does serve it, this machine " +
+			"has no `pgrep` to find it by: install procps, then run this again.")
+	}
+	if hostWide && deps.StopHostWide(name) {
+		stopped = true
+		out.printf("[green]Stopped the host-wide %s an older yolo left.[/green]", name)
+		out.print("  The jails that yolo launched lose it: relaunch them with this yolo, which gives " +
+			"each its own.")
+	}
+	if !stopped {
+		out.printf("[dim]No %s is running on this machine.[/dim]", name)
 	}
 	return 0
 }
 
-// Restart kills this daemon (if any) then spawns a fresh one — the canonical way
-// to pick up a new binary's daemon code without restarting every jail, and the
-// remedy the alive-but-incompatible warning names. Exit 0 with `socket=<path>`
-// when it becomes live; exit 1 with the log-path hint otherwise.
-//
-// IT REFUSES BEFORE THE KILL when it has no argv, and the order is the whole
-// point: a daemon nothing declares can be stopped but not started, so killing
-// first and discovering that second would leave the user worse off than they
-// began, with the process gone and no way to bring it back. The refusal names the
-// daemon, says why, and points at the verb that does work on it.
-func Restart(deps CLIDeps) int {
+// Restart restarts nothing, and says why and what does: since HD-R1 a host daemon is its jail's
+// own and restarts with the jail (docs/design/host-daemon-ownership.md §6, mode 2). There is no
+// shared daemon to cycle, and a copy started by hand beside a jail would be no launch's, which is
+// the process HD-R1 exists to end. Exits 1, a refusal.
+func Restart(deps CLIDeps, name string) int {
 	out := newPrinter(deps)
-	if len(deps.Life.Argv) == 0 {
-		reason := deps.Singleton.NoSpawn
-		if reason == "" {
-			reason = "yolo has no spawn command for it"
+	n := 0
+	for _, i := range deps.Running(name) {
+		if !i.HostWide {
+			n++
 		}
-		out.printf("[red]Cannot restart %s: %s.[/red]", deps.subject(), reason)
-		out.printf("  [dim]yolo host-daemon stop %s[/dim] can still stop it; "+
-			"[dim]yolo host-daemon status %s[/dim] reports it.",
-			deps.Singleton.Name, deps.Singleton.Name)
-		return 1
 	}
-	BrokerKill(deps.Life, syscall.SIGTERM, BrokerKillTimeout)
-	sock := BrokerSpawn(deps.Life)
-	if BrokerIsAlive(deps.Life) {
-		out.printf("[green]Restarted %s.[/green]  socket=%s", deps.subject(), sock)
-		return 0
-	}
-	out.printf("[red]%s failed to become live after spawn.[/red]  Check %s",
-		deps.subject(), deps.LogPath)
+	out.printf("[yellow]Nothing to restart: each jail starts its own %s and ends it with the jail, "+
+		"so it restarts with its jail.[/yellow]", name)
+	out.printf("  To restart the copy a jail uses, leave that jail and launch it again (`yolo stop` "+
+		"in its workspace ends it at once). %d copies run now; `yolo %s stop %s` ends them all, and "+
+		"`yolo %s status %s` lists them.", n, HostDaemonVerb, name, HostDaemonVerb, name)
 	return 1
 }
 
-// Logs tails this daemon's shared host-wide log. When the log file
-// doesn't exist yet, print the dim "no log" line and exit 0. Otherwise build the
-// tail argv byte-exact vs Python — ["tail", "-n<lines>", maybe "-f", <path>] —
-// and run it. KeyboardInterrupt (Ctrl-C on `-f`) is swallowed (exit 0).
-func Logs(deps CLIDeps, lines int, follow bool) int {
+// Logs tails the log every copy of name appends to. A log that does not exist yet prints a dim
+// line and exits 0.
+func Logs(deps CLIDeps, name string, lines int, follow bool) int {
 	out := newPrinter(deps)
-	if !deps.LogIsFile(deps.LogPath) {
-		out.printf("[dim]No log file yet for %s at %s[/dim]", deps.subject(), deps.LogPath)
+	path := deps.LogPath(name)
+	if !deps.LogIsFile(path) {
+		out.printf("[dim]No log file yet for %s at %s; a launch that starts it writes one.[/dim]", name, path)
 		return 0
 	}
-	argv := []string{"tail", "-n" + strconv.Itoa(lines)}
-	if follow {
-		argv = append(argv, "-f")
-	}
-	argv = append(argv, deps.LogPath)
-	if err := deps.RunTail(argv); err != nil {
-		// Python catches KeyboardInterrupt and passes; any other tail failure
-		// there surfaces via subprocess.run's own stderr and a non-zero rc that
-		// Python ignores (the body returns None → exit 0). Match: swallow.
-		if isInterrupt(err) {
-			return 0
-		}
-		return 0
+	if err := deps.RunTail(BuildTailArgv(lines, follow, path)); err != nil {
+		// A Ctrl-C on `-f` and any tail failure alike exit 0: tail has already said why.
+		_ = isInterrupt(err)
 	}
 	return 0
 }
 
-// isInterrupt reports whether err is a SIGINT death of the child (tail -f
-// Ctrl-C), the analog of Python's KeyboardInterrupt swallow.
+// removeStaleSocket removes a jail's daemon socket that nothing serves, and the `.host` sibling
+// a daemon may bind beside it (the OpenAI credential service's private socket). Missing files are
+// not an error: the point is that they are gone.
+func removeStaleSocket(socket string) {
+	for _, p := range []string{socket, socket + ".host"} {
+		_ = os.Remove(p)
+	}
+}
+
+// terminate SIGTERMs pids, waits up to wait for them to exit, SIGKILLs the rest, and returns
+// those it had to kill.
+func terminate(pids []int, wait time.Duration) []int {
+	for _, p := range pids {
+		_ = syscall.Kill(p, syscall.SIGTERM)
+	}
+	deadline := time.Now().Add(wait)
+	alive := append([]int(nil), pids...)
+	for len(alive) > 0 && time.Now().Before(deadline) {
+		var still []int
+		for _, p := range alive {
+			if execx.IsAlive(p) {
+				still = append(still, p)
+			}
+		}
+		alive = still
+		if len(alive) > 0 {
+			time.Sleep(SocketPollInterval)
+		}
+	}
+	for _, p := range alive {
+		_ = syscall.Kill(p, syscall.SIGKILL)
+	}
+	return alive
+}
+
+// isInterrupt reports whether err is a SIGINT death of the child (tail -f Ctrl-C).
 func isInterrupt(err error) bool {
 	if ee, ok := err.(*exec.ExitError); ok {
 		if ws, ok := ee.Sys().(syscall.WaitStatus); ok {
@@ -271,8 +357,7 @@ func isInterrupt(err error) bool {
 	return false
 }
 
-// BuildTailArgv is the pure argv builder, exposed for parity testing against
-// Python. Byte-exact: ["tail", "-n<lines>", ("-f")?, <path>].
+// BuildTailArgv is the pure argv builder: ["tail", "-n<lines>", ("-f")?, <path>].
 func BuildTailArgv(lines int, follow bool, logPath string) []string {
 	argv := []string{"tail", "-n" + strconv.Itoa(lines)}
 	if follow {
@@ -281,26 +366,21 @@ func BuildTailArgv(lines int, follow bool, logPath string) []string {
 	return append(argv, logPath)
 }
 
-// printer wraps the shared richtext renderer: color mode emits ANSI, otherwise
-// known style tags are stripped (literal brackets like [y/N] are preserved in
-// both modes — info-parity, same text). Lowercase methods keep call sites terse.
+// printer wraps the shared richtext renderer.
 type printer struct{ rt richtext.Printer }
 
 func (p printer) print(msg string)               { p.rt.Print(msg) }
 func (p printer) printf(format string, a ...any) { p.rt.Printf(format, a...) }
 
-// newPrinter builds a printer for deps.Out, resolving the color gate through
-// tty.Color: ANSI is emitted only when deps.Color is set AND stdout is a real
-// terminal AND NO_COLOR is unset or empty, so a pipe/redirect stays clean.
+// newPrinter builds a printer for deps.Out, resolving the color gate through tty.Color: ANSI only
+// when deps.Color is set AND stdout is a terminal AND NO_COLOR is unset or empty.
 func newPrinter(deps CLIDeps) printer {
 	color := tty.Color(nil, deps.Color, deps.IsTTYStdout != nil && deps.IsTTYStdout())
 	return printer{rt: richtext.Printer{W: deps.Out, Color: color}}
 }
 
-// isTTYStdoutReal reports whether os.Stdout is a real terminal (the shared
-// internal/tty ioctl probe), mirroring builder/macosuser real-Deps, so color
-// reaches only a terminal. A var so a test can stand a terminal in for the
-// pipe `go test` gives it, and so reach SingletonDeps' own color decision.
+// isTTYStdoutReal reports whether os.Stdout is a real terminal. A var so a test can stand a
+// terminal in for the pipe `go test` gives it.
 var isTTYStdoutReal = func() bool {
 	return tty.IsTerminalFile(os.Stdout)
 }
