@@ -65,7 +65,7 @@ func TestAnUnmodifiedGitExtensionIsBuiltAtItsTipWithTheDefaultBuild(t *testing.T
 		rec.Good.Recipe != packdecl.TreeSourceRecipe(f.Source, packdecl.UnmodifiedGitBuild, nil, empty) {
 		t.Fatalf("the good build = %+v, want the tip under the empty series' recipe", rec.Good)
 	}
-	if !strings.Contains(out, "no build of it on this machine yet; building its upstream") ||
+	if !strings.Contains(out, "build extension "+treeKeyCLI+": "+tip[:8]+", the first build of it on this machine") ||
 		!strings.Contains(out, "built extension "+treeKeyCLI+": "+tip[:8]+"; this jail runs it") ||
 		strings.Contains(out, "0 patches") || strings.Contains(out, "takes the series") {
 		t.Errorf("the advance's lines speak of a series:\n%s", out)
@@ -174,6 +174,12 @@ func TestAnNpmExtensionIsBuiltWithNpmsInstallOfTheVersionItsSpecNames(t *testing
 	}
 	if !strings.Contains(out, "built extension "+treeKeyCLI+": 1.2.0; this jail runs it") {
 		t.Errorf("the move line does not name the version once:\n%s", out)
+	}
+	// The start line discloses the build line as the jail runs it: the version's install, never
+	// the recipe's `<version>`, and no checkout to copy.
+	if !strings.Contains(out, "it runs npm's own install of the package: "+packdecl.NpmTreeInstall("tool-ext", "1.2.0")) ||
+		strings.Contains(out, "<version>") {
+		t.Errorf("the start line does not disclose the version's own install:\n%s", out)
 	}
 	hits := atomic.LoadInt64(&nf.hits)
 	if again, _ := nf.deliver(t, true); again.Entry != d.Entry || atomic.LoadInt64(&nf.hits) != hits || len(nf.seen) != 1 {

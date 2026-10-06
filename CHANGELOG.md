@@ -16,12 +16,16 @@ catches up and becomes the guest notch on a Mac.
 ### Added
 
 **Patch series for programs and pi extensions.** A pack can name an upstream and your changes as a
-patch series, and yolo builds them onto each new release they fit. When a release conflicts, the
-last good build keeps running and `yolo pack rebase` sets up the fix, and `yolo pack series check`
-says whether a series still applies; both work in a jail. `yolo pack lint --online` checks a series
-before you use it, and patch series need git 2.40 or newer on the host. A launch now leaves out, and
-names, any part of a pack written for a newer yolo instead of failing, and `yolo features` lists
-what a yolo can read. See [Follow an upstream with a patch series](userguide/guides/patch-series.md).
+patch series, and yolo builds them onto each new release they fit, keeping the last good build
+running when one conflicts; `yolo pack rebase`, `yolo pack series check` and `yolo pack lint
+--online` keep a series applying, in a jail too, with git 2.40 or newer on the host. A launch
+builds them at once and shows them as one line, and a launch with no build of a series a pack
+needs stops before the jail starts, saying why once, in plain words
+(`YOLO_ALLOW_MISSING_PROGRAMS=1` starts it anyway). See
+[Follow an upstream with a patch series](userguide/guides/patch-series.md).
+
+**Packs written for a newer yolo.** A launch now leaves out, and names, any part of a pack written
+for a newer yolo instead of failing, and `yolo features` lists what a yolo can read.
 
 **Provider keys for a whole jail.** `yolo --with-credentials <provider>` now starts a jail holding
 those providers' keys from `env_sources`, as `yolo host --with-credentials` hands them to one

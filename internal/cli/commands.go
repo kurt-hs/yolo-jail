@@ -1253,22 +1253,33 @@ func runRun(args []string) int {
 	// jail is handed each fork's store key; a patched fork's advance runs here too
 	// (docs/design/patched-forks.md §7). Fourth seam of the same shape, and on the launch path
 	// only for AutoCapture's reason: the build jail runs from NewDefaultOptions, never from here.
+	//
+	// EVERY LINE ON THE LAUNCH STREAM, stderr teed into launch.log: the builds' lines are launch
+	// lines, which never go on the jail command's stdout (`yolo -- <cmd>` passes that through), and
+	// one stream keeps a build's start, progress and result lines in order (buildreport.go).
 	opts.BuildForks = func(req run.ForkBuildRequest) map[string]entrypoint.ForkDelivery {
-		out, errw := io.Writer(os.Stdout), io.Writer(os.Stderr)
-		if req.Stdout != nil && req.Stderr != nil {
-			out, errw = req.Stdout, req.Stderr // the launch's, teed into its launch.log
-		}
-		return buildForksForLaunch(req, out, errw, colorForWriter(os.Stdout))
+		stream := launchBuildStream(req.Stderr)
+		return buildForksForLaunch(req, stream, stream, colorForWriter(os.Stderr))
 	}
 	// And the TREE ARM beside it (docs/design/patched-extensions.md §6.1, §8.1): each patched
 	// extension's advance and the per-launch copy its jail mounts, on the launch path only for the
 	// same reason.
 	opts.BuildTrees = func(req run.TreeBuildRequest) map[string]run.TreeDelivery {
-		out, errw := io.Writer(os.Stdout), io.Writer(os.Stderr)
-		if req.Stdout != nil && req.Stderr != nil {
-			out, errw = req.Stdout, req.Stderr
+		stream := launchBuildStream(req.Stderr)
+		return deliverTreesForLaunch(req, stream, stream, colorForWriter(os.Stderr))
+	}
+	// And THE SLOT AS ONE ACT (buildpool.go; docs/design/pi-extension-store-builds.md XB-D10), which a
+	// fresh launch calls in place of the two: every key of both halves at once in one pool, under one
+	// interrupt scope.
+	opts.BuildSlot = func(req run.BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]run.TreeDelivery) {
+		var stderr io.Writer
+		switch {
+		case req.Forks != nil:
+			stderr = req.Forks.Stderr
+		case req.Trees != nil:
+			stderr = req.Trees.Stderr
 		}
-		return deliverTreesForLaunch(req, out, errw, colorForWriter(os.Stdout))
+		return runBuildSlot(req, launchBuildStream(stderr), colorForWriter(os.Stderr))
 	}
 	// Set the tmux/kitty jail indicator around the run, restoring on exit. The
 	// restore runs as subprocesses (kitten/tmux) with no timeout of their own,
