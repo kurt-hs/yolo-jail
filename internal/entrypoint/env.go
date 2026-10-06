@@ -119,6 +119,9 @@ type Env struct {
 	// problem instead of one-per-restart. Main turns a non-empty slice into the
 	// error that aborts the jail. See genStep.
 	genFailures []string
+	// genRecords are the same failures as their structured records (bootrefusal.go), which a
+	// refused boot writes beside boot.log for the host's build act to read.
+	genRecords []GenFailure
 
 	// serviceRefusals accumulates the boot's refusals about a SERVICE this jail needs rather
 	// than about a config generator: a required in-jail daemon that did not start or publish,
@@ -167,10 +170,13 @@ type Env struct {
 	orphanFS orphanFS
 }
 
-// genFailure records a fatal config-generator failure (A12). Collected rather
-// than returned immediately so a single boot reports every broken step.
-func (e *Env) genFailure(msg string) {
-	e.genFailures = append(e.genFailures, msg)
+// genStepFailure records a fatal config-generator failure (A12), collected rather than returned
+// immediately so a single boot reports every broken step: the failure err of the generator step
+// label, which was doing about:
+// the refusal's line ("<label>: <err>") and its structured record (bootrefusal.go).
+func (e *Env) genStepFailure(label string, about genAbout, err error) {
+	e.genFailures = append(e.genFailures, label+": "+err.Error())
+	e.genRecords = append(e.genRecords, genFailureOf(e, label, about, err))
 }
 
 // GenFailures returns the accumulated fatal generator failures, in order.

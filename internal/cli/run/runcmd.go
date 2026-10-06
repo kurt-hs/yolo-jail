@@ -638,6 +638,17 @@ type Options struct {
 	// build beside this launch's pack tree, by extension key. Injected for BuildForks' reason, and
 	// nil builds and copies nothing, each tree reaching its jail with the reason that says so.
 	BuildTrees func(req TreeBuildRequest) map[string]TreeDelivery
+	// BuildSlot is the WHOLE fork-build slot's act (buildslot.go; docs/design/pi-extension-store-builds.md
+	// XB-D10): BuildForks' and BuildTrees' work at once, every key of both in one pool under one
+	// interrupt scope, returning both halves' answers. When set a fresh launch calls it in place of
+	// the two; nil leaves them, one after the other. Injected for BuildForks' reason.
+	BuildSlot func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery)
+	// prewarmImage starts the image's own build beside the slot (imageprewarm.go); nil is
+	// image.Prewarm, and a launch whose image step is a test's fake (autoLoad) warms nothing.
+	prewarmImage func(image.AutoLoadOptions)
+	// imageIdentity is this launch's image identity, evaluated once whether the prewarm or the image
+	// step asks first (imageprewarm.go); nil evaluates it as the image step always did.
+	imageIdentity *identityMemo
 	// Sealed is THE SEAL (docs/design/forked-programs-as-packs.md FP-D9; seal.go): this launch is
 	// a fork BUILD, whose command is arbitrary code from a repository a pack named, so the jail is
 	// handed no credential and nothing that writes outside its own workspace and home. Every
@@ -829,9 +840,16 @@ type PerfRef struct{ Log *perf.Log }
 // the sinks; call once, after the early refusals have had their say — a
 // refused launch writes no file.
 func (o *Options) initPerf(cname string) {
-	o.Perf = newTimingLog(o.timingRecording(), o.Workspace, cname, o.Stderr, func(msg string) {
-		o.pr(o.Stderr).printf("[dim]yolo: %s[/dim]", msg)
-	})
+	notice := func(msg string) { o.pr(o.Stderr).printf("[dim]yolo: %s[/dim]", msg) }
+	slow := notice
+	if o.subLaunch() {
+		// A CAPTURE OR BUILD JAIL'S LAUNCH NAMES NO SLOW SPAN: its stream is its parent's record, not
+		// a terminal anyone watches (a build's is its launch's log alone, internal/cli's
+		// buildreport.go), and the parent's own progress line already says it is waiting. The file
+		// still records every span.
+		slow = nil
+	}
+	o.Perf = newTimingLogWith(o.timingRecording(), o.Workspace, cname, o.Stderr, notice, slow)
 	if o.Perf != nil {
 		o.perfReportOnce = &sync.Once{}
 		o.perfWindowAOnce = &sync.Once{}
@@ -867,15 +885,27 @@ func (o *Options) initPerf(cname string) {
 // seam exists so tests can freeze time, and a span system built on a frozen
 // clock reports 0.000s everywhere under test.
 func newTimingLog(enabled bool, ws, cname string, stderr io.Writer, notice func(string)) *perf.Log {
+	return newTimingLogWith(enabled, ws, cname, stderr, notice, notice)
+}
+
+// newTimingLogWith is newTimingLog with the slow-span notice apart from the file sink's: slow nil
+// wires no slow-span sink, which a sub-launch's collector has none of (initPerf, subLaunch).
+func newTimingLogWith(enabled bool, ws, cname string, stderr io.Writer, notice, slow func(string)) *perf.Log {
 	if !enabled {
 		return nil
 	}
-	sinks := []perf.Sink{
-		hostPerfFileSink(ws, cname, stderr, notice),
-		slowSpanNoticeSink(notice),
+	sinks := []perf.Sink{hostPerfFileSink(ws, cname, stderr, notice)}
+	if slow != nil {
+		sinks = append(sinks, slowSpanNoticeSink(slow))
 	}
 	return perf.New(time.Now, sinks...)
 }
+
+// subLaunch reports whether this launch is one another launch runs — a capture jail's or a fork
+// build jail's — by the one switch that makes it one: the capture store's mount suppressed
+// (CapturesDir returning "", capturehost.go), which also keeps a build from starting another
+// (forkDeliveriesFor).
+func (o *Options) subLaunch() bool { return o.CapturesDir != nil && o.CapturesDir() == "" }
 
 // slowSpanNoticeSink is the live "who is doing it" line — one notice per span
 // past perf.SlowSpanThreshold — AND THE WINDOW IN WHICH IT SAYS NOTHING.

@@ -1,0 +1,576 @@
+package cli
+
+// buildreport_test.go pins a jail launch's build report (buildreport.go, docs/design/patched-forks.md
+// PF-D79): a successful build is its start line, its disclosure line and its result line on the
+// terminal, and everything its build jail printed is in launch.log and the build's own log; the
+// nested launch's warnings stay on the terminal; a failed build prints its last lines and its log
+// under its failure line; and a build jail that refused is relayed with what it said.
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/progress"
+)
+
+// inProcessForkBuildChild stands in for the fork-build-jail child in this package's tests (TestMain):
+// a test binary never self-execs (forkBuildChildCommand), so a build a launch runs as a child runs
+// here, in this process, through the fake capture jail a test installs.
+func inProcessForkBuildChild(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
+	color bool) (int, bool) {
+	return forkBuildRunJail(staging, b, s, color), false
+}
+
+// launchStream is a launch's stderr as the run pipeline tees it (run's teeLog): the terminal takes
+// every write but a log-only one, the log every write but a transient one, with color stripped.
+type launchStream struct {
+	mu        sync.Mutex
+	term, log bytes.Buffer
+}
+
+var testANSI = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
+
+func (s *launchStream) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.term.Write(p)
+	s.log.Write(testANSI.ReplaceAll(p, nil))
+	return len(p), nil
+}
+
+func (s *launchStream) WriteLog(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log.Write(testANSI.ReplaceAll(p, nil))
+	return len(p), nil
+}
+
+func (s *launchStream) WriteTransient(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.term.Write(p)
+}
+
+func (s *launchStream) terminal() string { s.mu.Lock(); defer s.mu.Unlock(); return s.term.String() }
+func (s *launchStream) logged() string   { s.mu.Lock(); defer s.mu.Unlock(); return s.log.String() }
+
+// The stand-in's lines: what a real build jail's streams carry.
+const (
+	jailOutLine     = "added 212 packages in 9s"
+	jailErrLine     = "src/index.ts(3,1): compiled"
+	jailBootLine    = "cgroup delegate: not available (no host daemon socket)"
+	jailBuildError  = "Error: a build line's own error, which is not the nested launch's"
+	nestedFlakeLine = "Flake source: /opt/yolo-jail/share/yolo-jail (the bundle beside this binary)"
+	nestedJailLine  = "Jail: yolo-fork-0123456789abcdef"
+	nestedWarning   = "Warning: a nested launch's warning"
+	nestedDetail    = "  its detail, indented"
+)
+
+// talkingChild is a child that prints on each of its streams as a build jail does — its launch's own
+// lines, its jail's boot, the ready, then the build line's output on the child's own stdout and
+// stderr, which the launch's lines shared until the ready — then runs the fake build jail in this
+// process; rc, when non-zero, ends it there with the toolchain written, a build line that ran and
+// failed, after lines more lines on its stderr.
+func talkingChild(t *testing.T, rc, lines int) {
+	t.Helper()
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
+		color bool) (int, bool) {
+		if s.jailOut == nil || s.jailErr == nil || s.jailReady == nil {
+			t.Error("a jail launch's build ran its child with no writers for the jail's own lines")
+			return 1, false
+		}
+		fmt.Fprintln(s.errw, nestedFlakeLine)
+		fmt.Fprintln(s.errw, nestedJailLine)
+		fmt.Fprintln(s.errw, nestedWarning)
+		fmt.Fprintln(s.errw, nestedDetail)
+		fmt.Fprintln(s.jailErr, jailBootLine)
+		s.jailReady()
+		fmt.Fprintln(s.out, jailOutLine)
+		fmt.Fprintln(s.errw, jailErrLine)
+		fmt.Fprintln(s.errw, jailBuildError)
+		if rc != 0 {
+			writeFile(t, filepath.Join(staging, forkToolchainLeaf), "image-identity\n")
+			for i := 1; i <= lines; i++ {
+				fmt.Fprintf(s.errw, "build output line %d\n", i)
+			}
+			return rc, false
+		}
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+}
+
+// deliverWithStream runs one launch's tree arm for the fixture's extension, its stream the tee.
+func (fx *treeFixture) deliverWithStream(t *testing.T, ws string) (run.TreeDelivery, *launchStream) {
+	t.Helper()
+	stream := &launchStream{}
+	req := run.TreeBuildRequest{Trees: []packload.Fork{fx.tree(t)}, Platform: patchedTestPlatform, Runtime: "podman",
+		Workspace: ws, Build: true, CopyRoot: filepath.Join(t.TempDir(), "tree.patched"), Stderr: stream,
+		Progress: progress.Config{}}
+	got := deliverTreesForLaunch(req, stream, stream, false)
+	return got[treeKeyCLI], stream
+}
+
+// A SUCCESSFUL BUILD IS ITS START, ITS DISCLOSURE AND ITS RESULT ON THE TERMINAL, and the nested
+// launch's warning under it: no line its build jail printed, of its launch, its boot or its build,
+// reaches the terminal, and every one of them is in launch.log, marked with the build's key, and in
+// the build's own log. Red when the build act's streams stop being the report's (buildForkUnderLock)
+// or the tree arm stops making a report (deliverTreesForLaunch).
+func TestASuccessfulBuildsTerminalCarriesOnlyItsProgressLines(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	talkingChild(t, 0, 0)
+	ws := t.TempDir()
+	d, stream := fx.deliverWithStream(t, ws)
+	term, logged := stream.terminal(), stream.logged()
+	if d.Dir == "" {
+		t.Fatalf("nothing was delivered: %+v\n%s", d, term)
+	}
+	logName := filepath.Join(".yolo", buildLogName(treeKeyCLI))
+	label := "v1.0.0 (" + shortSHA(fx.base) + ")"
+	wantLines := []string{
+		// The start line: what is built and why, which a line of its own said before, and its log.
+		"build extension " + treeKeyCLI + ": " + label + " + 2 patches (series ",
+		"), the first build of it on this machine; log: " + logName,
+		// The disclosure: the seal and the build line, whole.
+		"  " + sealDisclosure("podman") + "; it runs, then copies the checkout: true",
+		// The result: the move line, with the store's clause.
+		"built extension " + treeKeyCLI + ": " + label + " + 2 patches; this jail runs it",
+		" — store key " + d.Entry + ", ",
+		// The nested launch's warning, and its detail.
+		"  its build jail: " + nestedWarning,
+		"  its build jail: " + nestedDetail,
+	}
+	for _, w := range wantLines {
+		if !strings.Contains(term, w) {
+			t.Errorf("the terminal lacks %q:\n%s", w, term)
+		}
+	}
+	for _, l := range strings.Split(strings.TrimSpace(term), "\n") {
+		if !strings.HasPrefix(l, "build extension ") && !strings.HasPrefix(l, "  sealed: ") &&
+			!strings.HasPrefix(l, "built extension ") && !strings.HasPrefix(l, "  its build jail: ") &&
+			!strings.HasPrefix(l, buildPoolLabel) && !strings.HasPrefix(l, "  "+buildPoolLabel) {
+			t.Errorf("the terminal carries a line that is not the build's progress: %q\n%s", l, term)
+		}
+	}
+	for _, line := range []string{jailOutLine, jailErrLine, jailBuildError, jailBootLine, nestedFlakeLine, nestedJailLine} {
+		if strings.Contains(term, line) {
+			t.Errorf("the build jail's line %q reached the terminal:\n%s", line, term)
+		}
+		if !strings.Contains(logged, "  ["+treeKeyCLI+"] "+line+"\n") {
+			t.Errorf("launch.log lacks the build jail's line %q:\n%s", line, logged)
+		}
+	}
+	own, err := os.ReadFile(filepath.Join(ws, logName))
+	if err != nil {
+		t.Fatalf("the build's own log: %v", err)
+	}
+	for _, line := range []string{jailOutLine, jailErrLine, nestedFlakeLine, nestedWarning, "it runs, then copies the checkout: true"} {
+		if !strings.Contains(string(own), line) {
+			t.Errorf("the build's own log lacks %q:\n%s", line, own)
+		}
+	}
+}
+
+// A FAILED BUILD PRINTS ITS LAST LINES AND ITS LOG under its failure line, which the terminal
+// otherwise never shows, and the nested launch's warnings under its result line, however long
+// before its last lines they came (report-tiers.md's tier 3); one that leaves nothing serving leaves
+// its cause to the launch's refusal, which says it once, so its own warning is not printed. Red with
+// buildFailed's printRunFailure call deleted, or buildRun.fail's warnings.
+func TestAFailedBuildPrintsItsTailAndItsLog(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	talkingChild(t, 3, 30)
+	ws := t.TempDir()
+	d, stream := fx.deliverWithStream(t, ws)
+	term := stream.terminal()
+	if d.Dir != "" {
+		t.Fatalf("a failed build delivered %+v", d)
+	}
+	own := filepath.Join(ws, ".yolo", buildLogName(treeKeyCLI))
+	for _, w := range []string{
+		"Building extension " + treeKeyCLI + ": failed (",
+		"  its last 20 lines:",
+		"    build output line 30",
+		"    build output line 11",
+		"  its whole output: " + own + ", and in " + filepath.Join(ws, ".yolo", run.LaunchLogName),
+		// The nested launch's warning, which came before the last 20 lines, under the result line.
+		"  its build jail: " + nestedWarning,
+		"  its build jail: " + nestedDetail,
+	} {
+		if !strings.Contains(term, w) {
+			t.Errorf("the failure lacks %q:\n%s", w, term)
+		}
+	}
+	if !d.Unsaid || !strings.Contains(d.Reason, "failed on the host") || strings.Contains(term, ": the build of ") {
+		t.Errorf("the failed build's cause is said by the act, or not left to the launch (%+v):\n%s", d, term)
+	}
+	if r, w := strings.Index(term, "Building extension "+treeKeyCLI+": failed ("), strings.Index(term, nestedWarning); w < r {
+		t.Errorf("the nested launch's warning is not under the build's result line:\n%s", term)
+	}
+	if strings.Contains(term, "build output line 10\n") || strings.Contains(term, "its output is above") {
+		t.Errorf("the failure printed more than the last 20 lines, or pointed above:\n%s", term)
+	}
+	if data, err := os.ReadFile(own); err != nil || !strings.Contains(string(data), "build output line 1\n") {
+		t.Errorf("the build's own log does not hold its whole output (%v):\n%s", err, data)
+	}
+}
+
+// A BUILD JAIL THAT REFUSED before its build line ran is relayed with what it said (PPX-D39), from
+// the stream it was printed on, each line its own (PPX-D42), in the cause the launch is handed, which
+// says it once (run's missingbuilds.go); the build's result line says the jail stopped. Red with the
+// relay's tail on the launch's streams (jailTail.tee) or the cause's hand in notStarted deleted.
+func TestABuildJailsRefusalIsHandedToTheLaunch(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, _ string, _ forkBuild, s captureStreams, _ bool) (int, bool) {
+		fmt.Fprintln(s.errw, nestedFlakeLine)
+		fmt.Fprintln(s.out, "Refusing to launch: the config changed and was not approved")
+		fmt.Fprintln(s.out, "  key: packs")
+		return 1, false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	d, stream := fx.deliverWithStream(t, t.TempDir())
+	term := stream.terminal()
+	if !strings.Contains(term, "Building extension "+treeKeyCLI+": its build jail exited 1 before its build line ran (") {
+		t.Errorf("the build's result does not say its jail stopped:\n%s", term)
+	}
+	if want := []string{"Refusing to launch: the config changed and was not approved", "key: packs"}; d.Cause == nil ||
+		!slices.Equal(d.Cause.Lines, want) {
+		t.Errorf("the launch is handed the cause %+v, want the refusal's lines %q", d.Cause, want)
+	}
+	if strings.Contains(term, " / ") || strings.Contains(term, "Refusing to launch") {
+		t.Errorf("the act said the cause the launch says once, or joined its lines:\n%s", term)
+	}
+}
+
+// A PLAIN FORK'S LAUNCH BUILD is one progress line as well: its start line with the build line,
+// its result with the store's clause, and its build jail's output in launch.log alone. Red with
+// buildPlainForkForLaunch's report deleted.
+func TestAPlainForksLaunchBuildIsOneProgressLine(t *testing.T) {
+	f := forkBuildHome(t)
+	var jailSeen run.Options
+	withFakeCaptureJail(t, fakeBuildJail(t, &jailSeen, probetoolBuilt))
+	talkingChild(t, 0, 0)
+	stream := &launchStream{}
+	got := buildForksForLaunch(run.ForkBuildRequest{Pins: []packload.ForkPin{{Fork: f, Commit: forkTestCommit}},
+		Platform: "linux/arm64", Workspace: t.TempDir(), Stderr: stream}, stream, stream, false)
+	term := stream.terminal()
+	if got["probetool"].Key == "" {
+		t.Fatalf("no build was delivered: %+v\n%s", got, term)
+	}
+	for _, w := range []string{"fork builds  1 fork never built at its pin on this machine",
+		"build fork " + f.Key() + ": " + f.Source + " at " + shortSHA(forkTestCommit),
+		"  " + sealDisclosure("podman") + "; it runs: " + f.Build,
+		"built fork " + f.Key() + " at " + shortSHA(forkTestCommit) + "; this jail runs it — store key " + got["probetool"].Key,
+	} {
+		if !strings.Contains(term, w) {
+			t.Errorf("the terminal lacks %q:\n%s", w, term)
+		}
+	}
+	if strings.Contains(term, jailOutLine) || !strings.Contains(stream.logged(), jailOutLine) {
+		t.Errorf("the build jail's output is on the terminal or missing from the log:\n%s", term)
+	}
+}
+
+// launchReported runs one jail launch's advance as its slot's pool runs it (addForkKeys), on one
+// stream.
+func (fx *patchedAdvanceFixture) launchReported(t *testing.T) (advanceResult, string) {
+	t.Helper()
+	stream := &launchStream{}
+	pool := newBuildPool(stream, progress.Config{}, false, "", "podman", 0, 0, &run.ActInterrupt{})
+	var r advanceResult
+	pool.add("fork forkpack/tool", func(it *poolItem) {
+		r = advancePatchedFork(fx.fork(t), advanceOptions{platform: patchedTestPlatform, runtime: "podman",
+			out: it.stream(), errw: it.stream(), launch: true, report: pool.report, slot: it})
+	})
+	pool.run()
+	return r, stream.terminal()
+}
+
+// A JAIL LAUNCH'S FIRST ADVANCE BUILDS IN THE CHILD, under the pool's interrupt scope — so its
+// output is kept off the terminal, and a Ctrl-C ends its wait and not the launch (PF-D80) — and a fit
+// that fails sends the advance to the series' base under the same start line, carrying the base's
+// clause (PF-D23, PF-D79). Red with the advance's report-mode child runner or its start line deleted.
+func TestAJailLaunchsFirstAdvanceBuildsInTheChildAndItsBaseGetsTheStartLine(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	v11 := fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.failBuildsOf(t, "fourteen")
+	r, term := fx.launchReported(t)
+	if r.delivery.Key == "" || fx.child != 2 || !slices.Equal(fx.scoped, []bool{true, true}) {
+		t.Fatalf("handed %+v after %d child builds (scoped %v), want the fit's and then the base's, under the pool's scope\n%s",
+			r.delivery, fx.child, fx.scoped, term)
+	}
+	fit, base := "v1.1.0 ("+shortSHA(v11)+") + 2 patches (series ", "v1.0.0 ("+shortSHA(fx.base)+") + 2 patches (series "
+	held := "held at the series' base, since the newest version the series takes did not build"
+	for _, w := range []string{
+		"build fork forkpack/tool: " + fit,
+		"), the first build of it on this machine",
+		"  " + sealDisclosure("podman") + "; it runs: sh build.sh",
+		"Building fork forkpack/tool: failed (",
+		"so the series is built at its base v1.0.0 (" + shortSHA(fx.base) + ") instead",
+		"build fork forkpack/tool: " + base,
+		") — " + held,
+		"built fork forkpack/tool: v1.0.0 (" + shortSHA(fx.base) + ") + 2 patches; this jail runs it — " + held + " — store key ",
+	} {
+		if !strings.Contains(term, w) {
+			t.Errorf("the launch lacks %q:\n%s", w, term)
+		}
+	}
+	for _, gone := range []string{"takes the series; building it", "in a sealed jail", "checking fork", "no build of it on this machine yet; replaying",
+		"so it is built at its base"} {
+		if strings.Contains(term, gone) {
+			t.Errorf("the launch still prints %q, which the start line carries:\n%s", gone, term)
+		}
+	}
+}
+
+// A SERVING ADVANCE'S START LINE carries the wait and what a Ctrl-C starts the jail on, and its
+// build runs under the interrupt scope (PF-D25).
+func TestAServingAdvancesStartLineCarriesItsWait(t *testing.T) {
+	fx, v11, _, _, _, _ := firstAdvance(t)
+	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 16: "sixteen"})
+	fx.later(2 * time.Hour)
+	fx.child, fx.scoped = 0, nil
+	r, term := fx.launchReported(t)
+	if !r.built || fx.child != 1 || !slices.Equal(fx.scoped, []bool{true}) {
+		t.Fatalf("built %v in %d child builds (scoped %v), want one scoped build\n%s", r.built, fx.child, fx.scoped, term)
+	}
+	for _, w := range []string{
+		"build fork forkpack/tool: v1.3.0 (" + shortSHA(v13) + ") + 2 patches (series ",
+		"), upstream moved past the good build v1.1.0 (" + shortSHA(v11) + ") — this launch waits for it, at most " +
+			forkBuildWaitBound.String() + ", and a Ctrl-C starts this jail on the good build v1.1.0 (" + shortSHA(v11) + ") instead",
+		"updated fork forkpack/tool: v1.1.0 (" + shortSHA(v11) + ") → v1.3.0 (" + shortSHA(v13) + "), 2 patches; " +
+			"this jail runs the new build — store key ",
+	} {
+		if !strings.Contains(term, w) {
+			t.Errorf("the launch lacks %q:\n%s", w, term)
+		}
+	}
+	if strings.Contains(term, "upstream moved — ") {
+		t.Errorf("the launch still prints the line the start line carries:\n%s", term)
+	}
+}
+
+// A BUILD LAUNCHED FROM INSIDE A JAIL SAYS IT SHARES THAT JAIL'S NETWORK: a nested podman is forced
+// onto its launcher's namespace whatever the seal asks, so the start line and the build's own log
+// say so rather than claiming a bridge (FP-D13). Red with the disclosure's network clause fixed.
+func TestABuildsSealDisclosureNamesTheNetworkItsLaunchApplies(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		prev := sealSharesNetwork
+		var asked []string
+		sealSharesNetwork = func(rt string) bool { asked = append(asked, rt); return shared }
+		fx := newTreeFixture(t, `"f.txt"`)
+		talkingChild(t, 0, 0)
+		ws := t.TempDir()
+		_, stream := fx.deliverWithStream(t, ws)
+		sealSharesNetwork = prev
+		term := stream.terminal()
+		own, _ := os.ReadFile(filepath.Join(ws, ".yolo", buildLogName(treeKeyCLI)))
+		bridged, nested := "and a bridged network, never the host's", "the network of the jail it is launched from"
+		want, gone := bridged, nested
+		if shared {
+			want, gone = nested, bridged
+		}
+		if !strings.Contains(term, want) || strings.Contains(term, gone) || !strings.Contains(string(own), want) {
+			t.Errorf("shared %v: the start line or the build's log does not say %q:\n%s\n%s", shared, want, term, own)
+		}
+		if !slices.Contains(asked, "podman") {
+			t.Errorf("shared %v: the disclosure was not asked about the launch's runtime, but %q", shared, asked)
+		}
+	}
+}
+
+// A BUILD'S OWN LOG KEEPS EVERY BUILD OF ITS KEY THIS LAUNCH RAN: a fit that fails sends the advance
+// to the series' base, whose build would otherwise rewrite the log the fit's failure names, so "its
+// whole output" would hold the base's output alone. Red with every begin truncating the log.
+func TestABuildLogKeepsEveryBuildOfItsKeyThisLaunch(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.failBuildsOf(t, "fourteen")
+	attempts := 0
+	prev := forkBuildChild
+	forkBuildChild = func(ctx context.Context, d time.Duration, staging string, b forkBuild, s captureStreams, color bool) (int, bool) {
+		attempts++
+		fmt.Fprintf(s.jailOut, "build attempt %d output\n", attempts)
+		return prev(ctx, d, staging, b, s, color)
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	ws := t.TempDir()
+	stream := &launchStream{}
+	pool := newBuildPool(stream, progress.Config{}, false, ws, "podman", 0, 0, &run.ActInterrupt{})
+	var r advanceResult
+	pool.add("fork forkpack/tool", func(it *poolItem) {
+		r = advancePatchedFork(fx.fork(t), advanceOptions{platform: patchedTestPlatform, runtime: "podman", workspace: ws,
+			out: it.stream(), errw: it.stream(), launch: true, report: pool.report, slot: it})
+	})
+	pool.run()
+	term := stream.terminal()
+	own := filepath.Join(ws, ".yolo", buildLogName("forkpack/tool"))
+	if r.delivery.Key == "" || attempts != 2 || !strings.Contains(term, "  its whole output: "+own) {
+		t.Fatalf("handed %+v after %d builds; want the base's after the fit's failure named %s\n%s", r.delivery, attempts, own, term)
+	}
+	data, _ := os.ReadFile(own)
+	for _, w := range []string{"build attempt 1 output", "build attempt 2 output"} {
+		if !strings.Contains(string(data), w) {
+			t.Errorf("the build's own log lacks %q:\n%s", w, data)
+		}
+	}
+	if strings.Count(string(data), "=== yolo build of ") != 2 {
+		t.Errorf("the build's own log does not head each build:\n%s", data)
+	}
+}
+
+// A CRLF-TERMINATED LINE IS A LINE: a carriage return that only ends a line clears nothing, so the
+// build jail's line reaches launch.log and a nested warning ending in one stays on the terminal; a
+// carriage return that redraws a line still keeps only what a terminal shows. Red with '\r' clearing
+// the line in progress at once.
+func TestACRLFLineFromABuildJailIsKept(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams, color bool) (int, bool) {
+		fmt.Fprint(s.jailOut, "crlf line from the build\r")
+		fmt.Fprint(s.jailOut, "\n")
+		fmt.Fprint(s.jailOut, "50%\r100% redrawn\n")
+		fmt.Fprint(s.errw, "Warning: crlf warning\r\n")
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	d, stream := fx.deliverWithStream(t, t.TempDir())
+	term, logged := stream.terminal(), stream.logged()
+	if d.Dir == "" {
+		t.Fatalf("nothing was delivered: %+v\n%s", d, term)
+	}
+	for _, w := range []string{"  [" + treeKeyCLI + "] crlf line from the build\n", "  [" + treeKeyCLI + "] 100% redrawn\n"} {
+		if !strings.Contains(logged, w) {
+			t.Errorf("launch.log lacks %q:\n%s", w, logged)
+		}
+	}
+	if strings.Contains(logged, "50%") {
+		t.Errorf("launch.log kept a redrawn line's first draw:\n%s", logged)
+	}
+	if !strings.Contains(term, "  its build jail: Warning: crlf warning") {
+		t.Errorf("the CRLF-terminated nested warning is not on the terminal:\n%s", term)
+	}
+}
+
+// IN A POOL A CHECK'S WAIT FOR A LOCK IS RECORDED: the key's line on the pool's progress line says
+// what it waits for, and launch.log keeps the notice, marked with the key. Red with the pool's
+// Begin discarding the notice.
+func TestAPoolChecksLockWaitIsShownAndLogged(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	f := fx.fork(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = patchedAdvanceStore(true).WithCheckRecord(f.Key(), nil, func(*packsrc.CheckRecord, error, func() error) (bool, error) {
+			close(held)
+			<-release
+			return false, nil
+		})
+	}()
+	<-held
+	stream := &launchStream{}
+	pool := newBuildPool(stream, progress.Config{}, false, t.TempDir(), "podman", 0, 0, &run.ActInterrupt{})
+	var line string
+	pool.add("fork forkpack/tool", func(it *poolItem) {
+		go func() {
+			defer close(release)
+			deadline := time.Now().Add(10 * time.Second)
+			for time.Now().Before(deadline) {
+				pool.mu.Lock()
+				line = pool.renderLocked()
+				pool.mu.Unlock()
+				if strings.Contains(line, "waiting for another yolo process") {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+		advancePatchedFork(f, advanceOptions{platform: patchedTestPlatform, runtime: "podman", out: it.stream(),
+			errw: it.stream(), launch: true, report: pool.report, slot: it})
+	})
+	pool.run()
+	want := "waiting for another yolo process to release the check record of " + f.Key()
+	if !strings.Contains(line, want) {
+		t.Errorf("the pool's line never said the check's wait; it read %q", line)
+	}
+	if !strings.Contains(stream.logged(), "  ["+f.Key()+"] "+want) {
+		t.Errorf("launch.log lacks the check's wait:\n%s", stream.logged())
+	}
+}
+
+// A KEY STOPPED WAITING FOR A CHECK SLOT SAYS SO ONCE: a Ctrl-C that lands while a key waits for
+// the pool's only check slot ends the key with one line. Red with the pool branch of
+// advancePatchedFork repeating what actStopped said.
+func TestAKeyStoppedWaitingForACheckSlotSaysSoOnce(t *testing.T) {
+	fx := newTreesFixture(t, 1)
+	act := &run.ActInterrupt{}
+	stream := &launchStream{}
+	ws := t.TempDir()
+	pool := newBuildPool(stream, progress.Config{}, false, ws, "podman", 1, 0, act)
+	if !pool.checks.acquire(context.Background(), 1000) {
+		t.Fatal("the only check slot could not be held")
+	}
+	req := run.TreeBuildRequest{Trees: fx.trees, Platform: patchedTestPlatform, Runtime: "podman", Workspace: ws,
+		Build: true, CopyRoot: filepath.Join(t.TempDir(), "trees.patched"), Stderr: stream, Interrupt: act}
+	f := fx.trees[0]
+	pool.add(f.Label(), func(it *poolItem) { deliverTree(f, req, pool.report, it, false) })
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+	}()
+	pool.run()
+	term := stream.terminal()
+	if n := strings.Count(term, "a Ctrl-C ended this launch's wait for its patched builds"); n != 1 {
+		t.Errorf("the stopped key said its Ctrl-C %d times, want once:\n%s", n, term)
+	}
+}
+
+// A FAILED BUILD'S TAIL IS ITS OWN OUTPUT: a nested launch that printed more lines before its jail
+// booted than the tail holds, and a build line that printed two, shows the build's two — its error
+// — and none of the launch's, which are in the logs. Red with failureLines keeping every stream's
+// last lines alike, which then shows the launch's lines and loses the error.
+func TestAFailedBuildsTailIsItsOwnOutput(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	prev := forkBuildChild
+	forkBuildChild = func(_ context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
+		color bool) (int, bool) {
+		for i := 1; i <= 30; i++ {
+			fmt.Fprintf(s.errw, "nested launch line %d\n", i)
+		}
+		s.jailReady()
+		fmt.Fprintln(s.jailOut, "compiling the extension")
+		fmt.Fprintln(s.jailErr, "error: the extension does not compile")
+		writeFile(t, filepath.Join(staging, forkToolchainLeaf), "image-identity\n")
+		return 3, false
+	}
+	t.Cleanup(func() { forkBuildChild = prev })
+	d, stream := fx.deliverWithStream(t, t.TempDir())
+	term := stream.terminal()
+	if d.Dir != "" {
+		t.Fatalf("a failed build delivered %+v", d)
+	}
+	for _, w := range []string{"  its last 2 lines:", "    compiling the extension", "    error: the extension does not compile"} {
+		if !strings.Contains(term, w) {
+			t.Errorf("the failure lacks %q:\n%s", w, term)
+		}
+	}
+	if strings.Contains(term, "nested launch line") {
+		t.Errorf("the failure's tail shows the nested launch's lines, not the build's:\n%s", term)
+	}
+	if !strings.Contains(stream.logged(), "nested launch line 1") {
+		t.Errorf("launch.log lacks the nested launch's lines:\n%s", stream.logged())
+	}
+}

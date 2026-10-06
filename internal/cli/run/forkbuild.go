@@ -19,6 +19,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -35,9 +36,13 @@ type ForkBuildRequest struct {
 	Runtime string
 	// Workspace is the launch's workspace, whose launch.log a failed build's line names.
 	Workspace string
-	// Stdout and Stderr are the launch's own writers, teed into that launch.log (launchlog.go), so
-	// a build's output is there as well as above; nil for the process's streams.
+	// Stdout and Stderr are the launch's own writers, teed into that launch.log (launchlog.go): a
+	// build's lines and the slot's progress line go to Stderr, and its build jail's output to the log half
+	// alone (LaunchLogOnly); nil for the process's streams.
 	Stdout, Stderr io.Writer
+	// Progress is the rendering of this launch's stream (progressConfig), for each build's progress
+	// line: redrawn in place on a terminal, lines anywhere else.
+	Progress progress.Config
 	// Interrupt is this launch's act interrupt (ActInterrupt, PF-D57), shared with its tree arm's
 	// request (TreeBuildRequest.Interrupt): a Ctrl-C that ends one patched fork's wait ends every
 	// later patched fork's and extension's too, and their good builds are handed with no check and no
@@ -64,8 +69,10 @@ type ForkBuildRequest struct {
 // dispatch), exactly as auto-capture's is; core cannot know what the jail will run. A hit builds
 // nothing, so §9's "never rebuild on a timer or on every launch" survives.
 //
-// Nothing here can fail the launch: every "no" is a reason the program's launcher prints in place
-// of the program (§9: a broken fork is one missing tool, not a broken jail).
+// Nothing here fails the launch: every "no" is a reason the program's launcher prints in place of
+// the program (§9: a broken fork is one missing tool, not a broken jail). The launch itself then
+// refuses, before its image, when a PATCHED fork has no build (missingbuilds.go, patched-forks.md
+// PF-D77).
 //
 // THE REASONS, in the order they are asked:
 //
@@ -76,11 +83,29 @@ type ForkBuildRequest struct {
 //     an entry no jail on this runtime could read: nothing is built, and the jail is told why.
 //   - A fork with no usable pin, or none for this platform, is its reason.
 func (o *Options) forkDeliveriesFor(rt string) map[string]entrypoint.ForkDelivery {
-	if len(o.forkPinned) == 0 || o.CapturesDir() == "" {
+	out, req := o.forkBuildPlan(rt)
+	if out == nil {
 		return nil
 	}
-	out := map[string]entrypoint.ForkDelivery{}
 	defer o.recordHandedForks(out)
+	if req == nil {
+		return out
+	}
+	if o.BuildForks == nil {
+		answers, _ := o.BuildSlot(BuildSlotRequest{Forks: req, MaxBuilds: SlotBuildJails(rt)})
+		return o.finishForkDeliveries(out, req, answers)
+	}
+	return o.finishForkDeliveries(out, req, o.BuildForks(*req))
+}
+
+// forkBuildPlan is the trigger's first half (forkDeliveriesFor): every fork's reason it has no
+// build to wait for, in out, and the request for the forks the build act readies, nil for none. out
+// is nil when this launch decides nothing for any fork (no fork, or a capture or build jail).
+func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, *ForkBuildRequest) {
+	if len(o.forkPinned) == 0 || o.CapturesDir() == "" {
+		return nil, nil
+	}
+	out := map[string]entrypoint.ForkDelivery{}
 	platform := containerJailPlatform()
 	var build []packload.ForkPin
 	for _, p := range o.forkPinned {
@@ -94,45 +119,63 @@ func (o *Options) forkDeliveriesFor(rt string) map[string]entrypoint.ForkDeliver
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
-		if why := (packdecl.Install{Platforms: p.Fork.Platforms}).UnpublishedReason("linux", goruntime.GOARCH); why != "" {
+		if why := forkUnpublishedHere(p.Fork); why != "" {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "fork " + p.Fork.Pack + " builds for none of this jail's platform: " + why}
 			continue
 		}
 		build = append(build, p)
 	}
 	if len(build) == 0 {
-		return out
+		return out, nil
 	}
 	if reason := o.roBindsUnsupported(rt); reason != "" { // parity: Warned — the capture store is not mounted below Apple Container's read-only floor, so no fork is built and each fork's launcher prints this reason
 		for _, p := range build {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "this runtime mounts no capture store to deliver a " +
 				"source-built program from — " + reason}
 		}
-		return out
+		return out, nil
 	}
-	if o.BuildForks == nil {
+	if o.BuildForks == nil && o.BuildSlot == nil {
 		for _, p := range build {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "this launch builds no fork"}
 		}
-		return out
+		return out, nil
 	}
-	req := ForkBuildRequest{Pins: build, Platform: platform, Runtime: rt, Workspace: o.Workspace,
-		Stdout: o.Stdout, Stderr: o.Stderr, Interrupt: o.actInterrupt()}
+	req := &ForkBuildRequest{Pins: build, Platform: platform, Runtime: rt, Workspace: o.Workspace,
+		Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(), Interrupt: o.actInterrupt()}
 	if o.packTree != "" {
+		// Called from every advance of the slot's pool at once (XB-D10): the record's writes are
+		// serialized in updateHandedFile, and this list under its own lock.
 		req.Hand = func(bin string, h HandedFork) error {
+			handedForksMu.Lock()
 			o.handedForks = append(o.handedForks, bin)
+			handedForksMu.Unlock()
 			return recordHandedFork(o.packTree, bin, h)
 		}
 	}
-	for bin, d := range o.BuildForks(req) {
+	return out, req
+}
+
+// finishForkDeliveries is the trigger's second half: the build act's answers merged into out, and
+// a reason for any fork it did not answer.
+func (o *Options) finishForkDeliveries(out map[string]entrypoint.ForkDelivery, req *ForkBuildRequest,
+	answers map[string]entrypoint.ForkDelivery) map[string]entrypoint.ForkDelivery {
+	for bin, d := range answers {
 		out[bin] = d
 	}
-	for _, p := range build {
+	for _, p := range req.Pins {
 		if _, ok := out[p.Fork.Bin]; !ok {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "the fork build returned no answer for " + p.Fork.Bin}
 		}
 	}
 	return out
+}
+
+// forkUnpublishedHere is why f builds for none of a container jail's platform, "" when it builds
+// for it: a fork no build is tried for, which the launch's refusal of a missing patched build
+// passes over (missingbuilds.go), since nothing failed.
+func forkUnpublishedHere(f packload.Fork) string {
+	return (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason("linux", goruntime.GOARCH)
 }
 
 // actInterrupt is this launch's act interrupt (ActInterrupt, PF-D57): one per launch, made by the

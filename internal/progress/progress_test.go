@@ -198,6 +198,9 @@ func TestByteFormatting(t *testing.T) {
 	if got := formatElapsed(147*time.Second, true); got != "2m27s" {
 		t.Errorf("formatElapsed(147s) = %q", got)
 	}
+	if got := Elapsed(12800 * time.Millisecond); got != "12.8s" {
+		t.Errorf("Elapsed(12.8s) = %q, want a result line's spelling", got)
+	}
 }
 
 // Write is how a subprocess summarizer prints through a live line: each complete

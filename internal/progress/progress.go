@@ -357,6 +357,11 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
+// Elapsed renders a duration as a result line's: "12.8s", or "2m27s" past a minute. For
+// a caller that writes a step's result line itself, as a pool of steps under one
+// line does for each of them, so its lines read like this package's own.
+func Elapsed(d time.Duration) string { return formatElapsed(d, true) }
+
 // formatElapsed renders a duration for a person: "12s" while running, "12.8s" in a
 // result, and minutes past one.
 func formatElapsed(d time.Duration, precise bool) string {
