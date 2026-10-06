@@ -385,3 +385,39 @@ func TestAMigrationThatCannotCompleteStartsNoOpenAIDaemonAndSaysWhy(t *testing.T
 		}
 	}
 }
+
+// HD-R1 ON APPLE CONTAINER: the one credential service its allow list admits is the jail's own
+// daemon too, keyed by the jail, with nothing at the machine-wide rendezvous. Drop "container"
+// from what hostWideDaemonsStillSharedOn excludes and it is ensured at /tmp/yolo-<name>.sock.
+func TestOnAppleContainerTheOpenAIServiceRunsAsTheJailsOwnDaemon(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("spawns a host process")
+	}
+	retireHome(t)
+	name := openaiauth.LoopholeName
+	perJailFixture(t, name)
+	var buf strings.Builder
+	o := &Options{Workspace: t.TempDir()}
+	fillDefaults(o)
+	o.Stdout = &buf
+	o.IsMacOS = false
+
+	cname := "yolo-perjail-ac"
+	handles := o.startLoopholes(cname, "container", jsonx.NewOrderedMap())
+	socketsDir := hostServiceSocketsDir(cname, false)
+	t.Cleanup(func() {
+		o.stopLoopholes(handles, socketsDir, "", "")
+		_ = os.RemoveAll(socketsDir)
+	})
+	if !startedLoophole(handles, name) {
+		t.Fatalf("Apple Container started no OpenAI credential service; output:\n%s", buf.String())
+	}
+	if upstream := frontSocketFile(frontShortHash(socketsDir), name); !fileExists(upstream) {
+		t.Errorf("the OpenAI daemon's socket is not this jail's own %s", upstream)
+	}
+	for _, p := range []string{paths.HostSingletonSocket(name), paths.HostSingletonPIDFile(name)} {
+		if fileExists(p) {
+			t.Errorf("the Apple Container launch touched the machine-wide rendezvous %s", p)
+		}
+	}
+}

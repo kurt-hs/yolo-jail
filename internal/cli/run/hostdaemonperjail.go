@@ -31,10 +31,15 @@ import (
 
 // hostWideDaemonsStillSharedOn reports the backends HD-R1 is NOT built on yet, where a record
 // declaring `host_daemon.scope: "host"` still gets the one machine-wide daemon (startHostSingleton).
-// The ruling is built one backend at a time, podman first, and this predicate is the seam between
-// the two halves until the last backend moves and it is deleted with the key.
+// The ruling is built one backend at a time, the two container backends first, and this predicate
+// is the seam between the two halves until the last backend moves and it is deleted with the key.
+//
+// APPLE CONTAINER takes the container arm's keeper like podman, so its jail's own daemons are
+// the keeper's children too. What it starts is unchanged: its allow list (loopholeAllow) admits
+// the OpenAI credential service, and the Claude broker when the launch delivers the credential
+// view, which that jail's own broker now keeps current for as long as the jail runs.
 func hostWideDaemonsStillSharedOn(rt string) bool {
-	return rt != "podman" // parity: HonoredBy — every other backend still reaches the shared credential state through the machine-wide daemon (startHostSingleton) until HD-R1 is built there
+	return rt != "podman" && rt != "container" // parity: HonoredBy — macos-user and the host notch still reach the shared credential state through the machine-wide daemon (startHostSingleton) until HD-R1 is built there
 }
 
 // endpointPromisedAtAssembly reports whether the jail-facing variable of lp's host service is the
