@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 )
 
 // legacyhome_test.go pins LegacyCopyServesHome (legacyhome.go): a machine-wide copy is this
@@ -21,8 +22,25 @@ func homeProcess(t *testing.T, deps Deps, home string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	awaitProcessHome(t, cmd.Process.Pid)
 	if err := os.WriteFile(deps.PIDFilePath, []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// awaitProcessHome waits until pid's environment names a HOME. Start returns once the child's
+// exec has passed its point of no return, which is before the kernel has laid out the new
+// program's environment, so a read straight after it can find none; a copy an older yolo left
+// running has long been past that.
+func awaitProcessHome(t *testing.T, pid int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if _, ok := processHome(pid); ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Skipf("pid %d's environment cannot be read here (/proc/%d/environ)", pid, pid)
+		}
 	}
 }
 
