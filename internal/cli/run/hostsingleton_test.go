@@ -341,12 +341,10 @@ func TestStartLoopholesRoutesByScope(t *testing.T) {
 	o.Stdout = &buf
 	o.IsMacOS = false
 
-	handles := o.startLoopholes("yolo-scope-test", "podman", jsonx.NewOrderedMap())
-	socketsDir := hostServiceSocketsDir("yolo-scope-test", false)
-	t.Cleanup(func() {
-		o.stopLoopholes(handles, socketsDir, "", "")
-		_ = os.RemoveAll(socketsDir)
-	})
+	// On a backend that still ensures the machine-wide daemon (hostWideDaemonsStillSharedOn);
+	// TestOnPodmanAHostScopedRecordRunsAsTheJailsOwnDaemon pins the other half of the dispatch.
+	handles := o.startLoopholes("yolo-scope-test", "macos-user", jsonx.NewOrderedMap())
+	t.Cleanup(func() { o.endServicesSession(handles) })
 
 	if fileExists(marker) {
 		t.Fatal("startLoopholes SPAWNED a scope:\"host\" daemon. The dispatch no longer " +

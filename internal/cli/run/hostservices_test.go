@@ -389,11 +389,18 @@ func TestExternalServiceWarnsOnReadinessTimeout(t *testing.T) {
 // answer "got:<request>".
 // mode "dies": as "line", and exit 3 once the file $YJ_FRONT_CHILD_DIE names
 // exists: a daemon that goes down on its own while its jail is up (keeperwatch_test.go).
+// mode "lingers": as "line", writing its pid to $YJ_FRONT_CHILD_PID; a SIGTERM
+// touches $YJ_FRONT_CHILD_TERMED and the child then exits 0 only once
+// $YJ_FRONT_CHILD_RELEASE exists, which is a credential daemon finishing the refresh in
+// flight when its jail ended (hostdaemonperjail_test.go).
 func frontUpstreamChildMain(mode, socketPath string) int {
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "front-upstream-child:", err)
 		return 1
+	}
+	if mode == "lingers" {
+		lingerAfterSIGTERM()
 	}
 	if die := os.Getenv("YJ_FRONT_CHILD_DIE"); mode == "dies" && die != "" {
 		go func() {

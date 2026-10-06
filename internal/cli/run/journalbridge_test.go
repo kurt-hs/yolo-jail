@@ -44,6 +44,12 @@ func TestMain(m *testing.M) {
 	if len(os.Args) >= 4 && os.Args[1] == "-front-upstream-child" {
 		os.Exit(frontUpstreamChildMain(os.Args[2], os.Args[3]))
 	}
+	// `<test-binary> -splice-child <socket> <upstream>` is a spawned per-jail daemon that relays
+	// every connection to a handler the test serves in its own process (hostdaemonperjail_test.go),
+	// so a per-jail spawn reaches the real handler a fixture stands up.
+	if len(os.Args) >= 4 && os.Args[1] == "-splice-child" {
+		os.Exit(spliceChildMain(os.Args[2], os.Args[3]))
+	}
 	// `<test-binary> -settings-echo-child <socket> <settings>` is the fake host-wide daemon
 	// for the settings-restart tests (singletonsettings_test.go): it reads its settings file
 	// ONCE, at startup, as every real one does, and answers each connection with it.

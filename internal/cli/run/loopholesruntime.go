@@ -420,10 +420,20 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 		// deliberately: a record with no scope at all is per-jail, which is the
 		// direction where a dropped field costs a spawn instead of silently
 		// declining to start a daemon somebody asked for.
-		if hd := daemonOf[name]; hd != nil && hd.Scope == loopholes.ScopeHost {
+		//
+		// HD-R1 RETIRES THAT ANSWER one backend at a time (hostdaemonperjail.go): where it is
+		// built, a `scope: "host"` record's daemon is this jail's own, spawned below like any
+		// other, and only the backends still listed by hostWideDaemonsStillSharedOn ensure the
+		// machine-wide one.
+		if hd := daemonOf[name]; hd != nil && hd.Scope == loopholes.ScopeHost && hostWideDaemonsStillSharedOn(rt) {
 			if h, ok := o.startHostSingleton(name, external[name], socketsDir, advertise, hd); ok {
 				handles = append(handles, markLaunchCheck(h, recordOf[name]))
 			}
+			continue
+		}
+		// MIGRATE, THEN SPAWN: the OpenAI legacy-state migration, under the lock it always ran
+		// under, before this launch's own OpenAI daemon reads the state (hostdaemonperjail.go).
+		if name == openaiauth.LoopholeName && !o.migrateLegacyOpenAIAuthState() {
 			continue
 		}
 		h, ok := o.startExternalService(name, external[name], socketsDir, transportOf[name], advertise, daemonOf[name])
@@ -440,7 +450,16 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 			}
 		}
 		if ok {
-			handles = append(handles, markLaunchCheck(h, recordOf[name]))
+			// Its variable is the assembler's, emitted before this spawn
+			// (endpointPromisedAtAssembly), so the handle carries none to insert twice.
+			if endpointPromisedAtAssembly(recordOf[name]) {
+				h.envVarName = ""
+			}
+			h = markLaunchCheck(h, recordOf[name])
+			// THIS JAIL'S OWN DAEMON, whatever the record's scope says: this launch started it,
+			// so it cannot predate this yolo, and the launch check names no restart for it.
+			h.hostWide = false
+			handles = append(handles, h)
 		}
 	}
 	return handles
@@ -1326,7 +1345,16 @@ func (o *Options) startExternalService(
 		// discarded because SIGKILL cannot be blocked: the only way it fails is ESRCH,
 		// meaning the group is already gone — which the failure clause below is about
 		// to report in its own words.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		//
+		// EXCEPT A DAEMON THAT DECLARES `detach`, which gets its SIGTERM and is left to finish:
+		// its work starts before its socket binds (a credential daemon's first proactive
+		// refresh), and a slow bind is no reason to cut a refresh that may already have
+		// redeemed a single-use token upstream.
+		if hd != nil && hd.Detach {
+			detachService(cmd)
+		} else {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
 		// Not fatal — the jail still starts. But it IS the state in which every
 		// in-jail client of this loophole fails, and the failure is otherwise
 		// silent until the agent hits it, so say so here and name the log that
@@ -1367,7 +1395,7 @@ func (o *Options) startExternalService(
 		envVar = hostServiceEnvVar(name)
 	}
 	out := o.pr(o.Stdout)
-	stop := func() { killServiceGroup(out, name, o.serviceTermGrace(), cmd, exited) }
+	stop := func() { o.stopService(out, name, hd, cmd, exited) }
 	if fronted {
 		// The daemon's socket accepts; now publish the jail-facing half. The
 		// front is started only AFTER the upstream wait on purpose: ServeFront
@@ -1399,11 +1427,12 @@ func (o *Options) startExternalService(
 			})
 		if failure := frontPublishFailure(hostPath, o.serviceReadyTimeout(), frontFailed); failure != "" {
 			close(frontStop)
-			killServiceGroup(out, name, o.serviceTermGrace(), cmd, exited)
+			o.stopService(out, name, hd, cmd, exited)
 			// Discarded: cleanup on a path that is already reporting a failure. A
 			// socket left behind here is retired by the next launch's pre-spawn
 			// unlink or by retireFrontSockets, and both of those report.
 			_ = os.Remove(daemonPath)
+			removeSocketSiblings(daemonPath)
 			// Same loudness contract as the daemon wait above: this is the state
 			// in which the daemon is healthy and the jail still cannot reach it,
 			// and `failure` is what distinguishes a front that could not BIND from
@@ -1425,11 +1454,16 @@ func (o *Options) startExternalService(
 			// past this point the endpoint file and the per-jail credential inside it
 			// may outlive the jail, and the backstop is another function's job.
 			o.awaitFrontClosed("host service", name, hostPath, frontDone, frontStopGrace)
-			killServiceGroup(out, name, o.serviceTermGrace(), cmd, exited)
+			// The daemon's own teardown, detach or kill (stopService). A detached daemon
+			// may still be finishing a request when the lines below remove its sockets:
+			// its front is already closed, so nothing can reach it by them, and the
+			// connection it is serving is unaffected.
+			o.stopService(out, name, hd, cmd, exited)
 			// Discarded: teardown litter only, and self-limiting — the next launch's
 			// pre-spawn unlink and retireFrontSockets both target this exact path and
 			// both report what they cannot remove.
 			_ = os.Remove(daemonPath)
+			removeSocketSiblings(daemonPath)
 		}
 	}
 	return loopholeDaemon{
@@ -1563,6 +1597,8 @@ func retireFrontSockets(shortHash string) {
 	matches, _ := filepath.Glob(frontSocketFile(shortHash, "*"))
 	for _, m := range matches {
 		_ = os.Remove(m)
+		// And what the daemon bound beside it under the same name (removeSocketSiblings).
+		removeSocketSiblings(m)
 	}
 }
 

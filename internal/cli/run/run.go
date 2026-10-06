@@ -1511,8 +1511,10 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// that dies without its teardown (SIGKILL, OOM) leaves the dir in place
 	// (docs/reference/jail-home.md).
 	socketsDir := hostServiceSocketsDir(cname, o.IsMacOS)
-	// Not under the seal (seal.go): a fork build starts no host service.
-	if rt != "container" && brokerLoopholeActive(cfg) && !o.Sealed {
+	// Not under the seal (seal.go): a fork build starts no host service. And not where HD-R1 is
+	// built (hostWideDaemonsStillSharedOn): there the broker is this jail's own, spawned with the
+	// rest of its host services, and no machine-wide one is ensured for it.
+	if rt != "container" && hostWideDaemonsStillSharedOn(rt) && brokerLoopholeActive(cfg) && !o.Sealed {
 		o.brokerEnsure()
 	}
 

@@ -92,10 +92,23 @@ func Main(argv []string) int {
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	shutdown := func() { stopOnce.Do(func() { close(stop) }) }
-	if !*noBgRefresh {
-		go RunBackgroundRefresher(*credsFile, stop,
-			BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+	// THE EXIT WAITS FOR A REFRESH IN FLIGHT, the background one included. A jail's end
+	// SIGTERMs this daemon and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3), so the daemon itself is what lets a refresh
+	// that has already redeemed the single-use refresh token upstream write its replacement
+	// before the process goes. Its bound is the upstream request's own deadline (httpClient).
+	// Serving stops first, and ServeFrontedUnix already waits for every handler it accepted.
+	background := make(chan struct{})
+	if *noBgRefresh {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			RunBackgroundRefresher(*credsFile, stop,
+				BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+		}()
 	}
+	defer func() { shutdown(); <-background }()
 
 	// hostservice.ServeUnix installs its own SIGTERM/SIGINT handler; wire a stop
 	// channel too so the background refresher goroutine exits with the process.
