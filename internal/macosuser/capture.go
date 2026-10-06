@@ -66,6 +66,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -262,8 +263,13 @@ func BuildCapturePlan(opts CaptureOptions) CapturePlan {
 	// contract is that everything written under it is the installer's output. The zero value
 	// makes the host-layer report `unsupported`, which is the true statement about a capture
 	// — it delivered no host layers — and keeps the bytes out of the delta walk.
+	//
+	// AND NONE OF THE CONFIG'S OWN mise_tools (docs/design/forked-programs-as-packs.md FP-D19): a
+	// capture jail is handed only yolo's defaults, as the container arm's is, so the staging home's
+	// mise config names no tool of the user's for the installer to set off.
+	captureMiseTools, _ := config.JailMiseTools(opts.Config, true)
 	bootstrapEnv := buildBootstrapEnv(stagingRoot, opts.Config, gitIdentity, opts.SandboxEnv,
-		packRoot, "", "", HostContext{}, "", stagingHome, darwinPrefix, opts.BlockedTools)
+		packRoot, "", "", HostContext{}, "", stagingHome, darwinPrefix, opts.BlockedTools, captureMiseTools)
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(stagingRoot)
 
