@@ -338,35 +338,6 @@ func TestEachHostServiceKindReportsItsEnd(t *testing.T) {
 			t.Errorf("how = %q, want the front's end, which came first", got)
 		}
 	})
-	t.Run("a host-wide daemon's front", func(t *testing.T) {
-		name := "yjtest-singleton-end"
-		singletonFixture(t, name)
-		socketsDir := t.TempDir()
-		if err := os.Chmod(socketsDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		var buf strings.Builder
-		o := &Options{}
-		fillDefaults(o)
-		o.Stdout = &buf
-		h, ok := o.startHostSingleton(name, hostScopedSpec(filepath.Join(t.TempDir(), "x")),
-			socketsDir, "127.0.0.1", hostScopedDaemon())
-		if !ok {
-			t.Fatalf("did not come up: %q", buf.String())
-		}
-		if h.end.done == nil || h.log == "" {
-			t.Fatalf("a host-wide daemon's front hands the keeper no end to watch, or no log: %+v", h)
-		}
-		h.stop()
-		select {
-		case <-h.end.done:
-		case <-time.After(10 * time.Second):
-			t.Fatal("the front's end never closed")
-		}
-		if !strings.Contains(h.end.how(), "front") {
-			t.Errorf("how = %q", h.end.how())
-		}
-	})
 	t.Run("the cgroup delegate", func(t *testing.T) {
 		if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
 			t.Skip("no cgroup v2 here")

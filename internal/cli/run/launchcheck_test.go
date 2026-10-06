@@ -42,11 +42,11 @@ import (
 const launchCheckFixtureName = "yjtest-launchcheck"
 
 // launchCheckPack is a pack shipping one host-wide loophole that declares the launch check
-// and a jail daemon, the shape of aws-auth's manifest. Where the machine-wide daemon is still
-// ensured its host argv never runs: the daemon is already up (serveLaunchCheckDaemon). Where
-// HD-R1 is built (hostWideDaemonsStillSharedOn) the launch spawns that argv as the jail's own
-// daemon, a relay to the handler serveLaunchCheckDaemon serves (spliceChildMain), so the words
-// asserted are still the real handler's.
+// and a jail daemon, the shape of aws-auth's manifest. A launch spawns its host argv as the
+// jail's own daemon (HD-R1), a relay to the handler serveLaunchCheckDaemon serves
+// (spliceChildMain), so the words asserted are still the real handler's. serveLaunchCheckDaemon
+// still stands it up where an older yolo's machine-wide daemon would be, which no launch reads
+// any more.
 func launchCheckPack(t *testing.T) *packload.Pack {
 	t.Helper()
 	cmd, err := json.Marshal([]string{os.Args[0], "-splice-child", "{socket}",
@@ -516,7 +516,7 @@ func TestAnAttachFindingNoFrontAsksNothing(t *testing.T) {
 
 // TestTheAttachArmRunsTheLaunchCheckAndStartsNothing pins the call site the tests above drive
 // around, and that the attach's check only asks: an attach runs above the config-change gate
-// and never starts or restarts a service (noteSingletonSettingsDrift's rule).
+// and never starts or restarts a service.
 func TestTheAttachArmRunsTheLaunchCheckAndStartsNothing(t *testing.T) {
 	if !callsIn(funcDecl(t, "run.go", "attachExisting"))["runAttachLaunchChecks"] {
 		t.Error("attachExisting no longer calls runAttachLaunchChecks")
