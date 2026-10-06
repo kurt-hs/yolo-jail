@@ -10,7 +10,7 @@ import (
 
 // launchCheckManifest is a host-wide socket daemon whose host_daemon carries extra.
 func launchCheckManifest(extra map[string]any) map[string]any {
-	hd := map[string]any{"cmd": []any{"d", "{socket}"}, "publishes": "socket", "scope": "host"}
+	hd := map[string]any{"cmd": []any{"d", "{socket}"}, "publishes": "socket", "detach": true}
 	for k, v := range extra {
 		hd[k] = v
 	}

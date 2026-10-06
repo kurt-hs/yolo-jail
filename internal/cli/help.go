@@ -41,8 +41,9 @@ var commandHelp = []struct{ name, blurb string }{
 	// for "how do I restart the broker" reads both lines at once and learns that
 	// the broker is one of several host-wide daemons. This line said "Manage the
 	// Claude OAuth broker" and was the whole surface until 2026-09-20, while two
-	// other host-scoped daemons had no management verb at all (OQ-HD2).
-	{"host-daemon", "Manage host-wide daemons: 'host-daemon status', 'stop|restart|logs <name>'"},
+	// other host daemons had no management verb at all (OQ-HD2). Since HD-R1 each jail runs
+	// its own, so the verb reports and stops what the jails are running.
+	{"host-daemon", "See and stop the host daemons jails run: 'host-daemon status', 'stop|restart|logs <name>'"},
 	{"broker", "Alias for 'host-daemon <verb> claude-oauth-broker' (the Claude OAuth broker)"},
 	// Directly under the two daemon lines, because the daemon it talks to is one of
 	// them (`openai-auth-broker`) and the pair divides cleanly: host-daemon reports on

@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // bedrock_test.go is the launch tier of the one Bedrock provider (docs/design/bedrock-plumbing.md
@@ -290,35 +288,21 @@ func TestBedrockTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 // A BEDROCK LAUNCH LEFT WITH NOTHING TO START ON STOPS, SAYING WHY (docs/design/model-lists-and-pickers.md
 // OQ-MM6), at a real launch through the front door: copilot, whose pack says it has no Bedrock
 // catalog, on a Bedrock provider no pack or config gives a model list, with a profile naming no
-// model. The launch asks the aws-auth service for the region's list; none may be running here, so
-// it runs the same fetch itself, through a stand-in `aws` on the launcher's PATH that refuses every
-// call, and nothing reaches AWS. It fails if the front door stops installing the fetch or the
-// composition stops asking it.
+// model. The launch runs the aws-auth service's own fetch for the region's list itself, asking no
+// running service (HD-D22 in docs/design/host-daemon-ownership.md), through a stand-in `aws` on the
+// launcher's PATH that refuses every call, and nothing reaches AWS. It fails if the front door
+// stops installing the fetch or the composition stops asking it.
 //
-// EXCLUSIVE, and refused beside a live aws-auth daemon, as the aws-auth fixture is
-// (newAWSAuthFixtureWith): the service's host socket is machine-wide, not in this test's private
-// home, and a running service fetches as ITS configured profile, not this test's stand-in, so the
-// launch would spend the machine owner's own SSO role on real Bedrock control-plane calls and get a
-// real list back.
+// EXCLUSIVE, as the aws-auth fixture is (newAWSAuthFixtureWith): the fetch writes the aws-auth
+// state dir's shared model cache.
 func TestABedrockLaunchWithNoListAndNoFetchStopsSayingWhy(t *testing.T) {
-	requireJailExclusive(t, "the test asks the machine-wide aws-auth host singleton for a model list")
+	requireJailExclusive(t, "the test's launch writes the aws-auth model cache")
 
 	dir := writeProject(t, `{}`)
 	packHome(t, `{"packs": ["copilot", "aws-auth", "wire-bridge"],
   "providers": {"bare": {"platform": "aws-bedrock", "region": "us-east-1"}},
   "profiles": {"bare": {"provider": "bare"}},
   "loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "stand-in-profile", "unnarrowed": true}}}}`)
-	if r := runYoloCLI(t, dir, "host-daemon", "status", "aws-auth"); r.rc == 0 || awsAuthDaemonAlive() {
-		t.Fatalf("an aws-auth host daemon is already running on this machine, and this launch would ask "+
-			"it for a model list, which it fetches as its own configured profile, against AWS. Its socket "+
-			"is machine-wide (%s). Stop it with `yolo host-daemon stop aws-auth` (the next launch that "+
-			"wants it starts it again) and rerun.\n%s", paths.HostSingletonSocket("aws-auth"), r.combined())
-	}
-	t.Cleanup(func() {
-		if r := runYoloCLI(t, dir, "host-daemon", "stop", "aws-auth"); r.rc != 0 {
-			t.Logf("stopping any aws-auth daemon this test's launch started: rc=%d\n%s", r.rc, r.combined())
-		}
-	})
 	// THE STAND-IN `aws`, first on the launcher's PATH: every call fails as a role that may not
 	// list would, and is logged, so a real CLI and a real ~/.aws are never consulted.
 	bin := t.TempDir()

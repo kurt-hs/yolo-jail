@@ -168,7 +168,7 @@ var parityBacklog = map[string]int{
 	"perfevents.go":          1,
 	"prepare.go":             1,
 	"preflight.go":           5,
-	"run.go":                 7,
+	"run.go":                 6,
 	"storepackages.go":       1,
 }
 

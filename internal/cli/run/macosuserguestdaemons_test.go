@@ -12,16 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/awscredadapter"
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -116,12 +112,8 @@ func TestMacosUserHandsTheAWSDoorwayTheEndpointItForwardsTo(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	o, stderr, seen := overrideNativeLaunch(t, awsAuthUserConfig(`, "loopholes": {"aws-auth": {"enabled": true,
 		"settings": {"profile": "yolo-unit", "unnarrowed": true}}}`), shellWith(nil))
-	// The host service is a host-wide singleton, and this package's later launches would adopt
-	// it: stopped here, before the temp HOME holding its state goes.
-	t.Cleanup(func() {
-		broker.BrokerKill(broker.SingletonDeps(awscredadapter.LoopholeName, nil), syscall.SIGTERM, 2*time.Second)
-		_ = os.Remove(paths.HostSingletonLock(awscredadapter.LoopholeName))
-	})
+	// The host service is this session's own (HD-R1) and ends with the session, so nothing here
+	// stops it.
 	doors := observeDoorways(t)
 	published := false
 	run := o.MacosUserRun

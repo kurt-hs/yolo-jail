@@ -9,8 +9,8 @@ package openaiauthhost
 // serveSockets gives to that path alone (openaiauthdaemon's two handlers; a `Session.JailID`
 // check could never do this job, because on that socket the field falls back to the client's
 // own self-asserted value). So a caller needs the socket's PATH, and getting it means
-// resolving the singleton's layout and making sure the daemon is even running. This package
-// already does exactly that for a managed `yolo host -- codex` launch (ensureSingleton), and
+// starting a daemon of the operator's own (StartPrivate, HD-R1: no shared daemon is left to
+// find). This package already does exactly that for a managed `yolo host -- codex` launch, and
 // the client cannot: openaiauthhost imports openauthclient, so the dependency only runs one
 // way. One resolver, two callers.
 //
@@ -75,9 +75,10 @@ Examples:
 Every one of these runs against the host's PRIVATE credential socket, which is why
 they are unavailable from inside a jail (the jail-facing door refuses them).`
 
-// RunOperator resolves the private socket — starting the machine-wide daemon if it is not
-// already up — states what a mutation is about to do, and delegates the wire work to the one
-// client.
+// RunOperator starts the verb's own OpenAI credential daemon (startPrivate: HD-R1 gives a launch
+// with no jail a daemon of its own, which ends with it), states what a mutation is about to do,
+// and delegates the wire work to the one client. The grant it acts on is still the machine's
+// one: every daemon reads and writes the one credentials file, under its refresh lock.
 //
 // THE DELEGATION IS THE POINT. It hands openauthclient.Run a getenv that answers with the
 // resolved socket and with NOTHING for the jail endpoint, so the request goes through the same
@@ -85,14 +86,14 @@ they are unavailable from inside a jail (the jail-facing door refuses them).`
 // every other client call. Composing the request here instead would be a second client, and
 // the first thing it would drift on is which door it dials.
 func RunOperator(args []string, stdout, stderr io.Writer) int {
-	return runOperator(args, ensureSingleton, stdout, stderr)
+	return runOperator(args, startPrivate, stdout, stderr)
 }
 
-// runOperator is the body with the singleton resolver injected, the seam `prepare` already
-// uses for the same dependency: a test must be able to exercise the whole verb — the usage
-// refusals, the machine-wide notice, the delegation and the door it dials — against a socket
-// it served itself, without spawning the host daemon.
-func runOperator(args []string, ensure func(io.Writer) (string, error), stdout, stderr io.Writer) int {
+// runOperator is the body with the daemon's start injected, the seam `prepare` already uses for
+// the same dependency: a test must be able to exercise the whole verb — the usage refusals, the
+// machine-wide notice, the delegation, the door it dials and the daemon's stop — against a
+// socket it served itself, without spawning the host daemon.
+func runOperator(args []string, ensure func(io.Writer) (string, func(), error), stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, OperatorUsage)
 		return 2
@@ -113,11 +114,13 @@ func runOperator(args []string, ensure func(io.Writer) (string, error), stdout, 
 	if line := machineWideNotice(args[0]); line != "" {
 		fmt.Fprintln(stderr, line)
 	}
-	socket, err := ensure(stderr)
+	socket, stop, err := ensure(stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "yolo internal openai-auth:", err)
+		fmt.Fprintln(stderr, "yolo openai-auth:", err)
 		return 1
 	}
+	// The verb's own daemon ends with the verb. A refresh it began finishes before it exits.
+	defer stop()
 	return openauthclient.Run(args, func(name string) string {
 		if name == openauthclient.HostSocketEnv {
 			return socket

@@ -62,6 +62,12 @@ used for 30 days are offered for removal at a launch once they reach 1 GiB, besi
 offer, and a yes makes it automatic; `yolo stores` and `yolo prune` show them too. The first offer
 comes 30 days after you upgrade. See [Storage](userguide/guides/storage.md#see-and-reclaim-disk).
 
+**Each jail runs its own login services.** The Claude, OpenAI and AWS login services now start with
+each jail and stop when it ends, instead of one copy shared by the whole machine, and a login
+refresh still in flight when a jail ends is finished first. `yolo host-daemon status` lists each
+jail's copy, and `restart` now tells you to relaunch the jail. See
+[Logins](userguide/guides/authentication.md#a-shared-claude-login-that-stays-fresh).
+
 ### Changed
 
 - A jail now installs every agent and tool your selected packs declare when it starts, once
@@ -84,9 +90,13 @@ comes 30 days after you upgrade. See [Storage](userguide/guides/storage.md#see-a
   git-ignore that file), and approve them at that project's next launch.
 - Renaming a project's GitHub remote, or adding a second one for a repository it already reaches,
   asks you to approve its repositories again at the next launch.
-- A host-wide service an older yolo started, such as `aws-auth`, now stops a new launch that uses
-  it instead of warning: run the `yolo host-daemon restart <name>` it names, which jails already
-  running survive.
+- After upgrading, stop the login services the previous version shared across the machine with
+  `yolo host-daemon stop --host-wide <name>`, which leaves each jail's own running: until you do, a
+  launch stops and names each one. Then launch your running jails again.
+- A loophole whose `host_daemon` says `"scope": "host"` now runs one copy per jail, with a warning,
+  and `yolo pack lint` refuses it: delete that line, and add `"detach": true` if its program must
+  finish its work when a jail ends. See
+  [Writing loopholes](userguide/guides/writing-loopholes.md).
 - On `-p bedrock-bridge`, Claude Code now uses its own Bedrock support through the wire bridge,
   so its model menu is its own: to start it on another maker's model there, name that model in
   the profile's `model`.

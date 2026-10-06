@@ -29,7 +29,7 @@ import (
 // operatorDaemon serves the daemon's PRIVATE-socket handler over a plain Unix socket, exactly
 // as serveSockets gives that handler to the private path, and returns an `ensure` the verb can
 // be injected with plus the broker's state path.
-func operatorDaemon(t *testing.T) (ensure func(io.Writer) (string, error), statePath string) {
+func operatorDaemon(t *testing.T) (ensure func(io.Writer) (string, func(), error), statePath string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "yj-oaop-")
 	if err != nil {
@@ -56,7 +56,7 @@ func operatorDaemon(t *testing.T) (ensure func(io.Writer) (string, error), state
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	return func(io.Writer) (string, error) { return socket, nil }, statePath
+	return func(io.Writer) (string, func(), error) { return socket, func() {}, nil }, statePath
 }
 
 // codexAuthFixture writes a credential file shaped like the one Codex writes from its own

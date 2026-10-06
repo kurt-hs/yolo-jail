@@ -593,7 +593,7 @@ func TestClaudeAtTheBridgeOnMacosUserHoldsNoBedrockAPIKey(t *testing.T) {
 		if held != tc.holds || (held && got != key) {
 			t.Errorf("-p %s: claude's macos-user session env holds the key: %v (%v), want %v", tc.profile, held, got, tc.holds)
 		}
-		if v := channel.launchServiceInput([]string{"claude"})["AWS_BEARER_TOKEN_BEDROCK"]; v != key {
+		if v := channel.launchServiceInput([]string{"claude"}, "")["AWS_BEARER_TOKEN_BEDROCK"]; v != key {
 			t.Errorf("-p %s: the launch-owned service's input lost the key: %q", tc.profile, v)
 		}
 	}

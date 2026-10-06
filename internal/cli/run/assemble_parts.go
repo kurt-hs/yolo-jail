@@ -491,8 +491,8 @@ func (o *Options) fwdSocketDir(cname string) string {
 }
 
 // hostServicesMountArgs builds the host-services dir mount and the endpoint env of
-// every host-scoped loophole this launch can back. Singleton ensure + front spawn are
-// side effects handled by the lifecycle phase; here we emit the -v and the env vars.
+// every loophole whose endpoint this launch promises (promisedEndpoints). The spawns that
+// publish into the directory are the lifecycle phase's; here we emit the -v and the env vars.
 //
 // THE SET IS DERIVED, NEVER LISTED. It used to be two `if`s naming
 // `claude-oauth-broker` and `openai-auth-broker`, and the third host-scoped loophole
@@ -501,13 +501,14 @@ func (o *Options) fwdSocketDir(cname string) string {
 // jail: the reachability witness walks YOLO_SERVICE_*_ENDPOINT, and the fault was that
 // no such variable existed for it to walk. A third name would have been the same defect
 // with a longer fuse. What the two branches actually computed — ACTIVE and MAY-RUN-HOST-
-// CODE — is a predicate, and hostScopedEndpoints applies it to every record declaring
-// `host_daemon.scope: "host"`. `rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc`
-// is the whole census; nothing here counts it or spells it.
+// CODE — is a predicate, and promisedEndpoints applies it to every loopback-tls record
+// declaring `host_daemon.detach: true` (endpointPromisedAtAssembly says why that key, since
+// HD-R1 retired `scope: "host"`, and why loopback-tls). `rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc` is
+// the whole census; nothing here counts it or spells it.
 //
-// THE ENV IS GATED ON THE LOOPHOLE BEING ACTIVE, not on the singleton's socket
-// existing at this instant. The container's environment is frozen at `podman run`
-// time, so a jail that happened to launch while the singleton was restarting used
+// THE ENV IS GATED ON THE LOOPHOLE BEING ACTIVE, not on a daemon's socket existing at
+// this instant. The container's environment is frozen at `podman run` time, so a jail
+// that launched while the host-wide daemon an older yolo shared was restarting used
 // to get NO broker address for its entire life: the in-jail terminator then exits
 // 2 and Claude Code will not start, and nothing later can repair it. Loophole
 // activity is the same predicate that decides whether the terminator is started at
@@ -516,7 +517,7 @@ func (o *Options) fwdSocketDir(cname string) string {
 // terminator rather than a missing variable.
 //
 // THE ONE SHAPE THAT IS EXCEPTED is Apple Container, where two independent halves of
-// the pipeline decline to publish at all — hostScopedEndpointIsUnpublishable's, and note
+// the pipeline decline to publish at all — promisedEndpointIsUnpublishable's, and note
 // that it is not the socket gate this deliberately replaced.
 //
 // THE EARLY RETURN IS DERIVED TOO, and it was the same defect wearing a different hat:
@@ -529,7 +530,7 @@ func (o *Options) fwdSocketDir(cname string) string {
 // the directory also carries JAIL-scoped daemons' endpoint files, whose variables are
 // emitted elsewhere, so the mount is owed there even when this set is empty.
 func (o *Options) hostServicesMountArgs(rt, cname string, cfg *jsonx.OrderedMap) []string {
-	names := hostScopedEndpoints(rt, cfg)
+	names := promisedEndpoints(rt, cfg)
 	if rt == "container" && len(names) == 0 {
 		return nil
 	}
@@ -545,21 +546,17 @@ func (o *Options) hostServicesMountArgs(rt, cname string, cfg *jsonx.OrderedMap)
 	return args
 }
 
-// hostScopedEndpoints names the loopholes whose endpoint variable this launch owes the
-// jail: every record declaring `host_daemon.scope: "host"` that is Active AND whose pack
-// may run host code, minus the ones this launch shape cannot publish.
+// promisedEndpoints names the loopholes whose endpoint variable this launch owes the
+// jail: every record endpointPromisedAtAssembly admits that is Active AND whose pack may run
+// host code, minus the ones this launch shape cannot publish.
 //
 // Census site 2, through the converged set (loopholes.NewHostSet) — the same site
 // brokerLoopholeActive used to hold on its own, which is why that predicate now reads
 // this list instead of building a second view of the same machine.
 //
-// SCOPE IS READ FROM THE MANIFEST, through loopholes.ScopeHost, and compared against
-// ScopeHost rather than against ScopeJail for the reason startHostSingleton's own loop
-// gives: the FIELD's zero value is "", not ScopeJail, so a dropped Scope must cost a
-// variable rather than silently promise a per-jail daemon's endpoint under a host-wide
-// name. It is the same comparison the SPAWN makes (loopholesruntime.go), which is what
-// keeps "yolo starts a host-wide daemon for this" and "the jail is told where it is"
-// from being two independently maintained answers.
+// THE MEMBERSHIP IS endpointPromisedAtAssembly's, the same predicate the spawn reads to blank
+// its handle's variable (loopholesruntime.go), which is what keeps "this launch starts it" and
+// "the jail is told where it is" from being two independently maintained answers.
 //
 // HONORED, NOT Active(): the records come from PACKS, and starting a host-side listener
 // — or pointing a jail at one — on the strength of a pack record whose origin nobody
@@ -568,17 +565,17 @@ func (o *Options) hostServicesMountArgs(rt, cname string, cfg *jsonx.OrderedMap)
 //
 // Discovery order, not sorted: it is the order every other view of this Set uses, so an
 // argv diff between two surfaces is a real difference rather than a collation one.
-func hostScopedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
+func promisedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
 	set := loopholes.NewHostSet(cfgMap(cfg, "loopholes"))
 	var names []string
 	for _, lp := range set.Active() {
-		if lp.HostDaemon == nil || lp.HostDaemon.Scope != loopholes.ScopeHost {
+		if !endpointPromisedAtAssembly(lp) {
 			continue
 		}
 		if !set.MayRunHostCode(lp) {
 			continue
 		}
-		if hostScopedEndpointIsUnpublishable(rt, lp.Name) {
+		if promisedEndpointIsUnpublishable(rt, lp.Name) {
 			continue
 		}
 		names = append(names, lp.Name)
@@ -586,7 +583,7 @@ func hostScopedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
 	return names
 }
 
-// hostScopedEndpointIsUnpublishable reports the launch shapes in which the optimistic
+// promisedEndpointIsUnpublishable reports the launch shapes in which the optimistic
 // emission above is a promise NOTHING ON THIS SIDE CAN EVER KEEP.
 //
 // ONE SHAPE IS LEFT, and the deletion of the other is this function's whole recent
@@ -627,10 +624,10 @@ func hostScopedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
 // # Apple Container has no publisher at all, and no timing to wait out
 //
 // This arm is not a race: NOTHING in an AC launch is even asked to write the endpoint
-// file for anything but the one service its allow list admits. run.go ensures the
-// host-wide singleton only when `rt != "container"`, and startLoopholes' per-runtime
-// allow list admits `openai-auth-broker` alone on this backend — so for every other
-// host-scoped loophole both the daemon and the front that would publish for it are
+// file for anything but the one service its allow list admits: startLoopholes'
+// per-runtime allow list admits `openai-auth-broker` alone on this backend (and the Claude
+// broker only to write the credential view, CL-D11, never for the jail to dial) — so for
+// every other promised loophole both the daemon and the front that would publish for it are
 // absent by construction, not late. The jail nevertheless got a path under
 // JailHostServicesDir whenever the broker loophole was active, which on AC means
 // `packs: ["claude", "codex"]`: codex brings the OpenAI loophole, claude brings the
@@ -642,33 +639,33 @@ func hostScopedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
 // its relay are equally absent there, so no jail ever completed a refresh through it.
 //
 // ⚠ THE NAME BELOW IS THE BACKEND'S ALLOW LIST, NOT A CENSUS ENTRY. The set of
-// host-scoped loopholes is derived (hostScopedEndpoints); which of them Apple Container
+// promised loopholes is derived (promisedEndpoints); which of them Apple Container
 // STARTS is a per-backend fact owned by startLoopholes, and this is the second spelling
 // of it. TestAppleContainerAllowListHasOneSpelling ties the two together at the source,
 // so widening that allow list without widening this reintroduces the defect one backend
 // over.
-func hostScopedEndpointIsUnpublishable(rt, name string) bool {
-	if rt == "container" { // parity: Warned — no publisher exists on AC for anything but the OpenAI service (no singleton ensure, allow list is openai-auth alone), and notePackLoopholesInert names the loophole at launch
+func promisedEndpointIsUnpublishable(rt, name string) bool {
+	if rt == "container" { // parity: Warned — no publisher exists on AC for anything but the OpenAI service (the allow list admits the OpenAI service alone for the jail), and notePackLoopholesInert names the loophole at launch
 		return name != openAIAuthBrokerName
 	}
 	return false
 }
 
 // brokerLoopholeActive reports whether this launch's broker loophole is enabled, its
-// requirements are met, AND the pack that shipped it may touch the host — the gate
-// run.go's singleton ensure reads.
+// requirements are met, AND the pack that shipped it may touch the host — the gate the
+// certificate mint (brokercerts.go) and the credential view read.
 //
 // IT IS THE DERIVED LIST'S MEMBERSHIP TEST NOW, not a second view of the same machine.
 // It used to build its own loopholes.NewHostSet and ask Lookup + Active + MayRunHostCode
-// — which was correct, and was also exactly the computation hostScopedEndpoints performs
-// for every host-scoped record. Two spellings of one predicate are two that can disagree,
+// — which was correct, and was also exactly the computation promisedEndpoints performs
+// for every promised record. Two spellings of one predicate are two that can disagree,
 // and "the spawn and the wiring are governed by ONE predicate" is the property
 // TestBrokerLifecycleIsGatedOnTheLoopholeRecord exists to hold.
 //
-// ⚠ IT PASSES "" AS THE RUNTIME, deliberately: the spawn gate asks whether the loophole
-// is ON, and run.go's caller already carries the backend half (`rt != "container"`).
-// Passing a real rt here would fold the AC suppression into the SPAWN decision, which is
-// a different question from "may this pack's host code run at all".
+// ⚠ IT PASSES "" AS THE RUNTIME, deliberately: its callers ask whether the loophole is
+// ON, and each carries its own backend half (mintBrokerCertificates' `rt == "container"`,
+// claudeview.Selected). Passing a real rt here would fold the AC suppression into those
+// decisions, which is a different question from "may this pack's host code run at all".
 //
 // HONORED, NOT Active(), AND THE UPGRADE IS THE PACK MOVE'S OWN CONSEQUENCE. Until
 // 2026-08-19 this stopped at Active(), and the reason it could was written down beside
@@ -679,13 +676,13 @@ func hostScopedEndpointIsUnpublishable(rt, name string) bool {
 // the record comes from a pack, and the name is claimable by another one.
 //
 // What this predicate switches on is not cosmetic — the in-jail TLS terminator, the CA
-// mount, the endpoint environment variable, and (through run.go) the host singleton spawn
-// itself. Starting all of that on the strength of a pack record whose origin nobody
+// mount, the endpoint environment variable, and the certificates this launch mints before
+// its argv. Starting all of that on the strength of a pack record whose origin nobody
 // evaluated is exactly the crossing the gate exists to govern. For yolo's own official
 // `claude` pack the gate passes by construction (an embedded pack carries yolo's own
 // authority), so nothing changes for the user this loophole is for.
 func brokerLoopholeActive(cfg *jsonx.OrderedMap) bool {
-	return inStrSlice(hostScopedEndpoints("", cfg), broker.BrokerLoopholeName)
+	return inStrSlice(promisedEndpoints("", cfg), broker.BrokerLoopholeName)
 }
 
 // deviceArgs builds the device-passthrough args: raw paths, USB by

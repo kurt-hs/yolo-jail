@@ -11,18 +11,21 @@ of that channel: this move is what emptied and retired it
 Nothing about the loophole's own paths changed — same name, same `{state}` dir, same endpoint file —
 so an upgrading host keeps its CA and every jail keeps trusting it.
 
-## Architecture — two daemons, one shared across every jail, no privileged ports
+## Architecture — two daemons per jail, one shared credentials file, no privileged ports
 
-- **Host daemon** (`yolo internal daemon claude-oauth-broker`) — a host-wide **singleton** serving
-  every jail, declared by `host_daemon.scope: "host"`. Holds the flock, reads/writes the shared
-  credentials file. Binds `/tmp/yolo-claude-oauth-broker.sock`; that socket is never exposed to
-  jails.
+- **Host daemon** (`yolo internal daemon claude-oauth-broker`) — **one per jail**, started by the
+  launch and stopped when the jail ends
+  ([`host-daemon-ownership.md`](../../../../docs/design/host-daemon-ownership.md), HD-R1; it was a
+  host-wide singleton until then). Every copy reads and writes the one shared credentials file and
+  takes the refresh flock beside it before it spends a refresh token, which is what keeps two jails
+  from racing. Binds `/tmp/yolo-front-<jail>-claude-oauth-broker.sock`; that socket is never exposed
+  to jails. Its manifest declares `detach`, so a jail's end lets a refresh in flight finish and
+  write its replacement token rather than killing it.
 - **The framework front** — not a process of this loophole's at all. Because the manifest declares
-  `publishes: "socket"`, yolo runs a `svcendpoint` loopback-TLS front **per jail** over that one
+  `publishes: "socket"`, yolo runs a `svcendpoint` loopback-TLS front for the jail over that
   socket: a `127.0.0.1` listener on a kernel-assigned port, serving a throwaway certificate whose
   private key never leaves the launching `yolo` process, splicing each authenticated connection into
-  the singleton. It dials per connection, so a restarted broker is picked up on the very next
-  request with no jail relaunch.
+  the jail's broker.
 
   It is also the attribution point: the front prepends yolo's **connection preamble**, carrying a
   host-asserted `jail_id`, so the broker's audit line names the jail and that name cannot be forged

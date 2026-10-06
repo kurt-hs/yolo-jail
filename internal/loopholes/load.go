@@ -237,8 +237,8 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 	//
 	// IT HAS NOW BITTEN TWICE. `Scope` was added to the schema, decoded correctly,
 	// asserted in loopholedecl's own tests — and dropped HERE, so every manifest
-	// declaring `scope: "host"` arrived at the run pipeline with Scope="" and the
-	// spawn path started a SECOND broker per jail. The prose above did not stop it;
+	// declaring the (since retired) `scope: "host"` arrived at the run pipeline with
+	// Scope="" and the spawn path started a SECOND broker per jail. The prose above did not stop it;
 	// TestHostDaemonFieldsSurviveLoad now does, by walking the struct with reflect
 	// rather than by listing what somebody remembered.
 	var hostDaemon *HostDaemon
@@ -255,6 +255,7 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 			Preamble:    m.HostDaemon.Preamble,
 			Scope:       m.HostDaemon.Scope,
 			LaunchCheck: m.HostDaemon.LaunchCheck,
+			Detach:      m.HostDaemon.Detach,
 		}
 	}
 

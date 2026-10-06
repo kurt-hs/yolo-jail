@@ -179,7 +179,7 @@ func TestAppleContainerStartsTheBrokerOnlyForAView(t *testing.T) {
 			"launch: nothing would write the view on the backend where it is the default")
 	}
 	// And its endpoint stays unpublished to the jail, which dials nothing.
-	if !hostScopedEndpointIsUnpublishable("container", broker.BrokerLoopholeName) {
+	if !promisedEndpointIsUnpublishable("container", broker.BrokerLoopholeName) {
 		t.Error("the claude broker's endpoint became publishable to Apple Container")
 	}
 }

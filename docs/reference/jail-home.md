@@ -355,9 +355,9 @@ orientation, not an inventory.
   that name still exists, and when the runtime cannot be asked, and the next launch of the
   workspace reuses it. "Exists" rather than "runs" because a relaunch releases the
   workspace lock when its bounded wait for a running container gives up, so its container
-  can still be only created while its endpoint files are already here. No host-wide
-  daemon writes here, because a singleton's socket is keyed by the loophole name
-  (`paths.HostSingletonSocket`). A keeper that dies without its teardown (`SIGKILL`, OOM)
+  can still be only created while its endpoint files are already here. No host daemon
+  binds its own socket here: a jail's daemon binds `paths.FrontSocketFile`, outside the directory,
+  and this directory holds the endpoint files its front publishes. A keeper that dies without its teardown (`SIGKILL`, OOM)
   leaves the directory behind. If its jail outlived it, the next launch on the machine reaps
   that jail once no session is left in it (`reapOrphanedJails`) and removes the directory
   through the same checks.

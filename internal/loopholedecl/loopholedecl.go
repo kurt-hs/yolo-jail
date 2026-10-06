@@ -169,19 +169,14 @@ type HostDaemon struct {
 	// is a silent DOWNGRADE. A test pins the round trip; an inverted spelling
 	// would have made the drop the safe direction and the bug invisible.
 	Preamble bool
-	// Scope is who the daemon belongs to: ScopeJail (the default — one per jail,
-	// spawned and reaped with it) or ScopeHost (one per HOST, ensured rather than
-	// spawned, fronted per jail, never killed when a jail ends). Always one of the
-	// two after a successful decode.
-	//
-	// The zero value of the FIELD is "", not ScopeJail, and every reader must
-	// therefore compare against ScopeHost rather than against ScopeJail — a
-	// struct built by hand (internal/loopholes' discover.go synthesizes one for a
-	// `loopholes:` config entry) then defaults to per-jail, which is the direction
-	// where a dropped field costs a spawn rather than a shared daemon nobody
-	// ensured. The opposite comparison would turn the same drop into "this config
-	// entry is a host-wide singleton", which is the one answer no config entry may
-	// ever give.
+	// Scope is who the daemon belongs to, and it has one value left: ScopeJail, one
+	// per jail, spawned with it and stopped when it ends. Always ScopeJail after a
+	// successful decode. The retired "host" (one daemon per HOST, ensured, fronted per
+	// jail, never stopped by a jail's end) is refused by the strict decoder with its
+	// migration (retiredScopeHint; docs/design/host-daemon-ownership.md, HD-R1), and read
+	// as ScopeJail, with a skew note, by the tolerant one (readRetiredScopeAsJail). Nothing reads
+	// the field to decide anything any more; it survives so a manifest that spells
+	// the default decodes, and so the record says what it was told.
 	Scope string
 	// LaunchCheck is `launch_check`: the daemon answers the LAUNCH CHECK, a term coined
 	// in internal/hostservice/launchcheck.go for the one framed request a launch sends a
@@ -195,6 +190,20 @@ type HostDaemon struct {
 	// declares it, so a launch says when its SSO session cannot mint
 	// (docs/design/sso-backed-bedrock.md SSO-D1).
 	LaunchCheck bool
+	// Detach is `detach`: how the jail's end stops this daemon. DEFAULTS TO FALSE, which is
+	// every daemon's teardown since loopholes existed: SIGTERM to its process group, a grace,
+	// then SIGKILL. True says the daemon's in-flight work has an upstream side effect worth
+	// completing, so yolo closes the jail's front, sends the daemon alone SIGTERM, and neither
+	// waits for it nor kills it. A request already in flight finishes and writes what it was
+	// going to write, and the daemon then exits on its own. The term is
+	// docs/design/host-daemon-ownership.md's DETACHED STRAGGLER (§1.3, "detach, do not drain,
+	// do not reap"), ruled with HD-R1 for the credential daemons that used to be one per host:
+	// a token refresh cut mid-flight can have redeemed a single-use refresh token upstream and
+	// lost its replacement. A daemon that declares it must exit on SIGTERM once its in-flight
+	// work is done, and its own upstream deadline is the only bound on that: nothing in yolo
+	// waits for it, hunts it or reaps it. The SIGTERM reaches only the daemon, not its group,
+	// so a child it runs for that work (aws-auth's `aws` CLI) finishes too.
+	Detach bool
 }
 
 // HostBindMount is one host path made visible in the container. Readonly
@@ -480,11 +489,46 @@ func decode(data []byte, dir string, strict bool) (*Manifest, []string, error) {
 		return nil, nil, Errorf("%s: manifest must be a JSON object", manifestPath)
 	}
 
+	var notes []string
+	if !strict {
+		if note := readRetiredScopeAsJail(data0, manifestPath); note != "" {
+			notes = append(notes, note)
+		}
+	}
 	m, err := walk(data0, manifestPath, filepath.Base(dir))
 	if err != nil {
 		return nil, nil, err
 	}
-	return m, unknownKeyNotes(data0, manifestPath, strict), nil
+	return m, append(notes, unknownKeyNotes(data0, manifestPath, strict)...), nil
+}
+
+// readRetiredScopeAsJail is the TOLERANT read of the retired `host_daemon.scope: "host"`: it
+// rewrites the value to ScopeJail in data (decode's own freshly decoded copy) and returns the
+// skew note saying so, or "" when the manifest does not declare it. The strict decoder never
+// calls it, so authoring (`yolo pack lint`) still refuses the value in parseHostDaemon.
+//
+// WHY THE VERSION BOUNDARY READS IT. Every jail an older yolo launched booted shipped manifests
+// declaring it, and an attach to that jail reads the jail's own frozen pack tree for every
+// host-side reader. Refused there, the jail's credential loopholes vanished from the records its
+// briefing is refreshed from, and the warning told the user to edit a shipped manifest inside a
+// running jail's tree. Unlike a retired top-level key (walk's `enabled` refusal), reading this
+// one as the new default keeps what the manifest asked for — a host daemon its jail can reach —
+// and changes only the daemon's lifetime, which HD-R1 ruled is the same for every daemon.
+func readRetiredScopeAsJail(data *jsonx.OrderedMap, manifestPath string) string {
+	hd, ok := getOrNil(data, keyHostDaemon).(*jsonx.OrderedMap)
+	if !ok {
+		return ""
+	}
+	if sv, ok := hd.Get(keyScope); !ok || Str(sv) != RetiredScopeHost {
+		return ""
+	}
+	hd.Set(keyScope, ScopeJail)
+	return fmt.Sprintf("%s: 'host_daemon.scope' = %s was retired (docs/design/host-daemon-ownership.md, "+
+		"HD-R1) and is read as one per jail, which every host daemon now is. In a jail launched "+
+		"by an older yolo this is its shipped manifest, and relaunching that jail with this yolo "+
+		"replaces it. In a manifest of yours, Delete 'scope' (`yolo pack lint` refuses it), and "+
+		"declare 'detach': true if the daemon's work in flight must finish when its jail ends.",
+		manifestPath, pytext.Repr(RetiredScopeHost))
 }
 
 // walk validates and lowers the decoded object. Every check here is STATIC: type
@@ -1027,28 +1071,32 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 			"the launch check is one framed request", manifestPath,
 			pytext.Repr(RequestEndFramed), pytext.Repr(requestEnd))
 	}
+	// TYPE-CHECKED for `launch_check`'s reason: Truthy("false") is true, and a quoted
+	// "false" would leave a daemon running past its jail that nothing ever reaps.
+	detach := false
+	if dv, ok := m.Get(keyDetach); ok {
+		b, isBool := dv.(bool)
+		if !isBool {
+			return nil, Errorf("%s: 'host_daemon.detach' must be a boolean (got %s)",
+				manifestPath, pytext.Repr(Str(dv)))
+		}
+		detach = b
+	}
 	scope := ScopeJail
 	if sv, ok := m.Get(keyScope); ok {
 		scope = Str(sv)
 	}
+	// 'host' is RETIRED, and refused with the migration rather than as an unknown value: the
+	// reader wrote what the docs told them to (retiredTransportHint's argument, one key over).
+	// Only the STRICT decoder gets here with it: the tolerant one has already read it as
+	// ScopeJail (readRetiredScopeAsJail), so a jail an older yolo launched keeps its loopholes.
+	if scope == RetiredScopeHost {
+		return nil, Errorf("%s: 'host_daemon.scope' = %s is no longer a value%s",
+			manifestPath, pytext.Repr(scope), retiredScopeHint())
+	}
 	if !inList(scope, validScopes) {
 		return nil, Errorf("%s: 'host_daemon.scope' = %s not in %s",
 			manifestPath, pytext.Repr(scope), sortedListRepr(validScopes))
-	}
-	// A host-wide daemon cannot publish its own endpoint file, and this is refused
-	// rather than documented because the failure it prevents is a CREDENTIAL one.
-	// An endpoint file carries one jail's bearer token (svcendpoint), so a single
-	// daemon publishing one would either hand every jail the same credential or
-	// hand all but one of them a credential minted for another jail. Under
-	// PublishesSocket the daemon binds one socket and yolo gives each jail its own
-	// front — which is the only shape in which "one daemon, N jails" and
-	// "one credential per jail" are both true.
-	if scope == ScopeHost && publishes != PublishesSocket {
-		return nil, Errorf(
-			"%s: 'host_daemon.scope' = 'host' requires 'publishes': 'socket' (got %s) —"+
-				" a host-wide daemon serves every jail on the machine, and an endpoint"+
-				" file carries ONE jail's bearer token; bind the socket and let yolo"+
-				" publish a front per jail", manifestPath, pytext.Repr(publishes))
 	}
 	cmd := StringSlice(cmdList)
 	if err := refuseControlCharsIn(manifestPath, "'host_daemon.cmd'", cmd); err != nil {
@@ -1074,7 +1122,7 @@ func parseHostDaemon(manifestPath string, raw any) (*HostDaemon, error) {
 	}
 	return &HostDaemon{
 		Cmd: cmd, Env: env, Publishes: publishes, RequestEnd: requestEnd,
-		Preamble: preamble, Scope: scope, LaunchCheck: launchCheck,
+		Preamble: preamble, Scope: scope, LaunchCheck: launchCheck, Detach: detach,
 	}, nil
 }
 

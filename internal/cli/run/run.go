@@ -574,12 +574,23 @@ func Run(opts Options) (rc int) {
 			// (servicessession.go). Two sessions of one workspace used to share the dir the
 			// workspace's cname selects, and this deferred teardown, which takes no container
 			// guard, removed it under the other session (OQ-HD10's second run, measured).
+			//
+			// EACH SESSION STARTS ITS OWN HOST DAEMONS (HD-R1, hostdaemonperjail.go), under the
+			// per-workspace spawn guard HD-D4 owes this backend: two sessions of one workspace
+			// are one identity here and start at once, so one waits while the other's
+			// daemons come up. A guard it cannot take refuses the launch, naming the fix.
+			guard, gerr := o.takeHostDaemonSpawnGuard(cname)
+			if gerr != nil {
+				o.pr(o.Stderr).print(hostDaemonSpawnGuardRefusal(cname, gerr))
+				return 1
+			}
 			handles, refused := o.startLoopholesDisclosed(cname, rt, cfg, staged.packs, jailDaemons)
+			guard.Close()
 			defer o.endServicesSession(handles)
 			// THE CREDENTIAL VIEW, opt-in until a Mac measures it (CL-D11): the
-			// workspace's view registered and written now that the broker singleton is up, and
-			// the resolved switch handed to the bootstrap, which then does not link the shared
-			// file.
+			// workspace's view registered and written now that the session's own broker is up,
+			// and the resolved switch handed to the bootstrap, which then does not link the
+			// shared file.
 			o.registerClaudeCredentialView(rt, cname, cfg)
 			if o.claudeCredentialView(rt, cfg) {
 				launchEnv.Set(claudeview.SwitchEnv, claudeview.ResolvedValue(true))
@@ -611,10 +622,13 @@ func Run(opts Options) (rc int) {
 				o.pr(o.Stderr).print(refused.markup("Refusing the macos-user launch"))
 				return 1
 			}
+			// THE SESSION'S OWN OpenAI DAEMON's private socket, for the doorways and the
+			// launch-owned services below, which reach it host to host.
+			openAISocket := openAIHostSocket(handles)
 			// THE DOORWAYS (macosuserdoorways.go), once the host services they forward to are up
 			// and their endpoint files are on launchEnv, and stopped when the command returns. One
 			// that does not start refuses the launch before the command runs.
-			stopDoorways, err := o.startMacosUserDoorways(doorways, launchEnv)
+			stopDoorways, err := o.startMacosUserDoorways(doorways, launchEnv, openAISocket)
 			if err != nil {
 				o.pr(o.Stderr).printf("[bold red]Refusing the macos-user launch: %s[/bold red]", err.Error())
 				return 1
@@ -624,7 +638,7 @@ func Run(opts Options) (rc int) {
 			// service a profiled agent's pairing needs, started after the credential service
 			// it may ask for a view, and stopped when the sandboxed command exits. One that does
 			// not start refuses the launch before the command runs.
-			stopServices, err := o.startMacosUserServices(channel)
+			stopServices, err := o.startMacosUserServices(channel, openAISocket)
 			if err != nil {
 				o.pr(o.Stderr).printf("[bold red]Refusing the macos-user launch: %s[/bold red]", err.Error())
 				return 1
@@ -1504,23 +1518,6 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// And what it set aside because a later pack declares the same service name (NC-D59).
 	o.noteShadowedServices()
 
-	// Broker singleton + relay: ensure BEFORE building the argv (the sockets-dir
-	// mount + broker env are emitted by the assembler when the socket exists).
-	//
-	// GATED ON THE LOOPHOLE RECORD (docs/reference/loophole-system.md OQ-A11), which
-	// is the same predicate the assembler already consults to decide the endpoint
-	// variable, the CA mount and the in-jail terminator. Until this gate existed the
-	// broker was THE counterexample to R1 sitting in the run pipeline: brokerEnsure was
-	// called on every launch with no lookup at all, so the host singleton and one relay
-	// per jail ran for EVERYBODY — including a user with `packs: []` who has never heard
-	// of claude — while the jail was wired to it only when the loophole was Active. Both
-	// halves failed, in opposite directions (§1.1).
-	//
-	// One predicate for the spawn and the wiring is the property to keep: they used to
-	// disagree, and the disagreement is what made a daemon nobody's surfaces named. A
-	// jail that does not get the broker's address must not leave a broker running on the
-	// host either.
-	//
 	// THE HOST-SERVICES DIR IS NOT CREATED HERE, and it used to be, on both arms of this
 	// gate. startLoopholesMatching's first statement creates it, broker or no broker, and
 	// that call precedes the container start, so the bind source still exists when podman
@@ -1539,11 +1536,15 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// too: the keeper hears the lifeline close and ends the jail (beforeReady). Only a keeper
 	// that dies without its teardown (SIGKILL, OOM) leaves the dir in place
 	// (docs/reference/jail-home.md).
+	//
+	// NO DAEMON IS ENSURED HERE ANY MORE: the Claude broker used to be ensured as the
+	// machine-wide singleton before the argv was built (brokerEnsure, deleted with HD-R1). It is
+	// this jail's own now, spawned by the keeper with the rest of its host services, AFTER the
+	// argv. What that early ensure also did, without saying so, was mint the CA and leaf the
+	// argv mounts into the jail; so the mint is done here, before the argv, on its own
+	// (mintBrokerCertificates).
+	o.mintBrokerCertificates(rt, cfg)
 	socketsDir := hostServiceSocketsDir(cname, o.IsMacOS)
-	// Not under the seal (seal.go): a fork build starts no host service.
-	if rt != "container" && brokerLoopholeActive(cfg) && !o.Sealed {
-		o.brokerEnsure()
-	}
 
 	// Store-prune gate (host-only; never from inside a jail — an inner CLI can't
 	// see its siblings).
@@ -2295,7 +2296,7 @@ func (o *Options) hostForwardPorts(cfg *jsonx.OrderedMap, rt string) []any {
 func insertHostServiceEnv(runCmd []string, imageRef string, services []loopholeDaemon) []string {
 	for _, svc := range services {
 		// An EMPTY envVarName means "this handle has no variable to insert", which
-		// today is the HOST-SCOPED loophole's front (startHostSingleton). Its
+		// today is a credential daemon's front (endpointPromisedAtAssembly). Its
 		// variable is emitted much earlier, by hostServicesMountArgs at argv-assembly
 		// time, and deliberately OPTIMISTICALLY: a jail told about a service whose
 		// front never published is refused by the in-jail reachability witness, where
@@ -2327,14 +2328,15 @@ func insertHostServiceEnv(runCmd []string, imageRef string, services []loopholeD
 // socket, and hostServiceEnvVar/hostServiceSocketEnvVar exist so a client cannot read the
 // wrong kind of path out of the right-looking variable.
 //
-// AN EMPTY NAME IS THE HOST-SCOPED FRONT (startHostSingleton), which carries none because the
+// AN EMPTY NAME IS A CREDENTIAL DAEMON'S FRONT (endpointPromisedAtAssembly), which carries none because the
 // container path emits its variable much earlier, at argv-assembly time
 // (hostServicesMountArgs), optimistically and before the front has published. This backend
 // assembles no argv and has no in-jail reachability witness to refuse a broken promise, so the
 // handle is both the only source it has and the honest one: the variable is emitted for a
 // service that really did publish. Falling back to hostServiceEnvVar rather than skipping is
-// what keeps the credential daemons — the broker and the OpenAI service, both host-scoped —
-// from being the two this arm silently omits.
+// what keeps the credential daemons — the broker and the OpenAI service, both promised at
+// assembly on the container path (endpointPromisedAtAssembly) — from being the two this arm
+// silently omits.
 func hostServiceLaunchEnvVar(h loopholeDaemon) string {
 	if h.envVarName != "" {
 		return h.envVarName
@@ -2569,9 +2571,11 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// was handed (patchedforkline.go): the good build may have moved since it booted, and only a
 	// fresh launch delivers a move.
 	o.noteAttachHandedBuilds(view)
-	// And what it did not APPLY: a host-wide daemon's settings the config has changed since it
-	// started. Reported, never restarted, from an attach (noteSingletonSettingsDrift).
-	o.noteSingletonSettingsDrift(cfg)
+	// A HOST-WIDE DAEMON'S SETTINGS DRIFT IS NOT NOTED ANY MORE (HD-D2's attach half, retired with
+	// HD-R1): no host daemon outlives the launch that started it, so the running jail's are that
+	// launch's, with its settings, and a changed setting takes effect at the next fresh launch, as
+	// every other jail setting does.
+	//
 	// What the keeper records from here on is this session's to be shown at its quit (JL-D19).
 	//
 	// TAKEN BEFORE THE START RECORD IS READ (noteServicesDown, next), never after: the keeper

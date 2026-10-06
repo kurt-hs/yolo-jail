@@ -331,13 +331,13 @@ func TestShippedBrokerFields(t *testing.T) {
 	// THE THREE FIELDS THAT CARRY THE CREDENTIAL PATH, and they are asserted here
 	// because a half-applied edit to any one of them is silent everywhere else.
 	//
-	// publishes:"socket" + scope:"host" is the pair that replaced the per-jail
-	// broker relay (docs/design/broker-as-a-pack.md §7): the daemon binds ONE
-	// host-wide socket and yolo runs a front per jail over it. Flipping `publishes`
-	// back to the default would make yolo wait for an endpoint file this daemon
-	// never writes; dropping `scope` would make the run pipeline SPAWN a second
-	// broker per jail, which is the concurrent single-use-refresh-token race the
-	// flock exists to prevent (agent-credentials.md §2.5) — and neither shows up as
+	// publishes:"socket" replaced the per-jail broker relay
+	// (docs/design/broker-as-a-pack.md §7): the daemon binds a socket and yolo runs the
+	// jail's front over it. Flipping it back to the default would make yolo wait for an
+	// endpoint file this daemon never writes. `detach` is what keeps a refresh in flight
+	// when its jail ends (docs/design/host-daemon-ownership.md §1.3): dropping it would
+	// make the jail's end SIGKILL a broker that may already have redeemed the single-use
+	// refresh token upstream, before it writes the replacement — and neither shows up as
 	// an error, only as a jail that cannot refresh.
 	//
 	// `preamble` is asserted at its DEFAULT rather than declared: the daemon reads
@@ -349,10 +349,9 @@ func TestShippedBrokerFields(t *testing.T) {
 		t.Errorf("publishes = %q, want %q — the daemon binds the host-wide socket and yolo "+
 			"fronts it per jail", m.HostDaemon.Publishes, loopholedecl.PublishesSocket)
 	}
-	if m.HostDaemon.Scope != loopholedecl.ScopeHost {
-		t.Errorf("scope = %q, want %q — ONE broker per host serving every jail; a per-jail "+
-			"scope means a second copy of the daemon holding the refresh flock",
-			m.HostDaemon.Scope, loopholedecl.ScopeHost)
+	if !m.HostDaemon.Detach {
+		t.Error("detach = false — a jail's end would kill a refresh in flight that may " +
+			"already have redeemed the single-use refresh token upstream")
 	}
 	if !m.HostDaemon.Preamble {
 		t.Errorf("preamble = false; this manifest declares nothing, so it must decode to the " +
@@ -673,18 +672,16 @@ func TestShippedAWSAuthFields(t *testing.T) {
 	if m.HostDaemon == nil || !reflect.DeepEqual(m.HostDaemon.Cmd, wantCmd) {
 		t.Fatalf("host_daemon = %+v, want cmd %v", m.HostDaemon, wantCmd)
 	}
-	// THE PAIR THAT MAKES THIS ONE SERVICE PER MACHINE. `publishes: "socket"` is
-	// required of any pack-shipped loophole; `scope: "host"` is OQ-SSO2, and dropping
-	// it would make the run pipeline spawn a SECOND daemon per jail — a second writer
-	// of the minted-credential cache, and a cold cache for every new jail, neither of
-	// which surfaces as an error.
+	// `publishes: "socket"` is required of any pack-shipped loophole. `detach` is what
+	// lets a mint in flight finish when its jail ends and fill the shared cache the next
+	// jail's copy starts warm from (OQ-SSO2, docs/design/host-daemon-ownership.md §1.3);
+	// dropping it would kill that mint, which surfaces as no error, only a cold cache.
 	if m.HostDaemon.Publishes != loopholedecl.PublishesSocket {
 		t.Errorf("publishes = %q, want %q", m.HostDaemon.Publishes, loopholedecl.PublishesSocket)
 	}
-	if m.HostDaemon.Scope != loopholedecl.ScopeHost {
-		t.Errorf("scope = %q, want %q — one credential service per machine, with the cache "+
-			"keyed by profile so it still serves several identities (OQ-SSO2)",
-			m.HostDaemon.Scope, loopholedecl.ScopeHost)
+	if !m.HostDaemon.Detach {
+		t.Error("detach = false — a jail's end would kill a mint in flight instead of " +
+			"letting it fill the shared credential cache")
 	}
 	if !m.HostDaemon.Preamble {
 		t.Error("preamble = false; this manifest declares nothing, so it must decode to the " +

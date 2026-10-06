@@ -53,7 +53,7 @@ func requirePgrep(t *testing.T) {
 // pattern every singleton got was the CLAUDE broker's spawn form, matched anywhere on
 // the machine. So stopping `aws-auth` while its PID file was absent SIGTERMed every
 // Claude broker on the host and reported "Stopped aws-auth." In CI it was another test
-// package's cleanup (`BrokerKill(SingletonDeps("aws-auth", nil))`) stopping
+// package's cleanup (`BrokerKill(SingletonDeps("aws-auth", nil))`, now LegacyDeps) stopping
 // internal/cli/run's daemon, in its own private singleton directory, between the
 // launch's readiness probe and the front's dial; on a developer's machine it is the
 // real broker every jail refreshes through.
@@ -66,8 +66,7 @@ func TestStoppingOneSingletonSignalsNoOtherDaemon(t *testing.T) {
 	victim, _ := startStray(t, "/opt/yolo/bin/yolo", "internal", "daemon", BrokerLoopholeName, "--socket", elsewhere)
 
 	for _, name := range []string{"aws-auth", BrokerLoopholeName} {
-		deps := SingletonDeps(name, nil)
-		deps.Out = nil
+		deps := LegacyDeps(name)
 		if _, err := os.Stat(deps.PIDFilePath); err == nil {
 			t.Fatalf("fixture: %s already has a PID file at %s, so the stray hunt would not run", name, deps.PIDFilePath)
 		}
@@ -96,9 +95,8 @@ func TestStoppingOneSingletonSignalsNoOtherDaemon(t *testing.T) {
 // every singleton rather than only Claude's.
 func TestTheStrayHuntFindsTheDaemonAtThisSingletonsSocket(t *testing.T) {
 	requirePgrep(t)
-	claude := SingletonDeps(BrokerLoopholeName, nil)
-	aws := SingletonDeps("aws-auth", nil)
-	aws.Out = nil
+	claude := LegacyDeps(BrokerLoopholeName)
+	aws := LegacyDeps("aws-auth")
 	current, _ := startStray(t, "/opt/yolo/bin/yolo", "internal", "daemon", BrokerLoopholeName,
 		"--socket", claude.SocketPath)
 	legacy, _ := startStray(t, "yolo-claude-oauth-broker-host", "--socket", claude.SocketPath)
