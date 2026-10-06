@@ -951,8 +951,9 @@ func treeAdmitProblem(m *capture.Manifest, f packload.Fork) string {
 
 // captureSeal is what makes a capture jail a fork build's: the seal, and the packs entries the
 // selection is narrowed to — and, for a patched extension's build, the extension's name (tree),
-// which the jail is told (run.Options.SealedTree). nil for `yolo capture` of an installer, which
-// keeps today's jail.
+// which the jail is told (run.Options.SealedTree). nil for `yolo capture` of an installer, whose
+// jail is unsealed and keeps the whole selection, but is still a capture jail, so it too is handed
+// none of the user's `mise_tools` (FP-D19, run.Options.captureJail).
 type captureSeal struct {
 	only []string
 	tree string
