@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -138,6 +139,17 @@ func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, hom
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = proc.Process.Kill(); _ = proc.Wait() })
+	// Start returns before the kernel has laid out the new program's environment, so wait until
+	// it names the HOME the copy runs under, as a long-running copy's always does.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", proc.Process.Pid)); err == nil &&
+			strings.Contains(string(raw), "HOME=") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Skipf("the fixture's environment cannot be read here (/proc/%d/environ)", proc.Process.Pid)
+		}
+	}
 	pidFile := paths.HostSingletonPIDFile(launchCheckFixtureName)
 	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(proc.Process.Pid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
