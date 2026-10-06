@@ -33,9 +33,11 @@ jail's copy, and `restart` now tells you to relaunch the jail. See
 [Logins](userguide/guides/authentication.md#a-shared-claude-login-that-stays-fresh).
 
 - After upgrading, relaunch your running jails, then stop the shared services the previous version
-  left with `yolo host-daemon stop <name>`; `yolo host-daemon status` lists them as host-wide.
-- A loophole whose `host_daemon` says `"scope": "host"` is now refused: delete that line, and add
-  `"detach": true` if its program must finish its work when a jail ends. See
+  left with `yolo host-daemon stop --host-wide <name>`, which leaves each jail's own running;
+  `yolo host-daemon status` lists them as host-wide.
+- A loophole whose `host_daemon` says `"scope": "host"` now runs one copy per jail, with a warning,
+  and `yolo pack lint` refuses it: delete that line, and add `"detach": true` if its program must
+  finish its work when a jail ends. See
   [Writing loopholes](userguide/guides/writing-loopholes.md).
 
 ### Fixed

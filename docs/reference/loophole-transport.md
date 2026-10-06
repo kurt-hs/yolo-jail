@@ -257,9 +257,9 @@ the refresh flock beside it, which is what serializes them across jails.
 > **A host-wide daemon an older yolo started is still invisible stale state.** It listens at the
 > machine-wide path keyed by the loophole *name* and serves the jails that yolo launched; no launch
 > of this yolo starts, fronts or restarts it. `yolo host-daemon status` lists it as host-wide, and
-> `yolo host-daemon stop <name>` ends it once those jails are relaunched. When verifying transport
-> work from inside a jail, relaunch the jail you measure, or the verification measures the
-> previous binary.
+> `yolo host-daemon stop --host-wide <name>` ends it, and no jail's own copy, once those jails are
+> relaunched. When verifying transport work from inside a jail, relaunch the jail you measure, or
+> the verification measures the previous binary.
 
 ## The connection preamble
 
@@ -344,7 +344,7 @@ the only place the values themselves are stated.
 | Retired transport values (recognized, refused, with a migration hint) | `unix-socket`, `tls-intercept` | `loopholedecl.RetiredTransportUnixSocket`, `RetiredTransportTLSIntercept` |
 | `publishes` values | `endpoint` (default), `socket` | `loopholedecl.PublishesEndpoint`, `PublishesSocket` |
 | `request_end` values | `framed` (default), `eof` | `loopholedecl.RequestEndFramed`, `RequestEndEOF` |
-| `scope` values | `jail` (default and only); `host` is refused at load, naming the fix | `loopholedecl.ScopeJail`, `RetiredScopeHost` |
+| `scope` values | `jail` (default and only); `host` is refused by the strict (authoring) decoder, naming the fix, and read as `jail` with a skew note by the tolerant one discovery uses | `loopholedecl.ScopeJail`, `RetiredScopeHost`, `readRetiredScopeAsJail` |
 | `detach` values | `false` (default), `true` | `loopholedecl` (`keyDetach`); `internal/cli/run` (`detachService`) |
 | Preamble version | `1` | `svcendpoint.PreambleVersion` |
 | Preamble frame cap | 4096 bytes | `internal/svcendpoint/preamble.go` |

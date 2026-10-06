@@ -234,9 +234,9 @@ Three keys shape the connection:
   is doing, instead of waiting for it and then killing it. Use it when cutting off a request half
   way would lose something, such as a refreshed login already paid for. Your program must still
   exit soon after the signal.
-- **`scope`** is retired. `"jail"` is the only value left, and a manifest that still says `"host"`
-  is refused, naming the fix: delete the line, and add `"detach": true` if the program must finish
-  its work in flight.
+- **`scope`** is retired. `"jail"` is the only value left. A manifest that still says `"host"` runs
+  one copy per jail with a warning, and `yolo pack lint` refuses it: delete the line, and add
+  `"detach": true` if the program must finish its work in flight.
 
 **`launch_check: true`** lets your program warn the user before their jail starts. Right after
 starting your program, the launch sends it one request,

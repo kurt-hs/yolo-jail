@@ -362,8 +362,9 @@ func (o *Options) reportBrokerDaemon(r *reporter) {
 			r.warn(fmt.Sprintf("loophole %s: a host-wide daemon an older yolo left is running "+
 				"(pid=%s)", brokerLoopholeName, pids),
 				"No launch of this yolo uses it; it serves only the jails that yolo launched. "+
-					"Relaunch those jails with this yolo, which gives each its own, then run `yolo "+
-					broker.HostDaemonVerb+" stop "+brokerLoopholeName+"`.")
+					"Relaunch those jails with this yolo, which gives each its own, then run `"+
+					broker.StopHostWideCommand(brokerLoopholeName)+"`, which leaves every jail's own "+
+					"copy running.")
 		case i.Accepting:
 			r.ok(fmt.Sprintf("loophole %s: jail %s's daemon live (pid=%s, socket accepting)",
 				brokerLoopholeName, i.Jail, pids))

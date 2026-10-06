@@ -120,7 +120,7 @@ func TestStatusReportsAnOlderYolosHostWideCopy(t *testing.T) {
 	deps, buf := newDeps(t, st)
 	PrintStatus(deps, fixtureDaemon)
 	for _, want := range []string{"host-wide, left by an older yolo: pid 3",
-		"relaunch those jails with this yolo", "yolo host-daemon stop " + fixtureDaemon} {
+		"relaunch those jails with this yolo", "yolo host-daemon stop --host-wide " + fixtureDaemon} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("status lacks %q:\n%s", want, buf.String())
 		}
@@ -192,6 +192,48 @@ func TestStopEndsAnOlderYolosHostWideCopy(t *testing.T) {
 	if !strings.Contains(buf.String(), "Stopped the host-wide "+fixtureDaemon+" an older yolo left") ||
 		!strings.Contains(buf.String(), "relaunch them with this yolo") {
 		t.Errorf("stop lacks the host-wide lines:\n%s", buf.String())
+	}
+}
+
+// THE UPGRADE STEP STOPS ONLY THE OLDER YOLO'S COPY. The next step status, check and the
+// changelog give for a host-wide copy is "relaunch those jails, then stop it", so by the time the
+// user runs it the relaunched jails each run their own copy: a stop that ended those too would
+// break every jail it had just told the user to relaunch.
+func TestStopHostWideLeavesEveryJailsOwnCopy(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("87b254a5", 4242, true),
+		{Name: fixtureDaemon, HostWide: true, PIDs: []int{3}, Accepting: true}}, stragglers: []int{77},
+		hostWide: true}
+	deps, buf := newDeps(t, st)
+	if rc := StopHostWide(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("rc = %d, want 0", rc)
+	}
+	if len(st.terminated) != 0 || len(st.removed) != 0 {
+		t.Errorf("terminated %v, removed %v: the host-wide stop reached a jail's own copy",
+			st.terminated, st.removed)
+	}
+	if !reflect.DeepEqual(st.hostWideAt, []string{fixtureDaemon}) {
+		t.Errorf("host-wide stop %v, want the older yolo's copy stopped", st.hostWideAt)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Stopped the host-wide "+fixtureDaemon+" an older yolo left") {
+		t.Errorf("stop lacks the host-wide line:\n%s", out)
+	}
+	if strings.Contains(out, "87b254a5") || strings.Contains(out, "fails its") {
+		t.Errorf("the host-wide stop speaks of a jail's copy it did not touch:\n%s", out)
+	}
+}
+
+func TestStopHostWideOfNoneRunningSaysSo(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("87b254a5", 4242, true)}}
+	deps, buf := newDeps(t, st)
+	if rc := StopHostWide(deps, fixtureDaemon); rc != 0 {
+		t.Errorf("rc = %d, want 0", rc)
+	}
+	if len(st.terminated) != 0 || len(st.hostWideAt) != 0 {
+		t.Errorf("terminated %v, host-wide %v, with no host-wide copy running", st.terminated, st.hostWideAt)
+	}
+	if !strings.Contains(buf.String(), "No host-wide "+fixtureDaemon+" an older yolo left is running") {
+		t.Errorf("stop does not say none was running:\n%s", buf.String())
 	}
 }
 

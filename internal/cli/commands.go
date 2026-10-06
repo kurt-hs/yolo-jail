@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -434,13 +435,17 @@ Subcommands:
   stop <name>         Stop every running copy. Each jail it served fails those
                       requests until it is launched again. A request in flight
                       gets up to 35 seconds to finish first.
+  stop --host-wide <name>
+                      Stop only the host-wide copy an older yolo left, and no
+                      jail's own: the upgrade's last step, after relaunching
+                      the jails that copy served.
   restart <name>      Restarts nothing, and says so: a copy restarts with its
                       jail, so leave that jail and launch it again.
   logs <name> [flags] Print the log every copy appends to.
 
 A host-wide copy an older yolo started, which served every jail on the machine,
-is reported as host-wide and stopped by ` + "`stop`" + `; no launch of this yolo starts
-or uses one.
+is reported as host-wide and stopped by ` + "`stop --host-wide`" + ` (or by ` + "`stop`" + `,
+with every jail's copy); no launch of this yolo starts or uses one.
 
 THE NAME IS REQUIRED BY EVERY VERB THAT ACTS. Only ` + "`status`" + ` defaults to every
 daemon, because it reports rather than acts; ` + "`stop`" + `, ` + "`restart`" + ` and ` + "`logs`" + `
@@ -465,6 +470,7 @@ Examples:
   yolo host-daemon status                     # every running copy
   yolo host-daemon status --format json       # the same, for a script or an agent
   yolo host-daemon stop aws-auth              # stop every jail's copy
+  yolo host-daemon stop --host-wide aws-auth  # stop only an older yolo's copy
   yolo host-daemon logs openai-auth-broker -n 100
 
 ` + "`yolo broker <subcommand>`" + ` is the retained alias for the Claude OAuth broker, and
@@ -490,6 +496,7 @@ Subcommands:
   status              Every jail's running copy: its pid, its socket and whether
                       the socket is accepting.
   stop                Stop every copy (each jail then needs a relaunch).
+  stop --host-wide    Stop only the host-wide copy an older yolo left.
   restart             Restarts nothing, and says so: a copy restarts with its
                       jail, so leave that jail and launch it again.
   logs [flags]        Print the broker's log.
@@ -618,6 +625,9 @@ func hostDaemonDispatch(verb, sub, name string, rest []string, format string) in
 	case "status":
 		return broker.PrintStatus(deps, name)
 	case "stop":
+		if slices.Contains(rest, broker.HostWideFlag) {
+			return broker.StopHostWide(deps, name)
+		}
 		return broker.Stop(deps, name)
 	case "restart":
 		return broker.Restart(deps, name)

@@ -87,6 +87,43 @@ func TestRestartRefusesAndNamesTheRelaunch(t *testing.T) {
 	}
 }
 
+// THE UPGRADE STEP, THROUGH THE DISPATCH: `stop --host-wide <name>` acts on an older yolo's
+// host-wide copy alone, so a jail's own copy — here a socket something accepts on — is never
+// reached, and with no host-wide copy running the answer says that and nothing about the jail.
+func TestStopHostWideIsParsedAndLeavesAJailsOwnCopy(t *testing.T) {
+	withNoPackDiscovery(t)
+	dir, err := os.MkdirTemp("/tmp", "yj-hd-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	saved := paths.FrontSocketDir
+	paths.FrontSocketDir = dir
+	t.Cleanup(func() { paths.FrontSocketDir = saved })
+	ln, err := net.Listen("unix", paths.FrontSocketFile("aaaaaaaa", broker.BrokerLoopholeName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	for _, argv := range [][]string{
+		{"host-daemon", "stop", "--host-wide", broker.BrokerLoopholeName},
+		{"host-daemon", "stop", broker.BrokerLoopholeName, "--host-wide"},
+		{"broker", "stop", "--host-wide"},
+	} {
+		rc, out, errOut := captureDispatchRC(t, argv)
+		if rc != 0 {
+			t.Errorf("%v exited %d:\n%s%s", argv, rc, out, errOut)
+		}
+		if !strings.Contains(out, "No host-wide "+broker.BrokerLoopholeName+" an older yolo left is running") {
+			t.Errorf("%v does not answer for the host-wide copy alone:\n%s%s", argv, out, errOut)
+		}
+		if strings.Contains(out, "aaaaaaaa") {
+			t.Errorf("%v spoke of a jail's own copy:\n%s", argv, out)
+		}
+	}
+}
+
 // TestBareStatusReportsTheSetAndNotOneDaemon pins the BARE-INVOCATION DECISION,
 // which the ruling requires be explicit rather than accidental: with no name,
 // `status` means the whole host-scoped set, never "the broker".

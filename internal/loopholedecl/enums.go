@@ -91,8 +91,10 @@ const (
 // the code: each daemon serializes on a flock keyed by its state file, never by the process, so
 // N copies in one home take one kernel lock (that doc's §1.1). What stays shared is that state.
 //
-// The key survives so a manifest that spells the default still decodes; "host" is refused at
-// load with the migration (retiredScopeHint), the way a retired transport is.
+// The key survives so a manifest that spells the default still decodes; "host" is refused by
+// the strict (authoring) decoder with the migration (retiredScopeHint), the way a retired
+// transport is, and read as ScopeJail with a skew note across the version boundary
+// (readRetiredScopeAsJail), since every jail an older yolo launched booted manifests saying it.
 const (
 	// ScopeJail (the default, and the only value): one daemon per jail. yolo spawns it at
 	// launch, waits for it, and stops it when the jail ends (`detach` says how).
