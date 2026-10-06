@@ -1508,9 +1508,13 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// that dies without its teardown (SIGKILL, OOM) leaves the dir in place
 	// (docs/reference/jail-home.md).
 	//
-	// NOTHING IS ENSURED HERE EITHER: the Claude broker used to be ensured as the machine-wide
-	// singleton before the argv was built (brokerEnsure, deleted with HD-R1). It is this jail's
-	// own now, spawned by the keeper with the rest of its host services (hostdaemonperjail.go).
+	// NO DAEMON IS ENSURED HERE ANY MORE: the Claude broker used to be ensured as the
+	// machine-wide singleton before the argv was built (brokerEnsure, deleted with HD-R1). It is
+	// this jail's own now, spawned by the keeper with the rest of its host services, AFTER the
+	// argv. What that early ensure also did, without saying so, was mint the CA and leaf the
+	// argv mounts into the jail; so the mint is done here, before the argv, on its own
+	// (mintBrokerCertificates).
+	o.mintBrokerCertificates(rt, cfg)
 	socketsDir := hostServiceSocketsDir(cname, o.IsMacOS)
 
 	// Store-prune gate (host-only; never from inside a jail — an inner CLI can't
