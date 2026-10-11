@@ -99,7 +99,7 @@ func TestWhyTheJailEndedAsksOnlyAboutAJailsEnd(t *testing.T) {
 	fastStopRecordWait(t)
 	o := goldenOptions("/ws", t.TempDir())
 	o.recordJailStop("yolo-ws-1", "a reason")
-	for _, rc := range []int{0, 1, 2, 126, 127, 130, 143} {
+	for _, rc := range []int{0, 1, 2, 126, 127, 130} {
 		var calls []string
 		o.Exec = probeRuntime("gone", &calls)
 		if _, ended := o.whyTheJailEnded("yolo-ws-1", "podman", rc, time.Unix(0, 0)); ended || len(calls) != 0 {
@@ -132,7 +132,7 @@ func TestWhyTheJailEndedReadsOnlyThisAttachsRecord(t *testing.T) {
 	}
 
 	writeJailStop("yolo-ws-1", jailStopRecord{At: since.Add(time.Second), Reason: "this jail's"})
-	for _, rc := range []int{137, 125, 255} {
+	for _, rc := range []int{137, 143, 125, 255} {
 		if reason, ended := o.whyTheJailEnded("yolo-ws-1", "podman", rc, since); !ended || reason != "this jail's" {
 			t.Errorf("rc %d: reason %q ended %v", rc, reason, ended)
 		}

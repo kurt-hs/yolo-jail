@@ -141,6 +141,9 @@ func (o *Options) noteJailStaysUpOnSignal(cname, rt string) {
 	state, locks := o.probeAfterQuitWithin(cname, 0)
 	locks.release()
 	if state == quitOthers {
+		if n, ok := o.jailSessionCount(rt, cname); ok && n == 0 {
+			return
+		}
 		o.sayJailStaysUpFor(cname, rt, othersUncounted)
 	}
 }

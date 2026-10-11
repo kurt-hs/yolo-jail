@@ -118,11 +118,12 @@ func YoloCheckOrphanReason(pid int, why string) string {
 	return fmt.Sprintf("`yolo check` (pid %d) removed it as an orphaned jail (%s)", pid, why)
 }
 
-// jailEndStatus reports an exec status a jail's end produces: 137, the SIGKILL the kernel sends
-// every process of a pid namespace whose init exits; or the runtime's own failure when the
-// container went away as the exec started (podman's 125 for a container no longer running, 255
-// for one gone from its database). Any other status is the session's own, and costs no probe.
-func jailEndStatus(rc int) bool { return rc == 137 || rc == 125 || rc == 255 }
+// jailEndStatus reports an exec status a jail's end produces: 143, the SIGTERM the runtime sends
+// container processes on graceful stop; 137, the SIGKILL the kernel sends every process of a pid
+// namespace whose init exits; or the runtime's own failure when the container went away as the
+// exec started (podman's 125 for a container no longer running, 255 for one gone from its database).
+// Any other status is the session's own, and costs no probe.
+func jailEndStatus(rc int) bool { return rc == 137 || rc == 143 || rc == 125 || rc == 255 }
 
 // The attach's wait for a record written as its jail ended: the first session's end is recorded
 // by its launcher just after the session returns, while the jail's own end follows within a poll
