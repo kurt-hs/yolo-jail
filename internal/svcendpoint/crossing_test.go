@@ -178,6 +178,12 @@ func readRawPreamble(c net.Conn) ([]byte, error) {
 // frame, so the next Read starts on the client's first byte.
 func startEchoFront(t *testing.T) (string, *upstreamLog) {
 	t.Helper()
+	return startEchoFrontWith(t, FrontOptions{})
+}
+
+// startEchoFrontWith is startEchoFront with the front's options.
+func startEchoFrontWith(t *testing.T, opts FrontOptions) (string, *upstreamLog) {
+	t.Helper()
 	dir := privateSocketDir(t)
 	upstream := filepath.Join(dir, "up.sock")
 	assertSockPathFits(t, upstream)
@@ -215,7 +221,7 @@ func startEchoFront(t *testing.T) (string, *upstreamLog) {
 
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
-	go func() { _ = ServeFront(endpoint, "127.0.0.1", upstream, stop) }()
+	go func() { _ = ServeFrontWithOptions(endpoint, "127.0.0.1", upstream, stop, opts) }()
 	waitProbe(t, endpoint)
 	return endpoint, seen
 }

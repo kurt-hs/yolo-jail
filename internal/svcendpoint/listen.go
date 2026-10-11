@@ -107,6 +107,10 @@ type Listener struct {
 	// race the accept loop). See crossing.go.
 	service, jail, via string
 
+	// label is the launch's own names for the jail on the other end (CrossingLabel), stamped
+	// on every Crossing this listener records. Set once at bind, like the fields above.
+	label CrossingLabel
+
 	// pre is the connection preamble every accepted connection is handed, built
 	// ONCE at bind from service/jail above, or nil when this listener sends none
 	// (FrontOptions.NoPreamble). READ-ONLY after bind and SHARED by every
@@ -150,7 +154,7 @@ type Listener struct {
 //  8. publish AFTER a successful bind, so a published file always names a live
 //     listener — which is what makes a Probe-based health check meaningful.
 func Listen(publishPath, advertiseHost string) (*Listener, error) {
-	return listenWith(publishPath, advertiseHost, CrossingViaEndpoint, true)
+	return listenWith(publishPath, advertiseHost, CrossingViaEndpoint, true, CrossingLabel{})
 }
 
 // listenWith is Listen plus the audit's "how was this served" label and the
@@ -171,7 +175,7 @@ func Listen(publishPath, advertiseHost string) (*Listener, error) {
 // is what replaced them. The knob stays, for a config-declared daemon yolo did not
 // write (internal/loopholes' discover.go defaults it OFF for those), but no yolo
 // daemon sets it.
-func listenWith(publishPath, advertiseHost, via string, preamble bool) (*Listener, error) {
+func listenWith(publishPath, advertiseHost, via string, preamble bool, label CrossingLabel) (*Listener, error) {
 	advertiseSource := advertiseFromCaller
 	if advertiseHost == "" {
 		advertiseHost, advertiseSource = advertiseHostWithSource()
@@ -241,6 +245,7 @@ func listenWith(publishPath, advertiseHost, via string, preamble bool) (*Listene
 		service:     service,
 		jail:        jailName,
 		via:         via,
+		label:       label,
 		pre:         pre,
 		ready:       make(chan net.Conn),
 		closed:      make(chan struct{}),
@@ -307,7 +312,7 @@ func (l *Listener) authenticate(conn net.Conn) {
 		// zero by construction: nothing but the pre-auth handshake happened, and
 		// the wrapper that counts is not installed until after this point.
 		recordCrossing(Crossing{
-			Service: l.service, Jail: l.jail, Via: l.via,
+			Service: l.service, Jail: l.jail, Via: l.via, Label: l.label,
 			Outcome: CrossingRejected, Reason: crossingRejectReason(err),
 			At: start, Duration: time.Since(start),
 		})
@@ -317,6 +322,7 @@ func (l *Listener) authenticate(conn net.Conn) {
 	// connection that failed the token check returned above and no daemon ever
 	// sees it, let alone yolo's assertion about which jail it came from.
 	cc := newCountingConn(conn, l.service, l.jail, l.via, start, l.pre)
+	cc.label = l.label
 	select {
 	case l.ready <- cc:
 	case <-l.closed:

@@ -115,6 +115,9 @@ type Crossing struct {
 	// Jail is the per-jail publication directory's name (in production
 	// "yolo-host-services-<8hex>"), likewise derived host-side.
 	Jail string
+	// Label is the container name and workspace code the LAUNCH that started this listener
+	// named it by (FrontOptions.Label); empty for a listener nothing labelled.
+	Label CrossingLabel
 	// Via is CrossingViaFront or CrossingViaEndpoint.
 	Via string
 	// Outcome is one of the Crossing* outcome constants.
@@ -135,6 +138,18 @@ type Crossing struct {
 	// pre-auth handshake.
 	BytesIn  int64
 	BytesOut int64
+}
+
+// CrossingLabel is how the launch that started a listener names the jail behind it: Container
+// is the jail's container name (on macos-user and the host notch, the name its workspace would
+// have as a container, or "" when the launch has none to give), and Workspace is the short code
+// the machine-wide launches.log keys that workspace by. Both are host-chosen at launch and handed
+// to the listener in-process — never read from the services directory, which the jail can write,
+// and never from the stream. Jail, derived from the publication path, stays beside them: a
+// macos-user session's directory carries a random suffix, and a reader of an older log keys on it.
+type CrossingLabel struct {
+	Container string
+	Workspace string
 }
 
 // crossingSinkFn receives one Crossing per boundary crossing. It must not block
@@ -242,6 +257,7 @@ func crossingName(s string) string {
 type countingConn struct {
 	net.Conn
 	service, jail, via string
+	label              CrossingLabel
 	start              time.Time
 
 	// pre is the connection preamble still owed to whoever reads this connection
@@ -324,6 +340,7 @@ func (c *countingConn) Close() error {
 		recordCrossing(Crossing{
 			Service:  c.service,
 			Jail:     c.jail,
+			Label:    c.label,
 			Via:      c.via,
 			Outcome:  outcome,
 			Reason:   reason,

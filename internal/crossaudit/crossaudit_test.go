@@ -104,10 +104,23 @@ func TestLineIsGreppableAndPayloadFree(t *testing.T) {
 	t.Cleanup(func() { time.Local = oldLocal })
 	got := Line(sample(svcendpoint.CrossingAccepted))
 	want := "2026-08-15T12:00:00.000Z crossing jail=yolo-host-services-a1b2c3d4 " +
-		"service=host-processes via=front outcome=accepted reason=- " +
+		"cname=- ws=- service=host-processes via=front outcome=accepted reason=- " +
 		"bytes_in=41 bytes_out=4096 elapsed_ms=1500\n"
 	if got != want {
 		t.Errorf("Line =\n  %q\nwant\n  %q", got, want)
+	}
+
+	// A labelled crossing names the launch's container and workspace code beside jail=, which
+	// stays first and unchanged so a reader keyed on it still matches.
+	labelled := sample(svcendpoint.CrossingAccepted)
+	labelled.Label = svcendpoint.CrossingLabel{Container: "yolo-myproj-1a2b3c4d", Workspace: "host:9f8e7d6c"}
+	if l := Line(labelled); !strings.Contains(l, " crossing jail=yolo-host-services-a1b2c3d4 cname=yolo-myproj-1a2b3c4d ws=host:9f8e7d6c service=") {
+		t.Errorf("labelled line = %q, want jail= then cname= and ws=", l)
+	}
+	// A label value that could split the line renders as absent.
+	labelled.Label = svcendpoint.CrossingLabel{Container: "a b", Workspace: "x=y"}
+	if l := Line(labelled); !strings.Contains(l, " cname=- ws=- ") {
+		t.Errorf("a label with a space or '=' reached the line: %q", l)
 	}
 
 	// A rejected crossing carries its reason in the same slot.

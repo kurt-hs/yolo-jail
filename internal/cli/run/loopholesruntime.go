@@ -422,6 +422,7 @@ func (o *Options) startLoopholesMatching(set loopholes.Set, cname, rt string, cf
 	allow func(string) bool) []loopholeDaemon {
 	o.startupOutcomes = nil
 	o.startupAttempt = 0
+	o.crossingLabel = crossingLabelFor(cname, rt)
 	if !o.prepareLoopholeSettingsForStart(set, cfg, allow) {
 		o.cleanupSettingsSnapshots()
 		return nil
@@ -1378,6 +1379,9 @@ func (o *Options) startHostSingleton(
 		svcendpoint.FrontOptions{
 			HalfCloseUpstream: hd.RequestEnd == loopholes.RequestEndEOF,
 			NoPreamble:        !hd.Preamble,
+			// This jail's names for the crossing log: a host-wide daemon serves every jail,
+			// but each jail has its own front, so the front's crossings are this jail's.
+			Label: o.crossingLabel,
 		})
 	if failure := frontPublishFailure(hostPath, o.serviceReadyTimeout(), frontFailed); failure != "" {
 		close(frontStop)
@@ -1859,6 +1863,7 @@ func (o *Options) startExternalService(
 				// site does not know which kind of declaration produced it,
 				// and must not.
 				NoPreamble: !hd.Preamble,
+				Label:      o.crossingLabel,
 			})
 		if failure := frontPublishFailure(hostPath, o.serviceReadyTimeout(), frontFailed); failure != "" {
 			// The daemon's own socket accepted a connect above; it is the front that failed.
@@ -1965,6 +1970,20 @@ func (o *Options) brokerEnsure() {
 		broker.BrokerSpawn(deps)
 		return true
 	})
+}
+
+// crossingLabelFor is how a launch names its jail on every crossing its fronts record
+// (svcendpoint.CrossingLabel, rendered by internal/crossaudit as `cname=… ws=…`): the
+// container name, and the short code launches.log keys the workspace by. A `yolo host` launch
+// has no container, so it records no cname and the host notch's code, `host:<code>`, the
+// spelling its perf log already uses (hostNotchLabel), so a reader tells its crossings from a
+// jail's at a glance.
+func crossingLabelFor(cname, rt string) svcendpoint.CrossingLabel {
+	code := paths.JailShortHash(cname)
+	if rt == hostNotchRuntime {
+		return svcendpoint.CrossingLabel{Workspace: "host:" + code}
+	}
+	return svcendpoint.CrossingLabel{Container: cname, Workspace: code}
 }
 
 // hostServicesDirPrefix names the per-jail host-services dir:

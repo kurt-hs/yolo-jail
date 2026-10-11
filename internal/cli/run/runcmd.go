@@ -35,6 +35,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
+	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
@@ -244,6 +245,9 @@ type Options struct {
 	// arm's deferred endServicesSession. nil on every other backend, before the spawn, and after
 	// the teardown.
 	servicesSession *servicesSession
+	// crossingLabel is how this launch names its jail on every crossing its fronts record
+	// (crossingLabelFor), set by startLoopholesMatching before any front starts.
+	crossingLabel svcendpoint.CrossingLabel
 	// startupRefusal is an attempt-specific fatal configuration refusal captured while a per-jail
 	// service was starting. The lifecycle caller returns it through the same unwind boundary as
 	// olderDaemonRefusal, while never treating historical log text as evidence.

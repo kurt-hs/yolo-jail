@@ -5,13 +5,14 @@
 //
 // Each request gets ONE line when it ends, stamped by internal/logstamp:
 //
-//	2026-10-11T12:17:03.412-04:00 aws-credential-adapter: request #12 GET /credentials 200 peer=127.0.0.1:40122 auth=ok upstream=aws-auth upstream_outcome=ok bytes_out=1280 elapsed_ms=4
+//	2026-10-11T12:17:03.412-04:00 aws-credential-adapter: request #12 GET /credentials 200 peer=127.0.0.1:40122 caller=claude caller_pid=136 auth=ok upstream=aws-auth upstream_outcome=ok bytes_out=1280 elapsed_ms=4
 //
 // and, while it is still in flight, a "still in flight" line every StillWaitingInterval naming
 // what it waits on, so a hang shows in the log while it happens rather than never.
 //
 // The fields after the status are the handler's (Entry.Set), in the order it set them; the
-// package adds peer, bytes_out and elapsed_ms. NEVER A VALUE A CALLER SENT: a handler sets
+// package adds peer, the caller's fields right after it when the Logger resolves callers
+// (ResolveCallers), bytes_out and elapsed_ms. NEVER A VALUE A CALLER SENT: a handler sets
 // outcomes and names, never a header, a token or a body, and the adapters' tests drive every
 // refusal with the real token and a wrong one and fail if either reaches the log.
 package reqlog
@@ -20,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,6 +42,30 @@ type Logger struct {
 	mu   sync.Mutex
 	out  io.Writer
 	seq  atomic.Uint64
+
+	// callers names each request's caller (ResolveCallers), nil when nothing does.
+	callers atomic.Pointer[callerResolver]
+}
+
+// CallerFunc names the caller of a connection from local to peer (both host:port; local is
+// "" when the server recorded none) as key/value pairs for the request line, returning by the
+// time ctx is done.
+type CallerFunc func(ctx context.Context, local, peer string) [][2]string
+
+type callerResolver struct {
+	resolve CallerFunc
+	budget  time.Duration
+}
+
+// ResolveCallers makes every request line name its caller, right after peer=, through resolve
+// (internal/peercaller in the credential adapters). The lookup starts with the request and runs
+// beside the handler; the response's first byte waits for it, at most budget from the request's
+// start, because the lookup needs the caller's socket still open, and a client that has its
+// answer may close it at once (Go's HTTP client closed one given a 401 before a lookup that ran
+// after the response could find it). A lookup still running at the budget is
+// logged as caller=unknown with why, and the response goes out regardless.
+func (l *Logger) ResolveCallers(budget time.Duration, resolve CallerFunc) {
+	l.callers.Store(&callerResolver{resolve: resolve, budget: budget})
 }
 
 // New returns a Logger writing to out.
@@ -88,6 +114,23 @@ type Entry struct {
 	status    int
 	wrote     bool
 	bytesOut  int64
+	// caller is the caller's fields (ResolveCallers), nil until the lookup answers; callerSet
+	// freezes it once the line has given up waiting.
+	caller    [][2]string
+	callerSet bool
+	// callerDone is closed when the lookup has answered, nil when there is none; callerWait makes
+	// the wait for it happen once.
+	callerDone   <-chan struct{}
+	callerBudget time.Duration
+	callerWait   sync.Once
+}
+
+func (e *Entry) setCaller(fields [][2]string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.callerSet {
+		e.caller, e.callerSet = fields, true
+	}
 }
 
 // From returns the request's Entry, or nil for a handler used outside Wrap. Every Entry method
@@ -127,8 +170,9 @@ func (l *Logger) Wrap(next http.Handler) http.Handler {
 		e := &Entry{id: l.seq.Add(1), start: time.Now(), method: r.Method, path: r.URL.Path,
 			peer: r.RemoteAddr, values: map[string]string{}}
 		done := make(chan struct{})
+		interval := StillWaitingInterval // read here, not in the goroutine, which may start late
 		go func() {
-			t := time.NewTicker(StillWaitingInterval)
+			t := time.NewTicker(interval)
 			defer t.Stop()
 			for {
 				select {
@@ -139,11 +183,54 @@ func (l *Logger) Wrap(next http.Handler) http.Handler {
 				}
 			}
 		}()
+		e.callerDone, e.callerBudget = l.startCallerLookup(e, r)
 		defer func() {
 			close(done)
+			e.awaitCaller()
 			l.Printf("%s", e.finalLine())
 		}()
 		next.ServeHTTP(&countingWriter{ResponseWriter: w, e: e}, r.WithContext(context.WithValue(r.Context(), entryKey{}, e)))
+	})
+}
+
+// startCallerLookup starts the request's caller lookup, when the Logger resolves callers, and
+// returns the channel closed when it has answered (nil when there is none) and its budget.
+func (l *Logger) startCallerLookup(e *Entry, r *http.Request) (<-chan struct{}, time.Duration) {
+	cr := l.callers.Load()
+	if cr == nil {
+		return nil, 0
+	}
+	local := ""
+	if a, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok && a != nil {
+		local = a.String()
+	}
+	peer := r.RemoteAddr
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ctx, cancel := context.WithTimeout(context.Background(), cr.budget)
+		defer cancel()
+		e.setCaller(cr.resolve(ctx, local, peer))
+	}()
+	return done, cr.budget
+}
+
+// awaitCaller waits for the caller lookup, once, until at most its budget from the request's
+// start: before the response's first byte, and at the end for a handler that wrote nothing.
+// Past the budget the line names the caller unknown and says why.
+func (e *Entry) awaitCaller() {
+	if e.callerDone == nil {
+		return
+	}
+	e.callerWait.Do(func() {
+		t := time.NewTimer(time.Until(e.start.Add(e.callerBudget)))
+		defer t.Stop()
+		select {
+		case <-e.callerDone:
+		case <-t.C:
+			e.setCaller([][2]string{{"caller", "unknown"},
+				{"caller_why", "the lookup ran past its " + e.callerBudget.String() + " budget"}})
+		}
 	})
 }
 
@@ -154,6 +241,9 @@ func (e *Entry) head() string {
 func (e *Entry) fields() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, " peer=%s", quote(e.peer))
+	for _, kv := range e.caller {
+		fmt.Fprintf(&b, " %s=%s", kv[0], quote(kv[1]))
+	}
 	for _, k := range e.keys {
 		fmt.Fprintf(&b, " %s=%s", k, quote(e.values[k]))
 	}
@@ -200,6 +290,7 @@ type countingWriter struct {
 }
 
 func (w *countingWriter) WriteHeader(code int) {
+	w.e.awaitCaller()
 	w.e.mu.Lock()
 	if !w.e.wrote {
 		w.e.status, w.e.wrote = code, true
@@ -209,6 +300,7 @@ func (w *countingWriter) WriteHeader(code int) {
 }
 
 func (w *countingWriter) Write(p []byte) (int, error) {
+	w.e.awaitCaller()
 	w.e.mu.Lock()
 	w.e.wrote = true
 	if w.e.status == 0 {

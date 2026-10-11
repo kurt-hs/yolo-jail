@@ -767,6 +767,7 @@ func TestConfigLoopholeComesUpBehindFront(t *testing.T) {
 
 	cname := "yolo-e2e-" + sha1Hex8(home)
 	socketsDir := hostServiceSocketsDir(cname, false)
+	crossings := captureCrossingsIn(t, socketsDir)
 	handles := o.startLoopholes(cname, "podman", cfg)
 	stopped := false
 	stopAll := func() {
@@ -820,6 +821,11 @@ func TestConfigLoopholeComesUpBehindFront(t *testing.T) {
 	}
 	if strings.TrimSpace(reply) != "pong" {
 		t.Errorf("reply = %q, want pong", reply)
+	}
+	// The front's crossing names this launch's container and workspace code, which the launch
+	// handed it (crossingLabelFor), so crossings.log names the jail as launches.log does.
+	if got, want := crossings.first(t).Label, crossingLabelFor(cname, "podman"); got != want || got.Container != cname {
+		t.Errorf("the front's crossing label = %+v, want %+v", got, want)
 	}
 
 	upstream := frontSocketFile(frontShortHash(socketsDir), "echoer")
