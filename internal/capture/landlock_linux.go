@@ -220,6 +220,15 @@ func scopedFor(abi int) uint64 {
 	return unix.LANDLOCK_SCOPE_SIGNAL | unix.LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET
 }
 
+// landlockRulesetAttr is struct landlock_ruleset_attr as far as ABI 6, the last field this ruleset sets.
+// It is ours rather than unix.LandlockRulesetAttr because x/sys renamed that type's fields and grew it
+// in v0.49.0, and the kernel takes any prefix of the struct, so the shorter one is valid everywhere.
+type landlockRulesetAttr struct {
+	handledAccessFS  uint64
+	handledAccessNet uint64
+	scoped           uint64
+}
+
 // ExecConfined restricts this process to p and execs argv (argv[0] an absolute path) with env. It
 // returns only when something failed, and never execs argv unconfined: every error is returned before
 // the exec, and the caller exits on it.
@@ -240,7 +249,7 @@ func ExecConfined(p LandlockPolicy, argv, env []string) error {
 		return err
 	}
 	runtime.LockOSThread()
-	attr := unix.LandlockRulesetAttr{Access_fs: handledFS(abi), Scoped: scopedFor(abi)}
+	attr := landlockRulesetAttr{handledAccessFS: handledFS(abi), scoped: scopedFor(abi)}
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, uintptr(unsafe.Pointer(&attr)),
 		unsafe.Sizeof(attr), 0)
 	if errno != 0 {

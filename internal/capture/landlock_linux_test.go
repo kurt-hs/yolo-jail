@@ -549,3 +549,15 @@ func TestALandlockPolicyRoundTripsThroughItsFlags(t *testing.T) {
 		}
 	}
 }
+
+// TestLandlockRulesetAttrIsTheABI6Layout pins the ruleset attribute to the kernel's field order and
+// size through ABI 6: three u64s, scoped at offset 16, 24 bytes in all.
+func TestLandlockRulesetAttrIsTheABI6Layout(t *testing.T) {
+	var a landlockRulesetAttr
+	if got := unsafe.Sizeof(a); got != 24 {
+		t.Errorf("size = %d, want 24", got)
+	}
+	if got := unsafe.Offsetof(a.scoped); got != 16 {
+		t.Errorf("scoped offset = %d, want 16", got)
+	}
+}
