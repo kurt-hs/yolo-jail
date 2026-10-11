@@ -158,6 +158,14 @@ type StatefulInputs struct {
 	// the user's, the file kept it, and with the record entry gone no later deselect could
 	// clear it (docs/reference/providers.md#deselection-clear-what-yolo-wrote-keep-what-the-user-wrote).
 	SelectionCleared []SelectionClear
+
+	// ProviderKeys are the provider keys of this surface for this render (providerkeys.go,
+	// packdecl.ProviderKey): settings the agent's provider selection decides, already resolved
+	// by the caller against that selection. The render drops a captured value at each from the
+	// decided overlay, on both branches, so only the computed layer decides the key; what it
+	// dropped is reported in StatefulOutput.ProviderKeyDrops. nil = none, which is every surface
+	// whose pack declares none and every notch but a jail's.
+	ProviderKeys []OwnedLeaf
 }
 
 // StatefulOutput is the render plus the sidecar values the caller must
@@ -231,6 +239,12 @@ type StatefulOutput struct {
 	// OverlayJSON. The caller must print it, because a one-shot mutation of the user's own
 	// config state that nobody announced is the defect, not the mutation.
 	Repairs []Repair
+
+	// ProviderKeyDrops are the captured values this render dropped at a provider key
+	// (StatefulInputs.ProviderKeys), already reflected in Result and OverlayJSON. A REPORT the
+	// caller must print: the drop edits the user's captured state, and a silent edit of it is
+	// the defect.
+	ProviderKeyDrops []OwnedDrop
 }
 
 // ComposeStateful runs the per-boot state machine for one surface and returns
@@ -506,6 +520,12 @@ func ComposeStateful(in StatefulInputs) (*StatefulOutput, error) {
 	// A key the selection just CLEARED is narrowed out first, for the reason
 	// StatefulInputs.SelectionCleared gives: it is yolo's own value, never a captured
 	// edit, and the clear only holds if the overlay does not put it back.
+	// THE PROVIDER KEYS FIRST (providerkeys.go): a captured value at a key the selection
+	// decides is dropped whatever lower layers say, so the narrowing below sees only what may
+	// stay. Before narrowOverlay, which would drop the same key silently whenever computed
+	// asserts it, so the report names every captured provider value the render took out.
+	var ownedDrops []OwnedDrop
+	overlay, ownedDrops = dropProviderKeys(overlay, in.ProviderKeys)
 	overlay = dropSelectionCleared(overlay, in.SelectionCleared)
 	overlay = narrowOverlay(kind, overlay, in.Base.Computed, in.Base.Surface.Managed)
 	// The same rule for the list records: one under a computed or managed layer that
@@ -578,6 +598,7 @@ func ComposeStateful(in StatefulInputs) (*StatefulOutput, error) {
 		FirstMigration:   firstMigration,
 		PureBytes:        pureBytes,
 		Repairs:          repairs,
+		ProviderKeyDrops: ownedDrops,
 	}, nil
 }
 

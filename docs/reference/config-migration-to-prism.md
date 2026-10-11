@@ -359,6 +359,42 @@ The capture overlay never records a list path. Everything here is `listCapture` 
 it. An `rmw` surface has no earlier list state to migrate. Its record starts empty, and entries
 already in the file are never recorded, so a pack drop never removes them.
 
+### Provider keys never come from the capture
+
+A **provider key** is a setting in an agent's own config that its provider selection decides: a
+provider switch such as Claude Code's `CLAUDE_CODE_USE_BEDROCK`, the region and credential
+variables a provider's client reads, a gateway base URL, or a model id only one platform serves.
+The agent's pack declares them in its top-level `provider_keys`, keyed by program bin, and every
+`platform_switches` entry is one too
+([`providers.md`](providers.md#provider-keys-the-selection-decides-them)). At a jail, both branches drop a captured value at a provider key from the decided overlay before the
+narrowing, so only the computed layer decides the key: its value lands when the derive asserts
+one, and the key is absent when it does not. A value-conditional key (`matches`, with a
+`platform`) drops only a value its pattern matches, and only while the agent is off that
+platform. A captured deletion (a null tombstone) is kept, since it can switch nothing on. Each
+drop is reported (`StatefulOutput.ProviderKeyDrops`), and the boot prints one warning per drop
+naming the key and `yolo config reset <agent>`.
+
+This exists because a captured edit outranks every layer but computed and managed, and a derive
+asserts a provider switch only while its provider is selected. On 2026-10-11 a capture overlay
+held `env.CLAUDE_CODE_USE_BEDROCK` (the boot said "4 keys from captured in-jail edits"), so a
+boot that selected Claude's subscription still rendered the switch and Claude Code ran on Bedrock
+with no credentials. Any capture of yolo's own previous Bedrock render produces that state: an
+adopting boot over the file, or an agent rewriting the file over a baseline that lacks the keys.
+`internal/entrypoint/providerkeys_test.go` reproduces it. The host layer and the host notch are
+not reached, by [PP-D1](../design/providers-and-profiles-redesign.md#PP-D1).
+
+### The capture log
+
+The **capture log** (a name coined with it) is the record of every change to a capture overlay.
+Every write that changes one appends one line per changed leaf to `capture.log` in the same store (`<workspace>/.yolo/prism/capture.log` at a jail). The writers are the boot render,
+the capture by `yolo config capture` and at shutdown, `yolo config reset`, and a host apply's
+store. A line carries the time, the surface, the writer, and the leaf, dotted, with its old and
+new values: `+` captured, `~` changed, `-` taken out (with the reason), and `x` for a value the
+same render captured and dropped, which neither sidecar ever shows. A value is written only when it
+is not credential-shaped. A key whose name looks like a credential, or a string that looks like a
+token, is written as its length alone. The log keeps about 128 KiB of the newest lines
+(`internal/capturelog`).
+
 ## What the boot caller owns
 
 The state machine is pure. Everything environment-dependent stays in the boot path:

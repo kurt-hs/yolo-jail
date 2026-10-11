@@ -17,6 +17,10 @@ now carries a millisecond timestamp, and the wire bridge and credential adapters
 with its outcome, upstream status or error and timings, plus a line while one is still waiting.
 See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
+### Fixed
+
+- A setting captured from an earlier Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription. The boot names each one it drops, and every change to captured edits is now logged.
+
 ## [0.13.0] - 2026-10-09
 
 Pi keeps to the active profile set, Nix builds made in a jail survive host garbage collection,

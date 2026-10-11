@@ -2069,9 +2069,50 @@ env` and `yolo host apply` launch nothing and print nothing.
 Core knows no agent's file or variable: the switch is the agent pack's declaration, a `program`
 contribution's `platform_switches` (`{platform, surface, pointer}`; packs/claude declares
 `aws-bedrock` at `/env/CLAUDE_CODE_USE_BEDROCK` in `claude/settings`, a `readsHost` surface), and
-`packload.PlatformSwitchConflicts` reads it from your own copy of that file. Not read: a switch
-captured from an in-jail edit of the jail's settings file, and one exported in the process
-environment.
+`packload.PlatformSwitchConflicts` reads it from your own copy of that file. That launcher check
+cannot see the file the jail composes, so **the jail boot checks it too**, over the settings file
+it has just rendered, whatever layer the switch came from (a pack's `config-overlay`, your own
+host copy, or anything else). The boot prints one warning naming the switch, its layer and the fix:
+
+```text
+claude: ~/.claude/settings.json, as this boot rendered it, sets CLAUDE_CODE_USE_BEDROCK (from your own host copy of ~/.claude/settings.json, which yolo leaves alone), which puts claude on its own "aws-bedrock" client, but no "aws-bedrock" provider is selected for claude, so this launch delivered it none of that platform's credentials and its requests will fail: select a provider of that platform for claude, or remove env.CLAUDE_CODE_USE_BEDROCK from your host ~/.claude/settings.json.
+```
+
+A switch captured from an in-jail edit never reaches that file: it is a provider key
+([below](#provider-keys-the-selection-decides-them)). Not read by either check: a switch exported
+in the process environment.
+
+### Provider keys: the selection decides them
+
+A **provider key** (a term coined here, for the fault below) is a setting in an agent's own config
+that the agent's provider selection decides. At a jail, no captured in-jail edit may set one. The value the agent's derive asserts for
+this selection lands, and otherwise the key is absent. A pack declares its programs' provider keys
+in a top-level `provider_keys` object keyed by program bin (`{"claude": [{surface, pointer}, …]}`,
+or `{surface, pointer, platform, matches}` for a key whose values only one platform serves). It is
+top-level, not on the `program`, so an older yolo ignores the key instead of skipping the whole
+program. Every `platform_switches` entry is one too, without being restated. packs/claude declares its provider switches (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`,
+`_FOUNDRY`, `_ANTHROPIC_AWS`, `_ANTHROPIC_GOOGLE_CLOUD`, `_MANTLE`), the auth-skip and base-URL
+overrides, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY`, the AWS region and credential chain, and
+the model keys (`model`, `ANTHROPIC_MODEL`, the tier pins). The model keys are dropped only while
+claude is off `aws-bedrock` and only when they hold a Bedrock-only id (`global.anthropic.…`, a
+Bedrock ARN), so a subscription model you picked with `/model` stays yours.
+
+When a boot drops a captured value, it says so in one line, and the drop is persisted:
+
+```text
+claude/settings: dropped the captured in-jail edit env.CLAUDE_CODE_USE_BEDROCK = "1" from ~/.claude/settings.json: claude's provider selection decides that key, so no captured edit may set it (it is absent unless the selected provider sets it). `yolo config diff claude` shows the captured edits that remain; `yolo config reset claude` discards them all.
+```
+
+Measured fault this closes (2026-10-11): `"profile": {"*": "bedrock", "claude": null}` selected
+Claude's subscription, and the launch delivered claude no AWS credentials. The capture overlay
+still held `env.CLAUDE_CODE_USE_BEDROCK` from an earlier Bedrock render, so Claude Code ran on
+Bedrock without credentials, and its first request timed out after thirteen minutes. Every
+change to a capture overlay is now logged
+([the capture log](config-migration-to-prism.md#the-capture-log)).
+
+Not reached, by [PP-D1](../design/providers-and-profiles-redesign.md#PP-D1): your own host copy of
+the file, which yolo obeys and names, and the host notch, where `yolo host apply` writes your real
+file.
 
 ## What this does not license
 
@@ -2248,7 +2289,8 @@ above explains what each is for; this table is the only place the exact spelling
 | Region file | a provider's `region_file` `{path, path_env_name, profile_env_name, default_profile, profile_section, key}` beside `region_env_name` (pack manifests only); the bedrock pack's: `.aws/config`, `AWS_CONFIG_FILE`, `AWS_PROFILE`, `default`, `profile {profile}`, `region`; an `env` contribution's `region_profile_setting` beside `served_by` and a `platform` gate, and aws-auth's pointer's is `profile`; delivered in the agent's first region variable, disclosed as `Region: …` | `packs/bedrock/pack.json`, `packs/aws-auth/pack.json`, `packload` (`regionfill.go`) |
 | Kinds that take the `profile` modifier | `env`, `config-overlay` — refused on every other kind; no shipped pack uses it | `packdecl` `validateContribution` |
 | Kinds that take the `platform` gate | `env` — one gate per contribution, `profile` or `platform`; `platform` on `provider` is the declaration | `packdecl` `validateContribution` |
-| Platform switches | a `program`'s `platform_switches` `[{platform, surface, pointer}]`; claude's: `aws-bedrock`, `claude/settings`, `/env/CLAUDE_CODE_USE_BEDROCK`; on when `true`, `1`, `yes` or `on` | `packs/claude/pack.json`, `packload.PlatformSwitchConflicts` |
+| Platform switches | a `program`'s `platform_switches` `[{platform, surface, pointer}]`; claude's: `aws-bedrock`, `claude/settings`, `/env/CLAUDE_CODE_USE_BEDROCK`; on when `true`, `1`, `yes` or `on` | `packs/claude/pack.json`, `packload.PlatformSwitchConflicts`, `entrypoint.notePlatformSwitchesOn` |
+| Provider keys | a pack's top-level `provider_keys` `{<bin>: [{surface, pointer, platform?, matches?}]}`, plus every platform switch of that program; at a jail a captured value at one is dropped (a `matches` key only for a matching value while off its `platform`) | `packs/claude/pack.json`, `agentcfg.dropProviderKeys`, `entrypoint.providerKeyLeaves` |
 | Profile flag grammar | `-p` / `--profile`: a bare name or comma list, or `cli=name` pairs (comma-separated, a bare name after a pair continuing that CLI's list, repeatable), on every notch; at `yolo host` / `yolo host env` a pair may name only the one command composed | `config.ParseProfileFlag`, through `parseProfileValue` (`applyProfileValue` on the run path, `hostProfileFor` at the host) |
 | Profile disclosure line | `Profile <name>: declared by <packs, or your config's profiles>; <agent> → provider "<p>", <route>; …`, then one `Warning: profile "<name>" …` line per agent the selection reaches nothing for or delivers no credential to | `packload.ProfileDisclosures`; printed by `run.noteUseProfiles` and `hostComposition.profileLines` |
 | Conventional tier aliases | `default`, `fast`, `balanced`, `frontier`; a missing one warns at boot as `pack derive for <agent>: provider "<name>" declares no "<alias>" model alias …`, and only when a derive asks `yolo.model_for` for it | `luahook.ConventionalModelAliases`, `luahook.MissingTierAliasNote` |

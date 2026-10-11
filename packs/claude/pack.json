@@ -7,6 +7,52 @@
       ]
     }
   },
+  // THE PROVIDER KEYS (packdecl.ProviderKey), keyed by program bin: the settings Claude Code
+  // reads that claude's provider SELECTION decides, so at a jail no captured in-jail edit may set
+  // one: the settings derive's value lands when it asserts one, and the key is absent otherwise.
+  // CLAUDE_CODE_USE_BEDROCK, the platform switch on the program below, is one already. The
+  // variables are Claude Code's (https://code.claude.com/docs/en/amazon-bedrock,
+  // .../google-vertex-ai, .../microsoft-foundry, .../llm-gateway): its provider switches, the
+  // gateway and auth overrides, and the AWS region and credential chain its Bedrock client
+  // reads. A model id only Bedrock serves (a cross-region inference profile such as
+  // global.anthropic.…, or a Bedrock ARN) is dropped only while claude is off "aws-bedrock", so a
+  // subscription model picked with /model stays the user's. PACK-WIDE, not on the program, so an
+  // older yolo ignores the key instead of skipping the whole program (packs/releasedecode_test.go).
+  // Measured fault this closes: 2026-10-11, a captured CLAUDE_CODE_USE_BEDROCK kept Claude Code
+  // on Bedrock with no credentials while yolo had selected its subscription.
+  "provider_keys": {
+    "claude": [
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_USE_VERTEX"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_USE_FOUNDRY"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_USE_ANTHROPIC_AWS"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_USE_MANTLE"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_SKIP_BEDROCK_AUTH"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_SKIP_VERTEX_AUTH"},
+      {"surface": "claude/settings", "pointer": "/env/CLAUDE_CODE_SKIP_FOUNDRY_AUTH"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_BASE_URL"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_BEDROCK_BASE_URL"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_VERTEX_BASE_URL"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_FOUNDRY_BASE_URL"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_AUTH_TOKEN"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_API_KEY"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_BEARER_TOKEN_BEDROCK"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_REGION"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_DEFAULT_REGION"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_PROFILE"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_ACCESS_KEY_ID"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_SECRET_ACCESS_KEY"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_SESSION_TOKEN"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_CONTAINER_CREDENTIALS_FULL_URI"},
+      {"surface": "claude/settings", "pointer": "/env/AWS_CONTAINER_AUTHORIZATION_TOKEN"},
+      {"surface": "claude/settings", "pointer": "/model", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_DEFAULT_OPUS_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_DEFAULT_SONNET_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_DEFAULT_HAIKU_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"},
+      {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_SMALL_FAST_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"}
+    ]
+  },
   "contributes": [
     // Where the install hint's name came from, checked 2026-10-02. A cask, so "brew-cask".
     //   brew-cask: https://formulae.brew.sh/api/cask/claude-code.json (binary artifact `claude`)
