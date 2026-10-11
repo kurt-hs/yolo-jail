@@ -72,6 +72,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/peercaller"
 	"github.com/mschulkind-oss/yolo-jail/internal/reqlog"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
@@ -189,7 +190,18 @@ func Handler(callerToken string, fetch Fetch) http.Handler {
 // requestLog is this adapter's log: one stamped line per request (internal/reqlog), and its
 // own diagnostics through it too, so the jail's aws-auth.log and the macos-user doorway's
 // launch-service log read the same.
-var requestLog = reqlog.New("aws-credential-adapter", os.Stderr)
+//
+// Every line names its caller (internal/peercaller): the agent whose process holds the other end
+// of the connection, found through /proc, because neither the protocol nor the token can say
+// which agent asked — the token is one per launch, shared by every Bedrock-selecting agent, and a
+// refused request often carries none.
+var requestLog = newRequestLog()
+
+func newRequestLog() *reqlog.Logger {
+	l := reqlog.New("aws-credential-adapter", os.Stderr)
+	l.ResolveCallers(peercaller.Budget, peercaller.Lookup)
+	return l
+}
 
 // refusalCode is the host refusal's Code, or "-" when the body names none.
 func refusalCode(body json.RawMessage) string {

@@ -222,13 +222,16 @@ there is a parsed request to describe.
 rejected — and `internal/crossaudit` appends it to a single per-host log:
 
 ```
-2026-08-15T12:00:00Z crossing jail=yolo-host-services-a1b2c3d4 service=host-processes \
-  via=front outcome=accepted reason=- bytes_in=41 bytes_out=4096 elapsed_ms=1500
+2026-10-11T12:17:03.412-04:00 crossing jail=yolo-host-services-a1b2c3d4 cname=yolo-myproj-a1b2c3d4 \
+  ws=a1b2c3d4 service=host-processes via=front outcome=accepted reason=- bytes_in=41 bytes_out=4096 \
+  elapsed_ms=1500
 ```
 
 | Field | Meaning |
 | :--- | :--- |
 | `jail` | the per-jail publication directory's name — **derived host-side** from the path yolo published at, never the client's `jail_id` |
+| `cname` | the jail's container name, as the launch that started the front named it. `-` for a `yolo host` launch, which has no container, and for a listener no launch started |
+| `ws` | the workspace's short code, the one `launches.log` keys a launch by (`jail=` there). A `yolo host` launch writes `host:<code>`, as the host notch's perf log does. `-` for a listener no launch started |
 | `service` | the loophole / host-service name, from the same path |
 | `via` | `front` (spliced) or `endpoint` (handed to a caller's own accept loop by `Listen`) |
 | `outcome` | `accepted`, `rejected` (auth failed), or `unreachable` (authenticated, upstream daemon gone) |
@@ -238,6 +241,11 @@ rejected — and `internal/crossaudit` appends it to a single per-host log:
 
 Three properties worth knowing:
 
+- **`cname` and `ws` come from the launch, in process.** The launch hands them to each front
+  it starts. They are not read from the services directory, which the jail can write, so a
+  jail cannot rename itself in this log. `jail` stays first and unchanged for readers keyed
+  on it. On `macos-user` and `yolo host` the directory's name carries a random suffix, so
+  `ws` is the field that matches `launches.log`.
 - **Per HOST, not per jail.** The question is "what crossed today", which is cross-jail
   by nature; the narrower question is one `rg jail=` away, and a per-jail file would also
   sit where `yolo prune` sweeps.

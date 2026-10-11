@@ -3,10 +3,15 @@ package openaiauthadapter
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,4 +61,67 @@ func TestEveryRefreshIsOneLineAndNoTokenReachesIt(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A refused refresh, sent over a real loopback connection, names the agent that sent it
+// (internal/peercaller): here this test binary, named as an agent by a launcher of its name.
+// Drives Serve, so it fails if the adapter's log stops resolving callers.
+func TestARefusedRefreshNamesTheAgentThatSentIt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("callers are named through Linux's /proc")
+	}
+	log := &lockedBuffer{}
+	requestLog.SetOutput(log)
+	t.Cleanup(func() { requestLog.SetOutput(os.Stderr) })
+	home := t.TempDir()
+	self := filepath.Base(os.Args[0])
+	if err := os.MkdirAll(filepath.Join(home, ".yolo/bin/launch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".yolo/bin/launch", self), []byte("#!/bin/bash\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_ = Serve(ln, testToken, func(context.Context, string) (Token, error) { return Token{}, nil })
+	}()
+	t.Cleanup(func() { _ = ln.Close() })
+
+	resp, err := http.PostForm("http://"+ln.Addr().String()+"/oauth/token", RefreshForm("yolo-broker:7"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(log.String(), "POST /oauth/token 401") {
+		if time.Now().After(deadline) {
+			t.Fatalf("no request line:\n%s", log.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	want := fmt.Sprintf(" caller=%s caller_pid=%d auth=missing-token", self, os.Getpid())
+	if line := log.String(); !strings.Contains(line, want) {
+		t.Errorf("the request line %q does not name its caller (%q)", line, want)
+	}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }

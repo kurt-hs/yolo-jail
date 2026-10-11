@@ -442,6 +442,9 @@ func TestHostScopedBrokerDaemonAnswersThroughTheFront(t *testing.T) {
 	o := &Options{}
 	fillDefaults(o)
 	o.Stdout = &buf
+	// What startLoopholesMatching sets before any front starts: this jail's crossing label.
+	o.crossingLabel = crossingLabelFor("yolo-singleton-test", "podman")
+	crossings := captureCrossingsIn(t, socketsDir)
 
 	h, ok := o.startHostSingleton(name, spec, socketsDir, "127.0.0.1", hostScopedDaemon())
 	if !ok {
@@ -489,5 +492,11 @@ func TestHostScopedBrokerDaemonAnswersThroughTheFront(t *testing.T) {
 			"still on hostservice.ServeUnix looks like: it consumed yolo's connection "+
 			"preamble AS this request, so every jail's OAuth refresh would fail on a "+
 			"connection both ends believe is healthy.", string(payload))
+	}
+	// A host-wide daemon serves every jail, but this front is this jail's: its crossing carries
+	// the launch's label.
+	_ = conn.Close()
+	if got := crossings.first(t).Label; got != o.crossingLabel {
+		t.Errorf("the host-wide front's crossing label = %+v, want %+v", got, o.crossingLabel)
 	}
 }

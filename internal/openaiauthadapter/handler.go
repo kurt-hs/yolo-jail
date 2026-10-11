@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
+	"github.com/mschulkind-oss/yolo-jail/internal/peercaller"
 	"github.com/mschulkind-oss/yolo-jail/internal/reqlog"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
@@ -131,7 +132,16 @@ func Handler(callerToken string, refresh Refresh, now func() time.Time) http.Han
 // requestLog is this adapter's log: one stamped line per refresh (internal/reqlog), and its own
 // diagnostics through it too. The token request's body is never logged: it carries the refresh
 // marker and the caller token bound into it.
-var requestLog = reqlog.New("openai-auth-adapter", os.Stderr)
+//
+// Every line names its caller (internal/peercaller): the agent whose process holds the other end
+// of the connection, found through /proc, since the refresh request names no agent.
+var requestLog = newRequestLog()
+
+func newRequestLog() *reqlog.Logger {
+	l := reqlog.New("openai-auth-adapter", os.Stderr)
+	l.ResolveCallers(peercaller.Budget, peercaller.Lookup)
+	return l
+}
 
 // The two refusal reasons, which differ only in what a caller that got one should check.
 const (

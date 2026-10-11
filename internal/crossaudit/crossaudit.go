@@ -57,6 +57,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
@@ -117,6 +118,11 @@ func InstallAt(path string) { svcendpoint.SetCrossingSink(openAt(path).record) }
 // Line renders one record: a timestamp, then logfmt-style key=value pairs in a
 // fixed order, one line, newline-terminated.
 //
+// cname= and ws= are the launch's own names for the jail (svcendpoint.CrossingLabel): its
+// container name and the workspace short code launches.log keys on (`host:<code>` for a
+// `yolo host` launch, as the host notch's perf log spells it). jail= stays first and unchanged,
+// so a reader keyed on it still matches.
+//
 // Deliberately close to internal/frameproto's per-request access line
 // (`jail=… keys=… rc=… elapsed_ms=… bytes_out=…`) so the two tiers read as
 // siblings; deliberately prefixed `crossing` so one grep separates them again.
@@ -128,9 +134,19 @@ func Line(c svcendpoint.Crossing) string {
 		reason = "-"
 	}
 	return fmt.Sprintf(
-		"%s crossing jail=%s service=%s via=%s outcome=%s reason=%s bytes_in=%d bytes_out=%d elapsed_ms=%d\n",
-		logstamp.Format(c.At), c.Jail, c.Service, c.Via, c.Outcome, reason,
-		c.BytesIn, c.BytesOut, c.Duration.Milliseconds())
+		"%s crossing jail=%s cname=%s ws=%s service=%s via=%s outcome=%s reason=%s bytes_in=%d bytes_out=%d elapsed_ms=%d\n",
+		logstamp.Format(c.At), c.Jail, labelValue(c.Label.Container), labelValue(c.Label.Workspace),
+		c.Service, c.Via, c.Outcome, reason, c.BytesIn, c.BytesOut, c.Duration.Milliseconds())
+}
+
+// labelValue renders one of the launch's names for the jail: "-" when the listener was not
+// labelled (a daemon's own endpoint, which no launch names), and never a value that could split
+// the line, though a container name and a short code are both host-chosen and carry neither.
+func labelValue(s string) string {
+	if s == "" || strings.ContainsAny(s, " \t\r\n=") {
+		return "-"
+	}
+	return s
 }
 
 // writer is the bounded append-only file behind the sink. One mutex covers the

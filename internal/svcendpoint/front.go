@@ -56,6 +56,12 @@ type FrontOptions struct {
 	// either way (crossing.go), so this is not a privacy switch and cannot be
 	// used as one.
 	NoPreamble bool
+
+	// Label is the launch's own names for the jail this front serves — its container name and
+	// its workspace's short code — stamped on every Crossing the front records, so the host's
+	// crossings.log names the jail as launches.log does. The zero value records neither, which
+	// is what a front started by anything but a launch does.
+	Label CrossingLabel
 }
 
 // ServeFrontWithOptions is ServeFront with per-daemon knobs; see FrontOptions.
@@ -65,7 +71,7 @@ func ServeFrontWithOptions(publishPath, advertiseHost, upstreamUnixPath string, 
 	// that NO per-request tier exists for them — splice does not parse the
 	// stream, and the preamble is the one thing yolo ADDS to it, never something
 	// it reads back.
-	ln, err := listenWith(publishPath, advertiseHost, CrossingViaFront, !opts.NoPreamble)
+	ln, err := listenWith(publishPath, advertiseHost, CrossingViaFront, !opts.NoPreamble, opts.Label)
 	if err != nil {
 		return err
 	}

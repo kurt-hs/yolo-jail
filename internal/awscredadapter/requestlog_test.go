@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -127,5 +131,53 @@ func TestACredentialRequestWaitingOnTheHostSaysSo(t *testing.T) {
 	<-done
 	if !strings.Contains(log.String(), "still in flight after") {
 		t.Errorf("the waiting line does not say how long:\n%s", log.String())
+	}
+}
+
+// THE LINE NAMES THE AGENT THAT ASKED, the 2026-10-11 incident's missing fact: a request with
+// no token, sent over a real loopback connection, is attributed through /proc to the agent
+// whose process holds the other end — here this test binary, named as an agent by a launcher
+// of its name in the home. Drives Serve, so it fails if the adapter's log stops resolving
+// callers.
+func TestARefusedRequestNamesTheAgentThatSentIt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("callers are named through Linux's /proc")
+	}
+	log := captureRequestLog(t)
+	home := t.TempDir()
+	self := filepath.Base(os.Args[0])
+	if err := os.MkdirAll(filepath.Join(home, ".yolo/bin/launch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".yolo/bin/launch", self), []byte("#!/bin/bash\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = Serve(ln, testToken, nil) }()
+	t.Cleanup(func() { _ = ln.Close() })
+
+	resp, err := http.Get("http://" + ln.Addr().String() + CredentialsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", resp.StatusCode)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(log.String(), "GET /credentials 401") {
+		if time.Now().After(deadline) {
+			t.Fatalf("no request line:\n%s", log.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	line := lastLine(t, log.String())
+	want := fmt.Sprintf(" caller=%s caller_pid=%d auth=missing-token", self, os.Getpid())
+	if !strings.Contains(line, want) {
+		t.Errorf("the request line %q does not name its caller (%q)", line, want)
 	}
 }

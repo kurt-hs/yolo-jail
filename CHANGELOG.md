@@ -15,7 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **Daemon logs you can reconstruct a request from.** Every jail daemon and host service log line
 now carries a millisecond timestamp, and the wire bridge and credential adapters log each request
 with its outcome, upstream status or error and timings, plus a line while one is still waiting.
-See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
+A credential adapter's line names the agent that asked, and the host's crossing log names each
+jail's container and workspace code. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
 ### Fixed
 
