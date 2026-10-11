@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
+	"github.com/mschulkind-oss/yolo-jail/internal/reqlog"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -56,22 +57,30 @@ func Handler(callerToken string, refresh Refresh, now func() time.Time) http.Han
 	if now == nil {
 		now = time.Now
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return requestLog.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entry := reqlog.From(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost || r.URL.Path != "/oauth/token" {
+			entry.Set("upstream", "-")
 			writeError(w, http.StatusNotFound, "invalid_request", "unknown OpenAI credential endpoint")
 			return
 		}
 		grantType, callerRefresh, ok := readTokenRequest(r)
 		if !ok {
+			entry.Set("upstream", "-")
+			entry.Set("note", "malformed token request")
 			writeError(w, http.StatusBadRequest, "invalid_request", "malformed token request")
 			return
 		}
 		if grantType != "refresh_token" {
+			entry.Set("upstream", "-")
+			entry.Set("note", "unsupported grant type")
 			writeError(w, http.StatusBadRequest, "unsupported_grant_type", "only refresh_token is supported")
 			return
 		}
 		if callerRefresh == "" {
+			entry.Set("upstream", "-")
+			entry.Set("note", "no refresh_token")
 			writeError(w, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 			return
 		}
@@ -83,21 +92,31 @@ func Handler(callerToken string, refresh Refresh, now func() time.Time) http.Han
 			if bound {
 				reason = callerTokenWrong
 			}
-			fmt.Fprintf(os.Stderr, "openai-auth-adapter: %s %s 401 — refused: caller token %s "+
-				"(the broker was not asked)\n", r.Method, r.URL.Path, reason)
+			entry.Set("auth", reason+"-token")
+			entry.Set("upstream", "-")
+			entry.Set("note", "refused: the broker was not asked")
 			w.Header().Set("WWW-Authenticate", `Bearer realm="yolo-openai-auth-adapter"`)
 			writeError(w, http.StatusUnauthorized, "invalid_client", callerRefusalMessage(reason))
 			return
 		}
+		entry.Set("auth", "ok")
+		entry.Set("upstream", "host-openai-auth-broker")
+		entry.Waiting("the host openai-auth-broker (the hop, or its refresh)")
+		started := time.Now()
 		token, err := refresh(r.Context(), marker)
+		entry.Set("upstream_ms", strconv.FormatInt(time.Since(started).Milliseconds(), 10))
 		if err != nil {
+			entry.Set("upstream_outcome", "failed")
+			entry.Set("upstream_error", strings.Join(strings.Fields(err.Error()), " "))
 			writeError(w, http.StatusBadGateway, "temporarily_unavailable", err.Error())
 			return
 		}
 		if token.AccessToken == "" || !validGenerationMarker(token.RefreshToken) || token.ExpiresAtMS <= 0 {
+			entry.Set("upstream_outcome", "incomplete")
 			writeError(w, http.StatusBadGateway, "server_error", "credential service returned an incomplete token view")
 			return
 		}
+		entry.Set("upstream_outcome", "ok")
 		expiresIn := max(0, int(time.UnixMilli(token.ExpiresAtMS).Sub(now()).Seconds()))
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  token.AccessToken,
@@ -106,8 +125,13 @@ func Handler(callerToken string, refresh Refresh, now func() time.Time) http.Han
 			"expires_in":    expiresIn,
 			"token_type":    "Bearer",
 		})
-	})
+	}))
 }
+
+// requestLog is this adapter's log: one stamped line per refresh (internal/reqlog), and its own
+// diagnostics through it too. The token request's body is never logged: it carries the refresh
+// marker and the caller token bound into it.
+var requestLog = reqlog.New("openai-auth-adapter", os.Stderr)
 
 // The two refusal reasons, which differ only in what a caller that got one should check.
 const (
@@ -171,12 +195,12 @@ func Main(args []string) int {
 		return 2
 	}
 	if len(fs.Args()) != 0 {
-		fmt.Fprintf(os.Stderr, "openai-auth-adapter: unexpected arguments: %v\n", fs.Args())
+		requestLog.Printf("unexpected arguments: %v", fs.Args())
 		return 2
 	}
 	callerToken, why := CallerToken(os.Getenv)
 	if why != "" {
-		fmt.Fprintln(os.Stderr, "openai-auth-adapter: idling, serving nothing:", why)
+		requestLog.Printf("idling, serving nothing: %s", why)
 		idleUntilStopped()
 		return 0
 	}
@@ -184,7 +208,7 @@ func Main(args []string) int {
 	refresh := func(_ context.Context, callerRefresh string) (Token, error) {
 		response, err := openauthclient.Request(endpoint, map[string]any{
 			"action": "refresh", "refresh_token": callerRefresh,
-		}, os.Stderr)
+		}, requestLog.Writer())
 		if err != nil {
 			return Token{}, err
 		}
@@ -196,13 +220,13 @@ func Main(args []string) int {
 	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "openai-auth-adapter:", err)
+		requestLog.Printf("%v", err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "openai-auth-adapter: serving on %s; every refresh must carry this "+
+	requestLog.Printf("serving on %s; every refresh must carry this "+
 		"launch's caller token ($%s)\n", listener.Addr(), openauthclient.CallerTokenEnv)
 	if err := Serve(listener, callerToken, refresh); err != nil {
-		fmt.Fprintln(os.Stderr, "openai-auth-adapter:", err)
+		requestLog.Printf("%v", err)
 		return 1
 	}
 	return 0

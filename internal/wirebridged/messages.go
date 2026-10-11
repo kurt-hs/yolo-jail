@@ -206,7 +206,7 @@ func newMessagesPassthrough(upstreamBaseURL string, models map[string]bool, sign
 		return nil
 	}
 	return &messagesPassthrough{url: u, models: models, signer: signer,
-		client: &http.Client{Transport: upstreamTransport}}
+		client: &http.Client{Transport: observedUpstream}}
 }
 
 // claims reports whether this pass-through carries a request for model, and the id it sends:

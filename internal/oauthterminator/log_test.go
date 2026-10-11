@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // TestRedactedRespStripsBody: the malformed-proxy-response log line must NOT
@@ -64,6 +65,11 @@ func TestLogFormatAndGating(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "INFO oauth-broker-jail: request: POST /v1/oauth/token") {
 		t.Errorf("info line = %q", out)
+	}
+	// The one daemon-log stamp (local time, milliseconds, offset), so the supervisor does
+	// not stamp the line a second time.
+	if !logstamp.HasStamp([]byte(out)) {
+		t.Errorf("info line carries no logstamp timestamp: %q", out)
 	}
 	if strings.Contains(out, "hidden") {
 		t.Errorf("DEBUG emitted without verbose: %q", out)

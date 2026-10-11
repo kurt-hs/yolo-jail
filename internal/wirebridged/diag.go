@@ -14,10 +14,10 @@ package wirebridged
 // the next one is a single `grep` in the file below.
 //
 // THE SINK, established rather than assumed: this daemon is a supervised child
-// of `yolo-jaild supervise`, which sets BOTH cmd.Stdout and cmd.Stderr to
-// <supervisor.LogDir()>/wire-bridge.log — i.e.
-// ~/.local/state/yolo-jail-daemons/wire-bridge.log, rotated at 5 MB
-// (internal/supervisor's openLog/child.start). So a plain write to os.Stderr
+// of `yolo-jaild supervise`, which sets BOTH cmd.Stdout and cmd.Stderr to a pipe it
+// copies, line by line, into <supervisor.LogDir()>/wire-bridge.log — i.e.
+// ~/.local/state/yolo-jail-daemons/wire-bridge.log, rotated at 5 MB while the daemon
+// runs (internal/supervisor's daemonlog.go). So a plain write to os.Stderr
 // LANDS IN A FILE a human can open, and there is no other channel out of this
 // process: the supervisor's own stderr is /dev/null in a real jail. That file's
 // other writer is the supervisor itself (its prefixed `logf` lines — restarts,
@@ -41,6 +41,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // diagSink is where every line goes. It is a variable for exactly one reason —
@@ -57,8 +59,12 @@ var (
 // in one place: the log file is shared with the supervisor's own lines and with
 // this daemon's concurrent request goroutines, so an interleaved half-line would
 // be a torn record in the one file the 8214 hunt needed.
+//
+// Every line opens with the daemon-log timestamp (internal/logstamp: local time, milliseconds,
+// offset), taken here when the line is written rather than by the supervisor when it copies the
+// line, so a request line's time is the daemon's and a test of this sink sees it too.
 func logf(format string, args ...any) {
-	line := "wire-bridge: " + strings.TrimRight(fmt.Sprintf(format, args...), "\n") + "\n"
+	line := logstamp.Now() + " wire-bridge: " + strings.TrimRight(fmt.Sprintf(format, args...), "\n") + "\n"
 	diagMu.Lock()
 	defer diagMu.Unlock()
 	_, _ = io.WriteString(diagSink, line)

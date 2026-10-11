@@ -45,6 +45,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -674,8 +675,8 @@ func (r *Running) spawn(verb string) (*serviceProcess, string) {
 		return nil, err.Error()
 	}
 	defer logFile.Close()
-	fmt.Fprintf(logFile, "[yolo launch %d %s] %s %s\n", os.Getpid(),
-		time.Now().Format(time.RFC3339), verb, strings.Join(r.Argv, " "))
+	fmt.Fprintf(logFile, "%s [yolo launch %d] %s %s\n", logstamp.Now(), os.Getpid(),
+		verb, strings.Join(r.Argv, " "))
 	readyR, readyW, err := os.Pipe()
 	if err != nil {
 		return nil, err.Error()

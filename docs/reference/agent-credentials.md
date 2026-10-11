@@ -1045,6 +1045,35 @@ starts no host service but the OpenAI one, and the Claude broker for a launch th
 credential view, so none of this runs there.
 [The backend table](#per-backend-differences) has the row.
 
+#### <a id="the-adapters-logs"></a>The adapters' logs
+
+The AWS credential adapter writes one line per request, as does the Codex refresh adapter
+(`openai-auth-adapter`). In a jail the lines go to `aws-auth.log` and `openai-auth-broker.log`
+under `~/.local/state/yolo-jail-daemons/`. On `macos-user` the adapter runs outside the sandbox,
+and its lines go to `launch-service-aws-auth.log` under `~/.local/share/yolo-jail/logs/`. Each
+line starts with the timestamp every yolo daemon log uses: local time with milliseconds and the
+zone's offset.
+
+```text
+2026-10-11T12:17:03.412-04:00 aws-credential-adapter: request #12 GET /credentials 401 peer=127.0.0.1:40122 auth=missing-token upstream=- note="refused: the host service was not asked" bytes_out=545 elapsed_ms=0
+2026-10-11T12:17:04.020-04:00 aws-credential-adapter: request #13 GET /credentials 200 peer=127.0.0.1:40130 auth=ok upstream=host-aws-auth upstream_ms=3 upstream_outcome=ok bytes_out=1280 elapsed_ms=4
+```
+
+- `auth` is `ok`, `missing-token` or `wrong-token`. A refused request never reaches the host
+  service, so it has `upstream=-`.
+- `upstream_outcome` is `ok`, `refused` (with the host's `upstream_code`, such as
+  `ExpiredToken`), `unreachable` (with the hop's `upstream_error`) or `incomplete` (with the
+  `missing` fields). `upstream_ms` is how long the host service took.
+- `peer` is the caller's address and port. The protocol does not say which agent is calling, so
+  the line cannot name one.
+- A request the host has not answered after 30 seconds gets a `still in flight` line, and another
+  every 30 seconds after that.
+
+No line holds the caller token, a credential, or the host's message text. Tests send the real
+token and a wrong one and fail if either reaches the log. On the host side,
+`host-service-aws-auth.log` and `crossings.log` use the same timestamp, so a request can be
+followed from the adapter to the host service.
+
 #### What has been watched running
 
 **MEASURED on 2026-09-29**, on a Linux host with rootless podman, where the launcher reported
@@ -1310,6 +1339,7 @@ $ rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc
 | AWS mint timing | re-mint below **10 min** of remaining life (twice the SDK's five-minute window), a pre-mint tick at half that; `AssumeRole` asks **3600 s**, the role-chaining ceiling, as session name `yolo-jail` | `internal/awsauth` (`RemintLead`, `Broker.TickInterval`, `MintDuration`, `SessionName`) |
 | AWS lapse answer | a `4xx` with `Code: ExpiredToken` and a message naming `aws sso login --profile <profile>`; a profile missing from `~/.aws/config` answers `ProfileNotFound` instead | `internal/awsauth` (`loginRequired`, `mint.go`) |
 | AWS caller refusal | `401`, `Code: CallerUnauthenticated` | `internal/awscredadapter` (`handler.go`) |
+| Adapter request log | one line per request, stamped `2026-10-11T12:17:03.412-04:00` (local time, milliseconds, offset); a `still in flight` line every **30 s** while one is unanswered ([format](#the-adapters-logs)) | `internal/reqlog` (`StillWaitingInterval`); `internal/logstamp` (`Layout`); `internal/awscredadapter`, `internal/openaiauthadapter` (`requestLog`) |
 | AWS service log | `~/.local/share/yolo-jail/logs/host-service-aws-auth.log` on the host: the profile, the narrowing and the SSO form at start, then each failed mint the pre-mint ticker or a launch check ran | `internal/awsauthdaemon` (`reportStartup`, `mintTracker`) |
 | AWS launch check | declared as `host_daemon.launch_check: true`; asked by a launch that serves the adapter; answered from the cache, or from the mint a cold cache needs, within a **2 s** budget the daemon clamps to at most **5 s**, the launch reading **1 s** past it; a failure prints `loophole aws-auth: cannot mint a Bedrock credential for this launch: …` | `packs/aws-auth/loopholes/aws-auth/manifest.jsonc`; `internal/hostservice` (`LaunchCheckBudget`, `LaunchCheckBudgetCap`), `internal/awsauthdaemon` (`launchcheck.go`), `internal/cli/run` (`launchcheck.go`, `launchCheckMargin`) |
 | AWS canonical state | `<loophole state>/credentials.json`, mode `0600` in a `0700` directory | `internal/awsauth` (`state.go`) |

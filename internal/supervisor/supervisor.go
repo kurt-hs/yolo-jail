@@ -8,9 +8,11 @@
 // Frozen contracts: the YOLO_JAIL_DAEMONS JSON shape +
 // skip-invalid-entry parsing, the restart policies (always | on-failure | no),
 // which govern a failure to SPAWN exactly as they govern an exit,
-// per-daemon logs at ~/.local/state/yolo-jail-daemons/<name>.log rotated once
-// at 5 MB (.log -> .log.1) and carrying the supervisor's own spawn-failure and
-// giving-up lines beside the child's output, the 1s→30s exponential backoff,
+// per-daemon logs at ~/.local/state/yolo-jail-daemons/<name>.log rotated to ONE
+// archived generation at 5 MB (.log -> .log.1) — at every spawn AND while the
+// daemon runs, since the supervisor copies the child's output into it
+// (daemonlog.go) — every line carrying a logstamp timestamp, the supervisor's own
+// spawn-failure and giving-up lines beside the child's output, the 1s→30s exponential backoff,
 // and SIGTERM/SIGINT → terminate children (5s grace → kill).
 package supervisor
 
@@ -28,14 +30,19 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 const (
-	logMaxBytes           = 5 * 1024 * 1024 // 5 MB
 	restartBackoffInitial = 1.0
 	restartBackoffMax     = 30.0
 )
+
+// logMaxBytes is the per-daemon log's cap (5 MB), past which it moves to <name>.log.1. A
+// variable only so a test can reach the live rotation without writing 5 MB; never rebound in
+// production.
+var logMaxBytes int64 = 5 * 1024 * 1024
 
 // LogDir returns ~/.local/state/yolo-jail-daemons (paths.JailDaemonLogsRel, which an install
 // capture excludes by the same spelling).
@@ -134,12 +141,15 @@ func openLog(name string) (*os.File, error) {
 	if err := os.MkdirAll(LogDir(), 0o755); err != nil {
 		return nil, err
 	}
-	p := filepath.Join(LogDir(), name+".log")
+	p := logPath(name)
 	if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() && info.Size() > logMaxBytes {
-		_ = os.Rename(p, filepath.Join(LogDir(), name+".log.1"))
+		_ = os.Rename(p, p+".1")
 	}
 	return os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 }
+
+// logPath is <LogDir>/<name>.log.
+func logPath(name string) string { return filepath.Join(LogDir(), name+".log") }
 
 // child supervises one daemon.
 type child struct {
@@ -152,6 +162,10 @@ type child struct {
 	// read under mu together with cmd, which is what makes teardown and a spawn
 	// still in flight mutually exclusive rather than a race — see start().
 	stopping bool
+	// copied is closed when the current spawn's output copier (daemonlog.go) has
+	// read its pipe to EOF and closed the log, so the exit line follows the
+	// child's last line rather than racing it.
+	copied chan struct{}
 }
 
 // errStopping is start()'s report that teardown claimed this child while the
@@ -195,16 +209,32 @@ func (c *child) start() error {
 			cmd.Env = append(os.Environ(), paths.JailDaemonReadyFDEnv+"=3")
 		}
 	}
-	cmd.Stdout = lf
-	cmd.Stderr = lf
+	// THE CHILD WRITES TO A PIPE, NOT THE FILE: the supervisor copies each line into
+	// the log with a timestamp (daemonlog.go), so a daemon's bare prints and its
+	// panic trace are placed in time too, and the log rotates while it runs.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		if ready != nil {
+			_ = ready.Close()
+		}
+		lf.Close()
+		return err
+	}
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 	err = cmd.Start()
 	if ready != nil {
 		_ = ready.Close()
 	}
+	// Our copy of the write end goes either way: the child holds its own.
+	_ = pw.Close()
 	if err != nil {
+		_ = pr.Close()
 		lf.Close()
 		return err
 	}
+	copied := make(chan struct{})
+	go copyDaemonOutput(pr, newDaemonSink(c.spec.Name, lf), copied)
 	// Publishing is where a spawn and teardown meet, so it is the ONE place that
 	// can decide between them. terminate() reads c.cmd under this mutex and
 	// returns when it is nil, which it is for the whole of a spawn up to this
@@ -224,14 +254,13 @@ func (c *child) start() error {
 		c.mu.Unlock()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait() // reap it; nothing else will
-		_ = lf.Close()
+		awaitCopy(copied)
 		return errStopping
 	}
 	c.cmd = cmd
 	c.done = make(chan struct{})
+	c.copied = copied
 	c.mu.Unlock()
-	// Close our copy of the fd; the child holds its own.
-	_ = lf.Close()
 	return nil
 }
 
@@ -252,8 +281,7 @@ func (c *child) logf(format string, args ...any) {
 		return
 	}
 	defer lf.Close()
-	_, _ = fmt.Fprintf(lf, "[yolo-jaild %s] %s\n",
-		time.Now().Format(time.RFC3339), fmt.Sprintf(format, args...))
+	_, _ = fmt.Fprintf(lf, "%s [yolo-jaild] %s\n", logstamp.Now(), fmt.Sprintf(format, args...))
 }
 
 // waitAndMaybeRestart waits for a child that DID spawn and reports whether to
@@ -264,9 +292,11 @@ func (c *child) waitAndMaybeRestart(stop <-chan struct{}) bool {
 	c.mu.Lock()
 	cmd := c.cmd
 	done := c.done
+	copied := c.copied
 	c.mu.Unlock()
 	err := cmd.Wait()
 	close(done) // signal terminate() that this process has reaped
+	awaitCopy(copied)
 	if isStopped(stop) {
 		return false
 	}

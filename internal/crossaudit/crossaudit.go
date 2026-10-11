@@ -58,8 +58,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
@@ -100,7 +100,15 @@ func DefaultPath() string {
 // Nothing is opened here. The first CROSSING opens the file, so an invocation
 // that crosses nothing — `yolo --version`, every test binary that never installs
 // — writes nothing and creates no directory.
-func Install() { InstallAt(DefaultPath()) }
+//
+// It also gives svcendpoint.Logger the one daemon-log timestamp (internal/logstamp). The
+// transport stays a stdlib-only leaf, so its default logger carries no stamp of its own: in a
+// jail, the supervisor stamps each line a daemon writes, and in a host process — every one of
+// which is this binary, and passes through here — this is where the stamp is set.
+func Install() {
+	svcendpoint.Logger = logstamp.Logger(os.Stderr, "")
+	InstallAt(DefaultPath())
+}
 
 // InstallAt is Install pointed somewhere else. For tests, and for a caller that
 // has already resolved which home it is writing into.
@@ -121,7 +129,7 @@ func Line(c svcendpoint.Crossing) string {
 	}
 	return fmt.Sprintf(
 		"%s crossing jail=%s service=%s via=%s outcome=%s reason=%s bytes_in=%d bytes_out=%d elapsed_ms=%d\n",
-		c.At.UTC().Format(time.RFC3339), c.Jail, c.Service, c.Via, c.Outcome, reason,
+		logstamp.Format(c.At), c.Jail, c.Service, c.Via, c.Outcome, reason,
 		c.BytesIn, c.BytesOut, c.Duration.Milliseconds())
 }
 

@@ -18,10 +18,8 @@ package awscredadapter
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"net"
-	"os"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 )
@@ -34,7 +32,7 @@ func DoorwayMain(args []string) int {
 		return 2
 	}
 	if len(fs.Args()) != 0 {
-		fmt.Fprintf(os.Stderr, "aws-credential-adapter: unexpected arguments: %v\n", fs.Args())
+		requestLog.Printf("unexpected arguments: %v", fs.Args())
 		return 2
 	}
 	return launchservice.ServeListener(LoopholeName, *listen, doorwayPrepare(Request))
@@ -54,12 +52,12 @@ func doorwayPrepare(request func(string, any, io.Writer) (Answer, error)) launch
 		// exactly as the jail's copy answers when its endpoint is missing (Handler).
 		endpoint := getenv(EndpointEnv)
 		if endpoint == "" {
-			fmt.Fprintf(os.Stderr, "aws-credential-adapter: the launch handed this doorway no "+
+			requestLog.Printf("the launch handed this doorway no "+
 				"endpoint ($%s is unset), so the host aws-auth service did not start; every "+
 				"request is answered ServiceUnreachable\n", EndpointEnv)
 		}
 		fetch := func() (Answer, error) {
-			return request(endpoint, map[string]any{"action": "credentials"}, os.Stderr)
+			return request(endpoint, map[string]any{"action": "credentials"}, requestLog.Writer())
 		}
 		return func(l net.Listener) error { return Serve(l, token, fetch) }, nil
 	}

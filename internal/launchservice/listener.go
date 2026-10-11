@@ -23,6 +23,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -43,7 +44,7 @@ func ServeListener(service, listen string, prepare Prepare) int {
 
 func serveListener(service, listen string, prepare Prepare, getenv func(string) string) int {
 	fail := func(why string) int {
-		fmt.Fprintf(os.Stderr, "%s: the doorway cannot start: %s\n", service, why)
+		fmt.Fprintf(os.Stderr, "%s %s: the doorway cannot start: %s\n", logstamp.Now(), service, why)
 		reportReadiness(getenv, "failed "+service+" "+oneLine(why))
 		return 1
 	}
@@ -79,7 +80,7 @@ func serveListener(service, listen string, prepare Prepare, getenv func(string) 
 	}
 	done := make(chan error, 1)
 	go func() { done <- serve(l) }()
-	fmt.Fprintf(os.Stderr, "%s: serving on %s for this launch; every request must carry its caller token\n",
+	fmt.Fprintf(os.Stderr, "%s %s: serving on %s for this launch; every request must carry its caller token\n", logstamp.Now(),
 		service, l.Addr())
 	reportReadiness(getenv, "ready "+service)
 	select {
@@ -89,7 +90,7 @@ func serveListener(service, listen string, prepare Prepare, getenv func(string) 
 		return 0
 	case err := <-done:
 		if err != nil && !errors.Is(err, net.ErrClosed) {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", service, err)
+			fmt.Fprintf(os.Stderr, "%s %s: %v\n", logstamp.Now(), service, err)
 			return 1
 		}
 		return 0

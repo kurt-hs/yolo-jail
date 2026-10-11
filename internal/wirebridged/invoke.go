@@ -76,7 +76,7 @@ func newInvokePassthrough(upstreamBaseURL string, signer *bedrockSigner) *invoke
 		prefix = strings.TrimSuffix(p, runtimeOpenAIPath)
 	}
 	return &invokePassthrough{scheme: u.Scheme, host: u.Host, prefix: prefix, signer: signer,
-		client: &http.Client{Transport: upstreamTransport}}
+		client: &http.Client{Transport: observedUpstream}}
 }
 
 // parseInvokePath reads `/model/{id}/{op}` off a request's escaped path: the model id, decoded,

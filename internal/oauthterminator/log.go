@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"os"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // Operational logging — the (lighter) forensics contract ported from
@@ -48,7 +50,7 @@ func SetupLog(path string, verbose bool) {
 
 // setupLogWriter is the injectable core (tests point it at a bytes.Buffer).
 func setupLogWriter(w io.Writer, verbose bool) {
-	logger = log.New(w, "", log.LstdFlags)
+	logger = logstamp.Logger(w, "")
 	logVerbose = verbose
 }
 

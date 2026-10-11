@@ -10,6 +10,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**Daemon logs you can reconstruct a request from.** Every jail daemon and host service log line
+now carries a millisecond timestamp, and the wire bridge and credential adapters log each request
+with its outcome, upstream status or error and timings, plus a line while one is still waiting.
+See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
+
 ## [0.13.0] - 2026-10-09
 
 Pi keeps to the active profile set, Nix builds made in a jail survive host garbage collection,

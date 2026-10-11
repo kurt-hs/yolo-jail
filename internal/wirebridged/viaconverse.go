@@ -56,7 +56,7 @@ func newConversePassthrough(agent, provider, openaiBase string, signer *bedrockS
 		return nil
 	}
 	return &conversePassthrough{agent: agent, provider: provider, scheme: scheme, host: host,
-		prefix: prefix, signer: signer, client: &http.Client{Transport: upstreamTransport}}
+		prefix: prefix, signer: signer, client: &http.Client{Transport: observedUpstream}}
 }
 
 // converseBase splits a Bedrock upstream's OpenAI base URL into where its Converse routes live:
