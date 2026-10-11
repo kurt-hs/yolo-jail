@@ -341,7 +341,9 @@ func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, runs stri
 // — it has its own, and a launch waits for it interruptibly (PF-D25), which a wait on the floor's
 // unbounded lock would not be — and then the install of the good build it leaves, under the lock.
 func (f *Floor) ensurePatched(ctx context.Context, p Program) (Status, Outcome, error) {
+	endPrepare := f.span(p.Bin(), "prepare") // the advance: check, replay, build, admit
 	prepared, err := f.PreparePatched(ctx, p, true)
+	endPrepare()
 	if err != nil {
 		return f.Status(p), "", err
 	}
@@ -405,8 +407,10 @@ func (f *Floor) installFromPatchedState(ctx context.Context, p Program, dir stri
 		return nil, &noEntryError{reason: why}
 	}
 	home := filepath.Join(dir, "home")
+	endMaterialize := f.span(p.Bin(), "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: g.Entry, Home: home, Stderr: f.out(),
 		Confined: true})
+	endMaterialize()
 	if errors.Is(err, capture.ErrNotRelocatable) {
 		buildHome := "/home/agent"
 		if m, merr := capture.ReadManifest(g.Entry.Root); merr == nil && m.Home != "" {
@@ -432,6 +436,7 @@ func (f *Floor) installFromPatchedState(ctx context.Context, p Program, dir stri
 	f.say("materialized %s from fork build %s (%s) by %s (%d files)", p.Bin(), g.Entry.Key, g.Label,
 		res.Mechanism(), res.Files)
 	rec := &Record{Entry: entryPath, Capture: g.Entry.Key, Revision: g.Commit, Recipe: g.Recipe, Version: g.Label}
+	defer f.span(p.Bin(), "exec_record")()
 	return f.execRecord(ctx, in, rec)
 }
 

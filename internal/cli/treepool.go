@@ -222,7 +222,9 @@ func (w orderedWriter) Write(p []byte) (int, error) {
 	defer o.mu.Unlock()
 	s := o.slots[w.i]
 	if s.log != nil {
-		_, _ = s.log.Write(p)
+		// ANSI-FREE, as a launch log's copy is (run's teeLog): the lines arrive rendered for the
+		// terminal, and a log full of escape sequences is a log nobody greps twice.
+		_, _ = s.log.Write(jailTailANSI.ReplaceAll(p, nil))
 	}
 	if w.i == o.head {
 		return o.stream(w.toErr).Write(p)

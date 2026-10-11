@@ -473,6 +473,7 @@ func materializeHostTree(f packload.Fork, entry *capture.Entry, version string) 
 	if isDir(version) {
 		return nil
 	}
+	defer advanceSpan(f, "materialize").End()
 	if err := os.MkdirAll(paths.HostTreesDir(), 0o700); err != nil {
 		return err
 	}

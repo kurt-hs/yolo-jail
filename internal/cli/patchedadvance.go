@@ -1057,7 +1057,12 @@ func (a *advance) run() advanceResult {
 		// Under a CHECK SLOT of the pool (XB-D10): a Ctrl-C while it waits for one ends it unchecked, as
 		// one during the check does.
 		var res packsrc.CheckResult
+		// TIMED (hostactperf.go): the wait for a check slot, then the check itself — the upstream's fetch
+		// and the record and mirror locks it takes.
+		slotWait := advanceSpan(f, "check_wait")
 		checked := a.checkSlot(func() {
+			slotWait.End()
+			defer advanceSpan(f, "check").End()
 			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force, Now: patchedNow,
 				Begin: func() (func(string), func()) {
 					if a.o.slot != nil {
@@ -1073,6 +1078,7 @@ func (a *advance) run() advanceResult {
 					return func(line string) { a.dim("%s", line) }, func() {}
 				}})
 		})
+		slotWait.End()
 		if !checked {
 			// A CTRL-C ENDED THE POOL'S WAIT before a check slot was free: nothing was asked.
 			return a.actStopped()
@@ -1606,6 +1612,7 @@ func (a *advance) buildFailure(commit string) *packsrc.EntryOutcome {
 // (not the series' base alone), whose apply error finish records (PF-D45). It takes what is left of
 // the replay's bound (PF-D44).
 func (a *advance) walk(list []packsrc.ListEntry, ofList bool) packsrc.WalkResult {
+	defer advanceSpan(a.f, "replay").End() // the series replayed onto each candidate on the list
 	a.replayRecordAuthorized = false
 	start := time.Now()
 	snapshot, err := a.replaySnapshot()
@@ -1801,8 +1808,11 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	if a.o.host {
 		// AT THE HOST the build jail's own stdout is this process's stderr (hostJailStdout): a
 		// `yolo host` launch's stdout is the agent's. A child's build jail writes to the child's own
-		// streams, the writers runForkBuildChild hands it.
+		// streams, the writers runForkBuildChild hands it. And it is KEPT, in the build's own log
+		// (buildJailOutput): the raw stream reaches no launch log, so without it a host build's output
+		// was in no file at all.
 		mode.jailStdout = hostJailStdout()
+		mode.keepJailOutput = true
 	}
 	if a.o.launch {
 		mode.lock = pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: a.ctx.Done()}
@@ -1834,7 +1844,10 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		// ends it unbuilt, as one during the build does (130, read by settle as the interrupt).
 		mode.runJail = func(staging string, b forkBuild, s captureStreams) int {
 			rc := 130
+			slotWait := advanceSpan(f, "build_slot_wait")
+			defer slotWait.End()
 			a.o.pool.build(a.ctx, func() {
+				slotWait.End()
 				if a.o.started != nil {
 					a.o.started()
 				}
@@ -2302,6 +2315,7 @@ func (a *advance) handedNow(r advanceResult) string {
 // the reap of what the move leaves behind. reason is what the jail is handed when nothing serves.
 func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *packsrc.EntryOutcome, reason string) advanceResult {
 	f := a.f
+	defer advanceSpan(f, "finish").End() // the record's writes, the hand, the reap
 	var res advanceResult
 	var moved, lost bool
 	packs := a.packs

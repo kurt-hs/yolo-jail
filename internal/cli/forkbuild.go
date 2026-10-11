@@ -51,6 +51,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -375,6 +376,12 @@ type buildMode struct {
 	// (captureStreams.jailOut and sessionOut); nil is this process's. The host floor's build and
 	// the host's advances name this process's stderr (hostJailStdout).
 	jailStdout io.Writer
+	// keepJailOutput tees the build jail's own output — its boot's lines, its session's, its stderr
+	// — into the build's log under yolo's host log directory (buildJailOutput), beside the streams it
+	// goes to, and says where once: a host build's, whose jail streams are this process's raw stderr,
+	// which neither host-launch.log nor any other file keeps. Ignored with a report (run), whose
+	// streams are the launch's log and the build's own already.
+	keepJailOutput bool
 	// runtime is the runtime the build jail boots with, handed to the run pipeline for this build
 	// alone (captureAct.runtime); "" is the one a launch resolves. A Mac's host floor names
 	// macos-user (FP-D24), whose build is the macos-user fork-build act and of darwin, and
@@ -699,6 +706,7 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 		// be the upstream unpatched, admitted under a recipe no reader asks for.
 		return nil, fmt.Errorf("fork %s is a patched fork, and its build was asked for with no series read", f.Key())
 	}
+	lockWait := advanceSpan(f, "build_lock_wait")
 	lk, err := pidlock.Acquire(b.lockPath(), mode.lock, func(pid int) {
 		if mode.run != nil {
 			mode.run.phase(fmt.Sprintf("waiting for pid %d's build of it, at most %s", pid, forkBuildWaitBound))
@@ -707,6 +715,7 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 		pr.Printf("[dim]waiting for pid %d, which is building %s at %s (at most %s)[/dim]",
 			pid, f.Bin, shortSHA(b.Commit), forkBuildWaitBound)
 	})
+	lockWait.End()
 	switch {
 	case errors.Is(err, pidlock.ErrHeld):
 		return nil, fmt.Errorf("%w (%s at %s; lock: %s)", errForkBuildLocked, f.Key(), shortSHA(b.Commit), b.lockPath())
@@ -720,7 +729,9 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 	defer lk.Release()
 	entry, err := buildForkUnderLock(b, mode, store, pr, out, errw, color)
 	if mode.settle != nil {
+		sp := advanceSpan(f, "settle")
 		mode.settle(entry, err)
+		sp.End()
 	}
 	return entry, err
 }
@@ -820,6 +831,8 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		mode.retainWorkspace = &retained
 	}
 	defer func() {
+		// TIMED: the wait for the jail to be known gone, its diagnostics kept, the workspace removed.
+		defer advanceSpan(f, "cleanup").End()
 		if !*mode.retainWorkspace {
 			if !workspaceLaunchHeld {
 				release, safe := forkBuildWorkspaceReclaimable(staging, cname)
@@ -837,6 +850,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	}()
 	src := filepath.Join(staging, forkSourceLeaf)
 	tree := ""
+	sourceSp := advanceSpan(f, "source") // the series replayed into src/, or the source checked out
 	if b.Series != nil {
 		// A PATCHED FORK: the series replayed onto the commit on the host, in a scratch repository
 		// outside this workspace, and the patched subdirectory copied into src/ (§5.1).
@@ -874,6 +888,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			pr.Printf("[dim]  %s[/dim]", richtext.Escape(sealDisclosure("")+"; "+buildRuns(f, b.buildLine())))
 		}
 	}
+	sourceSp.End()
 	runJail := mode.runJail
 	if runJail == nil {
 		runJail = func(staging string, b forkBuild, s captureStreams) int {
@@ -890,6 +905,15 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		streams.cleanupUnconfirmed = mode.retainWorkspace
 		streams.lifetimeReturned = new(bool)
 	}
+	if mode.run == nil && mode.keepJailOutput {
+		if kept := openBuildJailOutput(staging, fmt.Sprintf("%s at %s", f.Key(), shortSHA(b.Commit))); kept != nil {
+			defer kept.close()
+			streams.jailOut = kept.tee(streams.jailOut, os.Stdout)
+			streams.jailErr = kept.tee(streams.jailErr, os.Stderr)
+			streams.sessionOut = kept.tee(streams.sessionOut, os.Stdout)
+			pr.Printf("[dim]  its build jail's output is in %s as it runs[/dim]", richtext.Escape(kept.path))
+		}
+	}
 	mode.run.phase("in its sealed jail")
 	// THE JAIL'S LAST LINES, kept as they stream past, the launch's and the jail's own apart: a jail
 	// that stops before its build line ran is relayed with them (forkBuildNotStarted). Without a
@@ -900,6 +924,10 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	// THE BUILD'S OWN WORKSPACE, as the build saw it: a link into it dangles once the build ends.
 	workspace := forkBuildWorkspace(mode.runtime, b.id())
 	ownershipUnproven := false
+	// TIMED, step by step: the build jail (with the wait for a build slot inside it, in a pool), the
+	// wait for that jail to be known gone (reclaim), then the admission of its output into the store
+	// (admit: the manifest read, the checks, the digest and the rename), and the receipt.
+	var admitSp *perf.Span
 	entry, m, err := captureStaged(store, staging,
 		func() int {
 			if releaseWorkspaceLaunch != nil {
@@ -907,7 +935,9 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 				releaseWorkspaceLaunch = nil
 				workspaceLaunchHeld = false
 			}
+			jailSp := advanceSpan(f, "build_jail")
 			rc := runJail(staging, b, streams)
+			jailSp.End()
 			*streams.lifetimeReturned = forkBuildRunReturned(staging)
 			if !*streams.lifetimeReturned {
 				if _, runtimeErr := readForkBuildRuntime(staging); runtimeErr == nil {
@@ -925,7 +955,9 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 				fmt.Fprintln(errw, "The build capture has no trustworthy original-backend record; no output was admitted.")
 				return 1
 			}
+			reclaimSp := advanceSpan(f, "reclaim")
 			release, safe := forkBuildWorkspaceReclaimable(staging, cname)
+			reclaimSp.End()
 			if !safe {
 				*mode.retainWorkspace = true
 				ownershipUnproven = true
@@ -934,6 +966,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			}
 			releaseWorkspaceLaunch = release
 			workspaceLaunchHeld = true
+			admitSp = advanceSpan(f, "admit")
 			return 0
 		},
 		func(m *capture.Manifest) string {
@@ -952,6 +985,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			}
 			return linksIntoTheBuild(m, workspace)
 		})
+	admitSp.End()
 	if err != nil && ownershipUnproven {
 		// The build itself ran; what is unproven is that its jail is gone. That is no verdict on the
 		// commit, so it is not reported as a failed build.
@@ -972,6 +1006,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	if err != nil {
 		return nil, err
 	}
+	defer advanceSpan(f, "receipt").End()
 	receipt := entrypoint.BuildReceipt{
 		Bin: f.Bin, Source: b.buildSource(), Key: entry.Key, Digest: capture.DigestHash(entry.Digest),
 		Bytes: m.TotalBytes(), Path: entry.Root, Platform: m.Platform, Revision: b.Commit,

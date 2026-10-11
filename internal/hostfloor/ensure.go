@@ -78,9 +78,11 @@ func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) 
 	if err := f.ensureDir("bin", "programs", "records", "locks"); err != nil {
 		return st, "", err
 	}
+	endWait := f.span(p.Bin(), "lock_wait")
 	lk, err := acquire(f.lockPath(p.Bin()), true, func(pid int) {
 		f.say("waiting for pid %d, which is installing %s into yolo's floor", pid, p.Bin())
 	})
+	endWait()
 	if err != nil {
 		return st, "", err
 	}
@@ -396,6 +398,7 @@ func (f *Floor) install(ctx context.Context, p Program) (*Record, error) {
 // a later good-build pointer. A nil selection keeps ordinary recipes on their existing path.
 func (f *Floor) installSelected(ctx context.Context, p Program, patched *PatchedState) (*Record, error) {
 	bin := p.Bin()
+	defer f.span(bin, "install")()
 	prev, err := f.readRecord(bin)
 	if errors.Is(err, ErrNewerRecord) {
 		// Never written over, whoever calls (Ensure refuses before it gets here).
@@ -429,6 +432,9 @@ func (f *Floor) installSelected(ctx context.Context, p Program, patched *Patched
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
+	// THE PUBLISH, timed apart from the recipe: the loader check, the switch, and the prune of every
+	// older install directory, which for a build of thousands of files is a removal of thousands.
+	defer f.span(bin, "publish")()
 	// THE PROGRAM THE RECIPE LEFT, checked before the switch (HP-D15): whatever the recipe — an npm
 	// package's native build, a fork's, a capture the checks above could not see — a program asking
 	// for a dynamic loader this machine lacks has no floor entry here, and serving it would only be a

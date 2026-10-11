@@ -319,6 +319,11 @@ type Floor struct {
 	// nil => HintLocations. A test hands in folders under its own root, so what it reports never
 	// depends on what this machine keeps in /opt/homebrew/bin.
 	Hints func(home string) []string
+	// Span starts the named timing span of one of the floor's steps and returns its end: an
+	// install's preparation (the patched advance), its wait for the floor's lock, the install, and
+	// inside it the materialize of a build and the launcher's record (floor.<bin>.<step>; docs/
+	// reference/perf-logging.md). nil => nothing is timed.
+	Span func(name string) (end func())
 	// Out receives the progress lines and the installers' own output. nil => discarded.
 	Out io.Writer
 	// Prefix starts every line this package prints ("yolo host: ").
@@ -382,6 +387,15 @@ func (f *Floor) captureRefreshAge() time.Duration {
 // BinDir is the prefix's bin/: the one directory of it a host launch puts on the agent's PATH,
 // last (HE-D1).
 func (f *Floor) BinDir() string { return filepath.Join(f.Dir, "bin") }
+
+// span starts the floor step <bin>.<step>'s span (Span), floor.<bin>.<step>; its end is a no-op
+// when nothing times the floor.
+func (f *Floor) span(bin, step string) (end func()) {
+	if f.Span == nil {
+		return func() {}
+	}
+	return f.Span("floor." + bin + "." + step)
+}
 
 // Launcher is bin/<bin>.
 func (f *Floor) Launcher(bin string) string { return filepath.Join(f.BinDir(), bin) }
