@@ -15,6 +15,9 @@ covers:
   - internal/cli/applyhostprune.go
   - internal/cli/apply.go
   - internal/cli/run/launchlog.go
+  - internal/cli/run/launchcontext.go
+  - internal/cli/run/hostlaunchcontext.go
+  - internal/cli/hostlaunchcontext.go
   - internal/progress/
   - internal/entrypoint/catalog.go
   - internal/depcheck/
@@ -58,6 +61,7 @@ sentence saying how it went, with the counts underneath it as evidence rather th
 | The dependency pre-flight and its gate | `internal/cli` (`resolveHostDeps`, `gateHostDeps`, `hostDepFinding`), `internal/depcheck` |
 | The machine document, and the acting posture's refusal | `internal/cli` (`buildHostApplyDoc`, `emitHostApplyDoc`, `jsonRefusedForPosture`, `refuseJSONForActingApply`) |
 | The launcher's half of one launch's record | `internal/cli/run` (`launchLog`, `LaunchLogName`) |
+| The [archaeology records](#archaeology-records) in both launch logs | `internal/cli/run` (`recordLaunchContext`, `HostLaunchLog.RecordContext`), `internal/cli` (`hostlaunchcontext.go`) |
 | The boot catalog's compression | `internal/entrypoint` (`CatalogInstalledOrphans`, `catalogSummary`) |
 
 **Reads with:** [`host-apply-staleness.md`](host-apply-staleness.md) (the change predicate and the
@@ -527,6 +531,64 @@ and so does each trailer. Host wrappers make concurrent launches ordinary, and a
 resident under writes its last lines and its trailer when the agent exits, often below later
 launches' blocks: read a trailer by its pid, never by where it sits. A resident launch whose header
 a later launch's trim removed leaves its late lines and its trailer with no header above them.
+
+<a id="archaeology-records"></a>**Both logs also carry records no line on the terminal states.**
+An **archaeology record** *(coined here)* is a line the launcher writes to its log file alone
+(`teeLog.WriteLog`, so the terminal is unchanged): a fact that decided what the launch did, kept
+so the launch can be explained afterwards from the file. They exist because, on 2026-10-11, four
+launches of one workspace whose config said `"profile": {"*": "bedrock", "claude": null}` put
+claude on Bedrock once and on its subscription three times, and the log could not say why: the
+one that differed had been started with `-p bedrock`. A jail launch's block holds these, in this
+order (`launchcontext.go`):
+
+```text
+  invocation: yolo -p bedrock -- claude --resume
+  jail: yolo-002-43017c6e  runtime=podman  notch=jail
+  profile: claude=bedrock (-p bedrock), pi=bedrock (-p bedrock)
+  config files: ~/.config/yolo-jail/config.jsonc (modified 2026-10-11T12:30:01-0400, sha256 378115d2c078) CHANGED, was (modified 2026-10-11T12:16:40-0400, sha256 2c1add6aa0ba); <workspace>/yolo-jail.jsonc (absent)
+  config: effective config changed since the previous launch (2026-10-11T12:16:02-0400):
+    --- previous launch (2026-10-11T12:16:02-0400)
+    +++ this launch
+    @@ -1,4 +1,5 @@
+     {
+    +  "perf_logging": false,
+  packs: changed since the previous launch: + gh (embedded 1a2b3c4d5e6f), ~ claude (embedded 3477e129590b → embedded 9f8e7d6c5b4a)
+  captured edits: claude/settings (~/.claude/settings.json), re-applied on every boot: ultracode=true, permissions.ask (list); `yolo config reset claude/settings` discards them
+  decision: fresh launch of yolo-002-43017c6e (no running jail to attach to)
+```
+
+- **`invocation:`**, in the header: yolo's argv as typed, its own tokens whole and the command
+  after them with a value redacted where its NAME says it may be a credential (`API_KEY=…`,
+  `--token …`; the name-only rule of `internal/sensitivename`). A launch yolo starts itself, a
+  capture or a build jail, says it was typed by nobody.
+- **`decision:`** — `attach to the running jail <name>` (with `started by another launch
+  meanwhile` when the post-lock re-check found it), `fresh launch of <name>`, or for macos-user
+  whether the session joined the workspace's keeper.
+- **`profile:`** — every CLI the selected packs install, its active set, and its source, read off
+  the profile fold itself (`config.ProfileFold.Origins`): `config profile.<cli>`,
+  `config profile."*"` (or `config profile` for the key's string form), the `-p` spelling, or
+  `nothing selects one`. The same config launched without the flag records
+  `claude=none (config profile.claude), pi=bedrock (config profile."*")`.
+- **`config:`** and **`packs:`** — a unified diff of the effective config in `yolo config dump`'s
+  canonical form against the previous launch's, a key's value redacted where its name says it may
+  be a credential and the diff cut at 200 lines; the packs added, removed or changed by origin and
+  content digest; and each config file's modification time and digest. The first launch says `no
+  previous launch recorded`. The comparison's inputs are `<workspace>/.yolo/last-launch-config.json`
+  (the snapshot, so `diff` against `yolo config dump` works by hand) and `last-launch.json`, which
+  every launch that reaches the record rewrites, an attach included.
+- **`captured edits:`** — per surface, each captured in-jail edit's key path, with a value shown
+  only for a boolean (`ultracode=true`) or a deletion (`(removed)`), because neither can carry a
+  credential and they are the edits that switch behavior; a string or number is named by its kind.
+  List captures count their entries. Each line names its `yolo config reset` command.
+
+A `yolo host --` block holds the same records but the decision, its `invocation:` keeping the
+program's base name and argument count only (PR-D26's rule above), and its captured edits read from
+the host's capture store, which exists under `host_management: "own"` alone, with
+`yolo config reset <agent/surface> --at host`. Its comparison files are under
+`~/.local/share/yolo-jail/host-launches/<code>-last-launch*.json`, 0600, keyed by the directory's
+short code: not in the logs directory, which a jail may mount, because the snapshot is the whole
+config unredacted. Neither pair is read back to decide anything; a jail can rewrite the workspace's,
+which can only make a later diff wrong, as it can already write `launch.log` itself.
 
 ## Machine consumers
 

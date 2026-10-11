@@ -256,3 +256,11 @@ func unifiedDiff(a, b []string, fromfile, tofile string) []string {
 	}
 	return out
 }
+
+// TextDiff is the unified diff (three lines of context) between two texts, split on the line
+// boundaries the config-change diff uses, under the two labels; nil when they are equal. It is
+// the same diff the approval prompt and `yolo config drift` print, exported for the launch
+// log's record of what changed since the previous launch (internal/cli/run's launchcontext.go).
+func TextDiff(old, new, fromLabel, toLabel string) []string {
+	return unifiedDiff(splitLines(old), splitLines(new), fromLabel, toLabel)
+}
