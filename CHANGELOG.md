@@ -18,9 +18,15 @@ with its outcome, upstream status or error and timings, plus a line while one is
 A credential adapter's line names the agent that asked, and the host's crossing log names each
 jail's container and workspace code. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
+**Launch logs that explain a launch.** Each launch log now records the command you ran, where every
+agent's profile came from, what changed in your config and packs since the last launch, and which
+captured in-jail edits the boot replays. Slow `yolo host` launches are timed step by step, and each
+build jail's logs are kept. See [the launch records](docs/reference/report-tiers.md#archaeology-records).
+
 ### Fixed
 
 - A setting captured from an earlier Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription. The boot names each one it drops, and every change to captured edits is now logged.
+- Quitting a jail no longer waits while yolo deletes that launch's copies of your patched extensions.
 
 ## [0.13.0] - 2026-10-09
 
