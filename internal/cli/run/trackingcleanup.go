@@ -81,18 +81,25 @@ func (o *Options) forgetGone(cname, rt, skeleton, tree string) {
 		return
 	}
 	defer lock.Close()
-	if id, known := o.probeExistingContainer(cname, rt, trackingProbeTimeout); !known || id != "" {
+	// Each step below is its own sub-span of shutdown.clear_tracking, so a slow quit names the
+	// step that was slow (docs/reference/perf-logging.md#the-shutdown-path).
+	sp := o.Perf.Span("shutdown.clear_tracking.probe")
+	id, known := o.probeExistingContainer(cname, rt, trackingProbeTimeout)
+	sp.End()
+	if !known || id != "" {
 		return
 	}
 	runtime.CleanupContainerTracking(cname)
-	// The same path guard as a skeleton no container ever held: a direct child of this
-	// cname's skeleton root, never anything else.
-	discardUnheldSkeleton(cname, skeleton)
-	if tree != "" {
-		forgetLivePackTree(cname, tree)
-		discardPackTree(cname, tree)
-	}
+	// The skeleton, the pack tree and the tree's per-launch copies are MOVED aside and deleted
+	// by a detached remover, never here: the copies alone can be thousands of files, and this
+	// is the teardown the user's prompt waits on (discardremoval.go). The path guards are the
+	// inline removals' own: a direct child of this cname's roots, never anything else.
+	sp = o.Perf.Span("shutdown.clear_tracking.discard")
+	o.discardGoneTrees(cname, skeleton, tree)
+	sp.End()
+	sp = o.Perf.Span("shutdown.clear_tracking.credentials")
 	o.forgetGoneCredentials(cname, rt)
+	sp.End()
 }
 
 // forgetGoneCredentials takes away the credential files a jail's entries left once its container

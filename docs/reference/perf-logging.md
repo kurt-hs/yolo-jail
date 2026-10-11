@@ -344,7 +344,8 @@ flowchart TD
     scratch --> ports["shutdown.cleanup_port_forwarding<br/>(per socat: SIGTERM, short wait, SIGKILL; serial)"]
     ports --> fronts["shutdown.stop_loopholes<br/>shutdown.stop_front.&lt;name&gt; per daemon<br/>(front close, then group SIGTERM, wait, SIGKILL; serial)"]
     fronts --> check["shutdown.container_check (mark)<br/>then the UNBOUNDED podman ps"]
-    check --> capture["shutdown.capture_config"]
+    check --> clear["shutdown.clear_tracking<br/>.probe (bounded podman ps), .discard (renames; the remover started, detached),<br/>.credentials"]
+    clear --> capture["shutdown.capture_config"]
     capture --> oom["shutdown.oom_check"]
     oom --> rec["probe stopped, then shutdown.window_a<br/>+ .podman_teardown + .client_exit<br/>recorded from podman events<br/>(bounded by --stream=false, never --until)"]
     rec --> report["the report, or the quiet line"]
@@ -1155,6 +1156,24 @@ follow `child.termios_restored`, and `<workspace>/.yolo/housekeeping.log` should
 `scratch: removed 4 volume(s) in N.Ns` line. N is the delete that used to hold the
 terminal.
 
+### The slow clear_tracking was the per-launch trees
+
+**Attributed 2026-10-11** on the maintainer's host. `shutdown.clear_tracking` had
+taken 0.04 to 0.13 s on every quit in the host perf log from 2026-10-04 to
+2026-10-09. On 2026-10-11, with eight patched pi extensions in the launch, three
+quits took 1.5 s, 3.9 s and 19.4 s; the last ran at a load average of 93, with ten
+other jails on the machine. The span is the known-gone cleanup (`forgetGone`). It
+waits on one `podman ps`, bounded at 10 s, and it deleted the home skeleton, the
+pack tree and the tree's per-launch copies of its patched extensions inline. The
+copies held about 6,350 files (58 MB), one `unlinkat` each, on a disk ten jails
+share. The 10 s bound means the delete accounted for at least 9 s of the 19.4 s.
+
+The teardown now renames those directories into `AGENTS_DIR/<cname>/.discard/`,
+one rename each, and starts `yolo internal discard-rm` detached, as the scratch
+volumes' remover is started. If the remover does not start, the teardown deletes
+the directories inline, as it did before. The span has three sub-spans, `.probe`,
+`.discard` and `.credentials`, so the next slow quit names its step.
+
 ## Current values
 
 Verified at `16ef96cb`. The prose above says what each of these is for; this table
@@ -1200,6 +1219,7 @@ is the only place the exact values and spellings are stated.
 | Forwarded-input notes (after the death only) | `child.input  bytes=<n>[ key=ctrl-c]`, at most 40; then `shutdown.window_a.input_to_exit` | `run.noteForwardedInput`, `run.maxInputNotes`, `run.recordInputGap` |
 | Suspend marks | `child.suspended`, `child.resumed` | `ttyproxy.StageSuspended`, `StageResumed` |
 | Scratch-volume marks (both teardown arms) | `shutdown.scratch_volumes.rm_started`, or `shutdown.scratch_volumes.rm_not_started` when the spawn failed | `run.startScratchRemoval` |
+| Discard remover (the known-gone cleanup) | renames into `AGENTS_DIR/<cname>/.discard/gone-*`, then `yolo internal discard-rm -- <cname>`, detached; marks `shutdown.clear_tracking.discard_rm_started` or `.discard_rm_not_started` (deleted inline); sub-spans `shutdown.clear_tracking.{probe,discard,credentials}` | `run.discardGoneTrees`, `run.DiscardRemoverMain`, `paths.DiscardRoot`, `run.forgetGone` |
 | Scratch volume name | `<cname>.scratch.<16 hex>.<tmp\|var-tmp\|var-lib-containers\|var-cache-containers>` | `prune.ScratchVolumeName`, `prune.ScratchSlots`, `run.newScratchLaunchID` |
 | Scratch remover | `yolo internal scratch-rm --runtime <rt> --workspace <ws> --wait <d> [--lock-fd 3] -- <volume>…`; waits 1 min at exit, polls every 500 ms; one `scratch:` line in `<workspace>/.yolo/housekeeping.log`, only if `.yolo` still exists | `run.ScratchRemoverMain`, `run.scratchRemovalWait`, `run.scratchPollInterval` |
 | Scratch remover in-flight lock | shared `flock` on `<workspace>/.yolo/scratch-rm.lock`, inherited as fd 3; waited on exclusively | `run.ScratchRemoverLockName`, `run.spawnScratchRemover`, `run.WaitForScratchRemovers` |

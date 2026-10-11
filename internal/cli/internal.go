@@ -36,7 +36,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|capture-materialize|capture-run|config-dump|fork-build-jail|daemon|darwin-bootstrap|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -78,6 +78,11 @@ func runInternal(args []string) int {
 		// scratch volumes --rm no longer deletes in the client that held the terminal
 		// (internal/cli/run/scratchremoval.go). Hidden: its caller is the launcher.
 		return run.ScratchRemoverMain(args[1:])
+	case run.DiscardRemoverVerb:
+		// The detached remover a jail's teardown starts for the skeleton, pack tree and
+		// patched-extension copies it moved aside, so their deletion is off the quit
+		// (internal/cli/run/discardremoval.go). Hidden: its caller is the teardown.
+		return run.DiscardRemoverMain(args[1:])
 	case "daemon":
 		return runInternalDaemon(args[1:])
 	case "darwin-bootstrap":
