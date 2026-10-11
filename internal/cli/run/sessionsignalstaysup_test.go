@@ -234,6 +234,26 @@ func TestASignalEndedSessionStatesNoCountItsOwnExecIsIn(t *testing.T) {
 	awaitKeeperEnd(t, l, "the keeper did not end the jail once its other session left")
 }
 
+// TestASignalEndedSessionSaysNothingWhenZeroExecsRemain pins that when the runtime confirms 0
+// live exec sessions in the container, a session ended by a signal does not announce that the
+// jail stays up for other sessions.
+func TestASignalEndedSessionSaysNothingWhenZeroExecsRemain(t *testing.T) {
+	cname := "yolo-staysup-zero"
+	var other *sessionLock
+	l := startReadyWindowLaunch(t, cname, true, func() { other = holdAnotherSession(t, cname) })
+	l.jail.reportExecs(0)
+	l.retargetToTheSession(t)
+	if code := signalArm(t, syscall.SIGINT, l.codes); code != 128+int(syscall.SIGINT) {
+		t.Errorf("the session's arm exited %d, want %d", code, 128+int(syscall.SIGINT))
+	}
+	got := l.stderr.String()
+	if strings.Contains(got, "stays up") {
+		t.Errorf("the session announced stays up when 0 execs remained:\n%s", got)
+	}
+	other.release()
+	awaitKeeperEnd(t, l, "the keeper did not end the jail once its other session left")
+}
+
 // TestASignalToTheLastSessionSaysNothingOfTheJailStayingUp: the last session's SIGINT says nothing
 // of the jail staying up. Its teardown lets the session's count go before it looks, as a quit does,
 // so the keeper ends the jail then, without waiting for the process's exit, which the fake exit

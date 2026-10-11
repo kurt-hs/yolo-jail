@@ -144,7 +144,7 @@ type fakeJail struct {
 	stops          int
 	calls          []string
 	// execs, once reportExecs sets it, is how many exec sessions the runtime's inspect says the
-	// container has, its main process a hold (jailSessionCount); 0 answers nothing, a count unknown.
+	// container has, its main process a hold (jailSessionCount); -1 answers nothing, a count unknown.
 	execs int
 }
 
@@ -157,7 +157,7 @@ func (f *fakeJail) reportExecs(n int) {
 }
 
 func newFakeJail(t *testing.T, cname string) *fakeJail {
-	return &fakeJail{dir: heldDir(t), cname: cname}
+	return &fakeJail{dir: heldDir(t), cname: cname, execs: -1}
 }
 
 // mainArgv is the main process: its boot, the ready line, and a hold its stop file ends. ready
@@ -209,9 +209,9 @@ func (f *fakeJail) exec(argv []string, _ string, _ []string, _ time.Duration) Ex
 		return ExecResult{Ran: true, Stdout: "abc123\n"}
 	case len(argv) > 1 && argv[1] == "wait":
 		return ExecResult{} // the keeper's client exit is the observation here
-	case f.execs > 0 && len(argv) > 1 && argv[1] == "inspect" && strings.Contains(joined, "ExecIDs"):
+	case f.execs >= 0 && len(argv) > 1 && argv[1] == "inspect" && strings.Contains(joined, "ExecIDs"):
 		return ExecResult{Ran: true, Stdout: strconv.Itoa(f.execs) + "\n"}
-	case f.execs > 0 && len(argv) > 1 && argv[1] == "inspect" && strings.Contains(joined, ".Config.Env"):
+	case f.execs >= 0 && len(argv) > 1 && argv[1] == "inspect" && strings.Contains(joined, ".Config.Env"):
 		return ExecResult{Ran: true, Stdout: entrypoint.JailMainEnv + "=" + entrypoint.JailMainHold + "\n"}
 	}
 	return ExecResult{Ran: true}

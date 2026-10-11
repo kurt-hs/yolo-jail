@@ -448,6 +448,10 @@ func (o *Options) endSession(cname, rt string, rc int, since time.Time, logFrom 
 	out := o.pr(terminalOnly(o.Stderr))
 	switch state {
 	case quitOthers:
+		if n, ok := o.jailSessionCount(rt, cname); ok && n == 0 {
+			o.streamKeeperTeardown(cname, logFrom)
+			break
+		}
 		o.printKeeperRecords(cname, logFrom)
 		o.noteJailStaysUp(cname, rt)
 	case quitLast:
@@ -470,6 +474,9 @@ func (o *Options) endSession(cname, rt string, rc int, since time.Time, logFrom 
 // too (awaitKeeperUnwind), and a session a SIGINT or a SIGTERM ends prints it without the count
 // (noteJailStaysUpOnSignal).
 func (o *Options) noteJailStaysUp(cname, rt string) {
+	if n, ok := o.jailSessionCount(rt, cname); ok && n == 0 {
+		return
+	}
 	others := othersUncounted
 	if n, ok := o.jailSessionCount(rt, cname); ok && n > 0 {
 		others = fmt.Sprintf("%d other %s", n, plural(n, "session", "sessions"))
