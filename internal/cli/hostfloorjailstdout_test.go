@@ -113,6 +113,9 @@ func swapStderr(t *testing.T) func() string {
 
 // writerName names w for a message: a *bytes.Buffer's %v is its contents.
 func writerName(w io.Writer) string {
+	if kept, ok := w.(buildJailOutputWriter); ok {
+		return writerName(kept.w) + ", kept in the build's log"
+	}
 	switch w {
 	case nil:
 		return "nothing (this process's stdout)"
@@ -122,6 +125,15 @@ func writerName(w io.Writer) string {
 		return "os.Stderr"
 	}
 	return fmt.Sprintf("a %T", w)
+}
+
+// terminalHalf is the stream w writes to the terminal: a host build's jail stream is teed into the
+// build's own log (buildJailOutput), and what reaches a terminal is its other half.
+func terminalHalf(w io.Writer) io.Writer {
+	if kept, ok := w.(buildJailOutputWriter); ok {
+		return kept.w
+	}
+	return w
 }
 
 // THE FLOOR'S FORK BUILD JAIL WRITES TO THIS PROCESS'S STDERR: the first `yolo host -- <forked bin>`
@@ -144,7 +156,7 @@ func TestTheFloorsForkBuildJailWritesItsOutputToTheLaunchsStderr(t *testing.T) {
 	if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &errw, nil); rc != 0 || runs != 1 {
 		t.Fatalf("rc=%d builds=%d, want the floor's one build\n%s", rc, runs, errw.String())
 	}
-	if jailStdout != io.Writer(os.Stderr) {
+	if terminalHalf(jailStdout) != io.Writer(os.Stderr) {
 		t.Errorf("the floor's build jail runs its session with its stdout on %s, want this process's stderr", writerName(jailStdout))
 	}
 }
@@ -164,7 +176,7 @@ func TestTheHostsAdvanceBuildJailWritesItsOutputToTheLaunchsStderr(t *testing.T)
 	if rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil); rc != 0 || len(fx.builds) != 1 {
 		t.Fatalf("rc=%d builds=%d, want the advance's one build\n%s", rc, len(fx.builds), errw.String())
 	}
-	if jailStdout != io.Writer(os.Stderr) {
+	if terminalHalf(jailStdout) != io.Writer(os.Stderr) {
 		t.Errorf("the advance's build jail runs its session with its stdout on %s, want this process's stderr", writerName(jailStdout))
 	}
 }

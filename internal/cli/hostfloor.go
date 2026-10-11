@@ -72,6 +72,8 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 			return entrypoint.PackPolicyAllows(updatesWire, pack)
 		},
 		AllowPatchFailures: allowPatchFailures,
+		// The floor's steps, timed into the running host act's record (hostactperf.go).
+		Span: floorSpan,
 		// Either origin (resolveFloorCapture): a capture jail's, or this host's own capture (HP-D18),
 		// which no jail ever selects.
 		ResolveCapture: func(bin string) (*capture.Entry, error) {
@@ -172,7 +174,8 @@ func wireFloorBuild(f *hostfloor.Floor, store *capture.Store, out io.Writer) {
 		return entry, err
 	}
 	f.Build = func(p hostfloor.Program, commit string) (*capture.Entry, error) {
-		mode := buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound}, jailStdout: hostJailStdout()}
+		mode := buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound}, jailStdout: hostJailStdout(),
+			keepJailOutput: true}
 		if f.GOOS == "darwin" {
 			mode.runtime = "macos-user"
 		}
@@ -1015,7 +1018,9 @@ func resolveHostLaunchTarget(packs []*packload.Pack, cmd0 string, lp *hostpath.L
 		return onPath()
 	}
 	floor := newHostFloor(errw, progs)
+	sp := hostActSpan("resolve_target.floor")
 	st, _, err := floor.Ensure(withActInterrupt(context.Background(), act), prog)
+	sp.End()
 	var patchFailure *packsrc.PatchFailure
 	if errors.As(err, &patchFailure) {
 		return hostTarget{}, 1
@@ -1023,7 +1028,9 @@ func resolveHostLaunchTarget(packs []*packload.Pack, cmd0 string, lp *hostpath.L
 	if err == nil || (errors.Is(err, hostfloor.ErrNoEntry) && floor.OutsideTheFloor(prog)) {
 		// The agent starts: so do the MCP servers its config names (HC-D28). A no-entry agent the
 		// floor answers for is refused below (HNR-D2), so nothing is installed for it.
+		sp := hostActSpan("resolve_target.mcp_programs")
 		ensureMCPPrograms(packs, progs, floor, cmd0, errw, act, ready)
+		sp.End()
 	}
 	if errors.Is(err, hostfloor.ErrNoEntry) && st.Reason != "" {
 		if via, remedy := hostOutranking()(prog); via != "" && st.Reason == hostfloor.OutrankedReason(via, cmd0) {

@@ -628,6 +628,9 @@ type hostLaunchTrace struct {
 	log    *run.HostLaunchLog
 	timing *run.HostNotchTiming
 	errw   io.Writer
+	// restorePerf ends the launch's term as the host act whose steps record into its collector
+	// (hostactperf.go).
+	restorePerf func()
 }
 
 // startHostLaunchTrace starts the trace of a launch of cmd0 from the current directory; typedTiming
@@ -641,6 +644,7 @@ func startHostLaunchTrace(cmd0 string, typedTiming bool, errw io.Writer) *hostLa
 	t.log = run.OpenHostLaunchLog(ws, cmd0)
 	t.errw = t.log.Writer(errw)
 	t.timing = run.HostNotchTimingLog(typedTiming, explicitVerbose(), os.Getenv, t.errw)
+	t.restorePerf = startHostActPerf(t.timing.Log, "host")
 	return t
 }
 
@@ -660,6 +664,9 @@ func (t *hostLaunchTrace) handOver() {
 // end is the trace of a launch that returned rc: `outcome=not-started` unless it had already
 // handed over (a resident agent that exited, or an exec that failed), and the log's trailer.
 func (t *hostLaunchTrace) end(rc int) {
+	if t.restorePerf != nil {
+		t.restorePerf()
+	}
 	t.record.NotStarted(rc)
 	t.log.Done(rc)
 }
@@ -716,19 +723,32 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// the composition for the reason the credential pre-flight below gives for its own placement:
 	// a launch that is going to be stopped should be stopped while the only thing it has done is
 	// read some files. It is silent unless the user opted in, and it is a no-op in a jail.
+	//
+	// ITS THREE STEPS ARE SPANNED APART (host.apply_gate.advance, .preflight, .render), and each
+	// extension's advance inside the first one step by step (advanceSpan): the gate measured 90 s on
+	// a real launch with 20 s of it after the last build ended and nothing saying where.
 	sp = trace.span("host.apply_gate")
 	act := &run.ActInterrupt{}
 	if config.HostApplyOnLaunchEnabled() && config.HostManagementMode() != config.HostManagementNone {
 		// PF-D81 BEFORE THE GATE'S RENDER: a patched extension's series that does not apply, or a patched
 		// fork's recorded patch failure, stops the launch here, before the gate may apply anything.
-		if !advanceHostTrees(errw, colorForWriter(errw), filepath.Base(cmd[0]), act) ||
-			!hostPatchPreflight(errw, selectConfiguredHostPacks().packs, "to launch "+filepath.Base(cmd[0]),
-				"yolo host -- "+filepath.Base(cmd[0]), filepath.Base(cmd[0]), false, act) {
+		step := trace.span("host.apply_gate.advance")
+		advanced := advanceHostTrees(errw, colorForWriter(errw), filepath.Base(cmd[0]), act)
+		step.End()
+		if advanced {
+			step = trace.span("host.apply_gate.preflight")
+			advanced = hostPatchPreflight(errw, selectConfiguredHostPacks().packs, "to launch "+filepath.Base(cmd[0]),
+				"yolo host -- "+filepath.Base(cmd[0]), filepath.Base(cmd[0]), false, act)
+			step.End()
+		}
+		if !advanced {
 			sp.End()
 			return 1
 		}
 	}
+	step := trace.span("host.apply_gate.render")
 	gated := hostApplyGate(errw, stdin, cmd[0])
+	step.End()
 	sp.End()
 	if !gated {
 		return 1
@@ -736,10 +756,15 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// AND PPX-D18's STOP: the owning agent does not start without a patched extension it loads;
 	// then the line naming the build each one it loads is at (PPX-D26).
 	if home, err := os.UserHomeDir(); err == nil && !config.InJail() {
-		if !hostTreeGate(errw, filepath.Base(cmd[0]), home) {
+		sp = trace.span("host.tree_gate")
+		allowed := hostTreeGate(errw, filepath.Base(cmd[0]), home)
+		sp.End()
+		if !allowed {
 			return 1
 		}
+		sp = trace.span("host.tree_lines")
 		noteHostTreeLines(errw, colorForWriter(errw), filepath.Base(cmd[0]), home)
+		sp.End()
 	}
 
 	// hostServicesStart: this is the one front door that owns its command's lifetime, so a

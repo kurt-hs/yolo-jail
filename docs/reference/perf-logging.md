@@ -32,6 +32,13 @@ covers:
   - internal/ttyproxy/ttyproxy.go
   - internal/ttyproxy/suspendkey.go
   - internal/image/autoload.go
+  - internal/cli/hostactperf.go
+  - internal/cli/buildjaillogs.go
+  - internal/cli/patchedadvance.go
+  - internal/cli/forkbuild.go
+  - internal/cli/hosttrees.go
+  - internal/cli/hostfloor.go
+  - internal/hostfloor/floor.go
 tags: [observability, timing, run, shutdown, perf]
 summary: "The host-side timing-span system behind `--timing`, `--verbose`, `perf_logging` and `YOLO_TIMING`: a nil-safe collector in `internal/perf` that spans the launch, the child window and both shutdown arms, writes every event to `<workspace>/.yolo/host-perf.log` the moment it happens, prices the stretch inside podman's own `--rm` cleanup from its event log and records that too, and prints a table only when a flag typed on that invocation asks for one. `yolo host --` and `yolo host apply` record by the same gates into a machine-wide file."
 ---
@@ -841,6 +848,53 @@ timing at all: `yolo host --timing -- true` was refused as a jail-launch flag, a
   `yolo host apply --timing` ([D19](#why-its-this-way)), and `yolo apply --timing` at any notch but
   the host is refused by name.
 
+### The steps inside the host stages
+
+`host.apply_gate` and `host.resolve_target` wait on builds that take minutes, and as single spans
+they hid where the minutes went: a real `yolo host -- pi` on 2026-10-11 spent 90.7 s and 119.3 s in
+them, with about a minute in no span at all. So each stage's steps are spanned too, by the same
+gates, into the same file. A step span is named `<family>.<what>.<step>`, where the family is the
+command's (`host` for `yolo host --`, `host_apply` for `yolo host apply`), so an apply's build is
+never read as a launch's (`hostActSpan`, [`hostactperf.go`](../../internal/cli/hostactperf.go)).
+
+| Span | What it covers |
+| :--- | :--- |
+| `host.apply_gate.advance`, `.preflight`, `.render` | the gate's three steps: the patched extensions' parallel advance, the patch pre-flight, and the host-render gate itself (its observe pass and the apply it runs) |
+| `host.tree_gate`, `host.tree_lines` | after the gate: the owning agent's stop without its tree, and the line naming each tree's build |
+| `host.resolve_target.floor`, `.mcp_programs` | the floor's `Ensure` of the program (a patched fork's whole advance and install included), and the install of the MCP servers its config names |
+| `<family>.tree.<key>.<step>` | one step of a patched extension's advance, build or render, `<key>` being its `pack/name` |
+| `<family>.fork.<key>.<step>` | one step of a patched or plain fork's advance or build |
+| `<family>.floor.<bin>.<step>` | one step of the floor's install of `<bin>` |
+
+The key is in the name because a host act builds its extensions side by side
+([`treepool.go`](../../internal/cli/treepool.go)), and two concurrent builds' spans must be told
+apart. The steps of an advance and its build, in the order they run, all optional:
+
+- `check_wait`, `check`: the wait for a check slot, then the upstream check, the fetch and the
+  check record's and mirror's locks inside it;
+- `replay`: one walk of the series over the candidates (repeated for a walk at the series' base);
+- `build_lock_wait`: the build lock, held by another process building the same inputs;
+- `source`: the series replayed into the build's `src/`, or the source checked out;
+- `build_jail`: the build jail's whole run, and inside it `build_slot_wait`, the wait for one of the
+  pool's build slots (a host act's parallel advance only);
+- `reclaim`: the wait, after the jail returns, for its container to be known gone (bounded at 30 s);
+- `admit`: the manifest read, its checks, the digest and the rename into the capture store;
+- `receipt`, `cleanup`: the build's receipt, then the staging workspace's removal, its diagnostics
+  kept first ([Where a build jail's logs go](#where-a-build-jails-logs-go));
+- `settle`, `finish`: the build's settle under its lock, and the advance's record writes, hand and
+  reap, which an advance that builds nothing runs too;
+- `materialize`: a patched extension's copy into the host's trees directory, inside the render.
+
+The floor's steps (`Floor.Span`, [`floor.go`](../../internal/hostfloor/floor.go)): `prepare` (a
+patched fork's advance), `lock_wait` (the floor's per-program lock), `install`, and inside the
+install `materialize` (the build's copy into the floor, by reflink where it can), `exec_record` (the
+launcher's command, which fetches the floor's Node for a Node script) and `publish` (the loader
+check, the switch to the new install, and the removal of every older install directory).
+
+The build jail's own launch is a sub-launch with a record of its own, which is where its image
+build, its housekeeping-lock wait and its boot are spanned: that record is kept, beside the jail's
+output ([Where a build jail's logs go](#where-a-build-jails-logs-go)).
+
 ## Where the log lives
 
 The host half is `<workspace>/.yolo/host-perf.log`, beside `boot.log`. The jail
@@ -871,6 +925,33 @@ stderr report still work, and a jail is never refused over its timing log.
 The host notch's commands write elsewhere, to one machine-wide file
 ([The host notch](#the-host-notch)), with the same run header, the same retention and the
 same failure rule.
+
+### Where a build jail's logs go
+
+A capture jail and a fork's or a patched extension's build jail each run a whole launch in a scratch
+workspace under the capture store's `staging/`, which is deleted seconds after the build. That
+launch's `host-perf.log`, `boot.log`, `launch.log` and jail half went with it, while its last line
+named the deleted file. Every path that removes such a workspace now keeps them first
+(`preserveBuildJailLogs`, [`buildjaillogs.go`](../../internal/cli/buildjaillogs.go)): a capture's
+cleanup, a build's, the reuse of a retained build workspace, and the clear of an earlier capture's
+leftover workspace. They are appended to
+`~/.local/share/yolo-jail/logs/build-jail-<staging id>.log`, each under a header naming the file,
+where the staging id is the workspace's name: the program's bin for an installer's capture,
+`fork-<build id>` for a build, the id its container and its `jail-keeper-yolo-fork-<build id>-…`
+log carry too. The launch's lines that name those files (`timings recorded in …`, and the report's
+`host file:` and `jail half:`) name this file instead.
+
+A host build's own jail output, which reaches the terminal on the process's raw stderr and so no
+launch log, is kept in the same file as it streams, ANSI-free, under its own header, and the build
+says where on a line `host-launch.log` keeps. A tree build's `tree-build-<key>.log` is ANSI-free as
+well.
+
+The bound is the log directory's two rules, not a new one: a file past 1 MiB moves to `.1` before
+the next append (the tree build log's rule), only the newest 50 such files are kept with their `.1`
+(the run cap of this log, because the build id changes with every build's inputs), and at most the
+last 1 MiB of one source file is copied. The read is confined to the workspace and takes regular
+files only: the workspace is the jail's to write, and a link it left must not copy a host file
+into a directory a jail may be shown.
 
 > [!WARNING]
 > **This directory is inside the live workspace bind**, so a jail *can* write the

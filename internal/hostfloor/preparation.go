@@ -162,9 +162,11 @@ func (f *Floor) EnsurePrepared(ctx context.Context, p Program, prepared *Patched
 	if err := f.ensureDir("bin", "programs", "records", "locks"); err != nil {
 		return st, "", retainPreparationFailure(prepared, err)
 	}
+	endWait := f.span(p.Bin(), "lock_wait")
 	lk, err := acquire(f.lockPath(p.Bin()), true, func(pid int) {
 		f.say("waiting for pid %d, which is installing %s into yolo's floor", pid, p.Bin())
 	})
+	endWait()
 	if err != nil {
 		return st, "", retainPreparationFailure(prepared, err)
 	}

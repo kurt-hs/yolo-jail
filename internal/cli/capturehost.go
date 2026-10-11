@@ -234,6 +234,9 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 
 	store := &capture.Store{Dir: paths.CapturesDir(),
 		InNamespace: captureStagingInNamespace(arm.runtime, errw)}
+	// An earlier capture's workspace that its process never cleaned up (a SIGKILL) is removed by Stage:
+	// what its jail left of its diagnostics is kept first.
+	preserveBuildJailLogs(store.StagingDir(bin))
 	staging, err := store.Stage(bin)
 	if err != nil {
 		fmt.Fprintf(errw, "yolo capture: %v\n", err)
@@ -748,7 +751,9 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 		opts.OnlyPacks = seal.only
 		opts.SealedTree = seal.tree
 	}
-	opts.Stdout, opts.Stderr = out, errw
+	// The launch's own lines name the diagnostics it leaves in workspace by the file they are kept in
+	// once the workspace is gone (buildJailLogRewriter).
+	opts.Stdout, opts.Stderr = out, newBuildJailLogRewriter(errw, workspace)
 	// THE JAIL'S OWN LINES AND ITS SESSION'S STDOUT GO WHERE THE CALLER SAID (captureStreams), or to
 	// this process's. The run pipeline relays pid 1's output and runs the first session — the
 	// installer, the build — on the process's own streams, whatever Stdout it is handed: so without
@@ -1017,7 +1022,11 @@ func captureStagingInNamespace(rt string, errw io.Writer) func(string) error {
 // anyway: Store.Stage removes its staging dir before creating it, and where that dir holds a
 // container user's files it clears them too (captureStagingInNamespace), so a failure here
 // never becomes a staging dir no later capture can start from.
+//
+// THE JAIL'S OWN DIAGNOSTICS GO FIRST (buildjaillogs.go): its launch's timing, boot and launch logs
+// are kept in yolo's host log directory before the workspace holding them is removed.
 func cleanupCaptureWorkspace(workspace, cname string) {
+	preserveBuildJailLogs(workspace)
 	_ = os.RemoveAll(workspace)
 	runtime.CleanupContainerTracking(cname)
 	_ = os.RemoveAll(filepath.Join(paths.AgentsDir(), cname))

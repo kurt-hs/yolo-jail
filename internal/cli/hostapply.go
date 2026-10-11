@@ -168,7 +168,9 @@ func startHostApplyTiming(typed bool, errw io.Writer) func(rc int) {
 	t := run.HostNotchTimingLog(typed, explicitVerbose(), os.Getenv, errw)
 	prev := hostApplyPerf
 	hostApplyPerf = t.Log
+	restoreAct := startHostActPerf(t.Log, "host_apply")
 	return func(rc int) {
+		restoreAct()
 		hostApplyPerf = prev
 		t.Report(fmt.Sprintf("yolo host apply timing (rc %d):", rc))
 	}

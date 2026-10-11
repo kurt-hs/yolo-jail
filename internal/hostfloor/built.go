@@ -192,8 +192,10 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 	home := filepath.Join(dir, "home")
 	// CONFINED, as an installer's capture is: the manifest is the build jail's account of itself,
 	// and this materialize runs on the host.
+	endMaterialize := f.span(bin, "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: home, Stderr: f.out(),
 		Confined: true})
+	endMaterialize()
 	if errors.Is(err, capture.ErrNotRelocatable) {
 		// The manifest said it may move, and a reference it lists cannot be honored: the same
 		// answer, from the rewrite rather than the record.
@@ -216,6 +218,7 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 		res.Mechanism(), res.Files)
 	rec := &Record{Entry: entryPath, Capture: entry.Key, Revision: commit, Recipe: in.SourceRecipe(),
 		Version: buildVersion(commit)}
+	defer f.span(bin, "exec_record")()
 	return f.execRecord(ctx, in, rec)
 }
 

@@ -248,7 +248,17 @@ var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
 // launch, and a log holding them is carriage-return spam. The step's persistent
 // start and result lines still arrive through Write, so the log records every step
 // that was shown.
-func (t teeLog) WriteTransient(p []byte) (int, error) { return t.w.Write(p) }
+//
+// A REDRAW STAYS TRANSIENT THROUGH EVERY LAYER: tees stack — a build jail's launch tees its stream
+// into its own launch.log around the host launch's tee into host-launch.log — so the terminal half
+// is handed the redraw as a redraw when it can take one, and only a writer that cannot gets a
+// plain write. Written plainly to an inner tee, every frame landed in the inner log.
+func (t teeLog) WriteTransient(p []byte) (int, error) {
+	if tw, ok := t.w.(interface{ WriteTransient([]byte) (int, error) }); ok {
+		return tw.WriteTransient(p)
+	}
+	return t.w.Write(p)
+}
 
 // WriteLog is the log half alone, WriteTransient's inverse: for what a sub-launch of this launch
 // prints — a build jail's launch, its boot and its build line's output (internal/cli's
