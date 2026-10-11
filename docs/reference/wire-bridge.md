@@ -1045,11 +1045,12 @@ A refused boot tears the container down (`--rm`), and with it the process table 
 listeners. These are the facts that survive:
 
 - **The bridge's own log**, `~/.local/state/yolo-jail-daemons/wire-bridge.log` in the jail. The
-  supervisor points the daemon's stdout and stderr at it, and a readiness refusal names its path
+  supervisor copies the daemon's stdout and stderr into it, and a readiness refusal names its path
   (`daemon log: …`), as does a wait still running after two seconds. It sits in the jail home, so
   it outlives the container in the
-  workspace's home overlay under `<workspace>/.yolo/home`. Nothing the daemon logs is gated: no
-  verbosity dial exists, by the same rule that gives a launch no quiet mode
+  workspace's home overlay under `<workspace>/.yolo/home`. Every line carries a timestamp, and
+  every request gets a line ([the daemon log](#the-daemon-log)). Nothing the daemon logs is gated:
+  no verbosity dial exists, by the same rule that gives a launch no quiet mode
   ([`OQ-RO3`](report-tiers.md#why-its-this-way)).
 - **The host socat log**, `<cname>-socat.log` under `~/.local/share/yolo-jail/logs/`. The launcher
   creates it only when the launch has at least one forward, so its existence alone is evidence of
@@ -1067,6 +1068,49 @@ listeners. These are the facts that survive:
 > forwarding for this jail"*, quotes the launch's `YOLO_HOST_LOOPBACK` disposition. That
 > disposition is per launch and names no service. Neither line means the bridge was given a
 > forward.
+
+### The daemon log
+
+The bridge's log is meant to answer, after the fact, what happened to one agent request: whether
+it arrived, whether its caller token passed, what the upstream said, and how long each part took.
+
+**Every line starts with a timestamp** in local time with milliseconds and the zone's offset,
+for example `2026-10-11T12:17:03.412-04:00`. Every in-jail daemon log and the host service logs
+use the same format, so lines from two logs can be put in order.
+
+**Each request gets one line when it ends.** It is written on every listener, including requests
+the caller-token check refuses:
+
+```text
+2026-10-11T12:17:03.412-04:00 wire-bridge: request #7 POST /v1/messages 200 listener=adapter peer=127.0.0.1:40122 caller=- auth=ok upstream=https://bedrock-runtime.us-east-1.amazonaws.com/anthropic/v1/messages upstream_status=200 upstream_headers_ms=812 upstream_bytes=48211 bytes_out=48211 first_byte_ms=815 elapsed_ms=10234 streamed=yes end=clean (model … untranslated to …)
+```
+
+| Field | What it says |
+|---|---|
+| `request #N`, method, path, status | The request number counts from the daemon's start. The status is what the bridge sent, or meant to send. |
+| `listener` | `adapter` (the Anthropic-shaped route) or `via` (the `/agent/<name>/` routes). |
+| `peer` | The caller's address and port. |
+| `caller` | The agent a via path names (`/agent/copilot/…` gives `copilot`). It is `-` on the adapter route, whose requests do not name their agent. |
+| `auth` | `ok`, `missing-token` or `wrong-token`. A refused request has `upstream=-`. |
+| `upstream`, `upstream_status`, `upstream_headers_ms`, `upstream_bytes` | The target as scheme, host and path, its HTTP status, the time until its response headers arrived, and the body bytes read. A retry, such as a refreshed credential, numbers the fields `upstream1`, `upstream2` and so on. |
+| `upstream_error` | Set instead of a status when the request never got a response. It names the class and then the network stack's text: `dns:`, `connect refused:`, `connection reset:`, `tls:`, `timeout:` (including a via route's header timeout), `connection closed:`, or `canceled:` when the caller closed the request first. |
+| `upstream_end` | Set when the upstream response body did not end at a clean EOF: `cut: <cause>`, or `closed-early` when the bridge stopped reading it. |
+| `bytes_out`, `first_byte_ms`, `elapsed_ms` | What reached the caller, and when its first byte and the whole request finished. |
+| `streamed`, `end` | Whether the response was an event stream. `end` is `clean`, `upstream-cut`, `client-gone` (a write to the caller failed, also spelled `RESPONSE DELIVERY FAILED`), or `aborted` (the bridge cut the caller's connection so a truncated stream reads as a failure). |
+
+**A request still in flight after 30 seconds gets a line saying what it waits on**, and another
+every 30 seconds after that. The line says whether the request is still being prepared (reading
+the body, fetching the upstream credential), waiting for response headers from the named upstream,
+or streaming, with the bytes read so far and when the last byte reached the caller. A hang
+therefore shows up in the log while it is happening.
+
+**The log never holds a credential.** It holds no header value, query string or body. The caller
+token is checked, never written. A test sends the real token and a wrong one, in both headers, to
+both listeners, and fails if either string appears in the log.
+
+**The log is bounded.** Past 5 MB the supervisor moves it to the one archive beside it,
+`wire-bridge.log.1`, while the daemon runs. The host half's log follows the host rule in
+[current values](#current-values).
 
 ## <a id="at-the-host-notch"></a>The host half — a bridge for one launch
 
@@ -1289,7 +1333,8 @@ only place the values themselves are stated.
 | Endpoint variable | `YOLO_SERVICE_WIRE_BRIDGE_ENDPOINT`, emitted only when the daemon will serve | `run.serviceEndpointEnvArgs`, `wirebridged.WillServe` |
 | Ready-required daemons | `YOLO_JAIL_DAEMON_READY_NAMES=wire-bridge`, emitted beside the endpoint variable | `paths.JailDaemonReadyNamesEnv` |
 | Readiness pipe | `YOLO_JAIL_DAEMON_READY_FD`, always descriptor 3 in the daemon; one `ready <name>` or `failed <name> <reason>` line | `paths.JailDaemonReadyFDEnv` |
-| Daemon log | `~/.local/state/yolo-jail-daemons/wire-bridge.log` in the jail | `supervisor.LogDir` |
+| Daemon log | `~/.local/state/yolo-jail-daemons/wire-bridge.log` in the jail; every line stamped `2026-10-11T12:17:03.412-04:00` (local time, milliseconds, offset); one line per request; past 5 MB it moves to `wire-bridge.log.1`, while the daemon runs ([format](#the-daemon-log)) | `supervisor.LogDir`, `supervisor.logMaxBytes`; the stamp `logstamp.Layout`; the request line `wirebridged.withRequestLog` |
+| Still-in-flight line | every 30 s while a request is unfinished | `wirebridged.stillWaitingInterval` |
 | Host forward log | `~/.local/share/yolo-jail/logs/<cname>-socat.log`, created only when a launch forwards a port | `internal/cli/run/network.go` |
 | In-jail forward log | `~/.yolo-socat.log` | `entrypoint.startContainerPortForwarding` |
 | Hold a refused boot open | `YOLO_HOLD_ON_REFUSAL=1` | `paths.HoldOnRefusalEnv` |

@@ -324,8 +324,10 @@ func adapterHandler(route route, e *entrypoint.Env) (http.Handler, string, strin
 
 // listener is one bound address and what it serves.
 type listener struct {
-	addr    string
-	what    string // for the log: "provider \"x\" (from its anthropic base_url)" or "via routes"
+	addr string
+	what string // for the log: "provider \"x\" (from its anthropic base_url)" or "via routes"
+	// kind names the listener on each request-log line: "adapter" or "via".
+	kind    string
 	handler http.Handler
 	ln      net.Listener
 	// h2c: the listener also speaks unencrypted HTTP/2 with prior knowledge, which the via
@@ -388,7 +390,7 @@ func servePlan(ctx context.Context, p plan, e *entrypoint.Env) int {
 			if bh, ok := handler.(*bridgeHandler); ok {
 				bh.allow = allow.adapter
 			}
-			ls = append(ls, &listener{addr: route.ListenAddr, what: what,
+			ls = append(ls, &listener{addr: route.ListenAddr, what: what, kind: "adapter",
 				handler: requireAnthropicCaller(token, "the adapter route for "+what, handler)})
 			serving = append(serving, fmt.Sprintf("provider %q: anthropic on {addr} → openai %s (endpoint {endpoint}, credential %s)%s%s",
 				route.ProviderName, route.UpstreamBaseURL, credentialDescription(route, keySource),
@@ -403,7 +405,7 @@ func servePlan(ctx context.Context, p plan, e *entrypoint.Env) int {
 	}
 	if len(p.via.Routes) > 0 {
 		handler, lines := viaHandlerFor(p.via, e, allow.via)
-		ls = append(ls, &listener{addr: p.via.ListenAddr, what: "via routes",
+		ls = append(ls, &listener{addr: p.via.ListenAddr, what: "via routes", kind: "via",
 			handler: requireOpenAICaller(token, "the via address", handler), h2c: true})
 		serving = append(serving, "via routes on {addr} (endpoint {endpoint}): "+strings.Join(lines, "; "))
 		for _, skip := range p.via.Skipped {
@@ -485,7 +487,9 @@ func servePlan(ctx context.Context, p plan, e *entrypoint.Env) int {
 	servers := make([]*http.Server, len(ls))
 	errCh := make(chan error, len(ls))
 	for i, l := range ls {
-		servers[i] = &http.Server{Handler: l.handler}
+		// Every request on every listener is logged, the caller-token check included
+		// (accesslog.go): the request log wraps the whole listener.
+		servers[i] = &http.Server{Handler: withRequestLog(l.kind, l.handler)}
 		if l.h2c {
 			// An AWS SDK's default Node handler opens HTTP/2 to an http:// address with prior
 			// knowledge (WG-I48), so the via listener answers that as well as HTTP/1.

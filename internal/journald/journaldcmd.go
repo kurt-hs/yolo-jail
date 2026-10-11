@@ -14,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -382,7 +383,7 @@ func setupLog(path string) {
 			out = f
 		}
 	}
-	auditLog = log.New(out, "", log.LstdFlags)
+	auditLog = logstamp.Logger(out, "")
 }
 
 func logf(format string, args ...any) {

@@ -97,8 +97,13 @@ func TestDefaultPathIsOneFilePerHost(t *testing.T) {
 // log's schema whether or not anyone calls it one, so it is asserted rather than
 // left to drift.
 func TestLineIsGreppableAndPayloadFree(t *testing.T) {
+	// The stamp is logstamp's: local time, milliseconds, offset. Pin the zone so the
+	// expected line does not depend on the machine's.
+	oldLocal := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = oldLocal })
 	got := Line(sample(svcendpoint.CrossingAccepted))
-	want := "2026-08-15T12:00:00Z crossing jail=yolo-host-services-a1b2c3d4 " +
+	want := "2026-08-15T12:00:00.000Z crossing jail=yolo-host-services-a1b2c3d4 " +
 		"service=host-processes via=front outcome=accepted reason=- " +
 		"bytes_in=41 bytes_out=4096 elapsed_ms=1500\n"
 	if got != want {

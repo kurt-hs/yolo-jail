@@ -67,7 +67,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -81,13 +80,21 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/frameproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
 // Logger is where the access log + diagnostics go (stderr, or a file the
 // caller wires up). Matches host_service's logging.
-var Logger = log.New(os.Stderr, "", log.LstdFlags)
+// Every line carries the one daemon-log timestamp (internal/logstamp: local time,
+// milliseconds, offset), so the per-request access line can be placed beside the jail
+// side's lines and crossings.log to the millisecond.
+var Logger = defaultLogger
+
+// defaultLogger is Logger's production value, named so a test can check it after this
+// package's tests have pointed Logger elsewhere.
+var defaultLogger = logstamp.Logger(os.Stderr, "")
 
 // Session is a single client connection. A handler drives it with
 // Stdout/Stderr/JSON/Exit/ExecAllowlisted. Frame writes are serialized by mu,

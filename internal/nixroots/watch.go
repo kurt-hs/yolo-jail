@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // watch.go is the ROOT WATCHER (a term coined in docs/design/in-jail-nix-roots.md §5, option
@@ -52,7 +54,7 @@ type Watcher struct {
 
 func (w *Watcher) logf(format string, a ...any) {
 	if w.Log != nil {
-		fmt.Fprintf(w.Log, time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", a...)
+		fmt.Fprintf(w.Log, logstamp.Now()+" "+format+"\n", a...)
 	}
 }
 

@@ -17,8 +17,8 @@ package wirebridged
 //   - the inbound credential is never read for the upstream and never
 //     forwarded: the caller token it carries was checked before this handler
 //     runs (auth.go, WB-D18), and the outbound key is never logged;
-//   - one stderr line per request — method, path, status, duration — and
-//     never a body.
+//   - one stderr line per request (accesslog.go: method, path, status, auth,
+//     the upstream's status or error, bytes, timings) and never a body.
 
 import (
 	"bufio"
@@ -158,7 +158,7 @@ func newHandler(upstreamBaseURL, path, apiKey string,
 	translateResponse func([]byte) ([]byte, error), newStream func() streamTranslator) http.Handler {
 	return &bridgeHandler{
 		upstreamURL: strings.TrimSuffix(upstreamBaseURL, "/") + path,
-		apiKey:      apiKey, client: &http.Client{Timeout: upstreamTimeout, Transport: upstreamTransport},
+		apiKey:      apiKey, client: &http.Client{Timeout: upstreamTimeout, Transport: observedUpstream},
 		translateRequest: translateRequest, translateResponse: translateResponse, newStream: newStream,
 	}
 }
@@ -202,6 +202,12 @@ func (h *bridgeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// and routing decisions in the log, never a body).
 	note := ""
 	defer func() {
+		// Served by the daemon, the request log (accesslog.go) writes the request's one line,
+		// with everything below and the upstream's side too: this handler hands it the note.
+		if rl := reqLogFrom(r.Context()); rl != nil {
+			rl.setNote(note)
+			return
+		}
 		// THE STATUS IS WHAT THE BRIDGE INTENDED, NOT WHAT CLAUDE RECEIVED, and
 		// those diverge whenever a body write fails: the old line logged "200"
 		// for a response that never arrived, which is the discarded-error half of

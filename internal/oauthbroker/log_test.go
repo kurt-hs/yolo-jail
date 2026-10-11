@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // TestTokenFP pins the fingerprint algorithm: an 8-char sha256-hex prefix,
@@ -109,6 +110,9 @@ func TestLogLevelsAndFormat(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "INFO oauth-broker-host: hello 7") {
 		t.Errorf("info line = %q, want 'INFO oauth-broker-host: hello 7'", out)
+	}
+	if !logstamp.HasStamp([]byte(out)) {
+		t.Errorf("info line carries no logstamp timestamp (local, milliseconds, offset): %q", out)
 	}
 	if strings.Contains(out, "should be suppressed") {
 		t.Errorf("DEBUG emitted without verbose: %q", out)

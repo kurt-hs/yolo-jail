@@ -421,7 +421,7 @@ type passthroughHandler struct {
 // the wait for the upstream's response HEADERS instead.
 func newPassthroughHandler(agent, upstreamBaseURL, key string, signer *bedrockSigner) *passthroughHandler {
 	return &passthroughHandler{agent: agent, upstream: strings.TrimRight(upstreamBaseURL, "/"),
-		key: key, signer: signer, client: &http.Client{Transport: upstreamTransport}}
+		key: key, signer: signer, client: &http.Client{Transport: observedUpstream}}
 }
 
 // viaHeaderTimeout bounds how long the via pass-through waits for an upstream's response

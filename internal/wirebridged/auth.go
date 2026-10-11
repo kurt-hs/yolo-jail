@@ -97,15 +97,22 @@ const (
 
 func (a callerAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reason := a.check(r)
+	rl := reqLogFrom(r.Context())
 	if reason == "" {
+		rl.setAuth("ok")
 		a.next.ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="wire-bridge"`)
 	a.refuse(w, callerRefusalMessage(reason))
-	// The request line the handlers write for a served request, with the reason beside it.
 	// Never a presented value: a wrong token may be somebody's real credential sent to the
-	// wrong port.
+	// wrong port. Served by the daemon, the request log's line (accesslog.go) carries the
+	// outcome as auth=missing-token or auth=wrong-token; a handler used bare says it here.
+	if rl != nil {
+		rl.setAuth(reason + "-token")
+		rl.setNote(" (refused on " + a.what + ": the request reached no route and nothing was sent upstream)")
+		return
+	}
 	logf("%s %s %d — refused on %s: caller token %s (the request reached no route and nothing "+
 		"was sent upstream)", r.Method, r.URL.Path, http.StatusUnauthorized, a.what, reason)
 }

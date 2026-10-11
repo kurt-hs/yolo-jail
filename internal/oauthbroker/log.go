@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
 // Operational logging — the incident-derived forensics contract. The
@@ -48,12 +49,12 @@ func SetupLog(path string, verbose bool) {
 
 // setupLogWriter is the injectable core (tests point it at a bytes.Buffer).
 func setupLogWriter(w io.Writer, verbose bool) {
-	logger = log.New(w, "", log.LstdFlags)
+	logger = logstamp.Logger(w, "")
 	logVerbose = verbose
 }
 
 // logAt emits one line as "<LEVEL> <name>: <message>", carrying the level +
-// logger name so the incident greps keep working. log.LstdFlags prepends the
+// logger name so the incident greps keep working. logstamp prepends the
 // timestamp (the cgd/journald convention).
 func logAt(level, format string, args ...any) {
 	if logger == nil {

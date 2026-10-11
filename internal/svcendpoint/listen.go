@@ -21,7 +21,7 @@ import (
 // prints an endpoint line, a token, or a cert: that would write a live credential
 // into ~/.local/share/yolo-jail/logs/ (and into any transcript), and CI's secret
 // scan runs --only-verified, so it would not be caught.
-var Logger = log.New(os.Stderr, "", log.LstdFlags)
+var Logger = log.New(os.Stderr, "", 0)
 
 // AdvertiseHostEnv names the environment variable that overrides the host name
 // published for clients to dial. It is read from a HOST child process's

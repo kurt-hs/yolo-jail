@@ -61,17 +61,18 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/reqlog"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -108,29 +109,40 @@ type Fetch func() (Answer, error)
 // dials, serving only a request whose `Authorization` is callerToken (the package
 // comment says why).
 func Handler(callerToken string, fetch Fetch) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return requestLog.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entry := reqlog.From(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		if reason := callerCheck(r, callerToken); reason != "" {
 			// Before the path and method checks, so an unauthenticated caller learns nothing
 			// about what is served here. Never the presented value, in the log or the body.
-			fmt.Fprintf(os.Stderr, "aws-credential-adapter: %s %s 401 — refused: caller token %s "+
-				"(the host service was not asked)\n", r.Method, r.URL.Path, reason)
+			entry.Set("auth", reason+"-token")
+			entry.Set("upstream", "-")
+			entry.Set("note", "refused: the host service was not asked")
 			writeError(w, http.StatusUnauthorized, "CallerUnauthenticated", callerRefusalMessage(reason))
 			return
 		}
+		entry.Set("auth", "ok")
 		if r.URL.Path != CredentialsPath {
+			entry.Set("upstream", "-")
 			writeError(w, http.StatusNotFound, "InvalidRequest",
 				"no credentials are served at "+r.URL.Path+" — this adapter serves "+
 					CredentialsPath+", which is what AWS_CONTAINER_CREDENTIALS_FULL_URI names")
 			return
 		}
 		if r.Method != http.MethodGet {
+			entry.Set("upstream", "-")
 			writeError(w, http.StatusMethodNotAllowed, "InvalidRequest",
 				"the container-credentials protocol is one GET with no body; got "+r.Method)
 			return
 		}
+		entry.Set("upstream", "host-aws-auth")
+		entry.Waiting("the host aws-auth credential service (the hop, or its mint)")
+		started := time.Now()
 		answer, err := fetch()
+		entry.Set("upstream_ms", strconv.FormatInt(time.Since(started).Milliseconds(), 10))
 		if err != nil {
+			entry.Set("upstream_outcome", "unreachable")
+			entry.Set("upstream_error", oneLine(err.Error()))
 			// The HOP failed, so nobody said anything and this adapter has to. The
 			// message names the log the reason is in, because the fault is host-side
 			// and nothing in the jail can see it.
@@ -140,6 +152,10 @@ func Handler(callerToken string, fetch Fetch) http.Handler {
 			return
 		}
 		if !answer.OK {
+			// The host's Code is its own fixed vocabulary, a name and never a credential;
+			// the Message beside it is not logged.
+			entry.Set("upstream_outcome", "refused")
+			entry.Set("upstream_code", refusalCode(answer.Body))
 			// THE PASS-THROUGH. The body is the daemon's own {Code, Message} and it
 			// is forwarded byte for byte: for a lapsed session that Message holds
 			// `aws sso login --profile X` verbatim, and nothing here may summarise,
@@ -148,6 +164,8 @@ func Handler(callerToken string, fetch Fetch) http.Handler {
 			return
 		}
 		if missing := missingCredentialFields(answer.Body); len(missing) != 0 {
+			entry.Set("upstream_outcome", "incomplete")
+			entry.Set("missing", strings.Join(missing, ","))
 			// A 200 CARRYING AN INCOMPLETE BODY IS THE ONE FAILURE THE SDK WILL NOT
 			// EXPLAIN. It rejects a response with no `Token` WITHOUT naming the
 			// field (the trap awsauth's package comment opens with), so forwarding
@@ -163,9 +181,27 @@ func Handler(callerToken string, fetch Fetch) http.Handler {
 					"rejects a body missing one without naming it")
 			return
 		}
+		entry.Set("upstream_outcome", "ok")
 		writeRaw(w, http.StatusOK, answer.Body)
-	})
+	}))
 }
+
+// requestLog is this adapter's log: one stamped line per request (internal/reqlog), and its
+// own diagnostics through it too, so the jail's aws-auth.log and the macos-user doorway's
+// launch-service log read the same.
+var requestLog = reqlog.New("aws-credential-adapter", os.Stderr)
+
+// refusalCode is the host refusal's Code, or "-" when the body names none.
+func refusalCode(body json.RawMessage) string {
+	var doc struct{ Code string }
+	if json.Unmarshal(body, &doc) != nil || doc.Code == "" || len(doc.Code) > 64 {
+		return "-"
+	}
+	return oneLine(doc.Code)
+}
+
+// oneLine collapses text to one line, so an error's text cannot forge a second log record.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // credentialFields is the whole of what an SDK reads. Nothing else in the body is
 // looked at by anyone, which is why the adapter forwards rather than re-renders.
@@ -322,28 +358,28 @@ func Main(args []string) int {
 		return 2
 	}
 	if len(fs.Args()) != 0 {
-		fmt.Fprintf(os.Stderr, "aws-credential-adapter: unexpected arguments: %v\n", fs.Args())
+		requestLog.Printf("unexpected arguments: %v", fs.Args())
 		return 2
 	}
 	callerToken, why := callerTokenFrom(callerTokenLookup(os.Getenv))
 	if why != "" {
-		fmt.Fprintln(os.Stderr, "aws-credential-adapter: idling, serving nothing:", why)
+		requestLog.Printf("idling, serving nothing: %s", why)
 		idleUntilStopped()
 		return 0
 	}
 	endpoint := os.Getenv(EndpointEnv)
 	fetch := func() (Answer, error) {
-		return Request(endpoint, map[string]any{"action": "credentials"}, os.Stderr)
+		return Request(endpoint, map[string]any{"action": "credentials"}, requestLog.Writer())
 	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "aws-credential-adapter:", err)
+		requestLog.Printf("%v", err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "aws-credential-adapter: serving on %s; every request must carry this "+
+	requestLog.Printf("serving on %s; every request must carry this "+
 		"launch's caller token ($%s)\n", listener.Addr(), CallerTokenEnv)
 	if err := Serve(listener, callerToken, fetch); err != nil {
-		fmt.Fprintln(os.Stderr, "aws-credential-adapter:", err)
+		requestLog.Printf("%v", err)
 		return 1
 	}
 	return 0
