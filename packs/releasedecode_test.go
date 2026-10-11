@@ -38,6 +38,7 @@ package packs_test
 
 import (
 	"archive/tar"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -646,7 +647,16 @@ func extractRelease(t *testing.T, root, tag, dest string) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	tr := tar.NewReader(stdout)
+	untarInto(t, stdout, tag, dest)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("git archive %s: %v\n%s", tag, err, stderr.String())
+	}
+}
+
+// untarInto writes the tar stream r (`git archive` of tag) into dest.
+func untarInto(t *testing.T, r io.Reader, tag, dest string) {
+	t.Helper()
+	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -686,8 +696,10 @@ func extractRelease(t *testing.T, root, tag, dest string) {
 			_ = os.Symlink(h.Linkname, path)
 		}
 	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("git archive %s: %v\n%s", tag, err, stderr.String())
+	// Read past the end-of-archive marker to the stream's end: the writer's record padding is
+	// still in the pipe, and a writer blocked on it never exits (TestUntarIntoReadsTheWholeStream).
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		t.Fatalf("draining git archive %s: %v", tag, err)
 	}
 }
 
@@ -734,4 +746,30 @@ func testFuncExists(t *testing.T, root, name string) bool {
 		})
 	}
 	return found
+}
+
+// TestUntarIntoReadsTheWholeStream pins that the release extraction consumes git archive's output
+// to its end, record padding included. tar's reader stops at the end-of-archive marker; a writer
+// still holding padding then blocks on a full pipe while the test waits for it to exit, which on a
+// loaded host (where Linux shrinks new pipes to one page past pipe-user-pages-soft) hung
+// TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram for ten minutes.
+func TestUntarIntoReadsTheWholeStream(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	body := []byte("package x\n")
+	if err := tw.WriteHeader(&tar.Header{Name: "x/x.go", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	buf.Write(make([]byte, 20*512)) // git archive pads its last record, as tar(1) does
+	r := bytes.NewReader(buf.Bytes())
+	untarInto(t, r, "v0.0.0", t.TempDir())
+	if r.Len() != 0 {
+		t.Errorf("untarInto left %d bytes of the stream unread; a pipe writer would block on them", r.Len())
+	}
 }
