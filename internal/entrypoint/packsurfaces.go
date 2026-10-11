@@ -655,6 +655,13 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 		}
 	}
 
+	// THE PROVIDER KEYS (providerkeys.go): the settings this surface's agent's provider
+	// selection decides, resolved against that selection, so the stateful render drops a
+	// captured value at each and only the computed layer decides them. Jail-only by
+	// construction: this is the jail's tail of the loop.
+	platform := selectedPlatformOf(src.tables, src.sel.Provider)
+	contribs = contribs.withProviderKeys(providerKeyLeaves(pl.pack, surface, platform))
+
 	w, err := writeSurfaceThrough(e, pl.mechanism, surface, layers, contribs)
 	if pl.mechanism == manifest.ModeRMW {
 		// A REFUSAL IS A WARNING HERE, NOT AN A12 BOOT FAILURE, and the distinction is the
@@ -689,6 +696,12 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 	// so each goes only while it holds exactly yolo's render: what this write just produced,
 	// or, on a stateful surface, what the same layers produce without the captured edits.
 	retireMatchingCopies(e, surface, layers, contribs)
+	// PP-D1's conflict line over the file this boot wrote, whatever layer the switch came from
+	// (notePlatformSwitchesOn): the launcher's check reads the user's host copy alone.
+	if data, rerr := os.ReadFile(expandHomePath(e, surface.Path)); rerr == nil {
+		notePlatformSwitchesOn(e, pl.pack, surface, platform,
+			agentcfg.DecodeSurfaceObject(surface.Codec, data), layers.hostBytes, contribs)
+	}
 	return nil
 }
 

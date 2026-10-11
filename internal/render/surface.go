@@ -99,6 +99,9 @@ type State struct {
 	// keeps them out of the capture overlay (agentcfg.StatefulInputs.SelectionCleared). nil
 	// = none.
 	SelectionCleared []agentcfg.SelectionClear
+	// ProviderKeys are the surface's provider keys resolved against this render's selection
+	// (agentcfg.StatefulInputs.ProviderKeys): a captured value at one is dropped. nil = none.
+	ProviderKeys []agentcfg.OwnedLeaf
 }
 
 // Prepare resolves the ${workspace} placeholder in a surface's declared layers against
@@ -178,6 +181,7 @@ func (t Target) ComposeStateful(s manifest.Surface, l Layers, st State) (manifes
 		ListCaptureJSON:   st.ListCaptureJSON,
 		InsertRecordJSON:  st.InsertRecordJSON,
 		SelectionCleared:  st.SelectionCleared,
+		ProviderKeys:      st.ProviderKeys,
 	})
 	if err != nil {
 		return s, nil, err

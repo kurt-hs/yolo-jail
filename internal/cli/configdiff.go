@@ -583,6 +583,7 @@ func configReset(t configTarget, args []string, out, errw io.Writer, color bool)
 		overlayFile, lastRenderFile := t.overlayFile(s.Agent, s.Name), t.lastRenderFile(s.Agent, s.Name)
 		listCaptureFile := t.listCaptureFile(s.Agent, s.Name)
 		had, hadList := overlayKeyCountAt(overlayFile), listCaptureCountAt(listCaptureFile)
+		overlayBefore, _ := overlayFile.read()
 		removedAny := false
 		// The list capture goes with the overlay: it IS captured edits (per entry, at the
 		// surface's config-list paths), and a reset that kept it would re-apply the discarded
@@ -601,6 +602,8 @@ func configReset(t configTarget, args []string, out, errw io.Writer, color bool)
 		if !removedAny {
 			continue
 		}
+		logCaptureChange(overlayFile, s, "reset", overlayBefore, nil,
+			"removed by `yolo config reset`", t.sidecarFileMode())
 		// Ruling 1 / B1: also TRUNCATE the surface to its pure render.
 		//
 		// This is what makes reset survive adopt-on-first-migration. Deleting the two
@@ -882,10 +885,13 @@ func (r *ownedHostRender) capture(pr richtext.Printer, t configTarget, s manifes
 	// The two sidecars the apply's write persists, in its bytes, at the store's own mode — and
 	// REPLACED, as captureSurfaceAt replaces them, so a crash cannot leave a truncated overlay.
 	overlay, listCapture := t.overlayFile(s.Agent, s.Name), t.listCaptureFile(s.Agent, s.Name)
+	overlayBefore, _ := overlay.read()
 	if err := overlay.replace(append(append([]byte(nil), c.Overlay...), '\n'),
 		t.sidecarFileMode()); err != nil {
 		return -1, false, err
 	}
+	logCaptureChange(overlay, s, "capture (host)", overlayBefore, c.Overlay,
+		"dropped by the capture", t.sidecarFileMode())
 	if c.ListCapture != nil && listCapture.name != "" {
 		if err := listCapture.replace(append(append([]byte(nil), c.ListCapture...), '\n'),
 			t.sidecarFileMode()); err != nil {
@@ -1708,6 +1714,8 @@ func captureSurfaceAt(s manifest.Surface, at captureLocation) (bool, error) {
 	if err := at.overlay.replace(append(out.OverlayJSON, '\n'), at.sidecarMode); err != nil {
 		return false, err
 	}
+	logCaptureChange(at.overlay, s, "capture", overlayJSON, out.OverlayJSON,
+		"dropped by the capture", at.sidecarMode)
 	// The per-entry half, written only when the surface HAS a list path (the sidecar named
 	// one) — nil otherwise, and then no file is created.
 	if out.ListCaptureJSON != nil && at.listCapture.name != "" {

@@ -310,6 +310,11 @@ type surfaceContribs struct {
 	// leaf yolo's derive asserted on an earlier apply, still holding yolo's value, that the derive
 	// no longer asserts (hostRMWLeafRecord, HC-D25). Applied after hostClears.
 	hostLeafClears []string
+	// providerKeys are the surface's provider keys resolved for this render's selection
+	// (providerkeys.go), handed to the stateful render, which drops a captured value at each.
+	// Set by the jail's render alone (renderPlannedSurface): the host notch writes the user's
+	// real file, where yolo deletes nothing it did not write (PP-D1).
+	providerKeys []agentcfg.OwnedLeaf
 }
 
 // withHostLeaves is c with the host's leaf layer attached, as a new value (c is shared with
@@ -320,7 +325,7 @@ func (c *surfaceContribs) withHostLeaves(leaves map[string]any, clears, leafClea
 	}
 	out := &surfaceContribs{hostLeaves: leaves, hostClears: clears, hostLeafClears: leafClears}
 	if c != nil {
-		out.overlays, out.lists = c.overlays, c.lists
+		out.overlays, out.lists, out.providerKeys = c.overlays, c.lists, c.providerKeys
 	}
 	return out
 }
@@ -498,6 +503,9 @@ type statefulRender struct {
 	// so text() and pureText() — and so the archive gate and the change predicate — read the
 	// words the write will carry at this notch rather than the jail's.
 	header string
+	// overlayBefore is the capture overlay sidecar as this render found it (nil when absent),
+	// so the write can log what it changed there (capturelog).
+	overlayBefore []byte
 }
 
 // text is the exact file content this render produces — the same expression persist writes,
@@ -646,6 +654,7 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 			ListCaptureJSON:   listCaptureJSON,
 			InsertRecordJSON:  insertRecordJSON,
 			SelectionCleared:  cleared,
+			ProviderKeys:      contribs.providerKeyLeaves(),
 		})
 	if err != nil {
 		return nil, err
@@ -659,7 +668,8 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 	// belt-and-braces on top of that, plus it keeps the sidecar a faithful record of what the
 	// engine produced.
 	return &statefulRender{surface: surface, path: surfacePath, current: current,
-		out: out, selection: selectionRecord, header: t.GeneratedHeader(surface)}, nil
+		out: out, selection: selectionRecord, header: t.GeneratedHeader(surface),
+		overlayBefore: overlayJSON}, nil
 }
 
 // persistStatefulSurface writes what composeStatefulSurface decided: the surface file, the
@@ -720,6 +730,7 @@ func persistStatefulSurface(e *Env, r *statefulRender) error {
 		string(out.OverlayJSON)+"\n"); err != nil {
 		return err
 	}
+	logOverlayChange(e, target, r)
 	// The FOURTH sidecar, and only for a surface with a config-list path: the per-entry
 	// capture (agentcfg.ListRecord). nil for every other surface, which then keeps exactly
 	// the three files it had. Same store, same mode, same failure contract as the overlay —
@@ -738,6 +749,7 @@ func persistStatefulSurface(e *Env, r *statefulRender) error {
 		writeProvenanceRecord(e, surface.Agent, surface.Name, out.Result.Provenance)
 	}
 	writeStatefulInsertRecord(e, surface, out)
+	noteProviderKeyDrops(e, surface, out.ProviderKeyDrops)
 	noteCapturedOverlay(e, surface, out)
 	noteRepairedValues(e, out)
 	for _, n := range out.ListNotes {

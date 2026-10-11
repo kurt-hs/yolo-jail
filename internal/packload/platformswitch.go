@@ -170,6 +170,11 @@ func switchIsOn(p *Pack, sw packdecl.PlatformSwitch, home string) (string, any, 
 	return sw.Surface, nil, false
 }
 
+// SwitchOn is switchTruthy for a caller outside this package: the jail boot's check of the
+// settings file it just rendered (entrypoint.notePlatformSwitchesOn) reads a switch by the same
+// convention the launcher's check does, so the two cannot disagree about "on".
+func SwitchOn(v any) bool { return switchTruthy(v) }
+
 // switchTruthy is the common environment-flag convention a PlatformSwitch documents: JSON true,
 // the number 1, or a string reading 1, true, yes or on in any case.
 func switchTruthy(v any) bool {

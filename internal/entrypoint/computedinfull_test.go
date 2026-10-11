@@ -27,7 +27,8 @@ import (
 // THE JAIL HALF: a first migration (no last_render) of claude/settings, with an LSP
 // configured so the derive asserts env.ENABLE_LSP_TOOL, over a file that already holds one of
 // the agent's own variables. Before CO13 the adoption drop took `env` wholesale and
-// AWS_PROFILE was gone from the rendered file.
+// the variable was gone from the rendered file. (The example was AWS_PROFILE until that became
+// one of claude's provider keys, which no captured edit may set at a jail: providerkeys.go.)
 func TestConfigureClaudePrismFirstMigrationKeepsTheAgentsOwnEnv(t *testing.T) {
 	e, _ := newClaudePrismEnv(t, map[string]string{
 		"YOLO_LSP_SERVERS": `{"python":{}}`,
@@ -37,7 +38,7 @@ func TestConfigureClaudePrismFirstMigrationKeepsTheAgentsOwnEnv(t *testing.T) {
 	}
 	settings := filepath.Join(e.ClaudeDir(), "settings.json")
 	if err := os.WriteFile(settings,
-		[]byte(`{"env":{"ENABLE_LSP_TOOL":"1","AWS_PROFILE":"mine"}}`), 0o644); err != nil {
+		[]byte(`{"env":{"ENABLE_LSP_TOOL":"1","MY_TOOL_HOME":"mine"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -47,8 +48,8 @@ func TestConfigureClaudePrismFirstMigrationKeepsTheAgentsOwnEnv(t *testing.T) {
 
 	got := decodeJSONFile(t, settings)
 	env, _ := got["env"].(map[string]any)
-	if env["AWS_PROFILE"] != "mine" {
-		t.Errorf("env = %v, want AWS_PROFILE kept — claude's derive asserts ONE leaf of env "+
+	if env["MY_TOOL_HOME"] != "mine" {
+		t.Errorf("env = %v, want MY_TOOL_HOME kept — claude's derive asserts ONE leaf of env "+
 			"and does not declare the table in full (ctx.in_full), so an adopting render may "+
 			"claim only that leaf as yolo's own", got["env"])
 	}
@@ -58,8 +59,8 @@ func TestConfigureClaudePrismFirstMigrationKeepsTheAgentsOwnEnv(t *testing.T) {
 	// And it is ADOPTED, not merely left over: the capture overlay holds it, so a later boot
 	// that stops asserting ENABLE_LSP_TOOL still renders the user's variable.
 	overlay := decodeJSONFile(t, prismOverlayPath(e, "claude", "settings"))
-	if oenv, _ := overlay["env"].(map[string]any); oenv["AWS_PROFILE"] != "mine" {
-		t.Errorf("overlay = %v, want env.AWS_PROFILE adopted into the capture", overlay)
+	if oenv, _ := overlay["env"].(map[string]any); oenv["MY_TOOL_HOME"] != "mine" {
+		t.Errorf("overlay = %v, want env.MY_TOOL_HOME adopted into the capture", overlay)
 	}
 	if oenv, _ := overlay["env"].(map[string]any); oenv["ENABLE_LSP_TOOL"] != nil {
 		t.Errorf("overlay = %v, want yolo's asserted leaf narrowed OUT of the capture", overlay)

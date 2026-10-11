@@ -113,6 +113,13 @@ type Manifest struct {
 	// through ProgramModelListCheck; never projected into install or derive payloads.
 	ModelListChecks map[string]*ModelListCheck `json:"model_list_check,omitempty"`
 
+	// ProviderKeysByBin are the settings in each of this pack's programs' OWN config that the
+	// program's provider SELECTION decides, keyed by the program's bin: at a jail no captured
+	// in-jail edit may set one (providerkeys.go). PACK-WIDE, like model_list_check, so an older
+	// reader ignores the unknown key instead of dropping the program contribution that would
+	// otherwise carry it (packs/releasedecode_test.go measures that drop).
+	ProviderKeysByBin map[string][]ProviderKey `json:"provider_keys,omitempty"`
+
 	// Contributes is the pack's effects: one list of typed contributions, each with
 	// an explicit `kind` from the closed set (see contributes.go / kinds.go). It
 	// each with an explicit kind from the closed core-owned set
@@ -862,6 +869,7 @@ func (m *Manifest) Validate() []string {
 	problems = append(problems, m.validateNeeds()...)
 	problems = append(problems, m.validateContributions()...)
 	problems = append(problems, m.validateModelListChecks()...)
+	problems = append(problems, m.validateProviderKeys()...)
 	return append(problems, m.validateMCP()...)
 }
 
