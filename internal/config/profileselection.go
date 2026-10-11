@@ -305,6 +305,22 @@ type ProfileFold struct {
 	// first entry alone, each in receiver order. A receiver a later Named entry took is in
 	// neither: its entry is not the list's.
 	Whole, Narrowed []string
+	// Origins is where each CLI's entry in Table came from: which selection set it last, and
+	// whether through that selection's Named entry for the CLI or its Default. A CLI absent
+	// from Table is absent here too. Read by the launch logs' profile record, so the record
+	// states the fold's own answer rather than re-deriving which spelling won.
+	Origins map[string]ProfileOrigin
+}
+
+// ProfileOrigin is one Table entry's source in a ProfileFold.
+type ProfileOrigin struct {
+	// From is the index, among the selections FoldProfiles was handed, of the one that set the
+	// entry last: at a launch, 0 is the config `profile` key and 1 the -p flags.
+	From int
+	// Named is whether the entry came from that selection's Named entry for the CLI (a
+	// `profile` key's own `"claude": …`, a `-p claude=…`) rather than its Default (the key's
+	// "*" or string form, a bare `-p`).
+	Named bool
 }
 
 // FoldProfiles folds selections into the CLI-name → active-set table, LOWEST PRECEDENCE FIRST.
@@ -323,7 +339,7 @@ type ProfileFold struct {
 // it is OQ-AP2's, never a silent narrowing here. A Named entry with no profile is emitted as
 // null, which every reader of the table (packload.ProfileTable) reads as no selection.
 func FoldProfiles(recv ProfileReceivers, selections ...ProfileSelection) ProfileFold {
-	fold := ProfileFold{Table: jsonx.NewOrderedMap(), BareFrom: -1}
+	fold := ProfileFold{Table: jsonx.NewOrderedMap(), BareFrom: -1, Origins: map[string]ProfileOrigin{}}
 	fromBare := map[string]bool{}
 	for i, s := range selections {
 		if len(s.Default) > 0 {
@@ -341,10 +357,12 @@ func FoldProfiles(recv ProfileReceivers, selections ...ProfileSelection) Profile
 					}
 				}
 				fold.Table.Set(bin, packload.ProfileSetWire(set))
+				fold.Origins[bin] = ProfileOrigin{From: i}
 			}
 		}
 		for _, cli := range s.namedKeys() {
 			delete(fromBare, cli)
+			fold.Origins[cli] = ProfileOrigin{From: i, Named: true}
 			if set := s.Named[cli]; len(set) > 0 {
 				fold.Table.Set(cli, packload.ProfileSetWire(set))
 			} else {

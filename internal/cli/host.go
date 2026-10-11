@@ -601,6 +601,7 @@ func hostExec(flagArgs, cmd []string, out, errw io.Writer, stdin io.Reader) int 
 		return 2
 	}
 	trace := startHostLaunchTrace(cmd[0], flags.timing, errw)
+	trace.recordInvocation()
 	rc := hostLaunch(flags, profile, cmd, out, trace.errw, errw, stdin, trace)
 	trace.end(rc)
 	return rc
@@ -749,6 +750,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 		fmt.Fprintf(errw, "Warning: %s\n", msg)
 	}, hostServicesStart)
 	sp.End()
+	trace.recordComposition(launch, flags.profile)
 
 	sp = trace.span("host.preflight")
 	if rc := hostPreflight(launch, errw); rc != 0 {

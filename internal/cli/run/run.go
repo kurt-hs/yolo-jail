@@ -427,6 +427,11 @@ func Run(opts Options) (rc int) {
 		o.printProviderRefusal([]string{"Refusing to launch: " + err.Error()})
 		return 1
 	}
+	// THE ARCHAEOLOGY RECORDS (launchcontext.go), to launch.log alone: the jail, each agent's
+	// profile and where it came from, what changed since the previous launch, and the captured
+	// edits the boot re-applies. Here, once the channel has composed from the same fold, and on
+	// every backend and an attach alike.
+	o.recordLaunchContext(cfg, staged.packs, cname, rt)
 	injectedArgs := o.Args
 	if len(injectedArgs) > 0 {
 		injectedArgs = o.injectLaunchFlagsDisclosed(staged.packs, injectedArgs)
@@ -1522,6 +1527,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	}
 
 	// --- Fresh launch: config-change approval ---
+	o.logRecord("decision: fresh launch of %s (no running jail to attach to)", cname)
 	if !o.checkConfigChanges(cfg, rt) {
 		return 1
 	}
@@ -2701,6 +2707,13 @@ func startedLoophole(handles []loopholeDaemon, name string) bool {
 // was exec'd, and the caller continues into the fresh launch still holding the lock.
 func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.OrderedMap,
 	staged stagedPacks, channel *packChannel, raced bool, release func()) (rc int, restarted bool) {
+	// Every attach path comes through here (the first probe, the post-lock re-check and the
+	// stale-removal wait), so the launch log's decision record is written once, here.
+	if raced {
+		o.logRecord("decision: attach to the running jail %s (started by another launch meanwhile)", cname)
+	} else {
+		o.logRecord("decision: attach to the running jail %s", cname)
+	}
 	out := o.pr(o.Stdout)
 	if o.cachedGoodOwner != "" {
 		if release != nil {

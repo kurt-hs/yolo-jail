@@ -155,6 +155,9 @@ func (l *launchLog) writeHeader(o *Options) {
 	}
 	fmt.Fprintf(l.f, "%s %s ===\n", launchRunPrefix, time.Now().Format("2006-01-02T15:04:05-0700"))
 	fmt.Fprintf(l.f, "  yolo=%s  workspace=%s\n", version.Get(""), o.Workspace)
+	// The argv, so a later reader knows which flags this launch was given (a `-p` changes
+	// every agent's provider and says so nowhere else in the file): launchcontext.go.
+	fmt.Fprintf(l.f, "  invocation: %s\n", formatInvocation(o.Invocation, o.Args))
 	var absent []string
 	for _, k := range launchLogFacts {
 		if v := o.Getenv(k); v != "" {

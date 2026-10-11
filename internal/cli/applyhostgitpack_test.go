@@ -137,12 +137,15 @@ func hashTree(t *testing.T, root string) string {
 	// The machine logs are no render either: every `yolo host --` writes its launch line, its
 	// launch log and (when asked) its spans there, whatever it renders (hostLaunchTrace).
 	logs := filepath.Join(paths.GlobalStorage(), "logs")
+	// Nor is the previous host launch's record its launch log compares against
+	// (run.HostLaunchStateDir), which every `yolo host --` that composes rewrites.
+	launches := filepath.Join(paths.GlobalStorage(), "host-launches")
 	var lines []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if (p == store || p == logs) && d.IsDir() {
+		if (p == store || p == logs || p == launches) && d.IsDir() {
 			return filepath.SkipDir
 		}
 		rel, _ := filepath.Rel(root, p)

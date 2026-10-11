@@ -352,7 +352,9 @@ documented halves:
   above, `startup.log` from the last new-container provisioning run, `boot.log` (plus one
   rotation) which carries everything the entrypoint said as the jail started,
   `boot.session.log` (plus one rotation) which carries the same for each session that entered
-  it since, and `launch.log` which carries everything the host launcher said.
+  it since, and `launch.log` which carries everything the host launcher said, plus the
+  [archaeology records](report-tiers.md#archaeology-records) it writes there alone, compared
+  against `last-launch-config.json` and `last-launch.json`, which each launch leaves for the next.
 
 `boot.log` exists because it **outlives the container**: a boot that *refused* leaves no
 jail to ask, and the provisioning log is written by a shell wrapper that only runs on a
@@ -494,6 +496,8 @@ the only place the values themselves are stated.
 | A session's boot pass, and its one rotation | `<workspace>/.yolo/boot.session.log`, `boot.session.log.prev` | `internal/entrypoint/bootlog.go` (`attachPassLog`) |
 | Launch log (the host half), trimmed to the newest 50 runs | `<workspace>/.yolo/launch.log` | `internal/cli/run/launchlog.go`, `perf.MaxRuns` |
 | Host-notch launch log (`yolo host --`), trimmed to the newest 50 runs under a sibling `.lock` | `<machine storage>/logs/host-launch.log` | `internal/cli/run/launchlog.go` (`HostLaunchLogName`), `perf.MaxRuns` |
+| The previous launch's effective config and pack identities, for the launch log's change records | `<workspace>/.yolo/last-launch-config.json`, `last-launch.json` | `internal/cli/run/launchcontext.go` ([archaeology records](report-tiers.md#archaeology-records)) |
+| The same, for `yolo host --`, per directory short code, 0600 | `<machine storage>/host-launches/<code>-last-launch-config.json`, `<code>-last-launch.json` | `internal/cli/run/hostlaunchcontext.go` (`HostLaunchStateDir`) |
 | Host-notch perf log (`yolo host --`, `yolo host apply`) | `<machine storage>/logs/host-notch-perf.log` | `internal/cli/run/hosttiming.go` (`HostNotchPerfLogName`) |
 | Machine-wide launch line, one per launch at either notch | `<machine storage>/logs/launches.log` | `internal/cli/run/launchrecord.go` (`MachineLaunchLogName`) |
 | Provisioning log (fresh containers only) | `<workspace>/.yolo/startup.log` | `provision.StartupLog` |

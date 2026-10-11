@@ -50,25 +50,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/sensitivename"
 )
 
-// sensitiveNameTokens is the deny-list, as whole TOKENS rather than substrings.
-//
-// Tokens, because substring matching produces both failure directions at once: `key`
-// matches `monkey` (a false refusal with no explanation a user can see) while a check
-// narrow enough to avoid that misses `API_KEY`. Splitting a name into words first —
-// `TAVILY_API_KEY` → tavily·api·key, `apiKeyHelper` → api·key·helper — matches the way
-// people actually name credential fields.
-var sensitiveNameTokens = map[string]bool{
-	"apikey": true, "auth": true, "bearer": true, "cert": true, "certificate": true,
-	"cookie": true, "credential": true, "credentials": true, "key": true, "keys": true,
-	"oauth": true, "passphrase": true, "password": true, "passwd": true, "private": true,
-	"pwd": true, "secret": true, "secrets": true, "session": true, "signature": true,
-	"token": true, "tokens": true,
-}
+// sensitiveName reports whether a key name carries a deny-listed token. The list and the
+// tokenizer are internal/sensitivename's, shared with the launch log's redaction.
+func sensitiveName(name string) bool { return sensitivename.Is(name) }
 
 // sensitiveKeyPath walks a captured value and returns the first key PATH whose name is
 // credential-shaped, or "" when none is. The path is what the refusal names, since a user
@@ -80,52 +69,6 @@ func sensitiveKeyPath(key string, value any) string {
 		return key
 	}
 	return walkKeyPaths(key, value, sensitiveName)
-}
-
-// sensitiveName reports whether a key name carries a deny-listed token.
-func sensitiveName(name string) bool {
-	for _, tok := range nameTokens(name) {
-		if sensitiveNameTokens[tok] {
-			return true
-		}
-	}
-	return false
-}
-
-// nameTokens lowercases a key name and splits it into words on separators and camelCase
-// boundaries: "TAVILY_API_KEY" → [tavily api key], "apiKeyHelper" → [api key helper],
-// "OAuthToken" → [o auth token].
-//
-// The acronym rule is the usual one — split before an upper-case rune that follows a
-// lower-case one, and before the last upper-case rune of a run that is followed by a
-// lower-case one — so "APIKey" yields [api key] rather than [apikey]. `apikey` is in the
-// deny-list anyway, so the two spellings agree whichever way a name is written.
-func nameTokens(name string) []string {
-	var tokens []string
-	var cur strings.Builder
-	flush := func() {
-		if cur.Len() > 0 {
-			tokens = append(tokens, strings.ToLower(cur.String()))
-			cur.Reset()
-		}
-	}
-	runes := []rune(name)
-	for i, r := range runes {
-		switch {
-		case !unicode.IsLetter(r) && !unicode.IsDigit(r):
-			flush()
-			continue
-		case unicode.IsUpper(r) && i > 0:
-			prev := runes[i-1]
-			nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
-			if unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && nextLower) {
-				flush()
-			}
-		}
-		cur.WriteRune(r)
-	}
-	flush()
-	return tokens
 }
 
 // environmentBoundPath walks a captured value for a string that is an artifact of the JAIL

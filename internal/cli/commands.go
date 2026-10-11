@@ -1185,6 +1185,9 @@ func runRun(args []string) int {
 	}
 	opts := run.NewDefaultOptions()
 	opts.Color = true
+	// The argv as TYPED, not args (the front door's rewrite), for the launch log's header: the
+	// record of how this launch was asked for (run's launchcontext.go).
+	opts.Invocation = append([]string{}, os.Args[1:]...)
 	// A MISTYPED FLAG IS MISUSE, and this is the refusal the fold itself cannot make
 	// (self-documenting-cli.md requirement 3). parseRunArgs either swallows an unknown flag or
 	// reads it as the command it follows — so `yolo --dry-runn -- claude` launched for real, and
