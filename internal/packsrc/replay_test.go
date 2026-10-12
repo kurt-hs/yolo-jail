@@ -7,6 +7,7 @@ package packsrc
 // take its own series, a blob the mirror cannot get, and the replay's own config regime.
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 // checked runs a forced check of the fixture's main and returns the series and the list.
@@ -146,16 +148,53 @@ func TestASignalledBaseApplicationCommandIsNotClassified(t *testing.T) {
 	}
 }
 
+// A CANCELLED APPLICATION COMMAND is not classified: the walk leaves an apply error, never a
+// patch failure (PF-D81). THE CANCELLATION IS ARMED BY THE TEST once merge-tree is known to run,
+// through Store.Ctx, exactly as a Ctrl-C reaches the walk (PF-D25): cancelling a parent context
+// ends the git it started, and the walk treats a context-ended git as unclassified, the same path
+// every cancellation takes. It used to be WalkOptions{Timeout: time.Second} racing the whole walk —
+// under load the setup's own git runs (rev-list, the scratch checkout, `git am`) exhausted the
+// second before merge-tree started and the test failed on what it does not test
+// (patchfailure_test.go's probe made the same repair).
 func TestACancelledApplicationCommandIsNotClassified(t *testing.T) {
 	u := newPatchedUpstream(t)
 	u.release(t, "v1.1.0", map[int]string{14: "fourteen"})
 	series, list := u.checked(t)
 	marker := filepath.Join(t.TempDir(), "merge-started")
 	u.store.Git = wrappedGit(t, `case " $* " in *" merge-tree "*) echo started > `+shquote.Quote(marker)+`; exec sleep 30;; esac`)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	u.store.Ctx = ctx
 	addr := mustAddr(t, u.source("main"))
-	walk := u.store.WalkSeries(addr.Repo, addr.Path, series, list[:1], WalkOptions{Timeout: time.Second})
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("merge-tree did not start before cancellation: %v; walk=%+v", err, walk)
+	done := make(chan WalkResult, 1)
+	go func() {
+		// No Timeout: the bound is ReplayTimeout, far past the test, so nothing but the
+		// cancellation below can end the walk before merge-tree runs.
+		done <- u.store.WalkSeries(addr.Repo, addr.Path, series, list[:1], WalkOptions{})
+	}()
+	// Wait for the application command to start, an event rather than a wall clock: only then is
+	// the cancellation the one this test proves.
+	deadline := time.Now().Add(testsupport.ReadinessBudget(t))
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		select {
+		case walk := <-done:
+			t.Fatalf("walk returned before merge-tree started: %+v", walk)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("merge-tree did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	var walk WalkResult
+	select {
+	case walk = <-done:
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatal("the walk did not end after the application command was cancelled")
 	}
 	if walk.PatchFailure() != nil {
 		t.Fatalf("cancelled command became patch failure: %+v", walk.PatchFailure())
