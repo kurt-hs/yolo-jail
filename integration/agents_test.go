@@ -103,6 +103,14 @@ var packMatrix = []packCase{
 			"DECLARE which platforms its vendor publishes for (only the `service` kind " +
 			"carries `platforms`), so an arm64 Linux jail selecting this pack tries the " +
 			"install and gets the vendor's error instead of yolo declining with a reason"},
+	// Meta's Muse Code CLI. Its marker is NOT an auto-approve setting: the pack ships no
+	// `permissions.default_profile` (that would make the interactive CLI read-only with no
+	// in-place escape), so the surface's one load-bearing key is the `schema_version` the CLI
+	// refuses to start without. Its vendor installer is AUTH-GATED (dev.meta.ai answers
+	// 401/403, "muse is available to Meta employees"), so the real-install cells of packs.yml
+	// and macos-user.yml cannot pass from outside Meta's network — see packs/muse-code/pack.json.
+	{pack: "muse-code", binary: "muse", versionArg: "--version",
+		configRel: ".config/muse/settings.json", marker: "schema_version"},
 	// NOT AN AGENT: an MCP server program. It renders no config surface of its own (its `mcp`
 	// entry lands in each agent's), so the file asserted is the `files` tree its entry runs,
 	// which names the program it finds.
