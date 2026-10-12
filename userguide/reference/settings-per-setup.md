@@ -227,7 +227,7 @@ selects.
 | Loophole (its pack) | What it does | On by default | `podman` / Linux | `podman` / macOS | `container` / macOS | `macos-user` / macOS |
 |---|---|---|---|---|---|---|
 | `claude-oauth-broker` (`claude`) | Lets several jails share one Claude login without logging each other out | Yes | Yes[^lh-rootful] | Should work[^lh-mac] | No[^lh-ac] | No; not planned yet[^musrefresh] |
-| `openai-auth-broker` (`openai-auth`, brought in by `claude`, `codex`, `opencode` and `pi`) | One OpenAI subscription login for `codex`, `pi`, and `opencode` on the `codex` profile, in every jail | Yes | Yes | Should work[^lh-mac] | No[^lh-ac] | Yes[^login-mu] |
+| `openai-auth-broker` (`openai-auth`, which you add to `packs`; the `claude`, `codex`, `opencode` and `pi` packs no longer bring it in) | One OpenAI subscription login for `codex`, `pi`, and `opencode` on the `codex` profile, in every jail | Yes | Yes | Should work[^lh-mac] | No[^lh-ac] | Yes[^login-mu] |
 | `aws-auth` (`aws-auth`) | Bedrock with credentials from your host's `aws sso login`, narrowed to a role before they reach the jail | No | Yes[^lh-aws] | Should work[^lh-mac] | No[^lh-ac] | Yes[^login-mu] |
 | `github-broker` (`github`) | `gh` in the jail, run by your host's GitHub login against the project's own repositories; read-only for now | No | Yes[^lh-gh] | Should work[^lh-mac] | No[^lh-ac] | Starts; not yet run on a Mac |
 | `serial` (`serial`) | A USB serial device on the host, through an allowlist (`yolo-serial`) | No | Yes | Should work[^lh-mac] | No[^lh-ac] | Should work: `yolo-serial` is installed in the sandbox when the loophole is on. Not yet run on a Mac. |

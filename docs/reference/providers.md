@@ -1756,6 +1756,49 @@ which a via profile does not change, and no via route carries either of them. At
 host clears every via address before any derive reads one
 ([WG-I12](../design/wire-bridge-gateway.md#WG-I12)).
 
+### What a profile's subagents run on
+
+`subagents` is an optional field on a `profiles` entry, a profile field like
+[`via`](#routing-a-profile-through-the-bridge-via) rather than a provider option, so the
+provider's option census does not apply to it. It is the one input to a child agent's model that
+no launch can infer: a child otherwise starts on its parent's model, so one parent model cannot
+route different children, and the model a child should use instead is a fact about what the user
+wants, not about anything yolo can see.
+
+It takes two halves, each naming a model by the SAME vocabulary the profile's `model` option
+speaks — a bare alias or an exact id of the profile's provider, never a `<provider>/<id>`
+spelling, because the derive resolves each against the selected provider alone and a value naming
+another provider would be a child yolo let cross one:
+
+```jsonc
+// ~/.config/yolo-jail/config.jsonc
+"profiles": {
+  "zai-split": { "provider": "zai", "model": "glm-5.3",
+                 "subagents": { "default": "glm-5.3-flash",
+                                "roles": { "reviewer": "glm-5.3" } } }
+},
+"profile": { "pi": "zai-split" }
+```
+
+- **`default`** — the model a child that names none of its own starts on, replacing the parent's
+  model, so a parent on a smaller-context model can start its children on a larger one.
+- **`roles.<role>`** — the model one named subagent role runs on, pinned so that role runs
+  nowhere else.
+
+A profile that declares neither half is unchanged: children inherit the parent's model. `yolo`
+REFUSES a `subagents` object that declares neither half, or that carries an unknown key, an empty
+role name or an empty value, rather than skipping it — a declaration the user believes is routing
+their children and is not is worse than a launch that stops and names the key.
+
+pi is the one agent that reads the declaration today, through pi-subagents' block in its settings
+derive ([per-agent delivery](#per-agent-delivery)): `roles` becomes each role's
+`agentOverrides.<role>.model` and its own enforced, strict `modelScope.agents.<role>.allow`, and
+`default` the child `defaultModel`. A value the provider's model list cannot resolve REFUSES the
+render, naming the declaration (`subagents.default` or `subagents.roles.<role>`), the value, the
+provider and the ids it declares — the same ladder the profile's `model` option goes through, so
+an alias becomes pi's real id and a value pi would reject never reaches it. A provider that
+declares no model list passes the value through verbatim, exactly as the `model` option does.
+
 ### Model lists shaped by packs
 
 A pack can shape the model list of any provider, one another pack ships included, with a
