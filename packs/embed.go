@@ -85,5 +85,5 @@ package packs
 
 import "embed"
 
-//go:embed all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools
+//go:embed all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:meta-models all:muse-planner
 var FS embed.FS

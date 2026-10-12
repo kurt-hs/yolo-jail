@@ -1,0 +1,36 @@
+{
+  "name": "muse-planner",
+  "description": "A read-only pi-subagents child backed by Meta's Muse Code CLI (`muse exec`) on the local Muse login: the parent session calls it by name for a plan or an analysis and returns the text; it never edits the repository. Pi-shaped (pi-subagents), delivered through yolo's `files` kind — inert if pi-subagents is not installed.",
+  "contributes": [
+    // THE WRAPPER the `muse-planner` agent's runner calls. It lands in `~/.pi/agent/bin`, the
+    // FIRST entry on Pi's PATH in this deployment, which is what lets the agent definition
+    // name it as a bare `command` — the external-cli runner spawns the command with no shell,
+    // so `~` would not expand and a PATH name is the one spelling that resolves in the jail
+    // home and the host home alike. pi-subagents resolves it the same way (`resolveBinary`
+    // walks PATH, requiring the exec bit), and reports the runner as missing rather than
+    // starting it when it cannot.
+    //
+    // It reads the child's prompt from stdin and hands it to
+    // `muse exec --prompt-file` under `--disable-approval` (sandbox kept), a bounded
+    // `--max-model-steps` and a per-run `:read-only` permission profile, with its own deadline
+    // and the CLI's exit codes propagated. The profile id carries its leading colon (the bare
+    // `read-only` resolves to nothing), and the wrapper's `-c` value is JSON, so it is quoted.
+    // The file's own header is the reference.
+    {
+      "from": "files/scripts/muse-planner-exec.sh",
+      "into": ".pi/agent/bin/muse-planner-exec.sh",
+      "kind": "files"
+    },
+    // THE AGENT DEFINITION. `~/.pi/agent/agents/` is pi-subagents' user agent directory
+    // (`getAgentDir()/agents`; `~/.agents` is the other user scope it also reads). A
+    // definition needs `name` and `description` or it is skipped entirely, and `runner` is the
+    // block that makes it an external CLI rather than a Pi child. No `adapter`: only a
+    // code-owned id (codex-exec, claude-code, cursor-agent and their -writer twins) may set
+    // one, and this is the generic one-shot-stdin runner.
+    {
+      "from": "files/agents/muse-planner.md",
+      "into": ".pi/agent/agents/muse-planner.md",
+      "kind": "files"
+    }
+  ]
+}
