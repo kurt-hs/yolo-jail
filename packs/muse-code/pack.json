@@ -1,0 +1,126 @@
+{
+  "name": "muse-code",
+  "description": "Meta's Muse Code CLI as a first-class yolo agent (`muse`): installed from Meta's one-line installer, with a settings surface for ~/.config/muse/settings.json and a workspace-scope state subtree for the login the CLI stores. It runs on the local Muse subscription login; no API key is involved anywhere in this pack.",
+  "contributes": [
+    // THE MUSE CODE AGENT. The binary is `muse`, installed by Meta's one-line shell installer
+    // (https://dev.meta.ai/install.sh): `curl -fsSL https://dev.meta.ai/install.sh | sh`.
+    // `url` is the script, not the pipeline — packdecl's `via: "installer"` remedy is
+    // `curl <url> | sh` behind the installer-check gate, the same shape the `agy`, `claude`
+    // and `codex` packs declare.
+    //
+    // `probe_args` is the one-word version probe the per-pack install matrix runs; `muse
+    // --version` answers it. There is deliberately no `update` (Meta documents no
+    // self-update verb) and no `install_hints` (installer-only distribution: no npm, brew
+    // or pacman package).
+    //
+    // NO `protocols` AND NO `launch_selection`, deliberately, and both are omissions rather
+    // than oversights. `protocols` names the wire protocols a CLI can be POINTED AT, and
+    // Meta documents no provider list for Muse Code at all — declaring one would be a guess
+    // core would then resolve a pairing against, and this pack declares no provider to pair
+    // with. `launch_selection` is how `yolo host -p <profile> -- muse` hands a selection to
+    // a CLI without touching its settings file, and nothing documents which settings key or
+    // flag carries a model for one launch.
+    {
+      "bin": "muse",
+      "kind": "program",
+      "probe_args": [
+        "--version"
+      ],
+      "url": "https://dev.meta.ai/install.sh",
+      "via": "installer"
+    },
+    // ITS SETTINGS FILE. Meta's docs: user settings live at ~/.config/muse/settings.json, and
+    // a present file without `"schema_version": 1` is bad enough that the CLI refuses to
+    // start (`malformed settings file …`), while an absent file is fine. So the key is the one
+    // thing this surface has to guarantee, and it is `managed` (the top layer, re-asserted at
+    // every render): a captured in-jail edit folds BELOW managed, so on-disk content cannot
+    // defeat it, and a user who deleted the key cannot brick the CLI.
+    //
+    // THERE ARE TWO `schema_version` KEYS, NOT ONE, and the second one is the one that bit.
+    // `permissions` is not a plain table of knobs: Muse reads that VALUE as its own settings
+    // document (`UserPermissionSettingsV1`, whose required first field is `schema_version`),
+    // so a `permissions` object without its own `"schema_version": 1` fails at startup with
+    // `Named permission profiles are unavailable: missing field schema_version …` — measured
+    // against Muse Code 1.4.6, where the reported position is relative to THAT sub-document
+    // (`line 3 column 3` for a three-line `permissions` object), which is why the error names
+    // a line the settings file's own `schema_version` already occupies. It is `managed` for
+    // the same reason as the top-level one: without it every `muse` command exits 1.
+    //
+    // GENERALIZED: the read-only permission default this pack was derived from
+    // (`permissions.default_profile` in the `defaults` layer) is DROPPED here. It is the
+    // original owner's choice and this pack has no basis for it. Add it back as a `defaults`
+    // entry (NEVER `managed`: managed would make the interactive CLI read-only with no way for
+    // the owner to change it in place) if you want the interactive CLI to start read-only; the
+    // `muse-planner` pack pins its own posture per run instead.
+    //
+    // IF YOU DO NAME ONE, THE PROFILE IDS CARRY A LEADING COLON: `:read-only`, `:ask-me`,
+    // `:auto-review`, `:unrestricted`. The colon is the id, not decoration, and the bare
+    // `read-only` resolves to nothing — the CLI exits 1 with `Permission profile 'read-only'
+    // is unavailable: profile does not exist`. The unprefixed strings are the catalog's
+    // display names (`Read only`), not ids.
+    //
+    // Nothing else is stated: no model default, TUI preference, toolset narrowing or
+    // telemetry choice. The surface is `stateful` (the default mode), so whatever the CLI or
+    // the owner writes into the file is captured and survives regeneration.
+    {
+      "config": [
+        {
+          "agent": "muse",
+          "codec": "json",
+          "managed": {
+            "permissions": {
+              "schema_version": 1
+            },
+            "schema_version": 1
+          },
+          "name": "settings",
+          "path": "~/.config/muse/settings.json"
+        }
+      ],
+      "kind": "config"
+    },
+    // WHERE USER-LEVEL SKILLS GO. Meta documents the account-wide skills directory as
+    // `$XDG_CONFIG_HOME/muse/skills` — with the default XDG_CONFIG_HOME that is
+    // `~/.config/muse/skills` (https://dev.meta.ai/docs/muse-code/extending: "your
+    // account-wide skills in `$XDG_CONFIG_HOME/muse/skills` and `~/.agents/skills`"). This
+    // contribution is a DESTINATION and sources nothing (no `from`): it is how every pack's
+    // skills tree reaches `muse`, the shape the claude/pi/codex packs declare for their own
+    // agents. `~/.agents/skills`, the second path the same page names, is deliberately NOT
+    // declared here — it is a cross-tool directory, so declaring it would claim a destination
+    // this pack does not own rather than muse's own skills dir.
+    //
+    // WHAT IS **NOT** HERE, AND WHY THE SHIPPED CENSUS IS RED. Muse also loads user-level
+    // INSTRUCTIONS ("your machine-wide user rules always load"), but Meta's docs give NO PATH
+    // for that file and this tree cannot read one out of the CLI (muse is not installed here).
+    // So this pack declares no `briefing` destination rather than guess `~/.agents/AGENTS.md`
+    // or `~/.claude/CLAUDE.md`, both of which are plausible and unverified — exactly what
+    // internal/packload/agentsurfaces_test.go's census forbids. The briefing destination lands
+    // when the path is documented; until then that census (and the packMatrix row) stay red on
+    // this gap, and this pack must not be shipped as-is.
+    {
+      "agent": "muse",
+      "into": ".config/muse/skills",
+      "kind": "skills"
+    },
+    // WHERE THE CLI KEEPS ITS OWN STATE. `~/.config/muse` is the directory Meta documents as
+    // the user-settings location, and Muse Code also writes its login there
+    // (`~/.config/muse/auth.json` — a path the Muse Code issue tracker and a third-party SDK
+    // name, NOT the official docs). A jail home is disposable, so without a `state` subtree a
+    // browser login stored by the CLI would be gone at the next launch.
+    //
+    // WORKSPACE scope, not machine: sharing a credential across workspaces is what the
+    // machine scope is for and it is review-worthy by rule, while this pack's purpose is to
+    // reuse `muse`'s OWN login rather than to copy it anywhere.
+    //
+    // NOTE THE OVERLAP: this subtree and the `config muse/settings` surface above both write
+    // under ~/.config/muse. It is real and worth knowing, but it is NOT what broke the CLI:
+    // the cause was the missing NESTED `schema_version` (above). Both keys this surface
+    // guarantees are `managed`, re-asserted at every render ABOVE the capture fold, so a
+    // CLI-written file or a state restore cannot remove them. See ../NOTES.md.
+    {
+      "at": ".config/muse",
+      "kind": "state",
+      "scope": "workspace"
+    }
+  ]
+}

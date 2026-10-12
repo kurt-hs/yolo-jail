@@ -73,6 +73,11 @@ var shippedDelivery = map[string]struct {
 	"copilot":  {"copilot", "installer", "https://gh.io/copilot-install", "update", `PREFIX="$HOME"/.local`},
 	"opencode": {"opencode", "npm", "opencode-ai", "", ""},
 	"oh-omp":   {"omp", "npm", "@oh-labs/oh-omp@0.15.3", "", ""},
+	// Meta's Muse Code CLI. INSTALLER-ONLY — Meta publishes no npm, brew or pacman package and
+	// documents no self-update verb — so `update` is "" and the launcher falls back to re-running
+	// the declared installer. The URL is the one-line script the pack names; `curl <url> | sh`
+	// behind the installer-check gate is the same shape claude, agy and codex declare.
+	"muse": {"muse-code", "installer", "https://dev.meta.ai/install.sh", "", ""},
 	// pi's "native installer" IS npm — pi.dev/install.sh runs `npm install -g
 	// @earendil-works/pi-coding-agent` into npm's global prefix — so a flip would change
 	// nothing about delivery and would break the launcher's REAL_BIN.

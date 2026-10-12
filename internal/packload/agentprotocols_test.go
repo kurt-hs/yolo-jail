@@ -41,7 +41,13 @@ var shippedProtocols = map[string][]string{
 	"opencode": {"openai", "openai-responses"},
 	"oh-omp":   {"openai", "anthropic"},
 	"codex":    {"openai-responses", "openai"},
-	"agy":      nil,
+	// muse is Meta's Muse Code CLI. NOT CONSTRAINED, and the omission is the pack's declaration
+	// rather than a missing value: Meta documents no provider list for Muse Code at all, and
+	// packs/muse-code declares no provider to pair with, so there is no wire to name. Declaring
+	// one would be a guess core would then resolve a pairing against (packs/muse-code/pack.json
+	// carries the same note at the program).
+	"muse": nil,
+	"agy":  nil,
 	// NOT AN AGENT: the MCP server the chrome-devtools pack's `mcp` entry runs. An agent starts
 	// it and it talks to a browser, never to a provider, so there is no wire to name.
 	"chrome-devtools-mcp": nil,
