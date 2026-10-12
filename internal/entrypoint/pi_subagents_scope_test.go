@@ -340,3 +340,162 @@ func TestPiUnresolvableProfileModelRefusesTheRender(t *testing.T) {
 		}
 	}
 }
+
+// subagentsDeclRender is openrouterAliasRender's fixture for the `subagents` DECLARATION: the
+// shipped openrouter provider extended by two user aliases (the shape `providers.<p>.models`
+// takes, alias -> real id), over a profile that carries the declaration and, optionally, a
+// `model` option. Everything renders through ConfigurePackSurfaces over the shipped pi and
+// openrouter packs, and the declaration reaches the derive the way a launch delivers it — the
+// resolved YOLO_PROFILES table, through ResolveProfiles and ProfilesWireTable — so the wire
+// encode/decode is under test as well as the derive.
+func subagentsDeclRender(t *testing.T, sub luahook.Subagents, profileModel string) *pioencodeRender {
+	t.Helper()
+	packs := testPacksForAgent(t, "pi", "openrouter")
+	user, err := jsonx.Decode([]byte(`{"openrouter":{"models":{` +
+		`"deepseek-floor":"deepseek/deepseek-v4.1-flash:floor",` +
+		`"deepseek-whale":"deepseek/deepseek-v4.1-flash:whale"}}}`))
+	if err != nil {
+		t.Fatalf("fixture providers: %v", err)
+	}
+	userMap, _ := user.(*jsonx.OrderedMap)
+	providers, err := packload.ComposeProviders(userMap, packs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := map[string]string{}
+	if profileModel != "" {
+		opts["model"] = profileModel
+	}
+	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+		"or": {Provider: "openrouter", Options: opts, Subagents: sub},
+	}, providers)
+	if err != nil {
+		t.Fatalf("resolve the or profile: %v", err)
+	}
+	if got := resolved["or"].Subagents; got.Default != sub.Default || len(got.Roles) != len(sub.Roles) {
+		t.Fatalf("ResolveProfiles dropped the declaration: got %+v, want %+v", got, sub)
+	}
+	r := newPioencodeRender(t, mustCompactJSON(t, providers))
+	r.wireProfiles(mustCompactJSON(t, packload.ProfilesWireTable(resolved)))
+	return r
+}
+
+// A profile that declares `subagents` writes pi-subagents' per-role keys: `agentOverrides.
+// <role>.model` and `modelScope.agents.<role>.allow`, both as `<provider>/<id>`, and the
+// declared `default` replaces the model a child with none of its own starts on. Both values
+// are yolo ALIASES here, so the assertion is also that they resolved through fix 6's ladder
+// (profileModel / yolo.model_for) to the ids the provider declares — the alias itself would
+// be `Unknown subagent model`.
+//
+// NEGATIVE CONTROL: against the pre-change derive none of the four keys exist (the block was
+// defaultProvider/defaultModel/modelScope only), so this fails on the first assertion.
+func TestPiSubagentsDeclarationRoutesChildModels(t *testing.T) {
+	r := subagentsDeclRender(t, luahook.Subagents{
+		Default: "deepseek-floor",
+		Roles:   map[string]string{"worker": "deepseek-floor", "reviewer": "deepseek-whale"},
+	}, "deepseek-whale")
+	r.render(t, `{"pi":"or"}`)
+
+	got := r.piSettings(t)["subagents"]
+	want := map[string]any{
+		"defaultProvider": "openrouter",
+		"defaultModel":    "openrouter/deepseek/deepseek-v4.1-flash:floor",
+		"agentOverrides": map[string]any{
+			"worker":   map[string]any{"model": "openrouter/deepseek/deepseek-v4.1-flash:floor"},
+			"reviewer": map[string]any{"model": "openrouter/deepseek/deepseek-v4.1-flash:whale"},
+		},
+		"modelScope": map[string]any{
+			"enforce": true,
+			"strict":  true,
+			"allow":   []any{"openrouter/*"},
+			"agents": map[string]any{
+				"worker": map[string]any{
+					"enforce": true, "strict": true,
+					"allow": []any{"openrouter/deepseek/deepseek-v4.1-flash:floor"},
+				},
+				"reviewer": map[string]any{
+					"enforce": true, "strict": true,
+					"allow": []any{"openrouter/deepseek/deepseek-v4.1-flash:whale"},
+				},
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("after a declared subagents render, pi subagents =\n  %#v\nwant\n  %#v", got, want)
+	}
+}
+
+// The declared `default` is what a child that names no model of its own starts on, and it is
+// resolved the same way the `model` option is: an ALIAS becomes pi's real id, an exact id and
+// a provider with no declared list pass through verbatim. The role half is omitted when the
+// profile pins none, so pi-subagents' own per-role configuration is untouched.
+func TestPiSubagentsDeclarationDefaultAloneLeavesRolesAlone(t *testing.T) {
+	r := subagentsDeclRender(t, luahook.Subagents{Default: "deepseek-floor"}, "deepseek-whale")
+	r.render(t, `{"pi":"or"}`)
+	sub, _ := r.piSettings(t)["subagents"].(map[string]any)
+	if got := sub["defaultModel"]; got != "openrouter/deepseek/deepseek-v4.1-flash:floor" {
+		t.Errorf("defaultModel = %v, want the DECLARED default resolved to the real id", got)
+	}
+	if _, present := sub["agentOverrides"]; present {
+		t.Errorf("a profile pinning no role wrote agentOverrides: %#v", sub["agentOverrides"])
+	}
+	scope, _ := sub["modelScope"].(map[string]any)
+	if _, present := scope["agents"]; present {
+		t.Errorf("a profile pinning no role wrote modelScope.agents: %#v", scope["agents"])
+	}
+}
+
+// A profile that declares nothing about its children writes exactly the block it always did:
+// no agentOverrides, no modelScope.agents, and defaultModel still the model the chat selection
+// starts on. This is what "DEFAULT = children inherit the parent's model" means at the
+// render — the declaration is the ONLY thing that moves a child off the parent's model.
+func TestPiSubagentsWithNoDeclarationWritesNoRoleKeys(t *testing.T) {
+	r := subagentsDeclRender(t, luahook.Subagents{}, "deepseek-whale")
+	r.render(t, `{"pi":"or"}`)
+	got := r.piSettings(t)["subagents"]
+	want := map[string]any{
+		"defaultProvider": "openrouter",
+		"defaultModel":    "openrouter/deepseek/deepseek-v4.1-flash:whale",
+		"modelScope": map[string]any{
+			"enforce": true, "strict": true, "allow": []any{"openrouter/*"},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("with no declaration, pi subagents =\n  %#v\nwant\n  %#v", got, want)
+	}
+}
+
+// A declared value the provider's list cannot resolve REFUSES the render — the fix-6 rule
+// applied to the declaration — and the refusal names the declaration path (`subagents.roles.
+// worker`), the value, the provider and the ids it does declare. The settings surface is not
+// written at all, so a launch never runs children on a model pi would reject.
+//
+// NEGATIVE CONTROL: against the pre-change derive no failure is recorded (the declaration was
+// not read at all), so this fails on the `len(fails) == 0` guard.
+func TestPiSubagentsDeclarationRefusesAnUnresolvableModel(t *testing.T) {
+	r := subagentsDeclRender(t, luahook.Subagents{
+		Roles: map[string]string{"worker": "deepseek-flooor"},
+	}, "deepseek-whale")
+	fails := r.renderWith(t, `{"pi":"or"}`)
+
+	settings := filepath.Join(r.e.Home, ".pi", "agent", "settings.json")
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Errorf("settings.json must NOT be written when the derive refuses (stat err = %v)", err)
+	}
+	if len(fails) == 0 {
+		t.Fatalf("an unresolvable declared subagent model must REFUSE the render; no failure "+
+			"was recorded:\n%s", r.errw.String())
+	}
+	msg := strings.Join(fails, "\n")
+	for _, want := range []string{
+		"subagents.roles.worker",             // the declaration that named the value
+		"deepseek-flooor",                    // the value that could not resolve
+		"openrouter",                         // the provider
+		"deepseek/deepseek-v4.1-flash:floor", // an available id
+		"deepseek/deepseek-v4.1-flash:whale", // the other available id
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal does not name %q; got:\n%s", want, msg)
+		}
+	}
+}

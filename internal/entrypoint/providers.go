@@ -3,6 +3,7 @@ package entrypoint
 import (
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
@@ -103,6 +104,13 @@ func (e *Env) LoadProfiles() map[string]packload.ResolvedProfile {
 		p := packload.ResolvedProfile{Options: map[string]string{}}
 		for _, key := range entry.Keys() {
 			val, _ := entry.Get(key)
+			// The subagents declaration is the ONE reserved value that is not a string (it is a
+			// nested object), so it is read before the string check rather than inside the
+			// switch below.
+			if key == packload.WireSubagentsKey {
+				p.Subagents = decodeSubagents(val)
+				continue
+			}
 			s, isStr := val.(string)
 			if !isStr {
 				continue
@@ -142,4 +150,36 @@ func (e *Env) LoadProfiles() map[string]packload.ResolvedProfile {
 		out[name] = p
 	}
 	return out
+}
+
+// decodeSubagents lowers the reserved `_subagents` value (ProfilesWireTable's nested object)
+// into packload's declaration. A value this build cannot read is dropped whole, the rule this
+// reader follows everywhere: the launcher composed the table, so a shape the jail cannot read
+// must not refuse a launch — the profile simply declares no child models, which is the world
+// before the field.
+func decodeSubagents(v any) luahook.Subagents {
+	m, ok := v.(*jsonx.OrderedMap)
+	if !ok {
+		return luahook.Subagents{}
+	}
+	var sub luahook.Subagents
+	if raw, ok := m.Get("default"); ok {
+		sub.Default, _ = raw.(string)
+	}
+	if raw, ok := m.Get("roles"); ok {
+		if rm, isMap := raw.(*jsonx.OrderedMap); isMap {
+			roles := map[string]string{}
+			for _, role := range rm.Keys() {
+				rv, _ := rm.Get(role)
+				s, isStr := rv.(string)
+				if role != "" && isStr && s != "" {
+					roles[role] = s
+				}
+			}
+			if len(roles) > 0 {
+				sub.Roles = roles
+			}
+		}
+	}
+	return sub
 }

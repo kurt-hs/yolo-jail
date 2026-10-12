@@ -116,6 +116,25 @@ type DeriveCtx struct {
 	// narrowed (claude's allowlist, opencode's whitelist); off, the list only shapes menus.
 	ModelsNotEnforced bool
 
+	// Subagents is what the active profile DECLARES its child agents run on
+	// (`profiles.<name>.subagents`, a profile FIELD the config layer lifts out, like `via`),
+	// exposed as ctx.subagents. It is the answer to a question NO derive can infer: the
+	// child model is otherwise the profile's own model, which cannot route a different
+	// child per parent model, and a reduced-window child cannot be inferred from a
+	// sibling — the user writes the child's model down.
+	//
+	// The zero value is no declaration, exposed as an always-present table
+	// (`{ default = <string, "" when none>, roles = { <name> = <model> } }`) so a derive
+	// reads it with `type()`/`next()` and no nil guard. On an entrypoint older than this
+	// field ctx.subagents is simply absent, which the deriving pack reads the same as none.
+	//
+	// The values are UNRESOLVED: an alias or an exact id of the profile's provider, the
+	// SAME vocabulary the profile's `model` option speaks. Which model an alias names is
+	// the derive's business (OQ-CS4), so the derive resolves each value through its own
+	// agent's ladder and refuses what that ladder cannot resolve, rather than yolo writing
+	// a model the agent rejects.
+	Subagents Subagents
+
 	// AgentFiles says this notch writes the AGENT FILES the agent's pack declares (`agent_files`
 	// on its program, a term coined in docs/design/model-lists-and-pickers.md MM-D33), exposed as
 	// ctx.agent_files. Set on the env producer's call alone, and only where the composition
@@ -209,6 +228,22 @@ type DeriveCtx struct {
 	// registration listings). The two paths that render a surface — the jail's boot loop and
 	// `yolo check`'s dry run, sharing entrypoint.deriveComputedLayer — set it.
 	Warn func(msg string)
+}
+
+// Subagents is one profile's `subagents` declaration (DeriveCtx.Subagents): what the
+// profile states its child agents run on.
+//
+// Both halves are free strings in the profile's OWN model vocabulary (an alias or an exact
+// id of the profile's provider), never resolved here — see DeriveCtx.Subagents.
+type Subagents struct {
+	// Default is the model a child agent that names none of its own starts on, as written;
+	// "" when the profile states none, which leaves the derive's own child default in place
+	// (children inherit the parent session's model).
+	Default string
+	// Roles maps a subagent ROLE (the name its agent's subagent facility spawns, such as
+	// `worker` or `reviewer`) to the model that role runs on, as written. Nil when the
+	// profile pins no role.
+	Roles map[string]string
 }
 
 // BuiltInProvider is the agent's own provider for one yolo provider name (DeriveCtx.BuiltInProviders).
@@ -601,8 +636,9 @@ func guardUnknownAPI(L *lua.LState, yolo *lua.LTable, report func(name string)) 
 
 // buildDeriveCtxTable exposes the derive inputs: the three sentinels
 // (ctx.tombstone, ctx.empty_array, ctx.in_full), ctx.agent / ctx.surface, the resolved
-// selection (ctx.selected_provider, ctx.profile_name), and one read-only table per live
-// source (ctx.mcp_servers, ctx.lsp_servers).
+// selection (ctx.selected_provider, ctx.profile_name, ctx.subagents and the rest of the
+// profile's fields), and one read-only table per live source (ctx.mcp_servers,
+// ctx.lsp_servers).
 func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.LUserData) (*lua.LTable, error) {
 	t := L.NewTable()
 	L.SetField(t, "tombstone", sentinel)
@@ -629,6 +665,18 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 	// cannot be told a platform the table it also holds contradicts.
 	L.SetField(t, "selected_platform", lua.LString(selectedPlatform(ctx)))
 	L.SetField(t, "profile_name", lua.LString(ctx.ProfileName))
+	// ctx.subagents, always a table (DeriveCtx.Subagents), `{ default = <string>,
+	// roles = { <name> = <model> } }`, with `default` always present ("" for none) and
+	// `roles` always a table. A derive reads the declaration defensively anyway, so a ctx
+	// from a build older than the field reads the same as a profile that declares none.
+	subagents := L.NewTable()
+	L.SetField(subagents, "default", lua.LString(ctx.Subagents.Default))
+	roles := L.NewTable()
+	for _, name := range sortedStringKeys(ctx.Subagents.Roles) {
+		L.SetField(roles, name, lua.LString(ctx.Subagents.Roles[name]))
+	}
+	L.SetField(subagents, "roles", roles)
+	L.SetField(t, "subagents", subagents)
 	L.SetField(t, "via_url", lua.LString(ctx.ViaURL))
 	L.SetField(t, "via_api_key_env_name", lua.LString(ctx.ViaAPIKeyEnvName))
 	L.SetField(t, "enforce_models", lua.LBool(!ctx.ModelsNotEnforced))

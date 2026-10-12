@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -61,6 +62,12 @@ type UserProfile struct {
 	// EnforceModels is the profile's `enforce_models`, nil when it states none (MM-D5).
 	// Another profile FIELD the config layer lifts out, for via's reason.
 	EnforceModels *bool
+
+	// Subagents is the profile's `subagents` declaration: what the profile states its
+	// child agents run on. Its own profile FIELD, lifted out of the entry by the config
+	// layer for via's reason — it is a nested object, not a string option, so it can be
+	// neither an option value nor part of the provider-option census.
+	Subagents luahook.Subagents
 }
 
 // ResolvedProfile is one profile after resolution: the provider it selects and the full
@@ -94,6 +101,11 @@ type ResolvedProfile struct {
 	// selected pack installs and that declares a protocol, with no client of the provider's
 	// platform (AgentBindsPlatform). Read it through ViaFor, never alone.
 	Carried []string
+	// Subagents is the profile's `subagents` declaration (luahook.Subagents): what its child
+	// agents run on, as the user wrote it — an alias or exact id of the profile's provider.
+	// UNRESOLVED on purpose: the derive owns what a model name means (OQ-CS4), so it resolves
+	// each value through its own agent's ladder. The zero value is no declaration.
+	Subagents luahook.Subagents
 }
 
 // ViaFor is the service agent's traffic on this profile goes through and that service's via
@@ -296,7 +308,7 @@ func ResolveProfiles(packs []*Pack, user map[string]UserProfile,
 			enforce = userProf.EnforceModels
 		}
 		r := ResolvedProfile{Provider: provider, Options: opts, Via: via, ViaBase: viaBase,
-			EnforceModels: enforce}
+			EnforceModels: enforce, Subagents: userProf.Subagents}
 		if via == "" {
 			r.Carrier, r.CarrierBase, r.Carried = carrierFor(packs, providerEntry(providers, provider))
 		}
@@ -463,6 +475,12 @@ const (
 	WireCarrierKey     = "_carrier"
 	WireCarrierBaseKey = "_carrier_base"
 	WireCarriedKey     = "_carried"
+	// WireSubagentsKey carries a profile's `subagents` declaration
+	// (ResolvedProfile.Subagents) as a NESTED object — the one reserved profile value that is
+	// not a string, since it holds a default and a map of roles. Only when the profile
+	// declares one, and lifted out of the options exactly as the reserved keys above are, so
+	// it can never be mistaken for a provider option.
+	WireSubagentsKey = "_subagents"
 )
 
 // ProfilesWireTable renders the resolved table as the object that travels in
@@ -507,7 +525,31 @@ func ProfilesWireTable(resolved map[string]ResolvedProfile) *jsonx.OrderedMap {
 			}
 			entry.Set(WireCarriedKey, strings.Join(r.Carried, ","))
 		}
+		// The subagents declaration rides its reserved key as a nested object; an older
+		// entrypoint skips a value that is not a string, which leaves it with the world
+		// before the declaration (no ctx.subagents), as it has.
+		if r.Subagents.Default != "" || len(r.Subagents.Roles) > 0 {
+			entry.Set(WireSubagentsKey, subagentsWireValue(r.Subagents))
+		}
 		out.Set(name, entry)
+	}
+	return out
+}
+
+// subagentsWireValue renders a profile's `subagents` declaration as the nested object
+// ProfilesWireTable carries under WireSubagentsKey. Deterministic (sortedMapKeys), and it
+// omits a half the profile does not state, so the wire form names exactly what was declared.
+func subagentsWireValue(s luahook.Subagents) *jsonx.OrderedMap {
+	out := jsonx.NewOrderedMap()
+	if s.Default != "" {
+		out.Set("default", s.Default)
+	}
+	if len(s.Roles) > 0 {
+		roles := jsonx.NewOrderedMap()
+		for _, role := range sortedMapKeys(s.Roles) {
+			roles.Set(role, s.Roles[role])
+		}
+		out.Set("roles", roles)
 	}
 	return out
 }
