@@ -263,7 +263,7 @@ func TestAStopThatFailsNamesItsNextStep(t *testing.T) {
 		want  []string
 	}{
 		{"the runtime could not be run", []string{"-"}, []string{"`podman` is not on PATH", "run `yolo stop` again"}},
-		{"the runtime's stop failed", []string{"true\n", "!stopped with an error"},
+		{"the runtime's stop failed and the probe could not answer", []string{"true\n", "!stopped with an error"},
 			[]string{"`podman stop " + runtime.FromWorkspace("/ws") + "` failed", "`yolo stop` again retries it"}},
 	}
 	for _, tc := range cases {

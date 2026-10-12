@@ -1043,7 +1043,7 @@ func keeperStopSaysWhy(t *testing.T, rt string) {
 		first, attach := start(t, dir)
 		argv := []string{rt, "stop", cname}
 		if rt == "podman" {
-			argv = []string{rt, "stop", "-t", "5", cname}
+			argv = []string{rt, "stop", "-t", strconv.Itoa(run.TeardownStopTimeoutSeconds), cname}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), jailTimeout())
 		defer cancel()

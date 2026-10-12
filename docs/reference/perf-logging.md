@@ -1310,7 +1310,7 @@ is the only place the exact values and spellings are stated.
 | podman facts note | `podman.facts  version=… database=… events=… rootless=… network=… cgroups=…` | `run.podmanFactsNote`, `run.acceptPodmanFacts` |
 | podman readiness span and notes | `runtime.ready`; `runtime.ready.attempt  n=… dur=…s outcome=…[ stderr=…]`, the line cut at 160 characters | `run.waitForPodman`, `runtime.AttemptNote` |
 | podman readiness budget and backoff | 60 s; 1 s, 2 s, then 4 s between early exits | `runtime.PodmanReadyBudget`, `runtime.podmanReadyBackoff` |
-| Signal-arm jail stop | runtime `stop -t 5`, exec bounded at 10 s | `run.teardownStopTimeoutSeconds` |
+| Jail stop grace (the keeper's own stop and `yolo stop`) | runtime `stop -t 5`; the keeper bounds its own exec at 10 s | `run.TeardownStopTimeoutSeconds` |
 | Signal-arm exit code | `128 + signal` | `internal/ttyproxy` |
 | Loophole front close grace | 2 s | `run.frontStopGrace` |
 | Loophole group SIGTERM → SIGKILL wait | 5 s | `internal/cli/run` (`loopholesruntime.go`) |
