@@ -177,7 +177,7 @@ func TestConfigureClaudePrismStripsHostMCPServers(t *testing.T) {
 func TestConfigureClaudePrismKeepsHostEnabledPluginsWithNoLSP(t *testing.T) {
 	e, ctx := newClaudePrismEnv(t, map[string]string{}) // no YOLO_LSP_SERVERS
 	hostJSON := `{"enabledPlugins":{"pyright-lsp@claude-plugins-official":true,` +
-		`"gopls-lsp@claude-plugins-official":true},"env":{"AWS_PROFILE":"mine"}}`
+		`"gopls-lsp@claude-plugins-official":true},"env":{"MY_HOST_VAR":"mine"}}`
 	if err := os.WriteFile(filepath.Join(ctx, "settings.json"), []byte(hostJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestConfigureClaudePrismKeepsHostEnabledPluginsWithNoLSP(t *testing.T) {
 	// The same one key over: env.ENABLE_LSP_TOOL was tombstoned too, which deleted
 	// whatever the user's host env block held.
 	env, ok := got["env"].(map[string]any)
-	if !ok || env["AWS_PROFILE"] != "mine" {
+	if !ok || env["MY_HOST_VAR"] != "mine" {
 		t.Errorf("env = %v, want the host layer's own vars intact", got["env"])
 	}
 	if _, present := env["ENABLE_LSP_TOOL"]; present {

@@ -533,6 +533,9 @@ func TestTheMacosUserAgentFilePairForTheMCPView(t *testing.T) {
 	}
 	got := map[string]string{}
 	for _, e := range entries {
+		if e.IsDir() {
+			continue // the provider-keys files
+		}
 		b, err := os.ReadFile(filepath.Join(ws, macosUserAgentEnvDir, e.Name()))
 		if err != nil {
 			t.Fatal(err)

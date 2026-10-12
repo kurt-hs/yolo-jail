@@ -45,3 +45,34 @@ func TestMalformedProviderKeysAreRefused(t *testing.T) {
 		}
 	}
 }
+
+// The provider environment is the provider keys directly beneath the declared object, platform
+// switches included, a value-conditional key keeping its pattern; a key elsewhere is not one.
+func TestAPackDeclaresItsProgramsProviderEnvironment(t *testing.T) {
+	m, problems := Decode([]byte(`{"provider_keys":{"acme":[
+	    {"surface":"acme/settings","pointer":"/env/AWS_REGION"},
+	    {"surface":"acme/settings","pointer":"/env/MODEL","platform":"aws-bedrock","matches":"^br\\."},
+	    {"surface":"acme/settings","pointer":"/model","platform":"aws-bedrock","matches":"^br\\."},
+	    {"surface":"acme/settings","pointer":"/env/deep/X"}]},
+	  "provider_env":{"acme":{"surface":"acme/settings","pointer":"/env"}},
+	  "contributes":[` + providerKeysProgram + `]}`))
+	if len(problems) != 0 {
+		t.Fatalf("legal provider env refused: %v", problems)
+	}
+	got := m.ProviderEnv("acme")
+	if len(got) != 3 || got[0].Name != "USE_BR" || got[1].Name != "AWS_REGION" ||
+		got[2].Name != "MODEL" || got[2].Matches != `^br\.` || got[2].Platform != "aws-bedrock" {
+		t.Errorf("provider env = %+v", got)
+	}
+	for body, want := range map[string]string{
+		`{"nobody":{"surface":"nobody/settings","pointer":"/env"}}`: "must name a non-fork program",
+		`{"acme":{"surface":"other/settings","pointer":"/env"}}`:    "is agent \"other\"'s",
+		`{"acme":{"surface":"acme/settings","pointer":"env"}}`:      "RFC 6901 pointer",
+	} {
+		_, problems := Decode([]byte(`{"provider_env":` + body + `,"contributes":[` +
+			providerKeysProgram + `]}`))
+		if got := strings.Join(problems, "\n"); !strings.Contains(got, want) {
+			t.Errorf("%s: want a problem containing %q, got %v", body, want, problems)
+		}
+	}
+}

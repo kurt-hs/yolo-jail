@@ -335,6 +335,9 @@ func TestAnAttachKeepsTheRunningAdaptersScopedToken(t *testing.T) {
 		agents := map[string]string{}
 		entries, _ := os.ReadDir(filepath.Join(wsStateOf(o), agentEnvStateDir))
 		for _, e := range entries {
+			if e.IsDir() {
+				continue // the provider-keys files
+			}
 			b, _ := os.ReadFile(filepath.Join(wsStateOf(o), agentEnvStateDir, e.Name()))
 			agents[strings.TrimSuffix(e.Name(), ".sh")] = string(b)
 		}

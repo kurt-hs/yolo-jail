@@ -53,6 +53,15 @@
       {"surface": "claude/settings", "pointer": "/env/ANTHROPIC_SMALL_FAST_MODEL", "platform": "aws-bedrock", "matches": "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)"}
     ]
   },
+  // THE PROVIDER ENVIRONMENT (packdecl.ProviderEnvSource): the members of claude/settings' `env`
+  // object are Claude Code's process environment, so every provider key above directly under
+  // /env is also a variable each launcher of claude makes exactly what claude's profile selection
+  // says: exported with the selection's value, unset when the selection sets none, whatever the
+  // launching shell held (a claude started from another claude's shell included). Ruled
+  // 2026-10-11 (PP-D14, docs/design/providers-and-profiles-redesign.md).
+  "provider_env": {
+    "claude": {"surface": "claude/settings", "pointer": "/env"}
+  },
   "contributes": [
     // Where the install hint's name came from, checked 2026-10-02. A cask, so "brew-cask".
     //   brew-cask: https://formulae.brew.sh/api/cask/claude-code.json (binary artifact `claude`)

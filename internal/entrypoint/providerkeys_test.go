@@ -276,22 +276,70 @@ func TestProviderKeysFollowTheSelectionBothWays(t *testing.T) {
 	}
 }
 
-// THE JAIL-NOTCH CHECK (notePlatformSwitchesOn): a switch that reaches the rendered file from a
-// layer the provider keys do not reach — the user's own host copy, which PP-D1 rules yolo obeys
-// — is named at boot, whatever wrote it.
-func TestTheBootNamesASwitchTheRenderedFileCarries(t *testing.T) {
+// PP-D13 (ruled 2026-10-11: "Inside of JAIL, if we're not already managing the host config, I
+// would say a profile choice does override the host settings file being imported"): the user's
+// own host ~/.claude/settings.json, folded into the jail as its host layer while host management
+// is off, cannot put claude on a provider its selection did not pick. Its provider keys leave the
+// bytes the jail composes — dropped when the selection sets none, replaced when it sets one —
+// each named at boot with the host file, while every other host key reaches the jail as before
+// and the host file itself is never written. Through ConfigurePackSurfaces, so deleting the drop
+// in renderPlannedSurface fails here.
+func TestAProfileChoiceOverridesTheImportedHostSettingsInAJail(t *testing.T) {
 	f := newProviderKeyFixture(t, nil)
-	if err := os.WriteFile(filepath.Join(f.hostDir, "settings.json"),
-		[]byte(`{"env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}`), 0o644); err != nil {
+	host := filepath.Join(f.hostDir, "settings.json")
+	const hostBody = `{"env":{"CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_BASE_URL":"http://127.0.0.1:9/gw",` +
+		`"MY_OWN":"kept"},"model":"opus","theme":"dark"}`
+	if err := os.WriteFile(host, []byte(hostBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, stderr := f.boot("codex")
+	env := envOf(got)
+	if _, set := env["CLAUDE_CODE_USE_BEDROCK"]; set {
+		t.Errorf("the host file's Bedrock switch reached a claude on codex: %v\n%s", env, stderr)
+	}
+	if v := env["ANTHROPIC_BASE_URL"]; v == "http://127.0.0.1:9/gw" {
+		t.Errorf("the host file's gateway reached a claude on codex: %v", env)
+	}
+	if env["MY_OWN"] != "kept" || got["theme"] != "dark" || got["model"] != "opus" {
+		t.Errorf("every other host key must still reach the jail: %v", got)
+	}
+	for _, want := range []string{
+		"claude/settings: your host ~/.claude/settings.json sets env.CLAUDE_CODE_USE_BEDROCK = \"1\"",
+		"provider selection decides that key", "Your host file is unchanged",
+		"select a profile that sets it"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the boot must name the override (%q):\n%s", want, stderr)
+		}
+	}
+	if data, _ := os.ReadFile(host); string(data) != hostBody {
+		t.Errorf("the user's host file was written (PP-D1): %s", data)
+	}
+	// Replaced: on Bedrock the switch is the selection's, and the gateway still is not.
+	got, stderr = f.boot("bedrock")
 	if envOf(got)["CLAUDE_CODE_USE_BEDROCK"] != "1" {
-		t.Fatalf("PP-D1: the user's own host switch reaches the jail, got %v", got)
+		t.Errorf("claude on Bedrock lost the selection's switch: %v", envOf(got))
+	}
+	if envOf(got)["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:9/gw" {
+		t.Errorf("the host gateway reached claude on Bedrock: %v", envOf(got))
+	}
+	if strings.Contains(stderr, "sets env.CLAUDE_CODE_USE_BEDROCK") {
+		t.Errorf("a host key the selection sets to the same value changes nothing, so is not named:\n%s", stderr)
+	}
+}
+
+// THE JAIL-NOTCH CHECK (notePlatformSwitchesOn): a switch that reaches the rendered file from a
+// layer the provider keys do not reach — a pack's config-overlay — is named at boot, with the
+// pack it came from.
+func TestTheBootNamesASwitchTheRenderedFileCarries(t *testing.T) {
+	f := newProviderKeyFixture(t, map[string]string{"switcher": `{"name":"switcher","contributes":[
+	  {"kind":"config-overlay","surface":"claude/settings","config":{"managed":{"env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}}}]}`})
+	got, stderr := f.boot("codex")
+	if envOf(got)["CLAUDE_CODE_USE_BEDROCK"] != "1" {
+		t.Fatalf("the fixture needs the overlay's switch in the file, got %v", got)
 	}
 	for _, want := range []string{"claude: ~/.claude/settings.json, as this boot rendered it, sets " +
-		"CLAUDE_CODE_USE_BEDROCK", "from your own host copy", "no \"aws-bedrock\" provider is selected",
-		"remove env.CLAUDE_CODE_USE_BEDROCK from your host ~/.claude/settings.json"} {
+		"CLAUDE_CODE_USE_BEDROCK", `from pack "switcher"'s config-overlay`,
+		"no \"aws-bedrock\" provider is selected"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the boot must name the conflict (%q):\n%s", want, stderr)
 		}

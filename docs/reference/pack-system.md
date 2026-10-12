@@ -2033,7 +2033,9 @@ as a body is now an ordinary contribution: in an agent's own derive keyed on the
 `config-overlay` and refused by name on every other kind. A `program` may declare
 `platform_switches`, the settings in its own config that put it on a platform by themselves. A
 pack's top-level `provider_keys`, keyed by program bin, names the settings each program's provider
-selection decides, which no captured in-jail edit may set at a jail
+selection decides, which no captured in-jail edit or imported host copy may set at a jail, and
+its top-level `provider_env` names the object in a program's config whose members are its
+process environment, so every launcher makes those keys the selection's
 ([provider keys](providers.md#provider-keys-the-selection-decides-them)).
 
 [`providers.md`](providers.md) is the authority for all of it: the canonical `wire_api`

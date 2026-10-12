@@ -15,6 +15,11 @@ package agentcfg
 // narrowing, is what makes the computed layer the only voice at the key: its value lands when
 // it asserts one, and the key is absent when it does not.
 //
+// THE HOST LAYER TOO, AT A JAIL (PP-D13, ruled 2026-10-11): the jail's caller takes the provider
+// keys out of the user's host copy before composing it (DropHostProviderKeys), never a
+// tombstone, so the key goes from the bytes the jail composes and the user's real file — and
+// the host notch's render of it — still obeys the user (PP-D1).
+//
 // IT RUNS ON THE ACCUMULATED OVERLAY, like narrowOverlay, so a sidecar an older yolo wrote is
 // cleaned on the next boot, and the drop is persisted: the next render has nothing to report.
 // A TOMBSTONE is kept: a captured deletion can switch nothing on.
@@ -23,6 +28,7 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
 )
 
@@ -40,6 +46,43 @@ type OwnedLeaf struct {
 type OwnedDrop struct {
 	Pointer string
 	Value   any
+}
+
+// DropHostProviderKeys is the host layer's bytes without its values at owned, and what it
+// dropped, in pointer order: the JAIL's half of the maintainer's 2026-10-11 ruling PP-D13
+// (docs/design/providers-and-profiles-redesign.md: "Inside of JAIL, if we're not already
+// managing the host config, I would say a profile choice does override the host settings file
+// being imported"). The caller hands it the user's own host copy of a surface, folded into a
+// jail's render as its host layer, and composes the result instead, so at a provider key the
+// computed layer alone speaks: the selection's value lands when it sets one, and otherwise the
+// key is absent. It returns the input untouched when nothing is dropped, and when the bytes do
+// not decode as an object in codecName (the compose that follows reports that), so a surface
+// with no provider key reads exactly the bytes it always did. The user's file itself is never
+// written: these are the bytes the jail composes from.
+func DropHostProviderKeys(codecName string, hostBytes []byte, owned []OwnedLeaf) ([]byte, []OwnedDrop) {
+	if len(hostBytes) == 0 || len(owned) == 0 {
+		return hostBytes, nil
+	}
+	c, ok := codec.LookupCodec(codecName)
+	if !ok {
+		return hostBytes, nil
+	}
+	decoded, err := c.Decode(hostBytes)
+	if err != nil {
+		return hostBytes, nil
+	}
+	if _, isObj := decoded.(map[string]any); !isObj {
+		return hostBytes, nil
+	}
+	kept, drops := dropProviderKeys(decoded, owned)
+	if len(drops) == 0 {
+		return hostBytes, nil
+	}
+	out, err := c.Encode(kept)
+	if err != nil {
+		return hostBytes, nil
+	}
+	return out, drops
 }
 
 // dropProviderKeys returns overlay without the captured values at owned, and what it dropped,

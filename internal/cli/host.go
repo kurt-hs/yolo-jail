@@ -885,6 +885,10 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// pointer names, so that one is not missing and is not named. When that launch did not
 	// start (no login, no terminal), the URL is named with that reason, the launch's own.
 	printHostLines(errw, launch.unservedLines(managedHostVars(managed)))
+	// THE PROVIDER VARIABLES THE SHELL HELD AND THE AGENT WILL NOT (PP-D14, environ).
+	if line := launch.providerEnvLine(); line != "" {
+		fmt.Fprintf(errw, "yolo host: %s\n", line)
+	}
 	// THE PURE WORKERS THIS LAUNCH DOES NOT START (hostPureWorkers, HS-D29), one line each and on
 	// every launch: a worker that runs only in a jail, one whose host half is refused, one no gate
 	// of this selection asks for. Silent when there are none.
@@ -2125,8 +2129,43 @@ func remedyProfiles(resolved map[string]packload.ResolvedProfile, claimants []st
 // environ applies the composition over the environment this process inherited — the env
 // the exec hands the agent, and therefore the thing "is the key set in this launch" is
 // asked of.
+//
+// THE AGENT'S PROVIDER VARIABLES ARE THE SELECTION'S ALONE (PP-D14,
+// docs/design/providers-and-profiles-redesign.md, ruled 2026-10-11): a provider variable its pack
+// declares (packload.ProviderEnv) that the composition neither sets nor removes is taken out of
+// the inherited environment, so `yolo host -- claude` run from a Bedrock claude's shell, or from
+// a shell that exported CLAUDE_CODE_USE_BEDROCK, follows the auth path its own profile names.
+// Every other inherited variable is kept, as before.
 func (c *hostComposition) environ() []string {
-	return agentenv.Apply(os.Environ(), c.vars)
+	env, _ := c.providerEnvCleared(agentenv.Apply(os.Environ(), c.vars))
+	return env
+}
+
+// providerEnvCleared is env without the agent's provider variables the composition does not
+// decide, and the names it took out that held a value (hostProviderEnvLine says them).
+func (c *hostComposition) providerEnvCleared(env []string) ([]string, []string) {
+	if c.scope == nil {
+		return env, nil
+	}
+	decided := map[string]bool{}
+	for _, v := range c.vars {
+		decided[v.Key] = true
+	}
+	return packload.ClearProviderEnv(env, c.scope.ProviderEnv(c.agent),
+		func(name string) bool { return decided[name] })
+}
+
+// providerEnvLine is the launch's one line naming the provider variables it took out of the
+// inherited environment (environ), "" when it took none. A launch has no quiet mode, and a
+// variable the user exported that the agent then does not see must be said.
+func (c *hostComposition) providerEnvLine() string {
+	_, cleared := c.providerEnvCleared(agentenv.Apply(os.Environ(), c.vars))
+	if len(cleared) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("cleared %s from %s's environment: %s's profile selection decides its "+
+		"provider variables, and it sets none of these. To use them, select a profile that sets "+
+		"them (`yolo config-ref`: profile, providers).", strings.Join(cleared, ", "), c.agent, c.agent)
 }
 
 // credentialGaps is the providers.md#the-credential-preflight pre-flight for this launch, answered against environ().

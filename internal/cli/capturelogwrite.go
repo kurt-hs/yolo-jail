@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
 	"github.com/mschulkind-oss/yolo-jail/internal/capturelog"
 )
@@ -31,10 +32,31 @@ func captureLogBeside(overlay captureFile) captureFile {
 // by writer; removedWhy is said of every leaf the change took out.
 func logCaptureChange(overlay captureFile, s manifest.Surface, writer string, before, after []byte,
 	removedWhy string, mode fs.FileMode) {
+	logCaptureChangeWith(overlay, s, writer, before, after, removedWhy, mode, nil)
+}
+
+// logCaptureChangeWith is logCaptureChange for a capture that refused the provider keys in drops
+// (PP-D15): each is logged with that reason, and one the overlay did not hold before — taken in
+// from the file and refused in the same write, so neither sidecar shows it — gets a line of its
+// own (capturelog.Dropped), as the boot's capture logs it.
+func logCaptureChangeWith(overlay captureFile, s manifest.Surface, writer string, before, after []byte,
+	removedWhy string, mode fs.FileMode, drops []agentcfg.OwnedDrop) {
 	if overlay.name == "" {
 		return
 	}
-	lines := capturelog.Lines(time.Now(), s.Agent+"/"+s.Name, writer, before, after, nil, removedWhy)
+	now, surface := time.Now(), s.Agent+"/"+s.Name
+	why := "not captured: " + s.Agent + "'s provider selection decides this key"
+	reasons := capturelog.Reason{}
+	var taken []string
+	for _, d := range drops {
+		key := providerKeyLabel(d.Pointer)
+		reasons[key] = why
+		if !capturelog.Held(before, key) {
+			taken = append(taken, capturelog.Dropped(now, surface, writer, key, d.Value,
+				"edited in the jail and "+why))
+		}
+	}
+	lines := append(capturelog.Lines(now, surface, writer, before, after, reasons, removedWhy), taken...)
 	if len(lines) == 0 {
 		return
 	}

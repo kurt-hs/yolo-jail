@@ -155,11 +155,11 @@ func (o *Options) checkProviderRegions(cfg *jsonx.OrderedMap, packs []*packload.
 // redesign.md, ruled 2026-09-29): one line per agent whose own config switches it onto a provider
 // platform its selection does not serve — CLAUDE_CODE_USE_BEDROCK in the user's own
 // ~/.claude/settings.json, which reaches the jail as claude/settings' host layer, while claude's
-// selected provider is not Bedrock — naming the conflict and both fixes. yolo deletes nothing it
-// did not write, so the key reaches the jail as the user wrote it, and the credential gate, which
-// is yolo's, sends claude no Bedrock credential: the failure is yolo's to name
-// (packload.PlatformSwitchConflicts). A disclosure, not a refusal, so no quiet switch
-// (docs/reference/report-tiers.md, OQ-RO3).
+// selected provider is not Bedrock. Since PP-D13 (ruled 2026-10-11) the jail's render leaves the
+// switch out of what it composes from that host layer — the profile selection decides a provider
+// key in a jail — and never edits the user's file, so the line says the jail leaves it out and
+// names the profile that would use it there (PlatformSwitchConflict.InJail). A disclosure, not a
+// refusal, so no quiet switch (docs/reference/report-tiers.md, OQ-RO3).
 //
 // Called beside the provider pre-flight at each of its three call sites — the fresh container
 // launch, the attach delivery and every macos-user invocation — before it, so a launch that
@@ -177,6 +177,9 @@ func (o *Options) notePlatformSwitchConflicts(packs []*packload.Pack, channel *p
 	for _, c := range packload.PlatformSwitchConflicts(packs, channel.scope.Selection(),
 		channel.resolvedProfiles, channel.providers, home, "", render.HostLeafWrote(home)) {
 		c.HostApplyRenders = renders
+		// THE JAIL LEAVES THE SWITCH OUT (PP-D13, 2026-10-11): its render takes every provider
+		// key out of the host copy it imports, so the line says that, not "remove it".
+		c.InJail = true
 		o.pr(o.Stderr).print("[yellow]" + c.Line() + "[/yellow]")
 	}
 }

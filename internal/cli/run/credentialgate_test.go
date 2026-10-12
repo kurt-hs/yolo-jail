@@ -107,6 +107,9 @@ func launchGateJailWith(t *testing.T, packNames []string, config func([]*packloa
 	copyFile(t, filepath.Join(ws, "yolo-user-env.sh"), filepath.Join(cfgDir, "yolo-user-env.sh"))
 	entries, _ := os.ReadDir(filepath.Join(ws, agentEnvStateDir))
 	for _, e := range entries {
+		if e.IsDir() {
+			continue // the provider-keys files, which this cell does not read
+		}
 		copyFile(t, filepath.Join(ws, agentEnvStateDir, e.Name()),
 			filepath.Join(jail.home, entrypoint.AgentEnvDirRel, e.Name()))
 	}

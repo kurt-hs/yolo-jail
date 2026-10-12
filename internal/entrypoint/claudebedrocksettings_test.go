@@ -107,13 +107,14 @@ func TestClaudeSettingsSwitchBedrockOnForEveryBedrockSelection(t *testing.T) {
 	}
 }
 
-// YOLO DELETES NOTHING IT DID NOT WRITE (PP-D1): a Bedrock switch the user wrote in their own
-// host settings survives a launch that selects no Bedrock provider. The derive asserts the key
-// and never tombstones it; the launch names the conflict instead.
-func TestAUsersOwnBedrockSwitchSurvivesANonBedrockLaunch(t *testing.T) {
+// IN A JAIL THE PROFILE CHOICE OVERRIDES THE IMPORTED HOST SETTINGS (PP-D13, ruled 2026-10-11,
+// narrowing PP-D1 at the jail): a Bedrock switch the user wrote in their own host settings does
+// not reach a jail launch that selects no Bedrock provider, while the rest of their env block
+// does. The user's file itself is never written (TestAProfileChoiceOverridesTheImportedHostSettingsInAJail).
+func TestAUsersOwnBedrockSwitchStaysOutOfANonBedrockJail(t *testing.T) {
 	env := renderClaudeSettings(t, bedrockPacks, "", nil, "codex",
 		`{"env":{"CLAUDE_CODE_USE_BEDROCK":"1","OTHER":"kept"}}`)
-	if env["CLAUDE_CODE_USE_BEDROCK"] != "1" || env["OTHER"] != "kept" {
-		t.Errorf("the user's own env block must reach the jail unchanged, got %v", env)
+	if _, set := env["CLAUDE_CODE_USE_BEDROCK"]; set || env["OTHER"] != "kept" {
+		t.Errorf("the host switch must stay out and the rest of the env block reach the jail, got %v", env)
 	}
 }

@@ -6,13 +6,17 @@ package entrypoint
 // states the fault, measured 2026-10-11: a captured CLAUDE_CODE_USE_BEDROCK kept Claude Code on
 // Bedrock while yolo had selected its subscription and delivered no AWS credentials).
 //
-// Three things live here, all at the JAIL notch alone — the host notch writes the user's real
-// file, where PP-D1 rules that yolo deletes nothing it did not write:
+// These live here, all at the JAIL notch alone — the host notch writes the user's real file,
+// where PP-D1 rules that yolo deletes nothing it did not write:
 //
 //   - providerKeyLeaves resolves the surface's declared keys against this render's selection
-//     for the stateful render, which drops a captured value at each;
+//     for the stateful render, which drops a captured value at each, and for the host layer the
+//     jail imports, whose values at them it composes without (PP-D13, ruled 2026-10-11:
+//     "Inside of JAIL, if we're not already managing the host config, I would say a profile
+//     choice does override the host settings file being imported");
 //   - noteProviderKeyDrops names every value it dropped, one line each, with the key and the
-//     command that discards the rest of the captured edits (every stop names the next step);
+//     command that discards the rest of the captured edits (every stop names the next step),
+//     and noteHostProviderKeyDrops each one the host layer lost, with the host file;
 //   - notePlatformSwitchesOn is the PP-D1 conflict check run over the file THIS BOOT WROTE,
 //     whatever layer the switch came from, so a switch the launcher's check cannot see — it
 //     reads only the user's host copy — is still named before the agent starts.
@@ -107,6 +111,26 @@ func noteProviderKeyDrops(e *Env, surface manifest.Surface, drops []agentcfg.Own
 			"`yolo config reset %s` discards them all.", surface.Agent+"/"+surface.Name,
 			pointerLabel(d.Pointer), logValue(pointerLabel(d.Pointer), d.Value), surface.Path,
 			surface.Agent, surface.Agent, surface.Agent))
+	}
+}
+
+// noteHostProviderKeyDrops prints one warning per provider key this jail's render took out of
+// the user's own host copy of the surface (PP-D13): the key, the value when it is not
+// credential-shaped, that the host file is unchanged, and how to get the key here — a profile.
+// A key the selection itself sets to the same value (computed) changes nothing the agent reads,
+// and is not named.
+func noteHostProviderKeyDrops(e *Env, surface manifest.Surface, drops []agentcfg.OwnedDrop,
+	computed map[string]any) {
+	for _, d := range drops {
+		if v, ok := lookupPointer(computed, d.Pointer); ok && fmt.Sprint(v) == fmt.Sprint(d.Value) {
+			continue
+		}
+		e.warn(fmt.Sprintf("%s: your host %s sets %s = %s, and in a jail %s's provider selection "+
+			"decides that key, so this jail's copy leaves it out (it is absent unless the selected "+
+			"provider sets it). Your host file is unchanged; to use it here, select a profile that "+
+			"sets it (`yolo config-ref`: profile, providers).", surface.Agent+"/"+surface.Name,
+			surface.Path, pointerLabel(d.Pointer), logValue(pointerLabel(d.Pointer), d.Value),
+			surface.Agent))
 	}
 }
 

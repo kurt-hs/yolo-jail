@@ -27,6 +27,7 @@ build jail's logs are kept. See [the launch records](docs/reference/report-tiers
 
 - A setting captured from an earlier Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription. The boot names each one it drops, and every change to captured edits is now logged.
 - Quitting a jail no longer waits while yolo deletes that launch's copies of your patched extensions.
+- Claude now always uses the provider its profile selects, whether started from another Claude's shell, with Bedrock or gateway settings in your own Claude settings file, or after editing those settings in a jail. yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
 
 ## [0.13.0] - 2026-10-09
 

@@ -380,8 +380,24 @@ held `env.CLAUDE_CODE_USE_BEDROCK` (the boot said "4 keys from captured in-jail 
 boot that selected Claude's subscription still rendered the switch and Claude Code ran on Bedrock
 with no credentials. Any capture of yolo's own previous Bedrock render produces that state: an
 adopting boot over the file, or an agent rewriting the file over a baseline that lacks the keys.
-`internal/entrypoint/providerkeys_test.go` reproduces it. The host layer and the host notch are
-not reached, by [PP-D1](../design/providers-and-profiles-redesign.md#PP-D1).
+`internal/entrypoint/providerkeys_test.go` reproduces it.
+
+**A capture never records one either**
+([PP-D15](../design/providers-and-profiles-redesign.md#PP-D15), ruled 2026-10-11: provider keys
+behave like managed keys). `captureSurfaceAt`, the one capture behind `yolo config capture` and
+the fold at a jail's teardown, hands the engine every unconditional provider key a shipped pack
+declares on the surface. An in-jail edit at one is dropped from the overlay, logged in the
+capture log as `x <key> = <value>: edited in the jail and not captured: …`, and named in one line
+that points at the profile. A value-conditional key needs the selection, which a capture does not
+read, so the boot decides it. An edit made while the agent runs is not blocked (Claude Code
+rereads the file): it lasts until the next boot, which renders the selection's value and names it.
+
+**Nor does the host layer, at a jail**
+([PP-D13](../design/providers-and-profiles-redesign.md#PP-D13), ruled 2026-10-11). The user's own
+host copy, folded in only while host management is off, is composed without its values at the
+provider keys (`agentcfg.DropHostProviderKeys`, before the compose), and the boot names each one.
+The user's real file is never written, and the host notch is not reached, by
+[PP-D1](../design/providers-and-profiles-redesign.md#PP-D1).
 
 ### The capture log
 

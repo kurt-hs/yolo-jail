@@ -22,10 +22,12 @@ import (
 )
 
 // switchLine is the part of the line every arm must print.
-const switchLine = "claude: ~/.claude/settings.json sets CLAUDE_CODE_USE_BEDROCK, which puts claude on " +
-	"its own \"aws-bedrock\" client, but no \"aws-bedrock\" provider is selected for claude, so yolo " +
-	"delivers it none of that platform's credentials: select one (-p bedrock), or remove " +
-	"CLAUDE_CODE_USE_BEDROCK from ~/.claude/settings.json (yolo leaves it alone)."
+// Since PP-D13 (2026-10-11) the jail leaves the host copy's switch out of what it renders, so
+// the line says so rather than telling the user to remove it.
+const switchLine = "claude: ~/.claude/settings.json sets CLAUDE_CODE_USE_BEDROCK, which would put claude " +
+	"on its own \"aws-bedrock\" client, but no \"aws-bedrock\" provider is selected for claude, so this " +
+	"jail leaves it out of claude's settings (in a jail the profile selection decides it, and " +
+	"~/.claude/settings.json is unchanged): select one (-p bedrock) to use that platform here."
 
 // writeHostClaudeSettings writes the user's own host ~/.claude/settings.json under home.
 func writeHostClaudeSettings(t *testing.T, home, body string) {
@@ -90,8 +92,8 @@ func TestAnAttachNamesAUsersOwnBedrockSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.deliverChannelOnAttach("yolo-ws-abcd1234", "podman", cfg, stagedPacks{root: "/ctx/packs", packs: packs}, channel)
-	if got := stderr.String(); !strings.Contains(got, "which `yolo host apply` wrote there for claude's host selection") ||
-		strings.Contains(got, "yolo leaves it alone") {
+	if got := stderr.String(); !strings.Contains(got, "(which `yolo host apply` wrote there for claude's host selection)") ||
+		!strings.Contains(got, "this jail leaves it out") {
 		t.Errorf("a switch yolo's host apply wrote must be named as yolo's:\n%s", got)
 	}
 	if err := os.Remove(rec); err != nil {

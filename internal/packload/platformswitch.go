@@ -61,6 +61,12 @@ type PlatformSwitchConflict struct {
 	// (OQ-CO14) — where the apply refuses, so a switch yolo wrote is named for removal by hand or
 	// by `--revert`, never by an apply that would refuse at every launch.
 	HostApplyRenders bool
+	// InJail says the launch is a jail's, where the switch does NOT reach the agent: the jail's
+	// render takes every provider key out of the user's host copy it imports, the selection alone
+	// deciding it there (PP-D13, ruled 2026-10-11), and a host copy that is yolo's own render is
+	// a baseline the jail never folds in. So the line says the jail leaves it out, and offers
+	// the profile that uses it there; the host file is not the jail's to fix. Set by the caller.
+	InJail bool
 }
 
 // Line is the one line a launch prints for the conflict.
@@ -68,6 +74,17 @@ func (c PlatformSwitchConflict) Line() string {
 	fix := "select a provider of that platform for " + c.Agent
 	if c.Profile != "" {
 		fix = "select one (-p " + c.Profile + ")"
+	}
+	if c.InJail {
+		who := ""
+		if c.WrittenByYolo {
+			who = " (which `yolo host apply` wrote there for " + c.Agent + "'s host selection)"
+		}
+		return fmt.Sprintf("%s: %s sets %s%s, which would put %s on its own %s client, but no %s "+
+			"provider is selected for %s, so this jail leaves it out of %s's settings (in a jail the "+
+			"profile selection decides it, and %s is unchanged): %s to use that platform here.",
+			c.Agent, c.File, c.Key, who, c.Agent, strconv.Quote(c.Platform), strconv.Quote(c.Platform),
+			c.Agent, c.Agent, c.File, fix)
 	}
 	if c.WrittenByYolo && !c.HostApplyRenders {
 		// NOT "set own and apply": own's first apply ADOPTS the file as it finds it, so a switch

@@ -1329,7 +1329,9 @@ func configCapture(t configTarget, args []string, out, errw io.Writer, color boo
 			}
 			continue
 		}
-		n, err := captureSurface(t, s)
+		n, err := captureSurfaceNoting(t, s, func(line string) {
+			pr.Printf("[yellow]%s[/yellow]", richtext.Escape(line))
+		})
 		if err != nil {
 			if !t.refusals.note(err) {
 				fmt.Fprintf(errw, "yolo config capture: %s/%s: %v\n", s.Agent, s.Name, err)
@@ -1385,6 +1387,9 @@ type captureLocation struct {
 	// sidecarMode is the mode the written sidecars get: their store's
 	// (render.Target.SidecarFileMode), 0600 in a real home.
 	sidecarMode fs.FileMode
+	// note receives the one line per provider key the capture refused (captureproviderkeys.go);
+	// nil prints nothing, and the key is refused all the same.
+	note func(string)
 }
 
 // captureFile is one file a `yolo config` verb, or a capture, reads or writes: name below a
@@ -1655,6 +1660,12 @@ func (t configTarget) reportRefusals(cmd string, errw io.Writer, rc int, failed 
 // comes off the RESOLVED TARGET, which is what makes this and the diff that reports it read
 // one store.
 func captureSurface(t configTarget, s manifest.Surface) (int, error) {
+	return captureSurfaceNoting(t, s, nil)
+}
+
+// captureSurfaceNoting is captureSurface with note receiving the line for each provider key the
+// capture refused (captureLocation.note).
+func captureSurfaceNoting(t configTarget, s manifest.Surface, note func(string)) (int, error) {
 	surf, ok := t.surfaceStateFile(s.Path)
 	if !ok {
 		return -1, nil // not resolvable at this notch: the same answer as "no baseline"
@@ -1666,6 +1677,7 @@ func captureSurface(t configTarget, s manifest.Surface) (int, error) {
 		overlay:     overlay,
 		listCapture: listCapture,
 		sidecarMode: t.sidecarFileMode(),
+		note:        note,
 	})
 	if err != nil || !captured {
 		return -1, err
@@ -1698,12 +1710,18 @@ func captureSurfaceAt(s manifest.Surface, at captureLocation) (bool, error) {
 	// implementation would be free to disagree with the boot render, which is the one
 	// thing this must not do. Same entry the boot render calls, at the jail notch's
 	// Target — no layers, because capture only compares what is on disk (see above).
+	//
+	// THE PROVIDER KEYS ARE NEVER CAPTURED (PP-D15, ruled 2026-10-11: "we should in fact
+	// overwrite that. That's just the way precedence works… the profile should [win]"): a key
+	// the agent's provider selection decides is a managed key, so an in-jail edit at one is
+	// refused here, logged, and named, and the profile stays the only way to set it.
 	_, out, err := localTarget().ComposeStateful(s, render.Layers{}, render.State{
 		CurrentBytes:      current,
 		LastRenderPresent: true,
 		LastRenderBytes:   lastRender,
 		OverlayJSON:       overlayJSON,
 		ListCaptureJSON:   listCaptureJSON,
+		ProviderKeys:      captureProviderKeys(s),
 	})
 	if err != nil {
 		return false, err
@@ -1714,8 +1732,9 @@ func captureSurfaceAt(s manifest.Surface, at captureLocation) (bool, error) {
 	if err := at.overlay.replace(append(out.OverlayJSON, '\n'), at.sidecarMode); err != nil {
 		return false, err
 	}
-	logCaptureChange(at.overlay, s, "capture", overlayJSON, out.OverlayJSON,
-		"dropped by the capture", at.sidecarMode)
+	logCaptureChangeWith(at.overlay, s, "capture", overlayJSON, out.OverlayJSON,
+		"dropped by the capture", at.sidecarMode, out.ProviderKeyDrops)
+	noteCaptureProviderKeyDrops(at.note, s, out.ProviderKeyDrops)
 	// The per-entry half, written only when the surface HAS a list path (the sidecar named
 	// one) — nil otherwise, and then no file is created.
 	if out.ListCaptureJSON != nil && at.listCapture.name != "" {
