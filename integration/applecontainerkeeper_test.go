@@ -9,7 +9,7 @@ package integration
 // ⚠ THEY LANDED UNRUN ON APPLE CONTAINER, which this suite's header allows only for an experiment,
 // so every one is an experiment: both of its answers pass, and only a run that could not conduct
 // it is red. The instrument ran against podman in this repo's own Linux jail before they landed,
-// and one Apple Container run has asked them since; the three lifecycle runs that held there are
+// and Apple Container runs have asked them since; the lifecycle runs that have held there are
 // strict now, by the promotion rule (see "What has run" below).
 //
 // # Why a Mac, and why these
@@ -57,18 +57,18 @@ package integration
 //
 // # What has run
 //
-// On Apple Container, once: run 37133569003 (apple-container.yml, 2026-10-03, the maintainer's M1
-// Max, container 1.1.0, at 5ca9b7485). HOLDS, and strict since: first-session-quits-alone,
+// On Apple Container, twice. On 2026-10-03: run 37133569003 (apple-container.yml, the maintainer's
+// M1 Max, container 1.1.0, at 5ca9b7485). HOLDS, and strict since: first-session-quits-alone,
 // hangup-ends-one-session and main-process-client-killed. DOES NOT HOLD: killed-keeper, whose
 // refusal named `container stop <name>` (6f881d8fd, which that run predates, makes it `yolo stop`),
 // and both stop-says-why runs, whose sessions asked once whether their jail was gone while, by
 // Apple's source (read from code, not measured), Apple Container still listed it (JL-D83). NOT
-// CONDUCTED: the sweep, whose second workspace's jail
-// failed to start with the VZErrorDomain Code=2 that OQ-MB1 of
-// docs/research/macos-backend-performance.md records. OQ-MB1 was ruled and built on 2026-10-05,
-// a /mise disk per workspace, so the next run must conduct the sweep: its second workspace's
-// launch starts beside the first jail, and the run ends in a VERDICT line instead of NOT
-// CONDUCTED. The measures: an exec's process SURVIVED its
+// CONDUCTED then: the sweep, whose second workspace's jail failed to start with the VZErrorDomain
+// Code=2 that OQ-MB1 of docs/research/macos-backend-performance.md records. OQ-MB1 was ruled and
+// built on 2026-10-05, a /mise disk per workspace, and the next run conducted the sweep: run
+// 37832291377 (2026-10-08, container 1.1.0) recorded `AC-KEEPER sweep-spares-a-kept-jail (JL-D7)
+// VERDICT: HOLDS — all 9 claims held`, its second workspace's jail starting beside the first, so
+// the sweep is strict since. The measures: an exec's process SURVIVED its
 // client in all eight cases, the detach sequence REACHED the process, the container RUNS ON when its
 // main process's client is killed, and an attached exec returned 137 at both stops.
 // docs/design/jail-lifetime-last-session-wins.md §7 step 4 has the whole record.
@@ -947,9 +947,11 @@ func keeperMainClientDeath(t *testing.T, rt, dir, cname string) {
 // launcher is SIGKILLed while a second terminal is attached; the next launch in ANOTHER workspace,
 // sweeping orphans, leaves the jail, whose keeper lives; an entry attaches without being told its
 // owner is gone; and once the attached session leaves, the keeper ends the jail. On this backend the
-// reaper's keeper-era branch is its own (JL-D7), and has never run.
+// reaper's keeper-era branch is its own (JL-D7); it ran on 2026-10-08 (run 37832291377), where all
+// 9 claims held.
 func keeperSweepSparesAKeptJail(t *testing.T, rt, dir, cname, other string) {
 	rec := newKeeperRecord(t, "sweep-spares-a-kept-jail (JL-D7)")
+	rec.strict = true // HOLDS on Apple Container, run 37832291377 (2026-10-08, container 1.1.0)
 	first := keeperHolding(t, rt, "FIRST", dir, "release-first")
 	awaitLaunchLockReleased(t, dir, first)
 	keeper, why := findKeeperPID(dir, 30*time.Second)
