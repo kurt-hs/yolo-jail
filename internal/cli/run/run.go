@@ -2736,7 +2736,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	}
 	// ONE inspect serves the banner's baked version and the contract gate's tags — the
 	// container's whole frozen env, read once.
-	envLines := o.inspectContainerEnv(rt, cname)
+	envLines, _ := o.inspectContainerEnv(rt, cname)
 	// Launch line to stderr — surfaces the jail's BAKED version so a host CLI
 	// upgrade attaching to a pre-upgrade container (stale shims/mounts/entrypoint)
 	// is visible at a glance (audit §B#4.
@@ -3240,33 +3240,34 @@ func (o *Options) emitLaunchBanner(rt, cname string, resParts []string, jailVers
 }
 
 // inspectContainerEnv reads a running container's whole frozen environment via
-// `<rt> inspect`, one entry per line, or nil when the inspect cannot run. The
-// attach path's single source for both the banner's baked version and the contract
-// gate's tags (contracttags.go).
+// `<rt> inspect`, one entry per line. ok is false when the read could not be made at all (the
+// runtime would not run, or answered non-zero), which is an explicit UNKNOWN: a caller that decides
+// anything on the environment must never read that as an empty one (JL-P3). The attach path's
+// single source for both the banner's baked version and the contract gate's tags (contracttags.go).
 //
 // APPLE CONTAINER'S INSPECT TAKES NO --format: it answers a JSON document, which
 // internal/cli's ps and check already read that way. The podman template used to go to
 // every runtime, so on Apple Container this read nothing, and the gate, which reads an
 // empty listing as "cannot prove, treat as current", let an older jail there receive a
 // scoped delivery its launchers never source. runtime.EnvFromContainerInspectJSON reads the
-// measured payload (docs/plans/setup-support-gaps.md §5.1 row 5) into the same lines.
-func (o *Options) inspectContainerEnv(rt, cname string) []string {
+// measured payload (docs/plans/setup-support-gaps.md §5.1 row 5) into the same lines, and
+// reports its own inability to read them.
+func (o *Options) inspectContainerEnv(rt, cname string) ([]string, bool) {
 	if o.Exec == nil {
-		return nil
+		return nil, false
 	}
 	if rt == "container" { // parity: Honored — AC's inspect answers JSON and takes no --format; the same env lines come back
 		res := o.Exec([]string{"container", "inspect", cname}, "", nil, 3*time.Second)
 		if !res.Ran || res.RC != 0 {
-			return nil
+			return nil, false
 		}
-		env, _ := runtime.EnvFromContainerInspectJSON(res.Stdout)
-		return env
+		return runtime.EnvFromContainerInspectJSON(res.Stdout)
 	}
 	res := o.Exec([]string{rt, "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", cname}, "", nil, 3*time.Second)
 	if !res.Ran || res.RC != 0 {
-		return nil
+		return nil, false
 	}
-	return strings.Split(res.Stdout, "\n")
+	return strings.Split(res.Stdout, "\n"), true
 }
 
 // resPartsFor reconstructs the banner's resource-limit parts (memory/cpus/pids)

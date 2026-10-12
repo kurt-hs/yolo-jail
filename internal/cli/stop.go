@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
+
+// stopRuntimeStopTimeoutSeconds is run.TeardownStopTimeoutSeconds, named here because stopJail's
+// runner parameter shadows the run package. One grace, whether the keeper or `yolo stop` ends the
+// jail.
+const stopRuntimeStopTimeoutSeconds = run.TeardownStopTimeoutSeconds
 
 // stopUsage is what `yolo stop --help` prints.
 const stopUsage = `Usage: yolo stop
@@ -183,12 +189,33 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	// once its own session is cut short.
 	recordYoloStop(cname)
 	sp = p.Span("stop.stop_container")
-	_, ran, rc = run([]string{rt, "stop", cname})
+	// The keeper stops a container with the same grace this does (run.TeardownStopTimeoutSeconds):
+	// whatever ends a jail, the runtime gives it the same moment to exit before SIGKILL. Apple
+	// Container's `container stop` takes no grace, so only podman gets the flag.
+	stopArgv := []string{rt, "stop", cname}
+	if rt != "container" {
+		stopArgv = []string{rt, "stop", "-t", strconv.Itoa(stopRuntimeStopTimeoutSeconds), cname}
+	}
+	_, ran, rc = run(stopArgv)
 	sp.End()
-	if !ran || rc != 0 {
+	if !ran {
 		fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed above "+
 			"says why. `yolo stop` again retries it.\n", rt, cname, rc)
 		return 1
+	}
+	if rc != 0 {
+		// A NON-ZERO EXIT IS NOT BY ITSELF A FAILED STOP (JL-D82). Podman's SIGKILL/--rm path
+		// commonly exits 125 with the container already gone; judged on the exit status alone this
+		// would skip the keeper's teardown and report a jail that in fact ended. Judge it the way the
+		// keeper does: by the existence PROBE. Only a container the runtime still reports running is
+		// a failed stop; one it cannot answer for is not proof of anything (JL-P3: "could not ask" is
+		// never "gone"), and is reported as the failure it may be.
+		running, probed, _ := probeJailRunning(rt, cname, run)
+		if !probed || running {
+			fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed "+
+				"above says why. `yolo stop` again retries it.\n", rt, cname, rc)
+			return 1
+		}
 	}
 	// THE TEARDOWN, before the stop returns (docs/design/jail-lifetime-last-session-wins.md JL-D25):
 	// the jail's keeper runs it and this streams it, and a jail whose keeper died gets it from here

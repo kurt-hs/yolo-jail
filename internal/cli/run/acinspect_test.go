@@ -68,9 +68,9 @@ func acRuntime(t *testing.T, env string) func([]string, string, []string, time.D
 // comes back as the same env lines the podman template yields.
 func TestInspectContainerEnvReadsAppleContainersJSON(t *testing.T) {
 	o := &Options{Exec: acRuntime(t, "YOLO_VERSION=0.10.0\nYOLO_HOST_DIR=/ws\n")}
-	got := o.inspectContainerEnv("container", "yolo-ws-abcd1234")
-	if envLineValue(got, "YOLO_VERSION") != "0.10.0" || envLineValue(got, "YOLO_HOST_DIR") != "/ws" {
-		t.Errorf("inspectContainerEnv on Apple Container = %q, want the jail's environment", got)
+	got, ok := o.inspectContainerEnv("container", "yolo-ws-abcd1234")
+	if !ok || envLineValue(got, "YOLO_VERSION") != "0.10.0" || envLineValue(got, "YOLO_HOST_DIR") != "/ws" {
+		t.Errorf("inspectContainerEnv on Apple Container = %q (ok %v), want the jail's environment", got, ok)
 	}
 }
 

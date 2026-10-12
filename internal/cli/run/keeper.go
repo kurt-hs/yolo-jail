@@ -741,7 +741,19 @@ func (k *keeper) watchSessions() <-chan struct{} {
 	}
 	drained := make(chan struct{})
 	go func() {
-		if err := flockSyscall(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		for {
+			// A BLOCKING TAKE INTERRUPTED BY A SIGNAL (EINTR) IS RETRIED, not read as a lock that
+			// cannot be taken: read as a failure it left this goroutine with `drained` never closed,
+			// so the keeper could never end its jail on the count again for the jail's whole life
+			// (JL-P3, JL-D3). Any other error keeps the cautious behavior: no drain, the jail ends
+			// only when its container does.
+			err := flockSyscall(int(f.Fd()), syscall.LOCK_EX)
+			if err == nil {
+				break
+			}
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
 			k.sink.logf("keeper: cannot take the session lock (%v), so %s", err, endsWith)
 			_ = f.Close()
 			return
@@ -806,10 +818,14 @@ func (k *keeper) awaitNotRunning(done func()) {
 		}
 		if !said {
 			said = true
+			// The same holders a session's stays-up line names (sessionLockHolders): who is still in
+			// the jail at the moment the keeper decides to hold it. Empty when the host cannot name
+			// them, which is not "none" (JL-P3).
+			facts := sessionLockHolderFacts(p.Cname)
 			if known {
-				k.sink.logf("keeper: the main process's runtime client exited while %s still runs; keeping the jail and its host services until it ends", p.Cname)
+				k.sink.logf("keeper: the main process's runtime client exited while %s still runs; keeping the jail and its host services until it ends%s", p.Cname, facts)
 			} else {
-				k.sink.logf("keeper: the main process's runtime client exited, and %s could not say whether %s still runs; keeping the jail and its host services, and asking again", p.Runtime, p.Cname)
+				k.sink.logf("keeper: the main process's runtime client exited, and %s could not say whether %s still runs; keeping the jail and its host services, and asking again%s", p.Runtime, p.Cname, facts)
 			}
 		}
 		select {

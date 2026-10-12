@@ -16,7 +16,12 @@ import (
 
 // Teardown timing.
 const (
-	teardownStopTimeoutSeconds     = 5
+	// TeardownStopTimeoutSeconds is the grace the runtime's own stop gives the jail before it
+	// SIGKILLs it. It is shared by the keeper's drain (stopJail below) and `yolo stop`
+	// (internal/cli/stop.go) so a container is stopped the same way whoever ends it. It is
+	// podman's `-t`; Apple Container's `container stop` takes no grace, so both callers pass it
+	// only on podman.
+	TeardownStopTimeoutSeconds     = 5
 	lockReleasePollAttempts        = 20
 	lockReleasePollIntervalSeconds = 0.25
 )
@@ -236,8 +241,8 @@ func (o *Options) stopJail(cname, rt, reason string) {
 	if rt == "container" {
 		o.Exec([]string{"container", "stop", cname}, "", nil, 30*time.Second)
 	} else {
-		o.Exec([]string{rt, "stop", "-t", strconv.Itoa(teardownStopTimeoutSeconds), cname}, "", nil,
-			time.Duration(teardownStopTimeoutSeconds+5)*time.Second)
+		o.Exec([]string{rt, "stop", "-t", strconv.Itoa(TeardownStopTimeoutSeconds), cname}, "", nil,
+			time.Duration(TeardownStopTimeoutSeconds+5)*time.Second)
 	}
 }
 

@@ -164,6 +164,23 @@ func TestTheSessionCountLeavesOutAHoldMainProcess(t *testing.T) {
 	}
 }
 
+// TestTheSessionCountIsUnknownWhenTheEnvReadFails: whether the jail's main process is a hold is
+// part of the count (TestTheSessionCountLeavesOutAHoldMainProcess), so an environment read that
+// failed must not be read as "not the hold": that added a phantom session to the count, and with
+// no execs it read as "1 other session" (JL-P3: a count that could not be made is never a number).
+func TestTheSessionCountIsUnknownWhenTheEnvReadFails(t *testing.T) {
+	o := goldenOptions("/ws", t.TempDir())
+	o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+		if strings.Contains(strings.Join(argv, " "), "ExecIDs") {
+			return ExecResult{Ran: true, Stdout: "0\n"}
+		}
+		return ExecResult{Ran: true, RC: 125} // the environment inspect failed
+	}
+	if n, ok := o.jailSessionCount("podman", "yolo-ws-1"); ok {
+		t.Errorf("a failed environment read counted %d sessions (ok), want an unknown count", n)
+	}
+}
+
 // TestAnArrivalAtAJailWhoseKeeperIsGoneIsRefused is JL-D13, as OQ-JL7 ruled: a running jail whose
 // keeper is dead (a start record beside a free liveness lock), or one an earlier yolo started whose
 // launcher is dead, is not entered; the refusal names what runs in it and `yolo stop`. A jail whose

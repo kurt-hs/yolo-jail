@@ -281,3 +281,78 @@ func TestAStopThatFailsNamesItsNextStep(t *testing.T) {
 		})
 	}
 }
+
+// TestAStopWhoseNonZeroExitLeavesNoContainerStillEndsTheJail is JL-D82 at `yolo stop`'s door:
+// podman's stop of a jail whose --rm removal races its own SIGKILL exits non-zero (measured: 125)
+// with the container already gone. Judged on the exit status alone the stop reported a failure and
+// skipped the keeper's teardown; judged by the existence probe it is a jail that ended.
+func TestAStopWhoseNonZeroExitLeavesNoContainerStillEndsTheJail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cname := runtime.FromWorkspace("/ws")
+	saved := finishStop
+	t.Cleanup(func() { finishStop = saved })
+	finished := false
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+		finished = true
+		return 0
+	}
+	probes := 0
+	run := func(argv []string) (string, bool, int) {
+		switch {
+		case argv[1] == "inspect":
+			probes++
+			if probes == 1 {
+				return "true\n", true, 0 // running, so the stop proceeds
+			}
+			return "", true, 125 // no such container: the stop left it gone
+		case argv[1] == "stop":
+			return "", true, 125 // podman's SIGKILL/--rm race
+		}
+		return "", false, 1
+	}
+	var out, errb bytes.Buffer
+	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil); rc != 0 {
+		t.Fatalf("rc=%d, want 0\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
+	}
+	if strings.Contains(errb.String(), "failed (rc") {
+		t.Errorf("a jail the probe found gone was reported as a failed stop:\n%s", errb.String())
+	}
+	if !finished {
+		t.Errorf("the stop did not reach the keeper's teardown once the container was gone:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Stopped "+cname) {
+		t.Errorf("the stop did not say it stopped the jail:\n%s", out.String())
+	}
+}
+
+// TestAStopWhoseContainerIsStillRunningFails: a non-zero stop the existence probe then finds the
+// container still running is a real failure, reported with the command that retries it — the same
+// next step every other stop failure names. The keeper's teardown is not run.
+func TestAStopWhoseContainerIsStillRunningFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cname := runtime.FromWorkspace("/ws")
+	saved := finishStop
+	t.Cleanup(func() { finishStop = saved })
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+		t.Error("the stop ran the keeper's teardown with the container still running")
+		return 0
+	}
+	run := func(argv []string) (string, bool, int) {
+		switch {
+		case argv[1] == "inspect":
+			return "true\n", true, 0 // it still runs
+		case argv[1] == "stop":
+			return "", true, 1
+		}
+		return "", false, 1
+	}
+	var out, errb bytes.Buffer
+	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil); rc != 1 {
+		t.Fatalf("rc=%d, want 1", rc)
+	}
+	for _, want := range []string{"`podman stop " + cname + "` failed", "`yolo stop` again retries it"} {
+		if !strings.Contains(errb.String(), want) {
+			t.Errorf("the failure must say %q:\n%s", want, errb.String())
+		}
+	}
+}
