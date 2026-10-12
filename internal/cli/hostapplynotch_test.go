@@ -98,7 +98,7 @@ func TestHostApplyNamesEachKindOncePerGroup(t *testing.T) {
 // credential doorway, with audio beside them for the shape the host delivers nowhere.
 func TestHostApplyNamesWhatYoloHostDeliversAtLaunch(t *testing.T) {
 	home := t.TempDir()
-	selectPacks(t, home, `"pi","guardrails","wire-bridge","aws-auth","audio"`)
+	selectPacks(t, home, `"pi","guardrails","wire-bridge","aws-auth","openai-auth","audio"`)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	defaultReport(t)

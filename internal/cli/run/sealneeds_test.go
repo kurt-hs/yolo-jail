@@ -18,41 +18,35 @@ import (
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
-// sealNeedsFixture selects pi on Bedrock beside claude, with a ~/.aws holding a region and a
-// secret, pi's host settings and host briefing holding secrets, an inline env_sources value and
-// the aws-auth loophole enabled.
+// sealNeedsFixture selects bedrock beside claude, with a ~/.aws holding a region and a
+// secret, an inline env_sources value and the aws-auth loophole enabled.
 var sealNeedsFixture = sealFixture{
-	moduleNames: []string{"pi", "claude", "bedrock", "openai-auth", "aws-auth", "wire-bridge"},
+	moduleNames: []string{"claude", "bedrock", "aws-auth", "wire-bridge"},
 	files: map[string]string{
-		".aws/config":             "[profile sealtest-profile]\nregion = us-sealtest-8\n",
-		".aws/credentials":        "[default]\naws_access_key_id = AKIASEALTEST\naws_secret_access_key = sealtest-aws-secret\n",
-		".pi/agent/settings.json": `{"SEALTEST_PI_SETTINGS": "sealtest-pi-settings-secret"}`,
-		".pi/agent/AGENTS.md":     "the user's own pi house rules\n",
+		".aws/config":      "[profile sealtest-profile]\nregion = us-sealtest-8\n",
+		".aws/credentials": "[default]\naws_access_key_id = AKIASEALTEST\naws_secret_access_key = sealtest-aws-secret\n",
 	},
 	config: `{
-  "packs": ["pi", "claude"],
-  "profile": {"pi": "bedrock"},
-  "host_files": ["~/.pi/agent/AGENTS.md"],
+  "packs": ["bedrock", "claude"],
   "env_sources": [{"AWS_PROFILE": "sealtest-profile", "AWS_REGION": "us-sealtest-9"}],
   "loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "sealtest-profile", "unnarrowed": true}}}
 }
 `,
-	only: []string{"pi-fork", "pi"},
+	only: []string{"bedrock-fork", "bedrock"},
 }
 
 // sealNeedsSecrets is every value of the needs fixture's that is the user's own.
 var sealNeedsSecrets = []string{
 	"us-sealtest-8", "us-sealtest-9", "AKIASEALTEST", "sealtest-aws-secret", "sealtest-profile",
-	"sealtest-pi-settings-secret", "the user's own pi house rules",
 }
 
-// sealNeedsClosure is what the launch prints for the packs pi's needs bring in.
-var sealNeedsClosure = []string{"+ bedrock (needed by pi)", "+ openai-auth (needed by pi)", "+ aws-auth (needed by bedrock)"}
+// sealNeedsClosure is what the launch prints for the packs bedrock's needs bring in.
+var sealNeedsClosure = []string{"+ aws-auth (needed by bedrock)"}
 
 // sealNeedsWithheld is the line a sealed launch of the needs fixture prints for what it withheld
-// (sealedWithheldLine): counts of the env vars and host reads, and the three packs declaring them.
+// (sealedWithheldLine): counts of the env vars and host reads, and the packs declaring them.
 var sealNeedsWithheld = regexp.MustCompile(`Sealed build: [1-9][0-9]* pack env vars? and [1-9][0-9]* host reads? ` +
-	`declared by pi, bedrock, aws-auth (is|are) withheld \(FP-D9`)
+	`declared by (bedrock, aws-auth|aws-auth, bedrock) (is|are) withheld \(FP-D9`)
 
 func TestASealedBuildIsHandedNothingItsBasesNeedsDeclare(t *testing.T) {
 	argv, ws, home, printed := sealNeedsFixture.launch(t, true)
@@ -66,7 +60,7 @@ func TestASealedBuildIsHandedNothingItsBasesNeedsDeclare(t *testing.T) {
 		}
 	}
 	if strings.Contains(printed, "+ wire-bridge") {
-		t.Errorf("wire-bridge joined a sealed build narrowed to pi:\n%s", printed)
+		t.Errorf("wire-bridge joined a sealed build narrowed to bedrock:\n%s", printed)
 	}
 
 	// THE DISCLOSURE DESCRIBES WHAT CROSSES, and none of those packs' claims do: no env claim, no
@@ -112,14 +106,14 @@ func TestASealedBuildIsHandedNothingItsBasesNeedsDeclare(t *testing.T) {
 // selection discloses those packs' env, host reads and credential pointers, and hands the jail the
 // user's values, so the sealed test's silence and absence are the seal's doing.
 func TestTheNeedsFixtureCrossesUnsealed(t *testing.T) {
-	argv, ws, home, printed := sealNeedsFixture.launch(t, false)
+	argv, ws, _, printed := sealNeedsFixture.launch(t, false)
 	for _, want := range sealNeedsClosure {
 		if !strings.Contains(printed, want) {
 			t.Errorf("the unsealed fixture does not print %q:\n%s", want, printed)
 		}
 	}
 	for _, want := range []string{"Pack environment this launch:", "AWS_CONTAINER_AUTHORIZATION_TOKEN=",
-		"AWS_CONTAINER_CREDENTIALS_FULL_URI=", ".aws/config", ".pi/agent/settings.json", ".pi/agent/AGENTS.md"} {
+		"AWS_CONTAINER_CREDENTIALS_FULL_URI=", ".aws/config"} {
 		if !strings.Contains(printed, want) {
 			t.Errorf("the unsealed fixture does not disclose %q, so that claim is unexercised:\n%s", want, printed)
 		}
@@ -137,21 +131,5 @@ func TestTheNeedsFixtureCrossesUnsealed(t *testing.T) {
 			t.Errorf("the unsealed fixture hands the jail no %q, so that crossing is unexercised:\n%s",
 				secret, strings.Join(crossed, "\n"))
 		}
-	}
-	// pi's reads-host settings cross as a bind of the host file, not as bytes the launch writes.
-	settings := filepath.Join(home, ".pi", "agent", "settings.json")
-	houseRules := filepath.Join(home, ".pi", "agent", "AGENTS.md")
-	var settingsBound, houseRulesBound bool
-	for _, src := range sealedBindSources(argv) {
-		settingsBound = settingsBound || src == settings
-		houseRulesBound = houseRulesBound || src == houseRules
-	}
-	if !settingsBound {
-		t.Errorf("the unsealed fixture does not bind %s, so the reads-host site is unexercised: %v",
-			settings, sealedBindSources(argv))
-	}
-	if !houseRulesBound {
-		t.Errorf("the unsealed fixture does not bind %s, so the user's host file is unexercised: %v",
-			houseRules, sealedBindSources(argv))
 	}
 }

@@ -130,11 +130,11 @@ func TestHostClaudeFooterNamesTheConfigsProfile(t *testing.T) {
 	cases := []struct {
 		name, config, want string
 	}{
-		{"a pack-declared profile", `{"packs": ["claude"], "profile": {"claude": "bedrock"}}`,
+		{"a pack-declared profile", `{"packs": ["claude", "bedrock"], "profile": {"claude": "bedrock"}}`,
 			"Opus · yolo: Bedrock · host"},
 		// A profile only the user declares resolves through the user's `profiles`, the way
 		// `yolo host env` resolves it, and is named because it differs from its provider.
-		{"a user-declared profile", `{"packs": ["claude"], "profiles": {"work": {"provider": "bedrock"}}, ` +
+		{"a user-declared profile", `{"packs": ["claude", "bedrock"], "profiles": {"work": {"provider": "bedrock"}}, ` +
 			`"profile": {"claude": "work"}}`,
 			"Opus · yolo: Bedrock (profile work) · host"},
 		{"no selection", `{"packs": ["claude"]}`,
@@ -158,10 +158,10 @@ func TestHostClaudeFooterNamesTheConfigsProfile(t *testing.T) {
 // pack missing from the store) and a user config that does not parse both cost the footer its
 // profile at most. Neither may put a word on stderr, which Claude would show.
 func TestHostFooterStaysSilentOnABrokenPackSet(t *testing.T) {
-	home, command := hostFooterHome(t, `{"packs": ["claude"], "profile": {"claude": "bedrock"}}`)
+	home, command := hostFooterHome(t, `{"packs": ["claude", "bedrock"], "profile": {"claude": "bedrock"}}`)
 	cfg := filepath.Join(home, ".config", "yolo-jail", "config.jsonc")
 
-	writeFile(t, cfg, `{"packs": ["claude", {"source": "git+https://example.invalid/ghost.git", "name": "ghost"}], `+
+	writeFile(t, cfg, `{"packs": ["claude", "bedrock", {"source": "git+https://example.invalid/ghost.git", "name": "ghost"}], `+
 		`"profile": {"claude": "bedrock"}}`)
 	if line, stderr := hostFooterRun(t, command); line != "Opus · yolo: Bedrock · host" || stderr != "" {
 		t.Errorf("with an unresolvable pack: line=%q stderr=%q, want the profile and no stderr", line, stderr)
@@ -179,7 +179,7 @@ func TestHostFooterStaysSilentOnABrokenPackSet(t *testing.T) {
 // never checked out again, and the footer under-claims the profile only that pack declares.
 func TestHostFooterChecksNoFetchedPackOut(t *testing.T) {
 	repo := gitPackRepoWith(t, map[string]string{
-		"pack.json": `{"name": "gp", "contributes": [{"kind": "profile", "name": "mybed", "provider": "bedrock"}]}`,
+		"pack.json": `{"name": "gp", "needs": [{"pack": "bedrock"}], "contributes": [{"kind": "profile", "name": "mybed", "provider": "bedrock"}]}`,
 	})
 	home := gitPackHome(t, "git+file://"+repo+"?ref=main", `,"host_management":"own","profile":{"claude":"mybed"}`)
 	installGitPack(t)
@@ -230,27 +230,17 @@ func TestHostFooterRunKeepsArgvWhole(t *testing.T) {
 
 // TestHostFooterNamesABridgedSelectionTheHostServes: claude's codex profile is one a host launch
 // composes since `yolo host -- claude` starts the wire bridge's host half for it
-// (docs/design/host-notch-services.md HS-D10), so the footer names it as a jail's does, whether
-// the provider's pack joins through claude's `needs` or is listed. Before, the host refused the
+// (docs/design/host-notch-services.md HS-D10), so the footer names it as a jail's does, when
+// openai-auth is listed. Before, the host refused the
 // selection and the footer named the login (FT-D1).
 func TestHostFooterNamesABridgedSelectionTheHostServes(t *testing.T) {
-	cases := []struct {
-		name, config string
-	}{
-		{"the provider's pack joined", `{"packs": ["claude"], "profile": {"claude": "codex"}}`},
-		{"the provider's pack listed", `{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`},
+	_, command := hostFooterHome(t, `{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`)
+	line, stderr := hostFooterRun(t, command)
+	if want := "Opus · yolo: codex (bridge) · host"; line != want {
+		t.Errorf("host Claude footer = %q, want %q (a host launch runs claude's codex route)", line, want)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			_, command := hostFooterHome(t, c.config)
-			line, stderr := hostFooterRun(t, command)
-			if want := "Opus · yolo: codex (bridge) · host"; line != want {
-				t.Errorf("host Claude footer = %q, want %q (a host launch runs claude's codex route)", line, want)
-			}
-			if stderr != "" {
-				t.Errorf("the footer wrote to stderr at the host: %q", stderr)
-			}
-		})
+	if stderr != "" {
+		t.Errorf("host Claude footer produced stderr: %q", stderr)
 	}
 }
 
@@ -261,7 +251,7 @@ func TestHostFooterTablesKeepsAComposedSelection(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs": ["claude", "pi"], "profile": {"claude": "codex", "pi": "codex"}}`)
+		`{"packs": ["claude", "pi", "openai-auth"], "profile": {"claude": "codex", "pi": "codex"}}`)
 	got := hostFooterTables().UseProfiles
 	if got != `{"claude": "codex", "pi": "codex"}` {
 		t.Errorf("host footer profile = %q, want both composed selections", got)
@@ -277,7 +267,7 @@ func TestHostFooterTablesFoldTheProfileKeysDefault(t *testing.T) {
 		t.Setenv("HOME", home)
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 		writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-			`{"packs": ["claude", "pi"], "profile": `+sel+`}`)
+			`{"packs": ["claude", "pi", "openai-auth"], "profile": `+sel+`}`)
 		if got := hostFooterTables().UseProfiles; got != `{"claude": "codex", "pi": "codex"}` {
 			t.Errorf("%s: host footer profile = %q, want claude and pi on codex", name, got)
 		}

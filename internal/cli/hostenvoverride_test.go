@@ -35,9 +35,9 @@ func writeHostWidgetPack(t *testing.T, home string, certain bool) {
 // widgetHome is a host home selecting claude, with WIDGET_TOKEN in env_sources when inSources.
 func widgetHome(t *testing.T, inSources, certain bool) string {
 	t.Helper()
-	cfg := `{"packs": ["claude"]}`
+	cfg := `{"packs": ["claude", "bedrock"]}`
 	if inSources {
-		cfg = `{"packs": ["claude"], "env_sources": [{"WIDGET_TOKEN": "frozen"}]}`
+		cfg = `{"packs": ["claude", "bedrock"], "env_sources": [{"WIDGET_TOKEN": "frozen"}]}`
 	}
 	home := hostGateHome(t, cfg, nil)
 	t.Setenv("WIDGET_TOKEN", "")
@@ -74,7 +74,7 @@ func TestHostLaunchRefusesAPointerBesideItsOverride(t *testing.T) {
 			}
 			// The control: the same home without the overriding variable launches.
 			t.Setenv("WIDGET_TOKEN", "")
-			userCfg(t, home, `{"packs": ["claude"]}`)
+			userCfg(t, home, `{"packs": ["claude", "bedrock"]}`)
 			if rc, reached, errw := hostExecRun(t, "claude", "-p", "bedrock"); rc != 0 || !reached {
 				t.Fatalf("fixture control: without WIDGET_TOKEN the launch runs: rc=%d\n%s", rc, errw)
 			}
@@ -108,7 +108,7 @@ func TestHostOverrideWarningsAndTheObserveVerb(t *testing.T) {
 // jail gives wherever aws-auth is not served (macos-user,
 // TestMacosUserWithholdsTheBedrockPointerSoNothingOverridesIt in internal/cli/run).
 func TestHostBearerBesideAWithheldPointerOverridesNothing(t *testing.T) {
-	hostGateHome(t, `{"packs": ["claude"], "env_sources": [{"AWS_BEARER_TOKEN_BEDROCK": "sk-frozen"}]}`, nil)
+	hostGateHome(t, `{"packs": ["claude", "bedrock"], "env_sources": [{"AWS_BEARER_TOKEN_BEDROCK": "sk-frozen"}]}`, nil)
 	t.Setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "")
 	rc, reached, errw := hostExecRun(t, "claude", "-p", "bedrock")
 	if rc != 0 || !reached {
@@ -121,8 +121,9 @@ func TestHostBearerBesideAWithheldPointerOverridesNothing(t *testing.T) {
 
 // THE PROFILE DISCLOSURE LINE, the jail's (packload.ProfileDisclosures), at both host front doors.
 func TestHostLaunchSaysWhereItsProfileLanded(t *testing.T) {
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
 	const want = `Profile bedrock: declared by bedrock; claude → provider "bedrock", through claude's own "aws-bedrock" client`
-	_, errs := hostGateLaunchWith(t, claudeAlone, nil, []string{"-p", "bedrock"}, "claude")
+	_, errs := hostGateLaunchWith(t, claudeBedrock, nil, []string{"-p", "bedrock"}, "claude")
 	if !strings.Contains(errs, "yolo host: "+want) {
 		t.Errorf("yolo host -p bedrock -- claude must print %q:\n%s", want, errs)
 	}
@@ -131,7 +132,7 @@ func TestHostLaunchSaysWhereItsProfileLanded(t *testing.T) {
 	if !strings.Contains(errs, `yolo host: Warning: profile "bedrock" delivers claude no credential`) {
 		t.Errorf("yolo host -p bedrock -- claude must say it delivers claude no credential:\n%s", errs)
 	}
-	hostGateHome(t, claudeAlone, nil)
+	hostGateHome(t, claudeBedrock, nil)
 	var out, envErr bytes.Buffer
 	if rc := hostMain([]string{"env", "--agent", "claude", "-p", "bedrock"}, &out, &envErr, false, nil); rc != 0 {
 		t.Fatalf("rc=%d\n%s", rc, envErr.String())
@@ -170,7 +171,7 @@ func TestHostLaunchRefusesAProfileEntryValidationRefuses(t *testing.T) {
 func TestHostLaunchRefusesAPlatformGatedPointerBesideItsOverride(t *testing.T) {
 	for _, profile := range []string{"bedrock", "bedrock-sso"} {
 		t.Run(profile, func(t *testing.T) {
-			home := hostGateHome(t, `{"packs": ["claude"], "env_sources": [{"WIDGET_TOKEN": "frozen"}],
+			home := hostGateHome(t, `{"packs": ["claude", "bedrock"], "env_sources": [{"WIDGET_TOKEN": "frozen"}],
 			  "profiles": {"bedrock-sso": {"provider": "bedrock"}}}`, nil)
 			t.Setenv("WIDGET_TOKEN", "")
 			writeFile(t, filepath.Join(home, ".config", "yolo-jail", "local", "pack.json"),

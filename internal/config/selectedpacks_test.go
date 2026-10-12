@@ -159,8 +159,8 @@ func TestAConfiguredPacksDirIsReserved(t *testing.T) {
 	}
 }
 
-// The `needs` closure is part of the selection: codex and claude both need openai-auth, so
-// a claude selection resolves it too, exactly as the launch's staging adds it.
+// The `needs` closure is part of the selection: claude needs wire-bridge, and bedrock needs aws-auth,
+// so those selections resolve them too, exactly as the launch's staging adds them.
 func TestTheSelectionIncludesTheNeedsClosure(t *testing.T) {
 	selectionHome(t, `["claude"]`)
 	packs, complete := resolveSelectedPacks()
@@ -171,9 +171,23 @@ func TestTheSelectionIncludesTheNeedsClosure(t *testing.T) {
 	for _, p := range packs {
 		names = append(names, p.Name)
 	}
-	for _, want := range []string{"claude", "openai-auth", "wire-bridge"} {
+	for _, want := range []string{"claude", "wire-bridge"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("resolved selection %v is missing %s (claude's needs pull it in)", names, want)
+		}
+	}
+	selectionHome(t, `["bedrock"]`)
+	packs, complete = resolveSelectedPacks()
+	if !complete {
+		t.Fatal("an embedded-only selection must resolve completely")
+	}
+	names = nil
+	for _, p := range packs {
+		names = append(names, p.Name)
+	}
+	for _, want := range []string{"bedrock", "aws-auth"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("resolved selection %v is missing %s (bedrock's needs pull it in)", names, want)
 		}
 	}
 }

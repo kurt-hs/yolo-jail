@@ -169,11 +169,6 @@
       "register": {"path": "/packages", "surface": "pi/settings"}
     },
     {
-      "kind": "profile",
-      "name": "codex",
-      "provider": "openai-codex"
-    },
-    {
       "from": "extensions/yolo-openai-auth.js",
       "into": ".pi/agent/extensions/yolo-openai-auth.js",
       "kind": "files"
@@ -320,13 +315,5 @@
       "kind": "hook"
     }
   ],
-  "name": "pi",
-  "needs": [
-    {
-      "pack": "bedrock"
-    },
-    {
-      "pack": "openai-auth"
-    }
-  ]
+  "name": "pi"
 }

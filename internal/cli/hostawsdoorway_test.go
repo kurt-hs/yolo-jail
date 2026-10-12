@@ -119,7 +119,7 @@ func bedrockDoorwayConfig(agent string, enabled bool) string {
 	if !enabled {
 		loophole = `"loopholes": {}`
 	}
-	return `{"packs": ["` + agent + `"], "profile": {"` + agent + `": "bedrock"}, ` +
+	return `{"packs": ["` + agent + `", "bedrock"], "profile": {"` + agent + `": "bedrock"}, ` +
 		`"providers": {"bedrock": {"region": "eu-west-1"}}, ` + loophole + `}`
 }
 
@@ -386,7 +386,7 @@ func TestHostOpensTheAWSDoorwayForEveryBedrockAgent(t *testing.T) {
 			}
 		})
 	}
-	l := runDoorwayLaunch(t, `{"packs": ["claude"], "loopholes": {"aws-auth": {"enabled": true, `+
+	l := runDoorwayLaunch(t, `{"packs": ["claude", "bedrock"], "loopholes": {"aws-auth": {"enabled": true, `+
 		`"settings": {"profile": "`+doorwayProfile+`", "unnarrowed": true}}}}`, nil,
 		[]string{"-p", "bedrock"}, "claude")
 	assertDoorwayServed(t, l)
@@ -538,7 +538,7 @@ func TestHostEnvNamesTheLaunchThatOpensTheDoorway(t *testing.T) {
 // the pack's cause and remedy and the host check to run next, opens no doorway, and says nothing
 // about a jail there is none of. No `aws` runs, so no AWS state decides the result.
 func TestHostWordsAFailedDoorwayServiceForTheHost(t *testing.T) {
-	cfg := `{"packs": ["pi"], "profile": {"pi": "bedrock"}, "providers": {"bedrock": {"region": "eu-west-1"}}, ` +
+	cfg := `{"packs": ["pi", "bedrock"], "profile": {"pi": "bedrock"}, "providers": {"bedrock": {"region": "eu-west-1"}}, ` +
 		`"loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "` + doorwayProfile + `"}}}}`
 	l := runDoorwayLaunch(t, cfg, nil, nil, "pi")
 	if l.rc == 0 || len(l.started) != 0 {
@@ -606,7 +606,7 @@ func TestHostRefusesWhenTheDoorwayCannotStart(t *testing.T) {
 // reaches the host service's credential through it. Planning the doorways over the primary
 // alone (zai, no platform) opens none, and pi's Bedrock entry starts with no credential.
 func TestHostPiWithABedrockEntryAfterTheFirstGetsTheDoorway(t *testing.T) {
-	cfg := `{"packs": ["pi", "zai"], "profile": {"pi": ["zai", "bedrock"]}, ` +
+	cfg := `{"packs": ["pi", "zai", "bedrock"], "profile": {"pi": ["zai", "bedrock"]}, ` +
 		`"providers": {"bedrock": {"region": "eu-west-1"}}, ` +
 		`"env_sources": [{"ZAI_API_KEY": "tok-zai"}], ` +
 		`"loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "` + doorwayProfile +

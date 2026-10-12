@@ -207,11 +207,6 @@
       "kind": "autonomy"
     },
     {
-      "kind": "profile",
-      "name": "codex",
-      "provider": "openai-codex"
-    },
-    {
       "at": ".claude",
       "kind": "state",
       "scope": "workspace"
@@ -236,12 +231,6 @@
   ],
   "name": "claude",
   "needs": [
-    {
-      "pack": "bedrock"
-    },
-    {
-      "pack": "openai-auth"
-    },
     {
       "pack": "wire-bridge"
     }

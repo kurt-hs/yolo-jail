@@ -154,7 +154,7 @@ func TestACarriedAgentWithNoRouteIsRefused(t *testing.T) {
 // providers.
 func TestACarriedAgentWhoseAdapterRouteIsTakenIsRefused(t *testing.T) {
 	home := packHome(t)
-	writeUserConfig(t, home, `{"packs": ["claude", "copilot", "cerebras"]}`)
+	writeUserConfig(t, home, `{"packs": ["claude", "copilot", "cerebras", "bedrock"]}`)
 	cfg, err := jsonx.Decode([]byte(`{"providers": {"bedrock": {"region": "us-east-1"}}}`))
 	if err != nil {
 		t.Fatal(err)

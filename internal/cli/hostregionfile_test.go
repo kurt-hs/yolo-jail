@@ -31,10 +31,11 @@ func awsConfigIn(body string) func(home string) {
 }
 
 const hostAWSConfig = "[default]\nregion = eu-north-1\n\n[profile team]\nregion = ap-northeast-1\n"
+const claudeBedrock = `{"packs": ["claude", "bedrock"]}`
 
 func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 	noRegion := map[string]string{"AWS_REGION": ""}
-	rc, env, errs := hostGateRunIn(t, claudeAlone, noRegion, []string{"-p", "bedrock"}, "claude",
+	rc, env, errs := hostGateRunIn(t, claudeBedrock, noRegion, []string{"-p", "bedrock"}, "claude",
 		awsConfigIn(hostAWSConfig))
 	if rc != 0 || env == nil {
 		t.Fatalf("a region in ~/.aws/config must let yolo host -p bedrock -- claude run: rc=%d\n%s", rc, errs)
@@ -48,7 +49,7 @@ func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 
 	// THE PROFILE THE AGENT INHERITS picks the section: an AWS_PROFILE in the invoking shell,
 	// which the exec'd agent receives.
-	rc, env, errs = hostGateRunIn(t, claudeAlone, map[string]string{"AWS_REGION": "", "AWS_PROFILE": "team"},
+	rc, env, errs = hostGateRunIn(t, claudeBedrock, map[string]string{"AWS_REGION": "", "AWS_PROFILE": "team"},
 		[]string{"-p", "bedrock"}, "claude", awsConfigIn(hostAWSConfig))
 	if rc != 0 || env["AWS_REGION"] != "ap-northeast-1" {
 		t.Errorf("claude on AWS_PROFILE=team must get [profile team]'s region: rc=%d AWS_REGION=%q\n%s",
@@ -56,7 +57,7 @@ func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 	}
 
 	// A REGION THE AGENT ALREADY INHERITS wins, and the file is not named.
-	rc, env, errs = hostGateRunIn(t, claudeAlone, map[string]string{"AWS_REGION": "us-west-2"},
+	rc, env, errs = hostGateRunIn(t, claudeBedrock, map[string]string{"AWS_REGION": "us-west-2"},
 		[]string{"-p", "bedrock"}, "claude", awsConfigIn(hostAWSConfig))
 	if rc != 0 || env["AWS_REGION"] != "us-west-2" || strings.Contains(errs, "Region: ") {
 		t.Errorf("the shell's AWS_REGION must win over the file, with nothing disclosed: rc=%d AWS_REGION=%q\n%s",
@@ -67,7 +68,7 @@ func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 	// fills the gap. The null ranks with env_sources in the one ordered composition (packload's
 	// envcompose.go) and never removes a shape var, which the filled region is, so BR-D26's one
 	// gap — the null removing the filled region and the launch refusing — is closed.
-	rc, env, errs = hostGateRunIn(t, `{"packs": ["claude"], "env_sources": [{"AWS_REGION": null}]}`,
+	rc, env, errs = hostGateRunIn(t, `{"packs": ["claude", "bedrock"], "env_sources": [{"AWS_REGION": null}]}`,
 		map[string]string{"AWS_REGION": "us-west-2"}, []string{"-p", "bedrock"}, "claude", awsConfigIn(hostAWSConfig))
 	if rc != 0 || env["AWS_REGION"] != "eu-north-1" {
 		t.Errorf("a null removing the shell's AWS_REGION must leave the file's region to fill it: rc=%d AWS_REGION=%q\n%s",
@@ -75,7 +76,7 @@ func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 	}
 
 	// A FILE WITH NO REGION FOR THE PROFILE is the refusal, naming the file and the profile.
-	rc, env, errs = hostGateRunIn(t, claudeAlone, noRegion, []string{"-p", "bedrock"}, "claude",
+	rc, env, errs = hostGateRunIn(t, claudeBedrock, noRegion, []string{"-p", "bedrock"}, "claude",
 		awsConfigIn("[profile team]\nregion = ap-northeast-1\n"))
 	if rc != 1 || env != nil || !strings.Contains(errs,
 		`~/.aws/config (profile "default", since nothing names another): it has no [profile default] or [default] section`) {
@@ -85,7 +86,7 @@ func TestHostLaunchTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 
 // `yolo host env`, the observe verb, composes the same region and discloses it the same way.
 func TestHostEnvShowsTheRegionOfTheHostsAWSConfig(t *testing.T) {
-	home := hostGateHome(t, claudeAlone, map[string]string{"AWS_REGION": ""})
+	home := hostGateHome(t, claudeBedrock, map[string]string{"AWS_REGION": ""})
 	awsConfigIn(hostAWSConfig)(home)
 	vars, disclosure, err := hostEnvDelta("claude", "bedrock", nil, func(string) {})
 	if err != nil {
@@ -110,7 +111,7 @@ func TestHostEnvShowsTheRegionOfTheHostsAWSConfig(t *testing.T) {
 // profile, and the region the fill reads is the default profile's. Reading the shell's profile
 // there handed claude [profile team]'s region beside the default profile's credential.
 func TestHostRegionFillReadsNoProfileTheAgentDoesNotReceive(t *testing.T) {
-	rc, env, errs := hostGateRunIn(t, `{"packs": ["claude"], "env_sources": [{"AWS_PROFILE": null}]}`,
+	rc, env, errs := hostGateRunIn(t, `{"packs": ["claude", "bedrock"], "env_sources": [{"AWS_PROFILE": null}]}`,
 		map[string]string{"AWS_REGION": "", "AWS_PROFILE": "team"}, []string{"-p", "bedrock"}, "claude",
 		awsConfigIn(hostAWSConfig))
 	if rc != 0 || env == nil {

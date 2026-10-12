@@ -76,8 +76,9 @@ func agentEnvAt(t *testing.T, n notch, packs []*Pack, user *jsonx.OrderedMap,
 // jail it names the pack and what adding it alone would still refuse on.
 func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 	claude := embeddedNamed(t, "claude")
+	userProfiles := map[string]UserProfile{"codex": {Provider: "openai-codex"}}
 	for _, n := range notches {
-		vars, err := agentEnvAt(t, n, claude, nil, nil, "claude", "codex")
+		vars, err := agentEnvAt(t, n, claude, nil, userProfiles, "claude", "codex")
 		if err == nil {
 			t.Fatalf("%s: claude on codex with no openai-codex provider composed %v — the silent no-op", n.name, vars)
 		}
@@ -90,11 +91,11 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 			if !errors.As(err, &ue) {
 				t.Fatalf("host: err = %v, want the bridge refusal (*UnservedAdapterError)", err)
 			}
-			if ue.ProviderPack != "openai-auth" || ue.NeededBy != "claude" || ue.Adaptation.Pack != "wire-bridge" {
-				t.Errorf("host: the refusal must name the provider's pack, who needs it and the adapter: %+v", ue)
+			if ue.ProviderPack != "openai-auth" || ue.Adaptation.Pack != "wire-bridge" {
+				t.Errorf("host: the refusal must name the provider's pack and the adapter: %+v", ue)
 			}
 			for _, want := range []string{`provider "openai-codex" is not in this launch's provider table either`,
-				`pack "openai-auth" ships it and is not selected`, `pack "claude"'s ` + "`needs`"} {
+				`pack "openai-auth" ships it and is not selected`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("host: Error() must say %q:\n%v", want, err)
 				}
@@ -105,7 +106,7 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 				t.Fatalf("jail: err = %v, want *MissingProviderError", err)
 			}
 			if mp.Profile != "codex" || mp.Provider != "openai-codex" || mp.Shipper != "openai-auth" ||
-				mp.NeededBy != "claude" || mp.Then == nil {
+				mp.Then == nil {
 				t.Errorf("jail: %+v", mp)
 			}
 			for _, want := range []string{`profile "codex" selects provider "openai-codex" for agent "claude"`,
@@ -132,11 +133,12 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 // shipped pi pack `needs` openai-auth, which every notch joins, so only a hand-built pack set
 // without it meets this.
 func TestCodexAndPiWithoutTheirProviderStillCompose(t *testing.T) {
-	if _, err := agentEnvAt(t, notches[1], embeddedNamed(t, "codex"), nil, nil, "codex", "codex"); err != nil {
+	userProfiles := map[string]UserProfile{"codex": {Provider: "openai-codex"}}
+	if _, err := agentEnvAt(t, notches[1], embeddedNamed(t, "codex"), nil, userProfiles, "codex", "codex"); err != nil {
 		t.Errorf("host: codex on codex without openai-auth must compose as before: %v", err)
 	}
 	var mp *MissingProviderError
-	if _, err := agentEnvAt(t, notches[1], embeddedNamed(t, "pi"), nil, nil, "pi", "codex"); !errors.As(err, &mp) ||
+	if _, err := agentEnvAt(t, notches[1], embeddedNamed(t, "pi"), nil, userProfiles, "pi", "codex"); !errors.As(err, &mp) ||
 		mp.Shipper != "openai-auth" {
 		t.Errorf("host: pi on codex without openai-auth now has a reader (its prelaunch producer), "+
 			"so it must be refused naming openai-auth, got %v", err)
@@ -288,7 +290,8 @@ func TestPairingRefusalsReportsAMissingProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(claude, nil, providers)
+	userProfiles := map[string]UserProfile{"codex": {Provider: "openai-codex"}}
+	resolved, err := ResolveProfiles(claude, userProfiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

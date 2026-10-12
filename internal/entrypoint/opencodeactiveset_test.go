@@ -264,7 +264,7 @@ func TestEachOpencodeSetEntryKeepsItsOwnModelSwitch(t *testing.T) {
 func TestABedrockEntryAfterTheFirstKeepsItsOwnModelSwitch(t *testing.T) {
 	const opus, sol = "global.anthropic.claude-opus-5-5", "us.openai.gpt-6.1-sol"
 	company := companyModelsPack(t, bedrockListAdd+`,{"kind":"models","provider":"bedrock","only":["`+sol+`","`+opus+`"]}`)
-	packs := append(testPacksForAgent(t, "opencode", "zai"), company)
+	packs := append(testPacksForAgent(t, "opencode", "zai", "bedrock"), company)
 	off := false
 	for _, tc := range []struct {
 		name     string

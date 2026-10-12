@@ -42,8 +42,9 @@ func TestHostProfileForReadsTheRunGrammar(t *testing.T) {
 
 // Through hostMain: a pair naming the launched command composes exactly what the bare name does.
 func TestHostPairNamingTheCommandIsTheBareName(t *testing.T) {
-	bare, _ := hostGateLaunchWith(t, claudeAlone, nil, []string{"-p", "bedrock"}, "claude")
-	pair, _ := hostGateLaunchWith(t, claudeAlone, nil, []string{"-p", "claude=bedrock"}, "claude")
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
+	bare, _ := hostGateLaunchWith(t, claudeBedrock, nil, []string{"-p", "bedrock"}, "claude")
+	pair, _ := hostGateLaunchWith(t, claudeBedrock, nil, []string{"-p", "claude=bedrock"}, "claude")
 	for k := range pair {
 		if _, ok := bare[k]; !ok {
 			t.Errorf("the pair composed %s, which the bare name did not", k)
@@ -80,7 +81,8 @@ func TestHostPairNamingAnotherCLIRefuses(t *testing.T) {
 		}
 	}
 
-	hostGateHome(t, claudeAlone, nil)
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
+	hostGateHome(t, claudeBedrock, nil)
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"env", "-p", "pi=codex"}, &out, &errw, false, nil); rc != 2 || out.Len() != 0 {
 		t.Fatalf("yolo host env -p pi=codex: rc = %d, stdout = %q, want a refusal with nothing to eval", rc, out.String())
@@ -98,15 +100,14 @@ func TestHostPairNamingAnotherCLIRefuses(t *testing.T) {
 
 // A `-p claude=codex` pair reaches the bridge in both orders, and through `--profile=`: the pair is
 // read in the run path's grammar (ES-D27), so the host starts the wire bridge for claude rather than
-// reading "claude=codex" as a profile name, whether openai-auth is listed or joins through claude's
-// `needs`.
+// reading "claude=codex" as a profile name, when openai-auth is listed in packs.
 func TestHostPairStartsTheBridgeInBothOrders(t *testing.T) {
 	const helper = "YOLO_TEST_HOST_PAIR_SPELLING"
 	if spelling := os.Getenv(helper); spelling != "" {
 		prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 		os.Exit(Main(append([]string{"yolo"}, strings.Fields(spelling)...)))
 	}
-	for _, cfg := range []string{claudeAlone, `{"packs": ["claude", "openai-auth"]}`} {
+	for _, cfg := range []string{`{"packs": ["claude", "openai-auth"]}`} {
 		for _, spelling := range []string{"host -p claude=codex -- claude", "-p claude=codex host -- claude",
 			"host --profile=claude=codex -- claude"} {
 			t.Run(cfg+" "+spelling, func(t *testing.T) {

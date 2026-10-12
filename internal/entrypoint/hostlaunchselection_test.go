@@ -102,7 +102,7 @@ func acmeProvider(t *testing.T) (*jsonx.OrderedMap, map[string]packload.UserProf
 // another's.
 func TestHostLaunchSelectionSpellsCodexsSelectionAsItsDashC(t *testing.T) {
 	providers, profiles := acmeProvider(t)
-	f := newSelectionFixture(t, "codex", providers, profiles, "zai")
+	f := newSelectionFixture(t, "codex", providers, profiles, "zai", "openai-auth")
 
 	sub := f.compose(t, `{"codex":"codex"}`)
 	argv, err := sub.Argv()
@@ -227,7 +227,7 @@ func TestHostLaunchSelectionHandsOpencodeOneDocumentMergedOverTheUsersOwn(t *tes
 // PI: its own flags, the set's scope as one --models word; and the two list files its extensions
 // read, each in the variable its declaration names, as this launch composes them.
 func TestHostLaunchSelectionHandsPiItsFlagsAndItsLists(t *testing.T) {
-	f := newSelectionFixture(t, "pi", nil, nil, "zai", "openrouter")
+	f := newSelectionFixture(t, "pi", nil, nil, "zai", "openrouter", "openai-auth")
 	sel := f.compose(t, `{"pi":["zai","openrouter"]}`)
 	argv, err := sel.Argv()
 	if err != nil {
@@ -327,7 +327,7 @@ func TestALaunchSelectionRefusesWhatItsWordsCannotSpell(t *testing.T) {
 // and not the file's, on both of yolo-openai-auth.js's routes; unset, the file's. The variable's
 // name is read off the shipped declaration, so the pack and each extension cannot disagree on it.
 func TestPiExtensionsReadTheLaunchsListsBeforeTheirFiles(t *testing.T) {
-	f := newSelectionFixture(t, "pi", nil, nil)
+	f := newSelectionFixture(t, "pi", nil, nil, "openai-auth")
 	sel := f.compose(t, `{"pi":"codex"}`)
 	vars, err := sel.Vars(func(string) (string, bool) { return "", false })
 	if err != nil {

@@ -58,7 +58,7 @@ func builtInRender(t *testing.T, agentPack, use string) string {
 
 func codexNativeFixture(t *testing.T, userProvidersJSON string, profiles map[string]packload.UserProfile) ([]*packload.Pack, *jsonx.OrderedMap, map[string]packload.ResolvedProfile) {
 	t.Helper()
-	packs := testPacksForAgent(t, "codex", "zai", "wire-bridge")
+	packs := testPacksForAgent(t, "codex", "zai", "wire-bridge", "openai-auth")
 	userProviders, err := jsonx.Decode([]byte(userProvidersJSON))
 	if err != nil {
 		t.Fatal(err)

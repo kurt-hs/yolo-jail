@@ -32,7 +32,7 @@ import (
 // YOLO_USE_PROFILES. wire, when not "", replaces the resolved profile table.
 func renderOpencodeCodex(t *testing.T, use, wire string, extra ...string) map[string]any {
 	t.Helper()
-	packs := testPacksForAgent(t, "opencode", extra...)
+	packs := testPacksForAgent(t, "opencode", append(extra, "openai-auth")...)
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestOpencodeOnASetWithCodexSecondKeepsTheSubscription(t *testing.T) {
 // view flag and the file opencode's Auth store reads whenever openai-codex is selected for it,
 // and with neither on another provider.
 func TestOpencodeIsLaunchedWithTheOpenAILoginOnlyOnTheSubscription(t *testing.T) {
-	packs := testPacksForAgent(t, "opencode", "zai")
+	packs := testPacksForAgent(t, "opencode", "zai", "openai-auth")
 	env, err := launchEnvOf(packs, map[string]string{"opencode": "codex"}, "opencode")
 	if err != nil {
 		t.Fatalf("opencode on codex: %v", err)
@@ -191,8 +191,8 @@ func shippedOpencodePack(t *testing.T) *packload.Pack {
 	return mustEmbeddedPack(t, "opencode")
 }
 
-// THE PLUGIN REACHES opencode's SERVER PLUGIN DIRECTORY, and the pack needs openai-auth, the pack
-// declaring the provider and its one list, unconditionally (ML-D1's consumer rule).
+// THE PLUGIN REACHES opencode's SERVER PLUGIN DIRECTORY, and the pack does not declare an
+// unconditional need on openai-auth (it is decoupled from the agent pack).
 func TestShippedOpencodePackDeliversItsOpenAIAuthPlugin(t *testing.T) {
 	p := shippedOpencodePack(t)
 	needs := 0
@@ -201,8 +201,8 @@ func TestShippedOpencodePackDeliversItsOpenAIAuthPlugin(t *testing.T) {
 			needs++
 		}
 	}
-	if needs != 1 {
-		t.Errorf("opencode needs = %v, want one unconditional openai-auth need", p.Decl.DeclaredNeeds())
+	if needs != 0 {
+		t.Errorf("opencode needs = %v, want no unconditional openai-auth need", p.Decl.DeclaredNeeds())
 	}
 	found := false
 	for _, c := range p.Decl.Contributions() {
@@ -445,7 +445,7 @@ esac
 // login's view as it does for codex alone. Without it the switch would reach opencode's `openai`
 // row with no stored login, on the derive's non-key.
 func TestOpencodeOnASetWithCodexSecondIsLaunchedWithTheOpenAILogin(t *testing.T) {
-	packs := testPacksForAgent(t, "opencode", "zai")
+	packs := testPacksForAgent(t, "opencode", "zai", "openai-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

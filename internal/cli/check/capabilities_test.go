@@ -173,7 +173,7 @@ func TestMergedConfigSectionCountsASelectedPacksCapability(t *testing.T) {
 // web search, so claude's built-in login is not this launch's source and the launch refuses. A
 // prediction that ignored the `profile` key would count the login and predict a pass.
 func TestMergedConfigSectionReadsTheProfileKey(t *testing.T) {
-	capabilityHome(t, `{"packs": ["claude"]}`)
+	capabilityHome(t, `{"packs": ["claude", "bedrock"]}`)
 	cfg := capCfg(t, `{"required_capabilities": ["web_search"], "profile": "bedrock"}`)
 	empty := jsonx.NewOrderedMap()
 	var buf bytes.Buffer

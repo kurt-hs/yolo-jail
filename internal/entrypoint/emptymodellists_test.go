@@ -14,7 +14,7 @@ import (
 func modelListFixtureTable(t *testing.T, id, vendor string) ([]*packload.Pack, *jsonx.OrderedMap, *jsonx.OrderedMap,
 	map[string]bool, map[string]packload.ResolvedProfile) {
 	t.Helper()
-	packs := testPacksForAgent(t, "claude", "codex")
+	packs := testPacksForAgent(t, "claude", "codex", "bedrock")
 	packDir := t.TempDir()
 	var user *jsonx.OrderedMap
 	var manifest string

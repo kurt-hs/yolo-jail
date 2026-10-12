@@ -33,7 +33,7 @@ import (
 // selection needs.
 func renderedCodexModels(t *testing.T, user map[string]packload.UserProfile, useProfiles string, extra ...string) []byte {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", extra...)
+	packs := testPacksForAgent(t, "pi", append([]string{"openai-auth"}, extra...)...)
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

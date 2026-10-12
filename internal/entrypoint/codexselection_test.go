@@ -90,7 +90,7 @@ const zaiProviderJSON = `{"zai":{
 // spelled as the composed table carries it.
 func shippedCodexWithNeighbourJSON(t *testing.T) string {
 	t.Helper()
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "codex"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "codex", "openai-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

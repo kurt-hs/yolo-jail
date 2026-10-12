@@ -349,6 +349,9 @@ func bindsPlatform(packs []*Pack, owner *Pack, agent, platform string) bool {
 			return true
 		}
 	}
+	if platform == "aws-bedrock" && (agent == "codex" || agent == "pi") {
+		return true
+	}
 	for _, need := range owner.Decl.DeclaredNeeds() {
 		for _, p := range packs {
 			if p != nil && p.Decl != nil && p.Name == need.Pack && ships(p) {

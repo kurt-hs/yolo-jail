@@ -97,7 +97,7 @@ func TestAHostLaunchWhoseManagedLaunchDidNotStartSaysWhy(t *testing.T) {
 		managedVoice bool
 	}{{"codex", true}, {"pi", false}} {
 		t.Run(tc.agent, func(t *testing.T) {
-			hostUnservedHome(t, `{"packs": ["codex", "pi"]}`)
+			hostUnservedHome(t, `{"packs": ["codex", "pi", "openai-auth"]}`)
 			setGateTTY(t, false)
 			t.Cleanup(func() {
 				broker.BrokerKill(broker.SingletonDeps(openaiauthhost.BrokerName, nil), syscall.SIGTERM, 5*time.Second)
@@ -145,9 +145,9 @@ func TestTheHostWithholdsAPointerAtAJailDaemonAndNamesIt(t *testing.T) {
 		withheld                    []string
 		daemon                      string
 	}{
-		{"the bedrock pointer", `["claude", "aws-auth"]`, "claude", "bedrock",
+		{"the bedrock pointer", `["claude", "bedrock", "aws-auth"]`, "claude", "bedrock",
 			[]string{"AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN"}, "aws-auth"},
-		{"codex's refresh URL", `["codex"]`, "codex", "",
+		{"codex's refresh URL", `["codex", "openai-auth"]`, "codex", "",
 			[]string{"CODEX_REFRESH_TOKEN_URL_OVERRIDE"}, "openai-auth-broker"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

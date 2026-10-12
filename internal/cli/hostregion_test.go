@@ -21,8 +21,9 @@ const hostRegionVerdict = "yolo host: Refusing to launch: a selected provider is
 // derive then hands claude as AWS_REGION. An env_sources null removing the shell's AWS_REGION
 // removes the region too: the pre-flight reads the environment the exec would hand the agent.
 func TestHostLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
 	noRegion := map[string]string{"AWS_REGION": ""}
-	rc, env, errs := hostGateRun(t, claudeAlone, noRegion, []string{"-p", "bedrock"}, "claude")
+	rc, env, errs := hostGateRun(t, claudeBedrock, noRegion, []string{"-p", "bedrock"}, "claude")
 	if rc != 1 || env != nil {
 		t.Fatalf("yolo host -p bedrock -- claude with no region must refuse before the exec: rc=%d reached=%v\n%s",
 			rc, env != nil, errs)
@@ -43,10 +44,10 @@ func TestHostLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
 		shell      map[string]string
 		wantRegion string
 	}{
-		{"the invoking shell", claudeAlone, map[string]string{"AWS_REGION": "us-west-2"}, "us-west-2"},
-		{"AWS_DEFAULT_REGION in the shell", claudeAlone, map[string]string{"AWS_REGION": "", "AWS_DEFAULT_REGION": "eu-central-1"}, ""},
-		{"env_sources", `{"packs": ["claude"], "env_sources": [{"AWS_REGION": "eu-west-1"}]}`, noRegion, "eu-west-1"},
-		{"the provider's region", `{"packs": ["claude"], "providers": {"bedrock": {"region": "ap-south-1"}}}`, noRegion, "ap-south-1"},
+		{"the invoking shell", claudeBedrock, map[string]string{"AWS_REGION": "us-west-2"}, "us-west-2"},
+		{"AWS_DEFAULT_REGION in the shell", claudeBedrock, map[string]string{"AWS_REGION": "", "AWS_DEFAULT_REGION": "eu-central-1"}, ""},
+		{"env_sources", `{"packs": ["claude", "bedrock"], "env_sources": [{"AWS_REGION": "eu-west-1"}]}`, noRegion, "eu-west-1"},
+		{"the provider's region", `{"packs": ["claude", "bedrock"], "providers": {"bedrock": {"region": "ap-south-1"}}}`, noRegion, "ap-south-1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rc, env, errs := hostGateRun(t, tc.cfg, tc.shell, []string{"-p", "bedrock"}, "claude")
@@ -62,7 +63,7 @@ func TestHostLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
 		})
 	}
 
-	rc, env, errs = hostGateRun(t, `{"packs": ["claude"], "env_sources": [{"AWS_REGION": null}]}`,
+	rc, env, errs = hostGateRun(t, `{"packs": ["claude", "bedrock"], "env_sources": [{"AWS_REGION": null}]}`,
 		map[string]string{"AWS_REGION": "us-west-2"}, []string{"-p", "bedrock"}, "claude")
 	if rc != 1 || env != nil || !strings.Contains(errs, hostRegionVerdict) {
 		t.Errorf("an env_sources null removing the shell's AWS_REGION leaves the agent no region, "+
@@ -76,7 +77,7 @@ func TestHostLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
 // and the user's provider with no region is refused like the shipped one (the region
 // requirement keys on the platform too). Through hostMain to the exec.
 func TestHostBedrockFactsFollowTheProviderNotTheProfileName(t *testing.T) {
-	const cfg = `{"packs": ["claude"],
+	const cfg = `{"packs": ["claude", "bedrock"],
 	  "providers": {"bedrock": {"region": "us-west-2"},
 	                "bedrock-eu": {"platform": "aws-bedrock", "region": "eu-west-1"},
 	                "bedrock-bare": {"platform": "aws-bedrock"}},
@@ -104,7 +105,8 @@ func TestHostBedrockFactsFollowTheProviderNotTheProfileName(t *testing.T) {
 // THE HATCH lets the host launch through, loudly, as it does a jail's; and a launch that selects
 // no bedrock owes no region at all.
 func TestHostRegionRefusalHatchAndTheUnprofiledControl(t *testing.T) {
-	rc, env, errs := hostGateRun(t, claudeAlone,
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
+	rc, env, errs := hostGateRun(t, claudeBedrock,
 		map[string]string{"AWS_REGION": "", "YOLO_ALLOW_MISSING_PROVIDERS": "1"}, []string{"-p", "bedrock"}, "claude")
 	if rc != 0 || env == nil {
 		t.Fatalf("the hatch must let the host launch proceed: rc=%d\n%s", rc, errs)

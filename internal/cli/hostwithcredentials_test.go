@@ -165,7 +165,7 @@ func TestWithCredentialsIsRepeatable(t *testing.T) {
 // derive composes — and additionally receives the granted keys. The grant re-points nothing,
 // so the agent's backend is still the profile's.
 func TestWithCredentialsCombinesWithAProfile(t *testing.T) {
-	cfg := `{"packs": ["claude", "zai", "cerebras"], "env_sources": [` +
+	cfg := `{"packs": ["claude", "zai", "cerebras", "bedrock"], "env_sources": [` +
 		`{"ZAI_API_KEY": "tok-z", "CEREBRAS_API_KEY": "tok-c", "AWS_ACCESS_KEY_ID": "AKIA-host"}]}`
 	env, errs := hostGateLaunchWith(t, cfg, wcShell(nil),
 		[]string{"-p", "bedrock", "--with-credentials", "zai"}, "claude")
@@ -348,7 +348,7 @@ func TestWithCredentialsScopeHeaderNamesTheGrant(t *testing.T) {
 // ZAI_API_KEY. The additive command is the same run with the claimant added to the grant, and
 // every command the line names runs and still delivers the key the grant already carried.
 func TestWithCredentialsRemedyWidensTheGrant(t *testing.T) {
-	cfg := `{"packs": ["claude", "zai", "cerebras"], "env_sources": [` +
+	cfg := `{"packs": ["claude", "zai", "cerebras", "bedrock"], "env_sources": [` +
 		`{"ZAI_API_KEY": "tok-z", "CEREBRAS_API_KEY": "tok-c", "AWS_ACCESS_KEY_ID": "AKIA-host"}]}`
 	for _, tc := range []struct {
 		flags []string

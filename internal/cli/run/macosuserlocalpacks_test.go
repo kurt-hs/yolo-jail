@@ -157,7 +157,7 @@ func (f *supervisedFake) die(service string) {
 // launch's lines go. Deleting the Supervise call from startMacosUserServices or from
 // startMacosUserDoorways fails this.
 func TestTheMacosUserArmSupervisesEachServiceAndDoorwayItStarts(t *testing.T) {
-	o, stderr, _ := overrideNativeLaunch(t, `{"packs": ["claude", "cerebras", "codex"], `+
+	o, stderr, _ := overrideNativeLaunch(t, `{"packs": ["claude", "cerebras", "codex", "openai-auth"], `+
 		`"env_sources": [{"CEREBRAS_API_KEY": "csk-test"}]}`, shellWith(nil))
 	o.ProfileName = "cerebras"
 	fakes := map[string]*supervisedFake{}

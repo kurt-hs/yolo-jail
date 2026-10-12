@@ -154,7 +154,7 @@ func bedrockNativeLaunch(t *testing.T, userConfig string) (int, *nativeLaunch, s
 // unprofiled control is TestUnprofiledNativeLaunchStillCarriesTheEmptyWireTables, whose claude
 // launch selects no bedrock and must not be refused.
 func TestTheMacosUserLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
-	rc, seen, errs := bedrockNativeLaunch(t, `{"packs": ["claude"]}`)
+	rc, seen, errs := bedrockNativeLaunch(t, `{"packs": ["claude", "bedrock"]}`)
 	if rc != 1 || seen.reached {
 		t.Fatalf("claude on bedrock with no region must refuse the macos-user launch before the "+
 			"backend runs: rc=%d reached=%v\n%s", rc, seen.reached, errs)
@@ -163,7 +163,7 @@ func TestTheMacosUserLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
 		t.Errorf("the refusal must be the region pre-flight's:\n%s", errs)
 	}
 
-	rc, seen, errs = bedrockNativeLaunch(t, `{"packs": ["claude"]`+bedrockRegionMember+`}`)
+	rc, seen, errs = bedrockNativeLaunch(t, `{"packs": ["claude", "bedrock"]`+bedrockRegionMember+`}`)
 	if rc != 0 || !seen.reached {
 		t.Fatalf("with the provider's region set the launch must run: rc=%d reached=%v\n%s", rc, seen.reached, errs)
 	}
@@ -204,7 +204,7 @@ func TestAnAttachSelectingBedrockWithNoRegionRefusesBeforeTheWrite(t *testing.T)
 // land, and no `run` may have been asked of the runtime.
 func TestTheFreshPodmanLaunchRefusesABedrockProfileWithNoRegion(t *testing.T) {
 	home := packHome(t)
-	writeUserConfig(t, home, `{"packs": ["claude"]}`)
+	writeUserConfig(t, home, `{"packs": ["claude", "bedrock"]}`)
 	t.Setenv("PATH", t.TempDir())
 	ws := t.TempDir()
 	var stdout, stderr bytes.Buffer

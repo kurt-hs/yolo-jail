@@ -44,6 +44,11 @@
         "gpt-6.1-sol": "gpt-6.1-sol"
       },
       "name": "openai-codex"
+    },
+    {
+      "kind": "profile",
+      "name": "codex",
+      "provider": "openai-codex"
     }
   ],
   "description": "One machine-wide owner for OpenAI subscription login and refresh-token rotation.",

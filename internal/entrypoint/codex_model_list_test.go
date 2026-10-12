@@ -228,7 +228,7 @@ func piCodexModelsRel(t *testing.T) string {
 
 func renderCodexConsumers(t *testing.T, user *jsonx.OrderedMap) (codexConsumers, *jsonx.OrderedMap) {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "claude", "codex", "opencode")
+	packs := testPacksForAgent(t, "pi", "claude", "codex", "opencode", "openai-auth")
 	providers, err := packload.ComposeProviders(user, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -626,7 +626,7 @@ func TestTheHostNotchGivesPiTheDeclaredCodexList(t *testing.T) {
 	rel := piCodexModelsRel(t)
 	t.Setenv("YOLO_CTX_ROOT", t.TempDir())
 	home := t.TempDir()
-	in := hostTestInputs(t, testPacksForAgent(t, "pi"), nil, nil, nil)
+	in := hostTestInputs(t, testPacksForAgent(t, "pi", "openai-auth"), nil, nil, nil)
 	if r := hostRenderWith(t, home, render.OwnershipOwn, in, "pi", "pi/codex-models"); r.Action != "rendered" {
 		t.Fatalf("pi/codex-models at the host under own: %q, want rendered", r.Action)
 	}

@@ -301,11 +301,11 @@ func TestConfigureClaudePrismNoLSP(t *testing.T) {
 // surface: deleting the provider context hand-off, or falling back to Claude's built-in
 // picker, makes this test fail at the boot writer rather than only in a Lua unit test.
 //
-// The provider table is the one a claude launch composes (claude's needs closure brings
-// packs/openai-auth, which DECLARES the list), so the ids below are the declaration's as
-// rendered — without the table the derive has no list and writes no picker at all.
+// The provider table is the one a claude launch composes with packs/openai-auth, which
+// DECLARES the list, so the ids below are the declaration's as rendered — without the table
+// the derive has no list and writes no picker at all.
 func TestConfigureClaudePrismCodexModelPicker(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "claude"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "claude", "openai-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

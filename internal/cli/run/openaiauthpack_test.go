@@ -22,30 +22,22 @@ import (
 
 const codexRefreshAdapterURL = "http://127.0.0.1:1460/oauth/token"
 
-func TestCodexPackNeedsSharedOpenAIAuthUnconditionally(t *testing.T) {
+func TestCodexPackDoesNotNeedSharedOpenAIAuth(t *testing.T) {
 	needs := officialPack(t, "codex").Decl.DeclaredNeeds()
-	found := 0
 	for _, n := range needs {
 		if n.Pack == "openai-auth" {
-			found++
-			if len(n.WhenBins) != 0 {
-				t.Errorf("codex's openai-auth need has when_bins %v, want it unconditional", n.WhenBins)
-			}
+			t.Errorf("codex needs %s; agent packs must not need auth providers", n.Pack)
 		}
-	}
-	if found != 1 {
-		t.Fatalf("codex needs = %v, want one unconditional openai-auth need — selecting the "+
-			"agent must also select its one refresh owner", needs)
 	}
 }
 
-func TestStagePacksJoinsOpenAIAuthForCodex(t *testing.T) {
+func TestStagePacksJoinsAWSAuthForBedrock(t *testing.T) {
 	home := packHome(t)
-	writeUserPacks(t, home, `["codex"]`)
+	writeUserPacks(t, home, `["bedrock"]`)
 
 	var errBuf bytes.Buffer
 	o := &Options{Workspace: t.TempDir(), Stdout: discardBuf(), Stderr: &errBuf}
-	_, loaded, _, err := o.stagePacks("yolo-test-openai-auth-joined")
+	_, loaded, _, err := o.stagePacks("yolo-test-aws-auth-joined")
 	if err != nil {
 		t.Fatalf("stagePacks: %v", err)
 	}
@@ -53,54 +45,47 @@ func TestStagePacksJoinsOpenAIAuthForCodex(t *testing.T) {
 	for _, p := range loaded {
 		names = append(names, p.Name)
 	}
-	if !containsString(names, "openai-auth") {
-		t.Fatalf("codex's need did not join openai-auth: loaded = %v", names)
+	if !containsString(names, "aws-auth") {
+		t.Fatalf("bedrock's need did not join aws-auth: loaded = %v", names)
 	}
-	if got := errBuf.String(); !strings.Contains(got, "+ openai-auth (needed by codex)") {
+	if got := errBuf.String(); !strings.Contains(got, "+ aws-auth (needed by bedrock)") {
 		t.Errorf("the launch must disclose why the auth pack joined:\n%s", got)
 	}
 }
 
 // THE PRODUCTION CALL SITE must use stagePacks' completed needs closure when deciding
-// whether a loophole owner departed. openai-auth is normally absent from the literal config:
-// Codex and Pi pull it in through `needs`. Comparing the ownership record only with the
+// whether a loophole owner departed. aws-auth is normally absent from the literal config:
+// bedrock pulls it in through `needs`. Comparing the ownership record only with the
 // literal config archived the canonical broker credentials on every later launch.
-func TestStageRunPacksPreservesNeededOpenAIAuthState(t *testing.T) {
-	for _, tc := range []struct{ agent, config string }{
-		{"codex", `["codex"]`},
-		{"pi", `["pi"]`},
-	} {
-		t.Run(tc.agent, func(t *testing.T) {
-			home := retireHome(t)
-			writeUserPacks(t, home, tc.config)
-			rec := &packstage.LoopholeOwners{Owners: map[string]string{
-				"openai-auth-broker": "openai-auth",
-			}}
-			if err := rec.Save(packLoopholeOwnersPath()); err != nil {
-				t.Fatal(err)
-			}
-			stateDir, _ := writeLoopholeState(t, "openai-auth-broker", "CANONICAL CREDENTIALS")
+func TestStageRunPacksPreservesNeededAWSAuthState(t *testing.T) {
+	home := retireHome(t)
+	writeUserPacks(t, home, `["bedrock"]`)
+	rec := &packstage.LoopholeOwners{Owners: map[string]string{
+		"aws-auth": "aws-auth",
+	}}
+	if err := rec.Save(packLoopholeOwnersPath()); err != nil {
+		t.Fatal(err)
+	}
+	stateDir, _ := writeLoopholeState(t, "aws-auth", "CANONICAL CREDENTIALS")
 
-			var out bytes.Buffer
-			o := retireOptions(t, &out)
-			if _, ok := o.stageRunPacks("yolo-openai-auth-needs-" + tc.agent); !ok {
-				t.Fatalf("stageRunPacks failed:\n%s", out.String())
-			}
-			if _, err := os.ReadFile(filepath.Join(stateDir, "ca.key")); err != nil {
-				t.Fatalf("%s's dependency-selected broker state was archived: %v\n%s",
-					tc.agent, err, out.String())
-			}
-			if strings.Contains(out.String(), "ARCHIVED") {
-				t.Errorf("%s launch reported its active broker as retired:\n%s", tc.agent, out.String())
-			}
-			got, err := packstage.LoadLoopholeOwners(packLoopholeOwnersPath())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Owners["openai-auth-broker"] != "openai-auth" {
-				t.Errorf("broker ownership was lost: %v", got.Owners)
-			}
-		})
+	var out bytes.Buffer
+	o := retireOptions(t, &out)
+	if _, ok := o.stageRunPacks("yolo-aws-auth-needs-bedrock"); !ok {
+		t.Fatalf("stageRunPacks failed:\n%s", out.String())
+	}
+	if _, err := os.ReadFile(filepath.Join(stateDir, "ca.key")); err != nil {
+		t.Fatalf("bedrock's dependency-selected broker state was archived: %v\n%s",
+			err, out.String())
+	}
+	if strings.Contains(out.String(), "ARCHIVED") {
+		t.Errorf("bedrock launch reported its active broker as retired:\n%s", out.String())
+	}
+	got, err := packstage.LoadLoopholeOwners(packLoopholeOwnersPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Owners["aws-auth"] != "aws-auth" {
+		t.Errorf("broker ownership was lost: %v", got.Owners)
 	}
 }
 

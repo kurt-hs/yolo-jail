@@ -75,7 +75,7 @@ func TestClaudeNativeBedrockTiersReadTheConventionalAliases(t *testing.T) {
 	    {"id":"global.moonshot.kimi-k3","vendor":"moonshot","alias":"sonnet"},
 	    {"id":"us.anthropic.claude-sonnet-5","vendor":"anthropic","alias":"balanced"},
 	    {"id":"us.anthropic.claude-haiku-5","vendor":"anthropic","alias":"fast"}]}`)
-	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude"), company), nil, nil, "bedrock")
+	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude", "bedrock"), company), nil, nil, "bedrock")
 	want := map[string]string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "us.anthropic.claude-opus-5-6",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
@@ -100,7 +100,7 @@ func TestClaudeUnderAnOnlyReadsTheConventionalAliases(t *testing.T) {
 	    {"id":"us.anthropic.claude-haiku-5","vendor":"anthropic","alias":"fast"}]},
 	  {"kind":"models","provider":"bedrock","only":["us.anthropic.claude-sonnet-5","us.anthropic.claude-opus-5-6",
 	    "us.anthropic.claude-sonnet-5-1","us.anthropic.claude-haiku-5"]}`)
-	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude"), company), nil, nil, "bedrock")
+	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude", "bedrock"), company), nil, nil, "bedrock")
 	settingsEnv, _ := got.settings["env"].(map[string]any)
 	want := map[string]string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "us.anthropic.claude-opus-5-6",

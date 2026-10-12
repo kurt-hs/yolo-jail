@@ -27,12 +27,12 @@ import (
 )
 
 // shippedScopeRender is a render harness over the providers the shipped pi, zai, openrouter,
-// kilo and llamacpp packs compose (pi's closure adds openai-auth, which declares openai-codex),
+// kilo and llamacpp packs compose (plus openai-auth, which declares openai-codex),
 // with the profiles those packs ship resolved the way a launch resolves them. kilo's profile
 // states a model, because kilo declares no model list and names none of its own.
 func shippedScopeRender(t *testing.T) *pioencodeRender {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp")
+	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "openai-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

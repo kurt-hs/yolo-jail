@@ -34,11 +34,12 @@ func TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge(t *testing.T) {
 		prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 		os.Exit(Main(append([]string{"yolo"}, strings.Fields(spelling)...)))
 	}
+	claudeCodex := `{"packs": ["claude", "openai-auth"]}`
 	for _, tc := range []struct{ cfg, spelling string }{
-		{claudeAlone, "host -p codex -- claude"},
-		{claudeAlone, "-p codex host -- claude"},
-		{claudeAlone, "--at host -p codex -- claude"},
-		{`{"packs": ["claude"], "profile": {"claude": "codex"}}`, "host -- claude"},
+		{claudeCodex, "host -p codex -- claude"},
+		{claudeCodex, "-p codex host -- claude"},
+		{claudeCodex, "--at host -p codex -- claude"},
+		{`{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, "host -- claude"},
 	} {
 		t.Run(tc.spelling, func(t *testing.T) {
 			out := runHostSpelling(t, "^TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge$", helper,
@@ -103,8 +104,9 @@ func envWithoutYolo() []string {
 // bedrock is claude's own provider. aws-auth joins through claude's `needs` (item 6), and its
 // bedrock pointer is WITHHELD and NAMED, because the daemon behind it does not run at the host
 // (NC-D16): the ES-D24 measurement that kept the host off the closure, answered.
-func TestHostStillRunsClaudeOnBedrockWithClaudeAlone(t *testing.T) {
-	env, errs := hostGateLaunchWith(t, claudeAlone, nil, []string{"-p", "bedrock"}, "claude")
+func TestHostStillRunsClaudeOnBedrockWithBedrockPack(t *testing.T) {
+	claudeBedrock := `{"packs": ["claude", "bedrock"]}`
+	env, errs := hostGateLaunchWith(t, claudeBedrock, nil, []string{"-p", "bedrock"}, "claude")
 	if env["CLAUDE_CODE_USE_BEDROCK"] != "1" {
 		t.Errorf("claude on bedrock must still compose its switch: %v\n%s", env, errs)
 	}
@@ -116,21 +118,20 @@ func TestHostStillRunsClaudeOnBedrockWithClaudeAlone(t *testing.T) {
 			t.Errorf("the withheld %s must be named:\n%s", k, errs)
 		}
 	}
-	for _, want := range []string{"+ bedrock (needed by claude)", "+ aws-auth (needed by bedrock)"} {
+	for _, want := range []string{"+ aws-auth (needed by bedrock)"} {
 		if !strings.Contains(errs, want) {
-			t.Errorf("the packs claude's `needs` closure joined must be announced (WB-D12), %q:\n%s", want, errs)
+			t.Errorf("the packs bedrock's `needs` closure joined must be announced (WB-D12), %q:\n%s", want, errs)
 		}
 	}
 }
 
-// codex and pi on their codex profile, with openai-auth unlisted, still run at the host:
-// openai-auth joins through their `needs`, and each reaches the subscription through the host's
-// managed OpenAI launch.
-func TestHostStillRunsCodexAndPiOnCodexWithoutTheAuthPack(t *testing.T) {
+// codex and pi on their codex profile with openai-auth selected run at the host:
+// each reaches the subscription through the host's managed OpenAI launch.
+func TestHostRunsCodexAndPiOnCodexWithTheAuthPack(t *testing.T) {
 	for _, agent := range []string{"codex", "pi"} {
-		rc, env, errs := hostGateRun(t, `{"packs": ["`+agent+`"]}`, nil, []string{"-p", "codex"}, agent)
+		rc, env, errs := hostGateRun(t, `{"packs": ["`+agent+`", "openai-auth"]}`, nil, []string{"-p", "codex"}, agent)
 		if rc != 0 || env == nil {
-			t.Errorf("yolo host -p codex -- %s must still run: rc = %d\n%s", agent, rc, errs)
+			t.Errorf("yolo host -p codex -- %s must run: rc = %d\n%s", agent, rc, errs)
 		}
 	}
 }

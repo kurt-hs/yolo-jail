@@ -25,9 +25,8 @@ func TestOnlySelectedEmbeddedPacksAreStaged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stagePacks: %v", err)
 	}
-	// claude's needs: bedrock, openai-auth and wire-bridge (packs/claude/pack.json), and
-	// bedrock's: aws-auth (packs/bedrock/pack.json).
-	if len(loaded) != 5 || loaded[0].Name != "claude" {
+	// claude's needs: wire-bridge (packs/claude/pack.json).
+	if len(loaded) != 2 || loaded[0].Name != "claude" {
 		var names []string
 		for _, p := range loaded {
 			names = append(names, p.Name)
@@ -39,7 +38,7 @@ func TestOnlySelectedEmbeddedPacksAreStaged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 5 {
+	if len(entries) != 2 {
 		var names []string
 		for _, e := range entries {
 			names = append(names, e.Name())
@@ -80,9 +79,8 @@ func TestDroppingAPackUnstagesIt(t *testing.T) {
 	o := &Options{Workspace: t.TempDir(), Stderr: discardBuf()}
 	if _, loaded, _, err := o.stagePacks("yolo-test-drop"); err != nil {
 		t.Fatalf("stagePacks: %v", err)
-	} else if len(loaded) != 6 {
-		t.Fatalf("first pass: want claude, codex, OpenAI auth, Claude's wire bridge, the bedrock "+
-			"provider pack and its aws-auth; got %d packs", len(loaded))
+	} else if len(loaded) != 3 {
+		t.Fatalf("first pass: want claude, codex and Claude's wire bridge; got %d packs", len(loaded))
 	}
 
 	writeUserPacks(t, home, `["claude"]`)
@@ -90,7 +88,7 @@ func TestDroppingAPackUnstagesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stagePacks after drop: %v", err)
 	}
-	if len(loaded) != 5 || loaded[0].Name != "claude" {
+	if len(loaded) != 2 || loaded[0].Name != "claude" {
 		t.Fatalf("after dropping codex: want claude and its dependencies, got %d packs", len(loaded))
 	}
 	entries, err := os.ReadDir(filepath.Dir(loaded[0].Root))

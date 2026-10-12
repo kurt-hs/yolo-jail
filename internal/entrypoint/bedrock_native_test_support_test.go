@@ -19,7 +19,7 @@ import (
 func bedrockTables(t *testing.T, agent, userProvidersJSON string,
 	userProfiles map[string]packload.UserProfile, extra ...string) (providersJSON, wire string) {
 	t.Helper()
-	return bedrockTablesFor(t, testPacksForAgent(t, agent, extra...), userProvidersJSON, userProfiles)
+	return bedrockTablesFor(t, testPacksForAgent(t, agent, append(extra, "bedrock")...), userProvidersJSON, userProfiles)
 }
 
 // bedrockListTables is bedrockTables with a company pack supplying the Bedrock list
@@ -27,7 +27,7 @@ func bedrockTables(t *testing.T, agent, userProvidersJSON string,
 func bedrockListTables(t *testing.T, agent, userProvidersJSON string,
 	userProfiles map[string]packload.UserProfile, extra ...string) (providersJSON, wire string) {
 	t.Helper()
-	packs := append(testPacksForAgent(t, agent, extra...), companyModelsPack(t, bedrockListAdd))
+	packs := append(testPacksForAgent(t, agent, append(extra, "bedrock")...), companyModelsPack(t, bedrockListAdd))
 	return bedrockTablesFor(t, packs, userProvidersJSON, userProfiles)
 }
 

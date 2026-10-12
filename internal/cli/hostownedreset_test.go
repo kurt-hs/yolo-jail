@@ -821,7 +821,7 @@ func ownedPiHome(t *testing.T) (home, store string) {
 	return home, render.Host(home, nil, render.OwnershipOwn).SidecarDir()
 }
 
-const ownedPiConfig = `{"packs":["pi"],"host_management":"own","profile":{"pi":"codex"},
+const ownedPiConfig = `{"packs":["pi","openai-auth"],"host_management":"own","profile":{"pi":"codex"},
 	"mcp_servers":{"tavily":{"command":"npx","args":["-y","tavily-mcp"]}}}`
 
 // UNDER `own`, A RESET LANDS WHAT THE NEXT APPLY LANDS: the profile's selection, the user's MCP
@@ -880,7 +880,7 @@ func TestOwnedHostResetSaysWhenItCannotComposeTheRest(t *testing.T) {
 	home, _ := ownedPiHome(t)
 	// A config every launch refuses on its provider section: the retired `use_profiles`.
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs":["pi"],"host_management":"own","use_profiles":{"pi":"codex"}}`)
+		`{"packs":["pi","openai-auth"],"host_management":"own","use_profiles":{"pi":"codex"}}`)
 	var out, errw bytes.Buffer
 	if rc := configReset(hostTargetForTest(), []string{"pi/settings"}, &out, &errw, false); rc != 0 {
 		t.Fatalf("reset: rc=%d\n%s%s", rc, out.String(), errw.String())
