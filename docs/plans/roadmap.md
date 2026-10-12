@@ -224,8 +224,10 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     — first, as [the comparison's refresh](../reference/macos-no-vm-direction.md#when-to-refresh-this) waits on it. It
     also runs `yolo host -- claude` and `yolo host -- agy` for [the host floor's installer agents](../design/host-tool-provisioning.md#HP-D2),
     and a macos-user launch with a dotted `packages` entry, which no CI job runs.
-37. The next `apple-container.yml` dispatch reruns [the two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk),
-    which must pass now that each workspace has its own `/mise` disk, and re-asks [the keeper measures](../design/jail-lifetime-last-session-wins.md#7-what-i-would-build-in-order);
+37. [The two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk)
+    has held since each workspace got its own `/mise` disk: run 37832291377 (2026-10-08, `container` 1.1.0)
+    logged `AC-KEEPER sweep-spares-a-kept-jail (JL-D7) VERDICT: HOLDS`, and the sweep is strict since. The next
+    `apple-container.yml` dispatch re-asks [the keeper's remaining Apple Container runs](../design/jail-lifetime-last-session-wins.md#7-what-i-would-build-in-order);
     someone at the runner Mac upgrades `container` to 1.5.0 (its kernel prompt is interactive) before the VM-local probe.
 38. The next `macos-user.yml` run carries the Mac checks built since 2026-10-04: [I/O priority](../design/io-priority.md#9-what-i-would-build-in-order),
     the macos-user keeper, [the capture fixtures](install-capture.md), the host floor's fixture capture, the Mac floor's
