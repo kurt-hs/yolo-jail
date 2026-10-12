@@ -48,7 +48,8 @@ func TestHostLaunchMakesClaudesProviderVariablesTheSelections(t *testing.T) {
 			on[k] = v
 		}
 		on["CLAUDE_CODE_USE_BEDROCK"] = "0"
-		rc, env, errs := hostGateRunIn(t, claudeAlone, on, []string{"-p", "bedrock"}, "claude", nil)
+		// Bedrock is an explicitly selected provider pack, not a dependency of claude.
+		rc, env, errs := hostGateRunIn(t, `{"packs": ["claude", "bedrock"]}`, on, []string{"-p", "bedrock"}, "claude", nil)
 		if rc != 0 || env == nil {
 			t.Fatalf("launch did not exec: rc=%d\n%s", rc, errs)
 		}

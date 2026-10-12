@@ -77,16 +77,18 @@ func macosUserRunProbe(t *testing.T, fix, ws, script string, opts ...runOption) 
 // before startLoopholes. Since 2026-09-17 the arm goes through startLoopholesDisclosed and
 // starts every admitted host daemon, so backendInertReason has no macos-user case and the
 // report is the PLATFORM axis alone (loopholeinert.go's header). What is inert here instead is
-// the JAIL half, declined by name (jaildaemondecline.go). So, with `claude` and `journal`
-// selected and journal switched on:
+// the JAIL half, declined by name (jaildaemondecline.go). So, with `claude`, `journal` and
+// `openai-auth` selected and journal switched on:
 //
 //   - journal declares `platforms: ["linux"]`: its line names the platform, and its host daemon
 //     does NOT start, so the sandbox has no endpoint variable for it;
 //   - claude's broker is NOT reported inert — it starts, and the sandbox has its endpoint;
-//   - claude's jail daemons are declined by name.
+//   - openai-auth supplies the OpenAI refresh adapter, whose jail daemon is declined while its
+//     doorway runs outside the sandbox;
+//   - claude's other jail daemons are declined by name.
 func TestMacosUserReportsOnlyPlatformInertLoopholes(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["claude", "journal"], "loopholes": {"journal": {"enabled": true}}}`)
+	packHome(t, `{"packs": ["claude", "journal", "openai-auth"], "loopholes": {"journal": {"enabled": true}}}`)
 	ws := macosUserWorkspace(t, `{}`)
 	journalVar := macosUserServiceEnvVar("journal")
 	brokerVar := macosUserServiceEnvVar("claude-oauth-broker")

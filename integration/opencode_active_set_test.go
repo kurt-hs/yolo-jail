@@ -70,7 +70,7 @@ func TestOpencodeRunsOnEveryProviderOfItsSet(t *testing.T) {
 // A BEDROCK ENTRY AFTER THE FIRST (AP-D12's "anywhere in the set"): `-p opencode=zai,bedrock` with
 // a region on the provider starts opencode on zai, binds the Bedrock entry to opencode's own
 // amazon-bedrock client with that region as options.region, and enables both, through the staged
-// packs, the needs closure that joins bedrock's aws-auth, the channel and the boot render. No
+// packs, the selected Bedrock provider's aws-auth dependency, the channel and the boot render. No
 // agent runs, and nothing reaches AWS.
 func TestOpencodeRunsOnABedrockEntryAfterItsFirst(t *testing.T) {
 	requireJail(t)
@@ -79,7 +79,7 @@ func TestOpencodeRunsOnABedrockEntryAfterItsFirst(t *testing.T) {
 
 	dir := writeProject(t, `{}`)
 	// A list the user supplies: packs/bedrock ships none (docs/design/model-lists-and-pickers.md MM-D32).
-	packHome(t, `{"packs": ["opencode", "zai"], "providers": {"bedrock": {"region": "`+region+`", `+
+	packHome(t, `{"packs": ["bedrock", "opencode", "zai"], "providers": {"bedrock": {"region": "`+region+`", `+
 		`"models": {"global.anthropic.claude-opus-5-5": {"id": "global.anthropic.claude-opus-5-5", "vendor": "anthropic"}, "us.openai.gpt-6.1-sol": {"id": "us.openai.gpt-6.1-sol", "vendor": "openai"}}}}, `+
 		`"env_sources": [{"ZAI_API_KEY": "integration-probe-not-a-real-key"}]}`)
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "opencode=zai,bedrock", "--", "true"))

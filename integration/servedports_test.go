@@ -109,7 +109,7 @@ func TestTwoJailsOnOneLoopbackServeOnTheirOwnPorts(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	packHome(t, fmt.Sprintf(`{
-		"packs": ["claude", "cerebras"],
+		"packs": ["claude", "cerebras", "openai-auth"],
 		"profile": {"claude": "cerebras"},
 		"env_sources": [{"CEREBRAS_API_KEY": "served-ports-integration-key"}],
 		"providers": {"cerebras": {"endpoints": {"openai": {"base_url": "http://127.0.0.1:%d/v1"}}}}

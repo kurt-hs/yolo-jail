@@ -26,7 +26,7 @@ func TestCodexProfileRendersOneModelListForEveryAgent(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["pi", "claude", "codex", "opencode"]}`)
+	packHome(t, `{"packs": ["openai-auth", "pi", "claude", "codex", "opencode"]}`)
 	// runCommand rather than runYolo: the flag goes BEFORE the `--` that starts the
 	// container command. A bare name selects the profile for every agent.
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "codex", "--", "true"))
