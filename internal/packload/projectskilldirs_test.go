@@ -41,6 +41,12 @@ var shippedProjectSkillDirs = map[string][]string{
 	// omp's bundle is not installable on every arch and was not installed where the census was
 	// taken; an unmeasured path is not declared. It still RECEIVES every workspace source.
 	"omp": nil,
+	// muse (Muse Code 1.4.6) — the USER-level skills roots were measured empirically
+	// (agentsurfaces_test.go), but where Muse reads PROJECT-scope skills was not: the empirical
+	// run under a controlled HOME planted user-level roots only, so the pack declares no
+	// `project_dirs` and this row is nil for omp's reason — an unmeasured path is not declared.
+	// Muse still RECEIVES every workspace source; measure it before filling this in.
+	"muse-code": nil,
 }
 
 func TestShippedAgentPacksDeclareTheirProjectSkillDirs(t *testing.T) {

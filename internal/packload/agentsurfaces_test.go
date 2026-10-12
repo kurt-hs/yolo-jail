@@ -279,18 +279,29 @@ func TestAgentSurfaceDestinationsAreDistinct(t *testing.T) {
 //     loads user context from `<home>/.oh-omp/agent/AGENTS.md` plus skills one level
 //     below `<home>/.oh-omp/agent/skills/`; source-verified from the published
 //     @oh-labs/oh-omp package on 2026-09-15.
+//   - muse (Muse Code 1.4.6) — installed and RUN headlessly under a controlled HOME, and the
+//     two paths read from the run's own `session.jsonl` and its `rules.context_load`
+//     diagnostic rather than from `strings`: the native user-level file is
+//     `$XDG_CONFIG_HOME/muse/AGENTS.md` (default `~/.config/muse/AGENTS.md`), which REPLACES
+//     (does not merge with) foreign rules when present, falling back to `~/.claude/CLAUDE.md`
+//     then `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` (tagged `foreign_personal_fallback`) only
+//     when it is absent; the skills roots, highest first, are `$XDG_CONFIG_HOME/muse/skills`,
+//     `~/.agents/skills`, `~/.claude/skills`, `${CODEX_HOME:-$HOME/.codex}/skills`, proven by
+//     planting one skill id in each root and reading the `skill-shadowed` diagnostics.
+//     Measured 2026-10-12.
 //
 // The bar for an entry here is evidence of that kind, never a plausible-looking path.
 // `~/.copilot/AGENTS.md` was plausible for as long as this repo existed.
 func TestAgentSurfacesMatchTheVerifiedPaths(t *testing.T) {
 	verified := map[string]struct{ briefing, skills string }{
-		"claude":   {".claude/CLAUDE.md", ".claude/skills"},
-		"copilot":  {".copilot/copilot-instructions.md", ".copilot/skills"},
-		"opencode": {".config/opencode/AGENTS.md", ".config/opencode/skills"},
-		"agy":      {".gemini/config/AGENTS.md", ".gemini/config/skills"},
-		"pi":       {".pi/agent/AGENTS.md", ".pi/agent/skills"},
-		"codex":    {".codex/AGENTS.md", ".codex/skills"},
-		"omp":      {".oh-omp/agent/AGENTS.md", ".oh-omp/agent/skills"},
+		"claude":    {".claude/CLAUDE.md", ".claude/skills"},
+		"copilot":   {".copilot/copilot-instructions.md", ".copilot/skills"},
+		"opencode":  {".config/opencode/AGENTS.md", ".config/opencode/skills"},
+		"agy":       {".gemini/config/AGENTS.md", ".gemini/config/skills"},
+		"pi":        {".pi/agent/AGENTS.md", ".pi/agent/skills"},
+		"codex":     {".codex/AGENTS.md", ".codex/skills"},
+		"omp":       {".oh-omp/agent/AGENTS.md", ".oh-omp/agent/skills"},
+		"muse-code": {".config/muse/AGENTS.md", ".config/muse/skills"},
 	}
 	if len(verified) != len(agentPacks(t)) {
 		t.Errorf("%d agent packs but %d verified — an agent pack whose destinations nobody "+
