@@ -2,13 +2,17 @@
   "name": "muse-planner",
   "description": "A read-only pi-subagents child backed by Meta's Muse Code CLI (`muse exec`) on the local Muse login: the parent session calls it by name for a plan or an analysis and returns the text; it never edits the repository. Pi-shaped (pi-subagents), delivered through yolo's `files` kind — inert if pi-subagents is not installed.",
   "contributes": [
-    // THE WRAPPER the `muse-planner` agent's runner calls. It lands in `~/.pi/agent/bin`, the
-    // FIRST entry on Pi's PATH in this deployment, which is what lets the agent definition
-    // name it as a bare `command` — the external-cli runner spawns the command with no shell,
-    // so `~` would not expand and a PATH name is the one spelling that resolves in the jail
-    // home and the host home alike. pi-subagents resolves it the same way (`resolveBinary`
-    // walks PATH, requiring the exec bit), and reports the runner as missing rather than
-    // starting it when it cannot.
+    // THE WRAPPER the `muse-planner` agent's runner runs. It lands in `~/.pi/agent/bin`,
+    // beside the definition. The agent definition deliberately does NOT invoke it by its bare
+    // name: the external-cli runner resolves a bare command on PATH requiring the exec bit
+    // (pi-subagents' `resolveBinary` -> `X_OK`), and the EMBEDDED pack channel cannot deliver
+    // one — embed.FS reports 0444 for every file whatever its mode on disk, and the
+    // materializer writes 0o644 (internal/packload's copyEmbeddedTree). So a bare `command:
+    // muse-planner-exec.sh` would work only when the pack is selected BY PATH (packstage
+    // carries 0o111) and would silently fail as a SHIPPED pack. The definition therefore
+    // invokes `bash -c 'exec "$HOME/.pi/agent/bin/muse-planner-exec.sh"'`: `bash` is always
+    // executable, and `-c` lets `$HOME` resolve the path without a shell expanding `~`. The
+    // file still ships executable on disk, so a by-path selection can run it directly too.
     //
     // It reads the child's prompt from stdin and hands it to
     // `muse exec --prompt-file` under `--disable-approval` (sandbox kept), a bounded
