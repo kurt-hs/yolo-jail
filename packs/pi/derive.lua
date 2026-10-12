@@ -984,6 +984,70 @@ local function piSetSettings(ctx, out, settingsFor)
   return out
 end
 
+-- profileModel is THE resolution of a model a profile NAMES explicitly — its `model` option,
+-- which carries the provider's declared default when the profile states none — and the ONE
+-- home of the fail-closed rule: the value is resolved through the SAME ladder the generic
+-- branch below has always used, and a value that ladder cannot resolve REFUSES the render
+-- rather than being written.
+--
+-- The ladder, in order (docs/reference/providers.md OQ-CS4, OQ-XM1):
+--
+--   1. `yolo.model_for(value, ctx.selected_provider)` — the value as an ALIAS, the id under it;
+--   2. `yolo.model_for("default", ...)` — the provider's declared `default` alias, the same
+--      fallback the generic branch takes when a named alias does not resolve;
+--   3. the value as one of the provider's declared IDS (the profile naming an exact id).
+--
+-- pi matches a model id EXACTLY against the provider's list, so an unresolved alias — the
+-- defect this closes, `openrouter/deepseek-floor` for the alias `deepseek-floor` whose id is
+-- `deepseek/deepseek-v4.1-flash:floor` — starts every child on the wrong model or refuses them
+-- with `Unknown subagent model`. Writing it is never right, so when even the ladder resolves
+-- nothing yolo refuses the whole render, naming the provider, the option and the ids the
+-- provider does declare.
+--
+-- A provider that declares NO models has no list to resolve against: yolo cannot judge an id
+-- for a provider pi runs on its own catalog, so the value passes through as pi's own id. That is
+-- the case the raw-id pin (`profiles.<p>.model` set to an id pi knows) relies on, and it is why
+-- only a provider WITH a declared list can (and must) refuse.
+--
+-- permitMiss is true under an `only` (packload's models_only): the composed `models` map is then
+-- the OVERRIDE a pack or the user declared, so a profile model it dropped is not a
+-- misconfiguration — the caller falls back to that list's own default entry (docs/design/
+-- model-lists-and-pickers.md §7.2), which is why the miss returns nil instead of refusing there.
+local function profileModel(ctx, value, permitMiss)
+  local provName = ctx.selected_provider
+  local p = ctx.providers and ctx.providers[provName] or nil
+  local models = type(p) == "table" and type(p.models) == "table" and p.models or nil
+  if not models or next(models) == nil then
+    return value
+  end
+  local _, id = yolo.model_for(value, provName)
+  if not id and value ~= "default" then
+    _, id = yolo.model_for("default", provName)
+  end
+  if id then return id end
+  for _, modelId in pairs(models) do
+    if modelId == value then return value end
+  end
+  if permitMiss then return nil end
+  local ids, seen = {}, {}
+  for _, modelId in pairs(models) do
+    if type(modelId) == "string" and modelId ~= "" and not seen[modelId] then
+      seen[modelId] = true
+      table.insert(ids, modelId)
+    end
+  end
+  table.sort(ids)
+  error(string.format(
+    "the active profile \"%s\" sets the `model` option to \"%s\", which is neither a model "..
+    "alias nor a model id of provider \"%s\" (it declares: %s), so yolo refuses to write a "..
+    "model pi cannot resolve — pi matches a model id EXACTLY against the provider's list, and "..
+    "an unresolved value starts children on the wrong model or fails them with `Unknown "..
+    "subagent model`. Point the profile's `model` at one of those ids, or declare the alias "..
+    "under providers.%s.models.",
+    ctx.profile_name or "", value, provName,
+    #ids > 0 and table.concat(ids, ", ") or "(none)", provName))
+end
+
 -- The selection — defaultProvider and defaultModel, pi's OWN selection keys, verified from
 -- the published package the launcher installs (pi 0.84.4, npm-extracted, the CLI never
 -- run): dist/core/settings-manager.d.ts:71-72 declares the pair, the ids match EXACTLY
@@ -1105,12 +1169,15 @@ local function piSettingsFor(ctx)
   -- the selection names nothing from yolo's list.
   --
   --   - defaultProvider is pi's own id for the provider;
-  --   - defaultModel is the profile's `model` option as pi's own model id, taken literally and
-  --     never resolved through yolo's alias table, so `default` and any other alias name nothing.
-  --     It is the one model id yolo still writes here, because it is the selection the profile
-  --     states, and pi needs it: findInitialModel's saved-default step takes the pair or nothing,
-  --     and with nothing pi starts on the first provider it finds a login for, which may not be
-  --     this one. An id pi's list lacks resolves to nothing, and pi falls to the scope below;
+  --   - defaultModel is the profile's `model` option RESOLVED to pi's real id (profileModel,
+  --     the same alias table the generic branch resolves through), so `default` names nothing
+  --     (the tombstone below), a declared alias names the id under it, and a value neither an
+  --     alias nor an id of the provider's declared list REFUSES the render rather than being
+  --     written. It is the one model id yolo still writes here, and pi needs it:
+  --     findInitialModel's saved-default step takes the pair or nothing, and with nothing pi
+  --     starts on the first provider it finds a login for, which may not be this one. A provider
+  --     that declares no models (pi's own catalog) has nothing to resolve against, so the value
+  --     passes through as pi's own id;
   --   - enabledModels is `<id>/*`, the provider and every model pi has for it, so pi's scoped
   --     picker is pi's own list and a fresh session that names no model starts on it;
   --   - pi-subagents' scope is the same provider, whole (piSubagents with no ids).
@@ -1130,12 +1197,12 @@ local function piSettingsFor(ctx)
   end
   if own then
     local id = own.id
+    local narrowed = type(p) == "table" and p.models_only == true and type(p.models) == "table"
     local start = nil
     local m = type(ctx.profile) == "table" and ctx.profile.model or nil
     if type(m) == "string" and m ~= "" and m ~= "default" then
-      start = m
+      start = profileModel(ctx, m, narrowed)
     end
-    local narrowed = type(p) == "table" and p.models_only == true and type(p.models) == "table"
     local listed = {}
     if narrowed then
       local held = false
@@ -1165,31 +1232,34 @@ local function piSettingsFor(ctx)
     return {}
   end
   local isKilo = (ctx.selected_provider == "kilo" or (type(p) == "table" and type(p.endpoints) == "table" and type(p.endpoints.openai) == "table" and isKiloEndpoint(p.endpoints.openai.base_url or "")))
-  local alias = (ctx.profile and ctx.profile.model) or (type(p) == "table" and type(p.options) == "table" and p.options.model) or "default"
+  -- named is the model the profile NAMES, if it names one. The resolved profile's `model` option
+  -- already carries a provider's declared default (ResolveProfiles folds it in), so the value
+  -- here is whatever the profile states, user or pack: "default" and "" name NOTHING, and only a
+  -- real value asks to be resolved. `p.options.model` is read as a second source for a ctx built
+  -- without the folded table (a caller that composed the profile itself), which is what the alias
+  -- read has always done.
+  local named = (ctx.profile and ctx.profile.model) or (type(p) == "table" and type(p.options) == "table" and p.options.model) or nil
+  if type(named) ~= "string" or named == "" or named == "default" then
+    named = nil
+  end
   local sel = { defaultProvider = ctx.selected_provider }
-  -- The alias resolves through yolo.model_for (OQ-XM1), the core helper every derive shares,
-  -- which answers for the selected provider only and WARNS, never refuses, when a
-  -- conventional tier alias (default, fast, balanced, frontier) is missing. Asked only of a
-  -- provider that declares a model list: one with none has no alias to miss, and a warning
-  -- there would say nothing the user can act on. A build older than the helper answers nil
-  -- here (the tolerant guard's stub), which writes no default, the degraded result a
-  -- missing alias already has.
+  -- The model resolves through yolo.model_for (OQ-XM1), the core helper every derive shares,
+  -- which answers for the selected provider only. Asked only of a provider that declares a
+  -- model list: one with none has no alias to resolve, so its value passes through (the `isKilo`
+  -- branch below and profileModel's no-list rule).
   if type(p) == "table" and type(p.models) == "table" and next(p.models) ~= nil then
-    -- Named explicitly, so the answer is this entry's provider when piSetSettings asks for a
-    -- later entry of the active set (yolo.model_for answers only inside the set).
-    local _, id = yolo.model_for(alias, ctx.selected_provider)
-    if not id and alias ~= "default" then
-      _, id = yolo.model_for("default", ctx.selected_provider)
-    end
-    if id then
-      sel.defaultModel = id
+    if named then
+      -- NAMED EXPLICITLY: the full ladder (alias, the `default` alias, then the value as an
+      -- exact id), or a refusal when it resolves nothing (profileModel). The answer is this
+      -- entry's provider when piSetSettings asks for a later entry of the active set
+      -- (yolo.model_for answers only inside the set). The one exception is an `only`, where a
+      -- miss means the override dropped the profile's model and the DEFAULT ENTRY answers.
+      sel.defaultModel = profileModel(ctx, named, p.models_only == true)
     else
-      for _, modelId in pairs(p.models) do
-        if modelId == alias then
-          sel.defaultModel = modelId
-          break
-        end
-      end
+      -- NOTHING NAMED: the provider's declared `default` alias (OQ-CS3). A missing one is a
+      -- warning (yolo.model_for's tier note), never a refusal: the profile asked for nothing.
+      local _, id = yolo.model_for("default", ctx.selected_provider)
+      sel.defaultModel = id
     end
     -- UNDER AN `only` the list's DEFAULT ENTRY answers (docs/design/model-lists-and-pickers.md
     -- §7.2): the profile's model, else the `default` alias (both above), else the list's first
@@ -1200,8 +1270,8 @@ local function piSettingsFor(ctx)
       sel.defaultModel = first and first.id
     end
   end
-  if not sel.defaultModel and isKilo and (type(p.models) ~= "table" or next(p.models) == nil) and alias ~= "default" then
-    sel.defaultModel = alias
+  if not sel.defaultModel and isKilo and (type(p.models) ~= "table" or next(p.models) == nil) and named then
+    sel.defaultModel = named
   end
   if isKilo and sel.defaultModel then
     sel.defaultModel = normalizeKiloModel(sel.defaultModel)

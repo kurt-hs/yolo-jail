@@ -70,6 +70,56 @@ local function opencodeOwn(ctx, name)
   return nil
 end
 
+-- opencodeModel is the resolution of a model a profile NAMES explicitly — its `model` option,
+-- which carries the provider's declared default — and opencode's half of the fail-closed rule: a
+-- named value is looked up the way the generic selection branch has always done it, as an ALIAS
+-- in the selected provider's declared `models` map (alias -> real id), then as one of that map's
+-- IDS, and a value that is NEITHER REFUSES the render rather than being written.
+--
+-- The defect it closes is pi's (the alias `deepseek-floor` under a built-in provider written as
+-- `openrouter/deepseek-floor`): opencode splits `model` on the first slash and an id its catalog
+-- does not hold is a hard ModelNotFoundError, never a preference it quietly ignores, so an
+-- unresolved alias is a config that fails at the first request.
+--
+-- A provider that declares NO models has no list to resolve against: yolo cannot judge an id for
+-- a provider opencode runs on its own catalog, so the value passes through as opencode's own id.
+--
+-- permitMiss is true under an `only` (packload's models_only): the composed `models` map is then
+-- the OVERRIDE a pack or the user declared, so a profile model it dropped is not a
+-- misconfiguration — the caller starts on that list's default entry (docs/design/model-lists-and-
+-- pickers.md §7.2), which is why the miss returns nil instead of refusing there.
+local function opencodeModel(ctx, value, permitMiss)
+  local provName = ctx.selected_provider
+  local p = ctx.providers and ctx.providers[provName] or nil
+  local models = type(p) == "table" and type(p.models) == "table" and p.models or nil
+  if not models or next(models) == nil then
+    return value
+  end
+  if type(models[value]) == "string" and models[value] ~= "" then
+    return models[value]
+  end
+  for _, modelId in pairs(models) do
+    if modelId == value then return value end
+  end
+  if permitMiss then return nil end
+  local ids, seen = {}, {}
+  for _, modelId in pairs(models) do
+    if type(modelId) == "string" and modelId ~= "" and not seen[modelId] then
+      seen[modelId] = true
+      table.insert(ids, modelId)
+    end
+  end
+  table.sort(ids)
+  error(string.format(
+    "the active profile \"%s\" sets the `model` option to \"%s\", which is neither a model "..
+    "alias nor a model id of provider \"%s\" (it declares: %s), so yolo refuses to write a "..
+    "model opencode cannot resolve — an unknown prefix or id is a ModelNotFoundError opencode "..
+    "raises at the first request, not a preference it ignores. Point the profile's `model` at "..
+    "one of those ids, or declare the alias under providers.%s.models.",
+    ctx.profile_name or "", value, provName,
+    #ids > 0 and table.concat(ids, ", ") or "(none)", provName))
+end
+
 local function isLocalEndpoint(url)
   if type(url) ~= "string" then return false end
   return string.find(url, "://localhost") or
@@ -810,12 +860,13 @@ yolo.derive("opencode", "config", function(ctx)
       -- opencode runs it on its own client, address and model list, and the selection names
       -- nothing from yolo's list. enabled_providers names opencode's own id (zai-coding-plan for
       -- yolo's zai), so opencode's menu is that provider's own models. `model` is the profile's
-      -- `model` option as opencode's own model id, taken literally and never resolved through
-      -- yolo's alias table, and `small_model` the profile's `small_model` the same way; with
-      -- neither, opencode starts within the enabled providers by its own rule (AP-D17) and picks
-      -- its own small model. Under an `only` the session starts on the profile's model when the
-      -- list holds it, else the list's `default` alias, else its first entry, as the generic
-      -- branch below does, since
+      -- `model` option RESOLVED to opencode's real id (opencodeModel, the same alias table the
+      -- generic branch resolves through), so a yolo alias names the id under it and a value the
+      -- provider's declared list cannot resolve REFUSES the render; `small_model` is the
+      -- profile's `small_model` taken literally; with neither, opencode starts within the enabled
+      -- providers by its own rule (AP-D17) and picks its own small model. Under an `only` the
+      -- session starts on the profile's model when the list holds it, else the list's `default`
+      -- alias, else its first entry, as the generic branch below does, since
       -- that list is an override a pack or the user declared (OQ-4). `false` is a provider
       -- opencode has built in for another plan with none of its own for this one: no selection,
       -- and the launch's profile line says the profile cannot reach opencode's own client.
@@ -825,8 +876,12 @@ yolo.derive("opencode", "config", function(ctx)
           if type(v) == "string" and v ~= "" and v ~= "default" then return v end
           return nil
         end
+        local narrowed = type(p) == "table" and p.models_only == true and type(p.models) == "table"
         local start = literal(ctx.profile and ctx.profile.model)
-        if type(p) == "table" and p.models_only == true and type(p.models) == "table" then
+        if start then
+          start = opencodeModel(ctx, start, narrowed)
+        end
+        if narrowed then
           local list = callableModels(p, nil)
           local held = false
           for _, e in ipairs(list) do
@@ -847,12 +902,24 @@ yolo.derive("opencode", "config", function(ctx)
         res.selection = sel
       end
     elseif providerEndpoint(p) then
-      local alias = (ctx.profile and ctx.profile.model) or "default"
+      -- named is the model the profile NAMES, if it names one; the resolved profile's `model`
+      -- option already carries a provider's declared default (ResolveProfiles folds it in), so
+      -- the value is whatever the profile states, user or pack. "default" and "" name NOTHING.
+      local raw = ctx.profile and ctx.profile.model
+      local named = nil
+      if type(raw) == "string" and raw ~= "" and raw ~= "default" then named = raw end
+      local alias = named or "default"
       local modelID = nil
       if type(p) == "table" and type(p.models) == "table" then
-        if p.models[alias] then
+        if named then
+          -- NAMED EXPLICITLY: resolve it, or refuse the render (opencodeModel). A miss under
+          -- an `only` returns nil so the list's DEFAULT ENTRY answers below.
+          modelID = opencodeModel(ctx, named, p.models_only == true)
+        end
+        if not modelID and p.models[alias] then
           modelID = p.models[alias]
-        elseif p.models_only == true then
+        end
+        if not modelID and p.models_only == true then
           -- UNDER AN `only` the list's DEFAULT ENTRY answers (docs/design/model-lists-and-
           -- pickers.md §7.2): the profile's model when the list holds it (above), else the
           -- `default` alias, else the list's first entry in its order (callableModels'). An only
@@ -860,7 +927,8 @@ yolo.derive("opencode", "config", function(ctx)
           -- menu follow the selection, as copilot, codex, claude and oh-omp do under one.
           local first = callableModels(p, nil)[1]
           modelID = p.models.default or (first and first.id)
-        elseif alias == "default" then
+        end
+        if not modelID and not named and alias == "default" then
           local count
           -- The VALUES are the model ids (the keys are the aliases); see the catalog
           -- half above, which builds opencode's models table keyed the same way.

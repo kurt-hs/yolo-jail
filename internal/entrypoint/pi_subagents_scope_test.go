@@ -18,11 +18,14 @@ package entrypoint
 // settings cannot leak in.
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -220,5 +223,120 @@ func TestPiSubagentsCodexWithNoDeclaredModelsScopesTheWholeProvider(t *testing.T
 	}
 	if got := r.piSettings(t)["subagents"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("pi subagents = %#v, want %#v", got, want)
+	}
+}
+
+// openrouterAliasRender is shippedScopeRender with the SHIPPED openrouter provider extended by a
+// user entry that declares the two OpenRouter routing aliases the fix-6/fix-7 cases are about —
+// the shape `providers.<p>.models` takes, alias -> real id (docs/reference/providers.md §3.4).
+// The profile `or` selects openrouter, which pi has BUILT IN, so the built-in-provider branch is
+// the one under test. Everything renders through ConfigurePackSurfaces over the shipped pi and
+// openrouter packs, so the resolution under test is the derive's own.
+func openrouterAliasRender(t *testing.T, profileModel string) *pioencodeRender {
+	t.Helper()
+	packs := testPacksForAgent(t, "pi", "openrouter")
+	user, err := jsonx.Decode([]byte(`{"openrouter":{"models":{` +
+		`"deepseek-floor":"deepseek/deepseek-v4.1-flash:floor",` +
+		`"deepseek-nitro":"deepseek/deepseek-v4.1-flash:nitro"}}}`))
+	if err != nil {
+		t.Fatalf("fixture providers: %v", err)
+	}
+	userMap, _ := user.(*jsonx.OrderedMap)
+	providers, err := packload.ComposeProviders(userMap, packs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := map[string]string{}
+	if profileModel != "" {
+		opts["model"] = profileModel
+	}
+	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+		"or": {Provider: "openrouter", Options: opts},
+	}, providers)
+	if err != nil {
+		t.Fatalf("resolve the or profile: %v", err)
+	}
+	r := newPioencodeRender(t, mustCompactJSON(t, providers))
+	r.wireProfiles(mustCompactJSON(t, packload.ProfilesWireTable(resolved)))
+	return r
+}
+
+// A profile that names a yolo ALIAS under a provider pi has BUILT IN must render pi's REAL id,
+// not the alias. `deepseek-floor` is a yolo alias whose declared id is
+// `deepseek/deepseek-v4.1-flash:floor`; the built-in-provider branch used to write the alias
+// VERBATIM (`openrouter/deepseek-floor`), which pi cannot resolve against its provider's list,
+// so every subagent child died with `Unknown subagent model`. Both the selection and the
+// pi-subagents default must carry the resolved id.
+//
+// NEGATIVE CONTROL: against the pre-fix derive this fails on the first check — the rendered
+// defaultModel is `deepseek-floor`, the alias itself.
+func TestPiBuiltInProviderResolvesAProfileModelAlias(t *testing.T) {
+	r := openrouterAliasRender(t, "deepseek-floor")
+	r.render(t, `{"pi":"or"}`)
+	settings := r.piSettings(t)
+	if got := settings["defaultProvider"]; got != "openrouter" {
+		t.Errorf("defaultProvider = %v, want openrouter", got)
+	}
+	if got := settings["defaultModel"]; got != "deepseek/deepseek-v4.1-flash:floor" {
+		t.Errorf("defaultModel = %v, want the RESOLVED id deepseek/deepseek-v4.1-flash:floor "+
+			"(the alias must never reach pi: `Unknown subagent model`)", got)
+	}
+	sub, _ := settings["subagents"].(map[string]any)
+	if got := sub["defaultModel"]; got != "openrouter/deepseek/deepseek-v4.1-flash:floor" {
+		t.Errorf("subagents.defaultModel = %v, want openrouter/deepseek/deepseek-v4.1-flash:floor", got)
+	}
+	if got := sub["defaultProvider"]; got != "openrouter" {
+		t.Errorf("subagents.defaultProvider = %v, want openrouter", got)
+	}
+}
+
+// The tombstone half: a profile that names NO model under a provider whose declared list carries
+// aliases writes NO defaultModel, so a child inherits the parent session's model rather than
+// being pinned to a value the profile never asked for.
+func TestPiBuiltInProviderWithNoProfileModelWritesNoDefaultModel(t *testing.T) {
+	r := openrouterAliasRender(t, "")
+	r.render(t, `{"pi":"or"}`)
+	settings := r.piSettings(t)
+	if got, present := settings["defaultModel"]; present {
+		t.Errorf("defaultModel = %v, want it ABSENT: the profile names no model", got)
+	}
+	sub, _ := settings["subagents"].(map[string]any)
+	if got, present := sub["defaultModel"]; present {
+		t.Errorf("subagents.defaultModel = %v, want it ABSENT: the profile names no model", got)
+	}
+	if got := sub["defaultProvider"]; got != "openrouter" {
+		t.Errorf("subagents.defaultProvider = %v, want openrouter", got)
+	}
+}
+
+// A profile model that cannot be resolved to a registered id REFUSES the render — it is never
+// written. The refusal must name the provider, the `model` option and the ids the provider
+// declares, and the settings surface must not be written at all.
+//
+// NEGATIVE CONTROL: against the pre-fix derive no failure is recorded at all (the alias was
+// written), so this fails on the `len(fails) == 0` guard.
+func TestPiUnresolvableProfileModelRefusesTheRender(t *testing.T) {
+	r := openrouterAliasRender(t, "deepseek-flooor") // a typo of deepseek-floor
+	fails := r.renderWith(t, `{"pi":"or"}`)
+
+	settings := filepath.Join(r.e.Home, ".pi", "agent", "settings.json")
+	if _, err := os.Stat(settings); !os.IsNotExist(err) {
+		t.Errorf("settings.json must NOT be written when the derive refuses (stat err = %v)", err)
+	}
+	if len(fails) == 0 {
+		t.Fatalf("an unresolvable profile model must REFUSE the render; no failure was "+
+			"recorded:\n%s", r.errw.String())
+	}
+	msg := strings.Join(fails, "\n")
+	for _, want := range []string{
+		"openrouter",                         // the provider
+		"model",                              // the option it came from
+		"deepseek-flooor",                    // the value that could not resolve
+		"deepseek/deepseek-v4.1-flash:floor", // an available id
+		"deepseek/deepseek-v4.1-flash:nitro", // the other available id
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal does not name %q; got:\n%s", want, msg)
+		}
 	}
 }

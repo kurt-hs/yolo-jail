@@ -105,6 +105,17 @@ func newPioencodeRender(t *testing.T, providersJSON string) *pioencodeRender {
 // provider other than the name) sets its own and is not second-guessed here.
 func (r *pioencodeRender) render(t *testing.T, profilesJSON string) {
 	t.Helper()
+	if fails := r.renderWith(t, profilesJSON); len(fails) != 0 {
+		t.Fatalf("boot render failed: %v\n%s", fails, r.errw.String())
+	}
+}
+
+// renderWith is render WITHOUT the fatal on a generator refusal: it drives the one boot and
+// returns the failures the boot loop collected (genStep runs every step, so a refused surface
+// does not stop the others — the surface it refused is simply never written). A case that
+// asserts a refusal reads these, and asserts the refused surface's file is absent.
+func (r *pioencodeRender) renderWith(t *testing.T, profilesJSON string) []string {
+	t.Helper()
 	pi, err := embeddedPack("pi")
 	if err != nil {
 		t.Fatalf("embedded pi: %v", err)
@@ -125,9 +136,7 @@ func (r *pioencodeRender) render(t *testing.T, profilesJSON string) {
 		r.wireProfiles(nameAsProviderTable(t, profilesJSON))
 	}
 	ConfigurePackSurfaces(r.e, []*packload.Pack{pi, ocode, zai})
-	if fails := r.e.GenFailures(); len(fails) != 0 {
-		t.Fatalf("boot render failed: %v\n%s", fails, r.errw.String())
-	}
+	return r.e.GenFailures()
 }
 
 // wireProfiles installs the RESOLVED profile table a real launch composes on the host and
@@ -312,17 +321,11 @@ func TestPiDeriveWritesTheSelectionPair(t *testing.T) {
 			wantProvider: "zhipu",
 			wantModel:    "glm-5.3-flash",
 		},
-		{
-			// An option naming an alias the provider does not declare is not a licence to
-			// guess: the id under a wrong alias is not on the list pi matches against
-			// exactly, and neither is any other id. defaultProvider stands, defaultModel
-			// stays absent — the same degradation as a provider with no default alias.
-			name:         "an option naming an unknown alias writes defaultProvider alone",
-			providers:    zaiReachableJSON,
-			profiles:     `{"pi":"zhipu"}`,
-			wire:         `{"zhipu": {"provider": "zhipu", "model": "turbo"}}`,
-			wantProvider: "zhipu",
-		},
+		// NOTE: an option naming an alias the provider does not declare no longer degrades to
+		// "defaultProvider alone" — the fail-closed rule makes it REFUSE the render. That case
+		// is asserted by TestPiUnresolvableProfileModelRefusesTheRender
+		// by TestPiUnresolvableProfileModelRefusesTheRender (pi_subagents_scope_test.go),
+		// which a fatal-on-failure table cannot express.
 		{
 			// OQ-CS2: the no-profile case is the agent's own — pi's own persisted
 			// interactive choice stands, and yolo writing a default here would revert it on
@@ -446,19 +449,10 @@ func TestOpencodeDeriveWritesTheSelectionKey(t *testing.T) {
 			wantModel:     "zhipu/glm-5.3-flash",
 			wantProviders: []string{"zhipu"},
 		},
-		{
-			// An option naming an alias the provider does not declare asks a question the
-			// table cannot answer, and the one-model fallback is deliberately NOT the
-			// answer — that fallback belongs to the default ask, where "which model" has
-			// only one possible reply. Here it would be a silent override of an explicit
-			// one, so the key stays absent and opencode chooses, within the provider selected.
-			name:          "an option naming an unknown alias writes no model",
-			providers:     noDefaultJSON,
-			profiles:      `{"opencode":"solo"}`,
-			wire:          `{"solo": {"provider": "solo", "model": "turbo"}}`,
-			guard:         "solo",
-			wantProviders: []string{"solo"},
-		},
+		// NOTE: an option naming an alias the provider does not declare no longer writes NO
+		// model — the same fail-closed rule pi applies (opencodeModel) now REFUSES the render.
+		// Asserted by TestOpencodeUnresolvableProfileModelRefusesTheRender below, which a
+		// fatal-on-failure table cannot express.
 		{
 			// OQ-CS2 again, with a guard: with `model` unset opencode falls back to its own
 			// persisted interactive choice (~/.local/state/opencode/model.json), which is
@@ -536,6 +530,55 @@ func TestOpencodeDeriveWritesTheSelectionKey(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestOpencodeUnresolvableProfileModelRefusesTheRender is the opencode half of the same
+// fail-closed rule as pi's: a profile
+// model the selected provider's declared list cannot resolve REFUSES the render, naming the
+// provider, the `model` option and the ids it does declare, and writes no config. It is the
+// same class as pi's, and opencode's built-in/generic branches share the resolution
+// (opencodeModel), so the two agents cannot drift back to writing an id opencode raises
+// ModelNotFoundError on.
+//
+// NEGATIVE CONTROL: against the pre-fix derive no failure is recorded and no config is refused.
+func TestOpencodeUnresolvableProfileModelRefusesTheRender(t *testing.T) {
+	r := newPioencodeRender(t, zaiReachableJSON)
+	r.wireProfiles(`{"zhipu": {"provider": "zhipu", "model": "turbo"}}`)
+	fails := r.renderWith(t, `{"opencode":"zhipu"}`)
+
+	config := filepath.Join(r.e.Home, ".config", "opencode", "opencode.json")
+	if _, err := os.Stat(config); !os.IsNotExist(err) {
+		t.Errorf("opencode.json must NOT be written when the derive refuses (stat err = %v)", err)
+	}
+	if len(fails) == 0 {
+		t.Fatalf("an unresolvable profile model must REFUSE the render; no failure was "+
+			"recorded:\n%s", r.errw.String())
+	}
+	msg := strings.Join(fails, "\n")
+	for _, want := range []string{"zhipu", "model", "turbo", "glm-5.3"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal does not name %q; got:\n%s", want, msg)
+		}
+	}
+}
+
+// TestOpencodeBuiltInProviderResolvesAProfileModelAlias is the opencode half of the same
+// alias-resolution rule as pi's: a profile
+// that names a yolo alias under a provider opencode has built in (openrouter) must render
+// opencode's REAL id, not the alias. Before the fix the built-in branch wrote the value
+// literally (`openrouter/deepseek-floor`), which opencode raises ModelNotFoundError on.
+//
+// NEGATIVE CONTROL: against the pre-fix derive the rendered model is `openrouter/deepseek-floor`.
+func TestOpencodeBuiltInProviderResolvesAProfileModelAlias(t *testing.T) {
+	r := openrouterAliasRender(t, "deepseek-floor")
+	r.render(t, `{"opencode":"or"}`)
+	cfg := r.ocConfig(t)
+	if got := cfg["model"]; got != "openrouter/deepseek/deepseek-v4.1-flash:floor" {
+		t.Errorf("opencode model = %v, want the RESOLVED id openrouter/deepseek/deepseek-v4.1-flash:floor", got)
+	}
+	if got, want := cfg["enabled_providers"], []any{"openrouter"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("enabled_providers = %v, want %v", got, want)
 	}
 }
 
