@@ -70,7 +70,9 @@
   // ]
   // Extra tools to install via mise (key: tool name, value: version string).
   // No defaults — yolo ships no mise tool of its own. Declare only what you want.
-  // "mise_tools": {"neovim": "nightly", "typst": "latest"}
+  // Lua supplies lua/luac so the packs' derive.lua files can be syntax-checked
+  // in a bare shell (the repo validates Lua pack derives).
+  "mise_tools": {"lua": "5.4.9"},
   // Additional language servers. No defaults — declare each server you want; its binary
   // must be on PATH (e.g. via mise_tools) or given as an absolute command.
   // "lsp_servers": {
