@@ -344,6 +344,11 @@ type surfaceSelection struct {
 	// (packload.ModelsEnforced) — ctx.enforce_models, negated; false, the default, when no
 	// profile is active.
 	ModelsNotEnforced bool
+	// Subagents is what the active profile declares its child agents run on
+	// (ResolvedProfile.Subagents) — ctx.subagents; the zero value, no declaration, when no
+	// profile is active or it declares none. The values are unresolved, as the profile
+	// wrote them: the derive owns what a model name means (OQ-CS4).
+	Subagents luahook.Subagents
 }
 
 // surfaceSelectionFor resolves one surface's selection: packload.ProviderFor — the ONE
@@ -385,6 +390,7 @@ func surfaceSelectionFor(packs []*packload.Pack, resolved map[string]packload.Re
 		ViaURL:             packload.ViaURLFor(resolved[profile], s.Agent),
 		ViaAPIKeyEnvName:   packload.ViaAPIKeyEnvNameFor(packs, resolved[profile], s.Agent),
 		ModelsNotEnforced:  !packload.ModelsEnforced(resolved[profile]),
+		Subagents:          resolved[profile].Subagents,
 	}
 }
 
@@ -448,6 +454,7 @@ func deriveCtx(e *Env, surface manifest.Surface, sel surfaceSelection, tables ma
 		ViaURL:             sel.ViaURL,
 		ViaAPIKeyEnvName:   sel.ViaAPIKeyEnvName,
 		ModelsNotEnforced:  sel.ModelsNotEnforced,
+		Subagents:          sel.Subagents,
 		Tables:             tables,
 		UnknownAPI:         func(name string) { e.warnOnce(unknownDeriveAPINote(surface.Agent, name)) },
 		// A helper's warn-don't-refuse note (yolo.model_for's missing tier alias), keyed by

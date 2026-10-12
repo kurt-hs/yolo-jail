@@ -19,16 +19,23 @@ package config
 // do, whether it does it by declaring the profile or by switching it on.
 //
 // This file LOWERS only. It decides that an entry is well-formed — an object naming a
-// provider, with string option values — and nothing else: what an option MEANS is the
+// provider, with string option values, over the three profile FIELDS that are not options
+// (`via`, `enforce_models` and `subagents`) — and nothing else: what an option MEANS is the
 // derive's business and the provider owns which options exist (docs/reference/providers.md
 // §"Profiles and options"), so the lowering never validates a value against anything. The
 // pack-side resolution (defaults under these values, the census, the undeclared-name
 // refusal) is packload.ResolveProfiles.
+//
+// `subagents` is the one field with a SHAPE of its own, so its shape is checked here
+// (checkProfileSubagents): a nested object whose halves name models, refused rather than
+// skipped when a key or a value cannot be read. Its VALUES are still not validated — an
+// alias is resolved by the deriving agent's own ladder, at the render.
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -95,7 +102,8 @@ func checkProfiles(v any) (map[string]packload.UserProfile, []string) {
 	return out, problems
 }
 
-// checkProfileEntry lowers ONE entry: the provider it selects and its option values.
+// checkProfileEntry lowers ONE entry: the provider it selects, its option values, and the
+// profile fields that are not options (`via`, `enforce_models`, `subagents`).
 //
 // `provider` is REQUIRED (§5.2 property 3, and the property is inverted, not softened —
 // declaration was ruled mandatory after a first draft said otherwise). A null option
@@ -141,8 +149,22 @@ func checkProfileEntry(name string, raw any) (packload.UserProfile, string) {
 	options := map[string]string{}
 	via := ""
 	var enforce *bool
+	var subagents luahook.Subagents
 	for _, key := range m.Keys() {
 		if key == "provider" {
+			continue
+		}
+		if key == "subagents" {
+			// `subagents` is a profile FIELD, not a provider option, for via's reason: what
+			// the profile's child agents run on (a `default` and a `roles` map) is user
+			// intent about a surface the provider defines, and a nested object can be
+			// neither a string option nor part of the provider-option census.
+			v, _ := m.Get(key)
+			sub, problem := checkProfileSubagents(path, v)
+			if problem != "" {
+				return packload.UserProfile{}, problem
+			}
+			subagents = sub
 			continue
 		}
 		if key == "enforce_models" {
@@ -181,7 +203,80 @@ func checkProfileEntry(name string, raw any) (packload.UserProfile, string) {
 		}
 		options[key] = s
 	}
-	return packload.UserProfile{Provider: provider, Options: options, Via: via, EnforceModels: enforce}, ""
+	return packload.UserProfile{Provider: provider, Options: options, Via: via,
+		EnforceModels: enforce, Subagents: subagents}, ""
+}
+
+// checkProfileSubagents lowers ONE profile's `subagents` declaration, the profile field that
+// says what its child agents run on, and refuses a shape it cannot read with the fix in the
+// message.
+//
+// The two halves answer the two questions a child's model raises that no rule can infer. A
+// `default` replaces the child default the derive would otherwise take from the profile's own
+// model, so one parent model can route its children elsewhere (the whale that hands its
+// children the cheaper floor model of the same provider). `roles` pins one model per subagent
+// ROLE, so two children of one parent need not run wherever the provider's tiers happen to
+// fall. Both values are an alias or an exact id of the profile's PROVIDER — the same
+// vocabulary the profile's `model` option speaks, never a `<provider>/<...>` spelling, because
+// the derive resolves each through the selected provider's own ladder and a value naming
+// another provider would be a child yolo let cross one.
+//
+// Unknown keys and empty pieces are refused here rather than skipped: a declaration the user
+// believes is routing their children and is not is worse than a launch that stops and names
+// the key. An entry that states neither half declares nothing and is refused too, since the
+// whole object is then a no-op the user did not intend.
+func checkProfileSubagents(path string, raw any) (luahook.Subagents, string) {
+	m, ok := raw.(*jsonx.OrderedMap)
+	if !ok {
+		return luahook.Subagents{}, path + ".subagents: expected an object declaring \"default\" " +
+			"(the model a child agent that names none of its own starts on) and/or \"roles\" " +
+			"(one model per subagent role)"
+	}
+	var sub luahook.Subagents
+	roles := map[string]string{}
+	for _, key := range m.Keys() {
+		v, _ := m.Get(key)
+		switch key {
+		case "default":
+			s, isStr := asStr(v)
+			if !isStr || s == "" {
+				return luahook.Subagents{}, path + `.subagents.default: expected a non-empty string — ` +
+					"the model a child agent that names none of its own starts on, as an alias or " +
+					"exact model id of the profile's provider"
+			}
+			sub.Default = s
+		case "roles":
+			rs, isMap := v.(*jsonx.OrderedMap)
+			if !isMap {
+				return luahook.Subagents{}, path + `.subagents.roles: expected an object mapping a ` +
+					`subagent role to a model, e.g. {"worker": "deepseek-floor"}`
+			}
+			for _, role := range rs.Keys() {
+				rv, _ := rs.Get(role)
+				if role == "" {
+					return luahook.Subagents{}, path + `.subagents.roles: a role name must not be "" — ` +
+						"it names the subagent the model is pinned to"
+				}
+				s, isStr := asStr(rv)
+				if !isStr || s == "" {
+					return luahook.Subagents{}, path + ".subagents.roles." + role +
+						": expected a non-empty string — the model that role runs on, as an alias " +
+						"or exact model id of the profile's provider"
+				}
+				roles[role] = s
+			}
+		default:
+			return luahook.Subagents{}, path + ".subagents." + key + ": unknown key — a `subagents` " +
+				`entry declares "default" (the model a child agent that names none starts on) and ` +
+				`"roles" (one model per subagent role), and nothing else`
+		}
+	}
+	if sub.Default == "" && len(roles) == 0 {
+		return luahook.Subagents{}, path + `.subagents: declares nothing — give it a "default", ` +
+			`a "roles" entry, or remove it`
+	}
+	sub.Roles = roles
+	return sub, ""
 }
 
 // validateProfiles reports `profiles` problems, and it is the reason a malformed entry

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentenv"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -404,5 +405,35 @@ func TestAgentEnvWithoutTheResolvedTableSeesAnEmptyProfile(t *testing.T) {
 	}
 	if len(vars) != 1 || vars[0] != (agentenv.Var{Key: "PROFILE_KEYS", Value: "0"}) {
 		t.Errorf("vars = %#v, want exactly PROFILE_KEYS=0 — empty, not somebody else's options", vars)
+	}
+}
+
+// The `subagents` declaration is a profile FIELD, like `via`: ResolveProfiles carries it onto
+// the resolved entry and ProfilesWireTable renders it under its reserved key as a NESTED
+// object, so the option census never sees it and the jail reads it back
+// (entrypoint.decodeSubagents). A profile that declares none writes NO reserved key, which is
+// what keeps the wire table a launch with no declaration emits byte-identical to the one it
+// emitted before the field existed.
+//
+// NEGATIVE CONTROL: against the pre-change code the ResolvedProfile has no Subagents field and
+// the wire table has no `_subagents` key, so the first expectation fails.
+func TestProfilesWireTableCarriesTheSubagentsDeclaration(t *testing.T) {
+	pack := optionProviderPack(t)
+	resolved, err := ResolveProfiles([]*Pack{pack}, map[string]UserProfile{
+		"or": {Provider: "zai", Subagents: luahook.Subagents{
+			Default: "fast",
+			Roles:   map[string]string{"worker": "fast", "reviewer": "slow"},
+		}},
+		"plain": {Provider: "zai"},
+	}, composePacks(t, []*Pack{pack}))
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	got := dump(t, ProfilesWireTable(resolved))
+	want := `{"or": {"provider": "zai", "model": "default",` +
+		` "_subagents": {"default": "fast", "roles": {"reviewer": "slow", "worker": "fast"}}},` +
+		` "plain": {"provider": "zai", "model": "default"}}`
+	if got != want {
+		t.Errorf("wire table should be\n  %s\ngot\n  %s", want, got)
 	}
 }

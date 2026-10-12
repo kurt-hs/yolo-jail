@@ -294,3 +294,92 @@ func TestAProfileEnforceModelsIsABooleanField(t *testing.T) {
 		t.Errorf("problems %v, want the enforce_models refusal", problems)
 	}
 }
+
+// `subagents` is the third profile FIELD lifted out before options are read (for `via` and
+// `enforce_models`' reason): a nested object can be neither a string option nor part of the
+// provider-option census. It lowers to UserProfile.Subagents and puts NOTHING into Options,
+// so the census in packload.ResolveProfiles never sees it.
+func TestAProfileSubagentsIsAFieldNotAnOption(t *testing.T) {
+	got, problems := checkProfiles(decode(t, `{"or": {"provider": "openrouter", "model": "deepseek-whale",`+
+		` "subagents": {"default": "deepseek-floor", "roles": {"worker": "deepseek-floor",`+
+		` "reviewer": "deepseek-whale"}}}}`))
+	if len(problems) != 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	p := got["or"]
+	if p.Subagents.Default != "deepseek-floor" {
+		t.Errorf("Subagents.Default = %q, want deepseek-floor", p.Subagents.Default)
+	}
+	wantRoles := map[string]string{"worker": "deepseek-floor", "reviewer": "deepseek-whale"}
+	if len(p.Subagents.Roles) != len(wantRoles) {
+		t.Fatalf("Subagents.Roles = %v, want %v", p.Subagents.Roles, wantRoles)
+	}
+	for role, want := range wantRoles {
+		if p.Subagents.Roles[role] != want {
+			t.Errorf("Subagents.Roles[%q] = %q, want %q", role, p.Subagents.Roles[role], want)
+		}
+	}
+	if len(p.Options) != 1 || p.Options["model"] != "deepseek-whale" {
+		t.Errorf("Options = %v, want exactly {model: deepseek-whale} — subagents is a field", p.Options)
+	}
+	// A profile that declares nothing about children lowers the zero value, which the derive
+	// reads as "no declaration" and renders no block for.
+	plain, _ := checkProfiles(decode(t, `{"or": {"provider": "openrouter"}}`))
+	if s := plain["or"].Subagents; s.Default != "" || len(s.Roles) != 0 {
+		t.Errorf("a profile with no `subagents` lowered %+v, want the zero declaration", s)
+	}
+}
+
+// A `subagents` declaration is refused, never skipped, for every shape this build cannot
+// read: an unknown key, a non-object, a non-string or empty value, an empty role name, and
+// an object that declares neither half. The refusal names the path to the key, because "my
+// children are not being routed" is the failure a silently-skipped key produces.
+func TestCheckProfilesRefusesSubagentsShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"not an object", `"subagents": "worker=deepseek-floor"`, `config.profiles.or.subagents: expected an object`},
+		{"default is not a string", `"subagents": {"default": 7}`, `config.profiles.or.subagents.default: expected a non-empty string`},
+		{"default is empty", `"subagents": {"default": ""}`, `config.profiles.or.subagents.default: expected a non-empty string`},
+		{"roles is not an object", `"subagents": {"roles": ["worker"]}`, `config.profiles.or.subagents.roles: expected an object`},
+		{"a role value is not a string", `"subagents": {"roles": {"worker": 7}}`,
+			`config.profiles.or.subagents.roles.worker: expected a non-empty string`},
+		{"a role value is empty", `"subagents": {"roles": {"worker": ""}}`,
+			`config.profiles.or.subagents.roles.worker: expected a non-empty string`},
+		{"a role name is empty", `"subagents": {"roles": {"": "deepseek-floor"}}`,
+			`config.profiles.or.subagents.roles: a role name must not be ""`},
+		{"an unknown key", `"subagents": {"role": "worker"}`,
+			`config.profiles.or.subagents.role: unknown key`},
+		{"declares nothing", `"subagents": {}`, `config.profiles.or.subagents: declares nothing`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, problems := checkProfiles(decode(t, `{"or": {"provider": "openrouter", `+tc.body+`}}`))
+			if len(problems) != 1 {
+				t.Fatalf("want one problem, got %v", problems)
+			}
+			if !strings.Contains(problems[0], tc.want) {
+				t.Errorf("problem %q missing %q", problems[0], tc.want)
+			}
+		})
+	}
+}
+
+// The other half of EVERY refusal above: it names the next step, so a user who wrote the
+// key wrong is told what the shapes are rather than only that one did not fit (the
+// invariant AGENTS.md states — a stop that only reports is a defect).
+func TestSubagentsRefusalsNameTheFix(t *testing.T) {
+	for _, body := range []string{
+		`"subagents": {}`,
+		`"subagents": {"nope": "x"}`,
+		`"subagents": "x"`,
+	} {
+		_, problems := checkProfiles(decode(t, `{"or": {"provider": "openrouter", `+body+`}}`))
+		msg := strings.Join(problems, "\n")
+		if !strings.Contains(msg, "default") || !strings.Contains(msg, "roles") {
+			t.Errorf("the refusal for %s should name `default` and `roles` as the accepted keys, got %q",
+				body, msg)
+		}
+	}
+}

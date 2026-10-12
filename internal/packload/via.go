@@ -179,6 +179,7 @@ func derivedPointers(packs []*Pack, providers *jsonx.OrderedMap, useProfiles map
 		ViaURL:             url,
 		ViaAPIKeyEnvName:   ViaAPIKeyEnvNameFor(packs, resolved[profile], agent),
 		ModelsNotEnforced:  !ModelsEnforced(resolved[profile]),
+		Subagents:          resolved[profile].Subagents,
 		UnknownAPI:         func(string) {},
 	}
 	tables := func() map[string]map[string]any {

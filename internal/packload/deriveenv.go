@@ -223,6 +223,10 @@ func deriveAgentEnv(script string, owner *Pack, packs []*Pack, providers *jsonx.
 		// The profile's model-list enforcement switch (MM-D5), the same answer the surface
 		// path hands its derives (entrypoint.surfaceSelectionFor).
 		ModelsNotEnforced: !ModelsEnforced(cfg.resolved[profile]),
+		// The profile's `subagents` declaration, the same answer the surface path hands its
+		// derives, so an env derive and a config derive cannot disagree about what the
+		// profile says its children run on.
+		Subagents: cfg.resolved[profile].Subagents,
 		// Whether this notch writes the agent files the pack declares (WithAgentFiles, MM-D33).
 		AgentFiles: cfg.files != nil,
 		// The built-in source's capabilities, resolved the same way the surface path

@@ -823,6 +823,133 @@ yolo.derive("pi", "models", function(ctx)
   return { providers = in_full(ctx, providers) }
 end)
 
+-- declaredModelIds lists the selected provider's declared model ids, sorted and distinct, as
+-- the text a refusal quotes when it names what the provider does offer ("it declares: …"). One
+-- function, so profileModel's refusal and subagentModel's below cannot describe one provider's
+-- list two ways.
+local function declaredModelIds(ctx)
+  local p = ctx.providers and ctx.providers[ctx.selected_provider] or nil
+  local models = type(p) == "table" and type(p.models) == "table" and p.models or nil
+  local ids, seen = {}, {}
+  if models then
+    for _, modelId in pairs(models) do
+      if type(modelId) == "string" and modelId ~= "" and not seen[modelId] then
+        seen[modelId] = true
+        table.insert(ids, modelId)
+      end
+    end
+  end
+  if #ids == 0 then return "(none)" end
+  table.sort(ids)
+  return table.concat(ids, ", ")
+end
+
+-- profileModel is THE resolution of a model a profile NAMES explicitly — its `model` option,
+-- which carries the provider's declared default when the profile states none — and the ONE
+-- home of the fail-closed rule: the value is resolved through the SAME ladder the generic
+-- branch below has always used, and a value that ladder cannot resolve REFUSES the render
+-- rather than being written. subagentModel, below, resolves a `subagents` value through this
+-- same ladder.
+--
+-- The ladder, in order (docs/reference/providers.md OQ-CS4, OQ-XM1):
+--
+--   1. `yolo.model_for(value, ctx.selected_provider)` — the value as an ALIAS, the id under it;
+--   2. `yolo.model_for("default", ...)` — the provider's declared `default` alias, the same
+--      fallback the generic branch takes when a named alias does not resolve;
+--   3. the value as one of the provider's declared IDS (the profile naming an exact id).
+--
+-- pi matches a model id EXACTLY against the provider's list, so an unresolved alias — the
+-- defect this closes, `openrouter/deepseek-floor` for the alias `deepseek-floor` whose id is
+-- `deepseek/deepseek-v4.1-flash:floor` — starts every child on the wrong model or refuses them
+-- with `Unknown subagent model`. Writing it is never right, so when even the ladder resolves
+-- nothing yolo refuses the whole render, naming the provider, the option and the ids the
+-- provider does declare.
+--
+-- A provider that declares NO models has no list to resolve against: yolo cannot judge an id
+-- for a provider pi runs on its own catalog, so the value passes through as pi's own id. That is
+-- the case the raw-id pin (`profiles.<p>.model` set to an id pi knows) relies on, and it is why
+-- only a provider WITH a declared list can (and must) refuse.
+--
+-- permitMiss is true under an `only` (packload's models_only): the composed `models` map is then
+-- the OVERRIDE a pack or the user declared, so a profile model it dropped is not a
+-- misconfiguration — the caller falls back to that list's own default entry (docs/design/
+-- model-lists-and-pickers.md §7.2), which is why the miss returns nil instead of refusing there.
+local function profileModel(ctx, value, permitMiss)
+  local provName = ctx.selected_provider
+  local p = ctx.providers and ctx.providers[provName] or nil
+  local models = type(p) == "table" and type(p.models) == "table" and p.models or nil
+  if not models or next(models) == nil then
+    return value
+  end
+  local _, id = yolo.model_for(value, provName)
+  if not id and value ~= "default" then
+    _, id = yolo.model_for("default", provName)
+  end
+  if id then return id end
+  for _, modelId in pairs(models) do
+    if modelId == value then return value end
+  end
+  if permitMiss then return nil end
+  error(string.format(
+    "the active profile \"%s\" sets the `model` option to \"%s\", which is neither a model "..
+    "alias nor a model id of provider \"%s\" (it declares: %s), so yolo refuses to write a "..
+    "model pi cannot resolve — pi matches a model id EXACTLY against the provider's list, and "..
+    "an unresolved value starts children on the wrong model or fails them with `Unknown "..
+    "subagent model`. Point the profile's `model` at one of those ids, or declare the alias "..
+    "under providers.%s.models.",
+    ctx.profile_name or "", value, provName, declaredModelIds(ctx), provName))
+end
+
+-- subagentDecl reads the active profile's `subagents` DECLARATION off ctx
+-- (profiles.<name>.subagents -> DeriveCtx.Subagents): what the user says this profile's
+-- child agents run on. It is the ONE input to the block below that yolo cannot infer, and
+-- it exists because it cannot be inferred — a role pin per parent MODEL is not a function of
+-- the parent's provider (the old static map keyed there), and a reduced-window child's
+-- full-window sibling is not a function of anything yolo can see, so the user writes it
+-- down.
+--
+-- nil when the profile declares nothing — including on an entrypoint older than the field,
+-- where ctx.subagents is simply absent — which leaves piSubagents exactly the block it wrote
+-- before this existed. An empty declaration (no `default`, no `roles`) is nil too; the config
+-- layer refuses one, so this only guards a table this build did not compose.
+local function subagentDecl(ctx)
+  local d = ctx.subagents
+  if type(d) ~= "table" then return nil end
+  local default = d.default
+  if type(default) ~= "string" or default == "" then default = nil end
+  local roles = {}
+  if type(d.roles) == "table" then
+    for role, v in pairs(d.roles) do
+      if type(role) == "string" and role ~= "" and type(v) == "string" and v ~= "" then
+        roles[role] = v
+      end
+    end
+  end
+  if not default and next(roles) == nil then return nil end
+  return { default = default, roles = roles }
+end
+
+-- subagentModel resolves ONE declared subagent model the way fix 6 resolves a profile's
+-- `model` option: the SAME ladder (profileModel), so an alias becomes pi's real id and a value
+-- the ladder cannot resolve REFUSES the render rather than reaching pi. `where` names the
+-- declaration the value came from (`subagents.default`, `subagents.roles.worker`), so the
+-- refusal points at the config line to fix; the ids the provider DOES declare are quoted too.
+--
+-- A provider that declares no model list passes the value through verbatim, exactly as
+-- profileModel does for the `model` option: yolo has no list to judge an id against for a
+-- provider pi runs on its own catalog. Only a provider WITH a declared list can refuse.
+local function subagentModel(ctx, value, where)
+  local id = profileModel(ctx, value, true)
+  if id then return id end
+  error(string.format(
+    "the active profile \"%s\" declares %s = \"%s\", which is neither a model alias nor a "..
+    "model id of provider \"%s\" (it declares: %s) — pi matches a model id EXACTLY against "..
+    "the provider's list, so an unresolved value fails every child with `Unknown subagent "..
+    "model`. Point %s at one of those ids, or remove it.",
+    ctx.profile_name or "", where, value, ctx.selected_provider or "", declaredModelIds(ctx),
+    where))
+end
+
 -- piSubagents is pi-subagents' `subagents` block for the launch's provider, the same shape
 -- for EVERY provider (docs/research/extension-model-defaults.md OQ-XM3, ruled 2026-09-28,
 -- which also answers docs/research/pi-model-selection-ux.md OQ-PM1). The maintainer: "always
@@ -830,14 +957,26 @@ end)
 -- shouldn't be able to cross providers."
 --
 --   - defaultModel is `<provider>/<model>`, the model the chat selection below starts on, so
---     a child agent that names no model starts where its parent does. When yolo can name no
---     default (a provider with no model list whose profile names none, or a list with no
---     alias the profile resolves to), the key is TOMBSTONED rather than omitted: a lower
---     layer's value, such as a host settings.json holding a codex policy, would otherwise
---     hand the child another provider's model, and pi-subagents only WARNS about an
---     inherited model outside the scope (0.35.1 src/runs/shared/model-scope.ts,
+--     a child agent that names no model starts where its parent does. When the profile
+--     DECLARES a `subagents.default`, that model is used instead
+--     (profiles.<name>.subagents, resolved through profileModel like the `model` option), so
+--     one parent model can hand its children a different model of the same provider — the
+--     reduced-window case, where the user writes the full-window sibling's model down rather
+--     than yolo guessing it (fix 9: no window arithmetic, no sibling selection). When yolo
+--     can name no default at all (a provider with no model list whose profile names none,
+--     or a list with no alias the profile resolves to), the key is TOMBSTONED rather than
+--     omitted: a lower layer's value, such as a host settings.json holding a codex policy,
+--     would otherwise hand the child another provider's model, and pi-subagents only WARNS
+--     about an inherited model outside the scope (0.35.1 src/runs/shared/model-scope.ts,
 --     checkModelScope). With it deleted the child inherits the parent session's model,
 --     which is on this provider.
+--   - agentOverrides and modelScope.agents carry the declared ROLE pins
+--     (subagents.roles.<role>), each resolved to `<provider>/<id>`: the role's model, and an
+--     agent scope allowing exactly that one model, so a role cannot run anywhere else. Both
+--     are OMITTED when the profile pins no role, which leaves pi-subagents' own per-role
+--     configuration — and the provider-wide scope below — exactly as it was. This is the
+--     half a static map keyed on the parent's PROVIDER could not express: two profiles on
+--     one provider pin different roles.
 --   - modelScope is enforced and strict over `ids`, the provider's configured models, EXACTLY
 --     (ML-D5: never a family glob written down a second time), so a child may name another
 --     model of this provider, the stated exception, and never one of another. pi-subagents'
@@ -857,6 +996,10 @@ end)
 -- replaces each leaf yolo names, the allow array whole. A deselect writes nothing, and the
 -- block goes with the rest of the computed layer.
 local function piSubagents(ctx, provider, model, ids)
+  local decl = subagentDecl(ctx)
+  if decl and decl.default then
+    model = subagentModel(ctx, decl.default, "`subagents.default`")
+  end
   local sub = { defaultProvider = provider }
   if model then
     sub.defaultModel = provider .. "/" .. model
@@ -870,7 +1013,18 @@ local function piSubagents(ctx, provider, model, ids)
   if #allow == 0 then
     allow = { provider .. "/*" }
   end
-  sub.modelScope = { enforce = true, strict = true, allow = allow }
+  local scope = { enforce = true, strict = true, allow = allow }
+  if decl and next(decl.roles) ~= nil then
+    local overrides, agents = {}, {}
+    for role, value in pairs(decl.roles) do
+      local qualified = provider .. "/" .. subagentModel(ctx, value, "`subagents.roles." .. role .. "`")
+      overrides[role] = { model = qualified }
+      agents[role] = { enforce = true, strict = true, allow = { qualified } }
+    end
+    sub.agentOverrides = overrides
+    scope.agents = agents
+  end
+  sub.modelScope = scope
   return sub
 end
 
@@ -937,7 +1091,10 @@ end
 -- modelScope allows the union of every entry's scope, so a child may run on any provider in the
 -- set and on none outside it (§4.6, AP-D5). defaultProvider, defaultModel and subagents'
 -- defaultModel stay the primary's: a fresh session starts where the first entry says, and a
--- model the user saved on any entry is never steered (OQ-ML2).
+-- model the user saved on any entry is never steered (OQ-ML2). The primary profile's role pins
+-- (subagents.agentOverrides and modelScope.agents) stay the primary's too, for the same reason:
+-- a child's role is one profile's declaration, and the set widens which providers a child MAY
+-- use, never which model a role gets.
 --
 -- Each later entry is answered by settingsFor ITSELF, over a copy of ctx whose selection is
 -- that entry's, so every rule the primary follows (a provider pi lists itself, a kilo id, a
@@ -979,73 +1136,18 @@ local function piSetSettings(ctx, out, settingsFor)
     out.selection.enabledModels = enabled
   end
   if type(out.subagents) == "table" and #allow > 0 then
+    -- The scope is rebuilt over the UNION allow, and the primary's per-role agent scopes
+    -- (piSubagents' modelScope.agents, from the profile's `subagents.roles`) are carried
+    -- across unchanged: they stay the primary's, as defaultProvider, defaultModel and
+    -- subagents' defaultModel do (OQ-ML2). The union's own entries are the global allows the
+    -- `allow` above already widened, so a role model still passes the global check.
+    local prev = out.subagents.modelScope
     out.subagents.modelScope = { enforce = true, strict = true, allow = allow }
-  end
-  return out
-end
-
--- profileModel is THE resolution of a model a profile NAMES explicitly — its `model` option,
--- which carries the provider's declared default when the profile states none — and the ONE
--- home of the fail-closed rule: the value is resolved through the SAME ladder the generic
--- branch below has always used, and a value that ladder cannot resolve REFUSES the render
--- rather than being written.
---
--- The ladder, in order (docs/reference/providers.md OQ-CS4, OQ-XM1):
---
---   1. `yolo.model_for(value, ctx.selected_provider)` — the value as an ALIAS, the id under it;
---   2. `yolo.model_for("default", ...)` — the provider's declared `default` alias, the same
---      fallback the generic branch takes when a named alias does not resolve;
---   3. the value as one of the provider's declared IDS (the profile naming an exact id).
---
--- pi matches a model id EXACTLY against the provider's list, so an unresolved alias — the
--- defect this closes, `openrouter/deepseek-floor` for the alias `deepseek-floor` whose id is
--- `deepseek/deepseek-v4.1-flash:floor` — starts every child on the wrong model or refuses them
--- with `Unknown subagent model`. Writing it is never right, so when even the ladder resolves
--- nothing yolo refuses the whole render, naming the provider, the option and the ids the
--- provider does declare.
---
--- A provider that declares NO models has no list to resolve against: yolo cannot judge an id
--- for a provider pi runs on its own catalog, so the value passes through as pi's own id. That is
--- the case the raw-id pin (`profiles.<p>.model` set to an id pi knows) relies on, and it is why
--- only a provider WITH a declared list can (and must) refuse.
---
--- permitMiss is true under an `only` (packload's models_only): the composed `models` map is then
--- the OVERRIDE a pack or the user declared, so a profile model it dropped is not a
--- misconfiguration — the caller falls back to that list's own default entry (docs/design/
--- model-lists-and-pickers.md §7.2), which is why the miss returns nil instead of refusing there.
-local function profileModel(ctx, value, permitMiss)
-  local provName = ctx.selected_provider
-  local p = ctx.providers and ctx.providers[provName] or nil
-  local models = type(p) == "table" and type(p.models) == "table" and p.models or nil
-  if not models or next(models) == nil then
-    return value
-  end
-  local _, id = yolo.model_for(value, provName)
-  if not id and value ~= "default" then
-    _, id = yolo.model_for("default", provName)
-  end
-  if id then return id end
-  for _, modelId in pairs(models) do
-    if modelId == value then return value end
-  end
-  if permitMiss then return nil end
-  local ids, seen = {}, {}
-  for _, modelId in pairs(models) do
-    if type(modelId) == "string" and modelId ~= "" and not seen[modelId] then
-      seen[modelId] = true
-      table.insert(ids, modelId)
+    if type(prev) == "table" and type(prev.agents) == "table" then
+      out.subagents.modelScope.agents = prev.agents
     end
   end
-  table.sort(ids)
-  error(string.format(
-    "the active profile \"%s\" sets the `model` option to \"%s\", which is neither a model "..
-    "alias nor a model id of provider \"%s\" (it declares: %s), so yolo refuses to write a "..
-    "model pi cannot resolve — pi matches a model id EXACTLY against the provider's list, and "..
-    "an unresolved value starts children on the wrong model or fails them with `Unknown "..
-    "subagent model`. Point the profile's `model` at one of those ids, or declare the alias "..
-    "under providers.%s.models.",
-    ctx.profile_name or "", value, provName,
-    #ids > 0 and table.concat(ids, ", ") or "(none)", provName))
+  return out
 end
 
 -- The selection — defaultProvider and defaultModel, pi's OWN selection keys, verified from
