@@ -1597,12 +1597,31 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// launch waits for it to become attachable rather than racing it to a name collision.
 	if stale := o.findExistingContainer(cname, rt); stale != "" {
 		o.pr(o.Stderr).printf("Removing stale container %s...", cname)
-		if !o.removeStaleContainer(cname, rt) && !o.NeverAttach {
+		removed := o.removeStaleContainer(cname, rt)
+		if !removed && !o.NeverAttach {
 			if live := o.waitForRunningContainer(cname, rt); live != "" {
 				if rc, restarted := o.attachExisting(cname, rt, targetCmd, cfg, staged, channel, true, lock.Close); !restarted {
 					return rc
 				}
+				removed = true // attached to (or restarted into) a live container, not a wedged leftover
 			}
+		}
+		// A WEDGED STOPPED CONTAINER IS NOT COVERED BY THE WAIT ABOVE. The plain `rm` refused it,
+		// but it never becomes running, so waitForRunningContainer gives up and the launch would go
+		// on to create into a name collision. Force-remove a container the runtime does NOT report
+		// as running, exactly as the keeper's confirmGone does for one it stopped
+		// (forceRemoveStoppedContainer is never for a container that may run); a container that IS
+		// running, or that even a forced removal does not clear, is refused with the removal named.
+		if !removed {
+			if o.clearStaleRemainder(cname, rt) {
+				removed = true
+			}
+		}
+		if !removed {
+			o.pr(o.Stderr).printf("[bold red]Refusing to launch: a container named %s exists and could not "+
+				"be removed, so the container this launch creates would collide with it.[/bold red] "+
+				"[dim]Remove it with %s and launch again.[/dim]", cname, containerRemoveCommand(rt, cname))
+			return 1
 		}
 	}
 
@@ -2408,6 +2427,12 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		if !keeperStarted && kp.exitCode != 0 {
 			out.printf("[bold red]This jail's keeper ended (status %d) before it started; its log: %s[/bold red]",
 				kp.exitCode, keeperLogPath(cname))
+			// A container of the name that outlived the keeper is the collision a retry meets: name
+			// it, where the log alone leaves the user to infer it.
+			if o.findExistingContainer(cname, rt) != "" {
+				out.printf("[yellow]A container named %s still exists and would collide with a retry; "+
+					"remove it with %s, or run `yolo stop`.[/yellow]", cname, containerRemoveCommand(rt, cname))
+			}
 			o.unwindUnspawned(cname, rt, packStaging, in.homeSkeleton)
 		}
 		o.emitTimingReport(kp.exitCode, cname, rt)

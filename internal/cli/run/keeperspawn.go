@@ -560,23 +560,83 @@ func (o *Options) streamKeeperTeardown(cname string, logFrom int64) {
 	}
 }
 
-// noteKeeperStillRunning is what a bounded wait on a keeper says when the bound ran out: the keeper's
-// pid, its log and its last line, and how to end it in order (JL-D34).
-func (o *Options) noteKeeperStillRunning(cname string, waited time.Duration) {
-	out := o.pr(o.Stderr)
+// keeperStillRunningFacts is what a report that a keeper outlasted its wait says: the keeper's pid
+// (unknown with no start record), its log's path, and its most recent logged line.
+func keeperStillRunningFacts(cname string) (pid, logPath, last string) {
 	rec, _ := readKeeperRecord(cname)
-	last := ""
-	f := &keeperLogFollower{path: keeperLogPath(cname)}
-	if lines := f.next(); len(lines) > 0 {
-		last = lines[len(lines)-1]
-	}
-	pid := "unknown"
+	pid = "unknown"
 	if rec.PID > 0 {
 		pid = fmt.Sprint(rec.PID)
 	}
-	out.printf("[yellow]The keeper of %s (pid %s) has not finished after %s. Its log: %s. Its last "+
-		"line: %q. `kill %s` ends it in order.[/yellow]", cname, pid, waited, keeperLogPath(cname),
-		last, pid)
+	logPath = keeperLogPath(cname)
+	f := &keeperLogFollower{path: logPath}
+	if lines := f.next(); len(lines) > 0 {
+		last = lines[len(lines)-1]
+	}
+	return pid, logPath, last
+}
+
+// noteKeeperStillRunning is what a bounded wait on a keeper says when the bound ran out: the keeper's
+// pid, its log and its last line, and how to end it in order (JL-D34).
+func (o *Options) noteKeeperStillRunning(cname string, waited time.Duration) {
+	pid, logPath, last := keeperStillRunningFacts(cname)
+	o.pr(o.Stderr).printf("[yellow]The keeper of %s (pid %s) has not finished after %s. Its log: %s. Its last "+
+		"line: %q. `kill %s` ends it in order.[/yellow]", cname, pid, waited, logPath, last, pid)
+}
+
+// noteKeeperStillRunningPatiently is the patient `yolo stop`'s periodic line once a keeper has
+// outlasted keeperTeardownWait: the same facts, and the one thing that ends the jail now — then the
+// stop goes on waiting.
+func (o *Options) noteKeeperStillRunningPatiently(cname string, waited time.Duration) {
+	pid, logPath, last := keeperStillRunningFacts(cname)
+	o.pr(o.Stderr).printf("[yellow]Still waiting for the keeper of %s (pid %s) after %s. Its log: %s. Its "+
+		"last line: %q. `yolo stop --force` ends it now.[/yellow]", cname, pid, waited, logPath, last)
+}
+
+// stopForceGrace is how long `yolo stop --force` gives a signalled keeper to end in order before it
+// SIGKILLs it. A var so a test need not wait it out.
+var stopForceGrace = 5 * time.Second
+
+// signalKeeperProcess is how `yolo stop --force` signals a container jail's keeper; a var so a test
+// can stand in for the kernel. The macos-user path signals through signalKeyProcess, which is keyed
+// by a keeper key rather than a container name.
+var signalKeeperProcess = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
+
+// forceKeeperEnd is `yolo stop --force`'s escalation: it signals cname's keeper SIGTERM, waits
+// stopForceGrace for it to end in order (as the macos-user stop's SIGTERM does), and SIGKILLs it if
+// it has not, so a keeper that will not finish no longer holds the stop up. Best effort: with no
+// start record there is no pid to signal, and the caller's patient wait still ends when the keeper
+// does.
+func (o *Options) forceKeeperEnd(cname string, out printer) {
+	rec, ok := readKeeperRecord(cname)
+	if !ok || rec.PID <= 1 || rec.PID == os.Getpid() {
+		return
+	}
+	out.printf("[yellow]Ending the jail now: sent SIGTERM to its keeper (pid %d).[/yellow]", rec.PID)
+	if err := signalKeeperProcess(rec.PID, syscall.SIGTERM); err != nil {
+		return
+	}
+	if waitForKeeperGone(cname, stopForceGrace) {
+		return
+	}
+	out.printf("[yellow]The keeper of %s (pid %d) did not end after %s; sent SIGKILL.[/yellow]",
+		cname, rec.PID, stopForceGrace)
+	_ = signalKeeperProcess(rec.PID, syscall.SIGKILL)
+	_ = waitForKeeperGone(cname, stopForceGrace)
+}
+
+// waitForKeeperGone waits, within bound, for cname's keeper to be gone, and reports whether it is.
+func waitForKeeperGone(cname string, bound time.Duration) bool {
+	deadline := time.Now().Add(bound)
+	for {
+		if probeKeeper(cname) == keeperGone {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(keeperPoll)
+	}
 }
 
 // reapUnkeptJail is JL-D30's reap, run by the last session of a jail whose keeper died, holding both
@@ -667,15 +727,17 @@ func LaunchedRuntime(workspace string) (string, bool) {
 // jail (docs/design/jail-lifetime-last-session-wins.md JL-D25, JL-D30, JL-D34):
 //
 //   - a keeper holds the jail: the stop returns only once its teardown is done, streaming it from the
-//     keeper's log from logFrom, as a last session's quit does, within a bound; a Ctrl-C stops the
-//     stream and leaves the keeper running;
+//     keeper's log from logFrom. It WAITS PATIENTLY (waitForKeeperPatiently): past keeperTeardownWait
+//     it reports the keeper's facts and goes on waiting, rather than giving up as the launch-path
+//     waits do. force skips the patience: it signals the keeper first (SIGTERM, then SIGKILL). A
+//     Ctrl-C stops the stream and leaves the keeper running;
 //   - the jail's keeper is gone (an UNKEPT jail): nothing else will tear the host side down, so this
 //     runs the keeper's chain itself, holding the liveness lock and, once the sessions its stop ended
 //     have let theirs go, the session lock;
 //   - a jail an older yolo started: its own launcher tears it down, as `yolo stop` always left it to.
 //
 // capture is the E3 config capture the CLI wires into a launch. The status is `yolo stop`'s.
-func FinishStop(stdout, stderr io.Writer, workspace, rt string, logFrom int64, capture func(workspace, rt string)) int {
+func FinishStop(stdout, stderr io.Writer, workspace, rt string, logFrom int64, capture func(workspace, rt string), force bool) int {
 	o := NewDefaultOptions()
 	o.Workspace = workspace
 	o.Stdout, o.Stderr = stdout, stderr
@@ -683,10 +745,10 @@ func FinishStop(stdout, stderr io.Writer, workspace, rt string, logFrom int64, c
 	o.CaptureOnTerminate = capture
 	fillDefaults(&o)
 	o.runtime = rt
-	return o.finishStop(yoloruntime.FromWorkspace(workspace), rt, logFrom)
+	return o.finishStop(yoloruntime.FromWorkspace(workspace), rt, logFrom, force)
 }
 
-func (o *Options) finishStop(cname, rt string, logFrom int64) int {
+func (o *Options) finishStop(cname, rt string, logFrom int64, force bool) int {
 	out := o.pr(o.Stdout)
 	if probeKeeper(cname) != keeperGone {
 		out.printf("Waiting for the jail's keeper to finish its teardown...")
@@ -708,8 +770,16 @@ func (o *Options) finishStop(cname, rt string, logFrom int64) int {
 			case <-stop:
 			}
 		}()
-		gone := waitForKeeper(cname, logFrom, keeperTeardownWait, func(l string) {
+		if force {
+			// `yolo stop --force` ends the jail now instead of waiting out a keeper that will not
+			// finish: signal it before the wait, so the patient wait below returns as soon as it is
+			// gone (SIGTERM, then SIGKILL after stopForceGrace).
+			o.forceKeeperEnd(cname, out)
+		}
+		gone := waitForKeeperPatiently(cname, logFrom, func(l string) {
 			out.print("[dim]  " + richtext.Escape(l) + "[/dim]")
+		}, func(waited time.Duration) {
+			o.noteKeeperStillRunningPatiently(cname, waited)
 		}, stop)
 		end()
 		mu.Lock()

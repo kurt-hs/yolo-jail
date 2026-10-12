@@ -27,7 +27,7 @@ func TestAMacosUserStopEndsTheWorkspacesKeeperAndSessions(t *testing.T) {
 	t.Cleanup(func() { stopMacosUser = orig })
 	var out, errOut bytes.Buffer
 	s := &stopRun{}
-	if rc := stopJail(&out, &errOut, "/ws", "macos-user", s.run, nil); rc != 3 {
+	if rc := stopJail(&out, &errOut, "/ws", "macos-user", s.run, nil, false); rc != 3 {
 		t.Fatalf("stopJail at macos-user = %d, want the macos-user stop's own status (3)\n%s%s", rc, out.String(), errOut.String())
 	}
 	if got != "/ws" {

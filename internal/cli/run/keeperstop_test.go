@@ -34,7 +34,7 @@ func TestFinishStopWaitsForAKeeperAndReapsAnUnkeptJail(t *testing.T) {
 			_ = logF.Close()
 			releaseLock(live)
 		}()
-		if rc := o.finishStop(cname, "podman", 0); rc != 0 {
+		if rc := o.finishStop(cname, "podman", 0, false); rc != 0 {
 			t.Errorf("rc %d:\n%s", rc, out.String())
 		}
 		if !strings.Contains(out.String(), "Waiting for the jail's keeper") || !strings.Contains(out.String(), "keeper: done") {
@@ -68,7 +68,7 @@ func TestFinishStopWaitsForAKeeperAndReapsAnUnkeptJail(t *testing.T) {
 			}
 			return ExecResult{Ran: true} // no container of the name exists
 		}
-		if rc := o.finishStop(cname, "podman", 0); rc != 0 {
+		if rc := o.finishStop(cname, "podman", 0, false); rc != 0 {
 			t.Errorf("rc %d:\n%s", rc, out.String())
 		}
 		if stops != 0 {
@@ -96,7 +96,7 @@ func TestFinishStopWaitsForAKeeperAndReapsAnUnkeptJail(t *testing.T) {
 			t.Errorf("the stop touched an older yolo's jail: %v", argv)
 			return ExecResult{Ran: true}
 		}
-		if rc := o.finishStop("yolo-old", "podman", 0); rc != 0 || out.Len() != 0 {
+		if rc := o.finishStop("yolo-old", "podman", 0, false); rc != 0 || out.Len() != 0 {
 			t.Errorf("rc %d:\n%s", rc, out.String())
 		}
 	})
