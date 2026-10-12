@@ -169,13 +169,26 @@ func (o *Options) whyTheJailEnded(cname, rt string, rc int, since time.Time) (re
 // first answer comes before the listing has caught up with the end that returned the exec. The
 // session waits that bound only for a 137, 125 or 255 its jail survives, which is its own end.
 func (o *Options) jailGoneAfterItsEnd(cname, rt string) bool {
+	return JailGoneAfterItsEnd(rt, func() (running, answered bool) {
+		id, known := o.probeRunningContainer(cname, rt, stopProbeBudget)
+		return id != "", known
+	})
+}
+
+// JailGoneAfterItsEnd asks probe whether a jail is gone: true only when probe ANSWERED that no
+// container of the name is running. `yolo stop`'s post-stop re-probe reuses it (stopJail), so one
+// bounded wait covers both readers of a runtime whose listing trails its jail's end
+// (listingTrailsAJailsEnd): probe is asked again while it reports the jail running, every
+// jailGonePoll within jailGoneWait. A probe that could not ANSWER is never "gone" (JL-P3), and a
+// runtime whose listing does not trail is asked once.
+func JailGoneAfterItsEnd(rt string, probe func() (running, answered bool)) bool {
 	deadline := time.Now().Add(jailGoneWait)
 	for {
-		id, known := o.probeRunningContainer(cname, rt, stopProbeBudget)
+		running, answered := probe()
 		switch {
-		case !known:
+		case !answered:
 			return false
-		case id == "":
+		case !running:
 			return true
 		case !listingTrailsAJailsEnd(rt) || !time.Now().Before(deadline):
 			return false

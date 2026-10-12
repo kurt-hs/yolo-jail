@@ -29,7 +29,15 @@ type acStop struct {
 	podman  bool
 	stopped bool
 	lsRC    int
-	calls   [][]string
+	// stopRC is `container stop`'s exit status, 0 unless a test makes the stop fail.
+	stopRC int
+	// lsAfterStop, when set, answers `container ls` once the stop has run: ask is 1 on the first
+	// listing ask since the stop. It stands in for Apple Container, whose `container ls` keeps
+	// listing a jail for a moment after its stop returns (JL-D83) and whose API server can fail an
+	// ask while it ends one.
+	lsAfterStop func(ask int) (out string, rc int)
+	lsAsks      int
+	calls       [][]string
 }
 
 func (f *acStop) run(argv []string) (string, bool, int) {
@@ -49,6 +57,11 @@ func (f *acStop) run(argv []string) (string, bool, int) {
 		}
 		return `[{"id":"` + f.cname + `","status":{"state":"` + state + `"}}]`, true, 0
 	case len(argv) == 2 && argv[1] == "ls":
+		if f.stopped && f.lsAfterStop != nil {
+			f.lsAsks++
+			out, rc := f.lsAfterStop(f.lsAsks)
+			return out, true, rc
+		}
 		if f.lsRC != 0 {
 			return "", true, f.lsRC
 		}
@@ -59,7 +72,7 @@ func (f *acStop) run(argv []string) (string, bool, int) {
 		return out, true, 0
 	case len(argv) == 3 && argv[1] == "stop" && argv[2] == f.cname:
 		f.stopped = true
-		return f.cname + "\n", true, 0
+		return f.cname + "\n", true, f.stopRC
 	}
 	f.t.Errorf("the stop ran %v, which this fake does not answer", argv)
 	return "", true, 1
@@ -354,5 +367,74 @@ func TestAStopWhoseContainerIsStillRunningFails(t *testing.T) {
 		if !strings.Contains(errb.String(), want) {
 			t.Errorf("the failure must say %q:\n%s", want, errb.String())
 		}
+	}
+}
+
+// TestAnAppleContainerStopThatCannotListAfterwardsFails is the Apple Container half of JL-D82's
+// probe. `container stop` returns non-zero and the re-probe's `container ls` then fails (rc != 0):
+// read as `yolo stop`'s probe read it — rc discarded, `ran` taken for the answer — the failed stop
+// would look like a jail that ended, skipping the keeper's teardown to report success (JL-P3: an
+// unanswerable listing is never proof the container is gone). It must report the possible failure.
+func TestAnAppleContainerStopThatCannotListAfterwardsFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cname := runtime.FromWorkspace("/ws")
+	saved := finishStop
+	t.Cleanup(func() { finishStop = saved })
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+		t.Error("the stop ran the keeper's teardown after a re-probe that could not answer")
+		return 0
+	}
+	f := &acStop{t: t, cname: cname, stopRC: 1, lsAfterStop: func(int) (string, int) { return "", 1 }}
+	var out, errb bytes.Buffer
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 1 {
+		t.Fatalf("rc=%d, want 1\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
+	}
+	for _, want := range []string{"`container stop " + cname + "` failed", "`yolo stop` again retries it"} {
+		if !strings.Contains(errb.String(), want) {
+			t.Errorf("the failure must say %q:\n%s", want, errb.String())
+		}
+	}
+	if strings.Contains(out.String(), "Stopped "+cname) {
+		t.Errorf("a re-probe that could not answer was read as the jail gone:\n%s", out.String())
+	}
+}
+
+// TestAnAppleContainerStopWaitsOutTheListingBeforeCallingItGone: `container stop` returns
+// non-zero with the jail actually ending, and `container ls` keeps listing it for a few beats after
+// (JL-D83). A single immediate probe reads "still running" and reports a failed stop; the bounded
+// wait asks again while the jail is listed, and the stop ends as success, streaming the keeper's
+// teardown.
+func TestAnAppleContainerStopWaitsOutTheListingBeforeCallingItGone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cname := runtime.FromWorkspace("/ws")
+	saved := finishStop
+	t.Cleanup(func() { finishStop = saved })
+	finished := false
+	finishStop = func(_, _ io.Writer, _, rt string, _ int64, _ func(string, string)) int {
+		finished = rt == "container"
+		return 0
+	}
+	listing := "ID IMAGE OS ARCH STATE ADDR\n" + cname +
+		" localhost/yolo-jail:abc linux arm64 running 192.168.64.3/24\n"
+	asks := 0
+	f := &acStop{t: t, cname: cname, stopRC: 1, lsAfterStop: func(ask int) (string, int) {
+		asks = ask
+		if ask <= 2 { // the jail Apple Container's listing still trails
+			return listing, 0
+		}
+		return "ID IMAGE OS ARCH STATE ADDR\n", 0
+	}}
+	var out, errb bytes.Buffer
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 0 {
+		t.Fatalf("rc=%d, want 0\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
+	}
+	if asks < 2 {
+		t.Errorf("the re-probe asked `container ls` %d time(s) after the stop; want it asked again while the jail was listed", asks)
+	}
+	if !finished {
+		t.Errorf("the stop did not reach the keeper's teardown once the listing caught up:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Stopped "+cname) {
+		t.Errorf("the stop did not say it stopped the jail:\n%s", out.String())
 	}
 }
