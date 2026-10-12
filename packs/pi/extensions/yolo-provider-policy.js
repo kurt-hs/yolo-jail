@@ -81,15 +81,16 @@ export function denial(policy, provider) {
 // are applied, still asks each built-in's read-only check.) pi wraps it as "API key auth failed for provider <id>: <denial>" (pi-ai
 // ModelsError keeps the cause in the message).
 //
-//   - The key method reports the provider configured, so pi gets as far as asking for the auth
-//     and the user reads the denial, not pi's "No API key found ... /login".
+//   - The key method reports unconfigured auth (undefined), so pi knows the provider has no
+//     configured credentials: this prevents pi's startup/clear pass from defaulting to it,
+//     and prevents Ctrl+S in /model from saving it as defaultProvider in settings.json.
 //   - filterModels returns no model, so /model and the available list hide the provider. The
 //     catalog stays, so a resumed or `--model` selection still names a model and meets the
-//     denial.
-//   - The OAuth method exists so a saved OAuth login also counts configured and also meets the
-//     denial (pi-ai's resolver hands a stored OAuth credential only to an OAuth method). Its
-//     refresh throws too: a stored token near expiry takes pi's credential lock, and the refresh
-//     refuses inside it, so nothing is written and nothing is sent.
+//     denial on model_select or dispatch.
+//   - The OAuth method exists so a saved OAuth login also meets the denial (pi-ai's resolver
+//     hands a stored OAuth credential only to an OAuth method). Its refresh throws too: a stored
+//     token near expiry takes pi's credential lock, and the refresh refuses inside it, so nothing
+//     is written and nothing is sent.
 //   - Logins refuse, so /login cannot store a credential for the provider this launch.
 //   - No refreshModels: a dynamic catalog is not fetched with the provider's credential.
 export function blockingProvider(id, base, message) {
@@ -97,14 +98,14 @@ export function blockingProvider(id, base, message) {
 		throw new Error(message);
 	};
 	const refuseAsync = async () => refuse();
-	const configured = async () => ({ type: "api_key", source: BLOCK_NAME });
+	const unconfigured = async () => undefined;
 	const provider = {
 		id,
 		name: base?.name ?? id,
 		...(base?.baseUrl !== undefined ? { baseUrl: base.baseUrl } : {}),
 		...(base?.headers !== undefined ? { headers: base.headers } : {}),
 		auth: {
-			apiKey: { name: BLOCK_NAME, login: refuseAsync, check: configured, resolve: refuseAsync },
+			apiKey: { name: BLOCK_NAME, login: refuseAsync, check: unconfigured, resolve: refuseAsync },
 			oauth: { name: BLOCK_NAME, login: refuseAsync, refresh: refuseAsync, toAuth: refuseAsync },
 		},
 		getModels: () => safeModels(() => base?.getModels?.()),

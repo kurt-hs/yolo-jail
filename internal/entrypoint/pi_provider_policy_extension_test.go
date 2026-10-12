@@ -312,8 +312,8 @@ func TestPiProviderPolicyBlocksEveryProviderOutsideTheSet(t *testing.T) {
 				t.Errorf("%s: %s ran pi's own code for the provider: %q", p.ID, what, got)
 			}
 		}
-		if !strings.Contains(p.Check, `"type":"api_key"`) {
-			t.Errorf("%s: check = %q, want configured, so pi reaches the denial", p.ID, p.Check)
+		if p.Check != "OK null" {
+			t.Errorf("%s: check = %q, want unconfigured (OK null), so pi does not default to it or allow Ctrl+S", p.ID, p.Check)
 		}
 		if p.Available == nil || len(p.Available) != 0 {
 			t.Errorf("%s: available models %v, want none, so /model hides the provider", p.ID, p.Available)
