@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,9 +74,9 @@ func TestStopJail(t *testing.T) {
 			t.Fatalf("rc=%d, err=%s", rc, err.String())
 		}
 		cname := runtime.FromWorkspace("/ws")
-		if len(s.calls) != 2 || s.calls[1][0] != "podman" || s.calls[1][1] != "stop" ||
-			s.calls[1][2] != cname {
-			t.Errorf("the stop argv must be exactly '<rt> stop <cname>': %v", s.calls)
+		want := []string{"podman", "stop", "-t", strconv.Itoa(run.TeardownStopTimeoutSeconds), cname}
+		if len(s.calls) != 2 || !slices.Equal(s.calls[1], want) {
+			t.Errorf("the stop argv must be exactly '%v': %v", want, s.calls)
 		}
 		if !strings.Contains(out.String(), "Stopped "+cname) {
 			t.Errorf("the stop must say what it stopped:\n%s", out.String())

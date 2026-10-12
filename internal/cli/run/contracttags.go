@@ -470,8 +470,13 @@ func (o *Options) jailSessionsPhrase(rt, cname string) string {
 	return fmt.Sprintf("every session in it (%d running now)", n)
 }
 
-// jailSessionCount counts the sessions in a running jail, for DISPLAY ONLY: it decides nothing
-// (the session lock does, sessionlock.go), because it also counts an exec whose terminal is gone.
+// jailSessionCount counts the sessions in a running jail from the runtime's own view: its live
+// exec sessions plus the main process when that process is not a hold (entrypoint.JailMainEnv). It
+// is NOT the count a jail drains on — the session lock is (sessionlock.go) — but it IS a decision
+// at a quit's edge: endSession streams the keeper's teardown when it says zero while another
+// session holds the lock (keeperspawn.go). So a read that could not be made returns ok=false and is
+// never treated as a number, least of all zero (JL-P3: "could not count" is never zero).
+//
 // Each live exec is a session, which is how every session of a jail whose main process is a
 // hold enters, the first included (entrypoint.JailMainEnv). A jail launched before that ran
 // its first session AS its main process, which is one more. podman drops an exec session when
@@ -491,7 +496,14 @@ func (o *Options) jailSessionCount(rt, cname string) (int, bool) {
 	if err != nil || n < 0 {
 		return 0, false
 	}
-	if envLineValue(o.inspectContainerEnv(rt, cname), entrypoint.JailMainEnv) != entrypoint.JailMainHold {
+	env, ok := o.inspectContainerEnv(rt, cname)
+	if !ok {
+		// Whether the main process is a hold is part of the count. A failed environment read is
+		// unknown, and "not the hold" would add a phantom session (+1): report the count as
+		// unavailable instead (JL-P3).
+		return 0, false
+	}
+	if envLineValue(env, entrypoint.JailMainEnv) != entrypoint.JailMainHold {
 		n++ // the main process is the first session
 	}
 	return n, true

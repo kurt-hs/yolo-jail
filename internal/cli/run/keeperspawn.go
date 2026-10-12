@@ -473,15 +473,30 @@ func (o *Options) endSession(cname, rt string, rc int, since time.Time, logFrom 
 // them, how to re-enter it, and how to end it. The fresh launch's teardown before ready prints it
 // too (awaitKeeperUnwind), and a session a SIGINT or a SIGTERM ends prints it without the count
 // (noteJailStaysUpOnSignal).
+//
+// A COUNT THAT COULD NOT BE READ IS NEVER A NUMBER (JL-P3), and least of all the phantom "1 other
+// session" a failed environment read used to fabricate by counting the main process it could not
+// identify. So the real holders of the session lock are named in its place where the host can see
+// them (sessionLockHolders), the jail is still said to stay up for its other sessions while one
+// holds it but cannot be named, and only a count with NO holder at all says the count is unknown.
 func (o *Options) noteJailStaysUp(cname, rt string) {
-	if n, ok := o.jailSessionCount(rt, cname); ok && n == 0 {
+	if n, ok := o.jailSessionCount(rt, cname); ok {
+		if n == 0 {
+			return
+		}
+		o.sayJailStaysUpFor(cname, rt, fmt.Sprintf("%d other %s", n, plural(n, "session", "sessions")))
 		return
 	}
-	others := othersUncounted
-	if n, ok := o.jailSessionCount(rt, cname); ok && n > 0 {
-		others = fmt.Sprintf("%d other %s", n, plural(n, "session", "sessions"))
+	names, holder := sessionLockHolders(cname)
+	switch {
+	case len(names) > 0:
+		o.sayJailStaysUpFor(cname, rt, "its other sessions ("+strings.Join(names, "; ")+")")
+	case holder == heldShared:
+		o.sayJailStaysUpFor(cname, rt, othersUncounted)
+	default:
+		o.pr(terminalOnly(o.Stderr)).printf("[dim]Jail %s stays up; %s. `yolo -- <agent>` re-enters it, and %s ends them all.[/dim]",
+			cname, couldNotDetermineSessions, stopRemedy(rt, cname))
 	}
-	o.sayJailStaysUpFor(cname, rt, others)
 }
 
 // othersUncounted names a jail's other sessions without a number, for when nothing can count them.
