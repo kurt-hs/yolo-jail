@@ -210,8 +210,7 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 		// keeper does: by the existence PROBE. Only a container the runtime still reports running is
 		// a failed stop; one it cannot answer for is not proof of anything (JL-P3: "could not ask" is
 		// never "gone"), and is reported as the failure it may be.
-		running, probed, _ := probeJailRunning(rt, cname, run)
-		if !probed || running {
+		if !probeJailGoneAfterStop(rt, cname, run) {
 			fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed "+
 				"above says why. `yolo stop` again retries it.\n", rt, cname, rc)
 			return 1
@@ -252,6 +251,22 @@ func probeJailRunning(rt, cname string, run func(argv []string) (string, bool, i
 	}
 	state, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Running}}", cname})
 	return ran && rc == 0 && strings.TrimSpace(state) == "true", ran, rc
+}
+
+// probeJailGoneAfterStop answers, for a stop whose runtime stop returned non-zero, whether cname's
+// jail is gone: run.JailGoneAfterItsEnd over this file's own runtime runner. A runtime that could
+// not be run, or (Apple Container) could not answer, is "could not ask" and never "gone" (JL-P3),
+// as the pre-stop probe reads it, so the caller reports the possible failure it is. Apple
+// Container's `container ls` also keeps listing a jail for a moment after its stop returns
+// (JL-D83), which the bounded wait covers; podman's one answer stands, so it is asked once.
+func probeJailGoneAfterStop(rt, cname string, runCmd func(argv []string) (string, bool, int)) bool {
+	return run.JailGoneAfterItsEnd(rt, func() (running, answered bool) {
+		running, ran, rc := probeJailRunning(rt, cname, runCmd)
+		if !ran || (rt == "container" && rc != 0) { // parity: HonoredBy — a failed `container ls` is "could not ask", where podman's failed inspect is "no such container"
+			return false, false
+		}
+		return running, true
+	})
 }
 
 // launchedRuntime is the container runtime the workspace's jail was launched on, from its keeper's
