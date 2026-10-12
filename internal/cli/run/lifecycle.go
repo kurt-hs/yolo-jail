@@ -179,6 +179,35 @@ func ForceRemoveContainer(cname, rt string) (gone bool) {
 	return o.forceRemoveStoppedContainer(cname, rt)
 }
 
+// containerRemoveCommand is the command that force-removes a container of this name, in the
+// selected runtime's own terms — the next step a launch names when a container it could not remove
+// would collide with the one it is about to create.
+func containerRemoveCommand(rt, cname string) string {
+	if rt == "container" { // parity: HonoredBy — Apple Container's forced removal is `container rm --force` too (removeStaleContainer)
+		return "`container rm --force " + cname + "`"
+	}
+	return "`podman rm -f " + cname + "`"
+}
+
+// clearStaleRemainder is the fresh path's last resort for a container of the jail's name that the
+// plain removal refused (run.go's stale-removal block). A container the runtime does NOT report as
+// RUNNING is force-removed, exactly as the keeper's confirmGone force-removes one it stopped
+// (forceRemoveStoppedContainer is never for a container that may run), and this reports whether the
+// name is now clear. A container that IS running, or that the runtime cannot be told about, is never
+// force-removed — removeStaleContainer is the removal that refuses a live one — so the launch
+// refuses instead. It is what turns a wedged stopped leftover from a name collision into a launch.
+func (o *Options) clearStaleRemainder(cname, rt string) bool {
+	if id, known := o.probeRunningContainer(cname, rt, staleRemainderProbeTimeout); !known || id != "" {
+		return false
+	}
+	return o.forceRemoveStoppedContainer(cname, rt)
+}
+
+// staleRemainderProbeTimeout bounds clearStaleRemainder's running probe. It runs only after the
+// stale removal was refused, so the answer is already suspect; the bound keeps a wedged runtime
+// from stalling the refusal it is about to describe.
+const staleRemainderProbeTimeout = 5 * time.Second
+
 // removeStaleContainer force-removes a container and clears its tracking.
 func (o *Options) removeStaleContainer(cname, rt string) bool {
 	var res ExecResult

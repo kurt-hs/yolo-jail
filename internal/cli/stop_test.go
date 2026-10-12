@@ -60,7 +60,7 @@ func TestStopJail(t *testing.T) {
 			return s.run(argv)
 		}
 		var out, err bytes.Buffer
-		if rc := stopJail(&out, &err, "/ws", "podman", run, nil); rc != 0 {
+		if rc := stopJail(&out, &err, "/ws", "podman", run, nil, false); rc != 0 {
 			t.Fatalf("rc=%d, err=%s", rc, err.String())
 		}
 		if !strings.Contains(string(atStop), "`yolo stop` (pid ") {
@@ -70,7 +70,7 @@ func TestStopJail(t *testing.T) {
 	t.Run("running jail is stopped gracefully", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{stats: []string{"true\n", ""}}
-		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil); rc != 0 {
+		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("rc=%d, err=%s", rc, err.String())
 		}
 		cname := runtime.FromWorkspace("/ws")
@@ -85,11 +85,13 @@ func TestStopJail(t *testing.T) {
 	t.Run("nothing running is success — stop is idempotent", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{stats: []string{"false\n"}}
-		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil); rc != 0 {
+		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("a stopped jail must be success, rc=%d", rc)
 		}
-		if len(s.calls) != 1 {
-			t.Errorf("nothing to stop must issue no stop command: %v", s.calls)
+		for _, c := range s.calls {
+			if len(c) > 1 && c[1] == "stop" {
+				t.Errorf("nothing to stop issued a stop command: %v", c)
+			}
 		}
 		if !strings.Contains(out.String(), "No jail running") {
 			t.Errorf("the no-op must say so:\n%s", out.String())
@@ -98,7 +100,7 @@ func TestStopJail(t *testing.T) {
 	t.Run("no container at all is success too", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{stats: []string{"!Error: no such container"}}
-		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil); rc != 0 {
+		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("an absent container must be success, rc=%d", rc)
 		}
 		if !strings.Contains(out.String(), "No jail running") {
@@ -110,14 +112,14 @@ func TestStopJail(t *testing.T) {
 	t.Run("a failed stop the probe cannot answer for is a failure", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{stats: []string{"true\n", "!stopped with an error"}}
-		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil); rc != 1 {
+		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 1 {
 			t.Fatalf("a failed stop must fail, rc=%d", rc)
 		}
 	})
 	t.Run("macos-user has nothing to stop", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{}
-		if rc := stopJail(&out, &err, "/ws", "macos-user", s.run, nil); rc != 0 {
+		if rc := stopJail(&out, &err, "/ws", "macos-user", s.run, nil, false); rc != 0 {
 			t.Fatalf("rc=%d", rc)
 		}
 		if len(s.calls) != 0 || !strings.Contains(out.String(), "no persistent jail") {
@@ -126,7 +128,7 @@ func TestStopJail(t *testing.T) {
 	})
 	t.Run("no runtime is a failure", func(t *testing.T) {
 		var out, err bytes.Buffer
-		if rc := stopJail(&out, &err, "/ws", "", (&stopRun{}).run, nil); rc != 1 {
+		if rc := stopJail(&out, &err, "/ws", "", (&stopRun{}).run, nil, false); rc != 1 {
 			t.Fatalf("rc=%d", rc)
 		}
 	})
@@ -140,7 +142,7 @@ func TestStopJailEmitsTimingSpans(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s := &stopRun{stats: []string{"true", ""}}
 	p := perf.New(time.Now)
-	rc := stopJail(&strings.Builder{}, &strings.Builder{}, ws, "podman", s.run, p)
+	rc := stopJail(&strings.Builder{}, &strings.Builder{}, ws, "podman", s.run, p, false)
 	if rc != 0 {
 		t.Fatalf("rc = %d", rc)
 	}

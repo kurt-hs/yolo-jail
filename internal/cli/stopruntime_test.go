@@ -70,6 +70,14 @@ func (f *acStop) run(argv []string) (string, bool, int) {
 			out += f.cname + " localhost/yolo-jail:abc linux arm64 running 192.168.64.3/24\n"
 		}
 		return out, true, 0
+	case len(argv) == 3 && argv[1] == "ls" && argv[2] == "--all":
+		// The existence question `container ls` (running only) cannot answer: a stopped jail is
+		// here, and it is what would block the next launch by name.
+		out := "ID IMAGE OS ARCH STATE ADDR\n"
+		if !f.stopped {
+			out += f.cname + " localhost/yolo-jail:abc linux arm64 running 192.168.64.3/24\n"
+		}
+		return out, true, 0
 	case len(argv) == 3 && argv[1] == "stop" && argv[2] == f.cname:
 		f.stopped = true
 		return f.cname + "\n", true, f.stopRC
@@ -106,7 +114,7 @@ func stopWorkspace(t *testing.T, cfg string) (cname string, finished *[]string) 
 	var got []string
 	saved := finishStop
 	t.Cleanup(func() { finishStop = saved })
-	finishStop = func(_, _ io.Writer, _, rt string, _ int64, _ func(string, string)) int {
+	finishStop = func(_, _ io.Writer, _, rt string, _ int64, _ func(string, string), _ bool) int {
 		got = append(got, rt)
 		return 0
 	}
@@ -180,7 +188,7 @@ func TestAStopThatCannotListAppleContainerFails(t *testing.T) {
 	cname := runtime.FromWorkspace("/ws")
 	f := &acStop{t: t, cname: cname, lsRC: 1}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 1 {
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil, false); rc != 1 {
 		t.Fatalf("rc=%d, want 1\nstdout:\n%s", rc, out.String())
 	}
 	if strings.Contains(out.String(), "No jail running") {
@@ -235,7 +243,7 @@ func TestANoOpStopNamesTheOtherRuntimeWhenItCannotKnow(t *testing.T) {
 			}
 			var out, errb bytes.Buffer
 			s := &stopRun{stats: []string{"!Error: no such container"}}
-			if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil); rc != 0 {
+			if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 0 {
 				t.Fatalf("rc=%d", rc)
 			}
 			got := strings.Contains(out.String(), "YOLO_RUNTIME=container yolo stop")
@@ -255,7 +263,7 @@ func TestANoOpStopOnAppleContainerIsSuccess(t *testing.T) {
 	cname := runtime.FromWorkspace("/ws")
 	f := &acStop{t: t, cname: cname, stopped: true}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 0 {
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil, false); rc != 0 {
 		t.Fatalf("rc=%d, want 0\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
 	}
 	if got := f.stoppedOn(); len(got) != 0 {
@@ -283,7 +291,7 @@ func TestAStopThatFailsNamesItsNextStep(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errb bytes.Buffer
 			s := &stopRun{stats: tc.stats}
-			if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil); rc != 1 {
+			if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 1 {
 				t.Fatalf("rc=%d, want 1", rc)
 			}
 			for _, want := range tc.want {
@@ -305,7 +313,7 @@ func TestAStopWhoseNonZeroExitLeavesNoContainerStillEndsTheJail(t *testing.T) {
 	saved := finishStop
 	t.Cleanup(func() { finishStop = saved })
 	finished := false
-	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int {
 		finished = true
 		return 0
 	}
@@ -324,7 +332,7 @@ func TestAStopWhoseNonZeroExitLeavesNoContainerStillEndsTheJail(t *testing.T) {
 		return "", false, 1
 	}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil); rc != 0 {
+	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil, false); rc != 0 {
 		t.Fatalf("rc=%d, want 0\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
 	}
 	if strings.Contains(errb.String(), "failed (rc") {
@@ -346,7 +354,7 @@ func TestAStopWhoseContainerIsStillRunningFails(t *testing.T) {
 	cname := runtime.FromWorkspace("/ws")
 	saved := finishStop
 	t.Cleanup(func() { finishStop = saved })
-	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int {
 		t.Error("the stop ran the keeper's teardown with the container still running")
 		return 0
 	}
@@ -360,7 +368,7 @@ func TestAStopWhoseContainerIsStillRunningFails(t *testing.T) {
 		return "", false, 1
 	}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil); rc != 1 {
+	if rc := stopJail(&out, &errb, "/ws", "podman", run, nil, false); rc != 1 {
 		t.Fatalf("rc=%d, want 1", rc)
 	}
 	for _, want := range []string{"`podman stop " + cname + "` failed", "`yolo stop` again retries it"} {
@@ -380,13 +388,13 @@ func TestAnAppleContainerStopThatCannotListAfterwardsFails(t *testing.T) {
 	cname := runtime.FromWorkspace("/ws")
 	saved := finishStop
 	t.Cleanup(func() { finishStop = saved })
-	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string)) int {
+	finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int {
 		t.Error("the stop ran the keeper's teardown after a re-probe that could not answer")
 		return 0
 	}
 	f := &acStop{t: t, cname: cname, stopRC: 1, lsAfterStop: func(int) (string, int) { return "", 1 }}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 1 {
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil, false); rc != 1 {
 		t.Fatalf("rc=%d, want 1\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
 	}
 	for _, want := range []string{"`container stop " + cname + "` failed", "`yolo stop` again retries it"} {
@@ -410,7 +418,7 @@ func TestAnAppleContainerStopWaitsOutTheListingBeforeCallingItGone(t *testing.T)
 	saved := finishStop
 	t.Cleanup(func() { finishStop = saved })
 	finished := false
-	finishStop = func(_, _ io.Writer, _, rt string, _ int64, _ func(string, string)) int {
+	finishStop = func(_, _ io.Writer, _, rt string, _ int64, _ func(string, string), _ bool) int {
 		finished = rt == "container"
 		return 0
 	}
@@ -425,7 +433,7 @@ func TestAnAppleContainerStopWaitsOutTheListingBeforeCallingItGone(t *testing.T)
 		return "ID IMAGE OS ARCH STATE ADDR\n", 0
 	}}
 	var out, errb bytes.Buffer
-	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil); rc != 0 {
+	if rc := stopJail(&out, &errb, "/ws", "container", f.run, nil, false); rc != 0 {
 		t.Fatalf("rc=%d, want 0\nstdout:\n%s\nstderr:\n%s", rc, out.String(), errb.String())
 	}
 	if asks < 2 {
