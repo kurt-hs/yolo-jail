@@ -46,11 +46,14 @@ jail:
     yolo stop && yolo -- <cmd>
 
 Stopping IS the end of that jail's sessions; the next launch starts fresh. It
-returns once the jail's teardown is done, and prints it. Idempotent: with
-nothing running it says so and succeeds.
+returns once the jail's teardown is done, or fails after waiting about two
+minutes for a keeper that will not finish. Idempotent: with nothing running it
+says so and succeeds.
 
-It waits for the jail's keeper to finish its teardown for as long as that
-takes, streaming it with a periodic line if it outlasts the usual bound.
+It waits up to about two minutes for the jail's keeper to finish its teardown,
+streaming it, and returns once the keeper is gone. A keeper that outlasts that
+wait is reported with its pid, its log and its last line, and the stop fails,
+naming yolo stop --force as the escalation.
 --force ends the jail now instead: it stops the container without the stop
 grace and signals the keeper (SIGTERM, then SIGKILL), so a keeper that will
 not finish does not hold the stop up.

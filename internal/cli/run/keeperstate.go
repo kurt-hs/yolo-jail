@@ -245,10 +245,6 @@ var (
 	// quitProbeWait bounds how long a quitting session looks for the keeper's drain after it let its
 	// own lock go: the keeper, blocked on the exclusive lock, takes it within a scheduling tick.
 	quitProbeWait = 2 * time.Second
-	// keeperStillRunningEvery is how often `yolo stop`'s PATIENT wait reprints the keeper's facts
-	// once keeperTeardownWait — the bound the launch-path waits still refuse on — has passed. It is
-	// not a bound: the patient wait goes on until the keeper is gone or a Ctrl-C ends it.
-	keeperStillRunningEvery = 30 * time.Second
 )
 
 // waitForKeeper waits, up to bound, for cname's liveness lock to come free, handing each new line of
@@ -270,41 +266,6 @@ func waitForKeeper(cname string, offset int64, bound time.Duration, line func(st
 		}
 		if !time.Now().Before(deadline) {
 			return false
-		}
-		select {
-		case <-stop:
-			return false
-		case <-time.After(keeperPoll):
-		}
-	}
-}
-
-// waitForKeeperPatiently is waitForKeeper for `yolo stop`, which waits until the jail is ACTUALLY
-// gone: it follows the keeper's log (from offset) exactly as waitForKeeper does, but past
-// keeperTeardownWait — the bound the launch-path waits still refuse on — it calls progress once
-// every keeperStillRunningEvery and GOES ON waiting. stop, when it closes, is the only thing that
-// ends the wait early and leaves the keeper running (a Ctrl-C during a streamed teardown, JL-D34),
-// and the only way this returns false.
-func waitForKeeperPatiently(cname string, offset int64, line func(string), progress func(time.Duration), stop <-chan struct{}) bool {
-	follow := &keeperLogFollower{path: keeperLogPath(cname), offset: offset}
-	start := time.Now()
-	next := start.Add(keeperTeardownWait)
-	for {
-		gone := probeKeeper(cname) == keeperGone
-		if line != nil {
-			for _, l := range follow.next() {
-				line(l)
-			}
-		}
-		if gone {
-			return true
-		}
-		now := time.Now()
-		if !now.Before(next) {
-			if progress != nil {
-				progress(now.Sub(start))
-			}
-			next = now.Add(keeperStillRunningEvery)
 		}
 		select {
 		case <-stop:
