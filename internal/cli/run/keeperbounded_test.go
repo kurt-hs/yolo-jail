@@ -1,11 +1,11 @@
 package run
 
-// keeperpatient_test.go pins `yolo stop`'s default wait and its --force escalation
+// keeperbounded_test.go pins `yolo stop`'s BOUNDED default wait and its --force escalation
 // (docs/design/jail-lifetime-last-session-wins.md JL-D34):
 //
-//   - the default wait is PATIENT: past keeperTeardownWait — the bound the launch-path waits still
-//     refuse on — it reports the keeper's facts with the --force remedy and keeps waiting, instead
-//     of giving up and failing the stop;
+//   - the default wait is BOUNDED by keeperTeardownWait: a keeper that outlasts it is left running,
+//     its facts and the `yolo stop --force` remedy are printed, and the stop returns non-zero rather
+//     than polling on;
 //   - --force signals the keeper (SIGTERM, then SIGKILL after stopForceGrace), so a keeper that will
 //     not finish no longer holds the stop up;
 //   - a Ctrl-C during the wait still means "stop following": 128+SIGINT, the keeper left running.
@@ -20,9 +20,9 @@ import (
 	"time"
 )
 
-// patientStopOptions is a fixture whose reap of an unkept keeper is a no-op: the runtime is never
+// boundedStopOptions is a fixture whose reap of an unkept keeper is a no-op: the runtime is never
 // reached (Ran:true, empty answers), and the loophole dirs are emptied, as the unkept-jail fixture.
-func patientStopOptions(t *testing.T) (*Options, *bytes.Buffer) {
+func boundedStopOptions(t *testing.T) (*Options, *bytes.Buffer) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	emptyLoopholeDirs(t)
@@ -35,16 +35,18 @@ func patientStopOptions(t *testing.T) (*Options, *bytes.Buffer) {
 	return o, &out
 }
 
-// TestAStopWaitsOutALongKeeperInsteadOfGivingUp: the patient default. keeperTeardownWait is shrunk
-// so the progress line comes fast, and the keeper is released well past it; the stop must report the
-// keeper's facts with the --force remedy and return success only once the keeper is actually gone.
-func TestAStopWaitsOutALongKeeperInsteadOfGivingUp(t *testing.T) {
-	savedWait, savedEvery := keeperTeardownWait, keeperStillRunningEvery
-	keeperTeardownWait, keeperStillRunningEvery = 50*time.Millisecond, 50*time.Millisecond
-	t.Cleanup(func() { keeperTeardownWait, keeperStillRunningEvery = savedWait, savedEvery })
+// TestABoundedStopReturnsAtTheBoundAndNamesForce: the bounded default. The keeper is held well
+// past the shrunk bound and released only after the stop has returned; the stop must NOT wait it
+// out — it returns 1 at the bound, having printed the keeper's facts and `yolo stop --force`. On the
+// old patient default it waited the keeper out and returned 0, so rc==1 (and the elapsed check)
+// fails on that behavior.
+func TestABoundedStopReturnsAtTheBoundAndNamesForce(t *testing.T) {
+	savedWait := keeperTeardownWait
+	keeperTeardownWait = 50 * time.Millisecond
+	t.Cleanup(func() { keeperTeardownWait = savedWait })
 
-	o, out := patientStopOptions(t)
-	const cname = "yolo-patient"
+	o, out := boundedStopOptions(t)
+	const cname = "yolo-bounded"
 	live, err := holdLivenessLock(cname)
 	if err != nil {
 		t.Fatal(err)
@@ -53,17 +55,22 @@ func TestAStopWaitsOutALongKeeperInsteadOfGivingUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() {
-		time.Sleep(300 * time.Millisecond) // six times the bound: a bounded wait gives up long before
+		time.Sleep(500 * time.Millisecond) // ten times the bound: only a patient wait is still there
 		releaseLock(live)
 	}()
-	if rc := o.finishStop(cname, "podman", 0, false); rc != 0 {
-		t.Fatalf("rc=%d, the stop gave up rather than waiting the keeper out:\n%s", rc, out.String())
+	start := time.Now()
+	rc := o.finishStop(cname, "podman", 0, false)
+	if rc != 1 {
+		t.Fatalf("rc=%d, the bounded stop must fail at the bound rather than wait the keeper out:\n%s", rc, out.String())
 	}
-	if !strings.Contains(out.String(), "yolo stop --force") {
-		t.Errorf("the patient wait must point at --force:\n%s", out.String())
+	// The bound is honored, not merely eventually reached.
+	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+		t.Errorf("the stop took %s: it kept polling past keeperTeardownWait (%s)", elapsed, keeperTeardownWait)
 	}
-	if !strings.Contains(out.String(), "(pid 4242)") {
-		t.Errorf("the progress line must name the keeper's pid:\n%s", out.String())
+	for _, want := range []string{"yolo stop --force", "(pid 4242)", "has not finished"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the bounded report must say %q:\n%s", want, out.String())
+		}
 	}
 }
 
@@ -87,7 +94,7 @@ func TestAForcedStopEscalatesAKeeperThatWillNotFinish(t *testing.T) {
 			savedSignal := signalKeeperProcess
 			t.Cleanup(func() { signalKeeperProcess = savedSignal })
 
-			o, out := patientStopOptions(t)
+			o, out := boundedStopOptions(t)
 			const cname = "yolo-forced"
 			live, err := holdLivenessLock(cname)
 			if err != nil {
@@ -117,15 +124,15 @@ func TestAForcedStopEscalatesAKeeperThatWillNotFinish(t *testing.T) {
 	}
 }
 
-// TestACtrlCDuringThePatientStopStopsFollowing: a SIGINT once the wait has outlasted the old bound
-// still means "stop following" — 128+SIGINT, the keeper left running — never a give-up. Pre-change,
-// with keeperTeardownWait shrunk this small, the stop returned 1 long before the signal arrived.
-func TestACtrlCDuringThePatientStopStopsFollowing(t *testing.T) {
+// TestACtrlCDuringTheStopStopsFollowing: a SIGINT during the wait still means "stop following" —
+// 128+SIGINT, the keeper left running — never a give-up. The signal arrives well within the bound,
+// so the wait is still running when it lands.
+func TestACtrlCDuringTheStopStopsFollowing(t *testing.T) {
 	savedWait := keeperTeardownWait
-	keeperTeardownWait = 100 * time.Millisecond
+	keeperTeardownWait = 2 * time.Second
 	t.Cleanup(func() { keeperTeardownWait = savedWait })
 
-	o, out := patientStopOptions(t)
+	o, out := boundedStopOptions(t)
 	const cname = "yolo-ctrlc"
 	live, err := holdLivenessLock(cname)
 	if err != nil {
@@ -134,7 +141,7 @@ func TestACtrlCDuringThePatientStopStopsFollowing(t *testing.T) {
 	defer releaseLock(live)
 	catchSignal(t, syscall.SIGINT)
 	go func() {
-		time.Sleep(500 * time.Millisecond) // past the shrunk bound: only a patient wait is still there
+		time.Sleep(100 * time.Millisecond) // within the bound: the stop is still waiting
 		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
 	rc := o.finishStop(cname, "podman", 0, false)

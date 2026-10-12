@@ -10,8 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-A launch now leaves records that explain what it did, `yolo stop` waits until the jail is really
-gone, and a profile can declare what its subagents run on.
+A launch now leaves records that explain what it did, `yolo stop` can end a jail that would not
+end, and a profile can declare what its subagents run on.
 
 ### Added
 
@@ -36,9 +36,9 @@ See [profiles and options](docs/reference/providers.md#profiles-and-options).
 
 ### Changed
 
-**`yolo stop` waits until the jail has stopped.** It no longer gives up after about two minutes: it
-streams the keeper's teardown and goes on waiting, reporting the keeper's facts if the wait runs
-long. Ctrl-C still exits 130; `yolo stop --force` ends the jail now.
+**`yolo stop` waits for the jail's teardown, up to about two minutes.** It streams the keeper's
+progress; a keeper that outlasts the wait is reported with its pid, log and last line, and
+`yolo stop --force` ends the jail now. Ctrl-C still exits 130.
 
 **Selecting an agent pack no longer brings the Bedrock and OpenAI-subscription packs with it.** Add
 `bedrock` or `openai-auth` to `packs` if you use their profiles or providers; a launch that needs
