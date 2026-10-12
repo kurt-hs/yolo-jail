@@ -2,10 +2,10 @@ package run
 
 // platformswitchhostmgmt_test.go pins the jail notch's half of what a PP-D1 line says about a
 // switch yolo's host apply wrote (docs/design/providers-and-profiles-redesign.md, ruled
-// 2026-09-29): its remedy depends on whether a host apply renders in this home. Under
-// host_management "none" — the unset key since the `assert` retirement (OQ-CO14) — `yolo host
-// apply` refuses, so a line sending the user to it repeated at every launch; under "own" it
-// renders, and removes the key once claude's host selection leaves the platform.
+// 2026-09-29). Since PP-D13 (2026-10-11) a jail leaves every provider key of the host copy out of
+// what it renders, in every host_management posture, so the jail's line sends the user to no
+// host-side removal at all — the host-side remedies (`yolo host apply`, `--revert`, removal by
+// hand) are the `yolo host` launch's line alone (internal/cli's hostplatformswitch_test.go).
 
 import (
 	"os"
@@ -17,7 +17,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
 
-// THE ATTACH ARM, through deliverChannelOnAttach, so deleting the field's assignment in
+// THE ATTACH ARM, through deliverChannelOnAttach, so deleting InJail's assignment in
 // notePlatformSwitchConflicts fails here in one direction or the other: the user config is read
 // at the launch (config.HostManagementMode), never by packload.
 func TestAnAttachNamesAYoloWrittenSwitchsRemovalByWhetherAHostApplyRendersHere(t *testing.T) {
@@ -26,17 +26,12 @@ func TestAnAttachNamesAYoloWrittenSwitchsRemovalByWhetherAHostApplyRendersHere(t
 		name, userConfig string
 		want, wantNot    []string
 	}{
-		{"unset", "",
-			[]string{"remove CLAUDE_CODE_USE_BEDROCK from ~/.claude/settings.json by hand",
-				`host_management is not "own"`, "`yolo host apply --revert`"},
-			[]string{"or run `yolo host apply` with"}},
-		{"none", `{"host_management": "none"}`,
-			[]string{"remove CLAUDE_CODE_USE_BEDROCK from ~/.claude/settings.json by hand",
-				`host_management is not "own"`, "`yolo host apply --revert`"},
-			[]string{"or run `yolo host apply` with"}},
-		{"own", `{"host_management": "own"}`,
-			[]string{"or run `yolo host apply` with claude on a provider of another platform, which removes it."},
-			[]string{"by hand", "--revert"}},
+		{"unset", "", []string{"this jail leaves it out of claude's settings"},
+			[]string{"by hand", "--revert", "or run `yolo host apply` with"}},
+		{"none", `{"host_management": "none"}`, []string{"this jail leaves it out of claude's settings"},
+			[]string{"by hand", "--revert", "or run `yolo host apply` with"}},
+		{"own", `{"host_management": "own"}`, []string{"this jail leaves it out of claude's settings"},
+			[]string{"by hand", "--revert", "or run `yolo host apply` with"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o, cfg, channel, stderr := attachFixture(t, currentJailEnv, packs, emptyEnv(), nil)

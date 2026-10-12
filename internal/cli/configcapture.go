@@ -109,6 +109,8 @@ func captureOnTerminate(workspace, runtime string, warn func(string)) {
 			// names the store decides. Not localTarget(): that one carries the container
 			// workspace, and this runs on the host.
 			sidecarMode: render.Jail(paths.Home(), workspace, nil).SidecarFileMode(),
+			// A provider key the session edited is refused here too, and said (PP-D15).
+			note: warn,
 		}); err != nil {
 			warn(fmt.Sprintf("could not capture %s/%s: %v (the next launch will capture it)",
 				s.Agent, s.Name, err))

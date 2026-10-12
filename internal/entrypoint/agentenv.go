@@ -14,7 +14,9 @@ package entrypoint
 // file is; the gate governs what each agent's PROCESS ENVIRONMENT carries, not what the uid can
 // open (the doc's non-goal "protecting an agent from itself"). And it only ADDS: an agent
 // started by another agent inherits that agent's environment, as any child does, and a value a
-// user exported by hand in a jail shell is never unset by it.
+// user exported by hand in a jail shell is never unset by it — EXCEPT the agent's provider
+// variables, which the provider-keys file sourced after it (ProviderKeysFile) makes exactly what
+// the agent's own profile selection says (PP-D14, 2026-10-11).
 
 import (
 	"os"
@@ -45,6 +47,18 @@ func AgentEnvFile(home, agent string) string {
 	return filepath.Join(home, AgentEnvDirRel, agent+".sh")
 }
 
+// ProviderKeysSubdir is the directory, inside the per-agent env directory, holding each agent's
+// PROVIDER-KEYS FILE (internal/cli/run's providerEnvFileContent): its provider variables made
+// exactly what its profile selection says (docs/design/providers-and-profiles-redesign.md
+// PP-D14). A directory of its own, so no reader of the env files (agentsWithEnvFiles, the wire
+// bridge, the macos-user MCP view) mistakes one for an agent's env file.
+const ProviderKeysSubdir = "provider-keys"
+
+// ProviderKeysFile is agent's provider-keys file under home.
+func ProviderKeysFile(home, agent string) string {
+	return filepath.Join(home, AgentEnvDirRel, ProviderKeysSubdir, agent+".sh")
+}
+
 // agentEnvShellFn is spliced into the npm and native agent launchers immediately ahead of the
 // pre-launch authentication step and the exec, and into the wrapper ahead of its exec. Ahead
 // of the authentication step because that step reads its own switches from the environment,
@@ -65,6 +79,11 @@ const agentEnvShellFn = `# --- this agent's own environment (provider-credential
 # per entry by yolo from its one credential gate. Absent when the launch scoped nothing here.
 if [ -r "$HOME/` + AgentEnvDirRel + `/$BIN.sh" ]; then
     . "$HOME/` + AgentEnvDirRel + `/$BIN.sh"
+fi
+# Its PROVIDER variables, last, exactly as its profile selection says whatever this process
+# inherited (PP-D14): a nested agent follows the same auth path as a fresh one.
+if [ -r "$HOME/` + AgentEnvDirRel + `/` + ProviderKeysSubdir + `/$BIN.sh" ]; then
+    . "$HOME/` + AgentEnvDirRel + `/` + ProviderKeysSubdir + `/$BIN.sh"
 fi
 `
 
@@ -104,7 +123,11 @@ func agentEnvLookup(e *Env, agent string) func(string) (string, bool) {
 		}
 		return e.Lookup(key)
 	}
-	for _, l := range readAgentEnvFile(e.Home, agent) {
+	// The provider-keys file is sourced after the env file (agentEnvShellFn), so its plain
+	// exports and unsets apply last; its value-conditional lines are bash tests this grammar
+	// does not read, and change nothing here.
+	lines := append(readAgentEnvFile(e.Home, agent), readEnvLines(ProviderKeysFile(e.Home, agent))...)
+	for _, l := range lines {
 		if v, _ := current(l.key); !l.appliesTo(v) {
 			continue
 		}
@@ -206,7 +229,13 @@ func unescapeSingleQuoted(s string) string { return strings.ReplaceAll(s, "'\\''
 // readAgentEnvFile is agent's env file under home, parsed (parseAgentEnvLine); nil when it
 // cannot be read.
 func readAgentEnvFile(home, agent string) []agentEnvLine {
-	data, err := os.ReadFile(AgentEnvFile(home, agent))
+	return readEnvLines(AgentEnvFile(home, agent))
+}
+
+// readEnvLines is the file at path parsed in the env file's grammar (parseAgentEnvLine); nil
+// when it cannot be read.
+func readEnvLines(path string) []agentEnvLine {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}

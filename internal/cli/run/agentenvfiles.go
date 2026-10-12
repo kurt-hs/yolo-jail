@@ -155,6 +155,32 @@ func writeAgentEnvFiles(wsState, dir, home string, channel *packChannel) {
 			keep[name] = true
 		}
 	}
+	// THE PROVIDER-KEYS FILES (providerenvfiles.go, PP-D14), one per agent whose pack declares
+	// provider variables, profiled or not, in their own directory, replaced like the env files.
+	keepKeys := map[string]bool{}
+	if channel != nil {
+		keysDir := filepath.Join(dir, entrypoint.ProviderKeysSubdir)
+		for _, agent := range channel.providerEnvAgents() {
+			body := providerEnvFileContent(channel, agent)
+			if body == "" {
+				continue
+			}
+			if err := agentEnvDirBeneath(r, keysDir); err != nil {
+				break
+			}
+			if err := writeBeneath(r, filepath.Join(keysDir, agent+".sh"),
+				agentEnvFileMode, agentEnvFileMode, writeBytes([]byte(body))); err != nil {
+				continue
+			}
+			keep[entrypoint.ProviderKeysSubdir] = true
+			keepKeys[agent+".sh"] = true
+		}
+		for _, e := range readDirBeneath(r, keysDir) {
+			if !keepKeys[e.Name()] {
+				_ = r.RemoveAll(filepath.Join(keysDir, e.Name()))
+			}
+		}
+	}
 	for _, e := range readDirBeneath(r, dir) {
 		if !keep[e.Name()] {
 			_ = r.RemoveAll(filepath.Join(dir, e.Name()))

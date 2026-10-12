@@ -22,10 +22,13 @@ package packdecl
 // (packs/releasedecode_test.go measures both). Every platform switch is a provider key too,
 // without being restated (PlatformSwitch.ProviderKey).
 //
-// What it does NOT reach, by the ruling PP-D1 (docs/design/providers-and-profiles-redesign.md):
-// the user's own HOST copy of the file, composed as the host layer, which yolo obeys and names
-// at launch rather than deletes; and the host notch, where `yolo host apply` writes the user's
-// real file. Only the jail's capture overlay, which is yolo's record of in-jail edits.
+// WHERE IT REACHES (docs/design/providers-and-profiles-redesign.md). At a jail: the capture
+// overlay, which is yolo's record of in-jail edits, and since PP-D13 (2026-10-11) the user's own
+// HOST copy as the jail imports it — the jail composes it without its provider keys, so the
+// selection decides them there; a capture never records one (PP-D15). And the program's process
+// environment, at every notch, through provider_env (providerenv.go, PP-D14). What it does NOT
+// reach, by PP-D1: the user's real file, which yolo never edits, and `yolo host apply`'s render
+// of it, which obeys the user's own keys.
 
 import (
 	"fmt"

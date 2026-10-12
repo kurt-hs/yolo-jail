@@ -120,6 +120,12 @@ type Manifest struct {
 	// otherwise carry it (packs/releasedecode_test.go measures that drop).
 	ProviderKeysByBin map[string][]ProviderKey `json:"provider_keys,omitempty"`
 
+	// ProviderEnvByBin names, per program bin, the object in the program's own config whose
+	// members ARE its process environment (claude's settings `env` block): every provider key
+	// directly beneath it is also a variable each launcher of the program sets exactly as the
+	// selection says (providerenv.go). Pack-wide, like provider_keys, for the same reason.
+	ProviderEnvByBin map[string]ProviderEnvSource `json:"provider_env,omitempty"`
+
 	// Contributes is the pack's effects: one list of typed contributions, each with
 	// an explicit `kind` from the closed set (see contributes.go / kinds.go). It
 	// each with an explicit kind from the closed core-owned set
@@ -870,6 +876,7 @@ func (m *Manifest) Validate() []string {
 	problems = append(problems, m.validateContributions()...)
 	problems = append(problems, m.validateModelListChecks()...)
 	problems = append(problems, m.validateProviderKeys()...)
+	problems = append(problems, m.validateProviderEnv()...)
 	return append(problems, m.validateMCP()...)
 }
 

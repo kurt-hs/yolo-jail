@@ -22,7 +22,7 @@ func TestCaptureAndResetWriteTheCaptureLog(t *testing.T) {
 		t.Fatal("missing claude/settings")
 	}
 	settings := filepath.Join(home, ".claude", "settings.json")
-	writeFile(t, settings, `{"model":"base","env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}`)
+	writeFile(t, settings, `{"model":"base","env":{"MY_SETTING":"1"}}`)
 	writeSidecar(t, dir, "claude", "settings", "", `{"model":"base"}`)
 
 	if _, err := captureSurface(tgt, s); err != nil {
@@ -33,7 +33,7 @@ func TestCaptureAndResetWriteTheCaptureLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the capture wrote no log: %v", err)
 	}
-	if want := `claude/settings capture: + env.CLAUDE_CODE_USE_BEDROCK = "1" (captured)`; !strings.Contains(string(data), want) {
+	if want := `claude/settings capture: + env.MY_SETTING = "1" (captured)`; !strings.Contains(string(data), want) {
 		t.Errorf("capture.log is missing %q:\n%s", want, data)
 	}
 
@@ -42,7 +42,7 @@ func TestCaptureAndResetWriteTheCaptureLog(t *testing.T) {
 		t.Fatalf("reset rc=%d: %s", rc, errw.String())
 	}
 	data, _ = os.ReadFile(logPath)
-	if want := "claude/settings reset: - env.CLAUDE_CODE_USE_BEDROCK (was \"1\"): removed by `yolo config reset`"; !strings.Contains(string(data), want) {
+	if want := "claude/settings reset: - env.MY_SETTING (was \"1\"): removed by `yolo config reset`"; !strings.Contains(string(data), want) {
 		t.Errorf("capture.log is missing %q:\n%s", want, data)
 	}
 }

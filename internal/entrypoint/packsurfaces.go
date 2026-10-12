@@ -660,7 +660,18 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 	// captured value at each and only the computed layer decides them. Jail-only by
 	// construction: this is the jail's tail of the loop.
 	platform := selectedPlatformOf(src.tables, src.sel.Provider)
-	contribs = contribs.withProviderKeys(providerKeyLeaves(pl.pack, surface, platform))
+	providerLeaves := providerKeyLeaves(pl.pack, surface, platform)
+	contribs = contribs.withProviderKeys(providerLeaves)
+	// AND THE HOST LAYER'S (PP-D13, ruled 2026-10-11: "Inside of JAIL, if we're not already
+	// managing the host config, … a profile choice does override the host settings file being
+	// imported"). The user's own host copy reaches this render only while host management is
+	// off — under it the copy is yolo's render, a baseline, and hostBytes is nil — and a
+	// provider key it sets is taken out of the bytes this jail composes, so the selection alone
+	// decides it here. The user's file is not touched (PP-D1 still holds for it).
+	var hostDrops []agentcfg.OwnedDrop
+	layers.hostBytes, hostDrops = agentcfg.DropHostProviderKeys(surface.Codec, layers.hostBytes,
+		providerLeaves)
+	noteHostProviderKeyDrops(e, surface, hostDrops, layers.computed)
 
 	w, err := writeSurfaceThrough(e, pl.mechanism, surface, layers, contribs)
 	if pl.mechanism == manifest.ModeRMW {

@@ -52,6 +52,9 @@ func deliveredFiles(t *testing.T, channel *packChannel) (shared string, agents m
 	agents = map[string]string{}
 	entries, _ := os.ReadDir(filepath.Join(ws, agentEnvStateDir))
 	for _, e := range entries {
+		if e.IsDir() {
+			continue // the provider-keys files (providerenvfiles_test.go pins them)
+		}
 		body, err := os.ReadFile(filepath.Join(ws, agentEnvStateDir, e.Name()))
 		if err != nil {
 			t.Fatal(err)

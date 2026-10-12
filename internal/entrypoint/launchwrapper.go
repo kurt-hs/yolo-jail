@@ -143,7 +143,10 @@ func deliverEnvCarriers(e *Env, packs []*packload.Pack, launchDir, probePath str
 				continue
 			}
 			path := filepath.Join(launchDir, bin)
-			if pathExists(path) || !pathExists(AgentEnvFile(e.Home, bin)) {
+			// Its env file, or its provider-keys file (PP-D14): an unprofiled agent has only
+			// the second, and it is the one whose inherited provider switch must still go.
+			if pathExists(path) || (!pathExists(AgentEnvFile(e.Home, bin)) &&
+				!pathExists(ProviderKeysFile(e.Home, bin))) {
 				continue
 			}
 			provider := launcherShadows(bin, probePath, miseBins)
