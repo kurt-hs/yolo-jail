@@ -1,6 +1,6 @@
 {
   "name": "muse-code",
-  "description": "Meta's Muse Code CLI as a first-class yolo agent (`muse`): installed from Meta's one-line installer, which Meta serves ONLY to authenticated Meta employees (an unauthenticated fetch of the installer or the ~344 MiB binary returns HTTP 401/403, \"muse is available to Meta employees\"; there is no npm, brew or pacman package and no public mirror), with a settings surface for ~/.config/muse/settings.json plus the user-level briefing and skills destinations under ~/.config/muse. It runs on the local Muse subscription login; no API key is involved anywhere in this pack.",
+  "description": "Meta's Muse Code CLI as a first-class yolo agent (`muse`): installed from Meta's public one-line installer (https://dev.meta.ai/install.sh — no Meta account, no API key; there is no npm, brew or pacman package and no public mirror), with a settings surface for ~/.config/muse/settings.json plus the user-level briefing and skills destinations under ~/.config/muse. It runs on the local Muse subscription login; no API key is involved anywhere in this pack.",
   "contributes": [
     // THE MUSE CODE AGENT. The binary is `muse`, installed by Meta's one-line shell installer
     // (https://dev.meta.ai/install.sh): `curl -fsSL https://dev.meta.ai/install.sh | sh`.
@@ -8,15 +8,16 @@
     // `curl <url> | sh` behind the installer-check gate, the same shape the `agy`, `claude`
     // and `codex` packs declare.
     //
-    // THE INSTALLER IS AUTH-GATED, and yolo invents no second channel. Meta serves the
-    // installer and the ~344 MiB binary it downloads only to authenticated Meta employees:
-    // an unauthenticated fetch answers HTTP 401/403 with "muse is available to Meta
-    // employees". So a jail outside Meta's network installs nothing and stops at that
-    // refusal, and — the same fact — the real-install cells of .github/workflows/packs.yml
-    // and .github/workflows/macos-user.yml (which run `muse --version` in a real jail) cannot
-    // pass publicly. Nothing here works around it: the remedy is Meta's own access. The
-    // manifest has no `install_hints` for the reason the note below gives — no npm, brew or
-    // pacman package exists.
+    // THE INSTALLER IS PUBLIC, WITH AN OPTIONAL AUTHENTICATED FAST PATH, and it is not a
+    // gate. Meta serves the installer and the ~344 MiB binary it downloads from a plain
+    // public URL: the fetch is tried WITHOUT auth first, and a bearer token is attached only
+    // to `lookaside.facebook.com` URLs, and only when `~/.config/muse/auth.json` already
+    // exists. Measured here: the binary downloaded unauthenticated with no `auth.json` and no
+    // `META_API_KEY`, so a jail outside Meta's network installs it normally and the
+    // real-install cells of .github/workflows/packs.yml and .github/workflows/macos-user.yml
+    // (which run `muse --version` in a real jail) are not gate-blocked. The manifest has no
+    // `install_hints` for the reason the note below gives — no npm, brew or pacman package
+    // exists.
     //
     // `probe_args` is the one-word version probe the per-pack install matrix runs; `muse
     // --version` answers it. There is deliberately no `update` (Meta documents no
