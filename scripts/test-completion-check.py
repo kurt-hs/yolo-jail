@@ -264,6 +264,30 @@ class FrontDoor(unittest.TestCase):
         self.assertTrue(self.ran(calls, "just", "check-ci"))
         self.assertIn("Justfile", out)
 
+    def test_a_readers_file_change_routes_selective(self):
+        # scripts/ is a global prefix, but the census is this run's OWN selection input, read
+        # fresh from the working tree; refreshing it must not force the full gate.
+        self.verified()
+        (self.repo / "scripts" / "completion-readers.json").write_text(
+            json.dumps(dict(READERS, about="fixture, refreshed")))
+        self.commit("refresh the census")
+        rc, out, calls = self.done()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.ran(calls, "just", "check-ci"), [])
+        self.assertEqual(self.record(self.head())["route"], "selective")
+        # The scanning test still runs: a census refresh can move what any test reads.
+        self.assertTrue(self.ran(calls, "go", "test", "-short", "-run", "^(TestScansSource)$", "./c"))
+
+    def test_another_script_change_still_runs_the_full_gate(self):
+        # Only the census is exempt; every other scripts/ path remains a gate input.
+        self.verified()
+        self.write("scripts/completion-census.py", "# regenerates the census\n")
+        self.commit("a new script")
+        rc, out, calls = self.done()
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(self.ran(calls, "just", "check-ci"))
+        self.assertIn("scripts/completion-census.py", out)
+
     def test_an_unknown_path_runs_the_full_gate(self):
         self.verified()
         self.write("NOTES.txt", "something nothing classifies\n")
