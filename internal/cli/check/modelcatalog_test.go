@@ -282,7 +282,7 @@ func TestCheckReadsPisCatalogThroughTheShippedDeclaration(t *testing.T) {
 		`{"chat:gpt-6-astra": {"id": "gpt-6-astra", "provider": "openai-codex", "compat": {}}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	packsFixture(t, `{"packs": ["pi"]}`)
+	packsFixture(t, `{"packs": ["pi", "openai-auth"]}`)
 	env := map[string]string{"YOLO_VERSION": "test", "NPM_CONFIG_PREFIX": prefix}
 	var buf bytes.Buffer
 	r := &reporter{w: &buf}

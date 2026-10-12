@@ -278,6 +278,7 @@ func extractTree(t *testing.T, root, tag, dest string) {
 			_ = os.Symlink(h.Linkname, path)
 		}
 	}
+	_, _ = io.Copy(io.Discard, stdout)
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("git archive %s: %v\n%s", tag, err, stderr.String())
 	}

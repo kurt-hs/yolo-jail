@@ -344,7 +344,7 @@ func TestAProviderNoProfileSelectsSatisfiesNothing(t *testing.T) {
 // census reading the config's `profile` key alone would refuse it.
 func TestTheProfileFlagPicksTheSource(t *testing.T) {
 	ws := capabilityWorkspace(t, `{"required_capabilities": ["web_search"]}`)
-	capabilityPackHome(t, `{"packs": ["pi"]}`)
+	capabilityPackHome(t, `{"packs": ["pi", "openai-auth"]}`)
 	var stdout, stderr bytes.Buffer
 	o := capabilityGateOptions(t, ws, nil, &stdout, &stderr)
 	o.ProfileName = "codex"
@@ -363,7 +363,7 @@ func TestTheProfileFlagPicksTheSource(t *testing.T) {
 // Bedrock lacks native search), so this launch carries nothing that searches.
 func TestAProfileThatLeavesTheBuiltInLoginSatisfiesNothing(t *testing.T) {
 	ws := capabilityWorkspace(t, `{"required_capabilities": ["web_search"]}`)
-	capabilityPackHome(t, `{"packs": ["claude"], "profile": "bedrock"}`)
+	capabilityPackHome(t, `{"packs": ["claude", "bedrock"], "profile": "bedrock"}`)
 	var stdout, stderr bytes.Buffer
 	o := capabilityGateOptions(t, ws, nil, &stdout, &stderr)
 

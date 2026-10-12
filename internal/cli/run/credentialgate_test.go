@@ -455,7 +455,7 @@ func TestMacosUserLaunchCarriesOnlyTheLaunchedAgentsCredentials(t *testing.T) {
 		{"/opt/agents/bin/pi", true}} {
 		t.Run(strings.ReplaceAll(tc.launched, "/", "_"), func(t *testing.T) {
 			home := packHome(t)
-			writeUserConfig(t, home, `{"packs": ["claude", "pi", "zai"], "env_sources": [`+
+			writeUserConfig(t, home, `{"packs": ["claude", "pi", "zai", "bedrock"], "env_sources": [`+
 				`{"AWS_ACCESS_KEY_ID": "AKIA-gate", "AWS_SECRET_ACCESS_KEY": "secret-gate", `+
 				`"ZAI_API_KEY": "tok-gate", "GH_TOKEN": "gh-gate"}]}`)
 			var stdout, stderr bytes.Buffer
@@ -504,7 +504,7 @@ func TestMacosUserLaunchCarriesOnlyTheLaunchedAgentsCredentials(t *testing.T) {
 // hand codex claude's flag and the credential adapter's address.
 func TestMacosUserLaunchOmitsAnotherAgentsGatedEnv(t *testing.T) {
 	home := packHome(t)
-	writeUserConfig(t, home, `{"packs": ["claude", "codex", "zai", "aws-auth"], "env_sources": [`+
+	writeUserConfig(t, home, `{"packs": ["claude", "codex", "zai", "aws-auth", "bedrock"], "env_sources": [`+
 		`{"ZAI_API_KEY": "tok-gate"}]`+bedrockRegionMember+`}`)
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)

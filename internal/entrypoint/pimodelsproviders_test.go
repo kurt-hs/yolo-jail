@@ -57,8 +57,12 @@ func bootPiOnlyJail(t *testing.T, home string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	provJSON := "{}"
+	if providers != nil {
+		provJSON = mustCompactJSON(t, providers)
+	}
 	e := &Env{Home: home, Workspace: t.TempDir(),
-		Vars: map[string]string{"YOLO_PROVIDERS": mustCompactJSON(t, providers)}}
+		Vars: map[string]string{"YOLO_PROVIDERS": provJSON}}
 	withCtxRoot(t, t.TempDir(), "pi")
 	ConfigurePackSurfaces(e, packs)
 	if fails := e.GenFailures(); len(fails) != 0 {

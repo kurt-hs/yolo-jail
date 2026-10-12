@@ -44,11 +44,9 @@ func TestPiCatalogNeverCataloguesOpenAICodex(t *testing.T) {
 
 // The same property through the PRODUCTION pack set, where the openai-codex row comes from
 // packs/openai-auth's own declaration rather than a hand-built table, and with no profile
-// selected: the no-profile neighbor of TestPiCodexProfileSelectsBuiltInProviderAndExplicitModel,
-// which asserts it with the codex profile active. The set is pi's selection closure plus kilo
-// (testPacksForAgent), so openai-auth arrives the way a launch brings it, through pi's `needs`.
+// selected. The set is pi, kilo, and openai-auth.
 func TestPiCatalogFromShippedPacksOmitsOpenAICodex(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "pi", "kilo"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "pi", "kilo", "openai-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

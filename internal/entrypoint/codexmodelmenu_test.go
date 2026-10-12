@@ -25,7 +25,7 @@ import (
 // shipped provider table and profiles, and returns the model-list file it wrote.
 func renderCodexModelList(t *testing.T, home, use string) map[string]any {
 	t.Helper()
-	packs := testPacksForAgent(t, "codex", "openrouter")
+	packs := testPacksForAgent(t, "codex", "openrouter", "openai-auth")
 	table, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

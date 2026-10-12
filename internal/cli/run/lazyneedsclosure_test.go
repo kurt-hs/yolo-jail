@@ -25,11 +25,11 @@ func lazyNeedsFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.jsonc"),
-		[]byte(`{"packs": ["claude"]}`), 0o644); err != nil {
+		[]byte(`{"packs": ["local"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(local, "pack.json"), []byte(
-		`{"name":"local","supersedes":[{"capability":"openai-oauth-refresh",`+
+		`{"name":"local","needs":[{"pack":"openai-auth"}],"supersedes":[{"capability":"openai-oauth-refresh",`+
 			`"because":"this fixture ships its own OpenAI refresh path"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +44,8 @@ func lazyNeedsFixture(t *testing.T) {
 // the pack modules and supersessions; the lazy fallbacks behind `yolo check`, `yolo loopholes
 // list` and config validation used to iterate config.LoadPacks alone.
 //
-// Measured before the fix, with `"packs": ["claude"]` and a local pack superseding
-// openai-oauth-refresh: the Loopholes section listed only claude-oauth-broker, and the
+// Measured before the fix, with a pack superseding openai-oauth-refresh pulled via needs:
+// the Loopholes section listed only the base loophole, and the
 // supersession — which the launch honors, because the staged set includes openai-auth — was
 // graded `[WARN] pack supersession matched no served capability`, sending the user to fix a
 // pack that was right.
@@ -59,8 +59,8 @@ func TestLazyResolversApplyTheNeedsClosure(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("the lazy module resolver omitted openai-auth-broker, which packs/claude's " +
-			"`needs` pulls into every launch selecting claude")
+		t.Error("the lazy module resolver omitted openai-auth-broker, which local's " +
+			"`needs` pulls into every launch selecting local")
 	}
 
 	_, set := loopholes.ValidateSet()

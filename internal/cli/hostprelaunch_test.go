@@ -66,7 +66,7 @@ func TestHostPrelaunchIsWhatThePackDeclares(t *testing.T) {
 			hostPrelaunch{Bin: "codex", Flag: openaiauthhost.CodexViewFlag, Pack: "codex"}},
 		{"codex at a terminal", `{"packs": ["codex"]}`, nil, "codex", true,
 			hostPrelaunch{Bin: "codex", Flag: openaiauthhost.CodexViewFlag, Pack: "codex", Interactive: true}},
-		{"pi on codex", `{"packs": ["pi"]}`, []string{"-p", "codex"}, "pi", false,
+		{"pi on codex", `{"packs": ["pi", "openai-auth"]}`, []string{"-p", "codex"}, "pi", false,
 			hostPrelaunch{Bin: "pi", Flag: openaiauthhost.PiViewFlag, Pack: "pi"}},
 		{"pi on no profile", `{"packs": ["pi"]}`, nil, "pi", true,
 			hostPrelaunch{Bin: "pi", Interactive: true}},

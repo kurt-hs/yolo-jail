@@ -65,21 +65,35 @@ func TestBedrockNeedsAWSAuth(t *testing.T) {
 // and agy has no Bedrock transport at all, so none of the three binds it and none needs the pack.
 var bedrockBinders = []string{"claude", "codex", "opencode", "pi"}
 
-// bedrockStarters is the agent packs whose derive keys on Bedrock's platform WITHOUT binding it:
-// copilot reads the platform only to start a bridged session on its own one default when the list
-// names nothing (docs/design/model-lists-and-pickers.md MM-D34), since it has no Bedrock catalog,
-// and the bridge, not copilot, reaches Bedrock. So it keys on the platform and needs no pack.
-var bedrockStarters = []string{"copilot"}
+// TestAgentPacksDoNotNeedBedrock pins that agent packs do not pull bedrock in through needs:
+// Bedrock is an independent subscription/provider pack that a user selects when they use it.
+func TestAgentPacksDoNotNeedBedrock(t *testing.T) {
+	byName := shippedByName(t)
+	for _, agent := range bedrockBinders {
+		p := byName[agent]
+		if p == nil {
+			t.Fatalf("no shipped %s pack", agent)
+		}
+		for _, n := range p.Decl.DeclaredNeeds() {
+			if n.Pack == "bedrock" {
+				t.Errorf("packs/%s must not need bedrock — provider packs are selected explicitly", agent)
+			}
+		}
+	}
+}
 
-// TestEveryBedrockAgentAloneGetsTheBedrockProfile runs the production selection closure
-// (Selection.Close, the one every notch calls) over each binding agent pack alone, then
-// composes and resolves what the launch would, so it fails when a need is dropped, when the
-// provider or profile leaves the bedrock pack, or when aws-auth stops joining through it.
-func TestEveryBedrockAgentAloneGetsTheBedrockProfile(t *testing.T) {
+// TestEveryBedrockAgentWithBedrockGetsTheBedrockProfile verifies that when an agent and bedrock
+// are selected together, aws-auth joins through bedrock, the bedrock profile resolves, and the
+// agent binds the aws-bedrock platform.
+func TestEveryBedrockAgentWithBedrockGetsTheBedrockProfile(t *testing.T) {
 	byName := shippedByName(t)
 	embedded := func(name string) (*Pack, bool) {
 		p, ok := byName[name]
 		return p, ok
+	}
+	bedrock := byName["bedrock"]
+	if bedrock == nil {
+		t.Fatal("no shipped bedrock pack")
 	}
 	for _, agent := range bedrockBinders {
 		t.Run(agent, func(t *testing.T) {
@@ -87,23 +101,22 @@ func TestEveryBedrockAgentAloneGetsTheBedrockProfile(t *testing.T) {
 			if p == nil {
 				t.Fatalf("no shipped %s pack", agent)
 			}
-			added, causes, err := Selection{Embedded: embedded}.Close([]*Pack{p})
+			added, causes, err := Selection{Embedded: embedded}.Close([]*Pack{p, bedrock})
 			if err != nil {
 				t.Fatal(err)
 			}
-			set := append([]*Pack{p}, added...)
+			set := append([]*Pack{p, bedrock}, added...)
 			var names []string
 			for _, q := range set {
 				names = append(names, q.Name)
 			}
 			for _, want := range []string{"bedrock", "aws-auth"} {
 				if !slices.Contains(names, want) {
-					t.Errorf(`"packs": [%q] closes over %v, want %s among them`, agent, names, want)
+					t.Errorf(`"packs": [%q, "bedrock"] closes over %v, want %s among them`, agent, names, want)
 				}
 			}
-			if !strings.Contains(strings.Join(causes, "\n"), "bedrock (needed by "+agent+")") {
-				t.Errorf("the closure's cause lines %q do not say %s brought bedrock — the launch "+
-					"banner and yolo check print exactly these", causes, agent)
+			if !strings.Contains(strings.Join(causes, "\n"), "aws-auth (needed by bedrock)") {
+				t.Errorf("the closure's cause lines %q do not say bedrock brought aws-auth:\n%s", causes, strings.Join(causes, "\n"))
 			}
 			providers, err := ComposeProviders(nil, set)
 			if err != nil {
@@ -122,43 +135,11 @@ func TestEveryBedrockAgentAloneGetsTheBedrockProfile(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := ProviderFor(resolved, "bedrock"); got != "bedrock" {
-				t.Errorf("-p bedrock with %q alone resolves to provider %q, want bedrock", agent, got)
+				t.Errorf("-p bedrock with [%q, bedrock] resolves to provider %q, want bedrock", agent, got)
+			}
+			if !AgentBindsPlatform(set, agent, "aws-bedrock") {
+				t.Errorf("AgentBindsPlatform(%q, aws-bedrock) = false, want true", agent)
 			}
 		})
-	}
-}
-
-// TestOnlyTheBindingAgentsNeedBedrock pins the other half: an agent pack whose derive cannot
-// reach Bedrock does not pull the provider in, so a `-p bedrock` there is refused as a profile
-// the launch does not carry rather than accepted to configure nothing.
-func TestOnlyTheBindingAgentsNeedBedrock(t *testing.T) {
-	byName := shippedByName(t)
-	for name, p := range byName {
-		if len(p.InstallBins()) == 0 {
-			continue
-		}
-		needs := false
-		for _, n := range p.Decl.DeclaredNeeds() {
-			if n.Pack == "bedrock" {
-				needs = true
-			}
-		}
-		if want := slices.Contains(bedrockBinders, name); needs != want {
-			t.Errorf("packs/%s needs bedrock = %v, want %v (bedrockBinders)", name, needs, want)
-		}
-		// The list is what the derives say: a derive that keys on Bedrock's platform binds it,
-		// and one that does not cannot, so a binding added to a derive without the need (or a
-		// need left behind by a deleted binding) fails here rather than at a user's launch.
-		keys := strings.Contains(DeriveScript(p), `"aws-bedrock"`)
-		if slices.Contains(bedrockStarters, name) {
-			if !keys || needs {
-				t.Errorf("packs/%s is a bedrockStarter: want its derive keying on \"aws-bedrock\" (%v) and "+
-					"no need on bedrock (%v)", name, keys, needs)
-			}
-			continue
-		}
-		if keys != needs {
-			t.Errorf("packs/%s's derive keys on \"aws-bedrock\" = %v, but its needs name bedrock = %v", name, keys, needs)
-		}
 	}
 }

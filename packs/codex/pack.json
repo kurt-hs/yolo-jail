@@ -193,23 +193,10 @@
       "kind": "autonomy"
     },
     {
-      "kind": "profile",
-      "name": "codex",
-      "provider": "openai-codex"
-    },
-    {
       "at": ".codex",
       "kind": "state",
       "scope": "workspace"
     }
   ],
-  "name": "codex",
-  "needs": [
-    {
-      "pack": "bedrock"
-    },
-    {
-      "pack": "openai-auth"
-    }
-  ]
+  "name": "codex"
 }

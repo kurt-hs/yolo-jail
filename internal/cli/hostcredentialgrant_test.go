@@ -213,7 +213,7 @@ func runRemedy(t *testing.T, argv []string) (int, string, map[string]string, str
 // the agent's backend. The line says so, naming the profile it replaces, and never words it as
 // handing the agent the key.
 func TestHostGrantAgentRemedyIsWordedAsAProfileSwitch(t *testing.T) {
-	_, errs := hostGateLaunchWith(t, `{"packs": ["claude", "zai"], "profile": {"claude": "bedrock"}, `+
+	_, errs := hostGateLaunchWith(t, `{"packs": ["claude", "zai", "bedrock"], "profile": {"claude": "bedrock"}, `+
 		`"env_sources": [{"ZAI_API_KEY": "tok-es", "AWS_PROFILE": "dev"}]}`, nil, nil, "claude")
 	line := scopeLine(t, errs, "ZAI_API_KEY")
 	want := "To run claude on the zai profile for one launch, replacing its bedrock profile: " +
@@ -229,7 +229,7 @@ func TestHostGrantAgentRemedyIsWordedAsAProfileSwitch(t *testing.T) {
 // An ad-hoc command's remedy is the grant, whichever provider claims the name: bedrock's key
 // pair is handed to bash by `--with-credentials bedrock`, never by a -p (OQ-NC5).
 func TestHostGrantAdHocRemedyIsTheGrantNeverAProfile(t *testing.T) {
-	_, errs := hostGateLaunchWith(t, `{"packs": ["claude", "zai"], "env_sources": [`+
+	_, errs := hostGateLaunchWith(t, `{"packs": ["claude", "zai", "bedrock"], "env_sources": [`+
 		`{"ZAI_API_KEY": "tok-es", "AWS_ACCESS_KEY_ID": "AKIA-host"}]}`, nil, nil, "bash")
 	line := scopeLine(t, errs, "AWS_ACCESS_KEY_ID")
 	want := "To hand it to bash for one launch: `yolo host --with-credentials bedrock -- bash`"

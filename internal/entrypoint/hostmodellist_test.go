@@ -19,7 +19,7 @@ import (
 // hostListFor is HostModelList for the shipped codex pack over tables selecting use for codex.
 func hostListFor(t *testing.T, home, use string) ([]modelmenu.ListEntry, error) {
 	t.Helper()
-	packs := testPacksForAgent(t, "codex", "openrouter")
+	packs := testPacksForAgent(t, "codex", "openrouter", "openai-auth")
 	table, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

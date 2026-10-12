@@ -261,7 +261,7 @@ func assertServiceGone(t *testing.T, l serviceLaunch) {
 // codexConfig is claude alone, with the subscription's Responses endpoint moved to the fake
 // upstream (a user-scope provider address, which is legal there and only there).
 func codexConfig(upstream string) string {
-	return `{"packs": ["claude"], "providers": {"openai-codex": {"endpoints": {"openai-responses": ` +
+	return `{"packs": ["claude", "openai-auth"], "providers": {"openai-codex": {"endpoints": {"openai-responses": ` +
 		`{"base_url": "` + upstream + `/codex"}}}}}`
 }
 
@@ -426,7 +426,7 @@ func TestHostServicesLaunchRunsTheFloorsCopyWithTheFloorsPath(t *testing.T) {
 func TestHostWrapperSpellingAndTheChatRouteRunThroughTheBridge(t *testing.T) {
 	upstream, auths := fakeUpstream(t)
 	fakeHostBroker(t)
-	l := runServiceLaunch(t, `{"packs": ["claude"], "profile": {"claude": "codex"}, "providers": `+
+	l := runServiceLaunch(t, `{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}, "providers": `+
 		`{"openai-codex": {"endpoints": {"openai-responses": {"base_url": "`+upstream.URL+`/codex"}}}}}`,
 		nil, "", nil)
 	if l.rc != 0 || l.report.WithToken != http.StatusOK {
@@ -488,7 +488,7 @@ func TestHostStartsNoServiceWhenNoProfileNeedsOne(t *testing.T) {
 		flags     []string
 	}{
 		{"no profile", `{"packs": ["claude"]}`, nil},
-		{"bedrock", `{"packs": ["claude"]}`, []string{"-p", "bedrock"}},
+		{"bedrock", `{"packs": ["claude", "bedrock"]}`, []string{"-p", "bedrock"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := runServiceLaunch(t, tc.cfg, tc.flags, "", nil)
@@ -521,7 +521,7 @@ func TestHostRefusesWhenTheServiceCannotStart(t *testing.T) {
 			"listening. Its argv: yolo internal daemon wire-bridge. Its log: /x.log", p.Service, p.Pack)
 	}
 	t.Cleanup(func() { startLaunchService = origStart })
-	rc, env, errs := hostGateRun(t, claudeAlone, nil, []string{"-p", "codex"}, "claude")
+	rc, env, errs := hostGateRun(t, `{"packs": ["claude", "openai-auth"]}`, nil, []string{"-p", "codex"}, "claude")
 	if rc != 1 || env != nil {
 		t.Fatalf("rc = %d, env = %v: a service that cannot start must refuse before the agent\n%s", rc, env, errs)
 	}
@@ -540,8 +540,8 @@ func TestHostEnvRefusesABridgedProfile(t *testing.T) {
 		args  []string
 		spell string
 	}{
-		{claudeAlone, []string{"env", "--agent", "claude", "-p", "codex"}, "`yolo host -p codex -- claude`"},
-		{`{"packs": ["claude"], "profile": {"claude": "codex"}}`, []string{"env", "--agent", "claude"},
+		{`{"packs": ["claude", "openai-auth"]}`, []string{"env", "--agent", "claude", "-p", "codex"}, "`yolo host -p codex -- claude`"},
+		{`{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, []string{"env", "--agent", "claude"},
 			"`yolo host -- claude`"},
 	} {
 		hostGateHome(t, tc.cfg, nil)
@@ -569,7 +569,7 @@ func TestHostEnvRefusesABridgedProfile(t *testing.T) {
 // takes effect (OQ-HS3). Every apply test here declares `host_management: "own"`: the unset key
 // is `none` since OQ-CO14, under which the apply refuses before it renders or says anything.
 func TestHostApplyWritesNoBridgedAddressAndSaysWhy(t *testing.T) {
-	home := hostComputedHome(t, `{"packs": ["claude"], "host_management": "own", "profile": {"claude": "codex"}}`)
+	home := hostComputedHome(t, `{"packs": ["claude", "openai-auth"], "host_management": "own", "profile": {"claude": "codex"}}`)
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"apply", "--assert"}, &out, &errw, false, strings.NewReader("y\n")); rc != 0 {
 		t.Fatalf("yolo host apply --assert rc=%d\n%s%s", rc, out.String(), errw.String())
@@ -681,7 +681,7 @@ func TestHostRefusesAFetchedPacksHostHalfByName(t *testing.T) {
 		`{"kind": "adapter", "adapts": {"from": "openai-responses", "to": "anthropic"}, "address": "http://127.0.0.1:8215"}`,
 		`{"kind": "service", "name": "wire-bridge", "jail_daemon": {"cmd": ["yolo-jaild", "wire-bridge"]}, `+
 			`"host_daemon": {"cmd": ["yolo", "internal", "daemon", "wire-bridge"]}}`)
-	cfg := `{"packs": ["claude", {"source": "` + src + `", "name": "wire-bridge"}]}`
+	cfg := `{"packs": ["claude", "openai-auth", {"source": "` + src + `", "name": "wire-bridge"}]}`
 	origStart := startLaunchService
 	startLaunchService = func(*launchservice.Plan, map[string]string) (*launchservice.Running, error) {
 		t.Fatal("a fetched pack's host half was started")
@@ -720,7 +720,7 @@ func TestHostRunsALocalPacksBridgeHostHalfAndNamesItBeforeItStarts(t *testing.T)
 	if err := os.WriteFile(filepath.Join(fork, "pack.json"), manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `{"packs": ["claude", {"source": "file://` + fork + `", "name": "wire-bridge"}], ` +
+	cfg := `{"packs": ["claude", "openai-auth", {"source": "file://` + fork + `", "name": "wire-bridge"}], ` +
 		`"providers": {"openai-codex": {"endpoints": {"openai-responses": {"base_url": "` + upstream.URL + `/codex"}}}}}`
 	l := runServiceLaunch(t, cfg, []string{"-p", "codex"}, "", nil)
 	if l.rc != 0 {

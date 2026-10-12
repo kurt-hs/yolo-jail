@@ -72,15 +72,17 @@ func TestTestPacksForAgentResolvesTheNeedsClosure(t *testing.T) {
 		extra []string
 		want  []string
 	}{
-		// pi's unconditional needs: openai-auth, the pack declaring openai-codex, and bedrock,
-		// the pack declaring the Bedrock provider, whose own need joins aws-auth.
-		{agent: "pi", want: []string{"aws-auth", "bedrock", "openai-auth", "pi"}},
+		// pi has no unconditional needs; bedrock and openai-auth are decoupled.
+		{agent: "pi", want: []string{"pi"}},
 		// cerebras needs wire-bridge only when claude or copilot is installed; pi is neither.
 		{agent: "pi", extra: []string{"cerebras"},
-			want: []string{"aws-auth", "bedrock", "cerebras", "openai-auth", "pi"}},
-		// claude's needs are unconditional, and they satisfy kilo's conditional one as well.
+			want: []string{"cerebras", "pi"}},
+		// claude's unconditional need is wire-bridge, and it satisfies kilo's conditional one as well.
 		{agent: "omp", extra: []string{"claude", "kilo"},
-			want: []string{"aws-auth", "bedrock", "claude", "kilo", "omp", "openai-auth", "wire-bridge"}},
+			want: []string{"claude", "kilo", "omp", "wire-bridge"}},
+		// bedrock's own need joins aws-auth.
+		{agent: "omp", extra: []string{"bedrock"},
+			want: []string{"aws-auth", "bedrock", "omp"}},
 	}
 	for _, c := range cases {
 		if got := packNames(testPacksForAgent(t, c.agent, c.extra...)); !slices.Equal(got, c.want) {

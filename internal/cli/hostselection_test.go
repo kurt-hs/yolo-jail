@@ -17,16 +17,11 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// claudeAndItsNeeds is what `"packs": ["claude"]` selects at every notch: claude, the three
-// packs its unconditional `needs` joins, and aws-auth, which bedrock's need joins after them.
-var claudeAndItsNeeds = []string{"claude", "bedrock", "openai-auth", "wire-bridge", "aws-auth"}
+// claudeAndItsNeeds is what `"packs": ["claude"]` selects at every notch: claude and wire-bridge.
+var claudeAndItsNeeds = []string{"claude", "wire-bridge"}
 
-// claudeDirectNeeds and bedrockNeeds say which pack's need joins each of them, the pack a
-// cause line names.
-var (
-	claudeDirectNeeds = []string{"bedrock", "openai-auth", "wire-bridge"}
-	bedrockNeeds      = []string{"aws-auth"}
-)
+// claudeDirectNeeds says which pack's need joins claude, the pack a cause line names.
+var claudeDirectNeeds = []string{"wire-bridge"}
 
 func packNames(packs []*packload.Pack) []string {
 	out := make([]string, 0, len(packs))
@@ -89,7 +84,7 @@ func TestHostApplyNamesThePacksTheClosureJoined(t *testing.T) {
 	if rc := applyHostSurveyed(&out, &errw, false, false, nil, &hostApplySurvey{}); rc != 0 {
 		t.Fatalf("host apply dry run rc=%d\n%s%s", rc, out.String(), errw.String())
 	}
-	for needy, names := range map[string][]string{"claude": claudeDirectNeeds, "bedrock": bedrockNeeds} {
+	for needy, names := range map[string][]string{"claude": claudeDirectNeeds} {
 		for _, name := range names {
 			want := "joined — + " + name + " (needed by " + needy + ")"
 			if !strings.Contains(out.String(), want) {
@@ -107,7 +102,7 @@ func TestHostLaunchAnnouncesThePacksTheClosureJoined(t *testing.T) {
 	if rc := hostMain([]string{"env", "--agent", "claude"}, &out, &envErr, false, nil); rc != 0 {
 		t.Fatalf("yolo host env rc=%d\n%s", rc, envErr.String())
 	}
-	for needy, names := range map[string][]string{"claude": claudeDirectNeeds, "bedrock": bedrockNeeds} {
+	for needy, names := range map[string][]string{"claude": claudeDirectNeeds} {
 		for _, name := range names {
 			if want := "yolo host: + " + name + " (needed by " + needy + ")"; !strings.Contains(errs, want) {
 				t.Errorf("yolo host -- claude must print %q:\n%s", want, errs)
@@ -133,7 +128,11 @@ func TestNoHostLaunchOfClaudeExportsAnUnservedPointer(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	for _, flags := range [][]string{nil, {"-p", "bedrock"}} {
-		env, errs := hostGateLaunchWith(t, claudeAlone, nil, flags, "claude")
+		cfg := claudeAlone
+		if len(flags) > 0 {
+			cfg = claudeBedrock
+		}
+		env, errs := hostGateLaunchWith(t, cfg, nil, flags, "claude")
 		for k, v := range env {
 			if v == "" || os.Getenv(k) == v {
 				continue // inherited, not composed
@@ -144,7 +143,7 @@ func TestNoHostLaunchOfClaudeExportsAnUnservedPointer(t *testing.T) {
 			}
 		}
 	}
-	hostGateHome(t, claudeAlone, nil)
+	hostGateHome(t, claudeBedrock, nil)
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"env", "--agent", "claude", "-p", "bedrock"}, &out, &errw, false, nil); rc != 0 {
 		t.Fatalf("yolo host env rc=%d\n%s", rc, errw.String())

@@ -42,7 +42,7 @@ func writeHostClaudeSettings(t *testing.T, home, body string) {
 // THE macos-user ARM: a launch with no Bedrock selection prints the line and runs; the same
 // launch on `bedrock` (whose provider is Bedrock) prints nothing, nor does a switch that is off.
 func TestTheMacosUserLaunchNamesAUsersOwnBedrockSwitch(t *testing.T) {
-	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude"]}`, shellWith(nil))
+	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude", "bedrock"]}`, shellWith(nil))
 	o.ProfileName = ""
 	writeHostClaudeSettings(t, seen.home, `{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}`)
 	if rc := Run(*o); rc != 0 || !seen.reached {
@@ -55,7 +55,7 @@ func TestTheMacosUserLaunchNamesAUsersOwnBedrockSwitch(t *testing.T) {
 		t.Errorf("yolo deletes nothing it did not write, and the user's key went: %s", data)
 	}
 
-	o, stderr, seen = overrideNativeLaunch(t, `{"packs": ["claude"], "providers": {"bedrock": {"region": "us-west-2"}}}`, shellWith(nil))
+	o, stderr, seen = overrideNativeLaunch(t, `{"packs": ["claude", "bedrock"], "providers": {"bedrock": {"region": "us-west-2"}}}`, shellWith(nil))
 	writeHostClaudeSettings(t, seen.home, `{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}`)
 	if rc := Run(*o); rc != 0 || strings.Contains(stderr.String(), "CLAUDE_CODE_USE_BEDROCK") {
 		t.Errorf("claude on bedrock serves its own switch, so nothing is said: rc=%d\n%s", rc, stderr)
@@ -112,7 +112,7 @@ func TestAnAttachNamesAUsersOwnBedrockSwitch(t *testing.T) {
 // have been printed, since a refused launch is where a user most needs to know.
 func TestTheFreshPodmanLaunchNamesAUsersOwnBedrockSwitch(t *testing.T) {
 	home := packHome(t)
-	writeUserConfig(t, home, `{"packs": ["claude", "zai"]}`)
+	writeUserConfig(t, home, `{"packs": ["claude", "zai", "bedrock"]}`)
 	writeHostClaudeSettings(t, home, `{"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}`)
 	t.Setenv("PATH", t.TempDir())
 	ws := t.TempDir()

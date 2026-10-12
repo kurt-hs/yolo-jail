@@ -36,7 +36,7 @@ func TestHostLaunchNamesAUsersOwnBedrockSwitch(t *testing.T) {
 		"delivers it none of that platform's credentials: select one (-p bedrock), or remove " +
 		"CLAUDE_CODE_USE_BEDROCK from ~/.claude/settings.json (yolo leaves it alone)."
 
-	rc, env, errs := hostGateRunIn(t, claudeAlone, nil, nil, "claude", withSwitch(`"1"`))
+	rc, env, errs := hostGateRunIn(t, claudeBedrock, nil, nil, "claude", withSwitch(`"1"`))
 	if rc != 0 || env == nil {
 		t.Fatalf("the line is a disclosure, never a refusal: rc=%d\n%s", rc, errs)
 	}
@@ -52,7 +52,7 @@ func TestHostLaunchNamesAUsersOwnBedrockSwitch(t *testing.T) {
 		{"claude on bedrock", `"1"`, []string{"-p", "bedrock"}},
 		{"a switch that is off", `false`, nil},
 	} {
-		_, _, errs := hostGateRunIn(t, claudeAlone, nil, tc.flags, "claude", withSwitch(tc.value))
+		_, _, errs := hostGateRunIn(t, claudeBedrock, nil, tc.flags, "claude", withSwitch(tc.value))
 		if strings.Contains(errs, "sets CLAUDE_CODE_USE_BEDROCK") {
 			t.Errorf("%s: nothing to name:\n%s", tc.name, errs)
 		}
@@ -83,7 +83,7 @@ func hostBedrockSwitchRoundTrip(t *testing.T, packEntry string) {
 	  "mine": {"endpoints": {"anthropic": {"base_url": "https://anthropic.example"}}}},
 	  "profiles": {"mine": {"provider": "mine"}}`
 	fork := packEntry
-	home := hostGateHome(t, `{"packs": ["`+fork+`"], "host_management": "own", "profile": {"claude": "bedrock"}, `+
+	home := hostGateHome(t, `{"packs": ["`+fork+`", "bedrock"], "host_management": "own", "profile": {"claude": "bedrock"}, `+
 		providers+`}`, nil)
 	// `yolo host apply` refuses while a declared program is missing, and `claude` is on this
 	// development jail's PATH but not on CI's: stub it, or the test passes only here.
@@ -120,7 +120,7 @@ func hostBedrockSwitchRoundTrip(t *testing.T, packEntry string) {
 	}
 
 	// The host selection leaves Bedrock: the apply removes what it wrote, and nothing is named.
-	userCfg(t, home, `{"packs": ["`+fork+`"], "host_management": "own", "profile": {"claude": "mine"}, `+
+	userCfg(t, home, `{"packs": ["`+fork+`", "bedrock"], "host_management": "own", "profile": {"claude": "mine"}, `+
 		providers+`}`)
 	if got := apply(); strings.Contains(got, `"CLAUDE_CODE_USE_BEDROCK"`) {
 		t.Errorf("host apply with claude off Bedrock must remove the switch it wrote:\n%s", got)

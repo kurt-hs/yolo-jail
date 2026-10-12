@@ -94,7 +94,7 @@ func TestHostCapabilityCensusFoldsTheTypedProfile(t *testing.T) {
 	const refusal = "declares 'web_search'"
 	t.Run("-p bedrock takes claude off its login", func(t *testing.T) {
 		t.Setenv(config.AllowUnmetCapabilitiesEnv, "")
-		rc, env, errs := hostGateRun(t, `{"packs": ["claude"], "required_capabilities": ["web_search"]}`,
+		rc, env, errs := hostGateRun(t, `{"packs": ["claude", "bedrock"], "required_capabilities": ["web_search"]}`,
 			nil, []string{"-p", "bedrock"}, "claude")
 		if rc != 1 || env != nil || !strings.Contains(errs, refusal) {
 			t.Fatalf("rc=%d exec=%v, want the capability refusal (%q)\n%s", rc, env != nil, refusal, errs)
@@ -102,7 +102,7 @@ func TestHostCapabilityCensusFoldsTheTypedProfile(t *testing.T) {
 	})
 	t.Run("the profile key does the same", func(t *testing.T) {
 		t.Setenv(config.AllowUnmetCapabilitiesEnv, "")
-		rc, env, errs := hostGateRun(t, `{"packs": ["claude"], "profile": {"claude": "bedrock"}, `+
+		rc, env, errs := hostGateRun(t, `{"packs": ["claude", "bedrock"], "profile": {"claude": "bedrock"}, `+
 			`"required_capabilities": ["web_search"]}`, nil, nil, "claude")
 		if rc != 1 || env != nil || !strings.Contains(errs, refusal) {
 			t.Fatalf("rc=%d exec=%v, want the capability refusal (%q)\n%s", rc, env != nil, refusal, errs)
@@ -113,7 +113,7 @@ func TestHostCapabilityCensusFoldsTheTypedProfile(t *testing.T) {
 		// The launch may stop further on (a credential pre-flight); only the gate's verdict is
 		// this cell's, and the composition's profile line, which prints after the gate, is the
 		// witness that the launch got past it.
-		_, _, errs := hostGateRun(t, `{"packs": ["pi"], "required_capabilities": ["web_search"]}`,
+		_, _, errs := hostGateRun(t, `{"packs": ["pi", "openai-auth"], "required_capabilities": ["web_search"]}`,
 			nil, []string{"-p", "codex"}, "pi")
 		if strings.Contains(errs, "required_capabilities") || strings.Contains(errs, "required capabilit") {
 			t.Fatalf("-p codex -- pi met the requirement through the provider, yet the gate spoke:\n%s", errs)

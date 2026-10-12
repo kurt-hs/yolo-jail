@@ -77,7 +77,7 @@ var claudeTierVars = []string{
 // availableModels' order lead with it. A profile over openai-codex declares no option census
 // (the provider declares no options, ML-D1), so the opt-in needs no declaration there.
 func TestClaudeOnTheCodexListPinsTheStartOnlyOnTheOptIn(t *testing.T) {
-	packs := testPacksForAgent(t, "claude")
+	packs := testPacksForAgent(t, "claude", "openai-auth")
 	for _, tc := range []struct {
 		name    string
 		options map[string]string
@@ -338,7 +338,7 @@ func TestClaudeUnderAnOnlyOnItsOwnBedrockClient(t *testing.T) {
 	    {"id":"global.moonshot.kimi-k3","vendor":"moonshot","name":"Kimi K3"},
 	    {"id":"us.anthropic.claude-sonnet-5","vendor":"anthropic","alias":"sonnet","name":"Claude Sonnet 5"}]},
 	  {"kind":"models","provider":"bedrock","only":["global.anthropic.claude-opus-5-5","global.moonshot.kimi-k3","us.anthropic.claude-sonnet-5"]}`)
-	packs := append(testPacksForAgent(t, "claude"), company)
+	packs := append(testPacksForAgent(t, "claude", "bedrock"), company)
 	got := renderClaudeModels(t, packs, nil, nil, "bedrock")
 
 	want := []any{"global.anthropic.claude-opus-5-5", "us.anthropic.claude-sonnet-5"}
@@ -381,7 +381,7 @@ func TestClaudeUnderAnOnlyOnItsOwnBedrockClient(t *testing.T) {
 func TestClaudeKeepsItsOwnMenuForAListThatOnlyAdds(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
 	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic"}]}`)
-	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude"), company), nil, nil, "bedrock")
+	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude", "bedrock"), company), nil, nil, "bedrock")
 	for _, k := range []string{"modelPicker", "availableModels", "enforceAvailableModels"} {
 		if v, present := got.settings[k]; present {
 			t.Errorf("settings %s = %v, want it absent for a list no `only` narrowed (OQ-MM1)", k, v)
@@ -394,7 +394,7 @@ func TestClaudeKeepsItsOwnMenuForAListThatOnlyAdds(t *testing.T) {
 // the session valid, the start pin stays (OQ-MM3 is what would replace it).
 func TestClaudeOnTheCodexListWithEnforcementOff(t *testing.T) {
 	off := false
-	got := renderClaudeModels(t, testPacksForAgent(t, "claude"), nil, map[string]packload.UserProfile{
+	got := renderClaudeModels(t, testPacksForAgent(t, "claude", "openai-auth"), nil, map[string]packload.UserProfile{
 		"codex-open": {Provider: "openai-codex", EnforceModels: &off},
 	}, "codex-open")
 	for _, k := range []string{"availableModels", "enforceAvailableModels"} {

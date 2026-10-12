@@ -139,7 +139,7 @@ func TestTheMacosUserGuestDaemonsPickedPortIsFreeWhenTheSandboxStarts(t *testing
 // saying its doorway runs for this launch. The doorway is handed its token and the host
 // service's endpoint and private socket.
 func TestMacosUserBareClaudeOpensTheOpenAIDoorwayOutsideAndDeclinesTheRestByName(t *testing.T) {
-	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude"]}`, shellWith(nil))
+	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude", "openai-auth"]}`, shellWith(nil))
 	o.ProfileName = ""
 	doors := observeDoorways(t)
 	if rc := Run(*o); rc != 0 {

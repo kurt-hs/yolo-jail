@@ -314,7 +314,7 @@ func TestOpencodeAndPiPreferANarrowedListsDefaultAlias(t *testing.T) {
 func TestOpencodeWhitelistsANarrowedListOnItsOwnBedrockClient(t *testing.T) {
 	const opus, sol = "global.anthropic.claude-opus-5-5", "us.openai.gpt-6.1-sol"
 	company := companyModelsPack(t, bedrockListAdd+`,{"kind":"models","provider":"bedrock","only":["`+sol+`","`+opus+`"]}`)
-	packs := append(testPacksForAgent(t, "opencode"), company)
+	packs := append(testPacksForAgent(t, "opencode", "bedrock"), company)
 	off := false
 	for _, tc := range []struct {
 		name     string
@@ -428,7 +428,7 @@ func TestPiNarrowedListCarriesItsProfilesModelSwitch(t *testing.T) {
 	const sol = "us.openai.gpt-6.1-sol"
 	company := companyModelsPack(t, bedrockListAdd+
 		`,{"kind":"models","provider":"zai","only":["glm-5.3"]},{"kind":"models","provider":"bedrock","only":["`+sol+`"]}`)
-	packs := append(testPacksForAgent(t, "pi", "zai"), company)
+	packs := append(testPacksForAgent(t, "pi", "zai", "bedrock"), company)
 	off := false
 	for _, tc := range []struct {
 		name         string

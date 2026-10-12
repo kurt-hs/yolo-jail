@@ -85,7 +85,7 @@ func observeDoorways(t *testing.T) *doorwaysSeen {
 // pointer is ungated, so every codex launch is pointed at the refresh doorway.
 func codexNativeLaunch(t *testing.T) (*Options, *bytes.Buffer, *nativeLaunch) {
 	t.Helper()
-	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["codex"]}`, shellWith(nil))
+	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["codex", "openai-auth"]}`, shellWith(nil))
 	o.Args = []string{"codex"}
 	o.ProfileName = ""
 	return o, stderr, seen
@@ -168,9 +168,9 @@ func TestTheMacosUserArmRefusesWhenADoorwayCannotStart(t *testing.T) {
 // fails. Deleting the stop() in startMacosUserDoorways' error branch fails this.
 func TestAMacosUserDoorwayThatCannotStartStopsTheOnesAlreadyOpen(t *testing.T) {
 	installFakeAWSCLI(t)
-	o, stderr, seen := overrideNativeLaunch(t,
-		awsAuthUserConfig(`, "loopholes": {"aws-auth": {"enabled": true,
-		"settings": {"profile": "yolo-unit", "unnarrowed": true}}}`), shellWith(nil))
+	cfg := `{"packs": ["claude", "bedrock", "aws-auth", "openai-auth"]` + bedrockRegionMember +
+		`, "loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "yolo-unit", "unnarrowed": true}}}}`
+	o, stderr, seen := overrideNativeLaunch(t, cfg, shellWith(nil))
 	stopped, starts := 0, 0
 	var first string
 	orig := startMacosUserDoorway

@@ -85,7 +85,7 @@ func TestHostLaunchRefusesTheRetiredUseProfilesKey(t *testing.T) {
 // `host_management: "own"`, without which (OQ-CO14's unset `none`) the apply writes nothing.
 func TestYoloHostApplyFoldsTheProfileKeysDefault(t *testing.T) {
 	for name, sel := range map[string]string{"string form": `"codex"`, "\"*\"": `{"*": "codex"}`} {
-		home := hostComputedHome(t, `{"packs":["pi"], "host_management": "own", "profile":`+sel+`}`)
+		home := hostComputedHome(t, `{"packs":["pi","openai-auth"], "host_management": "own", "profile":`+sel+`}`)
 		var out, errw bytes.Buffer
 		if rc := hostMain([]string{"apply", "--assert"}, &out, &errw, false, strings.NewReader("y\n")); rc != 0 {
 			t.Fatalf("%s: yolo host apply --assert rc=%d\n%s%s", name, rc, out.String(), errw.String())
@@ -106,11 +106,11 @@ func TestYoloHostApplyFoldsTheProfileKeysDefault(t *testing.T) {
 // what the earlier apply wrote. Both configs declare `host_management: "own"`: under the unset
 // key (`none` since OQ-CO14) nothing renders to refuse, and the earlier apply writes nothing.
 func TestEveryHostRenderRefusesTheRetiredUseProfilesKey(t *testing.T) {
-	const retired = `{"packs":["pi"], "host_management": "own", "host_apply_on_launch": true, ` +
+	const retired = `{"packs":["pi","openai-auth"], "host_management": "own", "host_apply_on_launch": true, ` +
 		`"use_profiles": {"pi": "codex"}}`
 	applied := func(t *testing.T) string {
 		t.Helper()
-		home := hostComputedHome(t, `{"packs":["pi"], "host_management": "own", "host_apply_on_launch": true, `+
+		home := hostComputedHome(t, `{"packs":["pi","openai-auth"], "host_management": "own", "host_apply_on_launch": true, `+
 			`"profile": {"pi": "codex"}}`)
 		var out, errw bytes.Buffer
 		if rc := hostMain([]string{"apply", "--assert"}, &out, &errw, false, strings.NewReader("y\n")); rc != 0 {

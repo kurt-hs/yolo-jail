@@ -58,7 +58,7 @@ func TestTheBootWritesEachCallerTokenToAPrivateFile(t *testing.T) {
 // AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE is set, so the pointer must carry the first and never the
 // second, and the value is the `{caller_token}` the launch resolves per agent.
 func TestTheAWSPointerNamesTheScopedTokenNotAFile(t *testing.T) {
-	closure := testPacksForAgent(t, "claude", "aws-auth")
+	closure := testPacksForAgent(t, "claude", "aws-auth", "bedrock")
 	env := launchEnvFor(t, closure, map[string]string{"claude": "bedrock"}, "claude")
 	if env["AWS_CONTAINER_AUTHORIZATION_TOKEN"] != loopholedecl.TokenCallerToken {
 		t.Errorf("AWS_CONTAINER_AUTHORIZATION_TOKEN = %q, want %q beside the credentials URI %q",

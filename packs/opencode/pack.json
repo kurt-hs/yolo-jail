@@ -128,11 +128,6 @@
       "project_dirs": [".opencode/skills", ".claude/skills", ".agents/skills"]
     },
     {
-      "kind": "profile",
-      "name": "codex",
-      "provider": "openai-codex"
-    },
-    {
       "from": "footer/yolo-footer.js",
       "into": ".config/opencode/yolo/footer.js",
       "kind": "files"
@@ -203,13 +198,5 @@
       "kind": "autonomy"
     }
   ],
-  "name": "opencode",
-  "needs": [
-    {
-      "pack": "bedrock"
-    },
-    {
-      "pack": "openai-auth"
-    }
-  ]
+  "name": "opencode"
 }

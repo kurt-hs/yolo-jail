@@ -36,18 +36,15 @@ func TestSelectPacksClosesTheSelectionAndJoinsEachAddition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "bedrock", "openai-auth", "wire-bridge", "aws-auth"}
+	want := []string{"claude", "wire-bridge"}
 	if got := selectionNames(sel.Packs()); !slices.Equal(got, want) {
 		t.Fatalf("Packs() = %v, want %v", got, want)
 	}
-	if len(sel.Causes) != 4 || !sel.Complete() {
+	if len(sel.Causes) != 1 || !sel.Complete() {
 		t.Errorf("causes = %v, complete = %v", sel.Causes, sel.Complete())
 	}
 	wantEvents := []string{
-		"announce + bedrock (needed by claude)", "join bedrock",
-		"announce + openai-auth (needed by claude)", "join openai-auth",
 		"announce + wire-bridge (needed by claude)", "join wire-bridge",
-		"announce + aws-auth (needed by bedrock)", "join aws-auth",
 	}
 	if !slices.Equal(events, wantEvents) {
 		t.Errorf("events = %v, want %v", events, wantEvents)
@@ -58,7 +55,7 @@ func TestSelectPacksClosesTheSelectionAndJoinsEachAddition(t *testing.T) {
 // failure is the error and nothing past it is resolved.
 func TestSelectPacksFailFastIsTheCallersChoice(t *testing.T) {
 	boom := errors.New("boom")
-	entries := []PackEntry{{Name: "broken"}, EmbeddedPackEntry("codex")}
+	entries := []PackEntry{{Name: "broken"}, EmbeddedPackEntry("claude")}
 	resolve := func(e PackEntry) (*packload.Pack, error) {
 		if e.Name == "broken" {
 			return nil, boom
@@ -72,8 +69,8 @@ func TestSelectPacksFailFastIsTheCallersChoice(t *testing.T) {
 	if len(sel.Unresolved) != 1 || !errors.Is(sel.Unresolved[0].Err, boom) || sel.Complete() {
 		t.Errorf("unresolved = %+v", sel.Unresolved)
 	}
-	if got := selectionNames(sel.Packs()); !slices.Equal(got, []string{"codex", "bedrock", "openai-auth", "aws-auth"}) {
-		t.Errorf("the resolvable part = %v, want codex and its needs' closure", got)
+	if got := selectionNames(sel.Packs()); !slices.Equal(got, []string{"claude", "wire-bridge"}) {
+		t.Errorf("the resolvable part = %v, want claude and its needs' closure", got)
 	}
 
 	resolved := 0

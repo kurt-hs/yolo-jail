@@ -43,8 +43,8 @@ func TestShippedPiPackDeliversOpenAIAuthExtension(t *testing.T) {
 			openaiAuth++
 		}
 	}
-	if openaiAuth != 1 {
-		t.Fatalf("pi needs = %v, want one unconditional openai-auth need", needs)
+	if openaiAuth != 0 {
+		t.Fatalf("pi needs = %v, want no unconditional openai-auth need", needs)
 	}
 	var found bool
 	for _, c := range p.Decl.Contributions() {

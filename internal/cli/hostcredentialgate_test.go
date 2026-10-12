@@ -24,7 +24,7 @@ import (
 // environment the exec would have handed the agent plus what the launch printed.
 func hostGateLaunch(t *testing.T, flags []string, agent string) (map[string]string, string) {
 	t.Helper()
-	return hostGateLaunchWith(t, `{"packs": ["claude", "codex", "pi", "zai", "aws-auth"], "env_sources": [`+
+	return hostGateLaunchWith(t, `{"packs": ["claude", "codex", "pi", "zai", "bedrock", "aws-auth"], "env_sources": [`+
 		`{"AWS_ACCESS_KEY_ID": "AKIA-host", "AWS_SECRET_ACCESS_KEY": "secret-host", `+
 		`"ZAI_API_KEY": "tok-host"}]}`, nil, flags, agent)
 }

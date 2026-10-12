@@ -79,13 +79,9 @@ func TestOmpViaProfileNeverCataloguesOpenAICodex(t *testing.T) {
 	}
 }
 
-// The same property through a PRODUCTION pack set (design doc P3): omp beside claude, whose
-// `needs` joins openai-auth (the pack declaring openai-codex) and wire-bridge (whose adapter
-// composes an anthropic address onto it, because omp and claude both speak anthropic). The
-// set is the selection closure of omp, claude and kilo (testPacksForAgent), so both joins
-// arrive through claude's `needs`, as they do at launch.
+// The same property through a PRODUCTION pack set (design doc P3): omp beside claude, kilo, and openai-auth.
 func TestOmpCatalogFromShippedPacksOmitsOpenAICodex(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "omp", "claude", "kilo"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "omp", "claude", "kilo", "openai-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

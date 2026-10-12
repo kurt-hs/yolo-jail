@@ -222,7 +222,7 @@ func TestHostPiOnABedrockBridgeProfileStartsNoBridgeAndSaysItIsFileCarried(t *te
 		{`{"packs": ["pi", "bedrock", "wire-bridge"], "providers": {"bedrock": {"region": "eu-west-1"}}}`,
 			"bedrock-bridge", "pi", []string{`profile "bedrock-bridge"'s via — pi reads its route from ~/.pi/agent/models.json`,
 				"`yolo -p bedrock-bridge -- pi`"}},
-		{`{"packs": ["claude", "omp"], "providers": {"bedrock": {"region": "eu-west-1"}}}`,
+		{`{"packs": ["claude", "omp", "bedrock"], "providers": {"bedrock": {"region": "eu-west-1"}}}`,
 			"bedrock", "oh-omp", []string{`profile "bedrock"'s carrier "wire-bridge" — oh-omp reads its route from ~/.oh-omp/agent/models.yml`,
 				"`yolo -p bedrock -- oh-omp`"}},
 	} {

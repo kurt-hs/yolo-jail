@@ -76,7 +76,7 @@ var bearerInShell = shellWith(map[string]string{bearerVar: "sk-bedrock-frozen"})
 // bedrock to pin something about the pointer, and without a region the region pre-flight would
 // refuse it first (OQ-BR6, pinned on its own in regionpreflight_test.go).
 func awsAuthUserConfig(extra string) string {
-	return `{"packs": ["claude", "aws-auth"]` + bedrockRegionMember + extra + `}`
+	return `{"packs": ["claude", "bedrock", "aws-auth"]` + bedrockRegionMember + extra + `}`
 }
 
 // testBedrockRegion is the region fixtures give the shipped `bedrock` provider when a launch

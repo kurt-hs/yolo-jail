@@ -114,7 +114,7 @@ func TestPiOnBedrockWithNoListKeepsItsOwnCatalogAndDefault(t *testing.T) {
 // THE REGION REACHES pi's PROCESS: pi's Converse client reads it from the environment, so a region
 // the provider declares must arrive as AWS_REGION, through the env composition a launch runs.
 func TestPiOnBedrockReceivesTheProvidersRegion(t *testing.T) {
-	packs := testPacksForAgent(t, "pi")
+	packs := testPacksForAgent(t, "pi", "bedrock")
 	user := jsonx.NewOrderedMap()
 	bedrock := jsonx.NewOrderedMap()
 	bedrock.Set("region", "eu-west-1")
