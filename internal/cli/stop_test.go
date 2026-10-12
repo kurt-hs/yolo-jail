@@ -105,7 +105,9 @@ func TestStopJail(t *testing.T) {
 			t.Errorf("the no-op must say so:\n%s", out.String())
 		}
 	})
-	t.Run("a failed stop is a failure", func(t *testing.T) {
+	// The stop's failure is judged by a re-probe, and this script runs out before it: a probe
+	// that cannot be run is not proof the container is gone (JL-P3), so the stop stays a failure.
+	t.Run("a failed stop the probe cannot answer for is a failure", func(t *testing.T) {
 		var out, err bytes.Buffer
 		s := &stopRun{stats: []string{"true\n", "!stopped with an error"}}
 		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil); rc != 1 {

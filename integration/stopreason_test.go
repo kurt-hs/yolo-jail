@@ -11,9 +11,11 @@ import (
 	"context"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	naming "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
@@ -79,7 +81,7 @@ func TestAnAttachWhoseJailEndedSaysWhy(t *testing.T) {
 		defer cancel()
 		// The same tolerance as `yolo stop` above: a nested podman may say 125 at a stop with a
 		// live exec session while the stop itself goes through.
-		if out, err := exec.CommandContext(ctx, rt, "stop", "-t", "5", cname).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, rt, "stop", "-t", strconv.Itoa(run.TeardownStopTimeoutSeconds), cname).CombinedOutput(); err != nil {
 			t.Logf("%s stop: %v\n%s", rt, err, out)
 		}
 		if rc := attach.wait(t, jailTimeout()); !jailEnded(rc) {
