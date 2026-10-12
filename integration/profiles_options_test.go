@@ -80,10 +80,9 @@ func TestUndeclaredProfileNameRefusesTheLaunch(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	// claude alone keeps the declared set to one name, so the message's list is the fix a
-	// reader types; no provider pack is selected, so no credential pre-flight can produce
-	// a second, unrelated refusal.
-	packHome(t, `{"packs": ["claude"], "profile": {"claude": "zai-fst"}}`)
+	// claude and bedrock keep the declared set to the profile this fixture intends to report;
+	// no profile is selected, so no credential pre-flight can produce a second refusal.
+	packHome(t, `{"packs": ["bedrock", "claude"], "profile": {"claude": "zai-fst"}}`)
 
 	r := runYolo(t, dir, "true")
 	if r.rc == 0 {

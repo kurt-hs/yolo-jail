@@ -326,7 +326,7 @@ func TestOpenAIAuthBrokerRoundTripsAnImportedToken(t *testing.T) {
 	rootless := podmanRootless(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["codex"]}`)
+	packHome(t, `{"packs": ["codex", "openai-auth"]}`)
 	// A private ~/.local/share/yolo-jail for everything this test and its launch write — the
 	// broker state above all. macArchivePrivateState is the one implementation of that, named
 	// for its first caller; it keeps cache/ shared so the launch's downloads stay warm.

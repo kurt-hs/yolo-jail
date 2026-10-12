@@ -15,7 +15,7 @@ import (
 // (docs/design/host-notch-services.md, ruled 2026-09-29; OQ-OA6 route (b)), on the hardware. A
 // DOORWAY is that ruling's word for the thin adapter an agent's client talks to, which checks the
 // launch's caller token and forwards to the credential service's host daemon. The sandbox shares
-// the Mac's loopback, so a `"packs": ["codex"]` launch opens Codex's refresh doorway itself,
+// Mac's loopback, so selecting `codex` and `openai-auth` opens Codex's refresh doorway itself,
 // OUTSIDE Seatbelt, as the launch's own listener, and stops it when the command exits.
 //
 // WHAT ONLY THIS TEST CAN SEE, none of it executed before: that a process the launch starts
@@ -27,7 +27,7 @@ import (
 // be told apart from a missing listener.
 func TestMacosUserOpensTheCodexDoorwayOutsideTheSandbox(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["codex"]}`)
+	packHome(t, `{"packs": ["codex", "openai-auth"]}`)
 	ws := macosUserWorkspace(t, `{}`)
 	uid := sandboxUID(t)
 	me := strconv.Itoa(os.Getuid())

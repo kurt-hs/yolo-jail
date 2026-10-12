@@ -71,12 +71,13 @@ func TestOmpRunsOnEveryProviderOfItsSet(t *testing.T) {
 // `bedrock` reaches it only through the wire bridge's route for oh-omp, whose upstream is the first
 // entry's provider. Before the refusal, `-p oh-omp=zai,bedrock` started, printed bedrock as live in
 // the set, and rendered no bedrock row, so the session ran on zai alone. claude is selected because
-// its pack brings the wire bridge in; the launch refuses before any container starts.
+// its pack brings the wire bridge in; the bedrock pack is selected so this reaches the carried-
+// entry check rather than failing profile declaration. The launch refuses before any container starts.
 func TestOmpRefusesACarriedEntryAfterItsFirst(t *testing.T) {
 	requireJail(t)
 	t.Setenv("ZAI_API_KEY", "")
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["claude", "omp", "zai"], "providers": {"bedrock": {"region": "us-east-1"}}, `+
+	packHome(t, `{"packs": ["bedrock", "claude", "omp", "zai"], "providers": {"bedrock": {"region": "us-east-1"}}, `+
 		`"env_sources": [{"ZAI_API_KEY": "integration-probe-not-a-real-key"}]}`)
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "oh-omp=zai,bedrock", "--", "true"))
 	if r.rc == 0 {

@@ -26,8 +26,9 @@ import (
 // contribution points AWS_CONTAINER_CREDENTIALS_FULL_URI at it. These tests run all five
 // together, from the in-jail curl to the host's `aws`.
 //
-// Each test launches a real jail selecting `claude` and `aws-auth` with the `bedrock`
-// profile, and curls the pointer from inside it — no agent is started. The two cases:
+// The jail tests select `claude` and `bedrock`; the host-agent test selects `pi` and `bedrock`.
+// Bedrock declares the aws-auth dependency and contributes the provider and profile. The fixtures
+// curl the pointer from inside their session — no agent is started. The two cases:
 //
 //   - TestAWSAuthServesTheFourKeysOverTheLoopbackHop — a live session: a 200 whose body is
 //     exactly AccessKeyId, SecretAccessKey, Token and Expiration, the values the host's `aws`
@@ -146,7 +147,7 @@ func newAWSAuthFixture(t *testing.T, configure func(bin string) string) awsAuthF
 	// and this test is about the channel, not the narrowing (which has its own unit tests).
 	// The provider's region is there because a `bedrock` launch with none is refused before
 	// the jail starts (OQ-BR6); no request reaches AWS, so its value is never used.
-	return newAWSAuthFixtureWith(t, awsAuthUserConfig(`["claude", "aws-auth"]`, "claude", ""), true, configure)
+	return newAWSAuthFixtureWith(t, awsAuthUserConfig(`["claude", "bedrock"]`, "claude", ""), true, configure)
 }
 
 // awsAuthUserConfig is the fixture's user config: packs, agent on the bedrock profile, a region,
@@ -523,19 +524,20 @@ func TestAWSAuthServesAYoloHostAgentThroughItsDoorway(t *testing.T) {
 	// `host_floor: false`: `yolo host -- pi` otherwise runs yolo's own floor copy of pi,
 	// installing the real pi to do it, where this test needs the stand-in on PATH (and no
 	// automated test may run an agent CLI).
-	fx := newAWSAuthFixtureWith(t, awsAuthUserConfig(`["pi"]`, "pi", `"host_floor": false, `), false, func(bin string) string {
-		raw, err := json.Marshal(map[string]any{"Version": 1, "AccessKeyId": "ASIAYOLOHOSTDOORWAY",
-			"SecretAccessKey": "yolo-host-secret", "SessionToken": "yolo-host-session-token",
-			"Expiration": expires.Format(time.RFC3339)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		body := filepath.Join(bin, "process.json")
-		if err := os.WriteFile(body, raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return "cat '" + body + "'; exit 0"
-	})
+	fx := newAWSAuthFixtureWith(t,
+		awsAuthUserConfig(`["bedrock", "pi"]`, "pi", `"host_floor": false, `), false, func(bin string) string {
+			raw, err := json.Marshal(map[string]any{"Version": 1, "AccessKeyId": "ASIAYOLOHOSTDOORWAY",
+				"SecretAccessKey": "yolo-host-secret", "SessionToken": "yolo-host-session-token",
+				"Expiration": expires.Format(time.RFC3339)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := filepath.Join(bin, "process.json")
+			if err := os.WriteFile(body, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return "cat '" + body + "'; exit 0"
+		})
 	if err := os.WriteFile(filepath.Join(filepath.Dir(fx.argvLog), "pi"), []byte(awsAuthHostAgentScript), 0o755); err != nil {
 		t.Fatal(err)
 	}

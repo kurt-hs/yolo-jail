@@ -16,10 +16,9 @@ import (
 // `-p bedrock` and a region, renders each agent's OWN Bedrock client into its own file. yolo
 // ships no Bedrock model list (docs/design/model-lists-and-pickers.md MM-D32), so with none each
 // agent is left on its own default, and a list the user supplies is rendered and picked from. The unit
-// tests drive each derive through the boot render; this is the tier where the staged pack tree,
-// the needs closure a launch runs (none of the three packs lists `bedrock`, so it must join
-// through their `needs`), the composed table crossing into the jail and the stateful render all
-// have to agree. No agent runs, and nothing reaches AWS.
+// tests drive each derive through the boot render; the staged provider pack and its declared
+// aws-auth dependency, the composed table crossing into the jail and the stateful render all have
+// to agree. No agent runs, and nothing reaches AWS.
 
 // codexBedrockRegion is the built-in override's region line, under its own table.
 var codexBedrockRegion = regexp.MustCompile(`(?m)^\[model_providers\.amazon-bedrock-runtime\.aws\]\s*\nregion\s*=\s*"([^"]*)"`)
@@ -34,7 +33,7 @@ func TestBedrockRendersEachAgentsOwnClient(t *testing.T) {
 
 	// With no list, no agent is handed a Bedrock model: each keeps its own default.
 	bare := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["codex", "pi", "opencode"], "providers": {"bedrock": {"region": "`+region+`"}}}`)
+	packHome(t, `{"packs": ["bedrock", "codex", "pi", "opencode"], "providers": {"bedrock": {"region": "`+region+`"}}}`)
 	if r := runCommand(t, bare, append(jailRunArgs(), "-p", "bedrock", "--", "true")); r.rc != 0 {
 		t.Fatalf("a -p bedrock launch with no list failed: rc %d\n%s", r.rc, r.combined())
 	}
@@ -49,16 +48,16 @@ func TestBedrockRendersEachAgentsOwnClient(t *testing.T) {
 	}
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["codex", "pi", "opencode"], "providers": {"bedrock": {"region": "`+region+`", `+
+	packHome(t, `{"packs": ["bedrock", "codex", "pi", "opencode"], "providers": {"bedrock": {"region": "`+region+`", `+
 		`"models": {"global.anthropic.claude-opus-5-5": {"id": "global.anthropic.claude-opus-5-5", "vendor": "anthropic"}, "us.openai.gpt-6.1-sol": {"id": "us.openai.gpt-6.1-sol", "vendor": "openai"}}}}}`)
 
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "bedrock", "--", "true"))
 	if r.rc != 0 {
 		t.Fatalf("a -p bedrock launch of codex, pi and opencode failed: rc %d\n%s", r.rc, r.combined())
 	}
-	for _, want := range []string{"+ bedrock (needed by ", "+ aws-auth (needed by bedrock)"} {
+	for _, want := range []string{"+ aws-auth (needed by bedrock)"} {
 		if !strings.Contains(r.stderr, want) {
-			t.Errorf("the launch must say the closure joined the Bedrock provider, %q:\n%s", want, r.stderr)
+			t.Errorf("the launch must say bedrock's declared aws-auth dependency was joined, %q:\n%s", want, r.stderr)
 		}
 	}
 
@@ -140,7 +139,7 @@ func TestBedrockBridgeCarriesPiToRuntimeInItsRegion(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["pi"], "providers": {"bedrock": {"region": "us-east-1"}}}`)
+	packHome(t, `{"packs": ["bedrock", "pi"], "providers": {"bedrock": {"region": "us-east-1"}}}`)
 
 	// The via listener is the only one this launch binds, so the endpoint file names it: at the
 	// declared :8216 on a private network namespace, and at a port the launcher picked on a shared
@@ -208,7 +207,7 @@ func TestPlainBedrockCarriesOmpThroughTheBridge(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["claude", "omp"], "providers": {"bedrock": {"region": "us-east-1"}}}`)
+	packHome(t, `{"packs": ["bedrock", "claude", "omp"], "providers": {"bedrock": {"region": "us-east-1"}}}`)
 
 	script := `set -u
 url=$(sed -n 's|.*baseUrl: *\(http://[^ ]*/agent/oh-omp\).*|\1|p' "$HOME/.oh-omp/agent/models.yml" | head -n 1)
@@ -253,7 +252,7 @@ func TestBedrockRefusesOpencodeARegionItDoesNotRead(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["opencode"], "env_sources": [{"AWS_DEFAULT_REGION": "eu-west-1"}]}`)
+	packHome(t, `{"packs": ["bedrock", "opencode"], "env_sources": [{"AWS_DEFAULT_REGION": "eu-west-1"}]}`)
 
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "bedrock", "--", "true"))
 	if r.rc == 0 {
@@ -278,7 +277,7 @@ func TestBedrockBridgeTakesOpencodesDefaultRegion(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["opencode"], "env_sources": [{"AWS_DEFAULT_REGION": "eu-west-1"}]}`)
+	packHome(t, `{"packs": ["bedrock", "opencode"], "env_sources": [{"AWS_DEFAULT_REGION": "eu-west-1"}]}`)
 
 	script := `set -u
 addr=$(cat "$YOLO_SERVICE_WIRE_BRIDGE_ENDPOINT")
@@ -313,7 +312,7 @@ func TestBedrockTakesTheRegionOfTheHostsAWSConfig(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["opencode"]}`)
+	packHome(t, `{"packs": ["bedrock", "opencode"]}`)
 	home := os.Getenv("HOME")
 	if err := os.MkdirAll(filepath.Join(home, ".aws"), 0o755); err != nil {
 		t.Fatal(err)

@@ -72,7 +72,7 @@ func TestPiRunsOnEveryProviderOfItsSet(t *testing.T) {
 // A BEDROCK ENTRY AFTER THE FIRST (AP-D12's "anywhere in pi's set"): `-p pi=zai,bedrock` with a
 // region on the provider starts pi on zai, catalogs the Bedrock list under pi's own
 // amazon-bedrock provider, and hands pi the region in its own environment, through the staged
-// packs, the needs closure that joins bedrock's aws-auth, the channel and the boot render. No
+// packs, the selected Bedrock provider's aws-auth dependency, the channel and the boot render. No
 // agent runs, and nothing reaches AWS.
 func TestPiRunsOnABedrockEntryAfterItsFirst(t *testing.T) {
 	requireJail(t)
@@ -81,7 +81,7 @@ func TestPiRunsOnABedrockEntryAfterItsFirst(t *testing.T) {
 
 	dir := writeProject(t, `{}`)
 	// A list the user supplies: packs/bedrock ships none (docs/design/model-lists-and-pickers.md MM-D32).
-	packHome(t, `{"packs": ["pi", "zai"], "providers": {"bedrock": {"region": "`+region+`", `+
+	packHome(t, `{"packs": ["bedrock", "pi", "zai"], "providers": {"bedrock": {"region": "`+region+`", `+
 		`"models": {"global.anthropic.claude-opus-5-5": {"id": "global.anthropic.claude-opus-5-5", "vendor": "anthropic"}, "us.openai.gpt-6.1-sol": {"id": "us.openai.gpt-6.1-sol", "vendor": "openai"}}}}, `+
 		`"env_sources": [{"ZAI_API_KEY": "integration-probe-not-a-real-key"}]}`)
 	// pi's own env file, sourced as pi's launcher sources it; absent when nothing is scoped to pi,
