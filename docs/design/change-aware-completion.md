@@ -78,8 +78,11 @@ The reader evidence is [`scripts/completion-readers.json`](../../scripts/complet
 written by [`scripts/completion-census.py`](../../scripts/completion-census.py): it runs every test
 once, alone, with Go's `-test.testlogfile` — the log `go test` itself uses to invalidate its cache —
 and keeps each test's reads of files that belong to no package or to another package. On
-2026-10-09 it took 145 to 200 s for 12,403 tests and found 578 reading tests in 34 packages. Changing the file is a `scripts/`
-change, so the commit that refreshes it runs the full gate.
+2026-10-09 it took 145 to 200 s for 12,403 tests and found 578 reading tests in 34 packages. A range
+whose only global-matching path is this file routes selective, not full: the census is the selection
+data the run reads fresh, not a gate input, so refreshing it selects checks instead of forcing the
+whole gate. Every other `scripts/` path, and every genuine global input (`go.mod`, `go.sum`,
+`vendor/`, `flake.nix`, `flake.lock`, `.github/workflows/`), still runs the full gate.
 [`scripts/test-completion-check.py`](../../scripts/test-completion-check.py), run by `lint-ci`,
 covers the routes on a synthetic repository and pins both call sites.
 
@@ -481,10 +484,11 @@ engineering gaps go there, not into invented owner questions.
 | <a id="CAC-D14"></a>CAC-D14 | *Implementation decision.* Every changed Markdown file outside a Go package directory gets the Vantage check, including `docs/`, which `check-ci` does not check today. The ten `docs/` files with existing findings were fixed on 2026-10-09; the eleventh, `docs/research/vantage-check-0.5.9-findings.md`, is exempt by name, because its findings are specimens that its own opening note says must never be linked away. **Why:** section 4 requires the strict check on every changed document, and a check that skipped known-bad files would hide new findings in them. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D15"></a>CAC-D15 | *Implementation decision, from review.* Every scanning test — one whose recorded reads include a `D/*` or `D/*.E` pattern, or whose listings include a `D/**` tree — runs on every selective check, 43 tests in 18 packages on 2026-10-09. **Why:** what they read moves with ordinary edits, so a recorded set went stale between census runs: deleting a cited document selected none of the citation test, and `just done` would have recorded a tree `check-ci` rejects. Run uncached, the 42 of the earlier census took 14 s together; Go's test cache skips them when nothing they read changed. Reversible | 2026-10-09 | [Known limits](#known-limits) | ✅ |
 | <a id="CAC-D16"></a>CAC-D16 | *Implementation decision, from review.* The Vantage wrapper runs a pinned release (0.10.0), not `@latest`. **Why:** with `@latest`, an upstream release could turn a document nobody changed red, and a document's check must depend only on the document. Raising the pin changes `scripts/`, so that commit runs the full gate. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
+| <a id="CAC-D17"></a>CAC-D17 | *Implementation decision.* Exempt `scripts/completion-readers.json` from the global-input rule: a range whose only global-matching path is the census routes selective, because it is reader-selection data read fresh from the working tree, not a gate input. Every other `scripts/` path, and every genuine global input (`go.mod`, `go.sum`, `vendor/`, `flake.nix`, `flake.lock`, `.github/workflows/`), still runs the full gate. **Why:** treating the census as a global input forced the full gate on every census refresh — a 9-minute run to regenerate selection data. Reversible | 2026-10-12 | [What shipped](#what-shipped) | ✅ |
 
 The standalone-invocation requirement supersedes the coordinator-assertion mechanism in CAC-D4:
 an assertion cannot stop an uncoordinated writer, and refusing every uncertified caller would make
-ordinary `just done` unreachable. CAC-D7 to CAC-D16 record what was built and where it departs
+ordinary `just done` unreachable. CAC-D7 to CAC-D17 record what was built and where it departs
 from CAC-D1 to CAC-D6.
 
 The owner confirmed [CAC-D7](#CAC-D7) on 2026-10-09 ("yes to D7"). The speed plan's answered

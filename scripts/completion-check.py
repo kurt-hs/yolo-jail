@@ -324,7 +324,11 @@ def plan_selective(root, base, entries, readers):
         types = {m[:2] for m in (old, new) if m != "000000"}
         if types - {"10"}:
             plan.full.append(f"{path}: not a regular file (mode {old} -> {new})")
-        elif path in GLOBAL_FILES or path.startswith(GLOBAL_PREFIXES):
+        elif path != READERS_FILE and (path in GLOBAL_FILES
+                                       or path.startswith(GLOBAL_PREFIXES)):
+            # The census (READERS_FILE) is exempt: it is this run's own selection input, read
+            # fresh from the working tree, so refreshing it feeds check selection rather than
+            # demanding a check. Every other scripts/ path is still a gate input.
             plan.full.append(f"{path}: a gate or build input for the whole tree")
     if plan.full:
         return plan
@@ -366,6 +370,13 @@ def plan_selective(root, base, entries, readers):
                 plan.notes.append(f"{path}: not Markdown-checked, a specimen document")
             elif status != "D":
                 docs.append(path)
+            continue
+        if path == READERS_FILE:
+            # The census selects which tests run; it needs no check of its own, and a change to
+            # it is consumed by this very run. (In the real tree a scanning test also records a
+            # read of it, but selection must not depend on that.)
+            plan.notes.append(f"{path}: this run's selection input, read fresh; "
+                              "no check of its own")
             continue
         if _read_by_any(readers, path):
             continue
