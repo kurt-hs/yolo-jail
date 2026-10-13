@@ -861,6 +861,19 @@ after the launch's *Forks this launch* block, printed above the dispatch
 ([`run/forkbuild.go:165-172`](../../internal/cli/run/forkbuild.go#L165-L172)), so the move line
 names the build this jail gets.
 
+**The build-line digest disclosure is already built**, under
+[`report-tiers.md` OQ-RO9](../reference/report-tiers.md#why-its-this-way), not a remaining
+implementation step. The launch's disclosure names the whole build line by its recipe digest and
+`yolo pack status <key>`; every act that builds prints the line whole before it runs. This recipe
+digest is distinct from the series digest in the start line below. Rechecked against the production
+launch disclosure and status call sites on 2026-10-14: `TestTheLaunchDisclosesABuildLineByItsDigest`
+and `TestPackStatusKeyPrintsTheFullBuildLine` passed, along with the four digest/claim tests in
+`packload/buildlinedigest_test.go`. The launch build-start tests
+`TestASuccessfulBuildsTerminalCarriesOnlyItsProgressLines`,
+`TestAJailLaunchsFirstAdvanceBuildsInTheChildAndItsBaseGetsTheStartLine`, and
+`TestAServingAdvancesStartLineCarriesItsWait` also passed. The roadmap's remaining-small-build
+phrase was stale; no Go behavior changed and the completed nested-jail checks above were not rerun.
+
 **A jail launch builds its keys at once and shows each build as two lines and a result**
 ([PF-D79](#PF-D79), [PF-D80](#PF-D80)): a start line before the build line runs, with what is built
 and why, the wait, the build's own log and its disclosures (the seal and the build line, whole); and,
