@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -82,4 +83,25 @@ func admittedProgramServing(f packload.Fork, runtime, platform string) (entrypoi
 		return refuse("current serving entry does not match exact Good.Entry")
 	}
 	return entrypoint.ForkDelivery{Key: entry.Key}, &good
+}
+
+// registerProgramPreparation retains the original program declaration; admission
+// and current user authorization belong to the shared preparation dispatcher.
+func registerProgramPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer) error {
+	if req.Runtime != "podman" && req.Runtime != "container" {
+		return nil
+	}
+	osname, arch, ok := strings.Cut(req.Platform, "/")
+	if !ok || osname != "linux" || (arch != "amd64" && arch != "arm64") {
+		return nil
+	}
+	var forks []packload.Fork
+	for _, pin := range pins {
+		f := pin.Fork
+		if f.IsTree() || !f.Patched() || (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason(osname, arch) != "" {
+			continue
+		}
+		forks = append(forks, f)
+	}
+	return registerPreparationForks(forks, req.Runtime, req.Platform, w)
 }

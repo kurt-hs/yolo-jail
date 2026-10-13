@@ -415,10 +415,8 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			req.Forks = &filtered
 		}
 	}
-	var forkLater []bool
 	if fr := req.Forks; fr != nil {
-		forkLater = make([]bool, len(fr.Pins))
-		addForkKeys(pool, *fr, forkLater, color, func(bin string, d entrypoint.ForkDelivery) {
+		addForkKeys(pool, *fr, color, func(bin string, d entrypoint.ForkDelivery) {
 			mu.Lock()
 			defer mu.Unlock()
 			forks[bin] = d
@@ -454,17 +452,9 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
 		}
 	}
-	// Program registration is supplied by the program adapter. Until that caller
-	// is integrated, preserve its established one-shot next-launch progress.
 	if fr := req.Forks; fr != nil {
-		var background []packload.Fork
-		for i, p := range fr.Pins {
-			if forkLater[i] {
-				background = append(background, p.Fork)
-			}
-		}
-		if len(background) > 0 {
-			backgroundTreeAdvance(background, rt, fr.Platform, stream, color)
+		if err := registerProgramPreparation(fr.Pins, *fr, stream); err != nil {
+			fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
 		}
 	}
 	return forks, trees
@@ -475,19 +465,17 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 // states once, as auto-capture states its (a source build fetches its dependencies and compiles, once
 // per commit per machine). A plain fork the store holds a build of is answered at once.
 //
-// A PATCHED FORK whose `agent_updates` sets it to update FOR THE NEXT LAUNCH, on a runtime that runs
-// the background advance (podman), goes through deliverPatchedFork instead: this launch hands it the
-// good build it has and later[i] is set, which runBuildSlot collects into the one background advance
-// (XB-D28) once the pool has run.
-func addForkKeys(pool *buildPool, req run.ForkBuildRequest, later []bool, color bool, answer func(string, entrypoint.ForkDelivery)) {
+// A patched program's next-launch delivery keeps current Good readiness in the
+// pool. After the pool, runBuildSlot registers all eligible programs, even when
+// this launch had no due check, with the shared ongoing preparation worker.
+func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer func(string, entrypoint.ForkDelivery)) {
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	missing := 0
-	for i, p := range req.Pins {
+	for _, p := range req.Pins {
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
-				d, l := deliverPatchedFork(p.Fork, req, pool.report, it, color)
+				d, _ := deliverPatchedFork(p.Fork, req, pool.report, it, color)
 				answer(p.Fork.Bin, d)
-				later[i] = l
 			})
 			continue
 		}
