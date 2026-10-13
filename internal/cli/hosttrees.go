@@ -8,7 +8,6 @@ package cli
 //
 // The `files` render copies file by file and skips a contribution with no `from`
 // (entrypoint.RenderHostFiles), so a patched extension gets an arm of its own. The good build this
-// The good build this
 // machine admitted is copied — reflink or copy, never a hardlink (capture.CopyTree) — into a
 // VERSIONED DIRECTORY (coined here: one directory per store entry) under paths.HostTreesDir, where
 // no jail mounts it; `~/<into>` is a symbolic link the render owns, recorded in the `files`

@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 func allowAppleContainerBuild(t testing.TB) {
@@ -76,6 +78,53 @@ func TestAppleContainerRequiredColdBuildRefusesWhenLivenessIsUnknown(t *testing.
 		if !strings.Contains(out+got[poolKeyA].Reason, want) {
 			t.Errorf("the cold-build refusal lacks %q:\n%s\nreason: %s", want, out, got[poolKeyA].Reason)
 		}
+	}
+}
+
+func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *testing.T) {
+	pf := newPoolFixture(t)
+	initial, out := pf.launch(t, "podman", &run.ActInterrupt{})
+	if initial[poolKeyA].Entry == "" {
+		t.Fatalf("fixture did not establish an admitted tree: %+v\n%s", initial[poolKeyA], out)
+	}
+	before := patchedRecordOf(t, poolKeyA)
+	if before.Good == nil {
+		t.Fatal("fixture has no previous admitted good build")
+	}
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	pf.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	pf.now = pf.now.Add(2 * time.Hour)
+	var children atomic.Int32
+	pf.child = func(context.Context, forkBuild) int {
+		children.Add(1)
+		return 0
+	}
+	prevCapability := appleContainerBuildCapability
+	appleContainerBuildCapability = func() (bool, string) {
+		return false, "Apple Container has running yolo jail(s): yolo-another-session"
+	}
+	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
+
+	trees := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	req := run.TreeBuildRequest{FreshUpdate: true, Trees: trees, Platform: patchedTestPlatform, Runtime: "container",
+		Workspace: "/ws", Build: true, CopyRoot: filepath.Join(t.TempDir(), "tree.patched"), Interrupt: &run.ActInterrupt{}}
+	var report syncBuffer
+	got := deliverTreesForLaunch(req, &report, &report, false)
+	if children.Load() != 0 {
+		t.Fatalf("fresh check started an Apple Container build child despite live-jail liveness:\n%s", report.String())
+	}
+	if got[poolKeyA].Dir != "" || !strings.Contains(got[poolKeyA].Reason, "could not be prepared freshly") {
+		t.Fatalf("freshness request silently used the old admitted build: delivery=%+v\n%s", got[poolKeyA], report.String())
+	}
+	if !strings.Contains(got[poolKeyA].Reason, "candidate remains pending") || !strings.Contains(got[poolKeyA].Reason, "yolo-another-session") {
+		t.Fatalf("strict refusal did not retain the Apple pending/liveness explanation: %+v\n%s", got[poolKeyA], report.String())
+	}
+	after := patchedRecordOf(t, poolKeyA)
+	if after.Good == nil || after.Good.Commit != before.Good.Commit || after.Good.Recipe != before.Good.Recipe {
+		t.Fatalf("check-only freshness damaged the old admitted good build: before=%+v after=%+v", before.Good, after.Good)
+	}
+	if after.Check == nil || len(after.Check.List) == 0 || after.Check.List[0].Tag != "v1.1.0" {
+		t.Fatalf("freshness did not record the checked candidate as pending: %+v", after.Check)
 	}
 }
 

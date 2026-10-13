@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -95,6 +97,49 @@ func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
 	if repin == token.NoPos || lockAcquire == token.NoPos || lastAttach == token.NoPos || repin < lockAcquire || repin < lastAttach {
 		t.Fatalf("fresh pin resolution must follow lock acquisition and the raced attach decision: lock=%v attach=%v repin=%v",
 			lockAcquire, lastAttach, repin)
+	}
+}
+
+func TestInJailFreshUpdateRefusesMutableForkBeforeProgramPreparation(t *testing.T) {
+	forkLaunchHome(t, forkPinSource)
+	t.Setenv("YOLO_VERSION", "test-jail")
+	workspace := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	o := dispatchOptions(t, workspace, "podman", &stdout, &stderr, nil)
+	o.Update = true
+	o.Exec = func([]string, string, []string, time.Duration) ExecResult {
+		return ExecResult{Ran: true, RC: 0} // runtime answers that no jail is running
+	}
+	prefixBuilt := false
+	o.BuildJailPrefix = func(string) (string, []string) {
+		prefixBuilt = true
+		return "/test/prefix", nil
+	}
+	buildSlotCalled := false
+	o.BuildSlot = func(BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+		buildSlotCalled = true
+		return nil, nil
+	}
+
+	rc := Run(*o)
+	if rc == 0 {
+		t.Fatalf("in-jail --update accepted a selected mutable source fork\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	refusal := stdout.String() + stderr.String()
+	if !strings.Contains(refusal, "mutable source fork forkpack/tool") ||
+		!strings.Contains(refusal, "from the host workspace") {
+		t.Fatalf("the production launch path did not name its narrow in-jail refusal (rc=%d):\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+	}
+	if prefixBuilt || buildSlotCalled {
+		t.Fatalf("in-jail refusal came after launch/program preparation effects: prefix=%t build-slot=%t", prefixBuilt, buildSlotCalled)
+	}
+	if _, err := os.Stat(packsrc.ForkLockPath(paths.UserConfigPath())); !os.IsNotExist(err) {
+		t.Fatalf("in-jail refusal wrote or changed the host fork lock: %v", err)
+	}
+	for _, name := range []string{"assembled-config.json", "assembled-config.jsonc", "launch-config.json"} {
+		if _, err := os.Stat(filepath.Join(workspace, ".yolo", name)); err == nil {
+			t.Fatalf("in-jail refusal wrote %s before returning", name)
+		}
 	}
 }
 

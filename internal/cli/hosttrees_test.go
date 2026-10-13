@@ -677,6 +677,66 @@ func TestAMacOSHostLaunchSaysTheOwnerStartsWithoutItsTree(t *testing.T) {
 	}
 }
 
+func TestHostOwnerTreeRegistrationLeavesJailAndForkSubscriptionsActive(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	fx.listTreeForAgent(t)
+	manifestPath := filepath.Join(fx.treeDir, "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := `,{"kind":"files","into":".tool/ext/other-ext","source":"git+file://` + fx.repo +
+		`?ref=main","patches":"patches","build":"true","produces":["f.txt"]}]}`
+	writeFile(t, manifestPath, strings.TrimSuffix(strings.TrimSpace(string(manifest)), "]}")+second)
+	fx.writeHostConfig(t, treeHostOwn+`,"agent_updates":{"treepack":"next-launch","forkpack":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+
+	// A fresh jail launch registers its complete selected tree vector through runBuildSlot.
+	trees := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	if len(trees) != 2 {
+		t.Fatalf("fixture selected %d jail trees, want both the owner tree and the jail-only tree", len(trees))
+	}
+	var jailReport syncBuffer
+	jailDeliveries := deliverTreesForLaunch(run.TreeBuildRequest{Trees: trees, Platform: patchedTestPlatform,
+		Runtime: "podman", Workspace: "/ws", Build: true, CopyRoot: filepath.Join(t.TempDir(), "jail-trees"),
+		Interrupt: &run.ActInterrupt{}}, &jailReport, &jailReport, false)
+	for _, tree := range trees {
+		if jailDeliveries[tree.Key()].Entry == "" {
+			t.Fatalf("jail fixture did not admit selected tree %s: %+v\n%s", tree.Key(), jailDeliveries[tree.Key()], jailReport.String())
+		}
+	}
+
+	fork := packload.Fork{Pack: "forkpack", Bin: "probetool", Source: forkTestSource,
+		Build: "make install", Produces: []string{".local/bin/probetool"}}
+	forkReq := run.ForkBuildRequest{Platform: patchedTestPlatform, Runtime: "podman"}
+	if err := registerForkPreparation([]packload.ForkPin{{Fork: fork, Commit: forkTestCommit, Ref: "main"}}, forkReq, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	var hostReport bytes.Buffer
+	if !advanceHostTrees(&hostReport, false, "tool", nil) {
+		t.Fatalf("owner host advance refused after the jail had admitted its selected trees:\n%s", hostReport.String())
+	}
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := make(map[string]bool)
+	for _, record := range state {
+		if record.Runtime == "podman" && record.Platform == patchedTestPlatform {
+			active[record.Key] = record.Active
+		}
+	}
+	for _, key := range []string{trees[0].Key(), trees[1].Key(), fork.Key()} {
+		if !active[key] {
+			t.Errorf("host owner registration revoked unrelated jail/fork subscription %s: %+v", key, state)
+		}
+	}
+	if got := strings.Count(hostReport.String(), "using admitted build"); got != 1 {
+		t.Errorf("host -- tool did not consume exactly its declared owner's admitted tree: %d lines\n%s", got, hostReport.String())
+	}
+}
+
 // A REVERT REMOVES THE LINK (§8.3), and the host's versioned copies with it, as it withdraws every
 // key yolo wrote: its dry run names the link and writes nothing, and --assert removes the link, the
 // record's entry for it and the copies. Red if the revert stops calling revertHostTreeLinks. The
