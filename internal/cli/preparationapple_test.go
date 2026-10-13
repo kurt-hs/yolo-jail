@@ -114,8 +114,9 @@ func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *te
 	if children.Load() != 0 {
 		t.Fatalf("fresh check started an Apple Container build child despite live-jail liveness:\n%s", report.String())
 	}
-	if got[poolKeyA].Dir != "" || !strings.Contains(got[poolKeyA].Reason, "could not be prepared freshly") {
-		t.Fatalf("freshness request silently used the old admitted build: delivery=%+v\n%s", got[poolKeyA], report.String())
+	if got[poolKeyA].Dir != "" || !strings.Contains(got[poolKeyA].FreshFailure, "candidate remains pending") {
+		t.Fatalf("freshness request did not preserve its pending failure independently of the old good build: delivery=%+v\n%s",
+			got[poolKeyA], report.String())
 	}
 	if !strings.Contains(got[poolKeyA].Reason, "candidate remains pending") || !strings.Contains(got[poolKeyA].Reason, "yolo-another-session") {
 		t.Fatalf("strict refusal did not retain the Apple pending/liveness explanation: %+v\n%s", got[poolKeyA], report.String())
