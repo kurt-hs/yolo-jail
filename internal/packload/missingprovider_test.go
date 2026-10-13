@@ -94,8 +94,8 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 			if ue.ProviderPack != "openai-auth" || ue.Adaptation.Pack != "wire-bridge" {
 				t.Errorf("host: the refusal must name the provider's pack and the adapter: %+v", ue)
 			}
-			for _, want := range []string{`provider "openai-codex" is not in this launch's provider table either`,
-				`pack "openai-auth" ships it and is not selected`} {
+			for _, want := range []string{`do not add "openai-auth" to ` + "`packs`" + ` to fix this`,
+				`that would not change this refusal`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("host: Error() must say %q:\n%v", want, err)
 				}
@@ -109,8 +109,8 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 				mp.Then == nil {
 				t.Errorf("jail: %+v", mp)
 			}
-			for _, want := range []string{`profile "codex" selects provider "openai-codex" for agent "claude"`,
-				"does not hold it", `pack "openai-auth" ships it and is not selected`,
+			for _, want := range []string{`Profile "codex" uses provider "openai-codex" for claude`,
+				`Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration`,
 				`Pack "wire-bridge" adapts "openai-responses" → "anthropic"`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("jail: Error() must say %q:\n%v", want, err)
@@ -160,7 +160,7 @@ func TestAJailRefusesAUserProfileWhoseProviderItLacks(t *testing.T) {
 		if !errors.As(err, &mp) || mp.Shipper != "zai" || mp.Then != nil {
 			t.Fatalf("jail/%s: err = %v, want the missing provider naming zai to add", agent, err)
 		}
-		if !strings.Contains(err.Error(), "Add \"zai\" to `packs` and this profile resolves") {
+		if !strings.Contains(err.Error(), `Add "zai" to `+"`packs`"+` in your workspace configuration`) {
 			t.Errorf("jail/%s: the refusal must name the pack whose addition resolves it:\n%v", agent, err)
 		}
 		// With the pack selected the jail composes, so the refusal was about the row alone.
@@ -203,7 +203,7 @@ yolo.env("respy", function(ctx) return { RESPY_URL = "x" } end)`), 0o644); err !
 		if !errors.As(err, &mp) || mp.Shipper != "openai-auth" || mp.Then != nil {
 			t.Fatalf("%s: err = %v, want the missing provider naming openai-auth to add", n.name, err)
 		}
-		if !strings.Contains(err.Error(), "Add \"openai-auth\" to `packs` and this profile resolves") {
+		if !strings.Contains(err.Error(), `Add "openai-auth" to `+"`packs`"+` in your workspace configuration`) {
 			t.Errorf("%s: the refusal must name the pack whose addition resolves it:\n%v", n.name, err)
 		}
 	}
@@ -258,8 +258,8 @@ func TestAProviderNothingDeclaresRefuses(t *testing.T) {
 			if !errors.As(err, &mp) || mp.Shipper != "" || mp.Dropped != "" {
 				t.Fatalf("%s/%s: err = %v, want *MissingProviderError naming no pack", n.name, agent, err)
 			}
-			if !strings.Contains(err.Error(), "no pack yolo ships declares it") ||
-				!strings.Contains(err.Error(), "Declare it under `providers`") {
+			if !strings.Contains(err.Error(), "uses a provider supplied by your selected packs") ||
+				!strings.Contains(err.Error(), "declare this provider in `providers` in your workspace configuration") {
 				t.Errorf("%s/%s: %v", n.name, agent, err)
 			}
 		}
@@ -276,7 +276,7 @@ func TestAProviderTheUserDroppedRefuses(t *testing.T) {
 	if !errors.As(err, &mp) || mp.Dropped != "openai-auth" {
 		t.Fatalf("err = %v, want *MissingProviderError naming openai-auth as the dropped provider's pack", err)
 	}
-	if !strings.Contains(err.Error(), "a null `providers.openai-codex` entry in your config removes it") {
+	if !strings.Contains(err.Error(), "Remove the `providers.openai-codex` null entry") {
 		t.Errorf("the refusal must name the null: %v", err)
 	}
 }
@@ -299,6 +299,10 @@ func TestPairingRefusalsReportsAMissingProvider(t *testing.T) {
 	var mp *MissingProviderError
 	if len(errs) != 1 || !errors.As(errs[0], &mp) {
 		t.Fatalf("PairingRefusals = %v, want the one missing-provider refusal", errs)
+	}
+	want := `Profile "codex" uses provider "openai-codex" for claude, but that provider is unavailable. Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration to make this provider available, but that alone will not fix this refusal:`
+	if !strings.HasPrefix(errs[0].Error(), want) {
+		t.Errorf("check refusal = %q, want prefix %q", errs[0], want)
 	}
 }
 

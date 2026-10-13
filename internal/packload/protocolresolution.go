@@ -159,9 +159,8 @@ func (e *UnservedAdapterError) Error() string {
 		"not run — nothing serves it here, so %s",
 		e.Provider, e.Agent, a.Pack, strconv.Quote(a.From), strconv.Quote(a.To), a.Address, a.Service, pointed)
 	if e.ProviderPack != "" {
-		msg += fmt.Sprintf("; provider %q is not in this launch's provider table either — pack %q "+
-			"ships it and is not selected%s, and selecting it would not change this answer",
-			e.Provider, e.ProviderPack, neededByClause(e.NeededBy))
+		msg += fmt.Sprintf("; do not add %q to `packs` to fix this: it declares provider %q, but that would not change this refusal",
+			e.ProviderPack, e.Provider)
 	}
 	return msg
 }
@@ -189,35 +188,22 @@ type MissingProviderError struct {
 }
 
 func (e *MissingProviderError) Error() string {
-	head := fmt.Sprintf("profile %q selects provider %q for agent %q, and this launch's provider "+
-		"table does not hold it", e.Profile, e.Provider, e.Agent)
-	lost := fmt.Sprintf("so %s would launch with nothing re-pointed, on whatever login it already holds", e.Agent)
+	head := fmt.Sprintf("Profile %q uses provider %q for %s, but that provider is unavailable", e.Profile, e.Provider, e.Agent)
+	lost := fmt.Sprintf("%s would start with its existing login instead", e.Agent)
 	switch {
 	case e.Dropped != "":
-		return fmt.Sprintf("%s: pack %q ships it, and a null `providers.%s` entry in your config "+
-			"removes it — %s. Remove the null, or select a profile whose provider this launch holds",
-			head, e.Dropped, e.Provider, lost)
+		return fmt.Sprintf("%s. Remove the `providers.%s` null entry that removes it, or choose a profile using an available provider; %s",
+			head, e.Provider, lost)
 	case e.Shipper != "" && e.Then != nil:
-		return fmt.Sprintf("%s: pack %q ships it and is not selected%s — %s. With %q added the "+
-			"profile still refuses: %v", head, e.Shipper, neededByClause(e.NeededBy), lost, e.Shipper, e.Then)
+		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to make this provider available, but that alone will not fix this refusal: %v; %s",
+			head, e.Shipper, e.Then, lost)
 	case e.Shipper != "":
-		return fmt.Sprintf("%s: pack %q ships it and is not selected%s — %s. Add %q to `packs` and "+
-			"this profile resolves", head, e.Shipper, neededByClause(e.NeededBy), lost, e.Shipper)
+		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to use this provider; %s",
+			head, e.Shipper, lost)
 	default:
-		return fmt.Sprintf("%s: no selected pack ships it, no pack yolo ships declares it, and your "+
-			"config's `providers` has no entry for it — %s. Declare it under `providers`, or select "+
-			"a profile whose provider this launch holds", head, lost)
+		return fmt.Sprintf("%s. Choose a profile that uses a provider supplied by your selected packs, or declare this provider in `providers` in your workspace configuration; %s",
+			head, lost)
 	}
-}
-
-// neededByClause is the clause both refusals add when a selected pack's `needs` names the
-// provider's pack: why a pack the manifests ask for is still not selected.
-func neededByClause(neededBy string) string {
-	if neededBy == "" {
-		return ""
-	}
-	return fmt.Sprintf(", though pack %q's `needs` names it (a launch adds a needed pack only "+
-		"while the need's `when_bins` holds)", neededBy)
 }
 
 // missingProvider is refuseUnspeakableProvider's answer when the composed table does not hold
