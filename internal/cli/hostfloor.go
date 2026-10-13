@@ -449,7 +449,25 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 	// Exact recipe/platform resolution above and strict patch authority still gate it.
 	if treeUpdateTiming(fork) == timingNextLaunch && run.BackgroundBuildsOn(captureRuntime()) &&
 		state.Good != nil && state.Good.Entry != nil {
-		delivery, good := admittedProgramServing(fork, captureRuntime(), floorPatchedPlatform())
+		// The floor projection omits pack closure and Node metadata. Recover the
+		// complete selected declaration only if the program projection is unchanged.
+		selected := selectConfiguredHostPacks()
+		var delivery entrypoint.ForkDelivery
+		var good *packsrc.GoodBuild
+		if len(selected.problems()) == 0 {
+			for _, current := range floorPrograms(selected.packs) {
+				if !reflect.DeepEqual(current, p) {
+					continue
+				}
+				for _, declared := range packload.PatchedForks(selected.packs) {
+					if declared.Key() == fork.Key() {
+						delivery, good = admittedProgramServing(declared, captureRuntime(), floorPatchedPlatform())
+						break
+					}
+				}
+				break
+			}
+		}
 		if good != nil && delivery.PatchFailure == nil && delivery.Key == state.Good.Entry.Key {
 			return state
 		}
