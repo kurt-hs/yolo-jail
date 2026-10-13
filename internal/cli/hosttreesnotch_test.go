@@ -3,7 +3,7 @@ package cli
 // hosttreesnotch_test.go pins PPX-D35 at the host notch (docs/design/patched-extensions.md): a tree
 // whose list entry reaches the host (a guarded posture list) is built and linked by `yolo host apply
 // --assert`, while one whose entry reaches jails alone (an autonomous posture list) is neither built
-// nor linked there, and a link to it an earlier render left is retired with its copies.
+// nor linked there, and a link to it an earlier render left is retired while its copies remain.
 
 import (
 	"bytes"
@@ -61,8 +61,8 @@ func TestHostApplyBuildsAndLinksNoTreeListedForJailsAlone(t *testing.T) {
 }
 
 // A LINK AN EARLIER RENDER LEFT goes once the tree's entry reaches jails alone: the dry run names it
-// and keeps it, and --assert removes it, its versioned copies and its ownership record entry. Red if
-// the render stops retiring it.
+// and keeps it, and --assert removes it and its ownership record entry, but retains version bytes
+// whose session liveness is unknown. Red if the render stops retiring links or deletes those bytes.
 func TestHostApplyRetiresTheLinkOfATreeThatNoLongerReachesTheHost(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.listTreeForAgentWith(t, treeConfigList)
@@ -73,6 +73,11 @@ func TestHostApplyRetiresTheLinkOfATreeThatNoLongerReachesTheHost(t *testing.T) 
 	target, err := os.Readlink(fx.link())
 	if err != nil || !isDir(target) {
 		t.Fatalf("the first apply rendered no link (%q, %v):\n%s%s", target, err, out.String(), errw.String())
+	}
+	versionFile := filepath.Join(target, "f.txt")
+	before, err := os.ReadFile(versionFile)
+	if err != nil {
+		t.Fatalf("the rendered version has no bytes: %v", err)
 	}
 	manifest := filepath.Join(fx.treeDir, "pack.json")
 	data, err := os.ReadFile(manifest)
@@ -94,8 +99,9 @@ func TestHostApplyRetiresTheLinkOfATreeThatNoLongerReachesTheHost(t *testing.T) 
 	if _, err := os.Lstat(fx.link()); err == nil {
 		t.Errorf("the link of a tree no host loads was kept:\n%s", out.String())
 	}
-	if isDir(filepath.Dir(target)) {
-		t.Errorf("its versioned copies were kept:\n%s", out.String())
+	after, err := os.ReadFile(versionFile)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Errorf("automatic list-scope retirement removed or changed unproven-live version bytes: %v\n%s", err, out.String())
 	}
 	if man, _ := hostskills.LoadManifest(hostSkillsManifestPath()); man.OwnedBy(fx.link(), "treepack") {
 		t.Error("the ownership record still names the retired link")
