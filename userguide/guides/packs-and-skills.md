@@ -240,6 +240,9 @@ a pack declares for yolo to build: with `"next-launch"`, a fresh launch starts w
 build or fallback and tries any due update in the background. A later launch can use the new build
 if that update finishes first; the setting does not guarantee the next launch gets a newer one.
 
+If the refresh did not reach a hand-added package, two pi sessions started together may both
+install it, as on any machine pi runs on.
+
 **Packs move only when you say so**, apart from a branch ref as described above:
 
 ```bash
