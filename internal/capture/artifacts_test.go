@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -13,6 +14,9 @@ import (
 )
 
 func TestProgramArtifactsExcludeSecretsFromActualProducer(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	home := t.TempDir()
 	out := filepath.Join(t.TempDir(), "out")
 	t.Setenv("SYNTHETIC_PROVIDER_TOKEN", "must-not-cross")
@@ -40,6 +44,9 @@ printf private > "$HOME/.npm-global/.npmrc"`}})
 }
 
 func TestProgramArtifactsRefuseEscapeAndPermissionsBeforeOutput(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	for _, body := range []string{`ln -s /etc/passwd "$HOME/.local/bin/probe"`, `ln -s ../../.config/token "$HOME/.local/bin/probe"`, `printf program > "$HOME/.local/bin/probe"; chmod 4777 "$HOME/.local/bin/probe"`, `rmdir "$HOME/.local/bin"; ln -s "$HOME/.config" "$HOME/.local/bin"`} {
 		t.Run(body, func(t *testing.T) {
 			home := t.TempDir()
@@ -63,6 +70,9 @@ func TestProgramArtifactsRefuseEscapeAndPermissionsBeforeOutput(t *testing.T) {
 }
 
 func TestProgramArtifactsCancellationProducesNoManifest(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	out := filepath.Join(t.TempDir(), "out")

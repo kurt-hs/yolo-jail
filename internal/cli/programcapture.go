@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
@@ -41,19 +43,34 @@ func prepareProgramCapture(ctx context.Context, store *capture.Store, inputs cap
 	if err != nil {
 		return nil, err
 	}
+
+	var winner *capture.Entry
+	if best, ok := selected[capture.Program{Bin: inputs.Bin, Platform: inputs.Platform, Compatibility: identity}]; ok {
+		winner, err = store.Resolve(best.Key)
+		if err != nil {
+			return nil, err
+		}
+		m, err := capture.ReadManifest(winner.Root)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateProgramManifest(m, inputs.Platform, artifacts); err != nil {
+			return nil, err
+		}
+	}
 	var entry *capture.Entry
 	err = guard(func() error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if best, ok := selected[capture.Program{Bin: inputs.Bin, Platform: inputs.Platform, Compatibility: identity}]; ok {
-			entry, err = store.Resolve(best.Key)
-			return err
-		}
+		entry = winner
 		return nil
 	})
-	if err != nil || entry != nil {
-		return entry, err
+	if err != nil {
+		return nil, err
+	}
+	if entry != nil {
+		return entry, nil
 	}
 	stagingID := "program-" + identity
 	staging := store.StagingDir(stagingID)
@@ -96,10 +113,21 @@ func prepareProgramCapture(ctx context.Context, store *capture.Store, inputs cap
 	if manifest.Platform != inputs.Platform {
 		return nil, fmt.Errorf("selected program producer ran on a different platform — resolve its actual runtime and retry")
 	}
-	if err := capture.ValidateArtifacts(manifest, artifacts); err != nil {
+	if err := validateProgramManifest(manifest, inputs.Platform, artifacts); err != nil {
 		return nil, err
 	}
-	entry, err = store.AdmitEntryGuarded(ctx, filepath.Join(staging, captureOutLeaf), func(commit func() error) error {
+	entry, err = store.AdmitEntryValidated(ctx, filepath.Join(staging, captureOutLeaf), func(retained *capture.Manifest) error {
+		if err := validateProgramManifest(retained, inputs.Platform, artifacts); err != nil {
+			return err
+		}
+		if manifest.Relocatable != retained.Relocatable || !slices.Equal(sortedProgramRefs(manifest.AbsoluteRefs), sortedProgramRefs(retained.AbsoluteRefs)) {
+			return fmt.Errorf("program capture: retained capture has a different relocation contract — use the supported installer route")
+		}
+		if !retained.Relocatable && retained.Home != manifest.Home {
+			return fmt.Errorf("program capture: retained capture is tied to another home — use the supported installer route")
+		}
+		return nil
+	}, func(commit func() error) error {
 		return guard(func() error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -115,4 +143,28 @@ func prepareProgramCapture(ctx context.Context, store *capture.Store, inputs cap
 		return nil, err
 	}
 	return entry, nil
+}
+
+func validateProgramManifest(m *capture.Manifest, platform string, artifacts []string) error {
+	if m.Platform != platform {
+		return fmt.Errorf("program capture: canonical platform %q does not match %q — use the supported installer route", m.Platform, platform)
+	}
+	if m.RefScan != capture.RefScanFull {
+		return fmt.Errorf("program capture: canonical capture lacks the full relocation scan — use the supported installer route")
+	}
+	return capture.ValidateArtifacts(m, artifacts)
+}
+
+func sortedProgramRefs(refs []capture.AbsoluteRef) []capture.AbsoluteRef {
+	out := slices.Clone(refs)
+	slices.SortFunc(out, func(a, b capture.AbsoluteRef) int {
+		if c := cmp.Compare(a.Path, b.Path); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Kind, b.Kind); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Value, b.Value)
+	})
+	return out
 }

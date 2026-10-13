@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +17,9 @@ import (
 
 func programAdmissionFixture(t *testing.T) (*capture.Store, capture.ProgramInputs, []string, func(context.Context, string) error) {
 	t.Helper()
+	if goruntime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	t.Setenv("HOME", t.TempDir())
 	store := &capture.Store{Dir: t.TempDir()}
 	inputs := capture.ProgramInputs{Owner: "fixture", Bin: "probe", Declared: "fixture@1", Resolver: "npm", Release: "1", Recipe: "fixture-recipe", Platform: capture.Platform(), Runtime: "fixture-node", NodeABI: "127"}
@@ -182,5 +188,96 @@ func TestProgramCaptureAdmissionDifferentIdentitiesShareIdenticalCASBytes(t *tes
 	keys, err := store.EntryKeys()
 	if err != nil || len(keys) != 1 {
 		t.Fatalf("duplicate bytes: %v %v", keys, err)
+	}
+}
+
+func TestProgramCaptureAdmissionRejectsRetainedMetadataConflict(t *testing.T) {
+	for _, conflict := range []string{"platform", "legacy-relocation", "artifacts", "relocation-refs"} {
+		t.Run(conflict, func(t *testing.T) {
+			store, inputs, artifacts, produce := programAdmissionFixture(t)
+			staged, err := store.Stage("legacy")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := produce(context.Background(), staged); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(staged, captureOutLeaf)
+			m, err := capture.ReadManifest(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch conflict {
+			case "platform":
+				m.Platform = "darwin/arm64"
+			case "legacy-relocation":
+				m.RefScan = capture.RefScanSymlinks
+				m.Relocatable = false
+			case "relocation-refs":
+				m.AbsoluteRefs = []capture.AbsoluteRef{{Path: ".local/bin/probe", Kind: capture.RefFileContent, Value: m.Home}}
+			case "artifacts":
+				m.Surfaces = []string{".local"}
+			}
+			if err := capture.WriteManifest(out, m); err != nil {
+				t.Fatal(err)
+			}
+			existing, err := store.AdmitEntry(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(capture.ManifestPath(existing.Root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = prepareProgramCapture(context.Background(), store, inputs, artifacts, produce, func(commit func() error) error { return commit() })
+			if err == nil {
+				t.Fatal("incompatible canonical metadata published new identity")
+			}
+			selected, err := capture.Select(store, captureRecords)
+			if err != nil || len(selected) != 0 {
+				t.Fatalf("invalid identity published: %v %v", selected, err)
+			}
+			after, err := os.ReadFile(capture.ManifestPath(existing.Root))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("legacy canonical metadata overwritten")
+			}
+		})
+	}
+}
+
+func TestProgramCaptureAdmissionLinuxDarwinSameBytesRetainsOldReceipt(t *testing.T) {
+	store, inputs, artifacts, produce := programAdmissionFixture(t)
+	guard := func(commit func() error) error { return commit() }
+	first, err := prepareProgramCapture(context.Background(), store, inputs, artifacts, produce, guard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(capture.ReceiptsPath(first.Root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := inputs
+	other.Platform = "darwin/arm64"
+	producer := func(ctx context.Context, staging string) error {
+		if err := produce(ctx, staging); err != nil {
+			return err
+		}
+		out := filepath.Join(staging, captureOutLeaf)
+		m, err := capture.ReadManifest(out)
+		if err != nil {
+			return err
+		}
+		m.Platform = other.Platform
+		return capture.WriteManifest(out, m)
+	}
+	if _, err := prepareProgramCapture(context.Background(), store, other, artifacts, producer, guard); err == nil {
+		t.Fatal("same bytes admitted incompatible Darwin identity")
+	}
+	after, err := os.ReadFile(capture.ReceiptsPath(first.Root))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("old receipt changed")
+	}
+	if _, err := prepareProgramCapture(context.Background(), store, inputs, artifacts, func(context.Context, string) error { t.Fatal("old compatible winner reinstalled"); return nil }, guard); err != nil {
+		t.Fatal(err)
 	}
 }

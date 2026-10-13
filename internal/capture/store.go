@@ -221,7 +221,7 @@ func (s *Store) Stage(id string) (string, error) {
 // one of those inodes by hardlink and swapping it out would be a silent version change under a
 // running program.
 func (s *Store) Admit(staged string) (*Entry, error) {
-	return s.admit(context.Background(), staged, staged, false, nil)
+	return s.admit(context.Background(), staged, staged, false, nil, nil)
 }
 
 // AdmitEntry admits a whole ENTRY-SHAPED staging directory — `<staged>/tree` plus whatever
@@ -253,7 +253,17 @@ func (s *Store) AdmitEntryGuarded(ctx context.Context, staged string, guard func
 	} else if !fi.IsDir() {
 		return nil, fmt.Errorf("capture admit: %s is not a directory", tree)
 	}
-	return s.admit(ctx, staged, tree, true, guard)
+	return s.admit(ctx, staged, tree, true, guard, nil)
+}
+
+// AdmitEntryValidated checks the metadata that will actually survive admission under
+// the CAS lock, before publication. Duplicate bytes never replace canonical metadata.
+// Validation and lock waits remain outside the caller's short publication guard.
+func (s *Store) AdmitEntryValidated(ctx context.Context, staged string, validate func(*Manifest) error, guard func(func() error) error) (*Entry, error) {
+	if validate == nil {
+		return nil, fmt.Errorf("capture admit: missing metadata contract — provide selected output validation")
+	}
+	return s.admit(ctx, staged, TreeDir(staged), true, guard, validate)
 }
 
 // admit is the shared body of Admit and AdmitEntry.
@@ -263,7 +273,7 @@ func (s *Store) AdmitEntryGuarded(ctx context.Context, staged string, guard func
 // same path and the tree lands INSIDE a freshly-made entry dir; for AdmitEntry the staged
 // dir already IS the entry (tree plus metadata) and becomes the entry dir itself. That is
 // the whole difference between the two.
-func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, guard func(func() error) error) (*Entry, error) {
+func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, guard func(func() error) error, validate func(*Manifest) error) (*Entry, error) {
 	stagingRoot := filepath.Join(s.Dir, stagingLeaf)
 	if !within(stagingRoot, staged) {
 		return nil, fmt.Errorf("capture admit: staged tree %s is not under %s — admission is an "+
@@ -293,6 +303,19 @@ func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, 
 	entryPath := s.EntryDir(key)
 	_, markerErr := os.Stat(filepath.Join(entryPath, completeMarker))
 	duplicate := markerErr == nil
+	if validate != nil {
+		canonical := staged
+		if duplicate {
+			canonical = entryPath
+		}
+		m, err := ReadManifest(canonical)
+		if err != nil {
+			return nil, err
+		}
+		if err := validate(m); err != nil {
+			return nil, fmt.Errorf("capture admit: retained metadata is incompatible — use a compatible capture or the supported installer route: %w", err)
+		}
+	}
 	if !duplicate {
 		if err := s.clearIncompleteEntry(entryPath); err != nil {
 			return nil, err
