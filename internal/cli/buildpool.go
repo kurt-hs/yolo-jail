@@ -443,7 +443,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		platform = tr.Platform
 		selected = append(selected, tr.Trees...)
 	}
-	if len(selected) > 0 && !config.InJail() && run.BackgroundBuildsOn(rt) {
+	if len(selected) > 0 && !config.InJail() && run.BackgroundChecksOn(rt, platform) {
 		span := pool.report.preparationSpan("preparation.registration")
 		err := registerTreePreparation(selected, run.TreeBuildRequest{Runtime: rt, Platform: platform}, stream)
 		pool.report.preparationOutcome("preparation.registration", "selected trees", err)

@@ -169,6 +169,11 @@ type advanceOptions struct {
 	// mirror lock, the build's lock — and skips the key when one is held (§6.2 rule 5), while its
 	// completed build's settle record write waits (rule 1); a stopped build jail is removed by name.
 	background bool
+	// checkOnly preserves check/replay evidence and leaves any fit pending, without
+	// entering the sealed build path (Apple Container background preparation).
+	checkOnly bool
+	// requiredBuildFailure reports blocked actual builds to an explicit fresh request.
+	requiredBuildFailure func(error)
 }
 
 // advanceActScope is the production ActInterrupt scope boundary. The pass-through default keeps
@@ -977,6 +982,11 @@ func (a *advance) wantsBackground() bool {
 	if due, _ := packsrc.CheckDue(a.rec, a.in, patchedNow(), 0); due {
 		return true
 	}
+	return a.pendingBuild()
+}
+
+// pendingBuild excludes check-due alone: Apple launches consume only a recorded candidate.
+func (a *advance) pendingBuild() bool {
 	c := a.rec.Check
 	if c == nil || c.FetchErr != "" || c.Problem != "" || a.rec.ApplyErrAtLastCheck() != nil {
 		return false
@@ -1764,6 +1774,11 @@ func (a *advance) baseNext() string {
 // move, a recorded failure, or nothing recorded, and then the hand. With nothing serving, a fit
 // whose build fails or cannot be put in place sends the advance on to the series' base (PF-D23).
 func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
+	if a.o.checkOnly {
+		r := a.serveOr("candidate pending — a fresh launch builds it once other Apple Container jails stop")
+		r.retained = b.Entry.Label() + " pending — check-only preparation; launch again to build it"
+		return r
+	}
 	f := a.f
 	// ONE CAUSE, ONCE (buildcauses.go): a build jail sealed as an earlier one of this act was, whose
 	// own config was refused, would be refused the same way, so it is not started.
@@ -1928,6 +1943,8 @@ func (a *advance) endRun(err error) {
 		a.inFlight.fail("another launch's build of it failed")
 	case errors.As(err, &lockTimeout), errors.Is(err, errForkBuildLocked):
 		a.inFlight.fail("another build of it holds its lock")
+	case isAppleBuildPending(err):
+		a.inFlight.fail(err.Error())
 	case errors.Is(err, errForkBuildNotStarted):
 		var ns forkBuildNotStarted
 		errors.As(err, &ns)
@@ -1964,6 +1981,15 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 	}
 	if a.interrupted() || errors.Is(err, pidlock.ErrCanceled) {
 		return a.finish(nil, forkBuild{}, 0, nil, "the advance was interrupted — "+a.next()+" builds it")
+	}
+	if isAppleBuildPending(err) {
+		if a.o.requiredBuildFailure != nil {
+			a.o.requiredBuildFailure(err)
+		}
+		a.warn("%s: %v — %s", f.Label(), err, a.runsNow())
+		r := a.serveOr(err.Error())
+		r.retained = b.Entry.Label() + " pending — " + err.Error()
+		return r
 	}
 	var patchFailure *packsrc.PatchFailure
 	if errors.Is(err, packsrc.ErrStaleReplay) {

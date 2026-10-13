@@ -27,6 +27,7 @@ package cli
 // leaves its result where a container build jail does, so the admit and the receipt are one.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -754,6 +755,9 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		if entry, _, err := resolveForkBuild(store, f.Bin, b.Platform, f.Source, b.Commit, b.recipe()); err == nil {
 			return entry, nil
 		}
+	}
+	if err := appleRequiredBuildAdmission(context.Background(), mode.runtime, f.CaptureArg()); err != nil {
+		return nil, err
 	}
 	stagingID := "fork-" + b.id()
 	staging := store.StagingDir(stagingID)

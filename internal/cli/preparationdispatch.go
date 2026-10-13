@@ -98,7 +98,7 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 
 // registerPreparationForks preserves the exact owner declaration for tree/program adapters.
 func registerPreparationForks(trees []packload.Fork, runtime, platform string, w io.Writer) error {
-	if len(trees) == 0 || config.InJail() || !run.BackgroundBuildsOn(runtime) {
+	if len(trees) == 0 || config.InJail() || !run.BackgroundChecksOn(runtime, platform) {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -225,7 +225,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if !run.BackgroundBuildsOn(sub.Runtime) {
+			if !run.BackgroundChecksOn(sub.Runtime, sub.Platform) {
 				continue
 			}
 			f, err := currentPreparationTree(ctx, sub)
@@ -330,7 +330,7 @@ func runPreparationTree(ctx context.Context, root string, sub preparationSubscri
 	ran := false
 	runTreesUnder(keyCtx, []packload.Fork{f}, sub.Runtime, w, w, func(_ int, f packload.Fork, lane treeLane) {
 		withBackgroundKey(f.Key(), f.Label(), lane.errw, func(o *backgroundOutcome) {
-			res := advancePatchedFork(f, lane.options(advanceOptions{platform: sub.Platform, runtime: sub.Runtime, launch: true, background: true, admitGuard: guard}))
+			res := advancePatchedFork(f, lane.options(advanceOptions{platform: sub.Platform, runtime: sub.Runtime, launch: true, background: true, checkOnly: !run.BackgroundBuildsOn(sub.Runtime), admitGuard: guard}))
 			backgroundResult(o, res, keyCtx.Err() != nil)
 			outcome = *o
 			servingEntry = res.delivery.Key
@@ -437,7 +437,7 @@ func packPrepare(args []string, out, errw io.Writer) int {
 		}
 		eligible := false
 		for _, sub := range subs {
-			if run.BackgroundBuildsOn(sub.Runtime) {
+			if run.BackgroundChecksOn(sub.Runtime, sub.Platform) {
 				if _, err := currentPreparationTree(ctx, sub); err == nil {
 					eligible = true
 					break
