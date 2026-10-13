@@ -108,23 +108,27 @@ func TestWaitForRunningContainerGivesUpBounded(t *testing.T) {
 	p := &stalePhase{runningAfter: 1 << 30}
 	o := staleOptions(t, p)
 	// The wait's deadline reads o.Now, so a clock that moves a second per reading lets
-	// it expire after a handful of polls instead of five real seconds. (Its 100ms poll
-	// sleep is a bare time.Sleep with no seam, so each poll still costs that much.)
-	// The bound is asserted on BOTH clocks: the logical one is what a deadline read
-	// through o.Now is measured against, and the wall one catches a deadline that
-	// stopped reading o.Now — that loop still ends, on real time, and must still end
-	// in bounded real time.
+	// it expire after a handful of polls instead of five real seconds; o.Sleep is the
+	// second seam, so those polls cost nothing instead of 100ms each. Counting the
+	// sleeps is also the pin on the seam: a loop that went back to calling time.Sleep
+	// directly would leave slept at 0 and this test would fail, not merely slow down.
 	logical := time.Now()
 	o.Now = func() time.Time {
 		logical = logical.Add(time.Second)
 		return logical
 	}
+	slept := 0
+	o.Sleep = func(time.Duration) { slept++ }
 
 	start, logicalStart := time.Now(), logical
 	if cid := o.waitForRunningContainer("yolo-002-abcd1234", "podman"); cid != "" {
 		t.Fatalf("a container that never runs was reported as running: %q", cid)
 	}
 	elapsed, logicalElapsed := time.Since(start), logical.Sub(logicalStart)
+	if slept == 0 {
+		t.Error("the wait never slept — it must poll o.Sleep, not time.Sleep, or its interval " +
+			"is uninjectable and every test of it pays the real 100ms")
+	}
 	if elapsed > 30*time.Second || logicalElapsed > 30*time.Second {
 		t.Errorf("the wait took %s (%s on its own clock) — it must be bounded, or a wedged "+
 			"container hangs the launch instead of failing it", elapsed, logicalElapsed)

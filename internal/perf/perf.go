@@ -82,7 +82,11 @@ type Sink func(Event)
 // that crosses it — the culprit announced the moment it finishes, which is the
 // answer to "who is doing it" without waiting for (or ever reaching) a report.
 // A second, not a finer unit: the delays this exists to catch are seconds.
-const SlowSpanThreshold = 1 * time.Second
+//
+// A var, not a const, and that is the whole point: the run package's slow-span
+// tests can shrink it and observe a real Span cross it in milliseconds instead of
+// sleeping the second out. Production never assigns it (the default IS the ruling).
+var SlowSpanThreshold = 1 * time.Second
 
 // Log is a launch's timing collector. Construct one per process (New) or use
 // the shared Disabled(); nil is equally valid. Safe for concurrent use —
