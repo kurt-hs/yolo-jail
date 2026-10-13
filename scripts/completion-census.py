@@ -2,11 +2,11 @@
 """Regenerate scripts/completion-readers.json: which Go tests read repository files outside
 their own package directory.
 
-`just done` (scripts/completion-check.py) selects Go tests from the packages a change can reach
-through imports. A test that READS a file it does not import — a doc, a manifest, another
-package's source — is invisible to the import graph, so this census records those reads, per
-test, from Go's own test log (`-test.testlogfile`, the record `go test` uses to invalidate its
-cache), and the selector reruns a test whenever a change touches what it read.
+`just done` (scripts/completion-check.py) selects Go tests from the packages whose own files
+changed. A test that READS a file it does not import — a doc, a manifest, another package's
+source — is invisible to that selection, so this census records those reads, per test, from Go's
+own test log (`-test.testlogfile`, the record `go test` uses to invalidate its cache), and the
+selector reruns a test whenever a change touches what it read.
 
 Run it after adding or changing a test that reads outside its package directory:
 

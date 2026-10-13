@@ -57,8 +57,9 @@ of tests and 32 s of lint); a single package, `internal/cli`, took about 130 s o
    files, the flake, `.github/`, `scripts/`, release and site config), a non-regular file, a Go
    file in no package, an error from `go list`, an unreadable readers file, or a path no check and
    no recorded reader covers. Otherwise only:
-   - `go vet` and staticcheck for both GOOS values, and `go test -short`, on the changed packages
-     and every package whose build or tests import them (each GOOS's own graph for lint);
+   - `go vet` and staticcheck for both GOOS values on the changed packages and every package
+     whose build or tests import them, and `go test -short` on the changed packages alone
+     (each GOOS's own graph for lint; [CAC-D18](#CAC-D18));
    - the individual tests recorded as **reading** a changed path, or listing a directory that
      gained or lost an entry ([CAC-D10](#CAC-D10)), and on every change every **scanning** test,
      one that reads all files of a kind in a directory or lists a whole tree
@@ -86,6 +87,13 @@ whole gate. Every other `scripts/` path, and every genuine global input (`go.mod
 [`scripts/test-completion-check.py`](../../scripts/test-completion-check.py), run by `lint-ci`,
 covers the routes on a synthetic repository and pins both call sites.
 
+**`go test -short` no longer runs the importer closure, only the changed packages**
+([CAC-D18](#CAC-D18)). Go's test cache invalidates for every package a change reaches, so the
+closure's whole suite re-executed on each core edit — a comment in one importable package selected
+34 to 70 of the module's 143 packages — and the local route paid that suite for changes it did not
+test. Its lint still covers the closure, and `just check-ci` is unchanged and runs the closure's
+tests on every push.
+
 ### Measured on 2026-10-09
 
 One machine (32 CPUs), the shared Go build cache warm from earlier runs:
@@ -103,8 +111,9 @@ checkout path, and 21.2 s after the same one-line document commit in a checkout 
 was warm.
 
 `internal/cli` and `internal/cli/run` import nearly every package in the module, so most Go changes
-still pay for those two suites. That cost is the [suite-speed](../plans/test-suite-speed.md) work,
-not something selection can remove.
+still pay to lint those two packages in the importer closure — and paid for their suites until
+[CAC-D18](#CAC-D18) moved the closure's tests to CI. The remaining lint cost is the
+[suite-speed](../plans/test-suite-speed.md) work, not something selection can remove.
 
 ### Known limits
 
@@ -485,6 +494,8 @@ engineering gaps go there, not into invented owner questions.
 | <a id="CAC-D15"></a>CAC-D15 | *Implementation decision, from review.* Every scanning test — one whose recorded reads include a `D/*` or `D/*.E` pattern, or whose listings include a `D/**` tree — runs on every selective check, 43 tests in 18 packages on 2026-10-09. **Why:** what they read moves with ordinary edits, so a recorded set went stale between census runs: deleting a cited document selected none of the citation test, and `just done` would have recorded a tree `check-ci` rejects. Run uncached, the 42 of the earlier census took 14 s together; Go's test cache skips them when nothing they read changed. Reversible | 2026-10-09 | [Known limits](#known-limits) | ✅ |
 | <a id="CAC-D16"></a>CAC-D16 | *Implementation decision, from review.* The Vantage wrapper runs a pinned release (0.10.0), not `@latest`. **Why:** with `@latest`, an upstream release could turn a document nobody changed red, and a document's check must depend only on the document. Raising the pin changes `scripts/`, so that commit runs the full gate. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D17"></a>CAC-D17 | *Implementation decision.* Exempt `scripts/completion-readers.json` from the global-input rule: a range whose only global-matching path is the census routes selective, because it is reader-selection data read fresh from the working tree, not a gate input. Every other `scripts/` path, and every genuine global input (`go.mod`, `go.sum`, `vendor/`, `flake.nix`, `flake.lock`, `.github/workflows/`), still runs the full gate. **Why:** treating the census as a global input forced the full gate on every census refresh — a 9-minute run to regenerate selection data. Reversible | 2026-10-12 | [What shipped](#what-shipped) | ✅ |
+
+| <a id="CAC-D18"></a>CAC-D18 | *Implementation decision*, authorized by the owner 2026-10-12: the local route tests the changed packages and leaves the importer closure's tests to CI. Lint still covers the closure. **Why:** Go's test cache invalidates for every package a change reaches, so the closure's suite re-ran on every core edit and made `just done` cost what the gate it narrows costs; `just check-ci` and its routes are unchanged and run the closure on every push. Reversible | 2026-10-12 | [What shipped](#what-shipped) | ✅ |
 
 The standalone-invocation requirement supersedes the coordinator-assertion mechanism in CAC-D4:
 an assertion cannot stop an uncoordinated writer, and refusing every uncertified caller would make

@@ -214,22 +214,29 @@ class FrontDoor(unittest.TestCase):
         self.assertEqual([c["argv"] for c in self.ran(calls, "go", "test")],
                          [["test", "-short", "-run", "^(TestScansSource)$", "./c"]])
 
-    def test_a_leaf_package_change_checks_it_and_its_importers_only(self):
+    def test_a_changed_package_is_tested_alone_but_its_importers_are_still_linted(self):
+        # The local route tests the packages whose OWN files changed; the importer closure's
+        # tests are CI's. Go's test cache invalidates for every package a change reaches, so
+        # running them here made `just done` pay the closure's whole suite. Lint still covers
+        # the closure, so a compile-level break in b stays local.
         self.verified()
         self.write("a/a.go", "package a\n\nfunc A() int { return 2 }\n")
         self.commit("go")
         rc, out, calls = self.done()
         self.assertEqual(rc, 0, out)
-        want = ["example.com/m/a", "example.com/m/b"]
-        self.assertEqual([c["argv"] for c in self.ran(calls, "go", "test", "-short", "example.com/m/a")],
-                         [["test", "-short"] + want])
+        closure = ["example.com/m/a", "example.com/m/b"]
+        self.assertEqual(sorted(c["argv"] for c in self.ran(calls, "go", "test")),
+                         sorted([["test", "-short", "example.com/m/a"],
+                                 ["test", "-short", "-run", "^(TestScansSource)$", "./c"]]))
+        self.assertNotIn("example.com/m/b",
+                         [a for c in self.ran(calls, "go", "test") for a in c["argv"]])
         self.assertNotIn("example.com/m/c", [a for c in calls for a in c["argv"]])
         for goos in ("linux", "darwin"):
             vet = [c for c in self.ran(calls, "go", "vet") if c["GOOS"] == goos]
             sc = [c for c in self.ran(calls, "staticcheck") if c["GOOS"] == goos]
-            self.assertEqual([c["argv"][-2:] for c in vet], [want], goos)
-            self.assertEqual([c["argv"][-2:] for c in sc], [want], goos)
-        self.assertIn(["-checks=inherit,-SA4023"] + want,
+            self.assertEqual([c["argv"][-2:] for c in vet], [closure], goos)
+            self.assertEqual([c["argv"][-2:] for c in sc], [closure], goos)
+        self.assertIn(["-checks=inherit,-SA4023"] + closure,
                       [c["argv"] for c in self.ran(calls, "staticcheck") if c["GOOS"] == "darwin"])
         self.assertEqual([c["argv"] for c in self.ran(calls, "gofmt")], [["-l", "a/a.go"]])
         self.assertTrue(self.ran(calls, "go", "run", "./tools/pack-binaries", "check"))
