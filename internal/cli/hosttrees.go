@@ -105,8 +105,11 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		o := lane.options(advanceOptions{platform: req.Platform, runtime: rt, color: color,
 			launch: true, host: true, act: act, bypassCommand: command})
 		if treeUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(rt) {
-			r, _ := servingTreeOf(f, o, "", true)
-			if r.delivery.Key != "" || r.patchFailure != nil {
+			r, a := servingTreeOf(f, o, "", true)
+			if r.patchFailure != nil && a != nil {
+				r = a.patchFailureResult(r.patchFailure)
+			}
+			if r.delivery.Key != "" || r.patchFailure != nil || r.operationError != "" {
 				results[i] = r
 				return
 			}
@@ -115,6 +118,10 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	})
 	var stopped []string
 	for i, r := range results {
+		if r.operationError != "" {
+			fmt.Fprintf(errw, "yolo host: refusing %s: %s — repair the named evidence and retry `%s`; nothing was written.\n", trees[i].Label(), r.operationError, command)
+			return false
+		}
 		if r.patchFailure != nil && !r.bypassed {
 			stopped = append(stopped, trees[i].Label())
 		}
