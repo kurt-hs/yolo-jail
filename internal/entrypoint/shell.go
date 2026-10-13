@@ -339,6 +339,7 @@ func BootstrapScript(e *Env) string {
 		// The readiness act (readiness.go, OQ-JR1): one install-only call per declared program,
 		// and the launch's hatch, both baked for the floor checks' reason.
 		"__YOLO_PROGRAM_READINESS__", readinessChecks(e),
+		"__YOLO_LAUNCH_UPDATE__", boolFlag(e.Getenv(paths.LaunchUpdateEnv) == "1"),
 		"__YOLO_ALLOW_MISSING_PROGRAMS__", shquote.Quote(allowMissingPrograms(e)),
 		"__YOLO_ALLOW_MISSING_ENV__", paths.AllowMissingProgramsEnv,
 		// The one status the stage's wrapper passes through as a refusal. Spelled by
@@ -593,14 +594,14 @@ _yolo_ready_error() {
 # _yolo_ready BIN WHO runs BIN's launcher in install-only mode, its output shown as it comes,
 # and records WHO and the install's error when it leaves nothing to run.
 _yolo_ready() {
-    local _bin="$1" _who="$2" _out _rc=0 _err="" _line _phase_start=$SECONDS
+    local _bin="$1" _who="$2" _update="${3:-0}" _out _rc=0 _err="" _line _phase_start=$SECONDS
     _yolo_phase_perf readiness "$_bin" start foreground 0 pending
     _out=$(mktemp "${TMPDIR:-/tmp}/yolo-ready.XXXXXX" 2>/dev/null) || _out=""
     if [ -n "$_out" ]; then
-        YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null 2>&1 | tee "$_out" >&2
+        YOLO_PACK_UPDATE="$_update" YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null 2>&1 | tee "$_out" >&2
         _rc=${PIPESTATUS[0]}
     else
-        YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null >&2 2>&1 || _rc=$?
+        YOLO_PACK_UPDATE="$_update" YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null >&2 2>&1 || _rc=$?
     fi
     _yolo_phase_perf readiness "$_bin" end foreground "$((SECONDS - _phase_start))" "$_rc"
     if [ "$_rc" = 0 ]; then
@@ -623,7 +624,7 @@ YOLO_READY_EOF
 }
 __YOLO_PROGRAM_READINESS__
 if [ -n "$_yolo_ready_failed" ]; then
-    if [ "$_YOLO_ALLOW_MISSING_PROGRAMS" = 1 ]; then
+    if [ "$_YOLO_ALLOW_MISSING_PROGRAMS" = 1 ] && [ "__YOLO_LAUNCH_UPDATE__" != 1 ]; then
         echo "  ⚠ __YOLO_ALLOW_MISSING_ENV__ is set, so this jail starts WITHOUT what a selected pack declares:" >&2
         printf '%s' "$_yolo_ready_failed" >&2
         echo "    Each installs the first time it is run; its install output is above." >&2
@@ -636,6 +637,10 @@ if [ -n "$_yolo_ready_failed" ]; then
         echo "      network), or drop the pack from your packs list.  To start the jail without it:" >&2
         echo "          __YOLO_ALLOW_MISSING_ENV__=1 yolo <your command>" >&2
         echo "      and each missing program installs the first time it is run." >&2
+        if [ "__YOLO_LAUNCH_UPDATE__" = 1 ]; then
+            echo "      An explicit update cannot use a missing-program bypass: repair and retry --update," >&2
+            echo "      or launch without --update." >&2
+        fi
         _yolo_ready_refused=1
     fi
 fi

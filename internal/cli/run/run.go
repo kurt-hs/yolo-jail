@@ -466,6 +466,10 @@ func Run(opts Options) (rc int) {
 	// which wires internal/macosuser (SBPL sandbox, dscl provisioning, the
 	// sandbox-exec launch) + the darwinpkg streaming-build materialize adapter.
 	// Falls back to an actionable error if the front door didn't inject it.
+	if rt == "macos-user" && o.Update && !o.DryRun && len(staged.packs) > 0 {
+		o.pr(o.Stderr).print("--update preparation is unavailable in this macos-user launch path — run `yolo host --update -- <command>` for host-owned programs, or launch without --update")
+		return 1
+	}
 	if rt == "macos-user" {
 		if o.MacosUserRun == nil {
 			o.pr(o.Stdout).print(
@@ -1694,6 +1698,11 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// pool, under one interrupt scope, with the image's own build started beside it.
 	forkSpan := o.Perf.Span("launch.fork_builds")
 	o.runForkBuildSlot(cfg, rt, repoRoot)
+	if o.refuseFreshFailure() {
+		forkSpan.End()
+		lock.Close()
+		return 1
+	}
 	// A PATCH SERIES THAT DOES NOT APPLY IS FATAL (patchfailures.go; PF-D81, PF-D83): its error block
 	// first, before any line about what the slot delivered, then the refusal when an intact older build would
 	// otherwise run in silence; YOLO_ALLOW_PATCH_FAILURES=1 runs that build for this launch.
@@ -2732,6 +2741,13 @@ func startedLoophole(handles []loopholeDaemon, name string) bool {
 // was exec'd, and the caller continues into the fresh launch still holding the lock.
 func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.OrderedMap,
 	staged stagedPacks, channel *packChannel, raced bool, release func()) (rc int, restarted bool) {
+	if o.Update {
+		if release != nil {
+			release()
+		}
+		o.pr(o.Stderr).print("--update cannot refresh a running jail on attach — exit/stop this jail, then run a fresh `yolo --update -- <command>` launch")
+		return 2, false
+	}
 	// Every attach path comes through here (the first probe, the post-lock re-check and the
 	// stale-removal wait), so the launch log's decision record is written once, here.
 	if raced {

@@ -795,6 +795,9 @@ func Main(args []string) error {
 	// dead. It also never MATCHED, its comment's claim notwithstanding: it omitted
 	// e.LocalBin() from its first commit onward. BootPath is the single authority, applied
 	// once in execBash; TestBootPathIsTheOnlyPathAuthority refuses a second spelling.
+	if gate != nil {
+		delete(e.Vars, paths.LaunchUpdateEnv)
+	}
 	runBootSteps(&bootRun{e: e, target: bootContainer, perf: p, sessionPass: gate != nil})
 
 	// NOTE: We intentionally do NOT call `mise hook-env` here (flock deadlock).

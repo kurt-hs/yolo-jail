@@ -1262,3 +1262,6 @@ var JailPathHomeDirs = []string{
 	".yolo/bin/launch", // entrypoint.Env.LaunchDir — lazy installers, PATH head (B2)
 	"go/bin",           // entrypoint.Env.GoBin (GOPATH/bin)
 }
+
+// LaunchUpdateEnv carries explicit fresh-launch authorization to ordinary readiness launchers.
+const LaunchUpdateEnv = "YOLO_LAUNCH_UPDATE"
