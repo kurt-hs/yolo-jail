@@ -7,8 +7,10 @@ next: "Implement task 1's production timer, persistent tree subscriptions, inspe
 
 # Ready handoff: ongoing built-artifact preparation
 
-**Status:** 2026-10-13. Written against `99f36da2e`; source gaps confirmed by reading the
-one-shot dispatcher and launch callsite. Nothing below is claimed implemented or runtime-tested.
+**Status:** 2026-10-13. Source fence refreshed against `689af7ae5`: the launch still starts
+due one-shot work. State/control/lifecycle primitives now have focused in-process tests;
+production registration, authorized dispatch and guarded settle remain unimplemented.
+No end-to-end scheduler or target-runtime observation is claimed.
 **Design:** [preparation contracts](launch-update-preparation.md). Design wins on behavior;
 tree wins on cosmetic fact; this plan is advice and first to be wrong.
 
@@ -72,7 +74,16 @@ currently loses detached progress. New subscriptions must persist across no-due 
 
 Advice: keep state under `paths.BackgroundAdvanceDir()/scheduler`, using atomic JSON replacements
 and a separate short transaction lock; one process-lifetime scheduler lease, never held as a transaction
-across acts. Use the existing pidlock identity/lease protocol, not PID-only ownership.
+across acts. `pidlock.Acquire(..., NoWait, nil)` provides the existing kernel lease,
+NOT a process-identity protocol; its recorded PID is diagnostic only. Never unlink the lock inode.
+The concrete cooperative seam uses `svcendpoint.Listen`, `DialLocal` and server-side
+`ReadPreamble`, with a random expected lease incarnation in bounded JSON application commands.
+A held lease without authenticated incarnation proof remains unknown: no raw PID signal,
+forced takeover or evidence deletion. Owner publication is atomic/private after listener readiness.
+Status opens/probes without creating or rewriting state. Stop cancels the dispatch context;
+replacement rejects new dispatch and drains it while retaining the lease through teardown.
+The selected executable path's byte digest, not a stamp or `/proc/self/exe` path alone,
+is checked before dispatch and on busy ticks.
 
 ```go
 // Prospective package-cli contracts; storage root is paths.BackgroundAdvanceDir().
@@ -127,6 +138,31 @@ Request IDs in task 2 are separate from subscription and existing background-out
   state, workspace launch variables and capability-changing hatch values. Host Git keeps authorized
   noninteractive helpers/SSH transport; sealed build environment remains independently credential-free.
   Unknown inherited variables are not passed. Synthetic provider declarations test this without tool names.
+
+### Implemented prerequisite seam; remaining integration
+
+`preparationstate.go` supplies `registerPreparationSubscriptions(root, selected)`,
+`withPreparationGeneration(root, expected, commit)`, `publishPreparationSnapshot(root, snapshot)`
+and `readPreparationSnapshotFor(root, subscription)`. Runtime/platform qualify a snapshot;
+a key-only reader cannot safely merge host and jail selections. Registration coalesces identical
+inputs and advances generations on edits; unmentioned subscriptions remain inspectable, not authorized.
+The nonwaiting generation guard must run within the existing admission record callback and
+must be combined with policy/declaration reauthorization. Presence in state is never permission.
+
+`preparationscheduler.go` supplies `runPreparationWorker(ctx, root, selectedExecutable, ticks, dispatch)`;
+`probePreparationWorker(root)` and `controlPreparationWorker(ctx, root, expectedIdentity, op)`
+use authenticated `status|wake|stop|replace` control. The injected dispatcher receives the owned
+cancellation context and must use existing build-child/jail cleanup. A timer-to-callback test pins
+this lifecycle loop, but is NOT the launch-to-admitted-outcome test below.
+
+Task 1 still needs the real 60-second ticker/hidden `internal preparation-scheduler` wrapper,
+`pack prepare start|stop|status` routes, detached spawn/join, post-pool registration even when not due,
+current-selection reauthorization and key cancellation while busy, due/backoff/capability dispatch
+through existing acts, generation guard wiring at settle, and outcome-derived snapshot production.
+Only then can the exact fixture below pass (including its deleted-callsite proof).
+Task 2 request qualification additionally needs monotonic check-start sequence registration,
+request identity/vector and fresh-check admission; a subscription generation alone cannot prove freshness.
+No warm capture replacement is implemented or authorized here (OQ-PD23).
 
 ### Tests first — exact timer production-callsite fixture
 
