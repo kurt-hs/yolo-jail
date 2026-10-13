@@ -58,7 +58,7 @@ func newFloorPatchedFixture(t *testing.T) *patchedAdvanceFixture {
 	fx := patchedFloorFixture(t)
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	if rc, _, output := fx.hostLaunch(t); rc != 0 {
-		t.Fatalf("seed the real host floor with the fixture's admitted Good: rc=%d\\n%s", rc, output)
+		t.Fatalf("seed the real host floor with the fixture's admitted Good: rc=%d\n%s", rc, output)
 	}
 	return fx
 }

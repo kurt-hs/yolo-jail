@@ -258,6 +258,42 @@ func TestTheEvergreenRefreshIsThrottledAndFollowsAgentUpdates(t *testing.T) {
 	}
 }
 
+func TestManualUpdateBypassesPolicyAndTheRecentRefreshStamp(t *testing.T) {
+	w := newWorld(t)
+	clk := &clock{t: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
+	w.floor.Now = clk.now
+	w.publish("opencode-ai", "1.0.0", "bin=opencode")
+	p := npmProgram("opencode", "opencode", "opencode-ai")
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	w.publish("opencode-ai", "2.0.0", "bin=opencode")
+	manual := *w.floor
+	manual.ManualUpdate = true
+	manual.UpdatesAllowed = func(string) bool { return false }
+	st, outcome, err := manual.Ensure(context.Background(), p)
+	if err != nil || outcome != Updated || st.Record.Version != "2.0.0" || len(w.npmCalls("view")) != 1 {
+		t.Fatalf("manual update = %s %+v %v, polls=%d\n%s", outcome, st.Record, err,
+			len(w.npmCalls("view")), w.out.String())
+	}
+}
+
+func TestManualUpdateStillRespectsFixedNpmVersion(t *testing.T) {
+	w := newWorld(t)
+	w.publish("opencode-ai", "1.0.0", "bin=opencode")
+	p := npmProgram("opencode", "opencode", "opencode-ai@1.0.0")
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	w.publish("opencode-ai", "2.0.0", "bin=opencode")
+	manual := *w.floor
+	manual.ManualUpdate = true
+	st, outcome, err := manual.Ensure(context.Background(), p)
+	if err != nil || outcome != Current || st.Record.Version != "1.0.0" || len(w.npmCalls("view")) != 0 {
+		t.Fatalf("fixed manual update = %s %+v %v, polls=%d", outcome, st.Record, err, len(w.npmCalls("view")))
+	}
+}
+
 // TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval.
 func TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval(t *testing.T) {
 	w := newWorld(t)

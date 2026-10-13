@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"go/ast"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -238,6 +239,27 @@ func TestRunUsageListsEveryRunFlag(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("runFlags is stale: parseRunArgs consumes %v, runFlags says %v", got, want)
+	}
+}
+
+func TestRunUpdateFlagIsScopedBeforeTheCommandSeparator(t *testing.T) {
+	for _, spelling := range []string{"--update", "-u"} {
+		t.Run(spelling, func(t *testing.T) {
+			opts := run.NewDefaultOptions()
+			parsed := parseRunArgs([]string{"run", spelling, "--", "tool", "--update"}, &opts)
+			if parsed.misuse != nil || !opts.Update {
+				t.Fatalf("parseRunArgs(%q) = %+v, update=%v, misuse=%v", spelling, parsed, opts.Update, parsed.misuse)
+			}
+			if !reflect.DeepEqual(opts.Args, []string{"tool", "--update"}) {
+				t.Fatalf("command args = %q; post-separator update spelling must be untouched", opts.Args)
+			}
+		})
+	}
+	if runHelp([]string{"run", "--update", "--help"}, io.Discard) != true {
+		t.Fatal("help request was not answered before launch preparation")
+	}
+	if !strings.Contains(runUsage, "--update, -u") {
+		t.Errorf("run help omits the shared update flag:\n%s", runUsage)
 	}
 }
 

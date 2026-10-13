@@ -6,6 +6,8 @@ package packsrc
 // agree on one entry — including the one that waited for the other's lock.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,7 +63,101 @@ func TestPinForksPinsAnUnpinnedForkOnceAndNeverMovesIt(t *testing.T) {
 	}
 }
 
+// TestPinForksExplicitRepinMovesOnlyAtTheManualUpdateBoundary is the standing-pin counterpart:
+// normal launches retain the pin, while a manual request re-resolves the declared branch and records
+// the new commit under the fork lock.
+func TestPinForksExplicitRepinMovesAtTheManualUpdateBoundary(t *testing.T) {
+	repo, store, lockPath := forkPinFixture(t)
+	source := "git+file://" + repo + "?ref=main"
+	want := []ForkWant{{Key: "forkpack/tool", Source: source}}
+	first := store.PinForks(lockPath, want, ForkPinOptions{})[0]
+	if first.Err != nil || first.Entry.Commit == "" {
+		t.Fatalf("initial pin = %+v", first)
+	}
+	commitFile(t, repo, "build.sh", "# fresh branch head\n")
+	newHead := gitIn(t, repo, "rev-parse", "HEAD")
+	ordinary := store.PinForks(lockPath, want, ForkPinOptions{})[0]
+	if ordinary.Err != nil || ordinary.Entry.Commit != first.Entry.Commit {
+		t.Fatalf("ordinary launch moved the standing pin: %+v; want %s", ordinary, first.Entry.Commit)
+	}
+	fresh := store.PinForks(lockPath, want, ForkPinOptions{Repin: true})[0]
+	if fresh.Err != nil || !fresh.Pinned || fresh.Entry.Commit != newHead {
+		t.Fatalf("explicit repin = %+v; want the fresh branch head %s", fresh, newHead)
+	}
+	lock, err := LoadForkLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry, ok := lock.Get(want[0].Key); !ok || entry != fresh.Entry {
+		t.Fatalf("fresh pin was not committed to the lock: %+v (present=%v), want %+v", entry, ok, fresh.Entry)
+	}
+}
+
 // A pin made for another source is no pin: the fork is pinned again, for the source it declares now.
+func TestRepinForkPinWaitIsCancellableAndKeepsTheOldEntry(t *testing.T) {
+	repo, store, lockPath := forkPinFixture(t)
+	source := "git+file://" + repo + "?ref=main"
+	want := []ForkWant{{Key: "forkpack/tool", Source: source}}
+	first := store.PinForks(lockPath, want, ForkPinOptions{})[0]
+	if first.Err != nil || first.Entry.Commit == "" {
+		t.Fatalf("first pin = %+v", first)
+	}
+	commitFile(t, repo, "build.sh", "# fresh\n")
+
+	locked, release := make(chan struct{}), make(chan struct{})
+	held := make(chan error, 1)
+	go func() {
+		held <- WithForkLock(store.Dir, lockPath, nil, func(*ForkLock) (bool, error) {
+			close(locked)
+			<-release
+			return false, nil
+		})
+	}()
+	select {
+	case <-locked:
+	case <-time.After(time.Second):
+		t.Fatal("test pinner did not acquire the fork lock")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waiting, done := make(chan struct{}), make(chan []ForkPinOutcome, 1)
+	cancellable := &Store{Dir: store.Dir, Ctx: ctx}
+	go func() {
+		done <- cancellable.PinForks(lockPath, want, ForkPinOptions{Repin: true,
+			Begin: func() (func(string), func()) { return func(string) { close(waiting) }, func() {} },
+		})
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("fresh pinner did not begin waiting")
+	}
+	cancel()
+	var outcome []ForkPinOutcome
+	select {
+	case outcome = <-done:
+	case <-time.After(time.Second):
+		t.Error("fresh pinner did not stop after cancellation")
+	}
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatal(err)
+	}
+	if len(outcome) != 1 || !errors.Is(outcome[0].Err, context.Canceled) {
+		t.Fatalf("fresh pin result = %+v, want context.Canceled without a stale pin", outcome)
+	}
+	lock, err := LoadForkLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := lock.Get("forkpack/tool")
+	if !ok || entry.Commit != first.Entry.Commit {
+		t.Fatalf("cancelled repin changed the admitted pin: %+v (present=%v), original %s", entry, ok, first.Entry.Commit)
+	}
+}
+
 func TestPinForksRepinsAForkWhoseSourceChanged(t *testing.T) {
 	repo, store, lockPath := forkPinFixture(t)
 	l := &ForkLock{}

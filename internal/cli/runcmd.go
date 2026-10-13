@@ -102,6 +102,7 @@ Flags:
                      the user config — record the same spans to the same file and
                      print nothing but one dim line naming it.
   --dry-run          macos-user runtime only: print the plan without launching.
+  --update, -u       Wait for fresh preparation of this launch's selected programs and trees.
   --accept-config-changes
                      Approve a changed jail config on a launch with no terminal
                      to prompt on (CI, scripts), recording it as approved just
@@ -145,7 +146,7 @@ Global options are listed by 'yolo --help'; the full config reference is
 // TestTheLaunchHasNoQuietFlag. `YOLO_NO_BANNER` is the one pre-existing hatch and it is
 // deliberately narrow — it silences the version line and nothing else.
 var runFlags = []string{"--profile", "--timing", "--dry-run", "--network", "--accept-config-changes", "--at",
-	"--with-credentials"}
+	"--with-credentials", "--update"}
 
 // runKnownFlags is runFlags plus the spellings that are not policy: the short forms, help, and the
 // global --verbose the front door strips before subcommand resolution (included so a launch that
@@ -156,7 +157,7 @@ var runFlags = []string{"--profile", "--timing", "--dry-run", "--network", "--ac
 // in that list.
 func runKnownFlags() []string {
 	return append(append([]string(nil), runFlags...),
-		"-p", "--help", "-h", "--verbose", "-v", "run")
+		"-p", "-u", "--help", "-h", "--verbose", "-v", "run")
 }
 
 // applyProfileValue reads one -p/--profile value: "cli=name" (comma-separated,
@@ -386,6 +387,8 @@ func parseRunArgs(args []string, opts *run.Options) runArgv {
 			opts.Timing = true
 		case a == "--dry-run":
 			opts.DryRun = true
+		case a == "--update" || a == "-u":
+			opts.Update = true
 		// Spelled as a LITERAL, not as config.AcceptConfigChangesFlag, even though
 		// that constant is the flag's owner and the refusal message's source. The
 		// usage/parser drift guard (TestRunUsageListsEveryRunFlag) reads this

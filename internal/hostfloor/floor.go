@@ -226,6 +226,9 @@ type Floor struct {
 	Outranked func(p Program) string
 	// UpdatesAllowed is the `agent_updates` policy for a pack. nil => allowed, the ruled default.
 	UpdatesAllowed func(pack string) bool
+	// ManualUpdate is set only for an explicit launch-scoped --update request. It bypasses automatic
+	// policy and timing holds without bypassing declared pins, provisioner ownership or platform rules.
+	ManualUpdate bool
 	// AllowPatchFailures is the one explicit host foreground bypass; it never creates a build.
 	AllowPatchFailures func() bool
 	// PatchBypassCommand is the command a patch failure's error block puts its bypass in front of:

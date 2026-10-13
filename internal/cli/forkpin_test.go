@@ -2,7 +2,7 @@ package cli
 
 // forkpin_test.go pins the PIN (docs/design/forked-programs-as-packs.md FP-D7, FP-D18) through the
 // verbs that make and move it — `yolo pack install` pins once (no longer required: a launch pins too)
-// and leaves a pinned fork alone when its branch moves, `yolo pack update` moves it, `yolo pack
+// and leaves a pinned fork alone when its branch moves, a fresh `--update` or `yolo pack update` moves it, `yolo pack
 // status` reports it and its drift, and the build act fetches a pinned commit this machine lacks —
 // against a real local git repository standing in for the fork's remote.
 

@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,6 +70,7 @@ type patchedAdvanceFixture struct {
 	ran         bool     // whether the fake build jail writes the toolchain record (its build line ran)
 	said        string   // a line the fake build jail's runtime prints on the jail's stderr before it exits, "" for none
 	programBody string   // optional exact executable bytes for intact-runtime fixtures
+	duringBuild func()   // mutation hook for testing final guarded freshness admission
 	child       int      // how many builds went through the child-process runner
 	scoped      []bool   // per child build, whether an interrupt scope's context could cancel it
 	// sharedLocks is set where other keys of the selection run beside the build in the slot's pool,
@@ -171,6 +173,9 @@ func (fx *patchedAdvanceFixture) buildJail(t *testing.T) func(run.Options) int {
 		}
 		if err := capture.WriteManifest(out, m); err != nil {
 			t.Fatal(err)
+		}
+		if fx.duringBuild != nil {
+			fx.duringBuild()
 		}
 		return 0
 	}
@@ -293,6 +298,86 @@ func TestAFirstAdvanceBuildsTheNewestFitAndHandsIt(t *testing.T) {
 	}
 	if got := pinnedCommit(t); got != "" {
 		t.Errorf("the advance pinned the patched fork at %s", got)
+	}
+}
+
+func TestFreshAdmissionRejectsRecipeChangeDuringBuild(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	first, _, _ := fx.launch(t, "podman")
+	if first.failed || first.delivery.Key == "" {
+		t.Fatalf("initial admitted build = %+v", first)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
+	fx.duringBuild = func() {
+		patches, err := filepath.Glob(filepath.Join(fx.forkDir, "patches", "*.patch"))
+		if err != nil || len(patches) == 0 {
+			t.Fatalf("locate series recipe during build: files=%v err=%v", patches, err)
+		}
+		data, err := os.ReadFile(patches[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		changed := bytes.Replace(data, []byte("Subject: [PATCH 1/2]"), []byte("Subject: [PATCH 1/2] changed"), 1)
+		if bytes.Equal(changed, data) {
+			t.Fatal("series patch subject was not found")
+		}
+		if err := os.WriteFile(patches[0], changed, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := forkRequest(t, fx, "podman")
+	req.FreshUpdate = true
+	var output syncBuffer
+	delivered, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &output, false)
+	got := delivered["tool"]
+	if got.Key != "" || got.Reason == "" {
+		t.Fatalf("stale recipe was admitted or handed after changing during build: %+v\n%s", got, output.String())
+	}
+	if rec := fx.record(t); rec.Good == nil || rec.Good.Entry != first.delivery.Key {
+		t.Fatalf("stale fresh build replaced the previously admitted generation: %+v", rec.Good)
+	}
+}
+
+func TestFreshCheckBypassesHeldRecentStampAndReusesAdmittedBuild(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	initial, _, _ := fx.launch(t, "podman")
+	if initial.delivery.Key == "" || len(fx.builds) != 1 {
+		t.Fatalf("fixture did not admit one serving build: result=%+v builds=%d", initial, len(fx.builds))
+	}
+	fork := fx.fork(t)
+	identity, err := freshPreparationIdentity(fork, patchedTestPlatform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary, err := patchedAdvanceStore(true).FreshCheckBoundary(fork.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.writeUserConfig(t, `,"agent_updates":{"forkpack":false}`)
+	before := fx.record(t)
+	got := advancePatchedFork(fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
+		workspace: "/ws", launch: true, out: io.Discard, errw: io.Discard,
+		report:     newBuildReport("/ws", "podman", io.Discard, false),
+		freshCheck: true, freshAfterSeq: boundary, freshIdentity: identity})
+	if got.failed || got.delivery.Key != initial.delivery.Key || len(fx.builds) != 1 {
+		t.Fatalf("fresh verification rebuilt or lost the admitted unchanged artifact: result=%+v builds=%d", got, len(fx.builds))
+	}
+	after := fx.record(t)
+	if after.Seq != before.Seq+1 || after.Check == nil || after.Check.StartedSeq <= boundary {
+		t.Fatalf("fresh request did not record one qualifying post-registration check: before=%+v after=%+v", before, after)
+	}
+
+	// A changed recipe after registration refuses instead of retargeting the request.
+	changed := fork
+	changed.Build += " echo changed"
+	checkSeq := after.Seq
+	refused := advancePatchedFork(changed, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
+		workspace: "/ws", launch: true, out: io.Discard, errw: io.Discard,
+		report:     newBuildReport("/ws", "podman", io.Discard, false),
+		freshCheck: true, freshAfterSeq: after.StartedSeq, freshIdentity: identity})
+	if !refused.failed || refused.delivery.Key != "" || fx.record(t).Seq != checkSeq {
+		t.Fatalf("recipe edit was retargeted: result=%+v checks=%d→%d", refused, checkSeq, fx.record(t).Seq)
 	}
 }
 
@@ -579,6 +664,23 @@ func TestCaptureOfAPatchedForkBuildsThroughTheSwap(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "rebuilt fork forkpack/tool: v1.1.0") {
 		t.Errorf("the rebuild is not said:\n%s", out.String())
+	}
+}
+
+func TestRunUpdateFlagReachesTheLaunchPipelineWithoutConsumingTargetArgv(t *testing.T) {
+	newPatchedAdvanceFixture(t, "")
+	var seen run.Options
+	prev := launchRunPipeline
+	launchRunPipeline = func(o run.Options) int { seen = o; return 0 }
+	t.Cleanup(func() { launchRunPipeline = prev })
+	if rc := runRun([]string{"run", "--update", "--", "true", "--update"}); rc != 0 {
+		t.Fatalf("runRun = %d with the launch pipeline stubbed", rc)
+	}
+	if !seen.Update || !slices.Equal(seen.Args, []string{"true", "--update"}) {
+		t.Fatalf("public launch flag reached options as update=%v args=%q", seen.Update, seen.Args)
+	}
+	if seen.BuildSlot == nil {
+		t.Fatal("the fresh-update launch did not retain the production BuildSlot caller")
 	}
 }
 

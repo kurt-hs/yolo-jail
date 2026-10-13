@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -31,6 +32,35 @@ func twoProgramFixture(t *testing.T, extra string) (dist *floortest.Dist, someto
 func floorHolds(bin string) bool {
 	_, err := os.Stat(filepath.Join(paths.HostFloorDir(), "bin", bin))
 	return err == nil
+}
+
+func TestHostFreshProgramSetIsOwnerScopedAndIncludesProjectedMCPProgram(t *testing.T) {
+	_, pack := floorHostFixtureWith(t, `{"kind":"program","bin":"floorcli","via":"npm","package":"floorcli-pkg"},`+
+		`{"kind":"program","bin":"siblingcli","via":"npm","package":"siblingcli-pkg"},`+
+		`{"kind":"mcp","name":"fixture-server","bin":"mcpcli","config":{"command":"mcpcli"}},`+
+		`{"kind":"program","bin":"mcpcli","via":"npm","package":"mcpcli-pkg"},`+
+		`{"kind":"program","bin":"unrelated-mcp","via":"npm","package":"unrelated-mcp-pkg"}`, "")
+	selected, problems := packload.LoadDir(pack, "floorpack")
+	if len(problems) != 0 {
+		t.Fatalf("load owner pack: %v", problems)
+	}
+	selected.Local = true
+	got := hostFreshProgramSet([]*packload.Pack{selected}, "floorcli")
+	var bins []string
+	for _, p := range got {
+		bins = append(bins, p.Bin())
+	}
+	if strings.Join(bins, ",") != "floorcli,mcpcli" {
+		t.Fatalf("fresh host vector = %v; want target owner plus its projected MCP program, not sibling programs", bins)
+	}
+	got = hostFreshProgramSet([]*packload.Pack{selected}, "/tmp/floorcli")
+	bins = bins[:0]
+	for _, p := range got {
+		bins = append(bins, p.Bin())
+	}
+	if strings.Join(bins, ",") != "mcpcli" {
+		t.Fatalf("path target refreshed a declared PATH owner: %v; want only its actually projected MCP program", bins)
+	}
 }
 
 // HNR-D1 at the call site: a launch whose command no pack declares still installs every program the

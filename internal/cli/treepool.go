@@ -121,10 +121,27 @@ func (l treeLane) options(o advanceOptions) advanceOptions {
 // of act's, and returns once every one has; the lanes' lines reach out and errw in the trees' order.
 func runTreesInParallel(trees []packload.Fork, runtime string, act *run.ActInterrupt, out, errw io.Writer,
 	fn func(i int, f packload.Fork, lane treeLane)) {
+	_ = runTreesInParallelPrepared(trees, runtime, act, out, errw, nil, fn)
+}
+
+// runTreesInParallelPrepared registers a request inside the same interrupt scope that owns its
+// parallel advances. A canceled registration detaches before any keyed work starts.
+func runTreesInParallelPrepared(trees []packload.Fork, runtime string, act *run.ActInterrupt, out, errw io.Writer,
+	prepare func(context.Context) error, fn func(i int, f packload.Fork, lane treeLane)) error {
 	if len(trees) == 0 {
-		return
+		return nil
 	}
-	act.Scope(func(ctx context.Context) { runTreesUnder(ctx, trees, runtime, out, errw, fn) })
+	var prepareErr error
+	act.Scope(func(ctx context.Context) {
+		if prepare != nil {
+			prepareErr = prepare(ctx)
+			if prepareErr != nil || ctx.Err() != nil {
+				return
+			}
+		}
+		runTreesUnder(ctx, trees, runtime, out, errw, fn)
+	})
+	return prepareErr
 }
 
 // runTreesUnder is runTreesInParallel under ctx, which ends every key's wait when it is cancelled:

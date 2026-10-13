@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -194,6 +195,10 @@ func serverRefreshSet(e *Env, packs []*packload.Pack) []serverPkg {
 	return out
 }
 
+func ServerRefreshNpmSpecs(e *Env, packs []*packload.Pack) string {
+	return ServerRefreshSpecs(e, packs).npm
+}
+
 // packMCPServerPrograms is the npm `program` of packs that each held `mcp` server's `bin` names
 // (packload.HeldMCPServers), for a server this jail's composed YOLO_MCP_SERVERS still carries:
 // the host composes every selected pack's entry into that table and leaves a user's `null` in it
@@ -300,6 +305,10 @@ func ServerRefreshSpecs(e *Env, packs []*packload.Pack) launcherServers {
 // ServerRefreshRequest is one refresh, fully specified. Every seam a test needs is a field:
 // the clock, the command runner and the sink, so the walk can be driven without a registry.
 type ServerRefreshRequest struct {
+	// Context owns this request's lock waits and install subprocesses; nil means Background.
+	Context context.Context
+	// Fresh makes stale refresh failures fatal to the explicit request instead of falling back.
+	Fresh bool
 	// Env supplies Home and NpmPrefix. Nothing else is read from it.
 	Env *Env
 	// NpmSpecs is the baked declaration list, whitespace-separated, exactly as
@@ -341,6 +350,10 @@ func RefreshServers(req ServerRefreshRequest) error {
 	if run == nil {
 		run = runServerInstall
 	}
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	pkgs := serverPkgsFromSpecs(req.Env, req.NpmSpecs)
 	if len(pkgs) == 0 {
@@ -355,7 +368,7 @@ func RefreshServers(req ServerRefreshRequest) error {
 			// UNBOUNDED and REPORTED. There is nothing on disk to fall back to, so a
 			// bound here would trade a definite failure for a silent one.
 			fmt.Fprintf(stderr, "  Installing %s server %s...\n", p.kind, p.spec)
-			if err := run(context.Background(), stderr, p.installArgv()); err != nil {
+			if err := run(ctx, stderr, p.installArgv()); err != nil {
 				absentFailures = append(absentFailures, p.spec)
 				fmt.Fprintf(stderr, "  ⚠ %s server %s is not installed and could not be "+
 					"installed (%v) — the agent will not be able to connect to it.\n",
@@ -374,7 +387,9 @@ func RefreshServers(req ServerRefreshRequest) error {
 	}
 
 	if len(stale) > 0 {
-		refreshStaleServers(req.Env, stampDir, stale, stderr, now, run)
+		if err := refreshStaleServers(ctx, req.Fresh, req.Env, stampDir, stale, stderr, now, run); err != nil {
+			return err
+		}
 	}
 
 	if len(absentFailures) > 0 {
@@ -390,11 +405,11 @@ func RefreshServers(req ServerRefreshRequest) error {
 // success branch) and matters more here: without it an offline jail would spend the whole
 // budget again on every single agent invocation, for a set that cannot be refreshed. One
 // attempt per interval is the throttle; success is not its condition.
-func refreshStaleServers(e *Env, stampDir string, stale []serverPkg, stderr io.Writer,
-	now func() time.Time, run func(context.Context, io.Writer, []string) error) {
-	ctx, cancel := context.WithTimeout(context.Background(),
-		ServerRefreshTimeout*time.Second)
+func refreshStaleServers(parent context.Context, strict bool, e *Env, stampDir string, stale []serverPkg, stderr io.Writer,
+	now func() time.Time, run func(context.Context, io.Writer, []string) error) error {
+	ctx, cancel := context.WithTimeout(parent, ServerRefreshTimeout*time.Second)
 	defer cancel()
+	var failures []string
 
 	// ONE LOCK PER INSTALL PREFIX (§3.5's contention rule), and the SAME lock dirs the
 	// launchers take: the npm arm writes into $NPM_CONFIG_PREFIX, which is exactly what an
@@ -418,26 +433,39 @@ func refreshStaleServers(e *Env, stampDir string, stale []serverPkg, stderr io.W
 				// should still try.
 				fmt.Fprintf(stderr, "  %s servers: another update holds %s — "+
 					"running the installed versions.\n", p.kind, lockDir)
+				if strict {
+					failures = append(failures, fmt.Sprintf("%s server lock is busy", p.spec))
+				}
 				continue
 			}
 			held[lockDir] = true
 		}
 		fmt.Fprintf(stderr, "  Refreshing %s server %s...\n", p.kind, p.spec)
 		if err := run(ctx, stderr, p.installArgv()); err != nil {
-			// SWALLOWED, by ruling: a server already installed is used as-is when the
-			// refresh does not land. The message is the whole consequence.
+			// Ordinary invocation keeps its admitted installed version. An explicit fresh request
+			// refuses to proceed after this failed refresh, without claiming the old bytes are fresh.
 			fmt.Fprintf(stderr, "  ⚠ %s server %s could not be refreshed (%v) — "+
 				"keeping the installed version.\n", p.kind, p.spec, err)
+			if strict {
+				failures = append(failures, fmt.Sprintf("%s server refresh failed: %v", p.spec, err))
+			}
 		}
 		touchServerStamp(stampDir, p, now())
 		if ctx.Err() != nil {
-			// The budget is spent. Everything still on the list keeps its old bytes,
-			// which is the fallback the stale rule names.
-			fmt.Fprintf(stderr, "  ⚠ server refresh ran out of its %ds budget — "+
+			// The budget or caller's cancellation ended this request. Ordinary refresh keeps its
+			// fallback; explicit freshness refuses to start the command on the old generation.
+			fmt.Fprintf(stderr, "  ⚠ server refresh was cancelled or ran out of its %ds budget — "+
 				"the rest keep their installed versions.\n", ServerRefreshTimeout)
-			return
+			if strict {
+				failures = append(failures, ctx.Err().Error())
+			}
+			break
 		}
 	}
+	if len(failures) != 0 {
+		return fmt.Errorf("fresh server preparation failed: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 // serverPkgsFromSpecs re-derives serverPkg values from the launcher's baked list. It is the
@@ -543,6 +571,14 @@ func runServerInstall(ctx context.Context, stderr io.Writer, argv []string) erro
 		return fmt.Errorf("empty install argv")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Env = append(os.Environ(), "YOLO_BYPASS_SHIMS=1")
 	cmd.Stdout = stderr
 	cmd.Stderr = stderr

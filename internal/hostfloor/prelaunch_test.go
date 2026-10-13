@@ -67,6 +67,24 @@ func (w *refreshWorld) refresh(p Program) RefreshResult {
 	return w.f.PrelaunchRefresh(p, w.stub, []string{"PATH=/usr/bin:/bin", "MARK=handed"})
 }
 
+func (w *refreshWorld) manualRefresh(p Program) RefreshResult {
+	return w.f.PrelaunchRefreshManual(p, w.stub, []string{"PATH=/usr/bin:/bin", "MARK=handed"})
+}
+
+// TestManualPrelaunchRefreshBypassesPolicyAndItsStamp: --update asks the same declared command
+// despite the automatic pack hold and a successful recent stamp.
+func TestManualPrelaunchRefreshBypassesPolicyAndItsStamp(t *testing.T) {
+	w := newRefreshWorld(t, "")
+	p := refreshProgram()
+	if got := w.refresh(p); got.Outcome != RefreshRan {
+		t.Fatalf("initial automatic refresh = %v", got.Outcome)
+	}
+	w.f.UpdatesAllowed = func(string) bool { return false }
+	if got := w.manualRefresh(p); got.Outcome != RefreshRan || w.runs(t) != 2 {
+		t.Fatalf("manual refresh = %v after %d runs; output:\n%s", got.Outcome, w.runs(t), w.out.String())
+	}
+}
+
 // refreshProgram is pi as its pack declares it, watching due.
 func refreshProgram(due ...string) Program {
 	return Program{Pack: "pi", Install: packdecl.Install{Bin: "pi", Kind: "npm",

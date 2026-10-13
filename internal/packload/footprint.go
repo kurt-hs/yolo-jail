@@ -169,7 +169,7 @@ func (c Claim) DisclosureSentence() string {
 		if build, ok := strings.CutPrefix(c.Detail, forkClaimDetailPrefix); ok {
 			return "RUNS a program built from source, INSIDE THE JAIL (not on your machine), as " +
 				c.Target + ": " + build + " — built in a capture jail that gets no credentials, " +
-				"at the commit its first launch pinned (only `yolo pack update` moves it), never at " +
+				"at the commit its first launch pinned (`--update` or `yolo pack update` moves it), never at " +
 				"whatever the ref names today"
 		}
 	case packdecl.KindFiles:

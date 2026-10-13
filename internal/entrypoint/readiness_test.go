@@ -378,6 +378,22 @@ func TestReadinessAsksForExactlyTheLaunchersTheBootWrote(t *testing.T) {
 	if strings.Join(ready, ",") != strings.Join(launchers, ",") || strings.Join(ready, ",") != "alpha,beta" {
 		t.Errorf("readiness asks for %v, the boot wrote launchers %v; want both to be [alpha beta]", ready, launchers)
 	}
+	packs, err := LoadJailPacks(h.e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installOnly, err := SelectedProgramPreparations(h.e, packs, ProgramInstallOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := SelectedProgramPreparations(h.e, packs, ProgramFreshRefresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installOnly) != len(fresh) || len(fresh) != 2 || installOnly[0].Mode != ProgramInstallOnly ||
+		fresh[0].Mode != ProgramFreshRefresh || installOnly[0].Bin != fresh[0].Bin || installOnly[1].Bin != fresh[1].Bin {
+		t.Errorf("install-only and fresh refresh selected different declaration vectors or modes: install=%+v fresh=%+v", installOnly, fresh)
+	}
 	// And the generated bootstrap carries exactly those calls.
 	script, _ := os.ReadFile(h.scriptP)
 	if got := strings.Count(string(script), "\n_yolo_ready "); got != 2 {

@@ -83,6 +83,11 @@ type CheckOptions struct {
 	// Force is an EXPLICIT ACT's check (`yolo pack update`, `yolo pack install`, `yolo capture`):
 	// it ignores the throttle and the mirror's own stamp and fetches, still putting tags back.
 	Force bool
+	// Fresh requests an explicit post-registration check, independent from Force's caller-specific
+	// semantics. AfterSeq is the StartedSeq observed when the request registered; a finished check
+	// qualifies only when its start sequence is greater and its inputs match exactly.
+	Fresh    bool
+	AfterSeq uint64
 	// Now is the clock; nil means time.Now. Interval overrides BranchRefreshInterval (tests).
 	Now      func() time.Time
 	Interval time.Duration
@@ -101,6 +106,9 @@ type CheckResult struct {
 	Ran bool
 	// Due is why it ran, "" when it did not.
 	Due string
+	// Fresh says the record contains a check started after this request registered with identical
+	// inputs. The caller still inspects the check's concrete outcome before claiming success.
+	Fresh bool
 	// Recovered is the error the record that stood before this call had when it could not be
 	// read: the check started over from an empty record (§6.2). nil otherwise.
 	Recovered error
@@ -124,9 +132,14 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	}
 	// THE THROTTLE, A FILE READ: no lock and no git when the stamp is fresh.
 	rec, readErr := s.LoadCheckRecord(w.Owner)
-	if readErr == nil && !opts.Force {
-		if due, _ := CheckDue(rec, in, now(), opts.Interval); !due {
-			return CheckResult{Record: rec, Inputs: in}
+	if readErr == nil {
+		if opts.Fresh && freshCheckMatches(rec, in, opts.AfterSeq) {
+			return CheckResult{Record: rec, Inputs: in, Fresh: true}
+		}
+		if !opts.Force && !opts.Fresh {
+			if due, _ := CheckDue(rec, in, now(), opts.Interval); !due {
+				return CheckResult{Record: rec, Inputs: in}
+			}
 		}
 	}
 	waiting, end := (func(string))(nil), func() {}
@@ -137,15 +150,19 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	res := CheckResult{Inputs: in}
 	err = s.WithCheckRecord(w.Owner, waiting, func(r *CheckRecord, recErr error, save func() error) (bool, error) {
 		res.Recovered = recErr
+		if opts.Fresh && freshCheckMatches(r, in, opts.AfterSeq) {
+			res.Record, res.Fresh = r, true
+			return false, nil
+		}
 		// RE-READ UNDER THE LOCK: another launch may have checked while this one waited.
-		if !opts.Force && recErr == nil {
+		if !opts.Force && !opts.Fresh && recErr == nil {
 			if due, _ := CheckDue(r, in, now(), opts.Interval); !due {
 				res.Record = r
 				return false, nil
 			}
 		}
 		_, res.Due = CheckDue(r, in, now(), opts.Interval)
-		if opts.Force {
+		if opts.Force || opts.Fresh {
 			res.Due = "an explicit act checks now"
 		}
 		// THE ATTEMPT COUNTS, written before the fetch: a check that dies in it still waits out the
@@ -156,6 +173,9 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		// (CheckDue) instead of serving the old rule's list under the new one for an hour.
 		stamp := r.CheckedAt
 		r.CheckedAt = now().Unix()
+		r.StartedSeq++
+		r.StartedInputs = in
+		r.StartedAt = now().Unix()
 		if err := save(); err != nil {
 			return false, err
 		}
@@ -164,7 +184,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if n, err := ParseNpm(w.Source); err == nil {
 			found = s.findNpmCandidates(n)
 		} else {
-			found = s.findCandidates(addr, follow, w.Base, opts.Force, now(), waiting)
+			found = s.findCandidates(addr, follow, w.Base, opts.Force || opts.Fresh, now(), waiting)
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -174,7 +194,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 			return true, nil
 		}
 		r.Seq++
-		found.Seq, found.At = r.Seq, now().Unix()
+		found.Seq, found.At, found.StartedSeq = r.Seq, now().Unix(), r.StartedSeq
 		r.Read, r.Check = in, &found
 		if pf := r.PatchFailure; pf != nil {
 			switch {
@@ -193,12 +213,19 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 			r.Outcomes = keepListedOutcomes(r.Outcomes, found.List)
 		}
 		res.Record = r
+		res.Fresh = opts.Fresh && freshCheckMatches(r, in, opts.AfterSeq)
 		return true, nil
 	})
 	if err != nil {
 		res.Err = err
 	}
 	return res
+}
+
+// freshCheckMatches reports whether the finished result was started after a request's boundary and
+// used the exact current inputs. Sequence order, not timestamps, survives wall-clock rollback.
+func freshCheckMatches(r *CheckRecord, in CheckInputs, after uint64) bool {
+	return r != nil && r.Check != nil && r.Read == in && r.Check.StartedSeq > after
 }
 
 // keepListedOutcomes drops the outcomes of commits no longer on the list: the record keeps one

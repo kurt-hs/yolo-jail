@@ -358,6 +358,47 @@ func TestAStaleServerIsRefreshedBoundedAndSwallowed(t *testing.T) {
 	}
 }
 
+func TestFreshServerRefreshFailureAndCancellationAreFatal(t *testing.T) {
+	p := newRefreshProbe(t, nil)
+	p.installed(t, "chrome-devtools-mcp")
+	p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+	p.fail["chrome-devtools-mcp"] = true
+	if err := RefreshServers(ServerRefreshRequest{Env: p.e, NpmSpecs: "chrome-devtools-mcp", Updates: true,
+		Fresh: true, Stderr: &p.out, Now: func() time.Time { return p.now },
+		Run: func(context.Context, io.Writer, []string) error { return errors.New("registry unavailable") }}); err == nil {
+		t.Fatal("explicit fresh request accepted the historical installed server after its refresh failed")
+	}
+	p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- RefreshServers(ServerRefreshRequest{Context: ctx, Fresh: true, Env: p.e,
+			NpmSpecs: "chrome-devtools-mcp", Updates: true, Stderr: io.Discard,
+			Now: func() time.Time { return p.now }, Run: func(ctx context.Context, _ io.Writer, _ []string) error {
+				close(started)
+				<-ctx.Done()
+				return ctx.Err()
+			}})
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("fresh server refresh did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "fresh server preparation failed") {
+			t.Fatalf("cancelled fresh server refresh = %v, want a strict refusal", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled fresh server refresh remained blocked")
+	}
+}
+
 // A stamp inside the interval is the throttle, and it is per PACKAGE: two agents that both
 // connect to one server must not both pay for it.
 func TestAFreshStampDoesNoWork(t *testing.T) {

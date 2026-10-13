@@ -36,6 +36,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -63,6 +64,7 @@ type buildPool struct {
 	checks *fifoSem
 	builds *fifoSem
 	act    *run.ActInterrupt
+	start  func(context.Context)
 
 	mu      sync.Mutex
 	ctx     context.Context
@@ -138,6 +140,9 @@ func (p *buildPool) run() {
 		p.line = p.cfg.Start(p.w, buildPoolLabel)
 		p.line.Set(p.renderLocked())
 		p.mu.Unlock()
+		if p.start != nil {
+			p.start(ctx)
+		}
 		var wg sync.WaitGroup
 		for _, it := range p.items {
 			wg.Add(1)
@@ -380,6 +385,20 @@ func (s *fifoSem) release() {
 // in one pool, printed on stream, and each half's answers.
 func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[string]entrypoint.ForkDelivery,
 	map[string]run.TreeDelivery) {
+	if req.Forks != nil && req.Forks.FreshUpdate {
+		fresh := *req.Forks
+		fresh.FreshAfterSeq, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]uint64{}, map[string]error{}, map[string]string{}
+		if fresh.CachedGoodOwner != "" {
+			fresh.FreshBoundaryErr[fresh.CachedGoodOwner] = errors.New("historical cached-good recovery cannot satisfy a fresh update request")
+			fresh.CachedGoodOwner = ""
+		}
+		req.Forks = &fresh
+	}
+	if req.Trees != nil && req.Trees.FreshUpdate {
+		fresh := *req.Trees
+		fresh.FreshAfterSeq, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]uint64{}, map[string]error{}, map[string]string{}
+		req.Trees = &fresh
+	}
 	var workspace, rt string
 	var cfg progress.Config
 	var act *run.ActInterrupt
@@ -390,6 +409,28 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		workspace, rt, cfg, act = req.Trees.Workspace, req.Trees.Runtime, req.Trees.Progress, req.Trees.Interrupt
 	}
 	pool := newBuildPool(stream, cfg, color, workspace, rt, req.MaxChecks, req.MaxBuilds, act)
+	if req.Forks != nil && req.Forks.FreshUpdate || req.Trees != nil && req.Trees.FreshUpdate {
+		pool.start = func(ctx context.Context) {
+			store := patchedAdvanceStore(true)
+			store.Ctx = ctx
+			if fr := req.Forks; fr != nil && fr.FreshUpdate {
+				for _, pin := range fr.Pins {
+					f := pin.Fork
+					if !f.Patched() {
+						continue
+					}
+					registerFreshPreparation(ctx, store, f, fr.Platform, fr.FreshIdentity, fr.FreshAfterSeq, fr.FreshBoundaryErr)
+				}
+			}
+			if tr := req.Trees; tr != nil && tr.FreshUpdate {
+				for _, f := range tr.Trees {
+					if f.IsTree() {
+						registerFreshPreparation(ctx, store, f, tr.Platform, tr.FreshIdentity, tr.FreshAfterSeq, tr.FreshBoundaryErr)
+					}
+				}
+			}
+		}
+	}
 	var mu sync.Mutex
 	forks := map[string]entrypoint.ForkDelivery{}
 	trees := map[string]run.TreeDelivery{}
@@ -471,6 +512,17 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, later []bool, color 
 	for i, p := range req.Pins {
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
+				if req.FreshUpdate {
+					after := req.FreshAfterSeq[p.Fork.Key()]
+					boundaryErr := req.FreshBoundaryErr[p.Fork.Key()]
+					result := advancePatchedFork(p.Fork, advanceOptions{platform: req.Platform, runtime: req.Runtime,
+						workspace: req.Workspace, out: it.stream(), errw: it.stream(), color: color, launch: true,
+						freshCheck: true, freshAfterSeq: after, freshBoundaryErr: boundaryErr,
+						freshIdentity: req.FreshIdentity[p.Fork.Key()],
+						hand:          req.Hand, act: req.Interrupt, report: pool.report, slot: it})
+					answer(p.Fork.Bin, result.forkDelivery())
+					return
+				}
 				d, l := deliverPatchedFork(p.Fork, req, pool.report, it, color)
 				answer(p.Fork.Bin, d)
 				later[i] = l

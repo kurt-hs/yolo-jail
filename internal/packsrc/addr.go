@@ -58,6 +58,16 @@ type Addr struct {
 // IsLocal reports whether this address needs no fetch.
 func (a Addr) IsLocal() bool { return a.Kind == KindFile }
 
+// IsFixedRef reports a source ref the explicit update contract treats as a fixed input: a full commit,
+// a fully-qualified tag, or a semantic release-tag spelling. Other ref names may name a moving branch.
+func IsFixedRef(ref string) bool {
+	if isFullSHA(ref) || strings.HasPrefix(ref, "refs/tags/") {
+		return true
+	}
+	_, ok := ParseVersion(strings.TrimPrefix(ref, "v"))
+	return ok
+}
+
 // Parse parses and validates a pack address.
 //
 // Every rejection names what is wrong and what to write instead: an address is

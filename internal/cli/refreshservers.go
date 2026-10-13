@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -14,33 +16,30 @@ import (
 // # Who calls it, and from where
 //
 // The generated agent launchers, once, after they are done with their own program and BEFORE
-// they exec it. Not a boot genStep: §3.5 rules that a server inherits the trigger of the
-// agent that connects to it, so a launch that starts no agent refreshes nothing and a
-// workspace that never types `claude` never pays for claude's servers.
+// they exec it. The explicit `yolo run --update` prelude also calls the hidden command in
+// fail-closed `--fresh` mode over the same selected declarations. Not a boot genStep: the normal
+// trigger is the agent that connects to the servers, so a launch that starts no agent refreshes
+// nothing and a workspace that never types `claude` never pays for claude's servers.
 //
-// The precedent for a generated launcher calling a hidden subcommand is
-// `capture-materialize`, three doors down, and the reason is the same one turned around: the
-// walk is a filesystem-and-registry decision per package, and the alternative is a second
+// The walk is a filesystem-and-registry decision per package, and the alternative is a second
 // copy of it in each of the two bash templates.
 //
 // # Hidden, for capture-materialize's reason
 //
-// Nothing but the generated launcher should emit this argv: it installs into the home it is
-// pointed at, which is right from a launcher and is a way to write into someone's prefixes
-// from anywhere else.
+// This writes into the home it is pointed at; it is only for an agent launcher or the launch's
+// explicit preparation prelude, not an independently selectable management verb.
 //
-// # Its exit status is advisory
+// # Its exit status is advisory or fail-closed, by caller
 //
-// Non-zero means an ABSENT server could not be installed — the one outcome with no working
-// copy behind it. The launcher does not treat that as fatal (it execs the agent anyway, which
-// is present and runnable); the status exists so `yolo internal refresh-servers` is usable by
-// hand and so the failure has somewhere to go besides a message.
+// Ordinary refresh reports an absent server it could not install and remains advisory, preserving
+// the launcher's established behavior. An explicit `--fresh` request returns non-zero on a failed
+// refresh, so the prelude never starts the target on bytes it cannot claim are fresh.
 
 // There is no `--go` list any more: its only source was the deleted LSP recipe's go arm
 // (docs/reference/mcp-configuration.md#oq-lsp1), and the launchers stopped passing it in the
 // same change.
 const refreshServersUsage = "usage: yolo internal refresh-servers [--home=DIR] " +
-	"[--npm=\"pkg pkg\"] [--updates=0|1]"
+	"[--npm=\"pkg pkg\"] [--updates=0|1] [--fresh]"
 
 // runRefreshServers is the `yolo internal refresh-servers` entry.
 func runRefreshServers(args []string) int {
@@ -52,6 +51,7 @@ func runRefreshServers(args []string) int {
 	// jail silently frozen. A launcher always bakes the flag, so this default is only ever
 	// reached by a hand invocation.
 	updates := true
+	fresh := false
 	for _, a := range args {
 		switch {
 		case strings.HasPrefix(a, "--home="):
@@ -60,6 +60,8 @@ func runRefreshServers(args []string) int {
 			npmSpecs = strings.TrimPrefix(a, "--npm=")
 		case strings.HasPrefix(a, "--updates="):
 			updates = strings.TrimPrefix(a, "--updates=") == "1"
+		case a == "--fresh":
+			fresh = true
 		default:
 			fmt.Fprintf(os.Stderr, "refresh-servers: unexpected argument %q\n%s\n",
 				a, refreshServersUsage)
@@ -71,6 +73,22 @@ func runRefreshServers(args []string) int {
 		return 2
 	}
 
+	if fresh {
+		jailEnv := entrypoint.JailEnvFromOS()
+		if jailEnv.Getenv("YOLO_PACK_ROOT") == "" {
+			fmt.Fprintln(os.Stderr, "refresh-servers --fresh requires a staged selected pack tree — run `yolo --update` from a fresh jail launch")
+			return 1
+		}
+		packs, err := entrypoint.LoadJailPacks(jailEnv)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "refresh-servers --fresh: reading selected packs: %v\n", err)
+			return 1
+		}
+		if npmSpecs == "" {
+			npmSpecs = entrypoint.ServerRefreshNpmSpecs(jailEnv, packs)
+		}
+		home = jailEnv.Home
+	}
 	// NewEnv rather than a second path resolution: Home and NpmPrefix are exactly the values
 	// this needs, and the prefix's default ($HOME/.npm-global) is the same one the launcher
 	// templates spell in bash. --home is authoritative over the
@@ -81,13 +99,21 @@ func runRefreshServers(args []string) int {
 	vars["JAIL_HOME"] = home
 	e := entrypoint.NewEnv(vars)
 
-	if err := entrypoint.RefreshServers(entrypoint.ServerRefreshRequest{
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	serverErr := entrypoint.RefreshServers(entrypoint.ServerRefreshRequest{
+		Context:  ctx,
+		Fresh:    fresh,
 		Env:      e,
 		NpmSpecs: npmSpecs,
 		Updates:  updates,
 		Stderr:   os.Stderr,
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, "refresh-servers:", err)
+	})
+	if serverErr == nil && ctx.Err() != nil {
+		serverErr = ctx.Err()
+	}
+	if serverErr != nil {
+		fmt.Fprintln(os.Stderr, "refresh-servers:", serverErr)
 		return 1
 	}
 	return 0

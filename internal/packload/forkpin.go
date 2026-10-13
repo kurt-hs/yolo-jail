@@ -119,12 +119,20 @@ func InJailForkPins(pins []ForkPin) []ForkPin {
 
 // PinForks is THE LAUNCH'S PIN (forked-programs-as-packs.md FP-D18, applying the maintainer's
 // OQ-PF1): every fork the fork lock at lockPath does not pin for its declared source is pinned now,
-// through store (packsrc.Store.PinForks: its ref resolved once, by the launch's ref rule, and the
-// commit recorded under the fork lock's flock), and every fork's pin is returned. A standing pin is
-// never moved and costs no git run. A fork that could not be pinned has no Commit, and its Reason
-// names the failure and the next step. begin, when non-nil, brackets the git work (a launch's
-// progress line), and is not called when every fork is already pinned.
+// through store, and every fork's pin is returned. A standing pin is never moved unless the explicit
+// RepinForks path is requested.
 func PinForks(forks []Fork, lockPath string, store *packsrc.Store, begin func() (func(string), func())) []ForkPin {
+	return pinForks(forks, lockPath, store, false, begin)
+}
+
+// RepinForks is the explicit fresh-request variant of PinForks: it re-resolves every selected source
+// under the same lock, and does not hand out a stale standing pin when a refresh fails.
+func RepinForks(forks []Fork, lockPath string, store *packsrc.Store, begin func() (func(string), func())) []ForkPin {
+	return pinForks(forks, lockPath, store, true, begin)
+}
+
+func pinForks(forks []Fork, lockPath string, store *packsrc.Store, repin bool,
+	begin func() (func(string), func())) []ForkPin {
 	if len(forks) == 0 {
 		return nil
 	}
@@ -147,7 +155,7 @@ func PinForks(forks []Fork, lockPath string, store *packsrc.Store, begin func() 
 	if len(want) == 0 {
 		return pins
 	}
-	outcomes := store.PinForks(lockPath, want, packsrc.ForkPinOptions{Begin: begin})
+	outcomes := store.PinForks(lockPath, want, packsrc.ForkPinOptions{Begin: begin, Repin: repin})
 	for j, o := range outcomes {
 		i := at[j]
 		p := ForkPin{Fork: forks[i]}
@@ -183,7 +191,7 @@ const PatchedForkPinReason = "it is a patched fork: it follows its upstream with
 // fork is built at is the fact nothing else keeps (OQ-FP6).
 func (p ForkPin) PinnedLine() string {
 	return "pinned fork " + p.Fork.Key() + " at " + shortForkCommit(p.Commit) + " (" + p.Fork.Source +
-		"); `yolo pack update` moves it"
+		"); `--update` or `yolo pack update` moves it"
 }
 
 // shortForkCommit is a commit as a pin line names it, the length a `Fetched pack` line uses.

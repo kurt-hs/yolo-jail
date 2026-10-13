@@ -83,7 +83,7 @@ func recordingBuild(got *[]packload.ForkPin) func(*Options) {
 
 // pinnedLine is the disclosure a launch prints for a pin it made.
 func pinnedLine(commit, source string) string {
-	return "pinned fork forkpack/tool at " + commit[:8] + " (" + source + "); `yolo pack update` moves it"
+	return "pinned fork forkpack/tool at " + commit[:8] + " (" + source + "); `--update` or `yolo pack update` moves it"
 }
 
 // THE MOTIVATING CASE: a fork selected and never pinned. The launch pins it at what its ref names,
@@ -154,6 +154,67 @@ func TestALaunchNeverMovesAStandingForkPin(t *testing.T) {
 	}
 	if got := strings.TrimSpace(mustGit(t, mirrors[0], "rev-parse", "refs/heads/main")); got != head1 {
 		t.Errorf("the second launch fetched the fork's source (its mirror's main is %s, want %s)", got, head1)
+	}
+}
+
+// A fresh launch re-resolves its standing branch pin only after the attach decision has selected a
+// new jail; it builds the resulting commit and records that exact source selection.
+func TestUpdateLaunchRepinsItsStandingForkAfterTheAttachDecision(t *testing.T) {
+	repo, commit := launchForkRepo(t)
+	head1 := strings.TrimSpace(mustGit(t, repo, "rev-parse", "HEAD"))
+	source := "git+file://" + repo + "?ref=main"
+	forkLaunchHome(t, source)
+	var initial []packload.ForkPin
+	_, _ = fakePodmanLaunch(t, recordingBuild(&initial))
+	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head1 {
+		t.Fatalf("ordinary launch did not establish its standing pin: %+v (present=%v)", entry, ok)
+	}
+	head2 := commit("fresh update")
+	var built []packload.ForkPin
+	_, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.Update = true
+		o.BuildForks = func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			built = append(built, req.Pins...)
+			return map[string]entrypoint.ForkDelivery{"tool": {Key: "fresh-build"}}
+		}
+	})
+	if len(built) != 1 || built[0].Commit != head2 {
+		t.Fatalf("fresh launch build received %+v, want the new head %s\n%s", built, head2, printed)
+	}
+	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head2 {
+		t.Fatalf("fresh launch did not record the new branch pin: %+v (present=%v), want %s", entry, ok, head2)
+	}
+	if !strings.Contains(printed, "freshly resolved fork forkpack/tool") {
+		t.Errorf("fresh pin movement was not disclosed:\n%s", printed)
+	}
+}
+
+func TestUpdateLaunchLeavesAStandingTagForkPinFixed(t *testing.T) {
+	repo, commit := launchForkRepo(t)
+	mustGit(t, repo, "tag", "v1.2.3")
+	head1 := strings.TrimSpace(mustGit(t, repo, "rev-parse", "HEAD"))
+	source := "git+file://" + repo + "?ref=v1.2.3"
+	forkLaunchHome(t, source)
+	var initial []packload.ForkPin
+	_, _ = fakePodmanLaunch(t, recordingBuild(&initial))
+	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head1 {
+		t.Fatalf("ordinary launch did not pin the tag: %+v (present=%v)", entry, ok)
+	}
+	head2 := commit("move the remote tag")
+	mustGit(t, repo, "tag", "--force", "v1.2.3", head2)
+	var built []packload.ForkPin
+	_, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.Update = true
+		o.BuildForks = func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			built = append(built, req.Pins...)
+			return map[string]entrypoint.ForkDelivery{"tool": {Key: "fixed-tag-build"}}
+		}
+	})
+	if len(built) != 1 || built[0].Commit != head1 {
+		t.Fatalf("fresh launch moved a fixed tag input to %+v; want the standing commit %s\n%s", built, head1, printed)
+	}
+	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head1 {
+		t.Fatalf("fresh launch moved the fixed tag pin: %+v (present=%v), want %s", entry, ok, head1)
 	}
 }
 

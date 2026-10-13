@@ -413,6 +413,27 @@ func forkRequest(t *testing.T, fx *patchedAdvanceFixture, runtime string) run.Fo
 		Runtime: runtime, Workspace: "/ws", Interrupt: &run.ActInterrupt{}}
 }
 
+func TestExplicitFreshRequestReachesTheProductionForkBuildSlot(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	initial, _, _ := fx.launch(t, "podman")
+	if initial.delivery.Key == "" {
+		t.Fatal("fixture did not establish its serving generation")
+	}
+	before := fx.record(t)
+	req := forkRequest(t, fx, "podman")
+	req.FreshUpdate = true
+	var out syncBuffer
+	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+	after := fx.record(t)
+	if got["tool"].Key != initial.delivery.Key || len(fx.builds) != 1 {
+		t.Fatalf("explicit unchanged freshness did not reuse the admitted artifact: delivery=%+v builds=%d\n%s",
+			got["tool"], len(fx.builds), out.String())
+	}
+	if after.StartedSeq <= before.StartedSeq || after.Check == nil || after.Check.StartedSeq != after.StartedSeq {
+		t.Fatalf("production BuildSlot did not perform a post-registration keyed check: before=%+v after=%+v", before, after)
+	}
+}
+
 // A PATCHED FORK THAT UPDATES FOR THE NEXT LAUNCH is handed its good build with no check and no
 // build, and the launch starts ONE background advance carrying its key. This drives the production
 // pool path (runBuildSlot -> addForkKeys -> backgroundTreeAdvance -> startBackgroundAdvance): delete

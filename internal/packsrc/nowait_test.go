@@ -6,8 +6,9 @@ package packsrc
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -59,15 +60,115 @@ func TestANoWaitStoreReturnsErrLockHeld(t *testing.T) {
 	}
 }
 
-// A NoWait CHECK THAT MEETS A HELD MIRROR LOCK fetches nothing and leaves the record byte for byte
-// as it was — the attempt's stamp put back — and says the lock was held. Red if the check records
-// the held lock as its problem, or keeps the attempt's stamp.
+func TestFreshCheckBoundaryWaitsForStartedCheckAndCanBeCancelled(t *testing.T) {
+	s := &Store{Dir: t.TempDir(), Git: "/nonexistent/git", Getenv: noStagedTree}
+	const owner = "pack/program"
+	if err := s.WithCheckRecord(owner, nil, func(r *CheckRecord, _ error, _ func() error) (bool, error) {
+		r.StartedSeq = 4
+		return true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	unlock, err := s.lockCheckRecord(owner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary := make(chan struct {
+		seq uint64
+		err error
+	}, 1)
+	go func() {
+		seq, err := s.FreshCheckBoundary(owner)
+		boundary <- struct {
+			seq uint64
+			err error
+		}{seq, err}
+	}()
+	select {
+	case got := <-boundary:
+		unlock()
+		t.Fatalf("request boundary escaped the STARTED transaction: %+v", got)
+	case <-time.After(30 * time.Millisecond):
+	}
+	// Update while retaining the already-held flock; this is CheckPatched's persisted STARTED event.
+	r, err := s.LoadCheckRecord(owner)
+	if err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	r.StartedSeq = 5
+	if err := s.saveCheckRecord(r); err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	unlock()
+	select {
+	case got := <-boundary:
+		if got.err != nil || got.seq != 5 {
+			t.Fatalf("request after started check boundary = %d, %v; want 5", got.seq, got.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fresh request did not acquire the record after its check completed")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	unlock, err = s.lockCheckRecord(owner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled := make(chan error, 1)
+	waiting := make(chan struct{})
+	go func() {
+		_, err := s.freshCheckBoundaryContext(ctx, owner, func(string) { close(waiting) })
+		canceled <- err
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(5 * time.Second):
+		unlock()
+		t.Fatal("fresh boundary did not wait on the held record")
+	}
+	other := make(chan struct {
+		seq uint64
+		err error
+	}, 1)
+	go func() {
+		seq, err := s.FreshCheckBoundary(owner)
+		other <- struct {
+			seq uint64
+			err error
+		}{seq, err}
+	}()
+	cancel()
+	select {
+	case err := <-canceled:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled request lock wait = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		unlock()
+		t.Fatal("cancelled fresh boundary remained blocked")
+	}
+	unlock()
+	select {
+	case got := <-other:
+		if got.err != nil || got.seq != 5 {
+			t.Fatalf("remaining fresh request boundary = %d, %v; want 5", got.seq, got.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelling one request detached another waiter")
+	}
+}
+
+// A NoWait CHECK THAT MEETS A HELD MIRROR LOCK fetches nothing and leaves the completed check
+// unchanged; only the started-attempt identity advances, and the lock is reported.
 func TestANoWaitCheckThatMeetsAHeldMirrorLeavesTheRecord(t *testing.T) {
 	u := newPatchedUpstream(t)
 	w := u.want(t, "main", "")
 	u.check(t, w, false)
-	recPath := u.store.CheckRecordPath(w.Owner)
-	before, err := os.ReadFile(recPath)
+	beforeRecord, err := u.store.LoadCheckRecord(w.Owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,12 +197,19 @@ func TestANoWaitCheckThatMeetsAHeldMirrorLeavesTheRecord(t *testing.T) {
 	if !errors.Is(res.Err, ErrLockHeld) || res.Ran {
 		t.Fatalf("the check = %+v, want ErrLockHeld and nothing run", res)
 	}
-	after, err := os.ReadFile(recPath)
+	afterRecord, err := u.store.LoadCheckRecord(w.Owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(before, after) {
-		t.Errorf("the record changed:\nbefore %s\nafter  %s", before, after)
+	if afterRecord.StartedSeq != beforeRecord.StartedSeq+1 || afterRecord.StartedInputs != beforeRecord.StartedInputs {
+		t.Errorf("NoWait did not record exactly one started attempt: before=%+v after=%+v", beforeRecord, afterRecord)
+	}
+	beforeRecord.StartedSeq, beforeRecord.StartedAt, beforeRecord.StartedInputs = 0, 0, CheckInputs{}
+	afterRecord.StartedSeq, afterRecord.StartedAt, afterRecord.StartedInputs = 0, 0, CheckInputs{}
+	beforeStable, _ := json.Marshal(beforeRecord)
+	afterStable, _ := json.Marshal(afterRecord)
+	if !bytes.Equal(beforeStable, afterStable) {
+		t.Errorf("the completed check record changed:\nbefore %s\nafter  %s", beforeStable, afterStable)
 	}
 }
 

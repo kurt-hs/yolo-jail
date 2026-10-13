@@ -1,10 +1,13 @@
 package packsrc
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The fork lock round-trips, sorted and whole, beside the user config.
@@ -35,6 +38,55 @@ func TestForkLockRoundTrip(t *testing.T) {
 	}
 	if removed := back.Prune(nil); len(removed) != 1 || removed[0] != "pi-matt/pi" {
 		t.Errorf("Prune removed %v", removed)
+	}
+}
+
+func TestWithForkLockContextCancelsWhileWaiting(t *testing.T) {
+	store, path := t.TempDir(), filepath.Join(t.TempDir(), ForkLockName)
+	entered, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- WithForkLock(store, path, nil, func(*ForkLock) (bool, error) {
+			close(entered)
+			<-release
+			return false, nil
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first pinner did not hold the fork lock")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waiting, second := make(chan struct{}), make(chan error, 1)
+	called := false
+	go func() {
+		second <- WithForkLockContext(ctx, store, path, func(string) { close(waiting) },
+			func(*ForkLock) (bool, error) { called = true; return false, nil })
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("second pinner did not begin waiting")
+	}
+	cancel()
+	select {
+	case err := <-second:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("second pinner error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("second pinner did not stop after cancellation")
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("cancelled pinner entered its lock callback")
 	}
 }
 

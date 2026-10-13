@@ -115,10 +115,12 @@ ends, so yolo refuses that build and says why.
   then, and says so:
 
   ```text
-  pinned fork pi-mine/pi at 1a2b3c4d (git+https://github.com/you/pi-fork?ref=main); `yolo pack update` moves it
+  pinned fork pi-mine/pi at 1a2b3c4d (git+https://github.com/you/pi-fork?ref=main); `--update` or `yolo pack update` moves it
   ```
 
-  Later launches keep that commit even after your branch moves on, and `yolo pack update` moves the
+  Later ordinary launches keep that commit even after your branch moves on. A host `--update` fresh
+  launch or `yolo pack update` re-resolves the fork pin; an in-jail `--update` that needs a mutable
+  source pin names the host command instead.
   pin. `yolo pack status` shows the pin and whether it is built. The pin is kept in
   `~/.config/yolo-jail/forks.lock.json`: on another machine with the same config and that file, the
   first launch fetches the same commit, so both machines run the same build.

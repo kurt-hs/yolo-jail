@@ -70,6 +70,12 @@ func PatchedCopySlug(key string) string {
 
 // TreeBuildRequest is what a launch hands its tree arm (Options.BuildTrees).
 type TreeBuildRequest struct {
+	// FreshUpdate opts patched keys into explicit check-after-registration mode.
+	FreshUpdate bool
+	// FreshAfterSeq and FreshBoundaryErr are keyed start-sequence boundaries captured before the pool starts.
+	FreshAfterSeq    map[string]uint64
+	FreshBoundaryErr map[string]error
+	FreshIdentity    map[string]string
 	// Trees are the patched extensions to deliver (packload.PatchedTrees).
 	Trees []packload.Fork
 	// Platform is the jail's platform (containerJailPlatform), never the host's.
@@ -265,7 +271,7 @@ func (o *Options) treeBuildPlan(rt string) (map[string]TreeDelivery, *TreeBuildR
 		}
 		return out, nil
 	}
-	return out, &TreeBuildRequest{Trees: o.patchedTrees, Platform: containerJailPlatform(), Runtime: rt,
+	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: o.patchedTrees, Platform: containerJailPlatform(), Runtime: rt,
 		Workspace: o.Workspace, Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(),
 		Build: floor == "", BuildFloor: floor,
 		CopyRoot: patchedCopiesDir(o.packTree), Interrupt: o.actInterrupt()}

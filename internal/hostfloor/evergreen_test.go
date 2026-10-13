@@ -79,6 +79,18 @@ func TestAnInstallerAgentWhoseCaptureIsADayOldIsRecapturedAndUpdated(t *testing.
 	}
 }
 
+func TestManualUpdateRecapturesAnOtherwiseRecentNativeInstall(t *testing.T) {
+	e := newEvergreenWorld(t)
+	e.floor.ManualUpdate = true
+	e.floor.UpdatesAllowed = func(string) bool { return false }
+	e.clk.t = e.clk.t.Add(time.Minute)
+	st, outcome, err := e.ensure()
+	if err != nil || outcome != Updated || st.Record.Version != "2.1.300" || e.captures != 1 {
+		t.Fatalf("manual Ensure = %s %+v %v after %d captures\n%s", outcome, st.Record, err,
+			e.captures, e.out.String())
+	}
+}
+
 // TestNoRecaptureRunsInsideTheAgeOrTheIntervalOrUnderAHold: the capture costs a jail, so it waits
 // out the capture-refresh age even once the hourly stamp allows a poll; it waits out the hourly
 // stamp too; and `agent_updates` holding the pack holds it.

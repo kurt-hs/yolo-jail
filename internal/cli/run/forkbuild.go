@@ -10,6 +10,8 @@ package run
 // is the rebuild on a timer §9 forbids. Moving a pin is `yolo pack update`'s alone.
 
 import (
+	"context"
+	"fmt"
 	"io"
 	goruntime "runtime" // stdlib; this package's `runtime` is yolo's own (run.go)
 
@@ -25,6 +27,12 @@ import (
 
 // ForkBuildRequest is what a launch hands its fork build trigger (Options.BuildForks).
 type ForkBuildRequest struct {
+	// FreshUpdate opts patched keys into explicit check-after-registration mode.
+	FreshUpdate bool
+	// FreshAfterSeq and FreshBoundaryErr are keyed start-sequence boundaries captured before the pool starts.
+	FreshAfterSeq    map[string]uint64
+	FreshBoundaryErr map[string]error
+	FreshIdentity    map[string]string
 	// Pins are the forks to deliver: each PLAIN fork with its pinned commit, and each PATCHED fork,
 	// which has no pin by design (docs/design/patched-forks.md §6.5) and whose delivery its advance
 	// decides.
@@ -144,7 +152,7 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 		}
 		return out, nil
 	}
-	req := &ForkBuildRequest{Pins: build, CachedGoodOwner: o.cachedGoodOwner, Platform: platform, Runtime: rt, Workspace: o.Workspace,
+	req := &ForkBuildRequest{FreshUpdate: o.Update && !o.DryRun, Pins: build, CachedGoodOwner: o.cachedGoodOwner, Platform: platform, Runtime: rt, Workspace: o.Workspace,
 		Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(), Interrupt: o.actInterrupt()}
 	if o.packTree != "" {
 		// Called from every advance of the slot's pool at once (XB-D10): the record's writes are
@@ -250,7 +258,68 @@ func forkLockPath() string { return packsrc.ForkLockPath(paths.UserConfigPath())
 // `yolo host -- <bin>` and `yolo host apply --assert` (the host floor's PinFork), and `yolo capture
 // <forked bin>`, so the host and a jail can never pin one fork two ways.
 func PinLaunchForks(forks []packload.Fork, begin func() (func(string), func())) []packload.ForkPin {
-	return packload.PinForks(forks, forkLockPath(), launchStore(), begin)
+	return pinLaunchForks(nil, forks, begin)
+}
+
+// RepinLaunchForks is the explicit fresh-request counterpart, called only after the attach decision
+// has established that this is a new jail. It re-resolves selected mutable branch refs through the
+// same lock and store as PinLaunchForks; fixed inputs keep their pin and ordinary launch behavior.
+func RepinLaunchForks(ctx context.Context, forks []packload.Fork,
+	begin func() (func(string), func())) []packload.ForkPin {
+	var mutable, fixed []packload.Fork
+	for _, fork := range forks {
+		if mutableForkRef(fork) {
+			mutable = append(mutable, fork)
+		} else {
+			fixed = append(fixed, fork)
+		}
+	}
+	byKey := make(map[string]packload.ForkPin, len(forks))
+	if len(fixed) > 0 {
+		for _, pin := range pinLaunchForks(ctx, fixed, nil) {
+			byKey[pin.Fork.Key()] = pin
+		}
+	}
+	if len(mutable) > 0 {
+		store := launchStore()
+		store.Ctx = ctx
+		for _, pin := range packload.RepinForks(mutable, forkLockPath(), store, begin) {
+			byKey[pin.Fork.Key()] = pin
+		}
+	}
+	out := make([]packload.ForkPin, len(forks))
+	for i, fork := range forks {
+		out[i] = byKey[fork.Key()]
+	}
+	return out
+}
+
+func mutableForkRef(fork packload.Fork) bool {
+	if fork.Patched() {
+		return false
+	}
+	addr, err := packsrc.Parse(fork.Source)
+	return err == nil && addr.Kind == packsrc.KindGit && !packsrc.IsFixedRef(addr.Ref)
+}
+
+// freshJailForkPinRefusal names the mutable source dependencies a jail cannot manually re-resolve
+// because its fork lock is the host's read-only input. Fixed refs and unselected forks are unaffected.
+func freshJailForkPinRefusal(forks []packload.Fork) error {
+	for _, fork := range forks {
+		if !mutableForkRef(fork) || forkUnpublishedHere(fork) != "" {
+			continue
+		}
+		return fmt.Errorf("Refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update.",
+			fork.Key())
+	}
+	return nil
+}
+
+func pinLaunchForks(ctx context.Context, forks []packload.Fork,
+	begin func() (func(string), func())) []packload.ForkPin {
+	store := launchStore()
+	store.Ctx = ctx
+	return packload.PinForks(forks, forkLockPath(), store, begin)
 }
 
 // forkPins is the pin of every fork packs carry: pinned now where this launch may pin (PinLaunchForks),

@@ -1242,9 +1242,41 @@ func hostRefreshProgram(packs []*packload.Pack, cmd0 string) (hostfloor.Program,
 // with when a SIGTERM or SIGHUP stopped the refresh, as the jail's launcher ends.
 func hostPrelaunchRefresh(launch *hostComposition, prog hostfloor.Program, progs []hostfloor.Program,
 	target, childPath string, errw io.Writer) int {
-	res := newHostFloor(errw, progs).PrelaunchRefresh(prog, target, launch.refreshEnviron(childPath))
-	if res.Outcome != hostfloor.RefreshStopped {
-		return 0
+	return hostPrelaunchRefreshMode(launch, prog, progs, target, childPath, errw, false)
+}
+
+func hostPrelaunchRefreshFresh(launch *hostComposition, prog hostfloor.Program, progs []hostfloor.Program,
+	target, childPath string, errw io.Writer) int {
+	return hostPrelaunchRefreshMode(launch, prog, progs, target, childPath, errw, true)
+}
+
+func hostPrelaunchRefreshMode(launch *hostComposition, prog hostfloor.Program, progs []hostfloor.Program,
+	target, childPath string, errw io.Writer, fresh bool) int {
+	floor := newHostFloor(errw, progs)
+	var res hostfloor.RefreshResult
+	if fresh {
+		res = floor.PrelaunchRefreshManual(prog, target, launch.refreshEnviron(childPath))
+	} else {
+		res = floor.PrelaunchRefresh(prog, target, launch.refreshEnviron(childPath))
+	}
+	if !fresh {
+		if res.Outcome != hostfloor.RefreshStopped {
+			return 0
+		}
+	} else {
+		switch res.Outcome {
+		case hostfloor.RefreshNone, hostfloor.RefreshRan:
+			return 0
+		case hostfloor.RefreshInterrupted:
+			fmt.Fprintf(errw, "yolo host --update: the declared pre-launch refresh of %s was interrupted by Ctrl-C; it did not finish, so the command was not started\n", prog.Bin())
+			return 130
+		case hostfloor.RefreshStopped:
+			fmt.Fprintf(errw, "yolo host --update: the declared pre-launch refresh of %s was stopped by %s; the command was not started\n", prog.Bin(), res.Signal)
+			return 128 + int(res.Signal)
+		default:
+			fmt.Fprintf(errw, "yolo host --update: the declared pre-launch refresh of %s did not finish successfully (outcome %d, status %d); fix the named refresh problem, then retry\n", prog.Bin(), res.Outcome, res.Status)
+			return 1
+		}
 	}
 	name := res.Signal.String()
 	switch res.Signal {

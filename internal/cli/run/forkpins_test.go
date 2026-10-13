@@ -6,6 +6,8 @@ package run
 
 import (
 	"bytes"
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +63,84 @@ func launchToDispatch(t *testing.T) string {
 		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
 	}
 	return stdout.String() + stderr.String()
+}
+
+func TestRunContainerCallsFreshJailForkPreflight(t *testing.T) {
+	fn := funcDecl(t, "run.go", "runContainer")
+	called := callsIn(fn)
+	if !called["freshJailForkPinRefusal"] || !called["RepinLaunchForks"] {
+		t.Fatalf("runContainer must preflight in-jail mutable pins and keep host repinning separate; calls=%v", called)
+	}
+	var repin, lockAcquire, lastAttach token.Pos
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch f := call.Fun.(type) {
+		case *ast.Ident:
+			if f.Name == "RepinLaunchForks" {
+				repin = call.Pos()
+			}
+			if f.Name == "acquireWorkspaceLock" {
+				lockAcquire = call.Pos()
+			}
+		case *ast.SelectorExpr:
+			if f.Sel.Name == "attachExisting" && call.Pos() > lastAttach {
+				lastAttach = call.Pos()
+			}
+		}
+		return true
+	})
+	if repin == token.NoPos || lockAcquire == token.NoPos || lastAttach == token.NoPos || repin < lockAcquire || repin < lastAttach {
+		t.Fatalf("fresh pin resolution must follow lock acquisition and the raced attach decision: lock=%v attach=%v repin=%v",
+			lockAcquire, lastAttach, repin)
+	}
+}
+
+func TestFreshJailForkPinRefusalIsSelectedMutableAndReadOnly(t *testing.T) {
+	branch := packload.Fork{Pack: "selected", Base: "base", Bin: "tool",
+		Source: "git+https://example.invalid/selected?ref=main"}
+	if err := freshJailForkPinRefusal([]packload.Fork{branch}); err == nil ||
+		!strings.Contains(err.Error(), "mutable source fork selected/tool") ||
+		!strings.Contains(err.Error(), "from the host workspace") {
+		t.Fatalf("mutable selected fork refusal = %v", err)
+	}
+
+	t.Setenv("HOME", t.TempDir())
+	lockPath := packsrc.ForkLockPath(paths.UserConfigPath())
+	lock := &packsrc.ForkLock{}
+	lock.Set(packsrc.ForkLockEntry{Key: "selected/tool", Source: branch.Source, Ref: "main", Commit: strings.Repeat("a", 40)})
+	if err := lock.Save(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterErr := freshJailForkPinRefusal([]packload.Fork{branch}); afterErr == nil {
+		t.Fatal("a mutable source unexpectedly passed in-jail freshness")
+	}
+	if after, err := os.ReadFile(lockPath); err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("in-jail refusal changed the read-only host fork lock: err=%v bytes=%q", err, after)
+	}
+
+	fixed := []packload.Fork{
+		{Pack: "tagged", Bin: "tool", Source: "git+https://example.invalid/tagged?ref=v1.2.3"},
+		{Pack: "committed", Bin: "tool", Source: "git+https://example.invalid/committed?ref=" + strings.Repeat("b", 40)},
+	}
+	if err := freshJailForkPinRefusal(fixed); err != nil {
+		t.Fatalf("fixed tag/commit inputs were refused: %v", err)
+	}
+	// A moving fork not in the selected declaration vector is not a reason to refuse this launch.
+	if err := freshJailForkPinRefusal(fixed); err != nil {
+		t.Fatalf("unselected mutable fork affected the request: %v", err)
+	}
+	unpublished := branch
+	unpublished.Platforms = []string{"darwin/arm64"}
+	if err := freshJailForkPinRefusal([]packload.Fork{unpublished}); err != nil {
+		t.Fatalf("a fork not required on this platform blocked freshness: %v", err)
+	}
 }
 
 func TestALaunchNamesTheForksPinnedRevisionAndLeavesItsPinAlone(t *testing.T) {

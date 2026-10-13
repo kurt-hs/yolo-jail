@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -60,6 +62,39 @@ func TestACtrlCDuringTheChecksFetchStartsTheJailOnTheGoodBuild(t *testing.T) {
 	}
 	if rec := fx.record(t); rec.CheckedAt != 0 {
 		t.Errorf("the interrupted check left its stamp (%d), so the next launch would not check for an hour", rec.CheckedAt)
+	}
+}
+
+// A fresh request interrupted in its fetch refuses rather than treating the historical serving build as fresh.
+func TestFreshRequestCancellationDoesNotFallBackToTheServingBuild(t *testing.T) {
+	fx, _, _, old, _, _ := firstAdvance(t)
+	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
+	started := filepath.Join(t.TempDir(), "started")
+	patchedGitWrapper(t, "for a in \"$@\"; do if [ \"$a\" = fetch ]; then touch "+shquote.Quote(started)+
+		"; sleep 60; fi; done")
+	fx.later(2 * time.Hour)
+	req := forkRequest(t, fx, "podman")
+	req.FreshUpdate = true
+	var output syncBuffer
+	done := make(chan map[string]entrypoint.ForkDelivery, 1)
+	go func() {
+		delivered, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &output, false)
+		done <- delivered
+	}()
+	interruptWhen(t, "the fresh check fetch", func() bool { _, err := os.Stat(started); return err == nil })
+	var delivered map[string]entrypoint.ForkDelivery
+	select {
+	case delivered = <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("Ctrl-C did not cancel the fresh check")
+	}
+	if delivered["tool"].Key != "" || !strings.Contains(delivered["tool"].Reason, "could not be prepared freshly") ||
+		!strings.Contains(output.String(), "fresh upstream check was interrupted") {
+		t.Fatalf("cancelled freshness handed the old build instead of refusing: old=%s delivered=%+v\n%s",
+			old.delivery.Key, delivered["tool"], output.String())
+	}
+	if record := fx.record(t); record.CheckedAt != 0 || record.Good == nil || record.Good.Entry != old.delivery.Key {
+		t.Fatalf("cancellation lost the retry boundary or the previously admitted good build: %+v", record)
 	}
 }
 
