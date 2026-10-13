@@ -12,8 +12,9 @@ package cli
 // VERSIONED DIRECTORY (coined here: one directory per store entry) under paths.HostTreesDir, where
 // no jail mounts it; `~/<into>` is a symbolic link the render owns, recorded in the `files`
 // ownership record and swapped by writing a link beside it and renaming it over. The version the
-// link named before the swap is kept until the next move, so a host agent already running keeps
-// reading the tree it loaded; anything older is removed.
+// link named before the swap is kept, so a host agent already running keeps
+// reading the tree it loaded. Untracked older copies are retained until explicit cleanup;
+// link position alone cannot prove that a host session has exited.
 //
 // # Where the advance runs, and where it never does
 //
@@ -90,18 +91,27 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 			continue // no host render links a tree whose list entry reaches jails alone (PPX-D35)
 		}
 		trees = append(trees, f)
-		if bin != "" && treeUpdateTiming(f) == timingNextLaunch {
-			// THE HOST'S NEXT-LAUNCH MODE IS NOT BUILT (XB-D22): `yolo host -- <bin>` updates at its launch.
-			richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": `agent_updates` "+
-				"asks for the next launch, which this yolo applies to jail launches — `yolo host` updates it at this launch"))
-		}
 	}
 	// A PARALLEL ADVANCE, as a jail launch's tree arm runs one (treepool.go, XB-D10): the host builds
 	// in podman's own capture jails, side by side.
+	rt := captureRuntime()
+	req := run.TreeBuildRequest{Runtime: rt, Platform: capture.Platform(), Interrupt: act, Build: true}
+	if err := registerTreePreparation(trees, req, errw); err != nil {
+		fmt.Fprintf(errw, "yolo host: preparation registration failed: %v — run `yolo pack prepare start` after repairing the named problem.\n", err)
+		return false
+	}
 	results := make([]advanceResult, len(trees))
-	runTreesInParallel(trees, "", act, errw, errw, func(i int, f packload.Fork, lane treeLane) {
-		results[i] = hostTreeAdvance(f, lane.options(advanceOptions{platform: captureJailPlatform(), color: color,
-			launch: true, host: true, act: act, bypassCommand: command}))
+	runTreesInParallel(trees, rt, act, errw, errw, func(i int, f packload.Fork, lane treeLane) {
+		o := lane.options(advanceOptions{platform: req.Platform, runtime: rt, color: color,
+			launch: true, host: true, act: act, bypassCommand: command})
+		if treeUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(rt) {
+			r, _ := servingTreeOf(f, o, "", true)
+			if r.delivery.Key != "" || r.patchFailure != nil {
+				results[i] = r
+				return
+			}
+		}
+		results[i] = hostTreeAdvance(f, o)
 	})
 	var stopped []string
 	for i, r := range results {
@@ -313,7 +323,7 @@ func hostFallbackLine(f packload.Fork) string {
 // hostTreeServing is the good build that serves f, read with no git: its store entry and its
 // inputs, or why there is none.
 func hostTreeServing(f packload.Fork) (*capture.Entry, *packsrc.GoodBuild, string) {
-	a, early := newAdvance(f, advanceOptions{platform: captureJailPlatform(), out: io.Discard, errw: io.Discard, host: true})
+	a, early := newAdvance(f, advanceOptions{platform: capture.Platform(), out: io.Discard, errw: io.Discard, host: true})
 	if early != nil {
 		return nil, nil, early.delivery.Reason
 	}
@@ -521,21 +531,11 @@ func swapLink(dest, target string) error {
 	return nil
 }
 
-// pruneHostTreeVersions removes every versioned copy under dir but keep and previous: the version
-// the link names now, and the one it named before the move, which a host agent already running
-// may still be reading.
+// pruneHostTreeVersions retains untracked copies: neither age nor link position proves
+// a host session has stopped loading a version. Explicit revert remains the cleanup route.
+// Automatic reclamation requires proven session liveness, not yet tracked here.
 func pruneHostTreeVersions(dir, keep, previous string) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		p := filepath.Join(dir, e.Name())
-		if p == keep || p == previous {
-			continue
-		}
-		_ = os.RemoveAll(p)
-	}
+	// All existing versions have unknown session liveness.
 }
 
 // noteHostTreeLines prints a line for each patched extension the launch's agent loads at the host
@@ -627,20 +627,11 @@ func linkedTreeLabel(key string) string {
 	return "the build " + key
 }
 
-// sweepDroppedHostTrees removes the versioned copies of every patched extension the selection no
-// longer carries, once nothing the files ownership record names links into them: the dropped pack's
-// link is retired by the apply's prune of a dropped pack's output, which runs before this, and a
-// link still in place keeps its tree. Best-effort: a copy left behind costs disk, never a render.
+// sweepDroppedHostTrees deliberately retains untracked versions after deselection.
+// Retiring the link does not prove an already running host session stopped loading it.
+// Explicit revert can reclaim copies; automatic collection needs proven liveness.
 func sweepDroppedHostTrees(packs []*packload.Pack) {
-	live := map[string]bool{}
-	for _, f := range packload.PatchedTrees(packs) {
-		live[run.PatchedCopySlug(f.Key())] = true
-	}
-	man, err := hostskills.LoadManifest(hostSkillsManifestPath())
-	if err != nil {
-		return // an unreadable record proves nothing about which links remain, so nothing goes
-	}
-	sweepUnlinkedHostTrees(live, man)
+	// No host session liveness evidence is tracked for these copies.
 }
 
 // sweepUnlinkedHostTrees removes every extension's versioned copies under paths.HostTreesDir that

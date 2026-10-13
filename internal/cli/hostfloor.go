@@ -445,6 +445,15 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 	if !allowAdvance {
 		return state
 	}
+	// Detached preparation publishes Good, not a serving authorization snapshot.
+	// Exact recipe/platform resolution above and strict patch authority still gate it.
+	if treeUpdateTiming(fork) == timingNextLaunch && run.BackgroundBuildsOn(captureRuntime()) &&
+		state.Good != nil && state.Good.Entry != nil {
+		delivery, good := admittedProgramServing(fork, captureRuntime(), floorPatchedPlatform())
+		if good != nil && delivery.PatchFailure == nil && delivery.Key == state.Good.Entry.Key {
+			return state
+		}
+	}
 	result := floorAdvance(ctx, fork, out, installed, actInterruptOf(ctx))
 	return floorAdvanceState(p, result)
 }

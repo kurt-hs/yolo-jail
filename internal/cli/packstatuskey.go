@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"sort"
 	"strings"
 
@@ -39,7 +44,11 @@ func packStatusKey(args []string, out, errw io.Writer, color bool) int {
 	forks := append(packload.Forks(sel.packs), packload.PatchedTrees(sel.packs)...)
 	for _, f := range forks {
 		if f.Key() == key {
-			return printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+			rc := printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+			if rc == 0 {
+				printHostPreparationSnapshot(out, errw, key)
+			}
+			return rc
 		}
 	}
 	// Not in what resolved: before saying nothing selected builds it, say so when its pack is
@@ -109,4 +118,28 @@ func printBuildLine(pr richtext.Printer, errw io.Writer, forks []packload.Fork, 
 	fmt.Fprintf(errw, "yolo pack status: no selected fork or built tree is %s — the selected ones are %s; run "+
 		"`yolo pack status <one of them>`\n", key, strings.Join(keys, ", "))
 	return 1
+}
+
+// Scheduling evidence is diagnostic only: serving readers resolve CheckRecord.Good
+// against the current recipe and platform instead of trusting this snapshot.
+func printHostPreparationSnapshot(out, errw io.Writer, key string) {
+	selected := preparationSubscription{Key: key, Runtime: captureRuntime(), Platform: capture.Platform()}
+	snapshot, err := readPreparationSnapshotFor(filepath.Join(paths.BackgroundAdvanceDir(), "scheduler"), selected)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(errw, "  preparation status unavailable: %v — run `yolo pack prepare status` to inspect and repair scheduler state.\n", err)
+		return
+	}
+	fmt.Fprintf(out, "  preparation (%s, %s): %s, generation %d (diagnostic only)\n", snapshot.Runtime, snapshot.Platform, snapshot.Phase, snapshot.Generation)
+	if snapshot.Reason != "" {
+		fmt.Fprintf(out, "    %s\n", snapshot.Reason)
+	}
+	if !snapshot.RetryAt.IsZero() {
+		fmt.Fprintf(out, "    retry: %s\n", snapshot.RetryAt.Format("2006-01-02T15:04:05Z07:00"))
+	}
+	if snapshot.Log != "" {
+		fmt.Fprintf(out, "    log: %s\n", snapshot.Log)
+	}
 }
