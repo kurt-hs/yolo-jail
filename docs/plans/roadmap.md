@@ -147,9 +147,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     — what most agents' menus show turns on the first, and no agent gets search from Bedrock on runtime.
 24. [Decide whether pack-declared traps fold into the agent directory map](../design/agent-directory-map.md) — the map
     would supersede [the traps design](../design/pack-declared-file-diagnostics.md), so rule it before building either.
-25. [Measure the in-jail nix root watcher end to end](../design/in-jail-nix-roots.md#8-what-is-built) — built
-    2026-10-08; it needs one fresh jail on a host running this yolo: a `nix build` in the workspace, then
-    `yolo nix-roots list` and the host's `nix-store --query --roots`.
+25. [Measure the in-jail nix root watcher end to end](../design/in-jail-nix-roots.md#9-watcher-measurement-and-remaining-host-observation) — the running jail observed a tiny build through the watcher, but host root resolution remains unverified; the attempted shared-store root query pruned stale entries, so finish with a safe host-side observation.
 26. [Review H4's root-owned capture store on macos-user](install-capture.md#build-order), [rule whether integration
     sharding unparks](integration-parallelism.md) with [the test suite's other levers](test-suite-speed.md), and [name
     the real forked program](../design/forked-programs-as-packs.md), the last input its step 7 needs.
@@ -358,7 +356,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 22 — boot snapshot and diagnostic dial | D | `OQ-DB2`: is the boot snapshot always-on (leaning: on give-up paths only)? **Maintainer**. The §4.6 byte-cap adoption on the eight unbounded sinks is a separate A fragment. |
 | 23 — add-only model lists and Bedrock web search | D | Rule the model lists and web search on Bedrock. **Maintainer**. |
 | 24 — pack-declared traps vs the agent directory map | D | Does the map supersede the traps design? Rule before building either. **Maintainer**. |
-| 25 — in-jail nix root watcher measurement | A | Run a workspace `nix build`, then `yolo nix-roots list` and `nix-store --query --roots`. Run isolated: it mutates `/workspace`. |
+| 25 — in-jail nix root watcher measurement | A | Running-jail watcher observation is recorded; host resolution remains open. Use a safe host-side observation: the attempted shared-store `nix-store --query --roots` pruned stale entries, so do not repeat without isolation. |
 | 26 — H4, suite levers, the forked program, completion | D | Name the real forked program (source, build line and `produces`) for step 7, and rule whether integration sharding unparks. **Maintainer**. The H4 review of the root-owned capture store is X (a Mac); the native-addon measurement is recorded as blocked on a build line (`2f7e7d5ff`). |
 | 27 — how a jail reaches a worktree's `.git` | D | Read-only refuses every commit, read-write lets a jail prune the worktree. **Maintainer**. |
 | 28 — calls left at one decision each | D | The `:ro` degradation rows, message URLs (`OQ-DW3`), the macOS nix build sandbox, array-append pinning (E5), the pack system's other calls, relocating `.yolo` by a link (`OQ-JH1`), a pi-subagents shared registry, the shared tool store's relocation contract, storage tiers, and cache isolation. **Maintainer**. |

@@ -12,14 +12,18 @@ vantage:
 
 # In-jail Nix roots: a watcher keeps a jail's links as bounded, workspace-owned roots
 
-**Status:** 2026-10-08. Built: the root watcher, the managed-root registry with its lease, cap
+**Status:** Verified 2026-10-13 against `1c81fc90ca57af4a430c432029f33191a8cbfe10`. Built: the root watcher, the managed-root registry with its lease, cap
 and release, and `yolo nix-roots` ([§8](#8-what-is-built)). Owner rulings: automatic protection
 with a mandatory lifecycle, cap, inspection and release ([OQ-NR1](#decision-ledger)), and a
 read-only view of the host's `gcroots/auto` with no launch line of its own
 ([OQ-NR2](#decision-ledger)). The mechanism and the numbers are implementation decisions
 [NR-D3](#NR-D3) to [NR-D8](#NR-D8). MEASURED against the host daemon: a kept link is a root
-the host lists under its own spelling, and releasing it removes that root. UNMEASURED: the watcher
-receiving a real daemon's entries through the bind, because this jail's launcher predates the bind.
+the host lists under its own spelling, and releasing it removes that root. MEASURED in the
+currently running jail: a tiny `nix-build` output link under `/workspace/.yolo/durable` appeared
+in `yolo nix-roots list` as `by watch` after a bounded wait, and the watcher log recorded the
+same link and store path. UNMEASURED: whether the host's `nix-store --query --roots` lists this
+new managed link. The only attempted root query emitted stale-link removals; it was not repeated,
+and no host-root claim is inferred from the jail-side link or watcher log.
 
 > **In short.** The watcher sees each root request the host daemon records, and for a link that
 > exists in this jail it makes a yolo-owned link to the same store path, registered under the
@@ -506,6 +510,32 @@ and its numbers are implementation decisions [NR-D3](#NR-D3) to [NR-D8](#NR-D8),
 | <a id="NR-D6"></a>NR-D6 | *Implementation decision.* **The boot starts the watcher directly, not through `YOLO_JAIL_DAEMONS`.** That payload is the host's composed list of loophole and pack-service daemons, with readiness, orphan and disclosure handling those need. The watcher serves no endpoint and holds no credential, and a jail without it is the jail it was before. Its own lock keeps it to one process per jail; a watcher that dies stays down until the next boot, whose scan catches up. Reversible: compose it into the payload | 2026-10-08 | [§8](#8-what-is-built) | 2026-10-08 |
 | <a id="NR-D8"></a>NR-D8 | *Implementation decision, [OQ-NR1](#decision-ledger).* **A release is remembered, so a scan cannot revive it.** Each release records the link and the time (at most 1,024 links, for 30 days). A scan skips an auto entry whose own modification time is no newer: the daemon renames a fresh entry into place on every request, so an older entry is the request the release already answered. Without this, the jail's next restart would re-admit every released root whose entry the host had not yet pruned. Reversible: drop the record | 2026-10-08 | [§4.1](#41-workspace-ownership-caps-and-release) | 2026-10-08 |
 | <a id="NR-D7"></a>NR-D7 | *Implementation decision.* **The handoff is pinned and fenced on one connection:** `AddTempRoot(P)` when the watcher reads the entry (or `keep` reads the link), the managed link registered on that connection, `AddTempRoot(P)` again after the registration is acknowledged, then close. This is [§2.4](#24-a-new-permanent-root-does-not-update-an-active-gc-snapshot)'s order. The pin starts at discovery, not at the client's own `AddTempRoot`, so it narrows the window but does not close it ([NR-D5](#NR-D5)) | 2026-10-08 | [§4](#4-the-translated-root) | 2026-10-08: the order is pinned against a fake daemon; the real daemon accepted it ([§8](#8-what-is-built)) |
+
+## 9. Watcher measurement and remaining host observation
+
+On 2026-10-13, in the already-running jail (not a fresh launcher), a tiny local derivation was
+built with `nix-build` to a uniquely owned output link under
+`$YOLO_DURABLE_DIR/nix-roots-measurement-20261013/result`. The first immediate list still showed
+the baseline four managed roots; after an 8-second bounded wait, `yolo nix-roots list` showed a
+fifth `by watch` entry for that exact link and store path. The daemon log recorded `kept` for the
+same link, store path and root id. This proves the running watcher's automatic observation and
+managed registration of a daemon-created entry visible through the bind. It does **not** prove
+that the host's root query resolves the managed link under the host spelling.
+
+The test root was released with `yolo nix-roots release <test-link>`; the test symlink was then
+removed. The managed link was confirmed absent and the store path remained present. The one
+attempted host query was `nix-store --query --roots 2>&1 | head -30`; it printed multiple
+`removing stale link` diagnostics for pre-existing paths, including `/tmp` and prior test/build
+roots. The shell reported success for the pipeline, but `head` masked the nix-store exit status.
+Because the query prunes stale auto links, it was not repeated. No attempt was made to recreate
+or clean up any of those unrelated entries. The diagnostics establish that stale entries were
+removed; they do not establish that any live root or store output was deleted.
+
+**Remaining observation:** on the host, use a non-mutating inspection of the specific test managed
+link in the host's `gcroots/auto` and confirm it resolves to the test store path, or arrange a
+dedicated isolated host store for a `nix-store --query --roots` check. A jail-local symlink, the
+watcher log, and `yolo nix-roots list` are not host-daemon evidence. Do not rerun a root query
+against the shared store without an isolated safety plan.
 
 ## Appendix: reproducing M4 and M6
 
