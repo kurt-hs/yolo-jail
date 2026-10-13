@@ -161,8 +161,10 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	if req.Build && treeUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
-			// THIS RUNTIME RUNS NO BACKGROUND ADVANCE (Apple Container, macos-user): the key updates at
-			// this launch, as XB-D21 has the next-launch option do there whenever a build happens.
+			// THIS RUNTIME/PLATFORM RUNS NO BACKGROUND CHECKS (macos-user, a darwin platform, or
+			// anything else BackgroundChecksOn excludes; Apple Container checks Linux candidates
+			// check-only since slice 2): the key updates at this launch, as XB-D21 has the
+			// next-launch option do there whenever a build happens.
 			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
 				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
 				runtimeName(req.Runtime))))
@@ -263,7 +265,8 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 // deliverPatchedFork is the fork half of the next-launch mode (deliverTree's; XB-D28): what this
 // launch hands f at once — the good build it has — and whether its advance is left to a background
 // one. It advances f in front when `agent_updates` sets it to update at the launch, when the runtime
-// runs no background advance (Apple Container, macos-user: XB-D21, one dim line saying so), or when
+// runs no background checks (macos-user or an unsupported platform: XB-D21, one dim line saying so),
+// or when
 // no good build serves — there is nothing to hand, and a fork has no list entry to fall back on
 // (Fork.Fallback is always "" for one).
 func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *buildReport, it *poolItem,

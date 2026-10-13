@@ -1804,7 +1804,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	startGood := a.goodBuild()
 	a.boundHit, a.ownLock = false, b.lockPath()
 	mode := buildMode{force: a.o.force, packs: a.packs, lock: pidlock.NoWait, replaySpent: a.replaySpent,
-		runtime: a.o.runtime}
+		runtime: a.o.runtime, admitCtx: a.ctx}
 	if a.replayBinding != nil {
 		snapshot := *a.replayBinding
 		mode.sourceReplay = sourceReplayOptions{Snapshot: &snapshot, Record: func(w packsrc.WalkResult) packsrc.RecordReplayResult {
