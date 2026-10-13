@@ -71,6 +71,8 @@ func runInternal(args []string) int {
 		// and not the launch (forkbuildchild.go; docs/design/patched-forks.md PF-D25). Hidden: its
 		// caller is a patched fork's advance.
 		return runForkBuildJail(args[1:], os.Stdout, os.Stderr)
+	case "log-append":
+		return runInternalLogAppend(args[1:], os.Stdin)
 	case "config-dump":
 		return runConfigDump(args[1:])
 	case run.ScratchRemoverVerb:

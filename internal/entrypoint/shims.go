@@ -1216,15 +1216,10 @@ _yolo_receipt() {
         if [ -n "${6:-}" ]; then line="$line,\"path\":\"$(_yolo_scrub "$6")\""; fi
         line="$line,\"act\":\"$(_yolo_scrub "${5:-install}")\""
         line="$line,\"time\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
-        # ONE printf, ONE line: the whole receipt reaches the file as a single write(2) on a
-        # descriptor opened O_APPEND, and the kernel serializes the implied seek-to-end and
-        # the write against every other appender on the same inode — which is what keeps two
-        # launchers installing at once from interleaving half-lines. (An earlier note here
-        # credited PIPE_BUF. PIPE_BUF bounds atomic writes to a PIPE and says nothing about a
-        # regular file; the line-length budget the schema keeps is a readability bound, not
-        # the thing that makes this append atomic.)
-        mkdir -p "${_YOLO_RECEIPTS%/*}"
-        printf '%s\n' "$line" >> "$_YOLO_RECEIPTS"
+        # ONE line goes to the shipped Go helper. Its workspace-scoped opener never
+        # follows active/archive links, and its lock covers trim plus the whole append,
+        # shared with Go captures. Receipt failure remains best-effort below.
+        printf '%s\n' "$line" | yolo internal log-append "${_YOLO_RECEIPTS%/.yolo/receipts.jsonl}" receipts.jsonl
     } >/dev/null 2>&1 || true
     return 0
 }

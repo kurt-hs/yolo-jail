@@ -23,6 +23,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // stageFixture is a temp HOME with fake `mise`, a fake bootstrap exiting bootstrapRC that records
@@ -107,7 +108,7 @@ func (f stageFixture) runBash(t *testing.T, text string, env []string, out, errb
 	t.Helper()
 	cmd := exec.Command("bash", "-c", text)
 	cmd.Dir = f.home
-	cmd.Env = append([]string{"HOME=" + f.home, "PATH=" + f.fakeBin + ":/bin:/usr/bin"}, env...)
+	cmd.Env = append([]string{"HOME=" + f.home, "PATH=" + f.fakeBin + ":" + testutil.YoloBinaryDir(t) + ":/bin:/usr/bin"}, env...)
 	cmd.Stdout, cmd.Stderr = out, errb
 	err := cmd.Run()
 	if ee, ok := err.(*exec.ExitError); ok {

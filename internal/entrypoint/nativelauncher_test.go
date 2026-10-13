@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // A native pack's install is a URL piped into bash, and the sharpest thing about it is
@@ -87,7 +88,7 @@ func runNativeInstall(t *testing.T, inst *packdecl.Install) (int, string, []map[
 	cmd := exec.Command(script)
 	// A clean env with HOME pointed at the temp dir, so a real install would land there
 	// and nothing touches the developer's home.
-	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	cmd.Env = []string{"HOME=" + home, "PATH=" + testutil.YoloBinaryDir(t) + ":" + os.Getenv("PATH")}
 	// The cwd too, so a spliced value that ran as code leaves its witness where a test looks.
 	cmd.Dir = home
 	out, err := cmd.CombinedOutput()

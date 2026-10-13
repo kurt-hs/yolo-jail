@@ -166,8 +166,8 @@ writers, and launch-owned host services add a file family absent from the earlie
 | `<ws>/.yolo/launch.log` | `run.teeLog` | always-on | newest `perf.MaxRuns` launches (trimmed to one fewer at open, then appended) | yes (host-side) |
 | `<ws>/.yolo/host-perf.log` | `hostPerfFileSink` → `paths.OpenWorkspaceStateFile` → `perf.FileSinkTo` | recording gate | newest `perf.MaxRuns` = 50 runs | yes (host-side) |
 | `<ws>/.yolo/housekeeping.log` | `run.housekeepingNote` | when a slot fires | `logcap`: byte trim at each note, one archive | yes (host-side) |
-| `<ws>/.yolo/startup.log` | a shell `tee` in the generated final command (`provision.StartupLog`) | always-on | overwritten each launch; **no within-launch byte bound** | only if provisioning was reached |
-| `<ws>/.yolo/receipts.jsonl` | `entrypoint.AppendReceiptLine` (returns its error) and generated `_yolo_receipt` | captures and installers | byte trim at Go append; **shell append still unbounded** | yes |
+| `<ws>/.yolo/startup.log` | generated `provision.Script` through the shipped Go append/tee helper | always-on | active reset each run; byte trim at helper writes, one archive | only if provisioning was reached |
+| `<ws>/.yolo/receipts.jsonl` | `entrypoint.AppendReceiptLine` (returns its error) and generated `_yolo_receipt` | captures and installers | byte trim at Go and generated-shell append, one archive | yes |
 | `~/.yolo-perf.log` | `entrypoint`'s `perfLog.dump` | always-on | newest `perf.MaxRuns` runs via `TrimRunsInOpenFile` | via the home overlay |
 | `~/.yolo-socat.log` | `entrypoint.startContainerPortForwarding`, fd inherited by every forked `socat` | port forwards configured | `logcap`: byte trim at spawn, one archive | via the home overlay |
 | `~/.yolo-shared-creds.log` | `entrypoint.logSharedHook` | a `shared_credentials` hook | `logcap`: byte trim at each decision, one archive | via the home overlay |
@@ -183,18 +183,20 @@ Four facts follow, and each shapes [§4](#4-the-proposal):
 1. **`boot.log` is the only sink designed for the refused-boot case**, and the only one whose
    retention is expressed in *boots* rather than in *runs* — which is the unit a diagnostic
    reader actually has ("did it work last time?").
-2. **Two of the fifteen still have an unbounded writer path:** `startup.log` during one
-   provisioning run, and `receipts.jsonl` when generated `_yolo_receipt` appends without a Go
-   writer touching it. The Go receipt writer now trims at append. Housekeeping, jail socat,
-   shared-credentials and cgroup audit logs adopt `logcap` too; host service, host socat and
-   launch-service logs already used it. The entrypoint perf log now uses
-   `perf.TrimRunsInOpenFile`, rather than a hand-rolled rewrite. `logcap` keeps one archive
-   of at most `MaxBytes` (4 MiB); the active file can exceed that cap by whatever writers
-   append between trims. This is retention at open/append, **not a hard total byte ceiling**.
-3. **Two of the fifteen ever tell a human the sink itself failed** — `host-perf.log`
-   (`warnOnce`) and the cgroup audit log, which warns once and then keeps *returning* failure
-   so a later successful append cannot be mistaken for a complete record. One more,
-   `receipts.jsonl`, returns its error. The other twelve fail silently by explicit design.
+2. **The generated writers share Go retention:** `_yolo_receipt` and provisioning's
+   header, streaming output and failure marker call a hidden helper in the shipped `yolo`
+   binary. Workspace Go receipts use the same trim-and-append lock. Both active and archive
+   opens are confined beneath `.yolo` and never follow file links. Startup resets the active
+   file each run, so an old failure marker cannot make a healthy run look failed; the archive
+   stays outside the failure reader's input. Housekeeping, jail socat, shared-credentials,
+   cgroup audit and host service logs also use `logcap`, and entrypoint perf shares
+   `perf.TrimRunsInOpenFile`. The archive holds at most `MaxBytes` (4 MiB); the active file
+   can exceed that cap by what is written after the last trim. This is retention at
+   open/append, **not a hard total or per-launch byte ceiling**.
+3. **Sink failure reporting differs by writer:** host perf and cgroup audit warn;
+   Go receipts return their error, while shell receipts remain best-effort and silent.
+   Provisioning's helper reports write failures but keeps streaming setup output to stderr.
+   The setup's own status, not the helper's, controls refusal and the failure marker.
 4. **`startup.log` is the exception to the invariant the workspace-side sinks rest on.**
    `launch.log`'s own header states the rule — the `.yolo` directory is inside the live
    workspace bind, so *"a jail can write the host's record. Nothing reads this file back to
@@ -537,29 +539,24 @@ design adds is two boot logs per workspace. **The lifecycle half may need one ne
 `crossaudit`'s model rather than as a trim. Retention-at-open is not a hard ceiling for
 an inherited child descriptor; the distinction matters for the proposed lifecycle sink.
 
-**The ruling-free byte-cap fragment is partly built; this item remains open.** The current
-inventory and bounds are in [§2.4](#24-the-sinks-and-who-owns-each). The safe Go append and
-spawn paths now use `logcap.Open`/`TrimBeneath`, and entrypoint perf retention shares
-`perf.TrimRunsInOpenFile`. Housekeeping opens both active and archive beneath the workspace
-state root, preserving the no-symlink-following boundary. No new snapshot or dial is built.
+**The ruling-free byte-retention fragment is built.** The inventory and bounds are in
+[§2.4](#24-the-sinks-and-who-owns-each). Workspace append paths and both generated writers
+use confined Go opens; no host renderer opens the literal in-jail `/workspace` path.
+Generated receipts and Go captures share one trim-plus-append lock. Startup's helper owns
+all log writes, resets the active run safely, and preserves streaming stderr, setup status
+and the failure marker. Its binary is already shipped: containers resolve `yolo` via the
+image's `/bin` link, and macos-user's sandbox PATH includes the staged binary's directory.
+No service or separate bounding package is added.
 
-**Actionable remainder, not a decision blocker:**
+**MEASURED:** targeted generated-shell tests execute the freshly built dispatcher against an
+oversized receipt file and simultaneous Go/shell writes; startup tests cover oversized
+setup output, live stderr before setup finishes, refusal status, failure-marker retention,
+and a failed run followed by a healthy run using the production briefing reader. Confined
+active/archive/lock link tests also pass. Real container and macOS sandbox runs remain
+unmeasured for this fragment. These are trim-point retention tests, not proof of a hard
+per-launch ceiling.
 
-- `entrypoint.receiptShellFns` generates `_yolo_receipt` in `shims.go`, whose final
-  `printf >> "$_YOLO_RECEIPTS"` bypasses the Go append cap. No existing logcap CLI entry
-  point is available to that shell. The smallest next task is to route that single append
-  through a bounded Go receipt writer while preserving its one-write append and best-effort
-  contract; Go-only trimming does not bound this file between captures.
-- `provision.Script` generates the header's truncating `printf`, external `tee -a`, and a
-  failure-marker append to `startup.log`. It overwrites history each launch but can emit
-  unlimited bytes during that launch. A pre-launch `logcap.Trim` neither bounds that tee nor
-  survives the header's truncation as retention. The smallest next task is a bounded tee
-  writer that preserves console output, setup exit status and the failure marker, on both
-  container and macos-user backends. A host renderer must never trim the literal in-jail
-  `/workspace` path.
-
-These remaining writer changes are separate from the boot snapshot/dial blocked on
-[OQ-DB2](#oq-db2).
+No boot snapshot or dial is built; those still wait on [OQ-DB2](#oq-db2).
 
 ## 5. Why this is compatible with the no-quiet-mode ruling
 

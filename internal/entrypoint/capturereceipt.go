@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // capturereceipt.go is the ONE receipt writer that is Go rather than shell.
@@ -203,14 +204,20 @@ func ReadCaptureReceipts(path string) ([]CaptureReceipt, error) {
 // AppendReceiptLine appends one rendered receipt line to a JSONL log, creating the file and
 // its parent directory if needed.
 //
-// O_APPEND and one Write, the same discipline the shell writer states: the kernel serializes
-// the implied seek-to-end against every other appender on the inode, so two captures
-// finishing at once cannot interleave half-lines.
-//
-// Bounded at open (internal/logcap): past its byte cap the log's newest whole lines move to one
-// archived generation and the log is truncated in place. logcap keeps whole lines, so a reader
-// (ReadCaptureReceipts) never sees half a JSON object after a trim.
+// Workspace receipts use the same confined, locked trim-and-append operation as the
+// generated shell helper. The lock covers retention AND the complete line write, so a
+// simultaneous installer and capture cannot lose a receipt to an in-place trim.
+// Capture-store receipts retain their existing path-based append behavior.
+// The archive holds the newest whole lines up to logcap.MaxBytes; the active log may
+// exceed that size by the append made after the last trim. This is retention, not a ceiling.
 func AppendReceiptLine(path, line string) error {
+	if filepath.Base(filepath.Dir(path)) == ".yolo" && filepath.Base(path) == "receipts.jsonl" {
+		workspace := filepath.Dir(filepath.Dir(path))
+		open := func(name string, flag int, perm os.FileMode) (*os.File, error) {
+			return paths.OpenWorkspaceStateFile(workspace, name, flag, perm)
+		}
+		return logcap.AppendBeneath(open, "receipts.jsonl", []byte(line+"\n"))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -219,10 +226,6 @@ func AppendReceiptLine(path, line string) error {
 		return err
 	}
 	if _, err := f.WriteString(line + "\n"); err != nil {
-		// The close error is dropped in favour of the write error, which is the cause:
-		// returning a close failure here would replace "the receipt line could not be
-		// written, and why" with a fact about a descriptor. The success path below
-		// returns Close's error, which is where a lost buffered write would show up.
 		_ = f.Close()
 		return err
 	}
