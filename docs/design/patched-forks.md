@@ -1308,7 +1308,33 @@ reason ([PF-D54](#PF-D54)).
    graph is hashed, so two hosts agree.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **The one measurement the leaning awaited, 2026-10-13, with git 2.55.0 (the local
+   > `/bin/git`) and the nix store's git 2.47.2, in a scratch repository: the locator must use
+   > `git merge-tree --write-tree`, and the git floor is NOT raised.**
+   >
+   > The legacy three-argument form — `git merge-tree <base> <b1> <b2>`, which git now calls
+   > `--trivial-merge` and documents as deprecated — cannot answer this question: it prints a
+   > semi-diff merge result and **exits 0 for a clean merge and for a conflicting one alike**,
+   > and it never writes or prints a tree. A locator built on it would have neither the tree
+   > the build uses nor a conflict to refuse on.
+   >
+   > The `--write-tree` form does exactly what the model needs, with no working tree (measured
+   > through `--git-dir` in a bare clone): a clean merge prints the merged toplevel tree's OID
+   > and exits 0; a conflict prints the conflicted tree's OID, then the conflicting paths, and
+   > exits 1, and `-z --name-only --no-messages` makes those paths machine-readable. With no
+   > `--merge-base` it finds the base itself and gives the tree the explicit
+   > `--merge-base=<base>` gives — the model's ancestry invariant is what makes that base real.
+   >
+   > **The floor.** The form is git 2.38's (git's own `RelNotes/2.38.0.txt`: *"git merge-tree
+   > learned a new mode where it takes two commits and computes a tree"*), and yolo's declared
+   > floor is already above it: 2.40 in [PF-D58](#PF-D58), `replayMinGit` and `GitTooOldError`
+   > (`replay.go:61-62`, *"replaying a patch series needs git 2.40 or newer"*), the version
+   > `--merge-base` arrived in (git's `RelNotes/2.40.0.txt`). So there is nothing to raise: a
+   > locator that names the base with `--merge-base` (2.40, as the replay does) and one that
+   > lets `merge-tree` discover it (2.38) are both at or under the declared floor, and the
+   > locator must reuse that one refusal rather than add a second gate. A carry whose ancestry
+   > does not include upstream's is not a conflict: git itself exits 128 with *"fatal: refusing
+   > to merge unrelated histories"*, an apply error.
 
 7. 💬 <a id="OQ-PFK7"></a>**OQ-PFK7: Does a clean replay keep the clone it built, and does anything signal a stale series?**
 
