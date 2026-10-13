@@ -330,6 +330,33 @@ func requireWallClockSpans(t *testing.T, l *perf.Log) {
 	}
 }
 
+// TestSlowSpanThresholdIsInjectable pins the seam the slow-span tests stand on: the notice
+// compares a span's duration against perf.SlowSpanThreshold as a VALUE, not a hardcoded
+// second. Shrinking it here (and restoring it after) makes a real Span around a real short
+// sleep cross the line; a notice that had folded the constant back in would stay silent and
+// this test would fail, not merely take a second longer.
+func TestSlowSpanThresholdIsInjectable(t *testing.T) {
+	old := perf.SlowSpanThreshold
+	perf.SlowSpanThreshold = 5 * time.Millisecond
+	t.Cleanup(func() { perf.SlowSpanThreshold = old })
+
+	ws := t.TempDir()
+	o := goldenOptions(ws, t.TempDir())
+	o.Timing = true
+	var out, errb bytes.Buffer
+	o.Stdout, o.Stderr = &out, &errb
+	o.initPerf("yolo-ws-test0004")
+
+	sp := o.Perf.Span("injected.threshold.probe")
+	time.Sleep(15 * time.Millisecond)
+	sp.End()
+
+	if !strings.Contains(errb.String(), "injected.threshold.probe took") {
+		t.Errorf("a 15ms span did not cross the injected %s threshold — the notice must read "+
+			"perf.SlowSpanThreshold, not a hardcoded second:\n%s", perf.SlowSpanThreshold, errb.String())
+	}
+}
+
 // THE PIN the old single-Total block's comment said the next toucher owed: the
 // normal-exit shutdown chain, extracted into teardownAfterExit exactly so this
 // is unit-reachable. Deleting any span call site inside the chain fails this

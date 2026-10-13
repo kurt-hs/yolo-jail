@@ -404,6 +404,12 @@ type Options struct {
 
 	// Now is the clock seam. nil => time.Now.
 	Now func() time.Time
+	// Sleep is the wait seam for the poll loops' repeated cost. nil => time.Sleep.
+	// Injectable ONLY so a test can make a poll zero-cost without changing what
+	// bounds it: the loops read their deadline through Now, so a fake clock already
+	// decides how many polls there are — a fake Sleep is what stops each one charging
+	// the real interval. Production always uses the default.
+	Sleep func(time.Duration)
 	// ServiceReadyTimeout bounds each spawned host service's readiness wait
 	// (endpoint publish / socket bind). 0 => serviceReadyTimeoutDefault (5s).
 	// Injectable ONLY to shrink it in tests — the wait runs on the real wall
@@ -1061,6 +1067,9 @@ func fillDefaults(o *Options) {
 	// bridge default belongs to resolveNetMode, below the config (G25).
 	if o.Now == nil {
 		o.Now = time.Now
+	}
+	if o.Sleep == nil {
+		o.Sleep = time.Sleep
 	}
 	if o.Getenv == nil {
 		o.Getenv = os.Getenv

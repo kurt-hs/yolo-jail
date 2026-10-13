@@ -490,6 +490,10 @@ func tableBody(stdout string) []string {
 // possible success. The window it covers is the gap between `created` and `running`, which is
 // milliseconds on an idle machine and seconds on a loaded CI runner; five seconds is chosen
 // to cover the latter without making a genuinely wedged container look like a slow one.
+//
+// Both costs read seams: the deadline through o.Now and the poll interval through o.Sleep,
+// so a test can drive the loop to its bound on a fake clock without paying the interval out
+// in real time (stalecollision_test.go).
 func (o *Options) waitForRunningContainer(cname, rt string) string {
 	deadline := o.Now().Add(5 * time.Second)
 	for {
@@ -499,6 +503,6 @@ func (o *Options) waitForRunningContainer(cname, rt string) string {
 		if !o.Now().Before(deadline) {
 			return ""
 		}
-		time.Sleep(100 * time.Millisecond)
+		o.Sleep(100 * time.Millisecond)
 	}
 }
