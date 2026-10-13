@@ -1,0 +1,118 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
+)
+
+// prepareProgramCapture is the ordinary admission adapter. It does no source checking,
+// rendering or installation itself: the selected producer owns the sealed act, and guard
+// revalidates its selected inputs at publication using the scheduler/request's guard.
+// Until that producer is wired, supported launchers keep their legacy route.
+func prepareProgramCapture(ctx context.Context, store *capture.Store, inputs capture.ProgramInputs,
+	artifacts []string, produce func(context.Context, string) error, guard func(func() error) error) (*capture.Entry, error) {
+	identity, err := inputs.Identity()
+	if err != nil {
+		return nil, err
+	}
+	if produce == nil || guard == nil {
+		return nil, fmt.Errorf("program capture: no selected producer/admission guard — use the supported installer route")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	lock, err := pidlock.Acquire(filepath.Join(store.Dir, "locks", "program-"+identity+".lock"), pidlock.Mode{Wait: true, Bound: 20 * time.Minute, Cancel: ctx.Done()}, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	defer lock.Release()
+	// Always reread the winner after the keyed wait; unchanged resolved inputs do not install again.
+	selected, err := capture.Select(store, captureRecords)
+	if err != nil {
+		return nil, err
+	}
+	var entry *capture.Entry
+	err = guard(func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if best, ok := selected[capture.Program{Bin: inputs.Bin, Platform: inputs.Platform, Compatibility: identity}]; ok {
+			entry, err = store.Resolve(best.Key)
+			return err
+		}
+		return nil
+	})
+	if err != nil || entry != nil {
+		return entry, err
+	}
+	stagingID := "program-" + identity
+	staging := store.StagingDir(stagingID)
+	cname := runtime.FromWorkspace(staging)
+	if captureWorkspaceArtifactsExist(staging, cname) {
+		release, safe := forkBuildWorkspaceReclaimable(staging, cname)
+		if !safe {
+			return nil, forkBuildRetained{msg: "program capture workspace is not known gone — stop its owned jail, then retry preparation"}
+		}
+		cleanupForkBuildWorkspace(staging, cname)
+		release()
+	}
+	staging, err = store.Stage(stagingID)
+	if err != nil {
+		return nil, err
+	}
+	// The producer's workspace remains under the store, matching captureStaged's rename layout.
+	// Do not reap it here: an unknown surviving runtime may still own it after cancellation.
+	if err := produce(ctx, staging); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := writeForkBuildRunReturned(staging); err != nil {
+		return nil, err
+	}
+	release, safe := forkBuildWorkspaceReclaimable(staging, cname)
+	if !safe {
+		return nil, forkBuildRetained{msg: "program capture jail is not known gone — wait for its teardown, then retry preparation"}
+	}
+	defer release()
+	manifest, err := capture.ReadManifest(filepath.Join(staging, captureOutLeaf))
+	if err != nil {
+		return nil, err
+	}
+	if len(manifest.Entries) == 0 {
+		return nil, fmt.Errorf("selected program producer left no artifacts — retry the selected install")
+	}
+	if manifest.Platform != inputs.Platform {
+		return nil, fmt.Errorf("selected program producer ran on a different platform — resolve its actual runtime and retry")
+	}
+	if err := capture.ValidateArtifacts(manifest, artifacts); err != nil {
+		return nil, err
+	}
+	entry, err = store.AdmitEntryGuarded(ctx, filepath.Join(staging, captureOutLeaf), func(commit func() error) error {
+		return guard(func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return commit()
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	receipt := entrypoint.CaptureReceipt{Bin: inputs.Bin, Declared: inputs.Declared, Key: entry.Key, Digest: capture.DigestHash(entry.Digest), Bytes: manifest.TotalBytes(), Path: entry.Root, Platform: inputs.Platform, Compatibility: identity, Time: time.Now()}
+	if err := entrypoint.AppendReceiptLine(capture.ReceiptsPath(entry.Root), receipt.Line()); err != nil {
+		return nil, err
+	}
+	return entry, nil
+}

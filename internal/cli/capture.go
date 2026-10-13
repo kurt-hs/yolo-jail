@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
 // captureRunUsage is the whole surface of the inner driver. It is a HIDDEN subcommand
@@ -14,7 +15,7 @@ import (
 // home it is pointed at and MOVES the result out of it, which is correct inside a
 // throwaway capture jail and destructive anywhere else.
 const captureRunUsage = "usage: yolo internal capture-run --out=DIR [--home=DIR] " +
-	"[--surface-root=DIR] [--scan-content-refs] -- <installer argv...>"
+	"[--surface-root=DIR] [--scan-content-refs] [--artifact=HOME-RELATIVE-PATH ...] -- <installer argv...>"
 
 // runCaptureRun is the in-jail half of install-capture (docs/design/program-delivery.md
 // §6.3): baseline the capture surfaces, run the installer, move the delta into --out.
@@ -30,6 +31,7 @@ func runCaptureRun(args []string) int {
 	out, home, surfaceRoot := "", os.Getenv("HOME"), ""
 	scanContentRefs := false
 	var command []string
+	var artifacts []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -49,6 +51,8 @@ func runCaptureRun(args []string) int {
 			// /home/agent it was captured in (captureJailArgv). An unrecorded reference
 			// lands as a dead path. See capture.Options.ScanContentRefs for what it costs.
 			scanContentRefs = true
+		case strings.HasPrefix(a, "--artifact="):
+			artifacts = append(artifacts, strings.TrimPrefix(a, "--artifact="))
 		case strings.HasPrefix(a, "--surface-root="):
 			// The SECOND path to the capture surfaces — see capture.Options.SurfaceRoot.
 			// Passed by the host act, which is the only party that knows the workspace
@@ -64,7 +68,15 @@ func runCaptureRun(args []string) int {
 		fmt.Fprintln(os.Stderr, captureRunUsage)
 		return 2
 	}
+	// This assertion prevents accidental use by the legacy unsealed capture route.
+	// The host producer must still launch with run.Options.Sealed: an env marker
+	// is not a sandbox and is not evidence of withheld host crossings.
+	if artifacts != nil && os.Getenv(entrypoint.SealedBuildEnv) != "1" {
+		fmt.Fprintln(os.Stderr, "capture-run: artifact production requires a sealed jail — keep this installer on its supported legacy route until its sealed producer is available")
+		return 1
+	}
 	res, err := capture.Run(capture.Options{
+		Artifacts:       artifacts,
 		Home:            home,
 		Out:             out,
 		SurfaceRoot:     surfaceRoot,

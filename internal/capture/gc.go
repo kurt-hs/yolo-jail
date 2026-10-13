@@ -210,7 +210,10 @@ func lostBy(er entryRecords, selected map[Program]Selected) []Superseded {
 		if out[i].Program.Bin != out[j].Program.Bin {
 			return out[i].Program.Bin < out[j].Program.Bin
 		}
-		return out[i].Program.Platform < out[j].Program.Platform
+		if out[i].Program.Platform != out[j].Program.Platform {
+			return out[i].Program.Platform < out[j].Program.Platform
+		}
+		return out[i].Program.String() < out[j].Program.String()
 	})
 	return out
 }

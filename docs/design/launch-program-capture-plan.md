@@ -2,18 +2,20 @@
 title: "Sketch: machine-level ordinary CLI and MCP preparation"
 status: accepted
 stage: SKETCH
-next: "Verify the committed selected install-only and jail refresh contract, then supply the bounded capture adapter's tests-first handoff"
+next: "Wire the verified committed selected install-only helper into the sealed producer and launch/readiness/MCP consumers"
 depends-on:
   - launch-update-preparation-plan.md
 ---
 
 # Sketch: machine-level ordinary CLI and MCP preparation
 
-**Status:** 2026-10-13. Architecture settled; source checked at `faf3a3d08`. Not a build
-handoff: the shared selected install-only/refresh interface is still an agent dependency.
+**Status:** 2026-10-13. Source checked against `4e7d58311` plus this isolated candidate.
+Compatibility, artifact-driver and keyed admission pieces are implemented and locally tested;
+the selected sealed producer and launcher/readiness/MCP replacement are not wired. This is not
+a ready handoff for the whole adapter.
 **Design:** [preparation boundary](launch-update-preparation.md) and
 [OQ-PD23](program-delivery.md#decision-ledger). Design wins on behavior, tree wins on fact,
-this sketch is advice and first to be wrong. **Nobody builds from this sketch.**
+this sketch is advice and first to be wrong. No new owner ruling is needed.
 
 ## Settled scope — do not reopen
 
@@ -26,71 +28,71 @@ Unsupported legacy installers retain their honest bounded existing route.
 
 Scheduler, tree, patched-program, recorded plain-pin, host next-launch and Apple check-only
 work proceeds through the [independent plan](launch-update-preparation-plan.md).
-The capture architecture needs no further owner ruling.
 
-## Source proof and reuse
+## Implemented independent contracts
 
-| Read source | What it establishes / trap |
+| Source | Contract / constraint |
 | :--- | :--- |
-| [`resolveCaptureTarget`](../../internal/cli/capturehost.go#L587-L640) | Selected host packs and `HonoredInstalls` supply authority; native installer/source paths exist. npm declarations are rejected as needing no capture today. Do not pretend ordinary npm/MCP capture already exists. |
-| [`runCaptureJail`](../../internal/cli/capturehost.go#L714-L756) | `run.Options.Sealed` is set only with a non-nil seal; existing installer capture passes nil. Reusing this caller alone does **not** prove sealed ordinary production. |
-| [`capture.Program` / `Record`](../../internal/capture/select.go#L38-L109) | Ordinary selection is bin/platform and newest receipt; source/recipe fields presently describe forks. It cannot silently establish ordinary release/recipe/runtime/Node ABI compatibility. |
-| [`Store.AdmitEntry` / `Complete`](../../internal/capture/store.go#L220-L350) | Reuse staged admission and completion validation, not a parallel store or success record. |
-| [`Materialize`](../../internal/capture/materialize.go#L167) | Reuse confined placement/relocation and independent copies; account for guarded reread/reap rather than inventing universal session registration. |
-| [`readyProgramsOf`](../../internal/entrypoint/readiness.go#L86-L116), [`serverrefresh.go`](../../internal/entrypoint/serverrefresh.go), [`shims.go`](../../internal/entrypoint/shims.go) | Actual selection/readiness/launcher/server callers are the replacement boundary, not just tests of a capture callee. |
+| [`capture.ProgramInputs.Identity`](../../internal/capture/programinputs.go) | Hashes selected owner/bin/declaration/resolver, resolved release/source, recipe, dependency set, runtime/toolchain identity, platform and applicable observed Node ABI. No workspace path or universal floor is an input. |
+| [`CaptureReceipt`](../../internal/entrypoint/capturereceipt.go), [`captureRecords`](../../internal/cli/capturematerialize.go) | Additive ordinary compatibility identity through the existing receipt writer/reader/adapter. Old receipts still answer their established empty-identity route; they cannot prove a new resolved identity. |
+| [`capture.Select`](../../internal/capture/select.go), [`capture.PruneSupersededCaptures`](../../internal/capture/gc.go) | Exact ordinary identities are separate selection keys; prune remains the complement of the reader and keeps each reachable identity's winner. Materialized copies need no session registry. |
+| [`capture.Run`](../../internal/capture/inner.go), [`artifactSurfaces` / `ValidateArtifacts`](../../internal/capture/artifacts.go) | Opt-in artifact roots, not whole prefixes/home. Reject traversal, overlaps, yolo state, unselected/outside links, dangling/cyclic producer links, special files and unsafe permissions. Installer env is allowlisted with capture-private prefixes; context cancellation stops its process group. Legacy nil-artifact capture is unchanged. |
+| [`runCaptureRun`](../../internal/cli/capture.go) | Repeated hidden `--artifact=HOME-RELATIVE-PATH` arguments reach the real driver. This mode refuses a missing sealed-build marker before executing the installer. **A marker is not sandbox evidence**: the host producer must actually use the seal. |
+| [`Store.AdmitEntryGuarded`](../../internal/capture/store.go) | Digest/freeze and keyed CAS contention happen outside the caller's short selected-input publication guard; rename/completion happen within it. Identical bytes produced by different input identities serialize at the existing store. |
+| [`prepareProgramCapture`](../../internal/cli/programcapture.go) | Existing receipt selection, pidlock, staging, immutable admission and original-runtime/keeper liveness proof. Same-identity waiters reread the winner; unchanged identity skips production. Cancellation/stale authority admits nothing; unknown runtime retains staging. The producer callback remains an integration seam, not an implemented installer. |
+| [`materializeCapture`](../../internal/cli/capturematerialize.go) | Hidden `--compatibility=IDENTITY` selects exact ordinary bytes and preserves that identity in the materialize receipt. Existing fork `--key` and legacy native selection stay separate. Existing relocation/confinement machinery places independent copies. |
 
-Committed scheduler candidate objects `43e91ea41`, `dda75784c` and `5524c9c45` were inspected,
-not materialized in this checkout. They expose tree registration, scheduling state, bounded
-resolution, nonwaiting subscription admission guards and lifecycle fixtures. These are reuse
-contracts for the capture adapter after integration, **not primary-tree symbols**. No claim of
-capture support follows from the candidate's tree-only registration. Use its existing keyed
-check/replay/build/admit and check/build pools; do not add global permits without measured need.
+The compatibility tuple must contain **resolved facts**. Passing a declaration such as `latest`
+as its resolved release, a backend name as its complete runtime/toolchain identity, or an unapplied
+MCP list as its dependency vector does not meet this contract. The selected adapter must also
+include output/refresh instruction changes in its recipe identity.
 
-## Exact remaining source fact
+## Actual helper milestone and remaining seam
 
-The freshness work must commit and identify its **selected install-only shared helper and jail
-internal refresh route**: inputs, selected declaration authority, install-only/no-update behavior,
-credential-free child environment, outputs, error/cancellation semantics and production callers.
-It must show how npm packages and yolo-installed MCP declarations reach that contract without
-running an agent or rendering credentials. Do not name a proposed helper as existing code.
+Read-only inspection of the Task 2 owned source found draft
+`SelectedProgramPreparations(e, packs, mode)`, `ProgramPreparationEnv(mode)` and the context-cancellable
+launcher runner. Its source HEAD was `4e7d58311`; these helper edits were **uncommitted** when inspected.
+They are not APIs available in this candidate. The runner still inherits environment; wrapping it
+would not establish credential-free production.
 
-After that commit, the smart-role planner verifies the callable contract against source and adds
-an exact failing fixture/test command plus adapter file/hunk fences. Until then this document
-cannot honestly become a ready source handoff. This is an engineering dependency, not a new
-question for the owner, nor a requirement for another approval ceremony.
+The following source work remains; it is engineering, not a new approval gate:
 
-## Bounded implementation brief for promotion
+1. Verify the committed helper's selected/honored declaration, bin/platform/shadow selection,
+   install-only/no-application-argv mode, cancellation and actual enabled MCP/declared refresh set.
+   Resolve release/dependency/runtime/ABI facts without relaxing explicit version/source constraints.
+2. Supply `prepareProgramCapture`'s producer through an **actual non-nil seal** at
+   [`runCaptureJail`](../../internal/cli/capturehost.go), with the authorized narrowed pack set,
+   exact program output roots and original-runtime record. The existing installer capture still
+   passes nil and `resolveCaptureTarget` still rejects npm; neither proves this producer exists.
+3. Keep the seal's MCP table withholding. Original server env/args can contain secrets:
+   [`agentServerTables`](../../internal/cli/run/seal.go) correctly removes them. Only selected resolved
+   install/refresh artifact inputs may enter production; never restore credential-bearing tables.
+4. Join the existing scheduler/request checks and pools, supplying its short nonwaiting input guard.
+   The admission adapter does not implement update timing, STARTED-boundary checks or shared-demand
+   ownership. A cancelled waiter must not cancel work other demand still owns.
+5. Wire exact compatibility into real readiness/launcher/server/host materialization callsites,
+   replacing only supported routes. A raw npx server, unsupported native producer or pin stays on
+   its honest legacy path. Timer work never renders; attach keeps its running generation.
 
-**Constraint:** first producer support is only declarations/platforms for which the committed
-install-only contract can run in an actually sealed, credential-free environment. Explicitly
-leave other installers on the existing bounded route; distinguish Linux container, Linux host
-Landlock and native Darwin capture evidence. Do not relabel one as another.
+## Verification and fences
 
-1. Extend existing ordinary receipt/admission compatibility through the one receipt reader/writer:
-   resolved release/source, recipe/dependency inputs and relevant runtime/Node ABI. Preserve old
-   capture entries for their established route and historical-cache validation; no universal new
-   provenance prerequisite. A legacy entry cannot falsely prove new compatibility.
-2. Dispatch supported ordinary producers through the existing selected scheduler/request contract.
-   One keyed winner checks/builds/admit; concurrent consumers join and reread it. Manual fresh-check
-   bypasses automatic policy/throttle, not explicit source constraints; unchanged inputs reuse bytes.
-3. Replace supported warm vendor/MCP updates only at tested readiness/launcher/materialization
-   callers. Admission never renders settings or changes a running install. Keep unsupported routes
-   and cold mandatory readiness/refusal hatches; attach reads its running generation.
-4. Extend the actual adapter's retention/reap contract if shared live bytes are introduced. Ordinary
-   copied jail installs need no global generation registry. Unknown liveness retains shared bytes.
+Permanent local synthetic fixtures reach hidden driver/materializer dispatch and the actual
+admission adapter: excluded secrets/state, two workspace copies, exact input isolation and prune,
+concurrent same-identity reuse, distinct identities sharing identical CAS bytes, cancelled demand,
+stale publication rejection and unknown-runtime staging retention. Inputs tests cover release,
+recipe/dependencies, source, declaration, runtime, platform and Node ABI mismatches.
 
-**Required fixtures:** two workspaces reuse one release; changed recipe/platform/runtime/ABI or
-explicit pin rejects incompatible reuse; concurrent waiters produce one act; no credentials,
-login/config/state or host-file grants enter capture; failed/interrupted producer admits nothing;
-revocation/edit rejects stale admission; timer never renders; cold/off/manual behavior; unsupported
-installer stays bounded; strict patch failure and validated old-cache escape stay separate.
-Assertions must reach the actual production callers, using fake programs only, no agent/API calls.
+Targeted commands: `go test -short ./internal/capture ./internal/entrypoint ./internal/cli`,
+`go test -race -short ./internal/capture ./internal/cli -run 'TestProgram'`,
+`go vet ./internal/capture ./internal/entrypoint ./internal/cli`, and a build of `./cmd/yolo`.
+These establish local behavior, **not** a sealed runtime launch or capture replacement at readiness.
 
-**Promotion fences:** capture producer/store/receipt adapters, selected launcher/readiness/server
-handoff and their focused tests only. Scheduler/freshness files remain owned by their existing
-work until integrated. Stop on dirty foreign source, missing committed contract, changed behavior,
-or any need to widen auth. No implementation from this sketch.
+Fences remain capture/store/receipt adapters and their tests. Scheduler/freshness, source-fork,
+host/Apple/liveness and selected-helper edits stay with their owning tasks. Existing
+[PF-D81 / PF-D82](patched-forks.md#decision-ledger) authority is untouched; no new compatibility
+field is required of their historically valid receipts.
 
-**Acceptance still external:** real rootless and native Darwin sealing/runtime evidence, full
-controlled cold/warm wall-clock measurements and real agent loading remain separate acceptance;
-static compilation or nested rootful Podman cannot establish them.
+**Acceptance still external:** combined census/full gate and fresh non-agent runtime verification,
+real rootless and native Darwin sealing evidence, controlled cold/warm wall-clock measurements
+and real agent loading. Exact identity selection retains each still-reachable compatibility winner;
+no age-based reap or new global liveness registry was added.

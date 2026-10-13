@@ -29,6 +29,7 @@
 package capture
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -41,12 +42,18 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // Options configures one capture run.
 type Options struct {
+	// Context cancels the owned installer process group; nil is background.
+	Context context.Context
+	// Artifacts narrows capture to selected program output paths. Nil retains the
+	// established installer delta route. It never broadens the outer jail seal.
+	Artifacts []string
 	// Home is the HOME whose surfaces are captured, and the HOME the installer runs
 	// under. On the container backends this is /home/agent; on macos-user it is the
 	// throwaway staging home, which is why Manifest.Home records it.
@@ -167,6 +174,11 @@ func Run(opts Options) (*Result, error) {
 	}
 	if err := d.install(); err != nil {
 		return nil, err
+	}
+	if opts.Artifacts != nil {
+		if err := d.checkArtifacts(); err != nil {
+			return nil, err
+		}
 	}
 	res := &Result{Tree: d.tree}
 	if err := d.moveDelta(baseline, res); err != nil {
@@ -314,7 +326,16 @@ func newDriver(opts Options) (*driver, error) {
 		tree:     TreeDir(opts.Out),
 		surfaces: opts.Surfaces,
 	}
-	if d.surfaces == nil {
+	if opts.Artifacts != nil {
+		if opts.Surfaces != nil {
+			return nil, errors.New("program capture: artifacts and surface overrides cannot be combined — name only artifact paths")
+		}
+		var err error
+		d.surfaces, err = artifactSurfaces(opts.Artifacts)
+		if err != nil {
+			return nil, err
+		}
+	} else if d.surfaces == nil {
 		d.surfaces = paths.InstalledProgramSurfaces()
 	}
 	d.excludes = opts.Excludes
@@ -570,13 +591,31 @@ func (d *driver) walk() (snapshot, error) {
 
 // install runs the installer under the capture HOME.
 func (d *driver) install() error {
-	cmd := exec.Command(d.opts.Command[0], d.opts.Command[1:]...) //nolint:gosec // the argv IS the input
+	ctx := d.opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, d.opts.Command[0], d.opts.Command[1:]...) //nolint:gosec // the argv IS the input
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			if errors.Is(err, syscall.ESRCH) {
+				return os.ErrProcessDone
+			}
+			return err
+		}
+		return nil
+	}
+	cmd.WaitDelay = time.Second
 	cmd.Dir = d.home
 	cmd.Stdout = d.opts.Stdout
 	cmd.Stderr = d.opts.Stderr
 	cmd.Env = d.opts.Env
 	if cmd.Env == nil {
 		cmd.Env = envWithHome(os.Environ(), d.home)
+	}
+	if d.opts.Artifacts != nil {
+		cmd.Env = programEnvironment(cmd.Env, d.home)
 	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("capture: installer %s failed, so nothing was captured: %w",
