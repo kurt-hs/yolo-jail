@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -40,7 +41,7 @@ type acStop struct {
 	calls       [][]string
 }
 
-func (f *acStop) run(argv []string) (string, bool, int) {
+func (f *acStop) run(argv []string, _ time.Duration) (string, bool, int) {
 	f.calls = append(f.calls, argv)
 	switch {
 	case argv[0] == "podman" && f.podman && len(argv) > 1 && argv[1] == "inspect":
@@ -121,7 +122,7 @@ func stopWorkspace(t *testing.T, cfg string) (cname string, finished *[]string) 
 	return runtime.FromWorkspace(cwd), &got
 }
 
-func useStopExec(t *testing.T, f func([]string) (string, bool, int)) {
+func useStopExec(t *testing.T, f stopCommandRunner) {
 	saved := stopExec
 	t.Cleanup(func() { stopExec = saved })
 	stopExec = f
@@ -318,7 +319,7 @@ func TestAStopWhoseNonZeroExitLeavesNoContainerStillEndsTheJail(t *testing.T) {
 		return 0
 	}
 	probes := 0
-	run := func(argv []string) (string, bool, int) {
+	run := func(argv []string, _ time.Duration) (string, bool, int) {
 		switch {
 		case argv[1] == "inspect":
 			probes++
@@ -360,7 +361,7 @@ func TestAStopWhoseContainerIsStillRunningFails(t *testing.T) {
 		t.Error("the stop ran the keeper's teardown with the container still running")
 		return 0
 	}
-	run := func(argv []string) (string, bool, int) {
+	run := func(argv []string, _ time.Duration) (string, bool, int) {
 		switch {
 		case argv[1] == "inspect":
 			return "true\n", true, 0 // it still runs

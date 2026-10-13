@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
@@ -19,8 +20,8 @@ import (
 // records the removal that was run; removed flips once it succeeds; rmFails refuses it (the wedged
 // case). The state probe answers "no such object" once removed, so the post-removal existence check
 // settles on the removal's effect, never its exit status.
-func leftoverRuntime(cname, state string, rmArgv *[]string, removed *bool, rmFails bool) func([]string) (string, bool, int) {
-	return func(argv []string) (string, bool, int) {
+func leftoverRuntime(cname, state string, rmArgv *[]string, removed *bool, rmFails bool) stopCommandRunner {
+	return func(argv []string, _ time.Duration) (string, bool, int) {
 		switch {
 		case len(argv) > 2 && argv[1] == "container" && argv[2] == "exists":
 			if *removed {
@@ -111,7 +112,7 @@ func TestAStopThatCannotRemoveALeftoverNamesTheNextStep(t *testing.T) {
 		t.Errorf("a removal that did not take was reported as success:\n%s", out.String())
 	}
 	for _, want := range []string{
-		"still there in state \"exited\"",
+		"still there in state \"present\"",
 		"`podman rm -f " + cname + "`",
 		"runtime administrator",
 	} {

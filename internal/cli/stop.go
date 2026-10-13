@@ -60,8 +60,9 @@ grace and signals the keeper (SIGTERM, then SIGKILL), so a keeper that will
 not finish does not hold the stop up.
 
 Container runtime commands are bounded at 60 seconds each. After removal it
-waits up to 15 seconds for absence, plus any in-flight runtime probe. A container
-that survives, or a runtime that cannot answer, makes the stop fail.
+waits up to 15 seconds for absence; each probe uses only the remaining budget.
+A timed-out command may need up to one further second to close its output pipes.
+A container that survives, or a runtime that cannot answer, makes the stop fail.
 
 On the macos-user backend there is no container: it ends the workspace's
 macos-user sessions and the keeper that holds their host services, and
@@ -132,11 +133,13 @@ var stopRuntimeInstalled = func(bin string) bool {
 // Bound each runtime command, including probes of an unresponsive runtime.
 var stopRuntimeCommandTimeout = 60 * time.Second
 
-// realStopExec runs one runtime command, capturing stdout for the probes that
-// read it. Returns (stdout, ran, exit code).
-func realStopExec(argv []string) (string, bool, int) {
+type stopCommandRunner func(argv []string, timeout time.Duration) (string, bool, int)
+
+// realStopExec runs one runtime command within timeout, capturing stdout for the probes that
+// read it. Returns (stdout, ran, exit code); a timeout is not an answered runtime probe.
+func realStopExec(argv []string, timeout time.Duration) (string, bool, int) {
 	var out strings.Builder
-	ctx, cancel := context.WithTimeout(context.Background(), stopRuntimeCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.WaitDelay = time.Second
@@ -169,7 +172,7 @@ func realStopExec(argv []string) (string, bool, int) {
 // is the everyday off state. force is `yolo stop --force`: the container stop drops
 // its grace and the keeper's teardown is not waited out (finishStop signals instead).
 func stopJail(stdout, stderr io.Writer, ws, rt string,
-	run func(argv []string) (string, bool, int), p *perf.Log, force bool) int {
+	run stopCommandRunner, p *perf.Log, force bool) int {
 	launched, known := launchedRuntime(ws)
 	if known && launched != rt {
 		if rt != "" {
@@ -257,7 +260,7 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	if rt != "container" {
 		stopArgv = []string{rt, "stop", "-t", strconv.Itoa(stopGrace), cname}
 	}
-	_, ran, rc = run(stopArgv)
+	_, ran, rc = run(stopArgv, stopRuntimeCommandTimeout)
 	sp.End()
 	if !ran {
 		fmt.Fprintf(stderr, "yolo stop: `%s stop %s` failed (rc %d); any message the runtime printed above "+
@@ -310,13 +313,13 @@ var stopMacosUser = run.StopMacosUser
 // nothing there and every AC jail looked stopped (G11, docs/plans/setup-support-gaps.md); its
 // `container ls` lists the running containers, the question the attach decision asks it too
 // (probeRunningContainer), and a non-zero status there is "could not ask".
-func probeJailRunning(rt, cname string, run func(argv []string) (string, bool, int)) (running, ran bool, rc int) {
+func probeJailRunning(rt, cname string, run stopCommandRunner) (running, ran bool, rc int) {
 	if rt == "container" { // parity: HonoredBy — `container ls` lists the running containers, the question podman's template inspect answers
-		out, ran, rc := run([]string{"container", "ls"})
+		out, ran, rc := run([]string{"container", "ls"}, stopRuntimeCommandTimeout)
 		_, live := runtime.ParseContainerLsLive(out)[cname]
 		return ran && rc == 0 && live, ran, rc
 	}
-	state, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Running}}", cname})
+	state, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Running}}", cname}, stopRuntimeCommandTimeout)
 	return ran && rc == 0 && strings.TrimSpace(state) == "true", ran, rc
 }
 
@@ -326,7 +329,7 @@ func probeJailRunning(rt, cname string, run func(argv []string) (string, bool, i
 // as the pre-stop probe reads it, so the caller reports the possible failure it is. Apple
 // Container's `container ls` also keeps listing a jail for a moment after its stop returns
 // (JL-D83), which the bounded wait covers; podman's one answer stands, so it is asked once.
-func probeJailGoneAfterStop(rt, cname string, runCmd func(argv []string) (string, bool, int)) bool {
+func probeJailGoneAfterStop(rt, cname string, runCmd stopCommandRunner) bool {
 	return run.JailGoneAfterItsEnd(rt, func() (running, answered bool) {
 		running, ran, rc := probeJailRunning(rt, cname, runCmd)
 		if !ran || (rt == "container" && rc != 0) { // parity: HonoredBy — a failed `container ls` is "could not ask", where podman's failed inspect is "no such container"
@@ -343,9 +346,23 @@ func probeJailGoneAfterStop(rt, cname string, runCmd func(argv []string) (string
 // there. Podman container exists distinguishes absence (1) from runtime failure;
 // Apple Container's `container ls` lists running ONLY, so existence is its `--all` listing, whose
 // STATE column names the state.
-func probeJailExists(rt, cname string, run func(argv []string) (string, bool, int)) (state string, exists, answered bool) {
+func probeJailExists(rt, cname string, run stopCommandRunner) (state string, exists, answered bool) {
+	state, exists, answered = probeJailPresence(rt, cname, run, stopRuntimeCommandTimeout)
+	if rt == "container" || !answered || !exists {
+		return state, exists, answered
+	}
+	out, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Status}}", cname}, stopRuntimeCommandTimeout)
+	if !ran || rc != 0 || strings.TrimSpace(out) == "" {
+		return "unknown", true, true
+	}
+	return strings.TrimSpace(out), true, true
+}
+
+// probeJailPresence spends one command on existence only. Podman state diagnostics must not
+// hold up absence polling; Apple Container's listing already includes state.
+func probeJailPresence(rt, cname string, run stopCommandRunner, timeout time.Duration) (state string, exists, answered bool) {
 	if rt == "container" { // parity: HonoredBy — `container ls` lists running containers only; `--all` is the existence question `podman ps -a` answers
-		out, ran, rc := run([]string{"container", "ls", "--all"})
+		out, ran, rc := run([]string{"container", "ls", "--all"}, timeout)
 		if !ran || rc != 0 {
 			return "", false, false
 		}
@@ -361,22 +378,14 @@ func probeJailExists(rt, cname string, run func(argv []string) (string, bool, in
 		}
 		return "", false, true
 	}
-	_, ran, rc := run([]string{rt, "container", "exists", cname})
+	_, ran, rc := run([]string{rt, "container", "exists", cname}, timeout)
 	if !ran || (rc != 0 && rc != 1) {
 		return "", false, false
 	}
 	if rc == 1 {
 		return "", false, true
 	}
-	out, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Status}}", cname})
-	if !ran || rc != 0 {
-		return "unknown", true, true
-	}
-	state = strings.TrimSpace(out)
-	if state == "" {
-		state = "unknown"
-	}
-	return state, true, true
+	return "present", true, true
 }
 
 // endLeftoverJail ends a container of the jail's name that EXISTS but is not running, so it cannot
@@ -385,7 +394,7 @@ func probeJailExists(rt, cname string, run func(argv []string) (string, bool, in
 // removal is judged by the existence probe, never by its own exit status (JL-D82); a container it
 // cannot remove is reported as the failure it is, with the next step named.
 func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bool,
-	run func(argv []string) (string, bool, int), p *perf.Log) int {
+	run stopCommandRunner, p *perf.Log) int {
 	fmt.Fprintf(stdout, "The jail container of this workspace (%s) exists in state %q and would block "+
 		"the next launch; ending it.\n", cname, state)
 	sp := p.Span("stop.remove_leftover")
@@ -393,7 +402,7 @@ func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bo
 	if force {
 		argv = []string{rt, "rm", "--force", cname}
 	}
-	_, ran, rc := run(argv)
+	_, ran, rc := run(argv, stopRuntimeCommandTimeout)
 	sp.End()
 	gone, now := waitForJailContainerGone(rt, cname, run)
 	if gone {
@@ -435,8 +444,8 @@ var (
 // stopContainerGone verifies absence before success. Runtime stop and keeper teardown
 // returning cleanly do not prove that the container's name has been released.
 func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
-	run func(argv []string) (string, bool, int), p *perf.Log) int {
-	_, exists, answered := probeJailExists(rt, cname, run)
+	run stopCommandRunner, p *perf.Log) int {
+	_, exists, answered := probeJailPresence(rt, cname, run, stopRuntimeCommandTimeout)
 	if answered && !exists {
 		return 0
 	}
@@ -462,18 +471,23 @@ func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
 // forceRemoveJailContainer removes cname's container by force, running or not: this is `yolo stop`,
 // which was already asked to end this jail, so a leftover that still runs is removed rather than
 // left. Its own status is not the answer; waitForJailContainerGone judges the removal.
-func forceRemoveJailContainer(rt, cname string, run func(argv []string) (string, bool, int)) {
-	run([]string{rt, "rm", "--force", cname})
+func forceRemoveJailContainer(rt, cname string, run stopCommandRunner) {
+	run([]string{rt, "rm", "--force", cname}, stopRuntimeCommandTimeout)
 }
 
 // waitForJailContainerGone waits, within stopGoneWait, for the runtime to answer that no container
-// of cname's name exists, and reports the last state it did name while waiting. A runtime that
+// of cname's name exists, reporting presence (or the last Apple Container state). Each command
+// is capped to the remaining budget, plus realStopExec's pipe-closing WaitDelay. A runtime that
 // cannot be asked is never "gone" (JL-P3).
 func waitForJailContainerGone(rt, cname string,
-	run func(argv []string) (string, bool, int)) (gone bool, state string) {
+	run stopCommandRunner) (gone bool, state string) {
 	deadline := time.Now().Add(stopGoneWait)
 	for {
-		s, exists, answered := probeJailExists(rt, cname, run)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false, state
+		}
+		s, exists, answered := probeJailPresence(rt, cname, run, min(remaining, stopRuntimeCommandTimeout))
 		if answered && !exists {
 			return true, ""
 		}
@@ -481,10 +495,10 @@ func waitForJailContainerGone(rt, cname string,
 			return false, ""
 		}
 		state = s
-		if !time.Now().Before(deadline) {
+		if remaining = time.Until(deadline); remaining <= 0 {
 			return false, state
 		}
-		time.Sleep(stopGonePoll)
+		time.Sleep(min(stopGonePoll, remaining))
 	}
 }
 
