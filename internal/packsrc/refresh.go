@@ -49,6 +49,7 @@ package packsrc
 // another's fetch re-reads the stamp that fetch wrote and does not fetch again.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -690,6 +691,9 @@ func (s *Store) flock(path, what string, waiting func(string)) (func(), error) {
 	if s.NoWait {
 		return flockTry(path, what)
 	}
+	if s.Ctx != nil {
+		return flockPathContext(s.Ctx, path, what, waiting)
+	}
 	return flockPath(path, what, waiting)
 }
 
@@ -742,6 +746,15 @@ func flockTry(path, what string) (func(), error) {
 // flockPath opens path and takes an exclusive flock on it, NON-BLOCKING FIRST so a
 // caller can be told it is about to wait (what), then blocking.
 func flockPath(path, what string, waiting func(string)) (func(), error) {
+	return flockPathContext(context.Background(), path, what, waiting)
+}
+
+// flockPathContext keeps the same inode/ownership discipline as flockPath, while
+// allowing a shared worker's cancelled request to leave a contended lock wait.
+func flockPathContext(ctx context.Context, path, what string, waiting func(string)) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -758,9 +771,28 @@ func flockPath(path, what string, waiting func(string)) (func(), error) {
 		if waiting != nil {
 			waiting(fmt.Sprintf("waiting for another yolo process to release %s", what))
 		}
-		if err := flockRetry(fd, syscall.LOCK_EX); err != nil {
-			f.Close()
-			return nil, fmt.Errorf("locking %s: %w", path, err)
+		if ctx.Done() == nil {
+			if err := flockRetry(fd, syscall.LOCK_EX); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("locking %s: %w", path, err)
+			}
+		} else {
+			for {
+				select {
+				case <-ctx.Done():
+					f.Close()
+					return nil, ctx.Err()
+				case <-time.After(25 * time.Millisecond):
+				}
+				err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+				if err == nil {
+					break
+				}
+				if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EINTR) {
+					f.Close()
+					return nil, fmt.Errorf("locking %s: %w", path, err)
+				}
+			}
 		}
 	}
 	return func() {
