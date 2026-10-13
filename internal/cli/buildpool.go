@@ -483,7 +483,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	// advance from this launch. Registration follows the existing build slot so cold readiness still
 	// performs its ordinary foreground pin/build when no artifact exists.
 	if req.Forks != nil {
-		if err := registerForkPreparation(req.Forks.Pins, *req.Forks, stream); err != nil {
+		if err := registerForkPreparation(req.Forks.Pins, *req.Forks, stream, color); err != nil {
 			fmt.Fprintf(stream, "⚠ next-launch program preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
 	}

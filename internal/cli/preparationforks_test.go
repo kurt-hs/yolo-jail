@@ -1,13 +1,18 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,6 +21,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 func preparationForkRequest(f packload.Fork, commit, runtime string) run.ForkBuildRequest {
@@ -130,6 +137,156 @@ func TestPlainForkPreparationTimerFillsMissingArtifactAtStandingPin(t *testing.T
 	}
 }
 
+func TestPlainForkPreparationHeldMirrorDoesNotBlockStopOrAdmission(t *testing.T) {
+	forkBuildHome(t)
+	f := packload.Forks(selectConfiguredHostPacks().packs)[0]
+	setForkNextLaunch(t)
+	stubPreparationWorkerStart(t)
+
+	repo := filepath.Join(t.TempDir(), "upstream")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(testsupport.HermeticGitEnv(packsrc.CleanGitEnv(os.Environ())),
+			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-b", "main")
+	writeFile(t, filepath.Join(repo, "Makefile"), "install:\n\techo built\n")
+	git("config", "user.email", "test@example.invalid")
+	git("config", "commit.gpgsign", "false")
+	git("add", "Makefile")
+	git("commit", "-m", "fixture")
+	commit := git("rev-parse", "HEAD")
+	source := "git+file://" + filepath.ToSlash(repo) + "?ref=main"
+	manifest := filepath.Join(f.Root, "pack.json")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), forkTestSource, source, 1)
+	if updated == string(data) {
+		t.Fatal("fixture source address was not present in the fork declaration")
+	}
+	writeFile(t, manifest, updated)
+	f = packload.Forks(selectConfiguredHostPacks().packs)[0]
+	lock, err := packsrc.LoadForkLock(forkLockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock.Set(packsrc.ForkLockEntry{Key: f.Key(), Source: source, Ref: "main", Commit: commit})
+	if err := lock.Save(forkLockPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerForkPreparation([]packload.ForkPin{{Fork: f, Commit: commit, Ref: "main"}},
+		preparationForkRequest(f, commit, "podman"), io.Discard, false); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := readPreparationSnapshot(f.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := preparationRecord{Key: f.Key(), Runtime: "podman", Platform: patchedTestPlatform,
+		Kind: preparationPlainProgramKind, Generation: snapshot.Generation, PinCommit: commit}
+
+	addr, err := packsrc.Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(addr.Repo))
+	lockPath := filepath.Join(paths.PacksDir(), "locks", filepath.Base(addr.Repo)+"-"+hex.EncodeToString(sum[:6])+".lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		lockFile.Close()
+		t.Fatal(err)
+	}
+	releaseMirror := func() {
+		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		_ = lockFile.Close()
+	}
+	released := false
+	defer func() {
+		if !released {
+			releaseMirror()
+		}
+	}()
+
+	started := make(chan struct{}, 1)
+	previousCheckout := forkCheckout
+	forkCheckout = func(store *packsrc.Store, a packsrc.Addr, gotCommit string) (string, error) {
+		if store.Ctx == nil || !store.NoWait {
+			t.Errorf("timer checkout store policy = Ctx:%v NoWait:%v, want task context and no-wait",
+				store.Ctx != nil, store.NoWait)
+		}
+		started <- struct{}{}
+		resolved, err := store.Materialize(a, gotCommit)
+		if err != nil {
+			return "", err
+		}
+		return resolved.Root, nil
+	}
+	t.Cleanup(func() { forkCheckout = previousCheckout })
+	previousFetch := forkFetchCommit
+	forkFetchCommit = func(store *packsrc.Store, a packsrc.Addr, gotCommit string) error {
+		if store.Ctx == nil || !store.NoWait {
+			t.Errorf("timer fetch store policy = Ctx:%v NoWait:%v, want task context and no-wait",
+				store.Ctx != nil, store.NoWait)
+		}
+		return store.FetchForkCommit(a, gotCommit, nil)
+	}
+	t.Cleanup(func() { forkFetchCommit = previousFetch })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runPlainForkPreparation(ctx, record, f, io.Discard) }()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		releaseMirror()
+		released = true
+		<-done
+		t.Fatal("timer never reached its source checkout")
+	}
+	cancel() // scheduler stop/revocation while the missing-source mirror is held
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("held mirror returned %v", err)
+		}
+	case <-time.After(750 * time.Millisecond):
+		releaseMirror()
+		released = true
+		<-done
+		t.Fatal("stopping the timer did not drain its held-mirror source checkout promptly")
+	}
+	releaseMirror()
+	released = true
+	if child, _, resolveErr := resolveForkBuild(&capture.Store{Dir: paths.CapturesDir()}, f.Bin,
+		patchedTestPlatform, f.Source, commit, (forkBuild{Fork: f, Commit: commit, Platform: patchedTestPlatform}).recipe()); resolveErr == nil {
+		t.Errorf("busy timer source was admitted as %s (%v)", child.Key, resolveErr)
+	}
+	outcome := outcomeOf(t, f.Key())
+	if outcome.State != bgSkipped && outcome.State != bgInterrupted {
+		t.Errorf("held-mirror shutdown outcome = %+v, want busy skip or interruption", outcome)
+	}
+}
+
 func TestPreparationForkIdentityIncludesPinAndRecipe(t *testing.T) {
 	f := packload.Fork{Pack: "forkpack", Base: "basepack", Bin: "tool", Source: forkTestSource,
 		Build: "make install", Produces: []string{".local/bin/tool"}}
@@ -151,6 +308,38 @@ func TestPreparationForkIdentityIncludesPinAndRecipe(t *testing.T) {
 	}
 }
 
+func TestForkPreparationRegistrationRendersRichTextAndEscapesValues(t *testing.T) {
+	forkBuildHome(t)
+	setForkNextLaunch(t)
+	stubPreparationWorkerStart(t)
+	f := packload.Forks(selectConfiguredHostPacks().packs)[0]
+	f.Bin = "[red]spoof[/red]"
+	pin := packload.ForkPin{Fork: f, Commit: forkTestCommit, Ref: "main"}
+	req := preparationForkRequest(f, pin.Commit, "podman")
+
+	var plain, colored bytes.Buffer
+	if err := registerForkPreparation([]packload.ForkPin{pin}, req, &plain, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerForkPreparation([]packload.ForkPin{pin}, req, &colored, true); err != nil {
+		t.Fatal(err)
+	}
+	for mode, out := range map[string]string{"plain": plain.String(), "colored": colored.String()} {
+		if strings.Contains(out, "[dim]") || strings.Contains(out, "[/dim]") {
+			t.Errorf("%s output leaked rich-text markup: %q", mode, out)
+		}
+		if strings.Contains(out, "\x1b[31mspoof") {
+			t.Errorf("%s output interpreted a manifest-controlled label as color: %q", mode, out)
+		}
+		if !strings.Contains(richtext.Strip(out), "next-launch preparation is recorded") {
+			t.Errorf("%s output lost the registration notice: %q", mode, out)
+		}
+	}
+	if !strings.Contains(colored.String(), "\x1b[2m") {
+		t.Errorf("color-enabled registration did not render its dim style: %q", colored.String())
+	}
+}
+
 func TestPreparationAdmissionGuardRejectsRevokedOrEditedFork(t *testing.T) {
 	forkBuildHome(t)
 	f := packload.Forks(selectConfiguredHostPacks().packs)[0]
@@ -158,7 +347,7 @@ func TestPreparationAdmissionGuardRejectsRevokedOrEditedFork(t *testing.T) {
 	stubPreparationWorkerStart(t)
 	pin := packload.ForkPin{Fork: f, Commit: forkTestCommit, Ref: "main"}
 	req := preparationForkRequest(f, pin.Commit, "podman")
-	if err := registerForkPreparation([]packload.ForkPin{pin}, req, io.Discard); err != nil {
+	if err := registerForkPreparation([]packload.ForkPin{pin}, req, io.Discard, false); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := readPreparationSnapshot(f.Key())
@@ -197,7 +386,7 @@ func TestPreparationAdmissionGuardRejectsManualForkPinMovement(t *testing.T) {
 	stubPreparationWorkerStart(t)
 	pin := packload.ForkPin{Fork: f, Commit: forkTestCommit, Ref: "main"}
 	req := preparationForkRequest(f, pin.Commit, "podman")
-	if err := registerForkPreparation([]packload.ForkPin{pin}, req, io.Discard); err != nil {
+	if err := registerForkPreparation([]packload.ForkPin{pin}, req, io.Discard, false); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := readPreparationSnapshot(f.Key())

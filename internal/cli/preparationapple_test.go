@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -128,8 +129,92 @@ func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *te
 	}
 }
 
+func TestAppleProductionProbeRejectsLiveRowBeforeHeaderWithoutStartingChild(t *testing.T) {
+	pf := newPoolFixture(t)
+	bin := t.TempDir()
+	writeFile(t, filepath.Join(bin, "container"), "#!/bin/sh\nprintf 'yolo-live image linux arm64 running\\nID IMAGE OS ARCH STATE\\n'\n")
+	if err := os.Chmod(filepath.Join(bin, "container"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	prevCapability := appleContainerBuildCapability
+	appleContainerBuildCapability = appleContainerCanBuildNow
+	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
+	var children atomic.Int32
+	pf.child = func(context.Context, forkBuild) int { children.Add(1); return 0 }
+
+	got, out := pf.launch(t, "container", &run.ActInterrupt{})
+	if children.Load() != 0 {
+		t.Fatalf("the production Apple probe discarded a live row and started %d build children:\n%s", children.Load(), out)
+	}
+	if !strings.Contains(out, "unrecognized listing") || !strings.Contains(got[poolKeyA].Reason, "left it pending") {
+		t.Fatalf("malformed liveness did not leave the cold candidate pending:\n%s\ndelivery: %+v", out, got[poolKeyA])
+	}
+}
+
+func TestAppleContainerRechecksLivenessAtEachActualChildStart(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		denyAt      int32
+		failedBuild bool
+		wantChild   int32
+	}{
+		{name: "candidate", denyAt: 2},
+		{name: "base fallback", denyAt: 3, failedBuild: true, wantChild: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newTreeFixture(t, `"f.txt"`)
+			if tc.failedBuild {
+				fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+			}
+			fx.noFile = tc.failedBuild
+			f := fx.tree(t)
+			var probes, children atomic.Int32
+			prevCapability := appleContainerBuildCapability
+			appleContainerBuildCapability = func() (bool, string) {
+				if probes.Add(1) >= tc.denyAt {
+					return false, "Apple Container has running yolo jail(s): yolo-live-session"
+				}
+				return true, ""
+			}
+			t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
+			prevChild := forkBuildChild
+			forkBuildChild = func(ctx context.Context, bound time.Duration, staging string, b forkBuild,
+				streams captureStreams, color bool) (int, bool) {
+				children.Add(1)
+				return forkBuildRunJail(staging, b, streams, color), false
+			}
+			t.Cleanup(func() { forkBuildChild = prevChild })
+
+			req := run.TreeBuildRequest{FreshUpdate: true, Trees: []packload.Fork{f}, Platform: patchedTestPlatform,
+				Runtime: "container", Workspace: "/ws", Build: true,
+				CopyRoot: filepath.Join(t.TempDir(), "tree.patched"), Interrupt: &run.ActInterrupt{}}
+			var report syncBuffer
+			got := deliverTreesForLaunch(req, &report, &report, false)
+			if probes.Load() != tc.denyAt {
+				t.Errorf("capability probes = %d, want denial at probe %d:\n%s", probes.Load(), tc.denyAt, report.String())
+			}
+			if children.Load() != tc.wantChild {
+				t.Errorf("build children = %d, want %d:\n%s", children.Load(), tc.wantChild, report.String())
+			}
+			if got[f.Key()].Dir != "" || !strings.Contains(got[f.Key()].Reason, "candidate remains pending") {
+				t.Errorf("late liveness denial did not preserve the pending fresh candidate: %+v\n%s", got[f.Key()], report.String())
+			}
+			record := patchedRecordOf(t, f.Key())
+			if record.Good != nil {
+				t.Errorf("a deferred candidate changed the good build: %+v", record.Good)
+			}
+			if record.Check == nil || len(record.Check.List) == 0 {
+				t.Errorf("the checked candidate was not retained pending in its record: %+v", record.Check)
+			}
+		})
+	}
+}
+
 func TestAppleContainerCapabilityTreatsUnknownListingAsUnsafe(t *testing.T) {
-	for _, listing := range []string{"", "yolo-one image running"} {
+	for _, listing := range []string{"", "yolo-one image running", "yolo-live image linux arm64 running\nID IMAGE OS ARCH STATE\n",
+		"ID IMAGE OS ARCH STATE\nyolo-live image linux running\n", "ID IMAGE OS ARCH STATE\nID IMAGE OS ARCH STATE\n",
+		"ID IMAGE OS ARCH STATE\nyolo-live image linux arm64 stopped\n"} {
 		if safe, reason := appleContainerBuildDecision(listing); safe || !strings.Contains(reason, "liveness is unknown") {
 			t.Errorf("unrecognized listing %q was treated as safe: safe=%v reason=%q", listing, safe, reason)
 		}

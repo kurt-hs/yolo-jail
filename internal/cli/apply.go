@@ -941,12 +941,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		rc = prc
 		survey.noteStageFailure(stageRetire)
 	}
-	// And the host-private copies of a patched extension no selected pack carries any more, once
-	// the prune above has retired the link that named them (hosttrees.go).
-	if write {
-		sweepDroppedHostTrees(loaded)
-	}
-
+	noteRetainedHostTreeVersions(pr, write)
 	// Launch wrappers, last: they are the only stage that writes OUTSIDE the composed
 	// surfaces, and generating them after the surfaces means a wrapper never appears for
 	// a pack whose own apply just failed. Silent unless opted in (§5.5).

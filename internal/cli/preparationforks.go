@@ -19,6 +19,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 const (
@@ -77,7 +78,7 @@ func preparationForkEligible(f packload.Fork, runtime string) bool {
 // registerForkPreparation records only selected, already-pinned program forks. It never resolves a
 // branch: a timer can fill a missing artifact for this recorded commit but only an explicit update
 // may move the standing pin.
-func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer) error {
+func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer, color bool) error {
 	if len(pins) == 0 {
 		return nil
 	}
@@ -156,10 +157,11 @@ func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, 
 			fmt.Fprintf(w, "⚠ next-launch program preparation was recorded, but its host worker could not start (%v) — run `yolo pack prepare start` to retry\n", err)
 			return err
 		}
+		pr := richtext.Printer{W: w, Color: color}
 		for _, pin := range ordered {
 			if preparationForkEligible(pin.Fork, req.Runtime) {
-				fmt.Fprintf(w, "[dim]%s: next-launch preparation is recorded; the admitted artifact is for later launches, not this running jail — `yolo pack prepare status %s` shows progress (log %s)[/dim]\n",
-					pin.Fork.Label(), pin.Fork.Key(), backgroundAdvanceLog())
+				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: next-launch preparation is recorded; the admitted artifact is for later launches, not this running jail — `yolo pack prepare status %s` shows progress (log %s)",
+					pin.Fork.Label(), pin.Fork.Key(), backgroundAdvanceLog())))
 			}
 		}
 	}
@@ -215,6 +217,7 @@ func runPlainForkPreparation(ctx context.Context, record preparationRecord, f pa
 			entry, buildErr = buildFork(b, buildMode{
 				lock:    pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: buildCtx.Done()},
 				runJail: childJail(buildCtx, false, &bound), runtime: record.Runtime,
+				sourceCheckoutCtx: buildCtx, sourceCheckoutNoWait: true,
 				admitGuard: preparationAdmissionGuardUnder(buildCtx, record.Key, record.Runtime, record.Platform, record.Generation),
 			}, it.stream(), it.stream(), false)
 		})
@@ -226,6 +229,9 @@ func runPlainForkPreparation(ctx context.Context, record preparationRecord, f pa
 		case ctx.Err() != nil || errors.Is(buildErr, context.Canceled):
 			outcome.State = bgInterrupted
 			taskErr = ctx.Err()
+		case errors.Is(buildErr, packsrc.ErrLockHeld):
+			outcome.State, outcome.Error = bgSkipped, "the source mirror is busy; the next preparation attempt retries without waiting for its lock"
+			taskErr = nil
 		case buildErr != nil:
 			outcome.State, outcome.Error = bgFailed, buildErr.Error()
 			outcome.RetryAt = time.Now().Add(packsrc.BranchRefreshInterval).Unix()

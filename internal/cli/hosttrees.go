@@ -33,8 +33,8 @@ package cli
 //
 // # A revert
 //
-// `yolo host apply --revert` removes every link the `files` ownership record names into the
-// versioned copies, and the copies with it (revertHostTreeLinks, PPX-D31).
+// `yolo host apply --revert` removes every recorded link but retains its versioned bytes during the
+// ordinary retirement; only the explicit revert's confirmed cleanup deletes generations.
 
 import (
 	"context"
@@ -413,8 +413,9 @@ func renderHostTrees(p *packload.Pack, packs []*packload.Pack, home string, man 
 
 // retireHostTreeLink is the render's arm for a tree no host loads (PPX-D35): the link at `~/<into>`
 // an earlier render left, when the files ownership record says it is f's pack's and it points into
-// f's versioned copies, is removed with those copies and forgotten, as a revert removes it
-// (PPX-D31). ok is false, and nothing is touched, when there is no such link.
+// f's versioned copies, is removed and forgotten; the copied bytes are retained because an
+// untracked running host session may still read them. ok is false, and nothing is touched, when
+// there is no such link.
 func retireHostTreeLink(f packload.Fork, home string, man *hostskills.Manifest, observe bool) (
 	entrypoint.HostRenderResult, bool) {
 	dest := filepath.Join(home, filepath.FromSlash(strings.TrimSuffix(f.Into, "/")))
@@ -433,8 +434,7 @@ func retireHostTreeLink(f packload.Fork, home string, man *hostskills.Manifest, 
 		return res, true
 	}
 	man.Forget(dest)
-	_ = os.RemoveAll(hostTreeVersionsDir(f))
-	res.Action = "removed (" + why + ")"
+	res.Action = "removed (" + why + "); retained its host copies because a running host session may still use them"
 	return res, true
 }
 
@@ -664,25 +664,79 @@ func linkedTreeLabel(key string) string {
 	return "the build " + key
 }
 
-// sweepDroppedHostTrees removes the versioned copies of every patched extension the selection no
-// longer carries, once nothing the files ownership record names links into them: the dropped pack's
-// link is retired by the apply's prune of a dropped pack's output, which runs before this, and a
-// link still in place keeps its tree. Best-effort: a copy left behind costs disk, never a render.
-func sweepDroppedHostTrees(packs []*packload.Pack) {
-	live := map[string]bool{}
-	for _, f := range packload.PatchedTrees(packs) {
-		live[run.PatchedCopySlug(f.Key())] = true
+// noteRetainedHostTreeVersions says what historical generations remain after an apply. Host sessions
+// have no process-to-version liveness record, so ordinary drop/apply retires links but never deletes
+// an unlinked generation; only the explicit revert is a cleanup authority.
+func noteRetainedHostTreeVersions(pr richtext.Printer, write bool) {
+	if !write {
+		return
 	}
 	man, err := hostskills.LoadManifest(hostSkillsManifestPath())
 	if err != nil {
-		return // an unreadable record proves nothing about which links remain, so nothing goes
+		return // an unreadable ownership record cannot prove which generations remain in use
 	}
-	sweepUnlinkedHostTrees(live, man)
+	linked := map[string]bool{}
+	for dest := range man.Entries {
+		target, err := os.Readlink(dest)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(paths.HostTreesDir(), target)
+		if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			linked[filepath.Clean(target)] = true
+		}
+	}
+	var retained int
+	slugs, err := os.ReadDir(paths.HostTreesDir())
+	if err != nil {
+		return
+	}
+	for _, slug := range slugs {
+		if !slug.IsDir() {
+			continue
+		}
+		versions, err := os.ReadDir(filepath.Join(paths.HostTreesDir(), slug.Name()))
+		if err != nil {
+			continue
+		}
+		for _, version := range versions {
+			if version.IsDir() && !linked[filepath.Clean(filepath.Join(paths.HostTreesDir(), slug.Name(), version.Name()))] {
+				retained++
+			}
+		}
+	}
+	if retained > 0 {
+		pr.Printf("[dim]retained %d historical patched-extension host generation(s): a running host session may still read these bytes; stop all host agent sessions, then `yolo host apply --revert --assert` deletes them[/dim]", retained)
+	}
 }
 
-// sweepUnlinkedHostTrees removes every extension's versioned copies under paths.HostTreesDir that
-// neither live names (by slug) nor any link man records points into. Best-effort.
-func sweepUnlinkedHostTrees(live map[string]bool, man *hostskills.Manifest) {
+func hostTreeGenerationCount() int {
+	var count int
+	slugs, err := os.ReadDir(paths.HostTreesDir())
+	if err != nil {
+		return 0
+	}
+	for _, slug := range slugs {
+		if !slug.IsDir() {
+			continue
+		}
+		versions, err := os.ReadDir(filepath.Join(paths.HostTreesDir(), slug.Name()))
+		if err != nil {
+			continue
+		}
+		for _, version := range versions {
+			if version.IsDir() {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// removeUnlinkedHostTrees removes every unlinked extension generation under paths.HostTreesDir.
+// It is called only by the explicit confirmed revert; ordinary apply cannot know whether an
+// untracked host session still has one of these paths open.
+func removeUnlinkedHostTrees(man *hostskills.Manifest) {
 	entries, err := os.ReadDir(paths.HostTreesDir())
 	if err != nil {
 		return
@@ -694,7 +748,7 @@ func sweepUnlinkedHostTrees(live map[string]bool, man *hostskills.Manifest) {
 		}
 	}
 	for _, e := range entries {
-		if !e.IsDir() || live[e.Name()] || linked[e.Name()] {
+		if !e.IsDir() || linked[e.Name()] {
 			continue
 		}
 		_ = os.RemoveAll(filepath.Join(paths.HostTreesDir(), e.Name()))
@@ -717,18 +771,18 @@ func hostTreeLinkSlug(dest string) string {
 
 // revertHostTreeLinks is the revert's arm for PATCHED EXTENSIONS (docs/design/patched-extensions.md
 // §8.3, PPX-D31): every link the `files` ownership record names that points into the host's
-// versioned copies is removed and forgotten, and then every versioned copy no recorded link names,
-// whatever the selection carries — a revert is the user taking yolo out of the home. observe reports
-// the links it would remove and writes nothing. The links come back sorted. A plain `files` tree's
-// output is not this arm's: the revert withdraws keys, and leaves those as it always has.
+// versioned copies are deleted only in this explicit confirmed cleanup. observe reports the links,
+// retained generations and running-session warning without writing. The caller prints that warning
+// before the confirmed path deletes them. A plain `files` tree's output is not this arm's: the revert
+// withdraws keys, and leaves those as it always has.
 //
 // A record that cannot be read proves nothing is yolo's, so nothing is removed, and warn says so,
 // naming the record and what to do; it fails no revert, whose keys are another record's.
-func revertHostTreeLinks(observe bool) (links []string, warn string, err error) {
+func revertHostTreeLinks(observe bool) (links []string, generations int, warn string, err error) {
 	manPath := hostSkillsManifestPath()
 	man, lerr := hostskills.LoadManifest(manPath)
 	if lerr != nil {
-		return nil, fmt.Sprintf("the files ownership record %s cannot be read (%v), so no patched extension's "+
+		return nil, 0, fmt.Sprintf("the files ownership record %s cannot be read (%v), so no patched extension's "+
 			"link is removed — repair or remove that file and re-run this, or remove a link at ~/<into> by hand", manPath, lerr), nil
 	}
 	for dest := range man.Entries {
@@ -737,18 +791,24 @@ func revertHostTreeLinks(observe bool) (links []string, warn string, err error) 
 		}
 	}
 	sort.Strings(links)
-	if observe || len(links) == 0 {
-		return links, "", nil
+	generations = hostTreeGenerationCount()
+	if len(links) > 0 || generations > 0 {
+		warn = "the confirmed revert will delete retained patched-extension host generations; a running host session may still read these bytes — stop all host agent sessions before running with `--assert`"
+	}
+	if observe {
+		return links, generations, warn, nil
 	}
 	for _, dest := range links {
 		if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return links, "", err
+			return links, generations, warn, err
 		}
 		man.Forget(dest)
 	}
-	if err := man.Save(manPath); err != nil {
-		return links, "", err
+	if len(links) > 0 {
+		if err := man.Save(manPath); err != nil {
+			return links, generations, warn, err
+		}
 	}
-	sweepUnlinkedHostTrees(nil, man)
-	return links, "", nil
+	removeUnlinkedHostTrees(man)
+	return links, generations, warn, nil
 }
