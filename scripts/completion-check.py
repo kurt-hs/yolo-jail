@@ -10,11 +10,15 @@ Design: docs/design/change-aware-completion.md. In short:
   Justfile, a workflow, a script) or cannot be classified — it runs the full landing gate,
   `just check-ci`.
 * Otherwise it runs only what the change can reach: `go vet` and staticcheck (both GOOS
-  values) and `go test -short` for the changed packages and every package that imports them,
-  the individual tests recorded as READING a changed file (scripts/completion-readers.json,
-  written by scripts/completion-census.py), gofmt on the changed Go files, the official-binary
-  pin check when Go or pack sources moved, and the Markdown, guide and changelog checks for the
-  documents that changed.
+  values) for the changed packages and every package that imports them, `go test -short` for
+  the changed packages alone, the individual tests recorded as READING a changed file
+  (scripts/completion-readers.json, written by scripts/completion-census.py), gofmt on the
+  changed Go files, the official-binary pin check when Go or pack sources moved, and the
+  Markdown, guide and changelog checks for the documents that changed. The importer closure's
+  TESTS are CI's: Go's test cache invalidates for every package a change reaches, so running
+  them here cost the closure's whole suite on every core edit. Its lint still covers the
+  closure, so a compile-level break in an importer stays local at 14 s; CI is the backstop that
+  runs the closure's tests on every push.
 * It is read-only: it never formats, stages or commits. A dirty tree is refused BEFORE any
   check runs, and a tree that changes while checks run records nothing.
 
@@ -384,7 +388,9 @@ def plan_selective(root, base, entries, readers):
     if plan.full:
         return plan
 
-    # Go: lint and test what the changed packages reach.
+    # Go: lint the changed packages and everything that imports them; test the changed
+    # packages alone. An importer's own tests are CI's, because Go's test cache invalidates for
+    # every package a change reaches, which made this step cost the closure's whole suite.
     if changed_pkgs:
         for goos, base in LINT_PASSES:
             pkgs = sorted(affected(graphs[goos], changed_pkgs))
@@ -392,10 +398,12 @@ def plan_selective(root, base, entries, readers):
                 plan.add(f"{' '.join(base[:2]) if base[0] == 'go' else base[0]} GOOS={goos} "
                          f"({len(pkgs)} package{'s' if len(pkgs) != 1 else ''})",
                          base + pkgs, "changed packages and their importers", {"GOOS": goos})
-        tested = sorted(affected(graphs["linux"], changed_pkgs))
+        # Only the linux graph's own packages: the test step has always been GOOS=linux, so a
+        # package the linux build excludes is not a `go test` target here.
+        tested = sorted(ip for ip in changed_pkgs if ip in graphs["linux"])
         if tested:
             plan.add(f"go test -short ({len(tested)} package{'s' if len(tested) != 1 else ''})",
-                     ["go", "test", "-short"] + tested, "changed packages and their importers")
+                     ["go", "test", "-short"] + tested, "the changed packages")
     else:
         tested = []
     if gofmt:

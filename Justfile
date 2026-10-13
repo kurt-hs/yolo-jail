@@ -488,8 +488,9 @@ clean:
 # It verifies the task, not the tree from scratch (docs/design/change-aware-completion.md). The
 # baseline is the nearest ancestor of HEAD that an earlier `just done` verified on a clean tree
 # with the same toolchain; records are shared by every worktree of the repository. From there it
-# runs only what the change can reach — lint and short tests for the changed Go packages and their
-# importers, the tests recorded as reading a changed file (scripts/completion-readers.json), and
+# runs only what the change can reach — lint for the changed Go packages and their importers,
+# short tests for the changed packages alone (the importer closure's tests are CI's), the tests
+# recorded as reading a changed file (scripts/completion-readers.json), and
 # the checks for changed documents — and the full `check-ci` when there is no baseline or a gate
 # input moved. It never formats: a dirty tree is refused before any check runs, which is why it no
 # longer depends on `check`, whose `gofmt -w` could rewrite the work it was verifying.

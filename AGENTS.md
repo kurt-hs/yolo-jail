@@ -627,8 +627,9 @@ release is fixed by the next one. What the script cannot judge is who the sectio
 5. End of task: commit, then `just done` green. It is **change-aware and read-only**
    ([`change-aware-completion.md`](docs/design/change-aware-completion.md)): it refuses a dirty tree
    before any check, then runs only what the commits since the last verified ancestor reach — lint
-   and short tests for the changed Go packages and their importers, the tests recorded as reading a
-   changed file, and the checks for changed documents — or the full `just check-ci` when there is
+   for the changed Go packages and their importers, short tests for the changed packages alone (the
+   importer closure's tests are CI's), the tests recorded as reading a changed file, and the checks
+   for changed documents — or the full `just check-ci` when there is
    no verified ancestor or a gate input moved. It never formats, so `just format` stays step 3.
    Before landing a change to a test that reads files outside its package, rerun
    `python3 scripts/completion-census.py` and commit its output. `just done` is not the landing
