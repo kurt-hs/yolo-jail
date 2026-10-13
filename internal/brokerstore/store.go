@@ -350,6 +350,9 @@ func (s *Store) FileContext(ctx context.Context, input Request) (Request, error)
 				return nil
 			}
 		}
+		if err := filingLimit(r, input, now); err != nil {
+			return err
+		}
 		id, err := newID("r-")
 		if err != nil {
 			return err
@@ -463,6 +466,14 @@ func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Reval
 	return s.ConsumeContext(context.Background(), jail, start, set, commandDigest, revalidate)
 }
 func (s *Store) ConsumeContext(ctx context.Context, jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
+	return s.ConsumeDispatchContext(ctx, jail, start, set, commandDigest, revalidate, nil)
+}
+
+// ConsumeDispatchContext durably spends and audits before invoking dispatch under
+// the same source lock. Dispatch must honor ctx and never nest a store/scope lock.
+// Scope removal/revocation that wins this lock prevents dispatch; one that follows
+// waits for bounded dispatch. A crash or dispatch failure never refunds the use.
+func (s *Store) ConsumeDispatchContext(ctx context.Context, jail, start, set, commandDigest string, revalidate Revalidate, dispatch func() error) (Grant, bool, error) {
 	var out Grant
 	found := false
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
@@ -504,6 +515,12 @@ func (s *Store) ConsumeContext(ctx context.Context, jail, start, set, commandDig
 			}
 			out = *g
 			found = true
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if dispatch != nil {
+				return dispatch()
+			}
 			return nil
 		}
 		return nil

@@ -213,7 +213,8 @@ func ValidateCurrent(path string, expected File, repo string) error {
 
 // BindBroker records a fresh host broker lifetime under the same lock used by decisions.
 // No jail field participates in this binding; replacing it invalidates the old lifetime.
-func BindBroker(path string, expected File, start string) (File, error) {
+// acquireLease runs under this same transaction before binding is published.
+func BindBroker(path string, expected File, start string, acquireLease func() error) (File, error) {
 	var out File
 	if path != paths.BrokerScopeFile(expected.Source, expected.LaunchID) {
 		return out, errors.New("scope path is not the host launch path")
@@ -228,6 +229,12 @@ func BindBroker(path string, expected File, start string) (File, error) {
 		}
 		if f.Source != expected.Source || f.LaunchID != expected.LaunchID || f.PID != expected.PID || f.Workspace != expected.Workspace || f.Container != expected.Container {
 			return errors.New("scope identity changed before broker start")
+		}
+		if acquireLease == nil {
+			return errors.New("broker lifetime lease unavailable")
+		}
+		if err := acquireLease(); err != nil {
+			return err
 		}
 		f.BrokerStart, f.BrokerPID = start, os.Getpid()
 		got, err := write(f)

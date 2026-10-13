@@ -52,6 +52,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		return ExitNoPerm, err.Error()
 	}
 	if d.Outcome == OutcomeStanding {
+		code := ExitTempFail
 		err := brokerlock.WithTransactionContext(ctx, b.store.Dir, func() error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -66,15 +67,19 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 			if current.Outcome != OutcomeStanding || current.Set != d.Set {
 				return errors.New("standing policy changed; retry")
 			}
-			return b.audit.RequiredContext(ctx, brokeraudit.Event{Event: "standing-authorized", Service: Source, Jail: jail, Workspace: b.workspace, Argv: current.Argv, Repo: strings.Join(current.Repos, ","), Set: current.Set, Outcome: "authorized-before-dispatch"})
+			if err := b.audit.RequiredContext(ctx, brokeraudit.Event{Event: "standing-authorized", Service: Source, Jail: jail, Workspace: b.workspace, Argv: current.Argv, Repo: strings.Join(current.Repos, ","), Set: current.Set, Outcome: "authorized-before-dispatch"}); err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			code = b.dispatch(ctx, req, current, stdout, stderr, ev)
+			return nil
 		})
 		if err != nil {
 			return ExitUnavailable, "standing authorization failed: " + err.Error() + "; repair the host policy/audit and retry"
 		}
-		if ctx.Err() != nil {
-			return ExitTempFail, "caller disconnected; nothing ran; retry if still wanted"
-		}
-		return b.dispatch(ctx, req, d, stdout, stderr, ev), ""
+		return code, ""
 	}
 	sum := sha256.Sum256(req.Stdin)
 	q := brokerstore.Request{Jail: jail, Start: b.startID, Workspace: b.workspace, LaunchID: b.authority.scope.LaunchID, Argv: d.Argv, Repo: strings.Join(d.Repos, ","), Set: d.Set, Policy: p, StdinDigest: hex.EncodeToString(sum[:])}
@@ -92,17 +97,17 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		if ctx.Err() != nil {
 			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; use `yolo gh status <request>` before retrying"
 		}
-		_, ok, err := b.store.ConsumeContext(ctx, jail, b.startID, d.Set, q.Digest, gate)
+		code := ExitTempFail
+		_, ok, err := b.store.ConsumeDispatchContext(ctx, jail, b.startID, d.Set, q.Digest, gate, func() error {
+			code = b.dispatch(ctx, req, d, stdout, stderr, ev)
+			return nil
+		})
 		if err != nil {
 			return true, ExitUnavailable, "authorization or required audit failed: " + err.Error() + "; retry after repairing the host authority"
 		}
 		if !ok {
 			return false, 0, ""
 		}
-		if ctx.Err() != nil {
-			return true, ExitTempFail, "caller left after authorization; use was spent, nothing ran; retry if still wanted"
-		}
-		code := b.dispatch(ctx, req, d, stdout, stderr, ev)
 		if code == ghExitAuth {
 			return true, ExitUnavailable, noHostLogin
 		}
@@ -113,6 +118,14 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	}
 	q, err = b.store.FileContext(ctx, q)
 	if err != nil {
+		var limit *brokerstore.PendingLimitError
+		if errors.As(err, &limit) {
+			return ExitTempFail, limit.Error() + "; inspect those requests with `yolo gh status <id>` before retrying; nothing ran"
+		}
+		var denial *brokerstore.DenialCooldownError
+		if errors.As(err, &denial) {
+			return ExitNoPerm, denial.Error() + "; nothing ran and no new notification was filed; ask the host user before retrying"
+		}
 		return ExitUnavailable, "request filing failed: " + err.Error() + "; repair the host policy/audit and retry"
 	}
 	if err = b.delivery.Request(ctx, q); err != nil {
@@ -194,6 +207,13 @@ func (b *Broker) requestStatus(ctx context.Context, req Request, jail string, st
 }
 
 func (b *Broker) dispatch(ctx context.Context, req Request, d Decision, stdout, stderr func([]byte), ev *brokeraudit.Event) int {
+	if req.writeDeadline != nil {
+		if deadline, ok := ctx.Deadline(); ok {
+			req.writeDeadline(deadline)
+		}
+		stop := context.AfterFunc(ctx, func() { req.writeDeadline(time.Now()) })
+		defer stop()
+	}
 	var stdin []byte
 	if d.ReadsStdin {
 		stdin = req.Stdin
@@ -205,7 +225,7 @@ func (b *Broker) dispatch(ctx context.Context, req Request, d Decision, stdout, 
 	if b.execute != nil {
 		res = b.execute(ctx, d.Argv, stdin, stdout, stderr)
 	} else {
-		res = b.runner.Run(d.Argv, stdin, stdout, stderr)
+		res = b.runner.RunContext(ctx, d.Argv, stdin, stdout, stderr)
 	}
 	ev.Outcome = "ran"
 	ev.BytesOut = res.BytesOut

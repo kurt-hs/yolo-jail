@@ -3,7 +3,7 @@ title: "Reads run, writes ring the doorbell: time-boxed GitHub access across the
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Deliver request/answer notice readiness (OQ-BB10 and yolo notify), rule OQ-BB15 explicit admit semantics, then implement rule grammar and production pending limits/cooldown. Production writes remain refused; gated handler integration is built."
+next: "Deliver request/answer notice readiness (OQ-BB10 and yolo notify), rule OQ-BB15 explicit admit semantics, then implement rule grammar. Production writes remain refused; gated handler integration is built."
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, approvals, notifications, loopholes, audit, broker]
@@ -1361,13 +1361,20 @@ transaction is held. Disconnect or broker stop cancels the wait, never an alread
 request; a later decision dispatches nothing. A reissued command rechecks its actual canonical
 argv/repositories/stdin digest and spends one grant use durably before required audit and
 executor dispatch. Audit failure after spending loses the use and runs nothing; no refund can
-make a duplicate run. Callbacks must never nest a same-source lock-taking operation.
+make a duplicate run. **Authorization linearizes under the shared source transaction, held
+through bounded dispatch on both standing and windowed paths.** A cooperating scope removal,
+lifetime close or revocation that acquires it first prevents a subsequent dispatch; one that
+comes later waits for dispatch to return. The real executor observes the caller deadline and
+cancellation, and the host connection's write sinks carry that deadline. No execute-then-save
+ordering exists. User policy is sampled at authorization: ordinary out-of-band user config edits
+do not acquire this broker lock, and serialization with those edits is not promised. Callbacks must never nest a same-source lock-taking operation.
 
 **Production fence:** request delivery (including the no-notifier terminal notice) and later
 answer delivery must be ready, with no environment/config bypass. Manual discovery through
 `yolo approve` does not waive [OQ-BB10](#OQ-BB10). Answer ping remains `yolo notify` work; status
 and wait are already wired as its interim inspection path ([§3.3](#33-the-answer-comes-back-through-the-doorbell)).
-Notification withdrawal/expiry delivery, three-pending limit and denial cooldown remain unbuilt.
+Notification withdrawal/expiry delivery remains unbuilt. Pending limits, denial cooldown and
+known inert lifetime-lease collection are built; see [§9.2](#92-prompt-fatigue).
 
 **A request** is the parsed canonical command, its repository, the stdin digest, the jail id from
 the preamble, the workspace, the set it asks for, the time filed and its state: `pending`, then one of
@@ -1494,7 +1501,25 @@ repository legible, and it cannot make the human read it.
 A doorbell that rings too often trains a reflexive yes, which is worse than no doorbell because
 it manufactures the appearance of oversight. The design's defenses: reads never ring; a set grant
 covers every write for its window; a duplicate joins its pending request; a denied command stays
-quiet for 10 minutes; a jail may have at most three requests pending. The forcing question stays
+quiet for 10 minutes; a jail may have at most three requests pending. The cap is per host-asserted jail,
+across sets and broker starts, counting persisted unexpired pending requests; a duplicate in its
+own lifetime joins before the cap check. The failure names the existing request ids (exit 75),
+without filing or notifying. Denial cooldown is the same canonical argv/repository/stdin digest
+from that jail, across sets and starts; other jails and different digests are independent.
+An unanswered expiry is treated as denied ([§6.5](#65-when-there-is-no-notifier-or-nobody-answers)).
+At exactly ten minutes the cooldown ends; inside it exit 77 names the earlier denial and no new
+request/notification is filed. Both checks use the shared transaction, so concurrency or broker
+restart cannot manufacture another slot or reset the quiet period.
+
+A process-lifetime lease has known versioned source/start/launch metadata. The next real broker
+start collects a lease only after it obtains the exclusive nonblocking lease lock and validates
+that metadata and file identity under the source transaction. Creation, lease acquisition and
+binding use that same transaction. Live, unknown, unreadable, malformed, old-version and symlink
+lease evidence is retained; neither a PID nor age is cleanup evidence. Normal close removes
+only its own lease. Abrupt process exit releases its kernel lock, allowing the next start to
+collect its known inert file.
+
+ The forcing question stays
 the one the 2026-08 draft asked: **would the human ever say no?** A command they never refuse
 belongs in a standing set, and a user can put it there ([§5.7](#57-permission-sets)). The audit log
 is the evidence for moving it. The permission-set ruling pushes the other way too. A read-write

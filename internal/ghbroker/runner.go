@@ -307,6 +307,14 @@ type RunResult struct {
 // the two sinks through the redactor. Output past the cap is cut, with a last stderr line
 // saying so; a call past the timeout is killed with exit 124.
 func (r *Runner) Run(argv []string, stdin []byte, stdout, stderr func([]byte)) RunResult {
+	return r.RunContext(context.Background(), argv, stdin, stdout, stderr)
+}
+
+// RunContext bounds a serialized write dispatch by its authorization deadline.
+func (r *Runner) RunContext(ctx context.Context, argv []string, stdin []byte, stdout, stderr func([]byte)) RunResult {
+	if ctx.Err() != nil {
+		return RunResult{Exit: ExitTempFail}
+	}
 	cmd := exec.Command(r.GhPath, argv...)
 	cmd.Env, cmd.Dir = r.env, filepath.Join(r.runDir, "cwd")
 	cmd.SysProcAttr = childProcAttr()
@@ -325,6 +333,10 @@ func (r *Runner) Run(argv []string, stdin []byte, stdout, stderr func([]byte)) R
 		r.mu.Unlock()
 		stderr([]byte("github-broker: the broker is stopping, so nothing ran\n"))
 		return RunResult{Exit: ExitUnavailable}
+	}
+	if ctx.Err() != nil {
+		r.mu.Unlock()
+		return RunResult{Exit: ExitTempFail}
 	}
 	if err := cmd.Start(); err != nil {
 		r.mu.Unlock()
@@ -399,7 +411,9 @@ func (r *Runner) Run(argv []string, stdin []byte, stdout, stderr func([]byte)) R
 		mu.Unlock()
 		kill()
 	})
+	cancelKill := context.AfterFunc(ctx, kill)
 	wg.Wait()
+	cancelKill()
 	timer.Stop()
 	err := cmd.Wait()
 

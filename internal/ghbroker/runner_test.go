@@ -2,6 +2,7 @@ package ghbroker
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -380,5 +381,39 @@ func TestRedactorStreams(t *testing.T) {
 	n.flush()
 	if plain.String() != "no token held" {
 		t.Fatalf("an empty token must pass output through: %q", plain.String())
+	}
+}
+
+func TestRunnerContextCancellationKillsFakeGHBeforeDispatchDeadline(t *testing.T) {
+	f := newRunnerFixture(t, "2.101.0", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan RunResult, 1)
+	go func() { done <- f.r.RunContext(ctx, []string{"sleep", "60"}, nil, func([]byte) {}, func([]byte) {}) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls"))
+		if len(entries) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fake GH never started")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	select {
+	case res := <-done:
+		if res.Exit == 0 {
+			t.Fatal("canceled GH succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runner ignored cancellation")
+	}
+	f.r.mu.Lock()
+	remaining := len(f.r.running)
+	f.r.mu.Unlock()
+	if remaining != 0 {
+		t.Fatal("child not reaped", remaining)
 	}
 }
