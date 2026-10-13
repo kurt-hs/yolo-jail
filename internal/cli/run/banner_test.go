@@ -58,6 +58,36 @@ func TestLaunchBannerDoesNotRepeatTheStartupFields(t *testing.T) {
 	}
 }
 
+func TestEmitLaunchBannerColorsOnATerminal(t *testing.T) {
+	render := func(color, tty bool) string {
+		var buf bytes.Buffer
+		o := goldenOptions("/ws", t.TempDir())
+		o.Stderr = &buf
+		o.RepoRoot = func() (reporoot.Resolution, bool) { return reporoot.Resolution{}, false }
+		o.Color = color
+		o.IsTTYStdout = func() bool { return tty }
+		o.Getenv = func(string) string { return "" } // no ambient NO_COLOR
+		o.emitLaunchBanner("podman", "yolo-x-abc", []string{"pids=32768"}, "")
+		return buf.String()
+	}
+
+	plain := render(false, false)
+	colored := render(true, true)
+	if !strings.Contains(colored, "\x1b[") {
+		t.Fatalf("control: a terminal launch line emitted no ANSI: %q", colored)
+	}
+	if got := string(stripANSI([]byte(colored))); got != plain {
+		t.Errorf("the colored launch line is not the plain one plus escapes:\n stripped %q\n plain %q",
+			got, plain)
+	}
+	// The off-a-terminal half of the contract: unchanged bytes, so a redirect and
+	// a NO_COLOR run see exactly what shipped before the styling.
+	if off := render(true, false); off != plain {
+		t.Errorf("a launch line off a terminal is not byte-identical to the plain one:\n off %q\n plain %q",
+			off, plain)
+	}
+}
+
 // emitLaunchBanner must TERMINATE its line. LaunchBanner returns no trailing
 // newline, and emitLaunchBanner used Fprint, so the next writer landed on the same
 // line: a nested launch printed "…Resource limits: pids=32768No packs are configured…".

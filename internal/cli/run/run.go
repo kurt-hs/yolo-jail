@@ -3244,6 +3244,11 @@ func runtimeWriteTracking(cname, workspace string) error {
 // banner — the thing this change added to every command — and a user who set it
 // to keep a wrapper's stderr clean did not ask to lose the container name a
 // launch has always printed.
+//
+// The line is METADATA, so it is dimmed whole, rendered through the launch's own
+// color printer (o.pr, the run pipeline's tty.Color gate). The markup wraps
+// LaunchBanner's byte-identical return rather than living inside it, and a launch
+// tee strips the escapes from the log copy (launchlog.go's teeLog).
 func (o *Options) emitLaunchBanner(rt, cname string, resParts []string, jailVersion string) {
 	// Resolve the repo root via the shared method (o.RepoRoot → reporoot.Resolve),
 	// so the version this compares jailVersion against matches run/check and
@@ -3255,13 +3260,13 @@ func (o *Options) emitLaunchBanner(rt, cname string, resParts []string, jailVers
 			repoRoot = rr.Root
 		}
 	}
-	banner := LaunchBanner(rt, cname, version.Get(repoRoot), jailVersion, resParts)
-	// Fprintln, not Fprint: LaunchBanner returns no trailing newline, so the old
-	// Fprint left the cursor mid-line and whatever printed next was glued onto the
-	// banner ("…pids=32768No packs are configured…", observed in a nested launch).
-	// It was invisible before only because the next writer happened to be the
-	// container's own output, which opens with its own newline.
-	fmt.Fprintln(o.Stderr, banner)
+	line := LaunchBanner(rt, cname, version.Get(repoRoot), jailVersion, resParts)
+	// print, not Fprint as it once was: LaunchBanner returns no trailing newline, and
+	// the old Fprint left the cursor mid-line so whatever printed next was glued onto
+	// the banner ("…pids=32768No packs are configured…", observed in a nested
+	// launch). It was invisible before only because the next writer happened to be
+	// the container's own output, which opens with its own newline.
+	o.pr(o.Stderr).print("[dim]" + line + "[/dim]")
 }
 
 // inspectContainerEnv reads a running container's whole frozen environment via
