@@ -29,7 +29,7 @@ type stopRun struct {
 	stats []string // per-call canned stdout; rc = 0 unless the entry starts "!"
 }
 
-func (s *stopRun) run(argv []string) (string, bool, int) {
+func (s *stopRun) run(argv []string, _ time.Duration) (string, bool, int) {
 	s.calls = append(s.calls, argv)
 	if len(s.stats) == 0 {
 		return "", false, 1
@@ -53,11 +53,11 @@ func TestStopJail(t *testing.T) {
 		record := filepath.Join(paths.GlobalStorage(), "owners", cname+".stopped")
 		var atStop []byte
 		s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
-		run := func(argv []string) (string, bool, int) {
+		run := func(argv []string, _ time.Duration) (string, bool, int) {
 			if len(argv) > 1 && argv[1] == "stop" {
 				atStop, _ = os.ReadFile(record)
 			}
-			return s.run(argv)
+			return s.run(argv, stopRuntimeCommandTimeout)
 		}
 		var out, err bytes.Buffer
 		if rc := stopJail(&out, &err, "/ws", "podman", run, nil, false); rc != 0 {

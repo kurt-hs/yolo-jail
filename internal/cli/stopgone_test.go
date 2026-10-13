@@ -29,7 +29,7 @@ type stuckStopRuntime struct {
 	calls     [][]string
 }
 
-func (s *stuckStopRuntime) run(argv []string) (string, bool, int) {
+func (s *stuckStopRuntime) run(argv []string, _ time.Duration) (string, bool, int) {
 	s.calls = append(s.calls, argv)
 	switch {
 	case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Running}}":
@@ -85,7 +85,7 @@ func TestAStopSaysStoppedOnlyOnceTheContainerIsGone(t *testing.T) {
 				t.Errorf("a stop whose container is still there said Stopped:\n%s", out.String())
 			}
 			for _, want := range []string{
-				`state "running"`,
+				`state "present"`,
 				"`podman rm -f " + cname + "`",
 				"runtime administrator",
 			} {
@@ -149,7 +149,7 @@ func TestStopRefusesUnansweredExistenceAcrossPaths(t *testing.T) {
 				finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int { return 0 }
 				t.Cleanup(func() { finishStop = saved })
 				existsCalls := 0
-				runner := func(argv []string) (string, bool, int) {
+				runner := func(argv []string, _ time.Duration) (string, bool, int) {
 					switch argv[1] {
 					case "inspect":
 						if argv[3] == "{{.State.Running}}" {
@@ -186,11 +186,11 @@ func TestStopRefusesUnansweredExistenceAcrossPaths(t *testing.T) {
 func TestStopUnknownProbeAfterForceRemovalIsNotSuccess(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	f := &stuckStopRuntime{present: true}
-	runner := func(argv []string) (string, bool, int) {
+	runner := func(argv []string, _ time.Duration) (string, bool, int) {
 		if len(argv) > 2 && argv[1] == "container" && len(f.calls) > 3 {
 			return "", true, 125
 		}
-		return f.run(argv)
+		return f.run(argv, stopRuntimeCommandTimeout)
 	}
 	var out, errb bytes.Buffer
 	if rc := stopJail(&out, &errb, "/ws", "podman", runner, nil, false); rc != 1 || !strings.Contains(errb.String(), "could not be asked") {
@@ -227,11 +227,11 @@ func TestStopAlreadyEndingKeeperStillRequiresAbsence(t *testing.T) {
 			}
 			t.Cleanup(func() { finishStop = saved })
 			stuck := &stuckStopRuntime{present: true}
-			runner := func(argv []string) (string, bool, int) {
+			runner := func(argv []string, _ time.Duration) (string, bool, int) {
 				if argv[1] == "inspect" && argv[3] == "{{.State.Running}}" {
 					return "false", true, 0
 				}
-				return stuck.run(argv)
+				return stuck.run(argv, stopRuntimeCommandTimeout)
 			}
 			var out, errb bytes.Buffer
 			if rc := stopJail(&out, &errb, "/ws", "podman", runner, nil, force); rc != 1 || !called || !strings.Contains(errb.String(), "still there") {
@@ -250,7 +250,7 @@ func TestStopAppleContainerRequiresTerminalAbsence(t *testing.T) {
 			finishStop = func(_, _ io.Writer, _, _ string, _ int64, _ func(string, string), _ bool) int { return 0 }
 			t.Cleanup(func() { finishStop = saved })
 			cname := runtime.FromWorkspace("/ws")
-			runner := func(argv []string) (string, bool, int) {
+			runner := func(argv []string, _ time.Duration) (string, bool, int) {
 				switch argv[1] {
 				case "ls":
 					if len(argv) > 2 && unknown {
@@ -276,11 +276,74 @@ func TestStopRuntimeCommandTimeoutIsUnanswered(t *testing.T) {
 	stopRuntimeCommandTimeout = 20 * time.Millisecond
 	t.Cleanup(func() { stopRuntimeCommandTimeout = saved })
 	start := time.Now()
-	_, ran, _ := realStopExec([]string{"sh", "-c", "exec sleep 30"})
+	_, ran, _ := realStopExec([]string{"sh", "-c", "exec sleep 30"}, stopRuntimeCommandTimeout)
 	if ran {
 		t.Fatal("a timed-out runtime must not be an answered absence")
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Fatal("runtime command did not respect bound")
+	}
+}
+
+// Polling must spend its remaining budget on existence, never a diagnostic inspect.
+func TestWaitForJailContainerGoneBoundsExistenceProbe(t *testing.T) {
+	oldWait, oldPoll, oldTimeout := stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout
+	t.Cleanup(func() {
+		stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout = oldWait, oldPoll, oldTimeout
+	})
+	stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout = 40*time.Millisecond, time.Millisecond, 400*time.Millisecond
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "inspect-called")
+	script := "#!/bin/sh\nif [ \"$1\" = inspect ]; then\n  touch '" + marker + "'\n  exec sleep 1\nfi\nexec sleep 0.03\n"
+	if err := os.WriteFile(filepath.Join(dir, "podman"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	start := time.Now()
+	gone, state := waitForJailContainerGone("podman", "test-jail", realStopExec)
+	elapsed := time.Since(start)
+	if gone || state != "" {
+		t.Errorf("timed-out existence is unknown, got gone=%v state=%q", gone, state)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Error("absence polling ran nonessential diagnostic inspect")
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("40ms absence budget took %v", elapsed)
+	}
+}
+
+func TestWaitForJailContainerGoneCapsEachRuntimeProbe(t *testing.T) {
+	for _, rt := range []string{"podman", "container"} {
+		t.Run(rt, func(t *testing.T) {
+			oldWait, oldPoll, oldTimeout := stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout
+			t.Cleanup(func() {
+				stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout = oldWait, oldPoll, oldTimeout
+			})
+			stopGoneWait, stopGonePoll, stopRuntimeCommandTimeout = 40*time.Millisecond, time.Second, 20*time.Millisecond
+			calls := 0
+			runner := func(argv []string, timeout time.Duration) (string, bool, int) {
+				calls++
+				want := []string{"podman", "container", "exists", "test-jail"}
+				if rt == "container" {
+					want = []string{"container", "ls", "--all"}
+				}
+				if !slices.Equal(argv, want) {
+					t.Fatalf("unexpected poll command: %v", argv)
+				}
+				if timeout <= 0 || timeout > stopRuntimeCommandTimeout {
+					t.Fatalf("invalid command budget: %v", timeout)
+				}
+				return "test-jail image linux arm64 stopped", true, 0
+			}
+			start := time.Now()
+			gone, state := waitForJailContainerGone(rt, "test-jail", runner)
+			if gone || state == "" || calls != 1 {
+				t.Fatalf("surviving container: gone=%v state=%q calls=%d", gone, state, calls)
+			}
+			if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+				t.Errorf("poll sleep exceeded remaining budget: %v", elapsed)
+			}
+		})
 	}
 }
