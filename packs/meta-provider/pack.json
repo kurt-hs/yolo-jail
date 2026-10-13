@@ -16,9 +16,9 @@
     // provider a models.json ROW in the derive — it never puts the NAME in the table. So a
     // profile naming `meta` is refused without one of the two:
     //
-    //   This launch will be REFUSED: profile "meta" selects provider "meta" for agent "pi",
-    //   and this launch's provider table does not hold it: no selected pack ships it, no pack
-    //   yolo ships declares it, and your config's `providers` has no entry for it.
+    //   This launch will be REFUSED: Profile "meta" uses provider "meta" for pi, but that
+    //   provider is unavailable. Choose a profile that uses a provider supplied by your
+    //   selected packs, or declare this provider in `providers` in your workspace configuration.
     //
     // Measured 2026-10-12 on yolo 0.13.0: reproduce it by selecting the `meta` profile with
     // this `provider` contribution removed (the profile alone is not enough), and watch the
