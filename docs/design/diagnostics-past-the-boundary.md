@@ -156,44 +156,45 @@ meanings — the timing report, `yolo stop`'s table, and the `host apply` detail
 
 ### 2.4 The sinks, and who owns each
 
-**Fourteen diagnostic files, three directories, and no index except the `diagnosing-the-jail`
-skill.** Every writer named below is the only writer of its file — the one-writer property
-holds throughout, which is the good news in this table.
+**Fifteen diagnostic file families, and no index except the `diagnosing-the-jail`
+skill.** Re-inventoried for the byte-cap fragment: receipts have both Go and generated-shell
+writers, and launch-owned host services add a file family absent from the earlier inventory.
 
-| Sink | Sole writer | Gate | Bound | Survives a refused boot |
+| Sink | Writer | Gate | Bound | Survives a refused boot |
 | :--- | :--- | :--- | :--- | :---: |
 | `<ws>/.yolo/boot.log` | `entrypoint.attachBootLog` (tee on `e.Stderr`, + `e.LogOnly`) | always-on | **1 generation** (`boot.log.prev`) | **yes** |
 | `<ws>/.yolo/launch.log` | `run.teeLog` | always-on | newest `perf.MaxRuns` launches (trimmed to one fewer at open, then appended) | yes (host-side) |
 | `<ws>/.yolo/host-perf.log` | `hostPerfFileSink` → `paths.OpenWorkspaceStateFile` → `perf.FileSinkTo` | recording gate | newest `perf.MaxRuns` = 50 runs | yes (host-side) |
-| `<ws>/.yolo/housekeeping.log` | `run.housekeepingNote` | when a slot fires | **none** | yes (host-side) |
-| `<ws>/.yolo/startup.log` | a shell `tee` in the generated final command (`provision.StartupLog`) | always-on | **none** | only if provisioning was reached |
-| `<ws>/.yolo/receipts.jsonl` | `entrypoint.AppendReceiptLine` — the one sink that **returns** its error | when a capture realizes | **none** | yes |
-| `~/.yolo-perf.log` | `entrypoint`'s `perfLog.dump` | always-on | last 50 runs, **hand-rolled** | via the home overlay |
-| `~/.yolo-socat.log` | `entrypoint.startContainerPortForwarding`, fd inherited by every forked `socat` | port forwards configured | **none** | via the home overlay |
-| `~/.yolo-shared-creds.log` | `entrypoint.logSharedCreds` | a `shared_credentials` hook | **none** | via the home overlay |
+| `<ws>/.yolo/housekeeping.log` | `run.housekeepingNote` | when a slot fires | `logcap`: byte trim at each note, one archive | yes (host-side) |
+| `<ws>/.yolo/startup.log` | a shell `tee` in the generated final command (`provision.StartupLog`) | always-on | overwritten each launch; **no within-launch byte bound** | only if provisioning was reached |
+| `<ws>/.yolo/receipts.jsonl` | `entrypoint.AppendReceiptLine` (returns its error) and generated `_yolo_receipt` | captures and installers | byte trim at Go append; **shell append still unbounded** | yes |
+| `~/.yolo-perf.log` | `entrypoint`'s `perfLog.dump` | always-on | newest `perf.MaxRuns` runs via `TrimRunsInOpenFile` | via the home overlay |
+| `~/.yolo-socat.log` | `entrypoint.startContainerPortForwarding`, fd inherited by every forked `socat` | port forwards configured | `logcap`: byte trim at spawn, one archive | via the home overlay |
+| `~/.yolo-shared-creds.log` | `entrypoint.logSharedHook` | a `shared_credentials` hook | `logcap`: byte trim at each decision, one archive | via the home overlay |
 | `~/.local/state/yolo-jail-daemons/<name>.log` | `internal/supervisor` (`openLog`, `child.logf`) | always-on per daemon | **5 MB × 2** generations | via the home overlay |
-| `<state>/logs/host-service-<name>.log` | `run` loophole runtime (child's stdout+stderr) | per spawned host service | **none** | host-side |
-| `<state>/logs/<cname>-socat.log` | `run.network` — open error **discarded** | `forward_host_ports` | **none** | host-side |
+| `<state>/logs/host-service-<name>.log` | `run` loophole runtime (child's stdout+stderr) | per spawned host service | `logcap`: byte trim at spawn/reuse, one archive | host-side |
+| `<state>/logs/<cname>-socat.log` | `run.network` — open error **discarded** | `forward_host_ports` | `logcap`: byte trim at spawn, one archive | host-side |
+| `<state>/logs/launch-service-<service>.log` | `launchservice.Running.spawn` (host child stdout+stderr) | per launch-owned service | `logcap`: byte trim at spawn, one archive | host-side |
 | `<state>/logs/crossings.log` | `internal/crossaudit` | always-on per crossing | **4 MiB + 1 archive = 8 MiB, ever** | host-side |
-| `<state>/logs/cgroup-delegate-audit.log` | `internal/cgd.Append` | on a delegate request | **none** | host-side |
+| `<state>/logs/cgroup-delegate-audit.log` | `internal/cgd.Append` | on a delegate request | `logcap`: byte trim at append, one archive | host-side |
 
 Four facts follow, and each shapes [§4](#4-the-proposal):
 
 1. **`boot.log` is the only sink designed for the refused-boot case**, and the only one whose
    retention is expressed in *boots* rather than in *runs* — which is the unit a diagnostic
    reader actually has ("did it work last time?").
-2. **Eight of the fourteen have no bound at all**, including every host-side service log and
-   both in-jail append logs. `internal/perf/filesink.go` states the doctrine — *"a
-   per-workspace diagnostic file must be self-limiting or it quietly becomes a
-   disk-exhaustion bug on a directory the user cannot see into from the jail"* — and exports
-   `TrimRunsInFile` (since replaced by `TrimRunsInOpenFile`, which trims through the open
-   descriptor so a link in `.yolo` is never followed) so there is one implementation. Those eight never adopted it, and a ninth
-   — `~/.yolo-perf.log` — **re-implements it by hand** in `boot.go`. That is the drift
-   `filesink.go`'s own comment predicts, arrived at in both available directions.
-3. **Two of the fourteen ever tell a human the sink itself failed** — `host-perf.log`
+2. **Two of the fifteen still have an unbounded writer path:** `startup.log` during one
+   provisioning run, and `receipts.jsonl` when generated `_yolo_receipt` appends without a Go
+   writer touching it. The Go receipt writer now trims at append. Housekeeping, jail socat,
+   shared-credentials and cgroup audit logs adopt `logcap` too; host service, host socat and
+   launch-service logs already used it. The entrypoint perf log now uses
+   `perf.TrimRunsInOpenFile`, rather than a hand-rolled rewrite. `logcap` keeps one archive
+   of at most `MaxBytes` (4 MiB); the active file can exceed that cap by whatever writers
+   append between trims. This is retention at open/append, **not a hard total byte ceiling**.
+3. **Two of the fifteen ever tell a human the sink itself failed** — `host-perf.log`
    (`warnOnce`) and the cgroup audit log, which warns once and then keeps *returning* failure
    so a later successful append cannot be mistaken for a complete record. One more,
-   `receipts.jsonl`, returns its error. The other eleven fail silently by explicit design.
+   `receipts.jsonl`, returns its error. The other twelve fail silently by explicit design.
 4. **`startup.log` is the exception to the invariant the workspace-side sinks rest on.**
    `launch.log`'s own header states the rule — the `.yolo` directory is inside the live
    workspace bind, so *"a jail can write the host's record. Nothing reads this file back to
@@ -478,7 +479,7 @@ launch stream that P4 requires stay readable, so it degrades silently by choice.
 
 **The rule does not apply to a sink reporting on itself.** Stating the carve-out is what keeps
 the rule narrow enough to be a rule: without it, the first honest reading of this section is a mandate
-to make fourteen sinks announce their own failures onto the terminal [`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) protects.
+to make fifteen sink families announce their own failures onto the terminal [`OQ-RO3`](../reference/report-tiers.md#why-its-this-way) protects.
 
 #### The canonical specimen, and the shape of the test that misses it
 
@@ -533,24 +534,32 @@ For the boot half, no new sink and therefore no new retention policy: `boot.log`
 generation, the snapshot is capped at 64 KiB and rides inside it, and the upper bound this
 design adds is two boot logs per workspace. **The lifecycle half may need one new sink**
 ([OQ-DB5](#oq-db5)), and if it does, its bound is stated **in bytes with a total ceiling** on
-`crossaudit`'s model rather than as a trim — an unbounded append is what eight of the existing
-fourteen already are, and adding a ninth while arguing for bounds would be the doc
-contradicting itself.
+`crossaudit`'s model rather than as a trim. Retention-at-open is not a hard ceiling for
+an inherited child descriptor; the distinction matters for the proposed lifecycle sink.
 
-**The pre-existing gap is larger than this design and is named rather than fixed here.** Eight
-of the fourteen sinks in [§2.4](#24-the-sinks-and-who-owns-each) have no bound, against a
-doctrine in `internal/perf/filesink.go` that says every one of them must
-([§2.4](#24-the-sinks-and-who-owns-each) fact 2). The two that matter most for this design's
-own failure cases: `~/.yolo-socat.log`, `O_APPEND` with its fd inherited by every forked
-`socat` for the life of the jail and never trimmed — which is the log of the mechanism that
-caused the 8214 collision — and `<state>/logs/<cname>-socat.log`, whose *open error is
-discarded outright*, so a failure to create it is invisible in both directions.
+**The ruling-free byte-cap fragment is partly built; this item remains open.** The current
+inventory and bounds are in [§2.4](#24-the-sinks-and-who-owns-each). The safe Go append and
+spawn paths now use `logcap.Open`/`TrimBeneath`, and entrypoint perf retention shares
+`perf.TrimRunsInOpenFile`. Housekeeping opens both active and archive beneath the workspace
+state root, preserving the no-symlink-following boundary. No new snapshot or dial is built.
 
-The remedy is not per-sink judgement; it is adopting `perf.TrimRunsInOpenFile` or a byte cap at
-each one, and deleting the hand-rolled copy in `entrypoint/boot.go`. That is a mechanical
-change gated on nothing here, and it does not wait on any ruling. `internal/crossaudit` is
-the model to copy: a stated total ceiling (4 MiB active + one archive, *"8 MiB of crossing
-log exists, ever"*) rather than a trim whose worst case nobody has written down.
+**Actionable remainder, not a decision blocker:**
+
+- `entrypoint.receiptShellFns` generates `_yolo_receipt` in `shims.go`, whose final
+  `printf >> "$_YOLO_RECEIPTS"` bypasses the Go append cap. No existing logcap CLI entry
+  point is available to that shell. The smallest next task is to route that single append
+  through a bounded Go receipt writer while preserving its one-write append and best-effort
+  contract; Go-only trimming does not bound this file between captures.
+- `provision.Script` generates the header's truncating `printf`, external `tee -a`, and a
+  failure-marker append to `startup.log`. It overwrites history each launch but can emit
+  unlimited bytes during that launch. A pre-launch `logcap.Trim` neither bounds that tee nor
+  survives the header's truncation as retention. The smallest next task is a bounded tee
+  writer that preserves console output, setup exit status and the failure marker, on both
+  container and macos-user backends. A host renderer must never trim the literal in-jail
+  `/workspace` path.
+
+These remaining writer changes are separate from the boot snapshot/dial blocked on
+[OQ-DB2](#oq-db2).
 
 ## 5. Why this is compatible with the no-quiet-mode ruling
 
@@ -723,7 +732,7 @@ Observable outcomes a human can check, not test names:
    `boot.log` is closed at handover and the per-daemon log may be the wedged thing, so neither
    can carry a supervisor teardown ([§4.1.1](#411-the-sink-may-not-be-the-resource-under-diagnosis-and-it-must-outlive-the-boot)).
    The candidates: give `yolo-jaild` its own always-append log beside the per-daemon ones,
-   which is a fifteenth sink and needs a bound; or stop detaching the supervisor with
+   which would add a sixteenth sink family and needs a bound; or stop detaching the supervisor with
    `cmd.Stderr = nil` and give it a real stderr, which changes a boot-path decision made for
    other reasons. **This is the question the implementer cannot route around**, and it is the
    one place this design's *"no new sink"* cost line may have to give.

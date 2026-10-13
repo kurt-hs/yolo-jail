@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/flakebundle"
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -70,8 +71,15 @@ const housekeepingLogName = "housekeeping.log"
 // launch, paths.OpenExistingWorkspaceStateFile for one that may outlive the workspace (the
 // scratch remover). Beneath a root on `.yolo` either way, never by path: the directory is
 // jail-writable, and a link left at the name would take the note to the file it names.
+//
+// The log is bounded at open (internal/logcap), through THE SAME ROOT-SCOPED OPEN as the note:
+// one archived generation past the cap, and neither the log nor its archive is ever opened by
+// path, so the link-safety above holds for the trim too.
 func writeHousekeepingNote(open func(workspace, name string, flag int, perm fs.FileMode) (*os.File, error),
 	workspace string, now time.Time, line string) {
+	_ = logcap.TrimBeneath(func(name string, flag int, perm fs.FileMode) (*os.File, error) {
+		return open(workspace, name, flag, perm)
+	}, housekeepingLogName)
 	f, err := open(workspace, housekeepingLogName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return

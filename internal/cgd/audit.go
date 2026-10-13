@@ -2,6 +2,7 @@ package cgd
 
 import (
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,7 +108,7 @@ func (a *Auditor) appendLocked(ev AuditEvent) error {
 	if err := os.MkdirAll(filepath.Dir(a.path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := logcap.Open(a.path, 0o600)
 	if err != nil {
 		return err
 	}

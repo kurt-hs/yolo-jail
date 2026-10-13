@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 )
 
 // capturereceipt.go is the ONE receipt writer that is Go rather than shell.
@@ -204,11 +206,15 @@ func ReadCaptureReceipts(path string) ([]CaptureReceipt, error) {
 // O_APPEND and one Write, the same discipline the shell writer states: the kernel serializes
 // the implied seek-to-end against every other appender on the inode, so two captures
 // finishing at once cannot interleave half-lines.
+//
+// Bounded at open (internal/logcap): past its byte cap the log's newest whole lines move to one
+// archived generation and the log is truncated in place. logcap keeps whole lines, so a reader
+// (ReadCaptureReceipts) never sees half a JSON object after a trim.
 func AppendReceiptLine(path, line string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := logcap.Open(path, 0o644)
 	if err != nil {
 		return err
 	}

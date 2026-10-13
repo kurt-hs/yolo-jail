@@ -39,6 +39,7 @@ package entrypoint
 
 import (
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"os"
 	"path"
 	"path/filepath"
@@ -334,7 +335,7 @@ func (e *Env) logSharedHook(hook, pack, file, sharedDir, decision string) {
 	line := fmt.Sprintf("%s[%s]: %s -> %s: %s", hook, pack, file, sharedDir, decision)
 	e.warn(line)
 	logPath := filepath.Join(e.Home, sharedCredsLog)
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := logcap.Open(logPath, 0o644)
 	if err != nil {
 		return
 	}
