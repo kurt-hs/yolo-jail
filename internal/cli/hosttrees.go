@@ -374,8 +374,9 @@ func renderHostTrees(p *packload.Pack, packs []*packload.Pack, home string, man 
 
 // retireHostTreeLink is the render's arm for a tree no host loads (PPX-D35): the link at `~/<into>`
 // an earlier render left, when the files ownership record says it is f's pack's and it points into
-// f's versioned copies, is removed with those copies and forgotten, as a revert removes it
-// (PPX-D31). ok is false, and nothing is touched, when there is no such link.
+// f's versioned copies, is removed and forgotten. Copies remain because an existing host session
+// may still load them (OQ-LUP1); only warned explicit revert deletes them (PPX-D31).
+// ok is false, and nothing is touched, when there is no such link.
 func retireHostTreeLink(f packload.Fork, home string, man *hostskills.Manifest, observe bool) (
 	entrypoint.HostRenderResult, bool) {
 	dest := filepath.Join(home, filepath.FromSlash(strings.TrimSuffix(f.Into, "/")))
@@ -394,7 +395,6 @@ func retireHostTreeLink(f packload.Fork, home string, man *hostskills.Manifest, 
 		return res, true
 	}
 	man.Forget(dest)
-	_ = os.RemoveAll(hostTreeVersionsDir(f))
 	res.Action = "removed (" + why + ")"
 	return res, true
 }
