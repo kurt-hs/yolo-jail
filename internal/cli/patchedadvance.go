@@ -113,6 +113,10 @@ type advanceOptions struct {
 	// launch is a fresh jail launch's advance: the check throttled, a back-off honored, the wait
 	// interruptible while a good build serves.
 	launch bool
+	// checkOnly performs the upstream check and candidate replay but deliberately does not start a
+	// build child. Apple Container uses it whenever liveness does not prove a build jail safe.
+	checkOnly       bool
+	checkOnlyReason string
 	// force is `yolo capture <bin>`'s: the check forced, a back-off ignored, the good build's own
 	// inputs rebuilt when nothing is pending, the build lock not waited for.
 	force bool
@@ -1397,6 +1401,28 @@ func (a *advance) run() advanceResult {
 		return a.noFit(edited, w.Results[0].Entry.Label())
 	}
 	fit := w.Results[w.Fit]
+	if a.o.runtime == "container" && !a.o.checkOnly {
+		capabilitySpan := advanceSpan(f, "build_capability")
+		canBuild, reason := appleContainerBuildCapability()
+		capabilitySpan.End()
+		if !canBuild {
+			a.o.checkOnly, a.o.checkOnlyReason = true, reason
+		}
+	}
+	if a.o.checkOnly {
+		reason := a.o.checkOnlyReason
+		if reason == "" {
+			reason = "Apple Container liveness is unknown"
+		}
+		next := "when `container ls` shows no running yolo jail, retry a fresh launch to build the pending candidate"
+		if strings.Contains(reason, "unknown") || strings.Contains(reason, "could not") || strings.Contains(reason, "unrecognized") {
+			next = "repair the Apple Container listing; verify `container ls` shows no running yolo jail, then retry a fresh launch"
+		}
+		why := fmt.Sprintf("%s checked candidate %s and left it pending because %s — %s", f.Label(),
+			fit.Entry.Label(), reason, next)
+		a.warn("%s: %s", f.Label(), why)
+		return a.serveOr(why)
+	}
 	return a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
 		Entry: a.entryWithVersion(fit.Entry)}, base, edited)
 }

@@ -227,10 +227,13 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 	}
 }
 
-// ON APPLE CONTAINER the next-launch mode is the at-launch wait (XB-D21), said: the key is checked and
-// built in front and no background advance starts. Red if the runtime gate is dropped.
+// ON APPLE CONTAINER the next-launch mode builds at the launch only when the runtime listing proves
+// no conflicting yolo jail is running (XB-D21).
 func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
 	pf := newPoolFixture(t)
+	prevCapability := appleContainerBuildCapability
+	appleContainerBuildCapability = func() (bool, string) { return true, "" }
+	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if first[poolKeyA].Dir == "" {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
@@ -243,8 +246,8 @@ func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
 	if got[poolKeyA].Entry == first[poolKeyA].Entry {
 		t.Errorf("the key was not updated at the launch:\n%s", out)
 	}
-	if !strings.Contains(out, "on Apple Container this yolo runs no background advance — it updates at this launch") {
-		t.Errorf("the demotion is not said:\n%s", out)
+	if !strings.Contains(out, "Apple Container checks at this launch, but starts a build jail only when `container ls` proves no yolo jail is running") {
+		t.Errorf("the Apple Container build capability is not disclosed:\n%s", out)
 	}
 	if snapshot, err := readPreparationSnapshot(poolKeyA); err != nil || snapshot.Phase != "unsupported" {
 		t.Errorf("Apple Container preparation outcome = %+v err=%v, want visible unsupported state", snapshot, err)
@@ -465,6 +468,7 @@ func TestAPatchedForkThatUpdatesForTheNextLaunchRegistersWithThePreparationSched
 // is checked and built in front and no background advance starts. Red if the runtime gate is
 // dropped.
 func TestOnAppleContainerANextLaunchForkUpdatesAtTheLaunch(t *testing.T) {
+	allowAppleContainerBuild(t)
 	fx, good := forkWithAGoodBuild(t)
 	sp := stubSpawn(t)
 	req := forkRequest(t, fx, "container")

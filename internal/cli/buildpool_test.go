@@ -166,6 +166,7 @@ func TestTheSlotBuildsItsKeysAtOnceAndPrintsThemInOrder(t *testing.T) {
 // jail there, so the pool's bound for it is one. Red with the pool's own bound not read from
 // run.SlotBuildJails.
 func TestAppleContainerBuildsOneKeyAtATime(t *testing.T) {
+	allowAppleContainerBuild(t)
 	fx := newTreesFixture(t, 3)
 	peak := concurrentChildren(t, 2, 200*time.Millisecond)
 	got, stream := fx.slot(t, "container", 0, &run.ActInterrupt{})

@@ -438,9 +438,9 @@ func TestHostTreesRowIsYolosOwn(t *testing.T) {
 	if row == nil {
 		t.Fatalf("no state.%s row in %v", leaf, rows)
 	}
-	if row.Verdict != VerdictYolo || !strings.Contains(row.Reclaimer.Detail, "self-bounded") ||
+	if row.Verdict != VerdictYolo || !strings.Contains(row.Reclaimer.Detail, "host-session liveness is untracked") ||
 		!strings.Contains(row.Reclaimer.Trigger, "yolo host apply --assert") || row.Bytes != 12 {
-		t.Errorf("host-trees row = verdict %q, reclaimer %+v, %d bytes; want yolo's own, self-bounded at "+
+		t.Errorf("host-trees row = verdict %q, reclaimer %+v, %d bytes; want conservative retention at "+
 			"`yolo host apply --assert`, 12", row.Verdict, row.Reclaimer, row.Bytes)
 	}
 }
