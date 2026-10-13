@@ -19,7 +19,7 @@ covers:
   - scripts/stage-source-bundle.sh
 tags: [image, nix, podman, mounts, packages, disk]
 stage: CURRENT
-next: "Give Apple Container the stock tag: container image tag <src> <dst> exists in container 1.1.0 and 1.5.0, so ImageTagCmd learns that spelling and both Runtime == container guards go (tagStockImage and its caller in AutoLoadImage), and TestMacArchiveDeliveryReusesLayers evicts the stock tag on Apple Container too, or the verifying dispatch fails on 'Image build skipped'. Part B config-declared baked packages now reuse a launch record. Remaining Linux-actionable slices: ambient-only YOLO_EXTRA_PACKAGES and lean-attribute launch records, with input-key isolation tests. Native Apple Container validation of both parts remains Mac-only"
+next: "Give Apple Container the stock tag: container image tag <src> <dst> exists in container 1.1.0 and 1.5.0, so ImageTagCmd learns that spelling and both Runtime == container guards go (tagStockImage and its caller in AutoLoadImage), and TestMacArchiveDeliveryReusesLayers evicts the stock tag on Apple Container too, or the verifying dispatch fails on 'Image build skipped'. Part B config-declared baked packages, ambient-only inputs, and lean-attribute launch records are implemented and live Linux reuse is verified. Native Apple Container and rootless-host behavior remain external validation"
 summary: "How a jail gets its image and its own binaries: the image bakes nixpkgs and names, a launch bind-mounts yolo's binaries and can deliver packages from the mounted nix store, a failed build is fatal, the loaded image is addressed by content and delivered by a layer-negotiating `skopeo copy` (layer-aware delivery, C9) over a three-tier layer plan, serialised machine-wide and with no retained tar anywhere. The invariants, the pipeline, the traps, and the cost model that shaped them."
 ---
 
@@ -1493,6 +1493,12 @@ moving pins remain unrecorded. Reuse still requires nix store validity and runti
 failed builds remain fatal. These tests do **not** prove Apple Container runtime behavior. Remaining
 work is Part A's native Apple Container tag dispatch/runtime validation and warm-launch timing on a Mac.
 
+#### Live Linux reuse evidence
+
+Independent live launches verified both recorded-image paths with an isolated HOME, state and config, and a fresh CLI whose source-skew guard passed. For ambient `YOLO_EXTRA_PACKAGES=["hello"]`, a cold launch completed in 162 s and ran `/bin/hello`; the identical warm launch completed in 10 s and reported that the image matched this launch's inputs. Changing only the ambient bytes to `[  "hello" ]` completed in 39 s and rebuilt under a distinct key. Both recorded store paths passed Nix validity checks and runtime inspection.
+
+For opted-in lean delivery with `packages:["hello"]`, the cold launch completed in 169 s and ran `/run/yolo/packages/bin/hello` while `/bin/hello` was absent; the warm launch completed in 65 s and reported an image-input match. The default and lean keys differed, and the lean record matched the independently evaluated `ociImageLean` output. Evidence and logs are retained by the reviewer at `/tmp/yolo-item31-review-eoMvxh/`. These observations establish Linux Podman reuse only: the host reported `rootless=false`; native Apple Container and rootless behavior remain unverified.
+
 ## Why it's this way
 
 Rulings a maintainer reading only the normative text above might undo on purpose. IDs are the
@@ -1575,4 +1581,4 @@ values themselves are stated.
 | Image reap on the launch path | every image except each workspace's current one, at most once per 24 h, opt out with `YOLO_NO_AUTO_IMAGE_REAP` | `prune.ReadCurrentImagePointers`, `prune.AutoReapInterval`; `autoReapOptOutEnv` (`internal/cli/run/autoreapimages.go`) |
 | Binary-cache substituter | `yolo-jail.cachix.org` | `nixConfig` (`flake.nix`) |
 
-**2026-10-13 implementation under OQ-4 and OQ-IP4:** config-declared baked packages now use the complete launch-input record above, rather than treating the stock identity alone as their key. Workspace scope and build-failure policy are unchanged.
+**2026-10-13 implementation under the workspace-scope and stock-image reuse rulings:** config-declared baked packages now use the complete launch-input record above, rather than treating the stock identity alone as their key. Workspace scope and build-failure policy are unchanged.
