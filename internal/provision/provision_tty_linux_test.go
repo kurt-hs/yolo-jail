@@ -47,7 +47,7 @@ func openPty(t *testing.T) (master, slave *os.File) {
 	return m, s
 }
 
-// AT A TERMINAL, a refusal exits with RefusedStatus and never prompts — and the control
+// AT A TERMINAL, a refusal exits with StageRefusedStatus and never prompts — and the control
 // case proves the pty really made `[ -t 0 ]` true, so "no prompt" is not vacuous.
 func TestARefusalAtATerminalDoesNotOfferToContinue(t *testing.T) {
 	// Control: an ordinary failure at a tty prompts, reads the answer, and on `y` continues.
@@ -76,8 +76,8 @@ func TestARefusalAtATerminalDoesNotOfferToContinue(t *testing.T) {
 	if strings.Contains(stderr, "continue anyway?") {
 		t.Errorf("a refusal at a terminal offered to continue — OQ-AR3 rules out any escape hatch:\n%s", stderr)
 	}
-	if rc != RefusedStatus {
-		t.Errorf("rc = %d, want RefusedStatus (%d)", rc, RefusedStatus)
+	if rc != StageRefusedStatus {
+		t.Errorf("rc = %d, want StageRefusedStatus (%d)", rc, StageRefusedStatus)
 	}
 	if strings.Contains(stdout, "TARGET-REACHED") {
 		t.Errorf("the target ran after a refusal at a terminal:\n%s", stdout)

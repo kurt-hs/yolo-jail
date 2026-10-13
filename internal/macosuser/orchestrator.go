@@ -1684,8 +1684,9 @@ func runCacheRelocationProbes(deps Deps, out printer, probes []CacheRelocationPr
 // workspace that merely DECLARES mise_tools could not launch at all, and the message
 // blamed the user for it — the exact inversion of the rule above.
 //
-// The discriminator is the marker, because the marker is written by the script and
-// therefore exists only if the script ran:
+// Explicit Script outcome statuses below always stop, independent of log readability.
+// For older producers and exec-layer failures the discriminator remains the marker,
+// because the marker is written by the script and exists only if the script ran:
 //
 //   - non-zero AND the marker is in this launch's log → the stage ran, its body failed,
 //     and a human answered `n`. A deliberate veto: abort, as before.
@@ -1707,20 +1708,24 @@ func runProvisionStage(deps Deps, out printer, plan RunPlan) bool {
 	if rc == 0 {
 		return true
 	}
+	if rc == provision.StageLogFailedStatus {
+		deps.sayFailed(out, "[bold red]Provisioning log could not be written.[/bold red] Repair workspace .yolo permissions or free disk space, then retry yolo; log: "+log+".")
+		return false
+	}
 	vetoed := true // the conservative reading; see the docstring.
-	if cleared && deps.ReadFile != nil {
+	if rc != provision.StageRefusedStatus && rc != provision.StageAbortedStatus && cleared && deps.ReadFile != nil {
 		body, ok := deps.ReadFile(log)
 		vetoed = !ok || strings.Contains(body, provision.FailedMarker)
 	}
 	// A stage a signal cut short is reported by none of these (Deps.sayFailed): the launch is ending,
 	// and its caller returns the signal's status whatever this returns.
-	if vetoed && rc == provision.RefusedStatus {
+	if rc == provision.StageRefusedStatus || (vetoed && rc == provision.RefusedStatus) {
 		deps.sayFailed(out, "[bold red]Provisioning refused the launch.[/bold red] A selected pack "+
 			"declares something this sandbox cannot provide; the reason is printed above "+
 			"and in "+log+".")
 		return false
 	}
-	if vetoed {
+	if rc == provision.StageAbortedStatus || vetoed {
 		deps.sayFailed(out, "[bold red]Provisioning was aborted.[/bold red] The sandbox is set up "+
 			"but its declared tools were not installed — the log is at "+log+".")
 		return false

@@ -160,9 +160,9 @@ func TestARefusedStageNeverReachesTheTarget(t *testing.T) {
 	for _, timing := range []bool{false, true} {
 		f := newStageFixture(t, provision.RefusedStatus)
 		rc, stdout, stderr := f.run(t, targetCmdForTest, timing)
-		if rc != provision.RefusedStatus {
-			t.Errorf("timing=%v: rc = %d, want provision.RefusedStatus (%d) — the container's "+
-				"exit is how the host sees the refusal", timing, rc, provision.RefusedStatus)
+		if rc != provision.StageRefusedStatus {
+			t.Errorf("timing=%v: rc = %d, want provision.StageRefusedStatus (%d) — the container's "+
+				"exit is how the host sees the refusal", timing, rc, provision.StageRefusedStatus)
 		}
 		if strings.Contains(stdout, targetMarker) {
 			t.Errorf("timing=%v: the target ran after the stage refused the launch:\n%s", timing, stdout)
@@ -206,9 +206,9 @@ func TestAFailedMiseInstallStillRunsTheBootstrap(t *testing.T) {
 		if _, err := os.Stat(f.bootRan); err != nil {
 			t.Fatalf("a failed `mise install` skipped the bootstrap, so no Node floor was checked: %v", err)
 		}
-		if rc != provision.RefusedStatus {
-			t.Errorf("rc = %d, want provision.RefusedStatus (%d): the refusal must win over the "+
-				"earlier failure", rc, provision.RefusedStatus)
+		if rc != provision.StageRefusedStatus {
+			t.Errorf("rc = %d, want provision.StageRefusedStatus (%d): the refusal must win over the "+
+				"earlier failure", rc, provision.StageRefusedStatus)
 		}
 		if strings.Contains(stdout, targetMarker) {
 			t.Errorf("the target ran after the bootstrap refused:\n%s", stdout)
