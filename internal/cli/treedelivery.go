@@ -250,19 +250,18 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	}
 }
 
-// deliverPatchedFork is the fork half of the next-launch mode (deliverTree's; XB-D28): what this
-// launch hands f at once — the good build it has — and whether its advance is left to a background
-// one. It advances f in front when `agent_updates` sets it to update at the launch, when the runtime
-// runs no background advance (Apple Container, macos-user: XB-D21, one dim line saying so), or when
-// no good build serves — there is nothing to hand, and a fork has no list entry to fall back on
-// (Fork.Fallback is always "" for one).
+// deliverPatchedFork is the fork half of the next-launch mode (deliverTree's; XB-D28): this launch
+// hands f's existing good build without checking it, while runBuildSlot records the selected key for
+// the persistent preparation scheduler after the pool completes. It advances f in front when
+// `agent_updates` sets it to update at the launch, when the runtime runs no background advance
+// (Apple Container, macos-user: XB-D21, one dim line saying so), or when no good build serves.
 func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *buildReport, it *poolItem,
-	color bool) (_ entrypoint.ForkDelivery, later bool) {
+	color bool) entrypoint.ForkDelivery {
 	errw := it.stream()
 	pr := richtext.Printer{W: errw, Color: color}
 	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
 	// whatever this launch's timing.
-	again := noteBackgroundOutcome(f, pr)
+	noteBackgroundOutcome(f, pr)
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
 		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
 	nextLaunch := false
@@ -275,21 +274,13 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 		}
 	}
 	if !nextLaunch {
-		return advancePatchedFork(f, o).forkDelivery(), false
+		return advancePatchedFork(f, o).forkDelivery()
 	}
-	r, a := servingPatchedFork(f, o)
-	if r.delivery.Key != "" {
-		if r.delivery.PatchFailure == nil {
-			// THE SPAWN CONDITION (XB-D19): its check due, a candidate pending, or the last background
-			// advance unfinished; a key with nothing to do starts none.
-			later = again || a.wantsBackground()
-		}
-		return r.delivery, later
+	r, _ := servingPatchedFork(f, o)
+	if r.delivery.Key != "" || r.delivery.PatchFailure != nil {
+		return r.delivery
 	}
-	if r.delivery.PatchFailure != nil {
-		return r.delivery, false
-	}
-	return advancePatchedFork(f, o).forkDelivery(), false
+	return advancePatchedFork(f, o).forkDelivery()
 }
 
 // servingPatchedFork is what serves a patched fork with no check and no build, for the next-launch

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/notty"
@@ -81,7 +82,7 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 	err := withPreparationState(func(state *preparationState) error {
 		for i := range state.Subscriptions {
 			r := &state.Subscriptions[i]
-			if r.Runtime == req.Runtime && r.Platform == req.Platform {
+			if r.Runtime == req.Runtime && r.Platform == req.Platform && preparationKind(*r) == preparationTreeKind {
 				if _, selected := inspections[r.Key]; selected {
 					continue // selected keys are updated only after their check-record authority is known
 				}
@@ -100,6 +101,7 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 				idx = len(state.Subscriptions) - 1
 			}
 			r := &state.Subscriptions[idx]
+			r.Kind = preparationTreeKind
 			inspection := inspections[key]
 			if inspection.err != nil {
 				continue // contention, cancellation and unreadable authority are not a fresh result
@@ -488,30 +490,55 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				if !ok {
 					continue
 				}
-				failure, inspectErr := preparationPatchFailure(ctx, f)
-				if inspectErr != nil {
-					if ctx.Err() != nil {
-						return ctx.Err()
+				if preparationKind(r) == preparationPlainProgramKind {
+					pin, pinErr := currentForkPin(f)
+					if pinErr != nil || pin.Commit != r.PinCommit {
+						if pinErr == nil {
+							pinErr = fmt.Errorf("the standing pin changed from %s to %s", shortSHA(r.PinCommit), shortSHA(pin.Commit))
+						}
+						_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
+							if rec.Generation == r.Generation {
+								rec.Active, rec.Phase = false, "unresolved"
+								rec.Reason = pinErr.Error() + " — run `yolo pack install` to restore the selected pin"
+							}
+						})
+						continue
 					}
-					continue // unknown authority is retried; it must not revoke or refresh this subscription
-				}
-				if failure != nil {
-					_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
-						rec.Active, rec.Phase = false, "failed"
-						rec.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
-					})
-					continue
-				}
-				advance, early := newAdvance(f, advanceOptions{platform: r.Platform, runtime: r.Runtime, background: true, launch: true})
-				if early != nil {
-					_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
-						rec.Phase = "unresolved"
-						rec.Reason = early.problem + " — run `yolo pack status " + r.Key + "` and repair the selected declaration"
-					})
-					continue
-				}
-				if !advance.wantsBackground() {
-					continue
+					b := forkBuild{Fork: f, Commit: pin.Commit, Platform: r.Platform}
+					if entry, _, resolveErr := resolveForkBuild(&capture.Store{Dir: paths.CapturesDir()}, f.Bin, r.Platform, f.Source, pin.Commit, b.recipe()); resolveErr == nil {
+						_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
+							if rec.Active && rec.Generation == r.Generation {
+								rec.Phase, rec.ServingEntry, rec.Reason, rec.At = "unchanged", entry.Key, "", preparationNow()
+							}
+						})
+						continue
+					}
+				} else {
+					failure, inspectErr := preparationPatchFailure(ctx, f)
+					if inspectErr != nil {
+						if ctx.Err() != nil {
+							return ctx.Err()
+						}
+						continue // unknown authority is retried; it must not revoke or refresh this subscription
+					}
+					if failure != nil {
+						_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
+							rec.Active, rec.Phase = false, "failed"
+							rec.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
+						})
+						continue
+					}
+					advance, early := newAdvance(f, advanceOptions{platform: r.Platform, runtime: r.Runtime, background: true, launch: true})
+					if early != nil {
+						_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
+							rec.Phase = "unresolved"
+							rec.Reason = early.problem + " — run `yolo pack status " + r.Key + "` and repair the selected declaration"
+						})
+						continue
+					}
+					if !advance.wantsBackground() {
+						continue
+					}
 				}
 				baseline := uint64(0)
 				if old, err := readBackgroundOutcome(backgroundOutcomePath(r.Key)); err == nil {
@@ -522,17 +549,25 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				tasks[id] = preparationTask{cancel: cancel, generation: r.Generation, baseline: baseline}
 				_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
 					rec.Phase, rec.Reason, rec.At, rec.RetryAt = "checking", "", preparationNow(), time.Time{}
+					if preparationKind(r) == preparationPlainProgramKind {
+						rec.Phase = "building"
+					}
 					rec.Log = backgroundAdvanceLog()
 				})
-				go func(r preparationRecord, baseline uint64) {
+				go func(r preparationRecord, f packload.Fork, baseline uint64) {
 					var out strings.Builder
-					runBackgroundAdvanceUnder(taskCtx, backgroundArgs{runtime: r.Runtime, platform: r.Platform, keys: []string{r.Key}, schedulerGeneration: r.Generation}, &out)
+					var taskErr error
+					if preparationKind(r) == preparationPlainProgramKind {
+						taskErr = runPlainForkPreparation(taskCtx, r, f, &out)
+					} else {
+						runBackgroundAdvanceUnder(taskCtx, backgroundArgs{runtime: r.Runtime, platform: r.Platform, keys: []string{r.Key}, schedulerGeneration: r.Generation}, &out)
+					}
 					if out.Len() > 0 {
 						_, _ = io.WriteString(w, out.String())
 					}
 					cancel()
-					done <- preparationTaskResult{key: r.Key, runtime: r.Runtime, platform: r.Platform, generation: r.Generation, baseline: baseline}
-				}(r, baseline)
+					done <- preparationTaskResult{key: r.Key, runtime: r.Runtime, platform: r.Platform, generation: r.Generation, baseline: baseline, err: taskErr}
+				}(r, f, baseline)
 			}
 
 		}
@@ -574,7 +609,8 @@ func preparationTreesWithResolver(records []preparationRecord, resolver func(con
 		want[record.Key+"\x00"+record.Runtime+"\x00"+record.Platform] = true
 	}
 	out := map[string]packload.Fork{}
-	for _, f := range packload.PatchedTrees(sel.packs) {
+	forks := append(packload.PatchedTrees(sel.packs), packload.Forks(sel.packs)...)
+	for _, f := range forks {
 		for id := range want {
 			parts := strings.SplitN(id, "\x00", 3)
 			if len(parts) == 3 && parts[0] == f.Key() {
@@ -598,7 +634,7 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 		f, ok := current[id]
 		var failure *packsrc.PatchFailure
 		var inspectErr error
-		if ok {
+		if ok && preparationKind(old) != preparationPlainProgramKind {
 			failure, inspectErr = preparationPatchFailure(ctx, f)
 			preparationRefreshInspected(inspectErr)
 		}
@@ -609,10 +645,30 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 			if !ok {
 				r.Active = false
 				r.Phase = "unresolved"
-				r.Reason = "the user-configured pack selection does not authorize this tree for background preparation; select its owner pack or run `yolo capture " + r.Key + "`"
+				r.Reason = "the user-configured pack selection no longer authorizes this key for background preparation; select its owner pack or run `yolo capture " + r.Key + "` for a manual build"
 				return
 			}
-			identity, err := preparationInputIdentity(f, r.Runtime, r.Platform)
+			if preparationKind(*r) != preparationForkKind(f) {
+				r.Active, r.Phase = false, "unresolved"
+				r.Reason = "the selected contribution changed from this recorded preparation kind — start a fresh launch to register its current artifact route"
+				return
+			}
+			identity := ""
+			var err error
+			if preparationKind(*r) == preparationPlainProgramKind {
+				pin, pinErr := currentForkPin(f)
+				if pinErr != nil {
+					r.Active, r.Phase = false, "unresolved"
+					r.Reason = pinErr.Error() + " — run `yolo pack install` to establish the selected pin"
+					return
+				}
+				identity, err = preparationForkIdentity(f, pin.Commit, r.Runtime, r.Platform)
+				r.PinCommit = pin.Commit
+			} else if preparationKind(*r) == preparationPatchedProgramKind {
+				identity, err = preparationForkIdentity(f, "", r.Runtime, r.Platform)
+			} else {
+				identity, err = preparationInputIdentity(f, r.Runtime, r.Platform)
+			}
 			if err != nil {
 				r.Active = false
 				r.Phase = "invalid"
@@ -634,7 +690,14 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 				r.Reason = ""
 				r.RetryAt = time.Time{}
 			}
-			if treeUpdateTiming(f) != timingNextLaunch {
+			eligible := false
+			switch preparationKind(*r) {
+			case preparationTreeKind:
+				eligible = treeUpdateTiming(f) == timingNextLaunch
+			case preparationPatchedProgramKind, preparationPlainProgramKind:
+				eligible = forkUpdateTiming(f) == timingNextLaunch
+			}
+			if !eligible {
 				r.Active = false
 				r.Phase = "held"
 				r.Reason = "the current `agent_updates` policy does not select next-launch preparation — change the user config to resume"
@@ -643,7 +706,7 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 			if !run.BackgroundBuildsOn(r.Runtime) {
 				r.Active = false
 				r.Phase = "unsupported"
-				r.Reason = runtimeName(r.Runtime) + " does not support background tree preparation — use a fresh launch to prepare it"
+				r.Reason = runtimeName(r.Runtime) + " does not support background preparation — use a fresh launch to prepare it"
 				return
 			}
 			if !r.Active {
@@ -668,7 +731,7 @@ func preparationStopRequested() bool {
 	return state.Worker.PID == os.Getpid() && state.Worker.Identity != "" && strings.TrimSpace(string(contents)) == state.Worker.Identity
 }
 
-var errPreparationAdmissionStale = errors.New("tree preparation inputs or selection changed before admission — the current selection will be retried")
+var errPreparationAdmissionStale = errors.New("preparation inputs or selection changed before admission — the current selection will be retried")
 
 func preparationAdmissionGuard(key, rt, platform string, generation uint64) func(func() error) error {
 	return preparationAdmissionGuardUnder(context.Background(), key, rt, platform, generation)
@@ -687,17 +750,41 @@ func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform strin
 		}
 		id := key + "\x00" + rt + "\x00" + platform
 		f, ok := current[id]
-		if !ok || treeUpdateTiming(f) != timingNextLaunch || !run.BackgroundBuildsOn(rt) {
+		if !ok {
 			return errPreparationAdmissionStale
 		}
-		failure, inspectErr := preparationPatchFailure(ctx, f)
-		if inspectErr != nil {
-			return inspectErr // held is retryable; unknown and cancellation are not revocation
+		kind := preparationKind(preparationRecord{Kind: preparationForkKind(f)})
+		eligible := false
+		switch kind {
+		case preparationTreeKind:
+			eligible = treeUpdateTiming(f) == timingNextLaunch
+		case preparationPatchedProgramKind, preparationPlainProgramKind:
+			eligible = forkUpdateTiming(f) == timingNextLaunch
 		}
-		if failure != nil {
+		if !eligible || !run.BackgroundBuildsOn(rt) {
 			return errPreparationAdmissionStale
 		}
-		identity, err := preparationInputIdentity(f, rt, platform)
+		if kind != preparationPlainProgramKind {
+			failure, inspectErr := preparationPatchFailure(ctx, f)
+			if inspectErr != nil {
+				return inspectErr // held is retryable; unknown and cancellation are not revocation
+			}
+			if failure != nil {
+				return errPreparationAdmissionStale
+			}
+		}
+		identity := ""
+		if kind == preparationPlainProgramKind {
+			pin, pinErr := currentForkPin(f)
+			if pinErr != nil {
+				return errPreparationAdmissionStale
+			}
+			identity, err = preparationForkIdentity(f, pin.Commit, rt, platform)
+		} else if kind == preparationPatchedProgramKind {
+			identity, err = preparationForkIdentity(f, "", rt, platform)
+		} else {
+			identity, err = preparationInputIdentity(f, rt, platform)
+		}
 		if err != nil {
 			return errPreparationAdmissionStale
 		}
@@ -718,7 +805,7 @@ func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform strin
 			return errPreparationAdmissionStale
 		}
 		record := state.Subscriptions[i]
-		if !record.Active || record.Generation != generation {
+		if !record.Active || record.Generation != generation || preparationKind(record) != kind {
 			return errPreparationAdmissionStale
 		}
 		if record.InputIdentity != identity {

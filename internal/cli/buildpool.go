@@ -134,37 +134,44 @@ func (p *buildPool) run() {
 	if len(p.items) == 0 {
 		return
 	}
-	scope := func(ctx context.Context) {
-		p.mu.Lock()
-		p.ctx = ctx
-		p.line = p.cfg.Start(p.w, buildPoolLabel)
-		p.line.Set(p.renderLocked())
-		p.mu.Unlock()
-		if p.start != nil {
-			p.start(ctx)
-		}
-		var wg sync.WaitGroup
-		for _, it := range p.items {
-			wg.Add(1)
-			go func(it *poolItem) {
-				defer wg.Done()
-				defer it.end()
-				it.work(it)
-			}(it)
-		}
-		wg.Wait()
-		p.mu.Lock()
-		line := p.line
-		p.line = nil
-		p.mu.Unlock()
-		line.Set("") // every key's own result line said how it ended
-		line.Done("")
-	}
+	scope := func(ctx context.Context) { p.runUnder(ctx) }
 	if p.act == nil {
 		run.InterruptScope(scope)
 		return
 	}
 	p.act.Scope(scope)
+}
+
+// runUnder runs the same bounded pool under a parent act's cancellation context. The scheduler uses
+// this to stop a plain-fork build when its subscription is revoked or its worker is stopped.
+func (p *buildPool) runUnder(ctx context.Context) {
+	if len(p.items) == 0 {
+		return
+	}
+	p.mu.Lock()
+	p.ctx = ctx
+	p.line = p.cfg.Start(p.w, buildPoolLabel)
+	p.line.Set(p.renderLocked())
+	p.mu.Unlock()
+	if p.start != nil {
+		p.start(ctx)
+	}
+	var wg sync.WaitGroup
+	for _, it := range p.items {
+		wg.Add(1)
+		go func(it *poolItem) {
+			defer wg.Done()
+			defer it.end()
+			it.work(it)
+		}(it)
+	}
+	wg.Wait()
+	p.mu.Lock()
+	line := p.line
+	p.line = nil
+	p.mu.Unlock()
+	line.Set("") // every key's own result line said how it ended
+	line.Done("")
 }
 
 // renderLocked is the pool's line's detail: what is building, how many are checking — naming a check
@@ -454,10 +461,8 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			req.Forks = &filtered
 		}
 	}
-	var forkLater []bool
 	if fr := req.Forks; fr != nil {
-		forkLater = make([]bool, len(fr.Pins))
-		addForkKeys(pool, *fr, forkLater, color, func(bin string, d entrypoint.ForkDelivery) {
+		addForkKeys(pool, *fr, color, func(bin string, d entrypoint.ForkDelivery) {
 			mu.Lock()
 			defer mu.Unlock()
 			forks[bin] = d
@@ -474,21 +479,16 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		}
 	}
 	pool.run()
-	// A cause that held a good build is said once, when every key has printed (buildcauses.go).
-	pool.report.flush()
-	// Patched forks still use the detached one-shot advance. Selected source trees are recorded by
-	// the persistent preparation scheduler below, which resolves their configuration afresh.
-	var background []packload.Fork
-	if fr := req.Forks; fr != nil {
-		for i, p := range fr.Pins {
-			if forkLater[i] {
-				background = append(background, p.Fork)
-			}
+	// The persistent scheduler owns next-launch fork preparation; do not start a competing one-shot
+	// advance from this launch. Registration follows the existing build slot so cold readiness still
+	// performs its ordinary foreground pin/build when no artifact exists.
+	if req.Forks != nil {
+		if err := registerForkPreparation(req.Forks.Pins, *req.Forks, stream); err != nil {
+			fmt.Fprintf(stream, "⚠ next-launch program preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
 	}
-	if len(background) > 0 {
-		backgroundTreeAdvance(background, req.Forks.Runtime, req.Forks.Platform, stream, color)
-	}
+	// A cause that held a good build is said once, when every key has printed (buildcauses.go).
+	pool.report.flush()
 	if tr := req.Trees; tr != nil && tr.Build {
 		if err := registerTreePreparation(tr.Trees, *tr, stream); err != nil {
 			fmt.Fprintf(stream, "⚠ next-launch tree preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
@@ -502,14 +502,12 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 // states once, as auto-capture states its (a source build fetches its dependencies and compiles, once
 // per commit per machine). A plain fork the store holds a build of is answered at once.
 //
-// A PATCHED FORK whose `agent_updates` sets it to update FOR THE NEXT LAUNCH, on a runtime that runs
-// the background advance (podman), goes through deliverPatchedFork instead: this launch hands it the
-// good build it has and later[i] is set, which runBuildSlot collects into the one background advance
-// (XB-D28) once the pool has run.
-func addForkKeys(pool *buildPool, req run.ForkBuildRequest, later []bool, color bool, answer func(string, entrypoint.ForkDelivery)) {
+// Patched next-launch forks are served without a foreground advance when a good build exists; their
+// selected subscription is recorded by runBuildSlot after the pool completes.
+func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer func(string, entrypoint.ForkDelivery)) {
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	missing := 0
-	for i, p := range req.Pins {
+	for _, p := range req.Pins {
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
 				if req.FreshUpdate {
@@ -523,9 +521,8 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, later []bool, color 
 					answer(p.Fork.Bin, result.forkDelivery())
 					return
 				}
-				d, l := deliverPatchedFork(p.Fork, req, pool.report, it, color)
+				d := deliverPatchedFork(p.Fork, req, pool.report, it, color)
 				answer(p.Fork.Bin, d)
-				later[i] = l
 			})
 			continue
 		}

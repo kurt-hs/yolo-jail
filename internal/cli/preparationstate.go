@@ -32,15 +32,15 @@ type preparationWorker struct {
 }
 
 type preparationRecord struct {
-	Key, Runtime, Platform, InputIdentity string
-	Generation                            uint64
-	Active                                bool
-	Phase                                 string
-	ServingEntry                          string
-	Reason                                string
-	Log                                   string
-	At, RetryAt                           time.Time
-	UpdatedAt                             time.Time
+	Key, Runtime, Platform, Kind, InputIdentity, PinCommit string
+	Generation                                             uint64
+	Active                                                 bool
+	Phase                                                  string
+	ServingEntry                                           string
+	Reason                                                 string
+	Log                                                    string
+	At, RetryAt                                            time.Time
+	UpdatedAt                                              time.Time
 }
 
 type preparationState struct {
