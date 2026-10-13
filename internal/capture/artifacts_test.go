@@ -3,8 +3,11 @@ package capture
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -76,5 +79,26 @@ func TestProgramArtifactsCancellationProducesNoManifest(t *testing.T) {
 	_, err = Run(Options{Context: ctx, Home: t.TempDir(), Out: filepath.Join(t.TempDir(), "out"), Artifacts: []string{".local/bin/probe"}, Command: []string{"/bin/sh", "-c", "sleep 30 & wait"}})
 	if err == nil || time.Since(start) > 3*time.Second {
 		t.Fatalf("child cancellation: %v after %v", err, time.Since(start))
+	}
+}
+
+func TestLegacyCaptureInstallerRetainsCallerProcessGroup(t *testing.T) {
+	if _, err := exec.LookPath("ps"); err != nil {
+		t.Skip("ps is unavailable")
+	}
+	res, err := Run(Options{Home: t.TempDir(), Out: filepath.Join(t.TempDir(), "out"), Command: []string{"/bin/sh", "-c", `mkdir -p "$HOME/.local/bin"; ps -o pgid= -p $$ > "$HOME/.local/bin/probe"`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(res.Tree, ".local/bin/probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pgid != syscall.Getpgrp() {
+		t.Fatalf("legacy installer process group %d differs from caller %d", pgid, syscall.Getpgrp())
 	}
 }
