@@ -163,7 +163,7 @@ func startBrokerProcess(t *testing.T) *brokerProcess {
 	}
 	ws := filepath.Join(root, "ws")
 	sf, err := brokerscope.Write(brokerscope.File{Source: Source, LaunchID: "cafe", PID: os.Getpid(),
-		Workspace: ws, Repos: []string{"o/r"}})
+		Container: "fixture", Workspace: ws, Repos: []string{"o/r"}})
 	if err != nil {
 		t.Fatal(err)
 	}

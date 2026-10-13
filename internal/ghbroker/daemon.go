@@ -2,6 +2,7 @@ package ghbroker
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -47,9 +48,12 @@ const Source = "github"
 // repository it resolved, its stdin, and an agent name it reports. None of it is a
 // decision, a grant, a jail identity or a duration (§9.3).
 type Request struct {
-	Argv  []string
-	Repo  string
-	Stdin []byte
+	Invalid   string
+	Operation string
+	RequestID string
+	Argv      []string
+	Repo      string
+	Stdin     []byte
 	// StdinSent says the forwarder sent stdin, which is audited by digest even when the
 	// command does not read it.
 	StdinSent bool
@@ -58,7 +62,12 @@ type Request struct {
 
 // Broker answers one jail's calls.
 type Broker struct {
-	runner *Runner // nil when the host has no gh, or one the broker will not run
+	authority *Authority
+	delivery  RequiredDelivery
+	execute   func(context.Context, []string, []byte, func([]byte), func([]byte)) RunResult
+	waitLimit time.Duration
+	shutdown  context.Context
+	runner    *Runner // nil when the host has no gh, or one the broker will not run
 	// unavailable is what a call is told when runner is nil; "" means the host has no gh.
 	unavailable string
 	scope       Scope
@@ -105,6 +114,16 @@ func Main(argv []string) int {
 	}
 	b, cleanup := newBroker(sf, spawnCwd, os.Stderr)
 	defer cleanup()
+	b.authority, err = BindAuthority(*scopeFile, sf, b.startID)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "github-broker: refusing host authority:", err, "; relaunch the jail")
+		return 1
+	}
+	b.store.Revalidate = b.authority.Revalidate
+	b.store.Audit = StoreAudit(b.audit)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.shutdown = ctx
 	// TOLD TO STOP, END gh FIRST. The launcher stops a daemon with SIGTERM to its process
 	// group and SIGKILLs it after a grace; the listener then waits for every call in flight,
 	// and a gh in its own process group never saw the SIGTERM. So the broker kills its gh
@@ -115,6 +134,7 @@ func Main(argv []string) int {
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-sig
+		cancel()
 		if b.runner != nil {
 			b.runner.Shutdown()
 		}
@@ -156,6 +176,7 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 		now: time.Now,
 	}
 	cleanup := func() {
+		_ = b.authority.Close()
 		b.endLifetimes()
 		_ = os.RemoveAll(runDir)
 	}
@@ -254,7 +275,18 @@ func SelfCheck(w io.Writer) int {
 func (b *Broker) Handle(s *hostservice.Session) {
 	b.trackJail(s.JailID)
 	req := requestFrom(s)
-	code := b.Serve(req, s.JailID, s.StdoutBytes, func(p []byte) { s.Stderr(string(p)) })
+	ctx := b.shutdown
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// One request per connection. Any EOF or extra client bytes cancel its wait.
+	done := make(chan struct{})
+	go func() { defer close(done); var one [1]byte; _, _ = s.Conn().Read(one[:]); cancel() }()
+	code := b.ServeContext(ctx, req, s.JailID, s.StdoutBytes, func(p []byte) { s.Stderr(string(p)) })
+	_ = s.Conn().SetReadDeadline(time.Now())
+	<-done
 	s.Exit(code)
 }
 
@@ -295,28 +327,46 @@ func (b *Broker) endLifetimes() {
 	}
 }
 
-// requestFrom reads the forwarder's frame. A malformed field reads as absent, and a
-// missing argv is an empty one, which the classifier refuses.
+// requestFrom refuses malformed fields instead of dropping bytes or arguments.
 func requestFrom(s *hostservice.Session) Request {
 	var r Request
-	if v, ok := s.Get("argv"); ok {
-		if list, ok := v.([]any); ok {
-			for _, a := range list {
-				if str, ok := a.(string); ok {
-					r.Argv = append(r.Argv, str)
-				}
+	str := func(key string, dst *string) {
+		if v, has := s.Get(key); has {
+			var ok bool
+			*dst, ok = v.(string)
+			if !ok {
+				r.Invalid = "malformed " + key
 			}
 		}
 	}
-	if v, ok := s.Get("repo"); ok {
-		r.Repo, _ = v.(string)
+	str("operation", &r.Operation)
+	str("request", &r.RequestID)
+	str("repo", &r.Repo)
+	str("agent", &r.Agent)
+	if v, has := s.Get("argv"); has {
+		list, ok := v.([]any)
+		if !ok {
+			r.Invalid = "malformed argv"
+		} else {
+			for _, v := range list {
+				a, ok := v.(string)
+				if !ok {
+					r.Invalid = "malformed argv"
+					break
+				}
+				r.Argv = append(r.Argv, a)
+			}
+		}
 	}
-	if v, ok := s.Get("agent"); ok {
-		r.Agent, _ = v.(string)
-	}
-	if v, ok := s.Get("stdin"); ok {
-		if str, ok := v.(string); ok {
-			if data, err := base64.StdEncoding.DecodeString(str); err == nil {
+	if v, has := s.Get("stdin"); has {
+		str, ok := v.(string)
+		if !ok {
+			r.Invalid = "malformed stdin"
+		} else {
+			data, err := base64.StdEncoding.DecodeString(str)
+			if err != nil {
+				r.Invalid = "malformed stdin"
+			} else {
 				r.Stdin, r.StdinSent = data, true
 			}
 		}
@@ -327,6 +377,11 @@ func requestFrom(s *hostservice.Session) Request {
 // Serve classifies and, for a standing read, runs one call, returning its exit code. It
 // appends the audit line whatever happened (BB-P7).
 func (b *Broker) Serve(req Request, jail string, stdout, stderr func([]byte)) int {
+	return b.ServeContext(context.Background(), req, jail, stdout, stderr)
+}
+
+// ServeContext is the same production handler with a cancellable caller lifetime.
+func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, stdout, stderr func([]byte)) int {
 	start := b.now()
 	ev := brokeraudit.Event{Event: "call", Service: Source, Jail: jail, Workspace: b.workspace,
 		Agent: agentName(req.Agent), AgentReported: agentName(req.Agent) != "", Argv: req.Argv}
@@ -341,8 +396,28 @@ func (b *Broker) Serve(req Request, jail string, stdout, stderr func([]byte)) in
 	finish := func(code int) int {
 		ev.Exit = &code
 		ev.ElapsedMs = b.now().Sub(start).Milliseconds()
-		b.audit.Append(ev)
+		b.audit.AppendContext(ctx, ev)
 		return code
+	}
+
+	if req.Invalid != "" {
+		ev.Set = "refused"
+		ev.Outcome = "refused"
+		ev.Reason = req.Invalid
+		say(req.Invalid + "; retry with a valid forwarder frame")
+		return finish(ExitUsage)
+	}
+	if req.Operation != "" {
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		ctx = bounded
+		ev.Set = "status"
+		ev.Outcome = "status"
+		if req.Operation != "status" && req.Operation != "wait" {
+			say("unknown operation; use `yolo gh status <request>`")
+			return finish(ExitUsage)
+		}
+		return finish(b.requestStatus(ctx, req, jail, stdout, stderr))
 	}
 
 	if len(req.Stdin) > StdinCap {
@@ -351,6 +426,22 @@ func (b *Broker) Serve(req Request, jail string, stdout, stderr func([]byte)) in
 		return finish(ExitUsage)
 	}
 	d := Classify(req.Argv, req.Repo, b.scope)
+	if b.authority != nil && (d.Outcome == OutcomeStanding || d.Outcome == OutcomeWindowed) {
+		current, _, err := b.authority.Classify(req.Argv, req.Repo)
+		if err != nil {
+			ev.Set = "refused"
+			ev.Outcome = "refused"
+			ev.Reason = err.Error()
+			say("current host authority refused: " + err.Error() + "; repair the host policy or relaunch the jail")
+			return finish(ExitNoPerm)
+		}
+		// A configured standing write still passes through required delivery and
+		// transaction-audit dispatch; it cannot escape via the standing read branch.
+		if d.Outcome == OutcomeWindowed && current.Outcome == OutcomeStanding {
+			current.Outcome = OutcomeWindowed
+		}
+		d = current
+	}
 	ev.Repo = strings.Join(d.Repos, ",")
 	if d.Argv != nil {
 		ev.Argv = d.Argv
@@ -365,6 +456,25 @@ func (b *Broker) Serve(req Request, jail string, stdout, stderr func([]byte)) in
 		say("out of scope: " + d.Reason)
 		return finish(ExitUsage)
 	case OutcomeWindowed:
+		if b.delivery != nil && b.delivery.Ready() {
+			bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			ctx = bounded
+			code, msg := b.window(ctx, req, jail, d, stdout, stderr)
+			ev.Set = d.Set
+			ev.Outcome = "refused"
+			if code == 0 {
+				ev.Outcome = "ran"
+			}
+			if code == ExitTempFail {
+				ev.Outcome = "pending"
+			}
+			ev.Reason = msg
+			if msg != "" {
+				say(msg)
+			}
+			return finish(code)
+		}
 		// BB-D66: at once, never a wait. Step 1 has no request store and no notifier, so
 		// there is nothing to wait for; the 30-second wait of §3.2 arrives with them.
 		ev.Set, ev.Outcome = d.Set, "denied"
