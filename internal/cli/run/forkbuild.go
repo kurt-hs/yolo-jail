@@ -122,7 +122,7 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 				"from the host delivers it"}
 			continue
 		}
-		if p.Commit == "" && !p.Fork.Patched() {
+		if p.Commit == "" && !p.Fork.Patched() && !o.Update {
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: p.Reason}
 			continue
 		}
@@ -274,7 +274,7 @@ func (o *Options) forkPins(packs []*packload.Pack) []packload.ForkPin {
 	if config.InJail() {
 		return packload.InJailForkPins(packload.LoadForkPins(forks, forkLockPath()))
 	}
-	if o.DryRun {
+	if o.DryRun || o.Update {
 		return packload.LoadForkPins(forks, forkLockPath())
 	}
 	// A first pin can fetch the fork's repository (bounded at LaunchFetchTimeout), so it gets a

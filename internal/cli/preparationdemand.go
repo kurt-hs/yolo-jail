@@ -208,18 +208,24 @@ func runFreshPreparationDemands(ctx context.Context, w interface{ Write([]byte) 
 				err = guard.Guard(sub.Key, func() error { return nil })
 			}
 			if err == nil {
-				res = advancePatchedFork(fork, advanceOptions{freshCheck: true, preparation: guard, platform: sub.Platform, runtime: sub.Runtime, launch: true, ctx: keyCtx, operationCtx: keyCtx, out: w, errw: w, admitGuard: func(commit func() error) error {
-					rec, e := patchedAdvanceStore(true).LoadCheckRecord(sub.Key)
-					if e != nil {
-						return e
-					}
-					boundary, identity, e := request.Boundary(sub.Key)
-					if e != nil {
-						return e
-					}
-					return patchedAdvanceStore(true).WithFreshAuthority(sub.Key, boundary, rec.Fresh, identity, func() error { return guard.Guard(sub.Key, commit) })
-				}})
-				err = qualifyPreparationResultContext(keyCtx, &request, sub.Key, res)
+				if !fork.Patched() && !fork.IsTree() {
+					res, err = runFreshPlainPreparation(keyCtx, fork, &request, sub, guard, w)
+				} else {
+					res = advancePatchedFork(fork, advanceOptions{freshCheck: true, preparation: guard, platform: sub.Platform, runtime: sub.Runtime, launch: true, ctx: keyCtx, operationCtx: keyCtx, out: w, errw: w, admitGuard: func(commit func() error) error {
+						rec, e := patchedAdvanceStore(true).LoadCheckRecord(sub.Key)
+						if e != nil {
+							return e
+						}
+						boundary, identity, e := request.Boundary(sub.Key)
+						if e != nil {
+							return e
+						}
+						return patchedAdvanceStore(true).WithFreshAuthority(sub.Key, boundary, rec.Fresh, identity, func() error { return guard.Guard(sub.Key, commit) })
+					}})
+				}
+				if err == nil {
+					err = qualifyPreparationResultContext(keyCtx, &request, sub.Key, res)
+				}
 			}
 			cancel()
 			<-done
@@ -288,7 +294,14 @@ func waitFreshPreparation(ctx context.Context, req run.PreparationRequest, key s
 				if sub.Key == key {
 					for _, f := range selected {
 						if f.Key() == key {
-							res, _ = servingTreeOf(f, advanceOptions{platform: sub.Platform, runtime: sub.Runtime, out: io.Discard, errw: io.Discard, readOnlyInitialization: true}, "", false)
+							if !f.Patched() && !f.IsTree() {
+								res, e = freshPlainServing(f, sub)
+								if e != nil {
+									return advanceResult{}, e
+								}
+							} else {
+								res, _ = servingTreeOf(f, advanceOptions{platform: sub.Platform, runtime: sub.Runtime, out: io.Discard, errw: io.Discard, readOnlyInitialization: true}, "", false)
+							}
 						}
 					}
 				}

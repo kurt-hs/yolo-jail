@@ -26,7 +26,7 @@ var prepareHostLaunchUpdate = func(cmd0 string, out io.Writer, act *run.ActInter
 			keys = append(keys, f)
 		}
 	}
-	for _, f := range packload.PatchedForks(sel.packs) {
+	for _, f := range packload.Forks(sel.packs) {
 		if f.Bin == bin {
 			keys = append(keys, f)
 		}
@@ -63,9 +63,7 @@ var prepareHostLaunchUpdate = func(cmd0 string, out io.Writer, act *run.ActInter
 				continue
 			}
 			if p.Install.Kind == packdecl.InstallKindSource {
-				if !p.Install.IsPatchedFork() {
-					result = fmt.Errorf("%s needs explicit source-pin resolution; run `yolo pack update` then retry the fresh launch", bin)
-				}
+
 				return
 			}
 			if filepath.Base(cmd0) != cmd0 {
