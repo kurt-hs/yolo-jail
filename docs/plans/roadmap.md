@@ -363,7 +363,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 29 — editor preference and SandVault/Safehouse compat | D | May yolo hold an editor preference, and how a SandVault/Safehouse user tries yolo ([OQ-NB1](../design/sandvault-safehouse-compat.md#OQ-NB1), then [OQ-NB2](../design/sandvault-safehouse-compat.md#OQ-NB2)/[OQ-NB3](../design/sandvault-safehouse-compat.md#OQ-NB3)/[OQ-NB5](../design/sandvault-safehouse-compat.md#OQ-NB5))? **Maintainer**. |
 | 30 — the rest of the broker's step 2 | A | Next slice is the request store and grants ([§7](../design/boundary-broker.md#7-grants-and-the-request-store)) with `yolo approve`; the first user-scope slice landed (`c177ab83e`). [OQ-BB10](../design/boundary-broker.md#OQ-BB10) is D; the D-Bus notifier is X (a Mac) and the answer ping waits on `yolo notify`. |
 | 31 — speed builds the maintainer asked for | X | A Mac: Part A's `container image tag` argv is unverified from Linux and only a real Mac dispatch proves it. |
-| 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. Still A: the Seatbelt 0644 test (writable off-Mac). Still X: the Mac readiness run and the quiet-host re-measure. |
+| 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. The host-file 0644 regression is authored in `integration/macosuserread0644_test.go`; Linux checks its unsandboxed fixture/probe only. Still X: native Mac execution of the denial twin, the Mac readiness run and the quiet-host re-measure. |
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
@@ -413,7 +413,7 @@ Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 1
 
 ### Actionable now, in land order
 
-The remaining A work, cheapest first: item 32's Seatbelt 0644 test → item 22's byte-cap fragment → item 30's
-request store and grants → item 6's host delivery/reporting → IC2's ongoing tree scheduling → item 1's
-nested-jail verification (after item 6's landed half) → item 25's measurement **last and isolated**, as it
-mutates `/workspace`. Item 37's small diagnostics build waits on the ruling in [OQ-DA3](downstream-asks.md#OQ-DA3); item 22's separate byte-cap fragment remains actionable.
+The remaining A work, cheapest first: item 22's byte-cap fragment → item 30's request store and grants →
+item 6's host delivery/reporting → IC2's ongoing tree scheduling → item 1's nested-jail verification (after
+item 6's landed half) → item 25's measurement **last and isolated**, as it mutates `/workspace`. Item 37's
+small diagnostics build waits on the ruling in [OQ-DA3](downstream-asks.md#OQ-DA3).
