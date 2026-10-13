@@ -11,7 +11,7 @@ import (
 func fixture(t *testing.T) (*Store, *time.Time, Request) {
 	t.Helper()
 	now := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
-	s := &Store{Dir: filepath.Join(t.TempDir(), "github"), Now: func() time.Time { return now }}
+	s := &Store{Dir: filepath.Join(t.TempDir(), "github"), Now: func() time.Time { return now }, Revalidate: unchangedPolicy}
 	r := Request{Jail: "jail", Start: "start", Workspace: "/project", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "digest", Set: "read-write", Policy: Policy{Window: 15 * time.Minute, MaxWindow: 12 * time.Hour, Session: true, Uses: 25}}
 	return s, &now, r
 }
@@ -31,10 +31,10 @@ func TestFirstDecisionWinsAndOnceIsSpent(t *testing.T) {
 	if g.Uses != 1 || g.Digest != r.Digest {
 		t.Fatalf("once: %+v", g)
 	}
-	if _, ok, err := s.Consume(input.Jail, input.Start, input.Set, r.Digest); err != nil || !ok {
+	if _, ok, err := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); err != nil || !ok {
 		t.Fatalf("consume %v %v", ok, err)
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest); ok {
+	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
 		t.Fatal("reused once")
 	}
 }
@@ -53,15 +53,15 @@ func TestPolicyExpiryIdentityAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, who := range [][2]string{{"other", "start"}, {"jail", "new"}} {
-		if _, ok, _ := s.Consume(who[0], who[1], input.Set, r.Digest); ok {
+		if _, ok, _ := s.Consume(who[0], who[1], input.Set, r.Digest, s.Revalidate); ok {
 			t.Fatal("wrong holder")
 		}
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, "other", r.Digest); ok {
+	if _, ok, _ := s.Consume(input.Jail, input.Start, "other", r.Digest, s.Revalidate); ok {
 		t.Fatal("wrong set")
 	}
 	*now = now.Add(time.Hour)
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest); ok {
+	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
 		t.Fatal("expiry boundary")
 	}
 	if err := s.Revoke(g.ID); err != nil {
@@ -110,7 +110,7 @@ func TestConcurrentFilingAndUseAreSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, ok, err := s.Consume(input.Jail, input.Start, input.Set, "another command")
+			_, ok, err := s.Consume(input.Jail, input.Start, input.Set, "another command", s.Revalidate)
 			if err != nil {
 				t.Error(err)
 			}
@@ -163,10 +163,12 @@ func TestPendingExpiryAndEndLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.End(input.Jail, input.Start); err != nil {
+	if _, err := s.End(input.Jail, input.Start); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest); ok {
+	if _, ok, _ := s.Consume(input.Jail, input.Start, input.Set, r.Digest, s.Revalidate); ok {
 		t.Fatal("ended lifetime granted")
 	}
 }
+
+func unchangedPolicy(q Request) (Policy, error) { return q.Policy, nil }

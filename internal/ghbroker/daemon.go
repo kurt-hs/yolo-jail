@@ -275,19 +275,18 @@ func (b *Broker) endLifetimes() {
 	for jail := range b.jails {
 		jails = append(jails, jail)
 	}
-	b.jails = map[string]struct{}{}
 	b.lifetimeMu.Unlock()
 	for _, jail := range jails {
-		_, grants, err := b.store.List()
+		grants, err := b.store.End(jail, b.startID)
 		if err != nil {
-			fmt.Fprintf(b.log, "github-broker: could not list grants while ending broker lifetime: %v\n", err)
-		}
-		if err := b.store.End(jail, b.startID); err != nil {
-			fmt.Fprintf(b.log, "github-broker: could not end broker lifetime: %v\n", err)
-			continue
+			fmt.Fprintf(b.log, "github-broker: broker lifetime teardown incomplete: %v; retry stopping the broker on the host\n", err)
+		} else {
+			b.lifetimeMu.Lock()
+			delete(b.jails, jail)
+			b.lifetimeMu.Unlock()
 		}
 		for _, g := range grants {
-			if g.Jail == jail && g.Start == b.startID && g.Ended.IsZero() {
+			if g.Jail == jail && g.Start == b.startID {
 				b.audit.Append(brokeraudit.Event{Event: "grant-ended", Service: Source, Jail: jail,
 					Workspace: b.workspace, Set: g.Set, Grant: g.ID, Outcome: "ended",
 					Reason: "broker lifetime ended"})

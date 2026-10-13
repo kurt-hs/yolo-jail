@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"io"
 	"os"
 	"path/filepath"
@@ -53,7 +54,33 @@ type Decision struct {
 type Store struct {
 	Dir string
 	Now func() time.Time
+	// Revalidate is mandatory for approving decisions; it reads current host authority
+	// under the transaction lock. Nil fails closed. Deny/revoke need no authority.
+	Revalidate Revalidate
 }
+
+// Revalidate must re-read approved scope, current host policy, and live jail/start
+// identity for this request. At consumption it must also classify and scope-check
+// the ACTUAL invocation captured by the caller (a set grant can cover a different
+// command/repository from the filed request). Never scope-check only the parent.
+// It must return an error for unknown/stale authority,
+// must not acquire the transaction lock, and must never trust jail-provided policy.
+type Revalidate func(Request) (Policy, error)
+
+func currentPolicy(q Request, gate Revalidate) (Policy, error) {
+	if gate == nil {
+		return Policy{}, errors.New("current authority gate unavailable; retry after the host broker policy adapter is installed")
+	}
+	p, err := gate(q)
+	if err != nil {
+		return Policy{}, err
+	}
+	if err = validatePolicy(p); err != nil {
+		return Policy{}, err
+	}
+	return p, nil
+}
+
 type records struct {
 	requests []Request
 	grants   []Grant
@@ -85,81 +112,68 @@ func (s *Store) transaction(fn func(*records, time.Time) error) error {
 	if err := privateDir(s.Dir); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(s.Dir, ".lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	fi, statErr := f.Stat()
-	if statErr != nil || !fi.Mode().IsRegular() {
-		return errors.New("store lock is not a regular file")
-	}
-	if err = f.Chmod(0600); err != nil {
-		return err
-	}
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	for _, name := range []string{"requests", "grants"} {
-		if err := privateDir(filepath.Join(s.Dir, name)); err != nil {
+	return brokerlock.WithTransaction(s.Dir, func() error {
+		var err error
+		for _, name := range []string{"requests", "grants"} {
+			if err := privateDir(filepath.Join(s.Dir, name)); err != nil {
+				return err
+			}
+		}
+		var r records
+		if err = readRecords(filepath.Join(s.Dir, "requests"), &r.requests); err != nil {
 			return err
 		}
-	}
-	var r records
-	if err = readRecords(filepath.Join(s.Dir, "requests"), &r.requests); err != nil {
-		return err
-	}
-	if err = readRecords(filepath.Join(s.Dir, "grants"), &r.grants); err != nil {
-		return err
-	}
-	now := s.now()
-	for i := range r.requests {
-		q := &r.requests[i]
-		if q.State == "pending" && !now.Before(q.Filed.Add(time.Hour)) {
-			q.State = "expired"
-			q.Decided = q.Filed.Add(time.Hour)
-			if err = s.write("requests", q.ID, q); err != nil {
-				return err
-			}
+		if err = readRecords(filepath.Join(s.Dir, "grants"), &r.grants); err != nil {
+			return err
 		}
-	}
-	for i := range r.grants {
-		g := &r.grants[i]
-		if g.Ended.IsZero() && !now.Before(g.Expires) {
-			g.Ended = g.Expires
-			if err = s.write("grants", g.ID, g); err != nil {
-				return err
-			}
-		}
-	}
-	for i := len(r.grants) - 1; i >= 0; i-- {
-		g := r.grants[i]
-		if !g.Ended.IsZero() && !now.Before(g.Ended.Add(7*24*time.Hour)) {
-			if err = os.Remove(filepath.Join(s.Dir, "grants", g.ID+".json")); err != nil {
-				return err
-			}
-			r.grants = append(r.grants[:i], r.grants[i+1:]...)
-		}
-	}
-	for i := len(r.requests) - 1; i >= 0; i-- {
-		q := r.requests[i]
-		if !q.Decided.IsZero() && !now.Before(q.Decided.Add(7*24*time.Hour)) {
-			live := false
-			for _, g := range r.grants {
-				if g.Request == q.ID {
-					live = true
-				}
-			}
-			if !live {
-				if err = os.Remove(filepath.Join(s.Dir, "requests", q.ID+".json")); err != nil {
+		now := s.now()
+		for i := range r.requests {
+			q := &r.requests[i]
+			if q.State == "pending" && !now.Before(q.Filed.Add(time.Hour)) {
+				q.State = "expired"
+				q.Decided = q.Filed.Add(time.Hour)
+				if err = s.write("requests", q.ID, q); err != nil {
 					return err
 				}
-				r.requests = append(r.requests[:i], r.requests[i+1:]...)
 			}
 		}
-	}
-	return fn(&r, now)
+		for i := range r.grants {
+			g := &r.grants[i]
+			if g.Ended.IsZero() && !now.Before(g.Expires) {
+				g.Ended = g.Expires
+				if err = s.write("grants", g.ID, g); err != nil {
+					return err
+				}
+			}
+		}
+		for i := len(r.grants) - 1; i >= 0; i-- {
+			g := r.grants[i]
+			if !g.Ended.IsZero() && !now.Before(g.Ended.Add(7*24*time.Hour)) {
+				if err = os.Remove(filepath.Join(s.Dir, "grants", g.ID+".json")); err != nil {
+					return err
+				}
+				r.grants = append(r.grants[:i], r.grants[i+1:]...)
+			}
+		}
+		for i := len(r.requests) - 1; i >= 0; i-- {
+			q := r.requests[i]
+			if !q.Decided.IsZero() && !now.Before(q.Decided.Add(7*24*time.Hour)) {
+				live := false
+				for _, g := range r.grants {
+					if g.Request == q.ID {
+						live = true
+					}
+				}
+				if !live {
+					if err = os.Remove(filepath.Join(s.Dir, "requests", q.ID+".json")); err != nil {
+						return err
+					}
+					r.requests = append(r.requests[:i], r.requests[i+1:]...)
+				}
+			}
+		}
+		return fn(&r, now)
+	})
 }
 func validID(id, prefix string) bool {
 	if !strings.HasPrefix(id, prefix) || len(id) != 34 {
@@ -333,6 +347,15 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				q.Decided = now
 				return s.write("requests", q.ID, q)
 			}
+			current, err := currentPolicy(*q, s.Revalidate)
+			if err != nil {
+				return err
+			}
+			// Frontends cannot widen either the filed request or today's ceiling.
+			q.Policy.Window = min(q.Policy.Window, current.Window)
+			q.Policy.MaxWindow = min(q.Policy.MaxWindow, current.MaxWindow)
+			q.Policy.Uses = min(q.Policy.Uses, current.Uses)
+			q.Policy.Session = q.Policy.Session && current.Session
 			duration := min(15*time.Minute, q.Policy.MaxWindow)
 			uses := 1
 			command := q.Digest
@@ -379,11 +402,10 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 	return out, err
 }
 
-// Consume must be called only after classification has rejected refused/out-of-scope
-// commands and revalidated the current host policy. This storage API does not
-// classify commands or read configuration. Spending is persisted before execution,
-// so a crash cannot refund a use.
-func (s *Store) Consume(jail, start, set, commandDigest string) (Grant, bool, error) {
+// Consume revalidates current authority inside the same transaction immediately
+// before matching/spending. A missing gate fails closed for an otherwise live grant.
+// Spending is persisted before execution: a crash cannot refund a use.
+func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
 	var out Grant
 	found := false
 	err := s.transaction(func(r *records, now time.Time) error {
@@ -395,6 +417,15 @@ func (s *Store) Consume(jail, start, set, commandDigest string) (Grant, bool, er
 			allowed := false
 			for _, q := range r.requests {
 				if q.ID == g.Request && q.State == "allowed" && q.Jail == jail && q.Start == start && q.Set == set {
+					current, err := currentPolicy(q, revalidate)
+					if err != nil {
+						return err
+					}
+					// Narrowing invalidates a grant rather than silently rewriting
+					// its coverage. Refile under the new policy before approving.
+					if current.MaxWindow < q.Policy.MaxWindow || current.Window < q.Policy.Window || current.Uses < q.Policy.Uses || (q.Policy.Session && !current.Session) {
+						return errors.New("current policy narrowed; refile the command under the host's current policy")
+					}
 					allowed = true
 					break
 				}
@@ -440,10 +471,12 @@ func (s *Store) Revoke(id string) error {
 	})
 }
 
-// End closes this broker lifetime, including still-pending requests. Later wiring
-// must call it on teardown; stale grants still cannot match a new random start id.
-func (s *Store) End(jail, start string) error {
-	return s.transaction(func(r *records, now time.Time) error {
+// End closes this broker lifetime, returning exactly the grants it durably ended
+// under this transaction, including partial progress on error. Audit those grants
+// even on error and report/retry incomplete teardown. Pending requests also end.
+func (s *Store) End(jail, start string) ([]Grant, error) {
+	var ended []Grant
+	err := s.transaction(func(r *records, now time.Time) error {
 		for i := range r.grants {
 			g := &r.grants[i]
 			if g.Jail == jail && g.Start == start && g.Ended.IsZero() {
@@ -451,6 +484,7 @@ func (s *Store) End(jail, start string) error {
 				if err := s.write("grants", g.ID, g); err != nil {
 					return err
 				}
+				ended = append(ended, *g)
 			}
 		}
 		for i := range r.requests {
@@ -465,4 +499,5 @@ func (s *Store) End(jail, start string) error {
 		}
 		return nil
 	})
+	return ended, err
 }

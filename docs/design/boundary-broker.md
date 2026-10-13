@@ -1332,17 +1332,23 @@ is a thin local client of the store with its own operator credential
 
 **Host-store slice built 2026-10-13:** `internal/brokerstore` and the registered `yolo approve`
 command implement filing, duplicate joining, serialized decisions, bounded grants, consumption,
-revocation, lifetime ending and seven-day retention. No production broker calls these APIs yet;
+revocation, lifetime ending and seven-day retention. The broker now ends its own lifetime
+and audits exactly the grants ended. Scope write/remove/sweep and store mutations share one
+source-directory transaction lock. Approve and consume require in-transaction current-authority
+callbacks; missing gates fail closed. Host adapters are not delivered yet (the standalone
+frontend cannot allow synthetic requests without one). No production broker files or consumes requests;
 no broker write can run and no broker request is waiting. Tests cover the store and real CLI
 dispatch, not end-to-end broker approvals.
 
 **Implementation interpretation:** Allow once lasts `min(15m, max_window)`, one use, so a
 user-defined shorter ceiling is never exceeded. Its confirmation prints the effective expiry.
 
-**Mandatory before production integration:** resolve policies from host user scope, revalidate
-current policy and approved repository scope at use, share serialization with scope-file
-mutations, bind a freshly drawn broker start id, wire teardown and audit events, and complete
-the bounded-wait/status path. The notifier and answer delivery remain later work; the terminal
+**Mandatory before production integration:** deliver host user-policy/scope/live-start adapters
+to the approval and consumption callbacks, reclassify the actual invocation at use, wire
+request/decision/use audit events, and complete the bounded-wait/status/execution path.
+Current policy narrowing conservatively invalidates a grant rather than silently reshaping it;
+refile and reapprove under the new policy. Callbacks run under the shared source lock and must
+never nest a lock-taking store or scope call. The notifier and answer delivery remain later work; the terminal
 notice is blocked by [OQ-BB10](#OQ-BB10), the ping by `yolo notify`.
 
 **A request** is the parsed canonical command, its repository, the stdin digest, the jail id from
@@ -1365,8 +1371,8 @@ Rules:
 
 - **Expiry is checked at use**, against the clock, never by a sweeper. A grant that expired is
   kept for the audit and matches nothing.
-- **A jail stopping ends every grant it holds**, set grants included. The broker deletes them when
-  it exits, but that alone is not the guarantee: the preamble's jail id is
+- **A jail stopping ends every grant it holds**, set grants included. The broker ends them when
+  it exits (ended records stay for retention), but that alone is not the guarantee: the preamble's jail id is
   `paths.JailShortHash` of the container name, which is derived from the workspace path, so it is
   **per workspace and the same across restarts**. After a SIGKILL, an OOM or a host crash, a grant
   file left in the store would match the next launch of that workspace. So a grant also carries

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -67,6 +68,15 @@ func NewLaunchID() (string, error) {
 // Write writes a launch's scope file, 0600 in 0700 directories, atomically, and returns its
 // path.
 func Write(f File) (string, error) {
+	// Validate before deriving a lock directory from a source name.
+	if f.Source == "" || f.LaunchID == "" || strings.ContainsAny(f.Source+f.LaunchID, "/\\.") {
+		return "", errors.New("scope file: bad source or launch id")
+	}
+	var path string
+	err := brokerlock.WithTransaction(paths.BrokerSourceDir(f.Source), func() error { var err error; path, err = write(f); return err })
+	return path, err
+}
+func write(f File) (string, error) {
 	if f.Source == "" || f.LaunchID == "" || strings.ContainsAny(f.LaunchID+f.Source, "/\\.") {
 		return "", fmt.Errorf("scope file: bad source %q or launch id %q", f.Source, f.LaunchID)
 	}
@@ -80,7 +90,16 @@ func Write(f File) (string, error) {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return "", err
 		}
-		_ = os.Chmod(d, 0o700)
+		fi, err := os.Lstat(d)
+		if err != nil {
+			return "", err
+		}
+		if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			return "", errors.New("scope directory is not real")
+		}
+		if err = os.Chmod(d, 0700); err != nil {
+			return "", err
+		}
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -108,14 +127,7 @@ func Write(f File) (string, error) {
 // ReadFile reads a scope file, refusing a symlink or a file of another version.
 func ReadFile(path string) (File, error) {
 	var f File
-	fi, err := os.Lstat(path)
-	if err != nil {
-		return f, err
-	}
-	if !fi.Mode().IsRegular() {
-		return f, fmt.Errorf("scope file %s is not a regular file", path)
-	}
-	data, err := os.ReadFile(path)
+	data, err := readCapped(path, 1<<20)
 	if err != nil {
 		return f, err
 	}
@@ -132,6 +144,13 @@ func ReadFile(path string) (File, error) {
 // 0) answers ESRCH. Any other answer — alive, or not ours to signal — keeps the file, so a
 // live launch's file is never collected and a file is never aged out.
 func Sweep(source string) (removed []string) {
+	if source == "" || strings.ContainsAny(source, "/\\.") {
+		return nil
+	}
+	_ = brokerlock.WithTransaction(paths.BrokerSourceDir(source), func() error { removed = sweep(source); return nil })
+	return removed
+}
+func sweep(source string) (removed []string) {
 	dir := filepath.Dir(paths.BrokerScopeFile(source, "x"))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -153,4 +172,38 @@ func Sweep(source string) (removed []string) {
 		}
 	}
 	return removed
+}
+
+// Remove serializes launch teardown with grant decisions and consumption.
+func Remove(path string) error {
+	return brokerlock.WithTransaction(filepath.Dir(filepath.Dir(path)), func() error { return os.Remove(path) })
+}
+
+// ValidateCurrent is a non-locking gate read, for use inside a store transaction.
+// The caller must additionally validate its current policy and broker start identity.
+func ValidateCurrent(path string, expected File, repo string) error {
+	if expected.Source == "" || expected.LaunchID == "" || expected.Workspace == "" || expected.Container == "" || expected.PID <= 0 {
+		return errors.New("scope identity unavailable; relaunch the jail")
+	}
+	f, err := ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
+		if !ValidRepo(r) {
+			return errors.New("corrupt repository scope; relaunch the jail")
+		}
+	}
+	if f.Source != expected.Source || f.LaunchID != expected.LaunchID || f.Workspace != expected.Workspace || f.Container != expected.Container || f.PID != expected.PID {
+		return errors.New("scope identity changed; relaunch the jail to approve its scope")
+	}
+	if !ValidRepo(repo) {
+		return errors.New("invalid repository; use an approved owner/repo")
+	}
+	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
+		if r == repo {
+			return nil
+		}
+	}
+	return errors.New("repository no longer approved; relaunch the jail to approve its scope")
 }

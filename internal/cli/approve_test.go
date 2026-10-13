@@ -12,7 +12,7 @@ import (
 
 func approvalFixture(t *testing.T) (*brokerstore.Store, brokerstore.Request) {
 	t.Helper()
-	s := &brokerstore.Store{Dir: t.TempDir()}
+	s := &brokerstore.Store{Dir: t.TempDir(), Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
 	r, err := s.File(brokerstore.Request{Jail: "j", Start: "s", Workspace: "/w\x1b[2J", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "stdin", Set: "read-write", Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 25}})
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestApproveOperatorPaths(t *testing.T) {
 	if rc := approveMain([]string{"--revoke", gs[0].ID}, false, s, &out, &errs); rc != 0 {
 		t.Fatal(errs.String())
 	}
-	if _, ok, _ := s.Consume("j", "s", "read-write", r.Digest); ok {
+	if _, ok, _ := s.Consume("j", "s", "read-write", r.Digest, s.Revalidate); ok {
 		t.Fatal("revoked grant consumed")
 	}
 	for _, args := range [][]string{{r.ID, "--deny", "--for", "1m"}, {"--for", "1m"}, {"--revoke", "all", r.ID}, {"--for", "0s", r.ID}, {"--nonsense"}} {
