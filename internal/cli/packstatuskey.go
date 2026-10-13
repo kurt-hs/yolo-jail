@@ -54,6 +54,9 @@ func packStatusKey(args []string, out, errw io.Writer, color bool) int {
 	// Not in what resolved: before saying nothing selected builds it, say so when its pack is
 	// configured but did not resolve HERE, which is the ordinary case in a jail (a host path the
 	// jail does not have) and a store miss or manifest problem on the host.
+	// Retained inactive/failure evidence stays inspectable after deselection too.
+	// It does not make an unselected build line or serving entry admissible.
+	printHostPreparationSnapshot(out, errw, key)
 	if rc, said := packStatusKeyUnresolved(errw, sel, key); said {
 		return rc
 	}
@@ -132,7 +135,17 @@ func printHostPreparationSnapshot(out, errw io.Writer, key string) {
 		fmt.Fprintf(errw, "  preparation status unavailable: %v — run `yolo pack prepare status` to inspect and repair scheduler state.\n", err)
 		return
 	}
-	fmt.Fprintf(out, "  preparation (%s, %s): %s, generation %d (diagnostic only)\n", snapshot.Runtime, snapshot.Platform, snapshot.Phase, snapshot.Generation)
+	fmt.Fprintf(out, "  preparation %s (%s, %s): %s, generation %d (diagnostic only)\n", snapshot.Key, snapshot.Runtime, snapshot.Platform, snapshot.Phase, snapshot.Generation)
+	fmt.Fprintf(out, "    input: %s\n", snapshot.InputIdentity)
+	if snapshot.WorkerIdentity != "" {
+		fmt.Fprintf(out, "    worker: %s\n", snapshot.WorkerIdentity)
+	}
+	if !snapshot.At.IsZero() {
+		fmt.Fprintf(out, "    at: %s\n", snapshot.At.Format("2006-01-02T15:04:05Z07:00"))
+	}
+	if snapshot.ServingEntry != "" {
+		fmt.Fprintf(out, "    serving entry: %s (diagnostic only; not admission)\n", snapshot.ServingEntry)
+	}
 	if snapshot.Reason != "" {
 		fmt.Fprintf(out, "    %s\n", snapshot.Reason)
 	}
