@@ -203,8 +203,9 @@ var errBackgroundFromTest = errors.New("a test binary does not self-exec the bac
 // as the fork build child is), detached, its streams appended to log. A test binary never self-execs.
 // A var so a test can count the spawn.
 var startBackgroundAdvance = func(argv []string, log string) error {
-	if flag.Lookup("test.v") != nil {
-		return errBackgroundFromTest
+	env, err := loadPreparationEnvironment()
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		return err
@@ -215,7 +216,17 @@ var startBackgroundAdvance = func(argv []string, log string) error {
 	}
 	defer f.Close()
 	c := exec.Command(run.SelfExecPath(), argv...)
+	c.Env = env
 	c.Stdout, c.Stderr = f, f
+	return startPreparedBackgroundCommand(c)
+}
+
+// The process seam sees the fully composed command, so tests pin the production environment
+// callsite without self-execing the test binary or starting an agent.
+var startPreparedBackgroundCommand = func(c *exec.Cmd) error {
+	if flag.Lookup("test.v") != nil {
+		return errBackgroundFromTest
+	}
 	return notty.StartDetached(c)
 }
 
