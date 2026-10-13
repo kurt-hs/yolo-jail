@@ -334,3 +334,80 @@ func TestTheShippedClaudeCodexBranchComposesNothingWithoutAnAddress(t *testing.T
 		t.Errorf("the bridged codex route must still compose its address: %v", vars)
 	}
 }
+
+// A BARE `-p codex` REACHES AGY, AND AGY CANNOT CONSUME openai-codex. config.FoldProfiles keys
+// every selected pack's program bin, so a bare list (or `-p codex` with no `=`) lands
+// `{"agy": "codex"}` in the profile table; openai-auth is not selected, so the composed table
+// holds no openai-codex. agy declares no protocols and no built-in providers, and its one derive
+// renders ctx.mcp_servers, so no provider's row reaches anything it composes: the binding is
+// INAPPLICABLE. docs/design/providers-and-profiles-redesign.md OQ-PP3 rules that a bare `-p X`
+// for an agent it does not reach is one launch line, never a refusal, so a multi-agent jail still
+// launches — and the jail's line (packload.profileReach) discloses it, which is what keeps this
+// from being the silent no-op P1 forbids. Before this build both notches at AgentEnv answered
+// agy's binding with a MissingProviderError naming openai-auth, so agy's mere presence in the pack
+// set made a profile aimed at another agent fatal.
+func TestABareProfileOnAnAgentWithNoProviderSurfaceIsDisclosedNotRefused(t *testing.T) {
+	packs := embeddedNamed(t, "agy")
+	user := map[string]UserProfile{"codex": {Provider: "openai-codex"}}
+	// The fold's row for agy — the whole input the gate sees; see config.FoldProfiles.
+	table := map[string]string{"agy": "codex"}
+	for _, n := range notches {
+		if _, err := agentEnvAt(t, n, packs, nil, user, "agy", "codex"); err != nil {
+			t.Fatalf("%s: agy cannot consume openai-codex, so its binding is disclosed, not refused: %v",
+				n.name, err)
+		}
+	}
+	// THE DISCLOSURE, at the jail that renders the launch line: the same table the jail would
+	// print warns, naming agy and why.
+	providers, err := ComposeProviders(nil, packs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ResolveProfiles(packs, user, providers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := ProfileDisclosures(ProfileDisclosureInput{
+		Table: table, Packs: packs, Resolved: resolved, Providers: providers,
+	})
+	if len(ds) != 1 || !strings.Contains(strings.Join(ds[0].Warnings(), "\n"), "reaches nothing for agy") {
+		t.Fatalf("the launch line must disclose agy's inapplicable binding: %+v", ds)
+	}
+}
+
+// The reader predicate is about whether the agent can CONSUME the provider, not whether its pack
+// registers a derive. The same config-surface derive refuses at a jail for an agent that can be
+// pointed at the provider (it declares the protocol the provider offers, or implements the
+// provider itself) and composes for one that cannot, mirroring profileReach's reachability.
+// Without the consumability guard the third case refuses, which is agy's bug behind a fixture.
+func TestASurfaceDeriveReadsTheTableOnlyForAProviderItsAgentCanConsume(t *testing.T) {
+	user := map[string]UserProfile{"sub": {Provider: "openai-codex"}}
+	mk := func(program string) *Pack {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "derive.lua"),
+			[]byte(`yolo.derive("respy", "config", function(ctx) return {} end)`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return &Pack{Name: "respy", Root: root, Decl: declFrom(t, program)}
+	}
+	const head = `{"contributes":[{"kind":"program","bin":"respy","via":"npm","package":"r"`
+	cases := []struct {
+		name    string
+		program string
+		refuses bool
+	}{
+		{"speaks the protocol the provider offers", head + `,"protocols":["openai-responses"]}]}`, true},
+		{"implements the provider itself", head + `,"built_in_providers":{"names":["openai"],"plans":{"openai-codex":{"provider":"openai"}}}}]}`, true},
+		{"neither, so the binding is inapplicable", head + `}]}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := mk(tc.program)
+			_, err := agentEnvAt(t, notches[0], []*Pack{p}, nil, user, "respy", "sub")
+			var mp *MissingProviderError
+			if refused := errors.As(err, &mp); refused != tc.refuses {
+				t.Fatalf("refused = %v, want %v: err = %v", refused, tc.refuses, err)
+			}
+		})
+	}
+}

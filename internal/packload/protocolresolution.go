@@ -236,8 +236,11 @@ func neededByClause(neededBy string) string {
 // `need` openai-auth, which every notch now joins (notch-convergence item 6). A jail also renders each agent's config surfaces, whose derives read
 // the table: pi's, codex's and opencode's each write nothing for a provider the table lacks,
 // so a user-declared profile naming a provider no selected pack ships would start the agent
-// on its own default. At a jail a `yolo.derive` for the agent in any selected pack is a
-// reader too, and the excuse is left to an agent nothing derives for at all.
+// on its own default. A `yolo.derive` for the agent in any selected pack is a reader too,
+// but only for a provider that agent can consume: a bare `-p X` keys every program bin
+// (config.FoldProfiles), including an agent with no provider surface at all, whose binding
+// is inapplicable rather than silently dropped and is disclosed by the launch line instead
+// (OQ-PP3; readsProviderTable).
 // Otherwise, with such a pack found, the gate is asked again with its declaration composed
 // the way this notch composes (WithServed(NothingServed()) where unserved is non-nil, which is
 // the notch that runs no pack service). An *UnservedAdapterError from that is returned
@@ -271,7 +274,7 @@ func missingProvider(packs []*Pack, owner *Pack, agent, profile, selected string
 	}
 	predicted := refuseUnspeakableProvider(with, owner, agent, profile, selected, table, unserved)
 	if predicted == nil {
-		if readsProviderTable(packs, owner, agent, unserved == nil) {
+		if readsProviderTable(packs, owner, agent, selected, unserved == nil) {
 			return e
 		}
 		return nil
@@ -311,11 +314,25 @@ func packNeeding(packs []*Pack, target string) string {
 }
 
 // readsProviderTable reports whether anything the notch runs for agent reads the provider
-// table: owner's `yolo.env` producer for it (AgentEnv), and, when surfaces is set (a jail,
-// which renders config surfaces), a `yolo.derive` for it in any of packs. A script whose
-// registrations cannot be read counts as a reader, so missingProvider refuses rather than
-// excuses.
-func readsProviderTable(packs []*Pack, owner *Pack, agent string, surfaces bool) bool {
+// table FOR provider: owner's `yolo.env` producer for it (AgentEnv), and, when surfaces is
+// set (a jail, which renders config surfaces), a `yolo.derive` for it in any of packs. A
+// script whose registrations cannot be read counts as a reader, so missingProvider refuses
+// rather than excuses.
+//
+// THE READER MUST CONSUME THE PROVIDER. A surface derive reads nothing for a provider its
+// agent cannot be pointed at, so counting one makes the portability of a profile depend on
+// which unrelated agents the selection happened to key. A bare `-p <name>` (and the config
+// key's list form) keys every selected pack's program bin (config.FoldProfiles), an agent
+// with no provider surface included: agy declares no protocols and its one derive renders
+// ctx.mcp_servers, never ctx.providers. That binding is INAPPLICABLE — nothing this launch
+// composes is different with the provider's row than without it — and
+// docs/design/providers-and-profiles-redesign.md OQ-PP3 rules that a bare `-p X` for an
+// agent it does not reach is one launch line (packload.profileReach), never a refusal, so a
+// jail with several agents still launches. The refusal P1 keeps is the case where the agent
+// CAN consume the provider and this launch's table lacks it, so its derive would silently do
+// nothing (ES-D25) — the reachability is the caller's `predicted == nil` plus
+// agentConsumesProvider's declaration test.
+func readsProviderTable(packs []*Pack, owner *Pack, agent, provider string, surfaces bool) bool {
 	if script := DeriveScript(owner); script != "" {
 		agents, err := (luahook.GopherLuaVM{}).EnvRegistrations(script)
 		if err != nil || slices.Contains(agents, agent) {
@@ -323,6 +340,9 @@ func readsProviderTable(packs []*Pack, owner *Pack, agent string, surfaces bool)
 		}
 	}
 	if !surfaces {
+		return false
+	}
+	if !agentConsumesProvider(owner, agent, provider) {
 		return false
 	}
 	for _, p := range packs {
@@ -339,6 +359,48 @@ func readsProviderTable(packs []*Pack, owner *Pack, agent string, surfaces bool)
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// agentConsumesProvider reports whether agent can be pointed at provider AT ALL, from its own
+// pack's declarations alone: it declares the wire protocols a provider's endpoints are filed
+// under (docs/reference/protocol-resolution.md#the-three-declarations, "the agent half of the
+// resolver's three declarations"), or its program implements provider itself
+// (built_in_providers), which OQ-PR1's gate reads as reachable (docs/design/
+// provider-reachability-and-model-names.md#3-topic-a-the-consequence-of-closing-it). An agent
+// that declares neither — agy, muse-code — resolves direct for every provider: the
+// compatibility shape (docs/reference/protocol-resolution.md, "Absent means unconstrained"),
+// under which no provider's row reaches anything its derives compose.
+//
+// This is the reachability OQ-PP3 hands the launch line, answered from the agent half alone:
+// the caller already settled that provider's own declaration pairs with the agent's (its
+// predicted == nil), so the open question is only whether the agent is a candidate for that
+// pairing at all.
+func agentConsumesProvider(owner *Pack, agent, provider string) bool {
+	if owner == nil || owner.Decl == nil {
+		return false
+	}
+	if len(owner.Decl.SpokenProtocols(agent)) > 0 {
+		return true
+	}
+	if provider == "" {
+		return false
+	}
+	b := owner.Decl.BuiltInProvidersFor(agent)
+	if b == nil {
+		return false
+	}
+	for _, n := range b.Names {
+		if n == provider {
+			return true
+		}
+	}
+	// A plan maps a YOLO provider name to the program's own provider for that plan; a name
+	// keyed to a null plan is the program having a provider of that name for another plan and
+	// none for this one, which its client does not reach.
+	if plan, ok := b.Plans[provider]; ok && plan != nil {
+		return true
 	}
 	return false
 }
