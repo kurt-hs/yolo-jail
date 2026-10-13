@@ -35,7 +35,9 @@ profile that declares none is unchanged.
 See [profiles and options](docs/reference/providers.md#profiles-and-options).
 
 **Meta's Muse Code CLI as a pack.** Add `muse-code` to `packs` and run `yolo -- muse`; yolo
-installs it and delivers your rules and skills to `~/.config/muse`. See
+installs it and delivers your rules and skills. The workspace-trust question is answered for you, so
+the agent starts instead of asking, and a Muse Code login is shared across every jail on the
+machine, so signing in once covers all of them. See
 [choosing your packs](userguide/guides/packs-and-skills.md#choose-your-packs).
 
 ### Changed
