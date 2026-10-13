@@ -18,11 +18,11 @@ end, and a profile can declare what its subagents run on.
 **Daemon logs you can reconstruct a request from.** Every jail daemon and host service log line
 now carries a millisecond timestamp, and the wire bridge and credential adapters log each request
 with its outcome, upstream status or error and timings, plus a line while one is still waiting.
-A credential adapter's line names the agent that asked, and the host's crossing log names each
+A credential adapter's line names the asking agent, and the host's crossing log names each
 jail's container and workspace code. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
-**Launch logs that explain a launch.** Each launch log now records the command you ran, where every
-agent's profile came from, what changed in your config and packs since the last launch, and which
+**Launch logs that explain a launch.** Each launch log now records the command you ran, each
+agent's profile source, what changed in your config and packs since the last launch, and which
 captured in-jail edits the boot replays. Slow `yolo host` launches are timed step by step, and each
 build jail's logs are kept. See [the launch records](docs/reference/report-tiers.md#archaeology-records).
 
@@ -34,11 +34,15 @@ per-role `roles` models for pi's child agents, each an alias or id of the profil
 profile that declares none is unchanged.
 See [profiles and options](docs/reference/providers.md#profiles-and-options).
 
+**Meta's Muse Code CLI as a pack.** Add `muse-code` to `packs` and run `yolo -- muse`; yolo
+installs it and delivers your rules and skills to `~/.config/muse`. See
+[choosing your packs](userguide/guides/packs-and-skills.md#choose-your-packs).
+
 ### Changed
 
 **`yolo stop` waits for the jail's teardown, up to about two minutes.** It streams the keeper's
 progress; a keeper that outlasts the wait is reported with its pid, log and last line, and
-`yolo stop --force` ends the jail now. Ctrl-C still exits 130.
+`--force` ends it now. Ctrl-C still exits 130.
 
 **Selecting an agent pack no longer brings the Bedrock and OpenAI-subscription packs with it.** Add
 `bedrock` or `openai-auth` to `packs` if you use their profiles or providers; a launch that needs
@@ -48,8 +52,8 @@ one names the pack to add.
 
 - A setting captured from an earlier Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription. The boot names each one it drops, and every change to captured edits is now logged.
 - Quitting a jail no longer waits while yolo deletes that launch's copies of your patched extensions.
-- Claude now always uses the provider its profile selects, whether started from another Claude's shell, with Bedrock or gateway settings in your own Claude settings file, or after editing those settings in a jail. yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
-- A container of the jail's name that exists but is not running is no longer reported as "No jail running": `yolo stop` names its state and ends it, and a launch that meets one it cannot remove force-removes a container the runtime does not report as running, or names the command that clears it.
+- Claude now always uses the provider its profile selects, whether started from another Claude's shell, with Bedrock or gateway settings in your Claude settings file, or after editing those in a jail. yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
+- A container of the jail's name that exists but is not running is no longer reported as "No jail running": `yolo stop` names its state and ends it, and a launch force-removes one the runtime does not report as running, or names the command that clears it.
 - A stop the runtime already finished no longer reads as a failure, so the keeper's teardown still runs; a jail you leave reports another session only when there is one, naming what holds it; and a jail whose keeper is interrupted while waiting for its last session still ends by itself.
 - On Apple Container, a stop no longer reads a listing it could not get as the jail being gone, and waits out a listing that trails its jail's end.
 - With a profile active, pi no longer starts on a provider outside it or saves one as the session's default model.
