@@ -368,7 +368,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
 | 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login. **Maintainer**. |
-| 37 — downstream pack consumer asks | A | The one small diagnostics build among the tracker's four questions; four carries are owned by items 1 and 23. |
+| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); four carries are owned by items 1 and 23. |
 
 ### External waits
 
@@ -413,7 +413,7 @@ Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 1
 
 ### Actionable now, in land order
 
-The remaining A work, cheapest first: item 32's Seatbelt 0644 test → item 22's byte-cap fragment → item 37's small
-diagnostics build → item 30's request store and grants → item 6's host delivery/reporting → IC2's ongoing tree
-scheduling → item 1's nested-jail verification (after item 6's landed half) → item 25's measurement **last and
-isolated**, as it mutates `/workspace`.
+The remaining A work, cheapest first: item 32's Seatbelt 0644 test → item 22's byte-cap fragment → item 30's
+request store and grants → item 6's host delivery/reporting → IC2's ongoing tree scheduling → item 1's
+nested-jail verification (after item 6's landed half) → item 25's measurement **last and isolated**, as it
+mutates `/workspace`. Item 37's small diagnostics build waits on the ruling in [OQ-DA3](downstream-asks.md#OQ-DA3); item 22's separate byte-cap fragment remains actionable.
