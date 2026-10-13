@@ -27,6 +27,7 @@ package cli
 // leaves its result where a container build jail does, so the admit and the receipt are one.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -395,6 +396,13 @@ type buildMode struct {
 	// packs is the pack store a PATCHED build replays its series in (the launch's, under the
 	// advance's context); nil reads the machine's with the store's default budget.
 	packs *packsrc.Store
+	// preRunErr is set by the launch's last-moment capability check when no child is safe to start.
+	// That deferral is not a build failure and must not settle a candidate as failed.
+	preRunErr *error
+	// sourceCheckoutCtx/NoWait bind a plain timer preparation's source lookup to its task and make
+	// both mirror-lock attempts tries. Foreground launch/host builds leave these at their normal policy.
+	sourceCheckoutCtx    context.Context
+	sourceCheckoutNoWait bool
 	// replaySpent is what the advance's walks have already taken of the replay's bound, which the
 	// build's own replay into src/ shares (packsrc.WalkOptions.Spent, PF-D44).
 	replaySpent time.Duration
@@ -732,7 +740,8 @@ func buildFork(b forkBuild, mode buildMode, out, errw io.Writer, color bool) (*c
 	}
 	defer lk.Release()
 	entry, err := buildForkUnderLock(b, mode, store, pr, out, errw, color)
-	if mode.settle != nil {
+	var deferred appleBuildDeferred
+	if mode.settle != nil && !(mode.preRunErr != nil && errors.As(*mode.preRunErr, &deferred)) {
 		sp := advanceSpan(f, "settle")
 		mode.settle(entry, err)
 		sp.End()
@@ -884,8 +893,15 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		}
 	} else {
 		mode.run.phase("checking out its source")
-		if err := checkOutForkSource(f.Source, b.Commit, src); err != nil {
-			return nil, forkSourceError{fmt.Errorf("checking out %s at %s: %w", f.Source, shortSHA(b.Commit), err)}
+		var checkoutErr error
+		if mode.sourceCheckoutCtx != nil || mode.sourceCheckoutNoWait {
+			checkoutErr = checkOutForkSourceWithPolicy(f.Source, b.Commit, src, mode.sourceCheckoutCtx,
+				mode.sourceCheckoutNoWait)
+		} else {
+			checkoutErr = checkOutForkSource(f.Source, b.Commit, src)
+		}
+		if checkoutErr != nil {
+			return nil, forkSourceError{fmt.Errorf("checking out %s at %s: %w", f.Source, shortSHA(b.Commit), checkoutErr)}
 		}
 		if mode.run == nil {
 			pr.Printf("[bold]build[/bold] [cyan]%s[/cyan]  [dim]%s at %s, in a sealed jail[/dim]", f.Key(), f.Source, b.Commit)
@@ -990,6 +1006,9 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 			return linksIntoTheBuild(m, workspace)
 		}, mode.admitGuard)
 	admitSp.End()
+	if err != nil && mode.preRunErr != nil && *mode.preRunErr != nil {
+		return nil, *mode.preRunErr
+	}
 	if err != nil && ownershipUnproven {
 		// The build itself ran; what is unproven is that its jail is gone. That is no verdict on the
 		// commit, so it is not reported as a failed build.
@@ -1245,32 +1264,45 @@ func (e captureJailExit) Error() string {
 // THE COPY NEVER FOLLOWS A LINK: a symlink in the fork's repository is copied as a link, so it
 // resolves inside the build jail, never on the host that copies it.
 func checkOutForkSource(source, commit, dst string) error {
+	checkoutStore := &packsrc.Store{Dir: paths.PacksDir()}
+	fetchStore := packsrc.LaunchStore(paths.PacksDir())
+	return checkOutForkSourceWithStores(source, commit, dst, checkoutStore, fetchStore)
+}
+
+// checkOutForkSourceWithPolicy is the plain preparation timer's source route: both store operations
+// inherit task cancellation, and neither waits for another process's mirror lock.
+func checkOutForkSourceWithPolicy(source, commit, dst string, ctx context.Context, noWait bool) error {
+	checkoutStore := &packsrc.Store{Dir: paths.PacksDir(), Ctx: ctx, NoWait: noWait}
+	fetchStore := packsrc.LaunchStore(paths.PacksDir())
+	fetchStore.Ctx, fetchStore.NoWait = ctx, noWait
+	return checkOutForkSourceWithStores(source, commit, dst, checkoutStore, fetchStore)
+}
+
+func checkOutForkSourceWithStores(source, commit, dst string, checkoutStore, fetchStore *packsrc.Store) error {
 	a, err := packsrc.Parse(source)
 	if err != nil {
 		return err
 	}
-	store := &packsrc.Store{Dir: paths.PacksDir()}
-	res, err := forkCheckout(store, a, commit)
+	res, err := forkCheckout(checkoutStore, a, commit)
 	if err != nil {
-		if ferr := forkFetchCommit(a, commit); ferr != nil {
+		if ferr := forkFetchCommit(fetchStore, a, commit); ferr != nil {
 			return fmt.Errorf("%w (fetching it: %v)", err, ferr)
 		}
-		if res, err = forkCheckout(store, a, commit); err != nil {
+		if res, err = forkCheckout(checkoutStore, a, commit); err != nil {
 			return err
 		}
 	}
 	return copySourceTree(res, dst)
 }
 
-// forkFetchCommit fetches commit of a into the pack store through the launch's store (its fetch
-// budget, and no controlling terminal for git), since a build is a launch's act. A package var so a
-// test can stand in for the network.
-var forkFetchCommit = func(a packsrc.Addr, commit string) error {
-	return packsrc.LaunchStore(paths.PacksDir()).FetchForkCommit(a, commit, nil)
+// forkFetchCommit fetches commit of a's repository by its id, through the launch's store policy. A
+// package var so a test can stand in for the network and inspect the timer's context/nonwaiting policy.
+var forkFetchCommit = func(store *packsrc.Store, a packsrc.Addr, commit string) error {
+	return store.FetchForkCommit(a, commit, nil)
 }
 
 // forkCheckout materializes a's commit and returns the directory to copy from. A package var so a
-// test can stand a fixture tree in for the pack store.
+// test can stand a fixture tree in for the pack store's checkout.
 var forkCheckout = func(store *packsrc.Store, a packsrc.Addr, commit string) (string, error) {
 	r, err := store.Materialize(a, commit)
 	if err != nil {

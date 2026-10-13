@@ -7,11 +7,13 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 const appleBuildLivenessTimeout = 5 * time.Second
+
+type appleBuildDeferred struct{ reason string }
+
+func (e appleBuildDeferred) Error() string { return e.reason }
 
 // appleContainerBuildCapability is the actual runtime gate for a foreground build child. Apple
 // Container cannot start that child beside an existing jail, so a failed or malformed listing is
@@ -36,10 +38,10 @@ func appleContainerCanBuildNow() (bool, string) {
 }
 
 func appleContainerBuildDecision(output string) (bool, string) {
-	if !validAppleContainerLiveListing(output) {
+	live, valid := appleContainerLiveListing(output)
+	if !valid {
 		return false, "`container ls` returned an unrecognized listing; Apple Container liveness is unknown, so no build child was started"
 	}
-	live := runtime.ParseContainerLsLive(output)
 	if len(live) != 0 {
 		names := make([]string, 0, len(live))
 		for name := range live {
@@ -51,17 +53,35 @@ func appleContainerBuildDecision(output string) (bool, string) {
 	return true, ""
 }
 
-func validAppleContainerLiveListing(output string) bool {
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		var id, state bool
-		for _, field := range fields {
-			id = id || strings.EqualFold(field, "ID")
-			state = state || strings.EqualFold(field, "STATE")
-		}
-		if id && state {
-			return true
+// appleContainerLiveListing validates and reads the same table: the header must be first and every
+// data row must have exactly its column count. The container CLI's parser skips line one, so a
+// header found later must never be used to authorize a build after that parser discards a live row.
+func appleContainerLiveListing(output string) (map[string]struct{}, bool) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+		return nil, false
+	}
+	header := strings.Fields(lines[0])
+	wantHeader := []string{"ID", "IMAGE", "OS", "ARCH", "STATE"}
+	if len(header) < len(wantHeader) {
+		return nil, false
+	}
+	for i, field := range wantHeader {
+		if !strings.EqualFold(header[i], field) {
+			return nil, false
 		}
 	}
-	return false
+	stateColumn := len(wantHeader) - 1
+	live := map[string]struct{}{}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) != len(header) || strings.EqualFold(fields[0], "ID") ||
+			!strings.EqualFold(fields[stateColumn], "running") {
+			return nil, false
+		}
+		if strings.HasPrefix(fields[0], "yolo-") {
+			live[fields[0]] = struct{}{}
+		}
+	}
+	return live, true
 }

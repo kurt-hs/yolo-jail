@@ -1414,21 +1414,25 @@ func (a *advance) run() advanceResult {
 		if reason == "" {
 			reason = "Apple Container liveness is unknown"
 		}
-		next := "when `container ls` shows no running yolo jail, retry a fresh launch to build the pending candidate"
-		if strings.Contains(reason, "unknown") || strings.Contains(reason, "could not") || strings.Contains(reason, "unrecognized") {
-			next = "repair the Apple Container listing; verify `container ls` shows no running yolo jail, then retry a fresh launch"
-		}
-		why := fmt.Sprintf("%s checked candidate %s and left it pending because %s — %s", f.Label(),
-			fit.Entry.Label(), reason, next)
-		a.warn("%s: %s", f.Label(), why)
-		if a.o.freshCheck {
-			return a.freshRefusal("Apple Container cannot admit the freshly checked candidate while its build is deferred",
-				fmt.Errorf("%s; the candidate remains pending and the previous admitted build remains available to an ordinary launch", why))
-		}
-		return a.serveOr(why)
+		return a.deferAppleCandidate(fit.Entry, reason)
 	}
 	return a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
 		Entry: a.entryWithVersion(fit.Entry)}, base, edited)
+}
+
+func (a *advance) deferAppleCandidate(candidate packsrc.ListEntry, reason string) advanceResult {
+	next := "when `container ls` shows no running yolo jail, retry a fresh launch to build the pending candidate"
+	if strings.Contains(reason, "unknown") || strings.Contains(reason, "could not") || strings.Contains(reason, "unrecognized") {
+		next = "repair the Apple Container listing; verify `container ls` shows no running yolo jail, then retry a fresh launch"
+	}
+	why := fmt.Sprintf("%s checked candidate %s and left it pending because %s — %s", a.f.Label(),
+		candidate.Label(), reason, next)
+	a.warn("%s: %s", a.f.Label(), why)
+	if a.o.freshCheck {
+		return a.freshRefusal("Apple Container cannot admit the freshly checked candidate while its build is deferred",
+			fmt.Errorf("%s; the candidate remains pending and the previous admitted build remains available to an ordinary launch", why))
+	}
+	return a.serveOr(why)
 }
 
 // gitTooOld ends an advance whose walk refused this host's git as too old for the replay (PF-D58).
@@ -1887,8 +1891,9 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	startFail := a.buildFailure(b.Commit)
 	startGood := a.goodBuild()
 	a.boundHit, a.ownLock = false, b.lockPath()
+	var preRunErr error
 	mode := buildMode{force: a.o.force, packs: a.packs, lock: pidlock.NoWait, replaySpent: a.replaySpent,
-		runtime: a.o.runtime}
+		runtime: a.o.runtime, preRunErr: &preRunErr}
 	if a.replayBinding != nil {
 		snapshot := *a.replayBinding
 		mode.sourceReplay = sourceReplayOptions{Snapshot: &snapshot, Record: func(w packsrc.WalkResult) packsrc.RecordReplayResult {
@@ -1943,6 +1948,22 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 			}
 		}
 	}
+	if a.o.runtime == "container" {
+		nextRunJail := mode.runJail
+		mode.runJail = func(staging string, b forkBuild, s captureStreams) int {
+			capabilitySpan := advanceSpan(f, "build_capability")
+			canBuild, reason := appleContainerBuildCapability()
+			capabilitySpan.End()
+			if !canBuild {
+				preRunErr = appleBuildDeferred{reason: reason}
+				return 130
+			}
+			if nextRunJail != nil {
+				return nextRunJail(staging, b, s)
+			}
+			return forkBuildRunJail(staging, b, s, a.o.color, captureAct{runtime: a.o.runtime})
+		}
+	}
 	if jail := mode.runJail; jail != nil && a.o.pool != nil {
 		// Under a BUILD SLOT (XB-D10), saying at once that it started; a Ctrl-C while it waits for one
 		// ends it unbuilt, as one during the build does (130, read by settle as the interrupt).
@@ -1967,6 +1988,14 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		settled = &r
 	}
 	_, err := buildFork(b, mode, a.o.out, a.o.errw, a.o.color)
+	var deferred appleBuildDeferred
+	if errors.As(err, &deferred) {
+		if a.inFlight != nil {
+			a.inFlight.fail("deferred")
+			a.inFlight = nil
+		}
+		return a.deferAppleCandidate(b.Entry, deferred.reason)
+	}
 	r := advanceResult{}
 	if settled != nil {
 		r = *settled

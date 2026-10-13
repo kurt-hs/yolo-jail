@@ -121,9 +121,16 @@ func hostRevert(out, errw io.Writer, color bool, write bool) int {
 	}
 	// THE PATCHED EXTENSIONS' LINKS (hosttrees.go, docs/design/patched-extensions.md §8.3): each one
 	// the render owns goes, and the host's versioned copies with it.
-	links, warn, lerr := revertHostTreeLinks(!write)
+	var links []string
+	var generations int
+	var warn string
+	var lerr error
+	links, generations, warn, lerr = revertHostTreeLinks(true)
 	if warn != "" {
 		pr.Printf("[yellow]Warning: %s[/yellow]", richtext.Escape(warn))
+	}
+	if write && lerr == nil {
+		links, generations, _, lerr = revertHostTreeLinks(false)
 	}
 	for _, l := range links {
 		action := "would remove the link"
@@ -132,18 +139,27 @@ func hostRevert(out, errw io.Writer, color bool, write bool) int {
 		}
 		pr.Printf("  [yellow]%-20s %s[/yellow] [dim]%s[/dim]", "patched extension", action, l)
 	}
+	if generations > 0 {
+		action := "would delete"
+		if write {
+			action = "deleted"
+		}
+		pr.Printf("  [yellow]%-20s %s %d host generation(s)[/yellow]", "patched extension", action, generations)
+	}
 	if lerr != nil {
 		fmt.Fprintf(errw, "yolo host apply --revert: patched extensions: %v — the keys above are withdrawn; "+
 			"re-run it to take the links out\n", lerr)
 		return 1
 	}
-	if len(result.Records) == 0 && len(links) == 0 {
+	if len(result.Records) == 0 && len(links) == 0 && generations == 0 {
 		pr.Printf("[dim]yolo has never rendered into this home — nothing to revert.[/dim]")
 		return 0
 	}
 	treeNote := ""
 	if len(links) > 0 {
 		treeNote = fmt.Sprintf(", and %d patched-extension link(s) with their host copies", len(links))
+	} else if generations > 0 {
+		treeNote = fmt.Sprintf(", and %d retained patched-extension host generation(s)", generations)
 	}
 	if !write {
 		pr.Printf("[bold]%d key(s) across %d surface(s)%s[/bold] — re-run with [bold]--assert[/bold] "+

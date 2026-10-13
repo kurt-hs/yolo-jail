@@ -94,8 +94,9 @@ func TestHostApplyRetiresTheLinkOfATreeThatNoLongerReachesTheHost(t *testing.T) 
 	if _, err := os.Lstat(fx.link()); err == nil {
 		t.Errorf("the link of a tree no host loads was kept:\n%s", out.String())
 	}
-	if isDir(filepath.Dir(target)) {
-		t.Errorf("its versioned copies were kept:\n%s", out.String())
+	if !isDir(filepath.Dir(target)) || !strings.Contains(out.String(), "retained 1 historical patched-extension host generation(s)") ||
+		!strings.Contains(out.String(), "running host session may still read these bytes") {
+		t.Errorf("retiring its link deleted or failed to disclose bytes an untracked host session may still read:\n%s", out.String())
 	}
 	if man, _ := hostskills.LoadManifest(hostSkillsManifestPath()); man.OwnedBy(fx.link(), "treepack") {
 		t.Error("the ownership record still names the retired link")

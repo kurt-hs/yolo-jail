@@ -428,9 +428,9 @@ func TestApplyAtHostAdvancesInItsActingPostureOnly(t *testing.T) {
 	}
 }
 
-// A DROPPED EXTENSION's host copies go once nothing yolo recorded links into them, and stay while
-// a recorded link still does.
-func TestADroppedExtensionsHostCopiesAreSwept(t *testing.T) {
+// A RETIRED HOST LINK does not prove its generation is unused: host sessions are untracked, so
+// dropping the extension removes only the link and retains the versioned bytes for explicit cleanup.
+func TestRetireHostTreeLinkRetainsItsGeneration(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
@@ -438,23 +438,25 @@ func TestADroppedExtensionsHostCopiesAreSwept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	slugDir := filepath.Dir(target)
-	sweepDroppedHostTrees(nil) // the selection no longer carries it, and its link is still there
-	if !isDir(target) {
-		t.Fatal("a copy a recorded link still names was swept")
-	}
-	if err := os.Remove(fx.link()); err != nil {
+	man, err := hostskills.LoadManifest(hostSkillsManifestPath())
+	if err != nil {
 		t.Fatal(err)
 	}
-	sweepDroppedHostTrees(nil)
-	if isDir(slugDir) {
-		t.Error("a dropped extension's copies outlived its link")
+	fork := fx.tree(t)
+	if _, ok := retireHostTreeLink(fork, fx.home, man, false); !ok {
+		t.Fatal("the owned host tree link was not retired")
+	}
+	if _, err := os.Lstat(fx.link()); err == nil {
+		t.Fatal("retiring the extension left its link")
+	}
+	if !isDir(filepath.Dir(target)) {
+		t.Fatal("retiring a link deleted bytes an untracked host session may still read")
 	}
 }
 
-// THE SWEEP'S CALL SITE: an apply that retires a dropped pack's link removes its copies too. Red if
-// the apply stops calling sweepDroppedHostTrees.
-func TestAnApplyThatDropsTheExtensionRemovesItsHostCopies(t *testing.T) {
+// THE APPLY CALL SITE: dropping an extension retires its owned link but retains historical host
+// generations because the apply cannot prove no running session still uses them.
+func TestAnApplyThatDropsTheExtensionRetainsItsHostCopies(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.writeTreePackConfig(t, "own")
 	var errw bytes.Buffer
@@ -472,8 +474,9 @@ func TestAnApplyThatDropsTheExtensionRemovesItsHostCopies(t *testing.T) {
 	if _, err := os.Lstat(fx.link()); err == nil {
 		t.Fatalf("the dropped pack's link was not retired:\n%s", out.String())
 	}
-	if isDir(filepath.Dir(target)) {
-		t.Errorf("the dropped extension's host copies outlived its retired link:\n%s", out.String())
+	if !isDir(filepath.Dir(target)) || !strings.Contains(out.String(), "retained 1 historical patched-extension host generation(s)") ||
+		!strings.Contains(out.String(), "running host session may still read these bytes") {
+		t.Errorf("the dropped extension's historical bytes or retention disclosure are missing:\n%s", out.String())
 	}
 }
 
@@ -709,7 +712,7 @@ func TestHostOwnerTreeRegistrationLeavesJailAndForkSubscriptionsActive(t *testin
 	fork := packload.Fork{Pack: "forkpack", Bin: "probetool", Source: forkTestSource,
 		Build: "make install", Produces: []string{".local/bin/probetool"}}
 	forkReq := run.ForkBuildRequest{Platform: patchedTestPlatform, Runtime: "podman"}
-	if err := registerForkPreparation([]packload.ForkPin{{Fork: fork, Commit: forkTestCommit, Ref: "main"}}, forkReq, io.Discard); err != nil {
+	if err := registerForkPreparation([]packload.ForkPin{{Fork: fork, Commit: forkTestCommit, Ref: "main"}}, forkReq, io.Discard, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -737,11 +740,44 @@ func TestHostOwnerTreeRegistrationLeavesJailAndForkSubscriptionsActive(t *testin
 	}
 }
 
-// A REVERT REMOVES THE LINK (§8.3), and the host's versioned copies with it, as it withdraws every
-// key yolo wrote: its dry run names the link and writes nothing, and --assert removes the link, the
-// record's entry for it and the copies. Red if the revert stops calling revertHostTreeLinks. The
-// apply runs under `own`, the contract that renders the link, and the revert with the key unset:
-// `--revert` runs under `none` (the unset state since OQ-CO14) and is refused at `own`.
+// A REVERT REMOVES THE LINK and explicitly deletes its retained copies after warning that running
+// host sessions may still read them. `--assert` is the destructive cleanup authority.
+func TestARevertCleansRetiredGenerationsAfterDrop(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	fx.writeTreePackConfig(t, "own")
+	var errw bytes.Buffer
+	hostApply([]string{"--assert"}, io.Discard, &errw, false, strings.NewReader(""))
+	target, err := os.Readlink(fx.link())
+	if err != nil {
+		t.Fatalf("the apply rendered no link: %v\n%s", err, errw.String())
+	}
+	other := filepath.Join(fx.packs, "otherpack")
+	writeFile(t, filepath.Join(other, "pack.json"), `{"name":"otherpack","contributes":[]}`)
+	writeFile(t, filepath.Join(fx.home, ".config", "yolo-jail", "config.jsonc"),
+		`{"packs":[{"source":"file://`+other+`","name":"otherpack"}],"host_management":"own"}`)
+	hostApply([]string{"--assert"}, io.Discard, &errw, false, strings.NewReader("y\n"))
+	if !isDir(filepath.Dir(target)) {
+		t.Fatal("ordinary drop deleted the generation before explicit cleanup")
+	}
+	writeFile(t, filepath.Join(fx.home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[]}`)
+
+	var out bytes.Buffer
+	if rc := hostMain([]string{"apply", "--revert"}, &out, &errw, false, nil); rc != 0 {
+		t.Fatalf("the orphan-generation dry revert rc=%d\n%s%s", rc, out.String(), errw.String())
+	}
+	if !strings.Contains(out.String(), "running host session may still read these bytes") ||
+		!strings.Contains(out.String(), "would delete 1 host generation") || !isDir(filepath.Dir(target)) {
+		t.Fatalf("the orphan-generation dry revert lost its warning, plan or bytes:\n%s", out.String())
+	}
+	out.Reset()
+	if rc := hostMain([]string{"apply", "--revert", "--assert"}, &out, &errw, false, nil); rc != 0 {
+		t.Fatalf("the orphan-generation confirmed revert rc=%d\n%s%s", rc, out.String(), errw.String())
+	}
+	if isDir(filepath.Dir(target)) || !strings.Contains(out.String(), "running host session may still read these bytes") {
+		t.Fatalf("explicit orphan-generation cleanup did not warn and delete:\n%s", out.String())
+	}
+}
+
 func TestARevertRemovesAPatchedExtensionsLinkAndItsCopies(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.writeTreePackConfig(t, "own")
@@ -755,8 +791,13 @@ func TestARevertRemovesAPatchedExtensionsLinkAndItsCopies(t *testing.T) {
 	if rc := hostMain([]string{"apply", "--revert"}, &out, &errw, false, nil); rc != 0 {
 		t.Fatalf("the dry revert rc=%d\n%s%s", rc, out.String(), errw.String())
 	}
-	if !strings.Contains(out.String(), "would remove") || !strings.Contains(out.String(), fx.link()) {
-		t.Errorf("the dry revert does not name the link:\n%s", out.String())
+	if !strings.Contains(out.String(), "would remove") || !strings.Contains(out.String(), fx.link()) ||
+		!strings.Contains(out.String(), "running host session may still read these bytes") ||
+		!strings.Contains(out.String(), "stop all host agent sessions") {
+		t.Errorf("the dry revert does not name the link and running-session warning:\n%s", out.String())
+	}
+	if !isDir(filepath.Dir(target)) {
+		t.Fatal("the dry revert deleted the retained generation")
 	}
 	if _, err := os.Lstat(fx.link()); err != nil {
 		t.Fatal("the dry revert removed the link")
@@ -769,7 +810,12 @@ func TestARevertRemovesAPatchedExtensionsLinkAndItsCopies(t *testing.T) {
 		t.Errorf("the revert left the link:\n%s", out.String())
 	}
 	if isDir(filepath.Dir(target)) {
-		t.Errorf("the revert left the host's versioned copies:\n%s", out.String())
+		t.Errorf("the explicit confirmed revert retained the host's versioned copies:\n%s", out.String())
+	}
+	warningAt := strings.Index(out.String(), "running host session may still read these bytes")
+	deleteAt := strings.Index(out.String(), "deleted 1 host generation")
+	if warningAt < 0 || deleteAt < 0 || warningAt > deleteAt {
+		t.Errorf("the confirmed revert must warn about running sessions before deleting generations:\n%s", out.String())
 	}
 	if man, _ := hostskills.LoadManifest(hostSkillsManifestPath()); man.OwnedBy(fx.link(), "treepack") {
 		t.Error("the revert left the link in the files ownership record")
