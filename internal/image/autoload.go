@@ -487,6 +487,23 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	// the image closure holds derivations no public cache serves, so a darwin
 	// launch that must build needs a Linux builder it may not have. Now it only
 	// needs one when the image it wants is genuinely absent.
+	// Config-declared packages have a complete key independent of stock tags.
+	packagesIdentity := ""
+	if !o.SkipBuild && o.RepoRoot != "" && len(o.ExtraPackages) > 0 {
+		line := o.startProgress("Evaluating the image identity with nix")
+		id, ok := o.EvalIdentity(o.RepoRoot)
+		line.Done(verdict(ok))
+		if ok {
+			packagesIdentity = id
+		}
+	}
+	launchKey := o.packagesLaunchKey(packagesIdentity)
+	if ref, storePath := o.recordedPackagesImage(launchKey); ref != "" {
+		fmt.Fprintln(o.reportWriter(out), "Image build skipped: "+ref+" matches this launch's image inputs.")
+		o.RegisterRoot(storePath)
+		_ = os.Remove(outLink)
+		return LoadResult{OK: true, Ref: ref, StorePath: storePath}
+	}
 	identity := o.stockIdentity()
 	if ref := o.stockImageLoaded(identity); ref != "" {
 		// THE MATCH ROOTS WHAT IT RUNS (stockimage.go, "what a match does not
@@ -1001,6 +1018,7 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	// protecting its closure from a `nix-collect-garbage` (storage-lifecycle §1).
 	// Appending on use also makes the LRU mean "recently used" rather than
 	// "recently built", which is what the load diagnosis reports.
+	o.recordPackagesImage(launchKey, currentPath)
 	_ = AddLoadedPath(sentinel, currentPath)
 
 	// Register a DURABLE GC root for the store path we are about to run against,
