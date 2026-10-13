@@ -3,7 +3,7 @@ title: "One keyed build for every pi extension: in parallel, published by rename
 date: 2026-10-05
 status: in-review
 stage: DESIGN
-next: "Build the independent scheduler/freshness slices from launch-update-preparation-plan.md; ordinary capture replacement alone waits on OQ-PD23, with native/rootless/performance acceptance retained"
+next: "Build scheduler/freshness slices; ordinary capture replacement has a settled architecture and source-interface dependency"
 tags: [pi, extensions, packs, builds, parallelism, locks, updates, startup]
 summary: "A record of the maintainer's request for parallel pi extension builds and the implemented capture route: unmodified extensions use the patched-tree pipeline with an empty patch series, per-key locks and read-only per-launch copies. It records the built-tree next-launch behavior implemented in Podman's source-built slice 1, runtime-checked only on Linux rootful nested Podman, and what remains unbuilt or unmeasured; it does not imply native/performance/migration slice 2. It also records the startup measurements."
 vantage:
@@ -61,8 +61,8 @@ and, under [OQ-6](pi-git-extension-caching.md#OQ-6)'s leaning, the held in-jail 
 **Start at [§2](#2-the-verdict-and-five-principles)**: the comparison that decides [OQ-6](pi-git-extension-caching.md#OQ-6). Everything
 after it holds under either answer unless it says otherwise.
 
-**Needs your ruling:** None in this document. The ordinary warm-program capture policy remains
-[OQ-PD23](program-delivery.md#oq-pd23). The extension/capture timing rulings and build evidence
+**Needs your ruling:** None in this document. The ordinary warm-program capture architecture is
+settled by [OQ-PD23](program-delivery.md#decision-ledger). The extension/capture timing rulings and build evidence
 remain in this document's ledger.
 
 **Reads with:**
@@ -73,7 +73,7 @@ remain in this document's ledger.
   build, admit, delivery and locks this reuses. Every PPX and PF term and row cited here is theirs.
 - [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md): the pre-launch refresh this changes.
 - [`program-delivery.md`](program-delivery.md): the agent CLI's own update, which
-  [OQ-XB1](#OQ-XB1) leaves in front until [OQ-PD23](program-delivery.md#OQ-PD23).
+  [OQ-XB1](#OQ-XB1) leaves in front until the settled [OQ-PD23](program-delivery.md#decision-ledger) replacement is built.
 - [`pi-extension-store-builds-plan.md`](pi-extension-store-builds-plan.md): the implementation
   sketch, incomplete while questions are open; nobody builds from it.
 
@@ -392,8 +392,8 @@ and 4.61 s against 4.55 s; MEASURED, research pass, medians of three).
 | The launch lock | One workspace | Unchanged |
 | The held store's `mirror-<slug>` and `tree-<key>` locks | One repository, one tree | Land only under (a) or (b), retuned ([§8](#8-if-the-held-store-lands-instead)) |
 | The refresh's stamp and its seen-content markers (throttles, not locks) | **The machine**, under `~/.cache` | Move beside the refresh's lock, one workspace ([XB-D14](#XB-D14)) |
-| The agent CLI's hourly update stamp, `~/.cache/yolo-agent-stamps/<bin>.stamp` (a throttle) | **The machine**, over an `npm install -g` into each workspace's `$NPM_CONFIG_PREFIX` ([`shims.go`](../../internal/entrypoint/shims.go)) | Unchanged here: [OQ-PD23](program-delivery.md#OQ-PD23) owns it, and its leaning makes the stamp stop mattering |
-| The MCP server refresh's stamps, `~/.cache/yolo-agent-stamps/servers` (throttles) | **The machine**, over installs into each workspace's prefix, under that prefix's lock ([`serverrefresh.go`](../../internal/entrypoint/serverrefresh.go)) | Unchanged here; it has the CLI stamp's shape, so it is ruled with [OQ-PD23](program-delivery.md#OQ-PD23) |
+| The agent CLI's hourly update stamp, `~/.cache/yolo-agent-stamps/<bin>.stamp` (a throttle) | **The machine**, over an `npm install -g` into each workspace's `$NPM_CONFIG_PREFIX` ([`shims.go`](../../internal/entrypoint/shims.go)) | Unchanged here: [OQ-PD23](program-delivery.md#decision-ledger) owns its replacement |
+| The MCP server refresh's stamps, `~/.cache/yolo-agent-stamps/servers` (throttles) | **The machine**, over installs into each workspace's prefix, under that prefix's lock ([`serverrefresh.go`](../../internal/entrypoint/serverrefresh.go)) | Unchanged here; it has the CLI stamp's shape, so it is ruled with [OQ-PD23](program-delivery.md#decision-ledger) |
 
 The first row is the one machine-wide lock in pi's path. Three machine-wide throttles sit over
 per-workspace work, against [§6.2](#62-the-rules)'s rule 6. This design moves the refresh's, because
@@ -402,8 +402,8 @@ a seen marker there can make a new workspace skip the refresh it needs
 updates: a missing CLI or server installs whatever its stamp says (READ, the cold install at
 [`shims.go`](../../internal/entrypoint/shims.go), the absent server at
 [`serverrefresh.go`](../../internal/entrypoint/serverrefresh.go)), so they can keep a
-workspace on an older version but start no unlocked install, which is
-[OQ-PD23](program-delivery.md#OQ-PD23)'s question.
+workspace on an older version but start no unlocked install. The settled replacement is
+[OQ-PD23](program-delivery.md#decision-ledger)'s machine-level preparation; implementation remains pending.
 
 ### 6.2 The rules
 
@@ -568,7 +568,7 @@ jail reads:
 
 Whether the option moves them too is [OQ-XB1](#OQ-XB1). Under its leaning they stay in front, and
 pi's CLI joins the background once it is delivered once per machine, which is
-[OQ-PD23](program-delivery.md#OQ-PD23)'s leaning.
+[OQ-PD23](program-delivery.md#decision-ledger)'s ruling; implementation remains pending.
 
 ### 7.6 The setting
 
@@ -709,7 +709,7 @@ jiti's path-and-hash cache key). A machine-wide one is ruled out by
   ([§4.4](#44-entries-no-pack-declares)).
 - **Delivering a newer tree into a running jail** ([§10](#10-alternatives)).
 - **Private registries and authenticated git** for a captured extension.
-- **pi's own CLI in the background mode**, which waits on [OQ-PD23](program-delivery.md#OQ-PD23).
+- **pi's own CLI in the background mode**, which waits on [OQ-PD23](program-delivery.md#decision-ledger)'s implementation.
 - **Writing the list entry for the author**, which waits on [OQ-PR1](pack-pi-resources.md#OQ-PR1).
 - **The compile caches and the shim**, routed to the [roadmap](../plans/roadmap.md).
 
@@ -756,7 +756,7 @@ anything rewrites pi's list, is restated in the store's design.
 
    - **A — Only what yolo builds.** The three stay in front, hourly and bounded as today; pi's CLI
      joins the background once it is delivered once per machine
-     ([OQ-PD23](program-delivery.md#OQ-PD23)).
+     ([OQ-PD23](program-delivery.md#decision-ledger)).
    - **B — All of them.** Each runs detached after pi starts; a running session can find its files
      replaced underneath it, and pi's startup install can race the refresh.
 
@@ -766,7 +766,7 @@ anything rewrites pi's list, is restated in the store's design.
    ([§9](#9-the-startup-profile) #2), hourly per workspace once [XB-D14](#XB-D14) lands, and the
    CLI's update and the servers' refresh, not timed and hourly per machine, each of the three
    bounded at 60 s. It buys that with the in-place breakage the trees exist to end, and pi's CLI
-   joins once [OQ-PD23](program-delivery.md#OQ-PD23) delivers it once per machine.
+   joins once [OQ-PD23](program-delivery.md#decision-ledger)'s implementation delivers it once per machine.
 
    **Answer:**
    > **Ruled in review 2026-10-05, A, widened to everything yolo captures:** *"only what YOLO builds, I

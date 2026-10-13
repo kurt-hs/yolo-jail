@@ -35,7 +35,8 @@ candidate state, acceptance gaps and verification; a place here does not make it
 2. [Finish ongoing launch preparation and explicit update-and-wait](../design/launch-update-preparation.md)
    — reuse the admitted-build pipeline before optimizing isolated waits; its
    [tests-first source handoff](../design/launch-update-preparation-plan.md) starts with ongoing
-   tree scheduling, then freshness and adapters; only ordinary warm CLI/MCP replacement stays in the
+   tree scheduling, then freshness and adapters; ordinary warm CLI/MCP replacement has its settled
+   machine-level architecture and source-interface dependency in the
    [capture sketch](../design/launch-program-capture-plan.md).
    [Source research](../research/launch-preparation.md) bounds current timing claims.
 
@@ -63,8 +64,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    running](../design/host-daemon-ownership.md#OQ-HD9) is still to rule, with the design's two other questions.
 3. Rulings that hold a build: [whether a project's mise pin of `pnpm` stays hidden](../design/program-delivery.md#OQ-PD19),
    with [autoprune's `$GOBIN` class](../design/program-delivery.md#OQ-PD20) and [a pack's agent-CLI pin](../design/program-delivery.md#OQ-PD21);
-   [whether an agent CLI updates once per machine](../design/program-delivery.md#OQ-PD23), as each workspace downloads
-   every release itself; [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the
+   [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the
    broker's no-notifier notice waits on; [whether a pack service's in-jail daemon is disclosed](../design/trust-paths.md#OQ-TP11),
    as no launch line names the wire bridge; and [whether copilot and oh-omp alone get `-p bedrock`](../design/bedrock-plumbing.md#OQ-BR24).
 4. Rulings that hold a defect's fix: [the Kilo special-casing](../design/gateway-provider-packs.md), while claude gives

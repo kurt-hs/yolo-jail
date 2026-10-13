@@ -15,7 +15,8 @@ tree wins on cosmetic fact; this plan is advice and first to be wrong.
 **Authority:** tasks 1–4 cover scheduler, built trees, patched programs, recorded plain-fork pins,
 host next-launch consumption, Apple check-only and reporting. They do not replace ordinary warm
 CLI/MCP refresh. That work alone lives in the [capture sketch](launch-program-capture-plan.md),
-blocked on [OQ-PD23](program-delivery.md#oq-pd23). No worker builds from that sketch.
+with architecture settled by [OQ-PD23](program-delivery.md#decision-ledger) and a remaining
+committed source-interface dependency. No worker builds from that sketch.
 
 All task behavior below is a constraint, quoted from the design; decomposition advice is labeled.
 Stop and report missing symbols, someone else's dirty owned files, noncosmetic drift, an unexpectedly
@@ -283,7 +284,7 @@ Linux fake runtimes and local source fixtures, because these prove dispatch/auth
 - Status/reporting spans cover registration, admitted read, check, key wait, build, copy/install, render,
   readiness, prelaunch refresh and handover. Persist reason/retry after notice consumption. Piped output
   stays bounded without terminal controls. Do not sum overlapping spans into total wall clock.
-- Ordinary capture/MCP replacement remains the [question-dependent sketch](launch-program-capture-plan.md).
+- Ordinary capture/MCP replacement remains the [source-dependent sketch](launch-program-capture-plan.md).
   Unsupported installer/platform routes, raw/hand-installed extensions and configured pack source refresh
   stay explicit residual routes; do not erase their waits or call them implemented timer support.
 - Retain native extension loading, migration-kit acceptance, controlled cold/warm full wall-clock samples,

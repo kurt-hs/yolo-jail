@@ -1,8 +1,8 @@
 ---
 title: "Prepare between launches; materialize only at a launch"
-status: in-review
-stage: DESIGN
-next: "Build the independent scheduler and freshness slices from the ready plan; capture replacement alone waits on OQ-PD23"
+status: accepted
+stage: DECIDED
+next: "Build scheduler/freshness slices; refine capture handoff against the committed selected install-only contract"
 ---
 
 # Prepare between launches; materialize only at a launch
@@ -17,7 +17,7 @@ next: "Build the independent scheduler and freshness slices from the ready plan;
 
 **Start at:** [The policy boundary](#the-policy-boundary).
 
-**Needs your ruling:** existing [OQ-PD23](program-delivery.md#oq-pd23), including its MCP-server scope; no new question is opened here.
+**Needs your ruling:** None. [OQ-PD23](program-delivery.md#decision-ledger) includes ordinary CLI and yolo-installed MCP programs; remaining capture work is agent engineering.
 
 **Reads with:** [source research](../research/launch-preparation.md), [ready independent implementation plan](launch-update-preparation-plan.md), [capture-only sketch](launch-program-capture-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
 
@@ -29,7 +29,7 @@ My recommendation is to extend the existing detached act, not build a second del
 [XB-D28](pi-extension-store-builds.md#XB-D28) already covers everything yolo builds or captures;
 [XB-D21](pi-extension-store-builds.md#XB-D21) and [XB-D22](pi-extension-store-builds.md#XB-D22) retain their platform and host scope.
 The requested continuation adds ongoing preparation and an explicit update-and-wait launch option.
-It does **not** settle the still-open ordinary warm-program capture policy.
+It includes the settled [machine-level CLI/MCP capture architecture](program-delivery.md#machine-level-program-preparation).
 
 - **P1 — Pack authority:** selected pack declarations define programs, sources, recipes, platforms and ownership. No tool-name switch or agent registry.
 - **P2 — Admission before delivery:** checks and candidate builds do not constitute a usable generation. Existing guarded admission, completion receipts and compare-and-swap remain authoritative.
@@ -52,9 +52,9 @@ the next applicable launch must enforce it.
 | Built extension trees, patched or empty-series | Keyed pool, copy and Podman launch-triggered detached advance exist. Add ongoing scheduling and shared visibility. |
 | Patched fork programs | Advance/admission exists; extend timing to `next-launch`, retaining fatal patch semantics and explicit historical recovery. |
 | Plain source forks | Timer may build a missing artifact at its recorded standing pin, never move that pin. Manual update reuses authorized manual pin resolution; explicit tag/commit constraints still apply. Unchanged admitted inputs reuse their artifact. |
-| Captured ordinary programs | Host capture/floor route exists; keep that established route. Only replacement of ordinary warm CLI/MCP updates waits on [OQ-PD23](program-delivery.md#oq-pd23). |
+| Captured ordinary programs | Reuse host capture/floor machinery for immutable machine-level artifacts under [OQ-PD23](program-delivery.md#decision-ledger); supported warm-update replacement remains unbuilt. |
 | Declared programs not capturable on a platform | Keep their supported installer/readiness route; say unsupported preparation explicitly. No timer executes an unsealed host installer. |
-| MCP server programs | Keep present invocation refresh until [OQ-PD23](program-delivery.md#oq-pd23) explicitly includes or excludes them. No silent inclusion. |
+| MCP server programs | Included in machine preparation for supported yolo-installed declarations; preserve bounded invocation refresh until its tested replacement lands. Raw npx or hand-installed servers are not silently captured. |
 | Raw or hand-installed extensions | Existing in-jail prelaunch refresh remains foreground; not a pack-built artifact. Explain this residual wait. |
 | Configured pack sources | Existing refresh remains separate; scheduling may reuse its authorized resolution, but must not render refreshed declarations into a running environment. |
 | Host tree/program delivery | Linux preparation can run detached; selected launch/apply materializes the admitted generation. Timer never swaps host links or settings. |
@@ -117,7 +117,7 @@ These are reversible engineering bounds, not new owner defaults:
 - Wake every **60 seconds**, and immediately for newly registered work, config-change notification or a foreground request.
   Missed sleeps cause one reevaluation, never a burst of catch-up jobs. No networking when all keys are not due.
 - Source checks preserve the existing **one-hour attempt interval** and keyed candidate/build backoff. Captures preserve
-  their established release/refresh intervals until the capture policy is ruled; the scheduler tick is not a new update interval.
+  their established release/refresh intervals while the capture adapter is built; the scheduler tick is not a new update interval.
 - Recipe/series/source/platform edits invalidate a queued request immediately. A pending candidate becomes runnable when its
   existing backoff permits. A busy skip does not stamp success or extend the upstream attempt throttle.
 - Offline/fetch/build failures retain their exact typed outcome and retry time; no retry loop inside one tick.
@@ -183,8 +183,8 @@ never implicitly restart a running jail.
   is unchanged. If an older check predates this request, run one follow-up fresh check, not a rebuild.
 - No candidate means a successful fresh check, not a rebuild. A failed check, build or unsupported required freshness route
   fails the explicit request with the repair/ordinary-launch route. Never quietly fall back while advertising freshness.
-- Ordinary enabled programs/MCP not yet covered by machine capture complete their current supported launch update route;
-  the flag cannot promise host-prepared capture until [OQ-PD23](program-delivery.md#oq-pd23) is ruled.
+- Ordinary enabled programs/MCP use the settled machine-prepared route once their supported adapter lands;
+  until then the existing bounded launch update route remains, without advertising implemented capture.
 - Apple Container can check now, but when another jail prevents a required build the flag refuses and names stopping that
   jail or preparing through supported Podman. Below the read-only floor no unsafe build/copy is authorized.
 - Completion is a per-request vector of exact selected identities and admitted generations, not a machine-global “up to date” bit.
@@ -239,10 +239,10 @@ loopback classes, and native Darwin for Apple Container/macOS limits. Static com
 | Launch-only background spawn | Insufficient: no progress between launches after that act exits. Add a scheduler around it. |
 | Native/macOS support by relabeling Linux entries | Rejected: platform/recipe receipt must match; retain unsupported routes explicitly. |
 | Persistent worker/resource pressure | Existing per-act bounds, keyed exclusion, due attempts and explicit lifecycle/status; consider global permits only after measured pressure. |
-| Ordinary CLI capture scope still open | Keep [OQ-PD23](program-delivery.md#oq-pd23) as the only owner gate; do not treat implementation authorization as its answer. |
+| Ordinary CLI/MCP producer support | Architecture is settled by [OQ-PD23](program-delivery.md#decision-ledger); validate each producer's sealing, compatibility and launcher/readiness handoff before replacing its existing route. |
 
 This does not optimize agent startup internals, replace raw extension management, widen credentials,
 change confinement defaults, auto-install a host agent on a timer or prove shutdown performance.
 Research informs this design; the ready plan hands off independent slices now. Capture replacement alone
-stays in its question-dependent sketch until the existing owner answer is saved. Implementers build fenced
+stays in its source-dependent sketch until the committed install-only/refresh interface is verified. Implementers build fenced
 seams; reviewers check contracts and runtime QA establishes platform claims.

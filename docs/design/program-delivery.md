@@ -17,7 +17,7 @@ is ruled and sits in the [Decision Ledger](#decision-ledger), and **these are op
 [§10](#10-what-i-would-build-in-order) still have a subject, [OQ-PD20](#oq-pd20), which asks whether `$GOBIN` stays a boot-catalog
 orphan class that `programs.autoprune` removes now that yolo installs nothing there, and
 [OQ-PD21](#oq-pd21), which asks whether a pack may pin an agent CLI against P6's *Pin: none*, and
-[OQ-PD23](#oq-pd23), which asks whether an agent CLI updates once per machine. **In the tree:** the receipts and the boot orphan catalog
+[OQ-PD23](#decision-ledger), which settles ordinary CLI/MCP preparation once per machine. **In the tree:** the receipts and the boot orphan catalog
 (`af46c9b4`), the mise half (`a16403e2`), the [§6.2](#62-pay-the-enum-tolerance-before-the-next-mechanism-arrives) tolerance (`0a4d241c`), the offline
 reconcile (`43f28ce8`), the removal act and `yolo programs` (`3a4f1bbf`, `c127f4ad`, `3ac165e4`),
 evergreen agent updates with B2's PATH move and A7's version prune (merge `208a5e43`), and install
@@ -29,7 +29,7 @@ jail, dated), **READ FROM CODE** (traced but not observed running) or **NOT MEAS
 was re-verified as an ancestor of `HEAD` on 2026-09-06 — a rebase had left earlier revisions of
 this doc, and the roadmap, citing SHAs that resolve as objects but are not ancestors.
 
-**Needs your ruling:** [OQ-PD19](#-oq-pd19--do-steps-three-and-five-still-have-a-subject-after-the-agentproject-split), [OQ-PD20](#oq-pd20), [OQ-PD21](#oq-pd21), [OQ-PD23](#oq-pd23).
+**Needs your ruling:** [OQ-PD19](#-oq-pd19--do-steps-three-and-five-still-have-a-subject-after-the-agentproject-split), [OQ-PD20](#oq-pd20), [OQ-PD21](#oq-pd21).
 
 > [!IMPORTANT]
 > **AMENDED 2026-09-03 — the doc reopened, and [§3.5](#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03) is the amendment.** This document
@@ -1869,6 +1869,7 @@ needed it, which was the point.
 | **OQ-PD17** | **No unreferenced oracle — the reap rule is the COMPLEMENT OF THE RESOLVER.** Reclaiming a capture entry is never a correctness event (measured: a reflinked destination survives its source's unlink byte-identical), and the resolver already picks *newest-by-receipt-time per (bin, platform)* — so every other entry is already unreachable by the only reader. Delete what the resolver would not select; `K = 1`. Retires all three candidates (materialize receipts, a store-side reference list, `FIEMAP`), **and** `K = 2` and the age floor, which this doc had proposed. ✅ **SHIPPED** `46874f2d` as `capture.PruneSupersededCaptures`, reached through `yolo prune`. ⚠ Surfaced [OQ-PD18](#decision-ledger): nothing populated the store automatically, so materialize had never hit on any machine. | 2026-09-04 · shipped 2026-09-04 | [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) *As built*, [`agent-cli-copies.md` §4.2](../reference/agent-cli-copies.md#reclaiming-a-capture-entry-is-never-unsafe) |
 | **OQ-PD18** | **(d), DEFAULT ON — auto-capture on first launch, host-side, in the throwaway jail, no knob to turn it on.** Nothing populated the store before this: `yolo capture` was its only writer, no launch path called it, and it had never been run. ⚠ **Default-on makes a stale entry actively harmful** — the workspace pays a copy AND a download, and is left holding a dead version the vendor updater will not remove — so **A7's V-axis prune is a prerequisite, not a companion** (landed first, `5fe5ba5c`), and [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) became load-bearing (ruled the same day). On ext4 capture costs `+S` at every N and buys `N−1` avoided downloads; the ext4 share of real installs is the unmeasured number that would revisit the default. ✅ **SHIPPED 2026-09-04** (merge `18524ff9`): the trigger in `internal/cli/run/autocapture.go`, the miss decision in `internal/cli/autocapture.go`, `YOLO_NO_AUTO_CAPTURE=1` the opt-out; verified in a real nested jail. ⚠ **AMENDED 2026-10-03:** a fresh launch only, never an attach ([OQ-PD25](#decision-ledger)), and a failure is backed off, not retried by every launch ([OQ-PD26](#decision-ledger)). | 2026-09-04 · shipped 2026-09-04 | [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) *As built*, [`agent-cli-copies.md` §4.1](../reference/agent-cli-copies.md#the-ext4-inversion) |
 | **OQ-PD22** | *Implementation decision, reversible, inside [OQ-PD12](#decision-ledger)'s 60-second bound:* **an UPDATE ACT (a pack's update verb, or its pre-launch refresh) runs DETACHED from the terminal, under a bound that HOLDS, and a Ctrl-C ends the act, not the launch.** The act runs through `yolo internal no-terminal --timeout=60 --kill-after=5` (no controlling terminal, a `/dev/null` stdin, SIGTERM then SIGCONT at 60 s, SIGKILL to its process group 5 s later, and a forwarded Ctrl-C escalated after the same 5 s; status 124 for a timeout), spliced once into all three launcher templates (`internal/entrypoint/updatebound.go`). The launcher traps the Ctrl-C around the act, says the update was interrupted, and runs the installed version; a SIGTERM or SIGHUP releases the act's lock before ending the launcher by that signal; an interrupted installer re-run writes no receipt. GNU `timeout --foreground -k` is the fallback where no `yolo` has the verb. **Why:** GNU `timeout 60` was the hang it was meant to prevent. Its own process group on the user's terminal made `claude install`'s raw-mode switch stop it with SIGTTOU, its SIGTERM without `-k` could not end a process stopped again inside its handler, and the terminal's Ctrl-C never reached it (measured 2026-10-01, the *Timeout* bullet in [§3.5](#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03)). The vendor's updater did nothing wrong that a terminal-less run does not absorb, so the fix is yolo's. The bound is the verb's rather than `timeout -k`'s because a stock macOS has no `timeout(1)`. **Narrows [`PS-D7`](provisioner-sets.md#PS-D7)** for the update path only: a Ctrl-C at a cold install still ends the launcher. | 2026-10-01 | [§3.5](#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03) |
+| **OQ-PD23** | **Ordinary CLI and yolo-installed MCP programs are captured once per machine per compatible resolved input, by a repeatable sealed credential-free producer, and reused across workspaces.** Explicit source/version constraints remain binding; unsupported installers retain their bounded existing route. Implementation pending, not built. | 2026-10-13 | [Machine-level program preparation](#machine-level-program-preparation) |
 | **OQ-PD24** | *Implementation decision, reversible, fixing a defect under [OQ-PD18](#decision-ledger):* **the capture driver CHECKS its surface root instead of trusting it, and reaches a surface through the home whenever the root is not provably the same directory.** The host passes `--surface-root=/workspace/.yolo/home` to every container backend, and that is a second path to the surfaces only on podman, whose per-surface binds come from `<ws>/.yolo/home/<Subtree>`. Apple Container binds that directory whole at the home (READ FROM CODE: `appleContainerBaseMounts`), so `~/.local` is `<root>/.local` and `<root>/local` does not exist: every capture there walked absent surfaces and stored nothing, and every launch ran claude's, codex's and agy's installers again (MEASURED on a Mac 2026-10-02, [`macos-backend-performance.md` §8](../research/macos-backend-performance.md#8-results)). The driver now requires the same device and inode at the deepest level both spellings exist (`surfaceDoor`, `internal/capture/inner.go`) and otherwise takes the home, the door the installer writes through. ⚠ **On Apple Container the move therefore COPIES the delta across the guest's two mounts** instead of renaming it: a correct capture, paid once per program per machine. A rename there would need the host to name that backend's layout, and the guest's view of one host directory through two virtiofs mounts to be coherent; neither is checked. | 2026-10-03 | [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) |
 | **OQ-PD25** | *Implementation decision, reversible, reading [OQ-PD18](#decision-ledger)'s "on first launch":* **auto-capture runs on a FRESH launch only, below every attach decision, beside the fork builds and under the launch lock; an attach never runs it.** The jail an attach enters was started by a fresh launch that met the miss first, so a trigger above the dispatch only repeated that attempt for every terminal that joined: 14 s per attach on Apple Container (MEASURED, [`macos-backend-performance.md` §8](../research/macos-backend-performance.md#8-results)), where a capture jail cannot start beside the running one (INFERRED from [§7](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk), which MEASURED that a second unsealed jail cannot). Under the lock, a second terminal waits for the first launch's capture and then attaches, rather than capturing too. **Supersedes [FP-D14](forked-programs-as-packs.md#FP-D14)'s clause** that auto-capture keeps its slot above the dispatch because a running jail's launchers read the store lazily: true, and worth less than an attempt per terminal. The call is one line in `runContainer` (`internal/cli/run/run.go`). | 2026-10-03 | [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) |
 | **OQ-PD26** | *Implementation decision, reversible, inside [OQ-PD18](#decision-ledger):* **a failed auto-capture is REMEMBERED per program and platform on the machine, and the trigger backs off: the first retry a day after the failure, each further consecutive failure doubling the wait, never more than a week; a different yolo, or any capture that stores the program, starts over.** Shipped as a forgotten failure, on the argument that the common cause is a transient network; then a capture that fails every time re-pays its installer on every launch, which is what every Apple Container launch did (61 s of each fresh launch, MEASURED, [`macos-backend-performance.md` §8](../research/macos-backend-performance.md#8-results)). The memo is a file per `(bin, platform)` beside the store's entries (`capture.AutoFailure`), keyed to the yolo version because an update may be the fix, as it was there. The failing launch says once when the next try is, with `yolo capture <bin>` to retry now and `YOLO_NO_AUTO_CAPTURE=1` to stop; a launch inside the back-off says nothing. **Losing the capture lock to another workspace is not a failure** and is not remembered. The values are `autoCaptureFirstBackoff` and `autoCaptureMaxBackoff` in `internal/cli/autocapture.go`. | 2026-10-03 | [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) |
@@ -1882,7 +1883,7 @@ needed it, which was the point.
 
 ## Open Questions
 
-**Open: [OQ-PD19](#-oq-pd19--do-steps-three-and-five-still-have-a-subject-after-the-agentproject-split), [OQ-PD20](#oq-pd20), [OQ-PD21](#oq-pd21) and [OQ-PD23](#oq-pd23).** Every other question is ruled and in the [Decision Ledger](#decision-ledger):
+**Open: [OQ-PD19](#-oq-pd19--do-steps-three-and-five-still-have-a-subject-after-the-agentproject-split), [OQ-PD20](#oq-pd20), [OQ-PD21](#oq-pd21).** Every other question is ruled and in the [Decision Ledger](#decision-ledger):
 the 2026-08-24 set, the 2026-09-03 amendment's rulings with its B2 revision and the two questions
 it opened, and the two from 2026-09-04 (the capture build opened [OQ-PD17](#decision-ledger), and
 ruling it surfaced [OQ-PD18](#decision-ledger)). [OQ-PD22](#decision-ledger), recorded 2026-10-01, was an
@@ -2107,53 +2108,29 @@ do.
 **Answer:**
 > _(empty — fill in when decided)_
 
-### <a id="oq-pd23"></a>💬 [`OQ-PD23`](#oq-pd23) — does an agent CLI update once per machine, rather than once per workspace?
+### Machine-level program preparation
 
-Filed 2026-10-02 from the maintainer's question after a launch sat at "Updating claude…" (the hang
-[OQ-PD22](#decision-ledger) fixed): *"I thought we capture these updates somehow and then layer
-them in. … why isn't this all one-timed?"* The working label in that session was Q134.
+Ordinary CLI and yolo-installed MCP programs **prepare once per machine**, then reuse immutable
+admitted artifacts across workspaces. [OQ-PD23](#decision-ledger) settles efficiency and repeatability,
+not one universal cross-OS binary. The producer is sealed and credential-free, under selected pack
+authority. Reuse requires matching resolved source, recipe, platform/runtime, Node ABI where
+applicable, dependency inputs and validated provenance. No login, config, credential or session
+state is captured; this grants no new host reads or credential transport.
 
-**Today.** The capture store serves an agent's first install on a machine and nothing after it
-([OQ-CP4](../reference/agent-cli-copies.md#oq-cp4)). After that, each workspace's launcher runs
-the vendor's own update verb (`claude install` for claude) when its stamp is more than an hour old
-(`UPDATE_INTERVAL=3600`, `_update_due` in the launcher template), so every workspace downloads
-every release itself. That stamp sits in `~/.cache/yolo-agent-stamps`, which every workspace on the
-machine shares, while each install is the workspace's own ([§4.4](#44-the-scope-mismatch-the-maintainers-premise-corrected)).
-**READ FROM CODE, NOT MEASURED:** an update in one workspace holds off every other workspace's for
-an hour, so a workspace that only launches within an hour of another's update stays on its old
-version. **At the host, since 2026-10-05:** the host floor updates an installer agent per machine, not
-per workspace: once its newest capture of the agent is a day old it captures the agent again (a
-failed capture is retried after the hourly interval), and it installs only a newer release
-([HP-D16](host-tool-provisioning.md#HP-D16)). That capture is the store's newest, so a jail's cold
-install takes it too. The question stays open for a jail's warm updates. The MCP server refresh's
-stamps have the same shape: they sit in
-`~/.cache/yolo-agent-stamps/servers` while each install goes into the workspace's own prefix, under
-that prefix's lock ([`serverrefresh.go:264`](../../internal/entrypoint/serverrefresh.go#L264),
-[`:379-382`](../../internal/entrypoint/serverrefresh.go#L379-L382)). No option below names them, so
-the ruling should say whether they follow it
-([`pi-extension-store-builds.md` §6.1](pi-extension-store-builds.md#61-every-lock-in-pis-path)).
+Admission makes bytes available; launch/apply selects and materializes them without changing
+running sessions or attach's generation. Reuse existing check/replay/build/admit acts, not a second
+builder or agent registry. Explicit source pins/version constraints remain binding.
+[PF-D81](patched-forks.md#PF-D81)'s strict patch failures and
+[PF-D82](patched-forks.md#PF-D82)'s validated historical-cache escape remain unchanged, without
+new provenance prerequisites excluding previously valid historical entries.
 
-**What [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) rested on.** `yolo capture` is a host act, and the capture jail gets no store mount,
-so a launcher inside a jail cannot start one. But the launch itself runs on the host, and
-auto-capture ([OQ-PD18](#decision-ledger)) already captures there.
-
-- **(A) Keep per-workspace updates, and check first.** The launcher asks the vendor for its latest
-  version and runs the updater only when that is newer. *You keep:* every workspace downloading
-  every release; the hourly no-op runs stop.
-- **(B) One capture per release, per machine.** At most hourly, the launch asks the vendor for its
-  latest version; for a new one it captures it once, in the throwaway jail auto-capture uses, and
-  every jail's launcher copies in the newest capture and runs no vendor updater. Reverses [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4),
-  and the shared stamp stops mattering. *You pay:* a capture per release, about a minute on the
-  host, and a jail picks a new version up at its next launch.
-- **(C) Leave it as it is.** The hang is fixed either way ([OQ-PD22](#decision-ledger)).
-
-<!-- vantage: question id=OQ-PD23 leaning="B: one capture per release per machine. The launch runs on the host, where auto-capture already captures, so OQ-CP4's premise that no host act can follow an update no longer holds; one download per release replaces one per workspace, and no vendor updater runs inside a jail." -->
-
-_Leaning:_ **(B).** One download per machine per release is what the maintainer expected, it takes
-the vendor updater out of every jail, and the premise [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) rested on no longer holds.
-
-**Answer:**
-> _(empty — fill in when decided)_
+Unsupported legacy installers retain their bounded existing install/readiness route, with
+unsupported preparation inspectable. Linux capture does not establish Darwin compatibility.
+Supported warm CLI/MCP updates move to machine preparation once their replacement callsites are
+tested; the existing launchers remain until then. The cold-only premise of
+[OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) does not govern this future route.
+The [capture sketch](launch-program-capture-plan.md) owns remaining agent engineering, not an
+unanswered owner choice.
 
 ### Compacted questions — headings kept because sibling docs link to them
 
