@@ -139,8 +139,27 @@ func TestTheHostRenderLinksTheGoodBuildAndRetainsUnknownVersions(t *testing.T) {
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
 	third, _ := os.Readlink(fx.link())
-	if third == second || !isDir(first) || !isDir(second) {
+	if third == second || !isDir(first) || !isDir(second) || !isDir(third) {
 		t.Errorf("after the second move: link %q, oldest kept %v, previous kept %v", third, isDir(first), isDir(second))
+	}
+	// Deselection and unlinking are not reader-death evidence either.
+	if err := os.Remove(fx.link()); err != nil {
+		t.Fatal(err)
+	}
+	userFile := filepath.Join(fx.home, "user-bytes")
+	cacheFile := filepath.Join(paths.CapturesDir(), "unknown-cache-bytes")
+	writeFile(t, userFile, "user")
+	writeFile(t, cacheFile, "cache")
+	sweepDroppedHostTrees(nil)
+	for _, version := range []string{first, second, third} {
+		if !isDir(version) {
+			t.Errorf("automatic cleanup removed unproven version %s", version)
+		}
+	}
+	for file, want := range map[string]string{userFile: "user", cacheFile: "cache"} {
+		if got, err := os.ReadFile(file); err != nil || string(got) != want {
+			t.Errorf("automatic cleanup touched unrelated bytes %s: %q (%v)", file, got, err)
+		}
 	}
 }
 
@@ -693,7 +712,12 @@ func TestARevertRemovesAPatchedExtensionsLinkAndItsCopies(t *testing.T) {
 	if _, err := os.Lstat(fx.link()); err != nil {
 		t.Fatal("the dry revert removed the link")
 	}
+	if !isDir(target) || !strings.Contains(errw.String(), "Stop all host agents") ||
+		!strings.Contains(errw.String(), "--assert does not prove") {
+		t.Fatalf("dry revert must retain copies and preview the cleanup warning:\n%s", errw.String())
+	}
 	out.Reset()
+	errw.Reset()
 	if rc := hostMain([]string{"apply", "--revert", "--assert"}, &out, &errw, false, nil); rc != 0 {
 		t.Fatalf("the revert rc=%d\n%s%s", rc, out.String(), errw.String())
 	}
@@ -703,11 +727,46 @@ func TestARevertRemovesAPatchedExtensionsLinkAndItsCopies(t *testing.T) {
 	if isDir(filepath.Dir(target)) {
 		t.Errorf("the revert left the host's versioned copies:\n%s", out.String())
 	}
+	if !strings.Contains(errw.String(), "old host sessions may still read these copies") {
+		t.Fatalf("explicit cleanup omitted the live-session warning:\n%s", errw.String())
+	}
 	if man, _ := hostskills.LoadManifest(hostSkillsManifestPath()); man.OwnedBy(fx.link(), "treepack") {
 		t.Error("the revert left the link in the files ownership record")
 	}
 	if !strings.Contains(out.String(), "1 patched-extension link") {
 		t.Errorf("the revert's summary does not count the link:\n%s", out.String())
+	}
+}
+
+// hostTreeNoticeWriter checks filesystem state at the warning, not after the verb returns.
+type hostTreeNoticeWriter func([]byte) (int, error)
+
+func (w hostTreeNoticeWriter) Write(p []byte) (int, error) { return w(p) }
+
+func TestRevertHostTreeLinksWarnsBeforeExplicitDeletion(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	advanceHostTrees(io.Discard, false, "", nil)
+	fx.renderTrees(t, true)
+	target, err := os.Readlink(fx.link())
+	if err != nil {
+		t.Fatal(err)
+	}
+	warned := false
+	notice := hostTreeNoticeWriter(func(p []byte) (int, error) {
+		warned = true
+		if _, err := os.Lstat(fx.link()); err != nil || !isDir(target) {
+			t.Fatal("explicit cleanup removed links or copies before warning")
+		}
+		if !strings.Contains(string(p), "Stop all host agents") {
+			t.Fatalf("warning has no next action: %s", p)
+		}
+		return len(p), nil
+	})
+	if _, _, err := revertHostTreeLinks(false, notice); err != nil {
+		t.Fatal(err)
+	}
+	if !warned || isDir(target) {
+		t.Fatalf("warning=%v, explicit cleanup left copies=%v", warned, isDir(target))
 	}
 }
 
