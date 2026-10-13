@@ -186,6 +186,11 @@ func TestPreparationProgramFailureBackoffPreservesGood(t *testing.T) {
 	if fx.record(t).Good.Entry != old {
 		t.Fatal("failure replaced Good")
 	}
+	failure, err := readBackgroundOutcome(backgroundOutcomePath("forkpack/tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryAt := time.Unix(failure.RetryAt, 0)
 	subs, err := readPreparationSubscriptions(preparationRoot())
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +222,21 @@ func TestPreparationProgramFailureBackoffPreservesGood(t *testing.T) {
 	if after != before {
 		t.Fatal("backoff retried build")
 	}
+	fx.rc = 0
+	fx.now = retryAt.Add(2 * time.Hour)
+	runProgramPreparationTick(t, func() bool {
+		for _, sub := range subs {
+			snap, err := readPreparationSnapshotFor(preparationRoot(), sub)
+			if err == nil && snap.ServingEntry != "" && snap.ServingEntry != old {
+				return true
+			}
+		}
+		return false
+	})
+	if d, g := admittedProgramServing(fx.fork(t), "podman", patchedTestPlatform); g == nil || d.Key == old {
+		t.Fatalf("retry did not admit exact Good: %+v %+v", d, g)
+	}
+
 }
 
 func TestPreparationProgramPatchFailureDoesNotBuild(t *testing.T) {

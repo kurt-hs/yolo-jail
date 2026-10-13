@@ -22,6 +22,7 @@ package packsrc
 // a temp file and a rename, and writers are serialized by a flock in the pack store (WithForkLock).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -161,7 +162,15 @@ func (l *ForkLock) Prune(keep []string) []string {
 // (storeDir/locks), WithLock's discipline for the second file: fn reports whether it changed
 // anything, and nothing is written when it did not.
 func WithForkLock(storeDir, lockPath string, waiting func(string), fn func(*ForkLock) (bool, error)) error {
-	unlock, err := flockPath(filepath.Join(storeDir, "locks", "forklock-"+mirrorSlug(lockPath)+".lock"),
+	return WithForkLockGuarded(context.Background(), storeDir, lockPath, waiting, fn, nil)
+}
+
+// WithForkLockGuarded is the cancellable fork-pin transaction for a shared worker.
+// Lock order is forklock, then mirror; fn may record a short check-start boundary
+// before mirror work. guard wraps only Save and must not reacquire forklock or
+// wait on work that needs it. A nil guard preserves the legacy writer's behavior.
+func WithForkLockGuarded(ctx context.Context, storeDir, lockPath string, waiting func(string), fn func(*ForkLock) (bool, error), guard func(func() error) error) error {
+	unlock, err := flockPathContext(ctx, filepath.Join(storeDir, "locks", "forklock-"+mirrorSlug(lockPath)+".lock"),
 		"the fork lock "+lockPath, waiting)
 	if err != nil {
 		return err
@@ -175,5 +184,17 @@ func WithForkLock(storeDir, lockPath string, waiting func(string), fn func(*Fork
 	if err != nil || !changed {
 		return err
 	}
-	return l.Save(lockPath)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	save := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return l.Save(lockPath)
+	}
+	if guard != nil {
+		return guard(save)
+	}
+	return save()
 }
