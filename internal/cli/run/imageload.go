@@ -1,6 +1,7 @@
 package run
 
 import (
+	"os"
 	"sync"
 	"time"
 
@@ -40,6 +41,13 @@ func (o *Options) autoLoadImage(cfg *jsonx.OrderedMap, rt, repoRoot string, sp s
 		load = func(opts image.AutoLoadOptions) image.LoadResult { return memoizedImageLoad(key, opts, confirm) }
 	}
 	return load(opts)
+}
+
+func ambientExtraPackages(configPackages []any) string {
+	if len(configPackages) != 0 {
+		return ""
+	}
+	return os.Getenv("YOLO_EXTRA_PACKAGES")
 }
 
 // imageLoadOptions is the image step's whole request, which the prewarm beside the fork-build slot
@@ -85,7 +93,10 @@ func (o *Options) imageLoadOptions(cfg *jsonx.OrderedMap, rt, repoRoot string, s
 		// SkipBuild stays a field on AutoLoadOptions as a dormant seam.
 		SkipBuild:     false,
 		ExtraPackages: extra,
-		Attr:          attr,
+		// Only capture the inherited value for the ambient-only case; config-declared
+		// packages have their own canonical JSON input and remain distinct.
+		AmbientExtraPackages: ambientExtraPackages(extra),
+		Attr:                 attr,
 		// THE LAUNCH STREAM IS STDERR, for every line the image half writes, and none of
 		// them may be written to the jail command's stdout. `yolo -- <cmd>` passes the
 		// command's output through untouched, and callers compare it exactly — two
