@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -56,6 +57,8 @@ func runInternal(args []string) int {
 		// reason from the other end: it writes a vendor's files into the home it is
 		// pointed at.
 		return runCaptureMaterialize(args[1:])
+	case capture.InstallerSupervisorVerb:
+		return capture.InstallerSupervisorMain(args[1:])
 	case "capture-run":
 		// The in-jail half of install-capture (program-delivery.md §6.3). Hidden
 		// rather than documented: it MOVES an installer's output out of the home it

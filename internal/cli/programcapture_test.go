@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,9 @@ import (
 )
 
 func TestProgramCaptureMaterializeExactCompatibilityAcrossWorkspaces(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	store := &capture.Store{Dir: t.TempDir()}
 	firstHome := t.TempDir()
 	makeEntry := func(id, body string) *capture.Entry {
@@ -74,6 +78,9 @@ func TestProgramCaptureMaterializeExactCompatibilityAcrossWorkspaces(t *testing.
 }
 
 func TestProgramCaptureDriverRequiresSealAndCapturesOnlyArtifactArgv(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("artifact ownership requires Linux")
+	}
 	home := t.TempDir()
 	out := filepath.Join(t.TempDir(), "out")
 	marker := filepath.Join(home, "installer-started")

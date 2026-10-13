@@ -49,7 +49,8 @@ import (
 
 // Options configures one capture run.
 type Options struct {
-	// Context cancels the owned installer process group; nil is background.
+	// Context cancels artifact-owned descendants, or the explicit-context legacy
+	// installer process group. Nil is background.
 	Context context.Context
 	// Artifacts narrows capture to selected program output paths. Nil retains the
 	// established installer delta route. It never broadens the outer jail seal.
@@ -123,7 +124,9 @@ type Options struct {
 	Stderr io.Writer
 }
 
-// Result reports what one capture produced.
+// Result reports what one capture produced. Artifact mode copies each changed leaf
+// from pinned descriptors into the private tree, leaving source cleanup to its
+// throwaway runtime; legacy mode retains its rename/EXDEV optimization.
 type Result struct {
 	// Manifest is the delta manifest, already written to ManifestPath(Out).
 	Manifest *Manifest
@@ -133,7 +136,8 @@ type Result struct {
 	// directory is one of them, not one per file inside it).
 	//
 	// Copied is the number that were not on the same MOUNT as the tree and had to be
-	// duplicated instead. It is reported rather than swallowed because a copy is the
+	// duplicated instead. Artifact mode instead counts copied changed leaves and
+	// performs no source rename. The legacy cost is reported rather than swallowed because a copy is the
 	// exact cost this subsystem exists to delete — 1.2 GB of it for claude, measured
 	// 2026-09-03 — and a caller that sees it can move its scratch dir instead of paying
 	// it on every capture forever.
@@ -144,13 +148,19 @@ type Result struct {
 // Run performs one capture: walk a baseline of the surfaces, run the installer, move
 // everything it added or changed into TreeDir(Out), and write the manifest beside it.
 //
-// The delta is MOVED, not copied — the capture home is throwaway, and a copy of a
+// Legacy delta is MOVED, not copied — the capture home is throwaway, and a copy of a
 // gigabyte-scale install is the cost the store exists to avoid. See Result.Copied for the
 // one case where it cannot be.
 func Run(opts Options) (*Result, error) {
 	d, err := newDriver(opts)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Artifacts != nil {
+		if err := d.pinArtifactHome(); err != nil {
+			return nil, err
+		}
+		defer d.artifactHome.Close()
 	}
 	// A CAPTURE THAT FAILS STILL HANDS BACK WHAT IT LEFT. The delta move normally carries the
 	// installer's files out of the surfaces and into the store's out tree, which the success path
@@ -164,6 +174,9 @@ func Run(opts Options) (*Result, error) {
 			return
 		}
 		_ = d.giveToStoreOwner(d.opts.Out)
+		if opts.Artifacts != nil {
+			return
+		} // Artifact transfer copies from pinned descriptors; never chown source paths on failure.
 		for _, s := range d.surfaces {
 			_ = d.giveToStoreOwner(d.surfacePath(s))
 		}
@@ -174,11 +187,6 @@ func Run(opts Options) (*Result, error) {
 	}
 	if err := d.install(); err != nil {
 		return nil, err
-	}
-	if opts.Artifacts != nil {
-		if err := d.checkArtifacts(); err != nil {
-			return nil, err
-		}
 	}
 	res := &Result{Tree: d.tree}
 	if err := d.moveDelta(baseline, res); err != nil {
@@ -237,11 +245,16 @@ func Run(opts Options) (*Result, error) {
 	if m.AbsoluteRefs == nil {
 		m.AbsoluteRefs = []AbsoluteRef{}
 	}
+	if opts.Artifacts != nil {
+		if err := ValidateArtifacts(m, opts.Artifacts); err != nil {
+			return nil, err
+		}
+	}
 	if err := WriteManifest(d.opts.Out, m); err != nil {
 		return nil, err
 	}
 	res.Manifest = m
-	if res.Copied > 0 && d.opts.Stderr != nil {
+	if res.Copied > 0 && d.opts.Stderr != nil && opts.Artifacts == nil {
 		fmt.Fprintf(d.opts.Stderr, "yolo capture: %d of %d delta paths had to be COPIED into %s "+
 			"rather than renamed — the scratch dir is on a different MOUNT from the capture "+
 			"surfaces, so every capture pays for the bytes twice\n",
@@ -283,11 +296,12 @@ func DefaultExcludes() []string {
 
 // driver is one capture's resolved inputs.
 type driver struct {
-	opts     Options
-	home     string
-	tree     string
-	surfaces []paths.HomeSurface
-	excludes []string
+	artifactHome *os.File
+	opts         Options
+	home         string
+	tree         string
+	surfaces     []paths.HomeSurface
+	excludes     []string
 	// doors is the path each surface is walked and moved through, keyed by HomeRel, decided
 	// once before the baseline (surfaceDoor) so the walk, the move and the parents' modes all
 	// use the same one.
@@ -542,6 +556,9 @@ type snapshot map[string]node
 // slash-separated path (the surface root included, so a surface the installer CREATES is
 // itself detectable).
 func (d *driver) walk() (snapshot, error) {
+	if d.opts.Artifacts != nil {
+		return d.artifactSnapshot()
+	}
 	snap := snapshot{}
 	for _, s := range d.surfaces {
 		root := d.surfacePath(s)
@@ -594,6 +611,9 @@ func (d *driver) install() error {
 	ctx := d.opts.Context
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if d.opts.Artifacts != nil {
+		return d.installArtifacts(ctx)
 	}
 	cmd := exec.CommandContext(ctx, d.opts.Command[0], d.opts.Command[1:]...) //nolint:gosec // the argv IS the input
 	if d.opts.Context != nil || d.opts.Artifacts != nil {
@@ -649,6 +669,9 @@ func envWithHome(env []string, home string) []string {
 // roots are bind MOUNTPOINTS and renaming one fails EBUSY; descending into it captures the
 // same content and cannot fail that way.
 func (d *driver) moveDelta(baseline snapshot, res *Result) error {
+	if d.opts.Artifacts != nil {
+		return d.transferArtifacts(baseline, res)
+	}
 	for _, s := range d.surfaces {
 		if _, err := os.Lstat(d.surfacePath(s)); err != nil {
 			if os.IsNotExist(err) {

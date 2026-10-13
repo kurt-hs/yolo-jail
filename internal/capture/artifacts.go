@@ -2,8 +2,6 @@ package capture
 
 import (
 	"fmt"
-	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -59,68 +57,6 @@ func artifactSurfaces(roots []string) ([]paths.HomeSurface, error) {
 	return out, nil
 }
 
-// checkArtifacts runs after the installer has exited, before moving any output. No
-// parent may be a link, and output links may refer only to another whitelisted output.
-func (d *driver) checkArtifacts() error {
-	roots := d.surfaceRels()
-	for _, root := range roots {
-		if err := confinedParents(d.home, root, false); err != nil {
-			return fmt.Errorf("program capture: %w", err)
-		}
-		start := d.surfacePath(paths.HomeSurface{HomeRel: root})
-		err := filepath.WalkDir(start, func(p string, e fs.DirEntry, err error) error {
-			if os.IsNotExist(err) && p == start {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(start, p)
-			if err != nil {
-				return err
-			}
-			named := root
-			if rel != "." {
-				named = path.Join(root, filepath.ToSlash(rel))
-			}
-			info, err := e.Info()
-			if err != nil {
-				return err
-			}
-			if info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 || (info.Mode()&os.ModeSymlink == 0 && info.Mode().Perm()&0o002 != 0) {
-				return fmt.Errorf("program capture: output %q has unsafe permissions %s — fix the selected install recipe", named, info.Mode())
-			}
-			switch {
-			case info.Mode().IsRegular(), info.IsDir():
-				return nil
-			case info.Mode()&os.ModeSymlink != 0:
-				target, err := os.Readlink(p)
-				if err != nil {
-					return err
-				}
-				if err := checkArtifactTarget(d.home, named, target, roots); err != nil {
-					return err
-				}
-				resolved, err := filepath.EvalSymlinks(p)
-				if err != nil {
-					return fmt.Errorf("program capture: link %q is dangling or cyclic — fix the selected recipe: %w", named, err)
-				}
-				realHome, err := filepath.EvalSymlinks(d.home)
-				if err != nil {
-					return err
-				}
-				return checkArtifactTarget(realHome, named, resolved, roots)
-			default:
-				return fmt.Errorf("program capture: output %q is not a file, directory or symlink — fix the selected recipe", named)
-			}
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // programEnvironment is an allowlist, not a credential-name blacklist. The outer
 // producer must independently use the sealed jail: this filters the installer's env,
 // not its filesystem or network authority. Prefixes are private to that capture home.
@@ -167,6 +103,9 @@ func ValidateArtifacts(m *Manifest, roots []string) error {
 			if err := checkArtifactTarget(m.Home, e.Path, e.Target, expected); err != nil {
 				return err
 			}
+			if err := resolveArtifactLink(m.Home, e.Path, have, expected); err != nil {
+				return err
+			}
 		} else {
 			mode, err := strconv.ParseUint(e.Mode, 8, 32)
 			if err != nil || mode&0o6002 != 0 {
@@ -201,4 +140,43 @@ func checkArtifactTarget(home, named, target string, roots []string) error {
 		}
 	}
 	return fmt.Errorf("program capture: link %q targets unselected output %q — include its program artifact or fix the selected recipe", named, target)
+}
+
+// Resolve links from the captured entry table, never by following installer paths.
+func resolveArtifactLink(home, named string, have map[string]ManifestEntry, roots []string) error {
+	cur := named
+	for hops := 0; hops < 40; hops++ {
+		parts := strings.Split(cur, "/")
+		followed := false
+		for i := range parts {
+			prefix := strings.Join(parts[:i+1], "/")
+			e, ok := have[prefix]
+			if !ok {
+				return fmt.Errorf("program capture: dangling link %q — fix the selected recipe", named)
+			}
+			if e.Kind != KindSymlink {
+				continue
+			}
+			if err := checkArtifactTarget(home, prefix, e.Target, roots); err != nil {
+				return err
+			}
+			target := e.Target
+			if filepath.IsAbs(target) {
+				r, err := filepath.Rel(home, target)
+				if err != nil {
+					return err
+				}
+				target = filepath.ToSlash(r)
+			} else {
+				target = path.Join(path.Dir(prefix), target)
+			}
+			cur = path.Join(target, strings.Join(parts[i+1:], "/"))
+			followed = true
+			break
+		}
+		if !followed {
+			return nil
+		}
+	}
+	return fmt.Errorf("program capture: cyclic link %q — fix the selected recipe", named)
 }

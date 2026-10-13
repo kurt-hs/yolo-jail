@@ -10,7 +10,8 @@ depends-on:
 # Sketch: machine-level ordinary CLI and MCP preparation
 
 **Status:** 2026-10-13. Source checked against `4e7d58311` plus this isolated candidate.
-Compatibility, artifact-driver and keyed admission pieces are implemented and locally tested;
+Compatibility, artifact-driver and keyed admission pieces include the component security repairs
+and are locally tested;
 the selected sealed producer and launcher/readiness/MCP replacement are not wired. This is not
 a ready handoff for the whole adapter.
 **Design:** [preparation boundary](launch-update-preparation.md) and
@@ -36,9 +37,9 @@ work proceeds through the [independent plan](launch-update-preparation-plan.md).
 | [`capture.ProgramInputs.Identity`](../../internal/capture/programinputs.go) | Hashes selected owner/bin/declaration/resolver, resolved release/source, recipe, dependency set, runtime/toolchain identity, platform and applicable observed Node ABI. No workspace path or universal floor is an input. |
 | [`CaptureReceipt`](../../internal/entrypoint/capturereceipt.go), [`captureRecords`](../../internal/cli/capturematerialize.go) | Additive ordinary compatibility identity through the existing receipt writer/reader/adapter. Old receipts still answer their established empty-identity route; they cannot prove a new resolved identity. |
 | [`capture.Select`](../../internal/capture/select.go), [`capture.PruneSupersededCaptures`](../../internal/capture/gc.go) | Exact ordinary identities are separate selection keys; prune remains the complement of the reader and keeps each reachable identity's winner. Materialized copies need no session registry. |
-| [`capture.Run`](../../internal/capture/inner.go), [`artifactSurfaces` / `ValidateArtifacts`](../../internal/capture/artifacts.go) | Opt-in artifact roots, not whole prefixes/home. Reject traversal, overlaps, yolo state, unselected/outside links, dangling/cyclic producer links, special files and unsafe permissions. Installer env is allowlisted with capture-private prefixes; context cancellation stops its process group. Legacy nil-artifact capture is unchanged. |
+| [`capture.Run`](../../internal/capture/inner.go), [`artifactSurfaces` / `ValidateArtifacts`](../../internal/capture/artifacts.go) | Opt-in artifact roots, not whole prefixes/home. Reject traversal, overlaps, yolo state, unselected/outside links, dangling/cyclic producer links, special files and unsafe permissions. Installer env is allowlisted with capture-private prefixes. Linux artifact mode uses an isolated same-binary subreaper and pinned no-follow descriptor copies; cleanup proof precedes validation. Unsupported artifact platforms refuse only this new route. Legacy nil-artifact capture is unchanged. |
 | [`runCaptureRun`](../../internal/cli/capture.go) | Repeated hidden `--artifact=HOME-RELATIVE-PATH` arguments reach the real driver. This mode refuses a missing sealed-build marker before executing the installer. **A marker is not sandbox evidence**: the host producer must actually use the seal. |
-| [`Store.AdmitEntryGuarded`](../../internal/capture/store.go) | Digest/freeze and keyed CAS contention happen outside the caller's short selected-input publication guard; rename/completion happen within it. Identical bytes produced by different input identities serialize at the existing store. |
+| [`Store.AdmitEntryGuarded` / `AdmitEntryValidated`](../../internal/capture/store.go) | Digest/freeze and keyed CAS contention happen outside the caller's short selected-input publication guard; rename/completion happen within it. Identical bytes produced by different input identities serialize at the existing store. The validated route checks the retained canonical manifest before publication; incompatible metadata refuses without changing existing metadata or receipts. |
 | [`prepareProgramCapture`](../../internal/cli/programcapture.go) | Existing receipt selection, pidlock, staging, immutable admission and original-runtime/keeper liveness proof. Same-identity waiters reread the winner; unchanged identity skips production. Cancellation/stale authority admits nothing; unknown runtime retains staging. The producer callback remains an integration seam, not an implemented installer. |
 | [`materializeCapture`](../../internal/cli/capturematerialize.go) | Hidden `--compatibility=IDENTITY` selects exact ordinary bytes and preserves that identity in the materialize receipt. Existing fork `--key` and legacy native selection stay separate. Existing relocation/confinement machinery places independent copies. |
 
@@ -46,6 +47,42 @@ The compatibility tuple must contain **resolved facts**. Passing a declaration s
 as its resolved release, a backend name as its complete runtime/toolchain identity, or an unapplied
 MCP list as its dependency vector does not meet this contract. The selected adapter must also
 include output/refresh instruction changes in its recipe identity.
+
+## Stable component handoff contract
+
+- **Driver:** hidden `capture-run --home=ABS --out=ENTRY --scan-content-refs`
+  with repeated `--artifact=HOME-RELATIVE-PATH`, followed by `-- INSTALLER ARGV`.
+  The selected producer must use an actual non-nil seal and supply the sealed-build marker;
+  the marker alone remains an accidental-use assertion. Config/login roots, whole shared
+  install prefixes, unselected link targets and yolo state are excluded/refused.
+- **Ownership:** Linux artifact mode self-execs the existing binary's hidden
+  `capture-installer-supervise` helper. Only that helper enables subreaping. Its lifetime pipe
+  closes on driver cancellation/death; after direct installer exit or cancellation it kills
+  only kernel-reported direct children, including successive adopted escaped/session-changing
+  generations, and reaps to `ECHILD`. Cleanup has a three-second bound. Cancellation also bounds a stopped helper: the driver
+  waits four seconds for cleanup, then kills only its own helper and refuses without
+  descendant-completion proof; the owned sealed runtime must finish teardown. Missing ownership,
+  failed installer, missing completion evidence or unreaped descendants refuse before transfer;
+  stop the owned sealed runtime and retry. No global subreaper or broad process kill exists.
+  Unsupported platforms retain legacy/native installation and refuse only new artifact capture,
+  naming the supported sealed Linux route.
+- **Transfer:** pin HOME before installation; open every source ancestor and regular file
+  fd-relative with no-follow checks, and read links without following them. Artifact mode
+  copies changed leaves from pinned descriptors into the private output tree, even on one
+  mount. It does not use the legacy rename optimization or pathname source cleanup/chown;
+  its throwaway runtime owns source cleanup. Link existence/cycle checks use captured entries,
+  not installer-controlled paths. Descriptor confinement remains necessary even after reaping.
+- **Admission:** `prepareProgramCapture` receives resolved `ProgramInputs`, exact roots,
+  producer callback and short publication guard. Before attaching identity to same-byte CAS,
+  `AdmitEntryValidated` validates the retained canonical manifest under the content lock, outside
+  the publication guard: platform, selected roots/entries, full relocation scan, relocation
+  disposition/reference instructions, and original home when not relocatable. It never upgrades
+  old canonical metadata. Incompatible reuse returns an error, publishes no new receipt, and
+  leaves legacy metadata/receipts intact. Warm exact winners also validate canonical metadata.
+  Different ABI identities with genuinely compatible metadata may still share one CAS entry.
+- **Boundary:** ownership cleanup and descriptor reads do not seal a producer. The selected
+  sealed producer, actual readiness/MCP/launcher consumers and scheduler demand wiring below
+  are still absent; this component cannot claim host-credential isolation or feature completion.
 
 ## Actual helper milestone and remaining seam
 
@@ -80,7 +117,10 @@ Permanent local synthetic fixtures reach hidden driver/materializer dispatch and
 admission adapter: excluded secrets/state, two workspace copies, exact input isolation and prune,
 concurrent same-identity reuse, distinct identities sharing identical CAS bytes, cancelled demand,
 stale publication rejection and unknown-runtime staging retention. Inputs tests cover release,
-recipe/dependencies, source, declaration, runtime, platform and Node ABI mismatches.
+recipe/dependencies, source, declaration, runtime, platform and Node ABI mismatches. Security
+regressions cover successful survivors, immediate double-fork/new-session children, escaped
+cancellation, missing helper evidence, parent swaps with excluded regular files, incompatible
+Linux/Darwin same-byte reuse, historical symlink-only metadata and retained relocation instructions.
 
 Targeted commands: `go test -short ./internal/capture ./internal/entrypoint ./internal/cli`,
 `go test -race -short ./internal/capture ./internal/cli -run 'TestProgram'`,
