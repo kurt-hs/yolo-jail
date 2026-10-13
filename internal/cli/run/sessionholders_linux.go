@@ -6,11 +6,9 @@ package run
 // runs on. The session lock is held with flock(2), so only FLOCK entries answer.
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -27,15 +25,10 @@ const userHZ = 100
 // and are left out when that cannot be read. An unreadable /proc yields nothing, which its caller
 // reads as an unnamed holder, never as none (JL-P3).
 func procLockHolders(f *os.File) []lockHolder {
-	fi, err := f.Stat()
-	if err != nil {
+	want := kernelLockIdentity(f)
+	if want == "" {
 		return nil
 	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil
-	}
-	want := lockDevInode(unix.Major(uint64(st.Dev)), unix.Minor(uint64(st.Dev)), st.Ino)
 	data, err := os.ReadFile("/proc/locks")
 	if err != nil {
 		return nil
@@ -58,10 +51,29 @@ func procLockHolders(f *os.File) []lockHolder {
 	return out
 }
 
-// lockDevInode is /proc/locks' "<maj:min:inode>" spelling of a lock's file: the device in hex, the
-// inode in decimal, which is what st_dev and st_ino resolve to.
-func lockDevInode(major, minor uint32, ino uint64) string {
-	return fmt.Sprintf("%02x:%02x:%d", major, minor, ino)
+// kernelLockIdentity reads the identity the kernel's lock table uses. On overlayfs
+// st_dev can name the overlay while a flock names its backing inode's device.
+// f is the unlocked diagnostic descriptor, not a session's held descriptor. A
+// nonblocking shared take lets fdinfo name that exact inode without guessing by
+// inode number alone. Release it BEFORE reading /proc/locks so the diagnostic
+// cannot name itself as a remaining session or keep the jail alive afterward.
+func kernelLockIdentity(f *os.File) string {
+	fd := int(f.Fd())
+	if err := unix.Flock(fd, unix.LOCK_SH|unix.LOCK_NB); err != nil {
+		return ""
+	}
+	data, err := os.ReadFile("/proc/self/fdinfo/" + strconv.Itoa(fd))
+	unlockErr := unix.Flock(fd, unix.LOCK_UN)
+	if err != nil || unlockErr != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 7 && fields[0] == "lock:" && fields[2] == "FLOCK" {
+			return fields[6]
+		}
+	}
+	return ""
 }
 
 // bootTime reads /proc/stat's btime line, the base a process's starttime is measured from, or the
