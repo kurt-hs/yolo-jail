@@ -130,7 +130,7 @@ These are reversible engineering bounds, not new owner defaults:
   scheduler lease's metadata transaction while acquiring an artifact/check/build lock; never kill a
   winner to favor a foreground request.
 - Existing per-build/wait **20-minute** bound and **60-second** source-check/network bounds remain.
-  Build children retain their existing **60-second** cancellation kill grace. No new act-wide deadline that
+  Build children retain their existing **5-second** cancellation kill grace. No new act-wide deadline that
   would mark an otherwise healthy later key failed. Document total wait can be multiple build bounds.
 - Sealed builds retain the existing build-jail CPU/memory limits and filesystem boundary; the scheduler cannot
   borrow credentialed launch limits or grant host files to accelerate a build. Disk-full stops that key with
