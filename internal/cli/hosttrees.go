@@ -540,7 +540,8 @@ func swapLink(dest, target string) error {
 
 // pruneHostTreeVersions retains untracked copies: neither age nor link position proves
 // a host session has stopped loading a version. Explicit revert remains the cleanup route.
-// Automatic reclamation requires proven session liveness, not yet tracked here.
+// Automatic reclamation requires proven session liveness, not yet tracked here; an inherited
+// descriptor's absence does not prove an arbitrary agent stopped. See OQ-LUP1 in the design.
 func pruneHostTreeVersions(dir, keep, previous string) {
 	// All existing versions have unknown session liveness.
 }
@@ -641,7 +642,8 @@ func sweepDroppedHostTrees(packs []*packload.Pack) {
 	// No host session liveness evidence is tracked for these copies.
 }
 
-// sweepUnlinkedHostTrees removes every extension's versioned copies under paths.HostTreesDir that
+// sweepUnlinkedHostTrees is explicit revert cleanup ONLY: unlinking or an absent lease is not
+// session-death evidence. The caller warns before removing links or copies. It removes copies
 // neither live names (by slug) nor any link man records points into. Best-effort.
 func sweepUnlinkedHostTrees(live map[string]bool, man *hostskills.Manifest) {
 	entries, err := os.ReadDir(paths.HostTreesDir())
@@ -685,7 +687,7 @@ func hostTreeLinkSlug(dest string) string {
 //
 // A record that cannot be read proves nothing is yolo's, so nothing is removed, and warn says so,
 // naming the record and what to do; it fails no revert, whose keys are another record's.
-func revertHostTreeLinks(observe bool) (links []string, warn string, err error) {
+func revertHostTreeLinks(observe bool, notice io.Writer) (links []string, warn string, err error) {
 	manPath := hostSkillsManifestPath()
 	man, lerr := hostskills.LoadManifest(manPath)
 	if lerr != nil {
@@ -698,6 +700,11 @@ func revertHostTreeLinks(observe bool) (links []string, warn string, err error) 
 		}
 	}
 	sort.Strings(links)
+	if len(links) > 0 {
+		fmt.Fprintln(notice, "Warning: explicit revert removes patched-extension links and their host copies; "+
+			"old host sessions may still read these copies. Stop all host agents using them before "+
+			"running `yolo host apply --revert --assert`; --assert does not prove those sessions stopped.")
+	}
 	if observe || len(links) == 0 {
 		return links, "", nil
 	}

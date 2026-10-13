@@ -2,15 +2,16 @@
 title: "Prepare between launches; materialize only at a launch"
 status: in-review
 stage: DESIGN
-next: "Build the independent scheduler and freshness slices from the ready plan; capture replacement alone waits on OQ-PD23"
+next: "Rule OQ-LUP1 for host lifetime/pinning; build the independent scheduler/freshness slices; capture replacement waits on OQ-PD23"
 ---
 
 # Prepare between launches; materialize only at a launch
 
 **Status:** 2026-10-13. The Task 1 tree producer has source-tested ongoing dispatch and
-owner/input/generation-guarded admission. Disposable-HOME status/stop smoke is not runtime build
-verification. Fresh-request qualification/flags, program registration, host consumption and Apple
-capabilities remain independent slices; see the [current plan](launch-update-preparation-plan.md).
+owner/input/generation-guarded admission. Host consumption retains unknown versions but does not
+establish known-gone reclamation. Disposable-HOME status/stop smoke is not runtime build verification.
+Fresh-request qualification/flags, program registration and Apple capabilities remain independent
+slices; see the [current plan](launch-update-preparation-plan.md). OQ-LUP1 remains unanswered.
 
 > **In short.** Environment preparation should continue between launches, using the same admitted-build pipeline. A launch chooses a generation; background work never changes the environment already running.
 
@@ -20,7 +21,7 @@ capabilities remain independent slices; see the [current plan](launch-update-pre
 
 **Start at:** [The policy boundary](#the-policy-boundary).
 
-**Needs your ruling:** existing [OQ-PD23](program-delivery.md#oq-pd23), including its MCP-server scope; no new question is opened here.
+**Needs your ruling:** [OQ-LUP1](#OQ-LUP1) for reliable host lifetime/pinning; existing [OQ-PD23](program-delivery.md#oq-pd23), including its MCP-server scope.
 
 **Reads with:** [source research](../research/launch-preparation.md), [ready independent implementation plan](launch-update-preparation-plan.md), [capture-only sketch](launch-program-capture-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
 
@@ -202,6 +203,43 @@ retain host versioned copies that a tracked session uses until liveness is known
 liveness. Untracked preexisting host versions are conservatively retained until explicit cleanup with a
 warning. Only launch/apply swaps host links/settings. Program-generation changes belong to their actual
 materialization adapter, not the initial tree scheduler. Admission alone never mutates a running environment.
+
+### Host lifetime and session pinning remain unestablished
+
+The existing host consumer retains all unknown versions; this is safety, not completed known-gone
+reclamation. Explicit revert still removes owned links and unlinked copies, warning before deletion
+that operators must first stop host agents using them. Automatic launch/apply must not infer death
+from an absent link, age, PID or released descriptor.
+
+Source evidence: [`hostExec`](../../internal/cli/host.go) either replaces itself with `syscall.Exec`,
+uses `managed.Run`, or calls [`launchservice.RunAgent`](../../internal/launchservice/agent.go), which
+waits for its direct child. That wait establishes direct-child exit on the resident path, not the
+absence of surviving descendants or agents started externally after apply. The existing
+[`modelmenu.Held.KeepAcrossExec`](../../internal/modelmenu/shared.go) clears close-on-exec on a menu
+lease. Reusing that pattern alone cannot prove an arbitrary agent stayed alive until release:
+an agent can close inherited descriptors while still running. Conversely, descendants can retain them.
+
+Lifetime evidence also does not pin module lookup. [`swapLink`](../../internal/cli/hosttrees.go)
+changes the shared `~/<into>` link; a session resolving that path again may see a later version even
+if its old copy survives. Safe collection needs both a defined set of readers and a stable
+per-session generation reference, not merely lease inheritance. No global session registry is approved.
+
+## Open questions
+
+1. 💬 **OQ-LUP1: What establishes host reader lifetime and pins each session's generation?**
+
+   <!-- vantage: question id=OQ-LUP1 -->
+
+   Choose **A**, retain unproven versions until explicit operator cleanup with a stop-agents warning,
+   accepting no automatic known-gone collection; or **B**, approve a stronger host lifetime/pinning
+   mechanism before automatic collection. B must define managed and external readers, descendants,
+   crashes and mutable-link rereads without a new global session registry. Released inherited locks
+   alone cannot establish death. This decision gates host reclamation, not independent preparation.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+## Remaining launch guarantees
 
 Cold starts still complete mandatory program readiness and existing refusal/hatch behavior.
 The flag changes preparation timing, not credential composition, boot PATH, host-apply consent or selected pack disclosures.
