@@ -7,16 +7,19 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 )
 
 // admittedProgramServing qualifies the selected program's exact Good.Entry, never a
 // scheduler snapshot or an independently recovered older build. It does not repair
 // records, advance sources, materialize programs, or consume background notices.
-func admittedProgramServing(f packload.Fork, runtime, platform string) (entrypoint.ForkDelivery, *packsrc.GoodBuild) {
+// logs optionally supplies the caller's existing collector; it changes no qualification.
+func admittedProgramServing(f packload.Fork, runtime, platform string, logs ...*perf.Log) (entrypoint.ForkDelivery, *packsrc.GoodBuild) {
 	refuse := func(why string) (entrypoint.ForkDelivery, *packsrc.GoodBuild) {
 		return entrypoint.ForkDelivery{Reason: fmt.Sprintf("%s: %s — run `yolo host apply --assert` on a supported container host to prepare the selected program", f.Key(), why)}, nil
 	}
@@ -33,6 +36,11 @@ func admittedProgramServing(f packload.Fork, runtime, platform string) (entrypoi
 	if why := (packdecl.Install{Platforms: f.Platforms}).UnpublishedReason(osname, arch); why != "" {
 		return refuse(why)
 	}
+	var log *perf.Log
+	if len(logs) > 0 {
+		log = logs[0]
+	}
+	defer log.Span("preparation.admitted_read").End()
 	selected := selectConfiguredHostPacks()
 	if problems := selected.problems(); len(problems) > 0 {
 		return refuse(fmt.Sprintf("user selection unavailable: %v", problems))
@@ -87,7 +95,8 @@ func admittedProgramServing(f packload.Fork, runtime, platform string) (entrypoi
 
 // registerProgramPreparation retains the original program declaration; admission
 // and current user authorization belong to the shared preparation dispatcher.
-func registerProgramPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer) error {
+// logs times only an eligible callback attempt, not successful admission.
+func registerProgramPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer, logs ...*perf.Log) error {
 	if req.Runtime != "podman" && req.Runtime != "container" {
 		return nil
 	}
@@ -103,5 +112,18 @@ func registerProgramPreparation(pins []packload.ForkPin, req run.ForkBuildReques
 		}
 		forks = append(forks, f)
 	}
-	return registerPreparationForks(forks, req.Runtime, req.Platform, w)
+	var report *buildReport
+	var span *perf.Span
+	if len(forks) > 0 && !config.InJail() && run.BackgroundBuildsOn(req.Runtime) {
+		var log *perf.Log
+		if len(logs) > 0 {
+			log = logs[0]
+		}
+		report = &buildReport{perf: log}
+		span = report.preparationSpan("preparation.registration")
+	}
+	err := registerPreparationForks(forks, req.Runtime, req.Platform, w)
+	report.preparationOutcome("preparation.registration", "selected programs", err)
+	span.End()
+	return err
 }

@@ -461,7 +461,7 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 				}
 				for _, declared := range packload.PatchedForks(selected.packs) {
 					if declared.Key() == fork.Key() {
-						delivery, good = admittedProgramServing(declared, captureRuntime(), floorPatchedPlatform())
+						delivery, good = admittedProgramServing(declared, captureRuntime(), floorPatchedPlatform(), hostActPerf)
 						break
 					}
 				}

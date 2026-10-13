@@ -57,6 +57,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -96,7 +97,16 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	// in podman's own capture jails, side by side.
 	rt := captureRuntime()
 	req := run.TreeBuildRequest{Runtime: rt, Platform: capture.Platform(), Interrupt: act, Build: true}
-	if err := registerTreePreparation(trees, req, errw); err != nil {
+	var report *buildReport
+	var registration *perf.Span
+	if len(trees) > 0 && !config.InJail() && run.BackgroundBuildsOn(rt) {
+		report = &buildReport{perf: hostActPerf}
+		registration = report.preparationSpan("preparation.registration")
+	}
+	err := registerTreePreparation(trees, req, errw)
+	report.preparationOutcome("preparation.registration", "selected host trees", err)
+	registration.End()
+	if err != nil {
 		fmt.Fprintf(errw, "yolo host: preparation registration failed: %v — run `yolo pack prepare start` after repairing the named problem.\n", err)
 		return false
 	}
@@ -105,7 +115,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		o := lane.options(advanceOptions{platform: req.Platform, runtime: rt, color: color,
 			launch: true, host: true, act: act, bypassCommand: command})
 		if treeUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(rt) {
-			r, a := servingTreeOf(f, o, "", true)
+			r, a := servingTreeOf(f, o, "", true, hostActPerf)
 			if r.patchFailure != nil && a != nil {
 				r = a.patchFailureResult(r.patchFailure)
 			}

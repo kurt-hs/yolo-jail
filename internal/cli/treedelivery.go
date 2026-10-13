@@ -30,6 +30,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -305,8 +306,13 @@ func servingTree(f packload.Fork, o advanceOptions, floor string) advanceResult 
 }
 
 // servingTreeOf is servingTree with the advance it read, nil when the series could not be read.
-func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy bool) (advanceResult, *advance) {
-	defer o.report.preparationSpan("preparation.admitted_read").End()
+// logs lets a host lane reuse its collector without enabling a jail buildReport.
+func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy bool, logs ...*perf.Log) (advanceResult, *advance) {
+	report := o.report
+	if len(logs) > 0 {
+		report = &buildReport{perf: logs[0]}
+	}
+	defer report.preparationSpan("preparation.admitted_read").End()
 	a, early := newAdvance(f, o)
 	if early != nil {
 		return *early, nil
