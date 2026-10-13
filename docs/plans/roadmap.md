@@ -10,7 +10,7 @@ vantage:
 
 # Roadmap
 
-**Reconciled:** 2026-10-07
+**Reconciled:** 2026-10-13
 
 This page owns the order in which open work is taken up, and why. Each linked document owns its state, next step and
 gates; read it before starting, because a place on this list is not permission to build.
@@ -215,31 +215,40 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 35. The four calls the 2026-09-26 open-source audit left to the maintainer: whether one public research doc stays
     public, the scratch-directory `.gitignore` entries, a `last-release` recipe from the template, and when to retire
     the Python-version migration; the audit's report is outside this repository, so this is their only record.
+36. Decide how far one login is shared — with the host, and between two agents of one provider
+    ([universal-login-sharing.md](../design/universal-login-sharing.md)): the machine store already shares an agent's
+    login across every jail, the host notch and the pi/Muse pair are the two gaps, and [its sketch](../design/universal-login-sharing-plan.md)
+    waits on all three questions. Rule the canonical copy's location with it, so a `yolo` state reset cannot destroy a login.
+37. Work the asks a downstream pack consumer is still waiting on ([downstream-asks.md](downstream-asks.md)) — nine
+    carries, each with the shape a landed version takes; four are owned by [the patched-fork
+    design](../design/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), the
+    other four by [the tracker's own questions](downstream-asks.md#open-questions) (one of them a small
+    diagnostics build), and one is [already answered](downstream-asks.md#4-a-reduced-window-child).
 
 ## External waits
 
-36. One session at a Mac, with `sudo`'s password and the runner stopped, completes [the benchmark](../research/macos-backend-performance.md#8-results)
+38. One session at a Mac, with `sudo`'s password and the runner stopped, completes [the benchmark](../research/macos-backend-performance.md#8-results)
     — [auto-capture](../design/program-delivery.md#decision-ledger), macos-user's `go test`, Podman Machine on applehv
     and [NFS from macOS's `nfsd`](../research/macos-vm-runtime-comparison.md#6-is-there-an-open-stack-with-faster-shared-folders)
     — first, as [the comparison's refresh](../reference/macos-no-vm-direction.md#when-to-refresh-this) waits on it. It
     also runs `yolo host -- claude` and `yolo host -- agy` for [the host floor's installer agents](../design/host-tool-provisioning.md#HP-D2),
     and a macos-user launch with a dotted `packages` entry, which no CI job runs.
-37. [The two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk)
+39. [The two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk)
     has held since each workspace got its own `/mise` disk: run 37832291377 (2026-10-08, `container` 1.1.0)
     logged `AC-KEEPER sweep-spares-a-kept-jail (JL-D7) VERDICT: HOLDS`, and the sweep is strict since. The next
     `apple-container.yml` dispatch re-asks [the keeper's remaining Apple Container runs](../design/jail-lifetime-last-session-wins.md#7-what-i-would-build-in-order);
     someone at the runner Mac upgrades `container` to 1.5.0 (its kernel prompt is interactive) before the VM-local probe.
-38. The next `macos-user.yml` run carries the Mac checks built since 2026-10-04: [I/O priority](../design/io-priority.md#9-what-i-would-build-in-order),
+40. The next `macos-user.yml` run carries the Mac checks built since 2026-10-04: [I/O priority](../design/io-priority.md#9-what-i-would-build-in-order),
     the macos-user keeper, [the capture fixtures](install-capture.md), the host floor's fixture capture, the Mac floor's
     fork build and [the guest notch](environment-manager-plan.md); each doc's `next` names its test.
-39. A human with a subscription login runs [the credential-view runbook](runbooks/claude-credential-view-measures.md)
+41. A human with a subscription login runs [the credential-view runbook](runbooks/claude-credential-view-measures.md)
     for [Claude's login without interception](../design/claude-login-without-interception.md), on a Mac and for a day
     on a rootless host, which releases [`yolo host -- claude` joining the shared login](../reference/claude-oauth-interposition.md),
     and records one browser login and one shared expiry for [the OpenAI service](../design/openai-auth-broker-plan.md).
-40. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../design/podman-reboot-readiness.md#testing-and-the-real-host-check),
+42. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../design/podman-reboot-readiness.md#testing-and-the-real-host-check),
     [a low-space collection with a jail up](storage-lifecycle.md), [the keeper's scope move and logout](../design/jail-lifetime-last-session-wins.md#8-what-done-looks-like),
     and HD-R1's first launch once item 2 lands.
-41. One live agent session per check, which no test may start: [the footer](../design/agent-footer.md#21-as-built),
+43. One live agent session per check, which no test may start: [the footer](../design/agent-footer.md#21-as-built),
     [Claude's LSP plugin](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin), [the via route](../design/wire-bridge-gateway.md#41-how-it-is-built),
     [menus under a model list](../design/model-lists-and-pickers.md#13-build-order-and-what-done-looks-like), [a switch in
     a provider set](../design/active-provider-sets.md#9-what-done-looks-like), [Copilot's config migration](../design/agent-directory-map.md#74-copilot),
@@ -249,24 +258,24 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     Bedrock](../design/bedrock-plumbing.md#8-behaviour-this-design-fixes) under SSO. Check [Pi launch selection](../design/pi-launch-selection-flags.md)
     and [simultaneous native authentication](../design/simultaneous-auth-and-pack-isolation.md) in a live session;
     launch arguments and source inspection do not establish authentication isolation.
-42. A human with the cloud account clears [a Bedrock API key or static key pair](../design/bedrock-plumbing.md#64-the-credential-three-are-supported),
+44. A human with the cloud account clears [a Bedrock API key or static key pair](../design/bedrock-plumbing.md#64-the-credential-three-are-supported),
     [an SSO lapse mid-turn](../design/sso-backed-bedrock.md#11-evidence-and-how-to-re-check-it), [settings-only Bedrock mode](../reference/providers.md#two-channels-split-by-payload-type),
     [an AgentCore gateway](../design/bedrock-web-search.md) and [a Claude usage-limit response](../design/wire-bridge-gateway.md#5-part-4--the-subscription-arm-and-opt-in-failover-ruled).
-43. The maintainer's own commits and launches clear [the `matt` pack's `briefing/`](../reference/pack-system.md#briefing),
+45. The maintainer's own commits and launches clear [the `matt` pack's `briefing/`](../reference/pack-system.md#briefing),
     [its posture list at the host](../design/notch-scoped-config-contributions.md#5-fastest-path-to-the-motivating-case),
     [a dropped pack's host output](../reference/pack-system.md#retiring-a-dropped-packs-host-output), [the fzf
     pack](handoff-fzf-pack-adoption.md), his pack's move to pi's package folder, [the listen-port fix where reported](../reference/wire-bridge.md#what-can-hold-the-listen-port-before-the-bridge-does)
     and [the runner Mac's published-ports change](runbooks/mac-actions-runner.md).
-44. A live `llama-server` and one manual turn per agent clear [the `llamacpp` provider](../../packs/llamacpp/README.md),
+46. A live `llama-server` and one manual turn per agent clear [the `llamacpp` provider](../../packs/llamacpp/README.md),
     whose spellings have never met a server; copilot is the one to try first.
-45. The mise use record's first 30-day window gives [the disk footprint's re-measure](../design/minimal-disk-footprint.md)
+47. The mise use record's first 30-day window gives [the disk footprint's re-measure](../design/minimal-disk-footprint.md)
     its first offer to check, on the host.
-46. Nix dropping Intel Macs, when nixpkgs 26.05's security fixes stop on 2026-12-31, brings back [what replaces the
+48. Nix dropping Intel Macs, when nixpkgs 26.05's security fixes stop on 2026-12-31, brings back [what replaces the
     Intel macOS runner](../research/macos-support-matrix.md#OQ-MX1), deferred until then.
-47. The maintainer files the upstream reports drafted with the VM-local design, on [VZ's virtio-fs cache policy](../research/apple-container-file-cost.md#21-per-file-cost-not-bandwidth)
+49. The maintainer files the upstream reports drafted with the VM-local design, on [VZ's virtio-fs cache policy](../research/apple-container-file-cost.md#21-per-file-cost-not-bandwidth)
     and [VZ keeping freed guest memory](../research/macos-vm-memory-reclaim.md#5-adding-it-to-apple-container-ourselves)
     — last, since only Apple can ship either fix.
-48. Native macOS verification of [JD-10's guest pack-tree lifetime](../design/jail-daemon-on-macos-user-plan.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
+50. Native macOS verification of [JD-10's guest pack-tree lifetime](../design/jail-daemon-on-macos-user-plan.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
 
 ## Boundaries
 

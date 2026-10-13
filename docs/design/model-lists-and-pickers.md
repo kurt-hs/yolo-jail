@@ -130,7 +130,7 @@ current.
   renamed `OQ-PSW` because [`provisioner-sets.md`](provisioner-sets.md) also uses `OQ-PS`.
 
 **Needs your ruling:** [OQ-MM1](#OQ-MM1) first, because it decides what most agents' menus
-show; then [OQ-MM3](#OQ-MM3); [OQ-MM4](#OQ-MM4) ([MM-D31](#MM-D31)) [OQ-MM5](#OQ-MM5) ([MM-D30](#MM-D30)) and [OQ-MM6](#OQ-MM6) were ruled 2026-10-05. Decided
+show; then [OQ-MM3](#OQ-MM3); [OQ-MM4](#OQ-MM4) ([MM-D31](#MM-D31)) [OQ-MM5](#OQ-MM5) ([MM-D30](#MM-D30)) and [OQ-MM6](#OQ-MM6) were ruled 2026-10-05. Added 2026-10-13, at a downstream pack consumer's request: [OQ-ML4](#OQ-ML4) and [OQ-ML5](#OQ-ML5). Decided
 2026-09-30 as implementation choices, each reversible: [OQ-BR14](#OQ-BR14) ([MM-D16](#MM-D16)) and [OQ-PSW1](#OQ-PSW1) ([MM-D17](#MM-D17)). Ruled 2026-09-29:
 [OQ-ML1](#OQ-ML1), [OQ-ML2](#OQ-ML2) and [OQ-BR12](#OQ-BR12). [OQ-BR13](#OQ-BR13) was directed
 the same day (set the model selection however each agent allows) and is researched in
@@ -2315,6 +2315,50 @@ The options, as the walkthrough drafted them:
     which dropped that standing ruling; a review caught it the same day. Claude turns on a Claude
     model and on another maker's, and one copilot turn, under `-p bedrock-bridge`, by a human,
     are what is left to watch.
+
+12. 💬 <a id="OQ-ML4"></a>**[OQ-ML4](#OQ-ML4): Does the `models.json` derive inherit pi's catalog facts for a row that states none?**
+
+    Requested by a downstream pack consumer: a declared row that states no thinking levels loses
+    pi's catalog map, so `--thinking xhigh` is clamped. `base` inherits those facts on the model-list
+    surface, but `config-ref` says the keys that do so are "read by PI's model-list render alone",
+    leaving the `models.json` derive uncovered.
+
+    - **A — The derive fills a row that states none from pi's catalog**, by the row's id or its
+      `base`, so both surfaces behave the same.
+    - **B — Extend `base` to the `models.json` surface**, one mechanism for both.
+    - **C — Document `base` as model-list-surface only**; leave the row as written.
+
+    <!-- vantage: question id=OQ-ML4 leaning="A: it makes the two rendered surfaces one behavior, while B overloads a key the model-list resolver owns onto a surface it never read. C is what the reference already implies and is the only option that leaves the clamp in place." -->
+
+    _Leaning:_ A: it makes the two rendered surfaces one behavior, while B overloads a key the
+    model-list resolver owns onto a surface it never read. C is what the reference already implies
+    and is the only option that leaves the clamp in place.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
+
+13. 💬 <a id="OQ-ML5"></a>**[OQ-ML5](#OQ-ML5): Does the pi derive emit `sharedModels` and `extends` on both rendered surfaces?**
+
+    A downstream pack consumer's pi extension already reads `sharedModels`/`extends`; the yolo side
+    would emit a `sharedModels` entry per referenced model and an `extends` on each row, instead of
+    restating price, window, output cap and reasoning flag per route, on both `models.json` and
+    `yolo-model-lists.json`.
+
+    - **A — Both surfaces**, with the acceptance: no route reports pi's 128000/16384 defaults, a
+      same-value restatement fails a test, an unresolvable reference is refused by `yolo check` and
+      by pi, and a lower `contextWindow` under an inherited `workingContextWindow` fails loudly.
+    - **B — The model-list surface only**; `models.json` rows stay as written.
+    - **C — Decline**; rows keep restating their facts.
+
+    <!-- vantage: question id=OQ-ML5 leaning="A: it is the same benefit on both surfaces, and emitting only where a resolver already runs would leave the derived rows — the ones a provider pi does not ship gets — as the one place facts still drift. `extends` is not subsumed by `base`: the io design names them as different mechanisms, and the consumer's design argues it." -->
+
+    _Leaning:_ A: it is the same benefit on both surfaces, and emitting only where a resolver
+    already runs would leave the derived rows — the ones a provider pi does not ship gets — as the
+    one place facts still drift. `extends` is not subsumed by `base`: the io design names them as
+    different mechanisms, and the consumer's design argues it.
+
+    **Answer:**
+    > _(empty — fill in when decided)_
 
 ---
 

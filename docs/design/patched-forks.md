@@ -1,11 +1,11 @@
 ---
 title: "A patched fork follows its upstream — a patch series that rebuilds itself while it applies"
 date: 2026-10-03
-status: accepted
-stage: DECIDED
+status: in-review
+stage: DESIGN
 tags: [design, packs, programs, forks, build, evergreen, git]
 summary: "A second mode for a forked program: the fork pack names the upstream and carries a git format-patch series. yolo checks the upstream at most hourly, replays the series at its base and picks it onto the newest upstream version it fits on the host, builds the result in the sealed capture jail, and moves this machine's good build only once that build is admitted, so a patch-application failure stops the operation by default and continuing requires the displayed explicit bypass. The same mode follows a pi extension's upstream as a tree, in patched-extensions.md. The four calls that were the maintainer's, what runs after the user's own edit fails, whether the default follows versions or the branch head, whether a launch waits for the rebuild, and whether a conflict gets a rebase verb, were decided on their leanings under his delegation of 2026-10-04."
-next: "Existing macos-user delivery and the migration-kit measurement remain separate."
+next: "OQ-PFK6 and OQ-PFK7, requested 2026-10-13 by a downstream pack consumer; existing macos-user delivery and the migration-kit measurement remain separate."
 depends-on:
   - forked-programs-as-packs.md
 ---
@@ -1288,6 +1288,60 @@ reason ([PF-D54](#PF-D54)).
    > **Ruled in review 2026-10-05, as leaned (A):** *"defer"*. A patched fork, like a plain one,
    > reaches a macos-user sandbox only once install-capture H4 settles where the build store lives
    > for the sandbox account; until then the launch says to use a container backend.
+
+6. 💬 <a id="OQ-PFK6"></a>**OQ-PFK6: May a `files` contribution name a `carry` — a commit graph, a branch plus a repository — instead of a `patches` series?**
+
+   Requested by a downstream pack consumer, whose model replaces the generated series with a git
+   merge question ([the full model](#oq-pfk6-background)). yolo would never author or rebase that
+   history; it would only ask git whether the carry merges.
+
+   - **A — `carry` replaces `patches`.** Never both, and naming both is refused. Clean merges are
+     built and the ratchet keys on the resolved commit; a conflict refuses naming the paths.
+   - **B — `carry` sits beside `patches`.** A pack may declare either.
+   - **C — Decline.** Keep the generated series and the replay as the only route.
+
+   <!-- vantage: question id=OQ-PFK6 leaning="A, pending one measurement: the tree-only merge needs a git new enough to offer it as a working-tree-free merge, and an older git must be refused by name rather than silently replaying. The consumer's model answers the two-machine disagreement the replay cannot: a commit graph is hashed, so two hosts agree." -->
+
+   _Leaning:_ A, pending one measurement: the tree-only merge needs a git new enough to offer it as
+   a working-tree-free merge, and an older git must be refused by name rather than silently
+   replaying. The consumer's model answers the two-machine disagreement the replay cannot: a commit
+   graph is hashed, so two hosts agree.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+7. 💬 <a id="OQ-PFK7"></a>**OQ-PFK7: Does a clean replay keep the clone it built, and does anything signal a stale series?**
+
+   Two halves of the same defect: the repair path discards the artifact the repair needs, and
+   staleness is visible only to whoever runs `yolo pack status`. A conflicting rebase already keeps
+   the clone; a series that needs no rebase does not.
+
+   - **A — Both.** A clean replay leaves the built clone (or copies it beside the series), and a
+     `yolo check` warning names a series whose base has moved.
+   - **B — Clone retention only.** Keep the clone; leave staleness to the explicit host read.
+   - **C — Staleness signal only.** Warn; keep deleting the clone.
+
+   <!-- vantage: question id=OQ-PFK7 leaning="A: both halves are cheap and the deletion is the one place the launcher throws away work it just did. The clone location and its retention are the open detail, since a clone under yolo's state dir must not become an uncollected per-version store." -->
+
+   _Leaning:_ A: both halves are cheap and the deletion is the one place the launcher throws away
+   work it just did. The clone location and its retention are the open detail, since a clone under
+   yolo's state dir must not become an uncollected per-version store.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
+
+### What a `carry` is, in full
+
+<a id="oq-pfk6-background"></a>Requested by a downstream pack consumer. The contribution names a
+locator: a repository plus a branch, where the repository may be a local path or a URL with `?ref=`.
+At the advance the launcher fetches both the locator and the upstream release, and `git merge-tree`
+— no working tree — answers whether the carry merges into the candidate. A failure refuses, naming
+the conflicting paths; a success is the tree the build uses, and the ratchet keys on the resolved
+commit, so two machines that resolve the same commit build the same bytes. The invariant the model
+rests on is that the named repository's ancestry includes upstream's, so `merge-base` names a real
+commit; yolo never authors that history and never rebases it. The two mechanisms answer different
+problems: a `patches` series is a set of changes yolo replays and can disagree about across two
+machines, while a `carry` is a commit graph, so the merge question is decided by hashes.
 
 ## Decision Ledger
 
