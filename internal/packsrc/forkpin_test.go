@@ -303,6 +303,31 @@ func TestPinForksConcurrentPinnersAgreeOnOneEntry(t *testing.T) {
 	}
 }
 
+func TestFetchForkCommitPreservesLockAndCancellation(t *testing.T) {
+	repo, store, _ := forkPinFixture(t)
+	a, err := Parse("git+file://" + repo + "?ref=main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := gitIn(t, repo, "rev-parse", "HEAD")
+	unlock, err := store.lockMirror(a.Repo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.NoWait = true
+	if err := store.FetchForkCommit(a, commit, nil); !errors.Is(err, ErrLockHeld) {
+		t.Errorf("busy FetchForkCommit error = %v, want errors.Is(ErrLockHeld)", err)
+	}
+	unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store.Ctx, store.NoWait = ctx, false
+	if err := store.FetchForkCommit(a, commit, nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled FetchForkCommit error = %v, want errors.Is(context.Canceled)", err)
+	}
+}
+
 // FETCHING A PINNED COMMIT MOVES NOTHING: a commit the store has never held is fetched by its id and
 // checked out, and the branch a pin was resolved from may have moved on without moving the pin's
 // tree. A commit the store already holds runs no fetch.

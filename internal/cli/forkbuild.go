@@ -1286,7 +1286,7 @@ func checkOutForkSourceWithStores(source, commit, dst string, checkoutStore, fet
 	res, err := forkCheckout(checkoutStore, a, commit)
 	if err != nil {
 		if ferr := forkFetchCommit(fetchStore, a, commit); ferr != nil {
-			return fmt.Errorf("%w (fetching it: %v)", err, ferr)
+			return fmt.Errorf("%w (fetching it: %w)", err, ferr)
 		}
 		if res, err = forkCheckout(checkoutStore, a, commit); err != nil {
 			return err

@@ -137,7 +137,8 @@ func TestPlainForkPreparationTimerFillsMissingArtifactAtStandingPin(t *testing.T
 	}
 }
 
-func TestPlainForkPreparationHeldMirrorDoesNotBlockStopOrAdmission(t *testing.T) {
+func plainForkPreparationFixture(t *testing.T) (packload.Fork, preparationRecord, string, string, packsrc.Addr) {
+	t.Helper()
 	forkBuildHome(t)
 	f := packload.Forks(selectConfiguredHostPacks().packs)[0]
 	setForkNextLaunch(t)
@@ -197,11 +198,15 @@ func TestPlainForkPreparationHeldMirrorDoesNotBlockStopOrAdmission(t *testing.T)
 	}
 	record := preparationRecord{Key: f.Key(), Runtime: "podman", Platform: patchedTestPlatform,
 		Kind: preparationPlainProgramKind, Generation: snapshot.Generation, PinCommit: commit}
-
 	addr, err := packsrc.Parse(source)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return f, record, commit, source, addr
+}
+
+func TestPlainForkPreparationHeldMirrorDoesNotBlockStopOrAdmission(t *testing.T) {
+	f, record, commit, _, addr := plainForkPreparationFixture(t)
 	sum := sha256.Sum256([]byte(addr.Repo))
 	lockPath := filepath.Join(paths.PacksDir(), "locks", filepath.Base(addr.Repo)+"-"+hex.EncodeToString(sum[:6])+".lock")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
@@ -284,6 +289,99 @@ func TestPlainForkPreparationHeldMirrorDoesNotBlockStopOrAdmission(t *testing.T)
 	outcome := outcomeOf(t, f.Key())
 	if outcome.State != bgSkipped && outcome.State != bgInterrupted {
 		t.Errorf("held-mirror shutdown outcome = %+v, want busy skip or interruption", outcome)
+	}
+}
+
+func TestPlainForkPreparationMissingCommitFetchContentionSkips(t *testing.T) {
+	f, record, commit, source, addr := plainForkPreparationFixture(t)
+
+	sum := sha256.Sum256([]byte(addr.Repo))
+	mirrorLock := filepath.Join(paths.PacksDir(), "locks", filepath.Base(addr.Repo)+"-"+hex.EncodeToString(sum[:6])+".lock")
+	if err := os.MkdirAll(filepath.Dir(mirrorLock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	previousCheckout := forkCheckout
+	lockHeld := make(chan struct{})
+	var lockFile *os.File
+	forkCheckout = func(store *packsrc.Store, a packsrc.Addr, gotCommit string) (string, error) {
+		resolved, checkoutErr := store.Materialize(a, gotCommit)
+		if checkoutErr != nil && lockFile == nil {
+			var err error
+			lockFile, err = os.OpenFile(mirrorLock, os.O_CREATE|os.O_RDWR, 0o600)
+			if err != nil {
+				t.Errorf("open mirror lock: %v", err)
+				return "", checkoutErr
+			}
+			if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+				t.Errorf("hold mirror lock after missing-commit checkout: %v", err)
+				_ = lockFile.Close()
+				lockFile = nil
+				return "", checkoutErr
+			}
+			close(lockHeld)
+		}
+		if checkoutErr != nil {
+			return "", checkoutErr
+		}
+		return resolved.Root, nil
+	}
+	t.Cleanup(func() {
+		forkCheckout = previousCheckout
+		if lockFile != nil {
+			_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+			_ = lockFile.Close()
+		}
+	})
+	previousFetch := forkFetchCommit
+	fetchResult := make(chan error, 1)
+	forkFetchCommit = func(store *packsrc.Store, a packsrc.Addr, gotCommit string) error {
+		if store.Ctx == nil || !store.NoWait {
+			t.Errorf("timer fetch store policy = Ctx:%v NoWait:%v, want task context and no-wait",
+				store.Ctx != nil, store.NoWait)
+		}
+		err := previousFetch(store, a, gotCommit)
+		fetchResult <- err
+		return err
+	}
+	t.Cleanup(func() { forkFetchCommit = previousFetch })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runPlainForkPreparation(ctx, record, f, io.Discard) }()
+	select {
+	case <-lockHeld:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timer did not perform a missing-commit checkout before the fetch contention")
+	}
+	select {
+	case fetchErr := <-fetchResult:
+		if !errors.Is(fetchErr, packsrc.ErrLockHeld) {
+			t.Errorf("pinned-commit fetch error = %v, want errors.Is(ErrLockHeld)", fetchErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timer did not attempt the pinned-commit fetch after checkout failed")
+	}
+	select {
+	case taskErr := <-done:
+		if taskErr != nil {
+			t.Errorf("busy timer source returned an error: %v", taskErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("busy timer source did not defer promptly")
+	}
+	outcome := outcomeOf(t, f.Key())
+	if outcome.State != bgSkipped || outcome.RetryAt != 0 || !strings.Contains(outcome.Error, "source mirror is busy") {
+		t.Errorf("busy pinned-commit fetch outcome = %+v, want a no-backoff skip/defer", outcome)
+	}
+	if entry, _, resolveErr := resolveForkBuild(&capture.Store{Dir: paths.CapturesDir()}, f.Bin,
+		patchedTestPlatform, f.Source, commit, (forkBuild{Fork: f, Commit: commit, Platform: patchedTestPlatform}).recipe()); resolveErr == nil {
+		t.Errorf("busy pinned-commit fetch was admitted as %s", entry.Key)
+	}
+	current, err := currentForkPin(f)
+	if err != nil || current.Commit != commit || current.Fork.Source != source {
+		t.Errorf("timer changed standing pin after busy fetch: pin=%+v err=%v", current, err)
 	}
 }
 
