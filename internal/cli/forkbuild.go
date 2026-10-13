@@ -406,6 +406,10 @@ type buildMode struct {
 	// build there (§6.6, PF-D17), so a waiter that takes the lock next reads either, and a move's
 	// reap sees this build's lock held until the build is in the record.
 	settle func(entry *capture.Entry, err error)
+	// admitGuard wraps only the final store publication for an ongoing preparation task. It uses
+	// the subscription generation as a nonwaiting guard so a revoked or edited input cannot be
+	// admitted after its worker is cancelled.
+	admitGuard func(func() error) error
 }
 
 // errForkBuildLocked is a build refused because another holds its lock.
@@ -928,7 +932,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 	// wait for that jail to be known gone (reclaim), then the admission of its output into the store
 	// (admit: the manifest read, the checks, the digest and the rename), and the receipt.
 	var admitSp *perf.Span
-	entry, m, err := captureStaged(store, staging,
+	entry, m, err := captureStagedWithAdmission(store, staging,
 		func() int {
 			if releaseWorkspaceLaunch != nil {
 				releaseWorkspaceLaunch()
@@ -984,7 +988,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 				return why
 			}
 			return linksIntoTheBuild(m, workspace)
-		})
+		}, mode.admitGuard)
 	admitSp.End()
 	if err != nil && ownershipUnproven {
 		// The build itself ran; what is unproven is that its jail is gone. That is no verdict on the
@@ -1182,6 +1186,12 @@ func linksIntoTheBuild(m *capture.Manifest, workspace string) string {
 // the refusal's text, check "" for none.
 func captureStaged(store *capture.Store, staging string, runJail func() int,
 	empty func(*capture.Manifest) string, check func(*capture.Manifest) string) (*capture.Entry, *capture.Manifest, error) {
+	return captureStagedWithAdmission(store, staging, runJail, empty, check, nil)
+}
+
+func captureStagedWithAdmission(store *capture.Store, staging string, runJail func() int,
+	empty func(*capture.Manifest) string, check func(*capture.Manifest) string,
+	admitGuard func(func() error) error) (*capture.Entry, *capture.Manifest, error) {
 	if rc := runJail(); rc != 0 {
 		return nil, nil, captureJailExit{rc: rc}
 	}
@@ -1198,9 +1208,19 @@ func captureStaged(store *capture.Store, staging string, runJail func() int,
 			return nil, nil, fmt.Errorf("%s — nothing was stored", why)
 		}
 	}
-	entry, err := store.AdmitEntry(outDir)
+	var entry *capture.Entry
+	admit := func() error {
+		var err error
+		entry, err = store.AdmitEntry(outDir)
+		return err
+	}
+	if admitGuard != nil {
+		err = admitGuard(admit)
+	} else {
+		err = admit()
+	}
 	if err != nil {
-		return nil, nil, err
+		return nil, m, err
 	}
 	return entry, m, nil
 }

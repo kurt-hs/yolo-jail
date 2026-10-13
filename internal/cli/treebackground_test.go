@@ -435,14 +435,13 @@ func TestExplicitFreshRequestReachesTheProductionForkBuildSlot(t *testing.T) {
 }
 
 // A PATCHED FORK THAT UPDATES FOR THE NEXT LAUNCH is handed its good build with no check and no
-// build, and the launch starts ONE background advance carrying its key. This drives the production
-// pool path (runBuildSlot -> addForkKeys -> backgroundTreeAdvance -> startBackgroundAdvance): delete
-// the fork arm's collection or its call site and no advance is started. Red if forkUpdateTiming stops
-// reading `agent_updates`, if the fork arm advances the key in front, or if its key never reaches the
-// spawn.
-func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *testing.T) {
+// build, and its selected key is persisted for the existing preparation scheduler. This drives the
+// production pool path (runBuildSlot -> addForkKeys -> registerForkPreparation); deleting registration
+// leaves no scheduler snapshot. The legacy one-shot dispatcher is deliberately not started.
+func TestAPatchedForkThatUpdatesForTheNextLaunchRegistersWithThePreparationScheduler(t *testing.T) {
 	fx, good := forkWithAGoodBuild(t)
 	builds := len(fx.builds)
+	stubPreparationWorkerStart(t)
 	sp := stubSpawn(t)
 	req := forkRequest(t, fx, "podman")
 	var out syncBuffer
@@ -453,12 +452,12 @@ func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *te
 	if len(fx.builds) != builds {
 		t.Errorf("a next-launch fork was checked or built in front (%d builds):\n%s", len(fx.builds)-builds, out.String())
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{"forkpack/tool"}) {
-		t.Fatalf("%d background advances started for %v, want one for forkpack/tool:\n%s", sp.count(), sp.argvs, out.String())
+	if sp.count() != 0 {
+		t.Fatalf("the launch started a competing one-shot advance: %v", sp.argvs)
 	}
-	if !strings.Contains(out.String(), "fork forkpack/tool: updates for the next launch — a background advance "+
-		"is checking and building it now; its log is "+backgroundAdvanceLog()) {
-		t.Errorf("the spawn is not said with its log:\n%s", out.String())
+	snapshot, err := readPreparationSnapshot("forkpack/tool")
+	if err != nil || snapshot.Generation == 0 || snapshot.InputIdentity == "" || snapshot.Phase != "pending" {
+		t.Fatalf("the selected patched program was not registered with the scheduler: %+v err=%v", snapshot, err)
 	}
 }
 
