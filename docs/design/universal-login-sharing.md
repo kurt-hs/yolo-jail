@@ -184,7 +184,7 @@ at one path when both packs declare the same machine-scope `at`, the *storage* h
 
 | Option | Shape | Cost | Status |
 | :--- | :--- | :--- | :--- |
-| **A — One file, dual-parse** | both packs declare the same `at`; each agent reads the same `auth.json`. Requires that one file satisfy both readers, or that each reader tolerate the other's keys. | no core code; depends on a format both readers accept, which is **unproven** | needs an empirical spike before it can be leaned on |
+| **A — One file, dual-parse** | both packs declare the same `at`; each agent reads the same `auth.json`. Requires that one file satisfy both readers, or that each reader tolerate the other's keys. | no core code; depends on a format both readers accept, which pi's reader **rejects** for each candidate shape | spike run 2026-10-13 — pi fails on both shapes; [see below](#the-dual-parse-spike-measured) |
 | **B — A derive/transform** | yolo renders each agent's file from one canonical store, the way `models.json` is derived. | new core code: a derive and a hook kind that does not exist today (the hook set is closed — `shared_credentials`, `shared_directory`, `unshare_directory`, `per_jail_history`) | largest change; only worth it if a second agent pair needs it |
 | **C — Leave two stores** | accept [`OQ-PR2`](provider-reachability-and-model-names.md#9-decision-ledger)'s gap; each agent keeps its own login. | the user logs in twice | today's state |
 
@@ -194,6 +194,47 @@ itself read as a provider id with a credential of the wrong shape. A tolerated u
 have to be added to pi's reader (a Pi-side change, not a pack declaration), or the shared file must
 be Muse's shape plus a flattened pi map that pi ignores — which is B wearing A's clothes. This is why
 the leaning defers to the spike.
+
+### The dual-parse spike, measured
+
+A read-only spike ran pi's own reader against candidate files. Muse's reader was **not** run: the jail
+holds no `~/.config/muse/auth.json`, and launching the Muse CLI was out of scope. No network is
+involved — the reader parses a local file. pi's reader is `ReadOnlyAuthStorage.load()` in the build
+that runs (`dist/core/auth-storage.js:164-215`): its top level **is** the provider map, and every value
+must be a `type:"api_key"` or `type:"oauth"` credential.
+
+```console
+$ export PI=/home/agent/.local/share/pi-fork/node_modules/@earendil-works/pi-coding-agent
+$ node --input-type=module -e '
+  const { ReadOnlyAuthStorage } = await import(process.env.PI + "/dist/core/auth-storage.js");
+  const { writeFileSync } = await import("node:fs");
+  const load = (doc) => {
+    writeFileSync("/tmp/pi-dualparse.json", JSON.stringify(doc));
+    try { new ReadOnlyAuthStorage("/tmp/pi-dualparse.json").load(); return "PASS"; }
+    catch (e) { return "FAIL: " + e.message; }
+  };
+  console.log(load({schema_version:1, providers:{meta:{mechanism:"oauth", access_token:"a", expires_at:1}}}));
+  console.log(load({schema_version:1, providers:{meta:{type:"oauth", access:"a", refresh:"r", expires:1}}}));
+  console.log(load({meta:{type:"oauth", access:"a", refresh:"r", expires:1}, providers:{meta:{}}}));
+'
+FAIL: Invalid auth.json credential for provider "schema_version"
+FAIL: Invalid auth.json credential for provider "schema_version"
+FAIL: Invalid auth.json credential for provider "providers"
+```
+
+- **The Muse shape is rejected before `providers` is ever reached.** The reader walks the top level,
+  meets the `schema_version` number first, and rejects it as a credential for a provider of that name.
+- **A Muse-shaped file whose provider *values* are valid pi credentials fails identically** — the
+  `schema_version` key still comes first, so fixing only the inner credentials changes nothing.
+- **A flat pi map with an extra `providers` key fails too.** An unknown top-level key is never
+  tolerated: its value must itself be a pi credential, and the Muse doc's `providers` map is not one.
+
+A's storage half is unmet as well. The two packs declare **different** machine-scope `at` dirs today —
+pi at `.pi-shared-credentials` ([`packs/pi/pack.json`](../../packs/pi/pack.json)) and Muse Code at
+`.muse-shared-credentials` ([`packs/muse-code/pack.json`](../../packs/muse-code/pack.json)) — while the
+base-name join that would put both `auth.json` files at one path joins inside a **single** `at` dir
+([`sharedlink.go`](../../internal/entrypoint/sharedlink.go)). A therefore needs one pack's `at` changed
+*as well as* a file both readers accept.
 
 **A precedence asymmetry to settle with it.** A stored pi credential wins over `META_API_KEY`, while
 Muse lets `META_API_KEY` override its login. Whichever storage shape wins, the two agents must agree
@@ -280,14 +321,21 @@ supplied key will fight.
    - **C — Out of scope.** Two stores remain, as
      [`OQ-PR2`](provider-reachability-and-model-names.md#9-decision-ledger) accepts.
 
-   <!-- vantage: question id=OQ-ULS3 leaning="A, run as a spike before any leaning is trusted: the base-name collapse already gives the shared path for free, so the only unknown is whether one file can satisfy both readers. Fall back to C if it cannot, and build B only when a second provider pair asks." -->
+   <!-- vantage: question id=OQ-ULS3 leaning="Not A on present evidence: the spike ran, and pi rejects both candidate shapes, so one file does not satisfy both readers as they stand. Its own fallback was C; whether to take that now or build B is the maintainer's ruling, and Muse's half is unmeasured." -->
 
-   _Leaning:_ A, run as a spike before any leaning is trusted: the base-name collapse already gives
-   the shared path for free, so the only unknown is whether one file can satisfy both readers. Fall
-   back to C if it cannot, and build B only when a second provider pair asks.
+   _Leaning:_ Not A on present evidence: the spike ran, and pi rejects both candidate shapes, so one
+   file does not satisfy both readers as they stand. Its own fallback was C; whether to take that now
+   or build B is the maintainer's ruling, and Muse's half is unmeasured.
 
    **Answer:**
-   > _(empty — fill in when decided)_
+   > **Measured 2026-10-13, not ruled.** A's pi half is measured and **fails**: pi rejects both the
+   > Muse shape and a flat map carrying an extra `providers` key, so one file cannot satisfy both
+   > readers as they stand ([the spike, below](#the-dual-parse-spike-measured)). Its storage half is
+   > unmet too — the two packs declare different machine-scope `at` dirs, and the base-name join works
+   > inside one `at`. A is therefore **not available** without a Pi-side tolerance change or a schema
+   > change. Muse's half is **unmeasured** (no Muse login in the jail; launching the CLI was out of
+   > scope). [OQ-ULS3](#OQ-ULS3) stays open between B (a derive) and C (two stores) — the maintainer's
+   > ruling, not the spike's.
 
 ## 9. Decision Ledger
 
