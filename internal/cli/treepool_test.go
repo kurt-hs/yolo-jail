@@ -378,15 +378,11 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	pf.now = pf.now.Add(2 * time.Hour)
 	var builds sync.Map
 	pf.child = func(_ context.Context, b forkBuild) int { builds.Store(b.Fork.Key(), true); return 0 }
-	prevBackground := backgroundTreeAdvance
-	t.Cleanup(func() { backgroundTreeAdvance = prevBackground })
 	pf.agentUpdates(t, `{"*":true,"treepool":"next-launch"}`)
-	var queued []string
-	backgroundTreeAdvance = func(trees []packload.Fork, _, _ string, _ io.Writer, _ bool) {
-		for _, f := range trees {
-			queued = append(queued, f.Key())
-		}
-	}
+	// The launch never spawns a one-shot advance: it registers both keys with the
+	// shared scheduler and starts its worker. Stub the spawn; the persisted
+	// subscriptions below are the registration evidence.
+	stubSpawn(t)
 	got, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	n := 0
 	builds.Range(func(any, any) bool { n++; return true })
@@ -396,9 +392,17 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	if got[poolKeyA].Entry != first[poolKeyA].Entry || got[poolKeyB].Entry != first[poolKeyB].Entry {
 		t.Errorf("the next-launch keys were not handed their good builds: %+v", got)
 	}
-	slices.Sort(queued)
-	if !slices.Equal(queued, []string{poolKeyA, poolKeyB}) {
-		t.Errorf("the background advance was handed %v, want both keys", queued)
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil {
+		t.Fatalf("the scheduler kept no readable subscriptions: %v", err)
+	}
+	var registered []string
+	for _, s := range subs {
+		registered = append(registered, s.Key)
+	}
+	slices.Sort(registered)
+	if !slices.Equal(registered, []string{poolKeyA, poolKeyB}) {
+		t.Errorf("the scheduler registered %v, want both next-launch keys", registered)
 	}
 }
 
