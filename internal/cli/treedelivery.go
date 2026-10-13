@@ -156,9 +156,9 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	// whatever this launch's timing.
 	again := noteBackgroundOutcome(f, pr)
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
-		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it}
+		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it, freshCheck: req.FreshCheck, preparation: req.Preparation}
 	nextLaunch := false
-	if req.Build && treeUpdateTiming(f) == timingNextLaunch {
+	if !req.FreshCheck && req.Build && treeUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			// THIS RUNTIME/PLATFORM RUNS NO BACKGROUND CHECKS (macos-user, a darwin platform, or
@@ -173,7 +173,20 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	var patchFailure *packsrc.PatchFailure
 	for attempt := 0; ; attempt++ {
 		var r advanceResult
-		if !req.Build {
+		if req.FreshCheck {
+			var err error
+			if !req.Build {
+				err = fmt.Errorf("%s cannot prepare fresh builds here (%s); use a supported host/backend or launch without --update", f.Label(), req.BuildFloor)
+			} else {
+				r, err = waitFreshPreparation(it.context(), req.Preparation, f.Key())
+			}
+			if err != nil {
+				if req.FreshFailure != nil {
+					req.FreshFailure(err)
+				}
+				return run.TreeDelivery{Reason: err.Error(), PatchFailure: r.patchFailure}, false
+			}
+		} else if !req.Build {
 			r = servingTree(f, o, req.BuildFloor)
 		} else {
 			switch {
@@ -277,15 +290,32 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 	// whatever this launch's timing.
 	again := noteBackgroundOutcome(f, pr)
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
-		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
+		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it, freshCheck: req.FreshCheck, preparation: req.Preparation}
 	nextLaunch := false
-	if forkUpdateTiming(f) == timingNextLaunch {
+	if !req.FreshCheck && forkUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
 				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
 				runtimeName(req.Runtime))))
 		}
+	}
+	if req.FreshCheck {
+		r, err := waitFreshPreparation(it.context(), req.Preparation, f.Key())
+		if err != nil {
+			if req.FreshFailure != nil {
+				req.FreshFailure(err)
+			}
+			return entrypoint.ForkDelivery{Reason: err.Error(), PatchFailure: r.patchFailure}, false
+		}
+		if req.Hand != nil {
+			if err = req.Hand(f.Bin, run.HandedFork{Key: r.delivery.Key}); err != nil {
+				if req.FreshFailure != nil {
+					req.FreshFailure(err)
+				}
+			}
+		}
+		return r.forkDelivery(), false
 	}
 	if !nextLaunch {
 		return advancePatchedFork(f, o).forkDelivery(), false

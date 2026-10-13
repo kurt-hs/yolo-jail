@@ -94,6 +94,8 @@ import (
 
 // advanceOptions is who runs an advance, and how.
 type advanceOptions struct {
+	freshCheck  bool
+	preparation run.PreparationRequest
 	// admitGuard excludes stale scheduler owner/inputs through the actual record save.
 	admitGuard func(func() error) error
 	// bypassCommand is the operation a patch failure's Bypass line names, when the caller is not one
@@ -1055,7 +1057,7 @@ func (a *advance) run() advanceResult {
 	if cachedFailure.State == "unavailable" {
 		return a.unavailableDetachedAuthority(cachedFailure)
 	}
-	if hold != "" && good != nil && !a.o.force {
+	if hold != "" && good != nil && !a.o.force && !a.o.freshCheck {
 		// A hold suppresses Git and repair retry, never already-classified failure authority.
 		if cachedFailure.State == "failure" && cachedFailure.Failure != nil {
 			return a.patchFailureResult(cachedFailure.Failure)
@@ -1075,8 +1077,27 @@ func (a *advance) run() advanceResult {
 		checked := a.checkSlot(func() {
 			slotWait.End()
 			defer advanceSpan(f, "check").End()
-			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force, Now: patchedNow,
-				Begin: func() (func(string), func()) {
+			opts := packsrc.CheckOptions{Force: a.o.force, Now: patchedNow}
+			if sub, e := treePreparationSubscription(f, a.o.runtime, a.o.platform); e == nil {
+				opts.InputIdentity = sub.InputIdentity
+			}
+			if a.o.freshCheck {
+				boundary, identity, err := a.o.preparation.Boundary(f.Key())
+				if err != nil {
+					res.Err = err
+					return
+				}
+				opts.FreshAfter, opts.InputIdentity = &boundary, identity
+				switch req := a.o.preparation.(type) {
+				case *preparationRequest:
+					opts.RequestID = req.ID
+				case preparationDemandGuard:
+					opts.RequestID = req.request.ID
+				}
+				opts.StartGuard = func(commit func() error) error { return a.o.preparation.Guard(f.Key(), commit) }
+			}
+			opts.Begin =
+				func() (func(string), func()) {
 					if a.o.slot != nil {
 						// IN A JAIL LAUNCH'S POOL THE CHECK IS ITS LINE'S "checking N" (buildpool.go), and a
 						// wait for a lock another key or launch holds is said there, beside the key, and kept
@@ -1088,7 +1109,8 @@ func (a *advance) run() advanceResult {
 					}
 					a.dim("checking %s's upstream %s", f.Label(), f.Source)
 					return func(line string) { a.dim("%s", line) }, func() {}
-				}})
+				}
+			res = a.packs.CheckPatched(f.CheckWant(a.series), opts)
 		})
 		slotWait.End()
 		if !checked {
@@ -1210,7 +1232,7 @@ func (a *advance) run() advanceResult {
 			// needs the network too, and its failure would start a back-off for no reason.
 			return a.finish(nil, forkBuild{}, 0, nil, "")
 		}
-		if a.serves() && !res.Ran && !a.o.force && a.rec.ApplyErrAtLastCheck() != nil {
+		if a.serves() && !res.Ran && !a.o.force && !a.o.freshCheck && a.rec.ApplyErrAtLastCheck() != nil {
 			// THE LAST WALK OF THIS CHECK'S LIST ENDED IN AN APPLY ERROR (§6.2's row, PF-D45), said on
 			// the launch that met it: the good build runs, the fork's line carries the held suffix,
 			// and the next check retries — never every launch inside the hour, each paying the walk.
@@ -1565,7 +1587,7 @@ func (a *advance) pendingOf(list []packsrc.ListEntry, exactGit bool) []packsrc.L
 	if exactGit {
 		gitVer, _ = a.packs.GitVersion()
 	}
-	backoff := a.o.launch && a.serves()
+	backoff := a.o.launch && a.serves() && !a.o.freshCheck
 	var out []packsrc.ListEntry
 	for _, e := range list {
 		if a.conflicted(e.Commit, gitVer) {

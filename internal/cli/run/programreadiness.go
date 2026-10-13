@@ -24,6 +24,9 @@ import "github.com/mschulkind-oss/yolo-jail/internal/paths"
 // instead of the host's, so its stage says why the act is off in that jail's terms.
 func (o *Options) programReadinessArgs() []string {
 	var out []string
+	if o.Update {
+		out = append(out, "-e", paths.LaunchUpdateEnv+"=1")
+	}
 	for _, k := range []string{paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv} {
 		v := o.Getenv(k)
 		if k == paths.NoProgramReadinessEnv && o.NoProgramReadiness {

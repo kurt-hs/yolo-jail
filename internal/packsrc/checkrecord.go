@@ -65,7 +65,8 @@ func (f *PatchFailure) Error() string {
 
 // CheckRecord is one owner key's check record.
 type CheckRecord struct {
-	Schema int `json:"schema"`
+	Fresh  *CheckStart `json:"fresh_start,omitempty"`
+	Schema int         `json:"schema"`
 	// Owner is the owner key the record is for.
 	Owner string `json:"owner"`
 	// CheckedAt is the CHECK STAMP (the design's term, §4.2): when the last check was ATTEMPTED,

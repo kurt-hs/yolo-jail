@@ -139,7 +139,7 @@ func readinessChecks(e *Env) string {
 		// reason, not a variable nobody typed.
 		return "echo " + shquote.Quote("  ↳ a capture or build jail: its command is the install, "+
 			"so nothing is installed ahead of it") + " >&2"
-	} else if v != "" {
+	} else if v != "" && e.Getenv(paths.LaunchUpdateEnv) != "1" {
 		var who []string
 		for _, p := range progs {
 			who = append(who, p.Who)
@@ -150,7 +150,11 @@ func readinessChecks(e *Env) string {
 	}
 	lines := make([]string, 0, len(progs))
 	for _, p := range progs {
-		lines = append(lines, "_yolo_ready "+shquote.Quote(p.Bin)+" "+shquote.Quote(p.Who))
+		mode := "0"
+		if e.Getenv(paths.LaunchUpdateEnv) == "1" && p.inst.Kind != packdecl.InstallKindSource {
+			mode = "1"
+		}
+		lines = append(lines, "_yolo_ready "+shquote.Quote(p.Bin)+" "+shquote.Quote(p.Who)+" "+mode)
 	}
 	return strings.Join(lines, "\n")
 }

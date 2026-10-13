@@ -56,6 +56,9 @@ type ExecResult struct {
 // are deterministically unit-testable. nil/zero fields are
 // filled with real implementations by fillDefaults.
 type Options struct {
+	// Update requests a new check, never a forced rebuild.
+	Update       bool
+	freshFailure error
 	// --- CLI surface (typer options + ctx.args) ---
 	//
 	// Network is `--network <mode>` as typed on THIS launch, and it beats the config's

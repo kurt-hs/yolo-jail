@@ -208,6 +208,10 @@ func waitPreparationGone(ctx context.Context, root string) error {
 func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.Writer) error {
 	root := preparationRoot()
 	return runPreparationWorker(ctx, root, run.SelfExecPath(), ticks, func(ctx context.Context) error {
+		if err := runFreshPreparationDemands(ctx, w); err != nil {
+			fmt.Fprintln(w, err)
+			return err
+		}
 		subscriptions, err := readPreparationSubscriptions(root)
 		if err != nil {
 			fmt.Fprintln(w, err)

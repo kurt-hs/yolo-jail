@@ -88,6 +88,8 @@ Exec flags (yolo host -- ...):
                                 any YOLO_ALLOW_* variable, and no config key. A jail launch
                                 takes the same flag, and the jail holds the set for its
                                 whole life (` + "`yolo run --help`" + `).
+  --update, -u                  Check this command owner's selected build inputs now;
+                                reuse unchanged admitted builds.
   --timing                      Time this launch: record its stages' spans in
                                 ~/.local/share/yolo-jail/logs/host-notch-perf.log and
                                 print the table before the command starts, as a jail
@@ -284,6 +286,7 @@ func hostExecWithoutCommand(flagArgs []string, out, errw io.Writer) int {
 
 // hostExecFlags is what the exec half accepts before `--`.
 type hostExecFlags struct {
+	update  bool
 	profile string
 	// grant is the --with-credentials request, nil when the flag was not given: the only
 	// spelling that makes one (credential-sources-separation.md OQ-ES5, ruled for the host).
@@ -310,7 +313,7 @@ type hostExecFlags struct {
 func jailOnlyRunFlags() []string {
 	var out []string
 	for _, f := range runFlags {
-		if f != "--profile" && f != "--at" && f != hostTimingFlag && f != withCredentialsFlag {
+		if f != "--profile" && f != "--at" && f != hostTimingFlag && f != withCredentialsFlag && f != "--update" {
 			out = append(out, f)
 		}
 	}
@@ -436,6 +439,10 @@ func parseHostExecFlags(args []string, errw io.Writer) (hostExecFlags, bool) {
 		if a == "--help" || a == "-h" {
 			f.help = true
 			return f, false
+		}
+		if a == "--update" || a == "-u" {
+			f.update = true
+			continue
 		}
 		if a == hostTimingFlag {
 			f.timing = true
@@ -729,6 +736,13 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// a real launch with 20 s of it after the last build ended and nothing saying where.
 	sp = trace.span("host.apply_gate")
 	act := &run.ActInterrupt{}
+	if flags.update {
+		if err := prepareHostLaunchUpdate(cmd[0], errw, act); err != nil {
+			fmt.Fprintf(errw, "Fresh host preparation refused: %v — repair and retry --update, or launch without --update\n", err)
+			sp.End()
+			return 1
+		}
+	}
 	if config.HostApplyOnLaunchEnabled() && config.HostManagementMode() != config.HostManagementNone {
 		// PF-D81 BEFORE THE GATE'S RENDER: a patched extension's series that does not apply, or a patched
 		// fork's recorded patch failure, stops the launch here, before the gate may apply anything.

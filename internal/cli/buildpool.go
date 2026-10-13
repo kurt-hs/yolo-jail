@@ -390,6 +390,48 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	case req.Trees != nil:
 		workspace, rt, cfg, act = req.Trees.Workspace, req.Trees.Runtime, req.Trees.Progress, req.Trees.Interrupt
 	}
+	var freshKeys []packload.Fork
+	platform := ""
+	fresh := false
+	var freshFailure func(error)
+	if fr := req.Forks; fr != nil {
+		if fr.FreshCheck {
+			fresh = true
+			freshFailure = fr.FreshFailure
+			platform = fr.Platform
+			for _, p := range fr.Pins {
+				freshKeys = append(freshKeys, p.Fork)
+			}
+		}
+	}
+	if tr := req.Trees; tr != nil {
+		if tr.FreshCheck {
+			fresh = true
+			freshFailure = tr.FreshFailure
+			platform = tr.Platform
+			freshKeys = append(freshKeys, tr.Trees...)
+		}
+	}
+	if fresh {
+		request, err := newPreparationRequest(context.Background(), freshKeys, rt, platform)
+		var release func()
+		if err == nil {
+			release, err = registerPreparationDemand(context.Background(), request)
+		}
+		if err != nil {
+			if freshFailure != nil {
+				freshFailure(err)
+			}
+			return nil, nil
+		}
+		defer release()
+		if fr := req.Forks; fr != nil {
+			fr.Preparation = request
+		}
+		if tr := req.Trees; tr != nil {
+			tr.Preparation = request
+		}
+	}
 	pool := newBuildPool(stream, cfg, color, workspace, rt, req.MaxChecks, req.MaxBuilds, act)
 	pool.report.perf = req.Perf
 	var mu sync.Mutex
@@ -438,7 +480,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	// Register selected keys even when their source check is not due. The timer
 	// independently resolves policy and admits only the current generation.
 	var selected []packload.Fork
-	platform := ""
+	platform = ""
 	if tr := req.Trees; tr != nil {
 		platform = tr.Platform
 		selected = append(selected, tr.Trees...)

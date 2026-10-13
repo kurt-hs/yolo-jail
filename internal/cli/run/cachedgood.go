@@ -16,6 +16,10 @@ func (o *Options) selectCachedGood(rt string) bool {
 	if selector == "" {
 		return true
 	}
+	if o.Update {
+		o.pr(o.Stderr).print("--update cannot combine with historical cached-good recovery — drop --update for this recovery launch, or unset " + CachedGoodEnv + " and retry fresh preparation")
+		return false
+	}
 	refuse := func(why string) bool {
 		o.pr(o.Stderr).printf("[bold red]Refusing cached-good recovery: %s.[/bold red]", why)
 		return false

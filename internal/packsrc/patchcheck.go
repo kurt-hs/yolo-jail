@@ -80,6 +80,9 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 
 // CheckOptions tunes CheckPatched.
 type CheckOptions struct {
+	StartGuard               func(func() error) error
+	FreshAfter               *CheckStart
+	InputIdentity, RequestID string
 	// Force is an EXPLICIT ACT's check (`yolo pack update`, `yolo pack install`, `yolo capture`):
 	// it ignores the throttle and the mirror's own stamp and fetches, still putting tags back.
 	Force bool
@@ -124,7 +127,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	}
 	// THE THROTTLE, A FILE READ: no lock and no git when the stamp is fresh.
 	rec, readErr := s.LoadCheckRecord(w.Owner)
-	if readErr == nil && !opts.Force {
+	if readErr == nil && !opts.Force && opts.FreshAfter == nil {
 		if due, _ := CheckDue(rec, in, now(), opts.Interval); !due {
 			return CheckResult{Record: rec, Inputs: in}
 		}
@@ -137,8 +140,18 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	res := CheckResult{Inputs: in}
 	err = s.WithCheckRecord(w.Owner, waiting, func(r *CheckRecord, recErr error, save func() error) (bool, error) {
 		res.Recovered = recErr
+		// RE-READ UNDER THE LOCK: a qualifying winner serves all requests registered
+		// before its start. A check in progress at registration never qualifies.
+		if opts.FreshAfter != nil && recErr == nil && r.Read == in && r.Fresh.Qualifies(*opts.FreshAfter, opts.InputIdentity) {
+			err := s.WithFreshAuthority(w.Owner, *opts.FreshAfter, r.Fresh, opts.InputIdentity, func() error { return nil })
+			if err != nil {
+				return false, err
+			}
+			res.Record = r
+			return false, nil
+		}
 		// RE-READ UNDER THE LOCK: another launch may have checked while this one waited.
-		if !opts.Force && recErr == nil {
+		if !opts.Force && opts.FreshAfter == nil && recErr == nil {
 			if due, _ := CheckDue(r, in, now(), opts.Interval); !due {
 				res.Record = r
 				return false, nil
@@ -154,6 +167,10 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		// inputs with the last check's list. A check killed in its git after an edit to what it
 		// reads leaves the old inputs beside the old list, and the next launch is due at once
 		// (CheckDue) instead of serving the old rule's list under the new one for an hour.
+		begun, err := s.beginCheck(w.Owner, opts.InputIdentity, opts.RequestID, opts.FreshAfter, now(), opts.StartGuard)
+		if err != nil {
+			return false, err
+		}
 		stamp := r.CheckedAt
 		r.CheckedAt = now().Unix()
 		if err := save(); err != nil {
@@ -164,7 +181,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if n, err := ParseNpm(w.Source); err == nil {
 			found = s.findNpmCandidates(n)
 		} else {
-			found = s.findCandidates(addr, follow, w.Base, opts.Force, now(), waiting)
+			found = s.findCandidates(addr, follow, w.Base, opts.Force || opts.FreshAfter != nil, now(), waiting)
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -173,6 +190,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 			r.CheckedAt, res.Ran, res.Err, res.Record = stamp, false, found.lockHeld, r
 			return true, nil
 		}
+		r.Fresh = &begun
 		r.Seq++
 		found.Seq, found.At = r.Seq, now().Unix()
 		r.Read, r.Check = in, &found

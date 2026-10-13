@@ -10,6 +10,7 @@ package run
 // is the rebuild on a timer §9 forbids. Moving a pin is `yolo pack update`'s alone.
 
 import (
+	"fmt"
 	"io"
 	goruntime "runtime" // stdlib; this package's `runtime` is yolo's own (run.go)
 
@@ -25,6 +26,9 @@ import (
 
 // ForkBuildRequest is what a launch hands its fork build trigger (Options.BuildForks).
 type ForkBuildRequest struct {
+	FreshCheck   bool
+	Preparation  PreparationRequest
+	FreshFailure func(error)
 	// Pins are the forks to deliver: each PLAIN fork with its pinned commit, and each PATCHED fork,
 	// which has no pin by design (docs/design/patched-forks.md §6.5) and whose delivery its advance
 	// decides.
@@ -133,6 +137,9 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 	}
 	if reason := o.roBindsUnsupported(rt); reason != "" { // parity: Warned — the capture store is not mounted below Apple Container's read-only floor, so no fork is built and each fork's launcher prints this reason
 		for _, p := range build {
+			if o.Update {
+				o.recordFreshFailure(fmt.Errorf("%s cannot deliver fresh source builds here — use a supported capture-store backend, or launch without --update", p.Fork.Key()))
+			}
 			out[p.Fork.Bin] = entrypoint.ForkDelivery{Reason: "this runtime mounts no capture store to deliver a " +
 				"source-built program from — " + reason}
 		}
@@ -144,7 +151,7 @@ func (o *Options) forkBuildPlan(rt string) (map[string]entrypoint.ForkDelivery, 
 		}
 		return out, nil
 	}
-	req := &ForkBuildRequest{Pins: build, CachedGoodOwner: o.cachedGoodOwner, Platform: platform, Runtime: rt, Workspace: o.Workspace,
+	req := &ForkBuildRequest{FreshCheck: o.Update, FreshFailure: o.recordFreshFailure, Pins: build, CachedGoodOwner: o.cachedGoodOwner, Platform: platform, Runtime: rt, Workspace: o.Workspace,
 		Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(), Interrupt: o.actInterrupt()}
 	if o.packTree != "" {
 		// Called from every advance of the slot's pool at once (XB-D10): the record's writes are
