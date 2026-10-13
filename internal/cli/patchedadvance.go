@@ -94,6 +94,8 @@ import (
 
 // advanceOptions is who runs an advance, and how.
 type advanceOptions struct {
+	// admitGuard excludes stale scheduler owner/inputs through the actual record save.
+	admitGuard func(func() error) error
 	// bypassCommand is the operation a patch failure's Bypass line names, when the caller is not one
 	// patchBypass derives it for: `yolo host apply --assert`, or `yolo host -- <bin>` for a patched
 	// extension, whose own key names no bin.
@@ -2325,80 +2327,97 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 	if built != nil || failure != nil {
 		packs = a.records() // only a completed build's settle may wait
 	}
-	err := packs.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, _ error, _ func() error) (bool, error) {
-		changed := false
-		if built != nil {
-			_, gone := a.store.Resolve(built.Key)
-			switch {
-			case gone != nil:
-				res.gone = gone
-			case r.Good != nil && seq < r.Good.Seq:
-				lost = true
-			default:
-				read := r.Read
-				r.Good = &packsrc.GoodBuild{Commit: b.Commit, Tag: b.Entry.Tag, Version: b.Entry.Version,
-					Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(),
-					Seq: seq, Read: &read, Entry: built.Key, At: patchedNow().Unix()}
-				dropBuildFailure(r, b.Commit)
-				moved, changed = true, true
+	err := packs.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, _ error, save func() error) (bool, error) {
+		settle := func() (bool, error) {
+			changed := false
+			if built != nil {
+				_, gone := a.store.Resolve(built.Key)
+				switch {
+				case gone != nil:
+					res.gone = gone
+				case r.Good != nil && seq < r.Good.Seq:
+					lost = true
+				default:
+					read := r.Read
+					r.Good = &packsrc.GoodBuild{Commit: b.Commit, Tag: b.Entry.Tag, Version: b.Entry.Version,
+						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(),
+						Seq: seq, Read: &read, Entry: built.Key, At: patchedNow().Unix()}
+					dropBuildFailure(r, b.Commit)
+					moved, changed = true, true
+				}
 			}
-		}
-		if failure != nil {
-			setFailure(r, failure)
-			changed = true
-		}
-		if a.patchFailure != nil {
+			if failure != nil {
+				setFailure(r, failure)
+				changed = true
+			}
+			if a.patchFailure != nil {
+				if snapshot := a.replayBinding; snapshot != nil && r.Seq == snapshot.Seq && r.Read == snapshot.Inputs &&
+					r.Seq == a.seq && r.Read == a.in && reflect.DeepEqual(r.PatchFailure, snapshot.Failure) &&
+					reflect.DeepEqual(r.ApplyErr, snapshot.ApplyErr) {
+					r.PatchFailure = a.patchFailure
+					changed = true
+				}
+			}
 			if snapshot := a.replayBinding; snapshot != nil && r.Seq == snapshot.Seq && r.Read == snapshot.Inputs &&
 				r.Seq == a.seq && r.Read == a.in && reflect.DeepEqual(r.PatchFailure, snapshot.Failure) &&
 				reflect.DeepEqual(r.ApplyErr, snapshot.ApplyErr) {
-				r.PatchFailure = a.patchFailure
-				changed = true
+				switch {
+				case a.applyErr != nil:
+					r.ApplyErr, changed = a.applyErr, true
+				case a.walked && a.replayRecordAuthorized && r.ApplyErr != nil:
+					// The opaque diagnosis belongs to an older check, but may be cleared only after
+					// RecordReplay changed this exact guarded authority successfully.
+					r.ApplyErr, changed = nil, true
+				}
 			}
-		}
-		if snapshot := a.replayBinding; snapshot != nil && r.Seq == snapshot.Seq && r.Read == snapshot.Inputs &&
-			r.Seq == a.seq && r.Read == a.in && reflect.DeepEqual(r.PatchFailure, snapshot.Failure) &&
-			reflect.DeepEqual(r.ApplyErr, snapshot.ApplyErr) {
+			a.rec = r
+			h := run.HandedFork{Fork: f.Key()}
+			if g := r.Good; g != nil && g.Recipe == a.recipe {
+				if e := a.exactGood(g); e != nil {
+					h.Key, h.Commit, h.Tag, h.Patches, h.Series = e.Key, g.Commit, g.Tag, g.Patches, g.Series
+					good := *g
+					res.good = &good
+				}
+			}
+			if h.Key == "" {
+				h.Reason = reason
+				if h.Reason == "" {
+					h.Reason = f.Label() + " has no build on this machine yet — " + a.next() + " builds it"
+				}
+			}
+			res.delivery = entrypoint.ForkDelivery{Key: h.Key, Reason: h.Reason, PatchFailure: a.patchFailure}
+			res.patchFailure = a.patchFailure
+			if a.o.hand != nil {
+				if err := a.o.hand(f.Bin, h); err != nil && h.Key != "" {
+					a.warn("%s: could not record what this launch hands its jail (%v) — until it is recorded, "+
+						"another launch's move of this fork may remove the build before this jail first runs %s; "+
+						"if %s then cannot start, a fresh launch delivers the good build", f.Label(), err, f.Thing(), f.Thing())
+				}
+			}
+			// THE REAP (PF-D20), after the hand, so this launch's own build is in the records it reads.
 			switch {
-			case a.applyErr != nil:
-				r.ApplyErr, changed = a.applyErr, true
-			case a.walked && a.replayRecordAuthorized && r.ApplyErr != nil:
-				// The opaque diagnosis belongs to an older check, but may be cleared only after
-				// RecordReplay changed this exact guarded authority successfully.
-				r.ApplyErr, changed = nil, true
+			case moved:
+				a.reapOthers(r.Good.Entry)
+			case lost && built.Key != r.Good.Entry:
+				a.reapOne(built.Key)
 			}
+			return changed, nil
 		}
-		a.rec = r
-		h := run.HandedFork{Fork: f.Key()}
-		if g := r.Good; g != nil && g.Recipe == a.recipe {
-			if e := a.exactGood(g); e != nil {
-				h.Key, h.Commit, h.Tag, h.Patches, h.Series = e.Key, g.Commit, g.Tag, g.Patches, g.Series
-				good := *g
-				res.good = &good
+		if a.o.admitGuard == nil {
+			return settle()
+		}
+		err := a.o.admitGuard(func() error {
+			changed, err := settle()
+			if err != nil || !changed {
+				return err
 			}
+			return save()
+		})
+		if err != nil {
+			res = advanceResult{operationError: oneLineErr(err)}
+			moved = false
 		}
-		if h.Key == "" {
-			h.Reason = reason
-			if h.Reason == "" {
-				h.Reason = f.Label() + " has no build on this machine yet — " + a.next() + " builds it"
-			}
-		}
-		res.delivery = entrypoint.ForkDelivery{Key: h.Key, Reason: h.Reason, PatchFailure: a.patchFailure}
-		res.patchFailure = a.patchFailure
-		if a.o.hand != nil {
-			if err := a.o.hand(f.Bin, h); err != nil && h.Key != "" {
-				a.warn("%s: could not record what this launch hands its jail (%v) — until it is recorded, "+
-					"another launch's move of this fork may remove the build before this jail first runs %s; "+
-					"if %s then cannot start, a fresh launch delivers the good build", f.Label(), err, f.Thing(), f.Thing())
-			}
-		}
-		// THE REAP (PF-D20), after the hand, so this launch's own build is in the records it reads.
-		switch {
-		case moved:
-			a.reapOthers(r.Good.Entry)
-		case lost && built.Key != r.Good.Entry:
-			a.reapOne(built.Key)
-		}
-		return changed, nil
+		return false, err // already saved while the generation guard was held
 	})
 	if err != nil {
 		if a.lockHeldSkip(err) {
@@ -2411,7 +2430,9 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 	}
 	res.lost = lost
 	res.problem = a.problem
-	res.operationError = a.operationError
+	if res.operationError == "" {
+		res.operationError = a.operationError
+	}
 	res.patchFailure = a.patchFailure
 	res.patchFailureSaid = a.patchFailure != nil && a.failureReported
 	if res.delivery.Key == "" && a.serving != nil && a.rec != nil && a.rec.Good != nil &&

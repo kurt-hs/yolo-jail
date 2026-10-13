@@ -7,7 +7,10 @@ next: "Build the independent scheduler and freshness slices from the ready plan;
 
 # Prepare between launches; materialize only at a launch
 
-**Status:** 2026-10-13. Source reviewed at `99f36da2e`; this extension is not implemented.
+**Status:** 2026-10-13. The Task 1 tree producer has source-tested ongoing dispatch and
+owner/input/generation-guarded admission. Disposable-HOME status/stop smoke is not runtime build
+verification. Fresh-request qualification/flags, program registration, host consumption and Apple
+capabilities remain independent slices; see the [current plan](launch-update-preparation-plan.md).
 
 > **In short.** Environment preparation should continue between launches, using the same admitted-build pipeline. A launch chooses a generation; background work never changes the environment already running.
 

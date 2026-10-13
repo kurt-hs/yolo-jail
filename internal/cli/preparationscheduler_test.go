@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
 func preparationFixture(t *testing.T) (string, string) {
@@ -284,5 +285,36 @@ func TestPreparationUnreadableExecutableStopsBeforeDispatch(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("worker did not stop")
+	}
+}
+
+func TestPreparationSlowAuthenticatedClientDoesNotDelayStop(t *testing.T) {
+	root, exe := preparationFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() {
+		done <- runPreparationWorker(ctx, root, exe, ticks, func(context.Context) error { return nil })
+	}()
+	owner := awaitPreparationOwner(t, root)
+	slow, err := svcendpoint.DialLocal(filepath.Join(root, "control.endpoint"), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer slow.Close()
+	// Authenticate, then hold the application request open without a complete JSON command.
+	if _, err = slow.Write([]byte(`{"Identity":`)); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if err := controlPreparationWorker(ctx, root, owner.Identity, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > preparationControlBound/2 {
+		t.Fatalf("slow client serialized stop: %v", elapsed)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

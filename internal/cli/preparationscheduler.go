@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
@@ -165,33 +166,53 @@ func runPreparationWorker(ctx context.Context, root, selectedExecutable string, 
 }
 
 func servePreparationControl(ctx context.Context, listener *svcendpoint.Listener, calls chan<- preparationControlCall) {
+	// A slow client consumes one slot, not the control accept loop. Excess clients
+	// are closed rather than spawning unbounded authenticated/handshake waiters.
+	slots := make(chan struct{}, 8)
+	var handlers sync.WaitGroup
+	defer handlers.Wait()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
-		// Sequential bounded commands avoid unbounded handler goroutines. Dispatch
-		// never runs on this goroutine or the lifecycle select loop.
-		conn.SetDeadline(time.Now().Add(preparationControlBound))
-		var cmd preparationCommand
-		_, err = svcendpoint.ReadPreamble(conn)
-		// ReadPreamble clears its own read deadline; restore our request bound.
-		conn.SetDeadline(time.Now().Add(preparationControlBound))
-		if err == nil {
-			err = json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&cmd)
+		select {
+		case slots <- struct{}{}:
+		default:
+			conn.Close()
+			continue
 		}
-		if err == nil {
+		handlers.Add(1)
+		go func() {
+			defer handlers.Done()
+			defer func() { <-slots }()
+			defer conn.Close()
+			deadline := time.Now().Add(preparationControlBound)
+			conn.SetDeadline(deadline)
+			var cmd preparationCommand
+			_, err := svcendpoint.ReadPreamble(conn)
+			conn.SetDeadline(deadline)
+			if err == nil {
+				err = json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&cmd)
+			}
+			if err != nil {
+				return
+			}
 			call := preparationControlCall{cmd, make(chan preparationResponse, 1)}
+			timer := time.NewTimer(time.Until(deadline))
+			defer timer.Stop()
 			select {
 			case calls <- call:
-				response := <-call.reply
-				_ = json.NewEncoder(conn).Encode(response)
 			case <-ctx.Done():
+				return
+			case <-timer.C:
+				return
 			}
-		}
-		conn.Close()
-		if ctx.Err() != nil {
-			return
-		}
+			select {
+			case response := <-call.reply:
+				_ = json.NewEncoder(conn).Encode(response)
+			case <-timer.C:
+			}
+		}()
 	}
 }

@@ -61,6 +61,8 @@ func runInternal(args []string) int {
 		// rather than documented: it MOVES an installer's output out of the home it
 		// is pointed at, which is correct only inside a throwaway capture jail.
 		return runCaptureRun(args[1:])
+	case preparationSchedulerVerb:
+		return runInternalPreparationScheduler(args[1:])
 	case backgroundAdvanceVerb:
 		// The detached host process a fresh launch starts for the built trees that update for the
 		// next launch (backgroundadvance.go; docs/design/pi-extension-store-builds.md XB-D19). Hidden:

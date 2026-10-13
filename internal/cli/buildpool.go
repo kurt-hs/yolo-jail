@@ -422,47 +422,42 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			forks[bin] = d
 		})
 	}
-	var later []bool
 	if tr := req.Trees; tr != nil {
-		later = make([]bool, len(tr.Trees))
-		for i, f := range tr.Trees {
+		for _, f := range tr.Trees {
 			pool.add(f.Label(), func(it *poolItem) {
-				d, l := deliverTree(f, *tr, pool.report, it, color)
+				d, _ := deliverTree(f, *tr, pool.report, it, color)
 				mu.Lock()
 				defer mu.Unlock()
-				trees[f.Key()], later[i] = d, l
+				trees[f.Key()] = d
 			})
 		}
 	}
 	pool.run()
 	// A cause that held a good build is said once, when every key has printed (buildcauses.go).
 	pool.report.flush()
-	// ONE BACKGROUND ADVANCE for every key either half left to one (XB-D19): the forks' and the
-	// trees' together, from whichever request the launch supplied.
-	var background []packload.Fork
+	// Register selected keys even when their source check is not due. The timer
+	// independently resolves policy and admits only the current generation.
+	var selected []packload.Fork
+	platform := ""
+	if tr := req.Trees; tr != nil {
+		platform = tr.Platform
+		selected = append(selected, tr.Trees...)
+	}
+	if err := registerTreePreparation(selected, run.TreeBuildRequest{Runtime: rt, Platform: platform}, stream); err != nil {
+		fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
+	}
+	// Program registration is supplied by the program adapter. Until that caller
+	// is integrated, preserve its established one-shot next-launch progress.
 	if fr := req.Forks; fr != nil {
+		var background []packload.Fork
 		for i, p := range fr.Pins {
 			if forkLater[i] {
 				background = append(background, p.Fork)
 			}
 		}
-	}
-	if tr := req.Trees; tr != nil {
-		for i, f := range tr.Trees {
-			if later[i] {
-				background = append(background, f)
-			}
+		if len(background) > 0 {
+			backgroundTreeAdvance(background, rt, fr.Platform, stream, color)
 		}
-	}
-	if len(background) > 0 {
-		platform := ""
-		switch {
-		case req.Forks != nil:
-			platform = req.Forks.Platform
-		case req.Trees != nil:
-			platform = req.Trees.Platform
-		}
-		backgroundTreeAdvance(background, rt, platform, stream, color)
 	}
 	return forks, trees
 }
