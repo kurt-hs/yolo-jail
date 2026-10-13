@@ -596,17 +596,19 @@ func (d *driver) install() error {
 		ctx = context.Background()
 	}
 	cmd := exec.CommandContext(ctx, d.opts.Command[0], d.opts.Command[1:]...) //nolint:gosec // the argv IS the input
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-			if errors.Is(err, syscall.ESRCH) {
-				return os.ErrProcessDone
+	if d.opts.Context != nil || d.opts.Artifacts != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+				if errors.Is(err, syscall.ESRCH) {
+					return os.ErrProcessDone
+				}
+				return err
 			}
-			return err
+			return nil
 		}
-		return nil
+		cmd.WaitDelay = time.Second
 	}
-	cmd.WaitDelay = time.Second
 	cmd.Dir = d.home
 	cmd.Stdout = d.opts.Stdout
 	cmd.Stderr = d.opts.Stderr
