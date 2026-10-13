@@ -2,7 +2,7 @@
 title: "Boundary broker: host request store slice"
 status: accepted
 stage: BUILT
-next: "Integrate resolved host policies, enqueue/consume/teardown, audit and shared scope locking; keep broker writes refused until complete"
+next: "Supply host authority adapters and bounded request/wait/status/execution; keep broker writes refused until complete"
 ---
 
 # Host request store slice
@@ -30,9 +30,19 @@ No production enqueue, no write execution, no notification, no answer ping, no n
 
 ## Completed and deferred
 
-The host store and CLI dispatch are built. Allow once narrows to the shorter of 15 minutes and
-the resolved ceiling (implementation interpretation of [§5.7](boundary-broker.md#57-permission-sets) and [§7](boundary-broker.md#7-grants-and-the-request-store)). This lifecycle slice adds a fresh random start id to each host broker process, associates authenticated host-service jail ids with that process, ends its store lifetime during graceful teardown, and audits each grant it ends.
+The host store and CLI dispatch are built. Allow once narrows to the shorter of 15 minutes and the resolved ceiling (implementation interpretation of [§5.7](boundary-broker.md#57-permission-sets) and [§7](boundary-broker.md#7-grants-and-the-request-store)). The lifecycle slice adds a fresh random start id to each host broker process, associates authenticated host-service jail ids with that process, ends its store lifetime during graceful teardown, and audits each grant it ends.
 
-Windowed production calls still refuse with exit 77: this slice does not file requests, consume grants or execute writes, and grants stored here cannot make a broker write run. Before production request/consume wiring, both real writers must use the same transaction lock: `brokerscope.Write` (including its create/replace of approved launch scope) and every `brokerstore` mutation/consume path. `brokerlock.WithTransaction(dir, fn)` holds the single store flock while the caller re-reads current host policy and approved scope and makes its write/consume decision. `Store.Consume` runs its required revalidation callback inside its transaction immediately before matching and spending; scope writes invoke the same lock before replacing the scope record. The gate must reclassify and scope-check the actual invocation, not only the original request. Do not take same-directory lock-taking APIs from inside the callback.
+Windowed production calls still refuse with exit 77: this work does not file requests, consume grants or execute writes, and grants stored here cannot make a broker write run.
 
-Bounded wait/status and notification integration remain unbuilt. This work does not solve [OQ-BB10](boundary-broker.md#OQ-BB10) or build `yolo notify`; terminal notification and ping remain excluded.
+## Shared transaction slice (after `0c72f266a`)
+
+MEASURED: focused store/scope/lifecycle tests and race regressions exercise the shared protocol; production approval execution remains unbuilt.
+
+- `brokerlock.WithTransaction(sourceDir, func() error)` exclusively holds `<sourceDir>/.lock`. `Store.transaction`, actual `brokerscope.Write`, scope `Remove`, and `Sweep` all use it. Launch teardown calls `Remove`; broker teardown calls `Store.End`. Callback code must not call any lock-taking store/scope API for the same directory (including `List`), nor nest transactions.
+- `Store.Revalidate` is mandatory immediately before approving in `Decide`; deny/revoke/list need none. The decision narrows the filed policy against today's ceiling and use cap. `Consume` invokes its mandatory callback inside that transaction, immediately before spending. The callback must re-read current host policy, approved scope and live start/jail identity; at consumption it must reclassify and scope-check the actual invocation captured in its closure, not merely the original request. Missing gates and callback errors fail closed. Policy narrowing invalidates existing grants conservatively.
+- `brokerscope.ValidateCurrent` is a non-locking gate reader: bounded, no-follow scope read, known schema, exact launch/source/workspace/container/PID identity and repository membership. It is not a policy loader or start-id validator.
+- `End` returns exactly the grants durably ended in its transaction, including partial progress on error. Broker teardown audits those records without a preceding `List`; failures are reported as incomplete and retained for retry.
+
+The next approved operations are host policy/scope/start adapter delivery to both the broker and approval frontend, canonical request filing/joining, bounded waiting and status, then revalidate/consume/audit/execute wiring. The standalone approval frontend deliberately has no current-authority adapter yet: synthetic pending records cannot be allowed by `yolo approve` without one; listing, deny and revoke still work. Production brokers still enqueue nothing, consume no grants and return 77 for windowed writes. Bounded wait and execution must be complete before enabling production requests.
+
+Terminal notices remain blocked by [OQ-BB10](boundary-broker.md#OQ-BB10); notification delivery and answer ping remain separate dependencies on the notifier and `yolo notify`. This work resolves neither.

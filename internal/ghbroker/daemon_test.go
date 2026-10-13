@@ -568,6 +568,7 @@ func TestBrokerLifetimeBindsHostJailAndEndsItsGrants(t *testing.T) {
 		t.Fatalf("broker lifetimes are not unique: %q, %q", b.startID, other.startID)
 	}
 	store := b.store
+	store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
 	q, err := store.File(brokerstore.Request{Jail: "jail-one", Start: b.startID,
 		Workspace: b.workspace, Argv: []string{"pr", "merge", "1"}, Repo: "o/r",
 		StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{
@@ -606,5 +607,58 @@ func TestBrokerLifetimeBindsHostJailAndEndsItsGrants(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("broker teardown did not audit grant-ended: %s", audit)
+	}
+}
+
+func TestBrokerTeardownReportsStoreFailureAndRetriesWithoutFalseAudit(t *testing.T) {
+	t.Setenv("HOME", resolvedDir(t))
+	t.Setenv("PATH", resolvedDir(t))
+	var log bytes.Buffer
+	b, cleanup := newBroker(brokerscope.File{Workspace: "/project"}, "/project", &log)
+	defer cleanup()
+	b.store.Revalidate = func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }
+	q, err := b.store.File(brokerstore.Request{Jail: "jail", Start: b.startID, Workspace: "/project", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Hour, Uses: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.trackJail(q.Jail)
+	path := filepath.Join(b.store.Dir, "requests", q.ID+".json")
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	b.endLifetimes()
+	if !strings.Contains(log.String(), "teardown incomplete") {
+		t.Fatal(log.String())
+	}
+	b.lifetimeMu.Lock()
+	_, tracked := b.jails[q.Jail]
+	b.lifetimeMu.Unlock()
+	if !tracked {
+		t.Fatal("failed teardown forgotten")
+	}
+	audit, _ := os.ReadFile(paths.BrokerAuditLog())
+	if bytes.Contains(audit, []byte(g.ID)) {
+		t.Fatal("false completed audit")
+	}
+	if err = os.WriteFile(path, saved, 0600); err != nil {
+		t.Fatal(err)
+	}
+	b.endLifetimes()
+	audit, err = os.ReadFile(paths.BrokerAuditLog())
+	if err != nil || bytes.Count(audit, []byte(g.ID)) != 1 {
+		t.Fatal(string(audit), err)
+	}
+	b.endLifetimes()
+	audit, _ = os.ReadFile(paths.BrokerAuditLog())
+	if bytes.Count(audit, []byte(g.ID)) != 1 {
+		t.Fatal("duplicate audit")
 	}
 }
