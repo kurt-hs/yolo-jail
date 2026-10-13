@@ -706,3 +706,33 @@ func TestTheGateReadRefusalNamesAnAgentChosenFileAsText(t *testing.T) {
 		t.Fatalf("the refusal lost or rendered the file's name:\n%q", buf.String())
 	}
 }
+
+// BB-D23: a launch that starts a brokered loophole discloses the user-scope permission sets the
+// source runs under, read from the user config alone. Deleting the disclosure call site leaves a
+// widened grant invisible at the launch that starts it.
+func TestTheLaunchDisclosesTheUserScopesBrokeredSets(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	o, buf, _ := brokeredFixture(t)
+	userCfg := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "config.jsonc")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(`{"brokered": {"gbsrc": {"sets": [
+	  {"name": "read-only", "mode": "standing", "admit": ["pr comment"]},
+	  {"name": "review", "mode": "windowed", "window": "1h"}]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.AcceptConfigChanges = true
+	if !o.checkConfigChanges(gbOn(), "podman") {
+		t.Fatalf("an accepted gate refused:\n%s", buf.String())
+	}
+	handles := o.startLoopholes("yolo-brokered-sets", "podman", gbOn())
+	t.Cleanup(func() {
+		o.stopLoopholes(handles, hostServiceSocketsDir("yolo-brokered-sets", false), "", "")
+	})
+	if want := "gb: sets from user config: read-only (+ pr comment), review 1h"; !strings.Contains(buf.String(), want) {
+		t.Errorf("the launch does not disclose %q:\n%s", want, buf.String())
+	}
+}

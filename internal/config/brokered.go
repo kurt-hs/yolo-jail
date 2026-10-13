@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
@@ -34,6 +35,8 @@ import (
 // # What it may not be
 //
 //   - A user-scope `repos` list: with no workspace key it would widen every workspace.
+//   - A workspace-scope `sets` list: a set decides what a write grant hands over, and the
+//     workspace is the agent's to edit, so the sets live at user scope alone (BB-D23, BB-P9).
 //   - The old user-scope form, `brokered.<source>.workspaces`, keyed by a workspace's host path,
 //     which shipped in 0.11.1: retired at every scope, its message naming the edit to make.
 //   - A `brokered` key from a file outside the workspace, reached by an include or a link: it
@@ -50,11 +53,36 @@ const (
 	brokeredKey           = "brokered"
 	brokeredWorkspacesKey = "workspaces"
 	brokeredReposKey      = "repos"
+	brokeredSetsKey       = "sets"
 )
 
-// knownBrokeredSourceKeys are the keys a source object may hold: `repos`, and the retired
-// `workspaces`, which stays known so that its targeted message is its only error.
-var knownBrokeredSourceKeys = set(brokeredReposKey, brokeredWorkspacesKey)
+// The keys one entry of `brokered.<source>.sets` may hold (boundary-broker.md §5.7): the set's
+// name and mode, the window a windowed set is granted for with its ceiling and use cap, and the
+// command rules it admits. Like the source object, a set has one voice — an unknown key is
+// refused, since a typo would otherwise drop a rule or a bound with nothing said.
+const (
+	brokeredSetNameKey      = "name"
+	brokeredSetModeKey      = "mode"
+	brokeredSetWindowKey    = "window"
+	brokeredSetMaxWindowKey = "max_window"
+	brokeredSetUsesKey      = "uses"
+	brokeredSetAdmitKey     = "admit"
+)
+
+const (
+	brokeredSetModeStanding = "standing"
+	brokeredSetModeWindowed = "windowed"
+)
+
+var knownBrokeredSetKeys = set(brokeredSetNameKey, brokeredSetModeKey, brokeredSetWindowKey,
+	brokeredSetMaxWindowKey, brokeredSetUsesKey, brokeredSetAdmitKey)
+
+// knownBrokeredSourceKeys are the keys a source object may hold: `repos` and the retired
+// `workspaces`, each with its own message at the scope that refuses it, and the user-scope
+// `sets` (BB-D23, BB-P9). Keeping `sets` known at both scopes is what lets each scope answer in
+// its own words — the user scope validates the sets, the workspace scope refuses them — rather
+// than either falling back to the generic unknown-key message.
+var knownBrokeredSourceKeys = set(brokeredReposKey, brokeredWorkspacesKey, brokeredSetsKey)
 
 // brokeredReposPath is `brokered.<source>.repos`, the key every core-side text names (WW-D13).
 func brokeredReposPath(source string) string {
@@ -63,6 +91,246 @@ func brokeredReposPath(source string) string {
 
 // BrokeredReposKey is brokeredReposPath for callers outside the package.
 func BrokeredReposKey(source string) string { return brokeredReposPath(source) }
+
+// brokeredSetsPath is `brokered.<source>.sets`, the user-scope half of the key (BB-D23).
+func brokeredSetsPath(source string) string {
+	return brokeredKey + "." + source + "." + brokeredSetsKey
+}
+
+// BrokeredSet is one entry of a source's user-scope `sets` list (boundary-broker.md §5.7): a
+// named permission set a grant can hand over. Only the fields the user WROTE are set, so a
+// windowed set that names no window leaves the source's default in force; Disclosure says what
+// the user configured.
+type BrokeredSet struct {
+	Name      string
+	Mode      string // "standing" or "windowed"
+	Window    string // windowed only: "15m", "1h", …, "" for the source's default
+	MaxWindow string // windowed only: a duration or "session", "" for the source's default
+	Uses      int    // windowed only: the use cap, 0 for the source's default
+	Admit     []string
+}
+
+// BrokeredSets is the user-scope permission sets configured for source, in the order written,
+// each valid entry once and a malformed one skipped (the validator is what reports it). nil
+// when the source names none, which leaves its defaults in force. It reads the user scope alone:
+// the sets are user scope only (BB-D23), and a workspace's copy is refused rather than read.
+func BrokeredSets(source string) []BrokeredSet {
+	v, _ := UserScopeConfigOrEmpty().Get(brokeredKey)
+	sources, ok := asMap(v)
+	if !ok {
+		return nil
+	}
+	sv, _ := sources.Get(source)
+	src, ok := asMap(sv)
+	if !ok {
+		return nil
+	}
+	rv, has := src.Get(brokeredSetsKey)
+	if !has {
+		return nil
+	}
+	sets, _ := brokeredSetsValue(brokeredSetsPath(source), rv)
+	return sets
+}
+
+// Disclosure is the one-line rendering of a set for the launch's disclosure (BB-D23): the name,
+// a windowed set's window and any ceiling and use cap it names, and the rules it admits. A rule
+// the user wrote is shown with the doc's `+` lead, and control characters cannot reach here (the
+// validator refuses them).
+func (s BrokeredSet) Disclosure() string {
+	b := s.Name
+	if s.Mode == brokeredSetModeWindowed {
+		if s.Window != "" {
+			b += " " + s.Window
+		}
+		if s.MaxWindow != "" {
+			b += " max " + s.MaxWindow
+		}
+		if s.Uses > 0 {
+			b += " " + itoa(s.Uses) + " uses"
+		}
+	}
+	if len(s.Admit) > 0 {
+		rules := make([]string, len(s.Admit))
+		for i, r := range s.Admit {
+			rules[i] = "+ " + r
+		}
+		b += " (" + strings.Join(rules, ", ") + ")"
+	}
+	return b
+}
+
+// BrokeredSetsDisclosure joins one source's sets for the launch line, "" for none. The caller
+// prints it: "<loophole>: sets from user config: <this>" (BB-D23).
+func BrokeredSetsDisclosure(sets []BrokeredSet) string {
+	parts := make([]string, len(sets))
+	for i, s := range sets {
+		parts[i] = s.Disclosure()
+	}
+	return strings.Join(parts, ", ")
+}
+
+// brokeredSetsValue parses a `sets` list, returning the valid sets and one message per problem,
+// each starting with path. A malformed entry is SKIPPED, never repaired: a reader that does not
+// validate admits nothing it could not read whole.
+func brokeredSetsValue(path string, v any) ([]BrokeredSet, []string) {
+	if v == nil {
+		return nil, nil
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, []string{path + `: expected a list of sets, each {"name": "…", "mode": "standing"|"windowed"} (got ` +
+			pyReprValue(v) + ")"}
+	}
+	if len(list) == 0 {
+		return nil, []string{path + ": an empty list defines no set; remove the key to keep the " +
+			"source's default sets"}
+	}
+	var out []BrokeredSet
+	var problems []string
+	seen := map[string]bool{}
+	for i, e := range list {
+		entryPath := path + "[" + itoa(i) + "]"
+		m, ok := asMap(e)
+		if !ok {
+			problems = append(problems, entryPath+": expected an object (got "+pyReprValue(e)+")")
+			continue
+		}
+		reportUnknownKeysTo(&problems, m, knownBrokeredSetKeys, entryPath)
+		set, ok := brokeredSetEntry(entryPath, m, seen, &problems)
+		if !ok {
+			continue
+		}
+		seen[set.Name] = true
+		out = append(out, set)
+	}
+	return out, problems
+}
+
+// brokeredSetEntry validates one set object, appending a message per problem and reporting ok
+// false when the set must be skipped. seen is the names already accepted, so a name written
+// twice is refused rather than silently resolving to the last.
+func brokeredSetEntry(path string, m *jsonx.OrderedMap, seen map[string]bool, problems *[]string) (BrokeredSet, bool) {
+	var s BrokeredSet
+	good := true
+	bad := func(msg string) {
+		good = false
+		*problems = append(*problems, msg)
+	}
+
+	nv, _ := m.Get(brokeredSetNameKey)
+	switch name, ok := nv.(string); {
+	case !ok:
+		bad(path + "." + brokeredSetNameKey + ": expected a set name — a lowercase letter, then " +
+			"lowercase letters, digits and hyphens (got " + pyReprValue(nv) + ")")
+	case !validBrokeredSetName(name):
+		bad(path + "." + brokeredSetNameKey + ": " + pyReprValue(name) + " is not a set name: a " +
+			"lowercase letter, then lowercase letters, digits and hyphens")
+	case seen[name]:
+		bad(path + "." + brokeredSetNameKey + ": " + pyReprValue(name) + " is named twice; a " +
+			"source's sets are one ordered list, each name once")
+	default:
+		s.Name = name
+	}
+
+	mode, _ := m.Get(brokeredSetModeKey)
+	switch mode {
+	case brokeredSetModeStanding, brokeredSetModeWindowed:
+		s.Mode, _ = mode.(string)
+	default:
+		bad(path + "." + brokeredSetModeKey + ": expected " + pyReprValue(brokeredSetModeStanding) +
+			" or " + pyReprValue(brokeredSetModeWindowed) + " (got " + pyReprValue(mode) + ")")
+	}
+
+	if s.Mode == brokeredSetModeStanding {
+		for _, k := range []string{brokeredSetWindowKey, brokeredSetMaxWindowKey, brokeredSetUsesKey} {
+			if _, has := m.Get(k); has {
+				bad(path + "." + k + ": only a windowed set has a window, a ceiling or a use cap; a " +
+					"standing set runs until it is switched off")
+			}
+		}
+	}
+	if s.Mode == brokeredSetModeWindowed {
+		if wv, has := m.Get(brokeredSetWindowKey); has {
+			w, ok := wv.(string)
+			if !ok || !brokeredWindow(w, false) {
+				bad(path + "." + brokeredSetWindowKey + `: expected a duration such as "15m" or "1h" (got ` +
+					pyReprValue(wv) + ")")
+			} else {
+				s.Window = w
+			}
+		}
+		if mv, has := m.Get(brokeredSetMaxWindowKey); has {
+			mw, ok := mv.(string)
+			if !ok || !brokeredWindow(mw, true) {
+				bad(path + "." + brokeredSetMaxWindowKey + `: expected a duration such as "1h", or ` +
+					`"session" for the jail's life (got ` + pyReprValue(mv) + ")")
+			} else {
+				s.MaxWindow = mw
+			}
+		}
+		if uv, has := m.Get(brokeredSetUsesKey); has {
+			n, ok := jsonx.AsInt(uv)
+			if !ok || n < 1 {
+				bad(path + "." + brokeredSetUsesKey + ": expected a whole number of uses, at least 1 (got " +
+					pyReprValue(uv) + ")")
+			} else {
+				s.Uses = int(n)
+			}
+		}
+	}
+
+	if av, has := m.Get(brokeredSetAdmitKey); has {
+		list, ok := av.([]any)
+		switch {
+		case !ok:
+			bad(path + "." + brokeredSetAdmitKey + ": expected a list of command-rule strings (got " +
+				pyReprValue(av) + ")")
+		default:
+			for i, r := range list {
+				rule, ok := r.(string)
+				if !ok || strings.TrimSpace(rule) == "" {
+					bad(path + "." + brokeredSetAdmitKey + "[" + itoa(i) + "]: expected a non-empty " +
+						"command rule (got " + pyReprValue(r) + ")")
+					continue
+				}
+				if termsafe.HasUnsafe(rule) {
+					bad(path + "." + brokeredSetAdmitKey + "[" + itoa(i) + "]: the rule " +
+						pyReprValue(termsafe.Visible(rule)) + " carries a control character; a rule is plain text")
+					continue
+				}
+				s.Admit = append(s.Admit, rule)
+			}
+		}
+	}
+	return s, good
+}
+
+// validBrokeredSetName reports whether s is a set name: a lowercase letter, then lowercase
+// letters, digits and hyphens.
+func validBrokeredSetName(s string) bool {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// brokeredWindow reports whether s is a window: a positive Go duration, and for a ceiling also
+// `session`, the bound that names the jail's whole life (BB-D29). `session` written for a window
+// is refused, since the window is what the grant is for and the ceiling is what bounds it.
+func brokeredWindow(s string, ceiling bool) bool {
+	if s == "session" {
+		return ceiling
+	}
+	d, err := time.ParseDuration(s)
+	return err == nil && d > 0
+}
 
 // approvalConfigPart is the approval record's config part: the workspace config with `brokered`
 // left out (WW-D11). The entry is approved in the scope part, as rows of the labeled block, and
@@ -322,8 +590,9 @@ func reposSpelling(source string, repos []string) string {
 
 // validateBrokeredUserScope checks the user scope's own `brokered` (WW-D9): a `repos` list there
 // is refused, naming the workspace files instead, since with no workspace key it would widen every
-// workspace. Other shapes are refused as they are at workspace scope; `workspaces` is the retired
-// check's. In a jail the user scope is the host-generated one, and each refusal is a warning.
+// workspace; a `sets` list there is validated, since user scope is where the sets live (BB-D23).
+// Other shapes are refused as they are at workspace scope; `workspaces` is the retired check's.
+// In a jail the user scope is the host-generated one, and each refusal is a warning.
 func validateBrokeredUserScope(errs, warns *[]string) {
 	v, present := UserScopeConfigOrEmpty().Get(brokeredKey)
 	if !present || v == nil {
@@ -339,7 +608,7 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 	}
 	sources, ok := asMap(v)
 	if !ok {
-		refuse("config." + brokeredKey + ": expected an object of source name -> {\"repos\": " +
+		refuse("config." + brokeredKey + ": expected an object of source name -> {\"sets\": " +
 			"[...]} (got " + pyReprValue(v) + ")")
 		return
 	}
@@ -351,7 +620,7 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 		path := "config." + brokeredKey + "." + name
 		src, ok := asMap(sv)
 		if !ok {
-			refuse(path + ": expected an object holding \"repos\" (got " + pyReprValue(sv) + ")")
+			refuse(path + ": expected an object holding \"sets\" (got " + pyReprValue(sv) + ")")
 			continue
 		}
 		var unknown []string
@@ -366,6 +635,12 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 				WorkspaceConfigName + ", or " + WorkspaceLocalConfigName + " beside it for what the " +
 				"project should not commit, and approve it at that project's next launch. Then " +
 				"remove this key from " + paths.UserConfigPath() + ".")
+		}
+		if setsV, has := src.Get(brokeredSetsKey); has && setsV != nil {
+			_, problems := brokeredSetsValue(path+"."+brokeredSetsKey, setsV)
+			for _, p := range problems {
+				refuse(p)
+			}
 		}
 	}
 }
@@ -421,6 +696,12 @@ func brokeredShapeProblems(v any) []string {
 			continue
 		}
 		reportUnknownKeysTo(&out, src, knownBrokeredSourceKeys, srcPath)
+		if _, has := src.Get(brokeredSetsKey); has {
+			out = append(out, srcPath+"."+brokeredSetsKey+": user scope only — a set decides what a "+
+				"write grant hands over, and this workspace is the agent's to edit, so a workspace may "+
+				"not name one (BB-P9). Put it in the user config, "+paths.UserConfigPath()+", and remove "+
+				"this key.")
+		}
 		rv, _ := src.Get(brokeredReposKey)
 		if rv == nil {
 			continue

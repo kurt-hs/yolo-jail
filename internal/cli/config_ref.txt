@@ -389,8 +389,9 @@
     but how the endpoint file crosses into an AC guest is an unmade decision, so
     host services stay explicitly DEFERRED there rather than quietly enabled.
 
-  [bold]brokered[/bold] (object, [bold]WORKSPACE SCOPE[/bold]): More repositories for this
-    workspace's brokered loophole, such as the github pack's github-broker.
+  [bold]brokered[/bold] (object, [bold]repos: WORKSPACE SCOPE, sets: USER SCOPE[/bold]): More
+    repositories for this workspace's brokered loophole, such as the github pack's github-broker,
+    and the permission sets a write grant hands over.
     A brokered loophole runs your host login's commands for the jail, but only
     against the workspace's repositories: its git remotes, and any it lists
     here, which every fresh launch reads and asks you to approve.  It runs only
@@ -413,6 +414,22 @@
       "repos": null in the local file clears the list.  A `brokered` key from a
       file outside the workspace, reached through an include or a link, is
       refused, and so is one written twice in one file.
+    • [bold]sets[/bold] (USER SCOPE ONLY): the named permission sets this source's grants hand
+      over.  A standing set runs freely; a windowed set runs only under a grant, for its window
+      and up to its ceiling and use cap.  Each entry is
+        {"name": "review", "mode": "windowed", "window": "1h", "max_window": "session",
+         "uses": 50, "admit": ["pr comment", "pr review"]}
+      • name (required): lowercase letters, digits and hyphens, unique in the list.
+      • mode (required): "standing" or "windowed".
+      • window, max_window, uses: a windowed set only.  window is a duration such as "15m" or
+        "1h"; max_window is a duration or "session" (the jail's life); uses is a whole number
+        of 1 or more.  A field a set does not name keeps the source's default.
+      • admit: the command rules the set adds, in the broker's own vocabulary; a set named like
+        a default with no admit keeps that default's rules.
+      Every set is definable, "read-only" included, and each launch names what it found, as in
+      "github-broker: sets from user config: read-only (+ pr comment), review 1h".  A workspace
+      file may NOT name sets: that file is the agent's to edit, so `sets` there is a `yolo check`
+      error.
     It takes effect at the next fresh launch: the config-change prompt shows each
     repository as a row of the repository-scope block, naming the file it came
     from, and asks you to approve it; then the launch names the scope, as in
