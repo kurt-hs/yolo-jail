@@ -54,7 +54,7 @@ func brokeredLines(all string) string {
 }
 
 // A workspace's own entry is accepted, from either file; each malformed shape is refused at the
-// file and line it was written at; `sets` is an unknown key, never a message of its own.
+// file and line it was written at; a workspace `sets` is refused as user scope only (BB-P9).
 func TestAWorkspaceEntryIsAcceptedAndEachBadShapeIsRefusedWhereItWasWritten(t *testing.T) {
 	h := newBrokeredHost(t)
 	write(t, filepath.Join(h.ws, WorkspaceConfigName), `{"brokered": {"github": {"repos": ["org/lib", "a.b/c_d-e"]}}}`)
@@ -66,7 +66,7 @@ func TestAWorkspaceEntryIsAcceptedAndEachBadShapeIsRefusedWhereItWasWritten(t *t
 	for body, want := range map[string]string{
 		`{"brokered": []}`:                                                "config.brokered: expected an object of source name",
 		`{"brokered": {"github": "x"}}`:                                   `config.brokered.github: expected an object holding "repos"`,
-		`{"brokered": {"github": {"sets": []}}}`:                          "config.brokered.github.sets: unknown key",
+		`{"brokered": {"github": {"sets": []}}}`:                          "config.brokered.github.sets: user scope only",
 		`{"brokered": {"github": {"repos": "org/lib"}}}`:                  "config.brokered.github.repos: expected a list of OWNER/REPO strings",
 		`{"brokered": {"github": {"repos": ["github.com/o/r"]}}}`:         "config.brokered.github.repos[0]: 'github.com/o/r' is not OWNER/REPO",
 		`{"brokered": {"github": {"repos": ["ok/one", 3]}}}`:              "config.brokered.github.repos[1]: 3 is not OWNER/REPO",
@@ -275,8 +275,8 @@ func TestAUserScopeReposListIsRefusedNamingTheWorkspaceFiles(t *testing.T) {
 		t.Errorf("the refusal is not located at the user file's line:\n%s", errs)
 	}
 	write(t, h.userCfg, `{"brokered": {"github": {"sets": {}}}}`)
-	if errs, _ := h.validate(t); !strings.Contains(errs, "config.brokered.github.sets: unknown key") {
-		t.Errorf("a user-scope sets is not an unknown key:\n%s", errs)
+	if errs, _ := h.validate(t); !strings.Contains(errs, "config.brokered.github.sets: expected a list of sets") {
+		t.Errorf("a user-scope sets of the wrong shape is not refused as a list:\n%s", errs)
 	}
 }
 
@@ -402,5 +402,72 @@ func TestTheGatesReadIsStrictAndItsEntryNamesEachFile(t *testing.T) {
 	}
 	if got := read.Entry("github"); len(got) != 0 {
 		t.Errorf("a local `repos: null` left %+v, want the list cleared", got)
+	}
+}
+
+// BB-D23/§5.7: a source's permission sets are declared at user scope under `sets`, each validated
+// in shape and each admitted rule kept; the reader the launch's disclosure uses (BrokeredSets)
+// returns what the validator accepted, in the order written.
+func TestUserScopeBrokeredSetsAreValidatedAndReadable(t *testing.T) {
+	h := newBrokeredHost(t)
+	write(t, h.userCfg, `{"brokered": {"github": {"sets": [
+	  {"name": "read-only", "mode": "standing", "admit": ["pr comment"]},
+	  {"name": "review", "mode": "windowed", "window": "1h", "max_window": "session", "uses": 50,
+	   "admit": ["pr comment", "pr review"]},
+	  {"name": "read-write", "mode": "windowed", "window": "15m"}
+	]}}}`)
+	if errs, _ := h.validate(t); brokeredLines(errs) != "" {
+		t.Fatalf("a user-scope sets list was refused:\n%s", errs)
+	}
+	want := "read-only (+ pr comment), review 1h max session 50 uses (+ pr comment, + pr review), read-write 15m"
+	if got := BrokeredSetsDisclosure(BrokeredSets("github")); got != want {
+		t.Fatalf("disclosure %q, want %q", got, want)
+	}
+	if got := BrokeredSets("gitlab"); got != nil {
+		t.Errorf("another source's sets are this source's: %v", got)
+	}
+}
+
+// BB-D23/§5.7: every malformed set is refused at the user file it was written at, and a bad entry
+// is skipped rather than repaired. A set with no `admit` keeps the source's default rules, which
+// is why it is accepted.
+func TestEachMalformedBrokeredSetIsRefused(t *testing.T) {
+	h := newBrokeredHost(t)
+	for body, want := range map[string]string{
+		`{"brokered": {"github": {"sets": {}}}}`:                                                                     "config.brokered.github.sets: expected a list of sets",
+		`{"brokered": {"github": {"sets": []}}}`:                                                                     "an empty list defines no set",
+		`{"brokered": {"github": {"sets": [3]}}}`:                                                                    "config.brokered.github.sets[0]: expected an object",
+		`{"brokered": {"github": {"sets": [{"mode": "standing"}]}}}`:                                                 ".name: expected a set name",
+		`{"brokered": {"github": {"sets": [{"name": "Read", "mode": "standing"}]}}}`:                                 "is not a set name",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "always"}]}}}`:                                      ".mode: expected",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "standing", "window": "1h"}]}}}`:                    ".window: only a windowed set",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "window": "soon"}]}}}`:                  ".window: expected a duration",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "window": "session"}]}}}`:               ".window: expected a duration",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "uses": 0}]}}}`:                         ".uses: expected a whole number",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "uses": 1.5}]}}}`:                       ".uses: expected a whole number",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "admit": "pr"}]}}}`:                     ".admit: expected a list",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "admit": [""]}]}}}`:                     ".admit[0]: expected a non-empty",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "standing", "nope": 1}]}}}`:                         ".nope: unknown key",
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "standing"}, {"name": "a", "mode": "windowed"}]}}}`: "is named twice",
+	} {
+		write(t, h.userCfg, body)
+		errs, _ := h.validate(t)
+		if !strings.Contains(errs, want) || !strings.Contains(errs, "config.jsonc:1:") {
+			t.Errorf("%s: errors lack %q (or the location):\n%s", body, want, errs)
+		}
+	}
+	for _, ok := range []string{
+		`{"brokered": {"github": {"sets": [{"name": "read-only", "mode": "standing"}]}}}`,
+		`{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "max_window": "session"}]}}}`,
+	} {
+		write(t, h.userCfg, ok)
+		if errs, _ := h.validate(t); brokeredLines(errs) != "" {
+			t.Errorf("%s refused though it is valid:\n%s", ok, errs)
+		}
+	}
+	// A rule a launch prints cannot carry a control character.
+	write(t, h.userCfg, `{"brokered": {"github": {"sets": [{"name": "a", "mode": "windowed", "admit": ["pr\ncomment"]}]}}}`)
+	if errs, _ := h.validate(t); !strings.Contains(errs, "carries a control character") {
+		t.Errorf("a rule with a newline was not refused:\n%s", errs)
 	}
 }

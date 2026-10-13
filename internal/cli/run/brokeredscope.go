@@ -87,6 +87,14 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 	_, localName := config.ResolveWorkspaceConfigPath(o.Workspace, config.WorkspaceLocalConfigName)
 	for _, lp := range brokered {
 		brokerscope.Sweep(lp.Brokered.Source)
+		// The user-scope permission sets this source runs under are disclosed here (BB-D23): a
+		// set decides what a write grant hands over, so it is named on every launch that starts
+		// the broker, whether or not the workspace that reads it could see it. Read from the user
+		// scope alone; a malformed set is the validator's to report and is skipped here.
+		if sets := config.BrokeredSets(lp.Brokered.Source); len(sets) > 0 {
+			out.printf("[dim]%s: sets from user config: %s[/dim]", lp.Name,
+				richtext.Escape(config.BrokeredSetsDisclosure(sets)))
+		}
 		approvedRepos, approved := o.approvedScopes[lp.Name]
 		if !approved {
 			out.print("[yellow]" + lp.Name + ": no repository scope was approved for this launch, " +
