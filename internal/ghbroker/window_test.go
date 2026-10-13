@@ -362,3 +362,21 @@ func TestWindowRequiredAuditLockHonorsCallerCancellation(t *testing.T) {
 		t.Fatal("failed request audit was persisted")
 	}
 }
+
+func TestWindowAuditRecordsFailedExecutorAsRan(t *testing.T) {
+	b, _ := windowFixture(t)
+	b.delivery = &fakeDelivery{ready: true, request: func(q brokerstore.Request) error {
+		_, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{})
+		return err
+	}}
+	b.execute = func(context.Context, []string, []byte, func([]byte), func([]byte)) RunResult {
+		return RunResult{Exit: 1, BytesOut: 42, Redactions: 1}
+	}
+	if got := callWindow(b, context.Background()); got != 1 {
+		t.Fatal(got)
+	}
+	ev := lastAudit(t)
+	if ev.Outcome != "ran" || ev.BytesOut != 42 || ev.Redactions != 1 {
+		t.Fatal(ev)
+	}
+}
