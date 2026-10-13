@@ -22,6 +22,11 @@ import (
 func leftoverRuntime(cname, state string, rmArgv *[]string, removed *bool, rmFails bool) func([]string) (string, bool, int) {
 	return func(argv []string) (string, bool, int) {
 		switch {
+		case len(argv) > 2 && argv[1] == "container" && argv[2] == "exists":
+			if *removed {
+				return "", true, 1
+			}
+			return "", true, 0
 		case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Running}}":
 			return "false\n", true, 0
 		case len(argv) > 3 && argv[1] == "inspect" && argv[3] == "{{.State.Status}}":
@@ -87,8 +92,9 @@ func TestAForcedStopForceRemovesALeftoverContainer(t *testing.T) {
 
 // TestAStopThatCannotRemoveALeftoverNamesTheNextStep: the removal fails and the container is still
 // there. The stop must not report success or "no jail": it names the state, the removal that failed,
-// and the restart that clears the wedge.
+// and the runtime-owned recovery step.
 func TestAStopThatCannotRemoveALeftoverNamesTheNextStep(t *testing.T) {
+	shrinkStopGone(t)
 	t.Setenv("HOME", t.TempDir())
 	cname := runtime.FromWorkspace("/ws")
 	var rmArgv []string
@@ -107,7 +113,7 @@ func TestAStopThatCannotRemoveALeftoverNamesTheNextStep(t *testing.T) {
 	for _, want := range []string{
 		"still there in state \"exited\"",
 		"`podman rm -f " + cname + "`",
-		"systemctl --user restart podman",
+		"runtime administrator",
 	} {
 		if !strings.Contains(errb.String(), want) {
 			t.Errorf("the failure must name %q:\n%s", want, errb.String())

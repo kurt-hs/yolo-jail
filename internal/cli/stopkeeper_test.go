@@ -39,7 +39,7 @@ func TestAStopWaitsForTheJailsKeeper(t *testing.T) {
 		return finishRC
 	}
 	var out, errb bytes.Buffer
-	s := &stopRun{stats: []string{"true\n", ""}}
+	s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 	if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 0 {
 		t.Fatalf("rc=%d, err=%s", rc, errb.String())
 	}
@@ -71,7 +71,7 @@ func TestAStopWaitsForTheJailsKeeper(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	s = &stopRun{stats: []string{"false\n"}}
+	s = &stopRun{stats: []string{"false\n", "!Error: no such container"}}
 	if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 0 || len(got) != 1 ||
 		!strings.Contains(out.String(), "already ending") {
 		t.Errorf("a jail already ending was not waited for: rc=%d got=%v\n%s", rc, got, out.String())
