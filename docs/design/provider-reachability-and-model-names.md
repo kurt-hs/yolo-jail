@@ -1,21 +1,22 @@
 ---
 title: "A provider an agent already has: who may select it, and what a model is called"
 date: 2026-10-12
-status: draft
+status: in-review
 stage: DESIGN
-next: "Rule OQ-PR1 (does the provider-table gate agree about a built-in provider?) and OQ-MN1 (is `name` the naming surface?) — each decides a whole topic below"
+next: "Rule OQ-PR6 (is OQ-PR1's option C also needed?) and OQ-PR7 (what replaces the case the removed `null` plan served?) — every other question was ruled 2026-10-12, and nothing here is built"
 tags: [providers, profiles, models, built-in-providers, display-names, packs]
-summary: "Two questions the 2026-10-05 built-in-provider ruling opens, and they are one seam seen twice. A provider an agent ships its own client for is handled by that agent's derive and named on the launch line, but the provider-table gate every launch reduces through does not know what one is, so a profile that names it is refused. And a model the agent's own catalog defines has nowhere for a friendly display name to live, because no catalog row is written for that provider. This doc asks the questions rather than settling them."
+summary: "Two questions the 2026-10-05 built-in-provider ruling opens, and they are one seam seen twice. A provider an agent ships its own client for is handled by that agent's derive and named on the launch line, but the provider-table gate every launch reduces through does not know what one is, so a profile that names it is refused. And a model the agent's own catalog defines has nowhere for a friendly display name to live, because no catalog row is written for that provider. The 2026-10-12 review ruled every question this doc first raised; two narrow ones remain, and nothing here is built."
 vantage:
   status-chip: true
 ---
 
 # A provider an agent already has: who may select it, and what a model is called
 
-**Status:** 2026-10-12. **DRAFT** — no question below is ruled and nothing here is proposed for build.
-Evidence read against the tree at `ab9cf2f90`. The two topics are one seam seen twice: yolo writes
-nothing for a provider an agent has built in, so other mechanisms have to decide what that means,
-and today they disagree.
+**Status:** 2026-10-12. The review of 2026-10-12 ruled every question this doc first raised; the two
+narrow ones it left ([OQ-PR6](#OQ-PR6), [OQ-PR7](#OQ-PR7)) are still open, and **nothing here is
+built**. Evidence read against the tree at `ab9cf2f90`. The two topics are one seam seen twice: yolo
+writes nothing for a provider an agent has built in, so other mechanisms have to decide what that
+means, and today they disagree.
 
 > **In short.** The 2026-10-05 [OQ-3](pi-codex-provider-shadowing.md#OQ-3) ruling made yolo write no
 > model entry over any provider an agent has built in. The derives, the launch profile line and the
@@ -43,13 +44,14 @@ describes needs a home the current composed-table shape does not have ([§5](#5-
 
 **Start at [§1](#1-one-seam-two-mechanisms)** — the seam. Both topics fall out of it.
 
-**Needs your ruling:** [OQ-PR1](#OQ-PR1), [OQ-PR2](#OQ-PR2), [OQ-PR3](#OQ-PR3), [OQ-PR4](#OQ-PR4), [OQ-PR5](#OQ-PR5), [OQ-MN1](#OQ-MN1), [OQ-MN2](#OQ-MN2), [OQ-MN3](#OQ-MN3), [OQ-MN4](#OQ-MN4).
+**Needs your ruling:** [OQ-PR6](#OQ-PR6), [OQ-PR7](#OQ-PR7). Every other question was ruled on
+2026-10-12 and is compacted into [§9](#9-decision-ledger).
 
 **Reads with:** [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md) (the ruling this
 doc develops — its [OQ-4](pi-codex-provider-shadowing.md#OQ-4) is adjacent to [§5](#5-topic-b-where-a-name-has-nowhere-to-live)),
 [`model-lists-and-pickers.md`](model-lists-and-pickers.md) (the aliases and display names this doc
 builds on — it says "code claims cite a symbol, never a line"; this doc cites lines on purpose, as
-a draft nothing has verified yet), and [`../reference/providers.md`](../reference/providers.md) (the
+a document whose citations no one has re-measured), and [`../reference/providers.md`](../reference/providers.md) (the
 provider and profile reference).
 
 ---
@@ -67,12 +69,14 @@ the maintainer's words it settled three things:
   plan** when it has one, "and the launch says when it has none".
 
 The declaration is `built_in_providers` on a program pack: `names`, `plans` (a yolo provider mapped
-to the agent's own provider for that plan, or `null`), and `yolo_lists` for a provider the agent
-runs on its own client but on yolo's list
+to the agent's own provider for that plan), and `yolo_lists` for a provider the agent runs on its
+own client but on yolo's list
 ([`internal/packdecl/builtinproviders.go`](../../internal/packdecl/builtinproviders.go) lines
 [18–43](../../internal/packdecl/builtinproviders.go#L18-L43); pi's list and its `yolo_lists` are
 [`packs/pi/pack.json`](../../packs/pi/pack.json) lines
-[16–30](../../packs/pi/pack.json#L16-L30)).
+[16–30](../../packs/pi/pack.json#L16-L30)). The built declaration still permits a `null` plan; the
+review **removed it** on 2026-10-12 ([OQ-PR3](#9-decision-ledger)), so a `plans` entry must resolve
+to a concrete provider, and what replaces the case `null` served is [OQ-PR7](#OQ-PR7).
 
 Three readers were built downstream of composition:
 
@@ -126,10 +130,12 @@ what the ruling forbids yolo relying on.
 > readers; it is making the gate and the launch line agree with the derive, and giving the launch
 > line a branch it does not have.
 
-**So the actual question is [OQ-PR1](#OQ-PR1):** should the provider-table gate treat a built-in
-name as reachable, the way the derive does? Not "should yolo auto-detect providers" — nothing is
-discovered. The agent's pack declares the names; core reads a declaration, which is the whole design
-of [BI-D1](pi-codex-provider-shadowing.md#BI-D1).
+**Ruled 2026-10-12 — the gate reads the declaration ([OQ-PR1](#9-decision-ledger)).** A built-in
+name resolves even when the composed table lacks it, exactly as the derive already assumes. This is
+not "should yolo auto-detect providers" — nothing is discovered. The agent's pack declares the
+names; core reads a declaration, which is the whole design of
+[BI-D1](pi-codex-provider-shadowing.md#BI-D1). Whether the narrower plan-level form (option C) is
+also needed is [OQ-PR6](#OQ-PR6).
 
 ---
 
@@ -143,10 +149,13 @@ each pack lists every provider id its agent's code registers: pi 43, omp 49, ope
 [`packs/codex/pack.json`](../../packs/codex/pack.json#L23)). A gate that admits a built-in name
 makes all 317 selectable, in three agents, in one change.
 
-**It is agent-relative, and must stay so.** pi reaches `meta` through its own client; claude cannot
-reach `meta` at all without an endpoint and a credential — and claude declares no
-`built_in_providers` ([`packs/claude/pack.json`](../../packs/claude/pack.json) has none), so for
-claude the gate's refusal is still correct. The rule is per (agent, provider, plan), which is exactly what the declaration holds.
+**It is agent-relative, and stays so.** The set an agent can reach is exactly what its SELECTED
+packs declare — its `built_in_providers` names, plus the providers the composed table holds. There
+is no second detection list to maintain, and nothing is auto-detected. pi reaches `meta` through
+its own client; claude cannot reach `meta` at all without an endpoint and a credential — and claude
+declares no `built_in_providers` ([`packs/claude/pack.json`](../../packs/claude/pack.json) has none)
+— so a profile naming `meta` for claude is **a fatal error at startup**, a launch refusal, not a
+warning. The rule is per (agent, provider, plan), which is exactly what the declaration holds.
 
 **The reader count is already wrong before this doc.** Two lists disagree about how many readers the
 declaration has:
@@ -157,7 +166,7 @@ names the via gate's own read at
 [`launchrefusal.go:117`](../../internal/wirebridged/launchrefusal.go#L117), so by one counting the
 via gate is already an undeclared fourth. Adding the protocol gate makes it four by
 [§6.5](pi-codex-provider-shadowing.md#65-what-the-build-decided)'s counting or five by
-[BI-D3](pi-codex-provider-shadowing.md#BI-D3)'s. **This doc would amend
+[BI-D3](pi-codex-provider-shadowing.md#BI-D3)'s. **This doc amends
 [BI-D3](pi-codex-provider-shadowing.md#BI-D3)** to state one reader set, containing every core read,
 rather than two lists that each claim three.
 
@@ -165,12 +174,12 @@ rather than two lists that each claim three.
 actually reach it moves from a launch-time refusal to a **runtime auth failure**. Today, a profile
 naming a provider the agent has but cannot use stops the launch. Afterward it starts the agent, and
 the first request fails — for pi's `meta`, an authentication error the agent prints inside the
-session, not a refusal yolo owns. Three things follow, and the first is a question
-([OQ-PR4](#OQ-PR4)):
+session, not a refusal yolo owns. The review settled which layer owns it ([OQ-PR4](#9-decision-ledger)):
+the launch line. Three things follow:
 
-- the launch line must say an endpoint-less built-in is a **routing** statement, not an availability
-  one: that nothing this launch configures delivers a credential to it, naming the login or variable
-  the agent's own client reads. `profileReach`'s built-in branch
+- **the launch line owns it.** It must say an endpoint-less built-in is a **routing** statement, not
+  an availability one: that nothing this launch configures delivers a credential to it, naming the
+  login or variable the agent's own client reads. `profileReach`'s built-in branch
   ([`profiledisclosure.go:217`](../../internal/packload/profiledisclosure.go#L217), route at
   [:227](../../internal/packload/profiledisclosure.go#L227)) returns before the credential half, so
   it says the route and not whether a credential reaches it — unlike the catalogued-provider path,
@@ -179,11 +188,11 @@ session, not a refusal yolo owns. Three things follow, and the first is a questi
 - [R3](pi-codex-provider-shadowing.md#8-risks-and-invariants) changes shape: under
   [OQ-3](pi-codex-provider-shadowing.md#OQ-3) a stale list costs only a collision with a provider of
   that name, but a gate that reads the list makes staleness decide **selectability** — a provider an
-  agent added, not yet in its pack's list, would be refused. **This doc would amend
+  agent added, not yet in its pack's list, would be refused. **This doc amends
   [R3](pi-codex-provider-shadowing.md#8-risks-and-invariants)** to say so;
-- an arm this doc does not propose, recorded only to be ruled out explicitly: refusing at launch an
-  endpoint-less built-in the launch cannot find a credential for. It would need a per-agent map from
-  a built-in name to the credential it reads, which yolo does not have and
+- **ruled out ([OQ-PR4](#9-decision-ledger)):** an arm this doc does not propose — refusing at
+  launch an endpoint-less built-in the launch cannot find a credential for. It would need a
+  per-agent map from a built-in name to the credential it reads, which yolo does not have and
   [BI-D1](pi-codex-provider-shadowing.md#BI-D1) deliberately keeps out of core ("yolo keeps names").
 
 ---
@@ -256,12 +265,13 @@ The maintainer wants the ability for users and for packs ("It could come from an
 eschews shipping renames of the agent's own catalog. Both are satisfiable only if a name can live
 somewhere other than a catalog row.
 
-**This overlaps an open ruling, and this doc defers to it.** [OQ-4](pi-codex-provider-shadowing.md#OQ-4)
-(open) asks whether the ruling reaches *a list* a pack declares for a built-in provider. Naming a
-model on such a provider is the same territory. [OQ-MN2](#OQ-MN2) below should not be ruled before
-[OQ-4](pi-codex-provider-shadowing.md#OQ-4); if [OQ-4](pi-codex-provider-shadowing.md#OQ-4) says a
-pack may narrow or replace a built-in provider's list, a name may ride that list, and part of this
-gap closes without new machinery.
+**This shares territory with a ruling still open elsewhere.** [OQ-4](pi-codex-provider-shadowing.md#OQ-4)
+(open) asks whether the ruling reaches *a list* a pack declares for a built-in provider. The review
+nonetheless settled the naming question on 2026-10-12 ([OQ-MN2](#9-decision-ledger)): **a name may
+attach to a model the agent's own catalog owns, a built-in provider's included, and it attaches per
+ENTRY, not per model id** — so two entries for one model id with different context windows are
+named separately. If [OQ-4](pi-codex-provider-shadowing.md#OQ-4) says a pack may narrow or replace a
+built-in provider's list, a name may ride that list, closing part of this gap without new machinery.
 
 ---
 
@@ -277,24 +287,29 @@ gap closes without new machinery.
   provider is answered there, not here.
 - **Not an implementation plan.** No file map, no build order, no mechanism chosen. That material
   belongs to a companion sketch once the questions in [§8](#8-open-questions) are ruled.
-- **Not about auto-detection.** The word is avoided on purpose ([OQ-PR2](#OQ-PR2)): nothing is
-  discovered. The agent's pack declares; core reads.
+- **Not about auto-detection.** The word is refused on purpose: the concept is the **built-in
+  provider** ([OQ-PR2](#9-decision-ledger)), the term
+  [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md#terms-in-plain-words) already
+  coined. Nothing is discovered. The agent's pack declares; core reads.
 
 ---
 
 ## 7. Amendments and what is merely relied on
 
-**This doc would AMEND, if ruled:**
+**This doc AMENDS (ruled 2026-10-12; the amendments are unbuilt):**
 
 | Ruling | The amendment |
 | :--- | :--- |
+| [BI-D1](pi-codex-provider-shadowing.md#BI-D1) | the `null` plan it defines is removed: a `plans` entry must resolve to a concrete provider, so a program with no provider of its own for a plan says so without `null` ([§1](#1-one-seam-two-mechanisms), [OQ-PR3](#9-decision-ledger)); the built declaration and its reference still carry `null` |
 | [BI-D3](pi-codex-provider-shadowing.md#BI-D3) | its "three ways" is two disagreeing lists; add the via gate's own read, and the protocol gate's, as one stated reader set ([§3](#3-topic-a-the-consequence-of-closing-it)) |
+| [BI-D7](pi-codex-provider-shadowing.md#BI-D7) | its `null`-plan warning goes with the `null` plan ([OQ-PR3](#9-decision-ledger), [OQ-PR7](#OQ-PR7)) |
 | [R3](pi-codex-provider-shadowing.md#8-risks-and-invariants) | a stale built-in provider list would also decide **selectability**, not only a collision ([§3](#3-topic-a-the-consequence-of-closing-it)) |
-| [MM-D7](model-lists-and-pickers.md#MM-D7) | its reach: a display name currently has a home only where a row is written; naming a built-in provider's own model needs a home that is not a row ([§5](#5-topic-b-where-a-name-has-nowhere-to-live)) |
+| [MM-D7](model-lists-and-pickers.md#MM-D7) | its reach: a display name currently has a home only where a row is written; naming a built-in provider's own model needs a home that is not a row, per model entry ([§5](#5-topic-b-where-a-name-has-nowhere-to-live), [OQ-MN2](#9-decision-ledger)) |
+| [`../reference/providers.md`](../reference/providers.md) | gains one normative statement of the built-in rule, with each mechanism linking to it ([OQ-PR5](#9-decision-ledger)) |
 
 **Merely relied on, unchanged:** [OQ-3](pi-codex-provider-shadowing.md#OQ-3) (the ruling itself),
-[BI-D1](pi-codex-provider-shadowing.md#BI-D1), [BI-D2](pi-codex-provider-shadowing.md#BI-D2),
-[BI-D4](pi-codex-provider-shadowing.md#BI-D4) to [BI-D7](pi-codex-provider-shadowing.md#BI-D7),
+[BI-D2](pi-codex-provider-shadowing.md#BI-D2),
+[BI-D4](pi-codex-provider-shadowing.md#BI-D4) to [BI-D6](pi-codex-provider-shadowing.md#BI-D6),
 [BI-D9](pi-codex-provider-shadowing.md#BI-D9) to [BI-D12](pi-codex-provider-shadowing.md#BI-D12),
 [BI-D8](pi-codex-provider-shadowing.md#BI-D8) (which holds the naming-adjacent lists),
 [ML-D1](model-lists-and-pickers.md#ML-D1), [ML-D6](model-lists-and-pickers.md#ML-D6),
@@ -305,153 +320,39 @@ gap closes without new machinery.
 
 ## 8. Open Questions
 
-1. 💬 <a id="OQ-PR1"></a>**OQ-PR1: should the provider-table gate treat a built-in provider name as reachable?**
+Two narrow questions the rest of the review left open. Every other question this doc raised was
+ruled on 2026-10-12 and is compacted into [§9](#9-decision-ledger).
 
-   The choice decides whether [OQ-3](pi-codex-provider-shadowing.md#OQ-3)'s "selects the agent's own provider" holds for a name no pack ships.
+1. 💬 <a id="OQ-PR6"></a>**OQ-PR6: is the gate's narrow form (option C) also needed?**
 
-   - **A — Yes, the gate reads the declaration.** A built-in name resolves even when the table lacks it, as the derive already assumes.
-   - **B — No, the table must hold it.** A built-in provider still needs a pack to declare it; the derive's handling stays reachable only for those.
-   - **C — Only for a plan the declaration maps.** A name built in but with a `null` plan for the profile stays refused; a name with an agent's own provider resolves.
+   [OQ-PR1](#9-decision-ledger) ruled that the provider-table gate treats a built-in name as
+   reachable, reading the declaration. Option C was narrower: admit a built-in name only for a plan
+   the declaration maps, and keep refusing one that is built in but whose plan names nothing.
 
-   <!-- vantage: question id=OQ-PR1 leaning="A or C — the derive already treats any built-in name as usable, so today's refusal contradicts a built reader, and C is the narrower first step." -->
+   - **A — No, plain reachability is enough.** Every built-in name resolves; there is no second, per-plan gate.
+   - **B — Also add the plan check.** A name with no plan the agent serves stays refused.
 
-   _Leaning:_ **A or C** — the derive already treats any built-in name as usable, so today's refusal
-   contradicts a built reader, and C is the narrower first step.
+   <!-- vantage: question id=OQ-PR6 leaning="A — OQ-PR1 already made the whole name reachable, and a plan-level gate is a second place for the declaration to be read wrongly." -->
 
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-PR2"></a>**OQ-PR2: what is this concept called?**
-
-   The name becomes vocabulary in every later doc, so it is worth ruling now. It must not be "auto-detection": nothing is discovered.
-
-   - **A — "the agent's own client"** — describes the route, but names no capability.
-   - **B — "agent-declared reachability"** — names the fact (the pack declares it), heavier.
-   - **C — "built-in provider"** — already coined in [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md#terms-in-plain-words); reuse it with no new term.
-
-   <!-- vantage: question id=OQ-PR2 leaning="C — 'built-in provider' is already coined and defined, and a second term for one fact is the drift naming discipline exists to prevent." -->
-
-   _Leaning:_ **C** — "built-in provider" is already coined and defined, and a second term for one
-   fact is the drift naming discipline exists to prevent.
+   _Leaning:_ **A** — [OQ-PR1](#9-decision-ledger) already made the whole name reachable, and a
+   plan-level gate is a second place for the declaration to be read wrongly.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 <a id="OQ-PR3"></a>**OQ-PR3: must a `null` plan still refuse?**
+2. 💬 <a id="OQ-PR7"></a>**OQ-PR7: what replaces the case the removed `null` plan served?**
 
-   A plan may map a yolo provider to `null` — "the agent has the name built in for another plan and
-   none of its own for this one" ([BI-D1](pi-codex-provider-shadowing.md#BI-D1)). Whether the gate
-   admits it decides that case's behavior.
+   The `null` plan said "the agent has this name built in for another plan and none of its own for
+   this one" ([OQ-PR3](#9-decision-ledger) removed it). With it gone that case must resolve to a
+   concrete plan or be refused, and the review did not say which.
 
-   - **A — Still refuse, with a built-in-specific sentence.** The launch line already has such a warning ([BI-D7](pi-codex-provider-shadowing.md#BI-D7)); the gate should reuse its reasoning.
-   - **B — Admit it, and let the launch line warn.** The gate never refuses a built-in name; the profile line is the only channel that says a `null` plan reaches nothing.
+   - **A — The profile is refused at startup.** A plan the agent has no provider of its own for is the "agent cannot reach it" case, a fatal launch error.
+   - **B — The agent's own provider of that name is used anyway.** The name is built in, so the plan distinction is dropped.
 
-   <!-- vantage: question id=OQ-PR3 leaning="A — a null plan says the profile reaches nothing, which is what the gate exists to catch, and BI-D7 already words the launch line." -->
+   <!-- vantage: question id=OQ-PR7 leaning="A — it is the same shape as the fatal case the review did rule on, where a profile names a provider its agent cannot reach." -->
 
-   _Leaning:_ **A** — a `null` plan says the profile reaches nothing, which is what the gate exists
-   to catch, and [BI-D7](pi-codex-provider-shadowing.md#BI-D7) already words the launch line.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 <a id="OQ-PR4"></a>**OQ-PR4: for an endpoint-less built-in, does the launch line or the refusal own the case?**
-
-   Once admitted, an endpoint-less built-in may be one the agent cannot actually reach. Which layer says so decides whether the failure is at launch or at the first request.
-
-   - **A — The launch line owns it.** The launch proceeds; the line says the route is the agent's own client and nothing here delivers a credential, naming the login it reads. Failure moves to the first request.
-   - **B — The refusal owns it when no credential can be found.** The gate refuses at launch, needing a per-agent map from a built-in name to the variable it reads — machinery [BI-D1](pi-codex-provider-shadowing.md#BI-D1) keeps out of core.
-
-   <!-- vantage: question id=OQ-PR4 leaning="A — it keeps core to names, which is BI-D1's whole point, and B needs a name→credential map core does not have." -->
-
-   _Leaning:_ **A** — it keeps core to names, which is [BI-D1](pi-codex-provider-shadowing.md#BI-D1)'s
-   whole point, and B needs a name→credential map core does not have.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-5. 💬 <a id="OQ-PR5"></a>**OQ-PR5: must the reference docs state the built-in rule once?**
-
-   The rule is implied today by three mechanisms in three code sites plus a launch line, and stated
-   in none of [`../reference/providers.md`](../reference/providers.md)'s sections. A reader has to
-   infer it from behavior.
-
-   - **A — One normative statement in the provider reference**, with each mechanism linking to it.
-   - **B — Leave it implied**, on the grounds that the ruling's own doc is the statement.
-
-   <!-- vantage: question id=OQ-PR5 leaning="A — three mechanisms implying one rule is how a reader forms the wrong one, and the provider reference is where such a rule is looked up." -->
-
-   _Leaning:_ **A** — three mechanisms implying one rule is how a reader forms the wrong one, and the
-   provider reference is where such a rule is looked up.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-6. 💬 <a id="OQ-MN1"></a>**OQ-MN1: is `name` the surface, or should the `models` map be extended?**
-
-   `ModelEntry.Name` and `model_options.<alias>.name` already carry a display name. The question is
-   whether naming stays on them or grows a new field.
-
-   - **A — `name` is the surface.** No new field; a name is a fact on a model entry, as today.
-   - **B — Extend the `models` map.** A dedicated naming declaration, separate from the model entries.
-
-   <!-- vantage: question id=OQ-MN1 leaning="A — a name is already a model fact with one rule (MM-D7), and a second surface would be a second vocabulary for one thing." -->
-
-   _Leaning:_ **A** — a name is already a model fact with one rule
-   ([MM-D7](model-lists-and-pickers.md#MM-D7)), and a second surface would be a second vocabulary
-   for one thing.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-7. 💬 <a id="OQ-MN2"></a>**OQ-MN2: may a name attach to a model the agent's own catalog owns?**
-
-   This is the gap in [§5](#5-topic-b-where-a-name-has-nowhere-to-live), and it is adjacent to
-   [OQ-4](pi-codex-provider-shadowing.md#OQ-4).
-
-   - **A — Yes, for a built-in provider too.** A name needs a home that is not a catalog row; the maintainer's "the rename can happen from anywhere" points here.
-   - **B — No.** A name may attach only where yolo writes a row; a built-in provider's names stay the agent's.
-   - **C — Defer to [OQ-4](pi-codex-provider-shadowing.md#OQ-4).** If a pack may shape a built-in provider's list, a name rides that list and no new home is needed.
-
-   <!-- vantage: question id=OQ-MN2 leaning="C, then A — OQ-4 is open and decides the same territory, and if it closes the list side the answer is A, because the maintainer asked for the ability for users and packs." -->
-
-   _Leaning:_ **C, then A** — [OQ-4](pi-codex-provider-shadowing.md#OQ-4) is open and decides the
-   same territory, and if it closes the list side the answer is A, because the maintainer asked for
-   the ability for users and packs.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-8. 💬 <a id="OQ-MN3"></a>**OQ-MN3: precedence when a user, a personal pack and an upstream pack all name one model?**
-
-   The repo already has a layering rule; the question is whether naming follows it unchanged.
-
-   - **A — Follow the existing layering.** A pack's `models` `add` applies in pack order, then `only`, then the user's `providers.<name>.models` last ([§7.2](model-lists-and-pickers.md#72-composition-rules), [MM-D11](model-lists-and-pickers.md#MM-D11)); a later name wins.
-   - **B — A naming-specific rule.** Names resolve by a rule of their own, independent of the list's composition.
-
-   <!-- vantage: question id=OQ-MN3 leaning="A — the layering exists and is built (7.2, MM-D11), and a separate precedence for names would re-open what MM-D11 settled." -->
-
-   _Leaning:_ **A** — the layering exists and is built
-   ([§7.2](model-lists-and-pickers.md#72-composition-rules),
-   [MM-D11](model-lists-and-pickers.md#MM-D11)), and a separate precedence for names would re-open
-   what [MM-D11](model-lists-and-pickers.md#MM-D11) settled.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-9. 💬 <a id="OQ-MN4"></a>**OQ-MN4: does a name ever affect resolution, or only display?**
-
-   [MM-D7](model-lists-and-pickers.md#MM-D7) says the name is a display fact and the alias is the
-   resolution key. Confirming that a name never becomes a selectable string keeps a profile's `model`
-   meaning one thing.
-
-   - **A — Display only.** A name is never a resolution key; only an alias or an id selects ([ML-D6](model-lists-and-pickers.md#ML-D6)'s row rule).
-   - **B — A name may also be selected.** A profile `model` could name an entry by its display name.
-
-   <!-- vantage: question id=OQ-MN4 leaning="A — MM-D7 already implies display-only, and letting a name resolve would give one string two meanings and muddle ML-D6's alias facts." -->
-
-   _Leaning:_ **A** — [MM-D7](model-lists-and-pickers.md#MM-D7) already implies display-only, and
-   letting a name resolve would give one string two meanings and muddle
-   [ML-D6](model-lists-and-pickers.md#ML-D6)'s alias facts.
+   _Leaning:_ **A** — it is the same shape as the fatal case the review did rule on, where a profile
+   names a provider its agent cannot reach.
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -462,4 +363,12 @@ gap closes without new machinery.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| — | **Empty by design.** No question in this doc has been ruled; this is a draft to argue with. The rulings it develops are recorded in [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md#10-decision-ledger) and [`model-lists-and-pickers.md`](model-lists-and-pickers.md#16-decision-ledger). | — | — | — |
+| OQ-PR1 | **The provider-table gate reads the declaration.** A built-in name resolves even when the composed table lacks it, exactly as the derive already assumes, so [OQ-3](pi-codex-provider-shadowing.md#OQ-3)'s "selects the agent's own provider" holds for a name no pack ships. Not "auto-detection": the pack declares, core reads. The one reader set this makes is [BI-D3](pi-codex-provider-shadowing.md#BI-D3)'s amendment. Option C's narrower plan-level gate is [OQ-PR6](#OQ-PR6) | 2026-10-12 | [§2](#2-topic-a-the-provider-table-gate-does-not-know) | — |
+| OQ-PR2 | **The concept is the "built-in provider"**, the term [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md#terms-in-plain-words) already coined. One agent may have MULTIPLE built-in providers; a built-in provider's credential is either an API key or obtained by the agent itself; sharing an agent-obtained credential across jails is an **accepted gap**, and its absence must not block. That sharing mechanism is BUILT and generic and needs no core code — a pack declares a machine-scope `state` dir plus the `shared_credentials` hook, as [`packs/claude`](../../packs/claude/pack.json) and [`packs/agy`](../../packs/agy/pack.json) do ([`internal/entrypoint/packhooks.go`](../../internal/entrypoint/packhooks.go) `HookSharedCredentials`) — so what does not exist is a per-agent **opt-in**: each pack must declare the pair itself, and most, [`packs/muse-code`](../../packs/muse-code/pack.json) included, do not. It is pack-declared ONLY: no config key expresses it, and a read-write `mounts` element cannot substitute, being refused outside `/ctx/` ([`internal/config/mounts.go`](../../internal/config/mounts.go)). Providers are adopted INCREMENTALLY, one at a time, not all of what an agent supports at once | 2026-10-12 | [§6](#6-what-this-does-not-cover) | — |
+| OQ-PR3 | **The `null` plan is removed** — a profile must resolve to a concrete plan. This amends [BI-D1](pi-codex-provider-shadowing.md#BI-D1)'s `plans` shape and [BI-D7](pi-codex-provider-shadowing.md#BI-D7)'s launch line; the built declaration ([`internal/packdecl/builtinproviders.go`](../../internal/packdecl/builtinproviders.go)), its reference ([`pack-system.md`](../reference/pack-system.md#built_in_providers)) and [`providers.md`](../reference/providers.md) still carry `null`, and the removal is unbuilt. What replaces the case `null` served is [OQ-PR7](#OQ-PR7) | 2026-10-12 | [§1](#1-one-seam-two-mechanisms) | — |
+| OQ-PR4 | **The launch line owns an endpoint-less built-in, and the refusal does not.** The launch proceeds; the line says the route is the agent's own client and nothing this launch configures delivers a credential, naming the login the agent reads, so failure moves to the first request. A launch-time credential refusal is ruled out: it needs a per-agent name→credential map [BI-D1](pi-codex-provider-shadowing.md#BI-D1) keeps out of core | 2026-10-12 | [§3](#3-topic-a-the-consequence-of-closing-it) | — |
+| OQ-PR5 | **The built-in rule is stated once, normatively, in [`../reference/providers.md`](../reference/providers.md)**, with each mechanism linking to it | 2026-10-12 | [§7](#7-amendments-and-what-is-merely-relied-on) | — |
+| OQ-MN1 | **`name` is the surface.** No new field; a display name stays a fact on a model entry (`ModelEntry.Name`, `model_options.<alias>.name`) | 2026-10-12 | [§4](#4-topic-b-what-already-exists-for-a-model-name) | — |
+| OQ-MN2 | **A name may attach to a model the agent's own catalog owns**, a built-in provider's included, and **per ENTRY, not per model id** — two entries for one model id with different context windows are named separately. Whether a name may ride a pack-declared list on a built-in provider stays [OQ-4](pi-codex-provider-shadowing.md#OQ-4)'s | 2026-10-12 | [§5](#5-topic-b-where-a-name-has-nowhere-to-live) | — |
+| OQ-MN3 | **Naming follows the existing layering** ([§7.2](model-lists-and-pickers.md#72-composition-rules), [MM-D11](model-lists-and-pickers.md#MM-D11)): a pack's `models` applies in pack order, then `only`, then the user's `providers.<name>.models` last, and a later name wins. There is no naming-specific precedence | 2026-10-12 | [§4](#4-topic-b-what-already-exists-for-a-model-name) | — |
+| OQ-MN4 | **A name is display-only, never a resolution key.** Only an alias or an id selects ([ML-D6](model-lists-and-pickers.md#ML-D6)) | 2026-10-12 | [§4](#4-topic-b-what-already-exists-for-a-model-name) | — |
