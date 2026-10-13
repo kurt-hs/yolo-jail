@@ -31,8 +31,8 @@ No production enqueue, no write execution, no notification, no answer ping, no n
 ## Completed and deferred
 
 The host store and CLI dispatch are built. Allow once narrows to the shorter of 15 minutes and
-the resolved ceiling (implementation interpretation of [§5.7](boundary-broker.md#57-permission-sets) and [§7](boundary-broker.md#7-grants-and-the-request-store)). No production broker
-caller exists. Before adding one, policy and scope must be revalidated at use; scope-file
-mutations must join the store lock; teardown and audit events must be wired. Bounded wait,
-status and notification integration remain unbuilt. This slice does not solve [OQ-BB10](boundary-broker.md#OQ-BB10) or build
-`yolo notify`, and grants stored here cannot make a broker write run.
+the resolved ceiling (implementation interpretation of [§5.7](boundary-broker.md#57-permission-sets) and [§7](boundary-broker.md#7-grants-and-the-request-store)). This lifecycle slice adds a fresh random start id to each host broker process, associates authenticated host-service jail ids with that process, ends its store lifetime during graceful teardown, and audits each grant it ends.
+
+Windowed production calls still refuse with exit 77: this slice does not file requests, consume grants or execute writes, and grants stored here cannot make a broker write run. Before production request/consume wiring, both real writers must use the same transaction lock: `brokerscope.Write` (including its create/replace of approved launch scope) and every `brokerstore` mutation/consume path. `brokerlock.WithTransaction(dir, fn)` holds the single store flock while the caller re-reads current host policy and approved scope and makes its write/consume decision. `Store.Consume` runs its required revalidation callback inside its transaction immediately before matching and spending; scope writes invoke the same lock before replacing the scope record. The gate must reclassify and scope-check the actual invocation, not only the original request. Do not take same-directory lock-taking APIs from inside the callback.
+
+Bounded wait/status and notification integration remain unbuilt. This work does not solve [OQ-BB10](boundary-broker.md#OQ-BB10) or build `yolo notify`; terminal notification and ping remain excluded.

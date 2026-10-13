@@ -15,11 +15,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -61,6 +63,10 @@ type Broker struct {
 	unavailable string
 	scope       Scope
 	workspace   string
+	startID     string
+	store       *brokerstore.Store
+	lifetimeMu  sync.Mutex
+	jails       map[string]struct{}
 	audit       *brokeraudit.Log
 	log         io.Writer
 	now         func() time.Time
@@ -134,15 +140,29 @@ func Main(argv []string) int {
 func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, func()) {
 	sweepRunDirs()
 	runDir := newRunDir()
+	startID, startErr := brokerstore.NewStartID()
+	store := &brokerstore.Store{Dir: paths.BrokerSourceDir(Source)}
 	b := &Broker{
 		// Widened is no longer written; a file a previous build wrote still reads as it did.
 		scope:     NewScope(append(append([]string(nil), sf.Repos...), sf.Widened...)).ForFiles(sf.ConfigFile, sf.LocalFile),
 		workspace: sf.Workspace,
+		startID:   startID,
+		store:     store,
+		jails:     make(map[string]struct{}),
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) {
 			fmt.Fprintln(log, "github-broker:", msg)
 		}),
 		log: log,
 		now: time.Now,
+	}
+	cleanup := func() {
+		b.endLifetimes()
+		_ = os.RemoveAll(runDir)
+	}
+	if startErr != nil {
+		b.unavailable = "could not create a fresh broker lifetime identity"
+		fmt.Fprintln(log, "github-broker: refusing to start without a fresh broker lifetime identity:", startErr)
+		return b, cleanup
 	}
 	r, err := NewRunner(RunnerOptions{RunDir: runDir, Getenv: os.Getenv,
 		Refuse: placementRefusal(sf.Workspace, spawnCwd)})
@@ -155,11 +175,14 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 		} else {
 			fmt.Fprintln(log, "github-broker: no gh on the host's PATH; every call answers 69")
 		}
-		return b, func() { _ = os.RemoveAll(runDir) }
+		return b, cleanup
 	}
 	b.runner = r
 	fmt.Fprintln(log, "github-broker:", r.Summary())
-	return b, r.Close
+	return b, func() {
+		r.Close()
+		cleanup()
+	}
 }
 
 // placementRefusal is the loophole placement rule (config.AgentWritableTreeOf, the tree
@@ -229,9 +252,48 @@ func SelfCheck(w io.Writer) int {
 
 // Handle is the hostservice handler: one frame in, gh's output and an exit code out.
 func (b *Broker) Handle(s *hostservice.Session) {
+	b.trackJail(s.JailID)
 	req := requestFrom(s)
 	code := b.Serve(req, s.JailID, s.StdoutBytes, func(p []byte) { s.Stderr(string(p)) })
 	s.Exit(code)
+}
+
+func (b *Broker) trackJail(jail string) {
+	b.lifetimeMu.Lock()
+	defer b.lifetimeMu.Unlock()
+	if b.jails == nil {
+		b.jails = make(map[string]struct{})
+	}
+	b.jails[jail] = struct{}{}
+}
+
+// endLifetimes revokes every grant held by a jail served by this broker process. The
+// random start id also prevents an uncleanly terminated process from authorizing a later run.
+func (b *Broker) endLifetimes() {
+	b.lifetimeMu.Lock()
+	jails := make([]string, 0, len(b.jails))
+	for jail := range b.jails {
+		jails = append(jails, jail)
+	}
+	b.jails = map[string]struct{}{}
+	b.lifetimeMu.Unlock()
+	for _, jail := range jails {
+		_, grants, err := b.store.List()
+		if err != nil {
+			fmt.Fprintf(b.log, "github-broker: could not list grants while ending broker lifetime: %v\n", err)
+		}
+		if err := b.store.End(jail, b.startID); err != nil {
+			fmt.Fprintf(b.log, "github-broker: could not end broker lifetime: %v\n", err)
+			continue
+		}
+		for _, g := range grants {
+			if g.Jail == jail && g.Start == b.startID && g.Ended.IsZero() {
+				b.audit.Append(brokeraudit.Event{Event: "grant-ended", Service: Source, Jail: jail,
+					Workspace: b.workspace, Set: g.Set, Grant: g.ID, Outcome: "ended",
+					Reason: "broker lifetime ended"})
+			}
+		}
+	}
 }
 
 // requestFrom reads the forwarder's frame. A malformed field reads as absent, and a

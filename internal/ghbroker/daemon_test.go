@@ -11,6 +11,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
@@ -552,5 +553,58 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 	if !strings.Contains(strings.Join(strings.Fields(errOut2.String()), " "),
 		"in the workspace config file your environment briefing names") {
 		t.Errorf("without the names, the refusal does not name the briefing's file:\n%s", errOut2.String())
+	}
+}
+
+func TestBrokerLifetimeBindsHostJailAndEndsItsGrants(t *testing.T) {
+	t.Setenv("HOME", resolvedDir(t))
+	t.Setenv("PATH", resolvedDir(t)) // no host gh is needed to test lifecycle teardown
+	var log bytes.Buffer
+	b, cleanup := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &log)
+	other, cleanupOther := newBroker(brokerscope.File{Workspace: "/workspace/project"}, "/workspace/project", &bytes.Buffer{})
+	defer cleanupOther()
+	defer cleanup()
+	if b.startID == "" || b.startID == other.startID {
+		t.Fatalf("broker lifetimes are not unique: %q, %q", b.startID, other.startID)
+	}
+	store := b.store
+	q, err := store.File(brokerstore.Request{Jail: "jail-one", Start: b.startID,
+		Workspace: b.workspace, Argv: []string{"pr", "merge", "1"}, Repo: "o/r",
+		StdinDigest: "none", Set: "read-write", Policy: brokerstore.Policy{
+			Window: 15 * time.Minute, MaxWindow: 12 * time.Hour, Session: true, Uses: 25,
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Decide(q.ID, "pending", brokerstore.Decision{}); err != nil {
+		t.Fatal(err)
+	}
+	b.trackJail("jail-one")
+	cleanup()
+	_, grants, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range grants {
+		if g.Jail == "jail-one" && g.Start == b.startID && g.Ended.IsZero() {
+			t.Fatalf("grant survived broker teardown: %+v", g)
+		}
+	}
+	if !strings.Contains(log.String(), "no gh on the host") {
+		t.Fatalf("fake external executor setup did not take the unavailable path: %s", log.String())
+	}
+	audit, err := os.ReadFile(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, line := range bytes.Split(audit, []byte("\n")) {
+		var ev brokeraudit.Event
+		if json.Unmarshal(line, &ev) == nil && ev.Event == "grant-ended" && ev.Jail == "jail-one" && ev.Grant != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("broker teardown did not audit grant-ended: %s", audit)
 	}
 }
