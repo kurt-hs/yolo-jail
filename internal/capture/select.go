@@ -39,6 +39,8 @@ import "time"
 // captured for. The pair exists nowhere in the content address — only in the entry's own
 // `record` receipt — which is why selection has to read them.
 type Program struct {
+	// Compatibility is an ordinary resolved install identity; empty retains legacy selection.
+	Compatibility string
 	// Bin is the binary name the captured installer installs.
 	Bin string
 	// Platform is "<GOOS>/<GOARCH>" AS THE CAPTURE OBSERVED IT (capture.Platform() inside
@@ -67,6 +69,9 @@ func (p Program) String() string {
 	if p.Source != "" {
 		return p.Bin + " (" + p.Platform + ", built from " + p.Source + ")"
 	}
+	if p.Compatibility != "" {
+		return p.Bin + " (" + p.Platform + ", ordinary input " + p.Compatibility + ")"
+	}
 	return p.Bin + " (" + p.Platform + ")"
 }
 
@@ -86,6 +91,8 @@ func (p Program) String() string {
 // consumer of a content-addressed directory — including internal/prune, which deliberately
 // does not import internal/config.
 type Record struct {
+	// Compatibility separates resolved ordinary installs from each other and legacy captures.
+	Compatibility string
 	// Bin and Platform are the program this entry was captured for.
 	Bin, Platform string
 	// Source is a fork build's source address, "" for an installer capture (Program.Source).
@@ -160,7 +167,7 @@ func (r Record) Program() Program {
 	if r.Fork != "" {
 		return Program{Bin: r.Bin, Platform: r.Platform, Fork: r.Fork}
 	}
-	return Program{Bin: r.Bin, Platform: r.Platform, Source: r.Source}
+	return Program{Bin: r.Bin, Platform: r.Platform, Source: r.Source, Compatibility: r.Compatibility}
 }
 
 // Scanned is one complete entry and the candidate records beside it, as a store scan reads them.

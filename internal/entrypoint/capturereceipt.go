@@ -81,6 +81,8 @@ const (
 // `path` carries the entry root, which is what makes the manifest findable and matches the
 // launcher funnels' use of the field (the landing path of the thing installed).
 type CaptureReceipt struct {
+	// Compatibility identifies a resolved ordinary install; absent for historical captures.
+	Compatibility string
 	// Bin is the binary the captured installer installs.
 	Bin string
 	// Declared is the installer URL, verbatim from the pack's declaration.
@@ -135,6 +137,10 @@ func (r CaptureReceipt) Line() string {
 		b.WriteString(`,"platform":`)
 		b.WriteString(jsonStringLiteral(r.Platform))
 	}
+	if r.Compatibility != "" {
+		b.WriteString(`,"compatibility":`)
+		b.WriteString(jsonStringLiteral(r.Compatibility))
+	}
 	act := r.Act
 	if act == "" {
 		act = ReceiptActRecord
@@ -187,7 +193,7 @@ func ReadCaptureReceipts(path string) ([]CaptureReceipt, error) {
 		}
 		cr := CaptureReceipt{
 			Bin: r.Bin, Declared: r.Declared, Key: r.Resolved, Digest: r.SHA256,
-			Bytes: r.Bytes, Path: r.Path, Platform: r.Platform, Act: r.Act,
+			Bytes: r.Bytes, Path: r.Path, Platform: r.Platform, Act: r.Act, Compatibility: r.Compatibility,
 		}
 		// A stamp that does not parse leaves the zero time rather than dropping the
 		// receipt: the entry it names is real either way, and a caller ordering by time

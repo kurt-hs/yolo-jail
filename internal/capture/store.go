@@ -49,6 +49,7 @@
 package capture
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -58,7 +59,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/treedigest"
 )
 
@@ -218,7 +221,7 @@ func (s *Store) Stage(id string) (string, error) {
 // one of those inodes by hardlink and swapping it out would be a silent version change under a
 // running program.
 func (s *Store) Admit(staged string) (*Entry, error) {
-	return s.admit(staged, staged, false)
+	return s.admit(context.Background(), staged, staged, false, nil)
 }
 
 // AdmitEntry admits a whole ENTRY-SHAPED staging directory — `<staged>/tree` plus whatever
@@ -237,13 +240,20 @@ func (s *Store) Admit(staged string) (*Entry, error) {
 // change the content address, or a manifest whose Home string differed would file identical
 // vendor bytes under a second key.
 func (s *Store) AdmitEntry(staged string) (*Entry, error) {
+	return s.AdmitEntryGuarded(context.Background(), staged, nil)
+}
+
+// AdmitEntryGuarded prepares immutable bytes before entering a caller's short
+// selected-input publication guard. The guard must call commit exactly once on
+// success. Nil preserves the historical explicit-capture route.
+func (s *Store) AdmitEntryGuarded(ctx context.Context, staged string, guard func(func() error) error) (*Entry, error) {
 	tree := TreeDir(staged)
 	if fi, err := os.Lstat(tree); err != nil {
 		return nil, fmt.Errorf("capture admit: %s is not entry-shaped (no tree/): %w", staged, err)
 	} else if !fi.IsDir() {
 		return nil, fmt.Errorf("capture admit: %s is not a directory", tree)
 	}
-	return s.admit(staged, tree, true)
+	return s.admit(ctx, staged, tree, true, guard)
 }
 
 // admit is the shared body of Admit and AdmitEntry.
@@ -253,7 +263,7 @@ func (s *Store) AdmitEntry(staged string) (*Entry, error) {
 // same path and the tree lands INSIDE a freshly-made entry dir; for AdmitEntry the staged
 // dir already IS the entry (tree plus metadata) and becomes the entry dir itself. That is
 // the whole difference between the two.
-func (s *Store) admit(staged, digestOf string, whole bool) (*Entry, error) {
+func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, guard func(func() error) error) (*Entry, error) {
 	stagingRoot := filepath.Join(s.Dir, stagingLeaf)
 	if !within(stagingRoot, staged) {
 		return nil, fmt.Errorf("capture admit: staged tree %s is not under %s — admission is an "+
@@ -270,15 +280,65 @@ func (s *Store) admit(staged, digestOf string, whole bool) (*Entry, error) {
 		return nil, fmt.Errorf("capture admit: digesting %s: %w", digestOf, err)
 	}
 	key := Key(digest)
-	entry := s.EntryDir(key)
-	if _, err := os.Stat(filepath.Join(entry, completeMarker)); err == nil {
-		// Already admitted, and the key says the bytes are the same. Drop the duplicate
-		// rather than re-linking it in: the entry's inodes may already be materialized.
+	// Separate identities can produce identical bytes; serialize the CAS rename by
+	// content address too, without holding any selection guard while waiting.
+	lock, err := pidlock.Acquire(filepath.Join(s.Dir, "locks", "entry-"+key+".lock"), pidlock.Mode{Wait: true, Bound: 20 * time.Minute, Cancel: ctx.Done()}, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+	if err := freezeTree(digestOf); err != nil {
+		return nil, fmt.Errorf("capture admit: making staged tree read-only: %w", err)
+	}
+	entryPath := s.EntryDir(key)
+	_, markerErr := os.Stat(filepath.Join(entryPath, completeMarker))
+	duplicate := markerErr == nil
+	if !duplicate {
+		if err := s.clearIncompleteEntry(entryPath); err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
+			return nil, err
+		}
+		if !whole {
+			if err := os.MkdirAll(entryPath, 0o755); err != nil {
+				return nil, err
+			}
+		}
+	}
+	var entry *Entry
+	commit := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if duplicate {
+			entry = &Entry{Key: key, Root: entryPath, Tree: TreeDir(entryPath), Digest: digest}
+			return nil
+		}
+		var err error
+		entry, err = s.commitAdmission(staged, key, digest, whole)
+		return err
+	}
+	if guard == nil {
+		err = commit()
+	} else {
+		err = guard(commit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, errors.New("capture admit: input guard did not publish — retry preparation")
+	}
+	if duplicate {
 		if err := os.RemoveAll(staged); err != nil {
 			return nil, err
 		}
-		return &Entry{Key: key, Root: entry, Tree: TreeDir(entry), Digest: digest}, nil
 	}
+	return entry, nil
+}
+
+func (s *Store) clearIncompleteEntry(entry string) error {
 	// Absent, or a previous admit died partway. Start clean: a torn entry silently kept would
 	// be an installer's half-written state presented as a package.
 	if err := os.RemoveAll(entry); err != nil {
@@ -287,31 +347,27 @@ func (s *Store) admit(staged, digestOf string, whole bool) (*Entry, error) {
 			// podman left them a container user's (ownership.go), and only that user
 			// namespace can delete them. Every capture of the same bytes stops here until
 			// they are gone, so the message names the command that removes them.
-			return nil, fmt.Errorf("capture admit: %s, an unfinished entry an earlier capture left, "+
+			return fmt.Errorf("capture admit: %s, an unfinished entry an earlier capture left, "+
 				"holds files that are not yours to remove (%w) — an older yolo's capture on a rootless "+
 				"podman left them owned by a container user; remove the entry with "+
 				"`podman unshare rm -rf %s`", entry, err, entry)
 		}
-		return nil, err
+		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
-		return nil, err
-	}
+	return nil
+}
+
+func (s *Store) commitAdmission(staged, key, digest string, whole bool) (*Entry, error) {
+	entry := s.EntryDir(key)
 	dest := entry
 	if !whole {
 		// A bare tree: the entry directory is ours to create, and the tree lands inside it.
-		if err := os.MkdirAll(entry, 0o755); err != nil {
-			return nil, err
-		}
 		dest = TreeDir(entry)
 	}
 	if err := os.Rename(staged, dest); err != nil {
 		return nil, fmt.Errorf("capture admit: moving %s into the store: %w", staged, err)
 	}
 	tree := TreeDir(entry)
-	if err := freezeTree(tree); err != nil {
-		return nil, fmt.Errorf("capture admit: making %s read-only: %w", tree, err)
-	}
 	// LAST, always: everything above is redoable, and the marker is the only claim that it
 	// all happened.
 	if err := os.WriteFile(filepath.Join(entry, completeMarker), []byte(key+"\n"), 0o644); err != nil {

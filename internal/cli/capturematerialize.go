@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ import (
 // nobody has ruled on: a first run on a machine with no capture must still work.
 
 const captureMaterializeUsage = "usage: yolo internal capture-materialize --store=DIR --bin=NAME " +
-	"[--key=KEY] [--home=DIR] [--declared=URL] [--receipts=PATH]"
+	"[--key=KEY] [--compatibility=IDENTITY] [--home=DIR] [--declared=URL] [--receipts=PATH]"
 
 // runCaptureMaterialize is the `yolo internal capture-materialize` entry.
 func runCaptureMaterialize(args []string) int {
@@ -62,6 +63,12 @@ func runCaptureMaterialize(args []string) int {
 			opts.declared = strings.TrimPrefix(a, "--declared=")
 		case strings.HasPrefix(a, "--receipts="):
 			opts.receipts = strings.TrimPrefix(a, "--receipts=")
+		case strings.HasPrefix(a, "--compatibility="):
+			opts.compatibility = strings.TrimPrefix(a, "--compatibility=")
+			if digest, err := hex.DecodeString(opts.compatibility); err != nil || len(digest) != 32 {
+				fmt.Fprintln(os.Stderr, "capture-materialize: compatibility must be a resolved input SHA256 — resolve the selected install and retry")
+				return 2
+			}
 		case strings.HasPrefix(a, "--key="):
 			opts.key = strings.TrimPrefix(a, "--key=")
 		default:
@@ -70,7 +77,7 @@ func runCaptureMaterialize(args []string) int {
 			return 2
 		}
 	}
-	if opts.store == "" || opts.bin == "" || opts.home == "" {
+	if opts.store == "" || opts.bin == "" || opts.home == "" || (opts.key != "" && opts.compatibility != "") {
 		fmt.Fprintln(os.Stderr, captureMaterializeUsage)
 		return 2
 	}
@@ -79,6 +86,8 @@ func runCaptureMaterialize(args []string) int {
 
 // materializeArgs is one materialize request, parsed.
 type materializeArgs struct {
+	// compatibility, when set, requires the exact resolved ordinary input identity.
+	compatibility string
 	// store is the store root AS THIS PROCESS SEES IT — the in-jail mount point, not the
 	// host path. Passed rather than derived: paths.CapturesDir() inside a jail names the
 	// jail's own per-workspace home, which is not the machine store.
@@ -110,7 +119,7 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 	if a.key != "" {
 		return materializeForkBuild(store, a, platform, errw)
 	}
-	entry, rec, err := resolveCaptureFor(store, a.bin, platform)
+	entry, rec, err := resolveProgramCaptureFor(store, a.bin, platform, a.compatibility)
 	if err != nil {
 		fmt.Fprintf(errw, "  yolo: no capture for %s (%s): %v\n", a.bin, platform, err)
 		return 1
@@ -132,9 +141,10 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 	}
 	if a.receipts != "" {
 		line := entrypoint.CaptureReceipt{
-			Bin:      a.bin,
-			Declared: a.declared,
-			Key:      entry.Key,
+			Compatibility: rec.Compatibility,
+			Bin:           a.bin,
+			Declared:      a.declared,
+			Key:           entry.Key,
 			// From the RECORD receipt, not re-derived: the digest is of the canonical
 			// manifest, and recomputing it here would mean walking the tree we just
 			// spent the whole design avoiding walking.
@@ -229,11 +239,15 @@ func materializeForkBuild(store *capture.Store, a materializeArgs, platform stri
 // What stays here is what is local to the materialize path: turning "no entry for this
 // program" into a MISS whose message names the act that fixes it.
 func resolveCaptureFor(store *capture.Store, bin, platform string) (*capture.Entry, *capture.Record, error) {
+	return resolveProgramCaptureFor(store, bin, platform, "")
+}
+
+func resolveProgramCaptureFor(store *capture.Store, bin, platform, compatibility string) (*capture.Entry, *capture.Record, error) {
 	selected, err := capture.Select(store, captureRecords)
 	if err != nil {
 		return nil, nil, err
 	}
-	best, ok := selected[capture.Program{Bin: bin, Platform: platform}]
+	best, ok := selected[capture.Program{Bin: bin, Platform: platform, Compatibility: compatibility}]
 	if !ok {
 		return nil, nil, fmt.Errorf("nothing in %s records one (run `yolo capture %s` to make it)",
 			store.Dir, bin)
@@ -378,7 +392,7 @@ func captureRecords(entryDir string) ([]capture.Record, error) {
 			continue
 		}
 		out = append(out, capture.Record{
-			Bin: r.Bin, Platform: r.Platform, Time: r.Time, Digest: r.Digest,
+			Bin: r.Bin, Platform: r.Platform, Time: r.Time, Digest: r.Digest, Compatibility: r.Compatibility,
 		})
 	}
 	for _, r := range builds {
