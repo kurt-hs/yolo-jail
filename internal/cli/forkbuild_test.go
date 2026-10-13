@@ -7,6 +7,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,6 +36,24 @@ const (
 // forkBuildHome is a temp HOME selecting a base pack declaring probetool and a fork of it, with
 // the fork pinned, and a fixture tree standing in for the pack store's checkout. It returns the
 // fork as the selection reads it.
+func TestCheckOutForkSourcePreservesFetchCancellation(t *testing.T) {
+	previousCheckout, previousFetch := forkCheckout, forkFetchCommit
+	forkCheckout = func(*packsrc.Store, packsrc.Addr, string) (string, error) {
+		return "", errors.New("foreground checkout detail")
+	}
+	forkFetchCommit = func(*packsrc.Store, packsrc.Addr, string) error { return context.Canceled }
+	defer func() { forkCheckout, forkFetchCommit = previousCheckout, previousFetch }()
+
+	err := checkOutForkSourceWithStores(forkTestSource, forkTestCommit, t.TempDir(),
+		&packsrc.Store{}, &packsrc.Store{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("source checkout error = %v, want errors.Is(context.Canceled) from the fetch layer", err)
+	}
+	if !strings.Contains(err.Error(), "foreground checkout detail") || !strings.Contains(err.Error(), "(fetching it: context canceled)") {
+		t.Errorf("source error lost checkout or fetch details: %v", err)
+	}
+}
+
 func forkBuildHome(t *testing.T) packload.Fork {
 	t.Helper()
 	previousProbe := probeForkBuildContainer

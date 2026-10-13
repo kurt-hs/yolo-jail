@@ -197,6 +197,16 @@ func standingPin(l *ForkLock, w ForkWant) (ForkLockEntry, bool) {
 	return e, true
 }
 
+// forkResolveFailure keeps the displayed error one line while retaining the cause for callers that
+// distinguish contention and cancellation from a failed fetch.
+type forkResolveFailure struct {
+	message string
+	cause   error
+}
+
+func (e forkResolveFailure) Error() string { return e.message }
+func (e forkResolveFailure) Unwrap() error { return e.cause }
+
 // forkResolveError is why a fork's source resolved to no commit, on one line. A repository the store
 // has never held reads as the fetch that failed, not as the pack refresh's "never been fetched",
 // whose next step is a pack's.
@@ -213,7 +223,7 @@ func (s *Store) forkResolveError(a Addr, o Outcome) error {
 	if err == nil {
 		err = fmt.Errorf("%s resolved to no commit", a.Raw)
 	}
-	return errors.New(oneLine(err))
+	return forkResolveFailure{message: oneLine(err), cause: err}
 }
 
 // FetchForkCommit makes commit of a's repository checked out in the store, fetching it by its id
