@@ -36,7 +36,13 @@ macos-user, and at a Mac's `yolo host`, the launch says where the fork runs ([PF
 delivery on macos-user is deferred, ruled 2026-10-05 ([OQ-PFK5](#OQ-PFK5)). The four steps and the patched extensions were
 integrated on 2026-10-05 at `e87f1ba88`, with the unit gate, the integration suite and a nested
 jail run on the combined tree; integrating found two defects, fixed there ([PF-D56](#PF-D56), and
-[`patched-extensions.md` PPX-D32](patched-extensions.md#PPX-D32)). On 2026-10-05 the maintainer
+[`patched-extensions.md` PPX-D32](patched-extensions.md#PPX-D32)). On 2026-10-14, Linux nested-jail
+verification passed for `TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict`,
+`TestPatchedExtensionIsBuiltMountedReadOnlyAndHeldAtAConflict`, and
+`TestANextLaunchRefreshRunsBehindTheProgramInTheJail`, using the fresh source-built CLI and the
+harness's image-skew gate. The nested Podman reported `rootless=false`; this does not verify a real
+rootless host. The motivating personal fork's migration measurement remains unrun; no user series was
+substituted. On 2026-10-05 the maintainer
 ruled, in [`patched-extensions.md` OQ-PPX3](patched-extensions.md#OQ-PPX3), that a patched fork
 with no build to run refuses a fresh launch before it boots ([PF-D77](#PF-D77), built 2026-10-06), where
 [§6.7](#67-what-the-mode-never-does) had the mode never refuse one. The ledger's Built column says where. Evidence read
