@@ -55,9 +55,13 @@ func preparationInputIdentity(f packload.Fork, rt, platform string) (string, err
 	return hex.EncodeToString(sum[:]), nil
 }
 
+type preparationPatchInspection struct {
+	failure *packsrc.PatchFailure
+	err     error
+}
+
 func preparationEligible(f packload.Fork, req run.TreeBuildRequest) bool {
-	return req.Build && f.IsTree() && treeUpdateTiming(f) == timingNextLaunch &&
-		run.BackgroundBuildsOn(req.Runtime) && currentPatchFailure(f) == nil
+	return req.Build && f.IsTree() && treeUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(req.Runtime)
 }
 
 // registerTreePreparation persists the selected tree set after pool registration, even when no
@@ -66,11 +70,21 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 	if !req.Build {
 		return nil
 	}
+	inspections := make(map[string]preparationPatchInspection, len(trees))
+	for _, f := range trees {
+		if f.IsTree() {
+			failure, inspectErr := preparationPatchFailure(context.Background(), f)
+			inspections[f.Key()] = preparationPatchInspection{failure: failure, err: inspectErr}
+		}
+	}
 	var spawn bool
 	err := withPreparationState(func(state *preparationState) error {
 		for i := range state.Subscriptions {
 			r := &state.Subscriptions[i]
 			if r.Runtime == req.Runtime && r.Platform == req.Platform {
+				if _, selected := inspections[r.Key]; selected {
+					continue // selected keys are updated only after their check-record authority is known
+				}
 				r.Active, r.Reason = false, "not selected for next-launch preparation by the current user config"
 			}
 		}
@@ -86,16 +100,20 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 				idx = len(state.Subscriptions) - 1
 			}
 			r := &state.Subscriptions[idx]
+			inspection := inspections[key]
+			if inspection.err != nil {
+				continue // contention, cancellation and unreadable authority are not a fresh result
+			}
+			if failure := inspection.failure; failure != nil {
+				r.Active, r.Phase = false, "failed"
+				r.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
+				r.UpdatedAt = preparationNow()
+				continue
+			}
 			identity, identityErr := preparationInputIdentity(f, req.Runtime, req.Platform)
 			if identityErr != nil {
 				r.Active, r.Phase = false, "invalid"
 				r.Reason = fmt.Sprintf("could not read the selected tree declaration (%v) — repair the pack, then run `yolo pack prepare start`", identityErr)
-				continue
-			}
-			if failure := currentPatchFailure(f); failure != nil {
-				r.Active, r.Phase = false, "failed"
-				r.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
-				r.UpdatedAt = preparationNow()
 				continue
 			}
 			eligible := preparationEligible(f, req)
@@ -432,7 +450,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				}
 				return configErr
 			}
-			state = refreshPreparationSubscriptions(state, current)
+			state = refreshPreparationSubscriptionsUnder(ctx, state, current)
 			eligible := false
 			for _, record := range state {
 				eligible = eligible || record.Active
@@ -467,7 +485,14 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				if !ok {
 					continue
 				}
-				if failure := currentPatchFailure(f); failure != nil {
+				failure, inspectErr := preparationPatchFailure(ctx, f)
+				if inspectErr != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					continue // unknown authority is retried; it must not revoke or refresh this subscription
+				}
+				if failure != nil {
 					_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
 						rec.Active, rec.Phase = false, "failed"
 						rec.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
@@ -558,10 +583,22 @@ func preparationTreesWithResolver(records []preparationRecord, resolver func(con
 }
 
 func refreshPreparationSubscriptions(records []preparationRecord, current map[string]packload.Fork) []preparationRecord {
+	return refreshPreparationSubscriptionsUnder(context.Background(), records, current)
+}
+
+func refreshPreparationSubscriptionsUnder(ctx context.Context, records []preparationRecord, current map[string]packload.Fork) []preparationRecord {
 	for _, old := range records {
 		id := old.Key + "\x00" + old.Runtime + "\x00" + old.Platform
 		f, ok := current[id]
+		var failure *packsrc.PatchFailure
+		var inspectErr error
+		if ok {
+			failure, inspectErr = preparationPatchFailure(ctx, f)
+		}
 		_ = preparationUpdateRecord(old.Key, old.Runtime, old.Platform, func(r *preparationRecord) {
+			if inspectErr != nil {
+				return // unknown check-record authority cannot overwrite prior failure, freshness or backoff
+			}
 			if !ok {
 				r.Active = false
 				r.Phase = "unresolved"
@@ -575,7 +612,7 @@ func refreshPreparationSubscriptions(records []preparationRecord, current map[st
 				r.Reason = fmt.Sprintf("%v — repair the selected pack, then run `yolo pack prepare start`", err)
 				return
 			}
-			if failure := currentPatchFailure(f); failure != nil {
+			if failure != nil {
 				r.Active = false
 				r.Phase = "failed"
 				r.Reason = failure.Error() + " — repair the patch failure before resuming `yolo pack prepare start`"
@@ -641,6 +678,22 @@ func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform strin
 		if err != nil {
 			return errPreparationAdmissionStale
 		}
+		id := key + "\x00" + rt + "\x00" + platform
+		f, ok := current[id]
+		if !ok || treeUpdateTiming(f) != timingNextLaunch || !run.BackgroundBuildsOn(rt) {
+			return errPreparationAdmissionStale
+		}
+		failure, inspectErr := preparationPatchFailure(ctx, f)
+		if inspectErr != nil {
+			return inspectErr // held is retryable; unknown and cancellation are not revocation
+		}
+		if failure != nil {
+			return errPreparationAdmissionStale
+		}
+		identity, err := preparationInputIdentity(f, rt, platform)
+		if err != nil {
+			return errPreparationAdmissionStale
+		}
 		lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.NoWait, nil)
 		if err != nil {
 			if errors.Is(err, pidlock.ErrHeld) {
@@ -661,13 +714,7 @@ func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform strin
 		if !record.Active || record.Generation != generation {
 			return errPreparationAdmissionStale
 		}
-		id := key + "\x00" + rt + "\x00" + platform
-		f, ok := current[id]
-		if !ok || treeUpdateTiming(f) != timingNextLaunch || !run.BackgroundBuildsOn(rt) || currentPatchFailure(f) != nil {
-			return errPreparationAdmissionStale
-		}
-		identity, err := preparationInputIdentity(f, rt, platform)
-		if err != nil || identity != record.InputIdentity {
+		if record.InputIdentity != identity {
 			return errPreparationAdmissionStale
 		}
 		if preparationStopRequested() {

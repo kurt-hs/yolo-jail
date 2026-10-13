@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,41 @@ func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 	}
 	inputs, _, _, _ := f.CheckWant(series).Inputs()
 	return record.CurrentPatchFailure(inputs, series.Digest)
+}
+
+// preparationPatchFailure inspects scheduler authority without migrating a legacy good build or
+// waiting for its check-record lock. ErrLockHeld, read failures and cancellation are unknown, not
+// evidence that the subscription was revoked or that the record is clear.
+func preparationPatchFailure(ctx context.Context, f packload.Fork) (*packsrc.PatchFailure, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	series, err := f.ReadSeries()
+	if err != nil {
+		return nil, err
+	}
+	inputs, _, _, err := f.CheckWant(series).Inputs()
+	if err != nil {
+		return nil, err
+	}
+	store := *patchedForkStore()
+	store.NoWait = true
+	var record *packsrc.CheckRecord
+	err = store.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
+		if readErr != nil {
+			return false, readErr
+		}
+		copy := *r
+		record = &copy
+		return false, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return record.CurrentPatchFailure(inputs, series.Digest), nil
 }
 
 // patchFailureCommand is the operation a patch failure's bypass is put in front of: `yolo host --
