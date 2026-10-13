@@ -75,17 +75,10 @@ var hostTreeAdvance = advancePatchedFork
 // BEFORE the render, so a refused verb writes nothing; the advance has said the error block.
 func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterrupt, manual ...bool) bool {
 	freshUpdate := len(manual) > 0 && manual[0]
-	if !hostTreesBuild() {
-		if freshUpdate {
-			fmt.Fprintln(errw, "yolo host: refusing --update: patched trees cannot be freshly prepared on this host; run a fresh supported Linux jail launch instead")
-			return false
-		}
-		return true
-	}
 	sel := selectConfiguredHostPacks()
 	if sel.loadErr != nil {
 		if freshUpdate {
-			fmt.Fprintf(errw, "yolo host: refusing --update: could not resolve the selected owner vector: %v\n", sel.loadErr)
+			fmt.Fprintf(errw, "yolo host: refusing --update: could not resolve the selected owner vector: %v — repair the selected pack/config and retry\n", sel.loadErr)
 			return false
 		}
 		return true
@@ -112,6 +105,13 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		if err := registerHostTreePreparation(queued, errw); err != nil {
 			fmt.Fprintf(errw, "⚠ next-launch host tree preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
+	}
+	if !hostTreesBuild() {
+		if freshUpdate && len(trees) > 0 {
+			fmt.Fprintln(errw, "yolo host: refusing --update: patched trees cannot be freshly prepared on this host; run a fresh supported Linux jail launch instead")
+			return false
+		}
+		return true
 	}
 	// Capture each fresh request boundary inside the interrupt scope, under the same owner record
 	// lock that records STARTED before transport. A request canceled while waiting never advances.
@@ -161,12 +161,18 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	}
 	var stopped []string
 	for i, r := range results {
+		if freshUpdate && r.failed {
+			fmt.Fprintf(errw, "yolo host: refusing --update: fresh preparation of %s failed: %s — repair the named problem and retry, or launch without --update for ordinary recovery\n", trees[i].Label(), r.freshFailure())
+		}
 		if r.patchFailure != nil && !r.bypassed || freshUpdate && r.failed {
 			stopped = append(stopped, trees[i].Label())
 		}
 	}
 	if len(stopped) == 0 {
 		return true
+	}
+	if freshUpdate {
+		return false
 	}
 	fmt.Fprintf(errw, "yolo host: refusing: the patch series of %s %s not apply (the ERROR above); nothing was written.\n",
 		entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))

@@ -378,10 +378,10 @@ func RefreshServers(req ServerRefreshRequest) error {
 			touchServerStamp(stampDir, p, now())
 			continue
 		}
-		if p.pinned || !req.Updates {
+		if p.pinned || (!req.Updates && !req.Fresh) {
 			continue
 		}
-		if serverRefreshDue(stampDir, p, now()) {
+		if req.Fresh || serverRefreshDue(stampDir, p, now()) {
 			stale = append(stale, p)
 		}
 	}

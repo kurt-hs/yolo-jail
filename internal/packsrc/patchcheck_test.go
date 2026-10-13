@@ -366,15 +366,19 @@ func blockingGit(t *testing.T) (bin string, started func() bool, release func())
 	return bin, started, release
 }
 
-func TestFreshBoundaryWaitsForAnInFlightCheckThenStartsAFollowup(t *testing.T) {
+func TestFreshBoundaryRegistersDuringTransportThenSharesAFollowup(t *testing.T) {
 	u := newPatchedUpstream(t)
 	w := u.want(t, "main", "")
 	git, started, release := blockingGit(t)
 	u.store.Git = git
 	defer release()
+	beforeStart, err := u.store.FreshCheckBoundary(w.Owner)
+	if err != nil || beforeStart != 0 {
+		t.Fatalf("pre-STARTED request: %d, %v", beforeStart, err)
+	}
 	firstDone := make(chan CheckResult, 1)
 	go func() {
-		firstDone <- u.store.CheckPatched(w, CheckOptions{Force: true, Now: func() time.Time { return u.now }})
+		firstDone <- u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: beforeStart, Now: func() time.Time { return u.now }})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !started() && time.Now().Before(deadline) {
@@ -399,20 +403,6 @@ func TestFreshBoundaryWaitsForAnInFlightCheckThenStartsAFollowup(t *testing.T) {
 			err error
 		}{seq, err}
 	}()
-	select {
-	case got := <-boundaryDone:
-		t.Fatalf("registration crossed the in-flight check before it completed: %+v", got)
-	case <-time.After(30 * time.Millisecond):
-	}
-	release()
-	select {
-	case first := <-firstDone:
-		if first.Err != nil || !first.Ran || first.Fresh {
-			t.Fatalf("pre-request check = %+v", first)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the pre-request check did not finish after release")
-	}
 	var boundary struct {
 		seq uint64
 		err error
@@ -420,7 +410,16 @@ func TestFreshBoundaryWaitsForAnInFlightCheckThenStartsAFollowup(t *testing.T) {
 	select {
 	case boundary = <-boundaryDone:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the request boundary remained blocked after the earlier check completed")
+		t.Fatal("registration blocked on paused transport")
+	}
+	secondBoundary, err := u.store.FreshCheckBoundary(w.Owner)
+	if err != nil || secondBoundary != boundary.seq {
+		t.Fatalf("concurrent boundary = %d, %v", secondBoundary, err)
+	}
+	release()
+	first := <-firstDone
+	if first.Err != nil || !first.Ran || !first.Fresh {
+		t.Fatalf("first check: %+v", first)
 	}
 	if boundary.err != nil || boundary.seq != 1 {
 		t.Fatalf("request boundary = %d, %v; want the earlier check's start sequence 1", boundary.seq, boundary.err)
@@ -429,6 +428,10 @@ func TestFreshBoundaryWaitsForAnInFlightCheckThenStartsAFollowup(t *testing.T) {
 		Now: func() time.Time { return u.now }})
 	if followup.Err != nil || !followup.Ran || !followup.Fresh || followup.Record.Check.StartedSeq != 2 {
 		t.Fatalf("post-registration follow-up = %+v, want a new start after boundary 1", followup)
+	}
+	shared := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: secondBoundary, Now: func() time.Time { return u.now.Add(-time.Hour) }})
+	if shared.Err != nil || shared.Ran || !shared.Fresh {
+		t.Fatalf("shared followup after clock rollback: %+v", shared)
 	}
 }
 

@@ -575,3 +575,28 @@ func TestAPooledBuildThatFailsLeavesItsCauseToTheLaunch(t *testing.T) {
 		t.Errorf("the pooled act said the failure's cause, which the launch says once:\n%s", out)
 	}
 }
+
+func TestFreshTreeBuildFailureRefusesServingCopyAndFallback(t *testing.T) {
+	pf := newPoolFixture(t)
+	initial, output := pf.launch(t, "podman", &run.ActInterrupt{})
+	if initial[poolKeyA].Dir == "" {
+		t.Fatalf("seed tree: %+v\n%s", initial, output)
+	}
+	// A new source revision requires a build, but both keys still have serving copies.
+	writeFile(t, filepath.Join(pf.repo, "new-input"), "new upstream bytes")
+	gitCmd(t, pf.repo, "add", "new-input")
+	gitCmd(t, pf.repo, "commit", "-qm", "new input")
+	pf.child = func(context.Context, forkBuild) int { return 7 }
+	trees := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	for i := range trees {
+		trees[i].Fallback = t.TempDir()
+	}
+	var out syncBuffer
+	got := deliverTreesForLaunch(run.TreeBuildRequest{FreshUpdate: true, Trees: trees, Platform: patchedTestPlatform, Runtime: "podman", Build: true,
+		CopyRoot: filepath.Join(t.TempDir(), "copies"), Interrupt: &run.ActInterrupt{}}, &out, &out, false)
+	for _, key := range []string{poolKeyA, poolKeyB} {
+		if got[key].FreshFailure == "" || got[key].Dir != "" {
+			t.Fatalf("fresh tree failure used old bytes: %s %+v\n%s", key, got[key], out.String())
+		}
+	}
+}

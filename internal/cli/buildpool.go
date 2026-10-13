@@ -518,7 +518,9 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 						freshCheck: true, freshAfterSeq: after, freshBoundaryErr: boundaryErr,
 						freshIdentity: req.FreshIdentity[p.Fork.Key()],
 						hand:          req.Hand, act: req.Interrupt, report: pool.report, slot: it})
-					answer(p.Fork.Bin, result.forkDelivery())
+					delivery := result.forkDelivery()
+					delivery.FreshFailure = result.freshFailure()
+					answer(p.Fork.Bin, delivery)
 					return
 				}
 				d := deliverPatchedFork(p.Fork, req, pool.report, it, color)
@@ -533,7 +535,11 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 		}
 		missing++
 		pool.add(p.Fork.Label(), func(it *poolItem) {
-			answer(p.Fork.Bin, buildPlainForkForLaunch(b, req.Runtime, pool.report, it, color))
+			delivery := buildPlainForkForLaunch(b, req.Runtime, pool.report, it, color)
+			if req.FreshUpdate && delivery.Key == "" {
+				delivery.FreshFailure = delivery.Reason
+			}
+			answer(p.Fork.Bin, delivery)
 		})
 	}
 	if missing > 0 && !req.Interrupt.Interrupted() {

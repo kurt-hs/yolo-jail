@@ -43,6 +43,8 @@ const ForkBuildsEnv = "YOLO_FORK_BUILDS"
 // ForkDelivery is the host's answer for one fork's program this launch: the store key to
 // materialize, or why there is none.
 type ForkDelivery struct {
+	// FreshFailure is host-only explicit request failure, independent of serving bytes and hatches.
+	FreshFailure string `json:"-"`
 	// Key is the capture store entry holding the pinned build, "" when there is none.
 	Key string `json:"key,omitempty"`
 	// Reason is why there is no key, naming what to do; "" when Key is set.

@@ -679,3 +679,28 @@ func forkFloorProgram(t *testing.T) hostfloor.Program {
 	}
 	return p
 }
+
+func TestHostUpdatePlainForkMovesItsScopedPinAndBuildsTheNewCopy(t *testing.T) {
+	repo, commit, _ := forkFloorHome(t)
+	head1 := strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
+	withForkFloor(t)
+	runs := 0
+	withFakeCaptureJail(t, forkFloorBuildJail(t, &runs, true))
+	captureHostExec(t)
+	var out bytes.Buffer
+	if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out.String())
+	}
+	if forkLockCommit(t) != head1 {
+		t.Fatal("seed did not pin old branch")
+	}
+	head2 := commit("second")
+	got := captureHostExec(t)
+	out.Reset()
+	if rc := hostMain([]string{"--update", "--", "forkcli"}, io.Discard, &out, false, nil); rc != 0 || got.target == "" {
+		t.Fatalf("fresh plain source: %d target=%q\n%s", rc, got.target, out.String())
+	}
+	if forkLockCommit(t) != head2 || floorRecord(t, "forkcli").Revision != head2 || runs != 2 {
+		t.Fatalf("fresh repin/build did not reach floor: pin=%s revision=%s builds=%d\n%s", forkLockCommit(t), floorRecord(t, "forkcli").Revision, runs, out.String())
+	}
+}

@@ -97,3 +97,26 @@ func indexOfStr(s, sub string) int {
 	}
 	return -1
 }
+
+func TestUpdateTimingReportsAfterThePreparedTargetCompletes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "yolo"), []byte("#!/bin/sh\nprintf 'prepared %s\\n' \"$2\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	o := &Options{Update: true, Timing: true, Getenv: func(string) string { return "" }}
+	cmd := exec.Command("bash", "-c", o.sessionCmd("sh -c 'echo target-completed; exit 7'"))
+	cmd.Env = append(os.Environ(), "HOME="+dir, "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err == nil || err.(*exec.ExitError).ExitCode() != 7 {
+		t.Fatalf("target status: %v\n%s", err, out)
+	}
+	text := string(out)
+	last := -1
+	for _, want := range []string{"prepared refresh-programs", "prepared refresh-servers", "\ntarget-completed\n", "=== YOLO Jail Profile ===", "command execution:"} {
+		at := strings.Index(text, want)
+		if at < 0 || at <= last {
+			t.Fatalf("missing/out-of-order %q:\n%s", want, text)
+		}
+		last = at
+	}
+}

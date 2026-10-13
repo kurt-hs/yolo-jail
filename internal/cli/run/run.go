@@ -1621,6 +1621,11 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		removed := o.removeStaleContainer(cname, rt)
 		if !removed && !o.NeverAttach {
 			if live := o.waitForRunningContainer(cname, rt); live != "" {
+				if o.Update {
+					out.printf("Refusing --update: this workspace already has a running jail, and preparation cannot change the environment it is using.")
+					out.printf("Stop it with `yolo stop`, then retry `yolo --update -- <command>` as a fresh launch.")
+					return 1
+				}
 				if rc, restarted := o.attachExisting(cname, rt, targetCmd, cfg, staged, channel, true, lock.Close); !restarted {
 					return rc
 				}
@@ -1755,7 +1760,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// A PATCH SERIES THAT DOES NOT APPLY IS FATAL (patchfailures.go; PF-D81, PF-D83): its error block
 	// first, before any line about what the slot delivered, then the refusal when an intact older build would
 	// otherwise run in silence; YOLO_ALLOW_PATCH_FAILURES=1 runs that build for this launch.
-	if o.refusePatchFailures(rt) {
+	if o.refuseFreshPreparation() || o.refusePatchFailures(rt) {
 		forkSpan.End()
 		lock.Close()
 		return 1

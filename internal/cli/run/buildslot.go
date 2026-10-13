@@ -14,6 +14,7 @@ package run
 
 import (
 	goruntime "runtime" // stdlib; this package's `runtime` is yolo's own (run.go)
+	"sort"
 	"sync"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -85,4 +86,31 @@ func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
 		o.recordHandedTrees(trees)
 	}
 	o.forkDelivered, o.treeDelivered = forks, trees
+}
+
+// refuseFreshPreparation runs before the ordinary patch/missing-build hatches.
+func (o *Options) refuseFreshPreparation() bool {
+	if !o.Update {
+		return false
+	}
+	failures := map[string]string{}
+	for key, d := range o.forkDelivered {
+		if d.FreshFailure != "" {
+			failures[key] = d.FreshFailure
+		}
+	}
+	for key, d := range o.treeDelivered {
+		if d.FreshFailure != "" {
+			failures[key] = d.FreshFailure
+		}
+	}
+	keys := make([]string, 0, len(failures))
+	for key := range failures {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		o.pr(o.Stderr).printf("Refusing --update: fresh preparation of %s failed: %s. Repair the named problem and retry, or launch without --update to use ordinary recovery.", key, failures[key])
+	}
+	return len(keys) > 0
 }

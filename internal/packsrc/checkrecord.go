@@ -343,7 +343,7 @@ func (s *Store) LoadCheckRecord(owner string) (*CheckRecord, error) {
 
 // FreshCheckBoundary snapshots the last check-start sequence under the keyed record lock. CheckPatched
 // increments StartedSeq under this same lock before transport, so this is an atomic request boundary:
-// a check already started must finish before registration observes its sequence and cannot satisfy
+// registration observes an already-started check without waiting for transport; it cannot satisfy
 // the request. Legacy records naturally start at 0.
 func (s *Store) FreshCheckBoundary(owner string) (uint64, error) {
 	return s.FreshCheckBoundaryContext(s.parentCtx(), owner)

@@ -104,6 +104,8 @@ type TreeBuildRequest struct {
 
 // TreeDelivery is the tree arm's answer for one patched extension this launch.
 type TreeDelivery struct {
+	// FreshFailure refuses explicit preparation even when a fallback or serving copy exists.
+	FreshFailure string
 	// Dir is the per-launch copy to mount at `~/<into>`, "" when there is none.
 	Dir string
 	// Entry is the capture store entry the copy was made from.

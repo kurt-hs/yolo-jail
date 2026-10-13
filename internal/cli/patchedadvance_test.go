@@ -807,3 +807,27 @@ func TestAHandThatCannotBeRecordedSaysWhatItCosts(t *testing.T) {
 		}
 	}
 }
+
+func TestFreshBuildFailureRetainsServingBytesButCarriesUnconditionalRefusal(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	first, _, _ := fx.launch(t, "podman")
+	if first.failed || first.delivery.Key == "" {
+		t.Fatalf("seed: %+v", first)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
+	fx.failBuildsOf(t, "twenty")
+	t.Setenv(paths.AllowMissingProgramsEnv, "1")
+	t.Setenv(paths.AllowPatchFailuresEnv, "1")
+	req := forkRequest(t, fx, "podman")
+	req.FreshUpdate = true
+	var output syncBuffer
+	delivered, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req}, &output, false)
+	got := delivered["tool"]
+	if got.FreshFailure == "" || got.Key != first.delivery.Key {
+		t.Fatalf("failed fresh build lost refusal or serving bytes: %+v\n%s", got, output.String())
+	}
+	if rec := fx.record(t); rec.Good.Entry != first.delivery.Key {
+		t.Fatalf("failed fresh build moved good: %+v", rec.Good)
+	}
+}
