@@ -53,6 +53,9 @@ type AutoLoadOptions struct {
 	// ExtraPackages is the config `packages` list (JSON-encoded into
 	// YOLO_EXTRA_PACKAGES). nil/empty → unset.
 	ExtraPackages []any
+	// AmbientExtraPackages is the exact inherited YOLO_EXTRA_PACKAGES byte string. It
+	// is keyed separately from config packages and is never normalized before hashing.
+	AmbientExtraPackages string
 	// Attr is the flake attribute to build — ImageAttrDefault or, for a launch that
 	// delivers the image's bulk extras from the mounted nix store, ImageAttrLean (C5).
 	// "" => ImageAttrDefault, so every caller that does not know about the lean variant
@@ -489,7 +492,7 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	// needs one when the image it wants is genuinely absent.
 	// Config-declared packages have a complete key independent of stock tags.
 	packagesIdentity := ""
-	if !o.SkipBuild && o.RepoRoot != "" && len(o.ExtraPackages) > 0 {
+	if !o.SkipBuild && o.RepoRoot != "" && (len(o.ExtraPackages) > 0 || o.AmbientExtraPackages != "" || (o.Attr != "" && o.Attr != ImageAttrDefault)) {
 		line := o.startProgress("Evaluating the image identity with nix")
 		id, ok := o.EvalIdentity(o.RepoRoot)
 		line.Done(verdict(ok))

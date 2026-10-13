@@ -1486,11 +1486,12 @@ register the GC root and update the load sentinel. It runs the content ref, so e
 and reaper mappings need no new tag namespace. A record write failure warns and costs only
 the next build.
 
-The Linux unit tests exercise the production `AutoLoadImage` call site: unchanged packages
-reuse, changed packages/identity, moving pins, missing runtime image and invalid store path.
-They do **not** prove Apple Container runtime behavior. Remaining slices are ambient-only
-`YOLO_EXTRA_PACKAGES` and lean-image records, plus native Apple Container dispatch and warm
-launch timing on a Mac.
+The Linux tests exercise the production `AutoLoadImage` call site: unchanged packages reuse,
+changed packages/identity, moving pins, missing runtime image and invalid store path. Ambient-only
+inherited `YOLO_EXTRA_PACKAGES` bytes and the default/lean attribute now have distinct record keys;
+moving pins remain unrecorded. Reuse still requires nix store validity and runtime inspection, and
+failed builds remain fatal. These tests do **not** prove Apple Container runtime behavior. Remaining
+work is Part A's native Apple Container tag dispatch/runtime validation and warm-launch timing on a Mac.
 
 ## Why it's this way
 
