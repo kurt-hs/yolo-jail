@@ -189,20 +189,19 @@ type MissingProviderError struct {
 
 func (e *MissingProviderError) Error() string {
 	head := fmt.Sprintf("Profile %q uses provider %q for %s, but that provider is unavailable", e.Profile, e.Provider, e.Agent)
-	lost := fmt.Sprintf("%s would start with its existing login instead", e.Agent)
 	switch {
 	case e.Dropped != "":
-		return fmt.Sprintf("%s. Remove the `providers.%s` null entry that removes it, or choose a profile using an available provider; %s",
-			head, e.Provider, lost)
+		return fmt.Sprintf("%s. Remove the `providers.%s` null entry that removes it, or choose a profile using an available provider",
+			head, e.Provider)
 	case e.Shipper != "" && e.Then != nil:
-		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to make this provider available, but that alone will not fix this refusal: %v; %s",
-			head, e.Shipper, e.Then, lost)
+		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to make this provider available, but that alone will not fix this refusal: %v",
+			head, e.Shipper, e.Then)
 	case e.Shipper != "":
-		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to use this provider; %s",
-			head, e.Shipper, lost)
+		return fmt.Sprintf("%s. Add %q to `packs` in your workspace configuration to use this provider",
+			head, e.Shipper)
 	default:
-		return fmt.Sprintf("%s. Choose a profile that uses a provider supplied by your selected packs, or declare this provider in `providers` in your workspace configuration; %s",
-			head, lost)
+		return fmt.Sprintf("%s. Choose a profile that uses a provider supplied by your selected packs, or declare this provider in `providers` in your workspace configuration",
+			head)
 	}
 }
 
