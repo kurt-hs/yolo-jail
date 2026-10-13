@@ -3,7 +3,7 @@ title: "Reads run, writes ring the doorbell: time-boxed GitHub access across the
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Build the rest of step 2 short of the doorbell: user-scope sets under the `brokered` key (§5.7), the request store and grants (§7), `yolo approve` and the D-Bus notifier; the answer's ping waits on agent-event-watchers.md step 1 and the no-notifier terminal notice on OQ-BB10 — start at internal/config/brokered.go, whose source object accepts only `repos` today, beside the retired `workspaces`"
+next: "Integrate effective set policies and the host request/grant store into the broker: enqueue, bounded wait, status, consume, teardown and audit; then D-Bus notifications. Preserve write refusal until that path is complete. Answer ping waits on yolo notify; terminal notice waits on OQ-BB10."
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, approvals, notifications, loopholes, audit, broker]
@@ -18,7 +18,10 @@ vantage:
 built 2026-09-29** (the read path, the repository scope, the audit log, the mount fence),
 **step 2's widening entry built 2026-10-01** ([BB-D33](#BB-D33), [BB-D52](#BB-D52); the
 `brokered` key in `internal/config/brokered.go`, run end to end against a fake host `gh` by
-`integration/githubbroker_test.go`), and the rest of step 2 and step 3 not started. Revised
+`integration/githubbroker_test.go`), and **step 2's user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
+The store is not wired into broker calls: writes still refuse immediately, without filing a
+request. See [the build plan](boundary-broker-plan.md). The remaining integration, notifications
+and step 3 are not built. Revised
 around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#OQ-BB1), [OQ-BB2](#OQ-BB2), [OQ-BB3](#OQ-BB3), [OQ-BB4](#OQ-BB4),
 [OQ-BB6](#OQ-BB6), [OQ-BB7](#OQ-BB7), [OQ-BB8](#OQ-BB8), [OQ-BB9](#OQ-BB9) and OQ-C were ruled on
@@ -38,11 +41,11 @@ kind; its implementation decisions are
 [BB-D37](#BB-D37) to [BB-D45](#BB-D45), and the fixes a review of it found are
 [BB-D46](#BB-D46) to [BB-D51](#BB-D51). [BB-D58](#BB-D58) to [BB-D62](#BB-D62) answer an
 agent's field report of 2026-10-03: encoded endpoints, organization flags on writes, words that
-climb out of a path, GraphQL advice, and fuzz targets for the scope decision. Still unbuilt: the request store, `yolo approve`, the
-[BB-D46](#BB-D46) to [BB-D51](#BB-D51). The first in-jail use's report (2026-10-03) brought
+climb out of a path, GraphQL advice, and fuzz targets for the scope decision. The first in-jail
+use's report (2026-10-03) brought
 [BB-D64](#BB-D64) to [BB-D68](#BB-D68): `--jq` and `--template` run, the broker answers
 `gh auth status`, a write says at once that nothing waits, the forwarder's shim says what it is,
-and the github pack briefs every agent. Still unbuilt: the request store, `yolo approve`, the
+and the github pack briefs every agent. Still unbuilt: broker request/grant integration, the
 notifiers, the ping, and every write. (`internal/broker` and the `yolo broker` verb mean the
 Claude OAuth singleton; see **broker** in [§1.3](#13-terms).) The research behind
 [§5](#5-which-set-the-classifier) and [§6](#6-the-doorbell-a-persistent-desktop-notification) is
@@ -88,7 +91,7 @@ scope is approved through), [`providers.md`'s credential gate](../reference/prov
 (delivery as specific as possible), [`sso-backed-bedrock.md`](sso-backed-bedrock.md) (the second consumer waiting for a
 request shape), [`host-run-mailbox.md`](host-run-mailbox.md) (the paste-to-host stopgap
 for everything this design does not yet cover, planned to become one more front-end of its
-store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). No implementation sketch is open yet.
+store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). The bounded host-store slice is recorded in [the build plan](boundary-broker-plan.md).
 
 ---
 
@@ -1092,9 +1095,9 @@ the implementer picks it, and `yolo config-ref` is its authority once built. It 
   ([BB-P8](#BB-P8)).
 - **The `brokered` key splits by child** ([WW-D14](workspace-widening.md#WW-D14)): `<source>.repos`
   is workspace scope, the widening entry of [§5.6](#56-the-repository-scope), built 2026-10-05,
-  and `<source>.sets` will be user scope, refused at workspace scope ([BB-P9](#BB-P9)). The `sets`
-  half is not built, so a `sets` key under a source is refused today as an unknown key, at every
-  scope.
+  and `<source>.sets` is user scope, refused at workspace scope ([BB-P9](#BB-P9)). Its validation
+  and launch disclosure are built; effective rule classification and delivery to the broker
+  remain an integration step.
 
 #### What a grant covers, as filed
 
@@ -1326,6 +1329,21 @@ is a thin local client of the store with its own operator credential
 ([§A.6](#a6-recommendation--build-b1b-vendor-the-policy-engine-do-not-adopt-gh-broker)).
 
 ## 7. Grants and the request store
+
+**Host-store slice built 2026-10-13:** `internal/brokerstore` and the registered `yolo approve`
+command implement filing, duplicate joining, serialized decisions, bounded grants, consumption,
+revocation, lifetime ending and seven-day retention. No production broker calls these APIs yet;
+no broker write can run and no broker request is waiting. Tests cover the store and real CLI
+dispatch, not end-to-end broker approvals.
+
+**Implementation interpretation:** Allow once lasts `min(15m, max_window)`, one use, so a
+user-defined shorter ceiling is never exceeded. Its confirmation prints the effective expiry.
+
+**Mandatory before production integration:** resolve policies from host user scope, revalidate
+current policy and approved repository scope at use, share serialization with scope-file
+mutations, bind a freshly drawn broker start id, wire teardown and audit events, and complete
+the bounded-wait/status path. The notifier and answer delivery remain later work; the terminal
+notice is blocked by [OQ-BB10](#OQ-BB10), the ping by `yolo notify`.
 
 **A request** is the parsed canonical command, its repository, the stdin digest, the jail id from
 the preamble, the workspace, the set it asks for, the time filed and its state: `pending`, then one of
@@ -1653,8 +1671,8 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
    and a broker stopped mid-call leaving its `hosts.yml` copy behind. What step 1 did not build, and
    why: the launch disclosure of a `GH_TOKEN` reaching the jail ([BB-D18](#BB-D18)), which waits on
    [OQ-BB10](#OQ-BB10) or a `brokered` key of its own; the `agent` field of an audit line is empty, since the
-   forwarder cannot tell which agent ran it; and a user-scope set definition cannot be written
-   yet, so `yolo check` has no set definition to refuse ([§12](#12-what-done-looks-like) item 10).
+   forwarder cannot tell which agent ran it; and at that time a user-scope set definition could not be written, so `yolo check` had no
+   set definition to refuse ([§12](#12-what-done-looks-like) item 10).
    Verified by unit tests, by `integration/githubbroker_test.go` (a real podman jail against a
    fake host `gh`: a read, the refusals, a scope change at the next fresh launch, and an attach
    that keeps the running scope) and on Linux only; the macos-user arm's gate is pinned by a unit
@@ -1674,7 +1692,8 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
    ([`workspace-widening.md`](workspace-widening.md)). Verified by unit tests through each call
    site and by `integration/githubbroker_test.go`'s
    `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace`, a nested podman jail
-   against a fake host `gh`, on Linux only. The rest of step 2 is not built, and two parts of it
+   against a fake host `gh`, on Linux only. The host store and `yolo approve` are built as the independent slice described in §7,
+   without production enqueue or write execution. The remaining integration is not built, and two parts of it
    wait on more than this step: the answer's ping on the doorbell above, which is not built, and
    the no-notifier terminal notice on [OQ-BB10](#OQ-BB10), which is not ruled. The widening entry
    needs neither.

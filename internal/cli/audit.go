@@ -37,8 +37,8 @@ Flags:
   --workspace <path>  Only calls from this workspace.
   --set <name>        Only calls the broker assigned this set: read-only,
                       read-write, refused or out-of-scope.
-  --grant <id>        Only calls run under this grant (none exist yet: this
-                      version asks for no approvals).
+  --grant <id>        Only calls run under this grant (broker write execution
+                      is not integrated yet).
   --json              Print each matching line as stored, one JSON object per line.
   --help, -h          Show this help.
 

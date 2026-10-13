@@ -58,8 +58,9 @@ var registry = map[string]func(args []string) int{
 	"update":                runUpdate,
 	// The github-broker's two ends: `gh` is the jail side (Main routes it before the
 	// front door, gh.go), `audit` the host's record of every brokered call (audit.go).
-	"gh":    runGHVerb,
-	"audit": runAudit,
+	"gh":      runGHVerb,
+	"audit":   runAudit,
+	"approve": runApprove,
 }
 
 // valueTakingFlags are the flags whose value is the NEXT argv token rather than being
