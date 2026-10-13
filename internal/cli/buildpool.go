@@ -453,7 +453,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		}
 	}
 	if fr := req.Forks; fr != nil {
-		if err := registerProgramPreparation(fr.Pins, *fr, stream); err != nil {
+		if err := registerProgramPreparation(fr.Pins, *fr, stream, req.Perf); err != nil {
 			fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
 		}
 	}
