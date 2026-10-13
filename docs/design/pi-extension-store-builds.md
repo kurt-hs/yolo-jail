@@ -3,7 +3,7 @@ title: "One keyed build for every pi extension: in parallel, published by rename
 date: 2026-10-05
 status: in-review
 stage: DESIGN
-next: "Complete the remaining implementation slices under OQ-XB1's ruling: Apple Container's check-only advance (XB-D21), host updates and reporting (XB-D22), and timing for patched forks and captured programs (XB-D28). XB-D42's source-built slice 1 is built and runtime-checked only on Linux, rootful, nested Podman; rootless Podman and native macOS runtime behavior remain unmeasured, and Darwin evidence is static vet/compile only. This does not imply native/performance/migration slice 2. Independent review and landing remain. A real Pi load and the maintainer's extension migration are still unmeasured"
+next: "Build the independent scheduler/freshness slices from launch-update-preparation-plan.md; ordinary capture replacement alone waits on OQ-PD23, with native/rootless/performance acceptance retained"
 tags: [pi, extensions, packs, builds, parallelism, locks, updates, startup]
 summary: "A record of the maintainer's request for parallel pi extension builds and the implemented capture route: unmodified extensions use the patched-tree pipeline with an empty patch series, per-key locks and read-only per-launch copies. It records the built-tree next-launch behavior implemented in Podman's source-built slice 1, runtime-checked only on Linux rootful nested Podman, and what remains unbuilt or unmeasured; it does not imply native/performance/migration slice 2. It also records the startup measurements."
 vantage:
@@ -12,7 +12,13 @@ vantage:
 
 # One keyed build for every pi extension: in parallel, published by rename, read without a lock, and updated at launch or for the next one
 
-**Status:** 2026-10-05. Built: [XB-D14](#XB-D14), the unshared npm prefix with the refresh's
+**Status:** amended 2026-10-13 against `99f36da2e`: the Podman built-tree detached slice is in main,
+not awaiting landing. [Ongoing preparation](launch-update-preparation.md) owns its extension to
+between-launch scheduling and the remaining host/platform/program timing slices through its
+[ready independent plan](launch-update-preparation-plan.md); only ordinary warm CLI/MCP replacement
+waits on the capture question. Native/rootless
+runtime, controlled performance, real loading and migration acceptance remain outstanding.
+Built: [XB-D14](#XB-D14), the unshared npm prefix with the refresh's
 throttle beside its lock, and [XB-D34](#XB-D34), the npm launcher's install kept off a piped
 launch's stdout; then [OQ-6](pi-git-extension-caching.md#OQ-6) (c) as [XB-D35](#XB-D35) to
 [XB-D38](#XB-D38) build it (an unmodified extension from git or npm, built on the host with an
@@ -28,7 +34,7 @@ were unreliable under that load; a figure from one run, or with wall time only, 
 appears. The research harness was not the build this design specifies, and
 [§5.2](#52-the-pipeline) names how. MEASURED 2026-10-06, building step 2 for a
 jail launch's pool: a warm build jail whose build line only writes a file took 1.2 to 1.3 s from its
-start line to its admit, two at once in a nested launch ([XB-D13](#XB-D13)). UNMEASURED: no real pi has loaded a tree built this way, and the maintainer's migration of his extensions remains. For the Podman next-launch mode, the 2026-10-08 source candidate passed the parent integration/runtime gate only on Linux, rootful, nested Podman: a detached advance made its build available only to a later fresh jail, and termination and kill cases fenced and recovered the real build workspace. Rootless Podman and native macOS runtime behavior remain UNMEASURED; Darwin evidence is static vet/compile only. This source-built slice 1 does not imply native/performance/migration slice 2. Independent review and the landing commit remain outstanding. The Apple Container check-only path, the host path, and patched-fork/captured-program timing are still unbuilt. An npm source was built in the sealed jail
+start line to its admit, two at once in a nested launch ([XB-D13](#XB-D13)). UNMEASURED: no real pi has loaded a tree built this way, and the maintainer's migration of his extensions remains. For the Podman next-launch mode, the 2026-10-08 source candidate passed the parent integration/runtime gate only on Linux, rootful, nested Podman: a detached advance made its build available only to a later fresh jail, and termination and kill cases fenced and recovered the real build workspace. Rootless Podman and native macOS runtime behavior remain UNMEASURED; Darwin evidence is static vet/compile only. This source-built slice 1 does not imply native/performance/migration slice 2. Independent source/documentation review is complete and the source slice is in main. The Apple Container check-only path, the host path, and patched-fork/captured-program timing are still unbuilt. An npm source was built in the sealed jail
 and its tree mounted read-only by the integration cell of 2026-10-05, and a build jail's start was
 timed against a warm launch ([XB-D40](#XB-D40)).
 
@@ -55,10 +61,9 @@ and, under [OQ-6](pi-git-extension-caching.md#OQ-6)'s leaning, the held in-jail 
 **Start at [§2](#2-the-verdict-and-five-principles)**: the comparison that decides [OQ-6](pi-git-extension-caching.md#OQ-6). Everything
 after it holds under either answer unless it says otherwise.
 
-**Needs your ruling:** [OQ-6](pi-git-extension-caching.md#OQ-6) (c) and [OQ-XB1](#OQ-XB1) (A, widened
-to captures) were ruled 2026-10-05, and [XB-D14](#XB-D14) confirmed. [`pi-extension-lifecycle.md` OQ-4](pi-extension-lifecycle.md#OQ-4)
-rides with [OQ-6](pi-git-extension-caching.md#OQ-6) ([§4.4](#44-entries-no-pack-declares)). [XB-D27](#XB-D27), the reading of
-your update-timing ruling against [OQ-2](pi-git-extension-caching.md#OQ-2), was confirmed the same day.
+**Needs your ruling:** None in this document. The ordinary warm-program capture policy remains
+[OQ-PD23](program-delivery.md#oq-pd23). The extension/capture timing rulings and build evidence
+remain in this document's ledger.
 
 **Reads with:**
 - [`pi-git-extension-caching.md`](pi-git-extension-caching.md): the held store, its rulings

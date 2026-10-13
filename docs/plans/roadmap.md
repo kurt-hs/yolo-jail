@@ -32,6 +32,13 @@ candidate state, acceptance gaps and verification; a place here does not make it
    — the reported late Bedrock selection reaches a restart prompt; settle additive activation
    before treating restart as the remedy for an already-authorized missing daemon.
 
+2. [Finish ongoing launch preparation and explicit update-and-wait](../design/launch-update-preparation.md)
+   — reuse the admitted-build pipeline before optimizing isolated waits; its
+   [tests-first source handoff](../design/launch-update-preparation-plan.md) starts with ongoing
+   tree scheduling, then freshness and adapters; only ordinary warm CLI/MCP replacement stays in the
+   [capture sketch](../design/launch-program-capture-plan.md).
+   [Source research](../research/launch-preparation.md) bounds current timing claims.
+
 Pi's profile-set extension is built, children of pi-subagents included; what it cannot close is
 listed as accepted limits in
 [its design's §3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close),
@@ -71,9 +78,10 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    verdict block](../reference/report-tiers.md#the-verdict-block)'s "Only the dry run has a footer"; this entry is the
    work's only home. Rule [the dry run's exit](../reference/report-tiers.md#OQ-RO8) with it: the code exits 1 where
    [OQ-RO5](../reference/report-tiers.md#why-its-this-way) says 0, and the launch gate reads that exit.
-6. [Build the background update mode for what yolo builds](../design/pi-extension-store-builds.md#XB-D42) — pi
-   extensions are host builds made in one pool per launch, and `agent_updates: "next-launch"` exists; the background
-   advance itself remains, behind a seam that does not read that value yet.
+6. [Complete the remaining build-update slices](../design/pi-extension-store-builds.md), through
+   [ongoing preparation](../design/launch-update-preparation.md) — the Podman built-tree detached
+   slice is in main; host delivery/reporting, Apple Container check-only, fork/capture timing and
+   native/performance acceptance retain their scope rather than disappearing into a tree-only fix.
 7. [Rule how the Claude footer moves into a Claude Code plugin](../research/claude-code-extensions-footer.md), with [how
    yolo manages Claude Code mods](../research/claude-code-mods-management.md) — the plugin ends a process per refresh,
    and the mods rulings rest on that route.
