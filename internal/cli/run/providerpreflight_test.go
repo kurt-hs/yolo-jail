@@ -151,7 +151,7 @@ func TestCheckProviderCredentialsFollowCatalogMembership(t *testing.T) {
 	// Selected AND dropped: the selection refuses, naming the null, and not as a credential.
 	o.UseProfiles = map[string]string{"acme": "zai"}
 	if _, err := o.composePackChannel(cfg, packs, emptyEnv()); err == nil ||
-		!strings.Contains(err.Error(), "a null `providers.zai` entry in your config removes it") ||
+		!strings.Contains(err.Error(), "Remove the `providers.zai` null entry that removes it") ||
 		strings.Contains(err.Error(), "ZAI_API_KEY") {
 		t.Errorf("a selection of a provider the user dropped must refuse naming the null, not a key: %v", err)
 	}
