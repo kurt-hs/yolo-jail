@@ -229,9 +229,8 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 	}
 }
 
-// ON APPLE CONTAINER the next-launch mode is the at-launch wait (XB-D21), said: the key is checked and
-// built in front and no background advance starts. Red if the runtime gate is dropped.
-func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
+// Apple Container registers check-only preparation and preserves the admitted tree.
+func TestOnAppleContainerANextLaunchKeyRegistersChecks(t *testing.T) {
 	pf := newPoolFixture(t)
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if first[poolKeyA].Dir == "" {
@@ -242,14 +241,14 @@ func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
 	pf.now = pf.now.Add(2 * time.Hour)
 	sp := stubSpawn(t)
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
-	if sp.count() != 0 {
-		t.Errorf("Apple Container started a background advance:\n%s", out)
+	if sp.count() != 1 {
+		t.Errorf("Apple Container did not register a check-only worker:\n%s", out)
 	}
-	if got[poolKeyA].Entry == first[poolKeyA].Entry {
-		t.Errorf("the key was not updated at the launch:\n%s", out)
+	if got[poolKeyA].Entry != first[poolKeyA].Entry {
+		t.Errorf("the key was updated in foreground:\n%s", out)
 	}
-	if !strings.Contains(out, "on Apple Container this yolo runs no background advance — it updates at this launch") {
-		t.Errorf("the demotion is not said:\n%s", out)
+	if !strings.Contains(out, "ongoing next-launch preparation registered") {
+		t.Errorf("check registration is not said:\n%s", out)
 	}
 }
 
@@ -448,22 +447,20 @@ func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *te
 	}
 }
 
-// ON APPLE CONTAINER the next-launch mode is the at-launch wait (XB-D21, XB-D61), said: the fork key
-// is checked and built in front and no background advance starts. Red if the runtime gate is
-// dropped.
-func TestOnAppleContainerANextLaunchForkUpdatesAtTheLaunch(t *testing.T) {
+// Apple Container registers patched programs without starting a foreground update.
+func TestOnAppleContainerANextLaunchForkRegistersChecks(t *testing.T) {
 	fx, good := forkWithAGoodBuild(t)
 	sp := stubSpawn(t)
 	req := forkRequest(t, fx, "container")
 	var out syncBuffer
 	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
-	if sp.count() != 0 {
-		t.Errorf("Apple Container started a background advance:\n%s", out.String())
+	if sp.count() != 1 {
+		t.Errorf("Apple Container did not register a check-only worker:\n%s", out.String())
 	}
-	if got["tool"].Key == good {
-		t.Errorf("the fork was not updated at the launch:\n%s", out.String())
+	if got["tool"].Key != good {
+		t.Errorf("the fork was updated in foreground:\n%s", out.String())
 	}
-	if !strings.Contains(out.String(), "on Apple Container this yolo runs no background advance — it updates at this launch") {
-		t.Errorf("the demotion is not said:\n%s", out.String())
+	if !strings.Contains(out.String(), "ongoing next-launch preparation registered") {
+		t.Errorf("check registration is not said:\n%s", out.String())
 	}
 }

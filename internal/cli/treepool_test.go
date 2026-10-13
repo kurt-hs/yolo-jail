@@ -173,6 +173,9 @@ func TestALaunchsExtensionsBuildAtOnceAndPrintInOrder(t *testing.T) {
 // ON A BACKEND THAT CANNOT START TWO BUILD JAILS SIDE BY SIDE (Apple Container), one at a time.
 func TestOnAppleContainerOneBuildRunsAtATime(t *testing.T) {
 	pf := newPoolFixture(t)
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
 	if got[poolKeyA].Dir == "" || got[poolKeyB].Dir == "" {
 		t.Fatalf("delivered %+v\n%s", got, out)

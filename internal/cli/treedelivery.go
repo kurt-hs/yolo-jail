@@ -159,7 +159,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it}
 	nextLaunch := false
 	if req.Build && treeUpdateTiming(f) == timingNextLaunch {
-		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
+		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			// THIS RUNTIME RUNS NO BACKGROUND ADVANCE (Apple Container, macos-user): the key updates at
 			// this launch, as XB-D21 has the next-launch option do there whenever a build happens.
@@ -178,6 +178,11 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			case nextLaunch:
 				var a *advance
 				if r, a = servingTreeOf(f, o, "", true); r.delivery.Key != "" {
+					if r.delivery.PatchFailure == nil && req.Runtime == "container" && a.pendingBuild() {
+						r = treeAdvance(f, o)
+						later = true
+						break
+					}
 					if r.delivery.PatchFailure == nil {
 						// THE SPAWN CONDITION (XB-D19): its check due, a candidate pending, or the last
 						// background advance unfinished; a key with nothing to do starts none.
@@ -187,6 +192,14 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 				}
 				if r.delivery.PatchFailure != nil {
 					return run.TreeDelivery{Reason: r.delivery.Reason, PatchFailure: r.delivery.PatchFailure}, false
+				}
+				if f.Fallback != "" && req.Runtime == "container" {
+					if a != nil && a.pendingBuild() {
+						r = treeAdvance(f, o)
+						later = true
+						break
+					}
+					return run.TreeDelivery{Reason: f.Label() + " has no build yet; check-only preparation leaves a candidate for a fresh launch"}, true
 				}
 				if f.Fallback != "" {
 					return run.TreeDelivery{Reason: f.Label() + " has no build on this machine yet, and updates for " +
@@ -264,7 +277,7 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
 	nextLaunch := false
 	if forkUpdateTiming(f) == timingNextLaunch {
-		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
+		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
 				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
@@ -276,6 +289,9 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 	}
 	r, a := servingPatchedFork(f, o)
 	if r.delivery.Key != "" {
+		if r.delivery.PatchFailure == nil && req.Runtime == "container" && a.pendingBuild() {
+			return advancePatchedFork(f, o).forkDelivery(), true
+		}
 		if r.delivery.PatchFailure == nil {
 			// THE SPAWN CONDITION (XB-D19): its check due, a candidate pending, or the last background
 			// advance unfinished; a key with nothing to do starts none.
