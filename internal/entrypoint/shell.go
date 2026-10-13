@@ -386,6 +386,7 @@ func mcpPresetNpmPackages(e *Env) string {
 
 // bootstrapTemplate is the body of the bootstrap script.
 const bootstrapTemplate = `#!/bin/bash
+` + programPhasePerfShellFn + `
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export NPM_CONFIG_CACHE="${NPM_CONFIG_CACHE:-$HOME/.cache/npm}"
 export GOPATH="${GOPATH:-$HOME/go}"
@@ -592,7 +593,8 @@ _yolo_ready_error() {
 # _yolo_ready BIN WHO runs BIN's launcher in install-only mode, its output shown as it comes,
 # and records WHO and the install's error when it leaves nothing to run.
 _yolo_ready() {
-    local _bin="$1" _who="$2" _out _rc=0 _err="" _line
+    local _bin="$1" _who="$2" _out _rc=0 _err="" _line _phase_start=$SECONDS
+    _yolo_phase_perf readiness "$_bin" start foreground 0 pending
     _out=$(mktemp "${TMPDIR:-/tmp}/yolo-ready.XXXXXX" 2>/dev/null) || _out=""
     if [ -n "$_out" ]; then
         YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null 2>&1 | tee "$_out" >&2
@@ -600,6 +602,7 @@ _yolo_ready() {
     else
         YOLO_INSTALL_ONLY=1 "$_YOLO_LAUNCH_DIR/$_bin" </dev/null >&2 2>&1 || _rc=$?
     fi
+    _yolo_phase_perf readiness "$_bin" end foreground "$((SECONDS - _phase_start))" "$_rc"
     if [ "$_rc" = 0 ]; then
         if [ -n "$_out" ]; then rm -f "$_out"; fi
         return 0

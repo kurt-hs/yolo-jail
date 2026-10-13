@@ -44,6 +44,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -390,6 +391,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		workspace, rt, cfg, act = req.Trees.Workspace, req.Trees.Runtime, req.Trees.Progress, req.Trees.Interrupt
 	}
 	pool := newBuildPool(stream, cfg, color, workspace, rt, req.MaxChecks, req.MaxBuilds, act)
+	pool.report.perf = req.Perf
 	var mu sync.Mutex
 	forks := map[string]entrypoint.ForkDelivery{}
 	trees := map[string]run.TreeDelivery{}
@@ -443,8 +445,14 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		platform = tr.Platform
 		selected = append(selected, tr.Trees...)
 	}
-	if err := registerTreePreparation(selected, run.TreeBuildRequest{Runtime: rt, Platform: platform}, stream); err != nil {
-		fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
+	if len(selected) > 0 && !config.InJail() && run.BackgroundBuildsOn(rt) {
+		span := pool.report.preparationSpan("preparation.registration")
+		err := registerTreePreparation(selected, run.TreeBuildRequest{Runtime: rt, Platform: platform}, stream)
+		pool.report.preparationOutcome("preparation.registration", "selected trees", err)
+		span.End()
+		if err != nil {
+			fmt.Fprintf(stream, "Built-artifact preparation could not start: %v — run `yolo pack prepare start` on the host after repairing the reported cause\n", err)
+		}
 	}
 	// Program registration is supplied by the program adapter. Until that caller
 	// is integrated, preserve its established one-shot next-launch progress.

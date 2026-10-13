@@ -40,7 +40,7 @@ type handoffResult struct {
 // briefing-declaring pack or no packs at all, and runs the real refreshJailBriefings over
 // it. Going through the run pipeline's own function — not readHandoff, not
 // BriefingContent — is the whole point: this is the call site.
-func runRefreshWithHandoff(t *testing.T, handoff string, withBriefingPack bool) handoffResult {
+func runRefreshWithHandoff(t *testing.T, handoff string, withBriefingPack bool, blockConsume ...bool) handoffResult {
 	t.Helper()
 	home := packHome(t)
 	ws := t.TempDir()
@@ -50,6 +50,12 @@ func runRefreshWithHandoff(t *testing.T, handoff string, withBriefingPack bool) 
 	}
 	if handoff != "" {
 		if err := os.WriteFile(filepath.Join(yoloDir, handoffPointer), []byte(handoff), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if len(blockConsume) > 0 && blockConsume[0] {
+		if err := os.MkdirAll(filepath.Join(yoloDir, handoffConsumed), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -260,20 +266,17 @@ func assertPhaseEvents(t *testing.T, events []perf.Event, name string, want bool
 }
 
 func TestHandoffConsumeReportsRetainedPointerOnRenameFailure(t *testing.T) {
-	var events []perf.Event
-	ws := t.TempDir()
-	dir := filepath.Join(ws, ".yolo")
-	if err := os.MkdirAll(filepath.Join(dir, handoffConsumed), 0o755); err != nil {
-		t.Fatal(err)
+	got := runRefreshWithHandoff(t, "task retained after rename failure", true, true)
+	if !strings.Contains(got.briefing, "task retained after rename failure") {
+		t.Fatal("refresh did not deliver the handoff before attempting consumption")
 	}
-	if err := os.WriteFile(filepath.Join(dir, handoffPointer), []byte("task"), 0o644); err != nil {
-		t.Fatal(err)
+	if !got.pointerSurvives {
+		t.Fatal("failed rename lost pointer")
 	}
-	o := Options{Workspace: ws, Stderr: discardBuf(), Perf: perf.New(nil, func(e perf.Event) { events = append(events, e) })}
-	o.noteHandoffConsumed()
-	if _, err := os.Stat(filepath.Join(dir, handoffPointer)); err != nil {
-		t.Fatalf("failed rename lost pointer: %v", err)
+	if strings.Contains(got.stderr, "surfaced in this jail's briefing and consumed") {
+		t.Fatal("failed rename announced success")
 	}
+	events := got.events
 	assertPhaseEvents(t, events, "launch.handoff_consume", true)
 	for _, e := range events {
 		if e.Kind == perf.KindNote && e.Name == "launch.handoff_consume" && e.Detail == "pointer retained (rename did not succeed)" {
