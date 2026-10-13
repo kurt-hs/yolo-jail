@@ -31,8 +31,8 @@ No production enqueue, no write execution, no notification, no answer ping, no n
 ## Completed and deferred
 
 The host store and CLI dispatch are built. Allow once narrows to the shorter of 15 minutes and
-the resolved ceiling (implementation interpretation of §5.7 and §7). No production broker
+the resolved ceiling (implementation interpretation of [§5.7](boundary-broker.md#57-permission-sets) and [§7](boundary-broker.md#7-grants-and-the-request-store)). No production broker
 caller exists. Before adding one, policy and scope must be revalidated at use; scope-file
 mutations must join the store lock; teardown and audit events must be wired. Bounded wait,
-status and notification integration remain unbuilt. This slice does not solve OQ-BB10 or build
+status and notification integration remain unbuilt. This slice does not solve [OQ-BB10](boundary-broker.md#OQ-BB10) or build
 `yolo notify`, and grants stored here cannot make a broker write run.

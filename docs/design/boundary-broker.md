@@ -1692,7 +1692,7 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
    ([`workspace-widening.md`](workspace-widening.md)). Verified by unit tests through each call
    site and by `integration/githubbroker_test.go`'s
    `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace`, a nested podman jail
-   against a fake host `gh`, on Linux only. The host store and `yolo approve` are built as the independent slice described in §7,
+   against a fake host `gh`, on Linux only. The host store and `yolo approve` are built as the independent slice described in [§7](#7-grants-and-the-request-store),
    without production enqueue or write execution. The remaining integration is not built, and two parts of it
    wait on more than this step: the answer's ping on the doorbell above, which is not built, and
    the no-notifier terminal notice on [OQ-BB10](#OQ-BB10), which is not ruled. The widening entry
