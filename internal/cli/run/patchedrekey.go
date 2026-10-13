@@ -54,14 +54,42 @@ func LoadPatchedRecord(packs *packsrc.Store, f packload.Fork, s *packsrc.Series)
 // lock, which it returns as it now stands. rec itself, unchanged, when there is nothing to re-key. A
 // record that cannot be written is re-keyed in what this returns all the same, so this reader does
 // not read the old digest as an edit, and the next reader tries the write again.
+func qualifiesLegacyGood(f packload.Fork, s *packsrc.Series, rec *packsrc.CheckRecord) bool {
+	return rec != nil && rec.Good != nil && s != nil && s.LegacyDigest != "" && s.LegacyDigest != s.Digest &&
+		rec.Good.Series == s.LegacyDigest && rec.Good.Recipe == PatchedRecipe(f, s.LegacyDigest)
+}
+
+// NormalizeLegacyPatchedRecord returns the qualifying legacy authority under the current key,
+// in memory only. No receipt, record or serving pointer is written; the input remains unchanged.
+func NormalizeLegacyPatchedRecord(f packload.Fork, s *packsrc.Series, rec *packsrc.CheckRecord) *packsrc.CheckRecord {
+	if !qualifiesLegacyGood(f, s, rec) {
+		return rec
+	}
+	c := *rec
+	g := *rec.Good
+	c.Good = &g
+	c.Outcomes = append([]packsrc.EntryOutcome(nil), rec.Outcomes...)
+	if rec.PatchFailure != nil {
+		pf := *rec.PatchFailure
+		c.PatchFailure = &pf
+	}
+	if rec.ApplyErr != nil {
+		a := *rec.ApplyErr
+		c.ApplyErr = &a
+		if a.Legacy != nil {
+			legacy := *a.Legacy
+			a.Legacy = &legacy
+		}
+	}
+	c.RekeySeries(s.LegacyDigest, PatchedRecipe(f, s.LegacyDigest), s.Digest, PatchedRecipe(f, s.Digest))
+	return &c
+}
+
 func RekeyLegacyGood(packs *packsrc.Store, f packload.Fork, s *packsrc.Series, rec *packsrc.CheckRecord) *packsrc.CheckRecord {
-	if rec == nil || rec.Good == nil || s == nil || s.LegacyDigest == "" || s.LegacyDigest == s.Digest {
+	if !qualifiesLegacyGood(f, s, rec) {
 		return rec
 	}
 	oldRecipe := PatchedRecipe(f, s.LegacyDigest)
-	if rec.Good.Series != s.LegacyDigest || rec.Good.Recipe != oldRecipe {
-		return rec
-	}
 	newRecipe := PatchedRecipe(f, s.Digest)
 	var out *packsrc.CheckRecord
 	err := packs.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {

@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,10 +30,26 @@ func TestPreparationIdleRefreshCancellationDoesNotWaitForLegacyGoodRecordLock(t 
 	ctx, cancel := context.WithCancel(context.Background())
 	ticks := make(chan time.Time)
 	done := make(chan error, 1)
+	inspected := make(chan error, 1)
+	previousObserver := preparationRefreshInspected
+	preparationRefreshInspected = func(err error) { inspected <- err; <-ctx.Done() }
+	t.Cleanup(func() { preparationRefreshInspected = previousObserver })
 	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
 	ticks <- pf.now
-	// Let the synchronous idle refresh reach its record inspection before cancellation.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case err := <-inspected:
+		if !errors.Is(err, packsrc.ErrLockHeld) {
+			cancel()
+			release()
+			<-done
+			t.Fatalf("refresh inspection = %v, want actual held-lock authority", err)
+		}
+	case <-time.After(time.Second):
+		cancel()
+		release()
+		<-done
+		t.Fatal("production refresh did not inspect the held check record")
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -205,4 +224,86 @@ func preparationRecordFor(key, runtime, platform string) (preparationRecord, err
 		return preparationRecord{}, errors.New("preparation subscription missing")
 	}
 	return state.Subscriptions[idx], nil
+}
+
+// Legacy authority must travel through the production refresh and admission gates without writes.
+func TestPreparationLegacyFailureAuthority(t *testing.T) {
+	for _, typed := range []bool{false, true} {
+		for _, qualifies := range []bool{true, false} {
+			t.Run(fmt.Sprintf("typed=%t/qualifies=%t", typed, qualifies), func(t *testing.T) {
+				_, f, s, _ := legacyPreparationFixture(t)
+				store := patchedForkStore()
+				inputs, _, _, err := f.CheckWant(s).Inputs()
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = store.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, e error, _ func() error) (bool, error) {
+					if e != nil {
+						return false, e
+					}
+					if !qualifies {
+						r.Good.Recipe = "different-recipe"
+					}
+					if typed {
+						r.PatchFailure = &packsrc.PatchFailure{Owner: r.Owner, Inputs: inputs, Series: s.LegacyDigest, Kind: "base", Target: packsrc.ListEntry{Commit: inputs.Base}}
+					} else {
+						r.Read = inputs
+						r.Check.List = []packsrc.ListEntry{{Commit: "selected-conflict"}}
+						r.Check.Seq = r.Seq
+						r.Outcomes = append(r.Outcomes, packsrc.EntryOutcome{Commit: "selected-conflict", Kind: packsrc.OutcomeConflict, Series: s.LegacyDigest, Member: "patch", Paths: []string{"f.txt"}})
+					}
+					return true, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				before, err := os.ReadFile(store.CheckRecordPath(f.Key()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				record, err := readPreparationSnapshot(f.Key())
+				if err != nil {
+					t.Fatal(err)
+				}
+				committed := false
+				err = preparationAdmissionGuardUnder(context.Background(), f.Key(), "podman", patchedTestPlatform, record.Generation)(func() error { committed = true; return nil })
+				if qualifies && (!errors.Is(err, errPreparationAdmissionStale) || committed) {
+					t.Fatalf("legacy failure admitted: committed=%t err=%v", committed, err)
+				}
+				if !qualifies && (err != nil || !committed) {
+					t.Fatalf("unrelated recipe rejected: committed=%t err=%v", committed, err)
+				}
+				id := f.Key() + "\x00podman\x00" + patchedTestPlatform
+				subscription, err := preparationRecordFor(f.Key(), "podman", patchedTestPlatform)
+				if err != nil {
+					t.Fatal(err)
+				}
+				refreshPreparationSubscriptionsUnder(context.Background(), []preparationRecord{subscription}, map[string]packload.Fork{id: f})
+				refreshed, err := preparationRecordFor(f.Key(), "podman", patchedTestPlatform)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if qualifies && (refreshed.Active || refreshed.Phase != "failed" || refreshed.Reason == "") {
+					t.Fatalf("legacy authority cleared by refresh: %+v", refreshed)
+				}
+				if !qualifies && !refreshed.Active {
+					t.Fatalf("unrelated recipe acquired failure authority: %+v", refreshed)
+				}
+				after, err := os.ReadFile(store.CheckRecordPath(f.Key()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(before, after) {
+					t.Fatal("inspection persistently migrated the record")
+				}
+				final, err := preparationRecordFor(f.Key(), "podman", patchedTestPlatform)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if final.ServingEntry != record.ServingEntry {
+					t.Fatal("inspection published a candidate pointer")
+				}
+			})
+		}
+	}
 }

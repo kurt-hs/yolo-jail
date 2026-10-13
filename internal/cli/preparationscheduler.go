@@ -451,6 +451,9 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				return configErr
 			}
 			state = refreshPreparationSubscriptionsUnder(ctx, state, current)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			eligible := false
 			for _, record := range state {
 				eligible = eligible || record.Active
@@ -586,6 +589,9 @@ func refreshPreparationSubscriptions(records []preparationRecord, current map[st
 	return refreshPreparationSubscriptionsUnder(context.Background(), records, current)
 }
 
+// preparationRefreshInspected observes completed authority inspections; the default has no side effects.
+var preparationRefreshInspected = func(error) {}
+
 func refreshPreparationSubscriptionsUnder(ctx context.Context, records []preparationRecord, current map[string]packload.Fork) []preparationRecord {
 	for _, old := range records {
 		id := old.Key + "\x00" + old.Runtime + "\x00" + old.Platform
@@ -594,6 +600,7 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 		var inspectErr error
 		if ok {
 			failure, inspectErr = preparationPatchFailure(ctx, f)
+			preparationRefreshInspected(inspectErr)
 		}
 		_ = preparationUpdateRecord(old.Key, old.Runtime, old.Platform, func(r *preparationRecord) {
 			if inspectErr != nil {

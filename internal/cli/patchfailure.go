@@ -62,6 +62,7 @@ func preparationPatchFailure(ctx context.Context, f packload.Fork) (*packsrc.Pat
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	record = runpkg.NormalizeLegacyPatchedRecord(f, series, record)
 	return record.CurrentPatchFailure(inputs, series.Digest), nil
 }
 
