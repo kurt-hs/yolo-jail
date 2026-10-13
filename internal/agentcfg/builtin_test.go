@@ -124,6 +124,61 @@ func TestBuiltinClaudeConfigSurface(t *testing.T) {
 	}
 }
 
+// TestBuiltinMuseCodeTrustSurface asserts muse-code/trust is in the manifest as a stateful
+// surface at Muse's user-global store, with the workspace trust entry a USER-OVERRIDABLE
+// DEFAULT under the ${workspace} placeholder — the direct analogue of claude/config's
+// hasTrustDialogAccepted.
+//
+// The shape is load-bearing and each part is pinned here: Muse 1.4.7 refuses `{"trusted":true}`
+// (`missing field 'decision'`), a string value, an unknown decision variant and a store without
+// the top-level `schema_version`, so both keys must be present and `decision` must be the
+// `trusted` variant. `defaults` and NOT `managed` is the honest match for "trust by default":
+// a `managed` entry would overwrite a user who has explicitly UNtrusted the workspace, while a
+// `defaults` fill never touches a key the file already holds.
+//
+// The mode is `stateful` rather than claude's `rmw` for a measured reason: an `rmw` surface
+// writes a whole manifest number through jsonx as `1.0`, and Muse REJECTS a float version
+// (`invalid type: floating point `1.0`, expected u32`); the stateful compose path normalizes it
+// to `1`. The entrypoint render test (muse_code_test.go) pins the accepted bytes.
+func TestBuiltinMuseCodeTrustSurface(t *testing.T) {
+	m := packManifest(t)
+	s, ok := m.Lookup("muse", "trust")
+	if !ok {
+		t.Fatal("builtin manifest missing muse/trust — Muse's trust dialog would park every launch")
+	}
+	if s.Codec != "json" {
+		t.Errorf("muse/trust codec = %q, want json", s.Codec)
+	}
+	if s.Path != "~/.config/muse/trust.json" {
+		t.Errorf("muse/trust path = %q, want ~/.config/muse/trust.json", s.Path)
+	}
+	if s.ResolvedMode() != manifest.ModeStateful {
+		t.Errorf("muse/trust mode = %q, want stateful: an rmw surface renders the numeric "+
+			"schema_version as `1.0`, which Muse rejects", s.ResolvedMode())
+	}
+	if s.DefaultsMap()["schema_version"] != float64(1) {
+		t.Errorf("muse/trust defaults schema_version = %v, want 1 (Muse refuses to start without it)",
+			s.DefaultsMap()["schema_version"])
+	}
+	proj, ok := s.DefaultsMap()["projects"].(map[string]any)
+	if !ok {
+		t.Fatalf("muse/trust defaults projects not an object: %T", s.DefaultsMap()["projects"])
+	}
+	entry, ok := proj[WorkspacePlaceholder].(map[string]any)
+	if !ok {
+		t.Fatalf("muse/trust defaults projects[%s] not an object: %T",
+			WorkspacePlaceholder, proj[WorkspacePlaceholder])
+	}
+	if entry["decision"] != "trusted" {
+		t.Errorf("muse/trust defaults projects[%s].decision = %v, want trusted",
+			WorkspacePlaceholder, entry["decision"])
+	}
+	// A `managed` projects entry would defeat a user's explicit untrust.
+	if _, present := s.ManagedMap()["projects"]; present {
+		t.Error("muse/trust projects must be a DEFAULT, not managed: managed would overwrite a user's untrust")
+	}
+}
+
 // TestBuiltinCopilotConfigSurface asserts copilot/config (config.json) is in the
 // manifest with the json codec at the right path, and — the §7 subtlety — that
 // yolo:true is a USER-OVERRIDABLE DEFAULT (the bespoke write-if-absent), not a

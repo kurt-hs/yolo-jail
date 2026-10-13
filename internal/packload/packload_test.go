@@ -58,10 +58,13 @@ func TestEmbeddedPackSurfacesDecode(t *testing.T) {
 	// list its launcher writes codex's model menu from: the same doc's MM-D9 and MM-D22;
 	// muse-code's settings is the ~/.config/muse/settings.json surface Meta's Muse Code CLI
 	// reads, whose two managed `schema_version` keys the CLI refuses to start without —
-	// packs/muse-code comments the pair at the declaration site).
+	// packs/muse-code comments the pair at the declaration site.
+	// muse-code's trust is the ~/.config/muse/trust.json store whose `${workspace}` entry
+	// pre-answers the interactive "Do you trust this workspace?" dialog — packs/muse-code
+	// comments the proven shape at the declaration site.
 	// A drop here means a pack lost a surface in translation.
-	if total != 22 {
-		t.Errorf("official packs declare %d surfaces, want 22", total)
+	if total != 23 {
+		t.Errorf("official packs declare %d surfaces, want 23", total)
 	}
 }
 

@@ -90,6 +90,67 @@
       ],
       "kind": "config"
     },
+    // THE TRUST PRE-ANSWER — the file that stops Muse's "Do you trust this workspace?" dialog
+    // from parking every launch. Muse asks that dialog BEFORE the model runs and before any
+    // project-local skills, rules, hooks or plugin config load, so an unanswered one is not a
+    // rough edge: the user never reaches a running agent. The answer persists in a USER-GLOBAL
+    // store at `$XDG_CONFIG_HOME/muse/trust.json` (default `~/.config/muse/trust.json`; yolo
+    // never sets XDG_CONFIG_HOME) keyed by the CANONICAL absolute project root — inside a jail
+    // that root is always literally `/workspace`, so one `${workspace}` entry covers every jail.
+    //
+    // PROVEN AGAINST THE BINARY (Muse Code 1.4.7-R6101.1), both directions. With no file, the
+    // interactive TUI opens on `Do you trust this workspace? / Workspace: /workspace / 1 Trust
+    // and continue / 2 Quit` and `muse exec` prints `muse: Agent delegation: auto unavailable:
+    // workspace is untrusted.`; with `{"schema_version":1,"projects":{"/workspace":{"decision":
+    // "trusted"}}}` on disk the TUI proceeds and `muse exec` prints `muse: workspace trust:
+    // trusted source=user-config`. The exact shape is load-bearing: a string value is `invalid
+    // type: string "trusted", expected struct ProjectTrustEntry`; `{"trusted":true}` is `missing
+    // field 'decision'`; a bad decision is `unknown variant 'bogus', expected 'trusted' or
+    // 'untrusted'`; a wrong version is `unsupported trust store schema version 2`; omitting it is
+    // `missing field 'schema_version'`. Extra keys on an entry are tolerated.
+    //
+    // `defaults` AND NOT `managed`, matching packs/claude's `hasTrustDialogAccepted` — the
+    // honest match for "trust by default". A `defaults` fill never overwrites a key the file
+    // already holds, so a user who has explicitly UNtrusted the workspace (or edited the store
+    // themselves) keeps their value.
+    //
+    // `stateful`, AND THE MODE IS DELIBERATE RATHER THAN COPIED FROM claude. claude's trust key
+    // rides on `~/.claude.json`, which is `rmw`; this surface cannot be. `rmw` writes through
+    // jsonx's `DumpsIndent` over the DECODED manifest value, and a whole number read out of a
+    // manifest is a `float64`, which that encoder renders `1.0` — and Muse REJECTS a float
+    // version: `malformed trust store … invalid type: floating point `1.0`, expected u32`,
+    // exit 1, worse than the dialog. The stateful compose path normalizes the number, so
+    // `schema_version` lands as `1`. `stateful` is also the right semantics here: Muse OWNS
+    // this file and rewrites it when trust changes, and a stateful surface captures those
+    // in-jail edits and folds them above `defaults` instead of losing them.
+    //
+    // This file is the ONLY trust persistence — Muse has no trust subcommand,
+    // `~/.config/muse/settings.json` carries no trust key, and the documented
+    // `--trust-workspace` flag "does not save trust".
+    //
+    // `schema_version` is a `defaults` key for the same reason: Muse refuses to start without it,
+    // but a version the user's own store already carries (written by a newer Muse) must not be
+    // overwritten by yolo's 1.
+    {
+      "config": [
+        {
+          "agent": "muse",
+          "codec": "json",
+          "defaults": {
+            "projects": {
+              "${workspace}": {
+                "decision": "trusted"
+              }
+            },
+            "schema_version": 1
+          },
+          "mode": "stateful",
+          "name": "trust",
+          "path": "~/.config/muse/trust.json"
+        }
+      ],
+      "kind": "config"
+    },
     // WHERE USER-LEVEL SKILLS GO. Meta documents the account-wide skills directory as
     // `$XDG_CONFIG_HOME/muse/skills` — with the default XDG_CONFIG_HOME that is
     // `~/.config/muse/skills` (https://dev.meta.ai/docs/muse-code/extending: "your
@@ -125,6 +186,56 @@
       "agent": "muse",
       "into": ".config/muse/AGENTS.md",
       "kind": "briefing"
+    },
+    // AUTONOMY — NO APPROVAL PROMPTS IN A JAIL, PROMPTS AT THE HOST. This is the second half
+    // of "the agent does not start": the trust file above clears the workspace dialog, and this
+    // clears the tool-approval prompts that otherwise stall the first command. The two postures
+    // are the §4.2 notch pair — the confinement notch's AgentAutonomy bit selects `autonomous`
+    // at jail/guest/preview and `guarded` at the host (render.ProfileFor).
+    //
+    // THE FLAGS ARE THE APPROVAL/SANDBOX AXES ONLY, and trust is left to the persisted file
+    // above. `--disable-approval` and `--disable-sandbox` are read off `muse --help` and are
+    // exactly `--yolo` minus its per-run trust: `--yolo` is documented "Disable approval and
+    // sandboxing and trust this workspace for this run", so the two narrower flags do the same
+    // job on the RUN without touching trust. Trust belongs to the store, not to a per-run flag —
+    // `--trust-workspace` is documented "does not save trust" and is NOT proven to suppress the
+    // dialog, so it is deliberately not used.
+    //
+    // THE GUARDED POSTURE IS A FLAG, because Muse has NO settings key for approval or sandbox:
+    // `approval`, `approval_mode` and `sandbox` are each rejected as `unknown top-level member`
+    // (measured), and the one posture-shaped settings key — `permissions.default_profile` — is
+    // the key this pack's settings comment forbids putting in `managed`. So the guarded posture
+    // asserts `--approval-mode on-request`, the documented "ask before tool calls" mode, which
+    // is a real assertion rather than the autonomous flag's absence restated: it pins prompts
+    // ON at the host regardless of any `permissions.default_profile` the user has set. claude,
+    // codex and pi carry config keys in `guarded` because their autonomous postures write
+    // PERSISTENT keys; a launch flag has no persistence (it is composed per launch), so a flag
+    // is the whole of this posture — copilot's flag-only `--yolo` is the same shape, and it
+    // declares no guarded posture because it has nothing persistent to undo.
+    {
+      "autonomous": {
+        "launch": [
+          {
+            "bin": "muse",
+            "flags": [
+              "--disable-approval",
+              "--disable-sandbox"
+            ]
+          }
+        ]
+      },
+      "guarded": {
+        "launch": [
+          {
+            "bin": "muse",
+            "flags": [
+              "--approval-mode",
+              "on-request"
+            ]
+          }
+        ]
+      },
+      "kind": "autonomy"
     },
     // NO `state` CONTRIBUTION, AND THE OMISSION IS DELIBERATE. Muse Code keeps its login at
     // `~/.config/muse/auth.json`, so a state subtree looks like the way to persist it. It is
