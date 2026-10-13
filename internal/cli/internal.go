@@ -36,7 +36,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -61,6 +61,8 @@ func runInternal(args []string) int {
 		// rather than documented: it MOVES an installer's output out of the home it
 		// is pointed at, which is correct only inside a throwaway capture jail.
 		return runCaptureRun(args[1:])
+	case preparationSchedulerVerb:
+		return runPreparationSchedulerCommand()
 	case backgroundAdvanceVerb:
 		// The detached host process a fresh launch starts for the built trees that update for the
 		// next launch (backgroundadvance.go; docs/design/pi-extension-store-builds.md XB-D19). Hidden:

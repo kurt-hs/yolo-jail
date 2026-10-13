@@ -312,13 +312,21 @@ func TestAnUnknownRunningBuildJailKeepsItsStagingAndTheCandidatePending(t *testi
 		t.Errorf("the good build moved: %+v → %+v", before.Good, rec.Good)
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	_, launch := pf.launch(t, "podman", &run.ActInterrupt{})
 	if !strings.Contains(launch, "extension "+poolKeyA+": the background advance at ") || !strings.Contains(launch, " pending — ") {
 		t.Errorf("the next launch does not say the candidate was left pending:\n%s", launch)
 	}
-	if sp.count() != 1 || !slices.Contains(sp.keys(0), poolKeyA) {
-		t.Errorf("the pending candidate did not start another background advance: %v", sp.argvs)
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := false
+	for _, record := range state {
+		registered = registered || (record.Key == poolKeyA && record.Active)
+	}
+	if !registered {
+		t.Errorf("the pending candidate was not retained as an active scheduler subscription: %+v", state)
 	}
 }
 

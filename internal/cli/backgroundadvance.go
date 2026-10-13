@@ -1,28 +1,14 @@
 package cli
 
-// backgroundadvance.go is THE BACKGROUND ADVANCE (docs/design/pi-extension-store-builds.md §7.4,
-// XB-D19, XB-D20): `yolo internal background-advance`, the detached host process a fresh jail launch
-// starts for the built trees that update FOR THE NEXT LAUNCH (`agent_updates`' "next-launch"). The
-// launch hands each of those keys what it already has and leaves this process to check and build
-// them; what it builds lands for the next fresh launch through the check record's compare-and-swap,
-// and never touches a running jail's copy.
+// backgroundadvance.go retains THE ONE-SHOT BACKGROUND ADVANCE (docs/design/pi-extension-store-builds.md
+// §7.4, XB-D19 and XB-D20): `yolo internal background-advance` remains available, and the persistent
+// preparation scheduler invokes the same per-key advance pipeline on its timer. Launches register
+// selected next-launch trees after the build pool has delivered their current trees; they do not start
+// a one-shot process for each launch.
 //
-//   - DETACHED: a session of its own, a /dev/null stdin and its two streams on one log
-//     (backgroundAdvanceLog), so it neither holds a piped launch's output open nor dies with the
-//     terminal (notty.StartDetached). Normal priority: a deprioritized holder of a lock a launch at the
-//     default timing waits on would stretch that wait.
-//   - IT RESOLVES THE SELECTION ITSELF, from the user config, as `yolo capture <pack>/<name>` does
-//     (captureTree), never from the launch's staged tree, which goes when the jail stops. A key it
-//     cannot find there gets the outcome "unresolved", which the next launch says.
-//   - IT NEVER WAITS FOR A LOCK (§6.2 rule 5): a key whose background lock another advance holds is
-//     skipped, and so is one whose check record, mirror or build lock is held (advanceOptions.
-//     background); only a completed build's settle record write waits (rule 1).
-//   - A SIGTERM OR SIGHUP — or a SIGINT, should one reach it — cancels every key's check and build:
-//     each build child's process group is told and then killed (forkbuildchild.go), and each build
-//     jail is removed by name (advance.removeBuildJailOf). It never uses run.InterruptScope, which
-//     re-raises the signal it caught.
-//   - EACH KEY'S OUTCOME is a record under paths.BackgroundAdvanceDir, which the next fresh launch
-//     reads and claims, so one launch says it (noteBackgroundOutcome).
+// The advance resolves user-configured trees, never staged paths; skips busy keys rather than waiting;
+// settles built output through check-record compare-and-swap; and cancels build children and named build
+// jails when its owning scheduler is stopped. Outcomes remain in BackgroundAdvanceDir for the next launch.
 
 import (
 	"context"
@@ -242,9 +228,9 @@ func (a *advance) removeBuildJailOf(staging string) {
 }
 
 // backgroundTreeAdvance starts the background advance of the keys a launch handed what it had
-// (XB-D19), and says so at once, naming the keys and the log (XB-D20). The keys are the built trees'
-// and, since XB-D28, the patched forks' too — the name says tree, the mode covers every key. A key
-// another background advance runs right now is left to it.
+// (XB-D19), and says so at once, naming the keys and the log (XB-D20). The keys are patched forks;
+// selected source trees use the persistent preparation scheduler instead. A key another background
+// advance runs right now is left to it.
 var backgroundTreeAdvance = func(keys []packload.Fork, rt, platform string, errw io.Writer, color bool) {
 	pr := richtext.Printer{W: errw, Color: color}
 	var want, labels []string
@@ -278,8 +264,9 @@ var backgroundTreeAdvance = func(keys []packload.Fork, rt, platform string, errw
 
 // backgroundArgs are the background advance's flags.
 type backgroundArgs struct {
-	runtime, platform string
-	keys              []string
+	runtime, platform   string
+	keys                []string
+	schedulerGeneration uint64
 }
 
 type keyList []string
@@ -386,8 +373,11 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 	}
 	runTreesUnder(ctx, trees, a.runtime, w, w, func(_ int, f packload.Fork, lane treeLane) {
 		withBackgroundKey(f.Key(), f.Label(), lane.errw, func(o *backgroundOutcome) {
-			res := treeAdvance(f, lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true,
-				background: true}))
+			opts := lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true, background: true})
+			if a.schedulerGeneration != 0 {
+				opts.admitGuard = preparationAdmissionGuard(f.Key(), a.runtime, a.platform, a.schedulerGeneration)
+			}
+			res := treeAdvance(f, opts)
 			backgroundResult(o, res, ctx.Err() != nil)
 		})
 	})
