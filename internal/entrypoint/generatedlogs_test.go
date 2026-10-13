@@ -110,7 +110,7 @@ func TestGeneratedStartupRetentionStreamingAndRefusal(t *testing.T) {
 	var rest bytes.Buffer
 	_, _ = rest.ReadFrom(stderr)
 	err = cmd.Wait()
-	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != provision.RefusedStatus {
+	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != provision.StageRefusedStatus {
 		t.Fatalf("setup refusal status: %v", err)
 	}
 	active, err := os.ReadFile(path)
