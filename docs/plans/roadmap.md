@@ -187,9 +187,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     consumed](../design/image-paste.md#OQ-PA2) shapes the key handling, with [closing macos-user's possibly open
     pasteboard](../design/image-paste.md#OQ-PA1) and [the default](../design/image-paste.md#OQ-PA3); its first slice,
     the host reader and `yolo paste`, waits on none of them.
-31. Speed builds the maintainer asked for on 2026-10-04: [Apple Container's stock-image skip, then the skip for a launch
-    declaring `packages:`](../reference/image-staging-vs-baking.md), as a nix build that finds nothing to do is 3.2 to
-    3.5 s of a 6.9 s fresh launch; and [Podman Machines pinned to applehv](../research/macos-vm-runtime-comparison.md#32-on-a-shared-mac-folder),
+31. Finish [image build reuse](../reference/image-staging-vs-baking.md) with native Apple Container stock-tag dispatch and warm-launch validation; Linux baked, ambient and lean record reuse now has live evidence. Then [Podman Machines pinned to applehv](../research/macos-vm-runtime-comparison.md#32-on-a-shared-mac-folder),
     as Podman's installer gives libkrun, the slowest shared folder measured. Then
     [make OrbStack a working Podman host](../research/orbstack-as-a-podman-host.md), with [its native verification
     plan](../research/orbstack-as-a-podman-host-plan.md), as its measured shared-folder speed and memory return offer
