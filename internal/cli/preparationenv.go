@@ -15,7 +15,8 @@ import (
 
 // preparationEnvironment bounds the detached host's inputs. Host source transport keeps its
 // authorized helpers; this is not the sealed build environment, which has its own boundary.
-// Declarations take precedence over the allowlist even when a credential uses a transport name.
+// Declarations match case-insensitively so transport aliases cannot bypass credential exclusion.
+// Allowed entries retain their original spelling and value.
 func preparationEnvironment(in []string, providers *jsonx.OrderedMap, packs []*packload.Pack) []string {
 	excluded := map[string]bool{}
 	if providers != nil {
@@ -23,7 +24,7 @@ func preparationEnvironment(in []string, providers *jsonx.OrderedMap, packs []*p
 			v, _ := providers.Get(name)
 			entry, _ := v.(*jsonx.OrderedMap)
 			for _, n := range packload.CredentialEnvNames(entry) {
-				excluded[n] = true
+				excluded[strings.ToUpper(n)] = true
 			}
 		}
 	}
@@ -33,19 +34,19 @@ func preparationEnvironment(in []string, providers *jsonx.OrderedMap, packs []*p
 		}
 		for _, provider := range p.Decl.Providers() {
 			for _, n := range provider.APIKeyEnvName {
-				excluded[n] = true
+				excluded[strings.ToUpper(n)] = true
 			}
 		}
 		for bin := range p.Decl.ProviderEnvByBin {
 			for _, v := range p.Decl.ProviderEnv(bin) {
-				excluded[v.Name] = true
+				excluded[strings.ToUpper(v.Name)] = true
 			}
 		}
 	}
 	out := make([]string, 0, len(in))
 	for _, kv := range packsrc.CleanGitEnv(in) {
 		name, _, ok := strings.Cut(kv, "=")
-		if !ok || excluded[name] {
+		if !ok || excluded[strings.ToUpper(name)] {
 			continue
 		}
 		switch name {
