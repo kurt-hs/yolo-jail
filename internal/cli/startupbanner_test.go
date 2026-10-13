@@ -251,6 +251,33 @@ func TestStartupBannerHatchSuppressesIt(t *testing.T) {
 	}
 }
 
+// The startup banner's color pass. Driven through dispatchNative (not the
+// renderer alone) so deleting the richtext.Render call at the emit site turns
+// this red, and pinned as a parity property: on a terminal the line is the plain
+// banner plus escapes, and a NO_COLOR terminal (or a pipe, which captureStdio's
+// files are) receives the byte-identical plain banner.
+func TestStartupBannerColorsOnATerminal(t *testing.T) {
+	sandbox(t)
+	plain := wantStartupBanner(t)
+	standInTerminal(t)
+
+	t.Setenv("NO_COLOR", "")
+	_, colored := captureStdio(t, func() { dispatchNative("config-ref", []string{"config-ref"}) })
+	if !strings.Contains(colored, "\x1b[") {
+		t.Fatalf("control: the startup banner emitted no ANSI on a terminal: %q", colored)
+	}
+	if got := stripANSI(colored); got != plain {
+		t.Errorf("the colored banner is not the plain one plus escapes:\n stripped %q\n plain %q",
+			got, plain)
+	}
+
+	t.Setenv("NO_COLOR", "1")
+	_, vetoed := captureStdio(t, func() { dispatchNative("config-ref", []string{"config-ref"}) })
+	if vetoed != plain {
+		t.Errorf("NO_COLOR=1 banner = %q, want the plain banner %q", vetoed, plain)
+	}
+}
+
 // NO DOUBLE-PRINT FOR `run`. The launch line the run pipeline writes once it
 // knows the runtime and the container name deliberately carries neither the
 // version nor the platform — the startup banner above it already did — so `yolo

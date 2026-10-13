@@ -198,8 +198,13 @@ func TestInitStatusColorsThroughDispatch(t *testing.T) {
 				t.Errorf("ANSI-stripped dispatch output differs from NO_COLOR output:\n--- stripped ---\n%s\n--- plain ---\n%s",
 					got, plainOut)
 			}
-			if colorErr != plainErr {
-				t.Errorf("color changed stderr:\n--- color ---\n%s\n--- NO_COLOR ---\n%s", colorErr, plainErr)
+			// The startup banner now colors stderr on a terminal — dispatch writes it
+			// through the one color gate (documented in startupbanner.go) — so this guard
+			// is on the ANSI-STRIPPED stderr: init's own stderr, if any, must be
+			// unchanged by color. The banner's color is pinned by
+			// TestStartupBannerColorsOnATerminal.
+			if got := stripANSI(colorErr); got != plainErr {
+				t.Errorf("color changed stderr beyond the banner's escapes:\n--- color (stripped) ---\n%s\n--- NO_COLOR ---\n%s", got, plainErr)
 			}
 		})
 	}

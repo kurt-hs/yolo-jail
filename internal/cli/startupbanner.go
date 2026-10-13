@@ -40,12 +40,19 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/banner"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
 // emitStartupBanner writes the startup banner to w, unless banner.SuppressEnv is
 // set. getenv is injected so both the hatch and the host/in-jail side are
 // testable without mutating the process environment.
+//
+// The line is METADATA, so it is dimmed whole. The markup is applied HERE, around
+// banner.Startup's return, rather than inside it: that function's string is
+// compared byte for byte by its tests, and richtext.Render strips the tag again
+// wherever color is off (colorForWriter), so w receives exactly the bytes it
+// always did off a terminal.
 func emitStartupBanner(w io.Writer, getenv func(string) string) {
 	if banner.Suppressed(getenv) {
 		return
@@ -56,5 +63,6 @@ func emitStartupBanner(w io.Writer, getenv func(string) string) {
 	// version.Get answers with the baked stamp or "unknown" — it never shells out
 	// to git in the cwd.
 	repoRes, _ := reporoot.Resolve(getenv)
-	fmt.Fprintln(w, banner.Startup(version.Get(repoRes.Root), getenv))
+	line := richtext.Render("[dim]"+banner.Startup(version.Get(repoRes.Root), getenv)+"[/dim]", colorForWriter(w))
+	fmt.Fprintln(w, line)
 }
