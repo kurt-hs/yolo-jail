@@ -412,7 +412,11 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			filtered.CachedGoodOwner = ""
 			req.Forks = &filtered
 		}
-		addForkKeys(pool, *req.Forks, color, func(bin string, d entrypoint.ForkDelivery) {
+	}
+	var forkLater []bool
+	if fr := req.Forks; fr != nil {
+		forkLater = make([]bool, len(fr.Pins))
+		addForkKeys(pool, *fr, forkLater, color, func(bin string, d entrypoint.ForkDelivery) {
 			mu.Lock()
 			defer mu.Unlock()
 			forks[bin] = d
@@ -433,16 +437,32 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	pool.run()
 	// A cause that held a good build is said once, when every key has printed (buildcauses.go).
 	pool.report.flush()
+	// ONE BACKGROUND ADVANCE for every key either half left to one (XB-D19): the forks' and the
+	// trees' together, from whichever request the launch supplied.
+	var background []packload.Fork
+	if fr := req.Forks; fr != nil {
+		for i, p := range fr.Pins {
+			if forkLater[i] {
+				background = append(background, p.Fork)
+			}
+		}
+	}
 	if tr := req.Trees; tr != nil {
-		var background []packload.Fork
 		for i, f := range tr.Trees {
 			if later[i] {
 				background = append(background, f)
 			}
 		}
-		if len(background) > 0 {
-			backgroundTreeAdvance(background, *tr, stream, color)
+	}
+	if len(background) > 0 {
+		platform := ""
+		switch {
+		case req.Forks != nil:
+			platform = req.Forks.Platform
+		case req.Trees != nil:
+			platform = req.Trees.Platform
 		}
+		backgroundTreeAdvance(background, rt, platform, stream, color)
 	}
 	return forks, trees
 }
@@ -451,16 +471,20 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 // fork's advance, and each plain fork the store holds no build of at its pin, whose cost the launch
 // states once, as auto-capture states its (a source build fetches its dependencies and compiles, once
 // per commit per machine). A plain fork the store holds a build of is answered at once.
-func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer func(string, entrypoint.ForkDelivery)) {
+//
+// A PATCHED FORK whose `agent_updates` sets it to update FOR THE NEXT LAUNCH, on a runtime that runs
+// the background advance (podman), goes through deliverPatchedFork instead: this launch hands it the
+// good build it has and later[i] is set, which runBuildSlot collects into the one background advance
+// (XB-D28) once the pool has run.
+func addForkKeys(pool *buildPool, req run.ForkBuildRequest, later []bool, color bool, answer func(string, entrypoint.ForkDelivery)) {
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	missing := 0
-	for _, p := range req.Pins {
+	for i, p := range req.Pins {
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
-				result := advancePatchedFork(p.Fork, advanceOptions{platform: req.Platform, runtime: req.Runtime,
-					workspace: req.Workspace, out: it.stream(), errw: it.stream(), color: color, launch: true,
-					hand: req.Hand, act: req.Interrupt, report: pool.report, slot: it})
-				answer(p.Fork.Bin, result.forkDelivery())
+				d, l := deliverPatchedFork(p.Fork, req, pool.report, it, color)
+				answer(p.Fork.Bin, d)
+				later[i] = l
 			})
 			continue
 		}

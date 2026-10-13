@@ -114,6 +114,21 @@ var treeUpdateTiming = func(f packload.Fork) updateTiming {
 	return timingAtLaunch
 }
 
+// forkUpdateTiming is when a patched FORK f updates, from `agent_updates` (XB-D18): a fork its own
+// pack or its base holds (run.PatchedForkHold, HoldPacks = [f.Pack, f.Base]) updates AT THE LAUNCH;
+// otherwise its OWN pack's entry decides, since a fork of a program has no owning agent pack, so
+// f.Base's `agent_updates` holds the fork but never picks its timing. A var so a test can stand a
+// timing in.
+var forkUpdateTiming = func(f packload.Fork) updateTiming {
+	if run.PatchedForkHold(f) != "" {
+		return timingAtLaunch
+	}
+	if config.PackTimingDecision(config.AgentUpdatesWire(), f.Pack) == config.AgentUpdatesNextLaunch {
+		return timingNextLaunch
+	}
+	return timingAtLaunch
+}
+
 // runtimeName is a runtime as a line names it.
 func runtimeName(rt string) string {
 	switch rt {
@@ -226,6 +241,56 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 				PatchFailure: patchFailure}, later
 		}
 	}
+}
+
+// deliverPatchedFork is the fork half of the next-launch mode (deliverTree's; XB-D28): what this
+// launch hands f at once — the good build it has — and whether its advance is left to a background
+// one. It advances f in front when `agent_updates` sets it to update at the launch, when the runtime
+// runs no background advance (Apple Container, macos-user: XB-D21, one dim line saying so), or when
+// no good build serves — there is nothing to hand, and a fork has no list entry to fall back on
+// (Fork.Fallback is always "" for one).
+func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *buildReport, it *poolItem,
+	color bool) (_ entrypoint.ForkDelivery, later bool) {
+	errw := it.stream()
+	pr := richtext.Printer{W: errw, Color: color}
+	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
+	// whatever this launch's timing.
+	again := noteBackgroundOutcome(f, pr)
+	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
+		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
+	nextLaunch := false
+	if forkUpdateTiming(f) == timingNextLaunch {
+		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
+		if !nextLaunch {
+			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
+				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
+				runtimeName(req.Runtime))))
+		}
+	}
+	if !nextLaunch {
+		return advancePatchedFork(f, o).forkDelivery(), false
+	}
+	r, a := servingPatchedFork(f, o)
+	if r.delivery.Key != "" {
+		if r.delivery.PatchFailure == nil {
+			// THE SPAWN CONDITION (XB-D19): its check due, a candidate pending, or the last background
+			// advance unfinished; a key with nothing to do starts none.
+			later = again || a.wantsBackground()
+		}
+		return r.delivery, later
+	}
+	if r.delivery.PatchFailure != nil {
+		return r.delivery, false
+	}
+	return advancePatchedFork(f, o).forkDelivery(), false
+}
+
+// servingPatchedFork is what serves a patched fork with no check and no build, for the next-launch
+// mode, and the advance it read. It is servingTreeOf's read, which is key-shared: the good build a
+// store key names serves a fork and a tree alike — a tree goes on to its per-launch copy, a fork
+// hands the key itself.
+func servingPatchedFork(f packload.Fork, o advanceOptions) (advanceResult, *advance) {
+	return servingTreeOf(f, o, "", true)
 }
 
 // servingTree is what serves f with no check and no build: the good build, when its series and

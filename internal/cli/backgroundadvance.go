@@ -242,28 +242,29 @@ func (a *advance) removeBuildJailOf(staging string) {
 }
 
 // backgroundTreeAdvance starts the background advance of the keys a launch handed what it had
-// (XB-D19), and says so at once, naming the keys and the log (XB-D20). A key another background
-// advance runs right now is left to it.
-var backgroundTreeAdvance = func(trees []packload.Fork, req run.TreeBuildRequest, errw io.Writer, color bool) {
+// (XB-D19), and says so at once, naming the keys and the log (XB-D20). The keys are the built trees'
+// and, since XB-D28, the patched forks' too — the name says tree, the mode covers every key. A key
+// another background advance runs right now is left to it.
+var backgroundTreeAdvance = func(keys []packload.Fork, rt, platform string, errw io.Writer, color bool) {
 	pr := richtext.Printer{W: errw, Color: color}
-	var keys, labels []string
-	for _, f := range trees {
+	var want, labels []string
+	for _, f := range keys {
 		if pidlock.Held(backgroundKeyLock(f.Key())) {
 			continue // its outcome line said it is running (noteBackgroundOutcome)
 		}
-		keys, labels = append(keys, f.Key()), append(labels, f.Label())
+		want, labels = append(want, f.Key()), append(labels, f.Label())
 	}
-	if len(keys) == 0 {
+	if len(want) == 0 {
 		return
 	}
 	log := backgroundAdvanceLog()
 	them := "them"
-	if len(keys) == 1 {
+	if len(want) == 1 {
 		them = "it"
 	}
-	if err := startBackgroundAdvance(backgroundAdvanceArgv(keys, req.Runtime, req.Platform), log); err != nil {
-		step := "`yolo capture " + keys[0] + "`"
-		if len(keys) > 1 {
+	if err := startBackgroundAdvance(backgroundAdvanceArgv(want, rt, platform), log); err != nil {
+		step := "`yolo capture " + want[0] + "`"
+		if len(want) > 1 {
 			step = "`yolo capture <pack>/<name>` for each"
 		}
 		pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("⚠ %s: updates for the next launch, and the "+
@@ -353,6 +354,13 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 	}, config.UserScopeSelection())
 	if sel.loadErr == nil {
 		for _, f := range packload.PatchedTrees(sel.packs) {
+			if want[f.Key()] && !found[f.Key()] {
+				trees, found[f.Key()] = append(trees, f), true
+			}
+		}
+		// A PATCHED FORK updates in the background too (XB-D28): its key resolves beside a tree's,
+		// and the same lanes run its advance.
+		for _, f := range packload.PatchedForks(sel.packs) {
 			if want[f.Key()] && !found[f.Key()] {
 				trees, found[f.Key()] = append(trees, f), true
 			}

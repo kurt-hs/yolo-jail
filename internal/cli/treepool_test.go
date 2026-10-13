@@ -379,7 +379,7 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	t.Cleanup(func() { backgroundTreeAdvance = prevBackground })
 	pf.agentUpdates(t, `{"*":true,"treepool":"next-launch"}`)
 	var queued []string
-	backgroundTreeAdvance = func(trees []packload.Fork, _ run.TreeBuildRequest, _ io.Writer, _ bool) {
+	backgroundTreeAdvance = func(trees []packload.Fork, _, _ string, _ io.Writer, _ bool) {
 		for _, f := range trees {
 			queued = append(queued, f.Key())
 		}

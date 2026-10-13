@@ -164,7 +164,7 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 	patchedGitWrapper(t, "echo called > "+shellQuote(calls)+"; exit 99")
 	spawned := 0
 	previousBackground := backgroundTreeAdvance
-	backgroundTreeAdvance = func([]packload.Fork, run.TreeBuildRequest, io.Writer, bool) { spawned++ }
+	backgroundTreeAdvance = func([]packload.Fork, string, string, io.Writer, bool) { spawned++ }
 	t.Cleanup(func() { backgroundTreeAdvance = previousBackground })
 	// Use the production pool path: BuildTrees' answer and next-launch spawn decision are one act.
 	var output bytes.Buffer

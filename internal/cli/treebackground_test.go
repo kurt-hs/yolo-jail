@@ -380,3 +380,74 @@ func TestConcurrentLaunchesReportABackgroundOutcomeOnce(t *testing.T) {
 		t.Errorf("%d launches reported the same outcome, want one:\n%s", n, out.String())
 	}
 }
+
+// A PATCHED-FORK FIXTURE whose first advance built and recorded the good build, its `agent_updates`
+// rewritten to the next-launch mode for the fork's own pack, and a newer upstream with the clock
+// stepped past the check's interval: a check is due for the fork key.
+func forkWithAGoodBuild(t *testing.T) (*patchedAdvanceFixture, string) {
+	t.Helper()
+	fx := newPatchedAdvanceFixture(t, "")
+	r, out, _ := fx.launch(t, "podman")
+	if r.delivery.Key == "" {
+		t.Fatalf("the fixture's first advance built nothing:\n%s", out)
+	}
+	fx.writeUserConfig(t, `,"agent_updates":{"forkpack":"next-launch"}`)
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen"})
+	fx.later(2 * time.Hour)
+	return fx, r.delivery.Key
+}
+
+// forkRequest is one launch's fork-build request for fx's patched fork.
+func forkRequest(t *testing.T, fx *patchedAdvanceFixture, runtime string) run.ForkBuildRequest {
+	t.Helper()
+	return run.ForkBuildRequest{Pins: []packload.ForkPin{{Fork: fx.fork(t)}}, Platform: patchedTestPlatform,
+		Runtime: runtime, Workspace: "/ws", Interrupt: &run.ActInterrupt{}}
+}
+
+// A PATCHED FORK THAT UPDATES FOR THE NEXT LAUNCH is handed its good build with no check and no
+// build, and the launch starts ONE background advance carrying its key. This drives the production
+// pool path (runBuildSlot -> addForkKeys -> backgroundTreeAdvance -> startBackgroundAdvance): delete
+// the fork arm's collection or its call site and no advance is started. Red if forkUpdateTiming stops
+// reading `agent_updates`, if the fork arm advances the key in front, or if its key never reaches the
+// spawn.
+func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *testing.T) {
+	fx, good := forkWithAGoodBuild(t)
+	builds := len(fx.builds)
+	sp := stubSpawn(t)
+	req := forkRequest(t, fx, "podman")
+	var out syncBuffer
+	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+	if got["tool"].Key != good || got["tool"].Reason != "" {
+		t.Errorf("the fork was not handed its good build: %+v", got["tool"])
+	}
+	if len(fx.builds) != builds {
+		t.Errorf("a next-launch fork was checked or built in front (%d builds):\n%s", len(fx.builds)-builds, out.String())
+	}
+	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{"forkpack/tool"}) {
+		t.Fatalf("%d background advances started for %v, want one for forkpack/tool:\n%s", sp.count(), sp.argvs, out.String())
+	}
+	if !strings.Contains(out.String(), "fork forkpack/tool: updates for the next launch — a background advance "+
+		"is checking and building it now; its log is "+backgroundAdvanceLog()) {
+		t.Errorf("the spawn is not said with its log:\n%s", out.String())
+	}
+}
+
+// ON APPLE CONTAINER the next-launch mode is the at-launch wait (XB-D21, XB-D61), said: the fork key
+// is checked and built in front and no background advance starts. Red if the runtime gate is
+// dropped.
+func TestOnAppleContainerANextLaunchForkUpdatesAtTheLaunch(t *testing.T) {
+	fx, good := forkWithAGoodBuild(t)
+	sp := stubSpawn(t)
+	req := forkRequest(t, fx, "container")
+	var out syncBuffer
+	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+	if sp.count() != 0 {
+		t.Errorf("Apple Container started a background advance:\n%s", out.String())
+	}
+	if got["tool"].Key == good {
+		t.Errorf("the fork was not updated at the launch:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "on Apple Container this yolo runs no background advance — it updates at this launch") {
+		t.Errorf("the demotion is not said:\n%s", out.String())
+	}
+}

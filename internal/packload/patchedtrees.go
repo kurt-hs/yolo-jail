@@ -115,6 +115,22 @@ func PatchedTrees(packs []*Pack) []Fork {
 	return out
 }
 
+// PatchedForks lists every PATCHED FORK the packs carry — a fork of a program that declares
+// `patches`, so its upstream is checked and its series replayed and built (patched-forks.md PF-D1)
+// — in pack order and then declaration order, each as Forks returns it. The fork half of the
+// background advance's key resolution (docs/design/pi-extension-store-builds.md XB-D28), beside
+// PatchedTrees; a patched extension is a built tree, not a fork of a program, and never listed
+// here.
+func PatchedForks(packs []*Pack) []Fork {
+	var out []Fork
+	for _, f := range Forks(packs) {
+		if f.Patched() && !f.IsTree() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // ListEntry is the list entry f's agent loads its tree through (packdecl.TreeListEntry): `~/<into>`,
 // or for an npm source the package inside the npm prefix the tree is. An entry loads the tree when
 // it is this or a path inside it, cleaned (loadsTree, PPX-D36), so `~/<into>/` loads it too; the pi

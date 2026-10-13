@@ -102,3 +102,17 @@ func TestAPatchedForkFootprintNamesTheSeries(t *testing.T) {
 		t.Errorf("the disclosure says a patched fork is pinned, or not that it follows: %s", s)
 	}
 }
+
+// PatchedForks is the PATCHED FORK half of the background advance's key resolution (XB-D28): every
+// patched fork of a program, in pack order, and neither a plain fork nor a patched extension.
+func TestPatchedForksListsPatchedProgramForksAlone(t *testing.T) {
+	base := claimPack(t, "pi",
+		packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "pi", Via: "npm", Package: "pi-coding-agent"})
+	patched := claimPack(t, "pi-fork", patchedForkContribution())
+	plain := claimPack(t, "pi-plain", forkContribution("pi", "pi"))
+	tree := claimPack(t, "matt", patchedTreeContribution())
+	got := PatchedForks([]*Pack{base, patched, plain, tree})
+	if len(got) != 1 || got[0].Key() != "pi-fork/pi" || !got[0].Patched() || got[0].IsTree() {
+		t.Fatalf("PatchedForks = %+v, want pi-fork/pi alone", got)
+	}
+}
