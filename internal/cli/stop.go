@@ -12,6 +12,7 @@ package cli
 // replacement hid the kill).
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -46,8 +47,8 @@ jail:
     yolo stop && yolo -- <cmd>
 
 Stopping IS the end of that jail's sessions; the next launch starts fresh. It
-returns once the jail's teardown is done, or fails after waiting about two
-minutes for a keeper that will not finish. Idempotent: with nothing running it
+returns once the jail's teardown is done and its container is confirmed absent,
+or fails if the runtime cannot confirm it. Idempotent: with nothing running it
 says so and succeeds.
 
 It waits up to about two minutes for the jail's keeper to finish its teardown,
@@ -57,6 +58,10 @@ naming yolo stop --force as the escalation.
 --force ends the jail now instead: it stops the container without the stop
 grace and signals the keeper (SIGTERM, then SIGKILL), so a keeper that will
 not finish does not hold the stop up.
+
+Container runtime commands are bounded at 60 seconds each. After removal it
+waits up to 15 seconds for absence, plus any in-flight runtime probe. A container
+that survives, or a runtime that cannot answer, makes the stop fail.
 
 On the macos-user backend there is no container: it ends the workspace's
 macos-user sessions and the keeper that holds their host services, and
@@ -124,15 +129,24 @@ var stopRuntimeInstalled = func(bin string) bool {
 	return err == nil
 }
 
+// Bound each runtime command, including probes of an unresponsive runtime.
+var stopRuntimeCommandTimeout = 60 * time.Second
+
 // realStopExec runs one runtime command, capturing stdout for the probes that
 // read it. Returns (stdout, ran, exit code).
 func realStopExec(argv []string) (string, bool, int) {
 	var out strings.Builder
-	cmd := exec.Command(argv[0], argv[1:]...)
+	ctx, cancel := context.WithTimeout(context.Background(), stopRuntimeCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.WaitDelay = time.Second
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
+		if ctx.Err() != nil {
+			return out.String(), false, 1
+		}
 		if ee, ok := err.(*exec.ExitError); ok {
 			return out.String(), true, ee.ExitCode()
 		}
@@ -144,8 +158,8 @@ func realStopExec(argv []string) (string, bool, int) {
 // stopJail is stop's testable core. A RUNNING container is stopped gracefully
 // (the runtime's own TERM-then-KILL discipline; the launcher's --rm removes
 // the container as it exits, so the next launch is fresh by construction). A
-// stopped or absent container is SUCCESS: stop is idempotent, and any leftover
-// is the next launch's stale-removal job, not this command's.
+// absent container is SUCCESS: stop is idempotent. A stopped leftover must be
+// removed and absence verified, so it cannot block the next launch.
 //
 // rt is the runtime the config and YOLO_RUNTIME resolve. The one the jail's keeper recorded
 // launching it on goes ahead of it (launchedRuntime, JL-D79): a jail launched with
@@ -185,8 +199,8 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	running, ran, rc := probeJailRunning(rt, cname, run)
 	sp.End()
 	if !ran {
-		fmt.Fprintf(stderr, "yolo stop: the %s runtime could not be run: `%s` is not on PATH, or would not "+
-			"start. Put it on PATH and run `yolo stop` again.\n", rt, rt)
+		fmt.Fprintf(stderr, "yolo stop: the %s runtime did not complete: `%s` is not on PATH, would not "+
+			"start, or timed out. Check that the runtime is installed and responsive, then run `yolo stop` again.\n", rt, rt)
 		return 1
 	}
 	if rt == "container" && rc != 0 { // parity: HonoredBy — `container ls` is AC's answer, and a failed one is "could not ask", where podman's failed inspect is "no such container"
@@ -203,12 +217,21 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 		// teardown, as it waits for the one it causes, so the next launch finds it done.
 		if keeperAlive(ws) {
 			fmt.Fprintf(stdout, "This workspace's jail (%s) is already ending.\n", cname)
-			return finishStop(stdout, stderr, ws, rt, logFrom, stopCapture(stderr), force)
+			if frc := finishStop(stdout, stderr, ws, rt, logFrom, stopCapture(stderr), force); frc != 0 {
+				return frc
+			}
+			// The keeper's teardown is done; the container may still be there (see stopContainerGone).
+			return stopContainerGone(stdout, stderr, rt, cname, run, p)
 		}
 		// A container of this name that EXISTS but is not running is not "no jail": it holds the
 		// name, so the next launch's create is refused (the wedge of a --rm container whose runtime
 		// never removed it). End it, or report that it would not go.
-		if state, exists, answered := probeJailExists(rt, cname, run); answered && exists {
+		state, exists, answered := probeJailExists(rt, cname, run)
+		switch {
+		case !answered:
+			stopCouldNotAsk(stderr, rt, cname)
+			return 1
+		case exists:
 			return endLeftoverJail(stdout, stderr, rt, cname, state, force, run, p)
 		}
 		fmt.Fprintf(stdout, "No jail running for this workspace (%s).\n", cname)
@@ -264,6 +287,12 @@ func stopJail(stdout, stderr io.Writer, ws, rt string,
 	if frc != 0 {
 		return frc
 	}
+	// The runtime's stop and the keeper's teardown can each return cleanly while a container of the
+	// name is still there, so neither is proof the jail ended. Judge the stop by the container's
+	// EXISTENCE before saying so (stopContainerGone).
+	if rc := stopContainerGone(stdout, stderr, rt, cname, run, p); rc != 0 {
+		return rc
+	}
 	fmt.Fprintf(stdout, "Stopped %s. The next yolo launch starts fresh.\n", cname)
 	return 0
 }
@@ -311,7 +340,7 @@ func probeJailGoneAfterStop(rt, cname string, runCmd func(argv []string) (string
 // state: the gate that stops `yolo stop` calling a container that exists but is not running "no
 // jail". The state is the runtime's own word ("exited", "created", "stopped"). answered is false
 // when the runtime could not be asked; exists is true only when it answered and the container is
-// there. Podman answers a Go-template inspect, whose non-zero status is its "no such object";
+// there. Podman container exists distinguishes absence (1) from runtime failure;
 // Apple Container's `container ls` lists running ONLY, so existence is its `--all` listing, whose
 // STATE column names the state.
 func probeJailExists(rt, cname string, run func(argv []string) (string, bool, int)) (state string, exists, answered bool) {
@@ -332,12 +361,16 @@ func probeJailExists(rt, cname string, run func(argv []string) (string, bool, in
 		}
 		return "", false, true
 	}
-	out, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Status}}", cname})
-	if !ran {
+	_, ran, rc := run([]string{rt, "container", "exists", cname})
+	if !ran || (rc != 0 && rc != 1) {
 		return "", false, false
 	}
-	if rc != 0 { // podman's inspect of an absent container exits non-zero ("no such object")
+	if rc == 1 {
 		return "", false, true
+	}
+	out, ran, rc := run([]string{rt, "inspect", "--format", "{{.State.Status}}", cname})
+	if !ran || rc != 0 {
+		return "unknown", true, true
 	}
 	state = strings.TrimSpace(out)
 	if state == "" {
@@ -362,8 +395,8 @@ func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bo
 	}
 	_, ran, rc := run(argv)
 	sp.End()
-	now, exists, answered := probeJailExists(rt, cname, run)
-	if answered && !exists {
+	gone, now := waitForJailContainerGone(rt, cname, run)
+	if gone {
 		fmt.Fprintf(stdout, "Ended the leftover container %s. The next yolo launch starts fresh.\n", cname)
 		return 0
 	}
@@ -372,7 +405,7 @@ func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bo
 			"the next launch may still be there. %s\n", rt, cname, leftoverRemoveHint(rt, cname))
 		return 1
 	}
-	if !answered {
+	if now == "" {
 		fmt.Fprintf(stderr, "yolo stop: `%s rm %s` ran (rc %d), but whether the container is gone could "+
 			"not be asked. %s\n", rt, cname, rc, leftoverRemoveHint(rt, cname))
 		return 1
@@ -383,24 +416,100 @@ func endLeftoverJail(stdout, stderr io.Writer, rt, cname, state string, force bo
 	return 1
 }
 
-// leftoverRemoveHint names, for a leftover container the runtime would not remove, the next step —
-// and, first, the class worth ruling out: a container whose PID NAMESPACE has not drained. The
-// kernel will not finish a container's teardown while any task remains in its PID namespace, and
-// that task can be a ZOMBIE (Z) whose parent is a `podman exec`'s conmon — a zombie still counts,
-// and podman cannot reap another process's zombie. A launcher stopped mid-attach (Tl, e.g. `yolo -p
-// … -- pi` under a Ctrl-Z) leaves exactly that, and the container then refuses both stop and rm
-// while `podman kill -s KILL` times out. Inspecting for the Tl launcher and the Z task, and killing
-// the exec's conmon (which reparents and reaps the zombie), is what lets the namespace finish; a
-// runtime restart (and then the removal by force) clears the rest.
+// leftoverRemoveHint names the runtime-owned recovery step; no host process is signalled.
 func leftoverRemoveHint(rt, cname string) string {
-	class := " The container's PID namespace may not have drained: a task inside it (often a zombie " +
-		"whose parent is a `podman exec`'s conmon) is pinning it, and podman cannot reap another " +
-		"process's zombie. Inspect with `ps -o pid,ppid,stat,cmd` for a stopped launcher (Tl) and a Z " +
-		"task; killing the exec's conmon lets the namespace finish."
 	if rt == "container" {
-		return class + fmt.Sprintf(" Restart Apple Container, then `container rm --force %s`.", cname)
+		return fmt.Sprintf("Run `container rm --force %s`; if it still fails, restart Apple Container and retry.", cname)
 	}
-	return class + fmt.Sprintf(" Restart the runtime (`systemctl --user restart podman`), then `podman rm -f %s`.", cname)
+	return fmt.Sprintf("Run `podman rm -f %s`; if it still fails, ask the runtime administrator to diagnose the container before retrying `yolo stop`.", cname)
+}
+
+// stopGonePoll and stopGoneWait bound stopContainerGone's looks for the container to disappear,
+// after runtime-owned removal. Vars so a test need not
+// wait them out.
+var (
+	stopGonePoll = 100 * time.Millisecond
+	stopGoneWait = 15 * time.Second
+)
+
+// stopContainerGone verifies absence before success. Runtime stop and keeper teardown
+// returning cleanly do not prove that the container's name has been released.
+func stopContainerGone(stdout, stderr io.Writer, rt, cname string,
+	run func(argv []string) (string, bool, int), p *perf.Log) int {
+	_, exists, answered := probeJailExists(rt, cname, run)
+	if answered && !exists {
+		return 0
+	}
+	if !answered {
+		stopCouldNotAsk(stderr, rt, cname)
+		return 1
+	}
+	sp := p.Span("stop.remove_container")
+	forceRemoveJailContainer(rt, cname, run)
+	sp.End()
+	gone, leftover := waitForJailContainerGone(rt, cname, run)
+	if gone {
+		return 0
+	}
+	if leftover == "" {
+		stopCouldNotAsk(stderr, rt, cname)
+		return 1
+	}
+	stopStillThere(stderr, rt, cname, leftover)
+	return 1
+}
+
+// forceRemoveJailContainer removes cname's container by force, running or not: this is `yolo stop`,
+// which was already asked to end this jail, so a leftover that still runs is removed rather than
+// left. Its own status is not the answer; waitForJailContainerGone judges the removal.
+func forceRemoveJailContainer(rt, cname string, run func(argv []string) (string, bool, int)) {
+	run([]string{rt, "rm", "--force", cname})
+}
+
+// waitForJailContainerGone waits, within stopGoneWait, for the runtime to answer that no container
+// of cname's name exists, and reports the last state it did name while waiting. A runtime that
+// cannot be asked is never "gone" (JL-P3).
+func waitForJailContainerGone(rt, cname string,
+	run func(argv []string) (string, bool, int)) (gone bool, state string) {
+	deadline := time.Now().Add(stopGoneWait)
+	for {
+		s, exists, answered := probeJailExists(rt, cname, run)
+		if answered && !exists {
+			return true, ""
+		}
+		if !answered {
+			return false, ""
+		}
+		state = s
+		if !time.Now().Before(deadline) {
+			return false, state
+		}
+		time.Sleep(stopGonePoll)
+	}
+}
+
+// stopCouldNotAsk reports a stop that cannot prove the jail gone because the runtime would not
+// answer the existence probe. "Could not ask" is never "gone" (JL-P3), so the stop is not a
+// success; it names the runtime's own listing and the retry.
+func stopCouldNotAsk(stderr io.Writer, rt, cname string) {
+	listing := rt + " ps -a"
+	if rt == "container" {
+		listing = "container ls --all"
+	}
+	fmt.Fprintf(stderr, "yolo stop: whether this workspace's jail container %s is gone could not be "+
+		"asked (`%s` did not answer), so this stop cannot say it ended the jail. `%s` shows it; "+
+		"`yolo stop` again retries.\n", cname, rt, listing)
+}
+
+// stopStillThere reports a stop that could not end a container of the jail's name, naming its exact
+// state and the next step that clears the wedge.
+func stopStillThere(stderr io.Writer, rt, cname, state string) {
+	if state == "" {
+		state = "unknown"
+	}
+	fmt.Fprintf(stderr, "yolo stop: this workspace's jail container %s is still there in state %q "+
+		"after `yolo stop` tried to end it, so the next launch would be refused by its name. %s\n",
+		cname, state, leftoverRemoveHint(rt, cname))
 }
 
 // launchedRuntime is the container runtime the workspace's jail was launched on, from its keeper's

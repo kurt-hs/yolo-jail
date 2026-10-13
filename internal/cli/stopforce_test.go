@@ -49,23 +49,23 @@ func TestAForcedStopDropsTheGraceAndForcesTheKeeper(t *testing.T) {
 	cname := runtime.FromWorkspace("/ws")
 
 	var out, errb bytes.Buffer
-	s := &stopRun{stats: []string{"true\n", ""}}
+	s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 	if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, false); rc != 0 {
 		t.Fatalf("rc=%d, err=%s", rc, errb.String())
 	}
 	want := []string{"podman", "stop", "-t", strconv.Itoa(run.TeardownStopTimeoutSeconds), cname}
-	if len(s.calls) != 2 || !slices.Equal(s.calls[1], want) {
+	if len(s.calls) < 2 || !slices.Equal(s.calls[1], want) {
 		t.Errorf("a plain stop's argv = %v, want %v", s.calls, want)
 	}
 
 	out.Reset()
 	errb.Reset()
-	s = &stopRun{stats: []string{"true\n", ""}}
+	s = &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 	if rc := stopJail(&out, &errb, "/ws", "podman", s.run, nil, true); rc != 0 {
 		t.Fatalf("rc=%d, err=%s", rc, errb.String())
 	}
 	wantForced := []string{"podman", "stop", "-t", "0", cname}
-	if len(s.calls) != 2 || !slices.Equal(s.calls[1], wantForced) {
+	if len(s.calls) < 2 || !slices.Equal(s.calls[1], wantForced) {
 		t.Errorf("a forced stop's argv = %v, want %v", s.calls, wantForced)
 	}
 	if !slices.Equal(forced, []bool{false, true}) {
@@ -77,7 +77,7 @@ func TestAForcedStopDropsTheGraceAndForcesTheKeeper(t *testing.T) {
 // runtime for a zero-grace stop.
 func TestAForcedStopReachesTheRuntimeFromTheFrontDoor(t *testing.T) {
 	cname, _ := stopWorkspace(t, `{"runtime": "podman"}`)
-	s := &stopRun{stats: []string{"true\n", ""}}
+	s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 	useStopExec(t, s.run)
 	var rc int
 	stdout, stderr := captureBoth(t, func() { rc = runStop([]string{"stop", "--force"}) })
@@ -85,7 +85,7 @@ func TestAForcedStopReachesTheRuntimeFromTheFrontDoor(t *testing.T) {
 		t.Fatalf("runStop = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr)
 	}
 	want := []string{"podman", "stop", "-t", "0", cname}
-	if len(s.calls) != 2 || !slices.Equal(s.calls[1], want) {
+	if len(s.calls) < 2 || !slices.Equal(s.calls[1], want) {
 		t.Errorf("the forced stop's argv = %v, want %v", s.calls, want)
 	}
 }

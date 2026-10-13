@@ -52,7 +52,7 @@ func TestStopJail(t *testing.T) {
 		cname := runtime.FromWorkspace("/ws")
 		record := filepath.Join(paths.GlobalStorage(), "owners", cname+".stopped")
 		var atStop []byte
-		s := &stopRun{stats: []string{"true\n", ""}}
+		s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 		run := func(argv []string) (string, bool, int) {
 			if len(argv) > 1 && argv[1] == "stop" {
 				atStop, _ = os.ReadFile(record)
@@ -69,13 +69,13 @@ func TestStopJail(t *testing.T) {
 	})
 	t.Run("running jail is stopped gracefully", func(t *testing.T) {
 		var out, err bytes.Buffer
-		s := &stopRun{stats: []string{"true\n", ""}}
+		s := &stopRun{stats: []string{"true\n", "", "!Error: no such container"}}
 		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("rc=%d, err=%s", rc, err.String())
 		}
 		cname := runtime.FromWorkspace("/ws")
 		want := []string{"podman", "stop", "-t", strconv.Itoa(run.TeardownStopTimeoutSeconds), cname}
-		if len(s.calls) != 2 || !slices.Equal(s.calls[1], want) {
+		if len(s.calls) < 2 || !slices.Equal(s.calls[1], want) {
 			t.Errorf("the stop argv must be exactly '%v': %v", want, s.calls)
 		}
 		if !strings.Contains(out.String(), "Stopped "+cname) {
@@ -84,7 +84,7 @@ func TestStopJail(t *testing.T) {
 	})
 	t.Run("nothing running is success — stop is idempotent", func(t *testing.T) {
 		var out, err bytes.Buffer
-		s := &stopRun{stats: []string{"false\n"}}
+		s := &stopRun{stats: []string{"false\n", "!Error: no such container"}}
 		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("a stopped jail must be success, rc=%d", rc)
 		}
@@ -99,7 +99,7 @@ func TestStopJail(t *testing.T) {
 	})
 	t.Run("no container at all is success too", func(t *testing.T) {
 		var out, err bytes.Buffer
-		s := &stopRun{stats: []string{"!Error: no such container"}}
+		s := &stopRun{stats: []string{"!Error: no such container", "!Error: no such container"}}
 		if rc := stopJail(&out, &err, "/ws", "podman", s.run, nil, false); rc != 0 {
 			t.Fatalf("an absent container must be success, rc=%d", rc)
 		}
@@ -140,7 +140,7 @@ func TestStopJail(t *testing.T) {
 func TestStopJailEmitsTimingSpans(t *testing.T) {
 	ws := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
-	s := &stopRun{stats: []string{"true", ""}}
+	s := &stopRun{stats: []string{"true", "", "!Error: no such container"}}
 	p := perf.New(time.Now)
 	rc := stopJail(&strings.Builder{}, &strings.Builder{}, ws, "podman", s.run, p, false)
 	if rc != 0 {
