@@ -237,24 +237,45 @@
       },
       "kind": "autonomy"
     },
-    // NO `state` CONTRIBUTION, AND THE OMISSION IS DELIBERATE. Muse Code keeps its login at
-    // `~/.config/muse/auth.json`, so a state subtree looks like the way to persist it. It is
-    // not needed and it is actively WRONG on macos-user. `~/.config` is ALREADY a
-    // per-workspace durable directory on every backend: podman binds `<wsState>/config` there
-    // (`podmanEarlyHomeBinds`, which is also what the persistence map reads), Apple Container
-    // binds the whole home, and macos-user's layout links `.config` into the workspace sidecar
-    // (`DeriveDarwinHomeLayout`). So the CLI's own `auth.json` persists at the path it writes
-    // with no declaration at all.
+    // THE LOGIN IS SHARED ACROSS WORKSPACES BY A TOP-LEVEL MACHINE-SCOPE DIR AND A FILE-LEVEL
+    // HOOK, NOT BY A `state` AT `.config/muse`, AND THE DISTINCTION IS THE WHOLE POINT.
     //
-    // The defect the declaration caused: the darwin layout links `.config` WHOLESALE, so a
-    // second link at the nested `.config/muse` cannot be laid — `ensureLayoutSymlink` finds
-    // the real directory the same layout just created and `Apply` returns an occupied-layout
-    // refusal, so every macos-user launch selecting this pack FAILED at boot with
-    // `darwin_home_layout: … a real path where the workspace tier's symlink belongs:
-    // <home>/.config/muse` (reproduced by
+    // Muse Code keeps its login at `~/.config/muse/auth.json`, and that login must survive from
+    // one jail to the next. `~/.config` is per-workspace durable on every backend: podman binds
+    // `<wsState>/config` there (`podmanEarlyHomeBinds`, which is also what the persistence map
+    // reads), Apple Container binds the whole home, and macos-user's layout links `.config` into
+    // the workspace sidecar (`DeriveDarwinHomeLayout`). So `auth.json` persists across launches
+    // of ONE workspace with no declaration — and logging in inside one jail does nothing for any
+    // other, which is the defect this pair fixes. The maintainer is on a Muse SUBSCRIPTION and
+    // cannot mint a Model API key, so the environment-variable route is not available: the
+    // credential has to come from the CLI's own login flow, which is exactly what the
+    // `shared_credentials` hook carries into the machine tier (the shape claude and agy already
+    // use).
+    //
+    // A `state` CONTRIBUTION AT `.config/muse` IS STILL REFUSED, and the reason is the NESTED
+    // path rather than sharing itself. The darwin layout links `.config` WHOLESALE, so a second
+    // link at the nested `.config/muse` cannot be laid — `ensureLayoutSymlink` finds the real
+    // directory the same layout just created and `Apply` returns an occupied-layout refusal, so
+    // every macos-user launch selecting this pack FAILED at boot with `darwin_home_layout: … a
+    // real path where the workspace tier's symlink belongs: <home>/.config/muse` (reproduced by
     // internal/entrypoint/darwinoverlaystate_test.go's pack enumeration, which is what caught
-    // it). Muse Code is the only shipped agent whose config lives under `.config`, so it is
-    // the only one this shape affects — every other agent pack's state dir is a top-level
-    // dot-dir (`.claude`, `.codex`, `.pi`, `.oh-omp`, `.gemini`) with no linked ancestor.
+    // it). Muse Code is the only shipped agent whose config lives under `.config`, so it is the
+    // only one a nested state dir would affect — every other agent pack's state dir is a
+    // top-level dot-dir (`.claude`, `.codex`, `.pi`, `.oh-omp`, `.gemini`) with no linked
+    // ancestor. The hook below links a FILE under the home root, into a machine-scope dir that
+    // is also at the root, so it never claims a path inside a linked ancestor and never collides
+    // with the wholesale `.config` link.
+    {
+      "at": ".muse-shared-credentials",
+      "because": "identity/credential state shared across workspaces",
+      "kind": "state",
+      "scope": "machine"
+    },
+    {
+      "at": ".muse-shared-credentials",
+      "from": ".config/muse/auth.json",
+      "hook": "shared_credentials",
+      "kind": "hook"
+    }
   ]
 }

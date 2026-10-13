@@ -264,3 +264,81 @@ func TestSharedCredentialsHookLogsDiscardDecision(t *testing.T) {
 		t.Errorf("log does not record the discard: %q", logData)
 	}
 }
+
+// TestEveryShippedCredentialPackLinksItsMachineTier drives every shipped pack that declares a
+// machine-scope credential store through the boot's OWN entry, RunPackHooks, and reads the
+// REALIZED link and its target — the file the agent's next login is written through.
+//
+// It is a PAIR of manifest declarations that make the login survive (a `scope: machine` state
+// dir and the `shared_credentials` hook that names it), and a test pinning one half alone would
+// go green while the other was deleted. Driving RunPackHooks makes both load-bearing: drop the
+// hook and no link appears at all; drop the state dir and the hook's own undeclared-shared-dir
+// refusal fails the boot. This is why it drives the boot entry rather than calling
+// linkSharedCredential directly, and why it reads the symlink on disk instead of a return value.
+//
+// The credential file is CREATED first, which is the shape a real login leaves (the hook only
+// symlinks; it never reads or writes the schema). A login performed in one jail must serve the
+// next, and that is exactly what the link at `from` is.
+func TestEveryShippedCredentialPackLinksItsMachineTier(t *testing.T) {
+	for _, tc := range []struct {
+		pack, from, shared string
+	}{
+		{"claude", ".claude/.credentials.json", ".claude-shared-credentials"},
+		{"agy", ".gemini/antigravity-cli/antigravity-oauth-token", ".gemini-shared-credentials"},
+		{"muse-code", ".config/muse/auth.json", ".muse-shared-credentials"},
+		{"pi", ".pi/agent/auth.json", ".pi-shared-credentials"},
+	} {
+		t.Run(tc.pack, func(t *testing.T) {
+			p, err := embeddedPack(tc.pack)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// EvalSymlinks at the mint point, per AGENTS.md's darwin rule: the target
+			// comparisons below compare resolved paths.
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			e := &Env{Home: home, Workspace: t.TempDir(), Vars: map[string]string{}}
+			link := filepath.Join(home, filepath.FromSlash(tc.from))
+			shared := filepath.Join(home, filepath.FromSlash(tc.shared), filepath.Base(tc.from))
+
+			// The credential a first login writes. `{}` is honest: the hook never reads
+			// these bytes, only links the path.
+			const login = `{}`
+			if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(link, []byte(login), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			RunPackHooks(e, []*packload.Pack{p})
+			if fails := e.GenFailures(); len(fails) != 0 {
+				t.Fatalf("the %s credential hook failed the boot — a dropped state-dir or hook "+
+					"manifest block is the usual cause: %v", tc.pack, fails)
+			}
+
+			// The realized result: a RELATIVE symlink at the credential path, resolving to
+			// the machine-tier file. Reading THROUGH the link instead would pass on a plain
+			// leftover file, which is the shape that never shares anything.
+			target, err := os.Readlink(link)
+			if err != nil {
+				t.Fatalf("%s is not a symlink after the %s hook ran: %v — a login here would "+
+					"not reach the next jail", link, tc.pack, err)
+			}
+			if filepath.IsAbs(target) {
+				t.Errorf("link target %q is absolute; it must be relative so it resolves through "+
+					"whatever mount or sidecar backs the home", target)
+			}
+			if resolved := filepath.Join(filepath.Dir(link), target); resolved != shared {
+				t.Errorf("%s -> %q resolves to %q, want the machine tier %q", link, target, resolved, shared)
+			}
+			if got, err := os.ReadFile(shared); err != nil {
+				t.Fatalf("the machine tier holds no credential: %v", err)
+			} else if string(got) != login {
+				t.Errorf("machine tier = %q, want the first login %q", got, login)
+			}
+		})
+	}
+}

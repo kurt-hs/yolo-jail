@@ -39,14 +39,17 @@ func loadAll(t *testing.T) []*packload.Pack {
 // workspace ran one version of an extension, and it went on 2026-10-05 (XB-D14 of
 // docs/design/pi-extension-store-builds.md): one jail's refresh rewrote the npm prefix every
 // pi jail loaded from, against the no-leakage ruling. pi now unshares the link a home kept to
-// it, and the list is credential dirs alone again.
+// it, and every entry left is a CREDENTIAL dir — one login per machine, which is the leak the
+// user asked for. That is what `.muse-shared-credentials` (Muse Code's `~/.config/muse/auth.json`)
+// and `.pi-shared-credentials` (pi's `~/.pi/agent/auth.json`) joined for.
 //
 // Ported from TestSharedDirsForIsClaudeOnlyAndSelectionGated. Its selection-gating half is
 // gone with the concept: sharedDirs are now mounted for the packs actually loaded, which is
 // the same gate expressed structurally.
 func TestMachineGlobalTierStaysNarrow(t *testing.T) {
 	got := packload.SharedDirs(loadAll(t))
-	want := []string{".claude-shared-credentials", ".gemini-shared-credentials"}
+	want := []string{".claude-shared-credentials", ".gemini-shared-credentials",
+		".muse-shared-credentials", ".pi-shared-credentials"}
 	if len(got) != len(want) {
 		t.Fatalf("sharedDirs across every shipped pack = %v, want %v; each entry leaks state "+
 			"between workspaces by design — confirm that is intended, then update this "+

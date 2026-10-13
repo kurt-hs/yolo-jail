@@ -302,6 +302,30 @@
       "kind": "state",
       "scope": "workspace"
     },
+    // pi's LOGINS SHARED ACROSS WORKSPACES, the same state+hook pair claude and agy declare.
+    // `~/.pi` is a WORKSPACE-scope state dir above, so `~/.pi/agent/auth.json` is
+    // per-workspace and a login inside one jail does nothing for another. This links that ONE
+    // file into a top-level machine-scope dir, so one Meta (Muse subscription) login serves
+    // every jail on the machine. The credential file is TWO levels under the state dir
+    // (`.pi/agent/auth.json` vs claude's `.claude/.credentials.json`), which the hook's
+    // base-name join handles: it lands `<home>/.pi-shared-credentials/auth.json` and a
+    // relative `../../` target the macos-user sidecar mirror resolves.
+    //
+    // THE BARGAIN: pi keeps every provider's credential in that ONE file, so this shares ALL
+    // of them machine-wide, not just Meta's. claude and agy make the same one-file bargain,
+    // and the maintainer approved it rather than splitting the store.
+    {
+      "at": ".pi-shared-credentials",
+      "because": "identity/credential state shared across workspaces",
+      "kind": "state",
+      "scope": "machine"
+    },
+    {
+      "at": ".pi-shared-credentials",
+      "from": ".pi/agent/auth.json",
+      "hook": "shared_credentials",
+      "kind": "hook"
+    },
     {
       "at": ".pi-shared-npm",
       "from": ".pi/agent/npm",
