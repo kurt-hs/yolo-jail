@@ -62,6 +62,47 @@ func TestPreparationEnvironmentBoundsInheritedInputs(t *testing.T) {
 	}
 }
 
+func TestPreparationEnvironmentCredentialCaseVariants(t *testing.T) {
+	for _, declared := range []string{"https_proxy", "HTTPS_PROXY", "HtTpS_PrOxY"} {
+		for _, authority := range []string{"user provider", "pack provider", "program provider"} {
+			t.Run(authority+"/"+declared, func(t *testing.T) {
+				var providers *jsonx.OrderedMap
+				var packs []*packload.Pack
+				if authority == "user provider" {
+					providers = jsonx.NewOrderedMap()
+					entry := jsonx.NewOrderedMap()
+					entry.Set("api_key_env_name", declared)
+					providers.Set("synthetic", entry)
+				} else {
+					manifest := `{"contributes":[{"kind":"provider","name":"synthetic","api_key_env_name":"` + declared + `","endpoints":{"openai":{"base_url":"https://example.invalid"}}}]}`
+					if authority == "program provider" {
+						manifest = `{"provider_keys":{"acme":[{"surface":"acme/settings","pointer":"/env/` + declared + `"}]},"provider_env":{"acme":{"surface":"acme/settings","pointer":"/env"}},"contributes":[{"kind":"program","bin":"acme","via":"npm","package":"acme"}]}`
+					}
+					m, problems := packdecl.Decode([]byte(manifest))
+					if len(problems) > 0 {
+						t.Fatal(problems)
+					}
+					packs = []*packload.Pack{{Name: "synthetic", Decl: m}}
+				}
+				got := preparationEnvMap(preparationEnvironment([]string{
+					"HTTPS_PROXY=synthetic-upper", "https_proxy=synthetic-lower", "HtTpS_PrOxY=synthetic-mixed",
+					"HTTP_PROXY=http://upper.invalid", "http_proxy=http://lower.invalid",
+				}, providers, packs))
+				for _, name := range []string{"HTTPS_PROXY", "https_proxy", "HtTpS_PrOxY"} {
+					if _, ok := got[name]; ok {
+						t.Errorf("claimed credential alias %s survived", name)
+					}
+				}
+				for name, value := range map[string]string{"HTTP_PROXY": "http://upper.invalid", "http_proxy": "http://lower.invalid"} {
+					if got[name] != value {
+						t.Errorf("allowed transport %s changed", name)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestPreparationEnvironmentExcludesDeclaredProgramProviderEnv(t *testing.T) {
 	m, problems := packdecl.Decode([]byte(`{"provider_keys":{"acme":[{"surface":"acme/settings","pointer":"/env/SSL_CERT_FILE"}]},
  "provider_env":{"acme":{"surface":"acme/settings","pointer":"/env"}},
@@ -80,17 +121,27 @@ func TestPreparationEnvironmentExcludesDeclaredProgramProviderEnv(t *testing.T) 
 }
 
 func TestPreparationEnvironmentRealSpawnUsesAuthorizedDeclarations(t *testing.T) {
+	for _, names := range [][2]string{{"https_proxy", "all_proxy"}, {"HTTPS_PROXY", "ALL_PROXY"}, {"HtTpS_PrOxY", "AlL_PrOxY"}} {
+		t.Run(names[0], func(t *testing.T) {
+			testPreparationEnvironmentRealSpawn(t, names[0], names[1])
+		})
+	}
+}
+
+func testPreparationEnvironmentRealSpawn(t *testing.T, packCredential, userCredential string) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("YOLO_USER_LAYER", "")
 	dir := filepath.Join(home, "pack")
 	writeFile(t, filepath.Join(dir, "pack.json"), `{"contributes":[{"kind":"provider","name":"synthetic",
- "api_key_env_name":"HTTPS_PROXY","endpoints":{"openai":{"base_url":"https://example.invalid"}}}]}`)
+ "api_key_env_name":"`+packCredential+`","endpoints":{"openai":{"base_url":"https://example.invalid"}}}]}`)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[{"name":"synthetic","source":"file://`+dir+`"}],
- "providers":{"custom":{"api_key_env_name":"ALL_PROXY","endpoints":{"openai":{"base_url":"https://example.invalid"}}}}}`)
+ "providers":{"custom":{"api_key_env_name":"`+userCredential+`","endpoints":{"openai":{"base_url":"https://example.invalid"}}}}}`)
 	t.Setenv("HTTPS_PROXY", "pack-secret")
+	t.Setenv("https_proxy", "pack-secret-lower")
 	t.Setenv("ALL_PROXY", "user-secret")
+	t.Setenv("all_proxy", "user-secret-lower")
 	t.Setenv("UNKNOWN_SECRET", "secret")
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
 	old := startPreparedBackgroundCommand
@@ -102,13 +153,13 @@ func TestPreparationEnvironmentRealSpawnUsesAuthorizedDeclarations(t *testing.T)
 			t.Fatal("spawn implicitly inherits environment")
 		}
 		env := preparationEnvMap(c.Env)
-		for _, k := range []string{"HTTPS_PROXY", "ALL_PROXY", "UNKNOWN_SECRET", "YOLO_ALLOW_PATCH_FAILURES"} {
+		for _, k := range []string{"HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "UNKNOWN_SECRET", "YOLO_ALLOW_PATCH_FAILURES"} {
 			if _, ok := env[k]; ok {
 				t.Errorf("real spawn retained %s", k)
 			}
 		}
 		if env["HOME"] != home || env["GIT_TERMINAL_PROMPT"] != "0" {
-			t.Errorf("bounded env: %+v", env)
+			t.Error("bounded environment lost home or noninteractive control")
 		}
 		if !slices.Equal(c.Args[1:], []string{"internal", backgroundAdvanceVerb, "--runtime=podman"}) {
 			t.Errorf("argv changed: %v", c.Args)
