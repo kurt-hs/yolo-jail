@@ -63,6 +63,9 @@ type backgroundOutcome struct {
 	State string `json:"state"`
 	// Pid is the background advance's, while it runs.
 	Pid int `json:"pid,omitempty"`
+	// Completed scheduler outcomes retain ownership after the running PID clears.
+	ProducerPID            int    `json:"producer_pid,omitempty"`
+	SubscriptionGeneration uint64 `json:"subscription_generation,omitempty"`
 	// At is when the background advance began the key, in unix seconds.
 	At int64 `json:"at"`
 	// Log is the background advance's log, which every line about it names.
@@ -332,8 +335,16 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 	// Selection may itself materialize a fetched pack whose checkout is incomplete. Apply the
 	// background policy BEFORE entering that resolver too, not only to the later tree advance.
 	var deferred error
+	resolver := func(e config.PackEntry) (*packload.Pack, error) {
+		return resolveConfiguredPackWithSpec(e, config.ResolvePackSpec{Ctx: ctx, NoWait: true, Detached: true})
+	}
+	if a.schedulerGeneration != 0 {
+		var release func()
+		resolver, release = preparationScopedResolver(ctx)
+		defer release()
+	}
 	sel := selectHostPacks(func(e config.PackEntry) (*packload.Pack, error) {
-		p, err := resolveConfiguredPackWithSpec(e, config.ResolvePackSpec{Ctx: ctx, NoWait: true, Detached: true})
+		p, err := resolver(e)
 		if errors.Is(err, packsrc.ErrLockHeld) {
 			deferred = err
 		}
@@ -373,9 +384,12 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 	}
 	runTreesUnder(ctx, trees, a.runtime, w, w, func(_ int, f packload.Fork, lane treeLane) {
 		withBackgroundKey(f.Key(), f.Label(), lane.errw, func(o *backgroundOutcome) {
+			if a.schedulerGeneration != 0 {
+				o.ProducerPID, o.SubscriptionGeneration = os.Getpid(), a.schedulerGeneration
+			}
 			opts := lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true, background: true})
 			if a.schedulerGeneration != 0 {
-				opts.admitGuard = preparationAdmissionGuard(f.Key(), a.runtime, a.platform, a.schedulerGeneration)
+				opts.admitGuard = preparationAdmissionGuardUnder(ctx, f.Key(), a.runtime, a.platform, a.schedulerGeneration)
 			}
 			res := treeAdvance(f, opts)
 			backgroundResult(o, res, ctx.Err() != nil)
