@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 func stubPreparationWorkerStart(t *testing.T) {
@@ -57,6 +59,10 @@ func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
 			if err != nil || got.To == "" {
 				return false
 			}
+			snapshot, err := readPreparationSnapshot(key)
+			if err != nil || snapshot.Phase != "admitted" || snapshot.ServingEntry != got.To {
+				return false
+			}
 		}
 		return true
 	}
@@ -79,6 +85,18 @@ func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
 			t.Errorf("%s: timer did not publish an admitted outcome: %+v", key, got)
 		}
 	}
+	for _, f := range packload.PatchedTrees(selectConfiguredHostPacks().packs) {
+		before, _ := readPreparationSnapshot(f.Key())
+		noteBackgroundOutcome(f, richtext.Printer{W: io.Discard})
+		if _, err := os.Stat(backgroundSaidPath(f.Key())); err != nil {
+			t.Fatal(err)
+		}
+		after, _ := readPreparationSnapshot(f.Key())
+		var status bytes.Buffer
+		if code := printPreparationStatus(&status, io.Discard, false, f.Key()); code != 0 || after.Phase != "admitted" || after.ServingEntry != before.ServingEntry || !strings.Contains(status.String(), "admitted entry: "+before.ServingEntry) {
+			t.Fatalf("consumed notice erased actual admitted status: %+v status=%s", after, status.String())
+		}
+	}
 }
 
 func TestPreparationNoDueRegistrationCanBecomeDueOnLaterTick(t *testing.T) {
@@ -97,8 +115,10 @@ func TestPreparationNoDueRegistrationCanBecomeDueOnLaterTick(t *testing.T) {
 	ticks := make(chan time.Time)
 	done := make(chan error, 1)
 	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	// Three synchronous sends ensure the first no-due evaluation completed, without a sleep.
 	ticks <- pf.now
-	time.Sleep(25 * time.Millisecond)
+	ticks <- pf.now
+	ticks <- pf.now
 	if builds.Load() != 0 {
 		t.Fatalf("no-due timer tick built %d trees", builds.Load())
 	}
@@ -404,6 +424,21 @@ func TestPreparationBusyKeyRetriesWithoutSuccessStamp(t *testing.T) {
 	}
 	if outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA)); err == nil && outcome.Pid == os.Getpid() && outcome.State == bgMoved {
 		t.Fatal("busy skip manufactured a successful outcome")
+	}
+	deadline = time.After(5 * time.Second)
+	for {
+		snapshot, _ := readPreparationSnapshot(poolKeyB)
+		if snapshot.Phase == "admitted" && snapshot.ServingEntry != "" {
+			break
+		}
+		select {
+		case <-deadline:
+			lk.Release()
+			stop()
+			<-done
+			t.Fatalf("free B starved while A remained locked: %+v", snapshot)
+		case <-time.After(time.Millisecond):
+		}
 	}
 	lk.Release()
 	ticks <- pf.now

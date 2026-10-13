@@ -44,8 +44,9 @@ func preparationInputIdentity(f packload.Fork, rt, platform string) (string, err
 		return "", err
 	}
 	identity := struct {
-		Key, Pack, Owner, Source, Follow, Build, Series, Runtime, Platform string
-	}{f.Key(), f.Pack, f.Owner, f.Source, f.Follow, f.Build, series.Digest, rt, platform}
+		Key, Pack, Owner, Follow, Recipe, Runtime, Platform string
+		Platforms                                           []string
+	}{f.Key(), f.Pack, f.Owner, f.Follow, run.PatchedRecipe(f, series.Digest), rt, platform, f.Platforms}
 	b, err := json.Marshal(identity)
 	if err != nil {
 		return "", err
@@ -142,10 +143,15 @@ func startPreparationScheduler() error {
 		return err
 	}
 	defer f.Close()
-	cmd := exec.Command(run.SelfExecPath(), preparationSchedulerArgv()...)
-	cmd.Env = currentPreparationEnvironment()
+	cmd := preparationSchedulerProcess()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, f, f
 	return notty.StartDetached(cmd)
+}
+
+func preparationSchedulerProcess() *exec.Cmd {
+	cmd := exec.Command(run.SelfExecPath(), preparationSchedulerArgv()...)
+	cmd.Env = currentPreparationEnvironment()
+	return cmd
 }
 
 var preparationStartLock = filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-start.lock")
@@ -301,7 +307,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				}
 			case <-more:
 				select {
-				case tickEvents <- preparationNow():
+				case tickEvents <- time.Time{}:
 				case <-pumpCtx.Done():
 					return
 				}
@@ -311,30 +317,39 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 		}
 	}()
 	tasks := map[string]preparationTask{}
+	var releaseSnapshot func()
+	defer func() {
+		if releaseSnapshot != nil {
+			releaseSnapshot()
+		}
+	}()
+	attempted := map[string]bool{}
+	defer func() {
+		for _, task := range tasks {
+			task.cancel()
+		}
+		for range tasks {
+			<-done
+		}
+	}()
 	control := time.NewTicker(time.Second)
 	defer control.Stop()
 	keyID := func(r preparationRecord) string { return r.Key + "\x00" + r.Runtime + "\x00" + r.Platform }
 	for {
 		select {
 		case <-ctx.Done():
-			for _, task := range tasks {
-				task.cancel()
-			}
-			for range tasks {
-				<-done
-			}
 			return ctx.Err()
 		case result := <-done:
 			id := result.key + "\x00" + result.runtime + "\x00" + result.platform
 			delete(tasks, id)
-			reprocess := false
+			reprocess := true
 			_ = preparationUpdateRecord(result.key, result.runtime, result.platform, func(r *preparationRecord) {
 				if r.Generation != result.generation || !r.Active {
 					return
 				}
 				r.At = preparationNow()
 				if outcome, err := readBackgroundOutcome(backgroundOutcomePath(r.Key)); err == nil &&
-					outcome.Generation > result.baseline && outcome.Pid == os.Getpid() && outcome.State != bgRunning {
+					outcome.Generation > result.baseline && outcome.Key == r.Key && outcome.ProducerPID == os.Getpid() && outcome.SubscriptionGeneration == result.generation && outcome.Pid == 0 && outcome.State != bgRunning {
 					phase := outcome.State
 					switch phase {
 					case bgMoved:
@@ -350,10 +365,10 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 					if r.Reason == "" {
 						r.Reason = outcome.Retained
 					}
+					r.RetryAt = time.Time{}
 					if outcome.RetryAt > 0 {
 						r.RetryAt = time.Unix(outcome.RetryAt, 0)
 					}
-					reprocess = outcome.State == bgMoved || outcome.State == bgNothing
 				} else if result.err != nil {
 					r.Phase, r.Reason = "failed", result.err.Error()
 				} else {
@@ -368,21 +383,9 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 			}
 		case <-control.C:
 			if preparationStopRequested() {
-				for _, task := range tasks {
-					task.cancel()
-				}
-				for range tasks {
-					<-done
-				}
 				return nil
 			}
 			if err := preparationCheckBinaryIdentity(); err != nil {
-				for _, task := range tasks {
-					task.cancel()
-				}
-				for range tasks {
-					<-done
-				}
 				return err
 			}
 			if _, err := os.Stat(preparationWakePath()); err == nil {
@@ -392,15 +395,12 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				default:
 				}
 			}
-		case _, ok := <-tickEvents:
+		case tick, ok := <-tickEvents:
 			if !ok {
-				for _, task := range tasks {
-					task.cancel()
-				}
-				for range tasks {
-					<-done
-				}
 				return nil
+			}
+			if !tick.IsZero() {
+				attempted = map[string]bool{}
 			}
 			state, stateErr := preparationSubscriptions()
 			if stateErr != nil {
@@ -409,7 +409,17 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 			if len(state) == 0 {
 				return nil
 			}
-			current, configErr := currentPreparationTrees(state)
+			if releaseSnapshot != nil {
+				releaseSnapshot()
+			}
+			current, release, configErr := scopedPreparationTrees(ctx, state)
+			releaseSnapshot = release
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.Is(configErr, packsrc.ErrLockHeld) {
+				continue
+			}
 			if configErr != nil {
 				for _, r := range state {
 					if r.Active {
@@ -420,10 +430,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 						})
 					}
 				}
-				for _, task := range tasks {
-					task.cancel()
-				}
-				continue
+				return configErr
 			}
 			state = refreshPreparationSubscriptions(state, current)
 			eligible := false
@@ -449,8 +456,11 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				if !r.Active || !run.BackgroundBuildsOn(r.Runtime) || len(tasks) > 0 {
 					continue
 				}
+				if !r.RetryAt.IsZero() && preparationNow().Before(r.RetryAt) {
+					continue
+				}
 				id := keyID(r)
-				if _, busy := tasks[id]; busy {
+				if _, busy := tasks[id]; busy || attempted[id] {
 					continue
 				}
 				f, ok := current[id]
@@ -479,6 +489,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				if old, err := readBackgroundOutcome(backgroundOutcomePath(r.Key)); err == nil {
 					baseline = old.Generation
 				}
+				attempted[id] = true
 				taskCtx, cancel := context.WithCancel(ctx)
 				tasks[id] = preparationTask{cancel: cancel, generation: r.Generation, baseline: baseline}
 				_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
@@ -501,7 +512,28 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 }
 
 func currentPreparationTrees(records []preparationRecord) (map[string]packload.Fork, error) {
-	sel := selectConfiguredHostPacks()
+	// Compatibility for short-lived callers. Persistent readers use an explicitly owned scope.
+	return preparationTreesWithResolver(records, resolveConfiguredPack)
+}
+
+func scopedPreparationTrees(ctx context.Context, records []preparationRecord) (map[string]packload.Fork, func(), error) {
+	resolver, release := preparationScopedResolver(ctx)
+	current, err := preparationTreesWithResolver(records, resolver)
+	return current, release, err
+}
+
+func preparationTreesWithResolver(records []preparationRecord, resolver func(config.PackEntry) (*packload.Pack, error)) (map[string]packload.Fork, error) {
+	var contention error
+	sel := selectHostPacks(func(e config.PackEntry) (*packload.Pack, error) {
+		p, err := resolver(e)
+		if errors.Is(err, packsrc.ErrLockHeld) {
+			contention = err
+		}
+		return p, err
+	}, config.UserScopeSelection())
+	if contention != nil {
+		return nil, contention
+	}
 	if problems := sel.problems(); len(problems) > 0 {
 		var lines []string
 		for _, problem := range problems {
@@ -555,6 +587,8 @@ func refreshPreparationSubscriptions(records []preparationRecord, current map[st
 				r.Phase = "pending"
 				r.At = time.Time{}
 				r.ServingEntry = ""
+				r.Reason = ""
+				r.RetryAt = time.Time{}
 			}
 			if treeUpdateTiming(f) != timingNextLaunch {
 				r.Active = false
@@ -568,8 +602,10 @@ func refreshPreparationSubscriptions(records []preparationRecord, current map[st
 				r.Reason = runtimeName(r.Runtime) + " does not support background tree preparation — use a fresh launch to prepare it"
 				return
 			}
+			if !r.Active {
+				r.Reason = ""
+			}
 			r.Active = true
-			r.Reason = ""
 		})
 	}
 	updated, _ := preparationSubscriptions()
@@ -591,7 +627,20 @@ func preparationStopRequested() bool {
 var errPreparationAdmissionStale = errors.New("tree preparation inputs or selection changed before admission — the current selection will be retried")
 
 func preparationAdmissionGuard(key, rt, platform string, generation uint64) func(func() error) error {
+	return preparationAdmissionGuardUnder(context.Background(), key, rt, platform, generation)
+}
+
+func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform string, generation uint64) func(func() error) error {
 	return func(commit func() error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Nonwaiting resolution happens before acquiring the subscription guard.
+		current, release, err := scopedPreparationTrees(ctx, []preparationRecord{{Key: key, Runtime: rt, Platform: platform}})
+		defer release()
+		if err != nil {
+			return errPreparationAdmissionStale
+		}
 		lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.NoWait, nil)
 		if err != nil {
 			if errors.Is(err, pidlock.ErrHeld) {
@@ -612,10 +661,6 @@ func preparationAdmissionGuard(key, rt, platform string, generation uint64) func
 		if !record.Active || record.Generation != generation {
 			return errPreparationAdmissionStale
 		}
-		current, err := currentPreparationTrees([]preparationRecord{record})
-		if err != nil {
-			return errPreparationAdmissionStale
-		}
 		id := key + "\x00" + rt + "\x00" + platform
 		f, ok := current[id]
 		if !ok || treeUpdateTiming(f) != timingNextLaunch || !run.BackgroundBuildsOn(rt) || currentPatchFailure(f) != nil {
@@ -627,6 +672,9 @@ func preparationAdmissionGuard(key, rt, platform string, generation uint64) func
 		}
 		if preparationStopRequested() {
 			return errPreparationAdmissionStale
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		return commit()
 	}
