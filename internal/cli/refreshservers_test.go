@@ -5,9 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 func TestFreshServerHiddenDispatchUsesAppliedMCPPresets(t *testing.T) {
+	// runInternal reads the staged jail pack tree and flips packload's process-wide decoder
+	// tolerance. Keep both sides of this test on the host's strict authoring decoder.
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	home := t.TempDir()
 	packRoot := t.TempDir()
 	prefix := t.TempDir()

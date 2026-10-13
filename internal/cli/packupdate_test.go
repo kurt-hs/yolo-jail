@@ -42,8 +42,9 @@ import (
 func stageNpmPackRoot(t *testing.T, manifest string, launchers ...string) *entrypoint.Env {
 	t.Helper()
 	// The refresh reads this tree through entrypoint.LoadJailPacks, which switches the process
-	// to the tolerant decoder; the restore keeps every later test on the strict one.
-	t.Cleanup(packload.OverrideSkewTolerance(false))
+	// to the tolerant decoder; force strict host behavior both before and after this fixture.
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	home := t.TempDir()
 	packRoot := t.TempDir()
 	packDir := filepath.Join(packRoot, "acme")
@@ -260,7 +261,8 @@ func TestInternalFreshProgramRefreshUsesOnlyTheStagedSelectedTree(t *testing.T) 
 func TestUpdateReachesTheLauncherInUpdateMode(t *testing.T) {
 	// `pack update` reads the tree below through entrypoint.LoadJailPacks (stageNpmPackRoot's
 	// reason).
-	t.Cleanup(packload.OverrideSkewTolerance(false))
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	home := t.TempDir()
 	packRoot := t.TempDir()
 	packDir := filepath.Join(packRoot, "acme")

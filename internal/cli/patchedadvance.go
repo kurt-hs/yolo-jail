@@ -1421,6 +1421,10 @@ func (a *advance) run() advanceResult {
 		why := fmt.Sprintf("%s checked candidate %s and left it pending because %s — %s", f.Label(),
 			fit.Entry.Label(), reason, next)
 		a.warn("%s: %s", f.Label(), why)
+		if a.o.freshCheck {
+			return a.freshRefusal("Apple Container cannot admit the freshly checked candidate while its build is deferred",
+				fmt.Errorf("%s; the candidate remains pending and the previous admitted build remains available to an ordinary launch", why))
+		}
 		return a.serveOr(why)
 	}
 	return a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
