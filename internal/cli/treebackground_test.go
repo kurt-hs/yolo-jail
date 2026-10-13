@@ -416,12 +416,8 @@ func forkRequest(t *testing.T, fx *patchedAdvanceFixture, runtime string) run.Fo
 		Runtime: runtime, Workspace: "/ws", Interrupt: &run.ActInterrupt{}}
 }
 
-// A PATCHED FORK THAT UPDATES FOR THE NEXT LAUNCH is handed its good build with no check and no
-// build, and the launch starts ONE background advance carrying its key. This drives the production
-// pool path (runBuildSlot -> addForkKeys -> backgroundTreeAdvance -> startBackgroundAdvance): delete
-// the fork arm's collection or its call site and no advance is started. Red if forkUpdateTiming stops
-// reading `agent_updates`, if the fork arm advances the key in front, or if its key never reaches the
-// spawn.
+// A next-launch patched program is handed Good without advancing in front and
+// registers its owner with the ongoing worker through the production pool path.
 func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *testing.T) {
 	fx, good := forkWithAGoodBuild(t)
 	builds := len(fx.builds)
@@ -435,11 +431,19 @@ func TestAPatchedForkThatUpdatesForTheNextLaunchStartsOneBackgroundAdvance(t *te
 	if len(fx.builds) != builds {
 		t.Errorf("a next-launch fork was checked or built in front (%d builds):\n%s", len(fx.builds)-builds, out.String())
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{"forkpack/tool"}) {
-		t.Fatalf("%d background advances started for %v, want one for forkpack/tool:\n%s", sp.count(), sp.argvs, out.String())
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Fatalf("%d workers started for %v, want one scheduler:\n%s", sp.count(), sp.argvs, out.String())
 	}
-	if !strings.Contains(out.String(), "fork forkpack/tool: updates for the next launch — a background advance "+
-		"is checking and building it now; its log is "+backgroundAdvanceLog()) {
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 1 {
+		t.Fatalf("missing program subscription: %+v %v", subs, err)
+	}
+	for _, sub := range subs {
+		if sub.Key != "forkpack/tool" {
+			t.Fatalf("wrong owner: %+v", sub)
+		}
+	}
+	if !strings.Contains(out.String(), "ongoing next-launch preparation registered; log "+backgroundAdvanceLog()) {
 		t.Errorf("the spawn is not said with its log:\n%s", out.String())
 	}
 }
