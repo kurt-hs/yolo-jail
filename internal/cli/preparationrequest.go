@@ -35,7 +35,7 @@ func selectedFreshPreparation(ctx context.Context) ([]packload.Fork, error) {
 	if problems := sel.problems(); len(problems) > 0 {
 		return nil, fmt.Errorf("fresh preparation selection unavailable: %v — run `yolo check --no-build` and retry", problems)
 	}
-	return append(packload.PatchedTrees(sel.packs), packload.PatchedForks(sel.packs)...), nil
+	return append(packload.PatchedTrees(sel.packs), packload.Forks(sel.packs)...), nil
 }
 
 func newPreparationRequest(ctx context.Context, keys []packload.Fork, runtime, platform string) (*preparationRequest, error) {
@@ -47,9 +47,7 @@ func newPreparationRequest(ctx context.Context, keys []packload.Fork, runtime, p
 	store := patchedAdvanceStore(true)
 	store.Ctx = ctx
 	for _, f := range keys {
-		if !f.Patched() {
-			continue
-		}
+
 		if _, ok := req.Boundaries[f.Key()]; ok {
 			continue
 		}

@@ -138,3 +138,22 @@ func (s *Store) WithFreshAuthority(owner string, boundary CheckStart, begun *Che
 		return commit()
 	})
 }
+
+// BeginFreshCheck exposes the same short start protocol to a plain-source
+// resolver that already owns its keyed/global pin transaction. It does no transport.
+func (s *Store) BeginFreshCheck(owner, identity, request string, boundary CheckStart, guard func(func() error) error) (CheckStart, error) {
+	var begun CheckStart
+	err := s.WithCheckRecord(owner, nil, func(r *CheckRecord, readErr error, save func() error) (bool, error) {
+		if readErr != nil {
+			return false, readErr
+		}
+		var err error
+		begun, err = s.beginCheck(owner, identity, request, &boundary, time.Now(), guard)
+		if err != nil {
+			return false, err
+		}
+		r.CheckedAt = begun.StartedAt.Unix()
+		return true, nil
+	})
+	return begun, err
+}

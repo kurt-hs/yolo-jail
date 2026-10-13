@@ -458,7 +458,30 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		}
 	}
 	if fr := req.Forks; fr != nil {
-		addForkKeys(pool, *fr, color, func(bin string, d entrypoint.ForkDelivery) {
+		planned := *fr
+		if fr.FreshCheck {
+			planned.Pins = nil
+			for _, pin := range fr.Pins {
+				if pin.Fork.Patched() {
+					planned.Pins = append(planned.Pins, pin)
+					continue
+				}
+				f := pin.Fork
+				pool.add(f.Label(), func(it *poolItem) {
+					res, err := waitFreshPreparation(it.context(), fr.Preparation, f.Key())
+					if err != nil {
+						if fr.FreshFailure != nil {
+							fr.FreshFailure(err)
+						}
+						res.delivery = entrypoint.ForkDelivery{Reason: err.Error()}
+					}
+					mu.Lock()
+					defer mu.Unlock()
+					forks[f.Bin] = res.delivery
+				})
+			}
+		}
+		addForkKeys(pool, planned, color, func(bin string, d entrypoint.ForkDelivery) {
 			mu.Lock()
 			defer mu.Unlock()
 			forks[bin] = d

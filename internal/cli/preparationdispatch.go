@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
@@ -31,7 +32,10 @@ func treePreparationSubscription(f packload.Fork, rt, platform string) (preparat
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return preparationSubscription{}, err
 	}
-	series, err := f.ReadSeries()
+	series := packsrc.EmptySeries()
+	if f.Patched() || f.Unmodified() {
+		series, err = f.ReadSeries()
+	}
 	if err != nil {
 		return preparationSubscription{}, err
 	}
