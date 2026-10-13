@@ -138,10 +138,13 @@ func TestCodexAndPiWithoutTheirProviderStillCompose(t *testing.T) {
 		t.Errorf("host: codex on codex without openai-auth must compose as before: %v", err)
 	}
 	var mp *MissingProviderError
-	if _, err := agentEnvAt(t, notches[1], embeddedNamed(t, "pi"), nil, userProfiles, "pi", "codex"); !errors.As(err, &mp) ||
-		mp.Shipper != "openai-auth" {
-		t.Errorf("host: pi on codex without openai-auth now has a reader (its prelaunch producer), "+
-			"so it must be refused naming openai-auth, got %v", err)
+	_, err := agentEnvAt(t, notches[1], embeddedNamed(t, "pi"), nil, userProfiles, "pi", "codex")
+	if !errors.As(err, &mp) || mp.Shipper != "openai-auth" {
+		t.Fatalf("host: pi on codex without openai-auth must be refused naming openai-auth, got %v", err)
+	}
+	want := `Profile "codex" uses provider "openai-codex" for pi, but that provider is unavailable. Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration to use this provider`
+	if got := err.Error(); got != want {
+		t.Errorf("rendered refusal = %q, want %q", got, want)
 	}
 }
 
