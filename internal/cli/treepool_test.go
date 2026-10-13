@@ -363,8 +363,8 @@ func TestOrderedOutputHoldsALaterKeyUntilTheEarlierEnd(t *testing.T) {
 }
 
 // THE BACKGROUND MODE (XB-D28, XB-D19): a key that `agent_updates` sets to update for the next launch
-// is handed the good build it has with no check and no build, and left to the background advance.
-// Red if the tree arm stops reading the timing, or stops handing the background advance its keys.
+// is handed the good build it has with no check and no build, and recorded for periodic preparation.
+// Red if the tree arm stops reading the timing or recording either key for the preparation worker.
 func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	pf := newPoolFixture(t)
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
@@ -378,6 +378,7 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	prevBackground := backgroundTreeAdvance
 	t.Cleanup(func() { backgroundTreeAdvance = prevBackground })
 	pf.agentUpdates(t, `{"*":true,"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
 	var queued []string
 	backgroundTreeAdvance = func(trees []packload.Fork, _, _ string, _ io.Writer, _ bool) {
 		for _, f := range trees {
@@ -393,9 +394,23 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 	if got[poolKeyA].Entry != first[poolKeyA].Entry || got[poolKeyB].Entry != first[poolKeyB].Entry {
 		t.Errorf("the next-launch keys were not handed their good builds: %+v", got)
 	}
-	slices.Sort(queued)
-	if !slices.Equal(queued, []string{poolKeyA, poolKeyB}) {
-		t.Errorf("the background advance was handed %v, want both keys", queued)
+	if len(queued) != 0 {
+		t.Errorf("tree keys reached the one-shot fork advance: %v", queued)
+	}
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registered []string
+	for _, record := range state {
+		registered = append(registered, record.Key)
+		if !record.Active || record.Generation == 0 {
+			t.Errorf("next-launch tree was not recorded for preparation: %+v", record)
+		}
+	}
+	slices.Sort(registered)
+	if !slices.Equal(registered, []string{poolKeyA, poolKeyB}) {
+		t.Errorf("preparation worker was handed %v, want both keys", registered)
 	}
 }
 

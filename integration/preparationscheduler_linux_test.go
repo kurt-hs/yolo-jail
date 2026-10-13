@@ -55,6 +55,7 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 	home := withPrivateFixtureYoloStore(t)
 	t.Setenv("YOLO_REPO_ROOT", repoRoot)
 	work := writeProject(t, `{}`)
+	awaitDetachedWriters(t, work, home)
 	statePath := filepath.Join(paths.BackgroundAdvanceDir(), "scheduler.json")
 	platform := "linux/" + goruntime.GOARCH
 	writePreparationFixtureState(t, statePath, platform)
