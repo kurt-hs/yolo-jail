@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,11 +161,8 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
 	calls := filepath.Join(t.TempDir(), "git-called")
 	patchedGitWrapper(t, "echo called > "+shellQuote(calls)+"; exit 99")
-	spawned := 0
-	previousBackground := backgroundTreeAdvance
-	backgroundTreeAdvance = func([]packload.Fork, string, string, io.Writer, bool) { spawned++ }
-	t.Cleanup(func() { backgroundTreeAdvance = previousBackground })
-	// Use the production pool path: BuildTrees' answer and next-launch spawn decision are one act.
+	stubPreparationWorkerStart(t)
+	// Use the production pool path: BuildTrees' answer and next-launch registration are one act.
 	var output bytes.Buffer
 	req := run.TreeBuildRequest{Trees: []packload.Fork{fx.tree(t)}, Platform: patchedTestPlatform, Runtime: "podman",
 		Workspace: "/ws", Build: true, CopyRoot: filepath.Join(t.TempDir(), "tree.patched")}
@@ -174,8 +170,17 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 	if delivered := trees[treeKeyCLI]; delivered.Dir == "" || delivered.PatchFailure == nil {
 		t.Errorf("the offline next-launch consumer lost its old Good or concrete failure: %+v\n%s", delivered, output.String())
 	}
-	if len(fx.builds) != buildCount || spawned != 0 {
-		t.Errorf("next-launch failure ran foreground build/background work: builds=%d/%d spawned=%d", len(fx.builds), buildCount, spawned)
+	if len(fx.builds) != buildCount {
+		t.Errorf("next-launch failure ran a foreground build: builds=%d/%d", len(fx.builds), buildCount)
+	}
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range state {
+		if record.Key == treeKeyCLI && (record.Active || record.Phase != "failed") {
+			t.Errorf("PF-D81 evidence did not hold its scheduler subscription: %+v", record)
+		}
 	}
 	if _, err := os.Stat(calls); err == nil {
 		t.Errorf("next-launch failure probed Git before its offline delivery")

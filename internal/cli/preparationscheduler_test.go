@@ -1,0 +1,457 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+)
+
+func stubPreparationWorkerStart(t *testing.T) {
+	t.Helper()
+	previous := preparationSpawn
+	preparationSpawn = func() error { return nil }
+	t.Cleanup(func() { preparationSpawn = previous })
+}
+
+// This is the production registration call from runBuildSlot followed by the production timer loop.
+// It fails if registration is removed or if the loop stops dispatching a timer tick.
+func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
+	pf := readyForABackgroundAdvance(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	builds := pf.countBuilds()
+	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	for _, key := range []string{poolKeyA, poolKeyB} {
+		got, err := readPreparationSnapshot(key)
+		if err != nil || got.Key != key || got.Generation == 0 {
+			t.Fatalf("launch did not persist %s subscription: %+v err=%v", key, got, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	select {
+	case ticks <- pf.now:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("scheduler did not receive its production timer tick")
+	}
+	complete := func() bool {
+		if builds.Load() < 2 {
+			return false
+		}
+		for _, key := range []string{poolKeyA, poolKeyB} {
+			got, err := readBackgroundOutcome(backgroundOutcomePath(key))
+			if err != nil || got.To == "" {
+				return false
+			}
+		}
+		return true
+	}
+	deadline := time.After(5 * time.Second)
+	for !complete() {
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatalf("timer did not admit both registered trees (build count %d)", builds.Load())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	for _, key := range []string{poolKeyA, poolKeyB} {
+		if got := outcomeOf(t, key); got.To == "" {
+			t.Errorf("%s: timer did not publish an admitted outcome: %+v", key, got)
+		}
+	}
+}
+
+func TestPreparationNoDueRegistrationCanBecomeDueOnLaterTick(t *testing.T) {
+	pf := newPoolFixture(t)
+	if got, out := pf.launch(t, "podman", &run.ActInterrupt{}); got[poolKeyA].Dir == "" || out == "" {
+		t.Fatalf("initial tree build failed: %+v\n%s", got, out)
+	}
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	builds := pf.countBuilds()
+	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	if builds.Load() != 0 {
+		t.Fatalf("launch did work before due: %d builds", builds.Load())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	ticks <- pf.now
+	time.Sleep(25 * time.Millisecond)
+	if builds.Load() != 0 {
+		t.Fatalf("no-due timer tick built %d trees", builds.Load())
+	}
+	pf.commit(t, "", map[int]string{5: "five"})
+	pf.now = pf.now.Add(2 * time.Hour)
+	ticks <- pf.now
+	complete := func() bool {
+		if builds.Load() < 2 {
+			return false
+		}
+		for _, key := range []string{poolKeyA, poolKeyB} {
+			if got, err := readBackgroundOutcome(backgroundOutcomePath(key)); err != nil || got.To == "" {
+				return false
+			}
+		}
+		return true
+	}
+	deadline := time.After(5 * time.Second)
+	for !complete() {
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatalf("later due tick did not admit both trees: builds=%d", builds.Load())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+func TestPreparationConcurrentRegistrationCoalesces(t *testing.T) {
+	pf := newPoolFixture(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	trees := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	req := run.TreeBuildRequest{Trees: trees, Build: true, Runtime: "podman", Platform: patchedTestPlatform}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := registerTreePreparation(append(trees, trees[0]), req, io.Discard); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state) != 2 {
+		t.Fatalf("concurrent duplicate registrations created %d records: %+v", len(state), state)
+	}
+	for _, record := range state {
+		if !record.Active || record.Generation == 0 {
+			t.Errorf("registration is not active and versioned: %+v", record)
+		}
+	}
+}
+
+func TestPreparationMalformedUserConfigBlocksDispatch(t *testing.T) {
+	pf := newPoolFixture(t)
+	path := filepath.Join(pf.home, ".config", "yolo-jail", "config.jsonc")
+	if err := os.WriteFile(path, []byte(`{"packs":[`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := currentPreparationTrees(nil); err == nil || !strings.Contains(err.Error(), "selection is incomplete") {
+		t.Fatalf("malformed user config did not disable scheduler dispatch: %v", err)
+	}
+}
+
+func TestPreparationBinaryMismatchIsVisible(t *testing.T) {
+	newPoolFixture(t)
+	executable := filepath.Join(t.TempDir(), "yolo")
+	if err := os.WriteFile(executable, []byte("current binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := withPreparationState(func(state *preparationState) error {
+		state.Worker = preparationWorker{Executable: executable, BinaryDigest: "old-binary-digest"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := preparationCheckBinaryIdentity(); err == nil || !strings.Contains(err.Error(), "binary changed") {
+		t.Fatalf("worker binary mismatch did not stop dispatch: %v", err)
+	}
+}
+
+func TestPackPrepareEmptySelectionDoesNotStartWorker(t *testing.T) {
+	pf := newPoolFixture(t)
+	if err := os.WriteFile(filepath.Join(pf.home, ".config", "yolo-jail", "config.jsonc"), []byte(`{"packs":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	starts := 0
+	previous := preparationSpawn
+	preparationSpawn = func() error { starts++; return nil }
+	t.Cleanup(func() { preparationSpawn = previous })
+	var out strings.Builder
+	if rc := packPrepare([]string{"start"}, &out, io.Discard, false); rc != 0 {
+		t.Fatalf("empty start rc=%d", rc)
+	}
+	if rc := packPrepare([]string{"status"}, &out, io.Discard, false); rc != 0 {
+		t.Fatalf("read-only status rc=%d", rc)
+	}
+	if starts != 0 {
+		t.Fatalf("empty selection or status started the worker %d times", starts)
+	}
+}
+
+func TestPreparationStateCorruptionIsNotSuccess(t *testing.T) {
+	newPoolFixture(t)
+	if err := os.MkdirAll(filepath.Dir(preparationStatePath()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preparationStatePath(), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadPreparationState(); err == nil || !strings.Contains(err.Error(), "yolo pack prepare start") {
+		t.Fatalf("corrupt scheduler state was not reported with a repair action: %v", err)
+	}
+}
+
+func TestPreparationAdmissionGuardRejectsChangedGeneration(t *testing.T) {
+	newPoolFixture(t)
+	stubPreparationWorkerStart(t)
+	if err := withPreparationState(func(state *preparationState) error {
+		state.Subscriptions = append(state.Subscriptions, preparationRecord{Key: poolKeyA, Runtime: "podman", Platform: patchedTestPlatform, Generation: 4, Active: true})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := preparationUpdateRecord(poolKeyA, "podman", patchedTestPlatform, func(r *preparationRecord) { r.Generation++ }); err != nil {
+		t.Fatal(err)
+	}
+	committed := false
+	err := preparationAdmissionGuard(poolKeyA, "podman", patchedTestPlatform, 4)(func() error { committed = true; return nil })
+	if !errors.Is(err, errPreparationAdmissionStale) || committed {
+		t.Fatalf("stale generation admitted: committed=%t err=%v", committed, err)
+	}
+}
+
+func TestPreparationAdmissionGuardRechecksCurrentPackSelection(t *testing.T) {
+	pf := newPoolFixture(t)
+	previousTiming := treeUpdateTiming
+	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
+	t.Cleanup(func() { treeUpdateTiming = previousTiming })
+	stubPreparationWorkerStart(t)
+	selected := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	if len(selected) == 0 {
+		t.Fatal("fixture has no selected trees")
+	}
+	f := selected[0]
+	req := run.TreeBuildRequest{Build: true, Runtime: "podman", Platform: patchedTestPlatform}
+	if err := registerTreePreparation([]packload.Fork{f}, req, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := readPreparationSnapshot(f.Key())
+	if err != nil || snapshot.Generation == 0 {
+		t.Fatalf("fixture did not register a generation: %+v err=%v", snapshot, err)
+	}
+	if err := os.WriteFile(filepath.Join(pf.home, ".config", "yolo-jail", "config.jsonc"), []byte(`{"packs":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	committed := false
+	err = preparationAdmissionGuard(f.Key(), req.Runtime, req.Platform, snapshot.Generation)(func() error { committed = true; return nil })
+	if !errors.Is(err, errPreparationAdmissionStale) || committed {
+		t.Fatalf("deselected pack admitted a prepared build: committed=%t err=%v", committed, err)
+	}
+}
+
+func TestPreparationEnvironmentUsesDeclaredProviderExclusionsAndBoundedAllowlist(t *testing.T) {
+	env := preparationEnvironment([]string{
+		"HOME=/home/user", "PATH=/usr/bin", "LANG=C.UTF-8", "SSH_AUTH_SOCK=/run/ssh.sock",
+		"GIT_SSH_COMMAND=ssh -F /home/user/.ssh/config", "YOLO_REPO_ROOT=/src", "YOLO_RUNTIME=podman",
+		"YOLO_ALLOW_PATCH_FAILURES=1", "YOLO_WORKSPACE=/workspace", "GIT_DIR=/repo/.git",
+		"UNKNOWN_AGENT_TOKEN=secret", "SYNTHETIC_PROVIDER_KEY=secret", "HTTPS_PROXY=https://proxy",
+	}, []string{"SYNTHETIC_PROVIDER_KEY"})
+	got := map[string]string{}
+	for _, item := range env {
+		name, value, _ := strings.Cut(item, "=")
+		got[name] = value
+	}
+	for _, name := range []string{"HOME", "PATH", "LANG", "SSH_AUTH_SOCK", "GIT_SSH_COMMAND", "YOLO_REPO_ROOT", "YOLO_RUNTIME", "HTTPS_PROXY"} {
+		if got[name] == "" {
+			t.Errorf("required worker environment %s was removed: %v", name, env)
+		}
+	}
+	for _, name := range []string{"YOLO_ALLOW_PATCH_FAILURES", "YOLO_WORKSPACE", "GIT_DIR", "UNKNOWN_AGENT_TOKEN", "SYNTHETIC_PROVIDER_KEY"} {
+		if _, ok := got[name]; ok {
+			t.Errorf("unbounded or credential variable %s crossed into worker environment", name)
+		}
+	}
+	if !reflect.DeepEqual(env, preparationEnvironment([]string{
+		"HTTPS_PROXY=https://proxy", "SYNTHETIC_PROVIDER_KEY=secret", "YOLO_RUNTIME=podman", "YOLO_REPO_ROOT=/src",
+		"GIT_SSH_COMMAND=ssh -F /home/user/.ssh/config", "SSH_AUTH_SOCK=/run/ssh.sock", "LANG=C.UTF-8", "PATH=/usr/bin", "HOME=/home/user",
+	}, []string{"SYNTHETIC_PROVIDER_KEY"})) {
+		t.Error("bounded environment should be deterministic independent of inherited ordering")
+	}
+}
+
+func TestPreparationRevocationCancelsPausedChild(t *testing.T) {
+	pf := newPoolFixture(t)
+	if first, out := pf.launch(t, "podman", &run.ActInterrupt{}); first[poolKeyA].Dir == "" || first[poolKeyB].Dir == "" {
+		t.Fatalf("initial tree build failed: %+v\\n%s", first, out)
+	}
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	pf.commit(t, "", map[int]string{5: "five"})
+	pf.now = pf.now.Add(2 * time.Hour)
+	stubPreparationWorkerStart(t)
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	var once sync.Once
+	pf.child = func(ctx context.Context, _ forkBuild) int {
+		once.Do(func() { close(started) })
+		<-ctx.Done()
+		close(cancelled)
+		return 1
+	}
+	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	ctx, stop := context.WithCancel(context.Background())
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	ticks <- pf.now
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		stop()
+		<-done
+		t.Fatal("scheduler did not start the paused build child")
+	}
+	pf.agentUpdates(t, `{"treepool":false}`)
+	ticks <- pf.now
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		stop()
+		<-done
+		t.Fatal("selection removal did not cancel the owned child")
+	}
+	for {
+		state, err := preparationSubscriptions()
+		if err != nil {
+			stop()
+			<-done
+			t.Fatal(err)
+		}
+		inactive := true
+		for _, r := range state {
+			if r.Active {
+				inactive = false
+			}
+		}
+		if inactive {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	stop()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	for _, key := range []string{poolKeyA, poolKeyB} {
+		snapshot, err := readPreparationSnapshot(key)
+		if err != nil || snapshot.Phase != "held" || !strings.Contains(snapshot.Reason, "agent_updates") {
+			t.Errorf("revoked key %s was not retained held with its policy reason: %+v err=%v", key, snapshot, err)
+		}
+	}
+}
+
+func TestPreparationBusyKeyRetriesWithoutSuccessStamp(t *testing.T) {
+	pf := readyForABackgroundAdvance(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	lk, err := pidlock.Acquire(backgroundKeyLock(poolKeyA), pidlock.NoWait, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	ticks := make(chan time.Time)
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	ticks <- pf.now
+	deadline := time.After(5 * time.Second)
+	for {
+		snapshot, _ := readPreparationSnapshot(poolKeyA)
+		if snapshot.Phase == "busy" {
+			break
+		}
+		select {
+		case <-deadline:
+			lk.Release()
+			stop()
+			<-done
+			t.Fatalf("busy key did not defer: %+v", snapshot)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA)); err == nil && outcome.Pid == os.Getpid() && outcome.State == bgMoved {
+		t.Fatal("busy skip manufactured a successful outcome")
+	}
+	lk.Release()
+	ticks <- pf.now
+	deadline = time.After(5 * time.Second)
+	for {
+		outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA))
+		if err == nil && outcome.To != "" {
+			break
+		}
+		select {
+		case <-deadline:
+			stop()
+			<-done
+			t.Fatalf("released busy key did not retry: outcome=%+v err=%v", outcome, err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	stop()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+func TestPreparationStatusDoesNotMutateOrConsumeOutcomes(t *testing.T) {
+	newPoolFixture(t)
+	stubPreparationWorkerStart(t)
+	if err := withPreparationState(func(s *preparationState) error {
+		s.Subscriptions = append(s.Subscriptions, preparationRecord{Key: poolKeyA, Runtime: "podman", Platform: patchedTestPlatform, Generation: 1, Active: true, Phase: "admitted", ServingEntry: "entry"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(preparationStatePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if rc := printPreparationStatus(&out, io.Discard, false, poolKeyA); rc != 0 {
+		t.Fatalf("status rc=%d", rc)
+	}
+	after, err := os.ReadFile(preparationStatePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("read-only status changed scheduler state")
+	}
+	if !strings.Contains(out.String(), "admitted") || !strings.Contains(out.String(), "entry") {
+		t.Fatalf("status omitted its persisted snapshot: %s", out.String())
+	}
+}

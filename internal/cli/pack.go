@@ -221,6 +221,8 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               print one selected fork's or built tree's full build line and
                               its recipe digest, the digest a launch's disclosure shows in the
                               line's place
+  yolo pack prepare start|stop|status
+                              manage or inspect the detached built-tree preparation worker
   yolo pack rebase <pack>/<bin> [--onto <ref>] [--into <dir>] [--restart] [--pack <dir>]
                               rebase a PATCHED fork's series (a fork that declares "patches"),
                               or a patched extension's, named <pack>/<name>, when an upstream
@@ -312,6 +314,8 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		return packInstall(out, errw, color)
 	case "update":
 		return packUpdate(out, errw, color)
+	case "prepare":
+		return packPrepare(args[1:], out, errw, color)
 	case "status":
 		if len(args) > 1 {
 			return packStatusKey(args[1:], out, errw, color)
@@ -1860,7 +1864,7 @@ func packStatus(out, errw io.Writer, color bool) int {
 	pr := richtext.Printer{W: out, Color: color}
 	if len(entries) == 0 {
 		pr.Printf("[dim]No packs configured.[/dim]")
-		return 0
+		return printPreparationStatus(out, errw, color, "")
 	}
 
 	configured := map[string]string{}
@@ -1925,6 +1929,10 @@ func packStatus(out, errw io.Writer, color bool) int {
 		for _, line := range forkLines {
 			pr.Printf("%s", line)
 		}
+	}
+	prepRC := printPreparationStatus(out, errw, color, "")
+	if prepRC != 0 {
+		return prepRC
 	}
 	if len(drift) > 0 || forkDrift {
 		return 1

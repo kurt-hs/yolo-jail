@@ -39,7 +39,11 @@ func packStatusKey(args []string, out, errw io.Writer, color bool) int {
 	forks := append(packload.Forks(sel.packs), packload.PatchedTrees(sel.packs)...)
 	for _, f := range forks {
 		if f.Key() == key {
-			return printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+			rc := printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+			if rc != 0 {
+				return rc
+			}
+			return printPreparationStatus(out, errw, color, key)
 		}
 	}
 	// Not in what resolved: before saying nothing selected builds it, say so when its pack is

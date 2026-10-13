@@ -1,10 +1,8 @@
 package cli
 
-// treebackground_test.go pins THE NEXT-LAUNCH MODE at a fresh launch (treedelivery.go,
-// backgroundadvance.go; docs/design/pi-extension-store-builds.md §7.4, XB-D17 to XB-D21): the timing
-// read from `agent_updates`, the one background advance a launch starts and only when something is
-// due, the keys a running one already has, Apple Container's demotion, and the next launch's report
-// of what the background advance did.
+// treebackground_test.go pins THE NEXT-LAUNCH MODE (treedelivery.go and the preparation scheduler;
+// docs/design/pi-extension-store-builds.md §7.4, XB-D17 to XB-D21): timing precedence, durable tree
+// registration, timer-driven advancement, Apple Container's demotion and the next launch's report.
 
 import (
 	"bytes"
@@ -111,10 +109,9 @@ func TestTreeUpdateTimingReadsOwnerThenContributingPack(t *testing.T) {
 	}
 }
 
-// A NEXT-LAUNCH KEY WHOSE CHECK IS DUE is handed its good build, and the launch starts ONE background
-// advance for every such key, naming its log; nothing is checked or built in front. Red if the launch
-// stops starting it (runBuildSlot's call, or backgroundTreeAdvance's spawn).
-func TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance(t *testing.T) {
+// A NEXT-LAUNCH KEY DUE FOR A CHECK is handed its good build and registered for the periodic worker;
+// the launch itself checks and builds nothing.
+func TestANextLaunchKeyDueForACheckRegistersForPreparation(t *testing.T) {
 	pf := newPoolFixture(t)
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if first[poolKeyA].Dir == "" || first[poolKeyB].Dir == "" {
@@ -124,7 +121,7 @@ func TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance(t *testing.T) {
 	pf.commit(t, "", map[int]string{5: "five"})
 	pf.now = pf.now.Add(2 * time.Hour)
 	builds := pf.countBuilds()
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if builds.Load() != 0 || strings.Contains(out, "checking extension") {
 		t.Errorf("a next-launch key was checked or built in front (%d builds):\n%s", builds.Load(), out)
@@ -132,46 +129,55 @@ func TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance(t *testing.T) {
 	if got[poolKeyA].Entry != first[poolKeyA].Entry || got[poolKeyB].Entry != first[poolKeyB].Entry {
 		t.Errorf("the keys were not handed their good builds: %+v", got)
 	}
-	if sp.count() != 1 {
-		t.Fatalf("%d background advances started, want one:\n%s", sp.count(), out)
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
 	}
-	argv := sp.argvs[0]
-	if len(argv) < 2 || argv[0] != "internal" || argv[1] != backgroundAdvanceVerb || !slices.Contains(argv, "--runtime=podman") ||
-		!slices.Contains(argv, "--platform="+patchedTestPlatform) {
-		t.Errorf("the background advance's argv = %q", argv)
+	if len(state) != 2 {
+		t.Fatalf("registered subscriptions = %+v, want both selected keys", state)
 	}
-	if !slices.Equal(sp.keys(0), []string{poolKeyA, poolKeyB}) {
-		t.Errorf("the background advance was handed %v, want both keys", sp.keys(0))
-	}
-	if !strings.Contains(out, "a background advance is checking and building them now; its log is "+backgroundAdvanceLog()) {
-		t.Errorf("the spawn is not said with its log:\n%s", out)
+	for _, r := range state {
+		if !r.Active || r.Generation == 0 {
+			t.Errorf("subscription is not active and versioned: %+v", r)
+		}
 	}
 }
 
-// A NEXT-LAUNCH KEY WITH NOTHING DUE — checked within the hour, nothing pending — starts none. Red if
-// the launch starts a background advance for every key it handed a good build.
-func TestANextLaunchKeyWithNothingDueStartsNone(t *testing.T) {
+// A NEXT-LAUNCH KEY WITH NOTHING DUE still starts the idle scheduler and records its subscription,
+// but the first timer tick performs no check or build.
+func TestANextLaunchKeyWithNothingDueRegistersIdleWorker(t *testing.T) {
 	pf := newPoolFixture(t)
 	if first, out := pf.launch(t, "podman", &run.ActInterrupt{}); first[poolKeyA].Dir == "" {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.now = pf.now.Add(time.Minute)
-	sp := stubSpawn(t)
-	if _, out := pf.launch(t, "podman", &run.ActInterrupt{}); sp.count() != 0 {
-		t.Errorf("a launch with nothing due started %d background advances:\n%s", sp.count(), out)
+	builds := pf.countBuilds()
+	stubPreparationWorkerStart(t)
+	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state) != 2 || builds.Load() != 0 {
+		t.Fatalf("idle registration state=%+v builds=%d", state, builds.Load())
+	}
+	for _, r := range state {
+		if !r.Active {
+			t.Errorf("no-due key was not retained: %+v", r)
+		}
 	}
 }
 
-// A KEY THAT TOOK ITS FALLBACK for want of a build starts the background advance, which builds it;
-// a key with neither builds in front. Red if the fallback's key is not handed to the spawn.
-func TestAFallbackKeyStartsTheBackgroundAdvance(t *testing.T) {
+// A KEY THAT TOOK ITS FALLBACK is registered just like every selected next-launch tree; a key with
+// neither build nor fallback remains a cold foreground build. The worker independently reauthorizes.
+func TestAFallbackKeyIsRegisteredForTheScheduler(t *testing.T) {
 	pf := newPoolFixture(t)
 	writeFile(t, filepath.Join(pf.packs, "treepool", "pack.json"), `{"name":"treepool","contributes":[`+
 		`{"kind":"files","into":".tool/ext/ext-a","source":"git+file://`+pf.repo+`?ref=main","fallback":"git:example.com/ext-a"},`+
 		`{"kind":"files","into":".tool/ext/ext-b","source":"git+file://`+pf.repo+`?ref=main"}]}`)
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if got[poolKeyA].Dir != "" || !strings.Contains(got[poolKeyA].Reason, "a background advance builds it") {
 		t.Errorf("the fallback key was handed %+v", got[poolKeyA])
@@ -179,8 +185,12 @@ func TestAFallbackKeyStartsTheBackgroundAdvance(t *testing.T) {
 	if got[poolKeyB].Dir == "" {
 		t.Errorf("the key with neither a build nor a fallback was not built in front: %+v\n%s", got[poolKeyB], out)
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyA}) {
-		t.Errorf("the background advance was started %d times for %v, want once for %s", sp.count(), sp.argvs, poolKeyA)
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state) != 2 {
+		t.Errorf("scheduler registration omitted selected trees: %+v", state)
 	}
 }
 
@@ -203,17 +213,17 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 		Pid: os.Getpid(), At: pf.now.Unix(), Log: backgroundAdvanceLog()}); err != nil {
 		t.Fatal(err)
 	}
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	_, out := pf.launch(t, "podman", &run.ActInterrupt{})
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyB}) {
-		t.Errorf("the background advance was started for %v, want %s alone", sp.argvs, poolKeyB)
-	}
 	if !strings.Contains(out, "extension "+poolKeyA+": the background advance started at ") ||
 		!strings.Contains(out, "is still checking and building it") {
 		t.Errorf("the running advance is not said:\n%s", out)
 	}
 	if _, err := os.Stat(backgroundOutcomePath(poolKeyA)); err != nil {
 		t.Errorf("a running advance's record was claimed: %v", err)
+	}
+	if !pidlock.Held(backgroundKeyLock(poolKeyA)) {
+		t.Error("registration disturbed the running key's background lock")
 	}
 }
 
@@ -228,16 +238,16 @@ func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
 	pf.now = pf.now.Add(2 * time.Hour)
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
-	if sp.count() != 0 {
-		t.Errorf("Apple Container started a background advance:\n%s", out)
-	}
 	if got[poolKeyA].Entry == first[poolKeyA].Entry {
 		t.Errorf("the key was not updated at the launch:\n%s", out)
 	}
 	if !strings.Contains(out, "on Apple Container this yolo runs no background advance — it updates at this launch") {
 		t.Errorf("the demotion is not said:\n%s", out)
+	}
+	if snapshot, err := readPreparationSnapshot(poolKeyA); err != nil || snapshot.Phase != "unsupported" {
+		t.Errorf("Apple Container preparation outcome = %+v err=%v, want visible unsupported state", snapshot, err)
 	}
 }
 
@@ -261,7 +271,6 @@ func TestTheNextLaunchReportsTheBackgroundMoveOnce(t *testing.T) {
 		runBackgroundAdvanceUnder(context.Background(), backgroundArgs{runtime: "podman", platform: patchedTestPlatform,
 			keys: []string{key}}, &bg)
 	}
-	sp := stubSpawn(t)
 	got, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	for _, k := range []string{poolKeyA, poolKeyB} {
 		if got[k].Entry == first[k].Entry {
@@ -273,9 +282,6 @@ func TestTheNextLaunchReportsTheBackgroundMoveOnce(t *testing.T) {
 	}
 	if !strings.Contains(out, "(was ") {
 		t.Errorf("the move line does not say what it moved from:\n%s", out)
-	}
-	if sp.count() != 0 {
-		t.Errorf("a launch after a finished background advance started another:\n%s", out)
 	}
 	_, again := pf.launch(t, "podman", &run.ActInterrupt{})
 	if strings.Contains(again, "the background advance at ") {
@@ -306,7 +312,6 @@ func TestTheNextLaunchReportsAFailureWithItsLogAndRetry(t *testing.T) {
 	var bg bytes.Buffer
 	runBackgroundAdvanceUnder(context.Background(), backgroundArgs{runtime: "podman", platform: patchedTestPlatform,
 		keys: []string{poolKeyB}}, &bg)
-	stubSpawn(t)
 	_, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	want := "⚠ extension " + poolKeyB + ": the background advance at "
 	if !strings.Contains(out, want) || !strings.Contains(out, " could not build ") ||
@@ -330,17 +335,21 @@ func TestAnUnfinishedBackgroundAdvanceIsSaidAndStartedAgain(t *testing.T) {
 		Pid: 1, At: pf.now.Unix(), Log: backgroundAdvanceLog()}); err != nil {
 		t.Fatal(err)
 	}
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	_, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if !strings.Contains(out, "did not finish — its output is in "+backgroundAdvanceLog()+"; a launch with next-launch updates retries it") {
 		t.Errorf("the unfinished advance is not said:\n%s", out)
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyA}) {
-		t.Errorf("the background advance was started for %v, want %s alone", sp.argvs, poolKeyA)
+	state, err := preparationSubscriptions()
+	active := false
+	for _, record := range state {
+		active = active || (record.Key == poolKeyA && record.Active)
+	}
+	if err != nil || !active {
+		t.Errorf("the unfinished key was not retained as an active subscription: records=%+v err=%v", state, err)
 	}
 }
 
-// A background move reports what it built, not what a launch runs: this launch may have no copy
 // destination (or fail to copy), and a held/edited recipe can select a different build.
 func TestABackgroundMoveDoesNotClaimAnUndeliveredTreeRuns(t *testing.T) {
 	pf := readyForABackgroundAdvance(t)
