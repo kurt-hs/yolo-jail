@@ -1,21 +1,24 @@
 // Package brokerstore is the host-only request/grant API of boundary-broker.md §7.
-// It is not wired into broker calls yet: writes still refuse without filing a request.
+// Broker calls use it only behind required-delivery readiness; production writes
+// still refuse without filing a request.
 package brokerstore
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
 )
 
 const sessionLimit = 12 * time.Hour
@@ -31,6 +34,7 @@ type Policy struct {
 }
 type Request struct {
 	ID                             string
+	LaunchID                       string // host launch scope identity
 	Jail, Start, Workspace         string // host-asserted jail identity and random broker lifetime
 	Argv                           []string
 	Repo, StdinDigest, Digest, Set string
@@ -57,6 +61,8 @@ type Store struct {
 	// Revalidate is mandatory for approving decisions; it reads current host authority
 	// under the transaction lock. Nil fails closed. Deny/revoke need no authority.
 	Revalidate Revalidate
+	// Audit, when supplied by a host adapter, runs under the shared transaction.
+	Audit func(context.Context, string, Request, Grant) error
 }
 
 // Revalidate must re-read approved scope, current host policy, and live jail/start
@@ -79,6 +85,34 @@ func currentPolicy(q Request, gate Revalidate) (Policy, error) {
 		return Policy{}, err
 	}
 	return p, nil
+}
+
+func (s *Store) audit(ctx context.Context, kind string, q Request, g Grant) error {
+	if s.Audit != nil {
+		return s.Audit(ctx, kind, q, g)
+	}
+	return nil
+}
+
+// CommandDigest binds canonical argv, repository and stdin digest, never a policy.
+func CommandDigest(q Request) string { return digest(q) }
+
+// Status reveals a request only to its exact authenticated holder and broker start.
+func (s *Store) Status(jail, start, id string) (Request, error) {
+	return s.StatusContext(context.Background(), jail, start, id)
+}
+func (s *Store) StatusContext(ctx context.Context, jail, start, id string) (Request, error) {
+	var out Request
+	err := s.transactionContext(ctx, func(r *records, _ time.Time) error {
+		for _, q := range r.requests {
+			if q.ID == id && q.Jail == jail && q.Start == start {
+				out = q
+				return nil
+			}
+		}
+		return errors.New("request not found for this broker lifetime")
+	})
+	return out, err
 }
 
 type records struct {
@@ -109,10 +143,13 @@ func privateDir(path string) error {
 // transaction is the only mutator. A grant is usable only after its parent request
 // is durably allowed; a crash between the two renames can leave no usable authority.
 func (s *Store) transaction(fn func(*records, time.Time) error) error {
+	return s.transactionContext(context.Background(), fn)
+}
+func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.Time) error) error {
 	if err := privateDir(s.Dir); err != nil {
 		return err
 	}
-	return brokerlock.WithTransaction(s.Dir, func() error {
+	return brokerlock.WithTransactionContext(ctx, s.Dir, func() error {
 		var err error
 		for _, name := range []string{"requests", "grants"} {
 			if err := privateDir(filepath.Join(s.Dir, name)); err != nil {
@@ -290,6 +327,9 @@ func validatePolicy(p Policy) error {
 
 // File joins an identical pending command only in this jail, lifetime and set.
 func (s *Store) File(input Request) (Request, error) {
+	return s.FileContext(context.Background(), input)
+}
+func (s *Store) FileContext(ctx context.Context, input Request) (Request, error) {
 	var out Request
 	if input.Jail == "" || input.Start == "" || input.Workspace == "" || input.Set == "" || input.Repo == "" || len(input.Argv) == 0 || input.StdinDigest == "" {
 		return out, errors.New("request needs host holder, workspace, set, command, repository and stdin digest")
@@ -297,7 +337,12 @@ func (s *Store) File(input Request) (Request, error) {
 	if err := validatePolicy(input.Policy); err != nil {
 		return out, err
 	}
-	err := s.transaction(func(r *records, now time.Time) error {
+	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
+		if s.Revalidate != nil {
+			if _, err := currentPolicy(input, s.Revalidate); err != nil {
+				return err
+			}
+		}
 		input.Digest = digest(input)
 		for _, q := range r.requests {
 			if q.Jail == input.Jail && q.Start == input.Start && q.Set == input.Set && q.Digest == input.Digest && q.State == "pending" {
@@ -314,6 +359,9 @@ func (s *Store) File(input Request) (Request, error) {
 		input.Decided = time.Time{}
 		input.State = "pending"
 		out = input
+		if err := s.audit(ctx, "request", input, Grant{}); err != nil {
+			return err
+		}
 		return s.write("requests", id, input)
 	})
 	return out, err
@@ -342,6 +390,9 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 			if d.Deny {
 				if d.For != 0 || d.Session || d.Uses != 0 {
 					return errors.New("deny cannot also grant")
+				}
+				if err := s.audit(context.Background(), "decision", *q, Grant{}); err != nil {
+					return err
 				}
 				q.State = "denied"
 				q.Decided = now
@@ -390,6 +441,9 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				return err
 			}
 			out = Grant{ID: gid, Request: q.ID, Jail: q.Jail, Start: q.Start, Set: q.Set, Digest: command, Expires: now.Add(duration), Uses: uses}
+			if err = s.audit(context.Background(), "decision", *q, out); err != nil {
+				return err
+			}
 			if err = s.write("grants", gid, out); err != nil {
 				return err
 			}
@@ -406,15 +460,19 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 // before matching/spending. A missing gate fails closed for an otherwise live grant.
 // Spending is persisted before execution: a crash cannot refund a use.
 func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
+	return s.ConsumeContext(context.Background(), jail, start, set, commandDigest, revalidate)
+}
+func (s *Store) ConsumeContext(ctx context.Context, jail, start, set, commandDigest string, revalidate Revalidate) (Grant, bool, error) {
 	var out Grant
 	found := false
-	err := s.transaction(func(r *records, now time.Time) error {
+	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
 		for i := range r.grants {
 			g := &r.grants[i]
 			if g.Jail != jail || g.Start != start || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
 				continue
 			}
 			allowed := false
+			var parent Request
 			for _, q := range r.requests {
 				if q.ID == g.Request && q.State == "allowed" && q.Jail == jail && q.Start == start && q.Set == set {
 					current, err := currentPolicy(q, revalidate)
@@ -427,6 +485,7 @@ func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Reval
 						return errors.New("current policy narrowed; refile the command under the host's current policy")
 					}
 					allowed = true
+					parent = q
 					break
 				}
 			}
@@ -438,6 +497,9 @@ func (s *Store) Consume(jail, start, set, commandDigest string, revalidate Reval
 				g.Ended = now
 			}
 			if err := s.write("grants", g.ID, g); err != nil {
+				return err
+			}
+			if err := s.audit(ctx, "grant-used", parent, *g); err != nil {
 				return err
 			}
 			out = *g

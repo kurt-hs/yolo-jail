@@ -2,6 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -82,5 +85,57 @@ func TestApproveThroughRegistry(t *testing.T) {
 	rs, _, err := s.List()
 	if err != nil || rs[0].State != "denied" {
 		t.Fatal(rs, err)
+	}
+}
+
+func TestApproveRegistryUsesCurrentHostAuthorityAndRequiredAudit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_USER_LAYER", "")
+	sf := brokerscope.File{Source: "github", LaunchID: "registry", PID: os.Getpid(), Container: "registry-jail", Workspace: "/fixture", Repos: []string{"o/r"}}
+	path, err := brokerscope.Write(sf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := ghbroker.BindAuthority(path, sf, "registry-start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	d, policy, err := a.Classify([]string{"pr", "comment", "1", "--body", "hi"}, "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &brokerstore.Store{Dir: paths.BrokerSourceDir("github"), Revalidate: a.Revalidate}
+	q, err := s.File(brokerstore.Request{Jail: paths.JailShortHash(sf.Container), Start: "registry-start", Workspace: sf.Workspace, LaunchID: sf.LaunchID, Argv: d.Argv, Repo: "o/r", Set: d.Set, Policy: policy, StdinDigest: "stdin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := registry["approve"]([]string{"approve", q.ID}); code != 0 {
+		t.Fatal(code)
+	}
+	_, gs, err := s.List()
+	if err != nil || len(gs) != 1 {
+		t.Fatal(gs, err)
+	}
+	audit, err := os.ReadFile(paths.BrokerAuditLog())
+	if err != nil || !bytes.Contains(audit, []byte(`"event":"decision"`)) {
+		t.Fatal(string(audit), err)
+	}
+	// A second filed command cannot be approved when its actual broker lease ended,
+	// even if both recorded PIDs are still live (PID reuse cannot grant authority).
+	d, policy, err = a.Classify([]string{"pr", "comment", "2", "--body", "hi"}, "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err = s.File(brokerstore.Request{Jail: paths.JailShortHash(sf.Container), Start: "registry-start", Workspace: sf.Workspace, LaunchID: sf.LaunchID, Argv: d.Argv, Repo: "o/r", Set: d.Set, Policy: policy, StdinDigest: "stdin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if code := registry["approve"]([]string{"approve", q.ID}); code == 0 {
+		t.Fatal("approved dead lifetime")
 	}
 }

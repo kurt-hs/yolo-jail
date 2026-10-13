@@ -19,8 +19,9 @@ import (
 // fresh launch writes the scope that gate approved, the workspace's remotes and its
 // `brokered.<source>.repos` entry alike (docs/design/workspace-widening.md WW-P2), to
 // broker/<source>/scope/<launch-id>.json and only then spawns the daemon, handing it the
-// file's name. The daemon reads that file alone — never the remotes, never the approval
-// record, never a config file — so no host pre-approval, config edit or other session's
+// file's name. For repository authority the daemon reads that file alone — never the
+// remotes, approval record or config file (user-only permission-set policy is separate) —
+// so no host pre-approval, config edit or other session's
 // launch changes a running daemon's scope.
 //
 // Keyed by a random launch id, never the workspace or the container name: on macos-user
@@ -32,9 +33,11 @@ const FileVersion = 1
 
 // File is one launch's scope file.
 type File struct {
-	Version  int    `json:"version"`
-	Source   string `json:"source"`
-	LaunchID string `json:"launch_id"`
+	BrokerStart string `json:"broker_start,omitempty"`
+	BrokerPID   int    `json:"broker_pid,omitempty"`
+	Version     int    `json:"version"`
+	Source      string `json:"source"`
+	LaunchID    string `json:"launch_id"`
 	// PID is the launching yolo process; the file is collected once that process is known
 	// gone (Sweep), never by age.
 	PID       int    `json:"pid"`
@@ -206,4 +209,36 @@ func ValidateCurrent(path string, expected File, repo string) error {
 		}
 	}
 	return errors.New("repository no longer approved; relaunch the jail to approve its scope")
+}
+
+// BindBroker records a fresh host broker lifetime under the same lock used by decisions.
+// No jail field participates in this binding; replacing it invalidates the old lifetime.
+func BindBroker(path string, expected File, start string) (File, error) {
+	var out File
+	if path != paths.BrokerScopeFile(expected.Source, expected.LaunchID) {
+		return out, errors.New("scope path is not the host launch path")
+	}
+	if start == "" {
+		return out, errors.New("missing broker lifetime")
+	}
+	err := brokerlock.WithTransaction(filepath.Dir(filepath.Dir(path)), func() error {
+		f, err := ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if f.Source != expected.Source || f.LaunchID != expected.LaunchID || f.PID != expected.PID || f.Workspace != expected.Workspace || f.Container != expected.Container {
+			return errors.New("scope identity changed before broker start")
+		}
+		f.BrokerStart, f.BrokerPID = start, os.Getpid()
+		got, err := write(f)
+		if err != nil {
+			return err
+		}
+		if got != path {
+			return errors.New("scope path is not its host launch path")
+		}
+		out = f
+		return nil
+	})
+	return out, err
 }

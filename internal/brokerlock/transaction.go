@@ -2,16 +2,24 @@
 package brokerlock
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 // WithTransaction holds dir/.lock exclusively. Callbacks must not call another
 // lock-taking API for this directory; reads and current-policy gates do not lock.
 // All cooperating authority writers must use this same source directory.
 func WithTransaction(dir string, fn func() error) error {
+	return WithTransactionContext(context.Background(), dir, fn)
+}
+
+// WithTransactionContext bounds lock acquisition; it never interrupts a callback
+// halfway through a durable state change. Gates check cancellation before spending.
+func WithTransactionContext(ctx context.Context, dir string, fn func() error) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -37,7 +45,25 @@ func WithTransaction(dir string, fn func() error) error {
 	if err = f.Chmod(0600); err != nil {
 		return err
 	}
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	for {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		return err
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)

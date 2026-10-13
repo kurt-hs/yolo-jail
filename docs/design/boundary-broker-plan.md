@@ -2,7 +2,7 @@
 title: "Boundary broker: host request store slice"
 status: accepted
 stage: BUILT
-next: "Supply host authority adapters and bounded request/wait/status/execution; keep broker writes refused until complete"
+next: "Deliver required request/answer readiness and rule OQ-BB15 before production writes; combine build/nested verification and pins at integration"
 ---
 
 # Host request store slice
@@ -43,6 +43,62 @@ MEASURED: focused store/scope/lifecycle tests and race regressions exercise the 
 - `brokerscope.ValidateCurrent` is a non-locking gate reader: bounded, no-follow scope read, known schema, exact launch/source/workspace/container/PID identity and repository membership. It is not a policy loader or start-id validator.
 - `End` returns exactly the grants durably ended in its transaction, including partial progress on error. Broker teardown audits those records without a preceding `List`; failures are reported as incomplete and retained for retry.
 
-The next approved operations are host policy/scope/start adapter delivery to both the broker and approval frontend, canonical request filing/joining, bounded waiting and status, then revalidate/consume/audit/execute wiring. The standalone approval frontend deliberately has no current-authority adapter yet: synthetic pending records cannot be allowed by `yolo approve` without one; listing, deny and revoke still work. Production brokers still enqueue nothing, consume no grants and return 77 for windowed writes. Bounded wait and execution must be complete before enabling production requests.
+## Host authority and gated handler slice (after `2cb2332b7`)
 
-Terminal notices remain blocked by [OQ-BB10](boundary-broker.md#OQ-BB10); notification delivery and answer ping remain separate dependencies on the notifier and `yolo notify`. This work resolves neither.
+BUILT AND CHECKED: real host adapters and the actual bounded handler/caller integration.
+Production still supplies no required-delivery readiness; every windowed write stays exit 77,
+with nothing filed or waiting. No bypass or consent default was added.
+
+- `config.CurrentBrokeredSets` strictly re-reads the host user scope, never a jail policy frame.
+  Malformed entries are not skipped. The two default named sets support mode/window/ceiling/use
+  bounds. Explicit `admit`, including empty, and custom sets refuse the entire policy until
+  [OQ-BB15](boundary-broker.md#OQ-BB15) settles replacement versus augmentation and a rule grammar
+  is supplied. No flag/API-pattern syntax was coined.
+- `ghbroker.BindAuthority` binds a fresh start and broker PID to the launch scope using the shared
+  transaction. A private flock lease proves the actual start is live even if a PID is recycled.
+  `Authority.Close` invalidates it under that transaction; process death releases it too.
+  Normal close removes its own lease file; abnormal death can leave an inert lease file, never
+  usable authority. Abnormal-exit lease-file collection is not built.
+- Both the default `yolo approve` registry caller and broker consumption use the real adapter.
+  It checks holder/workspace/start, host launch path, current approved identity and each actual
+  repository, current classification and canonical argv. Canonicalization normalizes the
+  explicit repository flag before hashing; stdin is bound by digest, never stored as bytes.
+- `Broker.ServeContext` is the production handler, not a test-only engine. RequiredDelivery is
+  an explicit dependency that production leaves nil. It must honor context cancellation and
+  deliver requests idempotently by request id, with notice and later answer capability ready.
+  Fake delivery/executor tests pass through `Forward`, the real TLS front, the hostservice connection handler (`Broker.Handle`)
+  and this handler. `yolo gh status/wait <request>` frames are wired and holder-scoped.
+- `WithTransactionContext`, `FileContext`, `StatusContext` and `ConsumeContext` bound lock
+  acquisition. A test-first regression held the real shared flock and reproduced an unbounded
+  wait; it now exits on deadline without executing. Disconnect/stop cancel a caller's wait,
+  not the persistent pending request. Decisions after that wait execute nothing.
+- Store request/decision/use hooks run inside the shared transaction. `brokeraudit.Required`
+  syncs authorization evidence and propagates failure. Consume persists its use first; required
+  audit failure then runs nothing and never refunds. Standing-write policies also pass the
+  required-delivery and in-transaction authority/audit fence. Existing standing reads remain
+  best-effort call-audited. Frame type/base64 errors refuse rather than dropping arguments/bytes.
+
+### Exact remaining operations and fences
+
+1. [OQ-BB10](boundary-broker.md#OQ-BB10) launch-terminal notice transport/ruling; no fake manual-discovery substitute.
+2. Real notification/request delivery, capability checks, idempotent delivery, answer/expiry
+   observer and notification withdrawal; yolo notify ping (or the specified interim status
+   delivery contract) must feed the required readiness dependency. No production implementation
+   exists and no write is enabled.
+3. [OQ-BB15](boundary-broker.md#OQ-BB15) explicit-list semantics, then declared command/flag/API rule evaluation; explicit
+   lists and custom sets currently refuse rather than silently widening.
+4. Production three-pending bound and ten-minute denial cooldown ([§9.2](boundary-broker.md#92-prompt-fatigue)); abnormal-exit lease
+   metadata collection. Store retention/expiry and live-use bounds are already checked.
+5. Integrator-owned build-go, isolated nested smoke, combined integration/gates and pack pins.
+   Deferred commands: `GOMAXPROCS=2 just build-go`, then from a disposable workspace with
+   disposable HOME/XDG config/state/data (shared Go/tool caches preserved), run the resulting
+   `dist-go/linux-$(go env GOARCH)/yolo` by absolute path with `YOLO_REPO_ROOT` naming this tree.
+   Assert production forwarded writes still exit 77/no request/no API write. Exercise host
+   approval list/status/deny/revoke and in-jail host-only refusal against isolated synthetic
+   records; never invoke a real GH write. This slice is committed, not fully landed/verified.
+
+Targeted evidence: test-first host adapter/handler compile failures, shared-flock wait regression;
+focused race tests include current narrowing/scope removal/lifetime closure, revocation/expiry,
+concurrent one-use dispatch, audit failure ordering, hostile frames and unknown/explicit policy.
+CLI registry tests use the real host adapter and required decision audit. Shared transaction
+review approved the base slice with no blockers; its adapter obligations are the ones above.

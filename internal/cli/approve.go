@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -39,7 +41,7 @@ func runApprove(args []string) int {
 	if answerHelp("approve", args, os.Stdout) {
 		return 0
 	}
-	return approveMain(args[1:], config.InJail(), &brokerstore.Store{Dir: paths.BrokerSourceDir("github")}, os.Stdout, os.Stderr)
+	return approveMain(args[1:], config.InJail(), &brokerstore.Store{Dir: paths.BrokerSourceDir("github"), Revalidate: ghbroker.ApprovalAuthority, Audit: ghbroker.StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))}, os.Stdout, os.Stderr)
 }
 func approveMain(args []string, inJail bool, s *brokerstore.Store, out, errs io.Writer) int {
 	fail := func(err error) int {
