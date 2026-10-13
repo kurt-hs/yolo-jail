@@ -8,13 +8,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -258,5 +261,37 @@ func TestPackStatusInAJailPointsAtTheHostsForkPins(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "recorded on the host") {
 		t.Errorf("in a jail, status does not say where the fork pins are (rc %d):\n%s", rc, out.String())
+	}
+}
+
+func TestHostPinDeclarationsContextCancelsHeldLockPromptly(t *testing.T) {
+	repo, _ := forkRepo(t)
+	forkPinHome(t, "git+file://"+repo+"?ref=main")
+	entered, release := make(chan struct{}), make(chan struct{})
+	ownerDone := make(chan error, 1)
+	go func() {
+		ownerDone <- packsrc.WithForkLock(paths.PacksDir(), forkLockPath(), nil, func(*packsrc.ForkLock) (bool, error) { close(entered); <-release; return false, nil })
+	}()
+	<-entered
+	defer func() {
+		close(release)
+		if err := <-ownerDone; err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- pinForkDeclarationsContext(ctx, richtext.Printer{W: &out}, &out, packload.Forks(selectConfiguredHostPacks().packs), nil, true, false, false)
+	}()
+	select {
+	case rc := <-done:
+		if rc == 0 {
+			t.Fatal("cancelled pin reported success")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled host pin waited on held lock")
 	}
 }

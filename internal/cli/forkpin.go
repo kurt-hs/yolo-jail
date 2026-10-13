@@ -75,7 +75,7 @@ func pinForkDeclarationsContext(ctx context.Context, pr richtext.Printer, errw i
 	store := &packsrc.Store{Dir: paths.PacksDir(), Ctx: ctx}
 	rc := 0
 	var lines, pruned, migrated []string
-	err := packsrc.WithForkLock(store.Dir, lockPath, func(line string) { pr.Printf("[dim]%s[/dim]", line) },
+	err := packsrc.WithForkLockContext(ctx, store.Dir, lockPath, func(line string) { pr.Printf("[dim]%s[/dim]", line) },
 		func(l *packsrc.ForkLock) (bool, error) {
 			changed := false
 			var keep []string

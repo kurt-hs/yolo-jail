@@ -614,3 +614,25 @@ fi`)
 		t.Errorf("the launcher did not exec the agent after refreshing its servers:\n%s", out)
 	}
 }
+
+func TestFreshServerRefreshBypassesPolicyAndEveryAttemptStampButKeepsPins(t *testing.T) {
+	p := newRefreshProbe(t, nil)
+	p.installed(t, "chrome-devtools-mcp")
+	p.stamp(t, serverNpm, "chrome-devtools-mcp", 0)
+	attempts := 0
+	req := ServerRefreshRequest{Env: p.e, Fresh: true, Updates: false, NpmSpecs: "chrome-devtools-mcp",
+		Stderr: &p.out, Now: func() time.Time { return p.now },
+		Run: func(context.Context, io.Writer, []string) error { attempts++; return errors.New("offline") }}
+	for i := 0; i < 2; i++ {
+		if err := RefreshServers(req); err == nil {
+			t.Fatal("fresh failed attempt was treated as success")
+		}
+	}
+	if attempts != 2 {
+		t.Fatalf("fresh retries = %d; want two despite automatic off and recent failed stamp", attempts)
+	}
+	req.NpmSpecs = "chrome-devtools-mcp@1.2.3"
+	if err := RefreshServers(req); err != nil || attempts != 2 {
+		t.Fatalf("explicit pin refreshed: attempts=%d err=%v", attempts, err)
+	}
+}

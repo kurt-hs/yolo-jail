@@ -10,6 +10,7 @@ package cli
 // fake), the floor's Node, Linux as the floor's platform and the exec are the test's.
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -994,5 +995,66 @@ func TestTheProductionFloorWiresThePatchedAdvanceAndRead(t *testing.T) {
 	want := installedCopy{commit: v11, recipe: ps.Recipe, label: ps.Good.Label}
 	if len(handed) != 2 || handed[0] != nil || handed[1] == nil || *handed[1] != want {
 		t.Errorf("the advances were handed %+v, want nothing and then %+v", handed, want)
+	}
+}
+
+func TestHostUpdatePatchedProgramChecksInsideFrozenRecentPolicyWithoutRebuild(t *testing.T) {
+	fx := patchedFloorFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	if rc, _, out := fx.hostLaunch(t); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out)
+	}
+	before := fx.record(t)
+	builds := len(fx.builds)
+	cfg := paths.UserConfigPath()
+	data, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(`"packs":`), []byte(`"agent_updates": false, "packs":`), 1)
+	if err := os.WriteFile(cfg, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := captureHostExec(t)
+	var output syncBuffer
+	if rc := hostMain([]string{"--update", "--", "tool"}, io.Discard, &output, false, nil); rc != 0 || got.target == "" {
+		t.Fatalf("fresh host: %d target=%q\n%s", rc, got.target, output.String())
+	}
+	after := fx.record(t)
+	if after.StartedSeq <= before.StartedSeq || after.Good.Entry != before.Good.Entry || len(fx.builds) != builds {
+		t.Fatalf("fresh host failed check/reuse: before=%+v after=%+v builds=%d/%d", before, after, builds, len(fx.builds))
+	}
+}
+
+func TestHostUpdateBuildFailureRefusesOldFloorDespiteBothHatches(t *testing.T) {
+	fx := patchedFloorFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	if rc, _, out := fx.hostLaunch(t); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
+	fx.failBuildsOf(t, "twenty")
+	t.Setenv(paths.AllowMissingProgramsEnv, "1")
+	t.Setenv(paths.AllowPatchFailuresEnv, "1")
+	got := captureHostExec(t)
+	var output syncBuffer
+	if rc := hostMain([]string{"--update", "--", "tool"}, io.Discard, &output, false, nil); rc == 0 || got.target != "" {
+		t.Fatalf("failed fresh host launched old floor: %d target=%q\n%s", rc, got.target, output.String())
+	}
+}
+
+func TestHostUpdatePatchFailureRefusesDespiteBothHatches(t *testing.T) {
+	fx := patchedFloorFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	if rc, _, out := fx.hostLaunch(t); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
+	t.Setenv(paths.AllowMissingProgramsEnv, "1")
+	t.Setenv(paths.AllowPatchFailuresEnv, "1")
+	got := captureHostExec(t)
+	var output syncBuffer
+	if rc := hostMain([]string{"--update", "--", "tool"}, io.Discard, &output, false, nil); rc == 0 || got.target != "" {
+		t.Fatalf("patch hatch converted failed fresh request into launch: %d target=%q\n%s", rc, got.target, output.String())
 	}
 }

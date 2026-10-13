@@ -371,6 +371,9 @@ func floorAdvanceState(p hostfloor.Program, result advanceResult) hostfloor.Patc
 		state.PatchFailureSaid = result.patchFailureSaid
 	}
 	state.OperationError = result.operationError
+	if reason := result.delivery.FreshFailure; reason != "" {
+		appendFloorOperationError(&state, reason)
+	}
 	state.AdvanceBypassed = result.bypassed
 	state.ContinuingSaid = result.continuingSaid
 	return state
@@ -436,6 +439,9 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 		authorityBlocked = true
 	}
 	if authorityBlocked {
+		if _, fresh := ctx.Value(floorFreshRequestKey{}).(floorFreshRequest); fresh {
+			appendFloorOperationError(&state, "fresh preparation is blocked by current patch authority; repair the series and retry")
+		}
 		return state
 	}
 	if ctx != nil && ctx.Err() != nil {
@@ -473,6 +479,12 @@ func appendFloorAuthorityError(state *hostfloor.PatchedState, message string) {
 	state.AuthorityError += "; " + message
 }
 
+type floorFreshRequestKey struct{}
+type floorFreshRequest struct {
+	identity string
+	afterSeq uint64
+}
+
 // floorAdvance is the floor's advance of a patched fork (hostfloor.Floor.Advance): the fresh
 // launch's own (advancePatchedFork) as a LAUNCH — the check throttled, a back-off honored, the wait
 // interruptible while a good build serves (PF-D25) — at the host (advanceOptions.host), its lines on
@@ -481,8 +493,16 @@ func appendFloorAuthorityError(state *hostfloor.PatchedState, message string) {
 // context (withActInterrupt). It hands nothing: the floor installs the good build the record names
 // once it returns. A var so a test can count the floor's advances.
 var floorAdvance = func(ctx context.Context, f packload.Fork, out io.Writer, installed *installedCopy, act *run.ActInterrupt) advanceResult {
-	return advancePatchedFork(f, advanceOptions{platform: floorPatchedPlatform(), out: out, errw: out, launch: true, host: true,
-		installed: installed, act: act, operationCtx: ctx})
+	o := advanceOptions{platform: floorPatchedPlatform(), out: out, errw: out, launch: true, host: true,
+		installed: installed, act: act, operationCtx: ctx}
+	if request, ok := ctx.Value(floorFreshRequestKey{}).(floorFreshRequest); ok {
+		o.freshCheck, o.freshIdentity, o.freshAfterSeq, o.ctx = true, request.identity, request.afterSeq, ctx
+	}
+	result := advancePatchedFork(f, o)
+	if o.freshCheck {
+		result.delivery.FreshFailure = result.freshFailure()
+	}
+	return result
 }
 
 // actInterruptKey is the context key the verb's act interrupt rides under through the floor's Ensure,

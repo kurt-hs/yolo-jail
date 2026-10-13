@@ -201,3 +201,66 @@ func TestAnAttachTriggersNoForkBuild(t *testing.T) {
 		t.Errorf("an attach built a fork its running jail cannot receive:\n%s", printed)
 	}
 }
+
+func TestUpdatePublicLaunchRefusesServingDeliveryFailureDespiteHatches(t *testing.T) {
+	repo, _ := launchForkRepo(t)
+	head := strings.TrimSpace(mustGit(t, repo, "rev-parse", "HEAD"))
+	forkLaunchHome(t, "git+file://"+repo+"?ref="+head)
+	t.Setenv(paths.AllowMissingProgramsEnv, "1")
+	t.Setenv(paths.AllowPatchFailuresEnv, "1")
+	called := false
+	argv, out := fakePodmanLaunch(t, func(o *Options) {
+		o.Update = true
+		o.BuildForks = func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			called = true
+			if !req.FreshUpdate {
+				t.Error("public caller dropped explicit freshness")
+			}
+			return map[string]entrypoint.ForkDelivery{"tool": {Key: "old-good", FreshFailure: "new build failed"}}
+		}
+	})
+	if !called || argv != nil || !strings.Contains(out, "Refusing --update") || !strings.Contains(out, "new build failed") {
+		t.Fatalf("fresh failure reached runtime or was lost: called=%v argv=%v\n%s", called, argv, out)
+	}
+}
+
+func TestUpdatePublicLaunchRefusesCreatedToRunningRaceBeforeEffects(t *testing.T) {
+	repo, commit := launchForkRepo(t)
+	forkLaunchHome(t, "git+file://"+repo+"?ref=main")
+	initial := strings.TrimSpace(mustGit(t, repo, "rev-parse", "HEAD"))
+	lock := &packsrc.ForkLock{}
+	lock.Set(packsrc.ForkLockEntry{Key: "forkpack/tool", Source: "git+file://" + repo + "?ref=main", Ref: "main", Commit: initial})
+	if err := lock.Save(packsrc.ForkLockPath(paths.UserConfigPath())); err != nil {
+		t.Fatal(err)
+	}
+	commit("second")
+	removed, probes, built := false, 0, false
+	argv, out := fakePodmanLaunch(t, func(o *Options) {
+		o.Update = true
+		o.Exec = func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
+			joined := strings.Join(argv, " ")
+			switch {
+			case strings.Contains(joined, "ps -a -q"):
+				return ExecResult{Ran: true, RC: 0, Stdout: "racing-created\n"}
+			case strings.Contains(joined, "ps -q"):
+				probes++
+				if removed {
+					return ExecResult{Ran: true, RC: 0, Stdout: "racing-running\n"}
+				}
+			case len(argv) > 1 && argv[1] == "rm":
+				removed = true
+				return ExecResult{Ran: true, RC: 1}
+			case strings.Contains(joined, "exec "):
+				t.Error("update attached before refusal")
+			}
+			return ExecResult{Ran: true, RC: 0}
+		}
+		o.BuildForks = func(ForkBuildRequest) map[string]entrypoint.ForkDelivery { built = true; return nil }
+	})
+	if !removed || probes < 3 || argv != nil || built || !strings.Contains(out, "Refusing --update") {
+		t.Fatalf("created-running race failed: removed=%v probes=%d built=%v argv=%v\n%s", removed, probes, built, argv, out)
+	}
+	if pin, pinned := forkLockEntry(t); !pinned || pin.Commit != initial {
+		t.Fatal("race refusal moved a pin before attachment decision")
+	}
+}

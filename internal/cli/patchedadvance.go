@@ -243,6 +243,22 @@ type advanceResult struct {
 	problem           string
 }
 
+// freshFailure preserves failure independently of any old-good delivery.
+func (r advanceResult) freshFailure() string {
+	if !r.failed {
+		return ""
+	}
+	for _, reason := range []string{r.operationError, r.problem, r.delivery.Reason, r.failErr} {
+		if reason != "" {
+			return reason
+		}
+	}
+	if r.patchFailure != nil {
+		return r.patchFailure.Error()
+	}
+	return "the explicit preparation did not complete successfully"
+}
+
 // forkDelivery returns the program answer while preserving current-operation evidence even when
 // the record callback or a later delivery step failed.
 func (r advanceResult) forkDelivery() entrypoint.ForkDelivery {
@@ -930,7 +946,7 @@ func (a *advance) patchFailureResult(pf *packsrc.PatchFailure) advanceResult {
 	a.patchFailure = pf
 	text := a.patchFailureText(pf)
 	a.reportPatchFailure(pf, text)
-	if allowPatchFailures() && !a.o.background && a.serves() {
+	if allowPatchFailures() && !a.o.freshCheck && !a.o.background && a.serves() {
 		r := a.finish(nil, forkBuild{}, 0, nil, "")
 		if a.serving != nil && r.delivery.Key == "" {
 			r.failed = true

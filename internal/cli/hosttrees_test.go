@@ -891,3 +891,26 @@ func TestAHostLaunchQueuesAndConsumesItsOwnersTrees(t *testing.T) {
 		t.Errorf("the production host call did not register its selected owner tree: %+v", state)
 	}
 }
+
+func TestHostUpdateUnsupportedTreeRefusesOnlyItsRequiredOwnerBeforeEffects(t *testing.T) {
+	fx := newTreeFixture(t, `"f.txt"`)
+	fx.listTreeForAgent(t)
+	fx.writeHostConfig(t, `,"host_management":"none"`)
+	stubBins(t, "tool", "other")
+	previous := hostTreesBuild
+	hostTreesBuild = func() bool { return false }
+	t.Cleanup(func() { hostTreesBuild = previous })
+	got := captureHostExec(t)
+	var out bytes.Buffer
+	if rc := hostMain([]string{"--update", "--", "other"}, io.Discard, &out, false, nil); rc != 0 || !got.execed {
+		t.Fatalf("empty owner vector refused: %d\n%s", rc, out.String())
+	}
+	*got = execCapture{}
+	out.Reset()
+	if rc := hostMain([]string{"--update", "--", "tool"}, io.Discard, &out, false, nil); rc == 0 || got.execed || len(fx.builds) != 0 {
+		t.Fatalf("unsupported required tree launched/built: %d exec=%v builds=%d\n%s", rc, got.execed, len(fx.builds), out.String())
+	}
+	if !strings.Contains(out.String(), "patched trees cannot be freshly prepared") {
+		t.Fatalf("unsupported refusal lost reason/next step: %s", out.String())
+	}
+}

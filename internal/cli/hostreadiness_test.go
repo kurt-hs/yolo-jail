@@ -288,3 +288,53 @@ func TestAnUnpublishedProgramRunsThePATHCopyAndIsNotAReadinessFailure(t *testing
 		t.Errorf("the launch did not say the copy is not yolo's:\n%s", errw.String())
 	}
 }
+
+func TestHostUpdateUsesOnlyEffectiveMCPProgramsAndAllowsEmptyTreeVector(t *testing.T) {
+	for _, tc := range []struct {
+		name, extra string
+		wantMCP     bool
+		unsupported bool
+	}{
+		{"applied", "", true, false},
+		{"applied without tree support", "", true, true},
+		{"null removal", `, "mcp_servers":{"fixture-server":null}`, false, false},
+		{"command override", `, "mcp_servers":{"fixture-server":{"command":"mine"}}`, false, false},
+		{"jail-only filtered", `, "mcp_servers":{"fixture-server":{"command":"/workspace/bin/mcpcli"}}`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dist, _ := floorHostFixtureWith(t, `{"kind":"program","bin":"floorcli","via":"npm","package":"floorcli-pkg"},`+
+				`{"kind":"mcp","name":"fixture-server","bin":"mcpcli","config":{"command":"mcpcli"}},`+
+				`{"kind":"program","bin":"mcpcli","via":"npm","package":"mcpcli-pkg"}`, tc.extra)
+			dist.Publish("mcpcli-pkg", "1.0.0", "bin=mcpcli")
+			// Seed ordinary mandatory readiness, so the count below measures fresh updates only.
+			captureHostExec(t)
+			var out bytes.Buffer
+			if rc := hostExec(nil, []string{"floorcli"}, io.Discard, &out, nil); rc != 0 {
+				t.Fatalf("seed: %d\n%s", rc, out.String())
+			}
+			before := len(dist.NpmCalls("install"))
+			dist.Publish("mcpcli-pkg", "1.0.1", "bin=mcpcli")
+			orig := hostTreesBuild
+			hostTreesBuild = func() bool { return !tc.unsupported }
+			t.Cleanup(func() { hostTreesBuild = orig })
+			got := captureHostExec(t)
+			out.Reset()
+			if rc := hostMain([]string{"--update", "--", "floorcli"}, io.Discard, &out, false, nil); rc != 0 || got.target == "" {
+				t.Fatalf("fresh: %d target=%q\n%s", rc, got.target, out.String())
+			}
+			mcpUpdates := 0
+			for _, call := range dist.NpmCalls("install")[before:] {
+				if strings.Contains(call, "mcpcli-pkg") {
+					mcpUpdates++
+				}
+			}
+			want := 0
+			if tc.wantMCP {
+				want = 1
+			}
+			if mcpUpdates != want {
+				t.Fatalf("MCP updates=%d want=%d calls=%v\n%s", mcpUpdates, want, dist.NpmCalls("install")[before:], out.String())
+			}
+		})
+	}
+}

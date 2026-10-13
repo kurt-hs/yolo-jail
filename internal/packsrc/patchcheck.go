@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -148,6 +149,16 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	}
 	defer end()
 	res := CheckResult{Inputs: in}
+	// Serialize complete checks separately from the short persisted STARTED transaction.
+	unlock, err := s.flock(filepath.Join(s.Dir, "check-locks", mirrorSlug(w.Owner)+".lock"),
+		"the upstream check of "+w.Owner, waiting)
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	defer unlock()
+	var stamp int64
+	var startedSeq uint64
 	err = s.WithCheckRecord(w.Owner, waiting, func(r *CheckRecord, recErr error, save func() error) (bool, error) {
 		res.Recovered = recErr
 		if opts.Fresh && freshCheckMatches(r, in, opts.AfterSeq) {
@@ -171,7 +182,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		// inputs with the last check's list. A check killed in its git after an edit to what it
 		// reads leaves the old inputs beside the old list, and the next launch is due at once
 		// (CheckDue) instead of serving the old rule's list under the new one for an hour.
-		stamp := r.CheckedAt
+		stamp = r.CheckedAt
 		r.CheckedAt = now().Unix()
 		r.StartedSeq++
 		r.StartedInputs = in
@@ -179,12 +190,26 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if err := save(); err != nil {
 			return false, err
 		}
+		startedSeq = r.StartedSeq
 		res.Ran = true
-		var found CheckFound
-		if n, err := ParseNpm(w.Source); err == nil {
-			found = s.findNpmCandidates(n)
-		} else {
-			found = s.findCandidates(addr, follow, w.Base, opts.Force || opts.Fresh, now(), waiting)
+		return false, nil
+	})
+	if err != nil || !res.Ran {
+		res.Err = err
+		return res
+	}
+	var found CheckFound
+	if n, err := ParseNpm(w.Source); err == nil {
+		found = s.findNpmCandidates(n)
+	} else {
+		found = s.findCandidates(addr, follow, w.Base, opts.Force || opts.Fresh, now(), waiting)
+	}
+	err = s.WithCheckRecord(w.Owner, waiting, func(r *CheckRecord, recErr error, save func() error) (bool, error) {
+		if recErr != nil {
+			return false, recErr
+		}
+		if r.StartedSeq != startedSeq || r.StartedInputs != in {
+			return false, fmt.Errorf("the check record changed during transport; retry the launch")
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -194,7 +219,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 			return true, nil
 		}
 		r.Seq++
-		found.Seq, found.At, found.StartedSeq = r.Seq, now().Unix(), r.StartedSeq
+		found.Seq, found.At, found.StartedSeq = r.Seq, now().Unix(), startedSeq
 		r.Read, r.Check = in, &found
 		if pf := r.PatchFailure; pf != nil {
 			switch {

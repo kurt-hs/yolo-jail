@@ -148,7 +148,12 @@ func runtimeName(rt string) string {
 // one with none but a fallback takes the fallback this once, and only a key with neither builds in
 // front, since there is nothing to hand; the first two are left to the background advance.
 func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport, it *poolItem,
-	color bool) (_ run.TreeDelivery, later bool) {
+	color bool) (delivery run.TreeDelivery, later bool) {
+	defer func() {
+		if req.FreshUpdate && delivery.Dir == "" && delivery.FreshFailure == "" {
+			delivery.FreshFailure = delivery.Reason
+		}
+	}()
 	errw := it.stream()
 	pr := richtext.Printer{W: errw, Color: color}
 	if req.FreshUpdate && !req.Build {
@@ -208,6 +213,9 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			default:
 				r = treeAdvance(f, o)
 			}
+		}
+		if req.FreshUpdate && r.failed {
+			return run.TreeDelivery{FreshFailure: r.freshFailure(), Reason: r.freshFailure(), PatchFailure: r.patchFailure}, false
 		}
 		if r.delivery.PatchFailure != nil {
 			patchFailure = r.delivery.PatchFailure

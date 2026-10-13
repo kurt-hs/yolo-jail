@@ -191,7 +191,10 @@ func buildSessionCmd(targetCmd string, timing, color bool, preludes ...string) s
 	}
 	command := targetCmd
 	if prelude != "" {
-		command = prelude + " && exec " + targetCmd
+		command = prelude + " && " + targetCmd
+		if !timing {
+			command = prelude + " && exec " + targetCmd
+		}
 	}
 	if timing {
 		return "" +
