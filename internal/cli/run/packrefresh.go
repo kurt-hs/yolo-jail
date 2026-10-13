@@ -106,8 +106,9 @@ func (o *Options) refreshPacks() {
 		// network round trip bounded at a minute, so it gets a progress line. The
 		// lock-wait notice goes THROUGH the line, so it cannot tear it.
 		func() (func(string), func()) {
+			span := o.Perf.Span("launch.refresh_configured_packs")
 			line := o.progressConfig().Start(o.Stderr, "Checking fetched packs for updates")
-			return line.Println, func() { line.Done("") }
+			return line.Println, func() { line.Done(""); span.End() }
 		},
 	)
 }

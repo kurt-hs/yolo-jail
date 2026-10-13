@@ -145,7 +145,9 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 	// it for good. A jail with no briefing destination (no packs — run.go's
 	// warnIfNoPacks) writes zero briefings, and an unconditional consume ate the pointer
 	// on exactly the launch that could not deliver it.
+	handoffRead := o.Perf.Span("launch.handoff_read")
 	handoff := readHandoff(o.Workspace)
+	handoffRead.End()
 
 	in := jailcontent.BriefingInput{
 		Workspace:          o.Workspace,
@@ -771,9 +773,13 @@ func consumeHandoff(workspace string) bool {
 // is visible at the moment it happens instead of being discovered by an agent that never
 // got its task.
 func (o *Options) noteHandoffConsumed() {
+	span := o.Perf.Span("launch.handoff_consume")
+	defer span.End()
 	if !consumeHandoff(o.Workspace) {
+		o.Perf.Note("launch.handoff_consume", "pointer retained (rename did not succeed)")
 		return
 	}
+	o.Perf.Note("launch.handoff_consume", "pointer consumed")
 	o.pr(o.Stderr).printf("[dim]Handoff: .yolo/%s surfaced in this jail's briefing and consumed "+
 		"(restore with `mv .yolo/%s .yolo/%s`).[/dim]", handoffPointer, handoffConsumed, handoffPointer)
 }
