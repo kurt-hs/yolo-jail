@@ -3810,7 +3810,7 @@ func hostEnv(args []string, out, errw io.Writer) int {
 	}
 	for _, v := range added {
 		if v.Unset {
-			fmt.Fprintf(out, "unset %s\n", v.Key)
+			fmt.Fprintf(out, "unset %s\n", shellQuote(v.Key))
 			continue
 		}
 		fmt.Fprintf(out, "export %s=%s\n", v.Key, shellQuote(v.Value))
@@ -3838,7 +3838,11 @@ func hostEnvDelta(agent, profile string, grant *hostGrantRequest, warn func(stri
 	// pre-flight is: this is the observe verb, which has to answer even when the answer is "the
 	// launch would refuse this" (hostExec's note on the pre-flight).
 	refusal, warnings := c.envOverrideLines(os.Getenv)
-	blocks := [][]string{c.selectionLines(), c.profileLines(), refusal}
+	providerEnv := []string{}
+	if line := c.providerEnvLine(); line != "" {
+		providerEnv = append(providerEnv, line)
+	}
+	blocks := [][]string{c.selectionLines(), c.profileLines(), refusal, providerEnv}
 	blocks = append(blocks, warnings...)
 	var disclosure []string
 	for _, block := range append(blocks, c.regionLines(), c.shadowLines(), c.credentialScopeLines(), c.unservedLines(nil),
@@ -3853,7 +3857,32 @@ func hostEnvDelta(agent, profile string, grant *hostGrantRequest, warn func(stri
 	selection := c.launchSelection(nil, c.environ(), func(line string) { said = append(said, line) })
 	vars, lines := selection.scriptVars()
 	disclosure = append(append(disclosure, said...), lines...)
-	return append(append([]agentenv.Var(nil), c.vars...), vars...), disclosure, nil
+
+	// `yolo host env` evaluates into the caller's existing shell, so it must spell the
+	// provider-key removals that environ() applies to an exec. Only emit names that were
+	// present before clearing; do not serialize the inherited environment or its values.
+	beforeProviderClear := agentenv.Apply(os.Environ(), c.vars)
+	afterProviderClear, _ := c.providerEnvCleared(beforeProviderClear)
+	beforeKeys := hostEnvKeys(beforeProviderClear)
+	afterKeys := hostEnvKeys(afterProviderClear)
+	var providerUnsets []agentenv.Var
+	for _, v := range c.scope.ProviderEnv(c.agent) {
+		if beforeKeys[v.Name] && !afterKeys[v.Name] {
+			providerUnsets = append(providerUnsets, agentenv.Var{Key: v.Name, Unset: true})
+		}
+	}
+	return append(append(append([]agentenv.Var(nil), c.vars...), providerUnsets...), vars...), disclosure, nil
+}
+
+// hostEnvKeys returns only the names present in an environment slice, never its values.
+func hostEnvKeys(env []string) map[string]bool {
+	keys := make(map[string]bool, len(env))
+	for _, kv := range env {
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			keys[key] = true
+		}
+	}
+	return keys
 }
 
 // hostEnvDefaultAgent is the agent `yolo host env` composes for when no --agent is given:

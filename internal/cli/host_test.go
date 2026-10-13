@@ -216,7 +216,7 @@ func TestHostEnvExportFormat(t *testing.T) {
 		`export AWS_ACCESS_KEY_ID='AKIAEXAMPLE'`,
 		`export CLAUDE_CODE_USE_BEDROCK='1'`,
 		`export AWS_REGION='us-east-1'`,
-		"unset AWS_PROFILE",
+		"unset 'AWS_PROFILE'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("hostEnv output missing %q:\n%s", want, got)
