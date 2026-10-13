@@ -11,7 +11,7 @@ next: "Rule OQ-LUP1 for host lifetime/pinning; build the independent scheduler/f
 owner/input/generation-guarded admission. Host consumption retains unknown versions but does not
 establish known-gone reclamation. Disposable-HOME status/stop smoke is not runtime build verification.
 Fresh-request qualification/flags, program registration and Apple capabilities remain independent
-slices; see the [current plan](launch-update-preparation-plan.md). OQ-LUP1 remains unanswered.
+slices; see the [current plan](launch-update-preparation-plan.md). [OQ-LUP1](#OQ-LUP1) remains unanswered.
 
 > **In short.** Environment preparation should continue between launches, using the same admitted-build pipeline. A launch chooses a generation; background work never changes the environment already running.
 
