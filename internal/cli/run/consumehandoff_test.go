@@ -14,6 +14,7 @@ package run
 
 import (
 	"bytes"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ type handoffResult struct {
 	pointerSurvives bool
 	consumedExists  bool
 	stderr          string
+	events          []perf.Event
 }
 
 // runRefreshWithHandoff files `handoff` at .yolo/handover.md, stages either a
@@ -72,6 +74,8 @@ func runRefreshWithHandoff(t *testing.T, handoff string, withBriefingPack bool) 
 	o := goldenOptions(ws, home)
 	o.Stdout = discardBuf()
 	o.Stderr = &errBuf
+	var events []perf.Event
+	o.Perf = perf.New(nil, func(e perf.Event) { events = append(events, e) })
 
 	const cname = "yolo-test-handoff"
 	root, packs, briefings, err := o.stagePacks(cname)
@@ -84,7 +88,7 @@ func runRefreshWithHandoff(t *testing.T, handoff string, withBriefingPack bool) 
 		t.Fatalf("refreshJailBriefings: %v", err)
 	}
 
-	res := handoffResult{stderr: errBuf.String()}
+	res := handoffResult{stderr: errBuf.String(), events: events}
 	if data, err := os.ReadFile(filepath.Join(staging, briefingStagingName(claudeBriefingDest))); err == nil {
 		res.briefing = string(data)
 	}
@@ -201,4 +205,80 @@ func TestReadAndConsumeHandoff(t *testing.T) {
 	if consumeHandoff(empty) {
 		t.Error("consume of an absent handoff reported success")
 	}
+}
+
+func TestRefreshJailBriefingsReportsActualHandoffPhases(t *testing.T) {
+	for _, tc := range []struct {
+		name, handoff string
+		briefing      bool
+		consume       bool
+	}{
+		{"delivered", "task", true, true},
+		{"no destination", "task", false, false},
+		{"absent", "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runRefreshWithHandoff(t, tc.handoff, tc.briefing)
+			assertPhaseEvents(t, got.events, "launch.handoff_read", true)
+			assertPhaseEvents(t, got.events, "launch.handoff_consume", tc.consume)
+			if tc.consume {
+				found := false
+				for _, e := range got.events {
+					if e.Kind == perf.KindNote && e.Name == "launch.handoff_consume" && e.Detail == "pointer consumed" {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("consumed pointer has no factual outcome")
+				}
+			}
+		})
+	}
+}
+
+func assertPhaseEvents(t *testing.T, events []perf.Event, name string, want bool) {
+	t.Helper()
+	starts, ends := 0, 0
+	for _, e := range events {
+		if e.Name != name {
+			continue
+		}
+		if e.Kind == perf.KindStart {
+			starts++
+		}
+		if e.Kind == perf.KindEnd {
+			ends++
+		}
+	}
+	n := 0
+	if want {
+		n = 1
+	}
+	if starts != n || ends != n {
+		t.Fatalf("%s: starts=%d ends=%d, want %d each", name, starts, ends, n)
+	}
+}
+
+func TestHandoffConsumeReportsRetainedPointerOnRenameFailure(t *testing.T) {
+	var events []perf.Event
+	ws := t.TempDir()
+	dir := filepath.Join(ws, ".yolo")
+	if err := os.MkdirAll(filepath.Join(dir, handoffConsumed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, handoffPointer), []byte("task"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := Options{Workspace: ws, Stderr: discardBuf(), Perf: perf.New(nil, func(e perf.Event) { events = append(events, e) })}
+	o.noteHandoffConsumed()
+	if _, err := os.Stat(filepath.Join(dir, handoffPointer)); err != nil {
+		t.Fatalf("failed rename lost pointer: %v", err)
+	}
+	assertPhaseEvents(t, events, "launch.handoff_consume", true)
+	for _, e := range events {
+		if e.Kind == perf.KindNote && e.Name == "launch.handoff_consume" && e.Detail == "pointer retained (rename did not succeed)" {
+			return
+		}
+	}
+	t.Fatal("failed consume must not claim that the pointer was consumed")
 }

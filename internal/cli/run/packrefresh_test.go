@@ -2,6 +2,7 @@ package run
 
 import (
 	"bytes"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,6 +75,7 @@ func TestLaunchFetchesANeverInstalledGitPack(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+	o.Timing = true
 	// Read inside the backend call: the launch's pack tree is its own and goes when Run returns.
 	var staged string
 	var stagedErr error
@@ -90,6 +92,15 @@ func TestLaunchFetchesANeverInstalledGitPack(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Fetched pack gp: main → ") {
 		t.Errorf("the launch did not disclose the fetch:\n%s", stdout.String())
+	}
+	data, err := os.ReadFile(filepath.Join(ws, ".yolo", HostPerfLogName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"start  ", "end    "} {
+		if n := strings.Count(string(data), kind+"launch.refresh_configured_packs"); n != 1 {
+			t.Fatalf("refresh phase %s: count=%d, want one", kind, n)
+		}
 	}
 	l, err := packsrc.LoadLock(packsrc.LockPath(paths.UserConfigPath()))
 	if err != nil {
@@ -252,5 +263,30 @@ func TestTheLaunchPackRefreshIsNarrated(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Checking fetched packs for updates: done (") {
 		t.Errorf("the pack refresh was not narrated on the launch stream:\n%s", stderr.String())
+	}
+}
+
+func TestRefreshPacksReportsNoPhaseForSkippedWork(t *testing.T) {
+	for _, mode := range []string{"dry run", "in jail", "local only"} {
+		t.Run(mode, func(t *testing.T) {
+			home := hostRefreshEnv(t)
+			selection := `[ {"name":"mine", "source":"file://` + t.TempDir() + `"} ]`
+			if mode != "local only" {
+				selection = `[{"name":"gp", "source":"git+file://` + refreshGitRepo(t) + `?ref=main"}]`
+			}
+			writeUserPacks(t, home, selection)
+			var stdout, stderr bytes.Buffer
+			o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+			if mode == "dry run" {
+				o.DryRun = true
+			}
+			if mode == "in jail" {
+				t.Setenv("YOLO_VERSION", "test")
+			}
+			var events []perf.Event
+			o.Perf = perf.New(nil, func(e perf.Event) { events = append(events, e) })
+			o.refreshPacks()
+			assertPhaseEvents(t, events, "launch.refresh_configured_packs", false)
+		})
 	}
 }
