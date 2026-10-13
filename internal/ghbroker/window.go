@@ -38,7 +38,7 @@ func StoreAudit(log *brokeraudit.Log) func(context.Context, string, brokerstore.
 		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: Source, Jail: q.Jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
 	}
 }
-func (b *Broker) window(ctx context.Context, req Request, jail string, d Decision, stdout, stderr func([]byte)) (int, string) {
+func (b *Broker) window(ctx context.Context, req Request, jail string, d Decision, stdout, stderr func([]byte), ev *brokeraudit.Event) (int, string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if b.delivery == nil || !b.delivery.Ready() {
@@ -74,7 +74,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		if ctx.Err() != nil {
 			return ExitTempFail, "caller disconnected; nothing ran; retry if still wanted"
 		}
-		return b.dispatch(ctx, req, d, stdout, stderr), ""
+		return b.dispatch(ctx, req, d, stdout, stderr, ev), ""
 	}
 	sum := sha256.Sum256(req.Stdin)
 	q := brokerstore.Request{Jail: jail, Start: b.startID, Workspace: b.workspace, LaunchID: b.authority.scope.LaunchID, Argv: d.Argv, Repo: strings.Join(d.Repos, ","), Set: d.Set, Policy: p, StdinDigest: hex.EncodeToString(sum[:])}
@@ -102,7 +102,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		if ctx.Err() != nil {
 			return true, ExitTempFail, "caller left after authorization; use was spent, nothing ran; retry if still wanted"
 		}
-		code := b.dispatch(ctx, req, d, stdout, stderr)
+		code := b.dispatch(ctx, req, d, stdout, stderr, ev)
 		if code == ghExitAuth {
 			return true, ExitUnavailable, noHostLogin
 		}
@@ -193,7 +193,7 @@ func (b *Broker) requestStatus(ctx context.Context, req Request, jail string, st
 	}
 }
 
-func (b *Broker) dispatch(ctx context.Context, req Request, d Decision, stdout, stderr func([]byte)) int {
+func (b *Broker) dispatch(ctx context.Context, req Request, d Decision, stdout, stderr func([]byte), ev *brokeraudit.Event) int {
 	var stdin []byte
 	if d.ReadsStdin {
 		stdin = req.Stdin
@@ -201,8 +201,14 @@ func (b *Broker) dispatch(ctx context.Context, req Request, d Decision, stdout, 
 			stdin = []byte{}
 		}
 	}
+	var res RunResult
 	if b.execute != nil {
-		return b.execute(ctx, d.Argv, stdin, stdout, stderr).Exit
+		res = b.execute(ctx, d.Argv, stdin, stdout, stderr)
+	} else {
+		res = b.runner.Run(d.Argv, stdin, stdout, stderr)
 	}
-	return b.runner.Run(d.Argv, stdin, stdout, stderr).Exit
+	ev.Outcome = "ran"
+	ev.BytesOut = res.BytesOut
+	ev.Redactions = res.Redactions
+	return res.Exit
 }

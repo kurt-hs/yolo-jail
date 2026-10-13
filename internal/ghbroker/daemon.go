@@ -460,14 +460,13 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 			bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			ctx = bounded
-			code, msg := b.window(ctx, req, jail, d, stdout, stderr)
+			code, msg := b.window(ctx, req, jail, d, stdout, stderr, &ev)
 			ev.Set = d.Set
-			ev.Outcome = "refused"
-			if code == 0 {
-				ev.Outcome = "ran"
-			}
-			if code == ExitTempFail {
-				ev.Outcome = "pending"
+			if ev.Outcome != "ran" {
+				ev.Outcome = "refused"
+				if code == ExitTempFail {
+					ev.Outcome = "pending"
+				}
 			}
 			ev.Reason = msg
 			if msg != "" {
