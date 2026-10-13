@@ -2,15 +2,17 @@
 title: "Ready handoff: ongoing built-artifact preparation"
 status: accepted
 stage: DECIDED
-next: "Implement task 1's production timer, persistent tree subscriptions, inspection and cancellation; stop at targeted gates"
+next: "Review the Task 1 producer integration; serialize Task 2 fresh requests and program/host adapters against its APIs"
 ---
 
 # Ready handoff: ongoing built-artifact preparation
 
-**Status:** 2026-10-13. Source fence refreshed against `689af7ae5`: the launch still starts
-due one-shot work. State/control/lifecycle primitives now have focused in-process tests;
-production registration, authorized dispatch and guarded settle remain unimplemented.
-No end-to-end scheduler or target-runtime observation is claimed.
+**Status:** 2026-10-13. Task 1's tree producer now calls the real lifecycle loop from
+`internal preparation-scheduler`, registers no-due selections after the pool, and guards the actual
+admission record save against stale owner/input/generation. Focused source fixtures prove a launch's
+registration advances on an injected timer without another launch. Disposable-HOME binary smoke
+proves authenticated status/stop and lease release, not real runtime builds. Program registration,
+Task 2 freshness/flags, host consumption and Apple capability work remain separate integration slices.
 **Design:** [preparation contracts](launch-update-preparation.md). Design wins on behavior;
 tree wins on cosmetic fact; this plan is advice and first to be wrong.
 
@@ -155,14 +157,26 @@ use authenticated `status|wake|stop|replace` control. The injected dispatcher re
 cancellation context and must use existing build-child/jail cleanup. A timer-to-callback test pins
 this lifecycle loop, but is NOT the launch-to-admitted-outcome test below.
 
-Task 1 still needs the real 60-second ticker/hidden `internal preparation-scheduler` wrapper,
-`pack prepare start|stop|status` routes, detached spawn/join, post-pool registration even when not due,
-current-selection reauthorization and key cancellation while busy, due/backoff/capability dispatch
-through existing acts, generation guard wiring at settle, and outcome-derived snapshot production.
-Only then can the exact fixture below pass (including its deleted-callsite proof).
-Task 2 request qualification additionally needs monotonic check-start sequence registration,
-request identity/vector and fresh-check admission; a subscription generation alone cannot prove freshness.
-No warm capture replacement is implemented or authorized here (OQ-PD23).
+`preparationdispatch.go` supplies the actual 60-second hidden wrapper, `pack prepare start|stop|status`,
+spawn serialization/throttling and bounded cooperative stop/replacement wait. `registerTreePreparation`
+uses `registerPreparationForks(forks []packload.Fork, runtime, platform string, w io.Writer) error`;
+this independently resolves user authorization and preserves original tree/program declarations.
+The post-pool tree caller registers even when nothing is due. Program adapters must supply their own
+production registration caller; until then the existing program one-shot caller remains intact.
+The timer uses `advancePatchedFork` and existing keyed acts/known-owned child cleanup, never renders.
+Current declaration/policy checks run at dispatch, while busy, and at settle; current generation and
+worker incarnation/executable digest exclude stale publication inside the record save callback.
+Input edits reconcile only previously registered keys; revoked keys remain inactive and inspectable.
+Snapshot evidence is diagnostic and cannot authorize consumers. Publication fsyncs the temporary file
+before rename and the parent directory afterwards; control handlers have bounded concurrency/deadlines.
+The existing owned-child grace remains five seconds.
+
+Task 2 remains **unimplemented**: monotonic check-start sequences under the keyed check lock, request
+registration/vector/identity, qualifying check admission, unchanged-input reuse and shared `--update`/`-u`
+parser/caller propagation. Subscription generation alone does not certify freshness. These operations
+and the Task 2/3 source seams below must be integrated serially, not replaced with snapshot admission.
+Apple check-only dispatch, host exact-Good consumption, program registration and their platform tests
+are the adapter slices. No warm capture replacement is implemented or authorized (OQ-PD23).
 
 ### Tests first — exact timer production-callsite fixture
 

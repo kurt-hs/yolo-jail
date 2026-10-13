@@ -136,21 +136,20 @@ func TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance(t *testing.T) {
 		t.Fatalf("%d background advances started, want one:\n%s", sp.count(), out)
 	}
 	argv := sp.argvs[0]
-	if len(argv) < 2 || argv[0] != "internal" || argv[1] != backgroundAdvanceVerb || !slices.Contains(argv, "--runtime=podman") ||
-		!slices.Contains(argv, "--platform="+patchedTestPlatform) {
-		t.Errorf("the background advance's argv = %q", argv)
+	if !slices.Equal(argv, []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler argv = %q", argv)
 	}
-	if !slices.Equal(sp.keys(0), []string{poolKeyA, poolKeyB}) {
-		t.Errorf("the background advance was handed %v, want both keys", sp.keys(0))
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 2 {
+		t.Fatalf("registered keys: %v %v", subs, err)
 	}
-	if !strings.Contains(out, "a background advance is checking and building them now; its log is "+backgroundAdvanceLog()) {
-		t.Errorf("the spawn is not said with its log:\n%s", out)
+	if !strings.Contains(out, "ongoing next-launch preparation registered") || !strings.Contains(out, backgroundAdvanceLog()) {
+		t.Errorf("registration/log not said: %s", out)
 	}
 }
 
-// A NEXT-LAUNCH KEY WITH NOTHING DUE — checked within the hour, nothing pending — starts none. Red if
-// the launch starts a background advance for every key it handed a good build.
-func TestANextLaunchKeyWithNothingDueStartsNone(t *testing.T) {
+// A no-due launch registers the idle scheduler but performs no source checks/builds.
+func TestANextLaunchKeyWithNothingDueRegistersWithoutActs(t *testing.T) {
 	pf := newPoolFixture(t)
 	if first, out := pf.launch(t, "podman", &run.ActInterrupt{}); first[poolKeyA].Dir == "" {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
@@ -158,8 +157,13 @@ func TestANextLaunchKeyWithNothingDueStartsNone(t *testing.T) {
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.now = pf.now.Add(time.Minute)
 	sp := stubSpawn(t)
-	if _, out := pf.launch(t, "podman", &run.ActInterrupt{}); sp.count() != 0 {
-		t.Errorf("a launch with nothing due started %d background advances:\n%s", sp.count(), out)
+	builds := pf.countBuilds()
+	if _, out := pf.launch(t, "podman", &run.ActInterrupt{}); sp.count() != 1 || builds.Load() != 0 || strings.Contains(out, "checking extension") {
+		t.Errorf("no-due launch did acts or failed registration: spawns=%d builds=%d\n%s", sp.count(), builds.Load(), out)
+	}
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 2 {
+		t.Fatalf("no-due registration: %v %v", subs, err)
 	}
 }
 
@@ -179,8 +183,12 @@ func TestAFallbackKeyStartsTheBackgroundAdvance(t *testing.T) {
 	if got[poolKeyB].Dir == "" {
 		t.Errorf("the key with neither a build nor a fallback was not built in front: %+v\n%s", got[poolKeyB], out)
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyA}) {
-		t.Errorf("the background advance was started %d times for %v, want once for %s", sp.count(), sp.argvs, poolKeyA)
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler starts = %v", sp.argvs)
+	}
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 2 {
+		t.Fatalf("fallback/ready keys not both registered: %v %v", subs, err)
 	}
 }
 
@@ -205,8 +213,12 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 	}
 	sp := stubSpawn(t)
 	_, out := pf.launch(t, "podman", &run.ActInterrupt{})
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyB}) {
-		t.Errorf("the background advance was started for %v, want %s alone", sp.argvs, poolKeyB)
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler starts = %v", sp.argvs)
+	}
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 2 {
+		t.Fatalf("busy key must remain registered: %v %v", subs, err)
 	}
 	if !strings.Contains(out, "extension "+poolKeyA+": the background advance started at ") ||
 		!strings.Contains(out, "is still checking and building it") {

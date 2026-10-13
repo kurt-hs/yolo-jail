@@ -60,6 +60,8 @@ import (
 // true rather than being contradicted by six silently-active packs.
 const packUsage = `yolo pack — author and inspect agent config packs
 
+  prepare start|stop|status  control ongoing next-launch built-artifact preparation (host)
+
 A pack is a directory of jail CONFIG — skills, briefing prose (briefing/*.md), composed
 config files, and optionally a tool to install — delivered into every jail you launch.
 Everything a jail has beyond a bare shell arrives as a pack: with no packs configured, a
@@ -312,6 +314,8 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		return packInstall(out, errw, color)
 	case "update":
 		return packUpdate(out, errw, color)
+	case "prepare":
+		return packPrepare(args[1:], out, errw)
 	case "status":
 		if len(args) > 1 {
 			return packStatusKey(args[1:], out, errw, color)

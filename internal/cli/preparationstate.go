@@ -62,6 +62,10 @@ func ensurePreparationRoot(root string) error {
 	return nil
 }
 
+// Seams pin durable publication ordering and failure retention.
+var preparationFileSync = func(f *os.File) error { return f.Sync() }
+var preparationRename = os.Rename
+
 func writePreparationJSON(path string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -79,10 +83,23 @@ func writePreparationJSON(path string, value any) error {
 		f.Close()
 		return err
 	}
+	if err = preparationFileSync(f); err != nil {
+		f.Close()
+		return err
+	}
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err = preparationRename(f.Name(), path); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	// A sync error retains the published evidence but never reports durable success.
+	return preparationFileSync(dir)
 }
 
 // probePreparationWorker never creates, rewrites or removes state. Only a free
@@ -196,7 +213,7 @@ func registerPreparationSubscriptions(root string, selected []preparationSubscri
 	if err := ensurePreparationRoot(root); err != nil {
 		return nil, err
 	}
-	lock, err := pidlock.Acquire(filepath.Join(root, "subscriptions.lock"), pidlock.Mode{Wait: true, Bound: time.Second}, nil)
+	lock, err := pidlock.Acquire(filepath.Join(root, "subscriptions.lock"), pidlock.Mode{Wait: true, Bound: 5 * time.Second}, nil)
 	if err != nil {
 		return nil, err
 	}
