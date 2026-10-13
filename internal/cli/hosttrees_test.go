@@ -3,7 +3,7 @@ package cli
 // hosttrees_test.go pins a PATCHED EXTENSION at the host notch (docs/design/patched-extensions.md
 // §8.3, §11; PPX-D11, PPX-D18): the render links `~/<into>` to a versioned copy of the good build in
 // the host-private trees directory, through an owned link swapped by rename, keeps the previous
-// version until the next move, never takes a path the user owns, and says on a macOS host that it
+// versions with unknown session liveness, never takes a path the user owns, and says on a macOS host that it
 // builds none; `yolo host apply` advances before the render in its acting posture only; `yolo host
 // -- <bin>` advances only for its owning agent's programs; and the owning agent does not start at
 // the host without the tree it loads.
@@ -96,8 +96,8 @@ func (fx *treeFixture) writeTreePackConfig(t *testing.T, mode string) {
 
 // THE HOST RENDER (PPX-D11): `~/<into>` becomes a link the render owns, naming the good build's
 // versioned copy in the host-private directory; an observe pass after it changes nothing; a move
-// swaps the link and keeps the previous version, and the next move removes the one before it.
-func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) {
+// swaps the link and keeps all untracked versions.
+func TestTheHostRenderLinksTheGoodBuildAndRetainsUnknownVersions(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	advanceHostTrees(io.Discard, false, "", nil)
 	if out := fx.renderTrees(t, false); !strings.Contains(out, "would render") {
@@ -133,13 +133,13 @@ func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) 
 	if second == first || !isDir(first) || !isDir(second) {
 		t.Fatalf("after a move the link names %q, and the previous version %q is kept: %v", second, first, isDir(first))
 	}
-	// THE NEXT MOVE removes the one before the previous.
+	// THE NEXT MOVE retains even the oldest untracked version: it may still be loaded.
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 16: "sixteen"})
 	fx.now = fx.now.Add(2 * time.Hour)
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
 	third, _ := os.Readlink(fx.link())
-	if third == second || isDir(first) || !isDir(second) {
+	if third == second || !isDir(first) || !isDir(second) {
 		t.Errorf("after the second move: link %q, oldest kept %v, previous kept %v", third, isDir(first), isDir(second))
 	}
 }
@@ -422,9 +422,8 @@ func TestApplyAtHostAdvancesInItsActingPostureOnly(t *testing.T) {
 	}
 }
 
-// A DROPPED EXTENSION's host copies go once nothing yolo recorded links into them, and stay while
-// a recorded link still does.
-func TestADroppedExtensionsHostCopiesAreSwept(t *testing.T) {
+// A dropped extension may still be loaded by an untracked host session.
+func TestADroppedExtensionsHostCopiesRetainUnknownLiveness(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
@@ -441,14 +440,13 @@ func TestADroppedExtensionsHostCopiesAreSwept(t *testing.T) {
 		t.Fatal(err)
 	}
 	sweepDroppedHostTrees(nil)
-	if isDir(slugDir) {
-		t.Error("a dropped extension's copies outlived its link")
+	if !isDir(slugDir) {
+		t.Error("unknown host session liveness was treated as gone")
 	}
 }
 
-// THE SWEEP'S CALL SITE: an apply that retires a dropped pack's link removes its copies too. Red if
-// the apply stops calling sweepDroppedHostTrees.
-func TestAnApplyThatDropsTheExtensionRemovesItsHostCopies(t *testing.T) {
+// Apply retires an unauthorized link but retains bytes an existing session may load.
+func TestAnApplyThatDropsTheExtensionRetainsUnknownHostCopies(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.writeTreePackConfig(t, "own")
 	var errw bytes.Buffer
@@ -466,8 +464,8 @@ func TestAnApplyThatDropsTheExtensionRemovesItsHostCopies(t *testing.T) {
 	if _, err := os.Lstat(fx.link()); err == nil {
 		t.Fatalf("the dropped pack's link was not retired:\n%s", out.String())
 	}
-	if isDir(filepath.Dir(target)) {
-		t.Errorf("the dropped extension's host copies outlived its retired link:\n%s", out.String())
+	if !isDir(filepath.Dir(target)) {
+		t.Errorf("the dropped extension's host copies were removed with unknown liveness:\n%s", out.String())
 	}
 }
 
@@ -738,20 +736,13 @@ func TestARevertOverAnUnreadableFilesRecordRemovesNoLinkAndSaysSo(t *testing.T) 
 	}
 }
 
-// `yolo host -- <bin>` UPDATES ITS OWNER'S TREES AT ITS LAUNCH in the next-launch mode, which slice 1
-// of XB-D42 builds for jail launches only, and says so in one line. Red if the host stops saying it,
-// or starts leaving the tree to a background advance it does not start.
-func TestAHostLaunchSaysTheNextLaunchModeIsAJailLaunchs(t *testing.T) {
+// Cold readiness still blocks even in next-launch mode.
+func TestPreparationHostColdNextLaunchBuildsBeforeConsumption(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.listTreeForAgent(t)
 	fx.writeHostConfig(t, `,"agent_updates":{"agentpack":"next-launch"}`)
-	var errw bytes.Buffer
-	advanceHostTrees(&errw, false, "tool", nil)
-	if len(fx.builds) != 1 {
-		t.Errorf("`yolo host -- tool` built %d trees, want the one its owner loads, at the launch", len(fx.builds))
-	}
-	if !strings.Contains(errw.String(), "extension treepack/tool-ext: `agent_updates` asks for the next launch, "+
-		"which this yolo applies to jail launches — `yolo host` updates it at this launch") {
-		t.Errorf("the host launch does not say it:\n%s", errw.String())
+	stubSpawn(t)
+	if !advanceHostTrees(io.Discard, false, "tool", nil) || len(fx.builds) != 1 {
+		t.Fatalf("cold next-launch readiness built %d trees", len(fx.builds))
 	}
 }
