@@ -341,6 +341,10 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 				lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  %s is already in upstream %s; drop it from %s",
 					m, r.Entry.Label(), series.Dir))+"[/dim]")
 			}
+			for _, m := range r.Empty {
+				lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  %s was empty when written and makes no change of its own; drop it from %s",
+					m, series.Dir))+"[/dim]")
+			}
 			what := "upstream " + r.Entry.Label()
 			switch {
 			case atBase:

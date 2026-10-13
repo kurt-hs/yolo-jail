@@ -11,9 +11,11 @@ package packsrc
 //  2. ONTO AN ENTRY: each commit step 1 made is picked three-way onto the entry, one merge per
 //     commit whose base is that commit's parent — `git merge-tree --write-tree --merge-base`, the
 //     merge `git cherry-pick` and `git rebase` make, with no work tree. A pick whose result is the
-//     tree it was picked onto changed nothing: the member is ALREADY UPSTREAM, which is clean. A
-//     pick that stops with conflicting paths is a CONFLICT; anything else that stops the replay (a
-//     blob that is not there, a git that fails or runs out of time) is an APPLY ERROR.
+//     tree it was picked onto changed nothing, which is clean, for one of two reasons: the member
+//     is ALREADY UPSTREAM, or its commit was EMPTY WHEN WRITTEN (its tree is its parent's) and so
+//     could never change anything. A pick that stops with conflicting paths is a CONFLICT; anything
+//     else that stops the replay (a blob that is not there, a git that fails or runs out of time)
+//     is an APPLY ERROR.
 //
 // WHERE: a scratch repository in a private temporary directory, never in a staging workspace,
 // borrowing the mirror's objects read-only (objects/info/alternates) and deleted when the walk
@@ -84,8 +86,12 @@ type ReplayResult struct {
 	Entry ListEntry
 	// Clean is true when the whole series took: the entry is a FIT.
 	Clean bool
-	// Upstream lists the members whose pick changed nothing, already in the upstream.
+	// Upstream lists the members whose pick changed nothing because the upstream already holds
+	// their change.
 	Upstream []string
+	// Empty lists the members whose pick changed nothing because their commit was empty when the
+	// series was written — its tree is its parent's — so nothing about them was upstream.
+	Empty []string
 	// Tree is the PATCHED TREE (§5.3, PF-D15) of a clean replay: the git tree of the source's
 	// subdirectory (the whole tree at the repository root) in the replay's last commit.
 	Tree string
@@ -591,7 +597,19 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 		}
 		tree := fields[0]
 		if tree == ontoTree {
-			r.Upstream = append(r.Upstream, member)
+			// The pick changed nothing. Two reasons name the same tree: the member is already in
+			// the upstream, or its commit was empty when the series was written, which is no
+			// upstream fact at all. Only the first may be reported as already upstream.
+			empty, err := sc.memberEmpty(c)
+			if err != nil {
+				r.Err = fmt.Errorf("reading %s: %s", shortCommit(c), oneLine(err))
+				return
+			}
+			if empty {
+				r.Empty = append(r.Empty, member)
+			} else {
+				r.Upstream = append(r.Upstream, member)
+			}
 			continue
 		}
 		next, err := sc.git("", "commit-tree", "--no-gpg-sign", tree, "-p", onto, "-m", member)
@@ -615,6 +633,17 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 		return
 	}
 	r.Clean, r.Tree, r.head = true, strings.TrimSpace(tree), onto
+}
+
+// memberEmpty reports whether the commit `git am` made for a series member is empty: its tree
+// equals its parent's, so the member makes no change of its own and its pick cannot change anything.
+// `git diff-tree` names the paths a commit changes, and prints none for an empty one.
+func (sc *scratch) memberEmpty(c string) (bool, error) {
+	out, _, err := sc.gitStatus("", "diff-tree", "--no-commit-id", "--name-only", "-r", c)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "", nil
 }
 
 // export checks the source's subdirectory of commit out of the scratch repository into a

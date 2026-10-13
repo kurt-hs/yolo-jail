@@ -246,9 +246,11 @@ type RebaseOptions struct {
 // RebaseResult is what a rebase clone came to.
 type RebaseResult struct {
 	// Clean is true when the series takes the target as it stands; Upstream then names the
-	// members already in the upstream, whose pick changed nothing. The clone is removed.
+	// members already in the upstream, whose pick changed nothing, and Empty the members whose
+	// commit was empty when written, which changed nothing of their own. The clone is removed.
 	Clean    bool
 	Upstream []string
+	Empty    []string
 	// Conflict is the member the rebase stopped at and its conflicting paths: the clone is left
 	// mid-rebase in Dir (Kept), its markers in the work tree.
 	Conflict *ReplayConflict
@@ -398,7 +400,7 @@ func (s *Store) RebaseClone(o RebaseOptions) (res RebaseResult) {
 		res.Err = r.Err
 		return res
 	case r.Clean:
-		res.Clean, res.Upstream = true, r.Upstream
+		res.Clean, res.Upstream, res.Empty = true, r.Upstream, r.Empty
 		return res
 	}
 	// A CONFLICT: the rebase the user resumes, stopped where the pick stopped.
