@@ -618,6 +618,10 @@ func rebaseCleanLines(f packload.Fork, rec *packsrc.CheckRecord, in packsrc.Chec
 		lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  %s is already in upstream %s; drop it from %s",
 			m, target.Label(), series.Dir))+"[/dim]")
 	}
+	for _, m := range rr.Empty {
+		lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  %s was empty when written and makes no change of its own; drop it from %s",
+			m, series.Dir))+"[/dim]")
+	}
 	return lines
 }
 

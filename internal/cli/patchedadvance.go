@@ -1677,6 +1677,9 @@ func (a *advance) walk(list []packsrc.ListEntry, ofList bool) packsrc.WalkResult
 			for _, m := range r.Upstream {
 				a.dim("  %s is already in upstream %s; drop it from %s", m, r.Entry.Label(), a.series.Dir)
 			}
+			for _, m := range r.Empty {
+				a.dim("  %s was empty when written and makes no change of its own; drop it from %s", m, a.series.Dir)
+			}
 		}
 	}
 	return w

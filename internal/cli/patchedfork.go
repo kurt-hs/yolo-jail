@@ -479,6 +479,10 @@ func walkReport(f packload.Fork, series *packsrc.Series, rec *packsrc.CheckRecor
 				lines = append(lines, fmt.Sprintf("[dim]  %s is already in upstream %s; drop it from %s[/dim]",
 					m, r.Entry.Label(), series.Dir))
 			}
+			for _, m := range r.Empty {
+				lines = append(lines, fmt.Sprintf("[dim]  %s was empty when written and makes no change of its own; drop it from %s[/dim]",
+					m, series.Dir))
+			}
 			what := "upstream " + r.Entry.Label()
 			switch {
 			case atBase:

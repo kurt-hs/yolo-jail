@@ -253,8 +253,8 @@ type EntryOutcome struct {
 	// Member and Paths are a conflict's: the member that stopped and its conflicting paths.
 	Member string   `json:"member,omitempty"`
 	Paths  []string `json:"paths,omitempty"`
-	// Upstream lists the members a clean replay found already upstream (their pick changed
-	// nothing), to be dropped from the series.
+	// Upstream lists the members a clean replay found already upstream (their commit changed
+	// something of its own and the pick changed nothing), to be dropped from the series.
 	Upstream []string `json:"upstream,omitempty"`
 	// Error, Count and At are a build failure's: the error, the failures so far, and the last.
 	Error string `json:"error,omitempty"`
