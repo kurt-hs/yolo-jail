@@ -378,6 +378,15 @@ a fork that compiles a native addon in the capture jail, which links against the
 motivating fork's own `build` line is still unknown, so steps 1 to 3 want a rerun on it once it is
 named.
 
+An attempt at it on 2026-10-13, on a stand-in fork (`pinative`, a fork of `pi` whose `build` is
+`npm install -g "$(npm pack --silent)"` over a package with a `binding.gyp` and an `install` script
+of `node-gyp rebuild`), pinned and captured (`pinative/pi v1 → 9b820521`; `built pinative/pi
+06d32d42825d6fc9 32 paths, 76.0 kB`) but stopped before the compile: the capture jail's npm (11.17)
+refuses a package's own `install` script by default (`npm warn install-scripts … not yet covered by
+allowScripts … (install: node-gyp rebuild)`), so the admitted tree held JavaScript alone and no
+`.node`. That is a build-line blocker, not a result — nothing here says a compiled tree would be
+unrelocatable, and the gap stays open until a rerun gets the compile to run.
+
 ## Ships with
 
 **Tests, unit, by step.**
