@@ -1,6 +1,7 @@
 package ghbroker
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,22 +34,33 @@ func BindAuthority(path string, sf brokerscope.File, start string) (*Authority, 
 	if sf.Source != Source || sf.Container == "" || sf.Workspace == "" || sf.PID <= 0 {
 		return nil, errors.New("missing host launch identity")
 	}
-	if start == "" || strings.ContainsAny(start, "/\\.") {
+	if !validLifetimeToken(start) || !validLifetimeToken(sf.LaunchID) {
 		return nil, errors.New("invalid fresh broker start")
 	}
-	lease, err := os.OpenFile(filepath.Join(paths.BrokerSourceDir(Source), ".lifetime-"+start), os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	var lease *os.File
+	f, err := brokerscope.BindBroker(path, sf, start, func() error {
+		dir := paths.BrokerSourceDir(Source)
+		if err := collectInertLeases(dir); err != nil {
+			return err
+		}
+		var err error
+		lease, err = os.OpenFile(filepath.Join(dir, ".lifetime-"+start), os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+		if err != nil {
+			return err
+		}
+		if err = syscall.Flock(int(lease.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			return err
+		}
+		if err = json.NewEncoder(lease).Encode(lifetimeLease{Version: lifetimeLeaseVersion, Source: Source, Start: start, LaunchID: sf.LaunchID}); err != nil {
+			return err
+		}
+		return lease.Sync()
+	})
 	if err != nil {
-		return nil, err
-	}
-	if err = syscall.Flock(int(lease.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		lease.Close()
-		os.Remove(lease.Name())
-		return nil, err
-	}
-	f, err := brokerscope.BindBroker(path, sf, start)
-	if err != nil {
-		lease.Close()
-		os.Remove(lease.Name())
+		if lease != nil {
+			lease.Close()
+			os.Remove(lease.Name())
+		}
 		return nil, err
 	}
 	return &Authority{path: path, scope: f, start: start, lease: lease}, nil

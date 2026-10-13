@@ -48,12 +48,13 @@ const Source = "github"
 // repository it resolved, its stdin, and an agent name it reports. None of it is a
 // decision, a grant, a jail identity or a duration (§9.3).
 type Request struct {
-	Invalid   string
-	Operation string
-	RequestID string
-	Argv      []string
-	Repo      string
-	Stdin     []byte
+	writeDeadline func(time.Time) // host connection sink bound, never decoded from a jail frame
+	Invalid       string
+	Operation     string
+	RequestID     string
+	Argv          []string
+	Repo          string
+	Stdin         []byte
 	// StdinSent says the forwarder sent stdin, which is audited by digest even when the
 	// command does not read it.
 	StdinSent bool
@@ -275,6 +276,7 @@ func SelfCheck(w io.Writer) int {
 func (b *Broker) Handle(s *hostservice.Session) {
 	b.trackJail(s.JailID)
 	req := requestFrom(s)
+	req.writeDeadline = func(deadline time.Time) { _ = s.Conn().SetWriteDeadline(deadline) }
 	ctx := b.shutdown
 	if ctx == nil {
 		ctx = context.Background()

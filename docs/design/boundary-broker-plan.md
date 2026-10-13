@@ -57,8 +57,9 @@ with nothing filed or waiting. No bypass or consent default was added.
 - `ghbroker.BindAuthority` binds a fresh start and broker PID to the launch scope using the shared
   transaction. A private flock lease proves the actual start is live even if a PID is recycled.
   `Authority.Close` invalidates it under that transaction; process death releases it too.
-  Normal close removes its own lease file; abnormal death can leave an inert lease file, never
-  usable authority. Abnormal-exit lease-file collection is not built.
+  Normal close removes its own lease file; abnormal death releases its kernel lock. The next
+  real binding collects only known versioned metadata with proven exclusive-lock evidence;
+  unknown/live evidence is retained. Creation, collection and binding share the transaction.
 - Both the default `yolo approve` registry caller and broker consumption use the real adapter.
   It checks holder/workspace/start, host launch path, current approved identity and each actual
   repository, current classification and canonical argv. Canonicalization normalizes the
@@ -75,7 +76,10 @@ with nothing filed or waiting. No bypass or consent default was added.
 - Store request/decision/use hooks run inside the shared transaction. `brokeraudit.Required`
   syncs authorization evidence and propagates failure. Consume persists its use first; required
   audit failure then runs nothing and never refunds. Standing-write policies also pass the
-  required-delivery and in-transaction authority/audit fence. Existing standing reads remain
+  required-delivery and in-transaction authority/audit fence. Both paths now retain the source
+  lock through bounded executor dispatch: a cooperating scope removal cannot win between
+  authorization and host execution. Windowed dispatch saves its use before audit/execution.
+  User policy is sampled at authorization; arbitrary config edits are not lock-cooperating. Existing standing reads remain
   best-effort call-audited. Frame type/base64 errors refuse rather than dropping arguments/bytes.
 
 ### Exact remaining operations and fences
@@ -87,8 +91,11 @@ with nothing filed or waiting. No bypass or consent default was added.
    exists and no write is enabled.
 3. [OQ-BB15](boundary-broker.md#OQ-BB15) explicit-list semantics, then declared command/flag/API rule evaluation; explicit
    lists and custom sets currently refuse rather than silently widening.
-4. Production three-pending bound and ten-minute denial cooldown ([§9.2](boundary-broker.md#92-prompt-fatigue)); abnormal-exit lease
-   metadata collection. Store retention/expiry and live-use bounds are already checked.
+4. Notification-independent engineering fences are now built: three pending per jail across
+   sets/starts; ten-minute same-command denial cooldown across sets/starts, with expiry treated
+   as denied, exact boundary tests and no-notification handler results; known inert lease-file
+   collection with live/unknown evidence retained. Store retention/expiry and live-use bounds
+   remain checked. See [§9.2](boundary-broker.md#92-prompt-fatigue).
 5. Integrator-owned build-go, isolated nested smoke, combined integration/gates and pack pins.
    Deferred commands: `GOMAXPROCS=2 just build-go`, then from a disposable workspace with
    disposable HOME/XDG config/state/data (shared Go/tool caches preserved), run the resulting
@@ -102,3 +109,29 @@ focused race tests include current narrowing/scope removal/lifetime closure, rev
 concurrent one-use dispatch, audit failure ordering, hostile frames and unknown/explicit policy.
 CLI registry tests use the real host adapter and required decision audit. Shared transaction
 review approved the base slice with no blockers; its adapter obligations are the ones above.
+
+## Independent-review follow-up
+
+The independent reviewer blocked the standing path because audit released the source lock
+before dispatch. A tests-first orchestrated race reproduced the same gap on both standing and
+windowed paths: the executor seam could acquire the source flock itself. The real handler now
+holds it through bounded dispatch. `ConsumeDispatchContext` persists use and required audit
+before its callback, under that lock; simulated process death during callback leaves the use
+spent. Scope removal that wins first prevents execution; removal that follows waits for the
+bounded callback. Callback code never nests a same-source store/scope operation.
+
+`Runner.RunContext` stops/reaps fake GH on caller cancellation. The actual host handler passes
+write-sink deadlines to dispatch. Cancellation/deadline and audit failure regressions preserve
+no-refund ordering and release the shared lock. This is a bounded-dispatch linearization
+contract, not a claim that arbitrary out-of-band host config edits take broker locks.
+
+Per-jail pending cap and same-command denial cooldown are checked inside filing's shared
+transaction, after same-lifetime duplicate joining. Canonical digest excludes set/start, so
+policy changes and broker restarts do not evade cooldown. Pending expiry/decision frees a slot;
+expiry is denied for cooldown. Typed refusals reach the actual handler as 75/77, naming existing
+ids and filing/notifying nothing new. Known lifetime metadata and kernel flock evidence allow
+next-start collection after abnormal exit; unknown/live evidence and legacy empty files remain.
+
+Build/nested verification remains explicitly deferred to combined integration. Production
+readiness remains nil and writes still77; [OQ-BB10](boundary-broker.md#OQ-BB10) and
+[OQ-BB15](boundary-broker.md#OQ-BB15) are not resolved by these repairs.
