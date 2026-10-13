@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -65,6 +66,102 @@ func (r hostReadiness) done(bin string) bool { return r.settled[bin] }
 type hostReadinessFailure struct {
 	who, pack string
 	err       error
+}
+
+// hostFreshProgramSet is the owner-scoped host part of --update: the requested declared program
+// plus the yolo-owned programs backing the MCP servers this host launch projects for it.
+func hostFreshProgramSet(packs []*packload.Pack, cmd0 string) []hostfloor.Program {
+	all := floorPrograms(packs)
+	var selected []hostfloor.Program
+	seen := map[string]bool{}
+	add := func(p hostfloor.Program) {
+		if seen[p.Bin()] {
+			return
+		}
+		seen[p.Bin()] = true
+		selected = append(selected, p)
+	}
+	if !strings.ContainsAny(cmd0, string(filepath.Separator)) {
+		if target, ok := floorProgram(all, cmd0); ok {
+			add(target)
+		}
+	}
+	composed, _ := hostMCPPacks(packs)
+	for _, held := range packload.HeldMCPServers(composed) {
+		if held.Server.Bin == "" {
+			continue
+		}
+		if p, ok := floorProgram(all, held.Server.Bin); ok {
+			add(p)
+		}
+	}
+	return selected
+}
+
+func freshFloorRoute(p hostfloor.Program) bool {
+	switch p.Install.Kind {
+	case "npm", "native", packdecl.InstallKindSource:
+		return true
+	default:
+		return false
+	}
+}
+
+// hostFreshProgramPreparation runs only hostFreshProgramSet's declared yolo-owned programs. A
+// scoped plain-fork pin is re-resolved first; unrelated selected programs and lock entries remain
+// untouched. Ensure's manual mode bypasses automatic policy/timing holds, not fixed pins or ownership.
+func hostFreshProgramPreparation(packs []*packload.Pack, cmd0 string, errw io.Writer,
+	act *run.ActInterrupt) int {
+	programs := hostFreshProgramSet(packs, cmd0)
+	if len(programs) == 0 {
+		return 0
+	}
+	floor := newHostFloor(errw, floorPrograms(packs))
+	floor.ManualUpdate = true
+	ctx := withActInterrupt(context.Background(), act)
+	for _, p := range programs {
+		if floor.OutsideTheFloor(p) {
+			continue
+		}
+		if !freshFloorRoute(p) {
+			fmt.Fprintf(errw, "yolo host --update: %s in pack %s has no supported fresh installer route — preserve its current owner and run without --update, or select a supported pack declaration\n", p.Bin(), p.Pack)
+			return 1
+		}
+		if p.Install.Kind == packdecl.InstallKindSource && !p.Install.IsPatchedFork() {
+			var exact *packload.Fork
+			for _, f := range packload.Forks(packs) {
+				if f.Pack == p.Pack && f.Bin == p.Bin() && !f.Patched() {
+					fork := f
+					exact = &fork
+					break
+				}
+			}
+			if exact == nil {
+				fmt.Fprintf(errw, "yolo host --update: %s in pack %s has no selected plain-fork declaration — repair the selected pack before launching\n", p.Bin(), p.Pack)
+				return 1
+			}
+			addr, addrErr := packsrc.Parse(exact.Source)
+			if addrErr == nil && addr.Kind == packsrc.KindGit && !packsrc.IsFixedRef(addr.Ref) {
+				if rc := pinForkDeclarationsContext(ctx, richtext.Printer{W: errw, Color: colorForWriter(errw)}, errw,
+					[]packload.Fork{*exact}, nil, true, false, false); rc != 0 {
+					if act.Interrupted() {
+						return 130
+					}
+					return rc
+				}
+			}
+		}
+		_, outcome, err := floor.Ensure(ctx, p)
+		if act.Interrupted() {
+			return 130
+		}
+		if err != nil || outcome == hostfloor.Kept {
+			fmt.Fprintf(errw, "yolo host --update: fresh preparation of %s (pack %s) failed: %v — fix the named install/build problem, then retry\n",
+				p.Bin(), p.Pack, err)
+			return 1
+		}
+	}
+	return 0
 }
 
 // hostReadinessAct runs the act for a launch of cmd. It returns what it settled and the launch's

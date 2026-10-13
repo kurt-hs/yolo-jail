@@ -309,7 +309,7 @@ func TestHostLaunchOfAnUnpinnedForkPinsItBuildsItAndRunsTheFloorsCopy(t *testing
 	if rec := floorRecord(t, "forkcli"); rec.Revision != head1 {
 		t.Errorf("the floor runs %s, want the build at the pin it made, %s", rec.Revision, head1)
 	}
-	want := "yolo host: pinned fork forkpack/forkcli at " + head1[:8] + " (" + source + "); `yolo pack update` moves it"
+	want := "yolo host: pinned fork forkpack/forkcli at " + head1[:8] + " (" + source + "); `--update` or `yolo pack update` moves it"
 	if !strings.Contains(errw.String(), want) {
 		t.Errorf("the launch does not disclose the pin it made:\nwant %q\n%s", want, errw.String())
 	}

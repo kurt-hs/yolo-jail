@@ -71,6 +71,42 @@ func TestTheFollowRuleHeadAndPrefix(t *testing.T) {
 	}
 }
 
+func TestFreshCheckUsesStartedSequenceInsteadOfWallClock(t *testing.T) {
+	u := newPatchedUpstream(t)
+	w := u.want(t, "main", "")
+	before, err := u.store.FreshCheckBoundary(w.Owner)
+	if err != nil || before != 0 {
+		t.Fatalf("initial fresh-check boundary = %d, %v; want 0", before, err)
+	}
+	first := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: before,
+		Now: func() time.Time { return u.now }})
+	if first.Err != nil || !first.Ran || !first.Fresh || first.Record.Check.StartedSeq != 1 {
+		t.Fatalf("fresh check = %+v, want first post-registration start", first)
+	}
+
+	// A request registered after that check started must not treat its completion as fresh. Move
+	// the clock backwards as well: only the monotonic start sequence can force the follow-up.
+	afterStart, err := u.store.FreshCheckBoundary(w.Owner)
+	if err != nil || afterStart != 1 {
+		t.Fatalf("post-start boundary = %d, %v; want 1", afterStart, err)
+	}
+	u.now = u.now.Add(-time.Hour)
+	second := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: afterStart,
+		Now: func() time.Time { return u.now }})
+	if second.Err != nil || !second.Ran || !second.Fresh || second.Record.Check.StartedSeq != 2 {
+		t.Fatalf("post-start request = %+v, want a qualifying follow-up check", second)
+	}
+
+	// A concurrent request registered before the first check started can reuse that checked winner;
+	// it neither checks again nor requires the record's wall clock to be recent.
+	broken := &Store{Dir: u.store.Dir, Git: "/nonexistent/git", Getenv: noStagedTree}
+	shared := broken.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: 0,
+		Now: func() time.Time { return u.now }})
+	if shared.Err != nil || shared.Ran || !shared.Fresh || shared.Record.Check.StartedSeq != 2 {
+		t.Fatalf("pre-start concurrent request = %+v, want reuse of a post-boundary check", shared)
+	}
+}
+
 // A BASE PAST THE NEWEST VERSION lists nothing — no older version passes for an update — and the
 // branch still contains the base, which a first advance builds (PF-D10).
 func TestABasePastTheNewestVersionListsNothing(t *testing.T) {
@@ -328,6 +364,72 @@ func blockingGit(t *testing.T) (bin string, started func() bool, release func())
 	started = func() bool { _, err := os.Stat(mark); return err == nil }
 	release = func() { writeTestFile(t, gate, "") }
 	return bin, started, release
+}
+
+func TestFreshBoundaryWaitsForAnInFlightCheckThenStartsAFollowup(t *testing.T) {
+	u := newPatchedUpstream(t)
+	w := u.want(t, "main", "")
+	git, started, release := blockingGit(t)
+	u.store.Git = git
+	defer release()
+	firstDone := make(chan CheckResult, 1)
+	go func() {
+		firstDone <- u.store.CheckPatched(w, CheckOptions{Force: true, Now: func() time.Time { return u.now }})
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for !started() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !started() {
+		t.Fatal("the first check did not reach its paused git command")
+	}
+	startedRecord, err := u.store.LoadCheckRecord(w.Owner)
+	if err != nil || startedRecord.StartedSeq != 1 || startedRecord.Check != nil {
+		t.Fatalf("paused check did not persist its start before transport: record=%+v err=%v", startedRecord, err)
+	}
+
+	boundaryDone := make(chan struct {
+		seq uint64
+		err error
+	}, 1)
+	go func() {
+		seq, err := u.store.FreshCheckBoundary(w.Owner)
+		boundaryDone <- struct {
+			seq uint64
+			err error
+		}{seq, err}
+	}()
+	select {
+	case got := <-boundaryDone:
+		t.Fatalf("registration crossed the in-flight check before it completed: %+v", got)
+	case <-time.After(30 * time.Millisecond):
+	}
+	release()
+	select {
+	case first := <-firstDone:
+		if first.Err != nil || !first.Ran || first.Fresh {
+			t.Fatalf("pre-request check = %+v", first)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pre-request check did not finish after release")
+	}
+	var boundary struct {
+		seq uint64
+		err error
+	}
+	select {
+	case boundary = <-boundaryDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request boundary remained blocked after the earlier check completed")
+	}
+	if boundary.err != nil || boundary.seq != 1 {
+		t.Fatalf("request boundary = %d, %v; want the earlier check's start sequence 1", boundary.seq, boundary.err)
+	}
+	followup := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: boundary.seq,
+		Now: func() time.Time { return u.now }})
+	if followup.Err != nil || !followup.Ran || !followup.Fresh || followup.Record.Check.StartedSeq != 2 {
+		t.Fatalf("post-registration follow-up = %+v, want a new start after boundary 1", followup)
+	}
 }
 
 // A CHECK KILLED IN ITS GIT NEVER PAIRS NEW INPUTS WITH THE OLD LIST (§4.2): the attempt's stamp

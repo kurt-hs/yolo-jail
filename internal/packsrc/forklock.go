@@ -14,14 +14,15 @@ package packsrc
 //
 // A LAUNCH PINS a fork the lock does not name yet, or names for a source the manifest no longer
 // declares (PinForks, forkpin.go; FP-D18, which supersedes FP-D7's read-only launch under the
-// maintainer's OQ-PF1), and so does `yolo pack install`, which is no longer required. Only `yolo
-// pack update` MOVES a pin: a launch leaves a standing pin where it is, however far its branch has
-// moved, because re-resolving it at launch would be the rebuild on a timer §9 forbids.
+// maintainer's OQ-PF1), and so does `yolo pack install`, which is no longer required. An ordinary launch
+// leaves a standing pin where it is, however far its branch has moved; only an explicit manual
+// update may re-resolve it.
 //
 // It carries the same discipline as the pack lock (lock.go): a newer schema is refused, a rewrite is
 // a temp file and a rename, and writers are serialized by a flock in the pack store (WithForkLock).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -157,16 +158,21 @@ func (l *ForkLock) Prune(keep []string) []string {
 	return removed
 }
 
-// WithForkLock is the fork lock's load-modify-save under an exclusive flock in the pack store
-// (storeDir/locks), WithLock's discipline for the second file: fn reports whether it changed
-// anything, and nothing is written when it did not.
-func WithForkLock(storeDir, lockPath string, waiting func(string), fn func(*ForkLock) (bool, error)) error {
-	unlock, err := flockPath(filepath.Join(storeDir, "locks", "forklock-"+mirrorSlug(lockPath)+".lock"),
+// WithForkLock uses a cancellable context for the flock wait and the load-modify-save operation.
+func WithForkLockContext(ctx context.Context, storeDir, lockPath string, waiting func(string),
+	fn func(*ForkLock) (bool, error)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	unlock, err := flockPathContext(ctx, filepath.Join(storeDir, "locks", "forklock-"+mirrorSlug(lockPath)+".lock"),
 		"the fork lock "+lockPath, waiting)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	l, err := LoadForkLock(lockPath)
 	if err != nil {
 		return err
@@ -175,5 +181,15 @@ func WithForkLock(storeDir, lockPath string, waiting func(string), fn func(*Fork
 	if err != nil || !changed {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return l.Save(lockPath)
+}
+
+// WithForkLock is the fork lock's load-modify-save under an exclusive flock in the pack store
+// (storeDir/locks), WithLock's discipline for the second file: fn reports whether it changed
+// anything, and nothing is written when it did not.
+func WithForkLock(storeDir, lockPath string, waiting func(string), fn func(*ForkLock) (bool, error)) error {
+	return WithForkLockContext(context.Background(), storeDir, lockPath, waiting, fn)
 }

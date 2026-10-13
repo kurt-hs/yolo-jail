@@ -130,7 +130,12 @@ func (o *Options) provisionStage() string { return buildProvisionStage(o.scriptC
 // (firstSessionExecCmd); an attach's command is its bare target, which the entrypoint
 // announces itself.
 func (o *Options) sessionCmd(targetCmd string) string {
-	return buildSessionCmd(targetCmd, o.timingReporting(), o.scriptColor())
+	var prelude string
+	if o.Update && !o.DryRun {
+		prelude = shquote.Join([]string{"yolo", "internal", "refresh-programs"}) + " && " +
+			shquote.Join([]string{"yolo", "internal", "refresh-servers", "--fresh"})
+	}
+	return buildSessionCmd(targetCmd, o.timingReporting(), o.scriptColor(), prelude)
 }
 
 // executingBanner is the "⚡ Executing: <target>" line both branches of buildSessionCmd
@@ -179,7 +184,15 @@ func buildProvisionStage(color bool) string {
 // color=false is exactly those bytes minus their escapes, which
 // TestFinalInternalCmdIsTheGoldenWhenColorIsOn asserts, so NO_COLOR moved no frozen byte for
 // a launch that does not set it.
-func buildSessionCmd(targetCmd string, timing, color bool) string {
+func buildSessionCmd(targetCmd string, timing, color bool, preludes ...string) string {
+	prelude := ""
+	if len(preludes) > 0 {
+		prelude = preludes[0]
+	}
+	command := targetCmd
+	if prelude != "" {
+		command = prelude + " && exec " + targetCmd
+	}
 	if timing {
 		return "" +
 			"exec 3>&2; " +
@@ -188,7 +201,7 @@ func buildSessionCmd(targetCmd string, timing, color bool) string {
 			miseActivate + "; " +
 			"_t2=$(date +%s%N); " +
 			executingBanner(targetCmd, color) + "; " +
-			targetCmd + "; _rc=$?; " +
+			command + "; _rc=$?; " +
 			"_t3=$(date +%s%N); " +
 			"echo '' >&3; echo '=== YOLO Jail Profile ===' >&3; " +
 			"echo '' >&3; echo '--- Entrypoint (config generation) ---' >&3; " +
@@ -210,5 +223,5 @@ func buildSessionCmd(targetCmd string, timing, color bool) string {
 	return "" +
 		miseActivate + "; " +
 		executingBanner(targetCmd, color) + "; " +
-		targetCmd
+		command
 }

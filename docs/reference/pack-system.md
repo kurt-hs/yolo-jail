@@ -989,10 +989,13 @@ itself, so no `yolo pack install` is needed** ([FP-D18](../design/forked-program
 applying [`OQ-PF1`](#oq-pf1)). A host launch that carries a fork the lock does not pin for its
 declared `source` resolves the ref to a commit once, by the launch's ref rule
 ([fetch, refresh, lock](#fetch-refresh-lock)), records it, and builds that commit, printing
-``pinned fork <pack>/<bin> at <short sha> (<source>); `yolo pack update` moves it``. The pin is
+``pinned fork <pack>/<bin> at <short sha> (<source>); `--update` or `yolo pack update` moves it``. The pin is
 made under the fork lock's own lock and the file is re-read there, so two launches pinning one fork
-at once record one commit. **A standing pin never moves at launch**, however far its branch has
-moved, and costs no git run. A pin that cannot be made (the repository unreachable, the ref naming
+at once record one commit. **An ordinary standing pin never moves at launch**, however far its branch has
+moved, and costs no git run. An explicit `--update` fresh launch is the exception: on the host it
+re-resolves selected mutable branch pins; inside a jail it refuses only when a selected mutable source fork needs that
+host-only write, naming `yolo --update -- <command>` from the host workspace. Fixed tag/commit inputs remain
+eligible inside a jail. A pin that cannot be made (the repository unreachable, the ref naming
 nothing) is that fork's reason, with the next step, and the launch goes on without its program. A
 fork lock that cannot be read pins nothing, and every reader, a launch included, says so in the same
 words. A `--dry-run` and a launch inside a jail pin nothing, and inside a jail an unpinned fork's
@@ -1002,7 +1005,8 @@ pinned commit this machine's pack store does not hold fetches it by that commit,
 that arrived with the config builds the same commit here as on the machine that pinned it.
 `yolo pack install` still pins every selected fork the lock does not pin, and checks every pin,
 new or standing, out into the pack store; it is not required. `yolo pack update` re-resolves every
-fork, and is the only act that moves a pin. `yolo pack status` lists each pin and fails on a pin made
+fork; a host `--update` fresh launch re-resolves selected mutable branch forks too, but an in-jail `--update` never writes
+the host fork lock. `yolo pack status` lists each pin and fails on a pin made
 for a source the fork no longer declares. Each launch that carries a fork prints the commit it is
 pinned to (`fork <pack>: <bin> (in place of pack <base>'s) is built from <source> at commit <sha>`),
 or why it has none. A fork's source never goes through the launch's hourly pack refresh, which

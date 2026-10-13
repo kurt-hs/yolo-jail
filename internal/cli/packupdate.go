@@ -43,11 +43,15 @@ package cli
 // refresh, and saying so is better than silently doing nothing.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -70,7 +74,7 @@ import (
 // turns every launcher invocation into an update-and-exit and never launches their agent.
 // That is why the launcher announces what it did on stderr in this mode, and why nothing
 // but `yolo pack update` sets it.
-const launcherUpdateEnv = "YOLO_PACK_UPDATE"
+const launcherUpdateEnv = entrypoint.FreshRefreshEnv
 
 // launcherRunner runs one launcher script in update mode. A seam so a test can observe
 // WHICH launchers a refresh reaches without executing npm — the production one is
@@ -149,17 +153,98 @@ func refreshProgramsFromOS(pr richtext.Printer, errw io.Writer) int {
 	return refreshPrograms(e, pr, errw, execLauncherUpdate(pr.W, errw))
 }
 
+func refreshProgramsForFreshRequest() int {
+	e := entrypoint.JailEnvFromOS()
+	if e.Getenv("YOLO_PACK_ROOT") == "" {
+		fmt.Fprintln(os.Stderr, "yolo internal refresh-programs: no staged pack tree is available — run `yolo --update` from a fresh jail launch")
+		return 1
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	pr := richtext.Printer{W: os.Stderr, Color: colorForWriter(os.Stderr)}
+	return refreshSelectedPrograms(ctx, e, pr, os.Stderr, execProgramPreparation)
+}
+
+// preparationRunner invokes a declared launcher in one explicit mode; it never supplies application argv.
+type preparationRunner func(context.Context, string, string, entrypoint.ProgramPreparationMode) error
+
+// refreshSelectedPrograms is the fresh jail caller of the same selected declaration vector used by
+// install-only readiness. Source builds are handled by the keyed tree/fork advance before handoff.
+func refreshSelectedPrograms(ctx context.Context, e *entrypoint.Env, pr richtext.Printer, errw io.Writer,
+	run preparationRunner) int {
+	packs, err := entrypoint.LoadJailPacks(e)
+	if err != nil {
+		fmt.Fprintf(errw, "yolo internal refresh-programs: reading staged packs: %v\n", err)
+		return 1
+	}
+	programs, err := entrypoint.SelectedProgramPreparations(e, packs, entrypoint.ProgramFreshRefresh)
+	if err != nil {
+		fmt.Fprintf(errw, "yolo internal refresh-programs: resolving selected programs: %v\n", err)
+		return 1
+	}
+	rc := 0
+	for _, program := range programs {
+		if program.Install.Kind == packdecl.InstallKindSource {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			fmt.Fprintf(errw, "yolo internal refresh-programs: fresh preparation was cancelled (%v) — the command was not started\n", err)
+			return 1
+		}
+		launcher := filepath.Join(e.LaunchDir(), program.Bin)
+		if _, err := os.Stat(launcher); err != nil {
+			fmt.Fprintf(errw, "yolo internal refresh-programs: %s from pack %s has no launcher at %s — relaunch the jail to regenerate it\n",
+				program.Bin, program.Pack, launcher)
+			rc = 1
+			continue
+		}
+		pr.Printf("[dim]%s: refreshing %s[/dim]", program.Bin, declaredSource(&program.Install))
+		if err := run(ctx, program.Bin, launcher, program.Mode); err != nil {
+			fmt.Fprintf(errw, "yolo internal refresh-programs: %s (pack %s): %v\n", program.Bin, program.Pack, err)
+			rc = 1
+		}
+	}
+	if ctx.Err() != nil {
+		fmt.Fprintf(errw, "yolo internal refresh-programs: fresh preparation was cancelled (%v) — the command was not started\n", ctx.Err())
+		return 1
+	}
+	return rc
+}
+
 // execLauncherUpdate runs a launcher with launcherUpdateEnv set. Output goes straight
 // through: the launcher's own "Updating x → y" / "already current" lines are the report,
 // and paraphrasing them here would give the same event two spellings.
 func execLauncherUpdate(out, errw io.Writer) launcherRunner {
 	return func(bin, path string) error {
-		cmd := exec.Command(path)
-		cmd.Env = append(os.Environ(), launcherUpdateEnv+"=1")
-		cmd.Stdout = out
-		cmd.Stderr = errw
-		return cmd.Run()
+		return execProgramPreparationTo(context.Background(), bin, path, entrypoint.ProgramFreshRefresh, out, errw)
 	}
+}
+
+// execProgramPreparation runs a generated launcher as a child process group. Context cancellation
+// kills its shell and installer descendants, and argv contains no program arguments by design.
+func execProgramPreparation(ctx context.Context, bin, path string, mode entrypoint.ProgramPreparationMode) error {
+	return execProgramPreparationTo(ctx, bin, path, mode, os.Stdout, os.Stderr)
+}
+
+func execProgramPreparationTo(ctx context.Context, bin, path string, mode entrypoint.ProgramPreparationMode,
+	out, errw io.Writer) error {
+	env, err := entrypoint.ProgramPreparationEnv(mode)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, path)
+	cmd.Env = append(os.Environ(), env+"=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 5 * time.Second
+	cmd.Stdout = out
+	cmd.Stderr = errw
+	return cmd.Run()
 }
 
 // refreshPrograms runs the update path of every declared `program` in the packs staged for

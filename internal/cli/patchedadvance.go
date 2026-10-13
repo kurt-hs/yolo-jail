@@ -116,6 +116,12 @@ type advanceOptions struct {
 	// force is `yolo capture <bin>`'s: the check forced, a back-off ignored, the good build's own
 	// inputs rebuilt when nothing is pending, the build lock not waited for.
 	force bool
+	// freshCheck is an explicit launch freshness request. It forces a post-registration check but
+	// keeps force's rebuild and lock semantics unchanged.
+	freshCheck       bool
+	freshAfterSeq    uint64
+	freshBoundaryErr error
+	freshIdentity    string
 	// hand records what the launch hands its jail (run.ForkBuildRequest.Hand), under the record
 	// lock; nil records nothing.
 	hand func(bin string, h run.HandedFork) error
@@ -349,7 +355,22 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 	if o.slot != nil {
 		ctx = o.slot.context()
 	}
+	if a.o.freshBoundaryErr != nil {
+		return a.freshRefusal("could not register a fresh check", a.o.freshBoundaryErr)
+	}
+	if o.freshCheck {
+		identity, err := freshPreparationIdentity(f, o.platform)
+		if err != nil || identity != o.freshIdentity {
+			if err == nil {
+				err = fmt.Errorf("selected source, series or recipe changed after request registration")
+			}
+			return a.freshRefusal("the selected inputs changed; no preparation was retargeted", err)
+		}
+	}
 	if o.launch && (o.act.Interrupted() || ctx != nil && ctx.Err() != nil) {
+		if o.freshCheck {
+			return a.freshRefusal("the explicit preparation request was cancelled", context.Canceled)
+		}
 		return a.actStopped()
 	}
 	if o.launch && ctx != nil {
@@ -360,6 +381,9 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 		a.ctx = ctx
 		a.packs.Ctx = ctx
 		res := a.run()
+		if ctx.Err() != nil && o.freshCheck {
+			return a.freshRefusal("the explicit preparation request was cancelled", ctx.Err())
+		}
 		if ctx.Err() != nil && !res.built && !a.stopSaid {
 			a.interruptedLine()
 		}
@@ -381,6 +405,9 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 		a.packs.Ctx = workCtx
 		res = a.withOperationCancellation(a.run())
 	})
+	if sig != nil && o.freshCheck {
+		return a.freshRefusal("the explicit preparation request was cancelled", fmt.Errorf("interrupted by %s", sig))
+	}
 	if sig != nil && !res.built {
 		// Every step that saw the interrupt ended in finish, which handed the good build.
 		a.interruptedLine()
@@ -388,6 +415,21 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 	return res
 }
 
+func (a *advance) freshRefusal(problem string, cause error) advanceResult {
+	if cause != nil {
+		problem += ": " + oneLineErr(cause)
+	}
+	spelling := "`yolo --update -- <command>`"
+	if a.o.host {
+		spelling = "`yolo host --update -- <command>`"
+	}
+	reason := fmt.Sprintf("%s could not be prepared freshly (%s) — retry with %s",
+		a.f.Label(), problem, spelling)
+	a.warn("%s", reason)
+	return advanceResult{delivery: entrypoint.ForkDelivery{Reason: reason}, failed: true, problem: problem}
+}
+
+// withOperationCancellation retains cancellation evidence beside whatever the advance handed.
 func (a *advance) withOperationCancellation(result advanceResult) advanceResult {
 	if a.o.operationCtx == nil || a.o.operationCtx.Err() == nil {
 		return result
@@ -526,11 +568,14 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 // lock. That compare-and-swap may wait (§6.2 rule 1); initialization, replay records and all other
 // background work use a.packs and skip a busy lock (§6.2 rule 5).
 func (a *advance) records() *packsrc.Store {
-	if !a.packs.NoWait {
+	if !a.packs.NoWait && (a.ctx == nil || a.ctx.Err() == nil) {
 		return a.packs
 	}
 	s := *a.packs
 	s.NoWait = false
+	if a.ctx != nil && a.ctx.Err() != nil {
+		s.Ctx = nil
+	}
 	return &s
 }
 
@@ -1046,7 +1091,7 @@ func (a *advance) run() advanceResult {
 	if cachedFailure.State == "unavailable" {
 		return a.unavailableDetachedAuthority(cachedFailure)
 	}
-	if hold != "" && good != nil && !a.o.force {
+	if hold != "" && good != nil && !a.o.force && !a.o.freshCheck {
 		// A hold suppresses Git and repair retry, never already-classified failure authority.
 		if cachedFailure.State == "failure" && cachedFailure.Failure != nil {
 			return a.patchFailureResult(cachedFailure.Failure)
@@ -1066,7 +1111,8 @@ func (a *advance) run() advanceResult {
 		checked := a.checkSlot(func() {
 			slotWait.End()
 			defer advanceSpan(f, "check").End()
-			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force, Now: patchedNow,
+			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force,
+				Fresh: a.o.freshCheck, AfterSeq: a.o.freshAfterSeq, Now: patchedNow,
 				Begin: func() (func(string), func()) {
 					if a.o.slot != nil {
 						// IN A JAIL LAUNCH'S POOL THE CHECK IS ITS LINE'S "checking N" (buildpool.go), and a
@@ -1090,13 +1136,21 @@ func (a *advance) run() advanceResult {
 			// A CTRL-C ENDED THE CHECK, whose fetch it cut short: no fetch failed, so the stamp the
 			// attempt wrote goes, and the next launch checks again rather than an hour later (§6.2:
 			// an advance a Ctrl-C ended leaves the candidate pending).
-			_ = a.packs.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, _ error, _ func() error) (bool, error) {
+			checkCleanup := *a.packs
+			checkCleanup.Ctx = nil
+			_ = checkCleanup.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, _ error, _ func() error) (bool, error) {
 				r.CheckedAt = 0
 				return true, nil
 			})
+			if a.o.freshCheck {
+				return a.freshRefusal("the fresh upstream check was interrupted", a.ctx.Err())
+			}
 			return a.finish(nil, forkBuild{}, 0, nil, "")
 		}
 		if res.Err != nil {
+			if a.o.freshCheck {
+				return a.freshRefusal("the fresh upstream check could not run", res.Err)
+			}
 			failure := a.deliveryPatchFailure(false)
 			if failure.State == "unavailable" {
 				return a.unavailableDetachedAuthority(failure)
@@ -1110,6 +1164,20 @@ func (a *advance) run() advanceResult {
 			a.warn("%s: could not check its upstream: %v", f.Label(), res.Err)
 			a.problem = "could not check its upstream: " + oneLineErr(res.Err)
 			return a.serveOr(fmt.Sprintf("%s's upstream could not be checked (%v)", f.Label(), res.Err))
+		}
+		if a.o.freshCheck {
+			if !res.Fresh || res.Record == nil || res.Record.Check == nil || res.Record.Check.FetchErr != "" ||
+				res.Record.Check.Problem != "" {
+				problem := "the fresh upstream check did not complete successfully"
+				if res.Record != nil && res.Record.Check != nil {
+					if res.Record.Check.FetchErr != "" {
+						problem = "the fresh upstream check failed: " + res.Record.Check.FetchErr
+					} else if res.Record.Check.Problem != "" {
+						problem = "the fresh upstream check was refused: " + res.Record.Check.Problem
+					}
+				}
+				return a.freshRefusal(problem, nil)
+			}
 		}
 		a.rec = res.Record
 		found := a.rec.Check
@@ -1556,7 +1624,7 @@ func (a *advance) pendingOf(list []packsrc.ListEntry, exactGit bool) []packsrc.L
 	if exactGit {
 		gitVer, _ = a.packs.GitVersion()
 	}
-	backoff := a.o.launch && a.serves()
+	backoff := a.o.launch && a.serves() && !a.o.freshCheck
 	var out []packsrc.ListEntry
 	for _, e := range list {
 		if a.conflicted(e.Commit, gitVer) {
@@ -2325,10 +2393,19 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 	var res advanceResult
 	var moved, lost bool
 	packs := a.packs
-	if built != nil || failure != nil {
-		packs = a.records() // only a completed build's settle may wait
+	if built != nil || failure != nil || a.ctx != nil && a.ctx.Err() != nil {
+		packs = a.records() // a completed build's settle may wait; cancellation still records the serving hand
 	}
 	err := packs.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, _ error, save func() error) (bool, error) {
+		if a.o.freshCheck {
+			identity, err := freshPreparationIdentity(f, a.o.platform)
+			if err != nil {
+				return false, fmt.Errorf("fresh preparation inputs could not be revalidated before admission: %w", err)
+			}
+			if identity != a.o.freshIdentity {
+				return false, errPreparationAdmissionStale
+			}
+		}
 		settle := func() (bool, error) {
 			changed := false
 			if built != nil {
@@ -2421,6 +2498,9 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 		return false, nil
 	})
 	if err != nil {
+		if a.o.freshCheck {
+			return a.freshRefusal("the selected inputs changed or the request was cancelled before final admission", err)
+		}
 		if errors.Is(err, errPreparationAdmissionStale) {
 			return a.skip(err)
 		}

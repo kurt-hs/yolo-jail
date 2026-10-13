@@ -87,7 +87,7 @@ func TestPinForksSaysWhatItPinnedAndWhyItCouldNot(t *testing.T) {
 		t.Fatalf("pins = %+v, want the good fork pinned", pins)
 	}
 	if want := "pinned fork forkpack/tool at " + pins[0].Commit[:8] + " (" + good.Source +
-		"); `yolo pack update` moves it"; pins[0].PinnedLine() != want {
+		"); `--update` or `yolo pack update` moves it"; pins[0].PinnedLine() != want {
 		t.Errorf("PinnedLine() = %q, want %q", pins[0].PinnedLine(), want)
 	}
 	reason := pins[1].Reason

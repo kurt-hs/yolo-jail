@@ -1775,6 +1775,9 @@ fi
 // (pnpm) still ignores it: no pack declares pnpm, so neither caller ever reaches it.
 const InstallOnlyEnv = "YOLO_INSTALL_ONLY"
 
+// FreshRefreshEnv makes a generated launcher refresh its declared program, then stop without exec.
+const FreshRefreshEnv = "YOLO_PACK_UPDATE"
+
 // NoTerminalVerb is the `yolo internal` verb the native launcher runs a vendor installer
 // through, so that it has no controlling terminal and a /dev/null stdin (internal/notty,
 // docs/design/provisioner-sets.md PS-D1). Spelled here, where the launcher template is, and

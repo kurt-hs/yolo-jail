@@ -64,7 +64,51 @@ import (
 type readyProgram struct {
 	Bin  string
 	Who  string
+	Pack string
 	inst packdecl.Install
+}
+
+// ProgramPreparationMode distinguishes presence-only readiness from an explicit fresh refresh.
+type ProgramPreparationMode uint8
+
+const (
+	ProgramInstallOnly ProgramPreparationMode = iota + 1
+	ProgramFreshRefresh
+)
+
+// ProgramPreparation is one selected declaration the readiness and explicit refresh paths share.
+type ProgramPreparation struct {
+	Bin     string
+	Who     string
+	Pack    string
+	Install packdecl.Install
+	Mode    ProgramPreparationMode
+}
+
+// ProgramPreparationEnv names the launcher mode for an authorized selected-program preparation.
+func ProgramPreparationEnv(mode ProgramPreparationMode) (string, error) {
+	switch mode {
+	case ProgramInstallOnly:
+		return InstallOnlyEnv, nil
+	case ProgramFreshRefresh:
+		return FreshRefreshEnv, nil
+	default:
+		return "", fmt.Errorf("unknown program preparation mode %d", mode)
+	}
+}
+
+// SelectedProgramPreparations resolves exactly the launcher-backed, honored program declarations
+// selected for this staged environment. Readiness and explicit fresh refresh share this vector.
+func SelectedProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode) ([]ProgramPreparation, error) {
+	if _, err := ProgramPreparationEnv(mode); err != nil {
+		return nil, err
+	}
+	selected := selectedReadyPrograms(e, packs)
+	out := make([]ProgramPreparation, 0, len(selected))
+	for _, p := range selected {
+		out = append(out, ProgramPreparation{Bin: p.Bin, Who: p.Who, Pack: p.Pack, Install: p.inst, Mode: mode})
+	}
+	return out, nil
 }
 
 // declaredReadyPrograms is the set the readiness act installs, in pack-load order.
@@ -84,6 +128,19 @@ func declaredReadyPrograms(e *Env) []readyProgram {
 // launcher, a name the image or a mise tool provides (launcherShadows), a platform the vendor
 // does not publish for (UnpublishedReason), and a bin an earlier pack already took.
 func readyProgramsOf(e *Env, packs []*packload.Pack) []readyProgram {
+	selected, _ := SelectedProgramPreparations(e, packs, ProgramInstallOnly)
+	out := make([]readyProgram, 0, len(selected))
+	for _, p := range selected {
+		out = append(out, readyProgram{Bin: p.Bin, Who: p.Who, Pack: p.Pack, inst: p.Install})
+	}
+	return out
+}
+
+// selectedReadyPrograms is declaredReadyPrograms over packs already loaded. Its skips are
+// GenerateAgentLaunchers', in that function's order: an unusable bin name, a kind with no
+// launcher, a name the image or a mise tool provides (launcherShadows), a platform the vendor
+// does not publish for (UnpublishedReason), and a bin an earlier pack already took.
+func selectedReadyPrograms(e *Env, packs []*packload.Pack) []readyProgram {
 	probePath, miseBins := imageProbePath(e), declaredMiseBins(e)
 	seen := map[string]bool{}
 	var out []readyProgram
@@ -114,6 +171,7 @@ func readyProgramsOf(e *Env, packs []*packload.Pack) []readyProgram {
 			out = append(out, readyProgram{
 				Bin:  inst.Bin,
 				Who:  "program " + inst.Bin + " (pack " + p.Name + ")",
+				Pack: p.Name,
 				inst: inst,
 			})
 		}

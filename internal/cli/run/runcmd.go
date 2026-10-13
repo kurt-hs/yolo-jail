@@ -148,6 +148,9 @@ type Options struct {
 	// anything from it. Set by the front door (internal/cli's runRun); nil for a launch yolo
 	// starts itself (a capture or build jail), which the header says.
 	Invocation []string
+	// Update requests a fresh, explicit preparation for this invocation only. It is never inherited
+	// by the child command and is independent from capture's force-rebuild mode.
+	Update bool
 	// DryRun is --dry-run (macos-user only; a hard error elsewhere).
 	DryRun bool
 	// AcceptConfigChanges is --accept-config-changes: it grants the config-change

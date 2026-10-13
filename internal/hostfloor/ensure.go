@@ -205,21 +205,24 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 		return st, Current, nil
 	}
 	rec := st.Record
-	if f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
-		return st, Current, nil
-	}
-	if f.now().Sub(rec.Checked) < f.updateInterval() {
-		return st, Current, nil
-	}
 	if p.Install.Kind == "npm" {
 		if _, version := packdecl.SplitNpmSpec(p.Install.Package); packdecl.NpmSpecIsPinned(version) {
 			return st, Current, nil
 		}
 	}
+	if !f.ManualUpdate && f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
+		return st, Current, nil
+	}
+	if !f.ManualUpdate && f.now().Sub(rec.Checked) < f.updateInterval() {
+		return st, Current, nil
+	}
 	lk, err := acquire(f.lockPath(p.Bin()), false, nil)
 	if err != nil {
 		if errors.Is(err, errLockHeld) {
 			f.say("%s: another update is in progress; running the installed %s", p.Bin(), rec.Version)
+			if f.ManualUpdate {
+				return st, Kept, fmt.Errorf("another update of %s is still in progress", p.Bin())
+			}
 		}
 		return st, Current, nil
 	}
@@ -233,16 +236,26 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	if err != nil {
 		f.say("%s: could not check for a newer version (%v); running the installed %s",
 			p.Bin(), err, rec.Version)
+		if f.ManualUpdate {
+			return st, Kept, fmt.Errorf("could not check %s for an update: %w", p.Bin(), err)
+		}
 		return st, Current, nil
 	}
 	if newer == "" && p.Install.Kind == "native" {
+		if f.ManualUpdate && (f.Capture == nil || f.ResolveCapture == nil ||
+			f.cannotCapture(p.Bin(), "recaptures it") != "") {
+			return st, Kept, fmt.Errorf("cannot check %s for a newer installer release on this platform", p.Bin())
+		}
 		// THE INSTALLER RECIPE'S POLL (HP-D16): nothing newer is in the store, so once the machine's
-		// newest capture is a day old, the capture act runs once to look for a newer release. A
-		// failed or contended capture keeps the installed version, and the stamp above holds the next
+		// newest capture is a day old, the capture act runs to look for a newer release. A failed or
+		// contended capture keeps the installed version, and the stamp above holds the next automatic
 		// try off for the interval, as a failed npm update does.
-		if newer, err = f.recaptureWhenOld(p, rec); err != nil {
+		if newer, err = f.recaptureWhenOld(p, rec, f.ManualUpdate); err != nil {
 			f.say("%s: could not capture a newer release (%v); running the installed %s", p.Bin(), err,
 				rec.Version)
+			if f.ManualUpdate {
+				return st, Kept, fmt.Errorf("could not capture a newer release for %s: %w", p.Bin(), err)
+			}
 			return st, Kept, nil
 		}
 	}
@@ -253,6 +266,9 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	next, err := f.install(ctx, p)
 	if err != nil {
 		f.say("could not update %s (%v); running the installed %s", p.Bin(), err, rec.Version)
+		if f.ManualUpdate {
+			return st, Kept, fmt.Errorf("could not update %s: %w", p.Bin(), err)
+		}
 		return st, Kept, nil
 	}
 	f.say("updated %s to %s", p.Bin(), next.Version)
@@ -338,12 +354,12 @@ func newerCapture(in packdecl.Install, rec *Record, entry *capture.Entry) string
 // host with no runtime, HP-D2 and HP-D18): never the vendor's update verb, never against the real
 // home (OQ-HP3 ruled that out). A machine that cannot capture (cannotCapture) asks nothing, and
 // keeps what it runs.
-func (f *Floor) recaptureWhenOld(p Program, rec *Record) (string, error) {
+func (f *Floor) recaptureWhenOld(p Program, rec *Record, manual bool) (string, error) {
 	if f.Capture == nil || f.ResolveCapture == nil || f.cannotCapture(p.Bin(), "recaptures it") != "" {
 		return "", nil
 	}
 	age := f.now().Sub(f.newestCaptureTime(p.Bin(), rec))
-	if age < f.captureRefreshAge() {
+	if !manual && age < f.captureRefreshAge() {
 		return "", nil
 	}
 	// SAID BEFORE THE CAPTURE, which runs the vendor's installer (in a jail, or confined on the

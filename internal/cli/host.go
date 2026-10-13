@@ -61,6 +61,7 @@ Usage:
   yolo host wrappers [status]                report the PATH launch wrappers
 
 Exec flags (yolo host -- ...):
+  --update, -u                  Wait for fresh preparation of this command's declared owner.
   --profile <name>, -p <name>   Select a declared profile for the wrapped agent CLI, this
                                 launch only. A profile reaches agent CLIs only (a CLI a
                                 selected pack installs), as it does in a jail, and never
@@ -284,6 +285,7 @@ func hostExecWithoutCommand(flagArgs []string, out, errw io.Writer) int {
 
 // hostExecFlags is what the exec half accepts before `--`.
 type hostExecFlags struct {
+	update  bool
 	profile string
 	// grant is the --with-credentials request, nil when the flag was not given: the only
 	// spelling that makes one (credential-sources-separation.md OQ-ES5, ruled for the host).
@@ -310,7 +312,8 @@ type hostExecFlags struct {
 func jailOnlyRunFlags() []string {
 	var out []string
 	for _, f := range runFlags {
-		if f != "--profile" && f != "--at" && f != hostTimingFlag && f != withCredentialsFlag {
+		if f != "--profile" && f != "--at" && f != hostTimingFlag && f != withCredentialsFlag &&
+			f != "--update" && f != "-u" {
 			out = append(out, f)
 		}
 	}
@@ -436,6 +439,10 @@ func parseHostExecFlags(args []string, errw io.Writer) (hostExecFlags, bool) {
 		if a == "--help" || a == "-h" {
 			f.help = true
 			return f, false
+		}
+		if a == "--update" || a == "-u" {
+			f.update = true
+			continue
 		}
 		if a == hostTimingFlag {
 			f.timing = true
@@ -729,21 +736,42 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// a real launch with 20 s of it after the last build ended and nothing saying where.
 	sp = trace.span("host.apply_gate")
 	act := &run.ActInterrupt{}
+	if flags.update {
+		step := trace.span("host.fresh_preparation")
+		advanced := advanceHostTrees(errw, colorForWriter(errw), filepath.Base(cmd[0]), act, true)
+		step.End()
+		if !advanced {
+			sp.End()
+			return 1
+		}
+	}
 	if config.HostApplyOnLaunchEnabled() && config.HostManagementMode() != config.HostManagementNone {
 		// PF-D81 BEFORE THE GATE'S RENDER: a patched extension's series that does not apply, or a patched
 		// fork's recorded patch failure, stops the launch here, before the gate may apply anything.
 		step := trace.span("host.apply_gate.advance")
-		advanced := advanceHostTrees(errw, colorForWriter(errw), filepath.Base(cmd[0]), act)
-		step.End()
-		if advanced {
+		if !flags.update {
+			advanced := advanceHostTrees(errw, colorForWriter(errw), filepath.Base(cmd[0]), act)
+			step.End()
+			if advanced {
+				step = trace.span("host.apply_gate.preflight")
+				advanced = hostPatchPreflight(errw, selectConfiguredHostPacks().packs, "to launch "+filepath.Base(cmd[0]),
+					"yolo host -- "+filepath.Base(cmd[0]), filepath.Base(cmd[0]), false, act)
+				step.End()
+			}
+			if !advanced {
+				sp.End()
+				return 1
+			}
+		} else {
+			step.End()
 			step = trace.span("host.apply_gate.preflight")
-			advanced = hostPatchPreflight(errw, selectConfiguredHostPacks().packs, "to launch "+filepath.Base(cmd[0]),
+			advanced := hostPatchPreflight(errw, selectConfiguredHostPacks().packs, "to launch "+filepath.Base(cmd[0]),
 				"yolo host -- "+filepath.Base(cmd[0]), filepath.Base(cmd[0]), false, act)
 			step.End()
-		}
-		if !advanced {
-			sp.End()
-			return 1
+			if !advanced {
+				sp.End()
+				return 1
+			}
 		}
 	}
 	step := trace.span("host.apply_gate.render")
@@ -784,6 +812,15 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	}
 	sp.End()
 
+	if flags.update {
+		sp = trace.span("host.fresh_programs")
+		rc := hostFreshProgramPreparation(launch.packs, cmd[0], errw, act)
+		sp.End()
+		if rc != 0 {
+			return rc
+		}
+	}
+
 	// WHICH BINARY RUNS (HP-DIR4, host-agent-environment.md, which copy runs): a bare name of a program a
 	// selected pack delivers is the FLOOR's copy, installed first when missing; a path is exec'd
 	// as given; anything else is looked up on the child's PATH — the LAUNCH PATH (the caller's
@@ -818,10 +855,15 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// goes on; a SIGTERM or SIGHUP that stopped it ends the launch. Spanned only where it can run.
 	if prog, progs, ok := hostRefreshProgram(launch.packs, cmd[0]); ok {
 		sp = trace.span("host.prelaunch_refresh")
-		rc := hostPrelaunchRefresh(launch, prog, progs, target, childPath, errw)
+		var refreshRC int
+		if flags.update {
+			refreshRC = hostPrelaunchRefreshFresh(launch, prog, progs, target, childPath, errw)
+		} else {
+			refreshRC = hostPrelaunchRefresh(launch, prog, progs, target, childPath, errw)
+		}
 		sp.End()
-		if rc != 0 {
-			return rc
+		if refreshRC != 0 {
+			return refreshRC
 		}
 	}
 	// THE BLOCKED TOOLS (HE-D11, hostblockers.go): the selected packs' and the user scope's

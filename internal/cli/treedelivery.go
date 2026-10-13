@@ -151,13 +151,20 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	color bool) (_ run.TreeDelivery, later bool) {
 	errw := it.stream()
 	pr := richtext.Printer{W: errw, Color: color}
+	if req.FreshUpdate && !req.Build {
+		return run.TreeDelivery{Reason: fmt.Sprintf("%s cannot be freshly prepared on this runtime while its build floor is unavailable — use a supported fresh launch", f.Label())}, false
+	}
 	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
 	// whatever this launch's timing.
 	again := noteBackgroundOutcome(f, pr)
+	after := req.FreshAfterSeq[f.Key()]
+	boundaryErr := req.FreshBoundaryErr[f.Key()]
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
-		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it}
+		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it,
+		freshCheck: req.FreshUpdate && f.IsTree(), freshAfterSeq: after, freshBoundaryErr: boundaryErr,
+		freshIdentity: req.FreshIdentity[f.Key()]}
 	nextLaunch := false
-	if req.Build && treeUpdateTiming(f) == timingNextLaunch {
+	if req.Build && !req.FreshUpdate && treeUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
 		if !nextLaunch {
 			// THIS RUNTIME RUNS NO BACKGROUND ADVANCE (Apple Container, macos-user): the key updates at

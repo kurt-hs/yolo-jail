@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -105,6 +107,69 @@ func TestJailTreeFixturesRestoreTheStrictDecoder(t *testing.T) {
 	strict(t, "`yolo programs ls` over programsJail's tree")
 }
 
+func TestFreshRefreshHiddenDispatchUsesSelectedInstallOnlyDeclarations(t *testing.T) {
+	const manifest = `{"name":"acme","contributes":[` +
+		`{"kind":"program","bin":"fresh-app","via":"npm","package":"fresh-app"},` +
+		`{"kind":"program","bin":"fresh-dependency","via":"installer","url":"https://example.invalid/install.sh"}]}`
+	e := stageNpmPackRoot(t, manifest, "fresh-app", "fresh-dependency")
+	log := filepath.Join(t.TempDir(), "refresh.log")
+	for _, bin := range []string{"fresh-app", "fresh-dependency"} {
+		body := "#!/bin/sh\nprintf '%s:%s:%s\\n' " + bin + " \"${YOLO_PACK_UPDATE:-}\" \"$#\" >> \"$FRESH_LOG\"\n"
+		if err := os.WriteFile(filepath.Join(e.LaunchDir(), bin), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("JAIL_HOME", e.Home)
+	t.Setenv("YOLO_PACK_ROOT", e.Getenv("YOLO_PACK_ROOT"))
+	t.Setenv("FRESH_LOG", log)
+	if rc := runInternal([]string{"refresh-programs"}); rc != 0 {
+		t.Fatalf("the actual hidden refresh-programs caller returned %d", rc)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Fields(string(data))
+	sort.Strings(got)
+	if strings.Join(got, ",") != "fresh-app:1:0,fresh-dependency:1:0" {
+		t.Fatalf("selected fresh launchers received %q; want both selected dependencies in refresh-only mode with no application argv", got)
+	}
+}
+
+func TestFreshLauncherPreparationCancellationKillsTheOwnedProcessGroup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	launcher := filepath.Join(t.TempDir(), "launcher")
+	started := filepath.Join(t.TempDir(), "started")
+	body := "#!/bin/sh\nprintf started > \"$PREP_STARTED\"\nexec sleep 30\n"
+	if err := os.WriteFile(launcher, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PREP_STARTED", started)
+	done := make(chan error, 1)
+	go func() { done <- execProgramPreparation(ctx, "tool", launcher, entrypoint.ProgramFreshRefresh) }()
+	deadline := time.After(5 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("fresh launcher did not start")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("cancelled fresh launcher succeeded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled fresh launcher process group remained alive")
+	}
+}
+
 // TestInstallAndUpdateAreDifferentActs is the ruling at the dispatch: update refreshes an
 // npm-declared program, install never does.
 //
@@ -140,6 +205,35 @@ func TestInstallAndUpdateAreDifferentActs(t *testing.T) {
 		t.Errorf("`pack update` must be the act that refreshes an npm-declared program — "+
 			"with the launcher's hourly reinstall gone it is the only one left; got %d "+
 			"refresh calls", calls)
+	}
+}
+
+func TestInternalFreshProgramRefreshUsesOnlyTheStagedSelectedTree(t *testing.T) {
+	e := stageNpmPackRoot(t, `{"name":"acme","contributes":[`+
+		`{"kind":"program","bin":"selected-tool","via":"npm","package":"selected-tool"}]}`, "selected-tool")
+	t.Setenv("HOME", e.Getenv("JAIL_HOME"))
+	t.Setenv("JAIL_HOME", e.Getenv("JAIL_HOME"))
+	t.Setenv("YOLO_PACK_ROOT", e.Getenv("YOLO_PACK_ROOT"))
+	log := filepath.Join(t.TempDir(), "refresh")
+	launcher := filepath.Join(e.LaunchDir(), "selected-tool")
+	if err := os.WriteFile(launcher, []byte("#!/bin/sh\nprintf '%s|%s\\n' \"${YOLO_PACK_UPDATE:-}\" \"$*\" >> "+shquote.Quote(log)+"\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if rc := runInternal([]string{"refresh-programs"}); rc != 0 {
+		t.Fatalf("internal refresh-programs rc=%d", rc)
+	}
+	got, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "1|\n" {
+		t.Fatalf("fresh helper did not run the staged launcher only in update mode: %q", got)
+	}
+	if rc := runInternal([]string{"refresh-programs", "selected-tool"}); rc != 2 {
+		t.Fatalf("internal fresh helper accepted an arbitrary selector: rc=%d", rc)
+	}
+	if got, _ := os.ReadFile(log); string(got) != "1|\n" {
+		t.Fatalf("invalid selector caused another update: %q", got)
 	}
 }
 

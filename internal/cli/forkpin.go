@@ -12,6 +12,7 @@ package cli
 // for a fork, the rebuild on a timer §9 forbids.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -55,8 +56,23 @@ func pinForks(pr richtext.Printer, errw io.Writer, repin bool) int {
 		}
 		return 0
 	}
+	return pinForkDeclarations(pr, errw, forks, trees, repin, true, true)
+}
+
+// pinForkDeclarations pins exactly the passed declarations. pruneSelection is used only by
+// whole-selection pack commands; launch-scoped updates pass false so unrelated lock entries stay put.
+func pinForkDeclarations(pr richtext.Printer, errw io.Writer, forks, trees []packload.Fork,
+	repin, pruneSelection, checkTrees bool) int {
+	return pinForkDeclarationsContext(context.Background(), pr, errw, forks, trees, repin, pruneSelection, checkTrees)
+}
+
+func pinForkDeclarationsContext(ctx context.Context, pr richtext.Printer, errw io.Writer, forks, trees []packload.Fork,
+	repin, pruneSelection, checkTrees bool) int {
+	if config.InJail() {
+		return 1
+	}
 	lockPath := forkLockPath()
-	store := &packsrc.Store{Dir: paths.PacksDir()}
+	store := &packsrc.Store{Dir: paths.PacksDir(), Ctx: ctx}
 	rc := 0
 	var lines, pruned, migrated []string
 	err := packsrc.WithForkLock(store.Dir, lockPath, func(line string) { pr.Printf("[dim]%s[/dim]", line) },
@@ -125,8 +141,10 @@ func pinForks(pr richtext.Printer, errw io.Writer, repin bool) int {
 					changed = true
 				}
 			}
-			if pruned = l.Prune(keep); len(pruned) > 0 {
-				changed = true
+			if pruneSelection {
+				if pruned = l.Prune(keep); len(pruned) > 0 {
+					changed = true
+				}
 			}
 			return changed, nil
 		})
@@ -147,13 +165,13 @@ func pinForks(pr richtext.Printer, errw io.Writer, repin bool) int {
 	// THE PATCHED FORKS (docs/design/patched-forks.md §8.3), after the fork lock is released — the
 	// fork lock comes before a check record's lock, and nothing here holds both: update checks and
 	// replays every one, install those with no good build.
-	if n := checkPatchedForks(pr, errw, forks, repin); n != 0 {
-		rc = n
-	}
-	// And the PATCHED EXTENSIONS, through the same check and walk by their extension keys
-	// (docs/design/patched-extensions.md §6.1, PF-D12 generalized): no pin, no fork lock.
-	if n := checkPatchedForks(pr, errw, trees, repin); n != 0 {
-		rc = n
+	if checkTrees {
+		if n := checkPatchedForks(pr, errw, forks, repin); n != 0 {
+			rc = n
+		}
+		if n := checkPatchedForks(pr, errw, trees, repin); n != 0 {
+			rc = n
+		}
 	}
 	return rc
 }

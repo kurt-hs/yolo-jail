@@ -173,6 +173,10 @@ never implicitly restart a running jail.
 
 - Resolve the launch's selected eligible keys once; host exec restricts programs/trees to the command's declared owner,
   while a fresh jail prepares every selected declared program/tree needed by its readiness/render, not guessed from argv.
+- A `yolo --update` invoked inside a jail cannot use the host's read-only fork lock to move a selected mutable plain-source
+  fork's branch pin. Refuse only when that fork is required on this platform, before partial freshness work, and name
+  `yolo --update -- <command>` from the host workspace as the next step. Fixed tag/commit inputs, unselected forks and
+  unaffected supported routes remain eligible; ordinary non-update launch still uses the recorded pin.
 - Request a **fresh check**, meaning a check started after the request's keyed sequence boundary under
   the same selected input identity; wait for its candidate admission. Bypass automatic `agent_updates: false`,
   stamps and retry/backoff timing because a human asked. Honor explicit tag/commit/source constraints,

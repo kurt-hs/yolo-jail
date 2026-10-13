@@ -2,8 +2,12 @@ package run
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // TestFirstSessionBytesAreTheGolden pins the provisioning stage and the first session's
@@ -30,6 +34,54 @@ func TestBuildSessionCmdQuotingEscapesDisplay(t *testing.T) {
 	got := buildSessionCmd("echo 'hi'", false, true)
 	if !hasSuffixStr(got, "; echo 'hi'") {
 		t.Errorf("target_cmd tail not raw: %q", got)
+	}
+}
+
+func TestUpdatePreludeCompletesBeforeUntouchedTarget(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "updates")
+	launcher := filepath.Join(dir, "yolo")
+	body := "#!/bin/sh\necho \"$*\" >> " + shquote.Quote(log) + "\n" +
+		"if [ \"$2\" = refresh-servers ] && [ \"${FAIL_SERVERS:-}\" = 1 ]; then exit 7; fi\nexit 0\n"
+	if err := os.WriteFile(launcher, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "target-ran")
+	target := shquote.Join([]string{"sh", "-c", "touch " + shquote.Quote(marker) +
+		"; printf '%s|%s\\n' \"$0\" \"$1\"", "--update", "arg with space"})
+	o := &Options{Update: true, Getenv: func(string) string { return "" }}
+	script := o.sessionCmd(target)
+	cmd := exec.Command("bash", "-c", script)
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	got, err := cmd.CombinedOutput()
+	if err != nil || !strings.HasSuffix(string(got), "--update|arg with space\n") {
+		t.Fatalf("fresh launch = %q, %v; want the untouched target argv\nscript: %s", got, err, script)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the target marker is absent after successful preparation: %v", err)
+	}
+	updates, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(updates) != "internal refresh-programs\ninternal refresh-servers --fresh\n" {
+		t.Fatalf("update-only helpers ran %q, want the exact selected-tree and MCP helpers", updates)
+	}
+
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("bash", "-c", script)
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "FAIL_SERVERS=1")
+	got, err = cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("failed preparation returned success: output=%q", got)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("failed preparation reached target (marker stat err=%v): output=%q", err, got)
 	}
 }
 

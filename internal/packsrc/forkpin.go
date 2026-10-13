@@ -11,8 +11,8 @@ package packsrc
 // FP-D7 kept every pin out of the launch because re-resolving a branch at launch is the rebuild on a
 // timer §9 forbids. That reason forbids MOVING a pin, and this moves none: a STANDING pin — an entry
 // whose source is the one the fork declares — is returned as it is, with no git run, however far its
-// branch has moved. Only a fork with no such entry is resolved, once, and `yolo pack update` is
-// still the only act that moves a pin.
+// branch has moved. Only an explicit manual update (`RepinForks`) moves a standing pin; ordinary
+// launch resolution retains the recorded commit.
 //
 // # The resolution is the launch's ref rule
 //
@@ -31,6 +31,7 @@ package packsrc
 // first, unlocked read takes no lock at all, which is every launch after a fork's first.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -71,11 +72,15 @@ type ForkPinOptions struct {
 	// lock-wait notice and the function that ends what Begin started (a launch's progress line). A
 	// call that finds every fork pinned never calls it.
 	Begin func() (waiting func(string), end func())
+	// Repin re-resolves every selected source ref even when its current source already has a
+	// standing pin. It is reserved for an explicit manual update; ordinary launch pinning never
+	// moves a user's recorded commit.
+	Repin bool
 }
 
 // PinForks pins every fork in want that the fork lock at lockPath does not pin for its declared
-// source, and returns each fork's pin. It never moves a standing pin and never fails as a whole:
-// every failure is its fork's Err.
+// source, and returns each fork's pin. With Repin it re-resolves every selected source regardless
+// of a standing pin. It never fails as a whole: every failure is its fork's Err.
 func (s *Store) PinForks(lockPath string, want []ForkWant, opts ForkPinOptions) []ForkPinOutcome {
 	out := make([]ForkPinOutcome, len(want))
 	addrs := make([]Addr, len(want))
@@ -104,7 +109,7 @@ func (s *Store) PinForks(lockPath string, want []ForkWant, opts ForkPinOptions) 
 		if out[i].Err != nil {
 			continue
 		}
-		if e, ok := standingPin(lock, want[i]); ok {
+		if e, ok := standingPin(lock, want[i]); ok && !opts.Repin {
 			out[i].Entry = e
 			continue
 		}
@@ -118,11 +123,11 @@ func (s *Store) PinForks(lockPath string, want []ForkWant, opts ForkPinOptions) 
 		waiting, end = opts.Begin()
 	}
 	defer end()
-	err = WithForkLock(s.Dir, lockPath, waiting, func(l *ForkLock) (bool, error) {
+	err = WithForkLockContext(s.parentCtx(), s.Dir, lockPath, waiting, func(l *ForkLock) (bool, error) {
 		// RE-READ UNDER THE LOCK: another launch may have pinned a fork while this one waited.
 		var todo []int
 		for _, i := range unpinned {
-			if e, ok := standingPin(l, want[i]); ok {
+			if e, ok := standingPin(l, want[i]); ok && !opts.Repin {
 				out[i].Entry = e
 				continue
 			}
@@ -135,12 +140,24 @@ func (s *Store) PinForks(lockPath string, want []ForkWant, opts ForkPinOptions) 
 		for j, i := range todo {
 			items[j] = refreshItem{idx: j, addr: addrs[i]}
 		}
-		outcomes := s.refreshItems(items, waiting)
+		outcomes := s.refreshItems(items, waiting, opts.Repin)
 		changed := false
 		for j, i := range todo {
 			o := outcomes[j]
+			if opts.Repin && o.FetchErr != nil {
+				if errors.Is(o.FetchErr, context.Canceled) || errors.Is(o.FetchErr, context.DeadlineExceeded) {
+					out[i].Err = o.FetchErr
+				} else {
+					out[i].Err = s.forkResolveError(addrs[i], o)
+				}
+				continue
+			}
 			if o.Err != nil || o.Commit == "" {
-				out[i].Err = s.forkResolveError(addrs[i], o)
+				if opts.Repin && (errors.Is(o.Err, context.Canceled) || errors.Is(o.Err, context.DeadlineExceeded)) {
+					out[i].Err = o.Err
+				} else {
+					out[i].Err = s.forkResolveError(addrs[i], o)
+				}
 				continue
 			}
 			e := ForkLockEntry{Key: want[i].Key, Source: want[i].Source, Ref: o.Ref, Commit: o.Commit}
@@ -159,7 +176,11 @@ func (s *Store) PinForks(lockPath string, want []ForkWant, opts ForkPinOptions) 
 		for _, i := range unpinned {
 			if out[i].Pinned || out[i].Entry.Commit == "" && out[i].Err == nil {
 				out[i].Entry, out[i].Pinned, out[i].FetchErr = ForkLockEntry{}, false, nil
-				out[i].Err = fmt.Errorf("recording the pin in %s: %s", lockPath, oneLine(err))
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					out[i].Err = fmt.Errorf("recording the pin in %s: %w", lockPath, err)
+				} else {
+					out[i].Err = fmt.Errorf("recording the pin in %s: %s", lockPath, oneLine(err))
+				}
 			}
 		}
 	}
@@ -208,20 +229,20 @@ func (s *Store) FetchForkCommit(a Addr, commit string, waiting func(string)) err
 	}
 	at := a
 	at.Ref = commit
-	o := s.refreshItems([]refreshItem{{idx: 0, addr: at}}, waiting)[0]
+	o := s.refreshItems([]refreshItem{{idx: 0, addr: at}}, waiting, false)[0]
 	if o.Err != nil || o.Commit == "" {
 		return s.forkResolveError(at, o)
 	}
 	return nil
 }
 
-// refreshItems is the launch's ref rule (refreshGrouped, never forced) for items, recorded in no
-// lockfile. Each item's idx indexes the returned outcomes.
-func (s *Store) refreshItems(items []refreshItem, waiting func(string)) []Outcome {
+// refreshItems applies the launch's ref rule, forced for an explicit repin. Each item's idx indexes
+// the returned outcomes.
+func (s *Store) refreshItems(items []refreshItem, waiting func(string), force bool) []Outcome {
 	outcomes := make([]Outcome, len(items))
 	for _, it := range items {
 		outcomes[it.idx].Ref = it.addr.Ref
 	}
-	s.refreshGrouped(items, outcomes, false, time.Now(), BranchRefreshInterval, waiting)
+	s.refreshGrouped(items, outcomes, force, time.Now(), BranchRefreshInterval, waiting)
 	return outcomes
 }

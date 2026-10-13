@@ -447,6 +447,44 @@ func TestHostPiRefreshThatHandlesASIGTERMStillEndsTheLaunch(t *testing.T) {
 	}
 }
 
+func TestHostUpdateRunsDeclaredRefreshDespitePolicyAndStampBeforeExec(t *testing.T) {
+	h := newRefreshHost(t, `{"packs":["pi"],"host_floor":{"pi":false},"agent_updates":{"pi":false}}`, "")
+	first := h.launch(t)
+	if first.rc != 0 || h.refreshes(t) != 0 {
+		t.Fatalf("automatic launch should respect agent_updates=false: rc=%d\n%s\n%s", first.rc, first.errs, h.entries(t))
+	}
+	updated := h.launch(t, "--update")
+	if updated.rc != 0 || updated.execEnv == nil || h.refreshes(t) != 1 {
+		t.Fatalf("explicit update did not run the declared refresh: rc=%d exec=%v\n%s\n%v", updated.rc, updated.execEnv != nil, updated.errs, h.entries(t))
+	}
+	entries := h.entries(t)
+	if len(entries) != 3 || !strings.HasPrefix(entries[1], "refresh update --extensions|") || entries[2] != "exec" {
+		t.Errorf("fresh refresh must complete before the untouched command: %v", entries)
+	}
+}
+
+func TestHostUpdateRefreshFailureAndCtrlCBothBlockTheTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "failure", body: "  exit 7", want: 1},
+		{name: "Ctrl-C", body: "  kill -INT $PPID; exec sleep 10", want: 130},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRefreshHost(t, `{"packs":["pi"],"host_floor":{"pi":false}}`, tc.body)
+			r := h.launch(t, "--update")
+			if r.rc != tc.want || r.execEnv != nil {
+				t.Fatalf("rc=%d exec=%v; want %d and no target\n%s", r.rc, r.execEnv != nil, tc.want, r.errs)
+			}
+			if h.refreshes(t) != 1 {
+				t.Errorf("fresh request did not attempt its declared refresh exactly once: %v", h.entries(t))
+			}
+		})
+	}
+}
+
 // THE FLOOR'S OWN COPY IS REFRESHED TOO: a fixture pack's npm program, installed into the floor
 // from the fake registry, declares a refresh; the launch runs it through bin/<bin>, whose fake Node
 // prints the argv it was handed — to the launch's stderr, never its stdout — and then execs that

@@ -196,6 +196,10 @@ config schema or global permit service. **Commit:** `feat(preparation): schedule
 **Settled — do not reopen:** `--update`/`-u` before `--` is human update authorization for fresh jail/host
 launches, overriding automatic false/stamps/backoff, never explicit source constraints or safety gates.
 No freshness claim on failure, cancellation, unsupported required route or historical cached-good recovery.
+An in-jail `--update` refuses only when a selected, platform-required mutable plain-source fork needs branch-pin
+re-resolution that requires the host's writable fork store; the refusal names `yolo --update -- <command>` from
+its host workspace. Fixed tag/commit inputs, unselected forks and supported independent routes remain eligible;
+ordinary readiness retains the recorded pin.
 
 ```go
 // New request interface, separate from capture's force-rebuild option.

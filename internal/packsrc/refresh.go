@@ -49,6 +49,7 @@ package packsrc
 // another's fetch re-reads the stamp that fetch wrote and does not fetch again.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -690,7 +691,66 @@ func (s *Store) flock(path, what string, waiting func(string)) (func(), error) {
 	if s.NoWait {
 		return flockTry(path, what)
 	}
+	ctx := s.parentCtx()
+	if ctx != nil && ctx.Done() != nil {
+		return flockPathContext(ctx, path, what, waiting)
+	}
 	return flockPath(path, what, waiting)
+}
+
+func flockPathContext(ctx context.Context, path, what string, waiting func(string)) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	fd := int(f.Fd())
+	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+		if ctx.Err() != nil {
+			_ = syscall.Flock(fd, syscall.LOCK_UN)
+			f.Close()
+			return nil, ctx.Err()
+		}
+		return func() {
+			_ = syscall.Flock(fd, syscall.LOCK_UN)
+			_ = f.Close()
+		}, nil
+	} else if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		f.Close()
+		return nil, fmt.Errorf("locking %s: %w", path, err)
+	}
+	if waiting != nil {
+		waiting(fmt.Sprintf("waiting for another yolo process to release %s", what))
+	}
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			f.Close()
+			return nil, ctx.Err()
+		case <-ticker.C:
+			if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+				if ctx.Err() != nil {
+					_ = syscall.Flock(fd, syscall.LOCK_UN)
+					f.Close()
+					return nil, ctx.Err()
+				}
+				return func() {
+					_ = syscall.Flock(fd, syscall.LOCK_UN)
+					_ = f.Close()
+				}, nil
+			} else if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+				f.Close()
+				return nil, fmt.Errorf("locking %s: %w", path, err)
+			}
+		}
+	}
 }
 
 // WithLock is the lockfile's load-modify-save under an exclusive flock kept in the pack

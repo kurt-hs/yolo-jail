@@ -181,9 +181,12 @@ func TestParseHostExecFlags(t *testing.T) {
 		{"-p", "bedrock"},
 		{"--profile", "bedrock"},
 		{"--profile=bedrock"},
+		{"--update"},
+		{"-u"},
 	} {
 		f, ok := parseHostExecFlags(args, &errw)
-		if !ok || f.profile != "bedrock" {
+		if !ok || (args[0] == "--update" || args[0] == "-u") && !f.update ||
+			args[0] != "--update" && args[0] != "-u" && f.profile != "bedrock" {
 			t.Errorf("parseHostExecFlags(%q) = %+v, %v", args, f, ok)
 		}
 	}

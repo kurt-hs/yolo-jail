@@ -107,16 +107,26 @@ type RefreshResult struct {
 // launch's, as the jail's launcher runs it in the shell's: a program may refresh what the workspace
 // names too.
 func (f *Floor) PrelaunchRefresh(p Program, exe string, env []string) RefreshResult {
+	return f.prelaunchRefresh(p, exe, env, false)
+}
+
+// PrelaunchRefreshManual runs the same declared owner-program refresh, explicitly requested by
+// --update, without automatic policy/stamp holds. It remains the pack's declared argv and environment.
+func (f *Floor) PrelaunchRefreshManual(p Program, exe string, env []string) RefreshResult {
+	return f.prelaunchRefresh(p, exe, env, true)
+}
+
+func (f *Floor) prelaunchRefresh(p Program, exe string, env []string, manual bool) RefreshResult {
 	r := p.Install.Refresh
 	if r == nil || len(r.Argv) == 0 {
 		return RefreshResult{}
 	}
-	if f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
+	if !manual && f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
 		return RefreshResult{}
 	}
 	bin := p.Bin()
 	key := refreshContentKey(f.home(), r.DueOnChange)
-	if !f.refreshDue(bin, key) {
+	if !manual && !f.refreshDue(bin, key) {
 		return RefreshResult{}
 	}
 	lockPath := f.refreshLockPath(bin)

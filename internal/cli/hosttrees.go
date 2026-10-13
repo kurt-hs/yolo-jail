@@ -37,6 +37,7 @@ package cli
 // versioned copies, and the copies with it (revertHostTreeLinks, PPX-D31).
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -72,12 +73,21 @@ var hostTreeAdvance = advancePatchedFork
 // (PF-D57), which the patched forks' advances after these read too. It returns false when a series
 // does not apply and its bypass did not run an intact build in its place (PF-D81): the caller stops
 // BEFORE the render, so a refused verb writes nothing; the advance has said the error block.
-func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterrupt) bool {
+func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterrupt, manual ...bool) bool {
+	freshUpdate := len(manual) > 0 && manual[0]
 	if !hostTreesBuild() {
+		if freshUpdate {
+			fmt.Fprintln(errw, "yolo host: refusing --update: patched trees cannot be freshly prepared on this host; run a fresh supported Linux jail launch instead")
+			return false
+		}
 		return true
 	}
 	sel := selectConfiguredHostPacks()
 	if sel.loadErr != nil {
+		if freshUpdate {
+			fmt.Fprintf(errw, "yolo host: refusing --update: could not resolve the selected owner vector: %v\n", sel.loadErr)
+			return false
+		}
 		return true
 	}
 	command := "yolo host apply --assert"
@@ -90,22 +100,51 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 			continue // no host render links a tree whose list entry reaches jails alone (PPX-D35)
 		}
 		trees = append(trees, f)
-		if bin != "" && treeUpdateTiming(f) == timingNextLaunch {
+		if bin != "" && treeUpdateTiming(f) == timingNextLaunch && !freshUpdate {
 			// THE HOST'S NEXT-LAUNCH MODE IS NOT BUILT (XB-D22): `yolo host -- <bin>` updates at its launch.
 			richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": `agent_updates` "+
 				"asks for the next launch, which this yolo applies to jail launches — `yolo host` updates it at this launch"))
 		}
 	}
+	// Capture each fresh request boundary inside the interrupt scope, under the same owner record
+	// lock that records STARTED before transport. A request canceled while waiting never advances.
+	boundaries := make(map[string]uint64, len(trees))
+	identities := make(map[string]string, len(trees))
+	prepare := func(ctx context.Context) error {
+		if !freshUpdate {
+			return nil
+		}
+		store := patchedAdvanceStore(true)
+		store.Ctx = ctx
+		errs := make(map[string]error, len(trees))
+		for _, f := range trees {
+			if err := registerFreshPreparation(ctx, store, f, captureJailPlatform(), identities, boundaries, errs); err != nil {
+				return fmt.Errorf("could not register a fresh check for %s: %w", f.Label(), err)
+			}
+		}
+		return nil
+	}
 	// A PARALLEL ADVANCE, as a jail launch's tree arm runs one (treepool.go, XB-D10): the host builds
 	// in podman's own capture jails, side by side.
 	results := make([]advanceResult, len(trees))
-	runTreesInParallel(trees, "", act, errw, errw, func(i int, f packload.Fork, lane treeLane) {
-		results[i] = hostTreeAdvance(f, lane.options(advanceOptions{platform: captureJailPlatform(), color: color,
-			launch: true, host: true, act: act, bypassCommand: command}))
-	})
+	err := runTreesInParallelPrepared(trees, "", act, errw, errw, prepare,
+		func(i int, f packload.Fork, lane treeLane) {
+			opts := lane.options(advanceOptions{platform: captureJailPlatform(), color: color,
+				launch: true, host: true, act: act, bypassCommand: command})
+			if freshUpdate {
+				opts.freshCheck = true
+				opts.freshAfterSeq = boundaries[f.Key()]
+				opts.freshIdentity = identities[f.Key()]
+			}
+			results[i] = hostTreeAdvance(f, opts)
+		})
+	if err != nil {
+		fmt.Fprintf(errw, "yolo host: refusing --update before preparation began: %v — retry after the owner record is available\n", err)
+		return false
+	}
 	var stopped []string
 	for i, r := range results {
-		if r.patchFailure != nil && !r.bypassed {
+		if r.patchFailure != nil && !r.bypassed || freshUpdate && r.failed {
 			stopped = append(stopped, trees[i].Label())
 		}
 	}

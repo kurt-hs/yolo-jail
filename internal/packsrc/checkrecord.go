@@ -23,6 +23,7 @@ package packsrc
 // lock; CheckPatched takes the mirror lock inside it.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,13 @@ type CheckRecord struct {
 	Read CheckInputs `json:"read"`
 	// Seq is the sequence number of the last check that finished, 0 before any.
 	Seq int64 `json:"seq,omitempty"`
+	// StartedSeq is incremented and persisted immediately before each check starts transport. It is
+	// independent of Seq, which counts only finished checks, and lets an explicit freshness request
+	// distinguish a check already underway from one that starts after its registration.
+	StartedSeq uint64 `json:"started_seq,omitempty"`
+	// StartedInputs and StartedAt describe the last check start, including one that never finished.
+	StartedInputs CheckInputs `json:"started_inputs,omitempty"`
+	StartedAt     int64       `json:"started_at,omitempty"`
 	// Check is what the last finished check found; nil before any.
 	Check *CheckFound `json:"check,omitempty"`
 	// Good is the GOOD BUILD (§6.1): this machine's record of the inputs of the last build it
@@ -139,6 +147,9 @@ type CheckInputs struct {
 type CheckFound struct {
 	// Seq is this check's sequence number.
 	Seq int64 `json:"seq"`
+	// StartedSeq identifies the start event that produced this finished result. Zero denotes a
+	// legacy record written before freshness requests were supported.
+	StartedSeq uint64 `json:"started_seq,omitempty"`
 	// At is when it finished, in unix seconds.
 	At int64 `json:"at"`
 	// RefKind is what the ref named: "branch", "tag" or "commit". "" when it named nothing usable.
@@ -328,6 +339,38 @@ func (s *Store) LoadCheckRecord(owner string) (*CheckRecord, error) {
 		return nil, fmt.Errorf("the check record %s is %q's, not %q's", p, r.Owner, owner)
 	}
 	return &r, nil
+}
+
+// FreshCheckBoundary snapshots the last check-start sequence under the keyed record lock. CheckPatched
+// increments StartedSeq under this same lock before transport, so this is an atomic request boundary:
+// a check already started must finish before registration observes its sequence and cannot satisfy
+// the request. Legacy records naturally start at 0.
+func (s *Store) FreshCheckBoundary(owner string) (uint64, error) {
+	return s.FreshCheckBoundaryContext(s.parentCtx(), owner)
+}
+
+// FreshCheckBoundaryContext is FreshCheckBoundary with a cancellable record-lock wait. Cancellation
+// detaches this request without interrupting another process or a scheduler holding the lock.
+func (s *Store) FreshCheckBoundaryContext(ctx context.Context, owner string) (uint64, error) {
+	return s.freshCheckBoundaryContext(ctx, owner, nil)
+}
+
+func (s *Store) freshCheckBoundaryContext(ctx context.Context, owner string, waiting func(string)) (uint64, error) {
+	local := *s
+	local.Ctx = ctx
+	unlock, err := local.lockCheckRecord(owner, waiting)
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
+	record, err := local.LoadCheckRecord(owner)
+	if errors.Is(err, ErrNoCheckRecord) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return record.StartedSeq, nil
 }
 
 // save writes r through a temp file and a rename. The caller holds the record's lock.

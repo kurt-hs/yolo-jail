@@ -300,7 +300,7 @@ func (f *Floor) canAdvance() bool {
 // patchedUpdatesAllowed is the refresh arm's `agent_updates` question for a patched fork, asked for
 // the fork pack and for its base: a user who holds either holds the program it runs (PF-D19).
 func (f *Floor) patchedUpdatesAllowed(p Program) bool {
-	if f.UpdatesAllowed == nil {
+	if f.ManualUpdate || f.UpdatesAllowed == nil {
 		return true
 	}
 	return f.UpdatesAllowed(p.Pack) && (p.Install.ForkedBy == "" || f.UpdatesAllowed(p.Install.ForkedBy))

@@ -36,7 +36,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -117,10 +117,19 @@ func runInternal(args []string) int {
 		// whose pack declares one. Hidden: it runs that program and writes into the home it is
 		// pointed at, and its caller is the launcher.
 		return modelmenu.Run(args[1:], os.Getenv("HOME"), os.Stdout, os.Stderr)
+	case "refresh-programs":
+		// A fresh launch's install/update-only preparation pass: the current staged selected-pack
+		// declarations choose the launchers, and each is run through launcherUpdateEnv without
+		// executing the declared program itself.
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "yolo internal refresh-programs takes no arguments; it reads the staged selected pack tree")
+			return 2
+		}
+		return refreshProgramsForFreshRequest()
 	case "refresh-servers":
-		// Evergreen's TRANSITIVE half (program-delivery.md §3.5, OQ-PD12a), called by
-		// the GENERATED AGENT LAUNCHERS before they exec the agent. Hidden for
-		// capture-materialize's reason: it installs into the home it is pointed at.
+		// Evergreen's transitive refresh is normally called by the generated agent launchers;
+		// a fresh `yolo run --update` prelude also calls it with --fresh so preparation fails
+		// closed instead of starting the target on an installed fallback.
 		return runRefreshServers(args[1:])
 	case "node-floor-satisfied":
 		// OQ-AR3's predicate, called by the GENERATED BOOTSTRAP SCRIPT before and after it

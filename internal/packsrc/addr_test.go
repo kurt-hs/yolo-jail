@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestIsFixedRefSeparatesPinnedInputsFromMovingBranchNames(t *testing.T) {
+	for ref, want := range map[string]bool{
+		"main":                    false,
+		"release/next":            false,
+		"v1.2.3":                  true,
+		"1.2.3":                   true,
+		"refs/tags/vendor-stable": true,
+		"6461be617ca2670db07dabc4d84707aed18e5fa9": true,
+	} {
+		if got := IsFixedRef(ref); got != want {
+			t.Errorf("IsFixedRef(%q) = %v, want %v", ref, got, want)
+		}
+	}
+}
+
 func TestParseGitAddresses(t *testing.T) {
 	for _, tc := range []struct {
 		raw, repo, path, ref string

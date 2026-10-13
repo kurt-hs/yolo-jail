@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -224,6 +225,10 @@ func Run(opts Options) (rc int) {
 		}
 	}
 	o.runtime = rt
+	if o.Update && !o.DryRun && rt == "macos-user" { // parity: Refused — this backend has no fresh program-update route
+		o.pr(o.Stderr).printf("Refusing --update on macos-user: its program updater has no supported fresh-launch route. Use a supported container runtime for this update, or launch without --update.")
+		return 1
+	}
 	o.Perf.Mark("probes.done")
 
 	// The two container-only gates, hoisted ABOVE pack staging so a launch that is
@@ -1494,6 +1499,11 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		}
 
 		if existingCID != "" {
+			if o.Update {
+				out.printf("Refusing --update: this workspace already has a running jail, and preparation cannot change the environment it is using.")
+				out.printf("Stop it with `yolo stop`, then retry `yolo --update -- <command>` as a fresh launch.")
+				return 1
+			}
 			// A JAIL WHOSE KEEPER DIED is not entered (JL-D13, as OQ-JL7 ruled): its sessions run on
 			// without host services, and `yolo stop` then a launch is the remedy.
 			if o.refuseUnkeptJail(cname, rt) {
@@ -1530,6 +1540,12 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	o.logRecord("decision: fresh launch of %s (no running jail to attach to)", cname)
 	if !o.checkConfigChanges(cfg, rt) {
 		return 1
+	}
+	if o.Update && config.InJail() {
+		if err := freshJailForkPinRefusal(packload.Forks(loadedPacks)); err != nil {
+			out.printf("%s", err.Error())
+			return 1
+		}
 	}
 
 	// --- Freeze this launch's config artifacts under <workspace>/.yolo ---
@@ -1568,6 +1584,11 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// Re-check after acquiring the lock — another process may have won.
 	if !o.NeverAttach {
 		if raced := o.findRunningContainer(cname, rt); raced != "" {
+			if o.Update {
+				out.printf("Refusing --update: this workspace already has a running jail, and preparation cannot change the environment it is using.")
+				out.printf("Stop it with `yolo stop`, then retry `yolo --update -- <command>` as a fresh launch.")
+				return 1
+			}
 			if rc, restarted := o.attachExisting(cname, rt, targetCmd, cfg, staged, channel, true, lock.Close); !restarted {
 				return rc
 			}
@@ -1622,6 +1643,43 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 				"be removed, so the container this launch creates would collide with it.[/bold red] "+
 				"[dim]Remove it with %s and launch again.[/dim]", cname, containerRemoveCommand(rt, cname))
 			return 1
+		}
+	}
+
+	// A manual fresh request may move standing branch pins, unlike an ordinary launch. Do it only
+	// after the workspace lock and every attach/raced-start decision: an update refused on attach
+	// must never advance the source it asked to refresh.
+	if o.Update && !o.DryRun && !config.InJail() {
+		var forks []packload.Fork
+		for _, fork := range packload.Forks(loadedPacks) {
+			if forkUnpublishedHere(fork) == "" {
+				forks = append(forks, fork)
+			}
+		}
+		if len(forks) > 0 {
+			var pins []packload.ForkPin
+			sig := InterruptScope(func(ctx context.Context) {
+				pins = RepinLaunchForks(ctx, forks, func() (func(string), func()) {
+					line := o.progressConfig().Start(o.Stderr, "Refreshing fork pins")
+					return line.Println, func() { line.Done("") }
+				})
+			})
+			if sig != nil {
+				out.printf("Refusing --update: fresh fork resolution was interrupted; the command was not started. Retry with `yolo --update -- <command>`.")
+				return 130
+			}
+			o.forkPinned = pins
+			for _, pin := range o.forkPinned {
+				if pin.Fork.Patched() {
+					continue
+				}
+				if pin.Commit == "" {
+					out.printf("Refusing --update: could not freshly resolve fork %s (%s). Repair that source, or retry without --update.",
+						pin.Fork.Key(), pin.Reason)
+					return 1
+				}
+				o.pr(o.Stderr).print("[dim]freshly resolved fork " + richtext.Escape(pin.Fork.Key()+" at commit "+pin.Commit) + "[/dim]")
+			}
 		}
 	}
 
