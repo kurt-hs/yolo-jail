@@ -5,6 +5,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	_ "github.com/mschulkind-oss/yolo-jail/internal/packreg" // registers the embedded packs with packload
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 	"io"
 	"os"
@@ -64,6 +65,9 @@ func appendProvisionPerf(home string, ms int64, rc int) {
 	_ = f.Close()
 }
 
+// bootPerfRunPrefix is the delimiter emitted by dump and consumed by run retention.
+const bootPerfRunPrefix = "=== YOLO"
+
 // dump writes the perf log to ~/.yolo-perf.log. Best-
 // effort — all errors swallowed. This log is deliberately excluded from the
 // tree-parity golden (it is wall-clock timing); the format is for human
@@ -74,7 +78,7 @@ func (p *perfLog) dump(home string) {
 	}
 	logPath := filepath.Join(home, ".yolo-perf.log")
 	var b strings.Builder
-	fmt.Fprintf(&b, "=== YOLO Jail Entrypoint Perf (%s) ===\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&b, "%s Jail Entrypoint Perf (%s) ===\n", bootPerfRunPrefix, time.Now().Format("2006-01-02 15:04:05"))
 	prev := -1.0
 	for _, e := range p.entries {
 		delta := "       "
@@ -86,7 +90,8 @@ func (p *perfLog) dump(home string) {
 	}
 	fmt.Fprintf(&b, "  Total: %.3fs\n\n", p.entries[len(p.entries)-1].elapsed)
 
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// Read-write because retention reads and trims through this same descriptor.
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return
 	}
@@ -98,19 +103,11 @@ func (p *perfLog) dump(home string) {
 	// observable consequence of each failure is a missing or short ~/.yolo-perf.log,
 	// which is self-evident to the only reader who looks.
 	_, _ = f.WriteString(b.String())
+	// Trim to the newest perf.MaxRuns runs, through the same descriptor. A failed trim
+	// leaves the log longer than the bound — the next boot retries, and an over-long
+	// timing log has no consequence beyond size.
+	perf.TrimRunsInOpenFile(f, bootPerfRunPrefix, perf.MaxRuns)
 	_ = f.Close()
-
-	// Trim to last 50 runs. A failed trim leaves the log longer than 50 runs — the
-	// next boot retries, and an over-long timing log has no consequence beyond size.
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		return
-	}
-	runs := strings.Split(string(content), "=== YOLO")
-	if len(runs) > 51 {
-		trimmed := "=== YOLO" + strings.Join(runs[len(runs)-50:], "=== YOLO")
-		_ = os.WriteFile(logPath, []byte(trimmed), 0o644)
-	}
 }
 
 // ---------------------------------------------------------------------------

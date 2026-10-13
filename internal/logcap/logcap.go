@@ -66,6 +66,12 @@ func Open(path string, perm os.FileMode) (*os.File, error) {
 	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, perm)
 }
 
+// OpenFunc opens name, a single path component, with os.OpenFile's flag and perm, through
+// whatever root the caller's open is scoped to. paths.OpenWorkspaceStateFile is the shape it
+// stands for: a name under a jail-writable directory, opened so a link left at it is never
+// followed.
+type OpenFunc func(name string, flag int, perm fs.FileMode) (*os.File, error)
+
 // Trim bounds the log at path: when it holds more than MaxBytes, its newest MaxBytes, from the
 // first whole line, replace path+ArchiveSuffix and path is truncated to empty in place. A log
 // at or under the cap, a missing one and anything not a regular file are left alone.
@@ -82,6 +88,43 @@ func Trim(path string) error {
 		return err
 	}
 	defer f.Close()
+	return trimWith(f, func(tail []byte, perm fs.FileMode) error {
+		return writeArchive(path+ArchiveSuffix, tail, perm)
+	})
+}
+
+// TrimBeneath bounds the log at name, opened read-write through open, on Trim's terms: past
+// the cap the newest MaxBytes, from the first whole line, replace name+ArchiveSuffix and name
+// is truncated in place — but BOTH the log and its archive go through open, so a link the jail
+// left at either name is never followed. It is Trim for a caller whose open is ROOT-SCOPED
+// (paths.OpenWorkspaceStateFile), where opening by path would follow exactly that link. open
+// must take one path component and may itself remove a non-regular file at the name.
+func TrimBeneath(open OpenFunc, name string) error {
+	f, err := open(name, os.O_RDWR, 0)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+	return trimWith(f, func(tail []byte, perm fs.FileMode) error {
+		af, err := open(name+ArchiveSuffix, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+		if err != nil {
+			return err
+		}
+		if _, err := af.Write(tail); err != nil {
+			_ = af.Close()
+			return err
+		}
+		return af.Close()
+	})
+}
+
+// trimWith is Trim's body once the log is open, shared by the two opens above. It re-stats
+// under the flock (another trimmer may have emptied the log while this one waited), takes the
+// newest whole lines past the cap, hands them to archive, and truncates the log to empty.
+func trimWith(f *os.File, archive func(tail []byte, perm fs.FileMode) error) error {
 	if over, err := overCap(f); err != nil || !over {
 		return err
 	}
@@ -98,7 +141,7 @@ func Trim(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeArchive(path+ArchiveSuffix, tail, st.Mode().Perm()); err != nil {
+	if err := archive(tail, st.Mode().Perm()); err != nil {
 		return err
 	}
 	return f.Truncate(0)

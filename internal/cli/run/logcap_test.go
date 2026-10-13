@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
@@ -89,5 +90,38 @@ func TestAHostDaemonLaunchCapsItsServiceLog(t *testing.T) {
 	assertCapped(t, log)
 	if got, _ := os.ReadFile(log); !bytes.Contains(got, []byte("fresh start")) {
 		t.Errorf("the daemon's own output did not reach its log after the trim: %q", got)
+	}
+}
+
+func TestHousekeepingNoteCapsItsRootScopedLog(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, ".yolo", housekeepingLogName)
+	overfullLog(t, path)
+	o := &Options{Workspace: workspace, Now: time.Now}
+	o.housekeepingNote("fresh housekeeping")
+	assertCapped(t, path)
+	b, _ := os.ReadFile(path)
+	if !bytes.Contains(b, []byte("fresh housekeeping")) {
+		t.Fatal("new housekeeping note lost")
+	}
+}
+
+func TestHousekeepingTrimDoesNotFollowArchiveSymlink(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, ".yolo", housekeepingLogName)
+	overfullLog(t, path)
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("untouched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, path+logcap.ArchiveSuffix); err != nil {
+		t.Fatal(err)
+	}
+	o := &Options{Workspace: workspace, Now: time.Now}
+	o.housekeepingNote("fresh housekeeping")
+	assertCapped(t, path)
+	b, err := os.ReadFile(victim)
+	if err != nil || string(b) != "untouched" {
+		t.Fatalf("archive followed jail link: %q %v", b, err)
 	}
 }

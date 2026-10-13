@@ -15,6 +15,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/listeners"
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/supervisor"
 )
@@ -515,7 +516,7 @@ func startContainerPortForwarding(e *Env) {
 	hostGateway := e.Getenv("YOLO_FWD_HOST_GATEWAY")
 
 	logPath := filepath.Join(e.Home, ".yolo-socat.log")
-	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	logFile, err := logcap.Open(logPath, 0o644)
 	if err != nil {
 		// Without a log sink we can't fork socat safely, so bail.
 		return
