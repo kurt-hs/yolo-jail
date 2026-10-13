@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // receipts_test.go covers program-delivery.md §10's first step: every install yolo itself
@@ -311,7 +312,9 @@ echo CALLER_PROCEEDED
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(script).CombinedOutput()
+	cmd := exec.Command(script)
+	cmd.Env = append(os.Environ(), "PATH="+testutil.YoloBinaryDir(t)+":"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("a receipt whose argument could not be resolved killed its caller "+
 			"(%v):\n%s", err, out)
@@ -367,7 +370,7 @@ exit 0
 	cmd := exec.Command(filepath.Join(e.LaunchDir(), "pnpm"))
 	cmd.Env = append([]string{
 		"HOME=" + home,
-		"PATH=" + fakeBin + ":" + os.Getenv("PATH"),
+		"PATH=" + fakeBin + ":" + testutil.YoloBinaryDir(t) + ":" + os.Getenv("PATH"),
 	}, env...)
 	out, err := cmd.CombinedOutput()
 	rc := 0
@@ -657,7 +660,7 @@ func (b *bootstrapProbe) run(t *testing.T, env ...string) string {
 	// running it happens to use that MCP server.
 	cmd.Env = append([]string{
 		"HOME=" + b.home,
-		"PATH=" + b.fakeBin + ":/bin:/usr/bin",
+		"PATH=" + b.fakeBin + ":" + testutil.YoloBinaryDir(t) + ":/bin:/usr/bin",
 	}, env...)
 	out, err := cmd.CombinedOutput()
 	if _, isExit := err.(*exec.ExitError); err != nil && !isExit {

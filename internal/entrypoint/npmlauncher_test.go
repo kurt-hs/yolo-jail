@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // npmlauncher_test.go pins the npm `program` launcher's VERSION handling.
@@ -334,7 +335,7 @@ func (p *npmProbe) runStatus(t *testing.T, bin, pkg string, env ...string) ([]st
 	cmd := exec.Command(script)
 	cmd.Env = append([]string{
 		"HOME=" + p.home,
-		"PATH=" + launchPath,
+		"PATH=" + testutil.YoloBinaryDir(t) + ":" + launchPath,
 	}, env...)
 	out, err := cmd.CombinedOutput()
 	rc := 0

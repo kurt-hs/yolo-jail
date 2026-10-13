@@ -218,7 +218,8 @@ func StageBypassingShims(steps, bootstrap []string) string {
 // wire a writer, and whoever does not should delete the clause (the container's golden
 // moves with it).
 func Script(logPath, setup string, color bool) string {
-	log := shquote.Quote(logPath)
+	// Only generated shell opens this in-jail path; the host renderer never does.
+	appendLog := "yolo internal log-append " + shquote.Quote(filepath.Dir(filepath.Dir(logPath))) + " startup.log"
 	refused := strconv.Itoa(RefusedStatus)
 	red, reset := `\033[1;31m`, `\033[0m`
 	if !color {
@@ -226,11 +227,11 @@ func Script(logPath, setup string, color bool) string {
 	}
 	return "" +
 		`printf "=== yolo provisioning %s ===\n" "$(date "+%Y-%m-%dT%H:%M:%S%z")" ` +
-		">" + log + "; " +
-		"(" + setup + ") 2>&1 | tee -a " + log + " >&2; " +
+		"| " + appendLog + " --reset; " +
+		"(" + setup + ") 2>&1 | " + appendLog + " --tee >&2; " +
 		`_prc="${PIPESTATUS[0]}"; ` +
 		`if [ "$_prc" -ne 0 ]; then ` +
-		`printf "` + FailedMarker + ` (exit %s)\n" "$_prc" >>` + log + "; " +
+		`printf "` + FailedMarker + ` (exit %s)\n" "$_prc" | ` + appendLog + "; " +
 		`if [ "$_prc" -eq ` + refused + ` ]; then ` +
 		`printf "` + red + `✗ Provisioning refused the launch (exit %s): the reason is above — log: ` +
 		dquoteEscape(logPath) + reset + `\n" "$_prc" >&2; ` +

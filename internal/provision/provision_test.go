@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func TestScriptWritesTheMarkerIntoTheLog(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("the script never emits the marker")
 	}
-	if !strings.Contains(s[idx:], ">>/ws/.yolo/startup.log") {
+	if !strings.Contains(s[idx:], "| yolo internal log-append /ws startup.log") {
 		t.Errorf("the marker is printed but not appended to the log:\n%s", s[idx:])
 	}
 }
@@ -172,6 +173,7 @@ func runStageColor(t *testing.T, setup string, stdin *os.File, color bool) (rc i
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bash, "-c", Script(logPath, setup, color)+"; echo TARGET-REACHED")
+	cmd.Env = append(os.Environ(), "PATH="+testutil.YoloBinaryDir(t)+":"+os.Getenv("PATH"))
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
