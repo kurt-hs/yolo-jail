@@ -147,7 +147,7 @@ REFRESH_ONLY_IF_CONTAINS=(__YOLO_REFRESH_ONLY_IF_CONTAINS__)
 // says nothing while the job still runs. Until then every launcher sharing the store reads the
 // dead job's lock as held: it skips its refresh, and one whose watched content is new waits for
 // the lock first, up to UPDATE_TIMEOUT.
-const prelaunchRefreshShellFn = `
+const prelaunchRefreshShellFn = programPhasePerfShellFn + `
 # --- pre-launch refresh (pi-extension-lifecycle.md §3.2, §3.3) -------------------------
 # The stamp has the LOCK'S SCOPE (pi-extension-store-builds.md XB-D14): it lives beside the
 # lock, in the store the lock's parent names, so it throttles exactly the launches the lock
@@ -363,8 +363,10 @@ _stop_refresh_heartbeat() {
 # stdout to stderr: a piped launch ("$BIN -p … | consumer") must receive the program's output and
 # nothing else.
 _refresh_act() {
-    local rc=0
+    local rc=0 _phase_start=$SECONDS _phase_mode="${1:-foreground}"
+    _yolo_phase_perf program_refresh "$BIN" start "$_phase_mode" 0 pending
     _bounded __YOLO_EXEC_PREFIX__"$REAL_BIN" "${REFRESH_ARGV[@]}" </dev/null >&2 || rc=$?
+    _yolo_phase_perf program_refresh "$BIN" end "$_phase_mode" "$((SECONDS - _phase_start))" "$rc"
     _stop_refresh_heartbeat
     # Stamped on EVERY outcome (§4.1 invariant 3): an offline hour must not retry per launch.
     _refresh_touch || true
@@ -468,7 +470,7 @@ _refresh_job() {
 # the result final.
 _refresh_job_act() {
     local rc=0 retry="A launch after an hour tries again; to retry now, run: $BIN ${REFRESH_ARGV[*]}"
-    _refresh_act || rc=$?
+    _refresh_act detached || rc=$?
     if [ "$rc" = 0 ]; then
         rm -f "$REFRESH_RESULT" 2>/dev/null || true
     elif [ "$rc" = 124 ]; then

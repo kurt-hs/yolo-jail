@@ -216,7 +216,10 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			return run.TreeDelivery{Reason: f.Label() + " has a build on this machine, and this launch staged no pack " +
 				"tree to copy it beside — a fresh launch delivers it", PatchFailure: patchFailure}, later
 		}
+		span := report.preparationSpan("preparation.copy_install")
 		dir, err := copyTreeForLaunch(f, r.delivery.Key, req.CopyRoot, errw)
+		report.preparationOutcome("preparation.copy_install", f.Key(), err)
+		span.End()
 		switch {
 		case err == nil:
 			d := run.TreeDelivery{Dir: dir, Entry: r.delivery.Key, PatchFailure: patchFailure}
@@ -303,6 +306,7 @@ func servingTree(f packload.Fork, o advanceOptions, floor string) advanceResult 
 
 // servingTreeOf is servingTree with the advance it read, nil when the series could not be read.
 func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy bool) (advanceResult, *advance) {
+	defer o.report.preparationSpan("preparation.admitted_read").End()
 	a, early := newAdvance(f, o)
 	if early != nil {
 		return *early, nil

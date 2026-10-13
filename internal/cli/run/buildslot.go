@@ -17,12 +17,15 @@ import (
 	"sync"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 )
 
 // BuildSlotRequest is the fork-build slot's whole act (Options.BuildSlot): the fork builds' request
 // and the tree arm's, either nil when its half has nothing for the act, and how many checks and
 // sealed build jails the act runs at once.
 type BuildSlotRequest struct {
+	// Perf is the launch collector; nil keeps preparation phase timing disabled.
+	Perf  *perf.Log
 	Forks *ForkBuildRequest
 	Trees *TreeBuildRequest
 	// MaxChecks and MaxBuilds bound the pool (SlotChecks, SlotBuildJails); 0 takes those.
@@ -69,7 +72,7 @@ func (o *Options) runForkBuildSlot(cfg *jsonx.OrderedMap, rt, repoRoot string) {
 		// THE IMAGE'S OWN BUILD, BESIDE THE POOL: nothing the slot does feeds it, so it starts now
 		// rather than once the slowest key has ended.
 		o.startImagePrewarm(cfg, rt, repoRoot)
-		fAns, tAns := o.BuildSlot(BuildSlotRequest{Forks: fReq, Trees: tReq, MaxChecks: SlotChecks,
+		fAns, tAns := o.BuildSlot(BuildSlotRequest{Forks: fReq, Trees: tReq, Perf: o.Perf, MaxChecks: SlotChecks,
 			MaxBuilds: SlotBuildJails(rt)})
 		if fReq != nil {
 			o.finishForkDeliveries(forks, fReq, fAns)

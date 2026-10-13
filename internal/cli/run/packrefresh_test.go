@@ -254,12 +254,22 @@ func TestTheLaunchPackRefreshIsNarrated(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+	o.Timing = true
 	o.Progress = immediate
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay, _ macosuser.HostContext, _ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {
 		return 0
 	}
 	if rc := Run(*o); rc != 0 {
 		t.Fatalf("Run() = %d, want 0\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+	}
+	data, err := os.ReadFile(filepath.Join(ws, ".yolo", HostPerfLogName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phase := range []string{"start  launch.refresh_configured_packs", "end    launch.refresh_configured_packs  dur="} {
+		if strings.Count(string(data), phase) != 1 {
+			t.Fatalf("production launch must record one %s: %s", phase, data)
+		}
 	}
 	if !strings.Contains(stderr.String(), "Checking fetched packs for updates: done (") {
 		t.Errorf("the pack refresh was not narrated on the launch stream:\n%s", stderr.String())

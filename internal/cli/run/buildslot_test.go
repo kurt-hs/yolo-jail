@@ -72,6 +72,7 @@ func TestTheSlotIsOneActAndTheImageBuildStartsBesideIt(t *testing.T) {
 			return nil
 		}
 		o.prewarmImage = func(opts image.AutoLoadOptions) { prewarmed <- opts }
+		o.Timing = true
 		o.BuildSlot = func(r BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
 			req, calls = r, calls+1
 			select {
@@ -93,6 +94,9 @@ func TestTheSlotIsOneActAndTheImageBuildStartsBesideIt(t *testing.T) {
 	if req.MaxChecks != SlotChecks || req.MaxBuilds != SlotBuildJails("podman") {
 		t.Errorf("the slot's bounds are %d checks and %d builds, want %d and %d", req.MaxChecks, req.MaxBuilds,
 			SlotChecks, SlotBuildJails("podman"))
+	}
+	if req.Perf == nil {
+		t.Fatal("launch did not forward its timing collector into the slot")
 	}
 	if req.Forks.Interrupt == nil || req.Trees.Interrupt != req.Forks.Interrupt {
 		t.Error("the slot's two halves do not share the launch's act interrupt")
