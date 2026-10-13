@@ -176,7 +176,7 @@ registration/vector/identity, qualifying check admission, unchanged-input reuse 
 parser/caller propagation. Subscription generation alone does not certify freshness. These operations
 and the Task 2/3 source seams below must be integrated serially, not replaced with snapshot admission.
 Apple check-only dispatch, host exact-Good consumption, program registration and their platform tests
-are the adapter slices. No warm capture replacement is implemented or authorized (OQ-PD23).
+are the adapter slices. No warm capture replacement is implemented or authorized ([OQ-PD23](program-delivery.md#oq-pd23)).
 
 ### Tests first — exact timer production-callsite fixture
 
