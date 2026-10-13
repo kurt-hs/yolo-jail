@@ -544,6 +544,7 @@ func TestAFailedBuildBacksOffWhileTheGoodBuildServes(t *testing.T) {
 // child a serving advance runs (forkBuildChild), so this is red if that closure stops handing the
 // child the act's teed writers, as well as if the act stops relaying (PPX-D39).
 func TestABuildJailThatNeverRanRecordsNothing(t *testing.T) {
+	allowAppleContainerBuild(t)
 	fx, _, _, r, _, _ := firstAdvance(t)
 	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	fx.rc, fx.ran, fx.said = 125, false, "Error: the fixture's runtime refused the container"

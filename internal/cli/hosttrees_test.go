@@ -96,7 +96,7 @@ func (fx *treeFixture) writeTreePackConfig(t *testing.T, mode string) {
 
 // THE HOST RENDER (PPX-D11): `~/<into>` becomes a link the render owns, naming the good build's
 // versioned copy in the host-private directory; an observe pass after it changes nothing; a move
-// swaps the link and keeps the previous version, and the next move removes the one before it.
+// swaps the link and conservatively retains every version because host-session liveness is unknown.
 func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	advanceHostTrees(io.Discard, false, "", nil)
@@ -133,14 +133,20 @@ func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) 
 	if second == first || !isDir(first) || !isDir(second) {
 		t.Fatalf("after a move the link names %q, and the previous version %q is kept: %v", second, first, isDir(first))
 	}
-	// THE NEXT MOVE removes the one before the previous.
+	// THE NEXT MOVE still retains every earlier version: without a host-session liveness proof, an
+	// older link target may belong to an overlapping session and is not treated as absent.
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 16: "sixteen"})
 	fx.now = fx.now.Add(2 * time.Hour)
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
 	third, _ := os.Readlink(fx.link())
-	if third == second || isDir(first) || !isDir(second) {
-		t.Errorf("after the second move: link %q, oldest kept %v, previous kept %v", third, isDir(first), isDir(second))
+	if third == second || !isDir(first) || !isDir(second) || !isDir(third) {
+		t.Errorf("after the second move: link %q, retained versions first=%v previous=%v current=%v", third,
+			isDir(first), isDir(second), isDir(third))
+	}
+	// Three separately launched host sessions can still be using these three admitted copies.
+	if len(fx.builds) != 3 {
+		t.Errorf("built %d versions, want three session-overlapping candidates", len(fx.builds))
 	}
 }
 
@@ -738,20 +744,44 @@ func TestARevertOverAnUnreadableFilesRecordRemovesNoLinkAndSaysSo(t *testing.T) 
 	}
 }
 
-// `yolo host -- <bin>` UPDATES ITS OWNER'S TREES AT ITS LAUNCH in the next-launch mode, which slice 1
-// of XB-D42 builds for jail launches only, and says so in one line. Red if the host stops saying it,
-// or starts leaving the tree to a background advance it does not start.
-func TestAHostLaunchSaysTheNextLaunchModeIsAJailLaunchs(t *testing.T) {
+// `yolo host -- <bin>` REGISTERS ITS DECLARED OWNER'S TREES for next-launch preparation and reads an
+// already admitted build without doing a foreground upstream refresh. A cold host still builds once.
+func TestAHostLaunchQueuesAndConsumesItsOwnersTrees(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	fx.listTreeForAgent(t)
-	fx.writeHostConfig(t, `,"agent_updates":{"agentpack":"next-launch"}`)
+	fx.writeHostConfig(t, `,"host_management":"own","agent_updates":{"agentpack":"next-launch"}`)
+	stubPreparationWorkerStart(t)
 	var errw bytes.Buffer
 	advanceHostTrees(&errw, false, "tool", nil)
-	if len(fx.builds) != 1 {
-		t.Errorf("`yolo host -- tool` built %d trees, want the one its owner loads, at the launch", len(fx.builds))
+	if len(fx.builds) != 1 || !strings.Contains(errw.String(), "preparing the cold host build now") {
+		t.Fatalf("the cold host build was not established: builds=%d\n%s", len(fx.builds), errw.String())
 	}
-	if !strings.Contains(errw.String(), "extension treepack/tool-ext: `agent_updates` asks for the next launch, "+
-		"which this yolo applies to jail launches — `yolo host` updates it at this launch") {
-		t.Errorf("the host launch does not say it:\n%s", errw.String())
+	before := patchedRecordOf(t, treeKeyCLI)
+	if before.Good == nil {
+		t.Fatal("the cold host launch admitted no tree build")
+	}
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.now = fx.now.Add(2 * time.Hour)
+	errw.Reset()
+	advanceHostTrees(&errw, false, "tool", nil)
+	if len(fx.builds) != 1 || !strings.Contains(errw.String(), "using admitted build") {
+		t.Errorf("the next-launch host call refreshed in foreground: builds=%d\n%s", len(fx.builds), errw.String())
+	}
+	after := patchedRecordOf(t, treeKeyCLI)
+	if after.Good == nil || after.Good.Commit != before.Good.Commit {
+		t.Errorf("the host call moved the admitted build: before=%+v after=%+v", before.Good, after.Good)
+	}
+	state, err := preparationSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, record := range state {
+		if record.Key == treeKeyCLI && record.Runtime == "podman" && record.Active {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the production host call did not register its selected owner tree: %+v", state)
 	}
 }

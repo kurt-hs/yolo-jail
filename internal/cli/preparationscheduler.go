@@ -68,6 +68,17 @@ func preparationEligible(f packload.Fork, req run.TreeBuildRequest) bool {
 // registerTreePreparation persists the selected tree set after pool registration, even when no
 // subscription is due. It records no executable source paths: the worker resolves the user config.
 func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w io.Writer) error {
+	return registerTreePreparationScoped(trees, req, w, true)
+}
+
+// registerHostTreePreparation adds only the host's selected owner-scoped keys. Unlike a jail launch,
+// it cannot replace the scheduler's whole selected vector: host -- <bin> deliberately registers only
+// the extensions loaded by that declared command owner.
+func registerHostTreePreparation(trees []packload.Fork, w io.Writer) error {
+	return registerTreePreparationScoped(trees, run.TreeBuildRequest{Build: true, Runtime: "podman", Platform: captureJailPlatform()}, w, false)
+}
+
+func registerTreePreparationScoped(trees []packload.Fork, req run.TreeBuildRequest, w io.Writer, replaceSelection bool) error {
 	if !req.Build {
 		return nil
 	}
@@ -80,13 +91,15 @@ func registerTreePreparation(trees []packload.Fork, req run.TreeBuildRequest, w 
 	}
 	var spawn bool
 	err := withPreparationState(func(state *preparationState) error {
-		for i := range state.Subscriptions {
-			r := &state.Subscriptions[i]
-			if r.Runtime == req.Runtime && r.Platform == req.Platform && preparationKind(*r) == preparationTreeKind {
-				if _, selected := inspections[r.Key]; selected {
-					continue // selected keys are updated only after their check-record authority is known
+		if replaceSelection {
+			for i := range state.Subscriptions {
+				r := &state.Subscriptions[i]
+				if r.Runtime == req.Runtime && r.Platform == req.Platform && preparationKind(*r) == preparationTreeKind {
+					if _, selected := inspections[r.Key]; selected {
+						continue // selected keys are updated only after their check-record authority is known
+					}
+					r.Active, r.Reason = false, "not selected for next-launch preparation by the current user config"
 				}
-				r.Active, r.Reason = false, "not selected for next-launch preparation by the current user config"
 			}
 		}
 		for _, f := range trees {

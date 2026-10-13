@@ -167,11 +167,15 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	if req.Build && !req.FreshUpdate && treeUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
 		if !nextLaunch {
-			// THIS RUNTIME RUNS NO BACKGROUND ADVANCE (Apple Container, macos-user): the key updates at
-			// this launch, as XB-D21 has the next-launch option do there whenever a build happens.
-			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
-				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
-				runtimeName(req.Runtime))))
+			if req.Runtime == "container" {
+				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch; Apple Container checks at this launch, but starts a build jail only when `container ls` proves no yolo jail is running", f.Label())))
+			} else {
+				// macos-user runs no background advance and no build jail; its existing unsupported route
+				// remains explicit rather than implying a tree was refreshed.
+				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
+					"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
+					runtimeName(req.Runtime))))
+			}
 		}
 	}
 	var patchFailure *packsrc.PatchFailure

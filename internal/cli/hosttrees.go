@@ -8,12 +8,13 @@ package cli
 //
 // The `files` render copies file by file and skips a contribution with no `from`
 // (entrypoint.RenderHostFiles), so a patched extension gets an arm of its own. The good build this
+// The good build this
 // machine admitted is copied — reflink or copy, never a hardlink (capture.CopyTree) — into a
 // VERSIONED DIRECTORY (coined here: one directory per store entry) under paths.HostTreesDir, where
 // no jail mounts it; `~/<into>` is a symbolic link the render owns, recorded in the `files`
-// ownership record and swapped by writing a link beside it and renaming it over. The version the
-// link named before the swap is kept until the next move, so a host agent already running keeps
-// reading the tree it loaded; anything older is removed.
+// ownership record and swapped by writing a link beside it and renaming it over. Older versions are
+// retained: host agent sessions have no reliable process-to-version liveness record, so pruning by
+// age or by the two most recent links could delete bytes a still-running session may read.
 //
 // # Where the advance runs, and where it never does
 //
@@ -100,10 +101,17 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 			continue // no host render links a tree whose list entry reaches jails alone (PPX-D35)
 		}
 		trees = append(trees, f)
-		if bin != "" && treeUpdateTiming(f) == timingNextLaunch && !freshUpdate {
-			// THE HOST'S NEXT-LAUNCH MODE IS NOT BUILT (XB-D22): `yolo host -- <bin>` updates at its launch.
-			richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": `agent_updates` "+
-				"asks for the next launch, which this yolo applies to jail launches — `yolo host` updates it at this launch"))
+	}
+	var queued []packload.Fork
+	for _, f := range trees {
+		if treeUpdateTiming(f) == timingNextLaunch {
+			queued = append(queued, f)
+		}
+	}
+	if len(queued) > 0 {
+		// Host registrations are additive and limited to this command owner's tree vector.
+		if err := registerHostTreePreparation(queued, errw); err != nil {
+			fmt.Fprintf(errw, "⚠ next-launch host tree preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
 	}
 	// Capture each fresh request boundary inside the interrupt scope, under the same owner record
@@ -125,10 +133,20 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		return nil
 	}
 	// A PARALLEL ADVANCE, as a jail launch's tree arm runs one (treepool.go, XB-D10): the host builds
-	// in podman's own capture jails, side by side.
+	// in podman's own capture jails, side by side. An admitted next-launch build is read without a
+	// foreground upstream refresh; only a cold/mismatched build or strict patch failure advances here.
 	results := make([]advanceResult, len(trees))
 	err := runTreesInParallelPrepared(trees, "", act, errw, errw, prepare,
 		func(i int, f packload.Fork, lane treeLane) {
+			if !freshUpdate && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
+				if entry, _, _ := hostTreeServing(f); entry != nil {
+					richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
+						f.Label()+": using admitted build "+entry.Key+"; newer builds are prepared between host launches"))
+					return
+				}
+				richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
+					f.Label()+": no admitted build serves yet; preparing the cold host build now"))
+			}
 			opts := lane.options(advanceOptions{platform: captureJailPlatform(), color: color,
 				launch: true, host: true, act: act, bypassCommand: command})
 			if freshUpdate {
@@ -447,7 +465,6 @@ func renderHostTree(f packload.Fork, home string, man *hostskills.Manifest, obse
 	info, lerr := os.Lstat(dest)
 	occupied := lerr == nil
 	owned := man != nil && man.OwnedBy(dest, f.Pack)
-	var previous string
 	switch {
 	case occupied && !owned:
 		res.Action = "refused: exists and yolo has no record of writing it — left untouched"
@@ -462,7 +479,7 @@ func renderHostTree(f packload.Fork, home string, man *hostskills.Manifest, obse
 			"aside and apply again"
 		return res
 	case occupied:
-		previous, _ = os.Readlink(dest)
+		previous, _ := os.Readlink(dest)
 		if previous == version && isDir(version) {
 			res.Action = "unchanged"
 			return res
@@ -484,7 +501,6 @@ func renderHostTree(f packload.Fork, home string, man *hostskills.Manifest, obse
 	if man != nil {
 		man.Record(dest, f.Pack)
 	}
-	pruneHostTreeVersions(hostTreeVersionsDir(f), version, previous)
 	res.Action = "rendered (→ " + version + ")"
 	return res
 }
@@ -558,23 +574,6 @@ func swapLink(dest, target string) error {
 		return err
 	}
 	return nil
-}
-
-// pruneHostTreeVersions removes every versioned copy under dir but keep and previous: the version
-// the link names now, and the one it named before the move, which a host agent already running
-// may still be reading.
-func pruneHostTreeVersions(dir, keep, previous string) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		p := filepath.Join(dir, e.Name())
-		if p == keep || p == previous {
-			continue
-		}
-		_ = os.RemoveAll(p)
-	}
 }
 
 // noteHostTreeLines prints a line for each patched extension the launch's agent loads at the host
