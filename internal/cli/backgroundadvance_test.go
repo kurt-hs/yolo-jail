@@ -103,6 +103,39 @@ func TestTheBackgroundAdvanceResolvesItsKeysFromTheUserSelection(t *testing.T) {
 	_ = pf
 }
 
+// A PATCHED FORK'S KEY resolves from the user selection beside an extension's (XB-D28): the fork is
+// found through packload.PatchedForks, not only PatchedTrees, and its advance runs in the background
+// mode. Red if the resolver stops listing patched forks.
+func TestTheBackgroundAdvanceResolvesAPatchedForkFromTheUserSelection(t *testing.T) {
+	fx := newPatchedAdvanceFixture(t, "")
+	var mu sync.Mutex
+	seen := map[string]advanceOptions{}
+	roots := map[string]string{}
+	prev := treeAdvance
+	treeAdvance = func(f packload.Fork, o advanceOptions) advanceResult {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[f.Key()], roots[f.Key()] = o, f.Root
+		return advanceResult{}
+	}
+	t.Cleanup(func() { treeAdvance = prev })
+	var out bytes.Buffer
+	runBackgroundAdvanceUnder(context.Background(), bgArgs("forkpack/tool"), &out)
+	o, ok := seen["forkpack/tool"]
+	if !ok || len(seen) != 1 {
+		t.Fatalf("the advance ran for %v, want forkpack/tool alone:\n%s", seen, out.String())
+	}
+	if !o.background || !o.launch || o.runtime != "podman" || o.platform != patchedTestPlatform {
+		t.Errorf("the fork advance's options = %+v, want the background mode", o)
+	}
+	if roots["forkpack/tool"] != fx.fork(t).Root || roots["forkpack/tool"] == "" {
+		t.Errorf("the fork key resolved to root %q, want the user config's %q", roots["forkpack/tool"], fx.fork(t).Root)
+	}
+	if got := outcomeOf(t, "forkpack/tool"); got.State != bgNothing {
+		t.Errorf("the fork key's outcome = %+v, want nothing to do", got)
+	}
+}
+
 // A KEY ANOTHER BACKGROUND ADVANCE RUNS is skipped at once, its record left alone. Red if the key's
 // background lock is waited for or ignored.
 func TestTheBackgroundAdvanceSkipsAKeyWhoseLockIsHeld(t *testing.T) {
