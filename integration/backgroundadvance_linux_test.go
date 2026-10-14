@@ -673,6 +673,60 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 			}
 			helper := xbRemember(t, helperPID)
 			f.owned = append(f.owned, helper)
+			var requester *exec.Cmd
+			var requesterDone chan error
+			if sig == syscall.SIGKILL {
+				requester = exec.Command(yoloBin, append(append(jailRunArgs(), "--update"), "--", "bash", "-c", "true")...)
+				requester.Dir = writeProject(t, `{}`)
+				requester.Env = append(preparationCLIEnv(os.Getenv("HOME")), paths.NoProgramReadinessEnv+"=1", "YOLO_NO_AUTO_CAPTURE=1")
+				requesterLog := &syncBuffer{}
+				requester.Stdout, requester.Stderr = requesterLog, requesterLog
+				awaitDetachedWriters(t, requester.Dir, launchHome(requester.Env))
+				if err := requester.Start(); err != nil {
+					t.Fatal(err)
+				}
+				requesterProcess := xbRemember(t, requester.Process.Pid)
+				requesterDone = make(chan error, 1)
+				go func() { requesterDone <- requester.Wait() }()
+				t.Cleanup(func() {
+					if requesterProcess.alive() {
+						_ = requester.Process.Signal(syscall.SIGTERM)
+					}
+					xbWaitOwnedProcessEnd(t, "owned fresh requester cleanup", requesterProcess)
+				})
+				xbAwait(t, "public fresh requester owns its independent registered demand", func() bool {
+					files, _ := filepath.Glob(filepath.Join(paths.BackgroundAdvanceDir(), "demands", "*", "request-*.json"))
+					for _, path := range files {
+						data, err := os.ReadFile(path)
+						if err != nil {
+							continue
+						}
+						var demand struct {
+							Key               string
+							Fresh, Background bool
+						}
+						if json.Unmarshal(data, &demand) != nil || demand.Key != xbKey || !demand.Fresh || demand.Background {
+							continue
+						}
+						fds, _ := filepath.Glob(fmt.Sprintf("/proc/%d/fd/*", requesterProcess.pid))
+						for _, fd := range fds {
+							target, err := os.Readlink(fd)
+							if err == nil && target == path+".lease" && pidlock.Held(target) {
+								return true
+							}
+						}
+					}
+					select {
+					case err := <-requesterDone:
+						t.Fatalf("public requester exited before joining: %v\n%s", err, requesterLog.String())
+					default:
+					}
+					return false
+				})
+				if !helper.alive() || !child.alive() || preparationChildWorkspace(bg.pid) != staging {
+					t.Fatal("public requester did not join the original build")
+				}
+			}
 			sentinel := filepath.Join(staging, "ownership-sentinel")
 			xbWrite(t, sentinel, "must survive until known removal\n")
 			if err := syscall.Kill(bg.pid, sig); err != nil {
@@ -742,11 +796,16 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 				if !child.alive() {
 					t.Fatal("SIGKILL fixture has no surviving build child to fence")
 				}
-				if !run.ForceRemoveContainer(naming.FromWorkspace(staging), "podman") {
-					t.Fatal("could not remove fixture's own orphan container")
+				if err := requester.Process.Signal(syscall.SIGTERM); err != nil {
+					t.Fatal(err)
 				}
+				select {
+				case <-requesterDone:
+				case <-time.After(15 * time.Second):
+					t.Fatal("owned public requester did not detach")
+				}
+				xbAwait(t, "zero-demand original helper and child-group teardown", func() bool { return helper.ended() && child.ended() && xbGroupEnded(child.pid) })
 				xbContainerGone(t, staging)
-				xbAwait(t, "orphan build child ending after its container removal", func() bool { return helper.ended() && child.ended() && xbGroupEnded(child.pid) })
 			}
 			f.assertNoBuildFailure(t)
 			if b, err := os.ReadFile(sentinel); err != nil || string(b) != "must survive until known removal\n" {
