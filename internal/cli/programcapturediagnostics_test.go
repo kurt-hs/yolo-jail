@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,10 +19,12 @@ import (
 )
 
 type programCaptureDiagnosticFixture struct {
-	Chunks     [][]byte
-	FD         int
-	Workspace  string
-	Resolution []byte
+	Chunks      [][]byte
+	FD          int
+	Workspace   string
+	Resolution  []byte
+	Success     bool
+	OtherChunks map[int][][]byte
 }
 
 func init() {
@@ -39,6 +43,14 @@ func init() {
 	for _, chunk := range fixture.Chunks {
 		if _, err := out.Write(chunk); err != nil {
 			os.Exit(93)
+		}
+	}
+	for fd, chunks := range fixture.OtherChunks {
+		other := os.NewFile(uintptr(fd), "owned-fixture-other-output")
+		for _, chunk := range chunks {
+			if _, err := other.Write(chunk); err != nil {
+				os.Exit(93)
+			}
 		}
 	}
 	if fixture.Resolution != nil {
@@ -80,6 +92,14 @@ func programCaptureDiagnosticCases() []struct {
 		{"giant-unfinished", []string{"TLS verification failed\n" + strings.Repeat("fake-unfinished", 1<<16)}, []string{"fake-unfinished"}, "TLS verification failed"},
 		{"incomplete-url-userinfo", []string{"TLS verification failed\nhttps://fake-user:fake-incomplete-password"}, []string{"fake-user", "fake-incomplete-password"}, "TLS verification failed"},
 		{"bidi-format", []string{"TLS\u202e verification failed\u2066\u2069\n"}, nil, "TLS verification failed"},
+		{"quoted-json-token", []string{"{\"token\":\"fake-json-secret\"}\nTLS verification failed\n"}, []string{"fake-json-secret"}, "TLS verification failed"},
+		{"quoted-password", []string{"password=\"fake secret\"\nTLS verification failed\n"}, []string{"fake", "secret\""}, "TLS verification failed"},
+		{"quoted-keys-values", []string{"{\"password\":\"fake quoted value\", 'api_key':'fake single value'}\nTLS verification failed\n"}, []string{"fake", "quoted value", "single value"}, "TLS verification failed"},
+		{"escaped-quotes", []string{"token=\"fake \\\"quoted\\\" value\"\nTLS verification failed\n"}, []string{"fake", "quoted", "value"}, "TLS verification failed"},
+		{"incomplete-quoted-secret", []string{"TLS verification failed\n{\"token\":\"fake unfinished secret"}, []string{"fake", "unfinished secret"}, "TLS verification failed"},
+		{"ambiguous-quoted-secret", []string{"TLS verification failed\npassword=\"fake secret\"fake-suffix"}, []string{"fake", "secret", "suffix"}, "TLS verification failed"},
+		{"ambiguous-unquoted-secret", []string{"TLS verification failed\npassword=fake\" secret\""}, []string{"fake", "secret"}, "TLS verification failed"},
+		{"normal-quoted-progress", []string{"{\"message\":\"Preparing \\\"useful\\\" dependencies\"}\nTLS verification failed\n"}, nil, "{\"message\":\"Preparing \\\"useful\\\" dependencies\"}"},
 		{"normal-no-newline", []string{"Preparing dependencies\nTLS verification failed: certificate expired"}, nil, "certificate expired"},
 	}
 }
@@ -318,5 +338,118 @@ func TestProgramCaptureDiagnosticsPrivateResolutionProtocolUnchanged(t *testing.
 	}
 	if !strings.Contains(public.String(), "Resolution complete") {
 		t.Fatal("successful public progress was lost")
+	}
+}
+
+type programCaptureFinalFailWriter struct {
+	err    error
+	short  bool
+	cancel context.CancelFunc
+	writes int
+}
+
+func (w *programCaptureFinalFailWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.cancel != nil {
+		w.cancel()
+	}
+	if w.short {
+		return len(p) - 1, nil
+	}
+	return 0, w.err
+}
+
+func TestProgramCaptureDiagnosticsFinalFlushErrors(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := forkBuildChildCommand
+	t.Cleanup(func() { forkBuildChildCommand = old })
+	sentinel := errors.New("safe fixture public writer failure")
+	in := npmCaptureInput{Owner: "diagnostic-fixture", Bin: "probe", Package: "diagnostic-fixture"}
+	result := npmCaptureResolution{
+		Input: in, Lock: json.RawMessage(`{"lockfileVersion":3,"packages":{"node_modules/diagnostic-fixture":{"version":"1.0.0","resolved":"https://registry.invalid/fixture.tgz","integrity":"sha512-fake","bin":{"probe":"bin/probe.js"}}}}`),
+		Release: "1.0.0", Source: "https://registry.invalid/fixture.tgz|sha512-fake", BinPath: "bin/probe.js",
+		Dependencies: []string{"node_modules/diagnostic-fixture=1.0.0|https://registry.invalid/fixture.tgz|sha512-fake"},
+		Runtime:      npmCaptureRuntime{Image: "synthetic-image", Node: "synthetic-node", NodeDigest: "synthetic-digest", NPM: "synthetic-npm", Platform: "linux/amd64", ABI: "synthetic-abi"},
+	}
+	if _, err := result.inputs(); err != nil {
+		t.Fatal("invalid successful resolver fixture")
+	}
+	resolution, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name                          string
+		success, short, multi, cancel bool
+	}{
+		{"success-writer-error", true, false, false, false},
+		{"success-short-write", true, true, false, false},
+		{"success-earlier-write-error", true, false, false, false},
+		{"success-multistream-error", true, false, true, false},
+		{"child-failure-precedence", false, false, false, false},
+		{"cancel-precedence", true, false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := programCaptureDiagnosticFixture{Chunks: [][]byte{[]byte("Final useful diagnostic")}, FD: 1}
+			if tc.success {
+				fixture.Resolution = resolution
+			}
+			if tc.name == "success-earlier-write-error" {
+				fixture.Chunks = [][]byte{[]byte("Useful completed diagnostic\nFinal diagnostic")}
+			}
+			if tc.multi {
+				fixture.OtherChunks = map[int][][]byte{4: {[]byte("Other final diagnostic")}}
+			}
+			file := filepath.Join(t.TempDir(), "fixture.json")
+			forkBuildChildCommand = func(argv []string) (*exec.Cmd, error) {
+				for _, arg := range argv {
+					if workspace, ok := strings.CutPrefix(arg, "--workspace="); ok {
+						fixture.Workspace = workspace
+					}
+				}
+				raw, err := json.Marshal(fixture)
+				if err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile(file, raw, 0600); err != nil {
+					return nil, err
+				}
+				return exec.Command(self, "program-capture-diagnostics-fixture", file), nil
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			writer := &programCaptureFinalFailWriter{err: sentinel, short: tc.short}
+			if tc.cancel {
+				writer.cancel = cancel
+			}
+			_, err = resolveSelectedNPMCapture(ctx, &capture.Store{Dir: t.TempDir()}, in, writer)
+			expectedWrites := 1
+			if tc.multi {
+				expectedWrites = 2
+			}
+			if writer.writes != expectedWrites {
+				t.Fatal("not every final public stream was flushed")
+			}
+			if tc.cancel {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatal("flush failure displaced cancellation")
+				}
+			} else if !tc.success {
+				if err == nil || !strings.Contains(err.Error(), "status 37") || errors.Is(err, sentinel) {
+					t.Fatal("flush failure displaced original child failure")
+				}
+			} else {
+				want := sentinel
+				if tc.short {
+					want = io.ErrShortWrite
+				}
+				if !errors.Is(err, want) {
+					t.Fatal("successful child ignored final public writer failure")
+				}
+			}
+		})
 	}
 }

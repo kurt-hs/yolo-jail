@@ -34,8 +34,63 @@ var programCaptureDiagnosticRedactors = []struct {
 	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`), "$1<redacted>@"},
 	// Without @, a colon-bearing authority may be unfinished userinfo.
 	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+:[^/@\s]*`), "$1<redacted>"},
-	{regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|(?:api[_-]?)?key|token|password|secret)(\s*[:=]\s*)[^\s,;]+`), "$1$2<redacted>"},
 	{regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+`), "$1<redacted>"},
+}
+
+var programCaptureCredentialMarker = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|(?:api[_-]?)?key|token|password|secret)["']?\s*[:=]\s*`)
+
+// Values are scanned only within the already bounded record. An unfinished or
+// ambiguous quoted credential omits the record instead of guessing its boundary.
+func redactProgramCaptureCredentialRecord(text string) string {
+	var safe strings.Builder
+	for offset := 0; ; {
+		marker := programCaptureCredentialMarker.FindStringIndex(text[offset:])
+		if marker == nil {
+			safe.WriteString(text[offset:])
+			return safe.String()
+		}
+		start := offset + marker[1]
+		if start == len(text) {
+			return "[incomplete sensitive producer diagnostic omitted]"
+		}
+		end := start
+		quote := text[start]
+		if quote == '"' || quote == '\'' {
+			end++
+			for end < len(text) && text[end] != quote {
+				if text[end] == '\\' {
+					end++
+				}
+				end++
+			}
+			if end >= len(text) {
+				return "[incomplete sensitive producer diagnostic omitted]"
+			}
+			end++
+			if end < len(text) && !strings.ContainsRune(" \t\r,;}]", rune(text[end])) {
+				return "[ambiguous sensitive producer diagnostic omitted]"
+			}
+		} else {
+			for end < len(text) && !strings.ContainsRune(" \t\r,;", rune(text[end])) {
+				if text[end] == '\'' || text[end] == '"' {
+					return "[ambiguous sensitive producer diagnostic omitted]"
+				}
+				end++
+			}
+		}
+		if end == start {
+			return "[incomplete sensitive producer diagnostic omitted]"
+		}
+		safe.WriteString(text[offset:start])
+		if quote == '"' || quote == '\'' {
+			safe.WriteByte(quote)
+		}
+		safe.WriteString("<redacted>")
+		if quote == '"' || quote == '\'' {
+			safe.WriteByte(quote)
+		}
+		offset = end
+	}
 }
 
 type programCaptureDiagnostic struct {
@@ -82,6 +137,7 @@ type programCaptureDiagnosticTee struct {
 	escape      byte // ESC, CSI, string control, string ESC, or ESC intermediates.
 	utf8Pending [utf8.UTFMax]byte
 	utf8Count   int
+	writeErr    error
 }
 
 func (w *programCaptureDiagnosticTee) emit(newline bool) error {
@@ -89,7 +145,7 @@ func (w *programCaptureDiagnosticTee) emit(newline bool) error {
 	if w.omitted {
 		text = "[oversized producer diagnostic omitted]"
 	} else {
-		text = string(w.record)
+		text = redactProgramCaptureCredentialRecord(string(w.record))
 		for _, redactor := range programCaptureDiagnosticRedactors {
 			text = redactor.re.ReplaceAllString(text, redactor.replacement)
 		}
@@ -189,6 +245,9 @@ func (w *programCaptureDiagnosticTee) consume(r rune) error {
 func (w *programCaptureDiagnosticTee) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
 	for i, b := range p {
 		w.utf8Pending[w.utf8Count] = b
 		w.utf8Count++
@@ -204,6 +263,7 @@ func (w *programCaptureDiagnosticTee) Write(p []byte) (int, error) {
 				continue
 			}
 			if err := w.consume(r); err != nil {
+				w.writeErr = err
 				return i + 1, err
 			}
 		}
@@ -211,16 +271,19 @@ func (w *programCaptureDiagnosticTee) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *programCaptureDiagnosticTee) finish() {
+func (w *programCaptureDiagnosticTee) finish() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	// An incomplete terminal sequence makes the unfinished record unsafe to interpret.
 	if w.escape != 0 || w.utf8Count != 0 {
 		w.record = w.record[:0]
 		w.omitted = false
-		return
+		return w.writeErr
 	}
-	_ = w.emit(false)
+	if w.writeErr == nil {
+		w.writeErr = w.emit(false)
+	}
+	return w.writeErr
 }
 
 type ordinaryCaptureRuntimeKey struct{}
@@ -248,8 +311,11 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 		streams[i] = &programCaptureDiagnosticTee{out: w, diagnostic: diag}
 	}
 	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: streams[0], errw: streams[1], jailOut: streams[2], jailErr: streams[3]}, programCaptureEnvironment(os.Environ()))
+	var flushErr error
 	for _, stream := range streams {
-		stream.finish()
+		if err := stream.finish(); err != nil && flushErr == nil {
+			flushErr = err
+		}
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -259,6 +325,9 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 			return fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
 		}
 		return fmt.Errorf("selected sealed npm producer failed (status %d) — retry preparation", rc)
+	}
+	if flushErr != nil {
+		return fmt.Errorf("selected sealed npm producer diagnostic could not be published — repair the output writer, then retry preparation: %w", flushErr)
 	}
 	return nil
 }
