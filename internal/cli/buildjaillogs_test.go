@@ -72,6 +72,8 @@ func assertDiagnosticsKept(t *testing.T, workspace string) string {
 // than the workspace that is deleted.
 func TestABuildJailsDiagnosticsOutliveItsWorkspace(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
+	// writeHostConfig names the agent pack, so it must exist for the selection to resolve.
+	fx.listTreeForAgent(t)
 	fx.writeHostConfig(t, treeHostOwn)
 	build := fx.buildJail(t)
 	withFakeCaptureJail(t, func(o run.Options) int {
