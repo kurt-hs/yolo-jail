@@ -55,9 +55,10 @@ func demandBoundaryAfter(candidate, current preparationDemand) bool {
 }
 
 type preparationDemandResult struct {
-	Pending                                                 *appleBuildPending `json:"apple_build_pending,omitempty"`
-	UnsupportedNPM                                          bool               `json:"unsupported_npm,omitempty"`
-	Program                                                 *npmCaptureRecord  `json:"program,omitempty"`
+	NodeFloorUnavailable                                    *run.NodeFloorUnavailable `json:"node_floor_unavailable,omitempty"`
+	Pending                                                 *appleBuildPending        `json:"apple_build_pending,omitempty"`
+	UnsupportedNPM                                          bool                      `json:"unsupported_npm,omitempty"`
+	Program                                                 *npmCaptureRecord         `json:"program,omitempty"`
 	Delivery                                                entrypoint.ForkDelivery
 	Built, Failed, Bypassed, Lost, FellShort                bool
 	OperationError                                          string
@@ -705,6 +706,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 		var res advanceResult
 		var program *npmCaptureRecord
 		var unsupportedNPM bool
+		var nodeFloorUnavailable *run.NodeFloorUnavailable
 		if resolveErr != nil {
 			res = advanceResult{failed: true, problem: resolveErr.Error(), delivery: entrypoint.ForkDelivery{Reason: resolveErr.Error()}}
 		} else {
@@ -751,6 +753,9 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				record, err := advanceNPMCapture(withOrdinaryCaptureRuntime(workCtx, request.Runtime), &capture.Store{Dir: paths.CapturesDir()}, *resolved.NPM, resolved.Fingerprint, request.Fresh, request.AfterSeq, w, demandAdmissionGuard(workCtx, dir, request))
 				if err != nil {
 					unsupportedNPM = errors.Is(err, errNPMCaptureUnsupported)
+					if workCtx.Err() == nil {
+						errors.As(err, &nodeFloorUnavailable)
+					}
 					res = advanceResult{failed: true, operationError: err.Error()}
 				} else {
 					program = &record
@@ -796,6 +801,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				result := demandResult(res)
 				result.Program = program
 				result.UnsupportedNPM = unsupportedNPM
+				result.NodeFloorUnavailable = nodeFloorUnavailable
 				if e = writeDemandJSON(r.path+".result", result); e != nil {
 					return e
 				}

@@ -228,6 +228,12 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 	if err != nil {
 		return npmCaptureRecord{}, err
 	}
+	if ctx.Err() != nil {
+		return npmCaptureRecord{}, ctx.Err()
+	}
+	if result.NodeFloorUnavailable != nil {
+		return npmCaptureRecord{}, result.NodeFloorUnavailable
+	}
 	if result.UnsupportedNPM {
 		return npmCaptureRecord{}, fmt.Errorf("%w: %s", errNPMCaptureUnsupported, result.OperationError)
 	}

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
@@ -325,6 +328,20 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if rc == provision.RefusedStatus && !bound && len(argv) == 6 && argv[0] == "yolo" && argv[1] == "internal" && argv[2] == "program-npm" && argv[3] == "resolve" {
+		// Read only the owned result file, never public stdout. The exact declaration
+		// must match before the child status can become a structured floor refusal.
+		raw, readErr := os.ReadFile(filepath.Join(workspace, "resolution.json"))
+		input, inputErr := os.ReadFile(filepath.Join(workspace, "input.json"))
+		var result npmCaptureResolution
+		var in npmCaptureInput
+		if readErr == nil && inputErr == nil && json.Unmarshal(raw, &result) == nil && json.Unmarshal(input, &in) == nil && result.Input == in && result.NodeFloorUnavailable != nil {
+			e := result.NodeFloorUnavailable
+			if e.Owner == in.Owner && e.Bin == in.Bin && e.Floor == in.NodeFloor && e.Available != "" {
+				return e
+			}
+		}
+	}
 	if rc != 0 || bound {
 		if detail := diag.String(); detail != "" {
 			return fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
@@ -428,6 +445,13 @@ func resolveSelectedNPMCapture(ctx context.Context, store *capture.Store, in npm
 	}
 	argv := []string{"yolo", "internal", "program-npm", "resolve", path.Join(containerWorkspace, "input.json"), path.Join(containerWorkspace, "resolution.json")}
 	if err = programCaptureChild(ctx, staging, argv, w); err != nil {
+		var unavailable *run.NodeFloorUnavailable
+		if errors.As(err, &unavailable) {
+			if release, goneErr := programCaptureRuntimeGone(staging); goneErr == nil {
+				cleanupForkBuildWorkspace(staging, runtime.FromWorkspace(staging))
+				release()
+			}
+		}
 		return nil, err
 	}
 	release, err := programCaptureRuntimeGone(staging)

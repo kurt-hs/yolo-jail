@@ -154,6 +154,12 @@ func runOrdinaryScheduledPreparation(ctx context.Context, r preparationRecord, w
 	if err != nil {
 		return nil, err
 	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if result.NodeFloorUnavailable != nil {
+		return nil, result.NodeFloorUnavailable
+	}
 	if result.UnsupportedNPM {
 		return nil, fmt.Errorf("%w: %s", errNPMCaptureUnsupported, result.OperationError)
 	}
