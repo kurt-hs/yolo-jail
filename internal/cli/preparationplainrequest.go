@@ -19,6 +19,10 @@ func freshPlainServing(f packload.Fork, sub preparationDemand) (advanceResult, e
 	if err != nil {
 		return advanceResult{}, err
 	}
+	return freshPlainServingRecord(f, sub, record)
+}
+
+func freshPlainServingRecord(f packload.Fork, sub preparationDemand, record *packsrc.CheckRecord) (advanceResult, error) {
 	if record.Good == nil {
 		return advanceResult{}, errors.New("plain source has no admitted preparation; retry --update")
 	}
@@ -43,10 +47,24 @@ func runFreshPlainPreparation(ctx context.Context, f packload.Fork, sub preparat
 	boundary, identity := sub.CheckBoundary, sub.Identity
 	// A guarded completed winner can satisfy concurrent requests registered before
 	// its start. Exact pin/build validation below remains independently mandatory.
-	if record, e := store.LoadCheckRecord(f.Key()); e == nil && record.Fresh.Qualifies(boundary, identity) && record.Check != nil && record.Check.FetchErr == "" && record.Check.Problem == "" {
-		if res, e := freshPlainServing(f, sub); e == nil {
-			return res, guard(func() error { return nil })
+	var reused advanceResult
+	var completed bool
+	err := store.WithCheckRecord(f.Key(), nil, func(record *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
+		if readErr != nil {
+			return false, readErr
 		}
+		if record.Fresh.Qualifies(boundary, identity) && record.Check != nil && record.Check.FetchErr == "" && record.Check.Problem == "" {
+			if res, e := freshPlainServingRecord(f, sub, record); e == nil {
+				completed = true
+				return false, store.WithFreshAuthority(f.Key(), boundary, record.Fresh, identity, func() error {
+					return guard(func() error { reused = res; return nil })
+				})
+			}
+		}
+		return false, nil
+	})
+	if err != nil || completed {
+		return reused, err
 	}
 	var begun packsrc.CheckStart
 	publication := func(commit func() error) error {
