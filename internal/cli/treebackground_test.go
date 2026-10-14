@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,20 +56,6 @@ func stubSpawn(t *testing.T) *spawns {
 	}
 	t.Cleanup(func() { startBackgroundAdvance = prev })
 	return s
-}
-
-// keys are the --key values of spawn i, sorted.
-func (s *spawns) keys(i int) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []string
-	for _, a := range s.argvs[i] {
-		if k, ok := strings.CutPrefix(a, "--key="); ok {
-			out = append(out, k)
-		}
-	}
-	slices.Sort(out)
-	return out
 }
 
 func (s *spawns) count() int {

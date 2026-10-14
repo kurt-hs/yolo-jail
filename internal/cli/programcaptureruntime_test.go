@@ -12,10 +12,13 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestSelectedNPMRunPublicCustomizedRuntimeRetainsBoundedLegacyConsumer(t *testing.T) {
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	for _, tc := range []struct {
 		name, config string
 		store        bool
@@ -142,6 +145,8 @@ func TestSelectedNPMHostPublicCustomizedRuntimeDoesNotMaterializeBaseArchive(t *
 }
 
 func TestSelectedNPMRunPublicUnsupportedDependencyGraphRetainsLegacyFreshChecks(t *testing.T) {
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	f := newSelectedNPMFixture(t)
 	req := selectedNPMUser(t, f, false)
 	selectedNPMSharedWorker(t)

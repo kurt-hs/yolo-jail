@@ -188,9 +188,6 @@ func runPlainForkPreparation(ctx context.Context, record preparationRecord, f pa
 		outcome.ProducerPID, outcome.SubscriptionGeneration = os.Getpid(), record.Generation
 		pin, err := currentForkPin(f)
 		if err != nil || pin.Commit != record.PinCommit {
-			if err == nil {
-				err = fmt.Errorf("the standing pin changed from %s to %s", shortSHA(record.PinCommit), shortSHA(pin.Commit))
-			}
 			outcome.State, outcome.Error = bgSkipped, "the standing pin or selected declaration changed before the timer build — a fresh launch re-registers it"
 			taskErr = errPreparationAdmissionStale
 			return
