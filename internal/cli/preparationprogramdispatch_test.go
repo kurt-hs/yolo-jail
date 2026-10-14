@@ -268,15 +268,26 @@ func TestPreparationProgramPatchFailureDoesNotBuild(t *testing.T) {
 	fx.mu.Lock()
 	before := fx.child
 	fx.mu.Unlock()
+	var outcome backgroundOutcome
 	runProgramPreparationTick(t, func() bool {
-		o, err := readBackgroundOutcome(backgroundOutcomePath("forkpack/tool"))
-		return err == nil && o.At == fx.now.Unix()
+		var err error
+		outcome, err = readBackgroundOutcome(backgroundOutcomePath("forkpack/tool"))
+		return err == nil && outcome.At == fx.now.Unix() && outcome.State == bgFailed && outcome.PatchFailure != nil
 	})
 	fx.mu.Lock()
 	after := fx.child
 	fx.mu.Unlock()
 	if after != before || fx.record(t).Good.Entry != old {
 		t.Fatal("patch failure built or replaced Good")
+	}
+	record := fx.record(t)
+	failure := outcome.PatchFailure
+	current := record.CurrentPatchFailure(record.Read, failure.Series)
+	if outcome.State != bgFailed || failure.Owner != fx.fork(t).Key() || failure.Kind != "conflict" ||
+		record.Check == nil || record.Check.Seq != record.Seq || record.Read != failure.Inputs ||
+		!sameBackgroundPatchFailureIdentity(current, failure) {
+		t.Fatalf("background failure is not the exact current typed CheckRecord failure: outcome=%+v check=%+v current=%+v",
+			outcome, record.Check, current)
 	}
 	if d, g := admittedProgramServing(fx.fork(t), "podman", patchedTestPlatform); d.PatchFailure == nil || g != nil {
 		t.Fatalf("patch failure qualified: %+v %+v", d, g)

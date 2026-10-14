@@ -44,6 +44,9 @@ import (
 // release it fetches is one the distribution serves on a Mac too.
 func withForkFloor(t *testing.T) *floortest.Dist {
 	t.Helper()
+	platform := hostFloorCapturePlatform
+	hostFloorCapturePlatform = func() string { return "linux/" + goruntime.GOARCH }
+	t.Cleanup(func() { hostFloorCapturePlatform = platform })
 	dist := floortest.NewLinuxDist(t)
 	root := floorLoaderRoot(t)
 	orig := newHostFloor

@@ -1895,7 +1895,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -2959,6 +2958,7 @@
 "flake.nix",
 "go.mod",
 "integration/*",
+"integration/agents_captureprobe_test.go",
 "internal/agentcfg/*",
 "internal/agentcfg/codec/*",
 "internal/agentcfg/luahook/*",
@@ -3289,8 +3289,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {

@@ -135,8 +135,12 @@ func newSharedDemandProcessFixture(t *testing.T) *sharedDemandProcessFixture {
 	t.Helper()
 	fx := patchedFloorFixture(t)
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	seed, out, _ := fx.launch(t, "podman")
+	if seed.delivery.Key == "" {
+		t.Fatalf("container fixture did not seed its own admitted build: %+v\n%s", seed, out)
+	}
 	if rc, _, out := fx.hostLaunch(t); rc != 0 {
-		t.Fatalf("seed rc=%d\n%s", rc, out)
+		t.Fatalf("host-floor fixture seed rc=%d\n%s", rc, out)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
 	// A short owned temporary path keeps AF_UNIX usable on both hosts; resolve where minted.

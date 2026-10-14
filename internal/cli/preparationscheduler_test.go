@@ -127,8 +127,9 @@ func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
 		}
 		after, _ := readPreparationSnapshot(f.Key())
 		var status bytes.Buffer
-		if code := printPreparationStatus(&status, io.Discard, false, f.Key()); code != 0 || after.Phase != "admitted" || after.ServingEntry != before.ServingEntry || !strings.Contains(status.String(), "admitted entry: "+before.ServingEntry) {
-			t.Fatalf("consumed notice erased actual admitted status: %+v status=%s", after, status.String())
+		statusLine := f.Key() + " [podman/" + patchedTestPlatform + "]"
+		if code := printPreparationStatus(&status, io.Discard, false, ""); code != 0 || after.Phase != "admitted" || after.ServingEntry != before.ServingEntry || !strings.Contains(status.String(), statusLine) || !strings.Contains(status.String(), "admitted entry: "+before.ServingEntry) {
+			t.Fatalf("public all-record status lost fixture identity or actual admission: %+v status=%s", after, status.String())
 		}
 	}
 }

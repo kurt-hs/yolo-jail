@@ -48,6 +48,10 @@ func floorPrograms(packs []*packload.Pack) []hostfloor.Program {
 	return hostfloor.Programs(in)
 }
 
+// hostFloorCapturePlatform is the capture identity of the host floor; production uses this host's
+// native identity, while a test can make a synthetic Linux floor internally consistent.
+var hostFloorCapturePlatform = capture.Platform
+
 // newHostFloor is the machine's floor, with every input read from where it lives: the prefix
 // under the state dir, this host's platform, the user-scope `host_floor` and `agent_updates`, the
 // capture store and the capture act. out receives its progress lines, which are a launch's
@@ -77,7 +81,7 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 		// Either origin (resolveFloorCapture): a capture jail's, or this host's own capture (HP-D18),
 		// which no jail ever selects.
 		ResolveCapture: func(bin string) (*capture.Entry, error) {
-			entry, _, err := resolveFloorCapture(store, bin, capture.Platform())
+			entry, _, err := resolveFloorCapture(store, bin, hostFloorCapturePlatform())
 			return entry, err
 		},
 		// A fork's build boots a jail, so a machine whose runtime is not installed cannot make one —
@@ -338,7 +342,7 @@ func floorForkBuild(p hostfloor.Program, commit string) forkBuild {
 			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow,
 			Root: in.ForkRoot},
 		Commit:   commit,
-		Platform: capture.Platform(),
+		Platform: hostFloorCapturePlatform(),
 	}
 }
 
@@ -346,7 +350,7 @@ func floorForkBuild(p hostfloor.Program, commit string) forkBuild {
 // fork's floor build is (floorForkBuild), the only one a materialize on the host takes. The floor
 // holds a PATCHED fork's build on Linux only (noEntryReason refuses every other host first), where it
 // is a capture jail's too, so the floor's lookups and a jail launch's name one build.
-func floorPatchedPlatform() string { return capture.Platform() }
+func floorPatchedPlatform() string { return hostFloorCapturePlatform() }
 
 func floorAdvanceState(p hostfloor.Program, result advanceResult) hostfloor.PatchedState {
 	state := floorPatchedState(p)

@@ -238,7 +238,7 @@ type npmCaptureNodeIO struct {
 	runCommand       func(context.Context, string, []string, []string, io.Writer, io.Writer) error
 }
 
-func npmCaptureNode(ctx context.Context, home, floor, userConfig string, w io.Writer) (string, error) {
+var npmCaptureNode = func(ctx context.Context, home, floor, userConfig string, w io.Writer) (string, error) {
 	return npmCaptureNodeWithIO(ctx, home, floor, userConfig, w, npmCaptureNodeIO{
 		trustStorePath:   npmCaptureTrustStorePath,
 		validateTrust:    validateNPMCaptureTrustStore,
