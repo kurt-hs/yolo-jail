@@ -59,6 +59,7 @@ type xbOutcome struct {
 	Log      string `json:"log"`
 	To       string `json:"to"`
 	Retained string `json:"retained"`
+	RetryAt  int64  `json:"retry_at"`
 }
 
 func xbWrite(t *testing.T, path, body string) {
@@ -133,6 +134,15 @@ func newXBFixture(t *testing.T) *xbFixture {
 	// Registered after the private HOME, before any launch. The fixture stops only its own
 	// process identities and private staging containers before that HOME's cleanup can run.
 	t.Cleanup(func() {
+		if t.Failed() {
+			if data, err := os.ReadFile(f.log); err == nil {
+				if len(data) > 16384 {
+					data = data[len(data)-16384:]
+				}
+				t.Logf("bounded owned background log before cleanup:\n%s", data)
+			}
+			t.Logf("owned background outcome before cleanup: %+v", f.readOutcome())
+		}
 		// A launch can fail before ready observes its daemon. Recover only this private
 		// outcome's owner, and only if its argv still identifies our exact advance.
 		if o := f.readOutcome(); o.Pid > 0 && processHasArgs(o.Pid, "internal", "background-advance") && processHasArgs(o.Pid, "--key="+xbKey) {
@@ -376,6 +386,27 @@ func xbWaitOwnedProcessEnd(t *testing.T, what string, p xbProcess) {
 	xbAwait(t, what, p.ended)
 }
 
+// The sole independent worker can own a build through its authorized request helper.
+// Follow observed ancestry rather than assuming the sealed build is a direct child.
+func xbProcessDescendants(root int) []int {
+	pending := []int{root}
+	seen := map[int]bool{root: true}
+	var descendants []int
+	for len(pending) > 0 {
+		pid := pending[0]
+		pending = pending[1:]
+		for _, child := range processChildren(pid) {
+			if seen[child] {
+				continue
+			}
+			seen[child] = true
+			descendants = append(descendants, child)
+			pending = append(pending, child)
+		}
+	}
+	return descendants
+}
+
 // ready waits for the build's actual marker, never the boot's echo of its command.
 func (f *xbFixture) ready(t *testing.T) (xbProcess, xbProcess, string) {
 	t.Helper()
@@ -392,20 +423,22 @@ func (f *xbFixture) ready(t *testing.T) (xbProcess, xbProcess, string) {
 	var child xbProcess
 	var staging string
 	xbAwait(t, "the sealed local build marker (background log "+f.log+")", func() bool {
-		for _, pid := range processChildren(bg.pid) {
+		for _, pid := range xbProcessDescendants(bg.pid) {
 			argv, _ := processArgs(pid)
 			if !containsArg(argv, "fork-build-jail") {
 				continue
 			}
+			var workspace string
 			for _, arg := range argv {
 				if ws, ok := strings.CutPrefix(arg, "--workspace="); ok {
-					staging = ws
+					workspace = ws
 				}
 			}
-			if staging == "" {
+			if workspace == "" {
 				continue
 			}
-			if b, err := os.ReadFile(filepath.Join(staging, "build-ready")); err == nil && string(b) == "ready\n" {
+			if b, err := os.ReadFile(filepath.Join(workspace, "build-ready")); err == nil && string(b) == "ready\n" {
+				staging = workspace
 				child = xbRemember(t, pid)
 				return true
 			}
@@ -453,10 +486,16 @@ func xbContainerGone(t *testing.T, staging string) {
 	}
 }
 
-func (f *xbFixture) finish(t *testing.T, bg xbProcess, staging string) {
+func (f *xbFixture) finish(t *testing.T, bg, child xbProcess, staging string) {
 	t.Helper()
 	xbWrite(t, filepath.Join(staging, "build-release"), "release\n")
-	xbAwait(t, "background admission and exit", func() bool { return f.readOutcome().State == "moved" && bg.ended() })
+	xbAwait(t, "background admission and owned build exit", func() bool { return f.readOutcome().State == "moved" && child.ended() })
+	if !bg.alive() {
+		t.Fatal("persistent preparation worker exited after one admission")
+	}
+	if status := prepCLI(t, yoloBin, os.Getenv("HOME"), "pack", "prepare", "status"); !strings.Contains(status, "Tree preparation worker: running") {
+		t.Fatalf("admitting scheduler lost its authenticated lease:\n%s", status)
+	}
 	xbContainerGone(t, staging)
 	xbAwait(t, "staging collected after known removal", func() bool { _, err := os.Stat(staging); return os.IsNotExist(err) })
 	o := f.readOutcome()
@@ -591,7 +630,7 @@ func TestBackgroundAdvanceDetachedLaunchAdmitsOnlyForTheNextFreshJail(t *testing
 	if err := xbClientDeliveryProblem(r, "xb-local-unbuilt"); err != nil {
 		t.Fatalf("first piped launch did not hand the fallback: %v\n%s", err, r.combined())
 	}
-	bg, _, staging := f.ready(t)
+	bg, child, staging := f.ready(t)
 	if !pidlock.Held(filepath.Join(paths.BackgroundAdvanceDir(), run.PatchedCopySlug(xbKey)+".lock")) {
 		t.Fatal("running detached advance holds no kernel key lock")
 	}
@@ -608,10 +647,10 @@ func TestBackgroundAdvanceDetachedLaunchAdmitsOnlyForTheNextFreshJail(t *testing
 			t.Errorf("detached fd %d = %q (%v), want %q", fd, got, err, want)
 		}
 	}
-	if b, err := os.ReadFile(f.log); err != nil || !strings.Contains(string(b), "background advance started") {
+	if b, err := os.ReadFile(f.log); err != nil || !strings.Contains(string(b), "checking extension "+xbKey+"'s upstream") {
 		t.Fatalf("detached log is not its actual output: %v\n%s", err, b)
 	}
-	f.finish(t, bg, staging)
+	f.finish(t, bg, child, staging)
 }
 
 func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing.T) {
@@ -624,6 +663,70 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 				t.Fatalf("fallback launch rc=%d:\n%s", r.rc, r.combined())
 			}
 			bg, child, staging := f.ready(t)
+			_, childStat, ok := readStat(child.pid)
+			if !ok || len(childStat) < 2 {
+				t.Fatal("owned build child has no observed parent")
+			}
+			helperPID, err := strconv.Atoi(childStat[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			helper := xbRemember(t, helperPID)
+			f.owned = append(f.owned, helper)
+			var requester *exec.Cmd
+			var requesterDone chan error
+			if sig == syscall.SIGKILL {
+				requester = exec.Command(yoloBin, append(append(jailRunArgs(), "--update"), "--", "bash", "-c", "true")...)
+				requester.Dir = writeProject(t, `{}`)
+				requester.Env = append(preparationCLIEnv(os.Getenv("HOME")), paths.NoProgramReadinessEnv+"=1", "YOLO_NO_AUTO_CAPTURE=1")
+				requesterLog := &syncBuffer{}
+				requester.Stdout, requester.Stderr = requesterLog, requesterLog
+				awaitDetachedWriters(t, requester.Dir, launchHome(requester.Env))
+				if err := requester.Start(); err != nil {
+					t.Fatal(err)
+				}
+				requesterProcess := xbRemember(t, requester.Process.Pid)
+				requesterDone = make(chan error, 1)
+				go func() { requesterDone <- requester.Wait() }()
+				t.Cleanup(func() {
+					if requesterProcess.alive() {
+						_ = requester.Process.Signal(syscall.SIGTERM)
+					}
+					xbWaitOwnedProcessEnd(t, "owned fresh requester cleanup", requesterProcess)
+				})
+				xbAwait(t, "public fresh requester owns its independent registered demand", func() bool {
+					files, _ := filepath.Glob(filepath.Join(paths.BackgroundAdvanceDir(), "demands", "*", "request-*.json"))
+					for _, path := range files {
+						data, err := os.ReadFile(path)
+						if err != nil {
+							continue
+						}
+						var demand struct {
+							Key               string
+							Fresh, Background bool
+						}
+						if json.Unmarshal(data, &demand) != nil || demand.Key != xbKey || !demand.Fresh || demand.Background {
+							continue
+						}
+						fds, _ := filepath.Glob(fmt.Sprintf("/proc/%d/fd/*", requesterProcess.pid))
+						for _, fd := range fds {
+							target, err := os.Readlink(fd)
+							if err == nil && target == path+".lease" && pidlock.Held(target) {
+								return true
+							}
+						}
+					}
+					select {
+					case err := <-requesterDone:
+						t.Fatalf("public requester exited before joining: %v\n%s", err, requesterLog.String())
+					default:
+					}
+					return false
+				})
+				if !helper.alive() || !child.alive() || preparationChildWorkspace(bg.pid) != staging {
+					t.Fatal("public requester did not join the original build")
+				}
+			}
 			sentinel := filepath.Join(staging, "ownership-sentinel")
 			xbWrite(t, sentinel, "must survive until known removal\n")
 			if err := syscall.Kill(bg.pid, sig); err != nil {
@@ -646,18 +749,63 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 				if !known || !present {
 					t.Fatalf("SIGKILL left no real orphan container to exercise recovery: present=%v known=%v", present, known)
 				}
+				recordStore := &packsrc.Store{Dir: paths.PacksDir()}
+				before, beforeErr := recordStore.LoadCheckRecord(xbKey)
 				r = f.retry(t)
-				if r.rc != 0 || f.readOutcome().State != "retained" || f.readOutcome().Retained == "" {
-					t.Fatalf("retry under live orphan not retained: rc=%d outcome=%+v\n%s", r.rc, f.readOutcome(), r.combined())
+				outcome := f.readOutcome()
+				if r.rc != 0 || outcome.State != "skipped" || !strings.Contains(r.combined(), "skipped — another build of this fork is running") || !strings.Contains(r.combined(), "lock: ") || outcome.RetryAt != 0 {
+					t.Fatalf("retry under owned busy helper not skipped: rc=%d outcome=%+v\n%s", r.rc, outcome, r.combined())
+				}
+				after, afterErr := recordStore.LoadCheckRecord(xbKey)
+				if beforeErr != nil || afterErr != nil {
+					t.Fatalf("read original/busy check record: %v / %v", beforeErr, afterErr)
+				}
+				// The ordinary retry may recheck patch application; only that successful
+				// check's timestamp may change, never build outcomes/deadlines or Good.
+				for _, record := range []*packsrc.CheckRecord{before, after} {
+					for i := range record.Outcomes {
+						if record.Outcomes[i].Kind == packsrc.OutcomeApplies {
+							record.Outcomes[i].At = 0
+						}
+					}
+				}
+				beforeAdmission, _ := json.Marshal([]any{before.Good, before.Outcomes, before.ApplyErr, before.PatchFailure})
+				afterAdmission, _ := json.Marshal([]any{after.Good, after.Outcomes, after.ApplyErr, after.PatchFailure})
+				if string(beforeAdmission) != string(afterAdmission) {
+					t.Fatalf("busy retry changed Good, outcomes or failure deadlines: before=%s after=%s", beforeAdmission, afterAdmission)
+				}
+				// A new source check is allowed; a NoWait build refusal is not admission or failure.
+				if !helper.alive() || !child.alive() {
+					t.Fatal("busy retry replaced the original helper/build")
+				}
+				if b, err := os.ReadFile(sentinel); err != nil || string(b) != "must survive until known removal\n" {
+					t.Fatalf("busy retry changed staging sentinel: %q %v", b, err)
+				}
+				matches := 0
+				for _, pid := range xbProcessDescendants(helper.pid) {
+					if processHasArgs(pid, "internal", "fork-build-jail") {
+						matches++
+						if pid != child.pid {
+							t.Fatal("busy retry dispatched a new build child")
+						}
+					}
+				}
+				if matches != 1 {
+					t.Fatalf("original helper has %d sealed build children, want one", matches)
 				}
 				if !child.alive() {
 					t.Fatal("SIGKILL fixture has no surviving build child to fence")
 				}
-				if !run.ForceRemoveContainer(naming.FromWorkspace(staging), "podman") {
-					t.Fatal("could not remove fixture's own orphan container")
+				if err := requester.Process.Signal(syscall.SIGTERM); err != nil {
+					t.Fatal(err)
 				}
+				select {
+				case <-requesterDone:
+				case <-time.After(15 * time.Second):
+					t.Fatal("owned public requester did not detach")
+				}
+				xbAwait(t, "zero-demand original helper and child-group teardown", func() bool { return helper.ended() && child.ended() && xbGroupEnded(child.pid) })
 				xbContainerGone(t, staging)
-				xbAwait(t, "orphan build child ending after its container removal", func() bool { return child.ended() && xbGroupEnded(child.pid) })
 			}
 			f.assertNoBuildFailure(t)
 			if b, err := os.ReadFile(sentinel); err != nil || string(b) != "must survive until known removal\n" {
@@ -688,14 +836,14 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 			if r.rc != 0 {
 				t.Fatalf("recovery launch rc=%d:\n%s", r.rc, r.combined())
 			}
-			newBG, _, newStage := f.ready(t)
+			newBG, newChild, newStage := f.ready(t)
 			if newStage != staging {
 				t.Fatalf("retry escaped deterministic staging: %s != %s", newStage, staging)
 			}
 			if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
 				t.Fatalf("known-gone retry did not clear old staging: %v", err)
 			}
-			f.finish(t, newBG, newStage)
+			f.finish(t, newBG, newChild, newStage)
 		})
 	}
 }
