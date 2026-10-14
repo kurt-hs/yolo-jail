@@ -6,8 +6,11 @@ package entrypoint
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -215,4 +218,46 @@ func TestTheBootstrapRegeneratesAMetFloorsLaunchers(t *testing.T) {
 			t.Errorf("the failure is not said:\n%s", out)
 		}
 	})
+}
+
+// Both prepared validation and execution must use the interpreter chosen by the
+// production generator, including the launch whose provisioning installed it.
+func TestPreparedFloorLauncherSharesValidationAndExecutionInterpreter(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprint("pending=", pending), func(t *testing.T) {
+			e, store := floorLauncherHome(t, "thing", "22.19")
+			e.Vars[ProgramCapturesEnv] = MarshalProgramCaptures(map[string]ProgramCaptureDelivery{
+				"thing": {Declared: "thing-pkg", Compatibility: strings.Repeat("ab", 32), Platform: runtime.GOOS + "/" + runtime.GOARCH, Runtime: "{}", NodeFloor: "22.19"},
+			})
+			var node string
+			if !pending {
+				node = installFakeNode(t, store, "22.19.0")
+			}
+			if err := GenerateAgentLaunchers(e); err != nil {
+				t.Fatal(err)
+			}
+			if pending {
+				node = installFakeNode(t, store, "22.19.0")
+				if err := RegenerateFloorLaunchers(e.FloorPendingDir(), e.LaunchDir(), []string{"thing"}, io.Discard); err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw, err := os.ReadFile(filepath.Join(e.LaunchDir(), "thing"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(raw)
+			if strings.Contains(text, "__YOLO_EXEC_PREFIX_") {
+				t.Fatal("prepared validation retained an unresolved render token")
+			}
+			if got := strings.Count(text, "--node-path="+shquote.Quote(node)); got != 2 {
+				t.Fatalf("validation and materialization must both name %s: found %d", node, got)
+			}
+			for _, line := range execLinesOf(text) {
+				if !strings.Contains(line, "exec "+shquote.Quote(node)+" \"$REAL_BIN\"") {
+					t.Fatalf("execution and validation differ: %s", line)
+				}
+			}
+		})
+	}
 }

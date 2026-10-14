@@ -15,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
 // capturematerialize.go is `yolo internal capture-materialize` — the IN-JAIL half of
@@ -157,8 +158,12 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			return 1
 		}
 		actual, err := observeNPMCaptureRuntime(context.Background(), a.home, node)
-		if err != nil || actual != expected {
-			fmt.Fprintln(errw, "prepared runtime differs from this consumer — use the supported installer route or retry a fresh launch")
+		if err != nil {
+			fmt.Fprintf(errw, "prepared runtime observation failed (node=%q): %s — retry a fresh launch\n", node, termsafe.Visible(err.Error()))
+			return 1
+		}
+		if actual != expected {
+			fmt.Fprintf(errw, "prepared runtime differs from this consumer (fields: %s) — use the supported installer route or retry a fresh launch\n", strings.Join(npmCaptureRuntimeDifferences(expected, actual), ", "))
 			return 1
 		}
 	}

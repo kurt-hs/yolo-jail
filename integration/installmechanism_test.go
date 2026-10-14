@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,8 @@ func TestPinnedNpmProgramInstallsTheDeclaredVersion(t *testing.T) {
 		pinnedNpmBin + ` mechanism`,
 		`echo "=== VERSION ==="`,
 		`jq -r .version "$NPM_CONFIG_PREFIX/lib/node_modules/` + pinnedNpmBin + `/package.json"`,
+		`echo "=== PREPARED ==="`,
+		`cat "$HOME/.cache/yolo-program-captures/` + pinnedNpmBin + `"`,
 	}, "; ")
 
 	r := runYolo(t, dir, script)
@@ -103,9 +106,15 @@ func TestPinnedNpmProgramInstallsTheDeclaredVersion(t *testing.T) {
 	if got := section(r.stdout, "=== RUN ===", "=== VERSION ==="); !strings.Contains(got, "mechanism") {
 		t.Errorf("the installed program did not run: %q", got)
 	}
-	if got := strings.TrimSpace(section(r.stdout, "=== VERSION ===", "")); got != pinnedNpmVersion {
+	if got := strings.TrimSpace(section(r.stdout, "=== VERSION ===", "=== PREPARED ===")); got != pinnedNpmVersion {
 		t.Errorf("installed version = %q, want exactly %q — the DECLARATION must choose the "+
 			"bytes, not the registry's `latest` dist-tag", got, pinnedNpmVersion)
+	}
+	// This public caller must consume prepared artifacts, not silently pass via
+	// the legacy installer when the preparation or its production render is lost.
+	identity := strings.TrimSpace(section(r.stdout, "=== PREPARED ===", ""))
+	if raw, err := hex.DecodeString(identity); err != nil || len(raw) != 32 {
+		t.Fatalf("public npm consumer did not materialize its exact prepared identity: %q", identity)
 	}
 }
 
