@@ -459,6 +459,10 @@ func TestAFailedBuildBacksOffWhileTheGoodBuildServes(t *testing.T) {
 // child a serving advance runs (forkBuildChild), so this is red if that closure stops handing the
 // child the act's teed writers, as well as if the act stops relaying (PPX-D39).
 func TestABuildJailThatNeverRanRecordsNothing(t *testing.T) {
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here, so the
+	// build runs as the child this test is about.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	fx, _, _, r, _, _ := firstAdvance(t)
 	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	fx.rc, fx.ran, fx.said = 125, false, "Error: the fixture's runtime refused the container"
