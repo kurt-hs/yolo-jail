@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // argsFor builds the container argv for every ENABLED loophole module under root.
@@ -773,3 +774,102 @@ func sortedCopy(in []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+func TestCurrentSettingsDoctorSubstitutesOnlyDeclaredSettingsToken(t *testing.T) {
+	unsetJail(t)
+	root := redirectState(t)
+	const name = "doctor-argv"
+	stateDir := filepath.Join(root, name)
+	stable := filepath.Join(stateDir, SettingsFileName)
+	baseline := stable + ".backup"
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stableBefore := []byte("last-launch settings\n")
+	baselineBefore := []byte("persistent baseline\n")
+	if err := os.WriteFile(stable, stableBefore, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(baseline, baselineBefore, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := filepath.Join(t.TempDir(), "argv.txt")
+	settingsSeen := filepath.Join(t.TempDir(), "settings-seen.json")
+	doctor := filepath.Join(t.TempDir(), "fake-doctor")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + shellQuote(capture) + "\n" +
+		"cat \"$2\" > " + shellQuote(settingsSeen) + "\n"
+	if err := os.WriteFile(doctor, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	module := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(module, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeManifest(t, module, map[string]any{
+		"name": name, "transport": "none", "lifecycle": "external",
+		"settings": map[string]any{"value": map[string]any{"type": "string", "default": "manifest-default"}},
+		"doctor_cmd": []string{doctor, "--settings", "{settings}", "--settings-embedded", "prefix:{settings}/suffix",
+			"--baseline", "{state}/settings.json.backup", "--literal", stable, "--embedded", "prefix:" + stable + "/suffix"},
+	})
+	lp, err := LoadLoophole(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lp.Source = SourceConfig // The fixture supplies its own authority; no real pack is discovered.
+	frozen, _, err := FrozenSettingsBytes(lp, supplied("value", "current profile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDoctorCmd := append([]string(nil), lp.DoctorCmd...)
+	set := SetOf([]*Loophole{lp})
+	results := set.RunDoctorChecksWithSettings([]*Loophole{lp}, 5*time.Second, map[string][]byte{name: frozen})
+	if len(results) != 1 || results[0].RC == nil || *results[0].RC != 0 {
+		t.Fatalf("doctor result = %+v", results)
+	}
+
+	argvBytes, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := strings.Split(strings.TrimSuffix(string(argvBytes), "\n"), "\n")
+	if len(argv) != 10 {
+		t.Fatalf("captured argv = %#v, want 10 arguments", argv)
+	}
+	if argv[0] != "--settings" || filepath.Dir(argv[1]) != stateDir || !strings.HasPrefix(filepath.Base(argv[1]), "settings-"+SettingsFileName+"-") {
+		t.Errorf("declared {settings} did not name its private snapshot: %#v", argv[:2])
+	}
+	if argv[2] != "--settings-embedded" || argv[3] != "prefix:"+argv[1]+"/suffix" {
+		t.Errorf("embedded declared {settings} did not name its private snapshot: %#v", argv[2:4])
+	}
+	if argv[4] != "--baseline" || argv[5] != baseline {
+		t.Errorf("{state}-derived baseline changed: got %#v, want --baseline %q", argv[4:6], baseline)
+	}
+	if argv[6] != "--literal" || argv[7] != stable {
+		t.Errorf("literal settings path changed: got %#v, want --literal %q", argv[6:8], stable)
+	}
+	if argv[8] != "--embedded" || argv[9] != "prefix:"+stable+"/suffix" {
+		t.Errorf("embedded literal settings path changed: %#v", argv[8:])
+	}
+	if !reflect.DeepEqual(lp.DoctorCmd, originalDoctorCmd) {
+		t.Errorf("runner mutated the loaded doctor command: got %#v, want %#v", lp.DoctorCmd, originalDoctorCmd)
+	}
+	settingsAfter, err := os.ReadFile(settingsSeen)
+	if err != nil || !reflect.DeepEqual(settingsAfter, frozen) {
+		t.Errorf("doctor read settings %q, err=%v; want current frozen bytes %q", settingsAfter, err, frozen)
+	}
+	stableAfter, stableErr := os.ReadFile(stable)
+	baselineAfter, baselineErr := os.ReadFile(baseline)
+	if stableErr != nil || !reflect.DeepEqual(stableAfter, stableBefore) {
+		t.Errorf("persistent settings changed: %q, err=%v", stableAfter, stableErr)
+	}
+	if baselineErr != nil || !reflect.DeepEqual(baselineAfter, baselineBefore) {
+		t.Errorf("persistent baseline changed: %q, err=%v", baselineAfter, baselineErr)
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil || len(entries) != 2 {
+		t.Errorf("doctor snapshot was not cleaned up: entries=%v err=%v", entries, err)
+	}
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
