@@ -159,7 +159,7 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			return 1
 		}
 		if a.nodeFloor == "" && a.nodePath != "" && !preparedNodeHasSameFilePATHBinding(node) {
-			fmt.Fprintln(errw, "prepared Node cannot be bound to PATH — select an absolute Node path in a directory without ':' whose node is the same executable, then retry a fresh launch")
+			fmt.Fprintln(errw, "prepared Node cannot be bound to PATH — select a canonical absolute Node path in a directory without ':' whose node is the same executable, then retry a fresh launch")
 			return 1
 		}
 		actual, err := observeNPMCaptureRuntime(context.Background(), a.home, node)
@@ -241,8 +241,10 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 // preparedNodeHasSameFilePATHBinding checks the no-floor launcher's PATH binding.
 // A renamed interpreter is valid when its directory's executable node is the
 // same file, including symlinks and hardlinks; matching path strings is not enough.
+// Reject lexical changes: filepath.Dir must not erase symlink/.. components
+// that the launcher's parent substring would retain.
 func preparedNodeHasSameFilePATHBinding(node string) bool {
-	if !filepath.IsAbs(node) || strings.ContainsRune(filepath.Dir(node), os.PathListSeparator) {
+	if !filepath.IsAbs(node) || filepath.Clean(node) != node || strings.ContainsRune(filepath.Dir(node), os.PathListSeparator) {
 		return false
 	}
 	selected, err := os.Stat(node)

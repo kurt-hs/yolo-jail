@@ -244,7 +244,7 @@ func TestSelectedNPMGeneratedConsumerRequiresSameFilePATHNode(t *testing.T) {
 	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR"} {
 		t.Setenv(key, t.TempDir())
 	}
-	for _, binding := range []string{"different-sibling", "relative", "colon-directory", "renamed-symlink", "renamed-hardlink"} {
+	for _, binding := range []string{"different-sibling", "relative", "colon-directory", "symlink-dotdot", "renamed-symlink", "renamed-hardlink"} {
 		t.Run(binding, func(t *testing.T) {
 			f := newSelectedNPMFixture(t)
 			record := f.advance(t, false)
@@ -291,9 +291,37 @@ func TestSelectedNPMGeneratedConsumerRequiresSameFilePATHNode(t *testing.T) {
 					if binding == "relative" {
 						selection = filepath.Join("runtime", "node-real")
 					}
+					if binding == "symlink-dotdot" {
+						checked := filepath.Join(home, "checked")
+						if err := os.MkdirAll(checked, 0o755); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(filepath.Join(dir, "sub"), filepath.Join(checked, "link")); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Link(physical, filepath.Join(checked, "node")); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(filepath.Join(f.tools, "npm"), filepath.Join(checked, "npm")); err != nil {
+							t.Fatal(err)
+						}
+						// Keep the claim raw: Join would erase the symlink/.. contradiction.
+						selection = checked + "/link/../node-real"
+						selected, err := os.Stat(selection)
+						if err != nil {
+							t.Fatal(err)
+						}
+						sibling, err := os.Stat(filepath.Join(filepath.Dir(selection), "node"))
+						if err != nil || !os.SameFile(selected, sibling) {
+							t.Fatal("fixture does not satisfy the old cleaned-directory check")
+						}
+					}
 					selectors := t.TempDir()
 					script := "#!/bin/sh\nexec " + shquote.Quote(physical) + " \"$@\"\n"
-					if binding == "relative" {
+					if binding == "relative" || binding == "symlink-dotdot" {
 						script = "#!/bin/sh\nprintf '%s\\n' " + shquote.Quote(selection) + "\n"
 					}
 					if err := os.WriteFile(filepath.Join(selectors, "node"), []byte(script), 0o755); err != nil {
@@ -322,6 +350,9 @@ func TestSelectedNPMGeneratedConsumerRequiresSameFilePATHNode(t *testing.T) {
 						if err == nil || !strings.Contains(string(out), "prepared Node cannot be bound to PATH") || !strings.Contains(string(out), "retry a fresh launch") {
 							t.Errorf("unsafe binding was not refused with a next step: %v\n%s", err, out)
 						}
+						if binding == "symlink-dotdot" && !strings.Contains(string(out), "canonical absolute Node path") {
+							t.Errorf("noncanonical selection lacks its repair step: %s", out)
+						}
 						after, _ := os.ReadFile(marker)
 						if string(before) != string(after) {
 							t.Errorf("refused binding changed materialization marker: %s", out)
@@ -345,5 +376,39 @@ func TestSelectedNPMGeneratedConsumerRequiresSameFilePATHNode(t *testing.T) {
 				t.Fatalf("consumer called installer: %s", counts)
 			}
 		})
+	}
+}
+
+// Root is read-only here: execute only the PATH-binding expression extracted
+// from the actual generator, not a /node runtime or a mocked materializer.
+func TestSelectedNPMGeneratedRootDirectoryExpressionMatchesCheckedParent(t *testing.T) {
+	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR"} {
+		t.Setenv(key, t.TempDir())
+	}
+	f := newSelectedNPMFixture(t)
+	record := f.advance(t, false)
+	_, e := selectedNPMConsumer(t, f, record)
+	launcher, err := os.ReadFile(filepath.Join(e.LaunchDir(), "probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(launcher)
+	end := strings.Index(text, "_CAPTURE_ID=")
+	if end < 0 {
+		t.Fatal("generated capture binding is absent")
+	}
+	boundary := "\nfi\n"
+	start := strings.LastIndex(text[:end], boundary)
+	if start < 0 {
+		t.Fatal("generated validation boundary is absent")
+	}
+	binding := text[start+len(boundary) : end]
+	cmd := exec.Command("/bin/bash", "-c", "_CAPTURE_NODE=/node; PATH=/bin:/usr/bin;\n"+binding+"printf '%s\\n' \"$PATH\"")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generated root binding: %v\n%s", err, out)
+	}
+	if string(out) != "/:/bin:/usr/bin\n" {
+		t.Fatalf("root binding differs from checked parent /: %q", out)
 	}
 }
