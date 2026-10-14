@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -594,7 +595,9 @@ func buildAuditedSealedCandidate(t *testing.T, ctx context.Context, root, owned 
 	git("diff", "--quiet", "HEAD", "--", ".")
 	git("ls-files", "--error-unmatch", "internal/cli/programcapturesealedintegration_test.go")
 	exe := filepath.Join(owned, "candidate-yolo")
-	cmd := exec.CommandContext(ctx, "go", "build", "-mod=vendor", "-buildvcs=true", "-o", exe, "./cmd/yolo")
+	// Existing yolo source-build stamps establish the owned candidate. Go 1.26
+	// overlooks worktree .git FILES; its outer-repo VCS revision is only logged.
+	cmd := exec.CommandContext(ctx, "go", "build", "-mod=vendor", "-buildvcs=true", "-ldflags="+auditedSealedBuildFlags(head, root), "-o", exe, "./cmd/yolo")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("owned candidate build: %v\n%s", err, out)
@@ -603,20 +606,30 @@ func buildAuditedSealedCandidate(t *testing.T, ctx context.Context, root, owned 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := auditSealedBuildInfo(info, head); err != nil {
+	if err := auditSealedBuildInfo(info, head, root); err != nil {
 		t.Fatal(err)
 	}
 	git("diff", "--quiet", "HEAD", "--", ".")
 	t.Logf("owned CLI source=%s commit=%s path=%s", root, head, exe)
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			t.Logf("Go observed vcs.revision=%s (not candidate identity)", setting.Value)
+		}
+	}
 	return exe
 }
 
-func auditSealedBuildInfo(info *debug.BuildInfo, head string) error {
+func auditedSealedBuildFlags(head, root string) string {
+	const prefix = "github.com/mschulkind-oss/yolo-jail/internal/version."
+	return "-X=" + prefix + "GitCommit=" + head + " " + strconv.Quote("-X="+prefix+"SourceDir="+root)
+}
+
+func auditSealedBuildInfo(info *debug.BuildInfo, head, root string) error {
 	settings := map[string]string{}
 	for _, s := range info.Settings {
 		settings[s.Key] = s.Value
 	}
-	if info.Path != "github.com/mschulkind-oss/yolo-jail/cmd/yolo" || settings["vcs"] != "git" || settings["vcs.revision"] != head || head == "" {
+	if info.Path != "github.com/mschulkind-oss/yolo-jail/cmd/yolo" || info.Main.Path != "github.com/mschulkind-oss/yolo-jail" || settings["vcs"] != "git" || settings["-ldflags"] != auditedSealedBuildFlags(head, root) || head == "" || !filepath.IsAbs(root) {
 		return fmt.Errorf("owned CLI build/VCS identity differs from committed candidate")
 	}
 	// vcs.modified may describe inherited untracked node_modules. The owned build
@@ -644,15 +657,18 @@ func TestAuditedRegistryConsumerRefusesLegacyBeforeExecution(t *testing.T) {
 }
 
 func TestAuditedRegistryBuildIdentityRejectsUnrelatedCLI(t *testing.T) {
-	good := debug.BuildInfo{Path: "github.com/mschulkind-oss/yolo-jail/cmd/yolo", Settings: []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "candidate"}, {Key: "vcs.modified", Value: "true"}}}
-	if err := auditSealedBuildInfo(&good, "candidate"); err != nil {
+	good := debug.BuildInfo{Path: "github.com/mschulkind-oss/yolo-jail/cmd/yolo", Main: debug.Module{Path: "github.com/mschulkind-oss/yolo-jail"}, Settings: []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "outer-repo-observation"}, {Key: "-ldflags", Value: auditedSealedBuildFlags("candidate", "/owned/source")}, {Key: "vcs.modified", Value: "true"}}}
+	if err := auditSealedBuildInfo(&good, "candidate", "/owned/source"); err != nil {
 		t.Fatal(err)
 	}
-	if err := auditSealedBuildInfo(&good, "other"); err == nil {
+	if err := auditSealedBuildInfo(&good, "other", "/owned/source"); err == nil {
 		t.Fatal("accepted different source revision")
 	}
+	if err := auditSealedBuildInfo(&good, "candidate", "/other/source"); err == nil {
+		t.Fatal("accepted different source directory")
+	}
 	good.Path = "unrelated"
-	if err := auditSealedBuildInfo(&good, "candidate"); err == nil {
+	if err := auditSealedBuildInfo(&good, "candidate", "/owned/source"); err == nil {
 		t.Fatal("accepted unrelated executable")
 	}
 }
