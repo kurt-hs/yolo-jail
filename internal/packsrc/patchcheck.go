@@ -186,7 +186,12 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
 			// stamp goes back to what it was and the record says nothing of this call; the caller
-			// skips the key (§6.2 rule 5).
+			// skips the key (§6.2 rule 5). The start entry minted above is intentionally left
+			// behind: the mint must predate the transport, so a request registered while this
+			// check runs takes a boundary past it and the in-flight check can never satisfy
+			// that later request (TestFreshCheckBoundaryExcludesInFlightAndSharesFollowup).
+			// The orphan burns one sequence number and can never land in any record's Fresh,
+			// so WithFreshAuthority can never accept it — authority churn, fail-closed.
 			r.CheckedAt, res.Ran, res.Err, res.Record = stamp, false, found.lockHeld, r
 			return true, nil
 		}
