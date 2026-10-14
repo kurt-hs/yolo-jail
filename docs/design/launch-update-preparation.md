@@ -2,12 +2,12 @@
 title: "Prepare between launches; materialize only at a launch"
 status: accepted
 stage: DECIDED
-next: "Build scheduler/freshness slices; refine capture handoff against the committed selected install-only contract"
+next: "Finish capture integration and combined acceptance against the selected preparation and demand contracts"
 ---
 
 # Prepare between launches; materialize only at a launch
 
-**Status:** 2026-10-13. Source reviewed at `99f36da2e`; this extension is not implemented.
+**Status:** 2026-10-13. Source scheduling, explicit freshness and user-resolved shared demand are implemented in the candidate; capture integration and combined acceptance remain.
 
 > **In short.** Environment preparation should continue between launches, using the same admitted-build pipeline. A launch chooses a generation; background work never changes the environment already running.
 
@@ -83,6 +83,10 @@ No OS login service, root daemon or hidden package installation is introduced.
 2. The worker resolves declarations through the same **user-authorized** pack resolver as today's detached act.
    Never trust a disposable staged tree, workspace-modified manifest or paths received as executable authority.
    Workspace-only keys the user resolver cannot authorize remain foreground-only with an inspectable unresolved reason.
+   Explicit freshness still uses their existing scoped foreground check/build/admission route; it is not
+   refused merely because detachment is unauthorized. These keys have no cross-process shared ownership
+   or producer-exit survival. Cancellation refuses freshness even when an old good build exists; a
+   detached worker never executes their staged or workspace manifests.
 3. User-selected `next-launch` packs seed the set; a launch can add an authorized key/platform actually needed by that launch.
    Duplicate keys coalesce. No recursive scan of workspaces, all shipped packs or unselected programs.
 4. Reread user policy before each dispatch and before admission. Removed/off selections cancel automatic
@@ -160,7 +164,13 @@ An unsupported/unavailable runtime leaves due keys deferred with a reason, not a
 
 No scheduler global lock is held during a keyed act. Preserve build → record → mirror ordering;
 never wait on an earlier lock while holding a later one. Status reads snapshots without build locks.
-Joining uses request/outcome identities, not a consumed one-time notice or a PID alone.
+Joining uses request/outcome identities, not a consumed one-time notice or a PID alone. For
+user-resolved declarations, each requester holds its own kernel-released demand lease; the detached
+host worker owns production independently of any requester. A scheduler act attaches demand through
+the same route. Requester cancellation or process exit detaches only that lease; positively witnessed
+zero demand cancels the child and confirms the original backend's teardown before publication.
+Unreadable lease state is not absence and cannot authorize admission. These shared guarantees do not
+apply to the foreground-only declaration class above.
 
 ## Explicit update and launch materialization
 

@@ -270,6 +270,7 @@ type backgroundArgs struct {
 	runtime, platform   string
 	keys                []string
 	schedulerGeneration uint64
+	sharedDemand        bool
 }
 
 type keyList []string
@@ -284,6 +285,7 @@ func parseBackgroundArgs(args []string, errw io.Writer) (backgroundArgs, error) 
 	var keys keyList
 	fs.StringVar(&a.runtime, "runtime", "", "the jail runtime the keys are built for")
 	fs.StringVar(&a.platform, "platform", "", "the jail platform the keys are built for (linux/<arch>)")
+	fs.BoolVar(&a.sharedDemand, "shared-demand", false, "run owned production for attached requester leases")
 	fs.Var(&keys, "key", "a built tree's <pack>/<name> (repeated)")
 	if err := fs.Parse(args); err != nil {
 		return a, err
@@ -292,7 +294,7 @@ func parseBackgroundArgs(args []string, errw io.Writer) (backgroundArgs, error) 
 	switch {
 	case a.runtime == "" || a.platform == "" || len(a.keys) == 0:
 		return a, errors.New("--runtime, --platform and at least one --key are required")
-	case !run.BackgroundBuildsOn(a.runtime):
+	case !a.sharedDemand && !run.BackgroundBuildsOn(a.runtime):
 		return a, fmt.Errorf("%s runs no background builds in this yolo — use a fresh at-launch update or `yolo capture <pack>/<name>`", runtimeName(a.runtime))
 	case fs.NArg() > 0:
 		return a, fmt.Errorf("unexpected argument %q", fs.Arg(0))
@@ -313,6 +315,9 @@ func runBackgroundAdvance(args []string) int {
 		fmt.Fprintf(os.Stderr, "yolo internal %s: %v\nusage: yolo internal %s --runtime=<runtime> "+
 			"--platform=linux/<arch> --key=<pack>/<name> [--key=…]\n", backgroundAdvanceVerb, err, backgroundAdvanceVerb)
 		return 2
+	}
+	if a.sharedDemand {
+		return runSharedPreparationCommand(a, os.Stdout)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), backgroundSignals...)
 	defer stop()
@@ -389,6 +394,8 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 			}
 			opts := lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true, background: true})
 			if a.schedulerGeneration != 0 {
+				opts.sharedAutomatic = true
+				opts.sharedSubscriptionGeneration = a.schedulerGeneration
 				opts.admitGuard = preparationAdmissionGuardUnder(ctx, f.Key(), a.runtime, a.platform, a.schedulerGeneration)
 			}
 			res := treeAdvance(f, opts)
