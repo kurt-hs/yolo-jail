@@ -126,9 +126,9 @@ func TestALaunchWhoseProgramCannotInstallIsRefused(t *testing.T) {
 
 	r := runYolo(t, dir, `echo TARGET-$((40+2))`, withReadiness())
 	all := r.stdout + r.stderr
-	if r.rc != provision.RefusedStatus {
-		t.Errorf("rc = %d, want provision.RefusedStatus (%d) carried through the container's exit\n%s",
-			r.rc, provision.RefusedStatus, all)
+	if r.rc != provision.StageRefusedStatus {
+		t.Errorf("rc = %d, want provision.StageRefusedStatus (%d) carried through the container's exit\n%s",
+			r.rc, provision.StageRefusedStatus, all)
 	}
 	if strings.Contains(all, "TARGET-42") {
 		t.Errorf("the command ran after the refusal:\n%s", all)
