@@ -446,7 +446,9 @@ func containsSubstr(args []string, sub string) bool {
 // came from, which no manifest declares.
 func TestSubsetManifestProjectsEveryField(t *testing.T) {
 	notInTheManifest := map[string]string{
-		"Path":      "the module dir — a fact about where the record was found",
+		"Path": "the module dir — a fact about where the record was found",
+		"doctorCmdDecl": "the original command tokens retained only to re-resolve settings " +
+			"without rewriting literals",
 		"Source":    "bundled/pack/user/config — the caller's label, never a manifest key",
 		"SkewNotes": "the tolerant read's report, not a declaration",
 		"SupersededBy": "which selected packs retired this loophole's capabilities — a fact " +
