@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ import (
 type doorwaysSeen struct {
 	plans   []*launchservice.Plan
 	inputs  []map[string]string
-	stopped int
+	stopped atomic.Int32
 }
 
 // only is the one doorway named service that started, and its input; fatal when it is not
@@ -98,20 +99,20 @@ func codexNativeLaunch(t *testing.T) (*Options, *bytes.Buffer, *nativeLaunch) {
 func TestTheMacosUserArmOpensTheCodexDoorwayAndStopsItAfterTheCommand(t *testing.T) {
 	o, stderr, seen := codexNativeLaunch(t)
 	doors := observeDoorways(t)
-	stoppedBeforeRun := -1
+	stoppedBeforeRun := int32(-1)
 	run := o.MacosUserRun
 	o.MacosUserRun = func(cfg *jsonx.OrderedMap, ws string, a, b []string, c, d string, h macosuser.HomeOverlay,
 		ctx macosuser.HostContext, dry bool, env *jsonx.OrderedMap, bt []packload.BlockedTool, jd macosuser.JailDaemons) int {
-		stoppedBeforeRun = doors.stopped
+		stoppedBeforeRun = doors.stopped.Load()
 		return run(cfg, ws, a, b, c, d, h, ctx, dry, env, bt, jd)
 	}
 	if rc := Run(*o); rc != 0 {
 		t.Fatalf("Run() = %d\n%s", rc, stderr.String())
 	}
 	plan, _ := doors.only(t, "openai-auth-broker")
-	if stoppedBeforeRun != 0 || doors.stopped != 1 {
+	if stoppedBeforeRun != 0 || doors.stopped.Load() != 1 {
 		t.Errorf("the doorway was stopped %d times before the command ran and %d after; want 0 and 1",
-			stoppedBeforeRun, doors.stopped)
+			stoppedBeforeRun, doors.stopped.Load())
 	}
 	url, _ := seen.env.Get("CODEX_REFRESH_TOKEN_URL_OVERRIDE")
 	if url != "http://"+plan.Addresses()[0]+"/oauth/token" {
@@ -171,7 +172,8 @@ func TestAMacosUserDoorwayThatCannotStartStopsTheOnesAlreadyOpen(t *testing.T) {
 	cfg := `{"packs": ["claude", "bedrock", "aws-auth", "openai-auth"]` + bedrockRegionMember +
 		`, "loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "yolo-unit", "unnarrowed": true}}}}`
 	o, stderr, seen := overrideNativeLaunch(t, cfg, shellWith(nil))
-	stopped, starts := 0, 0
+	var stopped atomic.Int32
+	starts := 0
 	var first string
 	orig := startMacosUserDoorway
 	startMacosUserDoorway = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
@@ -191,9 +193,9 @@ func TestAMacosUserDoorwayThatCannotStartStopsTheOnesAlreadyOpen(t *testing.T) {
 		t.Fatalf("the launch tried %d doorway starts, want 2 (the Codex and the AWS doorway): the "+
 			"premise is gone\n%s", starts, stderr.String())
 	}
-	if stopped != 1 {
+	if stopped.Load() != 1 {
 		t.Errorf("the %q doorway that started was stopped %d times when the next one failed, want 1",
-			first, stopped)
+			first, stopped.Load())
 	}
 }
 

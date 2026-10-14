@@ -13,6 +13,8 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -21,12 +23,38 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// fakeLaunched is a started service the test can see stopped.
-type fakeLaunched struct{ stopped *int }
+// fakeLaunched is a started service the test can see stopped. The in-process keeper calls
+// Stop on another goroutine, so command-side observations must use the atomic count too.
+type fakeLaunched struct{ stopped *atomic.Int32 }
 
-func (f fakeLaunched) Stop()                               { *f.stopped++ }
+func (f fakeLaunched) Stop()                               { f.stopped.Add(1) }
 func (f fakeLaunched) PID() int                            { return 4242 }
 func (f fakeLaunched) Supervise(string, io.Writer, string) {}
+
+func TestFakeLaunchedStopIsSafeWhileTheCommandObservesIt(t *testing.T) {
+	var stopped atomic.Int32
+	service := fakeLaunched{&stopped}
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for range 8 {
+		workers.Go(func() {
+			<-start
+			for range 100 {
+				service.Stop()
+			}
+		})
+	}
+	close(start)
+	for range 100 {
+		if got := stopped.Load(); got < 0 || got > 800 {
+			t.Errorf("stop count = %d, want between 0 and 800", got)
+		}
+	}
+	workers.Wait()
+	if stopped.Load() != 800 {
+		t.Errorf("stopped %d times, want 800", stopped.Load())
+	}
+}
 
 // The channel composes claude on cerebras against the bridge's host half on a port this launch
 // picked, with the launch's caller token as claude's credential, where it used to refuse: macos-user
@@ -72,8 +100,8 @@ func TestTheMacosUserArmStartsTheServiceAndStopsItAfterTheCommand(t *testing.T) 
 		`"env_sources": [{"CEREBRAS_API_KEY": "csk-test"}]}`, shellWith(nil))
 	o.ProfileName = "cerebras"
 	var started []*launchservice.Plan
-	stopped := 0
-	stoppedBeforeRun := -1
+	var stopped atomic.Int32
+	stoppedBeforeRun := int32(-1)
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, env map[string]string) (launchedService, string, error) {
 		started = append(started, p)
@@ -86,7 +114,7 @@ func TestTheMacosUserArmStartsTheServiceAndStopsItAfterTheCommand(t *testing.T) 
 	run := o.MacosUserRun
 	o.MacosUserRun = func(cfg *jsonx.OrderedMap, ws string, a, b []string, c, d string, h macosuser.HomeOverlay,
 		ctx macosuser.HostContext, dry bool, env *jsonx.OrderedMap, bt []packload.BlockedTool, jd macosuser.JailDaemons) int {
-		stoppedBeforeRun = stopped
+		stoppedBeforeRun = stopped.Load()
 		return run(cfg, ws, a, b, c, d, h, ctx, dry, env, bt, jd)
 	}
 	if rc := Run(*o); rc != 0 {
@@ -95,8 +123,8 @@ func TestTheMacosUserArmStartsTheServiceAndStopsItAfterTheCommand(t *testing.T) 
 	if len(started) != 1 || started[0].Service != "wire-bridge" {
 		t.Fatalf("started %v, want the wire bridge", started)
 	}
-	if stoppedBeforeRun != 0 || stopped != 1 {
-		t.Errorf("stopped %d times before the command ran and %d after; want 0 and 1", stoppedBeforeRun, stopped)
+	if stoppedBeforeRun != 0 || stopped.Load() != 1 {
+		t.Errorf("stopped %d times before the command ran and %d after; want 0 and 1", stoppedBeforeRun, stopped.Load())
 	}
 	base, _ := seen.env.Get("ANTHROPIC_BASE_URL")
 	u, _ := url.Parse(base.(string))

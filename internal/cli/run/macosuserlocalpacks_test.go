@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -265,7 +266,7 @@ func TestMacosUserStartsAHostOnlyWorkerOutsideTheSandbox(t *testing.T) {
 		"host_daemon": {"cmd": ["yolo", "internal", "daemon", "acme-worker"]}}]}`)
 	writeUserConfigJSON(t, home, `{"packs": []}`)
 	var started []*launchservice.Plan
-	stopped := 0
+	var stopped atomic.Int32
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
 		started = append(started, p)
@@ -281,8 +282,8 @@ func TestMacosUserStartsAHostOnlyWorkerOutsideTheSandbox(t *testing.T) {
 		strings.Join(started[0].Cmd, " ") != "yolo internal daemon acme-worker" {
 		t.Fatalf("started %+v, want the acme-worker's host half with no address\n%s", started, got.out)
 	}
-	if stopped != 1 {
-		t.Errorf("the worker was stopped %d times, want once, after the command", stopped)
+	if stopped.Load() != 1 {
+		t.Errorf("the worker was stopped %d times, want once, after the command", stopped.Load())
 	}
 	named := strings.Index(got.out, `This launch runs pack code on your machine, outside the sandbox: the `+
 		`"acme-worker" service's host half from pack "local", a local pack yolo does not ship: yolo internal daemon acme-worker`)
@@ -346,10 +347,10 @@ func TestMacosUserNamesAFetchedHostOnlyWorkerItDoesNotStart(t *testing.T) {
 
 // recordWorkerStarts stubs the launch-owned service start for the test, recording each plan, and
 // counts the stops.
-func recordWorkerStarts(t *testing.T) (*[]*launchservice.Plan, *int) {
+func recordWorkerStarts(t *testing.T) (*[]*launchservice.Plan, *atomic.Int32) {
 	t.Helper()
 	var started []*launchservice.Plan
-	stopped := 0
+	var stopped atomic.Int32
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
 		started = append(started, p)
