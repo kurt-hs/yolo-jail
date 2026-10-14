@@ -152,7 +152,8 @@ func TestPreparationPublicRegistrationRetainsOldGenerationWithoutAdmission(t *te
 		t.Fatalf("old declaration admitted: %v committed=%v", err, committed)
 	}
 	var out bytes.Buffer
-	if rc := printPreparationStatus(&out, io.Discard, false, f.Key()); rc != 0 || !strings.Contains(out.String(), "retained diagnostic generation") || !strings.Contains(out.String(), "previous declaration, not current admission") || !strings.Contains(out.String(), "original failure") {
-		t.Fatalf("public status misrepresented old diagnostics: rc=%d %s", rc, out.String())
+	statusLine := f.Key() + " [" + req.Runtime + "/" + req.Platform + "]"
+	if rc := printPreparationStatus(&out, io.Discard, false, ""); rc != 0 || !strings.Contains(out.String(), statusLine) || !strings.Contains(out.String(), "retained diagnostic generation") || !strings.Contains(out.String(), "previous declaration, not current admission") || !strings.Contains(out.String(), "original failure") {
+		t.Fatalf("public all-record status misrepresented fixture diagnostics %s: rc=%d %s", statusLine, rc, out.String())
 	}
 }

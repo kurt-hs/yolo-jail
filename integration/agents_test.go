@@ -230,12 +230,18 @@ func TestPackInstallsVersionsAndConfigures(t *testing.T) {
 // macos-user nightly; docs/reference/agent-install-in-ci.md#OQ-CI7). One function, so the
 // darwin cell asks exactly the question the Linux cell asks and the two cannot drift.
 //
-// `<bin> --version` exercises the lazy launcher's install path, the stamp proves the
-// post-install step ran, the marker grep proves the pack's surface rendered, and
-// projectDirsProbe greps the installed bundle for the project skills dirs the pack declares.
+// `<bin> --version` exercises the lazy launcher. Prepared installs must prove the exact identity
+// the launch decided, plus its installed spec, without consulting the legacy install stamp; only
+// a legacy installer is required to write that stamp. The remaining checks pin the rendered
+// marker and declared project skills dirs.
 func packInstallProbe(t *testing.T, tc packCase) string {
 	t.Helper()
 	stamp := "$HOME/.cache/yolo-agent-stamps/" + tc.binary + ".stamp"
+	specFile := "$HOME/.cache/yolo-agent-stamps/" + tc.binary + ".spec"
+	captureMarker := "$HOME/.cache/yolo-program-captures/" + tc.binary
+	in := shippedProgram(t, tc.pack, tc.binary)
+	npmName, npmVersion := packdecl.SplitNpmSpec(in.Package)
+	expectedSpec := packdecl.NpmInstallSpec(npmName, npmVersion)
 	// A program declaring a PRE-LAUNCH REFRESH (packdecl.Refresh; pi's is
 	// `update --extensions`) has its launcher run the REAL vendor binary with that
 	// argv before the exec whenever the refresh's stamp is due — which on a fresh
@@ -248,10 +254,31 @@ func packInstallProbe(t *testing.T, tc packCase) string {
 	if refreshStamp := packRefreshStamp(tc); refreshStamp != "" {
 		touchRefresh = fmt.Sprintf("mkdir -p \"$(dirname %s)\" && touch %s && ", refreshStamp, refreshStamp)
 	}
-	return fmt.Sprintf(
-		"%s%s%s %s && test -f %s && grep -q '%s' \"$HOME/%s\"",
-		touchRefresh, seedRefreshSeen(t, tc.pack, tc.binary), tc.binary, tc.versionArg, stamp, tc.marker, tc.configRel,
-	) + projectDirsProbe(t, tc.pack, tc.binary)
+	capturePrefix := `"` + tc.binary + `":{"declared":"` + in.Package + `","compatibility":"`
+	prepared := fmt.Sprintf(`_capture_vector=${YOLO_PROGRAM_CAPTURES:-}
+[ -n "$_capture_vector" ] || _capture_vector='{}'
+_capture_prefix=%s
+case "$_capture_vector" in
+  *"$_capture_prefix"*) _capture=${_capture_vector#*"$_capture_prefix"}; _capture=${_capture%%%%\"*} ;;
+  *) _capture= ;;
+esac
+if [ -n "$_capture" ]; then
+  printf '%%s' "$_capture" | grep -Eq '^[a-f0-9]{64}$' || { echo 'PROBE_FAIL: launch capture identity is malformed' >&2; exit 1; }
+  [ -f "%s" ] || { echo 'PROBE_FAIL: prepared capture marker is missing' >&2; exit 1; }
+  [ "$(cat "%s")" = "$_capture" ] || { echo 'PROBE_FAIL: prepared capture marker differs from launch identity' >&2; exit 1; }
+  [ -f "%s" ] || { echo 'PROBE_FAIL: prepared install spec is missing' >&2; exit 1; }
+  [ "$(cat "%s")" = %s ] || { echo 'PROBE_FAIL: prepared install spec differs from shipped declaration' >&2; exit 1; }
+else
+  [ -f "%s" ] || { echo 'PROBE_FAIL: legacy installer did not write its install stamp' >&2; exit 1; }
+fi`,
+		shquote.Quote(capturePrefix), captureMarker, captureMarker, specFile, specFile,
+		shquote.Quote(expectedSpec), stamp)
+	return fmt.Sprintf(`probe_fail() { echo "PROBE_FAIL: $1" >&2; exit 1; }
+%s%s%s %s || probe_fail 'version command failed'
+%s
+grep -q %s "$HOME/%s" || probe_fail 'rendered config marker is missing'`,
+		touchRefresh, seedRefreshSeen(t, tc.pack, tc.binary), tc.binary, tc.versionArg,
+		prepared, shquote.Quote(tc.marker), tc.configRel) + projectDirsProbe(t, tc.pack, tc.binary)
 }
 
 // packRefreshStamp is the pre-launch refresh's stamp packInstallProbe touches, quoted for the

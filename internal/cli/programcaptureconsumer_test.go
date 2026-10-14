@@ -64,6 +64,18 @@ func TestSelectedNPMGeneratedReadinessConsumesExactArtifactsWithoutInstaller(t *
 	if out := runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv); strings.Contains(out, "1.0.0") {
 		t.Fatal("readiness ran synthetic target")
 	}
+	markerPath := entrypoint.ProgramCaptureMarker(home, "probe")
+	marker, err := os.ReadFile(markerPath)
+	if err != nil || strings.TrimSpace(string(marker)) != record.Identity {
+		t.Fatalf("prepared materialization marker = %q, %v; want exact launch identity %q", marker, err, record.Identity)
+	}
+	spec, err := os.ReadFile(filepath.Join(home, ".cache/yolo-agent-stamps/probe.spec"))
+	if err != nil || strings.TrimSpace(string(spec)) != "probe-pkg@latest" {
+		t.Fatalf("prepared install spec = %q, %v; want exact declared install spec", spec, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cache/yolo-agent-stamps/probe.stamp")); !os.IsNotExist(err) {
+		t.Fatalf("prepared materialization unexpectedly wrote or required legacy stamp: %v", err)
+	}
 	if got := runSelectedConsumer(t, f, home, e, ""); strings.TrimSpace(got) != "1.0.0" {
 		t.Fatalf("target %q", got)
 	}
@@ -83,6 +95,85 @@ func TestSelectedNPMGeneratedReadinessConsumesExactArtifactsWithoutInstaller(t *
 	otherHome, other := selectedNPMConsumer(t, f, next)
 	if got := runSelectedConsumer(t, f, otherHome, other, ""); !strings.HasSuffix(strings.TrimSpace(got), "2.0.0") {
 		t.Fatalf("next launch did not consume new admission: %q", got)
+	}
+}
+
+func TestSelectedNPMPreparedMarkerMismatchRematerializesAndMissingPayloadFails(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	record := f.advance(t, false)
+	home, e := selectedNPMConsumer(t, f, record)
+	runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv)
+	markerPath := entrypoint.ProgramCaptureMarker(home, "probe")
+	markerBefore, err := os.ReadFile(markerPath)
+	if err != nil || strings.TrimSpace(string(markerBefore)) != record.Identity {
+		t.Fatalf("initial prepared marker = %q, %v; want %q", markerBefore, err, record.Identity)
+	}
+	if err := os.WriteFile(markerPath, []byte("stale-generation\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv)
+	markerAfter, err := os.ReadFile(markerPath)
+	if err != nil || strings.TrimSpace(string(markerAfter)) != record.Identity {
+		t.Fatalf("mismatched marker was not repaired to launch identity: %q, %v", markerAfter, err)
+	}
+
+	// A valid marker cannot mask a missing admitted payload: every invocation validates
+	// the exact capture before accepting the installed binary or executing it.
+	captured, err := f.store.Resolve(record.Entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(captured.Root); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(filepath.Join(e.LaunchDir(), "probe"))
+	cmd.Env = append(os.Environ(), "HOME="+home, "NPM_CONFIG_PREFIX="+e.NpmPrefix,
+		"PATH="+f.tools+":"+os.Getenv("PATH"), "YOLO_INSTALL_ONLY=1", "YOLO_PACK_UPDATE=0")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "run `yolo capture probe` to make it") {
+		t.Fatalf("missing prepared payload was accepted or lacked the capture repair step: err=%v\n%s", err, out)
+	}
+	markerAfter, err = os.ReadFile(markerPath)
+	if err != nil || strings.TrimSpace(string(markerAfter)) != record.Identity {
+		t.Fatalf("missing-payload refusal changed the launch marker: %q, %v", markerAfter, err)
+	}
+	counts, _ := os.ReadFile(filepath.Join(f.root, "counts"))
+	if strings.Count(string(counts), "install\n") != 1 || strings.Count(string(counts), "resolve\n") != 1 {
+		t.Fatalf("prepared recovery/refusal contacted mutable installer: %s", counts)
+	}
+}
+
+func TestSelectedNPMGeneratedLegacyConsumerWritesInstallStamp(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	home := t.TempDir()
+	root := t.TempDir()
+	pack := filepath.Join(root, "fixture")
+	if err := os.MkdirAll(pack, 0755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"contributes":[{"kind":"program","bin":"probe","via":"npm","package":"probe-pkg"}]}`
+	if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// No ProgramCapturesEnv: this is the real generated launcher’s ordinary installer
+	// route, so the pack probe’s stamp assertion remains covered by an actual consumer.
+	e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_WORKSPACE": filepath.Join(home, "ws"),
+		"YOLO_PACK_ROOT": root, entrypoint.CapturesDirEnv: f.store.Dir})
+	if err := entrypoint.GenerateAgentLaunchers(e); err != nil {
+		t.Fatal(err)
+	}
+	if out := runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv); strings.Contains(out, "1.0.0") {
+		t.Fatalf("legacy readiness ran target: %s", out)
+	}
+	stamp := filepath.Join(home, ".cache/yolo-agent-stamps/probe.stamp")
+	if _, err := os.Stat(stamp); err != nil {
+		t.Fatalf("legacy installer did not write its actual stamp: %v", err)
+	}
+	if got := strings.TrimSpace(runSelectedConsumer(t, f, home, e, "")); got != "1.0.0" {
+		t.Fatalf("legacy launcher version = %q", got)
+	}
+	if _, err := os.Stat(entrypoint.ProgramCaptureMarker(home, "probe")); !os.IsNotExist(err) {
+		t.Fatalf("legacy consumer unexpectedly wrote a prepared marker: %v", err)
 	}
 }
 

@@ -33,6 +33,7 @@ type selectedNPMFixture struct {
 func init() {
 	if len(os.Args) > 5 && os.Args[1] == "npm-capture-runtime-test" && os.Args[3] == "internal" && os.Args[4] == programCaptureJailVerb {
 		npmCaptureImagePath = filepath.Join(os.Args[2], "image")
+		npmCaptureNode = npmCaptureNodeWithSyntheticTrust
 		captureRunPipeline = func(o run.Options) int {
 			// Actual seal caller and owned child; only the outer container is substituted.
 			if !o.Sealed || o.OnlyPacks == nil || len(o.OnlyPacks) != 0 || !o.NeverAttach || !o.NoProgramReadiness || o.CapturesDir() != "" || o.OnRuntimeResolved == nil {
@@ -62,8 +63,25 @@ func init() {
 	if len(os.Args) > 5 && os.Args[1] == "npm-capture-test-image" && os.Args[3] == "internal" &&
 		(os.Args[4] == "program-npm" || os.Args[4] == "capture-materialize" || os.Args[4] == "log-append") {
 		npmCaptureImagePath = os.Args[2]
+		npmCaptureNode = npmCaptureNodeWithSyntheticTrust
 		os.Exit(runInternal(os.Args[4:]))
 	}
+}
+
+// The host-executed producer fixture owns its own CA. It runs the same trust validator,
+// Node resolver, PATH lookup and commands as production, without depending on an image-only path.
+func npmCaptureNodeWithSyntheticTrust(ctx context.Context, home, floor, userConfig string, w io.Writer) (string, error) {
+	return npmCaptureNodeWithIO(ctx, home, floor, userConfig, w, npmCaptureNodeIO{
+		trustStorePath:   filepath.Join(filepath.Dir(npmCaptureImagePath), "synthetic-ca.pem"),
+		validateTrust:    validateNPMCaptureTrustStore,
+		resolveNodeFloor: entrypoint.ResolveNodeForFloor,
+		lookPath:         exec.LookPath,
+		runCommand: func(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) error {
+			cmd := exec.CommandContext(ctx, name, args...)
+			cmd.Env, cmd.Stdout, cmd.Stderr = env, stdout, stderr
+			return cmd.Run()
+		},
+	})
 }
 
 func newSelectedNPMFixture(t *testing.T) *selectedNPMFixture {
@@ -96,6 +114,9 @@ func newSelectedNPMFixture(t *testing.T) *selectedNPMFixture {
 	npmCaptureImagePath = filepath.Join(f.root, "image")
 	t.Cleanup(func() { npmCaptureImagePath = oldImage })
 	if err = os.WriteFile(npmCaptureImagePath, []byte("private-synthetic-runtime-v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(f.root, "synthetic-ca.pem"), []byte("synthetic fixture CA"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f.version(t, "1.0.0")

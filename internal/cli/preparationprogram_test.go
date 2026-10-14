@@ -102,7 +102,26 @@ func TestAdmittedProgramServingRejectsCorruptCaptureAndMissingGood(t *testing.T)
 	if err = os.WriteFile(store.CheckRecordPath(f.Key()), record, 0600); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(entry.Tree, ".local", "bin", "tool"), "corrupt")
+	tool := filepath.Join(entry.Tree, ".local", "bin", "tool")
+	info, err := os.Stat(tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o222 != 0 {
+		t.Fatalf("admitted tool is not immutable: mode %04o", info.Mode().Perm())
+	}
+	originalMode := info.Mode().Perm()
+	if err = os.Chmod(tool, originalMode|0o200); err != nil {
+		t.Fatalf("make only the fixture tool writable for deliberate corruption: %v", err)
+	}
+	defer func() {
+		if err := os.Chmod(tool, originalMode); err != nil {
+			t.Errorf("restore admitted tool mode %04o: %v", originalMode, err)
+		}
+	}()
+	if err = os.WriteFile(tool, []byte("corrupt"), originalMode|0o200); err != nil {
+		t.Fatalf("corrupt admitted tool after making only it writable: %v", err)
+	}
 	if d, _ = admittedProgramServing(f, "podman", patchedTestPlatform); d.Key != "" {
 		t.Fatal("corrupt capture qualified")
 	}
