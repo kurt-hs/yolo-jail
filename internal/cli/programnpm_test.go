@@ -127,6 +127,7 @@ if [ "$phase" = install ] && [[ " $* " == *' -g '* ]]; then
 fi
 [ -z "${NPM_TOKEN:-}" ] && [ -z "${SYNTHETIC_PROVIDER_KEY:-}" ]
 [ "$NPM_CONFIG_USERCONFIG" = /dev/null ] && [ "$NPM_CONFIG_GLOBALCONFIG" = /dev/null ]
+[ "$SSL_CERT_FILE" = /etc/ssl/certs/ca-bundle.crt ] && [ -z "$SSL_CERT_DIR" ] && [ "$NODE_OPTIONS" = --use-openssl-ca ]
 prefix=''
 previous=''
 for arg in "$@"; do
@@ -140,7 +141,7 @@ if [ "$phase" = install ]; then
  while [ -f "$ROOT/resolve-wait" ]; do sleep 0.02; done
  case " $* " in *' --package-lock-only '*) ;; *) exit 34;; esac
  case " $* " in *' --ignore-scripts '*) ;; *) exit 34;; esac
- [ ! -f "$ROOT/fail" ] || exit 35
+ [ ! -f "$ROOT/fail" ] || { printf '%2048s' '' | tr ' ' x >&2; printf '\nTLS verification failed; Authorization=fixture-secret-value\n' >&2; exit 35; }
  version=$(cat "$ROOT/version")
  package=$(jq -r '.dependencies | keys[0]' "$prefix/package.json")
  selector=$(jq -r --arg pkg "$package" '.dependencies[$pkg]' "$prefix/package.json")
@@ -205,6 +206,49 @@ func (f *selectedNPMFixture) advance(t *testing.T, fresh bool) npmCaptureRecord 
 		t.Fatal(err)
 	}
 	return r
+}
+
+func TestNPMCaptureEnvironmentUsesOnlyTheImageTrustStore(t *testing.T) {
+	for name, value := range map[string]string{
+		"SSL_CERT_FILE":       "/caller/private-ca.pem",
+		"SSL_CERT_DIR":        "/caller/private-ca-dir",
+		"NIX_SSL_CERT_FILE":   "/caller/private-nix-ca.pem",
+		"NODE_EXTRA_CA_CERTS": "/caller/private-node-ca.pem",
+		"HTTPS_PROXY":         "http://caller-proxy.invalid:3128",
+	} {
+		t.Setenv(name, value)
+	}
+	got := map[string]string{}
+	for _, kv := range npmCaptureEnvironment(t.TempDir(), "/nix/store/node/bin/node") {
+		name, value, ok := strings.Cut(kv, "=")
+		if ok {
+			got[name] = value
+		}
+	}
+	if got["SSL_CERT_FILE"] != "/etc/ssl/certs/ca-bundle.crt" || got["SSL_CERT_DIR"] != "" || got["NODE_OPTIONS"] != "--use-openssl-ca" {
+		t.Fatalf("producer did not select the fixed image CA bundle with verified OpenSSL trust: %v", got)
+	}
+	for _, name := range []string{"NIX_SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "HTTPS_PROXY"} {
+		if _, ok := got[name]; ok {
+			t.Errorf("caller trust/transport input %s crossed into the sealed producer", name)
+		}
+	}
+}
+
+func TestNPMCaptureTrustStoreMustBeReadableRegularFile(t *testing.T) {
+	if err := validateNPMCaptureTrustStore(filepath.Join(t.TempDir(), "missing.pem")); err == nil || !strings.Contains(err.Error(), "repair the selected image") {
+		t.Fatalf("missing image trust store did not fail closed with recovery guidance: %v", err)
+	}
+	if err := validateNPMCaptureTrustStore(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("non-file trust store did not fail closed: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "ca-bundle.crt")
+	if err := os.WriteFile(path, []byte("synthetic readable fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateNPMCaptureTrustStore(path); err != nil {
+		t.Fatalf("readable regular fixture rejected: %v", err)
+	}
 }
 
 func TestSelectedNPMProducerActualColdWarmFreshAndFixedPin(t *testing.T) {
@@ -287,6 +331,31 @@ func TestSelectedNPMFreshFailureCancelAndStaleDoNotPublish(t *testing.T) {
 	}
 }
 
+func TestSelectedNPMProducerFailureDiagnosticIsBoundedAndRedacted(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	if err := os.WriteFile(filepath.Join(f.root, "fail"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	boundary, err := registerNPMCaptureRequest(context.Background(), f.store, f.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = advanceNPMCapture(context.Background(), f.store, f.in, "recipe-v1", false, boundary, io.Discard, func(commit func() error) error { return commit() })
+	if err == nil {
+		t.Fatal("failed selected producer succeeded")
+	}
+	if !strings.Contains(err.Error(), "TLS verification failed") {
+		t.Fatalf("producer cause did not survive the public preparation error: %v", err)
+	}
+	if strings.Contains(err.Error(), "fixture-secret-value") || !strings.Contains(err.Error(), "Authorization=<redacted>") {
+		t.Fatalf("producer diagnostic was not redacted: %v", err)
+	}
+	const maxDiagnosticBytes = 1024
+	if len(err.Error()) > maxDiagnosticBytes+256 {
+		t.Fatalf("producer diagnostic exceeded its bound: %d bytes", len(err.Error()))
+	}
+}
+
 func TestSelectedNPMResolutionObservesRuntimeAndRejectsLockConflict(t *testing.T) {
 	f := newSelectedNPMFixture(t)
 	r, err := resolveSelectedNPMCapture(context.Background(), f.store, f.in, io.Discard)
@@ -297,8 +366,8 @@ func TestSelectedNPMResolutionObservesRuntimeAndRejectsLockConflict(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inputs.Release == "latest" || inputs.NodeABI == "" || len(inputs.Dependencies) != 1 || r.Runtime.NodeDigest == "" {
-		t.Fatal("fabricated resolution facts")
+	if inputs.Release == "latest" || inputs.NodeABI == "" || len(inputs.Dependencies) != 1 || r.Runtime.NodeDigest == "" || r.Runtime.TrustStore != npmCaptureTrustStore {
+		t.Fatal("fabricated resolution facts or missing image trust provenance")
 	}
 	original, _ := inputs.Identity()
 	copy := *r
@@ -314,6 +383,21 @@ func TestSelectedNPMResolutionObservesRuntimeAndRejectsLockConflict(t *testing.T
 	identity, _ = other.Identity()
 	if identity == original {
 		t.Fatal("platform conflict reused identity")
+	}
+	copy = *r
+	copy.Runtime.TrustStore += "-other"
+	if _, err := copy.inputs(); err == nil {
+		t.Fatal("resolution accepted an unknown trust store")
+	}
+	copy = *r
+	copy.Runtime.TrustStore = ""
+	legacyInputs, err := copy.inputs()
+	if err != nil {
+		t.Fatalf("historical Good without a trust-store field became unusable: %v", err)
+	}
+	legacyIdentity, _ := legacyInputs.Identity()
+	if legacyIdentity == original || strings.Contains(legacyInputs.Runtime, "TrustStore") {
+		t.Fatal("new trust policy did not produce a distinct key while preserving the historical input shape")
 	}
 	copy = *r
 	copy.Release = "99"

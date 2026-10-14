@@ -130,5 +130,11 @@ func OrdinaryRuntimeUnsupported(cfg *jsonx.OrderedMap, storePackages bool) strin
 }
 
 func ordinaryRuntimeEnvKey(key string) bool {
-	return key == "PATH" || key == "NODE_OPTIONS" || key == "NODE_PATH" || key == "NODE_EXTRA_CA_CERTS" || key == "NODE_AUTH_TOKEN" || key == "NPM_TOKEN" || strings.HasPrefix(key, "LD_") || strings.HasPrefix(key, "DYLD_") || strings.HasPrefix(key, "NPM_CONFIG_")
+	key = strings.ToUpper(key)
+	switch key {
+	case "PATH", "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "NODE_AUTH_TOKEN", "NPM_TOKEN",
+		"SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY":
+		return true
+	}
+	return strings.HasPrefix(key, "LD_") || strings.HasPrefix(key, "DYLD_") || strings.HasPrefix(key, "NPM_CONFIG_")
 }

@@ -8,13 +8,75 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 const programCaptureJailVerb = "program-capture-jail"
+
+const maxProgramCaptureDiagnostic = 1024
+
+var programCaptureDiagnosticRedactors = []struct {
+	re          *regexp.Regexp
+	replacement string
+}{
+	{regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`), ""},
+	{regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/-]+=*`), "<redacted>"},
+	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`), "$1<redacted>@"},
+	{regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|(?:api[_-]?)?key|token|password|secret)(\s*[:=]\s*)[^\s,;]+`), "$1$2<redacted>"},
+	{regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+`), "$1<redacted>"},
+}
+
+type programCaptureDiagnostic struct {
+	mu   sync.Mutex
+	tail []byte
+}
+
+func (d *programCaptureDiagnostic) Write(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(p) >= maxProgramCaptureDiagnostic {
+		d.tail = append(d.tail[:0], p[len(p)-maxProgramCaptureDiagnostic:]...)
+	} else {
+		drop := len(d.tail) + len(p) - maxProgramCaptureDiagnostic
+		if drop > 0 {
+			d.tail = append(d.tail[:0], d.tail[drop:]...)
+		}
+		d.tail = append(d.tail, p...)
+	}
+	return len(p), nil
+}
+
+func (d *programCaptureDiagnostic) String() string {
+	d.mu.Lock()
+	raw := append([]byte(nil), d.tail...)
+	d.mu.Unlock()
+	text := strings.ToValidUTF8(string(raw), "")
+	for _, redactor := range programCaptureDiagnosticRedactors {
+		text = redactor.re.ReplaceAllString(text, redactor.replacement)
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	for len(text) > maxProgramCaptureDiagnostic {
+		_, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+	}
+	return text
+}
+
+type programCaptureDiagnosticTee struct {
+	out        io.Writer
+	diagnostic *programCaptureDiagnostic
+}
+
+func (w programCaptureDiagnosticTee) Write(p []byte) (int, error) {
+	_, _ = w.diagnostic.Write(p)
+	return w.out.Write(p)
+}
 
 type ordinaryCaptureRuntimeKey struct{}
 
@@ -30,11 +92,19 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 	}
 	child = append(child, "--")
 	child = append(child, argv...)
-	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: w, errw: w, jailOut: w, jailErr: w}, programCaptureEnvironment(os.Environ()))
+	diag := &programCaptureDiagnostic{}
+	if w == nil {
+		w = io.Discard
+	}
+	tee := programCaptureDiagnosticTee{out: w, diagnostic: diag}
+	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: tee, errw: tee, jailOut: tee, jailErr: tee}, programCaptureEnvironment(os.Environ()))
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if rc != 0 || bound {
+		if detail := diag.String(); detail != "" {
+			return fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
+		}
 		return fmt.Errorf("selected sealed npm producer failed (status %d) — retry preparation", rc)
 	}
 	return nil
