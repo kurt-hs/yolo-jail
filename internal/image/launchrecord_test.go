@@ -92,6 +92,13 @@ func TestPackagesLaunchKeyRejectsMovingPins(t *testing.T) {
 	}
 }
 
+func TestPackagesLaunchKeyRejectsUnsupportedPackageObjects(t *testing.T) {
+	o := AutoLoadOptions{ExtraPackages: []any{map[string]string{"name": "hello", "nixpkgs": strings.Repeat("a", 40)}}}
+	if key := o.packagesLaunchKey(testIdentity); key != "" {
+		t.Fatalf("unsupported package object representation acquired a key: %s", key)
+	}
+}
+
 func TestPackagesLaunchDoesNotReuseAnUnprovenImage(t *testing.T) {
 	for _, failure := range []string{"invalid store", "missing image", "changed identity", "moving pin", "lean attr", "failed identity eval"} {
 		t.Run(failure, func(t *testing.T) {

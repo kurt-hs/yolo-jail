@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -56,6 +57,94 @@ func TestTheRunPathSendsImageDisclosuresToStderr(t *testing.T) {
 	if got.Out != o.Stderr {
 		t.Errorf("Out is not the launch's stderr (%p vs %p), so the image load's status lines "+
 			"go somewhere other than the launch stream", got.Out, o.Stderr)
+	}
+}
+
+func TestDecodedPackagePinsGateRecordedImageReuse(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		pin        string
+		wantBuilds int
+	}{
+		{name: "moving reference", pin: "nixos-unstable", wantBuilds: 2},
+		{name: "immutable commit", pin: strings.Repeat("a", 40), wantBuilds: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			path := filepath.Join(t.TempDir(), config.WorkspaceConfigName)
+			contents := `{"packages":[{"name":"hello","nixpkgs":"` + tc.pin + `"}]}`
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := config.LoadJSONCFile(path, "test configuration", true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			packages := config.EffectivePackages(cfg, config.PlatformLinux)
+			if len(packages) != 1 {
+				t.Fatalf("EffectivePackages = %#v, want one configured package", packages)
+			}
+			if _, ok := packages[0].(*jsonx.OrderedMap); !ok {
+				t.Fatalf("decoded package type = %T, want *jsonx.OrderedMap", packages[0])
+			}
+
+			loaded := map[string]bool{}
+			builds := 0
+			manifest := filepath.Join(t.TempDir(), "image.json")
+			if err := os.WriteFile(manifest, []byte(`{"version":1,"arch":"amd64","layers":[]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			o := goldenOptions(t.TempDir(), t.TempDir())
+			o.autoLoad = func(opts image.AutoLoadOptions) image.LoadResult {
+				opts.BuildStorePath = func(_ string, got []any, _ string) (string, []string) {
+					builds++
+					if len(got) != 1 {
+						t.Errorf("image build packages = %#v, want one configured package", got)
+					} else if spec, ok := got[0].(*jsonx.OrderedMap); !ok {
+						t.Errorf("image build package type = %T, want *jsonx.OrderedMap", got[0])
+					} else if pin, ok := spec.Get("nixpkgs"); !ok || pin != tc.pin {
+						t.Errorf("image build nixpkgs pin = %v, want %q", pin, tc.pin)
+					}
+					return manifest, nil
+				}
+				opts.EvalIdentity = func(string) (string, bool) {
+					return "sha256:816a3ee9bbc3b73bef97cdadb88702eadc4ee53bdcefd1c24e0d349b9304fb20", true
+				}
+				opts.LookupEnv = func(string) (string, bool) { return "", false }
+				opts.StorePathValid = func(string) bool { return true }
+				opts.RegisterRoot = func(string) {}
+				opts.Run = func(argv []string) (int, bool) {
+					if len(argv) >= 4 && argv[1] == "image" && argv[2] == "inspect" {
+						if loaded[argv[3]] {
+							return 0, true
+						}
+						return 1, true
+					}
+					return 0, true
+				}
+				opts.BuildCopier = func(string) (string, []string) {
+					return "/nix/store/fake-skopeo/bin/skopeo", nil
+				}
+				opts.LayerCopy = func(_ string, destination string, _ []string) (image.CopyReport, bool) {
+					loaded[strings.TrimPrefix(destination, "containers-storage:")] = true
+					return image.CopyReport{Layers: 1, Total: 1, CopiedLayers: 1, Copied: 1}, true
+				}
+				opts.StoreFacts = func() image.PodmanStoreFacts {
+					return image.PodmanStoreFacts{Rootless: image.RootlessNo}
+				}
+				return image.AutoLoadImage(opts)
+			}
+
+			for launch := 0; launch < 2; launch++ {
+				result := o.autoLoadImage(cfg, "podman", t.TempDir(), storePackagesPlan{})
+				if !result.OK {
+					t.Fatalf("launch %d failed: %+v", launch+1, result)
+				}
+			}
+			if builds != tc.wantBuilds {
+				t.Fatalf("BuildStorePath called %d times, want %d for %s", builds, tc.wantBuilds, tc.name)
+			}
+		})
 	}
 }
 
