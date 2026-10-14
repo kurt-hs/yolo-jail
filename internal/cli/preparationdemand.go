@@ -34,6 +34,34 @@ type preparationAnswer struct {
 	Error        string
 	PatchFailure *packsrc.PatchFailure
 	Good         *packsrc.GoodBuild
+	// AppleBuildPending preserves an Apple Container required-build admission
+	// refusal (appleBuildPending) across the worker/launch boundary: the
+	// worker's settle absorbs the refusal into a retained result, so without
+	// this marker the waiter could only rebuild an untyped error from Error
+	// and the launch's FreshFailure would never see the pending reason.
+	AppleBuildPending *applePendingRefusal `json:",omitempty"`
+}
+
+// applePendingRefusal is the JSON half of an appleBuildPending: the reason
+// the launch names and the capture it names it for.
+type applePendingRefusal struct {
+	Reason  string
+	Capture string
+}
+
+// applePendingOf returns the required-build admission refusal carried by the
+// worker's hook or the plain preparation's returned error, nil when neither
+// is one. The patched advance's settle serves the good build and retains the
+// refusal, so the hook's capture is the only typed copy on that path; the
+// plain preparation returns the gate's error directly.
+func applePendingOf(errs ...error) *applePendingRefusal {
+	for _, err := range errs {
+		var pending *appleBuildPending
+		if errors.As(err, &pending) {
+			return &applePendingRefusal{Reason: pending.reason, Capture: pending.capture}
+		}
+	}
+	return nil
 }
 
 func demandPath(id string) string { return filepath.Join(preparationRoot(), "requests", id+".json") }
@@ -207,11 +235,12 @@ func runFreshPreparationDemands(ctx context.Context, w interface{ Write([]byte) 
 			if err == nil {
 				err = guard.Guard(sub.Key, func() error { return nil })
 			}
+			var requiredBuildErr error
 			if err == nil {
 				if !fork.Patched() && !fork.IsTree() {
 					res, err = runFreshPlainPreparation(keyCtx, fork, &request, sub, guard, w)
 				} else {
-					res = advancePatchedFork(fork, advanceOptions{freshCheck: true, preparation: guard, platform: sub.Platform, runtime: sub.Runtime, launch: true, ctx: keyCtx, operationCtx: keyCtx, out: w, errw: w, admitGuard: func(commit func() error) error {
+					res = advancePatchedFork(fork, advanceOptions{freshCheck: true, preparation: guard, platform: sub.Platform, runtime: sub.Runtime, launch: true, ctx: keyCtx, operationCtx: keyCtx, out: w, errw: w, requiredBuildFailure: func(hookErr error) { requiredBuildErr = hookErr }, admitGuard: func(commit func() error) error {
 						rec, e := patchedAdvanceStore(true).LoadCheckRecord(sub.Key)
 						if e != nil {
 							return e
@@ -232,6 +261,9 @@ func runFreshPreparationDemands(ctx context.Context, w interface{ Write([]byte) 
 			answer := preparationAnswer{Fresh: preparationFreshness{RequestID: request.ID, Key: sub.Key, InputIdentity: sub.InputIdentity, ServingEntry: res.delivery.Key}, Good: res.good, PatchFailure: res.patchFailure}
 			if err != nil {
 				answer.Error = err.Error()
+			}
+			if pending := applePendingOf(requiredBuildErr, err); pending != nil {
+				answer.AppleBuildPending = pending
 			}
 			if err = writePreparationJSON(answerPath(request.ID, sub.Key), answer); err != nil {
 				return err
@@ -282,6 +314,12 @@ func waitFreshPreparation(ctx context.Context, req run.PreparationRequest, key s
 		err := readPreparationJSON(answerPath(request.ID, key), &answer)
 		if err == nil {
 			if answer.Error != "" {
+				if answer.AppleBuildPending != nil {
+					return advanceResult{patchFailure: answer.PatchFailure}, &appleBuildPending{
+						reason:  answer.AppleBuildPending.Reason,
+						capture: answer.AppleBuildPending.Capture,
+					}
+				}
 				return advanceResult{patchFailure: answer.PatchFailure}, errors.New(answer.Error)
 			}
 			res := advanceResult{delivery: entrypoint.ForkDelivery{Key: answer.Fresh.ServingEntry}, good: answer.Good, patchFailure: answer.PatchFailure}
