@@ -76,6 +76,7 @@ func programCaptureDiagnosticCases() []struct {
 	}{
 		{"marker-outside-tail", []string{"token=" + strings.Repeat("fake-secret-", 100) + "\nTLS verification failed\n"}, []string{"fake-secret-"}, "TLS verification failed"},
 		{"split-credentials", []string{"to", "ken", "=fake-", "token-value\nAuth", "orization: Bea", "rer fake-bearer-value\nhttps://fake-user:fake-password@registry.invalid/path?to", "ken=fake-query-value&ok=yes\nTLS verification failed\n"}, []string{"fake-token-value", "fake-bearer-value", "fake-user", "fake-password", "fake-query-value"}, "TLS verification failed"},
+		{"split-basic-credentials", []string{"Auth", "orization: Ba", "sic fake-basic-value\nProxy-Auth", "orization: Bas", "ic fake-basic-proxy-value\nTLS verification failed\n"}, []string{"fake-basic-value", "fake-basic-proxy-value"}, "TLS verification failed"},
 		{"terminal-sequences", []string{"\x1b]52;c;fake-osc\a\x1b[31mTLS\x1b[0m verification failed\n\x1bPfake-dcs\x1b\\\x1b_fake-apc\x1b\\\x1b^fake-pm\x1b\\\x1bXfake-sos\x1b\\\x07\b\x00\x01\x7f\n"}, []string{"fake-osc", "fake-dcs", "fake-apc", "fake-pm", "fake-sos"}, "TLS verification failed"},
 		{"split-terminal-and-utf8", []string{"\x1b", "]52;c;fake-osc", "\x1b", "\\TLS verification failed: caf\xc3", "\xa9\n"}, []string{"fake-osc"}, "café"},
 		{"incomplete-escape", []string{"TLS verification failed\n\x1b]52;c;fake-incomplete"}, []string{"fake-incomplete"}, "TLS verification failed"},
