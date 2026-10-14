@@ -3,19 +3,23 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
+	"golang.org/x/sys/unix"
 )
 
 const programCaptureJailVerb = "program-capture-jail"
@@ -297,6 +301,9 @@ func withOrdinaryCaptureRuntime(ctx context.Context, rt string) context.Context 
 	return context.WithValue(ctx, ordinaryCaptureRuntimeKey{}, rt)
 }
 
+// Only a normally returned, unbounded child78 can authorize reading a failure payload.
+type programCaptureRefused struct{ error }
+
 // programCaptureChild uses the existing bounded owned-child lifecycle, not a second builder.
 var programCaptureChild = func(ctx context.Context, workspace string, argv []string, w io.Writer) error {
 	child := []string{"internal", programCaptureJailVerb, "--workspace=" + workspace, forkBuildJailStreamsFlag}
@@ -315,7 +322,8 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 	for i := range streams {
 		streams[i] = &programCaptureDiagnosticTee{out: w, diagnostic: diag}
 	}
-	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: streams[0], errw: streams[1], jailOut: streams[2], jailErr: streams[3]}, programCaptureEnvironment(os.Environ()))
+	var returned bool
+	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: streams[0], errw: streams[1], jailOut: streams[2], jailErr: streams[3], lifetimeReturned: &returned}, programCaptureEnvironment(os.Environ()))
 	var flushErr error
 	for _, stream := range streams {
 		if err := stream.finish(); err != nil && flushErr == nil {
@@ -326,11 +334,16 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 		return ctx.Err()
 	}
 	if rc != 0 || bound {
+		failure := fmt.Errorf("selected sealed npm producer failed (status %d) — retry preparation", rc)
 		if detail := diag.String(); detail != "" {
-			return fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
+			failure = fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
 		}
-		return fmt.Errorf("selected sealed npm producer failed (status %d) — retry preparation", rc)
+		if rc == provision.RefusedStatus && !bound && returned {
+			return programCaptureRefused{failure}
+		}
+		return failure
 	}
+
 	if flushErr != nil {
 		return fmt.Errorf("selected sealed npm producer diagnostic could not be published — repair the output writer, then retry preparation: %w", flushErr)
 	}
@@ -417,19 +430,87 @@ func programCaptureRuntimeGone(workspace string) (func(), error) {
 	return release, nil
 }
 
+// Read only bounded regular failure files through the existing no-follow ancestor walk.
+// The root was pinned before execution; the caller also holds the runtime-gone witness.
+func readProgramFailureFile(root int, leaf string) ([]byte, error) {
+	if !filepath.IsLocal(leaf) {
+		return nil, fmt.Errorf("failure file path is not confined")
+	}
+	parent, _, err := openParentNoFollow(root, filepath.ToSlash(leaf), false)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(parent)
+	fd, err := unix.Openat(parent, filepath.Base(leaf), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), leaf)
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("failure payload is not a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 16385))
+	if err != nil || len(data) > 16384 {
+		return nil, fmt.Errorf("failure payload could not be read within its bound")
+	}
+	return data, nil
+}
+
 func resolveSelectedNPMCapture(ctx context.Context, store *capture.Store, in npmCaptureInput, w io.Writer) (*npmCaptureResolution, error) {
 	staging, err := stageProgramCapture(store, "npm-resolve-"+in.declarationIdentity())
 	if err != nil {
 		return nil, err
 	}
+	// Host aliases above the freshly staged directory are legitimate. Resolve them
+	// only at this trusted pre-child open, then follow no child-controlled component.
+	root, err := unix.Open(staging, noFollowDir, 0)
+	if err != nil {
+		return nil, fmt.Errorf("could not pin the owned producer workspace — repair its permissions, then retry preparation")
+	}
+	defer unix.Close(root)
+
 	b, _ := json.Marshal(in)
 	if err = os.WriteFile(filepath.Join(staging, "input.json"), b, 0644); err != nil {
 		return nil, err
 	}
 	argv := []string{"yolo", "internal", "program-npm", "resolve", path.Join(containerWorkspace, "input.json"), path.Join(containerWorkspace, "resolution.json")}
 	if err = programCaptureChild(ctx, staging, argv, w); err != nil {
-		return nil, err
+		var refused programCaptureRefused
+		if !errors.As(err, &refused) {
+			return nil, err
+		}
+		release, goneErr := programCaptureRuntimeGone(staging)
+		if goneErr != nil {
+			return nil, err
+		}
+		defer release()
+		defer cleanupForkBuildWorkspace(staging, runtime.FromWorkspace(staging))
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		raw, readErr := readProgramFailureFile(root, "resolution.json")
+		input, inputErr := readProgramFailureFile(root, "input.json")
+		var result npmCaptureResolution
+		var stagedInput npmCaptureInput
+		if readErr != nil || inputErr != nil || json.Unmarshal(raw, &result) != nil || json.Unmarshal(input, &stagedInput) != nil || stagedInput != in || result.Input != in {
+			return nil, fmt.Errorf("invalid owned npm failure payload — retry selected preparation")
+		}
+		e := result.NodeFloorUnavailable
+		// RawMessage preserves JSON null; it is an absent lock, not success facts.
+		if string(result.Lock) == "null" {
+			result.Lock = nil
+		}
+		if e == nil || !e.Valid() || e.Owner != in.Owner || e.Bin != in.Bin || e.Floor != in.NodeFloor || !reflect.DeepEqual(result, npmCaptureResolution{Input: in, NodeFloorUnavailable: e}) {
+			return nil, fmt.Errorf("invalid or mixed npm failure payload — retry selected preparation")
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, e
 	}
+
 	release, err := programCaptureRuntimeGone(staging)
 	if err != nil {
 		return nil, err

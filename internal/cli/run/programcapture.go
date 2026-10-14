@@ -1,9 +1,11 @@
 package run
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +15,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 )
 
 // ProgramCaptureRequest is the fresh launch's selected ordinary installation vector.
@@ -28,6 +32,24 @@ type ProgramCaptureRequest struct {
 	Act                            *ActInterrupt
 	Stderr                         io.Writer
 	UnsupportedRuntime             string
+}
+
+// NodeFloorUnavailable is an observed provider result, not an installation/network failure.
+// It travels only on failed preparation; it is never an artifact admission requirement.
+type NodeFloorUnavailable struct {
+	Owner, Bin, Floor, Available string
+}
+
+func (e *NodeFloorUnavailable) Valid() bool {
+	return e != nil && packdecl.ValidPackName(e.Owner) && packdecl.ValidBinName(e.Bin) && packdecl.ValidNodeFloor(e.Floor) && strings.Trim(strings.TrimPrefix(e.Floor, "v"), "0123456789.") == "" && entrypoint.ValidCaptureNodeAvailability(e.Available)
+}
+
+func (e *NodeFloorUnavailable) Error() string {
+	if !e.Valid() {
+		return "invalid structured Node-floor failure — retry selected preparation"
+	}
+
+	return fmt.Sprintf("REFUSING to start this jail: pack %s, program %s requires Node >=%s; the observed mise release list has no satisfying version. Available: %s — lower the pack's Node floor or retry after its provider offers a satisfying release", e.Owner, e.Bin, e.Floor, e.Available)
 }
 
 func ProgramRuntimeFingerprint(repoRoot string, cfg *jsonx.OrderedMap) (string, error) {
@@ -53,17 +75,17 @@ func ProgramRuntimeFingerprint(repoRoot string, cfg *jsonx.OrderedMap) (string, 
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot string, packs []*packload.Pack, channel *packChannel) bool {
+func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot string, packs []*packload.Pack, channel *packChannel) int {
 	if o.PreparePrograms == nil || o.captureJail() || o.roBindsUnsupported(rt) != "" {
-		return true
+		return 0
 	}
 	fingerprint, err := ProgramRuntimeFingerprint(repoRoot, cfg)
 	if err != nil {
 		if o.Update {
 			o.pr(o.Stderr).print("ordinary program runtime could not be resolved — repair the flake source, then retry --update: " + err.Error())
-			return false
+			return 1
 		}
-		return true
+		return 0
 	}
 	_, servers, presets := agentServerTables(cfg, false, packs)
 	e := entrypoint.NewEnv(map[string]string{"YOLO_MISE_TOOLS": jsonDumpsOrEmptyObj(cfgMap(cfg, "mise_tools")), "YOLO_MCP_SERVERS": jsonDumpsOrEmptyObj(servers), "YOLO_MCP_PRESETS": jsonDumpsOrEmptyList(presets)})
@@ -82,12 +104,20 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 		}
 	}
 	deliveries, err := o.PreparePrograms(ProgramCaptureRequest{Packs: packs, Env: e, Runtime: rt, Platform: containerJailPlatform(), Fingerprint: fingerprint, RepoRoot: repoRoot, Workspace: o.Workspace, Fresh: o.Update, Act: o.actInterrupt(), Stderr: o.Stderr, UnsupportedRuntime: reason})
+	if o.actInterrupt().Interrupted() {
+		err = context.Canceled
+	}
 	if err != nil {
+		var unavailable *NodeFloorUnavailable
+		if errors.As(err, &unavailable) && unavailable.Valid() {
+			fmt.Fprintln(o.Stderr, unavailable)
+			return provision.RefusedStatus
+		}
 		fmt.Fprintln(o.Stderr, "selected ordinary preparation failed:", err, "— retry a fresh launch")
-		return false
+		return 1
 	}
 	o.programCaptures = deliveries
-	return true
+	return 0
 }
 
 // OrdinaryRuntimeUnsupported is the conservative reuse boundary, not a launch

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +24,12 @@ func selectedNPMUser(t *testing.T, f *selectedNPMFixture, updates bool) run.Prog
 	writeFile(t, filepath.Join(f.root, "flake.nix"), "{}")
 	writeFile(t, filepath.Join(f.root, "flake.lock"), "{}")
 	pack := t.TempDir()
-	writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"fixture","contributes":[{"kind":"program","bin":"probe","via":"npm","package":"probe-pkg"}]}`)
+	manifest := `{"name":"fixture","contributes":[{"kind":"program","bin":"probe","via":"npm","package":"probe-pkg"}]}`
+	if f.in.NodeFloor != "" {
+		floor, _ := json.Marshal(f.in.NodeFloor)
+		manifest = strings.Replace(manifest, `"package":"probe-pkg"`, `"package":"probe-pkg","node_floor":`+string(floor), 1)
+	}
+	writeFile(t, filepath.Join(pack, "pack.json"), manifest)
 	cfgJSON, _ := json.Marshal(map[string]any{"packs": []any{map[string]string{"source": pack, "name": "fixture"}}, "agent_updates": updates, "host_floor": true})
 	writeFile(t, paths.UserConfigPath(), string(cfgJSON))
 	f.store.Dir = paths.CapturesDir()
