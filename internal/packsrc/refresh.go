@@ -750,11 +750,11 @@ func flockPath(path, what string, waiting func(string)) (func(), error) {
 }
 
 // flockPathContext keeps the same inode/ownership discipline as flockPath, while
-// allowing a shared worker's cancelled request to leave a contended lock wait.
+// allowing a shared worker's cancelled request to leave a contended lock wait. Only the
+// wait consults the context: an uncontended lock is still taken, so an advance a Ctrl-C
+// ended can read its check record to hand the good build, or clear the attempt's stamp,
+// with its operation context already cancelled (PF-D25).
 func flockPathContext(ctx context.Context, path, what string, waiting func(string)) (func(), error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
