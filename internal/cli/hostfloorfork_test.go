@@ -12,6 +12,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -750,23 +751,53 @@ func TestHostUpdatePlainForkFailedFetchRefusesInstalledCopy(t *testing.T) {
 }
 
 func TestHostUpdatePlainForkDeclarationChangeDuringFetchCannotPublish(t *testing.T) {
-	for _, change := range []string{"edited", "revoked"} {
+	testHostPlainFetchAuthority(t, true, []string{"edited", "revoked"})
+}
+
+func TestHostUpdatePlainForkUnchangedFetchRequiresFinishAuthority(t *testing.T) {
+	testHostPlainFetchAuthority(t, false, []string{"edited", "revoked", "ledger-deleted", "ledger-recreated", "ledger-reset", "ledger-rollback", "intact"})
+}
+
+func testHostPlainFetchAuthority(t *testing.T, changeTip bool, changes []string) {
+	t.Helper()
+	for _, change := range changes {
 		t.Run(change, func(t *testing.T) {
 			_, commit, manifest := forkFloorHome(t)
 			withForkFloor(t)
 			runs := 0
 			withFakeCaptureJail(t, forkFloorBuildJail(t, &runs, true))
 			captureHostExec(t)
-			var out syncBuffer
-			if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 {
-				t.Fatalf("seed: %d\n%s", rc, out.String())
+			var seedOut bytes.Buffer
+			if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &seedOut, nil); rc != 0 {
+				t.Fatalf("seed: %d\n%s", rc, seedOut.String())
 			}
+			var out syncBuffer
 			before := floorRecord(t, "forkcli")
+			floorBytes, err := os.ReadFile(before.Entry)
+			if err != nil {
+				t.Fatal(err)
+			}
 			pins, err := os.ReadFile(forkLockPath())
 			if err != nil {
 				t.Fatal(err)
 			}
-			commit("second")
+			// Seed historical Good from the real admitted floor artifact; finish-time
+			// freshness must not modify this ordinary serving evidence.
+			f := selectedPlainProgram(t)
+			store := patchedAdvanceStore(true)
+			good := &packsrc.GoodBuild{Commit: before.Revision, Recipe: before.Recipe, Entry: before.Capture}
+			if err := store.WithCheckRecord(f.Key(), nil, func(r *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
+				if readErr != nil {
+					return false, readErr
+				}
+				r.Good = good
+				return true, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if changeTip {
+				commit("second")
+			}
 			realGit, err := exec.LookPath("git")
 			if err != nil {
 				t.Fatal(err)
@@ -792,31 +823,79 @@ func TestHostUpdatePlainForkDeclarationChangeDuringFetchCannotPublish(t *testing
 			go func() { done <- hostMain([]string{"--update", "--", "forkcli"}, io.Discard, &out, false, nil) }()
 			defer func() { _, _ = release.WriteString("release\n") }()
 			waitFor(t, "real HOST source fetch", func() bool { _, err := os.Stat(started); return err == nil })
-			if change == "edited" {
+			switch change {
+			case "edited":
 				body, err := os.ReadFile(manifest)
 				if err != nil {
 					t.Fatal(err)
 				}
 				writeFile(t, manifest, strings.Replace(string(body), "sh build.sh", "sh changed.sh", 1))
-			} else {
+			case "revoked":
 				writeFile(t, paths.UserConfigPath(), `{"packs":[]}`)
+			case "ledger-deleted", "ledger-recreated", "ledger-reset", "ledger-rollback":
+				starts, err := filepath.Glob(filepath.Join(store.Dir, "checks", "start-*.json"))
+				if err != nil || len(starts) != 1 {
+					t.Fatalf("start ledger: %v %v", starts, err)
+				}
+				if change == "ledger-deleted" || change == "ledger-recreated" {
+					if err := os.Remove(starts[0]); err != nil {
+						t.Fatal(err)
+					}
+					if change == "ledger-recreated" {
+						if _, err := store.CheckBoundary(f.Key()); err != nil {
+							t.Fatal(err)
+						}
+					}
+				} else {
+					data, err := os.ReadFile(starts[0])
+					if err != nil {
+						t.Fatal(err)
+					}
+					var start packsrc.CheckStart
+					if err := json.Unmarshal(data, &start); err != nil {
+						t.Fatal(err)
+					}
+					if start.Seq == 0 {
+						t.Fatal("fetch began without recorded start")
+					}
+					start.Seq--
+					if change == "ledger-reset" {
+						start.Epoch = "reset-epoch"
+					}
+					data, err = json.Marshal(start)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(starts[0], data, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			if _, err := release.WriteString("release\n"); err != nil {
 				t.Fatal(err)
 			}
 			select {
 			case rc := <-done:
-				if rc == 0 || got.target != "" {
-					t.Errorf("%s declaration executed target: rc=%d target=%q\n%s", change, rc, got.target, out.String())
+				if change == "intact" {
+					if rc != 0 || got.target == "" {
+						t.Errorf("intact same-pin fetch refused: rc=%d target=%q\n%s", rc, got.target, out.String())
+					}
+				} else if rc == 0 || got.target != "" {
+					t.Errorf("%s authority executed target: rc=%d target=%q", change, rc, got.target)
 				}
 			case <-time.After(10 * time.Second):
 				t.Fatal("HOST fetch did not settle")
 			}
 			after, err := os.ReadFile(forkLockPath())
-			if err != nil || string(after) != string(pins) || !reflect.DeepEqual(floorRecord(t, "forkcli"), before) || runs != 1 {
-				t.Fatalf("%s request published pin/copy: %v runs=%d\n%s", change, err, runs, out.String())
+			current, recErr := store.LoadCheckRecord(f.Key())
+			if err != nil || recErr != nil || string(after) != string(pins) || !reflect.DeepEqual(current.Good, good) || runs != 1 {
+				t.Fatalf("%s request changed pin/Good/builds: %v %v runs=%d", change, err, recErr, runs)
 			}
-			if !strings.Contains(out.String(), "retry") {
+			currentFloorBytes, floorErr := os.ReadFile(before.Entry)
+			if floorErr != nil || !bytes.Equal(currentFloorBytes, floorBytes) || !reflect.DeepEqual(floorRecord(t, "forkcli"), before) {
+				t.Errorf("%s finish changed floor bytes/record: %v", change, floorErr)
+			}
+			if change != "intact" && !strings.Contains(out.String(), "retry") {
 				t.Errorf("no recovery step: %s", out.String())
 			}
 		})

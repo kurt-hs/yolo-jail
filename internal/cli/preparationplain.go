@@ -95,17 +95,23 @@ func freshHostPlainSource(ctx context.Context, f packload.Fork, platform string,
 		return commit()
 	}
 	var begun packsrc.CheckStart
-	_, err := resolveFreshPlainProgram(ctx, f, func() error {
-		var err error
-		begun, err = store.BeginFreshCheck(f.Key(), d.Identity, f.Key(), d.CheckBoundary, guard)
-		return err
-	}, func(commit func() error) error {
+	finish := func(commit func() error) error {
 		return store.WithCheckRecord(f.Key(), nil, func(_ *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
 			if readErr != nil {
 				return false, readErr
 			}
 			return false, store.WithFreshAuthority(f.Key(), d.CheckBoundary, &begun, d.Identity, func() error { return guard(commit) })
 		})
-	}, w)
-	return err
+	}
+	_, err := resolveFreshPlainProgram(ctx, f, func() error {
+		var err error
+		begun, err = store.BeginFreshCheck(f.Key(), d.Identity, f.Key(), d.CheckBoundary, guard)
+		return err
+	}, finish, w)
+	if err != nil {
+		return err
+	}
+	// An unchanged pin skips publication. Every successful result still needs
+	// finish-time authority before HOST can ensure or execute the floor copy.
+	return finish(func() error { return nil })
 }
