@@ -826,6 +826,13 @@ func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, fr
 		}
 		doctorCmd := m.DoctorCmd
 		if current, hasCurrent := frozen[m.Name]; hasCurrent && len(m.Settings) > 0 {
+			if m.doctorCmdDecl == nil {
+				rc := 1
+				results = append(results, DoctorResult{Loophole: m, RC: &rc,
+					Output: "not run: the original doctor declaration is unavailable for current settings. " +
+						"Reload the loophole and rerun `yolo check --no-build` or `yolo loopholes status`."})
+				continue
+			}
 			snapshot, remove, err := WritePrivateSettingsSnapshot(m, current)
 			if err != nil {
 				rc := 1
@@ -835,11 +842,7 @@ func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, fr
 				continue
 			}
 			cleanup = append(cleanup, remove)
-			doctorCmd = append([]string(nil), m.DoctorCmd...)
-			stable := SettingsFileFor(m.Name)
-			for i := range doctorCmd {
-				doctorCmd[i] = strings.ReplaceAll(doctorCmd[i], stable, snapshot)
-			}
+			doctorCmd = m.doctorCmdWithSettings(snapshot)
 		}
 		rc, output := runOne(doctorCmd, timeout)
 		results = append(results, DoctorResult{Loophole: m, RC: rc, Output: output})
