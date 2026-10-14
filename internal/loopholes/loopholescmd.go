@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -111,6 +112,11 @@ func RealDeps() Deps {
 // nothing records anything, so a pack loophole is absent rather than executed, which is
 // the fail-safe direction and is stated on packModules.
 func loopholesWithConfig(deps Deps, includeDisabled bool) Set {
+	set, _ := loopholesWithConfigAndBlock(deps, includeDisabled)
+	return set
+}
+
+func loopholesWithConfigAndBlock(deps Deps, includeDisabled bool) (Set, *jsonx.OrderedMap) {
 	// The same file-backed set config.ValidateConfig resolves names against.
 	known, _ := NewResolver().Known()
 
@@ -148,6 +154,7 @@ func loopholesWithConfig(deps Deps, includeDisabled bool) Set {
 	wsOrigins := config.WorkspaceLoopholeOrigins(deps.Cwd)
 	userInline := map[string]bool{}
 	merged := jsonx.NewOrderedMap()
+	mergedSettings := jsonx.NewOrderedMap()
 	for _, sc := range scopes {
 		if sc.cfg == nil {
 			continue
@@ -190,6 +197,20 @@ func loopholesWithConfig(deps Deps, includeDisabled bool) Set {
 					if _, hasCmd := m.Get("command"); hasCmd {
 						userInline[k] = true
 					}
+				}
+			}
+			if entry, ok := val.(*jsonx.OrderedMap); ok {
+				if supplied, hasSettings := getMap(entry, "settings"); hasSettings {
+					if previous, exists := mergedSettings.Get(k); exists {
+						if previousEntry, ok := previous.(*jsonx.OrderedMap); ok {
+							if previousSettings, exists := getMap(previousEntry, "settings"); exists {
+								supplied = config.MergeConfig(previousSettings, supplied)
+							}
+						}
+					}
+					settingsEntry := jsonx.NewOrderedMap()
+					settingsEntry.Set("settings", supplied)
+					mergedSettings.Set(k, settingsEntry)
 				}
 			}
 			merged.Set(k, val)
@@ -239,9 +260,9 @@ func loopholesWithConfig(deps Deps, includeDisabled bool) Set {
 	// include-disabled superset; includeDisabled selects the VIEW below.
 	set := NewHostSet(merged)
 	if includeDisabled {
-		return set
+		return set, mergedSettings
 	}
-	return SetOf(set.Enabled()).withGate(set)
+	return SetOf(set.Enabled()).withGate(set), mergedSettings
 }
 
 // List runs `yolo loopholes list`.
@@ -366,7 +387,7 @@ func Status(deps Deps) int {
 		p.Print("Inside jail — doctor checks are host-side.  From the host: [cyan]yolo loopholes status[/cyan]")
 		return 0
 	}
-	set := loopholesWithConfig(deps, true)
+	set, currentConfig := loopholesWithConfigAndBlock(deps, true)
 	all := set.All()
 	if len(all) == 0 {
 		fmt.Fprintln(deps.Out, "No loopholes installed.")
@@ -378,7 +399,7 @@ func Status(deps Deps) int {
 	// (docs/reference/loophole-system.md#selection-and-discovery). A withheld one is REPORTED, with the
 	// reason, rather than skipped: a skip is indistinguishable from `no-check`, which
 	// would read as "this loophole declares no self-check" — the wrong story entirely.
-	for _, r := range set.RunDoctorChecks(all, doctorCheckTimeout) {
+	for _, r := range runStatusDoctorChecks(set, all, currentConfig) {
 		state := doctorState(set, r)
 		// The state stays in its brackets, which are literal text to the renderer: no state
 		// word is a style word, so `[ok]` prints as itself inside the tags around it.
@@ -397,6 +418,62 @@ func Status(deps Deps) int {
 		}
 	}
 	return 0
+}
+
+// runStatusDoctorChecks validates current settings before asking each doctor to inspect them.
+// The persistent settings file remains the last-launch input for a running daemon and is
+// deliberately not rewritten by this read-only status command.
+func runStatusDoctorChecks(set Set, all []*Loophole, settingsBlock *jsonx.OrderedMap) []DoctorResult {
+	current := make(map[string][]byte)
+	rejected := make(map[string]DoctorResult)
+	for _, lp := range all {
+		if lp == nil || !lp.Active() || !set.MayRunHostCode(lp) || len(lp.Settings) == 0 || len(lp.DoctorCmd) == 0 {
+			continue
+		}
+		if len(lp.PlacementProblems("")) > 0 {
+			continue
+		}
+		frozen, _, err := FrozenSettingsBytes(lp, SettingsFromConfig(settingsBlock, lp.Name))
+		if err != nil {
+			rc := 1
+			rejected[lp.Name] = DoctorResult{Loophole: lp, RC: &rc, Output: "Current settings could not be resolved: " + err.Error() +
+				". Correct `loopholes." + lp.Name + ".settings` in its declared scope and rerun `yolo loopholes status`."}
+			continue
+		}
+		if lp.HostDaemon != nil && len(lp.HostDaemon.SettingsCheck) > 0 {
+			checked := RunSettingsCheck(lp, frozen)
+			if checked.Outcome != hostservice.CommandAccepted {
+				rc := 1
+				rejected[lp.Name] = DoctorResult{Loophole: lp, RC: &rc,
+					Output: "Current settings were not accepted: " + checked.Reason + "\nRemedy: " + checked.Remedy +
+						"\nThe self-check was not run; this finding is about current settings, not live daemon health. Correct the settings in their declared scope and rerun `yolo loopholes status`."}
+				continue
+			}
+		}
+		current[lp.Name] = frozen
+	}
+
+	var runnable []*Loophole
+	for _, lp := range all {
+		if _, skipped := rejected[lp.Name]; !skipped {
+			runnable = append(runnable, lp)
+		}
+	}
+	results := set.RunDoctorChecksWithSettings(runnable, doctorCheckTimeout, current)
+	byName := make(map[string]DoctorResult, len(results)+len(rejected))
+	for _, result := range results {
+		byName[result.Loophole.Name] = result
+	}
+	for name, result := range rejected {
+		byName[name] = result
+	}
+	ordered := make([]DoctorResult, 0, len(all))
+	for _, lp := range all {
+		if result, ok := byName[lp.Name]; ok {
+			ordered = append(ordered, result)
+		}
+	}
+	return ordered
 }
 
 // doctorStateStyle is the color of each doctorState word, by the CLI's one convention

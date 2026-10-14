@@ -2,6 +2,7 @@ package loopholes
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // TestSetEnabledGlobalPrintsTheConfigKeyAndWritesNothing: yolo never edits the user config
@@ -166,6 +168,126 @@ func cmdDeps(t *testing.T, out, errBuf *bytes.Buffer, userJSON, wsJSON string) D
 		Cwd:                 t.TempDir(),
 		LoadUserConfig:      func() *jsonx.OrderedMap { return parse(userJSON) },
 		LoadWorkspaceConfig: func(string) *jsonx.OrderedMap { return parse(wsJSON) },
+	}
+}
+
+func TestStatusDoctorsUseCorrectedUserSettingsInTextAndJSON(t *testing.T) {
+	isolateDirs(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stateRoot := t.TempDir()
+	previousStateDir := StateDirFor
+	StateDirFor = func(name string) string { return filepath.Join(stateRoot, name) }
+	t.Cleanup(func() { StateDirFor = previousStateDir })
+
+	const name = "status-settings-fixture"
+	const corrected = "svet-corrected-profile"
+	daemonStarted := filepath.Join(t.TempDir(), "daemon-started")
+	moduleRoot := t.TempDir()
+	manifest := map[string]any{
+		"name": name, "description": "status current settings fixture", "transport": "loopback-tls", "default_enabled": true,
+		"settings": map[string]any{"value": map[string]any{"type": "string", "scope": "user", "default": "manifest-default"}},
+		"host_daemon": map[string]any{
+			"cmd": []string{"/bin/sh", "-c", `touch ` + shquote.Quote(daemonStarted), "daemon", "--socket", "{socket}", "--settings", "{settings}"},
+			"settings_check": []string{"/bin/sh", "-c",
+				`if grep -q ` + corrected + ` "$1"; then exit 0; fi; printf '%s' '{"reason":"missing current profile","remedy":"set the user-scope profile"}'; exit 9`,
+				"validator", "{settings}"},
+			"publishes": "socket",
+		},
+		"doctor_cmd": []string{"/bin/sh", "-c",
+			`if grep -q ` + corrected + ` "$1"; then echo 'OK: doctor used current profile'; else echo 'FAIL: doctor saw stale profile'; exit 1; fi`,
+			"doctor", "{settings}"},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := filepath.Join(moduleRoot, name)
+	if err := os.MkdirAll(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "manifest.jsonc"), manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	SetPackModules([]PackModule{{Dir: module, HostExecApproved: true}})
+
+	stable := SettingsFileFor(name)
+	if err := os.MkdirAll(filepath.Dir(stable), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stableBytes := []byte(`{"value":"last-launch-profile"}` + "\n")
+	if err := os.WriteFile(stable, stableBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	userJSON := `{"loopholes":{"` + name + `":{"settings":{"value":"invalid-current-profile"}}}}`
+	parse := func() *jsonx.OrderedMap {
+		m, err := json5.Decode([]byte(userJSON))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.(*jsonx.OrderedMap)
+	}
+	var out, errBuf bytes.Buffer
+	deps := Deps{Out: &out, Err: &errBuf, Cwd: t.TempDir(),
+		LoadUserConfig: parse, LoadWorkspaceConfig: func(string) *jsonx.OrderedMap { return nil }}
+	if Status(deps) != 0 || !strings.Contains(out.String(), "missing current profile") ||
+		!strings.Contains(out.String(), "set the user-scope profile") || strings.Contains(out.String(), "doctor used current profile") {
+		t.Fatalf("invalid current user settings were not honestly reported before the doctor: %s", out.String())
+	}
+	out.Reset()
+	deps.Format = "json"
+	if Status(deps) != 0 {
+		t.Fatalf("invalid-settings status JSON returned nonzero: %s", errBuf.String())
+	}
+	var refused struct {
+		Entries []struct {
+			State  string `json:"state"`
+			Output string `json:"output"`
+		} `json:"loopholes"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &refused); err != nil || len(refused.Entries) != 1 || refused.Entries[0].State != "fail" ||
+		!strings.Contains(refused.Entries[0].Output, "missing current profile") || strings.Contains(refused.Entries[0].Output, "doctor used current profile") {
+		t.Fatalf("invalid current settings were not reported consistently in JSON: err=%v report=%+v output=%s", err, refused.Entries, out.String())
+	}
+	userJSON = `{"loopholes":{"` + name + `":{"settings":{"value":"` + corrected + `"}}}}`
+
+	for _, format := range []string{"text", "json"} {
+		out.Reset()
+		errBuf.Reset()
+		deps.Format = format
+		if Status(deps) != 0 {
+			t.Fatalf("status %s returned nonzero: %s", format, errBuf.String())
+		}
+		if format == "text" {
+			if !strings.Contains(out.String(), "doctor used current profile") || strings.Contains(out.String(), "doctor saw stale profile") {
+				t.Errorf("text status did not pass corrected current settings to the doctor: %s", out.String())
+			}
+		} else {
+			var report struct {
+				Entries []struct {
+					State  string `json:"state"`
+					Output string `json:"output"`
+				} `json:"loopholes"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+				t.Fatalf("decode status JSON: %v\n%s", err, out.String())
+			}
+			if len(report.Entries) != 1 || report.Entries[0].State != "ok" || !strings.Contains(report.Entries[0].Output, "doctor used current profile") {
+				t.Errorf("JSON status did not report the doctor against corrected current settings: %+v", report.Entries)
+			}
+		}
+	}
+	got, err := os.ReadFile(stable)
+	if err != nil || string(got) != string(stableBytes) {
+		t.Fatalf("status changed persistent last-launch settings: got=%q err=%v", got, err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(stable))
+	if err != nil || len(entries) != 1 || entries[0].Name() != SettingsFileName {
+		t.Fatalf("status settings snapshot was not cleaned up: entries=%v err=%v", entries, err)
+	}
+	if _, err := os.Stat(daemonStarted); !os.IsNotExist(err) {
+		t.Fatalf("read-only status started the host daemon: %v", err)
 	}
 }
 

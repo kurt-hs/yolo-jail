@@ -752,7 +752,7 @@ type DoctorResult struct {
 // forgotten is inside the function that spawns the process. A caller that DID evaluate the
 // gate says so by going through Set.RunDoctorChecks below.
 func RunDoctorChecks(loopholes []*Loophole, timeout time.Duration) []DoctorResult {
-	return runDoctorChecks(loopholes, timeout, nil)
+	return runDoctorChecks(loopholes, timeout, nil, nil)
 }
 
 // RunDoctorChecks runs the doctor_cmd of each given record WITH THIS SET'S ORIGIN GATE
@@ -761,7 +761,15 @@ func RunDoctorChecks(loopholes []*Loophole, timeout time.Duration) []DoctorResul
 // the PLACEMENT rule included (docs/reference/loophole-system.md#the-placement-rule),
 // since both entry points share one body.
 func (s Set) RunDoctorChecks(from []*Loophole, timeout time.Duration) []DoctorResult {
-	return runDoctorChecks(from, timeout, &s)
+	return runDoctorChecks(from, timeout, &s, nil)
+}
+
+// RunDoctorChecksWithSettings runs doctor_cmds against frozen current settings instead of
+// the persistent settings file last written by a launch. The caller supplies bytes only
+// after resolving and, where declared, validating the current merged config. Temporary
+// inputs remain private and are removed after all doctor processes finish.
+func (s Set) RunDoctorChecksWithSettings(from []*Loophole, timeout time.Duration, frozen map[string][]byte) []DoctorResult {
+	return runDoctorChecks(from, timeout, &s, frozen)
 }
 
 // runDoctorChecks is the shared body. gate nil means no gate was evaluated, which for a
@@ -777,11 +785,17 @@ func (s Set) RunDoctorChecks(from []*Loophole, timeout time.Duration) []DoctorRe
 // judgement: a rule a caller is merely asked to apply is a rule the next call site does not
 // know about. Measured before this gate existed: a hand-placed manifest whose doctor_cmd
 // named a script an agent writes was EXECUTED by both preflight commands.
-func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set) []DoctorResult {
+func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, frozen map[string][]byte) []DoctorResult {
 	if timeout == 0 {
 		timeout = doctorTimeoutDefault
 	}
 	results := []DoctorResult{}
+	var cleanup []func()
+	defer func() {
+		for _, remove := range cleanup {
+			remove()
+		}
+	}()
 	for _, m := range loopholes {
 		if m.Source == SourcePack && (gate == nil || !gate.MayRunHostCode(m)) {
 			results = append(results, DoctorResult{Loophole: m, RC: nil,
@@ -810,7 +824,24 @@ func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set) []
 			results = append(results, DoctorResult{Loophole: m, RC: nil, Output: "not run: " + why})
 			continue
 		}
-		rc, output := runOne(m.DoctorCmd, timeout)
+		doctorCmd := m.DoctorCmd
+		if current, hasCurrent := frozen[m.Name]; hasCurrent && len(m.Settings) > 0 {
+			snapshot, remove, err := WritePrivateSettingsSnapshot(m, current)
+			if err != nil {
+				rc := 1
+				results = append(results, DoctorResult{Loophole: m, RC: &rc,
+					Output: "not run: current settings could not be prepared: " + err.Error() +
+						". Check host storage permissions, then rerun `yolo check --no-build` or `yolo loopholes status`."})
+				continue
+			}
+			cleanup = append(cleanup, remove)
+			doctorCmd = append([]string(nil), m.DoctorCmd...)
+			stable := SettingsFileFor(m.Name)
+			for i := range doctorCmd {
+				doctorCmd[i] = strings.ReplaceAll(doctorCmd[i], stable, snapshot)
+			}
+		}
+		rc, output := runOne(doctorCmd, timeout)
 		results = append(results, DoctorResult{Loophole: m, RC: rc, Output: output})
 	}
 	return results
