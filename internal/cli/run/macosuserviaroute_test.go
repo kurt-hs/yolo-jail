@@ -11,6 +11,7 @@ package run
 import (
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -160,7 +161,8 @@ func TestTheMacosUserArmStartsTheBridgeForAViaOrCarrierAndStopsIt(t *testing.T) 
 			o.Args = []string{tc.agent}
 			o.ProfileName = tc.profile
 			var started []*launchservice.Plan
-			stopped, stoppedBeforeRun := 0, -1
+			var stopped atomic.Int32
+			stoppedBeforeRun := int32(-1)
 			orig := startMacosUserService
 			startMacosUserService = func(p *launchservice.Plan, env map[string]string) (launchedService, string, error) {
 				started = append(started, p)
@@ -170,7 +172,7 @@ func TestTheMacosUserArmStartsTheBridgeForAViaOrCarrierAndStopsIt(t *testing.T) 
 			run := o.MacosUserRun
 			o.MacosUserRun = func(cfg *jsonx.OrderedMap, ws string, a, b []string, c, d string, h macosuser.HomeOverlay,
 				ctx macosuser.HostContext, dry bool, env *jsonx.OrderedMap, bt []packload.BlockedTool, jd macosuser.JailDaemons) int {
-				stoppedBeforeRun = stopped
+				stoppedBeforeRun = stopped.Load()
 				return run(cfg, ws, a, b, c, d, h, ctx, dry, env, bt, jd)
 			}
 			if rc := Run(*o); rc != 0 {
@@ -179,8 +181,8 @@ func TestTheMacosUserArmStartsTheBridgeForAViaOrCarrierAndStopsIt(t *testing.T) 
 			if len(started) != 1 || started[0].Service != "wire-bridge" {
 				t.Fatalf("started %v, want the wire bridge\n%s", started, stderr.String())
 			}
-			if stoppedBeforeRun != 0 || stopped != 1 {
-				t.Errorf("stopped %d times before the command ran and %d after; want 0 and 1", stoppedBeforeRun, stopped)
+			if stoppedBeforeRun != 0 || stopped.Load() != 1 {
+				t.Errorf("stopped %d times before the command ran and %d after; want 0 and 1", stoppedBeforeRun, stopped.Load())
 			}
 			// pi rides the via route, whose base the profile table carries (its derive writes pi's
 			// config file from it at boot); copilot rides the adapter address composed for its
@@ -223,7 +225,7 @@ func TestTheMacosUserSessionCarriesTheBridgesCallerTokenForAViaRoute(t *testing.
 			o.Args = []string{cmd}
 			o.ProfileName = ""
 			var started []*launchservice.Plan
-			stopped := 0
+			var stopped atomic.Int32
 			orig := startMacosUserService
 			startMacosUserService = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
 				started = append(started, p)
@@ -266,7 +268,7 @@ func TestTheMacosUserBridgeIsHandedTheAWSDoorwaysPointerForTheAgentItCarries(t *
 	o.ProfileName = "bedrock"
 	doors := observeDoorways(t)
 	var inputs []map[string]string
-	stopped := 0
+	var stopped atomic.Int32
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, env map[string]string) (launchedService, string, error) {
 		inputs = append(inputs, env)
@@ -306,7 +308,7 @@ func TestMacosUserRefusesAViaTheBridgeServesNoRouteFor(t *testing.T) {
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
 		t.Errorf("a refused launch started %q", p.Service)
-		return fakeLaunched{new(int)}, "", nil
+		return fakeLaunched{new(atomic.Int32)}, "", nil
 	}
 	t.Cleanup(func() { startMacosUserService = orig })
 	if rc := Run(*o); rc != 1 || seen.reached {
@@ -335,7 +337,7 @@ func TestTheMacosUserBridgeServingAViaAndAnAdapterPairingNamesBothAndCarriesBoth
 	o.ProfileName = ""
 	var started []*launchservice.Plan
 	var inputs []map[string]string
-	stopped := 0
+	var stopped atomic.Int32
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, env map[string]string) (launchedService, string, error) {
 		started = append(started, p)
@@ -387,7 +389,7 @@ func TestTheMacosUserArmStartsNoBridgeForAViaThatRePointsNothing(t *testing.T) {
 	orig := startMacosUserService
 	startMacosUserService = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
 		t.Errorf("the launch started %q for agy, whose config the via re-points nothing of", p.Service)
-		return fakeLaunched{new(int)}, "", nil
+		return fakeLaunched{new(atomic.Int32)}, "", nil
 	}
 	t.Cleanup(func() { startMacosUserService = orig })
 	if rc := Run(*o); rc != 0 || !seen.reached {
