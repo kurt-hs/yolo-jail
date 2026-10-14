@@ -113,7 +113,7 @@ func TestTreeUpdateTimingReadsOwnerThenContributingPack(t *testing.T) {
 
 // A NEXT-LAUNCH KEY WHOSE CHECK IS DUE is handed its good build, and the launch starts ONE background
 // advance for every such key, naming its log; nothing is checked or built in front. Red if the launch
-// stops starting it (runBuildSlot's call, or backgroundTreeAdvance's spawn).
+// stops starting it (runBuildSlot's registration, or the scheduler spawn).
 func TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance(t *testing.T) {
 	pf := newPoolFixture(t)
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})

@@ -252,41 +252,6 @@ func (a *advance) removeBuildJailOf(staging string) {
 		"build of it waits until it is", a.f.Label(), cname, rt, cname)
 }
 
-// backgroundTreeAdvance starts the background advance of the keys a launch handed what it had
-// (XB-D19), and says so at once, naming the keys and the log (XB-D20). The keys are the built trees'
-// and, since XB-D28, the patched forks' too — the name says tree, the mode covers every key. A key
-// another background advance runs right now is left to it.
-var backgroundTreeAdvance = func(keys []packload.Fork, rt, platform string, errw io.Writer, color bool) {
-	pr := richtext.Printer{W: errw, Color: color}
-	var want, labels []string
-	for _, f := range keys {
-		if pidlock.Held(backgroundKeyLock(f.Key())) {
-			continue // its outcome line said it is running (noteBackgroundOutcome)
-		}
-		want, labels = append(want, f.Key()), append(labels, f.Label())
-	}
-	if len(want) == 0 {
-		return
-	}
-	log := backgroundAdvanceLog()
-	them := "them"
-	if len(want) == 1 {
-		them = "it"
-	}
-	if err := startBackgroundAdvance(backgroundAdvanceArgv(want, rt, platform), log); err != nil {
-		step := "`yolo capture " + want[0] + "`"
-		if len(want) > 1 {
-			step = "`yolo capture <pack>/<name>` for each"
-		}
-		pr.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf("⚠ %s: updates for the next launch, and the "+
-			"background advance that checks and builds %s could not start (%v) — the next launch tries again, or %s now",
-			strings.Join(labels, ", "), them, err, step)))
-		return
-	}
-	pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: updates for the next launch — a background advance "+
-		"is checking and building %s now; its log is %s", strings.Join(labels, ", "), them, log)))
-}
-
 // backgroundArgs are the background advance's flags.
 type backgroundArgs struct {
 	runtime, platform string
