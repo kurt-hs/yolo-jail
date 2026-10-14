@@ -327,7 +327,8 @@ func bootstrapPath(e *Env) string { return e.Home + "/.yolo-bootstrap.sh" }
 func BootstrapScript(e *Env) string {
 	r := strings.NewReplacer(
 		"__YOLO_MISE_SHIMS__", e.MiseShims(),
-		"__YOLO_MCP_NPM_PACKAGES__", mcpPresetNpmPackages(e),
+		"__YOLO_MCP_NPM_PACKAGES__", mcpPresetLegacyNpmPackages(e),
+		"__YOLO_MCP_CAPTURE_CHECKS__", e.programCapturePresetChecks(),
 		// One check per distinct Node floor the selected packs' programs declare, each naming
 		// the programs and packs that declare it. Baked for macos-user's `env -i`, per the
 		// comment at the consuming site.
@@ -422,6 +423,7 @@ fc-cache >/dev/null 2>&1
 # Empty when no preset needs an npm package, so a jail that wants none installs
 # nothing.  This was previously unconditional: 112 npm packages in every jail,
 # including one with no agents and no presets at all.
+__YOLO_MCP_CAPTURE_CHECKS__
 YOLO_MCP_NPM="__YOLO_MCP_NPM_PACKAGES__"
 if [ -n "$YOLO_MCP_NPM" ]; then
     # Reinstall only when something is actually missing, so a warm jail is fast.

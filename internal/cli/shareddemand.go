@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -37,12 +38,15 @@ var errSharedPreparationForegroundOnly = errors.New("the user-scope selection do
 
 type preparationDemand struct {
 	Key, Runtime, Platform, Identity string
+	Kind                             string
 	AfterSeq                         uint64
 	SubscriptionGeneration           uint64
 	Fresh, Host, Background          bool
 }
 
 type preparationDemandResult struct {
+	UnsupportedNPM                                          bool              `json:"unsupported_npm,omitempty"`
+	Program                                                 *npmCaptureRecord `json:"program,omitempty"`
 	Delivery                                                entrypoint.ForkDelivery
 	Built, Failed, Bypassed, Lost, FellShort                bool
 	OperationError                                          string
@@ -53,7 +57,7 @@ type preparationDemandResult struct {
 }
 
 func demandResult(r advanceResult) preparationDemandResult {
-	return preparationDemandResult{r.delivery, r.built, r.failed, r.bypassed, r.lost, r.fellShort, r.operationError, r.patchFailure, r.good, r.from, r.to, r.failWhat, r.failErr, r.skipped, r.retained, r.problem, r.retryAt}
+	return preparationDemandResult{Delivery: r.delivery, Built: r.built, Failed: r.failed, Bypassed: r.bypassed, Lost: r.lost, FellShort: r.fellShort, OperationError: r.operationError, PatchFailure: r.patchFailure, Good: r.good, From: r.from, To: r.to, FailWhat: r.failWhat, FailErr: r.failErr, Skipped: r.skipped, Retained: r.retained, Problem: r.problem, RetryAt: r.retryAt}
 }
 func (r preparationDemandResult) advance() advanceResult {
 	return advanceResult{delivery: r.Delivery, built: r.Built, failed: r.Failed, bypassed: r.Bypassed, lost: r.Lost, fellShort: r.FellShort, operationError: r.OperationError, patchFailure: r.PatchFailure, good: r.Good, from: r.From, to: r.To, failWhat: r.FailWhat, failErr: r.FailErr, skipped: r.Skipped, retained: r.Retained, problem: r.Problem, retryAt: r.RetryAt}
@@ -225,9 +229,41 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 	if selectionErr != nil && !errors.Is(selectionErr, packsrc.ErrLockHeld) {
 		return a.freshRefusal("could not authorize shared preparation", selectionErr)
 	}
+
+	result, err := waitSharedDemandResult(ctx, d, o.sharedAutomatic, func(pid int) {
+		a.dim("%s: waiting for pid %d's shared preparation — interrupting detaches this requester", a.f.Label(), pid)
+	})
+	if err != nil {
+		return a.freshRefusal("shared preparation did not complete", err)
+	}
+	r := result.advance()
+	if r.failed {
+		return r
+	}
+	if current, e := freshPreparationIdentity(a.f, o.platform); e != nil || current != d.Identity {
+		return a.freshRefusal("selected inputs changed before handoff", errPreparationAdmissionStale)
+	}
+	handoffOptions := o
+	handoffOptions.operationCtx = ctx
+	handoff, early := newAdvance(a.f, handoffOptions)
+	if early != nil {
+		return *early
+	}
+	handed := handoff.finish(nil, forkBuild{}, 0, nil, r.delivery.Reason)
+	if handed.failed {
+		return handed
+	}
+	r.delivery, r.good = handed.delivery, handed.good
+	return r
+}
+
+// waitSharedDemandResult is the ONE requester lease/wait protocol. Source and
+// ordinary-capture adapters supply their own authorization and handoff, not lifetimes.
+func waitSharedDemandResult(ctx context.Context, d preparationDemand, automatic bool, say func(int)) (preparationDemandResult, error) {
+	var err error
 	dir := sharedDemandDir(d.Key, d.Runtime, d.Platform)
 	if err = os.MkdirAll(dir, 0700); err != nil {
-		return a.freshRefusal("could not create requester lease", err)
+		return preparationDemandResult{}, fmt.Errorf("could not create requester lease: %w", err)
 	}
 	var path string
 	var previousWorkerError []byte
@@ -260,7 +296,7 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 				_ = os.Remove(path + ".lease")
 				return nil
 			})
-			if o.sharedAutomatic && ctx.Err() != nil {
+			if automatic && ctx.Err() != nil {
 				// Scheduler stop drains a producer only when no other requester owns it.
 				// A fresh launch's detach is never made to wait for that teardown.
 				ticker := time.NewTicker(sharedDemandPoll)
@@ -284,17 +320,19 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 		}()
 	}
 	if err != nil {
-		return a.freshRefusal("could not attach preparation demand", err)
+		return preparationDemandResult{}, fmt.Errorf("could not attach preparation demand: %w", err)
 	}
-	if o.freshCheck {
+	if d.Fresh {
 		_ = notifyPreparationScheduler()
 	}
 	// Launch processes never acquire the production/key/build lock. Registration can finish even
 	// while transport, a build or another request's STARTED transaction is paused.
 	if err = sharedPreparationSpawn(ctx, d); err != nil {
-		return a.freshRefusal("the owned preparation worker could not start", err)
+		return preparationDemandResult{}, fmt.Errorf("the owned preparation worker could not start: %w", err)
 	}
-	a.dim("%s: waiting for pid %d's shared preparation — interrupting detaches this requester", a.f.Label(), pidlock.Holder(filepath.Join(dir, "worker.lock")))
+	if say != nil {
+		say(pidlock.Holder(filepath.Join(dir, "worker.lock")))
+	}
 	ticker := time.NewTicker(sharedDemandPoll)
 	defer ticker.Stop()
 	waitBound := time.NewTimer(forkBuildWaitBound)
@@ -302,62 +340,42 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 	seenWorker := false
 	for {
 		if ctx.Err() != nil {
-			return a.freshRefusal("the preparation requester was interrupted", ctx.Err())
+			return preparationDemandResult{}, fmt.Errorf("the preparation requester was interrupted: %w", ctx.Err())
 		}
 		b, e := os.ReadFile(path + ".result")
 		if e == nil {
 			var result preparationDemandResult
 			if e = json.Unmarshal(b, &result); e != nil {
-				return a.freshRefusal("could not read shared preparation outcome", e)
+				return preparationDemandResult{}, e
 			}
 			if ctx.Err() != nil {
-				return a.freshRefusal("the preparation requester was interrupted", ctx.Err())
+				return preparationDemandResult{}, ctx.Err()
 			}
-			r := result.advance()
-			if r.failed {
-				return r
-			}
-			// Re-read guarded serving authority and record THIS launch's hand, not the worker's hand.
-			if current, e := freshPreparationIdentity(a.f, o.platform); e != nil || current != d.Identity {
-				return a.freshRefusal("selected inputs changed before handoff", errPreparationAdmissionStale)
-			}
-			handoffOptions := o
-			handoffOptions.operationCtx = ctx
-			handoff, early := newAdvance(a.f, handoffOptions)
-			if early != nil {
-				return *early
-			}
-			handed := handoff.finish(nil, forkBuild{}, 0, nil, r.delivery.Reason)
-			if handed.failed {
-				return handed
-			}
-			r.delivery = handed.delivery
-			r.good = handed.good
-			return r
+			return result, nil
 		}
 		if !errors.Is(e, os.ErrNotExist) {
-			return a.freshRefusal("could not read shared preparation outcome", e)
+			return preparationDemandResult{}, fmt.Errorf("could not read shared preparation outcome: %w", e)
 		}
 		workerError, readErr := os.ReadFile(filepath.Join(dir, "worker-error.json"))
 		if readErr == nil && string(workerError) != string(previousWorkerError) {
 			var failure struct{ Error string }
 			if e = json.Unmarshal(workerError, &failure); e != nil {
-				return a.freshRefusal("the owned worker outcome is unreadable", e)
+				return preparationDemandResult{}, fmt.Errorf("the owned worker outcome is unreadable: %w", e)
 			}
-			return a.freshRefusal("the owned preparation worker stopped", errors.New(failure.Error))
+			return preparationDemandResult{}, fmt.Errorf("the owned preparation worker stopped: %w", errors.New(failure.Error))
 		}
 		held, probeErr := demandLeaseHeld(filepath.Join(dir, "worker.lock"))
 		seenWorker = seenWorker || probeErr == nil && held
 		if probeErr == nil && !held {
 			if seenWorker {
-				return a.freshRefusal("the owned preparation worker exited without a usable outcome", errors.New("worker stopped"))
+				return preparationDemandResult{}, fmt.Errorf("the owned preparation worker exited without a usable outcome: %w", errors.New("worker stopped"))
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return a.freshRefusal("the preparation requester was interrupted", ctx.Err())
+			return preparationDemandResult{}, fmt.Errorf("the preparation requester was interrupted: %w", ctx.Err())
 		case <-waitBound.C:
-			return a.freshRefusal("waiting for owned preparation timed out", pidlock.ErrTimedOut)
+			return preparationDemandResult{}, fmt.Errorf("waiting for owned preparation timed out: %w", pidlock.ErrTimedOut)
 		case <-ticker.C:
 		}
 	}
@@ -448,7 +466,7 @@ func authorizedPreparationDemands(ctx context.Context, dir string, identity stri
 	var unknown error
 	for _, r := range live {
 		if r.Identity == identity {
-			_, release, e := resolveDemandFork(ctx, r.preparationDemand)
+			_, release, e := resolvePreparationDemand(ctx, r.preparationDemand)
 			release()
 			if e == nil {
 				authorized[r.path] = true
@@ -500,10 +518,16 @@ func sharedTimerDemand(ctx context.Context, d preparationDemand) (*preparationRe
 	}
 	r := state.Subscriptions[idx]
 	automatic := d
+	if r.Kind == preparationOrdinaryProgramKind {
+		if d.Kind != "" && d.Kind != r.Kind {
+			return nil, nil
+		}
+		automatic.Kind = r.Kind
+	}
 	automatic.Fresh = false
 	automatic.Background = true
 	automatic.SubscriptionGeneration = r.Generation
-	f, release, err := resolveDemandFork(ctx, automatic)
+	resolved, release, err := resolvePreparationDemand(ctx, automatic)
 	defer release()
 	if errors.Is(err, errPreparationAdmissionStale) || errors.Is(err, errSharedPreparationForegroundOnly) {
 		return nil, nil
@@ -511,7 +535,7 @@ func sharedTimerDemand(ctx context.Context, d preparationDemand) (*preparationRe
 	if err != nil {
 		return nil, err
 	}
-	identity, err := preparationInputIdentity(f, r.Runtime, r.Platform)
+	identity, err := preparationDemandInputIdentity(resolved, automatic)
 	if err != nil {
 		return nil, err
 	}
@@ -525,12 +549,12 @@ func sharedTimerDemand(ctx context.Context, d preparationDemand) (*preparationRe
 // record to inspect a failure: the existing advance owns that check/replay/settle authority.
 // Revalidate the independently owned subscription with a nonwaiting metadata transaction.
 func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commit func() error) error {
-	f, release, err := resolveDemandFork(ctx, d)
+	resolved, release, err := resolvePreparationDemand(ctx, d)
 	defer release()
 	if err != nil {
 		return err
 	}
-	identity, err := preparationInputIdentity(f, d.Runtime, d.Platform)
+	identity, err := preparationDemandInputIdentity(resolved, d)
 	if err != nil {
 		return err
 	}
@@ -650,7 +674,8 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				request = r.preparationDemand
 			}
 		}
-		f, release, resolveErr := resolveDemandFork(ctx, request)
+		resolved, release, resolveErr := resolvePreparationDemand(ctx, request)
+		f := resolved.Fork
 		if errors.Is(resolveErr, packsrc.ErrLockHeld) {
 			release()
 			select {
@@ -661,6 +686,8 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 			continue
 		}
 		var res advanceResult
+		var program *npmCaptureRecord
+		var unsupportedNPM bool
 		if resolveErr != nil {
 			res = advanceResult{failed: true, problem: resolveErr.Error(), delivery: entrypoint.ForkDelivery{Reason: resolveErr.Error()}}
 		} else {
@@ -699,25 +726,36 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 						return
 					}
 					_, e = authorizedPreparationDemands(workCtx, dir, request.Identity)
-					if e != nil && timer == nil && !errors.Is(e, packsrc.ErrLockHeld) {
+					if e != nil && timer == nil && !errors.Is(e, packsrc.ErrLockHeld) && !errors.Is(e, pidlock.ErrHeld) {
 						cancel()
 						return
 					}
 				}
 			}()
-			opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshAfterSeq: request.AfterSeq, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request)}
-			if request.Host && !f.IsTree() {
-				hostOnly := true
-				for _, r := range live {
-					if r.Identity == request.Identity && !r.Host {
-						hostOnly = false
+
+			if resolved.NPM != nil {
+				record, err := advanceNPMCapture(withOrdinaryCaptureRuntime(workCtx, request.Runtime), &capture.Store{Dir: paths.CapturesDir()}, *resolved.NPM, resolved.Fingerprint, request.Fresh, request.AfterSeq, w, demandAdmissionGuard(workCtx, dir, request))
+				if err != nil {
+					unsupportedNPM = errors.Is(err, errNPMCaptureUnsupported)
+					res = advanceResult{failed: true, operationError: err.Error()}
+				} else {
+					program = &record
+				}
+			} else {
+				opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshAfterSeq: request.AfterSeq, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request)}
+				if request.Host && !f.IsTree() {
+					hostOnly := true
+					for _, r := range live {
+						if r.Identity == request.Identity && !r.Host {
+							hostOnly = false
+						}
+					}
+					if hostOnly {
+						opts.installed = sharedInstalledCopy(workCtx, request)
 					}
 				}
-				if hostOnly {
-					opts.installed = sharedInstalledCopy(workCtx, request)
-				}
+				res = advancePatchedFork(f, opts)
 			}
-			res = advancePatchedFork(f, opts)
 			cancel()
 			<-monitorDone
 		}
@@ -731,10 +769,13 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				if r.Identity != request.Identity || r.Fresh && (!request.Fresh || r.AfterSeq > request.AfterSeq) {
 					continue
 				}
-				if request.Host && !f.IsTree() && !r.Host && r.Fresh && res.delivery.Key == "" && !res.failed && res.skipped == "" {
+				if request.Kind != preparationOrdinaryProgramKind && request.Host && !f.IsTree() && !r.Host && r.Fresh && res.delivery.Key == "" && !res.failed && res.skipped == "" {
 					continue
 				} // an installed host copy cannot fulfill a jail artifact demand
-				if e = writeDemandJSON(r.path+".result", demandResult(res)); e != nil {
+				result := demandResult(res)
+				result.Program = program
+				result.UnsupportedNPM = unsupportedNPM
+				if e = writeDemandJSON(r.path+".result", result); e != nil {
 					return e
 				}
 			}

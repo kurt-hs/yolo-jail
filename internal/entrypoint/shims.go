@@ -579,7 +579,7 @@ func GenerateAgentLaunchers(e *Env) error {
 			switch inst.Kind {
 			case "npm":
 				segments := npmAgentLauncherSegments(p.Name, inst, stampDir, receiptsFile(e),
-					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin))
+					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), e.programCaptureShell(inst.Bin, inst.Package))
 				prefix := nodeExecPrefix(inst.NodeFloor)
 				launcher = strings.Join(segments, prefix)
 				// AR-L5: a declared floor nothing met at generation leaves the render's segments
@@ -671,7 +671,7 @@ func npmAgentLauncher(pack string, inst *packdecl.Install, stampDir, receiptsPat
 // The split point is a token no value can hold: random per render, so a pack value that happens
 // to spell the template's sentinel cannot become a place the interpreter is spliced.
 func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, receiptsPath string,
-	updates bool, servers launcherServers, flags *packload.LaunchInjection) []string {
+	updates bool, servers launcherServers, flags *packload.LaunchInjection, prepared ...string) []string {
 	token := execPrefixToken()
 	binName := inst.Bin
 	pkgName, pkgVersion := splitNpmSpec(inst.Package)
@@ -683,6 +683,10 @@ func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, rec
 	if extraFlags != "" {
 		extraFlags += " "
 	}
+	captureInstall := ""
+	if len(prepared) > 0 {
+		captureInstall = prepared[0]
+	}
 	// launchFlagSplices rides on the END of every pair list rather than being spelled out
 	// three times: DP-B44's two sentinels are the same in all three templates, and a
 	// carrier that forgot one would drop a pack's flags silently.
@@ -691,6 +695,7 @@ func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, rec
 		"__YOLO_PACK__", shquote.Quote(pack),
 		"__YOLO_PKG__", shquote.Quote(pkgName),
 		"__YOLO_SPEC__", shquote.Quote(npmInstallSpec(pkgName, pkgVersion)),
+		"__YOLO_CAPTURE_INSTALL__", captureInstall,
 		"__YOLO_PINNED__", shquote.Quote(pinned),
 		"__YOLO_STAMP_DIR__", shquote.Quote(stampDir),
 		"__YOLO_EXTRA__", extraFlags,
@@ -1439,6 +1444,7 @@ export _YOLO_LAUNCHER_ACTIVE="${_YOLO_LAUNCHER_ACTIVE:-}:$BIN"
 
 mkdir -p "$STAMP_DIR"
 mkdir -p "$NPM_CONFIG_PREFIX"
+__YOLO_CAPTURE_INSTALL__
 ` + stampMtimeFn + receiptShellFns + misplacedShellFn + `
 _installed_version() {
     jq -r '.version' "$NPM_CONFIG_PREFIX/lib/node_modules/$PKG/package.json" 2>/dev/null || echo "0"

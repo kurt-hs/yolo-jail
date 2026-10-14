@@ -646,6 +646,10 @@ type Options struct {
 	// PLATFORM likewise — only the pipeline knows which backend is about to run, and the
 	// one answer that looks right and is wrong is the host's own (containerJailPlatform).
 	AutoCapture func(bins []string, platform string)
+	// PreparePrograms supplies exact ordinary compatibility decisions before a fresh
+	// container starts. Capture jails and attaches never call it.
+	PreparePrograms func(ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error)
+	programCaptures map[string]entrypoint.ProgramCaptureDelivery
 	// MacosUserCaptures picks, from the install-capture store at dir (CapturesDir's answer), the
 	// entry the materialize path's own resolver chooses for each of bins at platform, and names
 	// the store's other current entries there (kept) — the macos-user launch's half of hand-off

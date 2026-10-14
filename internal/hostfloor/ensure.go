@@ -59,6 +59,7 @@ const (
 // (wrapped, with the reason); one whose record a newer yolo wrote returns ErrNewerRecord's
 // refusal, installing nothing; a first install that fails returns its error.
 func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) {
+	delete(f.preparedNPM, p.Bin())
 	if p.Install.IsPatchedFork() {
 		// A PATCHED fork's install runs its advance first (patched.go): its own arm, end to end.
 		return f.ensurePatched(ctx, p)
@@ -205,15 +206,23 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 		return st, Current, nil
 	}
 	rec := st.Record
+	selectedChanged := false
+	if p.Install.Kind == "npm" && !f.ManualUpdate && f.PrepareNPM != nil {
+		selected, err := f.selectPreparedNPM(ctx, p, f.nodeBin(rec.Node), false, f.pollTimeout())
+		if err != nil {
+			return st, Kept, err
+		}
+		selectedChanged = selected != nil && (selected.Compatibility != rec.Recipe || selected.EntryKey != rec.Capture)
+	}
 	if p.Install.Kind == "npm" {
-		if _, version := packdecl.SplitNpmSpec(p.Install.Package); packdecl.NpmSpecIsPinned(version) {
+		if _, version := packdecl.SplitNpmSpec(p.Install.Package); packdecl.NpmSpecIsPinned(version) && !selectedChanged && (!f.ManualUpdate || f.PrepareNPM == nil) {
 			return st, Current, nil
 		}
 	}
-	if !f.ManualUpdate && f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
+	if !f.ManualUpdate && !selectedChanged && f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack) {
 		return st, Current, nil
 	}
-	if !f.ManualUpdate && f.now().Sub(rec.Checked) < f.updateInterval() {
+	if !f.ManualUpdate && !selectedChanged && f.now().Sub(rec.Checked) < f.updateInterval() {
 		return st, Current, nil
 	}
 	lk, err := acquire(f.lockPath(p.Bin()), false, nil)
@@ -283,7 +292,18 @@ func (f *Floor) newerThan(ctx context.Context, p Program, rec *Record) (string, 
 		if !f.NodeReady(rec.Node) {
 			return "", fmt.Errorf("its Node v%s is gone from the floor", rec.Node)
 		}
-		name, _ := packdecl.SplitNpmSpec(p.Install.Package)
+		if selected, err := f.selectPreparedNPM(ctx, p, nodeBin, f.ManualUpdate, f.pollTimeout()); err != nil {
+			return "", err
+		} else if selected != nil {
+			if selected.Compatibility == rec.Recipe && selected.EntryKey == rec.Capture {
+				return "", nil
+			}
+			return selected.Version, nil
+		}
+		name, version := packdecl.SplitNpmSpec(p.Install.Package)
+		if packdecl.NpmSpecIsPinned(version) {
+			return "", nil
+		}
 		// SAID BEFORE THE POLL, because the poll is the network: a slow or unreachable registry
 		// holds the launch for up to the poll timeout, once an interval, before the "starting"
 		// line — a wait that is yolo's, not the agent's, and a launch has no quiet mode.
@@ -545,6 +565,29 @@ func (f *Floor) npmEnv(nodeBin, prefix string) []string {
 	return f.installerEnv(nodeBin, set...)
 }
 
+func (f *Floor) selectPreparedNPM(ctx context.Context, p Program, nodeBin string, fresh bool, bound time.Duration) (*PreparedNPM, error) {
+	if f.PrepareNPM == nil {
+		return nil, nil
+	}
+	if selected, ok := f.preparedNPM[p.Bin()]; ok {
+		return selected, nil
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+	selected, err := f.PrepareNPM(checkCtx, p, nodeBin, fresh)
+	if err != nil {
+		return nil, err
+	}
+	if checkCtx.Err() != nil {
+		return nil, checkCtx.Err()
+	}
+	if f.preparedNPM == nil {
+		f.preparedNPM = map[string]*PreparedNPM{}
+	}
+	f.preparedNPM[p.Bin()] = selected
+	return selected, nil
+}
+
 // installNpm installs an npm program into dir/npm with the floor's Node.
 func (f *Floor) installNpm(ctx context.Context, p Program, dir string) (*Record, error) {
 	v := f.NodeVersion()
@@ -554,6 +597,26 @@ func (f *Floor) installNpm(ctx context.Context, p Program, dir string) (*Record,
 	nodeBin, err := f.ensureNode(ctx, v)
 	if err != nil {
 		return nil, err
+	}
+	if selected, err := f.selectPreparedNPM(ctx, p, nodeBin, f.ManualUpdate, f.installTimeout()); err != nil {
+		return nil, err
+	} else if selected != nil {
+		home := filepath.Join(dir, "home")
+		if err := os.MkdirAll(home, 0700); err != nil {
+			return nil, err
+		}
+		if err := selected.Materialize(ctx, home); err != nil {
+			return nil, err
+		}
+		entry := filepath.Join(home, ".npm-global", "bin", p.Bin())
+		if _, err := os.Stat(entry); err != nil {
+			return nil, err
+		}
+		rec := &Record{Node: v, Entry: entry, Version: selected.Version, Capture: selected.EntryKey, Recipe: selected.Compatibility, Exec: []string{entry}}
+		if isNodeScript(entry) {
+			rec.Exec = []string{filepath.Join(nodeBin, "node"), entry}
+		}
+		return rec, nil
 	}
 	if err := os.MkdirAll(f.npmCache(), 0o700); err != nil {
 		return nil, err
@@ -596,6 +659,9 @@ func (r *Record) NpmPackageDir(pkg string) string {
 	name, _ := packdecl.SplitNpmSpec(pkg)
 	if name == "" {
 		return ""
+	}
+	if r.Capture != "" {
+		return filepath.Join(r.Dir, "home", ".npm-global", "lib", "node_modules", filepath.FromSlash(name))
 	}
 	return filepath.Join(npmPrefix(r.Dir), "lib", "node_modules", filepath.FromSlash(name))
 }

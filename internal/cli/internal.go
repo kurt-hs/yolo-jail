@@ -51,6 +51,10 @@ func runInternal(args []string) int {
 		// hostFooterTables is the host notch's profile read (OQ-FT6): outside a jail, with
 		// no selection in the agent's env, the tables come from the user config.
 		return footer.Main(args[1:], os.Stdin, os.Stdout, hostFooterTables)
+	case programCaptureJailVerb:
+		return runProgramCaptureJail(args[1:], os.Stdout, os.Stderr)
+	case "program-npm":
+		return runProgramNPM(args[1:], os.Stderr)
 	case "capture-materialize":
 		// Install-capture's second verb (program-delivery.md §6.3), called by the
 		// GENERATED NATIVE LAUNCHER before it would download. Hidden for capture-run's

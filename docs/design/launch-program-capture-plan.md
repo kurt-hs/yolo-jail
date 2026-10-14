@@ -1,19 +1,18 @@
 ---
-title: "Sketch: machine-level ordinary CLI and MCP preparation"
+title: "Ready handoff: machine-level ordinary CLI and MCP preparation"
 status: accepted
-stage: SKETCH
-next: "Wire the verified committed selected install-only helper into the sealed producer and launch/readiness/MCP consumers"
+stage: DECIDED
+next: "Build the selected sealed npm producer and exact production consumers, then integrate the shared-demand owner's committed API"
 depends-on:
   - launch-update-preparation-plan.md
 ---
 
-# Sketch: machine-level ordinary CLI and MCP preparation
+# Ready handoff: machine-level ordinary CLI and MCP preparation
 
-**Status:** 2026-10-13. Source checked against `4e7d58311` plus this isolated candidate.
-Compatibility, artifact-driver and keyed admission pieces include the component security repairs
-and are locally tested;
-the selected sealed producer and launcher/readiness/MCP replacement are not wired. This is not
-a ready handoff for the whole adapter.
+**Status:** 2026-10-13. Written against the stable combined candidate `a2b94b129`.
+The selected helper and capture security components are committed. Engineering mechanics below
+are settled for implementation; the producer, consumers and shared-demand integration remain
+unbuilt. This is not a feature-completion claim.
 **Design:** [preparation boundary](launch-update-preparation.md) and
 [OQ-PD23](program-delivery.md#decision-ledger). Design wins on behavior, tree wins on fact,
 this sketch is advice and first to be wrong. No new owner ruling is needed.
@@ -81,35 +80,105 @@ include output/refresh instruction changes in its recipe identity.
   leaves legacy metadata/receipts intact. Warm exact winners also validate canonical metadata.
   Different ABI identities with genuinely compatible metadata may still share one CAS entry.
 - **Boundary:** ownership cleanup and descriptor reads do not seal a producer. The selected
-  sealed producer, actual readiness/MCP/launcher consumers and scheduler demand wiring below
-  are still absent; this component cannot claim host-credential isolation or feature completion.
+  adapter below must call the actual empty-pack seal; its caller and assembled-runtime negatives
+  are separate acceptance evidence from the artifact-driver tests.
 
-## Actual helper milestone and remaining seam
+## Selected npm production mechanics
 
-Read-only inspection of the Task 2 owned source found draft
-`SelectedProgramPreparations(e, packs, mode)`, `ProgramPreparationEnv(mode)` and the context-cancellable
-launcher runner. Its source HEAD was `4e7d58311`; these helper edits were **uncommitted** when inspected.
-They are not APIs available in this candidate. The runner still inherits environment; wrapping it
-would not establish credential-free production.
+**Constraint:** supported npm installation inputs contain only owner, bin, package selector and
+Node floor. Custom install flags, source/native programs and vendor self-update recipes retain
+their existing bounded route. MCP contributes only packages of effective enabled entries; never
+server args, env or credential-bearing tables. Empty vectors do nothing.
 
-The following source work remains; it is engineering, not a new approval gate:
+**Advice:** resolve a package lock with scripts disabled in an actual sealed empty-pack runtime,
+observing Node version/ABI, npm version, platform and image identity there. Persist the lock's
+resolved version, source/integrity and complete dependency graph as immutable resolution facts.
+The selected floor is satisfied through the existing mise toolchain, never a guessed ABI.
+A second sealed runtime installs with `npm ci` only if exact admission has no winner. Validate
+its observed runtime against the resolution before scripts run. Both phases use the existing
+owned child/stream/cancellation lifecycle and original-runtime known-gone witness.
 
-1. Verify the committed helper's selected/honored declaration, bin/platform/shadow selection,
-   install-only/no-application-argv mode, cancellation and actual enabled MCP/declared refresh set.
-   Resolve release/dependency/runtime/ABI facts without relaxing explicit version/source constraints.
-2. Supply `prepareProgramCapture`'s producer through an **actual non-nil seal** at
-   [`runCaptureJail`](../../internal/cli/capturehost.go), with the authorized narrowed pack set,
-   exact program output roots and original-runtime record. The existing installer capture still
-   passes nil and `resolveCaptureTarget` still rejects npm; neither proves this producer exists.
-3. Keep the seal's MCP table withholding. Original server env/args can contain secrets:
-   [`agentServerTables`](../../internal/cli/run/seal.go) correctly removes them. Only selected resolved
-   install/refresh artifact inputs may enter production; never restore credential-bearing tables.
-4. Join the existing scheduler/request checks and pools, supplying its short nonwaiting input guard.
-   The admission adapter does not implement update timing, STARTED-boundary checks or shared-demand
-   ownership. A cancelled waiter must not cancel work other demand still owns.
-5. Wire exact compatibility into real readiness/launcher/server/host materialization callsites,
-   replacing only supported routes. A raw npx server, unsupported native producer or pin stays on
-   its honest legacy path. Timer work never renders; attach keeps its running generation.
+**Constraint:** the production call to `runCaptureJail` has a non-nil seal and an explicitly empty
+pack selection. No selected pack manifest, hook, provider or sibling program crosses; only the
+installation input file enters the scratch workspace. The existing seal withholds host config,
+credential channel, services, grants, MCP tables and shared caches from the first runtime start.
+Use the hidden artifact driver for the install phase, full relocation scan and exact roots.
+
+**Advice:** one declaration-keyed resolution record stores the latest successful resolved facts
+and started-check sequence. Normal warm delivery reads that record and exact receipts without
+runtime/registry work; fresh requests register before checking and require a later sequence.
+Keep check/entry exclusion separate from short publication transactions. Runtime recipe changes
+invalidate the record. Guard declaration/runtime identity again immediately before publication.
+Failed/cancelled manual resolution never turns old-good bytes into successful freshness.
+
+**Constraint:** exact per-launch compatibility decisions feed generated launchers, readiness,
+enabled MCP materialization and the host's actual declared owner/applied MCP vector. Independent
+identity-named payload directories keep running programs stable; only the next launch/apply
+moves entry links. Timer work prepares immutable bytes and never materializes a home or settings.
+Workspace-only declarations the user resolver cannot authorize retain the real foreground route.
+Shared ownership extends the committed shared-demand worker/result protocol with an
+`ordinary-program` discriminator and exact ordinary result. It does not mint a source-fork
+request, carry a manifest/executable path, or create a second worker, monitor, registry or pool.
+The existing unique requester/kernel lease, detached worker, current user resolver, timer lease
+and final no-wait demand/subscription guards remain the owners. Short metadata contention is
+retried outside those locks without repeating resolution or installation; cancellation and
+revocation still forbid success. Scheduler dispatch lives in the existing persistent loop.
+
+**Constraint:** sealed reuse supports only the independently matching **baseline** runtime.
+The image marker identifies the base flake, not `packages:` or store-delivered loader variants.
+Customized packages, configured Node toolchains, loader/tool overrides in `env_sources` or the
+composed channel, and file-backed env sources whose runtime effect is not established use the
+existing authorized bounded installers. They are disclosed, not refused or silently dropped;
+`--update` must still finish its qualifying legacy check or fail before the target executes.
+Do not widen the empty-config seal to inherit caller packages or credentials to claim equality.
+
+**Constraint:** the HOST floor selects a capture only after its own Node binary/version/ABI,
+npm, platform and actual baseline identity match every producer fact. Missing baseline identity,
+custom loader environment and unsupported Darwin artifact mode retain the real host installer,
+its freshness/wait/cancellation and fixed-selector rules. No new native producer is required.
+The compatible route holds one exact decision through floor publication, keeps independent
+copies, and can consume a timer-prepared generation without a mutable registry poll.
+
+### Source and test map
+
+- New selected producer/inner npm driver under `internal/cli`; dispatch in the existing hidden
+  internal command table. Reuse `prepareProgramCapture`, validated CAS admission, exact receipts,
+  materializer and the existing capture-child lifecycle.
+- `programcapturedemand.go` resolves installation authority from current user selection and
+  adapts ordinary requests/results to `shareddemand.go`; `programcapturescheduler.go` adds
+  ordinary records/dispatch to `preparationscheduler.go`, never another timer loop.
+- `programcapturehost.go` wires compatibility-gated ordinary reuse into the actual host floor;
+  its independent bounded installer remains the fallback, including unsupported platforms.
+- Public run and HOST tests in `programcapturedemand_test.go`, `programcapturehost_test.go` and
+  `programcaptureruntime_test.go` exercise real callbacks/consumers with private synthetic npm
+  fixtures and an observed installed Node. `programcapturelifetime_test.go` tests the actual
+  shared worker's second-demand retention, zero-demand teardown and selection revocation;
+  `programcapturescheduler_test.go` drives the existing production timer and checks running-home
+  stability. Generated readiness/MCP/bootstrap consumers use the actual hidden materializer.
+- Fresh container preparation callsite in `internal/cli/run`, wired only by the normal CLI front
+  door. The callback returns exact compatibility decisions, never copies or a global generation.
+- Entrypoint generated npm launchers and enabled-server refresh read those exact decisions;
+  legacy capture/fork selection stays separate. Host floor resolves its declared ordinary owner.
+- Permanent synthetic tests must reach these production callers: cold/warm cross-workspace reuse,
+  lock/runtime/ABI conflicts, fresh newer registry/fixed pins, cancellation and stale guard,
+  running-generation stability, and actual assembled seal mount/config/env/input negatives.
+  Test registries/installers are local fixtures; no agent execution or provider API calls.
+
+**Gates:** targeted caller tests, affected short suites, vet, Linux build and Darwin compile,
+format/diff check and document check. Combined gates, pins, census and nested/native acceptance
+remain once-only landing-owner work. Preserve actual unfinished source outside the disposable tree.
+
+## Candidate implementation checklist
+
+The selected adapter now supplies the real non-nil seal and empty staged pack tree, resolved
+npm lock/runtime facts, original-runtime witness, STARTED boundaries and exact admission.
+Public run/host callbacks, generated readiness/MCP/bootstrap materialization, generic shared
+demand dispatch and ordinary records in the persistent scheduler are wired in this candidate.
+The source/test map above names those callsites; this is not acceptance of a live container.
+Legacy `yolo capture` still rejects npm and retains its nil-artifact installer semantics.
+Unsupported runtime/installer routes keep their existing bounded checks and fixed constraints.
+The seal still withholds MCP/server env/args; timer work admits bytes without rendering homes,
+and an attach keeps its immutable running-launch vector.
 
 ## Verification and fences
 
@@ -127,12 +196,13 @@ Targeted commands: `go test -short ./internal/capture ./internal/entrypoint ./in
 `go vet ./internal/capture ./internal/entrypoint ./internal/cli`, and a build of `./cmd/yolo`.
 These establish local behavior, **not** a sealed runtime launch or capture replacement at readiness.
 
-Fences remain capture/store/receipt adapters and their tests. Scheduler/freshness, source-fork,
-host/Apple/liveness and selected-helper edits stay with their owning tasks. Existing
+The ordinary adapter extends only the generic shared-demand dispatch and scheduler record kind.
+Independent source-fork, host/Apple/liveness repairs retain their committed owning-task behavior
+and permanent tests. Existing
 [PF-D81 / PF-D82](patched-forks.md#decision-ledger) authority is untouched; no new compatibility
 field is required of their historically valid receipts.
 
 **Acceptance still external:** combined census/full gate and fresh non-agent runtime verification,
 real rootless and native Darwin sealing evidence, controlled cold/warm wall-clock measurements
-and real agent loading. Exact identity selection retains each still-reachable compatibility winner;
+and platform-specific runtime evidence. No automated check starts a coding agent or calls its API. Exact identity selection retains each still-reachable compatibility winner;
 no age-based reap or new global liveness registry was added.
