@@ -10,16 +10,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-A launch leaves records explaining what it did, `--update` checks builds fresh on
-demand, `yolo stop` ends a stuck jail, and a profile declares what its subagents run on.
+Your environment prepares eligible builds between launches, checks builds fresh when you ask, and
+records what each launch did.
 
 ### Added
 
-**Daemon logs you can reconstruct a request from.** Every daemon and host-service line carries a millisecond timestamp; the wire bridge and credential adapters log each request with outcome and timings, pending ones included. An adapter's line names the asking agent; the host's crossing log names each jail. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
+**Daemon logs you can reconstruct a request from.** Daemon and host-service lines carry millisecond
+timestamps. The wire bridge and credential adapters log request outcomes and timings, including
+pending requests; adapter logs name the asking agent and crossing logs name the jail.
+See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
-**Launch logs that explain a launch.** Each launch log records the command you ran, each agent's profile source, what changed since the last launch, and which captured edits the boot replays; slow host launches are timed step by step, and build-jail logs are kept. See [the launch records](docs/reference/report-tiers.md#archaeology-records).
+**Launch logs that explain a launch.** Each launch log records your command, agent profile sources,
+changes since the last launch, and captured edits replayed at boot. Slow host-launch steps are timed,
+and build-jail logs are kept.
+See [the launch records](docs/reference/report-tiers.md#archaeology-records).
 
-**Fresh builds on demand with `--update`.** `yolo -u`/`--update -- <command>` and `yolo host --update -- <command>` check this launch's selected build inputs now, reusing unchanged good builds; on a running jail it refuses and names a fresh launch instead. See [explicit update](docs/design/launch-update-preparation.md#explicit-update-and-launch-materialization).
+**Fresh builds on demand with `--update`.** `--update` on `yolo` or `yolo host` checks this
+launch's selected build inputs, reusing unchanged good builds. On a running jail it refuses and
+names a fresh launch instead.
+See [explicit update](docs/design/launch-update-preparation.md#explicit-update-and-launch-materialization).
+
+**Prepare selected builds for a later launch.** Set eligible selected packs' `agent_updates` entry
+to `"next-launch"` to prepare updates while you work. Later launches can reuse admitted builds
+without changing the current environment. `yolo pack status` reports preparation state;
+`yolo pack prepare start|stop|status` manages the host worker.
+See [launch preparation](docs/design/launch-update-preparation.md).
+
+**Git skips optional index refreshes with `guardrails`.** When selected, the pack makes Git skip
+optional index work that takes a lock, such as refreshing it during `git status`; commands that
+write still take required locks. Set `GIT_OPTIONAL_LOCKS=1` in `env_sources` or for a command to
+opt back in.
+See [guardrails](packs/guardrails/README.md).
 
 **`yolo stop --force` ends a jail that will not end.** `-f`/`--force` stops the container with no
 grace period and signals its keeper, so one that will not finish stops anyway.
@@ -36,27 +57,32 @@ one login covers every jail on the machine. See
 
 ### Changed
 
-**`yolo stop` waits for the jail's teardown, up to about two minutes.** It streams the keeper's
-progress; a keeper that outlasts it is reported with its pid, log and last line;
-`--force` ends it now. Ctrl-C still exits 130.
+**`yolo stop` waits for teardown, up to about two minutes.** It streams keeper progress and reports
+the pid and log if teardown outlasts the wait; `--force` ends it now. Ctrl-C still exits 130.
 
 **Selecting an agent pack no longer brings the Bedrock and OpenAI-subscription packs with it.** Add
 `bedrock` or `openai-auth` to `packs` if you use their profiles or providers; a launch that needs
 one names the pack to add.
 
-**Repeat launches with the same packages skip the rebuild.** A launch baking extra packages records its image, and an identical later launch reuses it after verifying it. Config and environment lists keep their own records; a changed list or a moving ref always rebuilds. See [the question asked before the build](docs/reference/image-staging-vs-baking.md#the-stock-tag-and-the-question-asked-before-the-build).
+**Repeat launches with the same packages skip the rebuild.** Identical launches reuse the verified
+image from a launch that bakes extra packages. Changed config or environment lists, or a moving
+ref, still rebuild. See [image staging](docs/reference/image-staging-vs-baking.md).
 
 ### Fixed
 
-- A setting captured from a Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription; the boot names each dropped one and logs every change.
-- Quitting a jail no longer waits on deleting that launch's patched-extension copies.
-- A patched fork updating for the next launch no longer holds one up: the launch starts from its last good build while the update runs in the background.
-- Claude now always uses its profile's provider, from another Claude's shell, with Bedrock or gateway settings set, or after editing those in a jail, and yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
-- A non-running container of the jail's name is no longer "No jail running": `yolo stop` names its state and ends it, failing when the runtime cannot confirm it is gone; a launch force-removes one not reported as running, or names the command that clears it.
-- A stop the runtime already finished still runs the keeper's teardown instead of failing; leaving reports another session only when one holds the jail; an interrupted keeper still ends the jail by itself.
-- On Apple Container, a stop no longer reads an unanswerable listing as the jail gone, and waits out one that trails its jail's end.
-- With a profile active, pi no longer starts on a provider outside it or saves one as its default.
-- A profile's `model` may be one of your provider's aliases, resolving to its id; one that cannot resolve, or names a provider this launch does not hold, stops the launch naming the provider, the option, the ids it declares, and the fix.
+- A Bedrock setting captured during a session no longer overrides Claude Code after you switch to
+  its subscription profile; startup names and logs each discarded setting.
+- Quitting a jail no longer waits for its patched-extension copies to be deleted.
+- Claude always uses its profile's provider, even from another Claude shell or with Bedrock or
+  gateway settings in the environment. Yolo names any override. See
+  [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
+- If the runtime already stopped the jail, yolo still completes keeper teardown. It reports another
+  session only if one still owns the jail; an interrupted keeper also stops its jail.
+- Apple Container stops now wait when its jail listing lags; an unanswerable listing no longer
+  counts as proof the jail is gone.
+- With a profile active, pi no longer starts with an outside provider or saves it as default.
+- A profile's `model` may use one of your provider's aliases. An unknown alias or a provider
+  unavailable to this launch now stops it with the provider, option, declared ids, and fix.
 
 ## [0.13.0] - 2026-10-09
 
@@ -111,7 +137,6 @@ with `"host_floor": {"<pack>": false}` in your user config. See [host readiness]
 ### Fixed
 
 - A patched program whose current build fails can run its last good build for one launch with `YOLO_USE_CACHED_GOOD=<pack>/<program>` ([how](userguide/guides/patch-series.md#when-a-build-fails)).
-- A host service that refuses its settings stops the launch at once with its cause and fix, and Bedrock's names invalid profile settings without printing their values.
 - Cache cleanup no longer deletes login tokens or lock files, and stops at its time limit.
 - The GitHub broker keeps working when the host's `gh` updates.
 - `uvx yolo-jail` now runs yolo.
