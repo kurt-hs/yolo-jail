@@ -66,7 +66,7 @@ func programCaptureInstallShell(bin, declared, identity, store, receipts string,
 	if delivery.Runtime != "" {
 		argv = append(argv, "--runtime="+delivery.Runtime, "--node-floor="+delivery.NodeFloor)
 	}
-	nodeArg, nodeSelection := "", ""
+	nodeArg, nodeSelection, nodeBinding := "", "", ""
 	if delivery.Runtime != "" {
 		// The renderer shares this token with every exec, including pending-floor
 		// regeneration. A no-floor consumer binds its actual PATH-selected Node,
@@ -77,7 +77,10 @@ func programCaptureInstallShell(bin, declared, identity, store, receipts string,
 			// shipped through npm (opencode is one). Selection still happens on
 			// the consumer's original PATH; only this launcher's children inherit
 			// the selected physical interpreter ahead of its selector shim.
-			nodeSelection = "_CAPTURE_NODE=$(node -p 'process.execPath') || { echo 'prepared Node is unavailable — retry a fresh launch' >&2; exit 1; }\nexport PATH=\"${_CAPTURE_NODE%/*}:$PATH\"\n"
+			nodeSelection = "_CAPTURE_NODE=$(node -p 'process.execPath') || { echo 'prepared Node is unavailable — retry a fresh launch' >&2; exit 1; }\n"
+			// The CLI proves this directory's executable node is the same file
+			// before PATH is changed, including on warm launcher re-entry.
+			nodeBinding = "export PATH=\"${_CAPTURE_NODE%/*}:$PATH\"\n"
 			nodeArg = " --node-path=\"$_CAPTURE_NODE\""
 		}
 	}
@@ -88,7 +91,7 @@ func programCaptureInstallShell(bin, declared, identity, store, receipts string,
 	// Only metadata in the private home changes at materialization; the machine entry
 	// stays immutable, and each identity owns an independent payload directory.
 	marker := "${HOME}/.cache/yolo-program-captures/" + bin
-	return "\n" + nodeSelection + validation + `
+	return "\n" + nodeSelection + validation + nodeBinding + `
 _CAPTURE_ID=` + shquote.Quote(identity) + `
 _CAPTURE_MARKER="` + marker + `"
 if [ "$(cat "$_CAPTURE_MARKER" 2>/dev/null || true)" != "$_CAPTURE_ID" ] || [ ! -x "$REAL_BIN" ]; then

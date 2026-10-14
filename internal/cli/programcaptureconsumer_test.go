@@ -239,3 +239,111 @@ func TestSelectedNPMGeneratedConsumerBindsShimSelectionToGuardAndExecution(t *te
 		t.Fatalf("consumer ran a mutable installer: %s", counts)
 	}
 }
+
+func TestSelectedNPMGeneratedConsumerRequiresSameFilePATHNode(t *testing.T) {
+	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR"} {
+		t.Setenv(key, t.TempDir())
+	}
+	for _, binding := range []string{"different-sibling", "relative", "colon-directory", "renamed-symlink", "renamed-hardlink"} {
+		t.Run(binding, func(t *testing.T) {
+			f := newSelectedNPMFixture(t)
+			record := f.advance(t, false)
+			for _, mode := range []string{entrypoint.InstallOnlyEnv, "execute", "warm-reentry"} {
+				t.Run(mode, func(t *testing.T) {
+					home, e := selectedNPMConsumer(t, f, record)
+					if mode == "warm-reentry" {
+						runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv)
+					}
+					marker := filepath.Join(home, ".cache/yolo-program-captures/probe")
+					before, _ := os.ReadFile(marker)
+					dir := filepath.Join(home, "runtime")
+					if binding == "colon-directory" {
+						dir += ":other"
+					}
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						t.Fatal(err)
+					}
+					physical := filepath.Join(dir, "node-real")
+					if err := os.Link(f.node, physical); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(filepath.Join(f.tools, "npm"), filepath.Join(dir, "npm")); err != nil {
+						t.Fatal(err)
+					}
+					effect := filepath.Join(home, "intercepted-target")
+					sibling := filepath.Join(dir, "node")
+					switch binding {
+					case "renamed-symlink", "colon-directory":
+						if err := os.Symlink(physical, sibling); err != nil {
+							t.Fatal(err)
+						}
+					case "renamed-hardlink":
+						if err := os.Link(physical, sibling); err != nil {
+							t.Fatal(err)
+						}
+					default:
+						script := "#!/bin/sh\ncase \"$1\" in */probe) echo intercepted > " + shquote.Quote(effect) + "; echo INTERCEPTED; exit 0;; esac\nexec " + shquote.Quote(physical) + " \"$@\"\n"
+						if err := os.WriteFile(sibling, []byte(script), 0o755); err != nil {
+							t.Fatal(err)
+						}
+					}
+					selection := physical
+					if binding == "relative" {
+						selection = filepath.Join("runtime", "node-real")
+					}
+					selectors := t.TempDir()
+					script := "#!/bin/sh\nexec " + shquote.Quote(physical) + " \"$@\"\n"
+					if binding == "relative" {
+						script = "#!/bin/sh\nprintf '%s\\n' " + shquote.Quote(selection) + "\n"
+					}
+					if err := os.WriteFile(filepath.Join(selectors, "node"), []byte(script), 0o755); err != nil {
+						t.Fatal(err)
+					}
+					cmd := exec.Command(filepath.Join(e.LaunchDir(), "probe"))
+					cmd.Dir = home
+					cmd.Env = append(os.Environ(), "HOME="+home, "NPM_CONFIG_PREFIX="+e.NpmPrefix, "PATH="+selectors+":"+f.tools+":/bin:/usr/bin", "YOLO_INSTALL_ONLY=0", "YOLO_PACK_UPDATE=0")
+					if mode == entrypoint.InstallOnlyEnv {
+						cmd.Env = append(cmd.Env, mode+"=1")
+					}
+					if mode == "warm-reentry" {
+						cmd.Env = append(cmd.Env, "_YOLO_LAUNCHER_ACTIVE=:probe")
+					}
+					out, err := cmd.CombinedOutput()
+					valid := strings.HasPrefix(binding, "renamed-")
+					if valid {
+						if err != nil {
+							t.Fatalf("same-file Node refused: %v\n%s", err, out)
+						}
+						lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+						if mode != entrypoint.InstallOnlyEnv && lines[len(lines)-1] != "1.0.0" {
+							t.Fatalf("wrong target interpreter: %s", out)
+						}
+					} else {
+						if err == nil || !strings.Contains(string(out), "prepared Node cannot be bound to PATH") || !strings.Contains(string(out), "retry a fresh launch") {
+							t.Errorf("unsafe binding was not refused with a next step: %v\n%s", err, out)
+						}
+						after, _ := os.ReadFile(marker)
+						if string(before) != string(after) {
+							t.Errorf("refused binding changed materialization marker: %s", out)
+						}
+						if len(before) == 0 {
+							if _, err := os.Lstat(filepath.Join(e.NpmPrefix, "bin/probe")); !os.IsNotExist(err) {
+								t.Error("refused binding materialized target")
+							}
+						}
+						if _, err := os.Stat(effect); !os.IsNotExist(err) {
+							t.Errorf("target intercepted: %s", out)
+						}
+						if strings.Contains(string(out), "1.0.0") {
+							t.Errorf("refused binding executed target: %s", out)
+						}
+					}
+				})
+			}
+			counts, _ := os.ReadFile(filepath.Join(f.root, "counts"))
+			if strings.Count(string(counts), "install\n") != 1 || strings.Count(string(counts), "resolve\n") != 1 {
+				t.Fatalf("consumer called installer: %s", counts)
+			}
+		})
+	}
+}

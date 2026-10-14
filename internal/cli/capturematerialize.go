@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -157,6 +158,10 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			fmt.Fprintln(errw, "prepared runtime is unavailable — retry a fresh launch:", err)
 			return 1
 		}
+		if a.nodeFloor == "" && a.nodePath != "" && !preparedNodeHasSameFilePATHBinding(node) {
+			fmt.Fprintln(errw, "prepared Node cannot be bound to PATH — select an absolute Node path in a directory without ':' whose node is the same executable, then retry a fresh launch")
+			return 1
+		}
 		actual, err := observeNPMCaptureRuntime(context.Background(), a.home, node)
 		if err != nil {
 			fmt.Fprintf(errw, "prepared runtime observation failed (node=%q): %s — retry a fresh launch\n", node, termsafe.Visible(err.Error()))
@@ -231,6 +236,21 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			res.RelocatedFrom, res.RewrittenLinks, res.Rewritten, a.home)
 	}
 	return 0
+}
+
+// preparedNodeHasSameFilePATHBinding checks the no-floor launcher's PATH binding.
+// A renamed interpreter is valid when its directory's executable node is the
+// same file, including symlinks and hardlinks; matching path strings is not enough.
+func preparedNodeHasSameFilePATHBinding(node string) bool {
+	if !filepath.IsAbs(node) || strings.ContainsRune(filepath.Dir(node), os.PathListSeparator) {
+		return false
+	}
+	selected, err := os.Stat(node)
+	if err != nil || !selected.Mode().IsRegular() || selected.Mode().Perm()&0o111 == 0 {
+		return false
+	}
+	pathNode, err := os.Stat(filepath.Join(filepath.Dir(node), "node"))
+	return err == nil && pathNode.Mode().IsRegular() && pathNode.Mode().Perm()&0o111 != 0 && os.SameFile(selected, pathNode)
 }
 
 // materializeForkBuild is the --key mode: put the fork build the HOST decided on into this home
