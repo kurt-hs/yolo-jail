@@ -150,7 +150,19 @@ func preparationDemandInputIdentity(resolved resolvedPreparationDemand, d prepar
 	if resolved.NPM != nil {
 		return ordinaryProgramIdentity(*resolved.NPM, resolved.Fingerprint, d.Runtime, d.Platform), nil
 	}
-	return preparationInputIdentity(resolved.Fork, d.Runtime, d.Platform)
+	f := resolved.Fork
+	if f.IsTree() {
+		return preparationInputIdentity(f, d.Runtime, d.Platform)
+	}
+	commit := ""
+	if !f.Patched() {
+		pin, err := currentForkPin(f)
+		if err != nil {
+			return "", err
+		}
+		commit = pin.Commit
+	}
+	return preparationForkIdentity(f, commit, d.Runtime, d.Platform)
 }
 
 func ordinaryCaptureDelivery(r npmCaptureRecord) (entrypoint.ProgramCaptureDelivery, error) {

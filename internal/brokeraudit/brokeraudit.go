@@ -14,13 +14,15 @@
 //     workspace on the machine. BB-D26's mount fence covers this directory.
 //   - Bounded, not pruned: rotated at RotateBytes, Archives kept, so at most
 //     (Archives+1)×RotateBytes on disk. `yolo prune` never touches it.
-//   - A write failure warns ONCE per process and never blocks a call, as internal/crossaudit
-//     does: an audit that can refuse work becomes a reason to turn it off.
+//   - Standing-read Append is best-effort and warns once on failure. Required write
+//     authorization evidence fails closed and is synced before executor dispatch.
 package brokeraudit
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,9 +46,8 @@ type Stdin struct {
 	SHA256 string `json:"sha256"`
 }
 
-// Event is one audit line. `call` is the only event step 1 of the design writes; the
-// others (`request`, `decision`, `grant-used`, `grant-ended`, `revoke`) arrive with the
-// request store.
+// Event is one audit line. The delivery-gated handler also records request, decision
+// and grant-used authorization evidence; lifetime teardown records grant-ended.
 type Event struct {
 	Time    string `json:"time"`
 	Event   string `json:"event"`
@@ -117,6 +118,29 @@ func (l *Log) Append(e Event) {
 	}
 }
 
+// AppendContext keeps a best-effort post-call event from extending a canceled wait.
+func (l *Log) AppendContext(ctx context.Context, e Event) { _ = l.RequiredContext(ctx, e) }
+
+// Required durably appends authorization evidence. A failing caller must not
+// dispatch a host write. Standing read audit remains best-effort via Append.
+func (l *Log) Required(e Event) error { return l.RequiredContext(context.Background(), e) }
+
+// RequiredContext also cancels while waiting for another process's audit lock.
+func (l *Log) RequiredContext(ctx context.Context, e Event) error {
+	if e.Time == "" {
+		e.Time = l.now().UTC().Format(time.RFC3339)
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	if err = l.writeContext(ctx, append(line, '\n')); err != nil {
+		l.fail(err)
+		return err
+	}
+	return nil
+}
+
 func (l *Log) fail(err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -130,7 +154,8 @@ func (l *Log) fail(err error) {
 // write appends line under the directory's lock, rotating first when the line would take
 // the file past RotateBytes. The lock is a separate file so that a rotation never leaves a
 // writer holding a lock on a file that has since been renamed to an archive.
-func (l *Log) write(line []byte) error {
+func (l *Log) write(line []byte) error { return l.writeContext(context.Background(), line) }
+func (l *Log) writeContext(ctx context.Context, line []byte) error {
 	dir := filepath.Dir(l.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -140,8 +165,22 @@ func (l *Log) write(line []byte) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return err
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 	// Released by the Close above as well; unlocking first keeps the order readable.
 	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
@@ -157,8 +196,10 @@ func (l *Log) write(line []byte) error {
 	// A file created by an older writer, or by hand, keeps its mode on O_APPEND; the log
 	// carries every workspace's argv, so it is held to owner-only either way.
 	_ = f.Chmod(0o600)
-	_, err = f.Write(line)
-	return err
+	if _, err = f.Write(line); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 // rotate shifts audit.jsonl → .1 → … → .Archives, dropping the oldest.

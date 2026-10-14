@@ -345,26 +345,26 @@ func TestFreshCheckBypassesHeldRecentStampAndReusesAdmittedBuild(t *testing.T) {
 	if initial.delivery.Key == "" || len(fx.builds) != 1 {
 		t.Fatalf("fixture did not admit one serving build: result=%+v builds=%d", initial, len(fx.builds))
 	}
+	fx.writeUserConfig(t, `,"agent_updates":{"forkpack":false}`)
 	fork := fx.fork(t)
 	identity, err := freshPreparationIdentity(fork, patchedTestPlatform)
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundary, err := patchedAdvanceStore(true).FreshCheckBoundary(fork.Key())
+	boundary, err := patchedAdvanceStore(true).CheckBoundary(fork.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx.writeUserConfig(t, `,"agent_updates":{"forkpack":false}`)
 	before := fx.record(t)
 	got := advancePatchedFork(fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
 		workspace: "/ws", launch: true, out: io.Discard, errw: io.Discard,
 		report:     newBuildReport("/ws", "podman", io.Discard, false),
-		freshCheck: true, freshAfterSeq: boundary, freshIdentity: identity})
+		freshCheck: true, freshBoundary: boundary, freshIdentity: identity})
 	if got.failed || got.delivery.Key != initial.delivery.Key || len(fx.builds) != 1 {
 		t.Fatalf("fresh verification rebuilt or lost the admitted unchanged artifact: result=%+v builds=%d", got, len(fx.builds))
 	}
 	after := fx.record(t)
-	if after.Seq != before.Seq+1 || after.Check == nil || after.Check.StartedSeq <= boundary {
+	if after.Seq != before.Seq+1 || after.Check == nil || !after.Fresh.Qualifies(boundary, identity) {
 		t.Fatalf("fresh request did not record one qualifying post-registration check: before=%+v after=%+v", before, after)
 	}
 
@@ -375,7 +375,7 @@ func TestFreshCheckBypassesHeldRecentStampAndReusesAdmittedBuild(t *testing.T) {
 	refused := advancePatchedFork(changed, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
 		workspace: "/ws", launch: true, out: io.Discard, errw: io.Discard,
 		report:     newBuildReport("/ws", "podman", io.Discard, false),
-		freshCheck: true, freshAfterSeq: after.StartedSeq, freshIdentity: identity})
+		freshCheck: true, freshBoundary: *after.Fresh, freshIdentity: identity})
 	if !refused.failed || refused.delivery.Key != "" || fx.record(t).Seq != checkSeq {
 		t.Fatalf("recipe edit was retargeted: result=%+v checks=%d→%d", refused, checkSeq, fx.record(t).Seq)
 	}

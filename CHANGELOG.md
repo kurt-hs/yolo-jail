@@ -10,56 +10,53 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-A launch now leaves records that explain what it did, `yolo stop` can end a jail that would not
-end, and a profile can declare what its subagents run on.
+A launch leaves records explaining what it did, `--update` checks builds fresh on
+demand, `yolo stop` ends a stuck jail, and a profile declares what its subagents run on.
 
 ### Added
 
-**Daemon logs you can reconstruct a request from.** Every jail daemon and host service log line
-now carries a millisecond timestamp, and the wire bridge and credential adapters log each request
-with its outcome, upstream status or error and timings, plus a line while one is still waiting.
-A credential adapter's line names the asking agent, and the host's crossing log names each
-jail's container and workspace code. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
+**Daemon logs you can reconstruct a request from.** Every daemon and host-service line carries a millisecond timestamp; the wire bridge and credential adapters log each request with outcome and timings, pending ones included. An adapter's line names the asking agent; the host's crossing log names each jail. See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
-**Launch logs that explain a launch.** Each launch log now records the command you ran, each
-agent's profile source, what changed in your config and packs since the last launch, and which
-captured in-jail edits the boot replays. Slow `yolo host` launches are timed step by step, and each
-build jail's logs are kept. See [the launch records](docs/reference/report-tiers.md#archaeology-records).
+**Launch logs that explain a launch.** Each launch log records the command you ran, each agent's profile source, what changed since the last launch, and which captured edits the boot replays; slow host launches are timed step by step, and build-jail logs are kept. See [the launch records](docs/reference/report-tiers.md#archaeology-records).
+
+**Fresh builds on demand with `--update`.** `yolo -u`/`--update -- <command>` and `yolo host --update -- <command>` check this launch's selected build inputs now, reusing unchanged good builds; on a running jail it refuses and names a fresh launch instead. See [explicit update](docs/design/launch-update-preparation.md#explicit-update-and-launch-materialization).
 
 **`yolo stop --force` ends a jail that will not end.** `-f`/`--force` stops the container with no
-stop grace and signals its keeper, so a jail whose keeper will not finish stops anyway.
+grace period and signals its keeper, so one that will not finish stops anyway.
 
 **Declare what a profile's subagents run on.** A profile's `subagents` names a `default` model and
-per-role `roles` models for pi's child agents, each an alias or id of the profile's provider; a
-profile that declares none is unchanged.
+`roles` models for pi's child agents, each an alias or id of the profile's provider;
+without it, nothing changes.
 See [profiles and options](docs/reference/providers.md#profiles-and-options).
 
 **Meta's Muse Code CLI as a pack.** Add `muse-code` to `packs` and run `yolo -- muse`; yolo
-installs it and delivers your rules and skills. The workspace-trust question is answered for you, so
-the agent starts instead of asking, and a Muse Code login is shared across every jail on the
-machine, so signing in once covers all of them. See
+installs it with your rules and skills. The workspace-trust question is answered for you;
+one login covers every jail on the machine. See
 [choosing your packs](userguide/guides/packs-and-skills.md#choose-your-packs).
 
 ### Changed
 
 **`yolo stop` waits for the jail's teardown, up to about two minutes.** It streams the keeper's
-progress; a keeper that outlasts the wait is reported with its pid, log and last line, and
+progress; a keeper that outlasts it is reported with its pid, log and last line;
 `--force` ends it now. Ctrl-C still exits 130.
 
 **Selecting an agent pack no longer brings the Bedrock and OpenAI-subscription packs with it.** Add
 `bedrock` or `openai-auth` to `packs` if you use their profiles or providers; a launch that needs
 one names the pack to add.
 
+**Repeat launches with the same packages skip the rebuild.** A launch baking extra packages records its image, and an identical later launch reuses it after verifying it. Config and environment lists keep their own records; a changed list or a moving ref always rebuilds. See [the question asked before the build](docs/reference/image-staging-vs-baking.md#the-stock-tag-and-the-question-asked-before-the-build).
+
 ### Fixed
 
-- A setting captured from an earlier Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription. The boot names each one it drops, and every change to captured edits is now logged.
-- Quitting a jail no longer waits while yolo deletes that launch's copies of your patched extensions.
-- Claude now always uses the provider its profile selects, whether started from another Claude's shell, with Bedrock or gateway settings in your Claude settings file, or after editing those in a jail. yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
-- A container of the jail's name that exists but is not running is no longer reported as "No jail running": `yolo stop` names its state and ends it, and a launch force-removes one the runtime does not report as running, or names the command that clears it.
-- A stop the runtime already finished no longer reads as a failure, so the keeper's teardown still runs; a jail you leave reports another session only when there is one, naming what holds it; and a jail whose keeper is interrupted while waiting for its last session still ends by itself.
-- On Apple Container, a stop no longer reads a listing it could not get as the jail being gone, and waits out a listing that trails its jail's end.
-- With a profile active, pi no longer starts on a provider outside it or saves one as the session's default model.
-- A profile's `model` may be one of your provider's aliases: it resolves to the provider's own id, and one that cannot resolve stops the launch, naming the provider, the option and the ids it declares. pi and opencode both used to write an id their agent rejects.
+- A setting captured from a Bedrock session no longer keeps Claude Code on Bedrock after you select its subscription; the boot names each dropped one and logs every change.
+- Quitting a jail no longer waits on deleting that launch's patched-extension copies.
+- A patched fork updating for the next launch no longer holds one up: the launch starts from its last good build while the update runs in the background.
+- Claude now always uses its profile's provider, from another Claude's shell, with Bedrock or gateway settings set, or after editing those in a jail, and yolo says what it overrode. See [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
+- A non-running container of the jail's name is no longer "No jail running": `yolo stop` names its state and ends it, failing when the runtime cannot confirm it is gone; a launch force-removes one not reported as running, or names the command that clears it.
+- A stop the runtime already finished still runs the keeper's teardown instead of failing; leaving reports another session only when one holds the jail; an interrupted keeper still ends the jail by itself.
+- On Apple Container, a stop no longer reads an unanswerable listing as the jail gone, and waits out one that trails its jail's end.
+- With a profile active, pi no longer starts on a provider outside it or saves one as its default.
+- A profile's `model` may be one of your provider's aliases, resolving to its id; one that cannot resolve, or names a provider this launch does not hold, stops the launch naming the provider, the option, the ids it declares, and the fix.
 
 ## [0.13.0] - 2026-10-09
 

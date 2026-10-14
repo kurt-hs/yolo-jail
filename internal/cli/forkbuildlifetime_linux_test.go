@@ -24,6 +24,7 @@ import (
 )
 
 func TestHandledForkBuildSignalRetainsUntilKeeperAndOriginalBackendAreGone(t *testing.T) {
+	allowAppleContainerBuild(t)
 	for _, tc := range []struct {
 		name string
 		sig  syscall.Signal
@@ -52,6 +53,10 @@ func TestHandledForkBuildSignalRetainsUntilKeeperAndOriginalBackendAreGone(t *te
 
 			probes := 0
 			previousProbe := probeForkBuildContainer
+			// The required-build gate admits foreground builds only on positive absence proof;
+			// an empty running-container table stands in for the idle Apple host here, so the
+			// retry reaches the original-backend probe this test counts.
+			fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 			probeForkBuildContainer = func(gotName, gotRuntime string, _ time.Duration) (bool, bool) {
 				probes++
 				if gotName != cname || gotRuntime != "podman" {

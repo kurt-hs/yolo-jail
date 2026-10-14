@@ -1,7 +1,6 @@
 package run
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -471,6 +470,10 @@ func Run(opts Options) (rc int) {
 	// which wires internal/macosuser (SBPL sandbox, dscl provisioning, the
 	// sandbox-exec launch) + the darwinpkg streaming-build materialize adapter.
 	// Falls back to an actionable error if the front door didn't inject it.
+	if rt == "macos-user" && o.Update && !o.DryRun && len(staged.packs) > 0 { // parity: Refused — --update preparation is host-owned work this path cannot do, so the launch refuses naming the host alternative
+		o.pr(o.Stderr).print("--update preparation is unavailable in this macos-user launch path — run `yolo host --update -- <command>` for host-owned programs, or launch without --update")
+		return 1
+	}
 	if rt == "macos-user" {
 		if o.MacosUserRun == nil {
 			o.pr(o.Stdout).print(
@@ -1500,8 +1503,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 
 		if existingCID != "" {
 			if o.Update {
-				out.printf("Refusing --update: this workspace already has a running jail, and preparation cannot change the environment it is using.")
-				out.printf("Stop it with `yolo stop`, then retry `yolo --update -- <command>` as a fresh launch.")
+				o.refuseFreshAttach()
 				return 1
 			}
 			// A JAIL WHOSE KEEPER DIED is not entered (JL-D13, as OQ-JL7 ruled): its sessions run on
@@ -1585,8 +1587,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	if !o.NeverAttach {
 		if raced := o.findRunningContainer(cname, rt); raced != "" {
 			if o.Update {
-				out.printf("Refusing --update: this workspace already has a running jail, and preparation cannot change the environment it is using.")
-				out.printf("Stop it with `yolo stop`, then retry `yolo --update -- <command>` as a fresh launch.")
+				o.refuseFreshAttach()
 				return 1
 			}
 			if rc, restarted := o.attachExisting(cname, rt, targetCmd, cfg, staged, channel, true, lock.Close); !restarted {
@@ -1648,43 +1649,6 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 				"be removed, so the container this launch creates would collide with it.[/bold red] "+
 				"[dim]Remove it with %s and launch again.[/dim]", cname, containerRemoveCommand(rt, cname))
 			return 1
-		}
-	}
-
-	// A manual fresh request may move standing branch pins, unlike an ordinary launch. Do it only
-	// after the workspace lock and every attach/raced-start decision: an update refused on attach
-	// must never advance the source it asked to refresh.
-	if o.Update && !o.DryRun && !config.InJail() {
-		var forks []packload.Fork
-		for _, fork := range packload.Forks(loadedPacks) {
-			if forkUnpublishedHere(fork) == "" {
-				forks = append(forks, fork)
-			}
-		}
-		if len(forks) > 0 {
-			var pins []packload.ForkPin
-			sig := InterruptScope(func(ctx context.Context) {
-				pins = RepinLaunchForks(ctx, forks, func() (func(string), func()) {
-					line := o.progressConfig().Start(o.Stderr, "Refreshing fork pins")
-					return line.Println, func() { line.Done("") }
-				})
-			})
-			if sig != nil {
-				out.printf("Refusing --update: fresh fork resolution was interrupted; the command was not started. Retry with `yolo --update -- <command>`.")
-				return 130
-			}
-			o.forkPinned = pins
-			for _, pin := range o.forkPinned {
-				if pin.Fork.Patched() {
-					continue
-				}
-				if pin.Commit == "" {
-					out.printf("Refusing --update: could not freshly resolve fork %s (%s). Repair that source, or retry without --update.",
-						pin.Fork.Key(), pin.Reason)
-					return 1
-				}
-				o.pr(o.Stderr).print("[dim]freshly resolved fork " + richtext.Escape(pin.Fork.Key()+" at commit "+pin.Commit) + "[/dim]")
-			}
 		}
 	}
 
@@ -2798,6 +2762,13 @@ func startedLoophole(handles []loopholeDaemon, name string) bool {
 // was exec'd, and the caller continues into the fresh launch still holding the lock.
 func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.OrderedMap,
 	staged stagedPacks, channel *packChannel, raced bool, release func()) (rc int, restarted bool) {
+	if o.Update {
+		if release != nil {
+			release()
+		}
+		o.pr(o.Stderr).print("--update cannot refresh a running jail on attach — exit/stop this jail, then run a fresh `yolo --update -- <command>` launch")
+		return 2, false
+	}
 	// Every attach path comes through here (the first probe, the post-lock re-check and the
 	// stale-removal wait), so the launch log's decision record is written once, here.
 	if raced {

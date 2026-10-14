@@ -986,3 +986,83 @@ func TestTheProvisioningStageHonorsNoColor(t *testing.T) {
 		}
 	}
 }
+
+// Execute the production wrapper, then classify its real status through the production
+// orchestrator. A logger which cannot append the marker must never grant permission.
+func TestScriptOutcomesReachRunProvisionStage(t *testing.T) {
+	for _, tc := range []struct {
+		name, setup, loggerFailure string
+		wantContinue               bool
+		wantStatus                 int
+	}{
+		{"refusal without marker", "exit 78", "marker", false, provision.StageRefusedStatus},
+		{"refusal", "exit 78", "", false, provision.StageRefusedStatus},
+		{"reset failure", "true", "reset", false, provision.StageLogFailedStatus},
+		{"tee failure", "true", "tee", false, provision.StageLogFailedStatus},
+		{"ordinary failure without marker", "exit 7", "marker", false, provision.StageLogFailedStatus},
+		{"accepted degraded setup", "exit 7", "", true, 0},
+		{"success", "true", "", true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertScriptOutcome(t, tc.setup, tc.loggerFailure, nil, tc.wantContinue, tc.wantStatus)
+		})
+	}
+}
+
+func TestExecLayerRefusedStatusWithoutWrapperStillNeverRan(t *testing.T) {
+	var console bytes.Buffer
+	d := Deps{Run: func([]string) int { return provision.RefusedStatus }, RemoveFile: func(string) bool { return true }, ReadFile: func(string) (string, bool) { return "", true }}
+	if !runProvisionStage(d, printer{w: &console}, RunPlan{Workspace: t.TempDir()}) || !strings.Contains(console.String(), "never ran") {
+		t.Fatal(console.String())
+	}
+}
+
+func assertScriptOutcome(t *testing.T, setup, loggerFailure string, stdin *os.File, wantContinue bool, wantStatus int) {
+	t.Helper()
+	ws := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(ws, ".yolo"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	logger := `#!/bin/bash
+body=$(cat)
+case "$5" in
+--reset) [ "$FAIL_LOG" = reset ] && exit 1; printf '%s\n' "$body" > "$3/.yolo/startup.log";;
+--tee) printf '%s\n' "$body"; [ "$FAIL_LOG" = tee ] && exit 1; printf '%s\n' "$body" >> "$3/.yolo/startup.log";;
+*) [ "$FAIL_LOG" = marker ] && exit 1; printf '%s\n' "$body" >> "$3/.yolo/startup.log";;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "yolo"), []byte(logger), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var console bytes.Buffer
+	actualStatus := 0
+	deps := Deps{
+		Run: func(argv []string) int {
+			cmd := exec.Command(argv[0], argv[1:]...)
+			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "FAIL_LOG="+loggerFailure)
+			cmd.Stdout, cmd.Stderr = &console, &console
+			cmd.Stdin = stdin
+			if err := cmd.Run(); err != nil {
+				if e, ok := err.(*exec.ExitError); ok {
+					actualStatus = e.ExitCode()
+					return actualStatus
+				}
+				t.Fatal(err)
+			}
+			return 0
+		},
+		RemoveFile: func(p string) bool { err := os.Remove(p); return err == nil || os.IsNotExist(err) },
+		ReadFile: func(p string) (string, bool) {
+			b, err := os.ReadFile(p)
+			return string(b), err == nil || os.IsNotExist(err)
+		},
+	}
+	plan := RunPlan{Workspace: ws, ProvisionArgv: []string{"bash", "-c", provision.Script(provision.StartupLog(ws), setup, false)}}
+	if got := runProvisionStage(deps, printer{w: &console}, plan); got != wantContinue {
+		t.Fatalf("continue = %v, want %v; %s", got, wantContinue, console.String())
+	}
+	if actualStatus != wantStatus {
+		t.Fatalf("wrapper status = %d, want %d; %s", actualStatus, wantStatus, console.String())
+	}
+}

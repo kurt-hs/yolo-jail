@@ -123,7 +123,7 @@ type advanceOptions struct {
 	// freshCheck is an explicit launch freshness request. It forces a post-registration check but
 	// keeps force's rebuild and lock semantics unchanged.
 	freshCheck       bool
-	freshAfterSeq    uint64
+	freshBoundary    packsrc.CheckStart
 	freshBoundaryErr error
 	freshIdentity    string
 	// hand records what the launch hands its jail (run.ForkBuildRequest.Hand), under the record
@@ -207,6 +207,7 @@ type installedCopy struct {
 
 // advanceResult is what an advance did.
 type advanceResult struct {
+	pending *appleBuildPending
 	// delivery is what the jail is handed: the good build's store key, or why there is none.
 	delivery entrypoint.ForkDelivery
 	// built is true when this advance admitted a build (`yolo capture`'s success).
@@ -250,6 +251,13 @@ type advanceResult struct {
 }
 
 // freshFailure preserves failure independently of any old-good delivery.
+func (r advanceResult) freshError() error {
+	if r.pending != nil {
+		return r.pending
+	}
+	return nil
+}
+
 func (r advanceResult) freshFailure() string {
 	if !r.failed {
 		return ""
@@ -1077,6 +1085,11 @@ func (a *advance) wantsBackground() bool {
 	if due, _ := packsrc.CheckDue(a.rec, a.in, patchedNow(), 0); due {
 		return true
 	}
+	return a.pendingBuild()
+}
+
+// pendingBuild excludes a due check: Apple foreground work consumes recorded candidates only.
+func (a *advance) pendingBuild() bool {
 	c := a.rec.Check
 	if c == nil || c.FetchErr != "" || c.Problem != "" || a.rec.ApplyErrAtLastCheck() != nil {
 		return false
@@ -1166,7 +1179,7 @@ func (a *advance) run() advanceResult {
 			slotWait.End()
 			defer advanceSpan(f, "check").End()
 			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force,
-				Fresh: a.o.freshCheck, AfterSeq: a.o.freshAfterSeq, Now: patchedNow,
+				FreshAfter: a.freshCheckBoundary(), InputIdentity: a.o.freshIdentity, StartGuard: a.o.admitGuard, Now: patchedNow,
 				Begin: func() (func(string), func()) {
 					if a.o.slot != nil {
 						// IN A JAIL LAUNCH'S POOL THE CHECK IS ITS LINE'S "checking N" (buildpool.go), and a
@@ -1220,7 +1233,7 @@ func (a *advance) run() advanceResult {
 			return a.serveOr(fmt.Sprintf("%s's upstream could not be checked (%v)", f.Label(), res.Err))
 		}
 		if a.o.freshCheck {
-			if !res.Fresh || res.Record == nil || res.Record.Check == nil || res.Record.Check.FetchErr != "" ||
+			if res.Record == nil || !res.Record.Fresh.Qualifies(a.o.freshBoundary, a.o.freshIdentity) || res.Record.Check == nil || res.Record.Check.FetchErr != "" ||
 				res.Record.Check.Problem != "" {
 				problem := "the fresh upstream check did not complete successfully"
 				if res.Record != nil && res.Record.Check != nil {
@@ -1451,14 +1464,6 @@ func (a *advance) run() advanceResult {
 		return a.noFit(edited, w.Results[0].Entry.Label())
 	}
 	fit := w.Results[w.Fit]
-	if a.o.runtime == "container" && !a.o.checkOnly {
-		capabilitySpan := advanceSpan(f, "build_capability")
-		canBuild, reason := appleContainerBuildCapability()
-		capabilitySpan.End()
-		if !canBuild {
-			a.o.checkOnly, a.o.checkOnlyReason = true, reason
-		}
-	}
 	if a.o.checkOnly {
 		reason := a.o.checkOnlyReason
 		if reason == "" {
@@ -1479,8 +1484,10 @@ func (a *advance) deferAppleCandidate(candidate packsrc.ListEntry, reason string
 		candidate.Label(), reason, next)
 	a.warn("%s: %s", a.f.Label(), why)
 	if a.o.freshCheck {
-		return a.freshRefusal("Apple Container cannot admit the freshly checked candidate while its build is deferred",
+		result := a.freshRefusal("Apple Container cannot admit the freshly checked candidate while its build is deferred",
 			fmt.Errorf("%s; the candidate remains pending and the previous admitted build remains available to an ordinary launch", why))
+		result.pending = &appleBuildPending{Reason: reason, Capture: a.f.CaptureArg()}
+		return result
 	}
 	return a.serveOr(why)
 }
@@ -1943,7 +1950,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	a.boundHit, a.ownLock = false, b.lockPath()
 	var preRunErr error
 	mode := buildMode{force: a.o.force, packs: a.packs, lock: pidlock.NoWait, replaySpent: a.replaySpent,
-		runtime: a.o.runtime, preRunErr: &preRunErr}
+		runtime: a.o.runtime, admitCtx: a.ctx, preRunErr: &preRunErr, admitGuard: a.capturePublicationGuard()}
 	if a.replayBinding != nil {
 		snapshot := *a.replayBinding
 		mode.sourceReplay = sourceReplayOptions{Snapshot: &snapshot, Record: func(w packsrc.WalkResult) packsrc.RecordReplayResult {
@@ -2002,7 +2009,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		nextRunJail := mode.runJail
 		mode.runJail = func(staging string, b forkBuild, s captureStreams) int {
 			capabilitySpan := advanceSpan(f, "build_capability")
-			canBuild, reason := appleContainerBuildCapability()
+			canBuild, reason := appleContainerBuildCapability(a.ctx)
 			capabilitySpan.End()
 			if !canBuild {
 				preRunErr = appleBuildDeferred{reason: reason}
@@ -2033,18 +2040,26 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	}
 	var settled *advanceResult
 	mode.settle = func(entry *capture.Entry, err error) {
+		if isAppleBuildPending(err) {
+			return // Admission deferred without a child; leave failure/backoff settlement alone.
+		}
 		a.endRun(err)
 		r := a.settle(b, entry, err, base, edited)
 		settled = &r
 	}
 	_, err := buildFork(b, mode, a.o.out, a.o.errw, a.o.color)
+	var pending *appleBuildPending
 	var deferred appleBuildDeferred
-	if errors.As(err, &deferred) {
+	if errors.As(err, &pending) || errors.As(err, &deferred) {
 		if a.inFlight != nil {
 			a.inFlight.fail("deferred")
 			a.inFlight = nil
 		}
-		return a.deferAppleCandidate(b.Entry, deferred.reason)
+		reason := deferred.reason
+		if pending != nil {
+			reason = pending.Reason
+		}
+		return a.deferAppleCandidate(b.Entry, reason)
 	}
 	r := advanceResult{}
 	if settled != nil {
@@ -2491,6 +2506,52 @@ func (a *advance) handedNow(r advanceResult) string {
 	return a.hasNo()
 }
 
+// capturePublicationGuard protects the actual CAS write as well as Good settlement.
+// It takes the record transaction only here; finish already owns it and must not
+// reenter that lock. Unknown owned-child teardown is refused before this guard.
+func (a *advance) capturePublicationGuard() func(func() error) error {
+	if !a.o.freshCheck {
+		return a.o.admitGuard
+	}
+	return func(commit func() error) error {
+		return a.packs.WithCheckRecord(a.f.Key(), nil, func(r *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
+			if readErr != nil {
+				return false, readErr
+			}
+			return false, a.withPublicationAuthority(r, commit)
+		})
+	}
+}
+
+func (a *advance) withPublicationAuthority(r *packsrc.CheckRecord, commit func() error) error {
+	guard := func() error {
+		if a.o.admitGuard != nil {
+			return a.o.admitGuard(commit)
+		}
+		return commit()
+	}
+	if a.o.freshCheck {
+		identity, err := freshPreparationIdentity(a.f, a.o.platform)
+		if err != nil {
+			return fmt.Errorf("fresh preparation inputs could not be revalidated before publication: %w", err)
+		}
+		if identity != a.o.freshIdentity {
+			return errPreparationAdmissionStale
+		}
+		return a.packs.WithFreshAuthority(a.f.Key(), a.o.freshBoundary, r.Fresh, a.o.freshIdentity, guard)
+	}
+	return guard()
+}
+
+// freshCheckBoundary is nil for ordinary historical checks. Explicit requests
+// carry the epoch as well as the sequence minted by the short start ledger.
+func (a *advance) freshCheckBoundary() *packsrc.CheckStart {
+	if !a.o.freshCheck {
+		return nil
+	}
+	return &a.o.freshBoundary
+}
+
 // finish is the advance's last act, under the fork's record lock (§6.1, §6.6) — and, after a build,
 // under its build lock too (settle): the move of an admitted build, a compare-and-swap that prefers
 // the newer check, and only to a build still in the store; a failure's outcome; the walk's apply
@@ -2590,10 +2651,10 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 			}
 			return changed, nil
 		}
-		if built == nil || a.o.admitGuard == nil {
+		if !a.o.freshCheck && (built == nil || a.o.admitGuard == nil) {
 			return settle()
 		}
-		err := a.o.admitGuard(func() error {
+		err := a.withPublicationAuthority(r, func() error {
 			changed, err := settle()
 			if err != nil || !changed {
 				return err

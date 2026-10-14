@@ -60,6 +60,7 @@ var commandHelp = []struct{ name, blurb string }{
 	// The github-broker's two ends, together: what a jail runs, and what the host kept.
 	{"gh", "In a jail: run gh through the github-broker, with the host's login (read-only for now)"},
 	{"audit", "List every brokered call (e.g. the jail's gh commands) and what became of it"},
+	{"approve", "Host request/grant store decisions (broker writes not wired yet)"},
 	{"init", "Scaffold yolo-jail.jsonc in the current workspace"},
 	{"init-user-config", "Write user-level defaults at ~/.config/yolo-jail/config.jsonc"},
 	{"config", "Inspect generated config: 'config ls' (every composed file), 'render', 'diff', 'reset'"},

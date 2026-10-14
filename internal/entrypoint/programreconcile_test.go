@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // programreconcile_test.go covers program-delivery.md §10 step two: the offline comparison
@@ -638,7 +640,7 @@ printf '%s\n' "${line%%\"*}"
 		t.Fatal(err)
 	}
 	cmd := exec.Command(filepath.Join(e.LaunchDir(), "tool"))
-	cmd.Env = []string{"HOME=" + home, "PATH=" + fakeBin + ":/bin:/usr/bin"}
+	cmd.Env = []string{"HOME=" + home, "PATH=" + fakeBin + ":" + testutil.YoloBinaryDir(t) + ":/bin:/usr/bin"}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the generated launcher must install and exec (%v):\n%s", err, out)
 	}

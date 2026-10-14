@@ -1021,7 +1021,7 @@ func TestHostUpdatePatchedProgramChecksInsideFrozenRecentPolicyWithoutRebuild(t 
 		t.Fatalf("fresh host: %d target=%q\n%s", rc, got.target, output.String())
 	}
 	after := fx.record(t)
-	if after.StartedSeq <= before.StartedSeq || after.Good.Entry != before.Good.Entry || len(fx.builds) != builds {
+	if after.Fresh == nil || before.Fresh == nil || after.Fresh.Epoch != before.Fresh.Epoch || after.Fresh.Seq <= before.Fresh.Seq || after.Good.Entry != before.Good.Entry || len(fx.builds) != builds {
 		t.Fatalf("fresh host failed check/reuse: before=%+v after=%+v builds=%d/%d", before, after, builds, len(fx.builds))
 	}
 }

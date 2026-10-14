@@ -270,6 +270,10 @@ func TestForkBuildRetryUsesRetainedBackendWhenRuntimeIsUnspecified(t *testing.T)
 }
 
 func TestForkBuildRuntimeRecordMatchesChildResolution(t *testing.T) {
+	allowAppleContainerBuild(t)
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("YOLO_RUNTIME", "podman")
 	f := forkBuildHome(t)

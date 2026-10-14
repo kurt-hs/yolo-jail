@@ -51,6 +51,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -83,6 +84,7 @@ const (
 
 // buildReport is one jail launch's build report.
 type buildReport struct {
+	perf *perf.Log
 	// log is the launch stream's launch.log alone (run.LaunchLogOnly), io.Discard with no log.
 	log io.Writer
 	// workspace is the launch's, whose .yolo holds each build's own log; "" for none.
@@ -562,4 +564,24 @@ func childJail(ctx context.Context, color bool, bound *bool) func(string, forkBu
 		}
 		return rc
 	}
+}
+
+// preparationSpan records an actual phase attempt, not a success claim.
+func (r *buildReport) preparationSpan(name string) *perf.Span {
+	var log *perf.Log
+	if r != nil {
+		log = r.perf
+	}
+	return log.Span(name)
+}
+
+func (r *buildReport) preparationOutcome(name, key string, err error) {
+	if r == nil {
+		return
+	}
+	detail := key + ": returned without error"
+	if err != nil {
+		detail = key + ": failed: " + err.Error()
+	}
+	r.perf.Note(name, detail)
 }

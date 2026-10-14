@@ -52,7 +52,11 @@ func packStatusKey(args []string, out, errw io.Writer, color bool) int {
 	if rc, said := packStatusKeyUnresolved(errw, sel, key); said {
 		return rc
 	}
-	return printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+	rc := printBuildLine(richtext.Printer{W: out, Color: color}, errw, forks, key)
+	if statusRC := printPreparationStatus(out, errw, color, key); statusRC != 0 {
+		return statusRC
+	}
+	return rc
 }
 
 // packStatusKeyUnresolved reports a key whose pack the user configured but this process could not

@@ -34,16 +34,20 @@ candidate state, acceptance gaps and verification; a place here does not make it
 
 2. [Finish ongoing launch preparation and explicit update-and-wait](../design/launch-update-preparation.md)
    — reuse the admitted-build pipeline before optimizing isolated waits; its
-   [tests-first source handoff](../design/launch-update-preparation-plan.md) starts with ongoing
-   tree scheduling, then freshness and adapters; ordinary warm CLI/MCP replacement has its settled
-   machine-level architecture and source-interface dependency in the
+   [combined implementation map](../design/launch-update-preparation-plan.md) connects scheduling,
+   freshness, HOST, Apple checks and supported ordinary npm capture. Independent review and final
+   combined runtime/platform acceptance remain. Producer details stay in the
    [capture sketch](../design/launch-program-capture-plan.md).
    [Source research](../research/launch-preparation.md) bounds current timing claims.
 
-Pi's profile-set extension is built, children of pi-subagents included; what it cannot close is
-listed as accepted limits in
+Pi's existing profile-set/provider-seal extension is built, including its required child guard.
+That does not implement [MM-D42](../design/model-lists-and-pickers.md#MM-D42)'s process-local
+profile-derived child defaults and model restrictions: Pi's memory-only SDK settings do not
+replace native pi-subagents' independent disk reads or retained descendant policy. This settled
+post-landing repair needs an authorized dependency capability/source route; do not invent a yolo
+settings overlay or rewrite shared settings. Other accepted limits remain in
 [its design's §3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close),
-and the one call left there, a pi-subagents registry several extensions can share, is in item 28.
+and a pi-subagents registry several extensions can share stays in item 28.
 
 Native readiness and credential-store work retain their places below: assess
 [the privilege prerequisites](../research/sandvault-macos-privileges.md) without broad root
@@ -187,9 +191,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     consumed](../design/image-paste.md#OQ-PA2) shapes the key handling, with [closing macos-user's possibly open
     pasteboard](../design/image-paste.md#OQ-PA1) and [the default](../design/image-paste.md#OQ-PA3); its first slice,
     the host reader and `yolo paste`, waits on none of them.
-31. Speed builds the maintainer asked for on 2026-10-04: [Apple Container's stock-image skip, then the skip for a launch
-    declaring `packages:`](../reference/image-staging-vs-baking.md), as a nix build that finds nothing to do is 3.2 to
-    3.5 s of a 6.9 s fresh launch; and [Podman Machines pinned to applehv](../research/macos-vm-runtime-comparison.md#32-on-a-shared-mac-folder),
+31. Finish [image build reuse](../reference/image-staging-vs-baking.md) with native Apple Container stock-tag dispatch and warm-launch validation; Linux baked, ambient and lean record reuse now has live evidence. Then [Podman Machines pinned to applehv](../research/macos-vm-runtime-comparison.md#32-on-a-shared-mac-folder),
     as Podman's installer gives libkrun, the slowest shared folder measured. Then
     [make OrbStack a working Podman host](../research/orbstack-as-a-podman-host.md), with [its native verification
     plan](../research/orbstack-as-a-podman-host-plan.md), as its measured shared-folder speed and memory return offer
@@ -323,7 +325,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 | Item | Class | Disposition |
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#OQ-SK1) disposition, not a defect. |
-| IC2 — ongoing launch preparation and update-and-wait | A | Start the tests-first source handoff at ongoing tree scheduling, then freshness and adapters; reuse the admitted-build pipeline before optimizing isolated waits. |
+| IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
 and the credential store are items 11 and 20, and storage relocation and OrbStack are items 28 and 31.
@@ -334,10 +336,10 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 |---|---|---|
 | 1 — finish the patched-fork mode's verification | X / D | W9 #2's Linux nested-jail checks pass, and the build-line digest disclosure was already built and is now reverified through its production call-site tests ([evidence](../design/patched-forks.md#7-the-build-and-the-launch)); no listed Linux-local build remains. Remaining: #3 is X (a real rootless host or CI), #8–10 are X (a Mac), the migration-kit measurement needs the maintainer's real series, and [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11)/[OQ-PFK5](../design/patched-forks.md#OQ-PFK5)–[OQ-PFK7](../design/patched-forks.md#OQ-PFK7) are D. |
 | 2 — per-jail host daemons (HD-R1) | D | How do old jails coexist with per-jail daemons, and who keeps Claude's login fresh with no jail running ([OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9))? **Maintainer**. Built and held on a branch. |
-| 3 — rulings that hold a build | D | [OQ-PD19](../design/program-delivery.md#OQ-PD19)–[OQ-PD23](../design/program-delivery.md#OQ-PD23) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer**. |
+| 3 — rulings that hold a build | D | [OQ-PD19](../design/program-delivery.md#OQ-PD19)–[OQ-PD23](../design/program-delivery.md#decision-ledger) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer**. |
 | 4 — rulings that hold a defect's fix | D | The Kilo special-casing (claude gives undeclared-window Kilo models 1M context), [OQ-CDX3](../research/codex-background-service.md#OQ-CDX3) (`--no-daemon` for in-jail codex), whose OpenAI login host pi uses, and the leftover `mcp-adapter.json` ([OQ-MC1](../reference/mcp-configuration.md#OQ-MC1)/[OQ-MC2](../reference/mcp-configuration.md#OQ-MC2)). **Maintainer**. |
 | 5 — `yolo host apply --assert`'s next command and the dry run's exit | D | May a successful `--assert` name a next command (happy-path rule 2), and does the dry run exit 0 or 1 ([OQ-RO8](../reference/report-tiers.md#OQ-RO8))? **Maintainer**. |
-| 6 — remaining build-update slices | A | Next is host delivery/reporting; the fork-timing half landed (`ab95926c0`). Apple Container check-only and native/performance acceptance are X (a Mac). |
+| 6 — remaining build-update slices | A | The candidate connects host delivery/reporting, Apple check-only and fork/capture timing. Combined review and final runtime acceptance remain; native/performance acceptance is X (a Mac). |
 | 7 — Claude footer plugin and mods management | D | Move the footer into a Claude Code plugin, and how yolo manages Claude Code mods. **Maintainer**. |
 | 8 — VM-local disks and the private Homebrew tap | D | [OQ-VL1](../design/vm-local-volumes.md#OQ-VL1)–[OQ-VL4](../design/vm-local-volumes.md#OQ-VL4) and [OQ-PT1](../design/private-tap-programs.md#OQ-PT1)–[OQ-PT5](../design/private-tap-programs.md#OQ-PT5). **Maintainer**. The Apple Container file-cost probe is X (a Mac). |
 | 9 — macOS direction rewordings | D | Approve the drafted rewordings of the direction's ruled sentences. **Maintainer**. |
@@ -361,14 +363,14 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 27 — how a jail reaches a worktree's `.git` | D | Read-only refuses every commit, read-write lets a jail prune the worktree. **Maintainer**. |
 | 28 — calls left at one decision each | D | The `:ro` degradation rows, message URLs ([OQ-DW3](../design/docs-website.md#OQ-DW3)), the macOS nix build sandbox, array-append pinning (E5), the pack system's other calls, relocating `.yolo` by a link ([OQ-JH1](../reference/jail-home.md#OQ-JH1)), a pi-subagents shared registry, the shared tool store's relocation contract, storage tiers, and cache isolation. **Maintainer**. |
 | 29 — editor preference and SandVault/Safehouse compat | D | May yolo hold an editor preference, and how a SandVault/Safehouse user tries yolo ([OQ-NB1](../design/sandvault-safehouse-compat.md#OQ-NB1), then [OQ-NB2](../design/sandvault-safehouse-compat.md#OQ-NB2)/[OQ-NB3](../design/sandvault-safehouse-compat.md#OQ-NB3)/[OQ-NB5](../design/sandvault-safehouse-compat.md#OQ-NB5))? **Maintainer**. |
-| 30 — the rest of the broker's step 2 | A | Next slice is the request store and grants ([§7](../design/boundary-broker.md#7-grants-and-the-request-store)) with `yolo approve`; the first user-scope slice landed (`c177ab83e`). [OQ-BB10](../design/boundary-broker.md#OQ-BB10) is D; the D-Bus notifier is X (a Mac) and the answer ping waits on `yolo notify`. |
-| 31 — speed builds the maintainer asked for | X | A Mac: Part A's `container image tag` argv is unverified from Linux and only a real Mac dispatch proves it. |
-| 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. Still A: the Seatbelt 0644 test (writable off-Mac). Still X: the Mac readiness run and the quiet-host re-measure. |
+| 30 — the rest of the broker's step 2 | A | Next is broker integration of the host store ([build plan](../design/boundary-broker-plan.md)): resolved policies, enqueue/consume/teardown, bounded wait/status, shared scope locking and audit. The store/`yolo approve` slice does not execute writes. [OQ-BB10](../design/boundary-broker.md#OQ-BB10) remains D; notification delivery needs platform verification and the answer ping waits on `yolo notify`. |
+| 31 — speed builds the maintainer asked for | A / X | Part B's config-declared, ambient-only and lean-attribute launch records are implemented and runtime-tested in an isolated Linux environment. Part A's tag dispatch and native runtime validation require a Mac. See [launch records](../reference/image-staging-vs-baking.md#packages-launch-records--first-slice-2026-10-13). |
+| 32 — builds no ruling holds | D | The W1(e) `yolo run` progress golden sign-off (human approval of the frozen `testdata`). **Maintainer**. Sub-parts already closed: the startup banner (`d8f26fc72`), the unit-suite seams (`1382499b0`) and the pi-guide line (`a1c876717`); (b)/(c)/(g) are built with stale lines. The host-file 0644 regression is authored in `integration/macosuserread0644_test.go`; Linux checks its unsandboxed fixture/probe only. Still X: native Mac execution of the denial twin, the Mac readiness run and the quiet-host re-measure. |
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
 | 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login. **Maintainer**. |
-| 37 — downstream pack consumer asks | A | The one small diagnostics build among the tracker's four questions; four carries are owned by items 1 and 23. |
+| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); four carries are owned by items 1 and 23. |
 
 ### External waits
 
@@ -413,7 +415,7 @@ Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 1
 
 ### Actionable now, in land order
 
-The remaining A work, cheapest first: item 32's Seatbelt 0644 test → item 22's byte-cap fragment → item 37's small
-diagnostics build → item 30's request store and grants → item 6's host delivery/reporting → IC2's ongoing tree
-scheduling → item 1's nested-jail verification (after item 6's landed half) → item 25's measurement **last and
-isolated**, as it mutates `/workspace`.
+The remaining A work, cheapest first: item 22's byte-cap fragment → item 30's remaining broker integration →
+item 6's host delivery/reporting → IC2's ongoing tree scheduling → item 1's nested-jail verification (after
+item 6's landed half) → item 25's measurement **last and isolated**, as it mutates `/workspace`. Item 37's
+small diagnostics build waits on the ruling in [OQ-DA3](downstream-asks.md#OQ-DA3).

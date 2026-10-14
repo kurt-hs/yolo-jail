@@ -294,7 +294,7 @@ func TestPreparationAdmissionGuardRechecksCurrentPackSelection(t *testing.T) {
 }
 
 func TestPreparationEnvironmentUsesDeclaredProviderExclusionsAndBoundedAllowlist(t *testing.T) {
-	env := preparationEnvironment([]string{
+	env := legacyPreparationEnvironment([]string{
 		"HOME=/home/user", "PATH=/usr/bin", "LANG=C.UTF-8", "SSH_AUTH_SOCK=/run/ssh.sock",
 		"GIT_SSH_COMMAND=ssh -F /home/user/.ssh/config", "YOLO_REPO_ROOT=/src", "YOLO_RUNTIME=podman",
 		"YOLO_ALLOW_PATCH_FAILURES=1", "YOLO_WORKSPACE=/workspace", "GIT_DIR=/repo/.git",
@@ -315,7 +315,7 @@ func TestPreparationEnvironmentUsesDeclaredProviderExclusionsAndBoundedAllowlist
 			t.Errorf("unbounded or credential variable %s crossed into worker environment", name)
 		}
 	}
-	if !reflect.DeepEqual(env, preparationEnvironment([]string{
+	if !reflect.DeepEqual(env, legacyPreparationEnvironment([]string{
 		"HTTPS_PROXY=https://proxy", "SYNTHETIC_PROVIDER_KEY=secret", "YOLO_RUNTIME=podman", "YOLO_REPO_ROOT=/src",
 		"GIT_SSH_COMMAND=ssh -F /home/user/.ssh/config", "SSH_AUTH_SOCK=/run/ssh.sock", "LANG=C.UTF-8", "PATH=/usr/bin", "HOME=/home/user",
 	}, []string{"SYNTHETIC_PROVIDER_KEY"})) {

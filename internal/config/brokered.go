@@ -133,6 +133,43 @@ func BrokeredSets(source string) []BrokeredSet {
 	return sets
 }
 
+// CurrentBrokeredSets reads host user policy afresh and refuses malformed entries.
+// Unlike the disclosure reader, it must never skip a bad rule or fall back on a read error.
+func CurrentBrokeredSets(source string) ([]BrokeredSet, error) {
+	cfg, err := UserScopeConfig(true, nil)
+	if err != nil {
+		return nil, err
+	}
+	v, has := cfg.Get(brokeredKey)
+	if !has || v == nil {
+		return nil, nil
+	}
+	sources, ok := asMap(v)
+	if !ok {
+		return nil, fmt.Errorf("invalid brokered host policy")
+	}
+	v, has = sources.Get(source)
+	if !has || v == nil {
+		return nil, nil
+	}
+	src, ok := asMap(v)
+	if !ok {
+		return nil, fmt.Errorf("invalid brokered.%s host policy", source)
+	}
+	v, has = src.Get(brokeredSetsKey)
+	if !has {
+		return nil, nil
+	}
+	sets, problems := brokeredSetsValue(brokeredSetsPath(source), v)
+	if len(problems) != 0 {
+		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
+	}
+	if len(sets) == 0 {
+		return nil, fmt.Errorf("empty permission sets; configure host permission sets before retrying")
+	}
+	return sets, nil
+}
+
 // Disclosure is the one-line rendering of a set for the launch's disclosure (BB-D23): the name,
 // a windowed set's window and any ceiling and use cap it names, and the rules it admits. A rule
 // the user wrote is shown with the doc's `+` lead, and control characters cannot reach here (the
@@ -281,6 +318,7 @@ func brokeredSetEntry(path string, m *jsonx.OrderedMap, seen map[string]bool, pr
 	}
 
 	if av, has := m.Get(brokeredSetAdmitKey); has {
+		s.Admit = []string{}
 		list, ok := av.([]any)
 		switch {
 		case !ok:

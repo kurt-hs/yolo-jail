@@ -101,13 +101,18 @@ func BuildJailsSideBySide(rt string) bool {
 	return rt != "container" // parity: Honored — every other backend starts capture jails side by side (macos-user builds none)
 }
 
-// BackgroundBuildsOn reports whether a launch on rt may leave a next-launch key's update to a
-// BACKGROUND ADVANCE (docs/design/pi-extension-store-builds.md XB-D19): false on Apple Container,
-// where a build jail cannot start beside a running jail, so the next-launch option is the at-launch
-// wait whenever a build happens (XB-D21; its check-only background advance is not built), and on
-// macos-user, which builds nothing; only podman runs this slice's background advance.
+// BackgroundChecksOn reports whether preparation may check selected inputs on this
+// runtime/platform. Apple Container checks Linux candidates but cannot build them
+// beside a running jail; native Darwin preparation remains unsupported here.
+func BackgroundChecksOn(rt, platform string) bool {
+	return (rt == "podman" || rt == "container") && // parity: Honored — podman checks and builds, Apple Container checks Linux candidates only beside no running build jail (XB-D21); macos-user runs no preparation
+		(platform == "linux/amd64" || platform == "linux/arm64")
+}
+
+// BackgroundBuildsOn reports whether preparation may start a build jail while
+// another jail runs. Apple Container's scheduler is check-only (XB-D21).
 func BackgroundBuildsOn(rt string) bool {
-	return rt == "podman" // parity: Honored — only podman runs this slice's background advance
+	return rt == "podman" // parity: Honored — only podman builds beside a running jail; Apple Container's advance is check-only (XB-D21), macos-user builds nothing
 }
 
 // appleContainerVersion returns the `container` CLI's version, memoized for this launch.

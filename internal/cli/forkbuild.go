@@ -389,6 +389,11 @@ type buildMode struct {
 	// `yolo capture <forked bin>` names the runtime a capture resolves, so the platform its build is
 	// filed under is the one that jail makes (forkBuildPlatform).
 	runtime string
+	// admitCtx bounds the required-build admission query (appleRequiredBuildAdmission, 2s
+	// inside): the launch's cancelable context where the caller has one, so a Ctrl-C ends the
+	// query with the launch rather than waiting it out. Nil is context.Background(), which
+	// `yolo capture` and the host floor leave — the query's own 2s bound still applies.
+	admitCtx context.Context
 	// retainWorkspace is set by the child runner when cancellation or incomplete stream drainage
 	// means its detached keeper may still be stopping. Until a runtime probe confirms the old jail
 	// is gone, the staging tree and its host-side jail state must not be removed or reused.
@@ -829,6 +834,15 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		}
 		cleanupForkBuildWorkspace(staging, cname)
 	}
+	// Required-build admission applies to the new child only. Retained workspace
+	// ownership and its original backend must be established before this gate.
+	admitCtx := mode.admitCtx
+	if admitCtx == nil {
+		admitCtx = context.Background()
+	}
+	if err := appleRequiredBuildAdmission(admitCtx, mode.runtime, f.CaptureArg()); err != nil {
+		return nil, err
+	}
 	staging, err := store.Stage(stagingID)
 	if err != nil {
 		return nil, err
@@ -1104,7 +1118,7 @@ func buildPlainForkForLaunch(b forkBuild, rt string, report *buildReport, it *po
 	r := report.begin(buildStart{fork: b.Fork, what: b.Fork.Source + " at " + shortSHA(b.Commit), line: b.buildLine()}, it)
 	bound := false
 	entry, err := buildFork(b, buildMode{lock: pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: ctx.Done()},
-		run: r, runJail: childJail(ctx, color, &bound), runtime: rt}, it.stream(), it.stream(), color)
+		run: r, runJail: childJail(ctx, color, &bound), runtime: rt, admitCtx: ctx}, it.stream(), it.stream(), color)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		r.fail("interrupted")

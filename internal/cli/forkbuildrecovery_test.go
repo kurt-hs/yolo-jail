@@ -29,6 +29,7 @@ const (
 )
 
 func TestForkBuildRetryJoinsPersistedRuntimeEvidenceBeforeReuse(t *testing.T) {
+	allowAppleContainerBuild(t)
 	tests := []struct {
 		name          string
 		sidecar       forkRecoveryEvidence
@@ -148,6 +149,10 @@ func TestForkBuildRetryJoinsPersistedRuntimeEvidenceBeforeReuse(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
+			// The required-build gate admits foreground builds only on positive absence
+			// proof; an empty running-container table stands in for the idle Apple host
+			// here, active only for the changed-parent-selection row on container.
+			fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 			if tc.parentRuntime != "" {
 				t.Setenv("YOLO_RUNTIME", tc.parentRuntime)
 			}
@@ -243,6 +248,10 @@ func TestForkBuildRetryJoinsPersistedRuntimeEvidenceBeforeReuse(t *testing.T) {
 
 func TestForkBuildRetryRuntimeCommandErrorIsUnknownThroughProductionProbe(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here, so the
+	// retry reaches the production original-backend probe this test is about.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	f := forkBuildHome(t)
 	b := forkBuild{Fork: f, Commit: forkTestCommit, Platform: captureJailPlatform()}
 	staging, cname, marker := seedRetainedForkBuildWorkspace(t, b, "podman")
@@ -288,6 +297,10 @@ exit 37
 
 func TestForkBuildRetryWorkspaceLockOpenFailureRetainsEvidence(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here, so the
+	// retry reaches the workspace-lock ownership check this test is about.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	f := forkBuildHome(t)
 	b := forkBuild{Fork: f, Commit: forkTestCommit, Platform: captureJailPlatform()}
 	staging, cname, marker := seedRetainedForkBuildWorkspace(t, b, "podman")

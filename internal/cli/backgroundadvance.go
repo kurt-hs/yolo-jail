@@ -192,8 +192,9 @@ var errBackgroundFromTest = errors.New("a test binary does not self-exec the bac
 // as the fork build child is), detached, its streams appended to log. A test binary never self-execs.
 // A var so a test can count the spawn.
 var startBackgroundAdvance = func(argv []string, log string) error {
-	if flag.Lookup("test.v") != nil {
-		return errBackgroundFromTest
+	environment, err := loadPreparationEnvironment()
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		return err
@@ -204,7 +205,15 @@ var startBackgroundAdvance = func(argv []string, log string) error {
 	}
 	defer f.Close()
 	c := exec.Command(run.SelfExecPath(), argv...)
+	c.Env = environment
 	c.Stdout, c.Stderr = f, f
+	return startPreparedBackgroundCommand(c)
+}
+
+var startPreparedBackgroundCommand = func(c *exec.Cmd) error {
+	if flag.Lookup("test.v") != nil {
+		return errBackgroundFromTest
+	}
 	return notty.StartDetached(c)
 }
 
@@ -392,11 +401,20 @@ func runBackgroundAdvanceUnder(ctx context.Context, a backgroundArgs, w io.Write
 			if a.schedulerGeneration != 0 {
 				o.ProducerPID, o.SubscriptionGeneration = os.Getpid(), a.schedulerGeneration
 			}
-			opts := lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true, background: true})
+			opts := lane.options(advanceOptions{platform: a.platform, runtime: a.runtime, launch: true, background: true,
+				checkOnly: !run.BackgroundBuildsOn(a.runtime), checkOnlyReason: "Apple Container background preparation checks candidates without starting a build jail"})
 			if a.schedulerGeneration != 0 {
-				opts.sharedAutomatic = true
+				opts.sharedAutomatic = run.BackgroundBuildsOn(a.runtime)
 				opts.sharedSubscriptionGeneration = a.schedulerGeneration
 				opts.admitGuard = preparationAdmissionGuardUnder(ctx, f.Key(), a.runtime, a.platform, a.schedulerGeneration)
+				if opts.checkOnly {
+					// The source check holds its record transaction. Reuse the O subscription
+					// guard, which never reenters that record to inspect patch authority.
+					opts.admitGuard = func(commit func() error) error {
+						return commitSubscribedPreparation(ctx, preparationDemand{Key: f.Key(), Runtime: a.runtime,
+							Platform: a.platform, Background: true, SubscriptionGeneration: a.schedulerGeneration}, commit)
+					}
+				}
 			}
 			res := treeAdvance(f, opts)
 			backgroundResult(o, res, ctx.Err() != nil)

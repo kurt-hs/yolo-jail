@@ -5,7 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"os"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
@@ -21,17 +24,20 @@ type freshRequestInputs struct {
 	Platforms []string            `json:"platforms,omitempty"`
 	Inputs    packsrc.CheckInputs `json:"inputs"`
 	Recipe    string              `json:"recipe"`
+	Config    []byte              `json:"config,omitempty"`
 }
 
 func registerFreshPreparation(ctx context.Context, store *packsrc.Store, f packload.Fork, platform string,
-	identities map[string]string, boundaries map[string]uint64, errs map[string]error) error {
+	identities map[string]string, boundaries map[string]packsrc.CheckStart, errs map[string]error) error {
 	key := f.Key()
 	identity, err := freshPreparationIdentity(f, platform)
 	if err == nil {
-		var seq uint64
-		seq, err = store.FreshCheckBoundaryContext(ctx, key)
+		var boundary packsrc.CheckStart
+		local := *store
+		local.Ctx = ctx
+		boundary, err = local.CheckBoundary(key)
 		if err == nil {
-			identities[key], boundaries[key] = identity, seq
+			identities[key], boundaries[key] = identity, boundary
 			return nil
 		}
 	}
@@ -42,7 +48,11 @@ func registerFreshPreparation(ctx context.Context, store *packsrc.Store, f packl
 // freshPreparationIdentity freezes the authorized source/check vector and build recipe at request
 // registration. Advances compare it again before checking, so an edit never retargets a request.
 func freshPreparationIdentity(f packload.Fork, platform string) (string, error) {
-	series, err := f.ReadSeries()
+	var series *packsrc.Series
+	var err error
+	if f.Patched() || f.IsTree() {
+		series, err = f.ReadSeries()
+	}
 	if err != nil {
 		return "", err
 	}
@@ -54,7 +64,11 @@ func freshPreparationIdentity(f packload.Fork, platform string) (string, error) 
 	if recipe == "" {
 		return "", fmt.Errorf("%s has no supported build recipe", f.Key())
 	}
-	data, err := json.Marshal(freshRequestInputs{Owner: f.Key(), Base: f.Base, TreeOwner: f.Owner, Into: f.Into, Source: f.Source, Platform: platform, Platforms: f.Platforms, Inputs: inputs, Recipe: recipe})
+	configBytes, err := os.ReadFile(paths.UserConfigPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	data, err := json.Marshal(freshRequestInputs{Config: configBytes, Owner: f.Key(), Base: f.Base, TreeOwner: f.Owner, Into: f.Into, Source: f.Source, Platform: platform, Platforms: f.Platforms, Inputs: inputs, Recipe: recipe})
 	if err != nil {
 		return "", err
 	}

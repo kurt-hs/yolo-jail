@@ -29,8 +29,8 @@ import (
 type ForkBuildRequest struct {
 	// FreshUpdate opts patched keys into explicit check-after-registration mode.
 	FreshUpdate bool
-	// FreshAfterSeq and FreshBoundaryErr are keyed start-sequence boundaries captured before the pool starts.
-	FreshAfterSeq    map[string]uint64
+	// FreshBoundary and FreshBoundaryErr are keyed epoch/start boundaries captured before the pool starts.
+	FreshBoundary    map[string]packsrc.CheckStart
 	FreshBoundaryErr map[string]error
 	FreshIdentity    map[string]string
 	// Pins are the forks to deliver: each PLAIN fork with its pinned commit, and each PATCHED fork,
@@ -258,40 +258,7 @@ func forkLockPath() string { return packsrc.ForkLockPath(paths.UserConfigPath())
 // `yolo host -- <bin>` and `yolo host apply --assert` (the host floor's PinFork), and `yolo capture
 // <forked bin>`, so the host and a jail can never pin one fork two ways.
 func PinLaunchForks(forks []packload.Fork, begin func() (func(string), func())) []packload.ForkPin {
-	return pinLaunchForks(nil, forks, begin)
-}
-
-// RepinLaunchForks is the explicit fresh-request counterpart, called only after the attach decision
-// has established that this is a new jail. It re-resolves selected mutable branch refs through the
-// same lock and store as PinLaunchForks; fixed inputs keep their pin and ordinary launch behavior.
-func RepinLaunchForks(ctx context.Context, forks []packload.Fork,
-	begin func() (func(string), func())) []packload.ForkPin {
-	var mutable, fixed []packload.Fork
-	for _, fork := range forks {
-		if mutableForkRef(fork) {
-			mutable = append(mutable, fork)
-		} else {
-			fixed = append(fixed, fork)
-		}
-	}
-	byKey := make(map[string]packload.ForkPin, len(forks))
-	if len(fixed) > 0 {
-		for _, pin := range pinLaunchForks(ctx, fixed, nil) {
-			byKey[pin.Fork.Key()] = pin
-		}
-	}
-	if len(mutable) > 0 {
-		store := launchStore()
-		store.Ctx = ctx
-		for _, pin := range packload.RepinForks(mutable, forkLockPath(), store, begin) {
-			byKey[pin.Fork.Key()] = pin
-		}
-	}
-	out := make([]packload.ForkPin, len(forks))
-	for i, fork := range forks {
-		out[i] = byKey[fork.Key()]
-	}
-	return out
+	return pinLaunchForks(context.Background(), forks, begin)
 }
 
 func mutableForkRef(fork packload.Fork) bool {
@@ -309,7 +276,7 @@ func freshJailForkPinRefusal(forks []packload.Fork) error {
 		if !mutableForkRef(fork) || forkUnpublishedHere(fork) != "" {
 			continue
 		}
-		return fmt.Errorf("Refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update.",
+		return fmt.Errorf("refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update",
 			fork.Key())
 	}
 	return nil

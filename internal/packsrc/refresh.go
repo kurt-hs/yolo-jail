@@ -699,9 +699,6 @@ func (s *Store) flock(path, what string, waiting func(string)) (func(), error) {
 }
 
 func flockPathContext(ctx context.Context, path, what string, waiting func(string)) (func(), error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -711,11 +708,6 @@ func flockPathContext(ctx context.Context, path, what string, waiting func(strin
 	}
 	fd := int(f.Fd())
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-		if ctx.Err() != nil {
-			_ = syscall.Flock(fd, syscall.LOCK_UN)
-			f.Close()
-			return nil, ctx.Err()
-		}
 		return func() {
 			_ = syscall.Flock(fd, syscall.LOCK_UN)
 			_ = f.Close()

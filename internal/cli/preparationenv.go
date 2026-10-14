@@ -4,38 +4,70 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mschulkind-oss/yolo-jail/internal/config"
-	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
-// preparationEnvironment is the detached scheduler's complete inherited environment. Source
-// transport is the only credential-bearing exception; provider credentials and launch hatches do
-// not cross into this host worker.
-func preparationEnvironment(environ []string, providerEnvNames []string) []string {
-	providers := make(map[string]bool, len(providerEnvNames))
-	for _, name := range providerEnvNames {
-		providers[name] = true
+// preparationEnvironment bounds the detached host's inputs. Host source transport keeps its
+// authorized helpers; this is not the sealed build environment, which has its own boundary.
+// Declarations match case-insensitively so transport aliases cannot bypass credential exclusion.
+// Allowed entries retain their original spelling and value.
+func preparationEnvironment(in []string, providers *jsonx.OrderedMap, packs []*packload.Pack) []string {
+	excluded := map[string]bool{}
+	if providers != nil {
+		for _, name := range providers.Keys() {
+			v, _ := providers.Get(name)
+			entry, _ := v.(*jsonx.OrderedMap)
+			for _, n := range packload.CredentialEnvNames(entry) {
+				excluded[strings.ToUpper(n)] = true
+			}
+		}
 	}
-	allowed := map[string]bool{
-		"HOME": true, "PATH": true, "TMPDIR": true, "TMP": true, "TEMP": true,
-		"LANG": true, "LANGUAGE": true, "LC_ALL": true, "LC_CTYPE": true, "LC_MESSAGES": true,
-		"TERM": true, "TZ": true, "USER": true, "LOGNAME": true,
-		"XDG_CONFIG_HOME": true, "XDG_DATA_HOME": true, "XDG_CACHE_HOME": true, "NO_COLOR": true,
-		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true,
-		"http_proxy": true, "https_proxy": true, "all_proxy": true, "no_proxy": true,
-		"SSL_CERT_FILE": true, "SSL_CERT_DIR": true, "CURL_CA_BUNDLE": true, "NODE_EXTRA_CA_CERTS": true,
-		"SSH_AUTH_SOCK": true, "SSH_AGENT_PID": true, "GIT_SSH_COMMAND": true, "GIT_ASKPASS": true,
-		"SSH_ASKPASS": true, "YOLO_REPO_ROOT": true, "YOLO_RUNTIME": true,
+	for _, p := range packs {
+		if p.Decl == nil {
+			continue
+		}
+		for _, provider := range p.Decl.Providers() {
+			for _, n := range provider.APIKeyEnvName {
+				excluded[strings.ToUpper(n)] = true
+			}
+			for _, n := range provider.RegionEnvName {
+				excluded[strings.ToUpper(n)] = true
+			}
+		}
+		for bin := range p.Decl.ProviderEnvByBin {
+			for _, v := range p.Decl.ProviderEnv(bin) {
+				excluded[strings.ToUpper(v.Name)] = true
+			}
+		}
 	}
-	values := make(map[string]string)
-	for _, item := range environ {
-		name, value, ok := strings.Cut(item, "=")
-		if !ok || !allowed[name] || providers[name] || strings.HasPrefix(name, "YOLO_ALLOW_") || strings.HasPrefix(name, "YOLO_TEST_") {
+	values := make(map[string]string, len(in))
+	for _, kv := range packsrc.CleanGitEnv(in) {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || excluded[strings.ToUpper(name)] {
+			continue
+		}
+		switch name {
+		// Identity, storage and tool lookup; never workspace or launch-specific inputs.
+		case "HOME", "USER", "LOGNAME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
+			"TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE", "TZ":
+		// TLS and proxy settings are source transport, not agent provider credentials.
+		case "SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+			"http_proxy", "https_proxy", "all_proxy", "no_proxy":
+		// Git's ordinary host config/helpers and SSH transport remain authorized. Repository-local
+		// GIT_CONFIG_* injections and interactive askpass/UI variables are deliberately absent.
+		case "SSH_AUTH_SOCK", "SSH_AGENT_PID", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM":
+		// Existing source/runtime controls needed by the same sealed-build launcher. No YOLO_ALLOW_*
+		// hatches, jail markers, service tokens or arbitrary YOLO_* prefix is inherited.
+		case "YOLO_REPO_ROOT", "YOLO_RUNTIME", "YOLO_NIX_HOST_DAEMON", "YOLO_NIX_HOST_STORE_LINUX", "NIX_REMOTE", "NIX_DAEMON_SOCKET_PATH", "NIX_STORE_DIR",
+			"CONTAINER_HOST", "CONTAINER_CONNECTION", "PODMAN_CONNECTIONS_CONF", "CONTAINERS_CONF", "CONTAINERS_STORAGE_CONF":
+		default:
 			continue
 		}
 		values[name] = value
@@ -45,50 +77,40 @@ func preparationEnvironment(environ []string, providerEnvNames []string) []strin
 		keys = append(keys, name)
 	}
 	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
+	out := make([]string, 0, len(keys)+3)
 	for _, name := range keys {
 		out = append(out, name+"="+values[name])
 	}
-	return out
+	// These are worker-owned controls, not inherited agent variables.
+	return append(out, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never", "SSH_ASKPASS_REQUIRE=never")
 }
 
-func preparationProviderEnvNames() []string {
-	var names []string
-	selection := selectConfiguredHostPacks()
-	packs := append([]*packload.Pack(nil), selection.packs...)
-	packs = append(packs, packload.Embedded()...)
-	seen := map[string]bool{}
-	for _, p := range packs {
-		if p == nil || p.Decl == nil {
-			continue
-		}
-		for _, provider := range p.Decl.Providers() {
-			for _, name := range provider.APIKeyEnvName {
-				if !seen[name] {
-					names, seen[name] = append(names, name), true
-				}
-			}
-			for _, name := range provider.RegionEnvName {
-				if !seen[name] {
-					names, seen[name] = append(names, name), true
-				}
-			}
-		}
-	}
-	return names
+// loadPreparationEnvironment reads user-authorized declarations before process creation. An
+// unreadable boundary must not silently degrade to an inherited or only partly filtered env.
+func loadPreparationEnvironment() ([]string, error) {
+	return sharedPreparationEnvironment(context.Background())
 }
 
-func currentPreparationEnvironment() []string {
-	return preparationEnvironment(os.Environ(), preparationProviderEnvNames())
-}
-
-// A foreground detach must not block in an uncancellable resolver while discovering credential
-// declarations. Busy source-pack authority defers the requester rather than borrowing its env.
 func sharedPreparationEnvironment(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	user, err := config.UserScopeConfig(true, func(string) {})
+	if err != nil {
+		return nil, preparationEnvironmentError(err)
+	}
+	problems, _ := config.ValidateProviderSection(user)
+	if len(problems) > 0 {
+		return nil, preparationEnvironmentError(fmt.Errorf("%s", strings.Join(problems, "; ")))
+	}
+	var providers *jsonx.OrderedMap
+	if v, ok := user.Get("providers"); ok {
+		providers, _ = v.(*jsonx.OrderedMap)
+	}
 	resolver, release := preparationScopedResolver(ctx)
 	defer release()
 	var contention error
-	selected := selectHostPacks(func(e config.PackEntry) (*packload.Pack, error) {
+	sel := selectHostPacks(func(e config.PackEntry) (*packload.Pack, error) {
 		p, err := resolver(e)
 		if errors.Is(err, packsrc.ErrLockHeld) {
 			contention = err
@@ -101,19 +123,22 @@ func sharedPreparationEnvironment(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(selected.problems()) > 0 {
-		return nil, fmt.Errorf("could not resolve provider environment authority — repair the user pack selection and retry `yolo --update`")
-	}
-	var names []string
-	packs := append(append([]*packload.Pack(nil), selected.packs...), packload.Embedded()...)
-	for _, p := range packs {
-		if p == nil || p.Decl == nil {
-			continue
+	if problems := sel.problems(); len(problems) > 0 {
+		var reasons []string
+		for _, p := range problems {
+			reasons = append(reasons, p.Name+": "+p.Reason)
 		}
-		for _, provider := range p.Decl.Providers() {
-			names = append(names, provider.APIKeyEnvName...)
-			names = append(names, provider.RegionEnvName...)
-		}
+		return nil, preparationEnvironmentError(fmt.Errorf("%s", strings.Join(reasons, "; ")))
 	}
-	return preparationEnvironment(os.Environ(), names), nil
+	// Shipped declarations exclude known provider inputs even when the provider is not selected;
+	// configured declarations add user-defined names without a tool-name denylist.
+	packs := append(append([]*packload.Pack(nil), packload.Embedded()...), sel.packs...)
+	if problems := packload.EmbeddedProblems(); len(problems) > 0 {
+		return nil, preparationEnvironmentError(fmt.Errorf("%s", strings.Join(problems, "; ")))
+	}
+	return preparationEnvironment(os.Environ(), providers, packs), nil
+}
+
+func preparationEnvironmentError(err error) error {
+	return fmt.Errorf("cannot bound detached preparation environment: %w — run `yolo check --no-build` and repair the user pack/provider declarations before retrying", err)
 }

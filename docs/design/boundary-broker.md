@@ -3,7 +3,7 @@ title: "Reads run, writes ring the doorbell: time-boxed GitHub access across the
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Build the rest of step 2 short of the doorbell: user-scope sets under the `brokered` key (§5.7), the request store and grants (§7), `yolo approve` and the D-Bus notifier; the answer's ping waits on agent-event-watchers.md step 1 and the no-notifier terminal notice on OQ-BB10 — start at internal/config/brokered.go, whose source object accepts only `repos` today, beside the retired `workspaces`"
+next: "Deliver request/answer notice readiness (OQ-BB10 and yolo notify), rule OQ-BB15 explicit admit semantics, then implement rule grammar. Production writes remain refused; gated handler integration is built."
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, approvals, notifications, loopholes, audit, broker]
@@ -18,7 +18,11 @@ vantage:
 built 2026-09-29** (the read path, the repository scope, the audit log, the mount fence),
 **step 2's widening entry built 2026-10-01** ([BB-D33](#BB-D33), [BB-D52](#BB-D52); the
 `brokered` key in `internal/config/brokered.go`, run end to end against a fake host `gh` by
-`integration/githubbroker_test.go`), and the rest of step 2 and step 3 not started. Revised
+`integration/githubbroker_test.go`), and **step 2's user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
+The real handler has host authority adapters and a delivery-gated request/wait/status/consume
+path, tested through the transport with a fake executor. Production still provides no delivery
+readiness, so writes refuse immediately without filing requests. See [the build plan](boundary-broker-plan.md).
+Notifications, explicit admission rules and step 3 are not built. Revised
 around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#OQ-BB1), [OQ-BB2](#OQ-BB2), [OQ-BB3](#OQ-BB3), [OQ-BB4](#OQ-BB4),
 [OQ-BB6](#OQ-BB6), [OQ-BB7](#OQ-BB7), [OQ-BB8](#OQ-BB8), [OQ-BB9](#OQ-BB9) and OQ-C were ruled on
@@ -38,12 +42,12 @@ kind; its implementation decisions are
 [BB-D37](#BB-D37) to [BB-D45](#BB-D45), and the fixes a review of it found are
 [BB-D46](#BB-D46) to [BB-D51](#BB-D51). [BB-D58](#BB-D58) to [BB-D62](#BB-D62) answer an
 agent's field report of 2026-10-03: encoded endpoints, organization flags on writes, words that
-climb out of a path, GraphQL advice, and fuzz targets for the scope decision. Still unbuilt: the request store, `yolo approve`, the
-[BB-D46](#BB-D46) to [BB-D51](#BB-D51). The first in-jail use's report (2026-10-03) brought
+climb out of a path, GraphQL advice, and fuzz targets for the scope decision. The first in-jail
+use's report (2026-10-03) brought
 [BB-D64](#BB-D64) to [BB-D68](#BB-D68): `--jq` and `--template` run, the broker answers
 `gh auth status`, a write says at once that nothing waits, the forwarder's shim says what it is,
-and the github pack briefs every agent. Still unbuilt: the request store, `yolo approve`, the
-notifiers, the ping, and every write. (`internal/broker` and the `yolo broker` verb mean the
+and the github pack briefs every agent. Still unbuilt: production delivery readiness, explicit admission rules, the
+notifiers, the ping, and every production write. (`internal/broker` and the `yolo broker` verb mean the
 Claude OAuth singleton; see **broker** in [§1.3](#13-terms).) The research behind
 [§5](#5-which-set-the-classifier) and [§6](#6-the-doorbell-a-persistent-desktop-notification) is
 dated 2026-09-28 and marked MEASURED, SOURCED or INFERRED throughout
@@ -74,7 +78,7 @@ ping box, which is designed and not built.
 
 **Start at [§3](#3-the-flow)**, the flow. Everything else is what one step of it needs.
 
-**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14).
+**Needs your ruling:** [OQ-BB10](#OQ-BB10), [OQ-BB14](#OQ-BB14), [OQ-BB15](#OQ-BB15).
 [OQ-BB3](#OQ-BB3), [OQ-BB4](#OQ-BB4), [OQ-BB6](#OQ-BB6),
 [OQ-BB7](#OQ-BB7), [OQ-BB8](#OQ-BB8), [OQ-BB9](#OQ-BB9) and OQ-C were ruled 2026-09-29,
 [OQ-BB12](#OQ-BB12) and [OQ-BB13](#OQ-BB13) on 2026-10-01, and [OQ-BB6](#OQ-BB6) re-ruled on
@@ -88,7 +92,7 @@ scope is approved through), [`providers.md`'s credential gate](../reference/prov
 (delivery as specific as possible), [`sso-backed-bedrock.md`](sso-backed-bedrock.md) (the second consumer waiting for a
 request shape), [`host-run-mailbox.md`](host-run-mailbox.md) (the paste-to-host stopgap
 for everything this design does not yet cover, planned to become one more front-end of its
-store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). No implementation sketch is open yet.
+store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). The bounded host-store slice is recorded in [the build plan](boundary-broker-plan.md).
 
 ---
 
@@ -1092,9 +1096,9 @@ the implementer picks it, and `yolo config-ref` is its authority once built. It 
   ([BB-P8](#BB-P8)).
 - **The `brokered` key splits by child** ([WW-D14](workspace-widening.md#WW-D14)): `<source>.repos`
   is workspace scope, the widening entry of [§5.6](#56-the-repository-scope), built 2026-10-05,
-  and `<source>.sets` will be user scope, refused at workspace scope ([BB-P9](#BB-P9)). The `sets`
-  half is not built, so a `sets` key under a source is refused today as an unknown key, at every
-  scope.
+  and `<source>.sets` is user scope, refused at workspace scope ([BB-P9](#BB-P9)). Its validation
+  and launch disclosure are built; effective rule classification and delivery to the broker
+  remain an integration step.
 
 #### What a grant covers, as filed
 
@@ -1327,6 +1331,51 @@ is a thin local client of the store with its own operator credential
 
 ## 7. Grants and the request store
 
+**Host-store slice built 2026-10-13:** `internal/brokerstore` and the registered `yolo approve`
+command implement filing, duplicate joining, serialized decisions, bounded grants, consumption,
+revocation, lifetime ending and seven-day retention. The broker now ends its own lifetime
+and audits exactly the grants ended. Scope write/remove/sweep and store mutations share one
+source-directory transaction lock. Approve and consume require in-transaction current-authority
+callbacks; missing gates fail closed. Host adapters now re-read strict user-only policy,
+current approved scope and the live host lifetime at approval and actual consumption. A fresh
+random start is bound into the launch scope under that same transaction and holds a private
+process-lifetime lease; PID reuse cannot resurrect it. The real broker handler files, joins,
+waits, checks status, consumes and dispatches only when its required-delivery dependency is
+ready. Production supplies no such dependency: it still files nothing, consumes no grant and
+runs no write. Fake delivery and executor tests exercise the actual forwarder/front/handler,
+not a second approval implementation.
+
+**Built policy boundary:** the default named sets without explicit `admit`, including configured
+mode/window/ceiling/use bounds. Every explicit `admit` (even empty), custom set and unsupported
+rule refuses the policy as a whole. [OQ-BB15](#OQ-BB15) asks whether explicit rules replace or
+augment defaults; flag-condition and API-pattern syntax is not invented here.
+
+**Implementation interpretation:** Allow once lasts `min(15m, max_window)`, one use, so a
+user-defined shorter ceiling is never exceeded. Its confirmation prints the effective expiry.
+Current narrowing conservatively invalidates an existing grant; refile and reapprove.
+
+**Bounded handler:** authorization, filing and the in-call wait have a 30-second caller deadline
+([§3.2](#32-a-write-and-the-bounded-wait)); status/wait reveal only that authenticated jail's
+current start. Lock acquisition honors cancellation, including while another scope/store
+transaction is held. Disconnect or broker stop cancels the wait, never an already-pending
+request; a later decision dispatches nothing. A reissued command rechecks its actual canonical
+argv/repositories/stdin digest and spends one grant use durably before required audit and
+executor dispatch. Audit failure after spending loses the use and runs nothing; no refund can
+make a duplicate run. **Authorization linearizes under the shared source transaction, held
+through bounded dispatch on both standing and windowed paths.** A cooperating scope removal,
+lifetime close or revocation that acquires it first prevents a subsequent dispatch; one that
+comes later waits for dispatch to return. The real executor observes the caller deadline and
+cancellation, and the host connection's write sinks carry that deadline. No execute-then-save
+ordering exists. User policy is sampled at authorization: ordinary out-of-band user config edits
+do not acquire this broker lock, and serialization with those edits is not promised. Callbacks must never nest a same-source lock-taking operation.
+
+**Production fence:** request delivery (including the no-notifier terminal notice) and later
+answer delivery must be ready, with no environment/config bypass. Manual discovery through
+`yolo approve` does not waive [OQ-BB10](#OQ-BB10). Answer ping remains `yolo notify` work; status
+and wait are already wired as its interim inspection path ([§3.3](#33-the-answer-comes-back-through-the-doorbell)).
+Notification withdrawal/expiry delivery remains unbuilt. Pending limits, denial cooldown and
+known inert lifetime-lease collection are built; see [§9.2](#92-prompt-fatigue).
+
 **A request** is the parsed canonical command, its repository, the stdin digest, the jail id from
 the preamble, the workspace, the set it asks for, the time filed and its state: `pending`, then one of
 `allowed`, `denied`, `expired` or `refused`. Its identity for duplicate-joining and for
@@ -1347,8 +1396,8 @@ Rules:
 
 - **Expiry is checked at use**, against the clock, never by a sweeper. A grant that expired is
   kept for the audit and matches nothing.
-- **A jail stopping ends every grant it holds**, set grants included. The broker deletes them when
-  it exits, but that alone is not the guarantee: the preamble's jail id is
+- **A jail stopping ends every grant it holds**, set grants included. The broker ends them when
+  it exits (ended records stay for retention), but that alone is not the guarantee: the preamble's jail id is
   `paths.JailShortHash` of the container name, which is derived from the workspace path, so it is
   **per workspace and the same across restarts**. After a SIGKILL, an OOM or a host crash, a grant
   file left in the store would match the next launch of that workspace. So a grant also carries
@@ -1411,8 +1460,11 @@ per-agent record.
   | `gh_version` | the host `gh`'s |
 
 - **Bounded, not pruned:** rotated at 8 MiB, four archives kept, so at most 40 MiB. `yolo prune`
-  never touches it. A write failure warns once per daemon and never blocks a call, as
-  `crossaudit` does, because an audit that can refuse work becomes a reason to turn it off.
+  never touches it. Standing-read call audit remains best-effort and warns once on failure
+  ([BB-D15](#BB-D15)). The 2026-10-13 implementation direction requires synced request,
+  decision and authorization/use audit for the gated write path: failure refuses dispatch.
+  This narrows BB-D15's earlier never-blocks implementation choice for write authorization,
+  not for standing reads. A use already durably spent when its audit fails is never refunded.
 - **Viewing:** `yolo audit` on the host, with `--since`, `--jail`, `--workspace`, `--set`,
   `--grant` and `--json`; it refuses in a jail. `yolo stores` lists the file under the state
   directory, reclaimed by rotation only.
@@ -1449,7 +1501,25 @@ repository legible, and it cannot make the human read it.
 A doorbell that rings too often trains a reflexive yes, which is worse than no doorbell because
 it manufactures the appearance of oversight. The design's defenses: reads never ring; a set grant
 covers every write for its window; a duplicate joins its pending request; a denied command stays
-quiet for 10 minutes; a jail may have at most three requests pending. The forcing question stays
+quiet for 10 minutes; a jail may have at most three requests pending. The cap is per host-asserted jail,
+across sets and broker starts, counting persisted unexpired pending requests; a duplicate in its
+own lifetime joins before the cap check. The failure names the existing request ids (exit 75),
+without filing or notifying. Denial cooldown is the same canonical argv/repository/stdin digest
+from that jail, across sets and starts; other jails and different digests are independent.
+An unanswered expiry is treated as denied ([§6.5](#65-when-there-is-no-notifier-or-nobody-answers)).
+At exactly ten minutes the cooldown ends; inside it exit 77 names the earlier denial and no new
+request/notification is filed. Both checks use the shared transaction, so concurrency or broker
+restart cannot manufacture another slot or reset the quiet period.
+
+A process-lifetime lease has known versioned source/start/launch metadata. The next real broker
+start collects a lease only after it obtains the exclusive nonblocking lease lock and validates
+that metadata and file identity under the source transaction. Creation, lease acquisition and
+binding use that same transaction. Live, unknown, unreadable, malformed, old-version and symlink
+lease evidence is retained; neither a PID nor age is cleanup evidence. Normal close removes
+only its own lease. Abrupt process exit releases its kernel lock, allowing the next start to
+collect its known inert file.
+
+ The forcing question stays
 the one the 2026-08 draft asked: **would the human ever say no?** A command they never refuse
 belongs in a standing set, and a user can put it there ([§5.7](#57-permission-sets)). The audit log
 is the evidence for moving it. The permission-set ruling pushes the other way too. A read-write
@@ -1653,8 +1723,8 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
    and a broker stopped mid-call leaving its `hosts.yml` copy behind. What step 1 did not build, and
    why: the launch disclosure of a `GH_TOKEN` reaching the jail ([BB-D18](#BB-D18)), which waits on
    [OQ-BB10](#OQ-BB10) or a `brokered` key of its own; the `agent` field of an audit line is empty, since the
-   forwarder cannot tell which agent ran it; and a user-scope set definition cannot be written
-   yet, so `yolo check` has no set definition to refuse ([§12](#12-what-done-looks-like) item 10).
+   forwarder cannot tell which agent ran it; and at that time a user-scope set definition could not be written, so `yolo check` had no
+   set definition to refuse ([§12](#12-what-done-looks-like) item 10).
    Verified by unit tests, by `integration/githubbroker_test.go` (a real podman jail against a
    fake host `gh`: a read, the refusals, a scope change at the next fresh launch, and an attach
    that keeps the running scope) and on Linux only; the macos-user arm's gate is pinned by a unit
@@ -1674,7 +1744,8 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
    ([`workspace-widening.md`](workspace-widening.md)). Verified by unit tests through each call
    site and by `integration/githubbroker_test.go`'s
    `TestGitHubBrokerAWideningEntryAdmitsARepositoryForOneWorkspace`, a nested podman jail
-   against a fake host `gh`, on Linux only. The rest of step 2 is not built, and two parts of it
+   against a fake host `gh`, on Linux only. The host store, `yolo approve`, and delivery-gated handler are built as described in [§7](#7-grants-and-the-request-store),
+   without production enqueue or write execution. Production delivery remains unbuilt, and two parts of it
    wait on more than this step: the answer's ping on the doorbell above, which is not built, and
    the no-notifier terminal notice on [OQ-BB10](#OQ-BB10), which is not ruled. The widening entry
    needs neither.
@@ -2182,6 +2253,20 @@ covered:
 
     **Answer:**
     > _(empty — fill in when decided)_
+
+15. 💬 <a id="OQ-BB15"></a>**[OQ-BB15](#OQ-BB15): Does explicit `admit` replace or augment a default set's rules?**
+    [§5.7](#57-permission-sets) says a same-named default with no `admit` keeps its rules,
+    and says the user may add a write to read-only, but does not settle the explicit-list case.
+    This decides what an existing default set retains when a user writes `admit`.
+
+    - **A — Replace:** the explicit list is the complete set; omitted default reads disappear.
+    - **B — Augment:** the explicit list adds to the named default; a custom set has no base rules.
+
+    <!-- vantage: question id=OQ-BB15 -->
+
+    No leaning is implemented. Every explicit list, including empty, currently fails closed;
+    absence alone retains default rules. Flag predicates and API-pattern spelling also need
+    a defined grammar before those rules can run.
 
 ## 15. Decision Ledger
 

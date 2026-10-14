@@ -128,12 +128,12 @@ func TestSelectedNPMHostPublicCompatibleReuseFreshAndMismatchFallback(t *testing
 
 func TestSelectedNPMHostPublicInvalidatedCaptureReinstallsSameVersion(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		fixed, fail bool
-	}{{"updates-off", false, false}, {"fixed", true, false}, {"failed-replacement", false, true}} {
+		name                string
+		fixed, fail, recent bool
+	}{{"updates-off", false, false, false}, {"recent-check", false, false, true}, {"fixed", true, false, false}, {"failed-replacement", false, true, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSelectedNPMFixture(t)
-			req := selectedNPMUser(t, f, false)
+			req := selectedNPMUser(t, f, tc.recent)
 			if tc.fixed {
 				pack := req.Packs[0].Root
 				writeFile(t, filepath.Join(pack, "pack.json"), `{"name":"fixture","contributes":[{"kind":"program","bin":"probe","via":"npm","package":"probe-pkg@1.0.0"}]}`)

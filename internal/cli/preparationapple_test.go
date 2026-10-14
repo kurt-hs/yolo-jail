@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func allowAppleContainerBuild(t testing.TB) {
 	t.Helper()
 	prev := appleContainerBuildCapability
-	appleContainerBuildCapability = func() (bool, string) { return true, "" }
+	appleContainerBuildCapability = func(context.Context) (bool, string) { return true, "" }
 	t.Cleanup(func() { appleContainerBuildCapability = prev })
 }
 
@@ -35,12 +36,18 @@ func TestAppleContainerCheckOnlyDoesNotStartBuildChildAndKeepsAdmittedTree(t *te
 	pf.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	pf.now = pf.now.Add(2 * time.Hour)
 	prev := appleContainerBuildCapability
-	appleContainerBuildCapability = func() (bool, string) {
+	appleContainerBuildCapability = func(context.Context) (bool, string) {
 		return false, "Apple Container has running yolo jail(s): yolo-another-session"
 	}
 	t.Cleanup(func() { appleContainerBuildCapability = prev })
 
 	built := children.Load()
+	// The launch consumes a candidate discovered by the check-only act; a warm
+	// launch itself must not do that upstream work before the timer runs.
+	for _, f := range packload.PatchedTrees(selectConfiguredHostPacks().packs) {
+		treeAdvance(f, advanceOptions{platform: patchedTestPlatform, runtime: "container", launch: true,
+			checkOnly: true, checkOnlyReason: "Apple Container background preparation is check-only", out: io.Discard, errw: io.Discard})
+	}
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
 	if children.Load() != built {
 		t.Fatalf("Apple Container started %d build children while another jail was live:\n%s", children.Load()-built, out)
@@ -63,7 +70,7 @@ func TestAppleContainerRequiredColdBuildRefusesWhenLivenessIsUnknown(t *testing.
 		return 0
 	}
 	prev := appleContainerBuildCapability
-	appleContainerBuildCapability = func() (bool, string) {
+	appleContainerBuildCapability = func(context.Context) (bool, string) {
 		return false, "`container ls` could not establish Apple Container liveness (daemon unavailable); no build child was started"
 	}
 	t.Cleanup(func() { appleContainerBuildCapability = prev })
@@ -101,7 +108,7 @@ func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *te
 		return 0
 	}
 	prevCapability := appleContainerBuildCapability
-	appleContainerBuildCapability = func() (bool, string) {
+	appleContainerBuildCapability = func(context.Context) (bool, string) {
 		return false, "Apple Container has running yolo jail(s): yolo-another-session"
 	}
 	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
@@ -172,7 +179,7 @@ func TestAppleContainerRechecksLivenessAtEachActualChildStart(t *testing.T) {
 			f := fx.tree(t)
 			var probes, children atomic.Int32
 			prevCapability := appleContainerBuildCapability
-			appleContainerBuildCapability = func() (bool, string) {
+			appleContainerBuildCapability = func(context.Context) (bool, string) {
 				if probes.Add(1) >= tc.denyAt {
 					return false, "Apple Container has running yolo jail(s): yolo-live-session"
 				}
@@ -225,5 +232,59 @@ func TestAppleContainerCapabilityTreatsUnknownListingAsUnsafe(t *testing.T) {
 	}
 	if safe, reason := appleContainerBuildDecision("ID IMAGE OS ARCH STATE\n"); !safe || reason != "" {
 		t.Errorf("a valid empty container listing was not safe: safe=%v reason=%q", safe, reason)
+	}
+}
+
+// Registration and the actual timer must check Linux inputs on Apple without
+// authorizing even a build against an apparently empty container listing.
+func TestPreparationAppleSchedulerChecksLinuxWithoutBuild(t *testing.T) {
+	pf := readyForABackgroundAdvance(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	before := patchedRecordOf(t, poolKeyA)
+	// The fixture's initial Podman launch registered its own runtime. This case
+	// exercises an Apple-only machine, retaining the admitted bytes but no Podman timer.
+	if err := withPreparationState(func(state *preparationState) error { state.Subscriptions = nil; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	calls := pf.countBuilds()
+	trees := packload.PatchedTrees(selectConfiguredHostPacks().packs)
+	if err := registerTreePreparation(trees, run.TreeBuildRequest{Runtime: "container", Platform: patchedTestPlatform, Build: true}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadPreparationState()
+	i := preparationRecordIndex(state, poolKeyA, "container", patchedTestPlatform)
+	if err != nil || i < 0 || !state.Subscriptions[i].Active {
+		t.Fatalf("Apple Linux checks not registered: %+v %v", state, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ticks := make(chan time.Time, 1)
+	ticks <- time.Now()
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil && err != context.Canceled {
+			t.Error(err)
+		}
+	}()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		after := patchedRecordOf(t, poolKeyA)
+		snapshot, err := readPreparationSnapshot(poolKeyA)
+		if after.CheckedAt > before.CheckedAt && err == nil && strings.Contains(snapshot.Reason, "left it pending") {
+			if calls.Load() != 0 || after.Good == nil || before.Good == nil || after.Good.Entry != before.Good.Entry {
+				t.Fatalf("check-only work built or replaced Good: builds=%d before=%+v after=%+v", calls.Load(), before.Good, after.Good)
+			}
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("Apple timer did not check: snapshot=%+v err=%v", snapshot, err)
+		case <-poll.C:
+		}
 	}
 }

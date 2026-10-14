@@ -57,6 +57,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -102,8 +103,14 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	}
 	if len(queued) > 0 {
 		// Host registrations are additive and limited to this command owner's tree vector.
-		if err := registerHostTreePreparation(queued, errw); err != nil {
+		report := &buildReport{perf: hostActPerf}
+		span := report.preparationSpan("preparation.registration")
+		err := registerHostTreePreparation(queued, errw)
+		report.preparationOutcome("preparation.registration", "selected host trees", err)
+		span.End()
+		if err != nil {
 			fmt.Fprintf(errw, "⚠ next-launch host tree preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
+			return false
 		}
 	}
 	if !hostTreesBuild() {
@@ -115,7 +122,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	}
 	// Capture each fresh request boundary inside the interrupt scope, under the same owner record
 	// lock that records STARTED before transport. A request canceled while waiting never advances.
-	boundaries := make(map[string]uint64, len(trees))
+	boundaries := make(map[string]packsrc.CheckStart, len(trees))
 	identities := make(map[string]string, len(trees))
 	prepare := func(ctx context.Context) error {
 		if !freshUpdate {
@@ -138,7 +145,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 	err := runTreesInParallelPrepared(trees, "", act, errw, errw, prepare,
 		func(i int, f packload.Fork, lane treeLane) {
 			if !freshUpdate && treeUpdateTiming(f) == timingNextLaunch && currentPatchFailure(f) == nil {
-				if entry, _, _ := hostTreeServing(f); entry != nil {
+				if entry, _, _ := hostTreeServing(f, hostActPerf); entry != nil {
 					richtext.Printer{W: errw, Color: color}.Printf("[dim]%s[/dim]", richtext.Escape(
 						f.Label()+": using admitted build "+entry.Key+"; newer builds are prepared between host launches"))
 					return
@@ -150,7 +157,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 				launch: true, host: true, act: act, bypassCommand: command})
 			if freshUpdate {
 				opts.freshCheck = true
-				opts.freshAfterSeq = boundaries[f.Key()]
+				opts.freshBoundary = boundaries[f.Key()]
 				opts.freshIdentity = identities[f.Key()]
 			}
 			results[i] = hostTreeAdvance(f, opts)
@@ -374,7 +381,10 @@ func hostFallbackLine(f packload.Fork) string {
 
 // hostTreeServing is the good build that serves f, read with no git: its store entry and its
 // inputs, or why there is none.
-func hostTreeServing(f packload.Fork) (*capture.Entry, *packsrc.GoodBuild, string) {
+func hostTreeServing(f packload.Fork, logs ...*perf.Log) (*capture.Entry, *packsrc.GoodBuild, string) {
+	if len(logs) > 0 {
+		defer logs[0].Span("preparation.admitted_read").End()
+	}
 	a, early := newAdvance(f, advanceOptions{platform: captureJailPlatform(), out: io.Discard, errw: io.Discard, host: true})
 	if early != nil {
 		return nil, nil, early.delivery.Reason

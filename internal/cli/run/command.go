@@ -78,7 +78,7 @@ const miseActivate = `. "$HOME/.config/yolo-user-env.sh" 2>/dev/null; ` +
 // console line.
 //
 // It is also what keeps a REFUSED stage from reaching the target: provision.Script ends in
-// `exit` on provision.RefusedStatus (and on a declined prompt), which ends the stage's own
+// `exit` on provision.StageRefusedStatus (and on a declined prompt), which ends the stage's own
 // shell with that status. The entrypoint runs the stage as its own shell on the first
 // session's terminal and records a non-zero status as the jail's refusal
 // (entrypoint/jailmain.go), so the session's command — miseActivate, the Executing banner

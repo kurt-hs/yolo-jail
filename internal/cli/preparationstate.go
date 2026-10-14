@@ -41,6 +41,8 @@ type preparationRecord struct {
 	Log                                                    string
 	At, RetryAt                                            time.Time
 	UpdatedAt                                              time.Time
+	// Retained is diagnostic evidence from the previous declaration, not admission authority.
+	Retained *preparationSnapshot `json:"retained,omitempty"`
 }
 
 type preparationState struct {
@@ -56,20 +58,20 @@ func preparationStateLockPath() string {
 	return filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-state.lock")
 }
 func preparationWorkerLockPath() string {
-	return filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-worker.lock")
-}
-func preparationStopPath() string {
-	return filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-stop")
-}
-func preparationWakePath() string {
-	return filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-wake")
+	return filepath.Join(preparationRoot(), "worker.lock")
 }
 
 var preparationNow = time.Now
 
+func preparationRoot() string { return paths.BackgroundAdvanceDir() }
+
 func loadPreparationState() (preparationState, error) {
+	return loadPreparationStateAt(preparationRoot())
+}
+
+func loadPreparationStateAt(root string) (preparationState, error) {
 	var state preparationState
-	b, err := os.ReadFile(preparationStatePath())
+	b, err := os.ReadFile(filepath.Join(root, "scheduler.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return preparationState{Schema: preparationStateSchema}, nil
@@ -87,55 +89,66 @@ func loadPreparationState() (preparationState, error) {
 
 func writePreparationState(state preparationState) error {
 	state.Schema = preparationStateSchema
-	if err := os.MkdirAll(filepath.Dir(preparationStatePath()), 0o700); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(preparationStatePath()), ".scheduler-*.tmp")
-	if err != nil {
-		return err
-	}
-	name := f.Name()
-	defer os.Remove(name)
-	if err = f.Chmod(0o600); err == nil {
-		_, err = f.Write(append(b, '\n'))
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(name, preparationStatePath()); err != nil {
-		return err
-	}
-	if dir, openErr := os.Open(filepath.Dir(preparationStatePath())); openErr == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+	return writePreparationJSON(preparationStatePath(), state)
 }
 
 func withPreparationState(fn func(*preparationState) error) error {
-	lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.Wait, nil)
+	return withPreparationStateAt(preparationRoot(), fn)
+}
+
+func withPreparationStateAt(root string, fn func(*preparationState) error) error {
+	if err := ensurePreparationRoot(root); err != nil {
+		return err
+	}
+	lock, err := pidlock.Acquire(filepath.Join(root, "scheduler-state.lock"), pidlock.Wait, nil)
 	if err != nil {
 		return err
 	}
 	defer lock.Release()
-	state, err := loadPreparationState()
+	state, err := loadPreparationStateAt(root)
 	if err != nil {
 		return err
 	}
+	previous := append([]preparationRecord(nil), state.Subscriptions...)
 	if err := fn(&state); err != nil {
 		return err
 	}
-	return writePreparationState(state)
+	for i := range state.Subscriptions {
+		r := &state.Subscriptions[i]
+		j := preparationRecordIndex(preparationState{Subscriptions: previous}, r.Key, r.Runtime, r.Platform)
+		if j < 0 {
+			continue
+		}
+		old := previous[j]
+		if old.Generation == r.Generation && old.InputIdentity == r.InputIdentity {
+			continue
+		}
+		if old.Phase != "" && old.Phase != "pending" && old.Phase != "inactive" {
+			snapshot := preparationRecordSnapshot(old, state.Worker.Identity)
+			r.Retained = &snapshot
+		}
+		// Never relabel an earlier observation with the newly registered generation.
+		if r.Phase == old.Phase {
+			r.Phase = "pending"
+		}
+		if r.ServingEntry == old.ServingEntry {
+			r.ServingEntry = ""
+		}
+		if r.Reason == old.Reason {
+			r.Reason = ""
+		}
+		if r.Log == old.Log {
+			r.Log = ""
+		}
+		if r.At == old.At {
+			r.At = time.Time{}
+		}
+		if r.RetryAt == old.RetryAt {
+			r.RetryAt = time.Time{}
+		}
+	}
+	state.Schema = preparationStateSchema
+	return writePreparationJSON(filepath.Join(root, "scheduler.json"), state)
 }
 
 func preparationRecordIndex(state preparationState, key, runtime, platform string) int {
@@ -164,10 +177,16 @@ func preparationSnapshotFor(state preparationState, key string) (preparationSnap
 		}
 		return candidates[i].Platform < candidates[j].Platform
 	})
-	r := candidates[0]
+	return preparationRecordSnapshot(candidates[0], state.Worker.Identity), true
+}
+
+func preparationRecordSnapshot(r preparationRecord, workerIdentity string) preparationSnapshot {
+	if r.Phase == "pending" && r.Retained != nil {
+		return *r.Retained
+	}
 	return preparationSnapshot{Key: r.Key, Runtime: r.Runtime, Platform: r.Platform, InputIdentity: r.InputIdentity,
 		Generation: r.Generation, Phase: r.Phase, ServingEntry: r.ServingEntry, Reason: r.Reason, Log: r.Log,
-		At: r.At, RetryAt: r.RetryAt, WorkerIdentity: state.Worker.Identity}, true
+		At: r.At, RetryAt: r.RetryAt, WorkerIdentity: workerIdentity}
 }
 
 func readPreparationSnapshot(key string) (preparationSnapshot, error) {

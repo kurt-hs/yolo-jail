@@ -2,22 +2,22 @@
 title: "Prepare between launches; materialize only at a launch"
 status: accepted
 stage: DECIDED
-next: "Finish capture integration and combined acceptance against the selected preparation and demand contracts"
+next: "Complete independent combined-source review and final runtime/platform acceptance"
 ---
 
 # Prepare between launches; materialize only at a launch
 
-**Status:** 2026-10-13. Source scheduling, explicit freshness and user-resolved shared demand are implemented in the candidate; capture integration and combined acceptance remain.
+**Status:** 2026-10-14. The combined candidate connects source scheduling, explicit freshness, independent shared demand, HOST delivery, Apple check-only scheduling and supported ordinary npm capture. Independent review and final combined runtime/platform acceptance remain; this is not a shipped claim.
 
 > **In short.** Environment preparation should continue between launches, using the same admitted-build pipeline. A launch chooses a generation; background work never changes the environment already running.
 
-**The shape:** one detached host scheduler dispatches existing keyed check/replay/build/admit acts; launch-time readers copy, install and render their selected generations.
+**The shape:** one detached host scheduler registers demand with independent keyed workers running existing check/replay/build/admit acts; launch-time readers copy, install and render their selected generations.
 
 **Cost:** persistent scheduling state and narrowly scoped live host-copy retention, not another builder or an agent registry.
 
 **Start at:** [The policy boundary](#the-policy-boundary).
 
-**Needs your ruling:** None. [OQ-PD23](program-delivery.md#decision-ledger) includes ordinary CLI and yolo-installed MCP programs; remaining capture work is agent engineering.
+**Needs your ruling:** None. [OQ-PD23](program-delivery.md#decision-ledger) includes ordinary CLI and yolo-installed MCP programs; remaining capture acceptance is agent engineering.
 
 **Reads with:** [source research](../research/launch-preparation.md), [ready independent implementation plan](launch-update-preparation-plan.md), [capture-only sketch](launch-program-capture-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
 
@@ -52,7 +52,7 @@ the next applicable launch must enforce it.
 | Built extension trees, patched or empty-series | Keyed pool, copy and Podman launch-triggered detached advance exist. Add ongoing scheduling and shared visibility. |
 | Patched fork programs | Advance/admission exists; extend timing to `next-launch`, retaining fatal patch semantics and explicit historical recovery. |
 | Plain source forks | Timer may build a missing artifact at its recorded standing pin, never move that pin. Manual update reuses authorized manual pin resolution; explicit tag/commit constraints still apply. Unchanged admitted inputs reuse their artifact. |
-| Captured ordinary programs | Reuse host capture/floor machinery for immutable machine-level artifacts under [OQ-PD23](program-delivery.md#decision-ledger); supported warm-update replacement remains unbuilt. |
+| Captured ordinary programs | Reuse host capture/floor machinery for immutable machine-level artifacts under [OQ-PD23](program-delivery.md#decision-ledger); supported warm-update producer and consumers are connected in the candidate, with final real-runtime acceptance outstanding. |
 | Declared programs not capturable on a platform | Keep their supported installer/readiness route; say unsupported preparation explicitly. No timer executes an unsealed host installer. |
 | MCP server programs | Included in machine preparation for supported yolo-installed declarations; preserve bounded invocation refresh until its tested replacement lands. Raw npx or hand-installed servers are not silently captured. |
 | Raw or hand-installed extensions | Existing in-jail prelaunch refresh remains foreground; not a pack-built artifact. Explain this residual wait. |
@@ -152,7 +152,7 @@ An unsupported/unavailable runtime leaves due keys deferred with a reason, not a
 | :--- | :--- |
 | Two ordinary launches | Snapshot their own generation; coalesce registration. Neither waits for scheduler ownership or mutates the other's staged tree. |
 | Two updates for one key | Join the same keyed act, reread guarded admission after the winner; no duplicate download/build for the same release/recipe/platform. |
-| Explicit wait meets an older check | Registration snapshots a per-key monotonic started-check sequence under its record transaction. Only a greater sequence with identical inputs qualifies; concurrent requests before that check share it. A check already running cannot qualify: reread its winner then run one follow-up fresh check. Wall time alone never qualifies work across clock rollback. |
+| Explicit wait meets an older check | Registration snapshots the short per-key ledger epoch and monotonic started-check sequence. Only a greater sequence in that epoch with identical inputs qualifies; concurrent requests before that check share it. A check already running cannot qualify: reread its winner then run one follow-up fresh check. Wall time alone never qualifies work across clock rollback. |
 | Inputs move during work | Guarded settle rejects stale admission. Automatic work requeues the newest authorized identity; an explicit request fails with a retry command rather than silently changing its selected vector. Retain detailed outcome. |
 | Off/removal during work | Cancel before new check/build/admission; do not undo a generation already admitted before the policy change. |
 | Waiter Ctrl-C | Detach that waiter from shared work. For ordinary existing foreground advances retain [PF-D25](patched-forks.md#PF-D25) and shared act-interrupt behavior. Explicit freshness wait cancels the launch, never silently claims freshness or starts stale. |
@@ -187,7 +187,7 @@ never implicitly restart a running jail.
   fork's branch pin. Refuse only when that fork is required on this platform, before partial freshness work, and name
   `yolo --update -- <command>` from the host workspace as the next step. Fixed tag/commit inputs, unselected forks and
   unaffected supported routes remain eligible; ordinary non-update launch still uses the recorded pin.
-- Request a **fresh check**, meaning a check started after the request's keyed sequence boundary under
+- Request a **fresh check**, meaning a check started after the request's keyed epoch/sequence boundary under
   the same selected input identity; wait for its candidate admission. Bypass automatic `agent_updates: false`,
   stamps and retry/backoff timing because a human asked. Honor explicit tag/commit/source constraints,
   capabilities, selection, strict patch errors and cancellation. A standing branch pin is not an explicit
@@ -197,8 +197,8 @@ never implicitly restart a running jail.
   is unchanged. If an older check predates this request, run one follow-up fresh check, not a rebuild.
 - No candidate means a successful fresh check, not a rebuild. A failed check, build or unsupported required freshness route
   fails the explicit request with the repair/ordinary-launch route. Never quietly fall back while advertising freshness.
-- Ordinary enabled programs/MCP use the settled machine-prepared route once their supported adapter lands;
-  until then the existing bounded launch update route remains, without advertising implemented capture.
+- Supported ordinary npm programs/MCP use the connected machine-prepared adapter; unsupported,
+  customized or unobserved runtime inputs retain the bounded declared installer route.
 - Apple Container can check now, but when another jail prevents a required build the flag refuses and names stopping that
   jail or preparing through supported Podman. Below the read-only floor no unsafe build/copy is authorized.
 - Completion is a per-request vector of exact selected identities and admitted generations, not a machine-global “up to date” bit.

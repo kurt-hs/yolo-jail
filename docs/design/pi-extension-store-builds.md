@@ -14,9 +14,9 @@ vantage:
 
 **Status:** amended 2026-10-13 against `99f36da2e`: the Podman built-tree detached slice is in main,
 not awaiting landing. [Ongoing preparation](launch-update-preparation.md) owns its extension to
-between-launch scheduling and the remaining host/platform/program timing slices through its
-[ready independent plan](launch-update-preparation-plan.md); only ordinary warm CLI/MCP replacement
-waits on the capture question. Native/rootless
+between-launch scheduling, host/platform/program timing and connected ordinary CLI/MCP capture
+in the combined candidate through its [implementation map](launch-update-preparation-plan.md).
+The capture architecture is settled, not an open question. Native/rootless
 runtime, controlled performance, real loading and migration acceptance remain outstanding.
 Built: [XB-D14](#XB-D14), the unshared npm prefix with the refresh's
 throttle beside its lock, and [XB-D34](#XB-D34), the npm launcher's install kept off a piped
@@ -34,7 +34,7 @@ were unreliable under that load; a figure from one run, or with wall time only, 
 appears. The research harness was not the build this design specifies, and
 [§5.2](#52-the-pipeline) names how. MEASURED 2026-10-06, building step 2 for a
 jail launch's pool: a warm build jail whose build line only writes a file took 1.2 to 1.3 s from its
-start line to its admit, two at once in a nested launch ([XB-D13](#XB-D13)). UNMEASURED: no real pi has loaded a tree built this way, and the maintainer's migration of his extensions remains. For the Podman next-launch mode, the 2026-10-08 source candidate passed the parent integration/runtime gate only on Linux, rootful, nested Podman: a detached advance made its build available only to a later fresh jail, and termination and kill cases fenced and recovered the real build workspace. Rootless Podman and native macOS runtime behavior remain UNMEASURED; Darwin evidence is static vet/compile only. This source-built slice 1 does not imply native/performance/migration slice 2. Independent source/documentation review is complete and the source slice is in main. The Apple Container check-only path, the host path, and patched-fork/captured-program timing are still unbuilt. An npm source was built in the sealed jail
+start line to its admit, two at once in a nested launch ([XB-D13](#XB-D13)). UNMEASURED: no real pi has loaded a tree built this way, and the maintainer's migration of his extensions remains. For the Podman next-launch mode, the 2026-10-08 source candidate passed the parent integration/runtime gate only on Linux, rootful, nested Podman: a detached advance made its build available only to a later fresh jail, and termination and kill cases fenced and recovered the real build workspace. Rootless Podman and native macOS runtime behavior remain UNMEASURED; Darwin evidence is static vet/compile only. This source-built slice 1 does not imply native/performance/migration slice 2. Independent source/documentation review is complete and the source slice is in main. The combined candidate connects Apple Container check-only scheduling, owner-scoped HOST delivery and patched-fork/captured-program phase timing. Final combined runtime acceptance is still outstanding. An npm source was built in the sealed jail
 and its tree mounted read-only by the integration cell of 2026-10-05, and a build jail's start was
 timed against a warm launch ([XB-D40](#XB-D40)).
 
@@ -403,7 +403,7 @@ updates: a missing CLI or server installs whatever its stamp says (READ, the col
 [`shims.go`](../../internal/entrypoint/shims.go), the absent server at
 [`serverrefresh.go`](../../internal/entrypoint/serverrefresh.go)), so they can keep a
 workspace on an older version but start no unlocked install. The settled replacement is
-[OQ-PD23](program-delivery.md#decision-ledger)'s machine-level preparation; implementation remains pending.
+[OQ-PD23](program-delivery.md#decision-ledger)'s machine-level preparation; the supported npm adapter is connected in the candidate, with final runtime acceptance pending.
 
 ### 6.2 The rules
 
@@ -498,6 +498,15 @@ build fails. Within the hour, a launch runs no git and no registry request.
 
 ### 7.4 For the next launch (the option)
 
+**Ongoing preparation amendment (2026-10-13):** the tree launch caller now registers selected
+next-launch keys even when no check is due and starts/joins the persistent scheduler. Its timer
+reauthorizes policy/declarations and uses the same advance/admission pipeline, with an additional
+owner/input/generation guard through record publication. It never renders or replaces a running
+copy. `yolo pack prepare start|stop|status` controls/inspects that worker on the host. The historical
+one-shot verb remains valid. The candidate also connects program registration, owner-scoped HOST delivery and Apple check-only adapters; its independent workers own build demand, not the scheduler process.
+See [ongoing preparation](launch-update-preparation-plan.md) for current evidence and boundaries.
+
+
 1. **The launch hands what it has, at once.** Each key with a good build is handed it with no check;
    a key with none and a `fallback` is handed the fallback, so pi installs it this once; a key with
    neither builds in front, since there is nothing to hand.
@@ -568,7 +577,7 @@ jail reads:
 
 Whether the option moves them too is [OQ-XB1](#OQ-XB1). Under its leaning they stay in front, and
 pi's CLI joins the background once it is delivered once per machine, which is
-[OQ-PD23](program-delivery.md#decision-ledger)'s ruling; implementation remains pending.
+[OQ-PD23](program-delivery.md#decision-ledger)'s ruling. The candidate connects the supported npm producer and consumers; final runtime acceptance remains pending.
 
 ### 7.6 The setting
 
@@ -709,7 +718,7 @@ jiti's path-and-hash cache key). A machine-wide one is ruled out by
   ([§4.4](#44-entries-no-pack-declares)).
 - **Delivering a newer tree into a running jail** ([§10](#10-alternatives)).
 - **Private registries and authenticated git** for a captured extension.
-- **pi's own CLI in the background mode**, which waits on [OQ-PD23](program-delivery.md#decision-ledger)'s implementation.
+- **pi's own CLI in the background mode**, which waits on [OQ-PD23](program-delivery.md#decision-ledger)'s combined runtime acceptance.
 - **Writing the list entry for the author**, which waits on [OQ-PR1](pack-pi-resources.md#OQ-PR1).
 - **The compile caches and the shim**, routed to the [roadmap](../plans/roadmap.md).
 
@@ -810,7 +819,7 @@ step 2 for a jail launch's forks and extensions in one pool. [XB-D58](#XB-D58) t
 | <a id="XB-D16"></a>XB-D16 | *Under (a) or (b) only.* **The held store lands with [§8](#8-if-the-held-store-lands-instead)'s fixes: pi 1.0.1's per-manager dependency argv, packsrc's blob prefetch and `storeGitConfig`, one ref lookup per pointer, at most 4 pointers at once with Node probed once, a 5 s heartbeat and 60 s staleness, a reaper that drops the marker before the tree, and its prefetch as the background mode** | 2026-10-05 | [§8](#8-if-the-held-store-lands-instead) | — |
 | <a id="XB-D17"></a>XB-D17 | **`agent_updates` takes `true`, `false`, `"launch"` and `"next-launch"`, at its top level or per pack, user scope only; `true` is `"launch"`. "May it move" reads both strings as yes; a separate reader answers "when"; `host_floor` stays boolean** | 2026-10-05 | [§7.6](#76-the-setting) | the shape and the "may it move" reader 2026-10-06 ([OQ-PD30](program-delivery.md#decision-ledger)); the "when" reader for built trees 2026-10-08, slice 1 of [XB-D42](#XB-D42): `config.PackTimingDecision`, read by `cli.treeUpdateTiming` |
 | <a id="XB-D18"></a>XB-D18 | **`false` from a tree's contributing or owning agent pack holds it; otherwise the owning agent pack's value picks its timing, else the contributing pack's; a patched fork's is its own pack's** | 2026-10-05 | [§7.6](#76-the-setting) | the hold, `run.PatchedForkHold`; the timing 2026-10-08 for built trees, with [XB-D58](#XB-D58)'s precedence: `cli.treeUpdateTiming`, pinned by `TestTreeUpdateTimingReadsOwnerThenContributingPack` and `config.TestPackTimingDecisionPrecedence`. A patched fork's is not read yet ([XB-D61](#XB-D61)) |
-| <a id="XB-D19"></a>XB-D19 | **In the next-launch mode a fresh launch hands each key its good build or its fallback at once, builds in front only a key with neither, and starts one background advance when any check is due, any candidate pending or any key took its fallback for want of a build: a detached host process in its own session, at normal priority, its streams on a log, resolving the selection itself, taking each lock once and skipping a held key, moving good builds by the record's compare-and-swap and never a running jail's copy or the host's link. On SIGTERM or SIGHUP it kills its builds' process groups and removes each build jail by name; and every build, in either mode, asks whether a container of its name is running before it clears its staging, clearing it only on a known "no"** and otherwise leaving the candidate pending with a line. Normal priority because a deprioritized holder of a lock a foreground launch waits on stretches that wait, and an unprivileged process cannot raise its priority back | 2026-10-05 | [§7.4](#74-for-the-next-launch-the-option) | 2026-10-08 on podman, slice 1 of [XB-D42](#XB-D42), with [XB-D58](#XB-D58) to [XB-D65](#XB-D65): `cli/backgroundadvance.go` (`yolo internal background-advance`), the spawn condition `advance.wantsBackground`; pinned by `TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance`, `TestANextLaunchKeyWithNothingDueStartsNone`, `TestAFallbackKeyStartsTheBackgroundAdvance`, `TestABackgroundCheckSkipsAHeldRecordLock`, `TestABackgroundBuildSkipsAHeldBuildLock`, `TestAnUnknownRunningBuildJailKeepsItsStagingAndTheCandidatePending` and `TestASIGTERMEndsTheBackgroundAdvancesBuildsAndRemovesEachJail`. Not on Apple Container or macos-user, nor at the host ([XB-D61](#XB-D61)) |
+| <a id="XB-D19"></a>XB-D19 | **In the next-launch mode a fresh launch hands each key its good build or its fallback at once, builds in front only a key with neither, and starts one background advance when any check is due, any candidate pending or any key took its fallback for want of a build: a detached host process in its own session, at normal priority, its streams on a log, resolving the selection itself, taking each lock once and skipping a held key, moving good builds by the record's compare-and-swap and never a running jail's copy or the host's link. On SIGTERM or SIGHUP it kills its builds' process groups and removes each build jail by name; and every build, in either mode, asks whether a container of its name is running before it clears its staging, clearing it only on a known "no"** and otherwise leaving the candidate pending with a line. Normal priority because a deprioritized holder of a lock a foreground launch waits on stretches that wait, and an unprivileged process cannot raise its priority back | 2026-10-05 | [§7.4](#74-for-the-next-launch-the-option) | 2026-10-08 on podman, slice 1 of [XB-D42](#XB-D42), with [XB-D58](#XB-D58) to [XB-D65](#XB-D65): `cli/backgroundadvance.go` (`yolo internal background-advance`), the spawn condition `advance.wantsBackground`; pinned by `TestANextLaunchKeyDueForACheckStartsOneBackgroundAdvance`, `TestANextLaunchKeyWithNothingDueRegistersWithoutActs`, `TestAFallbackKeyStartsTheBackgroundAdvance`, `TestABackgroundCheckSkipsAHeldRecordLock`, `TestABackgroundBuildSkipsAHeldBuildLock`, `TestAnUnknownRunningBuildJailKeepsItsStagingAndTheCandidatePending` and `TestASIGTERMEndsTheBackgroundAdvancesBuildsAndRemovesEachJail`. Not on Apple Container or macos-user, nor at the host ([XB-D61](#XB-D61)) |
 | <a id="XB-D20"></a>XB-D20 | **A background advance is said at its spawn, naming its keys and log, and its outcome at the next launch: the move line, or the failure with the log and its retry time** | 2026-10-05 | [§7.4](#74-for-the-next-launch-the-option) | 2026-10-08 for a jail launch: the spawn line, and `cli.noteBackgroundOutcome` at the next launch ([XB-D64](#XB-D64)); pinned by `TestTheNextLaunchReportsTheBackgroundMoveOnce`, `TestTheNextLaunchReportsAFailureWithItsLogAndRetry` and `TestAnUnfinishedBackgroundAdvanceIsSaidAndStartedAgain`. The host's report is slice 2 |
 | <a id="XB-D21"></a>XB-D21 | **On Apple Container the background advance checks but builds nothing, and the next fresh launch builds a pending candidate in front, before its own jail starts, only when no other jail is running; while one is, it starts on the good build and its line names `yolo capture <pack>/<name>`. So there the next-launch option is the at-launch wait whenever a build happens.** A build jail cannot start beside a running jail there (INFERRED, [PF §9](patched-forks.md#9-notch-coverage)) | 2026-10-05 | [§7.4](#74-for-the-next-launch-the-option) | — |
 | <a id="XB-D22"></a>XB-D22 | **At the Linux host, `yolo host -- <bin>` of an owning agent in the next-launch mode starts the same background advance; the next host render swaps the link** | 2026-10-05 | [§7.4](#74-for-the-next-launch-the-option) | — |

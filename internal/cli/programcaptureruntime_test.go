@@ -12,10 +12,13 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestSelectedNPMRunPublicCustomizedRuntimeRetainsBoundedLegacyConsumer(t *testing.T) {
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	for _, tc := range []struct {
 		name, config string
 		store        bool
@@ -142,13 +145,15 @@ func TestSelectedNPMHostPublicCustomizedRuntimeDoesNotMaterializeBaseArchive(t *
 }
 
 func TestSelectedNPMRunPublicUnsupportedDependencyGraphRetainsLegacyFreshChecks(t *testing.T) {
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	f := newSelectedNPMFixture(t)
 	req := selectedNPMUser(t, f, false)
 	selectedNPMSharedWorker(t)
 	writeFile(t, filepath.Join(f.root, "unsupported-lock"), "1")
-	home, root := t.TempDir(), t.TempDir()
+	home, root, workspace := t.TempDir(), t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(root, "fixture", "pack.json"), `{"contributes":[{"kind":"program","bin":"probe","via":"npm","package":"probe-pkg"}]}`)
-	e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": root, "YOLO_AGENT_UPDATES": "false"})
+	e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_WORKSPACE": workspace, "YOLO_PACK_ROOT": root, "YOLO_AGENT_UPDATES": "false"})
 	if err := entrypoint.GenerateAgentLaunchers(e); err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +190,10 @@ func TestSelectedNPMRunPublicUnsupportedDependencyGraphRetainsLegacyFreshChecks(
 	}
 	if f.installs.Load() != 0 {
 		t.Fatal("unsupported dependency graph entered artifact installation")
+	}
+	receipts, err := os.ReadFile(filepath.Join(workspace, ".yolo", "receipts.jsonl"))
+	if err != nil || !strings.Contains(string(receipts), `"bin":"probe"`) {
+		t.Fatalf("generated launcher did not append its actual installation receipt: %s %v", receipts, err)
 	}
 	record, err := readNPMCaptureRecord(f.store, f.in)
 	if err != nil || record.Entry != "" || record.Completed != 0 {

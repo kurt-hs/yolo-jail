@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
@@ -62,7 +63,7 @@ type preparationPatchInspection struct {
 }
 
 func preparationEligible(f packload.Fork, req run.TreeBuildRequest) bool {
-	return req.Build && f.IsTree() && treeUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(req.Runtime)
+	return req.Build && f.IsTree() && treeUpdateTiming(f) == timingNextLaunch && run.BackgroundChecksOn(req.Runtime, req.Platform)
 }
 
 // registerTreePreparation persists the selected tree set after pool registration, even when no
@@ -158,6 +159,7 @@ func registerTreePreparationScoped(trees []packload.Fork, req run.TreeBuildReque
 			fmt.Fprintf(w, "⚠ next-launch tree preparation was recorded, but its host worker could not start (%v) — run `yolo pack prepare start` to retry\n", err)
 			return err
 		}
+		fmt.Fprintf(w, "next-launch tree preparation is recorded; the worker prepares later generations without changing this environment — `yolo pack prepare status` shows progress (log %s)\n", backgroundAdvanceLog())
 	}
 	return nil
 }
@@ -177,53 +179,80 @@ func startPreparationScheduler() error {
 	}
 	defer f.Close()
 	cmd := preparationSchedulerProcess()
+	environment, err := loadPreparationEnvironment()
+	if err != nil {
+		return err
+	}
+	cmd.Env = environment
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, f, f
 	return notty.StartDetached(cmd)
 }
 
 func preparationSchedulerProcess() *exec.Cmd {
 	cmd := exec.Command(run.SelfExecPath(), preparationSchedulerArgv()...)
-	cmd.Env = currentPreparationEnvironment()
 	return cmd
 }
 
 var preparationStartLock = filepath.Join(paths.BackgroundAdvanceDir(), "scheduler-start.lock")
 
 func ensurePreparationScheduler() error {
+	if err := ensurePreparationRoot(preparationRoot()); err != nil {
+		return err
+	}
 	lock, err := pidlock.Acquire(preparationStartLock, pidlock.Wait, nil)
 	if err != nil {
 		return err
 	}
 	defer lock.Release()
-	if pidlock.Held(preparationWorkerLockPath()) {
-		state, stateErr := loadPreparationState()
-		if stateErr != nil {
-			return stateErr
+	record, live, err := probePreparationWorker(preparationRoot())
+	if live == preparationUnknown {
+		return err
+	}
+	if live == preparationAlive {
+		digest, err := preparationBinaryDigest(run.SelfExecPath())
+		if err != nil {
+			return err
 		}
-		pid := pidlock.Holder(preparationWorkerLockPath())
-		if state.Worker.PID != pid || state.Worker.Identity == "" {
-			return fmt.Errorf("scheduler lease is held by pid %d, but no matching worker identity is recorded; state was retained and no process was signalled", pid)
+		if digest == record.BinaryDigest && record.Executable == run.SelfExecPath() {
+			return controlPreparationWorker(context.Background(), preparationRoot(), record.Identity, "wake")
 		}
-		return notifyPreparationScheduler()
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := controlPreparationWorker(ctx, preparationRoot(), record.Identity, "replace"); err != nil {
+			return err
+		}
+		if err := waitPreparationGone(ctx, preparationRoot()); err != nil {
+			return err
+		}
 	}
-	if err := os.Remove(preparationStopPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := notifyPreparationScheduler(); err != nil {
-		return err
-	}
-	if err := preparationSpawn(); err != nil {
-		_ = os.Remove(preparationWakePath())
-		return err
-	}
-	return nil
+	return preparationSpawn()
 }
 
 func notifyPreparationScheduler() error {
-	if err := os.MkdirAll(filepath.Dir(preparationWakePath()), 0700); err != nil {
+	record, live, err := probePreparationWorker(preparationRoot())
+	if live == preparationGone {
+		return nil
+	}
+	if live == preparationUnknown {
 		return err
 	}
-	return os.WriteFile(preparationWakePath(), []byte("wake\n"), 0600)
+	return controlPreparationWorker(context.Background(), preparationRoot(), record.Identity, "wake")
+}
+
+func waitPreparationGone(ctx context.Context, root string) error {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, live, _ := probePreparationWorker(root)
+		if live == preparationGone {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("preparation teardown still owns its lease; retry `yolo pack prepare status` then start: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func runPreparationSchedulerCommand() int {
@@ -231,40 +260,26 @@ func runPreparationSchedulerCommand() int {
 		fmt.Fprintln(os.Stderr, "yolo internal preparation-scheduler: runs on the host only — run `yolo pack prepare start` on the host")
 		return 2
 	}
-	lease, err := pidlock.Acquire(preparationWorkerLockPath(), pidlock.NoWait, nil)
-	if err != nil {
-		return 0
-	}
-	defer lease.Release()
-	exe, _ := os.Executable()
-	identity, digest := preparationExecutableIdentity(exe)
-	if identity == "" {
-		identity = fmt.Sprintf("pid:%d", os.Getpid())
-	}
-	if err := withPreparationState(func(state *preparationState) error {
-		state.Worker = preparationWorker{Identity: identity, PID: os.Getpid(), Executable: exe, BinaryDigest: digest}
-		return nil
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), backgroundSignals...)
 	defer cancel()
-	signals := make(chan os.Signal, 2)
-	signal.Notify(signals, backgroundSignals...)
-	defer signal.Stop(signals)
-	ticker := time.NewTicker(preparationTickInterval)
-	defer ticker.Stop()
-	go func() {
+	exe := run.SelfExecPath()
+	ticks := make(chan time.Time, 1)
+	ticks <- time.Now()
+	wake := make(chan struct{}, 1)
+	drain := make(chan struct{})
+	var drainOnce sync.Once
+	wakeScheduler := func() {
 		select {
-		case <-signals:
-			cancel()
-		case <-ctx.Done():
+		case wake <- struct{}{}:
+		default:
 		}
-	}()
-	fmt.Fprintf(os.Stdout, "=== preparation scheduler started %s (yolo pid %d)\n", preparationNow().Format(time.RFC3339), os.Getpid())
-	err = runPreparationScheduler(ctx, ticker.C, os.Stdout)
-	_ = withPreparationState(func(state *preparationState) error {
+	}
+	err := runPreparationWorker(ctx, preparationRoot(), exe, ticks, func(ownerCtx context.Context) error {
+		ticker := time.NewTicker(preparationTickInterval)
+		defer ticker.Stop()
+		wakeScheduler()
+		return runPreparationScheduler(ownerCtx, ticker.C, os.Stdout, wake, drain)
+	}, preparationWorkerControl{Wake: wakeScheduler, Finish: func(state *preparationState, err error) {
 		for i := range state.Subscriptions {
 			record := &state.Subscriptions[i]
 			if err != nil && !errors.Is(err, context.Canceled) && record.Active {
@@ -279,31 +294,13 @@ func runPreparationSchedulerCommand() int {
 			record.At = preparationNow()
 			record.Reason = "the owned worker stopped before this act settled; admitted build records remain authoritative — run `yolo pack prepare start` to resume"
 		}
-		if state.Worker.Identity == identity {
-			state.Worker = preparationWorker{StoppedAt: preparationNow()}
-		}
-		return nil
-	})
-	_ = os.Remove(preparationStopPath())
+	}, Drain: func() { drainOnce.Do(func() { close(drain) }) }})
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
-}
-
-func preparationExecutableIdentity(exe string) (string, string) {
-	resolved, err := filepath.EvalSymlinks(exe)
-	if err != nil {
-		resolved = exe
-	}
-	b, err := os.ReadFile(resolved)
-	if err != nil {
-		return "", ""
-	}
-	sum := sha256.Sum256(b)
-	digest := hex.EncodeToString(sum[:])
-	return resolved + "#" + digest, digest
 }
 
 type preparationTask struct {
@@ -320,7 +317,15 @@ type preparationTaskResult struct {
 }
 
 // runPreparationScheduler is the timer production loop. Tests inject ticks into this exact loop.
-func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.Writer) error {
+func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.Writer, wakes ...<-chan struct{}) error {
+	var wake, drain <-chan struct{}
+	draining := false
+	if len(wakes) > 0 {
+		wake = wakes[0]
+	}
+	if len(wakes) > 1 {
+		drain = wakes[1]
+	}
 	done := make(chan preparationTaskResult, 32)
 	more := make(chan struct{}, 1)
 	tickEvents := make(chan time.Time)
@@ -370,7 +375,13 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 	defer control.Stop()
 	keyID := func(r preparationRecord) string { return r.Key + "\x00" + r.Runtime + "\x00" + r.Platform }
 	for {
+		if draining && len(tasks) == 0 {
+			return nil
+		}
 		select {
+		case <-drain:
+			draining = true
+			drain = nil
 		case <-ctx.Done():
 			return ctx.Err()
 		case result := <-done:
@@ -430,6 +441,11 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				default:
 				}
 			}
+		case <-wake:
+			select {
+			case more <- struct{}{}:
+			default:
+			}
 		case <-control.C:
 			if preparationStopRequested() {
 				return nil
@@ -437,14 +453,11 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 			if err := preparationCheckBinaryIdentity(); err != nil {
 				return err
 			}
-			if _, err := os.Stat(preparationWakePath()); err == nil {
-				_ = os.Remove(preparationWakePath())
-				select {
-				case more <- struct{}{}:
-				default:
-				}
-			}
+
 		case tick, ok := <-tickEvents:
+			if draining {
+				continue
+			}
 			if !ok {
 				return ctx.Err()
 			}
@@ -506,7 +519,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				}
 			}
 			for _, r := range state {
-				if !r.Active || !run.BackgroundBuildsOn(r.Runtime) || len(tasks) > 0 {
+				if !r.Active || !run.BackgroundChecksOn(r.Runtime, r.Platform) || len(tasks) > 0 {
 					continue
 				}
 				if !r.RetryAt.IsZero() && preparationNow().Before(r.RetryAt) {
@@ -744,7 +757,7 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 				r.Reason = "the current `agent_updates` policy does not select next-launch preparation — change the user config to resume"
 				return
 			}
-			if !run.BackgroundBuildsOn(r.Runtime) {
+			if !run.BackgroundChecksOn(r.Runtime, r.Platform) || preparationKind(*r) == preparationPlainProgramKind && !run.BackgroundBuildsOn(r.Runtime) {
 				r.Active = false
 				r.Phase = "unsupported"
 				r.Reason = runtimeName(r.Runtime) + " does not support background preparation — use a fresh launch to prepare it"
@@ -761,18 +774,9 @@ func refreshPreparationSubscriptionsUnder(ctx context.Context, records []prepara
 }
 
 func preparationStopRequested() bool {
-	contents, err := os.ReadFile(preparationStopPath())
-	if err != nil {
-		return false
-	}
 	state, err := loadPreparationState()
-	if err != nil {
-		return false
-	}
-	return state.Worker.PID == os.Getpid() && state.Worker.Identity != "" && strings.TrimSpace(string(contents)) == state.Worker.Identity
+	return err == nil && state.Worker.StopRequested
 }
-
-var errPreparationAdmissionStale = errors.New("preparation inputs or selection changed before admission — the current selection will be retried")
 
 func preparationAdmissionGuard(key, rt, platform string, generation uint64) func(func() error) error {
 	return preparationAdmissionGuardUnder(context.Background(), key, rt, platform, generation)
@@ -802,7 +806,7 @@ func preparationAdmissionGuardUnder(ctx context.Context, key, rt, platform strin
 		case preparationPatchedProgramKind, preparationPlainProgramKind:
 			eligible = forkUpdateTiming(f) == timingNextLaunch
 		}
-		if !eligible || !run.BackgroundBuildsOn(rt) {
+		if !eligible || !run.BackgroundChecksOn(rt, platform) || kind == preparationPlainProgramKind && !run.BackgroundBuildsOn(rt) {
 			return errPreparationAdmissionStale
 		}
 		if kind != preparationPlainProgramKind {
@@ -870,8 +874,8 @@ func preparationCheckBinaryIdentity() error {
 	if state.Worker.BinaryDigest == "" || state.Worker.Executable == "" {
 		return nil
 	}
-	_, digest := preparationExecutableIdentity(state.Worker.Executable)
-	if digest == "" || digest != state.Worker.BinaryDigest {
+	digest, digestErr := preparationBinaryDigest(state.Worker.Executable)
+	if digestErr != nil || digest != state.Worker.BinaryDigest {
 		return errors.New("yolo binary changed while the preparation worker was running — its work was cancelled; run `yolo pack prepare start` to restart with the selected binary")
 	}
 	return nil

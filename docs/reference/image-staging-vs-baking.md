@@ -19,7 +19,7 @@ covers:
   - scripts/stage-source-bundle.sh
 tags: [image, nix, podman, mounts, packages, disk]
 stage: CURRENT
-next: "Give Apple Container the stock tag: container image tag <src> <dst> exists in container 1.1.0 and 1.5.0, so ImageTagCmd learns that spelling and both Runtime == container guards go (tagStockImage and its caller in AutoLoadImage), and TestMacArchiveDeliveryReusesLayers evicts the stock tag on Apple Container too, or the verifying dispatch fails on 'Image build skipped'. Then skip the no-op build for an unchanged launch that declares packages: generalize the stock record into a launch record keyed on the identity, the exact YOLO_EXTRA_PACKAGES, the attr and the system, taken only when every pinned nixpkgs value is a full commit; rewrite the non-goal that excludes it and ledger the change under OQ-4 and OQ-IP4"
+next: "Give Apple Container the stock tag: container image tag <src> <dst> exists in container 1.1.0 and 1.5.0, so ImageTagCmd learns that spelling and both Runtime == container guards go (tagStockImage and its caller in AutoLoadImage), and TestMacArchiveDeliveryReusesLayers evicts the stock tag on Apple Container too, or the verifying dispatch fails on 'Image build skipped'. Part B config-declared baked packages, ambient-only inputs, and lean-attribute launch records are implemented and live Linux reuse is verified. Native Apple Container and rootless-host behavior remain external validation"
 summary: "How a jail gets its image and its own binaries: the image bakes nixpkgs and names, a launch bind-mounts yolo's binaries and can deliver packages from the mounted nix store, a failed build is fatal, the loaded image is addressed by content and delivered by a layer-negotiating `skopeo copy` (layer-aware delivery, C9) over a three-tier layer plan, serialised machine-wide and with no retained tar anywhere. The invariants, the pipeline, the traps, and the cost model that shaped them."
 ---
 
@@ -470,8 +470,7 @@ flowchart TD
 ```
 
 A container launch runs the nix build **unless the stock image it wants is already in the
-runtime** — the pre-build question below, added 2026-09-13. A launch that is not a stock one, or
-whose stock image is absent, builds exactly as before: `SkipBuild` remains a dormant seam and no
+runtime or a valid packages launch record proves the requested image is present** — the pre-build question below, added 2026-09-13. An unmatched launch builds exactly as before: `SkipBuild` remains a dormant seam and no
 flag suppresses anything. When the derivation's output already exists the build is a no-op
 evaluation costing low single-digit seconds, so a warm launch that does build pays only that.
 Every flake-evaluating nix call
@@ -1470,10 +1469,35 @@ no image and nothing to substitute.
   the lean image only changes where they are delivered from.
 - **The `macos-user` backend**, beyond being the existence proof store delivery reused —
   [`nix-across-backends.md`](nix-across-backends.md).
-- **Skipping the build for a launch that is not a stock one.** The
-  [stock tag](#the-stock-tag-and-the-question-asked-before-the-build) can skip it only because the
-  identity is the stock image's *entire* input set; a `packages:` or lean launch has inputs the
-  identity does not cover, so it builds — a no-op evaluation of seconds when nothing moved.
+- **Skipping an unproven build.** A missing record, invalid store path or absent runtime
+  image always falls through to the build.
+
+### Packages launch records — first slice, 2026-10-13
+
+A launch declaring config `packages:` for the default baked image records the successful
+store path under `BUILD_DIR/launch-images/<key>`. The key hashes the evaluated image identity,
+the exact compact JSON sent as `YOLO_EXTRA_PACKAGES`, the image attribute and the host's nix
+system. Every explicit `nixpkgs` pin must be a full 40-digit commit; moving refs always build.
+Stock tags and platform defaults are unchanged.
+
+A matching launch verifies the recorded path with nix and inspects its content-addressed
+runtime ref under the housekeeping lock. Only when both succeed does it skip the build,
+register the GC root and update the load sentinel. It runs the content ref, so existing root
+and reaper mappings need no new tag namespace. A record write failure warns and costs only
+the next build.
+
+The Linux tests exercise the production `AutoLoadImage` call site: unchanged packages reuse,
+changed packages/identity, moving pins, missing runtime image and invalid store path. Ambient-only
+inherited `YOLO_EXTRA_PACKAGES` bytes and the default/lean attribute now have distinct record keys;
+moving pins remain unrecorded. Reuse still requires nix store validity and runtime inspection, and
+failed builds remain fatal. These tests do **not** prove Apple Container runtime behavior. Remaining
+work is Part A's native Apple Container tag dispatch/runtime validation and warm-launch timing on a Mac.
+
+#### Live Linux reuse evidence
+
+Independent live launches verified both recorded-image paths with an isolated HOME, state and config, and a fresh CLI whose source-skew guard passed. For ambient `YOLO_EXTRA_PACKAGES=["hello"]`, a cold launch completed in 162 s and ran `/bin/hello`; the identical warm launch completed in 10 s and reported that the image matched this launch's inputs. Changing only the ambient bytes to `[  "hello" ]` completed in 39 s and rebuilt under a distinct key. Both recorded store paths passed Nix validity checks and runtime inspection.
+
+For opted-in lean delivery with `packages:["hello"]`, the cold launch completed in 169 s and ran `/run/yolo/packages/bin/hello` while `/bin/hello` was absent; the warm launch completed in 65 s and reported an image-input match. The default and lean keys differed, and the lean record matched the independently evaluated `ociImageLean` output. Evidence and logs are retained by the reviewer at `/tmp/yolo-item31-review-eoMvxh/`. These observations establish Linux Podman reuse only: the host reported `rootless=false`; native Apple Container and rootless behavior remain unverified.
 
 ## Why it's this way
 
@@ -1556,3 +1580,5 @@ values themselves are stated.
 | `packages:` into the flake | `YOLO_EXTRA_PACKAGES` (JSON), read with `builtins.getEnv` | `image.AutoLoadOptions.ExtraPackages`; `extraPackages` (`flake.nix`) |
 | Image reap on the launch path | every image except each workspace's current one, at most once per 24 h, opt out with `YOLO_NO_AUTO_IMAGE_REAP` | `prune.ReadCurrentImagePointers`, `prune.AutoReapInterval`; `autoReapOptOutEnv` (`internal/cli/run/autoreapimages.go`) |
 | Binary-cache substituter | `yolo-jail.cachix.org` | `nixConfig` (`flake.nix`) |
+
+**2026-10-13 implementation under the workspace-scope and stock-image reuse rulings:** config-declared baked packages now use the complete launch-input record above, rather than treating the stock identity alone as their key. Workspace scope and build-failure policy are unchanged.

@@ -2,17 +2,17 @@
 title: "Ready handoff: machine-level ordinary CLI and MCP preparation"
 status: accepted
 stage: DECIDED
-next: "Build the selected sealed npm producer and exact production consumers, then integrate the shared-demand owner's committed API"
+next: "Verify the connected sealed npm producer and production consumers on the final combined runtime"
 depends-on:
   - launch-update-preparation-plan.md
 ---
 
 # Ready handoff: machine-level ordinary CLI and MCP preparation
 
-**Status:** 2026-10-13. Written against the stable combined candidate `a2b94b129`.
-The selected helper and capture security components are committed. Engineering mechanics below
-are settled for implementation; the producer, consumers and shared-demand integration remain
-unbuilt. This is not a feature-completion claim.
+**Status:** 2026-10-14. The combined candidate connects the selected sealed npm producer,
+launchers, MCP refresh and HOST consumers through the independent shared-demand worker.
+Permanent synthetic producer/consumer tests are present. Final combined runtime, native and
+controlled-performance acceptance remain; this is not a shipped or feature-completion claim.
 **Design:** [preparation boundary](launch-update-preparation.md) and
 [OQ-PD23](program-delivery.md#decision-ledger). Design wins on behavior, tree wins on fact,
 this sketch is advice and first to be wrong. No new owner ruling is needed.
@@ -39,7 +39,7 @@ work proceeds through the [independent plan](launch-update-preparation-plan.md).
 | [`capture.Run`](../../internal/capture/inner.go), [`artifactSurfaces` / `ValidateArtifacts`](../../internal/capture/artifacts.go) | Opt-in artifact roots, not whole prefixes/home. Reject traversal, overlaps, yolo state, unselected/outside links, dangling/cyclic producer links, special files and unsafe permissions. Installer env is allowlisted with capture-private prefixes. Linux artifact mode uses an isolated same-binary subreaper and pinned no-follow descriptor copies; cleanup proof precedes validation. Unsupported artifact platforms refuse only this new route. Legacy nil-artifact capture is unchanged. |
 | [`runCaptureRun`](../../internal/cli/capture.go) | Repeated hidden `--artifact=HOME-RELATIVE-PATH` arguments reach the real driver. This mode refuses a missing sealed-build marker before executing the installer. **A marker is not sandbox evidence**: the host producer must actually use the seal. |
 | [`Store.AdmitEntryGuarded` / `AdmitEntryValidated`](../../internal/capture/store.go) | Digest/freeze and keyed CAS contention happen outside the caller's short selected-input publication guard; rename/completion happen within it. Identical bytes produced by different input identities serialize at the existing store. The validated route checks the retained canonical manifest before publication; incompatible metadata refuses without changing existing metadata or receipts. |
-| [`prepareProgramCapture`](../../internal/cli/programcapture.go) | Existing receipt selection, pidlock, staging, immutable admission and original-runtime/keeper liveness proof. Same-identity waiters reread the winner; unchanged identity skips production. Cancellation/stale authority admits nothing; unknown runtime retains staging. The producer callback remains an integration seam, not an implemented installer. |
+| [`prepareProgramCapture`](../../internal/cli/programcapture.go) | Existing receipt selection, pidlock, staging, immutable admission and original-runtime/keeper liveness proof. Same-identity waiters reread the winner; unchanged identity skips production. Cancellation/stale authority admits nothing; unknown runtime retains staging. The selected npm adapter supplies the producer callback; unsupported inputs retain their declared installer. |
 | [`materializeCapture`](../../internal/cli/capturematerialize.go) | Hidden `--compatibility=IDENTITY` selects exact ordinary bytes and preserves that identity in the materialize receipt. Existing fork `--key` and legacy native selection stay separate. Existing relocation/confinement machinery places independent copies. |
 
 The compatibility tuple must contain **resolved facts**. Passing a declaration such as `latest`
