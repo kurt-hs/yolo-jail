@@ -360,17 +360,22 @@ func TestHostApplyGateExecsWhenTheBudgetExpires(t *testing.T) {
 	// warm the machine's page cache was — green here, RED ON CI 2026-09-12, where the survey won.
 	// Blocking the survey outright makes the timeout the only selectable case.
 	release := make(chan struct{})
+	finished := make(chan struct{})
 	prevSurvey := hostApplyGateSurvey
 	hostApplyGateSurvey = func(_, _ io.Writer, _, _ bool, _ io.Reader, _ *hostApplySurvey) int {
+		defer close(finished)
 		<-release
 		return 0
 	}
 	prev := hostApplyGateBudget
 	hostApplyGateBudget = 10 * time.Millisecond
 	t.Cleanup(func() {
+		// The timed-out survey may not even have read the seam yet. Join the fixture's
+		// survey before restoring globals or releasing gateFixture's environment.
+		close(release)
+		<-finished
 		hostApplyGateSurvey = prevSurvey
 		hostApplyGateBudget = prev
-		close(release) // let the abandoned goroutine finish; the gate already moved on
 	})
 
 	var errw bytes.Buffer
