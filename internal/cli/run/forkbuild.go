@@ -258,7 +258,7 @@ func forkLockPath() string { return packsrc.ForkLockPath(paths.UserConfigPath())
 // `yolo host -- <bin>` and `yolo host apply --assert` (the host floor's PinFork), and `yolo capture
 // <forked bin>`, so the host and a jail can never pin one fork two ways.
 func PinLaunchForks(forks []packload.Fork, begin func() (func(string), func())) []packload.ForkPin {
-	return pinLaunchForks(nil, forks, begin)
+	return pinLaunchForks(context.TODO(), forks, begin)
 }
 
 // RepinLaunchForks is the explicit fresh-request counterpart, called only after the attach decision
@@ -309,7 +309,7 @@ func freshJailForkPinRefusal(forks []packload.Fork) error {
 		if !mutableForkRef(fork) || forkUnpublishedHere(fork) != "" {
 			continue
 		}
-		return fmt.Errorf("Refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update.",
+		return fmt.Errorf("refusing --update: mutable source fork %s needs a fresh pin, but this jail cannot write its host fork lock. Run `yolo --update -- <command>` from the host workspace, or run this launch without --update",
 			fork.Key())
 	}
 	return nil
