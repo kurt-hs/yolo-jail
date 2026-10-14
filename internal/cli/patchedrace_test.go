@@ -76,10 +76,19 @@ func TestAWaiterTakesTheWinnersFailure(t *testing.T) {
 	go func() { defer wg.Done(); bRes = fx.concurrentLaunch(t, "/ws2", &bOut, nil) }()
 	waitFor(t, "B to wait on the build lock", func() bool { return strings.Contains(bOut.String(), "waiting for pid") })
 	// ANOTHER HOLDER OF THE RECORD LOCK as A's build ends: A's failure cannot be written until it goes.
+	// The check-start lease shares the locks dir since the shared-demand admission; it is not
+	// the record lock this wait is about.
 	locks, _ := filepath.Glob(filepath.Join(paths.PacksDir(), "locks", "check-*.lock"))
-	if len(locks) != 1 {
-		t.Fatalf("record locks = %v", locks)
+	var record []string
+	for _, l := range locks {
+		if !strings.HasPrefix(filepath.Base(l), "check-start-") {
+			record = append(record, l)
+		}
 	}
+	if len(record) != 1 {
+		t.Fatalf("record locks = %v", record)
+	}
+	locks = record
 	f, err := os.OpenFile(locks[0], os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
