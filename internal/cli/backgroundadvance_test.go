@@ -262,8 +262,10 @@ func TestABackgroundBuildSkipsAHeldBuildLock(t *testing.T) {
 }
 
 // A BUILD JAIL NOT KNOWN GONE — the runtime could not say — keeps its staging, records no failed build
-// and leaves the candidate pending, which the next launch says. Red if the background advance reports
-// it as a failure, or loses the retained state.
+// and leaves the candidate pending, which the next launch says. The next launch registers the
+// pending candidate with the shared scheduler rather than spawning a one-shot advance. Red if the
+// background advance reports it as a failure, loses the retained state, or the candidate leaves
+// the scheduler's subscriptions.
 func TestAnUnknownRunningBuildJailKeepsItsStagingAndTheCandidatePending(t *testing.T) {
 	pf := readyForABackgroundAdvance(t)
 	prevWait, prevProbe := forkBuildGoneWait, probeForkBuildContainer
@@ -317,8 +319,21 @@ func TestAnUnknownRunningBuildJailKeepsItsStagingAndTheCandidatePending(t *testi
 	if !strings.Contains(launch, "extension "+poolKeyA+": the background advance at ") || !strings.Contains(launch, " pending — ") {
 		t.Errorf("the next launch does not say the candidate was left pending:\n%s", launch)
 	}
-	if sp.count() != 1 || !slices.Contains(sp.keys(0), poolKeyA) {
-		t.Errorf("the pending candidate did not start another background advance: %v", sp.argvs)
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler starts = %v, want the worker that retries the pending candidate", sp.argvs)
+	}
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil {
+		t.Fatalf("the scheduler kept no readable subscriptions: %v", err)
+	}
+	registered := false
+	for _, s := range subs {
+		if s.Key == poolKeyA {
+			registered = true
+		}
+	}
+	if !registered {
+		t.Errorf("the pending candidate %s left the scheduler's subscriptions: %v", poolKeyA, subs)
 	}
 }
 
