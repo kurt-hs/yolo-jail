@@ -31,8 +31,8 @@ names a fresh launch instead.
 See [explicit update](docs/design/launch-update-preparation.md#explicit-update-and-launch-materialization).
 
 **Prepare selected builds for a later launch.** Set eligible selected packs' `agent_updates` entry
-to `"next-launch"` to prepare updates while you work. Later launches can reuse admitted builds
-without changing the current environment. `yolo pack status` reports preparation state;
+to `"next-launch"` to prepare updates while you work. Later launches can reuse
+successfully prepared builds without changing the current environment. `yolo pack status` reports preparation state;
 `yolo pack prepare start|stop|status` manages the host worker.
 See [launch preparation](docs/design/launch-update-preparation.md).
 
@@ -137,6 +137,7 @@ with `"host_floor": {"<pack>": false}` in your user config. See [host readiness]
 ### Fixed
 
 - A patched program whose current build fails can run its last good build for one launch with `YOLO_USE_CACHED_GOOD=<pack>/<program>` ([how](userguide/guides/patch-series.md#when-a-build-fails)).
+- A host service that refuses its settings stops the launch at once with its cause and fix, and Bedrock's names invalid profile settings without printing their values.
 - Cache cleanup no longer deletes login tokens or lock files, and stops at its time limit.
 - The GitHub broker keeps working when the host's `gh` updates.
 - `uvx yolo-jail` now runs yolo.
