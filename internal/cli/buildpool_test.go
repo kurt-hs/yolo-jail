@@ -167,6 +167,9 @@ func TestTheSlotBuildsItsKeysAtOnceAndPrintsThemInOrder(t *testing.T) {
 // run.SlotBuildJails.
 func TestAppleContainerBuildsOneKeyAtATime(t *testing.T) {
 	fx := newTreesFixture(t, 3)
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	peak := concurrentChildren(t, 2, 200*time.Millisecond)
 	got, stream := fx.slot(t, "container", 0, &run.ActInterrupt{})
 	if *peak != 1 {
