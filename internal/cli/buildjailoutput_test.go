@@ -68,6 +68,8 @@ func TestAHostForkBuildsJailOutputIsKept(t *testing.T) {
 // copy tree-build-<key>.log keeps is stripped as a launch log's is.
 func TestATreeBuildsLogHoldsNoEscapeSequences(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
+	// writeHostConfig names the agent pack, so it must exist for the selection to resolve.
+	fx.listTreeForAgent(t)
 	fx.writeHostConfig(t, treeHostOwn)
 	var errw syncBuffer
 	advanceHostTrees(&errw, true, "", nil)

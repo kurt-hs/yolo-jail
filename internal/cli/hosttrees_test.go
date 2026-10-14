@@ -508,7 +508,9 @@ func TestTheHostStopIsOffUnderHostManagementNone(t *testing.T) {
 func TestAHostAdvancesLinesNameTheHost(t *testing.T) {
 	fx := newTreeFixture(t, `"f.txt"`)
 	// An owned host: under "none", the unset default, the apply named as the next step writes
-	// nothing, so the line names the setting too (hostApplyStep).
+	// nothing, so the line names the setting too (hostApplyStep). writeHostConfig names the
+	// agent pack, so it must exist for the selection to resolve.
+	fx.listTreeForAgent(t)
 	fx.writeHostConfig(t, treeHostOwn)
 	advanceHostTrees(io.Discard, false, "", nil)
 	if len(fx.builds) != 1 {
