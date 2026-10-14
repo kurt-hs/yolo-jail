@@ -265,6 +265,9 @@ func TestANewerBuildsRefusalWhileTheGoodBuildServesIsSaidOnce(t *testing.T) {
 // runtime's limit (PF-D21), the likeliest cause there, with the capture that builds it once the other
 // jails stop; on podman it does not. Red with flush leaving out the runtime's line.
 func TestAHeldBuildOnAppleContainerNamesItsLimit(t *testing.T) {
+	// The required-build gate admits foreground builds only on positive absence proof;
+	// an empty running-container table stands in for the idle Apple host here.
+	fakeAppleListing(t, "ID IMAGE STATE\n", nil)
 	for _, rt := range []string{"container", "podman"} {
 		fx, trees := threeTreeFixture(t)
 		trees = trees[:1]
