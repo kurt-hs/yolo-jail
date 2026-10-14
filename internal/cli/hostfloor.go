@@ -151,6 +151,7 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 	}
 	wireFloorCapture(f, out)
 	wireFloorBuild(f, store, out)
+	wireFloorOrdinaryCapture(f, store, out)
 	return f
 }
 

@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -69,6 +72,10 @@ func runCaptureMaterialize(args []string) int {
 				fmt.Fprintln(os.Stderr, "capture-materialize: compatibility must be a resolved input SHA256 — resolve the selected install and retry")
 				return 2
 			}
+		case strings.HasPrefix(a, "--runtime="):
+			opts.programRuntime = strings.TrimPrefix(a, "--runtime=")
+		case strings.HasPrefix(a, "--node-floor="):
+			opts.nodeFloor = strings.TrimPrefix(a, "--node-floor=")
 		case strings.HasPrefix(a, "--key="):
 			opts.key = strings.TrimPrefix(a, "--key=")
 		default:
@@ -86,6 +93,7 @@ func runCaptureMaterialize(args []string) int {
 
 // materializeArgs is one materialize request, parsed.
 type materializeArgs struct {
+	programRuntime, nodeFloor string
 	// compatibility, when set, requires the exact resolved ordinary input identity.
 	compatibility string
 	// store is the store root AS THIS PROCESS SEES IT — the in-jail mount point, not the
@@ -123,6 +131,29 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(errw, "  yolo: no capture for %s (%s): %v\n", a.bin, platform, err)
 		return 1
+	}
+	if a.programRuntime != "" {
+		var expected npmCaptureRuntime
+		if err := json.Unmarshal([]byte(a.programRuntime), &expected); err != nil {
+			fmt.Fprintln(errw, "prepared runtime is unreadable — retry a fresh launch")
+			return 1
+		}
+		node, err := exec.LookPath("node")
+		if a.nodeFloor != "" {
+			node = entrypoint.ResolveNodeForFloor(a.nodeFloor)
+			if node == "" {
+				err = fmt.Errorf("selected Node floor is not present")
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(errw, "prepared runtime is unavailable — retry a fresh launch:", err)
+			return 1
+		}
+		actual, err := observeNPMCaptureRuntime(context.Background(), a.home, node)
+		if err != nil || actual != expected {
+			fmt.Fprintln(errw, "prepared runtime differs from this consumer — use the supported installer route or retry a fresh launch")
+			return 1
+		}
 	}
 	res, err := capture.Materialize(capture.MaterializeOptions{
 		Entry:  entry,

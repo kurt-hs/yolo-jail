@@ -202,6 +202,13 @@ const (
 	DefaultCaptureRefreshAge = 24 * time.Hour
 )
 
+// PreparedNPM is an exact compatible npm generation selected before floor publication.
+// Nil selection keeps this platform on its existing bounded authorized installer.
+type PreparedNPM struct {
+	Compatibility, EntryKey, Version string
+	Materialize                      func(ctx context.Context, home string) error
+}
+
 // Floor is one host prefix and every input its decisions read. The zero values of the func
 // fields mean the conservative answer each documents; the caller in internal/cli fills them.
 type Floor struct {
@@ -215,7 +222,9 @@ type Floor struct {
 	Node NodeDist
 	// NodeFloor is the highest `node_floor` any selected npm program declares; the floor's Node
 	// is Node.Shipped raised to it (OQ-HP4).
-	NodeFloor string
+	NodeFloor   string
+	PrepareNPM  func(ctx context.Context, p Program, nodeBin string, fresh bool) (*PreparedNPM, error)
+	preparedNPM map[string]*PreparedNPM
 	// Include reports whether a pack's programs are in the floor (`host_floor`). nil => every
 	// selected pack's are, which is the default by OQ-HP1.
 	Include func(pack string) bool

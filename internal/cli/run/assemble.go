@@ -1312,6 +1312,9 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 	// a key that authorises deleting binaries must not be settable by a repo-committed,
 	// agent-editable workspace config (config.ProgramsAutoprune, and validatePrograms
 	// reports a workspace-scoped one as an error rather than ignoring it).
+	if !in.sealed && len(o.programCaptures) > 0 {
+		env = append(env, "-e", entrypoint.ProgramCapturesEnv+"="+entrypoint.MarshalProgramCaptures(o.programCaptures))
+	}
 	if config.ProgramsAutoprune(nil) {
 		env = append(env, "-e", "YOLO_PROGRAMS_AUTOPRUNE=1")
 	}

@@ -117,24 +117,33 @@ func forkBuildChildArgv(staging string, b forkBuild, color bool) []string {
 // done (childJailPipes).
 func runForkBuildChild(ctx context.Context, bound time.Duration, staging string, b forkBuild, s captureStreams,
 	color bool) (int, bool) {
+	return runCaptureChild(ctx, bound, staging, b.Fork.Key(), forkBuildChildArgv(staging, b, color), s)
+}
+
+// runCaptureChild retains the existing owned process-group, stream and runtime-witness
+// lifecycle for both source builds and selected ordinary sealed producers.
+func runCaptureChild(ctx context.Context, bound time.Duration, staging, key string, argv []string, s captureStreams, environment ...[]string) (int, bool) {
 	errw := s.errw
 	if errw == nil {
 		errw = io.Discard
 	}
-	cmd, err := forkBuildChildCommand(forkBuildChildArgv(staging, b, color))
+	cmd, err := forkBuildChildCommand(argv)
 	if err != nil {
-		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", b.Fork.Key(), err)
+		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", key, err)
 		return 1, false
+	}
+	if len(environment) > 0 {
+		cmd.Env = environment[0]
 	}
 	jail, err := newChildJailPipes()
 	if err != nil {
-		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", b.Fork.Key(), err)
+		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", key, err)
 		return 1, false
 	}
 	output, err := newForkBuildChildOutput()
 	if err != nil {
 		jail.abandon()
-		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", b.Fork.Key(), err)
+		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", key, err)
 		return 1, false
 	}
 	cmd.Stdout, cmd.Stderr, cmd.ExtraFiles = output.writers[0], output.writers[1], jail.child
@@ -148,7 +157,7 @@ func runForkBuildChild(ctx context.Context, bound time.Duration, staging string,
 	if err := cmd.Start(); err != nil {
 		jail.abandon()
 		output.abandon()
-		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", b.Fork.Key(), err)
+		fmt.Fprintf(errw, "yolo: could not start the build jail of %s: %v\n", key, err)
 		return 1, false
 	}
 	output.copyTo(s.out, errw)

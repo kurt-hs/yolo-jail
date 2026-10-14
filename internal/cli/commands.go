@@ -1267,6 +1267,9 @@ func runRun(args []string) int {
 	// passes through here. That is belt to the pipeline's braces — the trigger also
 	// reads Options.CapturesDir, which that jail suppresses (see
 	// run.Options.autoCaptureInstallerPrograms).
+	opts.PreparePrograms = func(req run.ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error) {
+		return prepareOrdinaryForLaunch(req, launchBuildStream(req.Stderr))
+	}
 	opts.AutoCapture = func(bins []string, platform string) {
 		autoCapture(bins, platform, os.Stdout, os.Stderr, colorForWriter(os.Stdout))
 	}

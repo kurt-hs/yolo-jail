@@ -316,6 +316,7 @@ type preparationTaskResult struct {
 	generation             uint64
 	baseline               uint64
 	err                    error
+	program                *npmCaptureRecord
 }
 
 // runPreparationScheduler is the timer production loop. Tests inject ticks into this exact loop.
@@ -381,6 +382,21 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 					return
 				}
 				r.At = preparationNow()
+				if r.Kind == preparationOrdinaryProgramKind {
+					if result.err != nil || result.program == nil {
+						r.Phase = "failed"
+						r.Reason = fmt.Sprintf("%v — retry a fresh launch", result.err)
+						r.RetryAt = preparationNow().Add(time.Hour)
+					} else {
+						r.Phase = "admitted"
+						if r.ServingEntry == result.program.Entry {
+							r.Phase = "unchanged"
+						}
+						r.ServingEntry, r.Reason = result.program.Entry, ""
+						r.RetryAt = time.Time{}
+					}
+					return
+				}
 				if outcome, err := readBackgroundOutcome(backgroundOutcomePath(r.Key)); err == nil &&
 					outcome.Generation > result.baseline && outcome.Key == r.Key && outcome.ProducerPID == os.Getpid() && outcome.SubscriptionGeneration == result.generation && outcome.Pid == 0 && outcome.State != bgRunning {
 					phase := outcome.State
@@ -466,6 +482,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				return configErr
 			}
 			state = refreshPreparationSubscriptionsUnder(ctx, state, current)
+			state = refreshOrdinaryPreparationSubscriptions(ctx, state)
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -500,10 +517,15 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 					continue
 				}
 				f, ok := current[id]
-				if !ok {
+				ordinary := r.Kind == preparationOrdinaryProgramKind
+				if !ok && !ordinary {
 					continue
 				}
-				if preparationKind(r) == preparationPlainProgramKind {
+				if ordinary {
+					if !ordinaryPreparationDue(ctx, r) {
+						continue
+					}
+				} else if preparationKind(r) == preparationPlainProgramKind {
 					pin, pinErr := currentForkPin(f)
 					if pinErr != nil || pin.Commit != r.PinCommit {
 						if pinErr == nil {
@@ -570,7 +592,10 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 				go func(r preparationRecord, f packload.Fork, baseline uint64) {
 					var out strings.Builder
 					var taskErr error
-					if preparationKind(r) == preparationPlainProgramKind {
+					var program *npmCaptureRecord
+					if r.Kind == preparationOrdinaryProgramKind {
+						program, taskErr = runOrdinaryScheduledPreparation(taskCtx, r, &out)
+					} else if preparationKind(r) == preparationPlainProgramKind {
 						taskErr = runPlainForkPreparation(taskCtx, r, f, &out)
 					} else {
 						runBackgroundAdvanceUnder(taskCtx, backgroundArgs{runtime: r.Runtime, platform: r.Platform, keys: []string{r.Key}, schedulerGeneration: r.Generation}, &out)
@@ -579,7 +604,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 						_, _ = io.WriteString(w, out.String())
 					}
 					cancel()
-					done <- preparationTaskResult{key: r.Key, runtime: r.Runtime, platform: r.Platform, generation: r.Generation, baseline: baseline, err: taskErr}
+					done <- preparationTaskResult{key: r.Key, runtime: r.Runtime, platform: r.Platform, generation: r.Generation, baseline: baseline, err: taskErr, program: program}
 				}(r, f, baseline)
 			}
 
@@ -643,6 +668,9 @@ var preparationRefreshInspected = func(error) {}
 
 func refreshPreparationSubscriptionsUnder(ctx context.Context, records []preparationRecord, current map[string]packload.Fork) []preparationRecord {
 	for _, old := range records {
+		if old.Kind == preparationOrdinaryProgramKind {
+			continue
+		}
 		id := old.Key + "\x00" + old.Runtime + "\x00" + old.Platform
 		f, ok := current[id]
 		var failure *packsrc.PatchFailure
