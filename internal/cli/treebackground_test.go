@@ -254,8 +254,9 @@ func TestOnAppleContainerANextLaunchKeyRegistersChecks(t *testing.T) {
 
 // THE BACKGROUND ADVANCE'S MOVE IS SAID AT THE NEXT LAUNCH, ONCE, and that launch runs the new build:
 // a real background advance builds both keys for the next launch, and the launch after it says so;
-// the one after that says nothing. Red if the launch stops reading the outcome record, or stops
-// claiming it.
+// the one after that says nothing. That launch still registers the keys with the shared scheduler
+// and starts its worker — registration is unconditional, only checks and builds are due-gated.
+// Red if the launch stops reading the outcome record, or stops claiming it.
 func TestTheNextLaunchReportsTheBackgroundMoveOnce(t *testing.T) {
 	pf := newPoolFixture(t)
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
@@ -285,8 +286,8 @@ func TestTheNextLaunchReportsTheBackgroundMoveOnce(t *testing.T) {
 	if !strings.Contains(out, "(was ") {
 		t.Errorf("the move line does not say what it moved from:\n%s", out)
 	}
-	if sp.count() != 0 {
-		t.Errorf("a launch after a finished background advance started another:\n%s", out)
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler starts = %v, want the idempotent worker registration", sp.argvs)
 	}
 	_, again := pf.launch(t, "podman", &run.ActInterrupt{})
 	if strings.Contains(again, "the background advance at ") {
@@ -328,8 +329,10 @@ func TestTheNextLaunchReportsAFailureWithItsLogAndRetry(t *testing.T) {
 }
 
 // AN UNFINISHED BACKGROUND ADVANCE — its record running, its lock free, as a SIGKILL leaves it — is
-// said, and this launch starts another though nothing else is due. Red if an unfinished record does
-// not start one.
+// said, and this launch starts the scheduler worker that retries it, though nothing else is due.
+// The worker is the retry vehicle since the launch registers next-launch keys with the shared
+// scheduler rather than spawning a one-shot advance. Red if an unfinished record is not said, or
+// its key leaves the scheduler's subscriptions.
 func TestAnUnfinishedBackgroundAdvanceIsSaidAndStartedAgain(t *testing.T) {
 	pf := newPoolFixture(t)
 	if first, out := pf.launch(t, "podman", &run.ActInterrupt{}); first[poolKeyA].Dir == "" {
@@ -346,8 +349,20 @@ func TestAnUnfinishedBackgroundAdvanceIsSaidAndStartedAgain(t *testing.T) {
 	if !strings.Contains(out, "did not finish — its output is in "+backgroundAdvanceLog()+"; a launch with next-launch updates retries it") {
 		t.Errorf("the unfinished advance is not said:\n%s", out)
 	}
-	if sp.count() != 1 || !slices.Equal(sp.keys(0), []string{poolKeyA}) {
-		t.Errorf("the background advance was started for %v, want %s alone", sp.argvs, poolKeyA)
+	if sp.count() != 1 || !slices.Equal(sp.argvs[0], []string{"internal", preparationSchedulerVerb}) {
+		t.Errorf("scheduler starts = %v, want the worker that retries the unfinished key", sp.argvs)
+	}
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil {
+		t.Fatalf("the scheduler kept no readable subscriptions: %v", err)
+	}
+	var registered []string
+	for _, s := range subs {
+		registered = append(registered, s.Key)
+	}
+	slices.Sort(registered)
+	if !slices.Equal(registered, []string{poolKeyA, poolKeyB}) {
+		t.Errorf("the scheduler registered %v, want both next-launch keys including the unfinished one", registered)
 	}
 }
 
