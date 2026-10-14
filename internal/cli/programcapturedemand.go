@@ -231,8 +231,8 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 	if ctx.Err() != nil {
 		return npmCaptureRecord{}, ctx.Err()
 	}
-	if result.NodeFloorUnavailable != nil {
-		return npmCaptureRecord{}, result.NodeFloorUnavailable
+	if failure := result.ordinaryFloorFailure(in); failure != nil {
+		return npmCaptureRecord{}, failure
 	}
 	if result.UnsupportedNPM {
 		return npmCaptureRecord{}, fmt.Errorf("%w: %s", errNPMCaptureUnsupported, result.OperationError)
@@ -293,10 +293,10 @@ func prepareOrdinaryForLaunch(req run.ProgramCaptureRequest, w io.Writer) (map[s
 			deliveries[in.Bin] = delivery
 		}
 	})
-	if req.Act.Interrupted() || operationErr != nil {
-		if operationErr == nil {
-			operationErr = context.Canceled
-		}
+	if req.Act.Interrupted() {
+		return nil, context.Canceled
+	}
+	if operationErr != nil {
 		return nil, operationErr
 	}
 	return deliveries, nil
