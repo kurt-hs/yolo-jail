@@ -342,9 +342,18 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 		e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": consumerHome, "YOLO_WORKSPACE": workspace, entrypoint.CapturesDirEnv: store.Dir, entrypoint.ProgramCapturesEnv: entrypoint.MarshalProgramCaptures(deliveries)})
 		// Existing MCP archive-consumer seam; its Run callback refuses ANY legacy
 		// npm/producer command before spawning it. No second run pipeline can install.
+		// The outer session can have another mise Node ahead of the baseline.
+		// Positively observe the actual image Node and require full production
+		// runtime equality before materialization; never infer equivalence.
+		observed, observeErr := observeNPMCaptureRuntime(ctx, consumerHome, "/bin/node")
+		if observeErr != nil || observed != record.Resolution.Runtime {
+			t.Error("image Node does not match admitted runtime", observeErr)
+			return 1
+		}
+		consumerEnv := append(programCaptureEnvironment(os.Environ()), "PATH=/bin:/usr/bin")
 		err = auditedSealedRefresh(ctx, e, delivery, func(argv []string) error {
 			command := exec.CommandContext(ctx, exe, argv[1:]...)
-			command.Env = programCaptureEnvironment(os.Environ())
+			command.Env = consumerEnv
 			output, err := command.CombinedOutput()
 			_, _ = log.Write(output)
 			return err
@@ -360,7 +369,7 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 		}
 		consumerRuns++
 		command := exec.CommandContext(ctx, filepath.Join(e.NpmPrefix, "bin/semver"), "-r", "^1.0.0", "1.2.3", "2.0.0")
-		command.Env = programCaptureEnvironment(os.Environ())
+		command.Env = consumerEnv
 		output, err := command.CombinedOutput()
 		fmt.Fprintf(&log, "CONSUMER %d %s", consumerRuns, output)
 		if err != nil || string(output) != "1.2.3\n" {
