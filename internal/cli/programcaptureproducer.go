@@ -26,11 +26,13 @@ const maxProgramCaptureDiagnostic = 1024
 // complete. Oversized records are omitted, never truncated before redaction.
 const maxProgramCaptureDiagnosticRecord = 4096
 
+var programCaptureAuthorizationRedactor = regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[^\s,;]+`)
+
 var programCaptureDiagnosticRedactors = []struct {
 	re          *regexp.Regexp
 	replacement string
 }{
-	{regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[^\s,;]+`), "<redacted>"},
+	{programCaptureAuthorizationRedactor, "<redacted>"},
 	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`), "$1<redacted>@"},
 	// Without @, a colon-bearing authority may be unfinished userinfo.
 	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+:[^/@\s]*`), "$1<redacted>"},
@@ -70,6 +72,9 @@ func redactProgramCaptureCredentialRecord(text string) string {
 			if end < len(text) && !strings.ContainsRune(" \t\r,;}]", rune(text[end])) {
 				return "[ambiguous sensitive producer diagnostic omitted]"
 			}
+		} else if authorization := programCaptureAuthorizationRedactor.FindStringIndex(text[start:]); authorization != nil && authorization[0] == 0 {
+			// Consume scheme and credential together before removing the key's value.
+			end = start + authorization[1]
 		} else {
 			for end < len(text) && !strings.ContainsRune(" \t\r,;", rune(text[end])) {
 				if text[end] == '\'' || text[end] == '"' {
