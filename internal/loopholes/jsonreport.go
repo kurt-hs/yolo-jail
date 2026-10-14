@@ -205,10 +205,10 @@ func statusJSON(deps Deps) int {
 	if deps.InJail {
 		return writeJSON(deps.Out, deps.Err, "status", doc{HostSide: true, Entries: []StatusEntry{}})
 	}
-	set := loopholesWithConfig(deps, true)
+	set, currentConfig := loopholesWithConfigAndBlock(deps, true)
 	all := set.All()
 	return writeJSON(deps.Out, deps.Err, "status", doc{
-		Entries: statusEntries(set, set.RunDoctorChecks(all, doctorCheckTimeout)),
+		Entries: statusEntries(set, runStatusDoctorChecks(set, all, currentConfig)),
 	})
 }
 

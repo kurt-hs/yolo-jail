@@ -87,6 +87,7 @@ type Loophole struct {
 	JailEnv       *EnvMap
 	DoctorCmd     []string // nil == None
 	DoctorCmdSet  bool
+	doctorCmdDecl []string // Original manifest tokens for settings-only doctor re-resolution.
 	HostDaemon    *HostDaemon
 	JailDaemon    *JailDaemon
 	HostBindMount []HostBindMount

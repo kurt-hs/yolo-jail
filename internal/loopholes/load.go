@@ -222,11 +222,10 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 	jailBinary := func(name string) (string, bool) { return JailBinaryPath(m.Name, name), true }
 
 	var doctorCmd []string
+	var doctorCmdDecl []string
 	if m.DoctorCmdSet {
-		doctorCmd = substituteAll(m.DoctorCmd, loopholedecl.TokenLoopholeDir, hostDir)
-		doctorCmd = substituteAll(doctorCmd, loopholedecl.TokenSettings, settingsPath)
-		doctorCmd = substituteAll(doctorCmd, loopholedecl.TokenState, statePath)
-		doctorCmd = loopholedecl.ReplaceBinaryTokens(doctorCmd, false, hostBinary)
+		doctorCmdDecl = append([]string(nil), m.DoctorCmd...)
+		doctorCmd = renderDoctorCmd(doctorCmdDecl, hostDir, settingsPath, statePath, hostBinary)
 	}
 
 	// EVERY field, listed. This literal is the same shape as subsetManifest's, and
@@ -311,6 +310,7 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 		JailEnv:       m.JailEnv,
 		DoctorCmd:     doctorCmd,
 		DoctorCmdSet:  m.DoctorCmdSet,
+		doctorCmdDecl: doctorCmdDecl,
 		HostDaemon:    hostDaemon,
 		JailDaemon:    jailDaemon,
 		HostBindMount: bindMounts,
@@ -432,6 +432,25 @@ func (l *Loophole) platformUnsupportedReason(goos, goarch string) (string, bool)
 // is a projection, not a re-decode.
 func (l *Loophole) platformManifest() *loopholedecl.Manifest {
 	return &loopholedecl.Manifest{Platforms: l.Platforms, PlatformsSet: l.PlatformsSet}
+}
+
+// doctorCmdWithSettings resolves the original declaration with one per-invocation
+// settings path. Keeping the declaration is what distinguishes its {settings} token
+// from literal paths that happen to contain the stable settings filename.
+func (l *Loophole) doctorCmdWithSettings(settingsPath string) []string {
+	if l == nil || l.doctorCmdDecl == nil {
+		return nil
+	}
+	return renderDoctorCmd(l.doctorCmdDecl, resolvePath(l.Path), settingsPath,
+		StateDirFor(l.Name), hostBinaryPaths(l.Binaries, l.BinaryRefs))
+}
+
+func renderDoctorCmd(declared []string, hostDir, settingsPath, statePath string,
+	hostBinary func(string) (string, bool)) []string {
+	cmd := substituteAll(declared, loopholedecl.TokenLoopholeDir, hostDir)
+	cmd = substituteAll(cmd, loopholedecl.TokenSettings, settingsPath)
+	cmd = substituteAll(cmd, loopholedecl.TokenState, statePath)
+	return loopholedecl.ReplaceBinaryTokens(cmd, false, hostBinary)
 }
 
 // substituteAll replaces token with value in every element of args, returning a

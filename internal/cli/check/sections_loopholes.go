@@ -230,12 +230,14 @@ func (o *Options) checkLoopholes(r *reporter) {
 			r.ok("loophole " + lp.Name + ": not started on " + admitRuntime + " (settings validator not run)")
 			validates = false
 		}
+		var frozen []byte
 		if validates {
 			if problems := lp.PlacementProblems(o.Workspace); len(problems) > 0 {
 				r.warn("loophole "+lp.Name+": settings validator not run", strings.Join(problems, "\n"))
 				continue
 			}
-			frozen, _, err := loopholes.FrozenSettingsBytes(lp, suppliedLoopholeSettings(userSwitches, lp.Name))
+			var err error
+			frozen, _, err = loopholes.FrozenSettingsBytes(lp, loopholes.SettingsFromConfig(userSwitches, lp.Name))
 			if err != nil {
 				r.fail("loophole "+lp.Name+": settings validation failed",
 					"Could not resolve the declared settings snapshot: "+err.Error()+"\n"+run.LoopholeSettingsFixStep(lp))
@@ -274,6 +276,19 @@ func (o *Options) checkLoopholes(r *reporter) {
 			r.ok("loophole " + lp.Name + ": no self-check declared")
 			continue
 		}
+		if len(lp.Settings) > 0 && frozen == nil {
+			var err error
+			frozen, _, err = loopholes.FrozenSettingsBytes(lp, loopholes.SettingsFromConfig(userSwitches, lp.Name))
+			if err != nil {
+				r.fail("loophole "+lp.Name+": self-check settings could not be resolved",
+					"Could not resolve the current settings snapshot: "+err.Error()+"\n"+run.LoopholeSettingsFixStep(lp))
+				continue
+			}
+		}
+		settings := map[string][]byte{}
+		if len(lp.Settings) > 0 {
+			settings[lp.Name] = frozen
+		}
 		// set.RunDoctorChecks, not the package-level function: the Set is what carries
 		// the origin gate, and the ungated door is nailed shut rather than documented —
 		// through it a pack-shipped record comes back RC=nil however approved its pack
@@ -281,7 +296,7 @@ func (o *Options) checkLoopholes(r *reporter) {
 		// lands in the RC==nil branch with the refusal as its note; that is visible
 		// rather than silent, which is the whole difference between "withheld" and
 		// "declares no self-check".
-		results := set.RunDoctorChecks([]*loopholes.Loophole{lp}, 10*time.Second)
+		results := set.RunDoctorChecksWithSettings([]*loopholes.Loophole{lp}, 10*time.Second, settings)
 		res := results[0]
 		switch {
 		case res.RC != nil && *res.RC == 0:
@@ -437,26 +452,6 @@ func loopholeConfigBlock(workspace string) *jsonx.OrderedMap {
 		return nil
 	}
 	return block
-}
-
-func suppliedLoopholeSettings(configBlock *jsonx.OrderedMap, name string) *jsonx.OrderedMap {
-	if configBlock == nil {
-		return nil
-	}
-	entryValue, ok := configBlock.Get(name)
-	if !ok {
-		return nil
-	}
-	entry, ok := entryValue.(*jsonx.OrderedMap)
-	if !ok {
-		return nil
-	}
-	settingsValue, ok := entry.Get("settings")
-	if !ok {
-		return nil
-	}
-	settings, _ := settingsValue.(*jsonx.OrderedMap)
-	return settings
 }
 
 // reportSelfCheckLines renders a self-check's own graded output — "FAIL:" as a
