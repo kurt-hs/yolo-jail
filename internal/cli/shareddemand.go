@@ -274,7 +274,11 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 					if !pidlock.Held(filepath.Join(dir, "worker.lock")) {
 						break
 					}
-					<-ticker.C
+					select {
+					case <-cleanupCtx.Done():
+						return
+					case <-ticker.C:
+					}
 				}
 			}
 		}()

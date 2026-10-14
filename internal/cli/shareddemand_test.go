@@ -2,11 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
-	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
-	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +13,11 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
 
 func TestTask2ProducerCancellationWithSecondFreshWaiter(t *testing.T) {
@@ -168,6 +170,94 @@ func TestSharedDemandSchedulerStopDetachesWhileFreshTreeRequestRemains(t *testin
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("timer/fresh demand rebuilt %d children", calls.Load())
+	}
+}
+
+func TestSharedDemandSchedulerStopDetachesBeforeDemandStateUnlock(t *testing.T) {
+	pf := readyForABackgroundAdvance(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubPreparationWorkerStart(t)
+	entered, release, cancelled := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
+	var calls atomic.Int32
+	pf.child = func(ctx context.Context, b forkBuild) int {
+		if b.Fork.Key() != poolKeyA {
+			return 0
+		}
+		if calls.Add(1) == 1 {
+			close(entered)
+			select {
+			case <-ctx.Done():
+				cancelled <- struct{}{}
+				return 130
+			case <-release:
+			}
+		}
+		return 0
+	}
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	_, _ = pf.launch(t, "podman", nil)
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	ticks := make(chan time.Time)
+	schedulerDone := make(chan error, 1)
+	go func() { schedulerDone <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	ticks <- pf.now
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timer did not start owned production")
+	}
+	f := packload.PatchedTrees(selectConfiguredHostPacks().packs)[0]
+	req := run.TreeBuildRequest{Trees: []packload.Fork{f}, Build: true, Runtime: "podman", Platform: patchedTestPlatform, FreshUpdate: true, CopyRoot: filepath.Join(t.TempDir(), "tree.patched")}
+	var output syncBuffer
+	freshDone := make(chan map[string]run.TreeDelivery, 1)
+	go func() {
+		_, trees := runBuildSlot(run.BuildSlotRequest{Trees: &req}, &output, false)
+		freshDone <- trees
+	}()
+	dir := sharedDemandDir(poolKeyA, "podman", patchedTestPlatform)
+	waitFor(t, "fresh requester attached before scheduler stop", func() bool {
+		var live []livePreparationDemand
+		err := withDemandState(context.Background(), dir, false, func() error { var e error; live, e = livePreparationDemands(dir); return e })
+		return err == nil && len(live) == 2
+	})
+	state, err := pidlock.Acquire(filepath.Join(dir, "state.lock"), pidlock.Mode{Wait: true, Bound: 5 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("hold demand state across cleanup deadline: %v", err)
+	}
+	defer state.Release()
+	stop()
+	select {
+	case err := <-schedulerDone:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("scheduler stop: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("scheduler did not detach before demand state unlocked after the one-second cleanup deadline")
+	}
+	select {
+	case <-cancelled:
+		t.Fatal("scheduler exit cancelled the producer still owned by the fresh requester")
+	default:
+	}
+	state.Release()
+	close(release)
+	select {
+	case result := <-freshDone:
+		if result[poolKeyA].Dir == "" || result[poolKeyA].FreshFailure != "" {
+			t.Fatalf("fresh tree failed after valid demand became readable: %+v\n%s", result, output.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fresh requester did not settle after the demand state unlocked")
+	}
+	if calls.Load() != 1 {
+		t.Errorf("scheduler/fresh demand ran %d child acts, want the same child", calls.Load())
 	}
 }
 
