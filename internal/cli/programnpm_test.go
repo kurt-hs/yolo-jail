@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -104,6 +105,12 @@ func newSelectedNPMFixture(t *testing.T) *selectedNPMFixture {
 	script := `#!/bin/bash
 set -eu
 ROOT=` + shquote.Quote(f.root) + `
+if [ -n "${NPM_CONFIG_USERCONFIG:-}" ]; then
+ [ "$NPM_CONFIG_USERCONFIG" != "$NPM_CONFIG_GLOBALCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ] && [ ! -s "$NPM_CONFIG_USERCONFIG" ]
+ case "$NPM_CONFIG_USERCONFIG" in /*) ;; *) exit 34;; esac
+ printf '%s\n' "$NPM_CONFIG_USERCONFIG" >> "$ROOT/npm-userconfigs"
+ [ "$NPM_CONFIG_GLOBALCONFIG" = /dev/null ]
+fi
 if [ "$1" = --version ]; then echo 10.0.0; exit 0; fi
 phase=$1; shift
 if [ "$phase" = view ]; then
@@ -126,7 +133,6 @@ if [ "$phase" = install ] && [[ " $* " == *' -g '* ]]; then
  exit 0
 fi
 [ -z "${NPM_TOKEN:-}" ] && [ -z "${SYNTHETIC_PROVIDER_KEY:-}" ]
-[ "$NPM_CONFIG_USERCONFIG" = /dev/null ] && [ "$NPM_CONFIG_GLOBALCONFIG" = /dev/null ]
 [ "$SSL_CERT_FILE" = /etc/ssl/certs/ca-bundle.crt ] && [ -z "$SSL_CERT_DIR" ] && [ "$NODE_OPTIONS" = --use-openssl-ca ]
 prefix=''
 previous=''
@@ -189,6 +195,23 @@ else exit 36; fi
 
 	return f
 }
+func assertNPMCaptureUserConfigsRemoved(t *testing.T, root string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "npm-userconfigs"))
+	if err != nil {
+		t.Fatalf("producer npm commands did not report their private config: %v", err)
+	}
+	paths := strings.Fields(string(data))
+	if len(paths) == 0 {
+		t.Fatal("producer npm command observer saw no private userconfig")
+	}
+	for _, path := range paths {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("owned producer npm config survived its command lifetime: %s (%v)", path, err)
+		}
+	}
+}
+
 func (f *selectedNPMFixture) version(t *testing.T, v string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(f.root, "version"), []byte(v), 0644); err != nil {
@@ -210,16 +233,23 @@ func (f *selectedNPMFixture) advance(t *testing.T, fresh bool) npmCaptureRecord 
 
 func TestNPMCaptureEnvironmentUsesOnlyTheImageTrustStore(t *testing.T) {
 	for name, value := range map[string]string{
-		"SSL_CERT_FILE":       "/caller/private-ca.pem",
-		"SSL_CERT_DIR":        "/caller/private-ca-dir",
-		"NIX_SSL_CERT_FILE":   "/caller/private-nix-ca.pem",
-		"NODE_EXTRA_CA_CERTS": "/caller/private-node-ca.pem",
-		"HTTPS_PROXY":         "http://caller-proxy.invalid:3128",
+		"SSL_CERT_FILE":           "/caller/private-ca.pem",
+		"SSL_CERT_DIR":            "/caller/private-ca-dir",
+		"NIX_SSL_CERT_FILE":       "/caller/private-nix-ca.pem",
+		"NODE_EXTRA_CA_CERTS":     "/caller/private-node-ca.pem",
+		"HTTPS_PROXY":             "http://caller-proxy.invalid:3128",
+		"NPM_CONFIG_USERCONFIG":   "/caller/.npmrc",
+		"NPM_CONFIG_GLOBALCONFIG": "/caller/global.npmrc",
 	} {
 		t.Setenv(name, value)
 	}
+	userConfig, cleanup, err := createNPMCaptureUserConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
 	got := map[string]string{}
-	for _, kv := range npmCaptureEnvironment(t.TempDir(), "/nix/store/node/bin/node") {
+	for _, kv := range npmCaptureEnvironment(t.TempDir(), "/nix/store/node/bin/node", userConfig) {
 		name, value, ok := strings.Cut(kv, "=")
 		if ok {
 			got[name] = value
@@ -228,10 +258,28 @@ func TestNPMCaptureEnvironmentUsesOnlyTheImageTrustStore(t *testing.T) {
 	if got["SSL_CERT_FILE"] != "/etc/ssl/certs/ca-bundle.crt" || got["SSL_CERT_DIR"] != "" || got["NODE_OPTIONS"] != "--use-openssl-ca" {
 		t.Fatalf("producer did not select the fixed image CA bundle with verified OpenSSL trust: %v", got)
 	}
+	if got["NPM_CONFIG_USERCONFIG"] != userConfig || got["NPM_CONFIG_USERCONFIG"] == got["NPM_CONFIG_GLOBALCONFIG"] || got["NPM_CONFIG_GLOBALCONFIG"] != "/dev/null" {
+		t.Fatalf("producer did not select a private npm user config distinct from the global config: %v", got)
+	}
 	for _, name := range []string{"NIX_SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "HTTPS_PROXY"} {
 		if _, ok := got[name]; ok {
 			t.Errorf("caller trust/transport input %s crossed into the sealed producer", name)
 		}
+	}
+}
+
+func TestNPMCapturePrivateUserConfigIsEmptyAndRemoved(t *testing.T) {
+	path, cleanup, err := createNPMCaptureUserConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != 0 || !filepath.IsAbs(path) {
+		t.Fatalf("producer user config is not an absolute empty regular file: %s %+v %v", path, info, err)
+	}
+	cleanup()
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("owned npm config was not removed after its command lifetime: %v", err)
 	}
 }
 
@@ -251,9 +299,156 @@ func TestNPMCaptureTrustStoreMustBeReadableRegularFile(t *testing.T) {
 	}
 }
 
+func TestNPMCaptureNodeBoundaryValidatesImageTrustBeforeMise(t *testing.T) {
+	for name, value := range map[string]string{
+		"SSL_CERT_FILE":       "/caller/private-ca.pem",
+		"SSL_CERT_DIR":        "/caller/private-ca-dir",
+		"NIX_SSL_CERT_FILE":   "/caller/private-nix-ca.pem",
+		"NODE_EXTRA_CA_CERTS": "/caller/private-node-ca.pem",
+		"HTTPS_PROXY":         "http://caller-proxy.invalid:3128",
+	} {
+		t.Setenv(name, value)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		prepare   func(string) func(string) error
+		wantError string
+	}{
+		{
+			name:      "missing",
+			prepare:   func(string) func(string) error { return validateNPMCaptureTrustStore },
+			wantError: "unavailable",
+		},
+		{
+			name: "unreadable",
+			prepare: func(string) func(string) error {
+				return func(path string) error { return fmt.Errorf("open %s: %w", path, os.ErrPermission) }
+			},
+			wantError: "permission denied",
+		},
+		{
+			name:      "non-regular",
+			prepare:   func(string) func(string) error { return validateNPMCaptureTrustStore },
+			wantError: "not a regular file",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			trustPath := filepath.Join(t.TempDir(), "ca-bundle.crt")
+			if tc.name == "non-regular" {
+				if err := os.Mkdir(trustPath, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			userConfig, cleanup, err := createNPMCaptureUserConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			nodeRoot := t.TempDir()
+			if err := os.Mkdir(filepath.Join(nodeRoot, "bin"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(nodeRoot, "bin", "node"), []byte("fixture node"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var commands int
+			ops := npmCaptureNodeIO{
+				trustStorePath:   trustPath,
+				validateTrust:    tc.prepare(trustPath),
+				resolveNodeFloor: func(string) string { return "" },
+				lookPath: func(string) (string, error) {
+					t.Fatal("trust refusal must happen before PATH resolution")
+					return "", nil
+				},
+				runCommand: func(_ context.Context, _ string, args, _ []string, stdout, _ io.Writer) error {
+					commands++
+					if len(args) > 0 && args[0] == "where" {
+						_, _ = io.WriteString(stdout, nodeRoot+"\n")
+					}
+					return nil
+				},
+			}
+			_, err = npmCaptureNodeWithIO(context.Background(), t.TempDir(), "24", userConfig, io.Discard, ops)
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("trust failure %q did not reject at the node boundary: %v", tc.name, err)
+			}
+			if commands != 0 {
+				t.Fatalf("trust failure started %d mise command(s)", commands)
+			}
+		})
+	}
+}
+
+func TestNPMCaptureNodeBoundaryAllowsOnlyFixedImageTrust(t *testing.T) {
+	trustPath := filepath.Join(t.TempDir(), "ca-bundle.crt")
+	if err := os.WriteFile(trustPath, []byte("synthetic image CA bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodeRoot := t.TempDir()
+	if err := os.Mkdir(filepath.Join(nodeRoot, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	node := filepath.Join(nodeRoot, "bin", "node")
+	if err := os.WriteFile(node, []byte("synthetic node"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	userConfig, cleanup, err := createNPMCaptureUserConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	var commands []string
+	var commandEnvs [][]string
+	ops := npmCaptureNodeIO{
+		trustStorePath:   trustPath,
+		validateTrust:    validateNPMCaptureTrustStore,
+		resolveNodeFloor: func(string) string { return "" },
+		lookPath: func(string) (string, error) {
+			t.Fatal("a declared floor should resolve via mise in this fixture")
+			return "", nil
+		},
+		runCommand: func(_ context.Context, name string, args, env []string, stdout, _ io.Writer) error {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			commandEnvs = append(commandEnvs, append([]string(nil), env...))
+			if name == "mise" && len(args) > 0 && args[0] == "where" {
+				_, _ = io.WriteString(stdout, nodeRoot+"\n")
+			}
+			return nil
+		},
+	}
+	got, err := npmCaptureNodeWithIO(context.Background(), t.TempDir(), "24", userConfig, io.Discard, ops)
+	if err != nil || got != node {
+		t.Fatalf("intact image trust did not permit fixed-floor Node resolution: %q %v", got, err)
+	}
+	if !slices.Equal(commands, []string{"mise install node@24", "mise where node@24"}) {
+		t.Fatalf("resolved unexpected commands after image trust validation: %q", commands)
+	}
+	for _, env := range commandEnvs {
+		gotEnv := map[string]string{}
+		for _, kv := range env {
+			if key, value, ok := strings.Cut(kv, "="); ok {
+				gotEnv[key] = value
+			}
+		}
+		if gotEnv["SSL_CERT_FILE"] != npmCaptureTrustStorePath || gotEnv["SSL_CERT_DIR"] != "" || gotEnv["NODE_OPTIONS"] != "--use-openssl-ca" {
+			t.Errorf("mise did not receive fixed image trust settings: %v", gotEnv)
+		}
+		if gotEnv["NPM_CONFIG_USERCONFIG"] != userConfig || gotEnv["NPM_CONFIG_USERCONFIG"] == gotEnv["NPM_CONFIG_GLOBALCONFIG"] || gotEnv["NPM_CONFIG_GLOBALCONFIG"] != "/dev/null" {
+			t.Errorf("npm config files did not use the private-user/global split: %v", gotEnv)
+		}
+		for _, name := range []string{"NIX_SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "HTTPS_PROXY"} {
+			if _, ok := gotEnv[name]; ok {
+				t.Errorf("caller trust/transport input %s crossed the node boundary", name)
+			}
+		}
+	}
+}
+
 func TestSelectedNPMProducerActualColdWarmFreshAndFixedPin(t *testing.T) {
 	f := newSelectedNPMFixture(t)
 	cold := f.advance(t, false)
+	assertNPMCaptureUserConfigsRemoved(t, f.root)
 	if f.resolves.Load() != 1 || f.installs.Load() != 1 || cold.Identity == "" {
 		t.Fatalf("cold counts %d/%d %+v", f.resolves.Load(), f.installs.Load(), cold)
 	}

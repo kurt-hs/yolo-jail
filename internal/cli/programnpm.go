@@ -154,9 +154,40 @@ func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
 const npmCaptureTrustStorePath = "/etc/ssl/certs/ca-bundle.crt"
 const npmCaptureTrustStore = "openssl:file=" + npmCaptureTrustStorePath + ";dir=disabled"
 
-func npmCaptureEnvironment(home, node string) []string {
+func npmCaptureEnvironment(home, node, userConfig string) []string {
 	// Disable OpenSSL's compiled-in directory so only the immutable image bundle is trusted.
-	return []string{"HOME=" + home, "PATH=" + filepath.Dir(node) + ":/bin:/usr/bin", "LANG=C.UTF-8", "SSL_CERT_FILE=" + npmCaptureTrustStorePath, "SSL_CERT_DIR=", "NODE_OPTIONS=--use-openssl-ca", "NPM_CONFIG_CACHE=" + filepath.Join(home, ".cache/npm"), "NPM_CONFIG_USERCONFIG=/dev/null", "NPM_CONFIG_GLOBALCONFIG=/dev/null", "NPM_CONFIG_UPDATE_NOTIFIER=false", "NPM_CONFIG_FUND=false", "MISE_DATA_DIR=" + filepath.Join(home, ".local/share/mise"), "MISE_CONFIG_DIR=" + filepath.Join(home, ".config/mise"), "MISE_YES=1"}
+	return []string{"HOME=" + home, "PATH=" + filepath.Dir(node) + ":/bin:/usr/bin", "LANG=C.UTF-8", "SSL_CERT_FILE=" + npmCaptureTrustStorePath, "SSL_CERT_DIR=", "NODE_OPTIONS=--use-openssl-ca", "NPM_CONFIG_CACHE=" + filepath.Join(home, ".cache/npm"), "NPM_CONFIG_USERCONFIG=" + userConfig, "NPM_CONFIG_GLOBALCONFIG=/dev/null", "NPM_CONFIG_UPDATE_NOTIFIER=false", "NPM_CONFIG_FUND=false", "MISE_DATA_DIR=" + filepath.Join(home, ".local/share/mise"), "MISE_CONFIG_DIR=" + filepath.Join(home, ".config/mise"), "MISE_YES=1"}
+}
+
+func createNPMCaptureUserConfig() (string, func(), error) {
+	dir, err := os.MkdirTemp("", "yolo-npm-capture-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create private npm config area: %w", err)
+	}
+	path := filepath.Join(dir, "user.npmrc")
+	cleanup := func() {
+		_ = os.Remove(path)
+		_ = os.Remove(dir)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("create private npm user config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("close private npm user config: %w", err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("inspect private npm user config: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() != 0 || !filepath.IsAbs(path) {
+		cleanup()
+		return "", nil, fmt.Errorf("private npm user config is not an absolute empty regular file")
+	}
+	return path, cleanup, nil
 }
 
 func validateNPMCaptureTrustStore(path string) error {
@@ -175,33 +206,51 @@ func validateNPMCaptureTrustStore(path string) error {
 	return nil
 }
 
-func npmCaptureNode(ctx context.Context, home, floor string, w io.Writer) (string, error) {
-	if err := validateNPMCaptureTrustStore(npmCaptureTrustStorePath); err != nil {
+type npmCaptureNodeIO struct {
+	trustStorePath   string
+	validateTrust    func(string) error
+	resolveNodeFloor func(string) string
+	lookPath         func(string) (string, error)
+	runCommand       func(context.Context, string, []string, []string, io.Writer, io.Writer) error
+}
+
+func npmCaptureNode(ctx context.Context, home, floor, userConfig string, w io.Writer) (string, error) {
+	return npmCaptureNodeWithIO(ctx, home, floor, userConfig, w, npmCaptureNodeIO{
+		trustStorePath:   npmCaptureTrustStorePath,
+		validateTrust:    validateNPMCaptureTrustStore,
+		resolveNodeFloor: entrypoint.ResolveNodeForFloor,
+		lookPath:         exec.LookPath,
+		runCommand: func(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) error {
+			cmd := exec.CommandContext(ctx, name, args...)
+			cmd.Env, cmd.Stdout, cmd.Stderr = env, stdout, stderr
+			return cmd.Run()
+		},
+	})
+}
+
+// npmCaptureNodeWithIO keeps trust validation ahead of every resolver command. Its per-call
+// seam lets tests exercise this boundary without changing the producer's fixed image path.
+func npmCaptureNodeWithIO(ctx context.Context, home, floor, userConfig string, w io.Writer, ops npmCaptureNodeIO) (string, error) {
+	if err := ops.validateTrust(ops.trustStorePath); err != nil {
 		return "", err
 	}
 	if floor == "" {
-		return exec.LookPath("node")
+		return ops.lookPath("node")
 	}
-	if node := entrypoint.ResolveNodeForFloor(floor); node != "" {
+	if node := ops.resolveNodeFloor(floor); node != "" {
 		return node, nil
 	}
 	if !packdecl.ValidNodeFloor(floor) {
 		return "", fmt.Errorf("invalid Node floor — repair the selected declaration")
 	}
-	cmd := exec.CommandContext(ctx, "mise", "install", "node@"+floor)
-	cmd.Env = npmCaptureEnvironment(home, "/bin/node")
-	cmd.Stdout, cmd.Stderr = w, w
-	if err := cmd.Run(); err != nil {
+	if err := ops.runCommand(ctx, "mise", []string{"install", "node@" + floor}, npmCaptureEnvironment(home, "/bin/node", userConfig), w, w); err != nil {
 		return "", err
 	}
-	// Resolve the actual installed path, never infer an ABI from the requested floor.
-	cmd = exec.CommandContext(ctx, "mise", "where", "node@"+floor)
-	cmd.Env = npmCaptureEnvironment(home, "/bin/node")
-	b, err := cmd.Output()
-	if err != nil {
+	var b strings.Builder
+	if err := ops.runCommand(ctx, "mise", []string{"where", "node@" + floor}, npmCaptureEnvironment(home, "/bin/node", userConfig), &b, w); err != nil {
 		return "", err
 	}
-	node := filepath.Join(strings.TrimSpace(string(b)), "bin/node")
+	node := filepath.Join(strings.TrimSpace(b.String()), "bin/node")
 	if _, err := os.Stat(node); err != nil {
 		return "", err
 	}
@@ -211,12 +260,21 @@ func npmCaptureNode(ctx context.Context, home, floor string, w io.Writer) (strin
 var npmCaptureImagePath = "/etc/yolo-jail-image-identity"
 
 func observeNPMCaptureRuntime(ctx context.Context, home, node string) (npmCaptureRuntime, error) {
+	userConfig, cleanup, err := createNPMCaptureUserConfig()
+	if err != nil {
+		return npmCaptureRuntime{}, err
+	}
+	defer cleanup()
+	return observeNPMCaptureRuntimeWithConfig(ctx, home, node, userConfig)
+}
+
+func observeNPMCaptureRuntimeWithConfig(ctx context.Context, home, node, userConfig string) (npmCaptureRuntime, error) {
 	image, err := os.ReadFile(npmCaptureImagePath)
 	if err != nil {
 		return npmCaptureRuntime{}, err
 	}
 	cmd := exec.CommandContext(ctx, node, "-p", "JSON.stringify({node:process.version,abi:process.versions.modules,platform:process.platform,arch:process.arch})")
-	cmd.Env = npmCaptureEnvironment(home, node)
+	cmd.Env = npmCaptureEnvironment(home, node, userConfig)
 	b, err := cmd.Output()
 	if err != nil {
 		return npmCaptureRuntime{}, err
@@ -230,7 +288,7 @@ func observeNPMCaptureRuntime(ctx context.Context, home, node string) (npmCaptur
 		return npmCaptureRuntime{}, err
 	}
 	cmd = exec.CommandContext(ctx, filepath.Join(filepath.Dir(node), "npm"), "--version")
-	cmd.Env = npmCaptureEnvironment(home, node)
+	cmd.Env = npmCaptureEnvironment(home, node, userConfig)
 	npm, err := cmd.Output()
 	if err != nil {
 		return npmCaptureRuntime{}, err
@@ -247,11 +305,16 @@ func resolveNPMCapture(ctx context.Context, in npmCaptureInput, dir, home string
 	if err != nil {
 		return nil, err
 	}
-	node, err := npmCaptureNode(ctx, home, in.NodeFloor, w)
+	userConfig, cleanup, err := createNPMCaptureUserConfig()
 	if err != nil {
 		return nil, err
 	}
-	observed, err := observeNPMCaptureRuntime(ctx, home, node)
+	defer cleanup()
+	node, err := npmCaptureNode(ctx, home, in.NodeFloor, userConfig, w)
+	if err != nil {
+		return nil, err
+	}
+	observed, err := observeNPMCaptureRuntimeWithConfig(ctx, home, node, userConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +326,7 @@ func resolveNPMCapture(ctx context.Context, in npmCaptureInput, dir, home string
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(node), "npm"), "install", "--package-lock-only", "--ignore-scripts", "--prefer-online", "--prefix", dir)
-	cmd.Env = npmCaptureEnvironment(home, node)
+	cmd.Env = npmCaptureEnvironment(home, node, userConfig)
 	cmd.Stdout, cmd.Stderr = w, w
 	if err = cmd.Run(); err != nil {
 		return nil, err
@@ -310,11 +373,16 @@ func installNPMCapture(ctx context.Context, r npmCaptureResolution, identity, ho
 	if want != identity {
 		return fmt.Errorf("npm capture identity changed — retry preparation")
 	}
-	node, err := npmCaptureNode(ctx, home, r.Input.NodeFloor, w)
+	userConfig, cleanup, err := createNPMCaptureUserConfig()
 	if err != nil {
 		return err
 	}
-	actual, err := observeNPMCaptureRuntime(ctx, home, node)
+	defer cleanup()
+	node, err := npmCaptureNode(ctx, home, r.Input.NodeFloor, userConfig, w)
+	if err != nil {
+		return err
+	}
+	actual, err := observeNPMCaptureRuntimeWithConfig(ctx, home, node, userConfig)
 	if err != nil {
 		return err
 	}
@@ -346,7 +414,7 @@ func installNPMCapture(ctx context.Context, r npmCaptureResolution, identity, ho
 		return err
 	}
 	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(node), "npm"), "ci", "--prefer-online", "--prefix", root)
-	cmd.Env = npmCaptureEnvironment(home, node)
+	cmd.Env = npmCaptureEnvironment(home, node, userConfig)
 	cmd.Stdout, cmd.Stderr = w, w
 	if err = cmd.Run(); err != nil {
 		return err
