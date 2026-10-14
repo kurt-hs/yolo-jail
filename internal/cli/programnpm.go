@@ -30,7 +30,10 @@ type npmCaptureInput struct {
 	NodeFloor string
 }
 
-type npmCaptureRuntime struct{ Image, Node, NodeDigest, NPM, Platform, ABI string }
+type npmCaptureRuntime struct {
+	Image, Node, NodeDigest, NPM, Platform, ABI string
+	TrustStore                                  string `json:"TrustStore,omitempty"`
+}
 type npmCaptureResolution struct {
 	Unsupported              string `json:"unsupported,omitempty"`
 	Input                    npmCaptureInput
@@ -139,7 +142,7 @@ func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
 		return capture.ProgramInputs{}, fmt.Errorf("npm resolution does not match its dependency lock — retry preparation")
 	}
 	observed, _ := json.Marshal(r.Runtime)
-	if r.Runtime.Image == "" || r.Runtime.Node == "" || r.Runtime.NodeDigest == "" || r.Runtime.NPM == "" || r.Runtime.Platform == "" || r.Runtime.ABI == "" {
+	if r.Runtime.Image == "" || r.Runtime.Node == "" || r.Runtime.NodeDigest == "" || r.Runtime.NPM == "" || r.Runtime.Platform == "" || r.Runtime.ABI == "" || r.Runtime.TrustStore != "" && r.Runtime.TrustStore != npmCaptureTrustStore {
 		return capture.ProgramInputs{}, fmt.Errorf("npm capture has no observed runtime — retry in the sealed runtime")
 	}
 	recipe := []byte("npm-ci-local-v1\x00" + r.BinPath + "\x00" + npmCaptureHash(r.Lock) + "\x00" + r.Fingerprint)
@@ -148,11 +151,34 @@ func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
 
 // npmCaptureEnvironment is explicit even under the outer seal. npm configuration and
 // credential variables inherited from another command must not retarget dependency resolution.
+const npmCaptureTrustStorePath = "/etc/ssl/certs/ca-bundle.crt"
+const npmCaptureTrustStore = "openssl:file=" + npmCaptureTrustStorePath + ";dir=disabled"
+
 func npmCaptureEnvironment(home, node string) []string {
-	return []string{"HOME=" + home, "PATH=" + filepath.Dir(node) + ":/bin:/usr/bin", "LANG=C.UTF-8", "NPM_CONFIG_CACHE=" + filepath.Join(home, ".cache/npm"), "NPM_CONFIG_USERCONFIG=/dev/null", "NPM_CONFIG_GLOBALCONFIG=/dev/null", "NPM_CONFIG_UPDATE_NOTIFIER=false", "NPM_CONFIG_FUND=false", "MISE_DATA_DIR=" + filepath.Join(home, ".local/share/mise"), "MISE_CONFIG_DIR=" + filepath.Join(home, ".config/mise"), "MISE_YES=1"}
+	// Disable OpenSSL's compiled-in directory so only the immutable image bundle is trusted.
+	return []string{"HOME=" + home, "PATH=" + filepath.Dir(node) + ":/bin:/usr/bin", "LANG=C.UTF-8", "SSL_CERT_FILE=" + npmCaptureTrustStorePath, "SSL_CERT_DIR=", "NODE_OPTIONS=--use-openssl-ca", "NPM_CONFIG_CACHE=" + filepath.Join(home, ".cache/npm"), "NPM_CONFIG_USERCONFIG=/dev/null", "NPM_CONFIG_GLOBALCONFIG=/dev/null", "NPM_CONFIG_UPDATE_NOTIFIER=false", "NPM_CONFIG_FUND=false", "MISE_DATA_DIR=" + filepath.Join(home, ".local/share/mise"), "MISE_CONFIG_DIR=" + filepath.Join(home, ".config/mise"), "MISE_YES=1"}
+}
+
+func validateNPMCaptureTrustStore(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("sealed npm producer image CA bundle %s is unavailable — repair the selected image, then retry preparation: %w", path, err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("sealed npm producer image CA bundle %s cannot be inspected — repair the selected image, then retry preparation: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("sealed npm producer image CA bundle %s is not a regular file — repair the selected image, then retry preparation", path)
+	}
+	return nil
 }
 
 func npmCaptureNode(ctx context.Context, home, floor string, w io.Writer) (string, error) {
+	if err := validateNPMCaptureTrustStore(npmCaptureTrustStorePath); err != nil {
+		return "", err
+	}
 	if floor == "" {
 		return exec.LookPath("node")
 	}
@@ -213,7 +239,7 @@ func observeNPMCaptureRuntime(ctx context.Context, home, node string) (npmCaptur
 	if arch == "x64" {
 		arch = "amd64"
 	}
-	return npmCaptureRuntime{Image: strings.TrimSpace(string(image)), Node: p.Node, NodeDigest: npmCaptureHash(binary), NPM: strings.TrimSpace(string(npm)), Platform: p.Platform + "/" + arch, ABI: p.ABI}, nil
+	return npmCaptureRuntime{Image: strings.TrimSpace(string(image)), Node: p.Node, NodeDigest: npmCaptureHash(binary), NPM: strings.TrimSpace(string(npm)), Platform: p.Platform + "/" + arch, ABI: p.ABI, TrustStore: npmCaptureTrustStore}, nil
 }
 
 func resolveNPMCapture(ctx context.Context, in npmCaptureInput, dir, home string, w io.Writer) (*npmCaptureResolution, error) {

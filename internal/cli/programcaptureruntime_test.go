@@ -27,6 +27,9 @@ func TestSelectedNPMRunPublicCustomizedRuntimeRetainsBoundedLegacyConsumer(t *te
 		{"store-loader", `{}`, true},
 		{"configured-node", `{"mise_tools":{"node":"24"}}`, false},
 		{"configured-loader", `{"env_sources":[{"NODE_OPTIONS":"--max-old-space-size=1024"}]}`, false},
+		{"configured-ca-file", `{"env_sources":[{"SSL_CERT_FILE":"/fixture/trust.pem"}]}`, false},
+		{"configured-proxy", `{"env_sources":[{"HTTPS_PROXY":"http://proxy.invalid:3128"}]}`, false},
+		{"configured-lowercase-proxy", `{"env_sources":[{"https_proxy":"http://proxy.invalid:3128"}]}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSelectedNPMFixture(t)
