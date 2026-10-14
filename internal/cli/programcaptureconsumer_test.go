@@ -141,3 +141,60 @@ func TestSelectedNPMEnabledPresetBootstrapConsumesActualMaterializerWithoutNPM(t
 		t.Fatalf("preset bootstrap ran mutable npm: %s", counts)
 	}
 }
+
+func TestSelectedNPMWarmGeneratedConsumersRejectChangedRuntime(t *testing.T) {
+	for _, mode := range []string{entrypoint.InstallOnlyEnv, entrypoint.FreshRefreshEnv, "execute"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newSelectedNPMFixture(t)
+			record := f.advance(t, false)
+			home, e := selectedNPMConsumer(t, f, record)
+			runSelectedConsumer(t, f, home, e, entrypoint.InstallOnlyEnv)
+			markerBefore, _ := os.ReadFile(entrypoint.ProgramCaptureMarker(home, "probe"))
+			writeFile(t, npmCaptureImagePath, "changed-consumer-runtime")
+			cmd := exec.Command(filepath.Join(e.LaunchDir(), "probe"))
+			cmd.Env = append(os.Environ(), "HOME="+home, "NPM_CONFIG_PREFIX="+e.NpmPrefix, "PATH="+f.tools+":"+os.Getenv("PATH"), "YOLO_INSTALL_ONLY=0", "YOLO_PACK_UPDATE=0")
+			if mode != "execute" {
+				cmd.Env = append(cmd.Env, mode+"=1")
+			}
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("matching marker hid changed runtime; consumer succeeded: %s", out)
+			}
+			if !strings.Contains(string(out), "fresh launch") {
+				t.Fatalf("refusal lacks next step: %s", out)
+			}
+			markerAfter, _ := os.ReadFile(entrypoint.ProgramCaptureMarker(home, "probe"))
+			if string(markerBefore) != string(markerAfter) {
+				t.Fatal("validation mutated running generation")
+			}
+			counts, _ := os.ReadFile(filepath.Join(f.root, "counts"))
+			if strings.Count(string(counts), "install\n") != 1 || strings.Count(string(counts), "resolve\n") != 1 {
+				t.Fatalf("validation contacted registry/installer: %s", counts)
+			}
+		})
+	}
+}
+
+func TestSelectedNPMWarmMCPRejectsChangedRuntime(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	record := f.advance(t, false)
+	_, e := selectedNPMConsumer(t, f, record)
+	refresh := func() error {
+		return entrypoint.RefreshServers(entrypoint.ServerRefreshRequest{Env: e, NpmSpecs: f.in.Package, Updates: true, Stderr: io.Discard, Run: func(ctx context.Context, w io.Writer, argv []string) error {
+			if argv[0] != "yolo" || argv[2] != "capture-materialize" {
+				t.Fatalf("mutable MCP installer: %v", argv)
+			}
+			if rc := runInternal(argv[2:]); rc != 0 {
+				return fmt.Errorf("materializer status %d", rc)
+			}
+			return nil
+		}})
+	}
+	if err := refresh(); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, npmCaptureImagePath, "changed-MCP-runtime")
+	if err := refresh(); err == nil {
+		t.Fatal("warm MCP skipped changed runtime validation")
+	}
+}

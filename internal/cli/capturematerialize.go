@@ -56,6 +56,8 @@ func runCaptureMaterialize(args []string) int {
 	opts.home = os.Getenv("HOME")
 	for _, a := range args {
 		switch {
+		case a == "--validate-only":
+			opts.validateOnly = true
 		case strings.HasPrefix(a, "--store="):
 			opts.store = strings.TrimPrefix(a, "--store=")
 		case strings.HasPrefix(a, "--bin="):
@@ -74,6 +76,8 @@ func runCaptureMaterialize(args []string) int {
 			}
 		case strings.HasPrefix(a, "--runtime="):
 			opts.programRuntime = strings.TrimPrefix(a, "--runtime=")
+		case strings.HasPrefix(a, "--node-path="):
+			opts.nodePath = strings.TrimPrefix(a, "--node-path=")
 		case strings.HasPrefix(a, "--node-floor="):
 			opts.nodeFloor = strings.TrimPrefix(a, "--node-floor=")
 		case strings.HasPrefix(a, "--key="):
@@ -93,7 +97,8 @@ func runCaptureMaterialize(args []string) int {
 
 // materializeArgs is one materialize request, parsed.
 type materializeArgs struct {
-	programRuntime, nodeFloor string
+	programRuntime, nodeFloor, nodePath string
+	validateOnly                        bool
 	// compatibility, when set, requires the exact resolved ordinary input identity.
 	compatibility string
 	// store is the store root AS THIS PROCESS SEES IT — the in-jail mount point, not the
@@ -139,7 +144,9 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			return 1
 		}
 		node, err := exec.LookPath("node")
-		if a.nodeFloor != "" {
+		if a.nodePath != "" {
+			node, err = a.nodePath, nil
+		} else if a.nodeFloor != "" {
 			node = entrypoint.ResolveNodeForFloor(a.nodeFloor)
 			if node == "" {
 				err = fmt.Errorf("selected Node floor is not present")
@@ -154,6 +161,13 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 			fmt.Fprintln(errw, "prepared runtime differs from this consumer — use the supported installer route or retry a fresh launch")
 			return 1
 		}
+	}
+	if a.validateOnly {
+		if a.programRuntime == "" {
+			fmt.Fprintln(errw, "prepared runtime is absent — retry a fresh launch")
+			return 1
+		}
+		return 0
 	}
 	res, err := capture.Materialize(capture.MaterializeOptions{
 		Entry:  entry,
