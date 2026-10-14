@@ -66,12 +66,30 @@ func (o *AutoLoadOptions) packagesLaunchKeyForSystem(identity, system string) st
 
 func fixedPackagePins(packages []any) bool {
 	for _, p := range packages {
-		if spec, ok := p.(map[string]any); ok {
-			if pin, exists := spec["nixpkgs"]; exists {
-				s, ok := pin.(string)
-				if !ok || len(s) != 40 || strings.TrimLeft(s, "0123456789abcdefABCDEF") != "" {
-					return false
-				}
+		var pin any
+		var exists bool
+		switch spec := p.(type) {
+		case string:
+			continue
+		case map[string]any:
+			if spec == nil {
+				return false
+			}
+			pin, exists = spec["nixpkgs"]
+		case *jsonx.OrderedMap:
+			if spec == nil {
+				return false
+			}
+			pin, exists = spec.Get("nixpkgs")
+		default:
+			// Config decoding uses OrderedMap, while ambient JSON uses Go maps.
+			// Unknown package representations cannot prove a fixed reference.
+			return false
+		}
+		if exists {
+			s, ok := pin.(string)
+			if !ok || len(s) != 40 || strings.TrimLeft(s, "0123456789abcdefABCDEF") != "" {
+				return false
 			}
 		}
 	}
