@@ -34,6 +34,24 @@ type npmCaptureRuntime struct {
 	Image, Node, NodeDigest, NPM, Platform, ABI string
 	TrustStore                                  string `json:"TrustStore,omitempty"`
 }
+
+// npmCaptureRuntimeDifferences names only mismatched fields: runtime equality is
+// unchanged, and opaque metadata from a refused record is not printed to users.
+func npmCaptureRuntimeDifferences(expected, actual npmCaptureRuntime) []string {
+	var fields []string
+	for _, field := range []struct{ name, expected, actual string }{
+		{"Image", expected.Image, actual.Image}, {"Node", expected.Node, actual.Node},
+		{"NodeDigest", expected.NodeDigest, actual.NodeDigest}, {"NPM", expected.NPM, actual.NPM},
+		{"Platform", expected.Platform, actual.Platform}, {"ABI", expected.ABI, actual.ABI},
+		{"TrustStore", expected.TrustStore, actual.TrustStore},
+	} {
+		if field.expected != field.actual {
+			fields = append(fields, field.name)
+		}
+	}
+	return fields
+}
+
 type npmCaptureResolution struct {
 	Unsupported              string `json:"unsupported,omitempty"`
 	Input                    npmCaptureInput
@@ -259,6 +277,19 @@ func npmCaptureNodeWithIO(ctx context.Context, home, floor, userConfig string, w
 
 var npmCaptureImagePath = "/etc/yolo-jail-image-identity"
 
+// npmCaptureNPM resolves npm on the same explicit PATH used by the sealed
+// observation. The image's nodejs-slim interpreter and npm have separate store
+// prefixes, so a physical Node path need not have a sibling npm executable.
+func npmCaptureNPM(node string) (string, error) {
+	for _, dir := range []string{filepath.Dir(node), "/bin", "/usr/bin"} {
+		path := filepath.Join(dir, "npm")
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("npm is unavailable on the selected Node's sealed PATH — repair the selected runtime, then retry a fresh launch")
+}
+
 func observeNPMCaptureRuntime(ctx context.Context, home, node string) (npmCaptureRuntime, error) {
 	userConfig, cleanup, err := createNPMCaptureUserConfig()
 	if err != nil {
@@ -287,7 +318,11 @@ func observeNPMCaptureRuntimeWithConfig(ctx context.Context, home, node, userCon
 	if err != nil {
 		return npmCaptureRuntime{}, err
 	}
-	cmd = exec.CommandContext(ctx, filepath.Join(filepath.Dir(node), "npm"), "--version")
+	npmBin, err := npmCaptureNPM(node)
+	if err != nil {
+		return npmCaptureRuntime{}, err
+	}
+	cmd = exec.CommandContext(ctx, npmBin, "--version")
 	cmd.Env = npmCaptureEnvironment(home, node, userConfig)
 	npm, err := cmd.Output()
 	if err != nil {

@@ -579,7 +579,9 @@ func GenerateAgentLaunchers(e *Env) error {
 			switch inst.Kind {
 			case "npm":
 				segments := npmAgentLauncherSegments(p.Name, inst, stampDir, receiptsFile(e),
-					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), e.programCaptureShell(inst.Bin, inst.Package))
+					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), func(token string) string {
+						return e.programCaptureShell(inst.Bin, inst.Package, token)
+					})
 				prefix := nodeExecPrefix(inst.NodeFloor)
 				launcher = strings.Join(segments, prefix)
 				// AR-L5: a declared floor nothing met at generation leaves the render's segments
@@ -671,7 +673,7 @@ func npmAgentLauncher(pack string, inst *packdecl.Install, stampDir, receiptsPat
 // The split point is a token no value can hold: random per render, so a pack value that happens
 // to spell the template's sentinel cannot become a place the interpreter is spliced.
 func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, receiptsPath string,
-	updates bool, servers launcherServers, flags *packload.LaunchInjection, prepared ...string) []string {
+	updates bool, servers launcherServers, flags *packload.LaunchInjection, prepared ...func(string) string) []string {
 	token := execPrefixToken()
 	binName := inst.Bin
 	pkgName, pkgVersion := splitNpmSpec(inst.Package)
@@ -685,7 +687,7 @@ func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, rec
 	}
 	captureInstall := ""
 	if len(prepared) > 0 {
-		captureInstall = prepared[0]
+		captureInstall = prepared[0](token)
 	}
 	// launchFlagSplices rides on the END of every pair list rather than being spelled out
 	// three times: DP-B44's two sentinels are the same in all three templates, and a
@@ -1416,6 +1418,10 @@ HAS_LAUNCH_FLAGS=__YOLO_HAS_LAUNCH_FLAGS__
 LAUNCH_FLAGS=(__YOLO_LAUNCH_FLAGS__)
 ` + refreshDeclShell + probeArgsDeclShell + modelMenuDeclShell + launchFlagsShellFn + `
 
+mkdir -p "$STAMP_DIR"
+mkdir -p "$NPM_CONFIG_PREFIX"
+__YOLO_CAPTURE_INSTALL__
+
 # --- re-entry ----------------------------------------------------------------------
 # B2 PUT THE LAUNCH DIR AHEAD OF THE INSTALL PREFIXES, so a BARE-NAME call of this program
 # from inside its own update — an npm postinstall that runs the tool, a vendor updater that
@@ -1436,10 +1442,6 @@ case ":${_YOLO_LAUNCHER_ACTIVE:-}:" in
         ;;
 esac
 export _YOLO_LAUNCHER_ACTIVE="${_YOLO_LAUNCHER_ACTIVE:-}:$BIN"
-
-mkdir -p "$STAMP_DIR"
-mkdir -p "$NPM_CONFIG_PREFIX"
-__YOLO_CAPTURE_INSTALL__
 ` + stampMtimeFn + receiptShellFns + misplacedShellFn + `
 _installed_version() {
     jq -r '.version' "$NPM_CONFIG_PREFIX/lib/node_modules/$PKG/package.json" 2>/dev/null || echo "0"

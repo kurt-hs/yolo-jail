@@ -14,6 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 func selectedNPMConsumer(t *testing.T, f *selectedNPMFixture, r npmCaptureRecord) (string, *entrypoint.Env) {
@@ -143,7 +144,7 @@ func TestSelectedNPMEnabledPresetBootstrapConsumesActualMaterializerWithoutNPM(t
 }
 
 func TestSelectedNPMWarmGeneratedConsumersRejectChangedRuntime(t *testing.T) {
-	for _, mode := range []string{entrypoint.InstallOnlyEnv, entrypoint.FreshRefreshEnv, "execute"} {
+	for _, mode := range []string{entrypoint.InstallOnlyEnv, entrypoint.FreshRefreshEnv, "execute", "reentry"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newSelectedNPMFixture(t)
 			record := f.advance(t, false)
@@ -153,7 +154,9 @@ func TestSelectedNPMWarmGeneratedConsumersRejectChangedRuntime(t *testing.T) {
 			writeFile(t, npmCaptureImagePath, "changed-consumer-runtime")
 			cmd := exec.Command(filepath.Join(e.LaunchDir(), "probe"))
 			cmd.Env = append(os.Environ(), "HOME="+home, "NPM_CONFIG_PREFIX="+e.NpmPrefix, "PATH="+f.tools+":"+os.Getenv("PATH"), "YOLO_INSTALL_ONLY=0", "YOLO_PACK_UPDATE=0")
-			if mode != "execute" {
+			if mode == "reentry" {
+				cmd.Env = append(cmd.Env, "_YOLO_LAUNCHER_ACTIVE=:probe")
+			} else if mode != "execute" {
 				cmd.Env = append(cmd.Env, mode+"=1")
 			}
 			out, err := cmd.CombinedOutput()
@@ -196,5 +199,43 @@ func TestSelectedNPMWarmMCPRejectsChangedRuntime(t *testing.T) {
 	writeFile(t, npmCaptureImagePath, "changed-MCP-runtime")
 	if err := refresh(); err == nil {
 		t.Fatal("warm MCP skipped changed runtime validation")
+	}
+}
+
+// A PATH shim is a selector, not the executable whose bytes identify Node. The
+// actual generated launcher must bind validation AND target execution to the
+// selected physical Node, with its npm observed on the sealed runtime PATH.
+func TestSelectedNPMGeneratedConsumerBindsShimSelectionToGuardAndExecution(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	record := f.advance(t, false)
+	home, e := selectedNPMConsumer(t, f, record)
+	shims := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" != -p ]; then echo unbound-shim-target >&2; exit 89; fi\nexec " + shquote.Quote(f.node) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(shims, "node"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shims, "npm"), []byte("#!/bin/sh\necho wrong-shim-npm >&2\nexit 88\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{entrypoint.InstallOnlyEnv, "execute", "reentry"} {
+		cmd := exec.Command(filepath.Join(e.LaunchDir(), "probe"))
+		cmd.Env = append(os.Environ(), "HOME="+home, "NPM_CONFIG_PREFIX="+e.NpmPrefix, "PATH="+shims+":"+f.tools+":/bin:/usr/bin", "YOLO_INSTALL_ONLY=0", "YOLO_PACK_UPDATE=0")
+		if mode == entrypoint.InstallOnlyEnv {
+			cmd.Env = append(cmd.Env, mode+"=1")
+		}
+		if mode == "reentry" {
+			cmd.Env = append(cmd.Env, "_YOLO_LAUNCHER_ACTIVE=:probe")
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s consumer: %v\n%s", mode, err, out)
+		}
+		if mode != entrypoint.InstallOnlyEnv && strings.TrimSpace(string(out)) != "1.0.0" {
+			t.Fatalf("target used another interpreter: %s", out)
+		}
+	}
+	counts, _ := os.ReadFile(filepath.Join(f.root, "counts"))
+	if strings.Count(string(counts), "install\n") != 1 || strings.Count(string(counts), "resolve\n") != 1 {
+		t.Fatalf("consumer ran a mutable installer: %s", counts)
 	}
 }

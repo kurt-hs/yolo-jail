@@ -82,7 +82,12 @@ func newSelectedNPMFixture(t *testing.T) *selectedNPMFixture {
 	f := &selectedNPMFixture{store: &capture.Store{Dir: t.TempDir()}, in: npmCaptureInput{Owner: "fixture", Bin: "probe", Package: "probe-pkg"}, root: t.TempDir(), tools: t.TempDir(), node: node}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", f.tools+":"+os.Getenv("PATH"))
-	if err := os.Symlink(f.node, filepath.Join(f.tools, "node")); err != nil {
+	binary, err := os.ReadFile(f.node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.node = filepath.Join(f.tools, "node")
+	if err := os.WriteFile(f.node, binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("NPM_TOKEN", "must-not-cross")
@@ -127,7 +132,7 @@ if [ "$phase" = install ] && [[ " $* " == *' -g '* ]]; then
  prefix=$NPM_CONFIG_PREFIX;version=$(cat "$ROOT/version")
  mkdir -p "$prefix/bin" "$prefix/lib/node_modules/$package/bin"
  printf '{"version":"%s"}\n' "$version" > "$prefix/lib/node_modules/$package/package.json"
- printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$version" > "$prefix/lib/node_modules/$package/bin/$bin"
+ printf '#!/usr/bin/env node\nconsole.log("%s");\n' "$version" > "$prefix/lib/node_modules/$package/bin/$bin"
  chmod 755 "$prefix/lib/node_modules/$package/bin/$bin"
  ln -sf "../lib/node_modules/$package/bin/$bin" "$prefix/bin/$bin"
  exit 0
@@ -166,7 +171,7 @@ elif [ "$phase" = ci ]; then
  mkdir -p "$prefix/node_modules/$package/bin" "$HOME/.config/login"
  printf secret > "$HOME/.config/login/token"
  printf '{"version":"%s"}\n' "$version" > "$prefix/node_modules/$package/package.json"
- printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$version" > "$prefix/node_modules/$package/bin/probe"
+ printf '#!/usr/bin/env node\nconsole.log("%s");\n' "$version" > "$prefix/node_modules/$package/bin/probe"
  chmod 755 "$prefix/node_modules/$package/bin/probe"
 else exit 36; fi
 `
