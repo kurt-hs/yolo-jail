@@ -183,13 +183,13 @@ func hostFreshProgramPreparation(packs []*packload.Pack, cmd0 string, errw io.Wr
 			programCtx := ctx
 			if p.Install.IsPatchedFork() {
 				f := floorForkBuild(p, "").Fork
-				identities, boundaries, errs := map[string]string{}, map[string]uint64{}, map[string]error{}
+				identities, boundaries, errs := map[string]string{}, map[string]packsrc.CheckStart{}, map[string]error{}
 				if err := registerFreshPreparation(ctx, patchedAdvanceStore(true), f, floorPatchedPlatform(), identities, boundaries, errs); err != nil {
 					fmt.Fprintf(errw, "yolo host --update: could not register %s: %v — repair the named problem and retry\n", p.Bin(), err)
 					rc = 1
 					return
 				}
-				programCtx = context.WithValue(ctx, floorFreshRequestKey{}, floorFreshRequest{identity: identities[f.Key()], afterSeq: boundaries[f.Key()]})
+				programCtx = context.WithValue(ctx, floorFreshRequestKey{}, floorFreshRequest{identity: identities[f.Key()], boundary: boundaries[f.Key()]})
 			}
 			_, outcome, err := floor.Ensure(programCtx, p)
 			if act.Interrupted() {

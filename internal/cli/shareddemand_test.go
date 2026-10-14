@@ -29,7 +29,7 @@ func TestTask2ProducerCancellationWithSecondFreshWaiter(t *testing.T) {
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
 	f := fx.fork(t)
-	after, err := patchedAdvanceStore(true).FreshCheckBoundary(f.Key())
+	after, err := patchedAdvanceStore(true).CheckBoundary(f.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestTask2ProducerCancellationWithSecondFreshWaiter(t *testing.T) {
 	defer cancel()
 	var secondOut syncBuffer
 	options := func(ctx context.Context, out io.Writer) advanceOptions {
-		return advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true, ctx: ctx, out: out, errw: out, freshCheck: true, freshIdentity: identity, freshAfterSeq: after}
+		return advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true, ctx: ctx, out: out, errw: out, freshCheck: true, freshIdentity: identity, freshBoundary: after}
 	}
 	firstDone, secondDone := make(chan advanceResult, 1), make(chan advanceResult, 1)
 	go func() { firstDone <- advancePatchedFork(f, options(ctx, io.Discard)) }()
@@ -337,7 +337,7 @@ func TestSharedDemandUnknownLeaseKeepsChildButRefusesAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := patchedAdvanceStore(true).FreshCheckBoundary(f.Key())
+	after, err := patchedAdvanceStore(true).CheckBoundary(f.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestSharedDemandUnknownLeaseKeepsChildButRefusesAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Release()
-	d := preparationDemand{Key: f.Key(), Runtime: "podman", Platform: patchedTestPlatform, Identity: identity, Fresh: true, AfterSeq: after}
+	d := preparationDemand{Key: f.Key(), Runtime: "podman", Platform: patchedTestPlatform, Identity: identity, Fresh: true, CheckBoundary: after}
 	if err = writeDemandJSON(path, d); err != nil {
 		t.Fatal(err)
 	}
@@ -398,17 +398,7 @@ func TestSharedDemandSleepingSchedulerLeaseKeepsProducerAfterLastLaunchDetaches(
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	stubPreparationWorkerStart(t)
 	_, _ = pf.launch(t, "podman", nil)
-	timer, err := pidlock.Acquire(preparationWorkerLockPath(), pidlock.NoWait, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer timer.Release()
-	if err = withPreparationState(func(state *preparationState) error {
-		state.Worker = preparationWorker{PID: os.Getpid(), Identity: "owned-test-timer"}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	startAuthenticatedPreparationOwner(t, preparationRoot())
 	entered, release, cancelled := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
 	pf.child = func(ctx context.Context, b forkBuild) int {
 		if b.Fork.Key() == poolKeyA {
@@ -427,7 +417,7 @@ func TestSharedDemandSleepingSchedulerLeaseKeepsProducerAfterLastLaunchDetaches(
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := patchedAdvanceStore(true).FreshCheckBoundary(f.Key())
+	after, err := patchedAdvanceStore(true).CheckBoundary(f.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +426,7 @@ func TestSharedDemandSleepingSchedulerLeaseKeepsProducerAfterLastLaunchDetaches(
 	var output syncBuffer
 	done := make(chan advanceResult, 1)
 	go func() {
-		done <- advancePatchedFork(f, advanceOptions{launch: true, runtime: "podman", platform: patchedTestPlatform, ctx: ctx, out: &output, errw: &output, freshCheck: true, freshIdentity: identity, freshAfterSeq: after})
+		done <- advancePatchedFork(f, advanceOptions{launch: true, runtime: "podman", platform: patchedTestPlatform, ctx: ctx, out: &output, errw: &output, freshCheck: true, freshIdentity: identity, freshBoundary: after})
 	}()
 	<-entered
 	detach()
@@ -475,7 +465,7 @@ func TestSharedDemandCancelledRequesterDetachesDuringKeyedBuildLockWait(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := patchedAdvanceStore(true).FreshCheckBoundary(f.Key())
+	after, err := patchedAdvanceStore(true).CheckBoundary(f.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +487,7 @@ func TestSharedDemandCancelledRequesterDetachesDuringKeyedBuildLockWait(t *testi
 	defer detach()
 	done := make(chan advanceResult, 1)
 	go func() {
-		done <- advancePatchedFork(f, advanceOptions{launch: true, runtime: "podman", platform: patchedTestPlatform, ctx: ctx, out: io.Discard, errw: io.Discard, freshCheck: true, freshIdentity: identity, freshAfterSeq: after})
+		done <- advancePatchedFork(f, advanceOptions{launch: true, runtime: "podman", platform: patchedTestPlatform, ctx: ctx, out: io.Discard, errw: io.Discard, freshCheck: true, freshIdentity: identity, freshBoundary: after})
 	}()
 	waitFor(t, "owned worker waiting on build lock", func() bool { return strings.Contains(workerOutput.String(), "waiting for pid") })
 	detach()
@@ -530,14 +520,14 @@ func TestSharedDemandHostFreshCheckKeepsUsableFloorWithoutRebuildingMissingStore
 	}
 	good := fx.record(t).Good.Entry
 	removeStoreEntry(t, good)
-	before := fx.record(t).StartedSeq
+	before := *fx.record(t).Fresh
 	builds := len(fx.builds)
 	got := captureHostExec(t)
 	var output syncBuffer
 	if rc := hostMain([]string{"--update", "--", "tool"}, io.Discard, &output, false, nil); rc != 0 || got.target == "" {
 		t.Fatalf("fresh installed-copy route rc=%d target=%s\n%s", rc, got.target, output.String())
 	}
-	if record := fx.record(t); record.StartedSeq <= before || record.Good.Entry != good || len(fx.builds) != builds {
-		t.Fatalf("freshness rebuilt unchanged installed bytes: seq=%d before=%d builds=%d before=%d good=%+v", record.StartedSeq, before, len(fx.builds), builds, record.Good)
+	if record := fx.record(t); !record.Fresh.Qualifies(before, record.Fresh.InputIdentity) || record.Good.Entry != good || len(fx.builds) != builds {
+		t.Fatalf("freshness rebuilt unchanged installed bytes: start=%+v before=%+v builds=%d before=%d good=%+v", record.Fresh, before, len(fx.builds), builds, record.Good)
 	}
 }

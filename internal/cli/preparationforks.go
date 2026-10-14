@@ -9,14 +9,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -71,14 +74,14 @@ func preparationForkIdentity(f packload.Fork, commit, runtime, platform string) 
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func preparationForkEligible(f packload.Fork, runtime string) bool {
-	return !f.IsTree() && forkUpdateTiming(f) == timingNextLaunch && run.BackgroundBuildsOn(runtime)
+func preparationForkEligible(f packload.Fork, runtime, platform string) bool {
+	return !f.IsTree() && forkUpdateTiming(f) == timingNextLaunch && (run.BackgroundBuildsOn(runtime) || f.Patched() && run.BackgroundChecksOn(runtime, platform))
 }
 
 // registerForkPreparation records only selected, already-pinned program forks. It never resolves a
 // branch: a timer can fill a missing artifact for this recorded commit but only an explicit update
 // may move the standing pin.
-func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer, color bool) error {
+func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, w io.Writer, color bool, logs ...*perf.Log) (result error) {
 	if len(pins) == 0 {
 		return nil
 	}
@@ -96,6 +99,19 @@ func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, 
 	}
 	if len(ordered) == 0 {
 		return nil
+	}
+	if len(logs) > 0 && !config.InJail() && run.BackgroundChecksOn(req.Runtime, req.Platform) {
+		for _, pin := range ordered {
+			if (packdecl.Install{Platforms: pin.Fork.Platforms}).UnpublishedReason("linux", strings.TrimPrefix(req.Platform, "linux/")) == "" {
+				report := &buildReport{perf: logs[0]}
+				span := report.preparationSpan("preparation.registration")
+				defer func() {
+					report.preparationOutcome("preparation.registration", "selected programs", result)
+					span.End()
+				}()
+				break
+			}
+		}
 	}
 	spawn := false
 	err := withPreparationState(func(state *preparationState) error {
@@ -136,7 +152,7 @@ func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, 
 				r.InputIdentity, r.PinCommit = identity, pin.Commit
 				r.Phase, r.ServingEntry, r.At, r.RetryAt = "pending", "", time.Time{}, time.Time{}
 			}
-			r.Active = preparationForkEligible(f, req.Runtime)
+			r.Active = preparationForkEligible(f, req.Runtime, req.Platform)
 			if r.Active {
 				r.Phase, r.Reason = "pending", ""
 				spawn = true
@@ -159,7 +175,7 @@ func registerForkPreparation(pins []packload.ForkPin, req run.ForkBuildRequest, 
 		}
 		pr := richtext.Printer{W: w, Color: color}
 		for _, pin := range ordered {
-			if preparationForkEligible(pin.Fork, req.Runtime) {
+			if preparationForkEligible(pin.Fork, req.Runtime, req.Platform) {
 				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: next-launch preparation is recorded; the admitted artifact is for later launches, not this running jail — `yolo pack prepare status %s` shows progress (log %s)",
 					pin.Fork.Label(), pin.Fork.Key(), backgroundAdvanceLog())))
 			}
@@ -188,9 +204,6 @@ func runPlainForkPreparation(ctx context.Context, record preparationRecord, f pa
 		outcome.ProducerPID, outcome.SubscriptionGeneration = os.Getpid(), record.Generation
 		pin, err := currentForkPin(f)
 		if err != nil || pin.Commit != record.PinCommit {
-			if err == nil {
-				err = fmt.Errorf("the standing pin changed from %s to %s", shortSHA(record.PinCommit), shortSHA(pin.Commit))
-			}
 			outcome.State, outcome.Error = bgSkipped, "the standing pin or selected declaration changed before the timer build — a fresh launch re-registers it"
 			taskErr = errPreparationAdmissionStale
 			return

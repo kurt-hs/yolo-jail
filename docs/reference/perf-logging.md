@@ -796,6 +796,23 @@ block, as one `provisioning stage: <ms>ms (exit <rc>)` line appended after the s
 environment; the line carries no block header, because a header would make it the last block
 and hide the boot checkpoints. A jail with no recorded stage writes no line.
 
+The build slot forwards its optional host collector for `preparation.registration`,
+`preparation.admitted_read` and `preparation.copy_install`. These time actual attempts,
+not admission or installation claims; copy and registration notes record their return
+outcomes. Skipped registration or copy emits no span. They can overlap other launch
+spans and must not be added into a wall-clock total.
+
+Generated readiness and program-refresh calls append silent `program phase:` start/end
+rows to an **existing** jail perf log, without adding a block header or creating a sink.
+They use bash's **coarse elapsed seconds**, capture the command's exit status, and name
+only the program, PID and foreground/detached mode, never its argv. A readiness row
+covers its install-only launcher call, including a warm presence check; it does not
+claim that an install occurred. Detached refresh rows identify their own act, not a
+foreground launch generation, even if they land after another boot block. The boot
+log's existing block retention still applies; missing or unwritable logs do not change
+command output or status. No jail perf log means no such recording, including on the
+host and macos-user routes that keep no jail perf log.
+
 **Both halves of this switch are host-side.** Nothing in the image or the
 entrypoint reads the variable — the launcher emits it and also generates the bash
 that reads it, so the two move in one commit and renaming it is skew-free. It was

@@ -58,7 +58,8 @@ func init() {
 		}
 		os.Exit(runInternal(os.Args[4:]))
 	}
-	if len(os.Args) > 5 && os.Args[1] == "npm-capture-test-image" && os.Args[3] == "internal" && (os.Args[4] == "program-npm" || os.Args[4] == "capture-materialize") {
+	if len(os.Args) > 5 && os.Args[1] == "npm-capture-test-image" && os.Args[3] == "internal" &&
+		(os.Args[4] == "program-npm" || os.Args[4] == "capture-materialize" || os.Args[4] == "log-append") {
 		npmCaptureImagePath = os.Args[2]
 		os.Exit(runInternal(os.Args[4:]))
 	}

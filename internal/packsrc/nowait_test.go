@@ -60,102 +60,55 @@ func TestANoWaitStoreReturnsErrLockHeld(t *testing.T) {
 	}
 }
 
-func TestFreshCheckBoundaryWaitsForStartedCheckAndCanBeCancelled(t *testing.T) {
-	s := &Store{Dir: t.TempDir(), Git: "/nonexistent/git", Getenv: noStagedTree}
+func TestFreshCheckBoundaryWaitsForStartTransactionAndCancellationIsLocal(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
 	const owner = "pack/program"
-	if err := s.WithCheckRecord(owner, nil, func(r *CheckRecord, _ error, _ func() error) (bool, error) {
-		r.StartedSeq = 4
-		return true, nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	unlock, err := s.lockCheckRecord(owner, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	boundary := make(chan struct {
-		seq uint64
-		err error
-	}, 1)
+	entered, release := make(chan struct{}), make(chan struct{})
+	writer := make(chan error, 1)
 	go func() {
-		seq, err := s.FreshCheckBoundary(owner)
-		boundary <- struct {
-			seq uint64
-			err error
-		}{seq, err}
+		writer <- s.withCheckStart(owner, func(start *CheckStart) error {
+			start.Seq = 5
+			close(entered)
+			<-release
+			return saveCheckStart(filepath.Join(s.Dir, "checks", "start-"+mirrorSlug(owner)+".json"), *start)
+		})
 	}()
-	select {
-	case got := <-boundary:
-		unlock()
-		t.Fatalf("request boundary escaped the STARTED transaction: %+v", got)
-	case <-time.After(30 * time.Millisecond):
-	}
-	// Update while retaining the already-held flock; this is CheckPatched's persisted STARTED event.
-	r, err := s.LoadCheckRecord(owner)
-	if err != nil {
-		unlock()
-		t.Fatal(err)
-	}
-	r.StartedSeq = 5
-	if err := s.saveCheckRecord(r); err != nil {
-		unlock()
-		t.Fatal(err)
-	}
-	unlock()
-	select {
-	case got := <-boundary:
-		if got.err != nil || got.seq != 5 {
-			t.Fatalf("request after started check boundary = %d, %v; want 5", got.seq, got.err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("fresh request did not acquire the record after its check completed")
-	}
-
+	<-entered
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	unlock, err = s.lockCheckRecord(owner, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	local := *s
+	local.Ctx = ctx
 	canceled := make(chan error, 1)
-	waiting := make(chan struct{})
-	go func() {
-		_, err := s.freshCheckBoundaryContext(ctx, owner, func(string) { close(waiting) })
-		canceled <- err
-	}()
-	select {
-	case <-waiting:
-	case <-time.After(5 * time.Second):
-		unlock()
-		t.Fatal("fresh boundary did not wait on the held record")
-	}
+	go func() { _, err := local.CheckBoundary(owner); canceled <- err }()
 	other := make(chan struct {
-		seq uint64
-		err error
+		start CheckStart
+		err   error
 	}, 1)
 	go func() {
-		seq, err := s.FreshCheckBoundary(owner)
+		start, err := s.CheckBoundary(owner)
 		other <- struct {
-			seq uint64
-			err error
-		}{seq, err}
+			start CheckStart
+			err   error
+		}{start, err}
 	}()
 	cancel()
 	select {
 	case err := <-canceled:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("cancelled request lock wait = %v, want context.Canceled", err)
+			t.Fatalf("cancelled boundary = %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		unlock()
+		close(release)
 		t.Fatal("cancelled fresh boundary remained blocked")
 	}
-	unlock()
+	close(release)
+	if err := <-writer; err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case got := <-other:
-		if got.err != nil || got.seq != 5 {
-			t.Fatalf("remaining fresh request boundary = %d, %v; want 5", got.seq, got.err)
+		if got.err != nil || got.start.Seq != 5 || got.start.Epoch == "" {
+			t.Fatalf("remaining boundary = %+v", got)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancelling one request detached another waiter")
@@ -168,6 +121,10 @@ func TestANoWaitCheckThatMeetsAHeldMirrorLeavesTheRecord(t *testing.T) {
 	u := newPatchedUpstream(t)
 	w := u.want(t, "main", "")
 	u.check(t, w, false)
+	beforeStart, err := u.store.CheckBoundary(w.Owner)
+	if err != nil {
+		t.Fatal(err)
+	}
 	beforeRecord, err := u.store.LoadCheckRecord(w.Owner)
 	if err != nil {
 		t.Fatal(err)
@@ -201,11 +158,10 @@ func TestANoWaitCheckThatMeetsAHeldMirrorLeavesTheRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if afterRecord.StartedSeq != beforeRecord.StartedSeq+1 || afterRecord.StartedInputs != beforeRecord.StartedInputs {
-		t.Errorf("NoWait did not record exactly one started attempt: before=%+v after=%+v", beforeRecord, afterRecord)
+	afterStart, err := u.store.CheckBoundary(w.Owner)
+	if err != nil || afterStart.Epoch != beforeStart.Epoch || afterStart.Seq != beforeStart.Seq+1 {
+		t.Errorf("NoWait did not record exactly one started attempt: before=%+v after=%+v err=%v", beforeStart, afterStart, err)
 	}
-	beforeRecord.StartedSeq, beforeRecord.StartedAt, beforeRecord.StartedInputs = 0, 0, CheckInputs{}
-	afterRecord.StartedSeq, afterRecord.StartedAt, afterRecord.StartedInputs = 0, 0, CheckInputs{}
 	beforeStable, _ := json.Marshal(beforeRecord)
 	afterStable, _ := json.Marshal(afterRecord)
 	if !bytes.Equal(beforeStable, afterStable) {

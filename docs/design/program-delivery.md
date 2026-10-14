@@ -2126,11 +2126,13 @@ new provenance prerequisites excluding previously valid historical entries.
 
 Unsupported legacy installers retain their bounded existing install/readiness route, with
 unsupported preparation inspectable. Linux capture does not establish Darwin compatibility.
-Supported warm CLI/MCP updates move to machine preparation once their replacement callsites are
-tested; the existing launchers remain until then. The cold-only premise of
-[OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) does not govern this future route.
-The [capture sketch](launch-program-capture-plan.md) owns remaining agent engineering, not an
-unanswered owner choice.
+The combined candidate connects supported npm CLI/MCP updates to machine preparation through
+the actual launcher, refresh and HOST consumers. Warm invocation validates the actual runtime
+before exec or marker success; validation installs nothing and mutates no receipts. Customized
+or unobserved runtimes and unsupported platforms keep their declared bounded installer. The
+cold-only premise of [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) does not govern this route.
+The [capture plan](launch-program-capture-plan.md) owns final runtime acceptance, not an
+unanswered owner choice or a claim of shipping.
 
 ### Compacted questions — headings kept because sibling docs link to them
 

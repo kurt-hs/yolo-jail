@@ -408,7 +408,7 @@ func (s *Store) runEnv(b budget, dir string, env []string, args ...string) (stri
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if b.ctx.Err() != nil {
-		return "", fmt.Errorf("git %s timed out after %s", gitLabel(args), b.d)
+		return "", fmt.Errorf("git %s timed out after %s: %w", gitLabel(args), b.d, b.ctx.Err())
 	}
 	if err != nil {
 		said := strings.TrimSpace(strings.TrimSpace(stderr.String()) + "\n" + strings.TrimSpace(stdout.String()))

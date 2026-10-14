@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,20 +56,6 @@ func stubSpawn(t *testing.T) *spawns {
 	}
 	t.Cleanup(func() { startBackgroundAdvance = prev })
 	return s
-}
-
-// keys are the --key values of spawn i, sorted.
-func (s *spawns) keys(i int) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []string
-	for _, a := range s.argvs[i] {
-		if k, ok := strings.CutPrefix(a, "--key="); ok {
-			out = append(out, k)
-		}
-	}
-	slices.Sort(out)
-	return out
 }
 
 func (s *spawns) count() int {
@@ -229,10 +214,10 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 
 // ON APPLE CONTAINER the next-launch mode builds at the launch only when the runtime listing proves
 // no conflicting yolo jail is running (XB-D21).
-func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
+func TestOnAppleContainerANextLaunchKeyUsesServingBuildAndRegistersChecks(t *testing.T) {
 	pf := newPoolFixture(t)
 	prevCapability := appleContainerBuildCapability
-	appleContainerBuildCapability = func() (bool, string) { return true, "" }
+	appleContainerBuildCapability = func(context.Context) (bool, string) { return true, "" }
 	t.Cleanup(func() { appleContainerBuildCapability = prevCapability })
 	first, out := pf.launch(t, "podman", &run.ActInterrupt{})
 	if first[poolKeyA].Dir == "" {
@@ -243,14 +228,11 @@ func TestOnAppleContainerANextLaunchKeyUpdatesAtTheLaunch(t *testing.T) {
 	pf.now = pf.now.Add(2 * time.Hour)
 	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
-	if got[poolKeyA].Entry == first[poolKeyA].Entry {
-		t.Errorf("the key was not updated at the launch:\n%s", out)
+	if got[poolKeyA].Entry != first[poolKeyA].Entry {
+		t.Errorf("the warm key was updated before check-only preparation:\n%s", out)
 	}
-	if !strings.Contains(out, "Apple Container checks at this launch, but starts a build jail only when `container ls` proves no yolo jail is running") {
-		t.Errorf("the Apple Container build capability is not disclosed:\n%s", out)
-	}
-	if snapshot, err := readPreparationSnapshot(poolKeyA); err != nil || snapshot.Phase != "unsupported" {
-		t.Errorf("Apple Container preparation outcome = %+v err=%v, want visible unsupported state", snapshot, err)
+	if snapshot, err := readPreparationSnapshot(poolKeyA); err != nil || snapshot.Phase != "pending" {
+		t.Errorf("Apple Container did not register check-only preparation: %+v %v", snapshot, err)
 	}
 }
 
@@ -432,7 +414,7 @@ func TestExplicitFreshRequestReachesTheProductionForkBuildSlot(t *testing.T) {
 		t.Fatalf("explicit unchanged freshness did not reuse the admitted artifact: delivery=%+v builds=%d\n%s",
 			got["tool"], len(fx.builds), out.String())
 	}
-	if after.StartedSeq <= before.StartedSeq || after.Check == nil || after.Check.StartedSeq != after.StartedSeq {
+	if after.Fresh == nil || before.Fresh == nil || after.Fresh.Epoch != before.Fresh.Epoch || after.Fresh.Seq <= before.Fresh.Seq || after.Check == nil {
 		t.Fatalf("production BuildSlot did not perform a post-registration keyed check: before=%+v after=%+v", before, after)
 	}
 }
@@ -464,23 +446,19 @@ func TestAPatchedForkThatUpdatesForTheNextLaunchRegistersWithThePreparationSched
 	}
 }
 
-// ON APPLE CONTAINER the next-launch mode is the at-launch wait (XB-D21, XB-D61), said: the fork key
-// is checked and built in front and no background advance starts. Red if the runtime gate is
-// dropped.
-func TestOnAppleContainerANextLaunchForkUpdatesAtTheLaunch(t *testing.T) {
+// Apple warm next-launch programs retain the admitted build while their check-only
+// worker discovers candidates; the timer cannot build them.
+func TestOnAppleContainerANextLaunchForkUsesServingBuildAndRegistersChecks(t *testing.T) {
 	allowAppleContainerBuild(t)
 	fx, good := forkWithAGoodBuild(t)
-	sp := stubSpawn(t)
+	stubPreparationWorkerStart(t)
 	req := forkRequest(t, fx, "container")
 	var out syncBuffer
 	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
-	if sp.count() != 0 {
-		t.Errorf("Apple Container started a background advance:\n%s", out.String())
+	if got["tool"].Key != good {
+		t.Errorf("warm Apple fork changed before check-only preparation:\n%s", out.String())
 	}
-	if got["tool"].Key == good {
-		t.Errorf("the fork was not updated at the launch:\n%s", out.String())
-	}
-	if !strings.Contains(out.String(), "on Apple Container this yolo runs no background advance — it updates at this launch") {
-		t.Errorf("the demotion is not said:\n%s", out.String())
+	if snapshot, err := readPreparationSnapshot("forkpack/tool"); err != nil || snapshot.Phase != "pending" {
+		t.Fatalf("Apple fork did not register check-only work: %+v %v", snapshot, err)
 	}
 }

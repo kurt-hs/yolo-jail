@@ -37,7 +37,7 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|daemon|darwin-bootstrap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
 		return 2
 	}
 	switch args[0] {
@@ -82,6 +82,8 @@ func runInternal(args []string) int {
 		return runForkBuildJail(args[1:], os.Stdout, os.Stderr)
 	case "config-dump":
 		return runConfigDump(args[1:])
+	case "log-append":
+		return runInternalLogAppend(args[1:], os.Stdin)
 	case run.ScratchRemoverVerb:
 		// The detached remover a podman launch starts after its jail exits, to delete the
 		// scratch volumes --rm no longer deletes in the client that held the terminal

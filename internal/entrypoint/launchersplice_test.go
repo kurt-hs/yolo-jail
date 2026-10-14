@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // launchersplice_test.go guards the SPLICE CONTRACT written on npmLauncherTemplate: every
@@ -261,7 +262,7 @@ func runLauncher(t *testing.T, home, name, body, fakeBin string) (string, int) {
 	}
 	cmd := exec.Command(script)
 	cmd.Dir = home
-	cmd.Env = []string{"HOME=" + home, "PATH=" + fakeBin + ":" + os.Getenv("PATH")}
+	cmd.Env = []string{"HOME=" + home, "PATH=" + fakeBin + ":" + testutil.YoloBinaryDir(t) + ":" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()
 	rc := 0
 	if ee, ok := err.(*exec.ExitError); ok {

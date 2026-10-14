@@ -72,8 +72,8 @@ func PatchedCopySlug(key string) string {
 type TreeBuildRequest struct {
 	// FreshUpdate opts patched keys into explicit check-after-registration mode.
 	FreshUpdate bool
-	// FreshAfterSeq and FreshBoundaryErr are keyed start-sequence boundaries captured before the pool starts.
-	FreshAfterSeq    map[string]uint64
+	// FreshBoundary and FreshBoundaryErr are keyed epoch/start boundaries captured before the pool starts.
+	FreshBoundary    map[string]packsrc.CheckStart
 	FreshBoundaryErr map[string]error
 	FreshIdentity    map[string]string
 	// Trees are the patched extensions to deliver (packload.PatchedTrees).
@@ -106,6 +106,8 @@ type TreeBuildRequest struct {
 type TreeDelivery struct {
 	// FreshFailure refuses explicit preparation even when a fallback or serving copy exists.
 	FreshFailure string
+	// FreshError retains typed host-only admission refusal evidence.
+	FreshError error
 	// Dir is the per-launch copy to mount at `~/<into>`, "" when there is none.
 	Dir string
 	// Entry is the capture store entry the copy was made from.

@@ -23,6 +23,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 const (
@@ -39,8 +40,8 @@ const readyManifest = `{"name": "` + readyPack + `", "contributes": [{"kind": "p
 // every call to log. The program it installs records that it RAN in the same log, so "the
 // readiness act never runs the program" is an observation rather than an absence.
 type readyHome struct {
-	e                     *Env
-	fakeBin, log, scriptP string
+	e                              *Env
+	fakeBin, yoloBin, log, scriptP string
 }
 
 func newReadyHome(t *testing.T, manifests map[string]string, extra map[string]string) readyHome {
@@ -49,10 +50,10 @@ func newReadyHome(t *testing.T, manifests map[string]string, extra map[string]st
 		t.Skip("no bash on PATH; the bootstrap is bash")
 	}
 	home := t.TempDir()
+	workspace := t.TempDir()
 	vars := map[string]string{
-		"JAIL_HOME": home,
-		// A temp workspace, never the default: launchers write receipts under <workspace>/.yolo.
-		"YOLO_WORKSPACE": filepath.Join(home, "ws"),
+		"JAIL_HOME":      home,
+		"YOLO_WORKSPACE": workspace,
 	}
 	if manifests != nil {
 		vars["YOLO_PACK_ROOT"] = stageFloorPacks(t, manifests)
@@ -66,7 +67,7 @@ func newReadyHome(t *testing.T, manifests map[string]string, extra map[string]st
 	if err := GenerateAgentLaunchers(e); err != nil {
 		t.Fatal(err)
 	}
-	h := readyHome{e: e, fakeBin: filepath.Join(home, "fake-bin"), log: filepath.Join(home, "calls.log"),
+	h := readyHome{e: e, fakeBin: filepath.Join(home, "fake-bin"), yoloBin: testutil.YoloBinaryDir(t), log: filepath.Join(home, "calls.log"),
 		scriptP: filepath.Join(home, "bootstrap.sh")}
 	writeTestFile(t, h.scriptP, BootstrapScript(e))
 	if err := os.Chmod(h.scriptP, 0o755); err != nil {
@@ -124,7 +125,7 @@ func (h readyHome) run(t *testing.T, env ...string) (rc int, out, calls string) 
 	cmd := exec.Command(h.scriptP)
 	cmd.Env = append([]string{
 		"HOME=" + h.e.Home,
-		"PATH=" + h.fakeBin + ":/bin:/usr/bin",
+		"PATH=" + h.fakeBin + ":" + h.yoloBin + ":/bin:/usr/bin",
 		"FAKE_LOG=" + h.log,
 		"TMPDIR=" + os.TempDir(),
 	}, env...)
@@ -244,10 +245,10 @@ func TestTheRefusalQuotesTheInstallsErrorNotTheLaunchersClosingLine(t *testing.T
 // stage never runs — the shape the entrypoint runs the stage in (jailmain.go).
 func TestARefusedReadinessNeverReachesTheCommand(t *testing.T) {
 	h := newReadyHome(t, map[string]string{readyPack: readyManifest}, nil)
-	logPath := filepath.Join(h.e.Home, "startup.log")
+	logPath := filepath.Join(h.e.WorkspaceDir(), ".yolo", "startup.log")
 	stage := provision.Script(logPath, provision.Stage([]string{"true"}, []string{provision.StepRunBootstrapAt(h.scriptP)}), false)
 	cmd := exec.Command("bash", "-c", stage+"\necho THE-COMMAND-RAN")
-	cmd.Env = []string{"HOME=" + h.e.Home, "PATH=" + h.fakeBin + ":/bin:/usr/bin", "FAKE_LOG=" + h.log,
+	cmd.Env = []string{"HOME=" + h.e.Home, "PATH=" + h.fakeBin + ":" + h.yoloBin + ":/bin:/usr/bin", "FAKE_LOG=" + h.log,
 		"FAKE_NPM_OFFLINE=1", "TMPDIR=" + os.TempDir()}
 	cmd.Stdin = nil
 	o, err := cmd.CombinedOutput()
@@ -255,9 +256,9 @@ func TestARefusedReadinessNeverReachesTheCommand(t *testing.T) {
 	if ee, ok := err.(*exec.ExitError); ok {
 		rc = ee.ExitCode()
 	}
-	if rc != provision.RefusedStatus || strings.Contains(string(o), "THE-COMMAND-RAN") {
+	if rc != provision.StageRefusedStatus || strings.Contains(string(o), "THE-COMMAND-RAN") {
 		t.Errorf("rc = %d: a refused readiness act must end the stage with %d before the command:\n%s",
-			rc, provision.RefusedStatus, o)
+			rc, provision.StageRefusedStatus, o)
 	}
 }
 

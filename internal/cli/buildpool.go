@@ -47,6 +47,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -394,7 +395,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	map[string]run.TreeDelivery) {
 	if req.Forks != nil && req.Forks.FreshUpdate {
 		fresh := *req.Forks
-		fresh.FreshAfterSeq, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]uint64{}, map[string]error{}, map[string]string{}
+		fresh.FreshBoundary, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]packsrc.CheckStart{}, map[string]error{}, map[string]string{}
 		if fresh.CachedGoodOwner != "" {
 			fresh.FreshBoundaryErr[fresh.CachedGoodOwner] = errors.New("historical cached-good recovery cannot satisfy a fresh update request")
 			fresh.CachedGoodOwner = ""
@@ -403,7 +404,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	}
 	if req.Trees != nil && req.Trees.FreshUpdate {
 		fresh := *req.Trees
-		fresh.FreshAfterSeq, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]uint64{}, map[string]error{}, map[string]string{}
+		fresh.FreshBoundary, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]packsrc.CheckStart{}, map[string]error{}, map[string]string{}
 		req.Trees = &fresh
 	}
 	var workspace, rt string
@@ -416,23 +417,22 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		workspace, rt, cfg, act = req.Trees.Workspace, req.Trees.Runtime, req.Trees.Progress, req.Trees.Interrupt
 	}
 	pool := newBuildPool(stream, cfg, color, workspace, rt, req.MaxChecks, req.MaxBuilds, act)
+	pool.report.perf = req.Perf
 	if req.Forks != nil && req.Forks.FreshUpdate || req.Trees != nil && req.Trees.FreshUpdate {
 		pool.start = func(ctx context.Context) {
-			store := patchedAdvanceStore(true)
-			store.Ctx = ctx
+			local := *patchedAdvanceStore(true)
+			local.Ctx = ctx
+			store := &local
 			if fr := req.Forks; fr != nil && fr.FreshUpdate {
 				for _, pin := range fr.Pins {
 					f := pin.Fork
-					if !f.Patched() {
-						continue
-					}
-					registerFreshPreparation(ctx, store, f, fr.Platform, fr.FreshIdentity, fr.FreshAfterSeq, fr.FreshBoundaryErr)
+					registerFreshPreparation(ctx, store, f, fr.Platform, fr.FreshIdentity, fr.FreshBoundary, fr.FreshBoundaryErr)
 				}
 			}
 			if tr := req.Trees; tr != nil && tr.FreshUpdate {
 				for _, f := range tr.Trees {
 					if f.IsTree() {
-						registerFreshPreparation(ctx, store, f, tr.Platform, tr.FreshIdentity, tr.FreshAfterSeq, tr.FreshBoundaryErr)
+						registerFreshPreparation(ctx, store, f, tr.Platform, tr.FreshIdentity, tr.FreshBoundary, tr.FreshBoundaryErr)
 					}
 				}
 			}
@@ -483,14 +483,18 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	// advance from this launch. Registration follows the existing build slot so cold readiness still
 	// performs its ordinary foreground pin/build when no artifact exists.
 	if req.Forks != nil {
-		if err := registerForkPreparation(req.Forks.Pins, *req.Forks, stream, color); err != nil {
+		if err := registerForkPreparation(req.Forks.Pins, *req.Forks, stream, color, req.Perf); err != nil {
 			fmt.Fprintf(stream, "⚠ next-launch program preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
 	}
 	// A cause that held a good build is said once, when every key has printed (buildcauses.go).
 	pool.report.flush()
 	if tr := req.Trees; tr != nil && tr.Build {
-		if err := registerTreePreparation(tr.Trees, *tr, stream); err != nil {
+		span := pool.report.preparationSpan("preparation.registration")
+		err := registerTreePreparation(tr.Trees, *tr, stream)
+		pool.report.preparationOutcome("preparation.registration", "selected trees", err)
+		span.End()
+		if err != nil {
 			fmt.Fprintf(stream, "⚠ next-launch tree preparation could not be recorded (%v) — repair the scheduler state, then run `yolo pack prepare start`\n", err)
 		}
 	}
@@ -511,20 +515,30 @@ func addForkKeys(pool *buildPool, req run.ForkBuildRequest, color bool, answer f
 		if p.Fork.Patched() {
 			pool.add(p.Fork.Label(), func(it *poolItem) {
 				if req.FreshUpdate {
-					after := req.FreshAfterSeq[p.Fork.Key()]
+					after := req.FreshBoundary[p.Fork.Key()]
 					boundaryErr := req.FreshBoundaryErr[p.Fork.Key()]
 					result := advancePatchedFork(p.Fork, advanceOptions{platform: req.Platform, runtime: req.Runtime,
 						workspace: req.Workspace, out: it.stream(), errw: it.stream(), color: color, launch: true,
-						freshCheck: true, freshAfterSeq: after, freshBoundaryErr: boundaryErr,
+						freshCheck: true, freshBoundary: after, freshBoundaryErr: boundaryErr,
 						freshIdentity: req.FreshIdentity[p.Fork.Key()],
 						hand:          req.Hand, act: req.Interrupt, report: pool.report, slot: it})
 					delivery := result.forkDelivery()
 					delivery.FreshFailure = result.freshFailure()
+					if result.pending != nil {
+						delivery.FreshError = result.pending
+					}
 					answer(p.Fork.Bin, delivery)
 					return
 				}
 				d := deliverPatchedFork(p.Fork, req, pool.report, it, color)
 				answer(p.Fork.Bin, d)
+			})
+			continue
+		}
+		if req.FreshUpdate {
+			pool.add(p.Fork.Label(), func(it *poolItem) {
+				delivery := freshPlainPreparationForLaunch(it.pool.ctx, p.Fork, req, it.stream())
+				answer(p.Fork.Bin, delivery)
 			})
 			continue
 		}

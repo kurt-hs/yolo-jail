@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,10 +18,12 @@ func TestPreparationSpawnEnvironmentDiscoversSelectedProviderNames(t *testing.T)
 	}
 	writeFile(t, path, strings.Replace(string(b), `"contributes":[`, `"contributes":[{"kind":"provider","name":"synthetic-provider","api_key_env_name":"HTTP_PROXY"},`, 1))
 	t.Setenv("HTTP_PROXY", "synthetic-only-secret")
-	if !slices.Contains(preparationProviderEnvNames(), "HTTP_PROXY") {
-		t.Fatal("selected synthetic provider credential name was not discovered")
+	environment, err := sharedPreparationEnvironment(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
 	cmd := preparationSchedulerProcess()
+	cmd.Env = environment
 	for _, value := range cmd.Env {
 		if strings.HasPrefix(value, "HTTP_PROXY=") {
 			t.Fatalf("production spawned cmd.Env included discovered provider credential: %q", value)

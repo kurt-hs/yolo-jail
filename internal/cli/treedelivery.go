@@ -162,25 +162,17 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
 	// whatever this launch's timing.
 	again := noteBackgroundOutcome(f, pr)
-	after := req.FreshAfterSeq[f.Key()]
+	after := req.FreshBoundary[f.Key()]
 	boundaryErr := req.FreshBoundaryErr[f.Key()]
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
 		errw: errw, color: color, launch: true, act: req.Interrupt, report: report, slot: it,
-		freshCheck: req.FreshUpdate && f.IsTree(), freshAfterSeq: after, freshBoundaryErr: boundaryErr,
+		freshCheck: req.FreshUpdate && f.IsTree(), freshBoundary: after, freshBoundaryErr: boundaryErr,
 		freshIdentity: req.FreshIdentity[f.Key()]}
 	nextLaunch := false
 	if req.Build && !req.FreshUpdate && treeUpdateTiming(f) == timingNextLaunch {
-		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
+		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
-			if req.Runtime == "container" {
-				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch; Apple Container checks at this launch, but starts a build jail only when `container ls` proves no yolo jail is running", f.Label())))
-			} else {
-				// macos-user runs no background advance and no build jail; its existing unsupported route
-				// remains explicit rather than implying a tree was refreshed.
-				pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
-					"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
-					runtimeName(req.Runtime))))
-			}
+			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, and on %s this yolo runs no background advance — it updates at this launch", f.Label(), runtimeName(req.Runtime))))
 		}
 	}
 	var patchFailure *packsrc.PatchFailure
@@ -193,6 +185,11 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			case nextLaunch:
 				var a *advance
 				if r, a = servingTreeOf(f, o, "", true); r.delivery.Key != "" {
+					if r.delivery.PatchFailure == nil && req.Runtime == "container" && a.pendingBuild() {
+						r = treeAdvance(f, o)
+						later = true
+						break
+					}
 					if r.delivery.PatchFailure == nil {
 						// THE SPAWN CONDITION (XB-D19): its check due, a candidate pending, or the last
 						// background advance unfinished; a key with nothing to do starts none.
@@ -202,6 +199,14 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 				}
 				if r.delivery.PatchFailure != nil {
 					return run.TreeDelivery{Reason: r.delivery.Reason, PatchFailure: r.delivery.PatchFailure}, false
+				}
+				if f.Fallback != "" && req.Runtime == "container" {
+					if a != nil && a.pendingBuild() {
+						r = treeAdvance(f, o)
+						later = true
+						break
+					}
+					return run.TreeDelivery{Reason: f.Label() + " has no build yet; check-only preparation leaves a candidate for a fresh launch"}, true
 				}
 				if f.Fallback != "" {
 					return run.TreeDelivery{Reason: f.Label() + " has no build on this machine yet, and updates for " +
@@ -215,7 +220,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			}
 		}
 		if req.FreshUpdate && r.failed {
-			return run.TreeDelivery{FreshFailure: r.freshFailure(), Reason: r.freshFailure(), PatchFailure: r.patchFailure}, false
+			return run.TreeDelivery{FreshFailure: r.freshFailure(), FreshError: r.freshError(), Reason: r.freshFailure(), PatchFailure: r.patchFailure}, false
 		}
 		if r.delivery.PatchFailure != nil {
 			patchFailure = r.delivery.PatchFailure
@@ -235,7 +240,10 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			return run.TreeDelivery{Reason: f.Label() + " has a build on this machine, and this launch staged no pack " +
 				"tree to copy it beside — a fresh launch delivers it", PatchFailure: patchFailure}, later
 		}
+		span := report.preparationSpan("preparation.copy_install")
 		dir, err := copyTreeForLaunch(f, r.delivery.Key, req.CopyRoot, errw)
+		report.preparationOutcome("preparation.copy_install", f.Key(), err)
+		span.End()
 		switch {
 		case err == nil:
 			d := run.TreeDelivery{Dir: dir, Entry: r.delivery.Key, PatchFailure: patchFailure}
@@ -266,7 +274,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 // hands f's existing good build without checking it, while runBuildSlot records the selected key for
 // the persistent preparation scheduler after the pool completes. It advances f in front when
 // `agent_updates` sets it to update at the launch, when the runtime runs no background advance
-// (Apple Container, macos-user: XB-D21, one dim line saying so), or when no good build serves.
+// (macos-user or an unsupported platform: XB-D21, one dim line saying so), or when no good build serves.
 func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *buildReport, it *poolItem,
 	color bool) entrypoint.ForkDelivery {
 	errw := it.stream()
@@ -278,7 +286,7 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
 	nextLaunch := false
 	if forkUpdateTiming(f) == timingNextLaunch {
-		nextLaunch = run.BackgroundBuildsOn(req.Runtime)
+		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, "+
 				"and on %s this yolo runs no background advance — it updates at this launch", f.Label(),
@@ -288,7 +296,10 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 	if !nextLaunch {
 		return advancePatchedFork(f, o).forkDelivery()
 	}
-	r, _ := servingPatchedFork(f, o)
+	r, a := servingPatchedFork(f, o)
+	if r.delivery.PatchFailure == nil && r.delivery.Key != "" && req.Runtime == "container" && a.pendingBuild() {
+		return advancePatchedFork(f, o).forkDelivery()
+	}
 	if r.delivery.Key != "" || r.delivery.PatchFailure != nil {
 		return r.delivery
 	}
@@ -313,6 +324,7 @@ func servingTree(f packload.Fork, o advanceOptions, floor string) advanceResult 
 
 // servingTreeOf is servingTree with the advance it read, nil when the series could not be read.
 func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy bool) (advanceResult, *advance) {
+	defer o.report.preparationSpan("preparation.admitted_read").End()
 	a, early := newAdvance(f, o)
 	if early != nil {
 		return *early, nil

@@ -55,9 +55,13 @@ func TestPreparationOutputRecipeEditCancelsPausedChild(t *testing.T) {
 	}
 	stop()
 	<-done
-	after, err := readPreparationSnapshot(poolKeyA)
-	if err != nil || after.Generation <= before.Generation || after.ServingEntry != "" {
-		t.Fatalf("stale admission survived recipe edit: before=%+v after=%+v err=%v", before, after, err)
+	state, err := loadPreparationState()
+	i := preparationRecordIndex(state, poolKeyA, "podman", patchedTestPlatform)
+	if err != nil || i < 0 || state.Subscriptions[i].Generation <= before.Generation || state.Subscriptions[i].ServingEntry != "" {
+		t.Fatalf("stale admission survived recipe edit: before=%+v state=%+v err=%v", before, state, err)
+	}
+	if retained := state.Subscriptions[i].Retained; retained == nil || retained.Generation != before.Generation {
+		t.Fatalf("old diagnostic was relabelled with the new generation: %+v", state.Subscriptions[i])
 	}
 }
 

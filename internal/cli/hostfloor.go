@@ -452,6 +452,33 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 	if !allowAdvance {
 		return state
 	}
+	// Detached preparation publishes Good, not a serving authorization snapshot.
+	// Exact recipe/platform resolution above and strict patch authority still gate it.
+	if treeUpdateTiming(fork) == timingNextLaunch && run.BackgroundBuildsOn(captureRuntime()) &&
+		state.Good != nil && state.Good.Entry != nil {
+		// The floor projection omits pack closure and Node metadata. Recover the
+		// complete selected declaration only if the program projection is unchanged.
+		selected := selectConfiguredHostPacks()
+		var delivery entrypoint.ForkDelivery
+		var good *packsrc.GoodBuild
+		if len(selected.problems()) == 0 {
+			for _, current := range floorPrograms(selected.packs) {
+				if !reflect.DeepEqual(current, p) {
+					continue
+				}
+				for _, declared := range packload.PatchedForks(selected.packs) {
+					if declared.Key() == fork.Key() {
+						delivery, good = admittedProgramServing(declared, captureRuntime(), floorPatchedPlatform(), hostActPerf)
+						break
+					}
+				}
+				break
+			}
+		}
+		if good != nil && delivery.PatchFailure == nil && delivery.Key == state.Good.Entry.Key {
+			return state
+		}
+	}
 	result := floorAdvance(ctx, fork, out, installed, actInterruptOf(ctx))
 	return floorAdvanceState(p, result)
 }
@@ -483,7 +510,7 @@ func appendFloorAuthorityError(state *hostfloor.PatchedState, message string) {
 type floorFreshRequestKey struct{}
 type floorFreshRequest struct {
 	identity string
-	afterSeq uint64
+	boundary packsrc.CheckStart
 }
 
 // floorAdvance is the floor's advance of a patched fork (hostfloor.Floor.Advance): the fresh
@@ -497,7 +524,7 @@ var floorAdvance = func(ctx context.Context, f packload.Fork, out io.Writer, ins
 	o := advanceOptions{platform: floorPatchedPlatform(), out: out, errw: out, launch: true, host: true,
 		installed: installed, act: act, operationCtx: ctx}
 	if request, ok := ctx.Value(floorFreshRequestKey{}).(floorFreshRequest); ok {
-		o.freshCheck, o.freshIdentity, o.freshAfterSeq, o.ctx = true, request.identity, request.afterSeq, ctx
+		o.freshCheck, o.freshIdentity, o.freshBoundary, o.ctx = true, request.identity, request.boundary, ctx
 	}
 	result := advancePatchedFork(f, o)
 	if o.freshCheck {

@@ -3,13 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 )
-
-const appleBuildLivenessTimeout = 5 * time.Second
 
 type appleBuildDeferred struct{ reason string }
 
@@ -20,14 +17,10 @@ func (e appleBuildDeferred) Error() string { return e.reason }
 // unknown, never evidence that the build is safe.
 var appleContainerBuildCapability = appleContainerCanBuildNow
 
-func appleContainerCanBuildNow() (bool, string) {
-	bin, err := exec.LookPath("container")
-	if err != nil {
-		return false, fmt.Sprintf("Apple Container liveness is unknown (%v); `container ls` must show no running yolo jail before a build can start", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), appleBuildLivenessTimeout)
+func appleContainerCanBuildNow(parent context.Context) (bool, string) {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "ls").CombinedOutput()
+	out, err := applePreparationListing(ctx)
 	if ctx.Err() != nil {
 		return false, "`container ls` timed out; Apple Container liveness is unknown, so no build child was started"
 	}

@@ -2,7 +2,7 @@
 title: "Handoff: what the first macos-user hardware run left open"
 status: accepted
 stage: DECIDED
-next: "Record item 1's test as run in §3: the 2026-10-03 scheduled macos-user.yml run (37121866798, at 0e34798c6) passed TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace. Then write item 2's test, a launch whose probe reads a mode-0644 file the host user made, which Seatbelt must refuse. §2's link cleanup and §4's sandbox-exec seam are still unwritten"
+next: "Record item 1's test as run in §3: the 2026-10-03 scheduled macos-user.yml run (37121866798, at 0e34798c6) passed TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace. Then run TestMacosUserLaunchDeniesReadOfHost0644File on native macOS; its fixture/probe preflight passes on Linux but does not verify Seatbelt. §2's link cleanup and §4's sandbox-exec seam are still unwritten"
 date: 2026-09-12
 tags: [macos-user, handoff, lsp, integration, provisioning]
 summary: "The macos-user manual-checks runbook was run end to end on hardware for the first time on 2026-09-12. All ten items now have a measurement, three defects were found and fixed that day, and seven threads were opened. Four are left: one test-suite design flaw that only bites a persistent Mac and three automation gaps that are work nobody has done rather than problems. Three are closed: provider credentials on every argv this backend builds, the launch.log gap (fixed 2026-09-17), and the one product defect (lsp_servers installed nothing here) — wired on 2026-09-13, then closed by deletion on 2026-09-25 when yolo stopped installing language servers on any backend."
@@ -173,8 +173,14 @@ require:
 | Item | What the twin asserts | Note |
 | :--- | :--- | :--- |
 | 1 | `whoami` is `_yolojail` and `pwd` is the workspace | **Written 2026-10-01**: `TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace` asserts both on one probe, plus `id -un`, the uid the host resolves for `_yolojail` and `$HOME`, and `TestMacosUserIdentityProbeParsesAnUnsandboxedRun` runs the same probe unsandboxed under `-short`. Not yet run on a Mac |
-| 2 | a Seatbelt denial | ⚠ **must not use either of the item's own probes** — it should have the host user create a **mode-0644 file** for the purpose, so "readable without a sandbox" is true by construction. `~/.ssh` returns `EACCES` from the POSIX layer on a machine with no sandbox at all, and `$(logname)` fails with no controlling terminal |
+| 2 | a Seatbelt denial | **Written 2026-10-13**: `TestMacosUserLaunchDeniesReadOfHost0644File` launches the real sandbox against a host-created **mode-0644 harmless marker** under `/Users/Shared`, outside the workspace/home. The same sandbox account first reads it without Seatbelt, excluding DAC as the cause of refusal. Native execution remains **UNMEASURED**. |
 | 4 | `~/.claude/skills` and the briefing's first line | needs a pack selected (`packHome` already does this for other twins) |
+
+`TestMacosUserRead0644ProbeReadsUnsandboxedFixture` checks the same fixture's permissions,
+path quoting and probe/parser on Linux, including a failed-read control. This is not Seatbelt
+verification: the denial twin must run on native macOS through `runMacosUser`, so removing
+launch confinement makes its read succeed and fails the test. **0644 is the marker's mode,
+not the profile's:** the production root-owned Seatbelt profile remains 0444.
 
 ⚠ **Item 4's twin must not assert a skill COUNT.** The 2026-09-10 run recorded fourteen and the
 2026-09-12 run thirteen, and both were right: `developing-yolo-jail` is the source-tree-only

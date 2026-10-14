@@ -277,16 +277,17 @@ func TestSharedDemandSchedulerStopDetachesBeforeDemandStateUnlockWithProcessChil
 
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
-	ticks := make(chan time.Time)
+	ticks := make(chan time.Time, 1)
 	schedulerDone := make(chan error, 1)
-	go func() { schedulerDone <- runPreparationScheduler(ctx, ticks, io.Discard) }()
-	select {
-	case ticks <- f.fx.now:
-	case <-time.After(5 * time.Second):
-		t.Fatal("scheduler did not receive the production timer tick")
-	}
+	ownerTicks := make(chan time.Time, 1)
+	go func() {
+		schedulerDone <- runPreparationWorker(ctx, preparationRoot(), run.SelfExecPath(), ownerTicks, func(ownerCtx context.Context) error { return runPreparationScheduler(ownerCtx, ticks, io.Discard) })
+	}()
+	awaitPreparationOwner(t, preparationRoot())
+	ownerTicks <- time.Now()
+	ticks <- f.fx.now
 	childConn, pid := f.child(t)
-	freshAfter, err := patchedAdvanceStore(true).FreshCheckBoundary(fork.Key())
+	freshAfter, err := patchedAdvanceStore(true).CheckBoundary(fork.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +300,7 @@ func TestSharedDemandSchedulerStopDetachesBeforeDemandStateUnlockWithProcessChil
 	go func() {
 		requesterDone <- advancePatchedFork(fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true,
 			ctx: context.Background(), out: &requesterOutput, errw: &requesterOutput, freshCheck: true,
-			freshIdentity: identity, freshAfterSeq: freshAfter})
+			freshIdentity: identity, freshBoundary: freshAfter})
 	}()
 	dir := sharedDemandDir(fork.Key(), "podman", patchedTestPlatform)
 	waitFor(t, "fresh requester attached beside scheduler demand", func() bool {

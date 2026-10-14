@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // probeHarness is one generated launcher whose every pre-exec step is due, and the fakes that
@@ -82,8 +83,10 @@ func newProbeHarness(t *testing.T, template string) *probeHarness {
 	mustMkdir(t, h.fakeBin)
 	mustWrite(t, h.realBin, fakeRefreshProgram(h.progLog, filepath.Join(home, probeLockRel)), 0o755)
 	// `yolo internal no-terminal … -- CMD` runs CMD, as the real verb does once it has detached it;
-	// every other call is logged and answered with nothing.
+	// the receipt writer takes the real confined Go route, while other fake calls are observed.
+	realYolo := filepath.Join(testutil.YoloBinaryDir(t), "yolo")
 	mustWrite(t, filepath.Join(h.fakeBin, "yolo"), `#!/bin/bash
+if [ "${1:-} ${2:-}" = "internal log-append" ]; then exec `+shellQuoteForTest(realYolo)+` "$@"; fi
 if [ "${1:-} ${2:-}" = "internal no-terminal" ]; then
     while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done
     shift

@@ -1,12 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"io"
-	"os"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -23,18 +24,21 @@ func printPreparationStatus(out, errw io.Writer, color bool, key string) int {
 		}
 		return 0
 	}
-	if pidlock.Held(preparationWorkerLockPath()) {
-		pr.Printf("Tree preparation worker: running (lease held; pid %d)", pidlock.Holder(preparationWorkerLockPath()))
-	} else if state.Worker.Identity != "" {
-		pr.Printf("Tree preparation worker: stopped or unknown (state retained; run `yolo pack prepare start` to reauthorize and resume)")
-	} else {
-		pr.Printf("Tree preparation worker: not running")
+	record, live, probeErr := probePreparationWorker(preparationRoot())
+	switch live {
+	case preparationAlive:
+		pr.Printf("Tree preparation worker: running (authenticated incarnation %s; pid %d is diagnostic)", record.Identity, record.PID)
+	case preparationUnknown:
+		pr.Printf("Tree preparation worker: unknown (%v); state retained — retry `yolo pack prepare status`", probeErr)
+	default:
+		pr.Printf("Tree preparation worker: not running; run `yolo pack prepare start` to reauthorize and resume")
 	}
+
 	records := append([]preparationRecord(nil), state.Subscriptions...)
 	sortPreparationRecords(records)
 	found := false
 	for _, r := range records {
-		if key != "" && r.Key != key {
+		if key != "" && (r.Key != key || r.Runtime != captureRuntime() || r.Platform != capture.Platform()) {
 			continue
 		}
 		found = true
@@ -42,16 +46,27 @@ func printPreparationStatus(out, errw io.Writer, color bool, key string) int {
 		if phase == "" {
 			phase = "pending"
 		}
-		pr.Printf("%s [%s/%s] generation %d: %s%s", r.Key, r.Runtime, r.Platform, r.Generation, phase,
+		pr.Printf("%s [%s/%s] generation %d (diagnostic only; not admission): %s%s", r.Key, r.Runtime, r.Platform, r.Generation, phase,
 			map[bool]string{true: " (inactive)", false: ""}[!r.Active])
+		if r.Retained != nil && (r.Retained.Generation != r.Generation || r.Retained.InputIdentity != r.InputIdentity) {
+			pr.Printf("  retained diagnostic generation %d (previous declaration, not current admission): %s", r.Retained.Generation, richtext.Escape(r.Retained.Phase))
+			if r.Retained.Reason != "" {
+				pr.Printf("  retained reason: %s", richtext.Escape(r.Retained.Reason))
+			}
+			if r.Retained.Log != "" {
+				pr.Printf("  retained log: %s", r.Retained.Log)
+			}
+		}
+		pr.Printf("  input: %s", r.InputIdentity)
+		pr.Printf("  worker: %s", state.Worker.Identity)
 		if r.ServingEntry != "" {
-			pr.Printf("  admitted entry: %s", r.ServingEntry)
+			pr.Printf("  admitted entry: %s (diagnostic only; not admission)", r.ServingEntry)
 		}
 		if !r.At.IsZero() {
-			pr.Printf("  updated: %s", r.At.Format("2006-01-02 15:04:05 MST"))
+			pr.Printf("  updated: %s", r.At.Format(time.RFC3339))
 		}
 		if !r.RetryAt.IsZero() {
-			pr.Printf("  retry after: %s", r.RetryAt.Format("2006-01-02 15:04:05 MST"))
+			pr.Printf("  retry after: %s", r.RetryAt.Format(time.RFC3339))
 		}
 		if r.Reason != "" {
 			pr.Printf("  reason: %s", richtext.Escape(r.Reason))
@@ -104,35 +119,20 @@ func packPrepare(args []string, out, errw io.Writer, color bool) int {
 		fmt.Fprintln(out, "The host tree-preparation worker is running; inspect progress with `yolo pack prepare status`.")
 		return 0
 	case "stop":
-		state, err := loadPreparationState()
-		if err != nil {
-			fmt.Fprintf(errw, "yolo pack prepare stop: %v\n", err)
-			return 1
-		}
-		lockPath := preparationWorkerLockPath()
-		if !pidlock.Held(lockPath) {
-			fmt.Fprintln(out, "No proven live preparation worker owns the scheduler lease; recorded state was retained.")
+		record, live, err := probePreparationWorker(preparationRoot())
+		if live == preparationGone {
+			fmt.Fprintln(out, "No live preparation worker owns the scheduler lease; recorded state was retained.")
 			return 0
 		}
-		pid := pidlock.Holder(lockPath)
-		if state.Worker.Identity == "" || state.Worker.PID != pid {
-			fmt.Fprintf(errw, "yolo pack prepare stop: scheduler lease is held by pid %d, but its recorded worker identity is unknown — state was retained and no process was signalled\n", pid)
+		if live == preparationUnknown {
+			fmt.Fprintf(errw, "yolo pack prepare stop: owner unknown (%v) — retry status; state retained and no process was signalled\n", err)
 			return 1
 		}
-		if err := withPreparationState(func(s *preparationState) error {
-			if s.Worker.Identity != state.Worker.Identity {
-				return fmt.Errorf("worker identity changed during stop")
-			}
-			s.Worker.StopRequested = true
-			return nil
-		}); err != nil {
-			fmt.Fprintf(errw, "yolo pack prepare stop: %v\n", err)
+		if err := controlPreparationWorker(context.Background(), preparationRoot(), record.Identity, "stop"); err != nil {
+			fmt.Fprintf(errw, "yolo pack prepare stop: %v — retry status\n", err)
 			return 1
 		}
-		if err := os.WriteFile(preparationStopPath(), []byte(state.Worker.Identity+"\n"), 0o600); err != nil {
-			fmt.Fprintf(errw, "yolo pack prepare stop: could not signal the proven worker (%v)\n", err)
-			return 1
-		}
+
 		fmt.Fprintln(out, "Stop requested for the proven preparation worker; its owned child work will drain and state will be retained.")
 		return 0
 	default:

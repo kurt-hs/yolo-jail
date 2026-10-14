@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func TestScriptWritesTheMarkerIntoTheLog(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("the script never emits the marker")
 	}
-	if !strings.Contains(s[idx:], ">>/ws/.yolo/startup.log") {
+	if !strings.Contains(s[idx:], "| yolo internal log-append /ws startup.log") {
 		t.Errorf("the marker is printed but not appended to the log:\n%s", s[idx:])
 	}
 }
@@ -51,7 +52,7 @@ func TestOnlyAnExplicitNoPropagatesAFailure(t *testing.T) {
 		t.Error("the prompt is not gated on a tty, so a non-interactive launch would block " +
 			"or abort on a failed stage")
 	}
-	if !strings.Contains(s, `case "$_ans" in [nN]*) exit "$_prc";; esac`) {
+	if !strings.Contains(s, `case "$_ans" in [nN]*) exit `+strconv.Itoa(StageAbortedStatus)+`;; esac`) {
 		t.Error("the only exit path is no longer the explicit `n` answer")
 	}
 }
@@ -60,7 +61,7 @@ func TestOnlyAnExplicitNoPropagatesAFailure(t *testing.T) {
 // the pipeline's status is tee's, which is 0 whenever tee could write.
 func TestTheStagesStatusIsReadThroughPIPESTATUS(t *testing.T) {
 	s := Script(StartupLog("/ws"), Setup("false"), true)
-	if !strings.Contains(s, `_prc="${PIPESTATUS[0]}"`) {
+	if !strings.Contains(s, `_pstatus=("${PIPESTATUS[@]}"); _prc="${_pstatus[0]}"`) {
 		t.Error("the script reads the pipeline's status rather than the stage's; a failed " +
 			"stage would report success because tee succeeded")
 	}
@@ -172,6 +173,7 @@ func runStageColor(t *testing.T, setup string, stdin *os.File, color bool) (rc i
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bash, "-c", Script(logPath, setup, color)+"; echo TARGET-REACHED")
+	cmd.Env = append(os.Environ(), "PATH="+testutil.YoloBinaryDir(t)+":"+os.Getenv("PATH"))
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
@@ -192,9 +194,9 @@ func runStageColor(t *testing.T, setup string, stdin *os.File, color bool) (rc i
 // to ask, which is the case the old "only `n` propagates" wrapper waved through.
 func TestARefusingStepStopsTheLaunchBeforeTheTarget(t *testing.T) {
 	rc, stdout, stderr, log := runStage(t, Setup("echo installing >&2", "exit "+strconv.Itoa(RefusedStatus)), nil)
-	if rc != RefusedStatus {
-		t.Errorf("rc = %d, want RefusedStatus (%d) passed through — the caller (the container's "+
-			"exit, macos-user's orchestrator) reads the refusal from it", rc, RefusedStatus)
+	if rc != StageRefusedStatus {
+		t.Errorf("rc = %d, want StageRefusedStatus (%d) from wrapper — the caller (the container's "+
+			"exit, macos-user's orchestrator) reads the refusal from it", rc, StageRefusedStatus)
 	}
 	if strings.Contains(stdout, "TARGET-REACHED") {
 		t.Errorf("the target ran after a step refused the launch — the jail started unready:\n%s", stdout)

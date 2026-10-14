@@ -72,6 +72,13 @@ func Forward(args []string, env ForwardEnv) int {
 	}
 
 	req := map[string]any{"argv": args}
+	if len(args) > 0 && (args[0] == "status" || args[0] == "wait") {
+		if len(args) != 2 || !strings.HasPrefix(args[1], "r-") {
+			say("use `yolo gh %s <request-id>`", args[0])
+			return ExitUsage
+		}
+		req = map[string]any{"operation": args[0], "request": args[1]}
+	}
 	if args == nil {
 		req["argv"] = []string{}
 	}

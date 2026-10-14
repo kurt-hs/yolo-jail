@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/testutil"
 )
 
 // capturematerialize_test.go pins the LAUNCHER half of install-capture's second verb: the
@@ -71,7 +73,9 @@ func writeFakeYolo(t *testing.T, fakeBin, argvLog string, succeed bool) {
 	t.Helper()
 	// `yolo internal no-terminal -- <cmd>` (PS-D1's installer runner) is passed through to the
 	// command, as the real verb does, and not logged: the log is the materializer's.
+	realYolo := filepath.Join(testutil.YoloBinaryDir(t), "yolo")
 	body := `#!/bin/bash
+if [ "$1 $2" = "internal log-append" ]; then exec ` + shq(realYolo) + ` "$@"; fi
 if [ "$1 $2 $3" = "internal ` + NoTerminalVerb + ` --" ]; then shift 3; exec "$@"; fi
 printf '%s\n' "$*" >> ` + shq(argvLog) + `
 `

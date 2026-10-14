@@ -158,7 +158,7 @@ func (o *Options) scopeTokenArg(name, word string) (string, bool) {
 // daemon it was written for.
 func (o *Options) removeScopeFile(name string) {
 	if path, ok := o.scopeFiles[name]; ok {
-		_ = os.Remove(path)
+		_ = brokerscope.Remove(path)
 		delete(o.scopeFiles, name)
 	}
 }

@@ -45,6 +45,8 @@ const ForkBuildsEnv = "YOLO_FORK_BUILDS"
 type ForkDelivery struct {
 	// FreshFailure is host-only explicit request failure, independent of serving bytes and hatches.
 	FreshFailure string `json:"-"`
+	// FreshError retains the typed host-only admission refusal.
+	FreshError error `json:"-"`
 	// Key is the capture store entry holding the pinned build, "" when there is none.
 	Key string `json:"key,omitempty"`
 	// Reason is why there is no key, naming what to do; "" when Key is set.

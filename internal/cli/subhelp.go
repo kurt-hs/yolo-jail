@@ -103,6 +103,7 @@ var subcommandUsage = map[string]subUsage{
 	"stores":      {text: stores.Usage},
 	"nix-roots":   {text: nixRootsUsage, valueFlags: []string{"--format"}},
 	"update":      {text: updateUsage, valueFlags: []string{"--from"}},
+	"approve":     {text: approveUsage, valueFlags: []string{"--for", "--revoke"}},
 	"gh":          {text: ghUsage},
 	"audit":       {text: auditUsage, valueFlags: []string{"--since", "--jail", "--workspace", "--set", "--grant"}},
 	"loopholes":   {text: loopholesUsage, valueFlags: []string{"--format"}},

@@ -40,13 +40,24 @@ type preparationDemand struct {
 	Key, Runtime, Platform, Identity string
 	Kind                             string
 	AfterSeq                         uint64
+	CheckBoundary                    packsrc.CheckStart
 	SubscriptionGeneration           uint64
 	Fresh, Host, Background          bool
 }
 
+// demandBoundaryAfter keeps ordinary npm capture's sequence separate from the
+// source-check epoch ledger. Different epochs never batch a historical answer.
+func demandBoundaryAfter(candidate, current preparationDemand) bool {
+	if candidate.Kind == preparationOrdinaryProgramKind {
+		return candidate.AfterSeq > current.AfterSeq
+	}
+	return candidate.CheckBoundary.Epoch != current.CheckBoundary.Epoch || candidate.CheckBoundary.Seq > current.CheckBoundary.Seq
+}
+
 type preparationDemandResult struct {
-	UnsupportedNPM                                          bool              `json:"unsupported_npm,omitempty"`
-	Program                                                 *npmCaptureRecord `json:"program,omitempty"`
+	Pending                                                 *appleBuildPending `json:"apple_build_pending,omitempty"`
+	UnsupportedNPM                                          bool               `json:"unsupported_npm,omitempty"`
+	Program                                                 *npmCaptureRecord  `json:"program,omitempty"`
 	Delivery                                                entrypoint.ForkDelivery
 	Built, Failed, Bypassed, Lost, FellShort                bool
 	OperationError                                          string
@@ -57,38 +68,17 @@ type preparationDemandResult struct {
 }
 
 func demandResult(r advanceResult) preparationDemandResult {
-	return preparationDemandResult{Delivery: r.delivery, Built: r.built, Failed: r.failed, Bypassed: r.bypassed, Lost: r.lost, FellShort: r.fellShort, OperationError: r.operationError, PatchFailure: r.patchFailure, Good: r.good, From: r.from, To: r.to, FailWhat: r.failWhat, FailErr: r.failErr, Skipped: r.skipped, Retained: r.retained, Problem: r.problem, RetryAt: r.retryAt}
+	return preparationDemandResult{Pending: r.pending, Delivery: r.delivery, Built: r.built, Failed: r.failed, Bypassed: r.bypassed, Lost: r.lost, FellShort: r.fellShort, OperationError: r.operationError, PatchFailure: r.patchFailure, Good: r.good, From: r.from, To: r.to, FailWhat: r.failWhat, FailErr: r.failErr, Skipped: r.skipped, Retained: r.retained, Problem: r.problem, RetryAt: r.retryAt}
 }
 func (r preparationDemandResult) advance() advanceResult {
-	return advanceResult{delivery: r.Delivery, built: r.Built, failed: r.Failed, bypassed: r.Bypassed, lost: r.Lost, fellShort: r.FellShort, operationError: r.OperationError, patchFailure: r.PatchFailure, good: r.Good, from: r.From, to: r.To, failWhat: r.FailWhat, failErr: r.FailErr, skipped: r.Skipped, retained: r.Retained, problem: r.Problem, retryAt: r.RetryAt}
+	return advanceResult{pending: r.Pending, delivery: r.Delivery, built: r.Built, failed: r.Failed, bypassed: r.Bypassed, lost: r.Lost, fellShort: r.FellShort, operationError: r.OperationError, patchFailure: r.PatchFailure, good: r.Good, from: r.From, to: r.To, failWhat: r.FailWhat, failErr: r.FailErr, skipped: r.Skipped, retained: r.Retained, problem: r.Problem, retryAt: r.RetryAt}
 }
 func sharedDemandDir(key, rt, platform string) string {
 	sum := sha256.Sum256([]byte(key + "\x00" + rt + "\x00" + platform))
 	return filepath.Join(paths.BackgroundAdvanceDir(), "demands", hex.EncodeToString(sum[:]))
 }
-func writeDemandJSON(path string, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".publish-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(0600); err == nil {
-		_, err = f.Write(b)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if e := f.Close(); err == nil {
-		err = e
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
+func writeDemandJSON(path string, value any) error {
+	return writePreparationJSON(path, value)
 }
 func withDemandState(ctx context.Context, dir string, wait bool, fn func() error) error {
 	mode := pidlock.NoWait
@@ -207,7 +197,7 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 	if o.freshCheck && identity != o.freshIdentity {
 		return a.freshRefusal("selected inputs changed after registration", errPreparationAdmissionStale)
 	}
-	d := preparationDemand{Key: a.f.Key(), Runtime: o.runtime, Platform: o.platform, Identity: identity, AfterSeq: o.freshAfterSeq, Fresh: o.freshCheck, Host: o.host, Background: o.background, SubscriptionGeneration: o.sharedSubscriptionGeneration}
+	d := preparationDemand{Key: a.f.Key(), Runtime: o.runtime, Platform: o.platform, Identity: identity, CheckBoundary: o.freshBoundary, Fresh: o.freshCheck, Host: o.host, Background: o.background, SubscriptionGeneration: o.sharedSubscriptionGeneration}
 	if d.Runtime == "" {
 		d.Runtime = captureRuntime()
 	}
@@ -259,11 +249,11 @@ func (a *advance) waitSharedPreparation(ctx context.Context) advanceResult {
 
 // waitSharedDemandResult is the ONE requester lease/wait protocol. Source and
 // ordinary-capture adapters supply their own authorization and handoff, not lifetimes.
-func waitSharedDemandResult(ctx context.Context, d preparationDemand, automatic bool, say func(int)) (preparationDemandResult, error) {
+func registerSharedDemand(ctx context.Context, d preparationDemand) (*sharedDemandRequest, error) {
 	var err error
 	dir := sharedDemandDir(d.Key, d.Runtime, d.Platform)
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return preparationDemandResult{}, fmt.Errorf("could not create requester lease: %w", err)
+	if err = ensurePreparationRoot(dir); err != nil {
+		return nil, fmt.Errorf("could not create requester lease: %w", err)
 	}
 	var path string
 	var previousWorkerError []byte
@@ -283,44 +273,12 @@ func waitSharedDemandResult(ctx context.Context, d preparationDemand, automatic 
 		}
 		return writeDemandJSON(path, d)
 	})
-	if lease != nil {
-		defer func() {
-			lease.Release()
-			// Remove only this detached request under the same transaction the worker reads.
-			// Cleanup is bounded and never waits on an artifact/check/build lock.
-			cleanupCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			defer stop()
-			_ = withDemandState(cleanupCtx, dir, true, func() error {
-				_ = os.Remove(path)
-				_ = os.Remove(path + ".result")
-				_ = os.Remove(path + ".lease")
-				return nil
-			})
-			if automatic && ctx.Err() != nil {
-				// Scheduler stop drains a producer only when no other requester owns it.
-				// A fresh launch's detach is never made to wait for that teardown.
-				ticker := time.NewTicker(sharedDemandPoll)
-				defer ticker.Stop()
-				for {
-					var live []livePreparationDemand
-					err := withDemandState(cleanupCtx, dir, false, func() error { var e error; live, e = livePreparationDemands(dir); return e })
-					if err == nil && len(live) > 0 {
-						break
-					}
-					if !pidlock.Held(filepath.Join(dir, "worker.lock")) {
-						break
-					}
-					select {
-					case <-cleanupCtx.Done():
-						return
-					case <-ticker.C:
-					}
-				}
-			}
-		}()
-	}
+	r := &sharedDemandRequest{ctx: ctx, dir: dir, path: path, lease: lease, previousWorkerError: previousWorkerError}
 	if err != nil {
-		return preparationDemandResult{}, fmt.Errorf("could not attach preparation demand: %w", err)
+		if lease != nil {
+			r.release(false)
+		}
+		return nil, fmt.Errorf("could not attach preparation demand: %w", err)
 	}
 	if d.Fresh {
 		_ = notifyPreparationScheduler()
@@ -328,11 +286,67 @@ func waitSharedDemandResult(ctx context.Context, d preparationDemand, automatic 
 	// Launch processes never acquire the production/key/build lock. Registration can finish even
 	// while transport, a build or another request's STARTED transaction is paused.
 	if err = sharedPreparationSpawn(ctx, d); err != nil {
-		return preparationDemandResult{}, fmt.Errorf("the owned preparation worker could not start: %w", err)
+		r.release(false)
+		return nil, fmt.Errorf("the owned preparation worker could not start: %w", err)
 	}
+	return r, nil
+}
+
+type sharedDemandRequest struct {
+	ctx                 context.Context
+	dir, path           string
+	lease               *pidlock.Lock
+	previousWorkerError []byte
+}
+
+func (r *sharedDemandRequest) release(automatic bool) {
+
+	r.lease.Release()
+	// Remove only this detached request under the same transaction the worker reads.
+	// Cleanup is bounded and never waits on an artifact/check/build lock.
+	cleanupCtx, stop := context.WithTimeout(context.WithoutCancel(r.ctx), time.Second)
+	defer stop()
+	_ = withDemandState(cleanupCtx, r.dir, true, func() error {
+		_ = os.Remove(r.path)
+		_ = os.Remove(r.path + ".result")
+		_ = os.Remove(r.path + ".lease")
+		return nil
+	})
+	if automatic && r.ctx.Err() != nil {
+		// Scheduler stop drains a producer only when no other requester owns it.
+		// A fresh launch's detach is never made to wait for that teardown.
+		ticker := time.NewTicker(sharedDemandPoll)
+		defer ticker.Stop()
+		for {
+			var live []livePreparationDemand
+			err := withDemandState(cleanupCtx, r.dir, false, func() error { var e error; live, e = livePreparationDemands(r.dir); return e })
+			if err == nil && len(live) > 0 {
+				break
+			}
+			if !pidlock.Held(filepath.Join(r.dir, "worker.lock")) {
+				break
+			}
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}
+}
+func waitSharedDemandResult(ctx context.Context, d preparationDemand, automatic bool, say func(int)) (preparationDemandResult, error) {
+	r, err := registerSharedDemand(ctx, d)
+	if err != nil {
+		return preparationDemandResult{}, err
+	}
+	defer r.release(automatic)
 	if say != nil {
-		say(pidlock.Holder(filepath.Join(dir, "worker.lock")))
+		say(pidlock.Holder(filepath.Join(r.dir, "worker.lock")))
 	}
+	return r.wait(ctx)
+}
+func (r *sharedDemandRequest) wait(ctx context.Context) (preparationDemandResult, error) {
+	path, dir, previousWorkerError := r.path, r.dir, r.previousWorkerError
 	ticker := time.NewTicker(sharedDemandPoll)
 	defer ticker.Stop()
 	waitBound := time.NewTimer(forkBuildWaitBound)
@@ -399,7 +413,7 @@ func resolveDemandFork(ctx context.Context, d preparationDemand) (packload.Fork,
 	if problems := sel.problems(); len(problems) > 0 {
 		return packload.Fork{}, release, fmt.Errorf("current user selection is incomplete — repair %s, then retry `yolo --update`", paths.UserConfigPath())
 	}
-	forks := append(packload.PatchedForks(sel.packs), packload.PatchedTrees(sel.packs)...)
+	forks := append(packload.Forks(sel.packs), packload.PatchedTrees(sel.packs)...)
 	for _, f := range forks {
 		if f.Key() == d.Key {
 			identity, err := freshPreparationIdentity(f, d.Platform)
@@ -470,7 +484,7 @@ func authorizedPreparationDemands(ctx context.Context, dir string, identity stri
 			release()
 			if e == nil {
 				authorized[r.path] = true
-			} else if errors.Is(e, packsrc.ErrLockHeld) {
+			} else if !errors.Is(e, errPreparationAdmissionStale) && !errors.Is(e, errSharedPreparationForegroundOnly) {
 				unknown = e
 			}
 		}
@@ -506,16 +520,20 @@ func sharedTimerDemand(ctx context.Context, d preparationDemand) (*preparationRe
 	if idx < 0 || !state.Subscriptions[idx].Active {
 		return nil, nil
 	}
-	if state.Worker.Identity == "" || state.Worker.PID != pidlock.Holder(preparationWorkerLockPath()) {
-		return nil, errors.New("scheduler demand ownership is unreadable")
+	record, live, probeErr := probePreparationWorker(preparationRoot())
+	if live == preparationUnknown {
+		return nil, probeErr
 	}
-	stop, err := os.ReadFile(preparationStopPath())
-	if err == nil && strings.TrimSpace(string(stop)) == state.Worker.Identity {
+	if live == preparationGone {
 		return nil, nil
 	}
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+	if record.Identity != state.Worker.Identity {
+		return nil, errors.New("scheduler demand incarnation changed; retry status")
 	}
+	if record.StopRequested {
+		return nil, nil
+	}
+
 	r := state.Subscriptions[idx]
 	automatic := d
 	if r.Kind == preparationOrdinaryProgramKind {
@@ -578,12 +596,8 @@ func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commi
 	if !r.Active || r.Generation != d.SubscriptionGeneration || r.InputIdentity != identity {
 		return errPreparationAdmissionStale
 	}
-	stop, e := os.ReadFile(preparationStopPath())
-	if e == nil && state.Worker.Identity != "" && strings.TrimSpace(string(stop)) == state.Worker.Identity {
+	if state.Worker.StopRequested {
 		return context.Canceled
-	}
-	if e != nil && !os.IsNotExist(e) {
-		return e
 	}
 	if err = ctx.Err(); err != nil {
 		return err
@@ -633,6 +647,9 @@ func demandAdmissionGuard(ctx context.Context, dir string, d preparationDemand) 
 // held across resolution, transport, check/build locks, child teardown, or runtime inspection.
 func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer) (resultErr error) {
 	dir := sharedDemandDir(d.Key, d.Runtime, d.Platform)
+	if err := ensurePreparationRoot(dir); err != nil {
+		return err
+	}
 	owner, err := pidlock.Acquire(filepath.Join(dir, "worker.lock"), pidlock.NoWait, nil)
 	if errors.Is(err, pidlock.ErrHeld) {
 		return nil
@@ -670,7 +687,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 		// Batch only identical declarations. A fresh request may join a check only if the STARTED
 		// sequence is after its boundary. Requests arriving during transport get the next batch.
 		for _, r := range live {
-			if r.Identity == request.Identity && r.Fresh && (!request.Fresh || r.AfterSeq > request.AfterSeq) {
+			if r.Identity == request.Identity && r.Fresh && (!request.Fresh || demandBoundaryAfter(r.preparationDemand, request)) {
 				request = r.preparationDemand
 			}
 		}
@@ -717,16 +734,13 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 					timer, timerErr := sharedTimerDemand(workCtx, request)
 					if !keep && timer == nil {
 						if timerErr != nil {
-							var syntax *json.SyntaxError
-							if !errors.As(timerErr, &syntax) {
-								continue
-							} // unknown lease liveness is not zero demand
-						}
+							continue
+						} // unknown observation is not zero demand
 						cancel()
 						return
 					}
 					_, e = authorizedPreparationDemands(workCtx, dir, request.Identity)
-					if e != nil && timer == nil && !errors.Is(e, packsrc.ErrLockHeld) && !errors.Is(e, pidlock.ErrHeld) {
+					if timer == nil && errors.Is(e, errPreparationAdmissionStale) {
 						cancel()
 						return
 					}
@@ -741,8 +755,15 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				} else {
 					program = &record
 				}
+			} else if !f.Patched() && !f.IsTree() && request.Fresh {
+				var plainErr error
+				res, plainErr = runFreshPlainPreparation(workCtx, f, request, demandAdmissionGuard(workCtx, dir, request), w)
+				if plainErr != nil {
+					res = advanceResult{failed: true, operationError: plainErr.Error(), delivery: entrypoint.ForkDelivery{Reason: plainErr.Error()}}
+					errors.As(plainErr, &res.pending)
+				}
 			} else {
-				opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshAfterSeq: request.AfterSeq, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request)}
+				opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshBoundary: request.CheckBoundary, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request)}
 				if request.Host && !f.IsTree() {
 					hostOnly := true
 					for _, r := range live {
@@ -766,7 +787,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				return e
 			}
 			for _, r := range pending {
-				if r.Identity != request.Identity || r.Fresh && (!request.Fresh || r.AfterSeq > request.AfterSeq) {
+				if r.Identity != request.Identity || r.Fresh && (!request.Fresh || demandBoundaryAfter(r.preparationDemand, request)) {
 					continue
 				}
 				if request.Kind != preparationOrdinaryProgramKind && request.Host && !f.IsTree() && !r.Host && r.Fresh && res.delivery.Key == "" && !res.failed && res.skipped == "" {

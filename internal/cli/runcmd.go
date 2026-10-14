@@ -101,6 +101,7 @@ Flags:
                      or YOLO_VERBOSE=1 in the environment, "perf_logging": true in
                      the user config — record the same spans to the same file and
                      print nothing but one dim line naming it.
+  --update, -u       Check selected build inputs now; reuse unchanged good builds.
   --dry-run          macos-user runtime only: print the plan without launching.
   --update, -u       Wait for fresh preparation of this launch's selected programs and trees.
   --accept-config-changes
@@ -383,6 +384,8 @@ func parseRunArgs(args []string, opts *run.Options) runArgv {
 			parsed.boundary = i
 		case a == "run" && !sawRun:
 			sawRun = true // the injected/leading subcommand token
+		case a == "--update" || a == "-u":
+			opts.Update = true
 		case a == "--timing":
 			opts.Timing = true
 		case a == "--dry-run":

@@ -38,7 +38,7 @@ import (
 const FailedMarker = "PROVISIONING FAILED"
 
 // RefusedStatus is the ONE exit status a provisioning step uses to REFUSE the launch, and
-// the one status Script passes through unconditionally — non-interactively, at a terminal,
+// the input status Script translates to StageRefusedStatus — non-interactively, at a terminal,
 // with nobody asked. Every other non-zero status keeps degrading exactly as it did.
 //
 // It exists for docs/reference/agent-program-runtimes.md's OQ-AR3: a selected pack declares a
@@ -57,6 +57,17 @@ const FailedMarker = "PROVISIONING FAILED"
 // constant into its `exit`, so the producer and the one consumer that tests for it cannot
 // disagree about the number.
 const RefusedStatus = 78
+
+// Script's bounded outcomes are separate from setup/exec-layer statuses. Both backends
+// stop on these: macos-user checks them before its legacy log-marker classification,
+// and the container stops on every non-zero wrapper status. Ordinary setup failures
+// accepted by the user (or run without a terminal) still return zero.
+// 79–81 are reserved here, outside sysexits (64–78) and signal statuses (128+N).
+const (
+	StageRefusedStatus   = 79 // setup refused; independent of whether its marker was writable
+	StageAbortedStatus   = 80 // the human explicitly declined to continue
+	StageLogFailedStatus = 81 // logging failed; permission to continue cannot be inferred
+)
 
 // StartupLog is the provisioning log for one workspace: <workspace>/.yolo/startup.log.
 //
@@ -196,18 +207,11 @@ func StageBypassingShims(steps, bootstrap []string) string {
 // It is bash, not sh: ${PIPESTATUS[0]} is how the exit status of the stage survives the
 // pipe into tee, and a plain `sh` would report tee's.
 //
-// The exit status is the CALLER'S SIGNAL, and it says one of exactly two things: the human
-// asked to stop, or a step REFUSED the launch. A failed stage that was neither — including
-// every non-interactive one, where there is nobody to ask — completes with status 0,
-// because a jail whose tools did not install is still a jail the user asked for and the
-// record is in the log. Only the `n` answer and RefusedStatus propagate.
-//
-// THE REFUSAL IS TESTED BEFORE THE PROMPT and exits without asking. A prompt offering to
-// "continue anyway" would be the escape hatch OQ-AR3 ruled out, and a terminal is exactly
-// where a human would take it. The marker is still written first: the refusal IS a failed
-// provision, both readers of the log should say so, and macos-user's orchestrator tells a
-// stage that ran from one that never started by the marker's presence
-// (macosuser.runProvisionStage).
+// Script reports explicit bounded outcomes for a refusal, a human veto, or logging
+// failure. The marker remains diagnostic and supports older producers, but is not the
+// authority for these outcomes: an unwritable log must never turn a veto into permission.
+// Refusal wins over logging failure and is tested before the prompt. Other logging
+// failures stop conservatively, even when the setup itself succeeded.
 //
 // ⚠ THE TTY TEST IS THE ONLY LIVE HALF OF THE PROMPT'S GATE. `${YOLO_PROVISION_PROMPT:-1}`
 // beside it has NO WRITER: the container's launcher emits every `-e` by name and never this
@@ -218,7 +222,8 @@ func StageBypassingShims(steps, bootstrap []string) string {
 // wire a writer, and whoever does not should delete the clause (the container's golden
 // moves with it).
 func Script(logPath, setup string, color bool) string {
-	log := shquote.Quote(logPath)
+	// Only generated shell opens this in-jail path; the host renderer never does.
+	appendLog := "yolo internal log-append " + shquote.Quote(filepath.Dir(filepath.Dir(logPath))) + " startup.log"
 	refused := strconv.Itoa(RefusedStatus)
 	red, reset := `\033[1;31m`, `\033[0m`
 	if !color {
@@ -226,21 +231,30 @@ func Script(logPath, setup string, color bool) string {
 	}
 	return "" +
 		`printf "=== yolo provisioning %s ===\n" "$(date "+%Y-%m-%dT%H:%M:%S%z")" ` +
-		">" + log + "; " +
-		"(" + setup + ") 2>&1 | tee -a " + log + " >&2; " +
-		`_prc="${PIPESTATUS[0]}"; ` +
+		"| " + appendLog + " --reset || { " + logFailure(logPath) + "; }; " +
+		"(" + setup + ") 2>&1 | " + appendLog + " --tee >&2; " +
+		`_pstatus=("${PIPESTATUS[@]}"); _prc="${_pstatus[0]}"; _plog="${_pstatus[1]}"; ` +
 		`if [ "$_prc" -ne 0 ]; then ` +
-		`printf "` + FailedMarker + ` (exit %s)\n" "$_prc" >>` + log + "; " +
+		`printf "` + FailedMarker + ` (exit %s)\n" "$_prc" | ` + appendLog + ` || _plog=1; ` +
 		`if [ "$_prc" -eq ` + refused + ` ]; then ` +
 		`printf "` + red + `✗ Provisioning refused the launch (exit %s): the reason is above — log: ` +
 		dquoteEscape(logPath) + reset + `\n" "$_prc" >&2; ` +
-		`exit "$_prc"; fi; ` +
+		"exit " + strconv.Itoa(StageRefusedStatus) + "; fi; " +
+		`if [ "$_plog" -ne 0 ]; then ` + logFailure(logPath) + "; fi; " +
 		`printf "` + red + `✗ Provisioning failed (exit %s) — log: ` +
 		dquoteEscape(logPath) + reset + `\n" "$_prc" >&2; ` +
 		`if [ -t 0 ] && [ "${YOLO_PROVISION_PROMPT:-1}" != "0" ]; then ` +
 		`printf "Provisioning failed — continue anyway? [Y/n] " >&2; ` +
-		`read -r _ans; case "$_ans" in [nN]*) exit "$_prc";; esac; ` +
-		"fi; fi"
+		`read -r _ans; case "$_ans" in [nN]*) exit ` + strconv.Itoa(StageAbortedStatus) + ";; esac; " +
+		"fi; fi; " +
+		`if [ "$_plog" -ne 0 ]; then ` + logFailure(logPath) + "; fi"
+}
+
+// logFailure uses stderr because the log is precisely what cannot be trusted here.
+func logFailure(logPath string) string {
+	return `printf "Provisioning log could not be written: ` + dquoteEscape(logPath) +
+		` — repair workspace .yolo permissions or free disk space, then retry yolo.\n" >&2; exit ` +
+		strconv.Itoa(StageLogFailedStatus)
 }
 
 // dquoteEscape escapes the four characters that are still live inside a DOUBLE-quoted

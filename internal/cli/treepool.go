@@ -117,13 +117,6 @@ func (l treeLane) options(o advanceOptions) advanceOptions {
 	return o
 }
 
-// runTreesInParallel runs fn for every tree at once, each on its own lane, under one interrupt scope
-// of act's, and returns once every one has; the lanes' lines reach out and errw in the trees' order.
-func runTreesInParallel(trees []packload.Fork, runtime string, act *run.ActInterrupt, out, errw io.Writer,
-	fn func(i int, f packload.Fork, lane treeLane)) {
-	_ = runTreesInParallelPrepared(trees, runtime, act, out, errw, nil, fn)
-}
-
 // runTreesInParallelPrepared registers a request inside the same interrupt scope that owns its
 // parallel advances. A canceled registration detaches before any keyed work starts.
 func runTreesInParallelPrepared(trees []packload.Fork, runtime string, act *run.ActInterrupt, out, errw io.Writer,

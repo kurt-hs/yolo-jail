@@ -157,9 +157,10 @@ func TestALaunchNeverMovesAStandingForkPin(t *testing.T) {
 	}
 }
 
-// A fresh launch re-resolves its standing branch pin only after the attach decision has selected a
-// new jail; it builds the resulting commit and records that exact source selection.
-func TestUpdateLaunchRepinsItsStandingForkAfterTheAttachDecision(t *testing.T) {
+// A fresh launch delegates re-resolution to its guarded preparation worker only after
+// the attach decision. The launcher must not move the standing pin before that worker
+// can check the registration boundary and publish its exact source selection.
+func TestUpdateLaunchDelegatesStandingForkRepinAfterTheAttachDecision(t *testing.T) {
 	repo, commit := launchForkRepo(t)
 	head1 := strings.TrimSpace(mustGit(t, repo, "rev-parse", "HEAD"))
 	source := "git+file://" + repo + "?ref=main"
@@ -171,21 +172,23 @@ func TestUpdateLaunchRepinsItsStandingForkAfterTheAttachDecision(t *testing.T) {
 	}
 	head2 := commit("fresh update")
 	var built []packload.ForkPin
+	fresh := false
 	_, printed := fakePodmanLaunch(t, func(o *Options) {
 		o.Update = true
 		o.BuildForks = func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			fresh = req.FreshUpdate
 			built = append(built, req.Pins...)
 			return map[string]entrypoint.ForkDelivery{"tool": {Key: "fresh-build"}}
 		}
 	})
-	if len(built) != 1 || built[0].Commit != head2 {
-		t.Fatalf("fresh launch build received %+v, want the new head %s\n%s", built, head2, printed)
+	if !fresh || len(built) != 1 || built[0].Commit != head1 {
+		t.Fatalf("fresh worker request = %v, %+v; want the standing pin %s pending guarded resolution of %s\n%s", fresh, built, head1, head2, printed)
 	}
-	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head2 {
-		t.Fatalf("fresh launch did not record the new branch pin: %+v (present=%v), want %s", entry, ok, head2)
+	if entry, ok := forkLockEntry(t); !ok || entry.Commit != head1 {
+		t.Fatalf("launcher moved the branch pin ahead of guarded preparation: %+v (present=%v), want %s", entry, ok, head1)
 	}
-	if !strings.Contains(printed, "freshly resolved fork forkpack/tool") {
-		t.Errorf("fresh pin movement was not disclosed:\n%s", printed)
+	if strings.Contains(printed, "freshly resolved fork forkpack/tool") {
+		t.Errorf("launcher claimed a fresh result before its guarded worker published one:\n%s", printed)
 	}
 }
 

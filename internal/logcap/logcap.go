@@ -93,6 +93,48 @@ func Trim(path string) error {
 	})
 }
 
+// AppendBeneath serializes a complete append with retention using a confined opener. All
+// writers to a sink must use this operation; concurrent uncoordinated O_APPEND writers can
+// race an in-place trim. The sidecar lock is opened through open as well, so linked state
+// files are never followed.
+func AppendBeneath(open OpenFunc, name string, data []byte) error {
+	return appendBeneath(open, name, data, false)
+}
+
+// ResetBeneath starts a fresh active run after retaining oversized history. It takes
+// the same trim-and-append lock as AppendBeneath; startup's readers see only this run.
+func ResetBeneath(open OpenFunc, name string, data []byte) error {
+	return appendBeneath(open, name, data, true)
+}
+
+func appendBeneath(open OpenFunc, name string, data []byte, reset bool) error {
+	lock, err := open(name+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	if err := TrimBeneath(open, name); err != nil {
+		return err
+	}
+	flag := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if reset {
+		flag |= os.O_TRUNC
+	}
+	f, err := open(name, flag, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // TrimBeneath bounds the log at name, opened read-write through open, on Trim's terms: past
 // the cap the newest MaxBytes, from the first whole line, replace name+ArchiveSuffix and name
 // is truncated in place — but BOTH the log and its archive go through open, so a link the jail

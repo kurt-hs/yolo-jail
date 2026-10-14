@@ -74,35 +74,35 @@ func TestTheFollowRuleHeadAndPrefix(t *testing.T) {
 func TestFreshCheckUsesStartedSequenceInsteadOfWallClock(t *testing.T) {
 	u := newPatchedUpstream(t)
 	w := u.want(t, "main", "")
-	before, err := u.store.FreshCheckBoundary(w.Owner)
-	if err != nil || before != 0 {
-		t.Fatalf("initial fresh-check boundary = %d, %v; want 0", before, err)
+	before, err := u.store.CheckBoundary(w.Owner)
+	if err != nil || before.Seq != 0 {
+		t.Fatalf("initial fresh-check boundary = %+v, %v; want 0", before, err)
 	}
-	first := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: before,
+	first := u.store.CheckPatched(w, CheckOptions{FreshAfter: &before,
 		Now: func() time.Time { return u.now }})
-	if first.Err != nil || !first.Ran || !first.Fresh || first.Record.Check.StartedSeq != 1 {
+	if first.Err != nil || !first.Ran || !first.Record.Fresh.Qualifies(before, "") || first.Record.Fresh.Seq != 1 {
 		t.Fatalf("fresh check = %+v, want first post-registration start", first)
 	}
 
 	// A request registered after that check started must not treat its completion as fresh. Move
 	// the clock backwards as well: only the monotonic start sequence can force the follow-up.
-	afterStart, err := u.store.FreshCheckBoundary(w.Owner)
-	if err != nil || afterStart != 1 {
-		t.Fatalf("post-start boundary = %d, %v; want 1", afterStart, err)
+	afterStart, err := u.store.CheckBoundary(w.Owner)
+	if err != nil || afterStart.Seq != 1 {
+		t.Fatalf("post-start boundary = %+v, %v; want 1", afterStart, err)
 	}
 	u.now = u.now.Add(-time.Hour)
-	second := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: afterStart,
+	second := u.store.CheckPatched(w, CheckOptions{FreshAfter: &afterStart,
 		Now: func() time.Time { return u.now }})
-	if second.Err != nil || !second.Ran || !second.Fresh || second.Record.Check.StartedSeq != 2 {
+	if second.Err != nil || !second.Ran || !second.Record.Fresh.Qualifies(afterStart, "") || second.Record.Fresh.Seq != 2 {
 		t.Fatalf("post-start request = %+v, want a qualifying follow-up check", second)
 	}
 
 	// A concurrent request registered before the first check started can reuse that checked winner;
 	// it neither checks again nor requires the record's wall clock to be recent.
 	broken := &Store{Dir: u.store.Dir, Git: "/nonexistent/git", Getenv: noStagedTree}
-	shared := broken.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: 0,
+	shared := broken.CheckPatched(w, CheckOptions{FreshAfter: &before,
 		Now: func() time.Time { return u.now }})
-	if shared.Err != nil || shared.Ran || !shared.Fresh || shared.Record.Check.StartedSeq != 2 {
+	if shared.Err != nil || shared.Ran || !shared.Record.Fresh.Qualifies(before, "") || shared.Record.Fresh.Seq != 2 {
 		t.Fatalf("pre-start concurrent request = %+v, want reuse of a post-boundary check", shared)
 	}
 }
@@ -372,13 +372,13 @@ func TestFreshBoundaryRegistersDuringTransportThenSharesAFollowup(t *testing.T) 
 	git, started, release := blockingGit(t)
 	u.store.Git = git
 	defer release()
-	beforeStart, err := u.store.FreshCheckBoundary(w.Owner)
-	if err != nil || beforeStart != 0 {
-		t.Fatalf("pre-STARTED request: %d, %v", beforeStart, err)
+	beforeStart, err := u.store.CheckBoundary(w.Owner)
+	if err != nil || beforeStart.Seq != 0 {
+		t.Fatalf("pre-STARTED request: %+v, %v", beforeStart, err)
 	}
 	firstDone := make(chan CheckResult, 1)
 	go func() {
-		firstDone <- u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: beforeStart, Now: func() time.Time { return u.now }})
+		firstDone <- u.store.CheckPatched(w, CheckOptions{FreshAfter: &beforeStart, Now: func() time.Time { return u.now }})
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for !started() && time.Now().Before(deadline) {
@@ -387,24 +387,24 @@ func TestFreshBoundaryRegistersDuringTransportThenSharesAFollowup(t *testing.T) 
 	if !started() {
 		t.Fatal("the first check did not reach its paused git command")
 	}
-	startedRecord, err := u.store.LoadCheckRecord(w.Owner)
-	if err != nil || startedRecord.StartedSeq != 1 || startedRecord.Check != nil {
+	startedRecord, err := u.store.CheckBoundary(w.Owner)
+	if err != nil || startedRecord.Seq != 1 {
 		t.Fatalf("paused check did not persist its start before transport: record=%+v err=%v", startedRecord, err)
 	}
 
 	boundaryDone := make(chan struct {
-		seq uint64
+		seq CheckStart
 		err error
 	}, 1)
 	go func() {
-		seq, err := u.store.FreshCheckBoundary(w.Owner)
+		seq, err := u.store.CheckBoundary(w.Owner)
 		boundaryDone <- struct {
-			seq uint64
+			seq CheckStart
 			err error
 		}{seq, err}
 	}()
 	var boundary struct {
-		seq uint64
+		seq CheckStart
 		err error
 	}
 	select {
@@ -412,25 +412,25 @@ func TestFreshBoundaryRegistersDuringTransportThenSharesAFollowup(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("registration blocked on paused transport")
 	}
-	secondBoundary, err := u.store.FreshCheckBoundary(w.Owner)
+	secondBoundary, err := u.store.CheckBoundary(w.Owner)
 	if err != nil || secondBoundary != boundary.seq {
-		t.Fatalf("concurrent boundary = %d, %v", secondBoundary, err)
+		t.Fatalf("concurrent boundary = %+v, %v", secondBoundary, err)
 	}
 	release()
 	first := <-firstDone
-	if first.Err != nil || !first.Ran || !first.Fresh {
+	if first.Err != nil || !first.Ran || !first.Record.Fresh.Qualifies(beforeStart, "") {
 		t.Fatalf("first check: %+v", first)
 	}
-	if boundary.err != nil || boundary.seq != 1 {
-		t.Fatalf("request boundary = %d, %v; want the earlier check's start sequence 1", boundary.seq, boundary.err)
+	if boundary.err != nil || boundary.seq.Seq != 1 {
+		t.Fatalf("request boundary = %+v, %v; want the earlier check's start sequence 1", boundary.seq, boundary.err)
 	}
-	followup := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: boundary.seq,
+	followup := u.store.CheckPatched(w, CheckOptions{FreshAfter: &boundary.seq,
 		Now: func() time.Time { return u.now }})
-	if followup.Err != nil || !followup.Ran || !followup.Fresh || followup.Record.Check.StartedSeq != 2 {
+	if followup.Err != nil || !followup.Ran || !followup.Record.Fresh.Qualifies(boundary.seq, "") || followup.Record.Fresh.Seq != 2 {
 		t.Fatalf("post-registration follow-up = %+v, want a new start after boundary 1", followup)
 	}
-	shared := u.store.CheckPatched(w, CheckOptions{Fresh: true, AfterSeq: secondBoundary, Now: func() time.Time { return u.now.Add(-time.Hour) }})
-	if shared.Err != nil || shared.Ran || !shared.Fresh {
+	shared := u.store.CheckPatched(w, CheckOptions{FreshAfter: &secondBoundary, Now: func() time.Time { return u.now.Add(-time.Hour) }})
+	if shared.Err != nil || shared.Ran || !shared.Record.Fresh.Qualifies(secondBoundary, "") {
 		t.Fatalf("shared followup after clock rollback: %+v", shared)
 	}
 }
