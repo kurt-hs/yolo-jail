@@ -171,7 +171,7 @@ func (g preparationDemandGuard) Guard(key string, commit func() error) error {
 	if err := g.request.Guard(key, func() error { return nil }); err != nil {
 		return err
 	}
-	return withPreparationDemands(nil, true, func() error {
+	return withPreparationDemands(context.TODO(), true, func() error {
 		demands, err := readPreparationDemands()
 		if err != nil {
 			return err
