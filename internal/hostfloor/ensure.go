@@ -207,12 +207,19 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	}
 	rec := st.Record
 	selectedChanged := false
+	invalidatedCapture := false
 	if p.Install.Kind == "npm" && !f.ManualUpdate && f.PrepareNPM != nil {
 		selected, err := f.selectPreparedNPM(ctx, p, f.nodeBin(rec.Node), false, f.pollTimeout())
 		if err != nil {
 			return st, Kept, err
 		}
 		selectedChanged = selected != nil && (selected.Compatibility != rec.Recipe || selected.EntryKey != rec.Capture)
+		// A nil candidate says nothing about a legacy native install. For an install
+		// selected from a capture it means its compatibility can no longer be proven.
+		invalidatedCapture = selected == nil && rec.Capture != ""
+		if invalidatedCapture {
+			return f.replaceInvalidatedNPM(ctx, p, st)
+		}
 	}
 	if p.Install.Kind == "npm" {
 		if _, version := packdecl.SplitNpmSpec(p.Install.Package); packdecl.NpmSpecIsPinned(version) && !selectedChanged && (!f.ManualUpdate || f.PrepareNPM == nil) {
@@ -282,6 +289,25 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	}
 	f.say("updated %s to %s", p.Bin(), next.Version)
 	return f.Status(p), Updated, nil
+}
+
+// replaceInvalidatedNPM repairs dependencies for the same installed release. It is
+// compatibility repair, not an evergreen update, so update policy and fixed selectors
+// cannot permit executing the invalidated generation. Existing sessions keep their bytes.
+func (f *Floor) replaceInvalidatedNPM(ctx context.Context, p Program, st Status) (Status, Outcome, error) {
+	lk, err := acquire(f.lockPath(p.Bin()), false, nil)
+	if err != nil {
+		return st, Kept, fmt.Errorf("%s capture is incompatible and its replacement lock is unavailable: %w — retry yolo host", p.Bin(), err)
+	}
+	defer lk.release()
+	f.say("%s capture no longer matches this runtime; reinstalling %s with the bounded host installer", p.Bin(), st.Record.Version)
+	_, err = f.installSelected(ctx, p, nil, st.Record.Version)
+	if err != nil {
+		_ = os.Remove(f.Launcher(p.Bin()))
+		_ = os.Remove(f.recordPath(p.Bin()))
+		return st, Kept, fmt.Errorf("%s incompatible capture could not be replaced: %w — retry yolo host", p.Bin(), err)
+	}
+	return f.Status(p), Installed, nil
 }
 
 // newerThan reports the version an update would install, or "" when the installed one is current.
@@ -432,7 +458,7 @@ func (f *Floor) install(ctx context.Context, p Program) (*Record, error) {
 
 // installSelected installs from the patched build selected before the floor lock, never by rereading
 // a later good-build pointer. A nil selection keeps ordinary recipes on their existing path.
-func (f *Floor) installSelected(ctx context.Context, p Program, patched *PatchedState) (*Record, error) {
+func (f *Floor) installSelected(ctx context.Context, p Program, patched *PatchedState, npmVersion ...string) (*Record, error) {
 	bin := p.Bin()
 	defer f.span(bin, "install")()
 	prev, err := f.readRecord(bin)
@@ -448,7 +474,7 @@ func (f *Floor) installSelected(ctx context.Context, p Program, patched *Patched
 	var rec *Record
 	switch p.Install.Kind {
 	case "npm":
-		rec, err = f.installNpm(ctx, p, dir)
+		rec, err = f.installNpm(ctx, p, dir, npmVersion...)
 	case "native":
 		rec, err = f.installFromCapture(p, dir)
 	case packdecl.InstallKindSource:
@@ -589,7 +615,7 @@ func (f *Floor) selectPreparedNPM(ctx context.Context, p Program, nodeBin string
 }
 
 // installNpm installs an npm program into dir/npm with the floor's Node.
-func (f *Floor) installNpm(ctx context.Context, p Program, dir string) (*Record, error) {
+func (f *Floor) installNpm(ctx context.Context, p Program, dir string, exactVersion ...string) (*Record, error) {
 	v := f.NodeVersion()
 	if !packdecl.SatisfiesNodeFloor(v, p.Install.NodeFloor) {
 		return nil, fmt.Errorf("the floor's Node v%s is below the pack's node_floor %s", v, p.Install.NodeFloor)
@@ -623,6 +649,9 @@ func (f *Floor) installNpm(ctx context.Context, p Program, dir string) (*Record,
 	}
 	prefix := npmPrefix(dir)
 	name, version := packdecl.SplitNpmSpec(p.Install.Package)
+	if len(exactVersion) != 0 {
+		version = exactVersion[0]
+	}
 	argv := []string{filepath.Join(nodeBin, "npm"), "install", "-g", "--prefer-online"}
 	argv = append(argv, p.Install.Flags...)
 	argv = append(argv, packdecl.NpmInstallSpec(name, version))

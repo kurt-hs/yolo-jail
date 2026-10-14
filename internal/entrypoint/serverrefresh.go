@@ -367,14 +367,21 @@ func RefreshServers(req ServerRefreshRequest) error {
 		if bin, identity := req.Env.ProgramCaptureForSpec(p.spec); identity != "" {
 			marker := ProgramCaptureMarker(req.Env.Home, bin)
 			previous, _ := os.ReadFile(marker)
-			if strings.TrimSpace(string(previous)) != identity || !pathExists(p.installedPath) {
+			warm := strings.TrimSpace(string(previous)) == identity && pathExists(p.installedPath)
+			{
 				argv := []string{"yolo", "internal", "capture-materialize", "--store=" + capturesDir(req.Env), "--bin=" + bin, "--home=" + req.Env.Home, "--declared=" + p.spec, "--compatibility=" + identity, "--receipts=" + receiptsFile(req.Env)}
 				delivery := req.Env.ProgramCaptureDeliveries()[bin]
 				if delivery.Runtime != "" {
 					argv = append(argv, "--runtime="+delivery.Runtime, "--node-floor="+delivery.NodeFloor)
 				}
+				if warm {
+					argv = append(argv, "--validate-only")
+				}
 				if err := run(ctx, stderr, argv); err != nil {
 					return fmt.Errorf("prepared MCP package %s could not be delivered: %w — retry a fresh launch", p.spec, err)
+				}
+				if warm {
+					continue
 				}
 				if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 					return err

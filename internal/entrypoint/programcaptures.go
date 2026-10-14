@@ -66,14 +66,23 @@ func programCaptureInstallShell(bin, declared, identity, store, receipts string,
 	if delivery.Runtime != "" {
 		argv = append(argv, "--runtime="+delivery.Runtime, "--node-floor="+delivery.NodeFloor)
 	}
+	nodeArg := ""
+	if delivery.NodeFloor != "" {
+		// This token is joined with the same generation-time interpreter as exec.
+		nodeArg = " --node-path=" + execPrefixToken()
+	}
+	validation := ""
+	if delivery.Runtime != "" {
+		validation = "if ! " + shquote.Join(append(append([]string{}, argv...), "--validate-only")) + nodeArg + "; then\n    exit 1\nfi\n"
+	}
 	// Only metadata in the private home changes at materialization; the machine entry
 	// stays immutable, and each identity owns an independent payload directory.
 	marker := "${HOME}/.cache/yolo-program-captures/" + bin
-	return `
+	return "\n" + validation + `
 _CAPTURE_ID=` + shquote.Quote(identity) + `
 _CAPTURE_MARKER="` + marker + `"
 if [ "$(cat "$_CAPTURE_MARKER" 2>/dev/null || true)" != "$_CAPTURE_ID" ] || [ ! -x "$REAL_BIN" ]; then
-    if ! ` + shquote.Join(argv) + `; then
+    if ! ` + shquote.Join(argv) + nodeArg + `; then
         echo ` + shquote.Quote("  "+bin+": exact prepared artifacts could not be delivered — restart with a fresh launch to retry preparation") + ` >&2
         exit 1
     fi
