@@ -1700,8 +1700,8 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// first launch grows by one installer download per uncaptured program, and
 	// the very first nested --timing run measured 109 of its 125 seconds in
 	// this call — every bit of it between two spans, pointing at nothing.
-	if !o.prepareOrdinaryPrograms(cfg, rt, repoRoot, staged.packs, channel) {
-		return 1
+	if status := o.prepareOrdinaryPrograms(cfg, rt, repoRoot, staged.packs, channel); status != 0 {
+		return status
 	}
 	captureSpan := o.Perf.Span("launch.auto_capture")
 	o.autoCaptureInstallerPrograms(staged.packs, containerJailPlatform())

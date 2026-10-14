@@ -19,16 +19,20 @@ import (
 )
 
 type programCaptureDiagnosticFixture struct {
-	Chunks      [][]byte
-	FD          int
-	Workspace   string
-	Resolution  []byte
-	Success     bool
-	OtherChunks map[int][][]byte
+	Chunks                    [][]byte
+	FD                        int
+	Workspace                 string
+	Resolution                []byte
+	Input                     []byte
+	InputLink, ResolutionLink string
+	NoWitness                 bool
+	Status                    int
+	Success                   bool
+	OtherChunks               map[int][][]byte
 }
 
 func init() {
-	if len(os.Args) != 3 || os.Args[1] != "program-capture-diagnostics-fixture" {
+	if (len(os.Args) != 3 && !(len(os.Args) == 4 && os.Args[3] == "-test.short")) || os.Args[1] != "program-capture-diagnostics-fixture" {
 		return
 	}
 	raw, err := os.ReadFile(os.Args[2])
@@ -54,10 +58,26 @@ func init() {
 		}
 	}
 	if fixture.Resolution != nil {
-		if os.WriteFile(filepath.Join(fixture.Workspace, "resolution.json"), fixture.Resolution, 0600) != nil || writeForkBuildRunReturned(fixture.Workspace) != nil {
+		if fixture.Input != nil {
+			if os.WriteFile(filepath.Join(fixture.Workspace, "input.json"), fixture.Input, 0600) != nil {
+				os.Exit(95)
+			}
+		}
+		for name, target := range map[string]string{"input.json": fixture.InputLink, "resolution.json": fixture.ResolutionLink} {
+			if target != "" {
+				_ = os.Remove(filepath.Join(fixture.Workspace, name))
+				if os.Symlink(target, filepath.Join(fixture.Workspace, name)) != nil {
+					os.Exit(96)
+				}
+			}
+		}
+		if os.WriteFile(filepath.Join(fixture.Workspace, "resolution.json"), fixture.Resolution, 0600) != nil {
 			os.Exit(94)
 		}
-		os.Exit(0)
+		if !fixture.NoWitness && writeForkBuildRunReturned(fixture.Workspace) != nil {
+			os.Exit(94)
+		}
+		os.Exit(fixture.Status)
 	}
 	os.Exit(37)
 }

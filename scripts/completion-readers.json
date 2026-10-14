@@ -1895,6 +1895,7 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
+"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3288,7 +3289,8 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts"
+"scripts",
+"scripts/__pycache__"
 ]
 },
 {
@@ -5613,6 +5615,8 @@
 "internal/cli/programcapturescheduler_test.go",
 "internal/cli/programcapturesealedintegration_test.go",
 "internal/cli/programnpm_test.go",
+"internal/cli/programnpmfloor_test.go",
+"internal/cli/programnpmfloorboundaries_test.go",
 "internal/cli/programregistrationtiming_test.go",
 "internal/cli/programs_test.go",
 "internal/cli/providerdocs_test.go",
