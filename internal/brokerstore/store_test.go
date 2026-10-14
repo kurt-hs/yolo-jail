@@ -158,6 +158,9 @@ func TestPendingExpiryAndEndLifetime(t *testing.T) {
 		t.Fatal("approved expired request")
 	}
 	input.Start = "next"
+	// An unanswered expiry cools the same command down as a denial for ten
+	// minutes (boundary-broker.md §9.2); refile past the quiet period.
+	*now = now.Add(11 * time.Minute)
 	r, _ = s.File(input)
 	_, err := s.Decide(r.ID, "pending", Decision{Session: true})
 	if err != nil {
