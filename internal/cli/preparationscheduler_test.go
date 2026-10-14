@@ -17,6 +17,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 func stubPreparationWorkerStart(t *testing.T) {
@@ -33,7 +34,17 @@ func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	stubPreparationWorkerStart(t)
 	builds := pf.countBuilds()
+	buildFinished := make(chan struct{}, 32)
+	child := pf.child
+	pf.child = func(ctx context.Context, build forkBuild) int {
+		result := child(ctx, build)
+		buildFinished <- struct{}{}
+		return result
+	}
 	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	if builds.Load() != 0 {
+		t.Fatalf("next-launch registration built trees before the timer tick: %d", builds.Load())
+	}
 	for _, key := range []string{poolKeyA, poolKeyB} {
 		got, err := readPreparationSnapshot(key)
 		if err != nil || got.Key != key || got.Generation == 0 {
@@ -42,43 +53,66 @@ func TestPreparationTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ticks := make(chan time.Time)
+	drain := make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard, nil, drain) }()
+	logState := func() {
+		for _, key := range []string{poolKeyA, poolKeyB} {
+			outcome, outcomeErr := readBackgroundOutcome(backgroundOutcomePath(key))
+			snapshot, snapshotErr := readPreparationSnapshot(key)
+			t.Logf("%s outcome=%+v outcome_error=%v snapshot=%+v snapshot_error=%v", key, outcome, outcomeErr, snapshot, snapshotErr)
+		}
+	}
 	select {
 	case ticks <- pf.now:
 	case <-time.After(5 * time.Second):
 		cancel()
 		t.Fatal("scheduler did not receive its production timer tick")
 	}
-	complete := func() bool {
-		if builds.Load() < 2 {
-			return false
-		}
-		for _, key := range []string{poolKeyA, poolKeyB} {
-			got, err := readBackgroundOutcome(backgroundOutcomePath(key))
-			if err != nil || got.To == "" {
-				return false
-			}
-			snapshot, err := readPreparationSnapshot(key)
-			if err != nil || snapshot.Phase != "admitted" || snapshot.ServingEntry != got.To {
-				return false
-			}
-		}
-		return true
-	}
-	deadline := time.After(5 * time.Second)
-	for !complete() {
+	// The fake child callback precedes the scheduler's persisted result snapshot. Drain the injected
+	// production loop after both callbacks so assertions observe completed task results, not an
+	// intermediate state.
+	dispatchDeadline := time.NewTimer(5 * time.Second)
+	defer dispatchDeadline.Stop()
+	for range 2 {
 		select {
-		case <-deadline:
+		case <-buildFinished:
+		case <-dispatchDeadline.C:
 			cancel()
 			<-done
-			t.Fatalf("timer did not admit both registered trees (build count %d)", builds.Load())
-		case <-time.After(time.Millisecond):
+			logState()
+			t.Fatalf("timer did not start both registered tree builds (build count %d)", builds.Load())
 		}
 	}
-	cancel()
-	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
+	close(drain)
+	// Bound a genuinely stuck scheduler by the shared test deadline; a completed drain is signaled
+	// by the production loop and does not wait for this timer.
+	finishDeadline := time.NewTimer(testsupport.ReadinessBudget(t))
+	defer finishDeadline.Stop()
+	select {
+	case err := <-done:
+		cancel()
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-finishDeadline.C:
+		cancel()
+		<-done
+		logState()
+		t.Fatal("scheduler did not finish and publish its registered tree tasks within the test readiness budget")
+	}
+	if builds.Load() < 2 {
+		t.Fatalf("timer built %d registered trees, want both", builds.Load())
+	}
+	for _, key := range []string{poolKeyA, poolKeyB} {
+		got, err := readBackgroundOutcome(backgroundOutcomePath(key))
+		if err != nil || got.To == "" {
+			t.Fatalf("%s: scheduler did not publish an admitted outcome: %+v err=%v", key, got, err)
+		}
+		snapshot, err := readPreparationSnapshot(key)
+		if err != nil || snapshot.Phase != "admitted" || snapshot.ServingEntry != got.To {
+			t.Fatalf("%s: scheduler result snapshot disagrees with outcome: %+v outcome=%+v err=%v", key, snapshot, got, err)
+		}
 	}
 	for _, key := range []string{poolKeyA, poolKeyB} {
 		if got := outcomeOf(t, key); got.To == "" {
