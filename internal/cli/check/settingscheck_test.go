@@ -22,6 +22,12 @@ func settingsCheckPack(t *testing.T, root, name, validator, doctorSentinel strin
 
 func settingsCheckPackArgv(t *testing.T, root, name string, argv []string, doctorSentinel string, daemonArgv ...[]string) string {
 	t.Helper()
+	return settingsCheckPackWithDoctor(t, root, name, argv,
+		touchAndSay(doctorSentinel, "OK: unrelated health"), daemonArgv...)
+}
+
+func settingsCheckPackWithDoctor(t *testing.T, root, name string, validatorArgv, doctorArgv []string, daemonArgv ...[]string) string {
+	t.Helper()
 	daemon := []string{"/bin/sh", "-c", "exit 0", "--socket", "{socket}", "--settings", "{settings}"}
 	if len(daemonArgv) > 0 {
 		daemon = daemonArgv[0]
@@ -31,16 +37,67 @@ func settingsCheckPackArgv(t *testing.T, root, name string, argv []string, docto
 		"settings": map[string]any{"value": map[string]any{"type": "string", "scope": "workspace", "default": "good"}},
 		"host_daemon": map[string]any{
 			"cmd":            daemon,
-			"settings_check": argv,
+			"settings_check": validatorArgv,
 			"publishes":      "socket",
 		},
-		"doctor_cmd": touchAndSay(doctorSentinel, "OK: unrelated health"),
+		"doctor_cmd": doctorArgv,
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return writeLoopholeManifest(t, root, name, string(data[1:len(data)-1]))
+}
+
+func TestCheckDoctorReadsCorrectedUserSettingsWithoutPublishingThem(t *testing.T) {
+	moduleRoot := isolatedModuleDir(t)
+	const name = "acme-validator"
+	const corrected = "svet-corrected-profile"
+	validator := []string{"/bin/sh", "-c", `if grep -q ` + corrected + ` "$1"; then exit 0; fi; printf '%s' '{"reason":"missing corrected profile","remedy":"update the user-scope setting"}'; exit 9`, "validator", "{settings}"}
+	doctor := []string{"/bin/sh", "-c", `if grep -q ` + corrected + ` "$1"; then echo 'OK: doctor used current settings'; else echo 'FAIL: doctor saw stale settings'; exit 1; fi`, "doctor", "{settings}"}
+	daemonStarted := filepath.Join(t.TempDir(), "daemon-started")
+	daemon := []string{"/bin/sh", "-c", `touch ` + shquote.Quote(daemonStarted), "daemon", "--socket", "{socket}", "--settings", "{settings}"}
+	settingsCheckPackWithDoctor(t, moduleRoot, name, validator, doctor, daemon)
+	userConfig := paths.UserConfigPath()
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeUserSetting := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(userConfig, []byte(`{"loopholes":{"`+name+`":{"settings":{"value":"`+value+`"}}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeUserSetting("invalid-current-profile")
+	stable := loopholes.SettingsFileFor(name)
+	if err := os.MkdirAll(filepath.Dir(stable), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stableBytes := []byte(`{"value":"last-launch-profile"}` + "\n")
+	if err := os.WriteFile(stable, stableBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, out := runCheckLoopholes(t, t.TempDir())
+	if r.failed == 0 || !strings.Contains(out, "missing corrected profile") || strings.Contains(out, "doctor used current settings") {
+		t.Fatalf("check did not refuse invalid current user settings before the doctor: failed=%d\n%s", r.failed, out)
+	}
+	writeUserSetting(corrected)
+	r, out = runCheckLoopholes(t, t.TempDir())
+	if r.failed != 0 || !strings.Contains(out, "settings accepted") || !strings.Contains(out, "doctor used current settings") {
+		t.Fatalf("check did not pass corrected current settings to both validator and doctor: failed=%d\n%s", r.failed, out)
+	}
+	got, err := os.ReadFile(stable)
+	if err != nil || string(got) != string(stableBytes) {
+		t.Fatalf("preflight changed persistent last-launch settings: got=%q err=%v", got, err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(stable))
+	if err != nil || len(entries) != 1 || entries[0].Name() != loopholes.SettingsFileName {
+		t.Fatalf("doctor settings snapshot was not cleaned up: entries=%v err=%v", entries, err)
+	}
+	if _, err := os.Stat(daemonStarted); !os.IsNotExist(err) {
+		t.Fatalf("read-only check started the host daemon: %v", err)
+	}
 }
 
 func TestCheckLoopholesValidatesCurrentSnapshotAndSkipsOnlyRefusingDoctor(t *testing.T) {

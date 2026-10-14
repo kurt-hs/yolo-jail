@@ -62,6 +62,28 @@ func SettingsFileFor(name string) string {
 	return filepath.Join(StateDirFor(name), SettingsFileName)
 }
 
+// SettingsFromConfig returns one `loopholes.<name>.settings` value from the merged
+// loopholes block, or nil when no settings were supplied.
+func SettingsFromConfig(block *jsonx.OrderedMap, name string) *jsonx.OrderedMap {
+	if block == nil {
+		return nil
+	}
+	entryValue, ok := block.Get(name)
+	if !ok {
+		return nil
+	}
+	entry, ok := entryValue.(*jsonx.OrderedMap)
+	if !ok {
+		return nil
+	}
+	settingsValue, ok := entry.Get("settings")
+	if !ok {
+		return nil
+	}
+	settings, _ := settingsValue.(*jsonx.OrderedMap)
+	return settings
+}
+
 // ResolveSettings folds one loophole's config-supplied values over its manifest
 // declarations and returns the flat map to write.
 //
