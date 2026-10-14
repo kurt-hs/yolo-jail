@@ -136,7 +136,7 @@ func TestHostApplyNamesWhatYoloHostDeliversAtLaunch(t *testing.T) {
 	// --verbose says which pack's contributions landed in each group, for a kind in both.
 	verboseReport(t)
 	_, verbose := surveyApply(t)
-	for _, want := range []string{"env (aws-auth, pi)", "env (audio)", "loophole (aws-auth, openai-auth)",
+	for _, want := range []string{"env (aws-auth, guardrails, pi)", "env (audio)", "loophole (aws-auth, openai-auth)",
 		"loophole (audio)", "`yolo config-ref` says how"} {
 		if !strings.Contains(verbose, want) {
 			t.Errorf("--verbose does not say %q:\n%s", want, verbose)

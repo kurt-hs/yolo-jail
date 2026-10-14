@@ -11,6 +11,13 @@ reach an agent up front. The blocker
 prints its own message and its own alternative at the moment it refuses, which is
 where that information belongs. This file is for whoever edits these rules.
 
+## Git's optional index locks
+
+The pack sets `GIT_OPTIONAL_LOCKS=0`. Git skips optional work that takes an index lock, such as
+writing a refreshed index during `git status`; commands that need a lock to change the index, such
+as `git add` and `git commit`, still use one. Set `GIT_OPTIONAL_LOCKS=1` in `env_sources` to opt
+back in; that explicit user value overrides the pack default.
+
 ## Why these two
 
 **`find` → `fd`.** `fd` is faster for the same work. That is the entire reason: not
