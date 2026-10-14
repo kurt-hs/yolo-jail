@@ -80,7 +80,8 @@ func programCaptureInstallShell(bin, declared, identity, store, receipts string,
 			nodeSelection = "_CAPTURE_NODE=$(node -p 'process.execPath') || { echo 'prepared Node is unavailable — retry a fresh launch' >&2; exit 1; }\n"
 			// The CLI proves this directory's executable node is the same file
 			// before PATH is changed, including on warm launcher re-entry.
-			nodeBinding = "export PATH=\"${_CAPTURE_NODE%/*}:$PATH\"\n"
+			// Preserve root /, whose shell parent substring is empty.
+			nodeBinding = "_CAPTURE_NODE_DIR=${_CAPTURE_NODE%/*}\nexport PATH=\"${_CAPTURE_NODE_DIR:-/}:$PATH\"\n"
 			nodeArg = " --node-path=\"$_CAPTURE_NODE\""
 		}
 	}
