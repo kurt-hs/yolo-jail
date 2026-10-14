@@ -466,7 +466,7 @@ func Run(opts Options) (rc int) {
 	// which wires internal/macosuser (SBPL sandbox, dscl provisioning, the
 	// sandbox-exec launch) + the darwinpkg streaming-build materialize adapter.
 	// Falls back to an actionable error if the front door didn't inject it.
-	if rt == "macos-user" && o.Update && !o.DryRun && len(staged.packs) > 0 {
+	if rt == "macos-user" && o.Update && !o.DryRun && len(staged.packs) > 0 { // parity: Refused — --update preparation is host-owned work this path cannot do, so the launch refuses naming the host alternative
 		o.pr(o.Stderr).print("--update preparation is unavailable in this macos-user launch path — run `yolo host --update -- <command>` for host-owned programs, or launch without --update")
 		return 1
 	}

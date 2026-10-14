@@ -105,14 +105,14 @@ func BuildJailsSideBySide(rt string) bool {
 // runtime/platform. Apple Container checks Linux candidates but cannot build them
 // beside a running jail; native Darwin preparation remains unsupported here.
 func BackgroundChecksOn(rt, platform string) bool {
-	return (rt == "podman" || rt == "container") &&
+	return (rt == "podman" || rt == "container") && // parity: Honored — podman checks and builds, Apple Container checks Linux candidates only beside no running build jail (XB-D21); macos-user runs no preparation
 		(platform == "linux/amd64" || platform == "linux/arm64")
 }
 
 // BackgroundBuildsOn reports whether preparation may start a build jail while
 // another jail runs. Apple Container's scheduler is check-only (XB-D21).
 func BackgroundBuildsOn(rt string) bool {
-	return rt == "podman"
+	return rt == "podman" // parity: Honored — only podman builds beside a running jail; Apple Container's advance is check-only (XB-D21), macos-user builds nothing
 }
 
 // appleContainerVersion returns the `container` CLI's version, memoized for this launch.
