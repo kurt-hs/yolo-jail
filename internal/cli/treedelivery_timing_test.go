@@ -87,7 +87,10 @@ func TestRegistrationTimingSkipsUnsupportedAndInJailCalls(t *testing.T) {
 	fx := newTreesFixture(t, 1)
 	for _, mode := range []string{"unsupported", "in jail"} {
 		t.Run(mode, func(t *testing.T) {
-			rt := "container"
+			// Apple Container registers check-only preparation since the foreground
+			// required-build gate, so the unsupported runtime is macos-user, which runs
+			// no preparation at all.
+			rt := "macos-user"
 			if mode == "in jail" {
 				rt = "podman"
 				t.Setenv("YOLO_VERSION", "test")
