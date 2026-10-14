@@ -8,13 +8,288 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
+	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
 const programCaptureJailVerb = "program-capture-jail"
+
+const maxProgramCaptureDiagnostic = 1024
+
+// Records are withheld until their credential markers and terminal sequences are
+// complete. Oversized records are omitted, never truncated before redaction.
+const maxProgramCaptureDiagnosticRecord = 4096
+
+var programCaptureAuthorizationRedactor = regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[^\s,;]+`)
+
+var programCaptureDiagnosticRedactors = []struct {
+	re          *regexp.Regexp
+	replacement string
+}{
+	{programCaptureAuthorizationRedactor, "<redacted>"},
+	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`), "$1<redacted>@"},
+	// Without @, a colon-bearing authority may be unfinished userinfo.
+	{regexp.MustCompile(`(?i)(https?://)[^/@\s]+:[^/@\s]*`), "$1<redacted>"},
+	{regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+`), "$1<redacted>"},
+}
+
+var programCaptureCredentialMarker = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|(?:api[_-]?)?key|token|password|secret)["']?\s*[:=]\s*`)
+
+// Values are scanned only within the already bounded record. An unfinished or
+// ambiguous quoted credential omits the record instead of guessing its boundary.
+func redactProgramCaptureCredentialRecord(text string) string {
+	var safe strings.Builder
+	for offset := 0; ; {
+		marker := programCaptureCredentialMarker.FindStringIndex(text[offset:])
+		if marker == nil {
+			safe.WriteString(text[offset:])
+			return safe.String()
+		}
+		start := offset + marker[1]
+		if start == len(text) {
+			return "[incomplete sensitive producer diagnostic omitted]"
+		}
+		end := start
+		quote := text[start]
+		if quote == '"' || quote == '\'' {
+			end++
+			for end < len(text) && text[end] != quote {
+				if text[end] == '\\' {
+					end++
+				}
+				end++
+			}
+			if end >= len(text) {
+				return "[incomplete sensitive producer diagnostic omitted]"
+			}
+			end++
+			if end < len(text) && !strings.ContainsRune(" \t\r,;}]", rune(text[end])) {
+				return "[ambiguous sensitive producer diagnostic omitted]"
+			}
+		} else if authorization := programCaptureAuthorizationRedactor.FindStringIndex(text[start:]); authorization != nil && authorization[0] == 0 {
+			// Consume scheme and credential together before removing the key's value.
+			end = start + authorization[1]
+		} else {
+			for end < len(text) && !strings.ContainsRune(" \t\r,;", rune(text[end])) {
+				if text[end] == '\'' || text[end] == '"' {
+					return "[ambiguous sensitive producer diagnostic omitted]"
+				}
+				end++
+			}
+		}
+		if end == start {
+			return "[incomplete sensitive producer diagnostic omitted]"
+		}
+		safe.WriteString(text[offset:start])
+		if quote == '"' || quote == '\'' {
+			safe.WriteByte(quote)
+		}
+		safe.WriteString("<redacted>")
+		if quote == '"' || quote == '\'' {
+			safe.WriteByte(quote)
+		}
+		offset = end
+	}
+}
+
+type programCaptureDiagnostic struct {
+	mu   sync.Mutex
+	tail []byte // Only sanitized, redacted bytes; shared by the four public streams.
+}
+
+func (d *programCaptureDiagnostic) publish(out io.Writer, text string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	p := []byte(text)
+	if d.tail == nil {
+		d.tail = make([]byte, 0, maxProgramCaptureDiagnostic)
+	}
+	if len(p) >= maxProgramCaptureDiagnostic {
+		d.tail = append(d.tail[:0], p[len(p)-maxProgramCaptureDiagnostic:]...)
+	} else {
+		drop := len(d.tail) + len(p) - maxProgramCaptureDiagnostic
+		if drop > 0 {
+			d.tail = append(d.tail[:0], d.tail[drop:]...)
+		}
+		d.tail = append(d.tail, p...)
+	}
+	n, err := io.WriteString(out, text)
+	if err == nil && n != len(text) {
+		err = io.ErrShortWrite
+	}
+	return err
+}
+
+func (d *programCaptureDiagnostic) String() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// Tail truncation may cut a (safe) UTF-8 rune, but must never expose invalid bytes.
+	return strings.Join(strings.Fields(strings.ToValidUTF8(string(d.tail), "")), " ")
+}
+
+type programCaptureDiagnosticTee struct {
+	mu          sync.Mutex
+	out         io.Writer
+	diagnostic  *programCaptureDiagnostic
+	record      []byte
+	omitted     bool
+	escape      byte // ESC, CSI, string control, string ESC, or ESC intermediates.
+	utf8Pending [utf8.UTFMax]byte
+	utf8Count   int
+	writeErr    error
+}
+
+func (w *programCaptureDiagnosticTee) emit(newline bool) error {
+	text := ""
+	if w.omitted {
+		text = "[oversized producer diagnostic omitted]"
+	} else {
+		text = redactProgramCaptureCredentialRecord(string(w.record))
+		for _, redactor := range programCaptureDiagnosticRedactors {
+			text = redactor.re.ReplaceAllString(text, redactor.replacement)
+		}
+	}
+	w.record = w.record[:0]
+	w.omitted = false
+	if newline {
+		text += "\n"
+	}
+	if text == "" {
+		return nil
+	}
+	return w.diagnostic.publish(w.out, text)
+}
+
+func (w *programCaptureDiagnosticTee) consume(r rune) error {
+	// Accept both the UTF-8 and single-byte representations of C1 terminal controls.
+	switch r {
+	case 0x9b:
+		w.escape = 'c'
+		return nil
+	case 0x90, 0x9d, 0x9e, 0x9f, 0x98:
+		w.escape = 's'
+		return nil
+	case 0x9c:
+		w.escape = 0
+		return nil
+	}
+	switch w.escape {
+	case 'e':
+		switch r {
+		case '[':
+			w.escape = 'c'
+		case ']', 'P', '_', '^', 'X':
+			w.escape = 's'
+		default:
+			if r >= 0x20 && r <= 0x2f {
+				w.escape = 'i'
+			} else if r != 0x1b {
+				w.escape = 0
+			}
+		}
+		return nil
+	case 'i':
+		if r >= 0x30 && r <= 0x7e {
+			w.escape = 0
+		} else if r == 0x1b {
+			w.escape = 'e'
+		}
+		return nil
+	case 'c':
+		if r >= 0x40 && r <= 0x7e {
+			w.escape = 0
+		} else if r == 0x1b {
+			w.escape = 'e'
+		}
+		return nil
+	case 's':
+		if r == 0x07 {
+			w.escape = 0
+		} else if r == 0x1b {
+			w.escape = 't'
+		}
+		return nil
+	case 't':
+		if r == '\\' || r == 0x07 {
+			w.escape = 0
+		} else if r != 0x1b {
+			w.escape = 's'
+		}
+		return nil
+	}
+	if r == 0x1b {
+		w.escape = 'e'
+		return nil
+	}
+	if r == '\n' {
+		return w.emit(true)
+	}
+	if termsafe.Unsafe(r) && r != '\t' && r != '\r' {
+		return nil
+	}
+	if !w.omitted {
+		if len(w.record)+utf8.RuneLen(r) > maxProgramCaptureDiagnosticRecord {
+			w.record = w.record[:0]
+			w.omitted = true
+		} else {
+			if w.record == nil {
+				w.record = make([]byte, 0, maxProgramCaptureDiagnosticRecord)
+			}
+			w.record = utf8.AppendRune(w.record, r)
+		}
+	}
+	return nil
+}
+
+func (w *programCaptureDiagnosticTee) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	for i, b := range p {
+		w.utf8Pending[w.utf8Count] = b
+		w.utf8Count++
+		for w.utf8Count > 0 && utf8.FullRune(w.utf8Pending[:w.utf8Count]) {
+			r, size := utf8.DecodeRune(w.utf8Pending[:w.utf8Count])
+			invalid := r == utf8.RuneError && size == 1
+			if invalid {
+				r = rune(w.utf8Pending[0])
+			}
+			copy(w.utf8Pending[:], w.utf8Pending[size:w.utf8Count])
+			w.utf8Count -= size
+			if invalid && (r < 0x80 || r > 0x9f) {
+				continue
+			}
+			if err := w.consume(r); err != nil {
+				w.writeErr = err
+				return i + 1, err
+			}
+		}
+	}
+	return len(p), nil
+}
+
+func (w *programCaptureDiagnosticTee) finish() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// An incomplete terminal sequence makes the unfinished record unsafe to interpret.
+	if w.escape != 0 || w.utf8Count != 0 {
+		w.record = w.record[:0]
+		w.omitted = false
+		return w.writeErr
+	}
+	if w.writeErr == nil {
+		w.writeErr = w.emit(false)
+	}
+	return w.writeErr
+}
 
 type ordinaryCaptureRuntimeKey struct{}
 
@@ -30,12 +305,34 @@ var programCaptureChild = func(ctx context.Context, workspace string, argv []str
 	}
 	child = append(child, "--")
 	child = append(child, argv...)
-	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: w, errw: w, jailOut: w, jailErr: w}, programCaptureEnvironment(os.Environ()))
+	diag := &programCaptureDiagnostic{}
+	if w == nil {
+		w = io.Discard
+	}
+	// Each stream has its own parser: concurrent stderr cannot complete an unfinished
+	// stdout credential or escape. The shared diagnostic serializes public publication.
+	streams := make([]*programCaptureDiagnosticTee, 4)
+	for i := range streams {
+		streams[i] = &programCaptureDiagnosticTee{out: w, diagnostic: diag}
+	}
+	rc, bound := runCaptureChild(ctx, forkBuildWaitBound, workspace, "ordinary npm", child, captureStreams{out: streams[0], errw: streams[1], jailOut: streams[2], jailErr: streams[3]}, programCaptureEnvironment(os.Environ()))
+	var flushErr error
+	for _, stream := range streams {
+		if err := stream.finish(); err != nil && flushErr == nil {
+			flushErr = err
+		}
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if rc != 0 || bound {
+		if detail := diag.String(); detail != "" {
+			return fmt.Errorf("selected sealed npm producer failed (status %d): %s — retry preparation", rc, detail)
+		}
 		return fmt.Errorf("selected sealed npm producer failed (status %d) — retry preparation", rc)
+	}
+	if flushErr != nil {
+		return fmt.Errorf("selected sealed npm producer diagnostic could not be published — repair the output writer, then retry preparation: %w", flushErr)
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -181,6 +182,9 @@ func newXBFixture(t *testing.T) *xbFixture {
 					_ = syscall.Kill(p.pid, syscall.SIGKILL)
 				}
 			}
+		}
+		for _, p := range f.owned {
+			t.Logf("fixture cleanup owned identity=%+v ended=%v", p, p.ended())
 		}
 		staged, _ := filepath.Glob(filepath.Join(f.store, "staging", "fork-*"))
 		for _, ws := range staged {
@@ -405,6 +409,119 @@ func xbProcessDescendants(root int) []int {
 		}
 	}
 	return descendants
+}
+
+// The injected observation seam exercises the actual adoption path without ever signalling
+// discovered processes. A birth identity alone is not evidence that a parent belongs to us.
+type xbHelperObservation struct {
+	birth, state, home, exe, request string
+	parent                           int
+	args                             []string
+}
+
+func (f *xbFixture) captureBuildHelper(bg, child xbProcess, staging string, observe func(int) (xbHelperObservation, error)) (xbProcess, error) {
+	refuse := func() (xbProcess, error) {
+		return xbProcess{}, errors.New("helper ownership changed or is unproven — preserve the private fixture and inspect its owned scheduler before retrying")
+	}
+	if bg.pid <= 1 || child.pid <= 1 || bg.birth == "" || child.birth == "" ||
+		!slices.Contains(f.owned, bg) || !slices.Contains(f.owned, child) ||
+		!strings.HasPrefix(staging, filepath.Join(f.store, "staging", "fork-")) {
+		return refuse()
+	}
+	c, err := observe(child.pid)
+	if err != nil || c.birth != child.birth || c.parent <= 1 || c.parent == bg.pid {
+		return refuse()
+	}
+	parent, err := observe(c.parent)
+	if err != nil || parent.parent != bg.pid || parent.birth == "" {
+		return refuse()
+	}
+	scheduler, err := observe(bg.pid)
+	if err != nil || scheduler.birth != bg.birth || scheduler.request == "" {
+		return refuse()
+	}
+	wantArgs := []string{"internal", "background-advance", "--runtime=podman", "--platform=linux/" + goruntime.GOARCH, "--key=" + xbKey, "--shared-demand"}
+	if len(parent.args) != len(wantArgs)+1 || !slices.Equal(parent.args[1:], wantArgs) ||
+		len(c.args) < 4 || !slices.Equal(c.args[1:3], []string{"internal", "fork-build-jail"}) ||
+		!slices.Contains(c.args, "--workspace="+staging) {
+		return refuse()
+	}
+	for _, snapshot := range []xbHelperObservation{c, parent, scheduler} {
+		if len(snapshot.state) != 1 || !strings.Contains("RSDITtWP", snapshot.state) ||
+			snapshot.home != os.Getenv("HOME") || snapshot.exe == "" || snapshot.exe != scheduler.exe {
+			return refuse()
+		}
+	}
+	// Pin the helper's birth, then revalidate the whole child -> helper -> owned
+	// scheduler chain and its registered request before adding signal authority.
+	// Scheduling state may vary; identity, argv and all ownership bindings may not.
+	for _, item := range []struct {
+		pid    int
+		before xbHelperObservation
+	}{{c.parent, parent}, {bg.pid, scheduler}, {child.pid, c}} {
+		after, err := observe(item.pid)
+		before := item.before
+		if err != nil || len(after.state) != 1 || !strings.Contains("RSDITtWP", after.state) ||
+			after.birth != before.birth || after.parent != before.parent ||
+			after.home != before.home || after.exe != before.exe || after.request != before.request ||
+			!slices.Equal(after.args, before.args) {
+			return refuse()
+		}
+	}
+	helper := xbProcess{c.parent, parent.birth}
+	f.owned = append(f.owned, helper)
+	return helper, nil
+}
+
+func xbObserveHelperProcess(pid int) (xbHelperObservation, error) {
+	_, stat, ok := readStat(pid)
+	if !ok || len(stat) < 20 {
+		return xbHelperObservation{}, fmt.Errorf("helper ownership: unreadable pid %d", pid)
+	}
+	parent, err := strconv.Atoi(stat[1])
+	if err != nil {
+		return xbHelperObservation{}, err
+	}
+	args, err := processArgs(pid)
+	if err != nil {
+		return xbHelperObservation{}, err
+	}
+	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return xbHelperObservation{}, err
+	}
+	env, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return xbHelperObservation{}, err
+	}
+	var home string
+	for _, entry := range strings.Split(string(env), "\x00") {
+		if value, found := strings.CutPrefix(entry, "HOME="); found {
+			home = value
+		}
+	}
+	var request string
+	fds, err := filepath.Glob(fmt.Sprintf("/proc/%d/fd/*", pid))
+	if err != nil {
+		return xbHelperObservation{}, err
+	}
+	for _, fd := range fds {
+		target, err := os.Readlink(fd)
+		if err != nil || !strings.HasPrefix(target, paths.BackgroundAdvanceDir()+"/demands/") || !strings.HasSuffix(target, ".json.lease") {
+			continue
+		}
+		path := strings.TrimSuffix(target, ".lease")
+		data, err := os.ReadFile(path)
+		var demand struct {
+			Key, Runtime, Platform string
+			Background             bool
+		}
+		if err == nil && json.Unmarshal(data, &demand) == nil && demand.Key == xbKey && demand.Runtime == "podman" && demand.Platform == "linux/"+goruntime.GOARCH && demand.Background && pidlock.Held(target) {
+			request = path
+			break
+		}
+	}
+	return xbHelperObservation{birth: stat[19], state: stat[0], parent: parent, args: args, home: home, exe: exe, request: request}, nil
 }
 
 // ready waits for the build's actual marker, never the boot's echo of its command.
@@ -663,16 +780,11 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 				t.Fatalf("fallback launch rc=%d:\n%s", r.rc, r.combined())
 			}
 			bg, child, staging := f.ready(t)
-			_, childStat, ok := readStat(child.pid)
-			if !ok || len(childStat) < 2 {
-				t.Fatal("owned build child has no observed parent")
-			}
-			helperPID, err := strconv.Atoi(childStat[1])
+			helper, err := f.captureBuildHelper(bg, child, staging, xbObserveHelperProcess)
 			if err != nil {
 				t.Fatal(err)
 			}
-			helper := xbRemember(t, helperPID)
-			f.owned = append(f.owned, helper)
+			t.Logf("positively owned scheduler=%+v child=%+v shared-demand helper=%+v", bg, child, helper)
 			var requester *exec.Cmd
 			var requesterDone chan error
 			if sig == syscall.SIGKILL {
@@ -693,6 +805,7 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 						_ = requester.Process.Signal(syscall.SIGTERM)
 					}
 					xbWaitOwnedProcessEnd(t, "owned fresh requester cleanup", requesterProcess)
+					t.Logf("owned fresh requester cleanup ended: %+v", requesterProcess)
 				})
 				xbAwait(t, "public fresh requester owns its independent registered demand", func() bool {
 					files, _ := filepath.Glob(filepath.Join(paths.BackgroundAdvanceDir(), "demands", "*", "request-*.json"))
