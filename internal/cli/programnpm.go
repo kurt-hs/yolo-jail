@@ -17,8 +17,10 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 )
 
 // npmCaptureInput is the entire installation authority passed into the sealed runtime.
@@ -53,7 +55,8 @@ func npmCaptureRuntimeDifferences(expected, actual npmCaptureRuntime) []string {
 }
 
 type npmCaptureResolution struct {
-	Unsupported              string `json:"unsupported,omitempty"`
+	NodeFloorUnavailable     *run.NodeFloorUnavailable `json:"node_floor_unavailable,omitempty"`
+	Unsupported              string                    `json:"unsupported,omitempty"`
 	Input                    npmCaptureInput
 	Runtime                  npmCaptureRuntime
 	Lock                     json.RawMessage
@@ -123,6 +126,9 @@ func npmCaptureSpec(spec string) (name, selector string, err error) {
 var errNPMCaptureUnsupported = errors.New("npm dependency graph is unsupported for sealed capture")
 
 func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
+	if r.NodeFloorUnavailable != nil {
+		return capture.ProgramInputs{}, r.NodeFloorUnavailable
+	}
 	if r.Unsupported != "" {
 		return capture.ProgramInputs{}, fmt.Errorf("%w: %s", errNPMCaptureUnsupported, r.Unsupported)
 	}
@@ -262,6 +268,27 @@ func npmCaptureNodeWithIO(ctx context.Context, home, floor, userConfig string, w
 		return "", fmt.Errorf("invalid Node floor — repair the selected declaration")
 	}
 	if err := ops.runCommand(ctx, "mise", []string{"install", "node@" + floor}, npmCaptureEnvironment(home, "/bin/node", userConfig), w, w); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", err
+		}
+		// A failed install is not availability evidence. Ask the same provider for its
+		// release list; only a complete successful numeric observation can refuse.
+		var releases npmCaptureReleaseList
+		listCtx, cancel := context.WithTimeout(ctx, forkBuildWaitBound)
+		listErr := ops.runCommand(listCtx, "mise", []string{"ls-remote", "node"}, npmCaptureEnvironment(home, "/bin/node", userConfig), &releases, w)
+		if listCtx.Err() != nil && listErr == nil {
+			listErr = listCtx.Err()
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if listErr == nil && npmCaptureNoSatisfyingRelease(releases.String(), floor) {
+			return "", &run.NodeFloorUnavailable{Floor: floor, Available: entrypoint.DescribeAvailableNodes()}
+		}
 		return "", err
 	}
 	var b strings.Builder
@@ -273,6 +300,32 @@ func npmCaptureNodeWithIO(ctx context.Context, home, floor, userConfig string, w
 		return "", err
 	}
 	return node, nil
+}
+
+// The provider observation is private and bounded, even if its output is malformed.
+type npmCaptureReleaseList struct{ text strings.Builder }
+
+func (b *npmCaptureReleaseList) Write(p []byte) (int, error) {
+	if b.text.Len()+len(p) > 1<<20 {
+		return 0, fmt.Errorf("mise release list exceeds its observation bound")
+	}
+	return b.text.Write(p)
+}
+func (b *npmCaptureReleaseList) String() string { return b.text.String() }
+
+// Only mise's numeric, nonempty release-list output is availability evidence.
+func npmCaptureNoSatisfyingRelease(list, floor string) bool {
+	if len(list) > 1<<20 {
+		return false
+	}
+	lines := strings.Split(strings.TrimSpace(list), "\n")
+	for _, line := range lines {
+		v := strings.TrimSpace(line)
+		if strings.Trim(v, "0123456789.") != "" || !packdecl.ValidNodeFloor(v) || strings.Count(v, ".") != 2 || packdecl.SatisfiesNodeFloor(v, floor) {
+			return false
+		}
+	}
+	return true
 }
 
 var npmCaptureImagePath = "/etc/yolo-jail-image-identity"
@@ -347,6 +400,10 @@ func resolveNPMCapture(ctx context.Context, in npmCaptureInput, dir, home string
 	defer cleanup()
 	node, err := npmCaptureNode(ctx, home, in.NodeFloor, userConfig, w)
 	if err != nil {
+		var unavailable *run.NodeFloorUnavailable
+		if errors.As(err, &unavailable) {
+			unavailable.Owner, unavailable.Bin = in.Owner, in.Bin
+		}
 		return nil, err
 	}
 	observed, err := observeNPMCaptureRuntimeWithConfig(ctx, home, node, userConfig)
@@ -505,6 +562,19 @@ func runProgramNPM(args []string, w io.Writer) int {
 		var r *npmCaptureResolution
 		if err == nil {
 			r, err = resolveNPMCapture(ctx, in, path.Join(filepath.Dir(args[2]), "lock"), home, w)
+		}
+		var unavailable *run.NodeFloorUnavailable
+		if errors.As(err, &unavailable) {
+			b, writeErr := json.Marshal(npmCaptureResolution{Input: in, NodeFloorUnavailable: unavailable})
+			if writeErr == nil {
+				writeErr = os.WriteFile(args[2], b, 0644)
+			}
+			if writeErr != nil {
+				fmt.Fprintln(w, "npm capture refusal could not be recorded:", writeErr, "— repair the producer workspace permissions, then retry selected preparation")
+				return 1
+			}
+			fmt.Fprintln(w, unavailable)
+			return provision.RefusedStatus
 		}
 		if err == nil {
 			var b []byte

@@ -23,12 +23,13 @@ type programCaptureDiagnosticFixture struct {
 	FD          int
 	Workspace   string
 	Resolution  []byte
+	Status      int
 	Success     bool
 	OtherChunks map[int][][]byte
 }
 
 func init() {
-	if len(os.Args) != 3 || os.Args[1] != "program-capture-diagnostics-fixture" {
+	if (len(os.Args) != 3 && !(len(os.Args) == 4 && os.Args[3] == "-test.short")) || os.Args[1] != "program-capture-diagnostics-fixture" {
 		return
 	}
 	raw, err := os.ReadFile(os.Args[2])
@@ -57,7 +58,7 @@ func init() {
 		if os.WriteFile(filepath.Join(fixture.Workspace, "resolution.json"), fixture.Resolution, 0600) != nil || writeForkBuildRunReturned(fixture.Workspace) != nil {
 			os.Exit(94)
 		}
-		os.Exit(0)
+		os.Exit(fixture.Status)
 	}
 	os.Exit(37)
 }

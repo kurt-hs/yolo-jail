@@ -26,6 +26,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // TestAnUnsatisfiableNodeFloorRefusesTheLaunch: a local pack declares a program with
@@ -53,7 +54,8 @@ func TestAnUnsatisfiableNodeFloorRefusesTheLaunch(t *testing.T) {
 	dir := writeProject(t, `{}`)
 	packHome(t, `{"packs": [{"source": "file://`+pack+`", "name": "nodefloor-fixture"}]}`)
 
-	r := runYolo(t, dir, `true && echo NODEFLOOR-TARGET-$((40+2))`)
+	target := `true && echo NODEFLOOR-TARGET-$((40+2)) && touch /workspace/nodefloor-target-ran`
+	r := runYolo(t, dir, target)
 	all := r.stdout + r.stderr
 
 	if r.rc == 0 {
@@ -67,8 +69,11 @@ func TestAnUnsatisfiableNodeFloorRefusesTheLaunch(t *testing.T) {
 	if strings.Contains(all, "NODEFLOOR-TARGET-42") {
 		t.Errorf("the target ran after the refusal:\n%s", all)
 	}
-	if strings.Contains(all, "Executing:") {
-		t.Errorf("the Executing banner printed, announcing a command that must not run:\n%s", all)
+	if strings.Contains(all, "Executing: "+shquote.Join([]string{"bash", "-lc", target})) {
+		t.Errorf("the target Executing banner printed, announcing a command that must not run:\n%s", all)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "nodefloor-target-ran")); !os.IsNotExist(err) {
+		t.Errorf("persistent target marker exists or could not be checked: %v", err)
 	}
 	for what, want := range map[string]string{
 		"the refusal":  "REFUSING to start this jail",
