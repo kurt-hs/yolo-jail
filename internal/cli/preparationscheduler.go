@@ -430,7 +430,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 			}
 		case tick, ok := <-tickEvents:
 			if !ok {
-				return nil
+				return ctx.Err()
 			}
 			if !tick.IsZero() {
 				attempted = map[string]bool{}

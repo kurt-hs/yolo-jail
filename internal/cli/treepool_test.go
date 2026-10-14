@@ -97,6 +97,7 @@ func newPoolFixture(t *testing.T) *poolFixture {
 		return forkBuildRunJail(staging, b, s, color), false
 	}
 	t.Cleanup(func() { forkBuildChild = prev })
+	stubSharedPreparationWorker(t)
 	return pf
 }
 

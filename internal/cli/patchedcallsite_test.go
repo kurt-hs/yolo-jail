@@ -89,10 +89,11 @@ func TestFreshRequestCancellationDoesNotFallBackToTheServingBuild(t *testing.T) 
 		t.Fatal("Ctrl-C did not cancel the fresh check")
 	}
 	if delivered["tool"].Key != "" || !strings.Contains(delivered["tool"].Reason, "could not be prepared freshly") ||
-		!strings.Contains(output.String(), "fresh upstream check was interrupted") {
+		!strings.Contains(output.String(), "preparation requester was interrupted") {
 		t.Fatalf("cancelled freshness handed the old build instead of refusing: old=%s delivered=%+v\n%s",
 			old.delivery.Key, delivered["tool"], output.String())
 	}
+	waitFor(t, "zero-demand transport teardown", func() bool { return fx.record(t).CheckedAt == 0 })
 	if record := fx.record(t); record.CheckedAt != 0 || record.Good == nil || record.Good.Entry != old.delivery.Key {
 		t.Fatalf("cancellation lost the retry boundary or the previously admitted good build: %+v", record)
 	}

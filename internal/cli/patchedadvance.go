@@ -179,7 +179,13 @@ type advanceOptions struct {
 	// which its lines name; it tries each lock once — the check's record and mirror locks, the walk's
 	// mirror lock, the build's lock — and skips the key when one is held (§6.2 rule 5), while its
 	// completed build's settle record write waits (rule 1); a stopped build jail is removed by name.
-	background bool
+	// sharedOwned marks the detached production lane; requesters must not recurse into it.
+	sharedOwned          bool
+	sharedForegroundOnly bool
+	// sharedAutomatic attaches a scheduler request to the same production lifetime as updates.
+	sharedAutomatic              bool
+	sharedSubscriptionGeneration uint64
+	background                   bool
 }
 
 // advanceActScope is the production ActInterrupt scope boundary. The pass-through default keeps
@@ -367,13 +373,40 @@ var replayElapsed = time.Since
 
 // advancePatchedFork runs f's advance and returns what its jail is handed.
 func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
-	a, early := newAdvance(f, o)
-	if early != nil {
-		return *early
-	}
 	ctx := o.ctx
 	if o.slot != nil {
 		ctx = o.slot.context()
+	}
+	if o.launch && (o.freshCheck || o.sharedAutomatic) && !o.sharedOwned && !o.sharedForegroundOnly {
+		a := &advance{f: f, o: o, pr: richtext.Printer{W: o.out, Color: o.color}, epr: richtext.Printer{W: o.errw, Color: o.color}}
+		if o.freshBoundaryErr != nil {
+			return a.freshRefusal("could not register a fresh check", o.freshBoundaryErr)
+		}
+		if o.act.Interrupted() {
+			return a.freshRefusal("the preparation requester was interrupted", context.Canceled)
+		}
+		if ctx != nil {
+			return a.waitSharedPreparation(ctx)
+		}
+		var result advanceResult
+		sig := advanceActScope(o.act, func(scopeCtx context.Context) {
+			workCtx, stopScope, cancelWork := mergeAdvanceOperationContext(o.operationCtx, scopeCtx)
+			defer stopScope()
+			defer cancelWork()
+			result = a.waitSharedPreparation(workCtx)
+		})
+		if sig != nil {
+			return a.freshRefusal("the preparation requester was interrupted", context.Canceled)
+		}
+		return result
+	}
+	if o.sharedOwned || o.sharedForegroundOnly {
+		o.operationCtx = ctx
+	}
+
+	a, early := newAdvance(f, o)
+	if early != nil {
+		return *early
 	}
 	if a.o.freshBoundaryErr != nil {
 		return a.freshRefusal("could not register a fresh check", a.o.freshBoundaryErr)
@@ -393,6 +426,7 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 		}
 		return a.actStopped()
 	}
+
 	if o.launch && ctx != nil {
 		// IN A POOL — a jail launch's build pool (buildpool.go), a host act's parallel advance
 		// (treepool.go) — the pool's one interrupt scope is this advance's, so one Ctrl-C ends every
@@ -1954,7 +1988,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 			mode.runJail = func(staging string, b forkBuild, s captureStreams) int {
 				rc, bound := forkBuildChild(a.ctx, forkBuildWaitBound, staging, b, s, a.o.color)
 				a.boundHit = bound
-				if a.o.background && a.ctx.Err() != nil {
+				if (a.o.background || a.o.sharedOwned) && a.ctx.Err() != nil {
 					// A SIGTERM OR SIGHUP STOPPED THE BACKGROUND ADVANCE (XB-D19): its build child's group
 					// is gone, and nothing stops a build jail when the yolo that started it dies, so it is
 					// removed by name before the build's staging is looked at.

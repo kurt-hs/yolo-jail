@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"os"
 	"sort"
 	"strings"
@@ -75,4 +80,40 @@ func preparationProviderEnvNames() []string {
 
 func currentPreparationEnvironment() []string {
 	return preparationEnvironment(os.Environ(), preparationProviderEnvNames())
+}
+
+// A foreground detach must not block in an uncancellable resolver while discovering credential
+// declarations. Busy source-pack authority defers the requester rather than borrowing its env.
+func sharedPreparationEnvironment(ctx context.Context) ([]string, error) {
+	resolver, release := preparationScopedResolver(ctx)
+	defer release()
+	var contention error
+	selected := selectHostPacks(func(e config.PackEntry) (*packload.Pack, error) {
+		p, err := resolver(e)
+		if errors.Is(err, packsrc.ErrLockHeld) {
+			contention = err
+		}
+		return p, err
+	}, config.UserScopeSelection())
+	if contention != nil {
+		return nil, contention
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(selected.problems()) > 0 {
+		return nil, fmt.Errorf("could not resolve provider environment authority — repair the user pack selection and retry `yolo --update`")
+	}
+	var names []string
+	packs := append(append([]*packload.Pack(nil), selected.packs...), packload.Embedded()...)
+	for _, p := range packs {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		for _, provider := range p.Decl.Providers() {
+			names = append(names, provider.APIKeyEnvName...)
+			names = append(names, provider.RegionEnvName...)
+		}
+	}
+	return preparationEnvironment(os.Environ(), names), nil
 }

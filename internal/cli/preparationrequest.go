@@ -12,11 +12,15 @@ import (
 )
 
 type freshRequestInputs struct {
-	Owner    string              `json:"owner"`
-	Source   string              `json:"source"`
-	Platform string              `json:"platform"`
-	Inputs   packsrc.CheckInputs `json:"inputs"`
-	Recipe   string              `json:"recipe"`
+	Owner     string              `json:"owner"`
+	Base      string              `json:"base,omitempty"`
+	TreeOwner string              `json:"tree_owner,omitempty"`
+	Into      string              `json:"into,omitempty"`
+	Source    string              `json:"source"`
+	Platform  string              `json:"platform"`
+	Platforms []string            `json:"platforms,omitempty"`
+	Inputs    packsrc.CheckInputs `json:"inputs"`
+	Recipe    string              `json:"recipe"`
 }
 
 func registerFreshPreparation(ctx context.Context, store *packsrc.Store, f packload.Fork, platform string,
@@ -50,7 +54,7 @@ func freshPreparationIdentity(f packload.Fork, platform string) (string, error) 
 	if recipe == "" {
 		return "", fmt.Errorf("%s has no supported build recipe", f.Key())
 	}
-	data, err := json.Marshal(freshRequestInputs{Owner: f.Key(), Source: f.Source, Platform: platform, Inputs: inputs, Recipe: recipe})
+	data, err := json.Marshal(freshRequestInputs{Owner: f.Key(), Base: f.Base, TreeOwner: f.Owner, Into: f.Into, Source: f.Source, Platform: platform, Platforms: f.Platforms, Inputs: inputs, Recipe: recipe})
 	if err != nil {
 		return "", err
 	}

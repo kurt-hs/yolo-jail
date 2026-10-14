@@ -113,6 +113,7 @@ func newPatchedFixture(t *testing.T, follow string) *patchedFixture {
 	f.packs, f.home = packs, home
 	f.writeUserConfig(t, "")
 	forkPinHomeSeams(t)
+	stubSharedPreparationWorker(t)
 	return f
 }
 
