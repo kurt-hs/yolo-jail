@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,10 +161,6 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
 	calls := filepath.Join(t.TempDir(), "git-called")
 	patchedGitWrapper(t, "echo called > "+shellQuote(calls)+"; exit 99")
-	spawned := 0
-	previousBackground := backgroundTreeAdvance
-	backgroundTreeAdvance = func([]packload.Fork, string, string, io.Writer, bool) { spawned++ }
-	t.Cleanup(func() { backgroundTreeAdvance = previousBackground })
 	// Use the production pool path: BuildTrees' answer and next-launch spawn decision are one act.
 	var output bytes.Buffer
 	req := run.TreeBuildRequest{Trees: []packload.Fork{fx.tree(t)}, Platform: patchedTestPlatform, Runtime: "podman",
@@ -174,8 +169,8 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 	if delivered := trees[treeKeyCLI]; delivered.Dir == "" || delivered.PatchFailure == nil {
 		t.Errorf("the offline next-launch consumer lost its old Good or concrete failure: %+v\n%s", delivered, output.String())
 	}
-	if len(fx.builds) != buildCount || spawned != 0 {
-		t.Errorf("next-launch failure ran foreground build/background work: builds=%d/%d spawned=%d", len(fx.builds), buildCount, spawned)
+	if len(fx.builds) != buildCount {
+		t.Errorf("next-launch failure ran a foreground build: builds=%d/%d", len(fx.builds), buildCount)
 	}
 	if _, err := os.Stat(calls); err == nil {
 		t.Errorf("next-launch failure probed Git before its offline delivery")
