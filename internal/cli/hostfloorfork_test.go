@@ -16,9 +16,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
@@ -31,6 +34,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // withForkFloor is the PRODUCTION floor wiring — its ForkPin, ResolveBuild and Build among it —
@@ -702,5 +706,155 @@ func TestHostUpdatePlainForkMovesItsScopedPinAndBuildsTheNewCopy(t *testing.T) {
 	}
 	if forkLockCommit(t) != head2 || floorRecord(t, "forkcli").Revision != head2 || runs != 2 {
 		t.Fatalf("fresh repin/build did not reach floor: pin=%s revision=%s builds=%d\n%s", forkLockCommit(t), floorRecord(t, "forkcli").Revision, runs, out.String())
+	}
+}
+
+func TestHostUpdatePlainForkFailedFetchRefusesInstalledCopy(t *testing.T) {
+	repo, _, _ := forkFloorHome(t)
+	withForkFloor(t)
+	runs := 0
+	withFakeCaptureJail(t, forkFloorBuildJail(t, &runs, true))
+	captureHostExec(t)
+	var out bytes.Buffer
+	if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out.String())
+	}
+	before := floorRecord(t, "forkcli")
+	pins, err := os.ReadFile(forkLockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(repo, repo+"-offline"); err != nil {
+		t.Fatal(err)
+	}
+	got := captureHostExec(t)
+	out.Reset()
+	if rc := hostMain([]string{"--update", "--", "forkcli"}, io.Discard, &out, false, nil); rc == 0 || got.target != "" {
+		t.Errorf("failed fresh fetch executed installed target: rc=%d target=%q\n%s", rc, got.target, out.String())
+	}
+	after, err := os.ReadFile(forkLockPath())
+	if err != nil || string(after) != string(pins) || !reflect.DeepEqual(floorRecord(t, "forkcli"), before) || runs != 1 {
+		t.Fatalf("failed freshness changed standing pin/copy/builds: %v runs=%d", err, runs)
+	}
+	if !strings.Contains(out.String(), "fetch") || !strings.Contains(out.String(), "retry") {
+		t.Errorf("missing actionable fetch diagnosis:\n%s", out.String())
+	}
+	// Ordinary pack pinning and HOST consumption retain their cached/offline behavior.
+	if rc := pinForks(richtext.Printer{W: io.Discard}, io.Discard, true); rc != 0 {
+		t.Fatal(rc)
+	}
+	got = captureHostExec(t)
+	if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 || got.target == "" {
+		t.Fatalf("ordinary installed copy refused: %d\n%s", rc, out.String())
+	}
+}
+
+func TestHostUpdatePlainForkDeclarationChangeDuringFetchCannotPublish(t *testing.T) {
+	for _, change := range []string{"edited", "revoked"} {
+		t.Run(change, func(t *testing.T) {
+			_, commit, manifest := forkFloorHome(t)
+			withForkFloor(t)
+			runs := 0
+			withFakeCaptureJail(t, forkFloorBuildJail(t, &runs, true))
+			captureHostExec(t)
+			var out syncBuffer
+			if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 {
+				t.Fatalf("seed: %d\n%s", rc, out.String())
+			}
+			before := floorRecord(t, "forkcli")
+			pins, err := os.ReadFile(forkLockPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			commit("second")
+			realGit, err := exec.LookPath("git")
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			fifo, started := filepath.Join(dir, "release"), filepath.Join(dir, "started")
+			if err := syscall.Mkfifo(fifo, 0600); err != nil {
+				t.Fatal(err)
+			}
+			release, err := os.OpenFile(fifo, os.O_RDWR, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release.Close()
+			// The real fetch is paused, not replaced. The fixture owns this git child.
+			writeFile(t, filepath.Join(dir, "git"), "#!/bin/sh\nfor arg do\n if [ \"$arg\" = fetch ]; then\n  : > "+shquote.Quote(started)+"\n  read token < "+shquote.Quote(fifo)+"\n fi\ndone\nexec "+shquote.Quote(realGit)+" \"$@\"\n")
+			if err := os.Chmod(filepath.Join(dir, "git"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			got := captureHostExec(t)
+			done := make(chan int, 1)
+			go func() { done <- hostMain([]string{"--update", "--", "forkcli"}, io.Discard, &out, false, nil) }()
+			defer func() { _, _ = release.WriteString("release\n") }()
+			waitFor(t, "real HOST source fetch", func() bool { _, err := os.Stat(started); return err == nil })
+			if change == "edited" {
+				body, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, manifest, strings.Replace(string(body), "sh build.sh", "sh changed.sh", 1))
+			} else {
+				writeFile(t, paths.UserConfigPath(), `{"packs":[]}`)
+			}
+			if _, err := release.WriteString("release\n"); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case rc := <-done:
+				if rc == 0 || got.target != "" {
+					t.Errorf("%s declaration executed target: rc=%d target=%q\n%s", change, rc, got.target, out.String())
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("HOST fetch did not settle")
+			}
+			after, err := os.ReadFile(forkLockPath())
+			if err != nil || string(after) != string(pins) || !reflect.DeepEqual(floorRecord(t, "forkcli"), before) || runs != 1 {
+				t.Fatalf("%s request published pin/copy: %v runs=%d\n%s", change, err, runs, out.String())
+			}
+			if !strings.Contains(out.String(), "retry") {
+				t.Errorf("no recovery step: %s", out.String())
+			}
+		})
+	}
+}
+
+func TestHostUpdatePlainForkFixedPinAndOtherOwnerRemainUnchanged(t *testing.T) {
+	repo, commit, manifest := forkFloorHome(t)
+	first := strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
+	body, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, manifest, strings.Replace(string(body), "?ref=main", "?ref="+first, 1))
+	withForkFloor(t)
+	runs := 0
+	withFakeCaptureJail(t, forkFloorBuildJail(t, &runs, true))
+	captureHostExec(t)
+	var out bytes.Buffer
+	if rc := hostExec(nil, []string{"forkcli"}, io.Discard, &out, nil); rc != 0 {
+		t.Fatalf("seed: %d\n%s", rc, out.String())
+	}
+	lock, err := packsrc.LoadForkLock(forkLockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := packsrc.ForkLockEntry{Key: "other/tool", Source: "git+file:///other", Commit: "other-fixed-pin"}
+	lock.Set(other)
+	if err := lock.Save(forkLockPath()); err != nil {
+		t.Fatal(err)
+	}
+	commit("second")
+	got := captureHostExec(t)
+	if rc := hostMain([]string{"--update", "--", "forkcli"}, io.Discard, &out, false, nil); rc != 0 || got.target == "" {
+		t.Fatalf("healthy fixed source: %d target=%q\n%s", rc, got.target, out.String())
+	}
+	lock, err = packsrc.LoadForkLock(forkLockPath())
+	if err != nil || lock.Forks[other.Key] != other || forkLockCommit(t) != first || floorRecord(t, "forkcli").Revision != first || runs != 1 {
+		t.Fatalf("fixed/other owner moved: %+v %v builds=%d", lock, err, runs)
 	}
 }
