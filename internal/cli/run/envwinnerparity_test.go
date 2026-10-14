@@ -26,27 +26,29 @@ import (
 )
 
 // winnerKeys are the names the fixture sets from more than one source.
-var winnerKeys = []string{"K1", "FXP_KEY", "K2", "K4", "K5", "K6", "K7", "K8"}
+var winnerKeys = []string{"K1", "FXP_KEY", "K2", "K4", "K5", "K6", "K7", "K8", "GIT_OPTIONAL_LOCKS"}
 
 // unsetMark is what a sourced shell prints for a name it does not hold.
 const unsetMark = "<unset>"
 
 // wantAgentWinners is option A for fxa on its profile: each name's winner, unsetMark for a removal.
 var wantAgentWinners = map[string]string{
-	"K1":      "shape",        // the shape var beats the gated fold
-	"FXP_KEY": "shape-key",    // the shape var beats a claimed env_sources value
-	"K2":      "shape",        // the shape var beats an unclaimed env_sources value
-	"K4":      "es-unclaimed", // env_sources beats the static fold
-	"K5":      unsetMark,      // a null removes the fold's value
-	"K6":      "shape",        // a null never removes a shape var
-	"K7":      unsetMark,      // a shape tombstone beats env_sources and the fold
-	"K8":      "fold-static",  // the fold where nothing else sets the name
+	"K1":                 "shape",        // the shape var beats the gated fold
+	"FXP_KEY":            "shape-key",    // the shape var beats a claimed env_sources value
+	"K2":                 "shape",        // the shape var beats an unclaimed env_sources value
+	"K4":                 "es-unclaimed", // env_sources beats the static fold
+	"K5":                 unsetMark,      // a null removes the fold's value
+	"K6":                 "shape",        // a null never removes a shape var
+	"K7":                 unsetMark,      // a shape tombstone beats env_sources and the fold
+	"K8":                 "fold-static",  // the fold where nothing else sets the name
+	"GIT_OPTIONAL_LOCKS": unsetMark,
 }
 
 // wantSharedWinners is option A for every process: no gate, no claimed value, no shape var.
 var wantSharedWinners = map[string]string{
 	"K1": unsetMark, "FXP_KEY": unsetMark, "K2": "es-unclaimed", "K4": "es-unclaimed",
 	"K5": unsetMark, "K6": unsetMark, "K7": "es-unclaimed", "K8": "fold-static",
+	"GIT_OPTIONAL_LOCKS": unsetMark,
 }
 
 // winnerFixturePack installs fxa and sets every winnerKeys name from more than one source: the
@@ -224,6 +226,42 @@ func TestTheMacosUserSessionDeliversTheCompositionsWinner(t *testing.T) {
 	login := envMap(channel.launchEnv("zsh"))
 	requireWinners(t, "macos-user login shell", sourcedWinners(t, login), shared, wantSharedWinners)
 	requireWinners(t, "macos-user login shell, then fxa's file", sourcedWinners(t, login, agentFile), agent, wantAgentWinners)
+}
+
+func TestGuardrailsGitOptionalLocksReachesJailVehicles(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, want string
+	}{
+		{name: "pack default", want: "0"},
+		{name: "env_sources override", source: "1", want: "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := bareConfig()
+			if tc.source != "" {
+				es := jsonx.NewOrderedMap()
+				es.Set("GIT_OPTIONAL_LOCKS", tc.source)
+				cfg.Set("env_sources", []any{es})
+			}
+			packs := []*packload.Pack{officialPack(t, "guardrails")}
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			o := goldenOptions(t.TempDir(), home)
+			channel := channelFor(t, o, cfg, packs, nil)
+			if got, ok := channel.scope.SharedEnv().Value("GIT_OPTIONAL_LOCKS"); !ok || got != tc.want {
+				t.Fatalf("shared composition has GIT_OPTIONAL_LOCKS=%q, present=%v; want %q", got, ok, tc.want)
+			}
+
+			ws := t.TempDir()
+			deliverChannel(ws, "podman", channel)
+			file := filepath.Join(ws, "yolo-user-env.sh")
+			if got := sourcedWinners(t, nil, file)["GIT_OPTIONAL_LOCKS"]; got != tc.want {
+				t.Errorf("container shared environment has GIT_OPTIONAL_LOCKS=%q, want %q", got, tc.want)
+			}
+			if got := envMap(channel.launchEnv("bash"))["GIT_OPTIONAL_LOCKS"]; got != tc.want {
+				t.Errorf("macos-user launch environment has GIT_OPTIONAL_LOCKS=%q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 // THE READERS: DeliveredTo answers the agent's composition, and deliverySource, the env-override

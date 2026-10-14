@@ -23,20 +23,21 @@ import (
 
 // hostWinnerKeys are the names the fixture sets from more than one source; K3 is the shell's
 // against the shape var's.
-var hostWinnerKeys = []string{"K1", "FXP_KEY", "K2", "K3", "K4", "K5", "K6", "K7", "K8"}
+var hostWinnerKeys = []string{"K1", "FXP_KEY", "K2", "K3", "K4", "K5", "K6", "K7", "K8", "GIT_OPTIONAL_LOCKS"}
 
 // wantHostWinners is option A for fxa on its profile, over a shell exporting K3, K5 and K6:
 // "" for a name the exec'd process does not hold.
 var wantHostWinners = map[string]string{
-	"K1":      "shape",        // the shape var beats the gated fold
-	"FXP_KEY": "shape-key",    // the shape var beats a claimed env_sources value
-	"K2":      "shape",        // the shape var beats an unclaimed env_sources value
-	"K3":      "shape",        // yolo's value beats the shell's until OQ-NC13 says otherwise
-	"K4":      "es-unclaimed", // env_sources beats the static fold
-	"K5":      "",             // a null removes the fold's value and the shell's
-	"K6":      "shape",        // a null never removes a shape var
-	"K7":      "",             // a shape tombstone beats env_sources and the fold
-	"K8":      "fold-static",  // the fold where nothing else sets the name
+	"K1":                 "shape",        // the shape var beats the gated fold
+	"FXP_KEY":            "shape-key",    // the shape var beats a claimed env_sources value
+	"K2":                 "shape",        // the shape var beats an unclaimed env_sources value
+	"K3":                 "shape",        // yolo's value beats the shell's until OQ-NC13 says otherwise
+	"K4":                 "es-unclaimed", // env_sources beats the static fold
+	"K5":                 "",             // a null removes the fold's value and the shell's
+	"K6":                 "shape",        // a null never removes a shape var
+	"K7":                 "",             // a shape tombstone beats env_sources and the fold
+	"K8":                 "fold-static",  // the fold where nothing else sets the name
+	"GIT_OPTIONAL_LOCKS": "",
 }
 
 // writeWinnerFixture writes the fixture pack under home, selects it with fxa on fxp, and exports
@@ -66,6 +67,39 @@ end)
 	}
 	for _, k := range []string{"K3", "K5", "K6"} {
 		t.Setenv(k, "user-shell")
+	}
+}
+
+func TestGuardrailsGitOptionalLocksReachesHostExec(t *testing.T) {
+	for _, tc := range []struct {
+		name, config, want string
+	}{
+		{name: "pack default beats inherited shell", config: `{"packs":["guardrails"]}`, want: "0"},
+		{name: "env_sources override", config: `{"packs":["guardrails"],"env_sources":[{"GIT_OPTIONAL_LOCKS":"1"}]}`, want: "1"},
+		{name: "unselected pack preserves inherited shell", config: `{"packs":[]}`, want: "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			t.Setenv("GIT_OPTIONAL_LOCKS", "1")
+			t.Chdir(t.TempDir())
+			userCfg(t, home, tc.config)
+
+			c := composeHostLaunch("bash", "", nil, func(string) {})
+			if c.err != nil {
+				t.Fatal(c.err)
+			}
+			got := ""
+			for _, kv := range c.environ() {
+				if k, v, ok := strings.Cut(kv, "="); ok && k == "GIT_OPTIONAL_LOCKS" {
+					got = v
+				}
+			}
+			if got != tc.want {
+				t.Errorf("host exec GIT_OPTIONAL_LOCKS=%q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -42,6 +42,7 @@
     // https://sources.debian.org/src/rust-fd-find/10.2.0-1/debian/README.Debian/
     // A bundle file cannot hold the step, so `yolo check-deps` leaves fd out of it and prints
     // this command beside the bundle's (internal/depcheck bundleToken).
-    { "kind": "requires", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd", "dnf": "fd-find", "nix": "fd", "pacman": "fd"} }
+    { "kind": "requires", "bin": "fd", "install_hints": {"brew": "fd", "apt": "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd", "dnf": "fd-find", "nix": "fd", "pacman": "fd"} },
+    { "kind": "env", "vars": {"GIT_OPTIONAL_LOCKS": "0"} }
   ]
 }
