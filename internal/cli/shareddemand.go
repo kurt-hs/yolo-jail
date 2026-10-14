@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +67,18 @@ type preparationDemandResult struct {
 	Good                                                    *packsrc.GoodBuild
 	From, To, FailWhat, FailErr, Skipped, Retained, Problem string
 	RetryAt                                                 time.Time
+}
+
+// A structured refusal may accompany only a failed ordinary result, never success facts.
+func (r preparationDemandResult) ordinaryFloorFailure(in npmCaptureInput) error {
+	e := r.NodeFloorUnavailable
+	if e == nil {
+		return nil
+	}
+	if !r.Failed || !e.Valid() || e.Owner != in.Owner || e.Bin != in.Bin || e.Floor != in.NodeFloor || !reflect.DeepEqual(r, preparationDemandResult{Failed: true, OperationError: r.OperationError, NodeFloorUnavailable: e}) {
+		return fmt.Errorf("invalid or mixed ordinary failure result — retry selected preparation")
+	}
+	return e
 }
 
 func demandResult(r advanceResult) preparationDemandResult {
@@ -754,7 +767,9 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				if err != nil {
 					unsupportedNPM = errors.Is(err, errNPMCaptureUnsupported)
 					if workCtx.Err() == nil {
-						errors.As(err, &nodeFloorUnavailable)
+						if errors.As(err, &nodeFloorUnavailable) && (!nodeFloorUnavailable.Valid() || nodeFloorUnavailable.Owner != resolved.NPM.Owner || nodeFloorUnavailable.Bin != resolved.NPM.Bin || nodeFloorUnavailable.Floor != resolved.NPM.NodeFloor) {
+							nodeFloorUnavailable = nil
+						}
 					}
 					res = advanceResult{failed: true, operationError: err.Error()}
 				} else {

@@ -127,7 +127,7 @@ var errNPMCaptureUnsupported = errors.New("npm dependency graph is unsupported f
 
 func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
 	if r.NodeFloorUnavailable != nil {
-		return capture.ProgramInputs{}, r.NodeFloorUnavailable
+		return capture.ProgramInputs{}, fmt.Errorf("failure payload is not a successful npm resolution — retry selected preparation")
 	}
 	if r.Unsupported != "" {
 		return capture.ProgramInputs{}, fmt.Errorf("%w: %s", errNPMCaptureUnsupported, r.Unsupported)
@@ -287,7 +287,14 @@ func npmCaptureNodeWithIO(ctx context.Context, home, floor, userConfig string, w
 			return "", ctx.Err()
 		}
 		if listErr == nil && npmCaptureNoSatisfyingRelease(releases.String(), floor) {
-			return "", &run.NodeFloorUnavailable{Floor: floor, Available: entrypoint.DescribeAvailableNodes()}
+			available, observeErr := entrypoint.DescribeCaptureAvailableNodes()
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			if observeErr != nil {
+				return "", observeErr
+			}
+			return "", &run.NodeFloorUnavailable{Floor: floor, Available: available}
 		}
 		return "", err
 	}
@@ -565,6 +572,10 @@ func runProgramNPM(args []string, w io.Writer) int {
 		}
 		var unavailable *run.NodeFloorUnavailable
 		if errors.As(err, &unavailable) {
+			if !unavailable.Valid() {
+				fmt.Fprintln(w, "invalid structured npm failure — retry selected preparation")
+				return 1
+			}
 			b, writeErr := json.Marshal(npmCaptureResolution{Input: in, NodeFloorUnavailable: unavailable})
 			if writeErr == nil {
 				writeErr = os.WriteFile(args[2], b, 0644)

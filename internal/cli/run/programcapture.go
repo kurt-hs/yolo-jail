@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
 )
@@ -38,7 +40,15 @@ type NodeFloorUnavailable struct {
 	Owner, Bin, Floor, Available string
 }
 
+func (e *NodeFloorUnavailable) Valid() bool {
+	return e != nil && packdecl.ValidPackName(e.Owner) && packdecl.ValidBinName(e.Bin) && packdecl.ValidNodeFloor(e.Floor) && strings.Trim(strings.TrimPrefix(e.Floor, "v"), "0123456789.") == "" && entrypoint.ValidCaptureNodeAvailability(e.Available)
+}
+
 func (e *NodeFloorUnavailable) Error() string {
+	if !e.Valid() {
+		return "invalid structured Node-floor failure — retry selected preparation"
+	}
+
 	return fmt.Sprintf("REFUSING to start this jail: pack %s, program %s requires Node >=%s; the observed mise release list has no satisfying version. Available: %s — lower the pack's Node floor or retry after its provider offers a satisfying release", e.Owner, e.Bin, e.Floor, e.Available)
 }
 
@@ -94,9 +104,12 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 		}
 	}
 	deliveries, err := o.PreparePrograms(ProgramCaptureRequest{Packs: packs, Env: e, Runtime: rt, Platform: containerJailPlatform(), Fingerprint: fingerprint, RepoRoot: repoRoot, Workspace: o.Workspace, Fresh: o.Update, Act: o.actInterrupt(), Stderr: o.Stderr, UnsupportedRuntime: reason})
+	if o.actInterrupt().Interrupted() {
+		err = context.Canceled
+	}
 	if err != nil {
 		var unavailable *NodeFloorUnavailable
-		if errors.As(err, &unavailable) {
+		if errors.As(err, &unavailable) && unavailable.Valid() {
 			fmt.Fprintln(o.Stderr, unavailable)
 			return provision.RefusedStatus
 		}

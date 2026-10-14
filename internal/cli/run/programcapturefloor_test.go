@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ func TestRunOrdinaryNodeFloorRefusalStatusBeforeTarget(t *testing.T) {
 		{"install failure", errors.New("transient install failure"), 1},
 		{"cancel", context.Canceled, 1},
 		{"timeout", context.DeadlineExceeded, 1},
+		{"late interrupt", &NodeFloorUnavailable{Owner: "floor-fixture", Bin: "probe", Floor: "99", Available: "24.21.0 at /bin/node"}, 1},
+		{"unsafe availability", &NodeFloorUnavailable{Owner: "floor-fixture", Bin: "probe", Floor: "99", Available: "UNSAFE\n\x1b]52;c;secret\a"}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bin, targetMarker := t.TempDir(), filepath.Join(t.TempDir(), "target-ran")
@@ -56,9 +59,22 @@ func TestRunOrdinaryNodeFloorRefusalStatusBeforeTarget(t *testing.T) {
 			store := t.TempDir()
 			o.CapturesDir = func() string { return store }
 			calls := 0
-			o.PreparePrograms = func(ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error) {
+			o.PreparePrograms = func(req ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error) {
 				calls++
-				return nil, tc.err
+				result := tc.err
+				if tc.name == "late interrupt" {
+					req.Act.Scope(func(ctx context.Context) {
+						if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+							t.Fatal(err)
+						}
+						select {
+						case <-ctx.Done():
+						case <-time.After(3 * time.Second):
+							t.Fatal("interrupt not routed")
+						}
+					})
+				}
+				return nil, result
 			}
 			status := Run(*o)
 			_, markerErr := os.Lstat(targetMarker)
@@ -74,7 +90,7 @@ func TestRunOrdinaryNodeFloorRefusalStatusBeforeTarget(t *testing.T) {
 						t.Fatalf("missing %q: %s", want, diag.String())
 					}
 				}
-			} else if strings.Contains(diag.String(), "REFUSING") {
+			} else if strings.Contains(diag.String(), "REFUSING") || strings.Contains(diag.String(), "UNSAFE") || strings.Contains(diag.String(), "secret") {
 				t.Fatal("generic error classified unavailable")
 			}
 		})

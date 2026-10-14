@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 )
 
@@ -61,7 +62,8 @@ func TestNPMCaptureNodeUnavailableRequiresSuccessfulVersionObservation(t *testin
 				return tc.listErr
 			}}
 			_, err := npmCaptureNodeWithIO(ctx, t.TempDir(), "99", "private-npmrc", io.Discard, ops)
-			isUnavailable := strings.Contains(err.Error(), "Node >=99") && strings.Contains(err.Error(), "Available:")
+			var unavailable *run.NodeFloorUnavailable
+			isUnavailable := errors.As(err, &unavailable) && unavailable.Floor == "99"
 			if isUnavailable != tc.unavailable {
 				t.Fatalf("unavailable=%v want %v: %v (calls %d)", isUnavailable, tc.unavailable, err, calls)
 			}
@@ -111,13 +113,24 @@ func TestProgramCaptureChildFloorRefusalUsesOwnedResultNotOutput(t *testing.T) {
 			self, _ := os.Executable()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			forkBuildChildCommand = func([]string) (*exec.Cmd, error) {
+			forkBuildChildCommand = func(argv []string) (*exec.Cmd, error) {
+				for _, a := range argv {
+					if value, ok := strings.CutPrefix(a, "--workspace="); ok {
+						workspace = value
+					}
+				}
+				config, _ = json.Marshal(programCaptureDiagnosticFixture{FD: 1, Chunks: [][]byte{[]byte("producer refusal\n")}, Workspace: workspace, Resolution: payload, Status: tc.status})
+				writeFile(t, fixture, string(config))
 				if tc.cancel {
 					cancel()
 				}
 				return exec.Command(self, "program-capture-diagnostics-fixture", fixture, "-test.short"), nil
 			}
-			err := programCaptureChild(ctx, workspace, []string{"yolo", "internal", "program-npm", "resolve", "/workspace/input.json", "/workspace/resolution.json"}, io.Discard)
+			storeDir, evalErr := filepath.EvalSymlinks(t.TempDir())
+			if evalErr != nil {
+				t.Fatal(evalErr)
+			}
+			_, err := resolveSelectedNPMCapture(ctx, &capture.Store{Dir: storeDir}, in, io.Discard)
 			var got *run.NodeFloorUnavailable
 			if errors.As(err, &got) != tc.typed {
 				t.Fatalf("typed=%v want %v: %v", got, tc.typed, err)
@@ -126,7 +139,7 @@ func TestProgramCaptureChildFloorRefusalUsesOwnedResultNotOutput(t *testing.T) {
 				t.Fatalf("cancel lost: %v", err)
 			}
 			if tc.typed {
-				if _, e := result.inputs(); !errors.As(e, &got) {
+				if _, e := result.inputs(); e == nil || errors.As(e, &got) {
 					t.Fatalf("refusal admitted as success: %v", e)
 				}
 			}
@@ -138,6 +151,7 @@ func TestOrdinaryDemandTransportsFloorRefusalWithoutAdmittingGood(t *testing.T) 
 	for _, typed := range []bool{false, true} {
 		t.Run(fmt.Sprint(typed), func(t *testing.T) {
 			f := newSelectedNPMFixture(t)
+			f.in.NodeFloor = "99"
 			req := selectedNPMUser(t, f, false)
 			workers := selectedNPMSharedWorker(t)
 			old := programCaptureChild

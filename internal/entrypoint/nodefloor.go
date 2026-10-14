@@ -31,6 +31,7 @@ package entrypoint
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -387,4 +388,60 @@ func DescribeAvailableNodes() string {
 		where += ", no node outside $HOME on $" + DarwinLoginPathEnv
 	}
 	return "none (" + where + ", and no node in " + miseNodeStoreDir() + ")"
+}
+
+// DescribeCaptureAvailableNodes reports the existing observed candidates using only
+// numeric versions and fixed location labels; runtime output is never public metadata.
+func DescribeCaptureAvailableNodes() (string, error) {
+	nodes := AvailableNodes()
+	if len(nodes) == 0 {
+		return "none (image node and mise node store)", nil
+	}
+	var descriptions []string
+	for _, node := range nodes {
+		version, location, ok := strings.Cut(node, " at ")
+		if !ok || !numericNodeVersion(version) {
+			return "", fmt.Errorf("invalid installed Node version observation — repair the producer runtime, then retry preparation")
+		}
+		label := ""
+		if location == imageNodePath {
+			label = "/bin/node"
+		} else {
+			rel, err := filepath.Rel(miseNodeStoreDir(), location)
+			parts := strings.Split(filepath.ToSlash(rel), "/")
+			if err == nil && len(parts) == 3 && numericNodeVersion(parts[0]) && parts[1] == "bin" && parts[2] == "node" {
+				label = "mise node store"
+			}
+		}
+		if label == "" {
+			return "", fmt.Errorf("invalid installed Node source observation — repair the producer runtime, then retry preparation")
+		}
+		descriptions = append(descriptions, version+" at "+label)
+	}
+	result := strings.Join(descriptions, "; ")
+	if !ValidCaptureNodeAvailability(result) {
+		return "", fmt.Errorf("invalid Node availability observation — retry selected preparation")
+	}
+	return result, nil
+}
+
+func numericNodeVersion(version string) bool {
+	return version != "" && strings.Trim(version, "0123456789.") == "" && packdecl.ValidNodeFloor(version)
+}
+
+// ValidCaptureNodeAvailability is the wire/print boundary for the fixed-label report.
+func ValidCaptureNodeAvailability(description string) bool {
+	if description == "none (image node and mise node store)" {
+		return true
+	}
+	if len(description) == 0 || len(description) > 4096 {
+		return false
+	}
+	for _, item := range strings.Split(description, "; ") {
+		version, label, ok := strings.Cut(item, " at ")
+		if !ok || !numericNodeVersion(version) || label != "/bin/node" && label != "mise node store" {
+			return false
+		}
+	}
+	return true
 }
