@@ -17,7 +17,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
-	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -163,17 +162,10 @@ func hostFreshProgramPreparation(packs []*packload.Pack, cmd0 string, errw io.Wr
 					rc = 1
 					return
 				}
-				addr, addrErr := packsrc.Parse(exact.Source)
-				if addrErr == nil && addr.Kind == packsrc.KindGit && !packsrc.IsFixedRef(addr.Ref) {
-					if pinRC := pinForkDeclarationsContext(ctx, richtext.Printer{W: errw, Color: colorForWriter(errw)}, errw,
-						[]packload.Fork{*exact}, nil, true, false, false); pinRC != 0 {
-						if act.Interrupted() {
-							rc = 1
-							return
-						}
-						rc = pinRC
-						return
-					}
+				if err := freshHostPlainSource(ctx, *exact, floorPatchedPlatform(), errw); err != nil {
+					fmt.Fprintf(errw, "yolo host --update: %v — repair the named source problem, then retry\n", err)
+					rc = 1
+					return
 				}
 				// The floor's ForkPin reader snapshots pins when constructed. Reopen it after
 				// the scoped repin so Ensure consumes the newly authorized commit.

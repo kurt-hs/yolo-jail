@@ -72,3 +72,40 @@ func resolveFreshPlainProgram(ctx context.Context, f packload.Fork, beforeCheck 
 	}
 	return pin, nil
 }
+
+// HOST uses the same strict resolver and current user-declaration authority as
+// plain preparation. Its existing floor builder still owns host-platform delivery.
+func freshHostPlainSource(ctx context.Context, f packload.Fork, platform string, w io.Writer) error {
+	store := *patchedAdvanceStore(true)
+	store.Ctx = ctx
+	identities, boundaries, errs := map[string]string{}, map[string]packsrc.CheckStart{}, map[string]error{}
+	if err := registerFreshPreparation(ctx, &store, f, platform, identities, boundaries, errs); err != nil {
+		return err
+	}
+	d := preparationDemand{Key: f.Key(), Platform: platform, Identity: identities[f.Key()], CheckBoundary: boundaries[f.Key()], Fresh: true, Host: true}
+	guard := func(commit func() error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		_, release, err := resolveDemandFork(ctx, d)
+		defer release()
+		if err != nil {
+			return err
+		}
+		return commit()
+	}
+	var begun packsrc.CheckStart
+	_, err := resolveFreshPlainProgram(ctx, f, func() error {
+		var err error
+		begun, err = store.BeginFreshCheck(f.Key(), d.Identity, f.Key(), d.CheckBoundary, guard)
+		return err
+	}, func(commit func() error) error {
+		return store.WithCheckRecord(f.Key(), nil, func(_ *packsrc.CheckRecord, readErr error, _ func() error) (bool, error) {
+			if readErr != nil {
+				return false, readErr
+			}
+			return false, store.WithFreshAuthority(f.Key(), d.CheckBoundary, &begun, d.Identity, func() error { return guard(commit) })
+		})
+	}, w)
+	return err
+}
