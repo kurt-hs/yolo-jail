@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,11 +13,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/notty"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
@@ -210,6 +213,140 @@ func readSharedRequester(t *testing.T, cmd *exec.Cmd, path string, out *syncBuff
 	}
 	if result.Code != want || want != 0 && result.Target != "" || want == 0 && result.Target == "" {
 		t.Fatalf("requester result=%+v want code=%d\n%s", result, want, out.String())
+	}
+}
+
+func TestSharedDemandSchedulerStopDetachesBeforeDemandStateUnlockWithProcessChild(t *testing.T) {
+	f := newSharedDemandProcessFixture(t)
+	f.fx.writeUserConfig(t, `,"agent_updates":{"forkpack":"next-launch"}`)
+	fork := f.fx.fork(t)
+	request := forkRequest(t, f.fx, "podman")
+	var launchOutput syncBuffer
+	got, _ := runBuildSlot(run.BuildSlotRequest{Forks: &request, MaxBuilds: 1}, &launchOutput, false)
+	if got[fork.Bin].Key == "" {
+		t.Fatalf("next-launch registration did not serve its current build:\n%s", launchOutput.String())
+	}
+	if _, err := readPreparationSnapshot(fork.Key()); err != nil {
+		t.Fatalf("launch did not register scheduler demand: %v", err)
+	}
+	f.fx.later(2 * time.Hour)
+	before := f.fx.record(t).Good.Entry
+
+	previousSpawn := sharedPreparationSpawn
+	var spawnOnce sync.Once
+	var worker *exec.Cmd
+	workerDone := make(chan error, 1)
+	workerFinished := false
+	var spawnErr error
+	sharedPreparationSpawn = func(_ context.Context, d preparationDemand) error {
+		spawnOnce.Do(func() {
+			worker = sharedDemandTestProcess(t, "worker", "YOLO_TEST_DEMAND_KEY="+d.Key,
+				"YOLO_TEST_DEMAND_RUNTIME="+d.Runtime, "YOLO_TEST_DEMAND_PLATFORM="+d.Platform)
+			log, err := os.OpenFile(backgroundAdvanceLog(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				spawnErr = err
+				return
+			}
+			worker.Stdout, worker.Stderr = log, log
+			if err = worker.Start(); err != nil {
+				spawnErr = err
+				_ = log.Close()
+				return
+			}
+			_ = log.Close()
+			go func() { workerDone <- worker.Wait() }()
+		})
+		return spawnErr
+	}
+	var childConn net.Conn
+	t.Cleanup(func() {
+		sharedPreparationSpawn = previousSpawn
+		if childConn != nil {
+			_, _ = childConn.Write([]byte{1})
+			_ = childConn.Close()
+		}
+		if worker != nil && !workerFinished {
+			select {
+			case <-workerDone:
+			default:
+				_ = worker.Process.Kill()
+				<-workerDone
+			}
+		}
+	})
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	ticks := make(chan time.Time)
+	schedulerDone := make(chan error, 1)
+	go func() { schedulerDone <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	select {
+	case ticks <- f.fx.now:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler did not receive the production timer tick")
+	}
+	childConn, pid := f.child(t)
+	freshAfter, err := patchedAdvanceStore(true).FreshCheckBoundary(fork.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := freshPreparationIdentity(fork, patchedTestPlatform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requesterOutput syncBuffer
+	requesterDone := make(chan advanceResult, 1)
+	go func() {
+		requesterDone <- advancePatchedFork(fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true,
+			ctx: context.Background(), out: &requesterOutput, errw: &requesterOutput, freshCheck: true,
+			freshIdentity: identity, freshAfterSeq: freshAfter})
+	}()
+	dir := sharedDemandDir(fork.Key(), "podman", patchedTestPlatform)
+	waitFor(t, "fresh requester attached beside scheduler demand", func() bool {
+		var live []livePreparationDemand
+		err := withDemandState(context.Background(), dir, false, func() error { var e error; live, e = livePreparationDemands(dir); return e })
+		return err == nil && len(live) == 2
+	})
+	state, err := pidlock.Acquire(filepath.Join(dir, "state.lock"), pidlock.Mode{Wait: true, Bound: 5 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("hold demand state across cleanup deadline: %v", err)
+	}
+	defer state.Release()
+	stop()
+	select {
+	case err := <-schedulerDone:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("scheduler stop: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("scheduler did not detach before demand state unlocked after the one-second cleanup deadline")
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("scheduler stop killed the original child still owned by the fresh requester: %v", err)
+	}
+	if got := f.fx.record(t).Good.Entry; got != before {
+		t.Fatalf("unreadable demand state changed Good from %q to %q", before, got)
+	}
+	state.Release()
+	if _, err := childConn.Write([]byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-requesterDone:
+		if result.delivery.Key == "" || result.freshFailure() != "" {
+			t.Fatalf("fresh requester did not settle through the valid demand guard: %+v\n%s", result, requesterOutput.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("fresh requester did not settle after the valid demand became readable")
+	}
+	select {
+	case err := <-workerDone:
+		workerFinished = true
+		if err != nil {
+			t.Fatalf("shared worker exited: %v\n%s", err, mustRead(t, backgroundAdvanceLog()))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("shared worker did not finish after its child was released")
 	}
 }
 
