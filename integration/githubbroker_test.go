@@ -300,6 +300,62 @@ func githubBrokerReadScript() string {
 	)
 }
 
+// gh accepts flags around positional targets. Check the exact dispatched command and
+// argument multiset without making flag placement part of the broker contract.
+func fakeGHDispatched(out, command string) bool {
+	want := strings.Fields(command)
+	for _, line := range strings.Split(out, "\n") {
+		args, ok := strings.CutPrefix(line, "fake gh ran: ")
+		if !ok {
+			continue
+		}
+		got := strings.Fields(args)
+		if len(got) != len(want) || len(got) < 2 || got[0] != want[0] || got[1] != want[1] {
+			continue
+		}
+		counts := map[string]int{}
+		for _, arg := range want[2:] {
+			counts[arg]++
+		}
+		for _, arg := range got[2:] {
+			counts[arg]--
+		}
+		matched := true
+		for _, count := range counts {
+			if count != 0 {
+				matched = false
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func TestFakeGHDispatchedChecksExactCommandAndArguments(t *testing.T) {
+	const want = "pr view 32 --repo=yolo-it/app"
+	for _, tc := range []struct {
+		args    string
+		matches bool
+	}{
+		{"pr view 32 --repo=yolo-it/app", true},
+		{"pr view --repo=yolo-it/app 32", true},
+		{"pr view 32", false},
+		{"pr view --repo=yolo-up/lib 32", false},
+		{"pr view --repo=yolo-it/app 33", false},
+		{"pr comment --repo=yolo-it/app 32", false},
+		{"pr view --repo=yolo-it/app 32 --web", false},
+		{"pr view --repo=yolo-it/app --repo=yolo-it/app", false},
+	} {
+		t.Run(tc.args, func(t *testing.T) {
+			if got := fakeGHDispatched("fake gh ran: "+tc.args, want); got != tc.matches {
+				t.Fatalf("match=%v, want %v", got, tc.matches)
+			}
+		})
+	}
+}
+
 // assertGitHubBrokerRead is everything the read test asserts about one launch, from dir, that
 // ran githubBrokerReadScript against a host whose gh is writeFakeHostGH's, logging to argvLog.
 //
@@ -331,7 +387,7 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		"GH_HOST=github.com GH_TOKEN=unset",
 		"/broker/github/run/",
 	} {
-		if !strings.Contains(out, s) {
+		if !strings.Contains(out, s) && !(strings.HasPrefix(s, "fake gh ran: ") && fakeGHDispatched(out, strings.TrimPrefix(s, "fake gh ran: "))) {
 			t.Errorf("stdout lacks %q:\n%s", s, out)
 		}
 	}
@@ -353,7 +409,7 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		"Repositories this jail can use: yolo-it/app",
 		"# NOT A BLOCKER: this gh is pack github's forwarder (a yolo intercept).",
 	} {
-		if !strings.Contains(out, s) {
+		if !strings.Contains(out, s) && !(strings.HasPrefix(s, "fake gh ran: ") && fakeGHDispatched(out, strings.TrimPrefix(s, "fake gh ran: "))) {
 			t.Errorf("stdout lacks %q:\n%s", s, out)
 		}
 	}
@@ -375,7 +431,7 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		switch {
 		case line == "--version", line == "auth token --hostname github.com",
 			line == "auth status --hostname github.com --active --json hosts",
-			strings.HasPrefix(line, "pr view 32"), strings.HasPrefix(line, "pr view --json=title --jq=.title 32"),
+			fakeGHDispatched("fake gh ran: "+line, "pr view 32 --repo=yolo-it/app"), fakeGHDispatched("fake gh ran: "+line, "pr view --json=title --jq=.title 32 --repo=yolo-it/app"),
 			strings.HasPrefix(line, "pr list"), strings.HasPrefix(line, "api repos/yolo-it/app/leak"):
 		default:
 			t.Errorf("the host gh was run with %q, which the broker must never run", line)
@@ -563,7 +619,7 @@ func TestGitHubBrokerAnAttachKeepsTheRunningScope(t *testing.T) {
 		t.Errorf("a remote added mid-session answered %q, want 64 until a fresh launch approves it:\n%s",
 			got, r.combined())
 	}
-	if got := kvLine(r.stdout, "RCB"); got != "0" || !strings.Contains(r.stdout, "fake gh ran: pr view 2 --repo=yolo-it/app") {
+	if got := kvLine(r.stdout, "RCB"); got != "0" || !fakeGHDispatched(r.stdout, "pr view 2 --repo=yolo-it/app") {
 		t.Errorf("the approved origin answered %q:\n%s", got, r.combined())
 	}
 	if n := scopeFiles(t); n != 1 {

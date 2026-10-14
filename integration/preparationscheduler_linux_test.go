@@ -28,8 +28,9 @@ type preparationLifecycleState struct {
 		Active                                              bool
 	} `json:"subscriptions"`
 	Worker struct {
-		Identity string
-		PID      int
+		Identity  string
+		PID       int
+		StoppedAt time.Time `json:"stopped_at"`
 	} `json:"worker"`
 }
 
@@ -93,8 +94,14 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 		t.Fatalf("status after notice consumption lost the serving entry %q:\n%s", admitted.ServingEntry, status)
 	}
 
+	stopIdentity := state.Worker.Identity
 	prepCLI(t, yoloBin, home, "pack", "prepare", "stop")
-	waitPreparationState(t, statePath, 25*time.Second, "public stop to release the worker lease", func(s preparationLifecycleState) bool { return s.Worker.PID == 0 })
+	waitPreparationState(t, statePath, 25*time.Second, "public stop to release the worker lease", func(s preparationLifecycleState) bool {
+		return s.Worker.Identity == stopIdentity && preparationWorkerStopped(t, s)
+	})
+	if status := prepCLI(t, yoloBin, home, "pack", "prepare", "status"); !strings.Contains(status, "Tree preparation worker: not running;") {
+		t.Fatalf("public status did not prove the stopped worker lease free:\n%s", status)
+	}
 	if !workerExited(t, owned.workers[len(owned.workers)-1]) {
 		t.Fatal("public stop cleared worker state before the owned process exited")
 	}
@@ -102,12 +109,12 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 		t.Fatalf("reap the direct hidden-worker fixture: %v", err)
 	}
 
-	pausedBuild := `mkfifo /workspace/hold; printf 'PAUSED_SYNTHETIC_CHILD\\n'; read ignored < /workspace/hold`
+	pausedBuild := `mkfifo /workspace/hold; printf 'PAUSED_SYNTHETIC_CHILD\\n'; read ignored < /workspace/hold; printf 'PREPARED_TREE\n' > prepared.txt`
 	upstream.release("1.1.0", "eleven", "v1.1.0")
 	writePreparationPackRef(t, packDir, upstream.dir, "v1.1.0", pausedBuild)
 	t.Setenv("HTTP_PROXY", "synthetic-provider-secret")
 	prepCLI(t, yoloBin, home, "pack", "prepare", "start")
-	waitPreparationState(t, statePath, 10*time.Second, "public start to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 })
+	waitPreparationState(t, statePath, 10*time.Second, "public start to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 && s.Worker.StoppedAt.IsZero() })
 	state = readPreparationLifecycleState(t, statePath)
 	startWorker := owned.remember(state.Worker.PID)
 	container := waitPreparationPausedChild(t, statePath, 45*time.Second)
@@ -134,7 +141,7 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 	// Restart the same interrupted record, prove the second FIFO child is live, then exercise the
 	// actual worker SIGTERM handler and container cleanup.
 	prepCLI(t, yoloBin, home, "pack", "prepare", "start")
-	waitPreparationState(t, statePath, 10*time.Second, "restart to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 })
+	waitPreparationState(t, statePath, 10*time.Second, "restart to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 && s.Worker.StoppedAt.IsZero() })
 	state = readPreparationLifecycleState(t, statePath)
 	workerProcess := owned.remember(state.Worker.PID)
 	container = waitPreparationPausedChild(t, statePath, 45*time.Second)
@@ -162,7 +169,7 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepCLI(t, copyBinary, home, "pack", "prepare", "start")
-	waitPreparationState(t, statePath, 10*time.Second, "private binary-copy start to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 })
+	waitPreparationState(t, statePath, 10*time.Second, "private binary-copy start to record its worker", func(s preparationLifecycleState) bool { return s.Worker.PID != 0 && s.Worker.StoppedAt.IsZero() })
 	state = readPreparationLifecycleState(t, statePath)
 	workerProcess = owned.remember(state.Worker.PID)
 	container = waitPreparationPausedChild(t, statePath, 45*time.Second)
@@ -174,12 +181,53 @@ func TestPreparationSchedulerRealWorkerLifecycle(t *testing.T) {
 	if err := os.Rename(replacement, copyBinary); err != nil {
 		t.Fatalf("atomically replace the private worker binary copy: %v", err)
 	}
-	waitPreparationWorkerAndContainer(t, statePath, container, 30*time.Second, "binary mismatch did not drain the paused FIFO build")
-	if !workerExited(t, workerProcess) {
-		t.Fatal("binary mismatch cleared worker state before the owned process exited")
+	originalWorkspace := preparationChildWorkspace(workerProcess.pid)
+	originalIdentity := state.Worker.Identity
+	var originalChild xbProcess
+	for _, pid := range xbProcessDescendants(workerProcess.pid) {
+		if processHasArgs(pid, "internal", "fork-build-jail") {
+			if originalChild.pid != 0 {
+				t.Fatal("replacement fixture has more than one sealed build child")
+			}
+			originalChild = xbRemember(t, pid)
+		}
 	}
-	if got := prepRecord(readPreparationLifecycleState(t, statePath), "synthetic/example").Phase; got != "binary-mismatch" {
-		t.Fatalf("binary replacement phase=%q, want binary-mismatch", got)
+	if originalChild.pid == 0 {
+		t.Fatal("replacement fixture lost the original sealed build child")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	replacementStart := exec.CommandContext(ctx, copyBinary, "pack", "prepare", "start")
+	replacementStart.Dir, replacementStart.Env = repoRoot, preparationCLIEnv(home)
+	replacementOutput, replacementErr := replacementStart.CombinedOutput()
+	cancel()
+	if replacementErr == nil || !strings.Contains(string(replacementOutput), "teardown still owns its lease") {
+		t.Fatalf("replacement start did not refuse early takeover: %v\n%s", replacementErr, replacementOutput)
+	}
+	current := readPreparationLifecycleState(t, statePath)
+	if current.Worker.Identity != originalIdentity || !current.Worker.StoppedAt.IsZero() || !workerProcess.alive() || preparationChildWorkspace(workerProcess.pid) != originalWorkspace || !originalChild.alive() {
+		t.Fatalf("replacement changed or cancelled the original draining work: %+v", current)
+	}
+	if status := prepCLI(t, copyBinary, home, "pack", "prepare", "status"); !strings.Contains(status, "Tree preparation worker: running") {
+		t.Fatalf("draining incarnation lost its authenticated lease:\n%s", status)
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	releaseErr := exec.CommandContext(ctx, "podman", "exec", container, "bash", "-c", "printf 'release\\n' > /workspace/hold").Run()
+	cancel()
+	if releaseErr != nil {
+		t.Fatalf("release original fixture FIFO: %v", releaseErr)
+	}
+	waitPreparationWorkerAndContainer(t, statePath, container, 30*time.Second, "replacement did not drain the released original build")
+	if !workerExited(t, workerProcess) || !workerExited(t, originalChild) {
+		t.Fatal("replacement drain did not exit the original owned worker/build")
+	}
+	if state := readPreparationLifecycleState(t, statePath); state.Worker.Identity != originalIdentity {
+		t.Fatal("replacement acquired authority before the original drain completed")
+	}
+	if status := prepCLI(t, copyBinary, home, "pack", "prepare", "status"); !strings.Contains(status, "Tree preparation worker: not running;") {
+		t.Fatalf("replacement did not release its lease:\n%s", status)
+	}
+	if got := prepRecord(readPreparationLifecycleState(t, statePath), "synthetic/example").Phase; got != "admitted" {
+		t.Fatalf("binary replacement phase=%q, want admitted", got)
 	}
 }
 
@@ -441,12 +489,35 @@ func waitPreparationWorkerAndContainer(t *testing.T, statePath, container string
 		if inspectErr != nil {
 			t.Fatalf("inspect owned build container %s while waiting for %s: %v", container, what, inspectErr)
 		}
-		if state.Worker.PID == 0 && !containerGone {
+		if preparationWorkerStopped(t, state) && !containerGone {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("%s; final state=%+v container=%s", what, readPreparationLifecycleState(t, statePath), container)
+}
+
+// StoppedAt is published while the incarnation still owns its lease. Retained PID and
+// identity are diagnostics, not a live-owner sentinel; independently prove lease release.
+func preparationWorkerStopped(t *testing.T, state preparationLifecycleState) bool {
+	t.Helper()
+	if state.Worker.StoppedAt.IsZero() {
+		return false
+	}
+	lock, err := os.OpenFile(filepath.Join(paths.BackgroundAdvanceDir(), "worker.lock"), os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("inspect scheduler lease after final publication: %v", err)
+	}
+	defer lock.Close()
+	err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("probe scheduler lease: %v", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	return true
 }
 
 func workerExited(t *testing.T, p xbProcess) bool {
