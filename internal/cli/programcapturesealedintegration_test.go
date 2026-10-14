@@ -20,10 +20,14 @@ import (
 	"testing"
 	"time"
 
+	"debug/buildinfo"
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"reflect"
+	"runtime/debug"
 )
 
 // This exact tarball's entire 52-file source was audited: local semver mathematics,
@@ -99,6 +103,13 @@ func auditSealedSemverResolution(raw []byte) error {
 	if _, err := r.inputs(); err != nil {
 		return err
 	}
+	var complete struct{ Packages map[string]json.RawMessage }
+	if err := json.Unmarshal(r.Lock, &complete); err != nil {
+		return err
+	}
+	if err := auditSealedRootManifest(complete.Packages[""]); err != nil {
+		return err
+	}
 	var lock struct {
 		LockfileVersion int
 		Packages        map[string]struct {
@@ -142,9 +153,9 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	if !ok || time.Until(deadline) > 5*time.Minute {
 		t.Fatal("run with -timeout <=5m")
 	}
-	root, exe := os.Getenv("YOLO_REPO_ROOT"), os.Getenv("YOLO_TEST_AUDITED_LAUNCHER")
-	if !filepath.IsAbs(root) || !filepath.IsAbs(exe) {
-		t.Fatal("absolute source root and fresh launcher required")
+	root := os.Getenv("YOLO_REPO_ROOT")
+	if !filepath.IsAbs(root) {
+		t.Fatal("absolute committed source root required")
 	}
 	if _, err := exec.LookPath("podman"); err != nil {
 		t.Skip("Podman unavailable")
@@ -156,6 +167,7 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("retained owned evidence", owned)
+	exe := buildAuditedSealedCandidate(t, ctx, root, owned)
 	for key, sub := range map[string]string{"HOME": "home", "XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_CACHE_HOME": "cache", "XDG_RUNTIME_DIR": "runtime"} {
 		dir := filepath.Join(owned, sub)
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -259,20 +271,22 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	var denyFresh atomic.Bool
 	programCaptureChild = func(childCtx context.Context, staging string, argv []string, w io.Writer) error {
 		isResolve := len(argv) > 3 && argv[2] == "program-npm" && argv[3] == "resolve"
+		var err error
 		if !isResolve {
-			b, err := os.ReadFile(filepath.Join(staging, "resolution.json"))
-			if err != nil {
-				return err
+			b, readErr := os.ReadFile(filepath.Join(staging, "resolution.json"))
+			if readErr != nil {
+				return readErr
 			}
-			if err := auditSealedSemverResolution(b); err != nil {
-				return err
-			}
-			if err := auditSealedSemverTarball(raw); err != nil {
-				return err
-			}
-			installs.Add(1)
+			err = auditedSealedResolutionGate(b, func() error {
+				if err := auditSealedSemverTarball(raw); err != nil {
+					return err
+				}
+				installs.Add(1)
+				return originalChild(childCtx, staging, argv, w)
+			})
+		} else {
+			err = originalChild(childCtx, staging, argv, w)
 		}
-		err := originalChild(childCtx, staging, argv, w)
 		if err != nil {
 			return err
 		}
@@ -290,6 +304,10 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 			}
 		}
 		return nil
+	}
+	consumerHome := filepath.Join(owned, "consumer-home")
+	if err := os.Mkdir(consumerHome, 0700); err != nil {
+		t.Fatal(err)
 	}
 	consumerRuns := 0
 	launchRunPipeline = func(o run.Options) int {
@@ -309,18 +327,43 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 			}
 			return 1
 		}
-		if _, ok := deliveries["semver"]; !ok {
+		delivery, ok := deliveries["semver"]
+		if !ok {
 			t.Error("no real capture delivery")
 			return 1
 		}
+		record, err := readNPMCaptureRecord(store, in)
+		exact, deliveryErr := ordinaryCaptureDelivery(record)
+		if err != nil || deliveryErr != nil || exact != delivery || record.Identity != delivery.Compatibility || record.Entry == "" {
+			t.Error("delivery lacks actual admitted record")
+			return 1
+		}
+		e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": consumerHome, "YOLO_WORKSPACE": workspace, entrypoint.CapturesDirEnv: store.Dir, entrypoint.ProgramCapturesEnv: entrypoint.MarshalProgramCaptures(deliveries)})
+		// Existing MCP archive-consumer seam; its Run callback refuses ANY legacy
+		// npm/producer command before spawning it. No second run pipeline can install.
+		err = auditedSealedRefresh(ctx, e, delivery, func(argv []string) error {
+			command := exec.CommandContext(ctx, exe, argv[1:]...)
+			command.Env = programCaptureEnvironment(os.Environ())
+			output, err := command.CombinedOutput()
+			_, _ = log.Write(output)
+			return err
+		})
+		if err != nil {
+			fmt.Fprintln(&log, "CONSUMER_REFUSAL", err)
+			t.Error("archive consumer refused; private log retained")
+			return 1
+		}
+		if err := auditedSealedMaterializationWitness(e, record); err != nil {
+			t.Error(err)
+			return 1
+		}
 		consumerRuns++
-		command := exec.CommandContext(ctx, exe, "run", "--accept-config-changes", "--", "semver", "-r", "^1.0.0", "1.2.3", "2.0.0")
-		command.Dir = workspace
+		command := exec.CommandContext(ctx, filepath.Join(e.NpmPrefix, "bin/semver"), "-r", "^1.0.0", "1.2.3", "2.0.0")
 		command.Env = programCaptureEnvironment(os.Environ())
 		output, err := command.CombinedOutput()
-		fmt.Fprintf(&log, "CONSUMER %d\n%s\n", consumerRuns, output)
-		if err != nil || !strings.Contains(string(output), "\n1.2.3\n") {
-			t.Errorf("real consumer: %v\n%s", err, output)
+		fmt.Fprintf(&log, "CONSUMER %d %s", consumerRuns, output)
+		if err != nil || string(output) != "1.2.3\n" {
+			t.Error("audited local semver output mismatch")
 			return 1
 		}
 		return 0
@@ -390,8 +433,16 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	denyFresh.Store(true)
 	call("fresh-refusal", true, 1)
 	failed, err := readNPMCaptureRecord(store, in)
-	if err != nil || failed.Completed != fixed.Completed || failed.Started <= failed.Completed || failed.Failure == "" || failed.Entry != fixed.Entry || installs.Load() != 1 || consumerRuns != 3 {
+	if err != nil || failed.Completed != fixed.Completed || failed.Started <= failed.Completed || failed.Failure == "" || failed.Entry != fixed.Entry || failed.Identity != fixed.Identity || failed.Fingerprint != fixed.Fingerprint || !reflect.DeepEqual(failed.Resolution, fixed.Resolution) || installs.Load() != 1 || consumerRuns != 3 {
 		t.Fatalf("fresh failure served staleGood or published: %+v %v", failed, err)
+	}
+	good, receipt, err := resolveProgramCaptureFor(store, in.Bin, req.Platform, fixed.Identity)
+	if err != nil || good.Key != fixed.Entry || receipt.Compatibility != fixed.Identity {
+		t.Fatal("refusal changed actual selected capture Good", err)
+	}
+	current, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly)
+	if err != nil || len(current) != 1 || current[0] != in || failed.Resolution.Release != "7.7.2" {
+		t.Fatal("refusal changed fixed declaration/release pin", err)
 	}
 	t.Log("AUDITED_SUCCESS cold/warm/fixed/fresh-refusal; no stale delivery or target on failed fresh check")
 }
@@ -415,3 +466,216 @@ func (l *auditedSealedLog) Write(p []byte) (int, error) {
 	return l.b.Write(p)
 }
 func (l *auditedSealedLog) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+// Pure safety fixtures never resolve, install, admit or execute their injected data.
+func TestAuditedRegistryRootManifestRejectsInjectedInstallAuthority(t *testing.T) {
+	base := map[string]any{"dependencies": map[string]any{"semver": "7.7.2"}}
+	for _, field := range []string{"scripts", "optionalDependencies", "peerDependencies", "peerDependenciesMeta", "bundledDependencies", "bundleDependencies", "devDependencies", "workspaces", "overrides", "resolutions", "config", "os", "cpu", "engines", "bin", "gypfile", "hasInstallScript", "unknownInstallAuthority"} {
+		t.Run(field, func(t *testing.T) {
+			root := map[string]any{}
+			for k, v := range base {
+				root[k] = v
+			}
+			root[field] = map[string]any{"preinstall": "echo must-not-run"}
+			calls := 0
+			err := auditedSealedResolutionGate(auditedSealedJSON(auditedSealedResolutionFixture(root)), func() error { calls++; return nil })
+			if err == nil || calls != 0 {
+				t.Fatalf("injected root %s reached child: calls=%d err=%v", field, calls, err)
+			}
+		})
+	}
+}
+
+func auditedSealedResolutionFixture(root map[string]any) npmCaptureResolution {
+	lock := map[string]any{"lockfileVersion": 3, "packages": map[string]any{"": root, "node_modules/semver": map[string]any{"version": "7.7.2", "resolved": auditedSemverURL, "integrity": auditedSemverIntegrity, "bin": map[string]string{"semver": "bin/semver.js"}}}}
+	return npmCaptureResolution{Input: npmCaptureInput{Bin: "semver", Package: "semver@7.7.2"}, Runtime: npmCaptureRuntime{Image: "fixture", Node: "fixture", NodeDigest: "fixture", NPM: "fixture", Platform: "linux/amd64", ABI: "fixture", TrustStore: npmCaptureTrustStore}, Lock: auditedSealedJSON(lock), Release: "7.7.2", Source: auditedSemverURL + "|" + auditedSemverIntegrity, BinPath: "bin/semver.js", Dependencies: []string{"node_modules/semver=7.7.2|" + auditedSemverURL + "|" + auditedSemverIntegrity}}
+}
+
+func auditSealedRootManifest(raw []byte) error {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return err
+	}
+	for field, value := range root {
+		switch field {
+		case "dependencies":
+			var deps map[string]string
+			if err := json.Unmarshal(value, &deps); err != nil || len(deps) != 1 || deps["semver"] != "7.7.2" {
+				return fmt.Errorf("unaudited root dependencies")
+			}
+		case "name", "version", "license":
+			var text string
+			if err := json.Unmarshal(value, &text); err != nil {
+				return fmt.Errorf("invalid root metadata %s", field)
+			}
+		case "private":
+			var private bool
+			if err := json.Unmarshal(value, &private); err != nil || !private {
+				return fmt.Errorf("invalid root private flag")
+			}
+		default:
+			return fmt.Errorf("unaudited root manifest field %s", field)
+		}
+	}
+	if _, ok := root["dependencies"]; !ok {
+		return fmt.Errorf("root dependencies absent")
+	}
+	return nil
+}
+
+func auditedSealedRefresh(ctx context.Context, e *entrypoint.Env, d entrypoint.ProgramCaptureDelivery, next func([]string) error) error {
+	return entrypoint.RefreshServers(entrypoint.ServerRefreshRequest{Context: ctx, Env: e, NpmSpecs: "semver@7.7.2", Updates: true, Stderr: io.Discard, Run: func(_ context.Context, _ io.Writer, argv []string) error {
+		// A deleted archive callsite reaches this gate as npm install and is
+		// refused before execution; it can never produce a plausible bin output.
+		want := []string{"yolo", "internal", "capture-materialize", "--store=" + e.Getenv(entrypoint.CapturesDirEnv), "--bin=semver", "--home=" + e.Home, "--declared=semver@7.7.2", "--compatibility=" + d.Compatibility, "--receipts=" + filepath.Join(e.Workspace, ".yolo/receipts.jsonl")}
+		if d.Runtime != "" {
+			want = append(want, "--runtime="+d.Runtime, "--node-floor="+d.NodeFloor)
+		}
+		if len(argv) == len(want)+1 && argv[len(argv)-1] == "--validate-only" {
+			want = append(want, "--validate-only")
+		}
+		if !reflect.DeepEqual(argv, want) {
+			return fmt.Errorf("consumer attempted non-exact materialization or legacy/producer fallback")
+		}
+		return next(argv)
+	}})
+}
+
+func auditedSealedMaterializationWitness(e *entrypoint.Env, r npmCaptureRecord) error {
+	marker, err := os.ReadFile(entrypoint.ProgramCaptureMarker(e.Home, "semver"))
+	if err != nil || strings.TrimSpace(string(marker)) != r.Identity {
+		return fmt.Errorf("production consumer marker does not name admitted identity")
+	}
+	lines, err := os.ReadFile(filepath.Join(e.Workspace, ".yolo/receipts.jsonl"))
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, line := range bytes.Split(bytes.TrimSpace(lines), []byte{'\n'}) {
+		var receipt struct{ Kind, Bin, Declared, Resolved, Compatibility, Act string }
+		if err := json.Unmarshal(line, &receipt); err != nil {
+			return err
+		}
+		if receipt.Kind == entrypoint.ReceiptKindCapture && receipt.Bin == "semver" && receipt.Declared == "semver@7.7.2" && receipt.Act == entrypoint.ReceiptActMaterialize && receipt.Resolved == r.Entry && receipt.Compatibility == r.Identity {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("no production materialization receipt for admitted identity and entry")
+	}
+	return nil
+}
+
+func buildAuditedSealedCandidate(t *testing.T, ctx context.Context, root, owned string) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("source location unavailable")
+	}
+	actual, err := filepath.EvalSymlinks(filepath.Join(root, "internal/cli/programcapturesealedintegration_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller, err := filepath.EvalSymlinks(file)
+	if err != nil || caller != actual {
+		t.Fatal("test/source checkout differs")
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		c := exec.CommandContext(ctx, "git", args...)
+		c.Dir = root
+		b, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatal("tracked source must be committed before owned candidate build", err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	head := git("rev-parse", "HEAD")
+	git("diff", "--quiet", "HEAD", "--", ".")
+	git("ls-files", "--error-unmatch", "internal/cli/programcapturesealedintegration_test.go")
+	exe := filepath.Join(owned, "candidate-yolo")
+	cmd := exec.CommandContext(ctx, "go", "build", "-mod=vendor", "-buildvcs=true", "-o", exe, "./cmd/yolo")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("owned candidate build: %v\n%s", err, out)
+	}
+	info, err := buildinfo.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auditSealedBuildInfo(info, head); err != nil {
+		t.Fatal(err)
+	}
+	git("diff", "--quiet", "HEAD", "--", ".")
+	t.Logf("owned CLI source=%s commit=%s path=%s", root, head, exe)
+	return exe
+}
+
+func auditSealedBuildInfo(info *debug.BuildInfo, head string) error {
+	settings := map[string]string{}
+	for _, s := range info.Settings {
+		settings[s.Key] = s.Value
+	}
+	if info.Path != "github.com/mschulkind-oss/yolo-jail/cmd/yolo" || settings["vcs"] != "git" || settings["vcs.revision"] != head || head == "" {
+		return fmt.Errorf("owned CLI build/VCS identity differs from committed candidate")
+	}
+	// vcs.modified may describe inherited untracked node_modules. The owned build
+	// and explicit tracked-source diff, not that coarse flag, establish the source.
+	return nil
+}
+
+func TestAuditedRegistryConsumerRefusesLegacyBeforeExecution(t *testing.T) {
+	for _, wire := range []string{"", entrypoint.MarshalProgramCaptures(map[string]entrypoint.ProgramCaptureDelivery{"semver": {Declared: "semver@7.7.2", Compatibility: strings.Repeat("a", 64), Platform: capture.Platform()}})} {
+		e := entrypoint.NewEnv(map[string]string{"JAIL_HOME": t.TempDir(), "YOLO_WORKSPACE": t.TempDir(), entrypoint.CapturesDirEnv: t.TempDir(), entrypoint.ProgramCapturesEnv: wire})
+		d := entrypoint.ProgramCaptureDelivery{Declared: "semver@7.7.2", Compatibility: strings.Repeat("a", 64), Platform: capture.Platform()}
+		calls := 0
+		err := auditedSealedRefresh(context.Background(), e, d, func(argv []string) error { calls++; return fmt.Errorf("safe pure materializer sentinel") })
+		if err == nil {
+			t.Fatal("consumer swallowed refusal")
+		}
+		want := 0
+		if wire != "" {
+			want = 1
+		}
+		if calls != want {
+			t.Fatalf("consumer wiring/fallback calls=%d want=%d", calls, want)
+		}
+	}
+}
+
+func TestAuditedRegistryBuildIdentityRejectsUnrelatedCLI(t *testing.T) {
+	good := debug.BuildInfo{Path: "github.com/mschulkind-oss/yolo-jail/cmd/yolo", Settings: []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "candidate"}, {Key: "vcs.modified", Value: "true"}}}
+	if err := auditSealedBuildInfo(&good, "candidate"); err != nil {
+		t.Fatal(err)
+	}
+	if err := auditSealedBuildInfo(&good, "other"); err == nil {
+		t.Fatal("accepted different source revision")
+	}
+	good.Path = "unrelated"
+	if err := auditSealedBuildInfo(&good, "candidate"); err == nil {
+		t.Fatal("accepted unrelated executable")
+	}
+}
+
+func auditedSealedResolutionGate(raw []byte, next func() error) error {
+	if err := auditSealedSemverResolution(raw); err != nil {
+		return err
+	}
+	return next()
+}
+
+func TestAuditedRegistryRootLifecycleHooksStopBeforeChild(t *testing.T) {
+	for _, hook := range []string{"preinstall", "install", "postinstall", "prepublish", "preprepare", "prepare", "postprepare", "prepack", "postpack"} {
+		root := map[string]any{"dependencies": map[string]any{"semver": "7.7.2"}, "scripts": map[string]string{hook: "echo must-not-run"}}
+		calls := 0
+		err := auditedSealedResolutionGate(auditedSealedJSON(auditedSealedResolutionFixture(root)), func() error { calls++; return nil })
+		if err == nil || calls != 0 {
+			t.Fatalf("%s reached child", hook)
+		}
+	}
+	calls := 0
+	err := auditedSealedResolutionGate(auditedSealedJSON(auditedSealedResolutionFixture(map[string]any{"dependencies": map[string]any{"semver": "7.7.2"}})), func() error { calls++; return nil })
+	if err != nil || calls != 1 {
+		t.Fatal("pure audited baseline was rejected", err)
+	}
+}
