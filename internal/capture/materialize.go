@@ -99,6 +99,10 @@ type MaterializeOptions struct {
 	// writes (confine.go). Never set for a jail's home: macos-user's reaches `.local` through a
 	// link a materialize must follow.
 	Confined bool
+	// Platform is the GOOS/GOARCH the home's programs run on, which the entry's manifest must
+	// name. Empty is this process's own (Platform()); the host agent floor passes the platform it
+	// installs for, so a floor is judged by one platform throughout.
+	Platform string
 }
 
 // MaterializeResult reports what was put where, and by which mechanism.
@@ -181,9 +185,13 @@ func Materialize(opts MaterializeOptions) (*MaterializeResult, error) {
 	// linux/arm64 tree unpacked into a linux/amd64 home is a program that exists and does
 	// not run. Checking it twice costs one string compare and removes a whole class of
 	// caller bug (§6.3: "captures are per-platform, and only for platforms we can run").
-	if m.Platform != "" && m.Platform != Platform() {
+	want := opts.Platform
+	if want == "" {
+		want = Platform()
+	}
+	if m.Platform != "" && m.Platform != want {
 		return nil, fmt.Errorf("capture materialize: entry %s is a %s capture and this is %s",
-			opts.Entry.Key, m.Platform, Platform())
+			opts.Entry.Key, m.Platform, want)
 	}
 	// THE ENTRIES ARE A TREE UNDER THE HOME, checked before anything is written (confine.go):
 	// the manifest is the capture jail's own account of itself, and an entry that climbs out, or

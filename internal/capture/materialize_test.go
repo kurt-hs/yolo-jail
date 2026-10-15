@@ -366,6 +366,25 @@ func TestMaterializeRefusesAnotherPlatform(t *testing.T) {
 	}
 }
 
+// A caller that names the platform its home runs — the host floor, whose platform is its own
+// field — is judged by that platform, not by the process's: an entry of it is placed, and an entry
+// of this process's platform is refused.
+func TestMaterializeJudgesTheCallersPlatform(t *testing.T) {
+	home := t.TempDir()
+	_, entry := entryFixture(t, home, "plan9/mips", nil)
+	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home, Platform: "plan9/mips"}); err != nil {
+		t.Fatalf("materialize of a plan9/mips entry for a plan9/mips home = %v, want it placed", err)
+	}
+
+	other := t.TempDir()
+	_, native := entryFixture(t, other, Platform(), nil)
+	_, err := Materialize(MaterializeOptions{Entry: native, Home: other, Platform: "plan9/mips"})
+	if err == nil || !strings.Contains(err.Error(), "this is plan9/mips") {
+		t.Fatalf("materialize of a %s entry for a plan9/mips home = %v, want a refusal naming plan9/mips",
+			Platform(), err)
+	}
+}
+
 // A stale FILE at a captured path is replaced; a DIRECTORY there is refused rather than
 // removed, because os.RemoveAll on the home's side of that disagreement is how a materialize
 // would delete a user's data.
