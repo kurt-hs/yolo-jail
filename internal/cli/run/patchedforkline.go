@@ -99,10 +99,59 @@ func patchedForkLineOf(f packload.Fork, floor *FloorCopy, rebuilds string) (stri
 		return line + " with another series or build recipe — " + rebuilds + " builds the edited one", true
 	}
 	in, _, _, _ := f.CheckWant(series).Inputs()
-	if why := HeldSuffix(f, rec, in, series.Digest, recipe); why != "" {
-		return line + "; " + why, true
+	// THE BASE LAG, from the record the line already read: a series that still applies says how far
+	// its base is behind, which nothing else in the line does.
+	lag := ""
+	if l := rec.BaseLag(in, series.Digest); l != nil {
+		lag = "; " + BaseLagNote(l)
 	}
-	return line, false
+	if why := HeldSuffix(f, rec, in, series.Digest, recipe); why != "" {
+		return line + "; " + why + lag, true
+	}
+	return line + lag, false
+}
+
+// BaseLagNote is a series' base lag (packsrc.BaseLag) as a line says it: "its base v1.0.0 (…) is 2
+// releases behind: v1.1.0, v1.2.0", the names elided to the oldest and the newest past three, and
+// which of them are known to take the series as it stands.
+func BaseLagNote(lag *packsrc.BaseLag) string {
+	n := len(lag.Newer)
+	s := fmt.Sprintf("its base %s is %d %s behind: %s", lag.Base.Label(), n, plural(n, "release", "releases"),
+		lagTags(lag.Newer))
+	switch k := len(lag.Applies); {
+	case k == 0:
+	case k == n && n == 1:
+		s += ", which takes the series as it stands"
+	case k == n:
+		s += ", each of which takes the series as it stands"
+	default:
+		s += "; " + lagTags(lag.Applies) + plural(k, " takes", " take") + " the series as it stands"
+	}
+	return s
+}
+
+// BaseLagStep is the step that re-anchors a lagging series on its newest version, when that version
+// is known to take it as it stands: `yolo pack rebase <key> --onto <tag> --keep`, which keeps the
+// rebased clone and prints the export whose series names that version as its base. "" otherwise.
+func BaseLagStep(f packload.Fork, lag *packsrc.BaseLag) string {
+	newest := lag.Newer[len(lag.Newer)-1]
+	if len(lag.Applies) == 0 || lag.Applies[len(lag.Applies)-1].Commit != newest.Commit {
+		return ""
+	}
+	return "`yolo pack rebase " + shquote.QuoteDisplay(f.Key()) + " --onto " + shquote.QuoteDisplay(newest.Tag) +
+		" --keep` re-anchors the series on " + newest.Tag
+}
+
+// lagTags names entries by tag, oldest first: all of them up to three, else the oldest and the newest.
+func lagTags(es []packsrc.ListEntry) string {
+	if len(es) > 3 {
+		return es[0].Tag + " … " + es[len(es)-1].Tag
+	}
+	tags := make([]string, len(es))
+	for i, e := range es {
+		tags[i] = e.Tag
+	}
+	return strings.Join(tags, ", ")
 }
 
 // floorCopyLine is the host's line while the floor runs a build the check record does not name as its

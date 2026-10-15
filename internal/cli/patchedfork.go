@@ -649,6 +649,13 @@ func patchedForkStatusLines(f packload.Fork) []string {
 				goodBuildStored(f, rec.Good)))
 		}
 	}
+	if lag := rec.BaseLag(in, series.Digest); lag != nil {
+		line := "  base lag: " + run.BaseLagNote(lag)
+		if step := run.BaseLagStep(f, lag); step != "" {
+			line += " — " + step
+		}
+		lines = append(lines, "[dim]"+richtext.Escape(line)+"[/dim]")
+	}
 	lines = append(lines, candidateLines(f, rec, series, in)...)
 	return append(lines, nextCheckLine(f, rec, in)...)
 }
