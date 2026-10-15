@@ -831,6 +831,23 @@ surface naming the selection's own, two surfaces in one variable, `subcommands` 
 form, and a subcommand word that is empty, a flag, holds a space or is named twice
 ([MM-D30](../design/model-lists-and-pickers.md#MM-D30)).
 
+<a id="launch_computed"></a>`launch_computed`, a **top-level** key keyed by program bin, lists that
+program's **launch computed flags**, a term coined for this field (2026-10-15): top-level keys of
+its launch selection's surface's computed layer, outside the `selection`, that the same `yolo host
+-p` launch hands as argv words after the selection's own. Each is `{"key", "argv", "opt_in"}`:
+`{value}` in `argv` becomes the key's value as one word of compact JSON, keys sorted and a
+tombstoned key as `null` (`packs/pi`: `subagents`, pi-subagents' child model policy, as
+`--subagents-model-settings`). A key is compared with the configured profile's apart from the
+selection, so a `-p` whose selection agrees but whose key differs hands that key alone.
+`opt_in`, optional, names a variable that must be `1` in the launch's environment before the flag
+is handed; otherwise the launch says so and the program keeps its file's value (pi's ships behind
+`YOLO_PI_SUBAGENTS_MODEL_SETTINGS`, since pi 1.0.1 exits over an extension flag nothing
+registers). It is top-level, not on the `program`, so an older yolo ignores it rather than
+skipping the program. `packdecl` refuses a bin that is not this pack's own non-fork program with
+an argv-form `launch_selection`, an empty, repeated or `selection` key, a key the selection's
+`flags` hand, words that never carry `{value}` or hold an empty word, and a bad variable name
+([MM-D42](../design/model-lists-and-pickers.md#MM-D42)).
+
 <a id="exact_menu_refuses"></a>`exact_menu_refuses` says the program's model menu can show
 exactly a list only through a filter that also refuses every model off it, so its pack's derive
 writes that filter only while the governing profile's `enforce_models` is on. It is an object.

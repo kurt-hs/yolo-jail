@@ -126,6 +126,12 @@ type Manifest struct {
 	// selection says (providerenv.go). Pack-wide, like provider_keys, for the same reason.
 	ProviderEnvByBin map[string]ProviderEnvSource `json:"provider_env,omitempty"`
 
+	// LaunchComputedByBin are, per program bin, the computed keys of its launch selection's
+	// surface that one `yolo host -p` launch hands as argv words (launchcomputed.go;
+	// docs/design/model-lists-and-pickers.md MM-D42). Pack-wide, like provider_keys, for the same
+	// reason; projected onto the program's LaunchSelection.Computed.
+	LaunchComputedByBin map[string][]LaunchComputedFlag `json:"launch_computed,omitempty"`
+
 	// Contributes is the pack's effects: one list of typed contributions, each with
 	// an explicit `kind` from the closed set (see contributes.go / kinds.go). It
 	// each with an explicit kind from the closed core-owned set
@@ -875,6 +881,7 @@ func (m *Manifest) Validate() []string {
 	problems = append(problems, m.validateNeeds()...)
 	problems = append(problems, m.validateContributions()...)
 	problems = append(problems, m.validateModelListChecks()...)
+	problems = append(problems, m.validateLaunchComputed()...)
 	problems = append(problems, m.validateProviderKeys()...)
 	problems = append(problems, m.validateProviderEnv()...)
 	return append(problems, m.validateMCP()...)
@@ -1063,6 +1070,10 @@ type LaunchSelection struct {
 	// its content for this launch: pi's model-list files, which pi's extensions read from the
 	// variable before the file. Each path must be a computed surface of the pack.
 	Surfaces map[string]string `json:"surfaces,omitempty"`
+	// Computed are the program's LAUNCH COMPUTED FLAGS (LaunchComputedFlag), projected from the
+	// pack-wide `launch_computed` (Manifest.LaunchComputedByBin) and never read from the
+	// contribution itself: computed keys of Surface's layer handed after the selection's words.
+	Computed []LaunchComputedFlag `json:"-"`
 	// Subcommands are the words a release of the program reads as a subcommand only when it is
 	// argv[1], where argv words the launch put right after argv[0] would push it out and the
 	// program would take it for something else: pi 1.0.1 reads `pi --provider zai update` as a
@@ -1284,6 +1295,10 @@ func (ls *LaunchSelection) clone() *LaunchSelection {
 	}
 	if len(ls.Subcommands) > 0 {
 		out.Subcommands = append([]string(nil), ls.Subcommands...)
+	}
+	for _, f := range ls.Computed {
+		out.Computed = append(out.Computed, LaunchComputedFlag{Key: f.Key, Argv: append([]string(nil), f.Argv...),
+			OptIn: f.OptIn})
 	}
 	return out
 }

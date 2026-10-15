@@ -1,4 +1,22 @@
 {
+  // pi-subagents' child model policy for one `yolo host -p` launch: the `subagents` block the
+  // settings derive composes for the -p's profile (piSubagents: defaultProvider, defaultModel,
+  // agentOverrides, modelScope), as one word of compact JSON after the launch selection's words,
+  // never written into settings.json (docs/design/model-lists-and-pickers.md MM-D42). OFF until
+  // pi-subagents reads the flag: pi 1.0.1 exits over an extension flag no extension registers
+  // ("Unknown option"), so a launch hands it only under the opt-in variable, and says so otherwise.
+  "launch_computed": {
+    "pi": [
+      {
+        "argv": [
+          "--subagents-model-settings",
+          "{value}"
+        ],
+        "key": "subagents",
+        "opt_in": "YOLO_PI_SUBAGENTS_MODEL_SETTINGS"
+      }
+    ]
+  },
   "model_list_check": {
     "pi": {}
   },
