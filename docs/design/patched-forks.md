@@ -5,7 +5,7 @@ status: in-review
 stage: DESIGN
 tags: [design, packs, programs, forks, build, evergreen, git]
 summary: "A second mode for a forked program: the fork pack names the upstream and carries a git format-patch series. yolo checks the upstream at most hourly, replays the series at its base and picks it onto the newest upstream version it fits on the host, builds the result in the sealed capture jail, and moves this machine's good build only once that build is admitted, so a patch-application failure stops the operation by default and continuing requires the displayed explicit bypass. The same mode follows a pi extension's upstream as a tree, in patched-extensions.md. The four calls that were the maintainer's, what runs after the user's own edit fails, whether the default follows versions or the branch head, whether a launch waits for the rebuild, and whether a conflict gets a rebase verb, were decided on their leanings under his delegation of 2026-10-04."
-next: "OQ-PFK6, requested 2026-10-13 by a downstream pack consumer; existing macos-user delivery and the migration-kit measurement remain separate."
+next: "Build the carry ruled in OQ-PFK6 (PF-D87); existing macos-user delivery and the migration-kit measurement remain separate."
 depends-on:
   - forked-programs-as-packs.md
 ---
@@ -13,6 +13,8 @@ depends-on:
 # A patched fork follows its upstream — a patch series that rebuilds itself while it applies
 
 **Status:** amended 2026-10-09 by [PF-D81](#PF-D81) and [PF-D82](#PF-D82), both built the same day.
+On 2026-10-15 the maintainer ruled [OQ-PFK6](#OQ-PFK6): a `carry` beside `patches`, never both on
+one contribution ([§3.5](#35-a-carry-instead-of-a-series)); not built.
 A patch series that does not apply is fatal by default on every path: a jail launch refuses even
 when an intact older build would serve, its error block printed as soon as the builds end; `yolo host`, the host
 floor, `yolo host apply --assert`, `yolo pack update` and `yolo capture` stop; and a host verb that
@@ -218,7 +220,8 @@ rewritten as a patched fork:
 
 `follow` without `patches` is refused, naming the reason: a plain fork's pin moves only by
 `yolo pack update` ([FP-D18](forked-programs-as-packs.md#FP-D18)), and following an upstream is
-this mode's opt-in, not a dial on that one.
+this mode's opt-in, not a dial on that one. A contribution may name a `carry` in place of
+`patches` ([§3.5](#35-a-carry-instead-of-a-series)), never both.
 
 The fork key `<pack>/<bin>` is this route's **owner key** *(coined in [PF-D22](#PF-D22))*: the key
 the check, its record and lock, the replay, the ratchet and the explicit acts use. A patched
@@ -333,6 +336,39 @@ The base pack counts because a user who freezes `pi` means the program they run 
 fork now delivers. A ref edit is not a new address: a build is identified by repository,
 subdirectory, commit and recipe, never the ref ([§6.3](#63-what-is-served-and-the-store-key)), so
 moving `?ref=main` to `?ref=v0.99.2` while the good build is `v0.99.2` builds nothing.
+
+### 3.5 A carry instead of a series
+
+<a id="oq-pfk6-background"></a>Ruled 2026-10-15 ([OQ-PFK6](#OQ-PFK6)): yolo supports both
+mechanisms, and one contribution names at most one of them. Requested by a downstream pack consumer
+whose model replaces the series with a git merge question.
+
+A **carry** *(the consumer's term, adopted here)* is a commit graph a contribution names in place of
+a `patches` series: a locator, a repository plus a branch, where the repository may be a local path
+or a URL with `?ref=`. At the advance the launcher fetches both the locator and the upstream
+candidate, and `git merge-tree --write-tree`, with no working tree, answers whether the carry merges
+into the candidate. A conflict refuses, naming the conflicting paths; a clean merge is the tree the
+build uses, and the ratchet keys on the resolved commit, so two machines that resolve the same commit
+build the same bytes. The invariant the model rests on is that the named repository's ancestry
+includes upstream's, so the merge base is a real commit; yolo never authors that history and never
+rebases it. A carry whose ancestry does not include upstream's is an apply error, not a conflict: git
+exits 128 with *"fatal: refusing to merge unrelated histories"*.
+
+The two mechanisms answer different problems: a `patches` series is a set of changes yolo replays,
+and two machines can disagree about a replay, while a carry is a commit graph, so the merge question
+is decided by hashes. **Naming both on one contribution is a conflict and a fatal error**
+([PF-D87](#PF-D87)): the pack is refused at its decode, before any fetch, and the refusal names the
+contribution's owner key and both fields, and the next step: keep `carry` for a branch merged against
+upstream, or `patches` for a series, and delete the other.
+
+**The git floor.** Only the `--write-tree` form answers the question: the legacy three-argument
+`git merge-tree` exits 0 for a clean merge and a conflicting one alike and writes no tree, while
+`--write-tree` prints the merged tree's OID and exits 0, or prints the conflicted tree's OID and the
+conflicting paths and exits 1. That form is git 2.38's, under the floor of 2.40 the replay already
+declares ([PF-D58](#PF-D58)), so the carry reuses the replay's one refusal (`GitTooOldError`,
+*"replaying a patch series needs git 2.40 or newer"*) rather than adding a second gate: an older git
+is refused by name and never falls back to a replay. Measured 2026-10-13 with git 2.55.0 and 2.47.2
+in a scratch repository.
 
 ## 4. Detection
 
@@ -1335,66 +1371,6 @@ reason ([PF-D54](#PF-D54)).
    > reaches a macos-user sandbox only once install-capture H4 settles where the build store lives
    > for the sandbox account; until then the launch says to use a container backend.
 
-6. 💬 <a id="OQ-PFK6"></a>**OQ-PFK6: May a `files` contribution name a `carry` — a commit graph, a branch plus a repository — instead of a `patches` series?**
-
-   Requested by a downstream pack consumer, whose model replaces the generated series with a git
-   merge question ([the full model](#oq-pfk6-background)). yolo would never author or rebase that
-   history; it would only ask git whether the carry merges.
-
-   - **A — `carry` replaces `patches`.** Never both, and naming both is refused. Clean merges are
-     built and the ratchet keys on the resolved commit; a conflict refuses naming the paths.
-   - **B — `carry` sits beside `patches`.** A pack may declare either.
-   - **C — Decline.** Keep the generated series and the replay as the only route.
-
-   <!-- vantage: question id=OQ-PFK6 leaning="A, pending one measurement: the tree-only merge needs a git new enough to offer it as a working-tree-free merge, and an older git must be refused by name rather than silently replaying. The consumer's model answers the two-machine disagreement the replay cannot: a commit graph is hashed, so two hosts agree." -->
-
-   _Leaning:_ A, pending one measurement: the tree-only merge needs a git new enough to offer it as
-   a working-tree-free merge, and an older git must be refused by name rather than silently
-   replaying. The consumer's model answers the two-machine disagreement the replay cannot: a commit
-   graph is hashed, so two hosts agree.
-
-   **Answer:**
-   > **The one measurement the leaning awaited, 2026-10-13, with git 2.55.0 (the local
-   > `/bin/git`) and the nix store's git 2.47.2, in a scratch repository: the locator must use
-   > `git merge-tree --write-tree`, and the git floor is NOT raised.**
-   >
-   > The legacy three-argument form — `git merge-tree <base> <b1> <b2>`, which git now calls
-   > `--trivial-merge` and documents as deprecated — cannot answer this question: it prints a
-   > semi-diff merge result and **exits 0 for a clean merge and for a conflicting one alike**,
-   > and it never writes or prints a tree. A locator built on it would have neither the tree
-   > the build uses nor a conflict to refuse on.
-   >
-   > The `--write-tree` form does exactly what the model needs, with no working tree (measured
-   > through `--git-dir` in a bare clone): a clean merge prints the merged toplevel tree's OID
-   > and exits 0; a conflict prints the conflicted tree's OID, then the conflicting paths, and
-   > exits 1, and `-z --name-only --no-messages` makes those paths machine-readable. With no
-   > `--merge-base` it finds the base itself and gives the tree the explicit
-   > `--merge-base=<base>` gives — the model's ancestry invariant is what makes that base real.
-   >
-   > **The floor.** The form is git 2.38's (git's own `RelNotes/2.38.0.txt`: *"git merge-tree
-   > learned a new mode where it takes two commits and computes a tree"*), and yolo's declared
-   > floor is already above it: 2.40 in [PF-D58](#PF-D58), `replayMinGit` and `GitTooOldError`
-   > (`replay.go:61-62`, *"replaying a patch series needs git 2.40 or newer"*), the version
-   > `--merge-base` arrived in (git's `RelNotes/2.40.0.txt`). So there is nothing to raise: a
-   > locator that names the base with `--merge-base` (2.40, as the replay does) and one that
-   > lets `merge-tree` discover it (2.38) are both at or under the declared floor, and the
-   > locator must reuse that one refusal rather than add a second gate. A carry whose ancestry
-   > does not include upstream's is not a conflict: git itself exits 128 with *"fatal: refusing
-   > to merge unrelated histories"*, an apply error.
-
-### What a `carry` is, in full
-
-<a id="oq-pfk6-background"></a>Requested by a downstream pack consumer. The contribution names a
-locator: a repository plus a branch, where the repository may be a local path or a URL with `?ref=`.
-At the advance the launcher fetches both the locator and the upstream release, and `git merge-tree`
-— no working tree — answers whether the carry merges into the candidate. A failure refuses, naming
-the conflicting paths; a success is the tree the build uses, and the ratchet keys on the resolved
-commit, so two machines that resolve the same commit build the same bytes. The invariant the model
-rests on is that the named repository's ancestry includes upstream's, so `merge-base` names a real
-commit; yolo never authors that history and never rebases it. The two mechanisms answer different
-problems: a `patches` series is a set of changes yolo replays and can disagree about across two
-machines, while a `carry` is a commit graph, so the merge question is decided by hashes.
-
 ## Decision Ledger
 
 Every row is reversible, and the Built column says what has been built of each.
@@ -1402,7 +1378,8 @@ Every row is reversible, and the Built column says what has been built of each.
 [PF-D27](#PF-D27)–[PF-D58](#PF-D58), [PF-D60](#PF-D60)–[PF-D76](#PF-D76), [PF-D78](#PF-D78)–[PF-D80](#PF-D80) and
 [PF-D83](#PF-D83)–[PF-D84](#PF-D84) are implementation decisions made building it, [PF-D59](#PF-D59)
 and [PF-D77](#PF-D77) the maintainer's rulings in review on 2026-10-05, and [PF-D81](#PF-D81) and
-[PF-D82](#PF-D82) his ruling and request of 2026-10-09. [PF-D23](#PF-D23)–[PF-D26](#PF-D26) are the four questions that were the
+[PF-D82](#PF-D82) his ruling and request of 2026-10-09, and [OQ-PFK6](#OQ-PFK6) his ruling of
+2026-10-15, with [PF-D87](#PF-D87) the implementation decision under it. [PF-D23](#PF-D23)–[PF-D26](#PF-D26) are the four questions that were the
 maintainer's, [OQ-PFK1](#OQ-PFK1)–[OQ-PFK4](#OQ-PFK4), decided on their leanings on 2026-10-04 under
 his delegation, and still his to overrule. [PF-D8](#PF-D8),
 [PF-D16](#PF-D16) and [PF-D19](#PF-D19) apply rulings of
@@ -1496,6 +1473,8 @@ his delegation, and still his to overrule. [PF-D8](#PF-D8),
 | <a id="PF-D84"></a>PF-D84 | *Implementation decision, under [PF-D81](#PF-D81), reversible.* **Where a patch failure stops, and where its block is said. A jail launch's build slot hands the typed failure beside whatever it delivers and its advances print neither the block nor a CONTINUING line; the launch prints every block as soon as the slot ends, before any line about what the slot delivered and before the image step, then refuses when a block's subject has a build to run and the bypass is not set, whatever the command; a failure with nothing to run is then the missing-build refusal's, which points at the block instead of naming the target again. This holds on every runtime the slot runs on, below Apple Container's read-only floor too, where the tree arm builds nothing but still copies in the good build. A patched extension no selected agent pack loads in the jail stops nothing, its block saying so; one with a fallback and no build gets its fallback ([`pi-extension-store-builds.md` XB-D7](pi-extension-store-builds.md#XB-D7)). A host verb that renders into the home stops before its first write: a patched extension's advance already runs before the render, so `yolo host -- <bin>` under `host_apply_on_launch` and `yolo host apply --assert` stop on its answer, while the apply `yolo pack update` runs, which advances nothing, and `yolo host -- <bin>` without `host_apply_on_launch` read its recorded failure (the latter at the stop that looks for its link, its bypass loading the linked build); a patched fork's RECORDED failure is read before the render with no advance (`hostfloor.Floor.PreparePatched` with the advance off), and its advance stays after the render gate, so a failure that advance first finds stops the floor stage or the launch's readiness act and target, after a render that does not depend on the fork's build and before its floor entry is written.** Why: printed inside the slot, the block sat among other keys' progress and result lines and was followed by more, the buried error the ruling names; and moving the fork's advance before the render gate would put a fetch and a build inside the gate's budgeted observe pass, the trap `cli.TestTheHostFloorsAdvanceRunsAfterTheRenderGatesObservePass` pins | 2026-10-09 | [§8](#8-failure-and-the-next-step) | 2026-10-09: `run.Options.refusePatchFailures` (`cli/run/patchfailures.go`), `cli.advance.launchSaysPatchFailure`, `run.patchFailureReason`, `cli.hostPatchPreflight` (`cli/hostpatchpreflight.go`), `advanceHostTrees`' answer, `cli.hostTreePatchFailureAllows`, and `hostfloor.Floor.PatchBypassCommand`, so a block names the command that was run; the pack-update apply says no second block; pinned by `run.TestAPatchFailureBelowAppleContainersReadOnlyFloorStillRefuses`, `cli.TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure`, `cli.TestThePackUpdateApplyStopsOnRecordedPatchFailuresBeforeItWritesSayingThemOnce`, `run.TestAPatchFailureWithABuildToRunRefusesTheLaunch`, `run.TestAPatchedExtensionsPatchFailureRefusesOnlyWhereItIsLoaded`, `cli.TestABuildThatLeavesNothingAtALaunchIsSaidOnceByTheLaunch`, and the four host tests PF-D81's row names |
 | <a id="PF-D85"></a>PF-D85 | **Maintainer ruling, overruling [PF-D26](#PF-D26) and [OQ-PFK4](#OQ-PFK4)'s delegated answer:** *"either it's automatic or it's not a command. Otherwise, like, you can just run git rebase and have your agent fix stuff anyway. Like, if someone's involved fixing conflicts, then what good is this command?"* **`yolo pack rebase` is retired.** What a launch can do with no human, it does automatically; a conflict that needs a human is the user's (or their agent's) plain `git rebase`, which yolo's conflict message names with the series' base, the target commit and the stopping member. yolo still never writes the fork pack | 2026-10-15 | [§8.4](#84-rebasing-the-series), [OQ-PFK4](#OQ-PFK4) | 2026-10-15, `b06d0c900` and `0710483df`: the verb, its rebase clone and their tests deleted (`cli/patchedrebase*.go`, `packsrc/rebase.go`); every line that named it prints the rebase recipe, one printer (`packsrc.RebaseRecipe.Repair`, read through `packload.Fork.RebaseRecipe`) under the error block's Repair line, `yolo pack update`'s, `status`'s and `series check`'s conflicts, cached-good recovery and the base lag, while the held suffix and a missing build's reason name `yolo pack status`; pinned by `packsrc.TestTheRebaseRecipeRunsAsPrintedAndItsExportWaitsForTheRebase` and `cli.TestTheConflictsRecipeRunAsPrintedGivesASeriesTheNextLaunchBuilds` ([§14](#14-what-i-would-build-in-order)'s done condition, run end to end), `cli.TestPackStatusPrintsTheRecipeUnderTheConflict`, `cli.TestPatchedForkLinesNameOnlyVerbsThatExist` and `cli.TestTheRetiredRebaseVerbNamesWhatReplacedIt` (typing the verb names what replaced it). The automatic half is [PF-D86](#PF-D86) |
 | <a id="PF-D86"></a>PF-D86 | *Implementation decision, under [PF-D85](#PF-D85) ("what a launch can do with no human, it does automatically") and [PF-D29](#PF-D29), reversible.* **A member whose pick conflicts is ALREADY UPSTREAM when its patch-id (`git patch-id --stable`) equals that of a commit of the upstream between the series' base and the entry, the rule by which `git rebase <entry>` drops a commit as already applied. It is reported as PF-D29's already-upstream case ("already in upstream …; drop it from …"), and the replay goes on to the next member. Only commits that change exactly the member's paths can share its patch-id, so they are found from the trees alone (`rev-list -- <paths>`, the newest 64), and only their blobs are fetched into the mirror, under the replay's lock, before the patch-ids are read in the replay's own config regime; a read that fails leaves the conflict. Checked only for a member that conflicts: a member whose pick is clean is picked, so one upstream merged and later reverted is still applied, where `git rebase` would drop it.** MEASURED (`pick-vs-rebase-repro.sh`, git 2.55): with a member upstream merged verbatim and then edited on the same line, `git merge-tree --merge-base` conflicts, `git rebase <tag>` drops the member and exits 0, and `git rebase --onto <tag> <base>` conflicts, its cherry-pick detection comparing against nothing between the base and the tag; so the printed recipe ([§8.4](#84-rebasing-the-series)) runs `git rebase <target>` | 2026-10-15 | [§5.2](#52-the-replay-and-what-applies-cleanly-means) | 2026-10-15, `d65d1eede`: `packsrc.scratch.upstreamEquivalent`, `Store.prefetchObjects`; pinned by `packsrc.TestAMemberUpstreamMergedAndThenEditedIsAlreadyUpstream` (failed before: a conflict on the first member) and `TestAConflictingMemberWhoseChangeUpstreamDiffersStillConflicts` |
+| <a id="OQ-PFK6"></a>[OQ-PFK6](#OQ-PFK6) | **Maintainer ruling, the owner's own answer:** *"We should support both carry and patches in YOLO, but they cannot be used for the same thing. That is a conflict and a fatal error. I think that's what you're saying."* **yolo supports both a `carry` (a commit graph merged against the upstream candidate by `git merge-tree --write-tree`) and a `patches` series; one contribution naming both is refused as fatal.** It differs from every option offered: B's coexistence (a pack may declare either), with A's refusal of both; not A's "`carry` replaces `patches`", and not C. The leaning's git requirement stands: an older git is refused by name, never replayed silently, through the replay's existing 2.40 floor, which the 2026-10-13 measurement found already covers the form | 2026-10-15 | [§3.5](#35-a-carry-instead-of-a-series), [§3.1](#31-the-fields) | Not built: the `carry` field, its locator fetch, the merge-tree locator, the ratchet's resolved-commit key and the both-named refusal ([PF-D87](#PF-D87)) |
+| <a id="PF-D87"></a>PF-D87 | *Implementation decision, under [OQ-PFK6](#OQ-PFK6), reversible.* **"The same thing" is one contribution, one owner key ([PF-D22](#PF-D22)): a contribution that names both `carry` and `patches` is refused at the pack's decode, before any fetch, naming the owner key, both fields and which to keep for what.** The narrowest reading of the ruling; the doc scored nothing wider. Two contributions of one pack, one with each, are separate owner keys and not this conflict, whatever the fork route already says about two forks of one program | 2026-10-15 | [§3.5](#35-a-carry-instead-of-a-series) | Not built |
 | OQ-PFK7 | **Settled by the maintainer's ruling [PF-D85](#PF-D85)** (*"either it's automatic or it's not a command"*): `yolo pack rebase` is retired, so yolo makes no clone and a clean replay has none to keep; a conflict that needs a human is the user's own `git rebase`, from the printed recipe ([§8.4](#84-rebasing-the-series)). **A stale series is signalled by its base lag**: the launch's fork line and `yolo pack status` name the releases newer than the series' base, and which of them take it as it stands. Requested 2026-10-13 by a downstream pack consumer. Not built: a kept clone (A, B) and a `yolo check` warning | 2026-10-15 | [§7](#7-the-build-and-the-launch), [§8.4](#84-rebasing-the-series) | 2026-10-15, `1b3981d04`: `packsrc.CheckRecord.BaseLag`, `run.BaseLagNote` and `BaseLagSteps`; pinned by `cli.TestPackStatusAndTheForkLineNameTheBaseLag`, `cli.TestPackStatusSaysNoBaseLagAtTheNewestVersion` and `run.TestBaseLagNoteNamesTheNewerReleases` |
 
 ## Combined preparation boundary (2026-10-14 candidate)
