@@ -18,6 +18,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 // This reaches registration, the independent demand worker, guarded fork pin
@@ -231,5 +233,87 @@ func TestFreshPlainBuildSlotCompletedWinnerRequiresCurrentEpoch(t *testing.T) {
 				t.Fatalf("ordinary historical serving lost: %+v builds=%d", historical[f.Bin], builds.Load())
 			}
 		})
+	}
+}
+
+// ANOTHER PROCESS HOLDING THE DEMAND'S state.lock at a plain fork's fresh admission is contention:
+// the worker waits for it and admits, as a patched fork's worker does
+// (TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions), rather than failing the
+// `--update` request outright.
+func TestFreshPlainDemandRetriesStateLockHeldByAnotherProcess(t *testing.T) {
+	repo, _ := forkRepo(t)
+	forkPinHome(t, "git+file://"+repo+"?ref=main")
+	f := selectedPlainProgram(t)
+	stubSharedPreparationWorker(t)
+	entries := []capture.ManifestEntry{{Path: ".local", Kind: capture.KindDir, Mode: "0755"}, {Path: ".local/bin", Kind: capture.KindDir, Mode: "0755"}, {Path: ".local/bin/tool", Kind: capture.KindFile, Mode: "0755", Size: 32}}
+	fake := fakeCaptureJail(t, new(run.Options), entries)
+	withFakeCaptureJail(t, func(o run.Options) int {
+		writeFile(t, filepath.Join(o.Workspace, forkToolchainLeaf), "image-identity\n")
+		rc := fake(o)
+		out := filepath.Join(o.Workspace, captureOutLeaf)
+		m, err := capture.ReadManifest(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Platform = patchedTestPlatform
+		if err := capture.WriteManifest(out, m); err != nil {
+			t.Fatal(err)
+		}
+		return rc
+	})
+	old := forkBuildChild
+	forkBuildChild = func(ctx context.Context, bound time.Duration, staging string, b forkBuild, s captureStreams, color bool) (int, bool) {
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = old })
+
+	// The lock is taken through a separate open file description, which flock treats as another
+	// holder exactly as it would another process.
+	lockReady := make(chan *pidlock.Lock, 1)
+	var once atomic.Bool
+	previousHook := sharedDemandAdmissionHook
+	sharedDemandAdmissionHook = func(d preparationDemand) {
+		if d.Key != f.Key() || !d.Fresh || !once.CompareAndSwap(false, true) {
+			return
+		}
+		lock, err := pauseDemandStateLock(t, filepath.Join(sharedDemandDir(d.Key, d.Runtime, d.Platform), "state.lock"))
+		if err != nil {
+			t.Errorf("pause plain demand authorization: %v", err)
+			return
+		}
+		lockReady <- lock
+	}
+	t.Cleanup(func() { sharedDemandAdmissionHook = previousHook })
+
+	req := run.ForkBuildRequest{Pins: run.PinLaunchForks([]packload.Fork{f}, nil), FreshUpdate: true, Runtime: "podman", Platform: patchedTestPlatform, Interrupt: &run.ActInterrupt{}}
+	var out syncBuffer
+	done := make(chan entrypoint.ForkDelivery, 1)
+	go func() {
+		deliveries, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+		done <- deliveries[f.Bin]
+	}()
+	var held *pidlock.Lock
+	select {
+	case held = <-lockReady:
+	case d := <-done:
+		t.Fatalf("plain fresh request finished before its admission: %+v\n%s", d, out.String())
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatalf("plain fresh request never reached its admission; output:\n%s", out.String())
+	}
+	t.Cleanup(func() { held.Release() })
+	time.Sleep(3 * sharedDemandPoll)
+	select {
+	case d := <-done:
+		t.Fatalf("plain fresh request settled while another holder had state.lock: %+v\n%s", d, out.String())
+	default:
+	}
+	held.Release()
+	select {
+	case d := <-done:
+		if d.Key == "" || d.FreshFailure != "" {
+			t.Fatalf("plain fresh request did not admit after the lock was released: %+v\n%s", d, out.String())
+		}
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatalf("plain fresh request did not retry after state.lock was released; output:\n%s", out.String())
 	}
 }

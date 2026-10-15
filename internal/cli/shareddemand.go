@@ -809,6 +809,33 @@ func sharedFreshAdmissionRetry(ctx context.Context, dir string, d preparationDem
 	}
 }
 
+// sharedFreshPlainAdmissionRetry is sharedFreshAdmissionRetry for a plain fork's fresh request:
+// another process holding the demand's state.lock at any admission is contention, so the worker
+// waits for the lock (waitSharedDemandRetry, which also proves the request still live and its
+// authority unchanged) and runs the preparation again, instead of failing the request outright.
+// It stops on the same conditions as the patched retry, and each stop names the retry.
+func sharedFreshPlainAdmissionRetry(ctx context.Context, dir string, d preparationDemand, f packload.Fork,
+	guard func(func() error) error, w io.Writer) (advanceResult, error) {
+	retry := "`yolo --update -- <command>`"
+	if d.Host {
+		retry = "`yolo host --update -- <command>`"
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return advanceResult{}, fmt.Errorf("%s could not be prepared freshly (the preparation requester was interrupted: %s) — retry with %s",
+				f.Label(), oneLineErr(err), retry)
+		}
+		res, err := runFreshPlainPreparation(ctx, f, d, guard, w)
+		if !isSharedDemandStateLockHeld(err) {
+			return res, err
+		}
+		if err = waitSharedDemandRetry(ctx, dir, d); err != nil {
+			return advanceResult{}, fmt.Errorf("%s could not be prepared freshly (shared preparation authority changed before retry: %s) — retry with %s",
+				f.Label(), oneLineErr(err), retry)
+		}
+	}
+}
+
 // runSharedPreparation uses the existing check/replay/build/admission pipeline in a process
 // whose signal context is owned by the worker, never a launch. The short metadata lock is not
 // held across resolution, transport, check/build locks, child teardown, or runtime inspection.
@@ -952,7 +979,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				}
 			} else if !f.Patched() && !f.IsTree() && request.Fresh {
 				var plainErr error
-				res, plainErr = runFreshPlainPreparation(workCtx, f, request, demandAdmissionGuard(workCtx, dir, request, &stateMu), w)
+				res, plainErr = sharedFreshPlainAdmissionRetry(workCtx, dir, request, f, demandAdmissionGuard(workCtx, dir, request, &stateMu), w)
 				if plainErr != nil {
 					res = advanceResult{failed: true, operationError: plainErr.Error(), delivery: entrypoint.ForkDelivery{Reason: plainErr.Error()}}
 					errors.As(plainErr, &res.pending)
