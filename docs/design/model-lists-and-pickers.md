@@ -2067,6 +2067,14 @@ Options, with what Sam would see:
 Stakes: whether a gateway model that works today stops working once yolo renders a list, and
 whether [OQ-ML2](#OQ-ML2)'s "every start valid" survives the enforcement switch being off.
 
+**In plain terms.** A gateway such as z.ai serves more models than the list you give yolo. Two
+things are asked. First, should models you did not list be blocked there by default? Second,
+with blocking switched off, how does yolo stop claude starting on a model the gateway does not
+serve? claude's allowlist is the only start check yolo has that does not override the user's
+`/model` choice, so turning blocking off also turns that check off. The fix offered is a pin:
+yolo writes the list's default into claude's settings once, which breaks a standing rule that
+yolo never writes claude's model choice.
+
 **The setup.** Where the agent has no catalog of its own for a provider, the list is the
 provider's whole universe ([§14](#14-how-each-agents-menu-is-set-researched-2026-09-29)):
 every provider claude is routed to, and every key pi, oh-omp or opencode does not ship.
