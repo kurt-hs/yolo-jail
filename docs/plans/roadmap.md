@@ -116,11 +116,11 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [Cachix](handoff-cachix-cache.md), [the in-VM copier](../research/macos-layer-reusing-image-delivery.md), [the login
     seed](../design/base-home-legacy-state.md) and [the storage classes](../design/durable-scratch-space.md).
 
-    Review [the bounded privilege lifecycle](../design/macos-user-privilege-lifecycle.md), informed by
-    [SandVault's setup-authorized macOS privileges](../research/sandvault-macos-privileges.md),
-    with the native readiness work: reported startup denials and exit prompts expose prerequisites
-    that account existence and compilation do not establish. Borrowing its setup/runtime split
-    must not authorize arbitrary root operations or account-wide termination of sibling workspaces.
+    Build [the bounded privilege lifecycle](../design/macos-user-privilege-lifecycle.md) from
+    [its plan](../design/macos-user-privilege-lifecycle-plan.md), with the native readiness work:
+    an agent can start and stop macos-user jails unattended only once no launch or exit stops at a
+    password prompt, which is what testing and developing this backend unattended needs. The ruled
+    grant runs commands as the sandbox account alone, never as root, and never account-wide.
 12. [Rule the macos-user workspace root](../design/configurable-workspace-root.md), [its whitelist](../design/configurable-workspace-root.md#OQ-CW2)
     first — a `/var/root` home passes until it replaces the blacklist, and tightening later withdraws what users rely on.
 13. [Decide whether a workspace config may feed host dotenvs and mounts into a jail](../research/agent-safehouse.md#OQ-AS3)
