@@ -6,6 +6,7 @@ package packsrc
 // target, which the replay then takes.
 
 import (
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,7 +51,7 @@ func TestTheRebaseRecipeRunsAsPrintedAndItsExportWaitsForTheRebase(t *testing.T)
 		t.Fatalf("want four command lines, got:\n%s", strings.Join(lines, "\n"))
 	}
 	for _, w := range []string{"git rebase " + v11, "--base=" + v11, "format.noprefix=false", "--no-signature",
-		"--suffix=.patch", "mkdir " + patches + ".new", "rm -r " + patches + ".old"} {
+		"--suffix=.patch", "mkdir " + shquote.QuoteDisplay(patches+".new"), "rm -r " + shquote.QuoteDisplay(patches+".old")} {
 		if !strings.Contains(strings.Join(lines, "\n"), w) {
 			t.Errorf("the recipe lacks %q:\n%s", w, strings.Join(lines, "\n"))
 		}

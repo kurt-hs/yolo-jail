@@ -9,6 +9,7 @@ package cli
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,8 +103,8 @@ func TestTheConflictsRecipeRunAsPrintedGivesASeriesTheNextLaunchBuilds(t *testin
 		t.Fatalf("update rc=%d, want the conflict's block with four recipe commands, got %q\n%s\n%s", rc, cmds, out, errw)
 	}
 	for i, w := range []string{"git clone ", "git checkout -q -b yolo-rebase " + fx.fork(t).RebaseRecipe().Base +
-		" && git am " + patches + "/*.patch && git tag yolo-applied", "git rebase " + v12,
-		"test -n \"$(git rev-list -n 1 yolo-rebase --not " + v12 + " yolo-applied --)\" && mkdir " + patches + ".new"} {
+		" && git am " + shquote.QuoteDisplay(patches) + "/*.patch && git tag yolo-applied", "git rebase " + v12,
+		"test -n \"$(git rev-list -n 1 yolo-rebase --not " + v12 + " yolo-applied --)\" && mkdir " + shquote.QuoteDisplay(patches+".new")} {
 		if !strings.HasPrefix(cmds[i], w) {
 			t.Errorf("recipe command %d is %q, want it to start %q", i, cmds[i], w)
 		}
