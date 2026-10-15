@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -126,11 +127,12 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 	for _, tc := range []struct {
 		name       string
 		guardCall  int32
+		heldBuilds int
 		wantBuilds int
 	}{
-		{name: "initial check start", guardCall: 1, wantBuilds: 1},
-		{name: "capture publication", guardCall: 2, wantBuilds: 2},
-		{name: "Good settlement", guardCall: 3, wantBuilds: 1},
+		{name: "initial check start", guardCall: 1, heldBuilds: 0, wantBuilds: 1},
+		{name: "capture publication", guardCall: 2, heldBuilds: 1, wantBuilds: 2},
+		{name: "Good settlement", guardCall: 3, heldBuilds: 1, wantBuilds: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fx, oldGood := forkWithAGoodBuild(t)
@@ -141,11 +143,15 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 
 			var calls atomic.Int32
 			key := fx.fork(t).Key()
+			identity, err := freshPreparationIdentity(fx.fork(t), patchedTestPlatform)
+			if err != nil {
+				t.Fatal(err)
+			}
 			lockReady := make(chan *pidlock.Lock, 1)
 			lockErr := make(chan error, 1)
 			previousHook := sharedDemandAdmissionHook
-			sharedDemandAdmissionHook = func(_ preparationDemand) {
-				if calls.Add(1) != tc.guardCall {
+			sharedDemandAdmissionHook = func(d preparationDemand) {
+				if d.Key != key || d.Identity != identity || !d.Fresh || calls.Add(1) != tc.guardCall {
 					return
 				}
 				path := filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock")
@@ -176,8 +182,10 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 			case held = <-lockReady:
 			case err := <-lockErr:
 				t.Fatalf("pause real demand authorization: %v", err)
+			case result := <-done:
+				t.Fatalf("fresh demand finished before reaching requested authorization site: %+v\n%s", result.delivery["tool"], result.output)
 			case <-time.After(testsupport.ReadinessBudget(t)):
-				t.Fatal("production fresh demand did not reach the requested authorization site")
+				t.Fatalf("production fresh demand did not reach requested authorization site; output so far:\n%s", output.String())
 			}
 			defer held.Release()
 			time.Sleep(3 * sharedDemandPoll)
@@ -194,8 +202,8 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 					t.Fatalf("transient demand-state contention recorded a build failure: %+v", outcome)
 				}
 			}
-			if got := sharedDemandChildCount(fx) - baseChildren; got > tc.wantBuilds {
-				t.Fatalf("started %d candidate children while authorization stayed locked", got)
+			if got := sharedDemandChildCount(fx) - baseChildren; got != tc.heldBuilds {
+				t.Fatalf("candidate children while authorization stayed locked=%d, want exactly %d for %s", got, tc.heldBuilds, tc.name)
 			}
 			held.Release()
 			var result slotResult
@@ -211,6 +219,124 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 			}
 			if builds := sharedDemandChildCount(fx) - baseChildren; builds != tc.wantBuilds {
 				t.Fatalf("candidate child runs=%d, want %d for %s", builds, tc.wantBuilds, tc.name)
+			}
+		})
+	}
+}
+
+func TestSharedFreshDemandCancellationDuringFinalStateLockRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		guardCall int32
+	}{
+		{name: "capture publication", guardCall: 2},
+		{name: "Good settlement", guardCall: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx, oldGood := forkWithAGoodBuild(t)
+			newCommit := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 22: "twenty-two"})
+			fx.later(2 * time.Hour)
+			key := fx.fork(t).Key()
+			identity, err := freshPreparationIdentity(fx.fork(t), patchedTestPlatform)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var calls atomic.Int32
+			lockReady := make(chan *pidlock.Lock, 1)
+			lockErr := make(chan error, 1)
+			previousHook := sharedDemandAdmissionHook
+			sharedDemandAdmissionHook = func(d preparationDemand) {
+				if d.Key != key || d.Identity != identity || !d.Fresh || calls.Add(1) != tc.guardCall {
+					return
+				}
+				lock, lockErrAcquire := pidlock.Acquire(filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"), pidlock.NoWait, nil)
+				if lockErrAcquire != nil {
+					lockErr <- lockErrAcquire
+					return
+				}
+				lockReady <- lock
+			}
+			t.Cleanup(func() { sharedDemandAdmissionHook = previousHook })
+
+			req := forkRequest(t, fx, "podman")
+			req.FreshUpdate = true
+			var output syncBuffer
+			done := make(chan map[string]entrypoint.ForkDelivery, 1)
+			go func() {
+				delivery, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &output, false)
+				done <- delivery
+			}()
+			var held *pidlock.Lock
+			select {
+			case held = <-lockReady:
+			case lockErr := <-lockErr:
+				t.Fatalf("pause %s authorization: %v", tc.name, lockErr)
+			case delivery := <-done:
+				t.Fatalf("fresh request finished before %s authorization: %+v\n%s", tc.name, delivery["tool"], output.String())
+			case <-time.After(testsupport.ReadinessBudget(t)):
+				t.Fatalf("fresh request did not reach %s authorization; output:\n%s", tc.name, output.String())
+			}
+			t.Cleanup(func() { held.Release() })
+			demandDir := sharedDemandDir(key, "podman", patchedTestPlatform)
+			lockPath := filepath.Join(demandDir, "state.lock")
+			lockBytes, err := os.ReadFile(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			workerLock := filepath.Join(demandDir, "worker.lock")
+			if !pidlock.Held(workerLock) {
+				t.Fatal("authorization pause was not owned by the preparation producer")
+			}
+			time.Sleep(3 * sharedDemandPoll)
+			select {
+			case delivery := <-done:
+				t.Fatalf("request settled while its owned state.lock remained held: %+v\n%s", delivery["tool"], output.String())
+			default:
+			}
+			if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+				t.Fatal(err)
+			}
+			var delivery map[string]entrypoint.ForkDelivery
+			select {
+			case delivery = <-done:
+			case <-time.After(testsupport.ReadinessBudget(t)):
+				t.Fatalf("cancelled requester did not refuse while state.lock stayed held; output:\n%s", output.String())
+			}
+			got := delivery["tool"]
+			if got.Key != "" || got.FreshFailure == "" {
+				t.Fatalf("cancelled requester delivered or omitted its refusal: %+v\n%s", got, output.String())
+			}
+			if !pidlock.Held(lockPath) {
+				t.Fatal("request cancellation released a state.lock it did not own")
+			}
+			if after, err := os.ReadFile(lockPath); err != nil || !bytes.Equal(after, lockBytes) {
+				t.Fatalf("request cancellation changed owned state.lock bytes: before=%q after=%q err=%v", lockBytes, after, err)
+			}
+			if record := fx.record(t); record.Good == nil || record.Good.Entry != oldGood {
+				t.Fatalf("cancelled request changed Good: %+v, want %s", record.Good, oldGood)
+			}
+			for _, outcome := range fx.record(t).Outcomes {
+				if outcome.Commit == newCommit && outcome.Kind == packsrc.OutcomeBuildFailed {
+					t.Fatalf("cancelled transient contention recorded a build failure: %+v", outcome)
+				}
+			}
+			childrenAtRefusal := sharedDemandChildCount(fx)
+			held.Release()
+			waitFor(t, "cancelled producer teardown after owned state.lock release", func() bool { return !pidlock.Held(workerLock) })
+			if after, err := os.ReadFile(lockPath); err != nil || !bytes.Equal(after, lockBytes) {
+				t.Fatalf("producer teardown changed state.lock bytes: before=%q after=%q err=%v", lockBytes, after, err)
+			}
+			time.Sleep(3 * sharedDemandPoll)
+			if got := fx.record(t); got.Good == nil || got.Good.Entry != oldGood {
+				t.Fatalf("producer admitted work after requester cancellation: Good=%+v want entry %s", got.Good, oldGood)
+			}
+			for _, outcome := range fx.record(t).Outcomes {
+				if outcome.Commit == newCommit && outcome.Kind == packsrc.OutcomeBuildFailed {
+					t.Fatalf("producer teardown stamped a build failure after cancellation: %+v", outcome)
+				}
+			}
+			if count := sharedDemandChildCount(fx); count != childrenAtRefusal {
+				t.Fatalf("producer started another candidate after cancellation: children %d -> %d", childrenAtRefusal, count)
 			}
 		})
 	}
