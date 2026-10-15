@@ -91,7 +91,10 @@ func TestTask2ProducerCancellationWithSecondFreshWaiter(t *testing.T) {
 
 // Unit fixtures use the exact worker and lease protocol, with a separately owned worker context.
 // Process tests below use self-exec instead and prove that this seam is not lifetime authority.
-func stubSharedPreparationWorker(t *testing.T) {
+//
+// It returns the stop it also registers as a cleanup (idempotent), for a fixture whose later
+// cleanups restore seams the workers read and so must stop them first.
+func stubSharedPreparationWorker(t *testing.T) func() {
 	t.Helper()
 	previous := sharedPreparationSpawn
 	ctx, cancel := context.WithCancel(context.Background())
@@ -101,7 +104,10 @@ func stubSharedPreparationWorker(t *testing.T) {
 		go func() { defer wg.Done(); _ = runSharedPreparation(ctx, d, io.Discard) }()
 		return nil
 	}
-	t.Cleanup(func() { cancel(); wg.Wait(); sharedPreparationSpawn = previous })
+	var once sync.Once
+	stop := func() { once.Do(func() { cancel(); wg.Wait() }) }
+	t.Cleanup(func() { stop(); sharedPreparationSpawn = previous })
+	return stop
 }
 
 func TestWithDemandStatePreservesHeldLockAndCancellationIdentities(t *testing.T) {

@@ -181,13 +181,13 @@ func TestPatchActorOpaqueBeforeNextLaunchDelivery(t *testing.T) {
 		t.Fatalf("initial tree was not built: %+v", first)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	store := patchedAdvanceStore(true)
 	series, err := fx.tree(t).ReadSeries()
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := store.CheckPatched(fx.tree(t).CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	checked := store.CheckPatched(fx.tree(t).CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if checked.Err != nil || checked.Record == nil || checked.Record.Check == nil {
 		t.Fatalf("prepare the actual selected check before installing its old opaque diagnosis: %+v", checked)
 	}

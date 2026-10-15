@@ -159,7 +159,7 @@ func TestPreparationNoDueRegistrationCanBecomeDueOnLaterTick(t *testing.T) {
 		t.Fatalf("no-due timer tick built %d trees", builds.Load())
 	}
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	ticks <- pf.now
 	complete := func() bool {
 		if builds.Load() < 2 {
@@ -366,7 +366,7 @@ func TestPreparationRevocationCancelsPausedChild(t *testing.T) {
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	stubPreparationWorkerStart(t)
 	started := make(chan struct{})
 	cancelled := make(chan struct{})

@@ -242,7 +242,7 @@ func TestANewerBuildsRefusalWhileTheGoodBuildServesIsSaidOnce(t *testing.T) {
 		t.Fatalf("the first launch delivered %+v\n%s", got, out)
 	}
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	runs := 0
 	withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
 	got, out := deliverOneAtATime(t, trees)
@@ -273,7 +273,7 @@ func TestAHeldBuildOnAppleContainerNamesItsLimit(t *testing.T) {
 			t.Fatalf("%s: the first launch delivered %+v\n%s", rt, got, out)
 		}
 		fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-		fx.now = fx.now.Add(2 * time.Hour)
+		fx.setNow(fx.now.Add(2 * time.Hour))
 		runs := 0
 		withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
 		got, out := deliverAllOn(t, trees, rt)
