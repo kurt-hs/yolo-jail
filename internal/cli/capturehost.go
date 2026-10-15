@@ -1025,7 +1025,18 @@ func captureStagingInNamespace(rt string, errw io.Writer) func(string) error {
 //
 // THE JAIL'S OWN DIAGNOSTICS GO FIRST (buildjaillogs.go): its launch's timing, boot and launch logs
 // are kept in yolo's host log directory before the workspace holding them is removed.
+//
+// AND THE JAIL'S SCRATCH REMOVER GOES BEFORE THAT. The build jail's launch starts
+// `yolo internal scratch-rm` detached at its teardown and exits without waiting for it, so
+// the remover can still be running podman, and be about to log its line into
+// `<workspace>/.yolo`, when the jail's process has returned. Deleting the workspace under it
+// lost that line, or failed the delete with "directory not empty"; and the remover outlived
+// the launch that asked for this build (CI run 38804113167). So the cleanup waits, bounded,
+// for every remover holding the workspace's in-flight lock (run.WaitForScratchRemovers). The
+// jail is already gone by now (forkBuildWorkspaceReclaimable), so the first listing it makes
+// normally answers. Past the bound the cleanup goes ahead, best-effort like the rest of it.
 func cleanupCaptureWorkspace(workspace, cname string) {
+	_ = run.WaitForScratchRemovers(workspace, captureScratchRemoverWait)
 	preserveBuildJailLogs(workspace)
 	_ = os.RemoveAll(workspace)
 	runtime.CleanupContainerTracking(cname)
@@ -1037,6 +1048,10 @@ func cleanupCaptureWorkspace(workspace, cname string) {
 		_ = os.Remove(part)
 	}
 }
+
+// captureScratchRemoverWait bounds cleanupCaptureWorkspace's wait for the build jail's scratch
+// removers: run.ScratchRemoverBound, a remover's own wait for podman plus its podman calls.
+var captureScratchRemoverWait = run.ScratchRemoverBound
 
 // captureLockPath is the per-program capture lock, beside the launch locks — the
 // convention internal/cli/run/run.go establishes for everything that serialises on a
