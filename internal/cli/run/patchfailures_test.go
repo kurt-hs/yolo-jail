@@ -67,7 +67,7 @@ func TestAPatchFailureWithABuildToRunRefusesTheLaunch(t *testing.T) {
 		for _, w := range []string{
 			"ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0 (" + pfCommit + ")\n",
 			"  Patch: 0001-ten.patch\n  Conflict: f.txt\n  Operation stopped; no older fit or base will be built.\n",
-			"  Repair: yolo pack rebase forkpack/tool --onto " + pfCommit + "\n",
+			"  Repair: " + packsrc.RecipeLead + "\n", "      git rebase " + pfCommit + "\n",
 			"  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo\n",
 			"(runs the intact admitted build v1.1.0 (0a1b2c3d) + 1 patch for this one run",
 			"Refusing to launch: the patch series of fork forkpack/tool does not apply (the ERROR above)",

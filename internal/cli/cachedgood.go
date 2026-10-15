@@ -99,7 +99,7 @@ func cachedGoodRefusal(f packload.Fork, record *packsrc.CheckRecord, req run.For
 		if pf.Kind == "base" {
 			repair = "re-export the patch series with `git format-patch --base=" + pf.Target.Commit + "`"
 		} else {
-			repair = "`yolo pack rebase " + f.Key() + " --onto " + pf.Target.Commit + "`"
+			repair = "rebase the patch series onto " + pf.Target.Commit + " with the git commands under the ERROR's Repair line above"
 		}
 	}
 	if strings.Contains(why, "another yolo process holds the owner record lock") {
@@ -131,7 +131,7 @@ func writeCachedGoodPatchFailure(w io.Writer, f packload.Fork, record *packsrc.C
 		return
 	}
 	if admitted == "" {
-		writePatchFailure(w, pf, f.Key(), packsrc.PatchBypass{Command: "yolo", Missing: true}, "")
+		writePatchFailure(w, pf, f, packsrc.PatchBypass{Command: "yolo", Missing: true}, "")
 		return
 	}
 	target := pf.Target.Tag
@@ -148,7 +148,9 @@ func writeCachedGoodPatchFailure(w io.Writer, f packload.Fork, record *packsrc.C
 	if pf.Kind == "base" {
 		fmt.Fprintf(w, "  Repair: re-export the patch series with `git format-patch --base=%s`.\n", pf.Target.Commit)
 	} else {
-		fmt.Fprintf(w, "  Repair: `yolo pack rebase %s --onto %s`.\n", f.Key(), pf.Target.Commit)
+		for _, l := range f.RebaseRecipe().Repair(pf.Target, "Repair: "+packsrc.RecipeLead, "  ") {
+			fmt.Fprintln(w, l)
+		}
 	}
 	if pf.Log != "" {
 		fmt.Fprintf(w, "  Log: %s\n", printableFailureText(pf.Log))

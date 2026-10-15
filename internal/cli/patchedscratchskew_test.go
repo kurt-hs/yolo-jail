@@ -1,13 +1,12 @@
 package cli
 
-// patchedscratchskew_test.go pins that the scratch acts, `yolo pack series check` and `yolo pack
-// rebase --pack`, read a pack as a launch does, a USE READ (docs/design/patched-forks.md PF-D68),
-// and say each contribution it skips as a launch says it (PF-D72): a contribution this yolo cannot
-// read leaves the rest of the pack checked, and a patched fork skipped for a field this yolo does not
-// know is named rather than read as a pack that declares none.
+// patchedscratchskew_test.go pins that the scratch act, `yolo pack series check`, reads a pack as a
+// launch does, a USE READ (docs/design/patched-forks.md PF-D68), and says each contribution it skips
+// as a launch says it (PF-D72): a contribution this yolo cannot read leaves the rest of the pack
+// checked, and a patched fork skipped for a field this yolo does not know is named rather than read as
+// a pack that declares none.
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -27,7 +26,7 @@ func TestTheScratchActsSayASkippedSiblingAndCheckTheSeries(t *testing.T) {
 }
 
 // A PATCHED FORK THIS YOLO CANNOT READ is named, with its field and `update yolo`, before the
-// refusal that finds no series: both scratch acts.
+// refusal that finds no series.
 func TestTheScratchActsNameAPatchedForkTheyCannotRead(t *testing.T) {
 	f := newPatchedFixture(t, "")
 	writeFile(t, f.manifest, `{"name":"forkpack","contributes":[{"kind":"program","bin":"tool","via":"source",`+
@@ -39,9 +38,5 @@ func TestTheScratchActsNameAPatchedForkTheyCannotRead(t *testing.T) {
 	if rc != 1 || !strings.Contains(errw, skip) || !strings.Contains(errw, "update yolo") ||
 		!strings.Contains(errw, "declares no patch series") {
 		t.Errorf("the series check of an unreadable patched fork: rc=%d\n%s\n%s", rc, out, errw)
-	}
-	rc, out, errw = rebaseVerb(t, "forkpack/tool", "--pack", f.forkDir, "--into", filepath.Join(t.TempDir(), "clone"))
-	if rc != 1 || !strings.Contains(errw, skip) || !strings.Contains(errw, "declares no patched fork or extension") {
-		t.Errorf("the scratch rebase of an unreadable patched fork: rc=%d\n%s\n%s", rc, out, errw)
 	}
 }

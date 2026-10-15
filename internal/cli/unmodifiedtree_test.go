@@ -210,13 +210,3 @@ func TestAChildBuildJailIsHandedTheVersionsInstall(t *testing.T) {
 		t.Errorf("the git child's build line = %q", got)
 	}
 }
-
-// `yolo pack rebase` has nothing to rebase for an unmodified extension, and says what to do instead.
-func TestRebaseRefusesAnUnmodifiedExtensionNamingWhy(t *testing.T) {
-	trees := []packload.Fork{{Pack: "treepack", Bin: "tool-ext", Into: ".tool/ext/tool-ext", Source: "npm:tool-ext"}}
-	var errw strings.Builder
-	if _, rc := pickRebaseFork(trees, treeKeyCLI, "", &errw); rc != 1 ||
-		!strings.Contains(errw.String(), "unmodified extension") || !strings.Contains(errw.String(), `"patches"`) {
-		t.Errorf("rebase of an unmodified extension: rc %d, %q", rc, errw.String())
-	}
-}

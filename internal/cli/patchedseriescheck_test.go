@@ -60,7 +60,7 @@ func noScratchLeft(t *testing.T, tmp string) {
 
 // THE VERDICT `yolo pack status` READS: the host's update records the replay and its status reads
 // it back; in a jail, with nothing of the host's, the check reaches the same one — v1.2.0 does not
-// take 0001-ten.patch, which conflicts in f.txt — and names the rebase. Since PF-D81 neither side
+// take 0001-ten.patch, which conflicts in f.txt — and prints the git recipe that rebases it. Since PF-D81 neither side
 // goes on to call v1.1.0 below it a fit: the host's update stops at the conflict, fatally, and the
 // check says a launch stops there too. It writes nothing in the pack nor the host's pack store, and
 // moves no check record.
@@ -70,12 +70,12 @@ func TestSeriesCheckInAJailGivesTheVerdictPackStatusGivesOnTheHost(t *testing.T)
 	v12 := f.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	if rc, out, errw := packVerb(t, "update"); rc != 1 ||
 		!strings.Contains(errw, "ERROR: forkpack/tool: patch application failed at upstream v1.2.0 ("+v12+")") ||
-		!strings.Contains(errw, "  Repair: yolo pack rebase forkpack/tool --onto "+v12+"\n") {
+		!strings.Contains(errw, "  Repair: "+packsrc.RecipeLead+"\n") || !strings.Contains(errw, "      git rebase "+v12+"\n") {
 		t.Fatalf("update rc=%d, want 1 with PF-D81's error naming v1.2.0 and its rebase\n%s\n%s", rc, out, errw)
 	}
 	_, status, _ := packVerb(t, "status")
 	for _, w := range []string{"candidate: v1.2.0 (" + shortSHA(v12) + ")",
-		"does not take 0001-ten.patch (conflicts in f.txt) — `yolo pack rebase forkpack/tool` rebases the series"} {
+		"does not take 0001-ten.patch (conflicts in f.txt)", "      git rebase " + v12} {
 		if !strings.Contains(status, w) {
 			t.Fatalf("the host's status lacks %q:\n%s", w, status)
 		}
@@ -95,7 +95,8 @@ func TestSeriesCheckInAJailGivesTheVerdictPackStatusGivesOnTheHost(t *testing.T)
 		"checking fork forkpack/tool's upstream git+file://" + f.repo + "?ref=main in a scratch copy",
 		"fork forkpack/tool: upstream v1.2.0 (" + shortSHA(v12) + ") does not take the patch series —",
 		"  0001-ten.patch conflicts in f.txt\n",
-		"  rebase the series: yolo pack rebase forkpack/tool --pack " + shquote.QuoteDisplay(f.forkDir) + " --onto v1.2.0\n",
+		"  " + packsrc.RecipeLead + "\n", "      git rebase " + v12 + "\n",
+		"mkdir " + shquote.QuoteDisplay(filepath.Join(f.forkDir, "patches")+".new"),
 		"a launch stops at this conflict and builds no older version or the series' base until the series is rebased",
 	} {
 		if !strings.Contains(out, w) {
@@ -144,7 +145,7 @@ func TestSeriesCheckOfASeriesTheNewestVersionTakes(t *testing.T) {
 }
 
 // --onto CHECKS ONE COMMIT, whatever the follow rule would take: v1.1.0 takes the series and v1.2.0
-// does not, and its rebase step names v1.2.0.
+// does not, and its rebase recipe names v1.2.0's commit.
 func TestSeriesCheckOntoChecksThatVersionAlone(t *testing.T) {
 	f := newPatchedFixture(t, "")
 	v11 := f.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
@@ -156,7 +157,7 @@ func TestSeriesCheckOntoChecksThatVersionAlone(t *testing.T) {
 	}
 	rc, out, errw = seriesVerb(t, "check", f.forkDir, "--onto="+v12)
 	if rc != 1 || !strings.Contains(out, "upstream "+shortSHA(v12)+" does not take the patch series") ||
-		!strings.Contains(out, "--onto "+v12) || strings.Contains(out, "no upstream version on the list") {
+		!strings.Contains(out, "git rebase "+v12) || strings.Contains(out, "no upstream version on the list") {
 		t.Errorf("--onto v1.2.0's commit: rc=%d\n%s\n%s", rc, out, errw)
 	}
 }
@@ -233,15 +234,15 @@ func TestSeriesCheckRefusesWhatItCannotCheck(t *testing.T) {
 	}
 }
 
-// A JAIL'S CHECK OF A PACK OUTSIDE ITS WORKSPACE names the rebase on the host, which is where that
-// pack's series can be exported, since the scratch rebase there would refuse it.
-func TestSeriesCheckInAJailOfAPackOutsideItsWorkspaceNamesTheHostsRebase(t *testing.T) {
+// A JAIL'S CHECK OF A PACK OUTSIDE ITS WORKSPACE says the recipe's export belongs on the host, which
+// is where that pack's own series is: the jail's copy of it is not the host's.
+func TestSeriesCheckInAJailOfAPackOutsideItsWorkspaceSendsTheExportToTheHost(t *testing.T) {
 	f := newPatchedFixture(t, "")
 	f.commit(t, "v1.2.0", map[int]string{11: "eleven"})
 	inAJail(t, t.TempDir())
 	_, out, _ := seriesVerb(t, "check", f.forkDir)
-	if !strings.Contains(out, "  rebase the series on the host: yolo pack rebase forkpack/tool --onto v1.2.0\n") {
-		t.Errorf("the check does not name the host's rebase:\n%s", out)
+	if !strings.Contains(out, "outside this jail's workspace, so it is not the host's own copy of the pack: run the export below on the host") {
+		t.Errorf("the check does not say the export belongs on the host:\n%s", out)
 	}
 }
 
@@ -295,9 +296,9 @@ func TestAnInterruptedSeriesCheckRemovesItsScratchCopy(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	prev := rebaseInterrupt
-	rebaseInterrupt = func() (context.Context, func()) { return ctx, cancel }
-	t.Cleanup(func() { rebaseInterrupt = prev })
+	prev := seriesInterrupt
+	seriesInterrupt = func() (context.Context, func()) { return ctx, cancel }
+	t.Cleanup(func() { seriesInterrupt = prev })
 	rc, out, errw := seriesVerb(t, "check", f.forkDir)
 	if rc != 130 || !strings.Contains(errw, "interrupted — the scratch copy of the upstream is removed") {
 		t.Errorf("rc=%d, want 130 and the interruption said\n%s\n%s", rc, out, errw)

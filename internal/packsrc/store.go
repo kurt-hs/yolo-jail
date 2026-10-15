@@ -821,6 +821,33 @@ func (s *Store) prefetchBlobs(b budget, mirror, commit, sub string) {
 	_ = cmd.Run()
 }
 
+// prefetchObjects fetches the objects oids names into the blobless mirror, in one request, as
+// prefetchBlobs does for a commit's tree; an object already there is not asked for. Best effort:
+// what it could not fetch, the caller's own read meets as missing.
+func (s *Store) prefetchObjects(b budget, mirror string, oids []string) {
+	if len(oids) == 0 {
+		return
+	}
+	out, err := s.runIn(b, mirror, append([]string{"rev-list", "--objects", "--no-walk", "--missing=print"}, oids...)...)
+	if err != nil {
+		return
+	}
+	var missing strings.Builder
+	for _, line := range strings.Split(out, "\n") {
+		if oid, ok := strings.CutPrefix(strings.TrimSpace(line), "?"); ok {
+			missing.WriteString(oid + "\n")
+		}
+	}
+	if missing.Len() == 0 {
+		return
+	}
+	cmd := s.gitCmd(b.ctx, mirror, withFsck("-c", "fetch.negotiationAlgorithm=noop",
+		"fetch", "origin", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no",
+		"--filter=blob:none", "--stdin")...)
+	cmd.Stdin = strings.NewReader(missing.String())
+	_ = cmd.Run()
+}
+
 // checkSubdir reports whether a's subdirectory is a DIRECTORY in commit, the one thing a pack
 // root can be, reading the mirror's trees alone: `git ls-tree` names an entry's mode without
 // reading its contents, so this fetches nothing even from the partial mirror, which holds

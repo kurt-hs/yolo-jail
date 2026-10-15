@@ -22,8 +22,8 @@ package cli
 //     PF-D81; or onto --onto alone; or, with nothing on the list and the base on the branch, onto
 //     the base, which a first advance builds.
 //  4. THE VERDICT: the newest entry takes the series, or the member that stops it and its paths,
-//     naming the rebase that resolves it. Exit 0 when the newest entry (or --onto, or the base)
-//     takes the series, 1 otherwise.
+//     with the git that rebases it (packsrc.RebaseRecipe). Exit 0 when the newest entry (or
+//     --onto, or the base) takes the series, 1 otherwise.
 
 import (
 	"context"
@@ -31,9 +31,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -44,16 +46,16 @@ import (
 )
 
 // scratchBuilds is what follows a clean replay of the newest entry in a scratch act's lines (the
-// series check, the scratch rebase): with no check record to read, it cannot say whether this
+// series check): with no check record to read, it cannot say whether this
 // machine's good build already runs the series there, as an explicit act's patchedNotBuilt can.
 const scratchBuilds = "a fresh launch builds it, unless its good build already runs this series there"
 
 // patchedScratchStore is the store a scratch act checks and replays through, rooted at dir, the
-// scratch mirror's directory: the user's own terminal, as patchedForkStore's, with the rebase clone's
+// scratch mirror's directory: the user's own terminal, as patchedForkStore's, with a scratch act's
 // network bound, since a scratch mirror starts empty and its first fetch is a whole blobless clone. A
 // var so a test can hand it a git of its own.
 var patchedScratchStore = func(dir string) *packsrc.Store {
-	return &packsrc.Store{Dir: dir, Timeout: packsrc.RebaseCloneTimeout}
+	return &packsrc.Store{Dir: dir, Timeout: packsrc.ScratchTimeout}
 }
 
 // scratchPatchedStore makes a scratch mirror for a pack rooted at packRoot and the store over it,
@@ -197,7 +199,7 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 		return 1
 	}
 	pr := richtext.Printer{W: out, Color: color}
-	ctx, stop := rebaseInterrupt()
+	ctx, stop := seriesInterrupt()
 	defer stop()
 	rc = 0
 	for _, f := range forks {
@@ -261,7 +263,7 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	atBase := false
 	switch {
 	case onto != "":
-		target, err := store.ResolveRebaseTarget(repo, onto, nil)
+		target, err := store.ResolveOnto(repo, onto, nil)
 		if err != nil {
 			fmt.Fprintf(errw, "yolo pack series check: %s: %v — name a branch, a tag or a commit of the upstream\n",
 				f.Label(), err)
@@ -291,7 +293,7 @@ func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f 
 	// STOPS AT THE FIRST CONFLICT, as a launch's walk and `yolo pack update`'s do since PF-D81: a
 	// series the newest version does not take is a failed operation there, and no older fit or base
 	// is built, so naming one as what a launch builds would be a verdict no launch reaches.
-	w := store.WalkSeries(repo, subdir, series, list, packsrc.WalkOptions{Timeout: packsrc.RebaseCloneTimeout,
+	w := store.WalkSeries(repo, subdir, series, list, packsrc.WalkOptions{Timeout: packsrc.ScratchTimeout,
 		StopOnPatchFailure: true})
 	if ctx.Err() != nil {
 		return 130
@@ -334,8 +336,8 @@ func seriesCheckReport(f packload.Fork, packDir string, series *packsrc.Series, 
 			}
 			lines = append(lines,
 				"[yellow]"+richtext.Escape(f.Label()+": upstream "+r.Entry.Label()+" does not take the patch series —")+"[/yellow]",
-				richtext.Escape("  "+r.Conflict.Member+" conflicts in "+paths),
-				richtext.Escape("  "+scratchRebaseStep(f, packDir, r.Entry)))
+				richtext.Escape("  "+r.Conflict.Member+" conflicts in "+paths))
+			lines = append(lines, scratchRecipeLines(f, packDir, r.Entry)...)
 		case r.Clean:
 			for _, m := range r.Upstream {
 				lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  %s is already in upstream %s; drop it from %s",
@@ -389,20 +391,20 @@ func seriesCheckLine(packDir, onto string) string {
 	return shquote.JoinDisplay(argv)
 }
 
-// scratchRebaseStep is a scratch act's conflict step: the scratch rebase of the pack in packDir onto
-// e, named by its tag or commit so the rebase meets the commit this check did. In a jail, for a pack
-// outside the jail's workspace, which the scratch rebase refuses there, the host's keyed verb.
-func scratchRebaseStep(f packload.Fork, packDir string, e packsrc.ListEntry) string {
-	ref := e.Tag
-	if ref == "" {
-		ref = e.Commit
-	}
+// scratchRecipeLines is the check's conflict step: the rebase recipe onto e (§8.4, PF-D85), the
+// commit this check met, exporting into the series in packDir. In a container jail, for a pack
+// outside the jail's workspace, that directory is not the host's own copy, so it says to export
+// into the host's.
+func scratchRecipeLines(f packload.Fork, packDir string, e packsrc.ListEntry) []string {
+	var out []string
 	if notTheHostsCopy(packDir) {
-		return "rebase the series on the host: " + shquote.JoinDisplay([]string{"yolo", "pack", "rebase", f.Key(),
-			"--onto", ref})
+		out = append(out, "[dim]"+richtext.Escape("  "+packDir+" is outside this jail's workspace, so it is not the "+
+			"host's own copy of the pack: run the export below on the host, against the host's copy")+"[/dim]")
 	}
-	return "rebase the series: " + shquote.JoinDisplay([]string{"yolo", "pack", "rebase", f.Key(), "--pack", packDir,
-		"--onto", ref})
+	for _, l := range f.RebaseRecipe().Repair(e, packsrc.RecipeLead, "  ") {
+		out = append(out, "[dim]"+richtext.Escape(l)+"[/dim]")
+	}
+	return out
 }
 
 // inJailWorkspace reports whether p is inside this jail's own workspace (config.JailWorkspace), both
@@ -421,4 +423,35 @@ var jailMountsItsOwnFiles = func() bool { return goruntime.GOOS != "darwin" }
 // act may not write the host's pack from it: in a container jail, any path outside its workspace.
 func notTheHostsCopy(p string) bool {
 	return config.InJail() && jailMountsItsOwnFiles() && !inJailWorkspace(p)
+}
+
+// seriesInterrupt is the context the check's git runs under: ended by a Ctrl-C, a SIGTERM or a
+// SIGHUP (the terminal or the ssh session closed), so the scratch copy of the upstream is removed
+// rather than left behind. A var so a test can stand one in.
+var seriesInterrupt = func() (context.Context, func()) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+}
+
+// resolveExistingPrefix resolves the symlinks of p's longest existing prefix and joins the rest,
+// so a directory not made yet compares against resolved roots as the one it will be (a darwin temp
+// directory is a link, AGENTS.md's PATH-resolution class).
+func resolveExistingPrefix(p string) string {
+	rest := ""
+	for cur := filepath.Clean(p); ; {
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(r, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
+// underOrEqual reports whether child is base or inside it.
+func underOrEqual(child, base string) bool {
+	rel, err := filepath.Rel(base, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

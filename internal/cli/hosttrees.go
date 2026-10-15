@@ -263,7 +263,7 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 	if target, err := os.Readlink(dest); err == nil && filepath.Dir(target) == hostTreeVersionsDir(f) && isDir(dest) {
 		runs = linkedTreeLabel(filepath.Base(target))
 	}
-	_, _ = io.WriteString(errw, pf.Block(f.Key(), f.Key(), packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}))
+	_, _ = io.WriteString(errw, pf.Block(f.Key(), f.RebaseRecipe(), packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}))
 	if runs != "" && allowPatchFailures() {
 		fmt.Fprintf(errw, "CONTINUING: %s=1 is set — %s loads the intact admitted build %s of %s in place of the series "+
 			"that does not apply; the series is not repaired.\n", allowPatchFailuresEnv, bin, runs, f.Label())
