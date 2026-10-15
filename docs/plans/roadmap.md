@@ -10,7 +10,7 @@ vantage:
 
 # Roadmap
 
-**Reconciled:** 2026-10-13
+**Reconciled:** 2026-10-13; 0.14.0 was tagged 2026-10-15 (release commit `6750951f6`).
 
 This page owns the order in which open work is taken up, and why. Each linked document owns its state, next step and
 gates; read it before starting, because a place on this list is not permission to build.
@@ -41,11 +41,12 @@ candidate state, acceptance gaps and verification; a place here does not make it
    [Source research](../research/launch-preparation.md) bounds current timing claims.
 
 Pi's existing profile-set/provider-seal extension is built, including its required child guard.
-That does not implement [MM-D42](../design/model-lists-and-pickers.md#MM-D42)'s process-local
-profile-derived child defaults and model restrictions: Pi's memory-only SDK settings do not
-replace native pi-subagents' independent disk reads or retained descendant policy. This settled
-post-landing repair needs an authorized dependency capability/source route; do not invent a yolo
-settings overlay or rewrite shared settings. Other accepted limits remain in
+[MM-D42](../design/model-lists-and-pickers.md#MM-D42)'s process-local profile-derived child
+defaults and model restrictions: **YOLO side built, waits on Pi** (2026-10-15). A `yolo host -p`
+hands pi-subagents the profile's policy as `--subagents-model-settings`, off by default behind
+`YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1` until pi-subagents registers the flag; the Pi side accepted the
+interface on 2026-10-15. Do not invent a yolo settings overlay or rewrite shared settings. Other
+accepted limits remain in
 [its design's §3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close),
 and a pi-subagents registry several extensions can share stays in item 28.
 
@@ -227,11 +228,13 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     ([universal-login-sharing.md](../design/universal-login-sharing.md)): the machine store already shares an agent's
     login across every jail, the host notch and the pi/Muse pair are the two gaps, and [its sketch](../design/universal-login-sharing-plan.md)
     waits on all three questions. Rule the canonical copy's location with it, so a `yolo` state reset cannot destroy a login.
-37. Work the asks a downstream pack consumer is still waiting on ([downstream-asks.md](downstream-asks.md)) — nine
-    carries, each with the shape a landed version takes; four are owned by [the patched-fork
-    design](../design/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), the
-    other four by [the tracker's own questions](downstream-asks.md#open-questions) (one of them a small
-    diagnostics build), and one is [already answered](downstream-asks.md#4-a-reduced-window-child).
+    Beside it, [model auth for an isolated agent process](../design/isolated-agent-model-auth.md) (2026-10-15 sketch):
+    a second Pi process given access without a copy of the login; its six questions are the maintainer's.
+37. Work the asks a downstream pack consumer is still waiting on ([downstream-asks.md](downstream-asks.md)) — each
+    with the shape a landed version takes; three open ones are owned by [the patched-fork
+    design](../design/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), three
+    by [the tracker's own questions](downstream-asks.md#open-questions) (one of them a small diagnostics build,
+    two awaiting ratification of what was built 2026-10-15), and the rest are answered, declined or built.
 
 ## External waits
 
@@ -369,8 +372,8 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
-| 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login. **Maintainer**. |
-| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); four carries are owned by items 1 and 23. |
+| 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login; and [OQ-IA1](../design/isolated-agent-model-auth.md#OQ-IA1)–[OQ-IA6](../design/isolated-agent-model-auth.md#OQ-IA6), model auth for an isolated agent process. **Maintainer**. |
+| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); [OQ-DA2](downstream-asks.md#OQ-DA2) and [OQ-DA4](downstream-asks.md#OQ-DA4) await ratification of what was built; three carries are owned by items 1 and 23. |
 
 ### External waits
 
