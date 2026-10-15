@@ -1403,6 +1403,9 @@ func (m *Manifest) InstallContributions() []Install {
 		}
 		// The launch selection too, for the model menu's reason, and copied for Refresh's.
 		in.LaunchSelection = c.LaunchSelection.clone()
+		if in.LaunchSelection != nil && !c.IsFork() {
+			in.LaunchSelection.Computed = m.launchComputedFor(c.Bin)
+		}
 		switch c.Via {
 		case "npm":
 			in.Package = c.Package

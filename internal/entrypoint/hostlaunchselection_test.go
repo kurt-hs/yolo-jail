@@ -394,3 +394,40 @@ func decodeObject(t *testing.T, text string) map[string]any {
 	}
 	return doc
 }
+
+// PI'S CHILD MODEL POLICY (MM-D42): the shipped pi pack reads its settings derive's computed
+// `subagents` block, which no selection key carries, and spells it as one word of compact JSON,
+// keys sorted and a tombstone as null; held back, not spelled, while its opt-in is unset; and two
+// compositions compare it apart from the selection.
+func TestHostLaunchSelectionHandsPiItsChildPolicyAsOneJSONWord(t *testing.T) {
+	f := newSelectionFixture(t, "pi", nil, nil, "zai", "openrouter")
+	zai := f.compose(t, `{"pi":"zai"}`)
+	if _, ok := zai.Computed["subagents"]; !ok {
+		t.Fatalf("pi on zai composed no subagents block: %v", zai.Computed)
+	}
+	argv, held, err := zai.ComputedArgv(func(string) bool { return false })
+	if err != nil || argv != nil || len(held) != 1 || held[0].Word() != "--subagents-model-settings" ||
+		held[0].OptIn != "YOLO_PI_SUBAGENTS_MODEL_SETTINGS" {
+		t.Fatalf("with its opt-in unset: argv=%q held=%+v err=%v, want the flag held", argv, held, err)
+	}
+	argv, held, err = zai.ComputedArgv(func(name string) bool { return name == "YOLO_PI_SUBAGENTS_MODEL_SETTINGS" })
+	if err != nil || len(held) != 0 || len(argv) != 2 || argv[0] != "--subagents-model-settings" {
+		t.Fatalf("opted in: argv=%q held=%+v err=%v", argv, held, err)
+	}
+	if sub := decodeObject(t, argv[1]); sub["defaultProvider"] != "zai" {
+		t.Errorf("the word carries %v, want zai's policy", sub)
+	}
+	if plain, _ := zai.Argv(); slices.Contains(plain, "--subagents-model-settings") {
+		t.Errorf("Argv hands the computed key with the selection: %q", plain)
+	}
+	if !zai.SameComputed(f.compose(t, `{"pi":"zai"}`)) || zai.SameComputed(f.compose(t, `{"pi":"openrouter"}`)) {
+		t.Error("SameComputed must hold for one profile and not across providers")
+	}
+
+	tomb := &LaunchSelection{Spec: zai.Spec, Computed: map[string]any{"subagents": map[string]any{
+		"defaultProvider": "p", "defaultModel": nil}}}
+	argv, _, _ = tomb.ComputedArgv(func(string) bool { return true })
+	if want := []string{"--subagents-model-settings", `{"defaultModel":null,"defaultProvider":"p"}`}; !reflect.DeepEqual(argv, want) {
+		t.Errorf("a tombstoned default spells %q, want %q", argv, want)
+	}
+}

@@ -281,7 +281,11 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 	}
 	configured, err := entrypoint.HostLaunchSelection(p, *spec, paths.Home(),
 		&entrypoint.HostInputs{Vars: c.configuredWireTables(), Packs: c.packs}, nil)
-	if err == nil && launch.Same(configured) {
+	// The selection and the computed keys (pi's `subagents` block, MM-D42) are compared apart: a -p
+	// that agrees on the selection but composes other computed keys hands those keys alone.
+	sameSelection := err == nil && launch.Same(configured)
+	sameComputed := err == nil && launch.SameComputed(configured)
+	if sameSelection && sameComputed {
 		// The -p selects what the configured profile does: the file already holds it, and handing
 		// it again would override a choice the user made in the program since.
 		sel.follows = true
@@ -299,17 +303,52 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 		return keepsFile(fmt.Sprintf("%s=1 is set, which skips what packs add to a launch, and moving %s onto "+
 			"a -p is one of them", entrypoint.NoLaunchFlagsEnv, c.agent))
 	}
-	argv, err := launch.Argv()
-	if err != nil {
-		return keepsFile(fmt.Sprintf("%s's selection cannot be spelled as its pack's words (%v)", c.agent, err))
+	var argv, keys []string
+	var vars []entrypoint.Var
+	if !sameSelection {
+		if argv, err = launch.Argv(); err != nil {
+			return keepsFile(fmt.Sprintf("%s's selection cannot be spelled as its pack's words (%v)", c.agent, err))
+		}
+		if vars, err = launch.Vars(environLookup(environ)); err != nil {
+			return keepsFile(fmt.Sprintf("%s's selection cannot be handed in a variable (%v)", c.agent, err))
+		}
+		keys = launch.Keys()
 	}
-	vars, err := launch.Vars(environLookup(environ))
-	if err != nil {
-		return keepsFile(fmt.Sprintf("%s's selection cannot be handed in a variable (%v)", c.agent, err))
+	if !sameComputed {
+		lookup := environLookup(environ)
+		computed, held, err := launch.ComputedArgv(func(name string) bool {
+			v, _ := lookup(name)
+			return v == "1"
+		})
+		if err != nil {
+			return keepsFile(fmt.Sprintf("%s's selection cannot be spelled as its pack's words (%v)", c.agent, err))
+		}
+		argv = append(argv, computed...)
+		for _, f := range spec.Computed {
+			if _, ok := launch.Computed[f.Key]; ok && !heldKey(held, f.Key) {
+				keys = append(keys, f.Key+" as this launch composes it")
+			}
+		}
+		for _, h := range held {
+			say(fmt.Sprintf("-p %s composes its own %s for %s, which pack %s hands as %s only when %s=1, and it "+
+				"is not set, so %s keeps the %s its own config holds (~/%s) (docs/design/model-lists-and-pickers.md "+
+				"MM-D42). Set %s=1 once your %s reads %s.", shquote.Quote(c.typedProfile), h.Key, c.agent, p.Name,
+				h.Word(), h.OptIn, c.agent, h.Key, spec.Surface, h.OptIn, c.agent, h.Word()))
+		}
 	}
-	sel.argv, sel.vars, sel.keys, sel.follows = argv, vars, launch.Keys(), true
+	sel.argv, sel.vars, sel.keys, sel.follows = argv, vars, keys, true
 	sel.surface, sel.typed = spec.Surface, c.typedProfile
 	return sel
+}
+
+// heldKey reports whether held holds the flag for key.
+func heldKey(held []packdecl.LaunchComputedFlag, key string) bool {
+	for _, h := range held {
+		if h.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // scriptVars is what `yolo host env` exports of the selection, and the lines it says: the

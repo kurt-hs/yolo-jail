@@ -108,6 +108,10 @@ type LaunchSelection struct {
 	// Surfaces is each Spec.Surfaces path's content as this launch's derive composes it, encoded
 	// in that surface's codec.
 	Surfaces map[string]string
+	// Computed is the value of each LAUNCH COMPUTED FLAG's key (Spec.Computed,
+	// packdecl.LaunchComputedFlag) the derive's layer holds outside the selection, by key; nil
+	// when it holds none. A tombstoned key is present with a nil value.
+	Computed map[string]any
 	// codec is Spec.Surface's codec name, which the each and env forms encode values in.
 	codec string
 }
@@ -126,12 +130,20 @@ func HostLaunchSelection(p *packload.Pack, spec packdecl.LaunchSelection, home s
 		return nil, err
 	}
 	out := &LaunchSelection{Spec: spec, codec: s.Codec}
-	_, sel, problems := agentcfg.TakeSelection(layer)
+	rest, sel, problems := agentcfg.TakeSelection(layer)
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("surface %s/%s: %s", s.Agent, s.Name, problems[0])
 	}
 	if len(sel) > 0 {
 		out.Selection = sel
+	}
+	for _, f := range spec.Computed {
+		if v, ok := rest[f.Key]; ok {
+			if out.Computed == nil {
+				out.Computed = map[string]any{}
+			}
+			out.Computed[f.Key] = v
+		}
 	}
 	if spec.Rows != nil && out.Selection != nil {
 		table, _ := layer[spec.Rows.Table].(map[string]any)
@@ -201,15 +213,61 @@ func selectionNames(v any) []string {
 // Empty reports whether there is nothing to hand: no selection, so the program starts on its file.
 func (l *LaunchSelection) Empty() bool { return l == nil || len(l.Selection) == 0 }
 
-// Same reports whether l and o would hand the program the same thing: the same selection, rows and
-// surfaces. Two empty selections are the same whatever their surfaces say, since an empty one hands
-// nothing.
+// Same reports whether l and o would hand the program the same selection: the same selection, rows
+// and surfaces. Two empty selections are the same whatever their surfaces say, since an empty one
+// hands nothing. The computed keys are compared apart, by SameComputed.
 func (l *LaunchSelection) Same(o *LaunchSelection) bool {
 	if l.Empty() || o.Empty() {
 		return l.Empty() == o.Empty()
 	}
 	return reflect.DeepEqual(canonical(l.Selection), canonical(o.Selection)) &&
 		reflect.DeepEqual(canonical(l.Rows), canonical(o.Rows)) && reflect.DeepEqual(l.Surfaces, o.Surfaces)
+}
+
+// SameComputed reports whether l and o compose the same computed keys (Spec.Computed): a key one
+// holds and the other does not differs.
+func (l *LaunchSelection) SameComputed(o *LaunchSelection) bool {
+	var a, b map[string]any
+	if l != nil {
+		a = l.Computed
+	}
+	if o != nil {
+		b = o.Computed
+	}
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	return reflect.DeepEqual(canonical(a), canonical(b))
+}
+
+// ComputedArgv is the words the launch computed flags (Spec.Computed) hand, in declaration order,
+// each value one word of compact JSON (keys sorted, a tombstone as null); and the flags held back
+// because optedIn reports their OptIn variable is not set. A key the layer does not hold is not
+// handed. Nil, nil for a selection with no computed key.
+func (l *LaunchSelection) ComputedArgv(optedIn func(name string) bool) ([]string, []packdecl.LaunchComputedFlag, error) {
+	if l == nil || len(l.Computed) == 0 {
+		return nil, nil, nil
+	}
+	var words []string
+	var held []packdecl.LaunchComputedFlag
+	for _, f := range l.Spec.Computed {
+		v, ok := l.Computed[f.Key]
+		if !ok {
+			continue
+		}
+		if f.OptIn != "" && (optedIn == nil || !optedIn(f.OptIn)) {
+			held = append(held, f)
+			continue
+		}
+		value, err := compactJSON(canonical(v))
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %v", f.Key, err)
+		}
+		for _, w := range f.Argv {
+			words = append(words, strings.ReplaceAll(w, packdecl.LaunchSelectionValue, value))
+		}
+	}
+	return words, held, nil
 }
 
 // canonical is v through JSON, so two layers with one meaning compare equal whatever Go types the
