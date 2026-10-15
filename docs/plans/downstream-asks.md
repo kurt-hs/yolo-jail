@@ -43,7 +43,7 @@ only where a question has no design doc of its own. The source handoff lives out
 | [4](#4-a-reduced-window-child) | a reduced-window child does not silently inherit the small window | narrowed — yolo's part done | decision recorded below; the owner's declaration is the consumer's |
 | [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../design/patched-forks.md#decision-ledger) |
 | [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | open | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
-| [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | open | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
+| [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | ruled 2026-10-15, not built | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
 | [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | open | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | partially landed | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
@@ -157,7 +157,7 @@ a pack cannot migrate to it even if it were ignored. The full ruled model is the
 resolved commit; a conflict refuses naming paths; naming both `patches` and `carry` is refused by
 name; `patches` is otherwise unchanged.
 
-**Owner.** [OQ-PFK6](../design/patched-forks.md#OQ-PFK6).
+**Owner.** [OQ-PFK6](../design/patched-forks.md#OQ-PFK6), ruled 2026-10-15: both `carry` and `patches` are supported, and one contribution naming both is a fatal conflict ([PF-D87](../design/patched-forks.md#PF-D87)). Not built.
 
 ## 8. Model inheritance — emit `sharedModels` and `extends`
 
