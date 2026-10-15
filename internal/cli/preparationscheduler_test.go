@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
@@ -500,8 +501,9 @@ func TestPreparationBusyKeyRetriesWithoutSuccessStamp(t *testing.T) {
 func TestPreparationStatusDoesNotMutateOrConsumeOutcomes(t *testing.T) {
 	newPoolFixture(t)
 	stubPreparationWorkerStart(t)
+	platform := capture.Platform()
 	if err := withPreparationState(func(s *preparationState) error {
-		s.Subscriptions = append(s.Subscriptions, preparationRecord{Key: poolKeyA, Runtime: "podman", Platform: patchedTestPlatform, Generation: 1, Active: true, Phase: "admitted", ServingEntry: "entry"})
+		s.Subscriptions = append(s.Subscriptions, preparationRecord{Key: poolKeyA, Runtime: captureRuntime(), Platform: platform, Generation: 1, Active: true, Phase: "admitted", ServingEntry: "entry"})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -521,7 +523,8 @@ func TestPreparationStatusDoesNotMutateOrConsumeOutcomes(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("read-only status changed scheduler state")
 	}
-	if !strings.Contains(out.String(), "admitted") || !strings.Contains(out.String(), "entry") {
-		t.Fatalf("status omitted its persisted snapshot: %s", out.String())
+	if !strings.Contains(out.String(), poolKeyA+" ["+captureRuntime()+"/"+platform+"]") ||
+		!strings.Contains(out.String(), "admitted") || !strings.Contains(out.String(), "entry") {
+		t.Fatalf("status omitted its exact platform-qualified persisted snapshot: %s", out.String())
 	}
 }

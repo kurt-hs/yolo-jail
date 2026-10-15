@@ -17,7 +17,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 func TestTask2ProducerCancellationWithSecondFreshWaiter(t *testing.T) {
@@ -99,6 +101,253 @@ func stubSharedPreparationWorker(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { cancel(); wg.Wait(); sharedPreparationSpawn = previous })
+}
+
+func TestWithDemandStatePreservesHeldLockAndCancellationIdentities(t *testing.T) {
+	dir := t.TempDir()
+	held, err := pidlock.Acquire(filepath.Join(dir, "state.lock"), pidlock.NoWait, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	got := withDemandState(context.Background(), dir, false, func() error { return nil })
+	if !errors.Is(got, pidlock.ErrHeld) || !errors.Is(got, packsrc.ErrLockHeld) {
+		t.Fatalf("held demand-state lock lost an identity: %v", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got = withDemandState(ctx, t.TempDir(), false, func() error { return nil })
+	if !errors.Is(got, context.Canceled) || errors.Is(got, pidlock.ErrHeld) || errors.Is(got, packsrc.ErrLockHeld) {
+		t.Fatalf("cancellation was changed into lock contention: %v", got)
+	}
+}
+
+func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		guardCall  int32
+		wantBuilds int
+	}{
+		{name: "initial check start", guardCall: 1, wantBuilds: 1},
+		{name: "capture publication", guardCall: 2, wantBuilds: 2},
+		{name: "Good settlement", guardCall: 3, wantBuilds: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx, oldGood := forkWithAGoodBuild(t)
+			newCommit := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 22: "twenty-two"})
+			fx.later(2 * time.Hour)
+			baseChildren := sharedDemandChildCount(fx)
+			stubSharedPreparationWorker(t)
+
+			var calls atomic.Int32
+			key := fx.fork(t).Key()
+			lockReady := make(chan *pidlock.Lock, 1)
+			lockErr := make(chan error, 1)
+			previousHook := sharedDemandAdmissionHook
+			sharedDemandAdmissionHook = func(_ preparationDemand) {
+				if calls.Add(1) != tc.guardCall {
+					return
+				}
+				path := filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock")
+				lock, err := pidlock.Acquire(path, pidlock.NoWait, nil)
+				if err != nil {
+					lockErr <- err
+					return
+				}
+				lockReady <- lock
+			}
+			t.Cleanup(func() { sharedDemandAdmissionHook = previousHook })
+
+			req := forkRequest(t, fx, "podman")
+			req.FreshUpdate = true
+			type slotResult struct {
+				delivery map[string]entrypoint.ForkDelivery
+				output   string
+			}
+			done := make(chan slotResult, 1)
+			var output syncBuffer
+			go func() {
+				delivery, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &output, false)
+				done <- slotResult{delivery: delivery, output: output.String()}
+			}()
+
+			var held *pidlock.Lock
+			select {
+			case held = <-lockReady:
+			case err := <-lockErr:
+				t.Fatalf("pause real demand authorization: %v", err)
+			case <-time.After(testsupport.ReadinessBudget(t)):
+				t.Fatal("production fresh demand did not reach the requested authorization site")
+			}
+			defer held.Release()
+			time.Sleep(3 * sharedDemandPoll)
+			select {
+			case result := <-done:
+				t.Fatalf("fresh demand published a result while demand state.lock was held: %+v\n%s", result.delivery["tool"], result.output)
+			default:
+			}
+			if got := fx.record(t).Good; got == nil || got.Entry != oldGood {
+				t.Fatalf("Good changed while authorization was held: %+v, want %s", got, oldGood)
+			}
+			for _, outcome := range fx.record(t).Outcomes {
+				if outcome.Commit == newCommit && outcome.Kind == packsrc.OutcomeBuildFailed {
+					t.Fatalf("transient demand-state contention recorded a build failure: %+v", outcome)
+				}
+			}
+			if got := sharedDemandChildCount(fx) - baseChildren; got > tc.wantBuilds {
+				t.Fatalf("started %d candidate children while authorization stayed locked", got)
+			}
+			held.Release()
+			var result slotResult
+			select {
+			case result = <-done:
+			case <-time.After(testsupport.ReadinessBudget(t)):
+				t.Fatal("fresh demand did not retry after demand state.lock was released")
+			}
+			got := result.delivery["tool"]
+			if got.Key == "" || got.FreshFailure != "" || fx.record(t).Good.Commit != newCommit {
+				t.Fatalf("released transient lock did not admit the exact requested build: delivery=%+v record=%+v\n%s",
+					got, fx.record(t).Good, result.output)
+			}
+			if builds := sharedDemandChildCount(fx) - baseChildren; builds != tc.wantBuilds {
+				t.Fatalf("candidate child runs=%d, want %d for %s", builds, tc.wantBuilds, tc.name)
+			}
+		})
+	}
+}
+
+func TestSharedFreshDemandRechecksSelectionAfterStateLockContention(t *testing.T) {
+	fx, oldGood := forkWithAGoodBuild(t)
+	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty", 22: "twenty-two"})
+	fx.later(2 * time.Hour)
+	baseChildren := sharedDemandChildCount(fx)
+	stubSharedPreparationWorker(t)
+	key := fx.fork(t).Key()
+	lockReady := make(chan *pidlock.Lock, 1)
+	var lockOnce atomic.Bool
+	previousHook := sharedDemandAdmissionHook
+	sharedDemandAdmissionHook = func(_ preparationDemand) {
+		if !lockOnce.CompareAndSwap(false, true) {
+			return
+		}
+		lock, err := pidlock.Acquire(filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"), pidlock.NoWait, nil)
+		if err != nil {
+			t.Errorf("pause initial demand authorization: %v", err)
+			return
+		}
+		lockReady <- lock
+	}
+	t.Cleanup(func() { sharedDemandAdmissionHook = previousHook })
+
+	req := forkRequest(t, fx, "podman")
+	req.FreshUpdate = true
+	done := make(chan map[string]entrypoint.ForkDelivery, 1)
+	go func() {
+		delivery, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, io.Discard, false)
+		done <- delivery
+	}()
+	var held *pidlock.Lock
+	select {
+	case held = <-lockReady:
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatal("fresh request did not reach its initial authorization")
+	}
+	defer held.Release()
+	fx.writeUserConfig(t, `{"packs":[]}`)
+	held.Release()
+	select {
+	case delivery := <-done:
+		if delivery["tool"].Key != "" || delivery["tool"].FreshFailure == "" {
+			t.Fatalf("revoked selection was admitted after lock release: %+v", delivery["tool"])
+		}
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatal("revoked fresh request did not settle after lock release")
+	}
+	if got := fx.record(t).Good; got == nil || got.Entry != oldGood || sharedDemandChildCount(fx) != baseChildren {
+		t.Fatalf("revoked request changed current success: Good=%+v children=%d want %s/%d", got, sharedDemandChildCount(fx), oldGood, baseChildren)
+	}
+}
+
+func sharedDemandChildCount(fx *patchedAdvanceFixture) int {
+	fx.mu.Lock()
+	defer fx.mu.Unlock()
+	return fx.child
+}
+
+func TestSharedBackgroundDemandStateLockStaysBusyAndRetriesNextTick(t *testing.T) {
+	pf := readyForABackgroundAdvance(t)
+	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
+	stubSpawn(t)
+	pf.launch(t, "podman", &run.ActInterrupt{})
+	if err := withPreparationState(func(state *preparationState) error { state.Worker.Identity = "timer-fixture"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	oldGood := outcomeOfRecord(t, poolKeyA)
+	baseline := uint64(0)
+	if old, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA)); err == nil {
+		baseline = old.Generation
+	}
+	stubSharedPreparationWorker(t)
+	var lockOnce atomic.Bool
+	lockReady := make(chan *pidlock.Lock, 1)
+	previousHook := sharedDemandAdmissionHook
+	sharedDemandAdmissionHook = func(d preparationDemand) {
+		if d.Key != poolKeyA || !lockOnce.CompareAndSwap(false, true) {
+			return
+		}
+		lock, err := pidlock.Acquire(filepath.Join(sharedDemandDir(d.Key, d.Runtime, d.Platform), "state.lock"), pidlock.NoWait, nil)
+		if err != nil {
+			t.Errorf("pause background demand authorization: %v", err)
+			return
+		}
+		lockReady <- lock
+	}
+	t.Cleanup(func() { sharedDemandAdmissionHook = previousHook })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ticks := make(chan time.Time)
+	drain := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard, nil, drain) }()
+	ticks <- pf.now
+	var held *pidlock.Lock
+	select {
+	case held = <-lockReady:
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatal("background worker did not reach shared-demand authorization")
+	}
+	defer held.Release()
+	time.Sleep(3 * sharedDemandPoll)
+	if got := outcomeOfRecord(t, poolKeyA); got != oldGood {
+		t.Fatalf("background state-lock contention moved Good: %s -> %s", oldGood, got)
+	}
+	held.Release()
+	waitFor(t, "state-lock contention to settle as a busy retry", func() bool {
+		snapshot, err := readPreparationSnapshot(poolKeyA)
+		outcome, outcomeErr := readBackgroundOutcome(backgroundOutcomePath(poolKeyA))
+		return err == nil && outcomeErr == nil && snapshot.Phase == "busy" && snapshot.RetryAt.IsZero() &&
+			outcome.Generation > baseline && outcome.State == bgSkipped && outcome.RetryAt == 0
+	})
+	ticks <- pf.now.Add(time.Minute)
+	waitFor(t, "background retry to admit after state-lock release", func() bool {
+		snapshot, err := readPreparationSnapshot(poolKeyA)
+		return err == nil && snapshot.Phase == "admitted" && snapshot.ServingEntry != ""
+	})
+	if outcomeOfRecord(t, poolKeyA) == oldGood {
+		t.Fatal("background retry did not move Good after contention ended")
+	}
+	close(drain)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		cancel()
+		<-done
+		t.Fatal("background scheduler did not drain")
+	}
 }
 
 func TestSharedDemandSchedulerStopDetachesWhileFreshTreeRequestRemains(t *testing.T) {

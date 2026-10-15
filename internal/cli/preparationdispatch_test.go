@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 func TestPreparationRetainedNoticeTimerAdvancesWithoutAnotherLaunch(t *testing.T) {
@@ -25,39 +26,56 @@ func TestPreparationRetainedNoticeTimerAdvancesWithoutAnotherLaunch(t *testing.T
 		t.Fatal(err)
 	}
 	builds := pf.countBuilds()
+	subs, err := readPreparationSubscriptions(preparationRoot())
+	if err != nil || len(subs) != 2 {
+		t.Fatalf("timer fixture subscriptions: %d %v", len(subs), err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ticks := make(chan time.Time)
+	drain := make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
+	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard, nil, drain) }()
 	ticks <- pf.now
-	deadline := time.After(10 * time.Second)
+	deadline := time.NewTimer(testsupport.ReadinessBudget(t))
+	defer deadline.Stop()
 	for {
-		complete := builds.Load() >= 2
-		for _, key := range []string{poolKeyA, poolKeyB} {
-			got, err := readBackgroundOutcome(backgroundOutcomePath(key))
+		complete := builds.Load() == 2
+		for _, sub := range subs {
+			got, err := readBackgroundOutcome(backgroundOutcomePath(sub.Key))
 			complete = complete && err == nil && got.To != ""
+			snapshot, snapshotErr := readPreparationSnapshotFor(preparationRoot(), sub)
+			complete = complete && snapshotErr == nil && snapshot.Generation == sub.Generation &&
+				snapshot.InputIdentity == sub.InputIdentity && snapshot.Phase == "admitted" && snapshot.ServingEntry != ""
 		}
 		if complete {
 			break
 		}
 		select {
-		case <-deadline:
+		case <-deadline.C:
 			cancel()
 			<-done
-			t.Fatal("registered timer did not admit outcomes")
+			t.Fatal("registered timer did not settle both admitted snapshots")
 		case err := <-done:
 			t.Fatalf("scheduler stopped: %v", err)
 		case <-time.After(time.Millisecond):
 		}
 	}
-	cancel()
-	if err := <-done; err != nil && err != context.Canceled {
-		t.Fatal(err)
+	close(drain)
+	finishDeadline := time.NewTimer(testsupport.ReadinessBudget(t))
+	defer finishDeadline.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-finishDeadline.C:
+		cancel()
+		<-done
+		t.Fatal("scheduler did not drain admitted timer outcomes")
 	}
-	subs, err := readPreparationSubscriptions(preparationRoot())
-	if err != nil {
-		t.Fatal(err)
+	if builds.Load() != 2 {
+		t.Fatalf("timer ran %d builds, want exactly two", builds.Load())
 	}
 	for _, sub := range subs {
 		before, err := readPreparationSnapshotFor(preparationRoot(), sub)

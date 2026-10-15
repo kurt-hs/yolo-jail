@@ -208,6 +208,8 @@ type installedCopy struct {
 // advanceResult is what an advance did.
 type advanceResult struct {
 	pending *appleBuildPending
+	// admissionErr is a transient shared-demand authorization contention that the owning worker retries.
+	admissionErr error
 	// delivery is what the jail is handed: the good build's store key, or why there is none.
 	delivery entrypoint.ForkDelivery
 	// built is true when this advance admitted a build (`yolo capture`'s success).
@@ -478,6 +480,9 @@ func advancePatchedFork(f packload.Fork, o advanceOptions) advanceResult {
 }
 
 func (a *advance) freshRefusal(problem string, cause error) advanceResult {
+	if isSharedDemandStateLockHeld(cause) {
+		return advanceResult{admissionErr: cause}
+	}
 	if cause != nil {
 		problem += ": " + oneLineErr(cause)
 	}
@@ -2149,6 +2154,9 @@ func (a *advance) printRunFailure() bool {
 // bound; and for everything else, which records nothing, its line. It hands the jail what runs.
 func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base baseWhy, edited bool) advanceResult {
 	f := a.f
+	if a.o.freshCheck && isSharedDemandStateLockHeld(err) {
+		return a.freshRefusal("the build could not be authorized for publication yet", err)
+	}
 	if err == nil {
 		return a.moved(b, entry, base, edited)
 	}
@@ -2391,6 +2399,17 @@ func (a *advance) afterLock(b forkBuild, startGood *packsrc.GoodBuild, startFail
 func (a *advance) moved(b forkBuild, entry *capture.Entry, base baseWhy, edited bool) advanceResult {
 	prev := a.goodBuild()
 	r := a.finish(entry, b, a.seq, nil, "")
+	if r.admissionErr != nil || r.failed {
+		if a.inFlight != nil {
+			line := "final admission refused"
+			if r.admissionErr != nil {
+				line = "final admission deferred for retry"
+			}
+			a.inFlight.fail(line)
+			a.inFlight = nil
+		}
+		return r
+	}
 	if r.gone != nil {
 		// THE BUILD WENT BEFORE IT COULD BE HANDED: never moved to (§6.7, "never moves the good build
 		// to a build this machine has not admitted"), and the jail runs what the record names.

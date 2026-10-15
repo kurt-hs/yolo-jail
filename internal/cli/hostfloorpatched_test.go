@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -38,7 +39,7 @@ import (
 func patchedFloorFixture(t *testing.T) *patchedAdvanceFixture {
 	t.Helper()
 	fx := newPatchedAdvanceFixture(t, "")
-	fx.platform, fx.relocatable = capture.Platform(), true
+	fx.relocatable = true
 	real, err := filepath.EvalSymlinks(fx.home)
 	if err != nil {
 		t.Fatal(err)
@@ -48,10 +49,18 @@ func patchedFloorFixture(t *testing.T) *patchedAdvanceFixture {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(real, ".config"))
 	t.Chdir(floortest.ResolvedTemp(t))
 	withForkFloor(t)
+	fx.platform = floorPatchedPlatform()
 	orig := prepareOpenAIAuthHost
 	prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 	t.Cleanup(func() { prepareOpenAIAuthHost = orig })
 	return fx
+}
+
+func TestPatchedFloorFixtureUsesItsRequestedLinuxPlatform(t *testing.T) {
+	fx := patchedFloorFixture(t)
+	if want := floorPatchedPlatform(); want != "linux/"+goruntime.GOARCH || fx.platform != want {
+		t.Fatalf("synthetic floor manifest platform=%q, request platform=%q; want matching linux/%s", fx.platform, want, goruntime.GOARCH)
+	}
 }
 
 // hostLaunch runs one `yolo host -- tool` and returns its rc, what it exec'd, and its stderr.
