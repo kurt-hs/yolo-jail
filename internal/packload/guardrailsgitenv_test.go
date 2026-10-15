@@ -12,6 +12,26 @@ import (
 )
 
 func TestGuardrailsRequiredGitWritesRespectIndexLock(t *testing.T) {
+	t.Run("default temp root", func(t *testing.T) {
+		runGuardrailsRequiredGitWritesRespectIndexLock(t, t.TempDir())
+	})
+	t.Run("symlink temp root", func(t *testing.T) {
+		target := t.TempDir()
+		root := filepath.Join(t.TempDir(), "temp-root")
+		if err := os.Symlink(target, root); err != nil {
+			t.Fatal(err)
+		}
+		runGuardrailsRequiredGitWritesRespectIndexLock(t, root)
+	})
+}
+
+func runGuardrailsRequiredGitWritesRespectIndexLock(t *testing.T, root string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolving Git fixture root: %v", err)
+	}
+
 	loaded, problems := MaterializeEmbedded(officialpacks.FS, t.TempDir())
 	if len(problems) != 0 {
 		t.Fatalf("materializing official packs: %v", problems)
@@ -35,7 +55,6 @@ func TestGuardrailsRequiredGitWritesRespectIndexLock(t *testing.T) {
 		t.Fatalf("selected guardrails composed GIT_OPTIONAL_LOCKS=%q, present=%v; want 0", optionalLocks, ok)
 	}
 
-	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	hooks := filepath.Join(home, "hooks")
 	if err := os.MkdirAll(hooks, 0o700); err != nil {
