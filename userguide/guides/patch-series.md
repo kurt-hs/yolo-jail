@@ -176,24 +176,32 @@ its own.
 
 ## When your patches stop applying
 
+A patch the new version already contains is dropped by itself, even when upstream changed it
+again afterwards, as `git rebase` would; yolo says so and names the file you can delete.
+
 When a new version does not take your patches, yolo stops and prints an error. It names the patch
-that failed, the files it conflicts in, the command that fixes it, and the one way to go on without
-fixing it that works on your machine. yolo never builds an older version or your series' base
-instead. A jail launch prints it as soon as its builds are done, before the jail starts, then
-stops:
+that failed, the files it conflicts in, the git commands that fix it, and the one way to go on
+without fixing it that works on your machine. yolo never builds an older version or your series'
+base instead. A jail launch prints it as soon as its builds are done, before the jail starts, then
+stops (the commits and paths are shortened here):
 
 ```text
-ERROR: fork pi-mine/pi: patch application failed at upstream v1.0.2 (cd32f7729e1b4c0a8d5f3e6b7a2c9d0e1f4a5b6c)
+ERROR: fork pi-mine/pi: patch application failed at upstream v1.0.2 (cd32f7729e1b…)
   Patch: 0001-show-fleet-details.patch
   Conflict: packages/tui/src/footer.ts
   Operation stopped; no older fit or base will be built.
-  Repair: yolo pack rebase pi-mine/pi --onto cd32f7729e1b4c0a8d5f3e6b7a2c9d0e1f4a5b6c
+  Repair: rebase the series with git, yourself or with an agent; the next launch builds it:
+      git clone https://github.com/you/pi.git pi-mine-pi-rebase && cd pi-mine-pi-rebase
+      git checkout -q -b yolo-rebase 5d1e07b2… && git am ~/packs/pi-mine/patches/*.patch && git tag yolo-applied
+      git rebase cd32f7729e1b…
+    resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes nothing until the rebase is done:
+      test -n "$(git rev-list -n 1 yolo-rebase --not cd32f7729e1b… yolo-applied --)" && mkdir ~/packs/pi-mine/patches.new && git -c format.noprefix=false format-patch … && mv … && rm -r ~/packs/pi-mine/patches.old
   Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo
     (runs the intact admitted build v1.0.0 (a13d35a7) + 7 patches for this one run, skipping this update; it does not repair the series)
 Refusing to launch: the patch series of fork pi-mine/pi does not apply (the ERROR above), and a launch does not run an older build in its place unless asked.
 ```
 
-- **Repair** sets up a rebase of your patches onto that version, as below.
+- **Repair** is the rebase, as below.
 - **Every command stops** at the error, even when a good build is on your machine: a jail launch,
   `yolo host`, `yolo host apply --assert`, `yolo pack update` and `yolo capture`. A command that
   writes into your home, such as `yolo host apply --assert`, stops before it writes anything.
@@ -207,39 +215,35 @@ Refusing to launch: the patch series of fork pi-mine/pi does not apply (the ERRO
   `YOLO_ALLOW_MISSING_PROGRAMS=1` does nothing for a series that does not apply while a good build of
   it is here: use `YOLO_ALLOW_PATCH_FAILURES=1`.
 
-`yolo pack rebase <key>` sets up the rebase for you. Run it on your machine; in a jail, see
-[Check or rebase a series in a jail](#check-or-rebase-a-series-in-a-jail):
+### Rebase the series
 
-```bash
-yolo pack rebase pi-mine/pi
-```
+The Repair lines are plain git, with the commits filled in, for you or an agent to run in any
+folder. `yolo pack status` prints them again under the conflict, and `yolo pack series check`
+prints them too.
 
-1. It clones the upstream into `./pi-mine-pi-rebase` (`--into <dir>` picks another folder),
-   applies your patches, and stops at the patch that conflicts, with the conflict markers in place.
-2. You resolve each conflict and run the `git rebase --continue` line it prints. You can also start
-   an agent there, `cd <dir> && yolo`, to resolve them.
-3. Then run the export line it prints. That one line writes the rebased series over your pack's
-   `patches` folder, and does nothing until the rebase is finished. For a pack fetched from git, the
-   printed lines instead commit the new series to a clone of the pack's repository and push it.
+1. The first three lines clone the upstream, apply your patches at the version they were made
+   against, and rebase them onto the new version. The rebase stops at each patch that conflicts.
+2. Resolve each conflict, `git add` the files, and run `git rebase --continue`. An agent can do this
+   for you.
+3. Then run the last line. It writes the rebased series over your pack's `patches` folder, and does
+   nothing until the rebase is finished, so pasting it early is safe.
 4. The next launch builds the new series.
 
-`--onto <tag or commit>` rebases onto another version, and `--restart` starts a clone over. Running
-the command again on its clone prints its next steps again. It never writes into your pack itself.
+For a pack fetched from git, the lines say `<patches>` instead of a folder: run them against your
+own clone of the pack's repository, then commit and push the new series. yolo never writes into
+your pack itself.
 
-## Check or rebase a series in a jail
+## Check a series in a jail
 
-A jail cannot see your machine's copy of the upstream, or what yolo recorded about it. So two
-commands work from the pack's own folder instead, with a copy of the upstream they fetch for
-themselves and delete when they finish. Both also work on your machine.
+A jail cannot see your machine's copy of the upstream, or what yolo recorded about it. So
+**`yolo pack series check <pack folder>`** works from the pack's own folder instead, with a copy of
+the upstream it fetches for itself and deletes when it finishes. It works on your machine too.
 
-- **`yolo pack series check <pack folder>`** says whether each series in the pack still applies: it
-  applies, or the first patch that conflicts and its files. That is what `yolo pack status` would
-  show for the same series. `--onto <tag or commit>` checks that version instead of the newest.
-- **`yolo pack rebase <key> --pack <pack folder>`** sets up the rebase as above, onto the newest
-  version or `--onto`. In a jail the pack folder must be inside the workspace. The export line it
-  prints writes the new series into that folder, as it would on your machine.
-
-Neither command writes into your pack itself, or changes what a launch runs.
+It says whether each series in the pack still applies: it applies, or the first patch that conflicts
+and its files, with the git commands that rebase it. That is what `yolo pack status` would show for
+the same series. `--onto <tag or commit>` checks that version instead of the newest. In a jail, run
+the last line where the pack's folder is your machine's own copy: inside the workspace, or on your
+machine. It writes nothing into your pack, and changes nothing a launch runs.
 
 ## Commands
 
@@ -249,8 +253,7 @@ Neither command writes into your pack itself, or changes what a launch runs.
 | `yolo pack status` | Shows each good build, the newest version and what happened when yolo tried it, what holds it, and when the next check is due. It works offline. |
 | `yolo pack status <key>` | Prints the build line in full. A launch names the build line by a short digest instead of printing it each time; the build itself always prints it in full first. |
 | `yolo capture <bin>` or `yolo capture <pack>/<name>` | Checks now and builds the newest version if your series applies to it, or rebuilds the good build. It stops at a series that does not apply. |
-| `yolo pack rebase <key>` | Sets up a rebase of the series onto a version it does not apply to, as above. Add `--pack <pack folder>` to run it from the pack's folder, in a jail too. |
-| `yolo pack series check <pack folder>` | Says whether each series in a pack folder applies to the newest version, or which patch conflicts. It works in a jail. |
+| `yolo pack series check <pack folder>` | Says whether each series in a pack folder applies to the newest version, or which patch conflicts and the git commands that rebase it. It works in a jail. |
 | `yolo pack lint [--online] <dir>` | Checks a pack before you select it: each series must be one a launch can read. With `--online` it also checks the upstream in a scratch copy it deletes afterwards: that the ref and the series' base exist, what `follow` finds, and that your patches apply at their base. It works in a jail too. |
 
 To keep running what you have, turn `agent_updates` off for the pack, or put a tag in `?ref=`.
@@ -266,7 +269,7 @@ To keep running what you have, turn `agent_updates` off for the pack, or put a t
   the launch stops before the jail starts, whatever you asked it to run. It says why once, for
   every build the same cause left without one, says whether the fix is yours or a bug in yolo to
   report, and names the ways on: `yolo capture <key>` to build it again,
-  `yolo pack series check` and `yolo pack rebase <key>` when a series no longer applies, or dropping
+  `yolo pack series check` and the rebase it prints when a series no longer applies, or dropping
   the list entry or the pack. `YOLO_ALLOW_MISSING_PROGRAMS=1` starts the jail anyway: the shell
   works, and pi says which extension has no build if you run it.
 - **One launch from a previous good patched program:** if a fresh jail launch reports that the
@@ -278,7 +281,7 @@ To keep running what you have, turn `agent_updates` off for the pack, or put a t
   If its exact recorded build is missing or cannot safely run, yolo refuses and tells you how to
   repair the current build. This is different from `YOLO_ALLOW_MISSING_PROGRAMS=1`: that bypass
   starts a jail without supplying a program. Use `yolo capture` to retry a build failure, and
-  `yolo pack rebase` only when the series no longer applies.
+  the rebase the error prints only when the series no longer applies.
 
 ```text
 Refusing to launch: 2 patched extensions pack pi loads have no build on this machine.

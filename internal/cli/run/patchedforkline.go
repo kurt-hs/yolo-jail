@@ -23,7 +23,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
-	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // patchedPacksStore is the pack store a patched fork's lines read its check record from.
@@ -130,16 +129,17 @@ func BaseLagNote(lag *packsrc.BaseLag) string {
 	return s
 }
 
-// BaseLagStep is the step that re-anchors a lagging series on its newest version, when that version
-// is known to take it as it stands: `yolo pack rebase <key> --onto <tag> --keep`, which keeps the
-// rebased clone and prints the export whose series names that version as its base. "" otherwise.
-func BaseLagStep(f packload.Fork, lag *packsrc.BaseLag) string {
+// BaseLagSteps is the step that re-anchors a lagging series on its newest version, when that
+// version is known to take it as it stands: the rebase recipe onto it (packsrc.RebaseRecipe,
+// PF-D85), whose export writes a series naming that version as its base, under a lead line, each
+// line prefixed with indent. nil otherwise.
+func BaseLagSteps(f packload.Fork, lag *packsrc.BaseLag, indent string) []string {
 	newest := lag.Newer[len(lag.Newer)-1]
 	if len(lag.Applies) == 0 || lag.Applies[len(lag.Applies)-1].Commit != newest.Commit {
-		return ""
+		return nil
 	}
-	return "`yolo pack rebase " + shquote.QuoteDisplay(f.Key()) + " --onto " + shquote.QuoteDisplay(newest.Tag) +
-		" --keep` re-anchors the series on " + newest.Tag
+	return f.RebaseRecipe().Repair(newest, "to re-anchor the series on "+newest.Tag+", rebase it with git "+
+		"(it applies there as it stands):", indent)
 }
 
 // lagTags names entries by tag, oldest first: all of them up to three, else the oldest and the newest.
@@ -180,7 +180,7 @@ func HeldSuffix(f packload.Fork, rec *packsrc.CheckRecord, in packsrc.CheckInput
 		switch h.Kind {
 		case packsrc.OutcomeConflict:
 			return at + ": upstream " + h.Entry.Label() + " does not take " + h.Member +
-				" — `yolo pack rebase " + shquote.QuoteDisplay(f.Key()) + "`"
+				" — `yolo pack status` prints the git commands that rebase it"
 		case packsrc.OutcomeBuildFailed:
 			return at + ": the build of upstream " + h.Entry.Label() + " failed — `yolo capture " + f.CaptureArg() +
 				"` retries it now"

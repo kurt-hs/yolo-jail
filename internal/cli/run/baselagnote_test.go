@@ -2,9 +2,10 @@ package run
 
 // baselagnote_test.go pins how a series' base lag (packsrc.BaseLag) is said: the releases newer than
 // the base oldest first, elided past three to the oldest and the newest; which are known to take the
-// series; and the --keep rebase only when the newest is one of them.
+// series; and the rebase recipe that re-anchors it only when the newest is one of them.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -27,9 +28,9 @@ func TestBaseLagNoteNamesTheNewerReleases(t *testing.T) {
 		"v1.2.0 takes the series as it stands"; got != want {
 		t.Errorf("note:\n got %q\nwant %q", got, want)
 	}
-	f := packload.Fork{Pack: "forkpack", Bin: "tool"}
-	if step := BaseLagStep(f, lag); step != "" {
-		t.Errorf("a step for a newest version not known to take the series: %q", step)
+	f := packload.Fork{Pack: "forkpack", Bin: "tool", Source: "git+https://example.com/up.git?ref=main"}
+	if steps := BaseLagSteps(f, lag, ""); steps != nil {
+		t.Errorf("a step for a newest version not known to take the series: %q", steps)
 	}
 
 	rec.Good = &packsrc.GoodBuild{Commit: c('6'), Series: "s"}
@@ -40,9 +41,12 @@ func TestBaseLagNoteNamesTheNewerReleases(t *testing.T) {
 		"series as it stands"; got != want {
 		t.Errorf("note:\n got %q\nwant %q", got, want)
 	}
-	if got, want := BaseLagStep(f, lag), "`yolo pack rebase forkpack/tool --onto v1.5.0 --keep` re-anchors the "+
-		"series on v1.5.0"; got != want {
-		t.Errorf("step:\n got %q\nwant %q", got, want)
+	steps := strings.Join(BaseLagSteps(f, lag, ""), "\n")
+	for _, w := range []string{"to re-anchor the series on v1.5.0, rebase it with git (it applies there as it stands):",
+		"git clone https://example.com/up forkpack-tool-rebase", "git rebase " + c('6'), "--base=" + c('6')} {
+		if !strings.Contains(steps, w) {
+			t.Errorf("the re-anchoring steps lack %q:\n%s", w, steps)
+		}
 	}
 
 	// No lag: another check's record, a tag ref, or nothing above the base.

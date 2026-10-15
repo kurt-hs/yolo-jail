@@ -43,8 +43,9 @@ opt back in.
 See [guardrails](packs/guardrails/README.md).
 
 **See how far a patch series' base has fallen behind.** `yolo pack status` and the launch's fork
-line name the releases newer than a patched fork's base, and `yolo pack rebase --keep` re-anchors a
-series that still applies. See [patched forks](docs/design/patched-forks.md#84-rebasing-the-series).
+line name the releases newer than a patched fork's base; for a series that still applies, status
+prints the git commands that move its base forward.
+See [Follow an upstream with a patch series](userguide/guides/patch-series.md#rebase-the-series).
 
 **`yolo stop --force` ends a jail that will not end.** `-f`/`--force` stops the container with no
 grace period and signals its keeper, so one that will not finish stops anyway.
@@ -72,8 +73,14 @@ one names the pack to add.
 image from a launch that bakes extra packages. Changed config or environment lists, or a moving
 ref, still rebuild. See [image staging](docs/reference/image-staging-vs-baking.md).
 
+**`yolo pack rebase` is removed; a conflict now prints the git commands to rebase the series
+yourself.** Run them, or hand them to an agent. See
+[Rebase the series](userguide/guides/patch-series.md#rebase-the-series).
+
 ### Fixed
 
+- A launch now skips a patch upstream already contains, even one upstream changed again after
+  taking it, instead of stopping at a conflict.
 - A Bedrock setting captured during a session no longer overrides Claude Code after you switch to
   its subscription profile; startup names and logs each discarded setting.
 - Quitting a jail no longer waits for its patched-extension copies to be deleted.

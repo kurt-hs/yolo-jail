@@ -585,10 +585,10 @@ func floorPatchedStateRecord(p hostfloor.Program, recorded *packsrc.CheckRecord,
 	series, err := f.ReadSeries()
 	if err != nil {
 		return hostfloor.PatchedState{Reason: fmt.Sprintf("%v — correct it, and the next `yolo host -- %s` builds it",
-			err, f.Bin)}
+			err, f.Bin), Rebase: f.RebaseRecipe()}
 	}
 	recipe := forkBuild{Fork: f, Series: series}.recipe()
-	ps := hostfloor.PatchedState{Recipe: recipe}
+	ps := hostfloor.PatchedState{Recipe: recipe, Rebase: f.RebaseRecipe()}
 	platform := floorPatchedPlatform()
 	store := &capture.Store{Dir: paths.CapturesDir()}
 	var g *packsrc.GoodBuild

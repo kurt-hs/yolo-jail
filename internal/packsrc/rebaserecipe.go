@@ -1,0 +1,106 @@
+package packsrc
+
+// rebaserecipe.go is the REBASE RECIPE (a term coined here): the git commands, with the commits
+// filled in, that rebase a patch series onto an upstream commit it no longer fits, for the user or
+// their agent to run (docs/design/patched-forks.md §8.4, PF-D85, which retired `yolo pack
+// rebase`). Every line that names the repair of a series prints it through RebaseRecipe.Repair:
+// the error block (PatchFailure.Block), `yolo pack update` and `yolo pack status`, `yolo pack
+// series check`, cached-good recovery and the base lag's re-anchoring. yolo never runs it and
+// never writes the series.
+//
+// The steps: clone the upstream; on a branch at the series' base apply the series with `git am`
+// and tag the applied tip; `git rebase <target>`, which drops a member upstream already holds by
+// patch-id as the launch's replay does (PF-D86) — `--onto <target> <base>` would not, comparing
+// against nothing between the two; resolve each stop; then the EXPORT, one command line whose
+// every step runs only once the one before it succeeded, kept from PF-D49:
+//
+//   - a test that the rebase branch holds a commit neither the target nor the applied tip reaches,
+//     so pasted mid-rebase (the branch is still the applied tip), after an abort, or after a rebase
+//     that dropped every member, it changes nothing;
+//   - `mkdir <patches>.new`, which refuses an earlier export's leftover;
+//   - `git -c format.noprefix=false format-patch --no-signature --suffix=.patch --base=<target>`
+//     into it, reading the BRANCH, never HEAD, with `.patch` names and a/ b/ prefixes whatever the
+//     user's config says, since the series reads only `.patch` files and `git am` strips one path
+//     component;
+//   - the two renames and the `rm`, so a launch never reads an empty or partial series.
+
+import (
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+)
+
+const (
+	// RecipeBranch is the branch the recipe applies and rebases the series on, and RecipeApplied
+	// the tag it puts on the applied tip, which the export's test reads.
+	RecipeBranch  = "yolo-rebase"
+	RecipeApplied = "yolo-applied"
+)
+
+// RecipeLead is the sentence every printed recipe stands under: the error block's Repair line, and
+// each verb's conflict line.
+const RecipeLead = "rebase the series with git, yourself or with an agent; the next launch builds it:"
+
+// RebaseRecipe is what the recipe needs of one patch series.
+type RebaseRecipe struct {
+	// Repo is the upstream's repository, as `git clone` takes it; an npm source's is `npm:<name>`.
+	Repo string
+	// Base is the series' base-commit, "" when the series cannot be read.
+	Base string
+	// Patches is the series directory, "" when it is not the user's to write: a pack yolo fetched
+	// or ships, whose copy on this machine no act writes.
+	Patches string
+	// Pack and Rel name the series where Patches is "": the pack, and the series directory
+	// relative to the pack's root.
+	Pack, Rel string
+	// Dir is the clone's directory, relative to the current one.
+	Dir string
+}
+
+// Repair is the recipe for rebasing the series onto target as lines: lead, then the steps
+// indented under it, each line prefixed with indent.
+func (r RebaseRecipe) Repair(target ListEntry, lead, indent string) []string {
+	out := []string{indent + lead}
+	for _, l := range r.Lines(target) {
+		out = append(out, indent+"  "+l)
+	}
+	return out
+}
+
+// Lines is the recipe's steps: the commands, and the one sentence between them saying when the
+// export runs. A command line is indented two spaces under a sentence.
+func (r RebaseRecipe) Lines(target ListEntry) []string {
+	q := shquote.QuoteDisplay
+	if strings.HasPrefix(r.Repo, NpmSourcePrefix) {
+		return []string{"the upstream is an npm package, which has no git history to rebase onto: rework the series " +
+			"against version " + target.Label() + "'s published files and export it with `git format-patch --base`"}
+	}
+	base := r.Base
+	if base == "" {
+		base = "<the series' base-commit>"
+	}
+	t := target.Commit
+	// The series directory and its two siblings, each quoted whole; a placeholder where it is not
+	// the user's to write.
+	dir := func(suffix string) string {
+		if r.Patches == "" {
+			return "<patches>" + suffix
+		}
+		return q(r.Patches + suffix)
+	}
+	var lines []string
+	if r.Patches == "" {
+		lines = append(lines, "pack "+r.Pack+" is not yours to write here, so <patches> below is its series "+
+			"directory ("+r.Rel+") in your own clone of the pack's repository; commit and push it after")
+	}
+	return append(lines,
+		"  git clone "+q(r.Repo)+" "+q(r.Dir)+" && cd "+q(r.Dir),
+		"  git checkout -q -b "+RecipeBranch+" "+base+" && git am "+dir("")+"/*.patch && git tag "+RecipeApplied,
+		"  git rebase "+t,
+		"resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes "+
+			"nothing until the rebase is done:",
+		"  test -n \"$(git rev-list -n 1 "+RecipeBranch+" --not "+t+" "+RecipeApplied+" --)\" && mkdir "+
+			dir(".new")+" && git -c format.noprefix=false format-patch --no-signature --suffix=.patch --base="+t+
+			" -o "+dir(".new")+" "+t+".."+RecipeBranch+" && mv "+dir("")+" "+dir(".old")+" && mv "+dir(".new")+
+			" "+dir("")+" && rm -r "+dir(".old"))
+}

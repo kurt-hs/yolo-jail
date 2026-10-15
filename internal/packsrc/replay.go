@@ -70,7 +70,7 @@ const ReplayTimeout = 60 * time.Second
 var replayMinGit = [2]int{2, 40}
 
 // GitTooOldError is the replay's refusal of a git older than replayMinGit, before it runs anything:
-// the walk and the rebase clone both return it. It is its own type so a caller names updating git as
+// the walk returns it. It is its own type so a caller names updating git as
 // the next step, where a retry would meet the same git (docs/design/patched-forks.md PF-D58).
 type GitTooOldError struct {
 	// Have is the git this host runs, as `git version` names it.
@@ -282,7 +282,7 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	var commits []string
 	if series.Len() > 0 {
 		var baseErr *SeriesBaseError
-		commits, baseErr, err = sc.applyAtBase(series, "")
+		commits, baseErr, err = sc.applyAtBase(series)
 		switch {
 		case baseErr != nil:
 			res.Base = baseErr
@@ -554,16 +554,11 @@ func (sc *scratch) gitRun(dir string, env []string, stdin io.Reader, args ...str
 	return stdout.String(), 0, nil
 }
 
-// applyAtBase checks the series' base out in the scratch work tree — detached, or on a new branch
-// of that name when branch is set (the rebase clone's, rebase.go) — and makes each member a commit
-// with `git am`, one member at a time so a failure names its member. It returns the commits in
-// series order.
-func (sc *scratch) applyAtBase(series *Series, branch string) ([]string, *SeriesBaseError, error) {
-	at := []string{"checkout", "-q", "--detach", series.Base}
-	if branch != "" {
-		at = []string{"checkout", "-q", "-b", branch, series.Base}
-	}
-	if _, err := sc.git("", at...); err != nil {
+// applyAtBase checks the series' base out, detached, in the scratch work tree and makes each member
+// a commit with `git am`, one member at a time so a failure names its member. It returns the
+// commits in series order.
+func (sc *scratch) applyAtBase(series *Series) ([]string, *SeriesBaseError, error) {
+	if _, err := sc.git("", "checkout", "-q", "--detach", series.Base); err != nil {
 		return nil, nil, fmt.Errorf("checking the series' base %s out: %s", shortCommit(series.Base), oneLine(err))
 	}
 	files := filepath.Join(sc.dir, "series")

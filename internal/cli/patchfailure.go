@@ -75,14 +75,14 @@ func patchFailureCommand(bin string, host bool) string {
 	return "yolo"
 }
 
-// writePatchFailure prints PF-D81's error block (packsrc.PatchFailure.Block) for owner, its Bypass
+// writePatchFailure prints PF-D81's error block (packsrc.PatchFailure.Block) for fork, its Bypass
 // line offering only what works on this machine (PF-D83), and — when the bypass is set and
 // admitted names the intact build it runs — the CONTINUING line.
-func writePatchFailure(w io.Writer, f *packsrc.PatchFailure, owner string, bypass packsrc.PatchBypass, admitted string) {
+func writePatchFailure(w io.Writer, f *packsrc.PatchFailure, fork packload.Fork, bypass packsrc.PatchBypass, admitted string) {
 	if f == nil {
 		return
 	}
-	_, _ = io.WriteString(w, f.Block(owner, owner, bypass))
+	_, _ = io.WriteString(w, f.Block(fork.Key(), fork.RebaseRecipe(), bypass))
 	if allowPatchFailures() && admitted != "" {
 		fmt.Fprintf(w, "CONTINUING: using intact admitted build %s; skips this subject's advance.\n", admitted)
 	}

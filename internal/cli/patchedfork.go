@@ -31,7 +31,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
-	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
@@ -161,7 +160,7 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 			[]packsrc.ListEntry{target}, patchedYoloVersion(), 0, originalSnapshot,
 			func(failure *packsrc.PatchFailure) {
 				retryReportedFailure = failure
-				writePatchFailure(errw, failure, f.Key(), explicitPatchBypass(f, series, rec), "")
+				writePatchFailure(errw, failure, f, explicitPatchBypass(f, series, rec), "")
 			}, func(err error) {
 				if err != nil {
 					fmt.Fprintf(errw, "yolo pack: %s: its clean replay was recorded, but the matching detached failure evidence could not be resolved (%v) — the next launch checks it again\n",
@@ -293,7 +292,7 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 	walk, recorded, _ := recordExplicitWalk(store, f, series, res.Inputs, list,
 		patchedYoloVersion(), spent, boundSnapshot, func(failure *packsrc.PatchFailure) {
 			reportedFailure = failure
-			writePatchFailure(errw, failure, f.Key(), explicitPatchBypass(f, series, rec), "")
+			writePatchFailure(errw, failure, f, explicitPatchBypass(f, series, rec), "")
 		}, func(err error) {
 			if err != nil {
 				fmt.Fprintf(errw, "yolo pack: %s: its clean replay was recorded, but the matching detached failure evidence could not be resolved (%v) — the next launch checks it again\n",
@@ -411,7 +410,7 @@ func reportExplicitPatchFailure(pr richtext.Printer, errw io.Writer, f packload.
 		admitted = explicitCompatibleGood(f, series, rec)
 	}
 	if !alreadyReported {
-		writePatchFailure(errw, failure, f.Key(), explicitPatchBypass(f, series, rec), admitted)
+		writePatchFailure(errw, failure, f, explicitPatchBypass(f, series, rec), admitted)
 	} else if admitted != "" {
 		fmt.Fprintf(errw, "CONTINUING: using intact admitted build %s; this explicit subject was skipped.\n", admitted)
 	}
@@ -468,12 +467,10 @@ func walkReport(f packload.Fork, series *packsrc.Series, rec *packsrc.CheckRecor
 	if w.Fit >= 0 {
 		fit = &w.Results[w.Fit]
 	}
-	in, _, _, _ := f.CheckWant(series).Inputs()
 	for i, r := range w.Results {
 		switch {
 		case r.Conflict != nil:
-			lines = append(lines, conflictMessage(f, series, rec, r, fit,
-				isRebaseDefault(rec, in, series.Digest, r.Entry))...)
+			lines = append(lines, conflictMessage(f, series, rec, r, fit)...)
 		case r.Clean:
 			for _, m := range r.Upstream {
 				lines = append(lines, fmt.Sprintf("[dim]  %s is already in upstream %s; drop it from %s[/dim]",
@@ -506,36 +503,29 @@ func walkReport(f packload.Fork, series *packsrc.Series, rec *packsrc.CheckRecor
 }
 
 // conflictMessage is §8.2's message for one entry the series did not take; fit is the walk's newest
-// fit, nil when it found none. isDefault is whether the entry is the one `yolo pack rebase` takes
-// with no --onto (isRebaseDefault); another's step names it with --onto.
+// fit, nil when it found none. Its next step is the rebase recipe onto that entry (recipeLines).
 func conflictMessage(f packload.Fork, series *packsrc.Series, rec *packsrc.CheckRecord, r packsrc.ReplayResult,
-	fit *packsrc.ReplayResult, isDefault bool) []string {
+	fit *packsrc.ReplayResult) []string {
 	paths := strings.Join(r.Conflict.Paths, ", ")
 	if paths == "" {
 		paths = "(no path named)"
 	}
-	return []string{
+	return append([]string{
 		fmt.Sprintf("[yellow]%s: upstream %s does not take the patch series —[/yellow]", f.Label(), r.Entry.Label()),
 		fmt.Sprintf("  %s conflicts in %s", r.Conflict.Member, paths),
 		"  " + heldAt(rec, series, fit),
-		"  rebase the series: " + rebaseCommand(f, r.Entry, isDefault),
-	}
+	}, recipeLines(f, r.Entry, "  ")...)
 }
 
-// rebaseCommand is the conflict message's next step (§8.2): `yolo pack rebase <key>` (§8.4, PF-D26),
-// which rebases onto its default target (isDefault, rebaseDefaultTarget); for another entry,
-// `--onto` it. It is the only step a conflict names: the verb clones, replays to the conflict and
-// prints the continue and the export with the commits filled in (patchedrebase.go).
-func rebaseCommand(f packload.Fork, onto packsrc.ListEntry, isDefault bool) string {
-	cmd := "yolo pack rebase " + shquote.QuoteDisplay(f.Key())
-	if !isDefault {
-		ref := onto.Tag
-		if ref == "" {
-			ref = onto.Commit
-		}
-		cmd += " --onto " + shquote.QuoteDisplay(ref)
+// recipeLines is the next step every conflict an explicit act reports names (§8.4, PF-D85): the
+// git that rebases f's series onto target, with the commits filled in (packsrc.RebaseRecipe), as
+// dim lines under its lead, each prefixed with indent.
+func recipeLines(f packload.Fork, target packsrc.ListEntry, indent string) []string {
+	var out []string
+	for _, l := range f.RebaseRecipe().Repair(target, packsrc.RecipeLead, indent) {
+		out = append(out, "[dim]"+richtext.Escape(l)+"[/dim]")
 	}
-	return cmd
+	return out
 }
 
 // heldAt says what runs while the newest candidate does not fit: the good build; with none, the
@@ -650,11 +640,10 @@ func patchedForkStatusLines(f packload.Fork) []string {
 		}
 	}
 	if lag := rec.BaseLag(in, series.Digest); lag != nil {
-		line := "  base lag: " + run.BaseLagNote(lag)
-		if step := run.BaseLagStep(f, lag); step != "" {
-			line += " — " + step
+		lines = append(lines, "[dim]"+richtext.Escape("  base lag: "+run.BaseLagNote(lag))+"[/dim]")
+		for _, l := range run.BaseLagSteps(f, lag, "    ") {
+			lines = append(lines, "[dim]"+richtext.Escape(l)+"[/dim]")
 		}
-		lines = append(lines, "[dim]"+richtext.Escape(line)+"[/dim]")
 	}
 	lines = append(lines, candidateLines(f, rec, series, in)...)
 	return append(lines, nextCheckLine(f, rec, in)...)
@@ -731,7 +720,7 @@ func patchedAge(d time.Duration) string {
 }
 
 // candidateLines are the status lines for the last check's candidate and every replay recorded
-// against the series as it stands, a conflict's naming `yolo pack rebase` as its next step. in is
+// against the series as it stands, the newest conflict's followed by its rebase recipe. in is
 // what a check of the fork reads now: a record whose last check read anything else answers another
 // question, and its list is not shown as the candidate.
 func candidateLines(f packload.Fork, rec *packsrc.CheckRecord, series *packsrc.Series, in packsrc.CheckInputs) []string {
@@ -774,20 +763,23 @@ func candidateLines(f packload.Fork, rec *packsrc.CheckRecord, series *packsrc.S
 		state := "not replayed yet — `yolo pack update` replays it"
 		if i > 0 {
 			// BELOW A CONFLICT, NOTHING REPLAYS IT (PF-D81): an update stops at the newest's conflict
-			// and builds no older fit, so the one way to it is a rebase onto it.
-			state = "not tried — `yolo pack update` stops at the conflict above and builds no older " +
-				"version; `" + rebaseCommand(f, e, isRebaseDefault(rec, in, series.Digest, e)) +
-				"` rebases the series onto it"
+			// and builds no older fit, so the one way to it is the rebase the conflict above names.
+			state = "not tried — `yolo pack update` stops at the conflict above and builds no older version"
 		}
-		if o := rec.Conflict(e.Commit, series.Digest, yolo, gitVer); o != nil {
-			state = fmt.Sprintf("does not take %s (conflicts in %s) — `%s` rebases the series", o.Member,
-				strings.Join(o.Paths, ", "), rebaseCommand(f, e, isRebaseDefault(rec, in, series.Digest, e)))
+		conflict := rec.Conflict(e.Commit, series.Digest, yolo, gitVer)
+		if conflict != nil {
+			state = fmt.Sprintf("does not take %s (conflicts in %s)", conflict.Member, strings.Join(conflict.Paths, ", "))
 		} else if o := rec.Applies(e.Commit, series.Digest, yolo, gitVer); o != nil {
 			state = "applies — " + patchedNotBuilt
 		}
-		lines = append(lines, fmt.Sprintf("[dim]  %s: %s, checked %s ago: %s[/dim]", label, e.Label(), ago, state))
-		if !strings.HasPrefix(state, "does not take") {
+		lines = append(lines, fmt.Sprintf("[dim]  %s: %s, checked %s ago: %s[/dim]", label, e.Label(), ago,
+			richtext.Escape(state)))
+		if conflict == nil {
 			break // the walk stops at the first entry that may still fit
+		}
+		if i == 0 {
+			// THE NEXT STEP (§8.4, PF-D85): the git that rebases the series onto the newest version.
+			lines = append(lines, recipeLines(f, e, "    ")...)
 		}
 	}
 	return lines
