@@ -31,11 +31,28 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 const sharedDemandPoll = 50 * time.Millisecond
 
+// sharedDemandAdmissionHook is a deterministic pause seam for exercising real authorization
+// transactions under state.lock contention.
+var sharedDemandAdmissionHook func(preparationDemand)
+
 var errSharedPreparationForegroundOnly = errors.New("the user-scope selection does not authorize detached preparation for this declaration")
+
+type sharedDemandStateLockHeld struct{ cause error }
+
+func (e *sharedDemandStateLockHeld) Error() string { return e.cause.Error() }
+func (e *sharedDemandStateLockHeld) Unwrap() []error {
+	return []error{packsrc.ErrLockHeld, e.cause}
+}
+
+func isSharedDemandStateLockHeld(err error) bool {
+	var held *sharedDemandStateLockHeld
+	return errors.As(err, &held)
+}
 
 type preparationDemand struct {
 	Key, Runtime, Platform, Identity string
@@ -101,6 +118,9 @@ func withDemandState(ctx context.Context, dir string, wait bool, fn func() error
 	}
 	lock, err := pidlock.Acquire(filepath.Join(dir, "state.lock"), mode, nil)
 	if err != nil {
+		if errors.Is(err, pidlock.ErrHeld) {
+			return &sharedDemandStateLockHeld{cause: err}
+		}
 		return err
 	}
 	defer lock.Release()
@@ -621,6 +641,9 @@ func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commi
 
 func demandAdmissionGuard(ctx context.Context, dir string, d preparationDemand) func(func() error) error {
 	return func(commit func() error) error {
+		if sharedDemandAdmissionHook != nil {
+			sharedDemandAdmissionHook(d)
+		}
 		authorized, err := authorizedPreparationDemands(ctx, dir, d.Identity)
 		timer, timerErr := sharedTimerDemand(ctx, d)
 		if err != nil && timer == nil {
@@ -653,6 +676,82 @@ func demandAdmissionGuard(ctx context.Context, dir string, d preparationDemand) 
 			}
 			return context.Canceled
 		})
+	}
+}
+
+func waitSharedDemandRetry(ctx context.Context, dir string, d preparationDemand) error {
+	ticker := time.NewTicker(sharedDemandPoll)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var live []livePreparationDemand
+		err := withDemandState(ctx, dir, false, func() error {
+			var e error
+			live, e = livePreparationDemands(dir)
+			return e
+		})
+		if isSharedDemandStateLockHeld(err) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				continue
+			}
+		}
+		if err != nil {
+			return err
+		}
+		present := false
+		for _, request := range live {
+			if request.preparationDemand == d {
+				present = true
+				break
+			}
+		}
+		if !present {
+			return errPreparationAdmissionStale
+		}
+		_, release, err := resolvePreparationDemand(ctx, d)
+		release()
+		if err != nil {
+			return err
+		}
+		if d.SubscriptionGeneration != 0 {
+			if err = commitSubscribedPreparation(ctx, d, func() error { return nil }); err != nil {
+				return err
+			}
+		}
+		if d.Fresh {
+			boundary, boundaryErr := patchedAdvanceStore(true).CheckBoundary(d.Key)
+			if boundaryErr != nil {
+				return boundaryErr
+			}
+			if boundary.Epoch != d.CheckBoundary.Epoch || boundary.Seq < d.CheckBoundary.Seq {
+				return errPreparationAdmissionStale
+			}
+		}
+		return nil
+	}
+}
+
+func sharedFreshAdmissionRetry(ctx context.Context, dir string, d preparationDemand, f packload.Fork,
+	opts advanceOptions) advanceResult {
+	for {
+		if err := ctx.Err(); err != nil {
+			a := &advance{f: f, o: opts, pr: richtext.Printer{W: opts.out, Color: opts.color}, epr: richtext.Printer{W: opts.errw, Color: opts.color}}
+			return a.freshRefusal("the preparation requester was interrupted", err)
+		}
+		result := advancePatchedFork(f, opts)
+		if !isSharedDemandStateLockHeld(result.admissionErr) {
+			return result
+		}
+		if err := waitSharedDemandRetry(ctx, dir, d); err != nil {
+			a := &advance{f: f, o: opts, pr: richtext.Printer{W: opts.out, Color: opts.color}, epr: richtext.Printer{W: opts.errw, Color: opts.color}}
+			return a.freshRefusal("shared preparation authority changed before retry", err)
+		}
+		opts.pool = newAdvancePool(d.Runtime)
 	}
 }
 
@@ -795,7 +894,11 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 						opts.installed = sharedInstalledCopy(workCtx, request)
 					}
 				}
-				res = advancePatchedFork(f, opts)
+				if request.Fresh {
+					res = sharedFreshAdmissionRetry(workCtx, dir, request, f, opts)
+				} else {
+					res = advancePatchedFork(f, opts)
+				}
 			}
 			cancel()
 			<-monitorDone

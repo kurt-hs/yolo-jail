@@ -139,7 +139,7 @@ func forkFloorBuildJail(t *testing.T, runs *int, relocatable bool) func(run.Opti
 			t.Error("the floor's build ran in an unsealed jail")
 		}
 		writeForkFloorBuild(t, filepath.Join(o.Workspace, forkSourceLeaf), filepath.Join(o.Workspace, captureOutLeaf),
-			"/home/agent", capture.Platform(), relocatable)
+			"/home/agent", floorPatchedPlatform(), relocatable)
 		return 0
 	}
 }
