@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Ratify OQ-DA2 and OQ-DA4, both built on their leanings; rule OQ-DA3 (a small diagnostics build); the three mechanism questions owned by design docs; asks 10 and 11 wait on their own owners"
+next: "Ratify OQ-DA2 and OQ-DA4, both built on their leanings; rule OQ-DA3 (a small diagnostics build); the three mechanism questions owned by design docs; ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
 depends-on:
   - ../design/patched-forks.md#OQ-PFK6
   - ../design/patched-forks.md#OQ-PFK7
@@ -46,7 +46,7 @@ only where a question has no design doc of its own. The source handoff lives out
 | [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | open | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
 | [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | open | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | partially landed | [OQ-DA3](#OQ-DA3) |
-| [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | sketched, open | [`isolated-agent-model-auth.md`](../design/isolated-agent-model-auth.md) |
+| [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
 | [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo's part built, off by default; waits on pi-subagents | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
 
 ## 1. `remove:` for `config-list`
@@ -197,12 +197,16 @@ the host's `~` is never projected and names `host_files` and the briefing route
 **Ask.** A second Pi process in a jail, with its own agent directory and candidate extension code,
 gets model auth without a copy of the login's refresh material.
 
-**State.** `sketched`; nothing is authorized to build. **Evidence:**
-[`isolated-agent-model-auth.md`](../design/isolated-agent-model-auth.md) lays out four options (an
-access-only view, a proxy that injects auth, a provider-scoped key, mocked dispatch) and leaves
-[OQ-IA1](../design/isolated-agent-model-auth.md#OQ-IA1) to [OQ-IA6](../design/isolated-agent-model-auth.md#OQ-IA6) open.
+**State.** `declined` 2026-10-15 by the owner ([IA-D1](../design/isolated-agent-model-auth.md#IA-D1)).
+Nothing is built. **Evidence:** [`isolated-agent-model-auth.md`](../design/isolated-agent-model-auth.md)
+laid out four options (an access-only view, a proxy that injects auth, a provider-scoped key, mocked
+dispatch); its [reasons for the decline](../design/isolated-agent-model-auth.md#10-why-it-was-declined)
+are that a brokered token is no boundary inside one jail, no per-token revocation exists for either
+subscription, Anthropic-subscription use through an intermediary is flagged for Legal Counsel, and
+mocked offline tests are not blocked. [OQ-IA1](../design/isolated-agent-model-auth.md#OQ-IA1) to
+[OQ-IA6](../design/isolated-agent-model-auth.md#OQ-IA6) are moot.
 
-**Owner.** [`isolated-agent-model-auth.md`](../design/isolated-agent-model-auth.md#8-open-questions).
+**Owner.** None; the decline is [IA-D1](../design/isolated-agent-model-auth.md#IA-D1).
 
 ## 11. The host `-p` profile governs pi-subagents' children
 
