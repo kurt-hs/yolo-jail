@@ -34,7 +34,7 @@ func TestAppleContainerCheckOnlyDoesNotStartBuildChildAndKeepsAdmittedTree(t *te
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	prev := appleContainerBuildCapability
 	appleContainerBuildCapability = func(context.Context) (bool, string) {
 		return false, "Apple Container has running yolo jail(s): yolo-another-session"
@@ -101,7 +101,7 @@ func TestAppleContainerFreshCheckRefusesPendingCandidateDespiteServingGood(t *te
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	var children atomic.Int32
 	pf.child = func(context.Context, forkBuild) int {
 		children.Add(1)

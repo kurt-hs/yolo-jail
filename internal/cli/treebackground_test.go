@@ -104,7 +104,7 @@ func TestANextLaunchKeyDueForACheckRegistersForPreparation(t *testing.T) {
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	builds := pf.countBuilds()
 	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "podman", &run.ActInterrupt{})
@@ -136,7 +136,7 @@ func TestANextLaunchKeyWithNothingDueRegistersIdleWorker(t *testing.T) {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
-	pf.now = pf.now.Add(time.Minute)
+	pf.setNow(pf.now.Add(time.Minute))
 	builds := pf.countBuilds()
 	stubPreparationWorkerStart(t)
 	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
@@ -188,7 +188,7 @@ func TestAKeyWhoseBackgroundAdvanceRunsIsNotStartedAgain(t *testing.T) {
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	lk, err := pidlock.Acquire(backgroundKeyLock(poolKeyA), pidlock.NoWait, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +225,7 @@ func TestOnAppleContainerANextLaunchKeyUsesServingBuildAndRegistersChecks(t *tes
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	stubPreparationWorkerStart(t)
 	got, out := pf.launch(t, "container", &run.ActInterrupt{})
 	if got[poolKeyA].Entry != first[poolKeyA].Entry {
@@ -248,7 +248,7 @@ func TestTheNextLaunchReportsTheBackgroundMoveOnce(t *testing.T) {
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	var bg bytes.Buffer
 	// Advance each key separately: simultaneous keys of this fixture share one repository, and a
 	// NoWait background attempt intentionally skips a sibling holding its mirror lock.
@@ -283,7 +283,7 @@ func TestTheNextLaunchReportsAFailureWithItsLogAndRetry(t *testing.T) {
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	prev := forkBuildChild
 	forkBuildChild = func(ctx context.Context, d time.Duration, staging string, b forkBuild, s captureStreams,
 		color bool) (int, bool) {
@@ -315,7 +315,7 @@ func TestAnUnfinishedBackgroundAdvanceIsSaidAndStartedAgain(t *testing.T) {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
-	pf.now = pf.now.Add(time.Minute)
+	pf.setNow(pf.now.Add(time.Minute))
 	if err := writeBackgroundOutcome(backgroundOutcome{Key: poolKeyA, Label: "extension " + poolKeyA, State: bgRunning,
 		Pid: 1, At: pf.now.Unix(), Log: backgroundAdvanceLog()}); err != nil {
 		t.Fatal(err)

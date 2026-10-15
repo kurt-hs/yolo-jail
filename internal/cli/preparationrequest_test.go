@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,6 +98,21 @@ func TestPreparationSharedDemandSurvivesFirstWaiterCancellation(t *testing.T) {
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 25: "new release"})
 	f := fx.fork(t)
 	stubSpawn(t)
+	// The hold is installed before the first registration starts a worker goroutine, through the
+	// fixture's synchronized hook rather than by reassigning forkBuildChild under that worker.
+	started, resume := make(chan struct{}), make(chan struct{})
+	var startedOnce sync.Once
+	fx.mu.Lock()
+	fx.beforeChild = func(ctx context.Context) bool {
+		startedOnce.Do(func() { close(started) })
+		select {
+		case <-ctx.Done():
+			return false
+		case <-resume:
+			return true
+		}
+	}
+	fx.mu.Unlock()
 	first, err := newPreparationRequest(context.Background(), []packload.Fork{f}, "podman", patchedTestPlatform)
 	if err != nil {
 		t.Fatal(err)
@@ -106,18 +122,6 @@ func TestPreparationSharedDemandSurvivesFirstWaiterCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer releaseFirst()
-	started, resume := make(chan struct{}), make(chan struct{})
-	old := forkBuildChild
-	forkBuildChild = func(ctx context.Context, bound time.Duration, staging string, b forkBuild, s captureStreams, color bool) (int, bool) {
-		close(started)
-		select {
-		case <-ctx.Done():
-			return 130, false
-		case <-resume:
-		}
-		return old(ctx, bound, staging, b, s, color)
-	}
-	defer func() { forkBuildChild = old }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ticks := make(chan time.Time)
@@ -150,8 +154,11 @@ func TestPreparationSharedDemandSurvivesFirstWaiterCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second demand lost when first waiter cancelled: %v", err)
 	}
-	if result.delivery.Key == good.delivery.Key || fx.child != 1 {
-		t.Fatalf("shared build lost/rebuilt: entry %s child builds %d", result.delivery.Key, fx.child)
+	fx.mu.Lock()
+	children := fx.child
+	fx.mu.Unlock()
+	if result.delivery.Key == good.delivery.Key || children != 1 {
+		t.Fatalf("shared build lost/rebuilt: entry %s child builds %d", result.delivery.Key, children)
 	}
 }
 

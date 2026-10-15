@@ -240,7 +240,7 @@ func TestPreparationProgramFailureBackoffPreservesGood(t *testing.T) {
 		t.Fatal("backoff retried build")
 	}
 	fx.rc = 0
-	fx.now = retryAt.Add(2 * time.Hour)
+	fx.setNow(retryAt.Add(2 * time.Hour))
 	runProgramPreparationTick(t, func() bool {
 		for _, sub := range subs {
 			snap, err := readPreparationSnapshotFor(preparationRoot(), sub)

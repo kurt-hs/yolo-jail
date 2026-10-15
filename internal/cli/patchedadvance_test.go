@@ -64,7 +64,9 @@ func (s *syncBuffer) String() string {
 // apart by, the build jail substituted, and the interruptible build run in this process.
 type patchedAdvanceFixture struct {
 	*patchedFixture
+	// now is the fixture clock; writes go through setNow and other goroutines read it through clock.
 	now         time.Time
+	clockMu     sync.Mutex
 	builds      []string // f.txt as each build saw it in its src/
 	rc          int      // what the fake build jail exits with
 	ran         bool     // whether the fake build jail writes the toolchain record (its build line ran)
@@ -77,7 +79,11 @@ type patchedAdvanceFixture struct {
 	// whose checks and walks hold their own record and mirror locks meanwhile (PPX-D13): the lock
 	// assertion is then the single-key tests'.
 	sharedLocks bool
-	// mu guards builds, child and scoped, which the pool's keys write at once.
+	// beforeChild, when set (under mu), runs before each child build; false ends that build as
+	// interrupted. It is the synchronized way to hold a build that a worker goroutine may already be
+	// about to start, where reassigning forkBuildChild would race with it.
+	beforeChild func(context.Context) bool
+	// mu guards builds, child, scoped and beforeChild, which the pool's keys write at once.
 	mu sync.Mutex
 	// platform is what the fake build jail's manifest reports: a container capture jail's, unless a
 	// host floor test makes it the floor's own (capture.Platform), which a materialize on the host
@@ -88,17 +94,38 @@ type patchedAdvanceFixture struct {
 	relocatable bool
 }
 
+// clock is patchedNow's reading of the fixture clock, safe beside setNow.
+func (fx *patchedAdvanceFixture) clock() time.Time {
+	fx.clockMu.Lock()
+	defer fx.clockMu.Unlock()
+	return fx.now
+}
+
+// setNow steps the fixture clock. Only the test goroutine calls it, so its own unlocked reads of
+// now stay race-free.
+func (fx *patchedAdvanceFixture) setNow(t time.Time) {
+	fx.clockMu.Lock()
+	defer fx.clockMu.Unlock()
+	fx.now = t
+}
+
 func newPatchedAdvanceFixture(t *testing.T, follow string) *patchedAdvanceFixture {
 	t.Helper()
 	fx := &patchedAdvanceFixture{patchedFixture: newPatchedFixture(t, follow), now: time.Unix(1_900_000_000, 0), ran: true,
 		platform: patchedTestPlatform}
 	prevNow := patchedNow
-	patchedNow = func() time.Time { return fx.now }
+	patchedNow = fx.clock
 	t.Cleanup(func() { patchedNow = prevNow })
 	withFakeCaptureJail(t, fx.buildJail(t))
 	prevChild := forkBuildChild
 	forkBuildChild = func(ctx context.Context, _ time.Duration, staging string, b forkBuild, s captureStreams,
 		color bool) (int, bool) {
+		fx.mu.Lock()
+		hook := fx.beforeChild
+		fx.mu.Unlock()
+		if hook != nil && !hook(ctx) {
+			return 130, false
+		}
 		fx.mu.Lock()
 		fx.child++
 		fx.scoped = append(fx.scoped, ctx.Done() != nil)
@@ -106,6 +133,9 @@ func newPatchedAdvanceFixture(t *testing.T, follow string) *patchedAdvanceFixtur
 		return forkBuildRunJail(staging, b, s, color), false
 	}
 	t.Cleanup(func() { forkBuildChild = prevChild })
+	// Registered last so it runs first: every shared preparation worker is stopped before the
+	// seams above are restored under it.
+	t.Cleanup(fx.stopWorkers)
 	return fx
 }
 
@@ -229,7 +259,7 @@ func (fx *patchedAdvanceFixture) record(t *testing.T) *packsrc.CheckRecord {
 }
 
 // later steps the clock past the check's interval.
-func (fx *patchedAdvanceFixture) later(d time.Duration) { fx.now = fx.now.Add(d) }
+func (fx *patchedAdvanceFixture) later(d time.Duration) { fx.setNow(fx.now.Add(d)) }
 
 // firstAdvance is the state every later test starts from: v1.1.0 takes the clean series and the first advance builds it.
 func firstAdvance(t *testing.T) (fx *patchedAdvanceFixture, v11, v12 string, r advanceResult, out string, handed []run.HandedFork) {
