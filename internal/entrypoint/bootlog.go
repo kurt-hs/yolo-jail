@@ -197,6 +197,7 @@ var bootLogFacts = []string{
 	"YOLO_VERSION",
 	"YOLO_RUNTIME",
 	"YOLO_HOST_LOOPBACK",
+	paths.JailBackendEnv,
 	"YOLO_ALLOW_UNREACHABLE_SERVICES",
 	"YOLO_ALLOW_STALE_IMAGE",
 	paths.HoldOnRefusalEnv,

@@ -579,6 +579,9 @@ func podmanLinuxGolden(home string) []string {
 	// variable can mean one thing only: a launcher older than it. The in-jail witness
 	// never escalates on this value (internal/entrypoint/reachability.go).
 	add("-e", paths.HostLoopbackEnvVar+"="+paths.HostLoopbackUnknown)
+	// The container backend, on EVERY container launch (paths.JailBackendEnv): YOLO_RUNTIME
+	// above is a hard-coded `podman`, so this is the one variable that names it.
+	add("-e", paths.JailBackendEnv+"=podman")
 	// host services sockets dir mount (podman, always).
 	add("-v", hostServiceSocketsDir("yolo-ws-abcd1234", false)+":/run/yolo-services:rw")
 	// devices/gpu/kvm: none. resources: podman always gets --pids-limit 32768.

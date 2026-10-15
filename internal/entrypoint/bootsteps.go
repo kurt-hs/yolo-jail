@@ -97,6 +97,10 @@ type bootRun struct {
 	// selected pack and the user's env_sources write into the same Vars, and only the launcher
 	// may say a jail is a sealed build.
 	sealed bool
+
+	// egress is the outbound-network probe start_egress_probe launched in the background, which
+	// report_egress collects (egress.go); nil when the start step did not run.
+	egress *egressProbe
 }
 
 // jailPacks loads the staged packs once per run, on first use. The macos-user bootstrap
@@ -170,6 +174,18 @@ func bootSteps() []bootStep {
 			name:         "hydrate_session_env",
 			run:          func(b *bootRun) { hydrateEnvFromSessionEnvFile(b.e) },
 			notContainer: "the container boot reads its composed environment from ~/.config/yolo-user-env.sh (hydrate_user_env, above)",
+		},
+		{
+			// THE OUTBOUND-NETWORK PROBE STARTS HERE and is collected at report_egress, at the
+			// bottom (egress.go), so its few seconds of worst case overlap the boot's own work
+			// instead of adding to it. After the env hydration on purpose: HTTPS_PROXY and
+			// NO_PROXY may come from env_sources, which those steps fold into e.Vars. It reads
+			// the packs (their declared hosts are its targets), which only moves their one load
+			// earlier; a load failure is still reported at configure_pack_surfaces.
+			name: "start_egress_probe",
+			run:  startEgressProbeStep,
+			notSessionPass: "the finding is the jail's, said once by its own boot on the launch " +
+				"terminal; a session's pass joins a jail whose launch already reported it",
 		},
 		{
 			// Populate /run/localtime + /run/timezone from $TZ before anything else.
@@ -540,6 +556,20 @@ func bootSteps() []bootStep {
 				"the watcher's lock taken and exit, and race the session's exec into a program " +
 				"that does not reap it",
 			notDarwin: "macos-user shares the host's filesystem, so a root nix makes there is already one the host honors; no watcher is needed (in-jail-nix-roots.md §5.2)",
+		},
+		{
+			// Collect the outbound-network probe start_egress_probe launched (egress.go). A
+			// WARNING, never a refusal: it records nothing on the refusal gate. Here, just above
+			// the service witness, so a boot's two network findings read together; under a
+			// progress line, silent when quick, which it nearly always is by now.
+			name: "report_egress",
+			run: func(b *bootRun) {
+				line := b.e.progress("Checking that the jail can reach the internet")
+				reportEgressStep(b)
+				line.Done("")
+			},
+			notSessionPass: "the finding is the jail's, said once by its own boot on the launch " +
+				"terminal; a session's pass joins a jail whose launch already reported it",
 		},
 		{
 			// The in-jail reachability witness runs LAST, and both halves of that are
