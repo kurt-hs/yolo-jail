@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,6 +40,10 @@ const sharedDemandPoll = 50 * time.Millisecond
 // sharedDemandAdmissionHook is a deterministic pause seam for exercising real authorization
 // transactions under state.lock contention.
 var sharedDemandAdmissionHook func(preparationDemand)
+
+// sharedDemandMonitorHook runs inside the worker's demand monitor while it holds state.lock: a
+// pause seam for the worker contending with its own admission.
+var sharedDemandMonitorHook func()
 
 var errSharedPreparationForegroundOnly = errors.New("the user-scope selection does not authorize detached preparation for this declaration")
 
@@ -639,11 +644,18 @@ func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commi
 	return commit()
 }
 
-func demandAdmissionGuard(ctx context.Context, dir string, d preparationDemand) func(func() error) error {
+// local serializes this guard with the same worker's demand monitor. The monitor polls state.lock
+// throughout the work, and the guard takes it without waiting so that ANOTHER process's hold reads
+// as contention (busy, retried); the worker's own poll is not another holder, and without this a
+// poll that overlapped an admission refused it as "lock held" — a fresh plain fork's request
+// failed outright, and a background advance went busy until the next tick.
+func demandAdmissionGuard(ctx context.Context, dir string, d preparationDemand, local *sync.Mutex) func(func() error) error {
 	return func(commit func() error) error {
 		if sharedDemandAdmissionHook != nil {
 			sharedDemandAdmissionHook(d)
 		}
+		local.Lock()
+		defer local.Unlock()
 		authorized, err := authorizedPreparationDemands(ctx, dir, d.Identity)
 		timer, timerErr := sharedTimerDemand(ctx, d)
 		if err != nil && timer == nil {
@@ -771,6 +783,8 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 		return err
 	}
 	defer owner.Release()
+	// One worker's demand monitor and admission guard take state.lock in turn (demandAdmissionGuard).
+	var stateMu sync.Mutex
 	defer func() {
 		if resultErr != nil {
 			_ = writeDemandJSON(filepath.Join(dir, "worker-error.json"), struct {
@@ -835,7 +849,16 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 					case <-ticker.C:
 					}
 					var pending []livePreparationDemand
-					e := withDemandState(workCtx, dir, false, func() error { var err error; pending, err = livePreparationDemands(dir); return err })
+					stateMu.Lock()
+					e := withDemandState(workCtx, dir, false, func() error {
+						if sharedDemandMonitorHook != nil {
+							sharedDemandMonitorHook()
+						}
+						var err error
+						pending, err = livePreparationDemands(dir)
+						return err
+					})
+					stateMu.Unlock()
 					if e != nil {
 						continue
 					} // lock contention/read failure is unknown, not zero demand
@@ -853,7 +876,9 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 						cancel()
 						return
 					}
+					stateMu.Lock()
 					_, e = authorizedPreparationDemands(workCtx, dir, request.Identity)
+					stateMu.Unlock()
 					if timer == nil && errors.Is(e, errPreparationAdmissionStale) {
 						cancel()
 						return
@@ -862,7 +887,7 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 			}()
 
 			if resolved.NPM != nil {
-				record, err := advanceNPMCapture(withOrdinaryCaptureRuntime(workCtx, request.Runtime), &capture.Store{Dir: paths.CapturesDir()}, *resolved.NPM, resolved.Fingerprint, request.Fresh, request.AfterSeq, w, demandAdmissionGuard(workCtx, dir, request))
+				record, err := advanceNPMCapture(withOrdinaryCaptureRuntime(workCtx, request.Runtime), &capture.Store{Dir: paths.CapturesDir()}, *resolved.NPM, resolved.Fingerprint, request.Fresh, request.AfterSeq, w, demandAdmissionGuard(workCtx, dir, request, &stateMu))
 				if err != nil {
 					unsupportedNPM = errors.Is(err, errNPMCaptureUnsupported)
 					if workCtx.Err() == nil {
@@ -876,13 +901,13 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 				}
 			} else if !f.Patched() && !f.IsTree() && request.Fresh {
 				var plainErr error
-				res, plainErr = runFreshPlainPreparation(workCtx, f, request, demandAdmissionGuard(workCtx, dir, request), w)
+				res, plainErr = runFreshPlainPreparation(workCtx, f, request, demandAdmissionGuard(workCtx, dir, request, &stateMu), w)
 				if plainErr != nil {
 					res = advanceResult{failed: true, operationError: plainErr.Error(), delivery: entrypoint.ForkDelivery{Reason: plainErr.Error()}}
 					errors.As(plainErr, &res.pending)
 				}
 			} else {
-				opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshBoundary: request.CheckBoundary, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request)}
+				opts := advanceOptions{runtime: request.Runtime, platform: request.Platform, launch: true, host: request.Host, background: request.Background, freshCheck: request.Fresh, freshIdentity: request.Identity, freshBoundary: request.CheckBoundary, ctx: workCtx, out: w, errw: w, pool: newAdvancePool(request.Runtime), sharedOwned: true, admitGuard: demandAdmissionGuard(workCtx, dir, request, &stateMu)}
 				if request.Host && !f.IsTree() {
 					hostOnly := true
 					for _, r := range live {

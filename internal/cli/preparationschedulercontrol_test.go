@@ -106,7 +106,7 @@ func TestPreparationSchedulerUnknownSelectionRetainsButNeverAdmits(t *testing.T)
 		t.Fatalf("unknown selection classified as revocation: %v", err)
 	}
 	admitted := false
-	if err := demandAdmissionGuard(ctx, request.dir, d)(func() error { admitted = true; return nil }); err == nil || admitted {
+	if err := demandAdmissionGuard(ctx, request.dir, d, new(sync.Mutex))(func() error { admitted = true; return nil }); err == nil || admitted {
 		t.Fatalf("unknown authority admitted: %v %v", admitted, err)
 	}
 	if fx.record(t).Good.Entry != good.delivery.Key {
