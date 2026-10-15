@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- When another process holds a build lock, `yolo --update` now waits and retries instead of failing.
+
 ## [0.14.0] - 2026-10-15
 
 Your environment prepares builds between launches, checks them fresh when you ask, and records
