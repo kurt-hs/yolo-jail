@@ -139,7 +139,7 @@ func requireDoorwayRanOutsideAndStopped(t *testing.T, argv, saw, me, uid, diag s
 func TestMacosUserOpensTheAWSDoorwayOutsideTheSandbox(t *testing.T) {
 	requireMacosUser(t)
 	holdMachineLock(t, true, "the macos-user AWS doorway test owns the aws-auth host singleton")
-	packHome(t, awsAuthUserConfig(`["claude", "aws-auth"]`, "claude", ""))
+	packHome(t, awsAuthUserConfig(`["claude", "bedrock"]`, "claude", ""))
 	ws := macosUserWorkspace(t, `{}`)
 	uid := sandboxUID(t)
 	me := strconv.Itoa(os.Getuid())
