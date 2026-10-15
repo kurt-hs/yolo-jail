@@ -861,6 +861,14 @@ after the launch's *Forks this launch* block, printed above the dispatch
 ([`run/forkbuild.go:165-172`](../../internal/cli/run/forkbuild.go#L165-L172)), so the move line
 names the build this jail gets.
 
+**A fork line names its series' base lag** (a term coined here; user request, 2026-10-15): the
+version tags of the followed branch newer than the series' `base-commit:`, oldest first and elided to
+the oldest and the newest past three, and which of them the check record knows take the series as it
+stands — "its base v1.0.0 (…) is 2 releases behind: v1.1.0, v1.2.0; v1.2.0 takes the series as it
+stands". It is read from the check record the line already reads, so the launch runs no more git.
+`yolo pack status` says it as a `base lag:` line and, when the newest version takes the series, names
+`yolo pack rebase <key> --onto <tag> --keep`, which re-anchors it there ([§8.4](#84-rebasing-the-series)).
+
 **The build-line digest disclosure is already built**, under
 [`report-tiers.md` OQ-RO9](../reference/report-tiers.md#why-its-this-way), not a remaining
 implementation step. The launch's disclosure names the whole build line by its recipe digest and
@@ -1027,7 +1035,9 @@ step every conflict names:
    the replay's config regime: the series applied at its base on a branch, then
    `git rebase --onto <target> <base>`, so a conflict stops with markers in the work tree and
    `git rebase --continue` resumes it.
-5. **Clean:** it says the next launch builds it, and removes the clone.
+5. **Clean:** it says the next launch builds it, and removes the clone. With `--keep` it rebases
+   the series all the same, keeps the clone, and prints step 6's export, so a series still applying
+   can be re-anchored on the target as its `base-commit:` (user request, 2026-10-15).
 6. **A conflict:** it stops mid-rebase and prints, in order: the member and its paths;
    `git -C <dir> rebase --continue`, to run after resolving; and the export that replaces the series
    with no moment where it is empty or partial: `git -C <dir> format-patch --base=<target> -o

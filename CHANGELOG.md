@@ -42,6 +42,10 @@ write still take required locks. Set `GIT_OPTIONAL_LOCKS=1` in `env_sources` or 
 opt back in.
 See [guardrails](packs/guardrails/README.md).
 
+**See how far a patch series' base has fallen behind.** `yolo pack status` and the launch's fork
+line name the releases newer than a patched fork's base, and `yolo pack rebase --keep` re-anchors a
+series that still applies. See [patched forks](docs/design/patched-forks.md#84-rebasing-the-series).
+
 **`yolo stop --force` ends a jail that will not end.** `-f`/`--force` stops the container with no
 grace period and signals its keeper, so one that will not finish stops anyway.
 
