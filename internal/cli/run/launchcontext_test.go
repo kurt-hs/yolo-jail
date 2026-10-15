@@ -15,6 +15,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -155,7 +156,9 @@ func TestTheLaunchLogRecordsTheLaunchsArchaeology(t *testing.T) {
 		}
 	}
 	writeCfg(`{"profile": {"*": "bedrock", "acme": null}}`)
-	ws := t.TempDir()
+	// RESOLVED like the home packHome mints: the record lists config files sorted by path, so a
+	// workspace under a symlinked TMPDIR (darwin's /var) would sort apart from the home.
+	ws := floortest.ResolvedTemp(t)
 	prism := filepath.Join(ws, ".yolo", "prism")
 	if err := os.MkdirAll(prism, 0o755); err != nil {
 		t.Fatal(err)
