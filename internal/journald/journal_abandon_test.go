@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // AN ABANDONED `yolo-journalctl -f` STOPS ITS `journalctl`. A followed unit that logs
@@ -19,7 +21,7 @@ import (
 func TestAnAbandonedFollowTerminatesItsJournalctl(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
-	script := "#!/bin/sh\necho $$ > " + pidFile + "\nexec sleep 300\n"
+	script := "#!/bin/sh\necho $$ > " + shquote.Quote(pidFile) + "\nexec sleep 300\n"
 	if err := os.WriteFile(filepath.Join(dir, "journalctl"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

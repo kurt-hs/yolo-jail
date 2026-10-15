@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // ndjsonTime renders t the way `log --style ndjson` spells an entry's timestamp.
@@ -77,7 +79,7 @@ func TestAnAbandonedUserScopeStreamTerminatesItsLog(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
 	macosLogBin = filepath.Join(dir, "log")
-	script := "#!/bin/sh\necho $$ > " + pidFile + "\nexec sleep 300\n"
+	script := "#!/bin/sh\necho $$ > " + shquote.Quote(pidFile) + "\nexec sleep 300\n"
 	if err := os.WriteFile(macosLogBin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
