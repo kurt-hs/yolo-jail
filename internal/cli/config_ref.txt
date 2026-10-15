@@ -1681,7 +1681,8 @@
                     contribution gives `into` OR `agents`, never both — naming who it is
                     for is what makes the destination inferable, and a content pack has
                     no business naming a path it cannot keep current.  Giving NEITHER
-                    means BROADCAST, with or without a manifest: {"kind": "briefing"}.
+                    means BROADCAST (as of 0.9.0), with or without a manifest:
+                    {"kind": "briefing"}.
                     Each file has ONE governing contribution, so declarations only add:
                     {"from": "files/pi.md", "agents": ["pi"]} beside briefing/ delivers
                     both.  Two content contributions naming one source are refused.
