@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixdiag"
 )
 
@@ -159,12 +161,16 @@ func gradeSharedCreds(credsPath string, now time.Time) []selfCheckLine {
 
 	switch {
 	case remainingS < 0:
+		detail := "Refreshes are not landing.  Run /login from inside a " +
+			"jail to recover; check broker log at " +
+			"~/.local/share/yolo-jail/logs/host-service-claude-oauth-broker.log"
+		if rt := os.Getenv(hostservice.DoctorNotStartedOnEnv); rt != "" {
+			detail = expiredWithoutBrokerDetail(rt)
+		}
 		return []selfCheckLine{{grade: "FAIL",
 			title: "shared creds expired " + nixdiag.FmtDuration(-remainingS) +
 				" ago (" + lastWrite + ")",
-			detail: "Refreshes are not landing.  Run /login from inside a " +
-				"jail to recover; check broker log at " +
-				"~/.local/share/yolo-jail/logs/host-service-claude-oauth-broker.log"}}
+			detail: detail}}
 	case remainingS < 3600:
 		return []selfCheckLine{{grade: "NOTE",
 			title: "shared creds expire in " + nixdiag.FmtDuration(remainingS) +
@@ -176,4 +182,24 @@ func gradeSharedCreds(credsPath string, now time.Time) []selfCheckLine {
 			title: "shared creds valid for " + nixdiag.FmtDuration(remainingS) +
 				", " + lastWrite}}
 	}
+}
+
+// expiredWithoutBrokerDetail is the expired-creds remedy where the backend the next launch uses
+// does not start this broker (hostservice.DoctorNotStartedOnEnv names it; today that is Apple
+// Container, runtime "container"). The broker's log is a dead end there: Claude in the jail holds
+// its own refresh token and refreshes itself, so nothing the broker did is why the login expired.
+// What fails in that case is the jail reaching Anthropic, so the step that can work is the
+// jail's outbound network.
+func expiredWithoutBrokerDetail(runtime string) string {
+	backend, network := runtime, "check the network the jail uses"
+	if runtime == "container" {
+		backend = "Apple Container"
+		network = "check VPN or endpoint-security filters on this Mac, then restart " +
+			"the Apple Container VM with `container system stop && container system start`"
+	}
+	return "The broker is not in the path on " + backend + ": Claude in the jail refreshes " +
+		"its own token, so the broker's log has nothing about it.\n" +
+		"Check the jail's outbound network: from inside a jail, " +
+		"`curl -sI https://api.anthropic.com` should answer. If it does not, " + network + ".\n" +
+		"Then run /login from inside a jail to recover the login."
 }

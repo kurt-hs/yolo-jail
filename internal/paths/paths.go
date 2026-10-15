@@ -325,6 +325,18 @@ const HoldOnRefusalEnv = "YOLO_HOLD_ON_REFUSAL"
 // (macos-user returns above assembleRunCmd and has no container to exec into).
 const HoldExecEnv = "YOLO_HOLD_EXEC"
 
+// JailBackendEnv carries the LAUNCHER'S container backend into the jail — `podman` or
+// `container` (Apple Container) — for the in-jail findings whose next step differs by backend:
+// the boot's outbound-network check (internal/entrypoint/egress.go) tells an Apple Container
+// user to restart that runtime's services, which is wrong advice under podman.
+//
+// It is its own variable because the existing one cannot carry it: commonEnvBlock emits a
+// hard-coded YOLO_RUNTIME=podman on every container backend, that being the runtime a NESTED
+// launch inside the jail uses (see HoldExecEnv). Emitted on every container launch; macos-user
+// starts no container and its bootstrap knows its own backend. Absent means a launcher older
+// than the variable, and its readers fall back to wording true of podman.
+const JailBackendEnv = "YOLO_JAIL_BACKEND"
+
 // AllowMissingProgramsEnv is the escape hatch out of the jail's READINESS ACT
 // (docs/design/jail-notch-readiness.md, OQ-JR1): the provisioning stage installs every program
 // a selected pack declares before the command runs, and a program it cannot install STOPS the

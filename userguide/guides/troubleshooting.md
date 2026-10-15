@@ -45,6 +45,26 @@ older image.
   `podman machine start`. That stops every container in the machine, other jails included.
 - Start a fresh jail: `yolo stop`, then launch again. `yolo ps` lists running jails.
 
+**"This jail has no outbound network access".** Each launch checks, in the background and for a
+few seconds at most, that the jail can open a connection to the internet: to the hosts your packs
+install from or send requests to, and to `github.com`. When none of them answers, the launch says
+so, lists what each attempt got (a name that did not resolve, a connection that timed out, a proxy
+that could not be reached or refused), and still starts, since a jail may be offline on purpose.
+Without a network, an agent's login or token refresh, package installs and model calls all fail
+later, each naming itself rather than the network. The next step depends on the setup:
+
+- Apple Container: if the Mac itself is online, check for a VPN or an endpoint-security network
+  filter that blocks the container network, then run `container system stop && container system start`
+  and launch again.
+- Podman: check the host is online and that no VPN or firewall rule drops traffic from Podman's
+  network. On a Mac, restart the Podman machine with `podman machine stop`, then
+  `podman machine start`.
+- `macos-user`: the sandbox uses the Mac's own network, so check the Mac's connection and any VPN
+  or network filter that applies to the sandbox account.
+- Behind a proxy: give the jail `HTTPS_PROXY` (and `NO_PROXY` if needed) with an `env_sources`
+  entry; the check goes through it. A proxy listening on your computer's `127.0.0.1` cannot be
+  reached at that address from inside a container.
+
 **"No packs are configured, so this jail has no coding agent".** Add an agent pack to your user
 config; see [Choose an agent](../getting-started.md#choose-an-agent).
 

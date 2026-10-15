@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixdiag"
 )
 
@@ -296,4 +297,54 @@ func TestSelfCheckMissingCertsAreOneFinding(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSelfCheckOnABackendWithoutTheBrokerNamesAStepThatWorksThere is the Apple Container
+// dead end a user hit: since the broker's interception is skipped on that backend (the
+// loophole's intercepts cannot be carried without --add-host), Claude in an Apple Container
+// jail refreshes its own token, so expired shared creds there never mean a broker problem,
+// and "check broker log" sent the user to a log nothing had written to. The real cause was a
+// VM with no outbound network.
+//
+// `yolo check` decides whether the next launch starts this service (run.HostServiceAdmittedOn)
+// and tells the doctor_cmd through hostservice.DoctorNotStartedOnEnv; this drives the real
+// SelfCheck with that variable set, and parses its real stdout with check's parser.
+func TestSelfCheckOnABackendWithoutTheBrokerNamesAStepThatWorksThere(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	pinBrokerClock(t, now)
+	expired := func(t *testing.T) nixdiag.GradedLine {
+		t.Helper()
+		primeBrokerState(t)
+		creds := writeCreds(t, t.TempDir(),
+			now.UnixMilli()-int64(2*time.Hour/time.Millisecond), 3*time.Hour, now)
+		out := captureSelfCheckStdout(t, func() { _ = SelfCheck(creds) })
+		lines := nixdiag.SplitSelfCheckLines(out)
+		if len(lines) != 1 || lines[0].Grade != nixdiag.GradeFail {
+			t.Fatalf("want exactly one FAIL line for expired creds\nraw output:\n%s", out)
+		}
+		return lines[0]
+	}
+
+	t.Run("apple container", func(t *testing.T) {
+		t.Setenv(hostservice.DoctorNotStartedOnEnv, "container")
+		d := expired(t).Detail
+		if strings.Contains(d, "broker log") || strings.Contains(d, "host-service-claude-oauth-broker.log") {
+			t.Errorf("detail points an Apple Container user at the broker log, which the broker "+
+				"never writes for that backend:\n%s", d)
+		}
+		for _, want := range []string{"Apple Container", "refreshes", "outbound network",
+			"container system stop && container system start", "/login"} {
+			if !strings.Contains(d, want) {
+				t.Errorf("detail lacks %q:\n%s", want, d)
+			}
+		}
+	})
+
+	t.Run("a backend that runs the broker keeps the broker-log advice", func(t *testing.T) {
+		t.Setenv(hostservice.DoctorNotStartedOnEnv, "")
+		d := expired(t).Detail
+		if !strings.Contains(d, "check broker log at ~/.local/share/yolo-jail/logs/host-service-claude-oauth-broker.log") {
+			t.Errorf("detail lost the broker-log advice where the broker IS in the path:\n%s", d)
+		}
+	})
 }

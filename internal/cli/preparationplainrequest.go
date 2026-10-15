@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
@@ -140,6 +142,45 @@ func runFreshPlainPreparation(ctx context.Context, f packload.Fork, sub preparat
 	return freshPlainServing(f, sub)
 }
 
+// launchDemandForkResolver is resolveDemandFork at a launch's fresh plain request: a seam for
+// standing in for another process's hold on the pack source.
+var launchDemandForkResolver = resolveDemandFork
+
+// freshPlainResolutionWait bounds a launch's wait for another process's hold on the pack source
+// its fresh plain request resolves: the bound a requester waits for its shared worker
+// (sharedDemandRequest.wait), polled as the worker polls the same contention (runSharedPreparation).
+var freshPlainResolutionWait = forkBuildWaitBound
+
+// resolveFreshPlainDemandWaiting is the launch's authorization of a fresh plain request. Another
+// process holding the pack source's lock (packsrc.ErrLockHeld, from the scoped resolver's NoWait
+// try) is contention, not a failure: the shared worker meeting it during resolution polls and
+// retries, and a patched fork's launch request hands it to that worker, so this waits for the
+// holder too, under the same poll and bound, instead of refusing `--update` at once. A hold past the
+// bound, or an interrupt, refuses naming the retry.
+func resolveFreshPlainDemandWaiting(ctx context.Context, f packload.Fork, d preparationDemand) error {
+	const retry = "`yolo --update -- <command>`"
+	bound := time.NewTimer(freshPlainResolutionWait)
+	defer bound.Stop()
+	ticker := time.NewTicker(sharedDemandPoll)
+	defer ticker.Stop()
+	for {
+		_, release, err := launchDemandForkResolver(ctx, d)
+		release()
+		if !errors.Is(err, packsrc.ErrLockHeld) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s could not be prepared freshly (the preparation requester was interrupted while waiting: %s) — retry with %s",
+				f.Label(), oneLineErr(err), retry)
+		case <-bound.C:
+			return fmt.Errorf("%s could not be prepared freshly (still %s after %s) — retry with %s once that process finishes",
+				f.Label(), oneLineErr(err), freshPlainResolutionWait, retry)
+		case <-ticker.C:
+		}
+	}
+}
+
 // Plain forks use the same requester lease and independently owned worker as patched
 // sources. Workspace-only declarations retain bounded foreground ownership.
 func freshPlainPreparationForLaunch(ctx context.Context, f packload.Fork, req run.ForkBuildRequest, w io.Writer) entrypoint.ForkDelivery {
@@ -150,11 +191,7 @@ func freshPlainPreparationForLaunch(ctx context.Context, f packload.Fork, req ru
 		return refuse(err)
 	}
 	d := preparationDemand{Key: f.Key(), Runtime: req.Runtime, Platform: req.Platform, Identity: req.FreshIdentity[f.Key()], CheckBoundary: req.FreshBoundary[f.Key()], Fresh: true}
-	_, release, err := resolveDemandFork(ctx, d)
-	release()
-	if errors.Is(err, packsrc.ErrLockHeld) {
-		return refuse(err)
-	}
+	err := resolveFreshPlainDemandWaiting(ctx, f, d)
 	if err != nil && !errors.Is(err, errSharedPreparationForegroundOnly) {
 		return refuse(err)
 	}
