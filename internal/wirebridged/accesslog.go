@@ -447,6 +447,10 @@ func describeUpstreamError(ctx context.Context, err error) string {
 		return "connect refused: " + text
 	case errors.Is(err, syscall.ECONNRESET):
 		return "connection reset: " + text
+	case errors.Is(err, syscall.EPIPE):
+		// The upstream dropped the connection while the request was still being written: on macOS a
+		// reset surfaces here as EPIPE rather than ECONNRESET.
+		return "connection closed: " + text
 	case errors.As(err, &recErr), errors.As(err, &unknownCA), errors.As(err, &hostErr),
 		errors.As(err, &invalid), errors.As(err, &verifyErr), strings.Contains(text, "tls:"):
 		return "tls: " + text
