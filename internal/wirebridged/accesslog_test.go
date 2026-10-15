@@ -13,7 +13,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -124,6 +127,16 @@ func TestTheRequestLogSaysAHangIsStillWaitingOnTheUpstream(t *testing.T) {
 	<-errc
 	requestLine(t, logged, "POST /v1/messages", "upstream=https://api.cerebras.ai/v1/chat/completions",
 		`upstream_error="canceled: the caller closed the request"`)
+}
+
+// A reset the request's write meets is EPIPE on macOS, not ECONNRESET, and is named as the
+// connection's end like a reset, not as an unclassified error.
+func TestABrokenPipeToTheUpstreamIsNamedAConnectionClosed(t *testing.T) {
+	err := &url.Error{Op: "Post", URL: "https://api.example.invalid/v1", Err: &net.OpError{Op: "write", Net: "tcp",
+		Err: os.NewSyscallError("write", syscall.EPIPE)}}
+	if got := describeUpstreamError(context.Background(), err); !strings.HasPrefix(got, "connection closed: ") {
+		t.Fatalf("describeUpstreamError(broken pipe) = %q, want the connection-closed class", got)
+	}
 }
 
 func TestTheRequestLogNamesAResetAndARefusedConnect(t *testing.T) {
