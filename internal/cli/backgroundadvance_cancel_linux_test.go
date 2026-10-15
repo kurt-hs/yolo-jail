@@ -110,14 +110,17 @@ wait $!
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
-	var stagings []string
+	// Each build jail's NAME is taken when its child starts, as the build jail takes its own: the
+	// name resolves the staging's symlinks while it exists, and once the advance has removed it the
+	// lexical spelling, which under a symlinked TMPDIR names a different container.
+	var stagings, jails []string
 	prevCommand, prevChild, prevGrace := forkBuildChildCommand, forkBuildChild, forkBuildChildGrace
 	forkBuildChild, forkBuildChildGrace = runForkBuildChild, 500*time.Millisecond
 	forkBuildChildCommand = func(argv []string) (*exec.Cmd, error) {
 		for _, a := range argv {
 			if s, ok := strings.CutPrefix(a, "--workspace="); ok {
 				mu.Lock()
-				stagings = append(stagings, s)
+				stagings, jails = append(stagings, s), append(jails, runtime.FromWorkspace(s))
 				mu.Unlock()
 			}
 		}
@@ -153,7 +156,7 @@ wait $!
 	if len(stagings) != 1 {
 		t.Fatalf("the build children ran in %v, want one", stagings)
 	}
-	want := "podman rm --force " + runtime.FromWorkspace(stagings[0])
+	want := "podman rm --force " + jails[0]
 	if len(removed) != 1 || removed[0] != want {
 		t.Errorf("the removals = %q, want %q", removed, want)
 	}
