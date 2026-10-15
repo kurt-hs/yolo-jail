@@ -45,6 +45,15 @@ var sharedDemandAdmissionHook func(preparationDemand)
 // pause seam for the worker contending with its own admission.
 var sharedDemandMonitorHook func()
 
+// sharedWorkerLockContendedHook runs when a starting worker finds worker.lock taken: a seam for
+// forcing a liveness probe's momentary hold to overlap the worker's acquisition.
+var sharedWorkerLockContendedHook func()
+
+// sharedWorkerStartGrace bounds how long a requester waits for a worker it has never seen hold
+// worker.lock. A working worker holds that lock for its whole run, so a requester that has seen
+// neither the lock held nor a result for this long has no worker, and never will.
+var sharedWorkerStartGrace = time.Minute
+
 var errSharedPreparationForegroundOnly = errors.New("the user-scope selection does not authorize detached preparation for this declaration")
 
 type sharedDemandStateLockHeld struct{ cause error }
@@ -391,6 +400,7 @@ func (r *sharedDemandRequest) wait(ctx context.Context) (preparationDemandResult
 	waitBound := time.NewTimer(forkBuildWaitBound)
 	defer waitBound.Stop()
 	seenWorker := false
+	started := time.Now()
 	for {
 		if ctx.Err() != nil {
 			return preparationDemandResult{}, fmt.Errorf("the preparation requester was interrupted: %w", ctx.Err())
@@ -418,10 +428,20 @@ func (r *sharedDemandRequest) wait(ctx context.Context) (preparationDemandResult
 			return preparationDemandResult{}, fmt.Errorf("the owned preparation worker stopped: %w", errors.New(failure.Error))
 		}
 		held, probeErr := demandLeaseHeld(filepath.Join(dir, "worker.lock"))
+		if errors.Is(probeErr, os.ErrNotExist) {
+			held, probeErr = false, nil // no worker has ever started here
+		}
 		seenWorker = seenWorker || probeErr == nil && held
 		if probeErr == nil && !held {
+			// The worker may have answered and released between the read above and this probe.
+			if _, e = os.Stat(path + ".result"); e == nil {
+				continue
+			}
 			if seenWorker {
 				return preparationDemandResult{}, fmt.Errorf("the owned preparation worker exited without a usable outcome: %w", errors.New("worker stopped"))
+			}
+			if time.Since(started) >= sharedWorkerStartGrace {
+				return preparationDemandResult{}, fmt.Errorf("no preparation worker took this request within %s — see %s, then retry the launch", sharedWorkerStartGrace, backgroundAdvanceLog())
 			}
 		}
 		select {
@@ -775,8 +795,17 @@ func runSharedPreparation(ctx context.Context, d preparationDemand, w io.Writer)
 	if err := ensurePreparationRoot(dir); err != nil {
 		return err
 	}
-	owner, err := pidlock.Acquire(filepath.Join(dir, "worker.lock"), pidlock.NoWait, nil)
-	if errors.Is(err, pidlock.ErrHeld) {
+	// A held worker.lock is NOT proof that another worker will answer this demand: every liveness
+	// probe (demandLeaseHeld, pidlock.Held — the requester's own wait loop among them) takes the
+	// lock for an instant, and an exiting worker holds it after its last read of the demand. Wait
+	// for the lock instead of leaving; once it is ours, the loop below answers every live request
+	// or finds none. The wait owns nothing, so cancelling it publishes no worker error.
+	owner, err := pidlock.Acquire(filepath.Join(dir, "worker.lock"), pidlock.Mode{Wait: true, Cancel: ctx.Done()}, func(int) {
+		if sharedWorkerLockContendedHook != nil {
+			sharedWorkerLockContendedHook()
+		}
+	})
+	if errors.Is(err, pidlock.ErrCanceled) {
 		return nil
 	}
 	if err != nil {
