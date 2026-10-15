@@ -34,6 +34,11 @@ func init() {
 	if len(os.Args) > 5 && os.Args[1] == "npm-capture-runtime-test" && os.Args[3] == "internal" && os.Args[4] == programCaptureJailVerb {
 		npmCaptureImagePath = filepath.Join(os.Args[2], "image")
 		npmCaptureNode = npmCaptureNodeWithSyntheticTrust
+		// A fixture that stands in an image /bin (image-bins under its root) points the sealed
+		// producer's image probe at it; without one the probe keeps the image's real dirs.
+		if bins := filepath.Join(os.Args[2], "image-bins"); isDir(bins) {
+			entrypoint.OverrideImageProbeBase(bins)
+		}
 		captureRunPipeline = func(o run.Options) int {
 			// Actual seal caller and owned child; only the outer container is substituted.
 			if !o.Sealed || o.OnlyPacks == nil || len(o.OnlyPacks) != 0 || !o.NeverAttach || !o.NoProgramReadiness || o.CapturesDir() != "" || o.OnRuntimeResolved == nil {

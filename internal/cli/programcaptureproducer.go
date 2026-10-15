@@ -532,6 +532,14 @@ func resolveSelectedNPMCapture(ctx context.Context, store *capture.Store, in npm
 	if r.Input != in {
 		return nil, fmt.Errorf("selected npm resolver changed installation authority — retry preparation")
 	}
+	if r.ImageProvides != "" {
+		// Kept per image identity, so the next launch on this image asks no producer
+		// (programimageverdict.go). A verdict that cannot be kept costs the next launch one
+		// producer jail, never a wrong answer.
+		if err := recordImageProvides(store, r.ImageIdentity, in.Bin, r.ImageProvides); err != nil {
+			fmt.Fprintf(w, "%s: could not keep the image's answer (%v); the next launch on this image asks again\n", in.Bin, err)
+		}
+	}
 	if _, err = r.inputs(); err != nil {
 		return nil, err
 	}

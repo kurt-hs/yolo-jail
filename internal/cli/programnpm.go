@@ -55,8 +55,14 @@ func npmCaptureRuntimeDifferences(expected, actual npmCaptureRuntime) []string {
 }
 
 type npmCaptureResolution struct {
-	NodeFloorUnavailable     *run.NodeFloorUnavailable `json:"node_floor_unavailable,omitempty"`
-	Unsupported              string                    `json:"unsupported,omitempty"`
+	NodeFloorUnavailable *run.NodeFloorUnavailable `json:"node_floor_unavailable,omitempty"`
+	Unsupported          string                    `json:"unsupported,omitempty"`
+	// ImageProvides and ImageIdentity are the sealed producer's answer that its image already
+	// provides Input.Bin, at that path, in the image of that identity
+	// (npmImageProvidedResolution). They ride beside Unsupported so the host can keep the verdict
+	// per image identity (programimageverdict.go) without parsing the reason text.
+	ImageProvides            string `json:"image_provides,omitempty"`
+	ImageIdentity            string `json:"image_identity,omitempty"`
 	Input                    npmCaptureInput
 	Runtime                  npmCaptureRuntime
 	Lock                     json.RawMessage
@@ -142,8 +148,10 @@ func npmImageProvidedResolution(in npmCaptureInput, imageProvides func(string) s
 	if provided == "" {
 		return nil
 	}
+	identity, _ := os.ReadFile(npmCaptureImagePath)
 	return &npmCaptureResolution{Input: in, Unsupported: npmCaptureImageProvidesMarker + " " + provided +
-		", so the jail writes no launcher for " + in.Bin + " and nothing is prepared"}
+		", so the jail writes no launcher for " + in.Bin + " and nothing is prepared",
+		ImageProvides: provided, ImageIdentity: strings.TrimSpace(string(identity))}
 }
 
 // npmCaptureImageProvided reports whether err is the producer's answer that the image already

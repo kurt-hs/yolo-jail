@@ -32,7 +32,7 @@ func TestHostOrdinarySelectionDoesNotReadTheHostsBinAsTheImages(t *testing.T) {
 	if len(problems) != 0 || p == nil {
 		t.Fatalf("fixture pack: %v", problems)
 	}
-	vector, err := selectedOrdinaryInputs(entrypoint.NewEnv(map[string]string{}), []*packload.Pack{p}, entrypoint.ProgramInstallOnly)
+	vector, err := selectedOrdinaryInputs(entrypoint.NewEnv(map[string]string{}), []*packload.Pack{p}, entrypoint.ProgramInstallOnly, "linux/amd64")
 	if err != nil {
 		t.Fatal(err)
 	}

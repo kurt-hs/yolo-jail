@@ -450,7 +450,7 @@ func TestAuditedRegistrySealedPublicColdWarmAndFreshRefusal(t *testing.T) {
 	if err != nil || good.Key != fixed.Entry || receipt.Compatibility != fixed.Identity {
 		t.Fatal("refusal changed actual selected capture Good", err)
 	}
-	current, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly)
+	current, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly, captureJailPlatform())
 	if err != nil || len(current) != 1 || current[0] != in || failed.Resolution.Release != "7.7.2" {
 		t.Fatal("refusal changed fixed declaration/release pin", err)
 	}

@@ -46,8 +46,10 @@ func ordinarySelectionEnvironment(cfg *jsonx.OrderedMap, packs []*packload.Pack)
 	return entrypoint.NewEnv(vars)
 }
 
-func selectedOrdinaryInputs(e *entrypoint.Env, packs []*packload.Pack, mode entrypoint.ProgramPreparationMode) ([]npmCaptureInput, error) {
-	selected, err := entrypoint.SelectedHostProgramPreparations(e, packs, mode)
+// platform is the JAIL's `<os>/<arch>`, which judges each vendor's published platforms
+// (entrypoint.SelectedHostProgramPreparations), never the host's.
+func selectedOrdinaryInputs(e *entrypoint.Env, packs []*packload.Pack, mode entrypoint.ProgramPreparationMode, platform string) ([]npmCaptureInput, error) {
+	selected, err := entrypoint.SelectedHostProgramPreparations(e, packs, mode, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +115,7 @@ func resolveOrdinaryPreparation(ctx context.Context, d preparationDemand) (*npmC
 	if err != nil {
 		return nil, "", release, err
 	}
-	vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly)
+	vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly, d.Platform)
 	if err != nil {
 		return nil, "", release, err
 	}
@@ -261,11 +263,12 @@ func prepareOrdinaryForLaunch(req run.ProgramCaptureRequest, w io.Writer) (map[s
 	if req.Fresh {
 		mode = entrypoint.ProgramFreshRefresh
 	}
-	vector, err := selectedOrdinaryInputs(req.Env, req.Packs, mode)
+	vector, err := selectedOrdinaryInputs(req.Env, req.Packs, mode, req.Platform)
 	if err != nil {
 		return nil, err
 	}
 	deliveries := map[string]entrypoint.ProgramCaptureDelivery{}
+	vector = skipImageProvidedPrograms(vector, req.ImageIdentity, &capture.Store{Dir: paths.CapturesDir()}, w)
 	if len(vector) == 0 {
 		return deliveries, nil
 	}
@@ -330,7 +333,7 @@ func foregroundOrdinaryGuard(ctx context.Context, req run.ProgramCaptureRequest,
 		if len(selected.problems()) > 0 {
 			return errPreparationAdmissionStale
 		}
-		vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly)
+		vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly, req.Platform)
 		if err != nil {
 			return err
 		}

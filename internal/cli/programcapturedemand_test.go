@@ -42,7 +42,7 @@ func selectedNPMUser(t *testing.T, f *selectedNPMFixture, updates bool) run.Prog
 	if err != nil {
 		t.Fatal(err)
 	}
-	vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly)
+	vector, err := selectedOrdinaryInputs(ordinarySelectionEnvironment(cfg, selected.packs), selected.packs, entrypoint.ProgramInstallOnly, captureJailPlatform())
 	if err != nil || len(vector) != 1 {
 		t.Fatalf("ordinary fixture vector: %+v %v", vector, err)
 	}

@@ -32,6 +32,10 @@ type ProgramCaptureRequest struct {
 	Act                            *ActInterrupt
 	Stderr                         io.Writer
 	UnsupportedRuntime             string
+	// ImageIdentity is this launch's image identity, asked only when a program is selected, so a
+	// kept "the image already provides it" verdict can answer without a producer jail. nil, or
+	// ok=false, means unknown: every selected program then asks its producer.
+	ImageIdentity func() (string, bool)
 }
 
 // NodeFloorUnavailable is an observed provider result, not an installation/network failure.
@@ -103,7 +107,7 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 			}
 		}
 	}
-	deliveries, err := o.PreparePrograms(ProgramCaptureRequest{Packs: packs, Env: e, Runtime: rt, Platform: containerJailPlatform(), Fingerprint: fingerprint, RepoRoot: repoRoot, Workspace: o.Workspace, Fresh: o.Update, Act: o.actInterrupt(), Stderr: o.Stderr, UnsupportedRuntime: reason})
+	deliveries, err := o.PreparePrograms(ProgramCaptureRequest{Packs: packs, Env: e, Runtime: rt, Platform: containerJailPlatform(), Fingerprint: fingerprint, RepoRoot: repoRoot, Workspace: o.Workspace, Fresh: o.Update, Act: o.actInterrupt(), Stderr: o.Stderr, UnsupportedRuntime: reason, ImageIdentity: o.launchImageIdentity(repoRoot)})
 	if o.actInterrupt().Interrupted() {
 		err = context.Canceled
 	}
@@ -118,6 +122,22 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 	}
 	o.programCaptures = deliveries
 	return 0
+}
+
+// launchImageIdentity is the ordinary preparation's lazy view of this launch's image identity. It
+// shares the launch's one evaluation (identityMemo, imageprewarm.go): when the prewarm already
+// started it, this waits for the same answer; when nothing has asked yet, it installs the memo, so
+// the image step that follows reuses this answer instead of evaluating again.
+func (o *Options) launchImageIdentity(repoRoot string) func() (string, bool) {
+	if repoRoot == "" {
+		return nil
+	}
+	return func() (string, bool) {
+		if o.imageIdentity == nil {
+			o.imageIdentity = &identityMemo{}
+		}
+		return o.imageIdentity.eval(repoRoot)
+	}
 }
 
 // OrdinaryRuntimeUnsupported is the conservative reuse boundary, not a launch
