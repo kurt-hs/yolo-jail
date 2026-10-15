@@ -12,8 +12,8 @@ import (
 // actor prints for a patch series that does not apply — a jail launch, `yolo host`, the host floor,
 // `yolo pack update`, `yolo capture`, cached-good recovery — so the copyable shape is written once.
 // It names the subject, the upstream target, the patch and its conflict or cause, that the operation
-// stopped, the repair (the rebase recipe, rebaserecipe.go), and the ONE bypass that works on this machine (PatchBypass, PF-D83), and is
-// plain text: conspicuous without color.
+// stopped, the repair (the rebase recipe, rebaserecipe.go), and the ONE bypass that works on this
+// machine (PatchBypass, PF-D83), and is plain text: conspicuous without color.
 
 // PatchBypass is what the block's Bypass line may offer, decided by the caller from what is on this
 // machine (PF-D83): the bypass is named only when it will work.

@@ -309,6 +309,12 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		return packStatus(out, errw, color)
 	case "series":
 		return packSeries(args[1:], out, errw, color)
+	case "rebase":
+		// RETIRED (docs/design/patched-forks.md PF-D85): named so the stop says what replaced it.
+		fmt.Fprintln(errw, "yolo pack rebase was removed: a series that stops applying is rebased with plain git. "+
+			"Its error, `yolo pack status` and `yolo pack series check` print the commands with the commits "+
+			"filled in; run them yourself or hand them to an agent.")
+		return 2
 	case "-h", "--help", "help":
 		fmt.Fprintln(out, packUsage)
 		return 0

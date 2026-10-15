@@ -22,8 +22,8 @@ package cli
 //     PF-D81; or onto --onto alone; or, with nothing on the list and the base on the branch, onto
 //     the base, which a first advance builds.
 //  4. THE VERDICT: the newest entry takes the series, or the member that stops it and its paths,
-//     with the git that rebases it (packsrc.RebaseRecipe). Exit 0 when the newest entry (or --onto, or the base)
-//     takes the series, 1 otherwise.
+//     with the git that rebases it (packsrc.RebaseRecipe). Exit 0 when the newest entry (or
+//     --onto, or the base) takes the series, 1 otherwise.
 
 import (
 	"context"
