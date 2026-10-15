@@ -64,11 +64,13 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 	floorWire, updatesWire := config.HostFloorWire(), config.AgentUpdatesWire()
 	pins := floorForkPins(progs)
 	f := &hostfloor.Floor{
-		Dir:       paths.HostFloorDir(),
-		GOOS:      runtime.GOOS,
-		GOARCH:    runtime.GOARCH,
-		NodeFloor: hostfloor.HighestNodeFloor(progs),
-		Include:   func(pack string) bool { return entrypoint.PackPolicyAllows(floorWire, pack) },
+		Dir:    paths.HostFloorDir(),
+		GOOS:   runtime.GOOS,
+		GOARCH: runtime.GOARCH,
+		// The identity ResolveCapture and floorForkBuild name, so the materialize checks the same.
+		CapturePlatform: hostFloorCapturePlatform(),
+		NodeFloor:       hostfloor.HighestNodeFloor(progs),
+		Include:         func(pack string) bool { return entrypoint.PackPolicyAllows(floorWire, pack) },
 		// The user's provisioner order (PS-D12): a program it gives to a manager on the launch PATH
 		// has no floor entry. The PATH is resolved only when an order names one.
 		Outranked: hostfloor.Outranker(hostProvisionerOrder, lazyLaunchLookup()),

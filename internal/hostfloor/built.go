@@ -194,7 +194,7 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 	// and this materialize runs on the host.
 	endMaterialize := f.span(bin, "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: home, Stderr: f.out(),
-		Confined: true})
+		Confined: true, Platform: f.CapturePlatform})
 	endMaterialize()
 	if errors.Is(err, capture.ErrNotRelocatable) {
 		// The manifest said it may move, and a reference it lists cannot be honored: the same

@@ -426,3 +426,15 @@ func TestTheProductionFloorKnowsWhenThisMachineCannotCapture(t *testing.T) {
 		t.Errorf("with podman on PATH: %s (%s), want missing — the floor can capture it", st.Disposition, st.Reason)
 	}
 }
+
+// The production floor's materialize is judged by the same capture identity its ResolveCapture and
+// fork builds are looked up under (hostFloorCapturePlatform): a fixture that makes that identity a
+// synthetic Linux one on a Mac otherwise built a Linux entry the floor then refused as foreign.
+func TestTheProductionFloorMaterializesForItsCapturePlatform(t *testing.T) {
+	orig := hostFloorCapturePlatform
+	hostFloorCapturePlatform = func() string { return "plan9/mips" }
+	t.Cleanup(func() { hostFloorCapturePlatform = orig })
+	if got := productionHostFloor(io.Discard, nil).CapturePlatform; got != "plan9/mips" {
+		t.Fatalf("the production floor's CapturePlatform = %q, want hostFloorCapturePlatform's plan9/mips", got)
+	}
+}

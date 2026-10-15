@@ -216,6 +216,11 @@ type Floor struct {
 	Dir string
 	// GOOS and GOARCH are this host's platform: the one the floor installs for.
 	GOOS, GOARCH string
+	// CapturePlatform is the capture platform ("linux/arm64") a capture or build this floor
+	// materializes must be of — the same identity its ResolveCapture and fork builds are looked
+	// up under, so one floor judges an entry by one platform. Empty is this process's own
+	// (capture.Platform), which is what production's is.
+	CapturePlatform string
 	// Now is the clock. nil => time.Now.
 	Now func() time.Time
 	// Node says where the floor's Node comes from (node.go).
