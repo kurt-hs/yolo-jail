@@ -752,7 +752,7 @@ type DoctorResult struct {
 // forgotten is inside the function that spawns the process. A caller that DID evaluate the
 // gate says so by going through Set.RunDoctorChecks below.
 func RunDoctorChecks(loopholes []*Loophole, timeout time.Duration) []DoctorResult {
-	return runDoctorChecks(loopholes, timeout, nil, nil)
+	return runDoctorChecks(loopholes, timeout, nil, nil, nil)
 }
 
 // RunDoctorChecks runs the doctor_cmd of each given record WITH THIS SET'S ORIGIN GATE
@@ -761,15 +761,19 @@ func RunDoctorChecks(loopholes []*Loophole, timeout time.Duration) []DoctorResul
 // the PLACEMENT rule included (docs/reference/loophole-system.md#the-placement-rule),
 // since both entry points share one body.
 func (s Set) RunDoctorChecks(from []*Loophole, timeout time.Duration) []DoctorResult {
-	return runDoctorChecks(from, timeout, &s, nil)
+	return runDoctorChecks(from, timeout, &s, nil, nil)
 }
 
 // RunDoctorChecksWithSettings runs doctor_cmds against frozen current settings instead of
 // the persistent settings file last written by a launch. The caller supplies bytes only
 // after resolving and, where declared, validating the current merged config. Temporary
 // inputs remain private and are removed after all doctor processes finish.
-func (s Set) RunDoctorChecksWithSettings(from []*Loophole, timeout time.Duration, frozen map[string][]byte) []DoctorResult {
-	return runDoctorChecks(from, timeout, &s, frozen)
+//
+// env adds NAME=value entries to one loophole's doctor_cmd environment, keyed by loophole
+// name, on top of this process's own: how a caller that knows something the self-check cannot
+// see says it (hostservice.DoctorNotStartedOnEnv). nil adds nothing.
+func (s Set) RunDoctorChecksWithSettings(from []*Loophole, timeout time.Duration, frozen map[string][]byte, env map[string][]string) []DoctorResult {
+	return runDoctorChecks(from, timeout, &s, frozen, env)
 }
 
 // runDoctorChecks is the shared body. gate nil means no gate was evaluated, which for a
@@ -785,7 +789,7 @@ func (s Set) RunDoctorChecksWithSettings(from []*Loophole, timeout time.Duration
 // judgement: a rule a caller is merely asked to apply is a rule the next call site does not
 // know about. Measured before this gate existed: a hand-placed manifest whose doctor_cmd
 // named a script an agent writes was EXECUTED by both preflight commands.
-func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, frozen map[string][]byte) []DoctorResult {
+func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, frozen map[string][]byte, env map[string][]string) []DoctorResult {
 	if timeout == 0 {
 		timeout = doctorTimeoutDefault
 	}
@@ -844,7 +848,7 @@ func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, fr
 			cleanup = append(cleanup, remove)
 			doctorCmd = m.doctorCmdWithSettings(snapshot)
 		}
-		rc, output := runOne(doctorCmd, timeout)
+		rc, output := runOne(doctorCmd, timeout, env[m.Name])
 		results = append(results, DoctorResult{Loophole: m, RC: rc, Output: output})
 	}
 	return results
@@ -856,11 +860,14 @@ func runDoctorChecks(loopholes []*Loophole, timeout time.Duration, gate *Set, fr
 // can cite.
 const doctorTimeoutDefault = 10 * time.Second
 
-func runOne(argv []string, timeout time.Duration) (*int, string) {
+func runOne(argv []string, timeout time.Duration, env []string) (*int, string) {
 	// A doctor_cmd of the form ["yolo","internal","daemon",<name>,"--self-check"]
 	// re-execs the running yolo binary rather than resolving "yolo" on PATH.
 	argv = execx.SelfExecArgv(argv)
 	cmd := exec.Command(argv[0], argv[1:]...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

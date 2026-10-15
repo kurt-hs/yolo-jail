@@ -296,7 +296,17 @@ func (o *Options) checkLoopholes(r *reporter) {
 		// lands in the RC==nil branch with the refusal as its note; that is visible
 		// rather than silent, which is the whole difference between "withheld" and
 		// "declares no self-check".
-		results := set.RunDoctorChecksWithSettings([]*loopholes.Loophole{lp}, 10*time.Second, settings)
+		// The backend decides whether the next launch starts this service at all, and only
+		// this caller knows the backend: say so to the self-check, whose remedy otherwise
+		// names the service's own log, a dead end where nothing started it (the Claude
+		// broker on Apple Container, where Claude refreshes its own login).
+		notStarted := admitRuntime != "" &&
+			!run.HostServiceAdmittedOn(admitRuntime, lp.Name, claudeview.Selected(admitRuntime, o.Getenv))
+		var doctorEnv map[string][]string
+		if notStarted {
+			doctorEnv = map[string][]string{lp.Name: {hostservice.DoctorNotStartedOnEnv + "=" + admitRuntime}}
+		}
+		results := set.RunDoctorChecksWithSettings([]*loopholes.Loophole{lp}, 10*time.Second, settings, doctorEnv)
 		res := results[0]
 		switch {
 		case res.RC != nil && *res.RC == 0:
@@ -333,8 +343,16 @@ func (o *Options) checkLoopholes(r *reporter) {
 		// could not coexist with a non-zero rc. Now that the grading is behind
 		// doctor_cmd, a bad grade IS a non-zero rc, and gating liveness on rc=0
 		// would hide it in exactly the case it is diagnostic.
+		//
+		// Not where the next launch never starts the broker: its liveness rows promise that
+		// "the first `yolo run` will spawn it", which is false there.
 		if lp.Name == brokerLoopholeName {
-			o.reportBrokerDaemon(r)
+			if notStarted {
+				r.ok("loophole " + lp.Name + ": daemon not started on " + admitRuntime +
+					" (Claude refreshes its own login there)")
+			} else {
+				o.reportBrokerDaemon(r)
+			}
 		}
 	}
 }
