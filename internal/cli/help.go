@@ -134,7 +134,7 @@ func usageText() string {
 	b.WriteString("[bold]Usage:[/bold]\n")
 	b.WriteString("  [cyan]yolo -- <command>[/cyan] [args...]     Run <command> inside the jail\n")
 	b.WriteString("  [cyan]yolo <subcommand>[/cyan] [args...]     Run a management subcommand\n")
-	b.WriteString("  [cyan]yolo --version[/cyan]                  Print the version\n")
+	b.WriteString("  [cyan]yolo --version[/cyan]                  Print the version (--full adds the commit and binary sha256)\n")
 	b.WriteString("  [cyan]yolo --help[/cyan]                     Show this help\n\n")
 	b.WriteString("[bold]Commands:[/bold]\n")
 	width := 0
