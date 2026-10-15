@@ -143,7 +143,7 @@ func TestSelectedNPMHostPublicInvalidatedCaptureReinstallsSameVersion(t *testing
 					t.Fatal(err)
 				}
 				req.Env = ordinarySelectionEnvironment(cfg, req.Packs)
-				vector, err := selectedOrdinaryInputs(req.Env, req.Packs, entrypoint.ProgramInstallOnly)
+				vector, err := selectedOrdinaryInputs(req.Env, req.Packs, entrypoint.ProgramInstallOnly, req.Platform)
 				if err != nil || len(vector) != 1 {
 					t.Fatalf("fixed selection: %v %v", vector, err)
 				}

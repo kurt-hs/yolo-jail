@@ -100,7 +100,7 @@ func ProgramPreparationEnv(mode ProgramPreparationMode) (string, error) {
 // SelectedProgramPreparations resolves exactly the launcher-backed, honored program declarations
 // selected for this staged environment. Readiness and explicit fresh refresh share this vector.
 func SelectedProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode) ([]ProgramPreparation, error) {
-	return selectedProgramPreparations(e, packs, mode, imageProbePath(e))
+	return selectedProgramPreparations(e, packs, mode, imageProbePath(e), runtime.GOOS, runtime.GOARCH)
 }
 
 // SelectedHostProgramPreparations is SelectedProgramPreparations for a caller that is NOT inside
@@ -111,8 +111,17 @@ func SelectedProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPre
 // bin), while a host with a tool the image lacks skipped preparing it. The image half of the
 // collision check runs where the image is, in the sealed producer (ImageProvides), and the jail's
 // own launcher generation still applies it in full.
-func SelectedHostProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode) ([]ProgramPreparation, error) {
-	return selectedProgramPreparations(e, packs, mode, "")
+//
+// For the same reason it judges the vendor's published platforms against the JAIL's platform,
+// `<os>/<arch>` (the request's Platform: linux/<arch> for a container jail, the host's own for
+// macos-user, whose sandbox is a process on the host), never the host's GOOS/GOARCH: a macOS host
+// preparing a Linux jail must not be told a Linux-only vendor publishes nothing.
+func SelectedHostProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode, platform string) ([]ProgramPreparation, error) {
+	goos, goarch, ok := strings.Cut(platform, "/")
+	if !ok || goos == "" || goarch == "" || strings.Contains(goarch, "/") {
+		return nil, fmt.Errorf("invalid jail platform %q for program preparation — want <os>/<arch>", platform)
+	}
+	return selectedProgramPreparations(e, packs, mode, "", goos, goarch)
 }
 
 // ImageProvides reports the path at which the image's own bin dirs provide bin, or "" when they
@@ -122,11 +131,11 @@ func ImageProvides(bin string) string {
 	return lookPathIn(imageProbeBase, bin)
 }
 
-func selectedProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode, probePath string) ([]ProgramPreparation, error) {
+func selectedProgramPreparations(e *Env, packs []*packload.Pack, mode ProgramPreparationMode, probePath, goos, goarch string) ([]ProgramPreparation, error) {
 	if _, err := ProgramPreparationEnv(mode); err != nil {
 		return nil, err
 	}
-	selected := selectedReadyPrograms(e, packs, probePath)
+	selected := selectedReadyPrograms(e, packs, probePath, goos, goarch)
 	out := make([]ProgramPreparation, 0, len(selected))
 	for _, p := range selected {
 		out = append(out, ProgramPreparation{Bin: p.Bin, Who: p.Who, Pack: p.Pack, Install: p.inst, Mode: mode})
@@ -163,7 +172,7 @@ func readyProgramsOf(e *Env, packs []*packload.Pack) []readyProgram {
 // GenerateAgentLaunchers', in that function's order: an unusable bin name, a kind with no
 // launcher, a name the image or a mise tool provides (launcherShadows), a platform the vendor
 // does not publish for (UnpublishedReason), and a bin an earlier pack already took.
-func selectedReadyPrograms(e *Env, packs []*packload.Pack, probePath string) []readyProgram {
+func selectedReadyPrograms(e *Env, packs []*packload.Pack, probePath, goos, goarch string) []readyProgram {
 	miseBins := declaredMiseBins(e)
 	seen := map[string]bool{}
 	var out []readyProgram
@@ -184,7 +193,7 @@ func selectedReadyPrograms(e *Env, packs []*packload.Pack, probePath string) []r
 			if launcherShadows(inst.Bin, probePath, miseBins) != "" {
 				continue
 			}
-			if inst.UnpublishedReason(runtime.GOOS, runtime.GOARCH) != "" {
+			if inst.UnpublishedReason(goos, goarch) != "" {
 				continue
 			}
 			if seen[inst.Bin] {
