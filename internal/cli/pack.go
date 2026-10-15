@@ -223,7 +223,7 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               line's place
   yolo pack prepare start|stop|status
                               manage or inspect the detached built-tree preparation worker
-  yolo pack rebase <pack>/<bin> [--onto <ref>] [--into <dir>] [--restart] [--pack <dir>]
+  yolo pack rebase <pack>/<bin> [--onto <ref>] [--into <dir>] [--restart] [--keep] [--pack <dir>]
                               rebase a PATCHED fork's series (a fork that declares "patches"),
                               or a patched extension's, named <pack>/<name>, when an upstream
                               version no longer takes it: clones the upstream
@@ -233,6 +233,9 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               you to resolve. It prints the continue
                               and export commands and writes nothing in the pack; on its own
                               earlier clone it prints them again, and --restart starts over.
+                              A target the series takes as it stands needs no rebase, so the
+                              clone is removed; --keep rebases it all the same, keeps the clone
+                              and prints the export, whose series names that target as its base.
                               It reads the selected pack, on the host only. --pack <dir> rebases
                               the series in that local pack directory instead, checking the
                               upstream in a scratch copy, which is how a jail rebases one; in a

@@ -241,13 +241,18 @@ type RebaseOptions struct {
 	Dir string
 	// Now is the clock the marker is stamped by; zero means time.Now.
 	Now time.Time
+	// Keep is `yolo pack rebase --keep`: a series the target takes as it stands is rebased onto it
+	// all the same, and the finished clone kept (Kept), so it can be exported with the target as its
+	// base. Without it a clean replay removes the clone.
+	Keep bool
 }
 
 // RebaseResult is what a rebase clone came to.
 type RebaseResult struct {
 	// Clean is true when the series takes the target as it stands; Upstream then names the
 	// members already in the upstream, whose pick changed nothing, and Empty the members whose
-	// commit was empty when written, which changed nothing of their own. The clone is removed.
+	// commit was empty when written, which changed nothing of their own. The clone is removed,
+	// unless RebaseOptions.Keep kept it, its rebase finished (Kept).
 	Clean    bool
 	Upstream []string
 	Empty    []string
@@ -399,15 +404,19 @@ func (s *Store) RebaseClone(o RebaseOptions) (res RebaseResult) {
 	case r.Err != nil:
 		res.Err = r.Err
 		return res
-	case r.Clean:
+	case r.Clean && !o.Keep:
 		res.Clean, res.Upstream, res.Empty = true, r.Upstream, r.Empty
 		return res
 	}
-	// A CONFLICT: the rebase the user resumes, stopped where the pick stopped.
+	// A CONFLICT: the rebase the user resumes, stopped where the pick stopped. Under Keep a clean
+	// pick is rebased too, so the kept clone holds the finished rebase an export reads.
 	_, code, rerr := sc.gitStatus("", "rebase", "--onto", o.Target.Commit, o.Series.Base)
 	if code == 0 {
 		// git's rebase took what the pick did not: the work tree is the rebase's, so its answer is.
-		res.Clean = true
+		res.Clean, res.Kept = true, o.Keep
+		if r.Clean {
+			res.Upstream, res.Empty = r.Upstream, r.Empty
+		}
 		return res
 	}
 	stopped, err := sc.git("", "rev-parse", "--verify", "--quiet", "REBASE_HEAD")
@@ -418,7 +427,11 @@ func (s *Store) RebaseClone(o RebaseOptions) (res RebaseResult) {
 		res.Err = fmt.Errorf("rebasing the series onto %s: %s", o.Target.Label(), oneLine(rerr))
 		return res
 	}
-	conflict := &ReplayConflict{Member: r.Conflict.Member}
+	// Under Keep the pick may have been clean, naming no member: the rebase's own stop names it.
+	conflict := &ReplayConflict{}
+	if r.Conflict != nil {
+		conflict.Member = r.Conflict.Member
+	}
 	for i, c := range commits {
 		if c == strings.TrimSpace(stopped) {
 			conflict.Member = o.Series.Members[i].Name
@@ -431,7 +444,7 @@ func (s *Store) RebaseClone(o RebaseOptions) (res RebaseResult) {
 			}
 		}
 	}
-	if len(conflict.Paths) == 0 {
+	if len(conflict.Paths) == 0 && r.Conflict != nil {
 		conflict.Paths = r.Conflict.Paths
 	}
 	res.Conflict, res.Kept = conflict, true
