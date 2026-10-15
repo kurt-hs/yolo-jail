@@ -1,10 +1,10 @@
 ---
-status: in-review
-stage: DESIGN
-next: "Write the implementation plan for the reduced grant (§8 points 1 to 4); no build or installation is authorized"
+status: accepted
+stage: DECIDED
+next: "Build the reduced grant from the implementation plan, task 1 first; the owner authorizes the native Mac check separately"
 verified: 2026-10-09
 tags: [macos-user, privileges, security, lifecycle, sudo]
-summary: "Proposed contract: after explicit administrator setup, routine native startup and exit never ask for a sudo password. A root-protected, caller-authenticated helper installs only named guest artifacts, switches only to the fixed sandbox account and removes only owned session files. No implementation or installation is authorized; keychain, workspace and lifetime policies remain independent."
+summary: "Ruled contract: after one administrator setup, routine native startup and exit never ask for a sudo password. Setup installs one rule, `(_yolojail) NOPASSWD: /usr/bin/env`, for one enrolled host user per Mac; the host user writes and removes every per-launch file in a host-owned staging root under /Users/Shared; no root helper. The helper design is kept as the fallback. Keychain, workspace and lifetime policies remain independent."
 vantage:
   status-chip: true
 ---
@@ -17,28 +17,33 @@ measurement decided whether the per-launch root writes (G3 to G10) are dropped, 
 as `_yolojail` on 2026-10-15, so they are. The helper sections ([the authority boundary](#3-the-authority-boundary) through [exit and restart](#6-normal-switch-exit-stop-and-restart)) are now the
 fallback, kept in case a later fact breaks the condition; they are not the plan. Source verified
 2026-10-09 at `b2eeffc12`. The
-privilege helper is unbuilt; its native security and password-free behavior are **UNMEASURED**.
-This is not setup or build authorization.
+[implementation plan](macos-user-privilege-lifecycle-plan.md) was written against the tree on
+2026-10-15; nothing is built, and passwordless startup is **UNMEASURED**.
 
 > **In short.** Yolo manages the agent's environment; its native macOS confinement option should
 > authorize bounded routine operations at administrator setup, not ask for a password at every
-> startup or exit. That requires a protected privilege boundary, not broader sudo commands.
+> startup or exit. One sudo rule that can only run commands as the sandbox account does that,
+> because nothing a launch writes needs root any more.
 
-**The shape.** An administrator installs a protected helper; the normal-user launcher supplies
-bounded requests; guest code runs only after the helper permanently drops root privileges.
+**The shape.** Setup installs `<host user> ALL=(_yolojail) NOPASSWD: /usr/bin/env` and gives
+the host user a staging root under `/Users/Shared`. Each launch writes its profile, env files,
+binaries and trees there as the host user, read-only to the guest, enters the guest through that
+one rule, and removes its own files at exit.
 
-**Cost.** A new root execution surface, explicit administrative updates and retained crash artifacts.
+**Cost.** A standing right for the enrolled host user to run anything as `_yolojail` without a
+password, one enrolled host user per Mac, and a migration off root-owned `/var/yolo-jail`.
 
-**Start at [the grant inventory](#8-the-grant-inventory)**, then [the authority boundary](#3-the-authority-boundary).
+**Start at [the settled points](#points-settled-in-the-walkthrough-2026-10-15)**, then
+[the grant inventory](#8-the-grant-inventory).
 
-**Needs nothing from the owner** until an implementation plan exists: [OQ-MP10](#OQ-MP10) is ruled and its
-condition measured ([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)).
+**Needs from the owner:** authorization for the native check on a real Mac, which
+[the plan](macos-user-privilege-lifecycle-plan.md#the-owners-mac) lists.
 
 **Reads with:** [the privilege research](../research/sandvault-macos-privileges.md),
 [the keychain design](keychain-from-a-jail.md), [workspace policy](configurable-workspace-root.md),
 [session lifetime](jail-lifetime-last-session-wins.md#99-the-keeper-at-yolo-host-and-macos-user),
-and [guest-tree retention](jail-daemon-on-macos-user-plan.md#ownership-and-cleanup-unknown-keeps-the-bytes).
-No implementation plan exists for this proposal.
+[guest-tree retention](jail-daemon-on-macos-user-plan.md#ownership-and-cleanup-unknown-keeps-the-bytes),
+and [the implementation plan](macos-user-privilege-lifecycle-plan.md).
 
 ---
 
@@ -99,6 +104,12 @@ credential-bearing session files and a shared service account. The upstream root
 reason to review every parent component, not merely use no-follow handling on the final leaf.
 
 ## 3. The authority boundary
+
+> [!NOTE]
+> **Fallback, not the plan.** This section through [exit and restart](#6-normal-switch-exit-stop-and-restart)
+> describe the root helper [OQ-MP10](#OQ-MP10) declined. They are kept in case a later fact breaks
+> [walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)'s condition; the
+> [implementation plan](macos-user-privilege-lifecycle-plan.md) builds none of it.
 
 ### A protected helper, distinct from guest yolo
 
@@ -491,8 +502,9 @@ not an acceptance shortcut or unlock-policy ruling here.
 ### What may happen next
 
 [OQ-MP10](#OQ-MP10) is ruled and its condition held as `_yolojail`
-([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)). Next, author a code-grounded implementation plan,
-and implement and test the source contract.
+([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)). The code-grounded
+[implementation plan](macos-user-privilege-lifecycle-plan.md) is written: build it in its task
+order, then run its macOS CI step and, with the owner's authorization, its check on a real Mac.
 
 **Why this is on the critical path.** The owner wants an agent able to start and stop
 `macos-user` jails with nobody at a password prompt, so that it can test and develop that
