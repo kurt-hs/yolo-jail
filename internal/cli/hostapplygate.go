@@ -567,10 +567,14 @@ func surveyHostApplyWithinBudget(afterTrees bool, bin string) (*hostApplySurvey,
 		rc     int
 	}
 	done := make(chan outcome, 1)
+	// The seam is read HERE, on the caller's goroutine, never inside the one below: that goroutine
+	// is abandoned on expiry and may outlive this call, so a lazy read of the package variable
+	// would race with whoever replaces it afterwards (a test restoring its stub, for one).
+	run := hostApplyGateSurvey
 	go func() {
 		var sink bytes.Buffer
 		survey := &hostApplySurvey{}
-		rc := hostApplyGateSurvey(&sink, &sink, false, false, nil, survey)
+		rc := run(&sink, &sink, false, false, nil, survey)
 		done <- outcome{survey, rc}
 	}()
 	select {
