@@ -1027,7 +1027,9 @@ step every conflict names:
    the replay's config regime: the series applied at its base on a branch, then
    `git rebase --onto <target> <base>`, so a conflict stops with markers in the work tree and
    `git rebase --continue` resumes it.
-5. **Clean:** it says the next launch builds it, and removes the clone.
+5. **Clean:** it says the next launch builds it, and removes the clone. With `--keep` it rebases
+   the series all the same, keeps the clone, and prints step 6's export, so a series still applying
+   can be re-anchored on the target as its `base-commit:` (user request, 2026-10-15).
 6. **A conflict:** it stops mid-rebase and prints, in order: the member and its paths;
    `git -C <dir> rebase --continue`, to run after resolving; and the export that replaces the series
    with no moment where it is empty or partial: `git -C <dir> format-patch --base=<target> -o
