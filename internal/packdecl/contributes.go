@@ -556,7 +556,7 @@ type Contribution struct {
 	// validate — "" and undeclared are one declaration.
 	//
 	// It is a SKIP, not an error: a name nothing selected is inert exactly like an
-	// unselected owner is. Two kinds take it, and they key it differently, because they
+	// unselected owner is. Three kinds take it, and they key it differently, because they
 	// answer to different holders of the name:
 	//
 	//   - `config-overlay` keys it on the TARGET SURFACE'S OWNING agent — the name the
@@ -567,6 +567,10 @@ type Contribution struct {
 	//     active for ANY bin (packload.EnvFold — the second pass is what makes a CLI-less
 	//     pack's gated env reachable, packs/zai being the shipped case). Env has no
 	//     surface to name an agent, so it asks the table itself.
+	//
+	//   - `config-list` keys it as config-overlay does, on the TARGET SURFACE'S OWNING
+	//     agent (packoverlay.go's list pass), for the same reason: the surface names the
+	//     agent. A gated list's `add` and `remove` apply only while that profile is active.
 	//
 	// REFUSED ON EVERY OTHER KIND (validateContribution): a field silently doing nothing on
 	// the kinds it does not gate is the accepted-and-ignored defect this schema refuses
@@ -584,17 +588,32 @@ type Contribution struct {
 	// root is the whole surface, which is not an array, and an empty key is the trailing- or
 	// doubled-slash typo far more often than it is a real key.
 	//
-	// Add is the entries, a JSON array of any JSON values. REQUIRED, and `[]` is legal — a
-	// declared no-op — so omitempty on a RawMessage is what keeps "absent" (refused, an
-	// authoring error) apart from "empty" (accepted) all the way to the engine. A null is
-	// refused anywhere inside it: TOML cannot encode one, and in the merge patches beside
-	// this kind null means DELETE, which an append can never ask for.
+	// Add is the entries to append, a JSON array of any JSON values. A config-list carries
+	// `add`, `remove`, or both, and must carry at least one; `[]` is legal for either — a
+	// declared no-op — so omitempty on a RawMessage is what keeps "absent" apart from "empty"
+	// all the way to the engine. A null is refused anywhere inside either: TOML cannot encode
+	// one, and in the merge patches beside this kind null means DELETE, which neither verb can
+	// ask for.
 	//
-	// `config-list` only; both are refused on every other kind (validateContribution), and a
-	// `config` body is refused on this one — the entries ARE the body, and a config body is
-	// a config-overlay, which replaces arrays rather than appending to them.
-	Path string          `json:"path,omitempty"`
-	Add  json.RawMessage `json:"add,omitempty"`
+	// Remove is the entries to DELETE from the array, a JSON array of any JSON values: every
+	// top-level element equal to one of them — the same whole-JSON-value identity `add`
+	// de-duplicates by (pack-system.md#config-list-equality) — leaves the array the layers
+	// below produced, owner defaults, host file, workspace and config-overlays included. It
+	// never restates the array, and removing an entry the array does not hold is a silent
+	// no-op that creates nothing.
+	//
+	// ORDER (pack-system.md#config-list-order): contributions fold in pack order, then
+	// declaration order, and WITHIN one contribution `remove` applies BEFORE `add` — the order
+	// the per-entry capture applies its own record in — so an entry named in both ends up
+	// present, a later contribution's `add` re-adds what an earlier one removed, and a later
+	// `remove` removes what an earlier one added.
+	//
+	// `config-list` only; all three are refused on every other kind (validateContribution),
+	// and a `config` body is refused on this one — the entries ARE the body, and a config
+	// body is a config-overlay, which replaces arrays rather than editing them.
+	Path   string          `json:"path,omitempty"`
+	Add    json.RawMessage `json:"add,omitempty"`
+	Remove json.RawMessage `json:"remove,omitempty"`
 
 	// --- models (docs/design/model-lists-and-pickers.md §7, OQ-BR12; models.go) ---
 	// A `models` contribution shapes the model list of the provider its `provider` field
@@ -2636,10 +2655,17 @@ type ConfigList struct {
 	// "/", every step a non-empty object key. internal/jsonptr.Parse splits it.
 	Path string
 	// Add is the raw `add` array, validated as a JSON array with no null anywhere in it,
-	// and possibly empty (a no-op). Canonical JSON rather than the author's bytes, since
-	// cleanJSON5 re-marshals every manifest; the engine decodes it, for the same reason
-	// ConfigOverlay.Config is raw — packdecl stays free of the engine.
+	// and possibly empty (a no-op) or absent (a remove-only list). Canonical JSON rather than
+	// the author's bytes, since cleanJSON5 re-marshals every manifest; the engine decodes it,
+	// for the same reason ConfigOverlay.Config is raw — packdecl stays free of the engine.
 	Add json.RawMessage
+	// Remove is the raw `remove` array, validated as `add` is; nil when the contribution
+	// declares none. Always nil for a posture list, which takes `add` only.
+	Remove json.RawMessage
+	// Profile is the `profile` gate of a `config-list` contribution, "" for none — keyed on
+	// the target surface's owning agent, as a config-overlay's is. Always "" for a posture
+	// list, whose one gate is the posture.
+	Profile string
 	// Posture is "" for a `config-list` contribution, which contributes at every notch, and
 	// the posture a POSTURE LIST sits under (AutonomyPosture.Lists) for one declared inside an
 	// autonomy contribution, which contributes only while the notch selects that posture.
@@ -2658,7 +2684,8 @@ func (m *Manifest) ConfigListContributions() []ConfigList {
 	var out []ConfigList
 	for _, c := range m.Contributions() {
 		if c.Kind == KindConfigList {
-			out = append(out, ConfigList{Surface: c.Surface, Path: c.Path, Add: c.Add})
+			out = append(out, ConfigList{Surface: c.Surface, Path: c.Path, Add: c.Add,
+				Remove: c.Remove, Profile: c.Profile})
 		}
 	}
 	return out
@@ -2685,7 +2712,8 @@ func (m *Manifest) ListContributions() []ConfigList {
 	for _, c := range m.Contributions() {
 		switch c.Kind {
 		case KindConfigList:
-			out = append(out, ConfigList{Surface: c.Surface, Path: c.Path, Add: c.Add})
+			out = append(out, ConfigList{Surface: c.Surface, Path: c.Path, Add: c.Add,
+				Remove: c.Remove, Profile: c.Profile})
 		case KindAutonomy:
 			if seenAutonomy {
 				continue
@@ -3848,11 +3876,11 @@ func validateContribution(label string, c Contribution) []string {
 	// does nothing — the exact defect `requires does not take "via"` refuses below, for
 	// the same reason. Ahead of the kind switch so a kind added tomorrow inherits the
 	// refusal instead of learning about it the hard way.
-	if c.Profile != "" && c.Kind != KindConfigOverlay && c.Kind != KindEnv {
+	if c.Profile != "" && c.Kind != KindConfigOverlay && c.Kind != KindConfigList && c.Kind != KindEnv {
 		problems = append(problems, fmt.Sprintf(
-			"%s: kind %q does not take \"profile\" — the modifier gates config-overlay "+
-				"(on the target surface's agent) and env (on the launch's profile table); "+
-				"no consumer reads it on this kind", label, c.Kind))
+			"%s: kind %q does not take \"profile\" — the modifier gates config-overlay and "+
+				"config-list (on the target surface's agent) and env (on the launch's profile "+
+				"table); no consumer reads it on this kind", label, c.Kind))
 	}
 	// `node_floor` is program's alone, refused in `profile`'s position and for `profile`'s
 	// reason: the only consumer is the launcher generator's interpreter resolution, so a floor
@@ -4043,14 +4071,15 @@ func validateContribution(label string, c Contribution) []string {
 		for _, f := range []struct {
 			name string
 			set  bool
-		}{{"path", c.Path != ""}, {"add", len(c.Add) > 0 && c.Kind != KindModels}} {
+		}{{"path", c.Path != ""}, {"add", len(c.Add) > 0 && c.Kind != KindModels},
+			{"remove", len(c.Remove) > 0}} {
 			if !f.set {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf(
 				"%s: kind %q does not take %q — a JSON Pointer to an array and the entries "+
-					"appended there are the \"config-list\" kind's whole body; no consumer reads "+
-					"either on this kind. To add entries to an array without replacing it, write "+
+					"added to or removed from it are the \"config-list\" kind's whole body; no "+
+					"consumer reads them on this kind. To add entries to an array without replacing it, write "+
 					"{\"kind\": \"config-list\", \"surface\": \"<agent>/<name>\", "+
 					"\"path\": \"/<key>\", \"add\": [...]}", label, c.Kind, f.name))
 		}
@@ -4581,7 +4610,21 @@ func configListProblems(label string, c Contribution) []string {
 			"its entries ARE its body, in \"add\"; a config body is a config-overlay, which "+
 			"REPLACES an array rather than appending to it")
 	}
-	return append(problems, configListBodyProblems(label, `kind "config-list"`, c.Path, c.Add)...)
+	if c.Path != "" {
+		problems = append(problems, configListPathProblems(label+".path", c.Path)...)
+	}
+	if len(c.Add) == 0 && len(c.Remove) == 0 {
+		return append(problems, label+": kind \"config-list\" needs \"add\" or \"remove\" "+
+			"(or both) — a JSON array of the entries to append, or of the entries to delete "+
+			"from the array ([] is a declared no-op)")
+	}
+	if len(c.Add) > 0 {
+		problems = append(problems, configListEntriesProblems(label, "add", "append", c.Add)...)
+	}
+	if len(c.Remove) > 0 {
+		problems = append(problems, configListEntriesProblems(label, "remove", "delete", c.Remove)...)
+	}
+	return problems
 }
 
 // postureListProblems checks one posture list (AutonomyPosture.Lists) by config-list's
@@ -4614,22 +4657,30 @@ func configListBodyProblems(label, what, path string, add json.RawMessage) []str
 			"array of the entries to append ([] is a declared no-op)")
 		return problems
 	}
+	return append(problems, configListEntriesProblems(label, "add", "append", add)...)
+}
+
+// configListEntriesProblems checks one entries array of a config-list body — `add` or
+// `remove`, named by field, with its verb in the messages: a JSON array, with no null
+// anywhere inside it.
+func configListEntriesProblems(label, field, verb string, raw json.RawMessage) []string {
+	var problems []string
 	var v any
-	if err := json.Unmarshal(add, &v); err != nil {
-		return append(problems, fmt.Sprintf("%s.add: %v", label, err))
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return append(problems, fmt.Sprintf("%s.%s: %v", label, field, err))
 	}
 	entries, ok := v.([]any)
 	if !ok {
 		return append(problems, fmt.Sprintf(
-			"%s.add: must be a JSON array of the entries to append, not %s — even one entry "+
-				"is written [entry]", label, jsonTypeName(v)))
+			"%s.%s: must be a JSON array of the entries to %s, not %s — even one entry "+
+				"is written [entry]", label, field, verb, jsonTypeName(v)))
 	}
 	for i, e := range entries {
 		if at, found := firstNull(e, nil); found {
 			problems = append(problems, fmt.Sprintf(
-				"%s.add[%d]%s: null is not an entry — TOML cannot encode it, and in the merge "+
-					"patches beside this kind null means DELETE, which appending can never ask for",
-				label, i, jsonptr.Format(at)))
+				"%s.%s[%d]%s: null is not an entry — TOML cannot encode it, and in the merge "+
+					"patches beside this kind null means DELETE, which a list entry can never "+
+					"ask for", label, field, i, jsonptr.Format(at)))
 		}
 	}
 	return problems

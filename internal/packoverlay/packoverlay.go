@@ -255,8 +255,8 @@ func (s *OverlaySet) For(agent, name string) []agentcfg.Overlay {
 // because ownership is a property of the packs alone.
 //
 // activeProfiles is the ACTIVE profile set resolved by the caller's render — keyed by CLI
-// name. An overlay declaring a profile contributes only while that name occurs in the set
-// for the surface's OWNING agent. Taking the resolved set rather than re-deriving it keeps
+// name. An overlay or a config-list declaring a profile contributes only while that name
+// occurs in the set for the surface's OWNING agent. Taking the resolved set rather than re-deriving it keeps
 // this gate aligned with the launch's single profile resolution.
 //
 // An inactive profile is a CLEAN SKIP — no error, no orphan report, no applied notice —
@@ -413,8 +413,9 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 	// refused here — the owner's codec is the render's to judge, and the render refuses it
 	// naming the surface and its mode (agentcfg.ListCaptureRefusal).
 	//
-	// No profile gate: config-list takes none (packdecl refuses `profile` on it). The one
-	// gate is the POSTURE's, below.
+	// Two gates, below: the POSTURE's, for a posture list, and the PROFILE's, for a
+	// config-list that declares `profile` — keyed on the target surface's owning agent, as
+	// a config-overlay's is.
 	//
 	// A REGISTERING SLOT's entries take this pass too, each placed ahead of its contributing
 	// pack's own lists (registrationsOf).
@@ -437,7 +438,7 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 				set.Problems = append(set.Problems, "pack "+p.Name+": "+what+": "+err.Error())
 				continue
 			}
-			list, err := agentcfg.NewListContribution(p.Name, cl.Path, cl.Add)
+			list, err := agentcfg.NewListEdit(p.Name, cl.Path, cl.Add, cl.Remove)
 			if err != nil {
 				set.Problems = append(set.Problems, "pack "+p.Name+": "+what+" on "+
 					cl.Surface+": "+err.Error())
@@ -451,6 +452,13 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 			// contributed nothing is the notch, and R2's remedy ("select that pack") would be
 			// the wrong one.
 			if cl.Posture != "" && cl.Posture != selected {
+				continue
+			}
+			// THE PROFILE GATE, a config-list's (a posture list carries none), at the same
+			// position and for the same reasons as a config-overlay's (Pass 2): keyed on the
+			// TARGET surface's owning agent, a clean skip while that profile is inactive —
+			// no problem, no orphan, no applied row — for `add` and `remove` alike.
+			if cl.Profile != "" && !profileActive(activeProfiles[key.Agent], cl.Profile) {
 				continue
 			}
 			if _, owned := owners[key]; !owned {
