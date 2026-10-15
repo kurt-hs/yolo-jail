@@ -1,7 +1,7 @@
 ---
 status: in-review
 stage: DESIGN
-next: "Owner runs the OQ-MP10 measurement as _yolojail (one password; §8 point 2), then this doc records it; no build or installation is authorized"
+next: "Write the implementation plan for the reduced grant (§8 points 1 to 4); no build or installation is authorized"
 verified: 2026-10-09
 tags: [macos-user, privileges, security, lifecycle, sudo]
 summary: "Proposed contract: after explicit administrator setup, routine native startup and exit never ask for a sudo password. A root-protected, caller-authenticated helper installs only named guest artifacts, switches only to the fixed sandbox account and removes only owned session files. No implementation or installation is authorized; keychain, workspace and lifetime policies remain independent."
@@ -13,8 +13,9 @@ vantage:
 
 **Status:** 2026-10-15 — grants ruled ([OQ-MP10](#OQ-MP10)): one passwordless run-as-`_yolojail`
 rule in SandVault's form, no root helper, and **one enrolled host user per Mac**. One Mac
-measurement decides whether the per-launch root writes (G3 to G10) are dropped. It passed
-2026-10-15 against a stand-in account; until it is rerun as `_yolojail` and recorded, the helper sections ([the authority boundary](#3-the-authority-boundary) through [exit and restart](#6-normal-switch-exit-stop-and-restart)) describe the fallback, not the plan. Source verified
+measurement decided whether the per-launch root writes (G3 to G10) are dropped, and it passed
+as `_yolojail` on 2026-10-15, so they are. The helper sections ([the authority boundary](#3-the-authority-boundary) through [exit and restart](#6-normal-switch-exit-stop-and-restart)) are now the
+fallback, kept in case a later fact breaks the condition; they are not the plan. Source verified
 2026-10-09 at `b2eeffc12`. The
 privilege helper is unbuilt; its native security and password-free behavior are **UNMEASURED**.
 This is not setup or build authorization.
@@ -30,8 +31,8 @@ bounded requests; guest code runs only after the helper permanently drops root p
 
 **Start at [the grant inventory](#8-the-grant-inventory)**, then [the authority boundary](#3-the-authority-boundary).
 
-**Needs a measurement, not a ruling:** [the OQ-MP10 condition](#OQ-MP10), rerun as `_yolojail`,
-which takes the owner's password once ([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)).
+**Needs nothing from the owner** until an implementation plan exists: [OQ-MP10](#OQ-MP10) is ruled and its
+condition measured ([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)).
 
 **Reads with:** [the privilege research](../research/sandvault-macos-privileges.md),
 [the keychain design](keychain-from-a-jail.md), [workspace policy](configurable-workspace-root.md),
@@ -489,9 +490,8 @@ not an acceptance shortcut or unlock-policy ruling here.
 
 ### What may happen next
 
-[OQ-MP10](#OQ-MP10) is ruled. Its condition passed against a stand-in account. The owner reruns
-it as `_yolojail` and the result goes into
-[walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15). Then author a code-grounded implementation plan,
+[OQ-MP10](#OQ-MP10) is ruled and its condition held as `_yolojail`
+([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)). Next, author a code-grounded implementation plan,
 and implement and test the source contract.
 
 **Why this is on the critical path.** The owner wants an agent able to start and stop
@@ -662,12 +662,11 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
    can traverse to and read such a file, and cannot write or replace it. If that fails, the
    per-launch writes come back to the owner; nothing in the helper sections is adopted by default.
 
-   **Measured 2026-10-15 against a stand-in, not yet as `_yolojail`.** The owner's
-   `sandvault-matt` account has a passwordless run-as rule and `_yolojail` does not, so the run
-   used it as the guest. It is an unprivileged account outside the host user's groups, the
-   relation `_yolojail` has to the host user (checked with `id`); its passwordless rule is also
-   G1's exact shape, `sudo -u <account> /usr/bin/env`. The fixture was host-owned and built
-   without root, in a host-owned `0555` directory under `/Users/Shared`. All 16 expectations held:
+   **Measured 2026-10-15: the condition holds.** The owner ran it as `_yolojail` (uid 602), at
+   one password prompt, through G1's shape, `sudo -u _yolojail /usr/bin/env -i … /bin/sh -c`.
+   The fixture was host-owned and built without root, in a host-owned `0555` directory under
+   `/Users/Shared`. All 16 expectations held, the same as an earlier run with the owner's
+   `sandvault-matt` account as a stand-in guest:
 
    | The guest could | The guest could not |
    | :--- | :--- |
@@ -676,12 +675,16 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
    | read a `0444` file two `0555` directories down (G7) | create a file in that tree or delete it |
    | read a `0600` env file through a per-file read ACL, in a `0700` directory with a search ACL (G4) | list that directory, append to the file or delete it |
 
-   **To record the condition**, the owner runs the same script as `_yolojail`, with the stand-in as
-   the control account that must NOT be able to read the credential file. It prompts for the
-   password once and leaves nothing behind:
-   `/tmp/mp10/measure-mp10.sh _yolojail sandvault-matt`. The script is a scratch file outside the
-   repository. If it is gone, any rerun repeats the table above: the host builds the fixture, then
-   one `sudo -u <guest> /usr/bin/env -i … /bin/sh -c` call tries each act.
+   A control account, `sandvault-matt`, could not read the credential file, so the read ACL
+   names `_yolojail` alone. The script was a scratch file outside the repository
+   (`/tmp/mp10/measure-mp10.sh <guest> <control>`). Rerunning it means repeating the table above:
+   the host builds the fixture, then one `sudo -u <guest> /usr/bin/env -i … /bin/sh -c` call tries
+   each act.
+
+   **What it did not cover.** The guest ran without Seatbelt. A profile only narrows what the
+   guest may do, so it cannot grant a write the file modes refuse. It must, however, allow reads
+   of the new directory, and the implementation plan has to say so. The rule itself is not
+   installed, so passwordless startup is still **UNMEASURED**.
 
    **Where the directory lives: outside the host's home.** `/Users/<host user>` is `0750`
    group `staff` on this Mac, and `_yolojail` is not in `staff`, so a directory under the home,
@@ -717,7 +720,7 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
    > **Signed off with a reduced grant, 2026-10-15.** One passwordless rule,
    > `<host user> ALL=(_yolojail) NOPASSWD: /usr/bin/env`, covering G1 and G2; no root helper.
    > G3 to G10 are dropped on the condition in [walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15),
-   > which a Mac measurement must confirm. Setup refuses a second enrolled host user. The owner's
+   > confirmed by measurement as `_yolojail` the same day. Setup refuses a second enrolled host user. The owner's
    > words: *"Running any command as the `_yolojail` user seems pretty safe … it's a less
    > privileged user"*, and *"I have no interest in supporting multi-user Macs … So let's refuse
    > a second enrollment."* Still authorizes no build or installation.
@@ -732,7 +735,7 @@ workspace, keeper and guest-tree rulings remain in
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| OQ-MP10 | **Signed off, reduced.** G1 and G2 as one SandVault-form rule, `(_yolojail) NOPASSWD: /usr/bin/env`, with no root helper; G3 to G10 dropped if `_yolojail` can read host-owned `0444` files in a host-owned directory (unmeasured); one enrolled host user per Mac, a second refused at setup. The owner's words are in [the answer](#OQ-MP10). | 2026-10-15 | [§8](#8-the-grant-inventory) | No: nothing built or installed |
+| OQ-MP10 | **Signed off, reduced.** G1 and G2 as one SandVault-form rule, `(_yolojail) NOPASSWD: /usr/bin/env`, with no root helper; G3 to G10 dropped if `_yolojail` can read host-owned `0444` files in a host-owned directory, which held as `_yolojail` on 2026-10-15 ([point 2](#points-settled-in-the-walkthrough-2026-10-15)); one enrolled host user per Mac, a second refused at setup. The owner's words are in [the answer](#OQ-MP10). | 2026-10-15 | [§8](#8-the-grant-inventory) | No: nothing built or installed |
 | OQ-MP1 | **Partial: yes to A in principle.** Explicit administrator setup may grant the enrolled host user standing, bounded authority for routine startup and exit, and SandVault's model is the one to adopt. The owner's words: *"Yes, but before we do this, we need to talk about precisely what it is we're granting and how and why. This is exactly what we need to adopt from SandVault. We should use their model, but still, got to go through this more specifically."* Not authorization to build or install; the exact grants wait on [OQ-MP10](#OQ-MP10). | 2026-10-10 | [§8](#8-the-grant-inventory) | No: nothing built or installed |
 
 For this privilege policy alone, paste this into Vantage's planning-page Filter box:
