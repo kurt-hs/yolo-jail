@@ -10,95 +10,78 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Your environment prepares eligible builds between launches, checks builds fresh when you ask, and
-records what each launch did.
+Your environment prepares builds between launches, checks them fresh when you ask, and records
+what each launch did.
 
 ### Added
 
-**Daemon logs you can reconstruct a request from.** Daemon and host-service lines carry millisecond
-timestamps. The wire bridge and credential adapters log request outcomes and timings, including
-pending requests; adapter logs name the asking agent and crossing logs name the jail.
+**Daemon logs you can reconstruct a request from.** Daemon lines carry millisecond timestamps, and
+the wire bridge and credential adapters log each request's outcome, timing and caller.
 See [the daemon log](docs/reference/wire-bridge.md#the-daemon-log).
 
-**Launch logs that explain a launch.** Each launch log records your command, agent profile sources,
-changes since the last launch, and captured edits replayed at boot. Slow host-launch steps are timed,
-and build-jail logs are kept.
+**Launch logs that explain a launch.** Each launch log records your command, profile sources,
+changes since the last launch and slow steps, and build-jail logs are kept.
 See [the launch records](docs/reference/report-tiers.md#archaeology-records).
 
-**Fresh builds on demand with `--update`.** `--update` on `yolo` or `yolo host` checks this
-launch's selected build inputs, reusing unchanged good builds. On a running jail it refuses and
-names a fresh launch instead.
+**Fresh builds on demand with `--update`.** `yolo --update` and `yolo host --update` check this
+launch's build inputs, reusing unchanged good builds.
 See [explicit update](docs/design/launch-update-preparation.md#explicit-update-and-launch-materialization).
 
-**Prepare selected builds for a later launch.** Set eligible selected packs' `agent_updates` entry
-to `"next-launch"` to prepare updates while you work. Later launches can reuse
-successfully prepared builds without changing the current environment. `yolo pack status` reports preparation state;
-`yolo pack prepare start|stop|status` manages the host worker.
+**Prepare builds for a later launch.** Set a pack's `agent_updates` entry to `"next-launch"` and
+updates are prepared while you work; `yolo pack prepare` manages the worker.
 See [launch preparation](docs/design/launch-update-preparation.md).
 
 **Packs can remove list entries.** A `config-list` contribution now takes `remove`, which deletes
-matching entries from a config array without restating it, and `profile`, which applies the
-contribution only while that profile is active.
-See [`config-list`](docs/reference/pack-system.md#adding-entries-to-an-array-config-list).
+matching entries without restating the array, and `profile`, which applies it only under that
+profile. See [`config-list`](docs/reference/pack-system.md#adding-entries-to-an-array-config-list).
 
-**Git skips optional index refreshes with `guardrails`.** When selected, the pack makes Git skip
-optional index work that takes a lock, such as refreshing it during `git status`; commands that
-write still take required locks. Set `GIT_OPTIONAL_LOCKS=1` in `env_sources` or for a command to
-opt back in.
+**Git skips optional index refreshes with `guardrails`.** Commands like `git status` no longer take
+the index lock; set `GIT_OPTIONAL_LOCKS=1` to opt back in.
 See [guardrails](packs/guardrails/README.md).
 
-**See how far a patch series' base has fallen behind.** `yolo pack status` and the launch's fork
-line name the releases newer than a patched fork's base; for a series that still applies, status
-prints the git commands that move its base forward.
+**See how far a patch series has fallen behind.** `yolo pack status` and the launch's fork line name
+the releases newer than the series' base.
 See [Follow an upstream with a patch series](userguide/guides/patch-series.md#rebase-the-series).
 
-**`yolo stop --force` ends a jail that will not end.** `-f`/`--force` stops the container with no
-grace period and signals its keeper, so one that will not finish stops anyway.
+**`yolo stop --force` ends a jail that will not end.**
 
-**Declare what a profile's subagents run on.** A profile's `subagents` names a `default` model and
-`roles` models for pi's child agents, each an alias or id of the profile's provider;
-without it, nothing changes.
+**Declare what a profile's subagents run on.** A profile's `subagents` names the `default` and
+per-role models for pi's child agents.
 See [profiles and options](docs/reference/providers.md#profiles-and-options).
 
-**Meta's Muse Code CLI as a pack.** Add `muse-code` to `packs` and run `yolo -- muse`; yolo
-installs it with your rules and skills. The workspace-trust question is answered for you;
-one login covers every jail on the machine. See
-[choosing your packs](userguide/guides/packs-and-skills.md#choose-your-packs).
+**Meta's Muse Code CLI as a pack.** Add `muse-code` to `packs` and run `yolo -- muse`; one login
+covers every jail on the machine.
+See [choosing your packs](userguide/guides/packs-and-skills.md#choose-your-packs).
 
 ### Changed
 
-**`yolo stop` waits for teardown, up to about two minutes.** It streams keeper progress and reports
-the pid and log if teardown outlasts the wait; `--force` ends it now. Ctrl-C still exits 130.
+**`yolo stop` waits for teardown, up to about two minutes,** streaming its progress; `--force` ends
+it now.
 
-**Selecting an agent pack no longer brings the Bedrock and OpenAI-subscription packs with it.** Add
-`bedrock` or `openai-auth` to `packs` if you use their profiles or providers; a launch that needs
-one names the pack to add.
+**Agent packs no longer bring the Bedrock and OpenAI-subscription packs with them.** Add `bedrock`
+or `openai-auth` to `packs` if you use their profiles; a launch that needs one names it.
 
-**Repeat launches with the same packages skip the rebuild.** Identical launches reuse the verified
-image from a launch that bakes extra packages. Changed config or environment lists, or a moving
-ref, still rebuild. See [image staging](docs/reference/image-staging-vs-baking.md).
+**Repeat launches with the same packages skip the rebuild.**
+See [image staging](docs/reference/image-staging-vs-baking.md).
 
-**`yolo pack rebase` is removed; a conflict now prints the git commands to rebase the series
-yourself.** Run them, or hand them to an agent. See
-[Rebase the series](userguide/guides/patch-series.md#rebase-the-series).
+**`yolo pack rebase` is removed.** A conflict now prints the git commands to rebase the series
+yourself or with an agent.
+See [Rebase the series](userguide/guides/patch-series.md#rebase-the-series).
 
 ### Fixed
 
-- A launch now skips a patch upstream already contains, even one upstream changed again after
-  taking it, instead of stopping at a conflict.
-- A Bedrock setting captured during a session no longer overrides Claude Code after you switch to
-  its subscription profile; startup names and logs each discarded setting.
+- A launch skips a patch upstream already contains, even one upstream edited again, instead of
+  stopping at a conflict.
+- A Bedrock setting captured during a session no longer overrides Claude Code on its subscription
+  profile.
 - Quitting a jail no longer waits for its patched-extension copies to be deleted.
 - Claude always uses its profile's provider, even from another Claude shell or with Bedrock or
-  gateway settings in the environment. Yolo names any override. See
-  [provider keys](docs/reference/providers.md#provider-keys-the-selection-decides-them).
-- If the runtime already stopped the jail, yolo still completes keeper teardown. It reports another
-  session only if one still owns the jail; an interrupted keeper also stops its jail.
-- Apple Container stops now wait when its jail listing lags; an unanswerable listing no longer
-  counts as proof the jail is gone.
+  gateway settings in the environment.
+- Keeper teardown completes even when the runtime already stopped the jail.
+- Apple Container stops wait when its jail listing lags instead of assuming the jail is gone.
 - With a profile active, pi no longer starts with an outside provider or saves it as default.
-- A profile's `model` may use one of your provider's aliases. An unknown alias or a provider
-  unavailable to this launch now stops it with the provider, option, declared ids, and fix.
+- A profile's `model` may use one of your provider's aliases; an unknown alias stops the launch with
+  the declared ids.
 
 ## [0.13.0] - 2026-10-09
 
