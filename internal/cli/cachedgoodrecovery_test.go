@@ -14,6 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -419,7 +420,9 @@ func TestBuildSlotCachedGoodRunsThroughGeneratedLauncherAndCaptureMaterializer(t
 		t.Fatalf("resolver delivered %q, want exact admitted old Good.Entry %q\n%s", key, good.delivery.Key, output.String())
 	}
 
-	home, workspace := t.TempDir(), t.TempDir()
+	// The workspace is RESOLVED where it is minted: the program records $PWD, which sh derives
+	// physically when no PWD is inherited, so a symlinked TMPDIR would spell it differently.
+	home, workspace := t.TempDir(), floortest.ResolvedTemp(t)
 	argvPath, cwdPath := filepath.Join(home, "argv.bin"), filepath.Join(home, "cwd.txt")
 	deliveryJSON, err := json.Marshal(map[string]map[string]string{"tool": {"key": key}})
 	if err != nil {
