@@ -36,6 +36,11 @@ successfully prepared builds without changing the current environment. `yolo pac
 `yolo pack prepare start|stop|status` manages the host worker.
 See [launch preparation](docs/design/launch-update-preparation.md).
 
+**Packs can remove list entries.** A `config-list` contribution now takes `remove`, which deletes
+matching entries from a config array without restating it, and `profile`, which applies the
+contribution only while that profile is active.
+See [`config-list`](docs/reference/pack-system.md#adding-entries-to-an-array-config-list).
+
 **Git skips optional index refreshes with `guardrails`.** When selected, the pack makes Git skip
 optional index work that takes a lock, such as refreshing it during `git status`; commands that
 write still take required locks. Set `GIT_OPTIONAL_LOCKS=1` in `env_sources` or for a command to

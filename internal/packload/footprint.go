@@ -843,7 +843,7 @@ func FootprintOf(p *Pack) Footprint {
 	// feature), so it is a claim line only and never review-worthy — it reads nothing and
 	// runs nothing. The Detail carries the entry count and, when short, the entries.
 	for _, cl := range p.Decl.ConfigListContributions() {
-		add(packdecl.KindConfigList, cl.Surface+"#"+cl.Path, configListClaimDetail(cl.Add), false)
+		add(packdecl.KindConfigList, cl.Surface+"#"+cl.Path, configListClaimDetail(cl), false)
 	}
 
 	// Same rule for a `profile`-gated env contribution: it CLAIMS UNCONDITIONALLY and the
@@ -887,13 +887,33 @@ const configListClaimShown = 3
 // order, as compact JSON, since an entry may be any JSON value. The precedence clause is the
 // half an author needs before relying on it: the owner's own entries are kept, and a
 // captured, computed or managed value can still replace the whole array.
-func configListClaimDetail(add json.RawMessage) string {
-	shown := configListShown(add)
-	if shown == configListShownEmpty {
-		return "appends " + shown
+//
+// A `remove` is named first, in the order the fold applies it, as the entries it deletes
+// from whatever the layers below produced; a `profile` gate is named last, the way a gated
+// config-overlay's claim names its gate. An add-only, ungated list reads as it always did.
+func configListClaimDetail(cl packdecl.ConfigList) string {
+	var parts []string
+	if cl.Remove != nil {
+		if removed := configListShown(cl.Remove); removed == configListShownEmpty {
+			parts = append(parts, "removes nothing (empty `remove`, a no-op)")
+		} else {
+			parts = append(parts, "removes "+removed+" wherever the layers below hold them")
+		}
 	}
-	return "appends " + shown + " (owner's entries kept; captured, computed and managed " +
-		"still win)"
+	if cl.Add != nil || cl.Remove == nil {
+		shown := configListShown(cl.Add)
+		if shown == configListShownEmpty {
+			parts = append(parts, "appends "+shown)
+		} else {
+			parts = append(parts, "appends "+shown+" (owner's entries kept; captured, computed "+
+				"and managed still win)")
+		}
+	}
+	detail := strings.Join(parts, ", then ")
+	if cl.Profile != "" {
+		detail += fmt.Sprintf(" when profile %q is active for the owner's agent", cl.Profile)
+	}
+	return detail
 }
 
 // configListShownEmpty is configListShown's answer for an empty `add`, which appends nothing

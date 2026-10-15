@@ -13,13 +13,15 @@ package agentcfg
 // WHERE IT FOLDS (OQ-AL2, and this file's placement of it):
 //
 //	defaults < host < workspace < config-overlay…            the ordinary merge patch
-//	  → list contributions   (pack order, then declaration order)
+//	  → list contributions   (pack order, then declaration order; each: removes, then adds)
 //	  → capture overlay      (the merge patch of in-jail edits)
 //	  → list capture         (per-entry in-jail edits at a list path: removes, then adds)
 //	  → computed → managed
 //
 // So a later list contribution can re-add an entry an earlier overlay's replacement dropped,
-// and only the capture, computed and managed layers can replace the assembled array.
+// a contribution's `remove` deletes an entry any layer below it (or an earlier contribution)
+// put there, and only the capture, computed and managed layers can replace the assembled
+// array.
 //
 // PER-ENTRY CAPTURE (OQ-AL1) is the half that makes this survive a `stateful` surface's
 // read-back. A whole-array capture of `pi install` appending one package would hold every
@@ -89,13 +91,23 @@ type ListContribution struct {
 	Path string
 	// Add are the entries, decoded to the plain value model. Never contains a nil.
 	Add []any
+	// Remove are the entries to delete from the array, decoded like Add. Applied BEFORE
+	// Add within the one contribution (applyListContributions). Never contains a nil.
+	Remove []any
 }
 
-// NewListContribution validates and decodes one contribution. packdecl has already refused
-// every malformed manifest; this re-checks because a caller other than the collector (a
-// test, a future loader) must not be able to hand the engine a root pointer or a null the
-// TOML codec cannot encode.
+// NewListContribution validates and decodes one contribution that only appends. It is
+// NewListEdit with no `remove`.
 func NewListContribution(pack, pointer string, add json.RawMessage) (ListContribution, error) {
+	return NewListEdit(pack, pointer, add, nil)
+}
+
+// NewListEdit validates and decodes one contribution: its `add` and its `remove`, either of
+// which may be absent (nil) — packdecl has already refused a config-list carrying neither.
+// packdecl has already refused every malformed manifest; this re-checks because a caller
+// other than the collector (a test, a future loader) must not be able to hand the engine a
+// root pointer or a null the TOML codec cannot encode.
+func NewListEdit(pack, pointer string, add, remove json.RawMessage) (ListContribution, error) {
 	tokens, err := jsonptr.Parse(pointer)
 	if err != nil {
 		return ListContribution{}, err
@@ -104,17 +116,31 @@ func NewListContribution(pack, pointer string, add json.RawMessage) (ListContrib
 		return ListContribution{}, fmt.Errorf("config-list path must name an array inside the " +
 			"surface, not the whole document")
 	}
-	var entries []any
-	if err := json.Unmarshal(add, &entries); err != nil {
-		return ListContribution{}, fmt.Errorf("config-list `add` must be a JSON array: %v", err)
-	}
-	for i, e := range entries {
-		if e == nil {
-			return ListContribution{}, fmt.Errorf("config-list `add[%d]` is null, which TOML "+
-				"cannot encode", i)
+	decode := func(field string, raw json.RawMessage) ([]any, error) {
+		if raw == nil {
+			return nil, nil
 		}
+		var entries []any
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return nil, fmt.Errorf("config-list `%s` must be a JSON array: %v", field, err)
+		}
+		for i, e := range entries {
+			if e == nil {
+				return nil, fmt.Errorf("config-list `%s[%d]` is null, which TOML "+
+					"cannot encode", field, i)
+			}
+		}
+		return entries, nil
 	}
-	return ListContribution{Pack: pack, Path: pointer, Add: entries}, nil
+	adds, err := decode("add", add)
+	if err != nil {
+		return ListContribution{}, err
+	}
+	removes, err := decode("remove", remove)
+	if err != nil {
+		return ListContribution{}, err
+	}
+	return ListContribution{Pack: pack, Path: pointer, Add: adds, Remove: removes}, nil
 }
 
 // ListProvenance is the per-entry account of one list path in one render — the data behind
@@ -278,13 +304,22 @@ func ListPaths(lists []ListContribution) []string {
 	return out
 }
 
-// ContributedEntries is the ordered, de-duplicated union of every entry the contributions
-// add at one path — pack order, then declaration order, first occurrence wins.
+// ContributedEntries is the ordered, de-duplicated set of entries the contributions leave
+// added at one path — pack order, then declaration order, first occurrence wins — folded the
+// way applyListContributions folds them over an empty array: each contribution's `remove`
+// withdraws an entry an EARLIER contribution added, then its `add` appends. So an entry a
+// later pack removes is not contributed, which is what lets `rmw` (ReconcileInsertedList)
+// withdraw it from the file when yolo inserted it. A `remove` never reaches past the
+// contributions here: at an `rmw` surface an entry the file already held is the user's, and
+// a pack's `remove` leaves it alone (pack-system.md#config-list-remove-at-rmw).
 func ContributedEntries(lists []ListContribution, path string) []any {
 	var out []any
 	for _, l := range lists {
 		if l.Path != path {
 			continue
+		}
+		for _, e := range l.Remove {
+			out = withoutEntry(out, e)
 		}
 		for _, e := range l.Add {
 			if !containsEntry(out, e) {
@@ -557,12 +592,16 @@ func newTrace(tokens []string, base []any) *listTrace {
 }
 
 // applyListContributions folds the contributions into the value the ordinary layers
-// produced (pack-system.md#config-list-order): each contribution in order appends the first
-// occurrence of every entry the array does not already hold. A missing path acts as [] with
-// missing parents created; a non-object parent or a non-array value REFUSES the render,
-// naming the surface, the path and the pack (pack-system.md#config-list-type-conflict) —
-// never overwritten, never skipped. An empty `add` is a no-op and
-// creates nothing.
+// produced (pack-system.md#config-list-order): each contribution in order first deletes
+// every element equal to an entry of its `remove` (entryKey identity, every occurrence;
+// one the array does not hold is a silent no-op), then appends the first occurrence of
+// every `add` entry the array does not already hold. Remove-then-add is the order
+// applyListRecords applies the capture's own record in, so an entry named in both verbs of
+// one contribution ends up present. A missing path acts as [] with missing parents created
+// — but only for an `add` that appends something; a `remove` alone never creates a path.
+// A non-object parent or a non-array value REFUSES the render, naming the surface, the path
+// and the pack (pack-system.md#config-list-type-conflict) — never overwritten, never
+// skipped. An empty `add` and `remove` is a no-op and creates nothing.
 //
 // Returns the new value, the top-level keys the contributions CREATED (for the
 // `config-list` provenance label), and the per-path traces.
@@ -570,7 +609,7 @@ func applyListContributions(s manifest.Surface, merged map[string]any, lists []L
 	traces map[string]*listTrace) (map[string]any, []string, error) {
 	var created []string
 	for _, l := range lists {
-		if len(l.Add) == 0 {
+		if len(l.Add) == 0 && len(l.Remove) == 0 {
 			continue
 		}
 		tokens, err := jsonptr.Parse(l.Path)
@@ -596,6 +635,11 @@ func applyListContributions(s manifest.Surface, merged map[string]any, lists []L
 			}
 			arr = a
 		case pathAbsent:
+			if len(l.Add) == 0 {
+				// A remove-only contribution at a missing array: nothing to delete, and a
+				// deletion never creates the path it deletes from.
+				continue
+			}
 			if depth == 0 {
 				created = append(created, tokens[0])
 			}
@@ -607,6 +651,13 @@ func applyListContributions(s manifest.Surface, merged map[string]any, lists []L
 		}
 		next := append([]any(nil), arr...)
 		changed := st == pathAbsent
+		for _, e := range l.Remove {
+			if containsEntry(next, e) {
+				next = withoutEntry(next, e)
+				tr.removeEntry(e)
+				changed = true
+			}
+		}
 		for _, e := range l.Add {
 			if containsEntry(next, e) {
 				continue

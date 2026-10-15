@@ -80,8 +80,14 @@ func TestConfigListRefusals(t *testing.T) {
 			[]string{".path", "empty"}},
 		{"trailing slash", `{"kind":"config-list","surface":"pi/settings","path":"/packages/","add":["x"]}`,
 			[]string{".path", "empty"}},
-		{"missing add", `{"kind":"config-list","surface":"pi/settings","path":"/packages"}`,
-			[]string{`needs "add"`}},
+		{"neither add nor remove", `{"kind":"config-list","surface":"pi/settings","path":"/packages"}`,
+			[]string{`needs "add" or "remove"`}},
+		{"null remove", `{"kind":"config-list","surface":"pi/settings","path":"/packages","remove":null}`,
+			[]string{".remove", "array", "null"}},
+		{"scalar remove", `{"kind":"config-list","surface":"pi/settings","path":"/packages","remove":"x"}`,
+			[]string{".remove", "array", "string", "delete"}},
+		{"null remove element", `{"kind":"config-list","surface":"pi/settings","path":"/packages","add":["x"],"remove":["y",null]}`,
+			[]string{".remove[1]", "null", "TOML"}},
 		{"null add", `{"kind":"config-list","surface":"pi/settings","path":"/packages","add":null}`,
 			[]string{".add", "array", "null"}},
 		{"scalar add", `{"kind":"config-list","surface":"pi/settings","path":"/packages","add":"x"}`,
@@ -97,8 +103,6 @@ func TestConfigListRefusals(t *testing.T) {
 		{"config body", `{"kind":"config-list","surface":"pi/settings","path":"/packages","add":["x"],` +
 			`"config":{"managed":{"packages":["x"]}}}`,
 			[]string{`does not take "config"`, "config-overlay"}},
-		{"profile", `{"kind":"config-list","surface":"pi/settings","path":"/packages","add":["x"],"profile":"zai"}`,
-			[]string{`does not take "profile"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,6 +135,9 @@ func TestConfigListFieldsRefusedOnOtherKinds(t *testing.T) {
 		{"requires path", `{"kind":"requires","bin":"jq","path":"/x"}`, "path"},
 		// An EMPTY add is still a declared field: `[]` is present, so it is refused too.
 		{"env empty add", `{"kind":"env","vars":{"A":"1"},"add":[]}`, "add"},
+		{"overlay remove", `{"kind":"config-overlay","surface":"pi/settings","remove":["x"],` +
+			`"config":{"managed":{"k":1}}}`, "remove"},
+		{"env empty remove", `{"kind":"env","vars":{"A":"1"},"remove":[]}`, "remove"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -145,6 +152,47 @@ func TestConfigListFieldsRefusedOnOtherKinds(t *testing.T) {
 					"migration:\n%s", joined)
 			}
 		})
+	}
+}
+
+// `remove` is the kind's second verb (pack-system.md#adding-entries-to-an-array-config-list):
+// a remove-only list, an add-and-remove list and a profile-gated list all decode clean, and
+// every field reaches both projections the collector and the footprint read — a `remove` or
+// `profile` that decodes but never leaves the Contribution is a deletion or gate nothing
+// applies. Before `remove` existed the strict decoder refused the first entry with
+// `json: unknown field "remove"`, and `profile` on a config-list was refused by name.
+func TestConfigListRemoveAndProfileDecodeAndTravel(t *testing.T) {
+	m, problems := Decode([]byte(`{
+		"name": "personal",
+		"contributes": [
+			{"kind": "config-list", "surface": "pi/settings", "path": "/packages",
+			 "remove": ["B"], "profile": "lean"},
+			{"kind": "config-list", "surface": "pi/settings", "path": "/packages",
+			 "add": ["D"], "remove": [{"src": "B"}]},
+			{"kind": "config-list", "surface": "pi/settings", "path": "/packages", "remove": []}
+		]
+	}`))
+	if len(problems) != 0 {
+		t.Fatalf("valid config-list contributions were refused: %v", problems)
+	}
+	for name, got := range map[string][]ConfigList{
+		"ConfigListContributions": m.ConfigListContributions(),
+		"ListContributions":       m.ListContributions(),
+	} {
+		if len(got) != 3 {
+			t.Fatalf("%s() = %d entries, want 3", name, len(got))
+		}
+		if string(got[0].Remove) != `["B"]` || got[0].Add != nil || got[0].Profile != "lean" {
+			t.Errorf("%s entry 0 = add %s remove %s profile %q, want a remove-only list gated on lean",
+				name, got[0].Add, got[0].Remove, got[0].Profile)
+		}
+		if string(got[1].Add) != `["D"]` || string(got[1].Remove) != `[{"src":"B"}]` || got[1].Profile != "" {
+			t.Errorf("%s entry 1 = add %s remove %s profile %q, want both verbs and no gate",
+				name, got[1].Add, got[1].Remove, got[1].Profile)
+		}
+		if string(got[2].Remove) != "[]" {
+			t.Errorf("%s entry 2 Remove = %q, want [] (an empty remove is a no-op)", name, got[2].Remove)
+		}
 	}
 }
 

@@ -2357,24 +2357,36 @@ JSON value. The motivating case, one package added to pi's list without copying 
   path, because real keys contain dots (model ids, server names). Inside a key, `~1` stands for
   `/` and `~0` for `~`. The root (`""`) and an empty step (`/a//b`) are refused. Every step
   names an object key; nothing indexes into an array.
-- **`add` is required and must be an array.** `[]` is a no-op. A `null` is refused anywhere
-  inside an entry, because a TOML surface cannot encode one.
-- **Refused fields.** `config` and `profile` are refused on this kind, and `path` and `add` are
+- **`add`, `remove`, or both, and at least one.** Each must be an array, and `[]` is a no-op. A
+  `null` is refused anywhere inside an entry, because a TOML surface cannot encode one.
+- <a id="config-list-remove"></a>**`remove` deletes entries.** Every element of the target array
+  equal to one of its entries ([equality](#config-list-equality)) is deleted from what the layers
+  below produced: the owner's defaults, the host file, the workspace, every `config-overlay`, and
+  earlier list contributions. It never restates the array. Removing an entry the array does not
+  hold is a silent no-op, and a `remove` alone never creates a missing array. Within one
+  contribution `remove` applies before `add` ([order](#config-list-order)).
+- **`profile` gates the whole contribution**, `add` and `remove` alike, keyed on the target
+  surface's owning agent exactly as a `config-overlay`'s is: while that profile is not active the
+  contribution is a clean skip, with no report.
+- **Refused fields.** `config` is refused on this kind, and `path`, `add` and `remove` are
   refused on every other kind (`internal/packdecl`, `configListProblems`). A malformed
   declaration fails the manifest's validation, so it never reaches a launch.
-- **The same body can sit inside a posture.** An `autonomy` posture's `lists` take these three
-  fields under these rules and contribute only while the notch selects that posture — the one
-  way to make an entry host-only or jail-only ([posture lists](#autonomy)). A top-level
-  `config-list` has no gate and contributes at every notch.
+- **The same body can sit inside a posture.** An `autonomy` posture's `lists` take `surface`,
+  `path` and `add` under these rules (not `remove` or `profile`) and contribute only while the
+  notch selects that posture — the one way to make an entry host-only or jail-only
+  ([posture lists](#autonomy)). A top-level `config-list` contributes at every notch, gated only
+  by its `profile`.
 
 <a id="config-list-fold"></a>**How it folds** (`internal/agentcfg/listcontrib.go`):
 
 1. <a id="config-list-order"></a>**Order.** After every ordinary layer and every
-   `config-overlay`, contributions apply in pack order, then declaration order. Existing entries
-   keep their order, including any duplicates the lower layers already hold, and the first
-   occurrence of each contributed entry not already present is appended. So a later list
-   contribution can re-add an entry an earlier overlay's replacement dropped
-   ([OQ-AL2](#oq-al2)).
+   `config-overlay`, contributions apply in pack order, then declaration order. Each one first
+   deletes every element its `remove` names, then appends: existing entries keep their order,
+   including any duplicates the lower layers already hold, and the first occurrence of each
+   added entry not already present is appended. So a later list contribution can re-add an
+   entry an earlier overlay's replacement dropped ([OQ-AL2](#oq-al2)), a later `add` re-adds
+   what an earlier `remove` deleted, a later `remove` deletes what an earlier `add` appended,
+   and an entry named in both verbs of one contribution ends up present, after the survivors.
 2. <a id="config-list-equality"></a>**Equality.** Entries are compared as whole JSON values after
    normalizing number types, so a pack.json `1` (a float) equals a TOML file's `1` (an integer).
    Nothing is parsed, normalized or sorted. The same entry from two packs is written once, and
@@ -2409,7 +2421,7 @@ targets, or one the surface's list record already names — each mechanism recor
 | :--- | :--- | :--- |
 | `computed` | Nothing. The array is a function of its inputs, so a dropped pack's entries vanish on the next render. | — |
 | `stateful` | Per path, the entries an in-jail edit **added** and **removed** relative to the last render. The capture overlay never records a list path. | `<agent>-<name>.list-capture.json`, beside the overlay sidecar |
-| `rmw` | Per path, the entries yolo **inserted** and the inserted entries the user later removed from an array the file still holds (**declined**). A declined entry is never re-inserted; deleting the key or the whole file declines nothing, and neither does a render in which `managed` or a `computed` table held the path (the record is marked suspended, so the next render re-inserts instead of declining). An entry already in the file that yolo did not insert is the user's and is never removed. Revert removes only inserted entries. | `<agent>-<name>.list-record.json`, under the provenance directory, which has the provenance record's lifetime rather than the capture store's (the retired `assert` had no capture store at all) |
+| `rmw` | Per path, the entries yolo **inserted** and the inserted entries the user later removed from an array the file still holds (**declined**). A declined entry is never re-inserted; deleting the key or the whole file declines nothing, and neither does a render in which `managed` or a `computed` table held the path (the record is marked suspended, so the next render re-inserts instead of declining). An entry already in the file that yolo did not insert is the user's and is never removed — <a id="config-list-remove-at-rmw"></a>not by a pack's `remove` either, which at `rmw` only withdraws entries another contribution added. Revert removes only inserted entries. | `<agent>-<name>.list-record.json`, under the provenance directory, which has the provenance record's lifetime rather than the capture store's (the retired `assert` had no capture store at all) |
 
 `ListCaptureRefusal` is keyed on the **resolved** mechanism, not the declared mode: a census may
 render a declaration through another mechanism (an owned host renders a `computed` surface through
