@@ -823,7 +823,7 @@ func TestCurrentSettingsDoctorSubstitutesOnlyDeclaredSettingsToken(t *testing.T)
 	}
 	originalDoctorCmd := append([]string(nil), lp.DoctorCmd...)
 	set := SetOf([]*Loophole{lp})
-	results := set.RunDoctorChecksWithSettings([]*Loophole{lp}, 5*time.Second, map[string][]byte{name: frozen})
+	results := set.RunDoctorChecksWithSettings([]*Loophole{lp}, 5*time.Second, map[string][]byte{name: frozen}, nil)
 	if len(results) != 1 || results[0].RC == nil || *results[0].RC != 0 {
 		t.Fatalf("doctor result = %+v", results)
 	}

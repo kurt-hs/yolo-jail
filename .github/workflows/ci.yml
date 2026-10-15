@@ -189,6 +189,10 @@ jobs:
       - name: Unit tests (macOS)
         run: go test -short -timeout=20m ./...
 
+      # The undeploy script runs on Linux in lint-ci; this runs it on the macOS BSD userland.
+      - name: Undeploy script tests (macOS)
+        run: sh scripts/test-undeploy.sh
+
   build-image:
     # Build the jail image on BOTH arches natively — x86_64 and arm64 — so
     # linux/arm (aarch64-linux) is a tested target, not just an aspirational

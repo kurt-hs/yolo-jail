@@ -459,7 +459,7 @@ func runStatusDoctorChecks(set Set, all []*Loophole, settingsBlock *jsonx.Ordere
 			runnable = append(runnable, lp)
 		}
 	}
-	results := set.RunDoctorChecksWithSettings(runnable, doctorCheckTimeout, current)
+	results := set.RunDoctorChecksWithSettings(runnable, doctorCheckTimeout, current, nil)
 	byName := make(map[string]DoctorResult, len(results)+len(rejected))
 	for _, result := range results {
 		byName[result.Loophole.Name] = result
