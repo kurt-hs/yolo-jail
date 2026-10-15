@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/peercaller"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -73,6 +74,10 @@ func TestARefusedRefreshNamesTheAgentThatSentIt(t *testing.T) {
 	log := &lockedBuffer{}
 	requestLog.SetOutput(log)
 	t.Cleanup(func() { requestLog.SetOutput(os.Stderr) })
+	// A loaded CI runner can take longer than the production budget to walk /proc; this test
+	// asserts that the caller is named, not how fast, so it gives the lookup room.
+	requestLog.ResolveCallers(5*time.Second, peercaller.Lookup)
+	t.Cleanup(func() { requestLog.ResolveCallers(peercaller.Budget, peercaller.Lookup) })
 	home := t.TempDir()
 	self := filepath.Base(os.Args[0])
 	if err := os.MkdirAll(filepath.Join(home, ".yolo/bin/launch"), 0o755); err != nil {
