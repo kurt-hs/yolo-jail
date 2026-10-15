@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -39,12 +40,30 @@ const treeKeyCLI = "treepack/tool-ext"
 type treeFixture struct {
 	*patchedFixture
 	treeDir string
+	// now is the fixture clock; writes go through setNow and other goroutines read it through
+	// clock, so a scheduler reading patchedNow while the test steps the clock is synchronized.
 	now     time.Time
+	clockMu sync.Mutex
 	builds  []string // f.txt as each build saw it in its src/
 	seen    []run.Options
 	stray   bool // the fake build also leaves a path outside the reserved directory
 	homeRef bool // the fake build's tree names the build home
 	noFile  bool // the fake build leaves no f.txt in the tree
+}
+
+// clock is patchedNow's reading of the fixture clock, safe beside setNow.
+func (fx *treeFixture) clock() time.Time {
+	fx.clockMu.Lock()
+	defer fx.clockMu.Unlock()
+	return fx.now
+}
+
+// setNow steps the fixture clock. Only the test goroutine calls it, so its own unlocked reads of
+// now stay race-free.
+func (fx *treeFixture) setNow(t time.Time) {
+	fx.clockMu.Lock()
+	defer fx.clockMu.Unlock()
+	fx.now = t
 }
 
 func newTreeFixture(t *testing.T, produces string) *treeFixture {
@@ -65,7 +84,7 @@ func newTreeFixture(t *testing.T, produces string) *treeFixture {
 	writeFile(t, filepath.Join(fx.home, ".config", "yolo-jail", "config.jsonc"), `{"packs":[`+
 		`{"source":"file://`+fx.treeDir+`","name":"treepack"}]}`)
 	prevNow := patchedNow
-	patchedNow = func() time.Time { return fx.now }
+	patchedNow = fx.clock
 	t.Cleanup(func() { patchedNow = prevNow })
 	asLinuxTreeHost(t)
 	withFakeCaptureJail(t, fx.buildJail(t))
@@ -309,7 +328,7 @@ func TestATreesMoveReapsTheOldBuildEvenWhenARecordNamesIt(t *testing.T) {
 	}
 	writeFile(t, tree+".forks.json", `{"schema":1,"forks":{"tool-ext":{"key":"`+first.Entry+`"}}}`)
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	moved, out := fx.deliver(t, true)
 	if moved.Entry == "" || moved.Entry == first.Entry {
 		t.Fatalf("the good build did not move: %+v\n%s", moved, out)

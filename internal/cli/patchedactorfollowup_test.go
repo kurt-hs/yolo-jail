@@ -30,7 +30,7 @@ func TestPatchActorStaleReplayReadFailureKeepsFailureChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	check := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	check := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if check.Err != nil || check.Record == nil || check.Record.Check == nil {
 		t.Fatalf("prepare the selected check: %+v", check)
 	}
@@ -98,7 +98,7 @@ func TestPatchActorStaleSecondReplayReadFailureStopsSettlement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	check := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	check := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if check.Err != nil || check.Record == nil {
 		t.Fatalf("prepare the selected check: %+v", check)
 	}
@@ -151,13 +151,13 @@ func TestPatchActorNextLaunchConcreteFailureStaysOffline(t *testing.T) {
 		t.Fatalf("initial tree was not built: %+v", initial)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	failed, _ := fx.deliver(t, true)
 	if failed.PatchFailure == nil || failed.Entry == "" {
 		t.Fatalf("fixture did not retain a concrete failure with intact Good: %+v", failed)
 	}
 	buildCount := len(fx.builds)
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
 	calls := filepath.Join(t.TempDir(), "git-called")
 	patchedGitWrapper(t, "echo called > "+shellQuote(calls)+"; exit 99")
@@ -208,7 +208,7 @@ func TestPatchActorReapedCopyClearsOnlyFreshlyIrrelevantFailure(t *testing.T) {
 				t.Fatalf("initial tree was not built: %+v", first)
 			}
 			fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-			fx.now = fx.now.Add(2 * time.Hour)
+			fx.setNow(fx.now.Add(2 * time.Hour))
 			failed, _ := fx.deliver(t, true)
 			if failed.PatchFailure == nil || failed.Entry == "" {
 				t.Fatalf("fixture did not create Good plus a concrete failure: %+v", failed)
@@ -315,7 +315,7 @@ func deliverAfterReapedCopyWithLocalFailure(t *testing.T, fx *treeFixture, key s
 		if err != nil {
 			t.Fatal(err)
 		}
-		checked := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+		checked := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 		if checked.Err != nil || checked.Record == nil || checked.Record.Check == nil {
 			t.Fatalf("prepare the newer successful check after the copy reap: %+v", checked)
 		}
@@ -365,7 +365,7 @@ func TestPatchActorFailedReplayRecordingDoesNotAuthorizeOldApplyErrClear(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := store.CheckPatched(fork.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	checked := store.CheckPatched(fork.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if checked.Err != nil || checked.Record == nil || checked.Record.Check == nil || len(checked.Record.Check.List) == 0 {
 		t.Fatalf("prepare newer successful check: %+v", checked)
 	}
@@ -624,7 +624,7 @@ func prepareOpaqueTreeActorRecord(t *testing.T, fx *treeFixture) (*packsrc.Store
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	checked := store.CheckPatched(f.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if checked.Err != nil || checked.Record == nil || checked.Record.Check == nil || checked.Record.Check.FetchErr != "" ||
 		checked.Record.Check.Problem != "" {
 		t.Fatalf("prepare the successful selected check for opaque replay: %+v", checked)
@@ -649,7 +649,7 @@ func TestPatchActorOpaqueNextLaunchCleanProbeIsOfflineAndNonfatal(t *testing.T) 
 		t.Fatalf("initial tree was not delivered: %+v", old)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 20: "twenty"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	store, _ := prepareOpaqueTreeActorRecord(t, fx)
 	previousTiming := treeUpdateTiming
 	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
@@ -682,7 +682,7 @@ func TestPatchActorOpaqueUnavailableDeduplicatesAndLaterRetries(t *testing.T) {
 		t.Fatalf("initial tree was not delivered: %+v", old)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	store, _ := prepareOpaqueTreeActorRecord(t, fx)
 	previousTiming := treeUpdateTiming
 	treeUpdateTiming = func(packload.Fork) updateTiming { return timingNextLaunch }
@@ -745,7 +745,7 @@ func treeFailureWithAdmittedGood(t *testing.T) (*treeFixture, run.TreeDelivery) 
 		t.Fatalf("initial tree was not admitted: %+v", good)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	failed, _ := fx.deliver(t, true)
 	if failed.Entry == "" || failed.PatchFailure == nil || failed.PatchFailure.Target.Tag != "v1.2.0" {
 		t.Fatalf("fixture did not admit Good alongside a concrete failure: %+v", failed)
@@ -842,7 +842,7 @@ func TestPatchActorReapedCopyAfterFreshSuccessfulRemovalSurvivesSecondReap(t *te
 				varErrors = append(varErrors, fmt.Errorf("git %q: %w: %s", args, err, out))
 			}
 		}
-		fx.now = fx.now.Add(2 * time.Hour)
+		fx.setNow(fx.now.Add(2 * time.Hour))
 	}
 	t.Cleanup(func() { treeCopied = previousCopy })
 	beforeBuilds := len(fx.builds)
@@ -862,7 +862,7 @@ func TestPatchActorReapedCopyAfterFreshSuccessfulRemovalSurvivesSecondReap(t *te
 
 func TestPatchActorTreeFailureSurvivesTwiceReapedCopyAfterFailedFetch(t *testing.T) {
 	fx, failed := treeFailureWithAdmittedGood(t)
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	fetchLog := patchedGitWrapper(t, "is_fetch=0; for a in \"$@\"; do [ \"$a\" = fetch ] && is_fetch=1; done; "+
 		"if [ \"$is_fetch\" -eq 1 ]; then printf 'fixture fetch unavailable\\n' >&2; exit 2; fi")
 	previousAdvance, previousCopy := treeAdvance, treeCopied
@@ -910,7 +910,7 @@ func TestPatchActorReapedCopyRetainsLocalCommandFailureWhenTargetRemainsSelected
 		t.Fatalf("initial tree was not built: %+v", good)
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	wrapperLog := patchedGitWrapper(t, "is_merge=0; for a in \"$@\"; do [ \"$a\" = merge-tree ] && is_merge=1; done; "+
 		"if [ \"$is_merge\" -eq 1 ]; then printf 'test operation-command rejection\\n' >&2; exit 2; fi")
 	var localFailure *packsrc.PatchFailure

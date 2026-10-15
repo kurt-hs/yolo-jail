@@ -126,7 +126,7 @@ func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) 
 	}
 	// A MOVE swaps the link and keeps the version it named.
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
 	second, _ := os.Readlink(fx.link())
@@ -136,7 +136,7 @@ func TestTheHostRenderLinksTheGoodBuildAndKeepsThePreviousVersion(t *testing.T) 
 	// THE NEXT MOVE still retains every earlier version: without a host-session liveness proof, an
 	// older link target may belong to an overlapping session and is not treated as absent.
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 16: "sixteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	advanceHostTrees(io.Discard, false, "", nil)
 	fx.renderTrees(t, true)
 	third, _ := os.Readlink(fx.link())
@@ -507,7 +507,7 @@ func TestAHostAdvancesLinesNameTheHost(t *testing.T) {
 		t.Fatalf("the first host advance built %d trees", len(fx.builds))
 	}
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	prev := forkBuildChild
 	forkBuildChild = func(ctx context.Context, _ time.Duration, _ string, _ forkBuild, _ captureStreams, _ bool) (int, bool) {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
@@ -554,7 +554,7 @@ func TestAHostLaunchNamesTheBuildItsLinkNames(t *testing.T) {
 	}
 	// THE GOOD BUILD MOVES (a jail launch's advance), and the host's link stays where it was.
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	if d, out := fx.deliver(t, true); d.Dir == "" {
 		t.Fatalf("the jail launch's advance did not move the good build:\n%s", out)
 	}
@@ -867,7 +867,7 @@ func TestAHostLaunchQueuesAndConsumesItsOwnersTrees(t *testing.T) {
 		t.Fatal("the cold host launch admitted no tree build")
 	}
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	errw.Reset()
 	advanceHostTrees(&errw, false, "tool", nil)
 	if len(fx.builds) != 1 || !strings.Contains(errw.String(), "using admitted build") {

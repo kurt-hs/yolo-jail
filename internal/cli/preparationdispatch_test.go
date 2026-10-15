@@ -156,7 +156,7 @@ func TestPreparationNoDueRegistrationSurvivesUntilLaterTimer(t *testing.T) {
 		t.Fatal("no-due registration built")
 	}
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ticks := make(chan time.Time)
