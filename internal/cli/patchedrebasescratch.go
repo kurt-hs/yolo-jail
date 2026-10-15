@@ -55,7 +55,7 @@ func packRebaseScratch(ra rebaseArgs, args []string, out, errw io.Writer, color 
 	}
 	pr := richtext.Printer{W: out, Color: color}
 	origin := forkPackOrigin{local: packDir}
-	site := rebaseSite{scratch: true, jail: config.InJail()}
+	site := rebaseSite{scratch: true, jail: config.InJail(), keep: ra.keep}
 
 	// 2. THE CLONE'S DIRECTORY, as the keyed verb settles it.
 	dir, rc := rebaseDir(f, origin, ra.into, errw)
@@ -185,6 +185,9 @@ func rebaseHostLine(ra rebaseArgs) string {
 	}
 	if ra.into != "" {
 		argv = append(argv, "--into", ra.into)
+	}
+	if ra.keep {
+		argv = append(argv, "--keep")
 	}
 	line := shquote.JoinDisplay(argv)
 	if ra.key == "" {
