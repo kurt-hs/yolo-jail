@@ -166,6 +166,17 @@ func TestTheConflictsRecipeRunAsPrintedGivesASeriesTheNextLaunchBuilds(t *testin
 	}
 }
 
+// `yolo pack rebase` IS RETIRED, and typing it names what replaced it rather than an unknown verb.
+func TestTheRetiredRebaseVerbNamesWhatReplacedIt(t *testing.T) {
+	var out, errw strings.Builder
+	rc := packMain([]string{"rebase", "forkpack/tool"}, &out, &errw, false)
+	if rc != 2 || !strings.Contains(errw.String(), "yolo pack rebase was removed") ||
+		!strings.Contains(errw.String(), "`yolo pack status` and `yolo pack series check` print the commands") ||
+		strings.Contains(errw.String(), "unknown verb") {
+		t.Errorf("rc=%d\n%s%s", rc, out.String(), errw.String())
+	}
+}
+
 // `yolo pack status` NAMES THE RECIPE under the newest conflict it records, and nothing names the
 // retired verb.
 func TestPackStatusPrintsTheRecipeUnderTheConflict(t *testing.T) {
