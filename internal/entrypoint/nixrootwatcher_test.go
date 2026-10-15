@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/nixroots"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // watcherSeams points the step at a fixture auto dir and records the spawn instead of making it.
@@ -74,7 +75,7 @@ func TestAWatcherThatExitsIsReapedNotLeftAZombie(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
 	bin := filepath.Join(dir, "watcher")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho $$ > "+pidFile+"\n"), 0o755); err != nil {
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho $$ > "+shquote.Quote(pidFile)+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := startNixRootWatcherFn(bin, filepath.Join(dir, "logs", "nix-roots.log")); err != nil {
