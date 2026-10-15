@@ -18,6 +18,14 @@ func runInternalLogAppend(args []string, input io.Reader) int {
 		fmt.Fprintln(os.Stderr, "usage: yolo internal log-append <workspace> receipts.jsonl|startup.log [--tee|--reset (startup only)]")
 		return 2
 	}
+	// On the macos-user backend this runs as the sandbox account, whose ~/.config links into
+	// the workspace's own sidecar (<ws>/.yolo/home/config). Judged by the process HOME, that
+	// link put "yolo's user config directory" inside the workspace and refused every
+	// provisioning log (macos-user.yml run 38733308150). Judge by the account's boundary
+	// instead, the rule `yolo internal darwin-bootstrap` already applies to the same layout.
+	if darwinBootstrapIdentityRefusal() == nil {
+		defer paths.GuardScopeUnder(darwinBootstrapScopeHome())()
+	}
 	open := func(name string, flag int, perm os.FileMode) (*os.File, error) {
 		return paths.OpenWorkspaceStateFile(args[0], name, flag, perm)
 	}
