@@ -41,7 +41,10 @@ func (u *patchedUpstream) handRebaseTree(t *testing.T, onto string) string {
 		files = append(files, filepath.Join(u.pack, "patches", m.Name))
 	}
 	gitIn(t, clone, append([]string{"am", "-q"}, files...)...)
-	gitIn(t, clone, "rebase", "-q", "--onto", onto, u.base)
+	// `git rebase <onto>`, not `--onto <onto> <base>`: the same commits replayed (the base is an
+	// ancestor of every entry), and only this spelling drops a member upstream already holds by
+	// patch-id, since `--onto` compares against nothing between the base and the entry (PF-D86).
+	gitIn(t, clone, "rebase", "-q", onto)
 	return gitIn(t, clone, "rev-parse", "HEAD^{tree}")
 }
 
@@ -95,6 +98,45 @@ func TestAMemberAlreadyUpstreamIsClean(t *testing.T) {
 	}
 	if got := w.Results[0].Upstream; len(got) != 1 || got[0] != series.Members[0].Name {
 		t.Errorf("already upstream = %v, want the first member", got)
+	}
+}
+
+// A MEMBER UPSTREAM MERGED AND THEN EDITED is already upstream, as `git rebase` has it: its pick
+// conflicts with the later edit, but its patch-id equals a commit between the series' base and the
+// entry, so the replay drops it and reports it already upstream (PF-D86), where the pick alone
+// stopped the walk at a conflict no hand rebase meets. The mirror is blobless and the merged
+// commit's own file contents appear in no entry's tree, so the replay must fetch them to compare.
+func TestAMemberUpstreamMergedAndThenEditedIsAlreadyUpstream(t *testing.T) {
+	u := newPatchedUpstream(t)
+	u.release(t, "", map[int]string{10: "ten"})       // the first member, verbatim: the same patch-id
+	u.release(t, "v1.1.0", map[int]string{10: "TEN"}) // then edited on the member's own line
+	series, list := u.checked(t)
+	w := u.store.WalkSeries(mustAddr(t, u.source("main")).Repo, "", series, list[:1], WalkOptions{})
+	if w.Err != nil || len(w.Results) != 1 {
+		t.Fatalf("walk = %+v", w)
+	}
+	r := w.Results[0]
+	if r.Conflict != nil || r.Err != nil || !r.Clean || w.Fit != 0 {
+		t.Fatalf("v1.1.0 = %+v (conflict %+v), want a fit with the first member dropped", r, r.Conflict)
+	}
+	if len(r.Upstream) != 1 || r.Upstream[0] != series.Members[0].Name {
+		t.Errorf("already upstream = %v, want the first member", r.Upstream)
+	}
+	if want := u.handRebaseTree(t, list[0].Commit); r.Tree != want {
+		t.Errorf("patched tree %s, a hand rebase gives %s", r.Tree, want)
+	}
+}
+
+// A MEMBER THAT CONFLICTS AND IS NOT UPSTREAM still conflicts: the drop compares the member's whole
+// change, not the paths it touches, so an upstream commit to the same line that differs from it is
+// no reason to drop it.
+func TestAConflictingMemberWhoseChangeUpstreamDiffersStillConflicts(t *testing.T) {
+	u := newPatchedUpstream(t)
+	u.release(t, "v1.1.0", map[int]string{10: "TEN"})
+	series, list := u.checked(t)
+	w := u.store.WalkSeries(mustAddr(t, u.source("main")).Repo, "", series, list[:1], WalkOptions{})
+	if len(w.Results) != 1 || w.Results[0].Conflict == nil || w.Results[0].Conflict.Member != series.Members[0].Name {
+		t.Fatalf("walk = %+v, want the first member to conflict", w)
 	}
 }
 
