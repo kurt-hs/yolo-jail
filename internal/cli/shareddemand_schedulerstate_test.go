@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
@@ -38,7 +37,8 @@ func TestSharedBackgroundAdmissionWaitsOutTheSchedulersStateUpdate(t *testing.T)
 			return
 		}
 		// What the scheduler's record update does: hold scheduler-state.lock for a moment.
-		lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.NoWait, nil)
+		// Waiting, bounded: the scheduler's own record update can hold it at this moment too.
+		lock, err := pauseDemandStateLock(t, preparationStateLockPath())
 		if err != nil {
 			t.Errorf("hold scheduler-state.lock as its record update would: %v", err)
 			close(held)
