@@ -27,7 +27,8 @@ package run
 // First, the remover never CREATES the workspace or its `.yolo`: a user who deletes a
 // workspace right after quitting must not find it resurrected by a log line
 // (writeHousekeepingNote with paths.OpenExistingWorkspaceStateFile). Second, whoever needs
-// the workspace quiescent — the suite's cleanup, today — can WAIT for every remover started
+// the workspace quiescent — the suite's cleanup, and a build jail's cleanup before it deletes
+// the staging workspace — can WAIT for every remover started
 // for it: each one holds a shared flock on `<workspace>/.yolo/scratch-rm.lock` for its whole
 // life, taken by the launcher BEFORE the spawn and inherited by the child, so there is no
 // window in which the launcher has exited and the child has not yet locked
@@ -132,6 +133,11 @@ func (o *Options) selfExecArgv(argv []string) []string {
 	return execx.SelfExecArgv(argv)
 }
 
+// ScratchRemoverBound is how long a caller of WaitForScratchRemovers should be prepared to
+// wait for one workspace's removers: each remover's own scratchRemovalWait for podman to stop
+// referencing its volumes, plus the podman calls around it, with margin.
+const ScratchRemoverBound = 2 * scratchRemovalWait
+
 // scratchRemoverWaitPoll is WaitForScratchRemovers' re-try cadence.
 const scratchRemoverWaitPoll = 50 * time.Millisecond
 
@@ -139,9 +145,10 @@ const scratchRemoverWaitPoll = 50 * time.Millisecond
 // or timeout passes. No lock file (or no `.yolo`) means none was ever started with one, and
 // returns at once; it creates nothing either way.
 //
-// Its caller is the integration suite, which must not delete a workspace a remover is about
-// to log into (see the top of this file). A remover is bounded by scratchRemovalWait plus
-// its podman calls, so a timeout past that is the caller's to choose.
+// Its callers are the integration suite and a build jail's cleanup
+// (internal/cli's cleanupCaptureWorkspace), neither of which may delete a workspace a remover
+// is about to log into (see the top of this file). A remover is bounded by scratchRemovalWait
+// plus its podman calls (ScratchRemoverBound), so a timeout past that is the caller's to choose.
 func WaitForScratchRemovers(workspace string, timeout time.Duration) error {
 	r, err := paths.OpenStateDirRoot(paths.WorkspaceStateDir(workspace))
 	if errors.Is(err, fs.ErrNotExist) {
