@@ -569,11 +569,38 @@ func (f *xbFixture) ready(t *testing.T) (xbProcess, xbProcess, string) {
 	if group, err := syscall.Getpgid(child.pid); err != nil || group != child.pid {
 		t.Fatalf("build child pid=%d pgid=%d err=%v", child.pid, group, err)
 	}
-	present, known := run.ProbeExistingContainer(naming.FromWorkspace(staging), "podman", 5*time.Second)
-	if !known || !present {
-		t.Fatalf("real sealed build container missing: present=%v known=%v", present, known)
+	if !xbContainerPresent(t, staging) {
+		t.Fatalf("real sealed build container missing: the runtime answered that %s does not exist", naming.FromWorkspace(staging))
 	}
 	return bg, child, staging
+}
+
+// xbContainerPresent waits for the runtime to ANSWER whether the build jail exists, and returns
+// the answer. ProbeExistingContainer is tri-state, and known=false says only that the runtime
+// could not be asked — never that the container is missing. A single 5s probe made that a
+// failure: on CI's rootless podman 4.9.3 the first probe in
+// TestBackgroundAdvanceDetachedLaunchAdmitsOnlyForTheNextFreshJail came back unknown on both
+// arches (run 38782730899) while the build jail was running and its marker written, at the
+// moment the fixture's first jail was being ended by its keeper. Each unknown answer logs
+// podman's own output, so a runtime that never answers fails with its reason.
+func xbContainerPresent(t *testing.T, staging string) bool {
+	t.Helper()
+	cname := naming.FromWorkspace(staging)
+	var present bool
+	unknown := 0
+	xbAwait(t, "a known answer from podman about build jail "+cname, func() bool {
+		p, known := run.ProbeExistingContainer(cname, "podman", 5*time.Second)
+		if known {
+			present = p
+			return true
+		}
+		if unknown++; unknown <= 3 {
+			out, err := exec.Command("podman", "ps", "-a", "-q", "--filter", "name=^/"+cname+"$").CombinedOutput()
+			t.Logf("podman could not answer whether %s exists (try %d): err=%v output=%q", cname, unknown, err, out)
+		}
+		return false
+	})
+	return present
 }
 
 func (f *xbFixture) assertNoBuildFailure(t *testing.T) {
@@ -858,9 +885,8 @@ func TestBackgroundAdvanceSignalsFenceAndRecoverItsRealBuildWorkspace(t *testing
 			} else {
 				// SIGKILL bypasses the daemon's signal handler. The active owner/keeper must
 				// fence same-ID Stage, not erase a directory the real container still binds.
-				present, known := run.ProbeExistingContainer(naming.FromWorkspace(staging), "podman", 5*time.Second)
-				if !known || !present {
-					t.Fatalf("SIGKILL left no real orphan container to exercise recovery: present=%v known=%v", present, known)
+				if !xbContainerPresent(t, staging) {
+					t.Fatalf("SIGKILL left no real orphan container to exercise recovery: podman answered that %s does not exist", naming.FromWorkspace(staging))
 				}
 				recordStore := &packsrc.Store{Dir: paths.PacksDir()}
 				before, beforeErr := recordStore.LoadCheckRecord(xbKey)
