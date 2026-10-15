@@ -622,9 +622,34 @@ func sharedTimerDemand(ctx context.Context, d preparationDemand) (*preparationRe
 	return &r, nil
 }
 
+// preparationAdmissionStateWait bounds a shared worker's wait for scheduler-state.lock: far longer
+// than a scheduler.json update takes, far shorter than the check-start wait on the same path.
+var preparationAdmissionStateWait = 2 * time.Second
+
+// lockPreparationStateForAdmission takes scheduler-state.lock for a shared worker's subscription
+// revalidation. That lock guards only scheduler.json's read-modify-write: every holder is a short
+// in-memory update that takes no other lock, so a bounded wait cannot deadlock with the demand or
+// check-record locks the admission already holds. A single try read the scheduler's own routine
+// bookkeeping (each tick's record refresh, the update a finished task makes) as another process
+// owning the key, and the timer retry that should have admitted went busy again. A hold that
+// outlasts the bound still reads as contention: busy, retried on the next tick. The scheduler's
+// own admission guard (preparationAdmissionGuardUnder) keeps its immediate try by design.
+func lockPreparationStateForAdmission(ctx context.Context) (*pidlock.Lock, error) {
+	lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.Mode{Wait: true, Bound: preparationAdmissionStateWait, Cancel: ctx.Done()}, nil)
+	switch {
+	case err == nil:
+		return lock, nil
+	case errors.Is(err, pidlock.ErrTimedOut), errors.Is(err, pidlock.ErrHeld):
+		return nil, packsrc.ErrLockHeld
+	case errors.Is(err, pidlock.ErrCanceled) && ctx.Err() != nil:
+		return nil, ctx.Err()
+	}
+	return nil, err
+}
+
 // The caller already holds the artifact's check-record transaction. Do not reacquire that
 // record to inspect a failure: the existing advance owns that check/replay/settle authority.
-// Revalidate the independently owned subscription with a nonwaiting metadata transaction.
+// Revalidate the independently owned subscription with a short, bounded metadata transaction.
 func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commit func() error) error {
 	resolved, release, err := resolvePreparationDemand(ctx, d)
 	defer release()
@@ -635,10 +660,7 @@ func commitSubscribedPreparation(ctx context.Context, d preparationDemand, commi
 	if err != nil {
 		return err
 	}
-	lock, err := pidlock.Acquire(preparationStateLockPath(), pidlock.NoWait, nil)
-	if errors.Is(err, pidlock.ErrHeld) {
-		return packsrc.ErrLockHeld
-	}
+	lock, err := lockPreparationStateForAdmission(ctx)
 	if err != nil {
 		return err
 	}
