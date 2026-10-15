@@ -99,7 +99,7 @@ func TestEveryBootStepRunsOrSaysWhy(t *testing.T) {
 // The container boot's order, which is Main's order before the table, step for step.
 func TestTheContainerBootRunsItsStepsInOrder(t *testing.T) {
 	want := []string{
-		"hydrate_user_env", "configure_timezone", "scratch_permissions",
+		"hydrate_user_env", "start_egress_probe", "configure_timezone", "scratch_permissions",
 		"generate_store_packages", "export_image_ld_lib", "generate_ld_cache",
 		"generate_shims", "generate_agent_launchers", "generate_package_manager_launchers",
 		"deliver_launch_flags", "assert_required_bins",
@@ -111,7 +111,7 @@ func TestTheContainerBootRunsItsStepsInOrder(t *testing.T) {
 		"cgroup_delegation", "cleanup_stale_wrappers",
 		"published_port_localnet", "port_forwarding",
 		"note_service_caller_auth", "write_caller_token_files", "start_jail_daemon_supervisor",
-		"start_nix_root_watcher", "probe_service_reachability",
+		"start_nix_root_watcher", "report_egress", "probe_service_reachability",
 	}
 	if got := bootStepNames(bootContainer); !slices.Equal(got, want) {
 		t.Errorf("container boot steps:\n got %v\nwant %v", got, want)
@@ -126,13 +126,14 @@ func TestTheContainerBootRunsItsStepsInOrder(t *testing.T) {
 // does in a container, now that every pointer its one line gives works here (NC-D26).
 func TestTheMacosUserBootRunsItsStepsInOrder(t *testing.T) {
 	want := []string{
-		"hydrate_session_env", "darwin_home_layout",
+		"hydrate_session_env", "start_egress_probe", "darwin_home_layout",
 		"generate_shims", "generate_agent_launchers", "generate_package_manager_launchers",
 		"deliver_launch_flags", "assert_required_bins",
 		"catalog_installed_orphans", "reconcile_installed_programs", "report_durable_dir",
 		"generate_bashrc", "generate_mise_config", "mcp_presets_declined", "configure_git",
 		"configure_pack_surfaces", "configure_host_files", "install_home_overlay",
 		"generate_darwin_bootstrap_script", "retire_yolo_log", "write_login_rc",
+		"report_egress",
 	}
 	if got := bootStepNames(bootDarwin); !slices.Equal(got, want) {
 		t.Errorf("macos-user boot steps:\n got %v\nwant %v", got, want)
@@ -154,7 +155,7 @@ func TestTheContainerPerfLogKeepsItsLabels(t *testing.T) {
 		}
 	}
 	want := []string{
-		"hydrate_user_env", "configure_timezone", "scratch_permissions",
+		"hydrate_user_env", "start_egress_probe", "configure_timezone", "scratch_permissions",
 		"generate_store_packages", "export_image_ld_lib", "generate_ld_cache", "generate_shims",
 		"generate_agent_launchers", "generate_package_manager_launchers",
 		"deliver_launch_flags", "assert_required_bins", "catalog_installed_orphans",
@@ -163,7 +164,7 @@ func TestTheContainerPerfLogKeepsItsLabels(t *testing.T) {
 		"nvim_config", "generate_mcp_wrappers", "skills_skipped", "configure_pack_surfaces",
 		"configure_host_files", "cgroup_delegation", "cleanup_stale_wrappers",
 		"published_port_localnet", "port_forwarding", "jail_daemon_supervisor",
-		"probe_service_reachability",
+		"report_egress", "probe_service_reachability",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("container perf labels:\n got %v\nwant %v", got, want)

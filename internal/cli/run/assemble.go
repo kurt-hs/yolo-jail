@@ -696,6 +696,10 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// (holdonrefusal.go, internal/entrypoint/hold.go).
 	runCmd = append(runCmd, o.holdOnRefusalArgs(rt, in.cname)...)
 
+	// Which container backend this is, for the in-jail findings whose next step differs by
+	// backend (paths.JailBackendEnv): YOLO_RUNTIME cannot say it, being a hard-coded `podman`.
+	runCmd = append(runCmd, "-e", paths.JailBackendEnv+"="+rt)
+
 	// The readiness act's hatch and its off-switch, forwarded from the host for the same
 	// reason: the stage that reads them runs in the jail (programreadiness.go).
 	runCmd = append(runCmd, o.programReadinessArgs()...)
