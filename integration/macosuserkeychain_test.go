@@ -188,11 +188,12 @@ echo "=== END ==="
 // requireMacosUser, so it runs under -short on Linux and in check-macos, and the stand-in, not
 // the Mac's /usr/bin/security, answers every call on both.
 //
-// The stand-in hangs on `lock-keychain`, so that step is the watchdog's to end, at a one-second
-// bound; every other call answers as an account with a working keychain would, and the item it
-// reads back ends with no newline, as `security -i`'s prompt does.
+// The stand-in hangs on `lock-keychain`, so that step is the watchdog's to end, at
+// keychainTwinAnsweringBound; every other call answers as an account with a working keychain
+// would, and the item it reads back ends with no newline, as `security -i`'s prompt does.
 func TestMacosUserKeychainProbeShellRunsAgainstAStandIn(t *testing.T) {
-	run := runKeychainProbeAgainstAStandIn(t, "lock-keychain")
+	run := runKeychainProbeAgainstAStandInWithScript(t,
+		keychainProbeScript(keychainTwinAnsweringBound), "lock-keychain")
 	probe := section(run.out, "=== KEYCHAIN ===", "=== END ===")
 	for _, want := range []string{
 		"STEP default-keychain rc=0", "STEP create-keychain rc=0", "STEP unlock-via-stdin rc=0",
@@ -273,10 +274,19 @@ func TestKeychainWatchdogCannotInheritTheProbesCleanup(t *testing.T) {
 	}
 }
 
-// keychainTwinDeadline is how long the twin's probe may take: a few seconds over its one-second
-// bound per hanging step, and well under the stand-in's 30-second hang, so a step or a cleanup
-// left unbounded fails it rather than passing slowly.
+// keychainTwinDeadline is how long the twin's probe may take: a few seconds over its bound per
+// hanging step, and well under the stand-in's 30-second hang, so a step or a cleanup left
+// unbounded fails it rather than passing slowly.
 const keychainTwinDeadline = 15 * time.Second
+
+// keychainTwinAnsweringBound is the step bound, in seconds, for the one twin test that asserts the
+// ANSWERING steps end rc=0. A one-second bound is the watchdog's to hit on a hanging step, but on
+// a loaded macOS runner it also ended a step the stand-in answers at once: the 2026-10-15
+// macos-user run 38733308150 took 6.85s for a probe whose sibling took 2.32s on the same shell,
+// and killed find-from-a-second-process (two bash startups and a cat) at rc=143. The tests that
+// assert only the hanging steps keep the one-second bound, since a slow answering step cannot
+// fail them. Its one hang still ends well inside keychainTwinDeadline.
+const keychainTwinAnsweringBound = 5
 
 // keychainTwinRun is one run of the probe's shell against the stand-in: its combined output, the
 // stand-in's state dir and the temp dir the probe was given.
@@ -344,8 +354,8 @@ esac
 		t.Fatalf("the probe's shell failed: %v\n%s", err, run.out)
 	}
 	if took := time.Since(begun); took > keychainTwinDeadline {
-		t.Errorf("the probe took %s against a one-second bound with %v hanging: a step or the "+
-			"cleanup was not bounded\n%s", took, hang, run.out)
+		t.Errorf("the probe took %s, over %s, with %v hanging: a step or the "+
+			"cleanup was not bounded\n%s", took, keychainTwinDeadline, hang, run.out)
 	}
 	return run
 }
