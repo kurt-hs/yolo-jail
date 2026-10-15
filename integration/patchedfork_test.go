@@ -216,7 +216,7 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 	// bypass the jail runs v1.2.0's build, said, and the fork's line names what stopped v1.3.0.
 	v13 := up.release("1.3.0", "upstream-ten", "v1.3.0")
 	if r := runCommand(t, t.TempDir(), []string{"pack", "update"}, withHostSemantics()); r.rc == 0 ||
-		!strings.Contains(r.combined(), patchFailureBlock(owner, "v1.3.0", v13, "f.txt")) {
+		!hasPatchFailureBlock(r.combined(), owner, "v1.3.0", v13, "f.txt") {
 		t.Fatalf("yolo pack update did not fail on the conflict at v1.3.0: rc %d\n%s", r.rc, r.combined())
 	}
 	jailGone()
@@ -226,7 +226,7 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 		t.Fatalf("the launch after v1.3.0 started its jail on the older build: rc %d\n%s", refused.rc, refused.combined())
 	}
 	for _, w := range []string{"ERROR: fork " + owner + ": patch application failed at upstream v1.3.0 (" + v13 + ")",
-		"Repair: yolo pack rebase " + owner + " --onto " + v13, "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo",
+		"Repair: rebase the series with git", "      git rebase " + v13 + "\n", "Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo",
 		"Refusing to launch: the patch series of fork " + owner + " does not apply"} {
 		if !strings.Contains(refused.combined(), w) {
 			t.Errorf("the refused launch lacks %q:\n%s", w, refused.combined())
@@ -242,17 +242,25 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 	}
 }
 
-// patchFailureBlock is PF-D81's error for a conflict of the fixtures' one patch at upstream tag
-// (commit), from its ERROR line through the start of the line naming the build its Bypass runs
-// (packsrc.PatchFailure.Block, PF-D83: `yolo pack update` offers the bypass when a good build is here).
-func patchFailureBlock(owner, tag, commit, paths string) string {
-	return "ERROR: " + owner + ": patch application failed at upstream " + tag + " (" + commit + ")\n" +
+// hasPatchFailureBlock reports whether out holds PF-D81's error for a conflict of the fixtures' one
+// patch at upstream tag (commit): its ERROR line through the Repair line, then the git recipe's
+// rebase onto that commit (packsrc.RebaseRecipe, PF-D85), then the Bypass line through the start of
+// the line naming the build it runs (PF-D83: `yolo pack update` offers the bypass when a good build
+// is here).
+func hasPatchFailureBlock(out, owner, tag, commit, paths string) bool {
+	head := "ERROR: " + owner + ": patch application failed at upstream " + tag + " (" + commit + ")\n" +
 		"  Patch: 0001-patch-line-ten.patch\n" +
 		"  Conflict: " + paths + "\n" +
 		"  Operation stopped; no older fit or base will be built.\n" +
-		"  Repair: yolo pack rebase " + owner + " --onto " + commit + "\n" +
-		"  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo pack update\n" +
-		"    (runs the intact admitted build "
+		"  Repair: rebase the series with git, yourself or with an agent; the next launch builds it:\n"
+	i := strings.Index(out, head)
+	if i < 0 {
+		return false
+	}
+	rest := out[i+len(head):]
+	rebase := strings.Index(rest, "      git rebase "+commit+"\n")
+	bypass := strings.Index(rest, "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo pack update\n    (runs the intact admitted build ")
+	return rebase >= 0 && bypass > rebase
 }
 
 // liveCaptureEntries is the keys among keys whose entry is complete: its marker is there.

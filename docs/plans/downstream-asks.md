@@ -107,12 +107,12 @@ an automatic floor. Whether a profile declares it is the consumer's decision, no
 **Ask.** (a) A clean-replay export hands over the clone instead of deleting it. (b) A signal names
 a series gone stale against its upstream.
 
-**State.** `open` on both. **Evidence:** the conflicting path already keeps the clone and prints the
-`rebase --continue`/export lines, but a series that needs nothing to rebase still ends
-`nothing to rebase, so the clone is removed`
-([`patchedrebase.go`](../../internal/cli/patchedrebase.go),
-[`rebase.go`](../../internal/packsrc/rebase.go)); staleness is visible only through a host read
-(`yolo pack status`).
+**State.** `narrowed`. **Evidence:** `yolo pack rebase` and its clone are gone
+([PF-D85](../design/patched-forks.md#PF-D85)): every conflict prints the git commands that rebase
+the series, so the clone is the user's own, and `yolo pack status` prints the same commands under a
+series' base lag when the newest version takes it as it stands, which re-anchors it. The base lag
+names a stale series on `yolo pack status` and on the launch's fork line
+([`baselag.go`](../../internal/packsrc/baselag.go)); no `yolo check` warning exists.
 
 **Landed.** (a) a clean replay leaves a built clone; (b) `yolo check` or a status line names a
 series whose base moved.

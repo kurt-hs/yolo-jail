@@ -12,7 +12,7 @@ import (
 )
 
 // A SERIES ANCHORED ON v1.0.0 that v1.1.0 and v1.2.0 still take: once a launch advanced to v1.2.0,
-// pack status names both releases, that v1.2.0 takes the series, and the --keep rebase that
+// pack status names both releases, that v1.2.0 takes the series, and the git recipe that
 // re-anchors it; the fork line a launch prints names the lag too.
 func TestPackStatusAndTheForkLineNameTheBaseLag(t *testing.T) {
 	fx := newPatchedAdvanceFixture(t, "")
@@ -28,8 +28,10 @@ func TestPackStatusAndTheForkLineNameTheBaseLag(t *testing.T) {
 	lag := "its base v1.0.0 (" + shortSHA(fx.base) + ") is 2 releases behind: v1.1.0, v1.2.0"
 	_, status, errw := packVerb(t, "status")
 	for _, w := range []string{
-		"  base lag: " + lag + "; v1.2.0 takes the series as it stands — " +
-			"`yolo pack rebase forkpack/tool --onto v1.2.0 --keep` re-anchors the series on v1.2.0",
+		"  base lag: " + lag + "; v1.2.0 takes the series as it stands\n",
+		"    to re-anchor the series on v1.2.0, rebase it with git (it applies there as it stands):\n",
+		"      git rebase " + v12 + "\n",
+		" --base=" + v12 + " ",
 	} {
 		if !strings.Contains(status, w) {
 			t.Errorf("pack status lacks %q:\n%s\n%s", w, status, errw)

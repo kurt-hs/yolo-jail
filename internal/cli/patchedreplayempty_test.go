@@ -7,7 +7,7 @@ package cli
 // It must not be reported as "already upstream" (the reason a member the upstream already holds
 // gets); it is reported as empty when written, beside the absorbed member that keeps the upstream
 // line. Every surface renders the one pick, so this pins it where the user sees it: `yolo pack
-// series check`, `yolo pack update` and `yolo pack rebase`, three verbs over the shared result.
+// series check` and `yolo pack update`, two verbs over the shared result.
 
 import (
 	"path/filepath"
@@ -83,9 +83,6 @@ func TestAnOriginallyEmptyMemberIsNotReportedAsAlreadyUpstream(t *testing.T) {
 	}{
 		{"series check", func() (int, string, string) { return seriesVerb(t, "check", f.forkDir) }},
 		{"update", func() (int, string, string) { return packVerb(t, "update") }},
-		{"rebase", func() (int, string, string) {
-			return rebaseVerb(t, "forkpack/tool", "--into", filepath.Join(t.TempDir(), "clone"))
-		}},
 	} {
 		rc, out, errw := verb.run()
 		if rc != 0 {

@@ -109,7 +109,7 @@ func TestAMissingPatchedForkRefusesTheLaunch(t *testing.T) {
 	argv, printed := fakePodmanLaunch(t, func(o *Options) {
 		o.BuildForks = func(ForkBuildRequest) map[string]entrypoint.ForkDelivery {
 			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "upstream v1.1.0 does not take fork forkpack/tool's " +
-				"patch series — `yolo pack rebase forkpack/tool` rebases the series onto the upstream it does not fit"}}
+				"patch series — `yolo pack status` prints the git commands that rebase the series onto the upstream it does not fit"}}
 		}
 	})
 	if argv != nil {
@@ -117,8 +117,8 @@ func TestAMissingPatchedForkRefusesTheLaunch(t *testing.T) {
 	}
 	for _, w := range []string{
 		"Refusing to launch: 1 selected patched fork has no build on this machine.",
-		"\n  fork forkpack/tool: upstream v1.1.0 does not take fork forkpack/tool's patch series — `yolo pack rebase",
-		"`yolo pack series check` says where it stops, and `yolo pack rebase <key>` sets up the fix",
+		"\n  fork forkpack/tool: upstream v1.1.0 does not take fork forkpack/tool's patch series — `yolo pack status` prints",
+		"`yolo pack series check` says where it stops and prints the git commands that rebase it",
 	} {
 		if !strings.Contains(printed, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, printed)
@@ -148,7 +148,7 @@ func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 		"ERROR: fork forkpack/tool: patch application failed at upstream v1.2.0 (" + commit + ")\n",
 		"  Bypass: YOLO_ALLOW_MISSING_PROGRAMS=1 yolo\n",
 		"\n  fork forkpack/tool: its patch series does not apply (the ERROR above), and no build of it is on this machine\n",
-		"`yolo pack series check` says where it stops, and `yolo pack rebase <key>` sets up the fix",
+		"`yolo pack series check` says where it stops and prints the git commands that rebase it",
 		"  YOLO_ALLOW_PATCH_FAILURES=1 does not start this launch: it runs only an intact admitted build",
 		"To launch without it now: YOLO_ALLOW_MISSING_PROGRAMS=1",
 	} {
@@ -162,9 +162,10 @@ func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 	if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "Refusing to launch") {
 		t.Errorf("the error block follows the refusal:\n%s", printed)
 	}
-	// The block's header and its copyable Repair line name the commit; nothing else repeats it.
-	if n := strings.Count(printed, "c5c0f6bd"); n != 2 {
-		t.Errorf("the launch says the commit %d times, want twice (the block's header and Repair):\n%s", n, printed)
+	// The block's header and its Repair recipe name the commit — the rebase, then the export's test,
+	// --base and range — and nothing else repeats it.
+	if n := strings.Count(printed, "c5c0f6bd"); n != 5 {
+		t.Errorf("the launch says the commit %d times, want five (the block's header and its recipe):\n%s", n, printed)
 	}
 }
 

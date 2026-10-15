@@ -534,7 +534,7 @@ func TestBackgroundPatchFailureSurvivesRecordSaveFailureAndClaim(t *testing.T) {
 	// it once, right after the slot (run's patchfailures.go, PF-D81), from the failure handed here,
 	// whose Log names the real background log.
 	delivered, foreground := fx.deliver(t, true)
-	block := delivered.PatchFailure.Block(f.Label(), f.Key(), packsrc.PatchBypass{})
+	block := delivered.PatchFailure.Block(f.Label(), f.RebaseRecipe(), packsrc.PatchBypass{})
 	if delivered.PatchFailure == nil || delivered.PatchFailure.Owner != pf.Owner || delivered.PatchFailure.Seq != pf.Seq ||
 		delivered.PatchFailure.Target != pf.Target || delivered.PatchFailure.Member != pf.Member ||
 		!strings.Contains(block, "patch application failed at upstream v1.2.0") ||
@@ -613,7 +613,7 @@ func TestBackgroundPatchFailureSurvivesRecordSaveFailureAndClaim(t *testing.T) {
 			// The slot hands the failure for the launch to print once (run's patchfailures.go).
 			delivered, report := bg.fx.deliver(t, true)
 			if delivered.PatchFailure == nil || delivered.PatchFailure.Target != bg.failure.Target ||
-				!strings.Contains(delivered.PatchFailure.Block(bg.fork.Label(), bg.fork.Key(), packsrc.PatchBypass{}),
+				!strings.Contains(delivered.PatchFailure.Block(bg.fork.Label(), bg.fork.RebaseRecipe(), packsrc.PatchBypass{}),
 					"Log: "+backgroundAdvanceLog()) || strings.Contains(report, "ERROR: ") {
 				t.Fatalf("actual foreground delivery/report lost evidence after %s: %+v\n%s", mode, delivered.PatchFailure, report)
 			}

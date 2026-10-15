@@ -223,30 +223,14 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               line's place
   yolo pack prepare start|stop|status
                               manage or inspect the detached built-tree preparation worker
-  yolo pack rebase <pack>/<bin> [--onto <ref>] [--into <dir>] [--restart] [--keep] [--pack <dir>]
-                              rebase a PATCHED fork's series (a fork that declares "patches"),
-                              or a patched extension's, named <pack>/<name>, when an upstream
-                              version no longer takes it: clones the upstream
-                              into --into (default ./<pack>-<bin>-rebase), replays the series
-                              onto --onto (default: the newest upstream version above the good
-                              build, which a launch tries first), and stops at the conflict for
-                              you to resolve. It prints the continue
-                              and export commands and writes nothing in the pack; on its own
-                              earlier clone it prints them again, and --restart starts over.
-                              A target the series takes as it stands needs no rebase, so the
-                              clone is removed; --keep rebases it all the same, keeps the clone
-                              and prints the export, whose series names that target as its base.
-                              It reads the selected pack, on the host only. --pack <dir> rebases
-                              the series in that local pack directory instead, checking the
-                              upstream in a scratch copy, which is how a jail rebases one; in a
-                              jail the directory must be inside the workspace
   yolo pack series check [dir] [--onto <ref>]
                               say whether each patch series in a local pack directory (default:
                               the current one) still applies: fetches the upstream into a
                               scratch copy, replays the series at its base and onto the newest
                               version (or --onto), and prints the verdict a launch would reach —
-                              it applies, or the first patch that conflicts and its files. It
-                              writes nothing, and works in a jail
+                              it applies, or the first patch that conflicts and its files, with
+                              the git commands that rebase the series onto that version for you
+                              or an agent to run. It writes nothing, and works in a jail
   yolo pack --help, -h        this text (also 'yolo pack help', and after any verb)
 
 Packs are configured in ~/.config/yolo-jail/config.jsonc under "packs" (USER scope
@@ -284,9 +268,8 @@ func runPack(args []string) int {
 //
 // IT TAKES NO STDIN. It used to, for one reason: the install-time host-access approval
 // prompt, which OQ-TP9 deleted (docs/design/trust-paths.md, 2026-09-04). No `yolo pack`
-// verb asks a question now — `install`/`update` fetch and report, `rebase` fetches too (a
-// patched fork's forced check) and clones the fork's upstream into a directory outside yolo's
-// state directory, `init` scaffolds a pack, and everything else inspects — so there is no
+// verb asks a question now — `install`/`update` fetch and report, `series check` fetches
+// into a scratch copy it deletes, `init` scaffolds a pack, and everything else inspects — so there is no
 // reader to thread.
 func packMain(args []string, out, errw io.Writer, color bool) int {
 	if len(args) == 0 || packHelpAsked(args[1:]) {
@@ -324,8 +307,6 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 			return packStatusKey(args[1:], out, errw, color)
 		}
 		return packStatus(out, errw, color)
-	case "rebase":
-		return packRebase(args[1:], out, errw, color)
 	case "series":
 		return packSeries(args[1:], out, errw, color)
 	case "-h", "--help", "help":

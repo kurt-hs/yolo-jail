@@ -12,7 +12,7 @@ import (
 // actor prints for a patch series that does not apply — a jail launch, `yolo host`, the host floor,
 // `yolo pack update`, `yolo capture`, cached-good recovery — so the copyable shape is written once.
 // It names the subject, the upstream target, the patch and its conflict or cause, that the operation
-// stopped, the repair, and the ONE bypass that works on this machine (PatchBypass, PF-D83), and is
+// stopped, the repair (the rebase recipe, rebaserecipe.go), and the ONE bypass that works on this machine (PatchBypass, PF-D83), and is
 // plain text: conspicuous without color.
 
 // PatchBypass is what the block's Bypass line may offer, decided by the caller from what is on this
@@ -67,8 +67,9 @@ func (b PatchBypass) lines() []string {
 }
 
 // Block is the error block for f: label names the subject ("fork pi-mine/pi", or an owner key),
-// owner is the owner key the repair's rebase takes, and bypass what the Bypass line offers.
-func (f *PatchFailure) Block(label, owner string, bypass PatchBypass) string {
+// recipe is the subject's rebase recipe (RebaseRecipe, PF-D85), and bypass what the Bypass line
+// offers.
+func (f *PatchFailure) Block(label string, recipe RebaseRecipe, bypass PatchBypass) string {
 	if f == nil {
 		return ""
 	}
@@ -97,7 +98,9 @@ func (f *PatchFailure) Block(label, owner string, bypass PatchBypass) string {
 	if f.Kind == "base" {
 		fmt.Fprintf(&b, "  Repair: re-export the series with git format-patch --base=%s\n", f.Target.Commit)
 	} else {
-		fmt.Fprintf(&b, "  Repair: yolo pack rebase %s --onto %s\n", owner, f.Target.Commit)
+		for _, l := range recipe.Repair(f.Target, "Repair: "+RecipeLead, "  ") {
+			b.WriteString(l + "\n")
+		}
 	}
 	for _, l := range bypass.lines() {
 		b.WriteString("  " + l + "\n")

@@ -216,7 +216,7 @@ func TestBuildSlotRefusesMatchingReceiptThatIsNotARecordAct(t *testing.T) {
 		t.Errorf("non-record materialization receipt admitted as original build: %+v\n%s", d, out)
 	}
 	if !strings.Contains(out, "Current build failure remains recorded") || !strings.Contains(out, "yolo capture tool") ||
-		strings.Contains(out, "yolo pack rebase") {
+		strings.Contains(out, packsrc.RecipeLead) {
 		t.Errorf("refusal lost the ordinary current build failure or fabricated patch-rejection repair:\n%s", out)
 	}
 }
@@ -260,7 +260,7 @@ func TestCachedGoodDisclosureKeepsCurrentTypedPatchFailureOnSuccessAndRefusal(t 
 	}
 	d, success := askForCachedGood(t, fx, fork.Key())
 	if d.Key != key || !strings.Contains(success, "Current typed patch failure remains recorded") ||
-		!strings.Contains(success, "yolo pack rebase forkpack/tool --onto") ||
+		!strings.Contains(success, "  Repair: "+packsrc.RecipeLead) ||
 		!strings.Contains(success, "old build does not contain current edits") {
 		t.Errorf("success omitted current typed patch failure or old-build warning: delivery=%+v\n%s", d, success)
 	}
@@ -279,7 +279,7 @@ func TestCachedGoodDisclosureKeepsCurrentTypedPatchFailureOnSuccessAndRefusal(t 
 	}
 	d, refusal := askForCachedGood(t, fx, fork.Key())
 	if d.Key != "" || !strings.Contains(refusal, "ERROR: forkpack/tool: patch application failed") ||
-		!strings.Contains(refusal, "yolo pack rebase forkpack/tool --onto") ||
+		!strings.Contains(refusal, "  Repair: "+packsrc.RecipeLead) ||
 		!strings.Contains(refusal, "No prior build was delivered") {
 		t.Errorf("validation refusal omitted current typed failure/repair: delivery=%+v\n%s", d, refusal)
 	}
@@ -301,7 +301,7 @@ func TestBuildSlotHandRefusalRetainsCurrentPackagingFailureDisclosure(t *testing
 	delivered, _ := runBuildSlot(run.BuildSlotRequest{Forks: &request, MaxBuilds: 1}, &out, false)
 	if delivered["tool"].Key != "" || !strings.Contains(delivered["tool"].Reason, "fixture hand write denied") ||
 		!strings.Contains(out.String(), "Current build failure remains recorded") ||
-		!strings.Contains(out.String(), "yolo capture tool") || strings.Contains(out.String(), "yolo pack rebase") {
+		!strings.Contains(out.String(), "yolo capture tool") || strings.Contains(out.String(), packsrc.RecipeLead) {
 		t.Errorf("hand refusal lost the ordinary failure or invented a patch rejection: %+v\n%s",
 			delivered["tool"], out.String())
 	}

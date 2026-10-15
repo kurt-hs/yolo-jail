@@ -12,7 +12,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -159,19 +158,6 @@ func TestPackStatusAndUpdateReKeyALegacyDigestGoodBuild(t *testing.T) {
 			assertReKeyed(t, f, s, r.delivery.Key, newRecipe)
 		})
 	}
-}
-
-// `yolo pack rebase --onto` the good build's own commit says the good build already runs the series:
-// the legacy digest is no edit there either.
-func TestPackRebaseOntoALegacyDigestGoodBuildSaysItRunsTheSeries(t *testing.T) {
-	fx, _, _, r, _, _ := firstAdvance(t)
-	f := fx.fork(t)
-	s, _, newRecipe := legacyGood(t, f)
-	rc, out, errw := rebaseVerb(t, "forkpack/tool", "--onto", "v1.1.0", "--into", filepath.Join(t.TempDir(), "clone"))
-	if rc != 0 || !strings.Contains(out, "the good build already runs it") {
-		t.Errorf("rebase onto the good build's commit rc=%d, want it named as running the series:\n%s\n%s", rc, out, errw)
-	}
-	assertReKeyed(t, f, s, r.delivery.Key, newRecipe)
 }
 
 // THE HOST FLOOR'S OFFLINE READ serves it too, with its store entry and current logical recipe,

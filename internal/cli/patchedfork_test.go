@@ -1452,8 +1452,9 @@ func TestPackUpdateNamesTheBaseFallbackAsTheBase(t *testing.T) {
 }
 
 // EVERY VERB A PATCHED FORK'S LINES NAME EXISTS: update's and status's lines, a conflict's included,
-// name only `yolo pack` verbs this yolo dispatches — a conflict's `yolo pack rebase` among them —
-// since following a step that names a verb this yolo lacks would only fail.
+// name only `yolo pack` verbs this yolo dispatches — never the retired `yolo pack rebase`; a
+// conflict's next step is the git recipe (PF-D85) — since following a step that names a verb this
+// yolo lacks would only fail.
 func TestPatchedForkLinesNameOnlyVerbsThatExist(t *testing.T) {
 	f := newPatchedFixture(t, "")
 	f.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
@@ -1464,8 +1465,8 @@ func TestPatchedForkLinesNameOnlyVerbsThatExist(t *testing.T) {
 	if !strings.Contains(errw, "patch application failed") || !strings.Contains(sout, "does not take") {
 		t.Fatalf("the explicit conflict or status line was missing:\n%s\n%s\n%s", all, sout, serr)
 	}
-	if !strings.Contains(all, "yolo pack rebase forkpack/tool") {
-		t.Errorf("the conflict's next step does not name `yolo pack rebase`:\n%s", all)
+	if !strings.Contains(all, packsrc.RecipeLead) || !strings.Contains(all, "git rebase ") {
+		t.Errorf("the conflict's next step is not the git recipe:\n%s", all)
 	}
 	for _, m := range regexp.MustCompile("yolo pack ([a-z-]+)").FindAllStringSubmatch(all, -1) {
 		switch m[1] {
