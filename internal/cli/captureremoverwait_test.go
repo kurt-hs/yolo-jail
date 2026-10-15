@@ -33,19 +33,25 @@ func TestCaptureCleanupWaitsForTheBuildJailsScratchRemover(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_SH); err != nil {
+	// The descriptor is read here, once: the remover goroutine must not touch the *os.File the
+	// deferred Close tears down, since a flock is no happens-before edge for the race detector.
+	fd := int(lock.Fd())
+	if err := syscall.Flock(fd, syscall.LOCK_SH); err != nil {
 		t.Fatal(err)
 	}
 
 	var released atomic.Bool
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(time.Second)
 		_ = os.WriteFile(filepath.Join(ws, ".yolo", "housekeeping.log"), []byte("scratch: removed\n"), 0o644)
 		released.Store(true)
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(fd, syscall.LOCK_UN)
 	}()
 
 	cleanupCaptureWorkspace(ws, "yolo-capture-remover-test")
+	defer func() { <-done }()
 	if !released.Load() {
 		t.Fatal("the capture cleanup returned while the build jail's scratch remover still held " +
 			"the staging workspace's in-flight lock: its last line lands after the delete")
