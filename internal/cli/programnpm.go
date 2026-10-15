@@ -125,6 +125,33 @@ func npmCaptureSpec(spec string) (name, selector string, err error) {
 
 var errNPMCaptureUnsupported = errors.New("npm dependency graph is unsupported for sealed capture")
 
+// npmCaptureImageProvidesMarker opens the Unsupported reason the sealed producer records for a
+// program its image already provides. The reason crosses the producer's resolution file and the
+// shared-demand result as TEXT, so the requester recognizes the case by this marker
+// (npmCaptureImageProvided) rather than by an error identity that does not survive the trip.
+const npmCaptureImageProvidesMarker = "the jail image already provides"
+
+// npmImageProvidedResolution is the sealed producer's image half of the launcher collision check
+// (entrypoint.launcherShadows): the host selects ordinary preparations without seeing the image,
+// so the producer, which runs IN the image, answers whether the image provides in.Bin. When it
+// does, the jail writes no launcher for the name and the image's copy runs, so nothing is
+// prepared: the resolution is Unsupported, which every requester treats as "keep the jail's own
+// decision" rather than as a failed launch. It returns nil when the image does not provide it.
+func npmImageProvidedResolution(in npmCaptureInput, imageProvides func(string) string) *npmCaptureResolution {
+	provided := imageProvides(in.Bin)
+	if provided == "" {
+		return nil
+	}
+	return &npmCaptureResolution{Input: in, Unsupported: npmCaptureImageProvidesMarker + " " + provided +
+		", so the jail writes no launcher for " + in.Bin + " and nothing is prepared"}
+}
+
+// npmCaptureImageProvided reports whether err is the producer's answer that the image already
+// provides the program (npmImageProvidedResolution).
+func npmCaptureImageProvided(err error) bool {
+	return errors.Is(err, errNPMCaptureUnsupported) && strings.Contains(err.Error(), npmCaptureImageProvidesMarker)
+}
+
 func (r npmCaptureResolution) inputs() (capture.ProgramInputs, error) {
 	if r.NodeFloorUnavailable != nil {
 		return capture.ProgramInputs{}, fmt.Errorf("failure payload is not a successful npm resolution — retry selected preparation")
@@ -568,7 +595,9 @@ func runProgramNPM(args []string, w io.Writer) int {
 		err = json.Unmarshal(raw, &in)
 		var r *npmCaptureResolution
 		if err == nil {
-			r, err = resolveNPMCapture(ctx, in, path.Join(filepath.Dir(args[2]), "lock"), home, w)
+			if r = npmImageProvidedResolution(in, entrypoint.ImageProvides); r == nil {
+				r, err = resolveNPMCapture(ctx, in, path.Join(filepath.Dir(args[2]), "lock"), home, w)
+			}
 		}
 		var unavailable *run.NodeFloorUnavailable
 		if errors.As(err, &unavailable) {

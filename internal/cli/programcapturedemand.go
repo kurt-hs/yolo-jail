@@ -47,7 +47,7 @@ func ordinarySelectionEnvironment(cfg *jsonx.OrderedMap, packs []*packload.Pack)
 }
 
 func selectedOrdinaryInputs(e *entrypoint.Env, packs []*packload.Pack, mode entrypoint.ProgramPreparationMode) ([]npmCaptureInput, error) {
-	selected, err := entrypoint.SelectedProgramPreparations(e, packs, mode)
+	selected, err := entrypoint.SelectedHostProgramPreparations(e, packs, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +277,10 @@ func prepareOrdinaryForLaunch(req run.ProgramCaptureRequest, w io.Writer) (map[s
 		for _, in := range vector {
 			guard := foregroundOrdinaryGuard(ctx, req, in)
 			record, err := waitOrdinaryPreparation(ctx, in, req.Fingerprint, req.Runtime, req.Platform, req.Fresh, w, guard)
+			if npmCaptureImageProvided(err) {
+				fmt.Fprintf(w, "%s: the jail image already provides it, so nothing is prepared and the image's copy runs — drop the pack's `program %s` declaration to skip this check\n", in.Bin, in.Bin)
+				continue
+			}
 			if errors.Is(err, errNPMCaptureUnsupported) {
 				fmt.Fprintf(w, "%s: sealed dependency capture is unsupported (%v); retaining its bounded declared installer — use an entirely locked registry dependency graph for sealed reuse\n", in.Bin, err)
 				continue
