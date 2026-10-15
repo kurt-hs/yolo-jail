@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -315,5 +317,118 @@ func TestFreshPlainDemandRetriesStateLockHeldByAnotherProcess(t *testing.T) {
 		}
 	case <-time.After(testsupport.ReadinessBudget(t)):
 		t.Fatalf("plain fresh request did not retry after state.lock was released; output:\n%s", out.String())
+	}
+}
+
+// freshPlainLaunchResolutionHeld stands in for another process holding the plain fork's pack
+// source lock at the LAUNCH's own authorization (resolveDemandFork, reached through
+// launchDemandForkResolver): every resolution reports packsrc.ErrLockHeld, as a NoWait mirror try
+// does, until release is called. contended is closed at the first held answer.
+func freshPlainLaunchResolutionHeld(t *testing.T) (contended <-chan struct{}, release func()) {
+	t.Helper()
+	first, released := make(chan struct{}), make(chan struct{})
+	var once, releaseOnce sync.Once
+	previous := launchDemandForkResolver
+	launchDemandForkResolver = func(ctx context.Context, d preparationDemand) (packload.Fork, func(), error) {
+		select {
+		case <-released:
+			return previous(ctx, d)
+		default:
+		}
+		once.Do(func() { close(first) })
+		return packload.Fork{}, func() {}, fmt.Errorf("packs: forkpack: the pack mirror of fixture is %w", packsrc.ErrLockHeld)
+	}
+	t.Cleanup(func() { launchDemandForkResolver = previous })
+	return first, func() { releaseOnce.Do(func() { close(released) }) }
+}
+
+// ANOTHER PROCESS HOLDING THE PACK SOURCE LOCK at a plain fork's fresh LAUNCH request is
+// contention, as it is at the shared worker's admission
+// (TestFreshPlainDemandRetriesStateLockHeldByAnotherProcess): the launch waits for it and
+// prepares, rather than refusing `--update` outright.
+func TestFreshPlainLaunchWaitsForPackSourceLockHeldByAnotherProcess(t *testing.T) {
+	repo, _ := forkRepo(t)
+	forkPinHome(t, "git+file://"+repo+"?ref=main")
+	f := selectedPlainProgram(t)
+	stubSharedPreparationWorker(t)
+	entries := []capture.ManifestEntry{{Path: ".local", Kind: capture.KindDir, Mode: "0755"}, {Path: ".local/bin", Kind: capture.KindDir, Mode: "0755"}, {Path: ".local/bin/tool", Kind: capture.KindFile, Mode: "0755", Size: 32}}
+	fake := fakeCaptureJail(t, new(run.Options), entries)
+	withFakeCaptureJail(t, func(o run.Options) int {
+		writeFile(t, filepath.Join(o.Workspace, forkToolchainLeaf), "image-identity\n")
+		rc := fake(o)
+		out := filepath.Join(o.Workspace, captureOutLeaf)
+		m, err := capture.ReadManifest(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Platform = patchedTestPlatform
+		if err := capture.WriteManifest(out, m); err != nil {
+			t.Fatal(err)
+		}
+		return rc
+	})
+	old := forkBuildChild
+	forkBuildChild = func(ctx context.Context, bound time.Duration, staging string, b forkBuild, s captureStreams, color bool) (int, bool) {
+		return forkBuildRunJail(staging, b, s, color), false
+	}
+	t.Cleanup(func() { forkBuildChild = old })
+	contended, release := freshPlainLaunchResolutionHeld(t)
+	t.Cleanup(release)
+
+	req := run.ForkBuildRequest{Pins: run.PinLaunchForks([]packload.Fork{f}, nil), FreshUpdate: true, Runtime: "podman", Platform: patchedTestPlatform, Interrupt: &run.ActInterrupt{}}
+	var out syncBuffer
+	done := make(chan entrypoint.ForkDelivery, 1)
+	go func() {
+		deliveries, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+		done <- deliveries[f.Bin]
+	}()
+	select {
+	case <-contended:
+	case d := <-done:
+		t.Fatalf("plain fresh launch finished before resolving its pack source: %+v\n%s", d, out.String())
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatalf("plain fresh launch never resolved its pack source; output:\n%s", out.String())
+	}
+	time.Sleep(3 * sharedDemandPoll)
+	select {
+	case d := <-done:
+		t.Fatalf("plain fresh launch settled while another holder had its pack source lock: %+v\n%s", d, out.String())
+	default:
+	}
+	release()
+	select {
+	case d := <-done:
+		if d.Key == "" || d.FreshFailure != "" {
+			t.Fatalf("plain fresh launch did not prepare after the lock was released: %+v\n%s", d, out.String())
+		}
+	case <-time.After(testsupport.ReadinessBudget(t)):
+		t.Fatalf("plain fresh launch did not retry after the lock was released; output:\n%s", out.String())
+	}
+}
+
+// A HOLD THAT OUTLASTS THE BOUND refuses the fresh launch request, and the refusal names the
+// holder and the next step: rerun `--update` once that process finishes.
+func TestFreshPlainLaunchPackSourceLockPastBoundNamesTheRetry(t *testing.T) {
+	repo, _ := forkRepo(t)
+	forkPinHome(t, "git+file://"+repo+"?ref=main")
+	f := selectedPlainProgram(t)
+	stubSharedPreparationWorker(t)
+	previousBound := freshPlainResolutionWait
+	freshPlainResolutionWait = 3 * sharedDemandPoll
+	t.Cleanup(func() { freshPlainResolutionWait = previousBound })
+	_, release := freshPlainLaunchResolutionHeld(t)
+	t.Cleanup(release)
+
+	req := run.ForkBuildRequest{Pins: run.PinLaunchForks([]packload.Fork{f}, nil), FreshUpdate: true, Runtime: "podman", Platform: patchedTestPlatform, Interrupt: &run.ActInterrupt{}}
+	var out syncBuffer
+	deliveries, _ := runBuildSlot(run.BuildSlotRequest{Forks: &req, MaxBuilds: 1}, &out, false)
+	d := deliveries[f.Bin]
+	if d.Key != "" || d.FreshFailure == "" {
+		t.Fatalf("a pack source held past the bound did not refuse: %+v\n%s", d, out.String())
+	}
+	for _, want := range []string{f.Label(), "held by another yolo process", "retry with `yolo --update -- <command>` once that process finishes"} {
+		if !strings.Contains(d.FreshFailure, want) {
+			t.Errorf("refusal %q does not name %q", d.FreshFailure, want)
+		}
 	}
 }
