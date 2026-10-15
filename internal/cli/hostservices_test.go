@@ -32,6 +32,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 	"github.com/mschulkind-oss/yolo-jail/packs"
 )
 
@@ -87,7 +88,12 @@ func fakeAgentMain() int {
 		rep.WithoutAuth, _ = post("")
 	}
 	data, _ := json.Marshal(rep)
-	_ = os.WriteFile(os.Getenv("YOLO_CLI_TEST_AGENT_DUMP"), data, 0o600)
+	// Write then rename, so the report appears whole: a reader that sees the file (the signal
+	// test, waiting for the agent to have been served) must never find it created but empty.
+	dump := os.Getenv("YOLO_CLI_TEST_AGENT_DUMP")
+	if err := os.WriteFile(dump+".tmp", data, 0o600); err == nil {
+		_ = os.Rename(dump+".tmp", dump)
+	}
 	if os.Getenv("YOLO_CLI_TEST_AGENT_MODE") == "sleep" {
 		time.Sleep(30 * time.Second)
 	}
@@ -454,21 +460,32 @@ func TestHostServiceStopsWhenTheAgentDiesOfASignal(t *testing.T) {
 	fakeHostBroker(t)
 	signals := make(chan os.Signal, 1)
 	dump := make(chan struct{})
+	reported := make(chan bool, 1)
+	budget := testsupport.ReadinessBudget(t)
 	go func() {
-		// Wait for the fake agent to have written its report, i.e. to be running, then signal.
-		for i := 0; i < 1000; i++ {
+		// Wait for the fake agent's report, which it renames into place whole once the bridge has
+		// answered it, so the agent is running and has been served; then signal. At the budget,
+		// signal anyway, and the check below names that rather than blaming the bridge.
+		deadline := time.Now().Add(budget)
+		ok := false
+		for !ok && time.Now().Before(deadline) {
 			if p := os.Getenv("YOLO_CLI_TEST_AGENT_DUMP"); p != "" {
-				if _, err := os.Stat(p); err == nil {
-					break
+				if data, err := os.ReadFile(p); err == nil && len(data) > 0 {
+					ok = true
+					continue
 				}
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
+		reported <- ok
 		signals <- syscall.SIGTERM
 		close(dump)
 	}()
 	l := runServiceLaunch(t, codexConfig(upstream.URL), []string{"-p", "codex"}, "sleep", signals)
 	<-dump
+	if !<-reported {
+		t.Fatalf("the fake agent wrote no report within %s, so it was signalled before it was served\n%s", budget, l.errs)
+	}
 	if l.rc != 128+int(syscall.SIGTERM) {
 		t.Errorf("rc = %d, want %d (the agent died of the forwarded SIGTERM)\n%s", l.rc, 128+int(syscall.SIGTERM), l.errs)
 	}
