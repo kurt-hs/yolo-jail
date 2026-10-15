@@ -1,18 +1,22 @@
 ---
 title: "Model auth for an isolated agent process, without copying the login"
 date: 2026-10-15
-status: in-review
-stage: SKETCH
-next: "Rule OQ-IA1 (which option) and OQ-IA2 (which providers); the others follow from them"
+status: deprecated
+stage: SUPERSEDED
+next: "Nothing: the owner declined the request on 2026-10-15; reopen only on a new request"
 tags: [design, credentials, pi, openai-auth, claude-oauth-broker, aws-auth, wire-bridge, testing]
-summary: "A second Pi process inside a jail, with its own agent directory, a copied session and candidate extension code, has no model auth, because the logins live only in the live auth store and copying refresh material into scratch is ruled out. yolo already hands out access-token-only views for the OpenAI subscription and the Claude login, and its wire bridge already injects upstream auth so an agent holds no provider credential. This sketch lays out four options (an access-only view, a proxy that injects auth, a provider-scoped key, or mocked dispatch), each with its revocation, audit and blast-radius story per provider, and leaves the choice to the owner. Nothing is authorized to build."
+summary: "DECLINED 2026-10-15 by the owner. A downstream request asked that a second Pi process inside a jail, with its own agent directory, a copied session and candidate extension code, get model auth without a copy of the login. This sketch laid out four options (an access-only view, a proxy that injects auth, a provider-scoped key, or mocked dispatch). The owner declined the request: inside one jail a brokered token is not a boundary, no per-token revocation exists for either subscription, Anthropic-subscription use through an intermediary is a question for Legal Counsel, and mocked offline tests are not blocked. Nothing is built. The analysis stays as the record of why."
 ---
 
 # Model auth for an isolated agent process, without copying the login
 
-**Status:** 2026-10-15. Nothing is built and nothing is authorized to build. Every claim
-about current behavior was read from the tree at `e57e89739`. No experiment ran, so each
-statement about a provider's token behavior is cited or marked UNMEASURED.
+**Status:** 2026-10-15, declined by the owner: *"Okay, let's reject this request from YOLO for
+that isolated agent thing. We'll put that in a doc that we hand back to them with all of the rest
+of the stuff."* Earlier the same day: *"I'm a little suspect of this whole request."* Nothing is
+built and nothing will be. The reasons are the ones this sketch already found
+([§10](#10-why-it-was-declined)). Every claim about current behavior was read from the tree at
+`e57e89739`. No experiment ran, so each statement about a provider's token behavior is cited or
+marked UNMEASURED.
 
 > **In short.** The isolated process does not need a copy of the login. It needs either an
 > access-only token from a broker that already exists, or no token at all, because a proxy
@@ -34,8 +38,8 @@ counts as a change to the mount-assembly or compose path.
 
 **Start at [§4](#4-the-options)**, the options compared per provider.
 
-**Needs your ruling:** [OQ-IA1](#OQ-IA1), [OQ-IA2](#OQ-IA2), [OQ-IA3](#OQ-IA3),
-[OQ-IA4](#OQ-IA4), [OQ-IA5](#OQ-IA5), [OQ-IA6](#OQ-IA6).
+**Needs your ruling:** nothing. [OQ-IA1](#OQ-IA1) to [OQ-IA6](#OQ-IA6) are moot, closed by
+the decline ([§9](#9-decision-ledger)).
 
 **Reads with:** [`agent-credentials.md`](../reference/agent-credentials.md) (every
 credential channel that exists),
@@ -43,8 +47,7 @@ credential channel that exists),
 credential view),
 [`simultaneous-auth-and-pack-isolation.md`](simultaneous-auth-and-pack-isolation.md) (what
 a Pi extension cannot confine), and [`wire-bridge.md`](../reference/wire-bridge.md) (the
-proxy that already injects upstream auth). There is no implementation sketch yet. One opens
-when the first piece of build-level material appears.
+proxy that already injects upstream auth). No implementation sketch was opened, and none will be.
 
 ---
 
@@ -130,7 +133,7 @@ the live auth store and every endpoint file. Pi's extension policy has the same 
 So **"never exposing refresh material" is a property of what yolo hands the process, not
 something yolo can enforce against same-user candidate code**. Enforcing it would take a
 different user ID, a nested jail, or a separate jail with no live auth store mounted.
-[OQ-IA6](#OQ-IA6) asks whether that is in scope.
+[OQ-IA6](#OQ-IA6) asked whether that is in scope.
 
 What each option can honestly promise:
 
@@ -303,110 +306,42 @@ UNMEASURED Pi behaviors have been measured.
 | A view written into scratch is mistaken for a safe artifact and copied elsewhere | Expiry is real and short. B avoids the artifact altogether |
 | Candidate code turns off yolo's OpenAI extension, so Pi's refresh sends the marker upstream | The marker is no credential, so the request fails ([OpenAI views](../reference/agent-credentials.md#one-writer-and-a-view-per-agent)) |
 | A forced Anthropic refresh used as a kill switch signs out every Claude view for the length of a rewrite | Do not use refresh as revocation unless M7 measures it ([§6](claude-login-without-interception.md#6-costs-and-risks)) |
-| A per-process handle leaks into child processes through the environment | The open question of how a process is given a handle ([OQ-IA4](#OQ-IA4)) decides this |
+| A per-process handle leaks into child processes through the environment | The question of how a process is given a handle ([OQ-IA4](#OQ-IA4), moot) would have decided this |
 | Usage terms on intermediating Claude.ai credentials | Deferred to Legal Counsel ([§4.2](#42-b-a-proxy-that-injects-auth-so-the-process-never-holds-a-token)) |
 
 ## 8. Open Questions
 
-1. 💬 **OQ-IA1: Which option, or which combination, should be built?**
-
-   This decides whether revocation is real or only a matter of expiry, and whether a
-   proxy sits in the inference path.
-
-   - **A — access-only view.** Cheapest; no per-process revocation or audit.
-   - **B — injecting proxy.** Real revocation and per-call audit; new handle machinery.
-   - **C — provider-scoped keys.** No yolo code; works only where a provider offers it.
-   - **D — mocked dispatch.** Safe; does not meet the live-test need.
-   - **A now for `openai-codex`, B as the end state.**
-
-   <!-- vantage: question id=OQ-IA1 leaning="A now for openai-codex, B as the end state: A reuses the existing view writer, and only B makes revocation real." -->
-
-   _Leaning:_ A now for openai-codex, B as the end state: A reuses the existing view writer, and only B makes revocation real.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-IA2: Which providers are in scope?**
-
-   Each provider has different machinery and a different risk
-   ([§2](#2-what-exists-today-per-provider)).
-
-   - **OpenAI subscription only.** The broker and view writer exist.
-   - **Plus Bedrock and API-key providers.** The bridge already injects auth for them.
-   - **Plus the Anthropic subscription.** Needs Legal Counsel's answer and two
-     measurements first.
-
-   <!-- vantage: question id=OQ-IA2 leaning="OpenAI subscription, Bedrock and API-key providers; Anthropic subscription out until Legal Counsel answers and the Pi measurements run." -->
-
-   _Leaning:_ OpenAI subscription, Bedrock and API-key providers; Anthropic subscription out until Legal Counsel answers and the Pi measurements run.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 **OQ-IA3: Are short-lived tokens that cannot be revoked acceptable?**
-
-   Under A or C, revoking a process means waiting out the remaining lifetime: 8 h for
-   Anthropic, 1 h for Bedrock, and unmeasured for OpenAI. If that is not acceptable, B is
-   the only option.
-
-   - **Yes, with a cap.** Accept A where the lifetime is at most some bound (say 1 h).
-   - **Yes.** Accept the provider's own lifetime.
-   - **No.** Only B.
-
-   <!-- vantage: question id=OQ-IA3 leaning="Yes for a first step, since the jail's own agent already holds the same tokens; revisit if candidate code ever runs outside the jail." -->
-
-   _Leaning:_ Yes for a first step, since the jail's own agent already holds the same tokens; revisit if candidate code ever runs outside the jail.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 **OQ-IA4: How does an isolated process request auth, and how is it tied to one process?**
-
-   Today every credential is per launch, and the environment is inherited by children.
-
-   - **An env var naming a handle file.** Simple; every child inherits it.
-   - **A launch flag** (for example on a yolo wrapper that starts the isolated Pi). yolo
-     mints the handle and writes the view or proxy config itself.
-   - **An explicit broker call** (`yolo … issue --for <pid>`). Can be audited per call;
-     binding to a PID is only best-effort.
-
-   <!-- vantage: question id=OQ-IA4 leaning="A launch flag on a yolo wrapper, so yolo mints and records the handle; accept that children inherit it." -->
-
-   _Leaning:_ A launch flag on a yolo wrapper, so yolo mints and records the handle; accept that children inherit it.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-5. 💬 **OQ-IA5: Under B, what does revocation do to a request already in flight?**
-
-   A streamed answer can run for minutes.
-
-   - **Cut the stream.** Revocation is immediate.
-   - **Let it finish.** Refuse new requests only.
-
-   <!-- vantage: question id=OQ-IA5 leaning="Let it finish: refuse new requests only, so a revocation never leaves a half-written answer in the copied session." -->
-
-   _Leaning:_ Let it finish: refuse new requests only, so a revocation never leaves a half-written answer in the copied session.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-6. 💬 **OQ-IA6: Must the isolated process be kept out of the live auth store, not just handed none of it?**
-
-   Same-user code in the jail can read the live auth store whatever this design does
-   ([§3](#3-the-fact-that-bounds-every-option)).
-
-   - **No.** Accept a policy, not a boundary.
-   - **Yes.** Run the isolated process in a nested or separate jail with no live auth store
-     mounted, which widens scope considerably.
-
-   <!-- vantage: question id=OQ-IA6 leaning="No for now: the stated need is to keep refresh material out of scratch, which every option meets; a boundary is its own design." -->
-
-   _Leaning:_ No for now: the stated need is to keep refresh material out of scratch, which every option meets; a boundary is its own design.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+None. The six questions this sketch asked are moot, closed by the decline; each is a row in the
+[ledger](#9-decision-ledger), where its anchor still resolves.
 
 ## 9. Decision Ledger
 
-No rulings yet.
+| ID | Decision | Date | Section |
+| :--- | :--- | :--- | :--- |
+| <a id="IA-D1"></a>IA-D1 | **Declined by the owner.** *"Okay, let's reject this request from YOLO for that isolated agent thing."* No option is built, and the request goes back to the requester with the reasons in [§10](#10-why-it-was-declined) | 2026-10-15 | [§4](#4-the-options) |
+| <a id="OQ-IA1"></a>[OQ-IA1](#OQ-IA1) | *Moot by [IA-D1](#IA-D1).* Which option to build (A, B, C, D, or A then B). Its leaning was A for `openai-codex` now and B as the end state | 2026-10-15 | [§4.5](#45-side-by-side) |
+| <a id="OQ-IA2"></a>[OQ-IA2](#OQ-IA2) | *Moot by [IA-D1](#IA-D1).* Which providers are in scope. Its leaning left the Anthropic subscription out until Legal Counsel answered | 2026-10-15 | [§2](#2-what-exists-today-per-provider) |
+| <a id="OQ-IA3"></a>[OQ-IA3](#OQ-IA3) | *Moot by [IA-D1](#IA-D1).* Whether short-lived tokens that cannot be revoked are acceptable | 2026-10-15 | [§4.1](#41-a-an-access-only-view-with-an-expiry) |
+| <a id="OQ-IA4"></a>[OQ-IA4](#OQ-IA4) | *Moot by [IA-D1](#IA-D1).* How an isolated process requests auth and how it is tied to one process | 2026-10-15 | [§7](#7-risks) |
+| <a id="OQ-IA5"></a>[OQ-IA5](#OQ-IA5) | *Moot by [IA-D1](#IA-D1).* Under B, what revocation does to a request already in flight | 2026-10-15 | [§4.2](#42-b-a-proxy-that-injects-auth-so-the-process-never-holds-a-token) |
+| <a id="OQ-IA6"></a>[OQ-IA6](#OQ-IA6) | *Moot by [IA-D1](#IA-D1).* Whether the isolated process must be kept out of the live auth store, not just handed none of it | 2026-10-15 | [§3](#3-the-fact-that-bounds-every-option) |
+
+## 10. Why it was declined
+
+The owner declined the request on 2026-10-15. The reasons are the ones this sketch had already
+found:
+
+- **Inside one jail, a brokered token is not a boundary.** Any process running as the jail's
+  user can read the live `auth.json` and every endpoint file
+  ([§3](#3-the-fact-that-bounds-every-option)). Candidate code given an access-only view could
+  read the full login anyway.
+- **No per-token revocation exists for either subscription.** Neither yolo nor the repo's
+  research has a way to revoke one Anthropic or OpenAI subscription token, so under options A
+  and C revoking means waiting out the lifetime ([§4.1](#41-a-an-access-only-view-with-an-expiry)).
+- **Anthropic-subscription use through an intermediary is flagged for Legal Counsel.** Options A
+  and B both route that grant to a process other than Claude Code
+  ([§4.2](#42-b-a-proxy-that-injects-auth-so-the-process-never-holds-a-token)). This doc makes no
+  judgment on it.
+- **The tests are not blocked.** The requester's own request 13 records that mocked offline
+  tests are not blocked, which is [option D](#44-d-do-nothing-and-test-against-mocked-dispatch).
+  Live behavior can be verified in a relaunched jail.

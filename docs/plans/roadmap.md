@@ -228,8 +228,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     ([universal-login-sharing.md](../design/universal-login-sharing.md)): the machine store already shares an agent's
     login across every jail, the host notch and the pi/Muse pair are the two gaps, and [its sketch](../design/universal-login-sharing-plan.md)
     waits on all three questions. Rule the canonical copy's location with it, so a `yolo` state reset cannot destroy a login.
-    Beside it, [model auth for an isolated agent process](../design/isolated-agent-model-auth.md) (2026-10-15 sketch):
-    a second Pi process given access without a copy of the login; its six questions are the maintainer's.
+    [Model auth for an isolated agent process](../design/isolated-agent-model-auth.md), once beside it, was declined
+    2026-10-15 ([IA-D1](../design/isolated-agent-model-auth.md#IA-D1)); its six questions are moot.
 37. Work the asks a downstream pack consumer is still waiting on ([downstream-asks.md](downstream-asks.md)) — each
     with the shape a landed version takes; three open ones are owned by [the patched-fork
     design](../design/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), three
@@ -372,7 +372,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 33 — the exact-commit release gate | X | Live GitHub Actions and publisher permissions (offline fixtures cannot prove them), plus the first scheduled macos-user nightly on a Mac runner. |
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
-| 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login; and [OQ-IA1](../design/isolated-agent-model-auth.md#OQ-IA1)–[OQ-IA6](../design/isolated-agent-model-auth.md#OQ-IA6), model auth for an isolated agent process. **Maintainer**. |
+| 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login. **Maintainer**. Model auth for an isolated agent process was declined 2026-10-15 ([IA-D1](../design/isolated-agent-model-auth.md#IA-D1)). |
 | 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); [OQ-DA2](downstream-asks.md#OQ-DA2) and [OQ-DA4](downstream-asks.md#OQ-DA4) await ratification of what was built; three carries are owned by items 1 and 23. |
 
 ### External waits
