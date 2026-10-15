@@ -1,7 +1,7 @@
 ---
 status: in-review
 stage: DESIGN
-next: "On a Mac: measure whether _yolojail can read a host-owned 0444 file in a host-owned directory (§8, OQ-MP10 condition), then fold the result into this doc; no build or installation is authorized"
+next: "Owner runs the OQ-MP10 measurement as _yolojail (one password; §8 point 2), then this doc records it; no build or installation is authorized"
 verified: 2026-10-09
 tags: [macos-user, privileges, security, lifecycle, sudo]
 summary: "Proposed contract: after explicit administrator setup, routine native startup and exit never ask for a sudo password. A root-protected, caller-authenticated helper installs only named guest artifacts, switches only to the fixed sandbox account and removes only owned session files. No implementation or installation is authorized; keychain, workspace and lifetime policies remain independent."
@@ -13,8 +13,8 @@ vantage:
 
 **Status:** 2026-10-15 — grants ruled ([OQ-MP10](#OQ-MP10)): one passwordless run-as-`_yolojail`
 rule in SandVault's form, no root helper, and **one enrolled host user per Mac**. One Mac
-measurement decides whether the per-launch root writes (G3 to G10) are dropped; until it is
-recorded, the helper sections ([the authority boundary](#3-the-authority-boundary) through [exit and restart](#6-normal-switch-exit-stop-and-restart)) describe the fallback, not the plan. Source verified
+measurement decides whether the per-launch root writes (G3 to G10) are dropped. It passed
+2026-10-15 against a stand-in account; until it is rerun as `_yolojail` and recorded, the helper sections ([the authority boundary](#3-the-authority-boundary) through [exit and restart](#6-normal-switch-exit-stop-and-restart)) describe the fallback, not the plan. Source verified
 2026-10-09 at `b2eeffc12`. The
 privilege helper is unbuilt; its native security and password-free behavior are **UNMEASURED**.
 This is not setup or build authorization.
@@ -30,7 +30,8 @@ bounded requests; guest code runs only after the helper permanently drops root p
 
 **Start at [the grant inventory](#8-the-grant-inventory)**, then [the authority boundary](#3-the-authority-boundary).
 
-**Needs a measurement, not a ruling:** [the OQ-MP10 condition](#OQ-MP10), on a Mac.
+**Needs a measurement, not a ruling:** [the OQ-MP10 condition](#OQ-MP10), rerun as `_yolojail`,
+which takes the owner's password once ([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)).
 
 **Reads with:** [the privilege research](../research/sandvault-macos-privileges.md),
 [the keychain design](keychain-from-a-jail.md), [workspace policy](configurable-workspace-root.md),
@@ -488,10 +489,20 @@ not an acceptance shortcut or unlock-policy ruling here.
 
 ### What may happen next
 
-[OQ-MP10](#OQ-MP10) is ruled. First measure its condition on a Mac and record the result in
+[OQ-MP10](#OQ-MP10) is ruled. Its condition passed against a stand-in account. The owner reruns
+it as `_yolojail` and the result goes into
 [walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15). Then author a code-grounded implementation plan,
-review the root request/installation boundary independently, and implement and test the source
-contract. Native installation and measurement are separate: obtain explicit authorization for
+and implement and test the source contract.
+
+**Why this is on the critical path.** The owner wants an agent able to start and stop
+`macos-user` jails with nobody at a password prompt, so that it can test and develop that
+backend unattended. Installing the run-as rule alone does not deliver that. Today's source still
+runs root `sudo` for every per-launch write and removal: the profile `tee`, the env files, the
+staging copies and the `rm` at exit (G3 to G9). An agent's launch therefore still stops at a
+prompt. Both halves are needed: the source change that moves those writes to the host user, and
+setup installing the one rule.
+
+Native installation and measurement are separate: obtain explicit authorization for
 an isolated native test installation before either occurs. That installation approval is not
 an additional prerequisite for source planning, implementation or offline verification.
 No setup, sudoers, account, service, credentials or keychain action follows from writing or
@@ -640,13 +651,44 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
 1. **G1's shape: SandVault's literal rule, no helper.** Setup writes
    `<host user> ALL=(_yolojail) NOPASSWD: /usr/bin/env`. It runs anything as `_yolojail`, an
    account with less privilege than the host user and the account the guest already runs as,
-   and never as root. G2's probe, `sudo -n -u _yolojail /usr/bin/true`, needs no other rule.
+   and never as root. G2's probe goes through the same rule, as
+   `sudo -n -u _yolojail /usr/bin/env /usr/bin/true`. ⚠ The bare `/usr/bin/true` that SandVault
+   probes with would NOT match: sudo matches the command's path, and SandVault grants `true` a
+   line of its own.
 2. **Root for G3 to G10: dropped, if one measurement holds.** Each per-launch file is written by
    the host user, mode `0444`, in a directory the host user owns; credential files (G4, G5) get
    a per-file read ACL for `_yolojail`, which an owner sets without root. The host user deletes
-   its own files at exit (G8), and no receipts are needed (G10). **The condition, unmeasured:**
-   `_yolojail` can traverse to and read such a file, and cannot write or replace it. If that
-   fails, the per-launch writes come back to the owner; nothing in the helper sections is adopted by default.
+   its own files at exit (G8), and no receipts are needed (G10). **The condition:** `_yolojail`
+   can traverse to and read such a file, and cannot write or replace it. If that fails, the
+   per-launch writes come back to the owner; nothing in the helper sections is adopted by default.
+
+   **Measured 2026-10-15 against a stand-in, not yet as `_yolojail`.** The owner's
+   `sandvault-matt` account has a passwordless run-as rule and `_yolojail` does not, so the run
+   used it as the guest. It is an unprivileged account outside the host user's groups, the
+   relation `_yolojail` has to the host user (checked with `id`); its passwordless rule is also
+   G1's exact shape, `sudo -u <account> /usr/bin/env`. The fixture was host-owned and built
+   without root, in a host-owned `0555` directory under `/Users/Shared`. All 16 expectations held:
+
+   | The guest could | The guest could not |
+   | :--- | :--- |
+   | read a `0444` profile file (G3) | append to it, `chmod` it, delete it or rename it |
+   | run a `0555` copy of host `yolo` (`--version`, G6) | overwrite that copy, or create a file or link in its directory |
+   | read a `0444` file two `0555` directories down (G7) | create a file in that tree or delete it |
+   | read a `0600` env file through a per-file read ACL, in a `0700` directory with a search ACL (G4) | list that directory, append to the file or delete it |
+
+   **To record the condition**, the owner runs the same script as `_yolojail`, with the stand-in as
+   the control account that must NOT be able to read the credential file. It prompts for the
+   password once and leaves nothing behind:
+   `/tmp/mp10/measure-mp10.sh _yolojail sandvault-matt`. The script is a scratch file outside the
+   repository. If it is gone, any rerun repeats the table above: the host builds the fixture, then
+   one `sudo -u <guest> /usr/bin/env -i … /bin/sh -c` call tries each act.
+
+   **Where the directory lives: outside the host's home.** `/Users/<host user>` is `0750`
+   group `staff` on this Mac, and `_yolojail` is not in `staff`, so a directory under the home,
+   such as `~/.local/share/yolo-jail`, is unreachable. The fixture sat in `/Users/Shared`, which
+   any account can write. A name there can be squatted: `_yolojail` could create it first. So
+   setup (G0) creates the directory once and gives it to the host user, and a launch refuses one
+   it does not own.
 3. **The guest account: one enrolled host user per Mac.** Multi-user Macs are unsupported.
    Setup refuses to enroll a second host user while another is enrolled, and names the remedy:
    remove the existing enrollment first. This also removes the one cross-user exposure of a
