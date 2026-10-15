@@ -25,7 +25,7 @@ func TestPreparationHostConsumesGoodWithoutForegroundAdvance(t *testing.T) {
 			fx.renderTrees(t, true)
 			first, _ := os.Readlink(fx.link())
 			fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-			fx.now = fx.now.Add(2 * time.Hour)
+			fx.setNow(fx.now.Add(2 * time.Hour))
 			fx.writeHostConfig(t, treeHostOwn+`,"host_apply_on_launch":true,"agent_updates":{"agentpack":"next-launch"}`)
 			stubSpawn(t)
 			stubBins(t, "tool", "other")

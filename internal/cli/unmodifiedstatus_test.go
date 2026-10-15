@@ -32,7 +32,7 @@ func TestStatusOfAFixedUnmodifiedExtensionPromisesNoCheck(t *testing.T) {
 			if d, out := fx.deliver(t, true); d.Dir == "" {
 				t.Fatalf("no build: %s", out)
 			}
-			fx.now = fx.now.Add(3 * time.Hour)
+			fx.setNow(fx.now.Add(3 * time.Hour))
 			if d, out := fx.deliver(t, true); d.Dir == "" || strings.Contains(out, "checking extension") {
 				t.Fatalf("a fixed %s was checked again, or no build: %s", kind, out)
 			}

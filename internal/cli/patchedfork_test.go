@@ -38,6 +38,8 @@ import (
 // of it, and a HOME whose user config selects the fork and its base.
 type patchedFixture struct {
 	repo, forkDir, manifest, base, packs, home string
+	// stopWorkers stops the stubbed shared preparation workers (idempotent).
+	stopWorkers func()
 }
 
 // upstreamGit runs git in dir with a hermetic environment and a fixed identity.
@@ -113,7 +115,7 @@ func newPatchedFixture(t *testing.T, follow string) *patchedFixture {
 	f.packs, f.home = packs, home
 	f.writeUserConfig(t, "")
 	forkPinHomeSeams(t)
-	stubSharedPreparationWorker(t)
+	f.stopWorkers = stubSharedPreparationWorker(t)
 	return f
 }
 

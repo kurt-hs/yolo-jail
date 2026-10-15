@@ -43,7 +43,7 @@ func TestAHostLaunchStopsOnATreesPatchFailureBeforeTheGate(t *testing.T) {
 		t.Fatalf("the first launch: rc=%d execed %v\n%s", rc, got.execed, errw.String())
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	surveys := countGateSurveys(t)
 	got.execed = false
 	errw.Reset()
@@ -80,7 +80,7 @@ func TestAHostApplyStopsOnATreesPatchFailureBeforeItWrites(t *testing.T) {
 		t.Fatalf("the first apply: rc=%d\n%s\n%s", rc, out.String(), errw.String())
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	out.Reset()
 	errw.Reset()
 	if rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", ""); rc == 0 ||
@@ -162,7 +162,7 @@ func TestAHostLaunchWithoutApplyOnLaunchStopsOnATreesRecordedPatchFailure(t *tes
 		t.Fatalf("the first apply: rc=%d\n%s\n%s", rc, out.String(), errw.String())
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	if advanceHostTrees(io.Discard, false, "", nil) {
 		t.Fatal("the advance that records the failure did not stop")
 	}
@@ -219,7 +219,7 @@ func TestThePackUpdateApplyStopsOnRecordedPatchFailuresBeforeItWritesSayingThemO
 			t.Fatalf("the first apply: rc=%d\n%s\n%s", rc, out.String(), errw.String())
 		}
 		fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-		fx.now = fx.now.Add(2 * time.Hour)
+		fx.setNow(fx.now.Add(2 * time.Hour))
 		if advanceHostTrees(io.Discard, false, "", nil) {
 			t.Fatal("the advance that records the failure did not stop")
 		}

@@ -59,7 +59,7 @@ func newPoolFixture(t *testing.T) *poolFixture {
 		out := filepath.Join(o.Workspace, captureOutLeaf)
 		writeFile(t, filepath.Join(o.Workspace, forkToolchainLeaf), "image node npm\n")
 		reserved := packdecl.TreeReservedDir(o.SealedTree)
-		body := o.SealedTree + " " + pf.now.String()
+		body := o.SealedTree + " " + pf.clock().String()
 		writeFile(t, filepath.Join(capture.TreeDir(out), filepath.FromSlash(reserved), "name"), body)
 		m := &capture.Manifest{Schema: capture.ManifestSchema, Home: "/home/agent", Platform: patchedTestPlatform,
 			Surfaces: []string{".local"}, Excluded: capture.DefaultExcludes(), RefScan: capture.RefScanFull, Relocatable: true,
@@ -197,7 +197,7 @@ func TestOneCtrlCEndsEveryExtensionsBuildInThePool(t *testing.T) {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	var arrived sync.WaitGroup
 	arrived.Add(2)
 	var once sync.Once
@@ -248,7 +248,7 @@ func TestBackgroundTreeFailureIsImmediateAndRecoveredHostReportIsOrdered(t *test
 		t.Fatalf("clean Good was not admitted: %+v\n%s", first, firstOut.String())
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	var conflictOut bytes.Buffer
 	conflict := treeAdvance(f, advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true,
 		out: &conflictOut, errw: &conflictOut})
@@ -374,7 +374,7 @@ func TestAKeyThatUpdatesForTheNextLaunchIsHandedWhatItHas(t *testing.T) {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	var builds sync.Map
 	pf.child = func(_ context.Context, b forkBuild) int { builds.Store(b.Fork.Key(), true); return 0 }
 	prevBackground := backgroundTreeAdvance

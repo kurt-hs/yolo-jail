@@ -34,7 +34,7 @@ func prepareFloorOpaqueApplyErr(t *testing.T, fx *patchedAdvanceFixture, version
 		t.Fatal(err)
 	}
 	store := patchedAdvanceStore(true)
-	checked := store.CheckPatched(fork.CheckWant(series), packsrc.CheckOptions{Force: true, Now: func() time.Time { return fx.now }})
+	checked := store.CheckPatched(fork.CheckWant(series), packsrc.CheckOptions{Force: true, Now: fx.clock})
 	if checked.Err != nil || checked.Record == nil || checked.Record.Check == nil || len(checked.Record.Check.List) == 0 {
 		t.Fatalf("fixture could not make the selected local check: %+v", checked)
 	}

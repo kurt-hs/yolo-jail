@@ -72,7 +72,7 @@ func TestAnUnmodifiedGitExtensionIsBuiltAtItsTipWithTheDefaultBuild(t *testing.T
 	}
 	// THE UPSTREAM MOVES: the next check builds the new tip, with nothing to replay.
 	next := fx.commit(t, "", map[int]string{3: "three", 4: "four"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	d2, out2 := fx.deliver(t, true)
 	if d2.Entry == d.Entry || patchedRecordOf(t, treeKeyCLI).Good.Commit != next ||
 		!strings.Contains(out2, "updated extension "+treeKeyCLI+": "+tip[:8]+" → "+next[:8]+"; this jail runs the new build") {
@@ -186,7 +186,7 @@ func TestAnNpmExtensionIsBuiltWithNpmsInstallOfTheVersionItsSpecNames(t *testing
 		t.Errorf("a second launch inside the hour asked the registry or built: %d hits, %d builds", nf.hits, len(nf.seen))
 	}
 	nf.latest.Store("1.3.0")
-	nf.now = nf.now.Add(2 * time.Hour)
+	nf.setNow(nf.now.Add(2 * time.Hour))
 	d2, out2 := nf.deliver(t, true)
 	if d2.Entry == d.Entry || !strings.Contains(out2, "updated extension "+treeKeyCLI+": 1.2.0 → 1.3.0; this jail runs the new build") ||
 		!strings.Contains(strings.Join(nf.seen[len(nf.seen)-1].Args, " "), "tool-ext@1.3.0") {

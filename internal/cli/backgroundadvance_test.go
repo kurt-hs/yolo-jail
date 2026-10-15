@@ -56,7 +56,7 @@ func readyForABackgroundAdvance(t *testing.T) *poolFixture {
 		t.Fatalf("the first launch delivered %+v\n%s", first, out)
 	}
 	pf.commit(t, "", map[int]string{5: "five"})
-	pf.now = pf.now.Add(2 * time.Hour)
+	pf.setNow(pf.now.Add(2 * time.Hour))
 	return pf
 }
 
@@ -448,7 +448,7 @@ func TestBackgroundPatchFailureSurvivesRecordSaveFailureAndClaim(t *testing.T) {
 	}
 	before := patchedRecordOf(t, f.Key())
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	lock := patchedRecordLockPath(f.Key())
 	patchedGitWrapper(t, "for a in \"$@\"; do if [ \"$a\" = merge-tree ]; then rm -f "+
 		shellQuote(lock)+"; mkdir -p "+shellQuote(lock)+"; break; fi; done")
@@ -660,7 +660,7 @@ func makeDetachedPatchFailureWithRecordSave(t *testing.T, transient, preexisting
 		changes = map[int]string{14: "fourteen"}
 	}
 	fx.commit(t, "v1.2.0", changes)
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	if preexistingApply {
 		series, err := f.ReadSeries()
 		if err != nil {
@@ -787,7 +787,7 @@ func TestBackgroundPatchFailureRecoveryUsesCurrentCheckAuthority(t *testing.T) {
 				t.Fatalf("clean Good was not admitted: %+v\n%s", first, firstOut.String())
 			}
 			fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
-			fx.now = fx.now.Add(2 * time.Hour)
+			fx.setNow(fx.now.Add(2 * time.Hour))
 			var conflictOut bytes.Buffer
 			conflict := treeAdvance(f, advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true,
 				out: &conflictOut, errw: &conflictOut})
@@ -999,7 +999,7 @@ func TestBackgroundPatchFailureRecoveryUsesCurrentCheckAuthority(t *testing.T) {
 					t.Fatal(err)
 				}
 				if !mode.force {
-					bg.fx.now = bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second)
+					bg.fx.setNow(bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second))
 				}
 				var out bytes.Buffer
 				result := treeAdvance(bg.fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
@@ -1117,7 +1117,7 @@ func runBackgroundFinishContention(t *testing.T, bg detachedPatchFailureFixture,
 	if err := os.RemoveAll(patchedRecordLockPath(bg.fork.Key())); err != nil {
 		t.Fatal(err)
 	}
-	bg.fx.now = bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second)
+	bg.fx.setNow(bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second))
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	resume := func() { releaseOnce.Do(func() { close(release) }) }
@@ -1194,7 +1194,7 @@ func TestBackgroundAdvanceRepairsPriorDetachedFailureAfterExactCleanRecording(t 
 	if err := os.RemoveAll(patchedRecordLockPath(bg.fork.Key())); err != nil {
 		t.Fatal(err)
 	}
-	bg.fx.now = bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second)
+	bg.fx.setNow(bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second))
 	var output bytes.Buffer
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(bg.fork.Key()), &output)
 	completed := outcomeOf(t, bg.fork.Key())
@@ -1269,7 +1269,7 @@ func TestBackgroundAdvanceRepairsPersistedFailureWithSeparateLogAnnotation(t *te
 		token.Failure.Log == backgroundAdvanceLog() && reflect.DeepEqual(&tokenFailure, persisted) &&
 		foregroundTokenErr == nil && foregroundToken != nil && foregroundToken.Generation == prior.Generation &&
 		foregroundToken.Failure.Log == backgroundAdvanceLog() && reflect.DeepEqual(&foregroundTokenFailure, persisted)
-	bg.fx.now = bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second)
+	bg.fx.setNow(bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second))
 	var output bytes.Buffer
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(bg.fork.Key()), &output)
 	completed := outcomeOf(t, bg.fork.Key())
@@ -1442,7 +1442,7 @@ func TestBackgroundAdvanceRepairCoordinationIsNoWaitAndConservative(t *testing.T
 			if err := os.RemoveAll(patchedRecordLockPath(bg.fork.Key())); err != nil {
 				t.Fatal(err)
 			}
-			bg.fx.now = bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second)
+			bg.fx.setNow(bg.fx.now.Add(packsrc.BranchRefreshInterval + time.Second))
 			files, said, output := runBackgroundRepairWithArtifactContention(t, bg, phase)
 			var completed *backgroundOutcomeFile
 			for i := range files {
@@ -1870,7 +1870,7 @@ func TestBackgroundOlderFallbackDoesNotDisplaceCurrentResolution(t *testing.T) {
 	if second.Generation != firstSaid.Generation+1 {
 		t.Fatalf("second failure did not advance the generation: gen1=%d gen2=%d", firstSaid.Generation, second.Generation)
 	}
-	bg.fx.now = bg.fx.now.Add(time.Second)
+	bg.fx.setNow(bg.fx.now.Add(time.Second))
 	var out bytes.Buffer
 	result := treeAdvance(bg.fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman", launch: true,
 		force: true, out: &out, errw: &out})
@@ -2102,7 +2102,7 @@ func TestBackgroundReplayFailureReportsItsCauseWhileLastGoodServes(t *testing.T)
 		t.Fatalf("first build failed: %+v\n%s", first, firstOut.String())
 	}
 	candidate := fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	failFile := filepath.Join(t.TempDir(), "fail")
 	writeFile(t, failFile, candidate)
 	patchedGitWrapper(t, failReadingFilesAt(failFile))
@@ -2136,7 +2136,7 @@ func TestBackgroundOldGitReportsItsRemedyWhileLastGoodServes(t *testing.T) {
 		t.Fatalf("first build failed: %+v\n%s", first, out.String())
 	}
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	patchedGitWrapper(t, `if [ "$1" = version ]; then echo "git version 2.39.5"; exit 0; fi`)
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(f.Key()), &out)
 	o := outcomeOf(t, f.Key())
@@ -2175,7 +2175,7 @@ func TestBackgroundNoFitReportsItsCauseWhileLastGoodServes(t *testing.T) {
 		t.Fatalf("first build failed: %+v\n%s", first, out.String())
 	}
 	candidate := fx.commit(t, "v1.1.0", map[int]string{11: "eleven"})
-	fx.now = fx.now.Add(2 * time.Hour)
+	fx.setNow(fx.now.Add(2 * time.Hour))
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(f.Key()), &out)
 	if !strings.Contains(out.String(), "ERROR: "+f.Key()+": patch application failed at upstream v1.1.0") ||
 		!strings.Contains(out.String(), "Operation stopped; no older fit or base will be built.") {
