@@ -123,6 +123,16 @@ func TestWithDemandStatePreservesHeldLockAndCancellationIdentities(t *testing.T)
 	}
 }
 
+// pauseDemandStateLock takes a demand's state.lock from an admission hook, to hold the admission
+// paused, waiting up to the readiness budget. A single try is wrong here: the requester's retry
+// wait and the worker's demand monitor each poll that lock every sharedDemandPoll, so a try that
+// overlaps one of those brief reads finds the lock held by routine bookkeeping, not by contention
+// the test is arranging, and fails the test (CI run 38782226184: "pause real demand
+// authorization: lock held").
+func pauseDemandStateLock(t *testing.T, path string) (*pidlock.Lock, error) {
+	return pidlock.Acquire(path, pidlock.Mode{Wait: true, Bound: testsupport.ReadinessBudget(t)}, nil)
+}
+
 func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -155,7 +165,7 @@ func TestSharedFreshDemandRetriesStateLockAtInitialAndFinalAdmissions(t *testing
 					return
 				}
 				path := filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock")
-				lock, err := pidlock.Acquire(path, pidlock.NoWait, nil)
+				lock, err := pauseDemandStateLock(t, path)
 				if err != nil {
 					lockErr <- err
 					return
@@ -249,7 +259,7 @@ func TestSharedFreshDemandCancellationDuringFinalStateLockRetry(t *testing.T) {
 				if d.Key != key || d.Identity != identity || !d.Fresh || calls.Add(1) != tc.guardCall {
 					return
 				}
-				lock, lockErrAcquire := pidlock.Acquire(filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"), pidlock.NoWait, nil)
+				lock, lockErrAcquire := pauseDemandStateLock(t, filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"))
 				if lockErrAcquire != nil {
 					lockErr <- lockErrAcquire
 					return
@@ -356,7 +366,7 @@ func TestSharedFreshDemandRechecksSelectionAfterStateLockContention(t *testing.T
 		if !lockOnce.CompareAndSwap(false, true) {
 			return
 		}
-		lock, err := pidlock.Acquire(filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"), pidlock.NoWait, nil)
+		lock, err := pauseDemandStateLock(t, filepath.Join(sharedDemandDir(key, "podman", patchedTestPlatform), "state.lock"))
 		if err != nil {
 			t.Errorf("pause initial demand authorization: %v", err)
 			return
@@ -421,7 +431,7 @@ func TestSharedBackgroundDemandStateLockStaysBusyAndRetriesNextTick(t *testing.T
 		if d.Key != poolKeyA || !lockOnce.CompareAndSwap(false, true) {
 			return
 		}
-		lock, err := pidlock.Acquire(filepath.Join(sharedDemandDir(d.Key, d.Runtime, d.Platform), "state.lock"), pidlock.NoWait, nil)
+		lock, err := pauseDemandStateLock(t, filepath.Join(sharedDemandDir(d.Key, d.Runtime, d.Platform), "state.lock"))
 		if err != nil {
 			t.Errorf("pause background demand authorization: %v", err)
 			return
