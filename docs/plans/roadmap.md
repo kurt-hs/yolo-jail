@@ -63,7 +63,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    digest](../reference/report-tiers.md#why-its-this-way), built 2026-10-08 with `yolo pack status`; [whether a Mac fork build
    installs its base's `node_floor` first](../design/forked-programs-as-packs.md#OQ-FP11); his test with the migration kit.
 2. [Per-jail host daemons (HD-R1)](../design/host-daemon-ownership.md) — built on branch
-   `worktree-agent-a1e0c197b66474918` and held, not landed: it awaits the maintainer's choice of how old jails coexist
+   `hd-r1-held` (tip 47c96456b, 12 commits not on main, last touched 2026-10-06) and held, not landed: it awaits the maintainer's choice of how old jails coexist
    with it. Next because it retires the machine-wide credential daemons; [who keeps Claude's login fresh with no jail
    running](../design/host-daemon-ownership.md#OQ-HD9) is still to rule, with the design's two other questions.
 3. Rulings that hold a build: [whether a project's mise pin of `pnpm` stays hidden](../design/program-delivery.md#OQ-PD19),
