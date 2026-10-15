@@ -15,6 +15,7 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -476,7 +477,9 @@ func TestMacosUserBriefingSaysHostNetworkingAndAdvertisesNoPorts(t *testing.T) {
 	if !strings.Contains(got, relay) {
 		t.Errorf("the briefing does not name the remap the launch relays (want %q):\n%s", relay, got)
 	}
-	if n := strings.Count(got, "8000"); n != 2 {
+	// Counted as a whole token: the workspace path is a temp dir, and macOS names those with
+	// random runs such as `…2113800000gn`, which a bare substring count reads as a port.
+	if n := len(regexp.MustCompile(`\b8000\b`).FindAllString(got, -1)); n != 2 {
 		t.Errorf("the briefing mentions 8000 %d times, want only the relay sentence's two:\n%s", n, got)
 	}
 }
