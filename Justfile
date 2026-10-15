@@ -427,7 +427,7 @@ lint:
 #
 # Lint (CI mode — every `lint` pass, plus a gofmt cleanliness check).
 lint-ci: lint
-    @dirty="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"; test -z "$dirty" || { echo "gofmt needs to run on:"; echo "$dirty"; exit 1; }
+    @dirty="$(gofmt -l $(git ls-files --cached --others --exclude-standard -- '*.go' ':(exclude)vendor/'))"; test -z "$dirty" || { echo "gofmt needs to run on:"; echo "$dirty"; exit 1; }
     # The release gate's own tests, and the check that CHANGELOG.md's sections still extract.
     # `just release` and both release workflows share scripts/changelog-section.sh, so a rule
     # changed there shows up here first rather than on a tag that can never be moved.
@@ -448,9 +448,9 @@ lint-ci: lint
     # `just done`'s change-aware front door: its routes, and that `done` still calls it.
     python3 scripts/test-completion-check.py
 
-# Format code (Go: gofmt on tracked files)
+# Format code (Go: gofmt on tracked files; vendor/ is upstream code and never reformatted)
 format:
-    gofmt -w $(git ls-files --cached --others --exclude-standard '*.go')
+    gofmt -w $(git ls-files --cached --others --exclude-standard -- '*.go' ':(exclude)vendor/')
 
 # Quality checks (interactive use)
 check: format lint test-fast check-pack-binaries
