@@ -10,9 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+**A launch says when the jail has no internet.** If nothing outside answers, the launch warns,
+names what failed, and gives the next step for your setup, such as restarting Apple Container's
+services. See [Troubleshooting](userguide/guides/troubleshooting.md).
+
 ### Fixed
 
-- When another process holds a build lock, `yolo --update` now waits and retries instead of failing.
+- `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
+- On Apple Container, `yolo check` no longer sends you to the Claude broker's log for an expired login; it points you at the jail's network.
 
 ## [0.14.0] - 2026-10-15
 
