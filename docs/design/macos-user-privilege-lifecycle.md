@@ -566,6 +566,16 @@ What each line is for:
   
   Neither was reproduced; both are read from the source. That is why this design keeps root
   away from every path the host or guest can write ([staging](#staging-without-a-root-file-reader)).
+
+  **Yolo needs no counterpart to this sync.** Resetting a home the agent can rewrite is not a
+  security boundary: the agent can redo any edit the moment it starts. What yolo stages (G6,
+  G7) is different: its own binaries and the selected packs' trees, which must stay unwritable
+  by `_yolojail`. Whether yolo needs root even for those is [walkthrough point 2](#points-to-settle-in-the-walkthrough):
+  "unwritable by the guest" is a property of ownership and mode, so a file the host user owns,
+  mode `0444` in a host-owned directory the guest can traverse, gives the guest the same
+  read-only view with no root at all. Credential files keep the existing per-file read ACL for
+  `_yolojail`, which an owner sets without root. Seatbelt already write-protects the staged
+  skills copy as a second layer.
 - **`launchctl bootout` and `pkill -9` as root** stop everything the sandbox account runs. Yolo
   declines both ([below](#what-yolo-would-not-take)).
 
@@ -626,7 +636,10 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
 1. **G1's shape.** SandVault's literal run-as-guest rule, or the helper's `enter`?
 2. **Root for G3 to G9 at all.** These are beyond SandVault because yolo writes per-launch files
    into root-owned `/var/yolo-jail`. A host-owned directory might give the guest the same
-   read-only view without root. Nobody has evaluated that.
+   read-only view without root ([why](#what-sandvaults-setup-grants-exactly)). If it does, every
+   standing grant beyond G1's account switch disappears, and with it any root copy. Unmeasured:
+   whether `_yolojail` can traverse to such a directory, and whether a second enrolled host
+   user changes the answer.
 3. **The shared guest account.** SandVault has one account per host user; yolo has one per
    machine. Is enrolling a second host user allowed?
 4. **The shape of the policy.** SandVault writes several narrow sudo rules for system
