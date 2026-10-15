@@ -227,7 +227,13 @@ func assertNPMCaptureUserConfigsRemoved(t *testing.T, root string) {
 	if err != nil {
 		t.Fatalf("producer npm commands did not report their private config: %v", err)
 	}
-	paths := strings.Fields(string(data))
+	// One path per line: a temp root may contain spaces, so never split on whitespace.
+	var paths []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if line != "" {
+			paths = append(paths, line)
+		}
+	}
 	if len(paths) == 0 {
 		t.Fatal("producer npm command observer saw no private userconfig")
 	}
