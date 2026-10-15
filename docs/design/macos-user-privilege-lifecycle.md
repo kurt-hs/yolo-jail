@@ -532,6 +532,43 @@ temporary file, `visudo -c` and a rename
 <host user> ALL=(root) NOPASSWD: /usr/bin/pkill -9 -u sandvault-<host user>
 ```
 
+What each line is for:
+
+- **`/bin/zsh` and `/usr/bin/env` as the sandbox account** start the session: `env -i` with
+  the session's variables, then the shell. They grant nothing beyond what the sandbox account
+  can already do.
+- **`/usr/bin/true` as the sandbox account is the readiness probe.** Before every launch,
+  `sudo --non-interactive --user=<account> /usr/bin/true` proves the policy is installed and
+  matches; on failure SandVault stops and names `sv build --rebuild` instead of letting a
+  password prompt appear mid-launch
+  ([L2097-L2103](https://github.com/webcoyote/sandvault/blob/ad05889e9f5f7d63460d6e56a2586c724b14bcd0/sv#L2097-L2103)).
+  `true` is used because it does nothing: the probe tests authorization, never side effects.
+  Yolo's G2 is the same probe.
+- **`/var/sandvault/buildhome-<account>` as root syncs the sandbox home.** Setup writes this
+  script root-owned, mode `0554`, with the install's path already baked into its text
+  ([L1495-L1541](https://github.com/webcoyote/sandvault/blob/ad05889e9f5f7d63460d6e56a2586c724b14bcd0/sv#L1495-L1541)),
+  and every non-nested launch runs it
+  ([L1777](https://github.com/webcoyote/sandvault/blob/ad05889e9f5f7d63460d6e56a2586c724b14bcd0/sv#L1777)).
+  It creates `/Users/<account>`, runs the system `rsync --links --copy-unsafe-links` as root from
+  the install's `guest/home/` into it, and `chown -h`s what changed to the sandbox account. The
+  host user cannot edit the script or pass it arguments, which is the safe half. The unsafe half
+  is what it reads and where it writes, both as root:
+  - **Its source is host-writable.** `guest/home/` is in the checkout or the Homebrew prefix the
+    script was installed from, and on Apple-silicon Homebrew that prefix belongs to the host
+    user. `--copy-unsafe-links` copies the *target* of a link that points outside the tree, so a
+    link placed there makes root copy any root-only file into the sandbox home, which the chown
+    then hands to the sandbox account. That turns "may sync the home" into "may read any file
+    on the machine", with no password.
+  - **Its destination is sandbox-writable.** Root writes into a home the confined account owns,
+    so that account can swap a directory for a link between launches. The script's own comment
+    closes this race for `chown` with `-h`; whether `rsync` as root follows a planted directory
+    link is not established.
+  
+  Neither was reproduced; both are read from the source. That is why this design keeps root
+  away from every path the host or guest can write ([staging](#staging-without-a-root-file-reader)).
+- **`launchctl bootout` and `pkill -9` as root** stop everything the sandbox account runs. Yolo
+  declines both ([below](#what-yolo-would-not-take)).
+
 Three facts about that model matter for yolo:
 
 - **Each host user gets their own sandbox account** (`sandvault-<host user>`,
