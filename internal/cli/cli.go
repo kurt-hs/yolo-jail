@@ -16,6 +16,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/crossaudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -71,6 +72,14 @@ func Main(argv []string) int {
 		// an unstamped binary describes the yolo-jail repo, never the cwd's repo.
 		repoRes, _ := reporoot.Resolve(os.Getenv)
 		fmt.Println("yolo-jail " + version.Get(repoRes.Root))
+		// `--full` adds the build's identity below the one-line version: the commit it was
+		// stamped with and the sha256 of the running bytes (internal/version/identity.go).
+		// The first line stays byte-identical, since other tools parse it.
+		if slices.Contains(args[1:], "--full") {
+			for _, line := range version.FullLines() {
+				fmt.Println(line)
+			}
+		}
 		return 0
 	}
 
