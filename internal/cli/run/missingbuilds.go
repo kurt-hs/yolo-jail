@@ -26,7 +26,7 @@ package run
 //
 // THE REFUSAL SAYS EACH CAUSE ONCE, with every build it left without one (entrypoint.BuildCause,
 // PPX-D42), then who can fix it and the ways back: what the cause names, `yolo capture <key>` to
-// retry, `yolo pack series check` and `yolo pack rebase <key>` for a series that no longer applies,
+// retry, `yolo pack series check` and the git rebase it prints for a series that no longer applies,
 // dropping the list entry or the pack, and paths.AllowMissingProgramsEnv, the bypass
 // jail-notch-readiness.md JR-D3 names for the readiness act, so one variable covers both. With the
 // bypass set the same text is a warning and the launch goes on.
@@ -288,7 +288,7 @@ func (o *Options) printMissingGroups(builds []missingBuild) {
 	}
 	if series {
 		out.print("[dim]  " + richtext.Escape("Where a series no longer applies, `yolo pack series check` says where it "+
-			"stops, and `yolo pack rebase <key>` sets up the fix.") + "[/dim]")
+			"stops and prints the git commands that rebase it.") + "[/dim]")
 	}
 }
 

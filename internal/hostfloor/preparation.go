@@ -261,6 +261,9 @@ func mergePreparedPatchedState(initial, resolved PatchedState) PatchedState {
 	if out.Recipe == "" {
 		out.Recipe = initial.Recipe
 	}
+	if out.Rebase == (packsrc.RebaseRecipe{}) {
+		out.Rebase = initial.Rebase
+	}
 	if out.Good == nil && initial.Good != nil && initial.Recipe == out.Recipe &&
 		out.PatchFailure == nil && initial.PatchFailure == nil {
 		out.Good = clonePatchedBuild(initial.Good)

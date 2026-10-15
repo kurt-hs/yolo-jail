@@ -16,6 +16,12 @@ package packsrc
 //     could never change anything. A pick that stops with conflicting paths is a CONFLICT; anything
 //     else that stops the replay (a blob that is not there, a git that fails or runs out of time)
 //     is an APPLY ERROR.
+//  3. A CONFLICTING MEMBER THAT IS UPSTREAM ALL THE SAME: before a conflict is said, the member's
+//     patch-id (`git patch-id --stable`) is compared with that of every commit between the
+//     series' base and the entry that changes the same paths, the rule by which `git rebase` drops
+//     a commit as already applied. An equal one makes the member ALREADY UPSTREAM, as a pick that
+//     changes nothing does: upstream merged it and then edited it further (PF-D86). Their blobs
+//     are fetched into the mirror first, a blobless mirror having only the entries' own.
 //
 // WHERE: a scratch repository in a private temporary directory, never in a staging workspace,
 // borrowing the mirror's objects read-only (objects/info/alternates) and deleted when the walk
@@ -44,9 +50,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +70,7 @@ const ReplayTimeout = 60 * time.Second
 var replayMinGit = [2]int{2, 40}
 
 // GitTooOldError is the replay's refusal of a git older than replayMinGit, before it runs anything:
-// the walk and the rebase clone both return it. It is its own type so a caller names updating git as
+// the walk returns it. It is its own type so a caller names updating git as
 // the next step, where a retry would meet the same git (docs/design/patched-forks.md PF-D58).
 type GitTooOldError struct {
 	// Have is the git this host runs, as `git version` names it.
@@ -256,6 +264,10 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		return res
 	}
 	defer sc.remove()
+	sc.base = series.Base
+	if !opts.LocalOnly {
+		sc.fetch = func(oids []string) { s.prefetchObjects(b, mirror, oids) }
+	}
 	if series.Len() > 0 {
 		if opts.LocalOnly {
 			if err := missingBlobsScratch(sc, series.Base); err != nil {
@@ -270,7 +282,7 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	var commits []string
 	if series.Len() > 0 {
 		var baseErr *SeriesBaseError
-		commits, baseErr, err = sc.applyAtBase(series, "")
+		commits, baseErr, err = sc.applyAtBase(series)
 		switch {
 		case baseErr != nil:
 			res.Base = baseErr
@@ -396,6 +408,12 @@ type scratch struct {
 	dir    string // the private temporary directory holding both
 	repo   string // the repository, its work tree at repo and its git dir at repo/.git
 	b      budget
+	// base is the series' base, where the upstream range a conflicting member is compared against
+	// starts (upstreamEquivalent); "" compares nothing.
+	base string
+	// fetch fetches objects into the mirror the scratch repository borrows from, nil for a replay
+	// that reads only what is already here.
+	fetch func(oids []string)
 }
 
 // newScratch makes a scratch repository borrowing mirror's objects, run by the git binary gitBin.
@@ -496,6 +514,17 @@ func (sc *scratch) gitStatus(dir string, args ...string) (string, int, error) {
 // gitStatusEnv is gitStatus with env appended after replayEnv: the one GIT_ variable a replay
 // run sets itself, the private index of the export's checkout.
 func (sc *scratch) gitStatusEnv(dir string, env []string, args ...string) (string, int, error) {
+	return sc.gitRun(dir, env, nil, args...)
+}
+
+// gitInput is git with stdin fed to it, in the scratch repository: `git patch-id` reads a diff there.
+func (sc *scratch) gitInput(stdin string, args ...string) (string, error) {
+	out, _, err := sc.gitRun("", nil, strings.NewReader(stdin), args...)
+	return out, err
+}
+
+// gitRun is every replay git run: gitStatusEnv's, with stdin when it is not nil.
+func (sc *scratch) gitRun(dir string, env []string, stdin io.Reader, args ...string) (string, int, error) {
 	full := append(append([]string{}, replayConfig...), args...)
 	if dir == "" && len(args) > 0 && args[0] != "init" {
 		dir = sc.repo
@@ -504,6 +533,9 @@ func (sc *scratch) gitStatusEnv(dir string, env []string, args ...string) (strin
 	cmd.Dir = dir
 	cmd.Env = append(replayEnv(), env...)
 	cmd.WaitDelay = gitWaitDelay
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -522,16 +554,11 @@ func (sc *scratch) gitStatusEnv(dir string, env []string, args ...string) (strin
 	return stdout.String(), 0, nil
 }
 
-// applyAtBase checks the series' base out in the scratch work tree — detached, or on a new branch
-// of that name when branch is set (the rebase clone's, rebase.go) — and makes each member a commit
-// with `git am`, one member at a time so a failure names its member. It returns the commits in
-// series order.
-func (sc *scratch) applyAtBase(series *Series, branch string) ([]string, *SeriesBaseError, error) {
-	at := []string{"checkout", "-q", "--detach", series.Base}
-	if branch != "" {
-		at = []string{"checkout", "-q", "-b", branch, series.Base}
-	}
-	if _, err := sc.git("", at...); err != nil {
+// applyAtBase checks the series' base out, detached, in the scratch work tree and makes each member
+// a commit with `git am`, one member at a time so a failure names its member. It returns the
+// commits in series order.
+func (sc *scratch) applyAtBase(series *Series) ([]string, *SeriesBaseError, error) {
+	if _, err := sc.git("", "checkout", "-q", "--detach", series.Base); err != nil {
 		return nil, nil, fmt.Errorf("checking the series' base %s out: %s", shortCommit(series.Base), oneLine(err))
 	}
 	files := filepath.Join(sc.dir, "series")
@@ -578,6 +605,11 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 			"--no-messages", "--merge-base="+c+"^", onto, c)
 		fields := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
 		switch {
+		case code == 1 && len(fields) > 0 && fields[0] != "" && sc.upstreamEquivalent(c, r.Entry.Commit):
+			// MERGED UPSTREAM, THEN EDITED (PF-D86): the pick conflicts with the later edit, but
+			// the member's change is a commit of the upstream's, which `git rebase` drops.
+			r.Upstream = append(r.Upstream, member)
+			continue
 		case code == 1 && len(fields) > 0 && fields[0] != "":
 			var paths []string
 			for _, p := range fields[1:] {
@@ -633,6 +665,99 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 		return
 	}
 	r.Clean, r.Tree, r.head = true, strings.TrimSpace(tree), onto
+}
+
+// equivalentScanLimit bounds the upstream commits upstreamEquivalent compares one member against:
+// the newest that change exactly the member's paths, between the series' base and the entry.
+const equivalentScanLimit = 64
+
+// upstreamEquivalent reports whether the member commit c's change is a commit of the upstream's
+// between the series' base and entry: one whose patch-id (`git patch-id --stable`, which ignores
+// the message, line numbers and whitespace at the ends of lines) equals c's, the rule `git rebase`
+// drops a commit by as already applied. Only commits that change exactly c's paths can have its
+// patch-id, so those are found from the trees alone, the newest equivalentScanLimit of them, and
+// only their blobs are fetched. false on anything it cannot read, so a doubt leaves the conflict.
+func (sc *scratch) upstreamEquivalent(c, entry string) bool {
+	if sc.base == "" {
+		return false
+	}
+	paths, err := sc.git("", "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", c)
+	if err != nil {
+		return false
+	}
+	want := strings.Split(strings.TrimRight(paths, "\x00"), "\x00")
+	if len(want) == 0 || want[0] == "" {
+		return false
+	}
+	args := []string{"rev-list", "--no-merges", "--max-count=" + strconv.Itoa(equivalentScanLimit), entry,
+		"^" + sc.base, "--"}
+	for _, p := range want {
+		args = append(args, literalPathspec(p))
+	}
+	out, err := sc.git("", args...)
+	if err != nil {
+		return false
+	}
+	var candidates, oids []string
+	for _, u := range strings.Fields(out) {
+		raw, err := sc.git("", "diff-tree", "--no-commit-id", "-r", "-z", "--no-renames", u)
+		if err != nil {
+			return false
+		}
+		got, blobs := rawPathsAndBlobs(raw)
+		if !slices.Equal(got, want) {
+			continue
+		}
+		candidates, oids = append(candidates, u), append(oids, blobs...)
+	}
+	if len(candidates) == 0 {
+		return false
+	}
+	if sc.fetch != nil {
+		sc.fetch(oids)
+	}
+	mine := sc.patchID(c)
+	if mine == "" {
+		return false
+	}
+	for _, u := range candidates {
+		if sc.patchID(u) == mine {
+			return true
+		}
+	}
+	return false
+}
+
+// patchID is commit c's stable patch-id, "" when it cannot be read.
+func (sc *scratch) patchID(c string) string {
+	diff, err := sc.git("", "diff-tree", "--no-commit-id", "-p", "--no-renames", "--full-index", c)
+	if err != nil || strings.TrimSpace(diff) == "" {
+		return ""
+	}
+	out, err := sc.gitInput(diff, "patch-id", "--stable")
+	if err != nil {
+		return ""
+	}
+	id, _, _ := strings.Cut(strings.TrimSpace(out), " ")
+	return id
+}
+
+// rawPathsAndBlobs reads `git diff-tree -r -z` raw output: the paths it changes, sorted as git
+// names them, and the blobs on either side of each change but the null one.
+func rawPathsAndBlobs(raw string) (paths, blobs []string) {
+	fields := strings.Split(strings.TrimRight(raw, "\x00"), "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		meta := strings.Fields(fields[i]) // ":<mode> <mode> <old> <new> <status>"
+		if len(meta) == 5 {
+			for _, oid := range meta[2:4] {
+				if strings.Trim(oid, "0") != "" {
+					blobs = append(blobs, oid)
+				}
+			}
+		}
+		paths = append(paths, fields[i+1])
+	}
+	return paths, blobs
 }
 
 // memberEmpty reports whether the commit `git am` made for a series member is empty: its tree

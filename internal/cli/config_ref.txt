@@ -1606,11 +1606,12 @@
                     `follow` picks a branch ref's commit: "release" (default, the newest
                     semantic-version tag), "release:<prefix>", or "head"; a tag or full
                     commit holds it.  `follow` is refused without `patches`.  `yolo pack
-                    status` shows the series, the good build and what is pending; `yolo
-                    pack rebase <pack>/<bin>` sets up the fix for a series that stopped
-                    fitting; `yolo pack series check [<pack dir>]` says whether a local
-                    pack's series still applies, and `yolo pack rebase <pack>/<bin> --pack
-                    <pack dir>` rebases it, both in a jail too.  `yolo pack lint` reads the
+                    status` shows the series, the good build and what is pending; a launch
+                    drops a patch upstream already holds.  `yolo pack series check [<pack
+                    dir>]` says whether a local pack's series still applies, in a jail too.
+                    A series that stopped fitting is rebased by hand: its error, `yolo pack
+                    status` and the check print the git commands, commits filled in, for
+                    you or an agent to run.  `yolo pack lint` reads the
                     series, and `--online` checks its upstream.  Needs git 2.40 on the
                     host.  Export a series from a fork:
                     git format-patch --base=$(git merge-base <upstream>/main HEAD) \
@@ -1718,7 +1719,7 @@
                     the end; without one the tree is built and mounted, pi never loads it,
                     and `yolo pack lint` and each launch say so.  Drop the extension's old
                     `git:` entry in the same edit, or pi loads it twice.  Its key in
-                    `yolo pack rebase` and `yolo capture` is <pack>/<name>, <name> being
+                    `yolo pack status` and `yolo capture` is <pack>/<name>, <name> being
                     the last part of `into`.
       config        {config:[surface...]} — a composed config surface (see below)
       config-overlay {surface:"agent/name", config:{managed:{...}}, profile} — keys on a surface

@@ -67,6 +67,9 @@ type PatchedState struct {
 	// error block on this operation's stream, so the floor does not print the same block again. It
 	// is false for a failure read from the record, which nothing in this operation has said yet.
 	PatchFailureSaid bool
+	// Rebase is the fork's rebase recipe, which PatchFailure's error block prints as its repair
+	// (packsrc.RebaseRecipe, patched-forks.md PF-D85).
+	Rebase packsrc.RebaseRecipe
 	// OperationError is an independent check/operation failure returned by Advance. A compatible
 	// patch-failure bypass must not turn this into success.
 	OperationError string
@@ -325,16 +328,16 @@ func (f *Floor) writePatchFailureOnce(p Program, state PatchedState, runs string
 	if state.PatchFailureSaid {
 		return
 	}
-	f.writePatchFailure(p, state.PatchFailure, runs)
+	f.writePatchFailure(p, state.PatchFailure, state.Rebase, runs)
 }
 
-func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, runs string) {
+func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, recipe packsrc.RebaseRecipe, runs string) {
 	owner := p.Install.ForkedBy + "/" + p.Bin()
 	command := f.PatchBypassCommand
 	if command == "" {
 		command = "yolo host -- " + p.Bin()
 	}
-	_, _ = io.WriteString(f.out(), pf.Block("fork "+owner, owner, packsrc.PatchBypass{Command: command, Runs: runs}))
+	_, _ = io.WriteString(f.out(), pf.Block("fork "+owner, recipe, packsrc.PatchBypass{Command: command, Runs: runs}))
 }
 
 // ensurePatched is Ensure for a patched fork's program: the advance first, outside the floor's lock

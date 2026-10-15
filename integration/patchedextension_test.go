@@ -26,9 +26,9 @@ import (
 //     home directory and fed by a host read, as pack matt's pi `automode` surface is: the build
 //     jail's seal drops the agent pack, so its boot renders no pack surface (PPX-D41), and the
 //     user's own jail renders it.
-//  2. A version the series does not fit is held: `yolo pack update` reports the conflict and names
-//     `yolo pack rebase <pack>/<name>`; the next launch still mounts the previous build and its
-//     line names what holds it; and the named command, run as printed, stops at the same conflict
+//  2. A version the series does not fit is held: `yolo pack update` reports the conflict with the
+//     git recipe that rebases the series (PF-D85); the next launch still mounts the previous build
+//     and its line names what holds it; and the recipe, run as printed, stops at the same conflict
 //     in a clone of the upstream.
 //
 // HERMETIC, like patchedfork_test.go, whose upstream fixture it shares: the upstream is a local git
@@ -168,15 +168,15 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 	}
 
 	// 2. A VERSION THE SERIES DOES NOT FIT is FATAL (docs/design/patched-forks.md PF-D81): the update
-	// FAILS with the conflict's error, whose Repair line is the rebase onto the conflicting commit, and
+	// FAILS with the conflict's error, whose Repair recipe rebases onto the conflicting commit, and
 	// builds no older fit or base; the next launch refuses before its jail starts, its error block
 	// naming the rebase and the bypass that mounts the previous build; with that bypass the jail
 	// mounts it, held.
 	v12 := up.release("1.2.0", "upstream-ten", "v1.2.0")
 	updRun := runCommand(t, t.TempDir(), []string{"pack", "update"}, withHostSemantics())
 	upd := updRun.combined()
-	rebase := "yolo pack rebase " + owner
-	if updRun.rc == 0 || !strings.Contains(upd, patchFailureBlock(owner, "v1.2.0", v12, "f.txt")) {
+	heldStep := "yolo pack status` prints the git commands that rebase it"
+	if updRun.rc == 0 || !hasPatchFailureBlock(upd, owner, "v1.2.0", v12, "f.txt") {
 		t.Fatalf("yolo pack update did not fail on the conflict at v1.2.0 with its rebase: rc %d\n%s", updRun.rc, upd)
 	}
 	refused := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", "bash", "-c", probe),
@@ -192,7 +192,7 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 		t.Fatalf("the held launch does not mount the previous build:\n%s", out)
 	}
 	if want := "held at v1.1.0 (" + v11[:8] + "): upstream v1.2.0 (" + v12[:8] + ") does not take " +
-		"0001-patch-line-ten.patch — `" + rebase + "`"; !strings.Contains(out, want) {
+		"0001-patch-line-ten.patch — `" + heldStep; !strings.Contains(out, want) {
 		t.Errorf("the held launch's extension line lacks %q:\n%s", want, out)
 	}
 	if got := newCaptureEntries(t, store, before, patchTreeName); len(got) != 1 || got[0] != receipts[0].Key {
@@ -206,12 +206,25 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 	if got := newCaptureEntries(t, store, before, patchTreeAgentBin); len(got) != 0 {
 		t.Errorf("the held launch captured the owning installer despite both fixture suppression dials: %v", got)
 	}
-	clone := filepath.Join(t.TempDir(), "clone")
-	// The error's own Repair command, run as printed; --onto a commit names the target by its commit.
-	repair := rebase + " --onto " + v12
-	r := runCommand(t, t.TempDir(), append(strings.Fields(repair)[1:], "--into", clone), withHostSemantics())
-	if r.rc != 1 || !strings.Contains(r.combined(), "extension "+owner+": upstream "+v12[:8]+
-		" does not take the patch series — the rebase stopped in "+clone) {
-		t.Errorf("the conflict's own Repair command did not stop at the conflict: rc %d\n%s", r.rc, r.combined())
+	// The error's own Repair recipe, its clone, apply and rebase run as printed, stops at the same
+	// conflict, mid-rebase in the clone it made.
+	var recipe []string
+	for _, line := range strings.Split(upd, "\n") {
+		if c, ok := strings.CutPrefix(line, "      git "); ok {
+			recipe = append(recipe, "git "+c)
+		}
+	}
+	if len(recipe) < 3 || recipe[2] != "git rebase "+v12 {
+		t.Fatalf("the update's Repair recipe is %q, want the clone, the apply and the rebase onto %s", recipe, v12)
+	}
+	work := t.TempDir()
+	cmd := exec.Command("bash", "-c", strings.Join(recipe[:3], " && "))
+	cmd.Dir = work
+	cmd.Env = append(packsrc.CleanGitEnv(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_EDITOR=true", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+	said, err := cmd.CombinedOutput()
+	clone := filepath.Join(work, strings.ReplaceAll(owner, "/", "-")+"-rebase")
+	if fi, statErr := os.Stat(filepath.Join(clone, ".git", "rebase-merge")); err == nil || statErr != nil || !fi.IsDir() {
+		t.Errorf("the conflict's own Repair recipe did not stop mid-rebase in %s (%v):\n%s", clone, err, said)
 	}
 }

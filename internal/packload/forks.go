@@ -22,12 +22,15 @@ package packload
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // forkClaimDetailPrefix opens a fork claim's Detail; Claim.DisclosureSentence keys its sentence
@@ -139,6 +142,34 @@ func (f Fork) Key() string { return f.Pack + "/" + f.Bin }
 
 // Patched reports whether the fork is a PATCHED fork: one that declares `patches`.
 func (f Fork) Patched() bool { return f.Patches != "" }
+
+// RebaseRecipe is what the printed git recipe that rebases f's series needs (packsrc.RebaseRecipe;
+// patched-forks.md §8.4, PF-D85): its upstream, the series' base, and the series directory when it
+// is the user's own — not a copy in yolo's state directory (a fetched or shipped pack, a
+// process's pack tree) or a tree a launch staged into a jail, which no act writes.
+func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
+	r := packsrc.RebaseRecipe{Repo: packsrc.CheckRepo(f.Source), Pack: f.Pack, Rel: f.Patches,
+		Dir: f.Pack + "-" + f.Bin + "-rebase"}
+	if s, err := f.ReadSeries(); err == nil {
+		r.Base = s.Base
+	}
+	if f.Root != "" && !notUsersPackRoot(f.Root) {
+		r.Patches = filepath.Join(f.Root, filepath.FromSlash(f.Patches))
+	}
+	return r
+}
+
+// notUsersPackRoot reports whether a pack root is a copy yolo made rather than the user's own
+// directory: under yolo's state directory (the pack store, the embedded packs), a process's pack
+// tree, or the tree a launch staged for a jail (YOLO_PACK_ROOT).
+func notUsersPackRoot(root string) bool {
+	under := func(dir string) bool {
+		rel, err := filepath.Rel(dir, root)
+		return dir != "" && err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
+	return under(paths.GlobalStorage()) || under(os.Getenv("YOLO_PACK_ROOT")) ||
+		strings.Contains(root, string(filepath.Separator)+EmbeddedFallbackPrefix)
+}
 
 // ReadSeries reads a patched fork's series from its pack, once (packsrc.ReadSeries): every reader
 // of the series' bytes reads them through here and digests what it read. An UNMODIFIED EXTENSION's

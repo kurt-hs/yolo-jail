@@ -34,9 +34,10 @@ import (
 
 // launchPatchFailure is one patched build whose series this launch found does not apply.
 type launchPatchFailure struct {
-	label, owner string
-	failure      *packsrc.PatchFailure
-	bypass       packsrc.PatchBypass
+	label   string
+	recipe  packsrc.RebaseRecipe
+	failure *packsrc.PatchFailure
+	bypass  packsrc.PatchBypass
 }
 
 // launchPatchFailures are this launch's patch failures, in the order the slot ran them: the patched
@@ -57,7 +58,7 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 		if !ok || d.PatchFailure == nil {
 			continue
 		}
-		out = append(out, launchPatchFailure{label: "fork " + p.Fork.Key(), owner: p.Fork.Key(), failure: d.PatchFailure,
+		out = append(out, launchPatchFailure{label: "fork " + p.Fork.Key(), recipe: p.Fork.RebaseRecipe(), failure: d.PatchFailure,
 			bypass: forkPatchBypass(p.Fork.Key(), d)})
 	}
 	for _, f := range o.patchedTrees {
@@ -74,7 +75,7 @@ func (o *Options) launchPatchFailures(rt string) []launchPatchFailure {
 		default:
 			b.Missing = true
 		}
-		out = append(out, launchPatchFailure{label: f.Label(), owner: f.Key(), failure: d.PatchFailure, bypass: b})
+		out = append(out, launchPatchFailure{label: f.Label(), recipe: f.RebaseRecipe(), failure: d.PatchFailure, bypass: b})
 	}
 	return out
 }
@@ -109,7 +110,7 @@ func (o *Options) refusePatchFailures(rt string) bool {
 	bypassed := o.Getenv(paths.AllowPatchFailuresEnv) == "1"
 	var blocking []launchPatchFailure
 	for _, f := range failures {
-		lines := strings.Split(strings.TrimSuffix(f.failure.Block(f.label, f.owner, f.bypass), "\n"), "\n")
+		lines := strings.Split(strings.TrimSuffix(f.failure.Block(f.label, f.recipe, f.bypass), "\n"), "\n")
 		out.print("[bold red]" + richtext.Escape(lines[0]) + "[/bold red]")
 		for _, l := range lines[1:] {
 			out.print(richtext.Escape(l))
@@ -135,7 +136,7 @@ func (o *Options) refusePatchFailures(rt string) bool {
 	out.print("[bold red]" + richtext.Escape("Refusing to launch: the patch series of "+entrypoint.JoinAnd(labels)+" "+
 		plural(len(blocking), "does", "do")+" not apply (the ERROR above), and a launch does not run an older build "+
 		"in its place unless asked.") + "[/bold red]")
-	out.print(richtext.Escape("  Repair: as the ERROR's Repair line says; the next fresh launch builds the repaired series."))
+	out.print(richtext.Escape("  Repair: the git commands under the ERROR's Repair line; the next fresh launch builds the repaired series."))
 	out.print(richtext.Escape("  Bypass: " + paths.AllowPatchFailuresEnv + "=1 yolo — runs the intact admitted " +
 		plural(len(blocking), "build", "builds") + " named above for this one launch."))
 	if o.Getenv(paths.AllowMissingProgramsEnv) != "" {

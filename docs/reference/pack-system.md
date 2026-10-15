@@ -3905,13 +3905,11 @@ included, because a flat skills dir can carry none of them.
 | `yolo pack update` | everything `install` does, plus the refresh of npm-declared programs |
 | `yolo pack status` | show locked commits and flag config/lock drift |
 | `yolo pack status <pack>/<name>` | print one selected fork's or built tree's build line whole, with its recipe digest: the digest a launch's disclosure block shows in the line's place ([`OQ-RO9`](report-tiers.md#OQ-RO9)) |
-| `yolo pack rebase <pack>/<bin> [--onto <ref>] [--into <dir>] [--restart] [--pack <dir>]` | for a patched fork or extension ([`patched-forks.md` §8.4](../design/patched-forks.md#84-rebasing-the-series)): force its check, clone its upstream outside yolo's state directory, replay the series onto the target, and stop at the conflict, printing the continue and the export with the commits filled in; it writes nothing in the pack. Keyed alone it reads the selected pack and this machine's check record, on the host only; with `--pack` it reads the local pack in that directory and checks the upstream in a scratch copy, so it runs in a jail too, for a pack inside the jail's workspace ([PF-D66](../design/patched-forks.md#PF-D66)) |
-| `yolo pack series check [<pack-dir>] [--onto <ref>]` | the verdict a launch would reach on each patch series of the local pack in that directory, `.` by default: whether the newest version takes it, or the patch that stops it and the rebase that fixes it, reached in a scratch copy of the upstream with no check record read or written, so it runs in a jail as on the host ([PF-D65](../design/patched-forks.md#PF-D65)) |
+| `yolo pack series check [<pack-dir>] [--onto <ref>]` | the verdict a launch would reach on each patch series of the local pack in that directory, `.` by default: whether the newest version takes it, or the patch that stops it and the git commands that rebase it ([`patched-forks.md` §8.4](../design/patched-forks.md#84-rebasing-the-series)), reached in a scratch copy of the upstream with no check record read or written, so it runs in a jail as on the host ([PF-D65](../design/patched-forks.md#PF-D65)) |
 
 **No `yolo pack` verb asks a question, and `packMain` takes no stdin at all.** `install` and
-`update` fetch and report; `rebase` fetches too, a patched fork's forced check, and clones the
-fork's upstream into a directory outside yolo's state directory, printing the commands that change
-the pack rather than running them; `init` scaffolds a pack; every other verb inspects. That is a
+`update` fetch and report; `series check` fetches into a scratch copy it deletes, printing the git
+commands that would change the pack rather than running them; `init` scaffolds a pack; every other verb inspects. That is a
 property of the whole surface rather than an omission from one row: the only reader ever threaded through here was the
 fetched-pack approval prompt. `install` and `update` share the fetch body, a forced refresh
 of every git pack. `update` adds the refresh of npm-declared programs ([`program`](#program)). The distinction a user cares about is *did my pins move*, which the
