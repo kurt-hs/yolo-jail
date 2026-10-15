@@ -221,4 +221,22 @@ func TestPackProgramDoesNotShadowABakedBinary(t *testing.T) {
 	if !strings.Contains(r.stderr, "no launcher for fzf") {
 		t.Errorf("the boot must say why fzf got no launcher:\nstderr: %s", r.stderr)
 	}
+
+	// The host's preparation cannot see the image, so it asks the sealed producer, which
+	// answers from inside the image that the image provides fzf (CI run 38782730899: a
+	// runner without fzf refused this launch). That answer is kept per image identity: a
+	// second launch on the same image starts no producer and prepares nothing.
+	if !strings.Contains(r.stderr, "fzf: the jail image already provides") {
+		t.Errorf("the first launch must report the producer's image-provides answer:\nstderr: %s", r.stderr)
+	}
+	again := runYolo(t, dir, "true")
+	if again.rc != 0 {
+		t.Fatalf("second launch: rc %d\nstderr: %s", again.rc, again.stderr)
+	}
+	if !strings.Contains(again.stderr, "fzf: the jail image already provides /") {
+		t.Errorf("the second launch must answer from the kept verdict:\nstderr: %s", again.stderr)
+	}
+	if strings.Contains(again.stderr, "ordinary preparation") {
+		t.Errorf("the second launch on the same image asked a producer again:\nstderr: %s", again.stderr)
+	}
 }
