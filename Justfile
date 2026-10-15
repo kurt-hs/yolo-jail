@@ -262,6 +262,10 @@ deploy: install
 
     echo "yolo-jail deployed. Verify: yolo loopholes list"
 
+# Undo `just deploy`/`just install` (any platform) so a packaged yolo runs; `just undeploy --dry-run` previews.
+undeploy *args:
+    sh scripts/undeploy.sh {{args}}
+
 # Build the container image using Nix
 build-image:
     nix --extra-experimental-features 'nix-command flakes' build .#ociImage .#imageCopier
@@ -428,6 +432,7 @@ lint-ci: lint
     # `just release` and both release workflows share scripts/changelog-section.sh, so a rule
     # changed there shows up here first rather than on a tag that can never be moved.
     sh scripts/test-changelog-section.sh
+    sh scripts/test-undeploy.sh
     # CHANGELOG.md's links become the release body's, and a release is never edited after its
     # tag, so a dead link or anchor there has to fail here, before it can ship.
     scripts/vantage-check.sh CHANGELOG.md
