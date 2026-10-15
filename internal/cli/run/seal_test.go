@@ -47,7 +47,7 @@ var sealedEnvAllowlist = map[string]bool{
 	"OVERMIND_SOCKET": true, "PAGER": true, "RUSTUP_HOME": true, "TZ": true,
 	"VISUAL": true, "YOLO_AGENT_UPDATES": true, "YOLO_BLOCK_CONFIG": true, "YOLO_CONTEXT_DIR": true,
 	"YOLO_CONTRACT_TAGS": true, "YOLO_DURABLE_DIR": true, "YOLO_HOST_DIR": true, "YOLO_HOST_LAYERS": true,
-	"YOLO_HOST_LOOPBACK": true, "YOLO_JAIL_MAIN": true, "YOLO_LSP_SERVERS": true, "YOLO_MCP_PRESETS": true,
+	"YOLO_HOST_LOOPBACK": true, "YOLO_JAIL_BACKEND": true, "YOLO_JAIL_MAIN": true, "YOLO_LSP_SERVERS": true, "YOLO_MCP_PRESETS": true,
 	"YOLO_MCP_SERVERS": true, "YOLO_MISE_TOOLS": true, "YOLO_PACK_ROOT": true, "YOLO_RUNTIME": true,
 	"YOLO_SEALED_BUILD": true, "YOLO_VERSION": true,
 }
