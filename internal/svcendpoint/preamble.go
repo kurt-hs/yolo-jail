@@ -1,6 +1,6 @@
 package svcendpoint
 
-// The connection preamble — docs/design/broker-as-a-pack.md §5.5.
+// The connection preamble — docs/reference/loophole-transport.md, "The connection preamble".
 //
 // THIS FILE IS THE CODEC ALONE, so that the frame has exactly one encoder and
 // exactly one reader however many daemons grow to depend on it. The producer is

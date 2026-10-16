@@ -667,7 +667,7 @@ func relayShortHash(cname string) string { return paths.JailShortHash(cname) }
 //
 // yolo no longer spawns per-jail relays at all: the broker singleton sits behind
 // one svcendpoint front per jail, owned by the yolo process that launched that jail
-// and dying with it (docs/design/broker-as-a-pack.md §7). Nothing this sweep looks
+// and dying with it (docs/reference/loophole-system.md, "The per-jail relay is gone"). Nothing this sweep looks
 // for will ever be created again by this binary.
 //
 // It is kept, and kept for one release, because the upgrade is the case it was

@@ -27,7 +27,7 @@ summary: "How a loophole gets onto a machine and how it turns on: the `loophole`
 
 # The loophole system — packaging, activation and disclosure
 
-**Status:** CURRENT as of 2026-10-07, checked against the worktree based on `31312f66`.
+**Status:** CURRENT as of 2026-10-07, checked against the worktree based on `31312f66`. The broker section and the `OQ-BP` rows were added on 2026-10-16, checked against `8e65f3444`, when the broker-as-a-pack design graduated here and into [`pack-binaries.md`](pack-binaries.md).
 
 A **loophole** is a single controlled permeability point between a jail and the host: a
 declared, narrow passage through the wall, and the only extension point that can put a
@@ -382,7 +382,7 @@ will honor, so the claim set and the effect cannot disagree. The strict read bel
 `{jail_loophole_dir}` resolves to the module directory **where the jail sees it**: in a container,
 the path the module directory is mounted at; on `macos-user`, its place in this launch's
 root-owned copy of the staged packs, which keeps each file's exec bit
-([JD-10](../design/jail-daemon-on-macos-user-plan.md#JD-10)). The guest destination is keyed by
+([JD-10](macos-user-provisioning.md#JD-10)). The guest destination is keyed by
 the workspace name and the supplied host pack tree's unique directory leaf, so another launch
 cannot replace the first launch's module bytes or restart target. Staging reserves the path
 exclusively, fills it before a guest consumer starts, and never changes a collision. A collision
@@ -418,7 +418,7 @@ A pack's own tree can carry an executable only when the pack is configured by pa
 **embedded** pack's files read back `0444`, whatever their mode in the repository. So a loophole
 that ships a compiled program declares it as a **download** instead, under `binaries`, one build
 per `<goos>/<goarch>` with an https `url` and a **mandatory** `sha256`
-([`broker-as-a-pack.md`](../design/broker-as-a-pack.md#BP-D1), BP-D1 to BP-D6). The manifest pins
+([`pack-binaries.md`](pack-binaries.md#the-manifest-key-and-its-two-tokens), [BP-D1](pack-binaries.md#BP-D1) to [BP-D6](pack-binaries.md#BP-D6)). The manifest pins
 the bytes and the pack's commit pins the manifest, so a pinned pack pins everything that runs.
 
 Two tokens name a binary, for the module dir's reason and one more: host and jail differ in
@@ -458,14 +458,14 @@ one. What each missing piece produces:
 The jail receives each build as **one read-only file bind**, never the cache directory, and the
 file carries the exec bit the pack's tree could not. The `macos-user` guest declines a jail
 daemon whose argv names a jail binary: that path exists only in a container, and the build is a
-Linux one (placing a darwin build there is deferred, [BP-D6](../design/broker-as-a-pack.md#BP-D6)).
+Linux one (placing a darwin build there is deferred, [BP-D6](pack-binaries.md#BP-D6)).
 A host binary runs there as it does anywhere.
 
 **No pack yolo ships declares `binaries` yet.** When one does, yolo's own release builds the
 program from `cmd/<name>` for each platform the release ships `yolo` to that the loophole runs
 on (a jail build is always `linux/<arch>`), and publishes each build as a bare file on the tag's
 GitHub release, named `<name>_<version>_<goos>_<goarch>`
-([`broker-as-a-pack.md` §14](../design/broker-as-a-pack.md#14-the-release-matrix)). The
+([`pack-binaries.md`](pack-binaries.md#the-release-matrix)). The
 url and `sha256` are committed before the tag by `just pin-pack-binaries <version>`, which runs
 the pin tool (`tools/pack-binaries`) and builds reproducibly with one pinned Go. `just release`,
 the release before it uploads, and PyPI's gate each rebuild and refuse a digest the tree does
@@ -474,7 +474,7 @@ embedded manifest to that matrix in the short suite, so a build no release produ
 before it can ship.
 
 **Between two releases, main pins its own build** of each official program
-([`OQ-BP7`](../design/broker-as-a-pack.md#decision-ledger), ruled 2026-10-05), while each url still names
+([`OQ-BP7`](pack-binaries.md#OQ-BP7), ruled 2026-10-05), while each url still names
 the last release. `just check-ci` rebuilds every build and refuses a digest the tree no longer
 produces, naming `just pin-pack-binaries`, which with no version re-pins the digests and keeps
 the urls. A from-source `just install` builds this machine's builds from the tree and seeds them
@@ -482,7 +482,7 @@ into the cache, re-pinning a program the tree has changed, so its jail runs the 
 with no download. Any other build of such a tree meets, at `yolo pack install`, the release's
 file failing its digest for a changed program, or no file at all for one added since the last
 release. Either failure then names `just install` in the checkout when the `yolo` came from one
-([BP-D21 to BP-D29](../design/broker-as-a-pack.md#BP-D21)).
+([BP-D21](pack-binaries.md#BP-D21) to [BP-D29](pack-binaries.md#BP-D29)).
 
 > [!WARNING]
 > **A yolo older than the key reads a manifest with `binaries` tolerantly**: it skips the key
@@ -1010,6 +1010,83 @@ a config.
 > anything renders a loophole in a jail, it is not the entrypoint's surface loop. A derived
 > `true` would make the census assert something no code reads.
 
+## The Claude OAuth broker, a contribution of the claude pack
+
+The broker is the loophole whose move emptied the last bundled channel, and three of its
+properties are not guessable from its manifest.
+
+**It is a contribution of `packs/claude`**, declared as a `loophole` kind from
+`packs/claude/loopholes/claude-oauth-broker/`, not a pack of its own ([`OQ-A10`](#oq-a10)).
+Selecting the claude pack is the dependency the old `requires.command_on_path: "claude"` sniff
+approximated, so the manifest has no such sniff. It runs like every pack loophole: its host
+daemon publishes `socket` behind the framework front and is spawned by the launch that needs it
+([`HD-R1`](../design/host-daemon-ownership.md#HD-R1) retired the `scope: "host"` singleton the
+move first needed); `detach` lets a refresh in flight finish when its jail ends. What serializes
+refreshes across jails is the flock on the shared credentials file, not a single process. The
+in-jail terminator is a baked `yolo-jaild` subcommand, which an official pack may keep
+([OQ-BP1](#oq-bp1)).
+
+**Identity is the connection preamble, not a stamp.** Every authenticated connection is raw:
+yolo never parses a daemon's payload, and prepends its own
+[connection preamble](loophole-transport.md#the-connection-preamble) carrying the host-derived
+jail identity ([OQ-BP2](#oq-bp2)). Two invariants follow, and the transport keeps both:
+
+- <a id="i1"></a>**I1.** A `jail_id` in an audit record was asserted by the **host**, never by the
+  jail, so a jail cannot forge another jail's identity into the log. The daemon reads it from the
+  preamble (`hostservice` behind `ServeFrontedUnix`), and `yolo-ps` no longer reports its own.
+- <a id="i2"></a>**I2.** A connection emits exactly one connection-level audit record. The
+  preamble is not a request and creates no per-request tier; it is one frame at connection open,
+  host to daemon only.
+
+> [!WARNING]
+> **A daemon behind a front must read the preamble.** One that calls the bare `ServeUnix`
+> consumes the preamble *as the request*, so connections succeed, liveness is green, and every
+> request fails. The broker moved to `ServeFrontedUnix` in the same change that put it behind a
+> front, and its host-side liveness check is a connect probe, because a protocol round trip from
+> the host would have to forge a jail identity.
+
+<a id="the-per-jail-relay-is-gone"></a>**The per-jail relay is gone.** Before the move, a
+per-jail `broker-relay` daemon terminated the jail's TLS, dialed the broker, and rewrote the first
+request frame to stamp `jail_id`. Three of its four jobs were already the framework front's, and
+the preamble replaced the fourth, so `internal/brokerrelay` and its whole lifecycle were deleted
+rather than moved. `internal/prune`'s `ReapRelayOrphans` survives as a legacy sweep for relays an
+older yolo left in `/tmp`.
+
+<a id="host-processes-the-proving-ground"></a>**`host-processes` converted first, as the proving
+ground**: the same `publishes: "socket"` flip with none of the broker's relay, CA or credential
+file. The pack-shipped subset accepted its manifest unchanged, which is the evidence that the
+subset's `publishes` rule is load-bearing rather than too strict: the bundled loopholes predated
+it.
+
+### What emptying the bundled channel left behind
+
+Deleting the last bundled directory deleted the
+embed package and every importer at once, and four consequences outlived the commit:
+
+1. **There is no reserved loophole namespace.** The last reservation was the broker's, so the
+   mechanism went with it. What protects a name yolo still reaches by literal, `claude-oauth-broker`
+   above all, is name exclusivity across packs (fatal, so a second claimant refuses every launch
+   selecting claude) and the origin gate below.
+2. **The broker predicate asks for Honored.** `brokerLoopholeActive` once stopped at `Active()`
+   because the record was yolo's own; now that it comes from a pack it asks `Active()` and
+   `MayRunHostCode`, since it switches the in-jail terminator, the CA mount, the endpoint variable
+   and the certificates the launch mints.
+3. **The pack-shipped subset is universal.** Its two bundled exemptions died with the label:
+   `publishes: "endpoint"` is now undeclarable by any loophole a launch honors, and the placement
+   rule's self-hosting exemption is unrepresentable, a pack's module dir being its staged copy
+   outside every workspace.
+4. **The unrestricted loader keeps one production caller**, the inert report's
+   `resolveInertLoophole`. Every discovery read goes through the subset.
+
+> [!WARNING]
+> **Retiring `publishes: "endpoint"` is not a deletion of its enum member.** `PublishesEndpoint`
+> is the decoder's default for an absent `publishes`, and three refusals are expressed through
+> that default: the subset's refusal of a manifest silent about publication, a credential rule,
+> and the decoded record's value. Defaulting to `socket` instead turns all three into silent
+> acceptances, and turns a self-publishing manifest's fix-naming refusal into a decoder error
+> naming the wrong fix. Retiring the **key** is still an open follow-on; retiring the member is not
+> the way to do it.
+
 ## What this does not license
 
 - **Not** a second gate over host execution. A declaration about a default cannot widen what a
@@ -1088,4 +1165,8 @@ and after the design docs were deleted this table is where they resolve.
 | <a id="oq-lp12"></a>[`OQ-LP12`](#oq-lp12) | No request/grant machinery for per-workspace loopholes | The two verbs answer it: install once at user scope, and each workspace enables from the vetted set. The residual — a workspace can enable **any** installed loophole, not only the one that repo was installed for — is bounded by install-time vetting and visible in the per-launch disclosure. |
 | <a id="oq-lp13"></a>[`OQ-LP13`](#oq-lp13) | **Not hashing, and no new confirmation** — a placement rule, and it must not judge yolo's own shipped content | *If you can edit user-level files, you have all the perms already.* A dialog guarding an act that already required the authority it protects is theatre. And the rule exists because installed content in an agent-writable tree can be swapped by an actor with **none** of the authority that installed it — so applying it to the very artifact that performs the check protects nothing it does not already presuppose. |
 | <a id="oq-lp14"></a>[`OQ-LP14`](#oq-lp14) | The bind-host path rule is **withdrawn, not extended** | Its two cases were inverted: it admitted `~/.ssh` and refused a session runtime-dir socket. A gate with its cases inverted is not a weak gate, it is not a gate — and adding vocabulary to it keeps the inversion. See the warning under [The pack-shipped subset](#the-pack-shipped-subset). |
+| <a id="oq-bp1"></a>[`OQ-BP1`](#oq-bp1) | The broker move and the pack-shipped binary capability ship in **one sprint, as separable commits**; an official pack may keep a baked daemon | The broker's manifest is correct on a baked daemon, so the binary work could slip without reverting it. Do not read it as "binaries are done": the mechanism and its release matrix followed, in [`pack-binaries.md`](pack-binaries.md). |
+| <a id="oq-bp2"></a>[`OQ-BP2`](#oq-bp2) | Every connection is **raw**; yolo prepends its own connection preamble (`preamble: false` for a dumb pipe) and never parses a daemon's payload | A payload stamp needed decode, byte-identical re-encode and verbatim fallbacks for one protocol; the preamble is "write N bytes, then splice" for any protocol. Turning it off costs the daemon its identity, never yolo its audit trail. |
+| <a id="oq-bp3"></a>[`OQ-BP3`](#oq-bp3) | Superseded by [`OQ-BP4`](#oq-bp4): the bind-host path rule ([`OQ-LP14`](#oq-lp14)) was a dependency of emptying the channel, through `audio`, not of the broker | Superseded, not wrong: a future goal smaller than emptying a channel gets the original answer, proceed beside it, and should not inherit the coupling. |
+| <a id="oq-bp4"></a>[`OQ-BP4`](#oq-bp4) | **No inhabitants**: the bundled channel is retired, not shrunk | Deleting the last entry deleted the directory, its embed and every reader; see [What emptying the bundled channel left behind](#what-emptying-the-bundled-channel-left-behind). |
 | <a id="oq-cap2"></a>[`OQ-CAP2`](#oq-cap2) | A pack **can** ship a loophole — the contribution kind, rather than working around the absence of one | The argument that a pack could not serve a capability rested on none of the contribution kinds being a daemon; this kind falsifies that premise, and the narrower conclusion survives for a better reason: selection is how a pack-shipped loophole turns on and off, so supersession is only ever needed for loopholes selection cannot remove. |

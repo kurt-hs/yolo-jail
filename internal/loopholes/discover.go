@@ -211,7 +211,7 @@ func applyWorkspaceOverrides(existing map[string]*Loophole, loopholesConfig *jso
 // IT IS ALSO THE ONLY LOADER LEFT. There used to be a second, loadFromDir, which walked a
 // DIRECTORY OF loopholes for the bundled channel; that channel was retired on 2026-08-19
 // when its last inhabitant became a contribution of `packs/claude`
-// (docs/design/broker-as-a-pack.md OQ-BP4). Every manifest yolo reads now arrives as a
+// (docs/reference/loophole-system.md OQ-BP4). Every manifest yolo reads now arrives as a
 // named module dir — a pack's contribution — or as a `loopholes:` entry in a config.
 //
 // THE SOURCE LABEL SELECTS THE LOADER, which is how the pack-shipped subset
@@ -286,7 +286,7 @@ func loaderFor(source string) func(string) (*Loophole, error) {
 //   - `claude-oauth-broker` (2026-08-19) was reserved BOTH ways — from
 //     `broker.BrokerLoopholeName` unconditionally AND as the last bundled directory —
 //     which is why moving it into `packs/claude` had to delete this function in the same
-//     commit (docs/design/broker-as-a-pack.md §6.1's warning). A reservation left
+//     commit (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack"'s warning). A reservation left
 //     standing over a pack-shipped name is not a warning: the pre-flight is FATAL, so
 //     every launch selecting that pack is refused.
 //
@@ -311,7 +311,7 @@ func loaderFor(source string) func(string) (*Loophole, error) {
 // TWO CHANNEL SWITCHES HAVE LEFT THIS STRUCT, and both left the same way — the channel
 // they gated stopped existing. `Root` named the hand-placed user loopholes dir (OQ-LP10,
 // retired.go). `IncludeBundled` named `bundled_loopholes/`, emptied and retired on
-// 2026-08-19 (docs/design/broker-as-a-pack.md OQ-BP4). While each lived, every caller
+// 2026-08-19 (docs/reference/loophole-system.md OQ-BP4). While each lived, every caller
 // that did NOT want that channel had to remember to switch it off — and, worse for
 // IncludeBundled, every caller that DID want it had to remember to switch it on, with
 // the zero value silently answering "no bundled loopholes on this machine". That is the
@@ -835,7 +835,7 @@ type ValidateEntry struct {
 // manifests cannot use a loader that hides them.
 //
 // IT TOOK AN `includeBundled bool` UNTIL 2026-08-19, and both call sites passed true. The
-// bundled channel is retired (docs/design/broker-as-a-pack.md OQ-BP4), so the parameter
+// bundled channel is retired (docs/reference/loophole-system.md OQ-BP4), so the parameter
 // named a source that no longer exists — and a walker whose only remaining source is the
 // recorded pack modules cannot be asked to exclude them and still be census site 7.
 //

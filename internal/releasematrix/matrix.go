@@ -1,4 +1,4 @@
-// Package releasematrix is the RELEASE MATRIX of docs/design/broker-as-a-pack.md §14: what
+// Package releasematrix is the RELEASE MATRIX of docs/reference/pack-binaries.md, "The release matrix": what
 // yolo's own release does for the binaries its official packs declare. It says which platforms
 // each binary is built for (BP-D7), which release file each build is published as (BP-D8), and
 // what the tree must satisfy before any release can build them at all (the refusals BP-D9

@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 // "Behind the front" is the part that changed, and it changed on the credential
 // path. The singleton used to be host-to-host: the per-jail relay dialed it and
 // wrote the client's request first. The relay is deleted
-// (docs/design/broker-as-a-pack.md §7) and the manifest declares
+// (docs/reference/loophole-system.md, "The per-jail relay is gone") and the manifest declares
 // `publishes: "socket"` + `scope: "host"`, so yolo runs an svcendpoint front per
 // jail over this one socket and every connection it accepts opens with the
 // CONNECTION PREAMBLE. Reading it is what keeps the jail_id on this daemon's audit

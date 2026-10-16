@@ -834,7 +834,7 @@ through the spawn boundary. `yolo pack footprint` still itemizes every claim, no
 - **A pack service's jail daemon.** A `service` contribution's `jail_daemon` also runs a
   supervised process in the jail, and on a container no launch line says it runs (on macos-user
   the guest's `Started … inside the sandbox` line names it, since 2026-10-04's
-  [JD-9](jail-daemon-on-macos-user-plan.md#JD-9)): its claim is the `service` row's, classified skip, so it reaches no block, and the jail-daemon line above skips every
+  [JD-9](../reference/macos-user-provisioning.md#JD-9)): its claim is the `service` row's, classified skip, so it reaches no block, and the jail-daemon line above skips every
   service's entry. The ruling's argument is the loophole's *claim-free* daemon
   ([§3.2](#32-jail_daemon-is-a-claim-free-crossing-to-supervised-in-jail-execution)), and the
   [inventory](#2-the-inventory) has no row for this path, so whether TP10 reaches it is

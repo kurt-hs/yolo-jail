@@ -34,7 +34,7 @@ import (
 //
 // `bundled` labelled a manifest inside `bundled_loopholes/`, embedded in the binary. It
 // went the same way on 2026-08-19, when the last of them — `claude-oauth-broker` —
-// became a contribution of `packs/claude` (docs/design/broker-as-a-pack.md OQ-BP4). Two
+// became a contribution of `packs/claude` (docs/reference/loophole-system.md OQ-BP4). Two
 // things that hung off the label went with it: the pack-shipped subset's exemption
 // (`publishes: "endpoint"` was available to a bundled manifest and refused to a pack's),
 // and the placement rule's exemption (yolo's own content inside the mounted workspace).
@@ -224,7 +224,7 @@ func (l *Loophole) inJailActive() bool {
 //	                 `platforms` miss, or a binary with no build for this machine
 //	BinariesFetched()every build it runs is in the pack-binary cache (binaries.go): a
 //	                 probe with one fix, `yolo pack install`, since a launch never
-//	                 fetches (docs/design/broker-as-a-pack.md BP-D1)
+//	                 fetches (docs/reference/pack-binaries.md BP-D1)
 //	RequirementsMet()the `requires` probes (exec.LookPath, os.Stat)
 //
 // Superseded() sits second rather than third because it is the cheapest of the

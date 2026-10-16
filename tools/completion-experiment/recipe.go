@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/releasematrix"
 )
 
-// THE RECIPE (docs/design/broker-as-a-pack.md BP-D9) is how every official build is made, so a
+// THE RECIPE (docs/reference/pack-binaries.md BP-D9) is how every official build is made, so a
 // build of the same tree gives the same bytes on any machine: §14.2 measured that the checkout's
 // path and the build cache do not move them, and each item below removes one thing that does.
 //

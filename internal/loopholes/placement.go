@@ -62,7 +62,7 @@ func (l *Loophole) PlacementProblems(workspace string) []string {
 // this check — so an agent that could rewrite it had already rewritten the checker.
 //
 // Both halves stopped applying on 2026-08-19, when `bundled_loopholes/` was emptied
-// (docs/design/broker-as-a-pack.md OQ-BP4). yolo's own loopholes are OFFICIAL PACKS now,
+// (docs/reference/loophole-system.md OQ-BP4). yolo's own loopholes are OFFICIAL PACKS now,
 // and a pack's module dir is its STAGED copy under paths.AgentsDir() — outside every
 // workspace by construction — so the self-hosting collision cannot recur through them.
 // What replaced the trust half is not an exemption but the origin gate: an official

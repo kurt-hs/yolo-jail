@@ -7,7 +7,7 @@ refresh token. See [`docs/reference/claude-oauth-interposition.md`](../../../../
 
 It was `bundled_loopholes/claude-oauth-broker/` until 2026-08-19, and it was the **last** inhabitant
 of that channel: this move is what emptied and retired it
-([`docs/design/broker-as-a-pack.md`](../../../../docs/design/broker-as-a-pack.md), [§10](../../../../docs/design/broker-as-a-pack.md#10-sequencing) step 5).
+([`loophole-system.md`](../../../../docs/reference/loophole-system.md#the-claude-oauth-broker-a-contribution-of-the-claude-pack)).
 Nothing about the loophole's own paths changed — same name, same `{state}` dir, same endpoint file —
 so an upgrading host keeps its CA and every jail keeps trusting it.
 
@@ -32,7 +32,7 @@ so an upgrading host keeps its CA and every jail keeps trusting it.
   from inside one.
 
   A **per-jail relay** (`yolo internal daemon broker-relay`) used to do all of this. It is deleted
-  ([`broker-as-a-pack.md`](../../../../docs/design/broker-as-a-pack.md), [§7](../../../../docs/design/broker-as-a-pack.md#7-what-this-deletes-what-it-costs-what-it-forecloses)); the front is a goroutine
+  ([`loophole-system.md`](../../../../docs/reference/loophole-system.md#the-per-jail-relay-is-gone)); the front is a goroutine
   in the launching process and there is no second host daemon to supervise, reap or leak.
 - **Jail daemon** (`yolo-jaild oauth-terminator`) — supervised inside the jail at boot. Binds
   `127.0.0.1:443` in the container network namespace (unprivileged there), terminates TLS for

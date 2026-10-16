@@ -11,8 +11,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// packbinaryseed_test.go is the integration harness's half of docs/design/broker-as-a-pack.md
-// §14.4 step 7 (BP-D15, OQ-BP7 ruled 2026-10-05: main pins its own build). The suite builds
+// packbinaryseed_test.go is the integration harness's half of docs/reference/pack-binaries.md,
+// "What main pins between releases" (BP-D15, OQ-BP7 ruled 2026-10-05: main pins its own build). The suite builds
 // the `yolo` under test from this tree, so the manifests that yolo embeds pin this tree's build
 // of each official pack program, and no release publishes those bytes. A launch never fetches,
 // so without this step every test of an official loophole that runs a program would find its

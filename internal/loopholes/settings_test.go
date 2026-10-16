@@ -326,7 +326,7 @@ func TestListPrintsTheSettingsDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Offered as this process's pack modules — the only module source left after
-	// `bundled_loopholes/` was retired (docs/design/broker-as-a-pack.md OQ-BP4).
+	// `bundled_loopholes/` was retired (docs/reference/loophole-system.md OQ-BP4).
 	SetPackModuleResolver(nil)
 	SetPackModules(moduleDirsUnder(dir))
 	t.Cleanup(ResetPackModules)
@@ -374,7 +374,7 @@ func TestResolverCarriesTheDeclarationsToConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Offered as this process's pack modules — the only module source left after
-	// `bundled_loopholes/` was retired (docs/design/broker-as-a-pack.md OQ-BP4).
+	// `bundled_loopholes/` was retired (docs/reference/loophole-system.md OQ-BP4).
 	SetPackModuleResolver(nil)
 	SetPackModules(moduleDirsUnder(dir))
 	t.Cleanup(ResetPackModules)

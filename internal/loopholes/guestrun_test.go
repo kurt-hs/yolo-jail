@@ -84,7 +84,7 @@ func TestJailDaemonsRunInSplitsOnlyOnMacosUser(t *testing.T) {
 	}
 }
 
-// THE ONE GUEST RULE FOR A PACK SERVICE (docs/design/jail-daemon-on-macos-user-plan.md JD-9,
+// THE ONE GUEST RULE FOR A PACK SERVICE (docs/reference/macos-user-provisioning.md JD-9,
 // under OQ-DP8: "if you would have run it in the jail container, you run it on the guest"). Its
 // daemon is declined only when its admitted host half serves an adaptation instead, or when it
 // publishes an endpoint file at a container path. A service with no host half, one whose host

@@ -2,10 +2,10 @@
 // an allowlisted read-only view of host processes.  See internal/hostprocesses for
 // the daemon and cmd/yolo-ps for the jail-side CLI wrapper, both of which stay
 // BAKED: an official pack may name a baked client, so nothing here waits on the
-// pack-shipped-binary capability (broker-as-a-pack.md §12).
+// pack-shipped-binary capability (docs/reference/pack-binaries.md).
 //
 // It was `bundled_loopholes/host-processes/` until 2026-08-18.  It is the sprint's
-// PROVING GROUND (broker-as-a-pack.md §12) — the conversion with none of the
+// PROVING GROUND (loophole-system.md, "host-processes converted first") — the conversion with none of the
 // broker's complexity: no relay, no CA, no intercept, no credential file.  Four of
 // its five changes shipped earlier; this file is change 4, and change 5 is the
 // verification that the pack-shipped subset accepts the manifest UNCHANGED.  It
@@ -150,7 +150,7 @@
   // hostservice.ServeFrontedUnix reads it — so the tier-1 crossing
   // record and the tier-2 access line name the same jail BY
   // CONSTRUCTION rather than by whatever the client claimed
-  // (broker-as-a-pack.md §5.5).
+  // (loophole-transport.md, "The connection preamble").
   //
   // ``request_end`` is likewise left at its default ("framed"), and that
   // is not an oversight: hostservice reads exactly one 4+N-byte frame

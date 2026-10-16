@@ -703,7 +703,7 @@ func promisedEndpointIsUnpublishable(rt, name string) bool {
 // 2026-08-19 this stopped at Active(), and the reason it could was written down beside
 // cgroupDelegateHonored: the broker's record was BUNDLED — yolo's own manifest, in yolo's
 // own tree, under a name no pack could claim, so there was no origin to gate. The manifest
-// is a contribution of `packs/claude` now (docs/design/broker-as-a-pack.md §10 step 5) and
+// is a contribution of `packs/claude` now (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack") and
 // the reservation is retired, so both halves of that reason are gone in the same commit:
 // the record comes from a pack, and the name is claimable by another one.
 //

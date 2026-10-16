@@ -110,7 +110,7 @@ const (
 // THERE IS NO RESERVED LOOPHOLE NAMESPACE LEFT. `loopholes.ReservedLoopholeNames`, which
 // composed what survived this slice's deletion, is itself deleted (2026-08-19): the
 // broker was its last entry, and moving that manifest into `packs/claude` emptied both
-// of its contributors at once (docs/design/broker-as-a-pack.md §13). What refuses a
+// of its contributors at once (docs/reference/loophole-system.md, "What emptying the bundled channel left behind"). What refuses a
 // duplicate loophole name now is exclusivity ACROSS PACKS, plus the origin gate for what
 // a claimed name is allowed to switch on.
 
@@ -926,7 +926,7 @@ const packBinariesLeaf = "pack-binaries"
 // PackBinariesDir returns $HOME/.local/share/yolo-jail/pack-binaries — the cache of the
 // executables loophole manifests declare under `binaries`, each build verified against the
 // manifest's sha256 and kept at <dir>/<sha256>/<name> with its exec bit set
-// (docs/design/broker-as-a-pack.md BP-D1). `yolo pack install` fills it by download, a
+// (docs/reference/pack-binaries.md BP-D1). `yolo pack install` fills it by download, a
 // from-source `just install` seeds it with the tree's own builds of the official programs
 // (packbin.Seed, BP-D15), and a launch only reads it.
 //

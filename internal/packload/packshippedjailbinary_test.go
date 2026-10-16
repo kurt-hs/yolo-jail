@@ -1,7 +1,7 @@
 package packload_test
 
-// packshippedjailbinary_test.go is the EXPERIMENT broker-as-a-pack.md §10's second
-// sequencing step asks for, pinned: "a throwaway local pack whose `jail_daemon.cmd` is
+// packshippedjailbinary_test.go is the EXPERIMENT of pack-binaries.md's "A pack's own tree cannot carry
+// an executable", as its design asked for it, pinned: "a throwaway local pack whose `jail_daemon.cmd` is
 // `["{jail_loophole_dir}/bin/hello"]` … converts 'the mechanism appears to exist' into
 // 'the mechanism works'". The pack is packs/hello-daemon; its README records what the
 // experiment measured and this file is what keeps the measurement true.

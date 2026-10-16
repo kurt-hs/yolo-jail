@@ -44,7 +44,7 @@ func (p Problem) String() string {
 }
 
 // Census is every way the official binaries in entries fail the release matrix, REBUILDING
-// NOTHING (docs/design/broker-as-a-pack.md §14.4, step 2): each binary's builds are exactly
+// NOTHING (docs/reference/pack-binaries.md, "The pin tool and the three gates"): each binary's builds are exactly
 // BP-D7's platforms for the release platforms given, each build's url has BP-D8's form, and
 // each program is a main package at cmd/<name> that does not link the packs embed on any
 // platform it is built for. root is the checkout.

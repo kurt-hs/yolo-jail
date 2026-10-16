@@ -1,6 +1,6 @@
 package main
 
-// seed_test.go pins what main pins between two releases (docs/design/broker-as-a-pack.md
+// seed_test.go pins what main pins between two releases (docs/reference/pack-binaries.md
 // BP-D15, OQ-BP7 ruled 2026-10-05: main pins its own build): the digest-only check `just
 // check-ci` runs, the digest-only pin it names, and the seed `just install` runs, which builds
 // this machine's builds from the tree into the cache every launch reads.

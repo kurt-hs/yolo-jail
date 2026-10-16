@@ -21,7 +21,7 @@ package run
 // argv naming a container path the sandbox has no copy of (internal/loopholes' guestrun.go
 // states each). Every other pack service's daemon runs in the guest, and a loophole daemon naming
 // `{jail_loophole_dir}` runs from the sandbox's copy of the staged packs
-// (macosuserguestdaemons.go; docs/design/jail-daemon-on-macos-user-plan.md JD-9, JD-10).
+// (macosuserguestdaemons.go; docs/reference/macos-user-provisioning.md JD-9, JD-10).
 //
 // THE CLASSIFIER THIS FILE ONCE DECLINED TO WRITE now exists, in internal/loopholes, and for
 // the reason this file gave for not writing it: the verdict used to be one branch; it now

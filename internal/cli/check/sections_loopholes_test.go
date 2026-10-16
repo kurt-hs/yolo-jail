@@ -710,7 +710,7 @@ func TestHostServiceLivenessInJailSaysWhy(t *testing.T) {
 // returns it, so no real loophole's doctor_cmd can ever run from a test.
 //
 // A LAZY PACK-MODULE RESOLVER over the dir. It used to override BundledLoopholesDir; that
-// channel is retired (docs/design/broker-as-a-pack.md OQ-BP4) and a pack contribution is
+// channel is retired (docs/reference/loophole-system.md OQ-BP4) and a pack contribution is
 // the only module source left, so the record is what has to be replaced. Lazy because the
 // caller writes its manifests AFTER this returns.
 //
@@ -844,7 +844,7 @@ func runCheckLoopholes(t *testing.T, workspace string) (*reporter, string) {
 // A SECOND loophole is present alongside the one under test and asserted in the same
 // run: the fix is "the pack source is seen too", never "the pack source replaced the
 // ones that already worked". That second one used to be a BUNDLED loophole; the channel
-// is retired (docs/design/broker-as-a-pack.md OQ-BP4), so it is a second recorded module
+// is retired (docs/reference/loophole-system.md OQ-BP4), so it is a second recorded module
 // and what it still proves is that one loophole's self-check does not shadow another's.
 func TestCheckLoopholesReportsAPackShippedSelfCheck(t *testing.T) {
 	moduleRoot := isolatedModuleDir(t)

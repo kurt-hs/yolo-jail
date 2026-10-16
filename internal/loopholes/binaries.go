@@ -2,7 +2,7 @@ package loopholes
 
 // binaries.go is where a manifest's `binaries` (internal/loopholedecl's binaries.go) meets THIS
 // MACHINE: which build each reference needs here, where the cache keeps it, whether it is
-// there, and what to say when it is not (docs/design/broker-as-a-pack.md BP-D1).
+// there, and what to say when it is not (docs/reference/pack-binaries.md BP-D1).
 //
 // Two answers, on two axes, because they have different fixes:
 //

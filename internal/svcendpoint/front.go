@@ -41,7 +41,7 @@ type FrontOptions struct {
 	HalfCloseUpstream bool
 
 	// NoPreamble suppresses the connection preamble (preamble.go,
-	// docs/design/broker-as-a-pack.md §5.5) for daemons behind this front.
+	// docs/reference/loophole-transport.md, "The connection preamble") for daemons behind this front.
 	//
 	// THE ZERO VALUE IS ON — do not invert this field. §5.5's default is
 	// `preamble: true`, so that no manifest has to declare anything to keep

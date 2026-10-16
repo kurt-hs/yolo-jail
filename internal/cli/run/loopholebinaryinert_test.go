@@ -8,7 +8,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 )
 
-// A LAUNCH NEVER FETCHES A PACK BINARY (docs/design/broker-as-a-pack.md BP-D1), so a loophole
+// A LAUNCH NEVER FETCHES A PACK BINARY (docs/reference/pack-binaries.md BP-D1), so a loophole
 // whose declared build is not in the cache would otherwise simply not run on a working backend,
 // with nothing said. The inert report says so, names the loophole and its pack, and names the
 // one command that fixes it. Deleting the BinaryInertNotes loop in platformInertLines fails this.

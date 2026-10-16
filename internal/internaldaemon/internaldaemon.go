@@ -51,8 +51,8 @@ func IsDaemonArgv(argv []string) bool {
 // `broker-relay` was a member and is GONE. It fronted the broker singleton for one jail and
 // stamped a host-asserted jail_id into the request; both jobs are the framework's now —
 // svcendpoint's front publishes the endpoint, and its connection preamble carries the
-// identity — so the daemon was deleted rather than moved (docs/design/broker-as-a-pack.md
-// §7). A name removed from this switch reports "unknown daemon", which is the right answer
+// identity — so the daemon was deleted rather than moved (docs/reference/loophole-system.md,
+// "The per-jail relay is gone"). A name removed from this switch reports "unknown daemon", which is the right answer
 // for an argv nothing emits any more.
 func Run(args []string) int {
 	if len(args) == 0 {

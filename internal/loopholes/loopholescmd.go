@@ -287,7 +287,7 @@ func List(deps Deps) int {
 		// BundledLoopholesDir(), and dropping it is the point rather than a trim: the
 		// empty-list message is the one surface that tells a user WHERE a loophole
 		// could come from, and naming a channel that no longer exists would send them
-		// to look in a directory yolo does not read (docs/design/broker-as-a-pack.md
+		// to look in a directory yolo does not read (docs/reference/loophole-system.md
 		// OQ-BP4). Every loophole yolo ships is a pack's now, so `packs:` is the
 		// answer to "why is this list empty".
 		p.Printf("  • [bold]pack:[/bold] a `loophole` contribution from a selected pack; "+

@@ -31,7 +31,7 @@
 // "AGENTS ARE PACKS" becomes true of loopholes too.
 // `hello-daemon` is the odd one in that group and is an EXPERIMENT rather than a
 // capability: it is the only loophole here with no host daemon at all, and it exists to
-// answer broker-as-a-pack.md §10's second sequencing step — can a pack ship the
+// answer pack-binaries.md's experiment ("A pack's own tree cannot carry an executable") — can a pack ship the
 // EXECUTABLE its jail-side daemon runs? Its README records what that measured, including
 // the part this file is responsible for: `embed.FS` reports 0444 for every file whatever
 // its mode on disk, so nothing delivered through THIS channel can ever be executable.
@@ -61,7 +61,7 @@
 //
 // THIS EMBED IS THE ONLY CHANNEL LEFT. There were two — `bundled_loopholes/embed.go`
 // carried the loophole manifests yolo shipped — and emptying it was the sprint's goal
-// rather than a side effect (docs/design/broker-as-a-pack.md OQ-BP4). Five loopholes made
+// rather than a side effect (docs/reference/loophole-system.md OQ-BP4). Five loopholes made
 // the trip and they arrived by three different routes, which is worth remembering only
 // because each route had a different way of going wrong:
 //

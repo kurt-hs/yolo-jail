@@ -649,7 +649,7 @@ func hostDaemonOrder(set loopholes.Set, discovered []*loopholes.Loophole, cfg *j
 // Active() because the broker's record is BUNDLED — yolo's own manifest, in yolo's own
 // tree, under a name no pack may claim"; all three clauses expired on 2026-08-19, when
 // the manifest moved into `packs/claude` and the reserved namespace was deleted with
-// it (docs/design/broker-as-a-pack.md §13). Both predicates ask `Active() &&
+// it (docs/reference/loophole-system.md, "What emptying the bundled channel left behind"). Both predicates ask `Active() &&
 // MayRunHostCode` for one reason: the record comes from a PACK, so the origin gate is
 // live, and starting a host-side listener on the strength of a pack's record is exactly
 // the crossing that gate exists to govern.

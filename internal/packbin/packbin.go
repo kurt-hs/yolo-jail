@@ -1,7 +1,7 @@
 // Package packbin is the CACHE OF DOWNLOADED PACK BINARIES: the executables a loophole manifest
 // declares under `binaries` (internal/loopholedecl's binaries.go), each fetched once, verified
 // against the sha256 the manifest pins, and kept by digest with its exec bit set
-// (docs/design/broker-as-a-pack.md BP-D1).
+// (docs/reference/pack-binaries.md BP-D1).
 //
 // # Layout
 //
@@ -22,11 +22,11 @@
 //   - SEEDED, by Seed: `just install` builds this machine's builds of every official pack
 //     program from the source tree it installs, and admits each whose digest is the pin, so a
 //     from-source or forked tree's jail runs that tree's programs with no download
-//     (broker-as-a-pack.md BP-D15, OQ-BP7 ruled 2026-10-05). The integration harness seeds its
+//     (pack-binaries.md BP-D15, OQ-BP7 ruled 2026-10-05). The integration harness seeds its
 //     run's cache the same way. Both run the pin tool (tools/pack-binaries), which builds.
 //
-// A launch reads the cache through Path and Present and NEVER FETCHES — broker-as-a-pack.md
-// §3.1: "at `pack install`, never at launch" — so an offline launch of a pack whose builds are
+// A launch reads the cache through Path and Present and NEVER FETCHES — pack-binaries.md
+// (Principles): "at `pack install`, never at launch" — so an offline launch of a pack whose builds are
 // cached is an ordinary launch, and one whose builds are not reports the loophole inert and
 // names the command.
 //
