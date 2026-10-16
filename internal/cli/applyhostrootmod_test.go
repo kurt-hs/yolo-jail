@@ -11,7 +11,7 @@ package cli
 // only "skills_tier": "namespaced", or no pack.json at all, carries no skill directory, so the
 // destination inference found nothing to route and the mod reached no home, with nothing said.
 // One pack delivered by one notch and not the other is what the 2026-09-28 parity ruling removed
-// (docs/plans/notch-convergence.md#OQ-NC11).
+// (docs/plans/notch-convergence.md#7-decision-ledger).
 //
 // Driven through applyHost, the command's own entry point, so deleting the resolution's call site
 // fails these. Every test uses a t.TempDir() home with XDG_CONFIG_HOME inside it. The real $HOME

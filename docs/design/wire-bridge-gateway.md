@@ -1129,7 +1129,7 @@ concurrent track's:
     service, the host notch and macos-user included, through the service's launch-owned host
     half** (2026-10-05, an implementation decision taken under the maintainer's 2026-10-04
     delegation, *"make them and build it … adjust later"*; reversible). Under
-    [OQ-NC1](../plans/notch-convergence.md#OQ-NC1) A, which runs a selected pack's services at
+    [OQ-NC1](../plans/notch-convergence.md#7-decision-ledger) A, which runs a selected pack's services at
     every notch, a launch that runs pack services as launch-owned children asks whether serving one
     would route an agent through it, by its profile's `via` or by its carrier
     ([WG-I44](#WG-I44)), and starts it when it would (`packload.ViaRoutedServices`;

@@ -399,7 +399,7 @@ it never received (INFERRED).
   source, and a test that stages such a pack and finds the module in the jail's skills folder.
 - **Cost:** small. Both notches already share the writer.
 - **Verdict: build now.** The two notches delivering one pack differently is what the 2026-09-28 parity ruling
-  removed ([OQ-NC11](../plans/notch-convergence.md#OQ-NC11)), so no new ruling is needed. G3 depends on it.
+  removed ([OQ-NC11](../plans/notch-convergence.md#7-decision-ledger)), so no new ruling is needed. G3 depends on it.
 
 ## 3. Recommendation
 

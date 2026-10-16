@@ -16,7 +16,7 @@ vantage:
 are built** (`bbe5c878`, `499a332f`, `a6021d86`): posture lists, render-mark parity on
 `macos-user`, and the end-to-end test. Step 2 is the maintainer's, by hand, on the maintainer's own host
 and in the `matt` pack, which lives outside this repository, and is not done. The one ruling this line used to say was
-owed, [OQ-5](#OQ-5), was ruled as leaned on 2026-09-28, so what step 1 built stands and
+owed, [OQ-5](#10-decision-ledger), was ruled as leaned on 2026-09-28, so what step 1 built stands and
 [§4.2](#42-the-first-drafts-modifier-corrected) is not built. Evidence verified at
 `8da7840d`; the build was made against `33c0eb18`. A review of the build found four defects, fixed
 in `1300fb12`, `2ab44527`, `77dc6afa` and `22d086bd` (NS-D11 to NS-D13, and the release note). A
@@ -59,8 +59,8 @@ posture's `lists` in the `autonomy` kind (recommended), plus render-mark parity 
 **Start at [§3.2](#32-the-host-layer-is-already-a-baseline-on-container-backends)**, then
 [§5](#5-fastest-path-to-the-motivating-case) for the build order.
 
-**Rulings:** [OQ-5](#OQ-5) held as leaned, and [OQ-3](#OQ-3) was ruled "do it now" (both
-2026-09-28, in review). Nothing here awaits a ruling. [OQ-3](#OQ-3) is **BUILT** in
+**Rulings:** [OQ-5](#10-decision-ledger) held as leaned, and [OQ-3](#10-decision-ledger) was ruled "do it now" (both
+2026-09-28, in review). Nothing here awaits a ruling. [OQ-3](#10-decision-ledger) is **BUILT** in
 `12032eb2`: a posture's `config` entry on a surface another pack owns is a *posture overlay*,
 placed by the `config-overlay` path at the posture that selects it (NS-D19 to NS-D26), which is
 how a host-only scalar exists. It is measured by unit tests and the in-process chain only, like
@@ -98,7 +98,7 @@ posture overlays as built).
 - **Posture list** *(coined here)*. A `config-list` body declared inside an `autonomy` posture,
   contributing only while that posture is the selected one. It is not a new kind and not a
   modifier on `config-list`.
-- **Posture overlay** *(coined here, for [OQ-3](#OQ-3)'s build, NS-D19)*. An entry of an
+- **Posture overlay** *(coined here, for [OQ-3](#10-decision-ledger)'s build, NS-D19)*. An entry of an
   `autonomy` posture's `config` that names a surface its own pack does not declare. It
   contributes keys the way a `config-overlay` does, only while that posture is the selected
   one. An entry naming the pack's own surface is not one: it folds into that surface's
@@ -130,14 +130,14 @@ No declared channel could make the entry host-only at `8da7840d` (a posture list
 | :--- | :--- | :--- |
 | `config-list` | No gate at all: Pass 3 places it at every notch, and `profile` is refused on the kind | `packoverlay.Collect`; `validateContribution` |
 | `config-overlay` + `profile` | Gates on a profile name, not the notch; and the patch replaces `packages` whole | `Collect` Pass 2 |
-| `autonomy`'s `config` half | At `8da7840d` it folded only into surfaces the declaring pack owns — a patch naming another pack's surface was inert plus a `FoldNote`. It lands in the MANAGED layer, which outranks capture and host, and replaces arrays, so even `pi` setting `packages` this way would clobber the user's own list on every render. Since `12032eb2` ([OQ-3](#OQ-3)) a patch on another pack's surface is a posture overlay at config-overlay's slot, but a key still replaces an array whole, so it cannot carry an entry either | `(*Pack).SurfacesForReport`, `foldPostureManaged`, `mergeManagedMap`; now `packoverlay.Collect` |
+| `autonomy`'s `config` half | At `8da7840d` it folded only into surfaces the declaring pack owns — a patch naming another pack's surface was inert plus a `FoldNote`. It lands in the MANAGED layer, which outranks capture and host, and replaces arrays, so even `pi` setting `packages` this way would clobber the user's own list on every render. Since `12032eb2` ([OQ-3](#10-decision-ledger)) a patch on another pack's surface is a posture overlay at config-overlay's slot, but a key still replaces an array whole, so it cannot carry an entry either | `(*Pack).SurfacesForReport`, `foldPostureManaged`, `mergeManagedMap`; now `packoverlay.Collect` |
 | `autonomy`'s `launch` half | Already cross-pack (`launchFlagClaims`), but `InjectLaunchFlags` asked for the autonomous posture only, so no guarded flag reached a host launch (since 2026-09-28 it takes the target's posture and `yolo host --` calls it: [notch-convergence item 20](../plans/notch-convergence.md#tier-6--render)); a flag would also miss IDE launches, which still holds | `packload.InjectLaunchFlags` |
 | a derive | `luahook.DeriveCtx` carries no notch, and `computed` replaces arrays | `internal/agentcfg/luahook/derive.go` |
 | a host-only `packs` list | `packs` is one user-scope list for both notches; no `host_*` key selects packs | `internal/config` |
 
 `autonomy` is one declaration per pack (`CombineExclusive`), and **any** pack may make one; what
 confined its `config` half to the pack's own surfaces was `foldPostureManaged`, not the combine
-rule. Since [OQ-3](#OQ-3)'s build nothing confines it: a patch on another pack's surface is
+rule. Since [OQ-3](#10-decision-ledger)'s build nothing confines it: a patch on another pack's surface is
 `packoverlay.Collect`'s, as a posture overlay (NS-D19).
 
 ---
@@ -153,13 +153,13 @@ rule. Since [OQ-3](#OQ-3)'s build nothing confines it: a patch on another pack's
   names this direction for pi by name: pi is permissive by default, so *"the `host` notch must
   add a restriction"* — and a permission gate is that restriction. Conditioning on the notch for an
   environment dependency instead (host Docker, a native keychain) has no shipped or reported
-  case; it is part of [OQ-5](#OQ-5), not a principle.
+  case; it is part of [OQ-5](#10-decision-ledger), not a principle.
 - **P2. Contributors never own surfaces, and owners never anticipate every contributor.** An
   agent pack owns its surface; a personal or team pack (`matt`, a company pack) contributes to
   it. The lever a contributor needs must not require editing the owning pack.
 - **P3. Symmetry between `config-overlay` and `config-list` is not a given.** It is already
   broken by design: `profile` gates `config-overlay` and is refused on `config-list`. Whether a
-  host-only scalar should exist was [OQ-3](#OQ-3), ruled yes and built as the posture overlay
+  host-only scalar should exist was [OQ-3](#10-decision-ledger), ruled yes and built as the posture overlay
   (NS-D19): the posture gates a key the way it gates a list, and neither kind grows a modifier.
 - **P4. A host-only entry never reaches a jail through the host file.** On podman and Apple
   Container the render mark already holds this
@@ -275,13 +275,13 @@ earlier assert left stays until `yolo host apply --revert`, which runs under `no
 
 Two shapes carry the same gate. [§4.1](#41-recommended-posture-lists-inside-autonomy) is the
 recommendation; [§4.2](#42-the-first-drafts-modifier-corrected) is the draft's modifier, corrected
-against the tree. [OQ-5](#OQ-5) chooses between them. [§4.3](#43-render-mark-parity-on-macos-user)
+against the tree. [OQ-5](#10-decision-ledger) chooses between them. [§4.3](#43-render-mark-parity-on-macos-user)
 to [§4.6](#46-what-done-looks-like) hold for both.
 
 ### 4.1 Recommended: posture lists inside `autonomy`
 
 > [!NOTE]
-> **Recommendation (review, 2026-09-27), pending [OQ-5](#OQ-5). BUILT on that leaning in
+> **Recommendation (review, 2026-09-27), pending [OQ-5](#10-decision-ledger). BUILT on that leaning in
 > `bbe5c878`.** The first draft proposed
 > [§4.2](#42-the-first-drafts-modifier-corrected) and rejected this shape on two facts that do not
 > hold ([§6](#6-alternatives-considered), C). This is the shape the standing rulings already
@@ -357,7 +357,7 @@ one field: a `posture: "guarded"` modifier. What building it takes:
 
 ### 4.3 Render-mark parity on `macos-user`
 
-Needed whichever shape [OQ-5](#OQ-5) picks, and an implementation decision under the existing
+Needed whichever shape [OQ-5](#10-decision-ledger) picks, and an implementation decision under the existing
 [`OQ-CR6`](../reference/config-target-resolution.md#oq-cr6) ([ledger](#10-decision-ledger), NS-D3):
 compute `Rendered` in `(*Options).buildMacosCtxTree` with the same `hostLayerIsRender`, carry it
 on `macosuser.HostContext`, and have `macosuser.hostLayerWire` marshal `entrypoint.HostLayerWire`
@@ -471,7 +471,7 @@ included) and in no jail.
    `RenderHostPack` with its insert record, and `config ls`/`render` at both notches. Then the
    docs, `just check-ci` and the nested-jail check. It is what [PV-OQ-1](../reference/providers.md#pv-oq-1)
    and [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) already prescribe;
-   [OQ-5](#OQ-5) only asks whether to depart from them. The review's estimate: 60–80 lines of
+   [OQ-5](#10-decision-ledger) only asks whether to depart from them. The review's estimate: 60–80 lines of
    production Go, 200–250 of tests, half a day to a day. **As built:** every listed test, plus
    the real `yolo host apply --assert`, the malformed and ownerless cases at both bits, and
    declaration order; `just check-ci` green at each commit. The nested-jail check was not run
@@ -501,9 +501,9 @@ included) and in no jail.
    `TestAHomeAssertedIntoBeforeTheRetirementStaysABaselineToTheBoot`) and its unmanaged twin, for the
    container launcher and the `macos-user` one.
 
-**What gates what.** Nothing gates steps 1–4 unless [OQ-5](#OQ-5) amends the rulings for the
+**What gates what.** Nothing gates steps 1–4 unless [OQ-5](#10-decision-ledger) amends the rulings for the
 modifier, in which case step 1 builds [§4.2](#42-the-first-drafts-modifier-corrected) instead:
-about the same size, with worse skew behavior. [OQ-3](#OQ-3) gated only a host-only scalar,
+about the same size, with worse skew behavior. [OQ-3](#10-decision-ledger) gated only a host-only scalar,
 which automode does not need; it is built (`12032eb2`) as the extension point the ruling asked
 for. [`OQ-PR1`](pack-pi-resources.md#OQ-PR1) and
 pi-extension-store-builds [OQ-6](pi-extension-store-builds.md#OQ-6) gate nothing here.
@@ -519,9 +519,9 @@ it leaks on `macos-user`, and it depends on the mark outliving the `assert` reti
 
 | Alternative | Verdict |
 | :--- | :--- |
-| **A. `notches` modifier on `config-list` and `config-overlay`** (the first draft's proposal) | **Not recommended.** It conflicts with [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) as written, adds the notch-name edge [§6c](../reference/pack-system.md#batch-6c) rules out, fails open under skew, and changes `Collect`'s signature at every call site. Buildable if [OQ-5](#OQ-5) amends both rulings, and then as B |
-| **B. `posture: "guarded"` modifier on the same kinds** | **The fallback if [OQ-5](#OQ-5) amends the rulings** ([§4.2](#42-the-first-drafts-modifier-corrected)). The draft rejected it as the sole selector for host packages that need the host's environment rather than its permission policy (1Password, host notifications). No such case is shipped or reported; when one arrives, the predicate is a capability such as "a real home on the real filesystem", not a notch name |
-| **C. Posture `lists` inside `autonomy`** | **Recommended** ([§4.1](#41-recommended-posture-lists-inside-autonomy)), pending [OQ-5](#OQ-5). The draft's rejection rested on two facts that do not hold: `autonomy` is one declaration per pack that any pack may make, not reserved to agent-owning packs; and [OQ-PT8](../reference/providers.md#oq-pt8) moved `profile`'s config patch into gated contribution kinds, while [PV-OQ-1](../reference/providers.md#pv-oq-1) keeps `autonomy` a separate bundling kind on purpose |
+| **A. `notches` modifier on `config-list` and `config-overlay`** (the first draft's proposal) | **Not recommended.** It conflicts with [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) as written, adds the notch-name edge [§6c](../reference/pack-system.md#batch-6c) rules out, fails open under skew, and changes `Collect`'s signature at every call site. Buildable if [OQ-5](#10-decision-ledger) amends both rulings, and then as B |
+| **B. `posture: "guarded"` modifier on the same kinds** | **The fallback if [OQ-5](#10-decision-ledger) amends the rulings** ([§4.2](#42-the-first-drafts-modifier-corrected)). The draft rejected it as the sole selector for host packages that need the host's environment rather than its permission policy (1Password, host notifications). No such case is shipped or reported; when one arrives, the predicate is a capability such as "a real home on the real filesystem", not a notch name |
+| **C. Posture `lists` inside `autonomy`** | **Recommended** ([§4.1](#41-recommended-posture-lists-inside-autonomy)), pending [OQ-5](#10-decision-ledger). The draft's rejection rested on two facts that do not hold: `autonomy` is one declaration per pack that any pack may make, not reserved to agent-owning packs; and [OQ-PT8](../reference/providers.md#oq-pt8) moved `profile`'s config patch into gated contribution kinds, while [PV-OQ-1](../reference/providers.md#pv-oq-1) keeps `autonomy` a separate bundling kind on purpose |
 | **D. Mount the host's `list-record.json` and subtract** | **Moot.** The zero-mount signal it wanted already crosses as the launcher's `rendered` label ([`OQ-CR6`](../reference/config-target-resolution.md#oq-cr6)) |
 | **E. A Lua transform** | **Rejected.** Transforms were removed on 2026-09-11 (`2c5c84a1`, `e958ed96`); `luahook` is only the derive sandbox now, and [OQ-LT2](../reference/pack-system.md#oq-lt2) forbids a post-merge script slot |
 | **F. Sanitize the host bytes in the jail** (the first draft's second half) | **Rejected; moot on containers.** It filters bytes `hostSurfaceBytes` already discards under the label. In an unlabelled home it could only strip the user's own entry, against [`OQ-CR8`](../reference/config-target-resolution.md#oq-cr8). It is a second model of "which host bytes are yolo's" beside the mark, it knows only the selected packs' entries (so it misses a dropped pack's residue, which the mark covers), and it is a per-entry veto [the kind's limits](../reference/pack-system.md#config-list-limits) say does not exist |
@@ -545,7 +545,7 @@ it leaks on `macos-user`, and it depends on the mark outliving the `assert` reti
 
 ## 8. What this does not propose
 
-- **A host-only scalar only through a posture's `config`**, by [OQ-3](#OQ-3)'s ruling: no
+- **A host-only scalar only through a posture's `config`**, by [OQ-3](#10-decision-ledger)'s ruling: no
   separate mechanism for it, no modifier on `config-overlay` and no notch name. Built in
   `12032eb2` as the posture overlay (NS-D19 to NS-D26): a posture's `config` may now patch a
   surface another pack owns, on the `config-overlay` path.
@@ -558,54 +558,16 @@ it leaks on `macos-user`, and it depends on the mark outliving the `assert` reti
 
 ## 9. Open questions
 
-- ✅ <a id="OQ-3"></a>**OQ-3: Should posture-conditional content also reach `config-overlay`?**
-   The draft asked for `notches` on both kinds. In the recommended shape the equivalent question
-   is whether a posture's `config` may patch a surface another pack owns. That would activate
-   patches that today only produce a "folded nowhere" `FoldNote`, and it decides whether a
-   host-only scalar ever exists. The motivating case needs none: pi-automode keeps its own
-   settings in `~/.pi/agent/extensions/pi-automode/config.json` (its README, as reported).
+**None open.** Both questions this design raised are ruled, and each is a
+[§10](#10-decision-ledger) row: [OQ-3](#10-decision-ledger) built the posture overlay, and
+[OQ-5](#10-decision-ledger) kept posture lists inside `autonomy`.
 
-   <!-- vantage: question id=OQ-3 -->
-
-   _Leaning:_ Defer until a real case arrives. Nothing in the motivating case needs it, and
-   widening the posture's `config` reach is a ruling of its own.
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, against the leaning:** *"do it now. extension point."* Build
-   > it now as an extension point, not on a motivating case: a posture's `config` may patch a
-   > surface another pack owns, the way posture lists already reach another pack's arrays, so
-   > the patches that today only produce a "folded nowhere" note take effect at the posture that
-   > selects them. That is also the way a host-only scalar exists.
-
-   **Built** in `12032eb2`, as the *posture overlay*: the entry is placed by
-   `packoverlay.Collect`'s `config-overlay` pass at the posture that selects it, with that
-   kind's owner check, fold slot, order, refusals and provenance. The mechanism choices are
-   NS-D19 to NS-D26 in the [ledger](#10-decision-ledger).
-
-- ✅ <a id="OQ-5"></a>**OQ-5: Do the rulings that put confinement-conditional content in `autonomy` hold for a non-owning pack's host-only entry?**
-   [PV-OQ-1](../reference/providers.md#pv-oq-1) (settled 2026-09-01) and env-manager
-   [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) (2026-08-01) put confinement-conditional
-   content in `autonomy`. Since then the case has changed in two ways: the contributor does not
-   own the surface, and the content is an array append rather than a managed key. If the rulings
-   hold, step 1 builds [§4.1](#41-recommended-posture-lists-inside-autonomy). If they are amended,
-   it builds [§4.2](#42-the-first-drafts-modifier-corrected), a `posture` modifier on
-   `config-list` and `config-overlay`.
-
-   <!-- vantage: question id=OQ-5 -->
-
-   _Leaning:_ They hold; build posture lists. A permission gate is exactly the content
-   [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) put
-   in `autonomy`. The shape needs no `Collect` signature change and no notch names in manifests,
-   it keeps a permission gate in where the notch is unknown, and an older in-jail reader drops a
-   nested posture field, where it would render a modifier-gated list unconditionally.
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** the rulings hold, and posture lists inside
-   > `autonomy` are the shape, as built in `bbe5c878`. A permission gate is the content
-   > [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) moved into `autonomy`; the shape
-   > needs no `Collect` signature change and no notch names in manifests; and an older in-jail
-   > reader drops a nested posture field, where it would render a modifier-gated list
-   > unconditionally.
+The ruling on [OQ-3](#10-decision-ledger) went against the leaning to defer, as an extension point rather than for a
+motivating case: the motivating case needs none of it, because pi-automode keeps its own settings
+in `~/.pi/agent/extensions/pi-automode/config.json` (its README, as reported). The posture overlay
+is placed by `packoverlay.Collect`'s `config-overlay` pass at the posture that selects it, with
+that kind's owner check, fold slot, order, refusals and provenance; the mechanism choices are
+NS-D19 to NS-D26.
 
 ---
 
@@ -619,8 +581,8 @@ answer; `NS` is this file's name, notch-scoped.
 | OQ-1 | *Implementation decision*, under [§6c](../reference/pack-system.md#batch-6c) and [PV-OQ-1](../reference/providers.md#pv-oq-1). **The selector is the posture, not a notch name**, in one spelling (no `notch`/`notches` pair). `Collect` already receives the bit at every caller; a name would add a notch-name edge and a `packdecl`→`render` import cycle; at `KindUnset` the posture keeps a permission gate in where a `"host"` match drops it; and a custom confinement with prompts on gets the gate. Today posture and notch give the same answer at every shipped notch | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
 | OQ-2 | *Answered — moot.* Filtering host-only entries out of a `readsHost` layer: the render mark already delivers a managed home's host file as a baseline, not a layer, on podman and Apple Container. The residual `macos-user` leak is NS-D3. The sanitizer and the host-record mount are rejected ([§6](#6-alternatives-considered), D and F) | 2026-09-27 | [§3.2](#32-the-host-layer-is-already-a-baseline-on-container-backends) | ✅ `369c6f63` (containers); `macos-user` by NS-D3 |
 | OQ-4 | *Answered — moot; the rest is NS-D1 and NS-D2.* `yolo config ls` and `yolo config render` already pass `render.ProfileFor(t.notch).AgentAutonomy`, so `--at host` and `--at jail` follow the gate with no change | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878`, pinned by `TestConfigRenderAndLsFollowAPostureListsNotch` with no change to either verb |
-| OQ-3 | **Maintainer ruling**, against the leaning: *"do it now. extension point."* A posture's `config` may patch a surface another pack owns, so a posture can carry a host-only scalar | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` (NS-D19 to NS-D26) |
-| OQ-5 | **Maintainer ruling**, as leaned: [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) hold for a non-owning pack's host-only entry; posture lists inside `autonomy` | 2026-09-28 | [§9](#9-open-questions) | ✅ `bbe5c878` |
+| OQ-3 | **Maintainer ruling**, against the leaning: *"do it now. extension point."* A posture's `config` may patch a surface another pack owns, so a posture can carry a host-only scalar | 2026-09-28 | [§8](#8-what-this-does-not-propose), [§9](#9-open-questions) | ✅ `12032eb2` (NS-D19 to NS-D26) |
+| OQ-5 | **Maintainer ruling**, as leaned: [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) hold for a non-owning pack's host-only entry; posture lists inside `autonomy`, not a `posture` modifier on `config-list` and `config-overlay`: the shape needs no `Collect` signature change and no notch names in manifests, and an older in-jail reader drops a nested posture field where it would render a modifier-gated list unconditionally | 2026-09-28 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
 | NS-D1 | *Implementation decision.* The gate sits after the list decode and before the owner check; an unselected contribution is a clean skip (no problem, no orphan, no applied row), as the `profile` gate is | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
 | NS-D2 | *Implementation decision.* `yolo pack footprint` claims a gated list unconditionally and names the posture in the detail; `surveyNotchFacts.AutonomyFolds` counts posture lists | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878`; the claim is the `autonomy` one (NS-D4); the fold count narrowed to placed lists by NS-D12 (`2ab44527`) |
 | NS-D3 | *Implementation decision*, under [`OQ-CR6`](../reference/config-target-resolution.md#oq-cr6). `macos-user` computes `Rendered` with `hostLayerIsRender` in `buildMacosCtxTree` and emits `entrypoint.HostLayerWire` from `macosuser.hostLayerWire` | 2026-09-27 | [§4.3](#43-render-mark-parity-on-macos-user) | ✅ `499a332f`, unit-tested only |
@@ -639,7 +601,7 @@ answer; `NS` is this file's name, notch-scoped.
 | NS-D16 | *Implementation decision*, correcting NS-D14's record of `config promote` as a verb that writes nothing. Promote reads its fold through `configuredPacksForInspection` and writes the destination manifest, so a destination (`--to local` or `--to pack:<name>`) whose manifest has problems is refused at the write (`promotePlan.destManifestProblems`): exit 1, the problems named, `yolo pack lint <dir>` as the remedy, nothing written. It used to write, clear the capture overlay, exit 0 and say the next launch renders the keys, which no launch does. The dry run says `--accept-promotion` is refused and `--plan` names the destination as unwritable; both exit 0, as a plan is information | 2026-09-27 | [§4.4](#44-behavior-at-each-target-and-the-degenerate-cases) | ✅ `d20f21dd` |
 | NS-D17 | *Implementation decision.* The remedy group for a pack refused over its problems says "fix each problem named above in the pack", not "in the pack's manifest", because `packload.LoadDir` also reports a file such as `briefing/CLAUDE.md`, fixed by renaming it. The conventional local pack, which no `packs` list names (`PackEntry.Implicit`, now carried on `unresolvedPack`), gets its own group keyed on its directory, naming that directory and saying it has no `packs` entry to remove; it used to be told to remove it from `packs` | 2026-09-27 | [§4.4](#44-behavior-at-each-target-and-the-degenerate-cases) | ✅ `55600c5c` |
 | NS-D18 | *Implementation decision*, correcting NS-D14's "a pack-set fault never stops a host launch". A profile only a refused pack declares is undeclared at `yolo host --` and `host env`, so [OQ-CS6](../reference/providers.md#oq-cs6) refuses it, as a jail launch refuses the same config over the pack. The refusal now names that pack as the declarer, with its problems and `yolo pack lint` (`undeclaredHostProfileError`), from the profile names the part of its manifest that decoded declares, read for the message only (`manifestProblemsError.profiles`). A pack that cannot say what it declares (a manifest that did not decode, a git pack not in the store) is named beside the plain undeclared message. A provider only such a pack declares still launches without it, with the existing warning. **Revised 2026-09-28 by [notch-convergence item 6](../plans/notch-convergence.md#tier-2--one-selection-p1-p2)** ([NC-D5](../plans/notch-convergence.md#7-decision-ledger), [NC-D32](../plans/notch-convergence.md#NC-D32)): a pack with problems now refuses `yolo host --` and `yolo host env` before the selected profile's declaration or its provider is checked, the refusal naming the pack and its problems, so neither the profile refusal this row describes nor the provider fallback is reached. `undeclaredHostProfileError` and `manifestProblemsError.profiles` are deleted | 2026-09-27 | [§4.4](#44-behavior-at-each-target-and-the-degenerate-cases) | ✅ `203b3009` |
-| <a id="NS-D19"></a>NS-D19 | *Implementation decision*, building [OQ-3](#OQ-3). **What a posture overlay is, and the one path it takes.** An `autonomy` posture `config` entry whose identity the declaring pack does not declare is a *posture overlay* (the term coined in [Terms](#terms-in-plain-words)); one naming the pack's own surface still folds into its `managed` layer. The schema does not change: an author writes a patch on another pack's surface exactly as one on their own. One projection, `packdecl.(*Manifest).OverlayContributions`, walks `config-overlay` contributions and every posture `config` entry in declaration order, a posture's entries at the `autonomy` contribution's position, autonomous before guarded, first `autonomy` only (NS-D5's rule); `ConfigOverlayContributions` stays the kind's own projection. `packoverlay.Collect`'s overlay pass is the one planner: it skips the pack's own entries, decodes the rest, gates on the posture after the decode and before the owner check (NS-D1's position), and places each as an ordinary `agentcfg.Overlay`, so the fold slot below the owner's `managed`, "later wins", `config-overlay:<pack>` provenance, the boot's "config-overlay keys from" line, `config diff`, `config ls`, `config render`, `config promote`, the outranked report and the drop prune all read it with no change. No second planner, and no change at any `Collect` caller | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` |
+| <a id="NS-D19"></a>NS-D19 | *Implementation decision*, building [OQ-3](#10-decision-ledger). **What a posture overlay is, and the one path it takes.** An `autonomy` posture `config` entry whose identity the declaring pack does not declare is a *posture overlay* (the term coined in [Terms](#terms-in-plain-words)); one naming the pack's own surface still folds into its `managed` layer. The schema does not change: an author writes a patch on another pack's surface exactly as one on their own. One projection, `packdecl.(*Manifest).OverlayContributions`, walks `config-overlay` contributions and every posture `config` entry in declaration order, a posture's entries at the `autonomy` contribution's position, autonomous before guarded, first `autonomy` only (NS-D5's rule); `ConfigOverlayContributions` stays the kind's own projection. `packoverlay.Collect`'s overlay pass is the one planner: it skips the pack's own entries, decodes the rest, gates on the posture after the decode and before the owner check (NS-D1's position), and places each as an ordinary `agentcfg.Overlay`, so the fold slot below the owner's `managed`, "later wins", `config-overlay:<pack>` provenance, the boot's "config-overlay keys from" line, `config diff`, `config ls`, `config render`, `config promote`, the outranked report and the drop prune all read it with no change. No second planner, and no change at any `Collect` caller | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` |
 | <a id="NS-D20"></a>NS-D20 | *Implementation decision.* **Its body follows `config-overlay`'s rules.** `manifest.DecodePostureOverlay` decodes the entry as a strict surface DTO, then applies `overlayRefusals`, the table `DecodeOverlay` uses, except the four fields the posture schema itself requires (`agent`, `name`, `path`, `codec`): `defaults`, `mode`, `retireOnFirstRender` and `readsHost` are refused by name, and an empty `managed` contributes nothing and is refused. Problems lead with `autonomy <posture>.config <agent/name>`, which `collectProblemKind` reads as `autonomy`, and are reported at every notch, whichever posture is selected (a posture list's rule). A malformed entry is reported once: by the posture fold when it also decodes it (the selected posture of a pack declaring a surface of its own), by `Collect` otherwise. Before, a pack declaring no surface of its own had its posture `config` read by nothing | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` |
 | <a id="NS-D21"></a>NS-D21 | *Implementation decision.* **Its `path` and `codec` must be the owner's.** The schema requires both of every posture patch, and one on another pack's surface naming a different file or codec would read, to its author, like keys written somewhere they are not. Checked after the owner check, since only the owner knows the answer, so it is reported at a notch that would place the entry; the owner's declaration is the one `Collect`'s owner pass already holds | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` |
 | <a id="NS-D22"></a>NS-D22 | *Implementation decision.* **The fold note is retired, and the orphan replaces it.** Every patch the posture fold missed named another pack's surface by definition, so all of them are now `Collect`'s: placed, refused, skipped at the other posture, or an ownerless `autonomy` orphan (`OrphanOverlay.PostureConfig` makes the core-surface sentence say "a posture's config patch"). `(*Pack).SurfacesForReport` returns no notes, and keeps its signature, because the release probe compiles against it (`TestReleaseDecodeProbeAPIIsStable`); `FoldNote` stays as a type for the same reason. The boot's "folded nowhere" warning and `RenderHostPack`'s `ignored:` row are deleted, and `planPackSurfaces` returns no notes. The [`OQ-Z5`](../reference/providers.md#oq-z5) typo still reaches its author, as an orphan that says to check the identity | 2026-09-28 | [§9](#9-open-questions) | ✅ `12032eb2` |

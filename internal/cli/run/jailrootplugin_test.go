@@ -9,7 +9,7 @@ package run
 // (hostskills.writeLayer), while the jail attached a root plugin only to the pack's skills
 // sources, so a pack with no skills/ folder reached `yolo host apply` whole and no jail at all.
 // The two notches delivering one pack differently is what the 2026-09-28 parity ruling removed
-// (docs/plans/notch-convergence.md#OQ-NC11).
+// (docs/plans/notch-convergence.md#7-decision-ledger).
 //
 // Driven through stagePacks and refreshJailBriefings, the launch's own staging path, for the
 // reason skillcollision_test.go gives: a test of jailSkillSources alone stays green with the

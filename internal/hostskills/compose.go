@@ -277,7 +277,7 @@ func ComposeHostSkills(packs []*packload.Pack, homeDir string) []Destination {
 // resolved: its name, description, tier and wrapped plugins, and the map from its staged tree back
 // to the files the user edits. Sources, Problem and Unresolved are each destination's to fill.
 //
-// ONE CONSTRUCTOR FOR BOTH NOTCHES (docs/plans/notch-convergence.md#OQ-NC11): the host composition
+// ONE CONSTRUCTOR FOR BOTH NOTCHES (docs/plans/notch-convergence.md#7-decision-ledger): the host composition
 // above and the jail's layer plan (jailcontent.PackSkillSource, which the run pipeline fills from
 // this) read a pack's tier and plugins through it, so the two cannot disagree about what a pack's
 // skills are called.

@@ -636,7 +636,7 @@ running jail booted with, not the configured ones, since a running jail keeps it
 reason to ship one — and the conventional local pack is appended last among packs.
 
 **The pack layers are the host's.** Since
-[`OQ-NC11`](../plans/notch-convergence.md#OQ-NC11) the jail builds the host's layer plan for
+[`OQ-NC11`](../plans/notch-convergence.md#7-decision-ledger) the jail builds the host's layer plan for
 each destination (`jailcontent.SkillPlan`: every source whose audience admits the destination,
 one layer per pack) and writes it with the host render's own writer
 (`hostskills.ComposeInto`) into an empty scratch directory. Three things follow, each the host's
@@ -774,7 +774,7 @@ copied into another agent's tree with nothing able to stop it.
 > `yolo host apply` **composed** it: the jail read yolo's own generated output back in as the
 > user's tree, and since the local pack is an ordinary pack entry, its content arrived twice by
 > two routes. Invisible only because a flat copy was last-writer-wins, and since
-> [`OQ-NC11`](../plans/notch-convergence.md#OQ-NC11) it would be a collision refusing the launch.
+> [`OQ-NC11`](../plans/notch-convergence.md#7-decision-ledger) it would be a collision refusing the launch.
 > The slot it described already has a home — the conventional local pack is the last pack layer —
 > so a personal skill arrives by the same route every other pack's content takes.
 

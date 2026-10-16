@@ -254,7 +254,7 @@ pi auth file is the user's own file at the host"*. Four things stand behind it:
 | E | **Amends it** for pi, in the direction its codex half already took: a managed directory instead of the socket |
 | F | Leaves NC-D37's letter (it is about the launch) and **moves the line host management holds**: a config verb writes a credential |
 
-The related rulings: [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A (*"Host claude keeps its own
+The related rulings: [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) A (*"Host claude keeps its own
 login … a shared store without interception races the broker"*, with OpenAI having *"one
 machine-wide login lineage for the host and the jails"*); NC-D1 (*"host is supposed to act like
 everywhere else"*, [ledger](../plans/notch-convergence.md#7-decision-ledger)); and
@@ -499,9 +499,9 @@ no auth-only variable or flag (MEASURED, E1: every `PI_` variable `$PI` reads, a
   settings, `models.json`, extensions, skills, `AGENTS.md`, keybindings, prompts, themes, packages.
 - **The user sees** the subscription, and **loses their other pi logins under `yolo host`**, because
   the managed `auth.json` holds only the broker's entry. Copying their OAuth entries in would race
-  refresh-token rotation, which is [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) B's problem.
+  refresh-token rotation, which is [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) B's problem.
   Copying API-key entries is safe (INFERRED).
-- **An own login is never touched**: two lineages, kept apart, the [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A shape.
+- **An own login is never touched**: two lineages, kept apart, the [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) A shape.
 - **Lock:** concurrent `yolo host -- pi` launches share the managed file, as concurrent codex
   launches share their managed home.
 - **A trap:** the extension reads its model list from `homedir()/.pi/agent/`
@@ -594,7 +594,7 @@ gate, the `OPENCODE_AUTH_CONTENT` read, the refresh host and the headless method
   entries (INFERRED).
 - **Refresh posts the stored refresh token to `https://auth.openai.com`**, so a `yolo-broker:` view
   would fail at opencode's first refresh. A native opencode login is a separate grant, the
-  [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A shape.
+  [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) A shape.
 
 **It does not need this doc's fix today.** The opencode pack declares no OpenAI prelaunch, so yolo
 writes nothing for it at either notch. At the host a native login lives in the user's own file. In a
@@ -816,7 +816,7 @@ a macos-user launch hands it only to the services and doorways it runs outside t
    <!-- vantage: question id=OQ-3 leaning="A — the user's own login wins and refreshes through OpenAI by the marker dispatch; yolo's login serves only a missing or broker-marked entry. It fixes today's silent replacement without a file write and matches OQ-NC7 A; codex's precedent, OQ-OA3, is C's shape, which costs E's managed directory." -->
 
    _Leaning:_ A. It fixes today's silent replacement without a file write, so it composes with [OQ-1](#OQ-1)'s
-   D2, and it matches [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A, where host claude keeps its own
+   D2, and it matches [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) A, where host claude keeps its own
    login. The codex precedent is C's shape instead: `yolo host -- codex` uses the broker through a
    managed home while a direct host codex stays untouched
    ([OQ-OA3](../reference/agent-credentials.md#oq-oa3)). A keeps that second half, and C would cost E,

@@ -402,7 +402,7 @@ view: Claude is reading the Keychain, and `macos-user` stays off.
 
 Export `YOLO_CLAUDE_CREDENTIAL_VIEW=1` in the shell you launch jails from, and work normally for a
 day, including one workspace with `network.mode: "host"` (the case the interception cannot serve,
-[OQ-NC2](../notch-convergence.md#OQ-NC2)).
+[OQ-NC2](../notch-convergence.md#7-decision-ledger)).
 
 **Record** `podman info --format '{{.Host.Security.Rootless}} {{.Host.RootlessNetworkCmd}}'`.
 **Pass:** at least two background refreshes (`bg_refresh: ok` in the broker log), each followed by a
