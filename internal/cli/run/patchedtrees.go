@@ -101,6 +101,10 @@ type TreeBuildRequest struct {
 	// PF-D57): once a Ctrl-C has ended a wait in this launch's fork-build slot, each extension's
 	// good build is copied with no check and no build.
 	Interrupt *ActInterrupt
+	// CachedGood are the extension keys YOLO_USE_CACHED_GOOD covers this launch (selectCachedGood):
+	// each is handed the record's older good build, validated, as its per-launch copy, with no
+	// advance.
+	CachedGood []string
 }
 
 // TreeDelivery is the tree arm's answer for one patched extension this launch.
@@ -119,6 +123,10 @@ type TreeDelivery struct {
 	Series      string
 	// Reason is why there is no copy, naming what to do; "" when Dir is set.
 	Reason string
+	// Skipped says this launch skipped the extension (YOLO_SKIP_EXTENSIONS, skipextensions.go): no
+	// advance, no copy, no mount, its entries left out of the owning agent's lists, and nothing is
+	// missing — the missing-build refusal passes over it.
+	Skipped bool
 	// PatchFailure is host-only failure evidence carried beside the admitted directory.
 	PatchFailure *packsrc.PatchFailure
 	// Cause is the build's cause in plain words, when its act found one, which the launch's refusal
@@ -271,22 +279,28 @@ func (o *Options) treeBuildPlan(rt string) (map[string]TreeDelivery, *TreeBuildR
 	}
 	out := map[string]TreeDelivery{}
 	if config.InJail() {
+		o.noteSkipExtensionsHasNoEffect("in a jail")
 		for _, f := range o.patchedTrees {
 			out[f.Key()] = TreeDelivery{Reason: inJailTreeReason(f)}
 		}
 		return out, nil
 	}
+	// SKIPPED EXTENSIONS (YOLO_SKIP_EXTENSIONS): answered here, with no advance, no copy and no mount.
+	trees := o.skipExtensions(out)
 	floor := o.roBindsUnsupported(rt) // parity: Honored — below Apple Container's read-only floor the tree arm checks and builds nothing and still copies a good build already on this machine (pi-extensions.md §11)
 	if o.BuildTrees == nil && o.BuildSlot == nil {
-		for _, f := range o.patchedTrees {
+		for _, f := range trees {
 			out[f.Key()] = TreeDelivery{Reason: "this launch builds no extension"}
 		}
 		return out, nil
 	}
-	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: o.patchedTrees, Platform: containerJailPlatform(), Runtime: rt,
+	if len(trees) == 0 {
+		return out, nil
+	}
+	return out, &TreeBuildRequest{FreshUpdate: o.Update && !o.DryRun, Trees: trees, Platform: containerJailPlatform(), Runtime: rt,
 		Workspace: o.Workspace, Stdout: o.Stdout, Stderr: o.Stderr, Progress: o.progressConfig(),
 		Build: floor == "", BuildFloor: floor,
-		CopyRoot: patchedCopiesDir(o.packTree), Interrupt: o.actInterrupt()}
+		CopyRoot: patchedCopiesDir(o.packTree), Interrupt: o.actInterrupt(), CachedGood: o.cachedGoodTrees}
 }
 
 // finishTreeDeliveries is the tree arm's second half: the act's answers merged into out, and a
@@ -335,9 +349,14 @@ func (o *Options) patchedTreesWire(rt string) map[string]entrypoint.TreeDelivery
 	for _, f := range o.patchedTrees {
 		d := o.treeDelivered[f.Key()]
 		w := entrypoint.TreeDelivery{Into: f.Into, Owner: f.Owner}
-		if d.Dir != "" {
+		switch {
+		case d.Skipped:
+			// SKIPPED (YOLO_SKIP_EXTENSIONS): the boot leaves its entries out of the lists and stops
+			// nothing for it.
+			w.Reason, w.Skipped = d.Reason, true
+		case d.Dir != "":
 			w.Build, w.Label = d.Entry, d.label()
-		} else {
+		default:
 			w.Reason, w.Cause = d.Reason, d.Cause
 			// A FALLBACK NEVER STOPS the agent (XB-D7): the jail's boot puts its raw entry in the
 			// list in the tree's place (entrypoint.withTreeFallbacks), and the agent installs it.
@@ -370,8 +389,8 @@ func (o *Options) noteTreeDeliveries(rt string) {
 	}
 	for _, k := range keys {
 		d := o.treeDelivered[k]
-		if d.Dir != "" {
-			continue
+		if d.Dir != "" || d.Skipped {
+			continue // a skipped one's line was said where it was skipped (skipExtensions)
 		}
 		if fb := fallbacks[k]; fb != "" {
 			o.pr(o.Stderr).print("[dim]" + richtext.Escape(FallbackLine(k, d.Reason, fb)) + "[/dim]")
@@ -404,6 +423,7 @@ func FallbackLine(key, reason, fallback string) string {
 // noteMacosUserTrees is the macos-user launch's line for each patched extension (§11, FP-D3's
 // shape): no sealed build runs on this backend, so the agent starts without it.
 func (o *Options) noteMacosUserTrees() {
+	o.noteSkipExtensionsHasNoEffect("on macos-user")
 	for _, f := range o.patchedTrees {
 		if f.Fallback != "" {
 			// THE FALLBACK (XB-D7): with no wire on this backend the sandbox's boot takes it, so the
