@@ -311,8 +311,8 @@ type macActWords struct{ act, confines, runsAs string }
 func macActBlocked(p macCaptureProbes, w macActWords, does string) string {
 	switch {
 	case p.Geteuid() == 0:
-		return "yolo is running as root, and " + w.act + " on a Mac runs as your own user, asking for sudo " +
-			"itself at each step that needs it — run `yolo host` without sudo, and it " + does
+		return "yolo is running as root, and " + w.act + " on a Mac runs as your own user and needs no " +
+			"root — run `yolo host` without sudo, and it " + does
 	case !p.Which("sandbox-exec"):
 		return "sandbox-exec (Apple Seatbelt), which confines " + w.confines + " on a Mac, is not on PATH " +
 			"— put /usr/bin back on it, and the next `yolo host` launch " + does
