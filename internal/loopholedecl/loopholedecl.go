@@ -423,6 +423,24 @@ func DecodeTolerant(data []byte, dir string) (m *Manifest, skipped []string, err
 	return decode(data, dir, false)
 }
 
+// DecodeReleased decodes a manifest from a RELEASED commit: as strictly as Decode, except that
+// the one value HD-R1 retired, `host_daemon.scope: "host"`, is read as ScopeJail rather than
+// refused. Every release before HD-R1 declares it in yolo's own shipped manifests, and a reader
+// of a released tree (the release wiring's asset census) must still decode those; every other
+// unknown key or malformed value is still refused, unlike DecodeTolerant, which would also skip
+// keys this build does not know. The skew note readRetiredScopeAsJail writes is dropped: the
+// caller reads a historical tree, where the retired value is expected rather than news.
+func DecodeReleased(data []byte, dir string) (*Manifest, error) {
+	m, unknown, err := decodeMode(data, dir, true, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(unknown) > 0 {
+		return nil, &Error{problems: unknown}
+	}
+	return m, nil
+}
+
 // LoadDir reads <dir>/manifest.jsonc and decodes it STRICTLY (see Decode).
 //
 // This is the seam a caller that knows nothing about loopholes uses: a directory
@@ -483,6 +501,13 @@ func ManifestPath(dir string) string {
 // decode is the shared walk. strict routes unknown keys into the returned
 // problems; tolerant returns them as skipped notes.
 func decode(data []byte, dir string, strict bool) (*Manifest, []string, error) {
+	return decodeMode(data, dir, strict, !strict)
+}
+
+// decodeMode is decode with the retired-scope read separated from strictness: readRetiredScope
+// rewrites `host_daemon.scope: "host"` to ScopeJail before the walk, and its note is kept only
+// when the decode is tolerant (DecodeReleased is strict and reads it silently).
+func decodeMode(data []byte, dir string, strict, readRetiredScope bool) (*Manifest, []string, error) {
 	manifestPath := ManifestPath(dir)
 
 	decoded, err := json5.Decode(data)
@@ -499,8 +524,8 @@ func decode(data []byte, dir string, strict bool) (*Manifest, []string, error) {
 	}
 
 	var notes []string
-	if !strict {
-		if note := readRetiredScopeAsJail(data0, manifestPath); note != "" {
+	if readRetiredScope {
+		if note := readRetiredScopeAsJail(data0, manifestPath); note != "" && !strict {
 			notes = append(notes, note)
 		}
 	}
