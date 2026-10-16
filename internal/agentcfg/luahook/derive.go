@@ -182,6 +182,14 @@ type DeriveCtx struct {
 	// world before the ruling.
 	BuiltInProviders map[string]BuiltInProvider
 
+	// ReadsSharedModels is what the agent's own pack declares about the model file its program
+	// reads (packdecl.Contribution.ReadsSharedModels, read through packload.ReadsSharedModels
+	// by bin ownership, as BuiltInProviders is), exposed as ctx.reads_shared_models: true when
+	// the program reads the shared form, `sharedModels` with rows saying `extends`
+	// (docs/design/model-lists-and-pickers.md ML-D11). False, the zero value, asks for every
+	// row in full.
+	ReadsSharedModels bool
+
 	// UnknownAPI, when non-nil, makes an unknown `yolo.<name>` member TOLERATED
 	// instead of fatal, and is the callback that reports each one (once per name per
 	// Derive call, whatever a script does with it). Nil — the zero value — is STRICT:
@@ -734,6 +742,8 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		L.SetField(builtIn, name, own)
 	}
 	L.SetField(t, "built_in_providers", builtIn)
+	// ctx.reads_shared_models, always a boolean (DeriveCtx.ReadsSharedModels).
+	L.SetField(t, "reads_shared_models", lua.LBool(ctx.ReadsSharedModels))
 	have := sourceCapabilities(ctx)
 	for _, src := range knownDeriveSources {
 		table := ctx.Tables[src]
@@ -747,9 +757,61 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		if err != nil {
 			return nil, fmt.Errorf("luahook: marshalling ctx.%s: %w", src, err)
 		}
+		if src == sourceProviders {
+			if lt, ok := lv.(*lua.LTable); ok {
+				markModelFactTombstones(L, lt, table, sentinel)
+			}
+		}
 		L.SetField(t, src, lv)
 	}
 	return t, nil
+}
+
+// markModelFactTombstones sets ctx.tombstone in lt wherever the providers table holds a null
+// model FACT: under `model_options.<alias>.<fact>` and `model_shared.<name>.<fact>`. A null there
+// is a tombstone (docs/design/model-lists-and-pickers.md ML-D10), "this model has no such fact",
+// and a Lua table cannot hold nil, so goToLua alone would make it an absent key, which means the
+// opposite: inherit. Nowhere else in the table is a null touched: a null option default, for one,
+// still reads as absent, as every derive was written to expect.
+func markModelFactTombstones(L *lua.LState, lt *lua.LTable, providers map[string]any, sentinel *lua.LUserData) {
+	for name, pv := range providers {
+		entry, ok := pv.(map[string]any)
+		if !ok {
+			continue
+		}
+		lentry, ok := lt.RawGetString(name).(*lua.LTable)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"model_options", "model_shared"} {
+			byAlias, ok := entry[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			for alias, fv := range byAlias {
+				facts, ok := fv.(map[string]any)
+				if !ok {
+					continue
+				}
+				for fact, v := range facts {
+					if v != nil {
+						continue
+					}
+					group, _ := lentry.RawGetString(key).(*lua.LTable)
+					if group == nil {
+						group = L.NewTable()
+						lentry.RawSetString(key, group)
+					}
+					row, _ := group.RawGetString(alias).(*lua.LTable)
+					if row == nil {
+						row = L.NewTable()
+						group.RawSetString(alias, row)
+					}
+					row.RawSetString(fact, sentinel)
+				}
+			}
+		}
+	}
 }
 
 // selectedPlatform is the `platform` of the selected provider's row in ctx's providers table,

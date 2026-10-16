@@ -183,8 +183,8 @@ func TestAViaRouteRefusesAModelOffANarrowedList(t *testing.T) {
 }
 
 // TestTheSwitchOffAndAListNoOnlyNarrowedRefuseNothing: the profile's enforce_models off leaves the
-// list shaping the menus alone (MM-D5), and a list no `only` narrowed is no allowlist (OQ-MM3 is
-// open).
+// list shaping the menus alone (MM-D5), and a list no `only` narrowed is no allowlist (OQ-MM3,
+// ruled 2026-10-15).
 func TestTheSwitchOffAndAListNoOnlyNarrowedRefuseNothing(t *testing.T) {
 	off := false
 	b := bootNarrowed(t, []string{"pi", "zai", "wire-bridge"}, zaiOnly,

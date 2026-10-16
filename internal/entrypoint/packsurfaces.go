@@ -332,6 +332,10 @@ type surfaceSelection struct {
 	// — ctx.built_in_providers. A derive writes no model entry under one of them
 	// (docs/design/pi-codex-provider-shadowing.md OQ-3).
 	BuiltInProviders map[string]luahook.BuiltInProvider
+	// ReadsSharedModels is whether this surface's agent reads a model file's shared form
+	// (packload.ReadsSharedModels, from the agent's own pack, by bin ownership) —
+	// ctx.reads_shared_models (docs/design/model-lists-and-pickers.md ML-D11).
+	ReadsSharedModels bool
 	// ViaURL is this agent's per-agent route on the service its active profile's `via`
 	// names (OQ-WG7 (d)) — ctx.via_url; "" when the profile is not a via profile, or its
 	// service is not in the launch (the host notch).
@@ -387,6 +391,7 @@ func surfaceSelectionFor(packs []*packload.Pack, resolved map[string]packload.Re
 		ActiveSet:          packload.ActiveSetFor(set, resolved),
 		NativeCapabilities: packload.NativeCapabilities(packs, s.Agent),
 		BuiltInProviders:   packload.BuiltInProvidersFor(packs, s.Agent),
+		ReadsSharedModels:  packload.ReadsSharedModels(packs, s.Agent),
 		ViaURL:             packload.ViaURLFor(resolved[profile], s.Agent),
 		ViaAPIKeyEnvName:   packload.ViaAPIKeyEnvNameFor(packs, resolved[profile], s.Agent),
 		ModelsNotEnforced:  !packload.ModelsEnforced(resolved[profile]),
@@ -451,6 +456,7 @@ func deriveCtx(e *Env, surface manifest.Surface, sel surfaceSelection, tables ma
 		ActiveSet:          sel.ActiveSet,
 		NativeCapabilities: sel.NativeCapabilities,
 		BuiltInProviders:   sel.BuiltInProviders,
+		ReadsSharedModels:  sel.ReadsSharedModels,
 		ViaURL:             sel.ViaURL,
 		ViaAPIKeyEnvName:   sel.ViaAPIKeyEnvName,
 		ModelsNotEnforced:  sel.ModelsNotEnforced,
