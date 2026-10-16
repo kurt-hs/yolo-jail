@@ -94,6 +94,9 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		if !f.DeliveredAtHost() || (bin != "" && !ownerRuns(sel.packs, f, bin)) {
 			continue // no host render links a tree whose list entry reaches jails alone (PPX-D35)
 		}
+		if hostSkipped(f) {
+			continue // YOLO_SKIP_EXTENSIONS: not advanced or built; the render and the launch say it
+		}
 		trees = append(trees, f)
 	}
 	var queued []packload.Fork
@@ -265,8 +268,7 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 	if target, err := os.Readlink(dest); err == nil && filepath.Dir(target) == hostTreeVersionsDir(f) && isDir(dest) {
 		runs = linkedTreeLabel(filepath.Base(target))
 	}
-	continuing := runs != "" && patchrecovery.Read(os.Getenv, patchrecovery.AllowPatchFailuresEnv).
-		Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin})
+	continuing := runs != "" && allowPatchFailures(f)
 	bypass := packsrc.PatchBypass{Command: "yolo host -- " + bin, Runs: runs}
 	if continuing {
 		bypass = packsrc.PatchBypass{} // the hatch is set: no list, one line under the block
@@ -289,7 +291,7 @@ func hostTreePatchFailureAllows(errw io.Writer, f packload.Fork, bin, dest strin
 func hostLaunchTrees(packs []*packload.Pack, bin string) []packload.Fork {
 	var out []packload.Fork
 	for _, f := range packload.PatchedTrees(packs) {
-		if f.ListedAtHost && ownerRuns(packs, f, bin) && f.Fallback == "" {
+		if f.ListedAtHost && ownerRuns(packs, f, bin) && f.Fallback == "" && !hostSkipped(f) {
 			out = append(out, f)
 		}
 	}
@@ -360,15 +362,49 @@ func linkHostLaunchTrees(errw io.Writer, bin, home string) {
 // What the host apply's list contributions are collected from, so the agent installs each such
 // extension itself, from its raw entry, as it would with no yolo in between; the trees taken come
 // back for the apply's lines.
+//
+// A SKIPPED extension (YOLO_SKIP_EXTENSIONS, hostSkipped) takes no fallback: every entry that loads
+// it is left out of its pack's lists (packload.ApplyTreeLists), so the agent starts without it.
 func hostTreeFallbacks(packs []*packload.Pack) ([]*packload.Pack, []packload.Fork) {
-	return packload.ApplyTreeFallbacks(packs, func(f packload.Fork) bool {
+	out, taken, _ := packload.ApplyTreeLists(packs, func(f packload.Fork) bool {
 		if !hostTreesBuild() {
 			return false
 		}
 		entry, _, _ := hostTreeServing(f)
 		return entry != nil
-	})
+	}, hostSkipped)
+	return out, taken
 }
+
+// hostSkipScope is this host act's YOLO_SKIP_EXTENSIONS (docs/design/patched-build-recovery.md §6.6),
+// read from this process's environment.
+func hostSkipScope() patchrecovery.Scope {
+	return patchrecovery.Read(nil, patchrecovery.SkipExtensionsEnv)
+}
+
+// hostSkipped reports whether this host act skips f: no advance, no link, its entries left out of
+// the lists, and no stop for it.
+func hostSkipped(f packload.Fork) bool {
+	s := hostSkipScope()
+	return s.Set() && s.Covers(run.TreeSubject(f))
+}
+
+// hostSkipUnmatchedLine is the warning for YOLO_SKIP_EXTENSIONS names that cover none of packs'
+// built extensions, "" when there are none.
+func hostSkipUnmatchedLine(packs []*packload.Pack) string {
+	s := hostSkipScope()
+	if !s.Set() {
+		return ""
+	}
+	var subs []patchrecovery.Subject
+	for _, f := range packload.PatchedTrees(packs) {
+		subs = append(subs, run.TreeSubject(f))
+	}
+	return patchrecovery.UnmatchedLine(s.Env, s.Unmatched(subs), subs)
+}
+
+// hostSkippedAction opens the render's action for a tree YOLO_SKIP_EXTENSIONS skips.
+const hostSkippedAction = "skipped: "
 
 // hostFallbackAction opens the render's action for a tree whose fallback the apply took.
 const hostFallbackAction = "not rendered: "
@@ -421,6 +457,14 @@ func renderHostTrees(p *packload.Pack, packs []*packload.Pack, home string, man 
 	var out []entrypoint.HostRenderResult
 	for _, f := range packload.PatchedTrees(packs) {
 		if f.Pack != p.Name {
+			continue
+		}
+		if f.DeliveredAtHost() && hostSkipped(f) {
+			// SKIPPED: no link is written or moved, and its list entries were left out
+			// (hostTreeFallbacks). The next apply without the variable renders it again.
+			out = append(out, entrypoint.HostRenderResult{Surface: f.Pack + "/files",
+				Path:   filepath.Join(home, filepath.FromSlash(strings.TrimSuffix(f.Into, "/"))),
+				Action: hostSkippedAction + run.SkippedLine(f)})
 			continue
 		}
 		if !f.DeliveredAtHost() {
@@ -613,8 +657,15 @@ func noteHostTreeLines(errw io.Writer, color bool, bin, home string) {
 		return
 	}
 	pr := richtext.Printer{W: errw, Color: color}
+	if line := hostSkipUnmatchedLine(sel.packs); line != "" {
+		pr.Printf("[yellow]%s[/yellow]", richtext.Escape("yolo host: "+line))
+	}
 	for _, f := range packload.PatchedTrees(sel.packs) {
 		if !f.ListedAtHost || !ownerRuns(sel.packs, f, bin) {
+			continue
+		}
+		if hostSkipped(f) {
+			pr.Printf("[yellow]%s[/yellow]", richtext.Escape("yolo host: "+run.SkippedLine(f)))
 			continue
 		}
 		if !hostTreesBuild() {

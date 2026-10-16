@@ -86,6 +86,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -357,7 +358,21 @@ type advance struct {
 	problem string
 	// operationError is a current check's fetch failure, retained separately from a patch bypass.
 	operationError string
+	// THE WALK-BACK (docs/design/patched-build-recovery.md §6.4): builds counts the builds this run
+	// started, against walkBackBuilds; tried the entries it replayed or built; walkingBack is set while
+	// the walk-back replays an older entry, whose conflict is recorded without its own error block;
+	// walkBackHold is the hold the build under way records once it is admitted; slotHeld says the
+	// pool's build slot is already this advance's.
+	builds       int
+	tried        map[string]bool
+	walkingBack  bool
+	walkBackHold *packsrc.WalkBackHold
+	slotHeld     bool
 }
+
+// walkBackBuilds is the walk-back's budget (OQ-PBR4): at most this many builds per key per run, the
+// newest's own and the series' base each counting as one.
+const walkBackBuilds = 3
 
 // baseWhy is why an advance builds the series at its own base (§6.4), baseNone when it does not.
 type baseWhy int
@@ -552,12 +567,15 @@ func (a *advance) interruptedLine() {
 func (a *advance) actStopped() advanceResult {
 	f := a.f
 	a.stopSaid = true
-	failure := a.deliveryPatchFailure(false)
-	if failure.State == "unavailable" {
-		return a.unavailableDetachedAuthority(failure)
-	}
-	if failure.State == "failure" && failure.Failure != nil {
-		return a.patchFailureResult(failure.Failure)
+	if !(a.serves() && (run.PatchedForkHold(f) != "" || a.walkBackHolds())) {
+		// A held serving build runs whatever is recorded (§6.3, §6.4 of the recovery design).
+		failure := a.deliveryPatchFailure(false)
+		if failure.State == "unavailable" {
+			return a.unavailableDetachedAuthority(failure)
+		}
+		if failure.State == "failure" && failure.Failure != nil {
+			return a.patchFailureResult(failure.Failure)
+		}
 	}
 	if a.serves() {
 		a.dim("%s: not checked — a Ctrl-C ended %s's wait for its patched builds; %s %s, and %s checks it",
@@ -927,37 +945,70 @@ func (a *advance) patchFailureText(pf *packsrc.PatchFailure) string {
 	return report.String()
 }
 
-// patchBypass is what this advance's error block offers as its bypass (PF-D81, PF-D83): the patch
-// failure's own, naming the build it runs, when one serves; else, for a fork at a jail launch, the
-// older recorded good build cached-good recovery runs (PF-D82); else, at a jail launch, launching
-// without it; else none.
+// patchBypass is what this advance's error block offers: the hatch list (recoveryHatches).
 func (a *advance) patchBypass() packsrc.PatchBypass {
-	b := packsrc.PatchBypass{Command: patchFailureCommand(a.f.Bin, a.o.host)}
+	return packsrc.PatchBypass{Command: a.bypassCommand(), Key: a.f.Key(), Hatches: a.recoveryHatches()}
+}
+
+// bypassCommand is the act every hatch is put in front of: the caller's own (`yolo host apply
+// --assert`), `yolo capture <arg>`, `yolo host -- <bin>`, or a jail launch's `yolo`.
+func (a *advance) bypassCommand() string {
 	switch {
 	case a.o.bypassCommand != "":
-		b.Command = a.o.bypassCommand
+		return a.o.bypassCommand
 	case a.o.force:
-		b.Command = "yolo capture " + shquote.Quote(a.f.CaptureArg())
+		return "yolo capture " + shquote.Quote(a.f.CaptureArg())
 	}
-	if a.serves() {
-		b.Runs = a.servingLine()
-		return b
+	return patchFailureCommand(a.f.Bin, a.o.host)
+}
+
+// recoveryHatches is THE ONE AUTHORITY FOR A REFUSAL'S HATCH LIST (docs/design/patched-build-recovery.md
+// §6.8, PBR-D5): every hatch that would get this act running past what stopped it, in the order a
+// refusal lists them, each naming this key and this act's command. The advance hands it on the
+// delivery, and the launch's refusal prints it as is.
+func (a *advance) recoveryHatches() []patchrecovery.Hatch {
+	f := a.f
+	cmd, key := a.bypassCommand(), f.Key()
+	jailLaunch := a.o.launch && !a.o.host && !a.o.force && !a.o.background
+	var out []patchrecovery.Hatch
+	add := func(env, value, label string) {
+		out = append(out, patchrecovery.Hatch{Env: env, Value: value, Command: cmd, Label: label})
 	}
-	if a.o.host || a.o.force {
-		return b
+	switch {
+	case a.serves():
+		add(patchrecovery.AllowPatchFailuresEnv, key, "run "+a.servingLine())
+	case jailLaunch:
+		if label := a.cachedGoodLabel(); label != "" {
+			add(patchrecovery.UseCachedGoodEnv, key, "run the older build "+label)
+		}
 	}
-	if label := a.cachedGoodLabel(); label != "" {
-		b.CachedGood, b.CachedGoodLabel = a.f.Key(), label
-		return b
+	if a.walkBackWouldTry() {
+		add(patchrecovery.AllowOlderUpstreamEnv, key, "build on an older release")
 	}
-	b.Missing = true
-	return b
+	if a.series != nil && a.series.Replays() {
+		add(patchrecovery.SkipPatchesEnv, key, "run upstream without the patches")
+	}
+	if f.IsTree() && f.Owner != "" {
+		add(patchrecovery.SkipExtensionsEnv, key, "start "+f.Owner+" without it")
+	}
+	if !f.IsTree() && jailLaunch && !a.serves() {
+		add(patchrecovery.AllowMissingProgramsEnv, "1", "start without it")
+	}
+	return out
+}
+
+// withRecovery sets r's delivery's hatch list when r hands nothing or carries a patch failure.
+func (a *advance) withRecovery(r advanceResult) advanceResult {
+	if r.delivery.Key == "" || r.delivery.PatchFailure != nil || a.patchFailure != nil {
+		r.delivery.Recovery = a.recoveryHatches()
+	}
+	return r
 }
 
 // cachedGoodLabel names the older recorded good build cached-good recovery (PF-D82) would run for a
 // patched fork with no build of its current recipe to serve, "" when there is none it could run.
 func (a *advance) cachedGoodLabel() string {
-	if a.f.Into != "" || a.rec == nil || a.rec.Good == nil {
+	if a.rec == nil || a.rec.Good == nil {
 		return ""
 	}
 	if _, _, why := validateCachedGood(a.f, a.o.platform, a.rec.Good); why != "" {
@@ -1000,7 +1051,7 @@ func (a *advance) patchFailureResult(pf *packsrc.PatchFailure) advanceResult {
 	a.patchFailure = pf
 	text := a.patchFailureText(pf)
 	a.reportPatchFailure(pf, text)
-	if allowPatchFailures() && !a.o.freshCheck && !a.o.background && a.serves() {
+	if allowPatchFailures(a.f) && !a.o.freshCheck && !a.o.background && a.serves() {
 		r := a.finish(nil, forkBuild{}, 0, nil, "")
 		if a.serving != nil && r.delivery.Key == "" {
 			r.failed = true
@@ -1040,7 +1091,7 @@ func (a *advance) unavailableDetachedAuthority(result packsrc.LegacyReplayResult
 	if a.serving != nil {
 		out.delivery.Key = a.serving.Key
 	}
-	return out
+	return a.withRecovery(out)
 }
 
 // for it, and the next background advance tries again.
@@ -1191,21 +1242,25 @@ func (a *advance) run() advanceResult {
 	// launch runs no git process at all (P4), and a git upgrade is replayed at the next check
 	// (PF-D41).
 	exactGit := false
-	cachedFailure := a.deliveryPatchFailure(false)
-	if cachedFailure.State == "unavailable" {
-		return a.unavailableDetachedAuthority(cachedFailure)
-	}
-	if hold != "" && good != nil && !a.o.force && !a.o.freshCheck {
-		// A hold suppresses Git and repair retry, never already-classified failure authority.
-		if cachedFailure.State == "failure" && cachedFailure.Failure != nil {
-			return a.patchFailureResult(cachedFailure.Failure)
-		}
-		// HELD BY agent_updates (PF-D19): no check; a change to the series or the recipe is built at
-		// the good build's commit, and a serving good build is what runs.
+	held := hold != "" && good != nil && !a.o.force && !a.o.freshCheck
+	if held {
+		// HELD BY agent_updates (PF-D19; A HOLD HOLDS, docs/design/patched-build-recovery.md §6.3): no
+		// check, and prior state has no bearing — a failure recorded for another version, the
+		// background's included, never refuses. A serving good build is what runs; a change to the
+		// series or the recipe is built at the good build's commit, and only a failure there refuses.
 		if !a.serves() {
+			if pf := a.failureAtGood(good); pf != nil {
+				return a.patchFailureResult(pf)
+			}
 			list = []packsrc.ListEntry{goodEntry(good)}
 		}
 	} else {
+		var cachedFailure packsrc.LegacyReplayResult
+		if !a.walkBackHolds() {
+			if cachedFailure = a.deliveryPatchFailure(false); cachedFailure.State == "unavailable" {
+				return a.unavailableDetachedAuthority(cachedFailure)
+			}
+		}
 		// Under a CHECK SLOT of the pool (XB-D10): a Ctrl-C while it waits for one ends it unchecked, as
 		// one during the check does.
 		var res packsrc.CheckResult
@@ -1260,12 +1315,14 @@ func (a *advance) run() advanceResult {
 			if a.o.freshCheck {
 				return a.freshRefusal("the fresh upstream check could not run", res.Err)
 			}
-			failure := a.deliveryPatchFailure(false)
-			if failure.State == "unavailable" {
-				return a.unavailableDetachedAuthority(failure)
-			}
-			if failure.State == "failure" && failure.Failure != nil {
-				return a.patchFailureResult(failure.Failure)
+			if !a.walkBackHolds() {
+				failure := a.deliveryPatchFailure(false)
+				if failure.State == "unavailable" {
+					return a.unavailableDetachedAuthority(failure)
+				}
+				if failure.State == "failure" && failure.Failure != nil {
+					return a.patchFailureResult(failure.Failure)
+				}
 			}
 			if a.lockHeldSkip(res.Err) {
 				return a.skip(res.Err)
@@ -1300,13 +1357,22 @@ func (a *advance) run() advanceResult {
 			a.warn("%s: could not check its upstream (%s) — %s; the next check is in an hour, or "+
 				"`yolo pack update` checks now", f.Label(), found.FetchErr, a.runsNow())
 		}
+		if a.walkBackHolds() && !a.o.force {
+			// THE WALK-BACK HOLDS (§6.4 of the recovery design): the newest entry is still the one the
+			// series did not take, so the walked-back good build runs, held, and nothing is built or
+			// refused until a check lists something newer.
+			return a.finish(nil, forkBuild{}, 0, nil, "")
+		}
+		// A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (§6.2): it is current only while its target is the
+		// newest candidate not passed over (CheckRecord.CurrentPatchFailure), so a newer release the
+		// check listed is walked below as if there were no record.
 		cachedFailure = a.deliveryPatchFailure(false)
 		if cachedFailure.State == "unavailable" {
 			return a.unavailableDetachedAuthority(cachedFailure)
 		}
 		if cachedFailure.State == "failure" && cachedFailure.Failure != nil {
 			if !res.Ran {
-				return a.patchFailureResult(cachedFailure.Failure)
+				return a.failedOrWalkBack(cachedFailure.Failure, edited)
 			}
 			target := cachedFailure.Failure.Target
 			selected := false
@@ -1334,14 +1400,14 @@ func (a *advance) run() advanceResult {
 				return a.serveOr("the replay's check authority changed; the next launch rereads it before building")
 			}
 			if a.patchFailure != nil {
-				return a.patchFailureResult(a.patchFailure)
+				return a.failedOrWalkBack(a.patchFailure, edited)
 			}
 			failure := a.deliveryPatchFailure(false)
 			if failure.State == "unavailable" {
 				return a.unavailableDetachedAuthority(failure)
 			}
 			if failure.State == "failure" && failure.Failure != nil {
-				return a.patchFailureResult(failure.Failure)
+				return a.failedOrWalkBack(failure.Failure, edited)
 			}
 		}
 		if !res.Ran {
@@ -1350,7 +1416,7 @@ func (a *advance) run() advanceResult {
 				return a.unavailableDetachedAuthority(legacy)
 			}
 			if legacy.State == "failure" && legacy.Failure != nil {
-				return a.patchFailureResult(legacy.Failure)
+				return a.failedOrWalkBack(legacy.Failure, edited)
 			}
 		}
 		found = a.rec.Check
@@ -1460,6 +1526,7 @@ func (a *advance) run() advanceResult {
 		return a.finish(nil, forkBuild{}, 0, nil, "") // a Ctrl-C ended the wait for one: interruptedLine says it
 	}
 	defer release()
+	a.slotHeld = true
 	w := a.walk(list, base == baseNone)
 	if a.interrupted() {
 		return a.finish(nil, forkBuild{}, 0, nil, "")
@@ -1467,8 +1534,13 @@ func (a *advance) run() advanceResult {
 	if errors.Is(w.Err, packsrc.ErrStaleReplay) {
 		return a.serveOr("the replay's check authority changed; the next launch rereads it before building")
 	}
+	if held && w.PatchFailure() == nil {
+		// Under a hold only this walk's own verdict at the good build's commit counts: the record's
+		// failure for another version, which the replay's record leaves here, has no bearing (§6.3).
+		a.patchFailure = nil
+	}
 	if a.patchFailure != nil {
-		return a.patchFailureResult(a.patchFailure)
+		return a.failedOrWalkBack(a.patchFailure, edited)
 	}
 	if a.lockHeldSkip(w.Err) {
 		return a.skip(w.Err)
@@ -1522,8 +1594,191 @@ func (a *advance) run() advanceResult {
 		}
 		return a.deferAppleCandidate(fit.Entry, reason)
 	}
-	return a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
+	r := a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
 		Entry: a.entryWithVersion(fit.Entry)}, base, edited)
+	if !r.built && r.failErr != "" && !a.interrupted() {
+		// THE NEWEST FIT DID NOT BUILD: the walk-back tries older releases when it is asked for.
+		if wr, ok := a.walkBack(fit.Entry, packsrc.OutcomeBuildFailed, nil, edited); ok {
+			return wr
+		}
+	}
+	return r
+}
+
+// failedOrWalkBack ends an advance whose newest candidate does not take the series: the walk-back,
+// when YOLO_ALLOW_OLDER_UPSTREAM asks for it and finds an older release that builds, else the refusal.
+func (a *advance) failedOrWalkBack(pf *packsrc.PatchFailure, edited bool) advanceResult {
+	if r, ok := a.walkBack(pf.Target, packsrc.OutcomeConflict, pf, edited); ok {
+		return r
+	}
+	return a.patchFailureResult(pf)
+}
+
+// walkBackOn reports whether this run may WALK BACK (docs/design/patched-build-recovery.md §6.4,
+// OQ-PBR2): YOLO_ALLOW_OLDER_UPSTREAM covers this key, the act is a foreground one — never the
+// background advance or a shared lane, which read no hatch — and the followed ref is a branch, not a
+// tag or commit the user named.
+func (a *advance) walkBackOn() bool {
+	if a.o.background || a.o.sharedOwned || a.o.checkOnly || a.rec == nil || a.rec.Check == nil ||
+		a.rec.Check.RefKind != "branch" {
+		return false
+	}
+	return patchrecovery.Read(os.Getenv, patchrecovery.AllowOlderUpstreamEnv).Covers(recoverySubject(a.f))
+}
+
+// walkBackAsked reports, with no git, whether YOLO_ALLOW_OLDER_UPSTREAM asks f's foreground act to
+// walk back past pf: the variable covers f, pf is not the series' own failure at its base, and the
+// last check followed a branch. A host act's offline read then leaves pf to the advance, whose
+// walk-back decides whether it still stops the act.
+func walkBackAsked(f packload.Fork, pf *packsrc.PatchFailure) bool {
+	if pf == nil || pf.Kind == "base" ||
+		!patchrecovery.Read(os.Getenv, patchrecovery.AllowOlderUpstreamEnv).Covers(recoverySubject(f)) {
+		return false
+	}
+	rec, err := (&packsrc.Store{Dir: paths.PacksDir()}).LoadCheckRecord(f.Key())
+	return err == nil && rec.Check != nil && rec.Check.RefKind == "branch"
+}
+
+// walkBackList is what a walk-back would try now, newest first: the walk's list — with a build of
+// the series as it stands serving, only what is newer than it — passing over recorded conflicts,
+// failed builds still backing off, the failure in hand and what this run already tried; then, with
+// nothing serving, the series' base.
+func (a *advance) walkBackList() []packsrc.ListEntry {
+	if a.rec == nil || !a.rec.Answers(a.in) || a.series == nil {
+		return nil
+	}
+	from := a.rec.Check.List
+	if a.serves() {
+		from = a.rec.Candidates(a.in)
+	}
+	skip := func(commit string) bool {
+		return a.tried[commit] || a.conflicted(commit, "") || a.backingOff(commit) ||
+			a.patchFailure != nil && a.patchFailure.Target.Commit == commit
+	}
+	var out []packsrc.ListEntry
+	for _, e := range from {
+		if !skip(e.Commit) {
+			out = append(out, e)
+		}
+	}
+	if !a.serves() && a.baseFallback() && !onList(from, a.series.Base) && !skip(a.series.Base) {
+		out = append(out, a.baseEntry())
+	}
+	return out
+}
+
+// walkBackWouldTry reports whether YOLO_ALLOW_OLDER_UPSTREAM would get this act an older build: the
+// act reads it, the ref is a branch, the failure is not the series' own at its base, and the
+// walk-back has something left to try.
+func (a *advance) walkBackWouldTry() bool {
+	if a.o.background || a.o.sharedOwned || a.rec == nil || a.rec.Check == nil || a.rec.Check.RefKind != "branch" ||
+		a.patchFailure != nil && a.patchFailure.Kind == "base" {
+		return false
+	}
+	return len(a.walkBackList()) > 0
+}
+
+// walkBackHolds reports whether the record's walk-back hold still holds and its good build serves.
+func (a *advance) walkBackHolds() bool {
+	return a.serves() && a.rec != nil && a.rec.Good != nil && a.rec.Good.Recipe == a.recipe &&
+		a.rec.WalkBackHolds(a.in, a.series.Digest) != nil
+}
+
+// failureAtGood is, under an `agent_updates` hold with nothing serving, a recorded failure that stops
+// the build at the good build's commit: one at that commit, or the series' own at its base. A failure
+// recorded for any other version has no bearing on a held launch (§6.3).
+func (a *advance) failureAtGood(good *packsrc.GoodBuild) *packsrc.PatchFailure {
+	if a.rec == nil {
+		return nil
+	}
+	if pf := a.rec.PatchFailure; pf != nil && pf.Owner == a.f.Key() && pf.Inputs == a.in && pf.Series == a.series.Digest &&
+		(pf.Kind == "base" || pf.Target.Commit == good.Commit) {
+		copy := *pf
+		copy.Paths = append([]string(nil), pf.Paths...)
+		return &copy
+	}
+	if pf := a.rec.CurrentPatchFailure(a.in, a.series.Digest); pf != nil && pf.Target.Commit == good.Commit {
+		return pf
+	}
+	return nil
+}
+
+// walkBack is THE WALK-BACK (§6.4): newest, the entry that did not take the series (kind
+// OutcomeConflict, its failure pf) or did not build (OutcomeBuildFailed), stays recorded as it is,
+// and the run tries older releases newest first — replaying each, passing a conflict over, building
+// each clean one — until one is admitted, within walkBackBuilds. The admitted build becomes the good
+// build with a walk-back hold naming newest, and its disclosure line is said. ok is false when the
+// walk-back does not act: not asked for, a failure of the series at its own base, or nothing left to
+// try, so the caller's own end stands.
+func (a *advance) walkBack(newest packsrc.ListEntry, kind string, pf *packsrc.PatchFailure, edited bool) (advanceResult, bool) {
+	if !a.walkBackOn() || pf != nil && pf.Kind == "base" {
+		return advanceResult{}, false
+	}
+	if a.tried == nil {
+		a.tried = map[string]bool{}
+	}
+	a.tried[newest.Commit] = true
+	if len(a.walkBackList()) == 0 || a.builds >= walkBackBuilds {
+		return advanceResult{}, false
+	}
+	if !a.slotHeld {
+		release, ok := a.o.slot.build()
+		if !ok {
+			return a.finish(nil, forkBuild{}, 0, nil, ""), true
+		}
+		a.slotHeld = true
+		defer func() { release(); a.slotHeld = false }()
+	}
+	var last *advanceResult
+	for a.builds < walkBackBuilds {
+		list := a.walkBackList()
+		if len(list) == 0 {
+			break
+		}
+		e := list[0]
+		a.tried[e.Commit] = true
+		a.replaySpent = 0 // each older entry's replay has a bound of its own, as the base's does
+		a.patchFailure = nil
+		a.walkingBack = true
+		w := a.walk([]packsrc.ListEntry{e}, false)
+		a.walkingBack = false
+		if a.interrupted() {
+			return a.finish(nil, forkBuild{}, 0, nil, ""), true
+		}
+		if errors.Is(w.Err, packsrc.ErrStaleReplay) {
+			return a.serveOr("the replay's check authority changed; the next launch rereads it before building"), true
+		}
+		// The record's own current failure (the newest's) is what recordReplay leaves in a.patchFailure;
+		// this entry's verdict is the walk's.
+		a.patchFailure = nil
+		if w.PatchFailure() != nil {
+			continue // recorded as a conflict of its own; the walk-back goes on
+		}
+		if w.Base != nil || w.Fit < 0 {
+			break
+		}
+		a.walkBackHold = &packsrc.WalkBackHold{Newest: newest, Kind: kind, Good: e.Commit, Series: a.series.Digest}
+		r := a.build(forkBuild{Fork: a.f, Commit: e.Commit, Platform: a.o.platform, Series: a.series,
+			Entry: a.entryWithVersion(w.Results[w.Fit].Entry)}, baseNone, edited)
+		a.walkBackHold = nil
+		if r.built {
+			hold := packsrc.WalkBackHold{Newest: newest, Kind: kind}
+			a.say("%s: walked back to %s; %s", a.f.Label(), e.ShortLabel(), hold.Line())
+			return r, true
+		}
+		last = &r
+		if a.interrupted() || r.failErr == "" {
+			return r, true
+		}
+	}
+	a.patchFailure = pf
+	switch {
+	case pf != nil:
+		return a.patchFailureResult(pf), true
+	case last != nil:
+		return a.withRecovery(*last), true
+	}
+	return advanceResult{}, false
 }
 
 func (a *advance) deferAppleCandidate(candidate packsrc.ListEntry, reason string) advanceResult {
@@ -1850,7 +2105,10 @@ func (a *advance) walk(list []packsrc.ListEntry, ofList bool) packsrc.WalkResult
 			pf.Log = filepath.Join(a.o.workspace, ".yolo", "launch.log")
 		}
 		a.patchFailure = pf
-		a.reportPatchFailure(pf, a.patchFailureText(pf))
+		if !a.walkingBack {
+			// A walk-back's older conflict is recorded, and the newest's block is the one said.
+			a.reportPatchFailure(pf, a.patchFailureText(pf))
+		}
 	}
 	if a.interrupted() || a.lockHeldSkip(w.Err) {
 		return w // a held mirror lock replayed nothing: nothing is recorded, and the key is skipped
@@ -1996,7 +2254,14 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	case base == baseNone:
 		a.sayUnlessReport("%s: %s; building it", f.Label(), a.takes(b.Entry))
 	}
-	a.thenBase = base == baseNone && !a.serves() && a.baseFallback() && b.Commit != a.series.Base
+	a.builds++
+	if a.tried == nil {
+		a.tried = map[string]bool{}
+	}
+	a.tried[b.Commit] = true
+	// Under the walk-back the series' base is one of the older entries it tries (walkBack), not the
+	// next step after the newest fit.
+	a.thenBase = base == baseNone && !a.serves() && a.baseFallback() && b.Commit != a.series.Base && !a.walkBackOn()
 	startFail := a.buildFailure(b.Commit)
 	startGood := a.goodBuild()
 	a.boundHit, a.ownLock = false, b.lockPath()
@@ -2678,6 +2943,13 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(), PatchBranch: patchBranchLabel(b.Series),
 						Seq: seq, Read: &read, Entry: built.Key, At: patchedNow().Unix()}
 					dropBuildFailure(r, b.Commit)
+					// The walk-back's hold rides with the build it admitted; any other admitted build
+					// clears it (§6.4).
+					r.WalkBack = nil
+					if h := a.walkBackHold; h != nil {
+						hold := *h
+						r.WalkBack = &hold
+					}
 					moved, changed = true, true
 				}
 			}
@@ -2791,7 +3063,7 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 			res.delivery.CachedGood = a.cachedGoodLabel()
 		}
 	}
-	return res
+	return a.withRecovery(res)
 }
 
 // handedLabel names the build a delivery hands, "<label> + N patches", as the lines do.

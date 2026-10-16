@@ -361,12 +361,13 @@ func Run(opts Options) (rc int) {
 	// above the dispatch, so every backend and an attach say which revision each source-built
 	// program is at (OQ-FP6, forkbuild.go).
 	o.forkPinned = o.noteForkPins(staged.packs, rt)
-	if !o.selectCachedGood(rt) {
-		return 1
-	}
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
 	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)
+	// Cached-good recovery covers forks and extensions alike, so it reads both sets.
+	if !o.selectCachedGood(rt) {
+		return 1
+	}
 
 	// THE ARRIVAL AT A macos-user KEY (keeperspawn.go's arriveMacosUser; docs/design/
 	// jail-lifetime-last-session-wins.md JL-D44), before the channel composes, because a launch that

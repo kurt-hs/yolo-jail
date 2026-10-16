@@ -14,7 +14,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
-	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -79,8 +78,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 			if !f.DeliveredAtHost() || currentPatchFailure(f) == nil {
 				continue
 			}
-			if entry, _, _ := hostTreeServing(f); entry != nil && patchrecovery.Read(os.Getenv, patchrecovery.AllowPatchFailuresEnv).
-				Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}) {
+			if entry, _, _ := hostTreeServing(f); entry != nil && allowPatchFailures(f) {
 				continue // the bypass: the render links the good build, as it does for an advance's
 			}
 			stopped = append(stopped, f.Label())

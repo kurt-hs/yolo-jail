@@ -29,6 +29,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -149,7 +150,11 @@ func runtimeName(rt string) string {
 // front, since there is nothing to hand; the first two are left to the background advance.
 func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport, it *poolItem,
 	color bool) (delivery run.TreeDelivery, later bool) {
+	var recovery []patchrecovery.Hatch // the advance's hatch list (advance.recoveryHatches)
 	defer func() {
+		if delivery.Dir == "" || delivery.PatchFailure != nil {
+			delivery.Recovery = recovery
+		}
 		if req.FreshUpdate && delivery.Dir == "" && delivery.FreshFailure == "" {
 			delivery.FreshFailure = delivery.Reason
 		}
@@ -219,6 +224,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 				r = treeAdvance(f, o)
 			}
 		}
+		recovery = r.delivery.Recovery
 		if req.FreshUpdate && r.failed {
 			return run.TreeDelivery{FreshFailure: r.freshFailure(), FreshError: r.freshError(), Reason: r.freshFailure(), PatchFailure: r.patchFailure}, false
 		}

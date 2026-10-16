@@ -31,7 +31,7 @@ func TestPreparePatchedKeepsBothDiagnosticSourcesAndTypedFailure(t *testing.T) {
 	}
 	w.floor.Patched = func(Program) PatchedState { return initial }
 	w.floor.ResolvePatched = func(context.Context, Program, *Record, bool) PatchedState { return resolved }
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 
 	preparation, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err == nil || preparation == nil {
@@ -139,7 +139,7 @@ func TestPreparePatchedRejectsDamagedInstalledCopyForLiteralBypass(t *testing.T)
 			pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure,
 				Reason: "the selected good build is unavailable"}
 			pf.advances = 0
-			w.floor.AllowPatchFailures = func() bool { return true }
+			w.floor.AllowPatchFailures = func(Program) bool { return true }
 			prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 			var got *packsrc.PatchFailure
 			if err == nil || prepared == nil || prepared.delivery == patchedPreparationKeepInstalled ||
@@ -160,7 +160,7 @@ func TestEnsurePreparedRevalidatesKeepInstalledCopy(t *testing.T) {
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure,
 		Reason: "the selected good build is unavailable"}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err != nil || prepared.delivery != patchedPreparationKeepInstalled {
 		t.Fatalf("valid installed copy was not prepared for keep: delivery=%v err=%v", prepared.delivery, err)
@@ -200,7 +200,7 @@ func TestPreparePatchedDoesNotHandDamagedInstalledCopyToResolver(t *testing.T) {
 	}
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	called := false
 	w.floor.ResolvePatched = func(_ context.Context, _ Program, installed *Record, _ bool) PatchedState {
 		called = true
@@ -230,7 +230,7 @@ func TestPreparePatchedKeepsReadableNonExecutableInterpretedScript(t *testing.T)
 	}
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err != nil || prepared.delivery != patchedPreparationKeepInstalled {
 		t.Fatalf("readable Node script was rejected for lacking its own execute bit: delivery=%v err=%v", prepared.delivery, err)
@@ -242,7 +242,7 @@ func TestPreparePatchedRejectsUnreadableInterpretedScript(t *testing.T) {
 	w, pf, rec, _ := installPatchedPreparationCopy(t, p)
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	resolved, err := filepath.EvalSymlinks(rec.Entry)
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +287,7 @@ func TestAliasedFloorRootKeepsPrunedInstalledCopyAcrossResolverAndEnsure(t *test
 
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	if err := os.RemoveAll(good.Entry.Root); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestEnsurePreparedMaterializationRefusalPreservesCauseAndFailure(t *testing
 	good := patchedBuildWithBinaryHomeReference(t, pf, p)
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err != nil || prepared == nil || prepared.delivery != patchedPreparationInstallGood ||
 		prepared.selectedGood == nil || prepared.selectedGood.Entry.Key != good.Entry.Key {
@@ -419,7 +419,7 @@ func TestEnsurePreparedRetainsFailureForReapedSelectedStoreEntry(t *testing.T) {
 	good := pf.good(forkCommitOne, patchedRecipeOne, "v1.0.0 (11111111) + 2 patches", true)
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err != nil || prepared.delivery != patchedPreparationInstallGood {
 		t.Fatalf("store-only literal bypass was not prepared: delivery=%v err=%v", prepared.delivery, err)
@@ -458,7 +458,7 @@ func TestEnsurePreparedRetainsFailureAndIndependentInstallErrors(t *testing.T) {
 			good := pf.good(forkCommitOne, patchedRecipeOne, "v1.0.0 (11111111) + 2 patches", true)
 			failure := preparationPatchFailure()
 			pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good, PatchFailure: failure}
-			w.floor.AllowPatchFailures = func() bool { return true }
+			w.floor.AllowPatchFailures = func(Program) bool { return true }
 			prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 			if err != nil || prepared.delivery != patchedPreparationInstallGood {
 				t.Fatalf("store-only literal bypass was not prepared: delivery=%v err=%v", prepared.delivery, err)
@@ -533,7 +533,7 @@ func TestEnsurePreparedRetainsFailureForChangedHostPlatform(t *testing.T) {
 			good := pf.good(forkCommitOne, patchedRecipeOne, "v1.0.0 (11111111) + 2 patches", true)
 			failure := preparationPatchFailure()
 			pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good, PatchFailure: failure}
-			w.floor.AllowPatchFailures = func() bool { return true }
+			w.floor.AllowPatchFailures = func(Program) bool { return true }
 			prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 			if err != nil {
 				t.Fatalf("prepare selected store delivery: %v", err)
@@ -599,7 +599,7 @@ func TestPreparePatchedKeepsReadableDirectExecutableCopy(t *testing.T) {
 	_ = directExecutablePreparationRecord(t, w, rec)
 	failure := preparationPatchFailure()
 	pf.state = PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	prepared, err := w.floor.PreparePatched(context.Background(), p, false)
 	if err != nil || prepared.delivery != patchedPreparationKeepInstalled {
 		t.Fatalf("valid directly-executed installed copy was rejected: delivery=%v err=%v", prepared.delivery, err)

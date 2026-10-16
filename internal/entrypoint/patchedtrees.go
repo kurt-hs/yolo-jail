@@ -55,6 +55,11 @@ type TreeDelivery struct {
 	// Stop says the owner's launchers stop before exec (PPX-D18): nothing serves, at a notch that
 	// builds trees and that the owner's list entry reaches.
 	Stop bool `json:"stop,omitempty"`
+	// Skipped says the launch skipped the extension (YOLO_SKIP_EXTENSIONS,
+	// docs/design/patched-build-recovery.md §6.6): nothing is mounted, the boot leaves every entry
+	// that loads it out of the owning agent's lists, and no launcher stops for it. Additive: a boot
+	// that predates it reads a skipped extension as one handed no build.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // PatchedTreesWire renders the decisions for the environment, "" for none.
@@ -91,10 +96,13 @@ func patchedTrees(e *Env) map[string]TreeDelivery {
 // all — a notch that builds no tree (macos-user), or a launcher older than the wire (XB-D8: "an absent
 // wire means nothing was handed"). The surfaces' list contributions are collected from what it
 // returns, so the agent installs each such extension itself from its raw entry. The host's launch
-// says each one, with its reason, where it decided it.
+// says each one, with its reason, where it decided it. A key the wire marks Skipped takes no
+// fallback: every entry that loads it is left out of the lists (packload.ApplyTreeLists), so the
+// agent starts without it.
 func withTreeFallbacks(e *Env, packs []*packload.Pack) []*packload.Pack {
 	wire := patchedTrees(e)
-	out, _ := packload.ApplyTreeFallbacks(packs, func(f packload.Fork) bool { return wire[f.Key()].Build != "" })
+	out, _, _ := packload.ApplyTreeLists(packs, func(f packload.Fork) bool { return wire[f.Key()].Build != "" },
+		func(f packload.Fork) bool { return wire[f.Key()].Skipped })
 	return out
 }
 
@@ -107,7 +115,7 @@ func withTreeFallbacks(e *Env, packs []*packload.Pack) []*packload.Pack {
 func treeGateFor(d map[string]TreeDelivery, pack string) string {
 	keys := make([]string, 0, len(d))
 	for k, t := range d {
-		if t.Stop && t.Owner == pack && pack != "" {
+		if t.Stop && !t.Skipped && t.Owner == pack && pack != "" {
 			keys = append(keys, k)
 		}
 	}

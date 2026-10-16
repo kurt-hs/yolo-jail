@@ -415,7 +415,7 @@ func reportExplicitPatchFailure(pr richtext.Printer, errw io.Writer, f packload.
 	rec *packsrc.CheckRecord, failure *packsrc.PatchFailure, rc int, reported ...bool) int {
 	alreadyReported := len(reported) > 0 && reported[0]
 	admitted := ""
-	if allowPatchFailures() {
+	if allowPatchFailures(f) {
 		admitted = explicitCompatibleGood(f, series, rec)
 	}
 	if !alreadyReported {

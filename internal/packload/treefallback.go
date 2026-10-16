@@ -7,10 +7,14 @@ package packload
 // contributions, before anything folds, so the agent installs the extension itself, exactly as it
 // does with no yolo in between.
 //
+// And a SKIPPED extension (YOLO_SKIP_EXTENSIONS, docs/design/patched-build-recovery.md §6.6): every
+// entry of the contributing pack's own lists that loads the tree is left out, so the agent starts
+// without it.
+//
 // THIS IS NOT THE POST-MERGE REWRITE pack-system.md's OQ-LT2 forbids: it chooses between two
-// strings one author wrote, in that author's own contributions, before the fold, and touches no
-// other pack's entry and no entry the user wrote. Equality is exact, so core reads none of the
-// agent's grammar.
+// strings one author wrote, or drops one, in that author's own contributions, before the fold, and
+// touches no other pack's entry and no entry the user wrote. Equality is exact, so core reads none
+// of the agent's grammar.
 
 import (
 	"bytes"
@@ -25,60 +29,96 @@ import (
 // its posture lists copied too); the input is never modified, since an embedded pack is one shared
 // value per process. With nothing taken, packs is returned as it came.
 func ApplyTreeFallbacks(packs []*Pack, handed func(Fork) bool) ([]*Pack, []Fork) {
-	var taken []Fork
-	byPack := map[string]map[string]string{} // pack → the tree's list entry → its fallback
+	out, taken, _ := ApplyTreeLists(packs, handed, nil)
+	return out, taken
+}
+
+// ApplyTreeLists is ApplyTreeFallbacks with SKIPPED trees besides: a tree skipped reports true for
+// has every entry that loads it (its own list entry, or a path inside it) left out of the
+// contributing pack's config-lists and posture lists, and takes no fallback. The skipped trees come
+// back third, in PatchedTrees' order. A nil skipped skips none.
+func ApplyTreeLists(packs []*Pack, handed, skipped func(Fork) bool) ([]*Pack, []Fork, []Fork) {
+	var taken, dropped []Fork
+	edits := map[string]*listEdits{} // pack → its trees' list edits
+	editsOf := func(pack string) *listEdits {
+		if edits[pack] == nil {
+			edits[pack] = &listEdits{swap: map[string]string{}}
+		}
+		return edits[pack]
+	}
 	for _, f := range PatchedTrees(packs) {
+		if skipped != nil && skipped(f) {
+			dropped = append(dropped, f)
+			e := editsOf(f.Pack)
+			e.drop = append(e.drop, f.ListEntry())
+			continue
+		}
 		if f.Fallback == "" || handed(f) {
 			continue
 		}
 		taken = append(taken, f)
-		if byPack[f.Pack] == nil {
-			byPack[f.Pack] = map[string]string{}
-		}
-		byPack[f.Pack][f.ListEntry()] = f.Fallback
+		editsOf(f.Pack).swap[f.ListEntry()] = f.Fallback
 	}
-	if len(taken) == 0 {
-		return packs, nil
+	if len(edits) == 0 {
+		return packs, nil, nil
 	}
 	out := append([]*Pack(nil), packs...)
 	for i, p := range out {
-		if p == nil || p.Decl == nil || byPack[p.Name] == nil {
+		if p == nil || p.Decl == nil || edits[p.Name] == nil {
 			continue
 		}
-		swap := byPack[p.Name]
+		e := edits[p.Name]
 		cp := copyPackDecl(p)
 		for j, c := range cp.Decl.Contributes {
 			switch c.Kind {
 			case packdecl.KindConfigList:
-				cp.Decl.Contributes[j].Add = substituteEntries(c.Add, swap)
+				cp.Decl.Contributes[j].Add = e.apply(c.Add)
 			case packdecl.KindAutonomy:
-				cp.Decl.Contributes[j].Autonomous = postureWithFallbacks(c.Autonomous, swap)
-				cp.Decl.Contributes[j].Guarded = postureWithFallbacks(c.Guarded, swap)
+				cp.Decl.Contributes[j].Autonomous = postureWithEdits(c.Autonomous, e)
+				cp.Decl.Contributes[j].Guarded = postureWithEdits(c.Guarded, e)
 			}
 		}
 		out[i] = cp
 	}
-	return out, taken
+	return out, taken, dropped
 }
 
-// postureWithFallbacks is a copy of posture with swap applied to its lists, or posture itself when
-// it has none.
-func postureWithFallbacks(posture *packdecl.AutonomyPosture, swap map[string]string) *packdecl.AutonomyPosture {
+// listEdits is what one pack's lists have done to them: a tree's own entry swapped for its
+// fallback, and every entry that loads a skipped tree left out.
+type listEdits struct {
+	swap map[string]string
+	drop []string // the skipped trees' own list entries
+}
+
+// dropped reports whether entry loads a skipped tree (loadsTree).
+func (e *listEdits) dropped(entry string) bool {
+	for _, want := range e.drop {
+		if loadsTree(entry, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// postureWithEdits is a copy of posture with e applied to its lists, or posture itself when it has
+// none.
+func postureWithEdits(posture *packdecl.AutonomyPosture, e *listEdits) *packdecl.AutonomyPosture {
 	if posture == nil || len(posture.Lists) == 0 {
 		return posture
 	}
 	cp := *posture
 	cp.Lists = append([]packdecl.PostureList(nil), posture.Lists...)
 	for i, l := range cp.Lists {
-		cp.Lists[i].Add = substituteEntries(l.Add, swap)
+		cp.Lists[i].Add = e.apply(l.Add)
 	}
 	return &cp
 }
 
-// substituteEntries is a list body's `add` array with every string entry swap names replaced by its
-// value, in place, so the list keeps its order. A body that does not decode, or names none of them,
-// is returned as it came: the collector reports a malformed one.
-func substituteEntries(add json.RawMessage, swap map[string]string) json.RawMessage {
+// apply is a list body's `add` array with every string entry swap names replaced by its value, in
+// place, so the list keeps its order, and every entry that loads a skipped tree removed. A body that
+// does not decode, or that it changes nothing in, is returned as it came: the collector reports a
+// malformed one.
+func (e *listEdits) apply(add json.RawMessage) json.RawMessage {
 	var entries []any
 	dec := json.NewDecoder(bytes.NewReader(add))
 	dec.UseNumber() // a number entry beside the swapped one is written back as it was written
@@ -86,17 +126,23 @@ func substituteEntries(add json.RawMessage, swap map[string]string) json.RawMess
 		return add
 	}
 	changed := false
-	for i, e := range entries {
-		if s, ok := e.(string); ok {
-			if to, hit := swap[s]; hit {
-				entries[i], changed = to, true
+	kept := make([]any, 0, len(entries))
+	for _, entry := range entries {
+		if s, ok := entry.(string); ok {
+			if e.dropped(s) {
+				changed = true
+				continue
+			}
+			if to, hit := e.swap[s]; hit {
+				entry, changed = to, true
 			}
 		}
+		kept = append(kept, entry)
 	}
 	if !changed {
 		return add
 	}
-	b, err := json.Marshal(entries)
+	b, err := json.Marshal(kept)
 	if err != nil {
 		return add
 	}

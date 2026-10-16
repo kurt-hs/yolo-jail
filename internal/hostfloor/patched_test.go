@@ -170,7 +170,7 @@ func TestFloorPatchedPreparationRefusesUnresolvedAuthorityBesideGoodBuild(t *tes
 	p := patchedProgram()
 	good := pf.good(forkCommitOne, patchedRecipeOne, "v1.0.0 (11111111) + 2 patches", true)
 	pf.state = PatchedState{Recipe: patchedRecipeOne, Good: good}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	w.floor.ResolvePatched = func(context.Context, Program, *Record, bool) PatchedState {
 		return PatchedState{Recipe: patchedRecipeOne, Good: good, AuthorityError: "detached evidence unavailable",
 			OperationError: "independent operation error"}
@@ -194,7 +194,7 @@ func TestFloorPatchFatalReturnedFailureDoesNotAdoptPreAdvanceGood(t *testing.T) 
 	pf.state = PatchedState{Recipe: patchedRecipeOne, Good: first}
 	failure := &packsrc.PatchFailure{Owner: "forkpack/forkcli", Series: patchedRecipeOne,
 		Target: packsrc.ListEntry{Commit: "upstream-target"}, Kind: "conflict", Member: "0001-conflict.patch"}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	w.floor.Advance = func(context.Context, Program, *Record) PatchedState {
 		return PatchedState{Recipe: patchedRecipeOne, PatchFailure: failure}
 	}
@@ -224,7 +224,7 @@ func TestFloorPatchFatalRaisedNodeFloorIsNotBypassCompatible(t *testing.T) {
 	failure := &packsrc.PatchFailure{Owner: "forkpack/forkcli", Series: patchedRecipeOne,
 		Target: packsrc.ListEntry{Commit: "upstream-target"}, Kind: "conflict", Member: "0001-conflict.patch"}
 	pf.state.PatchFailure = failure
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	st, outcome, err := w.floor.Ensure(context.Background(), raised)
 	var got *packsrc.PatchFailure
 	if !errors.As(err, &got) || !reflect.DeepEqual(got, failure) || outcome == Current || st.Record == nil {
@@ -250,7 +250,7 @@ func TestFloorPatchFatalLiteralBypassCanInstallOnlyTheSelectedCompleteStoreBuild
 		advances++
 		return pf.state
 	}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	if _, err := os.Stat(w.floor.Dir); !os.IsNotExist(err) {
 		t.Fatalf("fixture unexpectedly created floor artifacts before Ensure: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestFloorPatchFatalCompatibilityBypassKeepsOnlyAnIntactCurrentSeriesCopy(t 
 			}
 			failure := &packsrc.PatchFailure{Owner: "forkpack/forkcli", Series: patchedRecipeOne,
 				Target: packsrc.ListEntry{Commit: "upstream-target"}, Kind: "conflict", Member: "0001-conflict.patch"}
-			w.floor.AllowPatchFailures = func() bool { return true }
+			w.floor.AllowPatchFailures = func(Program) bool { return true }
 			w.floor.Advance = func(context.Context, Program, *Record) PatchedState {
 				return PatchedState{Recipe: patchedRecipeOne, Good: pf.state.Good, PatchFailure: failure}
 			}
@@ -351,7 +351,7 @@ func TestFloorPatchFatalOperationErrorSurvivesCompatibleBypass(t *testing.T) {
 	}
 	failure := &packsrc.PatchFailure{Owner: "forkpack/forkcli", Series: patchedRecipeOne,
 		Target: packsrc.ListEntry{Commit: "upstream-target"}, Kind: "conflict", Member: "0001-conflict.patch"}
-	w.floor.AllowPatchFailures = func() bool { return true }
+	w.floor.AllowPatchFailures = func(Program) bool { return true }
 	w.floor.Advance = func(context.Context, Program, *Record) PatchedState {
 		return PatchedState{Recipe: patchedRecipeOne, Good: pf.state.Good, PatchFailure: failure,
 			OperationError: "the independent fetch check failed"}

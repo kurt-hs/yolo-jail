@@ -719,18 +719,63 @@ func (r *CheckRecord) CurrentPatchFailure(in CheckInputs, series string) *PatchF
 	if r == nil || r.Owner == "" {
 		return nil
 	}
+	if r.WalkBackHolds(in, series) != nil {
+		// THE WALK-BACK HOLDS (docs/design/patched-build-recovery.md §6.4): the newest's failure is the
+		// hold's, and the walked-back good build runs until upstream lists something newer.
+		return nil
+	}
 	if pf := r.PatchFailure; pf != nil && pf.Owner == r.Owner && pf.Inputs == in && pf.Series == series {
 		if pf.Kind == "base" {
 			if pf.Target.Commit == in.Base {
 				return clonePatchFailure(pf)
 			}
 		} else {
-			if r.Read != in || !successfulCheck(r) || listHasCommit(r.Check.List, pf.Target.Commit) {
+			if r.Read != in || !successfulCheck(r) ||
+				listHasCommit(r.Check.List, pf.Target.Commit) && !r.passedBy(pf, in, series) {
 				return clonePatchFailure(pf)
 			}
 		}
 	}
-	return r.legacyConflict(in, series)
+	if legacy := r.legacyConflict(in, series); legacy != nil && !r.passedBy(legacy, in, series) {
+		return legacy
+	}
+	return nil
+}
+
+// passedBy reports whether a successful check of in lists something the walk reaches before pf's
+// target (docs/design/patched-build-recovery.md §6.2): A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST,
+// so it governs only while its target is the newest candidate not already passed over by a conflict
+// of this series. A newer entry that is untried, replays cleanly or failed to build passes it by, and
+// so does a good build of this series that moved past it. A `base` failure, a failure at the good
+// build's own commit, and anything read under a failed check are never passed by.
+func (r *CheckRecord) passedBy(pf *PatchFailure, in CheckInputs, series string) bool {
+	if pf == nil || pf.Kind == "base" || r.Read != in || !successfulCheck(r) {
+		return false
+	}
+	if r.Good != nil && pf.Target.Commit == r.Good.Commit {
+		return false
+	}
+	for _, e := range r.Candidates(in) {
+		if e.Commit == pf.Target.Commit {
+			return false
+		}
+		if !r.conflictedUnder(e.Commit, series) {
+			return true
+		}
+	}
+	// The target is below the cut: a good build of this very series moved past it.
+	return r.Good != nil && r.Good.Series == series
+}
+
+// conflictedUnder reports whether a conflict is recorded for commit under series, whatever yolo or
+// git recorded it: what the record says, as HeldAt reads it.
+func (r *CheckRecord) conflictedUnder(commit, series string) bool {
+	for _, o := range r.Outcomes {
+		if o.Kind == OutcomeConflict && o.Commit == commit && o.Series == series {
+			return true
+		}
+	}
+	return false
 }
 
 func successfulCheck(r *CheckRecord) bool {
@@ -1091,6 +1136,8 @@ func clearLegacyApplyError(s *Store, snapshot ReplaySnapshot) error {
 const (
 	HeldByProblem    = "problem"
 	HeldByApplyError = "apply-error"
+	// HeldByWalkBack is a walk-back hold (CheckRecord.WalkBack): its Error is the hold's line.
+	HeldByWalkBack = "walk-back"
 )
 
 // Held is why a record's newest candidate is not what runs, read offline with no git: the first
@@ -1120,6 +1167,9 @@ func (r *CheckRecord) HeldAt(in CheckInputs, series, recipe string) *Held {
 	}
 	if r.Check.Problem != "" {
 		return &Held{Kind: HeldByProblem, Error: r.Check.Problem}
+	}
+	if h := r.WalkBackHolds(in, series); h != nil {
+		return &Held{Kind: HeldByWalkBack, Entry: h.Newest, Error: h.Line()}
 	}
 	for _, e := range r.Candidates(in) {
 		for _, o := range r.Outcomes {
