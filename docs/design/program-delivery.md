@@ -79,7 +79,7 @@ records *what you got* is not an attestation that it is *what someone published*
 supersedes.
 
 **Reads with:** [`trust-paths.md`](trust-paths.md) (the trust half, and the two questions this doc
-supersedes), [`jail-notch-readiness.md`](jail-notch-readiness.md) (an open design that would install
+supersedes), [`program-readiness.md`](../reference/program-readiness.md) (an open design that would install
 declared programs eagerly at launch while leaving [OQ-PD12a](#decision-ledger)'s lazy *refresh*
 untouched), [`../reference/agent-program-runtimes.md`](../reference/agent-program-runtimes.md) (a declared Node floor per
 `program`, built 2026-09-22, whose interpreter install is eager at boot for the same
@@ -271,7 +271,7 @@ on 2026-10-05, when it moved to GitHub's installer ([OQ-NI1](#OQ-NI1)).
 - **Cold start is the same act.** A program that is absent is installed; a present one past its
   stamp is updated. One path, so a fresh workspace and a six-week-old one converge. ⚠ **The cold
   half runs at launch too, built 2026-10-05 on the container backends** —
-  [`jail-notch-readiness.md`](jail-notch-readiness.md) ([OQ-JR1](jail-notch-readiness.md#9-decision-ledger)–[OQ-JR3](jail-notch-readiness.md#9-decision-ledger))
+  [`program-readiness.md`](../reference/program-readiness.md) ([OQ-JR1](../reference/program-readiness.md#OQ-JR1)–[OQ-JR3](../reference/program-readiness.md#OQ-JR3))
   installs every declared program in the provisioning stage and leaves this launcher's cold branch
   as the fallback. It changes readiness only; the refresh stays here either way.
 - **The update verb is the pack's to declare** ([OQ-PD14](#decision-ledger)). Vendors disagree
@@ -288,7 +288,7 @@ on 2026-10-05, when it moved to GitHub's installer ([OQ-NI1](#OQ-NI1)).
   agent **absent** → that command fails, loudly, naming the network. **No jail refuses to boot over
   this, and there is no `YOLO_ALLOW_STALE_AGENTS` escape hatch, because nothing global is being
   killed.**
-  ⚠ **AMENDED 2026-10-05 for the LAUNCH's own install ([OQ-JR1](jail-notch-readiness.md#9-decision-ledger),
+  ⚠ **AMENDED 2026-10-05 for the LAUNCH's own install ([OQ-JR1](../reference/program-readiness.md#OQ-JR1),
   built the same day on the container backends):** the launch installs declared programs, and a
   launch that cannot install one stops, naming the pack, the program and the error, offline
   included, unless `YOLO_ALLOW_MISSING_PROGRAMS=1` is set. This rule still governs the launcher's install when the

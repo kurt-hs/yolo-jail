@@ -12,7 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/version"
 )
 
-// OQ-FT13 (docs/design/agent-footer.md): a macos-user session is at the jail notch, so the
+// OQ-FT13 (docs/reference/agent-footer.md): a macos-user session is at the jail notch, so the
 // launch sets the marker every container launch sets, YOLO_VERSION, to the launcher's
 // version. Without it config.InJail() answers "host" inside the Seatbelt sandbox, and the
 // agent footer says `host` there.

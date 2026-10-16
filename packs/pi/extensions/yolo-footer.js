@@ -1,4 +1,4 @@
-// yolo's segment in pi's footer (docs/design/agent-footer.md §2): one status entry, keyed
+// yolo's segment in pi's footer (docs/reference/agent-footer.md, "Each agent's adapter"): one status entry, keyed
 // "yolo", that pi's own footer shows beside its other extension statuses. This file adds that
 // entry and does nothing else. It calls ctx.ui.setStatus and never ctx.ui.setFooter, which would
 // replace pi's stock footer (DIR-FT2).

@@ -28,7 +28,7 @@ package run
 // PPX-D42), then who can fix it and the ways back: what the cause names, `yolo capture <key>` to
 // retry, `yolo pack series check` and the git rebase it prints for a series that no longer applies,
 // dropping the list entry or the pack, and paths.AllowMissingProgramsEnv, the bypass
-// jail-notch-readiness.md JR-D3 names for the readiness act, so one variable covers both. With the
+// program-readiness.md JR-D3 names for the readiness act, so one variable covers both. With the
 // bypass set the same text is a warning and the launch goes on.
 //
 // A MISSING BUILD WHOSE CAUSE IS A PATCH FAILURE (patched-forks.md PF-D81) also names that failure's

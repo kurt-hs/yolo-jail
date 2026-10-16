@@ -24,7 +24,7 @@ import (
 // under the machine-wide housekeeping lock — the same lock OQ-BF5 gave the load
 // path so an inspect-and-record can never interleave with another launch's reap.
 // A sweep holds that lock one deletion at a time since OQ-PR2
-// (docs/design/podman-reboot-readiness.md), so this write can land between two of
+// (docs/reference/podman-readiness.md), so this write can land between two of
 // its deletions; the image reap's recheck re-reads the pointers under the lock
 // before each `rmi` (prune.AutoReapOldImagesGuarded), which is what keeps a sweep
 // that read the pointer directory earlier from acting on the old answer.

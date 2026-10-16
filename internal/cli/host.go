@@ -1282,7 +1282,7 @@ func (c *hostComposition) workerPointedAt(service string) string {
 // entrypoint.WireTables: the composed provider table, the resolved profile table, and a
 // selection holding this one agent's entry alone ("{}" when it selected no profile). ONE
 // composition for both of its readers, the agent's own environment (step 3b of
-// composeHostVarsWith; docs/design/agent-footer.md FT-D2) and every launch-owned service
+// composeHostVarsWith; docs/reference/agent-footer.md FT-D2) and every launch-owned service
 // (serviceInput), so the footer, `yolo host env` and a launch's bridge are never handed
 // different tables for one launch. A jail's channel writes the same three names
 // (run's packChannel.wireTableValues). A fresh map each call.
@@ -2911,7 +2911,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 	vars, c.origins, c.originPacks = hostComposedVars(scope.EnvFor(agent), hostHonorsIncomingValue, os.LookupEnv)
 	vars, c.origins, c.originPacks = withoutNames(vars, c.origins, c.originPacks, c.serviceOnly)
 
-	// THE WIRE TABLES the launch composed for this agent (docs/design/agent-footer.md FT-D2,
+	// THE WIRE TABLES the launch composed for this agent (docs/reference/agent-footer.md FT-D2,
 	// OQ-FT15), under the names a jail's channel uses: YOLO_PROVIDERS, YOLO_PROFILES and a
 	// YOLO_USE_PROFILES holding this agent's entry alone. The footer renderer reads its own env
 	// first (OQ-FT6), so a one-launch `yolo host -p zai -- claude` names zai rather than the

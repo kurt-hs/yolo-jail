@@ -112,7 +112,7 @@ func NotchRuntime(notch Confinement, isMacOS bool) string {
 // name the wrong notch: "guest", on a macOS guest launch (the macos-user arm of internal/cli/run;
 // env-manager plan EMP-D4). YOLO_VERSION says the process is in a launched session (InJail), and
 // that alone reads as the jail notch; this names the guest. Two readers: the agent footer, which
-// prints the notch (docs/design/agent-footer.md §1.2), and the macos-user backend's host-side
+// prints the notch (docs/reference/agent-footer.md, "The notch"), and the macos-user backend's host-side
 // messages, which name a next step that fits the notch (ContainerStepClause).
 //
 // Unset, or any value but "guest", is the jail notch. A launch at the jail notch sets nothing.

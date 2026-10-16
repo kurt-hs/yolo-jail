@@ -572,7 +572,7 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	printPerSideDisclosure(out, opts.Workspace, opts.Config, env)
 	printResourceDispositions(out, resources, env, host)
 	// THE JAIL MARKER, the one variable every container launch sets (`-e YOLO_VERSION=` in
-	// internal/cli/run's commonEnvBlock) and this backend did not (docs/design/agent-footer.md
+	// internal/cli/run's commonEnvBlock) and this backend did not (docs/reference/agent-footer.md
 	// OQ-FT13). config.InJail() and the probes that copy it read it, so without it every
 	// `yolo` the agent runs in here answered "host" from inside a Seatbelt sandbox, the agent
 	// footer included, although this backend renders at the jail notch (render.Jail).
@@ -586,7 +586,7 @@ func buildPlan(deps Deps, opts Options, darwin *Darwin) RunPlan {
 	// The bootstrap reads that file too, but into its generator Env alone (entrypoint's
 	// hydrate_session_env step), never into its process environment: config.InJail reads the
 	// process, so it stays false there and the bootstrap's children inherit nothing. What
-	// setting it changes on this backend is audited in the design's §2.2.
+	// setting it changes on this backend is audited in docs/reference/agent-footer.md, "What macos-user's marker moves".
 	env.Set("YOLO_VERSION", version.Get(opts.RepoRoot))
 	// AND THE JAIL'S OWN WORKSPACE beside it, for the same reason and in the same position: a
 	// container jail's own workspace is its bind root, /workspace, while this backend's is the

@@ -1,5 +1,5 @@
 # yolo's segment for copilot's footer: the `custom` footer item runs this file
-# (docs/design/agent-footer.md §2, §3).
+# (docs/reference/agent-footer.md, "Each agent's adapter" and "How a user's own footer survives").
 #
 # copilot's settings name only this file's PATH, and yolo fills that value into
 # ~/.copilot/settings.json once, after which it is yours and no later release can

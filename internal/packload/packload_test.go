@@ -47,7 +47,7 @@ func TestEmbeddedPackSurfacesDecode(t *testing.T) {
 		total += len(surfaces)
 	}
 	// The official packs carry 21 surfaces across the agents (opencode's tui is the agent
-	// footer's plugin list: docs/design/agent-footer.md; pi's codex-models is the data file
+	// footer's plugin list: docs/reference/agent-footer.md; pi's codex-models is the data file
 	// its openai-codex extension registers: docs/design/model-lists-and-pickers.md ML-D3;
 	// pi's model-lists is the data file its model-lists extension registers under an `only`:
 	// the same doc's MM-D6; oh-omp's settings is the config.yml whose enabledModels scopes an

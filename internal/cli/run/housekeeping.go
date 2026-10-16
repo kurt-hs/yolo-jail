@@ -95,7 +95,7 @@ func writeHousekeepingNote(open func(workspace, name string, flag int, perm fs.F
 // build/roots, the caches) are machine-wide, so two launches in different
 // workspaces are exactly the collision it exists to prevent.
 //
-// HELD ONE DELETION AT A TIME (OQ-PR2 of docs/design/podman-reboot-readiness.md,
+// HELD ONE DELETION AT A TIME (OQ-PR2 of docs/reference/podman-readiness.md,
 // ruled 2026-09-29). It used to be held for the whole pass, and every other
 // launch's image re-inspect waited for that pass: 16.1 s at the 2026-09-29 reboot,
 // on a host already slow because podman was finishing its post-boot refresh. A
@@ -486,7 +486,7 @@ func fmtMiseVersionsDetail(cands []prune.MiseVersion, leftovers int) string {
 // the window closed or its `podman run` may fail on an image removed underneath
 // it. The wait is bounded by ONE DELETION of another launch's pass, which holds the
 // lock around each deletion and lets go between them (OQ-PR2 of
-// docs/design/podman-reboot-readiness.md). It used to be the whole pass —
+// docs/reference/podman-readiness.md). It used to be the whole pass —
 // housekeeping.slot measured 62 s and 116 s on the maintainer's host, and 16.1 s at
 // the 2026-09-29 reboot — and a pass from a yolo older than that rule still holds
 // it that long. So a launch that has to wait SAYS so, and shows for how long, rather

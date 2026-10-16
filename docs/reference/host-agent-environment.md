@@ -46,7 +46,7 @@ graduated into them; its implementation decisions are in
 [the host launch PATH ledger](#the-host-launch-path-ledger), moved here on 2026-10-16, where the
 design's `HE-D1` and `HE-D2` are renumbered [HE-D16](#he-d16) and [HE-D17](#he-d17) because this
 doc's own `HE-D1` and `HE-D2` came first. Step 3's wire
-tables are from 2026-09-30 ([FT-D2](../design/agent-footer.md#FT-D2)), pinned by unit tests
+tables are from 2026-09-30 ([FT-D2](agent-footer.md#FT-D2)), pinned by unit tests
 through `hostMain`. [What `yolo host apply` renders into a derived surface](#what-yolo-host-apply-renders-into-a-derived-surface)
 was written against `d4e435a3` on 2026-10-01, when the host computed-layer design graduated
 into it, with [`OQ-HC1`](#oq-hc1) to [`OQ-HC3`](#oq-hc3) in [Why it's this way](#why-its-this-way);
@@ -324,7 +324,7 @@ refused for naming no command, the host verb having no default one.
    this one command's profile, `{}` when it has none), which no pack `env`, `env_sources` value or
    `null` replaces or removes. The tables are set on every launch, so a launch started inside
    another replaces what it inherited, and an agent's footer names the profile this launch runs on
-   ([FT-D2](../design/agent-footer.md#FT-D2)). PATH is overlaid last: the caller's PATH, then each
+   ([FT-D2](agent-footer.md#FT-D2)). PATH is overlaid last: the caller's PATH, then each
    folder of the user-scope `host_path` list not already on it, then the floor's `bin/`, which
    holds agent names only, so an agent's own commands see the caller's PATH first. A caller with no
    PATH at all (`env -i`) gets the system directories the floor's installers run with in its place,

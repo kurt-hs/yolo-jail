@@ -77,7 +77,7 @@ Constraints this design does not reopen:
   mounted, forwarded or written into a jail.
 - **Agents and tools are packs; core knows no tool by name**
   ([`AGENTS.md`](../../AGENTS.md#packs-and-what-core-does-not-know)).
-- **A launch is a readiness act** at the jail ([`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger)) and at
+- **A launch is a readiness act** at the jail ([`OQ-JR1`](../reference/program-readiness.md#OQ-JR1)) and at
   the host ([`HNR-D1`](host-notch-readiness.md#HNR-D1)). A declared program that cannot be made
   present stops the launch, and `YOLO_ALLOW_MISSING_PROGRAMS=1` is the bypass.
 - **The trust boundary today is disclosure, not consent**

@@ -1,7 +1,7 @@
 // Package footer renders the YOLO SEGMENT of an agent's footer: the text yolo adds to the
 // line an agent draws under its input box, stating what the session is billed through and
 // where the agent runs. It is `yolo internal footer`, the one renderer
-// docs/design/agent-footer.md §2 rules in, and every agent pack's adapter calls it rather
+// docs/reference/agent-footer.md, "One renderer, one adapter per agent", rules in, and every agent pack's adapter calls it rather
 // than carrying a script of its own.
 //
 // Terms, as that design coins them: the FOOTER is the agent's line; the YOLO SEGMENT is the
@@ -15,14 +15,14 @@
 // agent's name, its provider switches and how it tests them, the plain words for its login
 // and for each provider its profiles select, which routes are bridged, and the template.
 // Core knows no agent, no provider display name (no provider declaration carries one,
-// §1.1) and no agent's stdin schema — a template names paths into whatever JSON the agent
+// "The billing route") and no agent's stdin schema — a template names paths into whatever JSON the agent
 // pipes in.
 //
 // # Arguments
 //
 // EVERY flag takes exactly one value, as `--name value` or `--name=value`, and an unknown
 // flag is skipped together with its value. That is what keeps a command frozen into an
-// edited-in-place file working across releases (§3): an older command meeting a newer
+// edited-in-place file working across releases ("How a user's own footer survives"): an older command meeting a newer
 // renderer, or a newer one an older renderer, loses a flag rather than the footer.
 //
 //	--agent NAME         the key into YOLO_USE_PROFILES
@@ -46,7 +46,7 @@
 // # At the host
 //
 // A `yolo host --` launch exports the three tables it composed for its agent, empty ones
-// included, under the names a jail uses (docs/design/agent-footer.md FT-D2), so its footer
+// included, under the names a jail uses (docs/reference/agent-footer.md FT-D2), so its footer
 // reads them from the env like a jail's. An agent started at the host any other way — typed
 // in a shell after `yolo host apply` — carries none, and there "env first" would find nothing
 // and every footer would name the agent's login. OQ-FT6 rules the one exception to reading no
@@ -80,7 +80,7 @@ const DefaultTemplate = "yolo: {yolo.billing} · {yolo.notch}"
 // The three notches this renderer can name. `guest` needs a marker of its own beside the jail's,
 // which only its launcher sets — the macOS guest launch (config.NotchEnv; env-manager plan
 // EMP-D4) — so a guest session started any other way reads as the jail config.InJail says,
-// never as the host (§1.2).
+// never as the host ("The notch").
 const (
 	NotchJail  = "jail"
 	NotchGuest = "guest"
@@ -166,7 +166,7 @@ func ParseArgs(args []string) Options {
 }
 
 // Notch is where the agent runs, asked of config.InJail — the one answer to "am I in a
-// jail?" — and never of a copy of its test (the copies already disagree: §1.2). An absent
+// jail?" — and never of a copy of its test (the copies already disagree: "The notch"). An absent
 // or empty marker reads as host, deliberately: a missing marker can only under-claim
 // confinement.
 //
@@ -184,7 +184,7 @@ func Notch() string {
 	return NotchJail
 }
 
-// Billing is the billing route in the pack's plain words, by the rule of §1.1, in order:
+// Billing is the billing route in the pack's plain words, by the rule of "The billing route", in order:
 //
 //  1. A profile is selected for the agent: that profile's provider, resolved the way the
 //     launch resolved it (packload.ProviderFor over YOLO_PROFILES). A bridged route shows
@@ -259,7 +259,7 @@ func (o Options) firstSwitchOn(getenv func(string) string) (Switch, bool) {
 }
 
 // words is a provider's plain words, or its id when the pack gave none — a provider added
-// after a command was frozen into a file shows its id rather than nothing (§3).
+// after a command was frozen into a file shows its id rather than nothing ("How a user's own footer survives").
 func (o Options) words(id string) string {
 	if w := o.Words[id]; w != "" {
 		return w
@@ -327,7 +327,7 @@ func Render(o Options, getenv func(string) string, stdin func() any) string {
 // optional field never leaves its separator behind ("Opus · high", or just "Opus"). The
 // split is at the last `|`, and the prefix keeps its own spaces. A renderer older than this
 // form reads the whole text as an unknown name and renders it empty, so a command frozen
-// into a file (§3) loses the optional field rather than showing a literal.
+// into a file ("How a user's own footer survives") loses the optional field rather than showing a literal.
 func placeholder(raw string, field func(string) string) string {
 	prefix, name := "", raw
 	if i := strings.LastIndexByte(raw, '|'); i >= 0 {

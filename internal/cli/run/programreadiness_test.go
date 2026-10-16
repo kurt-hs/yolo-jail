@@ -8,7 +8,7 @@ import (
 )
 
 // TestAssembleRunCmdForwardsTheReadinessDials: the readiness act's hatch and its off-switch are
-// typed on the HOST and read by the jail's provisioning stage (docs/design/jail-notch-readiness.md
+// typed on the HOST and read by the jail's provisioning stage (docs/reference/program-readiness.md
 // OQ-JR1), and a container inherits nothing from the launcher's environment — so this forwarding
 // is the whole mechanism, and the hatch the refusal offers is one nobody could reach without it.
 //

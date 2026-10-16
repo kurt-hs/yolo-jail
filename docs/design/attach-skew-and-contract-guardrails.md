@@ -38,7 +38,7 @@ into an immutable prefix creates the gap. The rest falls out of it.
 
 **Needs your ruling:** nothing. [OQ-SK4](#decision-ledger) was decided as an implementation choice on 2026-09-30.
 
-**Reads with:** [`agent-footer.md`](agent-footer.md) (the footer contract whose addition triggered this finding),
+**Reads with:** [`agent-footer.md`](../reference/agent-footer.md) (the footer contract whose addition triggered this finding),
 [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (how mounted prefixes and generations work).
 
 ---

@@ -1,4 +1,4 @@
-// yolo's segment in omp's status line (docs/design/agent-footer.md §2): one status entry, keyed
+// yolo's segment in omp's status line (docs/reference/agent-footer.md, "Each agent's adapter"): one status entry, keyed
 // "yolo", that omp shows beside its other extension statuses (its `statusLine.showHookStatus`
 // setting, on unless you turn it off). This file adds that entry and does nothing else. It calls
 // ctx.ui.setStatus and never ctx.ui.setFooter, so omp's stock status line stays (DIR-FT2).
