@@ -66,6 +66,17 @@ func (o *Options) unsharedBindSources(rt string, sources []string) string {
 		"launch binds.[/bold red]\n" + shares.UnsharedRefusal(unreachable)
 }
 
+// machineCannotSee reports whether a macOS Podman launch's machine KNOWN not to share source,
+// on the same memoized read as unsharedBindSources. False whenever the list cannot be read,
+// that function's tri-state: an optional mount is skipped only for a fact, never a guess.
+func (o *Options) machineCannotSee(rt, source string) bool {
+	if !o.IsMacOS || rt != "podman" { // parity: NotApplicable — the same scope as unsharedBindSources: only a macOS Podman Machine has a share list
+		return false
+	}
+	shares, ok := o.podmanMachineShares()
+	return ok && len(shares.Unreachable([]string{source}, runtime.ResolveThroughExisting)) > 0
+}
+
 // bindSources returns the host source of every bind the argv makes before the image ref
 // (after it is the jailed command, whose arguments are not podman's): `-v`/`--volume`
 // specs and `--mount` fields, as argvMounts reads them — the one reader of podman's mount

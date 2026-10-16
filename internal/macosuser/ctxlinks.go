@@ -65,6 +65,10 @@ type ContextLink struct {
 	Named string
 	// RW is true for a read-write config element. A pack grant is always read-only (CX-D3).
 	RW bool
+	// Optional is true for a config element marked "optional": a link this backend cannot
+	// deliver is skipped rather than refused, unless the reason is a safety one
+	// (ContextRefusal.Unsafe). A pack grant is never optional.
+	Optional bool
 	// Dir is true for a directory source, false for a single file (a pack `mount` may name one).
 	Dir bool
 	// Pack names the pack whose `mount` grant this is; "" for a config `mounts` element.
@@ -107,10 +111,21 @@ func (l ContextLink) NamedSource() string {
 }
 
 // ContextRefusal is a context mount this backend does not deliver, and why. A launch with any
-// refuses whole (DP-D15: a fatal error rather than a mount that is "surprisingly not there").
+// REQUIRED one refuses whole (DP-D15: a fatal error rather than a mount that is "surprisingly
+// not there"); an optional one is skipped with one line unless Unsafe
+// (docs/reference/context-mounts.md#optional-mounts).
 type ContextRefusal struct {
 	Link   ContextLink
 	Reason string
+	// Brief is the reason in a few words, for a one-line skip or a refusal's list:
+	// "macos-user can't reach a folder inside a home".
+	Brief string
+	// Unsafe marks a reason about safety rather than delivery: a source containing every home,
+	// the sandbox account's own home, or yolo's state directory (the refusal set's clause 3).
+	// "optional" never skips one of these; it refuses as a required mount does.
+	Unsafe bool
+	// Index is the refused entry's position in the slice the siting was handed.
+	Index int
 }
 
 // ContextSiting is every macOS fact the siting rules read. A struct of facts, not syscalls,
@@ -213,38 +228,103 @@ func (s ContextSiting) usersRoots() []string {
 func SiteContextLinks(s ContextSiting, workspace string, links []ContextLink, occupied []string) []ContextRefusal {
 	var out []ContextRefusal
 	for i, l := range links {
-		why := s.siteOne(workspace, l)
-		if why == "" {
-			why = siteAgainst(links, i, occupied, s.FoldCase)
+		v := s.siteOne(workspace, l)
+		if v.reason == "" {
+			v = siteAgainst(links, i, occupied, s.FoldCase)
 		}
-		if why != "" {
-			out = append(out, ContextRefusal{Link: l, Reason: why})
+		// A refusal for a delivery reason may hide a safety one that a later rule would have
+		// named, and "optional" skips only the former. So whenever a link is refused at all, the
+		// safety predicates are asked on their own, whatever the rule order, and win.
+		if v.reason != "" && !v.unsafe {
+			if u := s.unsafeVerdict(l.Source); u.reason != "" {
+				v = u
+			}
+		}
+		if v.reason != "" {
+			out = append(out, ContextRefusal{Link: l, Reason: v.reason, Brief: v.brief,
+				Unsafe: v.unsafe, Index: i})
 		}
 	}
 	return out
 }
 
+// siteVerdict is one siting rule's answer: the full reason, the few-word brief, and whether the
+// reason is about safety (never skipped for an optional mount). A zero verdict admits the link.
+type siteVerdict struct {
+	reason, brief string
+	unsafe        bool
+}
+
+// unsafeVerdict asks the three SAFETY predicates of the siting on their own, independent of
+// siteOne's rule order: a source containing every home, inside the sandbox account's home, or
+// overlapping yolo's state directory. It asks them of every spelling the source may be an alias
+// for — as written, through the Data volume stripped, and with a users-root alias replaced by the
+// users root — so a spelling rule refusing first cannot hide one. An unresolved or relative
+// source is asked as written, after path.Clean.
+func (s ContextSiting) unsafeVerdict(src string) siteVerdict {
+	spellings := []string{path.Clean(src)}
+	if s.DataVolume != "" && pathWithin(src, s.DataVolume, s.FoldCase) {
+		if n := len(s.DataVolume); len(src) >= n {
+			spellings = append(spellings, path.Clean("/"+strings.TrimLeft(src[n:], "/")))
+		}
+	}
+	for _, alias := range s.UsersRootAliases {
+		if pathWithin(src, alias, s.FoldCase) && len(src) >= len(alias) {
+			spellings = append(spellings, path.Clean(s.UsersRoot+"/"+strings.TrimLeft(src[len(alias):], "/")))
+		}
+	}
+	for _, sp := range spellings {
+		for _, root := range s.usersRoots() {
+			if pathWithin(root, sp, s.FoldCase) {
+				return siteVerdict{reason: "its source " + src + " contains " + root +
+					", and with it every home on this Mac", brief: "it contains every home on this Mac",
+					unsafe: true}
+			}
+		}
+		if s.SandboxHome != "" && pathWithin(sp, s.SandboxHome, s.FoldCase) {
+			return siteVerdict{reason: "its source " + src + " is inside the sandbox account's own home " +
+				s.SandboxHome, brief: "it is inside the sandbox account's own home", unsafe: true}
+		}
+		for _, sd := range s.StateDirs {
+			if rel := overlap(sp, sd, s.FoldCase); rel != "" {
+				return siteVerdict{reason: "its source " + src + " " + rel + " yolo's state directory " + sd +
+					", where the context dir itself lives", brief: "it " + rel + " yolo's state directory",
+					unsafe: true}
+			}
+		}
+	}
+	return siteVerdict{}
+}
+
+// briefOutsideCtx is rule 1's brief, shared with the copies.
+const briefOutsideCtx = "macos-user delivers context mounts only under /ctx"
+
 // siteOne is rules 1-10 for one link, against the facts alone.
-func (s ContextSiting) siteOne(workspace string, l ContextLink) string {
+func (s ContextSiting) siteOne(workspace string, l ContextLink) siteVerdict {
 	src := l.Source
 	if l.Rel() == "" {
-		return "its jail path " + l.Dest + " is not under " + paths.ContainerContextDir +
+		return siteVerdict{reason: "its jail path " + l.Dest + " is not under " + paths.ContainerContextDir +
 			": with no mount namespace a context mount here is only a name inside $" +
-			paths.ContextDirEnv + ", and yolo will not move it to a path you did not choose"
+			paths.ContextDirEnv + ", and yolo will not move it to a path you did not choose",
+			brief: briefOutsideCtx}
 	}
 	if !path.IsAbs(src) || path.Clean(src) != src {
-		return "its source " + src + " is not a resolved absolute path"
+		return siteVerdict{reason: "its source " + src + " is not a resolved absolute path",
+			brief: "its source is not a resolved absolute path"}
 	}
 	for _, root := range s.usersRoots() {
 		if pathWithin(root, src, s.FoldCase) {
-			return "its source " + src + " contains " + root + ", and with it every home on this Mac"
+			return siteVerdict{reason: "its source " + src + " contains " + root +
+				", and with it every home on this Mac", brief: "it contains every home on this Mac",
+				unsafe: true}
 		}
 	}
 	if !pathWithin(src, s.UsersRoot, false) {
 		for _, root := range s.usersRoots() {
 			if pathWithin(src, root, s.FoldCase) {
-				return "its source " + src + " is spelled through another name for " + s.UsersRoot +
-					"; spell it under " + s.UsersRoot + ", the spelling the sandbox profile names"
+				return siteVerdict{reason: "its source " + src + " is spelled through another name for " +
+					s.UsersRoot + "; spell it under " + s.UsersRoot + ", the spelling the sandbox profile names",
+					brief: "macos-user needs it spelled under " + s.UsersRoot}
 			}
 		}
 	}
@@ -253,51 +333,57 @@ func (s ContextSiting) siteOne(workspace string, l ContextLink) string {
 		if n := len(s.DataVolume); len(src) >= n && strings.EqualFold(src[:n], s.DataVolume) {
 			plain = "/" + strings.TrimLeft(src[n:], "/")
 		}
-		return "its source " + src + " is spelled through " + s.DataVolume + ", the Data volume's " +
-			"own mount point, so the rules that keep one path to one mode would not recognise it; " +
-			"spell it as " + plain + ", the spelling the sandbox profile names"
+		return siteVerdict{reason: "its source " + src + " is spelled through " + s.DataVolume +
+			", the Data volume's own mount point, so the rules that keep one path to one mode would " +
+			"not recognise it; spell it as " + plain + ", the spelling the sandbox profile names",
+			brief: "macos-user needs it spelled as " + plain}
 	}
 	if s.SandboxHome != "" && pathWithin(src, s.SandboxHome, s.FoldCase) {
-		return "its source " + src + " is inside the sandbox account's own home " + s.SandboxHome
+		return siteVerdict{reason: "its source " + src + " is inside the sandbox account's own home " +
+			s.SandboxHome, brief: "it is inside the sandbox account's own home", unsafe: true}
 	}
 	if home, in := s.homes().containing(src); in {
 		msg := "its source " + src + " is inside the home folder " + home
 		if dir := s.privacyDir(src, home); dir != "" {
 			msg += ", in " + dir + ", which macOS's privacy controls guard as well"
 		}
-		return msg + ": the sandbox account cannot reach into a real home, so this backend " +
-			"delivers only sources outside every home"
+		return siteVerdict{reason: msg + ": the sandbox account cannot reach into a real home, so " +
+			"this backend delivers only sources outside every home",
+			brief: "macos-user can't reach a folder inside a home"}
 	}
 	for _, sd := range s.StateDirs {
 		if rel := overlap(src, sd, s.FoldCase); rel != "" {
-			return "its source " + src + " " + rel + " yolo's state directory " + sd +
-				", where the context dir itself lives"
+			return siteVerdict{reason: "its source " + src + " " + rel + " yolo's state directory " + sd +
+				", where the context dir itself lives", brief: "it " + rel + " yolo's state directory",
+				unsafe: true}
 		}
 	}
 	if s.VolumesRoot != "" && pathWithin(src, s.VolumesRoot, s.FoldCase) &&
 		(s.BootVolume == "" || !pathWithin(src, s.BootVolume, false)) {
-		return "its source " + src + " is on another volume (under " + s.VolumesRoot + "): " +
-			"whether the sandbox account gets through a removable or network volume's ownership " +
-			"and privacy protections has not been measured, so this backend refuses one until it is"
+		return siteVerdict{reason: "its source " + src + " is on another volume (under " + s.VolumesRoot +
+			"): whether the sandbox account gets through a removable or network volume's ownership " +
+			"and privacy protections has not been measured, so this backend refuses one until it is",
+			brief: "macos-user can't reach another volume yet"}
 	}
 	if l.RW && (s.SharedRoot == "" || src == s.SharedRoot || !pathWithin(src, s.SharedRoot, false)) {
-		return "a read-write source must sit under " + s.SharedRoot + ", and " + src +
+		return siteVerdict{reason: "a read-write source must sit under " + s.SharedRoot + ", and " + src +
 			" does not: only there does a file the sandbox creates inherit the access that lets " +
-			"you change it afterwards"
+			"you change it afterwards", brief: "macos-user writes only under " + s.SharedRoot}
 	}
 	if rel := overlap(src, workspace, s.FoldCase); rel != "" {
-		return "its source " + src + " " + rel + " the workspace " + workspace +
-			oneModeClause
+		return siteVerdict{reason: "its source " + src + " " + rel + " the workspace " + workspace +
+			oneModeClause, brief: "macos-user can't mount a folder that " + rel + " the workspace"}
 	}
 	if !l.RW {
 		for _, w := range s.WritableRoots {
 			if rel := overlap(src, w, s.FoldCase); rel != "" {
-				return "its source " + src + " " + rel + " " + w + ", which the sandbox may write" +
-					oneModeClause
+				return siteVerdict{reason: "its source " + src + " " + rel + " " + w +
+					", which the sandbox may write" + oneModeClause,
+					brief: "macos-user can't mount read-only where the sandbox writes (" + w + ")"}
 			}
 		}
 	}
-	return ""
+	return siteVerdict{}
 }
 
 // oneModeClause is §3.4's reason, shared by every overlap refusal.
@@ -309,7 +395,7 @@ const oneModeClause = ": with no mount namespace one path carries one mode here,
 //
 // A pair is reported ONCE, on its later member, so two colliding entries read as one refusal
 // naming both rather than two that each name the other.
-func siteAgainst(links []ContextLink, i int, occupied []string, fold bool) string {
+func siteAgainst(links []ContextLink, i int, occupied []string, fold bool) siteVerdict {
 	l := links[i]
 	dest := path.Clean(l.Dest)
 	for j, o := range links {
@@ -318,25 +404,28 @@ func siteAgainst(links []ContextLink, i int, occupied []string, fold bool) strin
 		}
 		if !l.RW && o.RW {
 			if rel := overlap(l.Source, o.Source, fold); rel != "" {
-				return "its read-only source " + l.Source + " " + rel + " the read-write source " +
-					o.Source + " (" + o.Origin() + ")" + oneModeClause
+				return siteVerdict{reason: "its read-only source " + l.Source + " " + rel +
+					" the read-write source " + o.Source + " (" + o.Origin() + ")" + oneModeClause,
+					brief: "macos-user can't mount it read-only where a read-write mount is"}
 			}
 		}
 		if j < i {
 			if rel := overlap(dest, path.Clean(o.Dest), fold); rel != "" {
-				return "its jail path " + dest + " " + rel + " " + path.Clean(o.Dest) + " (" +
-					o.Origin() + " of " + o.NamedSource() + "): a link cannot hold another link, " +
-					"so two context mounts here cannot share or nest a path"
+				return siteVerdict{reason: "its jail path " + dest + " " + rel + " " + path.Clean(o.Dest) +
+					" (" + o.Origin() + " of " + o.NamedSource() + "): a link cannot hold another link, " +
+					"so two context mounts here cannot share or nest a path",
+					brief: "macos-user can't nest it with the mount at " + path.Clean(o.Dest)}
 			}
 		}
 	}
 	for _, p := range occupied {
 		if rel := overlap(dest, path.Clean(p), fold); rel != "" {
-			return "its jail path " + dest + " " + rel + " " + path.Clean(p) +
-				", which yolo's own staging uses"
+			return siteVerdict{reason: "its jail path " + dest + " " + rel + " " + path.Clean(p) +
+				", which yolo's own staging uses",
+				brief: "macos-user can't nest it with yolo's own " + path.Clean(p)}
 		}
 	}
-	return ""
+	return siteVerdict{}
 }
 
 // SiteContextCopies returns every COPY in `copies` this backend cannot land in the context dir,
@@ -366,9 +455,10 @@ func siteAgainst(links []ContextLink, i int, occupied []string, fold bool) strin
 func SiteContextCopies(s ContextSiting, copies, links []ContextLink, occupied []string) []ContextRefusal {
 	var out []ContextRefusal
 	for i, c := range copies {
-		why := ""
+		why, brief := "", ""
 		dest := path.Clean(c.Dest)
 		if c.Rel() == "" {
+			brief = briefOutsideCtx
 			why = "its jail path " + c.Dest + " is not under " + paths.ContainerContextDir +
 				": with no mount namespace a copied file here can only land inside $" +
 				paths.ContextDirEnv
@@ -380,6 +470,7 @@ func SiteContextCopies(s ContextSiting, copies, links []ContextLink, occupied []
 			if rel := overlap(dest, path.Clean(p), s.FoldCase); rel != "" {
 				why = "its jail path " + dest + " " + rel + " " + path.Clean(p) +
 					", which yolo's own staging uses"
+				brief = "macos-user can't nest it with yolo's own " + path.Clean(p)
 			}
 		}
 		for _, o := range copies[:i] {
@@ -393,6 +484,7 @@ func SiteContextCopies(s ContextSiting, copies, links []ContextLink, occupied []
 				why = "its jail path " + dest + " " + rel + " " + path.Clean(o.Dest) + " (" +
 					o.Origin() + " of " + o.NamedSource() + "): two copied files cannot share or " +
 					"nest a path"
+				brief = "macos-user can't nest it with the copy at " + path.Clean(o.Dest)
 			}
 		}
 		for _, l := range links {
@@ -406,10 +498,11 @@ func SiteContextCopies(s ContextSiting, copies, links []ContextLink, occupied []
 				why = "its jail path " + dest + " " + rel + " " + path.Clean(l.Dest) + " (" +
 					l.Origin() + " of " + l.NamedSource() + "), where a link is staged: a copied " +
 					"file and a link cannot share or nest a path"
+				brief = "macos-user can't nest it with the mount at " + path.Clean(l.Dest)
 			}
 		}
 		if why != "" {
-			out = append(out, ContextRefusal{Link: c, Reason: why})
+			out = append(out, ContextRefusal{Link: c, Reason: why, Brief: brief, Index: i})
 		}
 	}
 	return out

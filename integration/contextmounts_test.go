@@ -72,6 +72,39 @@ func TestAReadWriteMountCrossesBothWaysAndIsNamedAtLaunch(t *testing.T) {
 	}
 }
 
+// AN OPTIONAL ELEMENT a launch cannot deliver is one skip line, and the jail starts with the
+// rest (context-mounts.md#optional-mounts). On podman the delivery failure a test can stage is a
+// missing source; the macos-user and Podman Machine skips are the unit suite's.
+func TestAnOptionalMountWithNoSourceIsSkippedAndTheJailStarts(t *testing.T) {
+	requireJail(t)
+
+	ro := resolvedTempDir(t)
+	if err := os.WriteFile(filepath.Join(ro, "ro.txt"), []byte("ro-bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(resolvedTempDir(t), "gone")
+	packHome(t, `{}`)
+	dir := writeProject(t, `{"network": {"mode": "bridge"}, "mounts": [
+	  {"host": "`+gone+`", "at": "/ctx/gone", "mode": "ro", "optional": true},
+	  "`+ro+`:/ctx/rodata"
+	]}`)
+
+	r := runYolo(t, dir, `cat /ctx/rodata/ro.txt; echo "GONE-$(test -e /ctx/gone && echo PRESENT || echo ABSENT)"`)
+	if r.rc != 0 {
+		t.Fatalf("rc=%d\nstdout:\n%s\nstderr:\n%s", r.rc, r.stdout, r.stderr)
+	}
+	out := r.combined()
+	for _, want := range []string{"ro-bytes", "GONE-ABSENT",
+		"skipped optional mount: " + gone + " → /ctx/gone (source does not exist)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the launch lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "mount path does not exist") {
+		t.Errorf("an optional missing source got the required element's warning:\n%s", out)
+	}
+}
+
 // The launch refuses a read-write element in the WORKSPACE config, which is agent-editable
 // (context-mounts.md#where-a-read-write-mount-may-be-declared, OQ-WT1's rule D), before any container starts.
 func TestAWorkspaceReadWriteMountRefusesTheLaunch(t *testing.T) {
