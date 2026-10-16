@@ -21,8 +21,8 @@ answered in the design's ledger: the macos-user spawn guard is
 [HD-D13](host-daemon-ownership.md#HD-D13). The rest of this status line is as it stood.
 
 2026-10-01 — pruned against the tree at `d4e435a3`. The three entries parked on
-[OQ-HD2](host-daemon-ownership.md#OQ-HD2), [OQ-HD1](host-daemon-ownership.md#OQ-HD1) and
-[OQ-HD6](host-daemon-ownership.md#OQ-HD6) are gone, and so is the documentation-drift list: the
+[OQ-HD2](host-daemon-ownership.md#11-decision-ledger), [OQ-HD1](host-daemon-ownership.md#11-decision-ledger) and
+[OQ-HD6](host-daemon-ownership.md#11-decision-ledger) are gone, and so is the documentation-drift list: the
 first question is built, the other two were dissolved by
 [HD-R1](host-daemon-ownership.md#HD-R1), and all three drifted documents now say the right thing
 ([what was pruned](#what-was-pruned-and-why)). What is left is the material a plan for HD-R1 will
@@ -53,7 +53,7 @@ Each entry below was checked against the tree at `d4e435a3` on 2026-10-01.
 
 | Entry | Disposition | Evidence |
 | :--- | :--- | :--- |
-| Blocked on [OQ-HD2](host-daemon-ownership.md#OQ-HD2): generalize the management surface | **Built** 2026-09-20 | `yolo host-daemon {status,stop,restart,logs}` is `runHostDaemon` in [`commands.go`](../../internal/cli/commands.go). The wrong-command line the entry quoted now prints `broker.CycleCommand(name)` ([`hostdaemoncmd.go`](../../internal/broker/hostdaemoncmd.go)), from `startHostSingleton` in [`loopholesruntime.go`](../../internal/cli/run/loopholesruntime.go) and from [`launchcheck.go`](../../internal/cli/run/launchcheck.go). `yolo check`'s broker probe takes its socket and PID paths from `paths.HostSingleton*` ([`check/broker.go`](../../internal/cli/check/broker.go)), so the third copy of those paths is gone |
+| Blocked on [OQ-HD2](host-daemon-ownership.md#11-decision-ledger): generalize the management surface | **Built** 2026-09-20 | `yolo host-daemon {status,stop,restart,logs}` is `runHostDaemon` in [`commands.go`](../../internal/cli/commands.go). The wrong-command line the entry quoted now prints `broker.CycleCommand(name)` ([`hostdaemoncmd.go`](../../internal/broker/hostdaemoncmd.go)), from `startHostSingleton` in [`loopholesruntime.go`](../../internal/cli/run/loopholesruntime.go) and from [`launchcheck.go`](../../internal/cli/run/launchcheck.go). `yolo check`'s broker probe takes its socket and PID paths from `paths.HostSingleton*` ([`check/broker.go`](../../internal/cli/check/broker.go)), so the third copy of those paths is gone |
 | Blocked on [OQ-HD1](host-daemon-ownership.md#11-decision-ledger): a version in the rendezvous | **Dissolved** by HD-R1 | A launcher-spawned child is one build, so there is nothing for a version to tell apart. The entry was also stale: the three byte-frozen copies of the broker's paths it counted are one now, since `broker.BrokerSingletonSocket` and its siblings call `paths.HostSingleton*` ([`brokerlifecycle.go`](../../internal/broker/brokerlifecycle.go)) |
 | Blocked on [OQ-HD6](host-daemon-ownership.md#11-decision-ledger): making an idle singleton visible | **Dissolved** by HD-R1 | The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) row for `yolo check`'s zero-jails blind spot: with no jail running there is no daemon to report. The early return the entry described is still in `checkHostServiceLiveness` ([`sections_loopholes.go`](../../internal/cli/check/sections_loopholes.go)), and it becomes correct under the ruling rather than a gap |
 | Documentation drift: the loopholes guide's manifest census omitted `host_daemon.scope` | **Fixed** | The census moved to [`writing-loopholes.md`](../../userguide/guides/writing-loopholes.md), which shows `scope` in the manifest example and has a `scope` bullet saying a `"host"` program keeps running when a jail exits |

@@ -100,7 +100,7 @@ the shared file is narrowed where `deliverChannel` calls `writeUserEnvFile`, not
   acknowledgment. It would be read through `UserScopeConfig`, never the merged config. The gate
   would treat an acknowledged name as unclaimed for `SharedEnvSources` and `EnvSourcesFor`, and
   `Disclosure` would name it on every launch.
-- **[OQ-ES7](credential-sources-separation.md#OQ-ES7)**, moot since
+- **[OQ-ES7](credential-sources-separation.md#10-decision-ledger)**, moot since
   [OQ-NC5](../plans/notch-convergence.md#7-decision-ledger): a typed host `-p` for an ad-hoc command is now
   refused, so nothing here is built. As filed, a CLI-less pack's gated env under a
   typed host `-p`. This touches `gateFiresFor` and `EnvFold` for the host's typed `-p` only, and

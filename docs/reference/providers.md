@@ -436,7 +436,7 @@ refused, with no hatch, or warned about and let through when the pack declares t
 `certain: false` (`EnvOverrideFindings`, also in `internal/packload`). Core names no variable
 there. `packs/aws-auth` declares the three for its credentials pointer: a Bedrock bearer and a
 static key pair refuse, and a `~/.aws` grant warns
-([`agent-credentials.md` OQ-SSO8](agent-credentials.md#OQ-SSO8)).
+([`agent-credentials.md` OQ-SSO8](agent-credentials.md#sso-decision-ledger)).
 
 ## The region preflight
 
@@ -687,7 +687,7 @@ that writes a launch's environment for one notch or backend. There are three:
     `eval "$(yolo host env --with-credentials zai)"` puts them in the current shell. No pack's
     env derive runs for a name no pack installs, and a CLI-less pack's gated env (`aws-auth`'s
     pointer) does not fire for it
-    ([`OQ-ES7`](../design/credential-sources-separation.md#OQ-ES7), moot since
+    ([`OQ-ES7`](../design/credential-sources-separation.md#10-decision-ledger), moot since
     [OQ-NC5](../plans/notch-convergence.md#7-decision-ledger)). A `profile` key
     naming a command no resolvable pack installs is refused here with the validator's message,
     as `yolo check` and every jail launch refuse it
@@ -2245,7 +2245,7 @@ so do `yolo host --` and `yolo host env`, over the one profile their launch sele
 (`packload.ProfileDisclosures`, the one function every notch calls). It is a disclosure, so no
 flag hides it ([OQ-RO3](report-tiers.md#why-its-this-way)).
 
-The host notch also runs the [OQ-SSO8](agent-credentials.md#OQ-SSO8) override check
+The host notch also runs the [OQ-SSO8](agent-credentials.md#sso-decision-ledger) override check
 a jail launch runs: a pack's env contribution delivered beside a variable the pack declares
 overrides it refuses `yolo host --`, and `yolo host env` prints the same refusal without
 refusing. The one input that differs is the invoking shell, which the agent `yolo host` execs

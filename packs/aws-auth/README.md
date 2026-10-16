@@ -126,7 +126,7 @@ SDK resolves, and a region-only config does not, so the entry is declared `certa
 The warning is printed on every such launch and cannot be switched off. `yolo check` predicts
 all three, the two refusals as FAIL and the grant as WARN, and `yolo pack footprint aws-auth`
 lists the three lines. Core names none of these variables; the rule is this pack's
-declaration ([`OQ-SSO8`](../../docs/reference/agent-credentials.md#OQ-SSO8)).
+declaration ([`OQ-SSO8`](../../docs/reference/agent-credentials.md#sso-decision-ledger)).
 
 "Delivers" means into the jail, through `env_sources` or a pack. A variable exported only in
 the shell you run `yolo` from never reaches the jail, so it is not refused, and an
