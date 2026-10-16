@@ -128,22 +128,22 @@ func LaunchPreconditions() []Precondition {
 			},
 		},
 		{
-			// Must NOT be run under sudo — the launch self-escalates, and running as root makes
-			// the host user 'root', misassigning the git identity + ACL.
+			// Must NOT be run under sudo: the launch stages as the host user and crosses into the
+			// sandbox through the one run-as rule, and running as root makes the host user
+			// 'root', misassigning the git identity + ACL.
 			ID: PreconditionNotRoot, Name: "running as your own user",
 			Requires: []string{PreconditionMacOS},
 			holds:    func(p LaunchProbes, _ string) bool { return p.Geteuid() != 0 },
 			Ready:    func(string) string { return "Running as your own user, not root" },
 			Unmet:    func(string) string { return "yolo is running as root (under sudo)" },
 			Fix: func(string) string {
-				return "Run `yolo` as your normal user: a launch asks for sudo itself at each step " +
-					"that needs it, and run as root it would give root's git identity and ACL to " +
-					"the sandbox."
+				return "Run `yolo` as your normal user: a launch needs no root, and run as root it " +
+					"would give root's git identity and ACL to the sandbox."
 			},
 			Refusal: func(string) string {
 				return "[bold red]Don't run `yolo` under sudo for the macos-user " +
-					"backend.[/bold red]  It escalates each step itself; running as " +
-					"root breaks the per-user identity/ACL."
+					"backend.[/bold red]  It needs no root, and running as root breaks " +
+					"the per-user identity/ACL. Run it as your normal user."
 			},
 		},
 		{
