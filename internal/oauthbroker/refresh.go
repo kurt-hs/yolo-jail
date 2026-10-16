@@ -89,7 +89,7 @@ func doBackgroundRefresh(credsPath string, leadSeconds int) RefreshResult {
 // single-use refresh token to break every jail's login. Claude cannot be told to send a secret
 // (it speaks TLS to a vendor hostname), but it already sends one: the refresh token it re-reads
 // from ~/.claude/.credentials.json, which in a jail is a link to the shared file, immediately
-// before the POST (docs/research/claude-oauth-refresh-mechanics.md §3.4). So the check is that
+// before the POST (docs/reference/claude-oauth-interposition.md, "Where the file actually is"). So the check is that
 // the presented token is the shared file's current one, or one this broker replaced moments ago
 // (the refresh race: another jail, or the background tick, rotated it between Claude's read and
 // its POST). A caller who cannot read the file cannot present either.

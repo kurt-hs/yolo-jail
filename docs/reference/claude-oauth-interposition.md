@@ -77,10 +77,9 @@ long answer that lives in the vendor binary, not in this tree.
 **Reads with:** [`agent-credentials.md`](agent-credentials.md) — the enumeration of every credential
 channel across the jail boundary, of which this is one; it owns the broker's *rulings*, the 90/300
 threshold defect and the per-backend credential table. This doc owns what is and is not on the wire.
-[`../research/claude-oauth-refresh-mechanics.md`](../research/claude-oauth-refresh-mechanics.md) owns
-the vendor's refresh state machine — the three failure paths, the dead-token set, why writing the disk
-file is the right hook. This doc does not re-derive either; it records the *interposition surface* and
-the channel enumeration behind "why a file".
+This doc does not re-derive those; it records the *interposition surface*, the channel enumeration
+behind "why a file", and, under [Why it's this way](#why-its-this-way), the three protections an
+interception jail relies on, why the background refresh loop stays, and what is still unmeasured.
 [`loophole-transport.md`](loophole-transport.md) owns the endpoint file, the front and the wire format.
 
 **Every vendor fact below is measured against Claude Code 2.1.278** and is marked where it appears.
@@ -660,20 +659,29 @@ broker's own default target is the same file under the global home
 The re-read that makes an external write visible is an **mtime sentinel** that resolves symlinks:
 `let{mtimeMs:r}=await iE(lE(Wb(),".credentials.json")); if(r!==e.lastCredentialsMtimeMs) …` (offset
 192110644), where `iE` is `fs/promises.stat` — not `lstat`. On a stat failure it falls back to
-comparing the stored `accessToken`. This is the same sentinel
-[`claude-oauth-refresh-mechanics.md:236-262`](../research/claude-oauth-refresh-mechanics.md) documents
-under its old minified name; it survived into 2.1.278 unchanged in substance.
+comparing the stored `accessToken`. The same sentinel existed in 2.1.143 under another minified
+name and survived into 2.1.278 unchanged in substance. Claude re-reads the file through it on the
+refresh path, immediately before its refresh `POST`, which is why the refresh token a jail presents
+is the shared file's current one unless another refresher rotated it in between.
+
+**The file's metadata is load-bearing, not only its tokens** (since Claude Code 2.1.200). A file
+carrying only the token trio (`accessToken`, `refreshToken`, `expiresAt`) reads as *not logged in*
+even when the tokens are valid; the subscription lives in `subscriptionType` and `rateLimitTier`.
+It was A/B proven on 2.1.201 on 2026-07-03: the same trio failed alone and worked with `scopes`,
+`subscriptionType` and `rateLimitTier` grafted on. Whether `scopes` alone is enough is untested,
+since the three were grafted together. So no writer of the file may strip it to the trio: the
+broker preserves every key the previous record carried across a refresh
+([`entitlement_metadata_test.go`](../../internal/oauthbroker/entitlement_metadata_test.go) pins it).
 
 > [!NOTE]
-> **One correction to that research doc.** Its
-> [§5](../research/claude-oauth-refresh-mechanics.md#5-why-writing-the-disk-file-is-the-right-hook)
-> (`:310-352`) says the disk-adopting branch of the
-> 401 handler *"Runs on every 401"* and *"Adopts whatever the disk has"*. In 2.1.278 there are **two**
+> **The 401 handler adopts the disk through two branches, not one.** In 2.1.143 its disk-adopting
+> branch ran on every 401 and adopted whatever the disk had. In 2.1.278 there are **two**
 > branches: the `CLAUDE_CODE_OAUTH_TOKEN`/FD disk-adoption block sits inside `if(!h?.refreshToken)`
 > and therefore only fires for injected static tokens (telemetry
 > `tengu_oauth_401_recovered_from_disk`), while a normal claude.ai login adopts disk through an
-> `h.accessToken !== e` comparison instead (`tengu_oauth_401_recovered_from_keychain`). The doc's
-> conclusion holds; its mechanism sentence no longer does.
+> `h.accessToken !== e` comparison instead (`tengu_oauth_401_recovered_from_keychain`). Either
+> way a fresh token written to disk is adopted on the next 401, which is what the
+> [background refresh loop](#the-background-refresh-loop-stays-on) relies on.
 
 > [!WARNING]
 > **A risk that stood until [CL-D22](../design/claude-login-without-interception.md#CL-D22): a
@@ -1116,6 +1124,140 @@ together, and nothing warns ahead of it until something reads `refreshTokenExpir
 | <a id="oq-1"></a>[**`OQ-1`**](#oq-1) (broker-ca) — **bake `openssl` *and* port the mint to `crypto/x509`, both** | The bake is not a substitute for retiring the dependency: a host-wide daemon that shells out to a tool fails on any host lacking it, and a nested launch's host is a jail. The port also takes the CA private key off disk. The bake stays regardless, for two consumers this ruling was never about ([why](#why-the-image-still-bakes-openssl)). |
 | <a id="oq-2"></a>[**`OQ-2`**](#oq-2) (broker-ca) — **a nested jail runs its own broker singleton**, like any other host | Nesting earns affordances, not exemptions: a jail that behaves differently cannot test the thing it is nested inside, and a special case here is one carried forever. So the endpoint-withholding gate has no nested arm ([how](#a-nested-jail-runs-its-own-broker)). |
 | <a id="oq-3"></a>[**`OQ-3`**](#oq-3) (broker-ca) — **a check that did not look must not be counted as a pass** | The principle is the ruling and the token was delegated: `[SKIP]` with its own counter, excluded from the pass tally, plus `hostFact` for a fact about the host rather than the reader. An all-green in-jail run that includes areas nobody examined offers them as evidence ([how](#yolo-check-does-not-count-a-skip-as-a-pass)). |
+| **The broker's refresh reply carries no `scope`** | It is what keeps the broker the shared file's only writer ([P3](#three-protections-an-interception-jail-has-p1-to-p3)). Echoing `scope` "for symmetry" makes the in-jail Claude a second writer, under its own lock rather than the broker's flock. |
+| **The background refresh loop stays, always on** | A recommendation of the 2026-09-20 analysis against Claude Code 2.1.278, not a maintainer ruling. Dropping it regresses suspend/resume, a recorded incident; making it conditional adds a second thing to get wrong for no measured benefit ([why](#the-background-refresh-loop-stays-on)). |
+
+### Three protections an interception jail has, P1 to P3
+
+These names *(coined in the 2026-09-20 analysis of Claude Code 2.1.278, and cited by these labels
+from `internal/oauthbroker` and `internal/oauthterminator`)* are the three reasons an in-jail
+Claude cannot take part in the refresh race on an interception launch. None of them is the
+background refresher, and each was accidental and undocumented when it was found: one change
+that looks like an improvement removes it, the tree stays green, and nothing fails until two jails
+and an expiry line up.
+
+- **P1: the broker discards the refresh token the client presented.** The terminator routes every
+  refresh grant to `action=refresh`, and the refresh is made from the shared file under the
+  broker's flock, never from the request body. A stale or burnt token a jail holds never reaches
+  upstream. It is half of the ssh-agent property (the consumer never holds the renewable secret):
+  `AsOAuthResponse` still returns the real `refresh_token`, so Claude holds one it can never
+  usefully spend. *Dies if* refresh grants are routed through `action=proxy`, or the refresh honors
+  a client-supplied token. Since caller authentication the presented token is compared, never
+  spent, so P1 still holds.
+- **P2: no broker reply can trigger Claude's dead-token wipe.** Claude's classifier fires only on a
+  top-level `error` of exactly `"invalid_grant"`, and the broker's error codes never are; a genuine
+  upstream `invalid_grant` arrives one level down, in the reply's `body` string. So the
+  machine-wide credential file is never blanked by a jail. *Dies if* the terminator "passes the
+  upstream error through faithfully".
+- **P3: the broker is the shared file's sole writer, because its reply omits `scope`.** With no
+  `scope`, Claude parses an empty scope list, and both its compare-and-swap save and its legacy
+  save return success without writing; Claude then re-reads the disk, where the broker has already
+  written. *Dies if* `scope` is echoed in the reply.
+
+P2 has a **cost**: the terminator answers every broker failure with HTTP 400, so a DNS failure
+after resume, an upstream `429`, a malformed body and a dead grant are indistinguishable to the
+client. The diagnostic loss is certain. The behavioral loss is unverified: on the claude.ai path
+Claude classifies a refresh failure by body content rather than status, so the flattening may cost
+nothing there, or it may spend Claude's bounded retry budget on a transient failure
+([unmeasured item 2](#what-is-still-unmeasured)).
+
+### The background refresh loop stays on
+
+**Keep it, do not make it conditional, and state its job accurately.** The 2026-09-20 analysis
+asked whether the broker could refresh only on demand, when a jail asks. Its reasoning, stated so a
+reader can disagree with a premise rather than the conclusion:
+
+- **Dropping it regresses exactly one thing, and that thing is already a recorded incident.** On
+  suspend and resume the token expires during sleep, and the first refresh after wake fails because
+  DNS is not up yet. The loop's fast retry gets the disk correct *before* Claude asks; on demand
+  only, Claude's first request after wake spends its bounded retry budget against a network that
+  is not up, and P2's flattening means it cannot tell that failure from a terminal one.
+- **It buys less than "an architectural fix" claims.** Against 2.1.278 the loop does not close the
+  dead-token or cross-jail race paths; P2 and P1 do. The loop is a **latency and availability**
+  device, not a correctness one: it keeps the post-idle 401 rare and, when one happens, Claude
+  adopts a fresh token from disk with no HTTP at all, instead of running the whole chain (its own
+  lock, the terminator, the broker's flock, upstream, the write, the re-read) on the user's first
+  keystroke after a gap.
+- **Conditional is the worst of the three.** A loop that runs only under some predicate adds a
+  second thing to get wrong, and a second thing to explain in a refusal, for no measured benefit
+  over always on. The loop is one goroutine and one `stat` a minute.
+- **On demand would also wake P3.** Claude's write path would run on every expiry instead of almost
+  never, so the missing `scope` would stop being a curiosity and become the only thing between the
+  design and a second writer of the shared file.
+
+| Failure path, as the analysis named them | What closes it today | If the loop were dropped |
+| :--- | :--- | :--- |
+| A: Claude idles past expiry, then 401s | the loop keeping the disk ahead, plus Claude's 401 fall-through to the disk | **worse**: suspend and resume loses its fast retry, and every expiry runs the full chain on a keystroke |
+| B: a dead-refresh-token set poisoned by a transient error | P2 | unchanged: more asks, none of which can poison it |
+| C: two jails race one single-use refresh token | P1 | unchanged: more round trips, same outcome |
+| D: a second writer of the shared file | P3 | latent becomes live |
+
+**Changes to refuse**, each of which reads as an improvement:
+
+| Tempting change | Why it is a regression |
+| :--- | :--- |
+| Warn and proceed on a flock failure, to avoid a hang | Concurrent jails burn the token, and a revoked grant ([OAuth 2.1 §4.3.1](https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-15.txt)) means `/login` in every jail. Of the tools surveyed, only MSAL .NET also fails closed; `gh` and msal-python fail open and say so in their source. |
+| Unlink the lock file on release, or move to a lock-file library | flock has no stale-lock class, because the kernel releases it when the holder dies, `SIGKILL` included. Lock-file artifacts do, and heartbeat libraries import lock **theft**, which is why Claude's own lock needs a handler that aborts the in-flight request. |
+| Derive the lock path per process, per `TMPDIR`, or from a socket name | The rendezvous is an **inode**: two spellings are two locks. |
+| Assume Anthropic has a grace window for a just-rotated refresh token | Nothing documents one and nobody has measured one ([item 1](#what-is-still-unmeasured)). |
+| Pass the upstream error through faithfully | Destroys P2: one jail can then blank the machine-wide credential. |
+| Echo `scope` in the refresh reply for symmetry | Destroys P3: it adds a second writer that does not hold the broker's flock. |
+
+**Follow-ups the analysis recommended**, in order of the regression each prevents. As of
+2026-10-16: the lead-time comment beside `BackgroundRefreshLeadSeconds` is written (the lead is now
+thirty minutes, above Claude's five-minute threshold, [CL-D5](../design/claude-login-without-interception.md#CL-D5));
+the caller-authentication refusal is pinned never to be `invalid_grant`; and a search found no test
+pinning P1's routing, the broker's refresh error codes against `invalid_grant`, or P3's missing
+`scope`, and the flock wait is still unbounded.
+
+1. **Pin P1, P2 and P3 with tests**: refresh grants route to `action=refresh`, never `action=proxy`;
+   no refresh error's top-level `error` is `invalid_grant`, and the terminator never hoists an
+   upstream code to the top level; the refresh reply carries no `scope`, or a change that adds it
+   writes the second-writer consequence down.
+2. **Stop flattening every failure to 400**, at least for diagnosability: give
+   `upstream_unreachable` and upstream `429` or `5xx` a status that carries the difference, keeping
+   400 for the terminal cases. Change the **status only**, never the top-level `error` (P2), and
+   measure the behavioral benefit first ([item 2](#what-is-still-unmeasured)). It is a precondition
+   for anyone revisiting on-demand-only refresh.
+3. **Bound the flock wait, and record the holder.** `LOCK_EX` blocks with no deadline. A dead
+   holder is no risk, since the kernel releases its lock; a live holder wedged in an upstream call
+   is, and the 30 s HTTP timeout bounds only the common case. Add a deadline that **reports** a
+   distinct error, and write `pid argv0` into the lock file so a waiter can name the holder (MSAL
+   .NET writes its process id and name for this reason; the broker opens the file `O_TRUNC` and
+   writes nothing). ⚠ A deadline must never become a fail-open: the refusal is the feature.
+4. **Consider withholding the real `refresh_token` from the reply, as a separate question.** It
+   would turn P1 from "cannot usefully spend it" into "never had it". No path above needs it, and it
+   carries real regression risk: Claude persists whatever it receives, the broker's own
+   `no_refresh_token` guard keys on a non-empty refresh token, and `/login` mirroring and the
+   metadata-shape requirement touch the same file. Verify against a live jail first. (The
+   credential view, [behind its switch](#the-credential-view-behind-a-switch), already carries no
+   refresh token.)
+
+### What is still unmeasured
+
+Open items from the same analysis. None is a question awaiting a ruling; each needs a
+measurement.
+
+1. **Does Anthropic have a reuse or grace interval for a just-rotated refresh token?** Unmeasured by
+   anyone. The test is small and destructive if wrong, so it wants a throwaway identity: refresh
+   once, then replay the *previous* refresh token at T+1 s, T+15 s and T+45 s, and record whether
+   each is accepted and whether the winner's token survives. Until someone runs it, assume zero; a
+   favorable answer would change nothing yolo can configure.
+2. **Does the 400 flattening cause user-visible dead ends today?** The broker logs the real
+   classification; Claude sees a 400. A soak that counts `upstream_unreachable` replies against
+   Claude's retry exhaustion would settle whether follow-up 2 above is urgent or merely correct.
+3. **Does Claude's own refresh lock ever contend inside one jail?** It serializes sibling Claude
+   processes sharing a storage directory, a real configuration here. Nobody has measured how often
+   it exhausts its five-retry budget, or what a jail does when it returns `lock_busy`. A stress run
+   with eight concurrent jails, whose contenders are the broker's flock, Claude's lock and its
+   compare-and-swap save, has never been run.
+4. **What happens on a backend without the `/etc/hosts` pin?** P1 and P2 both depend on the pin
+   routing the refresh into the terminator; a jail without it reaches the real endpoint directly and
+   inherits every failure above. Worth a `yolo check` finding, and worth confirming on `macos-user`,
+   where the terminator is declined ([backends carrying the interception](#current-values)).
+5. **Is the daemon-auth worker ever live in a jail?** Claude Code's 240 s proactive scheduler belongs
+   to Remote Control's daemon. If that daemon ever runs in a jail, it is a *third* refresh authority
+   on one credential, with a lead shorter than both yolo's and the CLI's.
 
 ## Current values
 

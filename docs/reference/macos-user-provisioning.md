@@ -82,8 +82,8 @@ and the agent.
 | What still warns on this backend | `internal/cli/run` (the `noteMacosUser*` printers: `loopholeinert.go`, `macosctxtree.go`, `jaildaemondecline.go`, `credentialnotes.go`) |
 | The nightly instrument | [`.github/workflows/macos-user.yml`](../../.github/workflows/macos-user.yml), `integration/macosuser*_test.go` |
 
-**Reads with:** [`nix-across-backends.md`](nix-across-backends.md) (what nix produces for each
-backend, and why an image is a floor),
+**Reads with:** [`image-staging-vs-baking.md`](image-staging-vs-baking.md#what-the-image-bakes) (what the
+image bakes, and so why an image is a floor),
 [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md) (the backend itself),
 [`macos-user-home-tiers.md`](macos-user-home-tiers.md) (the home split the stage writes
 through), and

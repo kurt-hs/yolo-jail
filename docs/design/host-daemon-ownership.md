@@ -74,8 +74,8 @@ has changed), [`broker-as-a-pack.md`](broker-as-a-pack.md) (where `scope: "host"
 invented, on the premise [§1.1](#11-the-premise-the-scope-was-built-on-is-false)
 refutes), [`../reference/loophole-system.md`](../reference/loophole-system.md)
 (activation, the origin gate, what a pack may declare),
-[`../research/claude-oauth-refresh-mechanics.md`](../research/claude-oauth-refresh-mechanics.md)
-(the refresh mechanics, including the sentence that says two brokers cannot race).
+[`../reference/claude-oauth-interposition.md`](../reference/claude-oauth-interposition.md#three-protections-an-interception-jail-has-p1-to-p3)
+(the refresh mechanics as they bear on yolo, including why a jail cannot race the refresh).
 
 ---
 
@@ -149,10 +149,11 @@ is defensive on both of the first two:
 
 The repo already said this plainly, in the research doc that produced the broker's design:
 *"this race is already mitigated by the broker holding the `REFRESH_LOCK` flock … Two
-brokers can't race; two jail Claudes' in-memory caches can."*
-([`../research/claude-oauth-refresh-mechanics.md`](../research/claude-oauth-refresh-mechanics.md).)
-Note which race that leaves standing: **in-jail client caches**, which one host daemon does
-not fix either.
+brokers can't race; two jail Claudes' in-memory caches can."* (That research doc is deleted; git
+history has it.) Note which race that leaves standing: **in-jail client caches**, which one host
+daemon does not fix either. Their caches can diverge but cannot race upstream, because the broker
+discards the refresh token a jail presents
+([P1](../reference/claude-oauth-interposition.md#three-protections-an-interception-jail-has-p1-to-p3)).
 
 > [!NOTE]
 > This is [§6](#6-the-failure-modes)'s mode-2 lesson happening to the scope itself. A
