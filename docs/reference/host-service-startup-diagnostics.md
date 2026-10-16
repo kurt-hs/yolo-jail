@@ -1,6 +1,6 @@
 ---
 status: accepted
-stage: GRADUATED
+stage: CURRENT
 verified: 2026-10-10
 verified_commit: 3fe15ecbc
 covers:
