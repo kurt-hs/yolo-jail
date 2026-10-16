@@ -17,6 +17,7 @@ package config
 // fence in silence — CX-D1's warning, and the reason there is one parser.
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -60,9 +61,20 @@ func (m ContextMount) OptionalSpelling() string {
 		mode = "rw"
 	}
 	if m.At != "" {
-		return fmt.Sprintf(`{"host": %q, "at": %q, "mode": %q, "optional": true}`, m.Host, m.At, mode)
+		return `{"host": ` + jsonString(m.Host) + `, "at": ` + jsonString(m.At) + `, "mode": "` + mode +
+			`", "optional": true}`
 	}
-	return fmt.Sprintf(`{"host": %q, "mode": %q, "optional": true}`, m.Host, mode)
+	return `{"host": ` + jsonString(m.Host) + `, "mode": "` + mode + `", "optional": true}`
+}
+
+// jsonString is s as a JSON string literal. Not Go's %q, whose escapes (\x00,   left raw,
+// \a) are not all JSON: a path with an odd byte would hand the user a line that does not parse.
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
 }
 
 // OptionalMountSkipLine is the one line every backend prints for an optional `mounts` element it
@@ -114,6 +126,14 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 			return m, []string{fmt.Sprintf("%s: %q ends in \":rw\", which is not a mode — "+
 				"a string entry is always read-only. A read-write mount is the object form: %s",
 				where, s, suggestion)}
+		}
+		if strings.HasSuffix(s, ":optional") {
+			// Refused as `:rw` is: a suffix is not an option, and parsed as a path it names a
+			// directory that does not exist, so the mount would vanish with a warning.
+			host, at := SplitMountString(strings.TrimSuffix(s, ":optional"))
+			return m, []string{fmt.Sprintf("%s: %q ends in \":optional\", which is not an option — "+
+				"a string entry is always required. An optional mount is the object form: %s",
+				where, s, ContextMount{Host: host, At: at}.OptionalSpelling())}
 		}
 		m.Host, m.At = SplitMountString(s)
 		if m.Host == "" {

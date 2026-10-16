@@ -257,7 +257,7 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 		var out []jailcontent.ContextMount
 		for _, l := range links {
 			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + l.Rel(),
-				Host: l.Source, ReadWrite: l.RW, Pack: l.Pack})
+				Host: l.Source, ReadWrite: l.RW, Pack: l.Pack, Optional: l.Optional})
 		}
 		for _, c := range copies {
 			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + c.Rel(),
@@ -267,7 +267,8 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 	}
 	var out []jailcontent.ContextMount
 	for _, m := range o.configCtxMounts(rt, cfg, nil) {
-		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, ReadWrite: m.rw})
+		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, ReadWrite: m.rw,
+			Optional: m.optional})
 	}
 	for _, m := range o.packCtxMounts(rt, packs, nil) {
 		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, Pack: m.pack})

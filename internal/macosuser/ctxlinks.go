@@ -232,6 +232,14 @@ func SiteContextLinks(s ContextSiting, workspace string, links []ContextLink, oc
 		if v.reason == "" {
 			v = siteAgainst(links, i, occupied, s.FoldCase)
 		}
+		// A refusal for a delivery reason may hide a safety one that a later rule would have
+		// named, and "optional" skips only the former. So whenever a link is refused at all, the
+		// safety predicates are asked on their own, whatever the rule order, and win.
+		if v.reason != "" && !v.unsafe {
+			if u := s.unsafeVerdict(l.Source); u.reason != "" {
+				v = u
+			}
+		}
 		if v.reason != "" {
 			out = append(out, ContextRefusal{Link: l, Reason: v.reason, Brief: v.brief,
 				Unsafe: v.unsafe, Index: i})
@@ -245,6 +253,47 @@ func SiteContextLinks(s ContextSiting, workspace string, links []ContextLink, oc
 type siteVerdict struct {
 	reason, brief string
 	unsafe        bool
+}
+
+// unsafeVerdict asks the three SAFETY predicates of the siting on their own, independent of
+// siteOne's rule order: a source containing every home, inside the sandbox account's home, or
+// overlapping yolo's state directory. It asks them of every spelling the source may be an alias
+// for — as written, through the Data volume stripped, and with a users-root alias replaced by the
+// users root — so a spelling rule refusing first cannot hide one. An unresolved or relative
+// source is asked as written, after path.Clean.
+func (s ContextSiting) unsafeVerdict(src string) siteVerdict {
+	spellings := []string{path.Clean(src)}
+	if s.DataVolume != "" && pathWithin(src, s.DataVolume, s.FoldCase) {
+		if n := len(s.DataVolume); len(src) >= n {
+			spellings = append(spellings, path.Clean("/"+strings.TrimLeft(src[n:], "/")))
+		}
+	}
+	for _, alias := range s.UsersRootAliases {
+		if pathWithin(src, alias, s.FoldCase) && len(src) >= len(alias) {
+			spellings = append(spellings, path.Clean(s.UsersRoot+"/"+strings.TrimLeft(src[len(alias):], "/")))
+		}
+	}
+	for _, sp := range spellings {
+		for _, root := range s.usersRoots() {
+			if pathWithin(root, sp, s.FoldCase) {
+				return siteVerdict{reason: "its source " + src + " contains " + root +
+					", and with it every home on this Mac", brief: "it contains every home on this Mac",
+					unsafe: true}
+			}
+		}
+		if s.SandboxHome != "" && pathWithin(sp, s.SandboxHome, s.FoldCase) {
+			return siteVerdict{reason: "its source " + src + " is inside the sandbox account's own home " +
+				s.SandboxHome, brief: "it is inside the sandbox account's own home", unsafe: true}
+		}
+		for _, sd := range s.StateDirs {
+			if rel := overlap(sp, sd, s.FoldCase); rel != "" {
+				return siteVerdict{reason: "its source " + src + " " + rel + " yolo's state directory " + sd +
+					", where the context dir itself lives", brief: "it " + rel + " yolo's state directory",
+					unsafe: true}
+			}
+		}
+	}
+	return siteVerdict{}
 }
 
 // briefOutsideCtx is rule 1's brief, shared with the copies.
