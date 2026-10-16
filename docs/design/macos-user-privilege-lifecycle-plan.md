@@ -813,9 +813,15 @@ file in flux. Every task runs `just format` before its commit and stages only it
      the host's two `chmod`s.
   4. The rule: `SudoersRule(user)` into a host temp file; `sudo /bin/cp` to the `.new` name,
      `sudo /usr/sbin/chown root:wheel`, `sudo /bin/chmod 0440`, `sudo /usr/sbin/visudo -c -f`,
-     `sudo /bin/mv -f`, then `sudo /usr/sbin/visudo -c`; if that last check fails,
-     `sudo /bin/rm -f /etc/sudoers.d/yolo-jail`, then `sudo /usr/sbin/visudo -c` again without the
-     rule, which decides the refusal. Neither check takes `-q`, which would hide visudo's reason.
+     `sudo /bin/mv -f`, then `sudo /usr/sbin/visudo -c`; if that last check fails, the rule is
+     parked under the `.new` name (`sudo /bin/mv -f`) and `sudo /usr/sbin/visudo -c` runs again
+     without it. When the second check fails with exactly the complaints of the first (the rule
+     adds none), the rule goes back in and setup warns; otherwise the parked rule is removed and
+     setup refuses. Neither check takes `-q`, which would hide visudo's reason. sudo itself reads a
+     `sudoers.d` file that root owns and that no one else can write, whatever its other mode bits,
+     and skips with a warning one it cannot trust (sudo's `open_sudoers` and the lexer's
+     `includedir` loop); only `visudo -c` requires mode 0440, so a pre-existing mode or owner
+     complaint does not stop sudo honoring the rule, and step 6's probe proves it does.
   5. Legacy sweep (PL-8): for each claimable record whose legacy profile exists, `sudo /bin/rm -f`
      the five legacy paths, then remove the record; print the count and `yolo stores` for the
      legacy trees.
@@ -833,11 +839,25 @@ file in flux. Every task runs `just format` before its commit and stages only it
     check prints nothing), a blank line, then the commands, one per line, with no placeholders.
   - The rule file alone fails: `✗ visudo rejected yolo's sudo rule. Nothing was installed.`, then
     `This is a yolo bug. Report it with the output above and this rule:`, the rule, the issues URL.
-  - The whole configuration fails with and without the rule:
+  - Before the first sudo of setup or teardown, when `sudo -n /usr/bin/true` (captured) fails,
+    so a prompt is coming: `• sudo needs your password to <set up the sandbox account and its
+    rule | remove the sandbox account and its rule | remove yolo's sudo rule>
+    (/etc/sudoers.d/yolo-jail).` Cached credentials print nothing.
+  - The whole configuration fails the same with and without the rule: a yellow
+    `⚠ Installed /etc/sudoers.d/yolo-jail. visudo -c also fails without it:`, a blank line,
+    visudo's complaints, a blank line, then the fixes at the paths visudo printed: one
+    `sudo chmod 0440 <files>` for the bad modes, one `sudo chown root:wheel <files>` for the bad
+    owners, `sudo visudo -f <path>` for each other file named, and `sudo visudo -c`.
+  - Moving the checked rule into place fails, first or after the comparison accepted it:
+    `✗ yolo's sudo rule is not installed: <the mv> failed.`, the pre-existing complaints when
+    there are any, their fixes, then `yolo macos-setup`.
+  - Both fail with nothing captured to compare:
     `✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.`, then
-    `sudo visudo -f <path>` for each file visudo's output names, `sudo visudo -c`, `yolo macos-setup`.
-  - It fails only with the rule: `✗ visudo rejected your sudo configuration with yolo's rule in
-    place. The rule was removed again.`, then the yolo-bug lines.
+    the same fixes, `sudo visudo -c`, `yolo macos-setup`.
+  - It fails only with the rule, or the rule adds a complaint: `✗ visudo rejected your sudo
+    configuration with yolo's rule in place. The rule was removed again.`, the added complaints
+    (all of visudo's output when the configuration passes without the rule), then the yolo-bug
+    lines.
   - The rule cannot be removed after that: `sudo rm -f /etc/sudoers.d/yolo-jail`, a no-sudo
     fallback (`osascript -e 'do shell script "/bin/rm -f /etc/sudoers.d/yolo-jail" with
     administrator privileges'`), then `yolo macos-setup`.
