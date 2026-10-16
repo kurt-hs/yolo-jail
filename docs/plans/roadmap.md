@@ -37,7 +37,7 @@ candidate state, acceptance gaps and verification; a place here does not make it
    [combined implementation map](../design/launch-update-preparation-plan.md) connects scheduling,
    freshness, HOST, Apple checks and supported ordinary npm capture. Independent review and final
    combined runtime/platform acceptance remain. Producer details stay in the
-   [capture sketch](../design/launch-program-capture-plan.md).
+   [ordinary capture section](../design/launch-update-preparation-plan.md#ordinary-cli-and-mcp-capture).
    [The preparation design's timing acceptance](../design/launch-update-preparation.md#visibility-and-acceptance) bounds current timing claims.
 
 Pi's existing profile-set/provider-seal extension is built, including its required child guard.
@@ -203,7 +203,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
     [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); [the disk levers'
     re-measure](../design/disk-levers-and-backfill.md); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).
-33. Verify [the exact-commit release gate](../design/pre-tag-release-gate.md) before the next publication request,
+33. Verify [the exact-commit release gate](../reference/release-process.md) before the next publication request,
     because offline fixtures do not prove live Actions or publisher permissions. What the 2026-10-05 and 2026-10-06
     builds still owe: read the first scheduled macos-user nightly with [the vendor
     installs](../reference/agent-install-in-ci.md), and the linux/arm64 copilot cell for [GitHub's own installer](../design/program-delivery.md#OQ-NI1);
