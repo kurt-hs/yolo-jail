@@ -18,7 +18,7 @@ package run
 // NOT FOR AN EXTENSION WITH A FALLBACK (docs/design/pi-extension-store-builds.md XB-D7): the agent
 // installs its raw entry in the tree's place, so nothing is missing; noteTreeDeliveries says the
 // fallback once, with the build's cause in plain words under it. NOR FOR ONE
-// patchrecovery.SkipExtensionsEnv covers (docs/design/patched-build-recovery.md §6.6): this launch
+// patchrecovery.SkipExtensionsEnv covers (docs/reference/pi-extensions.md §9.1): this launch
 // starts its owner without it.
 //
 // NOT WHERE NO TREE OR FORK IS BUILT: below Apple Container's read-only floor, inside a jail, and
@@ -26,7 +26,7 @@ package run
 // built, so nothing failed; those keep their warning line (noteTreeDeliveries, and the fork's
 // launcher). macos-user returns above the slot and says so itself (noteMacosUserTrees).
 //
-// THE REFUSAL'S SHAPE is a normal tool's (patched-build-recovery.md §6.8, the maintainer's ruling of
+// THE REFUSAL'S SHAPE is a normal tool's (docs/reference/patched-forks.md §8.7, the maintainer's ruling of
 // 2026-10-16): one ERROR line, each cause once with every build it left without one
 // (entrypoint.BuildCause, PPX-D42) as terse fact lines, then `Retry:` with each build's `yolo
 // capture` command, then `Start anyway:` (patchrecovery.Section) — the union of each missing build's
@@ -113,7 +113,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 				continue // its fallback is installed in its place: noteTreeDeliveries says it, and its cause (XB-D7)
 			}
 			if skip.Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}) {
-				continue // this launch starts its owner without it (patched-build-recovery.md §6.6)
+				continue // this launch starts its owner without it (docs/reference/pi-extensions.md §9.1)
 			}
 			if d, ok := o.treeDelivered[f.Key()]; ok && d.Dir == "" && !d.Skipped {
 				out = append(out, missingBuild{label: f.Label(), key: f.Key(), capture: f.CaptureArg(),

@@ -1,7 +1,7 @@
 package run
 
 // skipextensions_test.go pins YOLO_SKIP_EXTENSIONS and cached-good for extensions at a launch's call
-// sites (docs/design/patched-build-recovery.md §6.6, §6.7), from Run's own entry point: a fresh
+// sites (docs/reference/pi-extensions.md §9.1, patched-forks.md §8.5), from Run's own entry point: a fresh
 // launch hands the tree arm no skipped extension, mounts nothing for it, marks it skipped on the
 // wire with no stop and says so in one line; a name covering nothing warns; an attach, a nested
 // launch and a macos-user launch each say the hatch does nothing there; and YOLO_USE_CACHED_GOOD

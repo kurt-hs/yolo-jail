@@ -71,7 +71,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 		if target != "" && p.Bin() != target && missingHatch && errors.Is(err, hostfloor.ErrPatchFailureNothingRuns) {
 			continue
 		}
-		// A HOLD HOLDS (patched-build-recovery.md §6.3, OQ-PBR5): under `agent_updates` off, a recorded
+		// A HOLD HOLDS (docs/reference/patched-forks.md §3.4, OQ-PBR5): under `agent_updates` off, a recorded
 		// failure has no bearing while a build of the fork serves; the advance runs that build.
 		if errors.Is(err, hostfloor.ErrPatchFailureBypassable) && hostForkHeld(packs, p) {
 			continue

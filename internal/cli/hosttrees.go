@@ -376,7 +376,7 @@ func hostTreeFallbacks(packs []*packload.Pack) ([]*packload.Pack, []packload.For
 	return out, taken
 }
 
-// hostSkipScope is this host act's YOLO_SKIP_EXTENSIONS (docs/design/patched-build-recovery.md §6.6),
+// hostSkipScope is this host act's YOLO_SKIP_EXTENSIONS (docs/reference/pi-extensions.md §9.1),
 // read from this process's environment.
 func hostSkipScope() patchrecovery.Scope {
 	return patchrecovery.Read(nil, patchrecovery.SkipExtensionsEnv)

@@ -40,10 +40,6 @@ candidate state, acceptance gaps and verification; a place here does not make it
    [ordinary capture section](../design/launch-update-preparation-plan.md#ordinary-cli-and-mcp-capture).
    [The preparation design's timing acceptance](../design/launch-update-preparation.md#visibility-and-acceptance) bounds current timing claims.
 
-3. [Build the way back from a broken patched build](../design/patched-build-recovery.md) — ruled
-   2026-10-16: five recovery hatches with one grammar, a recorded failure that follows upstream's
-   newest, and a hold that holds; building.
-
 Pi's existing profile-set/provider-seal extension is built, including its required child guard.
 [MM-D42](../design/model-lists-and-pickers.md#MM-D42)'s process-local profile-derived child
 defaults and model restrictions: **YOLO side built, waits on Pi** (2026-10-15). A `yolo host -p`

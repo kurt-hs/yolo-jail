@@ -1,7 +1,7 @@
 package cli
 
-// skipextensions_test.go pins YOLO_SKIP_EXTENSIONS at the host (docs/design/patched-build-recovery.md
-// §6.6) and cached-good for an extension through the build slot (§6.7), at their call sites:
+// skipextensions_test.go pins YOLO_SKIP_EXTENSIONS at the host (docs/reference/pi-extensions.md
+// §9.1) and cached-good for an extension through the build slot (patched-forks.md §8.5), at their call sites:
 // `yolo host apply --assert` leaves a skipped extension's entry out of the agent's list, writes no
 // link for it and says so, and the next apply without the variable restores it; `yolo host -- tool`
 // neither builds nor stops for it; and YOLO_USE_CACHED_GOOD naming an extension hands the record's

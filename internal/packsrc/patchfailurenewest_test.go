@@ -1,7 +1,7 @@
 package packsrc
 
 // patchfailurenewest_test.go pins CurrentPatchFailure's two recovery rules
-// (docs/design/patched-build-recovery.md): A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (§6.2) — it
+// (docs/reference/patched-forks.md): A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (§6.2) — it
 // governs only while its target is the newest candidate no recorded conflict passes over — and THE
 // WALK-BACK HOLD (§6.4), under which the newest's failure is the hold's and does not govern.
 
