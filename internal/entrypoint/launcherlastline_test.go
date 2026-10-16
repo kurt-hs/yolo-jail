@@ -91,7 +91,7 @@ func TestAFailedUpdateSaysWhatEachModeDoesNext(t *testing.T) {
 		{"a launch due an update", up, nil,
 			[]string{"yolo: ERROR: misnative: its update (misnative selfupdate) failed (status 3)\n",
 				"\nRepair:\n", "    misnative\n", "\nStart anyway:\n",
-				"  YOLO_USE_INSTALLED=misnative misnative    run the installed version\n"}, false},
+				useInstalledLines("misnative", "misnative", "version")}, false},
 		{"a launch due an update its upstream cannot answer", down, nil,
 			[]string{"  misnative: its update (misnative selfupdate) failed (status 3), and its upstream could not be reached to check for a newer version — running what is installed.\n"}, true},
 	} {

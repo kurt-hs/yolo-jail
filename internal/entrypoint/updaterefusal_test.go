@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
-	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 )
 
 // warmNpmProbe is an npm probe holding tool 1.0.0, installed, with its update due.
@@ -53,8 +52,7 @@ func TestANewerNpmVersionThatFailsToInstallRefuses(t *testing.T) {
 		"Repair:\n" +
 		"  fix what stopped it (its output is above), then run tool again, which retries the update:\n" +
 		"    tool\n" +
-		patchrecovery.Section(patchrecovery.StartAnyway, []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv,
-			Value: "tool", Command: "tool", Label: "run the installed 1.0.0"}}, false)
+		"\nStart anyway:\n" + useInstalledLines("tool", "tool", "1.0.0")
 	if !strings.HasSuffix(out, want) {
 		t.Errorf("the refusal does not end with\n%s\ngot:\n%s", want, out)
 	}
@@ -165,7 +163,7 @@ func TestANativeVerbThatFailsIsJudgedByItsUpstream(t *testing.T) {
 			t.Fatalf("rc=%d, want %d:\n%s", rc, UpdateRefusedStatus, out)
 		}
 		for _, want := range []string{"yolo: ERROR: probetool: its update (probetool update) failed (status 7)\n",
-			"\nRepair:\n", "\nStart anyway:\n", "YOLO_USE_INSTALLED=probetool probetool    run the installed version\n"} {
+			"\nRepair:\n", "\nStart anyway:\n", useInstalledLines("probetool", "probetool", "version")} {
 			if !strings.Contains(out, want) {
 				t.Errorf("the refusal lacks %q:\n%s", want, out)
 			}
@@ -286,7 +284,7 @@ func TestAFailedPrelaunchRefreshWhoseRegistryAnswersRefuses(t *testing.T) {
 		t.Fatalf("rc=%d, want %d:\n%s", code, UpdateRefusedStatus, stderr)
 	}
 	for _, want := range []string{"yolo: ERROR: tool: the pre-launch refresh (update --extensions) failed (status 3)\n",
-		"\nRepair:\n", "\nStart anyway:\n", "  YOLO_USE_INSTALLED=tool tool    run the installed version\n"} {
+		"\nRepair:\n", "\nStart anyway:\n", useInstalledLines("tool", "tool", "version")} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, stderr)
 		}
