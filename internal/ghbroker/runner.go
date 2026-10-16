@@ -72,12 +72,28 @@ type Runner struct {
 	timeout time.Duration
 	outCap  int64
 
-	// running holds the process group of every gh a Run has started and not yet reaped, so
-	// Shutdown can end them; closed says Shutdown ran, and no Run starts another.
+	// running holds the kill of every gh a Run has started and not yet reaped, keyed by its
+	// process group, so Shutdown can end them; closed says Shutdown ran, and no Run starts
+	// another.
 	mu      sync.Mutex
-	running map[int]bool
+	running map[int]func()
 	closed  bool
+
+	// signalGroup sends SIGKILL to a process group; nil is syscall.Kill. A test replaces it
+	// to drop a signal the way a fork racing it drops one on macOS.
+	signalGroup func(pgid int) error
 }
+
+// killRetry is how often a kill re-signals gh's process group until nothing holds gh's
+// output open any more.
+//
+// One SIGKILL to a group is not enough on macOS: a child the group is forking at that
+// moment can miss it (XNU's killpg walks the group's members, and a child not yet linked
+// into it is not one; Linux makes the fork fail and retry instead), and that child, already
+// in the group and holding gh's stdout and stderr, then runs to its end. The fake gh's
+// `sleep 30` survived Shutdown this way in CI. So a kill signals the group again until the
+// pipes close, and stops before gh is reaped, while the group id cannot yet be reused.
+const killRetry = 50 * time.Millisecond
 
 // Shutdown ends every gh this runner is running, by process group, and lets no Run start
 // another. The broker calls it when it is told to stop.
@@ -91,8 +107,8 @@ func (r *Runner) Shutdown() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = true
-	for pgid := range r.running {
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	for _, kill := range r.running {
+		kill()
 	}
 }
 
@@ -344,10 +360,43 @@ func (r *Runner) RunContext(ctx context.Context, argv []string, stdin []byte, st
 		return RunResult{Exit: ExitUnavailable}
 	}
 	pgid := cmd.Process.Pid
-	if r.running == nil {
-		r.running = map[int]bool{}
+	// kill starts signaling gh's process group, again every killRetry, until the pumps
+	// below have read both pipes to their end; stopKilling ends it before gh is reaped.
+	var (
+		kmu         sync.Mutex
+		killing     bool
+		stopKilling bool
+	)
+	signal := r.signalGroup
+	if signal == nil {
+		signal = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
 	}
-	r.running[pgid] = true
+	signalOnce := func() bool {
+		kmu.Lock()
+		defer kmu.Unlock()
+		if stopKilling {
+			return false
+		}
+		_ = signal(pgid)
+		return true
+	}
+	kill := func() {
+		kmu.Lock()
+		start := !killing && !stopKilling
+		killing = true
+		kmu.Unlock()
+		if start {
+			go func() {
+				for signalOnce() {
+					time.Sleep(killRetry)
+				}
+			}()
+		}
+	}
+	if r.running == nil {
+		r.running = map[int]func(){}
+	}
+	r.running[pgid] = kill
 	r.mu.Unlock()
 	// Forgotten only once gh is reaped (the deferred call runs after cmd.Wait below), so
 	// Shutdown never signals a process group id the system has handed to someone else.
@@ -362,7 +411,6 @@ func (r *Runner) RunContext(ctx context.Context, argv []string, stdin []byte, st
 		total     int64
 		truncated bool
 	)
-	kill := func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	// counted gates one stream's redacted output on the shared cap. Past the cap the rest
 	// is read and dropped rather than the process killed, so gh's own exit code still
 	// crosses; the timeout bounds how long that can take.
@@ -415,6 +463,9 @@ func (r *Runner) RunContext(ctx context.Context, argv []string, stdin []byte, st
 	wg.Wait()
 	cancelKill()
 	timer.Stop()
+	kmu.Lock()
+	stopKilling = true
+	kmu.Unlock()
 	err := cmd.Wait()
 
 	res := RunResult{Exit: exitCode(err), BytesOut: total, Redactions: outRed.count + errRed.count,
