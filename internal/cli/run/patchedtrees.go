@@ -185,11 +185,15 @@ func patchedTreeLine(f packload.Fork) (string, bool) {
 	}
 	head := f.Label() + ": ~/" + strings.TrimSuffix(f.Into, "/") + what + f.Source
 	series, err := f.ReadSeries()
+	if err == nil && series.Unresolved() {
+		return head + " + the carry " + f.Carry + " — not fetched on this machine yet; the next fresh launch " +
+			"fetches and builds it, or `yolo pack update` fetches it now", true
+	}
 	if err != nil {
 		return head + " — its patch series cannot be read: " + err.Error(), true
 	}
-	if series.Len() > 0 {
-		head += " + " + PatchCount(series.Len()) + " (series " + series.ShortDigest() + ")"
+	if series.Replays() {
+		head += " + " + series.Describe()
 	}
 	if !f.DeliveredInJail() {
 		if !hostBuildsOwnTrees() {
@@ -445,7 +449,7 @@ func (o *Options) noteAttachTreeBuilds(handed map[string]HandedTree) {
 		}
 		line := "this jail mounts extension " + k + " at " + WithPatches(goodLabelOf(h.Commit, h.Tag), h.Patches)
 		if rec, err := patchedPacksStore().LoadCheckRecord(k); err == nil && rec.Good != nil && rec.Good.Entry != h.Entry {
-			line += "; " + WithPatches(GoodBuildLabel(rec.Good), rec.Good.Patches) + " is built, and the " +
+			line += "; " + WithGood(GoodBuildLabel(rec.Good), rec.Good) + " is built, and the " +
 				"next fresh launch, once this jail stops, mounts it"
 		}
 		out.printf("[dim]%s[/dim]", richtext.Escape(line))

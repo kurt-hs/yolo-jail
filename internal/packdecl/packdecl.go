@@ -315,6 +315,10 @@ type Install struct {
 	// fields of the same names carry the grammar.
 	Patches string `json:"patches,omitempty"`
 	Follow  string `json:"follow,omitempty"`
+	// Carry is a CARRY fork's (docs/design/patched-forks.md §3.5): the carry repository and branch
+	// as the fork writes it, in place of Patches. The Contribution field of the same name carries the
+	// grammar.
+	Carry string `json:"carry,omitempty"`
 	// ForkedBy names the fork pack whose build this program is, "" for every program that is
 	// not a fork's. Provenance only: every line that says what a source-built program is names
 	// the pack that supplied its bytes, not only the pack that owns its name.

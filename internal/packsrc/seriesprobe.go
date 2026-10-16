@@ -31,6 +31,8 @@ type SeriesProbe struct {
 	// replay runs when the fetch failed or the base is not in the mirror, which Found says.
 	Replayed bool
 	Walk     WalkResult
+	// Carry is a carry's series as the probe's check resolved it, nil for a patch series.
+	Carry *Series
 	// Err is why no check could run: an address that does not parse, or a record that could not
 	// be written.
 	Err error
@@ -66,12 +68,24 @@ func (s *Store) ProbeSeries(w PatchedWant, series *Series, waiting func(string))
 		return p
 	}
 	p.Tagless = s.taglessBranch(mirror, a.Ref, follow)
+	var list []ListEntry
+	if w.Carry != "" {
+		// A CARRY (carry.go) is what the check just resolved, merged into its own merge base: the
+		// carry's tree, which takes the git floor and every file the carry names.
+		resolved, err := CarrySeries(w.Carry, w.Source, res.Record)
+		if err != nil {
+			unlock()
+			return p // the check's problem names why the carry did not resolve
+		}
+		series, list = resolved, []ListEntry{{Commit: resolved.Base}}
+		p.Carry = resolved
+	}
 	base, _ := s.revParse(mirror, series.Base)
 	unlock()
 	if base == "" {
 		return p // the check's problem names the base it could not find
 	}
-	p.Walk = s.WalkSeries(a.Repo, a.Path, series, nil, WalkOptions{Waiting: waiting})
+	p.Walk = s.WalkSeries(a.Repo, a.Path, series, list, WalkOptions{Waiting: waiting})
 	p.Replayed = true
 	return p
 }

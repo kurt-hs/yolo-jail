@@ -98,7 +98,7 @@ func PatchedTrees(packs []*Pack) []Fork {
 			f := Fork{
 				Pack: p.Name, Bin: c.ExtensionName(), Source: c.Source, Build: c.TreeBuild(),
 				Produces: append([]string(nil), c.Produces...),
-				Root:     p.Root, Patches: c.Patches, Follow: follow, Into: c.Into, Fallback: c.Fallback,
+				Root:     p.Root, Patches: c.Patches, Carry: c.Carry, Follow: follow, Into: c.Into, Fallback: c.Fallback,
 				PackBases: forkBaseClosure(packs, p),
 			}
 			f.Owner, f.ListedInJail, f.ListedAtHost = owningAgentPack(packs, p, c.TreeListEntry())
@@ -298,7 +298,9 @@ func patchedTreeClaimDetail(root string, c packdecl.Contribution) string {
 		rule = follow.String()
 	}
 	series := "the series in " + c.Patches
-	if s, err := packsrc.ReadSeries(root, c.Patches); err == nil {
+	if c.Carry != "" {
+		series = "the carry " + c.Carry
+	} else if s, err := packsrc.ReadSeries(root, c.Patches); err == nil {
 		series = fmt.Sprintf("%d %s in %s (series %s)", s.Len(), plural(s.Len(), "patch", "patches"),
 			c.Patches, s.ShortDigest())
 	}
