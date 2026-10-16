@@ -1,44 +1,35 @@
 ---
-status: in-review
-stage: DESIGN
-next: "Rule OQ-PBR1 and OQ-PBR2 — the sticky-failure fix and the walk-back hatch are the two that unblock building"
+status: accepted
+stage: DECIDED
+next: "Build the six rulings and the four new hatches, then graduate into patched-forks.md and pi-extensions.md"
 tags: [packs, forks, patches, recovery, happy-path]
 ---
 
 # When the series and the upstream both break, is there a way back to a working agent?
 
-**Status:** 2026-10-16. Nothing built. Evidence read at `3a2b0956f`; seven scenarios run as a
-throwaway test against the advance's own test fixture ([Appendix A](#appendix-a-the-measured-scenarios)).
+**Status:** 2026-10-16. Every question ruled; building. Diagnosis read at `3a2b0956f`, seven
+scenarios measured ([Appendix A](#appendix-a-the-measured-scenarios)).
 
-> **In short.** Today a patched build has an escape for every failure *while something of the
-> current series is on this machine*, and none once nothing is. The cure is small because the code
-> already walks the upstream's versions newest-first; it stops at the first conflict on purpose.
-> Letting a user ask it not to, plus fixing one sticky record, closes every dead end found here.
+> **In short.** A patched build had an escape for every failure *while something of the current
+> series was on this machine*, and none once nothing was. Five opt-in hatches with one grammar, a
+> failure that follows upstream's newest, and a hold that holds close every dead end found here.
 
-**Why it matters.** When the agent is the broken thing, the agent cannot repair itself. A pi
-extension with no build stops pi even under `YOLO_ALLOW_MISSING_PROGRAMS=1`, and a recorded
-conflict outlives the upstream release that fixes it.
+**Why it matters.** When the agent is the broken thing, the agent cannot repair itself.
 
-**The shape.** Three parts: a default fix to which version a recorded patch failure points at,
-an opt-in **walk-back** that builds the series on an older upstream version, and two lines that
-name escapes the code already has.
+**The shape.** One vocabulary of hatches (`internal/patchrecovery`), decided by the advance and
+listed by every refusal as copyable commands.
 
-**Cost.** One new environment hatch, one change to how a recorded failure is cleared, and a
-changed meaning for an `agent_updates` hold if [OQ-PBR5](#OQ-PBR5) says so.
+**Start at [§6](#6-the-settled-design)** — the settled design. [§3](#3-the-as-built-path-table) to [§5](#5-escapes-that-exist-and-are-not-named) are the diagnosis it answers.
 
-**Start at [§4](#4-the-dead-ends)** — the dead ends. The proposal falls out of them.
-
-**Needs your ruling:** [OQ-PBR1](#OQ-PBR1), [OQ-PBR2](#OQ-PBR2), [OQ-PBR3](#OQ-PBR3),
-[OQ-PBR4](#OQ-PBR4), [OQ-PBR5](#OQ-PBR5), [OQ-PBR6](#OQ-PBR6).
+**Needs your ruling:** None.
 
 **Reads with:** [`patched-forks.md`](../reference/patched-forks.md) (the system reference this
 amends; every PF-D id is its), [`pi-extensions.md`](../reference/pi-extensions.md) (the same
 machinery over a `files` tree), [`patch-series.md`](../../userguide/guides/patch-series.md) (the
-user guide), [`happy-path-principle.md`](../reference/happy-path-principle.md) (the rule
-[§5](#5-escapes-that-exist-and-are-not-named) applies). No implementation sketch is opened yet:
-nothing here is settled enough to park build detail.
+user guide), [`happy-path-principle.md`](../reference/happy-path-principle.md).
 
 ---
+
 
 ## 1. Verdict
 
@@ -60,8 +51,8 @@ My read, from the code and the scenarios:
    The hatch turns that one option off for one launch, and lets a failed build continue down the
    same list.
 
-Build the sticky fix by default ([OQ-PBR1](#OQ-PBR1)) and the walk-back as a hatch
-([OQ-PBR2](#OQ-PBR2)). Both fit the maintainer's escape-hatch rule: an upstream that moved
+Build the sticky fix by default ([OQ-PBR1](#decision-ledger)) and the walk-back as a hatch
+([OQ-PBR2](#decision-ledger)). Both fit the maintainer's escape-hatch rule: an upstream that moved
 incompatibly or broke its build is external state, not a yolo bug.
 
 ## 2. Terms
@@ -85,7 +76,7 @@ incompatibly or broke its build is external state, not a yolo bug.
   agent loading the patched extension) runs. A jail whose agent refuses to start is not one.
 - **Walk-back** *(coined here)* — the proposed opt-in advance that tries the series on successively
   older versions from the walk's list, down to the series' base, until one builds
-  ([§6.2](#62-the-walk-back-hatch)). Not a rollback: it records nothing as the newest and moves no
+  ([§6.4](#64-the-walk-back)). Not a rollback: it records nothing as the newest and moves no
   pin.
 
 ## 3. The as-built path table
@@ -263,209 +254,197 @@ land):
 - [`patch-series.md`](../../userguide/guides/patch-series.md#commands)'s `agent_updates` advice, as
   in [D5](#45-d5-the-hold-the-guide-recommends-does-not-hold-past-a-recorded-failure).
 
-## 6. Proposal
+## 6. The settled design
 
-### 6.1 Fix the sticky failure, by default
+Every ruling below is the maintainer's of 2026-10-16 unless the [Decision Ledger](#decision-ledger)
+marks it an implementation decision.
 
-**A recorded patch failure governs only while its target is the newest entry not already passed
-over.** At a check that ran, when the list holds entries newer than the target, the advance walks
-from the newest, as it would with no record: a clean newest is built and clears the failure; a
-conflicting newest becomes the new recorded failure, and the recipe follows it.
+### 6.1 The hatches, and their one grammar
 
-- **No flag.** This is what [PF-D81](../reference/patched-forks.md#PF-D81)'s "a member that
-  conflicts at the newest version" already says; the sticky target reads that newest as "the newest
-  when it first failed".
-- **Cost.** One more replay per new upstream version (seconds), and rewriting the tests that pin
-  the current selection, among them `TestPatchFailureSelectedFirstFailureWins` and
-  `TestPatchFailureCleanDifferentTargetDoesNotClear`, whose intent must be re-read first.
-- **Done looks like:** scenario 1 builds v1.5.0 on its next launch, and a v1.6.0 that conflicts
-  refuses naming v1.6.0.
+| Variable | Gets the launch running by | New? |
+| :--- | :--- | :--- |
+| `YOLO_ALLOW_PATCH_FAILURES` | running the intact admitted build of the series as it stands past a recorded patch failure, this run | existing; now scoped |
+| `YOLO_USE_CACHED_GOOD` | running the record's **older good build** for one fresh jail launch, a fork's **or an extension's** ([§6.7](#67-cached-good-for-extensions)) | existing; now scoped, now trees too |
+| `YOLO_ALLOW_OLDER_UPSTREAM` | the **walk-back** ([§6.4](#64-the-walk-back)) | new |
+| `YOLO_SKIP_PATCHES` | building and running the upstream with no series applied ([§6.5](#65-skip-the-patches)) | new |
+| `YOLO_SKIP_EXTENSIONS` | starting the owning agent without a built extension ([§6.6](#66-skip-an-extension)) | new |
+| `YOLO_ALLOW_MISSING_PROGRAMS` | starting the jail without a program it cannot deliver | existing; unchanged, any non-empty value |
 
-### 6.2 The walk-back hatch
+**The value grammar** is shared by the five scoped variables (`internal/patchrecovery`):
 
-**`YOLO_ALLOW_OLDER_UPSTREAM=1`** *(name proposed here)*, beside a command, asks one run to walk
-the series back until something of it builds.
+- `1` covers every patched build the act selects.
+- Otherwise a comma-separated list of names. A name covers a patched build when it equals its key
+  (`pi-fork/pi`), its pack (`pi-fork`) or its bin or extension name (`pi`). Spaces around a name and
+  duplicates are dropped; an empty value is unset.
+- **A name that covers nothing selected is a warning line, never a refusal**: a hatch left in a
+  shell profile must not stop a workspace that does not select the pack it names. The line lists the
+  keys that are here.
+- `YOLO_ALLOW_PATCH_FAILURES` used to accept the literal `1` alone, and `YOLO_USE_CACHED_GOOD` exactly
+  one key. Both still mean what they meant; the grammar only widens them.
+
+**Who reads them.** A fresh jail launch, `yolo host -- <bin>`, `yolo host apply --assert`, and `yolo
+capture` (for the walk-back and skip-patches). Never the background scheduler, never a child
+process: no hatch is forwarded or persisted. On an attach, in a jail, or on macos-user (which
+delivers no patched build), a set hatch does nothing and the launch says so in one line, except
+`YOLO_USE_CACHED_GOOD`, which keeps its existing refusals there.
+
+### 6.2 A recorded failure follows upstream's newest
+
+At a check that ran, **a recorded patch failure governs only while its target is the newest entry on
+the walk's list not already passed over.** When the list holds an entry newer than the target, the
+advance walks from the newest as if there were no record: a clean newest builds and clears the
+failure; a conflicting newest becomes the recorded failure, and the recipe names it. Inside the
+check throttle, with no check run, the recorded failure stands. Done looks like: [D1](#41-d1-the-sticky-failure)'s v1.5.0 builds on the next launch whose check runs; a v1.6.0 that
+conflicts refuses naming v1.6.0.
+
+### 6.3 A hold holds
+
+Under an `agent_updates` hold, **prior state has no bearing**: a recorded patch failure, the
+background's included, never refuses a held launch.
+
+- With a good build that serves, the launch runs it with no git, and its held suffix names the
+  release the hold skips when a failure is recorded for one.
+- With nothing serving (an edited series under a hold), the series is built at the good build's
+  commit as today; a failure recorded for any other version is ignored, and only a failure at that
+  commit itself refuses.
+
+### 6.4 The walk-back
+
+`YOLO_ALLOW_OLDER_UPSTREAM` asks one run to try older upstream releases when the newest does not take
+the series or does not build.
 
 | Question | Answer |
 | :--- | :--- |
-| Who reads it | A fresh jail launch, `yolo host -- <bin>`, `yolo host apply --assert`, `yolo capture`. Never an attach, a jail, the background scheduler, or a child process: it is never forwarded or persisted |
-| When it acts | Only for a key with nothing of the current series serving (C9, C11, C15, C17, C18 and their extension forms). With a good build serving it does nothing and its line names `YOLO_ALLOW_PATCH_FAILURES=1`, which already works there |
-| Which versions | The walk's list the last check recorded, newest first: the version tags containing the series' base under `release`, the tip and then those tags under `head`. Then the base. **No commits between tags**: there are hundreds, and a tag is what upstream calls a release |
-| How far back | To the series' base, which bounds it by construction: the series was written there. A tag or commit `?ref=` gets no walk-back, since the user named the version |
-| What it tries | Every entry is replayed, passing over recorded conflicts; each clean entry is built, newest first, until one is admitted. A failed build goes on to the next clean entry instead of straight to the base |
-| Budget | At most **3 builds** per key per run ([OQ-PBR4](#OQ-PBR4)), each bounded as today (20 minutes); replays share the existing 60-second replay bound plus one of their own for the base. A Ctrl-C ends it as it ends any advance |
-| Failures | Recorded exactly as today: a conflict per entry, a build failure with its back-off. A walk-back passes over an entry backing off rather than paying for a known failure again |
-| What it records | The admitted build becomes the good build, held below the newest ([OQ-PBR3](#OQ-PBR3)). The newest entry's recorded failure stays. Nothing is written to the fork lock or the manifest |
-| What it prints | Per key, one disclosure line no flag hides: *"walk-back: upstream v1.4.0 does not take 0001-x.patch; v1.3.0 takes the series and built — held at v1.3.0, below upstream's newest"*, then the error block for the newest as today |
-| What it never does | Build a series that did not fully apply; build on the host; hide the newest's failure; move a good build that serves; run inside the throttle with nothing to do |
+| When it acts | For a covered key whose newest pending entry conflicts or fails to build (at a check that ran, or a recorded failure). Not for a `base`-kind failure, and not under a tag or commit `?ref=` |
+| Which versions | The walk's list, newest first: version tags under `release`, the tip then the tags under `head`; then the series' base when nothing serves. **Release tags only, never commits between them** |
+| Lower bound | With a build of the series as it stands serving, only entries **newer than that build** are tried: the walk-back never replaces a serving build with an older one. With nothing serving, down to the base |
+| What it tries | Each entry is replayed; recorded conflicts and entries still backing off are passed over; each clean entry is built until one is admitted |
+| Budget | **At most 3 builds per key per run**, the base counting as one; each bounded as any build is |
+| Failures | Recorded as today: a conflict per entry, a failed build with its back-off |
+| What it records | The admitted build becomes the good build, and the record keeps a **walk-back hold** *(coined here: the newest entry's commit the series did not take, beside the build the walk-back admitted)* |
+| What it prints | One disclosure line per key, no flag hiding it: `fork pi-fork/pi: walked back to v1.3.0; upstream v1.4.0 does not take the series` |
+| Never | builds a partly applied series; hides the newest's failure; runs in the background |
 
-**Returning to following needs nothing.** With [OQ-PBR3](#OQ-PBR3)'s leaning the next launch
-without the variable sees a recorded failure and an intact build of the series as it stands, so it
-refuses with `YOLO_ALLOW_PATCH_FAILURES=1` offered, as in C4. Once the series is rebased, or upstream
-releases a version it takes ([§6.1](#61-fix-the-sticky-failure-by-default)), the ordinary advance
-moves the good build forward.
+**The result sticks until upstream changes.** While the walk-back hold names the commit that is still
+the newest entry, a launch **without** the variable runs the walked-back good build, held, with that
+line as its held suffix, and does not refuse. When a check lists an entry newer than the hold's, the
+advance tries the newest again by [§6.2](#62-a-recorded-failure-follows-upstreams-newest): a clean build
+moves the good build and clears the hold; a failure refuses, listing its hatches, the hold no longer
+covering it. In practice the walk-back rarely builds at all, since a good build is usually here.
 
-**Every refusal that leaves nothing names the hatch** when the walk's list holds an older entry or
-the base, so C9, C11, C15, C17 and C18 each gain one line: *"To build your series on an older
-upstream version: `YOLO_ALLOW_OLDER_UPSTREAM=1 yolo`"*.
+### 6.5 Skip the patches
 
-**Forks and extensions are identical**, through the one advance. For an extension it is the only
-flag that yields a working agent ([§3.3](#33-a-patched-extension)).
+`YOLO_SKIP_PATCHES` covers a patched fork or patched extension: this run delivers an **upstream
+build** *(coined here: the upstream's newest list entry built with no series, under the fork's
+own build recipe)*.
 
-**Cost.** One environment hatch, one more option on the existing walk, a build cap, the line in the
-refusals, and the background scheduler's refusal to read it. Nothing new is stored.
+- **It keeps its own record**: the series' good build, failures, holds and back-offs are untouched, so
+  with the variable unset the next launch is exactly what it would have been.
+- **It is cached**: a second launch with the variable reuses the store entry, no rebuild, and follows
+  the same check throttle.
+- One disclosure line: `fork pi-fork/pi: running upstream v1.4.0 without its 3 patches`.
+- If the upstream build itself fails, the launch refuses, listing the hatches left.
+- Not for an unmodified extension, which has no patches to skip.
 
-### 6.3 Name cached-good where it works
+### 6.6 Skip an extension
 
-The missing-build refusal names `YOLO_USE_CACHED_GOOD=<key>` whenever a fork's older good build
-validates, not only beside a patch failure (C17). This is the happy path principle applied, not a
-new behavior, so it carries no question.
+`YOLO_SKIP_EXTENSIONS` covers a built extension, patched or unmodified: for this launch it is not
+advanced, built or mounted, **its entry is left out of the owning agent's lists** wherever the launch
+renders them (the host's render and the jail's boot), the owner's launchers are not stopped, and the
+missing-build refusal does not count it. One disclosure line names each skipped extension. The next
+launch without the variable restores it. This is the only hatch that gets pi itself running when its
+extension cannot be built, since `YOLO_ALLOW_MISSING_PROGRAMS` starts the jail and pi still looks for
+the directory.
 
-### 6.4 A hold that holds
+### 6.7 Cached-good for extensions
 
-If [OQ-PBR5](#OQ-PBR5) rules for it: under an `agent_updates` hold with a good build that serves,
-a recorded failure for a version the hold declines does not refuse; the launch says it once, in the
-held suffix, naming the release the hold skips. Then the guide's advice is true, and the
-"one-command pin" the maintainer asked for is that one config key, for every user, owner or not.
+`YOLO_USE_CACHED_GOOD` takes an extension key too: the record's older good build's tree is the
+per-launch copy, after the same validation of its entry and receipt a fork's gets. Its refusals stay:
+an attach, in a jail, macos-user, `--update`.
 
-## 7. What this does not propose
+### 6.8 Every refusal lists its hatches
+
+Every refusal or warning of a patched build has one shape (ruled 2026-10-16, pinned by golden tests):
+
+```text
+ERROR: fork pi-fork/pi: patch series does not apply to upstream v1.4.0 (abcdef01)
+  Patch: 0001-x.patch
+  Conflict: src/a.ts
+
+Repair:
+  git clone … (the recipe)
+
+Start anyway:
+  YOLO_ALLOW_PATCH_FAILURES=pi-fork/pi yolo    run v1.1.0 + 2 patches
+  YOLO_ALLOW_OLDER_UPSTREAM=pi-fork/pi yolo    build on an older release
+  YOLO_SKIP_PATCHES=pi-fork/pi yolo            run upstream without the patches
+```
+
+- **One ERROR line, the facts, then copyable commands.** No sentence justifying a hatch, no design
+  ids, no "because". The commands are bold cyan and the labels dim when color is on (`tty.Color`).
+- **A hatch is listed only when it would get THAT launch running**, with the subject's key as its
+  value and the act's own command (`yolo`, `yolo host -- pi`, `yolo capture pi-fork/pi`):
+
+| Hatch | Listed when |
+| :--- | :--- |
+| `YOLO_ALLOW_PATCH_FAILURES` | a build of the series as it stands serves |
+| `YOLO_USE_CACHED_GOOD` | nothing serves, an older good build validates, and the act is a fresh podman or Apple Container launch |
+| `YOLO_ALLOW_OLDER_UPSTREAM` | the walk's list holds an entry the walk-back would try ([§6.4](#64-the-walk-back)) |
+| `YOLO_SKIP_PATCHES` | a patched build that has no upstream build failure of its own recorded |
+| `YOLO_SKIP_EXTENSIONS` | an extension an agent pack loads |
+| `YOLO_ALLOW_MISSING_PROGRAMS` | a fork at a jail launch with nothing to run |
+
+**One authority decides the list**: the advance, which knows what serves and what its list holds. It
+hands the list on the delivery, and the launch's refusal prints it as is.
+
+## 7. What this does not do
 
 - **No automatic walk-back.** [PF-D81](../reference/patched-forks.md#PF-D81)'s default stands: a
   conflict at the newest stops the operation unless asked.
-- **No rollback of a serving build**, and no pin written anywhere: the walk-back only fills an empty
-  slot.
-- **No new route around a failed edit's ratchet**: the old series is still served only by
-  `YOLO_USE_CACHED_GOOD` or by reverting the edit ([PF-D23](../reference/patched-forks.md#PF-D23)).
-- **Nothing for macos-user**, which delivers no patched build at all.
+- **No commit-by-commit bisecting**, and no rollback of a serving build.
+- **No pin written anywhere**: no hatch writes the fork lock or a manifest.
 - **No repair**: yolo still never edits a patch ([PF-D85](../reference/patched-forks.md#PF-D85)).
+- **Nothing for macos-user**, which delivers no patched build at all.
 
 ## 8. Alternatives considered
 
 | Alternative | Verdict |
 | :--- | :--- |
-| Make the walk-back the default when nothing serves | Rejected: reverses [PF-D81](../reference/patched-forks.md#PF-D81)'s ruling that a conflict is never silently replaced by an older fit |
-| Walk upstream commits between tags, bisect-style | Rejected: hundreds of builds of unreleased code, each up to 20 minutes |
-| Cached-good for extensions | Weaker than the walk-back: it runs the *old* series, and needs a second copy path for trees. See [OQ-PBR6](#OQ-PBR6) |
-| Let `YOLO_ALLOW_MISSING_PROGRAMS` start pi without the extension | Rejected: an empty mountpoint at `~/<into>` makes pi fail to load the directory ([`pi-extensions.md` §9](../reference/pi-extensions.md#9-failure-and-the-next-step)) |
-| A user-scope `source` ref override | Rejected for now: a second place a pack's address is written, when [§6.4](#64-a-hold-that-holds) gives a non-owner the same hold |
-| A `yolo pack walk-back` verb | Rejected: [PF-D85](../reference/patched-forks.md#PF-D85)'s *"either it's automatic or it's not a command"* argues for a hatch on the act that needs the build |
+| Walk-back as the default when nothing serves | Rejected: reverses PF-D81, and the maintainer asked for an opt-in hatch |
+| Walk upstream commits between tags | Rejected by the maintainer: "roll back to some sane thing" |
+| Walk-back for one launch only | Rejected by [OQ-PBR3](#decision-ledger): the result sticks until upstream changes |
+| `YOLO_ALLOW_MISSING_PROGRAMS` starts pi without the extension | Rejected: an empty mountpoint makes pi fail to load the directory; `YOLO_SKIP_EXTENSIONS` drops the entry instead |
+| An unknown hatch name refuses the launch | Rejected: a hatch in a shell profile would stop every other workspace |
+| A user-scope `source` ref override | Rejected: the hold of [§6.3](#63-a-hold-holds) gives a non-owner the same pin |
 
 ## 9. Risks
 
 | Risk | Mitigation |
 | :--- | :--- |
-| A walk-back builds a version with a known security fix missing | The disclosure line names the version and that it is below the newest; the held suffix repeats it every launch |
-| The hatch is left in a shell profile and every launch walks back | It acts only when nothing serves; after its first admit something serves, so it does nothing more |
-| Three failed builds cost an hour | The cap, the per-build bound and Ctrl-C; each failure is backed off, so the next walk-back skips it |
-| The sticky fix replays on every release and slows a launch | Once per new release, inside the check that already ran |
-
-## 10. Open questions
-
-1. 💬 **OQ-PBR1: Should a recorded patch failure follow upstream's newest version instead of the version that first failed?**
-
-   Today a conflict at v1.4.0 keeps refusing after v1.5.0, which the series takes, is released
-   ([D1](#41-d1-the-sticky-failure)).
-
-   - **Follow the newest** — v1.5.0 is built at the next check; a conflicting v1.6.0 becomes the
-     failure. One replay per release.
-   - **Keep the first target** — the user must rebase onto v1.4.0, or hold.
-   - **Don't build** — and document the ref round trip instead.
-
-   <!-- vantage: question id=OQ-PBR1 leaning="Follow the newest. It is what PF-D81's 'the newest version' says, and the current behavior blocks the one upstream move that would fix things." -->
-
-   _Leaning:_ Follow the newest. It is what PF-D81's "the newest version" says, and the current behavior blocks the one upstream move that would fix things.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 **OQ-PBR2: Build the walk-back as an opt-in hatch, acting only when nothing of the current series serves?**
-
-   It is the only flag route to a working agent in [D2](#42-d2-nothing-of-the-current-series-is-here-and-the-newest-version-conflicts),
-   [D3](#43-d3-the-maintainers-case-an-edited-series-and-a-broken-upstream) and
-   [D4](#44-d4-nothing-of-the-current-series-builds-anywhere-it-is-tried).
-
-   - **Build it, nothing-serves only** — example: edited S2 conflicts at v1.4.0;
-     `YOLO_ALLOW_OLDER_UPSTREAM=1 yolo` builds S2 at v1.3.0.
-   - **Build it, always** — it also replaces a serving build with an older fit, which
-     `YOLO_ALLOW_PATCH_FAILURES=1` already covers.
-   - **Don't build** — rebasing by hand stays the only way.
-
-   <!-- vantage: question id=OQ-PBR2 leaning="Build it, nothing-serves only. Where a build serves, the existing bypass is already one variable; the gap is only where nothing does." -->
-
-   _Leaning:_ Build it, nothing-serves only. Where a build serves, the existing bypass is already one variable; the gap is only where nothing does.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 **OQ-PBR3: Does a walk-back's build become the good build, or serve only the launch that asked?**
-
-   This decides whether the user must set the variable once or on every launch until the repair.
-
-   - **The good build, held** — the next launch refuses at the newest's failure and offers
-     `YOLO_ALLOW_PATCH_FAILURES=1`, which runs it; nothing new to learn.
-   - **One launch only** — every launch repeats the walk-back, its replays and an exact lookup,
-     and the record never names an older build as good.
-
-   <!-- vantage: question id=OQ-PBR3 leaning="The good build, held. It reuses the ratchet and the existing bypass, and a build that was admitted is exactly what the good build means." -->
-
-   _Leaning:_ The good build, held. It reuses the ratchet and the existing bypass, and a build that was admitted is exactly what the good build means.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-4. 💬 **OQ-PBR4: How many builds may one walk-back try per key?**
-
-   Replays are seconds; builds are minutes (pi's is over a hundred megabytes, bounded at 20
-   minutes each).
-
-   - **3** — the newest fit, the next, then the base: under an hour at worst.
-   - **Until the base** — finds any working version, with no bound but the list.
-   - **1** — the newest fit only; the base is today's fallback anyway.
-
-   <!-- vantage: question id=OQ-PBR4 leaning="3. A release that built last month usually builds now; three failures in a row says the toolchain, not the version, is broken." -->
-
-   _Leaning:_ 3. A release that built last month usually builds now; three failures in a row says the toolchain, not the version, is broken.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-5. 💬 **OQ-PBR5: Should an `agent_updates` hold stop a recorded patch failure from refusing the launch?**
-
-   Today it does not ([D5](#45-d5-the-hold-the-guide-recommends-does-not-hold-past-a-recorded-failure)),
-   though the user guide says the hold keeps what you have. A user of a shipped pack has no other pin.
-
-   - **Yes** — with a good build serving, the held launch runs it and says which release it skips;
-     the hold is the one-key pin for owner and user alike.
-   - **No** — keep the code's choice, and correct the guide to say only the bypass continues.
-
-   <!-- vantage: question id=OQ-PBR5 leaning="Yes. A hold is the user saying they do not want the newer version, so a failure of that version is not theirs to fix today." -->
-
-   _Leaning:_ Yes. A hold is the user saying they do not want the newer version, so a failure of that version is not theirs to fix today.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-6. 💬 **OQ-PBR6: Should `YOLO_USE_CACHED_GOOD` also run an extension's older good build?**
-
-   Today an edited extension series that does not apply leaves pi unable to start
-   ([§3.3](#33-a-patched-extension)).
-
-   - **Yes** — pi runs the old series' tree; a second materialization path for trees.
-   - **No, the walk-back covers it** — the new series is built on an older upstream instead, which
-     is what the user edited for.
-
-   <!-- vantage: question id=OQ-PBR6 leaning="No, don't build it. With the walk-back the extension gets its new series, and only a series that fails even at its own base is left, which a revert fixes." -->
-
-   _Leaning:_ No, don't build it. With the walk-back the extension gets its new series, and only a series that fails even at its own base is left, which a revert fixes.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+| A walk-back or upstream build runs a version missing a security fix | Its disclosure line names the version, every launch |
+| A hatch left in a shell profile | The walk-back acts only when the newest fails; skip-patches says so every launch |
+| Three failed builds cost an hour | The cap, the per-build bound, Ctrl-C, and the back-off each failure records |
+| The newest-follows fix replays on every release | Once per new release, inside a check that already ran |
 
 ## Decision ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| — | No rulings yet | — | — | — |
+| OQ-PBR1 | A recorded failure follows upstream's newest. "Number one, yes, for sure. Sounds like a bug." | 2026-10-16 | [§6.2](#62-a-recorded-failure-follows-upstreams-newest) | — |
+| OQ-PBR2 | Build the walk-back, opt-in, release tags only. "the walkback should exist. Obviously it should try the latest, but if we can do something older when the latest fails then do it." / "I don't think we should go commit by commit to try to bisect this. We should roll back to some sane thing." | 2026-10-16 | [§6.4](#64-the-walk-back) | — |
+| OQ-PBR3 | The walk-back's result sticks until upstream changes. "The walkback's result should stick up until upstream changes and we should try again." | 2026-10-16 | [§6.4](#64-the-walk-back) | — |
+| OQ-PBR4 | At most 3 builds per walk-back. "yes, let's take three, but I think in practice it won't be that bad because we will likely already have had a successful one." | 2026-10-16 | [§6.4](#64-the-walk-back) | — |
+| OQ-PBR5 | A hold runs what you have, whatever is recorded. "Your prior state should have absolutely no bearing on your current state if you turn off updates or whatever." | 2026-10-16 | [§6.3](#63-a-hold-holds) | — |
+| OQ-PBR6 | Every hatch works for forks and extensions alike, cached-good included. "All of my opinions here go for anything that could be patched, the PI agent or PI extensions." | 2026-10-16 | [§6.7](#67-cached-good-for-extensions) | — |
+| PBR-R7 | An opt-in hatch that applies no patches: "just use upstream directly" | 2026-10-16 | [§6.5](#65-skip-the-patches) | — |
+| PBR-R8 | An opt-in hatch that starts pi without a patched extension | 2026-10-16 | [§6.6](#66-skip-an-extension) | — |
+| PBR-R9 | A hatch may name a pack. "Yes, definitely allow naming a specific pack." | 2026-10-16 | [§6.1](#61-the-hatches-and-their-one-grammar) | — |
+| PBR-R10 | Refusal output is a normal tool's: "named very clearly and very readable, set off by, you know, a blank line, maybe using colors … I don't want weird prose justifying these decisions in the user output here. Just do something normal like a normal tool would do." | 2026-10-16 | [§6.8](#68-every-refusal-lists-its-hatches) | — |
+| PBR-D1 | *Implementation decision (orchestrator, reversible):* every scoped hatch takes `1` or names; every refusal lists every hatch that would get that launch running, with the exact command | 2026-10-16 | [§6.1](#61-the-hatches-and-their-one-grammar), [§6.8](#68-every-refusal-lists-its-hatches) | — |
+| PBR-D2 | *Implementation decision (lead, reversible):* the names `YOLO_ALLOW_OLDER_UPSTREAM`, `YOLO_SKIP_PATCHES`, `YOLO_SKIP_EXTENSIONS`, beside the existing `YOLO_ALLOW_*` and `YOLO_USE_CACHED_GOOD`: `ALLOW_` for a hatch that lets yolo do more than it would, `SKIP_` for one that leaves something out | 2026-10-16 | [§6.1](#61-the-hatches-and-their-one-grammar) | — |
+| PBR-D3 | *Implementation decision (lead, reversible):* a name covers a build by key, pack or bin/extension name; an unmatched name warns and never refuses | 2026-10-16 | [§6.1](#61-the-hatches-and-their-one-grammar) | — |
+| PBR-D4 | *Implementation decision (lead, reversible):* with a build serving, the walk-back tries only entries newer than it, so it never moves a serving build backwards | 2026-10-16 | [§6.4](#64-the-walk-back) | — |
+| PBR-D5 | *Implementation decision (lead, reversible):* the advance is the one authority for a refusal's hatch list and hands it on the delivery | 2026-10-16 | [§6.8](#68-every-refusal-lists-its-hatches) | — |
 
 ## Appendix A: the measured scenarios
 
