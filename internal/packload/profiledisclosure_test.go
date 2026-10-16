@@ -1,6 +1,7 @@
 package packload
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,9 +67,9 @@ func TestTheProfileDisclosureReadsEachAgentsPlatformBinding(t *testing.T) {
 	alone := disclose(t, []string{"pi", "copilot", "bedrock", "aws-auth"},
 		map[string]string{"pi": "bedrock", "copilot": "bedrock"}, nil)
 	copilot := reachOf(t, alone, "copilot")
-	if copilot.Route != "" || len(copilot.Warnings) != 1 ||
-		!strings.Contains(copilot.Warnings[0], `reaches nothing for copilot`) ||
-		!strings.Contains(copilot.Warnings[0], "`-p copilot=<name>`") {
+	if copilot.Route != "" || len(copilot.Lines()) != 1 ||
+		!strings.Contains(copilot.Lines()[0], `reaches nothing for copilot`) ||
+		!strings.Contains(copilot.Lines()[0], "`-p copilot=<name>`") {
 		t.Errorf("copilot with no bridge: %+v, want one warning that the selection reaches nothing for it", copilot)
 	}
 	if !strings.Contains(alone.Line(), `copilot → provider "bedrock", which it cannot use here (below)`) {
@@ -176,5 +177,30 @@ func TestTheActiveSetLineSaysWhereAFreshSessionStarts(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("ActiveSetLines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// OQ-PP3: every agent one profile reaches nothing for is named on ONE warning line, each with
+// its own reason and next step, and the agents' other warnings follow it in agent order. One
+// unreached agent keeps the single-agent form.
+func TestTheUnreachedAgentsOfOneProfileShareOneLine(t *testing.T) {
+	d := ProfileDisclosure{Name: "bedrock", Agents: []ProfileReach{
+		{Agent: "agy", Profile: "bedrock", Unreached: "agy-why (`-p agy=<name>`)"},
+		{Agent: "claude", Profile: "bedrock", Warnings: []string{"Warning: claude-credential"}},
+		{Agent: "copilot", Profile: "bedrock", Unreached: "copilot-why (`-p copilot=<name>`)"},
+		{Agent: "opencode", Profile: "bedrock", Unreached: "opencode-why"},
+	}}
+	want := []string{
+		`Warning: profile "bedrock" reaches nothing for agy, copilot and opencode. ` +
+			"For agy: agy-why (`-p agy=<name>`). For copilot: copilot-why (`-p copilot=<name>`). " +
+			"For opencode: opencode-why.",
+		"Warning: claude-credential",
+	}
+	if got := d.Warnings(); !slices.Equal(got, want) {
+		t.Errorf("Warnings() =\n%q\nwant\n%q", got, want)
+	}
+	one := ProfileDisclosure{Name: "bedrock", Agents: d.Agents[2:3]}
+	if got := one.Warnings(); !slices.Equal(got, []string{`Warning: profile "bedrock" reaches nothing for copilot: copilot-why (` + "`-p copilot=<name>`)"}) {
+		t.Errorf("one unreached agent: %q", got)
 	}
 }

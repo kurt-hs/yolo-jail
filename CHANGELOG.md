@@ -40,6 +40,7 @@ model's facts across providers with per-provider overrides. See `yolo config-ref
 - `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
 - On Apple Container, `yolo check` no longer sends you to the Claude broker's log for an expired login; it points you at the jail's network.
 - A patched fork with nothing built no longer keeps refusing for an hour after a fetch failed because the network wasn't up yet; the next launch fetches again, and the refusal names the network.
+- A bare `-p` that some agents can't use now names them all on one line, with the fix for each.
 
 ## [0.14.0] - 2026-10-15
 
