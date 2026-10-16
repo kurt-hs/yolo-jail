@@ -130,7 +130,7 @@ func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) 
 			// the build the pack now asks for, which is a near-miss (forked-programs-as-packs.md §9),
 			// so it does not serve while that build is missing — the jail's source launcher refuses
 			// an older build in its home for the same reason. Not serving means its launcher LEAVES
-			// bin/, which ends every host agent's PATH (HE-D1): `yolo host` would not exec it, and an
+			// bin/, which ends every host agent's PATH (HE-D16): `yolo host` would not exec it, and an
 			// agent's own `<bin>` would still have found it there. The record goes with it, so the
 			// next Status says missing, and the install directory stays for the next install to
 			// prune: unlinking a launcher stops no agent already running.

@@ -1,6 +1,6 @@
 package cli
 
-// hostblockers_test.go pins HE-D11 (docs/design/host-launch-environment.md) at its call site,
+// hostblockers_test.go pins HE-D11 (docs/reference/host-agent-environment.md) at its call site,
 // hostLaunch, through hostExec: the blocked tools a jail would generate are put first on the PATH
 // of the program `yolo host --` starts, the shims work there (the guardrails message and 127 for a
 // blocked use, the real tool for the rest and under YOLO_BYPASS_SHIMS=1), and nothing changes for

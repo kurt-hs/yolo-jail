@@ -307,7 +307,7 @@ const (
 
 	// KindBlockedTool refuses a tool inside the jail, printing a message and an
 	// alternative instead of running it — and, since 2026-10-04, in the program `yolo host --`
-	// starts (docs/design/host-launch-environment.md HE-D11): that launch composes the child's
+	// starts (docs/reference/host-agent-environment.md HE-D11): that launch composes the child's
 	// PATH, so it renders the same shims through the same writer (entrypoint.RenderBlockers) into
 	// a directory yolo keeps on the host and puts it first. `yolo host apply` starts no process
 	// and owns no PATH, so the kind is delivered at launch only there (render.HostAtLaunch).

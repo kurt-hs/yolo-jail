@@ -2,7 +2,7 @@
 
 Tools a launch refuses in favour of a faster one for the same work: in a jail, and in the program
 `yolo host --` starts, whose PATH yolo composes, so the same shims go first on it
-([HE-D11](../../docs/design/host-launch-environment.md#he-d11)). `yolo host apply` starts nothing
+([HE-D11](../../docs/reference/host-agent-environment.md#he-d11)). `yolo host apply` starts nothing
 and blocks nothing.
 
 Not shipped into the jail — a README at a pack root is not a briefing source (that

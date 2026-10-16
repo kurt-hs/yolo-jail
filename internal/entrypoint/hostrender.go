@@ -1048,7 +1048,7 @@ func hostSurfaceWouldChange(e *Env, s manifest.Surface, path string, computed ma
 	if err != nil {
 		return false
 	}
-	// A FILE THE RENDER CREATES IS A CHANGE (HC-D4, docs/design/host-computed-layer.md §7), and
+	// A FILE THE RENDER CREATES IS A CHANGE (HC-D4, docs/reference/host-agent-environment.md), and
 	// the comparison below cannot see it: an absent file decodes to {} on both sides, so a
 	// surface whose layers add nothing folds to the baseline, while renderSurfaceRMWSurface
 	// writes the file regardless. Measured on host pi: the dry run said `unchanged`, the
@@ -1364,7 +1364,7 @@ func tableLosses(s manifest.Surface, tables []string, path string, layer map[str
 // hostMechanismTableLosses is the loss list per mechanism, the dispatch the change predicate
 // has (hostMechanismWouldChange) and for the same reason: each mechanism writes a table its
 // own way, so the list has to be computed by the one that writes (HC-D5,
-// docs/design/host-computed-layer.md §7).
+// docs/reference/host-agent-environment.md).
 //
 // tableLosses models the `rmw` write, which regenerates a table declared in full wholesale
 // (regenerateManagedTables), so every entry config does not declare goes. The `stateful`

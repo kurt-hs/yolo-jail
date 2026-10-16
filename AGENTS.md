@@ -342,7 +342,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   entry**: Claude Code's Bash tool defines `grep` and `find` as functions that run its bundled search tools
   (measured on Claude Code 2.1.289 and 2.1.290), so Claude's own commands never meet the guardrails blocks,
   which still apply to everything that runs them by PATH. `yolo host --` applies the same blocks at the host
-  and says both limits at every launch ([HE-D11](docs/design/host-launch-environment.md#he-d11)).
+  and says both limits at every launch ([HE-D11](docs/reference/host-agent-environment.md#he-d11)).
 - **Use `shquote.Join`** (`internal/shquote`) for anything crossing into the container's `bash -c`.
 - **A LAUNCH HAS NO QUIET MODE, by ruling** ([`OQ-RO3`](docs/reference/report-tiers.md#why-its-this-way)).
   Progress may be COMPRESSED to a line — that is the whole density control a launch gets — but a

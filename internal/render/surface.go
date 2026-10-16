@@ -250,7 +250,7 @@ func SurfaceText(s manifest.Surface, encoded []byte) string {
 // at boot; at the host it is `yolo host apply` under `host_management: own`, the one host
 // mechanism that writes it, and there is no jail start to speak of. The host wording used to
 // be the jail's, so a real ~/.codex/config.toml said "composed at jail start" (HC-D5,
-// docs/design/host-computed-layer.md §7). Every notch but the host keeps the jail's words:
+// docs/reference/host-agent-environment.md). Every notch but the host keeps the jail's words:
 // a preview shows what a jail would write, and guest has no render of its own yet.
 func (t Target) GeneratedHeader(s manifest.Surface) string {
 	if s.Codec != "toml" {
