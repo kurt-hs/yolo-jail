@@ -1,6 +1,7 @@
 package hostfloor
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -162,35 +163,45 @@ func TestPrelaunchRefreshWatchedContentMakesItDueInsideTheInterval(t *testing.T)
 	}
 }
 
-func TestPrelaunchRefreshFailureIsStampedAndLeavesTheContentDue(t *testing.T) {
+// TestPrelaunchRefreshFailureRefusesAndIsRetriedByTheNextLaunch is PD-NF1 for the refresh: one that
+// reached upstream and then failed is a failed update, so it is refused — one block, no "running what
+// is installed" — and neither stamped nor recorded as seen, so the next launch runs it again, a
+// stamp-only refresh included, instead of running the program with its add-ons as they were.
+func TestPrelaunchRefreshFailureRefusesAndIsRetriedByTheNextLaunch(t *testing.T) {
 	w := newRefreshWorld(t, "echo 'registry said no' >&2; exit 3")
 	p := refreshProgram(settingsRel)
 	got := w.refresh(p)
-	if got.Outcome != RefreshFailed || got.Status != 3 {
-		t.Fatalf("a refresh exiting 3: %+v, want RefreshFailed status 3", got)
+	var refusal *UpdateRefusal
+	if got.Outcome != RefreshFailed || got.Status != 3 || !got.Refused || !errors.As(got.Err, &refusal) {
+		t.Fatalf("a refresh exiting 3: %+v, want a refused RefreshFailed status 3", got)
 	}
-	if !strings.Contains(w.out.String(),
-		"yolo host: pi: the pre-launch refresh failed (status 3) — running what is installed\n") {
-		t.Errorf("the failure line is not the launcher's:\n%s", w.out)
+	for _, want := range []string{
+		"ERROR: pi: the pre-launch refresh (update --extensions) failed\n  it exited with status 3\n",
+		"\nRepair:\n", "\nStart anyway:\n", "YOLO_USE_INSTALLED=pi yolo host -- pi",
+	} {
+		if !strings.Contains(w.out.String(), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, w.out)
+		}
+	}
+	if strings.Contains(w.out.String(), "running what is installed") {
+		t.Errorf("a refused refresh still said it runs what is installed:\n%s", w.out)
 	}
 	if !strings.Contains(w.out.String(), "    registry said no\n") {
 		t.Errorf("the refresh's own output did not reach Out, nested under its line:\n%s", w.out)
 	}
-	if _, err := os.Stat(filepath.Join(w.f.Dir, "refresh", "pi.stamp")); err != nil {
-		t.Errorf("a failed refresh was not stamped: %v", err)
+	if _, err := os.Stat(filepath.Join(w.f.Dir, "refresh", "pi.stamp")); !os.IsNotExist(err) {
+		t.Errorf("a refused refresh was stamped (%v): the next launch would skip it", err)
 	}
 	if seen, _ := os.ReadDir(filepath.Join(w.f.Dir, "refresh", "pi.seen")); len(seen) != 0 {
 		t.Errorf("a failed refresh recorded its content as seen: %v", seen)
 	}
-	// So the watched change stays due, and the next launch retries it under the lock.
 	if w.refresh(p); w.runs(t) != 2 {
-		t.Errorf("the next launch inside the interval did not retry the unseen content")
+		t.Errorf("the next launch inside the interval did not retry the refused refresh")
 	}
-	// A refresh watching nothing waits out the stamp instead.
 	w2 := newRefreshWorld(t, "exit 3")
 	w2.refresh(refreshProgram())
-	if w2.refresh(refreshProgram()); w2.runs(t) != 1 {
-		t.Errorf("a stamp-only refresh that failed retried inside the interval")
+	if w2.refresh(refreshProgram()); w2.runs(t) != 2 {
+		t.Errorf("a stamp-only refresh that was refused was not retried by the next launch")
 	}
 }
 
@@ -299,15 +310,15 @@ func TestPrelaunchRefreshIsBoundedAndKilled(t *testing.T) {
 	w.f.PollTimeout = 300 * time.Millisecond
 	start := time.Now()
 	got := w.refresh(refreshProgram())
-	if got.Outcome != RefreshTimedOut {
-		t.Fatalf("a refresh outliving its bound: outcome %v\n%s", got.Outcome, w.out)
+	if got.Outcome != RefreshTimedOut || !got.Refused {
+		t.Fatalf("a refresh outliving its bound: %+v, want a refused RefreshTimedOut\n%s", got, w.out)
 	}
 	if took := time.Since(start); took > RefreshKillAfter+5*time.Second {
 		t.Errorf("the bounded refresh took %s", took)
 	}
 	if !strings.Contains(w.out.String(),
-		"yolo host: pi: the pre-launch refresh timed out after 300ms — running what is installed\n") {
-		t.Errorf("the timeout line is not the launcher's:\n%s", w.out)
+		"ERROR: pi: the pre-launch refresh (update --extensions) failed\n  it timed out after 300ms\n") {
+		t.Errorf("the timeout was not refused (PD-NF1):\n%s", w.out)
 	}
 	if pidlock.Held(w.f.refreshLockPath("pi")) {
 		t.Error("the lock outlived the timed-out refresh")

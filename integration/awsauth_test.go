@@ -457,8 +457,11 @@ func awsAuthLaunchWarning(out string) string {
 
 // awsAuthHostAgentScript is a stand-in `pi` for `yolo host`: it fetches the pointer it was
 // handed the way an AWS SDK's container provider does (the token verbatim as `Authorization`),
-// once with the token and once without, and prints what it saw. No real pi runs.
+// once with the token and once without, and prints what it saw. No real pi runs. Its pre-launch
+// refresh (`pi update --extensions`) succeeds and does nothing: a failed one stops the launch
+// (PD-NF1), which is not what this test is about.
 const awsAuthHostAgentScript = `#!/bin/sh
+[ "${1:-}" = update ] && exit 0
 uri=${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}
 echo "POINTER=$uri"
 echo "REGION=${AWS_REGION:-}"

@@ -72,6 +72,16 @@ branch installs, and its warm branch refreshes.
 > nothing satisfies, and refuses a launch it cannot satisfy
 > ([`OQ-AR3`](agent-program-runtimes.md#oq-ar3)).
 
+**A failed update stops the command, not the launch.** The readiness act installs only what is
+absent and never refreshes, so the update refusal of
+[PD-NF1](../design/program-delivery.md#PD-NF1) never fires inside it, and `YOLO_USE_INSTALLED`
+does not apply to it. That refusal belongs to the invocation: the first run of a program after a
+launch may stop with it when a newer version failed to install, naming
+`YOLO_USE_INSTALLED=<bin> <bin>` to run the installed version
+([§3.6](../design/program-delivery.md#36-no-silent-fallback-to-an-older-version-pd-nf1)). Under
+`--update` the explicit refresh still fails loudly, and neither `YOLO_ALLOW_MISSING_PROGRAMS` nor
+`YOLO_USE_INSTALLED` bypasses it.
+
 ## What "ready" means
 
 **Ready = every program a selected pack declares is installed and runnable, before the target

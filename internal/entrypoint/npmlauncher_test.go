@@ -203,6 +203,13 @@ view)
     fi
     echo "${FAKE_LATEST:-0}"
     ;;
+ping)
+    # The launchers' registry probe after a failed update act (PD-NF3).
+    if [ -n "${FAKE_REGISTRY_DOWN:-}" ]; then
+        echo "npm ERR! code ENOTFOUND" >&2
+        exit 1
+    fi
+    ;;
 esac
 exit 0
 `
@@ -699,19 +706,22 @@ func TestNpmLauncherUpdateModeReportsAFailedInstall(t *testing.T) {
 		}
 	})
 
-	// The LAUNCH path is deliberately the other way round and must stay that way: a failed
-	// install there is not the verdict, because the question that path has is "is there
-	// something to exec?" — and after a failed UPGRADE there still is.
+	// The LAUNCH path answers its own question. A failed UPGRADE leaves the previous binary
+	// to exec, but running it quietly is the fallback PD-NF1 forbids: the launch REFUSES with
+	// its own status, and only the user's hatch runs the version that IS installed.
 	t.Run("launch path keeps its own verdict", func(t *testing.T) {
 		p := newNpmProbe(t, "tool")
 		p.run(t, "tool", "tool", "FAKE_INSTALLED_VERSION=1.0.0")
 		p.truncateLog(t)
 
-		// A failed pinned upgrade: the previous binary is still there, so the launch
-		// succeeds and runs it.
 		_, out, rc := p.runStatus(t, "tool", "tool@2.0.0", "FAKE_INSTALL_FAIL=1")
+		if rc != UpdateRefusedStatus || strings.Contains(out, "RAN") {
+			t.Errorf("a failed upgrade must refuse rather than run the older version "+
+				"(rc=%d, want %d):\n%s", rc, UpdateRefusedStatus, out)
+		}
+		_, out, rc = p.runStatus(t, "tool", "tool@2.0.0", "FAKE_INSTALL_FAIL=1", "YOLO_USE_INSTALLED=tool")
 		if rc != 0 || !strings.Contains(out, "RAN") {
-			t.Errorf("a failed upgrade must still launch the version that IS installed "+
+			t.Errorf("under the hatch a failed upgrade must launch the version that IS installed "+
 				"(rc=%d):\n%s", rc, out)
 		}
 
@@ -903,10 +913,15 @@ func TestPinnedNpmLauncherRetriesAFailedUpgrade(t *testing.T) {
 	p.truncateLog(t)
 
 	// The declaration moves while the registry is unreachable. The attempt is made and
-	// fails; the binary on disk is still 1.2.3.
-	log := p.run(t, "tool", "tool@1.3.0", "FAKE_INSTALL_FAIL=1")
+	// fails; the binary on disk is still 1.2.3, and the launch REFUSES to run it (PD-NF6: a
+	// moved declaration is a known target, offline included).
+	log, out, rc := p.runStatus(t, "tool", "tool@1.3.0", "FAKE_INSTALL_FAIL=1", "FAKE_VIEW_FAIL=1", registryDownEnv)
 	if !hasArgv(log, "install -g --prefer-online tool@1.3.0") {
 		t.Fatalf("the moved declaration must still be attempted:\n%s", strings.Join(log, "\n"))
+	}
+	if rc != UpdateRefusedStatus || strings.Contains(out, "RAN") {
+		t.Fatalf("a moved declaration that did not install must refuse (rc=%d, want %d), offline included:\n%s",
+			rc, UpdateRefusedStatus, out)
 	}
 	p.truncateLog(t)
 

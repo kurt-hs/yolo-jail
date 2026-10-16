@@ -33,6 +33,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
@@ -537,49 +538,82 @@ func TestAConflictingTagFailsAndOnlyExplicitBypassContinues(t *testing.T) {
 	}
 }
 
-// A BUILD JAIL THAT NEVER RAN THE BUILD LINE is not a failed build (PF-D21): nothing is recorded,
-// the good build serves, the line relays what the jail said last, on a line of its own (PPX-D42),
-// and names the step (Apple Container's own besides), and the next launch tries again with no
-// back-off. The jail runs as the
-// child a serving advance runs (forkBuildChild), so this is red if that closure stops handing the
-// child the act's teed writers, as well as if the act stops relaying (PPX-D39).
-func TestABuildJailThatNeverRanRecordsNothing(t *testing.T) {
+// A BUILD JAIL THAT NEVER RAN THE BUILD LINE, WHILE A GOOD BUILD SERVES, STOPS THE LAUNCH (PD-NF1,
+// superseding PF-D21's "not a failed build"): it is recorded as the candidate's failed build, with its
+// cause and the back-off; the line relays what the jail said last, on a line of its own (PPX-D42),
+// and names the step (Apple Container's own besides); the error block follows, naming the jail as
+// what to fix, `yolo capture` and the hatches; inside the back-off the next launch stops on the record
+// with no build; YOLO_USE_CACHED_GOOD's fellow YOLO_ALLOW_PATCH_FAILURES runs the good build; and
+// `yolo capture` builds it. The jail runs as the child a serving advance runs (forkBuildChild), so
+// this is red if that closure stops handing the child the act's teed writers, as well as if the act
+// stops relaying (PPX-D39).
+func TestABuildJailThatNeverRanStopsTheLaunch(t *testing.T) {
+	for _, env := range patchrecovery.Scoped {
+		t.Setenv(env, "")
+	}
 	allowAppleContainerBuild(t)
 	fx, _, _, r, _, _ := firstAdvance(t)
-	fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
+	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	fx.rc, fx.ran, fx.said = 125, false, "Error: the fixture's runtime refused the container"
 	fx.later(2 * time.Hour)
 	children := fx.child
 	got, out, _ := fx.launch(t, "container")
-	if got.patchFailure != nil || got.delivery.PatchFailure != nil || got.delivery.Key != r.delivery.Key {
-		t.Fatalf("handed %+v\n%s", got.delivery, out)
+	pf := got.delivery.PatchFailure
+	if !got.failed || pf == nil || pf.Kind != packsrc.PatchFailureBuild || pf.Cause != packsrc.BuildCauseJail ||
+		pf.Target.Commit != v13 || got.delivery.Key != r.delivery.Key {
+		t.Fatalf("handed %+v, want the launch stopped on the jail beside the good build\n%s", got, out)
 	}
 	if fx.child == children {
 		t.Fatalf("the build did not run as a child, which this test is about:\n%s", out)
 	}
-	for _, w := range []string{"fork forkpack/tool: its build jail exited 125 before its build line ran — still " +
-		"running v1.1.0",
+	for _, w := range []string{"fork forkpack/tool: its build jail exited 125 before its build line ran — the error " +
+		"below names the ways on",
 		"\n    Error: the fixture's runtime refused the container\n",
-		"  Fix what it names, then `yolo capture tool` builds it; the next fresh launch tries too",
+		"  Fix what it names, then `yolo capture tool` builds it",
 		"On Apple Container a capture jail cannot start beside a running jail: if that is what stopped it, " +
-			"`yolo capture tool` builds it once the other jails stop"} {
+			"`yolo capture tool` builds it once the other jails stop",
+		"ERROR: forkpack/tool: yolo could not build upstream v1.3.0 (" + shortSHA(v13) + ")",
+		"  Cause: its build jail exited 125 before its build line ran\n",
+		"fix what stopped its build jail", "    yolo capture tool\n",
+		"YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo", "YOLO_USE_CACHED_GOOD=forkpack/tool yolo"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the lines lack %q:\n%s", w, out)
 		}
 	}
-	for _, w := range []string{"((", "))", "once the runtime starts jails again"} {
+	for _, w := range []string{"((", "))", "once the runtime starts jails again", "still running v1.1.0",
+		"the next fresh launch tries too", "YOLO_ALLOW_OLDER_UPSTREAM"} {
 		if strings.Contains(out, w) {
 			t.Errorf("the lines still say %q:\n%s", w, out)
 		}
 	}
+	recorded := false
 	for _, o := range fx.record(t).Outcomes {
-		if o.Kind == packsrc.OutcomeBuildFailed {
-			t.Errorf("a build jail that never ran was recorded as a failed build: %+v", o)
-		}
+		recorded = recorded || o.Kind == packsrc.OutcomeBuildFailed && o.Commit == v13 && o.Cause == packsrc.BuildCauseJail
+	}
+	if !recorded {
+		t.Errorf("a build jail that never ran was not recorded as the candidate's failed build: %+v", fx.record(t).Outcomes)
 	}
 	fx.later(time.Minute)
-	if _, out, _ = fx.launch(t, "container"); len(fx.builds) != 3 {
-		t.Errorf("the next launch did not try the build again (%d builds):\n%s", len(fx.builds), out)
+	again, out, _ := fx.launch(t, "container")
+	if again.delivery.PatchFailure == nil || again.delivery.PatchFailure.Cause != packsrc.BuildCauseJail || len(fx.builds) != 2 ||
+		!strings.Contains(out, "fix what stopped its build jail") {
+		t.Errorf("inside the back-off the next launch did not stop on the record with no build (%d builds): %+v\n%s",
+			len(fx.builds), again, out)
+	}
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "forkpack/tool")
+	if continued, out, _ := fx.launch(t, "container"); continued.failed || continued.delivery.Key != r.delivery.Key ||
+		len(fx.builds) != 2 || !strings.Contains(out, "Continuing with v1.1.0") {
+		t.Errorf("the hatch did not run the good build past the jail: %+v\n%s", continued, out)
+	}
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "")
+	fx.rc, fx.ran, fx.said = 0, true, ""
+	var capOut, capErr syncBuffer
+	if rc := capturePatchedFork(fx.fork(t), &capOut, &capErr, false); rc != 0 || len(fx.builds) != 3 {
+		t.Fatalf("`yolo capture` did not build it: rc=%d builds=%d\n%s%s", rc, len(fx.builds), capOut.String(), capErr.String())
+	}
+	if moved, out, _ := fx.launch(t, "container"); moved.failed || moved.delivery.PatchFailure != nil ||
+		moved.delivery.Key == r.delivery.Key {
+		t.Errorf("after the capture the launch did not run the new build: %+v\n%s", moved, out)
 	}
 }
 

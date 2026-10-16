@@ -31,7 +31,8 @@ func recoverySubject(f packload.Fork) patchrecovery.Subject {
 }
 
 // currentPatchFailure is what stops f's act, read from its check record with no git: the recorded
-// patch failure of its series as it stands, else its failed newer build (buildFailureOf, OQ-PPX3).
+// patch failure of its series as it stands, else its failed newer build (buildFailureOf, OQ-PPX3),
+// else the apply error the last check's replay met (replayFailureOf, PD-NF1).
 func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 	series, err := f.ReadSeries()
 	if err != nil {
@@ -45,7 +46,35 @@ func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 	if pf := record.CurrentPatchFailure(inputs, series.Digest); pf != nil {
 		return pf
 	}
-	return buildFailureOf(f, record, inputs, series, forkBuild{Fork: f, Series: series}.recipe(), "")
+	recipe := forkBuild{Fork: f, Series: series}.recipe()
+	if pf := buildFailureOf(f, record, inputs, series, recipe, ""); pf != nil {
+		return pf
+	}
+	return replayFailureOf(f, record, inputs, series, recipe)
+}
+
+// replayFailureOf is f's APPLY ERROR read as what stops its act (PD-NF1, the maintainer's ruling of
+// 2026-10-16, superseding PF-D45's serving: docs/design/program-delivery.md): the last check's
+// replay of the series onto its newest candidate could not run to a verdict while a good build of
+// the series as it stands is here (packsrc.CheckRecord.CurrentReplayFailure), as a PatchFailure of
+// Kind packsrc.PatchFailureBuild and Cause packsrc.BuildCauseReplay. It holds until the next check
+// replays the list again, which `yolo capture` forces. nil under the same exceptions as
+// buildFailureOf — an `agent_updates` hold, and an upstream build — and once that check is due
+// (packsrc.CheckDue), as a failed build's verdict lapses with its back-off: the next advance checks
+// and replays again, rather than a read that builds nothing stopping on it for good.
+func replayFailureOf(f packload.Fork, rec *packsrc.CheckRecord, in packsrc.CheckInputs, series *packsrc.Series,
+	recipe string) *packsrc.PatchFailure {
+	if f.Upstream || rec == nil || series == nil || runpkg.PatchedForkHold(f) != "" {
+		return nil
+	}
+	if due, _ := packsrc.CheckDue(rec, in, patchedNow(), 0); due {
+		return nil
+	}
+	pf := rec.CurrentReplayFailure(in, series.Digest, recipe)
+	if pf != nil {
+		pf.Retry = "yolo capture " + shquote.Quote(f.CaptureArg())
+	}
+	return pf
 }
 
 // buildFailureOf is f's FAILED NEWER BUILD (the maintainer's ruling OQ-PPX3, 2026-10-16:

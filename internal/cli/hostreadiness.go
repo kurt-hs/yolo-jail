@@ -29,7 +29,10 @@ import (
 // an intact admitted build of the series, or an installed copy, is on this machine, the missing-program
 // hatch does not waive it and only paths.AllowPatchFailuresEnv goes on, running that build; when
 // nothing of the program would run (hostfloor.ErrPatchFailureNothingRuns), the missing-program hatch
-// waives it by launching without the program, as for any program that could not be installed.
+// waives it by launching without the program, as for any program that could not be installed. A failed
+// update past a newer version found (hostfloor.UpdateRefusal, PD-NF1 of docs/design/program-delivery.md)
+// is refused the same way: the installed version is still on the floor, so the missing-program hatch
+// would not start without it, and only patchrecovery.UseInstalledEnv, which the floor reads, runs it.
 //
 // There is one installer: the act calls Floor.Ensure per program, as `yolo host apply --assert`
 // and the target's own install do. Ensure on an installed entry is the throttled evergreen
@@ -242,6 +245,10 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 	// patchSeries is set when one of them is a series that does not apply, rather than only a newer
 	// build that failed (OQ-PPX3), which the summary line names.
 	patchSeries := false
+	// updateFailure is a failed update past a newer version found (PD-NF1): the installed version is
+	// still on the floor, so the missing-program hatch — "start without it" — would not start without
+	// it, and only the refusal's own hatch (YOLO_USE_INSTALLED) runs it.
+	updateFailure := false
 	for _, p := range todo {
 		if floor.OutsideTheFloor(p) {
 			continue
@@ -250,6 +257,10 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 		r.settled[p.Bin()] = true
 		if err != nil {
 			// A PATCH FAILURE WITH SOMETHING TO RUN is not the missing-program hatch's (PF-D83).
+			var refusal *hostfloor.UpdateRefusal
+			if errors.As(err, &refusal) {
+				updateFailure = true
+			}
 			var applicationFailure *packsrc.PatchFailure
 			if errors.As(err, &applicationFailure) && !errors.Is(err, hostfloor.ErrPatchFailureNothingRuns) {
 				patchFailure = true
@@ -280,16 +291,19 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 			leaveOut = append(leaveOut, fmt.Sprintf("%q: false", f.pack))
 		}
 	}
-	if os.Getenv(paths.AllowMissingProgramsEnv) != "" && !patchFailure {
+	if os.Getenv(paths.AllowMissingProgramsEnv) != "" && !patchFailure && !updateFailure {
 		fmt.Fprintf(errw, "yolo host: ⚠ %s is set, so this launch starts WITHOUT what a selected pack declares:\n%s"+
 			"    The next `yolo host` launch tries each install again.\n", paths.AllowMissingProgramsEnv, list.String())
 		return r, 0
 	}
-	if patchFailure {
+	if patchFailure || updateFailure {
 		// The error block above names the failure, its repair and the hatch that runs a build here.
 		what := "a newer build of a patched program failed"
-		if patchSeries {
+		switch {
+		case patchSeries:
 			what = "a patch series does not apply"
+		case !patchFailure:
+			what = "a newer version of a program could not be installed"
 		}
 		fmt.Fprintf(errw, "yolo host: refusing to launch: %s\n%s", what, list.String())
 		return r, 1

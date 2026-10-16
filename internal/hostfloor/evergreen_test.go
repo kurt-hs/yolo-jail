@@ -137,19 +137,29 @@ func TestAMachineThatCannotCaptureKeepsItsCopyAndSaysNothing(t *testing.T) {
 	}
 }
 
-// TestAFailedRecaptureKeepsTheInstalledCopyAndWaitsOutTheInterval: the stamp is written before the
-// capture, so a capture that fails (a contended or broken one) keeps 2.1.267, and the next one runs
-// only once the interval has passed.
-func TestAFailedRecaptureKeepsTheInstalledCopyAndWaitsOutTheInterval(t *testing.T) {
+// TestARecaptureFailingOfflineKeepsTheInstalledCopyAndWaitsOutTheInterval is PD-NF3: the capture
+// is the check, so a capture that failed while the installer's upstream cannot be reached is a check
+// that could not run. 2.1.267 runs, the line says it could not check, and the stamp written before
+// the capture holds the next try off until the interval has passed.
+func TestARecaptureFailingOfflineKeepsTheInstalledCopyAndWaitsOutTheInterval(t *testing.T) {
 	e := newEvergreenWorld(t)
-	e.capturing = func(string) error { return errors.New("another capture of claude is running") }
+	e.capturing = func(string) error { return errors.New("the installer could not be downloaded") }
+	var probed []string
+	e.floor.ProbeUpstream = func(_ context.Context, url string) error {
+		probed = append(probed, url)
+		return errors.New("dial tcp: lookup example.invalid: no such host")
+	}
 	e.clk.t = e.clk.t.Add(25 * time.Hour)
 	st, outcome, err := e.ensure()
 	if err != nil || outcome != Kept || st.Record.Version != "2.1.267" || e.captures != 1 {
 		t.Fatalf("Ensure = %s %+v %v after %d captures\n%s", outcome, st.Record, err, e.captures, e.out.String())
 	}
-	if !strings.Contains(e.out.String(), "could not capture a newer release") {
-		t.Errorf("the failure was not said:\n%s", e.out.String())
+	if len(probed) != 1 || probed[0] != "https://example.invalid/claude/install.sh" {
+		t.Errorf("the probe asked %q, want the installer's URL once", probed)
+	}
+	if !strings.Contains(e.out.String(), "claude: could not check for a newer release: "+
+		"https://example.invalid/claude/install.sh is unreachable") {
+		t.Errorf("the could-not-check line was not said:\n%s", e.out.String())
 	}
 	if rec, _ := e.floor.readRecord("claude"); !rec.Checked.Equal(e.clk.t) {
 		t.Errorf("the record was checked at %s, want stamped now (%s)", rec.Checked, e.clk.t)

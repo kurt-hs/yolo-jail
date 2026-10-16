@@ -19,6 +19,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
 // The transcript's refusal, as the build jail's pid 1 printed it.
@@ -233,36 +234,46 @@ func TestWhoCanFixABuildJailsRefusal(t *testing.T) {
 	}
 }
 
-// A NEWER BUILD'S REFUSAL WHILE THE GOOD BUILD SERVES stays a warning (PPX-D40's reading): every
-// extension still runs its good build, and the cause is said once for all of them when the act's
-// builds are done. Red with deliverTreesForLaunch's flush deleted.
-func TestANewerBuildsRefusalWhileTheGoodBuildServesIsSaidOnce(t *testing.T) {
-	fx, trees := threeTreeFixture(t)
-	if got, out := deliverAll(t, trees); len(got) != 3 || got[trees[2].Key()].Dir == "" {
-		t.Fatalf("the first launch delivered %+v\n%s", got, out)
-	}
-	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
-	fx.setNow(fx.now.Add(2 * time.Hour))
-	runs := 0
-	withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
-	got, out := deliverOneAtATime(t, trees)
-	for _, f := range trees {
-		if got[f.Key()].Dir == "" {
-			t.Errorf("%s lost its good build to a newer build's refusal: %+v", f.Key(), got[f.Key()])
+// A NEWER BUILD'S REFUSAL WHILE THE GOOD BUILD SERVES STOPS THE LAUNCH (PD-NF1, superseding PF-D21 and
+// the warning PPX-D40's first reading kept): every extension is handed its failed newer build beside the
+// good build it would run only under a hatch, and the cause is said once for all of them when the act's
+// builds are done, saying the launch stops. Under YOLO_ALLOW_PATCH_FAILURES the group says what still
+// runs instead. Red with deliverTreesForLaunch's flush deleted, or with the build's stop deleted.
+func TestANewerBuildsRefusalWhileTheGoodBuildServesStopsTheLaunch(t *testing.T) {
+	for _, bypass := range []string{"", "1"} {
+		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
+		fx, trees := threeTreeFixture(t)
+		if got, out := deliverAll(t, trees); len(got) != 3 || got[trees[2].Key()].Dir == "" {
+			t.Fatalf("the first launch delivered %+v\n%s", got, out)
 		}
-	}
-	if n := strings.Count(out, "is mounted read-only in that jail"); runs != 1 || n != 1 {
-		t.Errorf("%d build jails ran and the cause was said %d times, want one of each:\n%s", runs, n, out)
-	}
-	want := "⚠ extension treepack/tool-ext, extension treepack/two-ext and extension treepack/three-ext: a newer build's " +
-		"jail refused to start, so each is still running its good build"
-	if !strings.Contains(out, want) || !strings.Contains(out, "This is a bug in yolo, not in pack treepack") {
-		t.Errorf("the held builds are not said once, with whose bug it is (%q):\n%s", want, out)
+		fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+		fx.setNow(fx.now.Add(2 * time.Hour))
+		runs := 0
+		withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
+		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", bypass)
+		got, out := deliverOneAtATime(t, trees)
+		for _, f := range trees {
+			d := got[f.Key()]
+			if d.Dir == "" || d.PatchFailure == nil || d.PatchFailure.Kind != packsrc.PatchFailureBuild ||
+				d.PatchFailure.Cause != packsrc.BuildCauseJail {
+				t.Errorf("bypass %q: %s is not handed its failed newer build beside the good build: %+v", bypass, f.Key(), d)
+			}
+		}
+		if n := strings.Count(out, "is mounted read-only in that jail"); runs != 1 || n != 1 {
+			t.Errorf("bypass %q: %d build jails ran and the cause was said %d times, want one of each:\n%s", bypass, runs, n, out)
+		}
+		tail := map[string]string{"": "this launch stops (the ERROR blocks below name the ways on)",
+			"1": "each is still running its good build"}[bypass]
+		want := "⚠ extension treepack/tool-ext, extension treepack/two-ext and extension treepack/three-ext: a newer build's " +
+			"jail refused to start, so " + tail
+		if !strings.Contains(out, want) || !strings.Contains(out, "This is a bug in yolo, not in pack treepack") {
+			t.Errorf("bypass %q: the stopped builds are not said once, with whose bug it is (%q):\n%s", bypass, want, out)
+		}
 	}
 }
 
-// ON APPLE CONTAINER a newer build held at its good build because its jail did not start names that
-// runtime's limit (PF-D21), the likeliest cause there, with the capture that builds it once the other
+// ON APPLE CONTAINER a newer build that stops the launch because its jail did not start (PD-NF1) names
+// that runtime's limit, the likeliest cause there, with the capture that builds it once the other
 // jails stop; on podman it does not. Red with flush leaving out the runtime's line.
 func TestAHeldBuildOnAppleContainerNamesItsLimit(t *testing.T) {
 	allowAppleContainerBuild(t)
@@ -277,8 +288,8 @@ func TestAHeldBuildOnAppleContainerNamesItsLimit(t *testing.T) {
 		runs := 0
 		withFakeCaptureJail(t, bootRefusingJail(t, &runs, true, automodeFailure()))
 		got, out := deliverAllOn(t, trees, rt)
-		if got[trees[0].Key()].Dir == "" {
-			t.Fatalf("%s: the held build lost its good build: %+v\n%s", rt, got, out)
+		if d := got[trees[0].Key()]; d.Dir == "" || d.PatchFailure == nil || d.PatchFailure.Cause != packsrc.BuildCauseJail {
+			t.Fatalf("%s: the stopped build was not handed its failure beside the good build: %+v\n%s", rt, got, out)
 		}
 		want := "On Apple Container a build jail cannot start beside a running jail: if that is what stopped it, " +
 			"`yolo capture " + trees[0].CaptureArg() + "` builds it once the other jails stop."

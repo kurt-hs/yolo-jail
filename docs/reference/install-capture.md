@@ -468,6 +468,7 @@ Their reaps follow the same complement rule, so a fork's newest build per source
 | Installer fails, or lands nothing | No manifest, or an empty delta refused; nothing is stored, the launch continues |
 | Two workspaces capture one program | The loser skips and installs lazily |
 | Auto-capture fails | Warns once, backs off per program and platform, the launch continues |
+| The host floor's evergreen recapture fails | The installer's URL unreachable: the installed copy runs, with a could-not-check line. Otherwise `yolo host` stops with [the refusal block](host-agent-environment.md#a-failed-update-stops-the-launch) unless `YOLO_USE_INSTALLED` names the program ([PD-NF1](../design/program-delivery.md#PD-NF1)) |
 | `macos-user` staged copy fails | Warns once; that program installs the ordinary way; the next launch retries |
 | Move across a mount in the driver | Copies, counts, says so |
 | `macos-user` proto-entry move hits `EXDEV` | Refuses rather than copying |
