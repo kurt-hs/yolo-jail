@@ -593,7 +593,7 @@ so the host broker can serve it without touching the user's own `~/.codex`
 - **The host agent floor** — the set of agents yolo guarantees on the host, installed into a
   yolo-owned prefix ([`host-tool-provisioning.md`](../design/host-tool-provisioning.md#defined-terms)) —
   holds codex on Linux since 2026-10-05, materialized from the machine's capture
-  ([OQ-HP3](../design/host-tool-provisioning.md#OQ-HP3),
+  ([OQ-HP3](../design/host-tool-provisioning.md#decision-ledger),
   [HP-D17](../design/host-tool-provisioning.md#HP-D17)); on macOS it waits for the host capture. Three
   consequences follow (INFERRED unless marked):
   - The capture must keep the complete package layout, or Codex 0.157 and later refuses to open at

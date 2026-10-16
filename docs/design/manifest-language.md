@@ -13,7 +13,7 @@ next: "Rule OQ-M1, whether the syntax-free model change goes now, with the expos
 # The manifest language: declarations stay inert data, and the syntax should stop fighting us
 
 **Status:** 2026-09-30 — three rulings owed, [`OQ-M1`](#OQ-M1) to [`OQ-M3`](#OQ-M3);
-[`OQ-M4`](#OQ-M4) was decided as an implementation choice ([MN-D1](#MN-D1)). Nothing built: re-checked
+[`OQ-M4`](#8-decision-ledger) was decided as an implementation choice ([MN-D1](#MN-D1)). Nothing built: re-checked
 2026-09-30, every shipped manifest is still one flat `contributes` list tagged by `kind`, and
 `packs/claude` still repeats `"agent": "claude"` on its own contributions. Re-checked against the tree
 and the sibling rulings 2026-09-24: the identity lever in [§3](#3-what-is-actually-free-to-change)
@@ -47,7 +47,7 @@ written today is a migration debt tomorrow, so the format should be chosen once.
 > pack "conventionally" mounts something removes a claim. The first is the goal; the second is
 > forbidden under every option below.
 
-**Needs your ruling:** [`OQ-M1`](#OQ-M1) (do the model change, and when?), [`OQ-M2`](#OQ-M2) (which syntax?), [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?). [`OQ-M4`](#OQ-M4) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
+**Needs your ruling:** [`OQ-M1`](#OQ-M1) (do the model change, and when?), [`OQ-M2`](#OQ-M2) (which syntax?), [`OQ-M3`](#OQ-M3) (may a manifest be pure code that returns data?). [`OQ-M4`](#8-decision-ledger) (does the user config share the language?) was decided as an implementation choice, [MN-D1](#MN-D1): it does not.
 
 **Reads with:** [`pack-system.md`](../reference/pack-system.md) (the contribution model and the
 total-enumeration rule), [`trust-paths.md`](trust-paths.md) (the origin gate and why a pack
@@ -124,6 +124,11 @@ the *shape*, and see how much of the problem is left.
 > `packs/omp` is `name: "omp"` with `bin: "oh-omp"`, and `oh-omp` is the agent its briefings and
 > skills declare. The saving in the table is the same either way, since it comes from deleting
 > the per-contribution repeats.
+
+**The user and workspace config stay JSONC, whatever a manifest ends up written in**
+([MN-D1](#MN-D1)). `yolo-jail.jsonc` and `~/.config/yolo-jail/config.jsonc` are settings, with no
+claims to enumerate, so the total-claim rule this doc protects does not reach them, and moving them
+would be a proposal of its own.
 
 ## 4. The options
 
@@ -309,19 +314,6 @@ Dhall (total, typed).
    **Answer:**
    > _(empty — fill in when decided)_
 
-4. ✅ <a id="OQ-M4"></a>**OQ-M4: Does the user/workspace config (`yolo-jail.jsonc`) share the language?**
-
-   <!-- vantage: question id=OQ-M4 -->
-
-   _Leaning:_ Not necessarily — the user config is *settings* (no claims to enumerate), so it may
-   keep a plain data syntax even if the manifest moves. Sharing is a convenience, not a
-   requirement, and coupling the two decisions would slow the manifest's.
-
-   **Answer:**
-   > Decided as an implementation choice ([MN-D1](#MN-D1)), reversible: no. `yolo-jail.jsonc` and
-   > `~/.config/yolo-jail/config.jsonc` stay JSONC whatever [OQ-M2](#OQ-M2) rules, and moving them
-   > would be a proposal of its own.
-
 ### 7.1 Background to the open questions
 
 #### Background to [OQ-M1](#OQ-M1)
@@ -380,5 +372,5 @@ Neither restructuring reaches this doc's ~0.40 threshold, so the rule as written
 | **OQ-M1** | — | — | — | — |
 | **OQ-M2** | — | — | — | — |
 | **OQ-M3** | — | — | — | — |
-| **OQ-M4** | Decided as an implementation choice: [MN-D1](#MN-D1) | 2026-09-30 | [§7](#7-open-questions) | — |
-| <a id="MN-D1"></a>MN-D1 | *Implementation decision, [OQ-M4](#OQ-M4).* **The user and workspace config keep JSONC, whatever [OQ-M2](#OQ-M2) rules for manifests.** The user config is settings, with no claims to enumerate, so the rule this doc exists to protect ([M2](#2-principles)) does not reach it. yolo already deleted the one scripted user config it had, `config.lua`, because it had no user ([`OQ-LT1`](../reference/pack-system.md#oq-lt1)). And coupling the two would make the manifest ruling wait on a rewrite of every user's config. Reversible: a proposal to move the user config would start from the manifest's ruling rather than wait for it | 2026-09-30 | [§7](#7-open-questions) | nothing to build |
+| OQ-M4 | **No: the user and workspace config keep JSONC whatever [OQ-M2](#OQ-M2) rules.** Decided as an implementation choice, [MN-D1](#MN-D1), reversible; moving them would be a proposal of its own | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |
+| <a id="MN-D1"></a>MN-D1 | *Implementation decision, [OQ-M4](#8-decision-ledger).* **The user and workspace config keep JSONC, whatever [OQ-M2](#OQ-M2) rules for manifests.** The user config is settings, with no claims to enumerate, so the rule this doc exists to protect ([M2](#2-principles)) does not reach it. yolo already deleted the one scripted user config it had, `config.lua`, because it had no user ([`OQ-LT1`](../reference/pack-system.md#oq-lt1)). And coupling the two would make the manifest ruling wait on a rewrite of every user's config. Reversible: a proposal to move the user config would start from the manifest's ruling rather than wait for it | 2026-09-30 | [§3](#3-what-is-actually-free-to-change) | nothing to build |

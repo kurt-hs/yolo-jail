@@ -634,7 +634,7 @@ everywhere else.
 > how its installer stopped prompting. But that kind sets the variable for the whole jail, not for
 > one installer run — fine for a vendor-prefixed name, wrong for a generic `PREFIX` every other
 > tool in the jail would also read. Whether installers get per-recipe env is
-> [`provisioner-sets.md`](provisioner-sets.md)'s [`OQ-PS8`](provisioner-sets.md#OQ-PS8).
+> [`provisioner-sets.md`](provisioner-sets.md)'s [`OQ-PS8`](provisioner-sets.md#decision-ledger).
 >
 > **The general rule the copilot case yields, worth applying to any future flip:** *self-updates
 > once native* is a necessary condition and never a sufficient one. The sufficient one is **does

@@ -10,11 +10,11 @@ summary: "Six of the seven agents yolo ships can show extra text in their footer
 
 # Which provider is this session on? — yolo facts in every agent's footer
 
-**Status:** 2026-09-30 — no ruling owed. [OQ-FT15](#OQ-FT15), how a one-launch
+**Status:** 2026-09-30 — no ruling owed. [OQ-FT15](#decision-ledger), how a one-launch
 `yolo host -p` reaches the host footer, was decided as an implementation choice ([FT-D2](#FT-D2)) and built
 2026-09-30: `yolo host --` exports the three tables it composed for its agent, as a jail launch does, and a unit
 test runs the filled Claude command in that launch's environment. Every other question is ruled: six in 2026-09-25's first review,
-and the two they opened ([OQ-FT13](#OQ-FT13), [OQ-FT14](#OQ-FT14)) in the second. Everything they rule was built
+and the two they opened ([OQ-FT13](#decision-ledger), [OQ-FT14](#decision-ledger)) in the second. Everything they rule was built
 on 2026-09-25, all seven build items: the bridge's streamed-usage fix, the renderer, an adapter for each of the six
 agents with a hook, the host's profile read, and macos-user's jail marker ([as built](#21-as-built); [what I would build](#what-i-would-build-in-order)). Not yet
 seen under a live agent: a human checks each footer. MEASURED: each agent's hook ([appendix](#appendix-evidence)),
@@ -38,9 +38,9 @@ prompt row; codex gets nothing. Claude
 hides most keyboard hints whenever any status line is set, and no key keeps them
 ([§2](#2-one-renderer-one-adapter-per-agent)).
 
-**Needs your ruling:** nothing. [OQ-FT15](#OQ-FT15), how a one-launch `yolo host -p` reaches the host footer, was
-decided as an implementation choice, [FT-D2](#FT-D2), and is built. Already ruled: a macos-user session says `jail` ([OQ-FT13](#OQ-FT13)), and a Claude login reads `Claude subscription`,
-without naming the plan ([OQ-FT14](#OQ-FT14)).
+**Needs your ruling:** nothing. [OQ-FT15](#decision-ledger), how a one-launch `yolo host -p` reaches the host footer, was
+decided as an implementation choice, [FT-D2](#FT-D2), and is built. Already ruled: a macos-user session says `jail` ([OQ-FT13](#decision-ledger)), and a Claude login reads `Claude subscription`,
+without naming the plan ([OQ-FT14](#decision-ledger)).
 
 ---
 
@@ -59,10 +59,10 @@ subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
 
 | Question | Ruling |
 |---|---|
-| [OQ-FT13](#OQ-FT13) What does a macos-user session's footer say, and what tells the renderer? | `jail`: macos-user sets the marker every container launch sets |
-| [OQ-FT14](#OQ-FT14) Does the footer name your plan ("Claude Team"), or only the login? | Only the login: `Claude subscription` |
-| [OQ-FT15](#OQ-FT15) How does `yolo host --` tell the footer about a one-launch `-p`? | Decided as an implementation choice, [FT-D2](#FT-D2): it exports the three tables it composed for its agent, under the names a jail uses. Built 2026-09-30 |
-| <a id="FT-D1"></a>FT-D1 | *Implementation decision.* At the host, a `use_profiles` selection the host launch refuses is left out of the footer's table, so the footer names the login. With `use_profiles: {claude: codex}` the footer said `codex (bridge) · host` whether or not `openai-auth` was listed, though `yolo host -- claude` refuses that profile in both cases (ES-D18 and ES-D25 of [`credential-sources-separation.md`](credential-sources-separation.md#10-decision-ledger)) and no host process runs the bridge. `hostFooterTables` asks the host's pairing gate (`packload.PairingRefusal`, with the host's unservable adaptations) for each selected agent and keeps only those it composes; a claude running on the host with that selection was started outside `yolo host`, or by `yolo host -p <other>`, whose one-launch selection the footer cannot see ([OQ-FT15](#OQ-FT15)): with `"packs": ["claude", "zai"]`, `yolo host -p zai -- claude` runs on z.ai (measured) while the footer names the Claude login. Only the pairing gate is asked, because it is the one refusal that turns on the selection itself. Chosen over a footer that names the refusal: the claude drawing it was never refused, since `yolo host` did not start it on that selection. *Revised 2026-09-28 by [HS-D10](host-notch-services.md#HS-D10):* the host launch now serves claude's `codex` selection with a launch-owned bridge, so that selection is kept; the rule stands for a selection the host still refuses | 2026-09-28 | [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | ✅ 2026-09-28 |
+| [OQ-FT13](#decision-ledger) What does a macos-user session's footer say, and what tells the renderer? | `jail`: macos-user sets the marker every container launch sets |
+| [OQ-FT14](#decision-ledger) Does the footer name your plan ("Claude Team"), or only the login? | Only the login: `Claude subscription` |
+| [OQ-FT15](#decision-ledger) How does `yolo host --` tell the footer about a one-launch `-p`? | Decided as an implementation choice, [FT-D2](#FT-D2): it exports the three tables it composed for its agent, under the names a jail uses. Built 2026-09-30 |
+| <a id="FT-D1"></a>FT-D1 | *Implementation decision.* At the host, a `use_profiles` selection the host launch refuses is left out of the footer's table, so the footer names the login. With `use_profiles: {claude: codex}` the footer said `codex (bridge) · host` whether or not `openai-auth` was listed, though `yolo host -- claude` refuses that profile in both cases (ES-D18 and ES-D25 of [`credential-sources-separation.md`](credential-sources-separation.md#10-decision-ledger)) and no host process runs the bridge. `hostFooterTables` asks the host's pairing gate (`packload.PairingRefusal`, with the host's unservable adaptations) for each selected agent and keeps only those it composes; a claude running on the host with that selection was started outside `yolo host`, or by `yolo host -p <other>`, whose one-launch selection the footer cannot see ([OQ-FT15](#decision-ledger)): with `"packs": ["claude", "zai"]`, `yolo host -p zai -- claude` runs on z.ai (measured) while the footer names the Claude login. Only the pairing gate is asked, because it is the one refusal that turns on the selection itself. Chosen over a footer that names the refusal: the claude drawing it was never refused, since `yolo host` did not start it on that selection. *Revised 2026-09-28 by [HS-D10](host-notch-services.md#HS-D10):* the host launch now serves claude's `codex` selection with a launch-owned bridge, so that selection is kept; the rule stands for a selection the host still refuses | 2026-09-28 | [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | ✅ 2026-09-28 |
 
 ## Terms used throughout
 
@@ -94,14 +94,14 @@ subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
 
 ## 1. What the footer shows
 
-Two facts and nothing else ([OQ-FT4](#OQ-FT4)): the **billing route**, in plain words, and the **notch**; no region,
+Two facts and nothing else ([OQ-FT4](#decision-ledger)): the **billing route**, in plain words, and the **notch**; no region,
 yolo version, backend, credential kind or jail name. One example per notch (the model name is Claude's own):
 
 | Notch | Claude's footer | What it says |
 |---|---|---|
 | jail | `Opus · yolo: Bedrock (env) · jail` | This jail: Bedrock switched on outside yolo's profiles |
 | host | `Opus · yolo: Claude subscription · host` | Your host Claude, with no profile selected in your user config |
-| guest | `Opus · yolo: Bedrock · guest` | A macOS guest session, whose launch says so ([§1.2](#12-the-notch)); UNVERIFIED on a Mac |
+| guest | `Opus · yolo: Bedrock · guest` | A macOS guest session, whose launch says so ([§1.2](#12-the-notch)); measured on a Mac by `TestMacosUserFooterSaysJail` in the scheduled `macos-user.yml` run of 2026-09-30 |
 
 Other shapes: with a `bedrock` profile selected, `yolo: Bedrock · jail`; under the everything profile,
 `yolo: everything (bridge) · jail`; pi's status entry, `yolo: ChatGPT subscription (profile codex) · jail`.
@@ -119,7 +119,7 @@ the switch wins (a table-only footer would call this Bedrock jail a subscription
    counts it on only for `1`, `true`, `yes` or `on`. Switches are not secrets; a credential variable is only ever
    tested for presence. The first switch that is on wins, marked `(env)`: "set outside yolo's profiles".
 3. **Neither:** the pack's words for the agent's built-in login, for example `Claude subscription`, never guessed.
-   It never names the plan ([OQ-FT14](#OQ-FT14)).
+   It never names the plan ([OQ-FT14](#decision-ledger)).
 
 **The plain words come from the pack.** No provider declaration carries a display name, so the pack's command
 passes the words for its login and for each provider its profiles select (`bedrock` → `Bedrock`, `openai-codex` →
@@ -147,12 +147,12 @@ that is not there. The renderer calls `config.InJail` and keeps no copy of the t
 
 > [!NOTE]
 > **macos-user set no marker until 2026-09-25**, so its footer would have said `host` inside a Seatbelt sandbox,
-> though yolo renders that backend at the jail notch (`render.Jail`). [OQ-FT13](#OQ-FT13) ruled the fix and it is
+> though yolo renders that backend at the jail notch (`render.Jail`). [OQ-FT13](#decision-ledger) ruled the fix and it is
 > built: the macos-user launch sets `YOLO_VERSION` to the launcher's version, last, in the session env file. What
 > else that moves on this backend is audited in [§2.2](#22-what-macos-users-marker-moves). UNVERIFIED on a Mac.
 > *2026-10-04:* the same backend is also the macOS guest notch, and that launch adds `YOLO_CONFINEMENT=guest`, so
 > its footer says `guest` while a `runtime: "macos-user"` launch at the jail notch still says `jail`
-> ([EMP-D4](../plans/environment-manager-plan.md#EMP-D4)). [OQ-FT13](#OQ-FT13)'s answer stands for the jail notch.
+> ([EMP-D4](../plans/environment-manager-plan.md#EMP-D4)). [OQ-FT13](#decision-ledger)'s answer stands for the jail notch.
 
 Degenerate inputs:
 - Absent or malformed `YOLO_*` JSON is treated as empty.
@@ -177,7 +177,7 @@ the level beside it. So yolo adds the level to claude alone and repeats nothing:
 | omp | the stock status line's `model` segment appends the level (`showThinkingLevel`, on in the default presets; `status-line/segments.ts` at upstream `8b619a2f`) | nothing |
 | opencode | the prompt row shows `· <variant>` after the model when a variant is selected (1.18.32 binary) | nothing |
 | copilot | its footer's `showModelEffort` (1.0.48 `app.js`) | nothing |
-| agy | agy's own line, which stays above yolo's ([`OQ-FT12`](#OQ-FT12)); whether agy's status-line JSON carries a level was not established from the binary, and agy is never run to find out | nothing |
+| agy | agy's own line, which stays above yolo's ([`OQ-FT12`](#decision-ledger)); whether agy's status-line JSON carries a level was not established from the binary, and agy is never run to find out | nothing |
 
 A command already frozen into a user's Claude `settings.json` ([§3](#3-how-a-users-own-footer-survives)) keeps its old template, and so keeps showing the
 model alone; a fresh file gets the new one.
@@ -194,7 +194,7 @@ stdin (`{stdin.model.display_name}`); a missing field renders empty, and a liter
 `{prefix|name}` prints prefix before the value only when there is one, so an optional field never leaves its
 separator behind; a renderer older than that form reads it as an unknown name and prints nothing.
 In a jail it reads no file and makes no network call. At the host it reads your user config, and, when that selects
-any profile, the packs it selects ([OQ-FT6](#OQ-FT6)). A run costs a median 2.2 ms in a jail and 4.8 ms at
+any profile, the packs it selects ([OQ-FT6](#decision-ledger)). A run costs a median 2.2 ms in a jail and 4.8 ms at
 the host when it composes a profile (MEASURED, [§2.1](#21-as-built)).
 
 **yolo adds; it never takes away** ([DIR-FT2](#DIR-FT2)). Wherever an agent has a stock status line, yolo's segment
@@ -203,8 +203,8 @@ goes beside it, and no adapter removes or replaces it:
 | Agent | Hook | How yolo delivers it | The agent's own line |
 |---|---|---|---|
 | claude | `statusLine: {type: "command", command, …}` in `settings.json`; session JSON on stdin | The claude pack's settings defaults, with a command that runs the renderer. Claude skips it until workspace trust is accepted; the pack pre-accepts that for the jail workspace, so it bites only at the host | No stock line. The row sits above Claude's footer badges and keeps them, but Claude then hides most keyboard hints (`esc to interrupt`, `? for shortcuts`, `hold space to speak`). No key keeps them: the one loss this rule cannot prevent |
-| agy | Claude-shaped `statusLine`, plus `stack_with_default`, in `~/.gemini/antigravity-cli/settings.json` | The agy pack's settings defaults, with `stack_with_default: true` ([OQ-FT12](#OQ-FT12)) | Any `statusLine` replaces agy's line unless that flag is true, so yolo sets it and agy's line stays |
-| copilot | `statusLine` in `~/.copilot/settings.json`, an edited-in-place file (it was `config.json` until copilot 1.0.35 moved settings out of it; yolo wrote it there until 2026-09-29, and copilot moved it back out at every start, [model-lists-and-pickers §14.2](model-lists-and-pickers.md#142-what-each-row-rests-on)); `command` is a file path or a shell command | A pack-shipped script whose path goes into the config as a default; yolo rewrites the script every boot, so the value in your file never changes. The value runs the script with `sh` only when it is readable, not the bare path, because no file an embedded pack ships can carry an exec bit and a backend may deliver no script ([as built](#21-as-built)). No experimental flag is set or checked ([OQ-FT7](#OQ-FT7)) | Kept: in 1.0.88 the custom line is one footer item, `custom`, beside fourteen stock ones |
+| agy | Claude-shaped `statusLine`, plus `stack_with_default`, in `~/.gemini/antigravity-cli/settings.json` | The agy pack's settings defaults, with `stack_with_default: true` ([OQ-FT12](#decision-ledger)) | Any `statusLine` replaces agy's line unless that flag is true, so yolo sets it and agy's line stays |
+| copilot | `statusLine` in `~/.copilot/settings.json`, an edited-in-place file (it was `config.json` until copilot 1.0.35 moved settings out of it; yolo wrote it there until 2026-09-29, and copilot moved it back out at every start, [model-lists-and-pickers §14.2](model-lists-and-pickers.md#142-what-each-row-rests-on)); `command` is a file path or a shell command | A pack-shipped script whose path goes into the config as a default; yolo rewrites the script every boot, so the value in your file never changes. The value runs the script with `sh` only when it is readable, not the bare path, because no file an embedded pack ships can carry an exec bit and a backend may deliver no script ([as built](#21-as-built)). No experimental flag is set or checked ([OQ-FT7](#decision-ledger)) | Kept: in 1.0.88 the custom line is one footer item, `custom`, beside fourteen stock ones |
 | pi | Extension API: `ctx.ui.setStatus(key, text)`, keyed and sorted | A file into `~/.pi/agent/extensions/`, the route `yolo-openai-auth.js` already takes; it calls `setStatus("yolo", …)` on `session_start` | Kept: status keys sit in pi's footer. The adapter never calls `setFooter`, which replaces it |
 | omp | The same `setStatus` API; extensions from `~/.oh-omp/agent/extensions` | The same extension file with omp's arguments, delivered by the omp pack to `extensions/yolo-footer/index.js`, a directory of yolo's own | Kept, as in pi |
 | opencode | TUI plugin slots, loaded from the specs in the `plugin` lists of `tui.json` and `tui.jsonc` (typed in the shipped `@opencode-ai/plugin` package) | A plugin showing the notch; opencode's prompt row already shows the provider. The opencode pack's `tui` surface defaults `plugin` to `["./yolo/footer.js"]`, and a `files` contribution delivers the plugin to `~/.config/opencode/yolo/footer.js`. Append slots only: the other two modes, `replace` and `single_winner`, show a plugin's content instead of opencode's own | Kept |
@@ -297,7 +297,7 @@ Built 2026-09-25, and not yet seen under a live agent: a human confirms build it
     gets no plugin at the host and is left byte for byte (MEASURED, a scratch-home host apply).
   - The plugin stays out of `~/.config/opencode/plugin/` and `plugins/`, which opencode's server loader scans for its
     own plugins, and out of `~/.config/opencode` itself, which is opencode's.
-- **The host's profile read** ([OQ-FT6](#OQ-FT6)) is `hostFooterTables` (`internal/cli/hostfooter.go`), which the
+- **The host's profile read** ([OQ-FT6](#decision-ledger)) is `hostFooterTables` (`internal/cli/hostfooter.go`), which the
   `internal footer` arm hands the renderer. The renderer asks it only outside a jail, only when the agent's env carries
   no `YOLO_USE_PROFILES`, and only for a template that names `{yolo.billing}`. It resolves as `yolo host env` with
   no `-p` does: the user config's `profile` key, your `profiles`, the composed provider table, and
@@ -316,7 +316,7 @@ Built 2026-09-25, and not yet seen under a live agent: a human confirms build it
   `yolo host apply --assert` with a bedrock profile selected for claude filled Claude's `statusLine`, and running it
   printed `Opus · yolo: Bedrock · host`; with `CLAUDE_CODE_USE_VERTEX=1` it printed
   `Opus · yolo: Bedrock ≠ Vertex AI (env) · host` (MEASURED).
-- **macos-user's marker** ([OQ-FT13](#OQ-FT13)): `buildPlan` (`internal/macosuser/orchestrator.go`) sets
+- **macos-user's marker** ([OQ-FT13](#decision-ledger)): `buildPlan` (`internal/macosuser/orchestrator.go`) sets
   `YOLO_VERSION` to `version.Get` over the launch's repo root, the value the container arm computes. It sets it after
   `env_sources` and the caller's own sandbox env, so no composed layer can empty it. It travels in the **session env
   file**, the file this backend writes the sandbox's env into for the provisioning stage's and the agent's argv to
@@ -356,7 +356,7 @@ Three limits the rulings leave:
 
 ### 2.2 What macos-user's marker moves
 
-[OQ-FT13](#OQ-FT13) set the marker only after checking every other reader on that backend. The marker reaches
+[OQ-FT13](#decision-ledger) set the marker only after checking every other reader on that backend. The marker reaches
 only processes started from the session env file: the provisioning stage, the agent, and any `yolo` either one
 runs. None of the `yolo internal` verbs a session runs by itself reads it: `node-floor-satisfied`,
 `node-floor-launchers`, `no-terminal`, `refresh-servers`, `capture-materialize` and `openai-auth-client` (READ; the
@@ -395,7 +395,7 @@ a user's own, and any key yolo sets that the user's does not survives into their
 
 - **yolo's default sets only `type` and `command`**, the two keys every user `statusLine` sets, so a user's value
   overwrites every key yolo wrote. No `refreshInterval` or `padding`: both facts are fixed per process. agy's
-  `stack_with_default: true` is the one exception ([OQ-FT12](#OQ-FT12)). Merged per key, it also reaches a
+  `stack_with_default: true` is the one exception ([OQ-FT12](#decision-ledger)). Merged per key, it also reaches a
   `statusLine` you write in agy, keeping agy's own line beside yours unless you set it `false`:
   [DIR-FT2](#DIR-FT2) applied to your footer too, visible and one key to undo.
 - **A value yolo writes into an edited-in-place file must never need to change.** Copilot's config, and every file
@@ -408,13 +408,13 @@ Where yolo writes decides who wins:
 
 | Where yolo writes | Your host `statusLine` | Your in-jail `/statusline` edit |
 |---|---|---|
-| **The owning pack's defaults (this design, [OQ-FT1](#OQ-FT1))** | you win | you win |
+| **The owning pack's defaults (this design, [OQ-FT1](#decision-ledger))** | you win | you win |
 | Another pack's overlay | yolo wins | you win |
 | The computed layer | yolo wins | yolo overwrites it on every boot |
 | The pack's managed values | yolo wins | yolo wins |
 
 Only the owning pack can write defaults, so the adapter lives in each agent pack, not a separate footer pack. To
-keep your own footer *and* yolo's facts, call the renderer from your script ([OQ-FT5](#OQ-FT5)). A host
+keep your own footer *and* yolo's facts, call the renderer from your script ([OQ-FT5](#decision-ledger)). A host
 `statusLine` pointing at an unstaged host script may render nothing in the jail; that is your config, left alone.
 agy reads no host settings file, so a host agy `statusLine` never reaches the jail.
 
@@ -422,10 +422,10 @@ agy reads no host settings file, so a host agy `statusLine` never reaches the ja
 
 | Fact | Source | Freshness |
 |---|---|---|
-| Billing route | `YOLO_USE_PROFILES`, `YOLO_PROFILES`, `YOLO_PROVIDERS` in the agent's own env, which a jail launch and `yolo host --` both set ([FT-D2](#FT-D2)); for a host agent whose env has none, the `profile` selection in your user config file ([OQ-FT6](#OQ-FT6)) | Fixed per process when the env carries them; else read on each run at the host |
+| Billing route | `YOLO_USE_PROFILES`, `YOLO_PROFILES`, `YOLO_PROVIDERS` in the agent's own env, which a jail launch and `yolo host --` both set ([FT-D2](#FT-D2)); for a host agent whose env has none, the `profile` selection in your user config file ([OQ-FT6](#decision-ledger)) | Fixed per process when the env carries them; else read on each run at the host |
 | Agent switch (for example `CLAUDE_CODE_USE_BEDROCK`) | The agent's own env, tested the agent's way | Fixed per process |
 | Notch | `YOLO_VERSION` through `config.InJail()`; absent means host ([§1.2](#12-the-notch)) | Fixed per process |
-| Not shown ([OQ-FT4](#OQ-FT4)) | Region (in `YOLO_PROVIDERS`), yolo version (`YOLO_VERSION`), backend (not in env: `YOLO_RUNTIME=podman` is the nested-launch selector), credential kind, jail name | — |
+| Not shown ([OQ-FT4](#decision-ledger)) | Region (in `YOLO_PROVIDERS`), yolo version (`YOLO_VERSION`), backend (not in env: `YOLO_RUNTIME=podman` is the nested-launch selector), credential kind, jail name | — |
 | Service health | The boot check runs once and writes one count line to `boot.log`; nothing is live | A connection attempt per refresh costs 3–4 ms; kept off the footer |
 | Bridged upstream, failover | Only lines in the bridge's log today | **Not fixed per process**; needs a state file the bridge writes ([Later](#later-cost-and-failover-a-separate-design)) |
 
@@ -442,7 +442,7 @@ so the renderer reads your user config instead, resolving profiles as `yolo host
 with a profile selected, MEASURED: [§2.1](#21-as-built)). A selection the host launch refuses is left out there, so
 the footer names the login ([FT-D1](#FT-D1)). Claude's `codex` profile is no longer one: `yolo host -- claude` starts
 the wire bridge for it, so the footer names `codex (bridge) · host` ([HS-D10](host-notch-services.md#HS-D10)), which
-is also what a claude started without yolo shows while it runs on its login. The worry [OQ-FT15](#OQ-FT15)'s leaning raised, that
+is also what a claude started without yolo shows while it runs on its login. The worry [OQ-FT15](#decision-ledger)'s leaning raised, that
 a later host-side reader would take one launch's selection for the user's table, does not hold at `4c3d6a85` (READ):
 outside the entrypoint's own loaders, which a host render hands its composed tables rather than the process env, the
 one reader of these names in a process env is `overlayGateProfiles`, and it reads `YOLO_USE_PROFILES` only at the
@@ -457,7 +457,7 @@ jail notch. A jail launch writes its own tables, so a nested `yolo` the agent st
 
 ### 4.1 The one-launch `-p` case at the host
 
-[OQ-FT15](#OQ-FT15)'s background, moved here from the question. Opened 2026-09-25 from
+[OQ-FT15](#decision-ledger)'s background, moved here from the question. Opened 2026-09-25 from
 [§4](#4-where-the-facts-come-from-and-how-fresh-they-are)'s measured case: `yolo host -p zai -- claude` with
 `use_profiles: {claude: bedrock}` shows `Bedrock`. Two facts decide the options. First, the renderer takes all three
 tables from the env as soon as `YOLO_USE_PROFILES` is set (`footer.WithHostTables`), so exporting the selection alone
@@ -500,123 +500,33 @@ You asked for Bedrock cost in a future doc, so none of it is ruled here. Facts f
 - No footer for codex (no hook), no cost, region, yolo version or backend, and no bridged upstream.
 - No service-health check on each refresh, and nothing that turns on or tests Copilot's experimental flag.
 - It never removes an agent's stock status line or a footer you wrote, and no setting picks the fields: changing
-  them means your own `statusLine` ([OQ-FT5](#OQ-FT5)).
+  them means your own `statusLine` ([OQ-FT5](#decision-ledger)).
 - No new contribution kind, and no revival of the deleted Lua transform ([OQ-LT1](../reference/pack-system.md#oq-lt1)).
 
 ## Open Questions
 
-Withdrawn on review 2026-09-25, hence the gaps: rendering's home and the table-versus-env rule became
-[§2](#2-one-renderer-one-adapter-per-agent) and [§1.1](#11-the-billing-route), opencode's question had nothing to
-decide, and the cost questions moved to the [later design](#later-cost-and-failover-a-separate-design). Rulings are
-in the [Decision Ledger](#decision-ledger).
-
-1. ✅ <a id="OQ-FT1"></a>**[OQ-FT1](#OQ-FT1) (ruled 2026-09-25, as its leaning): On by default, or opt-in?**
-
-   <!-- vantage: question id=OQ-FT1 -->
-
-   On by default, in each agent pack's defaults ([§3](#3-how-a-users-own-footer-survives)).
-
-2. ✅ <a id="OQ-FT4"></a>**[OQ-FT4](#OQ-FT4) (ruled 2026-09-25, leaning overruled): What else goes in?**
-
-   <!-- vantage: question id=OQ-FT4 -->
-
-   The billing route in plain words and the notch; no region, version or backend ([§1](#1-what-the-footer-shows)).
-
-3. ✅ <a id="OQ-FT5"></a>**[OQ-FT5](#OQ-FT5) (ruled 2026-09-25, as its leaning): How does a user keep their own
-   footer and yolo's segment?**
-
-   <!-- vantage: question id=OQ-FT5 -->
-
-   Their footer wins, and they call the renderer from it.
-
-4. ✅ <a id="OQ-FT6"></a>**[OQ-FT6](#OQ-FT6) (ruled 2026-09-25, as its leaning): Does your host Claude get it?**
-
-   <!-- vantage: question id=OQ-FT6 -->
-
-   Yes: env first, else your user config's profile selection ([§4](#4-where-the-facts-come-from-and-how-fresh-they-are)).
-
-5. ✅ <a id="OQ-FT7"></a>**[OQ-FT7](#OQ-FT7) (ruled 2026-09-25): Does yolo turn on Copilot's experimental flag?**
-
-   <!-- vantage: question id=OQ-FT7 -->
-
-   No, and it does not check it either: the status line is written like every other agent's.
-
-6. ✅ <a id="OQ-FT12"></a>**[OQ-FT12](#OQ-FT12) (ruled 2026-09-25): In agy, stack yolo's line with agy's own,
-   or replace it?**
-
-   <!-- vantage: question id=OQ-FT12 -->
-
-   Stack. It was only ever about agy's built-in line; a footer you write yourself is
-   [OQ-FT5](#OQ-FT5)'s, and just works. The rule behind the answer covers every agent: [DIR-FT2](#DIR-FT2).
-
-7. ✅ <a id="OQ-FT13"></a>**OQ-FT13: What does a macos-user session's footer say, and what tells the renderer?**
-   Today it would say `host` ([§1.2](#12-the-notch)). Options:
-
-   - (a) the macos-user launch sets `YOLO_VERSION` as the container launch does, so it says `jail`, the notch its
-     config resolves to (`ResolveConfinement` defaults to `jail`) and the one yolo renders it at; that moves every
-     other `config.InJail()` caller on that backend, so each is checked first.
-   - (b) A marker only the renderer reads: a second answer to "am I in a jail?".
-   - (c) `host` until the guest notch is built.
-
-   <!-- vantage: question id=OQ-FT13 -->
-
-   _Leaning:_ (a). One probe keeps one answer, and `host` inside a sandbox is the one label that is plainly wrong.
-
-   **Answer:** (a), ruled 2026-09-25 as leaned: *"macos-user sets YOLO_VERSION like the container launch, after
-   each other config.InJail caller on that backend is checked, so its footer says jail: one probe, one answer."*
-
-8. ✅ <a id="OQ-FT14"></a>**OQ-FT14: Does the footer name your plan, or only the login?** The login words come from
-   the pack, which cannot know your plan, and Claude's status-line data has no account field. The plan sits in
-   Claude's account cache, `~/.claude.json` `oauthAccount.organizationType` (`claude_team` here), and in its
-   credential file, which yolo never reads. Options: (a) `Claude subscription`; (b) `Claude Team`, read from that
-   cache on every run: a second exception to "reads no file" beside [OQ-FT6](#OQ-FT6)'s, from an undocumented file.
-
-   <!-- vantage: question id=OQ-FT14 -->
-
-   _Leaning:_ (a). A home holds one login, so `Claude subscription` already tells your Team login from Bedrock.
-
-   **Answer:** (a), ruled 2026-09-25 as leaned: *"Claude subscription: it already tells your Team login from
-   Bedrock, since a home holds one login, and naming the plan means reading Claude's undocumented account cache on
-   every run."*
-
-9. ✅ <a id="OQ-FT15"></a>**OQ-FT15: How should `yolo host --` tell the footer about a one-launch `-p`?**
-
-   The measured case, the two facts that decide it and each option's cost are in
-   [§4.1](#41-the-one-launch--p-case-at-the-host). Options:
-
-   - (a) `yolo host --` exports the three tables it already composed for the launch, with only its own agent's
-     entry in `YOLO_USE_PROFILES`. The renderer needs no change.
-   - (b) `yolo host --` exports one footer-only variable naming the profile, for example `YOLO_FOOTER_PROFILE`
-     *(coined here)*, and the host arm of the renderer resolves it against the tables it already composes. No
-     other reader can mistake it for a launch table.
-   - (c) Leave it unbuilt, and document that a one-launch `-p` at the host shows the config's selection or
-     `(env)`.
-
-   _Leaning:_ (b). It fixes the measured wrong label without putting the jail's wire tables into a host
-   agent's env, where a later host reader could take them for the user's config.
-
-   <!-- vantage: question id=OQ-FT15 -->
-
-   **Answer:**
-   > Decided as an implementation choice ([FT-D2](#FT-D2)), reversible: **(a)**, against the leaning.
-   > `yolo host --` exports the three tables it composed for the launch, with only its own agent's entry, so
-   > the renderer's existing "env first" read names the one-launch profile and the renderer does not change.
+None open. Every question is ruled or decided, and each ruling is a row in the
+[Decision Ledger](#decision-ledger). Withdrawn on review 2026-09-25, hence the gaps in the ids:
+rendering's home and the table-versus-env rule became [§2](#2-one-renderer-one-adapter-per-agent) and
+[§1.1](#11-the-billing-route), opencode's question had nothing to decide, and the cost questions moved to
+the [later design](#later-cost-and-failover-a-separate-design).
 
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | DIR-FT1 | **An easy way to put the provider in the claude footer, then other useful facts, in every agent possible; Bedrock cost in a future design.** *"I want to have an easy way to add the provider name to the claude code footer, and possibly some other useful things … it would be nice to be able to put bedrock costs there if possible, but this is certainly a future design doc … and we'd want this spread to all agents possible."* A direction, not a question | 2026-09-25 | [§1](#1-what-the-footer-shows), [§2](#2-one-renderer-one-adapter-per-agent), [Later](#later-cost-and-failover-a-separate-design) | — |
-| [OQ-FT1](#OQ-FT1) | **On by default, at the lowest layer (a).** *"let's try it default on"*. A footer a user already has replaces it | 2026-09-25 | [§3](#3-how-a-users-own-footer-survives) | 2026-09-25: claude, agy and copilot defaults; the pi and omp extensions and opencode's plugin list, each delivered by the owning pack |
-| [OQ-FT4](#OQ-FT4) | **The billing route in plain words (your subscription login, e.g. Teams, versus Bedrock versus another provider) and the notch (jail, guest or host); no region, no yolo version, no backend.** *"I was thinking the exact opposite almost. why would I care about region? set it once. I care teams vs bedrock, don't want yolo version, but I do want to know if I'm in a jail/guest or on the host, don't care about backend."* The leaning (region only) was overruled. Naming the plan itself opened [OQ-FT14](#OQ-FT14), and macos-user's notch opened [OQ-FT13](#OQ-FT13) | 2026-09-25 | [§1](#1-what-the-footer-shows), [§1.2](#12-the-notch) | 2026-09-25: the renderer prints these two facts only |
-| [OQ-FT5](#OQ-FT5) | **As its leaning:** *"(a) their footer wins and they embed the renderer in it; no engine feature and no wrapper key, since the only user so far has no footer."* | 2026-09-25 | [§3](#3-how-a-users-own-footer-survives) | 2026-09-25: nothing to build; a test pins that a user's own wins |
-| [OQ-FT6](#OQ-FT6) | **As its leaning:** *"(a) render at the host: env first, else the profile selection from the user config file, as the one exception to reads-no-file; no new host-only switch."* | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent), [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | 2026-09-25: `hostFooterTables`, handed to the renderer by `yolo internal footer` ([§2.1](#21-as-built)) |
-| [OQ-FT7](#OQ-FT7) | **Set it, and do nothing special about Copilot's gate.** *"why do we care? set it, and it works or it doesn't."* yolo writes Copilot's `statusLine` like every other agent's and neither flips the experimental flag nor checks it. This is the leaning's "no flag", and it also retires the question's other half, whether the gate still exists: nothing depends on it | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent) | 2026-09-25: copilot's default and script |
-| [OQ-FT12](#OQ-FT12) | **(b), stack with agy's own line:** the agy default sets `stack_with_default: true`. *"I don't want to get rid of the stock agent status lines wherever they exist. I want to add our own, not remove what's there. So I think it's your option B … but I'm not sure what it has to do with a user's own status lines, 'cause we decided that in a question up and yeah, it'll just work."* A user's own footer is [OQ-FT5](#OQ-FT5)'s | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent), [§3](#3-how-a-users-own-footer-survives) | 2026-09-25 |
-| <a id="DIR-FT2"></a>DIR-FT2 | **In every agent, yolo's segment is added beside the agent's stock status line wherever it has one, and never removes or replaces it.** Given with [OQ-FT12](#OQ-FT12): *"I want to add our own, not remove what's there."* Claude's hidden keyboard hints are the one loss no hook avoids | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent) | 2026-09-25, for all six agents with a hook: pi and omp through `setStatus` only, opencode through append slots only |
-| [OQ-FT13](#OQ-FT13) | **(a), as its leaning:** the macos-user launch sets `YOLO_VERSION` like the container launch, after each other `config.InJail()` caller on that backend is checked, so its footer says `jail`: one probe, one answer | 2026-09-25 | [§1.2](#12-the-notch) | 2026-09-25: the marker in `buildPlan`, and the audit in [§2.2](#22-what-macos-users-marker-moves); UNVERIFIED on a Mac |
-| [OQ-FT14](#OQ-FT14) | **(a), as its leaning:** a Claude login reads `Claude subscription`. A home holds one login, so that already tells a Team login from Bedrock; naming the plan would read Claude's undocumented account cache on every run | 2026-09-25 | [§1.1](#11-the-billing-route) | 2026-09-25 |
-| <a id="FT-D2"></a>FT-D2 | *Implementation decision, [OQ-FT15](#OQ-FT15), on [NC-D1](../plans/notch-convergence.md#1-the-thesis).* **(a): `yolo host --` exports `YOLO_USE_PROFILES`, `YOLO_PROFILES` and `YOLO_PROVIDERS` as it composed them for the launch, with only its own agent's entry in the selection.** The renderer is unchanged: its "env first" read ([OQ-FT6](#OQ-FT6)) then finds the one-launch profile, so `yolo host -p zai -- claude` names z.ai. Chosen over the leaning, (b), because NC-D1 rules one code path per concern with the notch as an input, in the maintainer's words *"host is supposed to act like everywhere else"*, and a footer-only variable is a host-only second name for a fact a jail already carries under these names. It is also the shape [OQ-FT13](#OQ-FT13) refused for the notch marker: *"one probe, one answer."* The leaning's cost for (a), a later host reader taking one launch's selection for the user's table, is what these names already mean: in a jail they are the launch's selection, and at the host the launch already hands exactly these three tables, scoped to its one agent, to each launch-owned service it starts (`hostComposition.serviceInput`). At `927bb54d` nothing outside a jail reads them from a process env except the renderer, since `overlayGateProfiles` reads `YOLO_USE_PROFILES` only at the jail notch. (c) is not open: [OQ-FT4](#OQ-FT4) ruled that the footer names the billing route, so a label known to be wrong is a defect to fix. Build notes: every `yolo host --` must set all three names, empty tables included, so a launch started inside another agent's launch replaces what it inherited; the writer ranges over `entrypoint.WireTables`, as every jail writer does ([NC-D22](../plans/notch-convergence.md#NC-D22)); `yolo host env` will print the same lines, being the same composition. Reversible: moving to (b) later changes only the launch's writer and the renderer's host arm | 2026-09-30 | [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | ✅ 2026-09-30: `hostComposition.wireTables`, which `serviceInput` now reads too, appended by `composeHostVarsWith` ([FT-D3](#FT-D3)); `TestHostLaunchExportsTheWireTablesItComposed`, `TestHostLaunchReplacesInheritedWireTables`, `TestHostEnvPrintsTheWireTables` and `TestHostLaunchFooterNamesAOneLaunchProfile` (`internal/cli/hostwiretables_test.go`) each fail with the append removed |
+| OQ-FT1 | **On by default, at the lowest layer (a).** *"let's try it default on"*. A footer a user already has replaces it | 2026-09-25 | [§3](#3-how-a-users-own-footer-survives) | 2026-09-25: claude, agy and copilot defaults; the pi and omp extensions and opencode's plugin list, each delivered by the owning pack |
+| OQ-FT4 | **The billing route in plain words (your subscription login, e.g. Teams, versus Bedrock versus another provider) and the notch (jail, guest or host); no region, no yolo version, no backend.** *"I was thinking the exact opposite almost. why would I care about region? set it once. I care teams vs bedrock, don't want yolo version, but I do want to know if I'm in a jail/guest or on the host, don't care about backend."* The leaning (region only) was overruled. Naming the plan itself opened [OQ-FT14](#decision-ledger), and macos-user's notch opened [OQ-FT13](#decision-ledger) | 2026-09-25 | [§1](#1-what-the-footer-shows), [§1.2](#12-the-notch) | 2026-09-25: the renderer prints these two facts only |
+| OQ-FT5 | **As its leaning:** *"(a) their footer wins and they embed the renderer in it; no engine feature and no wrapper key, since the only user so far has no footer."* | 2026-09-25 | [§3](#3-how-a-users-own-footer-survives) | 2026-09-25: nothing to build; a test pins that a user's own wins |
+| OQ-FT6 | **As its leaning:** *"(a) render at the host: env first, else the profile selection from the user config file, as the one exception to reads-no-file; no new host-only switch."* | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent), [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | 2026-09-25: `hostFooterTables`, handed to the renderer by `yolo internal footer` ([§2.1](#21-as-built)) |
+| OQ-FT7 | **Set it, and do nothing special about Copilot's gate.** *"why do we care? set it, and it works or it doesn't."* yolo writes Copilot's `statusLine` like every other agent's and neither flips the experimental flag nor checks it. This is the leaning's "no flag", and it also retires the question's other half, whether the gate still exists: nothing depends on it | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent) | 2026-09-25: copilot's default and script |
+| OQ-FT12 | **(b), stack with agy's own line:** the agy default sets `stack_with_default: true`. *"I don't want to get rid of the stock agent status lines wherever they exist. I want to add our own, not remove what's there. So I think it's your option B … but I'm not sure what it has to do with a user's own status lines, 'cause we decided that in a question up and yeah, it'll just work."* A user's own footer is [OQ-FT5](#decision-ledger)'s | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent), [§3](#3-how-a-users-own-footer-survives) | 2026-09-25 |
+| <a id="DIR-FT2"></a>DIR-FT2 | **In every agent, yolo's segment is added beside the agent's stock status line wherever it has one, and never removes or replaces it.** Given with [OQ-FT12](#decision-ledger): *"I want to add our own, not remove what's there."* Claude's hidden keyboard hints are the one loss no hook avoids | 2026-09-25 | [§2](#2-one-renderer-one-adapter-per-agent) | 2026-09-25, for all six agents with a hook: pi and omp through `setStatus` only, opencode through append slots only |
+| OQ-FT13 | **(a), as its leaning:** the macos-user launch sets `YOLO_VERSION` like the container launch, after each other `config.InJail()` caller on that backend is checked, so its footer says `jail`: one probe, one answer | 2026-09-25 | [§1.2](#12-the-notch) | 2026-09-25: the marker in `buildPlan`, and the audit in [§2.2](#22-what-macos-users-marker-moves); UNVERIFIED on a Mac |
+| OQ-FT14 | **(a), as its leaning:** a Claude login reads `Claude subscription`. A home holds one login, so that already tells a Team login from Bedrock; naming the plan would read Claude's undocumented account cache on every run | 2026-09-25 | [§1.1](#11-the-billing-route) | 2026-09-25 |
+| OQ-FT15 | **Decided as an implementation choice, [FT-D2](#FT-D2), against the leaning: (a).** `yolo host --` exports the three tables it composed for the launch, with only its own agent's entry, so the renderer's existing "env first" read names the one-launch profile and the renderer does not change. Reversible | 2026-09-30 | [§4.1](#41-the-one-launch--p-case-at-the-host) | ✅ 2026-09-30, as FT-D2 |
+| <a id="FT-D2"></a>FT-D2 | *Implementation decision, [OQ-FT15](#decision-ledger), on [NC-D1](../plans/notch-convergence.md#1-the-thesis).* **(a): `yolo host --` exports `YOLO_USE_PROFILES`, `YOLO_PROFILES` and `YOLO_PROVIDERS` as it composed them for the launch, with only its own agent's entry in the selection.** The renderer is unchanged: its "env first" read ([OQ-FT6](#decision-ledger)) then finds the one-launch profile, so `yolo host -p zai -- claude` names z.ai. Chosen over the leaning, (b), because NC-D1 rules one code path per concern with the notch as an input, in the maintainer's words *"host is supposed to act like everywhere else"*, and a footer-only variable is a host-only second name for a fact a jail already carries under these names. It is also the shape [OQ-FT13](#decision-ledger) refused for the notch marker: *"one probe, one answer."* The leaning's cost for (a), a later host reader taking one launch's selection for the user's table, is what these names already mean: in a jail they are the launch's selection, and at the host the launch already hands exactly these three tables, scoped to its one agent, to each launch-owned service it starts (`hostComposition.serviceInput`). At `927bb54d` nothing outside a jail reads them from a process env except the renderer, since `overlayGateProfiles` reads `YOLO_USE_PROFILES` only at the jail notch. (c) is not open: [OQ-FT4](#decision-ledger) ruled that the footer names the billing route, so a label known to be wrong is a defect to fix. Build notes: every `yolo host --` must set all three names, empty tables included, so a launch started inside another agent's launch replaces what it inherited; the writer ranges over `entrypoint.WireTables`, as every jail writer does ([NC-D22](../plans/notch-convergence.md#NC-D22)); `yolo host env` will print the same lines, being the same composition. Reversible: moving to (b) later changes only the launch's writer and the renderer's host arm | 2026-09-30 | [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | ✅ 2026-09-30: `hostComposition.wireTables`, which `serviceInput` now reads too, appended by `composeHostVarsWith` ([FT-D3](#FT-D3)); `TestHostLaunchExportsTheWireTablesItComposed`, `TestHostLaunchReplacesInheritedWireTables`, `TestHostEnvPrintsTheWireTables` and `TestHostLaunchFooterNamesAOneLaunchProfile` (`internal/cli/hostwiretables_test.go`) each fail with the append removed |
 | <a id="FT-D3"></a>FT-D3 | *Implementation decision, building [FT-D2](#FT-D2).* **The tables join the host composition's own variable list, after the pack env fold, `env_sources` and the provider derive's output and before the removals, attributed to the profile's provider environment.** In the list rather than overlaid at the exec, because `yolo host env` prints that list and FT-D2 has it print the same lines; after the three sources, so no pack `env` contribution or `env_sources` entry can hand the agent a table the launch did not compose; before the removals, so an `env_sources` null still unsets any name, the one rule the list already states for every assignment. One method, `wireTables`, serves the agent and each launch-owned service, which were handed separately built copies. A consequence found in building: a script from `yolo host env` now names every provider's credential variable as data inside `YOLO_PROVIDERS`, so five unit tests that asked whether a script mentioned a variable now ask whether it exports one. *Amended 2026-10-04 by [notch-convergence NC-D72](../plans/notch-convergence.md#NC-D72), an implementation decision taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible:* the tables now follow the whole composition, its removals included, and a composed entry under a table's name is dropped, so an `env_sources` null no longer removes a table. The reason given for "before the removals", that a null unsets any name, is the rule NC-D72's null rank retired (a null ranks with `env_sources` and never beats the profile's value). It also let a null of `YOLO_USE_PROFILES` hand the agent its parent launch's table, or none, which FT-D2's "every `yolo host --` must set all three names" exists to prevent. No jail vehicle lets a null remove one either. Pinned by `TestTheHostExecKeepsTheWireTablesOverEnvSources` (`internal/cli/envwinnerparity_test.go`) | 2026-09-30 | [§4](#4-where-the-facts-come-from-and-how-fresh-they-are) | ✅ 2026-09-30, with FT-D2 |
 
 ## What I would build, in order
@@ -643,7 +553,7 @@ in the [Decision Ledger](#decision-ledger).
    review the read stopped checking a fetched pack out on a refresh (`packsrc.Store.ResolveExisting`). The
    one-launch `-p` ([FT-D2](#FT-D2)) was built 2026-09-30. The look at a live host Claude is still open.
 7. Last, opencode's plugin (its slot API is known only from binary strings), and macos-user's marker
-   ([OQ-FT13](#OQ-FT13)): audit each `config.InJail()` caller reachable on that backend, then set `YOLO_VERSION`
+   ([OQ-FT13](#decision-ledger)): audit each `config.InJail()` caller reachable on that backend, then set `YOLO_VERSION`
    in its launch. Done: a macos-user Claude shows `· jail`, on a Mac. Built 2026-09-25. The slot API turned out to be
    typed in the shipped `@opencode-ai/plugin` package, and the binary's loader confirmed how it is read. A unit test
    loads the shipped plugin under node the way opencode loads a file plugin. On review the list moved from `tui.json`
