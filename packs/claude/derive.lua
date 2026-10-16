@@ -585,20 +585,19 @@ local function savedTier(v)
   return nil
 end
 
--- savedModelFor is the value the next provider change writes, nil for none (the key is then
--- not selected, and a value yolo wrote is cleared): the saved value itself when the new
--- provider lists it; else the new provider's model for the saved value's tier (the id its
+-- savedModelFor is the value the next change writes, nil for none (the key is then not
+-- selected, and on a change whatever the file holds is cleared, so claude uses its own
+-- default): the saved value itself when it is valid on the new route; else the new provider's model for the saved value's tier (the id its
 -- `models` map gives the tier's alias, tierAlias) on a listed provider, or the tier word itself
 -- on a provider with no list, which claude resolves natively; else the new provider's default
 -- (the list's default entry, as the picker and the tier pins name it); else nil, claude's own
 -- default.
 --
--- Two cases come first (MM-D44). When the trigger moved only in the profile's `model` or
+-- What comes first (MM-D44). When the trigger moved only in the profile's `model` or
 -- `pin_model` (savedModelTrigger), the user changed their config on the same provider and
--- route, so the new default is written, not the previous model's equivalent. And on claude's own
--- login (no list, no endpoint), a saved claude id is its own equivalent, version and `[1m]`
--- included, unless it is tied to another provider (tiedId): a value must never be rewritten
--- without a change.
+-- route, so the new default is written, not the previous model's equivalent. Otherwise a value
+-- VALID ON THE ROUTE is its own equivalent (validOnRoute), version and `[1m]` included, on every
+-- change: only a value tied to another platform, or one the route cannot call, is replaced.
 
 -- savedModelTrigger is the selection trigger of claude's saved model, and its ROUTE part: the
 -- selected provider and whether claude reaches it through a via service (bedrock and
@@ -610,12 +609,54 @@ local function savedModelTrigger(ctx)
   return route .. "|" .. (prof.model or "") .. "|" .. (prof.pin_model or ""), route
 end
 
--- tiedId says a saved value names a model of a provider other than claude's own login: a
--- region- or maker-dotted Bedrock id (`global.anthropic.…`, `anthropic.…`), a gateway's
--- `vendor/model`, or an ARN.
-local function tiedId(v)
-  return string.find(v, "/", 1, true) ~= nil or string.find(v, "^arn:") ~= nil
-    or string.find(v, "^[%a-]+%.") ~= nil
+-- withoutLong is a saved value without claude's `[1m]` suffix, which names the same model.
+local function withoutLong(v)
+  return (string.gsub(v, "%[1m%]$", ""))
+end
+
+-- bareTier says a saved value is one of claude's tier names, with or without `[1m]`: the form
+-- every route resolves through its tier pins or claude's own defaults.
+local function bareTier(v)
+  local s = withoutLong(v)
+  for _, tier in ipairs(claudeTiers) do
+    if s == tier.names[1] then return true end
+  end
+  return false
+end
+
+-- platformDotted says a saved value is a Bedrock id: an ARN, or a region- or maker-dotted id
+-- (`global.anthropic.…`, `us.meta.…`, `anthropic.…`).
+local function platformDotted(v)
+  return string.find(v, "^arn:") ~= nil or string.find(v, "^[%a-]+%.") ~= nil
+end
+
+-- anthropicOnBedrock is the Bedrock-only Anthropic id packs/claude/pack.json's `/model` provider
+-- key names: a Bedrock ARN, or an `anthropic.` id with an optional region prefix.
+local function anthropicOnBedrock(v)
+  return string.find(v, "^arn:aws[%a-]*:bedrock:") ~= nil or string.find(v, "^anthropic%.") ~= nil
+    or string.find(v, "^[%a-]+%.anthropic%.") ~= nil
+end
+
+-- validOnRoute says the saved value is a model the selected route can call, so it is its own
+-- equivalent: on an `only` or openai-codex, a listed id; on claude's own Bedrock client, a
+-- listed id, a tier name, or a Bedrock-only Anthropic id (any Bedrock id through the bridge,
+-- which translates other makers); on a routed gateway, a listed id, or anything neither a
+-- Bedrock id nor a first-party `claude-` id (a typed id goes to the gateway, OQ-MM3); on claude's
+-- own login, a claude id or alias tied to no other platform.
+local function validOnRoute(ctx, p, v, listed)
+  if type(v) ~= "string" or v == "" then return false end
+  local isListed = listed ~= nil and (listed[v] or listed[withoutLong(v)])
+  if ctx.selected_provider == "openai-codex" or listOnly(p) then return isListed == true end
+  if type(p) == "table" and claudeBedrock(ctx, p) then
+    if isListed or bareTier(v) or anthropicOnBedrock(v) then return true end
+    return bridgedBedrock(ctx, p) and platformDotted(v)
+  end
+  if routedProvider(ctx, p) then
+    return isListed == true or not (platformDotted(v) or string.find(v, "^claude") ~= nil)
+  end
+  if platformDotted(v) or string.find(v, "/", 1, true) ~= nil then return false end
+  local s = withoutLong(v)
+  return savedTier(s) ~= nil or string.find(s, "^claude") ~= nil or s == "default" or s == "opusplan"
 end
 
 local function savedModelFor(ctx)
@@ -627,9 +668,6 @@ local function savedModelFor(ctx)
   end
   local tier = savedTier(prev)
   local p = ctx.providers and ctx.providers[ctx.selected_provider]
-  local ownLogin = ctx.selected_provider ~= "openai-codex"
-    and not (type(p) == "table" and (claudeBedrock(ctx, p) or routedProvider(ctx, p)))
-  if ownLogin and tier and not tiedId(prev) then return prev end
   local listed, tierId, default = nil, nil, nil
   if ctx.selected_provider == "openai-codex" then
     local list = codexModelList(p)
@@ -663,8 +701,8 @@ local function savedModelFor(ctx)
       if type(m) == "string" and m ~= "" and m ~= "default" then default = spell(m) end
     end
   end
+  if validOnRoute(ctx, p, prev, listed) then return prev end
   if listed then
-    if type(prev) == "string" and listed[prev] then return prev end
     local id = tier and tierId(tier)
     if id then return id end
     return default
