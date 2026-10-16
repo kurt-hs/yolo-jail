@@ -655,6 +655,29 @@ the census records a deleted doc's path again, and the same test then fails on i
 leave paths that do not exist out of the census, or to keep the citation test's own stats out of
 it.
 
+### <a id="scheduler-cwd"></a>🔧 **The preparation scheduler keeps the launching workspace as its directory**
+
+`startPreparationScheduler` (`internal/cli/preparationscheduler.go`) starts a daemon that lives
+until logout without setting its working directory, so it holds open the first workspace it was
+launched from, even after that directory is deleted, and blocks unmounting it. Set it to `/` or
+yolo's state directory. Found by the 2026-10-16 review of the integration cleanup fix.
+
+A related question for the owner: should a launch that is refused (an unsatisfiable Node floor,
+say) still register its program for background preparation, so the scheduler keeps retrying it?
+
+### <a id="gh-pipe-grace"></a>🔧 **A killed `gh` call can still hang on a process that left its group**
+
+Since 2026-10-16 the github broker re-sends its kill to `gh`'s process group until `gh`'s output
+closes. A grandchild that leaves the group (`setsid`) and keeps that output open still hangs the
+call, and the kill then repeats every 50 ms until it ends. After a bounded wait, close the read
+ends instead, as Go's `exec.Cmd.WaitDelay` does.
+
+### <a id="darwin-prep-fence"></a>🔧 **The integration cleanup cannot stop preparation workers on macOS**
+
+The test cleanup that stops a test home's preparation workers finds them through `/proc`, so on a
+macOS host it stops nothing, and a test there can still fail its temp-directory cleanup the way
+`TestAnUnsatisfiableNodeFloorRefusesTheLaunch` did on Linux CI.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
