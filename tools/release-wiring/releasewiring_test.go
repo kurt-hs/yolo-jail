@@ -1418,7 +1418,7 @@ func TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialSta
 				}
 			}
 			state := t.TempDir()
-			if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\ncase \"$*\" in\n *ls-remote*) printf '%s\\trefs/tags/v9.8.7-rc.1\\n' \"$RELEASE_SHA\";;\n *rev-parse*) echo \"$RELEASE_SHA\";;\n cat-file*|show*|ls-tree*) cd \"$REAL_ROOT\" && exec \"$REAL_GIT\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
+			if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\ncase \"$*\" in\n *ls-remote*) printf '%s\\trefs/tags/v9.8.7-rc.1\\n' \"$RELEASE_SHA\";;\n *rev-parse*) echo \"$RELEASE_SHA\";;\n cat-file*|show*|ls-tree*) [ \"$(pwd -P)\" = \"$GITHUB_WORKSPACE\" ] || { echo \"git $* ran in $(pwd -P), not the --repo-root $GITHUB_WORKSPACE\" >&2; exit 97; }; cd \"$REAL_ROOT\" && exec \"$REAL_GIT\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\ncase \"$*\" in\n *validate-assets*) shift 2; exec \"$HELPER\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
@@ -1446,8 +1446,13 @@ esac
 			}
 			// The trusted checkout holds the pinned target's own release config
 			// (pinnedTargetConfig), so the working tree's config can move; git reads the
-			// target's blobs from the real repository.
-			workspace := filepath.Dir(pinnedTargetConfig(t, root, sha))
+			// target's blobs from the real repository, but only when the helper asks from
+			// the --repo-root it was given (the fake git checks its cwd, so a wrong root
+			// still fails here).
+			workspace, err := filepath.EvalSymlinks(filepath.Dir(pinnedTargetConfig(t, root, sha)))
+			if err != nil {
+				t.Fatal(err)
+			}
 			env := []string{"GITHUB_WORKSPACE=" + workspace, "REAL_ROOT=" + root, "RELEASE_VERSION=" + version, "RELEASE_SHA=" + sha, "RELEASE_ASSETS_DIR=" + dir, "RELEASE_NOTES_FILE=" + notes, "HELPER=" + helper, "STATE=" + state, "FAIL=" + tc.fail, "REAL_GIT=" + realGit}
 			out, e := runScript(t, root, "tools/release-wiring/publish-release.sh", bin, trace, env...)
 			if (e == nil) != (tc.fail == "") {
