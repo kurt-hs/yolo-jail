@@ -3,7 +3,7 @@ title: "Which model ids yolo ships, how an org shapes the list, and what each pi
 date: 2026-09-25
 status: in-review
 stage: DESIGN
-next: "Finish MM-D42 on the Pi side: pi-subagents must read --subagents-model-settings (YOLO side built behind YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1, golden in internal/cli/testdata). Build OQ-MM1 (ruled 2026-10-15, A) on claude's native profile: an add's rows appended beside its built-ins. Build OQ-MM3 (ruled 2026-10-15): drop pi's refusing registration for a model_routing list with no only, reconcile pi-subagents' strict scope, and write claude's settings.json model once per provider change, the previous model's tier equivalent else the list default (MM-D43, which needs the file's current value as a derive input and a provider-change trigger the selection record lacks). MM-D41's opt-in supplied-list warning is implemented and parent-gate checked without changing list rendering or enforcement; independent source and documentation review is complete. The overall design stays partly built while MM1, MM3, ML4 and ML5 are unbuilt. Build OQ-ML4 and OQ-ML5 (ruled 2026-10-16): a pi model row merged over pi's catalog field by field, a null fact as the tombstone (ML-D10), facts shared across a model's routes with per-route overrides, and the shared form written only for a pi a pack declares reads it, else full rows (ML-D11). OQ-MM6 is built (MM-D35 to MM-D40); live Claude/Copilot/Pi/AWS turns remain unmeasured. No question in this doc is open"
+next: "Finish MM-D42 on the Pi side: pi-subagents must read --subagents-model-settings (YOLO side built behind YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1, golden in internal/cli/testdata). Build OQ-MM1 (ruled 2026-10-15, A) on claude's native profile: an add's rows appended beside its built-ins. Build OQ-MM3 (ruled 2026-10-15): drop pi's refusing registration for a model_routing list with no only, reconcile pi-subagents' strict scope, and write claude's settings.json model once per provider change, the previous model's tier equivalent else the list default (MM-D43, which needs the file's current value as a derive input and a provider-change trigger the selection record lacks). MM-D41's opt-in supplied-list warning is implemented and parent-gate checked without changing list rendering or enforcement; independent source and documentation review is complete. The overall design stays partly built while MM1, MM3, ML4 and ML5 are unbuilt. Build OQ-ML4 and OQ-ML5 (ruled 2026-10-16): a pi model row merged over pi's catalog field by field, a null fact as the tombstone (ML-D10), facts shared across a model's routes with per-route overrides, and the shared form written only for a pi a pack declares reads it, else full rows (ML-D11). OQ-MM6 is built (MM-D35 to MM-D40); live Claude/Copilot/Pi/AWS turns remain unmeasured. A nested-jail check of `yolo host -p pi=` with a provider-only profile (§14.11) is still owed. No question in this doc is open"
 tags: [providers, profiles, models, aliases, pickers, packs, bedrock, currency]
 summary: "Where yolo must pick model ids itself (the 2026-09-25 ruling on OQ-BR3: only where an agent cannot just fall back to its own default), how those picks ship in a built-in pack that comes with yolo rather than in core, how a company pack adds to or narrows a model list, how each agent's picker renders the result, and how the list stays current without yolo keeping a catalog."
 vantage:
@@ -1594,7 +1594,7 @@ for this): codex gets `-c model_provider="…"`, `-c model="…"` and its provid
 `model_providers` row as `-c` leaves, right after `codex`, the subscription's selection naming
 `openai` for the provider a jail's render clears; opencode gets `OPENCODE_CONFIG_CONTENT`, one
 document with its selection and the rows `enabled_providers` names, merged over a value the user
-already set there; pi gets `--provider`, `--model` and `--models`, with the two model-list files
+already set there; pi gets `--provider` (only beside an explicit `--model`, [§14.11](#1411-pis-provider-flag-travels-only-with-an-explicit-model-built-2026-10-07)), `--model` and `--models`, with the two model-list files
 its extensions read handed whole in `YOLO_PI_OPENAI_CODEX_MODELS` and `YOLO_PI_MODEL_LISTS`, which
 the extensions read before the files; and oh-omp gets `--models`. Nothing is written, so the
 user's own files and the managed `CODEX_HOME`, rebuilt from the user's `~/.codex/config.toml`, keep
@@ -1724,6 +1724,71 @@ nothing was stored or created.
 selects a row as `<provider>/<id>` (the SDK documents that spelling as the selection id; copilot's
 own rule is in its native runtime, UNMEASURED); and that the file's mode starts with no GitHub
 login at all. copilot was never run.
+
+### 14.11 Pi's provider flag travels only with an explicit model (built 2026-10-07)
+
+A host launch hands pi `--provider` only when the composed selection also has `defaultModel`. A
+provider-only selection keeps its existing `--models` scope, leaving pi to resolve its own startup
+model. Pi treats `--provider` as a qualifier for `--model`, not as a standalone provider default,
+so a provider-only profile handed as `--provider deepseek --models deepseek/*` was rejected during
+session setup. Provider-only handoff therefore no longer independently sets pi's provider; no
+synthetic `--model` is added, and the native settings file is not edited by a host launch. This
+closes only the transport question: it does not decide that a profile locks resumed or saved
+sessions to its provider, and it restricts no calls (an active profile's call restriction is
+[the provider-policy extension](simultaneous-auth-and-pack-isolation.md)'s).
+
+**The flag-presence rule.** `yolo host -p` composes a pack's selection and, only when it differs
+from the configured profile's selection, hands it through the pack's declared `launch_selection`
+form ([§14.9](#149-a-host--p-moves-the-program-built-2026-10-05)). For the flags form, a
+declaration may give a flag a `requires` list (`LaunchSelectionFlag.requires`): other selection
+keys whose presence is required before that flag is emitted. The flag is emitted only when its own
+selection key and every required selection key are present in the handoff (including declared
+defaults); other flags are evaluated independently. An absent prerequisite suppresses that flag,
+not the rest of the selection.
+
+Pi declares:
+
+- `defaultProvider` as `--provider {value}`, requiring `defaultModel`;
+- `defaultModel` as `--model {value}`;
+- `enabledModels` as `--models {value}`.
+
+Therefore a provider-only selection such as `defaultProvider=deepseek` with
+`enabledModels=["deepseek/*"]` hands only `--models deepseek/*`. When `defaultModel` is explicit,
+pi still receives the provider-qualified pair `--provider <provider> --model <id>`. Keeping the
+provider on that explicit path matters when providers expose the same model ID: the list scope does
+not qualify pi's explicit `--model` lookup. The other declared list flags and variables are
+unchanged.
+
+This is a transport repair, not a provider lock or authorization boundary. It does not choose a
+model, turn `--model "*"` into a wildcard, change the native `settings.json`, or promise that pi
+will replace a saved in-scope selection or a resumed session. `--models` is a scope; pi's native
+startup and session behavior remains in control. If a composed selection has no explicit model and
+no usable scope, yolo does not fabricate one; the provider flag is omitted and pi retains its own
+configuration behavior.
+
+With no differing profile selection, with a profile that composes no selection, or when a declared
+subcommand is first in the user's argv, the existing host launch-selection rules still hand no
+injected pi flags. Explicit user arguments remain after the injected words and retain existing
+precedence.
+
+**Evidence and limits.** The production path is `internal/cli/host.go` → `hostmodelmenu.go` →
+`entrypoint.HostLaunchSelection` → `LaunchSelection.Argv`, with flag grammar and validation in
+`packdecl`. The pi consumer is declared in [`packs/pi/pack.json`](../../packs/pi/pack.json); the
+derive continues to supply the existing provider, model (when explicit), and scope selection in
+[`packs/pi/derive.lua`](../../packs/pi/derive.lua). The source audit read the installed
+`@earendil-works/pi-coding-agent` **1.0.4** source and bundle, whose runtime build reported
+`forkCommit: null`. It found pi's provider/model coupling check during session setup, and that its
+explicit-model resolver does not use the `--models` scope to disambiguate overlapping IDs. This
+evidence is version-bounded: it does not identify another machine's fork revision and cannot
+establish that runtime's behavior. The implementation makes no API or inference requests.
+Regression coverage exercises declaration decoding/validation and cloning, argv for a
+provider-only selection, explicit overlapping IDs and a missing prerequisite while retaining
+`--models`, and the production `yolo host` exec caller with a provider-only profile. It also
+verifies the native settings file remains unchanged. Focused source tests and an independent
+review were complete on 2026-10-07; no pi process or model request was made.
+
+**Still owed, UNMEASURED.** A nested-jail check of `yolo host -p pi=` with a provider-only
+profile has not been run.
 
 ---
 
