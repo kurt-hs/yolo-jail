@@ -200,6 +200,7 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 	// admitted is the generation this machine already prepared for exactly these inputs, kept only
 	// when its last check FAILED and PD-NF1 has this launch retry it (admittedServes).
 	var admitted *npmCaptureRecord
+	var recovery admittedRecovery
 	if !fresh {
 		record, readErr := readNPMCaptureRecord(store, in)
 		if readErr == nil && record.Fingerprint == fingerprint && record.Resolution != nil && record.Resolution.Runtime.Platform == platform {
@@ -212,7 +213,10 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 				if manifestErr != nil {
 					return record, manifestErr
 				}
-				if record.Failure == "" || admittedServes(in, record, w) {
+				if record.Failure != "" {
+					recovery = jailAdmittedRecovery(in)
+				}
+				if record.Failure == "" || admittedServes(in, record, recovery, w) {
 					if err = foregroundGuard(func() error { return ctx.Err() }); err != nil {
 						return record, err
 					}
@@ -229,7 +233,7 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 	if err == nil || admitted == nil || ctx.Err() != nil || errors.Is(err, errNPMCaptureUnsupported) {
 		return record, err
 	}
-	return retriedAdmitted(ctx, store, in, *admitted, err, w, foregroundGuard)
+	return retriedAdmitted(ctx, store, in, *admitted, err, recovery, w, foregroundGuard)
 }
 
 // waitOrdinaryCheck registers this launch's request and runs the check d asks for, in the
@@ -275,22 +279,43 @@ func waitOrdinaryCheck(ctx context.Context, store *capture.Store, in npmCaptureI
 	return *result.Program, nil
 }
 
+// admittedRecovery is what PD-NF1's decision over an admitted generation needs from the act that
+// serves it — a jail launch (jailAdmittedRecovery) or the host floor (wireFloorOrdinaryCapture) —
+// so both decide by the one rule (admittedServes, retriedAdmitted).
+type admittedRecovery struct {
+	// Held is an `agent_updates` hold on the program's pack; UseInstalled is the user's
+	// YOLO_USE_INSTALLED naming the program.
+	Held, UseInstalled bool
+	// Prefix starts each line said ("yolo host: " on the host floor, "" at a jail launch).
+	Prefix string
+	// Repair is the command that retries the preparation; Command the one the hatch is put in
+	// front of (hostfloor.UpdateRefusal's fields of the same names).
+	Repair, Command string
+}
+
+// jailAdmittedRecovery is a jail launch's: the user-scope `agent_updates` policy, and `yolo` to
+// retry and to put the hatch in front of.
+func jailAdmittedRecovery(in npmCaptureInput) admittedRecovery {
+	return admittedRecovery{Held: !entrypoint.PackPolicyAllows(config.AgentUpdatesWire(), in.Owner),
+		UseInstalled: ordinaryUseInstalled(in), Repair: "yolo", Command: "yolo"}
+}
+
 // admittedServes is PD-NF1 for an admitted generation whose last check failed (record.Failure):
 // true when that generation runs at this launch without a check, with the one line saying why. An
 // `agent_updates` hold runs it unchecked; a check that failed before it found anything is the
 // could-not-check case; and YOLO_USE_INSTALLED naming the program is the user's own hatch. Anything
 // else is a newer version yolo found and could not prepare, which this launch retries (false).
-func admittedServes(in npmCaptureInput, record npmCaptureRecord, w io.Writer) bool {
+func admittedServes(in npmCaptureInput, record npmCaptureRecord, rc admittedRecovery, w io.Writer) bool {
 	old := record.Resolution.Release
 	switch {
-	case !entrypoint.PackPolicyAllows(config.AgentUpdatesWire(), in.Owner):
+	case rc.Held:
 		return true
 	case record.FailedRelease == "":
-		fmt.Fprintf(w, "%s: could not check for a newer version (%s); running the prepared %s\n", in.Bin, firstLine(record.Failure), old)
+		fmt.Fprintf(w, "%s%s: could not check for a newer version (%s); running the prepared %s\n", rc.Prefix, in.Bin, firstLine(record.Failure), old)
 		return true
-	case ordinaryUseInstalled(in):
-		fmt.Fprintf(w, "%s: preparing %s failed (%s); %s is set, so yolo runs the prepared %s\n",
-			in.Bin, record.FailedRelease, firstLine(record.Failure), patchrecovery.UseInstalledEnv, old)
+	case rc.UseInstalled:
+		fmt.Fprintf(w, "%s%s: preparing %s failed (%s); %s is set, so yolo runs the prepared %s\n",
+			rc.Prefix, in.Bin, record.FailedRelease, firstLine(record.Failure), patchrecovery.UseInstalledEnv, old)
 		return true
 	}
 	return false
@@ -299,12 +324,12 @@ func admittedServes(in npmCaptureInput, record npmCaptureRecord, w io.Writer) bo
 // retriedAdmitted is the outcome of a retried check that failed with err, over the admitted
 // generation: a newer version found again is PD-NF1's refusal; a check that failed before it found
 // one is the could-not-check case, and the admitted generation runs.
-func retriedAdmitted(ctx context.Context, store *capture.Store, in npmCaptureInput, admitted npmCaptureRecord, err error, w io.Writer, foregroundGuard func(func() error) error) (npmCaptureRecord, error) {
+func retriedAdmitted(ctx context.Context, store *capture.Store, in npmCaptureInput, admitted npmCaptureRecord, err error, rc admittedRecovery, w io.Writer, foregroundGuard func(func() error) error) (npmCaptureRecord, error) {
 	old := admitted.Resolution.Release
 	newer := admitted.FailedRelease
 	if after, readErr := readNPMCaptureRecord(store, in); readErr == nil {
 		if after.FailedRelease == "" {
-			fmt.Fprintf(w, "%s: could not check for a newer version (%s); running the prepared %s\n", in.Bin, firstLine(err.Error()), old)
+			fmt.Fprintf(w, "%s%s: could not check for a newer version (%s); running the prepared %s\n", rc.Prefix, in.Bin, firstLine(err.Error()), old)
 			if gerr := foregroundGuard(func() error { return ctx.Err() }); gerr != nil {
 				return admitted, gerr
 			}
@@ -313,7 +338,7 @@ func retriedAdmitted(ctx context.Context, store *capture.Store, in npmCaptureInp
 		newer = after.FailedRelease
 	}
 	return admitted, &hostfloor.UpdateRefusal{Bin: in.Bin, Pack: in.Owner, Installed: old, Newer: newer,
-		Act: "preparing the newer version", Err: err, Repair: "yolo", Command: "yolo", Runs: "run the prepared " + old}
+		Act: "preparing the newer version", Err: err, Repair: rc.Repair, Command: rc.Command, Runs: "run the prepared " + old}
 }
 
 // ordinaryUseInstalled reports whether YOLO_USE_INSTALLED covers in: "1", or a name equal to its
