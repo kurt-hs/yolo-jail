@@ -18,7 +18,8 @@ import (
 //
 // Every failure is ignored: the image step meets it again and says so. A nix this starts is tracked
 // (nixchildren), so a signal that ends the launch stops it; a Ctrl-C at the terminal ends it too,
-// and the image step builds again.
+// and the image step builds again. Its Context ending — the launch returning, refused or not —
+// interrupts the nix it has running and starts no other.
 func Prewarm(opts AutoLoadOptions) {
 	opts.Out, opts.Report = io.Discard, io.Discard
 	opts.fill()
@@ -28,6 +29,9 @@ func Prewarm(opts AutoLoadOptions) {
 	}
 	if identity := o.stockIdentity(); identity != "" && o.stockImageLoaded(identity) != "" {
 		return
+	}
+	if o.ctx().Err() != nil {
+		return // the launch has returned: no build it would never wait for (Context)
 	}
 	outLink := filepath.Join(paths.BuildDir(), fmt.Sprintf("prewarm-result-%d", o.Getpid()))
 	defer os.Remove(outLink)
