@@ -28,10 +28,10 @@ proposing mirroring again, read [§1.1](#11-what-would-change-my-mind) and
 the postscript). **The closure question is ruled: no maximal mirroring** ([`OQ-WP8`](#OQ-WP8),
 2026-10-15, option A), and so are the last two: this doc is kept as an evergreen reference
 ([`OQ-WP7`](#OQ-WP7)), and the only goal behind the proposal was removing friction
-([`OQ-WP10`](#OQ-WP10)); it moved from `docs/design/` to `docs/reference/` that day. [`OQ-WP12`](#OQ-WP12) was answered by
-another design's ruling, and [`OQ-WP5`](#OQ-WP5) by measurement on 2026-09-25. Six more were closed on 2026-09-30
-without a ruling being owed: [`OQ-WP6`](#OQ-WP6) by the maintainer's own reopening, [`OQ-WP1`](#OQ-WP1) and
-[`OQ-WP11`](#OQ-WP11) as moot, and [`OQ-WP3`](#OQ-WP3), [`OQ-WP4`](#OQ-WP4) and [`OQ-WP9`](#OQ-WP9) as the implementation
+([`OQ-WP10`](#OQ-WP10)); it moved from `docs/design/` to `docs/reference/` that day. [`OQ-WP12`](#decision-ledger) was answered by
+another design's ruling, and [`OQ-WP5`](#decision-ledger) by measurement on 2026-09-25. Six more were closed on 2026-09-30
+without a ruling being owed: [`OQ-WP6`](#decision-ledger) by the maintainer's own reopening, [`OQ-WP1`](#decision-ledger) and
+[`OQ-WP11`](#decision-ledger) as moot, and [`OQ-WP3`](#decision-ledger), [`OQ-WP4`](#decision-ledger) and [`OQ-WP9`](#decision-ledger) as the implementation
 decisions [`WP-D1`](#WP-D1)–[`WP-D3`](#WP-D3) ([Decision Ledger](#decision-ledger)). No mirroring is built, and the maintainer
 ruled on 2026-10-15 that none will be, for [§12](#12-follow-up-maximal-mirroring)'s reasons, not
 the original ones. The one piece that was worth
@@ -203,7 +203,7 @@ the arithmetic:
   and `-trimpath` turns out not to cover it ([§3.1](#31-confirmed-jail-built-go-binaries-carry-workspace-source-paths)).
 - The jail home stops being `/home/agent` — i.e. someone proposes mirroring *all three* path
   spaces. That is a different, larger, and more coherent proposal than this one, and P1 would
-  no longer apply to it. See [`OQ-WP6`](#open-questions).
+  no longer apply to it. See [`OQ-WP6`](#decision-ledger).
 
 ---
 
@@ -485,7 +485,7 @@ workspace `mounts` entry whose basename collides with the pack staging root at
 failure, not a shadowing attack. What remains is that a workspace subdirectory the jail can
 already read gains a second read-only appearance under `/ctx`. Low, but **no document claims
 path divergence as the mitigation**, which makes this an undocumented control being removed —
-see [`OQ-WP4`](#open-questions).
+see [`OQ-WP4`](#decision-ledger).
 
 ### 4.5 Leakage: nothing new
 
@@ -517,7 +517,7 @@ is still required. The same holds for anything whose *content* names an interpre
 or a home-relative tool — which is most installed software.
 
 **It does not license mirroring the home.** That is a different and larger proposal
-([`OQ-WP6`](#OQ-WP6)), and every argument here about the *workspace* would have to be re-run for it.
+([`OQ-WP6`](#decision-ledger)), and every argument here about the *workspace* would have to be re-run for it.
 
 **It does not bring the backends into line.** The opposite — [§7.2](#72-macos-user-does-not-mirror-the-path-a-mac-user-would-want). Anyone arguing for
 mirroring on parity grounds is arguing against the evidence.
@@ -749,7 +749,7 @@ code.
 
 ### 7.3 Apple Container: measured, and supported
 
-**MEASURED 2026-09-25** on `container` 1.1.0 ([`OQ-WP5`](#OQ-WP5)): a directory arrives at every deep
+**MEASURED 2026-09-25** on `container` 1.1.0 ([`OQ-WP5`](#decision-ledger)): a directory arrives at every deep
 destination shape a mirror would produce. The reasoning that predicted it still explains why:
 AC's three known limits are not the ones a rename would trip. Mirroring is **mount-count-neutral** — it renames one
 destination and adds none, which matters because the mount-count pressure is what forced the
@@ -765,7 +765,7 @@ choice. Neither fact is touched by a destination rename either way.
 
 What remained was that nobody had confirmed an arbitrary deep destination on AC. That is
 exactly the question the July mise investigation asked and closed **moot** rather than answered — and un-mooting
-option A re-opens it. [`OQ-WP5`](#OQ-WP5) has now measured it: supported, on `container` 1.1.0 (2026-09-25). Second-order: `workspace_readonly` and
+option A re-opens it. [`OQ-WP5`](#decision-ledger) has now measured it: supported, on `container` 1.1.0 (2026-09-25). Second-order: `workspace_readonly` and
 the per-side shadows build `"/workspace/"+rel` destinations
 (`internal/cli/run/mounts.go`), so mirroring moves those strings too, on a backend
 where they are already degraded.
@@ -848,7 +848,7 @@ skill, briefing and pack would have to hedge on a value it cannot know.
 
 **D. Fix the three confirmed problems individually.** — **Accepted as the recommendation.**
 `-trimpath` in `scripts/build-go.sh` closed [§3.1](#31-confirmed-jail-built-go-binaries-carry-workspace-source-paths) for one line ([`OQ-WP2`](#decision-ledger), shipped 2026-09-09). [§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name) is a log
-directory and it is left ([`OQ-WP3`](#OQ-WP3), decided as [`WP-D1`](#WP-D1)). [§3.3](#33-confirmed-workspace-paths-written-in-jail-are-dead-on-the-host) is documentation, and the briefing already
+directory and it is left ([`OQ-WP3`](#decision-ledger), decided as [`WP-D1`](#WP-D1)). [§3.3](#33-confirmed-workspace-paths-written-in-jail-are-dead-on-the-host) is documentation, and the briefing already
 says the true thing. This is the "targeted fix beats a general one when the general one has a
 worse cost profile" call, and it is a judgement, not a derivation.
 
@@ -860,7 +860,7 @@ counted against it. It is rejected because it makes path *names* agree while lea
 ([§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)); because it deletes the cheapest signal the credential boundary has ([§12.5](#125-the-credential-boundary--the-argument-that-could-have-killed-it-and-does)); and
 because on `macos-user` the mirrored home is inexpressible three ways over ([§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice)). The two
 arguments expected to carry it — capture relocation and notch portability — come back negative
-([§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way), [§12.7](#127-the-notch-model--no-statement-anywhere-names-paths-as-the-obstacle)). *This entry replaced "not evaluated here"; [`OQ-WP6`](#OQ-WP6) is answered by [§12](#12-follow-up-maximal-mirroring) and
+([§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way), [§12.7](#127-the-notch-model--no-statement-anywhere-names-paths-as-the-obstacle)). *This entry replaced "not evaluated here"; [`OQ-WP6`](#decision-ledger) is answered by [§12](#12-follow-up-maximal-mirroring) and
 re-leaned accordingly.*
 
 **F. Do nothing.** — **Rejected**, narrowly: [§3.1](#31-confirmed-jail-built-go-binaries-carry-workspace-source-paths) is a real defect with a one-line fix and
@@ -895,10 +895,10 @@ underestimated.
 | R1 | Machine-shared stores gain a per-workspace fanout; the mise dangling-symlink class returns in the jail↔jail direction ([§4.2](#42-the-re-opened-class)) | High — it is the class the 2026-07 bundle closed | None structural. Per-tool neutral paths (the `CARGO_HOME=/mise/cargo` move) treat each instance; that is the whack-a-mole the neutral-path decision ended |
 | R2 | The prose tax is paid forever, not once ([§6.3](#63-the-prose-tax--the-part-that-does-not-end), P3) | High, and easiest to miss because it is not a code cost | None. It is inherent to replacing a constant with a per-machine variable |
 | R3 | The container backends and `macos-user` diverge *more*, because macos-user refuses a workspace under a user home — the exact path mirroring would produce on a Mac ([§7.2](#72-macos-user-does-not-mirror-the-path-a-mac-user-would-want)) | High, and I did not expect it | None. It is a direct conflict between two backends' path rules, not a gap to fill |
-| R3a | Apple Container may not express an arbitrary deep destination ([§7.3](#73-apple-container-measured-and-supported)) | **Retired 2026-09-25** — measured supported on `container` 1.1.0 ([`OQ-WP5`](#OQ-WP5)) | None needed. AC still has no fallback spelling, so a later AC release that regresses it has no workaround |
+| R3a | Apple Container may not express an arbitrary deep destination ([§7.3](#73-apple-container-measured-and-supported)) | **Retired 2026-09-25** — measured supported on `container` 1.1.0 ([`OQ-WP5`](#decision-ledger)) | None needed. AC still has no fallback spelling, so a later AC release that regresses it has no workaround |
 | R4 | Path-keyed agent history is stranded at the old key ([§8](#8-migration)) | Medium, one-time, user-visible | Storage-layout-version bump + an announced loss; no migration is possible for a vendor-owned key |
 | R5 | Two unconverted call sites change behaviour rather than erroring: `configls.go` (fails closed) and `load.go` (stops recognising its own workspace) | Medium | Both are named in [§6.1](#61-the-code-side-is-smaller-than-folklore-says); convert with the mount, not after |
-| R6 | Workspace-scope `mounts` entries that are inert today become live ([§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)) | Low — measured to fail closed on the worst shape | Give workspace `mounts` a scope rule, which [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3) asks ([`OQ-WP4`](#OQ-WP4), [`WP-D2`](#WP-D2)) |
+| R6 | Workspace-scope `mounts` entries that are inert today become live ([§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)) | Low — measured to fail closed on the worst shape | Give workspace `mounts` a scope rule, which [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3) asks ([`OQ-WP4`](#decision-ledger), [`WP-D2`](#WP-D2)) |
 | R7 | A host workspace path collides with a jail-fixed path ([§7.1](#71-podman-expressible-and-the-image-constraint-is-not-one)) | Low, absurd in practice | An explicit launch-time refusal list ([§9](#9-if-the-answer-were-yes-anyway--what-the-design-would-still-owe)) |
 
 **Risks specific to maximal mirroring** (added 2026-09-04 with [§12](#12-follow-up-maximal-mirroring)).
@@ -907,7 +907,7 @@ R2 is withdrawn from this table by the churn ruling; R1, R4, R6 and R7 carry ove
 | # | Risk | Severity | Mitigation |
 | :--- | :--- | :--- | :--- |
 | R8 | A cross-boundary reference resolves to an ABI-incompatible artifact instead of failing with ENOENT ([§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)) | **Critical, and it is the verdict** | None available. The two sides are different userlands by design; only alternative G addresses it |
-| R9 | `retireJailMadeVenv` (`internal/cli/run/retire.go`) degrades from a working guard to always-pass ([§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)) | High — a shipped safety net stops working, silently | Replace the path-prefix test with something that survives mirroring. Nothing in the tree offers one; a content probe would have to be invented, and the ELF interpreter, measured 2026-09-25, cannot tell the two sides apart ([`OQ-WP9`](#OQ-WP9)), so no hardening is planned ([`WP-D3`](#WP-D3)) |
+| R9 | `retireJailMadeVenv` (`internal/cli/run/retire.go`) degrades from a working guard to always-pass ([§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)) | High — a shipped safety net stops working, silently | Replace the path-prefix test with something that survives mirroring. Nothing in the tree offers one; a content probe would have to be invented, and the ELF interpreter, measured 2026-09-25, cannot tell the two sides apart ([`OQ-WP9`](#decision-ledger)), so no hardening is planned ([`WP-D3`](#WP-D3)) |
 | R10 | Host-credential paths and their jail namesakes become the same string, in agent-editable config ([§12.5](#125-the-credential-boundary--the-argument-that-could-have-killed-it-and-does)) | High | Scope-rule workspace `mounts` ([`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3), per [`WP-D2`](#WP-D2)), which is worth doing regardless and is not sufficient alone |
 | R11 | On `macos-user`, a sandbox home at `/Users/<hostuser>` hands the agent read-write over the human's home via `(subpath <sandboxHome>)` ([§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice)) | **Critical, mechanical** | None. `dscl` also refuses the duplicate shortname, so the shape is inexpressible rather than dangerous — but only because macOS stops it, not because yolo does |
 | R12 | Captures and other home-relative artifacts stop being machine-independent, foreclosing cross-machine reuse ([§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way)) | Medium, and it is a foreclosure rather than a break | None. It is inherent: the mirrored home embeds the host username |
@@ -1115,7 +1115,7 @@ Two consequences follow, and both are costs:
 
 **Answer to the deadline question:** slice 6 is **not** deletable under mirroring, so the
 capture work stream is **not** blocked on this decision. I have recorded the dependency
-anyway, inverted, at [`OQ-WP11`](#open-questions) — it is worth one line in the plan that the
+anyway, inverted, at [`OQ-WP11`](#decision-ledger) — it is worth one line in the plan that the
 hoped-for deletion is not available, so nobody sequences around it.
 
 ### 12.7 The notch model — no statement anywhere names paths as the obstacle
@@ -1182,7 +1182,7 @@ legitimately reopen it.
 > 2026-09-12 ([`../reference/macos-user-home-tiers.md`](macos-user-home-tiers.md)). The transcript
 > leak quoted above is closed by that layout, and the *"load-bearing"* credential framing is
 > retracted in [`backend-parity.md` §7](../design/backend-parity.md#7-what-this-does-not-propose). The
-> paragraph above is the 2026-09-04 reading, kept as the argument; [`OQ-WP12`](#OQ-WP12) records
+> paragraph above is the 2026-09-04 reading, kept as the argument; [`OQ-WP12`](#decision-ledger) records
 > the outcome. The neutral-ground half below is untouched by it.
 
 **Neutral ground is a security decision about grant *routing*, it does not depend on paths
@@ -1323,198 +1323,12 @@ obstacle to anything.
 lever is making the *content* agree, not the names.** That is [alternative G](#10-alternatives-each-with-a-verdict),
 and it already has a home in the tree.
 
-## Open Questions
+## Evidence behind two rulings
 
-1. ✅ <a id="OQ-WP1"></a>**OQ-WP1: Accept the verdict, or is there a fourth problem I did not find?**
-   The recommendation rests on the sweep in [§3](#3-the-absolute-path-problems-measured) being close to complete — three confirmed
-   cases, seven candidates disproved. A single additional confirmed case with a real payload,
-   especially in the machine-shared cache, changes the arithmetic materially. **Scoped to the
-   narrow question by the 2026-09-04 reopening** — the closure question for the doc as a whole
-   is now [`OQ-WP8`](#OQ-WP8).
+The measurements behind [`OQ-WP5`](#decision-ledger) and [`WP-D3`](#WP-D3), kept because they are
+what makes each ruling safe.
 
-   <!-- vantage: question id=OQ-WP1 -->
-
-   _Leaning (as filed):_ Accept. But I am asking rather than asserting, because a maintainer's lived
-   annoyance is evidence a repo sweep cannot produce, and "this bites me weekly" would
-   outweigh my census.
-
-   **Answer:**
-   > **Moot (2026-09-30).** It asks about the narrow proposal, the workspace mirrored alone, and
-   > that is not the proposal: the maintainer's 2026-09-04 reopening made it maximal mirroring,
-   > whose verdict is [`OQ-WP8`](#OQ-WP8). Its evidence half was answered by events. Two more
-   > crossings turned up after the sweep, both measured by other designs. A git worktree made in a
-   > container jail records `/workspace/…` in both of its links, so the host's
-   > `git worktree prune` drops it
-   > ([`durable-scratch-space.md` §2.6](../design/durable-scratch-space.md#26-a-worktree-records-absolute-paths-measured)).
-   > A nix link made in a jail reaches the host daemon as a root spelled with the jail's path,
-   > so the host's garbage collector does not keep what it names
-   > ([`in-jail-nix-roots.md`](../design/in-jail-nix-roots.md)). Neither is in the machine-shared cache,
-   > and each has a targeted fix that needs no mirroring: `git worktree add --lock`
-   > ([`DS-D10`](../design/durable-scratch-space.md#DS-D10), built), and a root registered under the
-   > host's spelling of the link (designed, not built). That is the pattern [§3](#3-the-absolute-path-problems-measured) found for the
-   > first three. Both are carried into [`OQ-WP8`](#OQ-WP8)'s block, and the lived-annoyance ask
-   > is its option (B).
-
-3. ✅ <a id="OQ-WP3"></a>**OQ-WP3: Leave the `~/.cache/claude-cli-nodejs/-workspace` collision alone?**
-   Every jail on the machine writes into that one key ([§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name)). Today it holds MCP logs.
-   Fixing it means binding a per-workspace directory over one vendor-specific path — a
-   mount added for one tool's cache layout, which is the shape yolo usually refuses.
-
-   <!-- vantage: question id=OQ-WP3 -->
-
-   _Leaning:_ Leave it, and note it in [`jail-home.md`](jail-home.md) [§2.1](jail-home.md#the-mount-stack) so the next person
-   who finds interleaved MCP logs does not spend an afternoon on it. Revisit if a
-   second consumer appears ([§1.1](#11-what-would-change-my-mind)).
-
-   **Answer:**
-   > **Decided as an implementation choice ([`WP-D1`](#WP-D1)), reversible:** the collision is
-   > left alone and named in [`jail-home.md`](jail-home.md#sharing-semantics)'s
-   > sharing semantics. Re-measured 2026-09-30, the key still holds MCP logs and nothing else:
-   > four `mcp-logs-*` directories, 1.8 MB. The note sits under *Sharing semantics* rather than
-   > beside [the mount stack](jail-home.md#the-mount-stack) the leaning named,
-   > because sharing is what that section is about.
-
-4. ✅ <a id="OQ-WP4"></a>**OQ-WP4: Should workspace-scope `mounts` get a scope rule, separately from this?**
-   [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else) found that a `mounts` entry naming a workspace path is inert today only because the
-   path does not resolve host-side — an undocumented fail-safe. That is a question about
-   [`trust-paths.md`](../design/trust-paths.md)'s scope model, which currently lists workspace `mounts`
-   as un-scope-ruled, and it stands whether or not mirroring ever happens.
-
-   <!-- vantage: question id=OQ-WP4 -->
-
-   _Leaning:_ Raise it in [`trust-paths.md`](../design/trust-paths.md), not here. The measured blast
-   radius is small (a workspace subdir gets a second read-only appearance under `/ctx`; the
-   `/ctx/packs` shadow is refused by podman), so it is a model tidy-up rather than a fix.
-
-   **Answer:**
-   > **Decided as an implementation choice ([`WP-D2`](#WP-D2)), reversible:** it is not ruled
-   > here, because it is already asked elsewhere. [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3),
-   > which the maintainer opened on 2026-09-18, asks whether `mounts` and `env_sources` become
-   > user-scope-only, and is still open there. [`trust-paths.md`](../design/trust-paths.md) holds no
-   > open question to raise it in. This doc's one addition, [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)'s accidental fail-safe, matters
-   > only if [`OQ-WP8`](#OQ-WP8) is answered yes, so AS3 needs nothing from it today.
-
-5. ✅ <a id="OQ-WP5"></a>**OQ-WP5: Does Apple Container support an arbitrary deep bind destination?**
-   Unanswered since the July mise investigation closed it as moot. It does not block the *no*, but it
-   would block a future *yes*, and it is cheap to measure for whoever next has AC hardware
-   in front of them. `docs/design/backend-parity.md` is where the answer belongs.
-
-   <!-- vantage: question id=OQ-WP5 -->
-
-   _Leaning:_ Unverified, and I would guess yes (AC does ordinary directory binds), but a
-   guess is exactly what this repo's doc norms forbid recording as fact.
-
-   **The measurement** is described in the [background](#background-to-oq-wp5).
-
-   **Answer:**
-   > **Yes, measured 2026-09-25.** `AC-WP5 VERDICT: SUPPORTED` on `container` CLI 1.1.0, in
-   > `apple-container.yml` run 36170072271 on the self-hosted arm64 runner. All three shapes
-   > arrived with `--read-only`, and the host saw the in-container write each time. For the
-   > nested shape the mountpoint was created on the host inside the parent bind. Nothing about
-   > Apple Container blocks a mirrored workspace destination. This settles a fact, not the
-   > design: mirroring is still the no of [`OQ-WP8`](#OQ-WP8).
-
-6. ✅ <a id="OQ-WP6"></a>**OQ-WP6: Is the interesting proposal actually "mirror all three path spaces"?**
-   P1 says mirroring the workspace alone cannot make the two sides agree, because home and
-   the toolchain store do not move. The coherent version of the idea moves all three — and
-   collides head-on with two shipped designs ([`jail-home.md`](jail-home.md),
-   [`../reference/jail-state-separation-design.md`](jail-state-separation-design.md)) that exist because
-   *not* sharing those was worth paying for. Worth a paragraph of intent before anyone
-   invests in it.
-
-   <!-- vantage: question id=OQ-WP6 -->
-
-   **Superseded in substance by [§12](#12-follow-up-maximal-mirroring), 2026-09-04** — the
-   question was asked for real and is now analysed rather than deferred. Its verdict half is
-   [`OQ-WP8`](#OQ-WP8)'s.
-
-   _Leaning (revised 2026-09-04, as filed):_ Still no, but my original reason was too glib. It is not
-   that the separate home is sacred — [§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice) shows the *shared-home* half of macos-user's shape
-   is weakly founded and reopenable. It is that mirroring makes names agree while contents
-   stay side-determined ([§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)), which is a worse failure mode than the one it removes, and
-   that on macos-user the mirrored home is mechanically inexpressible ([§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice)).
-
-   **Answer:**
-   > **Answered by the maintainer's reopening (2026-09-04): yes.** The proposal is all three
-   > path spaces and the user's name, in the maintainer's words *"what if we changed anywhere in
-   > our design that we need to match paths? The user could have the same name as the host
-   > user, we could mirror things there, and elsewhere."* [§12](#12-follow-up-maximal-mirroring) is that analysis. Whether to
-   > build it is [`OQ-WP8`](#OQ-WP8), and the leaning above is carried there.
-
-9. ✅ <a id="OQ-WP9"></a>**OQ-WP9: Harden `retireJailMadeVenv` regardless of the verdict?**
-   `internal/cli/run/retire.go` decides whether to delete a workspace venv by testing a
-   **path prefix** plus an existence check. [§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content) uses its degradation under mirroring as
-   evidence, but the guard is already thin: it misses any jail-made venv whose recorded
-   interpreter happens to exist on the host at the same path.
-
-   <!-- vantage: question id=OQ-WP9 -->
-
-   _Leaning:_ Yes, but as separate, small work, and only if a better oracle exists. Reading
-   the ELF interpreter out of the recorded `home` binary was the candidate. It is now measured
-   (below): cheap enough, but it cannot tell the two sides apart, so it does not meet the
-   leaning's own condition. No other oracle has been found, so this is still a question
-   rather than a proposal.
-
-   **Evidence, MEASURED 2026-09-25**: [background](#background-to-oq-wp9).
-
-   **Answer:**
-   > **Decided as an implementation choice ([`WP-D3`](#WP-D3)), reversible: no hardening.** The
-   > leaning made the work conditional on a better oracle, and none exists: the one candidate,
-   > measured above, cannot tell the sides apart. The guard's job has also shrunk. It runs only on
-   > a fresh container launch (`internal/cli/run/run.go`), and it checks `.venv` and the
-   > mise-config venv path, which the per-side shadow set
-   > ([`SS-2`](jail-state-separation-design.md#ss-2)) backs per side on the
-   > container backends. So a jail-made venv the guard can find in the workspace is state from
-   > before the shadows, the "old shared-store model" its own doc comment names
-   > (`internal/cli/run/retire.go`). Reopen if a content oracle is found, or if
-   > [`OQ-WP8`](#OQ-WP8) is answered yes.
-
-11. ✅ <a id="OQ-WP11"></a>**OQ-WP11: Record the inverted capture finding in `install-capture.md`?** The hoped-for
-    result was that mirroring makes slice 6 (relocation) deletable. [§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way) finds the opposite:
-    relocation is a `macos-user`-only need created by capture's own staging isolation, and on
-    the container backends it is unnecessary *because* `/home/agent` is a machine-independent
-    constant that mirroring would remove. So slice 6 is not blocked on this decision and the
-    two work streams do not collide.
-
-    <!-- vantage: question id=OQ-WP11 -->
-
-    _Leaning:_ Yes — one line in [`../plans/install-capture.md`](../plans/install-capture.md)'s
-    build-order step 6 saying the deletion is not available, so nobody sequences around a
-    saving that is not coming. That is an edit to a file another agent is actively working in,
-    so it belongs in their commit, not this one.
-
-    **Answer:**
-    > **Moot (2026-09-30).** The line's purpose was to stop anyone sequencing around a deletion
-    > that was not coming, and the work it guarded is built: hand-off H2, the relocation rewrite,
-    > landed on 2026-09-26 ([`install-capture.md`](../plans/install-capture.md)'s status), so
-    > there is nothing left to sequence. That plan's status already links here "for relocation
-    > itself". [§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way)'s finding
-    > matches what was built: a materialize into the capture's own home ignores `relocatable`,
-    > which is what makes the container backends need no rewrite.
-
-12. ✅ <a id="OQ-WP12"></a>**[`OQ-WP12`](#OQ-WP12): Reopen `macos-user`'s single shared home? — ANSWERED BY REFERENCE, 2026-09-11.**
-    A side finding of [§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice),
-    unrelated to mirroring's verdict: the single `/Users/_yolojail` home was inherited from
-    SandVault with no argument recorded, contradicted a must-keep in
-    [`macos-no-vm-direction.md`](macos-no-vm-direction.md) (*"Per-workspace isolation
-    … not one shared home"*), and carried a cross-workspace transcript leak.
-
-    <!-- vantage: question id=OQ-WP12 -->
-
-    _Leaning (as filed):_ the maintainer's call — a tier tradeoff — with the bar
-    [`backend-parity.md`](../design/backend-parity.md) sets: restore **both** tiers explicitly, never just
-    split the home.
-
-    **Answer:** answered by [`OQ-HT4`](macos-user-home-tiers.md#oq-ht4) (ruled
-    2026-09-11, built 2026-09-12), on exactly that bar. `HOME` stays `/Users/_yolojail` as the
-    machine tier; the workspace tier is a symlink layout into `<workspace>/.yolo/home`; pack
-    `scope: machine` directories stay in the account home and are mirrored back. The transcript
-    leak is closed by the layout, with no profile change
-    ([`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#no-bind-mounts)).
-
-### Background to the open questions
-
-#### Background to [OQ-WP5](#OQ-WP5)
+### Background to [OQ-WP5](#decision-ledger)
 
 **The measurement is**
 `TestAppleContainerBindsADeepDestination` in
@@ -1527,10 +1341,10 @@ nested inside another bind (`/workspace/a/b/c/proj`), and a path deep under an i
 directory (`/opt/yolo-wp5/a/b/c/proj`). Each runs with `--read-only` as a yolo launch does,
 and again without it on a failure, so the log says whether the rootfs or the destination
 refused. **How to read it:** grep the job log for `AC-WP5 VERDICT`. `SUPPORTED` answers
-this question yes. `NOT SUPPORTED for [...]` names the shapes that failed. Either way,
+it yes. `NOT SUPPORTED for [...]` names the shapes that failed. Either way,
 record the `container` version the line prints.
 
-#### Background to [OQ-WP9](#OQ-WP9)
+### Background to [OQ-WP9](#decision-ledger)
 
 **Evidence, MEASURED 2026-09-25**, with no ruling implied. The benchmark is
 `internal/cli/run/retire_bench_test.go`. It ran in this development jail on an AMD Ryzen AI
@@ -1578,7 +1392,7 @@ the median of its runs.
 All twelve questions are settled — [`OQ-WP8`](#OQ-WP8), the closure question, and
 [`OQ-WP7`](#OQ-WP7) and [`OQ-WP10`](#OQ-WP10), by the maintainer's rulings on 2026-10-15,
 [`OQ-WP2`](#decision-ledger), by building it,
-[`OQ-WP12`](#OQ-WP12), by another design's ruling, [`OQ-WP5`](#OQ-WP5), by measurement, and six on
+[`OQ-WP12`](#decision-ledger), by another design's ruling, [`OQ-WP5`](#decision-ledger), by measurement, and six on
 2026-09-30 without a ruling being owed. None is live. Rows named `WP-D<n>` *(coined here, 2026-09-30)* are
 **implementation decisions**: a question with one sensible answer inside this design, decided
 rather than asked, and reversible. The rows after them are *inherited* rulings this doc is built on top of, recorded so they are not
@@ -1590,14 +1404,14 @@ silently re-litigated:
 | <a id="OQ-WP10"></a>[OQ-WP10](#OQ-WP10) | **The only goal was removing friction; alternative G (one userland at several confinement notches) is not a goal.** It had been asked because [§10](#10-alternatives-each-with-a-verdict) named G as where the want might live, so that a no to mirroring would not silently read as a no to G. The friction was tools that bake absolute paths into what they write (uv's virtualenvs and their script shebangs, and the like), which break when the tree is used from the other side ([§5](#5-what-this-does-not-fix-and-what-it-does-not-license), [§12.4](#124-the-new-central-objection-you-can-mirror-a-name-but-not-its-content)). The maintainer's words: *"The real goal was to remove friction. That was the only goal. I'm not sure why that needs to know what's the purpose of this 10th question"*, and *"We just had enough problems with, like, UV baking paths in, or whatever else baking paths in, and if they were the same path, then baking in would be fine, and it would lower friction, but if it's not possible, okay, it's not possible."* | 2026-10-15 | [§10](#10-alternatives-each-with-a-verdict) alternative G, [§12.7](#127-the-notch-model--no-statement-anywhere-names-paths-as-the-obstacle), [`HP-DIR3`](../design/host-tool-provisioning.md#HP-DIR3) |
 | <a id="OQ-WP7"></a>[OQ-WP7](#OQ-WP7) | **Keep this doc, as an evergreen reference.** Path mirroring is an obvious-looking fix that keeps being proposed (it was asked in July and again in September), so the record of why it was rejected stays in the repository. Moved from `docs/design/` to `docs/reference/` the same day. The maintainer's words: *"I think as much as I want to delete this document, I think it's so obvious of a solution to want to a lot of the problems we have that we should keep this as an evergreen document in this repository."* | 2026-10-15 | this doc's opening paragraph |
 | OQ-WP2 | **`-trimpath` in `scripts/build-go.sh`, independent of the verdict** — shipped 2026-09-09 (`6bfcfe7b`) as the leaning proposed, with its own test pinning the flag against `flake.nix`'s hermetic build (`internal/entrypoint/gobuildflags_test.go`). The measurement behind it outgrew [§3.1](#31-confirmed-jail-built-go-binaries-carry-workspace-source-paths): a jail-run build can bake the HOST's absolute source paths into a shipped binary, because Go's build cache reuses compile actions recorded under another directory — so the flag keeps the maintainer's home layout out of an artifact, not just dead paths | 2026-09-09 | [§3.1](#31-confirmed-jail-built-go-binaries-carry-workspace-source-paths), [§10](#10-alternatives-each-with-a-verdict) alternative D |
-| OQ-WP5 | **Apple Container supports an arbitrary deep bind destination** — measured, not ruled: `AC-WP5 VERDICT: SUPPORTED` on `container` 1.1.0, all three shapes | 2026-09-25 | [OQ-WP5](#OQ-WP5), `apple-container.yml` run 36170072271 |
+| OQ-WP5 | **Apple Container supports an arbitrary deep bind destination** — measured, not ruled: `AC-WP5 VERDICT: SUPPORTED` on `container` 1.1.0, all three shapes | 2026-09-25 | [background](#background-to-oq-wp5), `apple-container.yml` run 36170072271 |
 | OQ-WP12 | **Answered by reference to [`OQ-HT4`](macos-user-home-tiers.md#oq-ht4).** The shared home was reopened in the macos-user home-tier design and both tiers were restored: `HOME` stays `/Users/_yolojail` (machine tier), the workspace tier is symlinks into `<workspace>/.yolo/home`, and the cross-workspace transcript leak is closed by that layout | 2026-09-11 | [`../reference/macos-user-home-tiers.md`](macos-user-home-tiers.md) |
-| OQ-WP6 | **Answered by the maintainer's reopening: the proposal is all three path spaces and the user's name** (*"The user could have the same name as the host user, we could mirror things there, and elsewhere"*). [§12](#12-follow-up-maximal-mirroring) analyses it and [`OQ-WP8`](#OQ-WP8) decides it | 2026-09-04, recorded 2026-09-30 | [OQ-WP6](#OQ-WP6) |
-| OQ-WP1 | **Moot.** It asks about the workspace-only proposal, which the reopening replaced. Its evidence half was answered by events: two more crossings were measured (a jail-made git worktree's links, a jail's nix roots), neither in the machine-shared cache, and each has a targeted fix that needs no mirroring. Both are inputs to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [OQ-WP1](#OQ-WP1), [`durable-scratch-space.md` §2.6](../design/durable-scratch-space.md#26-a-worktree-records-absolute-paths-measured), [`in-jail-nix-roots.md`](../design/in-jail-nix-roots.md) |
-| OQ-WP11 | **Moot.** The relocation rewrite (install-capture hand-off H2) was built on 2026-09-26, so no one can sequence around deleting it, and the plan's status already links here | 2026-09-30 | [OQ-WP11](#OQ-WP11), [`../plans/install-capture.md`](../plans/install-capture.md) |
-| <a id="WP-D1"></a>WP-D1 | *Implementation decision*, answering [`OQ-WP3`](#OQ-WP3). **`~/.cache/claude-cli-nodejs/-workspace` stays one key shared by every container jail on the machine**, and [`jail-home.md`](jail-home.md#sharing-semantics) names it. Why: it holds MCP logs and nothing else (re-measured 2026-09-30: four `mcp-logs-*` directories, 1.8 MB), and the fix is a mount for one vendor's cache layout. Reopen on [§1.1](#11-what-would-change-my-mind)'s first condition | 2026-09-30 | [OQ-WP3](#OQ-WP3), [§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name) |
-| <a id="WP-D2"></a>WP-D2 | *Implementation decision*, answering [`OQ-WP4`](#OQ-WP4). **A scope rule for workspace `mounts` is not ruled here**: [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3), which the maintainer opened on 2026-09-18, asks it for `mounts` and `env_sources` together. Why: one question in two docs gets asked twice, and [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)'s fail-safe matters only under a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [OQ-WP4](#OQ-WP4) |
-| <a id="WP-D3"></a>WP-D3 | *Implementation decision*, answering [`OQ-WP9`](#OQ-WP9). **`retireJailMadeVenv` is not hardened.** Why: the leaning's condition, a better oracle, is unmet (the ELF interpreter was measured unable to tell the sides apart, 2026-09-25), and the guard retires state from before the per-side shadows ([`SS-2`](jail-state-separation-design.md#ss-2)), which now keep a container jail's `.venv` and mise-config venv off the host. Reopen on a content oracle, or on a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [OQ-WP9](#OQ-WP9), `internal/cli/run/retire.go` |
+| OQ-WP6 | **Answered by the maintainer's reopening: the proposal is all three path spaces and the user's name** (*"The user could have the same name as the host user, we could mirror things there, and elsewhere"*). [§12](#12-follow-up-maximal-mirroring) analyses it and [`OQ-WP8`](#OQ-WP8) decides it | 2026-09-04, recorded 2026-09-30 | [§12](#12-follow-up-maximal-mirroring) |
+| OQ-WP1 | **Moot.** It asks about the workspace-only proposal, which the reopening replaced. Its evidence half was answered by events: two more crossings were measured (a jail-made git worktree's links, a jail's nix roots), neither in the machine-shared cache, and each has a targeted fix that needs no mirroring. Both are inputs to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [`durable-scratch-space.md` §2.6](../design/durable-scratch-space.md#26-a-worktree-records-absolute-paths-measured), [`in-jail-nix-roots.md`](../design/in-jail-nix-roots.md) |
+| OQ-WP11 | **Moot.** The relocation rewrite (install-capture hand-off H2) was built on 2026-09-26, so no one can sequence around deleting it, and the plan's status already links here | 2026-09-30 | [§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way), [`../plans/install-capture.md`](../plans/install-capture.md) |
+| <a id="WP-D1"></a>WP-D1 | *Implementation decision*, answering [`OQ-WP3`](#decision-ledger). **`~/.cache/claude-cli-nodejs/-workspace` stays one key shared by every container jail on the machine**, and [`jail-home.md`](jail-home.md#sharing-semantics) names it. Why: it holds MCP logs and nothing else (re-measured 2026-09-30: four `mcp-logs-*` directories, 1.8 MB), and the fix is a mount for one vendor's cache layout. Reopen on [§1.1](#11-what-would-change-my-mind)'s first condition | 2026-09-30 | [§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name) |
+| <a id="WP-D2"></a>WP-D2 | *Implementation decision*, answering [`OQ-WP4`](#decision-ledger). **A scope rule for workspace `mounts` is not ruled here**: [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3), which the maintainer opened on 2026-09-18, asks it for `mounts` and `env_sources` together. Why: one question in two docs gets asked twice, and [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)'s fail-safe matters only under a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else) |
+| <a id="WP-D3"></a>WP-D3 | *Implementation decision*, answering [`OQ-WP9`](#decision-ledger). **`retireJailMadeVenv` is not hardened.** Why: the leaning's condition, a better oracle, is unmet (the ELF interpreter was measured unable to tell the sides apart, 2026-09-25), and the guard retires state from before the per-side shadows ([`SS-2`](jail-state-separation-design.md#ss-2)), which now keep a container jail's `.venv` and mise-config venv off the host. Reopen on a content oracle, or on a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [background](#background-to-oq-wp9), `internal/cli/run/retire.go` |
 | OQ-MP1 | Same-path workspace mount ("option A") rejected; superseded by the state-separation bundle | 2026-07-03 | the deleted `mise-host-jail-path-mismatch.md` · this doc [§2.3](#23-the-prior-art-and-why-it-is-not-the-answer) re-examines it, because two of its three reasons have expired |
 | [`OQ-2`](#decision-ledger) (env-manager) | Host management is user-scoped; the workspace contributes nothing, so `${workspace}` surfaces are refused at the host notch | 2026-08-01 | `docs/plans/environment-manager-plan.md` · [§12.7](#127-the-notch-model--no-statement-anywhere-names-paths-as-the-obstacle) relies on it: mirroring cannot supply a referent the design says must not exist |
 | [`HP-DIR3`](../design/host-tool-provisioning.md#HP-DIR3) (host-tool-provisioning) | At the host, yolo manages the agent's environment and never the workspace's runtime; in a jail it does provision the workspace's runtime | 2026-09-29 | [`host-tool-provisioning.md`](../design/host-tool-provisioning.md#decision-ledger) · [`OQ-WP10`](#OQ-WP10) relied on it: alternative G's host-to-jail half is not a goal |

@@ -1878,7 +1878,7 @@ config-overlay `profile` modifier still gates on the primary alone.
 `via` is an optional profile field, on a pack's `kind: "profile"` and on a user `profiles`
 entry alike. Its value names a **service pack**, and today the one that serves it is
 `wire-bridge`. A profile with `via` sends its agent's model traffic through that service instead
-of straight to the provider ([OQ-WG6](../design/wire-bridge-gateway.md#OQ-WG6)):
+of straight to the provider ([OQ-WG6](../design/wire-bridge-gateway.md#decision-ledger)):
 
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
@@ -2464,7 +2464,7 @@ no profile. `yolo host env` prints the composition and nothing about what a laun
   model id outside the selected provider's `models`.** It would catch deselection residue loudly,
   but it also refuses every legitimate hand-picked model, and a launch-time check cannot see a
   mid-session `/model` switch at all. An enforced model allowlist is the wire bridge's job, which
-  sees every request ([`OQ-WG3`](../design/wire-bridge-gateway.md#OQ-WG3), ruled, and built
+  sees every request ([`OQ-WG3`](../design/wire-bridge-gateway.md#decision-ledger), ruled, and built
   2026-09-30 as [WG-I40](../design/wire-bridge-gateway.md#WG-I40)).
 - **No value schema for options** — a typechecker in core is `wire_api`'s enum one layer up.
 - <a id="what-the-credential-gate-does-not-do"></a>**No revoking a credential from a running

@@ -424,7 +424,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   in `~/.yolo/bin/launch/` run install-only, so agent CLIs are installed before the command runs.
   **A program it cannot install STOPS the launch**, offline included; `YOLO_ALLOW_MISSING_PROGRAMS=1`
   on the host is the hatch the refusal names, and the integration suite turns the act off with
-  `YOLO_NO_PROGRAM_READINESS=1` ([`OQ-JR1`](docs/design/jail-notch-readiness.md#OQ-JR1),
+  `YOLO_NO_PROGRAM_READINESS=1` ([`OQ-JR1`](docs/design/jail-notch-readiness.md#9-decision-ledger),
   [`readiness.go`](internal/entrypoint/readiness.go); not yet on macos-user, `JR-D2`). The launchers
   still refresh at invocation and still install what a skipped act left. **It installs no language
   server**: `lsp_servers` only renders config (Claude's generated plugin, Copilot's projection), so a

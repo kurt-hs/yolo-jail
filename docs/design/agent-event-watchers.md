@@ -196,7 +196,7 @@ the model, and whether that works while the agent is idle. The evidence behind e
 | **omp** | The same extension, if omp's API is pi's, as the omp pack's own `yolo-footer.js` comment claims | One file under `~/.oh-omp/agent/extensions/` | **wake**, UNMEASURED | INFERRED; omp is not installed here |
 | **opencode** | A plugin calling `client.session.prompt` on the active session, or the HTTP API (`/session/{id}/prompt_async`, `/tui/submit-prompt`) when the TUI runs with `--port` | One plugin file under `~/.config/opencode/plugins/` | **wake**, UNMEASURED | SOURCED ([plugins](https://opencode.ai/docs/plugins), [server](https://opencode.ai/docs/server)); the routes are MEASURED in the binary |
 | **copilot** | An extension that calls `joinSession()` for *"the user's current foreground session"* and then `session.send()` | One extension directory in copilot's user extensions dir. Extensions load by default | **wake**, UNMEASURED | MEASURED in the package's bundled SDK docs |
-| **codex** | A `UserPromptSubmit` hook returning `additionalContext`. For waking: `codex queue --thread <id> --message <text>` through the shared app-server daemon | The hook is one config entry. `queue` needs the TUI to be on the shared daemon, not its embedded fallback, and whether a queued message starts a turn on an idle thread is open upstream ([openai/codex#49081](https://github.com/openai/codex/issues/49081)) | **next turn**; the wake route is closed while [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1) keeps the daemon off wherever yolo launches Codex | hooks SOURCED ([hooks](https://learn.chatgpt.com/docs/hooks)); `queue` MEASURED in `--help` |
+| **codex** | A `UserPromptSubmit` hook returning `additionalContext`. For waking: `codex queue --thread <id> --message <text>` through the shared app-server daemon | The hook is one config entry. `queue` needs the TUI to be on the shared daemon, not its embedded fallback, and whether a queued message starts a turn on an idle thread is open upstream ([openai/codex#49081](https://github.com/openai/codex/issues/49081)) | **next turn**; the wake route is closed while [OQ-CDX1](../research/codex-background-service.md#decision-ledger) keeps the daemon off wherever yolo launches Codex | hooks SOURCED ([hooks](https://learn.chatgpt.com/docs/hooks)); `queue` MEASURED in `--help` |
 | **agy** | A `PreInvocation` hook returning `injectSteps` with a `userMessage`. For waking: `agy agentapi send-message`, which appears to need the running server's address and CSRF token | The hook is one `hooks.json` entry | **next turn** first | MEASURED in agy's embedded docs; the wake route is INFERRED |
 | a plain shell | Nothing | — | **held** | — |
 
@@ -204,7 +204,7 @@ the model, and whether that works while the agent is idle. The evidence behind e
 route that wakes an idle session from a file or a process the agent's own pack can ship, and
 omp probably shares pi's. codex and agy have one that reaches the next turn. agy has one that
 might wake, which needs measuring; codex's is closed while its background server is off
-([OQ-CDX1](../research/codex-background-service.md#OQ-CDX1)). None of the wake routes needs the agent to take part, and none
+([OQ-CDX1](../research/codex-background-service.md#decision-ledger)). None of the wake routes needs the agent to take part, and none
 needs yolo to learn a vendor's socket protocol.
 
 ## 3. The shape
@@ -475,7 +475,7 @@ tier, so the launch can say what a sidecar's pings will do ([§3.5](#35-failure-
   codex:<session> --agent-pid $PPID --format codex`, the session id from the hook's input as in
   claude's. A wake route, a codex-pack sidecar piping `--follow` into `codex queue`, is closed for
   now: `queue` reaches a running Codex only through Codex's background server, and
-  [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1) turned that server off wherever yolo
+  [OQ-CDX1](../research/codex-background-service.md#decision-ledger) turned that server off wherever yolo
   launches Codex.
 - **agy, next turn.** A `PreInvocation` hook running `yolo notify --drain --reader agy:<session>
   --agent-pid $PPID --format agy`.
@@ -949,7 +949,7 @@ directed and lands with step 1.
 7. **codex and agy next-turn hooks; opencode, copilot and omp wake deliverers**, each measured
    by a human before its tier is declared. Then codex's `queue` wake route, once
    [openai/codex#49081](https://github.com/openai/codex/issues/49081) settles and only if
-   [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1), which turned Codex's background
+   [OQ-CDX1](../research/codex-background-service.md#decision-ledger), which turned Codex's background
    server off, is revisited.
 8. **macos-user agent side**, once something there can keep it to one instance per workspace
    ([§3.2](#32-lifecycle-per-side-and-per-notch)). [OQ-DP8](declaration-parity.md#OQ-DP8), which
@@ -2015,7 +2015,7 @@ package carries no docs. INFERRED only.
   TUI uses that daemon by default and falls back to an embedded server that `queue` cannot reach
   (MEASURED, strings). The daemon also offers `turn/start`, `turn/steer`, `thread/inject_items`
   and `thread/loaded/list` (MEASURED, a schema generated from the binary). Since
-  [OQ-CDX1](../research/codex-background-service.md#OQ-CDX1) was ruled on 2026-09-29, yolo turns
+  [OQ-CDX1](../research/codex-background-service.md#decision-ledger) was ruled on 2026-09-29, yolo turns
   that daemon off wherever it launches Codex, so `queue` has nothing to reach in a yolo launch.
 - Whether a queued message starts a turn on an idle thread is unsettled:
   [openai/codex#49081](https://github.com/openai/codex/issues/49081), filed 2026-09-28, reports

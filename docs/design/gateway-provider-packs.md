@@ -77,7 +77,7 @@ is retired; its one trap the reference lacked, codex's `env_key` credential fiel
 Also [`wire-bridge-gateway.md`](wire-bridge-gateway.md), whose direction
 [DIR-WG1](wire-bridge-gateway.md#DIR-WG1) (routing every agent's model traffic through the wire
 bridge) names OpenRouter model filtering as its motivating case, and whose
-[OQ-WG3](wire-bridge-gateway.md#OQ-WG3) asks whether a curated OpenRouter or Kilo map
+[OQ-WG3](wire-bridge-gateway.md#decision-ledger) asks whether a curated OpenRouter or Kilo map
 ([§2](#2-a-selected-set-not-a-synchronized-catalog)) becomes an enforced allowlist rather than
 only the set a picker shows.
 
