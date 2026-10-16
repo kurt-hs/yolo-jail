@@ -172,7 +172,7 @@ yolo's own and has no coverage question in it. The fix is attribution
 A pack's program reaches a jail through a lazy launcher in `~/.yolo/bin/launch`
 ([`program-delivery.md`](../design/program-delivery.md)). Since 2026-10-05 the launch's readiness
 act runs that launcher install-only in the provisioning stage, so the program is installed before
-the command ([`OQ-JR1`](../design/jail-notch-readiness.md#OQ-JR1)); the suite turns the act off
+the command ([`OQ-JR1`](../design/jail-notch-readiness.md#9-decision-ledger)); the suite turns the act off
 (see [The real-install gate](#the-real-install-gate)). On first use, when the real binary is
 absent from its install prefix, the launcher installs it and then execs it. On the launch path a
 failed install is not the verdict: the check that follows asks whether something exists to exec,
@@ -385,7 +385,7 @@ launch never auto-captures, since `Run` returns through the macos-user branch be
 `runContainer` reaches the trigger (`internal/cli/run/autocapture.go`), so on darwin the
 installer packs' cells run the vendor's installer through the launcher itself.
 
-The gate decides the jail's readiness act too ([`OQ-JR1`](../design/jail-notch-readiness.md#OQ-JR1)):
+The gate decides the jail's readiness act too ([`OQ-JR1`](../design/jail-notch-readiness.md#9-decision-ledger)):
 since 2026-10-05 a launch installs every program its selected packs declare before its command, and
 a program it cannot install stops the launch. When the gate is unset, every launch the suite makes
 carries `YOLO_NO_PROGRAM_READINESS=1`, so a launch selecting a shipped agent pack installs nothing

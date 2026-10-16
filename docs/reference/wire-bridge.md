@@ -320,7 +320,7 @@ provider's key, read once at boot, for every upstream but one kind. A Bedrock up
 `platform` is `aws-bedrock`, at any `https` address, or one whose host is
 `bedrock-runtime.<region>.amazonaws.com` on any provider
 ([which upstream is Bedrock's](#which-upstream-is-bedrocks),
-[OQ-WG1](../design/wire-bridge-gateway.md#OQ-WG1)). Its credential chain is the AWS SDK's order:
+[OQ-WG1](../design/wire-bridge-gateway.md#decision-ledger)). Its credential chain is the AWS SDK's order:
 a static `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` pair, then the `aws-auth` pointer
 `AWS_CONTAINER_CREDENTIALS_FULL_URI`, then `AWS_BEARER_TOKEN_BEDROCK` sent unsigned as a bearer.
 Exactly one is used per request, so a signature and a bearer never travel together.
@@ -787,7 +787,7 @@ profile.
 
 On the bridge path the bridge is the one hard refusal of a model outside the provider's list
 ([`wire-bridge-gateway.md` §6](../design/wire-bridge-gateway.md#6-part-5--all-traffic-through-the-bridge-new-direction-design),
-[OQ-WG3](../design/wire-bridge-gateway.md#OQ-WG3)). There is no second list: the allowlist is the
+[OQ-WG3](../design/wire-bridge-gateway.md#decision-ledger)). There is no second list: the allowlist is the
 provider's composed list after a `models` `only`, the one every picker renders
 ([`model-lists-and-pickers.md`](../design/model-lists-and-pickers.md#7-how-a-company-pack-shapes-a-list-the-models-kind)).
 A list no `only` narrowed refuses nothing. The switch is the profile's `enforce_models`, on unless

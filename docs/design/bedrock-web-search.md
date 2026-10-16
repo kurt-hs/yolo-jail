@@ -48,7 +48,7 @@ and when a user's own Tavily search server is also eligible, which one does it g
   ([OQ-BR22](#OQ-BR22), answered by rulings).
 - **Built:** none of the search feature. The signer it reuses is built: `internal/sigv4`, the
   standard-library SigV4 signer the wire bridge has used since 2026-09-25 (commit `226d2b3a`;
-  [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR10)). It already exports the AgentCore
+  [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger)). It already exports the AgentCore
   service name and gateway-host matcher for this proxy.
 - **Read 2026-10-01** ([D7](#d7-read-2026-10-01-two-search-traps-a-derive-can-walk-into)): on
   `-p bedrock-bridge`, claude and codex each offer a search that runtime cannot serve, and
@@ -224,7 +224,7 @@ Four components, the last three new, and each name coined here:
 4. **The signing proxy** *(coined here)* — the in-jail program the entry runs. Agents' MCP clients
    cannot sign SigV4, so the proxy speaks MCP to the agent and MCP streamable HTTP to the gateway,
    signing each request as `bedrock-agentcore`. It uses the same standard-library signer the wire
-   bridge uses, `internal/sigv4` ([`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR10)), as a
+   bridge uses, `internal/sigv4` ([`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger)), as a
    third route: MCP pass-through, sign only, no translation. It is a hidden `yolo` subcommand the
    entry's `command` runs ([OQ-BR21](#OQ-BR21)).
 
@@ -287,7 +287,7 @@ MEASURED at `6f21b82c` ([§3](#3-what-yolos-mcp-pipeline-does-today)):
 Written for the implementer. Anything not here and not an open question is theirs.
 
 - **Credentials** resolve as the bridge's signer resolves them
-  ([`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR10)): static `AWS_ACCESS_KEY_ID` /
+  ([`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger)): static `AWS_ACCESS_KEY_ID` /
   `AWS_SECRET_ACCESS_KEY` first, then `aws-auth`'s container-credentials endpoint
   (`AWS_CONTAINER_CREDENTIALS_FULL_URI`), cached until five minutes before its `Expiration`,
   fetched lazily on the first request, and shared by concurrent requests. The proxy never sends a
@@ -502,7 +502,7 @@ projects to. That doc owns the rule; this one only records the reading.
 
 9. **Search, after [OQ-BR19](#OQ-BR19), [OQ-BR20](#OQ-BR20) and [OQ-BR23](#OQ-BR23) rule.** The
    bridge's signer it builds on shipped 2026-09-25 as `internal/sigv4` (bedrock-plumbing's build
-   step 8.1; [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR10)):
+   step 8.1; [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger)):
    1. ~~measure [D7](#d7-read-2026-10-01-two-search-traps-a-derive-can-walk-into) first: which
       agents offer a native search tool on a Bedrock profile, and which pass `${VAR}` references in
       an MCP `env`~~ — read 2026-10-01 from the shipped packages, not run. Both traps are real, and

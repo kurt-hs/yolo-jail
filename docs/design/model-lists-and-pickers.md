@@ -193,7 +193,7 @@ questions without asking: [OQ-BR15](#16-decision-ledger) on evidence (the bridge
   the same model ([the ruling](#oq-ml4-ml5-setup)). Built 2026-10-16 ([ML-D12](#ML-D12)).
 
 **Out of scope, and where it lives instead.** Refusing an off-list model at the wire:
-[`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-WG3), which reads this doc's effective
+[`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger), which reads this doc's effective
 list. Which vendors each agent can call on Bedrock, and the per-agent filter table:
 [`bedrock-plumbing.md`](bedrock-plumbing.md#OQ-BR9). Clearing a model id when you stop
 selecting a profile: [`OQ-PSW2`](../reference/providers.md#oq-psw2). Withholding a
@@ -725,7 +725,7 @@ Rules:
   universe whose service serves nothing else, so it keeps its enforcement. On a gateway that
   serves more than the list, such as z.ai, OpenRouter or Kilo, a list with no `only` refuses
   nothing: a typed id goes to the provider, which serves it or errors ([OQ-MM3](#OQ-MM3), ruled
-  2026-10-15, narrowing [OQ-WG3](wire-bridge-gateway.md#OQ-WG3)'s default-on enforcement there).
+  2026-10-15, narrowing [OQ-WG3](wire-bridge-gateway.md#decision-ledger)'s default-on enforcement there).
   Not yet built for pi's routing-declared lists.
 - **The GPT-6 lists moved into data** (BUILT 2026-09-27, [ML-D1](#ML-D1)): into the provider's
   own pack rather than the picks pack of [§5.1](#51-its-shape). claude's rendered `openai-codex`
@@ -830,7 +830,7 @@ profile, and what the bridge may dial is now
   ([§2](#2-the-ruling-and-how-it-fits-what-was-said-before)).
 - **No closed alias vocabulary.** `default`/`fast`/`balanced`/`frontier` warn; they never refuse.
 - **No enforcement at the wire.** Refusing an off-list model in the request path is
-  [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-WG3)'s. The refusals an agent can make
+  [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger)'s. The refusals an agent can make
   itself, listed in [§14.1](#141-the-table), follow that doc's switch ([MM-D5](#MM-D5)).
 
 Rejected or leaning against, each argued in its question: fetching Bedrock's list at launch
@@ -926,7 +926,7 @@ Three words used below:
   effective list's models and no others. It is not a refusal. A menu can be exact while the agent
   still runs a model typed on its command line.
 - A **refusal** is the agent, or the wire bridge, declining a request for a model outside the list.
-  The bridge's is [OQ-WG3](wire-bridge-gateway.md#OQ-WG3)'s: one list, and an enforcement switch
+  The bridge's is [OQ-WG3](wire-bridge-gateway.md#decision-ledger)'s: one list, and an enforcement switch
   on the profile that defaults on. It can act only on the **bridge path**
   ([wire-bridge-gateway §6](wire-bridge-gateway.md#6-part-5--all-traffic-through-the-bridge-new-direction-design)),
   never on an agent's native client, and for pi, oh-omp, opencode and codex that means a **via
@@ -1270,7 +1270,7 @@ single-executable binary.
 ### 14.3 The bridge's part, and `GET /v1/models`
 
 The bridge's allowlist exists once an `only` has narrowed the list, and only while the profile's
-switch is on ([OQ-WG3](wire-bridge-gateway.md#OQ-WG3)). It reaches copilot only on a bridged
+switch is on ([OQ-WG3](wire-bridge-gateway.md#decision-ledger)). It reaches copilot only on a bridged
 provider (Bedrock, and in a jail Cerebras and Kilo, [§14.2](#142-what-each-row-rests-on)),
 claude on any profile whose base URL is the bridge, and pi, oh-omp, opencode and codex only on a
 via route. It never reaches an agent's native client: claude's native profile, pi's, opencode's
@@ -1468,7 +1468,7 @@ measurements first, and stopped on them ([OQ-MM4](#16-decision-ledger)), until t
 ([MM-D31](#MM-D31)). pi's refusing `streamSimple`
 wrapper ([MM-D6](#MM-D6)) waited on its credential path, since measured and built
 ([§14.6](#146-what-was-built-2026-09-30)). The bridge's allowlist
-([OQ-WG3](wire-bridge-gateway.md#OQ-WG3)) was the bridge's own build, since done (2026-09-30,
+([OQ-WG3](wire-bridge-gateway.md#decision-ledger)) was the bridge's own build, since done (2026-09-30,
 [`wire-bridge-gateway.md` §6.1](wire-bridge-gateway.md#61-how-the-allowlist-is-built)). The `yolo check` line saying
 opencode's menu is not narrowed with the switch off ([MM-D5](#MM-D5)) was built on 2026-10-01
 ([MM-D29](#MM-D29)). The per-agent "empty effective list" line of [§7.2](#72-composition-rules) is now an opt-in
@@ -1855,7 +1855,7 @@ OpenRouter or Kilo, and every key pi, oh-omp or opencode does not ship.
 - **No refusal without an `only`.** A list no `only` narrowed refuses nothing there. A model
   id the user types goes to the provider, which serves it or returns an error. A refusal stays
   under an `only`, and on `openai-codex`, whose list is everything the subscription serves.
-  That narrows [OQ-WG3](wire-bridge-gateway.md#OQ-WG3)'s "enforced by default" on these
+  That narrows [OQ-WG3](wire-bridge-gateway.md#decision-ledger)'s "enforced by default" on these
   providers. Refusing by default wherever the list is the whole universe is rejected.
 - **claude's saved model is written once when the provider changes.** With no allowlist,
   nothing would check the model claude starts on. Its saved `/model` choice, the `model` key in

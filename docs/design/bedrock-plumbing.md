@@ -140,7 +140,7 @@ Whether yolo should keep both concepts is
    - The **wire bridge** is yolo's in-jail daemon ([`wire-bridge.md`](../reference/wire-bridge.md)).
      The agent speaks its own dialect to the bridge on the jail's loopback. The bridge forwards to
      runtime's OpenAI-compatible route, and will sign the request itself
-     ([OQ-BR10](wire-bridge-gateway.md#OQ-BR10), ruled).
+     ([OQ-BR10](wire-bridge-gateway.md#decision-ledger), ruled).
 
    Earlier drafts, and some sibling docs, call these two the *native arm* and the *bridge arm*.
    Those words are retired here and mean exactly the native client and the wire bridge. A third
@@ -206,11 +206,11 @@ expensive to change, and a name that means different things per agent is the con
 
 Under A, `-p bedrock-bridge` means claude's everything profile and pi's bridge version
 ([OQ-BR5](#OQ-BR5)). For copilot and oh-omp it is the same as `-p bedrock`. For codex and
-opencode it writes nothing until [OQ-WG5](wire-bridge-gateway.md#OQ-WG5) gives them a bridge
+opencode it writes nothing until [OQ-WG5](wire-bridge-gateway.md#decision-ledger) gives them a bridge
 route, and for agy it writes nothing. claude's
 `-p bedrock` keeps its shipped meaning. Two later questions do not block this:
-- how all-traffic mode is switched on, [OQ-WG2](wire-bridge-gateway.md#OQ-WG2), and which
-  native-client agents get a bridge route, [OQ-WG5](wire-bridge-gateway.md#OQ-WG5);
+- how all-traffic mode is switched on, [OQ-WG2](wire-bridge-gateway.md#decision-ledger), and which
+  native-client agents get a bridge route, [OQ-WG5](wire-bridge-gateway.md#decision-ledger);
 - whether transport becomes a first-class provider fact,
   [OQ-PP2](providers-and-profiles-redesign.md#OQ-PP2), which may later subsume this.
 
@@ -552,7 +552,7 @@ chat-completions id works. INFERRED end to end. The user writes the region into 
 > - a bearer beside `aws-auth`'s pointer is refused, so this provider and SSO cannot share a jail;
 > - an account denying `bedrock:CallWithBearerToken` rejects every request.
 >
-> For claude and copilot, the bridge's signer ([OQ-BR10](wire-bridge-gateway.md#OQ-BR10)) removes
+> For claude and copilot, the bridge's signer ([OQ-BR10](wire-bridge-gateway.md#decision-ledger)) removes
 > all three.
 
 <a id="65-the-credential-three-are-supported"></a>
@@ -825,7 +825,7 @@ pack is a pack).
 
 "No bridge for an agent that has a native client" is **withdrawn for pi** by
 [OQ-BR5](#OQ-BR5)'s ruling (claude's everything profile was already its exception). For codex,
-opencode and every other agent it stands until [OQ-WG5](wire-bridge-gateway.md#OQ-WG5) rules.
+opencode and every other agent it stands until [OQ-WG5](wire-bridge-gateway.md#decision-ledger) rules.
 
 ---
 
@@ -1036,10 +1036,10 @@ R6 to R11 moved with the bridge, model-list and search designs.
 | <a id="BR-D24"></a>BR-D24 | *Implementation decision.* **The file is the one on the machine yolo launches on, found from the environment yolo was launched from.** `AWS_CONFIG_FILE` there, with a leading `~` expanded, else `.aws/config` under that environment's `HOME`, which is where the `aws` command in the same shell would look. A relocation delivered into a jail names a path inside the jail, so it is not the host's file. That shell locates the file and chooses nothing else in a jail: a region variable or `AWS_PROFILE` left there, which the jail's agent never receives, keeps the file unread and the launch refused, naming it ([BR-D2](#BR-D2)). An empty `HOME` reads nothing, and says so: the jail notch reads `HOME` through the launch environment it was handed, so a test's stubbed environment never reads the machine's `~/.aws` | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `RegionFileSource.Getenv`; pinned by `TestTheRegionFillReadsTheFileTheLaunchNames` |
 | <a id="BR-D25"></a>BR-D25 | *Implementation decision.* **One disclosure line, and a refusal that names the file.** When the file supplied a region, every notch prints `Region: AWS_REGION=<region> for <agents> on provider "<name>", read from ~/.aws/config [<section>] (profile "<profile>", <what chose it>): the provider sets no region, and no region variable reaches <it or them>`, beside the credential gate's disclosure (the jail's `noteCredentialScope`, the host's exec and `yolo host env` blocks). A disclosure, so there is no quiet switch ([OQ-RO3](../reference/report-tiers.md#why-its-this-way)). When the file gives none (no such file, no section, no key, not a region, no `HOME`) the refusal is the existing one, reworded: a fact line names the file, the profile and why; the remedy offers `region = <region> under [<section>] in ~/.aws/config` as a third way; and the consulted line ends with the file | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `CredentialScope.RegionLines`, `RegionAsk.File`; the declaration itself is a review-worthy `reads-host` claim, so `yolo pack footprint` and the launch's pack-environment block name the file as read, not mounted (added 2026-09-29 from the review, which found this host read in no disclosure; `packload.regionFileClaimDetail`, pinned by `TestARegionFileIsAHostReadInTheFootprint`); pinned by `TestTheRegionFillDisclosesTheRegionTheFileAndTheProfile`, `TestTheRegionPreflightCountsAFilledRegionAndNamesTheFileItRead`, `TestCheckProviderCredentialsAsksForTheRegion`, and the notch tests of [BR-D20](#BR-D20) |
 | <a id="BR-D26"></a>BR-D26 | *Implementation decision.* **`yolo host` delivers the file's region too.** There the agent could read `~/.aws/config` itself, and claude would. yolo delivers it anyway so the refusal, the disclosure and the value are the same at every notch, as [BR-DIR1](#BR-DIR1) asks. No concrete reason not to was found: for claude the value is the one its own resolver would reach, except when aws-auth serves it, where the credential's own profile is the better answer. The invoking shell counts at this notch, so a region or `AWS_PROFILE` exported there wins or chooses, as it would for the agent. A name an env_sources `null` removes is not inherited, since the exec'd agent never receives it (corrected 2026-09-29 by the review: with `AWS_PROFILE` removed and exported in the shell, the fill read that profile's region while the agent's SDK used the default profile's credential). One gap is left: an env_sources `null` that removes a region variable also removes a filled region of that name, and the launch is then refused, naming the file's region as delivered and removed | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `cli.composeHostVarsWith`'s `RegionFiles`, `cli.inheritedExcept`; pinned by `TestHostLaunchTakesTheRegionOfTheHostsAWSConfig` and `TestHostRegionFillReadsNoProfileTheAgentDoesNotReceive` |
-| [OQ-BR10](#OQ-BR10) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR10): the bridge signs its own requests | 2026-09-24 | there | — |
-| [OQ-BR16](#OQ-BR16) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR16): the everything profile carries the subscription | 2026-09-24 | there | — |
-| [OQ-BR17](#OQ-BR17) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR17): opt-in per-model failover | 2026-09-24 | there | — |
-| [OQ-BR18](#OQ-BR18) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#OQ-BR18): the bridge may carry a Claude subscription | 2026-09-24 | there | — |
+| [OQ-BR10](#OQ-BR10) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger): the bridge signs its own requests | 2026-09-24 | there | — |
+| [OQ-BR16](#OQ-BR16) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger): the everything profile carries the subscription | 2026-09-24 | there | — |
+| [OQ-BR17](#OQ-BR17) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger): opt-in per-model failover | 2026-09-24 | there | — |
+| [OQ-BR18](#OQ-BR18) | Moved to [`wire-bridge-gateway.md`](wire-bridge-gateway.md#decision-ledger): the bridge may carry a Claude subscription | 2026-09-24 | there | — |
 | [DIR-BR4](#DIR-BR4) | Moved to [`bedrock-web-search.md`](bedrock-web-search.md#DIR-BR4): AgentCore web search on every Bedrock profile | 2026-09-25 | there | — |
 
 ---

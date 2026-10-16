@@ -36,7 +36,7 @@ capture` to that backend) landed 2026-09-04 and the recording half was measured 
 not a graduation candidate until a Mac has run H4.**
 Live designs cite this plan's relocation
 work: [`provisioner-sets.md`](../design/provisioner-sets.md) for the guest's materialize half, and
-[`OQ-WP11`](../reference/workspace-path-mirroring.md#OQ-WP11) for relocation itself.
+[`OQ-WP11`](../reference/workspace-path-mirroring.md#decision-ledger) for relocation itself.
 
 **Precedence:** the design wins on behavior; the tree wins on fact; this file is advice and is
 the first thing to be wrong. Never twist code to match it — correct it in the commit.

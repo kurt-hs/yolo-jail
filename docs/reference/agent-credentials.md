@@ -808,7 +808,7 @@ or `--remote`, which Codex refuses it with and which start no server, and delibe
 `agents`, which would start one and which Codex then refuses), the home's daemon settings turn
 Codex's own updater off from the first launch, and a server or updater an earlier launch left
 in that home is stopped once, when no other launch of it is live
-([OQ-CDX1](../research/codex-background-service.md#OQ-CDX1), [CDX-D2](../research/codex-background-service.md#CDX-D2),
+([OQ-CDX1](../research/codex-background-service.md#decision-ledger), [CDX-D2](../research/codex-background-service.md#CDX-D2),
 [CDX-D3](../research/codex-background-service.md#CDX-D3)).
 
 > [!WARNING]
@@ -847,7 +847,7 @@ as its `Authorization` header, and reads back a JSON body of four strings: an ac
 secret, a session token and an expiry. It accepts plain `http` only to a loopback address, or to
 ECS's own link-local ones. Every AWS SDK the shipped agents carry implements it, so no agent
 needs code of its own, and the wire bridge's SigV4 signer reads the same pointer
-([`wire-bridge-gateway.md` OQ-BR10](../design/wire-bridge-gateway.md#OQ-BR10)).
+([`wire-bridge-gateway.md` OQ-BR10](../design/wire-bridge-gateway.md#decision-ledger)).
 
 #### What a user configures
 
