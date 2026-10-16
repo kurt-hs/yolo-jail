@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -69,6 +70,44 @@ func TestShutdownEndsTheGHInFlight(t *testing.T) {
 	if res := f.r.Run([]string{"pr", "view"}, nil, s2.stdout, s2.stderr); res.Exit != ExitUnavailable ||
 		!strings.Contains(s2.errOut.String(), "stopping") {
 		t.Fatalf("a call after Shutdown: %+v %q", res, s2.errOut.String())
+	}
+}
+
+// A first SIGKILL that misses part of gh's process group does not leave the call waiting
+// for the rest. On macOS a child the group is forking as the signal arrives can miss it and
+// run on holding gh's pipes (CI saw the fake gh's `sleep 30` outlive Shutdown); dropping
+// the first signal here stands in for that, on every platform.
+func TestShutdownSignalsAgainWhenTheFirstKillMisses(t *testing.T) {
+	f := newRunnerFixture(t, "2.101.0", nil)
+	var mu sync.Mutex
+	signals := 0
+	f.r.signalGroup = func(pgid int) error {
+		mu.Lock()
+		signals++
+		first := signals == 1
+		mu.Unlock()
+		if first {
+			return nil
+		}
+		return syscall.Kill(-pgid, syscall.SIGKILL)
+	}
+	done := make(chan RunResult, 1)
+	var s sinks
+	go func() { done <- f.r.Run([]string{"sleep", "30"}, nil, s.stdout, s.stderr) }()
+	waitFor(t, "gh to start", 10*time.Second, func() bool {
+		entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls"))
+		return len(entries) == 1
+	})
+	f.r.Shutdown()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the call did not return after Shutdown when its first SIGKILL was lost")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if signals < 2 {
+		t.Fatalf("the group was signaled %d times", signals)
 	}
 }
 
