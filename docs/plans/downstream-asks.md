@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
+next: "Ask 11 waits on pi-subagents registering --subagents-model-settings; then turn YOLO_PI_SUBAGENTS_MODEL_SETTINGS on by default (MM-D42). Asks 6 and 8 are built (2026-10-16); ask 10 was declined 2026-10-15"
 depends-on:
   - ../reference/patched-forks.md#OQ-PFK6
   - ../reference/patched-forks.md#OQ-PFK7
@@ -241,7 +241,7 @@ on 2026-10-15; the flag ships off until pi-subagents registers it.
 The mechanism asks owned by a design doc of their own are all ruled there:
 [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) (2026-10-15),
 [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) and
-[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../reference/patched-forks.md#why-its-this-way)
+[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), all built; [OQ-PFK7](../reference/patched-forks.md#why-its-this-way)
 is settled. Of the four with no other home, [OQ-DA1](#decision-ledger), [OQ-DA2](#OQ-DA2), [OQ-DA3](#OQ-DA3) and
 [OQ-DA4](#OQ-DA4) are all settled; none remains open.
 
