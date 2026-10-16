@@ -658,9 +658,9 @@ func hostTreeLine(f packload.Fork, home string) string {
 	entry, g, why := hostTreeServing(f)
 	switch {
 	case entry != nil && entry.Key == linked:
-		return f.Label() + " at " + run.WithPatches(run.GoodBuildLabel(g), g.Patches)
+		return f.Label() + " at " + run.WithGood(run.GoodBuildLabel(g), g)
 	case entry != nil:
-		return f.Label() + " at " + linkedTreeLabel(linked) + "; " + run.WithPatches(run.GoodBuildLabel(g), g.Patches) +
+		return f.Label() + " at " + linkedTreeLabel(linked) + "; " + run.WithGood(run.GoodBuildLabel(g), g) +
 			" is built, and " + hostApplyStep("renders it")
 	default:
 		return f.Label() + " at " + linkedTreeLabel(linked) + "; " + why

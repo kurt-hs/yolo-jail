@@ -110,6 +110,26 @@ type Contribution struct {
 	// Refused without `patches`: a plain fork's pin moves only by `yolo pack update` (FP-D18),
 	// and following an upstream is the patched mode's opt-in, not a dial on a plain fork.
 	Follow string `json:"follow,omitempty"`
+	// PatchBranch is a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6): a git repository and a branch,
+	// written as a source address with `?ref=` (`git+https://github.com/you/pi?ref=patches`, or
+	// `git+file:///abs/path?ref=patches` for a local repository), whose commit graph is merged against
+	// the upstream candidate instead of replaying a `patches` series. It opts in to the patched
+	// mode exactly as `patches` does, on a fork's program and on a `files` extension, and `follow`
+	// reads beside it as beside a series.
+	//
+	// THE BRANCH'S ANCESTRY MUST INCLUDE THE UPSTREAM'S: the patch branch is a branch of the upstream (or
+	// of a fork of it) that merges the upstream in, never a rebased copy, so its merge base with the
+	// upstream is a real commit. Each check fetches it with the upstream and resolves the branch to
+	// a commit; the advance asks `git merge-tree --write-tree` (git 2.40 or newer, the replay's
+	// floor) whether that commit merges cleanly into each candidate, builds the merged tree of the
+	// newest that does, and keys the build on the upstream commit and the patch branch's commit, so a moved
+	// branch is a new build. A conflict is refused, naming the conflicting paths and the merge that
+	// repairs it in the patch branch repository; yolo never writes the patch branch.
+	//
+	// NEVER BESIDE `patches` (PF-D87): one contribution names one of them, and a manifest naming
+	// both is refused at its decode. Keep `patch_branch` for a branch merged against upstream, or `patches`
+	// for a `git format-patch` series. Two contributions of one pack may each use a different one.
+	PatchBranch string `json:"patch_branch,omitempty"`
 	// Fallback is an UNMODIFIED EXTENSION's raw list entry (docs/design/pi-extension-store-builds.md
 	// §4.3, XB-D7): the string the agent installs itself, in its own grammar (`npm:pi-web-access`,
 	// `git:github.com/o/r@<commit>`), which takes the place of the tree's list entry in this pack's
@@ -1435,7 +1455,7 @@ func (m *Manifest) InstallContributions() []Install {
 			in.Produces = append([]string(nil), c.Produces...)
 			// A patched fork's series directory and follow rule ride along, so every reader of
 			// the program can tell a patched fork from a plain one (Install.IsPatchedFork).
-			in.Patches, in.Follow = c.Patches, c.Follow
+			in.Patches, in.Follow, in.PatchBranch = c.Patches, c.Follow, c.PatchBranch
 		}
 		out = append(out, in)
 	}
@@ -2930,6 +2950,7 @@ func (m *Manifest) validateContributions() []string {
 	problems = append(problems, m.validateSingleAutonomy()...)
 	problems = append(problems, m.validateServicePointers()...)
 	problems = append(problems, m.validatePatchedOwnerKeys()...)
+	problems = append(problems, m.validatePatchBranchOrSeries()...)
 	problems = append(problems, m.validateDescribes()...)
 	problems = append(problems, m.validateStateScopes()...)
 	problems = append(problems, m.validateHookStates()...)

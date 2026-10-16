@@ -41,7 +41,7 @@ var preparationSpawn = func() error {
 }
 
 func preparationInputIdentity(f packload.Fork, rt, platform string) (string, error) {
-	series, err := f.ReadSeries()
+	series, err := f.DeclaredSeries()
 	if err != nil {
 		return "", err
 	}
