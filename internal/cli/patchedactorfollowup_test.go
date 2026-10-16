@@ -465,15 +465,20 @@ func TestPatchActorDueForcedAndNewerVersionRetriesKeepExactFailure(t *testing.T)
 				retried, _, _ = fx.launch(t, "podman")
 			}
 			current := fx.record(t)
-			if !retried.failed || retried.patchFailure == nil || retried.patchFailure.Kind != "conflict" ||
-				retried.patchFailure.Target.Tag != "v1.2.0" || retried.delivery.Key != oldKey || len(fx.builds) != 1 {
-				t.Fatalf("%s retry hid or built past the current failed target: result=%+v builds=%d", mode, retried, len(fx.builds))
-			}
-			if current.PatchFailure == nil || current.PatchFailure.Target.Commit != retried.patchFailure.Target.Commit ||
-				current.Good == nil || current.Good.Entry != oldKey {
-				t.Fatalf("%s retry changed persisted failure or Good: record=%+v", mode, current)
-			}
 			if mode == "newer-version" {
+				// A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (docs/design/patched-build-recovery.md §6.2,
+				// OQ-PBR1): the newer v1.3.0 that takes the series is built past the v1.2.0 failure.
+				if !retried.built || retried.patchFailure != nil || current.Good == nil || current.Good.Tag != "v1.3.0" ||
+					len(fx.builds) != 2 {
+					t.Fatalf("the newer fitting release was not built past the recorded failure: result=%+v builds=%d",
+						retried, len(fx.builds))
+				}
+				f := fx.fork(t)
+				series, _ := f.ReadSeries()
+				in, _, _, _ := f.CheckWant(series).Inputs()
+				if failure := current.CurrentPatchFailure(in, series.Digest); failure != nil {
+					t.Fatalf("the v1.2.0 failure still governs below the new good build: %+v", failure)
+				}
 				selected := false
 				for _, target := range current.Check.List {
 					selected = selected || target.Tag == "v1.2.0"
@@ -481,6 +486,15 @@ func TestPatchActorDueForcedAndNewerVersionRetriesKeepExactFailure(t *testing.T)
 				if !selected {
 					t.Fatalf("newer v1.3.0 check does not retain older failed target in its full selected list: %+v", current.Check.List)
 				}
+				return
+			}
+			if !retried.failed || retried.patchFailure == nil || retried.patchFailure.Kind != "conflict" ||
+				retried.patchFailure.Target.Tag != "v1.2.0" || retried.delivery.Key != oldKey || len(fx.builds) != 1 {
+				t.Fatalf("%s retry hid or built past the current failed target: result=%+v builds=%d", mode, retried, len(fx.builds))
+			}
+			if current.PatchFailure == nil || current.PatchFailure.Target.Commit != retried.patchFailure.Target.Commit ||
+				current.Good == nil || current.Good.Entry != oldKey {
+				t.Fatalf("%s retry changed persisted failure or Good: record=%+v", mode, current)
 			}
 		})
 	}

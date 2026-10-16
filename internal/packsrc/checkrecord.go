@@ -96,6 +96,47 @@ type CheckRecord struct {
 	// PatchBranch is the last patch branch a check resolved (patchbranch.go): what a patch branch's series is read from with
 	// no git (PatchBranchSeries), kept apart from Check so a later check's problem does not lose it.
 	PatchBranch *PatchBranchResolved `json:"patch_branch,omitempty"`
+	// WalkBack is the WALK-BACK HOLD (docs/design/patched-build-recovery.md §6.4): set when a run under
+	// YOLO_ALLOW_OLDER_UPSTREAM admitted an older release because the newest did not take the series or
+	// did not build. While its newest entry is still the newest of the list, the good build it admitted
+	// runs, held, with no refusal (WalkBackHolds). A build any other run admits clears it.
+	WalkBack *WalkBackHold `json:"walk_back,omitempty"`
+}
+
+// WalkBackHold is the record's walk-back hold: the newest list entry the series did not take, and
+// the good build the walk-back admitted in its place.
+type WalkBackHold struct {
+	// Newest is the list entry that did not take the series or did not build.
+	Newest ListEntry `json:"newest"`
+	// Kind is why: OutcomeConflict, or OutcomeBuildFailed.
+	Kind string `json:"kind"`
+	// Good is the commit of the build the walk-back admitted, Series that build's series digest.
+	Good   string `json:"good"`
+	Series string `json:"series"`
+}
+
+// WalkBackHolds is the record's walk-back hold when it still holds for a check of in and series:
+// its newest entry is still the newest on the last check's list, and the good build is the one it
+// admitted, of this series. nil otherwise.
+func (r *CheckRecord) WalkBackHolds(in CheckInputs, series string) *WalkBackHold {
+	if r == nil || r.WalkBack == nil || !r.Answers(in) || len(r.Check.List) == 0 || r.Good == nil {
+		return nil
+	}
+	h := r.WalkBack
+	if r.Check.List[0].Commit != h.Newest.Commit || r.Good.Commit != h.Good || r.Good.Series != series ||
+		h.Series != series {
+		return nil
+	}
+	return h
+}
+
+// Line is the hold's few words: "upstream v1.4.0 does not take the series".
+func (h *WalkBackHold) Line() string {
+	what := "does not take the series"
+	if h.Kind == OutcomeBuildFailed {
+		what = "does not build with the series"
+	}
+	return "upstream " + h.Newest.ShortLabel() + " " + what
 }
 
 // ApplyError is a walk's apply error as the record keeps it: the check whose list was walked, and
@@ -210,6 +251,14 @@ func (e ListEntry) Label() string {
 	return shortCommit(e.Commit)
 }
 
+// ShortLabel is the entry as a short line names it: its tag, or its short commit.
+func (e ListEntry) ShortLabel() string {
+	if e.Tag != "" {
+		return e.Tag
+	}
+	return shortCommit(e.Commit)
+}
+
 // GoodBuild is the good build's inputs (§6.1).
 type GoodBuild struct {
 	Commit string `json:"commit"`
@@ -298,6 +347,10 @@ func (r *CheckRecord) RekeySeries(oldSeries, oldRecipe, newSeries, newRecipe str
 	}
 	if f := r.PatchFailure; f != nil && f.Series == oldSeries {
 		f.Series = newSeries
+		changed = true
+	}
+	if h := r.WalkBack; h != nil && h.Series == oldSeries {
+		h.Series = newSeries
 		changed = true
 	}
 	if apply := r.ApplyErr; apply != nil && apply.Legacy != nil && apply.Legacy.Series == oldSeries {

@@ -135,8 +135,10 @@ func TestPatchActorLegacyConflictBeforeHoldAndGoodCut(t *testing.T) {
 	var out bytes.Buffer
 	delivered := buildForksForLaunch(forkLaunchRequest(&run.ActInterrupt{}), &out, &out, false)
 	got := delivered["tool"]
-	if got.Key != oldKey || got.PatchFailure == nil || got.PatchFailure.Target.Commit != good.Commit {
-		t.Fatalf("legacy selected conflict was not synthesized before Good/pending serving: %+v\n%s", got, out.String())
+	// A HOLD HOLDS (docs/design/patched-build-recovery.md §6.3, OQ-PBR5): with the good build serving,
+	// a recorded conflict — a legacy one included — has no bearing on the held launch, which runs it.
+	if got.Key != oldKey || got.PatchFailure != nil {
+		t.Fatalf("the held launch did not run the serving good build past the recorded conflict: %+v\n%s", got, out.String())
 	}
 	if len(fx.builds) != 1 || strings.Contains(out.String(), "git-was-called") {
 		t.Fatalf("held cached conflict ran Git or rebuilt: builds=%d\n%s", len(fx.builds), out.String())
