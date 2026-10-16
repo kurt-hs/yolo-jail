@@ -1036,7 +1036,7 @@ func FixPermissionsScript(root, group, failedList string) string {
 // grantBatch is the /bin/sh body find runs per batch: $1 the entry, $2 the failed list, then
 // the paths.
 const grantBatch = `ace=$1; out=$2; shift 2
-chmod -h +a "$ace" "$@" 2>/dev/null && exit 0
+chmod -h +a "$ace" "$@" && exit 0
 rc=0
 for f; do
   chmod -h +a "$ace" "$f" 2>/dev/null || { printf '%s\n' "$f" >>"$out"; rc=1; }
