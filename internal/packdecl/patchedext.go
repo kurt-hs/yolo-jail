@@ -36,7 +36,7 @@ const TreeReservedRoot = ".local/share/yolo-tree"
 // IsPatchedExtension reports whether c is a PATCHED EXTENSION: a `files` contribution that
 // declares `patches` (PPX-D1). Its `source` names the upstream, and `from` is refused beside it.
 func (c Contribution) IsPatchedExtension() bool {
-	return c.Kind == KindFiles && (c.Patches != "" || c.Carry != "")
+	return c.Kind == KindFiles && (c.Patches != "" || c.PatchBranch != "")
 }
 
 // IsBuiltTree reports whether c declares a BUILT TREE (patched-extensions.md §1): a `files`
@@ -45,13 +45,13 @@ func (c Contribution) IsPatchedExtension() bool {
 // patched extension with no series. Both are built, admitted, delivered and followed by one
 // implementation; only the series differs.
 func (c Contribution) IsBuiltTree() bool {
-	return c.Kind == KindFiles && (c.Source != "" || c.Patches != "" || c.Carry != "")
+	return c.Kind == KindFiles && (c.Source != "" || c.Patches != "" || c.PatchBranch != "")
 }
 
 // IsUnmodifiedExtension reports whether c is an UNMODIFIED EXTENSION: a built tree with no series
-// and no carry, its bytes the upstream's at one commit or version (XB-D1).
+// and no patch branch, its bytes the upstream's at one commit or version (XB-D1).
 func (c Contribution) IsUnmodifiedExtension() bool {
-	return c.IsBuiltTree() && c.Patches == "" && c.Carry == ""
+	return c.IsBuiltTree() && c.Patches == "" && c.PatchBranch == ""
 }
 
 // ExtensionName is a patched extension's name: the last segment of its `into`, which is the name
@@ -95,10 +95,10 @@ func NpmTreeInstall(name, version string) string {
 // own `build` (none is no command, PPX-D3); an unmodified git extension's `build`, or
 // UnmodifiedGitBuild; an npm extension's install, its version left to each build (npmTreeVersion).
 func (c Contribution) TreeBuild() string {
-	return TreeBuildLine(c.Source, c.Patches+c.Carry, c.Build)
+	return TreeBuildLine(c.Source, c.Patches+c.PatchBranch, c.Build)
 }
 
-// TreeBuildLine is Contribution.TreeBuild from a built tree's source, series directory (or carry:
+// TreeBuildLine is Contribution.TreeBuild from a built tree's source, series directory (or patch branch:
 // anything non-empty is a patched extension's own build) and `build`.
 func TreeBuildLine(source, patches, build string) string {
 	if patches != "" {

@@ -98,7 +98,7 @@ func checkPatchedForks(pr richtext.Printer, errw io.Writer, forks []packload.For
 
 // checkPatchedFork is one patched fork's explicit check and walk.
 func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store, f packload.Fork) int {
-	series, err := f.ReadSeriesFrom(store) // a carry not resolved yet: this check resolves it
+	series, err := f.ReadSeriesFrom(store) // a patch branch not resolved yet: this check resolves it
 	if err != nil {
 		fmt.Fprintf(errw, "yolo pack: %s: %v\n", f.Label(), err)
 		return 1
@@ -117,9 +117,9 @@ func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store,
 		return 1
 	}
 	original := res.Record
-	if f.Carry != "" {
-		// The carry as this check resolved it: its commit is what the walk merges and keys.
-		if s, err := packsrc.CarrySeries(f.Carry, f.Source, original); err == nil {
+	if f.PatchBranch != "" {
+		// The patch branch as this check resolved it: its commit is what the walk merges and keys.
+		if s, err := packsrc.PatchBranchSeries(f.PatchBranch, f.Source, original); err == nil {
 			series = s
 		}
 	}
@@ -606,15 +606,15 @@ func patchedForkStatusLines(f packload.Fork) []string {
 		head += "following " + followLabel(f.Follow)
 	}
 	if serr == nil && series.Unresolved() {
-		return []string{head, "[dim]  carry: " + richtext.Escape(f.Carry) + ", not fetched on this machine yet — " +
+		return []string{head, "[dim]  patch branch: " + richtext.Escape(f.PatchBranch) + ", not fetched on this machine yet — " +
 			"`yolo pack update` fetches it and builds nothing; the next fresh launch builds it[/dim]"}
 	}
 	if serr != nil {
 		return []string{head, "[yellow]  ⚠ " + serr.Error() + "[/yellow]"}
 	}
 	lines := []string{head}
-	if c := series.Carry; c != nil {
-		lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  carry: %s of %s, merge base with upstream %s",
+	if c := series.PatchBranch; c != nil {
+		lines = append(lines, "[dim]"+richtext.Escape(fmt.Sprintf("  patch branch: %s of %s, merge base with upstream %s",
 			c.Label(), c.Repo, shortSHA(series.Base)))+"[/dim]")
 	}
 	if series.Len() > 0 {
@@ -647,9 +647,9 @@ func patchedForkStatusLines(f packload.Fork) []string {
 		if f.Unmodified() {
 			lines = append(lines, fmt.Sprintf("[dim]  good build: %s, %s[/dim]", goodLabel(rec.Good),
 				goodBuildStored(f, rec.Good)))
-		} else if rec.Good.Carry != "" {
-			lines = append(lines, fmt.Sprintf("[dim]  good build: %s + carry %s, %s[/dim]", goodLabel(rec.Good),
-				rec.Good.Carry, goodBuildStored(f, rec.Good)))
+		} else if rec.Good.PatchBranch != "" {
+			lines = append(lines, fmt.Sprintf("[dim]  good build: %s + patch branch %s, %s[/dim]", goodLabel(rec.Good),
+				rec.Good.PatchBranch, goodBuildStored(f, rec.Good)))
 		} else {
 			lines = append(lines, fmt.Sprintf("[dim]  good build: %s + %d %s (series %s), %s[/dim]", goodLabel(rec.Good),
 				rec.Good.Patches, plural(rec.Good.Patches, "patch", "patches"), shortSHA(rec.Good.Series),
@@ -658,8 +658,8 @@ func patchedForkStatusLines(f packload.Fork) []string {
 	}
 	if lag := rec.BaseLag(in, series.Digest); lag != nil {
 		label := "  base lag: "
-		if lag.Carry {
-			label = "  carry lag: "
+		if lag.PatchBranch {
+			label = "  patch branch lag: "
 		}
 		lines = append(lines, "[dim]"+richtext.Escape(label+run.BaseLagNote(lag))+"[/dim]")
 		for _, l := range run.BaseLagSteps(f, lag, "    ") {

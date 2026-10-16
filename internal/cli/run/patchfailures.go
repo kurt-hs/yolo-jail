@@ -133,17 +133,17 @@ func (o *Options) refusePatchFailures(rt string) bool {
 	carries := 0
 	for i, f := range blocking {
 		labels[i] = f.label
-		if f.recipe.CarryRepo != "" {
+		if f.recipe.PatchBranchRepo != "" {
 			carries++
 		}
 	}
-	// A CARRY (docs/design/patched-forks.md §3.5) is merged, not applied: its refusal says so.
+	// A PATCH BRANCH (docs/design/patched-forks.md §3.5) is merged, not applied: its refusal says so.
 	what, verb := "the patch series of", plural(len(blocking), "does", "do")+" not apply"
 	switch {
 	case carries == len(blocking):
-		what, verb = "the carry of", plural(len(blocking), "does", "do")+" not merge"
+		what, verb = "the patch branch of", plural(len(blocking), "does", "do")+" not merge"
 	case carries > 0:
-		what, verb = "the patch series or carry of", plural(len(blocking), "does", "do")+" not apply"
+		what, verb = "the patch series or patch branch of", plural(len(blocking), "does", "do")+" not apply"
 	}
 	out.print("[bold red]" + richtext.Escape("Refusing to launch: "+what+" "+entrypoint.JoinAnd(labels)+" "+
 		verb+" (the ERROR above), and a launch does not run an older build "+

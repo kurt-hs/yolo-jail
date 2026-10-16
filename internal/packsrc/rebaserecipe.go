@@ -55,20 +55,20 @@ type RebaseRecipe struct {
 	Pack, Rel string
 	// Dir is the clone's directory, relative to the current one.
 	Dir string
-	// CarryRepo and CarryRef are a CARRY's repository and branch (carry.go), "" for a series: a
-	// carry is repaired by merging the target into its branch, in its own repository, and pushing.
-	CarryRepo, CarryRef string
+	// PatchBranchRepo and PatchBranchRef are a PATCH BRANCH's repository and branch (patchbranch.go), "" for a series: a
+	// patch branch is repaired by merging the target into its branch, in its own repository, and pushing.
+	PatchBranchRepo, PatchBranchRef string
 }
 
-// CarryRecipeLead is RecipeLead for a carry, which a merge repairs rather than a rebase.
-const CarryRecipeLead = "merge the upstream into the carry with git, yourself or with an agent; the next check fetches it:"
+// PatchBranchRecipeLead is RecipeLead for a patch branch, which a merge repairs rather than a rebase.
+const PatchBranchRecipeLead = "merge the upstream into the patch branch with git, yourself or with an agent; the next check fetches it:"
 
 // Repair is the recipe for rebasing the series onto target as lines: lead, then the steps
-// indented under it, each line prefixed with indent. A carry's takes CarryRecipeLead in RecipeLead's
+// indented under it, each line prefixed with indent. A patch branch's takes PatchBranchRecipeLead in RecipeLead's
 // place.
 func (r RebaseRecipe) Repair(target ListEntry, lead, indent string) []string {
-	if r.CarryRepo != "" {
-		lead = strings.Replace(lead, RecipeLead, CarryRecipeLead, 1)
+	if r.PatchBranchRepo != "" {
+		lead = strings.Replace(lead, RecipeLead, PatchBranchRecipeLead, 1)
 	}
 	out := []string{indent + lead}
 	for _, l := range r.Lines(target) {
@@ -85,14 +85,14 @@ func (r RebaseRecipe) Lines(target ListEntry) []string {
 		return []string{"the upstream is an npm package, which has no git history to rebase onto: rework the series " +
 			"against version " + target.Label() + "'s published files and export it with `git format-patch --base`"}
 	}
-	if r.CarryRepo != "" {
-		// A CARRY: the target merged into the branch, in the carry's own repository, and pushed —
-		// the next check fetches the branch and merges it again. yolo never writes the carry.
+	if r.PatchBranchRepo != "" {
+		// A PATCH BRANCH: the target merged into the branch, in the patch branch's own repository, and pushed —
+		// the next check fetches the branch and merges it again. yolo never writes the patch branch.
 		return []string{
-			"  git clone " + q(r.CarryRepo) + " " + q(r.Dir) + " && cd " + q(r.Dir) + " && git checkout " + q(r.CarryRef),
+			"  git clone " + q(r.PatchBranchRepo) + " " + q(r.Dir) + " && cd " + q(r.Dir) + " && git checkout " + q(r.PatchBranchRef),
 			"  git fetch " + q(r.Repo) + " " + target.Commit + " && git merge " + target.Commit,
 			"resolve each conflict (edit, git add, git commit), then push the branch:",
-			"  git push origin " + q(r.CarryRef),
+			"  git push origin " + q(r.PatchBranchRef),
 		}
 	}
 	base := r.Base

@@ -75,9 +75,9 @@ var replayMinGit = [2]int{2, 40}
 type GitTooOldError struct {
 	// Have is the git this host runs, as `git version` names it.
 	Have string
-	// Carry is set when what was refused is a carry's merge (OQ-PFK6), whose form is
-	// `merge-tree --write-tree`: one floor, one error, its words the carry's.
-	Carry bool
+	// PatchBranch is set when what was refused is a patch branch's merge (OQ-PFK6), whose form is
+	// `merge-tree --write-tree`: one floor, one error, its words the patch branch's.
+	PatchBranch bool
 }
 
 // Error names what the replay needs, what this host has, and the fix.
@@ -88,8 +88,8 @@ func (e *GitTooOldError) Error() string {
 // Need is what the replay needs: "replaying a patch series needs git 2.40 or newer (`git merge-tree
 // --merge-base`)".
 func (e *GitTooOldError) Need() string {
-	if e.Carry {
-		return fmt.Sprintf("merging a carry needs git %d.%d or newer (`git merge-tree --write-tree`)",
+	if e.PatchBranch {
+		return fmt.Sprintf("merging a patch branch needs git %d.%d or newer (`git merge-tree --write-tree`)",
 			replayMinGit[0], replayMinGit[1])
 	}
 	return fmt.Sprintf("replaying a patch series needs git %d.%d or newer (`git merge-tree --merge-base`)",
@@ -225,8 +225,8 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		res.Err = errors.New("cannot replay a nil series")
 		return res
 	}
-	if series.Carry != nil && series.Carry.Commit == "" {
-		res.Err = &CarryUnresolvedError{Source: series.Carry.Source}
+	if series.PatchBranch != nil && series.PatchBranch.Commit == "" {
+		res.Err = &PatchBranchUnresolvedError{Source: series.PatchBranch.Source}
 		return res
 	}
 	timeout := opts.Timeout
@@ -247,19 +247,19 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		return res
 	}
 	if !gitAtLeast(gitVer, replayMinGit) {
-		// ONE FLOOR FOR BOTH (OQ-PFK6): a carry's `merge-tree --write-tree` is git 2.38's, under the
+		// ONE FLOOR FOR BOTH (OQ-PFK6): a patch branch's `merge-tree --write-tree` is git 2.38's, under the
 		// replay's 2.40, so an older git is refused by the same error and never merged another way.
-		res.Err = &GitTooOldError{Have: gitVer, Carry: series.Carry != nil}
+		res.Err = &GitTooOldError{Have: gitVer, PatchBranch: series.PatchBranch != nil}
 		return res
 	}
-	// A CARRY'S MIRROR is its own repository's (carry.go): locked beside the upstream's, in one order,
+	// A PATCH BRANCH'S MIRROR is its own repository's (patchbranch.go): locked beside the upstream's, in one order,
 	// for the walk's whole length, and borrowed by the scratch repository with it.
 	mirror := s.mirrorPath(repo)
 	mirrors, locks := []string{mirror}, []string{repo}
-	carryMirror := ""
-	if series.Carry != nil {
-		carryMirror = s.mirrorPath(series.Carry.Repo)
-		mirrors, locks = append(mirrors, carryMirror), append(locks, series.Carry.Repo)
+	patchBranchMirror := ""
+	if series.PatchBranch != nil {
+		patchBranchMirror = s.mirrorPath(series.PatchBranch.Repo)
+		mirrors, locks = append(mirrors, patchBranchMirror), append(locks, series.PatchBranch.Repo)
 	}
 	unlock, err := s.lockMirrors(locks, opts.Waiting)
 	if err != nil {
@@ -272,8 +272,8 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		res.Err = fmt.Errorf("this machine holds no copy of %s to replay the series in — a check fetches it", repo)
 		return res
 	}
-	if carryMirror != "" && !mirrorExists(carryMirror) {
-		res.Err = fmt.Errorf("this machine holds no copy of the carry %s to merge — a check fetches it", series.Carry.Source)
+	if patchBranchMirror != "" && !mirrorExists(patchBranchMirror) {
+		res.Err = fmt.Errorf("this machine holds no copy of the patch branch %s to merge — a check fetches it", series.PatchBranch.Source)
 		return res
 	}
 
@@ -282,9 +282,9 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	// is its own tree, which every entry fits.
 	if series.Replays() && !opts.LocalOnly {
 		s.prefetchBlobs(b, mirror, series.Base, "")
-		if series.Carry != nil {
-			// The carry's own files, from the carry's repository into its blobless mirror.
-			s.prefetchBlobs(b, carryMirror, series.Carry.Commit, "")
+		if series.PatchBranch != nil {
+			// The patch branch's own files, from the patch branch's repository into its blobless mirror.
+			s.prefetchBlobs(b, patchBranchMirror, series.PatchBranch.Commit, "")
 		}
 	}
 	sc, err := newScratchOf(s.git(), b, mirrors...)
@@ -300,8 +300,8 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 	if series.Replays() {
 		type need struct{ mirror, commit string }
 		needs := []need{{mirror, series.Base}}
-		if series.Carry != nil {
-			needs = append(needs, need{carryMirror, series.Carry.Commit})
+		if series.PatchBranch != nil {
+			needs = append(needs, need{patchBranchMirror, series.PatchBranch.Commit})
 		}
 		for _, n := range needs {
 			if opts.LocalOnly {
@@ -340,10 +340,10 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 		} else {
 			missingErr = s.missingBlobs(b, mirror, e.Commit)
 		}
-		if missingErr == nil && series.Carry != nil && !opts.LocalOnly {
-			// An entry that does not contain the carry's base (the good build's own commit after the
-			// carry moved) merges from an older base, whose files the mirror may lack.
-			if mb, err := sc.git("", "merge-base", e.Commit, series.Carry.Commit); err == nil {
+		if missingErr == nil && series.PatchBranch != nil && !opts.LocalOnly {
+			// An entry that does not contain the patch branch's base (the good build's own commit after the
+			// patch branch moved) merges from an older base, whose files the mirror may lack.
+			if mb, err := sc.git("", "merge-base", e.Commit, series.PatchBranch.Commit); err == nil {
 				if mb = strings.TrimSpace(mb); mb != "" && mb != series.Base {
 					s.prefetchBlobs(b, mirror, mb, "")
 				}
@@ -354,8 +354,8 @@ func (s *Store) WalkSeries(repo, subdir string, series *Series, list []ListEntry
 			res.Results = append(res.Results, r)
 			return res
 		}
-		if series.Carry != nil {
-			sc.mergeCarry(&r, series.Carry, subdir)
+		if series.PatchBranch != nil {
+			sc.mergePatchBranch(&r, series.PatchBranch, subdir)
 		} else {
 			sc.pick(&r, series, commits, subdir)
 		}
@@ -466,7 +466,7 @@ type scratch struct {
 }
 
 // newScratchOf makes a scratch repository borrowing every mirror's objects, run by the git binary
-// gitBin: the upstream's, and a carry's (carry.go), whose commits and files live in a mirror of
+// gitBin: the upstream's, and a patch branch's (patchbranch.go), whose commits and files live in a mirror of
 // their own.
 func newScratchOf(gitBin string, b budget, mirrors ...string) (*scratch, error) {
 	dir, err := os.MkdirTemp("", "yolo-patched-replay-")
@@ -713,15 +713,15 @@ func (sc *scratch) pick(r *ReplayResult, series *Series, commits []string, subdi
 	sc.settle(r, onto, subdir)
 }
 
-// mergeCarry merges the carry's commit into r.Entry's commit with no work tree — `git merge-tree
-// --write-tree`, git computing the merge base — filling r as pick does: a CONFLICT names the carry
+// mergePatchBranch merges the patch branch's commit into r.Entry's commit with no work tree — `git merge-tree
+// --write-tree`, git computing the merge base — filling r as pick does: a CONFLICT names the patch branch
 // and the conflicting paths; a clean merge commits its tree with both commits as parents, so the
 // export and the patched tree read it as they read a replay's last commit.
-func (sc *scratch) mergeCarry(r *ReplayResult, carry *SeriesCarry, subdir string) {
+func (sc *scratch) mergePatchBranch(r *ReplayResult, patchBranch *SeriesPatchBranch, subdir string) {
 	onto := r.Entry.Commit
-	member := "the carry " + carry.Label()
+	member := "the patch branch " + patchBranch.Label()
 	out, code, err := sc.gitStatus("", "merge-tree", "--write-tree", "-z", "--name-only", "--no-messages",
-		onto, carry.Commit)
+		onto, patchBranch.Commit)
 	fields := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
 	switch {
 	case code == 1 && len(fields) > 0 && fields[0] != "":
@@ -735,7 +735,7 @@ func (sc *scratch) mergeCarry(r *ReplayResult, carry *SeriesCarry, subdir string
 		return
 	case err != nil && strings.Contains(err.Error(), "unrelated histories"):
 		r.Err = fmt.Errorf("%s shares no history with %s — git refuses to merge unrelated histories; merge the "+
-			"upstream into the carry branch", member, shortCommit(onto))
+			"upstream into the patch branch", member, shortCommit(onto))
 		return
 	case err != nil && code > 1 && sc.b.ctx.Err() == nil:
 		r.PatchFailure = &PatchFailure{Kind: "application-command", Member: member, Detail: err.Error()}
@@ -745,7 +745,7 @@ func (sc *scratch) mergeCarry(r *ReplayResult, carry *SeriesCarry, subdir string
 		r.Err = fmt.Errorf("merging %s into %s: %s", member, shortCommit(onto), oneLine(err))
 		return
 	}
-	next, err := sc.git("", "commit-tree", "--no-gpg-sign", fields[0], "-p", onto, "-p", carry.Commit,
+	next, err := sc.git("", "commit-tree", "--no-gpg-sign", fields[0], "-p", onto, "-p", patchBranch.Commit,
 		"-m", "merge "+member)
 	if err != nil {
 		r.Err = fmt.Errorf("committing the merge of %s into %s: %s", member, shortCommit(onto), oneLine(err))

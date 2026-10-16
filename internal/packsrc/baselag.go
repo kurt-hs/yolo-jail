@@ -13,8 +13,8 @@ type BaseLag struct {
 	Base    ListEntry
 	Newer   []ListEntry
 	Applies []ListEntry
-	// Carry is set when the lag is a carry's (carry.go): Base is its merge base with the upstream.
-	Carry bool
+	// PatchBranch is set when the lag is a patch branch's (patchbranch.go): Base is its merge base with the upstream.
+	PatchBranch bool
 }
 
 // BaseLag is the series' base lag by the last finished check of in, or nil: when that check read
@@ -23,14 +23,14 @@ type BaseLag struct {
 // keyed by.
 func (r *CheckRecord) BaseLag(in CheckInputs, series string) *BaseLag {
 	base := in.Base
-	if in.Carry != "" && r.Check != nil && r.Check.Carry != nil {
-		// A CARRY'S LAG is its merge base's: the newest upstream commit the branch already holds.
-		base = r.Check.Carry.Base
+	if in.PatchBranch != "" && r.Check != nil && r.Check.PatchBranch != nil {
+		// A PATCH BRANCH'S LAG is its merge base's: the newest upstream commit the branch already holds.
+		base = r.Check.PatchBranch.Base
 	}
 	if !r.Answers(in) || r.Check.RefKind != "branch" || base == "" {
 		return nil
 	}
-	lag := &BaseLag{Base: ListEntry{Commit: base}, Carry: in.Carry != ""}
+	lag := &BaseLag{Base: ListEntry{Commit: base}, PatchBranch: in.PatchBranch != ""}
 	// The list is newest first, and holds only versions containing the base, the base's own tag
 	// included: every other version entry is a descendant of it, so newer.
 	for i := len(r.Check.List) - 1; i >= 0; i-- {

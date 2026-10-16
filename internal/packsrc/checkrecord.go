@@ -93,9 +93,9 @@ type CheckRecord struct {
 	// PatchFailure records one currently relevant application failure independently from the
 	// last-build outcome and from whether a warning was already shown.
 	PatchFailure *PatchFailure `json:"patch_failure,omitempty"`
-	// Carry is the last carry a check resolved (carry.go): what a carry's series is read from with
-	// no git (CarrySeries), kept apart from Check so a later check's problem does not lose it.
-	Carry *CarryResolved `json:"carry,omitempty"`
+	// PatchBranch is the last patch branch a check resolved (patchbranch.go): what a patch branch's series is read from with
+	// no git (PatchBranchSeries), kept apart from Check so a later check's problem does not lose it.
+	PatchBranch *PatchBranchResolved `json:"patch_branch,omitempty"`
 }
 
 // ApplyError is a walk's apply error as the record keeps it: the check whose list was walked, and
@@ -137,9 +137,9 @@ type CheckInputs struct {
 	Ref    string `json:"ref"`
 	Follow string `json:"follow"`
 	Base   string `json:"base"`
-	// Carry is a CARRY's address as written (carry.go), "" for a patch series: an edit to it makes
-	// a check due at once, as an edit to the ref does. A carry's Base is "": the check resolves it.
-	Carry string `json:"carry,omitempty"`
+	// PatchBranch is a PATCH BRANCH's address as written (patchbranch.go), "" for a patch series: an edit to it makes
+	// a check due at once, as an edit to the ref does. A patch branch's Base is "": the check resolves it.
+	PatchBranch string `json:"patch_branch,omitempty"`
 }
 
 // CheckFound is what a finished check found in the upstream's mirror.
@@ -171,9 +171,9 @@ type CheckFound struct {
 	// advance builds the base, and this says why, one line naming what the rule reads. NoVersionLine
 	// completes it with where the fork stays. "" otherwise.
 	NoVersion string `json:"no_version,omitempty"`
-	// Carry is what this check resolved a carry to (carry.go), nil for a patch series or when the
-	// carry could not be resolved; the record keeps the last one in CheckRecord.Carry.
-	Carry *CarryResolved `json:"carry,omitempty"`
+	// PatchBranch is what this check resolved a patch branch to (patchbranch.go), nil for a patch series or when the
+	// patch branch could not be resolved; the record keeps the last one in CheckRecord.Patch branch.
+	PatchBranch *PatchBranchResolved `json:"patch_branch,omitempty"`
 	// lockHeld is a NoWait store's check that found the mirror's lock held (an error matching
 	// ErrLockHeld): it fetched and listed nothing, and CheckPatched records none of it. Never written.
 	lockHeld error
@@ -223,9 +223,9 @@ type GoodBuild struct {
 	Tree   string `json:"tree,omitempty"`
 	// Patches is how many patches the series held.
 	Patches int `json:"patches,omitempty"`
-	// Carry is the carry's label ("<ref>@<short commit>", SeriesCarry.Label) when the build merged a
-	// carry, "" for a patch series.
-	Carry string `json:"carry,omitempty"`
+	// PatchBranch is the patch branch's label ("<ref>@<short commit>", SeriesPatchBranch.Label) when the build merged a
+	// patch branch, "" for a patch series.
+	PatchBranch string `json:"patch_branch,omitempty"`
 	// Seq is the sequence number of the check its candidate came from, which the move's
 	// compare-and-swap reads (§6.1).
 	Seq int64 `json:"seq"`

@@ -50,11 +50,11 @@ type PatchedWant struct {
 	// Source is the upstream address as the manifest writes it, Follow the follow rule as written
 	// ("" for the default).
 	Source, Follow string
-	// Base is the series' base commit (Series.Base); "" for a carry, whose base the check resolves.
+	// Base is the series' base commit (Series.Base); "" for a patch branch, whose base the check resolves.
 	Base string
-	// Carry is a CARRY's address as written (carry.go), "" for a patch series: the check fetches
+	// PatchBranch is a PATCH BRANCH's address as written (patchbranch.go), "" for a patch series: the check fetches
 	// it with the upstream and resolves it, its commit and its merge base with the upstream.
-	Carry string
+	PatchBranch string
 }
 
 // Inputs is what a check of w reads (CheckInputs), or why w cannot be checked at all. An npm
@@ -80,11 +80,11 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 	if err != nil {
 		return CheckInputs{}, Addr{}, FollowRule{}, err
 	}
-	if w.Carry != "" {
-		if _, err := Parse(w.Carry); err != nil {
-			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the carry: %w", err)
+	if w.PatchBranch != "" {
+		if _, err := Parse(w.PatchBranch); err != nil {
+			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the patch branch: %w", err)
 		}
-		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), Carry: w.Carry}, a, f, nil
+		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), PatchBranch: w.PatchBranch}, a, f, nil
 	}
 	return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), Base: w.Base}, a, f, nil
 }
@@ -204,12 +204,12 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if n, err := ParseNpm(w.Source); err == nil {
 			found = s.findNpmCandidates(n)
 		} else {
-			var carry *Addr
-			if w.Carry != "" {
-				c, _ := Parse(w.Carry) // Inputs parsed it
-				carry = &c
+			var patchBranch *Addr
+			if w.PatchBranch != "" {
+				c, _ := Parse(w.PatchBranch) // Inputs parsed it
+				patchBranch = &c
 			}
-			found = s.findCandidates(addr, follow, w.Base, carry, opts.Force || opts.FreshAfter != nil, now(), waiting)
+			found = s.findCandidates(addr, follow, w.Base, patchBranch, opts.Force || opts.FreshAfter != nil, now(), waiting)
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -227,10 +227,10 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		r.Seq++
 		found.Seq, found.At = r.Seq, now().Unix()
 		r.Read, r.Check = in, &found
-		if found.Carry != nil {
-			resolved := *found.Carry
+		if found.PatchBranch != nil {
+			resolved := *found.PatchBranch
 			resolved.At = found.At
-			r.Carry = &resolved
+			r.PatchBranch = &resolved
 		}
 		if pf := r.PatchFailure; pf != nil {
 			switch {
@@ -281,10 +281,10 @@ func keepListedOutcomes(outcomes []EntryOutcome, list []ListEntry) []EntryOutcom
 
 // findCandidates is the check's fetch and ref rule, under the mirror's lock, with no checkout: the
 // fetch step, then the ref read afresh, the series' base made present, and the walk's list.
-func (s *Store) findCandidates(a Addr, follow FollowRule, base string, carry *Addr, force bool, now time.Time,
+func (s *Store) findCandidates(a Addr, follow FollowRule, base string, patchBranch *Addr, force bool, now time.Time,
 	waiting func(string)) CheckFound {
 	var found CheckFound
-	unlock, err := s.lockMirrors(mirrorsOf(a.Repo, carry), waiting)
+	unlock, err := s.lockMirrors(mirrorsOf(a.Repo, patchBranch), waiting)
 	if err != nil {
 		if errors.Is(err, ErrLockHeld) {
 			found.lockHeld = err
@@ -328,12 +328,12 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, carry *Ad
 		return found
 	}
 	found.Tip = tip
-	// A CARRY (carry.go): fetched from its own repository into this mirror, under this lock and
+	// A PATCH BRANCH (patchbranch.go): fetched from its own repository into this mirror, under this lock and
 	// budget, whenever a check runs, and resolved to a commit and its merge base with the tip, which
 	// is its base from here on. A fetch that fails is this check's failed fetch, and the copy the
 	// mirror holds answers meanwhile, as the upstream's does.
-	if carry != nil {
-		resolved, why, fetchErr := s.resolveCarry(b, *carry, a.Repo, tip, now)
+	if patchBranch != nil {
+		resolved, why, fetchErr := s.resolvePatchBranch(b, *patchBranch, a.Repo, tip, now)
 		if fetchErr != "" {
 			if found.FetchErr != "" {
 				found.FetchErr += "; " + fetchErr
@@ -345,7 +345,7 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, carry *Ad
 			found.Problem = why
 			return found
 		}
-		found.Carry, base = resolved, resolved.Base
+		found.PatchBranch, base = resolved, resolved.Base
 	} else if base != "" {
 		// AN UNMODIFIED EXTENSION has no series, so no base to make present
 		// (docs/design/pi-extension-store-builds.md §4.2): its walk's list is every entry the follow

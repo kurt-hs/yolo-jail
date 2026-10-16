@@ -67,8 +67,8 @@ func forkClaimDetail(root string, c packdecl.Contribution) string {
 		rule = follow.String()
 	}
 	series := "the series in " + c.Patches
-	if c.Carry != "" {
-		series = "the carry " + c.Carry
+	if c.PatchBranch != "" {
+		series = "the patch branch " + c.PatchBranch
 	} else if s, err := packsrc.ReadSeries(root, c.Patches); err == nil {
 		series = fmt.Sprintf("%d %s in %s (series %s)", s.Len(), plural(s.Len(), "patch", "patches"),
 			c.Patches, s.ShortDigest())
@@ -96,9 +96,9 @@ type Fork struct {
 	// Patches and Follow are a PATCHED fork's (docs/design/patched-forks.md): the series directory,
 	// relative to Root, and the follow rule as written. Both "" for a plain fork.
 	Patches, Follow string
-	// Carry is a CARRY's address (docs/design/patched-forks.md §3.5), in Patches' place: the fork is
-	// patched, its series the carry's commit as the last check resolved it. "" otherwise.
-	Carry string
+	// PatchBranch is a PATCH BRANCH's address (docs/design/patched-forks.md §3.5), in Patches' place: the fork is
+	// patched, its series the patch branch's commit as the last check resolved it. "" otherwise.
+	PatchBranch string
 	// PackBases is the base of every fork the fork pack declares, this one's included, and in turn
 	// every base those bases fork (forkBaseClosure): the packs a build sealed to that pack must
 	// carry, since a selection holding a fork whose base it lacks is refused (ApplyForks) on the
@@ -130,7 +130,7 @@ type Fork struct {
 
 // Unmodified reports whether f is an UNMODIFIED EXTENSION: a built tree with no series, the upstream
 // at one commit or version (XB-D1). Its series is the empty one (ReadSeries).
-func (f Fork) Unmodified() bool { return f.IsTree() && f.Patches == "" && f.Carry == "" }
+func (f Fork) Unmodified() bool { return f.IsTree() && f.Patches == "" && f.PatchBranch == "" }
 
 // Npm reports whether f follows an npm package rather than a git repository (XB-D5).
 func (f Fork) Npm() bool { return packsrc.IsNpmSource(f.Source) }
@@ -145,8 +145,8 @@ func (f Fork) FollowsUpstream() bool { return f.Patched() || f.IsTree() }
 // fork it is the OWNER KEY too (PF-D22): its check record, its lock and its explicit acts use it.
 func (f Fork) Key() string { return f.Pack + "/" + f.Bin }
 
-// Patched reports whether the fork is a PATCHED fork: one that declares `patches`, or a `carry`.
-func (f Fork) Patched() bool { return f.Patches != "" || f.Carry != "" }
+// Patched reports whether the fork is a PATCHED fork: one that declares `patches`, or a `patch_branch`.
+func (f Fork) Patched() bool { return f.Patches != "" || f.PatchBranch != "" }
 
 // RebaseRecipe is what the printed git recipe that rebases f's series needs (packsrc.RebaseRecipe;
 // patched-forks.md §8.4, PF-D85): its upstream, the series' base, and the series directory when it
@@ -155,10 +155,10 @@ func (f Fork) Patched() bool { return f.Patches != "" || f.Carry != "" }
 func (f Fork) RebaseRecipe() packsrc.RebaseRecipe {
 	r := packsrc.RebaseRecipe{Repo: packsrc.CheckRepo(f.Source), Pack: f.Pack, Rel: f.Patches,
 		Dir: f.Pack + "-" + f.Bin + "-rebase"}
-	if f.Carry != "" {
-		// A CARRY is repaired in its own repository, by a merge (packsrc.RebaseRecipe.Lines).
-		a, _ := packsrc.Parse(f.Carry)
-		r.CarryRepo, r.CarryRef, r.Dir = a.Repo, a.Ref, f.Pack+"-"+f.Bin+"-carry"
+	if f.PatchBranch != "" {
+		// A PATCH BRANCH is repaired in its own repository, by a merge (packsrc.RebaseRecipe.Lines).
+		a, _ := packsrc.Parse(f.PatchBranch)
+		r.PatchBranchRepo, r.PatchBranchRef, r.Dir = a.Repo, a.Ref, f.Pack+"-"+f.Bin+"-patch-branch"
 		return r
 	}
 	if s, err := f.ReadSeries(); err == nil {
@@ -186,23 +186,23 @@ func notUsersPackRoot(root string) bool {
 // of the series' bytes reads them through here and digests what it read. An UNMODIFIED EXTENSION's
 // is the empty series (packsrc.EmptySeries), which every entry of its upstream fits.
 //
-// A CARRY's series is its commit as the last check resolved it, read from the check record in the
-// machine's pack store with no git (packsrc.CarrySeries); before any check resolved it, the
-// unresolved carry (packsrc.UnresolvedCarrySeries, Series.Unresolved), which no walk runs on and
+// A PATCH BRANCH's series is its commit as the last check resolved it, read from the check record in the
+// machine's pack store with no git (packsrc.PatchBranchSeries); before any check resolved it, the
+// unresolved patch branch (packsrc.UnresolvedPatchBranchSeries, Series.Unresolved), which no walk runs on and
 // whose recipe no build carries. ReadSeriesFrom reads another store's record.
 func (f Fork) ReadSeries() (*packsrc.Series, error) { return f.ReadSeriesFrom(nil) }
 
-// ReadSeriesFrom is ReadSeries reading a carry's record from store, the machine's pack store when nil.
+// ReadSeriesFrom is ReadSeries reading a patch branch's record from store, the machine's pack store when nil.
 func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
-	if f.Carry != "" {
+	if f.PatchBranch != "" {
 		if store == nil {
 			store = &packsrc.Store{Dir: paths.PacksDir()}
 		}
-		s, err := store.ReadCarry(f.Key(), f.Carry, f.Source)
+		s, err := store.ReadPatchBranch(f.Key(), f.PatchBranch, f.Source)
 		if err != nil {
 			// NOT RESOLVED HERE YET (or a record that cannot be read, which the advance recovers): the
-			// unresolved carry, whose recipe no build carries; the next check resolves it.
-			return packsrc.UnresolvedCarrySeries(f.Carry), nil
+			// unresolved patch branch, whose recipe no build carries; the next check resolves it.
+			return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
 		}
 		return s, nil
 	}
@@ -221,9 +221,9 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 // CheckWant is the check request for a patched fork whose series s was read: its owner key, its
 // upstream and follow rule, and the series' base.
 func (f Fork) CheckWant(s *packsrc.Series) packsrc.PatchedWant {
-	w := packsrc.PatchedWant{Owner: f.Key(), Source: f.Source, Follow: f.Follow, Carry: f.Carry}
-	if s != nil && f.Carry == "" {
-		w.Base = s.Base // a carry's base is the check's to resolve
+	w := packsrc.PatchedWant{Owner: f.Key(), Source: f.Source, Follow: f.Follow, PatchBranch: f.PatchBranch}
+	if s != nil && f.PatchBranch == "" {
+		w.Base = s.Base // a patch branch's base is the check's to resolve
 	}
 	return w
 }
@@ -244,7 +244,7 @@ func Forks(packs []*Pack) []Fork {
 				Pack: p.Name, Base: c.ForkOf, Bin: c.Bin, Source: c.Source, Build: c.Build,
 				Produces:  append([]string(nil), c.Produces...),
 				Platforms: append([]string(nil), c.Platforms...),
-				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, Carry: c.Carry, PackBases: slices.Clone(bases),
+				Root:      p.Root, Patches: c.Patches, Follow: c.Follow, PatchBranch: c.PatchBranch, PackBases: slices.Clone(bases),
 				NodeFloor: baseProgramNodeFloor(packs, c.ForkOf, c.Bin),
 			})
 		}
@@ -463,7 +463,7 @@ func forkedProgram(base, fork packdecl.Contribution, forkPack string) packdecl.C
 	// A patched fork's series directory and follow rule, so the rewritten program says it is one
 	// (Install.IsPatchedFork). The directory stays relative to the FORK pack's root, which
 	// ForkedBy names.
-	out.Patches, out.Follow, out.Carry = fork.Patches, fork.Follow, fork.Carry
+	out.Patches, out.Follow, out.PatchBranch = fork.Patches, fork.Follow, fork.PatchBranch
 	out.ForkOf, out.ForkedBy = "", forkPack
 	return out
 }

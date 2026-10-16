@@ -882,8 +882,8 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		// A PATCHED FORK: the series replayed onto the commit on the host, in a scratch repository
 		// outside this workspace, and the patched subdirectory copied into src/ (§5.1).
 		switch {
-		case b.Series.Carry != nil:
-			mode.run.phase("merging the carry")
+		case b.Series.PatchBranch != nil:
+			mode.run.phase("merging the patch branch")
 		case b.Series.Len() == 0:
 			mode.run.phase("checking out its upstream")
 		default:
@@ -892,15 +892,15 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 		if tree, err = replayIntoSource(mode.packs, b, src, mode.replaySpent, mode.sourceReplay); err != nil {
 			what := "replaying the series onto"
 			switch {
-			case b.Series.Carry != nil:
-				what = "merging the carry into"
+			case b.Series.PatchBranch != nil:
+				what = "merging the patch branch into"
 			case b.Series.Len() == 0:
 				what = "checking out"
 			}
 			return nil, forkSourceError{fmt.Errorf("%s %s: %w", what, b.Entry.Label(), err)}
 		}
 		if mode.run == nil { // a launch's start line said it, before the build line ran
-			if b.Series.Carry != nil {
+			if b.Series.PatchBranch != nil {
 				pr.Printf("[bold]build[/bold] [cyan]%s[/cyan]  [dim]%s at %s + %s, in a sealed jail[/dim]",
 					f.Key(), patchedBuildSource(f.Source), b.Entry.Label(), richtext.Escape(run.SeriesWhat(b.Series)))
 			} else if b.Series.Len() == 0 {
