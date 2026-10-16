@@ -10,7 +10,7 @@
 //
 // THE BARE § NUMBERS IN THIS PACKAGE, code and tests, cite the PRE-REWRITE design: the
 // quarantine that was dropped once the shared base itself was found to be the defect. Read
-// them in `git show 030c8f52:docs/design/base-home-legacy-state.md` — §5.1 Detection, §5.2
+// them in `git show 030c8f52:docs/reference/jail-home.md` — §5.1 Detection, §5.2
 // Classification, §5.8 Disclosure, §6 Prevention, §8 What this does not cover, §11
 // Sequencing. The design was rewritten in 8c7eb2b9 and later graduated into
 // docs/reference/jail-home.md, which keeps none of those rules; they survive here only as

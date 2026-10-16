@@ -962,7 +962,7 @@ jail at all, and killing it would break the feature packs exist to provide.
 > - The **`host` layer** row was under a standing decision to be *removed*, not reported: design
 >   doc [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) / plan [OQ-3](../plans/environment-manager-plan.md#decision-ledger) resolved 2026-08-01 to retire the read-in layer in favour of a local
 >   pack. **That decision was REVERSED 2026-09-12** by
->   [`OQ-CO10`/`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger): the layer stays,
+>   [`OQ-CO10`/`OQ-CO11`](../reference/config-ownership.md#why-its-this-way): the layer stays,
 >   declared on the surface and read fail-closed ([`OQ-EM2`](../reference/what-yolo-is.md#why-its-this-way)).
 >   So the row stands as written — a declared impurity — and its *report* half is what is owed.
 

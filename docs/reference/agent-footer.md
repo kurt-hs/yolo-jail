@@ -22,7 +22,7 @@ summary: "How yolo puts two facts into every agent's footer that has a hook: wha
 # The agent footer — billing route and notch in every agent's status line
 
 **Status:** Verified 2026-10-16 against `8e65f344`. Graduated from the design doc
-`docs/design/agent-footer.md`, which git history keeps. MEASURED: each agent's hook
+`docs/reference/agent-footer.md`, which git history keeps. MEASURED: each agent's hook
 ([Evidence](#evidence)), the renderer's output and cost at both notches, the host apply's
 writes in a scratch home, and the macos-user marker on a Mac (`TestMacosUserFooterSaysJail` in the
 scheduled `macos-user.yml` workflow). UNMEASURED: any footer under a live agent session, because no

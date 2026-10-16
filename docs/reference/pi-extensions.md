@@ -50,7 +50,7 @@ itself, and the **pre-launch refresh** ([§17](#17-the-pre-launch-refresh)) runs
 **Reads with:** [`patched-forks.md`](patched-forks.md) (the mode this extends; every PF term and
 PF-D id cited here is its), [`pi-extension-store-builds.md`](../design/pi-extension-store-builds.md)
 (the held store: pi git extensions as immutable local trees, an unmodified extension built by this
-mode with an empty series, and the parallel build pool — its XB-D ids), [`pack-pi-resources.md`](../design/pack-pi-resources.md)
+mode with an empty series, and the parallel build pool — its XB-D ids), [`pack-pi-resources.md`](pack-system.md)
 (the other route that hands pi a local package), and the user guide's
 [patch a pi extension](../../userguide/guides/patch-series.md#patch-a-pi-extension).
 
@@ -132,7 +132,7 @@ Read from pi's `dist/core/package-manager.js` (0.99.1), and the tree at the veri
 - **A local path** is loaded in place, never installed; a path that does not exist is skipped with
   no message; update collects only npm and git entries. A local package loads its `package.json`
   `pi` manifest, else its conventional `extensions/`, `skills/`, `prompts/`, `themes/`
-  ([`pack-pi-resources.md`](../design/pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)).
+  ([`pack-pi-resources.md`](pack-system.md)).
 - **Identity** is `npm:<name>`, `git:<host>/<path>` or `local:<resolved path>`, so one extension as
   a `git:` and a local entry loads twice.
 - **pi serves its own packages and `typebox`** to every extension, so a tree carries only its other
@@ -396,7 +396,7 @@ the ways back: the fix the build's own failure names; `yolo pack series check` a
 for a series that no longer applies; `yolo capture <pack>/<name>` to retry; dropping the list entry,
 or the pack, to run without it. `YOLO_ALLOW_MISSING_PROGRAMS`, the readiness act's bypass, launches
 anyway and says so. It is decided where the trees are, before the image step, reading no command:
-yolo never reads the command line ([HP-DIR2](../design/host-tool-provisioning.md#HP-DIR2)). Whether
+yolo never reads the command line ([HP-DIR2](host-agent-environment.md#HP-DIR2)). Whether
 a build that fails while the good build serves should refuse too is [OQ-PPX3](#OQ-PPX3).
 
 - **Each cause is said once** ([PPX-D42](#PPX-D42)), with every extension it left without a build. A
@@ -420,7 +420,7 @@ a build that fails while the good build serves should refuse too is [OQ-PPX3](#O
 > [!WARNING]
 > A mountpoint podman made on an earlier launch may be left empty at `~/<into>`. pi does not skip an
 > empty directory as it skips a missing path: it tries to load the directory itself as one extension,
-> which fails ([`pack-pi-resources.md` §1](../design/pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)).
+> which fails ([`pack-pi-resources.md` §1](pack-system.md)).
 > This is one reason the launch refuses rather than starting pi with nothing at the path.
 
 **Two departures from the held store's rule**
@@ -463,7 +463,7 @@ keeps failing would cost every fresh launch a rebuild.
   so nothing in it may ever feed a host build.
 - **Nothing is rewritten** (PE7), so neither [OQ-6](../design/pi-extension-store-builds.md#OQ-6)
   nor an [`OQ-LT2`](pack-system.md#oq-lt2) amendment is needed.
-- **[OQ-PR1](../design/pack-pi-resources.md#OQ-PR1)'s slot**, if it ships, registers one tree per
+- **[OQ-PR1](pack-system.md#oq-pr1)'s slot**, if it ships, registers one tree per
   pack; a registration per contribution could later write the list entry the author writes by hand.
 
 ## 13. Migrating the maintainer's five forks
@@ -520,7 +520,7 @@ names `patched-extensions`.
 **Not covered:**
 
 - **A tree with no build, admitted without a jail.** It would reach macos-user; deferred.
-- **Writing the list entry for the author.** It waits on [OQ-PR1](../design/pack-pi-resources.md#OQ-PR1).
+- **Writing the list entry for the author.** It waits on [OQ-PR1](pack-system.md#oq-pr1).
 - **Moving a tree inside a running jail.** A running jail keeps what it booted with; a tree moves
   only at a fresh launch, where pi's own refresh would move a `git:` package in a running jail.
 - **A `files` contribution, or a list entry, scoped to a posture or notch**, which could keep the
