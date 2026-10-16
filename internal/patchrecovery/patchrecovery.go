@@ -45,9 +45,15 @@ const (
 	// AllowMissingProgramsEnv starts the jail without a program it cannot deliver. Not scoped: any
 	// non-empty value.
 	AllowMissingProgramsEnv = paths.AllowMissingProgramsEnv
+	// UseInstalledEnv runs the INSTALLED version of an unpatched program yolo manages (a launcher-
+	// or floor-installed program, a yolo-installed MCP server, a pre-launch refresh's content) when
+	// a newer version was found and installing it failed (docs/design/program-delivery.md PD-NF1,
+	// PD-NF2). Scoped by Parse's grammar, a name matching the program's pack, bin or package.
+	UseInstalledEnv = "YOLO_USE_INSTALLED"
 )
 
-// Scoped lists the hatches that take Parse's grammar, in the order a refusal lists them.
+// Scoped lists the patched-build hatches that take Parse's grammar, in the order a refusal lists
+// them. UseInstalledEnv takes the grammar too, but it is never a patched build's hatch.
 var Scoped = []string{AllowPatchFailuresEnv, UseCachedGoodEnv, AllowOlderUpstreamEnv, SkipPatchesEnv, SkipExtensionsEnv}
 
 // Scope is one hatch's parsed value.
