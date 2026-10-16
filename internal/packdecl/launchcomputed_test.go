@@ -1,7 +1,7 @@
 package packdecl
 
 // launchcomputed_test.go pins the pack-wide `launch_computed` declaration
-// (Manifest.LaunchComputedByBin; docs/design/model-lists-and-pickers.md MM-D42): projected onto the
+// (Manifest.LaunchComputedByBin; docs/reference/pack-system.md#launch_computed): projected onto the
 // owning program's LaunchSelection.Computed as a copy, never onto a fork's, and refused wherever no
 // launch could hand it. Through Decode and the real validator.
 

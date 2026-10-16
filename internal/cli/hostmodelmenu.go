@@ -281,7 +281,7 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 	}
 	configured, err := entrypoint.HostLaunchSelection(p, *spec, paths.Home(),
 		&entrypoint.HostInputs{Vars: c.configuredWireTables(), Packs: c.packs}, nil)
-	// The selection and the computed keys (pi's `subagents` block, MM-D42) are compared apart: a -p
+	// The selection and the computed keys (a pack's `launch_computed`) are compared apart: a -p
 	// that agrees on the selection but composes other computed keys hands those keys alone.
 	sameSelection := err == nil && launch.Same(configured)
 	sameComputed := err == nil && launch.SameComputed(configured)
@@ -331,8 +331,8 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 		}
 		for _, h := range held {
 			say(fmt.Sprintf("-p %s composes its own %s for %s, which pack %s hands as %s only when %s=1, and it "+
-				"is not set, so %s keeps the %s its own config holds (~/%s) (docs/design/model-lists-and-pickers.md "+
-				"MM-D42). Set %s=1 once your %s reads %s.", shquote.Quote(c.typedProfile), h.Key, c.agent, p.Name,
+				"is not set, so %s keeps the %s its own config holds (~/%s) (docs/reference/pack-system.md#launch_computed). "+
+				"Set %s=1 once your %s reads %s.", shquote.Quote(c.typedProfile), h.Key, c.agent, p.Name,
 				h.Word(), h.OptIn, c.agent, h.Key, spec.Surface, h.OptIn, c.agent, h.Word()))
 		}
 	}
