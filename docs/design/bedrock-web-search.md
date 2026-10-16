@@ -338,8 +338,8 @@ runtime chat and every native client. It denies:
 
 - `bedrock-agentcore:InvokeGateway`, so a jail that follows the README gets AccessDenied on every
   search;
-- any model-listing call [OQ-BR14](model-lists-and-pickers.md#OQ-BR14) or
-  [OQ-BR15](model-lists-and-pickers.md#OQ-BR15) might add;
+- any model-listing call [OQ-BR14](model-lists-and-pickers.md#16-decision-ledger) or
+  [OQ-BR15](model-lists-and-pickers.md#16-decision-ledger) might add;
 - every `bedrock-mantle` action, which matters only to the mantle recipe.
 
 The README is [`sso-backed-bedrock.md`](sso-backed-bedrock.md)'s to change; this doc owes the
@@ -533,7 +533,7 @@ should not be able to set it.
 | Option | Verdict |
 | :--- | :--- |
 | **A.** An environment variable (proposed: `AGENTCORE_WEB_SEARCH_GATEWAY`) the entry lists in `requires_env`. A company pack sets it with a `kind: "env"` contribution; a user with a local pack or `env_sources` | **Leaning** |
-| **B.** A provider option on the Bedrock provider (`options.web_search_gateway`), set in user config | A company pack cannot set another pack's provider option, the sole-ownership wall [OQ-BR12](model-lists-and-pickers.md#OQ-BR12) also hits, and "no URL, no preset" would need a new gate |
+| **B.** A provider option on the Bedrock provider (`options.web_search_gateway`), set in user config | A company pack cannot set another pack's provider option, the sole-ownership wall [OQ-BR12](model-lists-and-pickers.md#16-decision-ledger) also hits, and "no URL, no preset" would need a new gate |
 | **C.** A new top-level config key | Core would learn an AWS service by name |
 
 Under A, "no URL, no preset, and say so" is `requires_env`'s existing behavior. The proxy reads

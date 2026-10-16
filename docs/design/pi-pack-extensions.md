@@ -91,7 +91,7 @@ found. Measured statically against Claude Code 2.1.278
 
 **Needs your ruling:** **None *here*** — all six questions are ruled ([decision ledger](#10-decision-ledger)).
 The live questions have moved to the role model and the surface. In the role model,
-[`OQ-D1`–`OQ-D5`](slots-and-contributions.md#OQ-D1) were ruled 2026-09-20; what is open there
+[`OQ-D1`–`OQ-D5`](slots-and-contributions.md#7-decision-ledger) were ruled 2026-09-20; what is open there
 is [`OQ-D6`–`OQ-D12`](slots-and-contributions.md#OQ-D6), filed 2026-09-21 when a build attempt
 stopped, with [`OQ-D6`](slots-and-contributions.md#OQ-D6) the blocker. The surface questions,
 [`OQ-M1`–`OQ-M4`](manifest-language.md#OQ-M1), are all open.

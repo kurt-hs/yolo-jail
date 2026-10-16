@@ -122,7 +122,7 @@ can edit.
   whole and print its name. With no `--workspace`, they switch the folder they run in, which is the
   workspace a launch there opens. A hand edit is allowed; its comments are not kept by the next write.
   Neither command touches `config.jsonc`, by the maintainer's ruling
-  ([OQ-BB12](../design/boundary-broker.md#OQ-BB12)).
+  ([OQ-BB12](../design/boundary-broker.md#15-decision-ledger)).
 - **Its name and its key.** One file per workspace, `<the folder's name>-<12 hex digits>.jsonc`,
   the digits from the SHA-256 of the workspace's resolved path, each name in it spelled as its
   folder lists it, so two spellings of one folder on a case-insensitive file system name one

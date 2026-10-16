@@ -23,7 +23,7 @@ Kilo's model catalog on 2026-09-20 ([providers.md](../reference/providers.md#per
 and [OQ-GP4](#OQ-GP4) must be ruled before its
 durable half can move to the reference tree (the warning below). **Amended 2026-09-25:**
 [OQ-GP2](#decision-ledger)'s *"ship no models"* is narrowed by
-[OQ-BR3](model-lists-and-pickers.md#OQ-BR3) (the ledger note below); this doc's gateway packs
+[OQ-BR3](model-lists-and-pickers.md#16-decision-ledger) (the ledger note below); this doc's gateway packs
 still ship no models.
 
 > [!WARNING]
@@ -189,7 +189,7 @@ the code. pi supplies the 1M-token context window only for a `deepseek/` id on K
 claude's derive sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to
 `1048576` for **every** Kilo launch whose profile and provider declare no window, whatever the
 model. So claude on a smaller Kilo model believes it has 1M tokens and compacts too late. The
-literal-id fallback sits closer to a later ruling than it did: [OQ-ML2](model-lists-and-pickers.md#OQ-ML2)
+literal-id fallback sits closer to a later ruling than it did: [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger)
 (2026-09-29) says yolo never steers a valid choice the user's config makes, and a profile
 naming an exact id is such a choice.
 
@@ -240,5 +240,5 @@ The options, lettered here for the first time, with what each costs:
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | OQ-GP1 | Ship two packs rather than one generic gateway pack; endpoint capability differs by provider. | 2026-09-15 | [§1](#1-the-provider-facts) | shipped |
-| OQ-GP2 | Ship no models; users curate the finite selectable map and profiles choose defaults. **Amended 2026-09-25 by [OQ-BR3](model-lists-and-pickers.md#OQ-BR3):** where an agent cannot fall back to its own default by yolo having no opinion, yolo does pick model ids, shipped in a built-in pack that comes with yolo rather than in core (*"I do want to pick these … a built-in pack (it's not in core per se but it comes with [yolo]) with these that tries to pick these different models"*). Where an agent can default, yolo still ships nothing, and the user still curates the selectable map. The OpenRouter and Kilo packs are unchanged. Whether a pack may also carry a list an org reshapes was [OQ-BR12](model-lists-and-pickers.md#OQ-BR12), ruled 2026-09-29: yes, the `models` kind. | 2026-09-15; amended 2026-09-25 | [§2](#2-a-selected-set-not-a-synchronized-catalog); amendment in [`model-lists-and-pickers.md`](model-lists-and-pickers.md#OQ-BR3) | shipped; the amendment built as each provider's own list in its own pack, as [OQ-ML1](model-lists-and-pickers.md#OQ-ML1) ruled ([ML-D1](model-lists-and-pickers.md#ML-D1), [ML-D9](model-lists-and-pickers.md#ML-D9)) |
+| OQ-GP2 | Ship no models; users curate the finite selectable map and profiles choose defaults. **Amended 2026-09-25 by [OQ-BR3](model-lists-and-pickers.md#16-decision-ledger):** where an agent cannot fall back to its own default by yolo having no opinion, yolo does pick model ids, shipped in a built-in pack that comes with yolo rather than in core (*"I do want to pick these … a built-in pack (it's not in core per se but it comes with [yolo]) with these that tries to pick these different models"*). Where an agent can default, yolo still ships nothing, and the user still curates the selectable map. The OpenRouter and Kilo packs are unchanged. Whether a pack may also carry a list an org reshapes was [OQ-BR12](model-lists-and-pickers.md#16-decision-ledger), ruled 2026-09-29: yes, the `models` kind. | 2026-09-15; amended 2026-09-25 | [§2](#2-a-selected-set-not-a-synchronized-catalog); amendment in [`model-lists-and-pickers.md`](model-lists-and-pickers.md#16-decision-ledger) | shipped; the amendment built as each provider's own list in its own pack, as [OQ-ML1](model-lists-and-pickers.md#16-decision-ledger) ruled ([ML-D1](model-lists-and-pickers.md#ML-D1), [ML-D9](model-lists-and-pickers.md#ML-D9)) |
 | OQ-GP3 | Kilo is Chat Completions only until a documented, verified Responses route exists; Claude and Copilot reuse the existing wire bridge. | 2026-09-15 | [§3](#3-failure-and-safety-rules) | shipped |
