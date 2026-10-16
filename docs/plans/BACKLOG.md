@@ -714,6 +714,15 @@ tombstone. The next boot's capture records it again, so it is late rather than l
 `launchImageIdentity` installed earlier in the same launch is discarded and the identity is
 evaluated again. Found 2026-10-16 by the review of the prewarm-stop fix.
 
+### <a id="mirror-gc-on-launch"></a>🔧 **A launch's mirror gc can stall it silently**
+
+Since 2026-10-16 the pack store runs `git gc --auto` in the foreground after a fetch, on a fresh
+store timeout. Once a mirror passes `gc.autoPackLimit`, a launch that fetches pays for a full
+repack; on a very large mirror that outlasts the 60-second launch fetch budget it is killed and
+retried at every launch, with nothing printed. Give the gc a shorter budget, or say when it runs.
+`Sync`'s gc call (used by `yolo pack install` for forks) also has no test, and the comment above
+`Sync` wrongly says no production path calls it.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |

@@ -641,10 +641,30 @@ var stageCaptureScript = strings.Join([]string{
 	// One `&&` chain inside an `if`, where `set -e` does not end the script, so a failure of any
 	// step reaches the cleanup below it.
 	"if " + strings.Join([]string{
-		cpBin + ` -R "$3" "$tmp"`,
+		// THE COPY LANDS IN A DIRECTORY ALREADY IN THE COPIER'S OWN GROUP. Apple's cp, -p or
+		// not, ends every directory it creates with chmod(2) to the SOURCE's mode (file_cmds
+		// cp.c, the FTS_DP arm's `fts_dne` branch, which warns `cp: chmod:` and fails the
+		// copy), and a captured entry's directories carry setgid: its out/ leaf is 2770 in the
+		// sandbox group (captureLeafCommands) and the store freezes files only (freezeTree).
+		// XNU refuses setgid to an owner outside the directory's group with EPERM, and a new
+		// directory takes its parent's group, which under /Users/Shared is wheel (that this is
+		// the EPERM's cause is INFERRED from those three facts; the EPERM itself is measured,
+		// below). So the top is made first and given the copier's primary group, which every
+		// directory the copy creates under it inherits, and `"$3/."` copies the entry's
+		// contents into it (BSD and GNU alike) rather than a directory named after it. `"$3/."`
+		// would follow a symlinked entry where `cp -R "$3"` copied the link, so an entry that is
+		// not a real directory is refused first. Measured on CI 2026-10-16:
+		// `cp: chmod: …/captures/staging/<key>/: Operation not permitted` once staging stopped
+		// running as root.
+		`{ { [ -d "$3" ] && [ ! -L "$3" ]; } || { echo "` + stageCaptureScriptName +
+			`: $3 is not a directory (a symlink or missing), so it is not copied" >&2; false; }; }`,
+		mkdirBin + ` "$tmp"`,
+		chgrpBin + ` "$(` + idBin + ` -g)" "$tmp"`,
+		cpBin + ` -R "$3/." "$tmp"`,
 		// Readable and searchable by every account, writable by none: the sandbox can change
-		// neither a file's bytes nor its mode, since it owns neither.
-		chmodBin + ` -R ` + sealTreeMode + ` "$tmp"`,
+		// neither a file's bytes nor its mode, since it owns neither. Every set-id bit the copy
+		// carried goes too, so the staged entry's modes are this script's, not the source's.
+		chmodBin + ` -R ` + sealTreeMode + `,` + clearSetIDMode + ` "$tmp"`,
 		chmodBin + ` u+w "$tmp"`,
 		mvBin + ` "$tmp" "$dst"`,
 		chmodBin + ` a-w "$dst"`,
@@ -653,6 +673,13 @@ var stageCaptureScript = strings.Join([]string{
 	rmBin + ` -rf "$tmp"`,
 	"exit 1",
 }, "; ")
+
+// idBin names the copier's primary group in stageCaptureScript; clearSetIDMode is the symbolic
+// mode that drops setuid and setgid, which the seal adds to a staged entry's.
+const (
+	idBin          = "/usr/bin/id"
+	clearSetIDMode = "ug-s"
+)
 
 // unsealInScript is unsealScript's test as one statement of a `set -eu` script, over a quoted
 // shell word: give the owner write back on a sealed directory before removing it. It never ends
