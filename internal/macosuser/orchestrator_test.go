@@ -175,6 +175,7 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "project")
 	cname := cnameFor(workspace)
 	state := t.TempDir()
+	unsealOnCleanup(t, state) // the staged pack trees are sealed
 	hostA := writeFixturePackTree(t, "#!/bin/sh\necho A\n")
 	sibling := StagedPackTreeRoot(cname, hostA, state)
 	legacy := StagedPackRoot(cname, state)
@@ -252,7 +253,7 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		if !strings.Contains(out.String(), "Could not reserve guest pack tree") ||
 			!strings.Contains(out.String(), StagedPackTreeRoot(cname, hostC, "")) ||
 			!strings.Contains(out.String(), "fresh invocation") ||
-			!strings.Contains(out.String(), "sudo ls -la --") || !strings.Contains(out.String(), "Do not remove") {
+			!strings.Contains(out.String(), "`ls -la --") || !strings.Contains(out.String(), "Do not remove") {
 			t.Errorf("reservation refusal omitted safe retry/inspection guidance: %s", out.String())
 		}
 		for _, call := range rec {
@@ -451,12 +452,12 @@ func TestRunHappyPathLaunches(t *testing.T) {
 	// Must install profile + bootstrap, stage entrypoint (3 cmds), run
 	// bootstrap, launch under proxy.
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(joined, "install:/var/yolo-jail/profile-") {
+	if !strings.Contains(joined, "install:/Users/Shared/yolo-staged/profile-") {
 		t.Error("profile not installed")
 	}
 	// No `--login`: it rewrote every forwarded command (see
 	// TestNeitherArgvForwardsThroughSudoLogin), and sudo execve's the argv without it.
-	if !strings.Contains(joined, "proxy:sudo --set-home --user=_yolojail") {
+	if !strings.Contains(joined, "proxy:/usr/bin/sudo -n --set-home --user=_yolojail") {
 		t.Errorf("proxy launch missing:\n%s", joined)
 	}
 }
@@ -514,10 +515,10 @@ func TestMacosSetupCreatesWhenMissing(t *testing.T) {
 		t.Errorf("rc = %d", rc)
 	}
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(joined, "run:sudo dscl . -create /Users/_yolojail") {
+	if !strings.Contains(joined, "run:sudo /usr/bin/dscl . -create /Users/_yolojail") {
 		t.Errorf("user creation not run:\n%s", joined)
 	}
-	if !strings.Contains(joined, "run:sudo mkdir -p /Users/Shared/yolo") {
+	if !strings.Contains(joined, "run:sudo /bin/mkdir -p /Users/Shared/yolo") {
 		t.Error("shared root not provisioned")
 	}
 }
@@ -545,9 +546,9 @@ func TestMacosSetupReprovisionsAMissingHome(t *testing.T) {
 	}
 	joined := strings.Join(rec, "\n")
 	for _, want := range []string{
-		"run:sudo createhomedir -c -u _yolojail",
-		"run:sudo chown -R _yolojail:_yolojail /Users/_yolojail",
-		"run:sudo chmod 750 /Users/_yolojail",
+		"run:sudo /usr/sbin/createhomedir -c -u _yolojail",
+		"run:sudo /usr/sbin/chown -R _yolojail:_yolojail /Users/_yolojail",
+		"run:sudo /bin/chmod 750 /Users/_yolojail",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q:\n%s", want, joined)

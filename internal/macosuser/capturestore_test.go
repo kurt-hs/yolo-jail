@@ -140,13 +140,16 @@ func TestPlanInvariantsRefuseAWrongCaptureStore(t *testing.T) {
 		plan func(t *testing.T) RunPlan
 		want string
 	}{
-		{"outside the state dir", func(t *testing.T) RunPlan { return withStore(t, "/private/tmp/captures") },
-			"not under the root-owned state dir"},
-		{"under /Users", func(t *testing.T) RunPlan { return withStore(t, CaptureRootDefault()) },
-			"is under /Users"},
-		{"under a firmlinked /Users", func(t *testing.T) RunPlan {
+		{"outside the staging root", func(t *testing.T) RunPlan { return withStore(t, "/private/tmp/captures") },
+			"not under the host-owned staging root"},
+		{"the capture scratch root", func(t *testing.T) RunPlan { return withStore(t, CaptureRootDefault()) },
+			"not under the host-owned staging root"},
+		{"the user's own store under a firmlinked /Users", func(t *testing.T) RunPlan {
 			return withStore(t, "/System/Volumes/Data/Users/matt/.local/share/yolo-jail/captures")
-		}, "is under /Users"},
+		}, "not under the host-owned staging root"},
+		{"a sibling whose name extends the staging root", func(t *testing.T) RunPlan {
+			return withStore(t, StagingRoot()+"-evil/captures")
+		}, "not under the host-owned staging root"},
 		{"not staged", func(t *testing.T) RunPlan {
 			plan := planWithCtx(t, stagedCaptureCtx())
 			var kept [][]string
@@ -191,8 +194,8 @@ func TestPlanInvariantsRefuseAWrongCaptureStore(t *testing.T) {
 }
 
 // THE SESSION PROFILE IS UNCHANGED, which is the property (b) was chosen for: the staged store is
-// under /var/yolo-jail, which the profile's `(allow default)` already lets the sandbox read, so
-// staging it adds no rule — not a read allow for the user's store under /Users, which (a) would.
+// under the staging root, which the profile already lets the sandbox read, so staging it adds no
+// rule — not a read allow for the user's store under /Users, which (a) would.
 func TestTheSessionProfileIsTheSameWithAndWithoutCaptures(t *testing.T) {
 	without := planWithCtx(t, HostContext{})
 	with := planWithCtx(t, stagedCaptureCtx())
@@ -246,8 +249,8 @@ func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
 	for _, c := range cmds {
 		joined += strings.Join(c, " ") + "\n"
 	}
-	for _, want := range []string{cpBin + ` -R "$3" "$tmp"`, chmodBin + ` -R a+rX,go-w "$tmp"`,
-		mvBin + ` "$tmp" "$dst"`, `tmp="$1/` + capturesStagingLeaf + `/$2"`} {
+	for _, want := range []string{cpBin + ` -R "$3" "$tmp"`, chmodBin + ` -R a-w,a+rX "$tmp"`,
+		mvBin + ` "$tmp" "$dst"`, chmodBin + ` a-w "$dst"`, `tmp="$1/` + capturesStagingLeaf + `/$2"`} {
 		if !strings.Contains(stageCaptureScript, want) {
 			t.Errorf("the stage script does not %q:\n%s", want, stageCaptureScript)
 		}
@@ -269,9 +272,11 @@ func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
 }
 
 // THE COMMANDS RUN, as the invoking user rather than root, against temp dirs: the picked entry
-// is COPIED (its files are not the source's inodes), its links copied as links, group and other
-// write bits gone; an entry already staged is not copied again; a staged entry the store no longer
-// selects is removed, a kept one stays, and a copy a killed launch left under staging/ goes.
+// is COPIED (its files are not the source's inodes), its links copied as links, and SEALED, every
+// write bit gone; an entry already staged is not copied again; a staged entry the store no longer
+// selects is removed although sealed, a kept one stays, and a sealed copy a killed launch left
+// under staging/ goes. Run as root (as in a jail) the sealed removals prove nothing, since root
+// ignores the mode; CI runs this as an ordinary user.
 func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin, mkdirBin} {
 		if _, err := os.Stat(bin); err != nil {
@@ -282,6 +287,7 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	unsealOnCleanup(t, tmp)
 	sd := filepath.Join(tmp, "state")
 	src := filepath.Join(tmp, "userstore", "entries", captureKeyA)
 	bin := filepath.Join(src, "tree", ".local", "bin")
@@ -293,9 +299,12 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := StagedCapturesRoot(sd)
-	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyOld, "tree"), 0o755)
-	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyKept, "tree"), 0o755)
-	mustMkdir(t, filepath.Join(root, capturesStagingLeaf, captureKeyOld), 0o755)
+	// Sealed, as a staged entry and a dead copy are: the prune must unseal before it removes.
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyOld, "tree"), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyOld), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf, captureKeyKept, "tree"), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesStagingLeaf, captureKeyOld, "tree"), 0o555)
+	mustMkdir(t, filepath.Join(root, capturesStagingLeaf, captureKeyOld), 0o555)
 
 	cmds := StageCaptureCommands([]CaptureEntry{{Bin: "probetool", Key: captureKeyA, Source: src}},
 		[]string{captureKeyKept}, sd)
@@ -320,22 +329,23 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	if os.SameFile(srcInfo, dstInfo) {
 		t.Errorf("the staged file IS the user store's inode — a link, not a copy")
 	}
-	if dstInfo.Mode().Perm()&0o022 != 0 {
-		t.Errorf("staged file mode %v leaves group or other write", dstInfo.Mode().Perm())
+	if dstInfo.Mode().Perm()&0o222 != 0 {
+		t.Errorf("staged file mode %v leaves a write bit", dstInfo.Mode().Perm())
 	}
-	if fi, err := os.Stat(filepath.Join(dst, "tree", ".local", "bin", "loose")); err != nil || fi.Mode().Perm()&0o022 != 0 {
-		t.Errorf("a group-writable source file is staged %v (%v), want no group or other write", fi.Mode(), err)
+	if fi, err := os.Stat(filepath.Join(dst, "tree", ".local", "bin", "loose")); err != nil || fi.Mode().Perm()&0o222 != 0 {
+		t.Errorf("a group-writable source file is staged %v (%v), want no write bit", fi.Mode(), err)
 	}
-	if fi, err := os.Stat(filepath.Join(dst, "tree", ".local", "bin")); err != nil || fi.Mode().Perm()&0o022 != 0 ||
-		fi.Mode().Perm()&0o005 != 0o005 {
-		t.Errorf("a staged directory is %v (%v), want readable and searchable by all, writable by none but its owner",
-			fi.Mode(), err)
+	for _, d := range []string{dst, filepath.Join(dst, "tree", ".local", "bin")} {
+		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm()&0o222 != 0 || fi.Mode().Perm()&0o555 != 0o555 {
+			t.Errorf("staged directory %s is %v (%v), want sealed: readable and searchable by all, writable by none",
+				d, fi.Mode(), err)
+		}
 	}
 	if target, err := os.Readlink(filepath.Join(dst, "tree", ".local", "bin", "link")); err != nil ||
 		target != "/nonexistent/versions/1.0" {
 		t.Errorf("a link in the entry was not copied as the same link: %q (%v)", target, err)
 	}
-	for _, d := range []string{root, filepath.Join(root, capturesEntriesLeaf)} {
+	for _, d := range []string{root, filepath.Join(root, capturesEntriesLeaf), filepath.Join(root, capturesStagingLeaf)} {
 		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm() != 0o755 {
 			t.Errorf("%s is %v (%v), want 0755 so the sandbox can search it", d, fi.Mode(), err)
 		}
@@ -353,11 +363,33 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	// SECOND LAUNCH: the key is a content address, so an entry staged under it is not copied
 	// again. A file only the staged copy has proves the tree was left alone.
 	sentinel := filepath.Join(dst, "sentinel")
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	mustWrite(t, sentinel, "", 0o644)
+	if err := os.Chmod(dst, 0o555); err != nil {
+		t.Fatal(err)
+	}
 	runAll()
 	if _, err := os.Stat(sentinel); err != nil {
 		t.Errorf("a second launch re-copied an entry already staged under its key (%v)", err)
 	}
+}
+
+// unsealOnCleanup gives every directory under dir its owner's write back before the test's
+// temp dirs are removed. A staged tree is sealed (0555 directories), and t.TempDir's own cleanup,
+// run as an ordinary user, cannot remove what is inside a directory it may not write. Register it
+// AFTER the t.TempDir call that made dir: cleanups run last-registered first.
+func unsealOnCleanup(t *testing.T, dir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+			if err == nil && d.IsDir() {
+				_ = os.Chmod(p, 0o755)
+			}
+			return nil
+		})
+	})
 }
 
 func mustMkdir(t *testing.T, dir string, mode os.FileMode) {

@@ -219,9 +219,9 @@ func TestAPlanWithNoContextLinksKeepsItsProfile(t *testing.T) {
 	}
 }
 
-// THE LINKS ARE STAGED IN THE CONTEXT DIR, root-owned, inside the `.new` swap — after the
-// recursive chmod, so it never meets a link — with each parent made and opened explicitly,
-// and before the endpoint grants, which stay last.
+// THE LINKS ARE STAGED IN THE CONTEXT DIR, sealed, inside the `.new` swap — after the seal,
+// so no recursive chmod ever meets a link — with the `.new` root opened to its owner alone for
+// the links, each parent made, the parents sealed again and the root closed before the swap.
 func TestPlanStagesEachContextLinkInsideTheSwap(t *testing.T) {
 	plan := planWithLinks(t, roLink, optRO)
 	tmp := plan.ContextDir + ".new"
@@ -234,15 +234,19 @@ func TestPlanStagesEachContextLinkInsideTheSwap(t *testing.T) {
 		t.Fatalf("no stage command %v in:\n%v", want, plan.StageCommands)
 		return -1
 	}
-	chmodTree := index(chmodBin, "755", tmp)
+	sealTree := index(chmodBin, sealedBinaryMode, tmp)
+	openTree := index(chmodBin, "u+w", tmp)
 	mkParent := index(mkdirBin, "-p", tmp+"/opt")
-	openParent := index(chmodBin, "755", tmp+"/opt")
 	link1 := index(lnBin, "-s", roLink.Source, tmp+"/lib")
 	link2 := index(lnBin, "-s", optRO.Source, tmp+"/opt/tools")
+	sealParent := index(chmodBin, sealedBinaryMode, tmp+"/opt")
+	closeTree := index(chmodBin, "u-w", tmp)
 	swap := index(mvBin, "-f", tmp, plan.ContextDir)
-	if !(chmodTree < mkParent && mkParent < openParent && openParent < link1 && link1 < swap && link2 < swap) {
-		t.Errorf("the context dir is staged out of order (chmod %d, mkdir %d, chmod parent %d, links %d %d, swap %d):\n%v",
-			chmodTree, mkParent, openParent, link1, link2, swap, plan.StageCommands)
+	if !(sealTree < openTree && openTree < mkParent && mkParent < link1 && mkParent < link2 &&
+		link1 < sealParent && link2 < sealParent && sealParent < closeTree && closeTree < swap) {
+		t.Errorf("the context dir is staged out of order (seal %d, open %d, mkdir %d, links %d %d, seal parent %d, "+
+			"close %d, swap %d):\n%v", sealTree, openTree, mkParent, link1, link2, sealParent, closeTree, swap,
+			plan.StageCommands)
 	}
 }
 
@@ -255,12 +259,12 @@ func TestPlanAsksTheDACPreflightOfEverySource(t *testing.T) {
 		got = append(got, p.Access+" "+strings.Join(p.Argv, " "))
 	}
 	want := []string{
-		"read sudo --user=_yolojail /bin/test -r " + roLink.Source,
-		"search sudo --user=_yolojail /bin/test -x " + roLink.Source,
-		"read sudo --user=_yolojail /bin/test -r " + rwLink.Source,
-		"search sudo --user=_yolojail /bin/test -x " + rwLink.Source,
-		"write sudo --user=_yolojail /bin/test -w " + rwLink.Source,
-		"read sudo --user=_yolojail /bin/test -r " + file.Source,
+		"read /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -r " + roLink.Source,
+		"search /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -x " + roLink.Source,
+		"read /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -r " + rwLink.Source,
+		"search /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -x " + rwLink.Source,
+		"write /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -w " + rwLink.Source,
+		"read /usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -r " + file.Source,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("preflight =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -350,7 +354,7 @@ func TestRunMacosUserRefusesBeforeTheBuildWhenTheSandboxCannotReachASource(t *te
 	}
 	base := deps.Run
 	deps.Run = func(argv []string) int {
-		if len(argv) == 5 && argv[2] == testBin && argv[4] == roLink.Source {
+		if len(argv) == 7 && argv[4] == testBin && argv[6] == roLink.Source {
 			base(argv)
 			return 1
 		}
@@ -380,7 +384,7 @@ func TestRunMacosUserRefusesBeforeTheBuildWhenTheSandboxCannotReachASource(t *te
 		t.Errorf("the refusal's remedy is one a moved folder does not satisfy:\n%s", out.String())
 	}
 	asked := strings.Join(rec, "\n")
-	if !strings.Contains(asked, "run:sudo --user=_yolojail /bin/test -r "+optRO.Source) {
+	if !strings.Contains(asked, "run:/usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -r "+optRO.Source) {
 		t.Errorf("the other source was not asked, so one message would not name every source to move:\n%s", asked)
 	}
 }
@@ -395,7 +399,7 @@ func TestRunMacosUserGoesOnWhenEverySourceIsReachable(t *testing.T) {
 	opts.HostCtx = HostContext{Links: []ContextLink{roLink}}
 	RunMacosUser(deps, opts)
 	asked := strings.Join(rec, "\n")
-	if !strings.Contains(asked, "run:sudo --user=_yolojail /bin/test -r "+roLink.Source) ||
+	if !strings.Contains(asked, "run:/usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -r "+roLink.Source) ||
 		!strings.Contains(asked, "proxy:") {
 		t.Errorf("a reachable source either was not asked or stopped the launch:\n%s\n%s", asked, out.String())
 	}
@@ -411,7 +415,7 @@ func TestPlanRenderNamesEachContextLinkAndItsPreflight(t *testing.T) {
 	for _, want := range []string{
 		"context:     " + plan.ContextDir + "/lib → " + roLink.Source + " (read-only",
 		"context:     " + plan.ContextDir + "/data → " + rwLink.Source + " (read-write",
-		"sudo --user=_yolojail /bin/test -w " + rwLink.Source,
+		"/usr/bin/sudo -n --user=_yolojail /usr/bin/env /bin/test -w " + rwLink.Source,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the plan does not say %q:\n%s", want, got)
@@ -449,10 +453,10 @@ func TestPlanRenderNamesEachCopiedPackFile(t *testing.T) {
 	}
 }
 
-// THE STAGING COMMANDS WORK, run for real with `sudo` dropped and the state dir redirected —
+// THE STAGING COMMANDS WORK, run for real as the invoking user with the state dir redirected —
 // the part an argv assertion cannot see: that the links land at their paths pointing at their
-// sources, that the recursive chmod leaves the sources alone, and that a re-stage replaces
-// the links rather than nesting or keeping a dropped one. The tools are the ones the plan
+// sources, that the seal leaves the sources alone, and that a re-stage replaces the links rather
+// than nesting or keeping a dropped one, the sealed tree being unsealed before it goes. The tools are the ones the plan
 // pins (/bin/ln and the rest), so this runs wherever they exist.
 func TestStageContextDirCommandsMakeTheLinks(t *testing.T) {
 	for _, bin := range []string{lnBin, mkdirBin, chmodBin, cpBin, mvBin, rmBin} {
@@ -476,6 +480,7 @@ func TestStageContextDirCommandsMakeTheLinks(t *testing.T) {
 		}
 	}
 	sd := t.TempDir()
+	unsealOnCleanup(t, sd)
 	src := t.TempDir()
 	if err := os.Chmod(src, 0o700); err != nil {
 		t.Fatal(err)
@@ -484,7 +489,7 @@ func TestStageContextDirCommandsMakeTheLinks(t *testing.T) {
 		{Dest: "/ctx/lib", Source: src, Dir: true},
 		{Dest: "/ctx/deep/er/tools", Source: src, Dir: true},
 	}
-	// With a composed tree beside the links, so the recursive `chmod -R a+rX` runs too.
+	// With a composed tree beside the links, so the recursive seal runs too.
 	tree := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tree, "host-user"), 0o700); err != nil {
 		t.Fatal(err)
@@ -494,12 +499,12 @@ func TestStageContextDirCommandsMakeTheLinks(t *testing.T) {
 	if fi, err := os.Stat(filepath.Join(dst, "host-user")); err != nil || fi.Mode().Perm()&0o005 != 0o005 {
 		t.Errorf("the composed tree was not staged beside the links, opened to others: %v %v", fi, err)
 	}
-	// ...and its ROOT is closed to every account but root's and the sandbox's: a composed tree
-	// holds the user's own files (a directory host_files entry is routinely ~/.aws), so the
-	// contents' a+rX must not be reachable past it.
-	if fi, err := os.Stat(dst); err != nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("the staged context tree's root is %v (%v), want 0700 — any local account "+
-			"could read the user's host files under it", fi.Mode().Perm(), err)
+	// ...and its ROOT is closed to every account but its owner's and the sandbox's, and sealed:
+	// a composed tree holds the user's own files (a directory host_files entry is routinely
+	// ~/.aws), so the contents' a+rX must not be reachable past it.
+	if fi, err := os.Stat(dst); err != nil || fi.Mode().Perm() != 0o500 {
+		t.Errorf("the staged context tree's root is %v (%v), want 0500 — any local account "+
+			"could read the user's host files under it, or the owner left it writable", fi.Mode().Perm(), err)
 	}
 	for _, rel := range []string{"lib", "deep/er/tools"} {
 		target, err := os.Readlink(filepath.Join(dst, rel))
@@ -508,8 +513,8 @@ func TestStageContextDirCommandsMakeTheLinks(t *testing.T) {
 		}
 	}
 	for _, dir := range []string{"deep", "deep/er"} {
-		if fi, err := os.Stat(filepath.Join(dst, dir)); err != nil || fi.Mode().Perm() != 0o755 {
-			t.Errorf("parent %s is not 0755: %v %v", dir, fi, err)
+		if fi, err := os.Stat(filepath.Join(dst, dir)); err != nil || fi.Mode().Perm() != 0o555 {
+			t.Errorf("parent %s is not sealed 0555: %v %v", dir, fi, err)
 		}
 	}
 	if fi, _ := os.Stat(src); fi.Mode().Perm() != 0o700 {

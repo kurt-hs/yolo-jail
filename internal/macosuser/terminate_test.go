@@ -135,7 +135,7 @@ func TestAnUnsignaledTeardownKeepsPlainSudo(t *testing.T) {
 	if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/proj")); rc != 42 {
 		t.Fatalf("rc = %d, want the session's 42", rc)
 	}
-	if i := recAt(rec, "sudo -n"); i >= 0 {
+	if i := recAt(rec, "run:sudo -n"); i >= 0 {
 		t.Errorf("an unsignaled launch ran `sudo -n`: %s", rec[i])
 	}
 	if recAt(rec, "run:sudo "+rmBin+" -f ") < 0 {
@@ -430,8 +430,8 @@ func TestAStepTheSignalMadeFailReturnsTheSignalsStatus(t *testing.T) {
 		ca    bool   // the fixture with a keychain CA, so the CA files are written
 	}{
 		{"profile", failAt{install: func(p string) bool { return strings.HasSuffix(p, ".sb") }}, "Could not write Seatbelt profile", false},
-		{"stage", failAt{run: joined("/var/yolo-jail/bin/yolo.new")}, "Could not stage entrypoint", false},
-		{"env dir", failAt{run: joined("/bin/chmod 0700 /var/yolo-jail/env")}, "Could not prepare the session environment directory", false},
+		{"stage", failAt{run: joined("/Users/Shared/yolo-staged/bin/yolo.new")}, "Could not stage entrypoint", false},
+		{"env dir", failAt{run: joined("/bin/chmod 0700 /Users/Shared/yolo-staged/env")}, "Could not prepare the session environment directory", false},
 		{"env file", failAt{install: envFile}, "Could not write the session environment file", false},
 		{"env grant", failAt{run: func(argv []string) bool {
 			return slices.ContainsFunc(argv, envFile) && slices.Contains(argv, "+a")
