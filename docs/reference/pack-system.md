@@ -215,7 +215,7 @@ new named hook in core.
 
 > [!WARNING]
 > **Name reservation covers only the SELECTED packs** — the maintainer's
-> [`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger) ruling, which reversed what this
+> [`OQ-BH14`](jail-home.md#oq-bh14) ruling, which reversed what this
 > warning used to say: an unselected pack is treated as if it does not exist. A
 > `writable_home_dirs` entry may not claim a selected pack's writable or shared dir, and the
 > refusal names the pack; a `host_files` destination under a selected pack's writable or
@@ -226,7 +226,7 @@ new named hook in core.
 > `EnsureGlobalStorage` creates before the config is loaded, and `host_files`' surface-path
 > reservation, which the ruling did not reach
 > ([`jail-home.md`](jail-home.md#reserving-a-name-is-not-creating-a-directory); open as
-> [`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger)).
+> [`OQ-BH15`](jail-home.md#oq-bh15)).
 
 > [!WARNING]
 > **`packload.Embedded()` leases one immutable tree per build, shared by every process of
@@ -1487,7 +1487,7 @@ release each publish the host `yolo` and the entrypoint together, so only a from
 refuses that launch only when the checkout contains the binary's commit. Measured, the line
 widens no window, since those older readers already refuse every launch that selects claude or pi
 for other reasons: pi's own manifest, and the bedrock pack, which both agents `need`. Whether to
-accept the window is not ruled ([DS-D33](../design/durable-scratch-space.md#DS-D33),
+accept the window is not ruled ([DS-D33](jail-home.md#DS-D33),
 [OQ-D6](../design/slots-and-contributions.md#OQ-D6)).
 
 **Two content contributions naming one source are refused**, naming both
@@ -2436,7 +2436,7 @@ defaults < host < workspace < config-overlay < config-list < capture-overlay < l
   the layer for keys a user declares on an agent's file for one workspace's jail,
   and nothing else gives a workspace that today. A `host_files` entry may not write a selected
   pack's surface path (`selectedSurfacePaths` in [`hostfiles.go`](../../internal/config/hostfiles.go),
-  [`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger)), and a `config-overlay` comes only from
+  [`OQ-BH15`](jail-home.md#oq-bh15)), and a `config-overlay` comes only from
   a pack, which a workspace config may not select (`validatePacks` in
   [`packs.go`](../../internal/config/packs.go)). What a workspace can do instead is commit the
   agent's own project-scope file, which the agent also reads outside the jail, or edit a
@@ -3914,7 +3914,7 @@ set. Nothing in the jail is re-rendered from it
   before its entrypoint had read `/ctx/packs`.
 - **(b) One immutable tree per launch.** The jail binds its own tree at `/ctx/packs` and keeps
   it until it stops. Its trees are collected when its container is known gone, the way the home
-  skeleton is ([`OQ-BH10`](../design/base-home-legacy-state.md#decision-ledger)). This closes the
+  skeleton is ([`OQ-BH10`](jail-home.md#oq-bh10)). This closes the
   boot-window mix, and it drops the lock's reason to span the macos-user host-daemon start.
 - **(c) (b), plus a notice on attach** when the config's pack set differs from the one the jail
   booted with.
@@ -3985,7 +3985,7 @@ the ruling and none changing it:
    a refusal, an attach, a `--dry-run`, and a macos-user launch, whose sandbox copied the tree at
    its bootstrap and whose host daemons, which run from it, have stopped by then. A launch killed
    without a teardown leaves its tree to the reaper, the residual the home skeleton accepted
-   ([`OQ-BH16`](../design/base-home-legacy-state.md#decision-ledger)).
+   ([`OQ-BH16`](jail-home.md#oq-bh16)).
 8. *Implementation decision.* **The shared tree a pre-change jail binds** (`AGENTS_DIR/<cname>/packs`,
    `paths.LegacyPackStagingDir`) is never written. An attach to such a jail reads it, naming a
    configured pack by the config entry whose slug its directory carries (on podman; item 13 says

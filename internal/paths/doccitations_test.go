@@ -91,6 +91,14 @@ var fixtureCitations = map[string]string{
 	"docs/plans/handoff-host-mcp-servers.md": "retired 2026-09-27. internal/entrypoint/hostmcp_test.go " +
 		"cites it as `git log -- docs/plans/handoff-host-mcp-servers.md` for the original gap report, " +
 		"which lives only in history",
+	// Graduated 2026-10-16 into docs/reference/jail-home.md (the per-jail home skeleton).
+	// internal/basehome/classify.go names the PRE-REWRITE text inside a history command,
+	// because the bare § numbers in that package cite rules only that text held: the same
+	// in-history shape as the entries above.
+	"docs/design/base-home-legacy-state.md": "graduated 2026-10-16 into " +
+		"docs/reference/jail-home.md. internal/basehome/classify.go cites " +
+		"`git show 030c8f52:docs/design/base-home-legacy-state.md` for the quarantine design " +
+		"its bare § numbers name, which lives only in history",
 }
 
 // TestEveryDocCitationFromGoResolves is the tripwire for a class that has bitten

@@ -1,6 +1,6 @@
 package config
 
-// hostfilesselected_test.go pins OQ-BH15 (docs/design/base-home-legacy-state.md): host_files'
+// hostfilesselected_test.go pins OQ-BH15 (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches): host_files'
 // surface-path reservation covers only the SELECTED packs, resolved the way writable_home_dirs
 // resolves them, because an unselected pack can never have an impact (DIR-BH1). Driven through
 // ValidateConfig, the call both `yolo check` and the launch preflight make, so each test fails

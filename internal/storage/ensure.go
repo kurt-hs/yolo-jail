@@ -36,7 +36,7 @@ const StorageLayoutVersion = 2
 // own dirs, the single-file mountpoints and the three redirect links in it — the whole
 // shared base. Each podman jail now gets its own skeleton, built on the fresh-launch path
 // from that launch's selection (buildHomeSkeleton in internal/cli/run;
-// docs/design/base-home-legacy-state.md#26-which-writers-move), and <state>/home is mounted
+// docs/reference/jail-home.md#the-machine-store), and <state>/home is mounted
 // at /home/agent by nothing. The dirs an older yolo created here are left as they are: a
 // downgraded yolo still finds its base, and legacy bytes stay unmounted and unread.
 //

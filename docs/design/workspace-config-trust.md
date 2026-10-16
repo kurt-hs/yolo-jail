@@ -21,8 +21,8 @@ two later rulings on agent-editable workspace state.
 > stops *the agent in the jail*, which can write the local file for the next launch. So use both, one per actor,
 > and let no single mechanism pretend to cover the pair.
 
-**Why it matters.** [`context-mounts.md`](context-mounts.md) proposes a writable form of `mounts` and leaves
-[the question of where one may be declared](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred) to
+**Why it matters.** [`context-mounts.md`](../reference/context-mounts.md) proposes a writable form of `mounts` and leaves
+[the question of where one may be declared](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared) to
 this doc. The tree's only precedent is `cache_relocations`, which is user-scope-only *because* "a workspace config
 is agent-editable, so it cannot grant read-write host mounts" (`validateCacheRelocations`).
 
@@ -45,8 +45,8 @@ approves a grant; restated 2026-09-30). [OQ-WT2](#decision-ledger), [OQ-WT3](#de
 choices on 2026-09-30, each reversible and each holding under either answer to [OQ-WT5](#OQ-WT5). [OQ-AS3](../research/agent-safehouse.md#OQ-AS3)
 is filed in `agent-safehouse.md`, and this doc pairs with it rather than absorbing it ([WT-D6](#WT-D6)).
 
-**Reads with:** [`context-mounts.md`](context-mounts.md) (owns the *mount* mechanics; this doc owns only its
-[§2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred) trust predicate), [`config-safety.md`](../reference/config-safety.md) (the config-change approval gate that
+**Reads with:** [`context-mounts.md`](../reference/context-mounts.md) (owns the *mount* mechanics; this doc owns only its
+[here](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared) trust predicate), [`config-safety.md`](../reference/config-safety.md) (the config-change approval gate that
 already exists, and that this design has to justify itself against),
 [`gate-placement-principle.md`](../reference/gate-placement-principle.md) (Test 1, which every option is
 scored on), [`trust-paths.md`](trust-paths.md) ([OQ-TP6](trust-paths.md#decision-ledger) and
@@ -76,14 +76,14 @@ sketch exists.** It was deferred because this doc was written under a one-new-fi
   TTY it refuses unless `--accept-config-changes` is passed.
 - **Grant** *(coined here)* — a config element that gives the jail a host capability the tree currently refuses
   to take from workspace scope. The first and motivating member is an rw context mount
-  ([context-mounts §2.1](context-mounts.md#21-config-shape)). [§6](#6-what-a-trusted-grant-could-unlock) lists
+  ([context-mounts](../reference/context-mounts.md#the-config-shape)). [§6](#6-what-a-trusted-grant-could-unlock) lists
   the candidates.
 - **Grant set** *(coined here)* — the grants one config file declares, after `~` expansion and symlink
   resolution on the host, in canonical order.
 - **Trust record** *(coined here)* — a host-side file saying that the human approved a given grant set for a given
   workspace. Only `yolo trust` writes it. [§4](#4-the-recommendation-c--scope-for-the-author-trust-for-the-agent)
   specifies it.
-- **Trust predicate** — [context-mounts §2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred)'s
+- **Trust predicate** — [context-mounts](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared)'s
   term for the one question this doc must answer: *is this grant from a trusted source?*
 
 ## 1. What exists today
@@ -201,7 +201,7 @@ combinations.
 
 Every option is judged on six things: the threat it stops, the friction, in-jail behavior, macos-user, CI and
 no-TTY launches, and the failure rule. The failure rule is fixed by [OQ-TP6](trust-paths.md#decision-ledger) and
-[context-mounts §2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred): **a grant from an
+[context-mounts](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared): **a grant from an
 untrusted source refuses the launch.** It is never dropped and never downgraded to ro. No option gets a
 `YOLO_ALLOW_*` hatch. A hatch is for broken user config, and an untrusted grant is not broken config. Its remedies
 are to trust it or delete it.
@@ -321,7 +321,7 @@ Recommend **C**, and **ice it** until an rw mount is actually wanted
 
 The grant builder reads the local file **directly**, the way `LoadCacheRelocations` reads the user file, and never
 from the merged map. The merge does not record which file an element came from, and a builder that cannot say
-where an element came from cannot apply this table ([`context-mounts.md` §2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred)). `yolo check` applies the same table.
+where an element came from cannot apply this table ([`context-mounts.md`](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared)). `yolo check` applies the same table.
 
 ### 4.2 The trust record
 
@@ -337,7 +337,7 @@ where an element came from cannot apply this table ([`context-mounts.md` §2.2](
 - **One writer:** `yolo trust`, on the host. It writes atomically (temp file plus rename). Launches only read the
   record, so two concurrent launches cannot race on it.
 - **Never mounted into any jail.** The directory is under `~/.local/share/yolo-jail`, which
-  [context-mounts §2.3](context-mounts.md#23-refusal-set)'s credential-boundary predicate already refuses as an rw
+  [context-mounts](../reference/context-mounts.md#the-refusal-set)'s credential-boundary predicate already refuses as an rw
   source. A trusted grant therefore cannot mount the trust store writable.
 
 ### 4.3 The honest cost: the human pays the agent's toll
@@ -358,13 +358,13 @@ config) is always available to a human who would rather not pay it.
 - The order is scope first, then trust, then the approval gate. A refusal tells the user what to do before the
   launch asks them anything else.
 - The check runs identically on every backend, including macos-user, even where the backend cannot deliver the
-  mount. Delivery is [context-mounts](context-mounts.md#3-delivering-context-dirs-on-macos-user)' business, and a
+  mount. Delivery is [context-mounts](../reference/context-mounts.md#delivery-on-macos-user)' business, and a
   config's trust verdict must not depend on which backend reads it.
 
 ### 4.5 Disclosure, unchanged and unsuppressible
 
 Trust decides whether a grant is honored, never whether it is announced.
-[context-mounts §2.4](context-mounts.md#24-disclosure)'s per-mount line prints every launch, trusted or not, as an
+[context-mounts](../reference/context-mounts.md#the-launch-disclosure)'s per-mount line prints every launch, trusted or not, as an
 [OQ-RO3](../reference/report-tiers.md#why-its-this-way) disclosure. It is teed to `launch.log` and not hidden by
 `YOLO_NO_BANNER`. That line is also the answer to the "a file activates invisibly" objection from
 [§3.1](#31-option-a--scope-only-grants-only-in-the-local-file).
@@ -446,7 +446,7 @@ says "agent-editable" (a record the agent cannot write would answer that reason)
 
 | Candidate | The refusal's reason | Could trust answer it? |
 |---|---|---|
-| rw context mounts ([context-mounts](context-mounts.md)) | not built; the `cache_relocations` reason applies | **yes, the v1 case** |
+| rw context mounts ([context-mounts](../reference/context-mounts.md)) | not built; the `cache_relocations` reason applies | **yes, the v1 case** |
 | `cache_relocations` | agent-editable | yes |
 | source-bearing `host_files` | agent-editable, travels with the repo | yes |
 | provider `base_url` | agent-editable; steers inference and credentials | yes, but it is an exfiltration channel ([OQ-WT7](#decision-ledger)) |

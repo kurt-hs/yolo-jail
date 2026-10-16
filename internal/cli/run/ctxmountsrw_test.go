@@ -1,7 +1,7 @@
 package run
 
 // ctxmountsrw_test.go pins the read-write form of `mounts` on the container backends
-// (docs/design/context-mounts.md §4 step 1), each at the call site the design's §4 table
+// (docs/reference/context-mounts.md#tests-and-mac-probes), each at the call site the reference's table
 // names: the argv from Run's assembler, the launch stream, the refusal from Run(), and the
 // briefing from prepare.
 
@@ -354,7 +354,7 @@ func writeWorkspaceConfig(t *testing.T, ws, body string) {
 }
 
 // EVERY /ctx BIND YOLO MAKES ITSELF IS ON THE RESERVED LIST that the `mounts` duplicate check
-// refuses (paths.ReservedContextPaths, context-mounts.md §3.2). The argv below carries every
+// refuses (paths.ReservedContextPaths, context-mounts.md#where-the-bytes-are-named). The argv below carries every
 // one of them — the staged pack tree, the capture store, a directory and a file `host_files`
 // source, and the host nvim config — and no user-declared context mount, so each /ctx
 // destination in it is yolo's. A new bind added without a reservation fails here, instead of

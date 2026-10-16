@@ -12,7 +12,7 @@ import (
 )
 
 // pi-subagents' worktrees default to os.tmpdir(), which a jail deletes on exit — the one
-// shipped workflow tool whose default is per-launch (docs/design/durable-scratch-space.md
+// shipped workflow tool whose default is per-launch (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §2.4). The pi pack delivers an extension into pi's discovery directory that points it at
 // $YOLO_DURABLE_DIR/worktrees/pi-subagents (DS-D4). The declaration is asserted from the
 // shipped pack, so a source file with no files contribution fails here.

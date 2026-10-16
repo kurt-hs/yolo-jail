@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// contextmounts_test.go drives docs/design/context-mounts.md §4 steps 1-2 through a real
+// contextmounts_test.go drives docs/reference/context-mounts.md#tests-and-mac-probes through a real
 // jail: a read-write `mounts` element from the USER config is writable from inside and its
 // bytes reach the host, a read-only string element beside it stays unwritable, every launch
 // names the read-write one, and the jail is told its context dir. The unit suite pins each
@@ -73,7 +73,7 @@ func TestAReadWriteMountCrossesBothWaysAndIsNamedAtLaunch(t *testing.T) {
 }
 
 // The launch refuses a read-write element in the WORKSPACE config, which is agent-editable
-// (context-mounts.md §2.2, OQ-WT1's rule D), before any container starts.
+// (context-mounts.md#where-a-read-write-mount-may-be-declared, OQ-WT1's rule D), before any container starts.
 func TestAWorkspaceReadWriteMountRefusesTheLaunch(t *testing.T) {
 	requireJail(t)
 

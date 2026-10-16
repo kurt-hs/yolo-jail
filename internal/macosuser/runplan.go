@@ -49,7 +49,7 @@ type RunPlan struct {
 	CtxRoot string
 	// ContextDir is what $YOLO_CONTEXT_DIR names for the agent and the bootstrap: the same
 	// sealed tree as CtxRoot, but set on EVERY launch and staged every launch, empty when
-	// nothing was composed (docs/design/context-mounts.md CX-D4).
+	// nothing was composed (docs/reference/context-mounts.md#CX-D4).
 	ContextDir string
 	// ContextLinks are the context mounts this launch delivers, each a host-owned link in
 	// ContextDir with the profile deciding access to its source (ctxlinks.go); ContextPreflight
@@ -268,7 +268,7 @@ type HostContext struct {
 	GlobalGitignore string
 	// Links are the CONTEXT MOUNTS this launch delivers — config `mounts` elements and pack
 	// `mount` grants — each sited by the caller with SiteContextLinks against its resolved
-	// source (docs/design/context-mounts.md §3). Not bytes: each becomes a host-owned link in
+	// source (docs/reference/context-mounts.md#delivery-on-macos-user). Not bytes: each becomes a host-owned link in
 	// the context dir, so nothing is copied (DP-D15's size argument stands) and the bytes the
 	// agent reads are live. The caller's for the same reason as the rest of this struct:
 	// resolving a source is a read of the invoking user's filesystem.
@@ -545,7 +545,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	if len(captures) > 0 {
 		capturesRoot = StagedCapturesRoot("")
 	}
-	// THE CONTEXT DIR (docs/design/context-mounts.md CX-D4): the same sealed tree, named
+	// THE CONTEXT DIR (docs/reference/context-mounts.md#CX-D4): the same sealed tree, named
 	// to the AGENT on every launch whether or not anything was composed into it, so pack
 	// text and agents spell a context path `$YOLO_CONTEXT_DIR/<rel>` here as on a container
 	// (where it is /ctx). The tree is staged every launch for that reason — empty when the
@@ -1001,7 +1001,7 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	}
 	// THE DURABLE DIR, relayed from the launch env the run pipeline composed, so the
 	// bootstrap's launch line reports on the same directory the agent is told about
-	// (docs/design/durable-scratch-space.md §5.4) — and, like there, only when the launch
+	// (docs/reference/jail-home.md#the-durable-dir-report) — and, like there, only when the launch
 	// made it: an absent variable is how "none this launch" reaches this side.
 	if sandboxEnv != nil {
 		if v, ok := sandboxEnv.Get(durable.EnvVar); ok {

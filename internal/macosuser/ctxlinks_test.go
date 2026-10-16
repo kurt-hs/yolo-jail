@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
-// The macos-user delivery of context mounts (docs/design/context-mounts.md §4 steps 4-5),
+// The macos-user delivery of context mounts (docs/reference/context-mounts.md#tests-and-mac-probes),
 // through the PLAN: the siting, the profile's rules in their order, the links in the context
 // dir, and the DAC preflight. Every assertion here is on what the plan builder emits for a
 // HostContext carrying links, never on a direct call of the renderer, so deleting a call site

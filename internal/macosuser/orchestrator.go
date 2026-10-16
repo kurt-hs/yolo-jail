@@ -896,7 +896,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 
 	// THE DAC PREFLIGHT for every context mount this launch delivers (ctxlinks.go;
-	// docs/design/context-mounts.md §3.5), asked here, BEFORE the nix build, for the reason the
+	// docs/reference/context-mounts.md#the-dac-preflight-and-siting), asked here, BEFORE the nix build, for the reason the
 	// preconditions above are: it is cheap, it is a fact about this machine, and a refusal after
 	// a half-hour build is the worst place to learn it. The same probes the plan carries
 	// (BuildRunPlan → ContextPreflight over the same links), which PlanInvariants checks. Its

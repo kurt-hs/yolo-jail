@@ -1,7 +1,7 @@
 package run
 
 // homeskeleton.go builds the per-jail HOME SKELETON a podman jail binds read-only at
-// /home/agent (docs/design/base-home-legacy-state.md#2-the-design-a-per-jail-skeleton).
+// /home/agent (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches).
 //
 // A skeleton — the design's coined term — is a directory holding ONLY the mountpoints and
 // redirect links this launch's binds need, and no file content. It replaces the one
@@ -17,7 +17,7 @@ package run
 // else it used to create in <state>/home is created here instead.
 //
 // THE THREE RULES the shared base obeyed by accident, stated because a per-jail directory has
-// to obey them on purpose (docs/design/base-home-legacy-state.md#24-the-three-rules-the-shared-base-obeys-by-accident):
+// to obey them on purpose (docs/reference/jail-home.md#the-three-rules-a-skeleton-obeys):
 //
 //  1. BUILT OUTSIDE THE WORKSPACE, under paths.HomeSkeletonRoot. <workspace>/.yolo/home is
 //     writable from inside the jail, so a skeleton there would be read-only in name only, and
@@ -37,7 +37,7 @@ package run
 //  3. <state>/home STAYS as the machine store (above).
 //
 // FATAL AND BEST-EFFORT, split the way the writers this replaces split it
-// (docs/design/base-home-legacy-state.md#23-when-it-is-built): the entries
+// (docs/reference/jail-home.md#when-a-skeleton-is-built): the entries
 // that used to come from storage.EnsureGlobalStorage — the core dirs, the pack dirs, the
 // single-file mountpoints and the redirects — fail the launch, because a jail without them
 // does not boot; the config- and pack-driven ones that used to come from prepareWsState,

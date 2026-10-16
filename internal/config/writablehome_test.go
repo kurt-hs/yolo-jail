@@ -121,7 +121,7 @@ func TestReservedHomeSegments(t *testing.T) {
 // TestReservedHomeDirsSpanAllAgentsNotSelected, which held that these reservation lists
 // must span every shipped pack so that "a repo's config would be portable" and a dir a
 // FUTURE jail might mount over could not be claimed. The maintainer ruled the other way on
-// 2026-09-25 (docs/design/base-home-legacy-state.md#decision-ledger): "it has to be like the other
+// 2026-09-25 (docs/reference/jail-home.md#why-its-this-way): "it has to be like the other
 // packs don't exist … packs could come from anywhere and be added, removed, whatever." The
 // shipped set never covered every pack a jail could select, and one user-scope entry being
 // valid in one workspace and refused in another is an accepted consequence.

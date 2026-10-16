@@ -227,7 +227,7 @@ currently implicit*, so each is a place a `Target` parameter either fixes or mus
 
 **(1) Reservation lists.** Re-pointed 2026-09-25. This used to be one block of
 `packload.Embedded*` call sites, every shipped pack's dirs reserved whether selected or not. The
-maintainer's [`OQ-BH14`](base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories)
+maintainer's [`OQ-BH14`](../reference/jail-home.md#reserving-a-name-is-not-creating-a-directory)
 ruling moved the writable-dir half onto the **selected** packs, and `packload.EmbeddedWritableDirs`
 is deleted. What each list reads now:
 
@@ -245,7 +245,7 @@ The init-time constraint this section used to call the sharpest one is gone with
 registered from an `init()`, and a lazier or more fallible pack set would have made it reserve
 nothing, silently. It is now a function of the packs it is handed, and it reads no pack itself.
 `builtinSurfacePaths` was already lazy (a `sync.Once` behind a function) and still reads every
-shipped pack, a list [`OQ-BH15`](base-home-legacy-state.md#decision-ledger) leaves open.
+shipped pack, a list [`OQ-BH15`](../reference/jail-home.md#oq-bh15) leaves open.
 
 **(2) In-jail rendering — `internal/entrypoint`, 1,027 non-test lines of `prism*.go` +
 `pack*.go`.** `LoadJailPacks` → `ConfigurePackSurfaces` → `renderDeclaredSurface`
@@ -399,7 +399,7 @@ twice:
   > container path binds it and then COPIES it into the jail home at boot
   > (`entrypoint.stageHostFile`), so it is a launch-time snapshot on every backend, and
   > macos-user now copies it too, confined to its source and capped
-  > ([`context-mounts.md` CX-D25](context-mounts.md#CX-D25)). A pack's single-FILE `mount` is
+  > ([`context-mounts.md` CX-D25](../reference/context-mounts.md#CX-D25)). A pack's single-FILE `mount` is
   > copied on macos-user as well, and that one IS a substitute for a live bind; what keeps it
   > inside this rule's reason is that the copy is not SILENT, since the agent's briefing marks
   > the entry "copied at launch; host edits arrive at the next launch". Config `mounts` and a
@@ -618,7 +618,7 @@ generalized.**
 > **Overtaken 2026-09-25, in part.** The paragraphs below describe the lists as they stood when this
 > section was written: a union over every pack yolo ships, consumed at init time. The writable-dir
 > reservations now read the **selected** packs
-> ([`OQ-BH14`](base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories)),
+> ([`OQ-BH14`](../reference/jail-home.md#reserving-a-name-is-not-creating-a-directory)),
 > and `hostFileWritableRoots` is a function of its argument rather than an init-time value, so the
 > constraint below binds nothing any more. [§1.2](#12-the-four-places-yolo-reaches-into-it) lists
 > what each one reads now. The conclusion stands: a `Target` changes none of them.
@@ -944,7 +944,7 @@ That has a crisp consequence worth stating as a rule:
   source too, which every backend already delivers as a boot-time copy — and the one it leaves
   is the context mounts: a config `mounts` element or a pack's directory `mount` is a live link
   there or a refusal, and only a pack's single-file `mount` is copied, with the staleness stated
-  in the agent's briefing ([`context-mounts.md` CX-D25](context-mounts.md#CX-D25)). The
+  in the agent's briefing ([`context-mounts.md` CX-D25](../reference/context-mounts.md#CX-D25)). The
   *composed* artifacts a pack delivers — the merged skills tree, the composed briefing — are a separate
   question: those are composition results (their own `skills`/`briefing` kinds now) and port
   like config surfaces do, which is why [§7.3](#73-one-pack-three-environments)'s walkthrough writes them and [§6.5](#65-the-posture-stated-as-a-table)'s `assert`

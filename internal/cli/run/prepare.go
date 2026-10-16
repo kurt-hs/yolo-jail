@@ -206,7 +206,7 @@ func (o *Options) refreshJailBriefings(cname string, cfg *jsonx.OrderedMap, rt s
 		// THE PERSISTENCE MAP, from the definitions the mount argv reads and the same
 		// selected packs and config it is assembled from (persistencemap.go). It renders
 		// the storage-classes section and the Home line that points at it
-		// (docs/design/durable-scratch-space.md §4.1). Nil on macos-user.
+		// (docs/reference/jail-home.md#the-storage-class-briefing-section). Nil on macos-user.
 		Persistence: persistenceMapFor(rt, cfg, staged.packs, o.Workspace, o.Sealed),
 		// THE DURABLE DIR the section leads with (durabledir.go): the one this fresh launch
 		// made, or the one the running jail was started with on an attach, or why there is
@@ -453,7 +453,7 @@ func (o *Options) prepareWsState(cfg *jsonx.OrderedMap, loadedPacks []*packload.
 
 	// THE TWO CONTAINER BACKENDS LAY wsState OUT DIFFERENTLY, and each path here follows the
 	// layout this launch's backend reads (the design's OQ-BH12,
-	// docs/design/base-home-legacy-state.md#3-the-apple-container-seed-defect). Podman binds
+	// docs/reference/jail-home.md#the-claudejson-seed). Podman binds
 	// wsState's entries one at a time, each named with its leading dot stripped, and a
 	// missing bind source kills the container, so all of them are created first. Apple
 	// Container binds wsState WHOLE at /home/agent, so there a home path IS its wsState path:

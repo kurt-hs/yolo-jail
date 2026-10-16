@@ -16,7 +16,7 @@ import (
 )
 
 // WalkBudget bounds the size walk of the launch line: a fresh launch never waits longer than
-// this for the figure, and a walk that stops says so (docs/design/durable-scratch-space.md
+// this for the figure, and a walk that stops says so (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §5.4, DS-D11).
 const WalkBudget = 2 * time.Second
 

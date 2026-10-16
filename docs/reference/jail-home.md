@@ -15,6 +15,15 @@ covers:
   - internal/cli/run/wsstatebeneath.go
   - internal/cli/run/servicessession.go
   - internal/cli/run/persistencemap.go
+  - internal/cli/run/durabledir.go
+  - internal/cli/run/trackingcleanup.go
+  - internal/cli/run/shareddirsources.go
+  - internal/durable/
+  - internal/jailcontent/persistence.go
+  - internal/jailcontent/persistencesection.go
+  - internal/entrypoint/durablereport.go
+  - internal/cli/check/section_durabledir.go
+  - internal/basehome/
   - internal/cli/run/keeper.go
   - internal/cli/run/keeperspawn.go
   - internal/cli/run/keeperwatch.go
@@ -37,17 +46,24 @@ covers:
 tags: [home, mounts, overlays, storage, entrypoint, path]
 stage: DESIGN
 next: "Rule OQ-JH1, whether a user may relocate .yolo or .yolo/home with a symbolic link: options (a) keep the refusal and document a bind mount, (b) accept a link whose target is recorded host-side, (c) a YOLO_ALLOW_* hatch; leaning (a)"
-summary: "How /home/agent is composed: a per-jail read-only skeleton, per-workspace writable overlays punched through it, staged :ro content on top, and files the entrypoint regenerates into the overlays on every boot. Covers the mount stack, the write rules that keep bind mounts alive, PATH, what is shared at which scope, and how the three backends differ."
+summary: "How /home/agent is composed: a per-jail read-only skeleton, per-workspace writable overlays punched through it, staged :ro content on top, and files the entrypoint regenerates into the overlays on every boot. Covers the mount stack, the write rules that keep bind mounts alive, PATH, what is shared at which scope, the storage classes the briefing tells every agent about and the durable dir, and how the three backends differ."
 ---
 
 # The jail home — how `/home/agent` is composed
 
 **Status:** verified 2026-10-01 against `d4e435a3`, the whole doc. One question is open,
 [`OQ-JH1`](#OQ-JH1), on relocating `.yolo` with a symbolic link. The whole-document
-verification stamp above is unchanged; the seed evidence below was reconciled separately
-2026-10-07 against `931489400b`. MEASURED: historical Apple Container fake-seed delivery
-and directory layout. UNMEASURED: real Claude authentication and current target-host
-acceptance; see [the claude.json seed](#the-claudejson-seed).
+verification stamp above is unchanged; three parts were reconciled separately against
+`8e65f3444` on 2026-10-16, when the designs that built them graduated here: the
+[per-jail home skeleton](#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches), the
+[claude.json seed](#the-claudejson-seed), and the
+[storage classes and the durable dir](#storage-classes-and-the-durable-dir). MEASURED: the podman
+skeleton, rootful in a nested jail and rootless in CI on both arches; the durable dir and its
+briefing section in a podman jail on a rootless host; on Apple Container, the storage-classes
+section and a writable `$YOLO_DURABLE_DIR`, and fake-seed delivery and directory layout, both
+recorded HOLDS in [run 37133569003](https://github.com/mschulkind-oss/yolo-jail/actions/runs/37133569003),
+2026-10-03. UNMEASURED: real Claude authentication on Apple Container; owed:
+[a native seed regression check](#the-owed-apple-container-seed-gate).
 
 `/home/agent` is not a directory that exists anywhere as a whole. It is composed at
 container create out of four ingredients: a **read-only home skeleton of this jail's own**
@@ -254,7 +270,7 @@ config reach — which is the whole of their scope story.
 - **`mounts`** — each string `host[:container]` pair bound `:ro`, defaulting to `/ctx/<basename>`;
   an object element `{"host", "at", "mode"}` with `"mode": "rw"`, read from the user scope only
   (`config.LoadRWMounts`), is bound with no mode suffix and disclosed on every launch
-  (`run.configCtxMounts`, [`context-mounts.md` §2](../design/context-mounts.md#2-read-write-context-mounts)). Every container
+  (`run.configCtxMounts`, [`context-mounts.md`](context-mounts.md#read-write-context-mounts)). Every container
   launch carries `YOLO_CONTEXT_DIR=/ctx`. Nothing to do with the home.
 
 Where a `host_files` destination lands decides whether the composed write can succeed at
@@ -499,9 +515,10 @@ on the same inode, which is what makes an exec into a running jail safe:
 **Seeded once, then owned by the jail.** Nothing is copied from the machine store into a
 workspace but the Claude login ([The claude.json seed](#the-claudejson-seed)). `seedAgentDir`,
 which copied every top-level regular file of a pack's machine-store dir into each new
-workspace, legacy bytes included, is deleted
-([`base-home-legacy-state.md`](../design/base-home-legacy-state.md#27-the-seed)). Surface
-keys declared as seed-if-absent fill only when missing.
+workspace, legacy bytes included, is deleted on every backend: since the shared home stopped
+being writable its only inputs were legacy bytes, empty mountpoint files and `claude.json`,
+which the seed sync already handles. Surface keys declared as seed-if-absent fill only when
+missing.
 
 **Runtime state, written by use rather than by boot.** Launcher stamps and install
 receipts under `~/.cache`, the perf log (appended, trimmed to a bounded number of runs), the
@@ -555,40 +572,168 @@ for one vendor's cache layout, so none is made
 
 ### Why the home root is a read-only skeleton, with symlink hatches
 
-A **skeleton** (a term [`base-home-legacy-state.md`](../design/base-home-legacy-state.md#1-the-question-and-the-answer)
-coined) is a directory holding only the mountpoints and redirect links a launch's binds
-need, and no file content. Each fresh podman launch builds a NEW one (`buildHomeSkeleton`)
-from THIS launch's selected packs, config and `host_files` entries, under
-`<global storage>/agents/<container name>/home/`, and binds it `:ro` at `/home/agent`. So a
-pack the jail did not select has no effect inside it.
+A **skeleton** (a term coined by the design that built it) is a directory holding only the
+mountpoints and redirect links a launch's binds need, and no file content. Each fresh podman
+launch builds a NEW one (`buildHomeSkeleton`) from THIS launch's selected packs, config and
+`host_files` entries, under `<global storage>/agents/<container name>/home/`, and binds it `:ro`
+at `/home/agent`. So a pack the jail did not select has no effect inside it: the rule
+[`DIR-BH1`](#dir-bh1), *"a non-selected pack can never have an impact"*, has no exceptions.
 
-It replaced ONE machine-wide base, `<global storage>/home`, that every podman jail shared.
-That base was provisioned before the config was loaded, so it held the union of every
-*shipped* pack's dirs, plus every mountpoint any launch had ever made there: one
-workspace's `writable_home_dirs` and `host_files` links, every unselected pack's dirs, and
-the machine's shared credential dirs showed up in every jail.
+It replaced ONE machine-wide base, `<global storage>/home`, that every podman jail shared. That
+base was a leftover, not a design: it was the one **writable** home every jail shared until it was
+made `:ro` on 2026-04-07, which left a shell holding the union of every *shipped* pack's dirs
+(it is provisioned before the config is loaded), plus every mountpoint any launch had ever made
+there. One workspace's `writable_home_dirs` and `host_files` links, every unselected pack's dirs
+and their **legacy bytes** (files left from when the base was the shared writable home) showed up
+in every jail, and a jail that did not select claude could read the machine's Claude refresh
+token and `oauthAccount` through it, since rootless jail root is the host user and mode `0600`
+does not stop that read ([`DIR-BH2`](#dir-bh2)).
 
-It holds core's dirs, the selected packs' writable and shared dirs, the single-file
-mountpoints, the config- and pack-driven mountpoints, and three **relative** symlinks. The
-trick is that the root is read-only but these links resolve *through the container's mount
-table* into per-workspace writable overlays — so a tool that atomic-renames one of those
-files (an agent rewriting its own `~/.claude.json` constantly) lands its write in a
-writable mount. A link whose target dir is not bound in this jail (`.claude.json` in a jail
-without claude) dangles and reads as absent, which is the right answer there.
+The three relative symlinks are the hatch. The root is read-only, but these links resolve
+*through the container's mount table* into per-workspace writable overlays, so a tool that
+atomic-renames one of those files (an agent rewriting its own `~/.claude.json` constantly) lands
+its write in a writable mount. A link whose target dir is not bound in this jail (`.claude.json`
+in a jail without claude) dangles and reads as absent, which is the right answer there.
 
-- **Fatal, then best-effort.** Core's dirs, the selected packs' dirs, the single-file
-  mountpoints and the redirects fail the launch, naming the path; every config- and
-  pack-driven entry after them only warns. A pack entry that lands on a redirect name is
-  therefore the one that fails, as a warning.
-- **Never edited, never removed under a live jail.** A host-side `rmdir` of a mountpoint
-  silently detaches the bind inside a running jail, so an attach builds nothing and a fresh
-  launch builds a new directory rather than touching an old one. Old skeletons go with the
-  jail's whole `agents/<container name>` entry, through `PruneOrphanAgentStaging`, which
-  declines when liveness is unknown and keeps a name while it is live or tracked. A launch
-  drops its jail's tracking file once the runtime says the container is gone
-  (`forgetGoneContainer`), which is what lets the reaper reach the entry at all. A launch that
-  starts no container (a refusal after the build, a runtime that never ran) removes the
-  skeleton it built, since nothing ever held it.
+#### What a skeleton holds
+
+- Core's own dirs (`paths.HomeSkeletonCoreDirs`) and the single-file mountpoints
+  (`paths.HomeFileMountpoints`). Core's list is `paths.BaseHomeCoreDirs` without the pi pack's
+  `.pi/agent`, which would otherwise put a `~/.pi` in every jail; `BaseHomeCoreDirs` keeps it
+  only because `internal/basehome`'s legacy walk must treat an old base's empty `.pi/agent` as
+  core's.
+- The mountpoints for the selected packs' writable and shared dirs.
+- The three redirect links (`paths.HomeFileRedirects`).
+- Mountpoints for `config.WritableHomeDirs(cfg)`; for `host_files`, the writable-dir
+  mountpoints and the symlink links.
+- Mountpoints for the selected packs' `files` targets outside a writable dir
+  (`packFilesSkeletonEntries`), their skills destinations and their briefing destinations.
+
+**Every bind destination directly under `/home/agent` either exists in the skeleton or sits
+inside another bind**, which a test over the golden argv pins. The mountpoints stay even though
+podman auto-creates a nested one in every realistic variant measured
+([the warning under Backend differences](#backend-differences)): they are cheap and make mode
+and ownership deterministic.
+
+#### When a skeleton is built
+
+- **Only on the fresh-launch path, and only for podman**, after config load, after the attach
+  decision, under the workspace lock, as one call in `runContainer` after `prepareHostFiles`, so
+  both inputs exist. Its result is written straight into the argv input, so the skeleton and the
+  argv binding it come from one value. Never on attach. Apple Container and macos-user build none.
+- **Fatal, then best-effort, in that order.** Core's dirs, the selected packs' dirs, the
+  single-file mountpoints and the redirects fail the launch, naming the path, since podman's own
+  error would name neither; every config- and pack-driven entry after them only warns, and those
+  warnings reach the launch output. Because the fatal entries come first, a pack entry that lands
+  on a redirect name (a pack `files` entry into `.gitconfig`) is the one that fails, as a warning,
+  instead of failing every launch. A best-effort file mountpoint that finds a link or a directory
+  in its place warns rather than passing over it.
+- **A launch that starts no container leaves no skeleton.** A fatal entry removes the builder's
+  own partial directory, and every return between the build and the container start (the
+  pre-flights that read the assembled argv, a runtime that never started) removes the skeleton
+  first (`discardUnheldSkeleton`). No container ever held it, so the rule against removing a
+  mountpoint under a live jail does not apply.
+
+#### Where a skeleton lives, and when it goes
+
+<a id="the-three-rules-a-skeleton-obeys"></a>
+
+The shared base avoided three hazards by accident, by being host-only, only ever growing and
+never pruned. A skeleton obeys them as rules:
+
+1. **It is built outside the workspace**, under `paths.HomeSkeletonRoot(cname)`
+   ([`OQ-BH9`](#oq-bh9)), never in the workspace overlay. `/workspace/.yolo/home` is writable from
+   inside the jail (measured), so a skeleton there would be read-only in name only, and the host's
+   own `MkdirAll` and link writes would follow links the jail planted. `AgentsDir/<cname>` is
+   host-only, keyed per jail, already bound into jails for skills and briefings, and already reaped
+   by liveness. `jailcontent.PrepareSkills` clears only the contents of `skills-*` there, so it
+   never touches a sibling `home/`.
+2. **No mountpoint is removed under a live jail.** A host-side `rmdir` of a mountpoint silently
+   detaches the bind inside a running jail (measured in a user+mount namespace). The launch path
+   cannot prove that no container of the name is alive: a failed probe reads as "no container", a
+   failed stale-container removal can fall through to the fresh path, and the workspace lock is
+   fail-open. So a skeleton is **never edited**: an attach builds nothing, and each fresh launch
+   builds a new directory, timestamp-prefixed (`os.MkdirTemp`), rather than touching an old one
+   ([`OQ-BH10`](#oq-bh10)). Editing in place would need a tri-state liveness probe and a lock that
+   reports acquisition, neither of which the launch has.
+3. **`<state>/home` stays as the machine store** ([The machine store](#the-machine-store)).
+
+Old skeletons go with the jail's whole `agents/<container name>` entry, through
+`PruneOrphanAgentStaging`, which reaps nothing when liveness is unknown, never the launching
+jail's own name, keeps every name that is live **or tracked**, and has a one-hour age floor. It
+runs from `yolo prune` and from a launch's debounced housekeeping slot; a capture also removes the
+entry after it finishes. Two cleanups at the launch's own end make that reaper reach a skeleton:
+
+- **The tracking file goes once the container is known gone.** The tracking file
+  (`CONTAINER_DIR/<cname>`, the container-to-workspace map `yolo ps` reads) used to survive every
+  normal exit of a `--rm` jail, so a workspace in use kept its entry and gained a skeleton per
+  launch. Now each of the three ends of a launch (normal exit, the signal arm, a runtime that never
+  started) removes it, only when the runtime answered that no container of the name exists and the
+  workspace lock was free (`forgetGoneContainer`, over the tri-state `probeExistingContainer`).
+  Each end releases the launch's own lock first, the normal exit included, because the lock's other
+  release waits for the container to show as running, and a child that exits before it ever does
+  would otherwise find its own lock held.
+- **The launch removes its own skeleton** on the same known-gone evidence ([`OQ-BH16`](#oq-bh16)).
+  Removing a skeleton whose container is known gone is not the modification
+  [`OQ-BH10`](#oq-bh10) forbids. "Could not ask the runtime" removes nothing, so only a launch
+  killed with no teardown (SIGKILL, OOM) leaves one for the reaper, and on a machine where one
+  workspace is used alone that means `yolo prune --apply`, since the housekeeping slot always keeps
+  the launching jail's own name.
+
+> [!WARNING]
+> **The "lock was free" half needs `workspaceLock.Close` to unlock explicitly.** The normal exit
+> takes the workspace lock in `stopLoopholes` and again in `forgetGoneContainer` right after, and a
+> child the launch forked in between (the housekeeping slot's podman calls) holds a copy of the
+> first descriptor until its exec. Closing a descriptor does not release a `flock` another copy
+> still holds, so on a slow runner the second take failed and the skeleton stayed (CI,
+> ubuntu-24.04-arm, 2026-09-28). An explicit unlock releases it for every copy. Do not add a wait
+> instead: that puts latency on the quit path to hide a lock this launch had already released.
+
+#### The machine store
+
+The **machine store** (a term coined with the skeleton) is `<state>/home` once it stopped being
+mounted at `/home/agent`. It holds the machine-scope shared dirs and the Claude login seed, and
+backs the shared dirs' rw binds on both container backends, the seed sync, the OAuth broker's
+default credential file and the stranded-credential rescue (`migrateOldOverlay`).
+`config.agentWritableTrees` keeps it, because jails still write the shared dirs; the host-built
+`:ro` skeleton is not on that list.
+
+`storage.EnsureGlobalStorage` writes into it only the storage dirs, every shipped pack's shared dir
+(a bind source, since it runs before config loads) and the credential migration; the home loops,
+the single-file mountpoints and the redirects moved to the skeleton builder, and so did
+`prepareWsState`'s, `prepareHostFiles`'s and the pack `files` writes. A fresh launch writes nothing
+else there, which a snapshot test holds byte-identical.
+
+**Legacy bytes are left in place, unmounted and unread.** Nothing is moved or deleted. The
+2026-09-20 rulings for those bytes still bind any future code that touches them: move legacy
+runtime artifacts, never delete them, and make any delete path an explicit opt-in. The old union's empty directories
+stay too, so a downgrade keeps working. The launch no longer refuses over them, and
+`YOLO_ALLOW_LEGACY_BASE_HOME` is gone; `yolo check` keeps a detection-only report
+(`internal/basehome`, `basehome.Report.CleanupLines`) whose printed `mv` is optional cleanup the
+user runs, never a yolo verb ([`OQ-BH13`](#oq-bh13), [`DIR-BH0`](#dir-bh0)).
+`PruneShadowedHome` still empties shadowed seeds and never removes a directory, because a jail
+started by an older yolo still mounts `<state>/home`.
+
+#### What pins the skeleton
+
+`integration/homeskeleton_test.go` (`TestPodmanHomeIsAPerJailReadOnlySkeleton`) passed rootful in
+a nested jail and **rootless in CI on both arches** on 2026-09-25, its `claude only`, `codex only`
+and `writable_home_dirs` subtests all green: `/home/agent` bound `ro`, a write to the home root
+failing `EROFS`, `/home/agent` and `/home/agent/.config` statting `0:0 755` (jail root maps to the
+host user who built the skeleton), and a `writable_home_dirs` bind writable inside the `:ro`
+skeleton. Its `codex only` subtest plants a machine login in a machine store **private to the
+test** (the harness's isolated home links the whole state dir back to the machine's, so a plant
+through it would overwrite the developer's real login) and searches all of `~` for it. At the unit
+level: `TestEveryHomeBindHasASkeletonEntry`, `TestRunContainerBuildsTheSkeletonOnTheFreshPath`,
+`TestTheSkeletonCarriesOnlyTheSelectedPacksDirs`, `TestCoreSkeletonDirsNameNoPacksDir`,
+`TestEachFreshLaunchGetsANewSkeleton`, `TestAttachLeavesTheSkeletonByteIdentical`,
+`TestAFreshLaunchLeavesTheMachineStoreByteIdentical`,
+`TestOnlyTheListedFunctionsNameTheMachineStore` and the tracking-cleanup tests in
+`internal/cli/run/trackingcleanup_test.go`.
+
+> [!NOTE]
+> A nested jail's skeleton lives under the outer jail's home, which the outer agent can write.
+> The outer jail is that nested jail's host, as for every other host-side input.
 
 ### Reserving a name is not creating a directory
 
@@ -600,14 +745,22 @@ Two different things have been spelled with the same list, and they are separate
   `host_files` destination under a dir that is already bound read-write gets no staging.
 
 Reservation covers the **selected** packs only, by the maintainer's ruling
-([`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger)), and so does the skeleton: an
+([`OQ-BH14`](#oq-bh14)), and so does the skeleton: an
 unselected pack is treated as if it does not exist. (The machine store is the exception on the
 creating side, below.) So `writable_home_dirs: [".codex"]` passes in a workspace that does not
 select codex and is refused once it does, naming the pack; one user-scope entry can be legal
 in one workspace and refused in another, and that is accepted. A `host_files` entry under
 `~/.codex/` in a claude-only jail is staged as an ordinary new top-level dir. The launch
-hands its staged set to the reservation; validation resolves the same selection from the
-user config and the pack store.
+hands its staged set to the reservation (`HostFileEntry.StagingFor` and its three readers: the
+workspace-overlay half, the skeleton, the argv); validation, which runs before staging,
+resolves the same selection from the user config and the pack store, `needs` closure included
+(`resolveSelectedPacks`). It resolves with `packsrc.Store.ResolveExisting`, so validation
+writes nothing into the pack store; a configured pack the store cannot resolve reserves
+nothing, because staging refuses that launch anyway; and a configured pack with an
+`only`/`exclude` filter is loaded from a copy staged through that filter, since the filter can
+drop the manifest. A `host_files` destination under a selected pack's **shared** dir, or under
+a `writable_home_dirs` entry, is already under a read-write bind and is not staged again: a
+second bind at one destination is one podman refuses.
 
 Two things are not pack names and stay reserved in every workspace: core's own dirs and
 files, and `.claude` as a `writable_home_dirs` segment, because core's `~/.claude.json`
@@ -621,7 +774,7 @@ redirect targets `.claude/claude.json`.
   then creates the selected packs' own, on both container backends, so a configured pack's
   shared dir has a source too (`ensureSharedDirSources`).
 - **The `host_files` surface reservation**, in contrast, covers only the SELECTED packs' surfaces, plus core's
-  own ([`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger), built 2026-09-25): a destination
+  own ([`OQ-BH15`](#oq-bh15), built 2026-09-25; `selectedSurfacePaths`): a destination
   such as `~/.codex/config.toml` is refused only when a selected pack composes it. A collision
   between two selected writers is still refused at launch (`config.SurfaceCollisions`).
 
@@ -710,9 +863,13 @@ is a temp file, created `O_EXCL`, renamed over the path.
 The workspace side is the file the jail reads as `~/.claude.json`, which differs per backend
 (`claudeJSONInWsState`): `<workspace>/.yolo/home/claude/claude.json` on podman, the target of
 the skeleton's redirect, and `<workspace>/.yolo/home/.claude.json` on Apple Container, whose
-whole home is that directory. Apple Container synced the podman path until the design's
-[`OQ-BH12`](../design/base-home-legacy-state.md#decision-ledger) fix, so the seed never reached one
-of its jails.
+whole home is that directory. Apple Container synced the podman path until the
+[`OQ-BH12`](#oq-bh12) fix, so the seed never reached one of its jails. The host-side paths and
+link defenses are pinned by `internal/cli/run/acseed_test.go`
+(`TestAppleContainerSeedReachesTheJailsClaudeJSON`, `TestAppleContainerLoginIsLearnedByTheSeed`,
+`TestTheSeedDoesNotWriteThroughAJailPlantedLink`) and `internal/storage/claudejsonlink_test.go`;
+the forward allowlist by `TestSeedForwardsOnlyTheLoginKeys` and
+`TestAFilePlantedInTheMachineStoreReachesNoWorkspace`.
 
 **Seed evidence, reconciled 2026-10-07 against `931489400b`.**
 [TestAppleContainerFreshWorkspaceBootsWithTheLoginSeed](../../integration/applecontainerhome_test.go)
@@ -721,17 +878,25 @@ recorded `AC-PARITY login-seed VERDICT: HOLDS` on the self-hosted Mac in
 2026-10-03, at `5ca9b74856b1a181e91b0c30022f578382d54204`. The fake account arrived in
 both the host copy and the jail's `~/.claude.json`; `~/.claude` existed and the undotted
 `~/claude` and `~/npm-global` did not. The test uses a private machine store, starts no
-agent and makes no authentication request. This is **fake-seed delivery and layout**,
-not proof that Claude is logged in. Real authentication and reverse learning after a
+agent and makes no authentication request; the entrypoint adds workspace settings to the
+delivered JSON, so their presence is not evidence that the seed forwarded non-login keys. This is
+**fake-seed delivery and layout**, not proof that Claude is logged in. Real authentication and reverse learning after a
 real login remain UNMEASURED on that backend.
 
 > [!WARNING]
 > **Historical HOLDS is not current target acceptance.** That experiment accepted either
-> verdict. **Source-only update, 2026-10-09:** the login-seed check now fails on a bad verdict;
-> offline controls and a structural test pin its native caller's hard-failure branch. Its [live plan](../design/base-home-legacy-state-plan.md#remaining-gate--seed-regression-promotion)
-> still requires a native mutation of the actual container seed target/copy caller and a restored
-> boot green. Neither the historical observation nor offline tests proves authentic login or
-> repairs a later native failure.
+> verdict. Since 2026-10-09 the login-seed check fails on a bad verdict, with offline controls
+> (a known-good result, a missing jail email, each wrong directory fact, malformed or missing
+> probe facts, a host-copy read error) and a structural test pinning its native caller's
+> hard-failure branch. Those promote the source regression; they do not run or prove the Apple
+> Container boot, and neither they nor the historical observation proves authentic login.
+
+<a id="the-owed-apple-container-seed-gate"></a>**Owed: the native seed regression check.** On a
+native Apple Container host, mutate the actual container seed target/copy caller, run
+`TestAppleContainerFreshWorkspaceBootsWithTheLoginSeed` and observe its specific failure, then
+restore the source and observe it pass. Linux tests cannot stand in for that target result, and
+it needs no agent or API call. Real Claude authentication and reverse learning after a real login
+stay UNMEASURED on that backend beside it. The [roadmap](../plans/roadmap.md) carries the item.
 
 ### History isolation
 
@@ -739,6 +904,363 @@ The agent's history file is symlinked to a per-host-workspace file named by a ha
 host workspace path, driven by a pack's `per_jail_history` hook. This is belt and braces:
 even where a state dir is shared across workspaces — Apple Container's single writable home
 — history stays distinct per host workspace.
+
+## Storage classes and the durable dir
+
+Every briefing tells the agent which of its paths outlive the jail, and gives it one durable
+place with a name. That exists because an agent put its landing worktree in `/tmp`, a restart
+deleted it, and the next command ran its cherry-picks in the workspace on `main`, ungated: the
+briefing said only that the home was *"persistent across sessions"* while most of it was
+read-only, so a failed write sent the agent to `/tmp`.
+
+### Storage-class terms
+
+- **Storage class** — a kind of location, defined by what survives which event, who shares it,
+  what yolo cleans up, and which disk holds it. It classes **locations**, not the bytes at a
+  vendor path (state, cache or the user's own), which is a different question.
+- **Durable** — survives the jail's exit and the next launch of the same workspace. It does not
+  mean backed up, and it does not mean shared across workspaces.
+- **Per-launch** — created for one fresh launch, shared by every terminal that attaches to that
+  jail, and deleted after the jail exits. In yolo a restart *is* a fresh launch: a jail has no
+  in-place restart.
+- **Storage-class map** — the list of paths a launch makes writable, each with its class,
+  computed from the inputs that build the mount argv. It is a view of the mount plan, not a
+  second source of truth. The code calls it the **persistence map** (`jailcontent.PersistenceMap`,
+  built by `persistenceMapFor` in `internal/cli/run`).
+- **Durable dir** — `<workspace>/.yolo/durable`, the one agent-neutral durable directory,
+  exported as `$YOLO_DURABLE_DIR`. It is not called "scratch" because **scratch volumes** already
+  names the per-launch mounts ([`perf-logging.md`](perf-logging.md#the-linger-was-the-scratch-volumes)).
+- **Durable worktree** — a git worktree registered with the workspace's repository whose
+  directory lies beneath the durable dir. It is what the launch line counts.
+
+All but "durable" and "per-launch" were coined by the design that built this.
+
+### Four principles
+
+- <a id="DS-P1"></a>**DS-P1. The briefing describes the mounts the launch made, not a
+  hand-written summary of them.** A hand-written line had already drifted; only a list derived
+  from the launch's own inputs stays true when a pack adds a writable directory.
+- <a id="DS-P2"></a>**DS-P2. The durable place belongs to no agent.** Core does not know what an
+  agent is. A hand-made worktree, a landing tree or a build any agent needs next session goes to
+  one path every agent is told about. Where an agent's own tool already has a durable default, the
+  tool keeps it, and the briefing recommends it to no one else.
+- <a id="DS-P3"></a>**DS-P3. `/tmp` stays per-launch, and the briefing says so.** The fix is the
+  location, not a check before each use.
+- <a id="DS-P4"></a>**DS-P4. yolo reports what accumulates and never deletes it.** Only the agent
+  that made a worktree knows whether it holds unlanded work; yolo keeps the growth visible
+  ([`OQ-DS2`](#oq-ds2)).
+
+### The storage classes
+
+The persistence map has five classes (`jailcontent.PathClass`), and the briefing renders the
+first four, plus the rest of the home as read-only:
+
+| Class | podman | Apple Container | macos-user |
+| :--- | :--- | :--- | :--- |
+| **per launch** | `/tmp`, `/var/tmp`, `/var/lib/containers`, `/var/cache/containers` (scratch volumes), `/run`, `/dev/shm` | the same set, `tmpfs` in the VM's RAM | none |
+| **per workspace** | `$YOLO_DURABLE_DIR`; the pack-bound home dirs from `<ws>/.yolo/home`; the per-side shadows | `$YOLO_DURABLE_DIR`; **all of `/home/agent`** | `$YOLO_DURABLE_DIR`; the account home's links into `<ws>/.yolo/home` |
+| **every workspace on this machine** | `~/.cache`, `/mise`, the shared-credential dirs, each machine-scope pack dir | nested binds from the same store | the account home's real directories |
+| **the workspace itself** | `/workspace` | `/workspace` | its real path |
+| **internal** | `~/.yolo/bin`, the single-file binds (logs, a lock, the CA bundle, shell history) | | |
+| read-only | the rest of `/home/agent`, staged briefings and skills, `/ctx`, `/opt/yolo-jail`, `/nix/store` | rewritten at each launch | the staged skills and briefings, write-denied by Seatbelt |
+
+<a id="DS-D15"></a><a id="DS-D7"></a>
+
+**Internal** holds yolo's own writable mounts; it is in the map so the pin covers them, and the
+section never names them, saying instead that the read-only home has *"a few files yolo keeps
+there itself"* ([DS-D15](#DS-D15)). The per-launch volumes are deliberately not durable
+([DS-D7](#DS-D7)): podman silently reuses a named volume that exists, so a durable `/tmp` would
+hand a relaunch the last session's sockets and locks and the nested podman store, with no
+liveness signal to reap it by. Pointing `TMPDIR` at the durable dir is rejected for the same
+reasons; tools assume `TMPDIR` is cleaned for them.
+
+On **macos-user** there is no per-launch class: `/tmp` is the machine's own `/private/tmp` and
+`/var/folders`, which survive the launch, are shared with the host user and every workspace, and
+are cleared at reboot (inferred, not measured), so a name there must be unique (`mktemp`). That
+inverts the podman risk: a `/tmp` worktree there survives a restart and collides instead. At the
+**host notch** (`yolo host -- <agent>`) the briefing gets one static sentence, that `/tmp` is the
+machine's own and may not survive a reboot, and no variable ([`OQ-DS3`](#oq-ds3)).
+
+| Class | Shared by | yolo cleans up |
+| :--- | :--- | :--- |
+| per launch | the terminals attached to one jail | everything, after the jail exits; stragglers at the next launch or `yolo prune --apply` |
+| per workspace | every agent and terminal in this workspace's jail, and the host user | nothing; `yolo prune` may hardlink-deduplicate identical files in the pack-bound dirs, and deletes nothing in the durable dir |
+| every workspace on this machine | every workspace's jail | `~/.cache` subdirs by age (`PurgeCacheByAge`), masked seeds (`PruneShadowedHome`) |
+| the workspace itself | every jail and host process on the project | nothing |
+
+The guidance the section gives follows: source and anything to commit in the workspace, never a
+worktree there; worktrees, landing trees and long builds' outputs in the durable dir; nothing of
+the agent's own in another tool's directory; regenerable caches only in the machine-wide class,
+through each tool's own cache setting; throwaway files only in the per-launch class, never a
+worktree; and **secrets nowhere the agent chooses**, since credentials reach a jail through
+yolo's own channels and a copy the agent writes is one nothing rotates or revokes.
+
+### The storage-class briefing section
+
+<a id="DS-D1"></a><a id="DS-D13"></a><a id="DS-D14"></a><a id="DS-D16"></a><a id="DS-D17"></a>
+
+"Storage classes: what survives a restart" is core's, rendered by `jailcontent` from the
+persistence map after the Environment section and before the Loopholes section, into every
+selected pack's briefing destination, attach included. The map is a pure function of the
+launch's runtime, `ephemeral_storage`, the selected packs' writable and shared dirs, the
+workspace and the notch, and reads the definitions the argv reads (`prune.ScratchSlots`,
+`paths.HomeSurfaces`, `packload.WritableDirs`, `packload.SharedDirs`), never a second list. A
+unit test compares the map against the assembled golden argv per backend in **both directions**,
+and checks each mount's class against its argv source, so adding a writable mount without the map
+knowing fails the gate ([DS-D1](#DS-D1), [DS-D17](#DS-D17)). The map leaves out a `host_files`
+entry's staged parent dir, a loophole's own binds and the nix daemon socket, none of them a place
+for work ([DS-D14](#DS-D14)).
+
+The section is **agent-neutral** by the maintainer's ruling ([DS-D13](#DS-D13): *"we can't have
+a claude-only solution … we need to be clear about lifecycles, storage profiles, whatever. and
+give guidance"*), names no agent's directory, and recommends no location but the durable dir. The
+Environment section's Home line points at it per backend: podman *"mostly read-only"*, Apple
+Container *"writable, and kept for this workspace"*, macos-user *"one account home, shared by
+every workspace"*; a caller with no map gets no parenthetical, so no input can produce the old
+*"persistent"* claim ([DS-D16](#DS-D16)).
+
+<a id="DS-D18"></a><a id="DS-D29"></a><a id="DS-D31"></a><a id="DS-D32"></a><a id="DS-D34"></a><a id="DS-D35"></a>
+
+What it says, and why each choice stays (the rendered text is pinned in
+`internal/jailcontent/persistencesection_test.go`):
+
+- **It leads with the answer**: `$YOLO_DURABLE_DIR` and its path, then the worktree paragraph,
+  then the classes ([DS-D18](#DS-D18)). An agent given only the classes and what vanishes put its
+  clones in `/tmp`, and corrected, chose `~/.local`. With no durable dir the lead says why and
+  names no path.
+- **What the dir is for, in the maintainer's words** ([DS-D35](#DS-D35)): scratch space for what
+  the agent does not want a restart to wipe; not part of the project; the user never needs to look
+  in it; anything meant for the project or the user goes where it otherwise would.
+- **Any layout**, with worktrees in `worktrees/<task>`; a harness's `/tmp` instruction does not
+  outrank it; and the home dirs are the agents' and tools' own state, never for work
+  ([DS-D29](#DS-D29)).
+- **Its lifetime is said once** ([DS-D31](#DS-D31)): it survives restarts and yolo never deletes
+  it; it lives in `.yolo`, *"which git ignores"* ([DS-D32](#DS-D32), not "hidden from git", which
+  read as "git cannot touch it"), so a `git clean -fdx` (or `-fdX`) in the workspace deletes it,
+  and the agent never runs one there. It says *"survive a restart"*, not "next session", since a
+  new session in the same launch still sees `/tmp`.
+- **Apple Container's wording is chosen by the map's two facts, never by the backend's name**
+  ([DS-D34](#DS-D34)): a per-launch set in RAM is gone when the jail stops and uses the jail's
+  memory (so podman under `ephemeral_storage: "tmpfs"` says that too), and a whole-home bind is
+  writable and kept in `.yolo/home`, where yolo deletes nothing but its own files. The read-only
+  bullet becomes *"Rewritten at each launch"*, since there a write may succeed and lasts only until
+  the next launch.
+- **A nested jail whose workspace lies in the enclosing jail's scratch** gets a caveat that
+  replaces the lifetime sentence rather than following it, and an attach carries the caveat too,
+  since it rewrites the briefing ([DS-D21](#DS-D21), [DS-D32](#DS-D32)).
+
+### The durable dir
+
+<a id="DS-D2"></a><a id="DS-D6"></a><a id="DS-D8"></a><a id="DS-D9"></a><a id="DS-D21"></a><a id="DS-D30"></a>
+
+- **Path.** `<workspace>/.yolo/durable`, reached through the workspace's own mount at its in-jail
+  spelling: `/workspace/.yolo/durable` on the container backends, the real path on macos-user.
+  It has **no mount of its own** ([DS-D8](#DS-D8)): the same relative geometry on the host and in
+  the jail is what keeps a relative worktree path valid on both sides, and a fixed alias such as
+  `~/durable` would break that and add a punch to the skeleton. It lives inside the workspace, not
+  in the machine store, because the per-workspace home already does, and so it goes with the
+  workspace when the workspace is deleted ([DS-D9](#DS-D9): *"agent home is in the workspace as
+  well, so that's a weird constraint to have"*). `.yolo` is the one writable, per-workspace place
+  every jail backend already has, with no new mount and no new Seatbelt rule.
+- **One writer of the directory itself: the launcher** (`ensureDurableDir`, over `durable.Ensure`),
+  on every fresh launch and every jail backend, beneath a root on `.yolo` opened with
+  `paths.OpenStateDirRoot`, after `EnsureWorkspaceStateDir` has made `.yolo` and its ignore file.
+  An existing directory is left as it is; its contents belong to the agents ([DS-D2](#DS-D2)).
+- **The variable.** `YOLO_DURABLE_DIR` holds the absolute in-jail path and is set in the
+  environment every process in the jail inherits, **only when the directory exists at launch**,
+  never at the host notch ([`OQ-DS1`](#oq-ds1), [`OQ-DS3`](#oq-ds3)). An attach reads it from the
+  running jail's frozen environment and makes nothing.
+- **No exclude writes.** `.yolo/.gitignore`'s `*` already hides it, so yolo writes no repository
+  `.gitignore` or `.git/info/exclude` entry ([DS-D6](#DS-D6)). `git status`, `git add -A`, `rg`
+  and `fd` skip it (measured, `rg --hidden` and `fd -H` included), and Go and pytest skip
+  dot-directories. What does not: `git clean` with both `-d` and `-x` or `-X` (measured: without
+  `-d` a clean does not reach `.yolo`); a walk told to ignore nothing (`fd -HI`, `rg -uu`,
+  `find`, `du`); and watchers, indexers and backup tools that keep their own exclude lists.
+- **Failure never refuses the launch** ([durable-dir failure paths](#durable-dir-failure-paths)).
+
+<a id="DS-D3"></a>
+
+> [!WARNING]
+> **Host code never follows a link, reads a file's content, or removes anything beneath the
+> durable dir** ([DS-D3](#DS-D3)). Its only contact is the report's `lstat` walk and git's admin
+> files, read as bytes beneath an `os.Root`, and it **runs no `git` in the workspace**: the
+> workspace's `.git/config` is jail-writable and git executes programs a config names
+> (`core.fsmonitor` runs on `git status`), so yolo running git there would run jail-chosen code as
+> the host user. Every reader opens the dir through `durable.Open`, which refuses a link at `.yolo`
+> as well as at `durable` ([DS-D24](#DS-D24)). `yolo prune` never deletes from it.
+
+### The durable worktree convention
+
+<a id="DS-D10"></a><a id="DS-D28"></a>
+
+A hand-made worktree goes to `$YOLO_DURABLE_DIR/worktrees/<task>`, named for the work, made with
+**`git worktree add --lock`** and driven with `git -C <path>` rather than `cd <path> && …`, so a
+missing tree fails the command instead of running it in the workspace ([DS-D10](#DS-D10)). On the
+container backends the briefing says why beside the command, in the words [DS-D32](#DS-D32)
+settled: git records it under this jail's `/workspace`, a path the host does not have, so without
+the lock a `git worktree prune` or `git gc` on the host would drop its registration. On macos-user,
+where the host and the jail spell the workspace alike, it asks for the lock without that reason.
+Removal is the creator's: `git worktree unlock <path> && git worktree remove <path>`, which refuses
+while the tree holds uncommitted changes; `git worktree remove -f -f <path>` is named only as the
+form that discards them, since the doubled `-f` overrides that refusal as well as the lock
+([DS-D28](#DS-D28)). Two agents choosing one name get git's own `already exists`.
+
+<a id="DS-D5"></a>
+
+A tool that already has a durable default keeps it: `.claude/worktrees/`, `~/.codex/worktrees`,
+`.pi/worktrees`, `~/.local/share/opencode/worktree` ([DS-D5](#DS-D5)). The briefing offers none of
+them as the pattern for hand-made worktrees.
+
+#### A worktree records absolute paths
+
+git writes both worktree links as absolute paths by default, the repository's
+`.git/worktrees/<id>/gitdir` and the worktree's `.git` file, so a worktree made in a container jail
+names `/workspace/…`, which the host does not have. Measured with git 2.55.0, a repository moved to
+another absolute path (what the host sees):
+
+| Made with | `git worktree prune` at the new path | `git` inside it | `git clean -fdx` |
+| :--- | :--- | :--- | :--- |
+| plain `git worktree add` | **drops its registration** | `fatal: not a git repository` | **deletes the directory** |
+| `--lock` | keeps it | fails the same way | **deletes the directory** |
+| `--relative-paths` | keeps it | works | skips it |
+
+The branch's commits live in the main repository's refs and survive a pruned registration; the
+worktree's uncommitted files survive on disk but lose their index and `HEAD`.
+
+> [!WARNING]
+> **`--relative-paths` is the user's opt-in, never yolo's default, and the briefing does not name
+> it.** It fixes all three columns, but it sets `extensions.relativeWorktrees` and raises the
+> repository format version, and git 2.47.2 then refuses `status`, `log` and
+> `git config --local --unset` on the whole repository. Removing the worktree leaves the extension
+> set, it lands in the user's own `.git/config` through the live workspace bind, and an agent
+> cannot see which gits the user runs on the host. It is repairable,
+> `git config -f .git/config --unset extensions.relativeWorktrees` working even from the older git
+> (measured), but the user meets a broken repository first and has to know that repair. On
+> macos-user and at the host notch the workspace is at its real path, so this fault does not arise
+> there. Mounting the workspace at the host's path is
+> [`workspace-path-mirroring.md`](workspace-path-mirroring.md)'s question.
+
+### The durable-dir report
+
+<a id="DS-D11"></a><a id="DS-D19"></a><a id="DS-D20"></a><a id="DS-D22"></a><a id="DS-D24"></a><a id="DS-D25"></a><a id="DS-D26"></a><a id="DS-D27"></a><a id="DS-D36"></a>
+
+yolo never deletes a durable worktree, so it makes them hard to forget ([`OQ-DS2`](#oq-ds2)):
+
+- **The launch line**, computed by the in-jail boot (`entrypoint.ReportDurableDir`; the bootstrap
+  on macos-user) on every fresh launch and printed with the boot's other lines, so `launch.log` and
+  `boot.log` carry it: worktree count, total size, and the oldest idle worktree by name, with a
+  pointer to `yolo check` and the reminder that yolo deletes nothing there ([DS-D11](#DS-D11)).
+  Nothing prints for an empty dir. A second line counts **prunable registrations** whose path lies
+  below the workspace or the per-launch set, which is the `/tmp` incident class caught at the next
+  launch; it sends the reader to `git worktree prune -n -v`, never a bare prune, because inside a
+  container jail git calls every host-made worktree prunable ([DS-D20](#DS-D20)). A registration
+  elsewhere is not judged, since a container jail cannot see a worktree the host made beside the
+  repository, and the host's spelling (`YOLO_HOST_DIR`) and the workspace's own resolved spelling
+  are aliases of `/workspace` ([DS-D25](#DS-D25)). On the container backends the walk runs in the
+  main process's boot alone; every session's pass, the first included, skips it, declared as a
+  session-pass exclusion (`notSessionPass`), so an attach never repeats the line
+  ([DS-D36](#DS-D36); measured 0.14 s on a boot pass over 100,000 files, about 1 µs on a session's).
+- **The figures.** Count, branch, lock and idle come from git's own admin files under
+  `.git/worktrees`, read beneath an `os.Root` with no link followed, never from running git on the
+  launch path, where the macos-user bootstrap's `/usr/bin/git` could be the stub that asks to
+  install the developer tools ([DS-D19](#DS-D19)). Idle is the newer of a worktree's admin `HEAD`
+  and `index` mtimes. Size is the `lstat` total of the whole dir, following no link, under a
+  wall-clock budget; a stopped walk prints `≥` and says so. A workspace that is not a git
+  repository counts directories under `worktrees/`. None of this refuses or delays the launch past
+  the budget.
+- **`yolo check`** adds a Durable dir section listing each worktree with size, idle, branch,
+  **unique commits** (commits reachable from its `HEAD` and from no other local branch or
+  remote-tracking ref: what deleting the worktree and its branch would lose) and changed files,
+  plus other entries and prunable registrations, and a footer naming the one command that deletes
+  the dir and the removal advice. On the host the last two columns print *"in-jail only"*. Its
+  walks and git calls share one budget, a column past it reads *"not computed"*, and one scan
+  reads a bounded number of registrations and says when it stopped ([DS-D27](#DS-D27)).
+- **`yolo stores`** adds a *workspace durable dirs* section, one row per workspace, with verdict
+  `human` and no reclaimer. ⚠ It covers only workspaces the runtime still lists a container for,
+  and jails run `--rm`, so a workspace whose jail has exited gets no row; yolo keeps no durable
+  list of workspaces, and the launch line and `yolo check` are the views that never miss one
+  ([DS-D22](#DS-D22)). Both print only for a durable dir that exists.
+- **Jail-chosen strings** (entry names, registration paths, branches) pass through
+  `durable.Printable`, which drops control and bidi-format characters, and the `yolo stores` note
+  escapes rich markup, so a directory name cannot drive or restyle the host terminal
+  ([DS-D26](#DS-D26)).
+
+### Each agent's own pack
+
+<a id="DS-D4"></a><a id="DS-D23"></a><a id="DS-D33"></a>
+
+The section and the variable reach every agent, and neither names one. Where an agent's workflow
+tool must be pointed at the dir, **its own pack does it**, never core:
+
+- **pi**: pi-subagents defaults its worktrees to `os.tmpdir()`, the per-launch class, which makes it
+  the one shipped workflow tool that needed a change. The pack's extension
+  (`packs/pi/extensions/yolo-durable-worktrees.js`) sets `worktreeBaseDir` in
+  `~/.pi/agent/extensions/subagent/config.json` to `$YOLO_DURABLE_DIR/worktrees/pi-subagents` when
+  that is unset and the variable is set ([DS-D4](#DS-D4), [DS-D23](#DS-D23)). Not a pack `env`
+  value, which is literal and cannot spell a per-backend workspace path, and not
+  `PI_SUBAGENTS_WORKTREE_DIR` in the process environment, which every child process (a test runner)
+  would inherit. pi-dynamic-workflows hard-codes `<repo>/.pi/worktrees`, which survives and shows as
+  untracked; only an upstream setting can move it.
+- **claude**: Claude Code's own worktrees stay in `<repo>/.claude/worktrees/` ([DS-D5](#DS-D5)).
+  Redirecting them costs more than it buys: a `WorktreeCreate` hook loses Claude Code's cleanup
+  sweep, `.worktreeinclude` and transcript-follows-worktree, Claude Code prompts at the host notch
+  to enter a path outside `.claude/worktrees/`, and it refuses a symlinked `.claude/worktrees`
+  outright. yolo writes no exclude for it: where it is git-ignored, Claude Code wrote the exclude.
+- **codex** and **opencode** keep their workspace-durable defaults; copilot, agy and omp have no
+  workflow worktree tool yet.
+
+The claude and pi prose is one file in each pack, `briefing/worktrees.md`, as a content line
+addressed to that agent alone (`"agents": ["claude"]`, `["pi"]`), since an unaddressed `briefing/`
+file broadcasts to every agent and would hand one agent's tool facts to all of them
+([DS-D33](#DS-D33)). Each text holds at both notches and in a launch with no durable dir: it names
+a path under `$YOLO_DURABLE_DIR` only in a sentence conditioned on the variable being set, tells
+the agent to ask the user where the section says there is none, and puts the user's or project's
+own place for a hand-made worktree first. Pinned by
+`TestEachAgentPackShipsItsOwnWorktreeProseToItsOwnAgent` and
+`TestShippedAgentPacksBriefOnlyTheirOwnAgentAboutWorktrees`.
+
+> [!WARNING]
+> **The addressed lines open a version-skew window that is not ruled.** An entrypoint built before
+> the audiences field refuses a briefing line with no `into`, which fails the boot. The window is a
+> host `yolo` built from this tree paired with such an entrypoint: `just install` and a release
+> each ship both halves together, and the source-skew gate catches a from-source launch only when
+> the checkout contains the binary's commit. Measured, every such old reader already refuses the
+> claude and pi manifests for other reasons, so the lines widen no window today. Whether a shipped
+> pack may use the addressed shape at all is
+> [`OQ-D6`](../design/slots-and-contributions.md#OQ-D6), open in that design.
+
+> [!WARNING]
+> **pi-subagents ends every worktree run with a plain `git worktree prune`**, which in a container
+> jail drops the registration of every **unlocked** worktree whose recorded path is the host's.
+> Worktrees made by the section's convention are locked and kept; one made on the host beside the
+> repository, or in its `.claude/worktrees` at the host notch, is exposed unless locked. Nothing in
+> yolo closes this; the remedy is upstream, pruning only the run's own registrations.
+
+### Durable-dir failure paths
+
+| Failure | What happens | Who finds out |
+| :--- | :--- | :--- |
+| `.yolo` is a symbolic link | `OpenStateDirRoot` refuses; no dir, no variable | the briefing and the launch line name the reason |
+| a `workspace_readonly` entry is the durable dir or an ancestor (`.`, `.yolo`, `.yolo/durable`, compared lexically) | none is made; no variable | both say durable space is unavailable because the workspace is read-only there |
+| `mkdir` fails otherwise (disk full, permissions) | no variable; the launch continues | both name the error |
+| an attach to a jail started without one | `durable.Check` names a cause still present, else says a fresh launch tries again; nothing is made ([DS-D30](#DS-D30)) | the attach's briefing |
+| macos-user `--dry-run` | no directory is made; it checks and describes the path a real launch would export | the dry run |
+| the jail later deletes or replaces the dir, or leaves a link in it | nothing; the host follows nothing beneath it | the agent at its next write; the next launch's line |
+| the workspace itself sits in an enclosing jail's per-launch mount (a nested jail under `/tmp`) | the dir is made, and is only as durable as that mount | the section's caveat ([DS-D21](#DS-D21)) |
+
+### What the durable dir does not cover
+
+- **Backups.** Durable means the next launch, not a copy.
+- **Sharing work between workspaces.** The dir is per workspace; the machine-wide class is for
+  caches.
+- **Reclaiming `.claude/worktrees`, `.pi/worktrees` or `~/.codex/worktrees`.** Those are their
+  agents'; the report counts only the durable dir.
+- **The Claude Code harness's scratchpad under `/tmp`.** yolo cannot move it; the section says
+  what it is.
+- **A nudge at the moment of the mistake**, a `git` shim warning on `worktree add` into `/tmp` or a
+  hook. A shim named `git` sits in front of every git call every agent makes, and a hook needs yolo
+  to own `core.hooksPath` in someone's repository; revisit only if the section demonstrably fails
+  to change the behavior.
 
 ## Host code in jail-writable state
 
@@ -979,7 +1501,7 @@ leaves (a) or (b) as the real choice.
 **Fresh launch.** `EnsureGlobalStorage` runs first, before config load. Then: config-change
 approval, the per-workspace launch `flock`, removal of a stale stopped container, image
 autoload, `prepareWsState`, `prepareHostFiles`, the selected packs' shared-dir sources and a
-new home skeleton (podman), and argv assembly. The launch then spawns the jail's **keeper**
+new home skeleton (podman), the durable dir (every jail backend), and argv assembly. The launch then spawns the jail's **keeper**
 (the term is [`jail-lifetime-last-session-wins.md`](../design/jail-lifetime-last-session-wins.md)'s):
 one background host process per running container jail, `yolo internal daemon jail-keeper`,
 handed a `0600` plan file, the launch lock, a progress pipe and a lifeline. The keeper starts
@@ -1065,7 +1587,7 @@ separately.
   packs' dirs at their dotted names (`.claude`, not podman's `claude`) and syncs the login
   seed with `.claude.json`, and creates none of podman's dot-stripped bind sources, which on
   this backend were stray entries in the jail's home (`~/claude`, `~/npm-global`)
-  ([`OQ-BH12`](../design/base-home-legacy-state.md#decision-ledger)); fake-seed delivery and layout
+  ([`OQ-BH12`](#oq-bh12)); fake-seed delivery and layout
   were [observed on hardware](#the-claudejson-seed), without testing real authentication. The
   one-time legacy migrations write to the dotted paths too.
 - **Machine-scope shared dirs still need their own mounts**, nested inside that bind exactly
@@ -1162,6 +1684,10 @@ only place the values themselves are stated.
 | Pack manifest mount | `/ctx/packs`, `:ro`, with `YOLO_PACK_ROOT`; source `<global storage>/agents/<container name>/pack-trees/<UTC stamp>-<random>`, one per launch | `internal/cli/run/assemble.go` (`packCtxDir`), `paths.PackTreeRoot`, `internal/cli/run/packtree.go` |
 | Vestigial mount | `~/.yolo-entrypoint.lock` — mounted, touched and reserved; nothing `flock`s it | `assemble_parts.go`, `paths.HomeFileMountpoints`, `config/writablehome.go` |
 | The real launch lock | one host-side `flock` per workspace, under the state dir's `locks/` | `internal/cli/run/flock.go` |
+| Durable dir and its variable | `<workspace>/.yolo/durable` (`/workspace/.yolo/durable` in a container jail), `YOLO_DURABLE_DIR`; worktrees under `worktrees/` | `durable.DirName`, `durable.EnvVar`, `durable.ContainerJailPath`, `durable.WorktreesDir` |
+| Durable-dir report budgets | size walk 2 s; `yolo check`'s section 10 s; at most 1000 registrations a scan; admin files read 4 KiB at most; directories read in batches of 256 | `durable.WalkBudget`, `durableCheckBudget`, `internal/durable/report.go` (`maxRegistrations`, `adminFileCap`, `readDirBatch`) |
+| pi-subagents' durable base | `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, as `worktreeBaseDir` in `~/.pi/agent/extensions/subagent/config.json` | `packs/pi/extensions/yolo-durable-worktrees.js` |
+| Storage-class section heading | `## Storage classes: what survives a restart` | `jailcontent.persistenceHeading` |
 
 ## Why it's this way
 
@@ -1174,8 +1700,20 @@ Forward-facing rulings a maintainer would otherwise undo, with their original id
 | `OQ-6` | Both generated-script dirs live under **one** bind anchor at `~/.yolo/bin` | They need one writable bind, not two, and gathering them in the filesystem is not gathering them on PATH. It also retires the word "shim", which had come to name one of these dirs while colloquially naming the host's launch wrappers — three mechanisms, two of them sharing a word. |
 | `OQ-C` | Skills and briefings are deduplicated **by destination** before the argv | Several packs contributing to one destination is the feature for both kinds, and the old advice — "do not declare an `into` another pack uses" — was unfollowable in the configuration it most matters for: an agent pack naming a skills dir plus a house-rules pack sharing a corpus. podman kills the boot on a duplicate destination, so the rule has to be enforced, not documented. |
 | `#39` | Apple Container mounts machine-scope shared dirs explicitly, and a stranded per-workspace copy is **copied** into place, never moved | The single writable home made a machine-scope credential silently per-workspace. Repairing it by moving would re-run the experiment that destroyed a token on every boot. |
-| `DIR-BH2` / [`OQ-BH10`](../design/base-home-legacy-state.md#decision-ledger) | Each podman jail gets its **own** read-only skeleton, a new one per fresh launch, never edited | A shared base leaked one workspace's config and every unselected pack's dirs, and a claude-less jail could read the machine's Claude credential file through it. Editing a skeleton in place would need a liveness answer the launch path cannot give. |
-| [`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger) | Name reservation covers only the **selected** packs | Packs come from anywhere and are added and removed at will, so the shipped set never covered what a jail could select; reserving it was an unselected pack's effect. |
+| <a id="dir-bh1"></a>`DIR-BH1` | **The maintainer's principle:** *"a non-selected pack can never have an impact."* The skeleton, name reservation ([`OQ-BH14`](#oq-bh14)) and `host_files`' surface-path reservation ([`OQ-BH15`](#oq-bh15)) all follow the selection, and no config validation rule reads the shipped set | Every exception found so far was an unselected pack's effect reaching a jail. Readers that describe packs you have not selected (`yolo pack ls`, `footprint`) and `EnsureGlobalStorage`, which runs before config loads, are the only ones that read the whole shipped set, and none of them validates config. |
+| <a id="dir-bh2"></a>`DIR-BH2` | **The maintainer's direction:** the home is per jail, not shared (*"Why is this not just per jail? It seems like it's nothing."*). That it is a `:ro` skeleton from the selected packs, with `<state>/home` kept as the machine store, is the design's reading | A shared base leaked one workspace's config and every unselected pack's dirs, and a claude-less jail could read the machine's Claude credential file through it. Binding the workspace overlay whole at `/home/agent`, as Apple Container does, would give up `EROFS` on undeclared paths and rename every podman overlay out of its dot-stripped layout; it is that backend's mount-count workaround, not a model. |
+| <a id="dir-bh0"></a>`DIR-BH0` | **The maintainer's call:** no `yolo base-home --archive` verb; the user runs a printed `mv` | The verb was built and deleted the same day. Cleaning up legacy bytes is the user's act, and nothing on the launch path needs them gone. |
+| <a id="oq-bh4"></a>[`OQ-BH4`](#oq-bh4) | The launch path classifies no legacy bytes; the one remaining allowlist is `claudeJSONSeedKeys`, core-owned | With nothing mounted or seeded from the legacy bytes there is nothing to classify at launch; the classifier in `internal/basehome` serves only `yolo check`'s report. |
+| <a id="oq-bh9"></a>[`OQ-BH9`](#oq-bh9) | The skeleton lives under `paths.AgentsDir()/<cname>/` (`paths.HomeSkeletonRoot`), reaped by `PruneOrphanAgentStaging`; delegated to the build | Host-only, keyed per jail, already reaped by liveness. Inside the workspace overlay it would be jail-writable. |
+| <a id="oq-bh10"></a>[`OQ-BH10`](#oq-bh10) | **The maintainer's ruling:** a new skeleton per fresh launch, never modified afterwards; old ones go with the jail's `AgentsDir` entry through the reaper, which declines when liveness is unknown | Editing a skeleton in place would need a liveness answer the launch path cannot give, and a host `rmdir` under a live jail detaches its bind. |
+| <a id="oq-bh12"></a>[`OQ-BH12`](#oq-bh12) | Apple Container gets runtime-aware seed paths in `prepareWsState` rather than podman's mounts; delegated to the build | That backend is limited by mount count, and its whole home is the overlay, so the seed must target `wsState/.claude.json`. The [native regression check](#the-owed-apple-container-seed-gate) is still owed. |
+| <a id="oq-bh13"></a>[`OQ-BH13`](#oq-bh13) | **The maintainer's ruling:** the launch refusal over legacy bytes and `YOLO_ALLOW_LEGACY_BASE_HOME` went in the change that stopped the mount and deleted `seedAgentDir`; `yolo check` keeps a reworded detection-only report with the printed `mv` as optional cleanup | The refusal's reason was that every jail could read the bytes and the seed copied them; neither is true any more, and a hatch for a refusal with no reason is a second path to delete. |
+| <a id="oq-bh14"></a>[`OQ-BH14`](#oq-bh14) | **The maintainer's ruling:** name reservation covers only the **selected** packs' directories; an unselected pack is treated as nonexistent (*"packs could come from anywhere and be added, removed, whatever"*) | The shipped set never covered what a jail could select, so reserving it was an unselected pack's effect. One user-scope entry may be legal in one workspace and refused in another, and a pack selected later can refuse an entry that passed before; both are accepted. |
+| <a id="oq-bh15"></a>[`OQ-BH15`](#oq-bh15) | `host_files`' surface-path reservation covers only the selected packs' surfaces, resolved as `writable_home_dirs` resolves them; `config.SurfaceCollisions` still refuses two writers at launch | Confirmed in review: *"why is there even a thing that can read a pack that is not selected?"* It was the last validation rule reading the shipped set. |
+| <a id="oq-bh16"></a>[`OQ-BH16`](#oq-bh16) | A launch removes its own skeleton at exit on the known-gone evidence that removes its tracking file; "could not ask" removes nothing; delegated to the build (*"it should get cleaned up when we can clean it up"*) | Without it a workspace used alone kept one skeleton per launch until `yolo prune --apply`. Removing a skeleton no container holds is not the modification [`OQ-BH10`](#oq-bh10) forbids. |
+| <a id="oq-ds1"></a>[`OQ-DS1`](#oq-ds1) | The durable dir is `<workspace>/.yolo/durable`, exported as `$YOLO_DURABLE_DIR` | The name must say durable, and "scratch" already means the per-launch volumes here. |
+| <a id="oq-ds2"></a>[`OQ-DS2`](#oq-ds2) | **The maintainer's ruling:** yolo never deletes the durable dir's contents, and reports them at every launch, in `yolo check` and in `yolo stores` (*"anything that lets them just not slip by forever"*) | A worktree's value is its unlanded commits and uncommitted files, which age says nothing about, so an age reaper would delete work. |
+| <a id="oq-ds3"></a>[`OQ-DS3`](#oq-ds3) | The host notch gets one static sentence in the host header and no variable | Host `/tmp` is the machine's own, and a per-launch variable cannot reach the files `yolo host apply` writes. |
 | `C8` | The in-jail binaries and flake bundle are **mounted**, not baked | It takes the Go sources out of the image derivation, so a Go-only commit costs no image rebuild. The security delta — what executes in the jail is host-mutable with no rebuild — is the trade being made deliberately; see [`image-staging-vs-baking.md`](image-staging-vs-baking.md#the-security-delta). |
 | `HSD-1` | The host-services dir has **one creator, the spawn**, and the teardown removes it **only when the runtime answers** that no container of that name exists, running or not. (`HSD` stands for host-services dir, an id coined for this ledger.) | A second creation earlier in the launch had no teardown on the refusal paths between it and the spawn, so every refused launch left an empty directory in `/tmp`. The teardown used to read "could not ask the runtime" as "not running" and delete a possibly-live jail's endpoint files on no evidence. It asks whether a container exists, not whether one runs, because a relaunch releases the workspace lock once its bounded wait for a running container gives up, and a container that is only created is invisible to the running-only listing. That is the rule the tracking-file cleanup (`forgetGoneContainer`) already follows in the same teardown. Declining costs one directory, which the next launch of the workspace reuses. |
 | `HSD-2` | The host-services dir is built in `paths.HostSingletonDir`, not in a literal `/tmp` | The two are the same directory in production. A test package that isolates its host singletons (`testsupport.IsolateHostSingletons`) then carries these dirs into its private directory too. Before that, tests that started host services and never stopped them left empty `/tmp/yolo-host-services-<8hex>` dirs on every run. |

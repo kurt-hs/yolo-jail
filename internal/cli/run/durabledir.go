@@ -1,6 +1,6 @@
 package run
 
-// THE DURABLE DIR's launch half (docs/design/durable-scratch-space.md §5.2, OQ-DS1): every
+// THE DURABLE DIR's launch half (docs/reference/jail-home.md#the-durable-dir, OQ-DS1): every
 // fresh launch, on all three jail backends, makes `<workspace>/.yolo/durable` and — only when
 // that worked — exports its in-jail path as $YOLO_DURABLE_DIR to every process of the jail.
 // The briefing's storage-classes section leads with the same value, so the agent is told
