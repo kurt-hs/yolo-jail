@@ -1,6 +1,6 @@
 package cli
 
-// hostmodelroles_test.go pins the role environment (docs/research/extension-model-defaults.md
+// hostmodelroles_test.go pins the role environment (docs/reference/providers.md#oq-xm4
 // OQ-XM4) at the host notch: `yolo host -- <agent>` hands the exec'd agent YOLO_MODEL_<ROLE> for
 // the provider its profile selects, through the same gate a jail's env files are written from,
 // and removes a role its provider does not name that the invoking shell inherited from an agent

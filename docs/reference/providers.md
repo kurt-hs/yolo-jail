@@ -24,6 +24,8 @@ covers:
   - internal/agentcfg/selection.go
   - internal/agentcfg/staterender.go
   - internal/agentcfg/luahook/derive.go
+  - internal/agentcfg/luahook/modelfor.go
+  - internal/cli/run/providerlocal.go
   - internal/entrypoint/packsurfaces.go
   - internal/entrypoint/prism.go
   - internal/config/profiles.go
@@ -902,12 +904,12 @@ table, string, math libraries only; no `os`, no `io`). Two registrations and one
   the bootstrap runs. One runner (`AgentEnv`) serves both notches — that shared
   implementation is what keeps `yolo -- claude` and `yolo host -- claude` composing the same
   environment. An in-jail env derive has no consumer and is never run.
-- `yolo.model_for(alias)` — not a registration but the one helper: it resolves a model alias
-  for the SELECTED provider and returns `"<provider>/<id>", "<id>"`, or `nil`. It never reads
+- `yolo.model_for(alias[, provider])` — not a registration but the one helper: it resolves a
+  model alias for the SELECTED provider (or, named, one entry of the agent's active set) and returns `"<provider>/<id>", "<id>"`, or `nil`. It never reads
   another provider's aliases. A missing [tier alias](#tier-aliases) is a warning at boot, never
   a refusal; any other missing name is `nil`, silently
-  ([OQ-XM1](../research/extension-model-defaults.md#7-decision-ledger),
-  [XM-D1](../research/extension-model-defaults.md#XM-D1)).
+  ([OQ-XM1](#oq-xm1),
+  [XM-D1](#XM-D1)).
 
 > [!WARNING]
 > **The env half is not a surface, and the host render's key probe is not its seam.** A
@@ -1296,7 +1298,7 @@ What each agent actually receives, from one composed table and one selection:
 | Agent | Catalog | Selection |
 | :--- | :--- | :--- |
 | codex | `~/.codex/config.toml` `[model_providers.<id>]` (TOML); never a row for `openai-codex` | top-level `model_provider` + `model`; `model` alone for `openai-codex` ([above](#selecting-openai-codex-for-codex)) |
-| pi | `~/.pi/agent/models.json` `providers.<id>` (JSON; credential as `apiKey: "${VAR}"` config-value syntax); never a row for `openai-codex`, whose models the extension registers from [the declared list](#the-openai-codex-model-list) | `~/.pi/agent/settings.json` `defaultProvider` + `defaultModel` (a pair of bare ids), and `enabledModels` (the scoped list, default first), which is not written for `openai-codex`. Also, for every provider, pi-subagents' `subagents` block: `defaultModel` as `<provider>/<id>` (the same model), and `modelScope` `{enforce, strict, allow}` over the provider's configured ids when an `only` narrowed them (and on `openai-codex`), else `<provider>/*` ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)), so a child agent never crosses providers ([XM-D3](../research/extension-model-defaults.md#XM-D3), [XM-D4](../research/extension-model-defaults.md#XM-D4)). For an [active set](#an-active-set-several-profiles-for-one-agent) the pair stays the primary's, `enabledModels` is each entry's run in set order, each led by its own default (an `openai-codex` entry adds its declared base ids, never a `[1m]` variant, since `enabledModels` are minimatch patterns), and `modelScope.allow` is the union, so a child may use any listed provider and none other; each entry's profile options reach its own catalog row, and the OpenAI login pre-launches when any entry is `openai-codex` |
+| pi | `~/.pi/agent/models.json` `providers.<id>` (JSON; credential as `apiKey: "${VAR}"` config-value syntax); never a row for `openai-codex`, whose models the extension registers from [the declared list](#the-openai-codex-model-list) | `~/.pi/agent/settings.json` `defaultProvider` + `defaultModel` (a pair of bare ids), and `enabledModels` (the scoped list, default first), which is not written for `openai-codex`. Also, for every provider, pi-subagents' `subagents` block: `defaultModel` as `<provider>/<id>` (the same model), and `modelScope` `{enforce, strict, allow}` over the provider's configured ids when an `only` narrowed them (and on `openai-codex`), else `<provider>/*` ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)), so a child agent never crosses providers ([XM-D3](#XM-D3), [XM-D4](#XM-D4)). For an [active set](#an-active-set-several-profiles-for-one-agent) the pair stays the primary's, `enabledModels` is each entry's run in set order, each led by its own default (an `openai-codex` entry adds its declared base ids, never a `[1m]` variant, since `enabledModels` are minimatch patterns), and `modelScope.allow` is the union, so a child may use any listed provider and none other; each entry's profile options reach its own catalog row, and the OpenAI login pre-launches when any entry is `openai-codex` |
 | opencode | `~/.config/opencode/opencode.json` `provider.<id>` — `baseURL`/`apiKey` live UNDER `options`; `npm` `@ai-sdk/openai-compatible` for an `openai` endpoint, `@ai-sdk/openai` for an `openai-responses` one; never a row for `openai-codex`, whose list rides opencode's own `openai` row ([above](#selecting-openai-codex-for-opencode)) | top-level `model = "<provider>/<model>"` and `small_model`, written only when a model resolves, and `enabled_providers` naming the selected provider whether or not one does, so opencode on a provider that declares no models chooses among that provider's own ([AP-D17](../design/active-provider-sets.md#AP-D17)). For an [active set](#an-active-set-several-profiles-for-one-agent) `model` and `small_model` stay the primary's and `enabled_providers` names every entry in set order, a Bedrock entry as `amazon-bedrock` wherever it sits and an entry whose provider names no endpoint by that provider's name, which must be opencode's own id for it (`anthropic`), since yolo writes such an entry no row; opencode reads that key as a filter ("When set, ONLY these providers will be enabled", its 1.18.32 schema), so the order states the set and does not order opencode's menu. Each entry's own `enforce_models` decides the `whitelist` on its provider's row. A model picked in opencode lasts for that run of it: the `model` yolo writes outranks opencode's saved recent picks at its next start ([AP-D15](../design/active-provider-sets.md#AP-D15)) |
 | omp | `~/.oh-omp/agent/models.yml` `providers.<id>` (YAML; credential as the provider's env-var NAME, which oh-omp resolves before treating it as a literal) | **no start model** — the derive writes a catalog, so a selected profile makes the provider *available* and the user chooses it inside the agent. Under an `only`, `~/.oh-omp/agent/config.yml` `enabledModels` scopes the narrowed list, default first ([MM-D8](../design/model-lists-and-pickers.md#MM-D8)). For an [active set](#an-active-set-several-profiles-for-one-agent) each entry's key reaches oh-omp, and once any entry is narrowed the scope holds every entry in set order: a narrowed entry's run, default first, and `<provider>/*` for any other, since oh-omp's selector shows nothing outside a scope; with none narrowed nothing is written, as for one profile ([AP-D18](../design/active-provider-sets.md#AP-D18)) |
 | copilot | in a jail, for a provider whose list names a model, `providers.json`: an [agent file](pack-system.md#agent_files) beside copilot's env file, `~/.config/yolo-agent-env/copilot.providers.json`, which copilot reads from `COPILOT_PROVIDERS_CONFIG`. One provider and a row per entry of the list, its key as literal text; GitHub's own models appear beside it ([MM-D31](../design/model-lists-and-pickers.md#MM-D31)) | process env from the copilot pack's env derive: `COPILOT_PROVIDER_BASE_URL` (the sole activation gate), `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_WIRE_API` (openai type only), `COPILOT_MODEL` (required — a provider with no resolvable alias composes nothing at all; `<provider>/<id>` where the file is written), `COPILOT_PROVIDER_API_KEY` (a placeholder for a keyless loopback endpoint), `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` ← the provider's `context_window` option. The file, once it declares anything, replaces these `COPILOT_PROVIDER_*` variables; at `yolo host`, which writes no agent file, they are copilot's one model |
@@ -1466,6 +1468,48 @@ choice is explicit on purpose: a `host_files` entry for a `.yaml` or `.yml` file
 codec stays `raw`, byte for byte, which protects comments and formatting in unrelated
 configuration files (`config.hostFileCodecByExt`).
 
+### A local inference server is a provider
+
+A local model server, such as llama.cpp's `llama-server` on the launching machine, is a
+**mode** of the provider system and not a surface beside it ([OQ-LM1](#oq-lm1)): its endpoints,
+model alias, context window and credential story travel together as one `kind: "provider"`
+contribution and the `kind: "profile"` over it, the shape `zai` and `cerebras` ship. There is no
+`llm_endpoints` key. `packs/llamacpp` is the shipped instance, and its
+[README](../../packs/llamacpp/README.md) is the reference for running the server, what each agent
+receives, and the compat options.
+
+- **Transport.** A loopback `base_url` in the user's own `providers` config makes a bridged
+  container launch add the `forward_host_ports` hop for that port implicitly; a loopback URL a
+  *pack* declares never does, because a pack endpoint is a jail-local service fact. So the
+  shipped `llamacpp` pack needs `network.forward_host_ports` named in user config. That forward
+  takes no scope gate ([OQ-LM4](#oq-lm4)).
+- **Credentials, normally none.** The provider names no `api_key_env_name`, so the credential
+  preflight requires nothing, and each agent's derive hands its own dummy to a keyless endpoint.
+  A server started with a key, or a hosted endpoint, names the variable in user config, and the
+  preflight then requires it like any other provider's ([OQ-LM2](#oq-lm2)).
+- **Address, user scope only** ([OQ-LM3](#oq-lm3)), as for every credential-routing field
+  (the Current values row *Provider credential-routing scope*).
+- **Server facts are options, never detection.** What the server supports at the wire level
+  (`supports_store`, `max_tokens_field` and the rest) is declared as provider options that each
+  agent's derive translates; nothing infers them from a loopback URL, which would silently
+  downgrade a local server that is not llama.cpp-shaped. pi's derive and the wire bridge are the
+  readers today.
+- **One destination, one writer** ([OQ-LM6](#oq-lm6)). A `host_files` entry whose destination is
+  also a surface a loaded pack composes refuses the launch, one line per collision naming both
+  remedies (drop the entry, or deselect the pack). The refusal runs where the packs are already
+  loaded (`config.SurfaceCollisions`), because a configured pack not yet fetched resolves as
+  nothing at validation time. Every other `host_files` failure is a warning that degrades to the
+  defaults layer; two writers is a config that cannot be satisfied, so it is fatal.
+
+> [!WARNING]
+> **Unpinned call site.** The collision predicate and the surface collector have unit tests, but
+> the launch's call to `config.SurfaceCollisions` sits on a path that needs a real container, and
+> no integration test reaches it, so deleting that call leaves the gate green.
+
+UNMEASURED: no agent has been run against a live local server. Every per-agent spelling is read
+from the shipped client, which the no-agent-tests rule leaves as the evidence; the manual smoke
+turn per agent that [OQ-LM5](#oq-lm5) keeps owed is listed in the README's *Verifying* section.
+
 ### Tier aliases
 
 A provider's `models` map is open vocabulary, but four names are **conventional tier aliases**
@@ -1477,14 +1521,14 @@ vendor's model name ([model-lists-and-pickers §6](../design/model-lists-and-pic
 | `default` | what you get when nothing is said, and every derive's fallback |
 | `fast` | cheap and quick |
 | `balanced` | the middle tier, where one exists |
-| `frontier` | the most capable tier ([OQ-XM2](../research/extension-model-defaults.md#7-decision-ledger)) |
+| `frontier` | the most capable tier ([OQ-XM2](#oq-xm2)) |
 
 It is a convention with a warning, not an enum: a derive asking `yolo.model_for` for one the
 selected provider lacks gets `nil`, and the launch prints one warning naming the provider and
 the alias and proceeds. The list is `luahook.ConventionalModelAliases`.
 
 **Every program an agent starts can read them too**, as environment variables (added
-2026-10-01, [OQ-XM4](../research/extension-model-defaults.md#7-decision-ledger); measured by tests only):
+2026-10-01, [OQ-XM4](#oq-xm4); measured by tests only):
 `YOLO_MODEL_DEFAULT`, `YOLO_MODEL_FAST`, `YOLO_MODEL_BALANCED` and `YOLO_MODEL_FRONTIER`, each the
 model the agent's own selected provider names for that alias, as `<provider>/<id>`. They are per
 agent, composed by core beside the agent pack's env derive (`packload.ModelRoleVars`) and carried
@@ -1498,8 +1542,25 @@ that agent's values, as a child keeps any of its parent's environment
 one command still wins in a jail, as every profile-composed value does
 ([the per-agent file's precedence](#oq-cn8)). A variable of
 the same name the agent's own pack sets wins over the composed one, and no warning is printed for
-a missing role, since nothing asked for it ([XM-D8](../research/extension-model-defaults.md#XM-D8),
-[XM-D9](../research/extension-model-defaults.md#XM-D9)).
+a missing role, since nothing asked for it ([XM-D8](#XM-D8),
+[XM-D9](#XM-D9)).
+
+<a id="extensions-that-launch-agents"></a>**Extensions that launch agents follow the profile
+three ways, and yolo ships an adapter for none of them.** Most pi extensions that spawn a child
+agent (sub-agent runners, workflow engines) *inherit*: when nothing names a model, the child gets
+the parent session's model, so yolo's `defaultProvider`/`defaultModel` already reaches them. That
+is the floor. The extensions that keep their own role configuration, in files yolo never renders,
+reach yolo's tiers either through the role variables above or through an **adapter pack**, a term
+coined by the extension survey ([`extension-model-defaults.md`](../research/extension-model-defaults.md)):
+an ordinary pack whose only job is to render the selected provider's resolved tier aliases into
+ONE extension's own config file, with a `config` surface plus a derive that calls
+`yolo.model_for`. Adapters are written by the extension's author or the user, never shipped in
+`packs/`, and core names no extension ([OQ-XM1](#oq-xm1)). The one extension block yolo writes
+itself is pi-subagents' `subagents` block, which stays in pi's own derive for every provider
+([OQ-XM3](#oq-xm3); the [per-agent delivery](#per-agent-delivery) pi row says what it holds).
+An extension's model config that the user edits by hand in the jail keeps that edit, because an
+adapter's surface follows the same capture rules as any composed file. pi itself has no model-role
+setting, and yolo proposes none upstream ([OQ-XM5](#oq-xm5)).
 
 **claude reads three of them for its tiers** ([MM-D17](../design/model-lists-and-pickers.md#MM-D17)):
 `balanced` pins its Sonnet tier (`ANTHROPIC_DEFAULT_SONNET_MODEL`), `fast` its Haiku tier, and
@@ -2661,6 +2722,54 @@ Code comments cite them.
 | <a id="oq-z6"></a>[OQ-Z6](#oq-z6) — the three `endpoints` closure rules | Each closed a hole the schema sketch left. (1) `base_url` is valid only alone, `endpoints` and `base_url` together being an error. ⚠ Since superseded: the bare `base_url` shorthand is now refused outright ([the shorthand is removed](protocol-resolution.md#the-single-protocol-base_url-shorthand-is-removed)), and the pair stays refused ([P2](#principles)). (2) The derive gate is the provider's URL for the protocol that agent resolves ([provider reach](#provider-reach-which-agents-a-provider-can-reach-at-all)). (3) The derives write a catalog, not a choice: presence is not selection ([the principle](#principles)). |
 | <a id="oq-z7"></a>[OQ-Z7](#oq-z7) — **`wire_api` is translated, never passed through; `openai-chat` is retired, not renamed** | Each derive owns a provenance-bearing dialect map and emits nothing for a canonical value its agent cannot spell. Reopening the enum as a free string restores the pass-through failure the closed vocabulary closed ([OQ-PT1](#oq-pt1)). |
 
+### The extension-model rulings
+
+These rows carry the `OQ-XM` ids of the extension-model design, ruled 2026-09-28 and graduated
+here from [`extension-model-defaults.md`](../research/extension-model-defaults.md), which keeps
+the survey of how pi's extensions pick models. Code comments cite them. Body:
+[tier aliases](#tier-aliases) and [extensions that launch agents](#extensions-that-launch-agents).
+
+| Ruling | Why it holds |
+| :--- | :--- |
+| <a id="oq-xm1"></a>[OQ-XM1](#oq-xm1) — core exposes tier resolution to derives (`yolo.model_for`), and names no extension | yolo must not take an opinion on which extensions to support; one generic helper makes an adapter pack a few lines of Lua without core knowing it exists. |
+| <a id="oq-xm2"></a>[OQ-XM2](#oq-xm2) — `frontier` is a fourth conventional alias, under the same warn-don't-refuse rule | Extensions ask for a most-capable class (`big`, `frontier`); without a yolo name for it each adapter would invent one. Each adapter maps yolo's names onto its extension's; core maps none. |
+| <a id="oq-xm3"></a>[OQ-XM3](#oq-xm3) — pi-subagents' `subagents` block stays in pi's derive, for every provider, and never crosses providers | *"I want always the default to switch to the default … And regardless, it shouldn't be able to cross providers."* Moving it to an optional adapter pack, the leaning, was rejected; keeping it codex-only left every other provider's child on a stale model. |
+| <a id="oq-xm4"></a>[OQ-XM4](#oq-xm4) — role variables `YOLO_MODEL_<ROLE>`, set per agent and never jail-wide | A jail-wide variable is wrong the moment two agents run different profiles; they waited for the per-agent env files of [OQ-CN6](#oq-cn6). |
+| <a id="oq-xm5"></a>[OQ-XM5](#oq-xm5) — no model-roles proposal to pi upstream | Ruled against the leaning: adapters stay the way yolo reaches each extension's own settings. |
+
+### The extension-model build ledger
+
+The implementation decisions taken under those rulings, `XM-D1` to `XM-D9`, kept with their ids
+because code comments and sibling docs cite them. Each is built.
+
+| ID | Decision |
+| :--- | :--- |
+| <a id="XM-D1"></a>XM-D1 | **`yolo.model_for(alias)` answers for the SELECTED provider only** (since active sets, or a named entry of the agent's set) and returns `<provider>/<id>` and the bare id, or `nil`. Another provider declaring the alias is never borrowed from, since a child handed that model would cross providers. The bare id is returned because agents spell models differently and a derive may normalize before qualifying; the id is never parsed, so kilo's `vendor/model` ids survive whole. No provider selected, or one with no row: `nil`, silently. Like every `yolo.*` member it is a version boundary, so a shipped derive treats `nil` as "resolved nothing". |
+| <a id="XM-D2"></a>XM-D2 | **Only the four conventional aliases warn when missing**, through `DeriveCtx.Warn`; any other name is open vocabulary and silent when absent, because a derive may probe an exact id a profile names. The boot loop and `yolo check`'s dry run route the warning to the boot's once-per-message warning. |
+| <a id="XM-D3"></a>XM-D3 | **One function writes the `subagents` block for every provider**, codex's shape kept: `defaultProvider`, `defaultModel` as `<provider>/<id>` (the model the chat selection starts on, so the two cannot drift; codex's is `codexDefault`), and an enforced, strict `modelScope`. Which ids `allow` lists was later narrowed by [OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3): the configured ids under an `only` and on `openai-codex`, else the [XM-D4](#XM-D4) scope. |
+| <a id="XM-D4"></a>XM-D4 | **The provider-level scope `<provider>/*`**, strict and enforced, rather than no scope (a child could name any provider's model) or an empty `allow` (pi-subagents refuses it as a settings error). It keeps the never-cross-providers guarantee and allows another model of the same provider; pi-subagents turns `*` into `.*`, so ids with slashes of their own match too. |
+| <a id="XM-D5"></a>XM-D5 | **When yolo can name no default, `subagents.defaultModel` is tombstoned, not omitted**, so a host-layer value (a codex policy, say) cannot start every other provider's child on the wrong provider; deleted, the child inherits the parent's model, which is on the selected provider. The rest of a host's `subagents` object is kept. |
+| <a id="XM-D6"></a>XM-D6 | **The block is a computed key, and a profile switch needs no clearing logic.** Selection lifts scalars and arrays of scalars only, so [OQ-PSW2](#oq-psw2)'s deselect rule does not govern it: a computed key is re-asserted every boot while a profile is active, each switch rewrites every leaf yolo names, and a deselect writes no block. |
+| <a id="XM-D7"></a>XM-D7 | **claude's and opencode's derives do not call the helper.** claude reads its own tier names, then the conventional aliases, by hand ([MM-D17](../design/model-lists-and-pickers.md#MM-D17)); opencode's `small_model` tries a chain of names (`haiku`, `fast`, `small`), not one tier. |
+| <a id="XM-D8"></a>XM-D8 | **Core composes the role variables for every agent with a profile**, in the env-derive runner (`packload.ModelRoleVars` beside `packload.AgentEnv`), so every vehicle delivers them with no new reader and an agent pack cannot forget the relay. Names are `YOLO_MODEL_` plus the upper-cased alias, for the four conventional aliases only; the value is `yolo.model_for`'s qualified return through the same lookup (`luahook.ModelAliasID`), for the agent's PRIMARY provider. A same-named variable the agent's own pack sets wins. `yolo check` composes none, since it runs no derive. |
+| <a id="XM-D9"></a>XM-D9 | **A role the agent's provider does not name is removed, and only when some provider in the launch's table names it; a missing role is silent.** A child inherits its parent's environment, so a stale `YOLO_MODEL_FAST` would hand it a model across providers. The per-agent file removes only a value yolo set elsewhere, so a value the user typed stays ([OQ-CN8](#oq-cn8)); the host exec removes it outright. An agent with no profile writes no file and removes nothing, as [CN-D8](#CN-D8) accepts for every inherited value. Nothing warns, since no derive asked. |
+
+### The local-endpoint rulings
+
+These rows carry the `OQ-LM` ids of the local-inference survey, ruled 2026-09-14 and graduated
+here from [`local-model-endpoints.md`](../research/local-model-endpoints.md), which keeps the
+per-agent and `llama-server` findings. Code comments cite them. Body:
+[a local inference server is a provider](#a-local-inference-server-is-a-provider).
+
+| Ruling | Why it holds |
+| :--- | :--- |
+| <a id="oq-lm1"></a>[OQ-LM1](#oq-lm1) — local endpoints are a MODE of the provider system, not a parallel `llm_endpoints` key | A mode is a bundle (credential, env and model ids together), and splitting them is how a switch half-lands silently; a bare `{base_url, model}` key re-creates that for local models. Built as `packs/llamacpp`, pinned by `internal/packdecl/llamacpppack_test.go`. |
+| <a id="oq-lm2"></a>[OQ-LM2](#oq-lm2) — a local endpoint normally needs no key; the key path exists for the hosted case | Every agent here accepts a dummy against a keyless `llama-server`, so the shipped pack names no variable (`TestLlamacppNamesNoCredentialVariable`). A user-named key is then required by the credential preflight rather than silently dropping the endpoint, as the MCP precedent's `requires_env` would have. |
+| <a id="oq-lm3"></a>[OQ-LM3](#oq-lm3) — a provider address is user-scope only | A workspace config is a file the agent in the jail can rewrite, and repointing its inference at a chosen URL is total and silent. Since widened to every credential-routing field ([NC-D63](../plans/notch-convergence.md#NC-D63)); `config.validateProviderCredentialScope`. |
+| <a id="oq-lm4"></a>[OQ-LM4](#oq-lm4) — no scope gate on `forward_host_ports`, deliberately | *"We have the config diff confirmation already and this isn't a high risk."* An added entry cannot reach a launch without a human seeing it in the [config-change approval](config-safety.md), and a forwarded port is bounded by what listens on it; unlike [OQ-LM3](#oq-lm3), it is visible and partial. |
+| <a id="oq-lm5"></a>[OQ-LM5](#oq-lm5) — the recipe and the build were not sequenced | Both landed. The manual smoke turn per agent against a live server is still owed and recorded as UNMEASURED in the body. |
+| <a id="oq-lm6"></a>[OQ-LM6](#oq-lm6) — two writers for one path are a fatal error, not a merge or a precedence rule | *"I don't want weird recursive loops or anything in our resolution. I don't see a use case for this."* A pack surface and a `host_files` entry at one destination cannot both be satisfied, so the launch refuses instead of choosing a winner; this is what stops a pack-managed, read-only file being corrupted by a second writer. |
+
 ## Current values
 
 Verified at `d4e435a3`. The prose
@@ -2682,7 +2791,7 @@ above explains what each is for; this table is the only place the exact spelling
 | pi's copy of that list | `~/.pi/agent/yolo-openai-codex-models.json`, the computed surface `pi/codex-models`: `{"models": [{"id", "base", "name", "contextWindow"}, …], "enforce": <bool>}`, `enforce` being the switch of the profile that governs `openai-codex` (`piEnforceFor`); `{}` for an empty list. Read by the openai-auth extension at load, which refuses an unlisted id only when `enforce` is `true`. `yolo host apply` renders it at the host notch too, over the configured profile ([OQ-HC1](host-agent-environment.md#oq-hc1)) | `packs/pi/pack.json`, `packs/pi/derive.lua`, `packs/pi/extensions/yolo-openai-auth.js` |
 | opencode on `openai-codex` | `provider.openai` in `~/.config/opencode/opencode.json`: `models` keyed by each listed id (`name`; `limit` `{context, input}` at the declared window, `output` 0; `id` the base for a `[1m]` variant), `options.apiKey` the literal `yolo-chatgpt-subscription-needs-the-shared-login`, `whitelist` the ids while `enforce_models` is on; no `npm`, no `baseURL`; `model`/`small_model` `openai/<id>`, `enabled_providers` `openai`. The prelaunch `--opencode-auth` writes `{"openai": {"type": "oauth", "refresh": "yolo-broker:<n>", "access", "expires", "accountId"}}` into `~/.local/share/opencode/auth.json`, keeping every other key; the plugin `~/.config/opencode/plugins/yolo-openai-auth.js` serves requests on that credential | `packs/opencode/pack.json`, `packs/opencode/derive.lua`, `packs/opencode/plugins/yolo-openai-auth.js`, `internal/openauthclient/opencode.go` |
 | User config keys | `providers` (merged-scope — **except the ADDRESS**), `profiles` / `profile` (user-scope-only); `use_profiles` and `agent_profiles` refused by name as old spellings of `profile` | `internal/config` |
-| Provider credential-routing scope | Every provider field that decides where a credential goes is **USER-SCOPE ONLY**: a workspace `yolo-jail.jsonc` or `yolo-jail.local.jsonc` carrying one is a fatal config error naming the field and the user config. The address, `endpoints.<protocol>.base_url`, since 2026-09-17 ([`OQ-LM3`](../research/local-model-endpoints.md#decision-ledger)). Since 2026-09-28 ([OQ-NC6](../plans/notch-convergence.md#7-decision-ledger), the field list [NC-D63](../plans/notch-convergence.md#NC-D63)) also the rest of `endpoints` in any form (a protocol with no URL, a `wire_api`, a null removing an endpoint or the map), `api_key_env_name` (a value re-points the claim, a null unclaims the key so every process receives it), and a null provider or null `providers`, which remove claims. Since 2026-09-29 also `platform`, which decides which agents a pack's credential pointer reaches ([PP-D7](../design/providers-and-profiles-redesign.md#PP-D7)). `models`, `options`, `region` and `capabilities` still merge from either scope, a `region` only as one DNS label ([a region is a host-name part](#a-region-is-a-host-name-part)). The reason is the workspace file is AGENT-EDITABLE, and these fields decide where a credential and the inference behind it go. The entry-level `base_url` shorthand is refused at any scope | `internal/config/validate.go` (`validateProviderCredentialScope`, `validateProviderRegion`) |
+| Provider credential-routing scope | Every provider field that decides where a credential goes is **USER-SCOPE ONLY**: a workspace `yolo-jail.jsonc` or `yolo-jail.local.jsonc` carrying one is a fatal config error naming the field and the user config. The address, `endpoints.<protocol>.base_url`, since 2026-09-17 ([`OQ-LM3`](#oq-lm3)). Since 2026-09-28 ([OQ-NC6](../plans/notch-convergence.md#7-decision-ledger), the field list [NC-D63](../plans/notch-convergence.md#NC-D63)) also the rest of `endpoints` in any form (a protocol with no URL, a `wire_api`, a null removing an endpoint or the map), `api_key_env_name` (a value re-points the claim, a null unclaims the key so every process receives it), and a null provider or null `providers`, which remove claims. Since 2026-09-29 also `platform`, which decides which agents a pack's credential pointer reaches ([PP-D7](../design/providers-and-profiles-redesign.md#PP-D7)). `models`, `options`, `region` and `capabilities` still merge from either scope, a `region` only as one DNS label ([a region is a host-name part](#a-region-is-a-host-name-part)). The reason is the workspace file is AGENT-EDITABLE, and these fields decide where a credential and the inference behind it go. The entry-level `base_url` shorthand is refused at any scope | `internal/config/validate.go` (`validateProviderCredentialScope`, `validateProviderRegion`) |
 | Missing-provider hatch | `YOLO_ALLOW_MISSING_PROVIDERS=1`, for the credential and the region preflights | `internal/paths` |
 | Provider platform | `platform`, one token, open vocabulary; `aws-bedrock` is the one value read today (the claude, codex, opencode and pi derives, aws-auth's gate, the region preflight); a derive reads the selected provider's as `ctx.selected_platform` | `packdecl.PlatformProblem`, `luahook` (`selectedPlatform`) |
 | The shipped Bedrock provider | `bedrock` in the bedrock pack: `"platform": "aws-bedrock"`, no endpoints, no region, no options, the six AWS credential names under `api_key_env_name`; needed by claude, codex, opencode and pi, and needing aws-auth | `packs/bedrock/pack.json`, each agent pack's `needs` |

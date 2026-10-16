@@ -237,7 +237,7 @@ func requireNotCataloged(t *testing.T, raw map[string]any, tableKey, id string, 
 }
 
 // requireZaiSubagents asserts pi-subagents' block for the shipped zai profile
-// (docs/research/extension-model-defaults.md OQ-XM3): a child with no model of its own starts
+// (docs/reference/providers.md#oq-xm3): a child with no model of its own starts
 // on the profile's default, and may name only zai's models: pi's own list, whole, since zai is
 // one of pi's own providers (OQ-3).
 func requireZaiSubagents(t *testing.T, settings map[string]any) {

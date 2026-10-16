@@ -1599,7 +1599,7 @@ const modelFactsKey = "model_facts"
 
 // validateProviderCredentialScope refuses, at workspace scope, every provider field that
 // decides where a credential goes (docs/plans/notch-convergence.md OQ-NC6, ruled 2026-09-28,
-// the field list NC-D63). It began as OQ-LM3's address rule (docs/research/local-model-endpoints.md):
+// the field list NC-D63). It began as OQ-LM3's address rule (docs/reference/providers.md#oq-lm3):
 // `endpoints.<protocol>.base_url` in a workspace `yolo-jail.jsonc` is an error naming the user
 // config. OQ-NC6 applied the same reason, that the blast radius is total, to the rest of the
 // routing:

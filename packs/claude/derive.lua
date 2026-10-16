@@ -221,7 +221,7 @@ end
 -- carries each id's name and description.
 --
 -- THE TIER NAMES (MM-D17, for OQ-PSW1): each tier reads claude's own name for it, then yolo's
--- conventional alias for it, the vocabulary OQ-XM2 ruled (docs/research/extension-model-defaults.md):
+-- conventional alias for it, the vocabulary OQ-XM2 ruled (docs/reference/providers.md#oq-xm2):
 -- `frontier` for opus, `balanced` for sonnet and `fast` for haiku. So a provider that declares
 -- only the conventional names, which XM-D2's warning asks every provider for, still pins claude's
 -- Sonnet and Haiku tiers rather than leaving them on its default. claude's own name comes first

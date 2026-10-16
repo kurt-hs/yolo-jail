@@ -1,6 +1,6 @@
 package packload
 
-// modelroles.go is the ROLE ENVIRONMENT (docs/research/extension-model-defaults.md, OQ-XM4,
+// modelroles.go is the ROLE ENVIRONMENT (docs/reference/providers.md#oq-xm4, OQ-XM4,
 // ruled 2026-09-28: "not until per-agent environment exists; then as YOLO_MODEL_<ROLE>, set per
 // agent"). The per-agent vehicle exists since OQ-CN6's env files (2026-09-26), so each agent's
 // environment now carries the model its provider names for each conventional tier alias, for

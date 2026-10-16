@@ -1,44 +1,42 @@
+---
+title: "Pointing agents at a local model server"
+date: 2026-08-20
+status: accepted
+stage: GRADUATED
+tags: [research, providers, local-models, llamacpp, claude, copilot, pi, opencode, codex, agy]
+summary: "How each agent's provider surface reaches a local llama.cpp llama-server, and how that server behaves (Anthropic Messages natively, tool calling via the model's own template, context and auth traps). What yolo built from it, packs/llamacpp, and the OQ-LM rulings graduated into providers.md and the pack's README."
+---
+
 # Pointing agents at a local model server
 
 How do you point each agent yolo-jail ships at a **local inference server** — a
 llama.cpp `llama-server` on the host, speaking the OpenAI API — and make that
 choice **per-agent** and **declarative**? This is the evergreen domain doc for
-that question. It covers the six shipped agents' provider surfaces, the server
-side, and which yolo machinery would carry the config.
+that question. It covers six agents' provider surfaces and the server
+side.
 
-**Status:** findings gathered 2026-08-20; audited 2026-08-23 (OQ IDs given the
-`LM` prefix; findings NOT re-gathered). **BUILT 2026-09-17** as `packs/llamacpp`,
-under [OQ-LM1](#decision-ledger)'s *mode, not a parallel key* — so [Part 3](#part-3--the-yolo-side-what-would-carry-this)
-and [Part 4](#part-4--what-it-would-actually-take) are history rather than a plan, and each
-carries a warning saying so. Re-verified against installed CLIs on 2026-09-17: pi
-**0.85.1** still emits `supportsUsageInStreaming` and derives `contextWindow` from
-`meta.n_ctx`/`n_ctx_train`; `CLAUDE_CODE_ATTRIBUTION_HEADER` is **present in claude
-2.1.274** and read as a falsey gate, which upgrades the blog-post citation below to
-source; copilot 1.0.48 matches, though this doc omits three real vars it sets
-(`COPILOT_PROVIDER_BEARER_TOKEN`, `_AZURE_API_VERSION`, `_MODEL_LIMITS_ID`).
-**One measured gap the build could not close from its own files:** `packs/pi/derive.lua`
-emits no `compat` block, and pi's auto-detection for an unknown loopback URL yields the
-INVERSE of pi's own llama.cpp provider flags — so that derive needs a `compat` block
-before the pi smoke test can pass. **All six questions are ruled** (recorded 2026-09-14) —
-see the [Decision Ledger](#decision-ledger). Read §"Fast-moving — verify before
-building" first: this is the shortest-half-life doc in `docs/research/`, and
-several of its claims are expected to be stale within three months of the gather
-date. **Partial re-verification 2026-09-02**: the **pi** and **opencode**
-sections were re-read from source at the currently-installed versions (pi
-0.84.4, opencode 1.18.18) and dated subsections were added to each —
-[pi, 2026-09-02](#pi-2026-09-02-re-verification) and
-[opencode, 2026-09-02](#opencode-2026-09-02-re-verification). The other four
-agents' sections are still 2026-08-20 material.
+**Status:** GRADUATED, 2026-10-16. Findings gathered 2026-08-20; the pi and opencode sections
+re-read from source on 2026-09-02 (dated subsections below), and pi 0.85.1, claude 2.1.274 and
+copilot 1.0.48 spot-checked on 2026-09-17. What yolo built from this survey, `packs/llamacpp`, is
+described in [`packs/llamacpp/README.md`](../../packs/llamacpp/README.md) and
+[`providers.md`'s local-server section](../reference/providers.md#a-local-inference-server-is-a-provider),
+and the six rulings it led to, [OQ-LM1](../reference/providers.md#oq-lm1) to
+[OQ-LM6](../reference/providers.md#oq-lm6), live in
+[`providers.md`'s why-appendix](../reference/providers.md#the-local-endpoint-rulings). What stays
+here is evergreen knowledge about the agents and the server, not about yolo. Read
+[Fast-moving](#fast-moving--verify-before-building) first: this is the shortest-half-life doc in
+`docs/research/`. Since this was gathered, copilot also sets `COPILOT_PROVIDER_BEARER_TOKEN`,
+`_AZURE_API_VERSION` and `_MODEL_LIMITS_ID`, which the copilot section omits.
 
 Every per-agent claim was verified against the **shipped implementation** — the
 installed binary or npm bundle in this jail — not just vendor docs, and carries a
 provenance tag saying which. Claims that could not be confirmed from a primary
 source are marked **UNCONFIRMED**.
 
-Companion docs: [`pack-system.md`](../reference/pack-system.md)
-(how config is *shared*; this doc is how it is *pointed*) and
+Companion docs: [`providers.md`](../reference/providers.md) (how yolo composes and selects a
+provider for each agent) and
 [`../reference/loopback-tls-reachability.md`](../reference/loopback-tls-reachability.md)
-(why host-reachability is the load-bearing half).
+(how a jail reaches the host).
 
 ---
 
@@ -55,7 +53,7 @@ Companion docs: [`pack-system.md`](../reference/pack-system.md)
 - **The difficulty ranking inverted.** The two agents expected to be hardest
   (Claude Code, Copilot) are **pure environment variables**. The two expected to
   be easiest (pi, opencode) need a **composed config file**. That split, not the
-  per-agent detail, is what determines the yolo-side design.
+  per-agent detail, is what decides how a launcher must deliver the config.
 - **Copilot CLI has a first-class BYOK path** and the "GitHub welds you to their
   endpoints" prior is **refuted from its own shipped bundle**. `copilot help
   providers` explicitly names local OpenAI-compatible servers, and **GitHub
@@ -67,26 +65,6 @@ Companion docs: [`pack-system.md`](../reference/pack-system.md)
   ([#21174](https://github.com/ggml-org/llama.cpp/pull/21174)) is **still open**.
 - **`agy` is impossible.** Closed `ccpa | gemini | stubby` transport enum, no
   base-URL or API-key env var anywhere in the binary. Rejected, with evidence.
-- **Transport is already solved in-tree.** `network.forward_host_ports` hops via
-  a **bind-mounted Unix socket**, so a host `127.0.0.1:8080` becomes the jail's
-  own `127.0.0.1:8080`. It sidesteps the entire pasta/slirp4netns loopback saga
-  this repo has bled over.
-- **There is a zero-code recipe available today**: `host_files` +
-  `forward_host_ports`. `yolo config-ref` already names `~/.pi/agent/models.json`
-  as its own `host_files` example.
-- **The principled version is six mechanical edits.** `derive.lua`'s `ctx` is a
-  closed, core-owned set of exactly two sources. Adding an `llm_endpoints` source
-  clones the road `mcp_servers` already walks, then one `yolo.derive(...)` per
-  agent pack.
-- ~~**Prior art in this repo for any model or provider config: zero.**~~
-  **FALSE SINCE THE PROVIDER SYSTEM LANDED, and the correction is why this doc's
-  Part 3 and Part 4 are dead letters.** The same `rg` matched 65 files on
-  2026-09-17. `providers`/`profiles`, per-agent derives, and a loopback
-  `base_url` already triggering an implicit host forward
-  (`internal/cli/run/providerlocal.go`) are all shipped. This was written as
-  greenfield on 2026-08-20 and was overtaken; [OQ-LM1](#decision-ledger) then ruled local
-  endpoints INTO that system as a mode, so the greenfield designs below were never
-  built and should not be.
 - **The universal tool-calling fallback is gone from llama.cpp** (PR
   [#18675](https://github.com/ggml-org/llama.cpp/pull/18675), 2026-03-06). Tool
   calling now requires the model's own Jinja template to support it natively.
@@ -106,10 +84,9 @@ Companion docs: [`pack-system.md`](../reference/pack-system.md)
 | **agy** | — | — | — | **Reject** — no provider extension point exists |
 
 > [!IMPORTANT]
-> The two env-var agents and the three file agents want **different yolo
-> delivery mechanisms**. Env vars are the pack `env` kind or `env_sources`; files
-> are prism config surfaces. Any design that assumes one mechanism covers the
-> field is wrong. See [Part 3](#part-3--the-yolo-side-what-would-carry-this).
+> The two env-var agents and the three file agents want **different delivery
+> mechanisms**: process environment for the first, a composed config file for the
+> rest. Any launcher that assumes one mechanism covers the field is wrong.
 
 ### Claude Code
 
@@ -154,7 +131,7 @@ Knobs worth knowing:
 | `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` | Alias resolution — **the practical knob** |
 | `ANTHROPIC_SMALL_FAST_MODEL` | **Deprecated**, superseded by `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` | Suppresses bootstrap/feature-flag/telemetry calls to `api.anthropic.com` |
-| `ANTHROPIC_UNIX_SOCKET` | **Undocumented.** Routes the API fetch over a unix socket instead of TCP `[verified from source: 2.1.220, fn Ih, 2026-08-20]` — potentially a cheaper jail wiring than TCP. (This cell pointed at [`OQ-LM5`](#decision-ledger) — the ship-order question — which is a dangling cross-ref left by the 2026-08-23 id minting; no open question covers the socket.) |
+| `ANTHROPIC_UNIX_SOCKET` | **Undocumented.** Routes the API fetch over a unix socket instead of TCP `[verified from source: 2.1.220, fn Ih, 2026-08-20]` — potentially a cheaper jail wiring than TCP. |
 
 > [!WARNING]
 > **Scope trap.** There are two settings-`env` application passes
@@ -596,13 +573,11 @@ inherits whatever the interactive TUI last picked — normally a hosted model �
 because the state file is consulted *before* any "first configured provider"
 guess. A projection that wants local-only inference must therefore write
 `model` explicitly, and should know that `~/.local/state/opencode/model.json`
-is a runtime file no yolo surface covers: it lives under `$XDG_STATE_HOME`, the
+is a runtime file the agent itself owns: it lives under `$XDG_STATE_HOME`, the
 TUI rewrites it on every interactive model switch, and while an explicit config
 `model` beats it, the moment that key is dropped the agent silently reverts to
-its last interactive choice. It is the same two-writers shape
-[OQ-LM6](#decision-ledger) worries about, on the *selection* axis rather than the
-definition one — except that here the second writer is the agent itself, so no
-mount-level gate can close it.
+its last interactive choice. The second writer is the agent, so no mount-level
+gate can close it.
 
 ### Codex CLI
 
@@ -836,218 +811,10 @@ protocol.**
 Defaults are **port 8080** and **`--host 127.0.0.1`** (loopback-only). Run
 llama-server on the **host**, where the GPU is; running it inside the container
 means solving GPU passthrough for no benefit. The decision point is the bind
-address, and it is the hinge for [Part 3's reachability
-question](#reachability-can-the-jail-reach-a-host-llama-server). `--host` also
+address: a loopback bind needs the launcher to forward the port into a
+container, while `--host 0.0.0.0` puts the model server on the LAN and wants
+`--api-key`. `--host` also
 accepts a path ending in `.sock` for a Unix socket.
-
----
-
-## Part 3 — The yolo side: what would carry this
-
-> [!WARNING]
-> **THIS WHOLE PART IS A DEAD LETTER — kept as the record of a rejected direction.**
-> Its premise (*"Prior art in this repo: none … Nothing configures a model or a
-> provider today"*) was true on 2026-08-20 and is not now: the provider/profile
-> system shipped, and the same `rg` matched 65 files on 2026-09-17.
-> [OQ-LM1](#decision-ledger) ruled local endpoints are a **MODE** inside that system, so the
-> "six mechanical edits" below and [Part 4](#part-4--what-it-would-actually-take)'s Option 2
-> describe a surface that was deliberately not built. **What shipped instead is
-> `packs/llamacpp`** — one `kind: "provider"`, one `kind: "profile"`, one
-> profile-gated `kind: "env"`, exactly the `zai`/`cerebras` shape. Read the mechanism
-> verdicts below as history, not as a plan.
-
-### Mechanism verdict table
-
-| Mechanism | What it does today | Fits? | What's missing |
-|---|---|---|---|
-| **Pack `config` surface (prism)** `internal/packdecl/kinds.go:77` | A pack owns one config file: path + codec + `defaults`/`managed` layers + optional Lua transform | **Yes — the vehicle for pi/opencode/codex** | Content is a static literal in `pack.json`; nothing lets user config reach it except via `derive.lua` |
-| **`derive.lua`** `internal/agentcfg/luahook/derive.go` | Pre-merge producer: reads live tables, returns the `computed` layer | **Yes — the projection engine, already built** | `ctx` carries only `mcp_servers` and `lsp_servers` — a **closed, core-owned set** (`derive.go:180`) |
-| **Pack `env` kind** `kinds.go:96-99` | Static literal env vars, emitted as `-e K=V` on the podman argv (`assemble.go:470-484`) | **Yes for Claude Code / Copilot** | **Jail-global, not per-agent**, despite being declared per-pack; literal strings only, undrivable from user config |
-| **Pack `launch` kind** `kinds.go:100-101` | Injects flags after a binary at launch; **keyed by `bin`, so genuinely per-agent** | Partly | Static literals in `pack.json` |
-| **`env_sources`** `internal/config/envsources.go:58-85` | Ordered dotenv files → `~/.config/yolo-user-env.sh`, sourced by `.bashrc` and hydrated into the entrypoint's env | **Works today** | Jail-wide, untyped, no per-agent scoping, no provenance |
-| **`host_files`** `internal/config/hostfiles.go:73-75` | Brings any host file in as a composed surface. **`yolo config-ref` names `~/.pi/agent/models.json` as its own example** | **Yes — the zero-code answer today** | Hand-written per agent in each native dialect; N agents = N maintained blobs |
-| **`network.forward_host_ports`** `internal/cli/run/hostports.go` | Host↔jail port hop over a bind-mounted Unix socket | **Yes — the transport answer** | Requires `socat` both sides; no scope gate (see [OQ-LM4](#decision-ledger)) |
-| **Loophole** `internal/loopholedecl` | Manifest-declared host daemon, per-jail token, pinned TLS, typed settings, approval | **Overkill for transport; right for policy** | Only transport is `loopback-tls`; **no agent's HTTP client speaks that**, so it needs a *baked* jail-side shim — a core change, not a pack |
-
-### The layer model, and the precedent that constrains this
-
-Composition order, ascending
-([`compose.go`](../../internal/agentcfg/compose.go)):
-
-```
-defaults < host < workspace < config-overlay:<pack> < overlay(capture) < computed
-        → managed (re-enforced last, always wins)
-```
-
-A post-merge Lua `transform` sat between `computed` and `managed` until 2026-09-11
-([`OQ-LT1`](../reference/pack-system.md#oq-lt1)); the derive Lua this
-section goes on to use is the other half of that package and is untouched.
-
-`computed` — what `derive.lua` returns — sits **above** the captured in-jail
-overlay on purpose: *regenerate, don't reconcile*.
-
-The only interpolation anywhere is `${workspace}`, and it substitutes **map keys
-only, never values**, with an explicit refusal to generalize
-(`internal/agentcfg/builtin.go:32,43-46`).
-
-> [!IMPORTANT]
-> **The governing precedent** is `internal/entrypoint/mcp.go:33-62`. `${VAR}`
-> interpolation *did* exist for MCP `env`/`headers`/`url` and was **removed by
-> ruling on 2026-08-03**, for two reasons that apply verbatim here: an
-> interpolated value has **no layer**, so nothing can attribute it; and it sourced
-> config content from ambient process env at render time. The comment names the
-> sanctioned alternative outright — *"the honest form is a **LAYER with
-> provenance resolved at launch** — not a string substitution during render."*
-> **Any `llm_endpoints` design that reaches for `${VAR}` is re-opening a closed
-> decision.**
-
-### The `ctx` diff, concretely
-
-`ctx` is built in `internal/entrypoint/packsurfaces.go`, function `liveTables`
-at `:239-244`:
-
-```go
-return map[string]map[string]any{
-    manifest.SourceMCPServers: prismMap(e.LoadMCPServers()),
-    manifest.SourceLSPServers: prismMap(LoadLSPServers(e)),
-}
-```
-
-An `llm_endpoints` source would clone the road `mcp_servers` already walks, in
-**six mechanical edits**:
-
-1. known top-level key — `internal/config/config.go:63`
-2. per-entry validation — `internal/config/validate.go`
-3. onto the container — `internal/cli/run/assemble.go:605` (`-e YOLO_…`)
-4. loaded in-jail — a `LoadLLMEndpoints` beside `internal/entrypoint/mcp.go:84`
-5. into the table map — `packsurfaces.go:241`
-6. one `manifest.Source*` const + one `knownDeriveSources` entry — `derive.go:180`
-
-…then one `yolo.derive(...)` block per agent pack. Nothing structural changes.
-`packs/pi` ships no `derive.lua` today, so pi would gain both its first derive
-**and** a new config surface at `~/.pi/agent/models.json`.
-
-### Reachability: can the jail reach a host llama server?
-
-| Case | Works? | Conditions |
-|---|---|---|
-| **A.** `llama-server --host 0.0.0.0` | **Yes, out of the box** | `http://host.containers.internal:8080/v1`; `host.containers.internal` → `169.254.1.2` (`hostloopback.go:144`), forwarded to the host's global address. **Cost: the model server is on your LAN** — pair with `--api-key` |
-| **B.** `llama-server --host 127.0.0.1` | **Not by default on a pasta host** | Needs the launcher's loopback forwarding to fire: rootless podman + non-macOS + unset/`bridge` network mode + a recognised `rootlessNetworkCmd` + that binary advertising the flag + `YOLO_NO_HOST_LOOPBACK` unset (`hostloopback.go:352-425,645-647,721-746`) |
-| **C.** `network.forward_host_ports: [8080]` | **Yes — the clean answer** | Host `socat UNIX-LISTEN → TCP:127.0.0.1:8080`, socket dir bind-mounted, in-jail `socat TCP-LISTEN:8080 → UNIX-CONNECT`. **The hop is a Unix socket, not the network stack**, so none of Case B's conditions apply |
-
-Case C is the recommendation: the agent dials plain `http://127.0.0.1:8080/v1`,
-and the jail briefing already announces forwarded ports
-(`internal/jailcontent/briefing.go:205-220`). It fails when `socat` is absent on
-either side, when `network.mode: host` is set (warned and ignored), or when the
-port is already bound in-jail (silently skipped). On macOS it degrades to
-`YOLO_FWD_HOST_GATEWAY=host.containers.internal`, i.e. back to Case A/B
-semantics.
-
-**The FATAL reachability witness does not apply here.**
-`ProbeServiceReachability` enumerates only `YOLO_SERVICE_<NAME>_ENDPOINT`
-variables — yolo's own loophole endpoint files
-(`internal/entrypoint/reachability.go:659-670`). A user's llama server is
-invisible to it. That cuts both ways: no free diagnostic, but also no risk of
-bricking a launch.
-
-> [!WARNING]
-> **Verification constraint.** A nested jail is **structurally blind** to Cases A
-> and B — podman-in-podman forces `--net=host`, so the launcher's loopback and the
-> jail's are the same loopback and the bug cannot reproduce (`AGENTS.md`
-> CARVE-OUT; `hostloopback.go:24-25`). Case C *is* testable in-jail. Anything
-> settled about A/B must be reported together with
-> `podman info --format '{{.Host.RootlessNetworkCmd}}'` from a **real** rootless
-> host.
-
-### Loophole verdict
-
-**Overkill for transport; the right vehicle only if you want policy at the
-boundary.** What it would buy: host-side credential holding (an API key never
-visible in the jail), per-jail bearer identity, typed `scope: "user"` settings a
-workspace config can't widen, and auditing — the loophole guide named
-`llm-audit` ("logs every inference request") as its canonical hypothetical until
-`d42165a8` split that page on 2026-09-28, and neither
-[`loopholes.md`](../../userguide/guides/loopholes.md) nor
-[`writing-loopholes.md`](../../userguide/guides/writing-loopholes.md) names it now.
-
-What it costs: `loopback-tls` is the **only** transport
-(`internal/loopholedecl/enums.go:25-28,122`), and a pack-shipped loophole is
-refused if it declares `publishes: "endpoint"`. **No agent's HTTP client speaks
-pinned-TLS-plus-bearer-from-an-endpoint-file.** You would need a jail-side shim
-re-exposing plain HTTP locally — and in-jail clients must be *baked*, meaning
-`flake.nix` `shippedBinaries` **and** `scripts/stage-source-bundle.sh`. That is a
-core change, not a pack.
-
-**Recommendation: ship the projection over `forward_host_ports` first.** If an
-`llm-gateway` loophole ever lands, the projection layer is unchanged — the derive
-just emits a different `base_url`.
-
-### Localhost provider URLs — implemented 2026-09-15
-
-`providers.<name>.base_url` and
-`providers.<name>.endpoints.<protocol>.base_url` now treat a loopback hostname
-(`localhost`, IPv4 loopback, or IPv6 loopback) as the **launcher host**. The
-URL is intentionally left unchanged when delivered to the agent. On a bridged
-container launch, yolo discovers its port and adds the existing
-`forward_host_ports` Unix-socket transport implicitly, so the agent's own
-`localhost:<port>` resolves to a local listener that forwards to the host's
-`127.0.0.1:<port>`.
-
-This is a better fit than rewriting the URL to `host.containers.internal`:
-that name is runtime-specific, and Apple Container's socket publication has a
-different viable path. The same spelling therefore works on Linux Podman,
-Apple Container, and host-network/native launches (where no forward is needed).
-Only user configuration is scanned. A pack-declared loopback endpoint remains a
-jail-local service fact — for example, the wire bridge — and must never start a
-host forward. An explicit `network.forward_host_ports` mapping for the same
-jail port wins, preserving existing deliberate remaps.
-
----
-
-## Part 4 — What it would actually take
-
-Three coherent options, in ascending cost.
-
-### Option 1 — Document the recipe. Zero code, available today.
-
-`network.forward_host_ports: [8080]` for transport, plus `host_files` entries
-carrying each agent's native config, plus `env_sources` for the two env-var
-agents. Everything already exists; `yolo config-ref` even uses
-`~/.pi/agent/models.json` as its `host_files` example.
-
-**Cost:** N agents = N hand-maintained blobs in N dialects, and the endpoint URL
-is repeated in every one. **Verdict: do this first regardless** — it is a
-doc-and-example commit, and it de-risks Option 2 by proving each agent's config
-actually works before any Go is written.
-
-### Option 2 — The `llm_endpoints` source + per-pack derives.
-
-One canonical declaration in `yolo-jail.jsonc`; each pack's `derive.lua` projects
-it into that agent's dialect. Six mechanical Go edits plus five Lua blocks.
-
-**This is the design the prism was built for** — `packs/opencode/derive.lua` is
-already a 20-line working example of exactly this shape for MCP servers.
-**Verdict: the right target**, gated on the open questions below.
-
-### Option 3 — An `llm-gateway` loophole.
-
-Host-held credentials, per-jail identity, request auditing. **Verdict: defer.**
-It requires a new baked in-jail client binary and does not change the projection
-layer, so it composes cleanly on top of Option 2 later.
-
-### A wrinkle worth naming up front
-
-The env-var agents (Claude Code, Copilot) are the *cheapest* to deliver but sit
-on the *weakest* mechanism: pack `env` is **jail-global**, not per-agent, despite
-being declared per-pack (`-e` hits every process). In practice the variable names
-are already agent-namespaced — `ANTHROPIC_*`, `COPILOT_PROVIDER_*` — so
-collisions are unlikely.
-
-> [!CAUTION]
-> The one real hazard: **`ANTHROPIC_BASE_URL` also captures every nested Claude
-> Code and Agent SDK process in the jail**, including the agent doing the work.
-> Setting it jail-wide silently repoints the outer agent at the local model.
-> Per-agent scoping is not cosmetic here.
 
 ---
 
@@ -1127,39 +894,6 @@ Carry these forward; do not build on them without re-checking.
   `dist/core/model-config.js:147`, merged in
   `dist/core/provider-composer.js:42-44`) — see
   [pi, 2026-09-02](#pi-2026-09-02-re-verification).
-
----
-
-## Decision Ledger
-
-All six questions were ruled by the maintainer and recorded on 2026-09-14. The ids carry the `LM`
-prefix, minted 2026-08-23 so they would not collide with another doc's bare numbers.
-
-| ID | Ruling / Decision | Date | Settled in | Built |
-| :--- | :--- | :--- | :--- | :--- |
-| OQ-LM1 | **A mode, not a parallel key.** Local endpoints reuse the provider and profile framing rather than an `llm_endpoints` surface beside it. A mode is a bundle (credential, env and model ids together), and splitting them is how a switch half-lands silently; a bare `{base_url, model}` key would re-create that for local models. Every other question here inherits this | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | ✅ `packs/llamacpp` (2026-09-17): one provider, one profile, one profile-gated env, pinned by `internal/packdecl/llamacpppack_test.go` |
-| OQ-LM2 | **`requires_env`-style gating, matching the MCP precedent:** an endpoint drops when its key is absent rather than half-configuring. And document that a local endpoint normally needs no key at all: every agent here accepts a dummy against a local llama-server, so the key path exists for the hosted case, the only one where a real secret is at stake | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | Partly: `packs/llamacpp` names no key variable (`TestLlamacppNamesNoCredentialVariable`); a hosted endpoint's key is a user `api_key_env_name`, which the credential pre-flight requires rather than dropping the endpoint |
-| OQ-LM3 | **User-scope only.** A workspace `yolo-jail.jsonc` is a file the agent inside the jail can rewrite, and repointing an agent's inference at an attacker-chosen URL from a file that agent controls is the one answer that cannot be revised later without a breaking config change. Follows `scope: "user"` on journal's `full` setting | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | ✅ `config.validateProviderCredentialScope` refuses a workspace provider address, since widened to every credential-routing provider field ([NC-D63](../plans/notch-convergence.md#NC-D63)) |
-| OQ-LM4 | **No scope gate on `forward_host_ports`, and it is deliberately not treated as a hole.** *"I think we don't need it, we have the config diff confirmation already and this isn't a high risk."* The config-change approval ([`config-safety.md`](../reference/config-safety.md)) shows the workspace config's diff and asks y/N, so an agent adding an entry cannot reach a launch without a human seeing the line. ⚠ This is why it differs from [OQ-LM3](#decision-ledger): repointing inference is total and silent, while forwarding a loopback port is visible in the diff and bounded by what listens on that port | 2026-09-14 | [Mechanism verdict table](#mechanism-verdict-table) | — nothing to build |
-| OQ-LM5 | **Both at once:** the recipe (Option 1) and the build (Option 2) are not sequenced. ⚠ The smoke test still applies: nothing in this doc has been exercised against a live server, so the recipe half carries one manual run per agent whatever order the build half lands in | 2026-09-14 | [Part 4](#part-4--what-it-would-actually-take) | Partly: the build half is `packs/llamacpp`; no per-agent run against a live server is recorded here |
-| OQ-LM6 | **Two writers for one path are a fatal error, not a merge and not a precedence rule.** *"I don't want weird recursive loops or anything in our resolution. I don't see a use case for this."* A pack surface and a `host_files` entry at one destination is a config that cannot be satisfied, so it is refused where the collision is detectable instead of choosing a winner. Config claims are keyed by `agent/name`, not by path, which is why the collision is representable at all; on the maintainer's own machine `~/.pi/agent/models.json` is already pack-managed and mounted `:ro`, so this is what stops that config being corrupted | 2026-09-14 | [the notes below](#the-two-writers-refusal-as-built) | ✅ 2026-09-22: `config.SurfaceCollisions`; the launch refuses with one line per colliding entry naming both remedies (drop the entry, or deselect the pack) |
-
-### The two-writers refusal, as built
-
-**Why it is not only in `checkHostFiles`, which is where a reader looks first.** Config
-validation reserves the surfaces of the selected packs it can resolve (`selectedSurfacePaths`),
-but a configured pack whose tree is not in the store yet resolves there as nothing, and the launch
-fetches it afterwards. So the refusal also lives where the packs are already loaded, which is the
-first point every collision is detectable.
-
-**The asymmetry with every other `host_files` failure is deliberate.** A missing SOURCE is a
-warning and degrades to the defaults layer — the feature working. Two writers for one
-destination is a config that cannot be satisfied, so it is fatal.
-
-⚠ **What is NOT pinned:** the predicate has unit tests and so does the surface collector, but the
-wiring between them sits on a path that needs a real container to reach, so deleting the
-`SurfaceCollisions` call from the launch would leave the unit gate green. That is integration
-territory and is recorded rather than papered over.
 
 ---
 

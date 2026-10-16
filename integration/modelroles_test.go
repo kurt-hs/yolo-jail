@@ -1,7 +1,7 @@
 package integration
 
 // modelroles_test.go is the integration tier of the role environment
-// (docs/research/extension-model-defaults.md OQ-XM4, built 2026-10-01): each agent's own env
+// (docs/reference/providers.md#oq-xm4, built 2026-10-01): each agent's own env
 // file, sourced in a real jail as its launcher sources it, carries YOLO_MODEL_<ROLE> for the
 // provider its profile selects, and an agent started from another one loses a tier its own
 // provider does not name. Through config resolution, the credential gate, the per-agent file's

@@ -2993,10 +2993,10 @@ The contract:
   alias for the selected provider to `"<provider>/<id>", "<id>"`, or `nil`, and never reads
   another provider's aliases. Asked for a [tier alias](providers.md#tier-aliases) the provider
   lacks, it warns at boot and does not refuse. A pack that renders yolo's tiers into one
-  extension's own config file (an *adapter pack*, a term
-  [`extension-model-defaults.md`](../research/extension-model-defaults.md#defined-terms) coins)
+  extension's own config file (an [*adapter pack*](providers.md#extensions-that-launch-agents), a term
+  the [extension survey](../research/extension-model-defaults.md) coined)
   uses it to map them onto that extension's names
-  ([OQ-XM1](../research/extension-model-defaults.md#7-decision-ledger)).
+  ([OQ-XM1](providers.md#oq-xm1)).
 - `ctx.in_full(t)` declares that `t` — the value of a TOP-LEVEL key — is a table the derive
   regenerates in full: its entries track a live table, so an entry on disk this run did not
   produce is yolo's own stale output. A first migration's adoption takes such a table whole,

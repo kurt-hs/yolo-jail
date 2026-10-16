@@ -78,7 +78,7 @@ cite them:
   nothing."* An agent that cannot hold a set is refused by name, or given a mechanism that holds
   it ([OQ-AP2](#11-decision-ledger)). It is never handed the first entry in silence.
 - <a id="AP-P3"></a>**AP-P3. The set is the boundary.** Credentials, the picker, the start model
-  and child agents all stay inside it. [OQ-XM3](../research/extension-model-defaults.md#7-decision-ledger)'s
+  and child agents all stay inside it. [OQ-XM3](../reference/providers.md#oq-xm3)'s
   *"it shouldn't be able to cross providers"* becomes: nothing crosses out of the set.
 
 ### 1.1 Terms
@@ -110,7 +110,7 @@ Read at `f26397cc`. One CLI name maps to one profile everywhere along the chain:
 | The contract into the jail | `YOLO_USE_PROFILES`, CLI name → profile name | [`providers.md`](../reference/providers.md#what-crosses-to-the-jail) |
 | The derive's input | `ctx.selected_provider`, one string, and `ctx.profile`, one table | `buildDeriveCtxTable` in [`derive.go`](../../internal/agentcfg/luahook/derive.go) |
 | The credential gate | a provider's claimed key reaches *"each agent whose selected profile resolves to a claiming provider"* | `packload.ScopeCredentials`, [the gate](../reference/providers.md#the-credential-gate) |
-| The model helper | `yolo.model_for(alias)` answers for the selected provider only | [XM-D1](../research/extension-model-defaults.md#XM-D1) |
+| The model helper | `yolo.model_for(alias)` answers for the selected provider only | [XM-D1](../reference/providers.md#XM-D1) |
 
 **The silent drop.** `parseProfileValue` splits a value containing `=` on commas and keeps only
 the elements that contain `=`. So `-p pi=zai,openrouter` selects zai for pi and discards
@@ -281,7 +281,7 @@ error, a narrowing, or a bridge feature.
   chooses within it, as a one-entry set on those providers does today.
 - **Which models count as "the set's".** A provider with a declared list contributes that list.
   A provider with none contributes every model of that provider, the reading
-  [XM-D4](../research/extension-model-defaults.md#XM-D4) already gives its `<provider>/*`.
+  [XM-D4](../reference/providers.md#XM-D4) already gives its `<provider>/*`.
 - **What ML2 does not change here:** how yolo learns what model an agent "would start on" is
   ML2's to build, in [`model-lists-and-pickers.md`](model-lists-and-pickers.md). This doc only
   widens the set that model is checked against.
@@ -306,7 +306,7 @@ error, a narrowing, or a bridge feature.
 
 ### 4.6 Child agents
 
-[OQ-XM3](../research/extension-model-defaults.md#7-decision-ledger)'s rule, read for a set:
+[OQ-XM3](../reference/providers.md#oq-xm3)'s rule, read for a set:
 
 - **`subagents.defaultModel`** is the model the chat selection starts on, as today, so a child
   that names no model starts where its parent starts.
@@ -483,7 +483,7 @@ made in this doc, and every one yields to a ruling on the questions above.
 | <a id="AP-D2"></a>AP-D2 | *Implementation decision.* An agent is set-capable only when its pack declares it; the declaration fails closed where a derive older than sets would fail open | 2026-09-29 | [§4.3](#43-which-agents-take-a-set) | ✅ 2026-09-29 (`provider_sets` on `program`; `packs/pi` declares it, and `packs/opencode` since 2026-09-30, [AP-D15](#AP-D15)) |
 | <a id="AP-D3"></a>AP-D3 | *Implementation decision.* A set is refused when empty, when it names a profile twice, when two entries resolve to one provider, or when any entry is undeclared or lacks its key; yolo never runs the valid remainder | 2026-09-29 | [§4.2](#42-the-sets-rules), [§4.5](#45-credentials) | ✅ 2026-09-29 (`packload.ProfileSetProblems`; each entry declared, a bare list's ignored entries included; `packload.ProviderCredentialGapsIn`) |
 | <a id="AP-D4"></a>AP-D4 | *Implementation decision.* A typed `-p` pair replaces a CLI's set in the config key whole for the launch, never appending | 2026-09-29 | [§4.2](#42-the-sets-rules) | ✅ 2026-09-29 (`config.FoldProfiles`, at `effectiveUseProfiles` and `effectiveHostProfiles`) |
-| <a id="AP-D5"></a>AP-D5 | *Implementation decision.* The picker, the credential gate and pi-subagents' scope all read the union of the set, so a child agent may run on any provider in the set and on none outside it ([OQ-XM3](../research/extension-model-defaults.md#7-decision-ledger) read for a set) | 2026-09-29 | [§4.4](#44-models-the-union-and-the-start-model), [§4.6](#46-child-agents) | ✅ 2026-09-29 (`ScopeInput.Sets`; pi's `piSetSettings`); opencode's picker half 2026-09-30 (`opencodeSetProviders`, [AP-D15](#AP-D15)) |
+| <a id="AP-D5"></a>AP-D5 | *Implementation decision.* The picker, the credential gate and pi-subagents' scope all read the union of the set, so a child agent may run on any provider in the set and on none outside it ([OQ-XM3](../reference/providers.md#oq-xm3) read for a set) | 2026-09-29 | [§4.4](#44-models-the-union-and-the-start-model), [§4.6](#46-child-agents) | ✅ 2026-09-29 (`ScopeInput.Sets`; pi's `piSetSettings`); opencode's picker half 2026-09-30 (`opencodeSetProviders`, [AP-D15](#AP-D15)) |
 | <a id="AP-D6"></a>AP-D6 | *Implementation decision.* In a pi set of more than one, `enabledModels` carries an `openai-codex` entry's declared ids; [ML-D2](model-lists-and-pickers.md#ML-D2)'s omission holds when codex is the whole set | 2026-09-29 | [§4.4](#44-models-the-union-and-the-start-model) | ✅ 2026-09-29 (base ids only, [§13](#13-what-was-built-2026-09-29)) |
 | <a id="AP-D7"></a>AP-D7 | *Implementation decision.* At most one via or bridged entry per set, so the per-agent via route keeps one upstream and a host launch still starts zero or one service | 2026-09-29 | [§4.8](#48-via-and-the-wire-bridge) | ✅ 2026-09-29, narrowed by [AP-D9](#AP-D9) |
 | <a id="AP-D8"></a>AP-D8 | *Implementation decision.* The set crosses into a jail behind a new contract tag; an attach to an older jail with a real set takes the existing restart-or-refuse disposition, and a set of one needs no tag | 2026-09-29 | [§4.10](#410-state-that-already-exists) | ✅ 2026-09-29 (the `profile-sets` contract tag) |
@@ -505,7 +505,7 @@ made in this doc, and every one yields to a ruling on the questions above.
 | :--- | :--- |
 | [`model-lists-and-pickers.md`](model-lists-and-pickers.md) | [OQ-ML1](model-lists-and-pickers.md#16-decision-ledger) split this doc off and layers the per-provider default; [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger) is the start-model rule [§4.4](#44-models-the-union-and-the-start-model) reads over the union |
 | [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) | the gate [§4.5](#45-credentials) widens from one provider to the set, and [OQ-CN4](../reference/providers.md#oq-cn4)'s menu half |
-| [`extension-model-defaults.md`](../research/extension-model-defaults.md#7-decision-ledger) | [OQ-XM3](../research/extension-model-defaults.md#7-decision-ledger), the child-agent rule [§4.6](#46-child-agents) reads for a set, and [XM-D1](../research/extension-model-defaults.md#XM-D1)'s helper |
+| [`providers.md`'s extension-model rulings](../reference/providers.md#the-extension-model-rulings) | [OQ-XM3](../reference/providers.md#oq-xm3), the child-agent rule [§4.6](#46-child-agents) reads for a set, and [XM-D1](../reference/providers.md#XM-D1)'s helper |
 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1), what `-p` names, and [OQ-PP3](providers-and-profiles-redesign.md#8-decision-ledger), which [OQ-AP3](#11-decision-ledger) meets |
 | [`wire-bridge-gateway.md`](wire-bridge-gateway.md#3-part-2--routing-by-model-id-for-claudes-everything-profile-ruled) | the model-id routing [OQ-AP2](#11-decision-ledger)'s option C generalizes |
 | [`host-notch-services.md`](host-notch-services.md) | the launch-owned service a bridged entry starts at the host, and its "zero or one" |

@@ -7,7 +7,12 @@ shape [`zai`](../zai/README.md) and [`cerebras`](../cerebras/README.md) ship. Th
 no `llm_endpoints` key, and there is deliberately never going to be one: a bare
 `{base_url, model}` pair splits a switch into halves that can land separately, which is
 the measured failure this project already paid for once
-([`bedrock-plumbing.md`'s P1](../../docs/design/bedrock-plumbing.md#1-verdict-and-principles)).
+([`bedrock-plumbing.md`'s P1](../../docs/design/bedrock-plumbing.md#1-verdict-and-principles);
+ruled as [OQ-LM1](../../docs/reference/providers.md#oq-lm1)). How the provider system treats a
+local server in general is
+[`providers.md`'s local-server section](../../docs/reference/providers.md#a-local-inference-server-is-a-provider);
+the per-agent and server findings behind every spelling below are the survey
+[`local-model-endpoints.md`](../../docs/research/local-model-endpoints.md).
 
 The pack installs **no CLI** and **needs no credential**. It points at
 [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server` on the machine that
@@ -119,7 +124,7 @@ variable, rather than starting an agent that will authenticate as nobody.
 
 `providers.llamacpp` merges over this pack per field, so a different port, a second
 model alias or a real context window is one key in your config. **An address may only
-be written at user scope.** A `base_url` or an `endpoints.<protocol>.base_url` in a
+be written at user scope** ([OQ-LM3](../../docs/reference/providers.md#oq-lm3)). A `base_url` or an `endpoints.<protocol>.base_url` in a
 workspace `yolo-jail.jsonc` is refused by `yolo check` and by every launch: that file
 travels with the repo and is writable by the agent running inside the jail, and an
 agent that can rewrite where its own inference goes can route every prompt, every file
@@ -216,6 +221,7 @@ $ yolo pack footprint llamacpp       # the provider, the selection over it, no g
 is verified from the shipped implementation (each agent's own binary or npm bundle) and
 from llama.cpp's source, never from observed traffic — this repo's rules forbid an
 automated test that starts an agent or makes an API call. Each row of the table above is
-therefore a claim awaiting one manual turn against a real server, and the known soft
+therefore a claim awaiting one manual turn against a real server
+([OQ-LM5](../../docs/reference/providers.md#oq-lm5)), and the known soft
 spot to check first is copilot, which is handed the **anthropic** endpoint (its derive
 prefers one when the provider declares it).

@@ -1,7 +1,7 @@
 package packdecl
 
 // llamacpppack_test.go pins the SHIPPED `llamacpp` manifest — local inference as a MODE
-// (docs/research/local-model-endpoints.md, OQ-LM1: a provider and the profile over it,
+// (docs/reference/providers.md#oq-lm1, OQ-LM1: a provider and the profile over it,
 // never a parallel `llm_endpoints` key).
 //
 // It reads packs/llamacpp/pack.json through the production decoder, the way
