@@ -10,6 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
+
 ### Added
 
 **A launch says when the jail has no internet.** If nothing outside answers, the launch warns,
