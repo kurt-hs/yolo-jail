@@ -150,9 +150,10 @@ func (s *daemonSupervisor) finish(how string) {
 // either sees the mark and spawns nothing, or spawned under the lock before it, in which case
 // signal gets that process.
 //
-// A PROCESS ALREADY REAPED IS NOT SIGNALED: during a backoff wait, and after a give-up, the
-// current process has exited and its Wait has returned, so its pid may belong to another process
-// by now. exited closes only after that Wait, and until then the pid is still this child's.
+// The current process is handed over even when it is already reaped (a backoff wait, a give-up,
+// a daemonizing wrapper's exit): the kill path signals its GROUP, which may still hold a child
+// the leader left. stopService's detach path, which signals the bare pid, is the one that skips a
+// reaped process.
 func (s *daemonSupervisor) stop(signal func(cmd *exec.Cmd, exited <-chan struct{})) {
 	s.mu.Lock()
 	if !s.stopping {
@@ -161,11 +162,6 @@ func (s *daemonSupervisor) stop(signal func(cmd *exec.Cmd, exited <-chan struct{
 	}
 	cmd, exited := s.cmd, s.exited
 	s.mu.Unlock()
-	select {
-	case <-exited:
-		return
-	default:
-	}
 	signal(cmd, exited)
 }
 
@@ -215,11 +211,7 @@ func (s *daemonSupervisor) run() {
 			s.finish(stoppedByTeardown)
 			return
 		}
-		if s.stoppedByVerb != nil && cmd.Process != nil && s.stoppedByVerb(cmd.Process.Pid) {
-			s.say(fmt.Sprintf("host service '%s' was stopped by `yolo host-daemon stop`; not "+
-				"restarted. What uses it fails until its jail is launched again, which starts a "+
-				"fresh copy.%s", s.name, s.logClause()))
-			s.finish(stoppedByVerbAccount)
+		if cmd.Process != nil && s.endIfStoppedByVerb(cmd.Process.Pid) {
 			return
 		}
 		if st := cmd.ProcessState; st != nil && st.Success() && s.wrapperExit(cmd) {
@@ -254,9 +246,14 @@ func (s *daemonSupervisor) run() {
 			}
 			restarts++
 			backoff = min(backoff*2, s.policy.ceiling)
-			failure, stopped := s.restart()
+			failure, pid, stopped := s.restart()
 			if stopped {
 				s.finish(stoppedByTeardown)
+				return
+			}
+			// A restart the verb stopped inside its readiness wait fails that wait; the stop is
+			// still a stop, not a failed restart.
+			if failure != "" && pid != 0 && s.endIfStoppedByVerb(pid) {
 				return
 			}
 			if failure == "" {
@@ -272,30 +269,45 @@ func (s *daemonSupervisor) run() {
 	}
 }
 
-// restart spawns the daemon again and waits for it, as the first spawn did. stopped is true when
-// a teardown began before the spawn or during its wait; the teardown then stops whatever is current.
-func (s *daemonSupervisor) restart() (failure string, stopped bool) {
+// endIfStoppedByVerb ends supervision, saying so, when the death of pid was a stop by `yolo
+// host-daemon stop` (its marker names pid), and reports whether it did.
+func (s *daemonSupervisor) endIfStoppedByVerb(pid int) bool {
+	if s.stoppedByVerb == nil || !s.stoppedByVerb(pid) {
+		return false
+	}
+	s.say(fmt.Sprintf("host service '%s' was stopped by `yolo host-daemon stop`; not "+
+		"restarted. What uses it fails until its jail is launched again, which starts a "+
+		"fresh copy.%s", s.name, s.logClause()))
+	s.finish(stoppedByVerbAccount)
+	return true
+}
+
+// restart spawns the daemon again and waits for it, as the first spawn did. pid is the process it
+// spawned, 0 when none was. stopped is true when a teardown began before the spawn or during its
+// wait; the teardown then stops whatever is current.
+func (s *daemonSupervisor) restart() (failure string, pid int, stopped bool) {
 	s.mu.Lock()
 	if s.stopping {
 		s.mu.Unlock()
-		return "", true
+		return "", 0, true
 	}
 	cmd, exited, err := s.start()
 	if err != nil {
 		s.mu.Unlock()
-		return "could not start (" + err.Error() + ")", false
+		return "could not start (" + err.Error() + ")", 0, false
 	}
 	s.cmd, s.exited, s.upSince = cmd, exited, time.Now()
 	s.mu.Unlock()
+	pid = cmd.Process.Pid
 	failure = s.ready(cmd, exited)
 	if s.isStopping() {
-		return "", true
+		return "", pid, true
 	}
 	if failure != "" {
 		s.abandon(cmd)
 		<-exited
 	}
-	return failure, false
+	return failure, pid, false
 }
 
 // launchLogOnly is the launch.log half of a launch's writer, for a line that belongs in the record

@@ -161,10 +161,21 @@ func detachService(cmd *exec.Cmd) {
 
 // stopService is the one choice between the two teardowns a spawned host service gets: detach
 // for a daemon that declares it, the process-group SIGTERM, grace and SIGKILL for every other.
+//
+// DETACH SKIPS A PROCESS ALREADY REAPED: it signals the bare pid, and once the child's Wait has
+// returned (exited closed: a supervisor's backoff wait, a give-up) that pid may be another
+// process's. Until then the pid is still this child's, a zombie at worst. The kill path signals
+// regardless: its target is the group, which may still hold a child the leader left (a
+// daemonizing wrapper's service, a crashed leader's fork), and a group with no members left
+// answers ESRCH.
 func (o *Options) stopService(out printer, name string, hd *loopholes.HostDaemon, cmd *exec.Cmd,
 	exited <-chan struct{}) {
 	if hd != nil && hd.Detach {
-		detachService(cmd)
+		select {
+		case <-exited:
+		default:
+			detachService(cmd)
+		}
 		return
 	}
 	killServiceGroup(out, name, o.serviceTermGrace(), cmd, exited)
