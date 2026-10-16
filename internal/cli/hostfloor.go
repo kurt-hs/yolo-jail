@@ -1348,6 +1348,10 @@ func hostPrelaunchRefreshMode(launch *hostComposition, prog hostfloor.Program, p
 		res = floor.PrelaunchRefresh(prog, target, launch.refreshEnviron(childPath))
 	}
 	if !fresh {
+		// A FAILED REFRESH STOPS THE LAUNCH (PD-NF1): the block names the repair and the hatch.
+		if rc := refreshRefusalExit(res, prog.Bin(), errw); rc != 0 {
+			return rc
+		}
 		if res.Outcome != hostfloor.RefreshStopped {
 			return 0
 		}
