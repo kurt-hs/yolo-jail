@@ -210,7 +210,7 @@ func discloseLoophole() *loopholes.Loophole {
 }
 
 // TestWriteLoopholeSettingsDisclosesATrueWideningKey pins OQ-SSO10
-// (docs/design/sso-backed-bedrock.md): a bool setting's `disclose` sentence prints at
+// (docs/reference/agent-credentials.md): a bool setting's `disclose` sentence prints at
 // the launch whenever its RESOLVED value is true, as `loophole <name>: <sentence>`, on
 // the launch's stderr like every other disclosure (so a redirected stdout never swallows
 // it), and nothing prints when it is false, absent, or declares no sentence. Deleting the

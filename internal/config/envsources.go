@@ -44,7 +44,7 @@ func ParseDotenv(text string) *jsonx.OrderedMap {
 // AnchorEnvSources rewrites every RELATIVE env_sources file entry in cfg to an absolute
 // path under dir — which the loader passes as the directory of the file that DECLARED
 // the entry. It is the load-time half of the ruling that a relative path means "beside
-// my declaring file" (envsource-relative-paths.md, OQ-E1/E2, 2026-08-30), the same
+// my declaring file" (agent-credentials.md, OQ-E1/E2, 2026-08-30), the same
 // convention `include_if_found` already uses.
 //
 // Doing this AT LOAD TIME is what makes per-file anchoring possible at all: by the time

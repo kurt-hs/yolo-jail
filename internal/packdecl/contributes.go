@@ -662,7 +662,7 @@ type Contribution struct {
 	Vars map[string]string `json:"vars,omitempty"`
 	// OverriddenBy names what, delivered into the same jail, makes a consumer IGNORE these
 	// vars: a launch that would carry both is refused, because the agent would silently use
-	// the other thing (docs/design/sso-backed-bedrock.md OQ-SSO8). `env` only. The shape,
+	// the other thing (docs/reference/agent-credentials.md OQ-SSO8). `env` only. The shape,
 	// its rules and why the pack declares it rather than core are EnvOverride's doc
 	// (envoverride.go).
 	OverriddenBy []EnvOverride `json:"overridden_by,omitempty"`

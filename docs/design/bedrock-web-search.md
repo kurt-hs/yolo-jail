@@ -73,7 +73,7 @@ pack-contributed entries, the closed preset list; the settled parts fold in ther
 [capability-driven MCP delivery](../reference/mcp-configuration.md#capability-driven-mcp-delivery) (the delivery rule this
 reuses), [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) (how "this is
 Bedrock" gets spelled), [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) (why nothing
-selected for one agent reaches another), [`sso-backed-bedrock.md`](sso-backed-bedrock.md) (where
+selected for one agent reaches another), [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth) (where
 the AWS credential comes from, and owner of `packs/aws-auth`'s README).
 
 **Words used here.**
@@ -155,7 +155,7 @@ SOURCED 2026-09-25 from AWS's AgentCore guide and launch post; nothing was calle
 - **Acceptable use.** A user of the results *"must retain and display the source citations and
   links"*.
 
-**IAM per use**, for [`sso-backed-bedrock.md`](sso-backed-bedrock.md) to copy into the
+**IAM per use**, for [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth) to copy into the
 `aws-auth` README ([D6](#d6-live-in-docs-the-aws-auth-example-policy-denies-search)):
 
 | Use | Actions the jail's credential needs |
@@ -342,7 +342,7 @@ runtime chat and every native client. It denies:
   [OQ-BR15](model-lists-and-pickers.md#OQ-BR15) might add;
 - every `bedrock-mantle` action, which matters only to the mantle recipe.
 
-The README is [`sso-backed-bedrock.md`](sso-backed-bedrock.md)'s to change; this doc owes the
+The README is [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth)'s to change; this doc owes the
 per-use action list ([§2](#2-what-agentcore-web-search-is)) and build step 9.4's patch. A session
 policy narrows only as far as the role allows, so the role behind `aws-auth` must grant
 `InvokeGateway` too. SOURCED from AWS's endpoints and AgentCore gateway pages, 2026-09-24 and

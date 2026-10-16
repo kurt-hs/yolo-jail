@@ -1,6 +1,6 @@
 package packload
 
-// inheritedpointer_test.go pins ServedDaemons.WithInherited (docs/design/sso-backed-bedrock.md
+// inheritedpointer_test.go pins ServedDaemons.WithInherited (docs/reference/agent-credentials.md
 // SSO-D2): a daemon whose pointer a nested launch takes from the launching jail is served by
 // inheritance, its pointer delivered with the launching jail's values in place of the declared
 // ones (no listen address, no caller token of this launch's), and a pointer variable the
