@@ -116,7 +116,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     Bedrock design](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth), [A2's twin](../reference/macos-user-nix-and-features.md#ordering-and-what-aborts), [the
     render-mark twin](../reference/config-target-resolution.md#where-this-does-not-reach),
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
-    [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
+    [DP-B6](../design/declaration-parity.md), [the footer](../reference/agent-footer.md#what-has-and-has-not-been-observed), [the
     build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
     [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../reference/image-staging-vs-baking.md#the-first-load), [the login
     seed](../design/base-home-legacy-state.md) and [the storage classes](../design/durable-scratch-space.md).
@@ -161,8 +161,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 26. [Review H4's staged capture store on macos-user](../reference/install-capture.md#build-order), [rule whether integration
     sharding unparks](integration-parallelism.md) with [the test suite's other levers](test-suite-speed.md), and [name
     the real forked program](../design/forked-programs-as-packs.md), the last input its step 7 needs.
-    Beside suite speed, [make completion change-aware and read-only](../design/change-aware-completion.md),
-    with [its measured evidence](../design/change-aware-completion.md#measured-on-2026-10-09)
+    Beside suite speed, [make completion change-aware and read-only](../reference/change-aware-completion.md),
+    with [its measured evidence](../reference/change-aware-completion.md#measured-on-2026-10-09)
     — avoid irrelevant repeated gates without changing source landing or CI coverage.
     Keep its [unconnected component experiment](../../tools/completion-experiment/README.md) separate
     from production completion; input closure, baseline publication and command dispatch remain open.
@@ -202,7 +202,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [make OrbStack a working Podman host](../research/orbstack-as-a-podman-host.md), with [its native verification
     plan](../research/orbstack-as-a-podman-host-plan.md), as its measured shared-folder speed and memory return offer
     another Mac option without restoring Docker first.
-32. Builds no ruling holds: [the readiness act on macos-user](../design/jail-notch-readiness.md#JR-D2) — **built 2026-10-06**: host-side admission starts the existing confined stage for an absent/unknown selected program and its generated bootstrap runs the shared readiness act; fixture tests are in `integration/macosuserprogramreadiness_test.go`, with native macOS execution pending; [a provider set's overlay modifier](../design/active-provider-sets.md#13-what-was-built-2026-09-29), which reads only the
+32. Builds no ruling holds: [the readiness act on macos-user](../reference/program-readiness.md#JR-D2) — **built 2026-10-06**: host-side admission starts the existing confined stage for an absent/unknown selected program and its generated bootstrap runs the shared readiness act; fixture tests are in `integration/macosuserprogramreadiness_test.go`, with native macOS execution pending; [a provider set's overlay modifier](../design/active-provider-sets.md#13-what-was-built-2026-09-29), which reads only the
     primary; [the empty-list line in `yolo check`](../design/model-lists-and-pickers.md#72-composition-rules);
     [macos-user's item 2 twin](runbooks/macos-user-manual-checks.md#2-seatbelt-is-actually-applied);
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
@@ -263,7 +263,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 42. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../design/podman-reboot-readiness.md#testing-and-the-real-host-check),
     [a low-space collection with a jail up](../reference/image-retention.md#owed-host-steps), [the keeper's scope move and logout](../design/jail-lifetime-last-session-wins.md#8-what-done-looks-like),
     and HD-R1's first launch once item 2 lands.
-43. One live agent session per check, which no test may start: [the footer](../design/agent-footer.md#21-as-built),
+43. One live agent session per check, which no test may start: [the footer](../reference/agent-footer.md#what-has-and-has-not-been-observed),
     [Claude's LSP plugin](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin), [the via route](../design/wire-bridge-gateway.md#41-how-it-is-built),
     [menus under a model list](../design/model-lists-and-pickers.md#13-build-order-and-what-done-looks-like), [a switch in
     a provider set](../design/active-provider-sets.md#9-what-done-looks-like), [Copilot's config migration](../design/agent-directory-map.md#74-copilot),

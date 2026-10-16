@@ -1,14 +1,14 @@
 # Completion experiment (not production wiring)
 
 The production `just done` is [`scripts/completion-check.py`](../../scripts/completion-check.py),
-built from the [design's What shipped section](../../docs/design/change-aware-completion.md#what-shipped).
+described in [the completion reference](../../docs/reference/change-aware-completion.md#how-a-run-proceeds).
 It uses none of this package, which is kept as the earlier experiment.
 
 This package keeps the experimental completion sources and their focused tests
 in the repository. The Go helper reports observed build inputs; the Python
 components capture those inputs, check bounded file reads, and control synthetic
-helper executions. The [completion design](../../docs/design/change-aware-completion.md)
-describes the intended feature and the work still needed.
+helper executions. The [completion reference](../../docs/reference/change-aware-completion.md)
+describes the shipped feature and its known limits.
 
 This is not a production completion command, reusable baseline, quality result,
 or proof of all inputs a real toolchain reads. The production

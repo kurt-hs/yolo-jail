@@ -14,7 +14,7 @@ import (
 // stream from being read into memory whole.
 const attemptOutputCap = 4 << 20
 
-// RunPodmanAttempt is the real AttemptRunner (PR-D3 of podman-reboot-readiness.md). Three
+// RunPodmanAttempt is the real AttemptRunner (PR-D3 of podman-readiness.md). Three
 // properties, each for a measured reason:
 //
 //   - OUTPUT GOES TO UNLINKED TEMP FILES, NEVER PIPES. With pipes, os/exec's Wait does not

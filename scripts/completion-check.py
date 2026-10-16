@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`just done`: check what changed since the last verified commit, and nothing else.
 
-Design: docs/design/change-aware-completion.md. In short:
+Design: docs/reference/change-aware-completion.md. In short:
 
 * A BASELINE is the nearest ancestor of HEAD that an earlier `just done` verified green on a
   clean tree, with the same Go toolchain and linter. Records live in the repository's common Git

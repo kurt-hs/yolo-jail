@@ -1113,7 +1113,7 @@ runtime section's subject.
 picks one for itself: `containers-storage:[<driver>@<graphRoot>+<runRoot>:<driver options>]<ref>`,
 every field read from `store` in the same `podman info --format json` the namespace decision
 already reads. That read is the launch's own: the `podman info --format json` runtime selection's
-readiness gate waited for ([podman-reboot-readiness.md](../design/podman-reboot-readiness.md),
+readiness gate waited for ([podman-readiness.md](podman-readiness.md),
 PR-D5), parsed again by `image.ParsePodmanStoreFacts`, so a launch asks podman once — and `yolo
 check`'s Container Image section reads the same gate's answer.
 
@@ -1432,7 +1432,7 @@ serialization, not a cold-store copy. Its rules:
   idempotent and the ref content-addressed.
 - **It is not the housekeeping lock, and must not share its file.** A housekeeping pass may *skip*
   when another pass is running, and takes that lock one deletion at a time
-  ([OQ-PR2](../design/podman-reboot-readiness.md#decision-ledger)); a copy waiter must never skip, skipping
+  ([OQ-PR2](podman-readiness.md#OQ-PR2)); a copy waiter must never skip, skipping
   being exactly how the duplicate copy happens. And parking every reaper pass behind a
   multi-minute copy would be its own defect.
 - **It is taken in-jail too.** A nested jail's podman store is shared by every launch out of that

@@ -98,7 +98,7 @@ func TestRealExecTimeoutBoundsAGrandchildThatOutlivesAFinishedChild(t *testing.T
 // not be stopped by its next write. A read end closed at the return makes that write fail, and
 // the SIGPIPE it raises kills a program that does not handle it, such as a shell: here the
 // grandchild writes to both streams after the call returned and then records that it lived.
-// The rootless podman docs/design/podman-reboot-readiness.md finds finishing the post-boot
+// The rootless podman docs/reference/podman-readiness.md finds finishing the post-boot
 // refresh after its parent was killed is such a grandchild.
 func TestRealExecLeavesAGrandchildThatWritesAfterTheCall(t *testing.T) {
 	survived := filepath.Join(t.TempDir(), "survived")

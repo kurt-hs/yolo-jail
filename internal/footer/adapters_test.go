@@ -159,7 +159,7 @@ const claudeStatus = `{"model": {"id": "claude-opus-4", "display_name": "Opus"},
 func TestClaudeAdapter(t *testing.T) {
 	s := surfaceOf(t, packNamed(t, shippedPacks(t), "claude"), "claude", "settings")
 	sl := statusLineDefault(t, s)
-	// Only the two keys every user statusLine sets, so a user's own replaces all of it (§3).
+	// Only the two keys every user statusLine sets, so a user's own replaces all of it ("How a user's own footer survives").
 	if got := keys(sl); got != "command,type" {
 		t.Errorf("claude statusLine default keys = %s, want command,type", got)
 	}
@@ -325,7 +325,7 @@ func TestCopilotAdapter(t *testing.T) {
 // script is absent. macos-user rendered copilot's config and delivered no `files` contribution
 // until notch convergence item 21, so its home had the command and not the script; a later
 // backend or release may drop the file too, and the value in the user's file can never be
-// fixed after the first fill (§3).
+// fixed after the first fill ("How a user's own footer survives").
 // Copilot 1.0.88 treats a non-zero exit as a failure and warns "Status line command failed",
 // so the command has to exit 0 there, with nothing on either stream.
 func TestCopilotCommandIsSilentWithoutItsScript(t *testing.T) {
@@ -336,7 +336,7 @@ func TestCopilotCommandIsSilentWithoutItsScript(t *testing.T) {
 	}
 }
 
-// TestCopilotScriptIsSilentWithoutYolo: "turned off, the script prints nothing" (§3). With
+// TestCopilotScriptIsSilentWithoutYolo: "turned off, the script prints nothing" ("How a user's own footer survives"). With
 // no yolo on PATH the script exits 0 with no output, so copilot shows an empty item rather
 // than an error.
 func TestCopilotScriptIsSilentWithoutYolo(t *testing.T) {
@@ -542,7 +542,7 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 		env     map[string]string
 		want    string
 	}{
-		// The design's own example (§1): pi's native route to the ChatGPT subscription, under
+		// The design's own example ("What the footer shows"): pi's native route to the ChatGPT subscription, under
 		// the pi pack's profile, which is named unlike its provider.
 		{extensionAdapters[0], codexTables("pi"), "yolo: ChatGPT subscription (profile codex) · jail"},
 		{extensionAdapters[0], map[string]string{}, "yolo: pi's own login · host"},
@@ -586,7 +586,7 @@ func TestExtensionAdaptersSetOneYoloStatus(t *testing.T) {
 // It is tui.JSONC, not tui.json, and the difference is a user's theme. opencode 1.18.32 reads
 // both files in the global config dir and concatenates their `plugin` lists, but its one-time
 // migration moves `theme`, `keybinds` and `tui` out of opencode.json into tui.json ONLY while
-// tui.json does not exist (docs/design/agent-footer.md §2.1). A tui.json yolo created first
+// tui.json does not exist (docs/reference/agent-footer.md, "Each agent's adapter"). A tui.json yolo created first
 // would strand those keys in opencode.json, where the TUI no longer reads them.
 const (
 	opencodeTUIConfig  = ".config/opencode/tui.jsonc"
@@ -787,11 +787,11 @@ func mustJSON(t *testing.T, v any) string {
 
 // TestBridgedRoutesAreMarked: the claude and copilot adapters mark `(bridge)` on exactly the
 // shipped providers the agent reaches through an adapter's address rather than one of the
-// provider's own (§1.1: the pack marks its bridged routes, yolo does not infer them). The set
+// provider's own ("The billing route": the pack marks its bridged routes, yolo does not infer them). The set
 // is computed here from the shipped manifests with the launch's own resolver, so a provider
 // pack added later with no endpoint of the agent's protocol fails this until the adapter
 // lists it. That matters most for claude, whose command is frozen into a host file on the
-// first `yolo host apply` (§3).
+// first `yolo host apply` ("How a user's own footer survives").
 //
 // The profile is named unlike its provider on purpose: a user's own profile over a bridged
 // provider is bridged too, so the mark has to follow the provider id, not a profile name.
@@ -891,7 +891,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // TestFooterIsOnlyEverADefault pins OQ-FT1's layer across every shipped pack: the footer
 // is written in the owning pack's DEFAULTS and nowhere that outranks a user — no managed
 // key (either autonomy posture) and no config-overlay — or a user's own statusLine would
-// lose to yolo's (§3's table).
+// lose to yolo's ("How a user's own footer survives"'s table).
 func TestFooterIsOnlyEverADefault(t *testing.T) {
 	// The key each footer adapter writes: statusLine for the status-line agents, on any
 	// surface, and opencode's TUI plugin list.

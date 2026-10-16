@@ -192,7 +192,7 @@ func Reap(stableDir string, liveSources map[string]bool, liveKnown, apply bool, 
 // ReapGuarded is Reap with each generation's removal bracketed by guard: guard takes the
 // caller's lock, runs recheck, runs del only if recheck still says the generation may go, and
 // reports whether del ran (prune.Guard is this signature; the housekeeping slot passes its
-// per-deletion lock, docs/design/podman-reboot-readiness.md OQ-PR2). The recheck asks again
+// per-deletion lock, docs/reference/podman-readiness.md OQ-PR2). The recheck asks again
 // whether the generation is still not the one the stable path resolves to — a `just install`
 // since the listing may have swapped the link — and still past GenerationGrace. A jail
 // started since the listing mounts the current generation, which is never reaped. nil guard

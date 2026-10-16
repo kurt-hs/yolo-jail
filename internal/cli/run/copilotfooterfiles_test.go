@@ -9,7 +9,7 @@ import (
 )
 
 // TestCopilotFooterScriptLeavesCopilotStateAlone pins where the copilot pack's footer script
-// lands (docs/design/agent-footer.md §2.1). preparePackFiles' one-time migration from the
+// lands (docs/reference/agent-footer.md, "Each agent's adapter"). preparePackFiles' one-time migration from the
 // pre-ledger mountpoints archives every unclaimed zero-byte file in the DIRECTORY that holds a
 // single-file target. With the script directly in ~/.copilot, that directory was copilot's
 // own state root, and a workspace's first launch after the footer shipped moved copilot's or

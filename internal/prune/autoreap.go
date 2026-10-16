@@ -167,7 +167,7 @@ func AutoReapOldImages(rt, buildDir string, now time.Time, run RunFunc) (removed
 }
 
 // AutoReapOldImagesGuarded is AutoReapOldImages with each `rmi` bracketed by guard — the
-// housekeeping slot's per-deletion lock (OQ-PR2 of docs/design/podman-reboot-readiness.md).
+// housekeeping slot's per-deletion lock (OQ-PR2 of docs/reference/podman-readiness.md).
 //
 // THE RECHECK, run under that lock right before each `rmi`, reads the two things a launch can
 // change while the pass runs:

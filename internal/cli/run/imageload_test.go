@@ -235,7 +235,7 @@ func TestTheRunPathTellsTheImageLoadWhetherTheJailReadsTheHostStore(t *testing.T
 // TestTheRunPathHandsTheImageLoadTheGatesStoreFacts pins what makes `yolo capture` and
 // every ordinary launch take issue #47's fix WITHOUT a second `podman info`: the run path
 // hands AutoLoadImage the store facts parsed from the readiness gate's answer
-// (docs/design/podman-reboot-readiness.md PR-D5), so a rootless podman's store reaches the
+// (docs/reference/podman-readiness.md PR-D5), so a rootless podman's store reaches the
 // destination, and it still hands NO LayerCopy, so the real copy writes where the image load
 // computed. The image package's own read ran with no deadline after a probe that had passed;
 // a StoreFacts left nil would bring it back with every image-package test still green.

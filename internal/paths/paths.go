@@ -338,7 +338,7 @@ const HoldExecEnv = "YOLO_HOLD_EXEC"
 const JailBackendEnv = "YOLO_JAIL_BACKEND"
 
 // AllowMissingProgramsEnv is the escape hatch out of the jail's READINESS ACT
-// (docs/design/jail-notch-readiness.md, OQ-JR1): the provisioning stage installs every program
+// (docs/reference/program-readiness.md, OQ-JR1): the provisioning stage installs every program
 // a selected pack declares before the command runs, and a program it cannot install STOPS the
 // launch, offline included. Any non-empty value starts the jail instead, listing each program
 // it could not install; each then installs from its launcher the first time it is run, as
@@ -365,7 +365,7 @@ const AllowPatchFailuresEnv = "YOLO_ALLOW_PATCH_FAILURES"
 
 // NoProgramReadinessEnv turns the jail's readiness act OFF for a launch: any non-empty value
 // leaves every declared program to install from its launcher on first use, which is what every
-// launch did before OQ-JR1 (docs/design/jail-notch-readiness.md, JR-D7).
+// launch did before OQ-JR1 (docs/reference/program-readiness.md, JR-D7).
 //
 // It is NOT a second spelling of AllowMissingProgramsEnv. That hatch still installs and starts
 // the jail when an install fails; this one installs nothing ahead of time. It exists for the

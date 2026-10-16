@@ -22,7 +22,7 @@ func killGroupAtCleanup(t *testing.T, pid int) {
 
 // A child that exits while a grandchild still holds its stdout and stderr: the runner must
 // return when the CHILD exits. With pipes, os/exec's Wait would sit until the grandchild
-// closed them — the 22.5 s overrun of podman-reboot-readiness.md, and 100 s in its
+// closed them — the 22.5 s overrun of podman-readiness.md, and 100 s in its
 // reproduction.
 func TestTheAttemptReturnsWhenTheChildExitsThoughAGrandchildHoldsItsOutput(t *testing.T) {
 	testsupport.UnsetLCAll(t) // the child shell's output is compared exactly

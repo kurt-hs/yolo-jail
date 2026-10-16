@@ -64,7 +64,7 @@ reference. **MEASURED**: run here, or read from a file in this jail. **INFERRED*
   plugin tree in a pack whose `skills_tier` is `namespaced`, written whole into the skills folder
   ([packinitplugin.go:3-11](../../internal/cli/packinitplugin.go#L3-L11)). Not a plugin Claude installed.
 - **Notch**: one setting of yolo's confinement dial, as defined in
-  [agent-footer.md, *Terms used throughout*](../design/agent-footer.md#terms-used-throughout).
+  [agent-footer.md, *Terms used throughout*](../reference/agent-footer.md#terms-used-throughout).
 
 ## 1. Side by side
 

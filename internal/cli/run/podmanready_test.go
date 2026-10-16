@@ -1,7 +1,7 @@
 package run
 
 // podmanready_test.go pins the podman readiness gate (podmanready.go,
-// docs/design/podman-reboot-readiness.md) THROUGH runtime selection, never at an isolated
+// docs/reference/podman-readiness.md) THROUGH runtime selection, never at an isolated
 // helper: every case runs once down each of the three ways a launch reaches it — YOLO_RUNTIME,
 // the config's `runtime` key, and autodetection — so deleting the gate from either
 // validateExplicitRuntime or resolveRuntime's candidate loop fails every test here. The fake

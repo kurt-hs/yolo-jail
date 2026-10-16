@@ -9,7 +9,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
-// podmanready.go puts internal/runtime's READINESS GATE (docs/design/podman-reboot-readiness.md,
+// podmanready.go puts internal/runtime's READINESS GATE (docs/reference/podman-readiness.md,
 // a term coined there) in front of a Linux podman launch: runtime selection, whether the
 // runtime was named (validateExplicitRuntime) or found (resolveRuntime), waits up to
 // runtime.PodmanReadyBudget for `podman info --format json` instead of refusing a podman that

@@ -3,7 +3,7 @@ package run
 import "github.com/mschulkind-oss/yolo-jail/internal/paths"
 
 // programReadinessArgs forwards the jail readiness act's two dials from the host environment
-// into the container, each only when the user set it (docs/design/jail-notch-readiness.md,
+// into the container, each only when the user set it (docs/reference/program-readiness.md,
 // OQ-JR1): paths.AllowMissingProgramsEnv, the hatch its refusal offers, and
 // paths.NoProgramReadinessEnv, which turns the act off.
 //

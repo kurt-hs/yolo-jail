@@ -11,7 +11,7 @@ import (
 )
 
 // hostFooterTables is the host notch's half of the agent footer's billing route
-// (docs/design/agent-footer.md OQ-FT6): the three wire tables, composed from the user config
+// (docs/reference/agent-footer.md OQ-FT6): the three wire tables, composed from the user config
 // for an agent whose env carries none, so a host Claude that `yolo host --` did not start still
 // names the profile the config selects. footer.WithHostTables asks for it only outside a jail
 // and only when the agent's own env carries no selection ("env first").
@@ -42,7 +42,7 @@ import (
 // It never writes to stderr: every loader is handed a nil (silent) warn, and a table that
 // cannot be composed is left empty, which the renderer reads as absent.
 //
-// A SELECTION THE HOST LAUNCH REFUSES IS LEFT OUT (docs/design/agent-footer.md FT-D1). The
+// A SELECTION THE HOST LAUNCH REFUSES IS LEFT OUT (docs/reference/agent-footer.md FT-D1). The
 // footer names what the host composed, and for an agent whose selected profile the host's
 // protocol gate refuses it composes nothing: `yolo host -- claude` refuses claude's codex
 // profile (ES-D18, ES-D25), so a claude running on this host with that selection and no tables

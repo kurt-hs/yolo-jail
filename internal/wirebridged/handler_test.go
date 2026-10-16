@@ -433,7 +433,7 @@ func sseEvents(t *testing.T, body string) []wirebridge.Event {
 }
 
 // TestStreamedUsageReachesClaude is the end-to-end pin for the streaming-usage
-// defect (docs/design/agent-footer.md, "Later: cost and failover"): the bridge
+// defect (docs/reference/agent-footer.md, "Later: cost and failover"): the bridge
 // ASKS for usage on a streamed chat-completions request, READS PAST the finish
 // chunk to the usage chunk, and reports input, cache-read and output tokens in
 // message_delta, the event whose usage Claude Code merges into its cost and

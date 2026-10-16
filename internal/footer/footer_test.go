@@ -39,7 +39,7 @@ func claudeOpts() Options {
 	})
 }
 
-// TestBillingRoute is §1.1's rule, one row per clause.
+// TestBillingRoute is "The billing route"'s rule, one row per clause.
 func TestBillingRoute(t *testing.T) {
 	tables := func(use string, extra map[string]string) map[string]string {
 		m := map[string]string{
@@ -102,7 +102,7 @@ func TestBillingRoute(t *testing.T) {
 	}
 }
 
-// TestBillingDegenerateInputs is §1.2's list: absent or malformed tables read as empty, and
+// TestBillingDegenerateInputs is "The notch"'s list: absent or malformed tables read as empty, and
 // a profile naming an unknown provider renders the profile name alone.
 func TestBillingDegenerateInputs(t *testing.T) {
 	o := claudeOpts()
@@ -143,7 +143,7 @@ func TestBillingDegenerateInputs(t *testing.T) {
 	}
 }
 
-// TestNotch is §1.2: the marker a container launch sets, asked through config.InJail. An
+// TestNotch is "The notch": the marker a container launch sets, asked through config.InJail. An
 // EMPTY marker is the case the copies of the test disagree about, and it reads as host.
 func TestNotch(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "0.10.0")
@@ -160,7 +160,7 @@ func TestNotch(t *testing.T) {
 	}
 }
 
-// TestNotchNamesTheGuestFromItsLaunchersMarker is §1.2's guest row: the macOS guest launch sets
+// TestNotchNamesTheGuestFromItsLaunchersMarker is "The notch"'s guest row: the macOS guest launch sets
 // config.NotchEnv beside YOLO_VERSION (env-manager plan EMP-D4), and the renderer prints `guest`
 // for it, as the briefing and `yolo describe` name that session. The marker only narrows a
 // launched session: without YOLO_VERSION it is no launch, and absence still reads as host.
@@ -184,7 +184,7 @@ func TestNotchNamesTheGuestFromItsLaunchersMarker(t *testing.T) {
 
 // TestNoCopyOfTheJailProbe fails if this package grows its own answer to "am I in a
 // jail?". The rule is that the renderer asks config.InJail and keeps no copy of that test
-// (§1.2), and a faithful copy would pass TestNotch — so what is pinned here is that the
+// ("The notch"), and a faithful copy would pass TestNotch — so what is pinned here is that the
 // marker's NAME never appears in the renderer's source, which is the only way a copy can be
 // written.
 func TestNoCopyOfTheJailProbe(t *testing.T) {
@@ -213,7 +213,7 @@ func TestNoCopyOfTheJailProbe(t *testing.T) {
 	}
 }
 
-// TestRenderTemplate covers the template rules of §2: yolo facts, stdin paths, a missing
+// TestRenderTemplate covers the template rules of "The renderer": yolo facts, stdin paths, a missing
 // field rendering empty, and no literal {…} reaching the screen.
 func TestRenderTemplate(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "x")
@@ -381,7 +381,7 @@ func TestParseArgsTolerates(t *testing.T) {
 }
 
 // TestMainNeverFailsAndNeverWritesStderr: whatever the arguments and whatever is on
-// stdin, exit 0 and silence on stderr (§1.2's degenerate inputs).
+// stdin, exit 0 and silence on stderr ("The notch"'s degenerate inputs).
 func TestMainNeverFailsAndNeverWritesStderr(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_USE_PROFILES", "{broken")

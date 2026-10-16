@@ -50,8 +50,8 @@ func mustReadFile(t *testing.T, p string) string {
 	return string(b)
 }
 
-// footerLikePack is a fixture shaped like the omp pack's footer (docs/design/agent-footer.md
-// §2.1): one file in a subdirectory of its own, under a workspace-scoped state dir, so podman
+// footerLikePack is a fixture shaped like the omp pack's footer (docs/reference/agent-footer.md,
+// "Each agent's adapter"): one file in a subdirectory of its own, under a workspace-scoped state dir, so podman
 // prepares its mountpoint in the overlay and Apple Container copies it there. It returns the
 // pack and its one target.
 func footerLikePack(t *testing.T) (*packload.Pack, packFilesTarget) {

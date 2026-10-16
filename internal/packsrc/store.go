@@ -1048,8 +1048,8 @@ func (s *Store) storeCommit(a Addr) (string, error) {
 }
 
 // ResolveExisting is Resolve for a caller that must WRITE NOTHING, such as the agent footer's
-// host profile read, which runs on every status-line refresh (docs/design/agent-footer.md
-// §2.1). A fetched pack resolves only when the tree for the commit its ref names is already
+// host profile read, which runs on every status-line refresh (docs/reference/agent-footer.md,
+// "The host's profile read"). A fetched pack resolves only when the tree for the commit its ref names is already
 // complete in the store; a missing or interrupted tree is an error, never the RemoveAll and
 // checkout Materialize would run. A local pack, and the staged-tree fallback, resolve as
 // Resolve resolves them, since neither writes.

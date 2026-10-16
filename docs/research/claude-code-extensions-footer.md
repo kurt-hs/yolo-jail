@@ -41,9 +41,9 @@ How this round was done:
 ## Terms used here
 
 - **Footer**, **yolo segment**, **billing route**, **notch**, **wire bridge**, **adapter**: as defined in
-  [agent-footer.md, *Terms used throughout*](../design/agent-footer.md#terms-used-throughout).
+  [agent-footer.md, *Terms used throughout*](../reference/agent-footer.md#terms-used-throughout).
 - **Status-line command**: Claude's `statusLine` setting of type `command`, a shell command Claude runs and whose
-  output it draws as a row of the footer ([agent-footer.md §2](../design/agent-footer.md#2-one-renderer-one-adapter-per-agent)).
+  output it draws as a row of the footer ([agent-footer.md](../reference/agent-footer.md#one-renderer-one-adapter-per-agent)).
 - **Hooks module**: Claude Code's own term for *"a TypeScript or JavaScript file that `hooks/hooks.json` names under
   `modules`"* in a plugin, exporting `register(on, options)` (SOURCED, reference:11-16). Claude's changelog
   announces the feature as *"Claude Mods: plugins may now modify deeper behavior"* (SOURCED, changelog:97,
@@ -76,22 +76,22 @@ At the host, with no tables in the env, it also reads your user config on every 
 **How often it runs.** Claude 2.1.288 re-runs the command when any of `tokenUsage`, `permissionMode`, `vimMode`,
 `mainLoopModel`, `fastMode`, `effortValue`, `thinkingEnabled` or `prStatus` changes (MEASURED, binary strings).
 The design doc read a 300 ms debounce in 2.1.282
-([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence)). So while a reply streams, a token count that keeps
+([agent-footer.md, appendix](../reference/agent-footer.md#evidence)). So while a reply streams, a token count that keeps
 changing can start the renderer up to about three times a second (INFERRED). Each run is a shell plus the
 29 MB `yolo` binary, about 2.2 ms for the renderer alone in a jail and 4.8 ms at the host with a profile
-selected (MEASURED there, [agent-footer.md:194-195](../design/agent-footer.md#L194-L195)). Only the model and
+selected (MEASURED there, [agent-footer.md](../reference/agent-footer.md#the-renderer)). Only the model and
 effort ever change. The billing route, the switches and the notch are fixed per process
-([agent-footer.md:419-421](../design/agent-footer.md#L419-L421)).
+([agent-footer.md](../reference/agent-footer.md#where-the-facts-come-from-and-how-fresh-they-are)).
 
 **Its limits:**
 
 | Limit | Why | Where |
 |---|---|---|
-| Claude hides most keyboard hints (`esc to interrupt`, `? for shortcuts`) | Any `statusLine` setting does that, and no key brings them back. The one loss [DIR-FT2](../design/agent-footer.md#DIR-FT2) could not avoid | [agent-footer.md:202](../design/agent-footer.md#L202), [its appendix](../design/agent-footer.md#appendix-evidence) (SOURCED there) |
-| Your own `statusLine` replaces yolo's whole | The setting holds one command. To keep both, you call the renderer from your script ([OQ-FT5](../design/agent-footer.md#decision-ledger)) | [agent-footer.md §3](../design/agent-footer.md#3-how-a-users-own-footer-survives) |
-| The host value is frozen | `yolo host apply` fills a missing key once, then counts it as yours, so a later template or flag never arrives. A host filled before the effort level was added still shows the model alone | [prism.go:1006-1010](../../internal/entrypoint/prism.go#L1006-L1010), [agent-footer.md:179-180](../design/agent-footer.md#L179-L180) |
+| Claude hides most keyboard hints (`esc to interrupt`, `? for shortcuts`) | Any `statusLine` setting does that, and no key brings them back. The one loss [DIR-FT2](../reference/agent-footer.md#DIR-FT2) could not avoid | [agent-footer.md](../reference/agent-footer.md#each-agents-adapter), [its appendix](../reference/agent-footer.md#evidence) (SOURCED there) |
+| Your own `statusLine` replaces yolo's whole | The setting holds one command. To keep both, you call the renderer from your script ([OQ-FT5](../reference/agent-footer.md#OQ-FT5)) | [agent-footer.md](../reference/agent-footer.md#how-a-users-own-footer-survives) |
+| The host value is frozen | `yolo host apply` fills a missing key once, then counts it as yours, so a later template or flag never arrives. A host filled before the effort level was added still shows the model alone | [prism.go:1006-1010](../../internal/entrypoint/prism.go#L1006-L1010), [agent-footer.md](../reference/agent-footer.md#the-thinking-level-next-to-the-model) |
 | A process per refresh | Above | — |
-| Bridged upstream and failover cannot be shown cheaply | A per-refresh read of bridge state would cost a connection on every refresh, 3–4 ms, and the bridge publishes no state yet | [agent-footer.md:423-424](../design/agent-footer.md#L423-L424) |
+| Bridged upstream and failover cannot be shown cheaply | A per-refresh read of bridge state would cost a connection on every refresh, 3–4 ms, and the bridge publishes no state yet | [agent-footer.md](../reference/agent-footer.md#where-the-facts-come-from-and-how-fresh-they-are) |
 
 ## 2. What the extension API offers
 
@@ -103,7 +103,7 @@ surface may change between releases without notice"* (types:4).
 | Site | What it is | Surfaces | Fit for the footer |
 |---|---|---|---|
 | `$.ui.status(text)` | *"Pins `text` as this plugin's status line under the prompt, beside the engine's own pinned notices"*, one per plugin (types:2263-2273). In the terminal it is a pinned, low-priority notification with the text `<plugin name>: <text>` (MEASURED, binary strings `plugin-status-${E}` and `` `${lre(e)}: ${IFe(n)}` ``). The pinned-notice block draws each entry as `⚠ <text>` in the theme's `warning` color unless the notice names a color, which `$.ui.status`'s does not, cut at the row's end (MEASURED, binary strings: `cre` draws `[qb," ",E.text]` with `color:E.color??"warning"` and `wrap:E.wrap?"wrap":"truncate"`; `qb="⚠"`). So yolo's segment would read `⚠ yolo: claude-opus-5-5 · high · Bedrock · jail` in the color of a warning. The same block carries the engine's own pinned warnings, such as failed transcript writes. Desktop and SDK hosts are sent a `ui_status` message, *"One status line per plugin"* (MEASURED, binary strings) | terminal; a push to the others, whose drawing is UNMEASURED | **Adopt first**, with the warning style as a known cost for the live look. It is the prototype's site |
-| `PromptHint`, its `tail` prop | The hint line itself. A hook's `tail` is drawn dim at the end of Claude's own line, and *"the terminal keeps the engine's line (its pills stay live)"*. *"No other surface draws it yet"* (types:9531-9566). That line is the one a configured `statusLine` thins ([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence)), so under a user's own `statusLine` this site may show little or nothing (INFERRED; UNMEASURED) | terminal draws; desktop raises but does not draw `tail` | **Fallback** if the live look puts the status entry somewhere poor or its warning style reads badly. It is dim, not a warning |
+| `PromptHint`, its `tail` prop | The hint line itself. A hook's `tail` is drawn dim at the end of Claude's own line, and *"the terminal keeps the engine's line (its pills stay live)"*. *"No other surface draws it yet"* (types:9531-9566). That line is the one a configured `statusLine` thins ([agent-footer.md, appendix](../reference/agent-footer.md#evidence)), so under a user's own `statusLine` this site may show little or nothing (INFERRED; UNMEASURED) | terminal draws; desktop raises but does not draw `tail` | **Fallback** if the live look puts the status entry somewhere poor or its warning style reads badly. It is dim, not a warning |
 | `SessionMode`, its `modes` prop | The dim mode labels at the right of the prompt footer. A hook adds one label (types:9516-9529) | terminal, desktop | Rejected for the footer: one word, and `jail` is already in the segment |
 | `AbovePrompt` | A band above the input *"where the engine draws nothing of its own"*, collapsible (types:9569-9620) | terminal, desktop | Not for the default footer, which would cost rows on every screen. Kept for a richer view a user opens |
 | `Pane` | A framed region; the one site drawn on every surface (types:9630-9632) | all | Too heavy for a footer |
@@ -134,21 +134,21 @@ reference:124).
 
 | Option | Verdict |
 |---|---|
-| **`$.process.run(["yolo", "internal", "footer", …])` once per session load** | **Adopt.** One renderer stays the one reader of the profile tables ([agent-footer.md §2](../design/agent-footer.md#2-one-renderer-one-adapter-per-agent)), and nothing is ported to TypeScript. The child inherits Claude's own env, so it sees exactly what today's command sees, at both notches. One run measured a median 6.2 ms here, and the cost is paid once, not per refresh ([Appendix A](#appendix-a-evidence)). This is the pi adapter's shape ([yolo-footer.js:20-51](../../packs/pi/extensions/yolo-footer.js#L20-L51)) |
-| `$.fs.read` of a facts file yolo writes at launch | Rejected. The facts belong to one process's env, and one jail can hold several Claude processes started from attaches with different selections ([agent-footer.md:445-450](../design/agent-footer.md#L445-L450)). At the host a bare `claude` has no launch to write the file. It would also be a second channel for a fact the env already carries |
+| **`$.process.run(["yolo", "internal", "footer", …])` once per session load** | **Adopt.** One renderer stays the one reader of the profile tables ([agent-footer.md](../reference/agent-footer.md#one-renderer-one-adapter-per-agent)), and nothing is ported to TypeScript. The child inherits Claude's own env, so it sees exactly what today's command sees, at both notches. One run measured a median 6.2 ms here, and the cost is paid once, not per refresh ([Appendix A](#appendix-a-evidence)). This is the pi adapter's shape ([yolo-footer.js:20-51](../../packs/pi/extensions/yolo-footer.js#L20-L51)) |
+| `$.fs.read` of a facts file yolo writes at launch | Rejected. The facts belong to one process's env, and one jail can hold several Claude processes started from attaches with different selections ([agent-footer.md](../reference/agent-footer.md#where-the-facts-come-from-and-how-fresh-they-are)). At the host a bare `claude` has no launch to write the file. It would also be a second channel for a fact the env already carries |
 | `$.env.get` of the three tables, resolved in TypeScript | Rejected: a second renderer and a port of `packload.ProviderFor` |
 
 ## 3. Each footer fact, today and as an extension
 
 | Fact | Today (status-line command) | As an extension | Better, same or worse, and why |
 |---|---|---|---|
-| **Billing route** | The renderer, on every refresh, from the env ([footer.go:186-225](../../internal/footer/footer.go#L186-L225)) | The same renderer, once per session load, from the same env | **Same value, much cheaper.** It is fixed per process ([agent-footer.md:419-420](../design/agent-footer.md#L419-L420)). At the host with no tables in the env, a mid-session edit to your user config no longer shows until the next session. The process's real route did not change either (INFERRED) |
-| **Notch** | `config.InJail()` on every refresh ([footer.go:167-172](../../internal/footer/footer.go#L167-L172)) | The same, once | **Same value, cheaper.** Detection stays in Go, so guest's future marker lands in one place ([agent-footer.md §1.2](../design/agent-footer.md#12-the-notch)) |
+| **Billing route** | The renderer, on every refresh, from the env ([footer.go:186-225](../../internal/footer/footer.go#L186-L225)) | The same renderer, once per session load, from the same env | **Same value, much cheaper.** It is fixed per process ([agent-footer.md](../reference/agent-footer.md#where-the-facts-come-from-and-how-fresh-they-are)). At the host with no tables in the env, a mid-session edit to your user config no longer shows until the next session. The process's real route did not change either (INFERRED) |
+| **Notch** | `config.InJail()` on every refresh ([footer.go:167-172](../../internal/footer/footer.go#L167-L172)) | The same, once | **Same value, cheaper.** Detection stays in Go, so guest's future marker lands in one place ([agent-footer.md](../reference/agent-footer.md#the-notch)) |
 | **Model** | `stdin.model.display_name`, for example `Opus` | `$.session.model()`, then each main-loop request's `e.model` and each model switch | **Worse in wording**: an id such as `claude-opus-5-5`, since the API carries no display name. **Better in truth**: `turn.step` names the model a request actually went to, a fallback included (types:12639-12641) |
-| **Thinking level** | `stdin.effort.level`, live, re-run on an `effortValue` change | Each main-loop request's `e.effort` | **Worse**: unknown before the first request, and a `/effort` change shows only at the next request. Never guessed, per [agent-footer.md §1.3](../design/agent-footer.md#13-the-thinking-level-next-to-the-model) |
-| **Claude's cost estimate** (later design) | In the stdin JSON, not shown | `session.measure` pushes `cost.usd` (types:10410-10433) | **Same data, better delivery**: pushed after each turn, no process. Still Anthropic list price, not what Bedrock bills ([agent-footer.md:473-474](../design/agent-footer.md#L473-L474)) |
+| **Thinking level** | `stdin.effort.level`, live, re-run on an `effortValue` change | Each main-loop request's `e.effort` | **Worse**: unknown before the first request, and a `/effort` change shows only at the next request. Never guessed, per [agent-footer.md](../reference/agent-footer.md#the-thinking-level-next-to-the-model) |
+| **Claude's cost estimate** (later design) | In the stdin JSON, not shown | `session.measure` pushes `cost.usd` (types:10410-10433) | **Same data, better delivery**: pushed after each turn, no process. Still Anthropic list price, not what Bedrock bills ([agent-footer.md](../reference/agent-footer.md#later-cost-and-failover-a-separate-design)) |
 | **Billed Bedrock cost** (later design) | Not available | Not available | **Same**: no agent reports it |
-| **Bridge upstream and failover** (later design) | A read per refresh, kept off the footer for its cost; and no bridge state exists | One read per turn (`turn.complete`) or per `session.measure`, through `$.http.fetch` or `$.fs.read` | **Better, once the bridge publishes per-model state** ([agent-footer.md, Later](../design/agent-footer.md#later-cost-and-failover-a-separate-design)). A failover could also raise one `$.ui.toast` |
+| **Bridge upstream and failover** (later design) | A read per refresh, kept off the footer for its cost; and no bridge state exists | One read per turn (`turn.complete`) or per `session.measure`, through `$.http.fetch` or `$.fs.read` | **Better, once the bridge publishes per-model state** ([agent-footer.md, Later](../reference/agent-footer.md#later-cost-and-failover-a-separate-design)). A failover could also raise one `$.ui.toast` |
 | **A per-session meter** (later design) | No session key in the footer. But Claude already stamps its session id on its API requests: `X-Claude-Code-Session-Id` is among the headers of its main request path and of its Bedrock and Vertex clients (MEASURED, binary strings `var pbt="X-Claude-Code-Session-Id"`, `function xw(){return{"x-app":…,"User-Agent":…,[pbt]:q()}}` and the per-request `xe={...xw(),…}`) | `$.session.id()` (types:2588-2592) gives the plugin one | **Better on the display side only.** The plugin knows its session. `turn.step` can rewrite only the model and effort (types:12626), so the plugin adds nothing on the wire. Whether the header Claude already sends reaches the bridge at a custom `ANTHROPIC_BASE_URL`, and so whether the bridge can already tell sessions apart without any plugin, is UNMEASURED |
 
 ## 4. What an extension makes newly possible
@@ -161,15 +161,15 @@ reference:124).
   [OQ-CM2](#OQ-CM2).
 - **Claude's keyboard hints come back,** because yolo no longer needs a `statusLine` at all
   ([OQ-CM1](#OQ-CM1)). Claude hides most hints *"with a custom status line configured"*
-  ([agent-footer.md, appendix](../design/agent-footer.md#appendix-evidence), SOURCED there). With none configured they show
+  ([agent-footer.md, appendix](../reference/agent-footer.md#evidence), SOURCED there). With none configured they show
   (INFERRED from that wording).
 - **Fresh by events, with no process per refresh.** One renderer run per session load. The model and effort
   redraw in-process on each request and model switch. A `-p` run starts no process at all.
 - **Fixes reach the host.** On every `yolo host apply` a changed plugin tree is replaced whole
-  ([plugin.go:166-182](../../internal/hostskills/plugin.go#L166-L182); [agent-footer.md §3](../design/agent-footer.md#3-how-a-users-own-footer-survives)
+  ([plugin.go:166-182](../../internal/hostskills/plugin.go#L166-L182); [agent-footer.md](../reference/agent-footer.md#how-a-users-own-footer-survives)
   has the frozen alternative). So the never-change rule for frozen commands no longer binds Claude.
 - **The template becomes a setting.** A `userConfig` field is a `/config` row, and a change reloads the module
-  (reference:70). That would answer [agent-footer.md](../design/agent-footer.md#what-this-does-not-do)'s *"no setting
+  (reference:70). That would answer [agent-footer.md](../reference/agent-footer.md#what-this-does-not-do)'s *"no setting
   picks the fields"* without your own `statusLine`. Not built in the prototype.
 - **A band above the prompt** for a richer view: service health, bridge upstream per model, Claude's cost
   estimate. Better opened on demand than drawn by default ([§2.1](#21-where-a-plugin-can-draw)).
@@ -220,7 +220,7 @@ reference:124).
     `claude plugin validate` with *"$ is passed to "refresh", which is not a function declared at the top of this
     file"* (MEASURED).
 - **macos-user.** Skills reach the sandbox home through the home overlay, and `yolo` is on the sandbox PATH, as
-  [agent-footer.md:23-25](../design/agent-footer.md#L23-L25) measured in CI. The child would inherit the sandbox
+  [agent-footer.md](../reference/agent-footer.md#what-has-and-has-not-been-observed) measured in CI. The child would inherit the sandbox
   env, `YOLO_VERSION` included, so it says `jail` (INFERRED; unchecked on a Mac).
 - **Host notch.** `$.process.run` resolves `yolo` on Claude's own `PATH`, as `sh -c` does for today's command
   (INFERRED). The plugin is delivered by `yolo host apply`, as yolo's LSP plugin is
@@ -301,7 +301,7 @@ flag is decided remotely. So there is no seamless fallback. What remains:
 
 **Tests.** Keep `FOOTER_ARGS` a JSON array in the module, so `internal/footer`'s adapter tests can read and run it
 as they do pi's (`TestExtensionAdaptersSetOneYoloStatus`, `TestBridgedRoutesAreMarked`,
-[agent-footer.md:256-267](../design/agent-footer.md#L256-L267)). `claude plugin test` runs the engine's own dispatch
+[agent-footer.md](../reference/agent-footer.md#each-agents-adapter)). `claude plugin test` runs the engine's own dispatch
 under a kit whose bottom hook *"throws, naming its event"* for anything a test does not answer (types:14917). So no
 model request can be made. This round's run also opened no network connection. Whether it may run in CI is
 [OQ-CM3](#OQ-CM3). One trap: the jail's lazy `claude` launcher puts `--dangerously-skip-permissions` ahead of the
@@ -397,7 +397,7 @@ Build order:
    <!-- vantage: question id=OQ-CM1 leaning="A — plugin only: the jail always runs a Claude new enough, and the hint loss was the one cost DIR-FT2 could not avoid." -->
 
    _Leaning:_ A. The jail always runs a Claude new enough, and the hint loss was the one cost
-   [DIR-FT2](../design/agent-footer.md#DIR-FT2) could not avoid.
+   [DIR-FT2](../reference/agent-footer.md#DIR-FT2) could not avoid.
 
    **Answer:**
 
@@ -405,7 +405,7 @@ Build order:
 
 2. 💬 **OQ-CM2: Does your own `statusLine` still turn yolo's segment off?**
 
-   Today it does, because the two share one setting ([OQ-FT5](../design/agent-footer.md#decision-ledger)). With the plugin
+   Today it does, because the two share one setting ([OQ-FT5](../reference/agent-footer.md#OQ-FT5)). With the plugin
    they are separate sites, so both can show.
 
    - **A — Show both.** yolo's entry stays beside your line. To turn it off, you disable the `yolo@skills-dir`
@@ -414,7 +414,7 @@ Build order:
 
    <!-- vantage: question id=OQ-CM2 leaning="A — show both: DIR-FT2's add-never-remove reaches your own line too, and if you call the renderer from your script, drop that call." -->
 
-   _Leaning:_ A. [DIR-FT2](../design/agent-footer.md#DIR-FT2)'s "add, never remove" then covers your own line too.
+   _Leaning:_ A. [DIR-FT2](../reference/agent-footer.md#DIR-FT2)'s "add, never remove" then covers your own line too.
    If your script calls the renderer, drop that call.
 
    **Answer:**
@@ -519,7 +519,7 @@ Build order:
   the version floor.
 - **The binary**: `/home/agent/.local/share/claude/versions/2.1.288`, minified, read by quoted string. Used where
   the types are silent: the drawing, the rollout flag and the trust gate.
-- [agent-footer.md](../design/agent-footer.md): the built footer design this doc would revise. Every footer
+- [agent-footer.md](../reference/agent-footer.md): the built footer design this doc would revise. Every footer
   ruling cited here is there.
 - [agent-event-watchers.md](../design/agent-event-watchers.md): the doorbell and its per-agent deliverers ([§7.1](#71-the-doorbell-deliverer)).
 - [mcp-configuration.md, OQ-LSP3](../reference/mcp-configuration.md#oq-lsp3): the measured skills-dir plugin

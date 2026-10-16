@@ -13,7 +13,7 @@ import (
 )
 
 // launchrecord.go is the MACHINE-WIDE LAUNCH LINE (OQ-PR3 of
-// docs/design/podman-reboot-readiness.md, ruled 2026-09-29): every launch, refused or not,
+// docs/reference/podman-readiness.md, ruled 2026-09-29): every launch, refused or not,
 // leaves one line in GLOBAL_STORAGE/logs/launches.log, beside crossings.log, so a reboot's
 // restore storm can be read in one place. The investigation behind that design could not
 // find its failing launch at all: each workspace keeps its own launch.log, and the only

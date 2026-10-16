@@ -876,7 +876,7 @@ func firstLine(s string) string {
 // hostLoopbackFactsFor gathers the facts for this launch. It asks podman nothing of its
 // own: the `podman info` it reads is the launch's PODMAN FACTS, the answer runtime
 // selection's readiness gate already got (podmanready.go, PR-D5 of
-// docs/design/podman-reboot-readiness.md). The only subprocess it may run is
+// docs/reference/podman-readiness.md). The only subprocess it may run is
 // `<backend> --help`, and every failure path returns facts that decide to nothing.
 //
 // That is the fix for a silent failure, not a saving. This used to run its own `podman
