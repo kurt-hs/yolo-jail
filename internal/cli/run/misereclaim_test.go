@@ -12,7 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// misereclaim_test.go pins the launch's half of OQ-DF4 (minimal-disk-footprint.md, ruled
+// misereclaim_test.go pins the launch's half of OQ-DF4 (disk-footprint.md, ruled
 // 2026-10-05): the versions of the shared mise store no jail has used for 30 days are offered at
 // a launch like the cache class, through the same offer and the same consent record, and a yes
 // makes the slot remove them.

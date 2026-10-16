@@ -17,11 +17,11 @@ import (
 const autoReapOptOutEnv = "YOLO_NO_AUTO_IMAGE_REAP"
 
 // autoReapOldImages is the launch path's trigger for reclaiming superseded
-// `localhost/yolo-jail` images (Ledger C, minimal-disk-footprint.md §3.3) —
+// `localhost/yolo-jail` images (Ledger C, disk-footprint.md "Ledger C") —
 // the OQ-DF3 ruling's TRIGGER half wired in. `yolo prune --apply`'s "Old
 // yolo-jail images" section has always been SAFE (C2's dedup, the `podman ps`
 // veto, and since OQ-LS3 a retention set that is one pointer per workspace);
-// what was missing was ever running it (minimal-disk-footprint.md §1: the same
+// what was missing was ever running it (disk-footprint.md "Why a hint is not a trigger": the same
 // hint sat true for 24+ days and 404+ GiB accrued regardless). This calls the
 // exact same prune.PruneOldImages the manual command does, through
 // prune.AutoReapOldImages's day-long debounce (P7: a launch checks in, the

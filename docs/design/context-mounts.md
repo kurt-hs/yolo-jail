@@ -104,7 +104,7 @@ one-new-file constraint.
 
 No backend has a writable context mount. The only writable host binds today are the workspace, yolo's
 own state and cache dirs, `cache_relocations` targets (user scope, podman only), and the one
-[host-CAS alias](disk-levers-and-backfill.md#111-decision-ledger).
+[host-CAS alias](../reference/disk-footprint.md#why-its-this-way).
 
 Two premises in the brief are stale and should not be built on:
 
@@ -206,7 +206,7 @@ Each rw mount gets **one launch line, every launch**. It is a disclosure in the
   jail wrote there, including a symlink the jail planted;
 - on rootful podman only, the ownership consequence from [§2.5](#25-ownership).
 
-The reasoning is the [host-CAS](disk-levers-and-backfill.md#111-decision-ledger) gate's, turned into a
+The reasoning is the [host-CAS](../reference/disk-footprint.md#why-its-this-way) gate's, turned into a
 disclosure instead of a gate. A path-keyed writable dir lets the jail choose both the key and the
 bytes. That is exactly why `hostcas` admits only content-addressed stores. A user-declared rw mount
 is path-keyed by definition, so it cannot pass that gate. It is admissible only because a trusted source named it
@@ -613,7 +613,7 @@ Built column names the rest). Steps 4-5 replaced `run.refuseMacosUserCtxMounts` 
   uidmaps and `--userns host` when nested. `label=disable` is in the same file.
   `docs/reference/jail-home.md` covers "Ownership and UIDs".
 - **Host CAS.** `internal/hostcas`, `internal/cli/run/hostcasalias.go`, and
-  [OQ-BF10](disk-levers-and-backfill.md#111-decision-ledger).
+  [OQ-BF10](../reference/disk-footprint.md#why-its-this-way).
 - **macos-user today.** `run.noteMacosUserCtxMountGaps` (`internal/cli/run/macosctxtree.go`) warns
   and gives COPY as the reason. `macosuser.StagedCtxRoot` and `StageCtxCommands` (root-owned,
   `a+rX`, rm-then-mv). `YOLO_CTX_ROOT` is set in the bootstrap env only when a tree is staged, and

@@ -20,7 +20,7 @@ import (
 // on AGE with no liveness evidence at all, on the grounds that losing one costs a
 // rebuild. A prefix root fails that test: a running jail is EXECUTING from it, so
 // losing it is not a rebuild, and age is precisely backwards — the longer a jail
-// runs, the more certainly it would be reaped (disk-levers-and-backfill.md
+// runs, the more certainly it would be reaped (disk-footprint.md
 // OQ-BF4). OQ-LS4 (2026-09-28) found the same true of a running IMAGE's root on
 // podman/Linux and gave the image reaper this pass's rule for that one case; the
 // liveness evidence still differs (an image ref there, a bind-mount source here),
@@ -60,7 +60,7 @@ const PrefixBinMountDest = prefixBinMountDest
 // containers at all. Those need different next moves from the reader, and the
 // undifferentiated message is what let the second case hide for weeks — the
 // sweep was skipping on every run and looked exactly like the sweep having
-// nothing to do (minimal-disk-footprint.md's fourth ledger, 36.4 GiB across 572
+// nothing to do (yolo's own store outputs, disk-footprint.md: 36.4 GiB across 572
 // store paths on the maintainer's host). Empty means the question was answered.
 type LivePrefixDecline string
 

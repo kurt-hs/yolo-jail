@@ -297,7 +297,7 @@ func TestVersionPruneRunsOnTheColdInstallPathToo(t *testing.T) {
 	}
 }
 
-// L7 (docs/design/disk-levers-and-backfill.md §3): THE PRUNE RUNS AT EVERY INVOCATION, not only
+// L7 (docs/reference/disk-footprint.md "The levers"): THE PRUNE RUNS AT EVERY INVOCATION, not only
 // after the act that installed a version. The versions already on disk when A7 shipped, and every
 // version a workspace collects while its agent is not due an update, were reached by nothing: the
 // only call sites were the install and update arms. So these cells drive the launcher with NO

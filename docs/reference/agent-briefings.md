@@ -270,7 +270,7 @@ asked for. This is one rule with several call sites, and each was a real defect:
   home is kept for the host as a managed root, with the lease and cap read from
   `nixroots.DefaultLease` and `nixroots.DefaultCap`, names `yolo nix-roots`, says a link under
   `/tmp` is not kept, and keeps "if a link dangles, rebuild it"
-  ([the design](../design/in-jail-nix-roots.md#8-what-is-built)). `macos-user` shares host paths
+  ([the reference](in-jail-nix-roots.md#the-command)). `macos-user` shares host paths
   and never gets the line.
 
 > [!WARNING]

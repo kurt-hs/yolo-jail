@@ -1,5 +1,5 @@
 // Package nixroots registers nix GC roots from inside a container jail so the HOST honors
-// them: a TRANSLATED ROOT, a term coined in docs/design/in-jail-nix-roots.md §4 for an
+// them: a TRANSLATED ROOT, a term coined in docs/reference/in-jail-nix-roots.md "Translated roots and the host path map" for an
 // ordinary indirect root sent under the host's absolute spelling of a link the jail made.
 //
 // WHY A JAIL NEEDS THIS AT ALL. A podman jail reaches the host's nix daemon through the

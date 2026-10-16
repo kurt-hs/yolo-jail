@@ -118,7 +118,7 @@ func (r Registrar) Register(link string) (string, error) {
 }
 
 // Pin is a temp root on target, held on a connection of its own until Close: the HANDOFF
-// FENCE of in-jail-nix-roots.md §2.4 and §4. A caller pins the store path the moment it
+// FENCE of in-jail-nix-roots.md "The handoff fence" and §4. A caller pins the store path the moment it
 // learns of it, makes and registers its managed link through Pin.Register on the same
 // connection, and only then closes. Register re-adds the temp root after the permanent root
 // is acknowledged, so a GC already running — whose permanent-root scan may predate the new

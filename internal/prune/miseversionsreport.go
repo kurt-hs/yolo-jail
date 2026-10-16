@@ -8,7 +8,7 @@ import (
 )
 
 // miseWalkBudget bounds the sizing walk over the candidate versions: the same 60 s every other
-// walk of the design gets (disk-levers-and-backfill.md §5.3), past which a figure is a lower bound.
+// walk of the design gets (disk-footprint.md "Triggers and defaults"), past which a figure is a lower bound.
 const miseWalkBudget = 60 * time.Second
 
 // renderMiseVersions is `yolo prune`'s section for the unused tool versions (miseversions.go),

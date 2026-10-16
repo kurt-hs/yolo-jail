@@ -34,7 +34,7 @@ type Daemon struct {
 // Options shape what the fake answers.
 type Options struct {
 	// Protocol is the version the daemon advertises; 0 is 1.38, the version the design
-	// measured against (in-jail-nix-roots.md §3).
+	// measured against (in-jail-nix-roots.md "Measurements the design rests on").
 	Protocol uint64
 	// Reject, when set, answers AddIndirectRoot with an error frame carrying it.
 	Reject string

@@ -18,7 +18,7 @@ import (
 )
 
 // nixroots.go is `yolo nix-roots`: the inspection and release surface of a workspace's
-// MANAGED ROOTS (docs/design/in-jail-nix-roots.md §4.1, internal/nixroots/registry.go), and
+// MANAGED ROOTS (docs/reference/in-jail-nix-roots.md "Managed roots", internal/nixroots/registry.go), and
 // `keep`, the hand-run form of the root watcher (option A of §5).
 
 const nixRootsUsage = `Usage: yolo nix-roots <list|keep|release|prune> [args]

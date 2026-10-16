@@ -230,8 +230,8 @@ config reach — which is the whole of their scope story.
   relocation, and the only one of these that **no config key selects**: yolo picks both ends
   from a table of recognised *content-addressed* host caches (`internal/hostcas`, `pants/lmdb_store`
   today) so a jail shares the host user's own store instead of pooling a second copy of it
-  ([`../design/disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md) L9 /
-  [OQ-BF10](../design/disk-levers-and-backfill.md#111-decision-ledger)).
+  ([host-cache aliasing](disk-footprint.md#host-cas-aliasing),
+  [OQ-BF10](disk-footprint.md#why-its-this-way)).
   The source is the launching user's `$XDG_CACHE_HOME`/`$HOME/.cache`; the destination is the path
   the jail's own copy of the tool already uses, so **the mount lands on top of the jail's private
   copy**, which is what strands rather than moves it. It is **writable**, which is a strictly

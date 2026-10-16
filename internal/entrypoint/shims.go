@@ -2323,7 +2323,7 @@ _locked_update() {
     return "$rc"
 }
 
-# _locked_prune is A7 AT EVERY INVOCATION (L7, docs/design/disk-levers-and-backfill.md §3): the
+# _locked_prune is A7 AT EVERY INVOCATION (L7, docs/reference/disk-footprint.md "The levers"): the
 # install and update arms prune only what they superseded, so the versions on disk before A7
 # shipped, and those a workspace collects while its agent is not due an update or its policy
 # freezes it, were reached by nothing. The prune's evidence is the live symlink whatever ran

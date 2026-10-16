@@ -11,7 +11,7 @@ import (
 // binaries are bind-mounted from since C8, pid1 included.
 //
 // WHY IT IS NOT AN IMAGE ROOT, and why it lives in its own directory
-// (disk-levers-and-backfill.md OQ-BF4). Two reasons, and the second is the one
+// (disk-footprint.md OQ-BF4). Two reasons, and the second is the one
 // that bites:
 //
 //  1. build/roots/ is enumerated by prune.PruneOrphanImageRoots, which reaps on

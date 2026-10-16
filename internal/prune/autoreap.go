@@ -76,7 +76,7 @@ func loadRecordsSince(before, after loadSentinelSnapshot) map[string]bool {
 
 // THERE IS NO DefaultKeepImages ANY MORE, and this is where it was.
 //
-// It was `--keep-images`'s default (2), and minimal-disk-footprint.md OQ-DF3
+// It was `--keep-images`'s default (2), and disk-footprint.md OQ-DF3
 // ruled the NUMBER unchanged on 2026-09-06 — as a small undo buffer sitting on
 // top of the sentinel-derived veto rather than the safety mechanism itself.
 // OQ-LS3 (docs/reference/image-retention.md#why-its-this-way, ruled
@@ -92,7 +92,7 @@ func loadRecordsSince(before, after loadSentinelSnapshot) map[string]bool {
 
 // AutoReapInterval bounds how often the LAUNCH PATH's automatic old-image
 // reap actually does anything beyond a cheap timestamp read.
-// minimal-disk-footprint.md P7 warns that automating a sweep moves its
+// disk-footprint.md P7 warns that automating a sweep moves its
 // trigger to "a schedule set by other people's jails" — this is the
 // mitigation for Ledger C: every launch checks in, but the reap itself fires
 // at most once per interval, so a busy multi-workspace machine never re-probes
@@ -100,7 +100,7 @@ func loadRecordsSince(before, after loadSentinelSnapshot) map[string]bool {
 // of the load-sentinel LRU-10) on every single launch. A day is short enough
 // that the measured growth (~7-8 images every 3 days on the audited machine)
 // can never again go unreaped for the weeks the manual command was
-// (minimal-disk-footprint.md §1.1: 24+ days, 404+ GiB, on a hint nobody
+// (disk-footprint.md "Why a hint is not a trigger": 24+ days, 404+ GiB, on a hint nobody
 // acted on) — the defect this replaces was "however long a human forgets",
 // which was unbounded by construction; a day is not.
 const AutoReapInterval = 24 * time.Hour
@@ -142,7 +142,7 @@ func RecordAutoImageReap(sentinel string, now time.Time) {
 }
 
 // AutoReapOldImages is the launch path's counterpart to `yolo prune`'s manual
-// "Old yolo-jail images" section — minimal-disk-footprint.md OQ-DF3's
+// "Old yolo-jail images" section — disk-footprint.md OQ-DF3's
 // TRIGGER half. The mechanism it drives (PruneOldImages: rows deduped by image
 // ID, retained by the per-workspace current pointers, vetoed by `podman ps`) is
 // exactly the one the manual command drives, so this call is as safe as a human

@@ -34,7 +34,7 @@ func fakeStore(t *testing.T) (dir, storePath string) {
 	return dir, storePath
 }
 
-// M6 of in-jail-nix-roots.md §3, as a function: the link is made in the jail, pointing at the
+// M6 of in-jail-nix-roots.md "Measurements the design rests on", as a function: the link is made in the jail, pointing at the
 // store path, and the daemon is sent the HOST's spelling of it.
 func TestRootMakesTheLinkAndSendsTheHostSpelling(t *testing.T) {
 	store, sp := fakeStore(t)
