@@ -1,7 +1,7 @@
 package packdecl
 
 // filesregister_test.go pins where `register` and `expects` decode: on a `files` slot and nowhere
-// else, with config-list's pointer rules and one template token (docs/design/pack-pi-resources.md
+// else, with config-list's pointer rules and one template token (docs/reference/pack-system.md
 // §3.1).
 
 import (

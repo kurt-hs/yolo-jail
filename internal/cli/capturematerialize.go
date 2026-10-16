@@ -335,7 +335,7 @@ func resolveProgramCaptureFor(store *capture.Store, bin, platform, compatibility
 }
 
 // macosUserCaptures is run.Options.MacosUserCaptures: the entries a macos-user launch stages for
-// its launchers (docs/plans/install-capture.md hand-off H4), picked HERE, by the resolver the
+// its launchers (docs/reference/install-capture.md hand-off H4), picked HERE, by the resolver the
 // launcher's own `capture-materialize` asks (resolveCaptureFor) and the receipt adapter beside it,
 // so the host's pick and the sandbox's lookup over the staged copy are one answer.
 //

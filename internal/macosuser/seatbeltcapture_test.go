@@ -15,7 +15,7 @@ import (
 // integration/macosusercaptureseatbelt_test.go's TestMacosUserCaptureSeatbeltProfileDeniesTheSharedHome,
 // which loads a capture plan's profile as the sandbox account (macos-user.yml, on a Mac). A Linux
 // jail cannot run sandbox-exec at all; what the case leaves to a human with a Mac is in
-// docs/plans/install-capture.md's slice 6 hardware checklist.
+// docs/reference/install-capture.md's slice 6 hardware checklist.
 
 const testStagingRoot = "/Users/Shared/yolo-captures/probetool"
 

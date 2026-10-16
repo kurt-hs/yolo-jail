@@ -924,7 +924,7 @@ it with us**. What follows is what the tree does, split by how we know it.
    that provider fails, which includes item 3 of [the measured findings](#host-pi-measured).
 
 The last two correct two rows of
-[notch-scoped config contributions' failure paths](../design/notch-scoped-config-contributions.md#45-failure-paths), which now say so.
+[the posture-list failure paths](pack-system.md#posture-list-failure-paths), which now say so.
 
 ### Suspected, and what would tell them apart
 
@@ -934,7 +934,7 @@ The last two correct two rows of
 | [the findings read from source](#host-pi-read-from-source) item 1 | `yolo host -- pi` or a wrapped `pi` opens a browser or exits with "prepare shared OpenAI authentication" before pi prints anything |
 | [the findings read from source](#host-pi-read-from-source) item 2 | pi exits during startup with an npm error |
 | [the measured findings](#host-pi-measured) item 3 with pi-automode | pi starts, and tool calls are blocked after a refresh failure |
-| A host yolo older than the posture lists (`bbe5c878`), and so older than host verbs refusing a manifest with problems (`d4aa6a43`) | `yolo host apply --assert` and `yolo host --` exit 0 and read the pack declaring the posture list as an empty manifest, so pi's `packages` lacks pi-automode and nothing says why. Only `yolo check`, `yolo pack lint` and a jail launch refuse the manifest by name ([notch-scoped config contributions' failure paths](../design/notch-scoped-config-contributions.md#45-failure-paths)) |
+| A host yolo older than the posture lists (`bbe5c878`), and so older than host verbs refusing a manifest with problems (`d4aa6a43`) | `yolo host apply --assert` and `yolo host --` exit 0 and read the pack declaring the posture list as an empty manifest, so pi's `packages` lacks pi-automode and nothing says why. Only `yolo check`, `yolo pack lint` and a jail launch refuse the manifest by name ([the posture-list failure paths](pack-system.md#posture-list-failure-paths)) |
 
 What would settle it: the first screen pi printed; `yolo host apply --verbose`;
 `cat ~/.pi/agent/models.json`; `yolo openai-auth status`; `yolo --version`; your
@@ -942,7 +942,7 @@ What would settle it: the first screen pi printed; `yolo host apply --verbose`;
 Until then no candidate gets a question here: the `models.json` one is fixed by [HC-D1](#HC-D1),
 the login before exec belongs to [`agent-credentials.md`'s OpenAI service](agent-credentials.md#the-openai-subscription-credential-service), and the npm
 install and the classifier belong to
-[`notch-scoped-config-contributions.md`](../design/notch-scoped-config-contributions.md).
+[pack-system.md, posture lists](pack-system.md#posture-lists).
 
 ## Implementation-decision ledgers
 

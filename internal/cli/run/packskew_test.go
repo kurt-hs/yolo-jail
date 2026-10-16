@@ -3,7 +3,7 @@ package run
 // packskew_test.go pins the attach's disposition for a PACK-SET skew: a running jail whose pack
 // tree will not load, or whose packs cannot serve what this entry selects (packtree.go's
 // attachPackSkew). Both are known differences between the jail and this entry, so both take the
-// contract gate's disposition (docs/design/attach-skew-and-contract-guardrails.md, OQ-SK1): at a
+// contract gate's disposition (docs/reference/attach-skew.md, OQ-SK1): at a
 // terminal the restart prompt, which continues into a fresh launch; elsewhere a refusal; and
 // YOLO_ALLOW_ATTACH_SKEW, the one acknowledgment, which proceeds delivering nothing. Never the
 // configured packs in the jail's place, which is what OQ-PK2 (c) keeps from a running jail.

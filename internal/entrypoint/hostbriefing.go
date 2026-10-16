@@ -809,7 +809,7 @@ const LegacyLocalPackBriefingRel = "AGENTS.md"
 // briefing, by the apply that moved it. The refusal names the one-line edit that makes the move
 // delivery-preserving; the user's declarations stay theirs to write. `yolo host apply` no longer
 // reaches it: that `from` is a manifest problem, and since NS-D14 its resolver refuses the local
-// pack before the briefing kind runs (docs/design/notch-scoped-config-contributions.md). The
+// pack before the briefing kind runs (docs/reference/pack-system.md). The
 // refusal stays as this function's own guard, since nothing in its signature says a resolver ran
 // first.
 //

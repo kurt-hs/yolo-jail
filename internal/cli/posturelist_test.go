@@ -1,6 +1,6 @@
 package cli
 
-// posturelist_test.go pins the POSTURE LIST (docs/design/notch-scoped-config-contributions.md
+// posturelist_test.go pins the POSTURE LIST (docs/reference/pack-system.md
 // §4.1) through the verbs a user runs — `yolo host apply`, `yolo config render` and
 // `yolo config ls` — each with the notch it describes. Every test runs the real verb
 // (applyHost, applyHostSurveyed, configRunW) over a real file:// pack in a temp HOME, so each

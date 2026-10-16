@@ -50,7 +50,8 @@ the reserved-children rules (the withheld shipped name, the recovery report) and
 skill trees rulings ([`OQ-ST2`](#oq-st2), [ST-P1](#st-p1), [ST-P3](#st-p3), [ST3](#st3),
 [ST-N2](#st-n2), [ST-R](#st-r)) the same day, when the synced skill trees design graduated. Its
 measured account of [Claude Code's sync root](#claude-sync-root), its remaining ledger rows and the
-unruled half of [`OQ-ST2`](#OQ-ST2) moved in on 2026-10-16, when that design's stub was deleted. UNMEASURED:
+unruled half of [`OQ-ST2`](#OQ-ST2) moved in on 2026-10-16, when that design's stub was deleted. The [pi packages](#pi-packages) section and its
+`PR-D` rulings moved in the same day from the pi-resources design, checked against `8e65f3444`. UNMEASURED:
 no apply over a non-empty `synced/` bucket on a real host is recorded; the fence and the notice
 are pinned by tests that drive a real apply over fixtures.
 MEASURED in CI at `7ad8358c`
@@ -1096,7 +1097,7 @@ home, and has no update step: `yolo pack update` in the jail says the pin moves 
 Two backends deliver no fork yet. A `macos-user` launch carrying one says that its program is not
 delivered there and names hand-off H4
 ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)); H4 itself landed on 2026-10-05 for
-installer captures ([`install-capture.md`](../plans/install-capture.md#build-order)),
+installer captures ([`install-capture.md`](install-capture.md#build-order)),
 and what keeps a fork off this backend is that its build is a container one. Apple Container below its read-only floor
 mounts no capture store, so the launch builds nothing and each fork's launcher says why.
 
@@ -1614,7 +1615,7 @@ so that nothing of the user's is lost or chosen between:
   to every agent instead of the audience that `from` routed it to. Such a `from` is a manifest
   problem ([OQ-PB2](#oq-pb2)), so `yolo host apply` refuses the local pack before this step,
   with the launch's own words and nothing written
-  ([NS-D14](../design/notch-scoped-config-contributions.md#10-decision-ledger)). The move's
+  ([NS-D14](#ns-d14)). The move's
   refusal, which names the edit to `briefing/local.md`, stays as the function's own guard.
 - Otherwise it moves **without clobbering**: a hard link then an unlink, so a file created at the
   target between the check and the move is never replaced. Only a filesystem without hard links
@@ -1684,8 +1685,7 @@ which otherwise names a configured pack by its staged directory.
 `/packages`, because pi loads a listed folder as a package, every file in its `extensions/`,
 `themes/` and `prompts/` with no list, so a pack gives pi one
 `{"kind":"files","agents":["pi"],"from":"<folder>"}`
-([`pack-pi-resources.md`](../design/pack-pi-resources.md),
-[`registration.go`](../../internal/packload/registration.go)).
+([pi packages](#pi-packages), [`registration.go`](../../internal/packload/registration.go)).
 
 The join lives in destination borrowing rather than in either notch's renderer, which is why the
 host and the jail cannot drift apart again ([`filesslotparity_test.go`](../../internal/cli/run/filesslotparity_test.go)
@@ -1726,6 +1726,96 @@ grounds that a bind mount means nothing off-container — true of the mechanism 
 intent, since a pack that owns `~/.claude/file-suggestion.sh` means *this file is mine to
 maintain*. That changed on 2026-08-02; **ownership does not carry over**, which is the one
 asymmetry the host copy keeps.
+
+##### <a id="pi-packages"></a>pi packages: the one registering slot
+
+A content pack reaches pi with one entry and no pi path:
+`{"kind": "files", "agents": ["pi"], "from": "files/pi"}`. `packs/pi` declares the slot it lands
+in, at `.pi/agent/yolo-packs`, with `register` naming `pi/settings` and `/packages`, and core lists
+each landed tree in pi's `packages` setting. Terms used here:
+
+- A **slot** is a `files` declaration with `agent` + `into` and no `from`; an **addressed tree** is
+  one with `agents` + `from` and no `into`; its **landing** is the home-relative `<slot>/<pack>`
+  path it is delivered at ([the table above](#files)).
+- A **local pi package** is an entry in pi's `packages` setting that is a path rather than `npm:`
+  or `git:`. pi loads it where it is and never installs or updates it.
+- A **registration** *(a term coined by the design this section graduated from)* is the
+  `packages` entry core appends for one landed tree.
+
+<a id="pi-what-loads"></a>**What pi loads, from where.** Read from pi's own package manager
+(`@earendil-works/pi-coding-agent`; the function names are pi's), and the local-package rows
+MEASURED once against pi 0.99.2 by running pi's resolver offline over scratch packages with no
+agent session:
+
+| Where | What pi does with it |
+| :--- | :--- |
+| A top-level `.ts`/`.js` file in `~/.pi/agent/extensions/` | Loads it as one extension, automatically (`collectAutoExtensionEntries`) |
+| A subdirectory of `~/.pi/agent/extensions/` | Loads only what it declares: the `pi.extensions` list in its `package.json`, resolved as **exact paths with no globs**, or else its `index.ts`/`index.js`. With neither it loads **nothing** (`resolveExtensionEntries`) |
+| `~/.pi/agent/themes/*.json`, `~/.pi/agent/prompts/*.md` | Loads each top-level file, automatically |
+| Settings arrays `extensions`, `themes`, `skills`, `prompts` | Plain entries add files or directories; pattern entries (`!x`, `+x`, `-x`, globs) only filter what plain entries found (`resolveLocalEntries`) |
+| A `packages` entry that is a local path | Loaded in place, never installed or updated. A path that does not exist is **skipped silently**; the same path listed twice resolves once (`resolveLocalExtensionSource`) |
+| A package whose `package.json` has a `pi` key | Loads **only** the resource arrays that key lists, globs allowed. A type it does not list loads nothing, even if its conventional folder exists (`collectPackageResources`, `readPiManifest`) |
+| A package with no `pi` key | Loads each conventional folder that exists: `extensions/` (every top-level file), `themes/`, `skills/`, `prompts/`, with no list |
+| A local package with neither a `pi` key nor a conventional folder | Loads the directory itself as one extension, which fails without an index |
+
+That table is why the slot is where it is. A tree landed under `~/.pi/agent/extensions/<pack>/`
+is a subdirectory, which loads nothing without a hand-written manifest naming every file; a
+local package with conventional folders loads everything with no list. Extensions load through
+jiti with pi's own modules aliased, so one importing only `@earendil-works/*` and `node:*` needs no
+`node_modules` and loads from read-only files. `pi update --extensions` touches only `npm:` and
+`git:` sources, so a registered tree never fetches. Not run: loading an extension through jiti, and
+`~` expansion in a user setting; both are read from source.
+
+> [!WARNING]
+> **A tree that ships a `package.json` must give it no `pi` key, or list every type it ships.**
+> A `pi` key switches every conventional folder off, so a manifest listing only `extensions`
+> silently drops the tree's themes and prompts.
+
+<a id="pi-registration"></a>**What core does.** For every addressed tree that lands in a slot
+declaring `register`, `packload.Registrations` computes one entry, `~/<landing>` unless the slot
+spells an `entry` template, through the same matcher delivery uses (`matchedDestinations`, which
+destination borrowing reads too), so a tree is never listed where it was not delivered.
+`packoverlay.Collect` places each as a `config-list` entry **of the contributing pack**, ahead of
+that pack's own lists, and it folds as a hand-written one does: pack order, first occurrence wins,
+per-entry capture in a jail, the inserted-entries record at the host. Every render reaches it
+through `Collect` (the jail boot, `yolo host apply`, `config render`, `config ls`), so no notch has
+a call of its own. Core knows a slot, a surface, a pointer and a template, and nothing about pi.
+In a jail the tree is mounted `:ro` at the landing; at the host destination borrowing writes it at
+the real home's landing and the entry is inserted into the real `~/.pi/agent/settings.json` under
+the `rmw` record. `yolo features` lists `registered-files-slots`, since a yolo without the field
+skips a slot that declares it.
+
+<a id="pi-registration-cases"></a>**Behavior in every case:**
+
+| Case | Behavior |
+| :--- | :--- |
+| No pack addresses pi | Nothing is mounted or registered; `settings.json` is unchanged |
+| A tree lands and registers | pi loads every extension, theme and prompt in it as a user-scope package; no project trust is involved |
+| Two packs address pi | Two landings and two entries, in pack order. A clash in what they register (a command, tool or theme name) is pi's to resolve. UNVERIFIED how pi resolves it |
+| A tree holding none of `expects` | `pack lint`, `pack footprint` and `yolo check` warn, naming the tree and the expected names; it still lands and registers ([`PR-D4`](#pr-d4)) |
+| The tree's `from` names nothing, or an only/exclude filter in `packs` dropped it | Nothing is mounted or registered ([`PR-D11`](#pr-d11)); the launch warns that it skipped the tree, and `yolo host apply` reports the source missing |
+| The pack's name has a character a staged directory escapes (`my_pack`) | The entry names the landing under the name in `packs`, where the tree is mounted ([`PR-D10`](#pr-d10)) |
+| One extension fails to load | pi's startup error; yolo adds nothing. UNVERIFIED that pi loads the rest |
+| A pack leaves `packs` | Jail: the tree is unstaged and its entry is not re-contributed. Host: the inserted entry is removed, and `yolo host apply --assert` retires the tree with the rest of a dropped pack's `files` output ([retiring a dropped pack's host output](#retiring-a-dropped-packs-host-output)). `--revert` removes the entry and leaves the tree, which is inert because nothing lists it |
+| The user runs `pi install`, or deletes a registration, in a jail | Captured per entry and kept, which is `config-list`'s rule, not a new one |
+| The addressed agent's pack is not selected | The existing orphan report for an addressed `files` contribution; nothing is registered |
+| The tree ships `skills/` | pi loads them for pi only; `pack lint` adds an information line, because the `skills` kind reaches every agent ([`PR-D12`](#pr-d12)) |
+| Refresh | A new or removed registration changes `settings.json`, so the [`due_on_change`](#program) refresh runs once |
+| macos-user and Apple Container | The tree takes the `files` row of [`settings-per-setup.md`](../../userguide/reference/settings-per-setup.md#what-a-pack-can-contribute-per-setup), and the entry is a config-list entry every backend renders. Neither backend has been run for this |
+
+**Forbidden.** Registration never writes through a derive's `computed` layer, which would replace
+the array and erase the user's own `packages`; core never names pi; and a tree landed in a slot
+without `register` is never registered. pi's own two `.pi/agent/extensions/yolo-*.js` files are
+ordinary `files` entries, untouched by this.
+
+**What is not done.** UNMEASURED: no test starts pi, so no one has watched pi load an extension and
+a theme from `~/.pi/agent/yolo-packs/<pack>` in a jail; that is a human check (select a pack whose
+pi folder holds an extension and a theme, start pi, see both load). The maintainer's own pack
+still lists its extensions and themes one `files` entry each; migrating it to one addressed tree
+is owed. Whether a patched extension whose written `into` is a direct child of the slot is
+registered too is open, as [`OQ-PC3`](../design/pack-conventions.md#OQ-PC3). Non-goals:
+registering trees for other agents (none takes a list of package paths; Claude's `enabledPlugins`
+is an object map), and policing clashes between extensions.
 
 #### `state`
 
@@ -2065,9 +2155,8 @@ step 9.4: *"prompts on, no allow/deny clobber"*). A posture adds entries with `l
 no shipped pack's host posture sets an array (`TestNoShippedHostPostureReplacesAList`,
 `internal/entrypoint`).
 
-A **posture list** *(a term coined by
-[the design](../design/notch-scoped-config-contributions.md#41-recommended-posture-lists-inside-autonomy))*
-is how a pack declares an entry for one side of the confinement line. The motivating case is
+<a id="posture-lists"></a>A **posture list** *(a term coined by the notch-scoped contributions
+design this part graduated from; [`ns-oq-5`](#ns-oq-5))* is how a pack declares an entry for one side of the confinement line. The motivating case is
 a permission gate for pi that belongs on the host and would only cost tokens and prompts in a
 jail:
 
@@ -2109,9 +2198,8 @@ jail:
   ignores an unknown nested field), so the entry renders nowhere rather than everywhere. Install
   the host yolo before a pack uses the field, since the host refuses the manifest otherwise.
 
-A **posture overlay** *(a term coined by
-[the design's OQ-3 build](../design/notch-scoped-config-contributions.md#10-decision-ledger), NS-D19)*
-is a posture `config` entry naming a surface its own pack does not declare. It is how a pack
+<a id="posture-overlays"></a>A **posture overlay** *(a term coined by the same design for
+[`ns-oq-3`](#ns-oq-3)'s build, [NS-D19](#ns-d19))* is a posture `config` entry naming a surface its own pack does not declare. It is how a pack
 sets another pack's setting for one side of the confinement line, such as a scalar only the
 host gets:
 
@@ -2166,6 +2254,60 @@ A pack declares at most one `autonomy` contribution, with both postures inside i
 with a warning, so no reader there sees postures that do not render. `autonomy` never collides
 across packs: a posture overlay folds at config-overlay's slot, where later wins by pack
 order as it does for every overlay, and a list only appends.
+
+<a id="ns-p1"></a>**Content conditional on confinement lives in `autonomy`** (principle P1 of the
+notch-scoped contributions design this part graduated from). The notch decides the posture, and
+a pack declares what each posture means; no manifest names a notch, and no `config-list` or
+`config-overlay` grows a `notch` or `posture` modifier ([`ns-oq-5`](#ns-oq-5)). A contributor
+needs no edit to the owning pack: an agent pack owns its surface, and a personal or team pack
+contributes to it through its own `autonomy` declaration.
+
+<a id="posture-targets"></a>**Which posture each target selects:**
+
+| Target | `AgentAutonomy` | `guarded` lists and overlays | `autonomous` lists and overlays |
+| :--- | :--- | :--- | :--- |
+| host (`yolo host apply`, `yolo host`) | off | contribute | skipped |
+| jail (every backend's boot, `yolo check`'s probe) | on | skipped | contribute |
+| preview (`KindPreview`; no `Collect` caller passes it) | on | skipped | contribute |
+| guest | on | nothing renders there yet (`render.NotchUnbuilt`) | the same |
+| unset | off | contribute: a permission gate stays in | skipped |
+
+`lists: []` and an entry with `add: []` are no-ops. The same entry in both postures contributes
+at every target, as an ungated list does; the same entry from an ungated list and a posture
+list, or from two packs, is written and recorded once. When a contributor is dropped and the
+owner kept, the next host apply removes the inserted entry; when the owner and every
+contributor are dropped, the entry stays in the host file ([`OQ-AL3`](#oq-al3)) until
+`yolo host apply --revert`. An entry the user already had before the first apply is theirs,
+unrecorded and never removed, and a yolo-inserted entry the user deletes is recorded as declined
+and not re-added.
+
+<a id="posture-list-failure-paths"></a>**Failure paths:**
+
+| Step | Failure | What happens |
+| :--- | :--- | :--- |
+| Host manifest read | Host yolo older than the posture-list field | That yolo reads the declaring pack as an empty manifest and applies at exit 0, so nothing the pack declares reaches the real home and nothing says why; `yolo check`, `yolo pack lint` and a jail launch refuse the manifest by name. Run `just install` before the pack change |
+| Jail manifest read | Entrypoint older than the field | `DecodeTolerant` drops `lists`, so the entry renders nowhere (fail closed) |
+| Either notch | A yolo older than the posture overlay | The entry folds nowhere, so the key renders at no notch (fail closed) |
+| Host apply | `host_management: none` (the unset answer) | Refused, nothing written; only `own` writes |
+| `macos-user` boot | Host yolo older than the render-mark parity | The host file composes as a layer, so an applied entry reaches the jail ([NS-D3](config-target-resolution.md#ns-d3)); `just install` ends it |
+| First host pi start | The `npm:` package is not installed, or npm or the registry is unavailable | pi installs a missing package at resolve time, and that install has no catch on pi's startup path, so the start fails outright (read from pi 0.87.1's source, not run; [the host pi findings](host-agent-environment.md#host-pi-read-from-source)) |
+| Host pi, direct or IDE launch | pi uses `openai-codex` | The delivered extension's login and refresh fail, since only `yolo host --` sets the host socket; the error says to launch with `yolo host -- pi` ([the measured host pi findings](host-agent-environment.md#host-pi-measured)) |
+| Host pi, any tool call | pi-automode has no classifier model configured | It classifies with the session model, and blocks only when there is none or its provider fails (read from pi-automode 1.17.0's source, not run) |
+
+<a id="posture-lists-owed"></a>**What is measured, and what is not done.** MEASURED in a launched jail (podman, nested) by
+`TestAPostureListRendersOnlyItsOwnSideOfTheLine` (`integration/configlist_test.go`): a jail's
+`~/.pi/agent/settings.json` held the `autonomous` entry and not the `guarded` one, and
+`yolo config render pi/settings --at host` from the same home held the reverse; with the gate in
+`packoverlay.Collect` disabled the test failed. Every other caller (the boot loop, `yolo check`'s
+probe, `RenderHostPack` with its insert record, `yolo host apply --assert`, `yolo config render`
+and `ls`, the footprint and the notch line) is pinned by unit tests revert-checked against their
+call sites. UNMEASURED: no real host has run a posture list. The motivating case is owed, by
+hand, on the maintainer's host: add the guarded posture list above to the maintainer's own pack
+(outside this repository), set `host_management: own`, run `yolo host apply --assert`, start pi
+on the host once and run `/automode model`, then relaunch a jail and confirm the entry is absent.
+Not proposed: a per-entry removal or veto on a host-supplied array ([`OQ-LT2`](#oq-lt2)), a
+capability predicate (host Docker, a keychain) until a real case exists, a host-only `packs`
+list, and any escape hatch.
 
 #### `provider` and `profile`
 
@@ -3564,11 +3706,11 @@ pack cannot be resolved, `--assert` writes nothing and exits 1, naming each pack
 reason. The dry run says it would refuse. A pack whose manifest has problems, the ones
 `yolo check` and every launch refuse, counts as unresolvable here: it is named with each
 problem, and the fix is in the pack, not a fetch
-([NS-D14](../design/notch-scoped-config-contributions.md#10-decision-ledger)). For the
+([NS-D14](#ns-d14)). For the
 conventional local pack, which has no `packs` entry, the remedy names its directory. The
 problems, and the declaration every host verb reads, come from the tree the entry's
 `only`/`exclude` leave, as the launch loads it: a file the entry excludes is no problem, and a
-`pack.json` it filters out is not read ([NS-D15](../design/notch-scoped-config-contributions.md#10-decision-ledger)).
+`pack.json` it filters out is not read ([NS-D15](#ns-d15)).
 The other host
 verbs leave such a pack out and say so: `yolo host --` and `yolo host env` compose without it
 (a profile only it declares refuses the launch, naming it), `--revert` keeps its keys recorded,
@@ -3671,7 +3813,7 @@ another launch reads, so pack staging needs neither the lock nor the sync.
    own bootstrap-through-stage window. The lock opens in `Run`'s native arm just before
    `refreshJailBriefings` and is handed to the orchestrator (`AcquireWorkspaceLockFor`), which
    releases it before the agent.
-4. **The attach's contract gate** ([`attach-skew-and-contract-guardrails.md`](../design/attach-skew-and-contract-guardrails.md)).
+4. **The attach's contract gate** ([`attach-skew.md`](attach-skew.md)).
    A gate that restarts the jail continues into the fresh launch under the same hold, which is
    what makes the stopped jail's teardown leave its host-services dir to the relaunch.
 
@@ -3760,7 +3902,7 @@ longer waits for the other launch's staging.
 launch, plus a notice on attach (`newPackTree` and `noteBootedPackSetDiffers`, pinned by
 `TestASecondLaunchNeverTouchesTheFirstLaunchsTree` and
 `TestAnAttachWritesNothingIntoTheRunningJailsPackTree`). Chosen with the attach-skew stopgap
-([`attach-skew-and-contract-guardrails.md`](../design/attach-skew-and-contract-guardrails.md#findings-since-filing-2026-09-26)):
+([`attach-skew.md`](attach-skew.md#pack-contract-skew-and-the-release-decode-check)):
 an attach that re-stages hands a running jail pack contracts its binaries may not read, and
 per-launch trees close that class. The options as they stood: an attach re-staged the tree a
 live podman jail had bound, so after a config change the jail's `/ctx/packs` showed the new pack
@@ -3790,7 +3932,7 @@ packs it booted with at `/ctx/packs` for as long as it runs, however the config 
 attach after a change prints, on stderr, which packs were added, removed or changed and that
 `yolo stop` then a launch picks them up. A selection only the configured packs can satisfy (a
 profile only a newly added pack declares), and a jail tree this yolo cannot read, take the
-attach-skew disposition ([OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger)): the
+attach-skew disposition ([OQ-SK1](attach-skew.md#why-its-this-way)): the
 restart prompt at a terminal, a refusal naming the restart elsewhere, and
 `YOLO_ALLOW_ATTACH_SKEW=1` to attach delivering nothing. The mechanism choices, each made to build
 the ruling and none changing it:
@@ -3862,7 +4004,7 @@ the ruling and none changing it:
     the `claude_plugins` hook this build removed, so every jail v0.10.0 launched with claude binds a
     tree this build cannot read. Composing from the configured packs there delivered the newer
     shape, claude's list-valued `api_key_env_name`, into a jail whose derive reads it as a string,
-    which is the ride-along [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger) rules
+    which is the ride-along [OQ-SK1](attach-skew.md#why-its-this-way) rules
     out. Not a tolerant read of the old tree: the host's loader is strict by design, `TolerateSkew`
     is process-wide and in-jail only, and a read that drops what it does not know composes from a
     guess at the jail's packs. Under the acknowledgment such an attach writes nothing: no channel,
@@ -3871,7 +4013,7 @@ the ruling and none changing it:
     (`TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong`), which the release-decode allowlist
     cites.
 12. *Implementation decision.* **A selection the jail's packs cannot serve takes the same
-    disposition**, where the first build refused it outright. [`OQ-SK1`](../design/attach-skew-and-contract-guardrails.md#decision-ledger)'s terminal arm applies to
+    disposition**, where the first build refused it outright. [`OQ-SK1`](attach-skew.md#why-its-this-way)'s terminal arm applies to
     every attach that cannot be made compatible, so at a terminal the attach asks
     `Restart jail now? [Y/n]` and a yes continues into the fresh launch, still holding the lock, as
     a missing contract tag does. The headline names the packs the jail lacks (`this jail was
@@ -4164,6 +4306,45 @@ in the config-overlay comments (R2, R3) it means the R1–R5 table below, never
 | <a id="briefing-r5-row"></a>**R5** (briefing defaults) — one predicate, `packload.GovernedSources`, for every notch that reads a pack's sources | The gate used to live at three sites that agreed, which is how one trap reached every notch; a fourth site with its own gate drifts. See [the warning](#briefing-r5). |
 | <a id="oq-lt1"></a>[**OQ-LT1**](#oq-lt1) (transform removal) — the config transform (`config.lua`, `host_files[].transform`, a surface's `transform`) is deleted outright: no named refusal, no deprecation window | It had no user, and permanent named refusals would be code written for nobody. A stale key is still loud for free: the `host_files` key set (`knownHostFileKeys`) is closed and surface and overlay decoding is `DisallowUnknownFields`, so each is refused as an unknown key — the basis the ruling rests on, pinned by `TestHostFilesRetiredTransformKey` and `TestDecodeOverlayRejectsUnknownField`. A leftover `config.lua` file is simply never read. Do not add a `validateJournalRetired`-style refusal for it, and do not widen `knownHostFileKeys` back. |
 | <a id="oq-lt2"></a>[**OQ-LT2**](#oq-lt2) (transform removal) — principle 4 of the agent-settings composition design ("Lua, not a data-filter vocabulary") retires with the transform; the two gaps it leaves are accepted | Nothing declarative removes or rewrites an entry inside a host-supplied array, or edits one conditionally on its value; [`config-list`](#adding-entries-to-an-array-config-list) (2026-09-24) only APPENDS entries, and a merge patch still replaces the array whole. Nothing makes a declared, portable, *partial* edit of a raw file the host also owns. The answer is `capture` once (state) or `content:` (a jail-specific copy); a declarative `filter`/`replace` op is designed against a real case or not at all. Do not reintroduce a post-merge script slot to close either gap. |
+| <a id="oq-pr1"></a>[**OQ-PR1**](#oq-pr1) (pi packages) — a content pack reaches pi through one addressed tree laid out as a pi package, registered in pi's `packages`; per-file entries keep working | Ruled in review 2026-10-05, in the maintainer's words *"we need to be able to consolidate our pack files, they repeat way too much. we need a bunch of convention over configuration."* It is the only route with no pi path and no file list, and it covers themes and prompts in the same line. Do not move the slot into `.pi/agent/extensions` with a manifest: pi resolves a subdirectory's list as exact paths, so the pack would name every file again. See [pi packages](#pi-packages). |
+| <a id="pr-d1"></a>**PR-D1** (pi packages) — the slot is `.pi/agent/yolo-packs` | Outside every folder pi scans on its own, so only a registration loads a tree and a stale tree is inert. |
+| <a id="pr-d2"></a>**PR-D2** (pi packages) — a registration is a core-emitted `config-list` entry attributed to the contributing pack, never a derive's output | `config-list` is the only layer that appends beside the user's list and forgets a dropped pack at both notches; a derive's `computed` layer replaces the array and would erase the user's packages. |
+| <a id="pr-d3"></a>**PR-D3** (pi packages) — the entry is `~/{landing}` | pi expands `~` in user settings at both notches; an absolute path would differ between the jail and the host. |
+| <a id="pr-d4"></a>**PR-D4** (pi packages) — `expects` warns and never refuses | A tree pi cannot load is pi's failure to report; yolo adds the early hint, not a second gate. It is checked against the selected packs at `yolo check`, and against the packs yolo ships at `yolo pack lint` and `yolo pack footprint` of one pack, since a content pack's slot is in another pack. |
+| <a id="pr-d5"></a>**PR-D5** (pi packages) — `entry` is optional and defaults to PR-D3's value | The common slot names only where the list is, and a slot needing another spelling still has one. |
+| <a id="pr-d6"></a>**PR-D6** (pi packages) — registrations are computed through the matcher delivery uses and placed by `packoverlay.Collect` | One matching rule, so a tree is never listed where it was not delivered; `Collect` is the one join every render already runs. |
+| <a id="pr-d7"></a>**PR-D7** (pi packages) — a `register` naming a surface its own pack does not declare is a manifest problem: fatal at a boot and at `yolo host apply`, a `yolo pack lint` failure | The slot owner promises the list, so the list must be the owner's. |
+| <a id="pr-d10"></a>**PR-D10** (pi packages) — in a jail a landing is spelled with the name the launch loaded the pack under (`Pack.LaunchName`), not the staged directory | A staged directory escapes the name (`my_pack` is staged as `my_5fpack`), and an entry spelled with it lists a path where nothing is mounted, which pi skips without a word. |
+| <a id="pr-d11"></a>**PR-D11** (pi packages) — a tree is registered only when its source is in its pack's tree (`filesSourceDelivered`) | It is what every renderer checks before delivering a tree, so PR-D6's promise holds for a `from` naming nothing or a folder a filter dropped. |
+| <a id="pr-d12"></a>**PR-D12** (pi packages) — a tree shipping `skills/` gets an information line from `pack lint` alone, only in a slot whose `expects` names `skills` (`packload.SkillsInTreeNotes`) | Skills for one agent can be a choice, so it is a note, not a warning; gating on the slot's own `expects` keeps core agent-blind. |
+| <a id="ns-oq-1"></a>[**OQ-1**](#ns-oq-1) (notch-scoped) — the selector for a one-side-of-the-line entry is the posture, not a notch name, in one spelling | A name would add a notch-name edge [§6c](#batch-6c) rules out and a `packdecl`→`render` import cycle; at an unset target the posture keeps a permission gate in where a `"host"` match drops it; and a custom confinement with prompts on gets the gate. |
+| <a id="ns-oq-2"></a>[**OQ-2**](#ns-oq-2) (notch-scoped) — no filtering of host-only entries out of a `readsHost` layer in the jail | Moot: the render mark delivers a managed home's host file as a baseline, never a layer ([`OQ-CR6`](config-target-resolution.md#oq-cr6)). A sanitizer would strip the user's own entry in a home yolo never wrote, and a mounted host record is a second model of "which bytes are yolo's" beside the mark. |
+| <a id="ns-oq-3"></a>[**OQ-3**](#ns-oq-3) (notch-scoped) — a posture's `config` may patch a surface another pack owns (the [posture overlay](#posture-overlays)) | Maintainer ruling 2026-09-28, against the leaning to defer: *"do it now. extension point."* It is how a host-only scalar exists, with no modifier on `config-overlay` and no notch name. |
+| <a id="ns-oq-4"></a>[**OQ-4**](#ns-oq-4) (notch-scoped) — `yolo config ls` and `render` need nothing new for posture lists | Each already passes its notch's bit, so `--at host` and `--at jail` follow the gate. |
+| <a id="ns-oq-5"></a>[**OQ-5**](#ns-oq-5) (notch-scoped) — posture lists inside `autonomy`, not a `posture` or `notches` modifier on `config-list` and `config-overlay` | Maintainer ruling 2026-09-28, as leaned: [`PV-OQ-1`](providers.md#pv-oq-1) puts confinement-conditional keys in `autonomy` and nowhere else. The shape needs no `Collect` signature change and no notch names in manifests, and an older in-jail reader drops a nested posture field where it would render a modifier-gated list unconditionally. A modifier stays the fallback only if a ruling amends both. |
+| <a id="ns-d1"></a>**NS-D1** — the posture gate sits after the decode and before the owner check | An unselected contribution is a clean skip (no problem, no orphan, no applied row), as the `profile` gate is, while a malformed one is still reported at every notch. |
+| <a id="ns-d2"></a>**NS-D2** — `yolo pack footprint` claims a gated list unconditionally and names the posture; the notch line counts posture lists | Disclosure shows what a pack can do at any notch; NS-D12 narrows the count to placed lists. |
+| <a id="ns-d4"></a>**NS-D4** — a posture list is disclosed on the pack's `autonomy` claim (`<posture> appends <entries> to <agent/name>#<pointer>`), not as a `config-list` claim | A claim leads with the kind the author wrote; a `config-list` claim would name a declaration the pack does not make. |
+| <a id="ns-d5"></a>**NS-D5** — one projection, `(*Manifest).ListContributions`, walks `config-list` contributions and posture lists in declaration order, autonomous before guarded, first `autonomy` only | A posture's config, flags and lists come from one declaration, the one `PostureFor` reads. |
+| <a id="ns-d6"></a>**NS-D6** — posture-list validation shares `configListBodyProblems`, with messages naming the position (`contributes[i].guarded.lists[j]`) | One rule set for one body shape. |
+| <a id="ns-d7"></a>**NS-D7** — a malformed or ownerless posture list is reported led by `autonomy` | The author reads the kind they wrote. |
+| <a id="ns-d8"></a>**NS-D8** — once placed, a posture list is an ordinary `agentcfg.ListContribution` from its pack | The same fold, capture, insert record and `config-list:<pack>` label; the kind is named only where an author reads the declaration. |
+| <a id="ns-d11"></a>**NS-D11** — a second `autonomy` contribution in one pack is refused by the strict decoder (`validateSingleAutonomy`) and dropped with a note by the tolerant one | Every reader then sees one declaration; `packload.Collisions` cannot see this case, and a jail treats a problem as fatal, so it skips. |
+| <a id="ns-d12"></a>**NS-D12** — the notch line counts a posture list as a fold only when `Collect` placed it (`OverlaySet.PlacesPostureListFrom`) | Counting declarations printed "folded into the config surfaces below" under an orphan line. |
+| <a id="ns-d13"></a>**NS-D13** — `ConfigurePackByName` is the embedded lookup plus `configureOnePack`, so a fixture pack reaches the probe's `Collect` | Without it the probe's bit was invertible with every test green. |
+| <a id="ns-d14"></a>**NS-D14** — a pack whose manifest has problems is unresolvable to every host verb (`cli.resolveConfiguredPack`, `manifestProblemsError`) | No host verb reads a manifest every launch refuses. Each verb keeps its disposition: `host apply --assert` refuses the whole set and writes nothing; `yolo host --`, `host env` and the launch gate refuse, naming the pack and its remedy ([NC-D5](../plans/notch-convergence.md#7-decision-ledger)); the read-only `config` verbs name it as not folded; `config promote` refuses to write into it (NS-D16). The remedy names `yolo pack lint`. |
+| <a id="ns-d15"></a>**NS-D15** — the problems and declaration host verbs read come from the tree the entry's `only`/`exclude` leave (`cli.loadAsStaged`) | That is the tree the launch, `yolo check` and validation load; reading the unfiltered source refused packs whose only problem is an excluded file, and applied a `pack.json` the filters drop. The host notch's file reads still ignore the filters. |
+| <a id="ns-d16"></a>**NS-D16** — `config promote` refuses a destination whose manifest has problems (`promotePlan.destManifestProblems`) | It used to write, clear the capture overlay, and say the next launch renders keys no launch does. |
+| <a id="ns-d17"></a>**NS-D17** — the remedy for a refused pack says "fix each problem named above in the pack"; the conventional local pack gets its own remedy keyed on its directory | `LoadDir` also reports files such as `briefing/CLAUDE.md`, and the local pack has no `packs` entry to remove. |
+| <a id="ns-d18"></a>**NS-D18** — a pack with problems refuses `yolo host --` and `host env` before the selected profile or provider is checked | The refusal names the pack and its problems; superseded in its first form by [NC-D32](../plans/notch-convergence.md#NC-D32). |
+| <a id="ns-d19"></a>**NS-D19** — a posture overlay takes the one `config-overlay` path: one projection (`(*Manifest).OverlayContributions`) and `packoverlay.Collect`'s overlay pass as the one planner | No second planner and no change at any `Collect` caller, so provenance, `config diff`/`ls`/`render`/`promote`, the outranked report and the drop prune read it unchanged. |
+| <a id="ns-d20"></a>**NS-D20** — a posture overlay's body follows `config-overlay`'s refusals (`manifest.DecodePostureOverlay`), reported at every notch | A pack declaring no surface of its own used to have its posture `config` read by nothing. |
+| <a id="ns-d21"></a>**NS-D21** — a posture overlay's `path` and `codec` must be the owner's, checked after the owner check | A different file or codec would read to its author like keys written somewhere they are not. |
+| <a id="ns-d22"></a>**NS-D22** — the "folded nowhere" note is retired; an ownerless posture patch is an `autonomy` orphan | Every patch the posture fold missed is now `Collect`'s. `(*Pack).SurfacesForReport` and `FoldNote` keep their shape because the release probe compiles against them. |
+| <a id="ns-d23"></a>**NS-D23** — a posture overlay is disclosed on the `autonomy` claim as `<posture> contributes keys to <agent/name> (owner still wins)` | NS-D4's precedent, with `config-overlay`'s precedence clause. |
+| <a id="ns-d24"></a>**NS-D24** — the notch line counts a posture overlay only when placed (`OverlaySet.PlacesPostureConfigFrom`), and a patch on the pack's own surface by declaration | Once a patch could be an orphan, counting declarations printed a fold under "no effect". |
+| <a id="ns-d25"></a>**NS-D25** — a host-only scalar leaves the host the way every overlay key does | `own` regenerates without it; on an `rmw` surface it is recorded `retired:config-overlay:<pack>` and `--revert` removes it; dropping the pack prunes it. A posture-only withdrawal would be a second rule for one record. |
+| <a id="ns-d26"></a>**NS-D26** — every vehicle takes posture overlays with no vehicle-specific code | Every boot runs `ConfigurePackSurfaces` and every host render runs `RenderHostPack`, both over `Collect`, so the render mark keeps a host-applied scalar out of a later jail (`TestAHostOnlyScalarReachesTheHostAndNoJailLaunchedAfterIt`). |
 
 ## Current values
 

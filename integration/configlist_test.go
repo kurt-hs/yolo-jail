@@ -110,7 +110,7 @@ func TestConfigListSurvivesInJailEditsAndPackDrop(t *testing.T) {
 }
 
 // TestAPostureListRendersOnlyItsOwnSideOfTheLine is the launched-jail half of posture lists
-// (docs/design/notch-scoped-config-contributions.md §4.1): a pack's `autonomy` contribution
+// (docs/reference/pack-system.md, posture lists): a pack's `autonomy` contribution
 // carries one `config-list` entry per posture, and a jail, whose notch selects the autonomous
 // posture, renders that posture's entry and not the guarded one's. Until this test, unit tests
 // and in-process chains were the only evidence; none of them booted a jail.

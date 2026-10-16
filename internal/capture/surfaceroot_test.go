@@ -218,7 +218,7 @@ func TestYoloStateIsExcludedFromTheDelta(t *testing.T) {
 
 // YOLO'S JAIL DAEMON LOGS ARE NEVER PART OF A CAPTURE EITHER. A capture jail boots like any
 // jail, so its supervised daemons log into `.local/state/yolo-jail-daemons` — inside the
-// `.local` surface — while the installer runs. MEASURED 2026-10-01 (docs/plans/install-capture.md,
+// `.local` surface — while the installer runs. MEASURED 2026-10-01 (docs/reference/install-capture.md,
 // the Linux claude capture): the entry held the capture jail's claude-oauth-broker.log, and a
 // later jail that materialized it had its own live log of that name replaced by the capture
 // jail's, twelve minutes stale.

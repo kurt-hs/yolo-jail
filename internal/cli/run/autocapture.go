@@ -34,7 +34,7 @@ package run
 // podman/Apple-Container argv) and by nothing else, so a native launcher baked an empty
 // CAPTURES_DIR and `_try_materialize` returned 1 on its first line, and an auto-capture would
 // have paid a full installer download to file an entry no launcher there could read. Hand-off
-// H4 (docs/plans/install-capture.md) answered that with a root-owned copy of each selected
+// H4 (docs/reference/install-capture.md) answered that with a root-owned copy of each selected
 // program's entry under the backend's state dir, which the bootstrap names to its launchers
 // (macosuser.StagedCapturesRoot); its relocation half, H2, landed 2026-09-26. The capture there
 // is the macos-user capture act (internal/cli picks it for a darwin platform), so its entry is

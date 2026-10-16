@@ -5,7 +5,7 @@ package cli
 // every host verb reading packs through resolveConfiguredPack used to keep the pack and drop the
 // problems. So a pack `yolo pack lint`, `yolo check` and every launch refuse was applied
 // partially by `yolo host apply --assert`, at rc=0. The case the posture-list review found was a
-// pack with two `autonomy` contributions (notch-scoped-config-contributions.md NS-D14).
+// pack with two `autonomy` contributions (docs/reference/pack-system.md NS-D14).
 //
 // Each test drives a real command path against a t.TempDir() home, and each has a control: the
 // same fixture minus the second `autonomy` contribution, which must do what the malformed one
@@ -103,7 +103,7 @@ func TestApplyHostAssertRefusesAPackWithManifestProblems(t *testing.T) {
 }
 
 // A MANIFEST WITH A FIELD FROM A NEWER YOLO is the case a host yolo OLDER than a field meets
-// (notch-scoped-config-contributions.md §4.5, the host-manifest-read row). It used to not decode:
+// (docs/reference/pack-system.md, posture-list failure paths, the host-manifest-read row). It used to not decode:
 // LoadDir substituted an empty manifest and still returned the pack, so the old resolver applied
 // the pack's conventional skills/ as if it declared nothing. Since docs/design/patched-forks.md
 // PF-D68 the use read ignores and names the field, so the pack resolves, and a launch runs it;

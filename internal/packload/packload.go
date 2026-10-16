@@ -179,7 +179,7 @@ func (p *Pack) Surfaces() ([]manifest.Surface, []string) {
 //
 // A posture patch naming a surface this pack does NOT declare is not this fold's: it is a
 // POSTURE OVERLAY, which packoverlay.Collect places on the owner's surface as a config-overlay
-// or reports as an orphan (OQ-3, docs/design/notch-scoped-config-contributions.md NS-D19).
+// or reports as an orphan (notch-scoped OQ-3, docs/reference/pack-system.md NS-D19).
 func (p *Pack) SurfacesFor(autonomy bool) ([]manifest.Surface, []string) {
 	surfaces, problems, _ := p.SurfacesForReport(autonomy)
 	return surfaces, problems

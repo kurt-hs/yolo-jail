@@ -49,7 +49,7 @@ import (
 // On darwin the chain is reached today by CopyTree: a patched extension's per-launch copy, which
 // a launch on a container backend makes from the store on the Mac itself (treecopy.go,
 // internal/cli's copyTreeForLaunch). Materialize reaches it on a Mac once the macOS host floor
-// or macos-user's store access lands (docs/plans/install-capture.md, slice 6's H4). Its one
+// or macos-user's store access lands (docs/reference/install-capture.md, slice 6's H4). Its one
 // measurement is clone_darwin_test.go, which check-macos runs same-user and unsandboxed. A
 // clone from a store the invoking user owns into the macos-user sandbox account's sidecar,
 // under Seatbelt, is NOT MEASURED: it may succeed, answer EPERM (the chain falls to hardlink,

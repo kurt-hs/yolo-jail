@@ -1,7 +1,7 @@
 package run
 
 // postureoverlayendtoend_test.go drives OQ-3's host-only SCALAR end to end
-// (docs/design/notch-scoped-config-contributions.md NS-D19 to NS-D24), through the same three
+// (docs/reference/pack-system.md NS-D19 to NS-D24), through the same three
 // production steps as hostlayerendtoend_test.go and with nothing hand-written between them:
 // the host apply under `own` (RenderHostPack over a host-posture Collect), each backend's launcher, then
 // the jail boot (ConfigurePackSurfaces) handed that launcher's wire and bytes.

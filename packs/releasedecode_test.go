@@ -15,7 +15,7 @@ package packs_test
 // value in a closed set, such as a hook name. Either one stops an older jail's boot. So a manifest
 // change the current tree reads happily can still stop every jail an older yolo launched from
 // booting, the moment that jail is handed the new tree
-// (docs/design/attach-skew-and-contract-guardrails.md, "Findings since filing"). This test is the
+// (docs/reference/attach-skew.md, "Pack-contract skew, and the release-decode check"). This test is the
 // place such a change is noticed: it compiles the last release's reader from git and runs it
 // over the embed a binary built from this tree carries.
 //

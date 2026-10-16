@@ -1,7 +1,7 @@
 package integration
 
 // attachskewbriefing_test.go is the real-runtime pin on SK-D15
-// (docs/design/attach-skew-and-contract-guardrails.md, OQ-SK4): an attach that goes ahead under
+// (docs/reference/attach-skew.md, OQ-SK4): an attach that goes ahead under
 // YOLO_ALLOW_ATTACH_SKEW names the skew in the briefing it refreshes for the running jail. The
 // unit tier pins the section and each skew's route into it against a faked runtime
 // (internal/cli/run/attachskewbriefing_test.go); here the jail's frozen environment is a real

@@ -1,7 +1,7 @@
 package packdecl
 
 // posturelist_test.go pins the POSTURE LIST's declaration — a `config-list` body inside an
-// autonomy posture, the term docs/design/notch-scoped-config-contributions.md §4.1 coins: the
+// autonomy posture, the term docs/reference/pack-system.md coins in its posture lists: the
 // shape it decodes into, that config-list's own rules refuse a malformed one, and the one
 // projection (ListContributions) that carries it to the collector in declaration order. Which
 // notch places it is packoverlay's, and is tested there.
@@ -196,7 +196,7 @@ func TestPostureOfAgreesWithPostureFor(t *testing.T) {
 	}
 }
 
-// ONE AUTONOMY CONTRIBUTION PER PACK (notch-scoped-config-contributions.md NS-D11). A second
+// ONE AUTONOMY CONTRIBUTION PER PACK (docs/reference/pack-system.md NS-D11). A second
 // is the natural way to write one contribution per posture, and it used to decode clean while
 // every posture reader took only the first — so its lists rendered nowhere and `yolo pack
 // footprint` still claimed they appended. The strict decoder (`pack lint`, `check`, the

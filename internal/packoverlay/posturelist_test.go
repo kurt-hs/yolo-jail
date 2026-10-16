@@ -1,7 +1,7 @@
 package packoverlay
 
 // posturelist_test.go pins the rest of the POSTURE LIST's collection
-// (docs/design/notch-scoped-config-contributions.md §4.1): order among a pack's plain
+// (docs/reference/pack-system.md, posture lists): order among a pack's plain
 // config-lists, the malformed case, and the ownerless case — each at both values of the bit.
 // Which posture the bit selects is autonomyinert_test.go's.
 

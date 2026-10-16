@@ -67,7 +67,7 @@ func TestProfilePatchIsNoLongerThisFold(t *testing.T) {
 }
 
 // A posture patch naming a surface its own pack does not declare is NOT this fold's any more
-// (OQ-3, notch-scoped-config-contributions.md NS-D22). It used to merge into nothing here and
+// (notch-scoped OQ-3, docs/reference/pack-system.md NS-D22). It used to merge into nothing here and
 // come out as a FoldNote; since the ruling it is a POSTURE OVERLAY, packoverlay.Collect's to
 // place on the owner's surface or report as an orphan, so this fold neither merges it, nor
 // raises a problem, nor notes it. The typo'd identity is the OQ-Z5 case the note existed for;

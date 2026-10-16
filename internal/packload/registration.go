@@ -1,7 +1,7 @@
 package packload
 
 // registration.go turns a REGISTERING `files` slot (packdecl.FilesRegister) into the list entries
-// it asks for: one per tree that lands in it (docs/design/pack-pi-resources.md §3.3).
+// it asks for: one per tree that lands in it (docs/reference/pack-system.md, pi packages).
 //
 // It reads the resolver delivery reads — borrowingSources, carriesFor and matchedDestinations, the
 // rule borrowedDestinations synthesizes the landing from — so the entry names exactly the trees the
@@ -45,7 +45,7 @@ type Registration struct {
 // A tree is listed only when it is DELIVERED, which is when its source is in its pack's tree
 // (filesSourceDelivered): a `from` naming nothing, or an only/exclude filter in `packs` that dropped
 // the folder, leaves the jail skipping the mount with a warning and `yolo host apply` refusing the
-// path, and an entry for it would list a path where nothing is (pack-pi-resources.md PR-D6).
+// path, and an entry for it would list a path where nothing is (pack-system.md PR-D6).
 //
 // `set` may be raw or resolved (ResolveDestinations): the addressed declarations are read through
 // the pack's own declaration either way, and a resolved copy's synthesized landings carry no
@@ -82,7 +82,7 @@ type TreeNote struct {
 
 // ExpectsNotes is a TreeNote for every addressed tree of the `of` packs that lands, among the
 // slots `set` declares, in one declaring `expects` and holds NONE of the expected names directly
-// inside it — the early hint that what lands will not load (pack-pi-resources.md §3.4, PR-D4).
+// inside it — the early hint that what lands will not load (docs/reference/pack-system.md, pi packages, PR-D4).
 // `of` is usually `set` itself; a single-pack view (`yolo pack lint`) passes the pack, and a set
 // holding it and the packs yolo ships, where the slots it addresses are declared.
 //
@@ -129,7 +129,7 @@ func ExpectsNotes(of, set []*Pack) []TreeNote {
 
 // SkillsInTreeNotes is a TreeNote for every addressed tree of the `of` packs that lands, among the
 // slots `set` declares, in one whose `expects` names a skills folder (packdecl.DefaultSkillsDir),
-// and holds one directly inside it (pack-pi-resources.md §3.4, the row for a tree that ships
+// and holds one directly inside it (docs/reference/pack-system.md, pi packages, the row for a tree that ships
 // skills/). The slot's agent loads those skills from its own tree, so they reach that agent
 // alone, while the `skills` kind gives a pack's skills to every agent, which is the recommended
 // route. A note for `yolo pack lint`, never a warning: shipping skills to one agent is a choice.

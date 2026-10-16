@@ -111,7 +111,7 @@ made that answer right, and the corollary that makes mirroring actively harmful)
 [`jail-home.md`](jail-home.md) (the mount stack this would edit),
 [`host-execution-from-the-workspace.md`](host-execution-from-the-workspace.md) (the outbound
 threat model, which this changes less than I expected),
-[`../plans/install-capture.md`](../plans/install-capture.md) (relocation — the same family
+[`install-capture.md`](install-capture.md) (relocation — the same family
 of problem, solved the opposite way).
 
 ---
@@ -531,12 +531,12 @@ argued for on security grounds in either direction.
 
 ### 5.1 Relocation, and the same problem answered the opposite way
 
-[`../plans/install-capture.md`](../plans/install-capture.md) names **relocation** as the hard
+[`install-capture.md`](install-capture.md) names **relocation** as the hard
 part of its `macos-user` slice: an installer writes absolute self-references to the prefix it
 ran under, so a capture made at one prefix cannot be materialized at another. Its answer is
 to record every absolute reference to the staging prefix in the manifest and rewrite them at
 materialize time — *"or the entry is admitted `relocatable:false` and refuses to materialize
-elsewhere"* (`install-capture.md`, build order step 6).
+elsewhere"* ([`install-capture.md`](install-capture.md#slice-6)).
 
 This is the same underlying fact as the present proposal — **installed software embeds
 absolute self-references** — and the two reach for opposite strategies. Mirroring says *make
@@ -551,7 +551,7 @@ the prefix capture struggles with is the **home/staging** prefix
 materialize time), not the workspace. Mirroring moves the workspace and nothing else (P1), so
 every rewrite capture must perform is still there afterwards. The plan is explicit that a
 capture is not supposed to touch the workspace at all: `SeatbeltCaptureProfile(stagingHome)`
-grants **no workspace write** (`install-capture.md` Map, `internal/macosuser/seatbelt.go`).
+grants **no workspace write** ([`install-capture.md`](install-capture.md), `internal/macosuser/seatbelt.go`).
 
 One second-order note, pointing the wrong way. A capture entry is per-machine but *not*
 per-workspace, because its surfaces are home-relative
@@ -1083,7 +1083,7 @@ so they are mirroring-agnostic.
 ### 12.6 Capture relocation — chased hard, it cuts the other way
 
 This was expected to be mirroring's strongest concrete win: if all paths agree, does
-[`../plans/install-capture.md`](../plans/install-capture.md)'s slice-6 relocation machinery
+[`install-capture.md`](install-capture.md)'s slice-6 relocation machinery
 become unnecessary? **No. Chased to the bottom it inverts, twice.**
 
 **First: relocation exists on `macos-user` only, and its prefix mismatch is one yolo creates
@@ -1408,7 +1408,7 @@ silently re-litigated:
 | OQ-WP12 | **Answered by reference to [`OQ-HT4`](macos-user-home-tiers.md#oq-ht4).** The shared home was reopened in the macos-user home-tier design and both tiers were restored: `HOME` stays `/Users/_yolojail` (machine tier), the workspace tier is symlinks into `<workspace>/.yolo/home`, and the cross-workspace transcript leak is closed by that layout | 2026-09-11 | [`../reference/macos-user-home-tiers.md`](macos-user-home-tiers.md) |
 | OQ-WP6 | **Answered by the maintainer's reopening: the proposal is all three path spaces and the user's name** (*"The user could have the same name as the host user, we could mirror things there, and elsewhere"*). [§12](#12-follow-up-maximal-mirroring) analyses it and [`OQ-WP8`](#OQ-WP8) decides it | 2026-09-04, recorded 2026-09-30 | [§12](#12-follow-up-maximal-mirroring) |
 | OQ-WP1 | **Moot.** It asks about the workspace-only proposal, which the reopening replaced. Its evidence half was answered by events: two more crossings were measured (a jail-made git worktree's links, a jail's nix roots), neither in the machine-shared cache, and each has a targeted fix that needs no mirroring. Both are inputs to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [`durable-scratch-space.md` §2.6](../design/durable-scratch-space.md#26-a-worktree-records-absolute-paths-measured), [`in-jail-nix-roots.md`](../design/in-jail-nix-roots.md) |
-| OQ-WP11 | **Moot.** The relocation rewrite (install-capture hand-off H2) was built on 2026-09-26, so no one can sequence around deleting it, and the plan's status already links here | 2026-09-30 | [§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way), [`../plans/install-capture.md`](../plans/install-capture.md) |
+| OQ-WP11 | **Moot.** The relocation rewrite (install-capture hand-off H2) was built on 2026-09-26, so no one can sequence around deleting it, and the plan's status already links here | 2026-09-30 | [§12.6](#126-capture-relocation--chased-hard-it-cuts-the-other-way), [`install-capture.md`](install-capture.md) |
 | <a id="WP-D1"></a>WP-D1 | *Implementation decision*, answering [`OQ-WP3`](#decision-ledger). **`~/.cache/claude-cli-nodejs/-workspace` stays one key shared by every container jail on the machine**, and [`jail-home.md`](jail-home.md#sharing-semantics) names it. Why: it holds MCP logs and nothing else (re-measured 2026-09-30: four `mcp-logs-*` directories, 1.8 MB), and the fix is a mount for one vendor's cache layout. Reopen on [§1.1](#11-what-would-change-my-mind)'s first condition | 2026-09-30 | [§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name) |
 | <a id="WP-D2"></a>WP-D2 | *Implementation decision*, answering [`OQ-WP4`](#decision-ledger). **A scope rule for workspace `mounts` is not ruled here**: [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3), which the maintainer opened on 2026-09-18, asks it for `mounts` and `env_sources` together. Why: one question in two docs gets asked twice, and [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)'s fail-safe matters only under a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else) |
 | <a id="WP-D3"></a>WP-D3 | *Implementation decision*, answering [`OQ-WP9`](#decision-ledger). **`retireJailMadeVenv` is not hardened.** Why: the leaning's condition, a better oracle, is unmet (the ELF interpreter was measured unable to tell the sides apart, 2026-09-25), and the guard retires state from before the per-side shadows ([`SS-2`](jail-state-separation-design.md#ss-2)), which now keep a container jail's `.venv` and mise-config venv off the host. Reopen on a content oracle, or on a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [background](#background-to-oq-wp9), `internal/cli/run/retire.go` |
