@@ -67,11 +67,11 @@ func expectedReleaseAssets(root, targetSHA, version, trustedConfig string) ([]st
 			return nil, fmt.Errorf("read %s: %w", entry.name, err)
 		}
 		moduleDir := strings.TrimSuffix(entry.name, "/manifest.jsonc")
-		// TOLERANT, because the target is a released commit whose manifests this build may have
-		// retired a value of: every release before HD-R1 declares `host_daemon.scope: "host"`,
-		// which the strict decoder now refuses (docs/design/host-daemon-ownership.md HD-D17). The
-		// tolerant decoder still refuses a malformed manifest; only `binaries` is read here.
-		manifest, _, err := loopholedecl.DecodeTolerant(data, moduleDir)
+		// DecodeReleased, because the target is a released commit: every release before HD-R1
+		// declares `host_daemon.scope: "host"`, which the strict decoder now refuses
+		// (docs/design/host-daemon-ownership.md HD-D17). It reads exactly that retired value as
+		// per-jail and is otherwise as strict as Decode; only `binaries` is read here.
+		manifest, err := loopholedecl.DecodeReleased(data, moduleDir)
 		if err != nil {
 			return nil, fmt.Errorf("decode target loophole manifest %s: %w", entry.name, err)
 		}
