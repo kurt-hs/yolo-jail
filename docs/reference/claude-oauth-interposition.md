@@ -279,7 +279,7 @@ key, self-signs the CA, generates the leaf key, signs the leaf with the CA, and 
 **Both keys are ECDSA P-256**, for two reasons. Every verifier in the picture accepts it — Node through
 `NODE_EXTRA_CA_CERTS`, the OpenSSL-family clients through the jail's CA bundle, and Go's
 `tls.LoadX509KeyPair` in the terminator. And it is fast: RSA keygen in Go has a tail long enough to
-threaten the spawn deadline, and a slow mint surfaces as *"the singleton did not bind its socket"*,
+threaten the spawn deadline, and a slow mint surfaces as a daemon that did not bind its socket,
 which reads as a lifecycle bug rather than a crypto one.
 
 The certificate shapes carry three deliberate details, each with a reason that outlives the values:
@@ -373,14 +373,15 @@ audit reads the entry as unused. It is not, and the `flake.nix` comment on the e
 > shelled out to `openssl`, every launch whose *host was itself a jail* killed the singleton at
 > startup — socket never bound, no endpoint file, and once the reachability witness became fatal a
 > **refused** launch of the very nested jail `AGENTS.md` makes mandatory for verifying Go changes. On a
-> real host `openssl` is simply always there, so the dependency hid for months. A host-wide daemon
+> real host `openssl` is simply always there, so the dependency hid for months. A host daemon
 > must not assume the host has a general-purpose userland: a nested launch's host is a jail.
 
 #### A nested jail runs its own broker
 
-**A launcher that is itself inside a jail is an ordinary launcher.** It ensures its own host-wide
-singleton — the outer jail playing "the host" — which mints its own CA in its own `BrokerDir()`, mounts
-that trio into the nested jail, and publishes the endpoint. Nothing borrows the outer launcher's
+**A launcher that is itself inside a jail is an ordinary launcher.** It spawns the nested jail's own
+broker, as every launch does since [`HD-R1`](../design/host-daemon-ownership.md#HD-R1), with the outer
+jail playing "the host": that broker mints its own CA in the outer jail's `BrokerDir()`, the launch
+mounts that trio into the nested jail, and publishes the endpoint. Nothing borrows the outer launcher's
 broker, and nothing on the nested path is special-cased
 ([`OQ-2`](#oq-2)): the principle is that **nesting earns affordances, not exemptions**, because a jail
 that behaves differently cannot test the thing it is nested inside. Where nesting genuinely forces a
@@ -395,11 +396,11 @@ So `promisedEndpointIsUnpublishable` withholds a host-scoped endpoint variable o
 shape only — Apple Container, which has no publisher for anything but the OpenAI service (see
 [where the interposition exists](#where-the-interposition-exists-at-all)). It has no nested-jail arm,
 and it reads no socket. `TestBrokerEnvEmittedInANestedJailWithNoSingleton` pins the nested case:
-the variable is emitted whether or not the launcher's own singleton is up, which is the same treatment
-a real host gets.
+the variable is emitted whether or not a broker socket is present yet, which is the same treatment a
+real host gets.
 
 > [!WARNING]
-> **Do not reintroduce a "nested launcher with no singleton" gate.** It existed briefly as containment,
+> **Do not reintroduce a "nested launcher with no broker" gate.** It existed briefly as containment,
 > and both of its justifications are spent — the mint needs no tool, and a nested launcher has CA state
 > of its own. A gate keyed on nesting would also make "no Claude auth in a nested jail" permanent by
 > design.
@@ -834,8 +835,8 @@ unmeasured ([`agent-credentials.md`](agent-credentials.md#the-claude-oauth-broke
 
 **With the credential view on**, both macOS backends do get serialization: the host broker is the
 only refresher, and every jail reads a view ([below](#the-credential-view-behind-a-switch)). It is
-opt-in on both, as everywhere, until measured; on Apple Container the broker singleton starts only
-for a launch that turns it on
+opt-in on both, as everywhere, until measured; on Apple Container the jail's broker starts only for a
+launch that turns it on
 ([CL-D11](../design/claude-login-without-interception.md#CL-D11)).
 
 `backendInertReason` ([`loopholeinert.go`](../../internal/cli/run/loopholeinert.go)) reports every
@@ -919,7 +920,7 @@ precision each one needed.
 The in-process mint, the nested-host ruling and the `[SKIP]` level are each bounded, and each is
 easy to over-read:
 
-- **Not** a redesign of the broker, its singleton model or its transport. Moving the leaf key off disk
+- **Not** a redesign of the broker, its ownership model or its transport. Moving the leaf key off disk
   would mean the jail minting its own leaf — a redesign of the loophole, which none of this licenses.
 - **Not** a change to the reachability witness's severity rulings. It behaved correctly: an enabled
   service the jail could not use is exactly what it reported
@@ -1010,14 +1011,14 @@ would read such a view or its Keychain is unmeasured, as measure M11 is for `mac
 
 **Behind the switch, built 2026-10-04** ([CL-D27](../design/claude-login-without-interception.md#CL-D27),
 an implementation decision under the maintainer's delegation, reversible): with
-`YOLO_CLAUDE_CREDENTIAL_VIEW=1` in the shell, `yolo host -- claude` ensures the host broker,
-registers a view in a directory yolo manages, `~/.local/share/yolo-jail/host-agents/claude`, and
+`YOLO_CLAUDE_CREDENTIAL_VIEW=1` in the shell, `yolo host -- claude` starts a broker of its own that ends
+with the agent ([`HD-R1`](../design/host-daemon-ownership.md#HD-R1)), registers a view in a directory yolo manages, `~/.local/share/yolo-jail/host-agents/claude`, and
 points Claude's store at it with `CLAUDE_SECURESTORAGE_CONFIG_DIR`. The user's own `~/.claude` is
 never written, and nothing in it is copied in, so an MCP server's OAuth login is asked for again in
-such a session. A `/login` there enrolls the machine, as a jail's does. A broker that an older
-yolo started never refreshes such a view, so the launch then says the broker is too old, names
-`yolo host-daemon restart claude-oauth-broker`, and leaves Claude on its own login
-([CL-D28](../design/claude-login-without-interception.md#CL-D28)). Without the switch nothing
+such a session. A `/login` there enrolls the machine, as a jail's does. Because that broker is the
+running yolo's own, it always keeps the view current; the refusal of a broker too old to do so
+([CL-D28](../design/claude-login-without-interception.md#CL-D28)) went with the machine-wide broker.
+Without the switch nothing
 changes, which is [OQ-NC7](../plans/notch-convergence.md#OQ-NC7)'s ruling for every default user; making the view host Claude's default is
 this question's answer to give.
 

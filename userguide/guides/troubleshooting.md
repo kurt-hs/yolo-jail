@@ -84,10 +84,11 @@ to start the jail fresh; or let its terminals finish, and the last one to quit c
 Its log is `~/.local/share/yolo-jail/logs/jail-keeper-<jail name>.log`.
 
 **"Host service … of this jail has been down since …".** One of the services the keeper started
-for this jail stopped while the jail was up: a host service that crashed or was killed, a port
-forward whose `socat` exited, or the cgroup delegate. A host service such as a login service is
-restarted when it dies, up to five times in a row, and this line appears only once the keeper has
-given up on it; a port forward or the cgroup delegate is not restarted. Until the jail starts again,
+for this jail stopped while the jail was up and is no longer being restarted. A host service such
+as a login service is restarted when it dies, up to five times in a row, so for one of those the
+line means the keeper stopped restarting it: it kept dying, its pack was removed from your `packs`
+list while the jail was up, or you stopped it with `yolo host-daemon stop`. A port forward whose
+`socat` exited and the cgroup delegate are never restarted. Until the jail starts again,
 what in the jail uses that service fails. Each death and restart is also a line in the workspace's
 `.yolo/launch.log` and in the service's own log. A terminal that was in the jail is
 told as it quits, and one that joins later as it enters; the line names how the service ended and

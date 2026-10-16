@@ -3,7 +3,7 @@ title: "Plan sketch: host-daemon ownership"
 date: 2026-09-19
 status: deprecated
 stage: SKETCH
-next: "Nothing: HD-R1 is built (2026-10-06). Its build decisions are HD-D6 to HD-D19 in the design's ledger, which answer this sketch's table row by row, and its merges with main added HD-D20 to HD-D24"
+next: "Nothing: superseded by the built tree and the design's ledger. HD-R1 was built 2026-10-06 and finished 2026-10-16; its decisions are HD-D6 to HD-D30 in the design's ledger, and HD-D6 to HD-D19 answer this sketch's table row by row"
 depends-on:
   - host-daemon-ownership.md#OQ-HD10
 tags: [plan, sketch, daemons, loopholes, lifecycle]
@@ -12,8 +12,8 @@ summary: "The parking lot for implementation material from the host-daemon owner
 
 # Plan sketch: host-daemon ownership
 
-**Status:** 2026-10-06 — **[HD-R1](host-daemon-ownership.md#HD-R1) is built**, so this sketch is
-history. Each row of [what the spawn flock covers today](#what-the-spawn-flock-covers-today) is
+**Status:** 2026-10-16 — **[HD-R1](host-daemon-ownership.md#HD-R1) is built (2026-10-06) and
+finished (2026-10-16)**, so this sketch is history, superseded by the tree and the design's ledger. Each row of [what the spawn flock covers today](#what-the-spawn-flock-covers-today) is
 answered in the design's ledger: the macos-user spawn guard is
 [HD-D4](host-daemon-ownership.md#HD-D4), the OpenAI legacy-state migration
 [HD-D10](host-daemon-ownership.md#HD-D10), the jail-less host actors

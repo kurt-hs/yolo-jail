@@ -826,14 +826,12 @@ the declaration-total, default-filled settings for this invocation. It must be a
 exit zero accepts the candidate; nonzero refuses it. A manifest that omits the field keeps its
 legacy start behavior.
 
-A settings-check-enabled per-jail daemon receives a unique private settings file containing
-the exact validated bytes, retained until the owned service is torn down; a validator cannot
-change the bytes later published to its daemon by rewriting its own input. For a
-settings-check-enabled host-wide singleton, those bytes are atomically published under the
-existing singleton lifecycle lock, after any locked preparation succeeds and before drift
-handling or restart, so a failed preparation leaves the running daemon's settings file as it
-was. Manifests without
-`settings_check` keep the legacy path and behavior. The validator runner bounds execution to
+A settings-check-enabled daemon receives a unique private settings file containing the exact
+validated bytes, retained until the owned service is torn down; a validator cannot change the
+bytes later published to its daemon by rewriting its own input. Since
+[`HD-R1`](../design/host-daemon-ownership.md#HD-R1) every host daemon is its launch's own, so no
+other launch shares or republishes those bytes. Manifests without `settings_check` keep the
+stable name-keyed settings file. The validator runner bounds execution to
 2 seconds and combined captured output to 4 KiB, and emits bounded sanitized diagnostics.
 
 A validator refusal, timeout or start failure prevents only its own `doctor_cmd` during

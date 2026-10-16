@@ -1,8 +1,8 @@
 ---
 status: accepted
 stage: CURRENT
-verified: 2026-10-10
-verified_commit: 3fe15ecbc
+verified: 2026-10-16
+verified_commit: 1e140a543
 covers:
   - internal/loopholedecl/loopholedecl.go
   - internal/loopholes/settingscheck.go
@@ -10,12 +10,12 @@ covers:
   - internal/hostservice/boundedcommand.go
   - internal/hostservice/startupreason.go
   - internal/hostservice/startupoutcome.go
-  - internal/broker/brokerlifecycle.go
   - internal/cli/run/loopholesettings.go
   - internal/cli/run/loopholesruntime.go
   - internal/cli/run/launchcheck.go
   - internal/cli/run/packloopholes.go
   - internal/cli/run/keeper.go
+  - internal/cli/run/hostdaemonsupervise.go
   - internal/cli/run/hostdoorways.go
   - internal/cli/run/run.go
   - internal/cli/check/sections_loopholes.go
@@ -28,7 +28,7 @@ summary: "How a pack-declared host service's settings are validated before any s
 
 # Host-service startup diagnostics: the settings preflight and the attempt-reason channel
 
-**Status:** Verified 2026-10-10 against `3fe15ecbc`. UNMEASURED: native macOS behavior, real
+**Status:** Verified 2026-10-16 against `1e140a543`. UNMEASURED: native macOS behavior, real
 rootless loopback forwarding and live AWS authentication have not been observed; Linux fixtures
 and Darwin compilation are the evidence.
 
@@ -47,9 +47,8 @@ the keeper, the macos-user arm and `yolo host`.
 | Bounded direct execution and text sanitizing | `internal/hostservice` (`RunBoundedCommand`, `SafeCommandText`) |
 | Attempt-reason record, producer and reader | `internal/hostservice` (`StartupReason`, `NewStartupReasonChannel`, `WriteStartupReasonFromEnv`, `ReadStartupReasonOutcome`) |
 | Typed startup outcomes | `internal/hostservice` (`StartupOutcome`, `StartupKind`, `StartupReasonReadOutcome`) |
-| Host-wide singleton transaction | `internal/broker` (`EnsureSingleton`, `Deps.PublishSettings`, `Deps.PrepareLocked`) |
-| Launch preflight, publication, per-jail spawn | `internal/cli/run` (`prepareLoopholeSettingsForStart`, `publishLoopholeSettings`, `startExternalService`, `startHostSingleton`) |
-| The refusal value and its wording | `internal/cli/run` (`hostStartupRefusal`, carried in `olderDaemonRefusal`) |
+| Launch preflight, publication, per-jail spawn | `internal/cli/run` (`prepareLoopholeSettingsForStart`, `publishLoopholeSettings`, `startExternalService`) |
+| The refusal value and its wording | `internal/cli/run` (`hostStartupRefusal`, carried in `servicesRefusal`) |
 | `yolo check` validation phase | `internal/cli/check` (the loophole section) |
 | The AWS pack's validator and refusals | `internal/awsauthdaemon` (`SettingsCheck`, `safeSettingsRefusal`, `refuseStartup`), `internal/awsauth` (`ResolveRefusal`) |
 
@@ -78,17 +77,20 @@ settings map a launch resolves once from its merged config and then holds in mem
 handed to a validator or a daemon is a fresh copy of these bytes. It is not the stable settings
 file on disk, which is keyed by loophole name and shared by every launch on the machine.
 
-**Singleton** and **per-jail daemon** are the two ownership models of
-[`host-daemon-ownership.md`](../design/host-daemon-ownership.md): a host-wide daemon
-(`scope: "host"`) behind per-jail fronts, and a child owned by one launch or its keeper.
+**Per-jail daemon**: the one ownership model of
+[`host-daemon-ownership.md`](../design/host-daemon-ownership.md) since
+[`HD-R1`](../design/host-daemon-ownership.md#HD-R1) retired the machine-wide singleton: every host
+daemon is a child of the launch that wants it (its keeper, the macos-user arm or `yolo host`), and
+it ends with that launch. A machine-wide copy an older yolo left running is never started, stopped
+or refused by a launch; the launch names it in one line and goes on
+([`HD-D26`](../design/host-daemon-ownership.md#HD-D26)).
 
 ## Invariants
 
 1. **Validation precedes every shared lifecycle change.** A fresh launch runs the preflight before
-   image or provisioning work, before publishing shared settings, before stopping or replacing a
-   singleton, before spawning a per-jail child and before publishing a front. A refused snapshot
-   therefore leaves a valid running singleton, its settings file and its existing fronts exactly as
-   they were, and refuses only the new launch, which never attaches to the old settings instead.
+   image or provisioning work, before publishing any settings, before spawning a per-jail child
+   and before publishing a front. A refused snapshot therefore leaves every other jail's daemons,
+   settings and fronts exactly as they were, and refuses only the new launch.
 2. **What is published is what was validated, and never the validator's file.** The validator is
    host code that could rewrite its own input, so its file is a throwaway copy; publication copies
    the frozen bytes yolo kept.
@@ -168,26 +170,19 @@ with "correct the settings, run `yolo check --no-build`, then retry"; any other 
 the retry alone, and a remedy already naming `yolo check --no-build` is not repeated. A settings
 map that cannot even be resolved is refused the same way with class `settings-resolution`.
 
-### Publication, by ownership model
+### Publication
 
 After validation, `publishLoopholeSettings` publishes the frozen bytes without rereading config or
 the validator's file:
 
-- **Per-jail daemon with a preflight.** A new private `0600` file, written from the frozen bytes,
+- **A daemon with a preflight.** A new private `0600` file, written from the frozen bytes,
   replaces the stable path in this spawn's argv. A concurrent launch in another workspace cannot
-  substitute bytes between validation and the daemon's read. The file is removed on spawn failure,
-  and otherwise by the service's own teardown, after the daemon group is stopped.
-- **Singleton with a preflight.** The bytes go to the stable path, but only inside
-  `EnsureSingleton`, under the singleton lifecycle flock, in this order: locked preparation, then
-  atomic publication, then any migration stop or settings-drift restart. A failed preparation
-  publishes nothing; a failed publication leaves the current daemon untouched and refuses with
-  class `settings-publication`. The singleton contract is that the daemon reads its settings
-  before its socket becomes ready and never rereads the mutable stable path afterwards.
-- **No preflight declared.** The legacy path: the bytes are written to the stable name-keyed file
-  and the daemon receives that path, as before.
-
-A later *valid* settings change keeps the existing host-wide semantics: it may restart the
-singleton, which affects every front using it, as the launch already discloses.
+  substitute bytes between validation and the daemon's read. A file that cannot be written refuses
+  the launch with class `settings-publication`. The file is removed on spawn failure, and otherwise
+  by the service's own teardown, after the daemon group is stopped; a supervised restart reuses the
+  same argv, so it reads the same file.
+- **No preflight declared.** The bytes are written to the stable name-keyed file and the daemon
+  receives that path.
 
 ### In `yolo check`
 
@@ -248,12 +243,12 @@ readiness keeps its authority.
   the derived "cannot reach it" line, and the launch's existing severity rule decides the rest.
 - **A refusing daemon this attempt spawned and that is still alive is stopped.** A per-jail child
   gets a short grace to exit first so its exit status is recorded, then its process group is
-  killed. A singleton is signalled under the flock, because a refusing process left holding the
-  pid file would block the next ensure after the user fixes the cause.
+  killed.
 
 ## Typed startup outcomes
 
-Every start attempt yields a `StartupOutcome`: its owner (singleton or launch-owned child), the
+Every start attempt yields a `StartupOutcome`: its owner (always the launch-owned child since
+HD-R1, though the type keeps a singleton value), the
 last phase reached, a primary kind, what readiness was actually established, the process state
 and the reason-channel read. The kinds keep the failures the user must tell apart separate:
 preflight refusal, validator timeout or start failure, daemon start failure, cooperative refusal,
@@ -265,13 +260,17 @@ The outcome is launch-local and not serialized. What crosses each launch boundar
 
 | Front door | How the cause reaches the user |
 | :--- | :--- |
-| Terminal launch | `startPlannedLoopholes` returns it as `olderDaemonRefusal.startup` ahead of the post-bind launch checks, which could not recover a pre-bind cause |
-| Keeper | The keeper's output is a framed stream; it prints the refusal's markup through it and unwinds only what this launch owns |
+| Terminal launch | A preflight refusal is printed by `Run` before any service starts; a spawn's refusal comes back from `startPlannedLoopholes` as `servicesRefusal.startup`, beside the started handles and ahead of the launch checks, which could not recover a pre-bind cause |
+| Keeper | The keeper's output is a framed stream; it prints the refusal's markup ("Refusing this launch") through it and unwinds only what this launch owns |
 | macos-user arm | The same keeper path, headed "Refusing the macos-user launch"; the preflight refusal returns before the keeper starts |
 | `yolo host` | `HostDoorways.Start` returns the refusal, opens no doorway, and words it for the host |
 
-An unwind after a refusal stops only resources the refused launch owns. It never stops a shared
-singleton after a failed preflight.
+An unwind after a refusal stops only resources the refused launch owns, never another jail's
+daemon and never an older yolo's machine-wide copy.
+
+The first spawn's reason channel is the launch's diagnostic only. When the
+[host-side supervisor](../design/host-daemon-ownership.md#HD-D25) restarts a daemon that died
+mid-session, it reuses the same argv and environment but opens no new channel.
 
 ## AWS permission-mode presentation
 
@@ -295,8 +294,6 @@ refused; real errors and the pack's read/exec trust disclosures are unchanged.
 - No readiness-success or `waiting` lines, and no longer readiness budget. The keychain design's
   long-unlock wait ([KC-D13](../design/keychain-from-a-jail.md#KC-D13)) is separate, unbuilt work
   that this failure-only channel does not satisfy.
-- A singleton still holds one set of settings for the whole machine; there are no per-jail
-  profiles behind it.
 - Loopback reachability dispositions are unchanged, workspace-scope AWS settings stay refused, and
   the doctor and launch-check contracts are not replaced.
 - Tests never run an agent CLI or an AWS API; the AWS fixtures use sentinel profile and policy
@@ -314,11 +311,6 @@ refused; real errors and the pack's read/exec trust disclosures are unchanged.
 > launch on the machine: either breaks "what was validated is what runs".
 
 > [!WARNING]
-> **Do not move singleton publication outside the flock, or before preparation.** Published early,
-> an invalid or concurrent snapshot can kill a good daemon or be swapped by another launch; published
-> before a preparation that then fails, it leaves a file naming settings no daemon runs.
-
-> [!WARNING]
 > **Do not infer a cause from a log, stderr or a missing endpoint.** A shared log cannot attribute a
 > line to an attempt; a planted contradictory log entry must never change the result.
 
@@ -333,7 +325,7 @@ refused; real errors and the pack's read/exec trust disclosures are unchanged.
 
 ## Current values
 
-Verified at `3fe15ecbc`. The prose above explains what each of these is for; this table is the only
+Verified at `1e140a543`. The prose above explains what each of these is for; this table is the only
 place the numbers themselves are stated.
 
 | Value | Setting | Defined in |
@@ -344,9 +336,8 @@ place the numbers themselves are stated.
 | Attempt-reason record cap | 4096 bytes | `hostservice.StartupReasonMaxBytes` |
 | Attempt-reason record version | 1 | `hostservice.WriteStartupReasonFromEnv` |
 | Attempt token | 24 random bytes, hex | `hostservice.NewStartupReasonChannel` |
-| Child fd | 3 | `startExternalService`, the broker's spawn |
+| Child fd | 3 | `startExternalService` |
 | Channel variables | `YOLO_HOST_SERVICE_REASON_FD`, `YOLO_HOST_SERVICE_ATTEMPT`, `YOLO_HOST_SERVICE_NAME` | `hostservice.StartupReason*Env` |
 | Per-jail readiness window | 5s | `run.serviceReadyTimeoutDefault` |
-| Singleton readiness window | 5s | `broker.BrokerSpawnTimeout` |
 | Per-jail refusing-child exit grace | 1s | `run.refusalExitGrace` |
 | Private snapshot location | `<loophole state dir>/settings-<settings file name>-*`, mode `0600` | `loopholes.WritePrivateSettingsSnapshot` |
