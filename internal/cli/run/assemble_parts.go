@@ -692,7 +692,7 @@ func promisedEndpointIsUnpublishable(rt, name string) bool {
 // — which was correct, and was also exactly the computation promisedEndpoints performs
 // for every promised record. Two spellings of one predicate are two that can disagree,
 // and "the spawn and the wiring are governed by ONE predicate" is the property
-// TestBrokerLifecycleIsGatedOnTheLoopholeRecord exists to hold.
+// this function keeps (the spawn-side test that pinned it went with the singleton, HD-R1).
 //
 // ⚠ IT PASSES "" AS THE RUNTIME, deliberately: its callers ask whether the loophole is
 // ON, and each carries its own backend half (mintBrokerCertificates' `rt == "container"`,
