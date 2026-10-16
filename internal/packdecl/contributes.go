@@ -2064,6 +2064,13 @@ func (m *Manifest) SpokenProtocols(bin string) []string {
 // read in-jail by the supervisor's ParseEnv), and a service's daemon joins the same
 // list through that writer rather than forking it: the source-skew gate cannot see
 // an env contract, so the two halves of any shape change must land together.
+//
+// REQUIREMENT (OQ-HD4, ruled 2026-10-15, docs/design/host-daemon-ownership.md#OQ-HD4): a
+// service's jail daemon is a REQUEST-SCOPED FORWARDER THAT HOLDS NO UNFLUSHED STATE, the same
+// requirement loopholedecl.JailDaemon states. Its authoritative state is host-side, so it is
+// stopped without a drain (the supervisor's SIGTERM, five seconds, SIGKILL teardown, a container
+// stop, any reclaim of an orphan), and there is no graceful-stop key, by ruling. A daemon that
+// would need one does not fit this declaration: a declaration problem, not a silent data loss.
 type ServiceJailDaemon struct {
 	// Cmd is the argv, run as-is in the jail. No tokens are substituted — a
 	// service has no module dir to resolve against, unlike the loophole

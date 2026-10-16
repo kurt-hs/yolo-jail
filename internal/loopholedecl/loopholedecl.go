@@ -93,6 +93,16 @@ type Intercept struct {
 }
 
 // JailDaemon is a process supervised INSIDE the container.
+//
+// REQUIREMENT (OQ-HD4, ruled 2026-10-15, docs/design/host-daemon-ownership.md#OQ-HD4): a jail
+// daemon is a REQUEST-SCOPED FORWARDER THAT HOLDS NO UNFLUSHED STATE. Its authoritative state is
+// host-side, so interrupting it at any instant loses nothing, and it is stopped without a drain:
+// by the in-jail supervisor's SIGTERM, five seconds, SIGKILL teardown, by a container stop, and
+// by any reclaim of an orphan. There is no graceful-stop key, by ruling. A daemon that would
+// need one (one that buffers writes, or owns state the host does not) does not fit this
+// declaration: that is a declaration problem, not a silent data loss. The same property is
+// HD-R1's discriminator on the host side, where a credential daemon mid-refresh is its opposite
+// and is detached rather than killed (HostDaemon's detach).
 type JailDaemon struct {
 	// Cmd is the argv, RAW: {jail_loophole_dir} is still a token here. It is
 	// refused from carrying {loophole_dir} (the host-side spelling) at load.
