@@ -10,7 +10,7 @@ import (
 
 // TestFooterAdapterFilesLeaveTheAgentsOwnDirsAlone is TestCopilotFooterScriptLeavesCopilotStateAlone
 // for the other two agent-footer adapters that land a single file in a home directory an agent
-// also uses (docs/design/agent-footer.md §2.1): omp's extension and opencode's TUI plugin.
+// also uses (docs/reference/agent-footer.md, "Each agent's adapter"): omp's extension and opencode's TUI plugin.
 // preparePackFiles' one-time migration from the pre-ledger mountpoints archives every
 // unclaimed zero-byte file in the DIRECTORY that holds a single-file target. omp's
 // extension directory holds the user's own extensions and ~/.oh-omp is workspace state, so

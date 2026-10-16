@@ -86,7 +86,7 @@ func (o *Options) findRunningContainer(cname, rt string) string {
 const attachProbeTimeout = 30 * time.Second
 
 // probeRunningContainer is findRunningContainer with the TRI-STATE kept, in
-// probeExistingContainer's shape (PR-D8 of docs/design/podman-reboot-readiness.md): known is
+// probeExistingContainer's shape (PR-D8 of docs/reference/podman-readiness.md): known is
 // true only when the runtime answered — it ran, within timeout, and exited 0. So ("", true) is
 // "no container of this name is running" and ("", false) is "could not ask".
 //

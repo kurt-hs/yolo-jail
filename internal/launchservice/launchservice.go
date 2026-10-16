@@ -441,7 +441,7 @@ func (p *Plan) Addresses() []string {
 // the agents was pointed into names every address rather than none.
 //
 // THE SHAPE, NEVER THE AGENT'S WHOLE ENVIRONMENT. That also carries the three wire tables
-// (docs/design/agent-footer.md FT-D2), and the composed provider table names every address this
+// (docs/reference/agent-footer.md FT-D2), and the composed provider table names every address this
 // plan moved, a route no agent was pointed at included: packs/wire-bridge's Bedrock adapter
 // composes a `for_via` address onto the bedrock provider whenever that pack joins
 // (docs/design/wire-bridge-gateway.md WG-I39), and only a profile routing through the bridge

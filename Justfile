@@ -494,7 +494,7 @@ clean:
 
 # Run `just done` at end of task: check what changed since the last verified commit, read-only.
 #
-# It verifies the task, not the tree from scratch (docs/design/change-aware-completion.md). The
+# It verifies the task, not the tree from scratch (docs/reference/change-aware-completion.md). The
 # baseline is the nearest ancestor of HEAD that an earlier `just done` verified on a clean tree
 # with the same toolchain; records are shared by every worktree of the repository. From there it
 # runs only what the change can reach — lint for the changed Go packages and their importers,

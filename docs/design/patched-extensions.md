@@ -767,7 +767,7 @@ mode as written, and one ruling of each covers both routes ([§12](#12-dependenc
    >   applies;
    > - `yolo capture <pack>/<name>`, to retry;
    > - dropping the list entry, or the pack, to run without it;
-   > - and the opt-in bypass variable [OQ-JR1](jail-notch-readiness.md#9-decision-ledger) rules the same day
+   > - and the opt-in bypass variable [OQ-JR1](../reference/program-readiness.md#OQ-JR1) rules the same day
    >   for a program a launch could not install, if one variable fits both. Whether it does is the
    >   builder's call.
    >

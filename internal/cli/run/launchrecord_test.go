@@ -1,7 +1,7 @@
 package run
 
 // launchrecord_test.go pins the machine-wide launch line (launchrecord.go, OQ-PR3 of
-// docs/design/podman-reboot-readiness.md) THROUGH Run: one line per launch, refused or not,
+// docs/reference/podman-readiness.md) THROUGH Run: one line per launch, refused or not,
 // written where the launch's fate is decided, keyed by the workspace code and never its name.
 
 import (

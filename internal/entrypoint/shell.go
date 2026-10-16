@@ -547,7 +547,7 @@ _yolo_node_floor() {
 __YOLO_NODE_FLOOR_CHECKS__
 
 # --- Readiness: install every program a selected pack declares, then REFUSE if one is missing --
-# OQ-JR1 (docs/design/jail-notch-readiness.md; readiness.go renders the calls).  Each program's
+# OQ-JR1 (docs/reference/program-readiness.md; readiness.go renders the calls).  Each program's
 # OWN LAUNCHER installs it, in install-only mode (YOLO_INSTALL_ONLY=1): it installs a program
 # that is absent, never refreshes one that is present, and never runs it, so a warm home does
 # nothing here and says nothing.  AFTER the floors, so a launcher a floor install has just

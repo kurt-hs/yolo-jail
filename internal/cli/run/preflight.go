@@ -354,7 +354,7 @@ func (o *Options) isAppleContainer(path string) bool {
 // Podman on Linux goes through the READINESS GATE (podmanready.go): up to a minute for
 // `podman info` to answer, never killing a probe that may be doing podman's post-boot
 // cleanup, and refusing at once only on an answer that cannot clear on its own
-// (docs/design/podman-reboot-readiness.md). Podman on macOS takes the gate's PATIENT ONE-SHOT
+// (docs/reference/podman-readiness.md). Podman on macOS takes the gate's PATIENT ONE-SHOT
 // (PR-D24): one attempt, the same minute to answer, no retry. It used to be killed at 10 s and
 // called "not started", which is how a running machine that was busy got refused on the Intel
 // macOS nightly of 2026-10-03. Apple Container keeps a one-shot probe bounded at 5 s

@@ -1,6 +1,6 @@
 package cli
 
-// hostwiretables_test.go pins docs/design/agent-footer.md FT-D2 (OQ-FT15): `yolo host --` exports
+// hostwiretables_test.go pins docs/reference/agent-footer.md FT-D2 (OQ-FT15): `yolo host --` exports
 // YOLO_PROVIDERS, YOLO_PROFILES and YOLO_USE_PROFILES as it composed them for its one agent, so the
 // footer's "env first" read (OQ-FT6) names a one-launch `-p` instead of the config's selection.
 // Each cell runs the real front door (hostMain) to the exec, with the exec replaced, and reads the

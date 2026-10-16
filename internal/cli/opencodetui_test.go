@@ -12,7 +12,7 @@ import (
 // the file that stops opencode moving a user's TUI settings. opencode 1.18.32 moves `theme`,
 // `keybinds` and `tui` out of the global opencode.json into tui.json on its next start, but only
 // while tui.json does not exist, and after that its TUI reads them from the tui files alone
-// (docs/design/agent-footer.md §2.1). So over a home that still carries them in opencode.json,
+// (docs/reference/agent-footer.md, "Each agent's adapter"). So over a home that still carries them in opencode.json,
 // `yolo host apply` must create no tui.json, must leave those keys where opencode will look for
 // them, and lists the plugin in tui.jsonc, which opencode reads beside tui.json.
 func TestHostApplyLeavesOpencodesThemeMigrationAlone(t *testing.T) {

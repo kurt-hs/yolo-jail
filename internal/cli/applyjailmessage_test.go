@@ -21,7 +21,7 @@ func stubApplyJailLaunch(t *testing.T, rc int) *int {
 	return &calls
 }
 
-// TestApplyAtJailRunsTheLaunchsReadinessAct pins JR-D1 (docs/design/jail-notch-readiness.md):
+// TestApplyAtJailRunsTheLaunchsReadinessAct pins JR-D1 (docs/reference/program-readiness.md):
 // at the jail notch `yolo apply` IS the launch `yolo -- true` performs, which installs every
 // program a selected pack declares (OQ-JR1), and its status is that launch's. It used to be a
 // pointer that said the launch installs nothing; the line it prints now says what the launch

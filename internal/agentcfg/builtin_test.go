@@ -327,7 +327,7 @@ func TestBuiltinAgySettingsSurface(t *testing.T) {
 	if got, want := s.ManagedMap()["trustedWorkspaces"], []any{"/workspace"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("agy/settings trustedWorkspaces = %#v, want %#v", got, want)
 	}
-	// One default and only one: the footer's statusLine (docs/design/agent-footer.md), at
+	// One default and only one: the footer's statusLine (docs/reference/agent-footer.md), at
 	// the lowest layer so a statusLine of the user's own replaces it. The adapter itself is
 	// pinned in internal/footer's adapter tests.
 	if got := s.DefaultsMap(); len(got) != 1 || got["statusLine"] == nil {

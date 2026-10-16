@@ -1,6 +1,6 @@
 package entrypoint
 
-// readiness.go is the jail notch's READINESS ACT (docs/design/jail-notch-readiness.md, OQ-JR1):
+// readiness.go is the jail notch's READINESS ACT (docs/reference/program-readiness.md, OQ-JR1):
 // every program a selected pack declares is installed in the provisioning stage, before the
 // command runs, and a program the stage cannot install STOPS the launch.
 //
@@ -8,7 +8,7 @@ package entrypoint
 //
 // In the bootstrap script (shell.go), after the Node floors and before the stage's verdict, so
 // it runs after the CA bundle and after `mise install`, in the one place a launch already
-// installs over the network (§3 of the design names why it cannot go in launcher generation:
+// installs over the network (the reference's "How the act runs" names why it cannot go in launcher generation:
 // `yolo check` runs the generators, and an observe verb must install nothing).
 //
 // What it runs is each program's OWN LAUNCHER, in install-only mode (InstallOnlyEnv): the npm,
@@ -16,7 +16,7 @@ package entrypoint
 // running it, and do nothing at all when it is present. So there is one implementation of each
 // install, the launcher's, and the readiness act is a caller of it, as `yolo pack update` and
 // `yolo capture` are. Install-only never refreshes a program that is present: currency stays at
-// invocation (OQ-PD12a), and readiness is about presence alone (§1 of the design).
+// invocation (OQ-PD12a), and readiness is about presence alone (the reference's "Readiness and currency are different questions").
 //
 // # Which programs
 //
@@ -213,7 +213,7 @@ func selectedReadyPrograms(e *Env, packs []*packload.Pack, probePath, goos, goar
 
 // readinessChecks renders the readiness act's calls for the bootstrap: one `_yolo_ready <bin>
 // <who>` line per program, or "" when no selected pack declares one, so a jail with none runs
-// and prints exactly what it did before (the design's §7 item 3).
+// and prints exactly what it did before (the reference's "How the act runs": no call, no output).
 //
 // Every value is shquote'd into a bare word: the bin is validated, the pack name is a
 // pack-supplied string, and this is shell source.

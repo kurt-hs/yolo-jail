@@ -10,7 +10,7 @@ import (
 )
 
 // podmanreadyview.go is what the readiness gate SAYS, in one place because the launch and
-// `yolo check` must say the same thing (PR-D6, PR-D9 of docs/design/podman-reboot-readiness.md):
+// `yolo check` must say the same thing (PR-D6, PR-D9 of docs/reference/podman-readiness.md):
 // the progress line and its detail, one line above it per early exit, the line it closes with,
 // the refusal, and the per-attempt timing note.
 

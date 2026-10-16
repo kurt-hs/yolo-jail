@@ -1,7 +1,7 @@
 package run
 
 // podmanmachine_test.go pins macOS's podman probe, the patient one-shot (PR-D24 of
-// docs/design/podman-reboot-readiness.md, internal/runtime/podmanmachine.go), THROUGH runtime
+// docs/reference/podman-readiness.md, internal/runtime/podmanmachine.go), THROUGH runtime
 // selection: every case runs down each of the three ways a launch reaches it (YOLO_RUNTIME,
 // the config's `runtime` key, autodetection), so deleting the probe from validateExplicitRuntime
 // or from resolveRuntime's candidate loop fails every case here.

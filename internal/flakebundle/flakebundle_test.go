@@ -192,7 +192,7 @@ func TestReapKeepsWhatIsStillRunning(t *testing.T) {
 }
 
 // TestAGuardedReapKeepsAGenerationActivatedDuringThePass is the per-deletion recheck
-// (OQ-PR2 of docs/design/podman-reboot-readiness.md): the housekeeping slot lets go of its
+// (OQ-PR2 of docs/reference/podman-readiness.md): the housekeeping slot lets go of its
 // lock between deletions, so a `just install` that points the stable link at a generation
 // after the listing must make the recheck keep it — and with nothing changed, it goes.
 func TestAGuardedReapKeepsAGenerationActivatedDuringThePass(t *testing.T) {

@@ -1,7 +1,7 @@
 package prune
 
 // guard_test.go pins each reaper's RECHECK under a Guard (guard.go, OQ-PR2 of
-// docs/design/podman-reboot-readiness.md): the housekeeping slot lets go of its lock between
+// docs/reference/podman-readiness.md): the housekeeping slot lets go of its lock between
 // deletions, so each class asks again, under the lock and right before each deletion,
 // whether the item is still unused. Every test drives a guard that changes the world the way
 // a launch holding the lock would — just before the recheck — and asserts the item survives;

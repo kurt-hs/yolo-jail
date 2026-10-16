@@ -1,7 +1,7 @@
 package check
 
 // podmanmachine_test.go pins `yolo check`'s half of macOS's podman probe, the patient one-shot
-// (PR-D24 of docs/design/podman-reboot-readiness.md, internal/runtime/podmanmachine.go),
+// (PR-D24 of docs/reference/podman-readiness.md, internal/runtime/podmanmachine.go),
 // through the whole report (Check), so deleting the probe from the Container Runtime section or
 // from the runtime resolution Merged Configuration reads fails here.
 //

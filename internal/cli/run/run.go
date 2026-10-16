@@ -653,7 +653,7 @@ func Run(opts Options) (rc int) {
 		o.heldGrant = o.jailGrant
 		// THE NOTCH, told to the session (config.NotchEnv; env-manager plan EMP-D4). YOLO_VERSION,
 		// which the backend sets on every launch, says jail; a guest says so beside it, so the
-		// agent footer names the notch the briefing names (docs/design/agent-footer.md §1.2), and
+		// agent footer names the notch the briefing names (docs/reference/agent-footer.md, "The notch"), and
 		// the backend's own messages name a step that fits it. Set after the composition, so no
 		// pack env or env_sources entry can say otherwise. The jail notch sets nothing.
 		if o.atNotch == config.ConfinementGuest {
@@ -1492,7 +1492,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 
 		existingCID := ""
 		if !o.NeverAttach {
-			// TRI-STATE (PR-D8 of docs/design/podman-reboot-readiness.md): a runtime that could
+			// TRI-STATE (PR-D8 of docs/reference/podman-readiness.md): a runtime that could
 			// not say whether this workspace's jail is running refuses the launch, rather than
 			// starting a fresh one beside a jail that may be up.
 			cid, known := o.probeRunningContainer(cname, rt, attachProbeTimeout)
