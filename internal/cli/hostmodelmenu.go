@@ -48,6 +48,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/modelmenu"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -223,6 +224,42 @@ func hostSelectionProgram(packs []*packload.Pack, bin string) (*packload.Pack, *
 	return nil, nil
 }
 
+// deliveredComputed is spec with the launch computed flags of the program this launch delivers: a
+// fork's entries (packdecl.LaunchComputedFlag.ForkedBy, docs/reference/pack-system.md#LC-D1) are
+// flags only the fork's build registers, so where YOLO_SKIP_PATCHES runs the fork's upstream build
+// in its place they are dropped, or returned to the base's entry they replaced, and the line says
+// so. spec itself is never modified.
+func (c *hostComposition) deliveredComputed(p *packload.Pack, spec *packdecl.LaunchSelection, say func(string)) *packdecl.LaunchSelection {
+	var forkPack string
+	for _, f := range spec.Computed {
+		if f.ForkedBy != "" {
+			forkPack = f.ForkedBy
+			break
+		}
+	}
+	if forkPack == "" {
+		return spec
+	}
+	for _, f := range packload.Forks(c.packs) {
+		if f.Pack != forkPack || f.Base != p.Name || f.Bin != c.agent || !skipsPatches(f) {
+			continue
+		}
+		var dropped []string
+		for _, g := range spec.Computed {
+			if g.ForkedBy != "" {
+				dropped = append(dropped, g.Word())
+			}
+		}
+		out := *spec
+		out.Computed = packdecl.BaseComputed(spec.Computed)
+		say(fmt.Sprintf("%s runs its upstream build this launch (%s), so it gets none of the flags pack %s "+
+			"declares for its build: %s. Unset %s to run the patched build with them.", c.agent,
+			patchrecovery.SkipPatchesEnv, forkPack, strings.Join(dropped, ", "), patchrecovery.SkipPatchesEnv))
+		return &out
+	}
+	return spec
+}
+
 // hostSelection is what one launch hands its program of its LAUNCH SELECTION
 // (packdecl.LaunchSelection; docs/design/model-lists-and-pickers.md MM-D30): the argv words that go
 // right after argv[0], the variables set in its environment, and the words the disclosure names
@@ -261,6 +298,7 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 	if spec == nil {
 		return &hostSelection{bin: c.agent}
 	}
+	spec = c.deliveredComputed(p, spec, say)
 	sel := &hostSelection{pack: p.Name, bin: c.agent, declared: true}
 	keepsFile := func(why string) *hostSelection {
 		say(fmt.Sprintf("%s, so %s starts on the selection its own config holds (~/%s), not on -p %s's. %s",
@@ -281,7 +319,7 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 	}
 	configured, err := entrypoint.HostLaunchSelection(p, *spec, paths.Home(),
 		&entrypoint.HostInputs{Vars: c.configuredWireTables(), Packs: c.packs}, nil)
-	// The selection and the computed keys (pi's `subagents` block, MM-D42) are compared apart: a -p
+	// The selection and the computed keys (a pack's `launch_computed`) are compared apart: a -p
 	// that agrees on the selection but composes other computed keys hands those keys alone.
 	sameSelection := err == nil && launch.Same(configured)
 	sameComputed := err == nil && launch.SameComputed(configured)
@@ -331,8 +369,8 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 		}
 		for _, h := range held {
 			say(fmt.Sprintf("-p %s composes its own %s for %s, which pack %s hands as %s only when %s=1, and it "+
-				"is not set, so %s keeps the %s its own config holds (~/%s) (docs/design/model-lists-and-pickers.md "+
-				"MM-D42). Set %s=1 once your %s reads %s.", shquote.Quote(c.typedProfile), h.Key, c.agent, p.Name,
+				"is not set, so %s keeps the %s its own config holds (~/%s) (docs/reference/pack-system.md#launch_computed). "+
+				"Set %s=1 once your %s reads %s.", shquote.Quote(c.typedProfile), h.Key, c.agent, p.Name,
 				h.Word(), h.OptIn, c.agent, h.Key, spec.Surface, h.OptIn, c.agent, h.Word()))
 		}
 	}

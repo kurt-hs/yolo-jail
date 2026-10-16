@@ -128,7 +128,7 @@ type Manifest struct {
 
 	// LaunchComputedByBin are, per program bin, the computed keys of its launch selection's
 	// surface that one `yolo host -p` launch hands as argv words (launchcomputed.go;
-	// docs/design/model-lists-and-pickers.md MM-D42). Pack-wide, like provider_keys, for the same
+	// docs/reference/pack-system.md#launch_computed). Pack-wide, like provider_keys, for the same
 	// reason; projected onto the program's LaunchSelection.Computed.
 	LaunchComputedByBin map[string][]LaunchComputedFlag `json:"launch_computed,omitempty"`
 
@@ -1301,8 +1301,7 @@ func (ls *LaunchSelection) clone() *LaunchSelection {
 		out.Subcommands = append([]string(nil), ls.Subcommands...)
 	}
 	for _, f := range ls.Computed {
-		out.Computed = append(out.Computed, LaunchComputedFlag{Key: f.Key, Argv: append([]string(nil), f.Argv...),
-			OptIn: f.OptIn})
+		out.Computed = append(out.Computed, f.clone())
 	}
 	return out
 }

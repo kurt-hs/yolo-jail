@@ -1,7 +1,7 @@
 package packdecl
 
 // launchcomputed_test.go pins the pack-wide `launch_computed` declaration
-// (Manifest.LaunchComputedByBin; docs/design/model-lists-and-pickers.md MM-D42): projected onto the
+// (Manifest.LaunchComputedByBin; docs/reference/pack-system.md#launch_computed): projected onto the
 // owning program's LaunchSelection.Computed as a copy, never onto a fork's, and refused wherever no
 // launch could hand it. Through Decode and the real validator.
 
@@ -35,10 +35,73 @@ func TestLaunchComputedIsProjectedOntoItsProgramsSelection(t *testing.T) {
 	}
 }
 
+// forkOfTool is a fork of pack base's program tool, which declares no launch selection of its own.
+const forkOfTool = `{"kind":"program","bin":"tool","via":"source","fork_of":"base",
+  "source":"git+https://example.test/tool.git?ref=main",
+  "build":"make","produces":[".local/bin/tool"]}`
+
+// A FORK'S PACK MAY DECLARE launch_computed FOR THE BIN IT FORKS (pack-system.md#LC-D1): its own
+// validation checks the entries' shape alone, since the launch selection they ride is the base's,
+// and ForkLaunchComputedProblems makes the rest against the base's selection.
+func TestAForksPackMayDeclareLaunchComputedForItsBin(t *testing.T) {
+	m, problems := Decode([]byte(`{"launch_computed":{"tool":[{"key":"policy","argv":["--policy","{value}"]}]},
+	  "contributes":[` + forkOfTool + `]}`))
+	if len(problems) != 0 {
+		t.Fatalf("a fork's pack was refused: %v", problems)
+	}
+	if got := m.LaunchComputedByBin["tool"]; len(got) != 1 || got[0].Key != "policy" {
+		t.Errorf("decoded %+v", got)
+	}
+	_, problems = Decode([]byte(`{"launch_computed":{"tool":[{"key":"policy","argv":["--policy"]}]},
+	  "contributes":[` + forkOfTool + `]}`))
+	if !containsSubstr(problems, "must carry the value") {
+		t.Errorf("a fork's entry escapes the shape checks: %v", problems)
+	}
+	ls := &LaunchSelection{Surface: ".t/s.json", Flags: []LaunchSelectionFlag{{Key: "defaultModel",
+		Argv: []string{"--model", "{value}"}}}}
+	if p := ForkLaunchComputedProblems("fork", "tool", ls, []LaunchComputedFlag{{Key: "defaultModel",
+		Argv: []string{"--m", "{value}"}}}); !containsSubstr(p, "hand already") || !containsSubstr(p, "pack fork: ") {
+		t.Errorf("a selection key from a fork: %v", p)
+	}
+	if p := ForkLaunchComputedProblems("fork", "tool", nil, []LaunchComputedFlag{{Key: "policy",
+		Argv: []string{"--p", "{value}"}}}); !containsSubstr(p, `declares no "launch_selection"`) {
+		t.Errorf("a base with no selection: %v", p)
+	}
+}
+
+// THE MERGE: a fork's entry for a key the base declares takes its place, remembering it; its other
+// keys follow the base's; every fork entry names its pack; and BaseComputed undoes it exactly.
+func TestAForksComputedFlagsReplaceTheBasesByKey(t *testing.T) {
+	base := []LaunchComputedFlag{{Key: "a", Argv: []string{"--a", "{value}"}}, {Key: "b", Argv: []string{"--b", "{value}"}}}
+	fork := []LaunchComputedFlag{{Key: "c", Argv: []string{"--c", "{value}"}, OptIn: "C_ON"},
+		{Key: "b", Argv: []string{"--b2", "{value}"}}}
+	merged := MergeForkComputed(base, fork, "f")
+	var words, by []string
+	for _, f := range merged {
+		words, by = append(words, f.Word()), append(by, f.ForkedBy)
+	}
+	if !reflect.DeepEqual(words, []string{"--a", "--b2", "--c"}) || !reflect.DeepEqual(by, []string{"", "f", "f"}) {
+		t.Fatalf("merged words %q by %q", words, by)
+	}
+	if merged[1].Replaces == nil || merged[1].Replaces.Word() != "--b" || merged[2].Replaces != nil {
+		t.Errorf("Replaces: %+v", merged)
+	}
+	if got := BaseComputed(merged); !reflect.DeepEqual(got, base) {
+		t.Errorf("BaseComputed = %+v, want the base's own %+v", got, base)
+	}
+	if got := BaseComputed(MergeForkComputed(nil, fork, "f")); got != nil {
+		t.Errorf("a fork-only set leaves %+v without the fork", got)
+	}
+	merged[1].Replaces.Argv[0] = "edited"
+	if base[1].Argv[0] != "--b" {
+		t.Error("the merge aliases the base's entries")
+	}
+}
+
 func TestLaunchComputedIsRefusedWhereNoLaunchCouldHandIt(t *testing.T) {
 	cases := map[string]struct{ doc, want string }{
 		"another pack's bin": {`{"launch_computed":{"other":[{"key":"s","argv":["--s","{value}"]}]},
-		  "contributes":[` + computedProgram + `]}`, "must name a non-fork program declared by this pack"},
+		  "contributes":[` + computedProgram + `]}`, "must name a program this pack declares or forks"},
 		"a program with no selection": {`{"launch_computed":{"q":[{"key":"s","argv":["--s","{value}"]}]},
 		  "contributes":[{"kind":"program","bin":"q","via":"npm","package":"q"}]}`, `declares no "launch_selection"`},
 		"a selection in a variable": {`{"launch_computed":{"q":[{"key":"s","argv":["--s","{value}"]}]},
