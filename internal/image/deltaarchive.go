@@ -17,8 +17,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// THE DELTA ARCHIVE — docs/research/macos-layer-reusing-image-delivery.md,
-// "Option 3", ruled OQ-LR1 (build it) and OQ-LR3 (Apple Container's present set is
+// THE DELTA ARCHIVE — docs/reference/image-staging-vs-baking.md,
+// "The delta archive", ruled OQ-LR1 (build it) and OQ-LR3 (Apple Container's present set is
 // yolo's own delivery record).
 //
 // The two archive backends (deliverViaArchive says which and why) used to hand

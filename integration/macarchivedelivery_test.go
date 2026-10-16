@@ -33,8 +33,8 @@ import (
 // oci-archive that leaves out the layers the runtime already holds. Everything about it that a
 // Linux machine can check is checked on Linux: archivedelta_test.go pins the placeholder
 // behaviour against the real copier and the over-claim retry against a real REMOTE podman. What
-// is left is docs/research/macos-layer-reusing-image-delivery.md's "What only a Mac can
-// confirm", and these tests are that list run as CI instead of by hand:
+// is left is what only a Mac can confirm (docs/reference/image-staging-vs-baking.md,
+// "The delta archive"), and these tests run it as CI instead of by hand:
 //
 //   - TestMacArchiveDeliveryReusesLayers — both backends. Two throwaway workspaces, two real
 //     `yolo run` launches: IMAGE A (the stock image, no `packages:`) first, then IMAGE B
@@ -1267,7 +1267,7 @@ type lr2Sample struct{ write, load time.Duration }
 var oqLR2Uncompressed lr2Sample
 
 // TestMacArchiveFirstLoadInVMCopierOnPodman is OQ-LR2's SECOND candidate
-// (docs/research/macos-layer-reusing-image-delivery.md#decision-ledger), measured: a cold first delivery
+// (docs/reference/image-staging-vs-baking.md#the-first-load), measured: a cold first delivery
 // of image A made by the LINUX copier running inside the Podman Machine VM, reading the image
 // over the VM's /nix share and writing straight into the machine's own containers-storage.
 //
@@ -1427,7 +1427,7 @@ func vmLinuxSystem(unameM string) (string, error) {
 // every goroutine's stack and exits, and that dump says where it was. And the remote shell
 // prints inVMCopierExitMarker with the copier's status once it returns, so a session that still
 // hangs afterwards is the session's. On Linux the step after `Writing manifest` took about 0.1 s
-// of a 51 s cold copy (docs/research/macos-layer-reusing-image-delivery.md, OQ-LR2).
+// of a 51 s cold copy (docs/reference/image-staging-vs-baking.md, OQ-LR2).
 func inVMCopyArgv(facts image.PodmanStoreFacts, copier, imageJSON, ref string, limit time.Duration) []string {
 	inner := image.DeliveryCopyArgvFor("podman", facts, copier, imageJSON, ref)
 	return []string{"podman", "machine", "ssh", "--",

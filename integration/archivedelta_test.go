@@ -18,7 +18,7 @@ import (
 )
 
 // THE DELTA ARCHIVE AGAINST THE REAL COPIER AND A REAL REMOTE PODMAN
-// (docs/research/macos-layer-reusing-image-delivery.md, OQ-LR1).
+// (docs/reference/image-staging-vs-baking.md, OQ-LR1).
 //
 // The unit tests in internal/image drive deliverViaArchive against a fake copier
 // and a fake loader, which is how every branch is reachable; what they cannot do
@@ -39,8 +39,8 @@ import (
 //
 // Both are Linux-only: they build `.#ociImage`, which is a Linux image, and the
 // second runs a private podman service, which the Mac's podman (a client of a VM)
-// cannot. The Mac half is docs/research/macos-layer-reusing-image-delivery.md's
-// "What only a Mac can confirm".
+// cannot. The Mac half is integration/macarchivedelivery_test.go, whose results are in
+// docs/reference/image-staging-vs-baking.md's "The delta archive".
 
 // deltaFixture is the real image manifest and copier for the tree under test.
 type deltaFixture struct {
