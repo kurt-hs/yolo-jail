@@ -16,10 +16,9 @@ const CachedGoodEnv = patchrecovery.UseCachedGoodEnv
 // extension sets. It does not grant a build, host-floor, attach, or in-jail capability.
 //
 // THE GRAMMAR is patchrecovery's: `1`, or names matching a patched fork or a built extension by key,
-// pack or name (docs/reference/patched-forks.md §8.5). A name covering nothing selected
-// is a warning line. The one refusal for coverage is a value that covers nothing at all and is a
-// single exact owner key (`<pack>/<name>`): what used to be the selector's only form, and a typo of
-// one names a build the user asked for by its key.
+// pack or name (docs/reference/patched-forks.md §8.5). A name covering nothing selected is a
+// warning line, never a refusal, as for every hatch: one left in a shell profile must not stop a
+// workspace that does not select the pack it names.
 func (o *Options) selectCachedGood(rt string) bool {
 	selector := strings.TrimSpace(o.Getenv(CachedGoodEnv))
 	if selector == "" {
@@ -65,9 +64,6 @@ func (o *Options) selectCachedGood(rt string) bool {
 		if scope.Covers(sub) {
 			trees = append(trees, sub.Key)
 		}
-	}
-	if len(forks)+len(trees) == 0 && len(scope.Names()) == 1 && strings.Contains(selector, "/") {
-		return refuse(selector + " is not exactly one selected patched program or extension")
 	}
 	if line := patchrecovery.UnmatchedLine(CachedGoodEnv, scope.Unmatched(subs), subs); line != "" {
 		o.pr(o.Stderr).print("[yellow]" + richtext.Escape(line) + "[/yellow]")

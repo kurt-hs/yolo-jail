@@ -41,21 +41,25 @@ func TestFreshLaunchCarriesCachedGoodOwnerIntoBuildSlot(t *testing.T) {
 	}
 }
 
-// An invalid owner refuses before the build slot or container launch; it cannot turn into a generic
-// missing-program bypass or trigger an advance for some other key.
-func TestInvalidCachedGoodOwnerRefusesBeforeBuildSlot(t *testing.T) {
+// An owner key covering nothing selected warns, as every hatch's unmatched name does (§8.5), and
+// selects nothing: the build slot is asked for no cached-good owner, so it cannot turn into a
+// generic bypass or trigger an advance for some other key.
+func TestAnUnmatchedCachedGoodOwnerWarnsAndSelectsNothing(t *testing.T) {
 	patchedLaunchHome(t)
-	called := false
-	argv, printed := fakePodmanLaunch(t, func(o *Options) {
+	called, owner := false, ""
+	_, printed := fakePodmanLaunch(t, func(o *Options) {
 		o.Getenv = cachedGoodEnv("unselected/tool")
-		o.BuildSlot = func(BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+		o.BuildSlot = func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
 			called = true
+			if req.Forks != nil {
+				owner = req.Forks.CachedGoodOwner
+			}
 			return nil, nil
 		}
 	})
-	if called || argv != nil || !strings.Contains(printed, "not exactly one selected patched program") {
-		t.Errorf("invalid selector called the build slot (%v), ran the container (%v), or was not refused:\n%s",
-			called, argv != nil, printed)
+	if !called || owner != "" || strings.Contains(printed, "Refusing cached-good recovery") ||
+		!strings.Contains(printed, "Warning: YOLO_USE_CACHED_GOOD names unselected/tool, which matches no patched build here") {
+		t.Errorf("an unmatched owner refused, selected %q, or did not warn (slot called %v):\n%s", owner, called, printed)
 	}
 }
 

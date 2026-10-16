@@ -141,8 +141,15 @@ func patchFailureReason(reason string, patchFailure bool) string {
 // left its cause to the launch.
 func (o *Options) refuseMissingBuilds(rt string) bool {
 	var needed, unneeded []missingBuild
+	// A needed build whose cause is a patch failure was refused above, by its own error block and
+	// hatch list (patchfailures.go): one block and one list, not a second ERROR for it here — unless
+	// the missing-program hatch starts the launch without it, which the warning below says.
+	refusedAbove := false
+	starting := o.Getenv(paths.AllowMissingProgramsEnv) != ""
 	for _, m := range o.missingBuilds(rt) {
 		switch {
+		case m.needed && m.patchFailure && !starting:
+			refusedAbove = true
 		case m.needed:
 			needed = append(needed, m)
 		case m.cause != nil || m.unsaid:
@@ -150,7 +157,8 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 		}
 	}
 	out := o.pr(o.Stderr)
-	if slices.ContainsFunc(append(slices.Clone(needed), unneeded...), func(m missingBuild) bool { return m.patchFailure }) {
+	if len(needed)+len(unneeded) > 0 && (refusedAbove ||
+		slices.ContainsFunc(append(slices.Clone(needed), unneeded...), func(m missingBuild) bool { return m.patchFailure })) {
 		out.print("") // set off from the error block above (patchfailures.go)
 	}
 	// PF-D21's Apple Container line, which the act leaves to the launch with the cause: said once,
@@ -166,7 +174,7 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 		if acLimit {
 			o.printAppleContainerLimit()
 		}
-		return false
+		return refusedAbove
 	}
 	lacks := missingNeededPhrase(needed) + " " + plural(len(needed), "has", "have") + " no build on this machine"
 	if o.Getenv(paths.AllowMissingProgramsEnv) != "" {

@@ -965,9 +965,8 @@ The first five hatches, the **scoped hatches**, share one grammar (`patchrecover
   name and duplicates are dropped; an empty value is unset.
 - **A name that covers nothing selected is a warning, never a refusal** ([PBR-D3](#PBR-D3)): a hatch
   left in a shell profile must not stop a workspace that does not select the pack it names. The
-  warning lists the patched builds that are here. One exception keeps an old typo loud:
-  `YOLO_USE_CACHED_GOOD` set to one owner key that covers nothing refuses, since that was its only
-  form and names a build the user asked for by its key.
+  warning lists the patched builds that are here. `YOLO_USE_CACHED_GOOD` set to one owner key that
+  covers nothing warns the same way.
 - `YOLO_ALLOW_PATCH_FAILURES` once accepted the literal `1` alone, and `YOLO_USE_CACHED_GOOD` exactly
   one key. Both still mean what they meant.
 

@@ -150,18 +150,18 @@ func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 	}
 	for _, w := range []string{
 		"ERROR: fork forkpack/tool: patch series does not apply to upstream v1.2.0 (c5c0f6bd)\n",
-		"\nStart anyway:\n  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n\nERROR: 1 selected patched fork",
-		"\n  fork forkpack/tool: its patch series does not apply (the ERROR above)\n\nRetry:\n  yolo capture tool\n",
+		"\nStart anyway:\n  YOLO_ALLOW_MISSING_PROGRAMS=1 yolo    start without it\n",
 	} {
 		if !strings.Contains(printed, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, printed)
 		}
 	}
+	// One block and one hatch list: no second ERROR for the same fork.
+	if n, m := strings.Count(printed, "ERROR: "), strings.Count(printed, "Start anyway:"); n != 1 || m != 1 {
+		t.Errorf("the launch says %d ERROR lines and %d hatch lists, want one of each:\n%s", n, m, printed)
+	}
 	if strings.Contains(printed, paths.AllowPatchFailuresEnv) || strings.Contains(printed, "Rebase: yolo pack series check") {
 		t.Errorf("the launch offers a hatch with no build to run, or a second rebase pointer:\n%s", printed)
-	}
-	if strings.Index(printed, "ERROR: fork forkpack/tool") > strings.Index(printed, "ERROR: 1 selected patched fork") {
-		t.Errorf("the error block follows the refusal:\n%s", printed)
 	}
 	// The block's header and its Repair recipe name the commit — the rebase, then the export's test,
 	// --base and range — and nothing else repeats it.
