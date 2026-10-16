@@ -2301,8 +2301,12 @@ func (a *advance) buildFailedLines(b forkBuild, err error, retryAt time.Time) {
 		return
 	}
 	tail := a.runsNow()
-	if a.thenBase {
+	switch {
+	case a.thenBase:
 		tail = a.baseNext()
+	case a.o.background && a.serves():
+		// The next fresh launch stops on it until a build of it succeeds (OQ-PPX3), and says the ways on.
+		tail = "the next fresh launch stops on it until a build of it succeeds"
 	}
 	a.warn("%s: the build of %s failed: %v — %s", f.Label(), what, err, tail)
 	if !a.printRunFailure() && a.o.workspace != "" {
@@ -2603,6 +2607,9 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 		tail := a.runsNow()
 		if a.thenBase {
 			tail = a.baseNext()
+		} else if a.serves() && !a.o.background && !a.o.sharedOwned && !a.o.force && !a.o.freshCheck {
+			// It stops this act (OQ-PPX3): the error block run() says next names the ways on.
+			tail = "the error below names the ways on"
 		}
 		a.warn("%s: another launch's build of %s failed while this one waited: %s — %s", f.Label(),
 			b.Entry.Label(), waited.msg, tail)

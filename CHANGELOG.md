@@ -17,7 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading: it asks for your admin password and installs one sudo rule that runs commands only as the sandbox account, never as root. The backend now supports one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail now runs its own credential services** for Claude, OpenAI and AWS logins, started and ended with it. An older yolo's machine-wide service is left running for the jails it started; once they end, stop it with `yolo host-daemon stop --host-wide <name>`, or reboot. See [host services](userguide/guides/host-services.md).
-- **A patched fork or pi extension whose newer build fails now stops the launch** instead of quietly running the last good build. To run that build anyway, launch with `YOLO_USE_CACHED_GOOD=<name> yolo`.
+- **A patched fork or pi extension whose newer build fails now stops the launch** instead of quietly running the last good build. To run the last good build anyway, launch with `YOLO_USE_CACHED_GOOD=<name> yolo`.
 
 ### Added
 

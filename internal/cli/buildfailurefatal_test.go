@@ -286,6 +286,13 @@ func TestABackgroundBuildFailureStopsTheNextLaunch(t *testing.T) {
 	if d.PatchFailure == nil || d.PatchFailure.Kind != packsrc.PatchFailureBuild || *builds != 1 {
 		t.Fatalf("the next launch handed %+v after %d builds, want the background's failure\n%s", d, *builds, out)
 	}
+	// Its refusal lists the hatches this launch reads — cached-good recovery among them — and not the
+	// walk-back, which a read that builds nothing would not run.
+	if got := hatchEnvs(d.Recovery); !slices.Contains(got, "YOLO_USE_CACHED_GOOD="+poolKeyA) ||
+		!slices.Contains(got, "YOLO_ALLOW_PATCH_FAILURES="+poolKeyA) ||
+		slices.Contains(got, "YOLO_ALLOW_OLDER_UPSTREAM="+poolKeyA) {
+		t.Errorf("the next launch's hatch list = %v", got)
+	}
 }
 
 // AT THE HOST, AN EXTENSION'S FAILED NEWER BUILD STOPS `yolo host -- <bin>`: under
