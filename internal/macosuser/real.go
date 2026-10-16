@@ -119,8 +119,10 @@ func runCaptureReal(argv []string) (string, int) {
 // user's home or its per-user temp dir, which _yolojail cannot traverse: every shell the guest
 // starts there prints `shell-init: error retrieving current directory: getcwd: cannot access
 // parent directories`, and a relative path resolves nowhere. So a crossing (isRunAsSandboxArgv)
-// starts in `/`; what needs a directory names it (the session's inner `cd <workspace>`,
-// LaunchArgv). Every other command keeps the caller's cwd.
+// starts in `/`, and each crossing that reads its cwd changes into the workspace itself: the
+// provisioning stage (provisionInWorkspace) and the session (LaunchArgv's inner `cd`; it runs
+// through RunWithProxy, not here). The bootstrap, the capture driver and the jail daemons name
+// every path they use. Every other command keeps the caller's cwd.
 func commandFor(argv []string) *exec.Cmd {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	if isRunAsSandboxArgv(argv) {

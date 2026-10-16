@@ -649,12 +649,15 @@ var stageCaptureScript = strings.Join([]string{
 		// XNU refuses setgid to an owner outside the directory's group with EPERM, and a new
 		// directory takes its parent's group, which under /Users/Shared is wheel (that this is
 		// the EPERM's cause is INFERRED from those three facts; the EPERM itself is measured,
-		// below). So the top
-		// is made first and given the copier's primary group, which every directory the copy
-		// creates under it inherits, and `"$3/."` copies the entry's contents into it (BSD
-		// and GNU alike) rather than a directory named after it. Measured on CI 2026-10-16:
+		// below). So the top is made first and given the copier's primary group, which every
+		// directory the copy creates under it inherits, and `"$3/."` copies the entry's
+		// contents into it (BSD and GNU alike) rather than a directory named after it. `"$3/."`
+		// would follow a symlinked entry where `cp -R "$3"` copied the link, so an entry that is
+		// not a real directory is refused first. Measured on CI 2026-10-16:
 		// `cp: chmod: …/captures/staging/<key>/: Operation not permitted` once staging stopped
 		// running as root.
+		`{ { [ -d "$3" ] && [ ! -L "$3" ]; } || { echo "` + stageCaptureScriptName +
+			`: $3 is not a directory (a symlink or missing), so it is not copied" >&2; false; }; }`,
 		mkdirBin + ` "$tmp"`,
 		chgrpBin + ` "$(` + idBin + ` -g)" "$tmp"`,
 		cpBin + ` -R "$3/." "$tmp"`,
