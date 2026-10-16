@@ -17,7 +17,7 @@ next: "Rule OQ-M1, whether the syntax-free model change goes now, with the expos
 2026-09-30, every shipped manifest is still one flat `contributes` list tagged by `kind`, and
 `packs/claude` still repeats `"agent": "claude"` on its own contributions. Re-checked against the tree
 and the sibling rulings 2026-09-24: the identity lever in [§3](#3-what-is-actually-free-to-change)
-now follows [`OQ-D5`](slots-and-contributions.md#OQ-D5) (declared once per pack, never derived),
+now follows [`OQ-D5`](slots-and-contributions.md#7-decision-ledger) (declared once per pack, never derived),
 which that doc ruled on 2026-09-20. Sibling to
 [`slots-and-contributions.md`](slots-and-contributions.md) — that one fixes the manifest's
 **role** model, this one its **surface**.
@@ -117,7 +117,7 @@ The syntax and the model are separable, and it is worth being exact about which 
 the *shape*, and see how much of the problem is left.
 
 > ⚠ **The agent name is declared once per pack, and never derived.** An earlier draft of this
-> row derived it from `program.bin`. [`OQ-D5`](slots-and-contributions.md#OQ-D5) ruled
+> row derived it from `program.bin`. [`OQ-D5`](slots-and-contributions.md#7-decision-ledger) ruled
 > otherwise on 2026-09-20: a pack provides zero or one agents and must name the one it provides,
 > which is [`OQ-BA2`](../reference/agent-briefings.md#oq-ba2)'s refusal of a derived identity
 > restated at pack scope. Neither the pack's `name` nor its bin could be the source anyway:
@@ -149,11 +149,11 @@ Keep the syntax; change the model. Group by kind, derive the identity, keep conv
   reuse for genuinely repeated rows.
 
 *Illustrative only:* the `exposes` list form is
-[`slots-and-contributions.md`](slots-and-contributions.md)'s, whose [`OQ-D4`](slots-and-contributions.md#OQ-D4) ruled the field names
-provisional. Its [`OQ-D3`](slots-and-contributions.md#OQ-D3) ruled on 2026-09-20 that `briefing` and
+[`slots-and-contributions.md`](slots-and-contributions.md)'s, whose [`OQ-D4`](slots-and-contributions.md#7-decision-ledger) ruled the field names
+provisional. Its [`OQ-D3`](slots-and-contributions.md#7-decision-ledger) ruled on 2026-09-20 that `briefing` and
 `skills` destinations become `exposes` entries too, so the `briefing` line above is shown in
 today's shape only. What those slots are called is still open there, as
-[`OQ-D8`](slots-and-contributions.md#OQ-D8).
+[`OQ-D8`](slots-and-contributions.md#7-decision-ledger).
 
 ### B. Data-only Lua (reuse the sandbox already in the tree)
 
@@ -255,7 +255,7 @@ Dhall (total, typed).
 
    _Leaning:_ Yes — it is independent of the syntax decision, needs no dependency, and removes the
    bulk of the measured redundancy. The identity half of it has a recorded shape already:
-   [`OQ-D5`](slots-and-contributions.md#OQ-D5) ruled that a pack declares its agent once, so
+   [`OQ-D5`](slots-and-contributions.md#7-decision-ledger) ruled that a pack declares its agent once, so
    what this question still decides is whether to make the change, and when. ⚠ **The re-measure this used to require was TAKEN 2026-09-22
    without building anything, and it retired the gzip metric rather than answering with it** — see
    [OQ-M2](#OQ-M2). So M1 no longer gates on a measurement, and M2 no longer gates on M1.
@@ -329,7 +329,7 @@ Dhall (total, typed).
 "The model change" is
 [§3](#3-what-is-actually-free-to-change)'s three syntax-independent levers: group entries by kind,
 so `"program": {…}` replaces `{"kind": "program", …}` in a list; state the pack's agent once, which
-is [`OQ-D5`](slots-and-contributions.md#OQ-D5)'s ruled rule and is not built; and give each kind
+is [`OQ-D5`](slots-and-contributions.md#7-decision-ledger)'s ruled rule and is not built; and give each kind
 defaults for `into`, `path` and `codec`.
 
 ⚠ **Added 2026-10-05: what an older yolo does with each lever**

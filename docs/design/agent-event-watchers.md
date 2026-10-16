@@ -1145,7 +1145,7 @@ What this deliberately does not copy:
   [`host.go`](../../internal/cli/host.go)), and `yolo loopholes enable` writes a per-workspace
   file beside the user config, never the config itself (`CmdSetEnabled` in
   [`loopholescmd.go`](../../internal/loopholes/loopholescmd.go);
-  [OQ-BB12](boundary-broker.md#OQ-BB12)).
+  [OQ-BB12](boundary-broker.md#15-decision-ledger)).
   `yolo sidecar enable` writes state, never config, so it is no second writer ([EW-D14](#EW-D14)).
 - **A blanket in config.** direnv's `[whitelist]` in `direnv.toml` and mise's
   `trusted_config_paths` each let one line in `~/.config` stand in for the per-machine act, and

@@ -47,7 +47,7 @@ overrule:** [OQ-1](#OQ-1) D2, on its leaning ([PH-D1](#PH-D1)).
 [`agent-directory-map.md`](agent-directory-map.md) (`auth.json`'s class and its host column),
 [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md) (Pi provider catalog layering),
 [`model-lists-and-pickers.md`](model-lists-and-pickers.md) (ML-D3, MM-D23, and
-[OQ-MM5](model-lists-and-pickers.md#OQ-MM5) on a host `-p`).
+[OQ-MM5](model-lists-and-pickers.md#16-decision-ledger) on a host `-p`).
 
 ---
 
@@ -507,7 +507,7 @@ no auth-only variable or flag (MEASURED, E1: every `PI_` variable `$PI` reads, a
 - **A trap:** the extension reads its model list from `homedir()/.pi/agent/`
   (`CODEX_LIST_FILE`), not from pi's agent directory. A link
   hides that, but any yolo code that spells `~/.pi/agent` has to be audited.
-- **It is also the lever [OQ-MM5](model-lists-and-pickers.md#OQ-MM5) B anticipates** *"for pi, whose
+- **It is also the lever [OQ-MM5](model-lists-and-pickers.md#16-decision-ledger) B anticipates** *"for pi, whose
   selection is also file-held"*: a managed directory could carry a host `-p`'s selection.
 - **Cost:** the largest build here. Pi's agent directory has many children, the directory map walks it
   strictly, and the link set has to track pi's layout.
@@ -732,7 +732,7 @@ a macos-user launch hands it only to the services and doorways it runs outside t
 
 - **The jail's seeding.** The jail keeps writing its own `auth.json` before launch. Whether D2 makes
   that redundant is a later question.
-- **A host `-p` moving pi's file-held selection.** That is [OQ-MM5](model-lists-and-pickers.md#OQ-MM5)'s
+- **A host `-p` moving pi's file-held selection.** That is [OQ-MM5](model-lists-and-pickers.md#16-decision-ledger)'s
   subject; E would enable it and nothing here requires it.
 - **The `host_management` default.** Retiring `assert` moves the default to `none`
   ([`config-ownership-and-promotion.md`](config-ownership-and-promotion.md)). That is not built, and

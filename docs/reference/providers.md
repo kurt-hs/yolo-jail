@@ -306,7 +306,7 @@ and agy, whose transport takes no address, reaches nothing.
   every maker's (Converse). The filter is by declared maker, not by what the client could call:
   codex skips another maker's model whose AWS page lists Responses, until a turn measures one.
   pi and opencode list the entries in their model menus; claude's and codex's menus are not
-  shaped yet ([OQ-BR13](../design/model-lists-and-pickers.md#OQ-BR13)).
+  shaped yet ([OQ-BR13](../design/model-lists-and-pickers.md#16-decision-ledger)).
 - **Which model an agent starts on**: the profile's `model` when it names an entry that agent can
   call, as an alias or an id, or an id the provider does not list, which is passed through; else
   the provider's `default` alias when that agent can call it; else the first entry of a supplied
@@ -314,7 +314,7 @@ and agy, whose transport takes no address, reaches nothing.
   default. A listed entry the agent cannot call is skipped, never sent. claude's own client never
   takes a list's first entry: with nothing named, yolo pins no model, because Claude Code starts
   on an Anthropic model of its own, a valid session yolo does not steer
-  ([`OQ-ML2`](../design/model-lists-and-pickers.md#OQ-ML2)). copilot through the bridge, which
+  ([`OQ-ML2`](../design/model-lists-and-pickers.md#16-decision-ledger)). copilot through the bridge, which
   has no default of its own there, starts on `openai.gpt-oss-120b-1:0`.
 
 Each agent's binding, written only for the selected Bedrock provider and only on the agent's own
@@ -1219,7 +1219,7 @@ pack ships, and every agent that can use the provider renders that one list
   wins and `~/.codex/config.toml` is never written. The menu follows the provider the `-p`
   moved codex onto. With no `-p`, codex starts on what `yolo host apply` wrote into its config for
   the configured profile ([MM-D30](../design/model-lists-and-pickers.md#MM-D30), which decided
-  [OQ-MM5](../design/model-lists-and-pickers.md#OQ-MM5));
+  [OQ-MM5](../design/model-lists-and-pickers.md#16-decision-ledger));
 - **pi**'s extension registers exactly the list for `openai-codex`, read from a file yolo writes
   at every jail boot, with the cost, thinking and image facts taken from pi's own catalog. pi gets
   no model scope for it, and its sub-agents may use only the listed ids. A listed model pi's
@@ -1803,7 +1803,7 @@ declares no model list passes the value through verbatim, exactly as the `model`
 
 A pack can shape the model list of any provider, one another pack ships included, with a
 `kind: "models"` contribution (`yolo config-ref` has the fields;
-[OQ-BR12](../design/model-lists-and-pickers.md#OQ-BR12)). It takes one verb: `add` appends model
+[OQ-BR12](../design/model-lists-and-pickers.md#16-decision-ledger)). It takes one verb: `add` appends model
 entries, each naming its maker as `vendor`, or `only` keeps just the ids it names. A company
 ships its model policy this way once, instead of every engineer copying a list into their own
 config:
