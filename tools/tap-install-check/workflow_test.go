@@ -216,7 +216,7 @@ func TestReleasePushesTheFormulaTheDocsInstall(t *testing.T) {
 		"github.com/" + owner + "/homebrew-" + tap + ".git",
 		"tap/Formula/" + name + ".rb",
 		"test do",
-		`assert_match "` + versionLinePrefix + `#{version}", shell_output("#{bin}/yolo --version")`,
+		`assert_equal "` + versionLinePrefix + `#{version}+g${COMMIT}", shell_output("#{bin}/yolo --version").strip`,
 	} {
 		if !strings.Contains(helper, want) {
 			t.Errorf("trusted Homebrew update helper no longer says %q", want)

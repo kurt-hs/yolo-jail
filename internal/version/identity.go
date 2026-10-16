@@ -13,8 +13,8 @@ import (
 // one-line version, which two different binaries can share. Two facts, one per line:
 //
 //   - the commit the binary was built from, as the build stamped it (GitCommit, set by the
-//     Justfile `install` recipe and scripts/build-go.sh; a `go build` or a nix build stamps
-//     nothing and reports "unknown");
+//     Justfile `install` recipe, scripts/build-go.sh and every flake build (flake.nix:
+//     buildStamp); a plain `go build` stamps nothing and reports "unknown");
 //   - the sha256 of the executable's bytes, which tells two binaries apart even when they
 //     were stamped from the same commit (a dirty build, or one built from another checkout).
 //

@@ -391,9 +391,12 @@ cannot prove — an unstamped binary, a stamp naming a commit this repo lacks, n
 cannot prove is not one it reports. `macos-user` is exempt: no image, no second binary, nothing
 to skew.
 
-The stamp comes from `scripts/build-go.sh` and `just install` (`-ldflags -X` into
-`internal/version`); the from-source nix build stamps nothing, which is why the in-jail binary
-of a live-checkout nested jail never trips the gate.
+The stamp comes from `scripts/build-go.sh`, `just install` and every flake build (`-ldflags -X`
+into `internal/version`; the flake's `buildStamp`, from its git metadata or a bundle's
+`yolo-build-stamp.json`). So the in-jail `yolo` of a live-checkout jail is stamped with the
+commit its jail was built from, and trips the gate once the tree's HEAD moves through an image
+path: inside a jail, launch a nested jail with the by-path binary `just build-go` writes,
+`/workspace/dist-go/linux-<arch>/yolo`, which is stamped with the current HEAD.
 
 ## What the image bakes
 
