@@ -928,6 +928,14 @@
 ]
 },
 {
+"read": [],
+"listed": [
+".",
+"internal",
+"internal/cli"
+]
+},
+{
 "read": [
 "internal/cli/config_ref.txt"
 ],
@@ -1193,14 +1201,6 @@
 "internal/version",
 "internal/wirebridge",
 "internal/wirebridged"
-]
-},
-{
-"read": [],
-"listed": [
-".",
-"internal",
-"internal/cli"
 ]
 },
 {
@@ -1516,6 +1516,7 @@
 "internal/cli/run/cgddaemon_other.go",
 "internal/cli/run/cgroupresolve_linux.go",
 "internal/cli/run/claudecredentialview.go",
+"internal/cli/run/claudelogincatchup.go",
 "internal/cli/run/claudesecurestorage.go",
 "internal/cli/run/command.go",
 "internal/cli/run/console.go",
@@ -1536,6 +1537,7 @@
 "internal/cli/run/homeskeleton.go",
 "internal/cli/run/hostcasalias.go",
 "internal/cli/run/hostdaemonperjail.go",
+"internal/cli/run/hostdaemonsupervise.go",
 "internal/cli/run/hostexports.go",
 "internal/cli/run/hostfiles.go",
 "internal/cli/run/hostlaunchcontext.go",
@@ -5695,6 +5697,7 @@
 "internal/cli/run/cerebraspack_test.go",
 "internal/cli/run/cgdauditcallsite_test.go",
 "internal/cli/run/claudecredentialview_test.go",
+"internal/cli/run/claudelogincatchup_test.go",
 "internal/cli/run/claudesecurestorage_test.go",
 "internal/cli/run/command_nocolor_test.go",
 "internal/cli/run/command_refusal_test.go",
@@ -5747,6 +5750,7 @@
 "internal/cli/run/homesurfaces_test.go",
 "internal/cli/run/hostcasalias_test.go",
 "internal/cli/run/hostdaemonperjail_test.go",
+"internal/cli/run/hostdaemonsupervise_test.go",
 "internal/cli/run/hostdoorwaydisclosure_test.go",
 "internal/cli/run/hostdoorwayoldercopy_test.go",
 "internal/cli/run/hostdoorwaysets_test.go",
@@ -6524,45 +6528,48 @@
 "TestThePreflightRunsEveryBootGenerator": 31
 },
 "internal/cli/run": {
-"TestADaemonThatCannotAnswerIsSaidSo": 36,
-"TestADaemonsWordsCannotRestyleOrSplitTheLaunchOutput": 36,
-"TestADetachingSocketDaemonKeepsItsSocketVariable": 36,
+"TestADaemonThatCannotAnswerIsSaidSo": 34,
+"TestADaemonsWordsCannotRestyleOrSplitTheLaunchOutput": 34,
+"TestADetachingSocketDaemonKeepsItsSocketVariable": 34,
 "TestAFailedMiseInstallStillRunsTheBootstrap": 3,
-"TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart": 36,
-"TestAHealthyMintPrintsNoLaunchCheckLine": 36,
-"TestALaunchWhoseAgentsDoNotReachTheServiceAsksNothing": 36,
+"TestAFreshLaunchProceedsBesideAnOlderYolosMachineWideCopy": 34,
+"TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart": 34,
+"TestAHealthyMintPrintsNoLaunchCheckLine": 34,
+"TestALaunchStartingClaudesBrokerCatchesUpANearExpiryLogin": 34,
+"TestALaunchWhoseAgentsDoNotReachTheServiceAsksNothing": 34,
+"TestALaunchWithoutClaudesBrokerDoesNotCatchUp": 34,
 "TestARefusedFloorSkipsNoUnrelatedStep": 3,
+"TestARefusedLaunchDoesNotCatchUp": 34,
 "TestARefusedStageNeverReachesTheTarget": 3,
 "TestAWSUnnarrowedRoutineDisclosureDoesNotSuppressOtherPackDisclosures": 42,
-"TestAnAttachAsksTheRunningJailsServiceToo": 36,
-"TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop": 36,
-"TestAnAttachIntoThisYolosJailThatLacksTheCheckBlamesTheManifest": 36,
-"TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy": 36,
-"TestAnAttachProceedsPastADaemonThatAnswers": 36,
-"TestAnAttachWhoseAgentDoesNotReachTheServiceAsksNothing": 36,
-"TestAnOlderCopyUnderAnotherHomeDoesNotRefuse": 36,
-"TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch": 36,
+"TestAnAttachAsksTheRunningJailsServiceToo": 34,
+"TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop": 34,
+"TestAnAttachIntoThisYolosJailThatLacksTheCheckBlamesTheManifest": 34,
+"TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy": 34,
+"TestAnAttachProceedsPastADaemonThatAnswers": 34,
+"TestAnAttachWhoseAgentDoesNotReachTheServiceAsksNothing": 34,
+"TestAnOlderCopyUnderAnotherHomeIsNotNamed": 34,
 "TestAnOrdinaryBootstrapFailureStillReachesTheTarget": 3,
-"TestConfigRefAgreesWithTheMiseStoreScope": 34,
-"TestConfigRefStatesTheAppleContainerReadOnlyFloor": 34,
+"TestConfigRefAgreesWithTheMiseStoreScope": 35,
+"TestConfigRefStatesTheAppleContainerReadOnlyFloor": 35,
 "TestEveryPerLaunchPackRecordIsScoped": 39,
 "TestEveryShippedDetachedLoopholeGetsItsEndpointVariable": 40,
 "TestFlakeAndLauncherAgreeOnThePrefixLayout": 4,
 "TestMacosUserDeclParityBriefingRowsHoldForTheComposedBriefing": 37,
-"TestMacosUserDisclosureNamesEveryPackItNowStarts": 36,
-"TestNoOtherHatchAcknowledgesAttachSkew": 35,
+"TestMacosUserDisclosureNamesEveryPackItNowStarts": 34,
+"TestNoOtherHatchAcknowledgesAttachSkew": 36,
 "TestNoShippedDaemonSelfExecRunsTheSuite": 41,
-"TestOnPodmanACredentialDaemonRunsAsTheJailsOwn": 36,
-"TestOpenAIAuthSubsetSpawnDisclosesBeforeItSpawns": 36,
-"TestRealLoopholePackDisclosesItsDaemonBeforeTheSpawn": 36,
-"TestSelectedServiceStartupRefusalReachesLaunchOutput": 36,
+"TestOnPodmanACredentialDaemonRunsAsTheJailsOwn": 34,
+"TestOpenAIAuthSubsetSpawnDisclosesBeforeItSpawns": 34,
+"TestRealLoopholePackDisclosesItsDaemonBeforeTheSpawn": 34,
+"TestSelectedServiceStartupRefusalReachesLaunchOutput": 34,
 "TestSettingsPerSetupAgreesWithTheMiseStoreScope": 38,
-"TestSpawnBoundaryAnnouncesHostExecution": 36,
-"TestStartLoopholesDisclosesAWideningSetting": 36,
-"TestStartLoopholesWritesTheSettingsFile": 36,
+"TestSpawnBoundaryAnnouncesHostExecution": 34,
+"TestStartLoopholesDisclosesAWideningSetting": 34,
+"TestStartLoopholesWritesTheSettingsFile": 34,
 "TestTheContainerScriptHonorsNoColor": 3,
-"TestTheLaunchWarnsForEachWayTheAWSSessionCannotMint": 36,
-"TestWithNoOlderCopyAFreshLaunchIsNotRefused": 36
+"TestTheLaunchWarnsForEachWayTheAWSSessionCannotMint": 34,
+"TestWithNoOlderCopyAFreshLaunchSaysNothingOfOne": 34
 },
 "internal/cli/stores": {
 "TestEveryNamedReclaimerExists": 43
