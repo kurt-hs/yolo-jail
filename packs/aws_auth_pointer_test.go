@@ -144,8 +144,8 @@ func TestEveryShippedListenPointerNamesADaemonThatDeclaresOne(t *testing.T) {
 // step 4).
 //
 // The gate is the PROVIDER'S PLATFORM, "aws-bedrock"
-// ([`OQ-BR8`](../docs/design/providers-and-profiles-redesign.md#OQ-BR8), ruled 2026-09-29,
-// with [`OQ-BR2`](../docs/design/providers-and-profiles-redesign.md#OQ-BR2)'s marker), which is
+// ([`OQ-BR8`](../docs/design/providers-and-profiles-redesign.md#8-decision-ledger), ruled 2026-09-29,
+// with [`OQ-BR2`](../docs/design/providers-and-profiles-redesign.md#8-decision-ledger)'s marker), which is
 // what lets one pointer serve every consumer and every name: `-p bedrock`, a user's own profile
 // over that provider, and a user's own provider declaring the platform. It was the profile NAME
 // `bedrock`, which a second profile over the same provider lost (trap D5). An UNGATED

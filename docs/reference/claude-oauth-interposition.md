@@ -1040,7 +1040,7 @@ this question's answer to give.
   retired; `git show 43b221cbe`).
 - About a different store, `env_sources`:
   *"this is the credential store and it needs to be able to be shared because I don't want to put
-  it in multiple places"* ([OQ-ES1](../design/credential-sources-separation.md#OQ-ES1)).
+  it in multiple places"* ([OQ-ES1](../design/credential-sources-separation.md#10-decision-ledger)).
 
 **Not the maintainer's:** the phrase this question used to cite as yolo's ruling against a login
 per workspace, that re-authenticating in every workspace is *"wrong behavior, not an

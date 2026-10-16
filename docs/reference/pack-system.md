@@ -2871,7 +2871,7 @@ The contract:
   extension's own config file (an *adapter pack*, a term
   [`extension-model-defaults.md`](../research/extension-model-defaults.md#defined-terms) coins)
   uses it to map them onto that extension's names
-  ([OQ-XM1](../research/extension-model-defaults.md#OQ-XM1)).
+  ([OQ-XM1](../research/extension-model-defaults.md#7-decision-ledger)).
 - `ctx.in_full(t)` declares that `t` — the value of a TOP-LEVEL key — is a table the derive
   regenerates in full: its entries track a live table, so an entry on disk this run did not
   produce is yolo's own stale output. A first migration's adoption takes such a table whole,

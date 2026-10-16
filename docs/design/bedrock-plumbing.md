@@ -22,24 +22,24 @@ runtime directly and through the wire bridge (the MEASURED live line below). Rew
 2026-09-25 after the maintainer's review of that day.
 - Ruled: yolo ships one endpoint family, `bedrock-runtime` ([DIR-BR3](#DIR-BR3)). Every agent
   reaches every Bedrock model, across the whole matrix ([DIR-BR1](#DIR-BR1), [DIR-BR2](#DIR-BR2)).
-  claude gets a native profile and an everything profile ([OQ-BR11](#OQ-BR11)). pi gets its native
-  Converse client and a bridge route ([OQ-BR5](#OQ-BR5)). A launch refuses when no region is
-  visible ([OQ-BR6](#OQ-BR6)).
+  claude gets a native profile and an everything profile ([OQ-BR11](#decision-ledger)). pi gets its native
+  Converse client and a bridge route ([OQ-BR5](#decision-ledger)). A launch refuses when no region is
+  visible ([OQ-BR6](#decision-ledger)).
 - Built: the D1 fix (`f7b14308`, 2026-09-15): the codex derive now writes codex's own
-  credential field, `env_key`. The no-region refusal, [OQ-BR6](#OQ-BR6) (2026-09-29,
+  credential field, `env_key`. The no-region refusal, [OQ-BR6](#decision-ledger) (2026-09-29,
   `packload.ProviderRegionGaps` and `ProviderRegionRefusal`, with the review's fixes
   [BR-D1](#BR-D1), [BR-D4](#BR-D4) and [BR-D5](#BR-D5) and its config-ref entry), at every notch,
   keyed on the provider's platform and asked of each agent; since [BR-DIR1](#BR-DIR1) (built
   2026-09-29, [BR-D20](#BR-D20) to [BR-D26](#BR-D26)) an agent with no region is first given its
   credential profile's region from the host's `~/.aws/config`, corrected the same day by a review
   in those rows and in [BR-D2](#BR-D2). Build step 2's marker
-  ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), `packdecl.PlatformProblem` and
+  ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), `packdecl.PlatformProblem` and
   `ctx.selected_platform`): the `bedrock` provider declares `"platform": "aws-bedrock"`. Step 6's
-  D5 half ([OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8)): claude's switch and aws-auth's
+  D5 half ([OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger)): claude's switch and aws-auth's
   pointer key on that platform, and a user's own Bedrock provider co-claims the AWS credential
   names ([PP-D9](providers-and-profiles-redesign.md#PP-D9), `packload.credentialClaims`). The credential
   half, [`sso-backed-bedrock.md`](sso-backed-bedrock.md), is built.
-- Built 2026-09-29, build step 2 ([OQ-BR9](#OQ-BR9), [OQ-BR1](#OQ-BR1); [§12](#12-what-i-would-build-in-order)
+- Built 2026-09-29, build step 2 ([OQ-BR9](#decision-ledger), [OQ-BR1](#decision-ledger); [§12](#12-what-i-would-build-in-order)
   steps 3 to 5 and 8.2): the provider moved into its own pack, `packs/bedrock`, which claude,
   codex, opencode and pi need, with one model list of every maker, each entry naming its
   `vendor` ([BR-D6](#BR-D6) to [BR-D8](#BR-D8)); codex, opencode and pi are bound to their own
@@ -56,7 +56,7 @@ runtime directly and through the wire bridge (the MEASURED live line below). Rew
   named by region alone is reached at runtime's own `/openai/v1` in the served agent's region, so
   `bedrock-bridge` carries codex, opencode, pi and oh-omp on their via routes and claude on the
   everything profile, and copilot and oh-omp have a Bedrock path under it.
-- Built 2026-09-30, [OQ-BR1](#OQ-BR1)'s bridge half on plain `-p bedrock`: it carries copilot
+- Built 2026-09-30, [OQ-BR1](#decision-ledger)'s bridge half on plain `-p bedrock`: it carries copilot
   and oh-omp, which have no Bedrock client of their own, through the wire bridge wherever the
   bridge is in the launch, as it is beside claude ([`wire-bridge-gateway.md` WG-I44](wire-bridge-gateway.md#WG-I44)),
   and a launch that gives the bridge's one adapter route to another agent's provider is refused
@@ -86,16 +86,16 @@ runtime directly and through the wire bridge (the MEASURED live line below). Rew
 
 **Needs your ruling:** [OQ-BR24](#OQ-BR24), raised 2026-09-30 when the bridge began carrying
 copilot and oh-omp on plain `-p bedrock` ([BR-D15](#BR-D15)'s amendment). Both re-asks were answered 2026-09-29. [BR-D17](#BR-D17)'s is
-ruled ([BR-D19](#BR-D19)): GPT-6.1 Sol everywhere, with no Region detection. [OQ-BR6](#OQ-BR6)'s is
+ruled ([BR-D19](#BR-D19)): GPT-6.1 Sol everywhere, with no Region detection. [OQ-BR6](#decision-ledger)'s is
 directed ([BR-DIR1](#BR-DIR1)): yolo reads the effective profile's region from `~/.aws/config` and
-delivers it the same way at `yolo host` and in a jail. Both were built 2026-09-29. [OQ-BR9](#OQ-BR9) and [OQ-BR1](#OQ-BR1) were ruled 2026-09-29:
+delivers it the same way at `yolo host` and in a jail. Both were built 2026-09-29. [OQ-BR9](#decision-ledger) and [OQ-BR1](#decision-ledger) were ruled 2026-09-29:
 one `bedrock` pack pulls in every model family, and `-p bedrock` uses each agent's own Bedrock
 client, with `bedrock-bridge` forcing the wire bridge. Both are built, and the bridge's own
 Bedrock upstream that [BR-D16](#BR-D16) waited on followed on 2026-09-30
 ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)), and so did copilot and
 oh-omp through the bridge on plain `-p bedrock` wherever the bridge is in the launch
 ([`wire-bridge-gateway.md` WG-I44](wire-bridge-gateway.md#WG-I44)); the question above is what
-[OQ-BR1](#OQ-BR1)'s ruling still lacks.
+[OQ-BR1](#decision-ledger)'s ruling still lacks.
 
 ## The Bedrock and provider design set
 
@@ -107,12 +107,12 @@ names what is open there.
 | Order | Doc | Its one question | Ruled |
 | :--- | :--- | :--- | :--- |
 | 1 | [`providers.md`](../reference/providers.md#deselection-clear-what-yolo-wrote-keep-what-the-user-wrote) | what happens to the model id yolo wrote when you drop a profile ([OQ-PSW2](../reference/providers.md#oq-psw2), [OQ-PSW4](../reference/providers.md#oq-psw4)) | 2026-09-25 |
-| 2 | this doc | one Bedrock provider, and what you type ([OQ-BR9](#OQ-BR9) with [OQ-BR1](#OQ-BR1)) | 2026-09-29, built |
+| 2 | this doc | one Bedrock provider, and what you type ([OQ-BR9](#decision-ledger) with [OQ-BR1](#decision-ledger)) | 2026-09-29, built |
 | 3 | [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) | which credentials and env a profile lets through to which agent ([OQ-CN6](../reference/providers.md#oq-cn6) with [OQ-CN2](../reference/providers.md#oq-cn2) first) | 2026-09-26 |
-| 4 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | what a provider and a profile should mean ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), then [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8), then the PP questions) | [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8): 2026-09-29, built; the PP questions open |
+| 4 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | what a provider and a profile should mean ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), then [OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger), then the PP questions) | [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), [OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger): 2026-09-29, built; the PP questions open |
 | 5 | [`model-lists-and-pickers.md`](model-lists-and-pickers.md) | which models each picker shows, and which yolo picks ([OQ-ML2](model-lists-and-pickers.md#OQ-ML2) first) | [OQ-ML1](model-lists-and-pickers.md#OQ-ML1), [OQ-ML2](model-lists-and-pickers.md#OQ-ML2): 2026-09-29; the MM questions open |
 | 6 | [`wire-bridge-gateway.md`](wire-bridge-gateway.md) | how the bridge signs, and sending all traffic through it ([OQ-WG1](wire-bridge-gateway.md#OQ-WG1) first) | 2026-09-25 |
-| 7 | [`bedrock-web-search.md`](bedrock-web-search.md) | web search on Bedrock profiles | [OQ-BR21](bedrock-web-search.md#OQ-BR21), [OQ-BR22](bedrock-web-search.md#OQ-BR22): 2026-09-29; the rest open |
+| 7 | [`bedrock-web-search.md`](bedrock-web-search.md) | web search on Bedrock profiles | [OQ-BR21](bedrock-web-search.md#decision-ledger), [OQ-BR22](bedrock-web-search.md#decision-ledger): 2026-09-29; the rest open |
 | 8 | [`sso-backed-bedrock.md`](sso-backed-bedrock.md) | the SSO credential's last two edges ([OQ-SSO8](sso-backed-bedrock.md#OQ-SSO8), [OQ-SSO9](sso-backed-bedrock.md#OQ-SSO9)) | 2026-09-25 |
 
 ## Where the split ended up
@@ -131,7 +131,7 @@ Whether yolo should keep both concepts is
 1. **One endpoint family, `bedrock-runtime`** ([DIR-BR3](#DIR-BR3)). Mantle, AWS's other
    OpenAI-compatible endpoint, is not shipped, so no name has to say which one.
 2. **One provider, `bedrock`, holding every model family.** Each model entry declares its maker
-   (its `vendor`). [OQ-BR9](#OQ-BR9) ruled it on 2026-09-29, and it is built: `packs/bedrock`
+   (its `vendor`). [OQ-BR9](#decision-ledger) ruled it on 2026-09-29, and it is built: `packs/bedrock`
    ships it ([BR-D6](#BR-D6)).
 3. **Two transports, and this is the real axis.**
    - The **native client** is the agent's own built-in Bedrock code talking to AWS. yolo supplies
@@ -146,22 +146,22 @@ Whether yolo should keep both concepts is
    Those words are retired here and mean exactly the native client and the wire bridge. A third
    route, a plain user provider with an API key and no bridge, is documentation only
    ([§6.3](#63-a-hand-written-api-key-provider-documentation-only)).
-4. **claude has two profiles** ([OQ-BR11](#OQ-BR11)).
+4. **claude has two profiles** ([OQ-BR11](#decision-ledger)).
    - **native** is `-p bedrock` as shipped today: claude's own Bedrock mode, Anthropic models only.
    - **everything** *(coined here)* points claude at the bridge. The bridge forwards Anthropic ids
      untranslated and translates the rest, so one session can switch between Claude and GPT.
 
-   pi likewise gets a native route and a bridge route ([OQ-BR5](#OQ-BR5)).
+   pi likewise gets a native route and a bridge route ([OQ-BR5](#decision-ledger)).
 
 Each cell below names the transport, then the models it can call. The names are
-[OQ-BR1](#OQ-BR1)'s ruling (2026-09-29), and the last column says what is built.
+[OQ-BR1](#decision-ledger)'s ruling (2026-09-29), and the last column says what is built.
 
 | Agent | You type `-p bedrock` | You type `-p bedrock-bridge` | Delivered by |
 | :--- | :--- | :--- | :--- |
-| **claude** | native (`CLAUDE_CODE_USE_BEDROCK=1`): **Anthropic models only**, because Messages serves Claude only ([§2](#2-what-bedrock-is--sourced-from-awss-pages)). Shipped | the everything profile: the bridge, **every model**, Anthropic ids passed untranslated ([OQ-BR11](#OQ-BR11)) | native: built, its model filtered to Anthropic entries ([BR-D9](#BR-D9)); everything: built 2026-09-30, claude routed at the bridge's adapter address ([WG-I39](wire-bridge-gateway.md#WG-I39)), and since 2026-10-05 claude's own Bedrock client at that address, the bridge translating another maker's id on its invoke routes ([MM-D39](model-lists-and-pickers.md#MM-D39)) |
+| **claude** | native (`CLAUDE_CODE_USE_BEDROCK=1`): **Anthropic models only**, because Messages serves Claude only ([§2](#2-what-bedrock-is--sourced-from-awss-pages)). Shipped | the everything profile: the bridge, **every model**, Anthropic ids passed untranslated ([OQ-BR11](#decision-ledger)) | native: built, its model filtered to Anthropic entries ([BR-D9](#BR-D9)); everything: built 2026-09-30, claude routed at the bridge's adapter address ([WG-I39](wire-bridge-gateway.md#WG-I39)), and since 2026-10-05 claude's own Bedrock client at that address, the bridge translating another maker's id on its invoke routes ([MM-D39](model-lists-and-pickers.md#MM-D39)) |
 | **codex** | native (`amazon-bedrock-runtime`, Responses): **OpenAI models only**, since the evidence covers GPT alone and Anthropic's cards list no Responses API; widened when done-condition 5 measures another family | its via row, Responses at its via URL ([WG-I20](wire-bridge-gateway.md#WG-I20)), which the bridge carries to runtime's `/openai/v1/responses` | native: built ([BR-D12](#BR-D12)); bridge: built 2026-09-30 ([BR-D16](#BR-D16), [WG-I39](wire-bridge-gateway.md#WG-I39)) |
 | **opencode** | native (`amazon-bedrock`, routed per model): **every model** | its via row, carried the same way | native: built ([BR-D13](#BR-D13)); bridge: built 2026-09-30 |
-| **pi** | native (`amazon-bedrock` on Converse): **every model**; pi-ai 0.87.1's 165 Bedrock ids are all Converse | its via row keeps pi's native Converse client and sends it through the bridge's signing, using a supplied model list ([OQ-BR5](#OQ-BR5)); see [the built route](../reference/wire-bridge.md#converse-on-a-via-route) | native: built ([BR-D14](#BR-D14)); Converse bridge: built 2026-10-08; fixture-tested, not run against AWS |
+| **pi** | native (`amazon-bedrock` on Converse): **every model**; pi-ai 0.87.1's 165 Bedrock ids are all Converse | its via row keeps pi's native Converse client and sends it through the bridge's signing, using a supplied model list ([OQ-BR5](#decision-ledger)); see [the built route](../reference/wire-bridge.md#converse-on-a-via-route) | native: built ([BR-D14](#BR-D14)); Converse bridge: built 2026-10-08; fixture-tested, not run against AWS |
 | **copilot** | no native client, so the bridge: **every model** | the same | built 2026-09-30, copilot routed at the bridge's adapter address and started on the list's first model, or since 2026-10-05, with no list supplied, on `openai.gpt-oss-120b-1:0` ([MM-D34](model-lists-and-pickers.md#MM-D34)), with a supplied list shown whole as its `providers.json` in a jail ([MM-D31](model-lists-and-pickers.md#MM-D31)): `-p bedrock-bridge` ([WG-I39](wire-bridge-gateway.md#WG-I39)), and plain `-p bedrock` wherever the bridge is in the launch ([WG-I44](wire-bridge-gateway.md#WG-I44)); copilot does not need the pack or the bridge ([BR-D15](#BR-D15)) |
 | **oh-omp** | the bridge's [sign-only route](wire-bridge-gateway.md#4-part-3--the-sign-only-openai-chat-completions-route-ruled); its own client speaks mantle (SOURCED, not installed). Models unverified | the same | built 2026-09-30, on its via route: `-p bedrock-bridge`, and plain `-p bedrock` wherever the bridge is in the launch, as copilot's ([WG-I44](wire-bridge-gateway.md#WG-I44)) |
 | **agy** | nothing: its transport is a closed enum | nothing | nobody; it is the one hole ([§4](#4-what-each-agent-can-actually-do)) |
@@ -185,7 +185,7 @@ this doc's native clients.
 
 ### <a id="what-a-user-types-the-options-oq-br1-weighed"></a>What a user types: the options weighed before the ruling
 
-This is the background to [OQ-BR1](#OQ-BR1). The maintainer, 2026-09-25, on the earlier
+This is the background to [OQ-BR1](#decision-ledger). The maintainer, 2026-09-25, on the earlier
 version: *"I have no idea what any of these are. This is very unclear … maybe bedrock-codex would be the native,
 which is really only useful against the codex agent? would you want that against claude code?
 straight bedrock is better? isn't it really provider native and then the wire bridge. I'm
@@ -193,7 +193,7 @@ actually not sure where the split ended up."*
 [Where the split ended up](#where-the-split-ended-up) answers the last sentence.
 
 The earlier version weighed vendor names (`bedrock-gpt`, `bedrock-openai`) and `-mantle` names.
-[DIR-BR3](#DIR-BR3) removed the second, and [OQ-BR9](#OQ-BR9)'s leaning removes the need for the
+[DIR-BR3](#DIR-BR3) removed the second, and [OQ-BR9](#decision-ledger)'s leaning removes the need for the
 first. What remains is the axis the maintainer named. Stakes: profile names are typed, and
 expensive to change, and a name that means different things per agent is the confusion itself.
 
@@ -201,18 +201,18 @@ expensive to change, and a name that means different things per agent is the con
 | :--- | :--- |
 | **A.** `-p bedrock` means Bedrock in every agent: its native client where one exists (codex, opencode, pi, and claude for Anthropic), the bridge where none does (copilot, oh-omp). One more profile forces the bridge, spelled for the transport (proposed `bedrock-bridge`) | **Leaning** |
 | **B.** A profile per agent (`bedrock-codex`) | Adds nothing: native is already each agent's default, and `-p codex=bedrock` already scopes a pick |
-| **C.** A profile per vendor (`bedrock-gpt`) | Meaningful only under [OQ-BR9](#OQ-BR9) B; under A the vendor is on each entry and the picker chooses |
+| **C.** A profile per vendor (`bedrock-gpt`) | Meaningful only under [OQ-BR9](#decision-ledger) B; under A the vendor is on each entry and the picker chooses |
 | **D.** `bedrock-native` beside `bedrock-bridge` | The native name is a synonym of `bedrock` everywhere |
 
 Under A, `-p bedrock-bridge` means claude's everything profile and pi's bridge version
-([OQ-BR5](#OQ-BR5)). For copilot and oh-omp it is the same as `-p bedrock`. For codex and
+([OQ-BR5](#decision-ledger)). For copilot and oh-omp it is the same as `-p bedrock`. For codex and
 opencode it writes nothing until [OQ-WG5](wire-bridge-gateway.md#OQ-WG5) gives them a bridge
 route, and for agy it writes nothing. claude's
 `-p bedrock` keeps its shipped meaning. Two later questions do not block this:
 - how all-traffic mode is switched on, [OQ-WG2](wire-bridge-gateway.md#OQ-WG2), and which
   native-client agents get a bridge route, [OQ-WG5](wire-bridge-gateway.md#OQ-WG5);
 - whether transport becomes a first-class provider fact,
-  [OQ-PP2](providers-and-profiles-redesign.md#OQ-PP2), which may later subsume this.
+  [OQ-PP2](providers-and-profiles-redesign.md#8-decision-ledger), which may later subsume this.
 
 ---
 
@@ -298,13 +298,13 @@ Only the parts of the built provider system that Bedrock lands on. MEASURED at `
   `api_key_env_name`) and a profile `bedrock` selecting it. It is
   [the worked example](../reference/providers.md#two-channels-split-by-payload-type) in
   `providers.md`. ⚠ **Changed 2026-09-29**, after the measurements above: the provider declares
-  `"platform": "aws-bedrock"` ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)) and
-  `region_env_name`, the region refusal's variables ([OQ-BR6](#OQ-BR6), [BR-D1](#BR-D1)).
+  `"platform": "aws-bedrock"` ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)) and
+  `region_env_name`, the region refusal's variables ([OQ-BR6](#decision-ledger), [BR-D1](#BR-D1)).
   `CLAUDE_CODE_USE_BEDROCK`, which a profile-gated `env` and `config-overlay` pair set, is now
   set by claude's own derive, in env and in `claude/settings`, whenever claude's provider
   declares that platform and routes through no via service; `packs/aws-auth` gates its
   credential pointer on the platform, not on the profile name `bedrock`
-  ([OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8), [PP-D2 to PP-D4](providers-and-profiles-redesign.md#PP-D2)).
+  ([OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger), [PP-D2 to PP-D4](providers-and-profiles-redesign.md#PP-D2)).
   ⚠ **Changed again 2026-09-29, by build step 2**: the provider and its profile left packs/claude
   for `packs/bedrock`, which lists models ([BR-D6](#BR-D6), [BR-D15](#BR-D15)).
 - **Only the claude derive reads `region`**, mapping `p.region` to `AWS_REGION`. The `Region`
@@ -414,13 +414,13 @@ https://bedrock-runtime.{region}.amazonaws.com/openai/v1`, beside `aws.region`. 
 ### 6.1 The provider shape: one `bedrock` provider, or two
 
 > [!NOTE]
-> **Built 2026-09-29 as A** ([OQ-BR9](#OQ-BR9)'s ruling). The shipped file differs from the
+> **Built 2026-09-29 as A** ([OQ-BR9](#decision-ledger)'s ruling). The shipped file differs from the
 > snippet below in two ways: it declares no `options` (declaring any turns on the profile-option
 > census and would refuse user profiles that pass today, the reason [ML-D1](model-lists-and-pickers.md#ML-D1)
 > gives), and each model's facts ride `model_options`, `vendor` among them ([BR-D6](#BR-D6)).
 > The file is [`packs/bedrock/pack.json`](../../packs/bedrock/pack.json).
 
-**Under [OQ-BR9](#OQ-BR9)'s leaning (A), one runtime provider holds every model family.** It keeps
+**Under [OQ-BR9](#decision-ledger)'s leaning (A), one runtime provider holds every model family.** It keeps
 the name `bedrock` and moves out of packs/claude into a new `bedrock` pack, which packs/claude
 `needs` (as it needs `openai-auth`). It must move, because a provider every agent reads needs an
 owner every jail selects, and sole ownership rules out packs/claude. The new pack has no CLI; it
@@ -440,7 +440,7 @@ The shipped entries come from a built-in pack, ruled 2026-09-25
 ([OQ-BR3](model-lists-and-pickers.md#OQ-BR3)). How a pack carries object-form entries with a
 `vendor` is [`model-lists-and-pickers.md`](model-lists-and-pickers.md)'s. A derive recognizes
 the provider as Bedrock without matching its name by its `platform`
-([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), ruled and built 2026-09-29: the derive reads
+([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), ruled and built 2026-09-29: the derive reads
 `ctx.selected_platform`), so the native derives are unblocked.
 
 ```jsonc
@@ -454,9 +454,9 @@ the provider as Bedrock without matching its name by its `platform`
     { "kind": "profile", "name": "bedrock", "provider": "bedrock" } ] }
 ```
 
-There is no endpoint-family field ([OQ-BR7](#OQ-BR7)): consumers compose runtime's host from
+There is no endpoint-family field ([OQ-BR7](#decision-ledger)): consumers compose runtime's host from
 `region`, and a mantle recipe carries its own URL. **No region ships**
-([OQ-BR9](#OQ-BR9)'s ruling, [OQ-BR6](#OQ-BR6)): the user sets one, the host's `~/.aws/config`
+([OQ-BR9](#decision-ledger)'s ruling, [OQ-BR6](#decision-ledger)): the user sets one, the host's `~/.aws/config`
 names one for the credential's profile ([BR-DIR1](#BR-DIR1)), or the launch is refused (a
 shipped region would make the refusal unreachable, since the composed entry would always carry
 one). The provider keeps the six AWS credential names packs/claude's `bedrock` claimed under
@@ -465,23 +465,23 @@ credential gate withholds by; a list of several points an agent at none of them,
 still serves all three credentials ([§6.4](#64-the-credential-three-are-supported)). The
 snippet was corrected on 2026-09-29, when it paired a shipped region with the refusal's field.
 
-**What would have shipped had [OQ-BR9](#OQ-BR9) gone B** (it went A). claude's `bedrock` stays in packs/claude with
+**What would have shipped had [OQ-BR9](#decision-ledger) gone B** (it went A). claude's `bedrock` stays in packs/claude with
 Anthropic ids. A new `bedrock` pack ships a provider `bedrock-openai` with
 `global.openai.gpt-5.6-*` ids for codex, pi and opencode, selected by the profile `bedrock-gpt`.
 The reason: one `default` alias cannot name an Anthropic id for claude and a GPT id for codex. The
 `Name` field's comment calls that the ordinary case (*"one pack shipping two names is two
 contributions"*).
 
-<a id="oq-br9-background"></a>**What else [OQ-BR9](#OQ-BR9) weighed.** Stakes: whether a
+<a id="oq-br9-background"></a>**What else [OQ-BR9](#decision-ledger) weighed.** Stakes: whether a
 new vendor is a list entry or a new provider plus profile; whether `-p bedrock` means one thing
 for every agent; and whether claude's `bedrock` leaves packs/claude.
 
-It reopens two [§10](#10-alternatives-considered) rows and decides [OQ-BR1](#OQ-BR1)'s premise.
+It reopens two [§10](#10-alternatives-considered) rows and decides [OQ-BR1](#decision-ledger)'s premise.
 It sets which ids the built-in pack targets ([OQ-BR3](model-lists-and-pickers.md#OQ-BR3)). It
 makes `-p codex=bedrock` the ordinary gesture, which
 [OQ-BR4](../reference/providers.md#oq-br4)'s ruling (*"no I don't want it to leak"*) makes
 safe, and which is built (2026-09-26). The provider must not declare `web_search`, since on runtime that is false.
-[OQ-PP2](providers-and-profiles-redesign.md#OQ-PP2) may later reshape providers, and does not
+[OQ-PP2](providers-and-profiles-redesign.md#8-decision-ledger) may later reshape providers, and does not
 block this.
 
 ### 6.2 What each derive emits
@@ -493,7 +493,7 @@ model ([OQ-CS8](../reference/providers.md#oq-cs8)).
 | :--- | :--- | :--- | :--- |
 | **codex** | `[model_providers.amazon-bedrock-runtime]` with `aws.region`. `base_url` only for codex older than 0.156.1, and then on `amazon-bedrock`. No other field: codex refuses them (D3) | `model_provider = "amazon-bedrock-runtime"`, `model = <id>` | `aws.region` from `region`; `aws.profile` from `aws_profile` |
 | **opencode** | `provider["amazon-bedrock"] = { options: { region, profile? }, models: {…runtime-spelled ids…} }`, with **no `npm` and no `endpoint`/`baseURL`** | `model = "amazon-bedrock/<id>"` | `options.region`, `options.profile` |
-| **pi** (native half of [OQ-BR5](#OQ-BR5)) | bind to pi's built-in `amazon-bedrock`, with no `baseUrl` and no `api`. `providers["amazon-bedrock"].models` adds only runtime-spelled ids the built-in lacks; pi's docs say a `models` entry *"adds or replaces a model with the same ID on that provider"* | `defaultProvider = "amazon-bedrock"`, `defaultModel = <id>` | `AWS_REGION` in the jail env |
+| **pi** (native half of [OQ-BR5](#decision-ledger)) | bind to pi's built-in `amazon-bedrock`, with no `baseUrl` and no `api`. `providers["amazon-bedrock"].models` adds only runtime-spelled ids the built-in lacks; pi's docs say a `models` entry *"adds or replaces a model with the same ID on that provider"* | `defaultProvider = "amazon-bedrock"`, `defaultModel = <id>` | `AWS_REGION` in the jail env |
 | **claude** | none; claude has no catalog | env, as today | `AWS_REGION` from `region` |
 
 **codex's row** is INFERRED from binary strings. **pi's row** was re-read for this rewrite at
@@ -693,7 +693,7 @@ D2, D5, D6 and D7 moved with their questions ([Where the rest went](#where-the-r
 Written for the implementer. Anything not here and not an open question is theirs.
 
 **Degenerate inputs.**
-- **No region: refuse the launch** ([OQ-BR6](#OQ-BR6), ruled, **built 2026-09-29**). Refuse only
+- **No region: refuse the launch** ([OQ-BR6](#decision-ledger), ruled, **built 2026-09-29**). Refuse only
   when the selected Bedrock provider declares no `region` **and** the composed jail environment
   holds neither `AWS_REGION` nor `AWS_DEFAULT_REGION`, both of which yolo can see. The refusal
   names the three places. ⚠ The ruling's premise called an agent reading an `~/.aws/config`
@@ -739,7 +739,7 @@ Written for the implementer. Anything not here and not an open question is their
   *(Superseded 2026-09-29 by [BR-D10](#BR-D10): each agent has one built-in Bedrock provider, so
   only the selected one gets a row.)*
 
-<a id="oq-br6-reask"></a>[OQ-BR6](#OQ-BR6) was asked again after its ruling:
+<a id="oq-br6-reask"></a>[OQ-BR6](#decision-ledger) was asked again after its ruling:
 
 > [!NOTE]
 > **The re-ask, answered 2026-09-29 by [BR-DIR1](#BR-DIR1), and built.** It asked whether
@@ -764,8 +764,8 @@ Written for the implementer. Anything not here and not an open question is their
   does not support region …"*. yolo carries no region allowlist, since one would rot within a
   quarter.
 
-**Defaults.** The endpoint family is not a setting. No `region` ships ([OQ-BR9](#OQ-BR9)'s
-ruling and [OQ-BR6](#OQ-BR6)): the user sets one, or the credential profile's section of the
+**Defaults.** The endpoint family is not a setting. No `region` ships ([OQ-BR9](#decision-ledger)'s
+ruling and [OQ-BR6](#decision-ledger)): the user sets one, or the credential profile's section of the
 host's `~/.aws/config` gives one ([BR-DIR1](#BR-DIR1)), or the launch is refused, naming every
 way to set it. This line said `"us-east-1"`, shipped, until 2026-09-29, which would have made the
 refusal unreachable. `aws_profile` is `null`, meaning use the chain. The model alias is the profile's
@@ -786,8 +786,8 @@ pack is a pack).
 **What done looks like.** The numbers are kept from the earlier draft; the rest moved.
 - **1.** `yolo -p bedrock -- codex` completes one turn against GPT-5.6, in a jail with one
   credential and a region, and `codex doctor` reports `amazon-bedrock-runtime`, `responses` and
-  `bedrock-runtime.<region>`. The name is [OQ-BR1](#OQ-BR1)'s; it would be `-p bedrock-gpt` under
-  [OQ-BR9](#OQ-BR9) B.
+  `bedrock-runtime.<region>`. The name is [OQ-BR1](#decision-ledger)'s; it would be `-p bedrock-gpt` under
+  [OQ-BR9](#decision-ledger) B.
 - **1b.** Condition 1 holds under each of the three credentials, one per jail.
 - **2.** The same flag completes one turn on opencode and on pi, against the same id.
 - **5.** A user entry with no vendor naming an Anthropic id reaches Claude through codex with no
@@ -813,7 +813,7 @@ pack is a pack).
   wherever a loophole serves container credentials
   ([`sso-backed-bedrock.md` §8](sso-backed-bedrock.md#8-behaviour-this-design-specifies)).
 - **No new agent.** copilot and agy get no invented native path.
-- **No canonical Converse `wire_api`.** [OQ-BR5](#OQ-BR5) ruled that pi gets both routes. As a
+- **No canonical Converse `wire_api`.** [OQ-BR5](#decision-ledger) ruled that pi gets both routes. As a
   design consequence, not part of the ruling, the native route binds pi's own
   `bedrock-converse-stream` as a per-agent fact. The bridge version spoke OpenAI
   chat-completions until 2026-10-08, and speaks the same Converse since, its row replacing
@@ -824,7 +824,7 @@ pack is a pack).
   gate fix in [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) narrows them.
 
 "No bridge for an agent that has a native client" is **withdrawn for pi** by
-[OQ-BR5](#OQ-BR5)'s ruling (claude's everything profile was already its exception). For codex,
+[OQ-BR5](#decision-ledger)'s ruling (claude's everything profile was already its exception). For codex,
 opencode and every other agent it stands until [OQ-WG5](wire-bridge-gateway.md#OQ-WG5) rules.
 
 ---
@@ -836,9 +836,9 @@ opencode and every other agent it stands until [OQ-WG5](wire-bridge-gateway.md#O
 | **A hand-written API-key provider only** | **Rejected as primary; kept as a recipe** ([§6.3](#63-a-hand-written-api-key-provider-documentation-only)). It discards SigV4, the chain, codex's `auth.json` mode and opencode's options, makes yolo own a URL, and carries only an API key, so no SSO |
 | **Ship mantle too** | **Rejected by [DIR-BR3](#DIR-BR3)** ([§5](#5-one-endpoint-family--runtime-ships-and-why-not-mantle)) |
 | **`endpoint_family` as a profile option** | **Cannot work**: it moves the endpoint and leaves the ids |
-| **One `bedrock` provider for every agent** | **Reopened by [OQ-BR9](#OQ-BR9)**: the shared-`default` objection is answered by a per-entry vendor |
-| **Move `bedrock` out of packs/claude** | **Reopened by [OQ-BR9](#OQ-BR9)**: a provider every agent reads needs an owner every jail selects |
-| **Coin `bedrock-converse` as a fourth `wire_api`** | **Not needed** under [OQ-BR5](#OQ-BR5)'s ruling: native is per-agent, and the bridge route is chat-completions |
+| **One `bedrock` provider for every agent** | **Reopened by [OQ-BR9](#decision-ledger)**: the shared-`default` objection is answered by a per-entry vendor |
+| **Move `bedrock` out of packs/claude** | **Reopened by [OQ-BR9](#decision-ledger)**: a provider every agent reads needs an owner every jail selects |
+| **Coin `bedrock-converse` as a fourth `wire_api`** | **Not needed** under [OQ-BR5](#decision-ledger)'s ruling: native is per-agent, and the bridge route is chat-completions |
 
 ---
 
@@ -859,7 +859,7 @@ R6 to R11 moved with the bridge, model-list and search designs.
 ## 12. What I would build, in order
 
 1. ~~Fix D1~~: done 2026-09-15.
-2. ~~**Rule [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)**, whose marker the native derives
+2. ~~**Rule [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)**, whose marker the native derives
    key on~~: ruled and built 2026-09-29, the provider field `platform`, which a derive
    reads as `ctx.selected_platform`.
 3. ~~**The `bedrock` pack**~~: built 2026-09-29 ([BR-D6](#BR-D6), [BR-D7](#BR-D7),
@@ -874,9 +874,9 @@ R6 to R11 moved with the bridge, model-list and search designs.
 6. **Close the gate leaks**, per [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) and
    [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md). The D2 half is
    BUILT (2026-09-26, the credential gate); the D5 half is BUILT too (2026-09-29,
-   [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8)).
+   [OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger)).
 7. ~~**The hand-written API-key provider and mantle recipes** in the user guide, with P1 stated where users hit it.~~ Documented in [the providers and models guide](../../userguide/guides/providers-and-models.md#use-a-manual-bedrock-api-key-provider), with the endpoint/model pairing, credential boundary and current route limits.
-8. **The direction**, once [OQ-BR9](#OQ-BR9) rules:
+8. **The direction**, once [OQ-BR9](#decision-ledger) rules:
    1. the signer ([`wire-bridge-gateway.md`](wire-bridge-gateway.md));
    2. ~~**the shared provider with per-entry `vendor` and the derive filters**~~, built
       2026-09-29 ([BR-D6](#BR-D6) to [BR-D11](#BR-D11));
@@ -890,108 +890,19 @@ R6 to R11 moved with the bridge, model-list and search designs.
 
 ## 13. Open Questions
 
-1. ✅ <a id="OQ-BR9"></a>**[OQ-BR9](#OQ-BR9): One Bedrock provider, holding every model family, in its own pack?** With mantle
-   not shipped, the question is whether one runtime provider carries every family the org selected,
-   and who owns it ([§6.1](#61-the-provider-shape-one-bedrock-provider-or-two)). Its stakes, and
-   what else it decides, close [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two).
-
-   | Option | Verdict |
-   | :--- | :--- |
-   | **A.** One runtime provider, every family, a declared `vendor` per entry, owned by a new `bedrock` pack | **Leaning** |
-   | **B.** Keep the split: claude's `bedrock` for Anthropic ids, `bedrock-openai` for the rest | A provider per vendor group and a profile per provider; a company pack must know which one to extend |
-   | **C.** A, but infer the vendor from the id prefix | Weaker: prefixes vary by inference profile, user ids defeat it, and [`stringly-typed-references-principle.md`](../reference/stringly-typed-references-principle.md) forbids the match |
-
-   _Leaning:_ A. The provider moves into a new `bedrock` pack under its existing name, so
-   `-p bedrock` keeps working for claude and starts working for everyone. The same pack ships the
-   AgentCore search preset ([`bedrock-web-search.md`](bedrock-web-search.md)). The vendor is
-   declared, never parsed.
-
-   <!-- vantage: question id=OQ-BR9 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29: A, with the packaging left to the build.** The maintainer: *"I guess we
-   > can split these into different packs if that's convenient, but I do still want one pack that
-   > pulls them all in."* One `bedrock` provider holding every model family (each entry declaring
-   > its maker, never parsed from the id) is the leaning's shape; the build may split it across
-   > packs where that is simpler, provided one `bedrock` pack selects all of it, and every agent
-   > pack that binds Bedrock `needs` that pack, so `"packs": ["codex"]` alone still gets `-p
-   > bedrock`. The traps stand: the provider keeps its six AWS credential names (the gate
-   > withholds by them), ships no default region ([OQ-BR6](#OQ-BR6)), and an agent's fallback is
-   > the first model that agent can call.
-
-2. ✅ <a id="OQ-BR1"></a>**[OQ-BR1](#OQ-BR1): What does a user type to put an agent on Bedrock, and is "native client or wire
-   bridge" something they name?**
-   Its background, the four options it weighed and what A meant per agent are in
-   [what a user types](#what-a-user-types-the-options-oq-br1-weighed).
-
-   _Leaning:_ A. One name, `-p bedrock`, means Bedrock everywhere, by each agent's native client
-   where it has one and the bridge where it does not. The only second name forces the bridge, and
-   its spelling is yours to rule. No profile is named for an agent or a vendor. Rule it with
-   [OQ-BR9](#OQ-BR9).
-
-   <!-- vantage: question id=OQ-BR1 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29, as leaned.** The maintainer: *"we get to select it and point it at an
-   > agent just like everywhere else … by default we should pick the right thing, the native by
-   > default, but we should allow configurations to force the bridge."* `-p bedrock` (or `-p
-   > codex=bedrock` for one agent) puts an agent on Bedrock through its own Bedrock client where
-   > it has one, and through the wire bridge where it has none. One shipped profile forces the
-   > bridge, `bedrock-bridge`, which is also claude's route to non-Anthropic models; a user's own
-   > profile can force it the same way with `via`. No profile is named for an agent or a model
-   > maker.
-
-3. ✅ <a id="OQ-BR5"></a>**[OQ-BR5](#OQ-BR5) (ruled 2026-09-25): Is pi bound through its native
-   Converse client, or through runtime's OpenAI-compatible route?**
-
-   <!-- vantage: question id=OQ-BR5 -->
-
-   Both ([Decision Ledger](#decision-ledger)). The
-   native half is [§6.2](#62-what-each-derive-emits)'s pi row. The bridge half is pi's OpenAI
-   chat-completions client pointed at the bridge's sign-only route
-   ([`wire-bridge-gateway.md`](wire-bridge-gateway.md)). Its premise: a hand-written API-key provider
-   would leave pi needing a bearer because of yolo, not AWS (INFERRED); pi-ai 0.87.1 ships the built-in
-   (SOURCED).
-4. ✅ <a id="OQ-BR6"></a>**[OQ-BR6](#OQ-BR6) (ruled 2026-09-25, as its leaning): Refuse the
-   launch when no region is resolvable?**
-
-   <!-- vantage: question id=OQ-BR6 -->
-
-   Only when yolo can see none; the rule is in
-   [§8](#8-behaviour-this-design-fixes). Its premise: codex refuses and names the sources, while
-   opencode 1.18.32 and pi-ai 0.87.1 fall silently to `us-east-1` (read, not run), and so does
-   Claude Code 2.1.285 (read statically 2026-09-29). **Built 2026-09-29**; the implementation
-   decisions are [BR-D1](#BR-D1) to [BR-D5](#BR-D5). Its re-ask, answered and built, is in
-   [§8](#8-behaviour-this-design-fixes).
-
-5. ✅ <a id="OQ-BR7"></a>**[OQ-BR7](#OQ-BR7) (answered 2026-09-25 by [DIR-BR3](#DIR-BR3)): Is
-   `endpoint_family` its own field?**
-
-   <!-- vantage: question id=OQ-BR7 -->
-
-   No; with one family there is nothing to name. The fact it
-   protected now shows as the mantle recipe being its own provider.
-
-6. ✅ <a id="OQ-BR11"></a>**[OQ-BR11](#OQ-BR11) (ruled 2026-09-24): How does claude use native
-   Bedrock for Anthropic ids and the bridge for the rest?**
-
-   <!-- vantage: question id=OQ-BR11 -->
-
-   Both profiles: native `bedrock` handles Anthropic ids; the everything profile uses Claude's Bedrock client through the bridge and routes by model id. Anthropic ids pass through; other makers' ids are translated. See [§6.2](#62-what-each-derive-emits) and [OQ-MM6](model-lists-and-pickers.md#OQ-MM6) for the current switch and transport details.
-
-7. 💬 <a id="OQ-BR24"></a>[**OQ-BR24**](#OQ-BR24): **Do copilot and oh-omp need `bedrock` and `wire-bridge`,
+1. 💬 <a id="OQ-BR24"></a>[**OQ-BR24**](#OQ-BR24): **Do copilot and oh-omp need `bedrock` and `wire-bridge`,
    so either alone gets `-p bedrock`?** Since 2026-09-30 the bridge carries both on plain
    `-p bedrock`, because neither has a Bedrock client of its own
    ([`wire-bridge-gateway.md` WG-I44](wire-bridge-gateway.md#WG-I44)). But it carries them only
    where another selected pack already brings the provider, `aws-auth` and the bridge in, since
    neither pack needs them ([BR-D15](#BR-D15)). So `"packs": ["copilot"]` alone gets nothing on
-   `-p bedrock`, while `"packs": ["codex"]` alone does, by [OQ-BR9](#OQ-BR9)'s ruling that every
+   `-p bedrock`, while `"packs": ["codex"]` alone does, by [OQ-BR9](#decision-ledger)'s ruling that every
    agent binding Bedrock needs the pack. Needing them puts the Bedrock provider, `aws-auth` and an
    idle bridge into every copilot or oh-omp jail, Bedrock or not.
 
    <!-- vantage: question id=OQ-BR24 leaning="Yes: both need bedrock and wire-bridge, so one pack alone works on -p bedrock the way codex does, at the cost of an idle bridge in each such jail." -->
 
-   _Leaning:_ yes, as [OQ-BR9](#OQ-BR9) ruled for the agents with their own client: a user should
+   _Leaning:_ yes, as [OQ-BR9](#decision-ledger) ruled for the agents with their own client: a user should
    not have to select a second agent to make `-p bedrock` work for the first.
 
    > **Answer:**
@@ -1000,20 +911,20 @@ R6 to R11 moved with the bridge, model-list and search designs.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| [OQ-BR9](#OQ-BR9) | **Maintainer ruling:** one provider for every model family, packaging free, one `bedrock` pack pulling all of it in | 2026-09-29 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | ✅ 2026-09-29: `packs/bedrock`, needed by claude, codex, opencode and pi, the six credential names kept, no region, each agent's fallback its first callable entry ([BR-D6](#BR-D6) to [BR-D11](#BR-D11), [BR-D15](#BR-D15)). Pinned by `TestEveryBedrockAgentAloneGetsTheBedrockProfile` and `TestOnlyTheBindingAgentsNeedBedrock` |
-| [OQ-BR1](#OQ-BR1) | **Maintainer ruling:** `-p bedrock` everywhere, native client by default, `bedrock-bridge` or a user profile's `via` forces the bridge | 2026-09-29 | [§12](#12-what-i-would-build-in-order) | ✅ 2026-09-29 for the native half: codex, opencode and pi on their own clients, claude's filtered ([BR-D9](#BR-D9) to [BR-D14](#BR-D14)); `bedrock-bridge` ships ([BR-D16](#BR-D16)), and since 2026-09-30 carries every agent, copilot and oh-omp included, the bridge reaching Bedrock by region ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)); and the bridge half for `-p bedrock`, 2026-09-30: copilot and oh-omp, which have no Bedrock client, carried through the bridge wherever it is in the launch ([`wire-bridge-gateway.md` WG-I44](wire-bridge-gateway.md#WG-I44)), pinned by `TestPlainBedrockCarriesOnlyTheAgentsWithNoClientOfTheirOwn` and `TestPlainBedrockCarriesTheClientlessAgentsThroughTheBridge` |
+| OQ-BR9 | **Maintainer ruling:** A, with the packaging left to the build. *"I guess we can split these into different packs if that's convenient, but I do still want one pack that pulls them all in."* One `bedrock` provider holds every model family, each entry declaring its maker (never parsed from the id); the build may split it across packs, provided one `bedrock` pack selects all of it and every agent pack that binds Bedrock `needs` that pack | 2026-09-29 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | ✅ 2026-09-29: `packs/bedrock`, needed by claude, codex, opencode and pi, the six credential names kept, no region, each agent's fallback its first callable entry ([BR-D6](#BR-D6) to [BR-D11](#BR-D11), [BR-D15](#BR-D15)). Pinned by `TestEveryBedrockAgentAloneGetsTheBedrockProfile` and `TestOnlyTheBindingAgentsNeedBedrock` |
+| OQ-BR1 | **Maintainer ruling:** *"we get to select it and point it at an agent just like everywhere else … by default we should pick the right thing, the native by default, but we should allow configurations to force the bridge."* `-p bedrock` (or `-p codex=bedrock` for one agent) uses each agent's own Bedrock client where it has one and the wire bridge where it has none; `bedrock-bridge` or a user profile's `via` forces the bridge. No profile is named for an agent or a model maker | 2026-09-29 | [§12](#12-what-i-would-build-in-order) | ✅ 2026-09-29 for the native half: codex, opencode and pi on their own clients, claude's filtered ([BR-D9](#BR-D9) to [BR-D14](#BR-D14)); `bedrock-bridge` ships ([BR-D16](#BR-D16)), and since 2026-09-30 carries every agent, copilot and oh-omp included, the bridge reaching Bedrock by region ([`wire-bridge-gateway.md` WG-I39](wire-bridge-gateway.md#WG-I39)); and the bridge half for `-p bedrock`, 2026-09-30: copilot and oh-omp, which have no Bedrock client, carried through the bridge wherever it is in the launch ([`wire-bridge-gateway.md` WG-I44](wire-bridge-gateway.md#WG-I44)), pinned by `TestPlainBedrockCarriesOnlyTheAgentsWithNoClientOfTheirOwn` and `TestPlainBedrockCarriesTheClientlessAgentsThroughTheBridge` |
 | <a id="DIR-BR1"></a>DIR-BR1 | **Every agent reaches every Bedrock model its transport can carry, and every picker shows a current list an org can shape with one pack.** Given as a direction in review: *"Claude should be able to use all of those models with basically no change."* | 2026-09-24 | [§6.5](#65-every-bedrock-model-in-every-agent--the-direction) | — |
 | <a id="DIR-BR2"></a>DIR-BR2 | **The whole matrix**: every agent, every model its transport carries, every supported credential with SSO included, and every model one pick in the agent's menu. *"We need to support single sign on through all of the methods so I can use any model… So we got to support everything everywhere, the whole matrix."* agy is the one hole | 2026-09-24 | [§6.7](#67-the-whole-matrix--every-agent-every-model-every-credential) | — |
-| [OQ-BR11](#OQ-BR11) | **Both claude profiles: native and everything.** *"if you only do native or the rest, then you'll never be able to switch between Claude and, say, OpenAI in one Claude session, which I think we'll want. So I guess just both options."* The bridge routes by model id: Anthropic ids pass untranslated to runtime's Messages, and the rest are translated. It amends the bridge's one-upstream rule. The leaning (two profiles, no routing) was overruled | 2026-09-24 | [Where the split ended up](#where-the-split-ended-up); routing in [`wire-bridge-gateway.md`](wire-bridge-gateway.md) | The routing, 2026-09-29 ([`wire-bridge-gateway.md` §3.1](wire-bridge-gateway.md#31-how-it-is-built)): on a Bedrock upstream the bridge reaches, a model the list declares Anthropic's goes untranslated to runtime's `/anthropic/v1/messages`, the rest translated. The everything profile reaches it since the bridge's region-composed URL, 2026-09-30 ([`wire-bridge-gateway.md` §8](wire-bridge-gateway.md#8-build-order), step 1) |
+| OQ-BR11 | **Both claude profiles: native and everything.** *"if you only do native or the rest, then you'll never be able to switch between Claude and, say, OpenAI in one Claude session, which I think we'll want. So I guess just both options."* The bridge routes by model id: Anthropic ids pass untranslated to runtime's Messages, and the rest are translated. It amends the bridge's one-upstream rule. The leaning (two profiles, no routing) was overruled | 2026-09-24 | [Where the split ended up](#where-the-split-ended-up); routing in [`wire-bridge-gateway.md`](wire-bridge-gateway.md) | The routing, 2026-09-29 ([`wire-bridge-gateway.md` §3.1](wire-bridge-gateway.md#31-how-it-is-built)): on a Bedrock upstream the bridge reaches, a model the list declares Anthropic's goes untranslated to runtime's `/anthropic/v1/messages`, the rest translated. The everything profile reaches it since the bridge's region-composed URL, 2026-09-30 ([`wire-bridge-gateway.md` §8](wire-bridge-gateway.md#8-build-order), step 1) |
 | <a id="DIR-BR3"></a>DIR-BR3 | **yolo ships `bedrock-runtime` only; mantle is a documented manual recipe.** *"let's skip mantle"*. The reasons are in [§5](#5-one-endpoint-family--runtime-ships-and-why-not-mantle). It is revisited when a model or feature only mantle serves is needed. `-p bedrock-gpt-mantle` and every mantle provider are gone. A direction, so no question id | 2026-09-25 | [§5](#5-one-endpoint-family--runtime-ships-and-why-not-mantle) | — |
-| [OQ-BR7](#OQ-BR7) | **Moot under DIR-BR3**: one family, so no `endpoint_family` field. The leaning (its own field) had nothing left to decide | 2026-09-25 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | — |
-| [OQ-BR5](#OQ-BR5) | **Both: pi's native Converse, and a bridge version.** *"native converse is just basically the pi agent's native which we're supplying for all the others and then also there will be the bridge version because I'm sure there will be some different features we can offer and we're just going to want to support both as fully as possible."* | 2026-09-25 | [§6.2](#62-what-each-derive-emits) (native); [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (bridge). Design consequence, not part of the ruling: no canonical Converse `wire_api` is coined, and the bridge version speaks OpenAI chat-completions ([§9](#9-non-goals)); since 2026-10-08 it speaks Converse instead, an implementation decision ([`wire-bridge-gateway.md` WG-I49](wire-bridge-gateway.md#WG-I49)) | The bridge version: 2026-10-08, [`wire-bridge-gateway.md` WG-I48](wire-bridge-gateway.md#WG-I48) and [WG-I49](wire-bridge-gateway.md#WG-I49), not run against AWS |
-| [OQ-BR6](#OQ-BR6) | **As its leaning:** *"Refuse only when the provider declares no region AND no AWS_REGION / AWS_DEFAULT_REGION is in the composed jail environment — both of which yolo can see at launch. Anything beyond that (an ~/.aws/config region) is unproven, and unproven emits nothing."* Its re-ask was answered by [BR-DIR1](#BR-DIR1) | 2026-09-25 | [§8](#8-behaviour-this-design-fixes) | ✅ 2026-09-29: `packload.ProviderRegionGaps` and `ProviderRegionRefusal`, called at every notch; the review's fixes [BR-D1](#BR-D1), [BR-D4](#BR-D4), [BR-D5](#BR-D5) and the config-ref entry (`TestEveryProviderContributionFieldIsDocumented`); pinned by `TestCheckProviderCredentialsAsksForTheRegion`. The `~/.aws/config` region counts since [BR-DIR1](#BR-DIR1) |
-| <a id="BR-D1"></a>BR-D1 | *Implementation decision, revised 2026-09-29 by the review.* **The requirement keys on the provider's `platform`; a pack declares the platform's region variables with `region_env_name`.** Every selected provider whose composed entry declares a platform some selected pack declares variables for (on a provider of that platform, which packdecl refuses without a `platform` beside it) requires a region from those variables. the `bedrock` provider declares `AWS_REGION` and `AWS_DEFAULT_REGION` for `aws-bedrock` (in packs/claude when this was built, in packs/bedrock since [BR-D15](#BR-D15)), so a user's own `providers.bedrock-eu` with `"platform": "aws-bedrock"` is required a region without restating them. Core names no provider, no platform and no AWS variable. The first build made the field a per-provider opt-in on the premise that the marker was [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s open question; [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) was ruled the same day, so a user's Bedrock provider got the credential and derive behavior and never the refusal, and the review found it. A user's `providers` entry declares a platform, not its variables, so a user provider whose platform no selected pack declares variables for carries none | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packload.regionRequirements`; pinned by `TestTheRegionRequirementKeysOnThePlatform` |
+| OQ-BR7 | **Moot under DIR-BR3**: one family, so no `endpoint_family` field. The leaning (its own field) had nothing left to decide | 2026-09-25 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | — |
+| OQ-BR5 | **Both: pi's native Converse, and a bridge version.** *"native converse is just basically the pi agent's native which we're supplying for all the others and then also there will be the bridge version because I'm sure there will be some different features we can offer and we're just going to want to support both as fully as possible."* | 2026-09-25 | [§6.2](#62-what-each-derive-emits) (native); [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (bridge). Design consequence, not part of the ruling: no canonical Converse `wire_api` is coined, and the bridge version speaks OpenAI chat-completions ([§9](#9-non-goals)); since 2026-10-08 it speaks Converse instead, an implementation decision ([`wire-bridge-gateway.md` WG-I49](wire-bridge-gateway.md#WG-I49)) | The bridge version: 2026-10-08, [`wire-bridge-gateway.md` WG-I48](wire-bridge-gateway.md#WG-I48) and [WG-I49](wire-bridge-gateway.md#WG-I49), not run against AWS |
+| OQ-BR6 | **As its leaning:** *"Refuse only when the provider declares no region AND no AWS_REGION / AWS_DEFAULT_REGION is in the composed jail environment — both of which yolo can see at launch. Anything beyond that (an ~/.aws/config region) is unproven, and unproven emits nothing."* Its re-ask was answered by [BR-DIR1](#BR-DIR1) | 2026-09-25 | [§8](#8-behaviour-this-design-fixes) | ✅ 2026-09-29: `packload.ProviderRegionGaps` and `ProviderRegionRefusal`, called at every notch; the review's fixes [BR-D1](#BR-D1), [BR-D4](#BR-D4), [BR-D5](#BR-D5) and the config-ref entry (`TestEveryProviderContributionFieldIsDocumented`); pinned by `TestCheckProviderCredentialsAsksForTheRegion`. The `~/.aws/config` region counts since [BR-DIR1](#BR-DIR1) |
+| <a id="BR-D1"></a>BR-D1 | *Implementation decision, revised 2026-09-29 by the review.* **The requirement keys on the provider's `platform`; a pack declares the platform's region variables with `region_env_name`.** Every selected provider whose composed entry declares a platform some selected pack declares variables for (on a provider of that platform, which packdecl refuses without a `platform` beside it) requires a region from those variables. the `bedrock` provider declares `AWS_REGION` and `AWS_DEFAULT_REGION` for `aws-bedrock` (in packs/claude when this was built, in packs/bedrock since [BR-D15](#BR-D15)), so a user's own `providers.bedrock-eu` with `"platform": "aws-bedrock"` is required a region without restating them. Core names no provider, no platform and no AWS variable. The first build made the field a per-provider opt-in on the premise that the marker was [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)'s open question; [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger) was ruled the same day, so a user's Bedrock provider got the credential and derive behavior and never the refusal, and the review found it. A user's `providers` entry declares a platform, not its variables, so a user provider whose platform no selected pack declares variables for carries none | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packload.regionRequirements`; pinned by `TestTheRegionRequirementKeysOnThePlatform` |
 | <a id="BR-D2"></a>BR-D2 | *Implementation decision.* **"The composed jail environment" is what reaches the agent.** In a jail that is env_sources, a selected pack's env, the profile's provider environment and, on a container, the argv's `-e` pairs, and never the shell yolo was launched from, which no backend forwards and nothing relays a region out of. A region found only in that shell is named in the refusal as not delivered. At `yolo host` the exec'd environment includes that shell, so it counts there, and an env_sources `null` removing `AWS_REGION` removes it. *Kept through the region fill, 2026-09-29, from the review:* the first build of [BR-DIR1](#BR-DIR1) gave the jail's agent the file's region over a region variable, or read the default profile over an `AWS_PROFILE`, left in that shell, so `AWS_REGION=ap-south-1 AWS_PROFILE=prod yolo -p bedrock -- claude` ran in the default profile's region, disclosed as chosen "since nothing names another". Such a variable is now `RegionFileSource.Stranded` at the jail notch: the file is not read, and the refusal names it, offering to deliver the profile through env_sources. Relaying the shell's value into the jail was the other option, and was not built: nothing relays that shell, by this row. `AWS_PROFILE=default` there names the profile read anyway, and a profile aws-auth serves decides first | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ each notch's `RegionAsk` lookup; per agent since [BR-D4](#BR-D4); pinned by `TestARegionOnlyInTheLaunchShellIsNamedAndNotCounted`, and through the fill by `TestTheRegionFillLeavesTheLaunchShellsChoiceToTheRefusal` and `TestAJailLaunchDoesNotReplaceARegionOrProfileLeftInTheLaunchShell` |
 | <a id="BR-D3"></a>BR-D3 | *Implementation decision.* **The refusal is the provider pre-flight's second half and honors its hatch**, `YOLO_ALLOW_MISSING_PROVIDERS=1`, as a loud continuation. It runs wherever the credential half runs, so no arm can ask one question without the other. The one launch that may need the hatch is an agent that does read a region the refusal cannot count, such as an `~/.aws/config` one | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `ProviderRegionRefusal`; pinned by `TestTheRegionRefusalHonorsTheProviderHatch` |
 | <a id="BR-D4"></a>BR-D4 | *Implementation decision, from the review.* **The region is asked of each agent on the provider.** The first build answered "is a region delivered" through the launch-wide lookup, which counts a value reaching any process; since the credential gate, delivery is per agent, so claude on `bedrock` and codex on a profile whose gated env gives codex alone `AWS_REGION` passed, and claude started with none. `ProviderRegionGaps` takes one ask per agent whose profile selects a provider, each answered from what reaches that agent (the env_sources the gate delivers to it, the shared pack env, its own gated env and shape vars, `CredentialScope.DeliveredTo`, and on a container the argv's `-e` pairs), and the refusal names the agents that receive none | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packload.RegionAsk`; pinned by `TestTheRegionIsAskedOfEachAgentOnTheProvider` |
-| <a id="BR-D5"></a>BR-D5 | ⚠ **Revised 2026-09-29 by [BR-DIR1](#BR-DIR1)**: yolo reads that file now, delivers its region ([BR-D20](#BR-D20)), and the refusal's "not counted" line is gone. The row as decided: *Implementation decision, from the review.* **The refusal says an `~/.aws/config` region is not counted because yolo does not read it**, not that an agent reading it is "unproven": Claude Code's resolver reads `AWS_REGION`, then `AWS_DEFAULT_REGION`, then the shared-config region for the active `AWS_PROFILE` (through the AWS SDK's `loadConfig` with `NODE_REGION_CONFIG_FILE_OPTIONS`), then falls back to `"us-east-1"`. The reviewer read it in 2.1.284; re-read statically in 2.1.285 on 2026-09-29 (`grep -a readAwsSharedConfigRegion` on the installed binary), never run. The premise is corrected to name claude beside opencode and pi. Whether the host notch should count that region is put back to the maintainer ([OQ-BR6](#OQ-BR6)); until then the hatch covers it | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | Revised: the wording's absence is pinned by `TestProviderRegionRefusalWordsTheVerdictAndTheHatch` |
+| <a id="BR-D5"></a>BR-D5 | ⚠ **Revised 2026-09-29 by [BR-DIR1](#BR-DIR1)**: yolo reads that file now, delivers its region ([BR-D20](#BR-D20)), and the refusal's "not counted" line is gone. The row as decided: *Implementation decision, from the review.* **The refusal says an `~/.aws/config` region is not counted because yolo does not read it**, not that an agent reading it is "unproven": Claude Code's resolver reads `AWS_REGION`, then `AWS_DEFAULT_REGION`, then the shared-config region for the active `AWS_PROFILE` (through the AWS SDK's `loadConfig` with `NODE_REGION_CONFIG_FILE_OPTIONS`), then falls back to `"us-east-1"`. The reviewer read it in 2.1.284; re-read statically in 2.1.285 on 2026-09-29 (`grep -a readAwsSharedConfigRegion` on the installed binary), never run. The premise is corrected to name claude beside opencode and pi. Whether the host notch should count that region is put back to the maintainer ([OQ-BR6](#decision-ledger)); until then the hatch covers it | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | Revised: the wording's absence is pinned by `TestProviderRegionRefusalWordsTheVerdictAndTheHatch` |
 | <a id="BR-D6"></a>BR-D6 | *Implementation decision.* **A model's vendor is a `model_options` fact on a pack's provider, and a key of a user's object-form model entry.** The ruled `models` contribution kind ([OQ-BR12](model-lists-and-pickers.md#OQ-BR12)) is unbuilt, and `model_options` is the per-model fact channel the `openai-codex` list already uses ([ML-D1](model-lists-and-pickers.md#ML-D1)), so the one declaration needed no new schema. A user writes `{"id": …, "vendor": …}` under `providers.<name>.models`, lowered to the same flat key. Both layers check only the shape, one lowercase token (`packdecl.ValidModelVendor`); core interprets no value, and an entry with no vendor is offered to every agent | 2026-09-29 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | ✅ `packs/bedrock/pack.json`, `config.validateModelEntry`, `packload.flattenModelFacts`; pinned by `TestComposeProvidersLowersAUserModelsVendor` and `TestAProviderModelVendorIsShapeChecked` |
 | <a id="BR-D7"></a>BR-D7 | ⚠ **Superseded 2026-10-05 by [MM-D32](model-lists-and-pickers.md#MM-D32)**: yolo ships no Bedrock model list, so no start model is shipped for any agent but copilot ([MM-D34](model-lists-and-pickers.md#MM-D34)). ⚠ **Superseded 2026-09-29 by [BR-D19](#BR-D19)**, which drops GPT-6 Sol: three ids ship, Claude Opus 5.5, GPT-6.1 Sol and GPT-6 Astra, in that order. The row as decided: *Implementation decision, corrected 2026-09-29 by the review.* **Four ids ship, each read from its AWS model card on 2026-09-29, and none is a `default` alias.** Claude Opus 5.5 (`global.`), GPT-6 Sol (`global.`), GPT-6.1 Sol (`us.`, the only runtime id AWS offers for it) and GPT-6 Astra (`global.`), ordered in that sequence by the `order` fact. The maintainer's rule was GPT-6.1 Sol where Bedrock offers it and GPT-6 Sol where it offers only that: AWS offers GPT-6.1 Sol through the US inference profile alone, and GPT-6 Sol through `us.` and `global.`, whose source Regions include the EU, Asia Pacific and South America, so both ship. The first build shipped no GPT-6 Sol, on a reading that AWS published no page for it; the page exists (launched 2026-09-22), and the review found it. A `default` alias would steer claude's own Bedrock client, which [OQ-ML2](model-lists-and-pickers.md#OQ-ML2) forbids, so each agent's default is its first callable entry, which [BR-D17](#BR-D17) orders. The sources are dated in the pack README | 2026-09-29 | [§5.3 of model-lists](model-lists-and-pickers.md#53-the-prerequisite-verify-before-an-id-ships) | ✅ pinned by `TestTheShippedBedrockListDeclaresEachEntrysMaker` (deleted 2026-10-05 with the list, MM-D32) |
 | <a id="BR-D8"></a>BR-D8 | *Implementation decision.* **One Lua helper decides, for one agent, which entries it can call and which it starts on**, copied verbatim into the four binding derives because a derive cannot load another file. `callableModels` orders the entries by `order` and keeps those whose vendor the agent's client serves, or that name none. `callableModel` takes the profile's `model` when it names such an entry (as an alias or an id) or an id the provider does not list at all, which passes through as the user wrote it; else the provider's `default` alias when callable; else, for an agent yolo must pick for, the first callable entry. A profile naming a listed entry the agent cannot call is skipped, never sent | 2026-09-29 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | ✅ pinned identical by `TestBedrockModelListHelperIsIdenticalInEveryDerive` |
@@ -1024,11 +935,11 @@ R6 to R11 moved with the bridge, model-list and search designs.
 | <a id="BR-D13"></a>BR-D13 | ⚠ **Amended 2026-10-05 by [MM-D32](model-lists-and-pickers.md#MM-D32)**: the list is one a pack or the user supplies; with none the binding writes no models and names no model, and the agent keeps its own catalog and default. *Implementation decision.* **opencode's binding is `provider["amazon-bedrock"]` with the list's models and `options.region` only from the provider**, no `npm`, no endpoint, and the selection `amazon-bedrock/<id>` with `enabled_providers` naming it. Read from the opencode 1.18.32 binary's strings. ⚠ opencode reads `AWS_REGION` and not `AWS_DEFAULT_REGION`, and the derive cannot see an environment value to copy, so [§8](#8-behaviour-this-design-fixes)'s gap for a region only the latter delivers is closed by refusing the launch instead ([BR-D18](#BR-D18)) | 2026-09-29 | [§6.2](#62-what-each-derive-emits) | ✅ `packs/opencode/derive.lua`; pinned by `TestOpencodeOnBedrockUsesItsOwnClient` |
 | <a id="BR-D14"></a>BR-D14 | ⚠ **Amended 2026-10-05 by [MM-D32](model-lists-and-pickers.md#MM-D32)**: the list is one a pack or the user supplies; with none the binding writes no models and names no model, and the agent keeps its own catalog and default. *Implementation decision.* **pi's binding lists every entry under its built-in `amazon-bedrock`, with `models` alone, and hands pi a provider-declared region as `AWS_REGION`.** Read from pi 0.99.1's installed sources: a models-only row keeps each model on pi's Converse client, taking `api` and base URL from pi's own catalog, and pi reads its region from the environment. [§6.2](#62-what-each-derive-emits)'s "adds only ids the built-in lacks" is not buildable, since a derive cannot read pi's catalog, so a row replaces pi's entry of the same id and carries the window, output cap, inputs and reasoning the list declares; pi's cost and thinking levels for that id are lost. The scope and pi-subagents' policy are the list, the start model first | 2026-09-29 | [§6.2](#62-what-each-derive-emits) | ✅ `packs/pi/derive.lua`; pinned by `TestPiOnBedrockUsesItsOwnConverseClient` and `TestPiOnBedrockReceivesTheProvidersRegion` |
 | <a id="BR-D15"></a>BR-D15 | *Implementation decision.* **The agent packs that bind Bedrock need `packs/bedrock`, and it needs `aws-auth`.** claude, codex, opencode and pi; the aws-auth need moved from packs/claude to the pack that ships the provider it serves. copilot, oh-omp and agy do not need it: none has a Bedrock client, and the bridge has none to offer them, so a `-p bedrock` there is refused as a profile the launch does not declare rather than accepted to configure nothing. The need is pinned to the derives: a pack whose derive keys on `aws-bedrock` needs the pack, and one that does not, does not. *(Amended 2026-09-30: "the bridge has none to offer them" no longer holds. The bridge reaches the shipped `bedrock` by region ([WG-I39](wire-bridge-gateway.md#WG-I39)) and carries copilot and oh-omp on `-p bedrock` wherever it is in the launch ([WG-I44](wire-bridge-gateway.md#WG-I44)). The need is unchanged, so beside them alone `-p bedrock` is still undeclared; whether they should need `bedrock` and `wire-bridge` is not decided here, and is asked in this doc's opening **Needs your ruling** line.)* | 2026-09-29 | [§6.1](#61-the-provider-shape-one-bedrock-provider-or-two) | ✅ pinned by `TestOnlyTheBindingAgentsNeedBedrock` and `TestBedrockNeedsAWSAuth` |
-| <a id="BR-D16"></a>BR-D16 | *Implementation decision.* **`bedrock-bridge` ships as `{provider: bedrock, via: wire-bridge}`, and under it no agent runs its own Bedrock client.** codex gets its via row (Responses at its via URL), as pi, opencode and oh-omp already do. Until the bridge reached a provider named by region alone ([`wire-bridge-gateway.md` §8](wire-bridge-gateway.md#8-build-order), step 1, built 2026-09-30 as [WG-I39](wire-bridge-gateway.md#WG-I39)), the launch's via gate ([WG-I13](wire-bridge-gateway.md#WG-I13), [WG-I15](wire-bridge-gateway.md#WG-I15)) refused codex, pi, opencode and oh-omp and warned claude, which started on its own login; since then the bridge carries all five. Falling back to the native client was rejected: the profile asked for the bridge, and the gate's "the via has no effect" would then have been false for codex | 2026-09-29 | [OQ-BR1](#OQ-BR1) | ✅ pinned by `TestTheShippedBedrockBridgeProfileMeetsEachAgentAsItCan` and the per-agent `…OnABridgedBedrockProfile…` tests |
-| <a id="BR-D17"></a>BR-D17 | ⚠ **Superseded 2026-09-29 by [BR-D19](#BR-D19)**, the maintainer's answer to its re-ask: codex starts on GPT-6.1 Sol in every Region, and no start model is chosen to be callable everywhere. The row as decided: *Implementation decision, from the review; put back to the maintainer.* **Every agent's start model is a `global.` entry, so the pick is valid in every Region.** yolo picks only to make a session valid ([OQ-ML2](model-lists-and-pickers.md#OQ-ML2)) and ships no region ([OQ-BR6](#OQ-BR6)), so the entry an agent falls back to must be callable from whatever Region the user sets. A geography's id is callable only from that geography's source Regions: with GPT-6.1 Sol (`us.` only) first among OpenAI's, codex started on a model AWS refuses from eu-west-1, which the integration test then pinned. So Claude Opus 5.5 leads (opencode and pi start on it) and GPT-6 Sol precedes GPT-6.1 Sol (codex starts on it); in the US a user names GPT-6.1 Sol with a profile's `model`. Choosing by Region in a derive was not built: the derive sees only a provider-declared region, never one the environment delivers, and a map of which Regions a geography serves is the region allowlist [§8](#8-behaviour-this-design-fixes) forbids. Whether US users should start on GPT-6.1 Sol by default is the maintainer's to rule, and is asked in this doc's opening **Needs your ruling** line | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | Superseded: its pin, `TestEachBedrockAgentStartsOnAModelEveryRegionCanCall`, was replaced by [BR-D19](#BR-D19)'s |
+| <a id="BR-D16"></a>BR-D16 | *Implementation decision.* **`bedrock-bridge` ships as `{provider: bedrock, via: wire-bridge}`, and under it no agent runs its own Bedrock client.** codex gets its via row (Responses at its via URL), as pi, opencode and oh-omp already do. Until the bridge reached a provider named by region alone ([`wire-bridge-gateway.md` §8](wire-bridge-gateway.md#8-build-order), step 1, built 2026-09-30 as [WG-I39](wire-bridge-gateway.md#WG-I39)), the launch's via gate ([WG-I13](wire-bridge-gateway.md#WG-I13), [WG-I15](wire-bridge-gateway.md#WG-I15)) refused codex, pi, opencode and oh-omp and warned claude, which started on its own login; since then the bridge carries all five. Falling back to the native client was rejected: the profile asked for the bridge, and the gate's "the via has no effect" would then have been false for codex | 2026-09-29 | [OQ-BR1](#decision-ledger) | ✅ pinned by `TestTheShippedBedrockBridgeProfileMeetsEachAgentAsItCan` and the per-agent `…OnABridgedBedrockProfile…` tests |
+| <a id="BR-D17"></a>BR-D17 | ⚠ **Superseded 2026-09-29 by [BR-D19](#BR-D19)**, the maintainer's answer to its re-ask: codex starts on GPT-6.1 Sol in every Region, and no start model is chosen to be callable everywhere. The row as decided: *Implementation decision, from the review; put back to the maintainer.* **Every agent's start model is a `global.` entry, so the pick is valid in every Region.** yolo picks only to make a session valid ([OQ-ML2](model-lists-and-pickers.md#OQ-ML2)) and ships no region ([OQ-BR6](#decision-ledger)), so the entry an agent falls back to must be callable from whatever Region the user sets. A geography's id is callable only from that geography's source Regions: with GPT-6.1 Sol (`us.` only) first among OpenAI's, codex started on a model AWS refuses from eu-west-1, which the integration test then pinned. So Claude Opus 5.5 leads (opencode and pi start on it) and GPT-6 Sol precedes GPT-6.1 Sol (codex starts on it); in the US a user names GPT-6.1 Sol with a profile's `model`. Choosing by Region in a derive was not built: the derive sees only a provider-declared region, never one the environment delivers, and a map of which Regions a geography serves is the region allowlist [§8](#8-behaviour-this-design-fixes) forbids. Whether US users should start on GPT-6.1 Sol by default is the maintainer's to rule, and is asked in this doc's opening **Needs your ruling** line | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | Superseded: its pin, `TestEachBedrockAgentStartsOnAModelEveryRegionCanCall`, was replaced by [BR-D19](#BR-D19)'s |
 | <a id="BR-D18"></a>BR-D18 | *Implementation decision, from the review.* **An agent is asked for a region among the variables it reads, and opencode reads `AWS_REGION` alone.** A program contribution may declare `platform_regions: [{platform, region_env_name}]`, the region variables that program reads on that platform, replacing for that agent alone the list the platform's provider declares; the per-agent ask ([BR-D4](#BR-D4)) then counts only those, and names a platform variable that reached the agent unread. packs/opencode declares `AWS_REGION` for `aws-bedrock`, since opencode 1.18.32's loader takes `options.region`, else `AWS_REGION`, else `"us-east-1"` (read from the installed binary, never run). So a launch delivering opencode only `AWS_DEFAULT_REGION`, which passed the refusal and sent every request to `us-east-1`, is refused. Exporting `AWS_REGION=${AWS_REGION:-$AWS_DEFAULT_REGION}` in opencode's launch was the other option; it was not built, because an env derive's values are literals at every notch, and the copy would be a second meaning of a variable written in two writers (the jail's agent-env file and the host's exec environment). Core names no variable: which one a binary reads is its pack's fact, like `platform_switches` | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packdecl.PlatformRegion`, `packload.agentRegionVars`, `packs/opencode/pack.json`; pinned by `TestOpencodeOnBedrockIsNotGivenARegionItDoesNotRead` (the jail entry point), `TestBedrockRefusesOpencodeARegionItDoesNotRead` (a real launch), `TestAProgramIsAskedOnlyForTheRegionVariablesItReads` and `TestTheShippedOpencodeReadsOnlyAWSRegionOnBedrock` |
 | <a id="BR-D19"></a>BR-D19 | ⚠ **Superseded 2026-10-05 by [MM-D32](model-lists-and-pickers.md#MM-D32)**: yolo ships no Bedrock model list, so no start model is shipped for any agent but copilot ([MM-D34](model-lists-and-pickers.md#MM-D34)). **Maintainer ruling** on [BR-D17](#BR-D17)'s re-ask: *"let's just use 6.1 everywhere. Let's not auto-detect anything. I'm sure it will be there soon. People can override it if they need to. I just don't think that's our top issue at the moment. So yeah, just 6.1 everywhere. Forget the region specificness."* Every agent that yolo starts on an OpenAI model on Bedrock starts on GPT-6.1 Sol (`us.openai.gpt-6.1-sol`) in every Region, with no Region detection. Read with the earlier menu rule (*drop GPT-6 Sol where 6.1 exists, keep it where 6.1 is not available yet*): with 6.1 treated as available everywhere, GPT-6 Sol leaves the shipped Bedrock list. A user outside 6.1's Regions names another model in a profile's `model`; an id the provider does not list passes through as written. Supersedes BR-D17's global-first pick for OpenAI's models | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ 2026-09-29: `packs/bedrock/pack.json` ships Claude Opus 5.5, GPT-6.1 Sol and GPT-6 Astra in that order, so the one `order` fact decides every start and no derive reads a Region; pinned by `TestEachBedrockAgentStartsOnTheRuledModelInEveryRegion` (deleted 2026-10-05 with the list, MM-D32) (the order, both start models, no GPT-6 Sol), `TestCodexOnBedrockUsesItsOwnRuntimeClient` (GPT-6.1 Sol under a provider region of eu-west-1) and `TestBedrockRendersEachAgentsOwnClient` (the same at a real launch) |
-| <a id="BR-DIR1"></a>BR-DIR1 | **Maintainer direction** on [OQ-BR6](#OQ-BR6)'s re-ask (neither counting the host's `~/.aws/config` region only at `yolo host` nor refusing everywhere): *"I don't see why we can't wire this also in the jail. Like, we can provide this into the jail. Why wouldn't we? Should be the same on the host in the jail, and it should follow that."* yolo reads the region of the profile a launch's AWS credential comes from, in the host's `~/.aws/config`, and delivers it as the region the agent reads, at `yolo host` and in a jail alike; the region refusal then counts it. Revises [BR-D5](#BR-D5)'s "yolo does not read it" | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ 2026-09-29: the region fill, [BR-D20](#BR-D20) to [BR-D26](#BR-D26); pinned at the gate by `TestTheRegionFillReadsTheProfileTheCredentialComesFrom`, at the jail by `TestAJailLaunchDeliversTheRegionOfTheHostsAWSConfig`, at the host by `TestHostLaunchTakesTheRegionOfTheHostsAWSConfig` and `TestHostEnvShowsTheRegionOfTheHostsAWSConfig`, and at a real launch by `TestBedrockTakesTheRegionOfTheHostsAWSConfig` |
+| <a id="BR-DIR1"></a>BR-DIR1 | **Maintainer direction** on [OQ-BR6](#decision-ledger)'s re-ask (neither counting the host's `~/.aws/config` region only at `yolo host` nor refusing everywhere): *"I don't see why we can't wire this also in the jail. Like, we can provide this into the jail. Why wouldn't we? Should be the same on the host in the jail, and it should follow that."* yolo reads the region of the profile a launch's AWS credential comes from, in the host's `~/.aws/config`, and delivers it as the region the agent reads, at `yolo host` and in a jail alike; the region refusal then counts it. Revises [BR-D5](#BR-D5)'s "yolo does not read it" | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ 2026-09-29: the region fill, [BR-D20](#BR-D20) to [BR-D26](#BR-D26); pinned at the gate by `TestTheRegionFillReadsTheProfileTheCredentialComesFrom`, at the jail by `TestAJailLaunchDeliversTheRegionOfTheHostsAWSConfig`, at the host by `TestHostLaunchTakesTheRegionOfTheHostsAWSConfig` and `TestHostEnvShowsTheRegionOfTheHostsAWSConfig`, and at a real launch by `TestBedrockTakesTheRegionOfTheHostsAWSConfig` |
 | <a id="BR-D20"></a>BR-D20 | *Implementation decision, on [BR-DIR1](#BR-DIR1).* **The region fill is part of the credential gate's answer, not a vehicle's.** `packload.ScopeCredentials` runs it once per launch, after every agent's delivery is composed, and appends the region to that agent's shape vars. So the jail's per-agent env files, the macos-user session and each agent's file there, and the environment `yolo host` execs all deliver it with no vehicle learning a field, and the region pre-flight counts it through each notch's own lookup. Each notch hands the gate only a `RegionFileSource`: where the file is read, what the agent inherits beyond the gate (the invoking shell at `yolo host`, nothing in a jail, per [BR-D2](#BR-D2)), and the configured loophole settings. This is one code path per concern ([NC-D1](../plans/notch-convergence.md#7-decision-ledger)). A step writing the region into each vehicle was rejected: that is three writers of one value | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packload.ScopeInput.RegionFiles`, `fillRegions`; the sources in `run.composePackChannelWith` and `cli.composeHostVarsWith`; pinned by `TestAJailLaunchDeliversTheRegionOfTheHostsAWSConfig` and `TestHostLaunchTakesTheRegionOfTheHostsAWSConfig`, each failing with its notch's source deleted |
 | <a id="BR-D21"></a>BR-D21 | *Implementation decision.* **Which file, section and key are pack facts, and the profile is the credential's.** packs/bedrock's provider declares a `region_file`: `path` `.aws/config`, relocated by `path_env_name` `AWS_CONFIG_FILE`, the `key` `region` of `[profile NAME]` (`profile_section` `profile {profile}`), and the name chosen by `profile_env_name` `AWS_PROFILE`. The `default_profile` has two spellings, and the first the file has is its section: `[profile default]`, then `[default]` (corrected 2026-09-29 by the review: the first build read `[default]` alone, while Claude Code's bundled JavaScript loader lets `[profile default]` replace `[default]` and codex's aws-config crate says "profile `[default]` ignored because `[profile default]` was found which takes priority", so yolo delivered a region other than the one the agent would choose, and refused a file holding only `[profile default]`; `packdecl.RegionFile.Sections`, pinned by `TestTheRegionFillReadsProfileDefaultBeforeDefault`). Core names no AWS file, section or variable, the rule [OQ-SSO8](sso-backed-bedrock.md#OQ-SSO8) set. The profile, in order: (1) when aws-auth serves the agent, the one it mints for, which its pointer declares with `region_profile_setting: "profile"` (the loophole's `settings.profile`), since that is the profile the credential comes from; (2) the `AWS_PROFILE` the agent receives (env_sources at every notch, and the invoking shell at `yolo host` unless an env_sources `null` removes it, [BR-D26](#BR-D26)); (3) `default`. Only that profile's own section is read, so an `[sso-session]` block's `sso_region`, which is the SSO portal's region and not Bedrock's, never is | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packdecl.RegionFile`, `regionFileProblems`, `regionProfileSettingProblems`; `packs/bedrock/pack.json`, `packs/aws-auth/pack.json`; pinned by `TestTheShippedPacksDeclareTheBedrockRegionFile`, `TestTheRegionFillReadsTheProfileTheCredentialComesFrom` (every rung and the sso-session case), `TestARegionFileIsValidated` and `TestARegionProfileSettingNeedsItsLoopholeAndPlatform`; the first rung at the jail notch by `TestAJailLaunchReadsTheProfileAWSAuthMintsFor`, added after a review deleted the notch's `Setting` with the unit gate green |
 | <a id="BR-D22"></a>BR-D22 | *Implementation decision.* **yolo parses the file itself and never asks `aws`.** The file is AWS's documented INI format ([the shared config file format](https://docs.aws.amazon.com/sdkref/latest/guide/file-format.html)): `[default]` and `[profile NAME]` sections, `key = value` lines, `#` and `;` comments, and indented sub-setting lines under a key. `packload.iniValue` reads it as configparser, the reader botocore uses, does, in microseconds on the launch path. `aws configure get region` would start the AWS CLI once per agent per launch, and would need it installed, which a macos-user host or a `yolo host` machine need not have. internal/awsauth's `DetectForm` already reads the same format by hand. *Corrected 2026-09-29 by the review:* where the readers differ it reads as the most lenient of them, since a value it reads is delivered only as one DNS label, and a value it misses refuses a launch the agent could have made. So it strips an inline `#` or `;` comment after whitespace (`region = us-east-1 # prod`), as Claude Code's bundled loader and codex's aws-config crate do, which the first build refused as "not a region", and unquotes a quoted profile name (`[profile "dev"]`), as Claude Code's loader and botocore do. Keys still compare case-insensitively, as configparser's do, though Claude Code's loader keeps them as written: `REGION = eu-west-1` is delivered, the region the user wrote, where claude alone would fall back to `us-east-1`. A role profile whose region sits only on its `source_profile` is still refused: claude reads the selected profile's own section alone, and whether codex's crate follows the chain for a region is inferred from its source, not run | 2026-09-29 | [§8](#8-behaviour-this-design-fixes) | ✅ `packload.iniValue`; pinned by `TestIniValueReadsTheSharedConfigFormat` |
@@ -1051,12 +962,12 @@ links.
 
 | Moved | Home | Notes |
 | :--- | :--- | :--- |
-| <a id="OQ-BR2"></a>[OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), the Bedrock marker (the `service` field), and the former section 6.2 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | ruled 2026-09-29 as the field `platform`, and built |
-| <a id="OQ-BR8"></a>[OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8), does a gate key on the name or the provider, and trap D5 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | [OQ-BR4](../reference/providers.md#oq-br4)'s other direction |
+| <a id="OQ-BR2"></a>[OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), the Bedrock marker (the `service` field), and the former section 6.2 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | ruled 2026-09-29 as the field `platform`, and built |
+| <a id="OQ-BR8"></a>[OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger), does a gate key on the name or the provider, and trap D5 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | [OQ-BR4](../reference/providers.md#oq-br4)'s other direction |
 | <a id="OQ-BR4"></a>[OQ-BR4](../reference/providers.md#oq-br4), the wide env gate, trap D2 and done-condition 3 | [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) | ruled 2026-09-25: no leak, *"as specific as possible"*; the all-traffic direction it spawned is [DIR-WG1](wire-bridge-gateway.md#DIR-WG1) |
 | <a id="OQ-BR3"></a>[OQ-BR3](model-lists-and-pickers.md#OQ-BR3), <a id="OQ-BR12"></a>[OQ-BR12](model-lists-and-pickers.md#OQ-BR12), <a id="OQ-BR13"></a>[OQ-BR13](model-lists-and-pickers.md#OQ-BR13), <a id="OQ-BR14"></a>[OQ-BR14](model-lists-and-pickers.md#OQ-BR14), <a id="OQ-BR15"></a>[OQ-BR15](model-lists-and-pickers.md#OQ-BR15); parts 5 to 8 of the former section 6.6; done-conditions 8 to 10; R8 and R9; the "no model catalog" non-goal | [`model-lists-and-pickers.md`](model-lists-and-pickers.md) | [OQ-BR3](model-lists-and-pickers.md#OQ-BR3) ruled 2026-09-25: a built-in pack picks the models |
 | <a id="OQ-BR10"></a>[OQ-BR10](wire-bridge-gateway.md#OQ-BR10), <a id="OQ-BR16"></a>[OQ-BR16](wire-bridge-gateway.md#OQ-BR16), <a id="OQ-BR17"></a>[OQ-BR17](wire-bridge-gateway.md#OQ-BR17), <a id="OQ-BR18"></a>[OQ-BR18](wire-bridge-gateway.md#OQ-BR18); the signer and everything-profile routing (parts 3 and 4 of the former section 6.6); the Claude-subscription route (former section 6.8); done-condition 6; R6 and R7 | [`wire-bridge-gateway.md`](wire-bridge-gateway.md) | all ruled 2026-09-24 |
-| <a id="OQ-BR19"></a>[OQ-BR19](bedrock-web-search.md#OQ-BR19), <a id="OQ-BR20"></a>[OQ-BR20](bedrock-web-search.md#OQ-BR20), <a id="OQ-BR21"></a>[OQ-BR21](bedrock-web-search.md#OQ-BR21), <a id="OQ-BR22"></a>[OQ-BR22](bedrock-web-search.md#OQ-BR22), <a id="OQ-BR23"></a>[OQ-BR23](bedrock-web-search.md#OQ-BR23), <a id="DIR-BR4"></a>[DIR-BR4](bedrock-web-search.md#DIR-BR4); the former section 6.9; D6 and D7; done-condition 12; R10 and R11; the AgentCore evidence | [`bedrock-web-search.md`](bedrock-web-search.md) | DIR-BR4 ruled 2026-09-25 |
+| <a id="OQ-BR19"></a>[OQ-BR19](bedrock-web-search.md#OQ-BR19), <a id="OQ-BR20"></a>[OQ-BR20](bedrock-web-search.md#OQ-BR20), <a id="OQ-BR21"></a>[OQ-BR21](bedrock-web-search.md#decision-ledger), <a id="OQ-BR22"></a>[OQ-BR22](bedrock-web-search.md#decision-ledger), <a id="OQ-BR23"></a>[OQ-BR23](bedrock-web-search.md#OQ-BR23), <a id="DIR-BR4"></a>[DIR-BR4](bedrock-web-search.md#DIR-BR4); the former section 6.9; D6 and D7; done-condition 12; R10 and R11; the AgentCore evidence | [`bedrock-web-search.md`](bedrock-web-search.md) | DIR-BR4 ruled 2026-09-25 |
 | static keys beside `aws-auth`'s pointer ([OQ-SSO8](sso-backed-bedrock.md#OQ-SSO8)), option D's retirement ([OQ-SSO9](sso-backed-bedrock.md#OQ-SSO9)), AWS's guidance on the three credentials | [`sso-backed-bedrock.md`](sso-backed-bedrock.md) | ruled there |
 | deselection and the id a dropped profile leaves (P1's general form, done-condition 4) | [`providers.md`](../reference/providers.md#deselection-clear-what-yolo-wrote-keep-what-the-user-wrote) | — |
 

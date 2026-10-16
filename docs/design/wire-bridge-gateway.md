@@ -76,10 +76,10 @@ from their installed client sources, and oh-omp's from its published package
 
 [OQ-WG1](#OQ-WG1)–[OQ-WG7](#OQ-WG7) are settled ([Decision Ledger](#decision-ledger)); WG6 and WG7 are built.
 [OQ-WG1](#OQ-WG1)'s follow-up, re-keying the signer on the provider's Bedrock marker
-([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s `platform`), is built 2026-09-30
+([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)'s `platform`), is built 2026-09-30
 ([WG-I37](#WG-I37)), and so is [OQ-WG3](#OQ-WG3)'s allowlist ([WG-I40](#WG-I40)). Part 2, which passes Claude models through
 untranslated so prompt caching survives, needed no ruling: it is
-[OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s, released for build as [WG-I25](#WG-I25) and built
+[OQ-BR11](bedrock-plumbing.md#decision-ledger)'s, released for build as [WG-I25](#WG-I25) and built
 2026-09-29 ([§3.1](#31-how-it-is-built)).
 
 **Where the provider split ended up**, in plain words, because every part below leans on it.
@@ -92,16 +92,16 @@ family, `bedrock-runtime` ([DIR-BR3](bedrock-plumbing.md#DIR-BR3)). On it:
 
 | Agent | Native arm | Bridge arm |
 | :--- | :--- | :--- |
-| claude | `-p bedrock`: Claude Code's own Bedrock mode, Anthropic models only | the **everything profile**: every model in one session ([OQ-BR11](bedrock-plumbing.md#OQ-BR11)) |
+| claude | `-p bedrock`: Claude Code's own Bedrock mode, Anthropic models only | the **everything profile**: every model in one session ([OQ-BR11](bedrock-plumbing.md#decision-ledger)) |
 | codex, opencode | yes | only when the profile picks the bridge path ([OQ-WG5](#OQ-WG5)) |
-| pi | Converse | also: Converse through the bridge, which signs it ([OQ-BR5](bedrock-plumbing.md#OQ-BR5), ruled "both"; [WG-I49](#WG-I49)) |
+| pi | Converse | also: Converse through the bridge, which signs it ([OQ-BR5](bedrock-plumbing.md#decision-ledger), ruled "both"; [WG-I49](#WG-I49)) |
 | copilot | none | the only way in |
 | oh-omp | its own client speaks mantle, so it goes unused | the sign-only route |
 
 The **everything profile** is a term coined in [`bedrock-plumbing.md`](bedrock-plumbing.md). It
 is a claude profile that points claude at the bridge, so that one session can switch between
-Anthropic models and every other Bedrock model. [OQ-BR1](bedrock-plumbing.md#OQ-BR1) named it
-`bedrock-bridge`, and [OQ-BR9](bedrock-plumbing.md#OQ-BR9) put one provider, `bedrock`, behind
+Anthropic models and every other Bedrock model. [OQ-BR1](bedrock-plumbing.md#decision-ledger) named it
+`bedrock-bridge`, and [OQ-BR9](bedrock-plumbing.md#decision-ledger) put one provider, `bedrock`, behind
 both profiles (ruled and shipped 2026-09-29; the route itself reaches Bedrock since 2026-09-30, [WG-I39](#WG-I39)).
 What a provider and a profile should mean at all is
 [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md)'s question.
@@ -225,7 +225,7 @@ at boot.
 
 **One signer package, two users.** The search proxy in
 [`bedrock-web-search.md`](bedrock-web-search.md) signs calls to an AgentCore gateway with the
-same package ([OQ-BR21](bedrock-web-search.md#OQ-BR21)). This doc names that proxy and does not
+same package ([OQ-BR21](bedrock-web-search.md#decision-ledger)). This doc names that proxy and does not
 build it. [OQ-WG1](#OQ-WG1) lets one signer serve both without waiting on the provider redesign.
 
 ### 2.1 Behavior the signer fixes
@@ -261,12 +261,12 @@ plain `-p bedrock` and the fifth refusing a launch where the one adapter route i
 
 1. <a id="WG-I37"></a>**[WG-I37](#WG-I37)**: **the signer keys on the provider's `platform`, and
    the host rule decides only for a provider that declares no Bedrock platform.** A provider whose
-   `platform` is `aws-bedrock` ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s marker) is
+   `platform` is `aws-bedrock` ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)'s marker) is
    signed at whatever `https` address it names: a FIPS or VPC endpoint, or a corporate proxy, the
    configurations [OQ-WG1](#OQ-WG1)'s ruling named (*"A is cheating and I have no idea what other people's
    configurations are"*). A provider declaring no platform, or one the bridge does not know, keeps
    the host rule, signed exactly at `bedrock-runtime.<region>.amazonaws.com`, because an unknown
-   platform is inert ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s ruling) and dropping
+   platform is inert ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)'s ruling) and dropping
    the rule would stop signing a provider that works today. A Bedrock provider at a plain `http`
    address is not served: a SigV4 signature can be replayed for minutes by whoever sees it.
    **Why the union and not the marker alone:** the marker fixes every miss the ruling named, and
@@ -286,7 +286,7 @@ plain `-p bedrock` and the fifth refusing a launch where the one adapter route i
    each of those reads the same two. A value without a region's shape is refused by name, never
    skipped and never used, so no variable can name a host ([§7](#7-what-the-bridge-still-refuses)).
    With no region the adapter route idles and a via route answers 503, each naming the variables
-   it read; the launch's region pre-flight ([OQ-BR6](bedrock-plumbing.md#OQ-BR6)) refuses that
+   it read; the launch's region pre-flight ([OQ-BR6](bedrock-plumbing.md#decision-ledger)) refuses that
    launch first in the ordinary case. For an agent whose served via carries its primary profile,
    the pre-flight asks about the variables the bridge reads, the provider's whole list, not the
    fewer the agent's own client reads ([BR-D18](bedrock-plumbing.md#BR-D18)'s `platform_regions`),
@@ -311,7 +311,7 @@ plain `-p bedrock` and the fifth refusing a launch where the one adapter route i
    works today; and codex, opencode and pi, which speak no anthropic, would be refused `-p bedrock`
    over an address they never use. **Why not the via listener:** claude and copilot reach the
    bridge through the adapter routes by design ([§4.1](#41-how-it-is-built)'s table), and Part 2's
-   Messages pass-through is the adapter route's. **What this left:** [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s
+   Messages pass-through is the adapter route's. **What this left:** [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s
    ruling reads *"through the wire bridge where it has none"* for `-p bedrock` too, and copilot on
    `-p bedrock` still reached nothing, and said so on the profile line. Serving it there needed
    the serve decision to know which agents have their own Bedrock client, which the tables the
@@ -358,7 +358,7 @@ plain `-p bedrock` and the fifth refusing a launch where the one adapter route i
    claude, which needs it, or listed in `packs`); `-p bedrock-bridge` still adds it through the via
    closure, and copilot and oh-omp still need neither `bedrock` nor `wire-bridge`
    ([BR-D15](bedrock-plumbing.md#BR-D15)). An implementation decision: the behavior is
-   [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s ruling. Lives in `packload.carrierFor`,
+   [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s ruling. Lives in `packload.carrierFor`,
    `packload.ResolvedProfile.ViaFor` and `packload.ViaServedAt`.
 5. <a id="WG-I45"></a>**[WG-I45](#WG-I45)**: **the via gate refuses an agent routed through the
    bridge whose adapter route the launch gives another agent's provider.** The daemon serves one
@@ -627,7 +627,7 @@ Responses requests 1 and 2 did with no reasoning effort set, since none of the f
 
 ## 3. Part 2 — routing by model id, for claude's everything profile (ruled)
 
-[OQ-BR11](bedrock-plumbing.md#OQ-BR11), ruled in [`bedrock-plumbing.md`](bedrock-plumbing.md),
+[OQ-BR11](bedrock-plumbing.md#decision-ledger), ruled in [`bedrock-plumbing.md`](bedrock-plumbing.md),
 gives claude both a native profile and an everything profile. That ruling is the authority; this
 part is the mechanism. One claude process has one transport, so the everything profile points
 claude at the bridge (`ANTHROPIC_BASE_URL`, never `CLAUDE_CODE_USE_BEDROCK`), and **the bridge
@@ -657,7 +657,7 @@ not name, pass through signed, and one the list declares another maker's is tran
 the same chat-completions translation, with its answer re-framed as InvokeModel's
 ([WG-I47](#WG-I47)). The everything profile still reaches every model in one session. *Corrected
 after review the same day:* the first build refused another maker's model there, which dropped
-[OQ-BR11](bedrock-plumbing.md#OQ-BR11).
+[OQ-BR11](bedrock-plumbing.md#decision-ledger).
 
 This **amends** the bridge's rule that it dials only the upstream selected at boot
 ([`wire-bridge.md`](../reference/wire-bridge.md#lifecycle-and-failure-behavior)): the everything
@@ -705,7 +705,7 @@ translation sends `max_completion_tokens` since, and GPT-6.1 Sol and GPT-6 Astra
 same day ([the re-check](#re-check-after-the-fix-measured-2026-10-01)).
 
 **Done-condition** (carried from [`bedrock-plumbing.md`](bedrock-plumbing.md)'s done-condition
-6). It waited on [OQ-BR9](bedrock-plumbing.md#OQ-BR9) and
+6). It waited on [OQ-BR9](bedrock-plumbing.md#decision-ledger) and
 [OQ-BR12](model-lists-and-pickers.md#OQ-BR12), both ruled 2026-09-29, and on
 [OQ-BR13](model-lists-and-pickers.md#OQ-BR13), directed the same day, so nothing it waits on is
 open ([WG-I25](#WG-I25)). Claude's everything profile completes one
@@ -784,7 +784,7 @@ concurrent build numbered its own from WG-I26 on ([WG-I26](#WG-I26)):
    a listed id no alias declares a vendor for, are translated, so an Anthropic model reaches the
    pass-through only by being listed with `"vendor": "anthropic"`, by a pack's `model_options`
    or by a user's object-form entry (`vendor` joined the user's model entry in the
-   [OQ-BR9](bedrock-plumbing.md#OQ-BR9) build). When a user's config points a pack's alias at
+   [OQ-BR9](bedrock-plumbing.md#decision-ledger) build). When a user's config points a pack's alias at
    another id, composition drops the pack's vendor for that alias
    (`packload.dropRepointedVendors`), because it named the maker of the pack's model; the vendor
    the user's own entry declares, if any, is the one the alias keeps.
@@ -834,14 +834,14 @@ The **sign-only route** *(coined here)* is a second bridge route beside the Anth
 OpenAI chat-completions endpoint on the jail's loopback that forwards the request unchanged and
 adds only the signature. It is the same signer at the same seam, with no translation step.
 **BUILT 2026-09-25** as the bridge's **via route** *(coined here: the route a profile's `via`
-selects)*; [§4.1](#41-how-it-is-built) says how. **Its authority is two rulings, not one:** [OQ-BR5](bedrock-plumbing.md#OQ-BR5)
+selects)*; [§4.1](#41-how-it-is-built) says how. **Its authority is two rulings, not one:** [OQ-BR5](bedrock-plumbing.md#decision-ledger)
 (ruled 2026-09-25) for pi, and [DIR-BR2](bedrock-plumbing.md#DIR-BR2)'s whole-matrix direction
 (2026-09-24) for oh-omp. No ruling names oh-omp's route directly: the matrix needs one, and
 oh-omp's own client cannot reach runtime. It serves:
 
 - **oh-omp**, whose own Bedrock provider takes a bearer only and speaks mantle, so it goes
   unused on runtime.
-- **pi's bridge version.** [OQ-BR5](bedrock-plumbing.md#OQ-BR5) ruled both: *"native converse
+- **pi's bridge version.** [OQ-BR5](bedrock-plumbing.md#decision-ledger) ruled both: *"native converse
   is just basically the pi agent's native which we're supplying for all the others and then also
   there will be the bridge version because I'm sure there will be some different features we can
   offer and we're just going to want to support both as fully as possible."* So pi's native
@@ -1287,7 +1287,7 @@ A launch-time check also cannot see a mid-session `/model` switch or a `--model`
 bridge sees every request. So the rejection stands as the *enforcement point*, while its intent
 moves here.
 
-**How it relates to [OQ-BR1](bedrock-plumbing.md#OQ-BR1).** That question is restated around an
+**How it relates to [OQ-BR1](bedrock-plumbing.md#decision-ledger).** That question is restated around an
 agent's own native Bedrock client versus the wire bridge. A profile that forces the bridge for an
 agent with a native client is the Bedrock instance of this switch ([OQ-WG2](#OQ-WG2)).
 
@@ -1376,7 +1376,7 @@ Three earlier non-licenses are reopened here by name:
   The non-goal still holds for the credential service that doc builds, and its option E, a
   *host-side* proxy, stays rejected.
 - [`bedrock-plumbing.md`](bedrock-plumbing.md)'s non-goal *"No bridge for an agent that has a
-  native arm"*, whose one exception was the everything profile. [OQ-BR5](bedrock-plumbing.md#OQ-BR5)'s ruling puts pi through
+  native arm"*, whose one exception was the everything profile. [OQ-BR5](bedrock-plumbing.md#decision-ledger)'s ruling puts pi through
   the bridge, and DIR-WG1 offers it to every agent. **Revised** to "no bridge for an agent with a
   native arm **unless a profile asks for it**" ([OQ-WG5](#OQ-WG5)).
 
@@ -1411,17 +1411,17 @@ Three earlier non-licenses are reopened here by name:
    re-key **BUILT 2026-09-30** ([§2.2](#22-how-the-bedrock-upstream-is-chosen-built-2026-09-30),
    [WG-I37](#WG-I37)–[WG-I39](#WG-I39)). It has no dependency on the model-list work, and on its
    own it closes the SSO gap for copilot and the everything profile. Keyed on the provider's
-   `platform` ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)), and on the upstream host for a
+   `platform` ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)), and on the upstream host for a
    provider that declares none ([OQ-WG1](#OQ-WG1)). (Build step 8.1 in the source.)
 2. **Routing by model id**, measuring runtime's Messages route first
    ([§3](#3-part-2--routing-by-model-id-for-claudes-everything-profile-ruled)). (Build step 8.3.)
    <a id="WG-I25"></a>**[WG-I25](#WG-I25): released for build, 2026-09-29.** An implementation
    decision, numbered in the series [§4.1](#41-how-it-is-built)'s via build began; no ruling is
-   needed. The behavior is [OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s ruling (2026-09-24), and every ruling
+   needed. The behavior is [OQ-BR11](bedrock-plumbing.md#decision-ledger)'s ruling (2026-09-24), and every ruling
    [§3](#3-part-2--routing-by-model-id-for-claudes-everything-profile-ruled)'s done-condition
    waited on is in. Build it with, or right after, the `bedrock-bridge` profile: the one shipped
    profile that forces the bridge, which for claude is the everything profile
-   ([OQ-BR1](bedrock-plumbing.md#OQ-BR1), ruled 2026-09-29). Until this step lands, a Claude
+   ([OQ-BR1](bedrock-plumbing.md#decision-ledger), ruled 2026-09-29). Until this step lands, a Claude
    model picked under `-p bedrock-bridge` goes through translation to chat-completions, which
    strips `cache_control` (so no prompt is cached) and omits `thinking`
    ([WB-D15](../reference/wire-bridge.md#wb-d15)), and `count_tokens` stays refused
@@ -1458,9 +1458,9 @@ Three earlier non-licenses are reopened here by name:
 | **Mint a Bedrock API key for the bridge** ([option D](sso-backed-bedrock.md#4-five-options)) | **Superseded by [OQ-BR10](#OQ-BR10).** At most an hour over the narrowed session, frozen for the launch, and refused where `CallWithBearerToken` is denied. |
 | **A host-side signing proxy** ([option E](sso-backed-bedrock.md#4-five-options)) | **Not needed.** An in-jail signer gets the refresh and the policy resilience without the host seeing any prompt. |
 | **Vendor the AWS SDK's signer** ([OQ-BR10](#OQ-BR10)'s option C) | **Not taken; the implementer's call**, to keep the hermetic build free of an AWS module. The test vectors pin the standard-library signer instead. |
-| **Two claude profiles, no routing by model** ([OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s leaning) | **Overruled**: one session could never switch between Claude and an OpenAI model. |
+| **Two claude profiles, no routing by model** ([OQ-BR11](bedrock-plumbing.md#decision-ledger)'s leaning) | **Overruled**: one session could never switch between Claude and an OpenAI model. |
 | **Refuse a launch on an id outside the provider's `models`** ([providers reference](../reference/providers.md#no-launch-time-model-id-refusal)) | **Still rejected as the enforcement point**; its intent moves to the bridge ([OQ-WG3](#OQ-WG3)). |
-| **Sign on the provider's Bedrock marker** | **Taken, 2026-09-30 ([WG-I37](#WG-I37))**: [OQ-WG1](#OQ-WG1)'s follow-up once [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) gave providers a marker, because host patterns cannot know every configuration. The host rule stays for a provider that declares no Bedrock platform. |
+| **Sign on the provider's Bedrock marker** | **Taken, 2026-09-30 ([WG-I37](#WG-I37))**: [OQ-WG1](#OQ-WG1)'s follow-up once [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger) gave providers a marker, because host patterns cannot know every configuration. The host rule stays for a provider that declares no Bedrock platform. |
 
 ---
 
@@ -1476,7 +1476,7 @@ Three earlier non-licenses are reopened here by name:
      Bedrock address: `bedrock-runtime.<region>.amazonaws.com` for model traffic, or
      `*.gateway.bedrock-agentcore.<region>.amazonaws.com` for the web-search proxy.
    - **(b) By a flag on the provider** saying "this provider is Bedrock". That flag is
-     [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s marker, which you called *"a bigger
+     [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)'s marker, which you called *"a bigger
      decision than you're making it look"*, and which now waits on the provider redesign.
 
    Stakes: under (b) the signer can't ship until the redesign does. Background:
@@ -1484,7 +1484,7 @@ Three earlier non-licenses are reopened here by name:
 
    _Leaning:_ **(a)**. The bridge already knows the address when it starts, a signer keyed on it
    can never sign a request bound for a non-AWS provider, and the signer ships now without
-   waiting on [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2).
+   waiting on [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger).
 
 
    <!-- vantage: question id=OQ-WG1 -->
@@ -1495,7 +1495,7 @@ Three earlier non-licenses are reopened here by name:
    > people's configurations are."* The signer ships keyed on the upstream host. The host
    > patterns miss any Bedrock reached at an address they do not name, such as a VPC or FIPS
    > endpoint or a corporate proxy, so the signer re-keys on the provider's Bedrock marker once
-   > [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) gives it one. Until then, an unmatched
+   > [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger) gives it one. Until then, an unmatched
    > Bedrock address is unsigned and fails with AWS's own error.
 
 2. ✅ <a id="OQ-WG2"></a>**[OQ-WG2](#OQ-WG2): is all-traffic mode opted into per profile, per
@@ -1504,7 +1504,7 @@ Three earlier non-licenses are reopened here by name:
    native".
 
    _Leaning:_ Per profile, opt-in, default off, so existing launches are unchanged.
-   [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s bridge-forcing profile is then the Bedrock instance of
+   [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s bridge-forcing profile is then the Bedrock instance of
    the same switch.
 
 
@@ -1570,7 +1570,7 @@ Three earlier non-licenses are reopened here by name:
    replacing discards what each native client does well (the credential chain, codex's Bedrock
    mode), and every pass-through protocol is another wire the bridge must frame.
 
-   _Leaning:_ Beside, never replacing, following [OQ-BR5](bedrock-plumbing.md#OQ-BR5)'s "both".
+   _Leaning:_ Beside, never replacing, following [OQ-BR5](bedrock-plumbing.md#decision-ledger)'s "both".
    Chat-completions sign-only first (omp, pi), Responses (codex) later, Converse none. This
    revises [`bedrock-plumbing.md`](bedrock-plumbing.md)'s non-goal to "no bridge unless a profile
    asks for it".
@@ -1593,7 +1593,7 @@ Three earlier non-licenses are reopened here by name:
    Stakes: Part 3 and Part 5
    have no selection, so a handler built now would have no production call site. Background:
    [what the tree could and could not say](#background-to-oq-wg6).
-   - **(a) A provider marker** (via [OQ-BR9](bedrock-plumbing.md#OQ-BR9)'s Bedrock pack) that
+   - **(a) A provider marker** (via [OQ-BR9](bedrock-plumbing.md#decision-ledger)'s Bedrock pack) that
      `routeFor` reads as "sign-only upstream".
    - **(b) A profile field**, for example `via: "bridge"`. The agent's derive writes its base URL
      as the bridge's per-agent path ([OQ-WG4](#OQ-WG4)), and `routeFor` takes the upstream from
@@ -1601,7 +1601,7 @@ Three earlier non-licenses are reopened here by name:
 
    _Leaning:_ **(b)**. It is [OQ-WG2](#OQ-WG2) and [OQ-WG4](#OQ-WG4) as already ruled, made
    concrete, and it needs no new provider vocabulary. (a) would tie selection to the provider
-   redesign ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)) that WG1 was ruled to avoid.
+   redesign ([OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger)) that WG1 was ruled to avoid.
 
 
    <!-- vantage: question id=OQ-WG6 -->
@@ -1668,8 +1668,8 @@ Three earlier non-licenses are reopened here by name:
 - <a id="OQ-BR10"></a>[**OQ-BR10**](#OQ-BR10) (answered 2026-09-24 by
   [DIR-BR2](bedrock-plumbing.md#DIR-BR2)): **Should the wire bridge sign its own upstream
   requests with SigV4?** Yes: Part 1. It still touches
-  [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2), which [OQ-WG1](#OQ-WG1) sidesteps, and
-  [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8), under whose leaning the bridge reads
+  [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger), which [OQ-WG1](#OQ-WG1) sidesteps, and
+  [OQ-BR8](providers-and-profiles-redesign.md#8-decision-ledger), under whose leaning the bridge reads
   `aws-auth`'s adapter address from the composed provider row.
 - <a id="OQ-BR16"></a>[**OQ-BR16**](#OQ-BR16) (ruled 2026-09-24): **Does the everything profile
   carry the Claude subscription too?** Yes, *"that would be amazing"*: Part 4. Amends
@@ -1762,7 +1762,7 @@ The options:
   one agent receives a variable alone only through
   [OQ-CN6](../reference/providers.md#oq-cn6), so it is not the mechanism.
 - **(c) No Converse pass-through.** pi's bridge path stays the chat-completions route, as
-  [`bedrock-plumbing.md`](bedrock-plumbing.md) records as [OQ-BR5](bedrock-plumbing.md#OQ-BR5)'s design consequence ("the
+  [`bedrock-plumbing.md`](bedrock-plumbing.md) records as [OQ-BR5](bedrock-plumbing.md#decision-ledger)'s design consequence ("the
   bridge version speaks OpenAI chat-completions"), and WG5's "Converse included" is withdrawn.
 
 Stakes:
@@ -1800,7 +1800,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | OQ-BR18 | **Yes, the bridge may carry a Claude subscription.** The maintainer's call on Anthropic's terms and company policy | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-BR16 | **The everything profile carries the subscription too**, forwarded untranslated with its own bearer, so one model list spans Teams and Bedrock. *"yes that would be amazing"* | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-BR17 | **Opt-in automatic failover, per model, from the subscription to Bedrock** on the subscription's usage-limit response, every switch disclosed. *"yes, opt in"*. Supersedes the deleted agent-auth-modes.md's failover deferral for this path | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
-| OQ-WG1 | **The signer keys on the upstream host now** (`bedrock-runtime.<region>.amazonaws.com`, `*.gateway.bedrock-agentcore.<region>.amazonaws.com`), **and re-keys on the provider's Bedrock marker once [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) gives one** — host patterns cannot know other people's configurations | 2026-09-25 | [§2.1](#21-behavior-the-signer-fixes) | 2026-09-25, (a): `sigv4.BedrockRuntimeRegion` decides at boot (`route.SignRegion`). (b), the marker re-key, 2026-09-30 as [WG-I37](#WG-I37): `wirebridged.bedrockSigning` |
+| OQ-WG1 | **The signer keys on the upstream host now** (`bedrock-runtime.<region>.amazonaws.com`, `*.gateway.bedrock-agentcore.<region>.amazonaws.com`), **and re-keys on the provider's Bedrock marker once [OQ-BR2](providers-and-profiles-redesign.md#8-decision-ledger) gives one** — host patterns cannot know other people's configurations | 2026-09-25 | [§2.1](#21-behavior-the-signer-fixes) | 2026-09-25, (a): `sigv4.BedrockRuntimeRegion` decides at boot (`route.SignRegion`). (b), the marker re-key, 2026-09-30 as [WG-I37](#WG-I37): `wirebridged.bedrockSigning` |
 | OQ-WG6 | **A profile field (`via: "bridge"`) puts its agent on the bridge path**: the derive writes the agent's base URL as the bridge's per-agent path (WG4), and `routeFor` takes the upstream from the provider's own `openai` endpoint; no new provider vocabulary | 2026-09-25 | [OQ-WG6](#OQ-WG6) | 2026-09-25, [§4.1](#41-how-it-is-built) |
 | OQ-WG7 | **The multi-route bridge, as tabled**: existing adapter routes stay at their ports' roots; one new declared address carries every `via` route under `/agent/<name>/`; `via`'s value names the service pack, which selecting the profile adds like `needs`; a per-agent `ctx.via_url` derive input; credentials per route from the provider's `api_key_env_name`, Bedrock through the signer chain. An implementation decision, recorded as one | 2026-09-25 | [OQ-WG7](#OQ-WG7) | 2026-09-25, [§4.1](#41-how-it-is-built) |
 | WG-I1 | **The via pair crosses in `YOLO_PROFILES` under reserved keys `_via` / `_via_base`.** An implementation decision ([OQ-WG7](#OQ-WG7)) | 2026-09-25 | [WG-I1](#WG-I1) | 2026-09-25 |
@@ -1823,7 +1823,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | WG-I15 | **The via checks run the agent's own derives to see whether the via re-points it; a via that re-points nothing is disclosed as having no effect, never refused.** An implementation decision | 2026-09-26 | [WG-I15](#WG-I15) | 2026-09-26: `packload.DerivedViaPointers`, `wirebridged.ViaRouteGate` |
 | WG-I23 | **A via route forwards only a canonical path (no `.`, `..` or empty segment, no decoded `?` or `#`), and forwards it escaped; any other gets a 404.** An implementation decision, closing a bypass of WG-I20 | 2026-09-26 | [WG-I23](#WG-I23) | 2026-09-26: `wirebridged.canonicalViaTail`, `passthroughHandler.do` |
 | WG-I24 | **A stream the upstream cuts short aborts the agent's connection and is logged; only the wait for response headers is bounded.** An implementation decision | 2026-09-26 | [WG-I24](#WG-I24) | 2026-09-26: `passthroughHandler.ServeHTTP`, `wirebridged.viaHeaderTimeout` |
-| WG-I25 | **Part 2, routing by model id, is released for build: pass Anthropic ids untranslated to runtime's Messages route, built with or right after the `bedrock-bridge` profile.** Until then a Claude model on that profile is translated, losing `cache_control` and `thinking`. Whether runtime streams Anthropic SSE or AWS's binary event-stream is the builder's first measurement, not a choice. An implementation decision: the behavior is [OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s, and [OQ-BR9](bedrock-plumbing.md#OQ-BR9), [OQ-BR12](model-lists-and-pickers.md#OQ-BR12) and [OQ-BR13](model-lists-and-pickers.md#OQ-BR13) have ruled or been directed | 2026-09-29 | [§8](#8-build-order) step 2 | 2026-09-29, [§3.1](#31-how-it-is-built): the adapter route on a `bedrock-runtime` upstream sends a model its list declares vendor `anthropic` for to `/anthropic/v1/messages` untranslated (`wirebridged.anthropicModelIDs`, `messagesPassthrough`); pinned through the production boot by `TestAnAnthropicModelGoesUntranslatedToBedrocksMessagesRoute` and `TestEveryOtherModelOnTheRouteIsStillTranslated`. Reached by `bedrock-bridge` since [§8](#8-build-order) step 1's region-composed URL, 2026-09-30 ([WG-I39](#WG-I39)) |
+| WG-I25 | **Part 2, routing by model id, is released for build: pass Anthropic ids untranslated to runtime's Messages route, built with or right after the `bedrock-bridge` profile.** Until then a Claude model on that profile is translated, losing `cache_control` and `thinking`. Whether runtime streams Anthropic SSE or AWS's binary event-stream is the builder's first measurement, not a choice. An implementation decision: the behavior is [OQ-BR11](bedrock-plumbing.md#decision-ledger)'s, and [OQ-BR9](bedrock-plumbing.md#decision-ledger), [OQ-BR12](model-lists-and-pickers.md#OQ-BR12) and [OQ-BR13](model-lists-and-pickers.md#OQ-BR13) have ruled or been directed | 2026-09-29 | [§8](#8-build-order) step 2 | 2026-09-29, [§3.1](#31-how-it-is-built): the adapter route on a `bedrock-runtime` upstream sends a model its list declares vendor `anthropic` for to `/anthropic/v1/messages` untranslated (`wirebridged.anthropicModelIDs`, `messagesPassthrough`); pinned through the production boot by `TestAnAnthropicModelGoesUntranslatedToBedrocksMessagesRoute` and `TestEveryOtherModelOnTheRouteIsStillTranslated`. Reached by `bedrock-bridge` since [§8](#8-build-order) step 1's region-composed URL, 2026-09-30 ([WG-I39](#WG-I39)) |
 | <a id="WG-I26"></a>WG-I26 | **codex's via row covers a Bedrock provider that names no endpoint**: under a profile with a `via`, the selected provider of platform `aws-bedrock` gets codex's via row (Responses at its via URL, the first OpenAI entry of the list), as pi's, opencode's and oh-omp's derives already give every selected provider, rather than no row. The bridge, not codex, reaches Bedrock on that route, and a row the route cannot serve is the launch's to refuse ([WG-I13](#WG-I13)) rather than the derive's to hide: with no row, WG-I15 disclosed "the via has no effect", which was false, since without the via codex runs its own Bedrock client ([`bedrock-plumbing.md` BR-D16](bedrock-plumbing.md#BR-D16)). Until the region-composed URL landed ([§8](#8-build-order), step 1; 2026-09-30, [WG-I39](#WG-I39)), the shipped `bedrock-bridge` therefore refused codex, pi, opencode and oh-omp and warned claude; since then the route serves the row. An implementation decision | 2026-09-29 | [§4.1](#41-how-it-is-built) | 2026-09-29: `packs/codex/derive.lua` (`codexViaBedrock`); pinned by `TestTheShippedBedrockBridgeProfileMeetsEachAgentAsItCan` and `TestCodexOnABridgedBedrockProfileRidesItsViaRoute` |
 | WG-I30 | **Runtime's Messages stream is relayed byte for byte, and an answer framed as AWS's binary event stream is refused 502 by name.** The framing is SOURCED, not observed. An implementation decision | 2026-09-29 | [WG-I30](#WG-I30) | 2026-09-29: `messagesPassthrough.serve`; `TestAnEventStreamAnswerIsRefusedByName` |
 | WG-I31 | **The Messages upstream shares the route's signer and chain, and a Bedrock API key goes as `x-api-key` on it.** An implementation decision | 2026-09-29 | [WG-I31](#WG-I31) | 2026-09-29: `bedrockSigner.authorizeAs`, `messagesPassthrough.do`; `TestABedrockAPIKeyGoesAsXAPIKeyOnTheMessagesRoute`, `TestAnExpiredSignatureOnTheMessagesRouteIsRefreshedOnce`, and the 401 and 503 by `TestTheMessagesRouteKeepsTheSignersFailureStatuses` |
@@ -1839,7 +1839,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | WG-I41 | **A program whose background traffic is not on the list declares `unlisted_background_models`, and the bridge admits every model it sends, logging an off-list one; packs/codex and packs/copilot declare it.** An implementation decision, from [`model-lists-and-pickers.md` §14.3](model-lists-and-pickers.md#143-the-bridges-part-and-get-v1models)'s precondition | 2026-09-30 | [WG-I41](#WG-I41) | 2026-09-30: `packdecl.Contribution.UnlistedBackgroundModels`, `SendsUnlistedModels`; `TestUnlistedBackgroundModelsIsAProgramsFact`, `TestTheShippedAgentsSayWhoseBackgroundModelsAreOffTheList`, `TestAnAgentWhoseBackgroundModelsAreOffTheListIsAdmitted` |
 | WG-I42 | **The daemon reads that declaration from the jail's staged pack tree, only when a list is narrowed, and refuses no model when it cannot read one.** An implementation decision | 2026-09-30 | [WG-I42](#WG-I42) | 2026-09-30: `wirebridged.allowlistsFor` over `entrypoint.LoadJailPacks`; the no-tree half of `TestAnAgentWhoseBackgroundModelsAreOffTheListIsAdmitted` |
 | WG-I43 | **The refusal is a 400 `invalid_request_error` in the route's protocol naming the model, the provider, the list and the switch; a body naming `model` twice is refused.** An implementation decision | 2026-09-30 | [WG-I43](#WG-I43) | 2026-09-30: `modelAllowlist.checks`, `requestModel`; `TestAViaRouteRefusesAModelOffANarrowedList`, `TestTheAdapterRouteRefusesOnlyWhatEverySharerWouldBeRefused`, `TestAModelKeySpelledInAnotherCaseIsTheModel` |
-| WG-I44 | **On a profile naming no via, the service that fronts the provider's platform (its *carrier*, the pack the provider's `for_via` address names) carries every agent of the launch that declares a protocol and has no client of the platform, and `YOLO_PROFILES` says which (`_carrier`, `_carrier_base`, `_carried`).** Every reader asks `ResolvedProfile.ViaFor`, so the derives, the daemon's routes and allowlists, the witness, the region pre-flight, the via gate and the profile line agree; the via gate now runs on a launch with a fronting service, and the profile line's credential warning asks a carried agent too. It pulls no pack into a launch. [OQ-BR1](bedrock-plumbing.md#OQ-BR1)'s *"through the wire bridge where it has none"*, closing what [WG-I39](#WG-I39) left. An implementation decision | 2026-09-30 | [WG-I44](#WG-I44) | 2026-09-30: `packload.carrierFor`, `packload.FrontsAPlatform`, `ResolvedProfile.ViaFor`, `packload.ViaServedAt`, `packload.profileReach`, `entrypoint.Env.LoadProfiles`, `wirebridged.routeFor`, `viaRoutesFor`, `adapterAllowlist`, `run.checkViaRoutes`; `TestPlainBedrockCarriesOnlyTheAgentsWithNoClientOfTheirOwn` and `TestPlainBedrockReachesRuntimeForCopilotAndOmp` (the boot over the tables as they cross), `TestANarrowedBedrockListGovernsTheCarriedAgents`, `TestCopilotReachesBedrockThroughTheBridgeOnEitherProfile`, `TestOmpReachesBedrockThroughTheBridgeOnPlainBedrock`, `TestTheCarrierCarriesOnlyTheAgentsWithNoClientOfThePlatform`, `TestNoCarrierWithoutAServiceThatFrontsThePlatform`, `TestTheProfileDisclosureReadsEachAgentsPlatformBinding`, `TestACarriedAgentIsToldWhenNoCredentialReachesIt`, `TestACarriedAgentAnswersAtTheBridgesServedAddress`, `TestACarriedAgentTheAdapterCannotServeIsToldToSelectAnotherProfile`, and at the launch `TestPlainBedrockCarriesTheClientlessAgentsThroughTheBridge` and `TestACarriedAgentWithNoRouteIsRefused` |
+| WG-I44 | **On a profile naming no via, the service that fronts the provider's platform (its *carrier*, the pack the provider's `for_via` address names) carries every agent of the launch that declares a protocol and has no client of the platform, and `YOLO_PROFILES` says which (`_carrier`, `_carrier_base`, `_carried`).** Every reader asks `ResolvedProfile.ViaFor`, so the derives, the daemon's routes and allowlists, the witness, the region pre-flight, the via gate and the profile line agree; the via gate now runs on a launch with a fronting service, and the profile line's credential warning asks a carried agent too. It pulls no pack into a launch. [OQ-BR1](bedrock-plumbing.md#decision-ledger)'s *"through the wire bridge where it has none"*, closing what [WG-I39](#WG-I39) left. An implementation decision | 2026-09-30 | [WG-I44](#WG-I44) | 2026-09-30: `packload.carrierFor`, `packload.FrontsAPlatform`, `ResolvedProfile.ViaFor`, `packload.ViaServedAt`, `packload.profileReach`, `entrypoint.Env.LoadProfiles`, `wirebridged.routeFor`, `viaRoutesFor`, `adapterAllowlist`, `run.checkViaRoutes`; `TestPlainBedrockCarriesOnlyTheAgentsWithNoClientOfTheirOwn` and `TestPlainBedrockReachesRuntimeForCopilotAndOmp` (the boot over the tables as they cross), `TestANarrowedBedrockListGovernsTheCarriedAgents`, `TestCopilotReachesBedrockThroughTheBridgeOnEitherProfile`, `TestOmpReachesBedrockThroughTheBridgeOnPlainBedrock`, `TestTheCarrierCarriesOnlyTheAgentsWithNoClientOfThePlatform`, `TestNoCarrierWithoutAServiceThatFrontsThePlatform`, `TestTheProfileDisclosureReadsEachAgentsPlatformBinding`, `TestACarriedAgentIsToldWhenNoCredentialReachesIt`, `TestACarriedAgentAnswersAtTheBridgesServedAddress`, `TestACarriedAgentTheAdapterCannotServeIsToldToSelectAnotherProfile`, and at the launch `TestPlainBedrockCarriesTheClientlessAgentsThroughTheBridge` and `TestACarriedAgentWithNoRouteIsRefused` |
 | WG-I45 | **The via gate refuses an agent routed through the bridge, by its profile's `via` or by the carrier, whose adapter route the launch gives another agent's provider**: the daemon serves one adapter route, so copilot carried on `-p bedrock` beside claude on cerebras would reach cerebras with claude's key, and beside claude on the Codex subscription nothing. The refusal names both agents and both providers. Two agents neither routed by a via nor a carrier are not reached. An implementation decision | 2026-09-30 | [WG-I45](#WG-I45) | 2026-09-30: `wirebridged.adapterTakenRefusal`, read by `ViaRouteGate`; `TestACarriedAgentWhoseAdapterRouteAnotherProviderHoldsIsRefused`, and at the launch `TestACarriedAgentWhoseAdapterRouteIsTakenIsRefused` |
 | WG-I46 | **A via is served wherever a launch runs its service: at `yolo host --` and on macos-user through the service's launch-owned host half, which a what-if over the served tables starts for a via or a carrier, on a port reserved for the service's via address.** Inert only at `yolo host env`, `yolo host apply`, the footer, and at `yolo host --` for an agent whose config file carries the via. Amends WG-I12 and narrows WG-I8. An implementation decision under the maintainer's 2026-10-04 delegation; reversible | 2026-10-05 | [WG-I46](#WG-I46) | 2026-10-05: `packload.ViaRoutedServices`, `packload.FileCarriedVia`, `launchservice.NewPlan`, `wirebridged.runHostHalf`, `cli.planHostViaService`, `run.planMacosUserViaServices`, `run.checkServedViaRoutes`; `packload.ViaRePoints`; [HS-D30](host-notch-services.md#HS-D30)–[HS-D33](host-notch-services.md#HS-D33) list the tests |
 | <a id="WG-I47"></a>WG-I47 | **On a Bedrock upstream the adapter route also signs and passes through Bedrock's own InvokeModel routes, `POST /model/{id}/invoke`, `/invoke-with-response-stream` and `/count-tokens`, for an agent in its own Bedrock mode pointed at the bridge**: claude on `-p bedrock-bridge` since [OQ-MM6](model-lists-and-pickers.md#OQ-MM6). The body, the status and AWS's binary event stream go through byte for byte under their own `Content-Type`; the model id from the path is re-encoded as the AWS SDKs encode it (`:` as `%3A`), so the path the upstream receives is the one SigV4 covers; `X-Amzn-Bedrock-*` request headers are kept and no inbound credential is forwarded; a Bedrock API key goes as `Authorization: Bearer`, the form AWS documents for runtime. **Refused before any upstream:** a model off a narrowed, enforced list (Part 5's allowlist). **Translated:** a model the list declares another maker's, since the pass-through carries Anthropic's request format unchanged, which only an Anthropic model takes: the InvokeModel body becomes the Messages request it carries, translated to runtime's chat completions like any `/v1/messages` request, and the answer goes back as InvokeModel's, Anthropic's message JSON or AWS's event stream with one `chunk` message per Anthropic event (a failure inside the stream an exception message; count-tokens refused 404, as WB-D14 refuses it). A model the list does not name is forwarded. Any other path that is not `/v1/…` on such a route, the control-plane reads Claude Code sends at startup among them, is a 404 in AWS's error shape, and Claude Code falls back on its own model ids. A stream cut short aborts the agent's connection, as on the Messages route ([WG-I33](#WG-I33)). An implementation decision | 2026-10-05 | [Part 2](#3-part-2--routing-by-model-id-for-claudes-everything-profile-ruled) | 2026-10-05: `wirebridged`'s `invoke.go` (`invokePassthrough`, `parseInvokePath`, `awsEscape`) and `invoketranslate.go` (`serveInvokeTranslated`, `invokeTranscoder`, `eventStreamMessage`), routed from `bridgeHandler.ServeHTTP`, its makers from `route.ModelVendors`; `internal/wirebridged/invoke_test.go`, whose `TestTheBootHandsTheInvokeRouteTheListsMakers` runs the production boot. Not run against AWS |
@@ -1851,8 +1851,8 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | OQ-WG5 | **Each profile picks one path, native or the bridge**; a bridged profile passes the native protocol through or translates it; every native wire gets a pass-through route, Converse included | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design), [§8](#8-build-order) | — |
 | DIR-WG1 | **An option to send every agent's model traffic through the wire bridge, so it can filter models and route each agent to its own upstream.** *"having an option to send all traffic through wire bridge or whatever for all endpoints so that we can do things like filter models — like when I'm using OpenRouter I'd want to set a specific set of models and not allow it to use other models … the only way to do that even if you're talking about pi … is through wire bridge … maybe we can identify specific agents so we can route them to different places … give them different endpoints … another design doc spawning out of this"*. Given in answer to [OQ-BR4](../reference/providers.md#oq-br4). Reverses [`wire-bridge.md`](../reference/wire-bridge.md#what-a-wire-bridge-is-not)'s "Not a gateway". Reopens, for the in-jail bridge only, the stance of [`sso-backed-bedrock.md` §9](sso-backed-bedrock.md#9-non-goals) ("not a model router"), whose non-goal still holds for the credential service that doc builds; with [OQ-BR10](#OQ-BR10), amends WB-D4. Built through [OQ-WG2](#OQ-WG2)–[OQ-WG5](#OQ-WG5). A direction, so no question id | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design) | — |
 
-Part 2 rests on [OQ-BR11](bedrock-plumbing.md#OQ-BR11) (2026-09-24), and Part 3 on
-[OQ-BR5](bedrock-plumbing.md#OQ-BR5) (2026-09-25) for pi and
+Part 2 rests on [OQ-BR11](bedrock-plumbing.md#decision-ledger) (2026-09-24), and Part 3 on
+[OQ-BR5](bedrock-plumbing.md#decision-ledger) (2026-09-25) for pi and
 [DIR-BR2](bedrock-plumbing.md#DIR-BR2) (2026-09-24) for oh-omp; all three are recorded in
 [`bedrock-plumbing.md`'s Decision Ledger](bedrock-plumbing.md#decision-ledger), not here.
 

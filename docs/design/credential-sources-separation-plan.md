@@ -14,11 +14,11 @@ tags: [providers, profiles, credentials, env-sources, plan]
 **Status:** 2026-09-27; re-read 2026-09-30. [§1](#1-ship-now-es-d1-to-es-d5) is built (2026-09-27; the
 design's [ledger](credential-sources-separation.md#10-decision-ledger) has the commits and the
 mechanism choices and the review's fixes, ES-D6 to ES-D12). Everything after it is incomplete and blocked on the question
-it names, except [§3](#3-blocked-on-the-other-open-questions)'s [OQ-ES5](credential-sources-separation.md#OQ-ES5) host half, ruled and built
+it names, except [§3](#3-blocked-on-the-other-open-questions)'s [OQ-ES5](credential-sources-separation.md#10-decision-ledger) host half, ruled and built
 the same day (ES-D13 to ES-D17). [§2](#2-only-if-the-split-is-ruled-in) is moot since 2026-09-30,
-when the design's [OQ-ES1](credential-sources-separation.md#OQ-ES1) was answered no, and so is
-[§3](#3-blocked-on-the-other-open-questions)'s [OQ-ES7](credential-sources-separation.md#OQ-ES7)
-entry. [OQ-ES5](credential-sources-separation.md#OQ-ES5)'s jail half was ruled and built
+when the design's [OQ-ES1](credential-sources-separation.md#10-decision-ledger) was answered no, and so is
+[§3](#3-blocked-on-the-other-open-questions)'s [OQ-ES7](credential-sources-separation.md#10-decision-ledger)
+entry. [OQ-ES5](credential-sources-separation.md#10-decision-ledger)'s jail half was ruled and built
 2026-10-05 (the design's ES-D31 to ES-D36). What is left waits on
 [OQ-ES6](credential-sources-separation.md#OQ-ES6). Codebase facts were verified at `8da7840d`.
 
@@ -54,18 +54,18 @@ it, and `composeHostVars` step (2), `scope.EnvSourcesFor(agent)`, appends that p
 
 ## 2. Only if the split is ruled in
 
-**Moot (2026-09-30).** [OQ-ES1](credential-sources-separation.md#OQ-ES1) was answered no, so there
+**Moot (2026-09-30).** [OQ-ES1](credential-sources-separation.md#10-decision-ledger) was answered no, so there
 is no split and nothing below is built. The table stays as the record of what a second key would
 have touched.
 
-Blocked on [OQ-ES1](credential-sources-separation.md#OQ-ES1). Its leaning is no, and a no deletes
+Blocked on [OQ-ES1](credential-sources-separation.md#10-decision-ledger). Its leaning is no, and a no deletes
 this section. These are the call sites a second key would touch. Two of them are easy to miss:
 the shared file is narrowed where `deliverChannel` calls `writeUserEnvFile`, not inside it; and
 `userlayer.go`, not only `load.go`, anchors entries.
 
 | File / symbol | Why it is touched |
 | :--- | :--- |
-| `internal/config/validate.go` | Schema for the new key. It could also carry [OQ-ES2](credential-sources-separation.md#OQ-ES2)'s refusal, but only for the jail and `yolo check` (see [§1](#1-ship-now-es-d1-to-es-d5)'s first trap) |
+| `internal/config/validate.go` | Schema for the new key. It could also carry [OQ-ES2](credential-sources-separation.md#10-decision-ledger)'s refusal, but only for the jail and `yolo check` (see [§1](#1-ship-now-es-d1-to-es-d5)'s first trap) |
 | `internal/config/envsources.go`: `ResolveEnvSourcesFull`, `AnchorEnvSources` | Hydration and anchoring of a second key |
 | `internal/config/load.go`, `internal/config/userlayer.go` | Both call `AnchorEnvSources`; `userlayer.go` is the user-scope loader the host notch reads |
 | `internal/packload/credentialscope.go`: `ScopeInput`, `ScopeCredentials` | A second input stream. What it does with a name no provider claims is undefined (the design's [§4.2](credential-sources-separation.md#42-what-it-would-revisit)), and it is a design question, not a sketch entry |
@@ -77,12 +77,12 @@ the shared file is narrowed where `deliverChannel` calls `writeUserEnvFile`, not
 | `internal/wirebridged/keyfile.go`: `resolveKey` | Reads a served agent's key from that agent's file, then the shared file ([CN-D11](provider-credential-scope.md#CN-D11)) |
 | `internal/entrypoint/mcp.go`: `loadMCPTables` | `requires_env` is asked per agent ([CN-D19](provider-credential-scope.md#CN-D19)) |
 
-[OQ-ES2](credential-sources-separation.md#OQ-ES2) and
-[OQ-ES4](credential-sources-separation.md#OQ-ES4) are blocked on [OQ-ES1](credential-sources-separation.md#OQ-ES1) as well.
+[OQ-ES2](credential-sources-separation.md#10-decision-ledger) and
+[OQ-ES4](credential-sources-separation.md#10-decision-ledger) are blocked on [OQ-ES1](credential-sources-separation.md#10-decision-ledger) as well.
 
 ## 3. Blocked on the other open questions
 
-- **[OQ-ES5](credential-sources-separation.md#OQ-ES5)**, a provider-naming grant flag. **Its
+- **[OQ-ES5](credential-sources-separation.md#10-decision-ledger)**, a provider-naming grant flag. **Its
   host half is ruled and BUILT** (2026-09-27, the design's
   [§5.1](credential-sources-separation.md#51-the-explicit-grant---with-credentials-built)): the
   sibling input is `ScopeInput.Grants`, fed from `parseHostExecFlags` and `hostEnv`. **Its jail
@@ -100,7 +100,7 @@ the shared file is narrowed where `deliverChannel` calls `writeUserEnvFile`, not
   acknowledgment. It would be read through `UserScopeConfig`, never the merged config. The gate
   would treat an acknowledged name as unclaimed for `SharedEnvSources` and `EnvSourcesFor`, and
   `Disclosure` would name it on every launch.
-- **[OQ-ES7](credential-sources-separation.md#OQ-ES7)**, moot since
+- **[OQ-ES7](credential-sources-separation.md#10-decision-ledger)**, moot since
   [OQ-NC5](../plans/notch-convergence.md#OQ-NC5): a typed host `-p` for an ad-hoc command is now
   refused, so nothing here is built. As filed, a CLI-less pack's gated env under a
   typed host `-p`. This touches `gateFiresFor` and `EnvFold` for the host's typed `-p` only, and
