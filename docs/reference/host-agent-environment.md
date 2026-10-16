@@ -33,7 +33,7 @@ the remedy's corrections in ES-D10 to ES-D12), and are pinned by unit tests thro
 since 2026-09-28 a bare `-p` reaches agent CLIs only here, as in a jail
 ([OQ-NC5](../plans/notch-convergence.md#OQ-NC5), which retired ES-D1's `-p` grant). So is
 the `--with-credentials` grant beside it, from 2026-09-27
-([OQ-ES5](../design/credential-sources-separation.md#OQ-ES5)'s host half, ES-D13 to ES-D17), and
+([OQ-ES5](../design/credential-sources-separation.md#10-decision-ledger)'s host half, ES-D13 to ES-D17), and
 the refusal of a profile the in-jail bridge would serve (ES-D18 to ES-D20). The removal of
 `yolo host apply --shell-init` is newer still, ruled 2026-09-27 ([HE-D1](#he-d1)), and is pinned
 by unit tests through `hostMain`; so is the one-row-per-cause shape of the `yolo check` section
@@ -375,7 +375,7 @@ the grant, such as `yolo host --with-credentials zai,cerebras -- usage-bar`, rat
 which would replace the typed profile and drop the grant
 ([ES-D23](../design/credential-sources-separation.md#10-decision-ledger)). An unknown provider
 refuses, naming the known ones. Only the typed flag grants
-([OQ-ES5](../design/credential-sources-separation.md#OQ-ES5);
+([OQ-ES5](../design/credential-sources-separation.md#10-decision-ledger);
 [ES-D13 to ES-D16](../design/credential-sources-separation.md#10-decision-ledger)). A jail launch
 takes the same flag since 2026-10-05, and the jail holds the set for its whole life
 ([§5.2](../design/credential-sources-separation.md#52-the-jail-half---with-credentials-at-a-jail-launch-built)).

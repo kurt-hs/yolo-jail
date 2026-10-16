@@ -50,7 +50,7 @@ Can every agent's footer tell me what this session is billed through and whether
 away anything it already shows? Bedrock cost is a later design ([Later](#later-cost-and-failover-a-separate-design)).
 
 **Reads with:** [`providers.md`](../reference/providers.md#profiles-and-options) (what a provider and a profile are);
-[`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#OQ-BR11)) and
+[`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#decision-ledger)) and
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the bridge signer [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) and
 subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
 [`handoff-guest-notch-macos.md`](../plans/handoff-guest-notch-macos.md) (the three notches, and why `guest` was unbuilt; on macOS it launches since 2026-10-04).
@@ -127,7 +127,7 @@ passes the words for its login and for each provider its profiles select (`bedro
 follows in parentheses.
 
 **A bridged route shows the profile and `(bridge)`, never an upstream.** The everything profile
-([OQ-BR11](bedrock-plumbing.md#OQ-BR11)) serves Anthropic ids untranslated, translates the rest, and may fail over
+([OQ-BR11](bedrock-plumbing.md#decision-ledger)) serves Anthropic ids untranslated, translates the rest, and may fail over
 per model to Bedrock ([OQ-BR17](wire-bridge-gateway.md#OQ-BR17)), so no one provider name is true. The pack marks
 which of its routes are bridged; yolo does not infer it.
 

@@ -408,7 +408,7 @@ flowchart LR
 
 **The `aws-auth` pack, its own pack.** Not a contribution of `packs/claude` and not one of the
 `bedrock` pack that the Bedrock plumbing design proposes (its open provider-shape question,
-[OQ-BR9](bedrock-plumbing.md#OQ-BR9)), because the service serves consumers in **both** — claude's `bedrock` provider lives
+[OQ-BR9](bedrock-plumbing.md#decision-ledger)), because the service serves consumers in **both** — claude's `bedrock` provider lives
 in `packs/claude` and the other three agents' would live in the new `bedrock` pack, so a
 contribution of either would make one depend on the other. That is the same test
 [OQ-A10](../reference/loophole-system.md#why-its-this-way) applied to the Claude broker and
