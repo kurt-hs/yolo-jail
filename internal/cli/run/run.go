@@ -475,6 +475,7 @@ func Run(opts Options) (rc int) {
 		return 1
 	}
 	if rt == "macos-user" {
+		o.noteRecoveryHatches(rt, false) // recoveryscope.go: macos-user delivers no patched build
 		if o.MacosUserRun == nil {
 			o.pr(o.Stdout).print(
 				"[bold red]macos-user runtime handler not wired.[/bold red]  " +
@@ -1728,6 +1729,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// ONE ACT FOR BOTH (buildslot.go, XB-D10): every key of the slot runs at once in the build act's
 	// pool, under one interrupt scope, with the image's own build started beside it.
 	forkSpan := o.Perf.Span("launch.fork_builds")
+	o.noteRecoveryHatches(rt, false) // recoveryscope.go: what each set recovery hatch reaches, once
 	o.runForkBuildSlot(cfg, rt, repoRoot)
 	// A PATCH SERIES THAT DOES NOT APPLY IS FATAL (patchfailures.go; PF-D81, PF-D83): its error block
 	// first, before any line about what the slot delivered, then the refusal when an intact older build would
@@ -2968,6 +2970,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	} else {
 		out.printf("[bold cyan]Attaching to existing jail [dim](%s)[/dim]...[/bold cyan]", cname)
 	}
+	o.noteRecoveryHatches(rt, true) // recoveryscope.go: a set recovery hatch does nothing on an attach
 	// The launch's fate is known: it attaches (launchrecord.go).
 	o.recordLaunchOutcome(launchAttached, -1)
 	// WHAT THIS SESSION HOLDS OF THE JAIL'S GRANT, on every attach to a jail launched with one,

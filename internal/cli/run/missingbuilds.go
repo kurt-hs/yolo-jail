@@ -17,23 +17,22 @@ package run
 //
 // NOT FOR AN EXTENSION WITH A FALLBACK (docs/design/pi-extension-store-builds.md XB-D7): the agent
 // installs its raw entry in the tree's place, so nothing is missing; noteTreeDeliveries says the
-// fallback once, with the build's cause in plain words under it.
+// fallback once, with the build's cause in plain words under it. NOR FOR ONE
+// patchrecovery.SkipExtensionsEnv covers (docs/design/patched-build-recovery.md §6.6): this launch
+// starts its owner without it.
 //
 // NOT WHERE NO TREE OR FORK IS BUILT: below Apple Container's read-only floor, inside a jail, and
 // for a patched fork that builds for none of the jail's platform (forkUnpublishedHere) nothing was
 // built, so nothing failed; those keep their warning line (noteTreeDeliveries, and the fork's
 // launcher). macos-user returns above the slot and says so itself (noteMacosUserTrees).
 //
-// THE REFUSAL SAYS EACH CAUSE ONCE, with every build it left without one (entrypoint.BuildCause,
-// PPX-D42), then who can fix it and the ways back: what the cause names, `yolo capture <key>` to
-// retry, `yolo pack series check` and the git rebase it prints for a series that no longer applies,
-// dropping the list entry or the pack, and paths.AllowMissingProgramsEnv, the bypass
-// program-readiness.md JR-D3 names for the readiness act, so one variable covers both. With the
-// bypass set the same text is a warning and the launch goes on.
-//
-// A MISSING BUILD WHOSE CAUSE IS A PATCH FAILURE (patched-forks.md PF-D81) also names that failure's
-// own bypass, paths.AllowPatchFailuresEnv, and why it does not start this launch: it runs only an intact
-// admitted build, and a missing build has none.
+// THE REFUSAL'S SHAPE is a normal tool's (patched-build-recovery.md §6.8, the maintainer's ruling of
+// 2026-10-16): one ERROR line, each cause once with every build it left without one
+// (entrypoint.BuildCause, PPX-D42) as terse fact lines, then `Retry:` with each build's `yolo
+// capture` command, then `Start anyway:` (patchrecovery.Section) — the union of each missing build's
+// Recovery list, which the advance decides (PBR-D5); a delivery without one falls back to
+// paths.AllowMissingProgramsEnv for a fork and patchrecovery.SkipExtensionsEnv for an extension.
+// With paths.AllowMissingProgramsEnv set the launch goes on: one Warning line and the build lines.
 //
 // An extension NO agent pack loads has nothing to stop and nothing to refuse, but the slot's act
 // says nothing of a build that leaves nothing serving — a jail that stopped before its build line, a
@@ -47,6 +46,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -55,6 +55,8 @@ import (
 type missingBuild struct {
 	// label is what it is, as the lines name it: "extension matt/pi-subagents", "fork pi-fork/pi".
 	label string
+	// key is its owner key, the value a scoped hatch names.
+	key string
 	// capture is `yolo capture`'s argument for it.
 	capture string
 	reason  string
@@ -65,9 +67,10 @@ type missingBuild struct {
 	owner string
 	// needed says the launch refuses without it.
 	needed bool
-	// patchFailure says its series could not be applied (PF-D81): the refusal names the patch
-	// failure's own bypass beside the missing-program one.
+	// patchFailure says its series could not be applied (PF-D81), its error block said above.
 	patchFailure bool
+	// recovery is the advance's hatch list for it, nil when the advance set none.
+	recovery []patchrecovery.Hatch
 }
 
 // missingGroup is the missing builds one cause left: said once, with every label.
@@ -97,21 +100,26 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 				continue // built for none of this jail's platform: no build was tried, so none failed
 			}
 			if d, ok := o.forkDelivered[p.Fork.Bin]; ok && d.Key == "" {
-				out = append(out, missingBuild{label: "fork " + p.Fork.Key(), capture: p.Fork.CaptureArg(),
+				out = append(out, missingBuild{label: "fork " + p.Fork.Key(), key: p.Fork.Key(), capture: p.Fork.CaptureArg(),
 					reason: patchFailureReason(d.Reason, d.PatchFailure != nil), cause: d.Cause, unsaid: d.Unsaid,
-					needed: true, patchFailure: d.PatchFailure != nil})
+					needed: true, patchFailure: d.PatchFailure != nil, recovery: d.Recovery})
 			}
 		}
 	}
 	if o.BuildTrees != nil || o.BuildSlot != nil {
+		skip := patchrecovery.Read(o.Getenv, patchrecovery.SkipExtensionsEnv)
 		for _, f := range o.patchedTrees {
 			if f.Fallback != "" {
 				continue // its fallback is installed in its place: noteTreeDeliveries says it, and its cause (XB-D7)
 			}
+			if skip.Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}) {
+				continue // this launch starts its owner without it (patched-build-recovery.md §6.6)
+			}
 			if d, ok := o.treeDelivered[f.Key()]; ok && d.Dir == "" {
-				out = append(out, missingBuild{label: f.Label(), capture: f.CaptureArg(),
+				out = append(out, missingBuild{label: f.Label(), key: f.Key(), capture: f.CaptureArg(),
 					reason: patchFailureReason(d.Reason, d.PatchFailure != nil), cause: d.Cause,
-					unsaid: d.Unsaid, owner: f.Owner, needed: f.Owner != "" && f.ListedInJail, patchFailure: d.PatchFailure != nil})
+					unsaid: d.Unsaid, owner: f.Owner, needed: f.Owner != "" && f.ListedInJail, patchFailure: d.PatchFailure != nil,
+					recovery: d.Recovery})
 			}
 		}
 	}
@@ -123,7 +131,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 // patch are said once.
 func patchFailureReason(reason string, patchFailure bool) string {
 	if patchFailure {
-		return "its patch series does not apply (the ERROR above), and no build of it is on this machine"
+		return "its patch series does not apply (the ERROR above)"
 	}
 	return reason
 }
@@ -142,14 +150,17 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 		}
 	}
 	out := o.pr(o.Stderr)
+	if slices.ContainsFunc(append(slices.Clone(needed), unneeded...), func(m missingBuild) bool { return m.patchFailure }) {
+		out.print("") // set off from the error block above (patchfailures.go)
+	}
 	// PF-D21's Apple Container line, which the act leaves to the launch with the cause: said once,
 	// after the last group that has a cause, needed or not.
 	withCause := func(m missingBuild) bool { return m.cause != nil }
 	acLimit := rt == "container" && (slices.ContainsFunc(needed, withCause) || slices.ContainsFunc(unneeded, withCause)) // parity: Warned — Apple Container starts no build jail beside a running jail, so the refusal or warning names the capture that builds it once the others stop (PF-D21)
 	if len(unneeded) > 0 {
 		out.print("[yellow]" + richtext.Escape("Warning: "+countOf(len(unneeded), "patched build")+" no selected "+
-			"agent pack loads "+plural(len(unneeded), "has", "have")+" no build on this machine:") + "[/yellow]")
-		o.printMissingGroups(unneeded)
+			"agent pack loads "+plural(len(unneeded), "has", "have")+" no build on this machine") + "[/yellow]")
+		o.printMissingGroups(unneeded, true)
 	}
 	if len(needed) == 0 {
 		if acLimit {
@@ -157,47 +168,92 @@ func (o *Options) refuseMissingBuilds(rt string) bool {
 		}
 		return false
 	}
-	held := o.Getenv(paths.AllowMissingProgramsEnv) != ""
 	lacks := missingNeededPhrase(needed) + " " + plural(len(needed), "has", "have") + " no build on this machine"
-	head := "Refusing to launch: " + lacks + "."
-	if held {
-		head = "Warning: " + paths.AllowMissingProgramsEnv + " is set — CONTINUING, though " + lacks + ": what loads " +
-			plural(len(needed), "it", "them") + " stops in the jail, and the shell is unaffected."
-		out.print("[yellow]" + richtext.Escape(head) + "[/yellow]")
-	} else {
-		out.print("[bold red]" + richtext.Escape(head) + "[/bold red]")
+	if o.Getenv(paths.AllowMissingProgramsEnv) != "" {
+		out.print("[yellow]" + richtext.Escape("Warning: "+lacks+"; starting without "+plural(len(needed), "it", "them")+
+			" ("+paths.AllowMissingProgramsEnv+")") + "[/yellow]")
+		o.printMissingGroups(needed, true)
+		if acLimit {
+			o.printAppleContainerLimit()
+		}
+		return false
 	}
-	o.printMissingGroups(needed)
+	out.print("[bold red]" + richtext.Escape("ERROR: "+lacks) + "[/bold red]")
+	o.printMissingGroups(needed, false)
 	if acLimit {
 		o.printAppleContainerLimit()
 	}
-	if held {
-		return false
+	out.print("")
+	out.print("[bold]Retry:[/bold]")
+	for _, m := range needed {
+		out.print("  [bold cyan]" + richtext.Escape("yolo capture "+m.capture) + "[/bold cyan]")
 	}
-	them := "them"
-	if len(needed) == 1 {
-		them = "it"
-	}
-	if slices.ContainsFunc(needed, func(m missingBuild) bool { return m.patchFailure }) {
-		// A PATCH FAILURE'S OWN BYPASS (PF-D81) runs an intact admitted build in the failed series'
-		// place; a missing build has none on this machine, so the bypass is named with why it does
-		// not start this launch, and the repair above is the way back.
-		out.print("[dim]" + richtext.Escape("  "+paths.AllowPatchFailuresEnv+"=1 does not start this launch: it runs only an "+
-			"intact admitted build in place of a series that fails to apply, and none is on this machine. "+
-			"Repair the series as its error says.") + "[/dim]")
-	}
-	out.print("[dim]" + richtext.Escape("  To launch without "+them+" now: "+paths.AllowMissingProgramsEnv+"=1, and what "+
-		"loads "+them+" stops in the jail while the shell works.") + "[/dim]")
-	out.print("[dim]" + richtext.Escape("  To run without one for good: drop the list entry naming it, or its pack.") +
-		"[/dim]")
+	_, _ = out.rt.W.Write([]byte(patchrecovery.Section(patchrecovery.StartAnyway, missingRecovery(needed), out.rt.Color)))
 	return true
+}
+
+// missingRecovery is the union of the needed builds' hatch lists, in patchrecovery.Scoped's order
+// then the missing-program hatch: each build's Recovery, or for one with none,
+// paths.AllowMissingProgramsEnv for a fork and patchrecovery.SkipExtensionsEnv for an extension. A
+// hatch two builds share is listed once, its names joined in one value.
+func missingRecovery(needed []missingBuild) []patchrecovery.Hatch {
+	var all []patchrecovery.Hatch
+	for _, m := range needed {
+		switch {
+		case len(m.recovery) > 0:
+			all = append(all, m.recovery...)
+		case m.owner == "":
+			all = append(all, patchrecovery.Hatch{Env: patchrecovery.AllowMissingProgramsEnv, Value: "1", Command: "yolo",
+				Label: "start without it"})
+		default:
+			all = append(all, patchrecovery.Hatch{Env: patchrecovery.SkipExtensionsEnv, Value: m.key, Command: "yolo",
+				Label: "start " + m.owner + " without it"})
+		}
+	}
+	order := append(slices.Clone(patchrecovery.Scoped), patchrecovery.AllowMissingProgramsEnv)
+	rank := func(env string) int {
+		if i := slices.Index(order, env); i >= 0 {
+			return i
+		}
+		return len(order)
+	}
+	var out []patchrecovery.Hatch
+	for _, h := range all {
+		i := slices.IndexFunc(out, func(o patchrecovery.Hatch) bool { return o.Env == h.Env && o.Command == h.Command })
+		if i < 0 {
+			out = append(out, h)
+			continue
+		}
+		cur := &out[i]
+		switch {
+		case cur.Value == "1" || h.Value == "1":
+			cur.Value = "1"
+		case !slices.Contains(strings.Split(cur.Value, ","), h.Value):
+			cur.Value += "," + h.Value
+		}
+		if cur.Label != h.Label {
+			cur.Label = mergedHatchLabels[cur.Env]
+		}
+	}
+	slices.SortStableFunc(out, func(a, b patchrecovery.Hatch) int { return rank(a.Env) - rank(b.Env) })
+	return out
+}
+
+// mergedHatchLabels label one hatch line that covers several builds whose own labels differ.
+var mergedHatchLabels = map[string]string{
+	patchrecovery.AllowPatchFailuresEnv:   "run their admitted builds",
+	patchrecovery.UseCachedGoodEnv:        "run their older builds",
+	patchrecovery.AllowOlderUpstreamEnv:   "build on older releases",
+	patchrecovery.SkipPatchesEnv:          "run upstream without the patches",
+	patchrecovery.SkipExtensionsEnv:       "start without them",
+	patchrecovery.AllowMissingProgramsEnv: "start without them",
 }
 
 // printAppleContainerLimit is PF-D21's line: on Apple Container a build jail does not start beside a
 // running jail, the likeliest reason one stopped there.
 func (o *Options) printAppleContainerLimit() {
-	o.pr(o.Stderr).print("[dim]" + richtext.Escape("  On Apple Container a build jail cannot start beside a running "+
-		"jail: if that is what stopped it, `yolo capture <key>` builds it once the other jails stop.") + "[/dim]")
+	o.pr(o.Stderr).print(richtext.Escape("  Apple Container: a build jail cannot start beside a running jail; " +
+		"stop the other jails, then retry"))
 }
 
 // missingNeededPhrase names what the launch lacks: "3 patched extensions pack pi loads", with a
@@ -232,15 +288,17 @@ func countOf(n int, thing string) string {
 }
 
 // printMissingGroups says each cause once, with every build it left without one, then who can fix
-// it; a build whose act found no cause in plain words says its reason on its own line.
-func (o *Options) printMissingGroups(builds []missingBuild) {
+// it; a build whose act found no cause in plain words says its reason on its own line. inline says
+// no Retry list follows, so the fix line names the capture itself.
+func (o *Options) printMissingGroups(builds []missingBuild, inline bool) {
 	out := o.pr(o.Stderr)
 	var groups []*missingGroup
 	var series bool
 	for _, m := range builds {
+		// A series no longer applying is repaired by the recipe; its own block printed it above.
+		series = series || !m.patchFailure && m.cause == nil && strings.Contains(m.reason, "series")
 		if m.cause == nil {
 			groups = append(groups, &missingGroup{builds: []missingBuild{m}})
-			series = series || m.patchFailure || strings.Contains(m.reason, "series")
 			continue
 		}
 		joined := false
@@ -264,9 +322,10 @@ func (o *Options) printMissingGroups(builds []missingBuild) {
 		if first.cause == nil {
 			// A reason that names its build already ("extension a/x's build of v1 failed …") is said as
 			// it is; any other follows the build's label.
-			line := first.label + ": " + first.reason
-			if strings.HasPrefix(first.reason, first.label) {
-				line = first.reason
+			reason := missingHeadline(first.reason)
+			line := first.label + ": " + reason
+			if strings.HasPrefix(reason, first.label) {
+				line = reason
 			}
 			out.print("  " + richtext.Escape(line))
 			continue
@@ -279,21 +338,24 @@ func (o *Options) printMissingGroups(builds []missingBuild) {
 		for _, l := range first.cause.Lines {
 			out.print("      " + richtext.Escape(l))
 		}
-		for _, l := range first.cause.WhoFixes(missingRetry(g.builds)) {
-			out.print("[dim]    " + richtext.Escape(l) + "[/dim]")
+		retry := "retry"
+		if inline {
+			retry = missingRetry(g.builds)
+		}
+		for _, l := range first.cause.WhoFixes(retry) {
+			out.print("    " + richtext.Escape(l))
 		}
 		if first.cause.Log != "" && !first.cause.YoloBug {
-			out.print("[dim]    " + richtext.Escape("Its whole output: "+first.cause.Log) + "[/dim]")
+			out.print("    " + richtext.Escape("Log: "+first.cause.Log))
 		}
 	}
 	if series {
-		out.print("[dim]  " + richtext.Escape("Where a series no longer applies, `yolo pack series check` says where it "+
-			"stops and prints the git commands that rebase it.") + "[/dim]")
+		out.print("  " + richtext.Escape("Rebase: yolo pack series check"))
 	}
 }
 
 // missingHeadline is a reason as a group's headline: its own words, without the act that tries
-// again, which missingRetry names.
+// again, which the Retry list or missingRetry names.
 func missingHeadline(reason string) string {
 	if i := strings.Index(reason, " — "); i >= 0 {
 		return reason[:i]
@@ -309,16 +371,13 @@ func colonIf(more bool) string {
 	return ""
 }
 
-// missingRetry is what builds a group's builds once their cause is fixed.
+// missingRetry is the commands that build a group's builds once their cause is fixed.
 func missingRetry(builds []missingBuild) string {
-	if len(builds) == 1 {
-		return "`yolo capture " + builds[0].capture + "` builds it, or the next fresh launch does"
-	}
 	captures := make([]string, len(builds))
 	for i, m := range builds {
 		captures[i] = "`yolo capture " + m.capture + "`"
 	}
-	return "the next fresh launch builds them, or " + strings.Join(captures, ", ") + " now"
+	return entrypoint.JoinAnd(captures)
 }
 
 // labelsPhrase is labels as one phrase, a kind they share said once: "extensions a/x and a/y".
