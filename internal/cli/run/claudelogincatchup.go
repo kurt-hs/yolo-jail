@@ -64,8 +64,9 @@ func (o *Options) catchUpClaudeLogin(started []loopholeDaemon) {
 	oauthbroker.ConfigureStore()
 	var res oauthbroker.CatchUp
 	o.withProgressLine("Checking Claude's login", func(*progress.Line) (bool, string) {
-		res = oauthbroker.CatchUpAtLaunch(oauthbroker.LegacyCredsPath(), claudeCatchUpLead,
-			claudeCatchUpNow().UnixMilli(), claudeCatchUpRefresh)
+		// Its forensic lines go to the broker's own log, beside every daemon's refresh lines.
+		res = oauthbroker.CatchUpAtLaunchLogged(broker.BrokerLogPath(), oauthbroker.LegacyCredsPath(),
+			claudeCatchUpLead, claudeCatchUpNow().UnixMilli(), claudeCatchUpRefresh)
 		if res.Outcome == oauthbroker.CatchUpFailed {
 			return false, "failed"
 		}

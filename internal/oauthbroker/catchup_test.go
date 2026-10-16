@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,5 +136,59 @@ func TestTheCatchUpRefreshIsACacheHitWhenAnotherBrokerRefreshedFirst(t *testing.
 	got := CatchUpAtLaunch(p, BackgroundRefreshLeadSeconds, catchUpNow.UnixMilli(), refreshedByAnother)
 	if got.Outcome != CatchUpRefreshed || got.ExpiresInS != 8*3600 {
 		t.Fatalf("want a cache hit with the other broker's eight hours, got %+v", got)
+	}
+}
+
+// TestTheLoggedCatchUpAppendsToTheBrokersLog: the launch-side catch-up's forensic lines, its own
+// and the refresh path's, are appended to the broker's log beside what a daemon already wrote,
+// and the package logger is the caller's again afterwards.
+func TestTheLoggedCatchUpAppendsToTheBrokersLog(t *testing.T) {
+	saved, savedNow, savedLock := CanonicalPath, nowFunc, RefreshLockPath
+	CanonicalPath = ""
+	RefreshLockPath = filepath.Join(t.TempDir(), "refresh.lock")
+	nowFunc = func() int64 { return catchUpNow.UnixMilli() }
+	t.Cleanup(func() { CanonicalPath, nowFunc, RefreshLockPath = saved, savedNow, savedLock })
+	t.Setenv("YOLO_BROKER_UPSTREAM_URL", "http://127.0.0.1:1/v1/oauth/token")
+	savedLogger := logger
+	logger = nil
+	t.Cleanup(func() { logger = savedLogger })
+
+	logPath := filepath.Join(t.TempDir(), "logs", "host-service-claude-oauth-broker.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const daemonLine = "INFO oauth-broker-host: a running daemon's line\n"
+	if err := os.WriteFile(logPath, []byte(daemonLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := loginLeft(t, 10*time.Minute)
+	refreshedByAnother := func(credsPath string, lead int) RefreshResult {
+		body := `{"claudeAiOauth":{"accessToken":"at2","refreshToken":"rt2","expiresAt":` +
+			strconv.FormatInt(catchUpNow.Add(8*time.Hour).UnixMilli(), 10) + `}}`
+		if err := os.WriteFile(credsPath, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return LaunchCatchUpRefresh(credsPath, lead)
+	}
+	got := CatchUpAtLaunchLogged(logPath, p, BackgroundRefreshLeadSeconds, catchUpNow.UnixMilli(),
+		refreshedByAnother)
+	if got.Outcome != CatchUpRefreshed {
+		t.Fatalf("want a cache hit, got %+v", got)
+	}
+	if logger != nil {
+		t.Error("the catch-up left its log in place of the process's (none)")
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(data), daemonLine) {
+		t.Errorf("the daemon's line was not kept ahead of the catch-up's:\n%s", data)
+	}
+	for _, w := range []string{"at_launch: catch-up by launch pid", "at_launch: due (600s left",
+		"do_refresh: at-launch catch-up (lead 1800s)", "cache hit:", "at_launch: ok expires_in=28800"} {
+		if !strings.Contains(string(data), w) {
+			t.Errorf("the broker's log lacks %q:\n%s", w, data)
+		}
 	}
 }
