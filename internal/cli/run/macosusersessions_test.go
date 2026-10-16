@@ -3,7 +3,7 @@ package run
 // macosusersessions_test.go pins the macos-user backend's HOST-SERVICES SESSIONS: two sandboxed
 // sessions of ONE workspace each get a host-services dir of their own, so one session's exit
 // never removes or invalidates an endpoint the other is using
-// (docs/design/host-daemon-ownership.md#OQ-HD10, "The second run, MEASURED").
+// (docs/design/host-daemon-ownership.md#11-decision-ledger, "The second run, MEASURED").
 //
 // THE DEFECT, measured on a Mac (scheduled macos-user run 36319436117 at f937d0fd): both sessions
 // published into the one per-workspace dir the workspace's container name selects, the second

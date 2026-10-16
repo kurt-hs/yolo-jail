@@ -895,9 +895,9 @@ empty list, an empty platform and a platform given twice.
 
 <a id="built_in_providers"></a>`built_in_providers` names the providers the program ships its own
 client and model list for, a **built-in provider** in
-[`pi-codex-provider-shadowing.md`](../design/pi-codex-provider-shadowing.md#OQ-3)'s term, so yolo
+[`pi-codex-provider-shadowing.md`](../design/pi-codex-provider-shadowing.md#10-decision-ledger)'s term, so yolo
 writes no model entry over one and the agent uses its own list
-([OQ-3](../design/pi-codex-provider-shadowing.md#OQ-3), ruled 2026-10-05). It is an
+([OQ-3](../design/pi-codex-provider-shadowing.md#10-decision-ledger), ruled 2026-10-05). It is an
 object. `names` is every provider id the program's own code registers. `plans`, optional, maps a
 yolo provider name to the program's own provider for that provider's plan, `{"provider": …,
 "api_key_env_name": …}`, when the name alone gets it wrong, or to `null` when the program has the
@@ -3618,7 +3618,7 @@ do two macos-user sessions share a host-services dir: each publishes its endpoin
 its own and removes only that one
 ([`HSD-4`](jail-home.md#why-its-this-way)), after the second Mac run measured the first
 session to exit removing the other's
-([`OQ-HD10`](../design/host-daemon-ownership.md#OQ-HD10)).
+([`OQ-HD10`](../design/host-daemon-ownership.md#11-decision-ledger)).
 
 **What went wrong, MEASURED.** The first macOS run of
 `TestMacosUserTwoConcurrentLaunchesOfOneWorkspace` (CI run 36240337031, commit `6eb92400`)
@@ -3684,7 +3684,7 @@ another launch reads, so pack staging needs neither the lock nor the sync.
 
 **What it no longer covers.** Pack staging, on every backend. And on macos-user the host-daemon
 start, which runs from the launch's own tree: two launches' spawns can contend again, so
-[`OQ-HD10`](../design/host-daemon-ownership.md#OQ-HD10)'s experiment measures the spawn flock on
+[`OQ-HD10`](../design/host-daemon-ownership.md#11-decision-ledger)'s experiment measures the spawn flock on
 its own, as it would have before the staging fix.
 
 **What it costs.** A second launch of a podman workspace waits for the first launch's attach

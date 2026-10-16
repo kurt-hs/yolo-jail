@@ -262,7 +262,7 @@ declares, which [OQ-6](#OQ-6)'s option (c) says. Moving one into a pack is
 an edit: the `files` contribution of [§4.1](#41-the-declaration), its list entry, and its old raw
 string as the `fallback`.
 
-[`pi-extension-lifecycle.md` OQ-4](pi-extension-lifecycle.md#OQ-4), who installs a package the refresh
+[`pi-extension-lifecycle.md` OQ-4](pi-extension-lifecycle.md#7-decision-ledger), who installs a package the refresh
 did not reach and under what lock, narrows under (c) to raw entries in one workspace: two pi sessions
 of that workspace starting together while a raw package is missing. Its leaning, accept and document,
 fits that better than it did the machine-wide case.
@@ -374,7 +374,7 @@ and 4.61 s against 4.55 s; MEASURED, research pass, medians of three).
   cancelled, each key with a good build is handed it, and a key with none takes its fallback or is
   [PPX-D18](patched-extensions.md#PPX-D18)'s stop.
 - **The bounds are per key and unchanged**: 60 s for a check's fetch, 60 s for the walk, and
-  `forkBuildWaitBound` (20 minutes) for a build ([OQ-PFK3](patched-forks.md#OQ-PFK3)). A launch now
+  `forkBuildWaitBound` (20 minutes) for a build ([OQ-PFK3](patched-forks.md#decision-ledger)). A launch now
   waits for the slowest key, not for the sum.
 
 ## 6. No machine-wide lock
@@ -493,7 +493,7 @@ else changes: a launch still runs only an admitted build or the author's fallbac
 Today's behavior, unchanged except for [§5](#5-parallel-installs-and-updates)'s parallelism: a key
 whose check is due is checked; a candidate is built while the launch waits, up to
 `forkBuildWaitBound`; a Ctrl-C ends the wait and starts on the good build
-([OQ-PFK3](patched-forks.md#OQ-PFK3)); a key with no good build builds, or takes its fallback when its
+([OQ-PFK3](patched-forks.md#decision-ledger)); a key with no good build builds, or takes its fallback when its
 build fails. Within the hour, a launch runs no git and no registry request.
 
 ### 7.4 For the next launch (the option)

@@ -1,7 +1,7 @@
 package run
 
 // servicessession.go is ONE HOST-SERVICES DIR PER macos-user SESSION
-// (docs/design/host-daemon-ownership.md#OQ-HD10, the teardown defect its second run measured).
+// (docs/design/host-daemon-ownership.md#11-decision-ledger, the teardown defect its second run measured).
 //
 // A SESSION is one macos-user invocation of yolo: one sandbox and the host services started for
 // it, from launch to teardown (paths.HostServicesSessionPrefix defines the term). The backend

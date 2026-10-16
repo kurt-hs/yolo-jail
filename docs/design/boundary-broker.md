@@ -845,7 +845,7 @@ scope that gate approved, from its in-memory result ([WW-P2](workspace-widening.
 arguments a restart reuses. The launch id is a random value the fresh launch draws. The file is
 keyed by it, not by the workspace or the container name, because on macos-user two terminals in
 one workspace are two concurrent sessions that share the container name and the preamble's jail
-id, the per-container-name collision [OQ-HD10](host-daemon-ownership.md#OQ-HD10) measured for
+id, the per-container-name collision [OQ-HD10](host-daemon-ownership.md#11-decision-ledger) measured for
 endpoint files. Keyed by workspace, the second session's approval would replace the scope under
 the first session's broker. On the container path the key changes nothing visible: one jail runs
 per container name, and a second terminal attaches to it. The broker reads that file alone:

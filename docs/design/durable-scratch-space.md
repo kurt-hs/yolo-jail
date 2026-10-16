@@ -861,7 +861,7 @@ found only the per-launch scratch volumes. All three questions were ruled in rev
 | [`agent-briefings.md`](../reference/agent-briefings.md) | how the briefing is composed and where each pack's prose lands |
 | [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) | the jail-path-in-admin-file risk ([§2.6](#26-a-worktree-records-absolute-paths-measured)), which mounting the workspace at the host's path would also close |
 | [`disk-levers-and-backfill.md`](disk-levers-and-backfill.md), [`minimal-disk-footprint.md`](minimal-disk-footprint.md) | the measured cost of durable worktrees, and the rule that agents' worktrees are not yolo's to reclaim |
-| [`host-notch-services.md`](host-notch-services.md) | the host notch's shape, and [OQ-HS3](host-notch-services.md#OQ-HS3)'s acceptance of partial features outside `yolo host --` |
+| [`host-notch-services.md`](host-notch-services.md) | the host notch's shape, and [OQ-HS3](host-notch-services.md#11-decision-ledger)'s acceptance of partial features outside `yolo host --` |
 
 ## Appendix A — the measured runs
 

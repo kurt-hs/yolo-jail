@@ -772,7 +772,7 @@ one, but it is not the only one possible. Any selected pack may declare a servic
 local pack included, and its `jail_daemon` runs whatever command it names
 (`serviceJailDaemons`, [`packservices.go`](../../internal/cli/run/packservices.go), checks no
 origin). Only a service's host half is limited to the packs yolo ships
-([OQ-HS4](host-notch-services.md#OQ-HS4)). [OQ-TP10](#oq-tp10--a-wrapped-plugins-hooks-reach-the-agents-lifecycle-and-appear-in-no-launch-banner)'s argument
+([OQ-HS4](host-notch-services.md#11-decision-ledger)). [OQ-TP10](#oq-tp10--a-wrapped-plugins-hooks-reach-the-agents-lifecycle-and-appear-in-no-launch-banner)'s argument
 was about the loophole's claim-free daemon, and the [inventory](#2-the-inventory) has no row for a
 service, so the ruling does not say.
 

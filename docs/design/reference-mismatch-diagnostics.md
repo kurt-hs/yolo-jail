@@ -14,9 +14,9 @@ next: "Rule OQ-RM4 — whether an unmatched reference gets an escape hatch; the 
 are shipped; steps 4 and 5 landed 2026-09-30. MEASURED: the real binary refuses an unmatched
 `supersedes` claim at launch and `yolo check` fails it (`TestLaunchRefusesAnUnmatchedSupersession`,
 `integration/supersession_test.go`), passing on both CI arches in `ci.yml` run 36734688583
-(2026-09-30, at `9003abf6`). Triaged 2026-09-30: [`OQ-RM2`](#OQ-RM2) is
-answered by [`OQ-TP6`](trust-paths.md#decision-ledger), [`OQ-RM1`](#OQ-RM1) and
-[`OQ-RM3`](#OQ-RM3) are decided as implementation choices ([RM-D1](#RM-D1), [RM-D2](#RM-D2)),
+(2026-09-30, at `9003abf6`). Triaged 2026-09-30: [`OQ-RM2`](#decision-ledger) is
+answered by [`OQ-TP6`](trust-paths.md#decision-ledger), [`OQ-RM1`](#decision-ledger) and
+[`OQ-RM3`](#decision-ledger) are decided as implementation choices ([RM-D1](#RM-D1), [RM-D2](#RM-D2)),
 and only [`OQ-RM4`](#OQ-RM4) is still open; the build shipped its leaning, no hatch. Re-audited
 against the tree 2026-09-19, and step 1's second half landed 2026-09-25. **Shipped: steps 1–6.**
 Steps 2, 3 and 6 are all in the provider arc — the
@@ -29,7 +29,7 @@ forbids re-declaring it — and routes every loader finding through the counted 
 **loophole half landed 2026-09-25**, when `yolo check`'s Loopholes section began grading every
 unmatched `supersedes` claim as a `[WARN]` row (`checkLoopholes`, from
 `Set.SupersessionProblems()`).
-**Steps 4 and 5 landed 2026-09-30**, once [`OQ-RM2`](#OQ-RM2) and [`OQ-RM3`](#OQ-RM3) no
+**Steps 4 and 5 landed 2026-09-30**, once [`OQ-RM2`](#decision-ledger) and [`OQ-RM3`](#decision-ledger) no
 longer gated them: a launch refuses an unmatched `supersedes` claim with the discovery warning's
 own sentence, adding a skew clause when `version.SourceSkew` proves one, and `check`'s row became
 a `[FAIL]`. A jail launch and `yolo host` refuse it alike. The build's own choices are
@@ -290,7 +290,7 @@ The one genuinely new sentence, and the reason the refusals in [§4.1](#41-a-pro
 
 > [!NOTE]
 > **The ground under this section moved after it was written (re-checked 2026-09-24).** Two
-> changes, neither of which rules [`OQ-RM3`](#OQ-RM3):
+> changes, neither of which rules [`OQ-RM3`](#decision-ledger):
 >
 > - **The image no longer carries yolo's binaries.** The jail's `yolo-entrypoint` is built from
 >   the resolved flake on every launch and bind-mounted in
@@ -301,7 +301,7 @@ The one genuinely new sentence, and the reason the refusals in [§4.1](#41-a-pro
 >   source it would build from is refused before the build by `run.refuseOnSourceSkew`
 >   (`version.SourceSkew`, shipped 2026-08-30), naming `just install`, with
 >   `YOLO_ALLOW_SOURCE_SKEW=1` as its hatch. It compares the binary's commit stamp with `HEAD`
->   through git, not through a nix eval, so the 0.3 s cost [`OQ-RM3`](#OQ-RM3) weighs is not the
+>   through git, not through a nix eval, so the 0.3 s cost [`OQ-RM3`](#decision-ledger) weighs is not the
 >   cost of the check that shipped.
 >
 > This section's actual deliverable, a *reference-mismatch* refusal that names skew as a possible
@@ -391,7 +391,7 @@ order.)*
    "no loopholes installed" return, since a claim on a machine serving nothing is the surest
    no-op. `TestCheckLoopholesGradesAnUnmatchedSupersession` fails if that call is deleted (its
    callee's tests in `internal/loopholes` do not). It needed no ruling — grading does not change
-   the exit code, which is why it never waited on [`OQ-RM1`](#OQ-RM1). The set it reads is only as
+   the exit code, which is why it never waited on [`OQ-RM1`](#decision-ledger). The set it reads is only as
    right as the lazy pack resolvers behind it, and those first lacked the `needs` closure the launch
    applies (`packload.ResolveNeeds`), so a correct claim on a capability only a needs-pulled pack
    serves was graded as matching nothing; they apply it now, and
@@ -409,7 +409,7 @@ order.)*
    (`0bc29bd5`, `providerURLProblem` in `validate.go`). Adjacent hardening from the same
    cluster: a composed `base_url`+`endpoints` pair is refused (`5d8bd1fe`, [`OQ-PT2`](../reference/providers.md#why-its-this-way)).
 4. **Relocate the supersession match to the launch path.** Message unchanged; disposition and
-   surface change. [`OQ-RM2`](#OQ-RM2) is answered (2026-09-30): the launch refuses, and
+   surface change. [`OQ-RM2`](#decision-ledger) is answered (2026-09-30): the launch refuses, and
    `check`'s row becomes a `[FAIL]` in the same change ([RM-D1](#RM-D1)). **SHIPPED 2026-09-30.**
    The launch's gate is `refuseUnmatchedSupersessions` (`internal/cli/run`), a pack pre-flight in
    `stagePacksInto` over the packs the launch just staged ([RM-D3](#RM-D3)); it refuses with a
@@ -438,7 +438,7 @@ order.)*
    config.
 5. **The skew diagnostic.** Ships with or before step 4 — a refusal that cannot say "your image is
    old" is a worse refusal than the warning it replaces. **SHIPPED 2026-09-30, with step 4**, as
-   [RM-D2](#RM-D2) decided [`OQ-RM3`](#OQ-RM3): `UnmatchedSupersessionFix` calls
+   [RM-D2](#RM-D2) decided [`OQ-RM3`](#decision-ledger): `UnmatchedSupersessionFix` calls
    `version.SourceSkew` only once a claim has failed to match, and when that proves the host
    `yolo` older than its source, adds a clause naming both commits, the tree and
    `just install`. Without proof there is no clause, and nothing on the launch path runs a nix
@@ -456,7 +456,7 @@ order.)*
    therefore superseded; the shipped rule is broader and was chosen on review, not by accident.
 
 Steps 1–3 were independent of every design question in flight, and all three have shipped. Steps 4
-and 5 waited on [`OQ-RM2`](#OQ-RM2) and [`OQ-RM3`](#OQ-RM3) until 2026-09-30, and shipped that
+and 5 waited on [`OQ-RM2`](#decision-ledger) and [`OQ-RM3`](#decision-ledger) until 2026-09-30, and shipped that
 day. Nothing in this section is left to build.
 
 ---
@@ -479,80 +479,10 @@ day. Nothing in this section is left to build.
 
 ## 9. Open Questions
 
-1. ✅ <a id="OQ-RM1"></a>**OQ-RM1: Does `yolo check` refuse, or only report, the LAUNCH-ONLY checks?**
-   Background: [§9.1](#91-background-to-the-questions). What is left is the checks `check` cannot decide from a declaration
-   alone — [§4.4](#44-a-supersession-that-matches-nothing)'s supersession match above all, which
-   needs the resolved set and is decidable on the host. But `check` is also the command you run
-   *to find out what is wrong*, which is the argument that kept the supersedes finding non-fatal in
-   the first place. **This decides whether `check` ever exits non-zero for a reference it had to
-   resolve, or only ever shows a `[FAIL]` row that the launch then enforces.**
+[`OQ-RM1`](#decision-ledger) to [`OQ-RM3`](#decision-ledger) are settled and compacted into the
+[Decision Ledger](#decision-ledger). One question is open.
 
-   <!-- vantage: question id=OQ-RM1 -->
-
-   _Leaning:_ `check` shows `[FAIL]` and exits non-zero here as well — it already does exactly this
-   for every parse-time check, and a `check` that passes on a config the next launch refuses is the
-   defect this doc exists to close. The "don't break the diagnostic tool" carve-out belongs
-   to `loopholes list`, which reports one subsystem, not to `check`, which is the pre-flight.
-
-   **Answer:**
-   > **Decided as an implementation choice ([RM-D1](#RM-D1)), reversible:** `check`'s severity
-   > for a launch-only check is the launch's own. Where the launch refuses, `check` shows `[FAIL]`
-   > and exits non-zero, as it already does for the capability and protocol-pairing gates. So the
-   > supersession row turns `[FAIL]` in the change that makes the launch refuse it, and
-   > `yolo loopholes list` and `status` keep only reporting.
-
-2. ✅ <a id="OQ-RM2"></a>**OQ-RM2: When a supersession matches nothing, do we refuse the launch or refuse the pack?**
-   Two dispositions with very different feels. **(a)** Refuse the launch: nothing starts until the
-   claim is fixed. **(b)** Refuse the *pack*: it does not load, its other contributions do not
-   render, the launch proceeds without it — which is
-   [`trust-paths.md`](trust-paths.md) [`OQ-TP6`](trust-paths.md#decision-ledger)'s rule ("a refused contribution refuses the launch",
-   built 2026-08-18) read the other way. *(TP6's own subject, the approval refusal, was deleted
-   with the approval prompt on 2026-09-04 by [`OQ-TP9`](trust-paths.md#decision-ledger); the
-   rule stands and binds any future refusal source, which a refusing supersession would be. Its
-   "approve" option no longer exists.)*
-
-   <!-- vantage: question id=OQ-RM2 -->
-
-   _Leaning:_ (a), refuse the launch, for consistency with the shipped TP6 rule — *"no partial
-   packs: fix it, remove it, or approve it."* A pack that half-loads is the state that rule exists
-   to delete, and a supersession is precisely a claim about the environment other packs are running
-   in.
-
-   **Answer:**
-   > **Answered by [`OQ-TP6`](trust-paths.md#decision-ledger) (2026-08-18): (a), refuse the
-   > launch.** The maintainer's words in that ruling: *"If the installer is refused, that should be
-   > fatal. We can't run packs with selective things disabled by refusals. Fix the pack, remove the
-   > pack, approve. Those are the choices."* Option (b) runs the launch with a pack disabled by a
-   > refusal, and it makes the remove-the-pack choice for the user, which the ruling leaves with
-   > them. The approve choice went with the approval prompt ([`OQ-TP9`](trust-paths.md#decision-ledger));
-   > fixing or removing the pack is what is left, and both are the user's. It also follows
-   > [RM-P1](#decision-ledger), fail closed.
-
-3. ✅ <a id="OQ-RM3"></a>**OQ-RM3: How does the skew message get its two hashes?** [§4.6](#46-skew-your-image-is-older-than-your-tree) wants to say *"image
-   `<hash-a>`, tree `<hash-b>`"*. `ensureJailImage` does this with an eval, never a build — written
-   as `nix eval .#installPrefix.outPath` against `readlink /bin/yolo-entrypoint`; since 2026-09-12 it
-   is `nix eval --raw .#imageIdentity` against the loaded image's `/etc/yolo-jail-image-identity`.
-   Either way, ~0.3 s on the launch path is added to **every** launch, to produce a sentence needed
-   on almost none of them. *(Bears on this, and does not answer it: the launch already refuses a
-   host `yolo` older than its source through a git comparison, `run.refuseOnSourceSkew` — see
-   [§4.6](#46-skew-your-image-is-older-than-your-tree)'s note.)*
-
-   <!-- vantage: question id=OQ-RM3 -->
-
-   _Leaning:_ Compute it **lazily — only when a reference has already failed to match.** The refusal
-   is the slow path by definition, and 0.3 s on the way to an error message nobody minds. Do not put
-   it on the happy path.
-
-   **Answer:**
-   > **Decided as an implementation choice ([RM-D2](#RM-D2)), reversible:** the refusal takes
-   > its two hashes from the source-skew gate's own verdict (`version.SourceSkew`: the binary's
-   > commit and the checkout's `HEAD`, compared through git). It asks only once a reference has
-   > failed to match, and never runs a nix eval. The image no longer carries yolo, so its identity
-   > cannot explain a supersession that matches nothing; a host `yolo` older than its source can.
-   > That keeps the leaning (lazy, off the happy path) with the one hash source that still bears on
-   > the cause.
-
-4. 💬 🤷 <a id="OQ-RM4"></a>**OQ-RM4: Is there an escape hatch, and what is it called?** Every other fatal in this repo
+1. 💬 🤷 <a id="OQ-RM4"></a>**OQ-RM4: Is there an escape hatch, and what is it called?** Every other fatal in this repo
    has one — `YOLO_ALLOW_STALE_IMAGE`, `YOLO_ALLOW_UNREACHABLE_SERVICES`, `YOLO_NO_HOST_LOOPBACK` —
    each loud, each naming itself in the refusal.
 
@@ -569,7 +499,7 @@ day. Nothing in this section is left to build.
 
 ### 9.1 Background to the questions
 
-**[`OQ-RM1`](#OQ-RM1).** The parse-time half is no longer a question: steps 2–3 shipped as
+**[`OQ-RM1`](#decision-ledger).** The parse-time half is no longer a question: steps 2–3 shipped as
 `[FAIL]` rows, and `Check()` short-circuits on a merged-config failure and exits non-zero, so a
 bad enum or a credential in a URL already refuses.
 
@@ -582,9 +512,11 @@ bad enum or a credential in a URL already refuses.
 | RM-P1 | **Fail closed, and break things.** Pre-1.0, one maintainer, no external pack ecosystem — a breaking change with a one-command recovery is cheaper than a silent wrong result. *"it's breaking, so it breaks, what's wrong with that? we're early, we can break things."* | 2026-08-30 | [§6](#6-what-starts-failing-that-works-today), and R1 of [`stringly-typed-references-principle.md`](../reference/stringly-typed-references-principle.md) |
 | RM-P2 | **Skew is not an exemption from fail-closed; it is a message.** The remedy for a version-boundary mismatch is a diagnostic that names the rebuild, not a downgrade to a warning. The repo already does this in `ensureJailImage`. | 2026-08-30 | [§4.6](#46-skew-your-image-is-older-than-your-tree), and R5 |
 | RM-P3 | **The gate moves, the severity does not.** Where a validation point cannot resolve the registry or its actor cannot act, relocate the check upstream rather than lowering it. | 2026-08-30 | [§5](#5-where-each-check-lands-and-why-not-somewhere-else), and R5 |
-| [`OQ-RM2`](#OQ-RM2) | **Answered by [`OQ-TP6`](trust-paths.md#decision-ledger)'s ruling** (2026-08-18, the maintainer: *"If the installer is refused, that should be fatal. We can't run packs with selective things disabled by refusals. Fix the pack, remove the pack, approve. Those are the choices."*): an unmatched supersession refuses the launch. Refusing only the pack would run the rest with that pack disabled by a refusal, and would remove the pack on the user's behalf | 2026-09-30 | [§9](#9-open-questions), [§7](#7-sequencing-by-user-visible-payoff) step 4 |
-| <a id="RM-D1"></a>RM-D1 | *Implementation decision*, [`OQ-RM1`](#OQ-RM1). **`check` predicts the launch's disposition.** A check the launch refuses on is a `[FAIL]` with a non-zero exit, and a check the launch only warns about is a `[WARN]`. The tree already does this for two launch-only gates: `internal/cli/check`'s `capabilityGap` and `protocolPairingGap`, and `Check()` returns 1 on any `[FAIL]`. `protocolPairingGap`'s comment calls a prediction of a fatal refusal that exits 0 *"the defect this file exists to close"*. So `checkLoopholes`' supersession row moves from `[WARN]` to `[FAIL]` in the same change that makes the launch refuse ([§7](#7-sequencing-by-user-visible-payoff) step 4), never before. It reads the gate the launch applies (`Set.SupersessionProblems`), because a preflight shares the gate it predicts and never copies it ([`OQ-TP7`](trust-paths.md#decision-ledger)'s third-gate trap). Grading a row `[FAIL]` only counts it (`reporter.fail`), so the report around it still prints. The carve-out that keeps a diagnostic tool from being taken down belongs to `yolo loopholes list` and `status`, which keep reporting ([§5](#5-where-each-check-lands-and-why-not-somewhere-else)). Why it has one answer: a `check` that passes on a config the next launch refuses is what [RM-P1](#decision-ledger) and R1 exist to prevent | 2026-09-30 | [`OQ-RM1`](#OQ-RM1) |
-| <a id="RM-D2"></a>RM-D2 | *Implementation decision*, [`OQ-RM3`](#OQ-RM3). **The skew clause reads `version.SourceSkew`, lazily, on the refusal path only.** The image no longer carries yolo's binaries ([§4.6](#46-skew-your-image-is-older-than-your-tree)'s note), and a supersession is matched on the host against the selected packs and config. So the image's identity cannot explain a mismatch, and the `nix eval --raw .#imageIdentity` route that [§4.6](#46-skew-your-image-is-older-than-your-tree) weighed is dropped. What can explain one is a host `yolo` older than the checkout it builds from. `version.SourceSkew` already detects that through git (`BinaryCommit`, `TreeCommit`), and `run.refuseOnSourceSkew` refuses it before the build. So the mismatch refusal calls that function only after the match has failed. When it finds skew, which a launch reaches only with `YOLO_ALLOW_SOURCE_SKEW=1`, the refusal names both commits and `just install`. When it cannot prove skew, the refusal carries no skew clause, because the clause would be a guess. For this cause, [§4.6](#46-skew-your-image-is-older-than-your-tree)'s *"run `just load`"* remedy is `just install`. Why it has one answer: it is the leaning (lazy, never on the happy path), with the only hash source that still bears on the cause | 2026-09-30 | [`OQ-RM3`](#OQ-RM3) |
+| [`OQ-RM2`](#decision-ledger) | **Answered by [`OQ-TP6`](trust-paths.md#decision-ledger)'s ruling** (2026-08-18, the maintainer: *"If the installer is refused, that should be fatal. We can't run packs with selective things disabled by refusals. Fix the pack, remove the pack, approve. Those are the choices."*): an unmatched supersession refuses the launch. Refusing only the pack would run the rest with that pack disabled by a refusal, and would remove the pack on the user's behalf | 2026-09-30 | [§7](#7-sequencing-by-user-visible-payoff) step 4 |
+| <a id="RM-D1"></a>RM-D1 | *Implementation decision*, [`OQ-RM1`](#decision-ledger). **`check` predicts the launch's disposition.** A check the launch refuses on is a `[FAIL]` with a non-zero exit, and a check the launch only warns about is a `[WARN]`. The tree already does this for two launch-only gates: `internal/cli/check`'s `capabilityGap` and `protocolPairingGap`, and `Check()` returns 1 on any `[FAIL]`. `protocolPairingGap`'s comment calls a prediction of a fatal refusal that exits 0 *"the defect this file exists to close"*. So `checkLoopholes`' supersession row moves from `[WARN]` to `[FAIL]` in the same change that makes the launch refuse ([§7](#7-sequencing-by-user-visible-payoff) step 4), never before. It reads the gate the launch applies (`Set.SupersessionProblems`), because a preflight shares the gate it predicts and never copies it ([`OQ-TP7`](trust-paths.md#decision-ledger)'s third-gate trap). Grading a row `[FAIL]` only counts it (`reporter.fail`), so the report around it still prints. The carve-out that keeps a diagnostic tool from being taken down belongs to `yolo loopholes list` and `status`, which keep reporting ([§5](#5-where-each-check-lands-and-why-not-somewhere-else)). Why it has one answer: a `check` that passes on a config the next launch refuses is what [RM-P1](#decision-ledger) and R1 exist to prevent | 2026-09-30 | [§5](#5-where-each-check-lands-and-why-not-somewhere-else) |
+| <a id="RM-D2"></a>RM-D2 | *Implementation decision*, [`OQ-RM3`](#decision-ledger). **The skew clause reads `version.SourceSkew`, lazily, on the refusal path only.** The image no longer carries yolo's binaries ([§4.6](#46-skew-your-image-is-older-than-your-tree)'s note), and a supersession is matched on the host against the selected packs and config. So the image's identity cannot explain a mismatch, and the `nix eval --raw .#imageIdentity` route that [§4.6](#46-skew-your-image-is-older-than-your-tree) weighed is dropped. What can explain one is a host `yolo` older than the checkout it builds from. `version.SourceSkew` already detects that through git (`BinaryCommit`, `TreeCommit`), and `run.refuseOnSourceSkew` refuses it before the build. So the mismatch refusal calls that function only after the match has failed. When it finds skew, which a launch reaches only with `YOLO_ALLOW_SOURCE_SKEW=1`, the refusal names both commits and `just install`. When it cannot prove skew, the refusal carries no skew clause, because the clause would be a guess. For this cause, [§4.6](#46-skew-your-image-is-older-than-your-tree)'s *"run `just load`"* remedy is `just install`. Why it has one answer: it is the leaning (lazy, never on the happy path), with the only hash source that still bears on the cause | 2026-09-30 | [§4.6](#46-skew-your-image-is-older-than-your-tree) |
 | <a id="RM-D3"></a>RM-D3 | *Implementation decision*, [§7](#7-sequencing-by-user-visible-payoff) step 4. **The launch's gate is a pack pre-flight over the packs it just staged, and it runs before anything else on the launch path discovers loopholes.** `refuseUnmatchedSupersessions` sits in `stagePacksInto` beside the other pack pre-flights. That is where the pack set becomes complete, the `needs` closure included, and every `yolo run` backend and an attach pass through it, as they pass the other pre-flights. It reads the staged packs directly (`SupersessionProblemsFor`), not the process-wide records, which `stagePacksInto` sets only once its pre-flights pass. It runs before `checkViaRoutes`, whose `NewHostSet` would first print the same sentence through `Discover`'s warning, so the sentence prints once, as the refusal. It reads the pack modules alone, and that is the whole served set: every loophole yolo ships is a pack's, and a config-declared loophole carries no `serves` (`TestConfigDeclaredLoopholesServeNothing` fails if one ever does). Why it has one answer: the pre-flights are the one point where the whole set is in hand before the dispatch, and a refusal after a warning of the same sentence reads as two findings | 2026-09-30 | [§7](#7-sequencing-by-user-visible-payoff) step 4 |
 | <a id="RM-D4"></a>RM-D4 | *Implementation decision*, [§7](#7-sequencing-by-user-visible-payoff) step 5. **One fix, printed by both enforcing surfaces, with a skew clause read from `version.SourceSkew` itself.** `UnmatchedSupersessionFix` (`internal/loopholes`) renders the remedy, *fix the pack or remove it* ([`OQ-TP6`](trust-paths.md#decision-ledger)'s choices, less the approval that went with [`OQ-TP9`](trust-paths.md#decision-ledger)), and the clause when skew is proven. The launch prints it under its refusal and `check` under its `[FAIL]` row, after *"The launch refuses this."*, so the prediction reads as the refusal it predicts. It calls `version.SourceSkew` directly rather than going through `run.refuseOnSourceSkew`. That gate runs only on a container launch and yields to `YOLO_ALLOW_SOURCE_SKEW=1`, so [RM-D2](#RM-D2)'s *"which a launch reaches only with `YOLO_ALLOW_SOURCE_SKEW=1`"* holds for the container backends alone: `macos-user` and `check` run no such gate. The cause is the same on all three, because the packs a host `yolo` ships are the ones compiled into it. Why it has one answer: a `check` row without the clause would send a reader with a stale `yolo` looking for a typo they did not make, the defect [§4.6](#46-skew-your-image-is-older-than-your-tree) names | 2026-09-30 | [§7](#7-sequencing-by-user-visible-payoff) step 5 |
 | <a id="RM-D5"></a>RM-D5 | *Implementation decision*, [§4.4](#44-a-supersession-that-matches-nothing)'s **Where** row, on [NC-D1](../plans/notch-convergence.md#7-decision-ledger). **`yolo host --` and `yolo host env` refuse an unmatched claim too, through the jail's gate.** `run.UnmatchedSupersessionRefusal` is the one gate: a jail launch calls it from `stagePacksInto` and prints it after *"Refusing to launch: "*, and the host composition calls it over its own selection, right after that selection's own refusal and before `run.PlanHostDoorways`, whose discovery would first print the same sentence as a bare warning. At the host a claim retires a loophole's doorway, so a mistyped one leaves the doorway open exactly as it leaves a jail's loophole running. The gate is in the composition rather than in `yolo host --` alone, so `yolo host env` refuses it as it refuses a selection that does not resolve ([NC-D5](../plans/notch-convergence.md#7-decision-ledger)). The skew clause reads the tree `reporoot.Resolve` answers, as `check`'s default resolver does. `yolo host apply` does not run it: that verb starts no loophole and opens no doorway, so a claim changes nothing it writes. *Reversed on review the day it was written*: this row first said `yolo host` was not covered, because a loophole runs there only as a doorway a profile asks for. That left two dispositions for one finding at two notches, which NC-D1 rules out, and `check`'s *"The launch refuses this."* false of `yolo host`. Why it has one answer: one code path per concern, the notch as an input | 2026-09-30 | [§4.4](#44-a-supersession-that-matches-nothing) |
+| `OQ-RM1` | *Decided as an implementation choice, reversible ([RM-D1](#RM-D1)).* **`yolo check`'s severity for a launch-only check is the launch's own:** where the launch refuses, `check` shows `[FAIL]` and exits non-zero, as it already does for the capability and protocol-pairing gates. So the supersession row turns `[FAIL]` in the change that makes the launch refuse it, and `yolo loopholes list` and `status` keep only reporting | 2026-09-30 | [§5](#5-where-each-check-lands-and-why-not-somewhere-else) |
+| `OQ-RM3` | *Decided as an implementation choice, reversible ([RM-D2](#RM-D2)).* **The skew clause takes its two hashes from the source-skew gate's own verdict, `version.SourceSkew` (the binary's commit and the checkout's `HEAD`, compared through git), asked only once a reference has failed to match; no nix eval runs.** The image no longer carries yolo, so its identity cannot explain an unmatched supersession; a host `yolo` older than its source can. Lazy, and off the happy path, as leaned | 2026-09-30 | [§4.6](#46-skew-your-image-is-older-than-your-tree) |

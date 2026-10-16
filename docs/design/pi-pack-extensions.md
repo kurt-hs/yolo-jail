@@ -61,7 +61,7 @@ is in `packdecl`.
    not, which is the other way round. The pack resolver ships (`internal/packsrc` +
    `packs.lock.json`), but it resolves packs, not Pi packages; the materializer, a pack-declared
    `refresh` running `pi update --extensions`, shipped 2026-09-25, and nothing in yolo resolves a Pi
-   package's version yet ([`OQ-2`](pi-extension-lifecycle.md#OQ-2) there).
+   package's version yet ([`OQ-2`](pi-extension-lifecycle.md#7-decision-ledger) there).
 7. **`claude_plugins` is retired**, and nothing like it replaces it — no agent-named hook:
    deliver plugin trees locally, decompose them, or author one YOLO-owned Agent Plugins 1.0
    plugin rather than calling `claude plugins install`. ✅ **Built 2026-09-20**: the hook and

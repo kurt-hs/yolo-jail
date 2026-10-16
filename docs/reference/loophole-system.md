@@ -474,7 +474,7 @@ embedded manifest to that matrix in the short suite, so a build no release produ
 before it can ship.
 
 **Between two releases, main pins its own build** of each official program
-([`OQ-BP7`](../design/broker-as-a-pack.md#OQ-BP7), ruled 2026-10-05), while each url still names
+([`OQ-BP7`](../design/broker-as-a-pack.md#decision-ledger), ruled 2026-10-05), while each url still names
 the last release. `just check-ci` rebuilds every build and refuses a digest the tree no longer
 produces, naming `just pin-pack-binaries`, which with no version re-pins the digests and keeps
 the urls. A from-source `just install` builds this machine's builds from the tree and seeds them

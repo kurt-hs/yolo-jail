@@ -69,11 +69,11 @@ shared credential fresh when **no jail is running**. That is a lifetime problem,
 locking one, and [OQ-HD9](#OQ-HD9), ruled 2026-10-15, accepts the cost: nothing refreshes
 while no jail runs, and the next launch takes the refresh as an at-launch catch-up.
 
-**Needs your ruling:** nothing. [OQ-HD4](#OQ-HD4), the reclaimer's hard kill, was ruled in review on 2026-10-15: no graceful stop, and the request-scoped-forwarder property becomes a requirement on jail daemons. [OQ-HD5](#OQ-HD5), silent mid-session death, was ruled the same day: report it, and the spawning yolo restarts the daemon, bounded. [OQ-HD9](#OQ-HD9), who keeps the shared credential fresh with no jail running, was ruled in review on 2026-10-15: an at-launch catch-up refresh, and no timer. [OQ-HD11](#OQ-HD11), whether a launch restarts a singleton older than the yolo launching it, was ruled in review on 2026-10-05: no, and the launch refuses instead. [OQ-HD10](#OQ-HD10), what serializes spawn on macos-user, was answered from its measurements on 2026-10-05 ([`HD-D4`](#HD-D4)), not by a ruling.
+**Needs your ruling:** nothing. [OQ-HD4](#OQ-HD4), the reclaimer's hard kill, was ruled in review on 2026-10-15: no graceful stop, and the request-scoped-forwarder property becomes a requirement on jail daemons. [OQ-HD5](#OQ-HD5), silent mid-session death, was ruled the same day: report it, and the spawning yolo restarts the daemon, bounded. [OQ-HD9](#OQ-HD9), who keeps the shared credential fresh with no jail running, was ruled in review on 2026-10-15: an at-launch catch-up refresh, and no timer. [OQ-HD11](#11-decision-ledger), whether a launch restarts a singleton older than the yolo launching it, was ruled in review on 2026-10-05: no, and the launch refuses instead. [OQ-HD10](#11-decision-ledger), what serializes spawn on macos-user, was answered from its measurements on 2026-10-05 ([`HD-D4`](#HD-D4)), not by a ruling.
 
 **Reads with:** [`host-daemon-ownership-plan.md`](host-daemon-ownership-plan.md) (the
 implementation sketch, pruned against the tree on 2026-10-01: what the spawn flock covers today,
-which [OQ-HD10](#OQ-HD10) has to answer for, and the spawn sites the ruling reworks — still not a
+which [OQ-HD10](#11-decision-ledger) has to answer for, and the spawn sites the ruling reworks — still not a
 plan),
 [`../reference/loophole-transport.md`](../reference/loophole-transport.md) (**the
 authority** for `scope`, the ensure-under-flock model, the teardown asymmetry and the
@@ -247,7 +247,7 @@ otherwise, and completing it leaves the next jail warm.
 
 **Nothing reaps the straggler.** It finishes its work and exits on its own, and the window
 is bounded by that same thirty-second deadline. No pgrep-by-argv, no PID file to hunt, no
-`/proc` walk. A reaper here would be all of the cost of [OQ-HD6](#OQ-HD6) with none of its
+`/proc` walk. A reaper here would be all of the cost of [OQ-HD6](#11-decision-ledger) with none of its
 motive.
 
 **The residual worry is a process stuck holding the flock forever, and per-jail does not
@@ -270,7 +270,7 @@ it did not handle.
 | :--- | :--- | :--- |
 | **Correctness:** draining on `SIGTERM` needs a grace exceeding the thirty-second upstream timeout, so jail exits would hang | Do not drain — **detach**. The mid-flight refresh was going to be interrupted anyway, and one that lands late still writes the shared file, which is the desirable outcome | **Answered** ([§1.3](#13-the-disposition-detach-do-not-drain-do-not-reap)) |
 | **Operability:** an orphan whose socket was unlinked can only be found by pgrep-by-argv | Do not reap it. A detached helper finishes and exits; the window is the upstream deadline. The stuck-flock risk is not increased by per-jail, and its singleton form is worse | **Answered** ([§1.3](#13-the-disposition-detach-do-not-drain-do-not-reap)) |
-| **Scope:** the spawn flock (`paths.HostSingletonLock`, guarding socket ownership and process identity) is a **different lock** from the refresh flock. Deleting `ScopeHost` leaves nothing serializing spawn on macos-user, where per-jail identity is really per-**workspace** | **Not answered by the ruling.** It narrows — two launches on one workspace already share the home overlay and the `.yolo/` state dir, so this is the sharing that already exists there rather than a new class — but narrowing is not answering. The Mac runs answered it: the spawn flock is load-bearing there, so per-jail owes macos-user a per-workspace spawn guard | **Answered 2026-10-05 from its measurements: [OQ-HD10](#OQ-HD10), [`HD-D4`](#HD-D4)** |
+| **Scope:** the spawn flock (`paths.HostSingletonLock`, guarding socket ownership and process identity) is a **different lock** from the refresh flock. Deleting `ScopeHost` leaves nothing serializing spawn on macos-user, where per-jail identity is really per-**workspace** | **Not answered by the ruling.** It narrows — two launches on one workspace already share the home overlay and the `.yolo/` state dir, so this is the sharing that already exists there rather than a new class — but narrowing is not answering. The Mac runs answered it: the spawn flock is load-bearing there, so per-jail owes macos-user a per-workspace spawn guard | **Answered 2026-10-05 from its measurements: [OQ-HD10](#11-decision-ledger), [`HD-D4`](#HD-D4)** |
 
 VERIFIED for that third row, 2026-09-20: `macosuser.cnameFor` is `cnameFn`, which defaults
 to `runtime.FromWorkspace`; `FromWorkspace` resolves the path and hands it to
@@ -289,7 +289,7 @@ answer, and both are in the same comment: the lock is taken around a launch's **
 around a daemon's life, and a lock it cannot take **warns and returns a no-op release**,
 because "a workspace lock is a courtesy against a self-inflicted race and not a safety
 property worth refusing a launch over". A courtesy lock is a different object from
-`paths.HostSingletonLock`, which owns a socket. [OQ-HD10](#OQ-HD10).
+`paths.HostSingletonLock`, which owns a socket. [OQ-HD10](#11-decision-ledger).
 
 ⚠ **The prelude grew on 2026-09-26**, after this section was written. The lock used to be
 taken around provisioning alone. It is now taken before pack staging, because of a staging
@@ -467,19 +467,19 @@ Two residues worth naming, because a reader will otherwise assume they vanished:
 - **Per-jail identity is per-workspace-path, not per-launch.** `runtime.FromResolved`'s
   frozen contract hashes the resolved workspace path, so two launches on one workspace
   share a name — and on macos-user that is the identity a daemon would be keyed by.
-  [OQ-HD10](#OQ-HD10). ⚠ Since [`HD-D1`](#HD-D1) (2026-09-27) a macos-user session's
+  [OQ-HD10](#11-decision-ledger). ⚠ Since [`HD-D1`](#HD-D1) (2026-09-27) a macos-user session's
   per-jail sockets are keyed by its own host-services dir instead, which
-  [OQ-HD10](#OQ-HD10)'s note of 2026-10-01 records.
+  [OQ-HD10](#11-decision-ledger)'s note of 2026-10-01 records.
 - **`/tmp`-collision between two users on one host** stops applying to the *name-keyed*
   paths, since per-jail paths already carry a hash of the workspace. It does not stop
   applying to two users launching the **same workspace path**, and it never applied to the
   state dir, which is under each user's `$HOME` already. That is the surviving fragment of
-  the old [OQ-HD8](#OQ-HD8), and it belongs to [OQ-HD10](#OQ-HD10) now.
+  the old [OQ-HD8](#11-decision-ledger), and it belongs to [OQ-HD10](#11-decision-ledger) now.
 
 ### The spawn flock on macos-user, measured
 
-This is [OQ-HD10](#OQ-HD10)'s background, kept here so the question stays short. "This
-question" below means [OQ-HD10](#OQ-HD10), and "the leaning" means its leaning.
+This is [OQ-HD10](#11-decision-ledger)'s background, kept here so the question stays short. "This
+question" below means [OQ-HD10](#11-decision-ledger), and "the leaning" means its leaning.
 
 The spawn flock (`paths.HostSingletonLock`) is a **different lock** from the refresh flock
 [§1.1](#11-the-premise-the-scope-was-built-on-is-false) is about: it guards socket
@@ -623,7 +623,7 @@ path. The spawn flock is still the only lock on the OpenAI legacy-state migratio
 (`PrepareLocked`), and `yolo host -- codex`, `yolo host -- pi` and `yolo openai-auth` still
 ensure the OpenAI daemon at its machine-wide name, with no jail to key a per-jail one by.
 [The plan](host-daemon-ownership-plan.md#what-the-spawn-flock-covers-today) lists
-what the flock covers, row by row. [OQ-HD10](#OQ-HD10)'s leaning is unchanged.
+what the flock covers, row by row. [OQ-HD10](#11-decision-ledger)'s leaning is unchanged.
 
 **ANSWERED 2026-10-05, by these measurements under the leaning ([`HD-D4`](#HD-D4)).** The leaning
 said what each outcome would mean: if two concurrent launches of one workspace already collided,
@@ -652,14 +652,14 @@ it is kept and re-aimed rather than deleted. The claim, unchanged:
 daemon is spawned by the launch that uses it, so the `yolo` that talks to a daemon is the
 `yolo` that started it: **one build, by construction**. There is no second build for a
 version to tell apart, no path at which two builds meet, and therefore no version to put
-anywhere. The old [OQ-HD1](#OQ-HD1) — *should a daemon rendezvous carry a version?* — has
+anywhere. The old [OQ-HD1](#11-decision-ledger) — *should a daemon rendezvous carry a version?* — has
 no subject left.
 
 That is also why the alternative was worse. A wire-contract generation in the rendezvous
 path would have made the incompatible pair unrepresentable, which is the shape this repo
 prefers; but it does so by **multiplying daemons on purpose** across every upgrade, with
 nothing to reap the ones it strands. That is the singleton's own defect, compounded, which
-is why [OQ-HD1](#OQ-HD1) was blocked on [OQ-HD6](#OQ-HD6) and why both dissolve together.
+is why [OQ-HD1](#11-decision-ledger) was blocked on [OQ-HD6](#11-decision-ledger) and why both dissolve together.
 
 ### Testing it (true of the singleton; history)
 
@@ -862,7 +862,7 @@ Built 2026-10-06; what each row became is in [`HD-D12`](#HD-D12) and [`HD-D13`](
 | Apple Container | **OpenAI broker only** (an explicit allow filter) | yes |
 | macos-user | all enabled — no filter | **none**; no `yolo-jaild` is built for darwin |
 
-macos-user is the interesting row, and it is where [OQ-HD10](#OQ-HD10) lives: it takes the
+macos-user is the interesting row, and it is where [OQ-HD10](#11-decision-ledger) lives: it takes the
 full host half and none of the jail half, so "the host side has no supervisor" is the
 *entire* supervision story there — and under the ruling it is also the backend where
 "per-jail" means per-workspace-path
@@ -959,7 +959,7 @@ for the OpenAI daemon on a different predicate
 
 **Under the ruling both modes stop being representable, and so does the divergence between
 those two branches** — there is no live daemon of another build to kill or to spare, so the
-question of which to do has no occasion. That is what dissolves [OQ-HD3](#OQ-HD3).
+question of which to do has no occasion. That is what dissolves [OQ-HD3](#11-decision-ledger).
 
 **The residue is real and is worth naming, because it is the sharing the ruling keeps.** Two
 builds' daemons still read and write **one credentials file** and contend for **one flock**.
@@ -970,7 +970,7 @@ in [§9](#9-what-this-doc-does-not-cover) so the next reader does not mistake th
 claim that all version skew went away.
 
 <a id="oq-hd11-background"></a>**The same skew reaches the launch check, and
-[OQ-HD11](#OQ-HD11) asks whether the launch restarts it.** On 2026-10-05 the maintainer's first
+[OQ-HD11](#11-decision-ledger) asks whether the launch restarts it.** On 2026-10-05 the maintainer's first
 fresh launch of a patched fork found the `aws-auth` singleton older than the yolo launching it:
 its [launch check](../reference/loophole-protocol.md#the-launch-check) answered
 `unknown action: launch-check`, and the launch printed that the host-wide daemon predates this
@@ -986,7 +986,7 @@ yolo to make a safe, cheap, undoable fix itself and say so. Nothing records whic
 singleton today ([§4](#4-the-version-boundary-that-is-not-there-and-why-it-stops-applying-here)),
 so "older" is known only from the one historical break the launch check's answer shows. Under
 [`HD-R1`](#HD-R1) the question dissolves with the singleton. **Ruled 2026-10-05**
-([OQ-HD11](#OQ-HD11)): no launch restarts it, and the line naming the command becomes a refusal.
+([OQ-HD11](#11-decision-ledger)): no launch restarts it, and the line naming the command becomes a refusal.
 Built the same day, with one fact now recorded at spawn, so that "older" is read from a record
 rather than from the answer alone ([`HD-D20`](#HD-D20)). HD-R1's build left the refusal one
 host-wide daemon to meet, an older yolo's copy still running; it refused for that copy being
@@ -994,13 +994,13 @@ alive at all ([`HD-D21`](#HD-D21)) until the owner's coexistence call of 2026-10
 launch proceeds beside it and names it in one line ([`HD-D26`](#HD-D26)).
 
 <a id="oq-hd11-context"></a>**Old jails and fixed ports: the maintainer's context for
-[OQ-HD11](#OQ-HD11), 2026-10-05, not a ruling.** *"didn't we talk about this at some point? we
+[OQ-HD11](#11-decision-ledger), 2026-10-05, not a ruling.** *"didn't we talk about this at some point? we
 don't want to break old jails. but maybe that's not always possible for things that need fixed
 ports?"* Both halves have answers already:
 
 - **We did.** [`HD-R1`](#HD-R1), ruled 2026-09-20, is how old jails stay untouched: every jail
   gets its own host daemons, started and ended with it, so a newer yolo never touches a daemon an
-  older jail is using. Its build waited on [OQ-HD10](#OQ-HD10)'s answer, which [`HD-D4`](#HD-D4)
+  older jail is using. Its build waited on [OQ-HD10](#11-decision-ledger)'s answer, which [`HD-D4`](#HD-D4)
   now gives; [OQ-HD9](#OQ-HD9), ruled 2026-10-15, gives it an at-launch catch-up refresh and no timer.
 - **Fixed ports are not the obstacle.** The fixed in-jail ports are already per jail. A jail with
   a network of its own binds the declared `127.0.0.1:1460` and `127.0.0.1:1461` on its own
@@ -1027,7 +1027,7 @@ a host without `claude` installed "is idle until a jail asks it for a token", wh
 state rather than ruling on it.
 
 **Under the ruling this is not representable**: a daemon ends with the jail that asked for
-it. That is what dissolves [OQ-HD6](#OQ-HD6) — the reaper question had no good predicate
+it. That is what dissolves [OQ-HD6](#11-decision-ledger) — the reaper question had no good predicate
 *because* the daemon outlived every party who knew whether it was wanted, and now the party
 who knows is the one holding the process handle.
 
@@ -1228,7 +1228,7 @@ the ruling, so this table is now a record of what the growth cost, not a list of
 **The population question dissolves, and all three corrections have to be undone.** A retired `scope` means there is no host-wide set to enumerate: a pack declaring a
 host daemon declares an ordinary per-jail one, whose cost is the cost the tree already
 prices — a process for the life of a jail, a per-jail socket, a shared log, a front. That is
-what dissolves [OQ-HD7](#OQ-HD7): "may a pack declare `scope: "host"` freely?" has no
+what dissolves [OQ-HD7](#11-decision-ledger): "may a pack declare `scope: "host"` freely?" has no
 subject once the key is gone. The 2026-09-20 corrections describe the built tree and are
 right until this is built. ⚠ **Whoever builds it must revert them in the same change**: the
 USER_GUIDE's host-scope exemption, the loopholes guide's `host_daemon.scope` section and the
@@ -1257,7 +1257,7 @@ retiring `scope: "host"` removes one instance of it rather than the shape.
   promises a jail. [`OQ-HD2`](#11-decision-ledger) was the *management-surface* half — what a
   human can type — and deliberately did not decide it.
 - **Whether a fetched pack may ship a host daemon binary** — that is
-  [`OQ-BP6`](broker-as-a-pack.md#OQ-BP6)'s, answered 2026-09-30: yes, disclosed.
+  [`OQ-BP6`](broker-as-a-pack.md#decision-ledger)'s, answered 2026-09-30: yes, disclosed.
 - **What each loophole does, or whether it should exist.** Nothing here argues three
   credential daemons is too many.
 - **The in-jail halves' design.** The OAuth terminator and the two adapters are jail daemons;

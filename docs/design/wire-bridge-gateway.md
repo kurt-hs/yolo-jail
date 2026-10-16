@@ -70,7 +70,7 @@ from their installed client sources, and oh-omp's from its published package
   a separate matter, which [OQ-CN6](../reference/providers.md#oq-cn6) decides. Converse is built
   2026-10-08 ([WG-I48](#WG-I48), [WG-I49](#WG-I49)): pi's row sits under yolo's own provider key,
   off pi's built-in `amazon-bedrock` as
-  [`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#OQ-3) ruled, which pi's
+  [`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) ruled, which pi's
   source shows pi dispatches to its Converse client. Its bearer is the bridge's caller token
   rather than `local` ([WG-I36](#WG-I36)'s amendment).
 
@@ -970,8 +970,8 @@ track holds the ids from 10:
     `openai-auth`'s access-token view, which is neither a declared key nor SigV4. So the route
     would forward unauthenticated requests to the subscription backend. Every agent that speaks
     it implements it natively, and no derive re-points it
-    ([`pi-codex-provider-shadowing.md` OQ-2](pi-codex-provider-shadowing.md#OQ-2)). The name,
-    not a flag, follows that doc's [OQ-1](pi-codex-provider-shadowing.md#OQ-1). Whether codex's
+    ([`pi-codex-provider-shadowing.md` OQ-2](pi-codex-provider-shadowing.md#10-decision-ledger)). The name,
+    not a flag, follows that doc's [OQ-1](pi-codex-provider-shadowing.md#10-decision-ledger). Whether codex's
     subscription should ride the bridge at all is Part 4's kind of question, not this build's.
 12. <a id="WG-I22"></a>**[WG-I22](#WG-I22)** — **codex's via row names no `env_key`.** The bridge
     holds the provider's key and drops an inbound `Authorization` ([WG-I5](#WG-I5)). codex 0.157.0
@@ -1138,7 +1138,7 @@ concurrent track's:
     picked, and the host half serves the via routes from its input, signing with what the launch
     hands it for the routed agent ([HS-D32](host-notch-services.md#HS-D32)). **Where it stays
     inert:** `yolo host env`, `yolo host apply` and the footer, none of which owns a process the
-    service could live beside ([OQ-HS3](host-notch-services.md#OQ-HS3)), and `yolo host --` for an
+    service could live beside ([OQ-HS3](host-notch-services.md#11-decision-ledger)), and `yolo host --` for an
     agent whose derived config FILE carries the via (pi, opencode, oh-omp, codex), since a host
     launch renders no per-launch file ([HS-D31](host-notch-services.md#HS-D31)); that agent keeps
     its own client and the launch names why. claude and copilot, which ride the adapter address
@@ -1155,7 +1155,7 @@ concurrent track's:
 - ~~Part 5's allowlist~~: built 2026-09-30 ([§6.1](#61-how-the-allowlist-is-built)).
 - ~~The Converse pass-through route, pi's.~~ Built 2026-10-08 ([WG-I48](#WG-I48),
   [WG-I49](#WG-I49)): pi's row sits under yolo's own provider key, off pi's built-in
-  `amazon-bedrock` ([`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#OQ-3)),
+  `amazon-bedrock` ([`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger)),
   and speaks Converse to its via route, which signs and passes it through. Read from pi 1.0.4's
   source; no pi turn has crossed it.
 - ~~A Bedrock provider named by region alone gets no via route.~~ It does since 2026-09-30: its one
@@ -1651,7 +1651,7 @@ None is open. Every ruling, with the questions moved here from
    > only the bridge signs. (c) would reverse [OQ-WG5](#OQ-WG5)'s "Converse included", and (a)
    > leaves pi's client signing with the credential where only the bridge needs it, against
    > [OQ-BR4](../reference/providers.md#oq-br4)'s *"as specific as possible"*. Where the row
-   > lives is [`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#OQ-3)'s: its
+   > lives is [`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger)'s: its
    > broad reading would move it off pi's built-in `amazon-bedrock` key, and the placeholder works
    > the same under either key. Recorded 2026-09-30.
 
@@ -1751,11 +1751,11 @@ provider declares no endpoint. A Converse path names the model, and an inference
 carries an encoded `/`, which the via mux decodes today, so the Converse route must forward the
 path as the agent encoded it. And the re-pointing lives in pi's derive, as a `baseUrl` on pi's
 built-in `amazon-bedrock` provider. Whether that override counts as a catalog entry under
-[`pi-codex-provider-shadowing.md` OQ-2](pi-codex-provider-shadowing.md#OQ-2)'s rule is for that
+[`pi-codex-provider-shadowing.md` OQ-2](pi-codex-provider-shadowing.md#10-decision-ledger)'s rule is for that
 doc to say, and the override keeps pi's own Converse client.
 
 ⚠ **Superseded on the row's key, 2026-10-05 and 2026-10-08.**
-[`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#OQ-3) ruled the row off
+[`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) ruled the row off
 `amazon-bedrock`, and it is built under yolo's own provider key with
 `api: "bedrock-converse-stream"`, which pi dispatches to the same Converse client with no
 built-in provider behind it ([WG-I49](#WG-I49)). The path is forwarded re-encoded from the id

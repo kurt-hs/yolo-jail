@@ -726,7 +726,7 @@ that writes a launch's environment for one notch or backend. There are three:
     [`host-notch-services.md`](../design/host-notch-services.md)). The launch-chosen port
     overrides the manifest's and a user's `adapters` override. `yolo host env` refuses such a
     profile, naming the `yolo host --` spelling, because an environment script owns no process
-    for the bridge to live beside ([OQ-HS3](../design/host-notch-services.md#OQ-HS3)). A
+    for the bridge to live beside ([OQ-HS3](../design/host-notch-services.md#11-decision-ledger)). A
     bridge this launch cannot start refuses, naming why and the container jail where the profile
     works ([HS-D5](../design/host-notch-services.md#HS-D5)). Copilot, which also speaks openai,
     still runs on cerebras's own endpoint, and starts no bridge.
@@ -1308,7 +1308,7 @@ shape, but the agent's built-in Bedrock provider ([the shipped Bedrock provider]
 <a id="a-provider-the-agent-has-built-in"></a>**A provider the agent has built in** is the other
 exception, for pi, oh-omp and opencode: yolo writes it no model entry, and the agent uses its own
 client, address and model list
-([OQ-3](../design/pi-codex-provider-shadowing.md#OQ-3), ruled and built 2026-10-05). A *built-in
+([OQ-3](../design/pi-codex-provider-shadowing.md#10-decision-ledger), ruled and built 2026-10-05). A *built-in
 provider* is that design's term: one the agent ships its own client and list for, under its own
 key. Each agent pack names them in its program's `built_in_providers`
 (`internal/packdecl/builtinproviders.go`), and core hands the answer to every derive as
@@ -1618,7 +1618,7 @@ fact, and core checks only that it is an object.
 
 `base` names the pi **catalog** model the row inherits from, and it is what keeps a variant id
 from losing facts pi already publishes. `openrouter` is one of pi's own providers, so yolo
-writes no `models.json` row for it ([OQ-3](../design/pi-codex-provider-shadowing.md#OQ-3), which
+writes no `models.json` row for it ([OQ-3](../design/pi-codex-provider-shadowing.md#10-decision-ledger), which
 is also why the `:floor` and `:nitro` ids carry no facts of their own in the example). Instead
 packs/pi renders a **model list** for a provider whose rows carry routing, and its extension
 registers that list with pi's `registerProvider` — the same channel a pack's `only` uses, which
