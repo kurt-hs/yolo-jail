@@ -216,7 +216,7 @@ func TestARefusingProbeStopsTheLaunchAndStillSweepsTheSession(t *testing.T) {
 	key := launchedSessionKey(t, rec, probeWS)
 	joined := strings.Join(rec, "\n")
 	for _, f := range []string{SandboxEnvFile(key, ""), SandboxDaemonEnvFile(key, "")} {
-		if !strings.Contains(joined, "run:sudo "+rmBin+" -f "+f) {
+		if !strings.Contains(joined, "run:"+rmBin+" -f "+f) {
 			t.Errorf("%s is not swept after the refusal:\n%s", f, joined)
 		}
 	}

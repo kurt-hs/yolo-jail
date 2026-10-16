@@ -750,7 +750,7 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 			return 1
 		}
 	}
-	if !deps.InstallRootFile(plan.ProfilePath, plan.Seatbelt, "0444") {
+	if !deps.WriteHostFile(plan.ProfilePath, plan.Seatbelt, 0o444) {
 		out.printf("[bold red]Could not write the capture Seatbelt profile %s[/bold red]",
 			plan.ProfilePath)
 		return 1

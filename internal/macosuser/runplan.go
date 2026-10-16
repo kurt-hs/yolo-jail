@@ -108,13 +108,13 @@ type RunPlan struct {
 	// that started no host service, and then it costs nothing.
 	ProbeArgv []string
 	// DaemonEnvFile is the supervisor's own env file, beside EnvFile and delivered the same
-	// way (root-owned 0600 in the 0700 env dir, one `user:` read ACE for the sandbox
+	// way (host-owned 0600 in the 0700 env dir, one `user:` read ACE for the sandbox
 	// account); DaemonEnvFileContent is what to write. Both "" with no daemon.
 	// DaemonEnvRemoveCommands sweep it when the session ends.
 	DaemonEnvFile           string
 	DaemonEnvFileContent    string
 	DaemonEnvRemoveCommands [][]string
-	// EnvFile is the per-session, root-owned 0600 file carrying everything this launch
+	// EnvFile is the per-session, host-owned 0600 file carrying everything this launch
 	// COMPOSED — git identity, TERM, the profile/provider channel, the hydrated
 	// env_sources. The three sandboxed argvs above name it and read it; none of them
 	// carries its values (envfile.go states why, and PlanInvariants checks it).

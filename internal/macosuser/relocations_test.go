@@ -340,13 +340,13 @@ func TestTheLaunchProbesEachRelocationTargetBeforeTheAgent(t *testing.T) {
 	preflight := idx(func(r string) bool {
 		return r == "run:/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env "+testBin+" -w "+sharedReloc.Target
 	})
-	install := idx(func(r string) bool { return strings.HasPrefix(r, "install:") && strings.HasSuffix(r, ".sb") })
+	install := idx(func(r string) bool { return strings.HasPrefix(r, "write:") && strings.HasSuffix(r, ".sb") })
 	write := idx(func(r string) bool {
 		return strings.HasPrefix(r, "run:/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env -i") &&
 			strings.Contains(r, "/usr/bin/sandbox-exec -f ") &&
 			strings.Contains(r, sharedReloc.Target+"/.yolo-relocation-probe-")
 	})
-	stage := idx(func(r string) bool { return strings.HasPrefix(r, "run:sudo "+mkdirBin+" -p ") })
+	stage := idx(func(r string) bool { return strings.HasPrefix(r, "run:"+mkdirBin+" -p ") })
 	agent := idx(func(r string) bool { return strings.HasPrefix(r, "proxy:") })
 	materialize := idx(func(r string) bool { return strings.HasPrefix(r, "materialize:") })
 	if preflight < 0 || materialize < 0 || install < 0 || write < 0 || stage < 0 || agent < 0 ||
