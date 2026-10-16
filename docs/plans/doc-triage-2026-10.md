@@ -110,12 +110,6 @@ content moves into a reference doc under `docs/reference/`, and the design doc i
 
 ### D. Questions the graduations turned up
 
-#### 15. Is the recorded reading of "if a build fails, of course that's fatal" right? ([OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3))
-- **Why:** the ruling was recorded with a "recorder's reading, for the maintainer to confirm" that nobody confirmed: only a launch with **no** good build of a patched extension is refused; a newer build that fails while the last good one still works keeps serving it, with a warning.
-- **Example:** you edit your pi patch, the rebuild fails, and the jail starts on yesterday's build with a warning instead of refusing.
-- **What changes:** confirming changes nothing (it is built that way). "Every failure is fatal" means a typo in a patch blocks the agent until you fix it.
-- **My opinion:** confirm the reading.
-
 #### 16. Are the pi extension's known gaps acceptable for the active provider set? ([§3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close))
 - **Why:** the doc's own `next` asks for your review before it graduates. The extension that keeps pi on the selected providers cannot stop: pi reading (and refreshing) a blocked provider's saved login; a `models.json` row's `!command` running before the block; `pi --no-extensions` and pi-subagents' external runners; `pi auth …` and `pi update models`; a pi older than 0.81.0.
 - **What changes:** "acceptable" means these are written down as known gaps and the doc graduates into [`providers.md`](../reference/providers.md). "Must close" means patching pi itself.

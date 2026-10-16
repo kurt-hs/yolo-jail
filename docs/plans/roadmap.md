@@ -60,8 +60,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 
 1. [Finish the patched-fork mode's verification](../reference/patched-forks.md#14-unbuilt-and-unmeasured), with
    [its pi-extension companion](../reference/pi-extensions.md#16-unbuilt-and-unmeasured) — the compatibility
-   release is published; keep the remaining verification ahead of dependent work, and the maintainer's
-   confirmation of [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3)'s recorded reading. Beside it: [the build line shown by its
+   release is published; keep the remaining verification ahead of dependent work, and build [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3)'s 2026-10-16 ruling (no automatic fallback to an older build). Beside it: [the build line shown by its
    digest](../reference/report-tiers.md#why-its-this-way), built 2026-10-08 with `yolo pack status`; [whether a Mac fork build
    installs its base's `node_floor` first](../design/forked-programs-as-packs.md#OQ-FP11); his test with the migration kit.
 2. [Per-jail host daemons (HD-R1)](../design/host-daemon-ownership.md) — brought up to date with main and finished on
@@ -406,7 +405,7 @@ The ruling set, in the order it unblocks work:
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
-- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11), [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3) — the two open patched-fork rulings (item 1); [OQ-PFK5](../reference/patched-forks.md#why-its-this-way), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) are ruled
+- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11) — the open patched-fork ruling (item 1); [OQ-PFK5](../reference/patched-forks.md#why-its-this-way), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) are ruled
 - The W1(e) `yolo run` progress golden sign-off (item 32)
 
 Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 27, 28, 29, 34, 35 and 36.

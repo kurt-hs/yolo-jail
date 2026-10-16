@@ -723,6 +723,14 @@ retried at every launch, with nothing printed. Give the gc a shorter budget, or 
 `Sync`'s gc call (used by `yolo pack install` for forks) also has no test, and the comment above
 `Sync` wrongly says no production path calls it.
 
+### <a id="broker-signal-gaps"></a>🔧 **Two small signal-order gaps in the host brokers**
+
+The github broker copies the host's `hosts.yml` into its run directory before it installs its
+SIGTERM handler, so a SIGTERM in that moment leaves the copy until the next broker's sweep removes
+it. The Claude broker removes its `--end-with-pid` socket before an in-flight refresh finishes,
+where the OpenAI broker deliberately removes it after. Found 2026-10-16 by the review of the
+Claude broker's SIGTERM-order fix.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
