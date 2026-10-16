@@ -1316,8 +1316,8 @@ Two smaller things are left, and neither is the original worry. The refusal live
 pipeline**, so it stops a launch rather than failing `yolo check`, whose `host_files` validation is
 the config-time one — shape, scope and the embedded-pack reservations — and never a comparison
 against the loaded packs' surfaces. And it compares against CONFIG surfaces only, so a destination aimed inside a pack's composed
-*skills* tree is matched by nothing ([`synced-skill-trees.md`](synced-skill-trees.md#9-alternatives-considered)
-reaches the same gap from the other side). [§3](#3-the-design-inside-yolo) must not make either
+*skills* tree is matched by nothing (the synced skill trees design, now deleted, reached the same
+gap from the other side; what it built is [`pack-system.md`'s reserved children](../reference/pack-system.md#skills)). [§3](#3-the-design-inside-yolo) must not make either
 worse; it should not try to fix them either.
 
 **✅ 9.7 — FIXED (verified 2026-08-23; it gets packs now). macos-user is the existing host-shaped target, and it currently gets no packs at all.**
