@@ -635,6 +635,7 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 		}
 	}
 	lift, next, cleared := agentcfg.ApplySelectionReport(selection, fileObj, selectionRecord, hostOwned)
+	lift = dropKeptAtProviderKeys(lift, next, contribs.providerKeyLeaves())
 	if len(lift) > 0 {
 		computed = mergeSurfaceRoot(computed, lift)
 	}
@@ -669,6 +670,35 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 	return &statefulRender{surface: surface, path: surfacePath, current: current,
 		out: out, selection: selectionRecord, header: t.GeneratedHeader(surface),
 		overlayBefore: overlayJSON}, nil
+}
+
+// dropKeptAtProviderKeys is lift without every KEPT value (one the selection keeps as the user's,
+// so the record does not hold it) at a top-level provider key this render drops
+// (providerKeyLeaves): lifted, it would sit in the computed layer, beyond the drop's reach, and a
+// Bedrock-only `/model` pick would survive claude leaving Bedrock
+// (docs/design/model-lists-and-pickers.md MM-D44). Omitted, the value falls through to the
+// captured overlay, where the provider-key drop removes it and says so. A value the selection
+// wrote stands: the selection is the provider's own voice at the key.
+func dropKeptAtProviderKeys(lift, next map[string]any, owned []agentcfg.OwnedLeaf) map[string]any {
+	if len(lift) == 0 || len(owned) == 0 {
+		return lift
+	}
+	for k, v := range lift {
+		if wrote, ok := next[k]; ok && sameJSON(wrote, v) {
+			continue
+		}
+		for _, leaf := range owned {
+			if steps, err := jsonptr.Parse(leaf.Pointer); err != nil || len(steps) != 1 || steps[0] != k {
+				continue
+			}
+			s, isString := v.(string)
+			if leaf.Matches == nil || (isString && leaf.Matches.MatchString(s)) {
+				delete(lift, k)
+				break
+			}
+		}
+	}
+	return lift
 }
 
 // persistStatefulSurface writes what composeStatefulSurface decided: the surface file, the

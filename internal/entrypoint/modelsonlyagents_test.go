@@ -366,8 +366,9 @@ func TestOpencodeWhitelistsANarrowedListOnItsOwnBedrockClient(t *testing.T) {
 	}
 }
 
-// NO WHITELIST FOR A LIST NO `only` NARROWED: what an `add` does to opencode's own catalog is
-// OQ-MM1's, and a list with no `only` refuses nothing on a gateway serving more (OQ-MM3, ruled).
+// NO WHITELIST FOR A LIST NO `only` NARROWED: an `add` sits beside opencode's own catalog
+// (OQ-MM1), and a list with no `only` refuses nothing on a gateway serving more (OQ-MM3), both
+// ruled 2026-10-15.
 func TestOpencodeWritesNoWhitelistForAnUnnarrowedList(t *testing.T) {
 	r := newPioencodeRender(t, zaiReachableJSON)
 	r.render(t, `{"opencode":"zhipu"}`)
@@ -598,7 +599,7 @@ func TestPiRegistersNoNarrowedListItCannotUse(t *testing.T) {
 }
 
 // A LIST NO `only` NARROWED GIVES PI NOTHING TO REGISTER: it stays a models.json row beside pi's
-// own catalog (what an `add` does to that catalog is OQ-MM1's), and the scope stays as before.
+// own catalog (an `add` sits beside that catalog, OQ-MM1), and the scope stays as before.
 func TestPiRegistersNothingForAnUnnarrowedList(t *testing.T) {
 	r := newPioencodeRender(t, zaiReachableJSON)
 	r.render(t, `{"pi":"zhipu"}`)
