@@ -46,8 +46,8 @@ func newOrdinaryNoFallback(t *testing.T) *ordinaryNoFallback {
 }
 
 // launch runs `yolo run [args] -- probe` through the front door and returns what this launch's
-// preparation delivered, its error and what it printed.
-func (x *ordinaryNoFallback) launch(t *testing.T, args ...string) (map[string]entrypoint.ProgramCaptureDelivery, error, string) {
+// preparation delivered, what it printed and its error.
+func (x *ordinaryNoFallback) launch(t *testing.T, args ...string) (map[string]entrypoint.ProgramCaptureDelivery, string, error) {
 	t.Helper()
 	old := launchRunPipeline
 	t.Cleanup(func() { launchRunPipeline = old })
@@ -68,13 +68,13 @@ func (x *ordinaryNoFallback) launch(t *testing.T, args ...string) (map[string]en
 	if rc := runRun(append(append([]string{"run"}, args...), "--", "probe")); rc != 0 || !called {
 		t.Fatalf("front door rc=%d called=%v", rc, called)
 	}
-	return got, gotErr, out.String()
+	return got, out.String(), gotErr
 }
 
 // admit prepares 1.0.0 at a first launch and returns its compatibility.
 func (x *ordinaryNoFallback) admit(t *testing.T) string {
 	t.Helper()
-	got, err, out := x.launch(t)
+	got, out, err := x.launch(t)
 	if err != nil {
 		t.Fatalf("first launch: %v\n%s", err, out)
 	}
@@ -114,7 +114,7 @@ func TestOrdinaryNewerFailureRefusesTheLaunchWithTheRecoveryBlock(t *testing.T) 
 	x.admit(t)
 	x.failedCheck(t)
 	resolves, installs := x.f.resolves.Load(), x.f.installs.Load()
-	got, err, _ := x.launch(t)
+	got, _, err := x.launch(t)
 	var refusal *hostfloor.UpdateRefusal
 	if !errors.As(err, &refusal) || got != nil {
 		t.Fatalf("the launch ran the older generation past a newer one's failed preparation: %v %v", got, err)
@@ -146,7 +146,7 @@ func TestOrdinaryUseInstalledServesTheAdmittedGenerationOnlyWhenItNamesTheProgra
 	for _, value := range []string{"probe", "fixture", "probe-pkg", "1"} {
 		t.Setenv(patchrecovery.UseInstalledEnv, value)
 		resolves := x.f.resolves.Load()
-		got, err, out := x.launch(t)
+		got, out, err := x.launch(t)
 		if err != nil || got["probe"].Compatibility != first {
 			t.Fatalf("%s=%s did not run the prepared 1.0.0: %v %v\n%s", patchrecovery.UseInstalledEnv, value, got, err, out)
 		}
@@ -159,7 +159,7 @@ func TestOrdinaryUseInstalledServesTheAdmittedGenerationOnlyWhenItNamesTheProgra
 	}
 	t.Setenv(patchrecovery.UseInstalledEnv, "other")
 	var refusal *hostfloor.UpdateRefusal
-	if _, err, _ := x.launch(t); !errors.As(err, &refusal) {
+	if _, _, err := x.launch(t); !errors.As(err, &refusal) {
 		t.Fatalf("a hatch naming another program ran the older generation: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestOrdinaryUnreachableRegistryRunsTheAdmittedGenerationAndSaysSo(t *testin
 		writeFile(t, filepath.Join(x.f.root, "fail"), "")
 		x.check(t)
 		resolves := x.f.resolves.Load()
-		got, err, out := x.launch(t)
+		got, out, err := x.launch(t)
 		if err != nil || got["probe"].Compatibility != first {
 			t.Fatalf("an unreachable registry stopped the launch: %v %v\n%s", got, err, out)
 		}
@@ -186,7 +186,7 @@ func TestOrdinaryUnreachableRegistryRunsTheAdmittedGenerationAndSaysSo(t *testin
 		x.failedCheck(t)
 		writeFile(t, filepath.Join(x.f.root, "fail"), "")
 		resolves := x.f.resolves.Load()
-		got, err, out := x.launch(t)
+		got, out, err := x.launch(t)
 		if err != nil || got["probe"].Compatibility != first {
 			t.Fatalf("an unreachable registry at the retry stopped the launch: %v %v\n%s", got, err, out)
 		}
@@ -207,7 +207,7 @@ func TestOrdinaryAgentUpdatesHoldRunsTheAdmittedGenerationUnchecked(t *testing.T
 	}
 	writeFile(t, configPath, strings.Replace(string(data), `"agent_updates":true`, `"agent_updates":false`, 1))
 	resolves, installs := x.f.resolves.Load(), x.f.installs.Load()
-	got, err, out := x.launch(t)
+	got, out, err := x.launch(t)
 	if err != nil || got["probe"].Compatibility != first {
 		t.Fatalf("a held program did not run its prepared generation: %v %v\n%s", got, err, out)
 	}
@@ -219,7 +219,7 @@ func TestOrdinaryAgentUpdatesHoldRunsTheAdmittedGenerationUnchecked(t *testing.T
 func TestOrdinaryNothingAdmittedRefusesInTheRecoveryShape(t *testing.T) {
 	x := newOrdinaryNoFallback(t)
 	x.failInstall.Store(true)
-	_, err, _ := x.launch(t)
+	_, _, err := x.launch(t)
 	var failed *ordinaryPreparationFailed
 	if !errors.As(err, &failed) {
 		t.Fatalf("a first preparation's failure is not the refusal: %T %v", err, err)
@@ -247,7 +247,7 @@ func TestOrdinaryUpdateStaysStrictOverAnAdmittedGeneration(t *testing.T) {
 	x.admit(t)
 	x.failedCheck(t)
 	t.Setenv(patchrecovery.UseInstalledEnv, "probe")
-	got, err, _ := x.launch(t, "--update")
+	got, _, err := x.launch(t, "--update")
 	var failed *ordinaryPreparationFailed
 	if !errors.As(err, &failed) || got != nil {
 		t.Fatalf("--update ran the older generation: %v %v", got, err)
