@@ -12,7 +12,7 @@ import (
 )
 
 // TestTheMiseRowNamesItsReclaimerAndWhatItWouldDo: the shared tool store was listed as reclaimed
-// by nothing (minimal-disk-footprint.md §2.6). Since OQ-DF4 it has a reclaimer, and the row says
+// by nothing (disk-footprint.md "The shared mise tool store"). Since OQ-DF4 it has a reclaimer, and the row says
 // what that reclaimer would remove right now — judged the way `yolo prune` judges — or why it
 // cannot judge yet. In a jail it promises nothing: the store there is the host's.
 func TestTheMiseRowNamesItsReclaimerAndWhatItWouldDo(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 )
 
 // miseuserecord.go is the JAIL'S HALF of the mise use record (internal/miseuse, a term coined
-// for docs/design/minimal-disk-footprint.md OQ-DF4): a container jail's main process says, in
+// for docs/reference/disk-footprint.md OQ-DF4): a container jail's main process says, in
 // the shared tool store, which installed tool versions its workspace uses, so that the host can
 // reclaim the versions no jail on the machine has used for 30 days.
 //

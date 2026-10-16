@@ -1,5 +1,5 @@
 // Package miseuse is the MISE USE RECORD — a term coined for the OQ-DF4 build of
-// docs/design/minimal-disk-footprint.md: the files in which every jail on a machine says which
+// docs/reference/disk-footprint.md: the files in which every jail on a machine says which
 // installed versions of the shared mise tool store it uses, so that the host can tell which
 // versions NO jail has used for 30 days.
 //

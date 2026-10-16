@@ -35,7 +35,7 @@ func renderText(rep Report, o Options) {
 
 	// SectionAlias sits right after the cache, because it is about the cache: it
 	// names the host trees whose bytes the cache section's rows are NOT counting
-	// (docs/design/disk-levers-and-backfill.md OQ-BF10). Nothing sums across
+	// (docs/reference/disk-footprint.md OQ-BF10). Nothing sums across
 	// sections, which is what keeps a host-owned 27 G store out of yolo's own
 	// footprint.
 	for _, section := range []string{SectionState, SectionCache, SectionAlias, SectionImages, SectionVolumes, SectionToolDisks, SectionDurable, SectionMacosUser, SectionMacosUserLegacy, SectionNix} {

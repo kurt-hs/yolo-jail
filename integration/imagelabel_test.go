@@ -8,7 +8,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 )
 
-// The OWNER LABEL, end to end — minimal-disk-footprint.md OQ-DF3's REACH half.
+// The OWNER LABEL, end to end — disk-footprint.md OQ-DF3's REACH half.
 //
 // WHAT THIS PROTECTS. `PruneOldImages` proves an image is yolo's two ways: the
 // repository name, and — since the REACH ruling — a label baked into the image
@@ -96,7 +96,7 @@ func TestImageOwnerLabel(t *testing.T) {
 // it means `PruneOldImages` could ask one question instead of two (though the
 // answer would still have to be a UNION, not an intersection, which is what
 // podman's AND-across-keys filter semantics would give). Read
-// minimal-disk-footprint.md OQ-DF3 before changing either side.
+// disk-footprint.md OQ-DF3 before changing either side.
 func TestImagesRepoAndFilterAreMutuallyExclusive(t *testing.T) {
 	requireJail(t)
 	rt := detectRuntime()
@@ -108,7 +108,7 @@ func TestImagesRepoAndFilterAreMutuallyExclusive(t *testing.T) {
 	if err == nil {
 		t.Fatalf("`%s images %s --filter label=…` now SUCCEEDS (output %q) — the union in "+
 			"internal/prune/probes.go is two probes because this combination was a hard "+
-			"error; re-read minimal-disk-footprint.md OQ-DF3 before simplifying it",
+			"error; re-read disk-footprint.md OQ-DF3 before simplifying it",
 			rt, jailImageRepo, out)
 	}
 	if !strings.Contains(string(out), "filter") {

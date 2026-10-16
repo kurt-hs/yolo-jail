@@ -2,7 +2,7 @@ package run
 
 // hostcasalias.go is the HOST half of L9 — the launch's decision about whether a
 // recognised content-addressed cache is ALIASED from the host instead of pooled a
-// second time inside the jail (docs/design/disk-levers-and-backfill.md §3 L9,
+// second time inside the jail (docs/reference/disk-footprint.md "The levers" L9,
 // ruled as OQ-BF10 on 2026-09-08).
 //
 // The DECISION and its justification live in internal/hostcas, which `yolo

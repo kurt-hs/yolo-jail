@@ -1210,7 +1210,7 @@ wrong one to sequence on.
   report*; `<CapturesDir>` layout is a documented on-disk contract; the receipt
   gains `kind:"capture"`, `act:"materialize"`, and [§6.3](../design/program-delivery.md#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package)'s two new tuple members (`file manifest`,
   `platform`) — reader and writer move together or the round-trip goes red.
-- **Invariants to satisfy, cite by ID:** [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) [§5](../design/minimal-disk-footprint.md#5-invariants--what-must-not-break) **P2** (fail-safe on
+- **Invariants to satisfy, cite by ID:** [the reclaimer invariants](../reference/disk-footprint.md#reclaimer-invariants) **P2** (fail-safe on
   unknown liveness), **P3** (a reclaim never strands a running jail — ~~hardlinks make this
   structural: unlinking one name frees nothing another name holds~~ ⚠ *materialize is a reflink, so
   this is COW rather than link counting: the destination holds its own inode and its own extents, and

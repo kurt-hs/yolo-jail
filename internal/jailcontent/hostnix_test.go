@@ -7,7 +7,7 @@ import (
 
 // A jail whose nix goes through the host daemon is told that its links are not GC
 // roots, and a jail without the daemon is told nothing about nix at all
-// (docs/design/in-jail-nix-roots.md §8). The claim is measured, not inferred: a root the
+// (docs/reference/in-jail-nix-roots.md "The command and the briefing"). The claim is measured, not inferred: a root the
 // jail asks for is recorded under the jail's own spelling of the out-link, and the host
 // daemon deletes it as stale at the next GC or root query (§3, M1).
 func TestBriefingStatesThatInJailNixLinksAreNotRoots(t *testing.T) {

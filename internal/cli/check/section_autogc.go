@@ -9,7 +9,7 @@ import (
 )
 
 // sectionAutoGC observes the nix daemon's `min-free` setting — the automatic-GC
-// safety net (storage-lifecycle §2). With §1 rooting in place, a non-zero
+// safety net (image-retention.md "The host's auto-GC"). With the image roots in place, a non-zero
 // min-free lets the daemon free UNROOTED store paths when a build runs low on
 // space, bounding store growth without ever touching a running jail's rooted
 // image closure. `min-free = 0` (the nix default) means that net is OFF.

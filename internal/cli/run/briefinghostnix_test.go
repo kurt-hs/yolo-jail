@@ -12,7 +12,7 @@ import (
 // The "your nix links are not GC roots" line is gated on the SAME predicate that emits
 // the nix daemon and store mounts, asserted on the briefing refreshJailBriefings actually
 // writes — so it fails if the call site stops passing HostNix, not only if the renderer
-// changes (docs/design/in-jail-nix-roots.md §8).
+// changes (docs/reference/in-jail-nix-roots.md "The command and the briefing").
 func TestBriefingNixLineFollowsTheHostNixMount(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

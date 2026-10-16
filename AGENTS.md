@@ -402,7 +402,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   launch names in a disclosure line; a relocation gets no such line on a container backend (macos-user names each link it lays). A recognised **content-addressed** host
   cache is aliased at the path the jail's own copy of the tool already uses, so it stops existing twice
   (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);
-  [`OQ-BF10`](docs/design/disk-levers-and-backfill.md#111-decision-ledger)). Today that set is pants' `lmdb_store`
+  [`OQ-BF10`](docs/reference/disk-footprint.md#why-its-this-way), [the alias](docs/reference/disk-footprint.md#host-cas-aliasing)). Today that set is pants' `lmdb_store`
   alone. **The gate is CONTENT ADDRESSING, and the reason is injection rather than size**: a path-keyed cache
   lets a jail write content the host tool later reads *because of where it sits*, the jail choosing both key
   and bytes, while a CAS rejects a blob whose digest does not match its key. ⚠ **npm's `_cacache` and Go's
@@ -540,7 +540,8 @@ live, so edits are visible on the host instantly — there is no sync step.
 | Report tiers, the launch stream, why there is no quiet mode | [`report-tiers.md`](docs/reference/report-tiers.md) |
 | Terminal color: rich markup, the color gate, the terminal probe, `NO_COLOR` | [`cli-color.md`](docs/reference/cli-color.md) |
 | Program delivery: launchers, evergreen deps, the PATH ruling | [`program-delivery.md`](docs/design/program-delivery.md) |
-| Disk levers, host-cache backfill | [`disk-levers-and-backfill.md`](docs/design/disk-levers-and-backfill.md) |
+| Disk footprint: the housekeeping slot, offered reclaim, `yolo stores`, host-cache aliasing | [`disk-footprint.md`](docs/reference/disk-footprint.md) |
+| In-jail nix roots: translated roots, the root watcher, `yolo nix-roots` | [`in-jail-nix-roots.md`](docs/reference/in-jail-nix-roots.md) |
 | Cgroup delegate security model | [`security-shim.md`](docs/reference/security-shim.md) |
 | macOS backends | [`macos.md`](userguide/guides/macos.md) |
 | macos-user nix integration, disabled-feature surface | [`macos-user-nix-and-features.md`](docs/reference/macos-user-nix-and-features.md) |

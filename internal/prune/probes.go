@@ -337,7 +337,7 @@ const (
 // The OWNER LABEL: the Go half of a two-language spelling whose other half is
 // `config.Labels` in flake.nix's `mkOciImage`. It is what makes an image yolo
 // built attributable after it loses its repository name, and it is the second of
-// PruneOldImages' two entrances (minimal-disk-footprint.md OQ-DF3, REACH).
+// PruneOldImages' two entrances (disk-footprint.md OQ-DF3, REACH).
 //
 // ONCE ON DISK THIS IS A DE FACTO PUBLIC NAME. Renaming either half silently
 // un-owns every image already built — they keep the old key, nothing filters for
@@ -438,7 +438,7 @@ func listImagesByOwnerLabel(rt string, run RunFunc) string {
 // The repository name was the ONLY evidence an image was yolo's, and it is
 // exactly what a superseded image loses: a re-stream takes the content tag and
 // leaves the previous image `<none>:<none>`, invisible to a repo-name filter
-// forever (minimal-disk-footprint.md §3.3). The ruling closes that evidence gap
+// forever (disk-footprint.md "Ledger C"). The ruling closes that evidence gap
 // with a LABEL baked into the image config (flake.nix `mkOciImage`), which
 // survives untagging and stays filterable — so a nameless row is attributable
 // and is then treated exactly like a tagged one. Ruled NARROW: yolo never

@@ -1,12 +1,12 @@
 // Package stores implements `yolo stores` — the READ-ONLY inventory of every
 // store yolo can see on this machine, and the bounded sample ledger that makes
-// growth measurable at all (docs/design/disk-levers-and-backfill.md §5.5,
+// growth measurable at all (docs/reference/disk-footprint.md "`yolo stores`",
 // OQ-BF9).
 //
 // WHY IT IS NOT `prune --dry-run`. `yolo prune` prices what it WOULD delete;
 // this prices what EXISTS. Every store with no reclaimer and no trigger — the
 // unrooted /nix/store outputs, an uncovered cache subdir, the untagged podman
-// rows minimal-disk-footprint.md OQ-DF3 REACH ruled permanently off-limits — is
+// rows disk-footprint.md OQ-DF3 REACH ruled permanently off-limits — is
 // invisible to prune BY CONSTRUCTION, and those are exactly the rows this
 // command exists to surface. A listing that could only show reclaimable stores
 // would reproduce the blind spot it exists to close.
@@ -192,7 +192,7 @@ type Options struct {
 	DiskBytes func(path string) (int64, error)
 	// HostCAS answers L9's question — which recognised content-addressed host
 	// caches a launch from this frame would ALIAS rather than pool a second copy
-	// of (docs/design/disk-levers-and-backfill.md OQ-BF10). nil => the same
+	// of (docs/reference/disk-footprint.md OQ-BF10). nil => the same
 	// hostcas.Plan the launcher calls, over this frame's own facts.
 	//
 	// ONE PREDICATE, TWO READERS: the launch emits the mount and this command

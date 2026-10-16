@@ -1129,7 +1129,7 @@ func PackageRootsDir() string { return filepath.Join(BuildDir(), "package-roots"
 
 // StoreSamplesDir returns $HOME/.local/share/yolo-jail/stores — the bounded
 // sample ledger `yolo stores` writes, one <store-key>.samples file per store,
-// one dated line per store per run (docs/design/disk-levers-and-backfill.md
+// one dated line per store per run (docs/reference/disk-footprint.md
 // OQ-BF9).
 //
 // A DEDICATED LEAF, and a small one by construction: the ledger is capped at the

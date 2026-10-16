@@ -100,7 +100,7 @@ func BuildOCIImage(req OCIBuildRequest) (string, []string) {
 	// never loads or runs it — there is no running closure to protect, so an
 	// unrooted result is correct. Do NOT copy this pattern into a load path: the
 	// run path (autoload.go) MUST retain a durable root for the image it runs
-	// against (storage-lifecycle §1; see image.RegisterImageRoot).
+	// against (image-retention.md "A GC is safe at any moment"; see image.RegisterImageRoot).
 	//
 	// The GLOB is not decoration: building a second attr makes nix write
 	// `<outPath>-1` and `<outPath>-1-man` beside the first link, and each is its

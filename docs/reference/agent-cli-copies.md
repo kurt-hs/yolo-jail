@@ -42,7 +42,7 @@ what, so that a proposed fix can be priced against the axis it actually touches.
 
 **Reads with:** [`../design/program-delivery.md`](../design/program-delivery.md) (the capture design
 itself, the launcher, and the evergreen policy — the authority for all three),
-[`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) (who triggers a
+[`disk-footprint.md`](disk-footprint.md) (who triggers a
 reclaimer at all), [`jail-home.md`](jail-home.md) (the tier model that made the install prefix
 per-workspace), [`image-staging-vs-baking.md`](image-staging-vs-baking.md) (the image and store
 ledgers, which are a larger line item than program bytes by a wide margin).
@@ -113,8 +113,8 @@ by — is a keep-newest-K rule over a program's own version directory, run **by 
 the new version**, in the same workspace, immediately after it succeeds. It is generated into every
 native launcher and is called from both the update arm and the cold-install arm — "whoever installed
 the new one" is the trigger, so both qualify. **It also runs on every launch path**, as
-`_locked_prune`, since 2026-10-01 ([L7](../design/disk-levers-and-backfill.md#3-the-levers-ranked),
-[BF-D1](../design/disk-levers-and-backfill.md#BF-D1)): the versions no install or update of this
+`_locked_prune`, since 2026-10-01 ([L7](disk-footprint.md#vendor-versions),
+[BF-D1](disk-footprint.md#BF-D1)): the versions no install or update of this
 workspace superseded, such as those from before the prune shipped or those collected under a frozen
 `agent_updates`, otherwise stayed. That run counts the directory's entries with shell builtins and
 does nothing at `KEEP_VERSIONS` or fewer, and it takes the install-prefix lock, deleting nothing when
@@ -261,7 +261,7 @@ first.
   profile. That is [`../design/program-delivery.md`](../design/program-delivery.md)'s, and this doc
   proposes no change to any of it.
 - **Where an automatic reclaimer lives.**
-  [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) owns the trigger
+  [`disk-footprint.md`](disk-footprint.md#the-housekeeping-slot) owns the trigger
   question for every reclaimer yolo has.
 - **The image ledgers.** Cache tars, the nix store closure and the container image store are a
   larger line item than program bytes by a wide margin, and nothing here changes a byte of them —

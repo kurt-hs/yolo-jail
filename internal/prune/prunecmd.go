@@ -67,7 +67,7 @@ type Options struct {
 	CacheAge         int  // --cache-age        (default 30; 0 skips the pass)
 	PurgeHeavyCaches bool // --purge-heavy-caches
 	// NixGC enables the bounded, rooting-aware host nix store GC (--nix-gc,
-	// default OFF; storage-lifecycle §3). It is opt-in, host-only, and gated on
+	// default OFF; image-retention.md "The store GC's refusal"). It is opt-in, host-only, and gated on
 	// every running jail's image having a durable §1 GC root — see liveimageroots.go.
 	NixGC bool // --nix-gc
 	// NixGCMaxBytes caps an --apply store GC (0 => nixGCDefaultMaxBytes). A
@@ -193,14 +193,14 @@ const ImageCacheKeepUnset = -1
 // ImageCacheKeepAppleContainer is the retained default for the backend that
 // still writes a tar per store path, because `skopeo copy docker-archive:<path>`
 // and `podman save -o <path>` both interpolate a real path and cannot consume a
-// stream. Unchanged until minimal-disk-footprint.md OQ-DF2 names the component
+// stream. Unchanged until disk-footprint.md OQ-DF2 names the component
 // that deletes on success (OQ-BF6).
 const ImageCacheKeepAppleContainer = 3
 
 // ResolveImageCacheKeep picks the tar-retention default for a runtime, or
 // returns an explicit flag value unchanged.
 //
-// ZERO ON PODMAN (OQ-BF6, and it is minimal-disk-footprint.md OQ-DF1's ruling
+// ZERO ON PODMAN (OQ-BF6, and it is disk-footprint.md OQ-DF1's ruling
 // applied to the reaper rather than a new decision): since C3 the podman happy
 // path streams the image straight into `podman load` and writes no tar at all,
 // so a `3` there retains nothing but pre-C3 leftovers — measured at 10.7 GB on
@@ -443,7 +443,7 @@ func Run(opts Options) int {
 		p.line("  [dim]cache/images is only ever read host-side, so a symlink is safe HERE.  " +
 			"Other cache subdirs are bind-mounted into the jail, where a symlink dangles — " +
 			"relocate those with cache_relocations in ~/.config/yolo-jail/config.jsonc.[/dim]")
-		// Mental model (storage-lifecycle §1/§4): the tar here is a one-shot load
+		// Mental model (image-retention.md "A GC is safe at any moment" and disk-footprint.md "Lifecycle sweeps"): the tar here is a one-shot load
 		// artifact — streamed into podman's own image store once, then never read
 		// again — so pruning it (PruneImageCache, keep=3) is always safe and frees
 		// these bytes outright. It is NOT the thing that keeps a running jail
@@ -903,7 +903,7 @@ func Run(opts Options) int {
 	}
 
 	// --- Orphaned image GC roots ---
-	// The durable per-image roots (build/roots/<sha16>, storage-lifecycle §1) that
+	// The durable per-image roots (build/roots/<sha16>, image-retention.md "A GC is safe at any moment") that
 	// keep a `nix-collect-garbage` from deleting a jail's closure. Reap the ones
 	// unused for the retention horizon, so a later nix GC can reclaim the store
 	// paths — except the root of any image a container is running on, which is
@@ -1129,7 +1129,7 @@ func Run(opts Options) int {
 		totalSaved += cacheBytes
 	}
 
-	// --- Unused tool versions in the shared mise store (minimal-disk-footprint.md OQ-DF4) ---
+	// --- Unused tool versions in the shared mise store (disk-footprint.md OQ-DF4) ---
 	// The versions no jail on this machine has used for 30 days, judged from every jail's use
 	// record (miseversions.go). The launch offers them once they total 1 GiB; this is the same
 	// reclaimer, on demand and at any size.

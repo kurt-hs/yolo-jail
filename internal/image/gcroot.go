@@ -46,7 +46,7 @@ func ImageRootLink(storePath string) string {
 //
 // root is HOW the link is registered, and the caller picks it by where it runs
 // (run's gcRooter): AddRoot on the host, and from inside a jail the translated
-// root of docs/design/in-jail-nix-roots.md §4. A jail cannot use AddRoot: its
+// root of docs/reference/in-jail-nix-roots.md "Translated roots and the host path map". A jail cannot use AddRoot: its
 // `nix-store --add-root` sends the jail's spelling of the link, which does not
 // exist on the host, so the host daemon prunes the root as stale — verified
 // 2026-07-22 (an in-jail `--add-root` makes the symlink, `--query --roots` stays

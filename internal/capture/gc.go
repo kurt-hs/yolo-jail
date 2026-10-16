@@ -78,7 +78,7 @@ import (
 // runtime's user namespace when what it holds is a container user's (Store.InNamespace, wired by
 // captureStagingInNamespace) — and names `podman unshare rm -rf <dir>` only when that cannot run.
 //
-// # The reclaimer invariants, by ID (minimal-disk-footprint.md §5)
+// # The reclaimer invariants, by ID (disk-footprint.md "The reclaimer invariants")
 //
 //   - P2 (fail-safe on unknown liveness): this sweep asks NO liveness question, because it does
 //     not have one — an entry's reachability is decided by the selection function, not by who

@@ -101,7 +101,7 @@ profiles, whatever. and give guidance."*
 
 It was not the first time. On 2026-09-14 this repository's `.git/worktrees` held two prunable
 entries, `/tmp/yolo-base-wt` and `/tmp/yolo-prev-wt`, whose directories were already gone
-([`disk-levers-and-backfill.md`](disk-levers-and-backfill.md), the worktrees row).
+(the 2026-09-14 store survey behind [`disk-footprint.md`](../reference/disk-footprint.md#owed-measurements)).
 
 ### 1.2 Terms
 
@@ -335,7 +335,7 @@ relaunch after exit is a fresh launch with a new launch id ([§2.1](#21-a-podman
 | Class | Disk it lives on | Inside the workspace tree on the host? | Size exposure |
 | :--- | :--- | :--- | :--- |
 | **workspace** | the workspace's filesystem | it is the tree | the project |
-| **workspace-durable** | the workspace's filesystem | **yes**, under `<ws>/.yolo`, git-ignored by its `*` file | agent installs per workspace (claude's five builds were 1.2 GB, `paths.CapturesDir`'s comment); durable worktrees are unbounded: 985 MB across 20 stale trees in `.claude/worktrees` on 2026-09-14 ([`minimal-disk-footprint.md`](minimal-disk-footprint.md)) |
+| **workspace-durable** | the workspace's filesystem | **yes**, under `<ws>/.yolo`, git-ignored by its `*` file | agent installs per workspace (claude's five builds were 1.2 GB, `paths.CapturesDir`'s comment); durable worktrees are unbounded: 985 MB across 20 stale trees in `.claude/worktrees` on 2026-09-14 ([`disk-footprint.md`](../reference/disk-footprint.md#owed-measurements)) |
 | **machine-shared** | the host home's filesystem, under `~/.local/share/yolo-jail` | no | caches, bounded only by the age purge |
 | **per-launch** | podman's own storage for the volumes (INFERRED: beside its images); RAM under `ephemeral_storage: "tmpfs"` and on Apple Container | no | one session's temp files and the nested podman store; on a RAM backing, counted against memory |
 | **machine-temp** | the Mac's system volume, or the host's `/tmp` (often `tmpfs` on Linux, INFERRED) | no | shared with every other user of the machine |
@@ -731,8 +731,8 @@ beside it."*
 - **Sharing work between workspaces.** The durable dir is per workspace; the machine-shared class
   is for caches and stays out of the section's worktree advice.
 - **Reclaiming `.claude/worktrees`, `.pi/worktrees` or `~/.codex/worktrees`.** Those are their
-  agents' ([`disk-levers-and-backfill.md`](disk-levers-and-backfill.md) files them as *"not
-  yolo's"*). The report counts only the durable dir.
+  agents' ([`disk-footprint.md`](../reference/disk-footprint.md#two-tiers) files them as *"not
+  yolo's bytes"*). The report counts only the durable dir.
 - **The Claude Code harness's scratchpad under `/tmp`.** yolo cannot move it; the section says
   what it is.
 - **A tool that walks the workspace ignoring `.gitignore`.** The section names the class; the
@@ -860,7 +860,7 @@ found only the per-launch scratch volumes. All three questions were ruled in rev
 | [`reference/macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md) | the machine, workspace and session **tiers**, which are the sharing half of a storage class, and the macos-user wording |
 | [`agent-briefings.md`](../reference/agent-briefings.md) | how the briefing is composed and where each pack's prose lands |
 | [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) | the jail-path-in-admin-file risk ([§2.6](#26-a-worktree-records-absolute-paths-measured)), which mounting the workspace at the host's path would also close |
-| [`disk-levers-and-backfill.md`](disk-levers-and-backfill.md), [`minimal-disk-footprint.md`](minimal-disk-footprint.md) | the measured cost of durable worktrees, and the rule that agents' worktrees are not yolo's to reclaim |
+| [`disk-footprint.md`](../reference/disk-footprint.md) | the measured cost of durable worktrees, and the rule that agents' worktrees are not yolo's to reclaim |
 | [`host-notch-services.md`](host-notch-services.md) | the host notch's shape, and [OQ-HS3](host-notch-services.md#11-decision-ledger)'s acceptance of partial features outside `yolo host --` |
 
 ## Appendix A — the measured runs

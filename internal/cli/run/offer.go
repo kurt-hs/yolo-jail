@@ -12,7 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 )
 
-// offer.go is the OFFERED TIER (disk-levers-and-backfill.md OQ-BF1/OQ-BF2, §5.2
+// offer.go is the OFFERED TIER (disk-footprint.md OQ-BF1/OQ-BF2, §5.2
 // and §5.3): the classes yolo will not reclaim without being told, because their
 // regeneration is an unbounded re-fetch rather than a build or a load.
 //
@@ -167,7 +167,7 @@ func (it offerItem) detail() string {
 // offerPrompt is the one shape every offered class uses, so a user learns it
 // once — and may meet it again, since consent is per class and is not consumed
 // by being given (OQ-BF1). Every class due at one launch is in ONE prompt
-// (disk-levers-and-backfill.md §5.2's shape), and the answer is recorded for
+// (disk-footprint.md "Two tiers, one mapping"'s shape), and the answer is recorded for
 // each of them.
 func offerPrompt(items []offerItem) string {
 	var b strings.Builder
@@ -240,7 +240,7 @@ func LastOfferMeasurement(class string) offerMeasurement {
 const cachePurgeClass = "cache files older than 30 d"
 
 // miseVersionsClass is the shared mise tool store's versions no jail on the
-// machine has used for 30 days (minimal-disk-footprint.md OQ-DF4, ruled
+// machine has used for 30 days (disk-footprint.md OQ-DF4, ruled
 // 2026-10-05: "A" — offered like the cache, and automatic on a yes). Its
 // regeneration is a re-download for a workspace that comes back to an old version.
 const miseVersionsClass = "tool versions no jail used for 30 d"
