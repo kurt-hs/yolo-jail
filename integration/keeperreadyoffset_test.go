@@ -46,9 +46,9 @@ func TestADeathInTheReadyWindowIsToldOnceAtTheFirstSessionsQuit(t *testing.T) {
 	}
 	const service = "ro-down-probe"
 	// Through `sh -c`, as keeperwatch_test.go's stand-in: the placement rule would refuse socat's
-	// "UNIX-LISTEN:<socket>,fork" as a workspace path.
-	packHome(t, `{"loopholes": {"`+service+`": {"command": ["sh", "-c", "exec `+socat+
-		` UNIX-LISTEN:\"$0\",fork EXEC:cat", "{socket}"]}}}`)
+	// "UNIX-LISTEN:<socket>,fork" as a workspace path. Started once, so the supervisor's restarts
+	// fail and the death stands, after HD-D25's five (oncePerJailSocat).
+	packHome(t, oncePerJailSocat(t, service, socat))
 	dir := writeProject(t, `{}`)
 	cname := naming.FromWorkspace(dir)
 	logPath := filepath.Join(paths.GlobalStorage(), "logs", "jail-keeper-"+cname+".log")

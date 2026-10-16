@@ -105,6 +105,20 @@ func stateDirGone(dir string, start fs.FileInfo) string {
 	return ""
 }
 
+// ExitStateDirRetired is the exit status a daemon returns when it shut down for WatchStateDir's
+// reason: its state directory was retired (or removed) under it. It is a DELIBERATE exit, not a
+// crash, and the process that spawned the daemon reads it that way: the host-side supervisor of a
+// jail's host daemons (internal/cli/run's hostdaemonsupervise.go, docs/design/host-daemon-ownership.md
+// HD-D3 and HD-D25) reports it once and never restarts the daemon, because a restart would recreate
+// the directory a launch just archived. Any other exit is a death the supervisor restarts.
+//
+// WHY 85: it collides with nothing a host daemon or Go already exits with. 0 is a clean stop, 1 a
+// daemon's own failure, 2 Go's runtime (an unrecovered panic, a fatal error) and every flag-parse
+// error; 3 and 4 are yolo's own config-drift and auth statuses; 64 to 78 are sysexits.h, which the
+// gh broker (64, 69, 77) and the pi auth lock (75) use; 79 to 81 are the provisioning script's;
+// 124 is timeout(1)'s, 126 and 127 the shell's, and 128+n a signal's death as a shell reports it.
+const ExitStateDirRetired = 85
+
 // StateDirGoneExitLine is what a daemon logs as it shuts down for WatchStateDir's reason,
 // one spelling for all of them so a log reader greps one sentence.
 func StateDirGoneExitLine(daemon, reason string) string {

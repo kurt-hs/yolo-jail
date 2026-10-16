@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -85,8 +86,14 @@ func Main(argv []string) int {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() { <-signals; shutdown() }()
+	// A RETIRED STATE DIRECTORY IS A DELIBERATE EXIT, said by its own status
+	// (hostservice.ExitStateDirRetired), so the supervisor that spawned this daemon reports it and
+	// does not restart it: a restart would recreate the directory a launch just archived
+	// (docs/design/host-daemon-ownership.md HD-D3, HD-D25).
+	var retired atomic.Bool
 	if err := hostservice.WatchStateDir(stateDir, stop, func(reason string) {
 		fmt.Fprintln(os.Stderr, hostservice.StateDirGoneExitLine("yolo-openai-auth-host", reason))
+		retired.Store(true)
 		shutdown()
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo-openai-auth-host: watch the state directory:", err)
@@ -130,6 +137,9 @@ func Main(argv []string) int {
 		*socket, HostSocketPath(*socket), stop, shutdown); err != nil {
 		fmt.Fprintln(os.Stderr, "yolo-openai-auth-host:", err)
 		return 1
+	}
+	if retired.Load() {
+		return hostservice.ExitStateDirRetired
 	}
 	return 0
 }

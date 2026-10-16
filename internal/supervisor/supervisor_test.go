@@ -63,7 +63,7 @@ func specsEqual(a, b []Spec) bool {
 // restarted; the supervise loop returns. Uses `true` (exits 0 immediately).
 func TestRestartOnFailurePolicyExit0NoRestart(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // isolate LogDir
-	c := &child{spec: Spec{Name: "t", Cmd: []string{"true"}, Restart: "on-failure"}, backoff: restartBackoffInitial}
+	c := &child{spec: Spec{Name: "t", Cmd: []string{"true"}, Restart: "on-failure"}, backoff: RestartBackoffInitial}
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() { c.superviseOne(stop); close(done) }()
@@ -80,7 +80,7 @@ func TestRestartOnFailurePolicyExit0NoRestart(t *testing.T) {
 // own, so without that line an abandoned daemon and a running one look identical.
 func TestRestartNoPolicyNoRestart(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	c := &child{spec: Spec{Name: "t", Cmd: []string{"false"}, Restart: "no"}, backoff: restartBackoffInitial}
+	c := &child{spec: Spec{Name: "t", Cmd: []string{"false"}, Restart: "no"}, backoff: RestartBackoffInitial}
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() { c.superviseOne(stop); close(done) }()
@@ -162,7 +162,7 @@ func TestSpawnFailureRestartNoGivesUp(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	c := &child{
 		spec:    Spec{Name: "t", Cmd: []string{"/nonexistent/yolo-no-such-binary"}, Restart: "no"},
-		backoff: restartBackoffInitial,
+		backoff: RestartBackoffInitial,
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -192,7 +192,7 @@ func TestSpawnFailureRestartAlwaysRetries(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	c := &child{
 		spec:    Spec{Name: "t", Cmd: []string{"/nonexistent/yolo-no-such-binary"}, Restart: "always"},
-		backoff: restartBackoffInitial,
+		backoff: RestartBackoffInitial,
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})

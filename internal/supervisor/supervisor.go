@@ -34,9 +34,14 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+// RestartBackoffInitial and RestartBackoffMax are the restart backoff, in seconds: the first
+// restart waits RestartBackoffInitial, each later one twice the last, capped at RestartBackoffMax.
+// Exported because ONE POLICY GOVERNS BOTH SIDES: the host-side supervisor of a jail's host
+// daemons (internal/cli/run's hostdaemonsupervise.go) takes these same two values, and bounds
+// them, rather than inventing its own (docs/design/host-daemon-ownership.md HD-D25).
 const (
-	restartBackoffInitial = 1.0
-	restartBackoffMax     = 30.0
+	RestartBackoffInitial = 1.0
+	RestartBackoffMax     = 30.0
 )
 
 // logMaxBytes is the per-daemon log's cap (5 MB), past which it moves to <name>.log.1. A
@@ -318,7 +323,7 @@ func (c *child) waitAndMaybeRestart(stop <-chan struct{}) bool {
 		return false
 	}
 	sleepInterruptible(stop, time.Duration(c.backoff*float64(time.Second)))
-	c.backoff = minFloat(c.backoff*2, restartBackoffMax)
+	c.backoff = minFloat(c.backoff*2, RestartBackoffMax)
 	return !isStopped(stop)
 }
 
@@ -376,7 +381,7 @@ func (c *child) superviseOne(stop <-chan struct{}) {
 			}
 			c.logf("spawn failed: %v — restart policy %q: retrying in %.0fs", err, c.spec.Restart, c.backoff)
 			sleepInterruptible(stop, time.Duration(c.backoff*float64(time.Second)))
-			c.backoff = minFloat(c.backoff*2, restartBackoffMax)
+			c.backoff = minFloat(c.backoff*2, RestartBackoffMax)
 			continue
 		}
 		if !c.waitAndMaybeRestart(stop) {
@@ -391,7 +396,7 @@ func (c *child) superviseOne(stop <-chan struct{}) {
 func Run(specs []Spec, stop <-chan struct{}) {
 	children := make([]*child, len(specs))
 	for i, s := range specs {
-		children[i] = &child{spec: s, backoff: restartBackoffInitial}
+		children[i] = &child{spec: s, backoff: RestartBackoffInitial}
 	}
 	var wg sync.WaitGroup
 	for _, c := range children {
