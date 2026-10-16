@@ -156,3 +156,16 @@ func activeSetProviders(set []luahook.SetEntry) []string {
 	}
 	return out
 }
+
+// ReadsSharedModels reports whether the pack installing agent declares that agent reads a
+// model file's shared form (packdecl.Contribution.ReadsSharedModels;
+// docs/design/model-lists-and-pickers.md ML-D11), by bin ownership as BuiltInProvidersFor
+// reads `built_in_providers`. False when no selected pack installs agent or it declares
+// nothing, which every derive reads as "write full rows".
+func ReadsSharedModels(packs []*Pack, agent string) bool {
+	owner := binOwner(packs, agent)
+	if owner == nil || owner.Decl == nil {
+		return false
+	}
+	return owner.Decl.ReadsSharedModelsFor(agent)
+}

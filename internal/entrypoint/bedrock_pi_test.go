@@ -79,9 +79,11 @@ func TestPiOnBedrockUsesItsOwnConverseClient(t *testing.T) {
 			if sub["defaultModel"] != "amazon-bedrock/"+tc.model {
 				t.Errorf("subagents.defaultModel = %v, want amazon-bedrock/%s", sub["defaultModel"], tc.model)
 			}
+			// The company pack ADDS the list and no `only` narrows it, so children may run any
+			// model of the provider (docs/design/model-lists-and-pickers.md OQ-MM3).
 			scope, _ := sub["modelScope"].(map[string]any)
-			if !reflect.DeepEqual(scope["allow"], tc.enabled) {
-				t.Errorf("subagents.modelScope.allow = %v, want %v", scope["allow"], tc.enabled)
+			if want := []any{"amazon-bedrock/*"}; !reflect.DeepEqual(scope["allow"], want) {
+				t.Errorf("subagents.modelScope.allow = %v, want %v", scope["allow"], want)
 			}
 		})
 	}

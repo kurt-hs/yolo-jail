@@ -3045,9 +3045,14 @@ func installingPack(packs []*packload.Pack, bin string) string {
 // disagree about what the launch carries.
 func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	services []*launchservice.Plan) (*jsonx.OrderedMap, []packload.Adaptation, error) {
-	var user *jsonx.OrderedMap
+	var user, shared *jsonx.OrderedMap
 	if v, ok := cfg.Get("providers"); ok {
 		user, _ = v.(*jsonx.OrderedMap)
+	}
+	// The facts a model's routes share (docs/design/model-lists-and-pickers.md OQ-ML5), composed
+	// under each route's own as the jail notch's composedProviders composes them.
+	if v, ok := cfg.Get("model_facts"); ok {
+		shared, _ = v.(*jsonx.OrderedMap)
 	}
 	// A LAUNCH THAT STARTS A SERVICE composes its adaptations at the ports it picked, and a
 	// user's `adapters` override of those conversions does not apply here: the launch-chosen
@@ -3055,7 +3060,8 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	if len(services) > 0 {
 		addresses := launchservice.WithoutOverrides(hostAdapterAddresses(), packs,
 			launchservice.Names(services))
-		return packload.ComposeProvidersAt(user, packs, addresses, launchservice.Served(services))
+		return packload.ComposeProvidersAt(user, packs, addresses, launchservice.Served(services),
+			packload.WithModelFacts(shared))
 	}
 	// NO ADDRESS A PACK'S OWN SERVICE SERVES (docs/design/credential-sources-separation.md
 	// ES-D18): `yolo host` starts no jail daemon, so nothing is served at this notch
@@ -3066,7 +3072,8 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// wire resolves to it directly, and one that cannot refuses at the gate, which
 	// composeHostVars words. The same composition every notch calls (ComposeProvidersAt),
 	// with this notch's served set as its input (notch convergence item 2).
-	return packload.ComposeProvidersAt(user, packs, hostAdapterAddresses(), packload.NothingServed())
+	return packload.ComposeProvidersAt(user, packs, hostAdapterAddresses(), packload.NothingServed(),
+		packload.WithModelFacts(shared))
 }
 
 // hostAdapterAddresses is the user's adapter address overrides, read the same way the jail

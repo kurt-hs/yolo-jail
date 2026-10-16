@@ -169,3 +169,18 @@ func builtInProvidersProblems(label string, c Contribution) []string {
 	}
 	return problems
 }
+
+// ReadsSharedModelsFor reports whether the program installing bin declares it reads a model
+// file's shared form (Contribution.ReadsSharedModels). False when it declares nothing, or the
+// manifest installs no such program. Keyed by BIN, for BuiltInProvidersFor's reason.
+func (m *Manifest) ReadsSharedModelsFor(bin string) bool {
+	if bin == "" {
+		return false
+	}
+	for _, c := range m.Contributions() {
+		if c.Kind == KindProgram && c.Bin == bin {
+			return c.ReadsSharedModels
+		}
+	}
+	return false
+}
