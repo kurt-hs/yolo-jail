@@ -469,6 +469,8 @@ func (s *Store) fetchStep(b budget, repo string, addrs []Addr, mode fetchMode, n
 	}
 	// A commit an address pins that is on no branch or tag, which that fetch did not bring.
 	s.fetchPinnedCommits(b, mirror, addrs)
+	// Then the compaction the fetch's own maintenance no longer does, still under the lock.
+	s.autoGC(mirror)
 	return r
 }
 

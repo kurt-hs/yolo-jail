@@ -249,7 +249,7 @@ func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
 	for _, c := range cmds {
 		joined += strings.Join(c, " ") + "\n"
 	}
-	for _, want := range []string{cpBin + ` -R "$3" "$tmp"`, chmodBin + ` -R a-w,a+rX "$tmp"`,
+	for _, want := range []string{cpBin + ` -R "$3/." "$tmp"`, chmodBin + ` -R a-w,a+rX,ug-s "$tmp"`,
 		mvBin + ` "$tmp" "$dst"`, chmodBin + ` a-w "$dst"`, `tmp="$1/` + capturesStagingLeaf + `/$2"`} {
 		if !strings.Contains(stageCaptureScript, want) {
 			t.Errorf("the stage script does not %q:\n%s", want, stageCaptureScript)
@@ -271,6 +271,41 @@ func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
 	}
 }
 
+// THE COPY LANDS IN A DIRECTORY IN THE COPIER'S OWN GROUP, made before it, and copies the entry's
+// CONTENTS into it. Apple's cp ends each directory it creates with chmod(2) to the source's mode,
+// setgid included (a captured entry's out/ leaf is 2770), and XNU refuses that with EPERM to an
+// owner outside the directory's group, which a directory created under /Users/Shared/yolo-staged
+// inherits as wheel. macos-user CI failed exactly so (`cp: chmod: .../captures/staging/<key>/:
+// Operation not permitted`) once staging stopped running as root. Linux clears the bit silently
+// instead, so the words are what a Linux test can pin: no copy into a directory cp creates itself,
+// and the chgrp before the cp.
+func TestStageCaptureScriptCopiesIntoADirectoryInTheCopiersGroup(t *testing.T) {
+	steps := strings.Split(stageCaptureScript, " && ")
+	idx := func(want string) int {
+		for i, s := range steps {
+			if strings.Contains(s, want) {
+				return i
+			}
+		}
+		return -1
+	}
+	mk := idx(mkdirBin + ` "$tmp"`)
+	grp := idx(chgrpBin + ` "$(` + idBin + ` -g)" "$tmp"`)
+	cp := idx(cpBin + ` -R "$3/." "$tmp"`)
+	if mk < 0 || grp < 0 || cp < 0 || !(mk < grp && grp < cp) {
+		t.Fatalf("the stage script must make $tmp, give it the copier's primary group, then copy the "+
+			"entry's contents into it (mkdir %d, chgrp %d, cp %d):\n%s", mk, grp, cp, stageCaptureScript)
+	}
+	if strings.Contains(stageCaptureScript, cpBin+` -R "$3" "$tmp"`) {
+		t.Errorf("the stage script still lets cp create $tmp, so it inherits the staging dir's group")
+	}
+	for _, bad := range []string{cpBin + " -p", cpBin + " -a", cpBin + " -Rp", cpBin + " -pR", cpBin + " -R -p"} {
+		if strings.Contains(stageCaptureScript, bad) {
+			t.Errorf("the stage script preserves the source's modes (%q)", bad)
+		}
+	}
+}
+
 // THE COMMANDS RUN, as the invoking user rather than root, against temp dirs: the picked entry
 // is COPIED (its files are not the source's inodes), its links copied as links, and SEALED, every
 // write bit gone; an entry already staged is not copied again; a staged entry the store no longer
@@ -278,7 +313,7 @@ func TestStageCaptureCommandsCopyAndNeverLink(t *testing.T) {
 // under staging/ goes. Run as root (as in a jail) the sealed removals prove nothing, since root
 // ignores the mode; CI runs this as an ordinary user.
 func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
-	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin, mkdirBin} {
+	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin, mkdirBin, chgrpBin, idBin} {
 		if _, err := os.Stat(bin); err != nil {
 			t.Skipf("%s is not on this machine, so the stage commands cannot run here: %v", bin, err)
 		}
@@ -295,6 +330,12 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 	mustWrite(t, filepath.Join(bin, "probetool"), "#!/bin/sh\necho probe\n", 0o555)
 	mustWrite(t, filepath.Join(bin, "loose"), "group-writable", 0o664)
 	mustWrite(t, filepath.Join(src, ".yolo-capture-complete"), "", 0o444)
+	// A captured entry's directories carry setgid (its out/ leaf is 2770): the staged ones do not.
+	for _, d := range []string{src, bin} {
+		if err := os.Chmod(d, 0o2775); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.Symlink("/nonexistent/versions/1.0", filepath.Join(bin, "link")); err != nil {
 		t.Fatal(err)
 	}
@@ -336,6 +377,9 @@ func TestStageCaptureCommandsCopyOncePruneAndNeverLink(t *testing.T) {
 		t.Errorf("a group-writable source file is staged %v (%v), want no write bit", fi.Mode(), err)
 	}
 	for _, d := range []string{dst, filepath.Join(dst, "tree", ".local", "bin")} {
+		if fi, err := os.Stat(d); err == nil && fi.Mode()&(os.ModeSetgid|os.ModeSetuid) != 0 {
+			t.Errorf("staged directory %s is %v: a set-id bit crossed from the source", d, fi.Mode())
+		}
 		if fi, err := os.Stat(d); err != nil || fi.Mode().Perm()&0o222 != 0 || fi.Mode().Perm()&0o555 != 0o555 {
 			t.Errorf("staged directory %s is %v (%v), want sealed: readable and searchable by all, writable by none",
 				d, fi.Mode(), err)
@@ -513,12 +557,54 @@ func TestASignalDuringACaptureCopyEndsTheLaunch(t *testing.T) {
 	}
 }
 
+// A SYMLINKED ENTRY IS REFUSED, NOT FOLLOWED. The copy reads `"$3/."`, which follows a link at $3
+// where the old `cp -R "$3"` copied the link itself, so the script checks first that $3 is a real
+// directory, says why when it is not, and copies nothing. Run for real; the refusal comes before
+// any step that needs a macOS path.
+func TestTheCaptureStageScriptRefusesASymlinkedEntry(t *testing.T) {
+	for _, bin := range []string{"/bin/sh", chmodBin, rmBin} {
+		if _, err := os.Stat(bin); err != nil {
+			t.Skipf("%s is not on this machine, so the stage script cannot run here: %v", bin, err)
+		}
+	}
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(tmp, "elsewhere")
+	mustMkdir(t, filepath.Join(real, "tree"), 0o755)
+	mustWrite(t, filepath.Join(real, "tree", "f"), "bytes", 0o444)
+	link := filepath.Join(tmp, "userstore", "entries", captureKeyA)
+	mustMkdir(t, filepath.Dir(link), 0o755)
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(tmp, "captures")
+	mustMkdir(t, filepath.Join(root, capturesStagingLeaf), 0o755)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf), 0o755)
+
+	argv := stageCaptureArgv(root, CaptureEntry{Bin: "probetool", Key: captureKeyA, Source: link})
+	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	if err == nil {
+		t.Fatalf("the stage script exited 0 for a symlinked entry:\n%s", out)
+	}
+	if !strings.Contains(string(out), "is not a directory (a symlink or missing)") {
+		t.Errorf("the refusal does not say why:\n%s", out)
+	}
+	for _, p := range []string{filepath.Join(root, capturesStagingLeaf, captureKeyA),
+		filepath.Join(root, capturesEntriesLeaf, captureKeyA)} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("a symlinked entry was staged at %s (%v)", p, err)
+		}
+	}
+}
+
 // THE COPY CLEANS UP AFTER ITSELF when any step of it fails, so a launch on a full disk does not
 // keep a half-made copy of a 1.2 GB entry for the rest of its run, and it exits non-zero so the
 // launch can say so. Run for real: entries/ is a file here, so the copy succeeds and the rename
 // into entries/ fails, which works the same as the invoking user and as root.
 func TestAFailedCaptureCopyLeavesNoPartialCopy(t *testing.T) {
-	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin} {
+	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin, mkdirBin, chgrpBin, idBin} {
 		if _, err := os.Stat(bin); err != nil {
 			t.Skipf("%s is not on this machine, so the stage script cannot run here: %v", bin, err)
 		}

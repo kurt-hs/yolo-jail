@@ -167,8 +167,20 @@ func ProvisionArgv(script, profilePath, envFile string,
 	// wrap would install against a different environment than the agent then runs in.
 	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
-	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/bash", "-c", script})...)
+	out = append(out, ExecWithEnvFile(envFile, []string{"/bin/bash", "-c", provisionInWorkspace(workspace, script)})...)
 	return out
+}
+
+// provisionInWorkspace starts script in the workspace. The stage's `mise ls --missing` and
+// `mise install` find their config upward from the cwd, so the stage must run where the
+// container's does (--workdir /workspace), and a crossing into the sandbox account starts in `/`
+// (real.go's commandFor), never in the launcher's cwd. A cd that fails ends the stage rather than
+// provisioning against no config and reporting success.
+func provisionInWorkspace(workspace, script string) string {
+	if workspace == "" {
+		return script
+	}
+	return "cd -- " + shQuote(workspace) + " || exit 1\n" + script
 }
 
 // ProvisionBootstrapScript is where this workspace's generated bootstrap script lives —
