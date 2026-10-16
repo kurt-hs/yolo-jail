@@ -105,7 +105,7 @@ one-new-file constraint.
 
 No backend has a writable context mount. The only writable host binds today are the workspace, yolo's
 own state and cache dirs, `cache_relocations` targets (user scope, podman only), and the one
-[host-CAS alias](disk-levers-and-backfill.md#OQ-BF10).
+[host-CAS alias](disk-levers-and-backfill.md#111-decision-ledger).
 
 Two premises in the brief are stale and should not be built on:
 
@@ -191,7 +191,7 @@ of these hold:
 `WorkspaceScopeBreach` does not refuse them either ("a workspace UNDER the home is the ordinary
 case"). rw adds **no named list** ([OQ-CX2](#OQ-CX2), decided as [CX-D2](#CX-D2)). The ro form
 keeps today's rules and gets no share of the predicate ([OQ-CX3](#OQ-CX3), answered by
-[OQ-PR3](podman-reboot-readiness.md#OQ-PR3)).
+[OQ-PR3](podman-reboot-readiness.md#decision-ledger)).
 
 `yolo check` on the host runs the same predicate over the same resolution. In-jail it skips the
 filesystem half, as `mounts` validation already does.
@@ -207,7 +207,7 @@ Each rw mount gets **one launch line, every launch**. It is a disclosure in the
   jail wrote there, including a symlink the jail planted;
 - on rootful podman only, the ownership consequence from [§2.5](#25-ownership).
 
-The reasoning is the [host-CAS](disk-levers-and-backfill.md#OQ-BF10) gate's, turned into a
+The reasoning is the [host-CAS](disk-levers-and-backfill.md#111-decision-ledger) gate's, turned into a
 disclosure instead of a gate. A path-keyed writable dir lets the jail choose both the key and the
 bytes. That is exactly why `hostcas` admits only content-addressed stores. A user-declared rw mount
 is path-keyed by definition, so it cannot pass that gate. It is admissible only because a trusted source named it
@@ -597,7 +597,7 @@ Each one must show:
    behind the diff prompt. Refusing would break a mount this repo relies on.
 
    **Answer:**
-   > Answered by [OQ-PR3](podman-reboot-readiness.md#OQ-PR3) (2026-09-29): **no**, because the
+   > Answered by [OQ-PR3](podman-reboot-readiness.md#decision-ledger) (2026-09-29): **no**, because the
    > maintainer wants a jail that mounts `~/.local/share/yolo-jail/logs` to read it (*"I don't see
    > why we're worried about a jail getting access to that log. It's just like anything else on
    > the host"*), and the shared predicate would refuse exactly that mount. Whether a workspace
@@ -708,7 +708,7 @@ Each one must show:
 |---|---|---|---|
 | <a id="CX-D1"></a>**CX-D1** | *Implementation decision, reversible, answering [OQ-CX1](#OQ-CX1):* the writable form is an **object element in `mounts`** with a required `mode`, not a `writable_mounts` key. The separate key's one advantage was a key-level scope check like `cache_relocations`'. That no longer exists: `config.validateBrokerMountFence` ([BB-D26](boundary-broker.md#BB-D26), built 2026-09-29) already reloads the workspace config to learn which `mounts` elements came from it, refusing those and disclosing user-scope ones, so per-element provenance on this key is built. ⚠ That fence's `mountHostSources`, and `validateMounts`, read string elements only, so the object form must reach both, or the fence silently skips every object element. [BB-D34](boundary-broker.md#BB-D34)'s premise that no mount can write the approval record survives, because [§2.3](#23-refusal-set)'s clause 1 refuses any rw source inside `~/.local/share/yolo-jail` | 2026-09-30 | [§2.1](#21-config-shape), [§6](#6-alternatives-with-verdicts) |
 | <a id="CX-D2"></a>**CX-D2** | *Implementation decision, reversible, answering [OQ-CX2](#OQ-CX2):* the rw refusal set is the credential-boundary predicate, workspace overlap and the macos-user clause, with **no named list** of credential dirs. An rw element passes only from a source the trust predicate admits, and whoever wrote it already holds host-user authority, so a list refuses nobody who could not copy `~/.ssh` themselves ([gate-placement Test 1](../reference/gate-placement-principle.md#test-1--the-authority-test-could-this-actor-already-do-it), which [OQ-TP9](trust-paths.md#decision-ledger) applied to the pack approval prompt). A list would also read as a completeness claim, against [`agent-credentials.md`](../reference/agent-credentials.md)'s structural "no deny-read list to get right". The [§2.4](#24-disclosure) line names the path every launch | 2026-09-30 | [§2.3](#23-refusal-set) |
-| [OQ-CX3](#OQ-CX3) | **Answered by [OQ-PR3](podman-reboot-readiness.md#OQ-PR3) (2026-09-29): the ro form keeps today's rules.** The maintainer, ruling that a jail mounting the logs dir may read every launch's line: *"I don't see why we're worried about a jail getting access to that log. It's just like anything else on the host, it's outside of their view."* The shared predicate would refuse that mount, and [§2.3](#23-refusal-set) forbids a second spelling of it. What is left is a question of scope, not of this predicate: a user-scope ro mount of `$HOME` is the user's own authority (Test 1), and whether a workspace config may declare any host mount is [OQ-AS3](../research/agent-safehouse.md#OQ-AS3), the maintainer's own open question, whose presentation should name the `$HOME` case | 2026-09-30 | [§2.3](#23-refusal-set) |
+| [OQ-CX3](#OQ-CX3) | **Answered by [OQ-PR3](podman-reboot-readiness.md#decision-ledger) (2026-09-29): the ro form keeps today's rules.** The maintainer, ruling that a jail mounting the logs dir may read every launch's line: *"I don't see why we're worried about a jail getting access to that log. It's just like anything else on the host, it's outside of their view."* The shared predicate would refuse that mount, and [§2.3](#23-refusal-set) forbids a second spelling of it. What is left is a question of scope, not of this predicate: a user-scope ro mount of `$HOME` is the user's own authority (Test 1), and whether a workspace config may declare any host mount is [OQ-AS3](../research/agent-safehouse.md#OQ-AS3), the maintainer's own open question, whose presentation should name the `$HOME` case | 2026-09-30 | [§2.3](#23-refusal-set) |
 | <a id="CX-D3"></a>**CX-D3** | *Implementation decision, reversible, answering [OQ-CX4](#OQ-CX4):* a pack `mount` stays read-only, and **no rw form is built until a pack needs one**. No shipped pack declares a `mount` of any kind (`rg '"mount"' packs/*/pack.json` finds none, 2026-09-30). The leaning's worry, a writable path "on disclosure alone", is what [OQ-TP9](trust-paths.md#decision-ledger) made the boundary for a selected pack's host reach, so that pack's work is the footprint sentence, the argv and [§2.3](#23-refusal-set)'s refusal set on its source, not a gate | 2026-09-30 | [§2.7](#27-packs), [§4](#4-staging-and-the-tests-that-pin-each-piece) step 6 |
 | [OQ-CX5](#OQ-CX5) | **Answered by [DP-D15](declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open) and [OQ-DP4](declaration-parity.md#decision-ledger) (2026-09-12): narrow DP-D15.** Deliver by link plus Seatbelt wherever the DAC preflight and siting rules pass; refuse fatally everywhere else, keyed on the declaration being present. DP-D15's refusal is conditional in the maintainer's words (*"if we can't do it, we can't do it, we'll just make it a fatal error on setups that don't support it rather than having it be surprisingly not there"*), and [OQ-DP4](declaration-parity.md#decision-ledger) asked for the delivery by any mechanism (*"yes, build, however we can make it work"*; *"seatbelt and symlinks, syncing daemon, whatever, let's make it work"*). DP-D15 said "can't" because a copy was the only mechanism; for a reachable source it is not | 2026-09-30 | [§3.1](#31-does-dp-d15-still-hold); DP-D15's row in [`declaration-parity.md`](declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open) |
 | <a id="CX-D4"></a>**CX-D4** | *Implementation decision, reversible, answering [OQ-CX6](#OQ-CX6):* **`YOLO_CONTEXT_DIR` is exported on every launch and every backend**: `/ctx` on podman and Apple Container, `macosuser.StagedCtxRoot` on macos-user, created every launch and possibly empty. `YOLO_CTX_ROOT` keeps its meaning and its set-only-when-staged rule. macos-user cannot have `/ctx` ([§3.2](#32-where-the-bytes-are-named)), so a variable is the only spelling pack text and agents can share, and a variable set on one backend only would make every reader branch. Always setting it departs from `YOLO_PACK_ROOT`'s rule that absence is the honest signal, on purpose: this directory always exists and the briefing lists what is in it, so an empty one says "no context mounts", which is true. The name costs nothing to change until [§4](#4-staging-and-the-tests-that-pin-each-piece) step 2 ships | 2026-09-30 | [§3.2](#32-where-the-bytes-are-named) |
@@ -766,7 +766,7 @@ Built column names the rest). Steps 4-5 replaced `run.refuseMacosUserCtxMounts` 
   uidmaps and `--userns host` when nested. `label=disable` is in the same file.
   `docs/reference/jail-home.md` covers "Ownership and UIDs".
 - **Host CAS.** `internal/hostcas`, `internal/cli/run/hostcasalias.go`, and
-  [OQ-BF10](disk-levers-and-backfill.md#OQ-BF10).
+  [OQ-BF10](disk-levers-and-backfill.md#111-decision-ledger).
 - **macos-user today.** `run.noteMacosUserCtxMountGaps` (`internal/cli/run/macosctxtree.go`) warns
   and gives COPY as the reason. `macosuser.StagedCtxRoot` and `StageCtxCommands` (root-owned,
   `a+rX`, rm-then-mv). `YOLO_CTX_ROOT` is set in the bootstrap env only when a tree is staged, and

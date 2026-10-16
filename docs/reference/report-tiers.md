@@ -511,10 +511,10 @@ through it: the exec replaces yolo, and an agent yolo stays the parent of (a lau
 a managed Codex login) is handed the caller's own stderr, so it keeps its terminal. Like the
 jail's log it is never fatal and never prints. The same launch also leaves its line in the
 machine-wide `launches.log`, with `runtime=host`
-([`OQ-PR3`](../design/podman-reboot-readiness.md#OQ-PR3)).
+([`OQ-PR3`](../design/podman-reboot-readiness.md#decision-ledger)).
 
 The file keeps nothing typed after the program, and never the directory it was typed in, by
-[`OQ-PR3`](../design/podman-reboot-readiness.md#OQ-PR3)'s rule for a machine-wide record: an argument can be a secret or a prompt, the directory
+[`OQ-PR3`](../design/podman-reboot-readiness.md#decision-ledger)'s rule for a machine-wide record: an argument can be a secret or a prompt, the directory
 names a project, and the logs directory is one a jail may mount. The terminal still gets every
 line whole. In the log, a disclosure that yolo changed the command names each command by its
 program and argument count (`you asked for: codex <2 arguments>`), a program typed as a path is

@@ -13,7 +13,7 @@ vantage:
 
 **Status:** Exploration: **nothing here is proposed for implementation now**, and no watcher is
 built. Evidence verified at `51620f7e` (2026-09-29), and the review corrections re-checked at
-`bfb79a6e`. No ruling is owed: [OQ-YW1](#OQ-YW1) was ruled 2026-09-29, and [YW-D7](#YW-D7)
+`bfb79a6e`. No ruling is owed: [OQ-YW1](#11-decision-ledger) was ruled 2026-09-29, and [YW-D7](#YW-D7)
 records why the direction needs none. Since then the sibling below built the **keeper** at the
 container backends, and every row it moved was re-verified against `d4e435a3` on 2026-10-01: the
 jail-lifetime, attach and host-service rows of [§2.1](#21-done-by-the-launch-in-the-launchs-own-process),
@@ -48,7 +48,7 @@ calls "no free answer", and it concentrates every jail's crossings in one long-l
 **Start at [§3](#3-three-kinds-of-gap-and-only-one-needs-a-watcher)**, the three kinds of gap.
 Everything else falls out of it.
 
-**Needs your ruling:** none; [OQ-YW1](#OQ-YW1) was ruled 2026-09-29 (no scheduled reclaim).
+**Needs your ruling:** none; [OQ-YW1](#11-decision-ledger) was ruled 2026-09-29 (no scheduled reclaim).
 
 **Reads with:** [`jail-lifetime-last-session-wins.md`](../design/jail-lifetime-last-session-wins.md)
 (the sibling from the same run, not in the tree at `51620f7e`, on keeping a jail up until its last session leaves;
@@ -317,7 +317,7 @@ flowchart LR
 | **S0. Nothing new** | today's rows | none | nothing; every gap in [§2.6](#26-done-by-nobody) stays | the baseline |
 | **S1. Lifelines everywhere** | every crash leftover | small: `Lifeline` and flock liveness are in the tree, and since the keeper every child it starts carries `Pdeathsig` on Linux, socat included, which cannot read a pipe. Off Linux socat still takes a yolo wrapper | nothing. HD-R1 mode 6's stragglers (a refresh that must finish after its launch) must be deliberately exempt | **take it** whenever the crash class is worked, and before the boundary broker is built, whose per-jail grant lifetime depends on it ([§2.5](#25-designed-not-built)); it needs no watcher and no ruling beyond HD-R1's |
 | **S2. Opportunistic one-shots**, the self-update pattern generalized: any host yolo command whose per-duty stamp is stale starts a detached, lock-guarded run | reclaim on a machine that runs yolo but rarely launches | more detached writers, each owning the hazard the scratch remover already hit | nothing ruled; does nothing when nobody types yolo, which is [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9)'s idle week | useful, and a weaker S3 |
-| **S3. Scheduled ticks**: a systemd user timer or a launchd agent runs a tick every few minutes and at login | every "due while nobody runs" row | an install and uninstall step per OS; a status probe that reads "could not ask `systemctl`" as unknown; linger on Linux; on macOS, a job set to the `Background` session type in the `user/<uid>` domain if it must run with no GUI login ([§6.3](#63-platform)); keeping the unit's binary path in step with installs ([§6.2](#62-versions)) | [minimal-disk-footprint A6](../design/minimal-disk-footprint.md#7-alternatives-considered) and [disk-levers](../design/disk-levers-and-backfill.md#51-the-housekeeping-slot) rejected a timer for reclaim (P7: it runs at moments no user bounds). A tick pays P7 instead of avoiding it | **the shape to reach for first**, if [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) rules a timer in; [OQ-YW1](#OQ-YW1) asks whether reclaim may ride it |
+| **S3. Scheduled ticks**: a systemd user timer or a launchd agent runs a tick every few minutes and at login | every "due while nobody runs" row | an install and uninstall step per OS; a status probe that reads "could not ask `systemctl`" as unknown; linger on Linux; on macOS, a job set to the `Background` session type in the `user/<uid>` domain if it must run with no GUI login ([§6.3](#63-platform)); keeping the unit's binary path in step with installs ([§6.2](#62-versions)) | [minimal-disk-footprint A6](../design/minimal-disk-footprint.md#7-alternatives-considered) and [disk-levers](../design/disk-levers-and-backfill.md#51-the-housekeeping-slot) rejected a timer for reclaim (P7: it runs at moments no user bounds). A tick pays P7 instead of avoiding it | **the shape to reach for first**, if [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) rules a timer in; [OQ-YW1](#11-decision-ledger) ruled that reclaim does not ride it |
 | **S4. A socket-activated resident watcher that exits when idle** | the live-listener rows, plus everything S3 reaches | a new IPC protocol and a new version handshake; two activation mechanisms; peer checks | HD-R1's spirit and [OQ-HS3](../design/host-notch-services.md#OQ-HS3); a busy old-build watcher is modes 3 and 4 again | **held back** behind [§7](#7-what-would-have-to-be-true-before-building-one) |
 | **S5. A privilege-separated monitor**: holds only liveness and refcounts, parses no jail bytes, and spawns per-launch children for every jail-facing job | jail lifetime and reaping, with a jail-facing surface no larger than today's | two protocols, and a start and stop story | little that is ruled, as long as the monitor never holds a credential; "the monitor did not answer" must never read as "no other sessions" | the only resident shape I would draw if a watcher were ever wanted |
 | **S6. The full supervisor**: the launcher becomes a thin client, and the watcher owns fronts, the cgroup delegate, sidecars, grants, notifications and container lifetime | every row | a rewrite of the security shim's lifecycle story; the delegate's `SO_PEERCRED` check attests the wrong PID through a proxy | HD-R1, [OQ-HS3](../design/host-notch-services.md#OQ-HS3), the shim's principle 6, and the disclosure boundary: pack-declared host code would run while no launch is present to print a banner | **rejected** |
@@ -586,61 +586,32 @@ in three places:
 
 ## 10. Open Questions
 
-One question, about direction. It blocks no build, because nothing here is proposed. The
-direction question an earlier draft also filed, whether a resident watcher is closed or shelved,
-is not a question: [HD-R1](../design/host-daemon-ownership.md#HD-R1) already covers every
-host-side daemon, a resident watcher included, and any ruling can be revised in its own ledger.
-It is recorded as [YW-D7](#YW-D7). Whether one timer or several carry timed duties is a mechanism
-choice with one answer, recorded as [YW-D8](#YW-D8).
+None. The one question about direction, [OQ-YW1](#11-decision-ledger), was ruled 2026-09-29: disk
+reclaim stays in the launch slot, and any timer
+[OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) brings stays credential-only. The direction
+question an earlier draft also filed, whether a resident watcher is closed or shelved, is not a
+question: [HD-R1](../design/host-daemon-ownership.md#HD-R1) already covers every host-side daemon,
+a resident watcher included, and any ruling can be revised in its own ledger. It is recorded as
+[YW-D7](#YW-D7). Whether one timer or several carry timed duties is a mechanism choice with one
+answer, recorded as [YW-D8](#YW-D8).
 
-<a id="oq-yw1-background"></a>The background to [OQ-YW1](#OQ-YW1): A6 rejected a timer for
-reclaim because it runs at moments no user bounds (P7), and "the launch path fires at least as
-often as the artifacts are created". This question exists only if [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) puts a timer on the
-machine for credentials. It does not decide the image-load stall, which a tick holding the same
-lock would move rather than end ([§5.4](#54-cleanup-and-reclaim)).
-
-The two options it weighed:
-
-- **A — No. A6 stands, and the timer stays credential-only.** Reclaim keeps running in the
-  launch slot. A class that today waits for `yolo prune` can move into the slot, which needs no
-  timer. An idle machine is reclaimed at its next launch, and it creates no new launch
-  artifacts while idle.
-- **B — Yes. The timer also runs the reclaim floors**, each calling the slot's own function
-  under its existing locks and liveness gates. That buys reclaim on a machine that sits idle,
-  and the prune-only classes run with nobody typing. It costs P7 exposure at unchosen moments,
-  a launch that overlaps a tick waiting up to 116 s on the lock, moving
-  `YOLO_NO_AUTO_IMAGE_REAP` into configuration first ([YW-P5](#YW-P5)), and the unit-path rule
-  in [§6.2](#62-versions).
-
-1. ✅ <a id="OQ-YW1"></a>**[OQ-YW1](#OQ-YW1): If [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9)
-   installs a timer, may reclaim also run on it while no launch is present, reversing
-   [A6](../design/minimal-disk-footprint.md#7-alternatives-considered)?** The background, and the two
-   options it weighed, are [above](#oq-yw1-background).
-
-   _Leaning:_ **A.** An earlier draft leaned B because a tick seemed to take the 62-116 s pass off
-   the launch path. It does not: the pass already runs off its own launch's path, and a tick under
-   the same lock stalls a concurrent launch the same way. What remains for B is reclaim on an idle
-   machine, which A6's own argument answers: an idle machine creates no new launch artifacts. A
-   prune-only class that should run automatically can move into the slot, with no timer. **The
-   trap:** once a timer exists, the next duty gets added to it because it is there. Every addition
-   meets [§7](#7-what-would-have-to-be-true-before-building-one) items 2, 3 and 6 first, and a
-   call-site test pins its launch-path floor.
-
-   <!-- vantage: question id=OQ-YW1 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29, as leaned: A.** A6 stands: disk reclaim stays at launch, and any timer
-   > [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) brings stays credential-only. The maintainer:
-   > *"no. YOLO has no way of doing this, so... And I don't see why it's beneficial anyway. So,
-   > no."*
+> [!WARNING]
+> **A tick does not take the 62-116 s reclaim pass off the launch path.** The pass already runs
+> off its own launch's path, and a tick under the same housekeeping lock stalls a concurrent
+> launch the same way. An idle machine creates no new launch artifacts, so it is reclaimed at its
+> next launch; a prune-only class that should run automatically moves into the launch slot, with
+> no timer. **The trap:** once a timer exists, the next duty gets added to it because it is there.
+> Every addition meets [§7](#7-what-would-have-to-be-true-before-building-one) items 2, 3 and 6
+> first, and a call-site test pins its launch-path floor.
 
 ## 11. Decision Ledger
 
-Exploration conclusions that have one answer, recorded so a later design does not re-derive
-them. None is built, because nothing here is proposed.
+The one ruling, and the exploration conclusions that have one answer, recorded so a later design
+does not re-derive them. None is built, because nothing here is proposed.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-YW1 | **No scheduled reclaim: [A6](../design/minimal-disk-footprint.md#7-alternatives-considered) stands.** Disk reclaim stays at launch, and any timer [OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9) brings stays credential-only. The maintainer: *"no. YOLO has no way of doing this, so... And I don't see why it's beneficial anyway. So, no."* | 2026-09-29 | [§10](#10-open-questions) | Nothing to build: no timer exists, and reclaim runs in the launch slot |
 | <a id="YW-D1"></a>[`YW-D1`](#11-decision-ledger) | *Exploration conclusion.* Crash leftovers are never a reason for a watcher. The lifeline already in the tree (with `Pdeathsig` or a wrapper for socat) closes them per launch, the held-flock marker is liveness evidence a reaper can act on, podman's per-container process is a further route (S8), and the next launch's reapers are the backstop | 2026-09-29 | [§3](#3-three-kinds-of-gap-and-only-one-needs-a-watcher) | — |
 | <a id="YW-D2"></a>[`YW-D2`](#11-decision-ledger) | *Exploration conclusion.* Any tick or watcher calls the function the launch path calls, and a test pins each launch-path call site ([YW-P1](#YW-P1)) | 2026-09-29 | [§6.5](#65-drift) | — |
 | <a id="YW-D3"></a>[`YW-D3`](#11-decision-ledger) | *Exploration conclusion.* In-jail nix roots and pack-declared host code are out of reach for any host watcher: the first for attribution, the second for disclosure | 2026-09-29 | [§5.9](#59-out-of-reach-for-any-host-watcher) | — |
