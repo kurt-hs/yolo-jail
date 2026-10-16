@@ -21,9 +21,9 @@ import (
 // only consulted for unstamped `go build`/`go install` binaries.
 var buildVersion = ""
 
-// GitCommit is the short commit hash stamped into release builds via
-// -ldflags -X (goreleaser's {{.ShortCommit}}, scripts/build-go.sh, and every flake
-// build, whose flake.nix buildStamp carries 12 hex digits). Empty for
+// GitCommit is the commit hash, 12 hex digits, stamped via -ldflags -X by every
+// build channel: .goreleaser.yaml, the Homebrew formula, the PyPI wheels,
+// scripts/build-go.sh, `just install` and the flake (buildStamp). Empty for
 // unstamped builds. Not part of any user-facing byte contract yet — carried
 // for release forensics until the post-cutover CLI surface pass surfaces it.
 var GitCommit = ""
@@ -55,6 +55,7 @@ func Baked() string {
 // Normalize converts a raw git-describe/env version string to the canonical
 //
 //	git format: 0.1.0-3-gabcdef1-dirty -> 0.1.0+3.gabcdef1.dirty
+//	on tag, --long: 0.1.0-0-gabcdef1 -> 0.1.0+gabcdef1 (no distance)
 //	exactly on tag: 0.1.0 -> 0.1.0
 //	dirty on tag: 0.1.0-dirty -> 0.1.0+dirty
 //	leading "v" is stripped.
@@ -81,8 +82,16 @@ func Normalize(raw string) string {
 	baseVersion := strings.Join(parts, "-")
 
 	var suffixParts []string
+	// A zero distance is dropped, so a build on its tag reads <tag>+g<hash>: the
+	// release form, and the form a flake build stamps (flake.nix: buildStamp).
+	// Every build carries its hash (OQ-DA2, ruled 2026-10-16), which is why every
+	// stamping describe passes --long; build metadata after "+" never orders a
+	// version (selfupdate.Newer).
 	if commitCount != "" && commitHash != "" {
-		suffixParts = append(suffixParts, commitCount, commitHash)
+		if commitCount != "0" {
+			suffixParts = append(suffixParts, commitCount)
+		}
+		suffixParts = append(suffixParts, commitHash)
 	}
 	if dirty {
 		suffixParts = append(suffixParts, "dirty")
@@ -113,7 +122,7 @@ func isDigits(s string) bool {
 // returned VERBATIM (Python early-returns it before the normalization block —
 // the host sets it so the in-jail banner matches the host exactly, so it must
 // not be re-normalized); else the -ldflags baked version, normalized; else
-// `git describe --tags --dirty --always` in repoRoot, normalized. Returns ""
+// `git describe --tags --dirty --always --long` in repoRoot, normalized. Returns ""
 // when nothing resolves. Prefers the linker-stamped version (via YOLO_VERSION
 // env or ldflags) over git describe, since an installed binary should report
 // its own version, not the describe of whatever repo it happens to be run from.
@@ -143,7 +152,7 @@ func gitDescribe(repoRoot string) string {
 	var raw string
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--dirty", "--always")
+	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--dirty", "--always", "--long", "--abbrev=12")
 	cmd.Dir = repoRoot
 	cmd.Env = packsrc.CleanGitEnv(os.Environ()) // describe repoRoot, not a hook's repo (srcskew.go's gitOut)
 	out, err := cmd.Output()

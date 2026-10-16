@@ -134,7 +134,7 @@ type brewFormula struct {
 // tapFacts is what the tap's formula says, checked for internal consistency.
 type tapFacts struct {
 	// Version is the formula's stable version: what the formula stamps into
-	// `yolo --version` (release.yml passes #{version} to -ldflags).
+	// `yolo --version`, before the release's +g<hash12> (update-homebrew.sh's -ldflags).
 	Version string
 	// Keg is the linked keg's directory name — Version, plus `_<revision>` when the
 	// formula carries a revision. It names the Cellar directory.
@@ -176,16 +176,23 @@ func parseBrewInfo(data []byte, formula string) (tapFacts, error) {
 }
 
 // versionLinePrefix is what `yolo --version` prints before the version, and what the
-// formula's own test block asserts (release.yml: `assert_match "yolo-jail #{version}"`).
+// formula's own test block asserts before the release's +g<hash12> (update-homebrew.sh).
 const versionLinePrefix = "yolo-jail "
 
-// checkVersionLine requires `yolo --version` to print exactly one line naming want.
-// Exact, not a substring: a from-source describe such as 0.11.0+3.gabc1234 would
-// contain the version and still be a different binary.
+// releaseHashSuffix is the build metadata a release stamps after its version: the
+// commit, 12 hex digits (OQ-DA2, ruled 2026-10-16; update-homebrew.sh, .goreleaser.yaml).
+var releaseHashSuffix = regexp.MustCompile(`^\+g[0-9a-f]{12}$`)
+
+// checkVersionLine requires `yolo --version` to print exactly one line naming want,
+// the formula's version, followed by the release's `+g<hash12>`. Exact, not a
+// substring: a from-source describe such as 0.11.0+3.gabc1234 would contain the
+// version and still be a different binary, and a bare 0.11.0 is a formula that
+// stamped no commit.
 func checkVersionLine(stdout, want string) error {
 	got := strings.TrimSpace(stdout)
-	if got != versionLinePrefix+want {
-		return fmt.Errorf("`yolo --version` printed %q, want %q", got, versionLinePrefix+want)
+	rest, ok := strings.CutPrefix(got, versionLinePrefix+want)
+	if !ok || !releaseHashSuffix.MatchString(rest) {
+		return fmt.Errorf("`yolo --version` printed %q, want %q", got, versionLinePrefix+want+"+g<12 hex digits>")
 	}
 	return nil
 }
