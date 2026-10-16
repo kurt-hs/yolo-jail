@@ -174,7 +174,7 @@ func envValue(env []string, key string) string {
 // through the production floor wiring — and §8's first two rows: the first launch installs the
 // agent into the floor (saying so), and every launch, from a terminal PATH that has a
 // hand-installed copy or from a widget's bare PATH, execs the FLOOR's copy by path. The child's
-// PATH is the caller's, then the floor's bin/ last (OQ-HE10 (c), HE-D1). Replace the resolution in
+// PATH is the caller's, then the floor's bin/ last (OQ-HE10 (c), HE-D16). Replace the resolution in
 // hostExec with the old PATH lookup and the first assertion fails: the target is the stub.
 func TestHostLaunchRunsTheFloorsCopyOfASelectedPacksAgent(t *testing.T) {
 	dist, handInstalled := floorLaunchFixture(t, "")
@@ -307,7 +307,7 @@ func TestHostLaunchOfATargetGivenAsAPathRunsThatFile(t *testing.T) {
 }
 
 // TestHostChildPathIsTheCallersThenHostPathThenTheFloorsDeduplicated: the caller's PATH, then each
-// host_path folder not already on it (HE-D3), then the floor's bin/ (HE-D1), duplicates removed.
+// host_path folder not already on it (HE-D3), then the floor's bin/ (HE-D16), duplicates removed.
 func TestHostChildPathIsTheCallersThenHostPathThenTheFloorsDeduplicated(t *testing.T) {
 	sep := string(os.PathListSeparator)
 	ambient := strings.Join([]string{"/a", "", "/b", "/a", "/floor/bin"}, sep)

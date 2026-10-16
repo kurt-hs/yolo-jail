@@ -129,7 +129,7 @@ func TestHostExecLaunchesOverAnotherPacksMissingDependency(t *testing.T) {
 			t.Errorf("the hook must say %q:\n%s", want, report)
 		}
 	}
-	// THE MISS LINE BESIDE THE DECISION TEXT (host-launch-environment.md §4.2, HE-D2): a missing
+	// THE MISS LINE BESIDE THE DECISION TEXT (host-agent-environment.md, HE-D17): a missing
 	// dependency beside pending changes — the first launch before any apply — is still a miss, so
 	// the gate's decision branch prints the line too, not only its in-sync branch. Delete the
 	// reportGateMisses call after reportHostApplyGateDecisions and this fails.

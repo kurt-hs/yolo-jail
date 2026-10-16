@@ -17,7 +17,7 @@ import (
 // hostlaunchpath_test.go pins the LAUNCH PATH (docs/reference/host-agent-environment.md, the launch PATH: the
 // PATH yolo was started with, then `host_path`'s folders not already on it) at every host call
 // site that reads it — the launch gate's dependency survey, `yolo host apply`'s pre-flight and its
-// install, `yolo check-deps`, and the exec's target lookup — and the miss line (HE-D2) each prints.
+// install, `yolo check-deps`, and the exec's target lookup — and the miss line (HE-D17) each prints.
 // Every fixture is a temp HOME and a fake PATH; no agent CLI runs, and no test reads the real home.
 // Each test says which deleted call site fails it. A fixture that reaches the launch gate declares
 // `host_management: "own"`: the unset key is `none` since OQ-CO14, and the gate does nothing under it.
@@ -163,7 +163,7 @@ func otherOS() string {
 // TestAProgramWithNoBuildHereStillPrintsTheMissLine: a selected pack's program whose vendor publishes
 // no build for this host has no floor entry, so `yolo host -- <it>` looks it up on the launch PATH
 // (OQ-HE11 (a)) — and a check that looked it up there and found nothing prints the miss line too
-// (HE-D2: it prints on every miss), in `check-deps`, in `yolo host apply`'s default view and in the
+// (HE-D17: it prints on every miss), in `check-deps`, in `yolo host apply`'s default view and in the
 // launch gate. It is still not MISSING: nothing could install it, so check-deps exits 0 and host
 // apply counts it apart. Gate the miss line on "missing" again at any of the three, and this fails.
 func TestAProgramWithNoBuildHereStillPrintsTheMissLine(t *testing.T) {

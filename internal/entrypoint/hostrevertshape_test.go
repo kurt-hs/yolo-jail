@@ -1,7 +1,7 @@
 package entrypoint
 
 // hostrevertshape_test.go pins that `yolo host apply --revert` keeps an EMPTY declared default,
-// so a revert never re-creates the file HC-D1 fixed (docs/design/host-computed-layer.md).
+// so a revert never re-creates the file HC-D1 fixed (docs/reference/host-agent-environment.md).
 //
 // pi/models declares `"defaults": {"providers": {}}` because pi 0.87.1 rejects a models.json
 // without `providers`. A revert removes every key yolo wrote, `defaults` included, and leaves
