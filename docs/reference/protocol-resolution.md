@@ -50,7 +50,7 @@ pack joins a launch), [`providers.md`](providers.md) (the provider table this re
 [`OQ-CS8`](providers.md#why-its-this-way) is the line between resolving an address and composing
 a variable), [`pack-system.md`](pack-system.md) (contribution kinds, sole ownership, and the
 collision loop the adapter pair groups onto),
-[`cerebras-pack-and-copilot-delivery.md`](cerebras-pack-and-copilot-delivery.md#why-its-this-way)
+[`OQ-2` in providers.md's provider-reach rulings](providers.md#reach-oq-2)
 (the credential-without-an-address defect this makes unrepresentable).
 
 ---

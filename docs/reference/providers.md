@@ -39,6 +39,7 @@ covers:
   - packs/opencode/derive.lua
   - packs/copilot/derive.lua
   - packs/omp/derive.lua
+  - packs/omp/pack.json
   - packs/zai/pack.json
   - packs/cerebras/pack.json
   - packs/claude/pack.json
@@ -76,7 +77,8 @@ watched running, by area:
   ONLY, save one nested podman boot at `3a48ca94` (pi on zai: only pi's file carried
   `ZAI_API_KEY`, a bare shell did not, and the launch disclosed it); the tests that pin each done
   condition are listed in
-  [the design's record](../design/provider-credential-scope.md#5-what-done-looks-like-and-what-i-would-build).
+  [the done conditions](#the-credential-gate-done-conditions), beside
+  [the build ledger](#the-credential-gate-build-ledger).
   UNMEASURED: macos-user, Apple Container and `yolo host` on a real machine, and whether the
   per-agent file reaches every way an agent is started.
 - **The platform and the provider-keyed gates.** MEASURED BY TESTS ONLY: through the credential
@@ -135,8 +137,9 @@ loaded), [`protocol-resolution.md`](protocol-resolution.md) (how an agent's decl
 protocols and a provider's endpoints are paired, and the `adapter` contribution that supplies an
 address neither side declared), [`local-model-endpoints.md`](../research/local-model-endpoints.md) (the
 source-verified per-agent vocabularies the dialect maps translate into),
-[`cerebras-pack-and-copilot-delivery.md`](cerebras-pack-and-copilot-delivery.md) (which agents a
-provider can reach *at all*, one level below the delivery channels below),
+[`packs/cerebras/README.md`](../../packs/cerebras/README.md) and
+[`packs/zai/README.md`](../../packs/zai/README.md) (two provider packs, each worked through
+every agent),
 [`host-agent-environment.md`](host-agent-environment.md) (the host notch's own delivery: `yolo
 host --` and its wrapper directory), [`config-migration-to-prism.md`](config-migration-to-prism.md)
 (the stateful render a selection lifts into: the captured overlay, `last_render`, and the adopting
@@ -410,7 +413,7 @@ whose env derive copies its value into the agent's own environment (claude's
 `ANTHROPIC_AUTH_TOKEN`, copilot's `COPILOT_PROVIDER_API_KEY`) and for no other. opencode, pi and
 codex read the variable itself, so for them the refusal names the variable as left in that shell
 and offers `env_sources` (`packload.ProviderCredentialGapsTo`,
-[CN-D25](../design/provider-credential-scope.md#CN-D25)); until 2026-09-30 the check
+[CN-D25](#CN-D25)); until 2026-09-30 the check
 counted that shell for every agent, and those three started with no key. At `yolo host` the agent
 inherits that shell, so it counts there.
 
@@ -716,7 +719,7 @@ that writes a launch's environment for one notch or backend. There are three:
     Neither line calls the name withheld, because the command holds it anyway
     ([ES-D10 to ES-D12](../design/credential-sources-separation.md#10-decision-ledger)).
   - **A profile the wire bridge serves starts the bridge for its one command.** `yolo host
-    -p cerebras -- claude`, and `-p codex -- claude` on a bare `"packs": ["claude"]`, start
+    -p cerebras -- claude`, and `-p codex -- claude` with `"packs": ["claude", "openai-auth"]`, start
     the bridge's host half as a child of that launch, on a loopback port it picked, and point
     claude at it with the launch's caller token as `ANTHROPIC_AUTH_TOKEN`; the bridge stops when
     claude exits ([`wire-bridge.md`](wire-bridge.md#at-the-host-notch),
@@ -1111,7 +1114,7 @@ promoting the line to the terminal is a change at `noteSelectionClears` alone.
 > with the profile for the same reason. At `yolo host apply`, whose `rmw` write re-reads your real
 > file, a computed key the derive stops asserting leaves by the computed-leaf clear
 > ([HC-D25](host-agent-environment.md#HC-D25)) rather than by omission: claude's Bedrock
-> switch is the case that matters, since the host leaves claude's `codex` profile out.
+> switch is the case that matters, since the host leaves the `codex` profile out of claude's file.
 
 ### A selection outranks a host-layer value
 
@@ -1163,9 +1166,9 @@ protocol the `openai-codex` entry serves, so pointing codex at it resolves like 
 
 opencode has its own ChatGPT-subscription client: its built-in `openai` provider, which its
 built-in ChatGPT login puts on the subscription whenever an `oauth` credential is stored under
-`openai` (read from opencode 1.18.34, never run). The opencode pack ships a `codex` profile over
-`openai-codex`, as claude, codex and pi do, and its derive treats the provider by name, as codex's
-and pi's do ([OQ-1, OQ-2](../design/pi-codex-provider-shadowing.md#10-decision-ledger)):
+`openai` (read from opencode 1.18.34, never run). The `codex` profile over `openai-codex` is
+`packs/openai-auth`'s, the one profile every agent selects it by, and opencode's derive treats the
+provider by name, as codex's and pi's do ([OQ-1, OQ-2](../design/pi-codex-provider-shadowing.md#10-decision-ledger)):
 
 - **No yolo row for `openai-codex`**, a via row included. A row would put opencode on another SDK
   and address in place of its own client.
@@ -1346,6 +1349,123 @@ model a selection names is resolved IN THE DERIVE — alias = the profile's `mod
 `default`, then the provider's `models` map. Core decides no model: `yolo.model_for` only looks
 an alias up for the provider the derive was handed.
 
+### Provider reach: which agents a provider can reach at all
+
+**Provider reach** *(a term this reference coins)* is the question of which agent CLIs a given
+provider can drive. It sits one level below the delivery table above, which is about the channel
+(a catalog file, a selection key, a process environment) and assumes the pairing is possible.
+Reach is decided by **wire protocol**. A derive translates config *dialects*, turning one
+canonical declaration into whatever spelling an agent's own file wants. It cannot translate a
+wire protocol, which is a property of the bytes on the connection. So when an agent and a
+provider share no protocol, there are two honest answers: a translator
+([`wire-bridge.md`](wire-bridge.md)), or the record that the pairing is unreachable. The pairing
+itself is resolved, and an impossible one refused, above the derive
+([`protocol-resolution.md`](protocol-resolution.md)).
+
+| Agent | How a provider reaches it | Can ride a chat-completions-only provider |
+| :--- | :--- | :--- |
+| pi | catalog derive + selection keys | **yes**, natively |
+| opencode | catalog derive + selection key | **yes**, natively |
+| copilot | env derive only: its BYOK has no config file ([below](#copilots-byok-contract)) | **yes**, natively, and through the bridge when the provider's composed entry carries an `anthropic` endpoint ([D-3](#reach-d-3)) |
+| oh-omp | catalog derive, **no start model** | **catalog only**: it gets the provider row, and the user chooses it inside the agent |
+| claude | env derive only | **only through the wire bridge**: claude speaks Anthropic Messages, so a provider with no `anthropic` endpoint has nothing to point `ANTHROPIC_BASE_URL` at |
+| codex | catalog derive + selection keys | **no, and no bridge helps**: codex speaks OpenAI Responses only. Both of the bridge's translating routes take Anthropic Messages in (to chat completions, and to the Codex Responses service), and its [via route](wire-bridge.md#the-via-route--one-route-per-agent-under-agentname) passes codex's own Responses traffic through untranslated, so nothing turns Responses into chat completions |
+| agy | nothing | **no, and nothing can** (below) |
+| muse-code | nothing | **no**: it runs on its own Muse subscription login and declares no wire protocol, so no provider pairs with it (`packs/muse-code/pack.json`) |
+
+The catalog-derive rows describe a provider the agent has no provider of its own for. A provider
+the agent has built in gets no row ([above](#a-provider-the-agent-has-built-in)): cerebras and
+zai are both built in for pi, oh-omp and opencode, so each runs them on its own client and list.
+
+The derive's gate is **the provider's URL for the protocol that agent resolves**, never an
+entry-level address. Gating on one address silently dropped an `endpoints`-only provider from
+every catalog. The reason a provider gets no row differs per agent: for codex it is
+**incapacity** (its dialect map has no `anthropic` row); for pi it is **resolution** (pi speaks
+the anthropic protocol, but resolves the `openai` endpoint key, so an anthropic-only provider
+gives it no row); opencode consumes no `wire_api`, so for it the resolution key is the whole
+story ([OQ-Z6](#oq-z6)).
+
+Three rules every provider derive keeps:
+
+- **Model ids are wire-true.** An alias is a local nickname for an id the provider itself
+  recognizes, and the id is sent verbatim, so an alias that is not the provider's own spelling
+  is a wire error waiting to happen.
+- **A derive composes nothing rather than half-arming an agent.** Where an agent would refuse,
+  or would silently talk to the wrong host, the producer returns an empty table: a partially
+  composed provider environment is worse than none.
+- **A credential travels with the address it was minted for, or not at all.** A key composed
+  for a protocol the agent cannot reach goes to the agent's default first-party host
+  ([OQ-2](#reach-oq-2)).
+
+> [!WARNING]
+> **`agy` is Google-locked, and this is not a gap to close.** Its `modelProvider` setting
+> accepts exactly one value, and its only custom-endpoint hook speaks the Gemini protocol, so a
+> non-Gemini endpoint behind it is a request the agent cannot express. The non-Google models in
+> its picker ride Google's own backend. Do not add a provider derive to `packs/agy`; there is no
+> key to write. Revisit only if agy ships an OpenAI-compatible provider hook.
+
+> [!WARNING]
+> **codex plus a chat-completions-only provider stays unwireable, and the bridge is not the
+> workaround.** The bridge's translating routes all start from Anthropic Messages, the wrong
+> direction for codex. z.ai and Cerebras are the two recorded instances; treat a third as
+> confirmation of the rule rather than as a new bug.
+
+### Copilot's BYOK contract
+
+Copilot is the only agent whose entire provider surface is process environment, apart from the
+`providers.json` agent file a jail writes for a provider with a model list ([the delivery
+table](#per-agent-delivery)). It has no provider directory, so `packs/copilot/derive.lua`'s
+`yolo.env` producer **is** copilot's provider delivery ([D-2](#reach-d-2)). Four properties of
+that contract are copilot's behavior rather than yolo's choice:
+
+- **The base URL is the sole activation gate.** Copilot ignores every other `COPILOT_PROVIDER_*`
+  variable unless `COPILOT_PROVIDER_BASE_URL` is set.
+- **A model is mandatory.** Copilot's BYOK refuses to start without one, so a provider that
+  declares no resolvable model alias makes the producer compose **nothing**. Arming the base URL
+  alone would trade a working GitHub-authenticated copilot for a copilot-side refusal.
+- **BYOK is a mode switch, not an addition.** GitHub authentication is skipped once BYOK
+  activates, so selecting a provider for copilot replaces its identity.
+- **No canonical protocol is unspeakable to copilot.** It speaks both protocol families, so the
+  producer declines a provider only when it names no endpoint at all.
+
+**The producer prefers the `anthropic` endpoint** ([D-3](#reach-d-3)), then the `openai` one.
+Where a provider offers both, the anthropic route is the richer surface, and `anthropic` is
+copilot's first-class provider type. Two consequences look like bugs and are not:
+
+- `COPILOT_PROVIDER_WIRE_API` is emitted only for the openai type, because copilot's enum for it
+  speaks only to that type.
+- A provider whose anthropic endpoint the [wire bridge](wire-bridge.md) supplies, as it does for
+  Cerebras, reaches copilot *through the bridge* rather than on its native chat-completions
+  endpoint, though copilot could speak that directly.
+
+Beyond the base URL, type, wire API and model, the producer composes a context ceiling and a
+credential:
+
+- **A context ceiling.** A context window the profile or the provider declares becomes
+  `COPILOT_PROVIDER_MAX_PROMPT_TOKENS`, which is what makes a provider's `context_window`
+  option meaningful to copilot and not only to claude ([D-4](#reach-d-4)).
+- **A credential, in this order:** the endpoint's own credential when the endpoint names one
+  (the bridge's caller token, on an address the bridge serves), then the provider's hydrated
+  `api_key`, then an `api_key` under the provider's `options`, then the placeholder `local` for
+  a loopback base URL, because a local server that wants no authentication still needs the
+  variable set. The `options` fallback is one of the
+  [breaches the invariant warns about](#what-this-does-not-license).
+
+### oh-omp's catalog
+
+`packs/omp` installs Oh My Pi (oh-omp) and is a program pack, not a provider. Its derive projects
+every composed provider with a supported dialect into `~/.oh-omp/agent/models.yml` at provision
+time, so changing a provider's endpoint or aliases changes the catalog without a second,
+hand-maintained registry. A provider with no usable endpoint is left out rather than given a
+guessed URL. The catalog carries URLs, dialects, model ids and credential variable *names*; the
+values stay in the launch environment. oh-omp's workspace state (`.oh-omp`) is its own, shared
+with no other agent.
+
+The catalog surface names the YAML codec (`"codec": "yaml"`) to get structured merging. That
+choice is explicit on purpose: a `host_files` entry for a `.yaml` or `.yml` file that names no
+codec stays `raw`, byte for byte, which protects comments and formatting in unrelated
+configuration files (`config.hostFileCodecByExt`).
+
 ### Tier aliases
 
 A provider's `models` map is open vocabulary, but four names are **conventional tier aliases**
@@ -1374,7 +1494,7 @@ adapter pack, and it follows the profile. A role the provider does not name is u
 agent with a profile never inherits it from an agent on another provider. An agent with no
 profile selects no provider and composes none, so one started by an agent that has them keeps
 that agent's values, as a child keeps any of its parent's environment
-([CN-D8](../design/provider-credential-scope.md#CN-D8)). A value you set yourself for
+([CN-D8](#CN-D8)). A value you set yourself for
 one command still wins in a jail, as every profile-composed value does
 ([the per-agent file's precedence](#oq-cn8)). A variable of
 the same name the agent's own pack sets wins over the composed one, and no warning is printed for
@@ -1604,6 +1724,21 @@ name both sides declare, the user's values win per option and the pack's provide
 the user names another. Profiles **point at** a provider; there is no `extends`
 ([OQ-CS9](#oq-cs9)), because provider-declared option defaults already remove the duplication
 inheritance would.
+
+One word often does three jobs here, and they are separate things. Take `zai`:
+
+| Thing | Where it lives | What it is |
+| :--- | :--- | :--- |
+| the provider name | the key in the `providers` map, or a `kind: "provider"` contribution's `name` | a namespace. The derives iterate it and it lands in each agent's file as the provider id; it is what other things reference |
+| the profile's `provider` field | a profile declaration | a **reference, and mandatory**: which provider this selection routes to |
+| the profile name | the value `-p` sets | the selector: it gates `profile`-modified contributions and reaches every selected pack's derive |
+
+> [!WARNING]
+> **`requires_provider` is a tombstone, not a synonym for `provider`.** It is decodable and then
+> refused by name, in user config too, with a message pointing at the live field. The old field
+> was an *assertion* ("when this profile is active, that provider must exist and its key must be
+> hydrated"); the live one is a *reference*. Do not reintroduce the assertion spelling
+> (`packdecl.ProfileContribution.RequiresProvider`).
 
 The option NAMES a profile may carry are the provider's declared `options` — a flat
 name→default map in which a null means *declared, no default* ([OQ-CS4](#oq-cs4)). A profile
@@ -2305,6 +2440,18 @@ no profile. `yolo host env` prints the composition and nothing about what a laun
   key: each entry is its own provider's, the primary decides what a fresh session starts on, and
   a set refuses two entries on one provider or one regional platform. Merging two variants on a
   key would need a precedence rule between them, and no use case has asked for one.
+- **No two provider entries sharing one key.** One service is one provider: one key, and the
+  shape axis inside the entry as `endpoints.<protocol>` ([OQ-Z2](#oq-z2)).
+- **No endpoint that nothing serves.** An `anthropic` endpoint on a chat-completions provider is
+  legitimate only because the wire bridge's adapter declares and serves it; a hand-declared
+  endpoint with neither a service nor a bridge behind it is a lie the derives faithfully
+  propagate (`yolo check` warns about a user's jail-local one,
+  [`wire-bridge.md`](wire-bridge.md#needs--a-conditional-pack-dependency)).
+- **No option that no reachable agent reads.** An option exists to be consumed by some agent's
+  derive; one nobody reads is dead weight that reads as a promise ([D-4](#reach-d-4)).
+- **No env reference form in user-written config.** The credential's name crosses and the
+  value is hydrated per derive invocation; ambient process env is not a config-rendering input
+  ([OQ-Z3](#oq-z3)).
 - **No provider registry or discovery.** Providers are shipped by packs or written by hand.
 - **No secrets scanner.** The schema is the mechanism; a user who wants a content tripwire runs
   one in CI over the same files.
@@ -2374,8 +2521,9 @@ older links.
 ### The credential-gate rulings
 
 These rows carry the ids of the design the [credential gate](#the-credential-gate) was built from
-(`provider-credential-scope.md`, graduated 2026-10-01; its implementation-decision ledger,
-`CN-D1` to `CN-D25`, stays in that file as the build record). Each was ruled as leaned.
+(`provider-credential-scope.md`, graduated 2026-10-01 and since deleted; its
+implementation-decision ledger, `CN-D1` to `CN-D25`, is [below](#the-credential-gate-build-ledger)).
+Each was ruled as leaned.
 
 | Ruling | Why it holds |
 | :--- | :--- |
@@ -2389,6 +2537,66 @@ These rows carry the ids of the design the [credential gate](#the-credential-gat
 | <a id="oq-cn7"></a>[OQ-CN7](#oq-cn7) — **a loopback credential service follows the selection** (2026-09-28): `aws-auth`'s adapter starts, and a wire-bridge route is published, only when some agent's profile selects that provider; and `aws-auth` demands a per-launch caller token delivered only in the selecting agent's file | The gate scopes what an environment carries, and an adapter that answers any process would hand the minted credential to a bare shell anyway. What remains is a same-uid file read. |
 | <a id="oq-cn8"></a>[OQ-CN8](#oq-cn8) — **the user's explicit value wins over a profile's composed one** (2026-09-28) | `ANTHROPIC_MODEL=x claude` and an `export` in a jail shell are documented habits. Composed values are written against the launcher's incoming environment, overriding only an empty value or one yolo set, so a stale inherited value cannot win either. |
 | <a id="oq-cn9"></a>[OQ-CN9](#oq-cn9) — **macos-user writes the per-agent files too** (2026-09-28) | A bare `yolo` there starts a login shell, which is no agent, so an agent started from it would otherwise get none of its profile's values. |
+
+### The credential-gate done conditions
+
+These came from the gate's design (`provider-credential-scope.md`, graduated 2026-10-01; its
+build record moved here and the file was deleted).
+
+The done conditions, and the tests that show each, by tests only (2026-09-26, the tests the gate
+was built with; [`OQ-CN7`](#oq-cn7)'s credential half since `7d0af878`):
+
+1. `yolo -p zai -- pi`: pi's environment and `models.json` carry no AWS variable, and the launch
+   discloses what it withheld.
+2. `yolo -p codex=<a Bedrock profile> -- codex` leaves `CLAUDE_CODE_USE_BEDROCK` unset in the
+   jail environment and in claude's.
+3. With `aws-auth` selected, `-p codex=bedrock` gives codex `AWS_CONTAINER_CREDENTIALS_FULL_URI`;
+   claude and a bare `yolo -- bash` shell get neither it nor claude's flag, and the adapter
+   refuses them `401` (`TestTheAWSAdapterServesOnlyTheAgentThatSelectedBedrock`).
+4. Each gate has a test that fails when its call site is deleted.
+5. All three vehicles meet 1 to 3, or a vehicle that cannot says so as a disclosure.
+
+| Condition | Vehicle | Test |
+| :--- | :--- | :--- |
+| 1 | container: pi's launcher run against a fake pi, and a bare shell | `TestGateDoneCondition1PiOnZaiSeesNoAWS` (`internal/cli/run`); pi's `models.json` in `TestPiModelsJSONCarriesNoMultiRouteCredential` (`internal/entrypoint`) |
+| 2, 3 | container: codex's and claude's launchers, and a bare shell, with `aws-auth` selected; claude selecting `bedrock` as the control | `TestGateDoneConditions2And3CodexOnBedrock` |
+| 1–3 | host notch, through `hostMain` to its exec | `TestHostGatePiOnZaiSeesNoAWS`, `TestHostGateCodexOnBedrockAndClaudeUnselected` (`internal/cli`) |
+| 1, 5 | macos-user, through `Run` to its handler seam | `TestMacosUserLaunchCarriesOnlyTheLaunchedAgentsCredentials` |
+| 4 | every gate's call site | deleted one at a time; each deletion failed at least one test |
+| 5 | macos-user's per-launch limit | the disclosure `noteMacosUserCredentialScope` prints, pinned by the macos-user test above |
+### The credential-gate build ledger
+
+The implementation decisions the gate was built with, `CN-D1` to `CN-D25`, kept with their ids
+because code comments cite them. Each is built; the last column names what pins it. Where a row
+says "Settled in", the link is where the behavior is now described.
+
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| <a id="CN-D1"></a>CN-D1 | *Implementation decision.* `api_key_env_name` is a string or a non-empty list of distinct valid names (`packdecl.EnvNames`, one rule for manifests and user `providers`). One name keeps the string spelling on every surface; a list of several points an agent at none of them (`KeyEnvName`), so the derives read a view with the one name or none (`ProvidersForDerive`) and the pre-flight and the wire bridge read `KeyEnvName`. Picking the first of several would, for Bedrock, compose a bearer into claude's `ANTHROPIC_AUTH_TOKEN`. In a manifest, `null` and `""` read as absent, as they did while the field was a plain unvalidated string (review found the first build refusing both, fatally at boot); a user config's `""` stays refused, as it always was. Manifest names are validated now, which a pack author can meet as a new refusal | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestAProviderMayListItsCredentialVariables`, `TestACredentialVariableListIsValidated`; the manifest's `null` and `""`, `TestAnEmptyOrNullCredentialVariableReadsAsAbsent` |
+| <a id="CN-D2"></a>CN-D2 | *Implementation decision.* `bedrock` claims `AWS_BEARER_TOKEN_BEDROCK`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_PROFILE` and `AWS_CONTAINER_CREDENTIALS_FULL_URI`: [`OQ-SSO7`](../design/sso-backed-bedrock.md#13-decision-ledger)'s three routes as the clients spell them, plus the other two of pi's four spellings ([OQ-CN4](#oq-cn4)). Since [PP-D9](../design/providers-and-profiles-redesign.md#PP-D9) (2026-09-29) a provider declaring the same `platform` and no `api_key_env_name` of its own co-claims these six, so a user's own Bedrock provider keeps them to its agents rather than having them withheld from every process | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestTheShippedBedrockProviderClaimsItsCredentialRoutes`; the platform co-claim `packload.credentialClaims` ([PP-D9](../design/providers-and-profiles-redesign.md#PP-D9)) |
+| <a id="CN-D3"></a>CN-D3 | *Implementation decision.* An `env_sources` value no provider claims stays shared, delivered to every process as before. The gate scopes provider credentials; a user's other variables (`GH_TOKEN`) are not a provider's | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestScopeCredentialsSplitsClaimedFromShared` |
+| <a id="CN-D4"></a>CN-D4 | *Implementation decision.* The per-agent env gate (`gateFiresFor`): an agent pack's gated env reaches its own agent when that agent selected the profile; a CLI-less pack's reaches every agent that selected it; a table key naming no CLI any selected pack installs activates nothing. So `-p codex=bedrock` gives codex nothing of claude's either — "as specific as possible" — and the override pre-flight asks the same rule (`gateDelivered`) | 2026-09-26 | [the done conditions](#the-credential-gate-done-conditions) | ✅ `TestAnAgentPacksGatedEnvReachesOnlyItsOwnAgent`, `TestGateDoneConditions2And3CodexOnBedrock` |
+| <a id="CN-D5"></a>CN-D5 | *Implementation decision.* One gate function, `packload.ScopeCredentials`, with two call sites: `composePackChannel` (the jail, whose result the container and macos-user vehicles read) and `composeHostVars` (the host notch, which composes from user scope only and never went through `composePackChannel`). The same arrangement `EnvFold` and `AgentEnv` already had | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestGateDoneCondition1PiOnZaiSeesNoAWS` (the jail), `TestHostGatePiOnZaiSeesNoAWS` (the host notch) |
+| <a id="CN-D6"></a>CN-D6 | *Implementation decision.* The gate classifies NAMES, not sources: a claimed name is withheld from another provider's agent whether `env_sources` or the launch environment holds it, so the env derive's relay cannot hand one agent another's key | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `CredentialScope.LookupFor`, pinned by `TestTheEnvDeriveSeesOnlyTheAgentsOwnProvidersKey` |
+| <a id="CN-D7"></a>CN-D7 | *Implementation decision.* The container vehicle: `<workspace>/.yolo/home/agent-env/<agent>.sh`, mode 0600 in a 0700 directory, bound `:ro` at `~/.config/yolo-agent-env` on podman. `deliverChannel` writes it beside the shared file on a fresh launch and an attach, replacing the directory's contents whole; a directory bind shows an attach's rewrite to the running jail. On Apple Container, which binds `<workspace>/.yolo/home` itself as the home, `deliverChannel` writes the files, and the shared file's copy, straight to their in-home paths with the same modes on every entry. The first build copied them there at argv assembly instead, which made them 0644 in a 0755 directory and reached only a fresh launch, so an attach never revoked a deselected agent's file; review found both | 2026-09-26 | [the done conditions](#the-credential-gate-done-conditions) | ✅ `TestDeliverChannelRevokesADeselectedAgentsFile`; on Apple Container, `TestAppleContainerWritesOwnerOnlyAgentFilesAtTheJailsPath` and `TestAppleContainerAttachRevokesADeselectedAgentsFile` |
+| <a id="CN-D8"></a>CN-D8 | *Implementation decision.* A per-agent file only ADDS: no `unset` of values another agent holds. An agent started by another inherits that agent's environment, as any child does, and an unset list would also erase a value the user exported by hand in a jail shell. A derive's tombstone is spelled `unset`, which this bash-sourced file can say and the shared file cannot | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `agentEnvFileContent`, pinned by `TestAgentEnvFileContentGrammar` |
+| <a id="CN-D9"></a>CN-D9 | *Implementation decision.* The file grammar is the shared file's: `env_sources` values def-form (`export K=${K:-'v'}`), composed values plain-form; a derive key that is not a variable name is not written. Consequence found in review: the file is sourced by the launcher, after the user's shell, so a composed value beat the user's own inline or exported one, where before the gate the user's won; composed values are no longer plain-form since [OQ-CN8](#oq-cn8) (CN-D21) | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `agentEnvFileContent`, `TestAgentEnvFileContentGrammar`; composed-value grammar replaced `cef51809` |
+| <a id="CN-D10"></a>CN-D10 | *Implementation decision.* The npm and native launchers source the file after install, update, the MCP server refresh and the pre-launch refresh (none needs a credential; the first build sourced it before the two refreshes, and review moved it), and before the pre-launch authentication step, which reads a profile-gated switch (pi's `YOLO_AUTH_PRELAUNCH_PI_FLAG`) from it; the launch-flag wrapper sources it before its exec. An agent the image, the store package farm or a declared mise tool provides has neither launcher, and one with no launch flags had no wrapper either, so nothing sourced its file; review found it, and the same wrapper, with no flags, is now written for any pack-declared program that has a file this entry and no other carrier. The path is `$HOME`-relative, as the templates' install prefixes are | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `agentEnvShellFn`, `TestTheInstallerLaunchersSourceTheAgentsOwnEnvFile` and `TestTheLaunchWrapperSourcesTheAgentsOwnEnvFile`; the flagless carrier `deliverEnvCarriers`, `TestAShadowedAgentWithoutLaunchFlagsStillSourcesItsOwnFile`; the order `TestTheRefreshStepsRunWithoutTheAgentsCredentials` |
+| <a id="CN-D11"></a>CN-D11 | *Implementation decision.* The wire bridge reads a served route's key from the file of the agent the route serves (`route.Agent`, `viaRoute.Agent`), then the shared file, then its own environment | 2026-09-26 | [wire-bridge.md](wire-bridge.md) | ✅ `TestTheBridgeReadsTheServedAgentsOwnKey`, `TestAViaRouteReadsItsAgentsOwnKey` |
+| <a id="CN-D12"></a>CN-D12 | *Implementation decision.* macos-user delivers PER LAUNCH: the session env carries the shared values plus the launched program's own (the basename of its argv[0]), with `env_sources` last to keep that backend's precedence; `macosuser.buildPlan` no longer hydrates `env_sources`; the launch says so when another agent had values it cannot carry. Consequence found in review: a bare `yolo` there starts a login zsh, which is no agent, so an agent started from that shell got none of its profile's values, where before the gate every agent's shape variables rode the session; since [OQ-CN9](#oq-cn9) each profiled agent's own file carries them (CN-D24), and the session env is still per launch | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestMacosUserLaunchCarriesOnlyTheLaunchedAgentsCredentials`, `TestLaunchEnvLayersTheGatedEnvSourcesLast`; files `949d9430` |
+| <a id="CN-D13"></a>CN-D13 | *Implementation decision.* The host notch gates what yolo ADDS. The shell `yolo host` inherits is the user's and passes through untouched | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestHostGateCodexOnBedrockAndClaudeUnselected`; the shell untouched, `TestHostGrantShellHeldNameIsDisclosedAsNotAddedNeverWithheld` |
+| <a id="CN-D14"></a>CN-D14 | *Implementation decision.* The pre-flight's selected set is every provider some agent's profile resolves to (`SelectedProviders`) | 2026-09-26 | [the credential preflight](#the-credential-preflight) | ✅ `TestScopeCredentialsSplitsClaimedFromShared`, `TestProviderCredentialGapsDemandOnlySelectedProviders` |
+| <a id="CN-D15"></a>CN-D15 | *Implementation decision.* "Delivered", for the env-override pre-flight and `yolo check`'s prediction of it, means reaching SOME process through the gate; `yolo check` composes the same gate with `NoDerives`, running no pack code | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestEnvOverrideIgnoresACredentialTheGateWithholds`, `TestSectionPacksPredictsNoOverrideForAWithheldCredential` |
+| <a id="CN-D16"></a>CN-D16 | *Implementation decision.* The disclosure is one line naming the rule, then one line per group of variables with the same claimant and recipients ("`… (provider zai): pi only`", "`… withheld from every process`"), names only, printed only when a claimed credential was hydrated, on the fresh launch, the attach, macos-user and the host notch (`yolo host --`, and `yolo host env` on stderr since review found that front door printing nothing while its export dropped the value) | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestCredentialScopeDisclosureNamesOnly`; `yolo host env`, `TestHostEnvDisclosesWhatItsSliceWithholds` |
+| <a id="CN-D17"></a>CN-D17 | *Implementation decision.* The menu half: opencode's `enabled_providers` names the selected provider, under the selection beside `model` and only when a model is written (*amended 2026-09-30 by [AP-D17](../design/active-provider-sets.md#AP-D17): written whenever the selected provider is one opencode's config holds, a model or not*); claude gets no new key, its env derive already pointing it at exactly one endpoint per launch, and an enforced MODEL allowlist is [`OQ-BR13`](../design/model-lists-and-pickers.md#OQ-BR13); pi's `enabledModels` is unchanged and restricts nothing | 2026-09-26 | [the credential gate](#the-credential-gate) | ✅ `TestOpencodeMenuFollowsTheSelectedProvider` |
+| <a id="CN-D18"></a>CN-D18 | *Implementation decision, from review; its disposition REPLACED the same day by the attach contract gate.* An attach to a jail launched BEFORE the gate (after per-entry delivery) cannot receive the per-agent half: that yolo bound no agent-env directory and wrote launchers that source none. Delivering only the shared half would strip every scoped credential and shape variable from the selecting agent while the disclosure named it as the recipient, and that still holds. The first build froze `YOLO_AGENT_ENV_FILES=1` into the container. On an attach whose inspect returned an environment without it, and whose channel scopes something to an agent, it refused a typed `-p`, and for a config-only selection it warned by name and delivered nothing. That second arm was the silent ride-along [`OQ-SK1`](../design/attach-skew-and-contract-guardrails.md#OQ-SK1) forbids. **What replaced it:** the marker is now the `agent-env-files` contract tag, still read from jails that carry only the old marker. The missing tag takes the gate's disposition, typed or not: a `Restart jail now? [Y/n]` prompt at a terminal, a refusal naming `yolo stop` elsewhere, and `YOLO_ALLOW_ATTACH_SKEW=1` to proceed delivering nothing ([`attach-skew-and-contract-guardrails.md`](../design/attach-skew-and-contract-guardrails.md#what-was-built-2026-09-26), SK-D2 to SK-D4) | 2026-09-26 | [what crosses to the jail](#what-crosses-to-the-jail) | ✅ `347afce6`; replaced by `settleAttachSkew`, pinned by `TestAttachRefusesAPreGateJailItCannotDeliverTo` and `TestAttachSkewPromptsARestartInATerminal` |
+| <a id="CN-D19"></a>CN-D19 | *Implementation decision, from review.* An MCP server's `requires_env` is asked PER AGENT at boot (`loadMCPTables`): the boot's environment plus that agent's own env file, read in the file's grammar. A claimed variable never reaches the boot's environment, so the jail-wide gate had skipped such a server on every launch, even for the agent holding the key. yolo writes the entry's `${VAR}` references verbatim for the agent's own process to resolve, so the agents that hold the variable are exactly the ones whose config should name the server. `yolo check`'s entrypoint preflight still renders every embedded pack with every hydrated value and no selection, so it configures such a server for every agent; that prediction is not per agent yet | 2026-09-26 | [mcp-configuration.md](mcp-configuration.md) | ✅ `TestRequiresEnvIsEvaluatedPerAgent` (boot); `yolo check` open |
+| <a id="CN-D20"></a>CN-D20 | *Implementation decision.* For `openai-codex` only, CN-D17's clause *"pi's `enabledModels` is unchanged"* is superseded: pi's settings derive writes no `enabledModels` for it, because the extension registers exactly the declared model list and pi's "all" view there already is that list. The menu half of [OQ-CN4](#oq-cn4) for `openai-codex` is therefore the registered catalog, not `enabledModels`. Recorded as [ML-D2](../design/model-lists-and-pickers.md#ML-D2), which owns the lists | 2026-09-27 | [ML-D2](../design/model-lists-and-pickers.md#ML-D2) | ✅ `2a34a176` |
+| <a id="CN-D21"></a>CN-D21 | *Implementation decision, for [OQ-CN8](#oq-cn8).* "The user set this" is told from "yolo set this" BY VALUE, not by name: a name alone cannot tell `ANTHROPIC_MODEL=x claude` from the shared file's own `ANTHROPIC_MODEL`. Each composed value in an agent's file (gated pack env, shape vars) is written against the launcher's incoming environment: def-form `export K=${K:-'v'}` when yolo set K nowhere else, else `case "${K-}" in ''\|'<inherited>'…) export K='v' ;; esac`, overriding only an empty value or one yolo put there. The inherited values (`inheritedValues`) are the shared file's (its channel section's plain lines and its env_sources default), the container's frozen environment (read off the running container on an attach; nil on a fresh launch, whose argv carries none of the channel's names), and every other agent's composed value for K this entry (an agent started by another inherits it). A derive's tombstone unsets only an inherited value, and is not written when yolo set K nowhere else. Not remembered: a value an entry older than the current one set, which a shell that outlived two changing attaches keeps as it would any exported value. Consequence found 2026-09-30 ([NC-D68](../plans/notch-convergence.md#NC-D68)): with every line deferring to a value already set, the file's first line wins, so inside one agent's file a claimed `env_sources` value and a gated pack env value now beat that agent's shape variable for the same name, where before the plain-form shape line won. Which of yolo's own sources should win is [OQ-NC12](../plans/notch-convergence.md#OQ-NC12), and whether the host keeps the user's value is [OQ-NC13](../plans/notch-convergence.md#OQ-NC13) | 2026-09-28 | [the credential gate](#the-credential-gate) | ✅ `cef51809` |
+| <a id="CN-D22"></a>CN-D22 | *Implementation decision, for [OQ-CN7](#oq-cn7) (b).* A **profile-served daemon** (coined in `internal/packload/profileserved.go`) is a jail daemon that some selected pack's `env` contribution names `served_by`, where every such contribution carries a `profile` gate; aws-auth's adapter is the one shipped, and codex's OpenAI refresh adapter is not (its pointer is ungated). `jailDaemonsFor` drops one from the payload unless the credential gate's own per-agent rule (`gateFiresFor`, over `effectiveUseProfiles`) delivers one of its gates to some agent, so it gets no caller token and serves no address. Keyed on the profile NAME, as the pointer's gate was; since [`OQ-BR8`](../design/providers-and-profiles-redesign.md#OQ-BR8) (built 2026-09-29) both key on the selected provider's `platform`, so the adapter starts for a user profile over `bedrock` and a user Bedrock provider too ([PP-D5](../design/providers-and-profiles-redesign.md#PP-D5)). The fresh container launch and the macos-user arm print `Not started: the aws-auth jail daemon, because no agent's selected provider is on platform "aws-bedrock"…`. An attach starts no daemon, so an attach whose selection needs one the running jail's frozen `YOLO_JAIL_DAEMONS` lacks takes the attach-skew disposition (restart prompt at a terminal, refusal naming `yolo stop` elsewhere, `YOLO_ALLOW_ATTACH_SKEW=1`); an unreadable container environment claims nothing missing. The host half of aws-auth, machine-wide, is unchanged. The wire bridge's half of (b) already held: its daemon is selection-lazy and publishes a route only for a selected provider (`WillServe`), pinned through the assembly by `TestBridgedLaunchComposesTheWholeStory` and `TestBridgeStagedButUnroutedIdlesAndEmitsNothing` | 2026-09-28 | [`packs/aws-auth/README.md`](../../packs/aws-auth/README.md) | ✅ `7d0af878`; re-keyed on the platform by aws-auth's `env` `platform` gate ([PP-D3](../design/providers-and-profiles-redesign.md#PP-D3)) |
+| <a id="CN-D23"></a>CN-D23 | *Implementation decision, for [OQ-CN7](#oq-cn7) (c).* The caller-token mechanism is reused (minted by `launchCallerTokens`, adopted on attach by `runningCallerTokens`, demanded by the daemon); only its delivery changes. A new env-value token `{caller_token}` (`loopholedecl.TokenCallerToken`) resolves to the `served_by` daemon's token; it is legal only as the whole value of a `profile`-gated contribution with `served_by`, because a client sends it verbatim and an ungated value reaches every process. A token some selected pack names this way is **scoped** (coined in the same file): it is exported only in the agent files its pointer reaches, as aws-auth's `AWS_CONTAINER_AUTHORIZATION_TOKEN`, and the shared file carries it as an unexported comment record in its channel section (`entrypoint.ScopedCallerTokenRecord`), which the adapter reads at boot when its environment carries none and an attach adopts. An attach that composes no use for a running token carries its record forward, so a later entry selecting `bedrock` again delivers the token the running adapter still demands. `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` is gone from the pack: the AWS SDKs send `AWS_CONTAINER_AUTHORIZATION_TOKEN`'s value as the `Authorization` header, which "will only be used if `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` is not set" (the AWS SDKs and Tools reference guide, container credential provider), and the boot writes no `/run/yolo/caller-tokens` file for a scoped token. What remains is a same-uid file read, as the ruling's question said | 2026-09-28 | [`packs/aws-auth/README.md`](../../packs/aws-auth/README.md) | ✅ `7d0af878` |
+| <a id="CN-D24"></a>CN-D24 | *Implementation decision, for [OQ-CN9](#oq-cn9).* The files are written by the launcher's macos-user arm, ahead of the bootstrap, through the container vehicle's own `writeAgentEnvFiles`, into `<workspace>/.yolo/home/config/yolo-agent-env/`: `entrypoint.AgentEnvDirRel` with its leading dot trimmed, which is where the bootstrap's home layout links the sandbox's `~/.config` (`DeriveDarwinHomeLayout`). "The bootstrap writes" is met by the arm that precedes it, because the writer lives in the launcher's binary and calling it from the bootstrap would need a second copy. Not on a dry run. `noteMacosUserCredentialScope` now says the other agents read theirs from their own files. NOT MEASURED on hardware: that the sandbox account reads a 0600 file the invoking user wrote relies on the workspace's inheriting ACL, as every other sidecar file does | 2026-09-28 | [the credential gate](#the-credential-gate) | ✅ `949d9430` |
+| <a id="CN-D25"></a>CN-D25 | *Implementation decision.* **The jail's credential pre-flight asks each agent whether its provider's key reaches it**, never whether the launch carries the key anywhere: the env_sources that agent receives, the shared and its own pack env, its own shape vars (`CredentialScope.DeliveredTo`, the question the region pre-flight already asked), and on a container the argv's `-e` pairs. The shell yolo was launched from reaches no process of a jail ([BR-D2](../design/bedrock-plumbing.md#BR-D2)), so a key left only there counts for an agent whose env derive copied its value into the agent's own environment (`CredentialScope.Relays`; claude's `ANTHROPIC_AUTH_TOKEN`, copilot's `COPILOT_PROVIDER_API_KEY`) and for no other, and the refusal names the variable as left in that shell and offers `env_sources`. opencode, pi and codex read the variable itself and relay nothing, so the launch-wide lookup this replaces passed a launch that started them with no key. Found by the review of opencode's active set, 2026-09-30; it predates sets. The host notch keeps the launch-wide lookup, since the agent it execs inherits that shell | 2026-09-30 | [the credential preflight](#the-credential-preflight) | ✅ `packload.ProviderCredentialGapsTo`, `checkProviderCredentials`; `TestTheJailsCredentialPreflightAsksEachAgent`, `TestAKeyOnlyInTheLaunchShellCountsOnlyForAnAgentWhoseDeriveRelaysIt`, `TestAKeyLeftInTheLaunchShellRefusesOpencodesLaunch` |
 
 ### The profile-variant rulings
 
@@ -2416,6 +2624,42 @@ row says what replaced it.
 | <a id="pv-oq-16"></a>[OQ-16](#pv-oq-16) — `config-overlay` takes a `profile` gate, and it is the cross-pack mechanism | A cross-pack contribution already has collision detection, provenance, a footprint and a layer here; a second, fragment-shaped kind would answer none of those. What the overlay carries was re-ruled by [OQ-PT3](#oq-pt3). |
 | <a id="pv-oq-17"></a>[OQ-17](#pv-oq-17) — the host notch's overlay gate reads USER-SCOPE config only | A gated overlay rewrites real-home keys, and a workspace config is agent-editable. The jail notch reads the table the launcher emitted, whose blast radius is the disposable home. |
 | <a id="pv-d8"></a>[D8](#pv-d8) — Bedrock's non-secret half is a managed patch to `claude/settings` | `yolo host apply` refuses a pack's `env`, and a bare invocation outside yolo gets no process env; the settings file is the channel both survive. The process env still carries the credentials and the region. |
+
+### The provider-reach rulings
+
+These rows carry the ids of the retired provider-reach reference
+(`cerebras-pack-and-copilot-delivery.md`), whose body is now
+[provider reach](#provider-reach-which-agents-a-provider-can-reach-at-all),
+[copilot's BYOK contract](#copilots-byok-contract) and
+[`packs/cerebras/README.md`](../../packs/cerebras/README.md). Code comments cite `D-2` and
+`D-3`. The ids are bare, and as with [the profile-variant rows](#the-profile-variant-rulings) a
+bare id is ambiguous across this repository, so the anchors carry a `reach-` prefix.
+
+| Ruling | Why it holds |
+| :--- | :--- |
+| <a id="reach-d-1"></a>[D-1](#reach-d-1) — Cerebras ships exactly one model alias | The excluded model's documented tool-hallucination warning and disabled parallel tool calls disqualify it from unattended use; user config is the place to add it back. |
+| <a id="reach-d-2"></a>[D-2](#reach-d-2) — copilot's delivery is env-only, with no config surface | Copilot's BYOK has no file keys at all, so a config derive would render into nothing. The `providers.json` agent file a jail writes for a provider with a model list ([MM-D31](../design/model-lists-and-pickers.md#MM-D31)) is read through an environment variable, `COPILOT_PROVIDERS_CONFIG`, not from a copilot config file. |
+| <a id="reach-d-3"></a>[D-3](#reach-d-3) — copilot's producer prefers the `anthropic` endpoint when a provider declares both | The anthropic route is the richer surface and `anthropic` is copilot's first-class provider type. Cited from `internal/wirebridged`, whose serve decision follows from it. |
+| <a id="reach-d-4"></a>[D-4](#reach-d-4) — **reversed by the bridge**: Cerebras declares a context window | D-4 ruled the option out while claude could not ride Cerebras. The bridge made claude and copilot reachable, and both consume the window, so the option is live. The original reasoning still stands as the rule: an option no reachable agent reads is dead weight. |
+| <a id="reach-oq-1"></a>[OQ-1](#reach-oq-1) — ship a claude-wire translation proxy as its own pack, joined by `needs` | Shipped as the wire bridge, which is what gave Cerebras an anthropic endpoint ([`wire-bridge.md`](wire-bridge.md)). |
+| <a id="reach-oq-2"></a>[OQ-2](#reach-oq-2) — a credential is composed only when the provider's declaration does not name a protocol this agent cannot reach | A credential travels with the address it was minted for, or not at all: composing it anyway sends a third-party key to the agent's default first-party host. **Interim by design, and now spent:** [`protocol-resolution.md`](protocol-resolution.md) made the state unreachable by refusing the pairing above the derive, and the branch was deleted rather than reworked. |
+| <a id="reach-oq-3"></a>[OQ-3](#reach-oq-3) — the pack README states the rate limits | A free tier that cannot sustain an agent loop must say so where the user chooses the pack. |
+
+### The zai rulings
+
+These rows carry the `OQ-Z` ids of the retired zai worked example (`zai-plumbing.md`), whose body
+is now [`packs/zai/README.md`](../../packs/zai/README.md) and the sections linked from each row.
+Code comments cite them.
+
+| Ruling | Why it holds |
+| :--- | :--- |
+| <a id="oq-z1"></a>[OQ-Z1](#oq-z1) — z.ai's OpenAI route speaks **chat-completions only** | An authenticated probe on both routes: `POST /v4/responses` is 404 on the plain and coding-plan routes, while `/v4/chat/completions` answers on the same host. A keyless probe cannot settle it, because z.ai's edge 401s nonexistent paths too, authenticating before routing. Its consequence is that z.ai's openai endpoint has no codex spelling. ⚠ Its *derive-default* half is superseded by [OQ-Z7](#oq-z7): the probe measured z.ai's HTTP surface, which is not codex's config vocabulary. |
+| <a id="oq-z2"></a>[OQ-Z2](#oq-z2) — **one provider, one API key, any shape needed** | The two-entry bridge (`zai` plus `zai-claude`) duplicated a credential and a set of model aliases to express one service. `endpoints`-by-protocol is the required end state, and the shape axis lives inside the entry. |
+| <a id="oq-z3"></a>[OQ-Z3](#oq-z3) — **no env reference form; user-written env stays literal-only** | Ambient process env must not be a config-rendering input, so yolo writes references verbatim and the consumer resolves them. An alias costs one literal line in the same `0600` file. ⚠ The *derive* `ctx` is not secret-free: the env producer's copy of the provider table is hydrated. The composed table the launch relays is secret-free, pinned by `TestAgentEnvHydratesOnlyTheDerivedCopy`. |
+| <a id="oq-z4"></a>[OQ-Z4](#oq-z4) — **Claude Code honors the settings `env` block before its first API call** | Measured against a controlled listener with inherited `ANTHROPIC_*` scrubbed: a settings-only base URL produced traffic identical to the process-env control. It is what makes the settings block a real delivery channel ([OQ-4](#pv-oq-4) records the same measurement). |
+| <a id="oq-z5"></a>[OQ-Z5](#oq-z5) — a pack patches another pack's surface through `config-overlay`, never through a profile's own config body | A profile's config patches folded only into surfaces the same pack owns, and `packs/zai` owns no claude surface, so such a patch was silently dropped. Found as a live bug in the flagship manifest by a completeness audit. The profile body has since lost its `config` altogether ([OQ-PT8](#oq-pt8)), and an orphaned patch is now reported rather than dropped ([NS-D22](../design/notch-scoped-config-contributions.md#NS-D22)). |
+| <a id="oq-z6"></a>[OQ-Z6](#oq-z6) — the three `endpoints` closure rules | Each closed a hole the schema sketch left. (1) `base_url` is valid only alone, `endpoints` and `base_url` together being an error. ⚠ Since superseded: the bare `base_url` shorthand is now refused outright ([the shorthand is removed](protocol-resolution.md#the-single-protocol-base_url-shorthand-is-removed)), and the pair stays refused ([P2](#principles)). (2) The derive gate is the provider's URL for the protocol that agent resolves ([provider reach](#provider-reach-which-agents-a-provider-can-reach-at-all)). (3) The derives write a catalog, not a choice: presence is not selection ([the principle](#principles)). |
+| <a id="oq-z7"></a>[OQ-Z7](#oq-z7) — **`wire_api` is translated, never passed through; `openai-chat` is retired, not renamed** | Each derive owns a provenance-bearing dialect map and emits nothing for a canonical value its agent cannot spell. Reopening the enum as a free string restores the pass-through failure the closed vocabulary closed ([OQ-PT1](#oq-pt1)). |
 
 ## Current values
 
@@ -2481,3 +2725,9 @@ above explains what each is for; this table is the only place the exact spelling
 | Kilo reachability | Claude and Copilot use the wire bridge — through the adapter's composed `anthropic` address, not a Kilo-declared one; Pi and OpenCode use the direct OpenAI route; Codex has no documented Responses route and receives no entry | `packs/kilo/pack.json`, `packs/wire-bridge/pack.json`, `packs/{claude,codex,pi,opencode,copilot}/derive.lua` |
 | Kilo credential variable | `KILO_API_KEY` | `packs/kilo/pack.json` |
 | Gateway model catalogs | Neither gateway pack declares a model or model default. The user supplies `providers.<gateway>.models`; profiles name an alias with their `model` option. | `packs/{openrouter,kilo}/pack.json` |
+| The `codex` profile | `{"name": "codex", "provider": "openai-codex"}`, declared by the openai-auth pack alone; select `openai-auth` in `packs` to use it, since no agent pack `needs` it | `packs/openai-auth/pack.json` |
+| copilot BYOK variables | `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_WIRE_API`, `COPILOT_MODEL`, `COPILOT_PROVIDER_API_KEY`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | `packs/copilot/derive.lua` |
+| copilot's placeholder credential | `local`, for a loopback base URL with no key, and for a bridge-served endpoint whose own credential is unhydrated | `packs/copilot/derive.lua` |
+| oh-omp program | executable `oh-omp`, npm package `@oh-labs/oh-omp@0.15.3` | `packs/omp/pack.json` |
+| oh-omp model catalog | `~/.oh-omp/agent/models.yml`, codec `yaml`; its scope file `~/.oh-omp/agent/config.yml` | `packs/omp/pack.json` |
+| oh-omp workspace state | `.oh-omp` | `packs/omp/pack.json` |

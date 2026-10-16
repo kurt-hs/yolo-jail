@@ -313,7 +313,7 @@ func TestEveryOtherModelOnTheRouteIsStillTranslated(t *testing.T) {
 }
 
 // TestCopilotOnABedrockRouteGetsTheSamePassThrough: copilot's derive prefers the anthropic
-// endpoint (docs/reference/cerebras-pack-and-copilot-delivery.md D-3), so a Bedrock provider selected for
+// endpoint (docs/reference/providers.md#reach-d-3), so a Bedrock provider selected for
 // copilot is the same adapter route, and its Anthropic models pass through the same way.
 func TestCopilotOnABedrockRouteGetsTheSamePassThrough(t *testing.T) {
 	up, addr, _ := servedBedrockRoute(t, "copilot")
