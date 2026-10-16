@@ -3,6 +3,8 @@ package broker
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -28,6 +30,11 @@ type verbState struct {
 	hostWideAt []string
 	tailArgv   []string
 	removed    []string
+	// marked is each MarkStopped call, as "<socket> <pids>"; markedLate is set when one came
+	// after a Terminate; markErr is MarkStopped's answer.
+	marked     []string
+	markedLate bool
+	markErr    error
 }
 
 func newDeps(t *testing.T, st *verbState) (CLIDeps, *bytes.Buffer) {
@@ -46,6 +53,11 @@ func newDeps(t *testing.T, st *verbState) (CLIDeps, *bytes.Buffer) {
 			return out
 		},
 		Stragglers: func(string) []int { return st.stragglers },
+		MarkStopped: func(socket string, pids []int) error {
+			st.marked = append(st.marked, fmt.Sprintf("%s %v", socket, pids))
+			st.markedLate = st.markedLate || len(st.terminated) > 0
+			return st.markErr
+		},
 		Terminate: func(pids []int, _ time.Duration) []int {
 			st.terminated = append(st.terminated, pids...)
 			return st.killed
@@ -281,6 +293,43 @@ func TestStopOfASocketWithNoProcessSaysWhatItFound(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "is running on this machine") {
 		t.Errorf("stop says nothing runs beside a socket status lists:\n%s", buf.String())
+	}
+}
+
+// STOP MEANS STOP (HD-D28): before it signals, stop marks each jail's copy as stopped on purpose,
+// naming the pids it signals, so the jail's supervisor does not read the death as a crash and
+// restart it. A socket nothing serves and a straggler get no marker: no supervisor watches either.
+func TestStopMarksEachJailsCopyBeforeItSignals(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true), jailCopy("bbbbbbbb", 9, true),
+		{Name: fixtureDaemon, Jail: "cccccccc", Socket: "/dead"}}, stragglers: []int{11}}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	want := []string{"/tmp/yolo-front-aaaaaaaa-" + fixtureDaemon + ".sock [7]",
+		"/tmp/yolo-front-bbbbbbbb-" + fixtureDaemon + ".sock [9]"}
+	if !reflect.DeepEqual(st.marked, want) {
+		t.Errorf("marked %v, want %v", st.marked, want)
+	}
+	if st.markedLate {
+		t.Error("a copy was marked after the signal: its supervisor could read the death as a crash first")
+	}
+	if strings.Contains(buf.String(), "may restart") {
+		t.Errorf("stop warns of a restart though every marker was written:\n%s", buf.String())
+	}
+}
+
+// A MARKER THAT CANNOT BE WRITTEN still stops the copy, and says the jail's supervisor may start
+// it again, naming what to do.
+func TestStopSaysSoWhenAMarkerCannotBeWritten(t *testing.T) {
+	st := &verbState{running: []Instance{jailCopy("aaaaaaaa", 7, true)}, markErr: errors.New("denied")}
+	deps, buf := newDeps(t, st)
+	Stop(deps, fixtureDaemon)
+	if !reflect.DeepEqual(st.terminated, []int{7}) {
+		t.Errorf("terminated %v, want [7]", st.terminated)
+	}
+	for _, want := range []string{"could not mark", "denied", "may restart it", "`yolo stop`"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("stop lacks %q:\n%s", want, buf.String())
+		}
 	}
 }
 

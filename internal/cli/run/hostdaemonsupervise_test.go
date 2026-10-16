@@ -8,6 +8,7 @@ package run
 import (
 	"bufio"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
@@ -382,5 +384,216 @@ func TestLaunchLogOnlyTakesTheLogHalfAlone(t *testing.T) {
 	k := keeperStream{&keeperSink{}, frameStdout}
 	if got, ok := launchLogOnly(k).(keeperStream); !ok || got != k {
 		t.Errorf("a keeper's stream was not kept as its own routing: %T", launchLogOnly(k))
+	}
+}
+
+// A RESTART THAT FAILS ITS READINESS WAIT IS A DEATH (HD-D28 (3)): it is abandoned (its group
+// killed) and counted, so a daemon whose restarts never come up reaches the give-up, and no
+// abandoned process is left running.
+func TestARestartThatNeverBecomesReadyCountsAsADeath(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 2)
+	f.o.ServiceReadyTimeout = 150 * time.Millisecond
+	// The first spawn serves and dies; every later one lives on without ever serving.
+	h := f.spawnScript("neverready", `echo $$ >> "$PIDS"; if [ "$(wc -l < "$PIDS")" -eq 1 ]; then : > "$1"; sleep 0.1; rm -f "$1"; exit 3; fi; exec sleep 30`, nil)
+	if !ended(h, 20*time.Second) {
+		t.Fatalf("supervision never gave up on restarts that never became ready; host log:\n%s", hostLog("neverready"))
+	}
+	if n := len(f.spawned()); n != 3 {
+		t.Errorf("the daemon was started %d times, want 3: the first spawn and two restarts", n)
+	}
+	for _, pid := range f.spawned()[1:] {
+		if !waitFor(5*time.Second, func() bool { return !processLive(pid) }) {
+			t.Errorf("the abandoned restart (pid %d) is still running", pid)
+		}
+	}
+	log := hostLog("neverready")
+	if !strings.Contains(log, "(its restart did not become reachable within 150ms) after 2 restarts in a row; giving up") {
+		t.Errorf("the host log does not give up on the failed readiness wait as the death:\n%s", log)
+	}
+}
+
+// EXIT 85 DURING A RESTART'S READINESS WAIT IS AN ORDINARY FAILED RESTART (HD-D27 (3)): only a
+// daemon that served and then exited 85 is a retired state directory; one that exits 85 before
+// it serves is counted toward the give-up like any other failed restart.
+func TestARestartThatExits85BeforeReadyIsAnOrdinaryFailedRestart(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 2)
+	h := f.spawnScript("early85", `echo $$ >> "$PIDS"; if [ "$(wc -l < "$PIDS")" -eq 1 ]; then : > "$1"; sleep 0.1; rm -f "$1"; exit 3; fi; exit `+
+		shquote.Quote(strconv.Itoa(hostservice.ExitStateDirRetired)), nil)
+	if !ended(h, 20*time.Second) {
+		t.Fatalf("supervision never ended; host log:\n%s", hostLog("early85"))
+	}
+	if n := len(f.spawned()); n != 3 {
+		t.Errorf("the daemon was started %d times, want 3: an exit 85 before ready was not retried", n)
+	}
+	log := hostLog("early85")
+	if strings.Contains(log, "state directory was retired") || strings.Contains(h.end.how(), "retired") {
+		t.Errorf("an exit 85 before the restart served was read as a retired state directory:\n%s", log)
+	}
+	if !strings.Contains(log, "(its restart exited at startup (exit status 85)) after 2 restarts in a row; giving up") {
+		t.Errorf("the host log does not count the exit 85 as a failed restart up to the give-up:\n%s", log)
+	}
+}
+
+// A TEARDOWN AFTER THE CURRENT PROCESS HAS EXITED SIGNALS NOTHING: during a backoff wait, or
+// after a give-up, the process the supervisor holds is already reaped, and its pid may be
+// another process's by now.
+func TestATeardownSignalsNoProcessThatHasAlreadyExited(t *testing.T) {
+	exited := make(chan struct{})
+	s := newDaemonSupervisor("reaped", "", nil, exited)
+	signaled := 0
+	sig := func(*exec.Cmd, <-chan struct{}) { signaled++ }
+	close(exited)
+	s.stop(sig)
+	if signaled != 0 {
+		t.Errorf("the teardown signaled a process that had already exited (%d signals)", signaled)
+	}
+	if !s.isStopping() {
+		t.Error("the teardown did not mark the supervisor stopping")
+	}
+	live := newDaemonSupervisor("live", "", nil, make(chan struct{}))
+	live.stop(sig)
+	if signaled != 1 {
+		t.Errorf("the teardown did not signal a process that is still running (%d signals)", signaled)
+	}
+}
+
+// THE SAME, THROUGH THE CALL SITE: a teardown during the backoff wait ends supervision and spawns
+// nothing, and the kill path's grace never runs for the reaped process (no "ignored SIGTERM").
+func TestATeardownDuringTheBackoffSpawnsAndSignalsNothing(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 10*time.Second, 30*time.Second, 5)
+	f.o.ServiceTermGrace = 50 * time.Millisecond
+	h := f.spawnScript("inbackoff", `echo $$ >> "$PIDS"; : > "$1"; sleep 0.1; exit 3`, nil)
+	if !waitFor(5*time.Second, func() bool { return strings.Contains(hostLog("inbackoff"), "restarting it in 10s") }) {
+		t.Fatalf("the death was never reported; host log:\n%s", hostLog("inbackoff"))
+	}
+	h.stop()
+	if !ended(h, 5*time.Second) {
+		t.Fatal("supervision did not end with a teardown during its backoff")
+	}
+	if how := h.end.how(); how != stoppedByTeardown {
+		t.Errorf("the end's account is %q, want %q", how, stoppedByTeardown)
+	}
+	if n := len(f.spawned()); n != 1 {
+		t.Errorf("a process was spawned after the teardown (%d spawns)", n)
+	}
+	if strings.Contains(f.terminal.String(), "ignored SIGTERM") {
+		t.Errorf("the teardown signaled the reaped process and waited out its grace:\n%s", f.terminal.String())
+	}
+}
+
+// verbStoppable starts a fronted daemon at a jail's front socket (in a private FrontSocketDir),
+// whose argv names that socket after `--socket` as yolo's own daemons do, so `yolo host-daemon
+// stop` finds it by pgrep. before runs with the socket's path ahead of the first spawn. It returns
+// the handle and a reader of the pid the daemon last recorded.
+func (f *supervisedFixture) verbStoppable(name string, before func(socket string)) (loopholeDaemon, func() int) {
+	f.t.Helper()
+	saved := paths.FrontSocketDir
+	paths.FrontSocketDir = shortSocketDir(f.t)
+	f.t.Cleanup(func() { paths.FrontSocketDir = saved })
+	socketsDir := f.t.TempDir()
+	if err := os.Chmod(socketsDir, 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	if before != nil {
+		before(frontSocketFile(frontShortHash(socketsDir), name))
+	}
+	release := filepath.Join(f.t.TempDir(), "release")
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+	pidFile := filepath.Join(f.t.TempDir(), "pid")
+	spec := jsonx.NewOrderedMap()
+	spec.Set("command", []any{os.Args[0], "-front-upstream-child", "lingers", "{socket}", "--socket", "{socket}"})
+	env := jsonx.NewOrderedMap()
+	env.Set("YJ_FRONT_CHILD_PID", pidFile)
+	env.Set("YJ_FRONT_CHILD_RELEASE", release)
+	spec.Set("env", env)
+	h, ok := f.o.startExternalService(name, spec, socketsDir, loopholes.TransportLoopbackTLS,
+		"127.0.0.1", &loopholes.HostDaemon{Publishes: loopholes.PublishesSocket, RequestEnd: loopholes.RequestEndFramed})
+	if !ok {
+		f.t.Fatalf("the fronted daemon never came up:\n%s", f.terminal.String())
+	}
+	f.t.Cleanup(h.stop)
+	return h, func() int {
+		raw, _ := os.ReadFile(pidFile)
+		pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+		return pid
+	}
+}
+
+// STOP MEANS STOP (HD-D28): `yolo host-daemon stop` (and the `yolo broker stop` alias) ends a
+// jail's copy, and the jail's supervisor does not read that death as a crash: it is not restarted,
+// supervision ends with the stop as its account, so the keeper records the service down, and the
+// stop is a line in the daemon's host log and in launch.log, never "died mid-session".
+func TestAStopByTheVerbIsNotRestartedByTheJailsSupervisor(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 10*time.Millisecond, 10*time.Second, 5)
+	h, pid := f.verbStoppable("verbstop", nil)
+	first := pid()
+	var out strings.Builder
+	deps := broker.CLIRealDeps()
+	deps.Out, deps.Err, deps.Color = &out, &out, false
+	broker.Stop(deps, "verbstop")
+	if !strings.Contains(out.String(), "Stopped verbstop for jail") {
+		t.Fatalf("the verb did not stop the jail's copy:\n%s", out.String())
+	}
+	if !ended(h, 5*time.Second) {
+		t.Fatalf("supervision did not end with the verb's stop; host log:\n%s", hostLog("verbstop"))
+	}
+	if how := h.end.how(); !strings.Contains(how, "stopped by `yolo host-daemon stop`") {
+		t.Errorf("the end's account is %q, want the verb's stop", how)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if again := pid(); again != first || processLive(first) {
+		t.Errorf("the copy the verb stopped was started again (pid %d, was %d)", again, first)
+	}
+	want := "host service 'verbstop' was stopped by `yolo host-daemon stop`; not restarted"
+	for _, o := range []struct{ what, text string }{{"host log", hostLog("verbstop")}, {"launch.log", f.launch.String()}} {
+		if !strings.Contains(o.text, want) {
+			t.Errorf("the %s lacks %q:\n%s", o.what, want, o.text)
+		}
+		if strings.Contains(o.text, "died mid-session") || strings.Contains(o.text, "restarted (pid") {
+			t.Errorf("the %s reports the verb's stop as a death:\n%s", o.what, o.text)
+		}
+	}
+	if _, err := os.Lstat(hostservice.StopMarkerPath(h.upstream)); !os.IsNotExist(err) {
+		t.Errorf("the stop marker outlived its purpose (%v)", err)
+	}
+}
+
+// A STALE STOP MARKER STOPS NOTHING: one an earlier copy at the same socket left is removed by the
+// next first spawn there, and one naming another pid never stands for this copy's death, so a
+// genuine crash is still restarted.
+func TestAStaleStopMarkerDoesNotSuppressALaterCrashsRestart(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 10*time.Millisecond, 10*time.Second, 5)
+	h, pid := f.verbStoppable("stale", func(socket string) {
+		// What an earlier launch of this jail left: a marker for a copy no supervisor watched.
+		if err := hostservice.WriteStopMarker(socket, []int{1}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Lstat(hostservice.StopMarkerPath(h.upstream)); !os.IsNotExist(err) {
+		t.Errorf("the first spawn left an earlier copy's stop marker in place (%v)", err)
+	}
+	first := pid()
+	// One written for another pid at this socket.
+	if err := hostservice.WriteStopMarker(h.upstream, []int{first + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(first, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(10*time.Second, func() bool { return strings.Contains(hostLog("stale"), "restarted (pid") }) {
+		t.Fatalf("a crash beside a stale stop marker was not restarted; host log:\n%s", hostLog("stale"))
+	}
+	if strings.Contains(hostLog("stale"), "host-daemon stop") {
+		t.Errorf("a stale marker was read as the verb's stop:\n%s", hostLog("stale"))
+	}
+	if _, err := os.Lstat(hostservice.StopMarkerPath(h.upstream)); !os.IsNotExist(err) {
+		t.Errorf("the restart left the stale marker in place (%v)", err)
 	}
 }

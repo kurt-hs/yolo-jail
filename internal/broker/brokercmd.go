@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/execx"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
@@ -62,6 +63,10 @@ type CLIDeps struct {
 	// Terminate ends pids: SIGTERM, a wait of up to wait, then SIGKILL; it returns the ones it had
 	// to kill (terminate).
 	Terminate func(pids []int, wait time.Duration) (killed []int)
+	// MarkStopped tells the supervisor of a jail's copy, the jail's own yolo process, that the
+	// death of pids serving socket is a stop asked for, so it does not restart it
+	// (hostservice.WriteStopMarker; docs/design/host-daemon-ownership.md HD-D28).
+	MarkStopped func(socket string, pids []int) error
 	// StopHostWide ends the machine-wide copy an older yolo left for name, and reports whether
 	// one was running (BrokerKill over LegacyDeps).
 	StopHostWide func(name string) bool
@@ -84,6 +89,7 @@ func CLIRealDeps() CLIDeps {
 		Running:     RunningInstances,
 		Stragglers:  jailStragglers,
 		Terminate:   terminate,
+		MarkStopped: hostservice.WriteStopMarker,
 		StopHostWide: func(name string) bool {
 			return BrokerKill(LegacyDeps(name), syscall.SIGTERM, BrokerKillTimeout)
 		},
@@ -193,10 +199,14 @@ func pidList(pids []int) string {
 // finish, then SIGKILL, which is how a human ends a copy stuck holding the refresh lock
 // (docs/design/host-daemon-ownership.md §1.3: "killing a stuck lock holder is a thing a human may
 // have to do").
+//
+// AND IT STAYS STOPPED: each jail's copy is marked first (MarkStopped), so the jail's supervisor
+// does not restart it; a jail gets a fresh copy when it is launched again.
 func Stop(deps CLIDeps, name string) int {
 	out := newPrinter(deps)
 	pidSet := map[int]bool{}
 	var jails, cleared []string
+	var marks []Instance
 	hostWide := false
 	for _, i := range deps.Running(name) {
 		if i.HostWide {
@@ -214,6 +224,18 @@ func Stop(deps CLIDeps, name string) int {
 		jails = append(jails, i.Jail)
 		for _, p := range i.PIDs {
 			pidSet[p] = true
+		}
+		if len(i.PIDs) > 0 {
+			marks = append(marks, i)
+		}
+	}
+	// STOP MEANS STOP (docs/design/host-daemon-ownership.md HD-D28): the jail's own yolo process
+	// supervises its copy and restarts a death it did not cause, so each copy is marked as stopped
+	// on purpose BEFORE any signal, and its supervisor, reading the mark, leaves it down.
+	var unmarked []string
+	for _, i := range marks {
+		if err := deps.MarkStopped(i.Socket, i.PIDs); err != nil {
+			unmarked = append(unmarked, fmt.Sprintf("jail %s (%s)", i.Jail, richtext.Escape(err.Error())))
 		}
 	}
 	for _, p := range deps.Stragglers(name) {
@@ -246,6 +268,11 @@ func Stop(deps CLIDeps, name string) int {
 		if len(jails) > 0 {
 			out.printf("  Each jail it served fails its %s requests until it is launched again: "+
 				"leave that jail and launch it again, which starts a fresh copy.", name)
+		}
+		for _, u := range unmarked {
+			out.printf("  [yellow]Warning: could not mark the copy for %s as stopped, so that "+
+				"jail's yolo may restart it: `yolo stop` in that jail's workspace ends the jail and "+
+				"its copy together.[/yellow]", u)
 		}
 	}
 	if len(cleared) > 0 {
