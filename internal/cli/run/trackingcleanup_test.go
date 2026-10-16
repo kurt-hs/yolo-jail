@@ -4,7 +4,7 @@ package run
 // jail's tracking file once it has OBSERVED the container gone, which is what lets
 // prune.PruneOrphanAgentStaging reap the jail's AGENTS_DIR entry and the home skeletons in it,
 // as the maintainer's OQ-BH10 ruling assumed it did
-// (docs/design/base-home-legacy-state.md#OQ-BH10). Before this, a --rm jail's tracking file
+// (docs/design/base-home-legacy-state.md#decision-ledger). Before this, a --rm jail's tracking file
 // outlived every normal exit, the reaper kept every tracked name, and a workspace in use
 // gained one skeleton per fresh launch until someone ran `yolo ps`.
 

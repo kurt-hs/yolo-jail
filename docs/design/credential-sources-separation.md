@@ -166,7 +166,7 @@ What the maintainer said:
     and a disclosure is never suppressible
     ([`OQ-RO3`](../reference/report-tiers.md#why-its-this-way)).
   - An override has to be acknowledged in as many words, and it *"shouldn't just silently ride
-    along"* ([OQ-SK1](attach-skew-and-contract-guardrails.md#OQ-SK1), 2026-09-26).
+    along"* ([OQ-SK1](attach-skew-and-contract-guardrails.md#decision-ledger), 2026-09-26).
 - **P4. A value no provider claims reaches every process**
   ([CN-D3](provider-credential-scope.md#CN-D3)). The catch is that "claimed" is not
   the same as "secret". bedrock's claim list includes `AWS_PROFILE`, which is a profile name
@@ -667,7 +667,7 @@ works:
    note under the Answer restates the options as (A) and (B).
 
    _Leaning:_ (ii). The flag needs four properties, following the 2026-09-26 acknowledgment rule
-   ([OQ-SK1](attach-skew-and-contract-guardrails.md#OQ-SK1)):
+   ([OQ-SK1](attach-skew-and-contract-guardrails.md#decision-ledger)):
    - it is its own flag, and no other override implies it;
    - it is carried only in that entry's exec environment, never in a file
      ([§8](#8-what-this-does-not-license));
@@ -700,7 +700,7 @@ works:
    > - **It combines with `-p`:** an agent keeps its profile and additionally receives the granted
    >   keys.
    > - **Nothing else implies it:** not `-p`, not `use_profiles`, not any `YOLO_ALLOW_*`
-   >   ([OQ-SK1](attach-skew-and-contract-guardrails.md#OQ-SK1)'s acknowledgment rule).
+   >   ([OQ-SK1](attach-skew-and-contract-guardrails.md#decision-ledger)'s acknowledgment rule).
    > - **HOST ONLY.** A jail launch does not accept it, and a jail launch given the flag refuses,
    >   naming that it is host-only.
    >

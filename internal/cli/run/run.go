@@ -1421,7 +1421,7 @@ func (o *Options) noteUseProfiles(channel *packChannel, loadedPacks []*packload.
 // is gone with the shared mount it guarded: no jail mounts <state>/home at /home/agent any
 // more and no seed copies from it, so its legacy bytes are unmounted, unread, and nothing
 // a launch has cause to refuse over (the maintainer's OQ-BH13 ruling,
-// docs/design/base-home-legacy-state.md#10-decision-ledger). `yolo check` still reports
+// docs/design/base-home-legacy-state.md#decision-ledger). `yolo check` still reports
 // them, as optional cleanup.
 func (o *Options) ensureStorage() error {
 	return storage.EnsureGlobalStorage(func() {
