@@ -212,7 +212,7 @@ func LaunchPreconditions() []Precondition {
 			// an older yolo or not at all. Unreadable is asked here too, because unknown is a
 			// refusal, never a pass. The three staging-root rows are one probe judged three ways
 			// (JudgeStagingRoot), split so each refusal names the one remedy that reaches it.
-			// docs/design/macos-user-privilege-lifecycle.md#OQ-MP10 is the ruling.
+			// OQ-MP10 in docs/design/macos-user-privilege-lifecycle.md#decision-ledger is the ruling.
 			ID: PreconditionStagingRoot, Name: "the staging directory",
 			Requires: []string{PreconditionMacOS},
 			holds: func(p LaunchProbes, _ string) bool {
