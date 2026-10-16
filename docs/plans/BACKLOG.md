@@ -678,6 +678,12 @@ The test cleanup that stops a test home's preparation workers finds them through
 macOS host it stops nothing, and a test there can still fail its temp-directory cleanup the way
 `TestAnUnsatisfiableNodeFloorRefusesTheLaunch` did on Linux CI.
 
+### <a id="aws-auth-gateway-readme"></a>🔧 **The aws-auth README does not mention the gateway route**
+
+[OQ-SSO9](../reference/agent-credentials.md#sso-decision-ledger) retired option D in favor of a
+gateway route that takes an API key, but `packs/aws-auth/README.md` never says so. Found
+2026-10-16 while compacting that question.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
