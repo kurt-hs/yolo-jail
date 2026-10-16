@@ -82,7 +82,7 @@ func TestAProfileOnAPlanTheAgentHasNoProviderOfItsOwnForSaysSo(t *testing.T) {
 	d := ProfileDisclosures(ProfileDisclosureInput{Table: table, Packs: packs,
 		Resolved: resolved, Providers: providers})
 	r := reachOf(t, d[0], "acme")
-	if r.Route != "" || len(r.Warnings) != 1 {
+	if r.Route != "" || len(r.Lines()) != 1 {
 		t.Fatalf("acme on zai: %+v, want no route and one warning", r)
 	}
 	for _, want := range []string{
@@ -91,8 +91,8 @@ func TestAProfileOnAPlanTheAgentHasNoProviderOfItsOwnForSaysSo(t *testing.T) {
 		"yolo writes no model entry over a provider an agent has built in",
 		"Select a profile whose provider acme reaches (`-p acme=<name>`), or none for acme",
 	} {
-		if !strings.Contains(r.Warnings[0], want) {
-			t.Errorf("the warning lacks %q:\n%s", want, r.Warnings[0])
+		if !strings.Contains(r.Lines()[0], want) {
+			t.Errorf("the warning lacks %q:\n%s", want, r.Lines()[0])
 		}
 	}
 	if !strings.Contains(d[0].Line(), `acme → provider "zai", which it cannot use here (below)`) {

@@ -281,11 +281,19 @@ func profileLineChannel(t *testing.T, packs []*packload.Pack, useProfiles map[st
 func profileLineChannelArgv(t *testing.T, packs []*packload.Pack, useProfiles map[string]string,
 	userEnv *jsonx.OrderedMap, argvPairs map[string]string) string {
 	t.Helper()
+	return profileLineChannelWith(t, packs, func(o *Options) { o.UseProfiles = useProfiles }, userEnv, argvPairs)
+}
+
+// profileLineChannelWith is profileLineChannelArgv with the selection set by sel, so a test can
+// type a bare `-p <name>` (Options.ProfileName) rather than per-CLI pairs.
+func profileLineChannelWith(t *testing.T, packs []*packload.Pack, sel func(*Options),
+	userEnv *jsonx.OrderedMap, argvPairs map[string]string) string {
+	t.Helper()
 	home := retireHome(t)
 	writeUserPacks(t, home, `[]`)
 	var out bytes.Buffer
 	o := retireOptions(t, &out)
-	o.UseProfiles = useProfiles
+	sel(o)
 	cfg := newConfig()
 	providers := jsonx.NewOrderedMap()
 	bedrock := jsonx.NewOrderedMap()
@@ -353,6 +361,42 @@ func TestNoteUseProfilesWarnsWhereTheSelectionReachesNothing(t *testing.T) {
 	}
 	if strings.Contains(got, "reaches nothing for claude") {
 		t.Errorf("claude, whose pack binds Bedrock, is warned as reaching nothing:\n%s", got)
+	}
+}
+
+// A BARE `-p X` NAMES EVERY AGENT IT DOES NOT REACH ON ONE LINE (OQ-PP3, answered by OQ-AP3's
+// ruling: "if you don't direct it at a specific agent, then we should print out a message
+// showing you … these will only get the first one and the others will be ignored"). copilot and
+// agy have no Bedrock client of their own and no bridge carries them here, so a bare
+// `-p bedrock` reaches nothing for either; the launch says so once, naming both, and keeps each
+// agent's next step (the `-p <agent>=<name>` pair). It used to print one warning line per agent.
+// Driven through noteUseProfiles, so deleting the combining call fails this test too.
+func TestABareProfileNamesEveryAgentItDoesNotReachOnOneLine(t *testing.T) {
+	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "copilot"),
+		officialPack(t, "agy"), officialPack(t, "bedrock"), officialPack(t, "aws-auth")}
+	got := profileLineChannelWith(t, packs, func(o *Options) { o.ProfileName = "bedrock" },
+		emptyEnv(), nil)
+	var unreached []string
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "reaches nothing for") {
+			unreached = append(unreached, line)
+		}
+	}
+	if len(unreached) != 1 {
+		t.Fatalf("a bare -p reaching nothing for two agents must say so on ONE line, got %d:\n%s",
+			len(unreached), got)
+	}
+	line := unreached[0]
+	for _, want := range []string{
+		`Warning: profile "bedrock" reaches nothing for agy and copilot`,
+		"(`-p agy=<name>`)", "(`-p copilot=<name>`)",
+	} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the one line must say %q:\n%s", want, line)
+		}
+	}
+	if strings.Contains(line, "claude") {
+		t.Errorf("claude, whose pack binds Bedrock, is named as unreached:\n%s", line)
 	}
 }
 
