@@ -1641,6 +1641,15 @@ func (a *advance) walkBackOn() bool {
 // walk back past pf: the variable covers f, pf is not the series' own failure at its base, and the
 // last check followed a branch. A host act's offline read then leaves pf to the advance, whose
 // walk-back decides whether it still stops the act.
+// holdPassesOver reports whether an `agent_updates` hold makes recorded failure pf no bearing on f
+// while good is its good build (A HOLD HOLDS, docs/reference/patched-forks.md §3.4): a held launch
+// runs good, so only a failure at good's own commit, or the series' own at its base, can stop it
+// (advance.failureAtGood). The host floor asks this as the advance's held branch does.
+func holdPassesOver(f packload.Fork, good *packsrc.GoodBuild, pf *packsrc.PatchFailure) bool {
+	return pf != nil && good != nil && run.PatchedForkHold(f) != "" && pf.Kind != "base" &&
+		pf.Target.Commit != good.Commit
+}
+
 func walkBackAsked(f packload.Fork, pf *packsrc.PatchFailure) bool {
 	if pf == nil || pf.Kind == "base" ||
 		!patchrecovery.Read(os.Getenv, patchrecovery.AllowOlderUpstreamEnv).Covers(recoverySubject(f)) {
