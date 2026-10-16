@@ -32,9 +32,9 @@ import (
 // module directory, has a test of its own below (TestMacosUserRunsAModuleDirJailDaemonInTheGuest).
 //
 // WHAT ONLY THIS TEST CAN SEE, every item of it unexecuted before: that the Go-built darwin
-// yolo-jaild is signed well enough for the kernel to exec from /var/yolo-jail/bin; that
+// yolo-jaild is signed well enough for the kernel to exec from macosuser.StateDir()/bin; that
 // sandbox-exec admits the supervisor and the adapter it execs; that the adapter can READ its
-// root-owned 0600 daemon env file through the `user:` ACE (its log says "serving on", not
+// host-owned 0600 daemon env file through the `user:` ACE (its log says "serving on", not
 // "idling, serving nothing"); that it can write its log under the sandbox home; and that the
 // stop's SIGTERM, relayed by `sudo -n`, ends the supervisor.
 //
