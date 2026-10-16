@@ -105,6 +105,9 @@ type composeOpts struct {
 	modelNote func(string)
 	// modelListPresence receives one final supplied/absent fact per surviving provider.
 	modelListPresence func(provider string, supplied bool)
+	// modelFacts is the user's top-level `model_facts` (WithModelFacts): facts a model's routes
+	// share, laid under each route's own by liftModelFacts.
+	modelFacts *jsonx.OrderedMap
 }
 
 // ServiceAdaptations returns the conversions packs declare whose own pack serves them with a

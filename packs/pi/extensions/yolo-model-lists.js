@@ -7,7 +7,11 @@ import { join } from "node:path";
 // declares, written by `yolo.derive("pi", "model-lists")` in packs/pi/derive.lua, keyed by pi's
 // provider id (docs/design/model-lists-and-pickers.md MM-D6). The file sits beside extensions/,
 // outside pi's extension discovery and outside this file's own read-only delivery, as the
-// openai-codex list's does (yolo-openai-auth.js, ML-D3).
+// openai-codex list's does (yolo-openai-auth.js, ML-D3). A list a routing declaration carries is
+// here too, and so are the rows of pi's own Bedrock client, marked `keep_catalog`: those complete
+// pi's catalog for the provider rather than narrow it (withCatalog), because a models.json row
+// replaces its catalog entry whole and only this extension can read the catalog to merge it
+// (docs/design/model-lists-and-pickers.md OQ-ML4, ML-D12).
 //
 // WHY A REGISTRATION. pi builds a provider's list as its own catalog, then models.json rows,
 // which add or replace by id and never remove, then an extension's registerProvider with
@@ -16,7 +20,8 @@ import { join } from "node:path";
 // list pi's exact menu for a provider pi ships.
 //
 // TWO FORMS, chosen by the provider's `enforce` flag, which is the profile's enforce_models
-// switch (MM-D5), on unless the profile says false:
+// switch (MM-D5), on unless the profile says false, for a list an `only` narrowed, and false for
+// every other list (OQ-MM3: a list no `only` narrowed refuses nothing):
 //   - off: `models` alone, which keeps pi's own address, wire and credential for the provider
 //     (MEASURED). The menu is exact, and `pi --model <provider>/<unlisted id>` still runs, with
 //     pi's own warning.
@@ -62,6 +67,7 @@ function readModelLists() {
 		out[id] = {
 			models,
 			enforce: list.enforce === true,
+			keepCatalog: list.keep_catalog === true,
 			api: typeof list.api === "string" && list.api.length > 0 ? list.api : undefined,
 		};
 	}
@@ -128,28 +134,81 @@ async function piAI() {
 // `model.compat?.openRouterRouting&&(params.provider=model.compat.openRouterRouting)`). It is
 // MERGED over the catalog entry's own compat rather than replacing it, and is removed from the
 // model's top-level fields so no stray `openrouter_routing` reaches pi.
+//
+// A FACT THE ROW NAMES IN `tombstones` IS REMOVED (docs/design/model-lists-and-pickers.md
+// ML-D10): the row wrote it as null, meaning the model has no such fact, so the catalog's value
+// does not reach the registration. A field pi's models.json loader requires takes the value that
+// loader gives a row that states none (the same defaults an id the catalog lacks gets), and any
+// other field is left out.
+const LOADER_DEFAULTS = {
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 128000,
+	maxTokens: DEFAULT_MAX_TOKENS,
+};
+
+// catalogFacts is a catalog entry with its address fields dropped, so a registration built from
+// it never repoints the provider.
+function catalogFacts(builtin) {
+	const { api: _api, provider: _provider, baseUrl: _baseUrl, headers: _headers, ...facts } = builtin;
+	return facts;
+}
+
 function definition(provider, entry, lookup) {
-	const { base, openrouter_routing, ...declared } = entry;
+	const { base, openrouter_routing, tombstones, ...declared } = entry;
 	const withRouting = (model) => {
 		if (openrouter_routing === null || typeof openrouter_routing !== "object" || Array.isArray(openrouter_routing)) {
 			return model;
 		}
 		return { ...model, compat: { ...(model.compat ?? {}), openRouterRouting: openrouter_routing } };
 	};
+	const withoutTombstoned = (model) => {
+		if (!Array.isArray(tombstones)) return model;
+		const out = { ...model };
+		for (const field of tombstones) {
+			if (typeof field !== "string") continue;
+			if (field === "name") out.name = entry.id;
+			else if (field in LOADER_DEFAULTS) out[field] = structuredClone(LOADER_DEFAULTS[field]);
+			else delete out[field];
+		}
+		return out;
+	};
+	// `cost` merges RATE BY RATE: a row may state only some rates (the derive emits only the
+	// declared ones), and each rate it leaves out keeps the catalog's, or the loader's 0.
+	const withCost = (under) =>
+		declared.cost && typeof declared.cost === "object" ? { cost: { ...(under ?? {}), ...declared.cost } } : {};
 	const builtin = lookup(provider, base ?? entry.id);
 	if (builtin) {
-		const { api: _api, provider: _provider, baseUrl: _baseUrl, headers: _headers, ...facts } = builtin;
-		return withRouting({ ...facts, ...declared, name: declared.name ?? builtin.name });
+		const facts = catalogFacts(builtin);
+		return withRouting(withoutTombstoned({ ...facts, ...declared, ...withCost(facts.cost), name: declared.name ?? builtin.name }));
 	}
-	return withRouting({
+	return withRouting(withoutTombstoned({
 		name: entry.id,
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 128000,
-		maxTokens: DEFAULT_MAX_TOKENS,
+		...structuredClone(LOADER_DEFAULTS),
 		...declared,
-	});
+		...withCost(LOADER_DEFAULTS.cost),
+	}));
+}
+
+// withCatalog is the list a `keep_catalog` registration names: pi's own catalog for the
+// provider, each entry a row states replaced in place by that row merged over it, then every row
+// the catalog lacks. It is the list pi itself builds from its catalog and models.json rows (which
+// add or replace by id), except that a row's merge is field by field (OQ-ML4), so the menu is
+// not narrowed and a row keeps every catalog fact it does not state.
+function withCatalog(provider, rows, pi) {
+	const byId = new Map(rows.map((m) => [m.id, m]));
+	const out = [];
+	for (const builtin of pi.catalog(provider)) {
+		if (typeof builtin?.id !== "string") continue;
+		if (byId.has(builtin.id)) {
+			out.push(byId.get(builtin.id));
+			byId.delete(builtin.id);
+		} else {
+			out.push(catalogFacts(builtin));
+		}
+	}
+	return [...out, ...byId.values()];
 }
 
 // listApi is the ONE api every model of the list runs on, the api the refusing registration
@@ -214,7 +273,13 @@ export default async function registerYoloModelLists(pi) {
 	const unenforced = [];
 	for (const provider of providers) {
 		const list = lists[provider];
-		const models = list.models.map((entry) => definition(provider, entry, lib.lookup));
+		let models = list.models.map((entry) => definition(provider, entry, lib.lookup));
+		if (list.keepCatalog) {
+			// With no catalog to complete, a registration would only replace pi's list with yolo's
+			// rows; the models.json rows pi already loaded say the same without narrowing anything.
+			if (lib.catalog(provider).length === 0) continue;
+			models = withCatalog(provider, models, lib);
+		}
 		if (!list.enforce) {
 			pi.registerProvider(provider, { models });
 			continue;

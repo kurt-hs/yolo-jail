@@ -73,7 +73,7 @@ var knownTopLevelConfigKeys = set(
 	"cache_relocations", "writable_home_dirs", "host_files", "host_wrappers",
 	"host_apply_on_launch", "host_management", "agent_updates", "host_floor", "host_path", "provisioners", "packs", "perf_logging",
 	"update_check", "promotion_target",
-	"providers", "profiles", "profile", "required_capabilities", "adapters",
+	"providers", "model_facts", "profiles", "profile", "required_capabilities", "adapters",
 	// `agent_profiles` retired 2026-09-01, renamed to `pack_profiles` (the keys were
 	// always CLI names, and core knows packs, not agents — docs/design/
 	// docs/reference/providers.md#declaring-and-selecting-a-profile), which was itself renamed to `use_profiles`
@@ -218,8 +218,18 @@ var (
 	// OpenRouter's request `provider` field, which is why it is the one object-valued model
 	// fact while `model_options` stays flat strings. Both are read by packs/pi's model-lists
 	// render, and by the extension that registers it; core only checks their shape.
+	//
+	// `extends` names a top-level `model_facts` entry, the facts this model's routes share
+	// (docs/design/model-lists-and-pickers.md OQ-ML5): the composition lays them under the
+	// entry's own facts, so each route can override any of them. A null fact anywhere in the
+	// entry is a TOMBSTONE (ML-D10): the model has no such fact, where leaving it out inherits.
 	knownModelKeys = set("id", "name", "description", "vendor", "reasoning", "input", "cost", "context_window", "max_tokens",
-		"base", "openrouter_routing")
+		"base", "openrouter_routing", "extends")
+	// knownSharedModelKeys is the closed field set a `model_facts.<name>` entry may carry: the
+	// facts a model keeps on every route, so knownModelKeys less what only a route can say — its
+	// wire `id`, its `vendor` (a route-level routing fact the bridge reads), its OpenRouter
+	// `openrouter_routing`, and `extends` itself.
+	knownSharedModelKeys = set("name", "description", "reasoning", "input", "cost", "context_window", "max_tokens", "base")
 	// knownModelCostKeys is the closed set of rates inside that `cost` object. Canonical
 	// snake; the consuming derive translates to its agent's spelling (pi's cacheRead/...).
 	knownModelCostKeys = set("input", "output", "cache_read", "cache_write")

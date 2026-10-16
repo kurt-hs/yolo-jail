@@ -367,7 +367,7 @@ func TestOpencodeWhitelistsANarrowedListOnItsOwnBedrockClient(t *testing.T) {
 }
 
 // NO WHITELIST FOR A LIST NO `only` NARROWED: what an `add` does to opencode's own catalog is
-// OQ-MM1's, and whether a list with no `only` refuses on a gateway serving more is OQ-MM3's.
+// OQ-MM1's, and a list with no `only` refuses nothing on a gateway serving more (OQ-MM3, ruled).
 func TestOpencodeWritesNoWhitelistForAnUnnarrowedList(t *testing.T) {
 	r := newPioencodeRender(t, zaiReachableJSON)
 	r.render(t, `{"opencode":"zhipu"}`)

@@ -151,6 +151,9 @@ var inheritCensus = map[string]keyDisposition{
 	// arrives at the scope it was written at, and the inner launch's own gate still refuses
 	// one the inner WORKSPACE adds.
 	"providers": {preflight: true, nested: true, reason: "cloud provider declarations for agent configuration and nested launches"},
+	// `model_facts` is `providers`' companion: the facts a model's routes share, composed into
+	// the same table (packload.WithModelFacts), so it crosses wherever that table is composed.
+	"model_facts": {preflight: true, nested: true, reason: "facts a model's provider routes share, composed into the provider table here and in nested launches"},
 	// `profiles` and `profile` are user-scope-only (OQ-CS5 ruled BOTH keys), exactly
 	// like `packs` three entries up — so a workspace spelling can never reach the render
 	// that this census classifies, because the launch refuses it first. The two keys

@@ -1166,7 +1166,8 @@ func composedProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// A read problem is a warning and a skip there, so a launch degrades to the addresses
 	// the packs declared rather than refusing over a key it could not parse.
 	addresses, _ := config.LoadAdapterAddresses(nil)
-	return packload.ComposeProvidersAt(cfgMap(cfg, "providers"), packs, addresses, served)
+	return packload.ComposeProvidersAt(cfgMap(cfg, "providers"), packs, addresses, served,
+		packload.WithModelFacts(cfgMap(cfg, "model_facts")))
 }
 
 // servedDaemons is the "served at this notch" set for a launch whose composed jail-daemon
