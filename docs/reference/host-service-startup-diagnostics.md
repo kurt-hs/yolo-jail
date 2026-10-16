@@ -30,7 +30,7 @@ summary: "How a pack-declared host service's settings are validated before any s
 
 **Status:** Verified 2026-10-10 against `3fe15ecbc`. UNMEASURED: native macOS behavior, real
 rootless loopback forwarding and live AWS authentication have not been observed; Linux fixtures
-and Darwin compilation are the evidence ([the QA record](../plans/host-service-startup-diagnostics-qa.md)).
+and Darwin compilation are the evidence.
 
 A pack-declared host service can refuse its configuration for a good reason, and the launch then
 has to say that reason, with the pack's remedy, before the missing socket and the unreachable

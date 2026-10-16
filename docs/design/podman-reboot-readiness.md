@@ -59,9 +59,7 @@ recoverable.
 
 **Needs your ruling:** none. [OQ-PR1](#OQ-PR1), [OQ-PR2](#OQ-PR2) and [OQ-PR3](#OQ-PR3) were ruled 2026-09-29; the build is released.
 
-**Reads with:** [`podman-reboot-readiness-plan.md`](podman-reboot-readiness-plan.md)
-(the implementation sketch),
-[`perf-logging.md`](../reference/perf-logging.md) (the host timing log),
+**Reads with:** [`perf-logging.md`](../reference/perf-logging.md) (the host timing log),
 [`loopback-tls-reachability.md`](../reference/loopback-tls-reachability.md)
 (the host-loopback disposition this design protects).
 
