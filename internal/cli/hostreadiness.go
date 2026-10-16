@@ -239,6 +239,9 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 	var failed []hostReadinessFailure
 	// patchFailure is a patch failure the missing-program hatch does not waive (PF-D83).
 	patchFailure := false
+	// patchSeries is set when one of them is a series that does not apply, rather than only a newer
+	// build that failed (OQ-PPX3), which the summary line names.
+	patchSeries := false
 	for _, p := range todo {
 		if floor.OutsideTheFloor(p) {
 			continue
@@ -250,6 +253,9 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 			var applicationFailure *packsrc.PatchFailure
 			if errors.As(err, &applicationFailure) && !errors.Is(err, hostfloor.ErrPatchFailureNothingRuns) {
 				patchFailure = true
+				if applicationFailure.Kind != packsrc.PatchFailureBuild {
+					patchSeries = true
+				}
 			}
 			failed = append(failed, hostReadinessFailure{who: "program " + p.Bin() + " (pack " + p.Pack + ")",
 				pack: p.Pack, err: err})
@@ -281,7 +287,11 @@ func hostReadinessAct(packs []*packload.Pack, cmd []string, errw io.Writer, act 
 	}
 	if patchFailure {
 		// The error block above names the failure, its repair and the hatch that runs a build here.
-		fmt.Fprintf(errw, "yolo host: refusing to launch: a patch series does not apply\n%s", list.String())
+		what := "a newer build of a patched program failed"
+		if patchSeries {
+			what = "a patch series does not apply"
+		}
+		fmt.Fprintf(errw, "yolo host: refusing to launch: %s\n%s", what, list.String())
 		return r, 1
 	}
 	// REFUSAL, not a warning, in the jail's words: a launch without a program its own config

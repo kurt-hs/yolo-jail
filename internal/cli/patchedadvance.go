@@ -16,7 +16,10 @@ package cli
 // # The ratchet, in one rule
 //
 // What runs moves only once a build is admitted (P2): a newer upstream that does not apply or
-// build leaves the good build serving (PF-D8). The good build SERVES when its series digest and
+// build leaves the good build in place (PF-D8) — but STOPS the act (PF-D81 for a series that does
+// not apply; OQ-PPX3, 2026-10-16, for a build that fails, failedNewerBuild): the good build runs in
+// its place only under a recovery hatch the user set or an `agent_updates` hold, never on its own,
+// since a warning can be missed. The good build SERVES when its series digest and
 // recipe are the manifest's and its store entry is there; a user's own edit to the series, `build`
 // or `produces` is not held (PF-D23): nothing serves until the edited series builds, at the newest
 // fit or, failing that, at its own base.
@@ -788,6 +791,10 @@ func (a *advance) deliveryPatchFailure(probe bool) packsrc.LegacyReplayResult {
 		result.State, result.Failure = "failure", failure
 		return result
 	}
+	if failure := a.failedNewerBuild(); failure != nil {
+		result.State, result.Failure = "failure", failure
+		return result
+	}
 	if !probe || a.rec.ApplyErrAtLastCheck() == nil {
 		return result
 	}
@@ -1000,6 +1007,13 @@ func (a *advance) recoveryHatches() []patchrecovery.Hatch {
 	switch {
 	case a.serves():
 		add(patchrecovery.AllowPatchFailuresEnv, key, "run "+a.servingLine())
+		if jailLaunch && a.patchFailure != nil && a.patchFailure.Kind == packsrc.PatchFailureBuild {
+			// A FAILED NEWER BUILD (OQ-PPX3): cached-good recovery runs the good build too, at a fresh
+			// jail launch, with no check or build at all.
+			if label := a.cachedGoodLabel(); label != "" {
+				add(patchrecovery.UseCachedGoodEnv, key, "run the last good build "+label)
+			}
+		}
 	case jailLaunch:
 		if label := a.cachedGoodLabel(); label != "" {
 			add(patchrecovery.UseCachedGoodEnv, key, "run the older build "+label)
@@ -1398,7 +1412,9 @@ func (a *advance) run() advanceResult {
 			return a.unavailableDetachedAuthority(cachedFailure)
 		}
 		if cachedFailure.State == "failure" && cachedFailure.Failure != nil {
-			if !res.Ran {
+			if !res.Ran || cachedFailure.Failure.Kind == packsrc.PatchFailureBuild {
+				// A FAILED NEWER BUILD (OQ-PPX3) is still the newest after this check and still backing
+				// off: no replay would change it, and the next advance past its back-off builds it again.
 				return a.failedOrWalkBack(cachedFailure.Failure, edited)
 			}
 			target := cachedFailure.Failure.Target
@@ -1623,19 +1639,41 @@ func (a *advance) run() advanceResult {
 	}
 	r := a.build(forkBuild{Fork: f, Commit: fit.Entry.Commit, Platform: a.o.platform, Series: a.series,
 		Entry: a.entryWithVersion(fit.Entry)}, base, edited)
-	if !r.built && r.failErr != "" && !a.interrupted() {
-		// THE NEWEST FIT DID NOT BUILD: the walk-back tries older releases when it is asked for.
-		if wr, ok := a.walkBack(fit.Entry, packsrc.OutcomeBuildFailed, nil, edited); ok {
+	if r.built || !r.fellShort || a.interrupted() {
+		return r
+	}
+	// A NEWER BUILD THAT FAILED WHILE A GOOD BUILD SERVES STOPS THE ACT (OQ-PPX3): its own build, or
+	// another launch's this one waited for. The good build runs only under a hatch; nil while nothing
+	// serves, where the series' base or the missing-build refusal follows as before.
+	pf := a.failedNewerBuild()
+	if pf != nil && pf.Target.Commit != fit.Entry.Commit {
+		pf = nil
+	}
+	if r.failErr != "" || pf != nil {
+		// THE NEWEST FIT DID NOT BUILD: the walk-back tries older releases when it is asked for, and
+		// with nothing it builds stops on pf as it would have.
+		if wr, ok := a.walkBack(fit.Entry, packsrc.OutcomeBuildFailed, pf, edited); ok {
 			return wr
 		}
+	}
+	if pf != nil {
+		stopped := a.patchFailureResult(pf)
+		stopped.fellShort = true
+		stopped.failWhat, stopped.failErr, stopped.retryAt = r.failWhat, r.failErr, r.retryAt
+		return stopped
 	}
 	return r
 }
 
-// failedOrWalkBack ends an advance whose newest candidate does not take the series: the walk-back,
-// when YOLO_ALLOW_OLDER_UPSTREAM asks for it and finds an older release that builds, else the refusal.
+// failedOrWalkBack ends an advance whose newest candidate does not take the series, or whose build
+// failed (a PatchFailureBuild): the walk-back, when YOLO_ALLOW_OLDER_UPSTREAM asks for it and finds
+// an older release that builds, else the refusal.
 func (a *advance) failedOrWalkBack(pf *packsrc.PatchFailure, edited bool) advanceResult {
-	if r, ok := a.walkBack(pf.Target, packsrc.OutcomeConflict, pf, edited); ok {
+	kind := packsrc.OutcomeConflict
+	if pf.Kind == packsrc.PatchFailureBuild {
+		kind = packsrc.OutcomeBuildFailed
+	}
+	if r, ok := a.walkBack(pf.Target, kind, pf, edited); ok {
 		return r
 	}
 	return a.patchFailureResult(pf)
@@ -2111,6 +2149,19 @@ func (a *advance) buildFailure(commit string) *packsrc.EntryOutcome {
 	return nil
 }
 
+// failedNewerBuild is this advance's FAILED NEWER BUILD (buildFailureOf, OQ-PPX3): a recorded
+// failure of the newest candidate's build, still backing off, while a build of the series as it
+// stands serves. A foreground act stops on it as on a patch failure (patchFailureResult), so the
+// older build runs only under a hatch or a hold. nil for the acts that build regardless — `yolo
+// capture` and a fresh preparation — and for the background advance and a shared lane, which
+// record and report a failure but serve no launch.
+func (a *advance) failedNewerBuild() *packsrc.PatchFailure {
+	if a.o.background || a.o.sharedOwned || a.o.force || a.o.freshCheck || a.series == nil || !a.serves() {
+		return nil
+	}
+	return buildFailureOf(a.f, a.rec, a.in, a.series, a.recipe, a.o.workspace)
+}
+
 // walk replays the series down list and records each outcome, and says each conflict and each
 // member already upstream once, on the launch that found it. ofList marks a walk of the check's list
 // (not the series' base alone), whose apply error finish records (PF-D45). It takes what is left of
@@ -2240,6 +2291,15 @@ func (a *advance) entryWithVersion(e packsrc.ListEntry) packsrc.ListEntry {
 func (a *advance) buildFailedLines(b forkBuild, err error, retryAt time.Time) {
 	f := a.f
 	what := run.WithSeries(b.Entry.Label(), b.Series)
+	if pf := a.failedNewerBuild(); pf != nil && pf.Target.Commit == b.Commit && !a.thenBase {
+		// IT STOPS THE ACT (OQ-PPX3): the error block that follows names the repair and the hatches,
+		// and nothing runs the good build in its place unless one of them is set.
+		a.warn("%s: the build of %s failed: %v", f.Label(), what, err)
+		if !a.printRunFailure() && a.o.workspace != "" {
+			a.dim("  its output is above, and in %s", filepath.Join(a.o.workspace, ".yolo", "launch.log"))
+		}
+		return
+	}
 	tail := a.runsNow()
 	if a.thenBase {
 		tail = a.baseNext()
@@ -2995,7 +3055,8 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 				setFailure(r, failure)
 				changed = true
 			}
-			if a.patchFailure != nil {
+			if a.patchFailure != nil && a.patchFailure.Kind != packsrc.PatchFailureBuild {
+				// A failed newer build is read from the outcomes (failedNewerBuild), never kept as a patch failure.
 				if snapshot := a.replayBinding; snapshot != nil && r.Seq == snapshot.Seq && r.Read == snapshot.Inputs &&
 					r.Seq == a.seq && r.Read == a.in && reflect.DeepEqual(r.PatchFailure, snapshot.Failure) &&
 					reflect.DeepEqual(r.ApplyErr, snapshot.ApplyErr) {

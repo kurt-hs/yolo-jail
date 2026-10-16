@@ -537,36 +537,6 @@ func TestAConflictingTagFailsAndOnlyExplicitBypassContinues(t *testing.T) {
 	}
 }
 
-// A FAILED BUILD of a newer upstream is recorded and backed off while the good build serves (said
-// once, with where its output is and the next steps); inside the back-off nothing is built, past it
-// the build is tried again.
-func TestAFailedBuildBacksOffWhileTheGoodBuildServes(t *testing.T) {
-	fx, _, _, r, _, _ := firstAdvance(t)
-	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
-	fx.rc = 2
-	fx.later(2 * time.Hour)
-	failed, out, _ := fx.launch(t, "podman")
-	if failed.delivery.Key != r.delivery.Key || len(fx.builds) != 2 {
-		t.Fatalf("the failed build handed %+v after %d builds\n%s", failed.delivery, len(fx.builds), out)
-	}
-	for _, w := range []string{"the build of v1.3.0 (" + shortSHA(v13) + ") + 2 patches failed", "still running v1.1.0",
-		filepath.Join("/ws", ".yolo", "launch.log"), "`yolo capture tool` retries it now", "`agent_updates` off for pack forkpack"} {
-		if !strings.Contains(out, w) {
-			t.Errorf("the failed build's lines lack %q:\n%s", w, out)
-		}
-	}
-	fx.later(2 * time.Hour)
-	if _, out, _ = fx.launch(t, "podman"); len(fx.builds) != 2 {
-		t.Errorf("a launch inside the back-off built again:\n%s", out)
-	}
-	fx.rc = 0
-	fx.later(48 * time.Hour)
-	moved, out, _ := fx.launch(t, "podman")
-	if len(fx.builds) != 3 || moved.delivery.Key == r.delivery.Key {
-		t.Errorf("past the back-off the build was not tried again (%d builds), or did not move:\n%s", len(fx.builds), out)
-	}
-}
-
 // A BUILD JAIL THAT NEVER RAN THE BUILD LINE is not a failed build (PF-D21): nothing is recorded,
 // the good build serves, the line relays what the jail said last, on a line of its own (PPX-D42),
 // and names the step (Apple Container's own besides), and the next launch tries again with no

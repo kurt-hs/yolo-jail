@@ -87,7 +87,7 @@ func (f *Floor) PreparePatched(ctx context.Context, p Program, allowAdvance bool
 	nothingRuns := runs == "" && currentStatus.Record == nil
 	if !bypass {
 		f.writePatchFailureOnce(p, state, runs)
-		return preparation, patchFailureStop(p, state, "patch application failure", runs, nothingRuns)
+		return preparation, patchFailureStop(p, state, state.PatchFailure.Summary(), runs, nothingRuns)
 	}
 	if keepInstalled {
 		preparation.delivery = patchedPreparationKeepInstalled
