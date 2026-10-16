@@ -13,11 +13,14 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 const preparationOrdinaryProgramKind = "ordinary-program"
@@ -187,15 +190,16 @@ func ordinaryCaptureDelivery(r npmCaptureRecord) (entrypoint.ProgramCaptureDeliv
 
 func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprint, rt, platform string, fresh bool, w io.Writer, foregroundGuard func(func() error) error) (npmCaptureRecord, error) {
 	store := &capture.Store{Dir: paths.CapturesDir()}
-	d := preparationDemand{Key: ordinaryProgramKey(in), Kind: preparationOrdinaryProgramKind, Runtime: rt, Platform: platform, Identity: ordinaryProgramIdentity(in, fingerprint, rt, platform), Fresh: fresh}
-	probe := d
-	probe.Identity = ""
+	probe := preparationDemand{Key: ordinaryProgramKey(in), Kind: preparationOrdinaryProgramKind, Runtime: rt, Platform: platform}
 	current, currentFingerprint, release, err := resolveOrdinaryPreparation(ctx, probe)
 	release()
 	foreground := config.InJail() || errors.Is(err, errSharedPreparationForegroundOnly) || err == nil && (current == nil || *current != in || currentFingerprint != fingerprint)
 	if err != nil && !foreground {
 		return npmCaptureRecord{}, err
 	}
+	// admitted is the generation this machine already prepared for exactly these inputs, kept only
+	// when its last check FAILED and PD-NF1 has this launch retry it (admittedServes).
+	var admitted *npmCaptureRecord
 	if !fresh {
 		record, readErr := readNPMCaptureRecord(store, in)
 		if readErr == nil && record.Fingerprint == fingerprint && record.Resolution != nil && record.Resolution.Runtime.Platform == platform {
@@ -208,13 +212,30 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 				if manifestErr != nil {
 					return record, manifestErr
 				}
-				if err = foregroundGuard(func() error { return ctx.Err() }); err != nil {
-					return record, err
+				if record.Failure == "" || admittedServes(in, record, w) {
+					if err = foregroundGuard(func() error { return ctx.Err() }); err != nil {
+						return record, err
+					}
+					return record, nil
 				}
-				return record, nil
+				// A newer version was found and preparing it failed: this launch retries it in
+				// front of the program, as the next launch after a failed background refresh does.
+				admitted, fresh = &record, true
 			}
 		}
 	}
+	d := preparationDemand{Key: ordinaryProgramKey(in), Kind: preparationOrdinaryProgramKind, Runtime: rt, Platform: platform, Identity: ordinaryProgramIdentity(in, fingerprint, rt, platform), Fresh: fresh}
+	record, err := waitOrdinaryCheck(ctx, store, in, fingerprint, d, foreground, w, foregroundGuard)
+	if err == nil || admitted == nil || ctx.Err() != nil || errors.Is(err, errNPMCaptureUnsupported) {
+		return record, err
+	}
+	return retriedAdmitted(ctx, store, in, *admitted, err, w, foregroundGuard)
+}
+
+// waitOrdinaryCheck registers this launch's request and runs the check d asks for, in the
+// foreground or through the shared worker.
+func waitOrdinaryCheck(ctx context.Context, store *capture.Store, in npmCaptureInput, fingerprint string, d preparationDemand, foreground bool, w io.Writer, foregroundGuard func(func() error) error) (npmCaptureRecord, error) {
+	fresh := d.Fresh
 	boundary, err := registerNPMCaptureRequest(ctx, store, in)
 	if err != nil {
 		return npmCaptureRecord{}, err
@@ -222,7 +243,7 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 	d.AfterSeq = boundary
 	if foreground {
 		fmt.Fprintf(w, "%s: foreground-only installation preparation; the user resolver does not authorize these exact inputs for a detached worker\n", in.Bin)
-		return advanceNPMCapture(withOrdinaryCaptureRuntime(ctx, rt), store, in, fingerprint, fresh, boundary, w, foregroundGuard)
+		return advanceNPMCapture(withOrdinaryCaptureRuntime(ctx, d.Runtime), store, in, fingerprint, fresh, boundary, w, foregroundGuard)
 	}
 	result, err := waitSharedDemandResult(ctx, d, false, func(pid int) {
 		fmt.Fprintf(w, "%s: waiting for shared ordinary preparation (pid %d); interrupting detaches this requester\n", in.Bin, pid)
@@ -252,6 +273,101 @@ func waitOrdinaryPreparation(ctx context.Context, in npmCaptureInput, fingerprin
 		return npmCaptureRecord{}, fmt.Errorf("ordinary check predates the request — retry --update")
 	}
 	return *result.Program, nil
+}
+
+// admittedServes is PD-NF1 for an admitted generation whose last check failed (record.Failure):
+// true when that generation runs at this launch without a check, with the one line saying why. An
+// `agent_updates` hold runs it unchecked; a check that failed before it found anything is the
+// could-not-check case; and YOLO_USE_INSTALLED naming the program is the user's own hatch. Anything
+// else is a newer version yolo found and could not prepare, which this launch retries (false).
+func admittedServes(in npmCaptureInput, record npmCaptureRecord, w io.Writer) bool {
+	old := record.Resolution.Release
+	switch {
+	case !entrypoint.PackPolicyAllows(config.AgentUpdatesWire(), in.Owner):
+		return true
+	case record.FailedRelease == "":
+		fmt.Fprintf(w, "%s: could not check for a newer version (%s); running the prepared %s\n", in.Bin, firstLine(record.Failure), old)
+		return true
+	case ordinaryUseInstalled(in):
+		fmt.Fprintf(w, "%s: preparing %s failed (%s); %s is set, so yolo runs the prepared %s\n",
+			in.Bin, record.FailedRelease, firstLine(record.Failure), patchrecovery.UseInstalledEnv, old)
+		return true
+	}
+	return false
+}
+
+// retriedAdmitted is the outcome of a retried check that failed with err, over the admitted
+// generation: a newer version found again is PD-NF1's refusal; a check that failed before it found
+// one is the could-not-check case, and the admitted generation runs.
+func retriedAdmitted(ctx context.Context, store *capture.Store, in npmCaptureInput, admitted npmCaptureRecord, err error, w io.Writer, foregroundGuard func(func() error) error) (npmCaptureRecord, error) {
+	old := admitted.Resolution.Release
+	newer := admitted.FailedRelease
+	if after, readErr := readNPMCaptureRecord(store, in); readErr == nil {
+		if after.FailedRelease == "" {
+			fmt.Fprintf(w, "%s: could not check for a newer version (%s); running the prepared %s\n", in.Bin, firstLine(err.Error()), old)
+			if gerr := foregroundGuard(func() error { return ctx.Err() }); gerr != nil {
+				return admitted, gerr
+			}
+			return admitted, nil
+		}
+		newer = after.FailedRelease
+	}
+	return admitted, &hostfloor.UpdateRefusal{Bin: in.Bin, Pack: in.Owner, Installed: old, Newer: newer,
+		Act: "preparing the newer version", Err: err, Repair: "yolo", Command: "yolo", Runs: "run the prepared " + old}
+}
+
+// ordinaryUseInstalled reports whether YOLO_USE_INSTALLED covers in: "1", or a name equal to its
+// pack, its bin or its npm package (PD-NF2's grammar).
+func ordinaryUseInstalled(in npmCaptureInput) bool {
+	scope := patchrecovery.Read(os.Getenv, patchrecovery.UseInstalledEnv)
+	if scope.Covers(patchrecovery.Subject{Key: in.Owner + "/" + in.Bin, Pack: in.Owner, Name: in.Bin}) {
+		return true
+	}
+	name, _, err := npmCaptureSpec(in.Package)
+	return err == nil && scope.Covers(patchrecovery.Subject{Name: name})
+}
+
+// ordinaryPreparationFailed is a selected program whose preparation failed with no admitted
+// generation to fall back to, or under an explicit --update: the launch stops, in PD-NF1's refusal
+// shape. It offers no hatch: nothing older is prepared for these inputs (or --update asked for the
+// check), and YOLO_ALLOW_MISSING_PROGRAMS is not read on this path, which stops before the jail's
+// readiness act could honor it.
+type ordinaryPreparationFailed struct {
+	Bin string
+	Err error
+}
+
+func (e *ordinaryPreparationFailed) Error() string {
+	return fmt.Sprintf("preparing %s failed: %v", e.Bin, e.Err)
+}
+
+func (e *ordinaryPreparationFailed) Unwrap() error { return e.Err }
+
+// Render is the refusal block: the ERROR line naming the program, the facts, a blank line, then
+// the repair.
+func (e *ordinaryPreparationFailed) Render(color bool) string {
+	var b strings.Builder
+	head := fmt.Sprintf("ERROR: %s: preparing it failed", e.Bin)
+	b.WriteString(richtext.Render("[bold red]"+richtext.Escape(head)+"[/bold red]", color) + "\n")
+	for _, l := range strings.Split(strings.TrimRight(fmt.Sprint(e.Err), "\n"), "\n") {
+		b.WriteString("  " + l + "\n")
+	}
+	b.WriteString("\n" + richtext.Render("[bold]Repair:[/bold]", color) + "\n")
+	b.WriteString("  fix what the error names, then retry the launch:\n")
+	b.WriteString("    yolo\n")
+	return b.String()
+}
+
+// ordinaryLaunchFailure is err as the launch reports it for in: PD-NF1's refusal and the Node
+// floor's typed refusal pass through, an interrupt stays an interrupt, and anything else is the
+// nothing-admitted refusal naming in.
+func ordinaryLaunchFailure(in npmCaptureInput, err error) error {
+	var refusal *hostfloor.UpdateRefusal
+	var floor *run.NodeFloorUnavailable
+	if errors.As(err, &refusal) || errors.As(err, &floor) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	return &ordinaryPreparationFailed{Bin: in.Bin, Err: err}
 }
 
 func prepareOrdinaryForLaunch(req run.ProgramCaptureRequest, w io.Writer) (map[string]entrypoint.ProgramCaptureDelivery, error) {
@@ -289,7 +405,7 @@ func prepareOrdinaryForLaunch(req run.ProgramCaptureRequest, w io.Writer) (map[s
 				continue
 			}
 			if err != nil {
-				operationErr = err
+				operationErr = ordinaryLaunchFailure(in, err)
 				return
 			}
 			delivery, err := ordinaryCaptureDelivery(record)
