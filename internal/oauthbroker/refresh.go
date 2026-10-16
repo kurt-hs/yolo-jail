@@ -49,7 +49,8 @@ func withRefreshLock(fn func() RefreshResult) RefreshResult {
 // DoRefresh is the flock-serialized refresh of the shared credentials file.
 // Returns either {access_token, refresh_token, expires_in, token_type} or
 // {error, ...}.
-//   - cache hit (>= 90s headroom) -> return cached as an oauth response
+//   - cache hit (at least RefreshCacheFloorMS, six minutes, of headroom) -> return cached as
+//     an oauth response
 //   - else read current oauth; missing/unreadable -> error dicts
 //   - refresh upstream; classify HTTP vs transport errors
 //   - normalize + write + return

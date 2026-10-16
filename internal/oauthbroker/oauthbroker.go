@@ -4,8 +4,9 @@
 //
 // Everything here is a frozen byte/behavior contract:
 // the creds-file JSON shape (indent=2 via jsonx), the mkstemp+fchmod(0600)+
-// os.replace atomic write, the 90s cache headroom, the 300s/60s/5s×12 refresher
-// timing and transient-vs-permanent classification (only upstream_unreachable
+// os.replace atomic write, the cache floors (RefreshCacheFloorMS for a refresh,
+// LiveTokenFloorMS for `cached`), the refresher timing (BackgroundRefresh*) and
+// transient-vs-permanent classification (only upstream_unreachable
 // fast-retries), the action request/response shapes incl. error dicts, the
 // User-Agent, and DisableCompression + accept-encoding strip both directions
 // (the 2026-05-12 logout-loop fix — Go's transparent gzip would regress it).
