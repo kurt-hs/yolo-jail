@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -83,7 +85,8 @@ func TestMacosUserTerminateEndsTheSessionThroughItsTeardown(t *testing.T) {
 					rc = ee.ExitCode()
 				}
 			case <-time.After(90 * time.Second):
-				t.Fatalf("the launcher did not exit within 90 s of %s%s", tc.name, diag())
+				t.Fatalf("the launcher did not exit within 90 s of %s%s\n--- processes, taken at the timeout:\n%s",
+					tc.name, diag(), macosUserProcessSnapshot(cmd.Process.Pid))
 			}
 			if rc == 0 {
 				t.Errorf("the signaled launch exited 0%s", diag())
@@ -105,6 +108,60 @@ func TestMacosUserTerminateEndsTheSessionThroughItsTeardown(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// macosUserProcessSnapshot is the process table a timed-out terminate leaves behind, for the
+// failure message: every process in the launcher's group (pgid, the launcher's pid, since the test
+// starts it with Setpgid) and every process of the sandbox account, which a signal from this uid
+// cannot reach. The ignored and caught masks (hex, bit N-1 for signal N, so SIGHUP is 0x1 and
+// SIGTERM 0x4000) say whether the session's shell could have died of the signal at all. Without
+// it, a hang reads the same whether the launcher, its sudo or the sandboxed shell is the one still
+// running (the 2026-10-16 macOS run of 8e65f3444, which printed only the launch's output).
+func macosUserProcessSnapshot(pgid int) string {
+	out, err := exec.Command("/bin/ps", "-axo",
+		"pid=,ppid=,pgid=,user=,stat=,sigignore=,sigcatch=,etime=,command=").Output()
+	if err != nil {
+		return "(ps failed: " + err.Error() + ")"
+	}
+	return "PID PPID PGID USER STAT IGNORED CAUGHT ELAPSED COMMAND\n" +
+		strings.Join(launchGroupOrSandboxRows(string(out), pgid, macosuser.SandboxUser), "\n")
+}
+
+// launchGroupOrSandboxRows is the rows of a `ps -o pid,ppid,pgid,user,…` listing whose pgid is
+// pgid or whose user is user.
+func launchGroupOrSandboxRows(listing string, pgid int, user string) []string {
+	var rows []string
+	for _, line := range strings.Split(listing, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		if f[2] == strconv.Itoa(pgid) || f[3] == user {
+			rows = append(rows, strings.TrimSpace(line))
+		}
+	}
+	return rows
+}
+
+// TestLaunchGroupOrSandboxRowsKeepsTheGroupAndTheAccount pins the timeout snapshot's filter, which
+// only a Mac's timeout ever runs: the launcher's group and the sandbox account's processes are
+// kept, everything else on the machine is not.
+func TestLaunchGroupOrSandboxRowsKeepsTheGroupAndTheAccount(t *testing.T) {
+	listing := "  100     1   100 runner   Ss  0 0 01:00 yolo run -- bash\n" +
+		"  101   100   100 runner   S   0 0 00:59 /usr/bin/sudo -n --user=_yolojail /usr/bin/env -i\n" +
+		"  102   101   100 _yolojail S   1 0 00:59 bash -lc touch up\n" +
+		"  200     1   200 _yolojail Ss  0 0 00:58 yolo-jaild supervise\n" +
+		"  300     1   300 runner   S   0 0 10:00 /usr/sbin/unrelated\n" +
+		"\n"
+	got := launchGroupOrSandboxRows(listing, 100, "_yolojail")
+	if len(got) != 4 {
+		t.Fatalf("kept %d rows, want the group's three and the account's one: %q", len(got), got)
+	}
+	for _, row := range got {
+		if strings.Contains(row, "unrelated") {
+			t.Errorf("kept a process of neither the group nor the account: %q", row)
+		}
 	}
 }
 
