@@ -380,9 +380,9 @@ func TestClaudeUnderAnOnlyOnItsOwnBedrockClient(t *testing.T) {
 
 // A LIST THAT ONLY ADDS SITS BESIDE CLAUDE'S OWN ROWS on its own Bedrock client (OQ-MM1, ruled
 // 2026-10-15, A; MM-D1, MM-D2): the list's Anthropic rows are appended to claude's built-in
-// picker rows and nothing is refused. The tier pins stay where they were before the ruling, in
-// the launched process alone (the owner, 2026-10-16: "keep today's behavior"), so none goes in
-// settings.json's `env` block.
+// picker rows and nothing is refused. A tier it names by alias is pinned in settings.json's `env`
+// block and the launched process; the rest keep what they had before the ruling (the owner,
+// 2026-10-16: "keep today's behavior").
 func TestClaudeAppendsAListThatOnlyAddsBesideItsOwnMenu(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
 	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic","alias":"opus","name":"Claude Opus 5.5"},
@@ -399,9 +399,19 @@ func TestClaudeAppendsAListThatOnlyAddsBesideItsOwnMenu(t *testing.T) {
 		}
 	}
 	settingsEnv, _ := got.settings["env"].(map[string]any)
-	for _, k := range claudeTierVars {
+	if settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" ||
+		got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" {
+		t.Errorf("opus pin = %v in settings, %q in the process, want the list's opus alias in both",
+			settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"], got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+	}
+	// The list names no default and no other alias, so nothing else is pinned, as before.
+	for _, tier := range []string{"SONNET", "HAIKU", "FABLE"} {
+		k := "ANTHROPIC_DEFAULT_" + tier + "_MODEL"
 		if v, set := settingsEnv[k]; set {
-			t.Errorf("settings env %s = %v, want no tier pin in the file for a list that only adds", k, v)
+			t.Errorf("settings env %s = %v, want it unpinned", k, v)
+		}
+		if v, set := got.env[k]; set {
+			t.Errorf("process env %s = %q, want it unpinned", k, v)
 		}
 	}
 }

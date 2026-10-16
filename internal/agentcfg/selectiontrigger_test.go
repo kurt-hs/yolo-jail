@@ -110,13 +110,14 @@ func TestApplySelectionTrigger(t *testing.T) {
 			wantNext:  map[string]any{trig: "", "model": "glm-5.3"},
 		},
 		{
-			// An upgrade: no trigger was recorded, so whether the provider changed is unknown,
-			// and the unknown reads as unchanged. The user's value stands.
-			name:      "no recorded trigger is no change",
+			// An upgrade, or a first render: no trigger was recorded, so whether the provider
+			// changed is unknown, and the unknown reads as a change. A value valid on the
+			// provider is its own equivalent, so only a stale one is replaced.
+			name:      "no recorded trigger is a change",
 			selection: map[string]any{trig: "zai", "model": "glm-5.3"},
 			file:      map[string]any{"model": "claude-opus-5-5"},
-			wantLift:  map[string]any{"model": "claude-opus-5-5"},
-			wantNext:  map[string]any{trig: "zai"},
+			wantLift:  map[string]any{"model": "glm-5.3"},
+			wantNext:  map[string]any{trig: "zai", "model": "glm-5.3"},
 		},
 		{
 			name:      "a derive that stops emitting the trigger forgets it",

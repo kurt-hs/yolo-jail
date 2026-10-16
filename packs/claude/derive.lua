@@ -518,10 +518,11 @@ end
 -- THE LIST BESIDE CLAUDE'S OWN ROWS (docs/design/model-lists-and-pickers.md OQ-MM1, ruled
 -- 2026-10-15, A; MM-D1, MM-D2). On claude's own Bedrock client a list no `only` narrowed is an
 -- `add`: its rows are appended to claude's built-in picker rows (replaceBuiltInOptions: false),
--- and nothing is refused. The tier pins are the env derive's provider branch's, unchanged by the
--- ruling: the list's default entry or the profile's `model` pins the Opus tier, and Sonnet and
--- Haiku fall back to it where the list names no alias of theirs (the owner, 2026-10-16: "keep
--- today's behavior"). That entry is also the saved model a provider change writes (MM-D43).
+-- and nothing is refused. The tier pins keep what the env derive's provider branch pinned
+-- before the ruling: the list's default entry or the profile's `model` pins the Opus tier, and
+-- Sonnet and Haiku fall back to it where the list names no alias of theirs (the owner,
+-- 2026-10-16: "keep today's behavior"); a tier the list names by alias takes that alias
+-- (aliasTierPins). That default is also the saved model a provider change writes (MM-D43).
 -- addRows is that list as claude can use it (onlyRows: the Anthropic entries natively), {} when
 -- this is not that case.
 local function addRows(ctx, p)
@@ -529,12 +530,37 @@ local function addRows(ctx, p)
   return onlyRows(ctx, p)
 end
 
+-- aliasTierPins pins each tier the list names by alias to that id (tierAlias, MM-D17), with the
+-- entry's name and description, and leaves every other tier as it finds it.
+local function aliasTierPins(ctx, p, out, rows)
+  local spell = routedSpelling(ctx, p)
+  local byId = {}
+  for _, r in ipairs(rows) do byId[r.id] = byId[r.id] or r end
+  for _, tier in ipairs(claudeTiers) do
+    local id = tierAlias(p.models, tier, function(id) return byId[spell(id)] ~= nil end)
+    if id then
+      local e = byId[spell(id)]
+      local var = "ANTHROPIC_DEFAULT_" .. tier.var .. "_MODEL"
+      out[var] = e.id
+      out[var .. "_NAME"] = e.name
+      out[var .. "_DESCRIPTION"] = e.description
+    end
+  end
+end
+
 -- listPins is what the env derive's provider branch hands back: the `only` rendering where an
--- `only` narrowed the list and claude reaches the provider, and otherwise MM-D2's remaining pins
--- on a routed provider (completeRoutedTiers).
+-- `only` narrowed the list and claude reaches the provider; beside claude's own rows on its own
+-- Bedrock client, the alias tiers over what the branch pinned; and otherwise MM-D2's remaining
+-- pins on a routed provider (completeRoutedTiers).
 local function listPins(ctx, p, out)
   if listOnly(p) and (claudeBedrock(ctx, p) or routedProvider(ctx, p)) then
     return applyOnlyPins(ctx, p, out)
+  end
+  local added = addRows(ctx, p)
+  if #added > 0 then
+    aliasTierPins(ctx, p, out, added)
+    out.ANTHROPIC_SMALL_FAST_MODEL = out.ANTHROPIC_DEFAULT_HAIKU_MODEL
+    return out
   end
   return completeRoutedTiers(ctx, p, out)
 end
@@ -566,10 +592,44 @@ end
 -- on a provider with no list, which claude resolves natively; else the new provider's default
 -- (the list's default entry, as the picker and the tier pins name it); else nil, claude's own
 -- default.
+--
+-- Two cases come first (MM-D44). When the trigger moved only in the profile's `model` or
+-- `pin_model` (savedModelTrigger), the user changed their config on the same provider and
+-- route, so the new default is written, not the previous model's equivalent. And on claude's own
+-- login (no list, no endpoint), a saved claude id is its own equivalent, version and `[1m]`
+-- included, unless it is tied to another provider (tiedId): a value must never be rewritten
+-- without a change.
+
+-- savedModelTrigger is the selection trigger of claude's saved model, and its ROUTE part: the
+-- selected provider and whether claude reaches it through a via service (bedrock and
+-- bedrock-bridge share a provider, but not what claude's client can call), then the profile's
+-- `model` and `pin_model`, each a change the user made in their config.
+local function savedModelTrigger(ctx)
+  local prof = type(ctx.profile) == "table" and ctx.profile or {}
+  local route = (ctx.selected_provider or "") .. "|" .. (((ctx.via_url or "") ~= "") and "via" or "")
+  return route .. "|" .. (prof.model or "") .. "|" .. (prof.pin_model or ""), route
+end
+
+-- tiedId says a saved value names a model of a provider other than claude's own login: a
+-- region- or maker-dotted Bedrock id (`global.anthropic.…`, `anthropic.…`), a gateway's
+-- `vendor/model`, or an ARN.
+local function tiedId(v)
+  return string.find(v, "/", 1, true) ~= nil or string.find(v, "^arn:") ~= nil
+    or string.find(v, "^[%a-]+%.") ~= nil
+end
+
 local function savedModelFor(ctx)
   local prev = type(ctx.saved) == "table" and ctx.saved.model or nil
+  local trigger, route = savedModelTrigger(ctx)
+  local before = type(ctx.saved_trigger) == "string" and ctx.saved_trigger or ""
+  if before ~= "" and before ~= trigger and string.match(before, "^([^|]*|[^|]*)|") == route then
+    prev = nil -- only the profile's config moved: its default, not the previous model's equivalent
+  end
   local tier = savedTier(prev)
   local p = ctx.providers and ctx.providers[ctx.selected_provider]
+  local ownLogin = ctx.selected_provider ~= "openai-codex"
+    and not (type(p) == "table" and (claudeBedrock(ctx, p) or routedProvider(ctx, p)))
+  if ownLogin and tier and not tiedId(prev) then return prev end
   local listed, tierId, default = nil, nil, nil
   if ctx.selected_provider == "openai-codex" then
     local list = codexModelList(p)
@@ -799,8 +859,10 @@ yolo.derive("claude", "settings", function(ctx)
     end
   end
   -- A LIST THAT ONLY ADDS, on claude's own Bedrock client (OQ-MM1, ruled 2026-10-15, A): its
-  -- rows appended beside claude's built-in rows, and no allowlist (addRows). The tier pins stay
-  -- the env derive's, as before the ruling (the owner, 2026-10-16: "keep today's behavior").
+  -- rows appended beside claude's built-in rows, no allowlist, and the tiers it names by alias
+  -- pinned in this file's `env` block beside CLAUDE_CODE_USE_BEDROCK (addRows, aliasTierPins), so
+  -- a bare `claude` keeps them. The default's Opus pin stays the process env's alone, as before
+  -- the ruling (the owner, 2026-10-16: "keep today's behavior").
   local added = addRows(ctx, selectedP)
   if #added > 0 then
     local options = {}
@@ -808,14 +870,16 @@ yolo.derive("claude", "settings", function(ctx)
       table.insert(options, { model = r.id, label = r.name or r.wire, description = r.description })
     end
     out.modelPicker = { options = options, replaceBuiltInOptions = false }
+    aliasTierPins(ctx, selectedP, env, added)
   end
-  -- THE SAVED MODEL, written once per provider change (savedModelFor; MM-D43). The selected
-  -- provider is the trigger ("" for claude's own login), so the value's own movement, which
-  -- follows the user's pick, never counts as a new selection. Emitted only where the boot hands
-  -- the derive the file's current values (ctx.saved): an entrypoint older than that does not
-  -- know the trigger either, and would write it into the file as a key.
+  -- THE SAVED MODEL, written once per change of its trigger (savedModelFor; MM-D43, MM-D44):
+  -- the selected provider, the via route, and the profile's `model` and `pin_model`
+  -- (savedModelTrigger), so the value's own movement, which follows the user's pick, never
+  -- counts as a new selection. Emitted only where the boot hands the derive the file's current
+  -- values (ctx.saved): an entrypoint older than that does not know the trigger either, and
+  -- would write it into the file as a key.
   if type(ctx.saved) == "table" then
-    out.selection = { ["@trigger"] = ctx.selected_provider or "", model = savedModelFor(ctx) }
+    out.selection = { ["@trigger"] = savedModelTrigger(ctx), model = savedModelFor(ctx) }
   end
   return out
 end)

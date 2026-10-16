@@ -24,6 +24,8 @@ type claudeHome struct {
 	t     *testing.T
 	e     *Env
 	packs []*packload.Pack
+	// profiles are the user profiles each boot resolves, nil for the packs' own alone.
+	profiles map[string]packload.UserProfile
 }
 
 func newClaudeHome(t *testing.T, packs []*packload.Pack) *claudeHome {
@@ -40,7 +42,7 @@ func (h *claudeHome) boot(profile string) map[string]any {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(h.packs, nil, providers)
+	resolved, err := packload.ResolveProfiles(h.packs, h.profiles, providers)
 	if err != nil {
 		h.t.Fatal(err)
 	}
