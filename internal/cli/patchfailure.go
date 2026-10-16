@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	runpkg "github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
@@ -27,6 +30,8 @@ func recoverySubject(f packload.Fork) patchrecovery.Subject {
 	return patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}
 }
 
+// currentPatchFailure is what stops f's act, read from its check record with no git: the recorded
+// patch failure of its series as it stands, else its failed newer build (buildFailureOf, OQ-PPX3).
 func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 	series, err := f.ReadSeries()
 	if err != nil {
@@ -37,7 +42,39 @@ func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 		return nil
 	}
 	inputs, _, _, _ := f.CheckWant(series).Inputs()
-	return record.CurrentPatchFailure(inputs, series.Digest)
+	if pf := record.CurrentPatchFailure(inputs, series.Digest); pf != nil {
+		return pf
+	}
+	return buildFailureOf(f, record, inputs, series, forkBuild{Fork: f, Series: series}.recipe(), "")
+}
+
+// buildFailureOf is f's FAILED NEWER BUILD (the maintainer's ruling OQ-PPX3, 2026-10-16:
+// docs/reference/pi-extensions.md): the build of the newest candidate failed while a good build of
+// the series as it stands is on this machine (packsrc.CheckRecord.CurrentBuildFailure), as a
+// PatchFailure of Kind packsrc.PatchFailureBuild, which every act refuses as it does a patch failure,
+// so none falls back to the older build on its own. nil when nothing stops f:
+//
+//   - while the failure's back-off has run out, since the next advance builds that candidate again
+//     (and refuses if it fails again), rather than stopping on an old verdict;
+//   - under an `agent_updates` hold (OQ-PBR5), which runs the good build past a newer version;
+//   - for an upstream build (YOLO_SKIP_PATCHES), itself a recovery hatch the user set.
+//
+// workspace names the build's log (buildLogName), "" for none.
+func buildFailureOf(f packload.Fork, rec *packsrc.CheckRecord, in packsrc.CheckInputs, series *packsrc.Series,
+	recipe, workspace string) *packsrc.PatchFailure {
+	if f.Upstream || rec == nil || series == nil || runpkg.PatchedForkHold(f) != "" {
+		return nil
+	}
+	pf, o := rec.CurrentBuildFailure(in, series.Digest, recipe, patchedYoloVersion())
+	if pf == nil || !patchedNow().Before(autoCaptureRetryAt(capture.AutoFailure{Failures: o.Count,
+		Last: time.Unix(o.At, 0)})) {
+		return nil
+	}
+	pf.Retry = "yolo capture " + shquote.Quote(f.CaptureArg())
+	if workspace != "" {
+		pf.Log = filepath.Join(paths.WorkspaceStateDir(workspace), buildLogName(f.Key()))
+	}
+	return pf
 }
 
 // preparationPatchFailure inspects scheduler authority without migrating a legacy good build or
