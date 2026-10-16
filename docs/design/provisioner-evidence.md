@@ -232,7 +232,7 @@ Four things follow, and the maintainer asked for the third to be checked.
 - **The sharpest sentence cuts against a naive *prefer the system manager* rule:** on Linux, nix
   is the only manager covering all six, so **the reproducible path and the only-path-that-works
   path are the same path**. That is a much stronger argument for a nix route than
-  "reproducibility is nice", and it is why [`OQ-PS1`](provisioner-sets.md#OQ-PS1) is not a nicety.
+  "reproducibility is nice", and it is why [`OQ-PS1`](provisioner-sets.md#decision-ledger) is not a nicety.
 
 ### 2.1 `install_hints` and a nix profile are complementary, not competitors
 
@@ -253,7 +253,7 @@ survive the ruling:
 
 1. **A user with no `/nix` gets nothing from it** ([§3.8](#38-what-if-the-user-has-no-nix)), and
    telling a brew user to install nix to get `copilot` is a worse experience than
-   `brew install copilot-cli`. This is half of [`OQ-PS1`](provisioner-sets.md#OQ-PS1).
+   `brew install copilot-cli`. This is half of [`OQ-PS1`](provisioner-sets.md#decision-ledger).
 2. **`install_hints` answers a different question** — a pack's *host dependencies* generally.
    The pack-host plan's motivating case is `fzf` and `fd` for a file-suggestion pack, not agent
    CLIs. `fzf` is in nixpkgs, brew, apt and pacman alike; for that class a nix profile is
@@ -273,7 +273,7 @@ survive the ruling:
 `noncontainer-nix-environment.md`**, compacted. It is the only
 resolver with depth like this, for a reason worth stating: it is the one that already works at
 two notches and has no caller at the third, so it is where
-[`OQ-PS1`](provisioner-sets.md#OQ-PS1) is decided. Its original analysis ran 2026-08-02 and was
+[`OQ-PS1`](provisioner-sets.md#decision-ledger) is decided. Its original analysis ran 2026-08-02 and was
 re-verified 2026-08-23; dates below are the original measurements' unless stated.
 
 > [!IMPORTANT]
@@ -322,7 +322,7 @@ verified 2026-08-23; the flake line numbers re-resolved 2026-09-11 (**the merged
 | A **gcroot** on the realized profile | **SHIPPED 2026-08-05** — the root *is* the build's `--out-link`, so it cannot be skipped | `internal/darwinpkg/gcroot.go`, `darwinpkg.go:117-141` |
 | The resolved profile **reported** to a human | **SHIPPED 2026-08-05** for `describe`, and **2026-09-14** for `check` — both now gated on `PrimBakedImage` being absent ([the model doc's build order](provisioner-sets.md), step 2) | `printPackageProfile` (`internal/cli/describe.go`), `sectionPackageProfile` (`internal/cli/check/section_packageprofile.go`) |
 | `yolo check` verifying nix + `/nix` + trusted-user **on macOS** | **SHIPPED** | `cli/check/section_nix_probe.go`, `sections_macos_platform.go` |
-| The same, on **Linux** | **PARTLY WIRED 2026-09-30** — the daemon connectivity probe runs wherever `nix` is found, except in a container jail its launch gave no host nix daemon, where it is a [SKIP] ([`PS-D5`](provisioner-sets.md#PS-D5)); the trusted-user verdict, the extra-platforms and builder block, and the platform section stay `IsMacOS`-gated by that decision | `sectionNix` in `section_nix_probe.go`, and `sectionMacOSPlatform`'s call in `check.go` ([`OQ-NX9`](provisioner-sets.md#OQ-NX9)) |
+| The same, on **Linux** | **PARTLY WIRED 2026-09-30** — the daemon connectivity probe runs wherever `nix` is found, except in a container jail its launch gave no host nix daemon, where it is a [SKIP] ([`PS-D5`](provisioner-sets.md#PS-D5)); the trusted-user verdict, the extra-platforms and builder block, and the platform section stay `IsMacOS`-gated by that decision | `sectionNix` in `section_nix_probe.go`, and `sectionMacOSPlatform`'s call in `check.go` ([`OQ-NX9`](provisioner-sets.md#decision-ledger)) |
 | A **caller** for the profile at the `host` notch | **DOES NOT EXIST** | `yolo host apply` never touches nix (`cli/apply.go`: no `packages` handling) |
 | `packages:` reported by `yolo host apply` / `check --at host` | **DOES NOT EXIST** — `packages` is not a pack *kind*, so the `FieldSet` census never sees it | `render/fieldset.go`, `cli/apply.go` ([`OQ-NX8`](provisioner-sets.md#OQ-NX8)) |
 
@@ -373,8 +373,8 @@ Keep it in mind as a simplification if the `buildEnv` ever proves more machinery
 
 ### 3.3 `nix profile --profile <dir>`: the only candidate that reaches a user's own PATH
 
-This is [`OQ-PS10`](provisioner-sets.md#OQ-PS10) — the *what does it leave behind* question, carved out of the old
-compound [`OQ-PS1`](provisioner-sets.md#OQ-PS1)(c) on 2026-09-11 — and the reason the merged doc's own
+This is [`OQ-PS10`](provisioner-sets.md#decision-ledger) — the *what does it leave behind* question, carved out of the old
+compound [`OQ-PS1`](provisioner-sets.md#decision-ledger)(c) on 2026-09-11 — and the reason the merged doc's own
 [`OQ-3`](provisioner-sets.md#decision-ledger) folded into it.
 
 `nix profile add` puts the binary on the user's PATH **forever, in every shell, with no
@@ -395,8 +395,8 @@ stable path *with* generations, rollback and `nix profile list` provenance. Veri
 > [!WARNING]
 > **⚠ Retracted 2026-09-11: "it costs the imperative/declarative purity the env-manager's sealing
 > story rests on… the closure table gains a row."** That sentence stood here and was the whole
-> basis of the old [`OQ-PS1`](provisioner-sets.md#OQ-PS1)(c) conditional. It is **wrong**, and the correction is what
-> made [`OQ-PS10`](provisioner-sets.md#OQ-PS10) answerable. Sealing's rule over the closure tiers is *"`--sealed`
+> basis of the old [`OQ-PS1`](provisioner-sets.md#decision-ledger)(c) conditional. It is **wrong**, and the correction is what
+> made [`OQ-PS10`](provisioner-sets.md#decision-ledger) answerable. Sealing's rule over the closure tiers is *"`--sealed`
 > refuses the **Undeclared** tier and **reports** the Declared-impure tier"*, and its criterion is
 > **nameability**
 > ([`yolo-as-environment-manager.md` §3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)).
@@ -410,7 +410,7 @@ stable path *with* generations, rollback and `nix profile list` provenance. Veri
 > already puts the **whole toolchain** outside the sealed closure, and
 > that is the design, not an oversight.
 
-**Three costs that are real**, and they are what [`OQ-PS10`](provisioner-sets.md#OQ-PS10) actually weighs: it
+**Three costs that are real**, and they are what [`OQ-PS10`](provisioner-sets.md#decision-ledger) actually weighs: it
 **mutates state yolo then owns** (a thing to reap, report and reason about across versions); its
 **pin is weaker** — MEASURED 2026-09-11, a `--profile` entry locks to whatever channel tarball
 `nixpkgs#…` resolved to, not to yolo's `flake.lock` (M3); and a bare install still **refuses
@@ -491,7 +491,7 @@ for the launcher answer over the rc-editing answer.
 all three live platforms while the jail installs them **lazily, at first use, via npm and
 curl-to-shell**. So the jail does not get its agent CLIs from nix either, and a host nix env
 would be **more reproducible than the jail** on exactly the axis the copilot question is about.
-That inversion is [`OQ-PS6`](provisioner-sets.md#OQ-PS6)'s jail row.
+That inversion is [`OQ-PS6`](provisioner-sets.md#decision-ledger)'s jail row.
 
 > [!WARNING]
 > **The merged doc's `via` census is STALE and is corrected here.** It said *"four npm
@@ -581,26 +581,26 @@ restated**; the freshness *argument* stands and is exactly what the
 containing `gnugrep` still shadows `/usr/bin/grep` when its `bin` is prepended; the difference
 from a devShell is **legibility, not effect**. On a Mac host that is the BSD-vs-GNU hazard
 arriving by the front door instead of the back. Nothing warns today, on any path (confirmed
-absent 2026-08-23). That is [`OQ-NX5`](provisioner-sets.md#OQ-NX5), and it is now also
+absent 2026-08-23). That is [`OQ-NX5`](provisioner-sets.md#decision-ledger), and it is now also
 [`OQ-P2`](../reference/macos-user-provisioning.md#why-it-is-this-way)'s problem one level down.
 
 ### 3.8 What if the user has no nix?
 
-Three sub-cases, and only one is interesting. This is the half of [`OQ-PS1`](provisioner-sets.md#OQ-PS1) the merged
+Three sub-cases, and only one is interesting. This is the half of [`OQ-PS1`](provisioner-sets.md#decision-ledger) the merged
 doc treated as terminal.
 
 1. **No nix at all** (the common macOS/Linux user). The resolver is unavailable. `yolo check`
    already fails on `nix not found` and prints the download URL
    (`internal/cli/check/section_nix_probe.go:25`, read 2026-09-11) — but on Linux the `/nix`-exists
-   and `nix store info` probes were `IsMacOS`-gated and never ran ([`OQ-NX9`](provisioner-sets.md#OQ-NX9);
+   and `nix store info` probes were `IsMacOS`-gated and never ran ([`OQ-NX9`](provisioner-sets.md#decision-ledger);
    the `nix store info` probe runs on every OS since 2026-09-30, [`PS-D5`](provisioner-sets.md#PS-D5)). **Telling
    a brew user to install nix to get `copilot` is worse than `brew install copilot-cli`**, so
    `install_hints` stays the floor. ⚠ **Re-examined 2026-09-11: that objection is about RANKING,
-   and it does not reach [`OQ-PS9`](provisioner-sets.md#OQ-PS9).** It says nix must not lead the macOS default order —
-   which [`OQ-PS6`](provisioner-sets.md#OQ-PS6)'s leaning already honours — and says nothing about a user whose only
+   and it does not reach [`OQ-PS9`](provisioner-sets.md#decision-ledger).** It says nix must not lead the macOS default order —
+   which [`OQ-PS6`](provisioner-sets.md#decision-ledger)'s leaning already honours — and says nothing about a user whose only
    covering provisioner *is* nix, which on a non-Arch Linux host is the ordinary case
    ([§2](#2-the-coverage-matrix-which-manager-covers-what)). The old
-   [`OQ-PS1`](provisioner-sets.md#OQ-PS1)(b) leaning cited it for work it could not do.
+   [`OQ-PS1`](provisioner-sets.md#decision-ledger)(b) leaning cited it for work it could not do.
 2. **nix present, user not trusted.** Already handled as a warning, not a failure: a non-trusted
    user can still substitute from `cache.nixos.org`; being trusted is what makes
    `--accept-flake-config` consult yolo's cachix.

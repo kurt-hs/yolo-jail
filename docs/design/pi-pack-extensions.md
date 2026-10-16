@@ -353,7 +353,7 @@ field shape [`slots-and-contributions.md`](slots-and-contributions.md) supersede
 [`OQ-D10`](slots-and-contributions.md#OQ-D10) and [`OQ-D12`](slots-and-contributions.md#OQ-D12)
 (its [`OQ-D1`–`OQ-D5`](slots-and-contributions.md#7-decision-ledger) are ruled, and D7, D8 and D11
 were decided as implementation choices on 2026-09-30) and the surface's
-[`OQ-M1`–`OQ-M3`](manifest-language.md#OQ-M1) ([`OQ-M4`](manifest-language.md#OQ-M4) is decided).
+[`OQ-M1`–`OQ-M3`](manifest-language.md#OQ-M1) ([`OQ-M4`](manifest-language.md#8-decision-ledger) is decided).
 
 The five earlier questions were ruled in review on 2026-09-19, and this review resolved
 the sixth — the alias-root layout — by **removing the overload that created it**. A `files`

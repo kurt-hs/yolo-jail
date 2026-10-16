@@ -791,7 +791,7 @@ is reported verified only against a real rootless host or CI, with
      under `host_management`. Name source-bearing entries and `mise_tools` as inert.
    - **B — Name both as inert** in host apply's notch line now. Revisit `host_files` once
      [`OQ-CO14`](../design/config-ownership-and-promotion.md#oq-co14) settles host ownership. Host
-     tools belong to [`OQ-PS1`](../design/provisioner-sets.md#OQ-PS1).
+     tools belong to [`OQ-PS1`](../design/provisioner-sets.md#decision-ledger).
 
    _Leaning:_ B. It ends the silence today without choosing an ownership model early.
 

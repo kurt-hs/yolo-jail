@@ -565,7 +565,7 @@ caller's PATH. Two 2026-09-29 rulings in
   PATH, project tools and mise shims included, with yolo's floor as a fallback. (2) An agent yolo
   delivers from the floor starts in a set, predictable environment: the floor's own node by
   absolute path, mise stripped.
-- **[OQ-HP7](../design/host-tool-provisioning.md#OQ-HP7), ruled (a) under principle
+- **[OQ-HP7](../design/host-tool-provisioning.md#decision-ledger), ruled (a) under principle
   [HP-DIR3](../design/host-tool-provisioning.md#HP-DIR3).** Only the delivered agent's own startup
   is fixed. The commands the agent runs see the user's own shell environment.
 
