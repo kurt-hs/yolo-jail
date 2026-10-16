@@ -104,7 +104,7 @@ podman 5.8.4 + crun 1.27.1), **READ FROM CODE** (traced to a `file:line` but not
 running), or **NOT MEASURED**.
 
 **Reads with:**
-[`../research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md)
+the deleted `mise-host-jail-path-mismatch.md`
 (where this question was first asked, as "option A", and answered no on 2026-07-03),
 [`../reference/jail-state-separation-design.md`](jail-state-separation-design.md) (the bundle that
 made that answer right, and the corollary that makes mirroring actively harmful),
@@ -256,7 +256,7 @@ move: [`storage-and-config.md`](storage-and-config.md) says it exists so the rec
 ### 2.3 The prior art, and why it is not the answer
 
 This is **option A** in
-[`../research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md),
+the deleted `mise-host-jail-path-mismatch.md`,
 asked as [`OQ-MP1`](#decision-ledger) and answered **no** on 2026-07-03. Two of its three stated reasons have
 expired and should not be recycled:
 
@@ -265,7 +265,7 @@ expired and should not be recycled:
 - *"Changes a documented invariant (`/workspace` everywhere), needs a canonicalization test
   pass."* Substantially weaker now. The codebase was Python then, with the literal spread
   everywhere; today the seam exists ([§6.1](#61-the-code-side-is-smaller-than-folklore-says)).
-- [`OQ-MP2`](../research/mise-host-jail-path-mismatch.md#-oq-mp2-does-apple-container-support-arbitrary-same-path-bind-targets--moot-2026-07-03) asked whether Apple Container supports arbitrary same-path bind targets and was
+- The same July investigation asked whether Apple Container supports arbitrary same-path bind targets and was
   closed **moot** without an answer. Still unanswered for AC ([§7](#7-backends)); answered for podman here
   (**MEASURED**, [§7.1](#71-podman-expressible-and-the-image-constraint-is-not-one)).
 
@@ -283,7 +283,7 @@ host username baked into every jail"*
 ([`../reference/jail-state-separation-design.md`](jail-state-separation-design.md#why-the-three-changes-are-one-change));
 it made jails host-layout-dependent where the goal was *"identical jails on gauss, macOS,
 anywhere"*
-([`../research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md)
+(the deleted `mise-host-jail-path-mismatch.md`
 §F+); and it required a dedicated nested-jail propagation variable, `YOLO_OUTER_MISE_PATH`,
 which the neutral path deleted — the store path is now
 [re-resolved at every nesting depth](jail-state-separation-design.md#invariants).
@@ -491,7 +491,7 @@ see [`OQ-WP4`](#open-questions).
 
 The host path is already in every jail (`YOLO_HOST_DIR`, **MEASURED**, [§2.1](#21-the-mount)), in the prompt,
 in `yolo ps`, and in the briefing. Mirroring exposes no new information. The
-[`mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md) note that it
+`mise-host-jail-path-mismatch.md` note (deleted 2026-10-16) that it
 *"[l]eaks the host username/layout into the jail (mild)"* was already true when written and is
 fully true now. **This is not an argument against.**
 
@@ -764,7 +764,7 @@ per-setting table). yolo still gates `:ro` on that version and still copies sing
 choice. Neither fact is touched by a destination rename either way.
 
 What remained was that nobody had confirmed an arbitrary deep destination on AC. That is
-exactly [`OQ-MP2`](../research/mise-host-jail-path-mismatch.md#-oq-mp2-does-apple-container-support-arbitrary-same-path-bind-targets--moot-2026-07-03), asked in July and closed **moot** rather than answered — and un-mooting
+exactly the question the July mise investigation asked and closed **moot** rather than answered — and un-mooting
 option A re-opens it. [`OQ-WP5`](#OQ-WP5) has now measured it: supported, on `container` 1.1.0 (2026-09-25). Second-order: `workspace_readonly` and
 the per-side shadows build `"/workspace/"+rel` destinations
 (`internal/cli/run/mounts.go`), so mirroring moves those strings too, on a backend
@@ -1395,7 +1395,7 @@ and it already has a home in the tree.
    > only if [`OQ-WP8`](#OQ-WP8) is answered yes, so AS3 needs nothing from it today.
 
 5. ✅ <a id="OQ-WP5"></a>**OQ-WP5: Does Apple Container support an arbitrary deep bind destination?**
-   Unanswered since [`OQ-MP2`](../research/mise-host-jail-path-mismatch.md#-oq-mp2-does-apple-container-support-arbitrary-same-path-bind-targets--moot-2026-07-03) closed it as moot in July. It does not block the *no*, but it
+   Unanswered since the July mise investigation closed it as moot. It does not block the *no*, but it
    would block a future *yes*, and it is cheap to measure for whoever next has AC hardware
    in front of them. `docs/design/backend-parity.md` is where the answer belongs.
 
@@ -1598,7 +1598,7 @@ silently re-litigated:
 | <a id="WP-D1"></a>WP-D1 | *Implementation decision*, answering [`OQ-WP3`](#OQ-WP3). **`~/.cache/claude-cli-nodejs/-workspace` stays one key shared by every container jail on the machine**, and [`jail-home.md`](jail-home.md#sharing-semantics) names it. Why: it holds MCP logs and nothing else (re-measured 2026-09-30: four `mcp-logs-*` directories, 1.8 MB), and the fix is a mount for one vendor's cache layout. Reopen on [§1.1](#11-what-would-change-my-mind)'s first condition | 2026-09-30 | [OQ-WP3](#OQ-WP3), [§3.2](#32-confirmed-one-machine-shared-cache-directory-is-keyed-by-the-collapsed-name) |
 | <a id="WP-D2"></a>WP-D2 | *Implementation decision*, answering [`OQ-WP4`](#OQ-WP4). **A scope rule for workspace `mounts` is not ruled here**: [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3), which the maintainer opened on 2026-09-18, asks it for `mounts` and `env_sources` together. Why: one question in two docs gets asked twice, and [§4.4](#44-trust-one-undocumented-fail-safe-and-nothing-else)'s fail-safe matters only under a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [OQ-WP4](#OQ-WP4) |
 | <a id="WP-D3"></a>WP-D3 | *Implementation decision*, answering [`OQ-WP9`](#OQ-WP9). **`retireJailMadeVenv` is not hardened.** Why: the leaning's condition, a better oracle, is unmet (the ELF interpreter was measured unable to tell the sides apart, 2026-09-25), and the guard retires state from before the per-side shadows ([`SS-2`](jail-state-separation-design.md#ss-2)), which now keep a container jail's `.venv` and mise-config venv off the host. Reopen on a content oracle, or on a yes to [`OQ-WP8`](#OQ-WP8) | 2026-09-30 | [OQ-WP9](#OQ-WP9), `internal/cli/run/retire.go` |
-| OQ-MP1 | Same-path workspace mount ("option A") rejected; superseded by the state-separation bundle | 2026-07-03 | [`../research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md) · this doc [§2.3](#23-the-prior-art-and-why-it-is-not-the-answer) re-examines it, because two of its three reasons have expired |
+| OQ-MP1 | Same-path workspace mount ("option A") rejected; superseded by the state-separation bundle | 2026-07-03 | the deleted `mise-host-jail-path-mismatch.md` · this doc [§2.3](#23-the-prior-art-and-why-it-is-not-the-answer) re-examines it, because two of its three reasons have expired |
 | [`OQ-2`](#decision-ledger) (env-manager) | Host management is user-scoped; the workspace contributes nothing, so `${workspace}` surfaces are refused at the host notch | 2026-08-01 | `docs/plans/environment-manager-plan.md` · [§12.7](#127-the-notch-model--no-statement-anywhere-names-paths-as-the-obstacle) relies on it: mirroring cannot supply a referent the design says must not exist |
 | [`HP-DIR3`](../design/host-tool-provisioning.md#HP-DIR3) (host-tool-provisioning) | At the host, yolo manages the agent's environment and never the workspace's runtime; in a jail it does provision the workspace's runtime | 2026-09-29 | [`host-tool-provisioning.md`](../design/host-tool-provisioning.md#decision-ledger) · [`OQ-WP10`](#OQ-WP10) relied on it: alternative G's host-to-jail half is not a goal |
 | — (`29b00697`) | `macos-user` shares only neutral ground, never the host home — because a foreign uid reaching a leaf inside `~` needs traversal on `/Users/<you>`, *"exactly where a stray grant silently exposes `~/.ssh`"* | 2026-07-13 | [§12.8](#128-macos-users-neutral-ground-is-it-a-constraint-or-a-choice) · the reason is grant **routing**, independent of whether paths match |

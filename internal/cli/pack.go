@@ -860,7 +860,7 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 // THE COLLECTOR ITSELF, never a second copy of its rules. Lint used to check an overlay for
 // packdecl's shape alone, so a body carrying only `defaults` printed "✓ pack ok" and a claim
 // line saying it contributes keys, then contributed nothing at the next apply
-// (docs/design/synced-skill-trees-plan.md) — and that overlay is the remedy yolo's own loss
+// (found by a 2026-09-19 host-apply measurement) — and that overlay is the remedy yolo's own loss
 // message tells a user to write.
 //
 // At BOTH postures, because lint knows no notch: the collector decodes every posture's

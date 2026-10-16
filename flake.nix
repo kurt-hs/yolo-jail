@@ -9,7 +9,7 @@
   # Cachix cache lets every macOS user *download* it instead (zero setup).
   #
   # ENABLED (2026-07-20).  Rename `yolo-jail` throughout if you claim a
-  # different cache name (see docs/plans/handoff-cachix-cache.md).
+  # different cache name (also `just cachix-push`'s CACHE default and the CACHIX_CACHE repository variable).
   nixConfig = {
     extra-substituters = [ "https://yolo-jail.cachix.org" ];
     extra-trusted-public-keys = [ "yolo-jail.cachix.org-1:6SMCmaSd8DsVfj5EHAdpgIZi0RE14zyYrAWnV8WxFLM=" ];

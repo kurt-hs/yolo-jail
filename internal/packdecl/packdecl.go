@@ -394,7 +394,7 @@ type Refresh struct {
 	// Pi installs a newly configured extension itself, at startup, whenever the refresh is not
 	// due; per workspace that was harmless, but a machine-shared store makes it two jails
 	// cloning one checkout at once, where the loser's cleanup deletes the winner's tree
-	// (docs/design/pi-git-extension-caching.md, "The first-install race"). Watching the file
+	// (docs/reference/pack-system.md, `program`, "the first-install race"). Watching the file
 	// that names the add-ons routes their first install through the locked refresh.
 	//
 	// CONTENT, not mtime: yolo rewrites a composed config file on every boot, so its mtime

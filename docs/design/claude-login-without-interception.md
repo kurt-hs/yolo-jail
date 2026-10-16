@@ -220,7 +220,7 @@ helper cannot carry the subscription, on firmer ground than before: it is exclud
 
 <a id="F11"></a>**F11. A custom `ANTHROPIC_BASE_URL` carries the saved bearer but not the rest of
 Claude.** SOURCED: the saved login's bearer follows `ANTHROPIC_BASE_URL`
-([`agent-auth-modes.md` §8.1](agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)).
+([`wire-bridge.md`](../reference/wire-bridge.md#the-subscription-bearer-follows-anthropic_base_url)).
 MEASURED text: only the model client reads that variable. The account calls above use the
 `BASE_API_URL` constant, and the binary carries these refusals for a custom base URL:
 *"not available with a custom ANTHROPIC_BASE_URL"*, *"Artifacts can't check the organization

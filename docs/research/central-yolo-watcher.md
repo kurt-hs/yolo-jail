@@ -492,7 +492,7 @@ yolo installs **no** init-system object today. `rg` over `internal/` and `cmd/` 
 `systemctl` and `LaunchAgent` finds only remediation hints in `internal/cli/check/section_nix_probe.go`
 (MEASURED). A watcher or timer would be the first. The project has deleted one resident launchd
 service before, the macOS Linux-builder VM, in favor of an ephemeral one
-([`macos-linux-builder-explained.md`](macos-linux-builder-explained.md)).
+([`nix-across-backends.md`](../reference/nix-across-backends.md#how-the-container-path-works)).
 
 ### 6.4 Rulings it collides with
 

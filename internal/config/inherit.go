@@ -173,7 +173,7 @@ var inheritCensus = map[string]keyDisposition{
 	// `required_capabilities` earns its NESTED seat on a check an inner launch performs,
 	// and its preflight seat on the in-jail readers — the distinction matters to whoever
 	// re-decides it, and it stopped being "shape alone on both sides" on 2026-09-17.
-	// OQ-CAP2's fatal refusal (docs/design/agent-auth-modes.md, which config_ref.txt
+	// OQ-CAP2's fatal refusal (docs/reference/mcp-configuration.md#the-capability-gate, which config_ref.txt
 	// cites for exactly this key) is BUILT: a LAUNCH now refuses when nothing the config or
 	// its selected packs declare satisfies a required name, from inside the config gate
 	// (internal/cli/run/preflight.go refuseUnmetCapabilities), which is why the key has

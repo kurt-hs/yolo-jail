@@ -3,7 +3,7 @@ title: "Plan sketch: pack-file conventions"
 date: 2026-10-05
 status: draft
 stage: SKETCH
-next: "Nothing to plan until OQ-PC3, OQ-PC1 and OQ-PC2 are ruled, except PC-D4, which rides pack-pi-resources-plan.md's emission step; an implementation-plan pass then re-reads the tree"
+next: "Nothing to plan until OQ-PC3, OQ-PC1 and OQ-PC2 are ruled, except PC-D4, which rides pack-pi-resources.md's emission step (`packload.Registrations`); an implementation-plan pass then re-reads the tree"
 depends-on:
   - pack-conventions.md#OQ-PC1
   - pack-conventions.md#OQ-PC2

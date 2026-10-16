@@ -775,7 +775,7 @@ func providerPlatform(ctx *DeriveCtx, provider string) string {
 }
 
 // sourceCapabilities resolves the ACTIVE authentication source's capability set —
-// agent-auth-modes.md §6.1's "if the active agent/mode already has capability C" — as a
+// mcp-configuration.md's capability-driven MCP delivery ("if the active agent/mode already has capability C") — as a
 // set, for eligibleMCPServers to ask membership of.
 //
 // An authentication source (docs/reference/mcp-configuration.md#authentication-source)

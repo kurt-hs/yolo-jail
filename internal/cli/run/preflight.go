@@ -67,7 +67,7 @@ func (o *Options) loadAndValidateConfig() (*jsonx.OrderedMap, bool) {
 		out.print("\n[dim]Run `yolo check` for a full preflight before restarting.[/dim]")
 		return nil, false
 	}
-	// THE CAPABILITY GATE (agent-auth-modes.md OQ-CAP2), last in the config gate and
+	// THE CAPABILITY GATE (mcp-configuration.md OQ-CAP2), last in the config gate and
 	// therefore below the shape errors above: `required_capabilities` is a string list
 	// before it is a set of names, and reporting an unmet name for a value that is not
 	// even a list would be reporting the second fault first.
@@ -132,7 +132,7 @@ func (o *Options) capabilityLaunch(cfg *jsonx.OrderedMap) *config.CapabilityLaun
 // discovers the hole at its first request. Reports whether the caller must stop.
 //
 // The census is config.UnmetCapabilities, the one `yolo check` predicts with: the user's own
-// declarations, then the selected packs' (agent-auth-modes.md §6.1 clause 1) — each installed
+// declarations, then the selected packs' (mcp-configuration.md#the-capability-gate) — each installed
 // agent's ACTIVE source, the provider its profile selects (composed under the user's overrides
 // as the launch composes it) or, with no profile, its built-in login. Until 2026-09-30 it read
 // the merged user config alone, so requiring `web_search` with claude selected was refused

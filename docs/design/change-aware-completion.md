@@ -28,7 +28,7 @@ The earlier bounded experiment stays in
 **Start at [the baseline](#3-the-baseline-is-automatic-and-covers-earlier-commits)** — empty working diffs are not evidence.
 **Ruled:** the owner confirmed [CAC-D7](#CAC-D7) on 2026-10-09: `just done` selects Go checks by package impact.
 Landing (`just check-ci`) is unchanged.
-**Reads with:** [input research](../research/completion-check-inputs.md) (source evidence) and
+**Reads with:** 
 [suite speed](../plans/test-suite-speed.md) (independent timing work).
 
 ---
@@ -159,8 +159,8 @@ Existing obligations remain distinct:
 The current [recipe graph](../../Justfile#L409-L498) makes `done` depend on `check`, which formats,
 lints Linux and Darwin, runs all short units and checks official binary pins. It does **not** run
 full integration. `check-ci` adds read-only formatting and changelog/guide/site-contract checks;
-it does not build a rendered site. [The research](../research/completion-check-inputs.md#the-recipe-names-describe-different-coverage)
-records those differences. The full fallback intentionally uses the existing stronger read-only gate.
+it does not build a rendered site.
+The full fallback intentionally uses the existing stronger read-only gate.
 
 ### What this does not license
 
@@ -265,14 +265,14 @@ fixture, not a design that permanently disables inheritance.
 
 **Ordinary prose** in this slice means a modified regular tracked file at one of the five exact
 paths below, whose body is not executable/test/pack input and whose structural targets are preserved.
-These paths are selected from the [actual reader survey](../research/completion-check-inputs.md#non-go-readers-rule-out-a-broad-prose-category),
+These paths are selected from the actual reader survey,
 not from a proposed all-documentation convention:
 
 | Exact path | Why it is eligible for investigation |
 | :--- | :--- |
 | [The speed plan](../plans/test-suite-speed.md) | Measurement and planning prose; source citations must survive |
 | [The roadmap](../plans/roadmap.md) | Priority/planning prose; source citations and planning routing must survive |
-| [Completion input research](../research/completion-check-inputs.md) | Source findings, not embedded instructions |
+| Completion input research (deleted 2026-10-16) | Source findings, not embedded instructions |
 | [This behavior design](change-aware-completion.md) | Planning behavior, not a runtime configuration |
 
 This is a small initial set, not a claim that the rest of the corpus is sourceful. New allowlist
@@ -294,7 +294,7 @@ extracting them; it is not a replacement renderer or a claim of regex equivalenc
 
 The restriction matters: a blank-surrounded text line can still change a multiline HTML ID or lie
 inside a fence/math block. Setext adjacency, heading edits, question IDs and frontmatter also
-force full. [Bounded counterexamples and positives](../research/completion-check-inputs.md#bounded-positive-diagnostic)
+force full. Bounded counterexamples and positives
 were executed; broader ordinary prose still requires the ordered comparisons.
 
 For that broader route, a set of slugs alone loses duplicate-heading ownership and ordering.
@@ -487,7 +487,7 @@ engineering gaps go there, not into invented owner questions.
 | <a id="CAC-D11"></a>CAC-D11 | *Implementation decision.* The context is the effective `go env` values (version, GOOS, GOARCH, GOROOT, GOFLAGS, CGO, toolchain, workspace, CC) and staticcheck's resolved path and version. Reading them runs `go env` and `staticcheck -version`, which CAC-D5 forbade on the prose route. **Why:** both take milliseconds and run no quality check; resolving tool identity from files without them was the unbuilt half of the old plan. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D12"></a>CAC-D12 | *Implementation decision.* Stability is the before-and-after check (clean tree, same HEAD) plus a per-worktree lock; there is no file-event observer, replacing CAC-D4 and CAC-D5's bounded observation. **Why:** the observer was unbuilt, Linux-only and could still not fence a writer. Cost, stated plainly: a write undone before the checks finish goes unseen; landing and CI rerun everything. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D13"></a>CAC-D13 | *Implementation decision.* A HEAD whose tree equals a verified tree under the same context runs no check, where section 3 sent an empty range to the full gate. **Why:** that record is an actual green for exactly these inputs, which is the reuse section 7 allowed once identities are recorded. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
-| <a id="CAC-D14"></a>CAC-D14 | *Implementation decision.* Every changed Markdown file outside a Go package directory gets the Vantage check, including `docs/`, which `check-ci` does not check today. The ten `docs/` files with existing findings were fixed on 2026-10-09; the eleventh, `docs/research/vantage-check-0.5.9-findings.md`, is exempt by name, because its findings are specimens that its own opening note says must never be linked away. **Why:** section 4 requires the strict check on every changed document, and a check that skipped known-bad files would hide new findings in them. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
+| <a id="CAC-D14"></a>CAC-D14 | *Implementation decision.* Every changed Markdown file outside a Go package directory gets the Vantage check, including `docs/`, which `check-ci` does not check today. The ten `docs/` files with existing findings were fixed on 2026-10-09; the eleventh, a defect report about vantage-check's own rules whose findings were deliberate specimens, was exempt by name until it was deleted on 2026-10-16. **Why:** section 4 requires the strict check on every changed document, and a check that skipped known-bad files would hide new findings in them. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D15"></a>CAC-D15 | *Implementation decision, from review.* Every scanning test — one whose recorded reads include a `D/*` or `D/*.E` pattern, or whose listings include a `D/**` tree — runs on every selective check, 43 tests in 18 packages on 2026-10-09. **Why:** what they read moves with ordinary edits, so a recorded set went stale between census runs: deleting a cited document selected none of the citation test, and `just done` would have recorded a tree `check-ci` rejects. Run uncached, the 42 of the earlier census took 14 s together; Go's test cache skips them when nothing they read changed. Reversible | 2026-10-09 | [Known limits](#known-limits) | ✅ |
 | <a id="CAC-D16"></a>CAC-D16 | *Implementation decision, from review.* The Vantage wrapper runs a pinned release (0.10.0), not `@latest`. **Why:** with `@latest`, an upstream release could turn a document nobody changed red, and a document's check must depend only on the document. Raising the pin changes `scripts/`, so that commit runs the full gate. Reversible | 2026-10-09 | [What shipped](#what-shipped) | ✅ |
 | <a id="CAC-D17"></a>CAC-D17 | *Implementation decision.* Exempt `scripts/completion-readers.json` from the global-input rule: a range whose only global-matching path is the census routes selective, because it is reader-selection data read fresh from the working tree, not a gate input. Every other `scripts/` path, and every genuine global input (`go.mod`, `go.sum`, `vendor/`, `flake.nix`, `flake.lock`, `.github/workflows/`), still runs the full gate. **Why:** treating the census as a global input forced the full gate on every census refresh — a 9-minute run to regenerate selection data. Reversible | 2026-10-12 | [What shipped](#what-shipped) | ✅ |

@@ -617,7 +617,7 @@ Four facts the build settled that the design left open:
 
 - **An `openai-codex` entry adds its declared BASE ids to `enabledModels`, never a `[1m]`
   variant.** pi matches `enabledModels` as minimatch patterns
-  ([`pi-model-selection-ux.md`](../research/pi-model-selection-ux.md)), in which `[1m]` is a
+  ([`providers.md`'s per-agent delivery](../reference/providers.md#per-agent-delivery)), in which `[1m]` is a
   character class: `openai-codex/gpt-x[1m]` would match `gpt-x1` or `gpt-xm`, never the variant. The variants
   stay in the pi-subagents scope, whose matcher escapes brackets, and one Tab away in pi's all view.
 - **A via entry may sit only first** ([AP-D9](#AP-D9)), which narrows [AP-D7](#AP-D7).

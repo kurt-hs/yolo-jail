@@ -5,7 +5,7 @@ status: in-review
 tags: [design, packs, programs, capture, notches, forks, build]
 summary: "A pack can declare a program from npm or from a vendor installer, and neither can express a fork the maintainer builds themselves. The proposal adds a third delivery route — a pinned source address plus a build recipe, built once in a throwaway capture jail and delivered from the capture store — and the load-bearing problem is not the build but relocation: capture is cheap today only because the capture home and the materialize home are the same string, which a host-and-jail artifact breaks by definition."
 stage: DESIGN
-next: "Rule OQ-FP11 (a Mac build's node_floor). Rerun the plan's step-7 measurement once the maintainer names the motivating fork (address, build line and produces); the host notch's floor arms are built on the stand-in's shape. Dispatch macos-user.yml for the Mac floor's fork build (FP-D24), then run `yolo host -- <forked bin>` on a Mac with a real fork"
+next: "Rule OQ-FP11 (a Mac build's node_floor). Rerun the host notch's measurement (§11) once the maintainer names the motivating fork (address, build line and produces); the host notch's floor arms are built on the stand-in's shape. Dispatch macos-user.yml for the Mac floor's fork build (FP-D24), then run `yolo host -- <forked bin>` on a Mac with a real fork"
 depends-on:
   - ../plans/install-capture.md
   - host-tool-provisioning.md
@@ -21,13 +21,13 @@ keeping them. Since 2026-10-02 a launch pins an unpinned fork
 itself, with no `yolo pack install` ([FP-D18](#FP-D18), which supersedes [FP-D7](#FP-D7)'s
 read-only launch under the maintainer's
 [`OQ-PF1`](../reference/pack-system.md#oq-pf1)). Building: the
-[plan](forked-programs-as-packs-plan.md#build-order)'s steps 1–6, the `source` vocabulary, the selection's rewrite of a fork's base, the pin, the seal, the build act and the jail's delivery, landed
+jail notch ([§11](#11-sequencing) steps 1–2), the `source` vocabulary, the selection's rewrite of a fork's base, the pin, the seal, the build act and the jail's delivery, landed
 2026-09-30, and the Built column of [§14](#14-decision-ledger) says what each step built. Step 7,
-the host notch, began with its measurement, which the plan's [step 7](forked-programs-as-packs-plan.md#step-7-needs) records.
+the host notch, began with its measurement, which [the host notch's measurement](#host-notch-measurement) records.
 MEASURED 2026-10-01 on a stand-in, pi's upstream at `v0.99.2` built through steps 1–6 in a
 nested jail: `relocatable:true`, and no `/nix/store`, home or Linux `/lib` path in its tree, so
 [FP-D4](#FP-D4)'s host notch can be built as written for a fork like it
-([the plan's run](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01)).
+([the run](#host-notch-measurement)).
 The host agent floor's source arms were built on 2026-10-01 to that shape
 ([FP-D16](#FP-D16), [FP-D17](#FP-D17)): on a Linux host, `yolo host -- <bin>` runs the floor's
 copy of the store's build at the pin. Since 2026-10-05 a Mac's floor does the same for a plain
@@ -40,7 +40,7 @@ questions were ruled 2026-09-22; the three that came out of ruling them
 ([FP-D1](#FP-D1)–[FP-D3](#FP-D3)). Evidence re-verified 2026-09-24 at `f491d192`; the inheritance
 limit in [§4.1](#41-a-fork-declares-itself-a-fork-and-the-base-keeps-the-name) and the macos-user
 gap in [OQ-FP9](#OQ-FP9) were re-read against the tree on 2026-09-30. The
-[plan](forked-programs-as-packs-plan.md) was promoted against the tree the same day, and the
+build plan (deleted 2026-10-16) was promoted against the tree the same day, and the
 implementation choices its promotion made are [FP-D4](#FP-D4)–[FP-D9](#FP-D9).
 
 > **In short.** A fork is not a new kind of thing — it is the `installer` route with the
@@ -68,7 +68,7 @@ a path that has never run outside unit tests. Every consumer pays a local build.
 2026-09-22; [OQ-FP7](#OQ-FP7), [OQ-FP8](#OQ-FP8) and [OQ-FP9](#OQ-FP9) came out of ruling them and
 were decided as implementation choices ([FP-D1](#FP-D1)–[FP-D3](#FP-D3)).
 
-**Reads with:** [`forked-programs-as-packs-plan.md`](forked-programs-as-packs-plan.md) (the
+**Reads with:** the deleted `forked-programs-as-packs-plan.md` (the
 implementation plan, promoted against the tree 2026-09-30),
 [`program-delivery.md`](program-delivery.md) (the `via` routes and the PATH ruling this
 extends), [`install-capture.md`](../plans/install-capture.md) (the capture mechanism as built).
@@ -254,7 +254,7 @@ rather than an implementation detail:
   The `macos-user` CI job loads the *session* Seatbelt profile under `sandbox-exec` and asserts
   the kernel's refusals. One capture has run on the backend that needs them, on hardware on
   2026-09-11 under the capture profile (`macosuser.SeatbeltCaptureProfile`,
-  [M4](../plans/runbooks/mac-provisioner-measurements.md#m4--does-the-capture-recording-half-work-on-hardware)),
+  [M4](provisioner-sets.md#15-what-a-mac-session-should-measure)),
   and it did not record whether its manifest came out relocatable. The relocating materialize
   ([`install-capture.md`](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
   hand-off H2) landed 2026-09-26 and has run only in Linux unit tests; no Mac has run it. ⚠ This
@@ -381,6 +381,8 @@ the existing hard case, not a new one — which makes it the best place to find 
 
 **Forbidden behaviour**, where a reasonable implementation might do otherwise:
 
+- **Never fall back to the base's delivery** when a fork has no build. A failed build leaves the
+  program unavailable; the installer route's download fallback is not this route's.
 - **Never rebuild on a timer or on every launch.** The trigger is a lock change or an explicit
   act, nothing else.
 - **Never build on the host**, on any backend.
@@ -419,6 +421,33 @@ the existing hard case, not a new one — which makes it the best place to find 
 - A jail and the host either run artifacts built for their own notch, or the notch that cannot
   says so by name.
 - Deleting the capture store costs a rebuild and nothing else.
+
+### The host notch's measurement, owed on the motivating fork
+
+<a id="host-notch-measurement"></a>The host notch ([FP-D4](#FP-D4)) relocates a build the
+reference scan cleared, and that scan does not report the build image's own paths, so a fork's
+build is measured first. **Owed:** the motivating fork, a forked `pi` no file names. A maintainer
+supplies its `source` (`git+https://…?ref=<branch or tag>`), `build` line and `produces`; the run
+needs the network and a Linux host with podman.
+
+1. Select the fork pack and run `yolo capture pi`, which pins the fork first if nothing has. Its
+   last line names the entry under `~/.local/share/yolo-jail/captures/entries/`.
+2. Read the entry's `capture-manifest.json`: `relocatable`, and every reason under
+   `notRelocatable`.
+3. Search its `tree/` for `/nix/store`, `/lib` and `/home/agent` with
+   `rg -uuu -l -a -F <path> tree`. The `-uuu` is needed: every program surface is a
+   dot-directory. Native addons (`*.node`) are where an image path would appear.
+4. If the tree names the image's own paths, stop and ask: the host notch cannot ship as written.
+
+**Measured 2026-10-01 on a stand-in**, pi's upstream at `v0.99.2` (build
+`npm ci --ignore-scripts && npm run build && cd packages/coding-agent && npm install -g "$(npm pack --silent)"`):
+17 s, 137.6 MB, `relocatable:true`, and no `/nix/store` or `/home/agent` in its 15,424 files.
+`--ignore-scripts` skipped the one native compile (`canvas`, which needs a `pkg-config` the image
+lacks), so **a fork that compiles a native addon in the jail is unmeasured**. A 2026-10-13
+attempt with a `node-gyp rebuild` install script stored JavaScript only, because the capture
+jail's npm 11.17 skips a package's own `install` script by default (`allowScripts`). A rerun
+first needs a build line that makes the compile run. Moved here on 2026-10-16 from the deleted
+build plan.
 
 ## 12. What this does not license
 
@@ -621,7 +650,7 @@ fork whose toolchain the floor and `packages:` cover.
 The six questions this doc opened are ruled. Three new ones ([§13](#13-open-questions)) came out of
 ruling them, and were decided as implementation choices ([FP-D1](#FP-D1)–[FP-D3](#FP-D3)).
 [FP-D4](#FP-D4)–[FP-D9](#FP-D9) are the implementation choices the
-[plan](forked-programs-as-packs-plan.md)'s promotion against the tree made, 2026-09-30, and
+build plan's promotion against the tree made, 2026-09-30, and
 [FP-D10](#FP-D10) onward are the ones building it made. [FP-D18](#FP-D18) applies a maintainer
 ruling made for packs ([`OQ-PF1`](../reference/pack-system.md#oq-pf1)) to forks, and supersedes
 [FP-D7](#FP-D7). [FP-D19](#FP-D19) records the maintainer's [OQ-FP10](#OQ-FP10) ruling, and
@@ -639,7 +668,7 @@ Mac.
 | <a id="FP-D1"></a>FP-D1 | *Implementation decision, [OQ-FP7](#OQ-FP7).* **On the launch path, the loser of a build race waits for the winner, bounded, then re-checks the store and uses the winner's entry; `yolo capture` keeps refusing.** The host floor already works this way for an install at launch: a second launch that finds the per-program lock held *"waits for it and prints one line naming the holder's pid. After the wait it re-checks the entry rather than installing again"* ([`host-tool-provisioning.md` §4](host-tool-provisioning.md#4-when-provisioning-runs), built in `internal/hostfloor/lock.go`). [NC-D1](../plans/notch-convergence.md#7-decision-ledger) asks for one code path per concern, so the fork build takes that shape and does not get a refusal of its own. A human who typed `yolo capture` can re-run it; a launch cannot, and refusing a jail because another is building the same bytes is the jail-level fatal [`OQ-PD12a`](program-delivery.md#decision-ledger) deleted. A wait that runs out is that launch's failed build, handled by [§9](#9-failure-modes)'s *Build fails* row. Reversible: the launch path can take the verb's refusal | 2026-09-30 | [§9](#9-failure-modes) | Step 5, 2026-09-30: the lock lifted into `internal/pidlock` with a bounded wait, `buildFork` waiting or refusing by mode. Step 6, 2026-09-30: the launch path waits at most `forkBuildWaitBound` and uses the winner's entry (`buildForksForLaunch`) |
 | <a id="FP-D2"></a>FP-D2 | *Implementation decision, [OQ-FP8](#OQ-FP8).* **One rule, not a per-kind table: the base pack stays in the launch and keeps every contribution as its own; the fork adds only the program's bytes, plus whatever it sets through the existing cross-pack kinds.** The fork brings its base into the launch, as a `needs` entry brings a pack in. So the base's launch flags, autonomy posture, profiles, briefing and skills render as the base's, and nothing changes owner. That is [OQ-FP5](#14-decision-ledger)'s *"a fork does not have to replicate the base pack"*. A fork's own setting on a base-owned surface uses `config-overlay`, `config-list`, or a posture overlay or list, each under its existing rules. The leaning wanted a table because one limit was measured: a posture's patch on another pack's surface was dropped. That limit is gone since `12032eb2` (2026-09-28), and an ownerless patch is reported rather than dropped, so the table would restate the kinds' own doc comments in `internal/packdecl`, which are the schema's reference. Reversible: a kind that later needs fork-specific handling gets it in its own doc comment | 2026-09-30 | [§4.1](#41-a-fork-declares-itself-a-fork-and-the-base-keeps-the-name) | Step 2, 2026-09-30: a fork brings its base the way an unconditional need does (`packload.ResolveNeeds`), and the base keeps every contribution |
 | <a id="FP-D3"></a>FP-D3 | *Implementation decision, [OQ-FP9](#OQ-FP9).* **The route ships in [§11](#11-sequencing)'s order, container backends first, and a `macos-user` launch with a fork pack selected says it delivered no program and why.** The line goes where the launch already says what a backend does not do: [`backend-parity.md`](backend-parity.md#3-the-dispositions--the-most-important-section)'s `Warned`, never `Dropped`. [§11](#11-sequencing) already puts `macos-user` fourth, as the relocation proving ground, so this adds only the line. What that backend lacks is the eager slot, which sits below its return in the run pipeline, and hand-off H4 (no `macos-user` launch can read the capture store), a ruling [`install-capture.md`](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it) holds. The relocation rewrite it also lacked when [OQ-FP9](#OQ-FP9) was written (H2) landed 2026-09-26. Reversible: the route can wait for the backend instead | 2026-09-30 | [§8](#8-notch-coverage-and-the-one-that-does-not-exist), [§11](#11-sequencing) | Step 6, 2026-09-30: the `Warned` line (`noteMacosUserForks`, `cli/run/forkbuild.go`); 2026-10-04, with [patched forks' step 4](patched-forks.md#PF-D54): the line names both container backends, and the sandbox's launcher for the program is handed the same reason |
-| <a id="FP-D4"></a>FP-D4 | *Implementation decision, [OQ-FP1](#14-decision-ledger).* **Build once per platform, in the capture jail, and relocate at materialize; the notch is not part of the key.** Every capture act already runs in a home that is not the host user's: the container's `/home/agent`, and on `macos-user` a throwaway staging home. Building per notch would need a capture jail at the host user's own home, which no backend offers, and [§12](#12-what-this-does-not-license) forbids building anywhere else. The host agent floor already takes a jail's capture into its own prefix this way ([OQ-HP3](host-tool-provisioning.md#OQ-HP3), *"one package inside and outside"*), through the relocating materialize ([hand-off H2](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)). That materialize refuses a move unless the full reference scan found every reference to the capture home and each is in a text file, and the refusal is [§9](#9-failure-modes)'s *not relocatable* row rather than a subtly wrong binary. The jail notch needs no relocation at all, since the build and the materialize share `/home/agent`. ⚠ The scan looks for the capture home only: a reference to the build image's own paths (`/nix/store`, `/lib`) is not one it reports, so the host notch starts with a measurement ([plan](forked-programs-as-packs-plan.md#build-order)). Reversible: a notch can join the identity later as one more receipt field | 2026-09-30 | [§5](#5-relocation-is-the-design-not-the-build), [§6](#6-identity-what-keys-a-fork-entry) | Jail notch, step 6, 2026-09-30: built at `/home/agent` and materialized there, with no relocation. Host notch, step 7, 2026-10-01: its measurement ran on a stand-in and found no image path in the tree (plan, [step 7](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01)), and the host agent floor's source arms relocate the build into the floor ([FP-D16](#FP-D16); `internal/hostfloor/built.go`) |
+| <a id="FP-D4"></a>FP-D4 | *Implementation decision, [OQ-FP1](#14-decision-ledger).* **Build once per platform, in the capture jail, and relocate at materialize; the notch is not part of the key.** Every capture act already runs in a home that is not the host user's: the container's `/home/agent`, and on `macos-user` a throwaway staging home. Building per notch would need a capture jail at the host user's own home, which no backend offers, and [§12](#12-what-this-does-not-license) forbids building anywhere else. The host agent floor already takes a jail's capture into its own prefix this way ([OQ-HP3](host-tool-provisioning.md#OQ-HP3), *"one package inside and outside"*), through the relocating materialize ([hand-off H2](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)). That materialize refuses a move unless the full reference scan found every reference to the capture home and each is in a text file, and the refusal is [§9](#9-failure-modes)'s *not relocatable* row rather than a subtly wrong binary. The jail notch needs no relocation at all, since the build and the materialize share `/home/agent`. ⚠ The scan looks for the capture home only: a reference to the build image's own paths (`/nix/store`, `/lib`) is not one it reports, so the host notch starts with a measurement ([the host notch's measurement](#host-notch-measurement)). Reversible: a notch can join the identity later as one more receipt field | 2026-09-30 | [§5](#5-relocation-is-the-design-not-the-build), [§6](#6-identity-what-keys-a-fork-entry) | Jail notch, step 6, 2026-09-30: built at `/home/agent` and materialized there, with no relocation. Host notch, step 7, 2026-10-01: its measurement ran on a stand-in and found no image path in the tree ([the host notch's measurement](#host-notch-measurement)), and the host agent floor's source arms relocate the build into the floor ([FP-D16](#FP-D16); `internal/hostfloor/built.go`) |
 | <a id="FP-D5"></a>FP-D5 | *Implementation decision, [OQ-FP3](#14-decision-ledger) and [OQ-FP5](#14-decision-ledger).* **A fork is a `program` contribution with `via: "source"`, `fork_of` naming its base pack, `source` (a pack source address, git transports only), `build` (one command line) and `produces` (the home-relative paths the build must leave, one of them the program itself at `bin/<bin>` under a capture surface on PATH). It claims no agent name. The one pack selection function and the in-jail pack loader each rewrite a copy of the base pack's program with the fork's delivery, so every reader of a pack's programs sees one program per bin.** `source` reuses the pack address grammar, which [OQ-FP3](#14-decision-ledger) borrows from `packsrc`. A `file://` source is refused, because a directory has no revision to key an entry on ([§6](#6-identity-what-keys-a-fork-entry)). The fork joins a base yolo ships the way an unconditional `needs` entry does; a base yolo does not ship must be in `packs` by name, because a need may name only a shipped pack ([WB-D9](../reference/wire-bridge.md#wb-d9)). The rewrite happens where the selected set is final because many callers read programs one pack at a time, and any one of them left without a fork arm would deliver the base's upstream program under the fork's name. The launch refuses a fork whose base is absent, whose base declares no program by that name, or which shares its base's program with a second fork, as it refuses two owners of one agent name. Reversible: the fields are additive, and a build that predates them skips a `via` it does not know | 2026-09-30 | [§4](#4-the-proposed-shape), [§4.1](#41-a-fork-declares-itself-a-fork-and-the-base-keeps-the-name) | Steps 1–2, 2026-09-30: the fields, their validation and the fork's claim (`packdecl/fork.go`); the rewrite and its refusals in `config.SelectPacks` and the jail's pack loader (`packload/forks.go`) |
 | <a id="FP-D6"></a>FP-D6 | *Implementation decision, [OQ-FP8](#OQ-FP8) under [FP-D2](#FP-D2).* **The fork replaces its base program's delivery fields and nothing else. `via`, `package`, `url`, `flags`, `update`, `versions_dir`, `install_hints` and `platforms` are the fork's, so each is absent unless the fork sets it; `refresh`, `node_floor`, `protocols`, `provider_sets` and `platform_switches` stay the base's. A fork may declare `platforms` (where it builds) and `node_floor`, and every other program field on a fork is refused.** This is [FP-D2](#FP-D2)'s *"the fork adds only the program's bytes"*, read one field at a time: the replaced fields say how the bytes arrive, and the kept ones say what the program does once it is there. An inherited `update` verb would let the launcher's hourly self-update replace the pinned build with the vendor's release, which [§12](#12-what-this-does-not-license) forbids (*"a fork that drifts from its lock is reported, never silently refreshed"*). An inherited install hint would tell `yolo check-deps` to install the upstream program. Reversible: a field can move between the two lists, which the program fields' doc comments in `internal/packdecl` state as the schema's reference | 2026-09-30 | [§4.1](#41-a-fork-declares-itself-a-fork-and-the-base-keeps-the-name) | Steps 1–2, 2026-09-30: the refusal of every other program field on a fork (`forkBaseFields`), and the rewrite that keeps the base's (`forkedProgram`) |
 | <a id="FP-D7"></a>FP-D7 | ⚠ **Superseded 2026-10-02 by [FP-D18](#FP-D18)**, under the maintainer's [`OQ-PF1`](../reference/pack-system.md#oq-pf1) of 2026-09-25 (*"yolo pack install and update still exist, but neither is required"*): a launch now pins a fork the lock does not pin, and the file, its key and `yolo pack update`'s move stand. The row as decided: *Implementation decision, [§4](#4-the-proposed-shape) step 2.* **A fork's revision is pinned in `forks.lock.json`, beside `packs.lock.json`, keyed `<fork pack>/<bin>`. `yolo pack install` pins a fork the lock does not name yet, and `yolo pack update` re-resolves every fork. A launch only reads the lock: a fork it finds unpinned, or whose `source` no longer matches the lock, gets no build and a reason naming the command.** Not in `packs.lock.json`, because a launch rewrites that file whenever a fetched pack moves, as `yolo pack install` and `yolo pack update` do, and a yolo that predates forks decodes it into a type with no field for them, so its next rewrite would drop every fork pin. Bumping that file's schema instead would make the same yolo refuse every pack. Not through the launch's pack refresh either, which since 2026-09-25 re-fetches a branch ref at most hourly: for a fork that is the rebuild on a timer [§9](#9-failure-modes) forbids. Reversible: the file can fold into `packs.lock.json` at a schema bump | 2026-09-30 | [§4](#4-the-proposed-shape), [§9](#9-failure-modes), [§12](#12-what-this-does-not-license) | Step 3, 2026-09-30: `forks.lock.json` (`packsrc/forklock.go`), pinned by `yolo pack install` and moved by `yolo pack update` (`cli/forkpin.go`), reported by `yolo pack status`, and only read at launch (`run/forkbuild.go`) |

@@ -174,6 +174,11 @@ as a command that mysteriously does not exist.
 > already gone before the build, so what remains is by construction a package declared for
 > *this* platform and not delivered.
 
+Its automated twin, `TestMacosUserAPackageWithNoDarwinBuildAbortsTheLaunch`
+(`integration/macosuserunavailablepackage_test.go`), runs on the scheduled `macos-user.yml` job and
+passed there on 2026-10-03 (run 37121866798), for both the declared package and the same package
+marked `platforms: ["linux"]`.
+
 ### Requirements
 
 `yolo check` verifies: **nix on PATH** (native darwin nix — without it the agent gets none of
@@ -611,8 +616,7 @@ unusable, is unmeasured. The policy suite's `undeclared_device_ioctl_refused` an
 
 ⚠ **This section said "no loophole host service starts here" and that is RETRACTED (2026-09-18).**
 The heading still stands — each shipped loophole really is mostly moot natively, for the
-reasons listed below — and an incoming link names it
-([`macos-revival-and-distribution-plan.md`](../plans/macos-revival-and-distribution-plan.md)).
+reasons listed below.
 It described an arm that returned from `Run()` above the spawn boundary, and that stopped being
 true when the lifecycle was generalised on 2026-09-17: this backend now goes through the same
 `startLoopholesDisclosed` wrapper a container launch does, starts **every** admitted host

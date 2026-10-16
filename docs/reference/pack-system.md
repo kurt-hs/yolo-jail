@@ -680,7 +680,7 @@ skipped, with one exception: a launch whose content has never been refreshed wit
 holder, bounded by the update timeout, because running the program instead would let it install
 what that content names outside the lock. It exists for the first-install race of a
 machine-shared store
-([`pi-git-extension-caching.md` §3.12](../design/pi-git-extension-caching.md#312-the-refresh-trigger-that-stays)).
+(pi's, until [XB-D14](../design/pi-extension-store-builds.md#XB-D14) made its npm prefix per workspace).
 `packdecl` refuses an empty list, an empty, absolute, escaping or unclean entry, and a
 duplicate.
 
@@ -1746,7 +1746,7 @@ declares `at`, that directory is not mounted and the link dangles. The hook repl
 that link, recognised by its target and never followed, with an empty real directory, so the
 tool repopulates its own copy per workspace. A real directory, a link to anything else, or an
 absent path are left alone, and the store the link pointed at is never touched. First used for
-pi's git checkouts ([`pi-git-extension-caching.md`](../design/pi-git-extension-caching.md)), and
+pi's git checkouts ([the held store](../design/pi-extension-store-builds.md#the-held-store)), and
 since 2026-10-05 for its npm prefix
 ([XB-D14](../design/pi-extension-store-builds.md#XB-D14)), so no shipped pack declares
 `shared_directory` any more. A fresh launch on podman or Apple Container that finds a selected
@@ -3280,6 +3280,21 @@ Whichever is ruled, R5's *"install is user-scope"* in
   keeps. Bare names only, because the other two source forms reach the host at selection. Not
   (c) yet: Ruling 2's reason still holds for content a repository owns, and the workspace skills
   layer already carries the case that wanted it most.
+
+  **Answer:**
+  > _(empty — fill in when decided)_
+
+- 💬 <a id="oq-acp4"></a>**[`OQ-ACP4`](#oq-acp4) — does pruning a shared pack need usage data to be anybody's job?**
+  A shared corpus of skills rots: it accumulates, quality drops, and people go back to their own
+  config. Claude Code can emit OpenTelemetry that includes skill names (`OTEL_LOG_TOOL_DETAILS`),
+  so a `yolo pack usage` view is possible for at least one agent. Moved here on 2026-10-16 from the
+  deleted `agent-config-packs.md` proposal (*ACP*: agent config packs), which kept the id.
+
+  <!-- vantage: question id=OQ-ACP4 leaning="Out of scope: no usage telemetry. Name pruning as a human responsibility in the user docs, and show an owner in yolo pack ls so there is someone to ask." -->
+
+  _Leaning:_ Out of scope: no usage telemetry. Name pruning as a human responsibility in the user
+  docs, and show an owner in `yolo pack ls` so there is someone to ask. Reading agent telemetry is
+  a much larger surface than this feature should open.
 
   **Answer:**
   > _(empty — fill in when decided)_

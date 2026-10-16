@@ -325,6 +325,19 @@ leak it there.
 > green. The two keys are stripped at two layers on purpose: `requires_env` gates delivery and
 > must go first, `provides` feeds the filter and must go after it.
 
+#### <a id="the-capability-gate"></a>The capability gate: `required_capabilities`
+
+A config may declare the named jobs it needs, such as `"required_capabilities": ["web_search"]`,
+and a launch refuses when nothing satisfies one: no installed agent's
+[authentication source](#authentication-source) declares it, no `mcp_servers` entry `provides` it,
+and it is not in the baseline every agent meets (`code_editing`, `command_execution`).
+`web_search` is not required by default. Every profile of an agent's active set counts, and a
+`providers.<name>.capabilities` the user writes counts whether or not a profile selects it. One
+census, `config.UnmetCapabilities`, answers a jail launch (before the backend dispatch),
+`yolo check`, and `yolo host -- <cmd>` (user scope only), and all three print one refusal.
+`YOLO_ALLOW_UNMET_CAPABILITIES=1` launches anyway. Moved here on 2026-10-16 from the deleted
+`agent-auth-modes.md`.
+
 #### A launch with a `provides` server, recorded 2026-10-01
 
 **MEASURED** in a nested podman jail, launched from a throwaway workspace with the binary
@@ -1015,6 +1028,8 @@ for the host half of Claude's plugin.
 | `D6` | The bootstrap's npm install for a preset is gated on the **same declaration** that builds the server table | Hardcoding a package list beside the preset table lets the two drift, and the failure is a preset that is configured and whose package was never installed. |
 | Capability-driven delivery ([above](#capability-driven-mcp-delivery)) | The filter sits at the derive **context boundary**, never in an agent's `derive.lua`, and keys on the selected **source**, never on the agent | The per-agent `provides == "web_search"` branches it replaced were opt-in, and one had drifted: claude's suppressed web search for every profile that was not bedrock or codex, so a Kilo launch, a source with no native search, lost its search MCP because of the agent it ran under. |
 | Principle 2 of [`pack-system.md`](pack-system.md) | Core publishes the **domain** (`mcp_servers`); the pack owns the **tool's dialect** | A per-tool branch in core is the agent registry coming back through a different door. The projection changes when the tool changes, which is the pack's business. |
+| <a id="oq-cap1"></a>[`OQ-CAP1`](#oq-cap1) | Two `mcp_servers` entries declaring the same `provides` refuse the launch | Which server does a job is never chosen silently. |
+| <a id="oq-cap2"></a>[`OQ-CAP2`](#oq-cap2) | A `required_capabilities` entry nothing satisfies refuses the launch; `web_search` is opt-in | A requirement the launch cannot meet is a broken config, found before any backend starts, so no backend can miss the refusal. |
 | <a id="oq-lsp1"></a>[`OQ-LSP1`](#oq-lsp1) | **Option D — generate.** yolo authors ONE plugin whose `lspServers` is rendered from the user's own `lsp_servers` table, and delivers it as content. Never a per-language map, never marketplace plugin ids — neither the three it replaced nor the full official set | A per-language map is yolo picking "the" server for a language, which is the user's choice; marketplace ids also need an install path, and a jail runs no vendor install verb. The ruling said "and enables it", but no enable step exists: the skills-tree load path is opt-out. The same rule deleted the install side: the three-entry recipe table that picked `pyright`, `typescript-language-server` and `gopls`, and its install lists, sentinel and refresh arm, went on 2026-09-25, so yolo installs no language server. |
 | <a id="oq-lsp3"></a>[`OQ-LSP3`](#oq-lsp3) | Claude **auto-loads a plugin from `~/.claude/skills/*`** with no marketplace, no `enabledPlugins` entry and no flag; it is **enabled by default** there; ONE plugin may declare MANY servers, keyed by server name. Measured statically against Claude Code 2.1.278 | This is the precondition option D rests on, and it is version-pinned. **Falsifier:** a Claude release that removes the skills-tree or session load arm, or a managed policy that stops the skills-tree scan — a `strictKnownMarketplaces` allowlist without `{"source": "skills-dir"}`, a `blockedMarketplaces` entry naming it, or (2.1.288 strings) any `strictPluginOnlyCustomization` lock — shipped on by default, or set by a policy on the user's machine. `disableSideloadFlags` is not one: it gates `--plugin-dir`, `--plugin-url`, `CLAUDE_CODE_PLUGIN_DIRS`, `--agents`, `--mcp-config` and the mods folder, not the skills tree (corrected 2026-10-03, [claude-code-mods-management.md G6](../research/claude-code-mods-management.md#g6-an-organization-policy-silently-blocks-the-whole-route)). Anyone revisiting it re-reads the installed version's plugin assembler. Two servers claiming one extension is a warning, not a load failure. |
 | <a id="lsp-i1"></a>[`LSP-I1`](#lsp-i1) | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* At `yolo host apply`, a `yolo-lsp` the plugin cannot be written over makes an `--assert` **exit 1**, and a dry run **exit 0** | The `--assert` did not deliver what the config asks, so a script must see it fail. A dry run's output is the finding ([OQ-RO5](report-tiers.md#why-its-this-way)), and a non-zero observe pass would leave the launch gate unable to read the home at all. |

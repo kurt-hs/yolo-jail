@@ -28,10 +28,10 @@ the build, [OQ-4](#OQ-4):** the lock serializes only the launcher's refresh. Pi'
 installs any configured package that is missing from the store, pinned or not, with no lock,
 whenever the refresh did not reach it first. That happens when the refresh is throttled, when
 the launch is contended, and for exact pins, which `pi update --extensions` skips. ⚠ **The
-shared store itself is ruled to go:** [`pi-git-extension-caching.md`](pi-git-extension-caching.md)'s
-[OQ-5](pi-git-extension-caching.md#OQ-5), ruled 2026-09-26, extends its immutable-tree design to
+shared store itself is ruled to go:** [the held store](pi-extension-store-builds.md#the-held-store)'s
+[OQ-5](pi-extension-store-builds.md#OQ-5), ruled 2026-09-26, extends its immutable-tree design to
 `npm:` packages, because `.pi-shared-npm` lets one jail's install change what another jail runs
-([§3.11](pi-git-extension-caching.md#311-the-npm-store) there). ⚠ **The storage tier is RETIRED on
+([the held store](pi-extension-store-builds.md#the-held-store) there). ⚠ **The storage tier is RETIRED on
 main since 2026-10-05**, ahead of that build:
 [`pi-extension-store-builds.md`'s XB-D14](pi-extension-store-builds.md#XB-D14) unshares the
 prefix, so `~/.pi/agent/npm` is per workspace again, and moves the refresh's lock, stamp and seen
@@ -283,7 +283,7 @@ transitive MCP/LSP step runs `yolo internal refresh-servers` before the agent's 
 >   project's `.pi/settings.json`. It also updates the git packages under `~/.pi/agent/git`,
 >   which is per-workspace. (It was a machine-shared `.pi-shared-git` for part of 2026-09-25; the
 >   no-leakage rulings withdrew that, and the redesign in
->   [`pi-git-extension-caching.md`](pi-git-extension-caching.md) moves yolo-managed git packages
+>   [the held store](pi-extension-store-builds.md#the-held-store) moves yolo-managed git packages
 >   to immutable per-commit trees pi never updates.) The package lists still live
 >   in the workspace-scoped `~/.pi`. So a refresh in one workspace suppresses every other
 >   workspace's refresh for the next hour, **except** that a changed package list is now due at
@@ -532,15 +532,15 @@ anything; the updater still skips a pinned npm source and never touches a local 
 statically, as the facts above were, and confirmed by running the resolver once on a scratch
 local package with no agent session: see
 [`pack-pi-resources.md`](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form).)
-[`pi-git-extension-caching.md`](pi-git-extension-caching.md)'s
-[OQ-5](pi-git-extension-caching.md#OQ-5), ruled 2026-09-26, rewrites every `npm:` entry to a
+[the held store](pi-extension-store-builds.md#the-held-store)'s
+[OQ-5](pi-extension-store-builds.md#OQ-5), ruled 2026-09-26, rewrites every `npm:` entry to a
 pointer pi loads as a local package. Once that half is built, pi's own startup never reaches
 the unlocked install for an entry the pack rewrote, and the throttled, contended and exact-pin
 cases go with it. The rewrite is that design's post-fold hook (PG-D2), and it waits on
-[OQ-6](pi-git-extension-caching.md#OQ-6). So [OQ-4](#OQ-4) hangs on that ruling: (a) is the
+[OQ-6](pi-extension-store-builds.md#OQ-6). So [OQ-4](#OQ-4) hangs on that ruling: (a) is the
 one option here that builds nothing the redesign would delete, the question closes
-when the npm half of [OQ-5](pi-git-extension-caching.md#OQ-5) lands, and it comes back only if
-[OQ-6](pi-git-extension-caching.md#OQ-6) is ruled against the rewrite. [OQ-6](pi-git-extension-caching.md#OQ-6),
+when the npm half of [OQ-5](pi-extension-store-builds.md#OQ-5) lands, and it comes back only if
+[OQ-6](pi-extension-store-builds.md#OQ-6) is ruled against the rewrite. [OQ-6](pi-extension-store-builds.md#OQ-6),
 restated on 2026-10-05, leans that way, to building pack-declared extensions as patched ones are; under it this
 question comes back narrowed. With the npm prefix per workspace, the unlocked install can race only
 another pi session of the same workspace, and only for an entry no pack declares

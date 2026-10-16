@@ -35,7 +35,7 @@ started; macos-user's delivery is by reading alone (it delivers the same compose
 **Rulings (all 2026-09-28, in review):** [OQ-XM1](#OQ-XM1) (build the core helper), [OQ-XM2](#OQ-XM2) (add `frontier`), [OQ-XM3](#OQ-XM3) (the `subagents` block, for every provider, never crossing providers), [OQ-XM4](#OQ-XM4) (role variables only once per-agent environment exists), [OQ-XM5](#OQ-XM5) (no upstream proposal). Nothing here awaits a ruling.
 
 **Reads with:** [`model-lists-and-pickers.md` §6](../design/model-lists-and-pickers.md#6-tier-aliases-default-fast-balanced)
-(the tier aliases this reuses), [`pi-model-selection-ux.md`](pi-model-selection-ux.md) ([OQ-PM1](pi-model-selection-ux.md#OQ-PM1),
+(the tier aliases this reuses), [`providers.md`'s pi shortlist](../reference/providers.md#pi-enabledmodels-is-a-shortlist) (the default-model question of pi-model-selection-ux.md, since deleted,
 which this reframes), [`providers.md`'s OQ-CN6](../reference/providers.md#oq-cn6)
 (why a jail-wide env var was the wrong vehicle, and the per-agent env files the role variables
 now ride).
@@ -126,8 +126,8 @@ mechanism doesn't need to reach claude or opencode plugins today.
 - **The one adapter yolo already ships.** `packs/pi/derive.lua` writes pi-subagents' `subagents`
   block (`defaultModel`, a strict `modelScope`) in its `openai-codex` branch, added 2026-09-15
   (`d3360c00`, "constrain codex workflow models"). It is exactly an adapter, embedded in the
-  agent's own pack and naming one extension. [OQ-PM1](pi-model-selection-ux.md#OQ-PM1)
-  asks what it should do for other providers. *Since 2026-09-28 ([OQ-XM3](#OQ-XM3)) it stays
+  agent's own pack and naming one extension. The pi default-model question (from the deleted
+  pi-model-selection-ux.md; answered by [OQ-XM3](#OQ-XM3)) asks what it should do for other providers. *Since 2026-09-28 ([OQ-XM3](#OQ-XM3)) it stays
   in pi's derive and is written for every provider ([XM-D3](#XM-D3)).*
 
 ## 5. Options, with verdicts
@@ -149,7 +149,7 @@ mechanism doesn't need to reach claude or opencode plugins today.
 2. **yolo ships no adapters.** It documents the adapter contract and one worked example. The
    example lives in docs, not in `packs/`.
 3. **The `subagents` block moves out of pi's derive** into an adapter pack that yolo does not
-   ship by default ([OQ-XM3](#OQ-XM3)). pi's derive then names no extension, and [OQ-PM1](pi-model-selection-ux.md#OQ-PM1)'s policy
+   ship by default ([OQ-XM3](#OQ-XM3)). pi's derive then names no extension, and the pi default-model question's policy
    question becomes that adapter's business.
 4. **Adapters compose with the default-models pack and `only`.** An adapter reads the same resolved
    aliases the pickers render, so a company pack's `only` narrows what an adapter can write too.
@@ -200,7 +200,7 @@ in-jail edit is the user's. That's the intended behavior, not a gap.
 
    Background: [what the block does today, and the stakes](#background-to-oq-xm3).
 
-   _Leaning:_ (a), and it answers [OQ-PM1](pi-model-selection-ux.md#OQ-PM1) the same way: the adapter writes `defaultModel` from the
+   _Leaning:_ (a), and it answers the pi default-model question the same way: the adapter writes `defaultModel` from the
    profile's `default` alias and `modelScope` from the provider's models, for every provider.
 
    <!-- vantage: question id=OQ-XM3 -->
@@ -219,7 +219,7 @@ in-jail edit is the user's. That's the intended behavior, not a gap.
    >   models, so a child may name another model of that provider (the stated exception) and can
    >   never cross to another provider.
    >
-   > This also answers [OQ-PM1](pi-model-selection-ux.md#OQ-PM1) with its leaning.
+   > This also answers the pi default-model question with its leaning.
 
 4. ✅ <a id="OQ-XM4"></a>**[OQ-XM4](#OQ-XM4): Does yolo also publish role env vars?** Stakes: an
    env var reaches extensions with no adapter, but a jail-wide one is wrong when claude and pi run
@@ -274,7 +274,7 @@ parent, so only a child that names another model changes: today it is refused, a
 the block pi-subagents starts it on that model, which works if that model's provider is
 configured and fails if it is not. Under
 (c) nothing changes for codex users, and every other provider keeps having no policy at all,
-which is the gap [OQ-PM1](pi-model-selection-ux.md#OQ-PM1) asks about.
+which is the gap the pi default-model question asked about.
 
 ## 7. Decision Ledger
 

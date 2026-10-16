@@ -27,8 +27,8 @@ launches; no pi, omp or opencode session was run. The `openai-codex` exclusion i
 2026-09-26, at `92c20cc6` (pi) and `4ed48212` (omp); codex already excluded it. Measured through
 the boot render by the catalog tests, which compose each agent's `needs` closure since 2026-09-27
 ([§6.2](#62-test-composition-alignment)), and for pi through a `-p codex` integration launch since
-2026-10-01, whose rendered `models.json` holds no `openai-codex` row ([the plan's
-§5](pi-codex-provider-shadowing-plan.md#5-verification-checklist)); no live pi or omp has run it.
+2026-10-01, whose rendered `models.json` holds no `openai-codex` row ([the integration
+test](../../integration/codex_model_list_test.go)); no live pi or omp has run it.
 Evidence verified at `c5bab09b`; pi's and claude's codex handling re-verified at `4dcebd18`.
 
 > **In short.** A pack-level endpoint added for wire-bridge adaptation caused Pi's derive
@@ -67,7 +67,7 @@ override row lives to [OQ-3](#OQ-3). Under the ruling it may not sit on pi's bui
 client with no built-in provider behind it. Built 2026-10-08 as
 [WG-I49](wire-bridge-gateway.md#WG-I49), not yet run.
 
-**Reads with:** [`pi-codex-provider-shadowing-plan.md`](pi-codex-provider-shadowing-plan.md) (the companion sketch — incomplete while questions are open),
+**Reads with:**
 [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) (the ambient environment delivery boundary),
 [`../reference/providers.md`](../reference/providers.md) (the provider declaration and derivation reference).
 

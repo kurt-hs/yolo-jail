@@ -7,7 +7,7 @@ package run
 // docs/design/pi-extension-store-builds.md, for `.pi-shared-npm`, its old shared npm prefix.
 //
 // NOTHING DELETES IT FOR YOU, by the move-over-delete rule the unsharing was built under
-// (pi-git-extension-caching.md §3.10): a jail an older yolo launched still has the directory
+// (docs/design/pi-extension-store-builds.md, "The held store"): a jail an older yolo launched still has the directory
 // mounted, and pi's extensions there load from it until that jail stops. So the line names the
 // command and the condition, and the user decides.
 //

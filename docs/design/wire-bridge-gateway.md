@@ -1191,7 +1191,7 @@ The **subscription arm** *(coined in [`bedrock-plumbing.md`](bedrock-plumbing.md
 Teams login routed through the wire bridge like any other upstream: the bridge forwards claude's
 request untranslated, with the subscription's OAuth bearer it arrived with, to Anthropic. That
 claude sends that bearer to whatever `ANTHROPIC_BASE_URL` names is MEASURED
-([`agent-auth-modes.md` §8.1](agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)).
+([`wire-bridge.md`](../reference/wire-bridge.md#the-subscription-bearer-follows-anthropic_base_url)).
 [OQ-BR16](#OQ-BR16) puts it on the everything profile, [OQ-BR17](#OQ-BR17) rules opt-in
 failover, and [OQ-BR18](#OQ-BR18) clears the terms question. Then:
 
@@ -1205,7 +1205,7 @@ failover, and [OQ-BR18](#OQ-BR18) clears the terms question. Then:
   with its usage-limit response, the bridge resends that request to Bedrock under the mapped id,
   and keeps doing so for that model until the limit resets. It is enabled per profile, and every
   switch is disclosed. This reverses the deferral in
-  [`agent-auth-modes.md` OQ-1](agent-auth-modes.md#12-decision-ledger), because the bridge
+  the deleted `agent-auth-modes.md`'s first question, because the bridge
   removes all three of its reasons: the limit is no longer opaque to yolo; the switch is per
   model, not global; and claude never changes credentials mid-session.
 
@@ -1799,7 +1799,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | OQ-BR10 | **The bridge signs its own requests (option A: a standard-library signer pinned by AWS's test vectors).** Answered by DIR-BR2: SSO on the bridge route rules out option B, whose minted key lives at most an hour. A over C (vendoring the AWS SDK's signer) is the implementer's call, taken to keep the hermetic build free of an AWS module | 2026-09-24 | [§2](#2-part-1--the-bridge-signs-its-own-upstream-requests-ruled) (moved from [`bedrock-plumbing.md`](bedrock-plumbing.md)) | 2026-09-25: `internal/sigv4`, pinned by AWS's SigV4 test suite; the bridge signs through `internal/wirebridged/signing.go`. Accepted by live Bedrock on 2026-10-01, under the SSO credential ([§2.4](#24-the-first-live-requests-measured-2026-10-01)) |
 | OQ-BR18 | **Yes, the bridge may carry a Claude subscription.** The maintainer's call on Anthropic's terms and company policy | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-BR16 | **The everything profile carries the subscription too**, forwarded untranslated with its own bearer, so one model list spans Teams and Bedrock. *"yes that would be amazing"* | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
-| OQ-BR17 | **Opt-in automatic failover, per model, from the subscription to Bedrock** on the subscription's usage-limit response, every switch disclosed. *"yes, opt in"*. Supersedes [agent-auth-modes OQ-1](agent-auth-modes.md#12-decision-ledger)'s deferral for this path | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
+| OQ-BR17 | **Opt-in automatic failover, per model, from the subscription to Bedrock** on the subscription's usage-limit response, every switch disclosed. *"yes, opt in"*. Supersedes the deleted agent-auth-modes.md's failover deferral for this path | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-WG1 | **The signer keys on the upstream host now** (`bedrock-runtime.<region>.amazonaws.com`, `*.gateway.bedrock-agentcore.<region>.amazonaws.com`), **and re-keys on the provider's Bedrock marker once [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) gives one** — host patterns cannot know other people's configurations | 2026-09-25 | [§2.1](#21-behavior-the-signer-fixes) | 2026-09-25, (a): `sigv4.BedrockRuntimeRegion` decides at boot (`route.SignRegion`). (b), the marker re-key, 2026-09-30 as [WG-I37](#WG-I37): `wirebridged.bedrockSigning` |
 | OQ-WG6 | **A profile field (`via: "bridge"`) puts its agent on the bridge path**: the derive writes the agent's base URL as the bridge's per-agent path (WG4), and `routeFor` takes the upstream from the provider's own `openai` endpoint; no new provider vocabulary | 2026-09-25 | [OQ-WG6](#OQ-WG6) | 2026-09-25, [§4.1](#41-how-it-is-built) |
 | OQ-WG7 | **The multi-route bridge, as tabled**: existing adapter routes stay at their ports' roots; one new declared address carries every `via` route under `/agent/<name>/`; `via`'s value names the service pack, which selecting the profile adds like `needs`; a per-agent `ctx.via_url` derive input; credentials per route from the provider's `api_key_env_name`, Bedrock through the signer chain. An implementation decision, recorded as one | 2026-09-25 | [OQ-WG7](#OQ-WG7) | 2026-09-25, [§4.1](#41-how-it-is-built) |

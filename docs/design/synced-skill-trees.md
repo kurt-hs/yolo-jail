@@ -35,18 +35,18 @@ pinned by tests that drive a real apply over fixtures.
 The measured loss before the fence, the worked migration through `enabledPlugins`, the
 alternatives and the build order are in git history
 (`git log --follow -- docs/design/synced-skill-trees.md`), and their transcripts in
-[`synced-skill-trees-plan.md`](synced-skill-trees-plan.md).
+the deleted `synced-skill-trees-plan.md` (`git log -- docs/design/synced-skill-trees-plan.md`).
 
 **Needs your ruling:** nothing owed; see the sub-question above.
 
 | Was | Now |
 | :--- | :--- |
 | <a id="1-verdict-and-the-principles-it-rests-on"></a>Section 1, the verdict and principles P1 to P5 | [ST-P1](../reference/pack-system.md#st-p1) and [ST-P3](../reference/pack-system.md#st-p3); P2 is [`OQ-ST2`](../reference/pack-system.md#oq-st2), and P4 and P5 described the deleted snapshot |
-| <a id="3-what-yolo-does-with-it-today"></a>Section 3, what yolo did with the tree: <a id="31-in-a-jail-nothing-and-that-is-right"></a>3.1 in a jail, <a id="32-on-the-host-yolo-eats-it--measured"></a>3.2 on the host, measured, <a id="33-why-nothing-caught-it"></a>3.3 why nothing caught it | [ST-P1](../reference/pack-system.md#st-p1) records the measured loss; the transcript is [the plan's](synced-skill-trees-plan.md) |
+| <a id="3-what-yolo-does-with-it-today"></a>Section 3, what yolo did with the tree: <a id="31-in-a-jail-nothing-and-that-is-right"></a>3.1 in a jail, <a id="32-on-the-host-yolo-eats-it--measured"></a>3.2 on the host, measured, <a id="33-why-nothing-caught-it"></a>3.3 why nothing caught it | [ST-P1](../reference/pack-system.md#st-p1) records the measured loss; the transcript is in the deleted `synced-skill-trees-plan.md`'s git history |
 | <a id="4-the-components--and-the-two-this-design-no-longer-has"></a>Section 4: <a id="41-the-fence--the-part-that-is-not-optional"></a>4.1 the fence, <a id="42-the-notice--what-replaces-the-transition"></a>4.2 the notice, <a id="43-what-was-deleted-with-the-snapshot-and-why"></a>4.3 the deleted snapshot | [the reserved-children rules](../reference/pack-system.md#skills), [ST-N2](../reference/pack-system.md#st-n2), [the notice ruling](../reference/pack-system.md#st-transition) |
 | <a id="5-naming-and-collisions--mostly-moot-now-and-the-part-that-is-not"></a>Section 5, naming and collisions; <a id="6-degenerate-inputs"></a>section 6, degenerate inputs | [the reserved-children rules](../reference/pack-system.md#skills) |
 | <a id="7-homes-that-are-already-wrong"></a>Section 7, homes that are already wrong | [a home an earlier apply already took from](../reference/pack-system.md#a-home-an-earlier-apply-already-took-from), [ST-R](../reference/pack-system.md#st-r) |
-| <a id="8-a-worked-migration-state-already-in-a-file-yolo-is-about-to-own"></a>Section 8, the worked migration through `enabledPlugins`: <a id="81-the-tree-is-safe-the-switch-is-not"></a>8.1, <a id="82-what-yolo-does-to-it-today--measured"></a>8.2 measured, <a id="83-how-to-check-your-own-case-before-the-first-apply"></a>8.3, <a id="84-what-to-do-today-when-the-dry-run-names-something"></a>8.4, <a id="85-what-the-migration-becomes-once-the-record-exists"></a>8.5, <a id="86-what-is-not-covered-and-what-stays-lost"></a>8.6 | git history, and [the plan's fixture](synced-skill-trees-plan.md#the-enabledplugins-measurement); since 2026-09-22 yolo writes no `enabledPlugins`, and the adoption rule it led to is [ST5](#ST5) |
+| <a id="8-a-worked-migration-state-already-in-a-file-yolo-is-about-to-own"></a>Section 8, the worked migration through `enabledPlugins`: <a id="81-the-tree-is-safe-the-switch-is-not"></a>8.1, <a id="82-what-yolo-does-to-it-today--measured"></a>8.2 measured, <a id="83-how-to-check-your-own-case-before-the-first-apply"></a>8.3, <a id="84-what-to-do-today-when-the-dry-run-names-something"></a>8.4, <a id="85-what-the-migration-becomes-once-the-record-exists"></a>8.5, <a id="86-what-is-not-covered-and-what-stays-lost"></a>8.6 | git history, including the deleted `synced-skill-trees-plan.md`'s fixture; since 2026-09-22 yolo writes no `enabledPlugins`, and the adoption rule it led to is [ST5](#ST5) |
 | <a id="9-alternatives-considered"></a>Section 9, alternatives; <a id="10-risks"></a>section 10, risks; <a id="11-what-this-does-not-propose"></a>section 11, what this does not propose; <a id="12-what-i-would-build-in-order"></a>section 12, the build order; <a id="13-what-done-looks-like"></a>section 13, done | git history; the fence is [`OQ-ST2`](../reference/pack-system.md#oq-st2) |
 | <a id="OQ-ST3"></a>The notice at the host only | [ST3](../reference/pack-system.md#st3) |
 | <a id="ST-N"></a>The notice; <a id="ST-N2"></a>the notice, compressed | [ST-N2](../reference/pack-system.md#st-n2) |
@@ -66,7 +66,7 @@ unchanged — and the ones in
 never from vendor docs, following the lesson
 [`../plans/pack-host-management-plan.md`](../plans/pack-host-management-plan.md#n6-new--copilot-reads-claudes-plugin-manifests-and-namespaces-plugin-skills)
 records. It is a private layout with no compatibility promise; the cheap re-check on a version
-bump is in [the sketch](synced-skill-trees-plan.md#where-the-claudeai-facts-came-from).
+bump is `grep -a -c '<org>_<account>' <bundle>` over the `claude` bundle under `~/.local/share/claude/versions/`: while that redaction template is in the binary, the naming has not moved.
 
 ### 2.1 The two UUIDs are an identity, not a plugin and a version
 

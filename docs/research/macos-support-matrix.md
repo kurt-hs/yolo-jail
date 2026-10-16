@@ -24,7 +24,7 @@ dispatch-only). A cell a test on either job pins is marked [CI]. On **2026-10-05
 maintainer deferred [OQ-MX1](#OQ-MX1), what replaces the Intel runner, until Nix actually drops
 Intel Macs.
 
-**Needs your ruling:** none now. [OQ-MX1](#OQ-MX1) (what replaces `macos-26-intel`) was deferred in review on 2026-10-05 until Nix actually drops Intel Macs, when nixpkgs 26.05's security support ends on 2026-12-31, and is 🔒 until then. [OQ-MX2](#OQ-MX2) is moot since 2026-09-30: the three `packages:` tests no longer fail on the nightly's runner. *MX* stands for this matrix; the prefix was coined for these two questions on 2026-09-26.
+**Needs your ruling:** [OQ-SH1](#OQ-SH1), whether macos-user self-hosting is worth pursuing; it blocks nothing. [OQ-MX1](#OQ-MX1) (what replaces `macos-26-intel`) was deferred in review on 2026-10-05 until Nix actually drops Intel Macs, when nixpkgs 26.05's security support ends on 2026-12-31, and is 🔒 until then. [OQ-MX2](#OQ-MX2) is moot since 2026-09-30: the three `packages:` tests no longer fail on the nightly's runner. *MX* stands for this matrix; the prefix was coined for these two questions on 2026-09-26.
 
 > [!NOTE]
 > **Code citations name a FILE, not a line** (since 2026-09-24). The line numbers this tracker
@@ -113,7 +113,7 @@ and nothing else here does.** Verified against `flake.nix` 2026-08-23.
   which makes them genuinely non-stock, so they build an image, and the nightly's runner has no
   Linux builder. Failing there is the designed behavior, not a bug; nobody has ruled whether they
   should skip instead. Filed 2026-09-26 from
-  [`handoff-mac-unmeasured-claims.md` §4](../plans/handoff-mac-unmeasured-claims.md#4-the-nightly--five-links-all-now-named),
+  the now-deleted `handoff-mac-unmeasured-claims.md`,
   where it was recorded without an id.
 
   <!-- vantage: question id=OQ-MX2 -->
@@ -143,8 +143,8 @@ warmup back it costs what the same test costs later in the run
 |---|---|---|---|
 | **podman** | container in one shared podman-machine VM | ✅ [L/CI] | first-class; the reference macOS container path |
 | **Apple Container (AC)** | one lightweight VM per container | 🟡 [M] | default macOS runtime; early-stage — hit limits in the 2026-07 session (bind-mount cap, `:ro` ignored, no `--net=host`, OCI convert). ⚠ *`:ro` ignored* is **refuted on `container` 1.1.0** (measured 2026-09-14, [`backend-parity.md` §5.3](../design/backend-parity.md#53-the-premise-under-defects-11-and-13-was-measured-and-inverted)); a container→host connection carrying nothing is the limit measured instead (2026-09-15) |
-| **macos-user** | native macOS user + Seatbelt, NO VM | ✅ [M] *(2026-07-21 build)* + ⚠ | **PROVEN on real HW 2026-07-21** (macOS 26.5 arm64): Seatbelt launch runs the agent as `_yolojail`, `packages:` via native darwin nix (buildEnv) with `which just` → `/nix/store/…` ([OQ-1](../plans/runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) path_helper fix holds), finding-6 password set, fresh-inode re-exec (no SIGKILL), host creds invisible, teardown idempotent. **Runbook → docs/plans/runbooks/mac-macos-user-e2e.md; results → mac-sandvault-session.md §[6b](../plans/runbooks/mac-sandvault-session.md#6b-m1-results--macos-user-e2e-observed-on-hardware-2026-07-21).** **⚠ The backend has changed underneath that proof (see the row below).** |
-| ↳ *macos-user, since 2026-07-21* | — | ✅ [M] *(2026-09-11)* | **What moved, and what it means for the ✅ above.** (a) ~~Pack staging has never run on a Mac~~ — **RAN 2026-09-11**: `StagePackCommands` staged the session's two local packs (44 + 3 files) and the surfaces rendered from them, including a `config-overlay` key reaching `claude/settings` and two `shared_credentials` symlinks. (b) **The confinement half was re-measured 2026-08-19** by running the work under the profile a real `--dry-run` emits: `go build ./...`, full `go test -short ./...` (58 pkgs) and `just test-fast` pass; SSH keys/`~/.claude`/`~/.aws`/keychains all `Operation not permitted`. (c) ~~The `sudo -u _yolojail` launch itself is still unproven end-to-end~~ — **PROVEN 2026-09-10** (runbook item 1) and exercised four more times 2026-09-11. (d) **`workspace_readonly` was a silent no-op here until 2026-08-23** (see [§3](#3-feature--runtime-coverage-does-each-yolo-capability-work-per-runtime)). (e) ~~**NEW 2026-09-11: the launch does not forward a command faithfully**~~ — **FIXED 2026-09-12**: `sudo --login` joined multi-line commands and let an intermediate shell expand `$VAR` first, silently and with exit 0; the flag is gone from the launch argv and `PlanInvariants` refuses it on both argvs. Verified on hardware both ways, including that [`OQ-1`](../plans/runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown)'s acceptance bar does not depend on it ([no `sudo --login` anywhere in this backend](../reference/macos-user-provisioning.md#no-sudo---login-anywhere-in-this-backend)). (f) **NEW 2026-09-12, also fixed the same day: a stale layout link from a DELETED workspace bricked every later launch whose packs did not declare that path** — a core `.claude.json` redirect needed `~/.claude` as a directory, and `MkdirAll` through a dangling symlink fails; found by the first hardware run of the macos-user twins. 📄 [../plans/handoff-guest-notch-macos.md §2](../plans/handoff-guest-notch-macos.md#2-the-bug-that-was-fixed-blind--your-first-job-is-to-run-it) |
+| **macos-user** | native macOS user + Seatbelt, NO VM | ✅ [M] *(2026-07-21 build)* + ⚠ | **PROVEN on real HW 2026-07-21** (macOS 26.5 arm64): Seatbelt launch runs the agent as `_yolojail`, `packages:` via native darwin nix (buildEnv) with `which just` → `/nix/store/…` ([OQ-1](../plans/runbooks/macos-user-manual-checks.md#OQ-1) path_helper fix holds), finding-6 password set, fresh-inode re-exec (no SIGKILL), host creds invisible, teardown idempotent. **Runbook → [macos-user-manual-checks.md](../plans/runbooks/macos-user-manual-checks.md).** **⚠ The backend has changed underneath that proof (see the row below).** |
+| ↳ *macos-user, since 2026-07-21* | — | ✅ [M] *(2026-09-11)* | **What moved, and what it means for the ✅ above.** (a) ~~Pack staging has never run on a Mac~~ — **RAN 2026-09-11**: `StagePackCommands` staged the session's two local packs (44 + 3 files) and the surfaces rendered from them, including a `config-overlay` key reaching `claude/settings` and two `shared_credentials` symlinks. (b) **The confinement half was re-measured 2026-08-19** by running the work under the profile a real `--dry-run` emits: `go build ./...`, full `go test -short ./...` (58 pkgs) and `just test-fast` pass; SSH keys/`~/.claude`/`~/.aws`/keychains all `Operation not permitted`. (c) ~~The `sudo -u _yolojail` launch itself is still unproven end-to-end~~ — **PROVEN 2026-09-10** (runbook item 1) and exercised four more times 2026-09-11. (d) **`workspace_readonly` was a silent no-op here until 2026-08-23** (see [§3](#3-feature--runtime-coverage-does-each-yolo-capability-work-per-runtime)). (e) ~~**NEW 2026-09-11: the launch does not forward a command faithfully**~~ — **FIXED 2026-09-12**: `sudo --login` joined multi-line commands and let an intermediate shell expand `$VAR` first, silently and with exit 0; the flag is gone from the launch argv and `PlanInvariants` refuses it on both argvs. Verified on hardware both ways, including that [`OQ-1`](../plans/runbooks/macos-user-manual-checks.md#OQ-1)'s acceptance bar does not depend on it ([no `sudo --login` anywhere in this backend](../reference/macos-user-provisioning.md#no-sudo---login-anywhere-in-this-backend)). (f) **NEW 2026-09-12, also fixed the same day: a stale layout link from a DELETED workspace bricked every later launch whose packs did not declare that path** — a core `.claude.json` redirect needed `~/.claude` as a directory, and `MkdirAll` through a dangling symlink fails; found by the first hardware run of the macos-user twins. 📄 [../plans/handoff-guest-notch-macos.md §2](../plans/handoff-guest-notch-macos.md#2-the-bug-that-was-fixed-blind--your-first-job-is-to-run-it) |
 
 ## 2. Builder (how the Linux image / packages get built) — CONTAINER RUNTIMES ONLY
 
@@ -157,7 +157,7 @@ question exists only for podman/AC.
 | **Container builder** (nix+sshd container on the runtime) | **podman** | ✅ [L] | **proven end-to-end in-jail**: image built, `ssh-ng` build ran inside container, result read back. `packages.builderImage` in flake. |
 | **Container builder** | **Apple Container** | ✅ [M] | **PROVEN on real HW 2026-07-17** (macOS 26.5 arm64, AC 0.12.3, nix 2.34.7): AC pulled the GHCR image, ran it with internal-network IP `192.168.64.2:22`, host nix `store info` → `Trusted: 1`, proof build returned `AC-CONTAINER-BUILDER-WORKS`. No `-p` needed — AC's per-container VM IP is directly reachable. **Runbook → docs/plans/runbooks/mac-ac-container-builder.md.** |
 | **Container builder → CLI wiring** | podman + AC | ✅ [L] *(2026-08-23)* | **The "Go-port gap" in [§5](#5-roadmap-ordered) item 3 is CLOSED.** `internal/containerbuilder` was resurrected (`8abb67ce`) and wired into the image path (`c2f0b941`), both 2026-07-21: `internal/image/autoload.go` imports it and calls it through the `BuildOffload` seam, which is a nil-returning stub on Linux and in tests. |
-| **QEMU `darwin.linux-builder`** | any container rt | ❌ removed | **DROPPED — Open Decision #3 RESOLVED 2026-07-23** (see `linux-builder-lifecycle.md` (archived 2026-09-09; git has it) (`linux-builder-lifecycle.md`, archived 2026-09-09 — the removal is DONE; the mechanism is in [`macos-linux-builder-explained.md`](macos-linux-builder-explained.md))). The container builder is the sole shipped builder on both runtimes. The AC-can't-host-sshd unknown that justified keeping QEMU as a fallback is discharged (AC hosting PROVEN 2026-07-17, row above). `internal/builder` + the `yolo builder` commands are being deleted, not reworked. **Done — verified 2026-08-23: `internal/builder` does not exist**, and `yolo check`'s Image Build section plus `nixdiag.LinuxBuilderRemedy` are rewired onto the container builder. |
+| **QEMU `darwin.linux-builder`** | any container rt | ❌ removed | **DROPPED — Open Decision #3 RESOLVED 2026-07-23** (see `linux-builder-lifecycle.md` (archived 2026-09-09; git has it) (`linux-builder-lifecycle.md`, archived 2026-09-09 — the removal is DONE; the mechanism is in [`nix-across-backends.md`](../reference/nix-across-backends.md#how-the-container-path-works))). The container builder is the sole shipped builder on both runtimes. The AC-can't-host-sshd unknown that justified keeping QEMU as a fallback is discharged (AC hosting PROVEN 2026-07-17, row above). `internal/builder` + the `yolo builder` commands are being deleted, not reworked. **Done — verified 2026-08-23: `internal/builder` does not exist**, and `yolo check`'s Image Build section plus `nixdiag.LinuxBuilderRemedy` are rewired onto the container builder. |
 | nix-darwin `linux-builder` | any | ⬜ | user-side; only if they already run nix-darwin. Documented, not ours to install. |
 
 ## 3. Feature × runtime coverage (does each yolo capability work per runtime?)
@@ -229,9 +229,9 @@ that says the thing does not work.
 > Does the native no-VM backend run an agent as `_yolojail` under Seatbelt with
 > `packages:` materialized via native aarch64-darwin nix? **YES.** All four J2
 > behaviors (fresh-inode re-exec, Go bootstrap self-exec, finding-6 password,
-> [OQ-1](../plans/runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) path_helper acceptance bar — `which just` → `/nix/store/…`), plus
+> [OQ-1](../plans/runbooks/macos-user-manual-checks.md#OQ-1) path_helper acceptance bar — `which just` → `/nix/store/…`), plus
 > creds-invisible and teardown idempotence, observed on real HW (macOS 26.5
-> arm64). Results in mac-sandvault-session.md §[6b](../plans/runbooks/mac-sandvault-session.md#6b-m1-results--macos-user-e2e-observed-on-hardware-2026-07-21).
+> arm64). Re-measured 2026-09-10 in [macos-user-manual-checks.md](../plans/runbooks/macos-user-manual-checks.md#3-the-acceptance-bar--packages-reaches-the-agent).
 
 **Other Mac-only gates (rewritten 2026-08-23).** The single sentence this
 replaces named only the AC "run agent in jail" row. The actual list, in the
@@ -259,7 +259,7 @@ is the single collected list, with the open questions attached.
 1. ✅ **[M] Prove the AC container builder** — DONE 2026-07-17 (real HW, see [§4](#4-whats-proven-vs-whats-the-next-gate)
    and the runbook). AC joins podman as a proven container-builder path.
 2. ✅ **[M] macos-user end-to-end** — DONE 2026-07-21 (real HW, see [§4](#4-whats-proven-vs-whats-the-next-gate) and
-   mac-sandvault-session.md §[6b](../plans/runbooks/mac-sandvault-session.md#6b-m1-results--macos-user-e2e-observed-on-hardware-2026-07-21)). The **path_helper login-shell PATH fix**
+   [macos-user-manual-checks.md](../plans/runbooks/macos-user-manual-checks.md#3-the-acceptance-bar--packages-reaches-the-agent)). The **path_helper login-shell PATH fix**
    (`.zprofile`/`.zshrc`/`.bash_profile` re-prepend the sandbox PATH after macOS
    path_helper) holds: `which just` → `/nix/store/…/bin/just`, not Homebrew's
    `/usr/local/bin`. Two jail-side fixes landed from the run: `--accept-flake-config`
@@ -337,6 +337,24 @@ is the single collected list, with the open questions attached.
    > its options and leaning are to be re-checked against the runners of the day when it is
    > asked again.
 
+9. 💬 <a id="OQ-SH1"></a>**[OQ-SH1](#OQ-SH1): Is macos-user self-hosting worth pursuing at all?** (maintainer; blocks nothing)
+
+   <!-- vantage: question id=OQ-SH1 -->
+
+   A macos-user jail cannot launch another one: `sudo` cannot run inside a Seatbelt sandbox, and
+   a sandbox refuses any profile but its own (measured 2026-09-03;
+   [DP-D14](../design/declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open)).
+   Options when filed:
+
+   - develop the pieces inside a macos-user jail, which works today;
+   - use a podman jail on the Mac;
+   - start a VM through Virtualization.framework, unproven;
+   - a scoped sudoers rule, root-equivalent unless pinned exactly;
+   - a host daemon that starts jails, rejected as the `docker.sock` pattern.
+
+   Moved here on 2026-10-16 from the deleted `macos-revival-and-distribution-plan.md`, where it
+   was SH-1 (*SH*: self-hosting).
+
 ### Replacing `macos-26-intel` — the background and each option's cost
 
 [OQ-MX1](#OQ-MX1), roadmap item 8 above, was NEW, added 2026-08-23. See
@@ -369,12 +387,12 @@ for the first time:
 
 ## 6. Cross-refs
 - **[runbooks/mac-ac-container-builder.md](../plans/runbooks/mac-ac-container-builder.md)** — Mac test (zero-sudo) for the gating AC-builder cell.
-- **[runbooks/mac-macos-user-e2e.md](../plans/runbooks/mac-macos-user-e2e.md)** — Mac test (you-drive) for the macos-user backend.
-- [macos-container-builder-exploration.md](macos-container-builder-exploration.md) — why container-builder, image sourcing, AC risk.
-- [macos-linux-builder-explained.md](macos-linux-builder-explained.md) — the Linux-person's explainer of the whole builder question.
+- **[runbooks/macos-user-manual-checks.md](../plans/runbooks/macos-user-manual-checks.md)** — what only a Mac can verify about the macos-user backend.
+- [nix-across-backends.md](../reference/nix-across-backends.md#how-the-container-path-works) — the container builder that offloads a Mac's Linux image build.
+- [nix-across-backends.md](../reference/nix-across-backends.md#the-macos-linux-builder-for-a-linux-reader) — why a Mac needs a Linux builder, explained for a Linux reader.
 - [macos-no-vm-direction.md](../reference/macos-no-vm-direction.md) — the "pursue both backends" decision.
-- [macos-revival-and-distribution-plan.md](../plans/macos-revival-and-distribution-plan.md) — the current macos-user + distribution roadmap of record.
-- [handoff-cachix-cache.md](../plans/handoff-cachix-cache.md) — the prebuilt-download happy path.
+- [macos-user-nix-and-features.md](../reference/macos-user-nix-and-features.md) — the macos-user backend's reference: native nix, and the surface a container would have given you.
+- [image-staging-vs-baking.md](../reference/image-staging-vs-baking.md#the-binary-cache) — the binary cache, the prebuilt-download happy path.
 - **[handoff-guest-notch-macos.md](../plans/handoff-guest-notch-macos.md)** — every Mac-gated item in one place, so one trip to a Mac can close all of it; holds the open questions ([`OQ-GN1`](../plans/handoff-guest-notch-macos.md#9-open-questions)–[`OQ-GN4`](../plans/handoff-guest-notch-macos.md#9-open-questions)) behind [§4](#4-whats-proven-vs-whats-the-next-gate)'s list above.
 - [provisioner-sets.md](../design/provisioner-sets.md) — absorbed `noncontainer-nix-environment.md` on 2026-09-11, then split three ways on 2026-09-20. Its [alternatives](../design/provisioner-sets.md#10-alternatives-each-with-a-verdict), alternative H, are the (now shipped) nix-profile work; the survey half, [provisioner-evidence.md](../design/provisioner-evidence.md), is where [macOS vs Linux coverage and freshness](../design/provisioner-evidence.md#37-macos-vs-linux-coverage-freshness-and-the-traps) measured the `x86_64-darwin` drop probe-by-probe and where its retraction lives.
 
