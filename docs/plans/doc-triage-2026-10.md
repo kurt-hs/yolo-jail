@@ -5,21 +5,20 @@ status: in-review
 stage: DESIGN
 next: "Owner picks which groups to act on"
 tags: [docs, triage, cleanup]
-summary: "Every Markdown file under docs/ (287) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review; no doc has moved. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
+summary: "Every Markdown file under docs/ (287 on 2026-10-15) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review. The whole Delete group (44) was deleted on 2026-10-16, each deferred idea moved to BACKLOG.md first, so it leaves this record. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
 vantage:
   status-chip: true
 ---
 
 # Doc triage, 2026-10-15
 
-**Status:** 2026-10-16. Only what is still to decide is listed; docs already acted on were removed from this record (`git log` has them). Seven read-only
+**Status:** 2026-10-16. Only what is still to decide is listed; docs already acted on were removed from this record (`git log` has them). All 44 Delete docs were deleted on 2026-10-16, after every deferred idea they held moved to [the backlog](BACKLOG.md#ideas-from-deleted-docs) or a live doc; none was left as a judgment call. Seven read-only
 agents read each doc's frontmatter, status line, headings, open questions and ledger, and
 spot-checked the code where a category depended on it. They did not compare every doc line by line with today's code.
 Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. **No Graduate doc was deleted**: every one still holds content, or ids that other docs and code link to, that no reference doc carries. The group is split below.
 
 **What the groups mean.**
 
-- **Delete**: superseded by a later doc or ruling, stale, or a finished plan. Proposed: delete it after repointing its links; git history keeps it. Nothing is archived.
 - **Merge**: overlaps another doc; fold it into the named target.
 - **Graduate** *(the term is [the house rule](../../AGENTS.md#where-things-live)'s: a built design's lasting reference moves to a system doc under `docs/reference/`, and the design doc is deleted)*: built; move what still matters, then retire the design doc.
 - **Fix**: a reference doc that describes something removed or renamed.
@@ -27,7 +26,6 @@ Later on 2026-10-15 each Graduate doc was checked against its target reference d
 
 | Group | Docs |
 | :--- | ---: |
-| [Delete](#delete-44) | 44 |
 | [Merge](#merge-13) | 13 |
 | [Graduate](#graduate-none-was-a-clean-delete) | 48 |
 | &nbsp;&nbsp;[Stub: ids still cited](#stub-ids-still-cited-6) | 6 |
@@ -45,62 +43,6 @@ Later on 2026-10-15 each Graduate doc was checked against its target reference d
 - **Wrong today.** omp-and-codex-claude-profile.md (reference) still says the claude pack owns the codex profile. repo-root-and-distribution.md (research, marked current) says /opt/yolo-jail is baked into the image; it is two bind mounts.
 - **Misfiled.** pre-tag-release-gate.md and research/tool-provisioning.md (72 inbound links) are reference docs. Nine *-plan.md files sit in docs/design/.
 - **Too big to review.** pack-system.md (4,073 lines), provisioner-sets (2,803), boundary-broker (2,754), model-lists-and-pickers (2,563), agent-event-watchers (2,532), jail-lifetime-last-session-wins (2,453).
-
-## Delete (44)
-
-Superseded, stale, or a finished plan. Proposed: delete after repointing links.
-
-**Two rows below are blocked:** their own text says delete, but other docs link to a section only they hold. Move that section, then delete:
-
-- [`plans/sequencing-2026-07.md`](sequencing-2026-07.md): [`boundary-broker.md`](../design/boundary-broker.md) links its section 4e anchor, `#4e-open-questions-the-maintainer-must-decide` (the open questions on agent auth), which [`roadmap.md`](roadmap.md) does not carry; [`README.md`](README.md) also links its `#runbooks` section.
-- [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md): links in five runbook, plan and research docs cite its [`OQ-1`](runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) (the path_helper question) through its section anchor, and no other doc defines that id.
-
-| Doc | Lines | Category | Target | Reason |
-| :--- | ---: | :--- | :--- | :--- |
-| [`design/agent-auth-modes.md`](../design/agent-auth-modes.md) | 523 | superseded | docs/reference/providers.md | Own status: "superseded in part by [`providers.md`](../reference/providers.md)"; only [`OQ-9`](../design/agent-auth-modes.md#OQ-9) (AWS credential pair) remains, and it says "rule together with [`OQ-CN1`](../design/provider-credential-scope.md#OQ-CN1)", which lives in [`providers.md`](../reference/providers.md): move [`OQ-9`](../design/agent-auth-modes.md#OQ-9) there and retire |
-| [`design/boundary-broker-plan.md`](../design/boundary-broker-plan.md) | 137 | done-plan | [`boundary-broker.md`](../design/boundary-broker.md) | Slice built: `internal/brokerstore/` and `internal/cli/approve.go` exist; remainder is deferred to the design's next slice |
-| [`design/forked-programs-as-packs-plan.md`](../design/forked-programs-as-packs-plan.md) | 511 | done-plan | [`forked-programs-as-packs.md`](../design/forked-programs-as-packs.md) | stage BUILT, steps 1–6 built; only the step-7 measurement is left, and it waits on the maintainer naming a fork. Move that note into the design and archive the plan |
-| [`design/openai-auth-broker-plan.md`](../design/openai-auth-broker-plan.md) | 322 | done-plan | docs/reference/agent-credentials.md | `stage: BUILT`. Only the human checks remain (a browser login end to end, and two agents crossing one expiry); move them to the roadmap |
-| [`design/pack-pi-resources-plan.md`](../design/pack-pi-resources-plan.md) | 114 | done-plan |  | `stage: BUILT` 2026-10-05; only a human pi load check remains |
-| [`design/packs-and-the-prism.md`](../design/packs-and-the-prism.md) | 528 | superseded | docs/reference/pack-system.md | `stage: SUPERSEDED`; kept only for its argument |
-| [`design/patched-forks-plan.md`](../design/patched-forks-plan.md) | 387 | done-plan |  | Its `next` says it was built and integrated at e87f1ba88 (2026-10-05); the code map should fold into the future patched-forks reference |
-| [`design/pi-codex-provider-shadowing-plan.md`](../design/pi-codex-provider-shadowing-plan.md) | 210 | done-plan |  | `stage: BUILT` (section 2.1, [`OQ-3`](../design/notch-scoped-config-contributions.md#OQ-3) broad reading, BI-D9). The one remaining item is the design's [`OQ-4`](../design/pi-codex-provider-shadowing.md#OQ-4) |
-| [`design/pi-extension-store-builds-plan.md`](../design/pi-extension-store-builds-plan.md) | 123 | superseded | docs/design/launch-update-preparation-plan.md | Its own `next` calls it a "historical sketch, not a handoff"; build slices come from [`launch-update-preparation-plan.md`](../design/launch-update-preparation-plan.md) |
-| [`design/pi-git-extension-caching-plan.md`](../design/pi-git-extension-caching-plan.md) | 71 | stale |  | Describes a build on the held branch `held/pi-extension-store` (d44cb88b9), which never merged; no `held/*` branch is visible in this repo now |
-| [`design/pi-git-extension-caching.md`](../design/pi-git-extension-caching.md) | 507 | superseded | docs/design/pi-extension-store-builds.md (XB-D35 to XB-D38) | [`OQ-6`](../design/pi-git-extension-caching.md#OQ-6) (c) was built through store-builds 2026-10-05; `next`: "Nothing"; the held branch is only "the record of option (a)" |
-| [`design/pi-startup-cancellation-plan.md`](../design/pi-startup-cancellation-plan.md) | 31 | done-plan |  | All lane items are checked; the repair is now in the tree (`internal/cli/forkbuildchild_cancel_linux_test.go`). The status line still says "not on main", which is stale |
-| [`design/synced-skill-trees-plan.md`](../design/synced-skill-trees-plan.md) | 295 | done-plan |  | stage GRADUATED; "nothing is owed"; keeps only measurement transcripts the graduated stub cites |
-| [`design/workspace-widening-plan.md`](../design/workspace-widening-plan.md) | 174 | done-plan | [`workspace-widening.md`](../design/workspace-widening.md) | stage BUILT 2026-10-05 in one landing; kept only until the design graduates |
-| [`plans/agent-config-packs.md`](agent-config-packs.md) | 1816 | superseded | docs/reference/pack-system.md | Status says "largely OVERTAKEN by what shipped" (packs key, lockfile, `yolo pack`). Only [`OQ-ACP4`](agent-config-packs.md#OQ-ACP4) is open (pruning/telemetry, leaning "out of scope"). Rule it on its leaning or move it into [`pack-system.md`](../reference/pack-system.md), then archive |
-| [`plans/further-roadmap-ideas.md`](further-roadmap-ideas.md) | 371 | stale | [`roadmap.md`](roadmap.md) | A 2026-08-23 SKETCH of candidates. Its own `next` says I2 and I5 are closed and I3's premise no longer holds; [`roadmap.md`](roadmap.md) calls it "a shelf of unverified candidates" |
-| [`plans/handoff-cachix-cache.md`](handoff-cachix-cache.md) | 255 | done-plan | facts → [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) / userguide macos.md | Cachix pushes on every release and nightly (`nightly-macos.yml`), and the Mac nightly measured substitution 2026-10-03. Left: a human Apple-silicon check, plus option B (push 13–15 darwin derivations), which belongs on the roadmap |
-| [`plans/handoff-fzf-pack-adoption.md`](handoff-fzf-pack-adoption.md) | 321 | done-plan |  | It says "Nothing is left in the tree". The only remaining step is the maintainer's copy on the host |
-| [`plans/handoff-mac-unmeasured-claims.md`](handoff-mac-unmeasured-claims.md) | 566 | done-plan |  | Status: "all measured". The leftover nightly-greenness item needs no Mac and [`OQ-MX2`](../research/macos-support-matrix.md#OQ-MX2) made the skip question moot |
-| [`plans/macos-revival-and-distribution-plan.md`](macos-revival-and-distribution-plan.md) | 1310 | done-plan | facts → [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md), macos.md | "Every track is built"; L part 2 moved to [`boundary-broker.md`](../design/boundary-broker.md). One 💬 left (question SH-1, self-hosting) "blocks nothing" — rule it or move to [`retired-decisions.md`](retired-decisions.md) |
-| [`plans/native-installer-migration.md`](native-installer-migration.md) | 438 | done-plan | [`program-delivery.md`](../design/program-delivery.md) (question PD13) | `stage: BUILT`: codex flipped, then copilot flipped 2026-10-05 ([`OQ-NI1`](native-installer-migration.md#OQ-NI1)). Left: one CI cell (copilot linux/arm64) to read |
-| [`plans/runbooks/claude-plugin-registration-probe.md`](runbooks/claude-plugin-registration-probe.md) | 146 | stale | [`pack-system.md`](../reference/pack-system.md) reserved children (2026-09-22) | Its Q3 "no longer decides a design". Q1/Q2 settle one unverified note in [`synced-skill-trees.md`](../design/synced-skill-trees.md) section 2.4 and have not run since 2026-09-19 |
-| [`plans/runbooks/mac-agent-guide.md`](runbooks/mac-agent-guide.md) | 242 | stale | macos-revival plan done; [`macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) | Sequencer for Track M (M0→M1→M2), all done. It assumes a Mac 531 commits stale with an `agents` key, and points at the stale go-port runbook and sequencing-2026-07 |
-| [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md) | 222 | stale (blocked) |  | Self-declared SUPERSEDED 2026-08-23: its diff-against-Python method died with the Python tree; "recommended for git rm" |
-| [`plans/runbooks/mac-macos-user-e2e.md`](runbooks/mac-macos-user-e2e.md) | 144 | stale | [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) + macos-user.yml CI | M1 gate PASSED 2026-07-21. It cites Python-era internals (`getpass.getuser()`, `_refuse_if_root`); the Go refusal now lives in `internal/macosuser/capture.go` |
-| [`plans/runbooks/mac-provisioner-measurements.md`](runbooks/mac-provisioner-measurements.md) | 355 | done-plan | design/provisioner-sets.md | "All five items have been RUN", with results inline. Results belong in [`provisioner-sets.md`](../design/provisioner-sets.md) / [`provisioner-evidence.md`](../design/provisioner-evidence.md) |
-| [`plans/runbooks/mac-sandvault-session.md`](runbooks/mac-sandvault-session.md) | 213 | done-plan |  | M0/M1 recipe; both PASSED 2026-07-21. It records the SandVault setup for a finished track |
-| [`plans/sequencing-2026-07.md`](sequencing-2026-07.md) | 770 | superseded (blocked) | [`roadmap.md`](roadmap.md) | Self-declared SUPERSEDED 2026-08-17; a historical snapshot |
-| [`plans/workspace-config-lock-briefing.md`](workspace-config-lock-briefing.md) | 42 | done-plan |  | PR #51 merged (4fd929dc9); roadmap commit 2a0142a60 struck it |
-| [`research/agent-config-distribution.md`](../research/agent-config-distribution.md) | 833 | superseded | docs/reference/pack-system.md | The direction it fed (cross-agent config distribution) shipped as packs. Its own 2026-08-23 postscript retracts the agent-registry claims, and the external survey has not been re-gathered since 2026-07-25. The "lessons" list could be kept as one paragraph in pack-system's why-section. |
-| [`research/completion-check-inputs.md`](../research/completion-check-inputs.md) | 221 | superseded | docs/design/change-aware-completion.md (stage BUILT) | It fed the change-aware `just done`, which is built and maintained through scripts/completion-readers.json. |
-| [`research/copilot-as-a-provider.md`](../research/copilot-as-a-provider.md) | 318 | stale |  | The question is closed with a "no": a Copilot subscription cannot legitimately back Claude Code (2026-09-17). Nothing builds on it, nothing in docs/ or userguide/ links to it, and its terms of service readings will go stale. Archive as a closed negative answer. |
-| [`research/gateway-providers.md`](../research/gateway-providers.md) | 57 | superseded | docs/design/gateway-provider-packs.md | Its evidence fed that design, and packs/openrouter and packs/kilo exist. The design still owns the one open item ([`OQ-GP4`](../design/gateway-provider-packs.md#OQ-GP4)). |
-| [`research/host-service-startup-diagnostics.md`](../research/host-service-startup-diagnostics.md) | 159 | superseded | docs/reference/host-service-startup-diagnostics.md | Frontmatter says stage GRADUATED, and the reference describes the repair as built. Runtime acceptance is tracked in plans/host-service-startup-diagnostics-{tasks,qa}.md. |
-| [`research/launch-preparation.md`](../research/launch-preparation.md) | 61 | superseded | docs/design/launch-update-preparation.md (DECIDED) | A 61-line source audit whose verdicts have been absorbed into the design, and its own `next` says to "use the preparation design". |
-| [`research/macos-container-builder-exploration.md`](../research/macos-container-builder-exploration.md) | 172 | superseded | docs/reference/nix-across-backends.md (`internal/containerbuilder`) | Self-described HISTORICAL. The container builder won and shipped, and `internal/builder` and `yolo builder` were deleted (re-checked 2026-08-23). |
-| [`research/macos-linux-builder-explained.md`](../research/macos-linux-builder-explained.md) | 250 | superseded | docs/reference/nix-across-backends.md | It recommends a VM builder that is retired (self-described SUPERSEDED IN PART). The section 0 "Rosetta stone" explainer is the only part still valid and could move into nix-across-backends's macOS builder section. |
-| [`research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md) | 460 | superseded | docs/reference/jail-state-separation-design.md | Self-described CLOSED, with all five question MP entries answered and Python-era paths. The resolving design is in the reference. |
-| [`research/openai-subscription-auth.md`](../research/openai-subscription-auth.md) | 185 | superseded | docs/reference/agent-credentials.md (OpenAI subscription credential service) | It fed design/openai-auth-broker.md, which is now stage GRADUATED, and the result lives in [`agent-credentials.md`](../reference/agent-credentials.md). |
-| [`research/pi-model-selection-ux.md`](../research/pi-model-selection-ux.md) | 243 | superseded | docs/reference/providers.md ("pi enabledModels is a shortlist") + design/model-lists-and-pickers.md | The section 4 recommendation is built, and [`providers.md`](../reference/providers.md) re-measured it at pi 0.87.1. Ongoing picker work lives in model-lists-and-pickers. |
-| [`research/platform-comparison.md`](../research/platform-comparison.md) | 340 | stale | superseded in practice by research/macos-support-matrix.md, userguide settings-per-setup.md | Self-described PARTLY STALE: every file it names is a Python name that no longer exists, it never mentions the macos-user backend, and it has not been re-gathered since before the Go port. |
-| [`research/rocm-gpu-jail-findings.md`](../research/rocm-gpu-jail-findings.md) | 203 | superseded | docs/reference/rocm-passthrough.md | Self-described SUPERSEDED IN PART. It is a ROCm 7.1.1 incident record, and the passthrough has since shipped. |
-| [`research/sandbox-comparison.md`](../research/sandbox-comparison.md) | 492 | stale | framing superseded by reference/what-yolo-is.md and research/agent-safehouse.md | The Claude Code side was gathered 2026-07-18 and never re-gathered. Its "container vs syscall filter" framing breaks with macos-user, and the doc predates the environment-first positioning. Only four docs link to it. |
-| [`research/vantage-check-0.5.9-findings.md`](../research/vantage-check-0.5.9-findings.md) | 273 | stale | upstream vantage-check issue tracker | A bug report written for an external tool, not a yolo direction. It was re-checked at 0.7.0 (2026-09-24), with six defects still reproducing. Its four 💬 markers are specimens (D12), not open yolo questions. File it upstream if not already filed, then archive. |
 
 ## Merge (13)
 

@@ -268,7 +268,7 @@ means.
 
 ### 1.3 What this measurement means
 
-[agent-config-packs.md §9.3](../plans/agent-config-packs.md) asked whether this was
+The deleted `agent-config-packs.md` asked whether this was
 extractable and answered "yes, but it needs an external consumer, and there isn't one." **That
 test was the wrong one, and it is worth saying so rather than inheriting it.** It looked for a
 *third party* who wanted an `agentpack` binary. The real gap was already sitting in the

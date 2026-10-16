@@ -124,7 +124,7 @@ wrong one to sequence on.
   import THAT. ⚠ *Since 2026-09-14 capture walks `paths.InstalledProgramSurfaces()`, which is
   `HomeSurfaces()` plus codex's nested `.codex/packages/standalone` payload — the one vendor whose
   installer symlinks `~/.local/bin` into a pack state dir
-  ([`native-installer-migration.md`](native-installer-migration.md)).*
+  ([`program-delivery.md`'s per-agent facts](../design/program-delivery.md#per-agent-facts-verified-2026-09-03)).*
 - **Locking:** `tryHostApplyLock` (`internal/cli/hostapplylock.go:80`) — non-blocking, never refuses,
   into `<gs>/locks/`. Two concurrent captures of one bin must not race the admit.
 
@@ -691,7 +691,7 @@ wrong one to sequence on.
    is swapped, the same way the record compared it (`underPrefix`). A recorded
    `<home>/.local/../x` was written against a flat staging home, while the destination reaches
    `.local` through a link into the workspace sidecar, and darwin resolves `..` physically
-   ([M5](runbooks/mac-provisioner-measurements.md#m5--does-seatbelt-resolve--through-a-symlinked-directory)).
+   ([M5](../design/provisioner-sets.md#15-what-a-mac-session-should-measure)).
    The verbatim suffix would land somewhere else.
 
    **(c) A file is rewritten into a NEW inode, never through a placed one.** The store's bytes are
@@ -805,7 +805,7 @@ wrong one to sequence on.
    No leaning. The facts that decide between (a) and (b) have not been measured on a Mac: what
    DAC lets `_yolojail` reach under `~/.local/share/yolo-jail`, and whether a hardlink from a store
    owned by another uid succeeds. One more fact decides whether H4 is worth building at all:
-   [M4](runbooks/mac-provisioner-measurements.md#m4--does-the-capture-recording-half-work-on-hardware)
+   [M4](../design/provisioner-sets.md#15-what-a-mac-session-should-measure)
    admitted a real claude capture and did not record whether its manifest came out
    `relocatable:true`. If claude's binary embeds the staging home, that entry is not relocatable,
    H2 refuses it, and H4 buys nothing for claude. `cat` the entry's `capture-manifest.json` on
@@ -978,7 +978,7 @@ wrong one to sequence on.
    ### What a human with a Mac must run
 
    ✅ **Items 1 and 2 RAN on 2026-09-11** as the provisioner runbook's
-   [M4](runbooks/mac-provisioner-measurements.md#m4--does-the-capture-recording-half-work-on-hardware):
+   [M4](../design/provisioner-sets.md#15-what-a-mac-session-should-measure):
    `yolo capture claude` loaded this profile, drove the vendor installer through the generated
    launcher, and admitted an entry into the machine store, rc 0. Items 3–5 have no recorded run.
    Item 3, the denial probe and the one check that tells a confined capture from one that silently
@@ -1160,7 +1160,7 @@ wrong one to sequence on.
 - **Slice 6 is design-against-read-code and cannot be tested from here.** Unit tests pin the
   generated profile string and the relocation RECORD. On hardware, the backend's installer
   launchers and capture's recording half both ran on 2026-09-11 (M1 and
-  [M4](runbooks/mac-provisioner-measurements.md#m4--does-the-capture-recording-half-work-on-hardware));
+  [M4](../design/provisioner-sets.md#15-what-a-mac-session-should-measure));
   whether Seatbelt *denies* the shared home during a capture is still unrecorded (slice 6's item 3:
   a case exists, and no green run is recorded).
   ⚠ *This line once said "the relocation rewrite" when there was none. Since 2026-09-26 there is

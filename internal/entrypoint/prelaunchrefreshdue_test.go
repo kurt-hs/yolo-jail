@@ -1,7 +1,7 @@
 package entrypoint
 
 // prelaunchrefreshdue_test.go RUNS the pre-launch refresh's DUE-ON-CHANGE trigger
-// (packdecl.Refresh.DueOnChange; docs/design/pi-git-extension-caching.md, "The first-install
+// (packdecl.Refresh.DueOnChange; docs/reference/pack-system.md, `program`, "the first-install
 // race"): the refresh is also due when a watched file's CONTENT has never been refreshed with
 // in the store its lock names, and a launch that finds the lock held for content it has never refreshed
 // waits for the holder instead of letting the program install outside the lock.

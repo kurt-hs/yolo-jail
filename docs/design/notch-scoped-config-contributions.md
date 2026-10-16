@@ -174,7 +174,7 @@ rule. Since [OQ-3](#OQ-3)'s build nothing confines it: a patch on another pack's
 
 | Ruling | Where it lives | What it requires here |
 | :--- | :--- | :--- |
-| Nothing leaks between jails; a launch's result never depends on other launches | [pi-git-extension-caching OQ-2](pi-git-extension-caching.md#OQ-2), [OQ-BR4](../reference/providers.md#oq-br4) | The gate is a pure function of the render target's notch; no cross-launch state |
+| Nothing leaks between jails; a launch's result never depends on other launches | [pi-extension-store-builds OQ-2](pi-extension-store-builds.md#OQ-2), [OQ-BR4](../reference/providers.md#oq-br4) | The gate is a pure function of the render target's notch; no cross-launch state |
 | The credential gate | [providers.md](../reference/providers.md#the-credential-gate); [CN-D3, CN-D13](provider-credential-scope.md#7-decision-ledger) | No interaction: host pi runs the classifier on the user's inherited environment, and no provider or `env_sources` value changes |
 | Escape hatches are for broken user config; an acknowledgment override only where yolo knows the environment differs | [attach-skew-and-contract-guardrails.md](attach-skew-and-contract-guardrails.md#decision-ledger) | None is needed, and none is proposed |
 | No post-merge script slot; a declarative filter only against a real case | [OQ-LT2](../reference/pack-system.md#oq-lt2) | Rules out any Lua or finalize hook here; see the sanitizer, [§6](#6-alternatives-considered) F |
@@ -506,7 +506,7 @@ modifier, in which case step 1 builds [§4.2](#42-the-first-drafts-modifier-corr
 about the same size, with worse skew behavior. [OQ-3](#OQ-3) gated only a host-only scalar,
 which automode does not need; it is built (`12032eb2`) as the extension point the ruling asked
 for. [`OQ-PR1`](pack-pi-resources.md#OQ-PR1) and
-pi-git-extension-caching [OQ-6](pi-git-extension-caching.md#OQ-6) gate nothing here.
+pi-extension-store-builds [OQ-6](pi-extension-store-builds.md#OQ-6) gate nothing here.
 
 **An interim with no code, container backends only.** After one `yolo host apply --assert` has
 left the mark, a `pi install` by hand on the host stays out of container jails, because the whole

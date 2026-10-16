@@ -466,7 +466,7 @@ fix, but they are worth investigating before any *next* round.
    reverse-proxy approach ("intercept `api.anthropic.com`", Option B of the archived
    `claude-oauth-mitm-proxy-plan.md`) is viable by base URL alone — and the same fact is a measured
    exfiltration channel, recorded with implications in
-   [`agent-auth-modes.md` §8.1](../design/agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url).
+   [`wire-bridge.md`'s measurement](../reference/wire-bridge.md#the-subscription-bearer-follows-anthropic_base_url).
 2. **Anthropic's server-side grace window past `expiresAt`.** The
    2026-05-17 incident showed Claude happy for 23 min past `expiresAt`
    client-side; could be Anthropic leniency, could be Claude idle. Test

@@ -271,7 +271,7 @@ no-op. Six facts, each from the tree:
    refused `401` (`TestTheBridgeRefusesEveryCallerWithoutThisLaunchsToken`).
 2. **Claude sends its subscription bearer to any base URL** when neither
    `ANTHROPIC_AUTH_TOKEN` nor `ANTHROPIC_API_KEY` is set (measured 2026-09-02,
-   [`agent-auth-modes.md` §8.1](agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)).
+   [`wire-bridge.md`](../reference/wire-bridge.md#the-subscription-bearer-follows-anthropic_base_url)).
 3. **The codex branch sets no `ANTHROPIC_AUTH_TOKEN`.** The `"local"` dummy exists *"so Claude
    does not fail or leak the private claude.ai subscription OAuth token"*, and it sits below the
    codex branch's early return in [`derive.lua`](../../packs/claude/derive.lua).

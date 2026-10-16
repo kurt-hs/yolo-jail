@@ -182,7 +182,7 @@ platform — a yolo-owned host directory on Linux, the `yolo-mise-data-v2` named
 macOS and Apple Container — and the in-jail path is identical either way. The host's own
 mise installation is never mounted, so host↔jail mise skew cannot matter; the design
 history and the path pitfalls are in
-[`mise-host-jail-path-mismatch.md`](mise-host-jail-path-mismatch.md).
+[`jail-state-separation-design.md`](../reference/jail-state-separation-design.md).
 
 **When it installs:** provisioning runs `mise install` on every boot
 (`internal/cli/run/command.go`); already-present tools are skipped, so
@@ -519,4 +519,4 @@ before restarting.
 - Node-binary duality, the loader analysis and nix-ld:
   [`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md).
 - mise shared-store host↔jail pitfalls:
-  [`mise-host-jail-path-mismatch.md`](mise-host-jail-path-mismatch.md).
+  [`jail-state-separation-design.md`](../reference/jail-state-separation-design.md#the-jailjail-residue-in-the-shared-store).

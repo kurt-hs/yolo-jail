@@ -453,7 +453,7 @@ func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
 // path surface refusing the spelling its neighbours accept. The cost was concrete: a
 // dotfiles tree shared between a Linux host and a Mac cannot name one pack directory
 // with an absolute path, because "/home/matt" and "/Users/matt" are not the same
-// string (macos-revival-and-distribution-plan.md, 2026-09-03).
+// string (measured on the maintainer's Mac, 2026-09-03).
 //
 // IT GRANTS NO NEW AUTHORITY. `packs` is user-scope only and a user config could
 // already name any absolute path on the machine, so this is a spelling and not a

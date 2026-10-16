@@ -337,7 +337,7 @@ transport's home leaves the everything profile distinguished only by its name. T
 | [OQ-CS9](../reference/providers.md#oq-cs9) | Profiles point at a provider; no `extends` | Rules out `bedrock-sso extends bedrock` ([OQ-BR8](#OQ-BR8)). Under [OQ-PP1](#OQ-PP1) (b) or (c) it is moot for profiles, but may reappear as a provider-level `extends` |
 | [OQ-PT8](../reference/providers.md#oq-pt8), 2026-09-01 | A profile is `{name, provider}`; its body moved onto name-keyed `profile:` contributions | Does **not** answer [OQ-BR8](#OQ-BR8): name versus provider was a consequence, never a choice. [OQ-PP1](#OQ-PP1) (b) would make the `profile` kind an alias or delete it |
 | [OQ-PT3](../reference/providers.md#oq-pt3) | A provider's fact is composed from the provider, not restated in a gated overlay | The precedent [OQ-BR8](#OQ-BR8)'s leaning follows |
-| [agent-auth-modes OQ-9](agent-auth-modes.md#OQ-9) | Still open: AWS's two-part credential has no declarative home | Same question as [OQ-CN1](../reference/providers.md#oq-cn1) from the credential side; a transport or marker field may give it one |
+| [OQ-ES8](credential-sources-separation.md#OQ-ES8) | Still open: AWS's two-part credential has no declarative home | Same question as [OQ-CN1](../reference/providers.md#oq-cn1) from the credential side; a transport or marker field may give it one |
 
 ---
 

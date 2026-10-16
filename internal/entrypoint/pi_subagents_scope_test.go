@@ -2,7 +2,7 @@ package entrypoint
 
 // pi_subagents_scope_test.go pins the maintainer's ruling of 2026-09-28 on pi-subagents'
 // `subagents` block (docs/research/extension-model-defaults.md OQ-XM3, which also answers
-// docs/research/pi-model-selection-ux.md OQ-PM1): pi's settings derive writes it for EVERY
+// the since-deleted pi-model-selection-ux.md's OQ-PM1): pi's settings derive writes it for EVERY
 // provider a pi profile selects, not only openai-codex.
 //
 //   - subagents.defaultModel is the active profile's default model, as `provider/id`, so a

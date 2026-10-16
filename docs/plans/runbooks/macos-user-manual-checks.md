@@ -65,10 +65,10 @@ What remains needs either root, a kernel, or a human at a password prompt.
 > so the subtest went with the recipe table it tested and item 9 is `mise_tools` only. The remaining open threads are
 > collected in [`../handoff-macos-user-open-threads.md`](../handoff-macos-user-open-threads.md).
 >
-> ⚠ **Defect 2 is why "single-line is immune" was wrong** (it was published in what is now
-> [the Mac measurements runbook's ordering
-> note](mac-provisioner-measurements.md#why-no-linux-jail-can-answer-these-and-how-the-five-are-ordered),
-> which carries the retraction): single-line survives the newline half only. Any forwarded command
+> ⚠ **Defect 2 is why "single-line is immune" was wrong** (it was published in the Mac provisioner-measurements runbook, deleted 2026-10-16;
+> the retraction now lives in [no `sudo --login` anywhere in this
+> backend](../../reference/macos-user-provisioning.md#no-sudo---login-anywhere-in-this-backend)):
+> single-line survives the newline half only. Any forwarded command
 > containing a shell variable was silently rewritten. Item 6 could not be measured at all until
 > its probe was rewritten without variables — and after the fix, the item's own spelling works.
 
@@ -379,13 +379,20 @@ $ YOLO_RUNTIME=macos-user yolo -- bash -lc 'which just'   # or any declared pack
 > outing and got that non-answer. Use a package the config declares, or the check
 > cannot distinguish "nix delivered it" from "macOS already had it".
 
+<a id="OQ-1"></a>**[OQ-1](#OQ-1), the `path_helper` question.** A login shell (`bash -l`, `zsh -l`, and the
+default `zsh` REPL) runs macOS `path_helper`, which puts the system paths (`/usr/local/bin`,
+`/opt/homebrew/bin`) ahead of the sandbox PATH. The darwin bootstrap writes `.zprofile`, `.zshrc`
+and `.bash_profile` so that the sandbox PATH is prepended again after it. The question asked whether that
+re-prepend wins on real hardware, and this item is its check. It was filed in the Go-port Mac
+runbook (deleted 2026-10-16) and answered yes on 2026-07-21, 2026-09-10 and 2026-09-12.
+
 This is the backend's founding requirement — it honors `packages:` via native nix or
 it does not ship. It exercises the whole native chain in one command: the build, the
 GC root, the PATH prefix, and the login-rc re-prepend surviving macOS `path_helper`
-(the [OQ-1](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) question). A Homebrew path here means the re-prepend lost.
+(the [OQ-1](#OQ-1) question). A Homebrew path here means the re-prepend lost.
 
 **PASSED 2026-09-10**, same session as items 1 and 2, and it answers
-[`OQ-1`](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown):
+[`OQ-1`](#OQ-1):
 the re-prepend HOLDS. Both declared packages resolved into the store profile —
 
 ```
@@ -405,7 +412,7 @@ to `/nix/store/…-yolo-noncontainer-profile/bin/fzf` (Homebrew's copy still pre
 beaten), so the re-prepend holds now that its value arrives as `$YOLO_DARWIN_LOGIN_PATH` rather
 than baked. **Then measured a second time**, deliberately, as the regression check on the
 `--login` removal (defect 2): same answer, which is what proved
-[`OQ-1`](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown)
+[`OQ-1`](#OQ-1)
 never depended on that flag. Note the profile's name has changed since the 2026-09-10 record —
 `yolo-noncontainer-profile`, was `yolo-noncontainer-packages`.
 
@@ -578,8 +585,8 @@ Apple's own binary answering.
 
 > [!WARNING]
 > ⚠ **THIS ITEM COULD NOT BE MEASURED AT ALL ON ITS FIRST ATTEMPT, and finding out why is what
-> exposed defect 2.** The command above is single-line, which [the Mac measurements
-> runbook](mac-provisioner-measurements.md#why-no-linux-jail-can-answer-these-and-how-the-five-are-ordered)
+> exposed defect 2.** The command above is single-line, which the Mac provisioner-measurements
+> runbook (deleted 2026-10-16)
 > said was immune to the forwarding defect. It is not: sudo(8) leaves **dollar signs** unescaped as well,
 > so an intermediate login shell expanded `$b` and `$(command -v $b)` against an empty
 > environment and the probe printed **nine blank lines** — with exit 0, the failure mode this

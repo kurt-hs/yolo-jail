@@ -15,7 +15,7 @@ import (
 // from proc_pidinfo(PROC_PIDTASKINFO).
 //
 // WHY NOT /bin/ps. ps is setuid root on macOS, and Seatbelt refuses a setuid exec inside any
-// sandbox regardless of the profile's content (docs/plans/macos-revival-and-distribution-plan.md
+// sandbox regardless of the profile's content (docs/plans/runbooks/macos-user-manual-checks.md's known-absent list
 // says the same of sudo). The guard runs inside the agent's sandbox, so its ps never started:
 // `fork/exec /bin/ps: operation not permitted`, a 768m hog in a 256m session slept its full
 // minute (macos-user CI run 37940733418, TestMacosUserMemoryGuard).

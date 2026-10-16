@@ -2326,7 +2326,7 @@
     at pre-flight, and passed through to a nested launch (it is one of the keys an
     inner jail inherits).
     ENFORCED: a launch that declares a capability nothing satisfies is REFUSED
-    (docs/design/agent-auth-modes.md OQ-CAP2).  A capability is satisfied by a
+    (docs/reference/mcp-configuration.md, "The capability gate").  A capability is satisfied by a
     declaration — `providers.<name>.capabilities` naming it, an `mcp_servers.<name>`
     entry whose "provides" is it, or a SELECTED agent whose pack declares it for the
     source that agent runs on: its own login when no profile points it elsewhere

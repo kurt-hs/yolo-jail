@@ -638,8 +638,8 @@ func TestTheNixVersionRowNamesTheDistribution(t *testing.T) {
 //
 // THE LINE ADDS, IT NEVER ASSIGNS. A `trusted-users = …` line is an assignment and replaces the
 // list: measured with nix 2.34.8, `trusted-users = root alice` then an appended
-// `trusted-users = root bob` trusts `root bob`, so alice is dropped. That is the runbook's own
-// machine (mac-sandvault-session.md §5, the "sets trusted-users after the include" case below),
+// `trusted-users = root bob` trusts `root bob`, so alice is dropped. That is the maintainer's
+// Mac (measured 2026-07-21, the "sets trusted-users after the include" case below),
 // where the hint told sandvault-matt to append a line that untrusted matt. `extra-trusted-users`
 // appends to the list (measured: `root alice bob`).
 func TestTheUntrustedHintNamesThisNixsFileAndRestart(t *testing.T) {

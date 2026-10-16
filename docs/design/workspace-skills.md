@@ -148,7 +148,7 @@ first and *project* for the second.
 
 > [!NOTE]
 > **Codex and `.agents/skills` — settled 2026-09-27: codex reads it.**
-> [`../research/agent-config-distribution.md`](../research/agent-config-distribution.md#part-1--where-agent-configuration-lives-per-agent)
+> The deleted research survey `agent-config-distribution.md`
 > (gathered 2026-07-25) listed `.agents/skills/` for Codex, and this note once called the row
 > *unconfirmed* because the binary names no such literal. The loader's source at the tag of the
 > installed 0.157.0 settles it: `repo_agents_skill_roots` joins the constants `.agents` and

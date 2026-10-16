@@ -785,10 +785,19 @@ an unauthenticated bridge. A process that took a port before the bridge bound it
 `macos-user` at any time, received whatever each client sent there. For claude,
 that included its saved Claude login: with no `ANTHROPIC_AUTH_TOKEN` set, claude sends that
 login's OAuth bearer to whatever `ANTHROPIC_BASE_URL` names
-([`agent-auth-modes.md` §8.1](../design/agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)).
+([measured below](#the-subscription-bearer-follows-anthropic_base_url)).
 The Codex route set no `ANTHROPIC_AUTH_TOKEN`, so claude on the Codex profile sent it, and on
 `macos-user`, where the bridge never binds, that was the default setup. Copilot
 and claude on a bridged provider such as Cerebras sent the provider's own key.
+
+<a id="the-subscription-bearer-follows-anthropic_base_url"></a>**Measured 2026-09-02: claude sends
+its saved login to whatever `ANTHROPIC_BASE_URL` names.** With a team subscription login saved and
+neither `ANTHROPIC_AUTH_TOKEN` nor `ANTHROPIC_API_KEY` set, `claude-cli/2.1.220` pointed at a
+loopback listener answering 503 sent it 8 of 8 requests, each with `Authorization: Bearer`
+carrying the login's OAuth token and no `x-api-key`. So anyone who can set that variable receives
+the login, with no other misconfiguration. `ANTHROPIC_AUTH_TOKEN` overrides the saved login, which
+is why every route to the bridge sets it to the caller token. Moved here on 2026-10-16 from the
+deleted `agent-auth-modes.md`.
 
 The maintainer's ruling, 2026-09-27, verbatim:
 
@@ -1306,7 +1315,7 @@ Rulings a future change would otherwise undo, with their original IDs.
 | <a id="wb-d17"></a>[**WB-D17**](#wb-d17) — more than one agent bin is a bridge consumer, and the serve predicate walks every active profile | Found while building: a derive that *prefers* an anthropic endpoint when a provider declares one makes that agent a consumer too, and a single-bin condition would have shipped those launches a dead URL with no bridge included. |
 | <a id="wb-d20"></a>[**WB-D20**](#wb-d20) — the readiness wait is one progress line naming its daemons, silent when it ends within two seconds; the daemons' log paths ride its detail and every refusal, never a line of their own (implementation decision, 2026-10-05) | It printed `yolo: waiting for required in-jail service readiness: …` and `Daemon diagnostics: …` on every launch, ready at once or not, against [report-tiers.md](report-tiers.md#progress-lines)'s rule that a step ending within two seconds prints nothing. A log path is wanted only when the wait fails or does not end, which is when it now appears: in the progress detail a slow wait shows, and in the refusal a fast failure prints. |
 | <a id="wb-d19"></a>[**WB-D19**](#wb-d19) — at the host and on macos-user the bridge runs as its service's host half, a launch-owned child for one launch's agent, on ports that launch picked, fed by a 0600 input file, stopped with the agent; only a pack yolo ships, or since HS-D27 a local one, runs its host half, and since HS-D30 a via or a carrier starts it too (2026-09-28) | The maintainer ruled every notch runs the selected packs' services ([OQ-NC1](../plans/notch-convergence.md#OQ-NC1), A) and that a host service lives per launch ([OQ-HS3](../design/host-notch-services.md#OQ-HS3)). The mechanism and its decisions are [`host-notch-services.md`](../design/host-notch-services.md)'s HS-D rows; see [the host half](#at-the-host-notch). |
-| <a id="wb-d18"></a>[**WB-D18**](#wb-d18) — every request carries the launch's caller token or is refused `401`; the token is minted per launch, reused by an attach, delivered only through the per-entry channel, and never forwarded upstream (2026-09-28) | The maintainer, 2026-09-27: *"calling the jail the boundary here seems also just as bad for security because jails don't need to be bridge type, they can be house type and then um it's identical. So uh if you think this is an issue, we need to solve it in both places."* A jail on the host's loopback shares the bridge's ports with every host process, and a client sends its real credential to whatever holds the port. For claude, the Claude login went too ([§8.1](../design/agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)). The token is the one credential a bridged client may send there, so the address names it, and the host notch's bridge will reuse it. See [caller authentication](#caller-authentication). |
+| <a id="wb-d18"></a>[**WB-D18**](#wb-d18) — every request carries the launch's caller token or is refused `401`; the token is minted per launch, reused by an attach, delivered only through the per-entry channel, and never forwarded upstream (2026-09-28) | The maintainer, 2026-09-27: *"calling the jail the boundary here seems also just as bad for security because jails don't need to be bridge type, they can be house type and then um it's identical. So uh if you think this is an issue, we need to solve it in both places."* A jail on the host's loopback shares the bridge's ports with every host process, and a client sends its real credential to whatever holds the port. For claude, the Claude login went too ([measured](#the-subscription-bearer-follows-anthropic_base_url)). The token is the one credential a bridged client may send there, so the address names it, and the host notch's bridge will reuse it. See [caller authentication](#caller-authentication). |
 
 ## Current values
 

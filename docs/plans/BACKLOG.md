@@ -13,6 +13,9 @@ packs cluster, and **six questions are live** in its stages. Created 2026-07-26;
 2026-08-23** (header + Stage E + Stage G); **re-checked 2026-09-24** against the tree and the
 designs it points at (E5's trigger fired, `file:line` anchors replaced by symbols).
 
+**Added 2026-10-16:** [Ideas from deleted docs](#ideas-from-deleted-docs), the deferred ideas
+that docs deleted that day held and no live doc tracked.
+
 **Needs your ruling:** [E1](#E1), [E2](#E2), [E5](#E5), [OQ-CO](#OQ-CO), [OQ-S4](#OQ-S4), [OQ-E4](#OQ-E4).
 
 **Why this exists.** The design work produced 8 docs / ~4,800 lines, and the actionable items
@@ -70,7 +73,6 @@ restated in [roadmap.md](roadmap.md) instead of linked from it.
 | [../design/host-render-target.md](../design/host-render-target.md) | **the host as a reduced render target**: the two duplicated render paths and the one `Target`-parameterized renderer that replaces them, which manifest fields even apply off-container, the confinement axis (jail / macos-user / host), `FieldSet` | adding a backend, touching host-side `config reset`/`capture`, or changing the boot render |
 | [../reference/what-yolo-is.md](../reference/what-yolo-is.md) | subsystem boundaries; where composition could run; how logic ships | deciding *where* something executes |
 | [../reference/third-party-pack-logic.md](../reference/third-party-pack-logic.md) | the projector protocol; build/source tiers; trust | implementing pack logic |
-| [agent-config-packs.md](agent-config-packs.md) | the concrete pack proposal: fetch, lockfile, staging, verbs | implementing pack plumbing |
 
 ---
 
@@ -649,6 +651,193 @@ entries, which get `raw` by auto-detect and keep their bytes exactly.
 | ✅ E8 | ~~Nightly-macOS builder arch mismatch~~ — **DONE 2026-08-03**. The original entry called this "a maintainer decision, not a fix"; that framing was wrong — `nightly-macos.yml:44` documents the Intel runner as the only hosted one with nested virt, testing the macOS *code paths* rather than Intel as a target, so it always had a technical answer. **(1)** `7cc54a0`: `publish.yml` pushes per-arch builder tags plus a multi-arch index, so `:latest` resolves on both arches. **(2)** `BuildersLine`'s advertised system was hardcoded `aarch64-linux` — *"the arch a Mac needs"* — so an x86_64 host connected to a working builder, was told it serves aarch64-linux, and nix declined to offload while the builder looked healthy. Now `BuilderSystem()` derives it from GOARCH. **(3+4) Two MORE instances of the same assumption, found by grepping the literal rather than trusting the entry's scope** — `nixdiag.HasLinuxBuilderFromConfig` decided "is a builder configured?" by matching `aarch64-linux`, so on x86_64 it reported *no builder* while one ran (and, with (2) fixed, would have accepted an arm64-only builder for an x86_64 build); and `DiagnoseNixBuildFailure` keyed its cross-build branch on the same literal, dropping x86_64 hosts to a raw stderr dump instead of the Linux-builder remedy. Both now take/match the wanted system. All four mutation-tested. **Remaining caveat, not a defect:** `publish.yml` is tag-triggered, so the multi-arch image does not reach GHCR until the next release — the nightly stays red until then, and that first nightly is the real proof | ✅ done, verified by the next release's nightly |
 
 ---
+
+## Ideas from deleted docs
+
+**Added 2026-10-16.** Forty-four superseded, stale or finished docs were deleted that day (git
+history keeps them). Each idea below was deferred, parked or left open in one of them, and no live
+doc tracked it. Each entry names the deleted doc it came from and links the live doc that owns the
+topic now. They are listed by area, in no priority order; nothing here is ranked or scheduled.
+
+### Credentials and providers
+
+- **Google refresh-token rotation for agy.** Find out whether Google rotates the refresh token
+  behind agy's sign-in. agy's login is one file every jail on a machine shares, and no yolo service
+  coordinates its refreshes, so if each refresh invalidates the previous token, two jails
+  refreshing at once could log each other out. From `sequencing-2026-07.md`, deleted 2026-10-16.
+  Owner: [where each agent's credentials live](../reference/agent-credentials.md#where-each-agents-credentials-live).
+- **Copilot as a model source for Claude Code: closed, with reopen triggers.** A Copilot
+  subscription cannot legitimately back Claude Code today: GitHub has no documented inference
+  endpoint, a proxy would break GitHub's acceptable-use terms, and at Business rates it saves
+  nothing. Revisit only if a Copilot plan's included credits clearly beat Anthropic's list prices
+  or GitHub publishes an inference API, and re-read GitHub's terms first. From
+  `copilot-as-a-provider.md`, deleted 2026-10-16. Owner:
+  [Copilot's BYOK contract](../reference/cerebras-pack-and-copilot-delivery.md#copilots-byok-contract).
+- **pi's model picker: make the provider visible.** pi's `/model` rows end with the provider in
+  brackets (`gpt-oss-120b [cerebras]`), which is easy to miss. If that still confuses people,
+  propose a small upstream pi change that shows the provider first; ship a yolo picker extension,
+  under a new command, only if the needs grow to provider tabs or favorites. From
+  `pi-model-selection-ux.md`, deleted 2026-10-16. Owner:
+  [rendering the effective list into each picker](../design/model-lists-and-pickers.md#8-rendering-the-effective-list-into-each-picker).
+
+### Security model
+
+- **One stated adversary for the project.** Write down, once for the whole project, which
+  adversaries yolo defends against. Each subsystem names its own (a sibling jail for the loophole
+  transport, an in-jail agent editing workspace config for the approval gate), and none says
+  whether a malicious dependency running inside the jail, such as an npm package or an MCP server,
+  is in scope. From `sequencing-2026-07.md`, deleted 2026-10-16. Owner:
+  [the loophole transport's threat model](../reference/loophole-transport.md#threat-model).
+- **Pack signing and revocation.** Optionally require that a fetched pack's commit is signed, and
+  add a way to revoke a known-bad pack tree (a denylist plus a `yolo pack audit` check). Weigh it
+  against the ruling that the pack boundary is disclosure, not an approval gate. From
+  `agent-config-packs.md`, deleted 2026-10-16. Owner:
+  [the credential boundary](../reference/pack-system.md#the-credential-boundary-disclosure-not-consent).
+
+### Packs and skills
+
+- **Team pack baseline.** One command that brings a fresh machine to a team's shared `packs` list.
+  Once such a list is shared (for example through `include_if_found`), also commit a lock beside
+  it that records the exact commit each pack resolved to. From `agent-config-packs.md`, deleted
+  2026-10-16. Owner: [the `packs` key](../reference/pack-system.md#the-packs-key).
+- **In-jail pack fetch.** Let a running jail fetch a new git pack mid-session through a host-side
+  git credential helper over a socket, instead of fetching only on the host at launch. From
+  `agent-config-packs.md`, deleted 2026-10-16. Owner:
+  [fetch, refresh, lock](../reference/pack-system.md#fetch-refresh-lock).
+- **Check the agents' skills folders.** Check, against each agent's installed package, that the
+  user-level skills folder its pack declares (pi's `~/.pi/agent/skills`, codex's `~/.codex/skills`)
+  is still where that CLI reads skills. If a CLI moves the folder, nothing breaks loudly. From
+  `agent-config-distribution.md`, deleted 2026-10-16. Owner:
+  [the `skills` kind](../reference/pack-system.md#skills).
+- **`host_files` into a skills folder.** A `host_files` entry can target a path inside a skills
+  folder yolo assembles (for example `.claude/skills`), and nothing refuses it, so two writers can
+  claim one tree. From `synced-skill-trees-plan.md`, deleted 2026-10-16. Owner:
+  [the `skills` kind](../reference/pack-system.md#skills).
+- **Host probe of Claude's sync folders.** On a host with a real Claude login (a jail cannot do
+  this, because its skills folder is a read-only bind of yolo's own copy), record when
+  `~/.claude/skills/synced` first appears, what `installed_plugins.json` holds after a real plugin
+  install, and whether switching organizations adds a second sync folder or replaces the first.
+  Then correct the unverified notes. From `claude-plugin-registration-probe.md`, deleted
+  2026-10-16. Owner:
+  [two sync roots](../design/synced-skill-trees.md#24-two-sync-roots-one-bucket-name-and-only-one-is-exposed).
+
+### pi extensions
+
+- **Make delivery of built pi extensions cheaper.** When the maintainer ruled that pack-declared
+  pi extensions are built on the host and copied read-only into each new jail, he left two costs to
+  optimize later: the copy made for every jail, and the wait on the first launch that builds an
+  extension. From `pi-git-extension-caching.md`, deleted 2026-10-16. Owner:
+  [the store builds' risks](../design/pi-extension-store-builds.md#11-risks).
+- **pi's refresh does not watch a project's own settings file.** pi's pre-launch refresh becomes
+  due when `~/.pi/agent/settings.json` changes, but never when a project's `.pi/settings.json`
+  does, so a package newly added to a project's settings is installed by pi's own startup, outside
+  the refresh lock. From `pi-git-extension-caching.md`, deleted 2026-10-16. Owner:
+  [the `program` kind](../reference/pack-system.md#program).
+
+### Program delivery and patched forks
+
+- **Move opencode to its vendor's installer.** Two blockers were measured 2026-09-03: the
+  installer hardcodes `$HOME/.opencode/bin` with no override, and the jail's home is read-only with
+  no writable `.opencode` declared, so the move needs a writable directory and a way for the
+  launcher to find a binary outside `~/.local/bin`. Whether `omp` has a native installer is also
+  unchecked. From `native-installer-migration.md`, deleted 2026-10-16. Owner:
+  [the per-agent facts](../design/program-delivery.md#per-agent-facts-verified-2026-09-03).
+- **A patched fork's host-floor install on a real host.** Replay and build a series in a real
+  sealed jail, then run it from the floor with `yolo host -- <bin>`. Every floor test so far stands
+  the build jail in. From `patched-forks-plan.md`, deleted 2026-10-16. Owner:
+  [what to build, in order](../design/patched-forks.md#14-what-i-would-build-in-order).
+- **The patch-series guide's export command fails for a fork with merges.** `git format-patch`
+  refuses when the fork merged upstream releases, and a series cut at the merge base does not
+  apply when it merged its own branches. The workaround found while migrating the maintainer's
+  forks is to export the first-parent chain, each merge one patch; when the fork merged upstream
+  releases, the first patch is the integration merge's whole diff against the release. The guide
+  should say so. From `patched-forks-plan.md`, deleted 2026-10-16. Owner:
+  [patch a program](../../userguide/guides/patch-series.md#patch-a-program).
+
+### macOS
+
+- **The macos-user floor carries the image's core packages but not its extras.** The [`OQ-P1`](../reference/macos-user-provisioning.md#oq-p1)
+  ruling says the floor is "everything the image bakes", but the floor's list excludes the image's
+  extra packages, such as chromium. Either add the extras with explicit darwin exclusions, or
+  narrow the ruling's wording. From `macos-revival-and-distribution-plan.md`, deleted 2026-10-16.
+  Owner: [the floor](../reference/macos-user-provisioning.md#the-floor).
+- **Reread the macos-user launch lines that changed on 2026-10-04, on a Mac.** Run a `--dry-run`
+  from a throwaway workspace that declares a `/dev/cu.*` device, a raw disk,
+  `ephemeral_storage: "tmpfs"` and a host nvim config. Check that each warning or disclosure reads
+  correctly, and that a config declaring none of them prints none. Then drop the user guide's "not
+  yet tried on a Mac" serial hedge, once the `declared_device_ioctl_allowed` case passes on
+  `macos-user.yml` and a real USB serial adapter accepts `stty -f` from the sandbox. From
+  `handoff-mac-unmeasured-claims.md`, deleted 2026-10-16. Owner:
+  [networking and devices](../reference/macos-user-nix-and-features.md#networking-devices-gpu).
+- **Push the darwin helpers a Mac builds for the stock image.** A Mac fetches every Linux path of
+  the stock image but still builds 13 to 15 small darwin-system helpers locally, because only
+  Linux runners push to the binary cache. A macOS job could push them; an Apple silicon push would
+  also need a `macos-latest` job. Worth doing only if a timed build on an Apple silicon Mac shows
+  they cost more than a few seconds. From `handoff-cachix-cache.md`, deleted 2026-10-16. Owner:
+  [the binary cache](../reference/image-staging-vs-baking.md#the-binary-cache).
+- **Pin the macOS builder image by digest.** The container that builds a Mac's Linux image is
+  pulled by the `:latest` tag; the exploration that chose a yolo-built image recommended pinning
+  it by digest so a build always uses a known builder. From
+  `macos-container-builder-exploration.md`, deleted 2026-10-16. Owner:
+  [how the container path works](../reference/nix-across-backends.md#how-the-container-path-works).
+- **Measure the macOS builder's startup cost.** Nobody has measured how long the builder container
+  takes to start on each build, or how long the first image pull takes. If it is slow, one builder
+  container could stay warm for a session. From `macos-container-builder-exploration.md`, deleted
+  2026-10-16. Owner:
+  [how the container path works](../reference/nix-across-backends.md#how-the-container-path-works).
+
+### Other platforms and hardware
+
+- **aarch64 run of the nix-ld tripwire.** Record one run of `yolo check`'s FHS-loader tripwire,
+  the scrubbed-environment start of mise's node, on an aarch64 machine. CI's integration job
+  covers both architectures, but this in-jail check has no recorded aarch64 run. From
+  `sequencing-2026-07.md`, deleted 2026-10-16. Owner:
+  [the regression tripwire](../reference/mise-node-dynamic-linking.md#the-regression-tripwire).
+- **Windows through WSL 2 is untried.** yolo may work on WSL 2 (Windows' Linux layer) as a Linux
+  host, but nobody has run it. From `sandbox-comparison.md`, deleted 2026-10-16. Owner:
+  [what works in each setup](../../userguide/reference/settings-per-setup.md#what-works-in-each-setup).
+- **GPU rembg on an AMD gfx1151 in a jail (not yolo work).** It needs an onnxruntime build with
+  gfx1151 kernels (MIGraphX with a non-asserts LLVM, or AMD's TheRock wheels). That belongs to the
+  downstream project that wanted it; it is recorded here only so the finding is not lost. From
+  `rocm-gpu-jail-findings.md`, deleted 2026-10-16. Owner:
+  [what ROCm passthrough does not do](../reference/rocm-passthrough.md#what-this-does-not-do).
+
+### Checks, tests and tooling
+
+- **Automate the corpus-honesty checks.** Turn them into a test with allowlists: every open
+  question carries a status emoji and a stable id, every cited question id resolves in the doc it
+  names, no doc cites the roadmap by a row or item name, and every backticked code path and commit
+  SHA resolves. `scripts/check-doc-shas.sh` already covers the SHA part. From
+  `further-roadmap-ideas.md` (its I1), deleted 2026-10-16. Owner:
+  [keeping this corpus honest](README.md#keeping-this-corpus-honest--the-checks-so-they-are-re-runnable).
+- **Flag a stale status line.** Flag a design or plan doc for re-checking when the date on its
+  status line is older than the newest commit touching the code paths it cites. It only flags; it
+  never decides whether the doc is right. From `further-roadmap-ideas.md` (its I1b), deleted
+  2026-10-16. Owner:
+  [keeping this corpus honest](README.md#keeping-this-corpus-honest--the-checks-so-they-are-re-runnable).
+- **`yolo check`'s Running Jails section says nothing about the host when run in a jail.** Inside
+  a jail it reports only the nested runtime's view, such as "No jails currently running", without
+  saying the host may have some. Give it the same host-fact note the NVIDIA section now prints.
+  From `further-roadmap-ideas.md` (its I3), deleted 2026-10-16. Owner:
+  [OQ-3, host facts in `yolo check`](../reference/claude-oauth-interposition.md#oq-3).
+- **Reproduce the loopback-forwarding outage in CI.** Add an integration test, run only when an
+  environment variable is set, that binds a listener on the jail's loopback and dials it from a
+  bare `podman run` inside the jail: it should fail without the loopback-mapping option and
+  connect with it. From `further-roadmap-ideas.md` (its I4), deleted 2026-10-16. Owner:
+  [a nested jail is blind to this](../reference/loopback-tls-reachability.md#a-nested-jail-is-structurally-blind-to-this).
+- **Run the boundary broker's host-store slice once in a nested jail.** From a throwaway workspace
+  with a throwaway home, confirm a forwarded write still exits 77 and files nothing, and that
+  `yolo approve` list, status, deny and revoke work on host-side test records and refuse inside a
+  jail. Never run a real GitHub write. From `boundary-broker-plan.md`, deleted 2026-10-16. Owner:
+  [grants and the request store](../design/boundary-broker.md#7-grants-and-the-request-store).
+- **File the vantage-check defect report upstream.** Its reference rules read a section or
+  question number ending in a letter (such as 4.3b) without the letter, so they reject the correct
+  link and accept a wrong one; they accept a link labeled with one section number that points at
+  another; and they never report a heading-form open question as missing its directive. All three
+  still reproduce on the pinned 0.10.0 (re-run 2026-10-16), and the report was never filed. Its
+  text is in git history (`git show 4acb71205:docs/research/vantage-check-0.5.9-findings.md`);
+  raise the pin once they are fixed. From `vantage-check-0.5.9-findings.md`, deleted 2026-10-16.
+  Owner: [the lettered-number note](README.md#vantage-checks-suggested-link-is-wrong-for-a-lettered-number).
 
 ## Rulings — ALL ANSWERED 2026-07-26
 

@@ -80,7 +80,7 @@ which the failure handling and the notch behavior fall out.
 
 **Reads with:** [`forked-programs-as-packs.md`](forked-programs-as-packs.md) (the fork route this
 extends; its ledger is the ground truth for every FP-D cited here),
-[`patched-forks-plan.md`](patched-forks-plan.md) (the implementation sketch, incomplete while the
+the deleted `patched-forks-plan.md` (the implementation sketch, incomplete while the
 questions are open), [`program-delivery.md`](program-delivery.md) (the agent-dependency rule this
 mode brings forks under), [`patched-extensions.md`](patched-extensions.md) (the companion that takes
 this mode to pi extensions, sharing its implementation through [PF-D22](#PF-D22)'s owner key).
@@ -198,7 +198,7 @@ Four of these decide most of the design:
 
 ### 3.1 The fields
 
-The stand-in fork the plan measured ([its step 7 run](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01)),
+The stand-in fork the plan measured ([its host-notch run](forked-programs-as-packs.md#host-notch-measurement)),
 rewritten as a patched fork:
 
 ```jsonc
@@ -844,8 +844,8 @@ so every launch that waited on a failing build would build it again.
   build can reach it.
 - **Never writes a patched file into the user's tree**, nor any file into the fork pack.
 - **Never falls back to the base's own delivery** when a patched fork has no build, which the fork
-  plan's *Don't* list already forbids for a plain fork
-  ([`forked-programs-as-packs-plan.md`](forked-programs-as-packs-plan.md)).
+  design's failure modes already forbid for a plain fork
+  ([`forked-programs-as-packs.md` §9](forked-programs-as-packs.md#9-failure-modes)).
 - **Never refuses a launch** over a check, a replay or a build while a good build serves. With
   nothing to serve, a fresh launch at a notch that builds forks refuses before booting
   ([PF-D77](#PF-D77), which amends this line).
@@ -880,7 +880,7 @@ failed is recorded ([§8.1](#81-the-failure-table)).
 
 **What a build costs, as measured.** The stand-in, pi's upstream at `v0.99.2`, built in 17 s in a
 nested jail, and its entry was 137.6 MB
-([the plan's run](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01)).
+([the run](forked-programs-as-packs.md#host-notch-measurement)).
 The one fork build the maintainer's host logs show, on 2026-10-02, held its sealed jail for about
 35 s from the keeper's start to its teardown; that log does not record whether it stored an entry.
 Read from GitHub on 2026-10-03, pi's upstream published five versions from 2026-09-29 to
@@ -1120,7 +1120,7 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 | **jail, podman (Linux or a macOS VM)** | yes: the check, the host replay and the sealed build run at a fresh launch |
 | **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so ([`run/forkbuild.go:63-68`](../../internal/cli/run/forkbuild.go#L63-L68)). A capture jail cannot start beside a running jail (INFERRED, [OQ-PD25](program-delivery.md#decision-ledger)), so while another workspace's jail runs, an advance cannot build. That is not a failed build: nothing is recorded, the candidate stays pending, the good build runs, and the line names `yolo capture <bin>` once the other jails stop. With no good build, the launch refuses with that line ([PF-D77](#PF-D77)). The launch's own jail is not running yet when its advance runs |
 | **jail, macos-user** | none: the fork route delivers nothing there ([FP-D3](forked-programs-as-packs.md#FP-D3), [`run/forkbuild.go:91-98`](../../internal/cli/run/forkbuild.go#L91-L98)), and the line says so. Built 2026-10-04: the line names a patched fork and both container backends, and the sandbox's launcher for the program repeats it ([PF-D54](#PF-D54)). Whether a patched fork reaches this backend is [OQ-PFK5](#OQ-PFK5) |
-| **`yolo host`, Linux** | yes. The floor's install runs the advance through the same implementation, from a source arm of the floor's refresh, which today returns at once for a fork ([`ensure.go:187-190`](../../internal/hostfloor/ensure.go#L187-L190)), and honors `agent_updates` through the floor's `UpdatesAllowed`. Its four readers of the manifest's recipe read the good build's: `servesANearMiss` ([`ensure.go:155-162`](../../internal/hostfloor/ensure.go#L155-L162)), `buildPending` ([`floor.go:521`](../../internal/hostfloor/floor.go#L521)), the lookup and build behind `ResolveBuild` and `Build` ([`cli/hostfloor.go:121-129`](../../internal/cli/hostfloor.go#L121-L129)), and the install record ([`built.go:176`](../../internal/hostfloor/built.go#L176)). A newer upstream that fails keeps the installed good build; after a failed edit the floor follows [OQ-PFK1](#OQ-PFK1), and under its leaning [FP-D17](forked-programs-as-packs.md#FP-D17)'s removal stands ([`ensure.go:121-136`](../../internal/hostfloor/ensure.go#L121-L136)). Whether `yolo host -- <bin>` waits for the advance is [OQ-PFK3](#OQ-PFK3). A moved good build reinstalls from a build this machine admitted; one whose manifest says it cannot move out of the jail's home has no floor entry, as [FP-D16](forked-programs-as-packs.md#FP-D16) says of any build. The stand-in measured relocatable ([the plan's run](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01)). Built 2026-10-04, [§14](#14-what-i-would-build-in-order) step 4: [PF-D50](#PF-D50) to [PF-D53](#PF-D53), and [PF-D55](#PF-D55): the floor's installed copy serves while the good build's store entry is gone |
+| **`yolo host`, Linux** | yes. The floor's install runs the advance through the same implementation, from a source arm of the floor's refresh, which today returns at once for a fork ([`ensure.go:187-190`](../../internal/hostfloor/ensure.go#L187-L190)), and honors `agent_updates` through the floor's `UpdatesAllowed`. Its four readers of the manifest's recipe read the good build's: `servesANearMiss` ([`ensure.go:155-162`](../../internal/hostfloor/ensure.go#L155-L162)), `buildPending` ([`floor.go:521`](../../internal/hostfloor/floor.go#L521)), the lookup and build behind `ResolveBuild` and `Build` ([`cli/hostfloor.go:121-129`](../../internal/cli/hostfloor.go#L121-L129)), and the install record ([`built.go:176`](../../internal/hostfloor/built.go#L176)). A newer upstream that fails keeps the installed good build; after a failed edit the floor follows [OQ-PFK1](#OQ-PFK1), and under its leaning [FP-D17](forked-programs-as-packs.md#FP-D17)'s removal stands ([`ensure.go:121-136`](../../internal/hostfloor/ensure.go#L121-L136)). Whether `yolo host -- <bin>` waits for the advance is [OQ-PFK3](#OQ-PFK3). A moved good build reinstalls from a build this machine admitted; one whose manifest says it cannot move out of the jail's home has no floor entry, as [FP-D16](forked-programs-as-packs.md#FP-D16) says of any build. The stand-in measured relocatable ([the run](forked-programs-as-packs.md#host-notch-measurement)). Built 2026-10-04, [§14](#14-what-i-would-build-in-order) step 4: [PF-D50](#PF-D50) to [PF-D53](#PF-D53), and [PF-D55](#PF-D55): the floor's installed copy serves while the good build's store entry is gone |
 | **`yolo host`, macOS** | none, as for every fork: the build is of the jail's platform ([FP-D16](forked-programs-as-packs.md#FP-D16)). The no-copy line names a jail on a container backend as where it runs ([PF-D54](#PF-D54)) |
 | **guest** | unbuilt, as every verb there is; nothing here is keyed on the notch set |
 
@@ -1219,7 +1219,7 @@ not know, as the host does, and names it.
 3. **`yolo pack rebase`**, as [OQ-PFK4](#OQ-PFK4) rules; retired 2026-10-15 for the printed git
    recipe ([PF-D85](#PF-D85)).
 4. **The host floor**: its four recipe readers and the refresh arm.
-5. **Rerun the plan's step-7 measurement** on the maintainer's own series against a newer upstream.
+5. **Rerun [the fork route's host-notch measurement](forked-programs-as-packs.md#host-notch-measurement)** on the maintainer's own series against a newer upstream.
 
 **Done looks like:**
 

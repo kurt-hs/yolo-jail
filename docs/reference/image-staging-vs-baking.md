@@ -1444,6 +1444,14 @@ only the stock attributes, so a baked `packages:` user is a cache miss by constr
 delivery is what makes the cache useful to them — complements, not alternatives. `macos-user` has
 no image and nothing to substitute.
 
+**On a Mac** (measured by the macOS nightly on 2026-10-03, `TestMacImageSubstitutesFromCachix` on
+an Intel runner): every Linux path of the stock image is fetched, from `cache.nixos.org` or this
+cache, and no Linux derivation is built, so a Mac needs no Linux builder for the stock image. It
+still builds 13 to 15 small darwin-system helpers locally (nix2container, its JSON metadata and
+three symlink trees), because the flake builds them with the host's package set and only Linux
+runners push. To use a cache name other than `yolo-jail`, change the `nixConfig` URL and key in
+`flake.nix`, the `CACHE` default of `just cachix-push`, and the `CACHIX_CACHE` repository variable.
+
 ## Backends
 
 | Backend | Image | yolo's binaries | `packages:` |

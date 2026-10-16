@@ -854,7 +854,7 @@ type Contribution struct {
 	Options map[string]OptionDefault `json:"options,omitempty"`
 
 	// Capabilities are the NAMED JOBS an AUTHENTICATION SOURCE performs for itself —
-	// agent-auth-modes.md §6.1 clause 1, "Agents / Modes declare native capabilities in
+	// mcp-configuration.md's capability-driven MCP delivery; first designed as "Agents / Modes declare native capabilities in
 	// pack.json or provider blocks". An authentication source is the credential-and-
 	// endpoint mode an agent runs under for a launch (docs/reference/
 	// mcp-configuration.md#authentication-source), and this is the field it says

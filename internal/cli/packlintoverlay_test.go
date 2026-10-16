@@ -1,7 +1,7 @@
 package cli
 
 // packlintoverlay_test.go pins `yolo pack lint` to the RENDER's overlay decode
-// (docs/design/synced-skill-trees-plan.md, "Two defects this measurement found"). Lint used to
+// (a defect a 2026-09-19 host-apply measurement found). Lint used to
 // check an overlay only for packdecl's shape (a surface named, a body present), so a body the
 // render refuses by name lint-passed with "✓ pack ok" and a claim line saying it "contributes
 // keys", then contributed nothing at the next apply. The overlay is the remedy yolo's own loss

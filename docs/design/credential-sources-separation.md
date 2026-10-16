@@ -5,7 +5,7 @@ status: in-review
 stage: DESIGN
 next: "Rule OQ-ES6 — whether a user may share a claimed generic name such as AWS_PROFILE with every process"
 tags: [providers, profiles, credentials, env-sources, notches, cli]
-summary: "A key listed in env_sources is withheld from `yolo host -- bash`, and the filing proposed a separate credential_sources key. Measured against the built credential gate: the surprise happens only for a claimed name that env_sources supplies, the host remedy (`yolo host -p <profile> -- <cmd>`) is already built but undocumented, and the split would revisit OQ-CN1. Five implementation decisions, now built, make the host remedy findable. OQ-ES5's host half is ruled (2026-09-27): an explicit `yolo host --with-credentials <provider…|all>` grant, keys only. Its jail half is ruled (2026-10-05) and built: the same flag at a jail launch, at every notch, the jail's grant fixed at its launch (ES-D31 to ES-D39). One question stays open: shared generic names such as AWS_PROFILE. The split itself (OQ-ES1) is answered no by OQ-ES5's own ruling, and aws-auth's pointer under a typed -p (OQ-ES7) is moot, since -p reaches agent CLIs only."
+summary: "A key listed in env_sources is withheld from `yolo host -- bash`, and the filing proposed a separate credential_sources key. Measured against the built credential gate: the surprise happens only for a claimed name that env_sources supplies, the host remedy (`yolo host -p <profile> -- <cmd>`) is already built but undocumented, and the split would revisit OQ-CN1. Five implementation decisions, now built, make the host remedy findable. OQ-ES5's host half is ruled (2026-09-27): an explicit `yolo host --with-credentials <provider…|all>` grant, keys only. Its jail half is ruled (2026-10-05) and built: the same flag at a jail launch, at every notch, the jail's grant fixed at its launch (ES-D31 to ES-D39). Two questions stay open: shared generic names such as AWS_PROFILE (OQ-ES6), and whether AWS's two-part credential needs more than a declared list of names (OQ-ES8). The split itself (OQ-ES1) is answered no by OQ-ES5's own ruling, and aws-auth's pointer under a typed -p (OQ-ES7) is moot, since -p reaches agent CLIs only."
 vantage:
   status-chip: true
 ---
@@ -63,7 +63,7 @@ fires on `AWS_PROFILE` for every claude-pack user.
 [§5.1](#51-the-explicit-grant---with-credentials-built).
 
 **Needs your ruling:** [OQ-ES6](#OQ-ES6), which asks for an exception to
-[OQ-BR4](../reference/providers.md#oq-br4). [OQ-ES5](#OQ-ES5) is ruled at both halves, and both are
+[OQ-BR4](../reference/providers.md#oq-br4), and [OQ-ES8](#OQ-ES8), moved here from a deleted doc. [OQ-ES5](#OQ-ES5) is ruled at both halves, and both are
 built ([§5.1](#51-the-explicit-grant---with-credentials-built) and
 [§5.2](#52-the-jail-half---with-credentials-at-a-jail-launch-built)).
 
@@ -795,6 +795,22 @@ works:
    > A grant-only process runs no derive and fires no gated env (ES-D13), so it never carried a
    > CLI-less pack's pointer either. Whether it should would be a new question about the grant.
    > It is not this one.
+
+8. 💬 <a id="OQ-ES8"></a>**OQ-ES8: Does AWS's two-part credential need more than a declared list of names?** *(Moved 2026-10-16 from the deleted `agent-auth-modes.md`, where it was the ninth question.)*
+
+   AWS's static credential is two variables that work only together, `AWS_ACCESS_KEY_ID` and
+   `AWS_SECRET_ACCESS_KEY`. Since [OQ-CN1](../reference/providers.md#oq-cn1) (ruled 2026-09-26)
+   the `bedrock` provider in `packs/bedrock/pack.json` lists both names, and `env_sources`
+   supplies the values, which [OQ-ES1](#OQ-ES1) keeps as the one credential store. Is that the
+   answer, or should a pair be declared as a pair, for example with one template that fills both?
+   The SSO route (`packs/aws-auth`) needs no pair: it is one pointer variable.
+
+   <!-- vantage: question id=OQ-ES8 leaning="Leave AWS's two-part credential on env_sources until a second credential made of several variables shows up." -->
+
+   _Leaning:_ Leave AWS's two-part credential on env_sources until a second credential made of several variables shows up.
+
+   **Answer:**
+   > _(empty — fill in when decided)_
 
 ### 9.1 Background to the open questions
 

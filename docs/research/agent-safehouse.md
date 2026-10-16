@@ -28,9 +28,12 @@ suite has since executed on a macOS runner, and all fifteen cases pass.
 
 **Needs your ruling:** [OQ-AS1](#OQ-AS1) (how far the `macos-user` Seatbelt profile moves toward deny-default), [OQ-AS2](#OQ-AS2) (whether yolo publishes a per-agent investigation series), [OQ-AS3](#OQ-AS3) (whether `mounts` and `env_sources` become user-scope-only).
 
-**Reads with:** [`sandbox-comparison.md`](sandbox-comparison.md), which does the same job for
-Claude Code's own built-in sandbox and states the default-deny argument this doc does not
-repeat.
+**Reads with — Claude Code's built-in sandbox**, the other neighbor (bubblewrap on Linux,
+Seatbelt on macOS, wrapped around Bash commands only). It denies listed operations and leaves the
+rest of the host readable, so each new need becomes another allow rule. yolo keeps the host out
+as a whole and allows everything inside, so the list to maintain is what the agent needs from the
+host, not what it must not touch. The fuller comparison, gathered 2026-07-18 and never
+re-gathered, is in git history as the deleted `sandbox-comparison.md`.
 
 > **In short.** The two projects answer different questions, and almost every difference falls
 > out of that one fact. Safehouse asks **"what may this agent touch on my machine?"** and
@@ -776,7 +779,7 @@ adopt.
 found the direction inverted on three of five agents — yolo *writes* files their table marks
 read-only and user-created.
 
-**The seam.** `docs/research/agent-config-distribution.md` is the existing home for
+**The seam.** [`workspace-skills.md` §2.1](../design/workspace-skills.md#21-where-each-agent-reads-skills--measured) is the nearest existing home for
 cross-agent path knowledge, and [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer)
 [the workspace layer](../reference/agent-briefings.md#the-workspace-layer) — *"The pack declares what its agent reads"* — is the mechanism that would make the
 document's project-scope half machine-checkable, since it proposes the pack declare its agent's
@@ -998,8 +1001,8 @@ All read 2026-09-18.
   surface, the trust precedence order, and the `.safehouse` key list.
 - [agent-safehouse.dev/docs/agent-investigations](https://agent-safehouse.dev/docs/agent-investigations/)
   — the thirteen per-agent reports.
-- [`sandbox-comparison.md`](sandbox-comparison.md) — the sibling comparison against Claude
-  Code's built-in sandbox; read it for the default-deny-at-the-right-layer argument.
+- `sandbox-comparison.md` (deleted 2026-10-16) — the sibling comparison against Claude
+  Code's built-in sandbox; its argument is summarized under **Reads with** near the top of this doc.
 - [`macos-no-vm-direction.md`](../reference/macos-no-vm-direction.md) — yolo's acceptance bar,
   and the sentence that frames this whole document.
 - [`agent-credentials.md`](../reference/agent-credentials.md) — the credential boundary, stated

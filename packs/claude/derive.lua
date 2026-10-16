@@ -718,7 +718,7 @@ end)
 -- pack service serves — the wire bridge's): the value the launch hydrated into that
 -- endpoint's `api_key`, or the "local" dummy when it hydrated none. Never the provider's key,
 -- and never absent: with no ANTHROPIC_AUTH_TOKEN claude sends its saved login's OAuth bearer
--- to the base URL (docs/design/agent-auth-modes.md §8.1), and the dummy at least draws a
+-- to the base URL (docs/reference/wire-bridge.md, "Caller authentication"), and the dummy at least draws a
 -- clear 401 from the bridge instead.
 local function routedAuthToken(ep)
   if type(ep) == "table" and type(ep.api_key) == "string" and ep.api_key ~= "" then
@@ -776,7 +776,7 @@ yolo.env("claude", function(ctx)
       ANTHROPIC_BASE_URL = codexEp,
       -- THE TOKEN THAT STOPS THE LOGIN LEAKING. With no ANTHROPIC_AUTH_TOKEN, claude sends its
       -- saved Claude login's OAuth bearer to whatever ANTHROPIC_BASE_URL names
-      -- (docs/design/agent-auth-modes.md §8.1, measured), and this route's base URL is the wire
+      -- (docs/reference/wire-bridge.md, "Caller authentication", measured), and this route's base URL is the wire
       -- bridge on loopback, a port anything sharing that loopback can reach or squat. Setting
       -- the variable overrides the login, so claude sends this instead: the bridge's per-launch
       -- caller token, which the composed endpoint names as its credential (routedAuthToken).

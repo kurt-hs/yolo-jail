@@ -952,7 +952,7 @@ end
 
 -- piSubagents is pi-subagents' `subagents` block for the launch's provider, the same shape
 -- for EVERY provider (docs/research/extension-model-defaults.md OQ-XM3, ruled 2026-09-28,
--- which also answers docs/research/pi-model-selection-ux.md OQ-PM1). The maintainer: "always
+-- which also answered the since-deleted pi-model-selection-ux.md's OQ-PM1). The maintainer: "always
 -- the default … unless there's some very clear exception stated. And regardless, it
 -- shouldn't be able to cross providers."
 --

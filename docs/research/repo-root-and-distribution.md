@@ -17,7 +17,7 @@
 > toolchain and no source. The old staging machinery (`stageInstalledWheel`,
 > `nix-build-root`, the `/opt/yolo-jail` bind mount) is **gone**; where its
 > history explains the design, "Historical" callouts preserve it. Plan:
-> `docs/plans/macos-revival-and-distribution-plan.md` (Track D).
+> the deleted `macos-revival-and-distribution-plan.md` (Track D).
 
 **TL;DR** — `yolo` builds the jail's container image from a **flake**
 (`nix build .#ociImage`) on first run, so every `yolo -- <cmd>` invocation must
@@ -330,7 +330,7 @@ Two remaining notes:
   ["https://yolo-jail.cachix.org"]`, ENABLED 2026-07-20), and `publish.yml`'s
   `push-image-cache` job runs when `CACHIX_AUTH_TOKEN` is set (the secret is
   configured). Human-gated remainder: the first push from a Linux box and the
-  Mac-side download proof. See `docs/plans/handoff-cachix-cache.md`. **Even a
+  Mac-side download proof. See [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-binary-cache). **Even a
   fully-populated Cachix cache would *not* remove the flake requirement** — `nix
   build .#ociImage` against `.` must still *evaluate the local flake* to know
   which store paths to fetch. Cachix removes the *build*, not the *flake read* —
@@ -464,7 +464,7 @@ directly), but the run path never sets it now.
   supported channel.
 - **D4 — Cachix** — substituter block is live in `flake.nix` and the push job
   is wired; human-gated remainder is the first push from a Linux box + the
-  Mac-side download proof (`docs/plans/handoff-cachix-cache.md`). Composes with
+  Mac-side download proof ([`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-binary-cache)). Composes with
   the bundle (still needs the local flake to evaluate).
 
 **Accepted regression:** the old dev-override fast loop (live-patching the outer
@@ -508,5 +508,5 @@ anchors:
   `c7e210d~1:src/cli/run_cmd.py`
 - Legacy `nix-build-root` cleanup (prune): `internal/prune/sweep.go`
 - Cachix substituter live (cache not yet filled): `flake.nix` `nixConfig`,
-  `publish.yml`, `docs/plans/handoff-cachix-cache.md`
+  `publish.yml`, [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-binary-cache)
 - Cache fallback: `internal/image/autoload.go`

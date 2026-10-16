@@ -116,6 +116,26 @@ recorded under G21 in [setup-support-gaps.md](../plans/setup-support-gaps.md)).
 `macos-user` delivers the host's own client instead:
 [nix inside the sandbox](macos-user-nix-and-features.md#nix-inside-the-sandbox).
 
+### The macOS Linux builder, for a Linux reader
+
+On a Mac, nix builds Mach-O programs, but the jail image is Linux, so any package missing from a
+binary cache has to be built on a Linux kernel. Nix's ordinary remote-builder mechanism does this:
+the host nix daemon connects over SSH (`ssh-ng`), runs `nix-daemon --stdio` on the far end, and
+copies the result back into the local store, the same thing as offloading builds to a Linux box
+on your LAN. `internal/containerbuilder` makes that Linux machine a short-lived container on the
+runtime already running, from an image of nix plus sshd; a builder image must contain nix, so
+nix's own closure is its size floor. Moved here on 2026-10-16 from the deleted
+`macos-linux-builder-explained.md`.
+
+| macOS term | The Linux thing you know |
+| :--- | :--- |
+| launchd, a LaunchDaemon, a LaunchAgent | systemd, a system unit, a `systemd --user` unit |
+| `launchctl` | `systemctl` |
+| Virtualization.framework | KVM: Apple's built-in hypervisor API |
+| nix-darwin | NixOS-style declarative system config layered on macOS; not nix itself |
+| Determinate Nix | a vendor distribution of nix (its own installer and daemon) |
+| Seatbelt (`sandbox-exec`) | roughly seccomp plus namespaces; what macos-user confines with |
+
 ## How the macos-user path works
 
 `darwinpkg.Materialize` runs `nix build --impure` on

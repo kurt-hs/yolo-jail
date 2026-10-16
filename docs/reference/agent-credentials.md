@@ -550,7 +550,9 @@ the canonical state, shaped for its own client:
   loopback port is reachable by every process on that loopback, so the launch also binds its
   per-launch caller token into the marker (`yolo-broker:<generation>.<token>`), and the adapter
   refuses a marker without it, with HTTP 401, before the service is asked anything. The service
-  never sees the suffix.
+  never sees the suffix. Codex reloads `auth.json` before each refresh, and honors the override
+  from 0.56.0 (2025-11-07); an older Codex posts its refresh straight to OpenAI. Every installable
+  Codex clears that floor (measured 2026-09-22 across 13 release tags), so yolo refuses none.
 - **Pi**'s `openai-codex` provider extension asks the service for an access token and its expiry,
   and writes them to the workspace provider record with `yolo-broker:<generation>` in Pi's
   required `refresh` field. Pi's normal refresh window calls the extension, which asks the service
@@ -658,7 +660,7 @@ session ends (`TestMacosUserOpensTheCodexDoorwayOutsideTheSandbox`, `macos-user.
 36719581090; it runs no Codex). opencode's view is MEASURED by unit tests only.
 
 UNMEASURED, because each needs a ChatGPT account and wall-clock time, and so a person
-([`../design/openai-auth-broker-plan.md`](../design/openai-auth-broker-plan.md) owns the checks):
+([the roadmap's external waits](../plans/roadmap.md#external-waits) carry them):
 
 - two Codex and two Pi processes crossing one expiry concurrently with exactly one upstream
   refresh;

@@ -495,7 +495,7 @@ What only a real host can still confirm is said per row.
   drives the same chain with that act stood in for, and `TestMacosUserHostFloorBuildsAForkFixtureForTheMac`
   runs it on a Mac (`macos-user.yml`, no green run recorded). **Needs a real host:** a real fork's
   build, made in a real sealed jail or as the sandbox account, running from the prefix. The 2026-10-01 stand-in
-  ([the plan's run](forked-programs-as-packs-plan.md#steps-1-to-3-on-a-stand-in-fork-2026-10-01))
+  ([the run](forked-programs-as-packs.md#host-notch-measurement))
   measured its build relocatable; nothing has run it outside the jail.
 - `yolo check` lists every floor entry with a disposition. Every file yolo wrote is under the
   prefix, and no jail's mount list reaches it.
