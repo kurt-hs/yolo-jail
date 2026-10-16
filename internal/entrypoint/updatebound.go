@@ -2,6 +2,7 @@ package entrypoint
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -258,7 +259,7 @@ _yolo_update_refused() {
         return 0
     fi
     if [ -n "$stamp" ]; then rm -f "$stamp" 2>/dev/null || true; fi
-    if [ -n "$ver" ]; then s="${s/the installed version/the installed $ver}"; fi
+    if [ -n "$ver" ]; then s="${s//the installed version/the installed $ver}"; fi
     {
         echo "yolo: ERROR: $head"
         echo "  $fact"
@@ -288,13 +289,31 @@ _yolo_refuse_failed() {
 // exits with it for an MCP server's refusal, and the launchers pass it through.
 const UpdateRefusedStatus = 75
 
-// useInstalledLabel is the hatch line's label; the shell puts the installed version in place of its
-// last word when it knows it.
-const useInstalledLabel = "run the installed version"
+// useInstalledVersion is the words of a hatch label that name what runs; the shell and
+// WithInstalledVersion put the installed version in place of "version" when they know it.
+const useInstalledVersion = "the installed version"
 
-// UseInstalledHatches is the refusal's hatch list for one program: its bin in front of its bin.
-func UseInstalledHatches(bin, command string) []patchrecovery.Hatch {
-	return []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv, Value: bin, Command: command, Label: useInstalledLabel}}
+// UseInstalledHatches is the refusal's hatch list: value (the program's bin, or the refused
+// packages) in front of bin, typed in this jail, and in front of `yolo -- bin`, typed on the host,
+// where a bare bin would run the host's own binary (PD-NF2). With no bin there is only one form.
+func UseInstalledHatches(value, bin string) []patchrecovery.Hatch {
+	if bin == "" {
+		return []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv, Value: value, Command: "yolo",
+			Label: "run " + useInstalledVersion}}
+	}
+	q := shquote.Quote(bin)
+	return []patchrecovery.Hatch{
+		{Env: patchrecovery.UseInstalledEnv, Value: value, Command: q, Label: "in this jail: run " + useInstalledVersion},
+		{Env: patchrecovery.UseInstalledEnv, Value: value, Command: "yolo -- " + q, Label: "from the host: run " + useInstalledVersion},
+	}
+}
+
+// WithInstalledVersion names version in every hatch label of hs, in place of "version".
+func WithInstalledVersion(hs []patchrecovery.Hatch, version string) []patchrecovery.Hatch {
+	for i := range hs {
+		hs[i].Label = strings.Replace(hs[i].Label, useInstalledVersion, "the installed "+version, 1)
+	}
+	return hs
 }
 
 // useInstalledSplices renders the refusal's baked values for one launcher: the pack its hatch may

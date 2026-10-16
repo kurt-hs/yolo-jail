@@ -410,7 +410,7 @@ func TestAStaleServerWhoseNewerVersionFailsRefuses(t *testing.T) {
 		"yolo: ERROR: npm server chrome-devtools-mcp 1.0.0 → 9.9.9: installing the newer version failed\n",
 		"  npm install -g --prefer-online chrome-devtools-mcp: probe: install refused (its output is above).\n",
 		"\nRepair:\n", "then run claude again", "    claude\n",
-		"\nStart anyway:\n", "  YOLO_USE_INSTALLED=chrome-devtools-mcp claude    run the installed 1.0.0\n",
+		"\nStart anyway:\n", useInstalledLines("chrome-devtools-mcp", "claude", "1.0.0"),
 	} {
 		if !strings.Contains(p.out.String(), want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, p.out.String())

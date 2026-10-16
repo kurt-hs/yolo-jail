@@ -663,9 +663,9 @@ func writeServerRefusal(w io.Writer, bin string, refused []serverRefused) {
 		cmd = "yolo"
 	}
 	fmt.Fprintf(w, "\nRepair:\n  fix what stopped it (its output is above), then run %s again, which retries the update:\n    %s\n", cmd, cmd)
-	hatches := UseInstalledHatches(strings.Join(names, ","), cmd)
+	hatches := UseInstalledHatches(strings.Join(names, ","), bin)
 	if len(refused) == 1 && refused[0].installed != "" {
-		hatches[0].Label = "run the installed " + refused[0].installed
+		hatches = WithInstalledVersion(hatches, refused[0].installed)
 	}
 	fmt.Fprint(w, patchrecovery.Section(patchrecovery.StartAnyway, hatches, false))
 }
