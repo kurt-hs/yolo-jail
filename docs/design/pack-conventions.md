@@ -103,7 +103,7 @@ activation rulings [OQ-PC2](#OQ-PC2) bears on), [`manifest-language.md`](manifes
   name.** A rule about pi's folders is a field in pi's pack. Core matches declared slots,
   surfaces, templates and identities, and holds no agent's name. [`AGENTS.md`](../../AGENTS.md):
   *"Core does not know what an agent is"*, as narrowed by
-  [OQ-D5](slots-and-contributions.md#OQ-D5): core knows an "agent" *"only insofar as it
+  [OQ-D5](slots-and-contributions.md#7-decision-ledger): core knows an "agent" *"only insofar as it
   identifies a config target"*. [OQ-PC1](#OQ-PC1)'s folders would also use a name to pick a
   source, which is part of what that question asks.
 - <a id="p3"></a>**P3. A convention is spelled so an older yolo skips it and says so, never
@@ -192,7 +192,7 @@ packs, and where each one is taken. Counts are in [Appendix A](#appendix-a-count
 | A posture `config` entry restating the `agent`, `name`, `path` and `codec` of its own pack's surface | Every shipped posture with a config patch | Handed to [OQ-M1](manifest-language.md#OQ-M1) ([§7](#7-considered-and-not-proposed)) |
 | A `config-overlay` wrapper, `{kind, surface, config: {managed: …}}`, around each overlay | The maintainer's packs; no shipped pack | [OQ-M1](manifest-language.md#OQ-M1)'s grouping by kind. Not here |
 | A bare `{"kind": "briefing"}` | The maintainer's `matt` | Removable today: it governs every unnamed `briefing/*.md`, which the implicit broadcast already delivers, and briefing prose is ordered by filename either way. No convention needed |
-| `agent` on every destination and surface of an agent pack | Every shipped agent pack | Ruled ([OQ-D5](slots-and-contributions.md#OQ-D5)); its build waits on [OQ-D6](slots-and-contributions.md#OQ-D6). Not re-asked |
+| `agent` on every destination and surface of an agent pack | Every shipped agent pack | Ruled ([OQ-D5](slots-and-contributions.md#7-decision-ledger)); its build waits on [OQ-D6](slots-and-contributions.md#OQ-D6). Not re-asked |
 | `codec` matching the extension; `"scope": "workspace"` (already the default); `after` equal to `host:` plus `into` | Most surfaces; most `state` entries; every briefing destination | [OQ-M1](manifest-language.md#OQ-M1)'s defaults and the `exposes` rewrite. Not here |
 | A provider's same-named profile; one `install_hints` value for every manager; a machine `state` and the hook whose `at` names it | Provider packs; `requires` entries; three agent packs | Not proposed ([§7](#7-considered-and-not-proposed)) |
 
@@ -586,7 +586,7 @@ a field an author left out, and never makes a pack that a yolo with the skip ref
 
 - **Grouping by kind, the syntax, per-kind defaults, and the posture spelling**:
   [`manifest-language.md`](manifest-language.md).
-- **Naming the agent once per pack**: ruled ([OQ-D5](slots-and-contributions.md#OQ-D5)), and its
+- **Naming the agent once per pack**: ruled ([OQ-D5](slots-and-contributions.md#7-decision-ledger)), and its
   build waits on [OQ-D6](slots-and-contributions.md#OQ-D6).
 - **A registration that loads part of a tree, or reaches one posture.** The written entry does
   that, and replaces the registration ([PC-D2](#PC-D2)).

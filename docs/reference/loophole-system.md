@@ -100,7 +100,7 @@ which is what makes per-workspace enablement safe to offer at all.
 > per-workspace file alone, which `yolo loopholes enable` writes on the host
 > ([`storage-and-config.md`](storage-and-config.md#the-per-workspace-file)); the user config's
 > switch and a workspace config's are refused, and its manifest may not default it on
-> ([OQ-BB13](../design/boundary-broker.md#OQ-BB13)). It runs a host login's commands, and the
+> ([OQ-BB13](../design/boundary-broker.md#15-decision-ledger)). It runs a host login's commands, and the
 > maintainer ruled it "manual enabling only for now".
 
 > [!CAUTION]
@@ -790,7 +790,7 @@ Three properties worth knowing:
 
 `yolo loopholes enable|disable` **writes the workspace's per-workspace file**, host-side, and
 never the user config ([`storage-and-config.md`](storage-and-config.md#the-per-workspace-file);
-the ruling is [OQ-BB12](../design/boundary-broker.md#OQ-BB12)). That file is user scope for one
+the ruling is [OQ-BB12](../design/boundary-broker.md#15-decision-ledger)). That file is user scope for one
 workspace and merges last, so the switch it holds decides for that workspace over every config
 file. `--global` keeps the command's old behavior: it prints the user-config key to paste, writes
 nothing, and exits non-zero, because the user config is a hand-commented file that a
@@ -871,7 +871,7 @@ hostname from it and knows no tool; `packs/github`'s `github-broker` is the firs
   (`config/brokerfence.go`).
 - An unknown key in the block is refused by both decoders: it is a fence, and a fence key a build
   does not read is a fence that does not exist.
-- **It is turned on one workspace at a time** ([OQ-BB13](../design/boundary-broker.md#OQ-BB13)):
+- **It is turned on one workspace at a time** ([OQ-BB13](../design/boundary-broker.md#15-decision-ledger)):
   by the per-workspace file `yolo loopholes enable <name>` writes, and by nothing else. Its manifest
   may not set `default_enabled: true` (refused at load), and a `loopholes.<name>.enabled` in the
   user config, or any switch of it in a workspace config, refuses the launch and fails

@@ -1105,7 +1105,7 @@ but asks it nothing: no launch check runs at that notch.
 The decision is [`SSO-D1`](#SSO-D1).
 
 **The service also fetches the region's Bedrock model list** for a launch whose Bedrock provider
-no pack or config gives one ([`model-lists-and-pickers.md` OQ-MM6](../design/model-lists-and-pickers.md#OQ-MM6)).
+no pack or config gives one ([`model-lists-and-pickers.md` OQ-MM6](../design/model-lists-and-pickers.md#16-decision-ledger)).
 It runs `aws bedrock list-foundation-models` and `aws bedrock list-inference-profiles` as the
 configured profile, so with the SSO role's own credentials before any narrowing, and the jail's
 served credential stays invoke-only: the action is answered on the service's private host socket

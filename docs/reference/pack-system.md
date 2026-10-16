@@ -2008,7 +2008,7 @@ PATH**, or a launcher would be reachable from the blockers' position.
 Routes a command NAME in the jail to a forwarder the pack declares:
 `{"kind": "intercept", "bin": "gh", "forward": ["yolo", "gh", "--"]}` writes
 `~/.yolo/bin/block/gh` as `exec yolo gh -- "$@"`. It is how a pack layers permissions over an
-existing CLI ([`boundary-broker.md` OQ-BB8](../design/boundary-broker.md#OQ-BB8)); `packs/github`
+existing CLI ([`boundary-broker.md` OQ-BB8](../design/boundary-broker.md#15-decision-ledger)); `packs/github`
 is the first user. It lives in the BLOCK dir because that is the directory whose job is to
 intercept a name ahead of everything installed, including a program the image bakes at `/bin`,
 for which `launchercollision.go` writes no launcher. `forward[0]` is a bare program name on the

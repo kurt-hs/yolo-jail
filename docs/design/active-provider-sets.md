@@ -53,8 +53,8 @@ finding it rests on.
 **Needs your ruling:** [OQ-AP4](#OQ-AP4) (two set members overlay the same key). [OQ-AP1](#OQ-AP1), [OQ-AP2](#OQ-AP2) and [OQ-AP3](#OQ-AP3) were ruled 2026-09-29 and are built, for pi and, since 2026-09-30, for opencode.
 
 **Reads with:** [`model-lists-and-pickers.md`](model-lists-and-pickers.md) (the parent: its
-[OQ-ML1](model-lists-and-pickers.md#OQ-ML1) ruling split this doc off, and its
-[OQ-ML2](model-lists-and-pickers.md#OQ-ML2) rule picks the start model),
+[OQ-ML1](model-lists-and-pickers.md#16-decision-ledger) ruling split this doc off, and its
+[OQ-ML2](model-lists-and-pickers.md#16-decision-ledger) rule picks the start model),
 [`providers.md`](../reference/providers.md) (the as-built selection, gate and derives this
 extends), [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) (what `-p`
 names, [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1), which this doc survives either way).
@@ -88,7 +88,7 @@ cite them:
   group declared anywhere. It is the value of that CLI's entry in the `profile` config key (it
   was `use_profiles` until [PP-D10](providers-and-profiles-redesign.md#PP-D10)) or its `-p` pair.
 - **Primary** *(coined here)*: the set's first entry. Its provider is the **primary provider**.
-  It decides where a session starts when [OQ-ML2](model-lists-and-pickers.md#OQ-ML2)'s rule has
+  It decides where a session starts when [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger)'s rule has
   to pick ([§4.4](#44-models-the-union-and-the-start-model)), and it is what every derive that
   predates sets sees as `ctx.selected_provider`. It is not a preference the other entries lose
   to. Once a session runs, every entry is equally live.
@@ -266,7 +266,7 @@ error, a narrowing, or a bridge feature.
     written unless an `only` narrowed an entry's list. Then `enabledModels` holds every entry in
     set order, a narrowed entry's run with its default first and `<provider>/*` for any other,
     because oh-omp's selector shows only the scope ([AP-D18](#AP-D18)).
-- **The start model follows [OQ-ML2](model-lists-and-pickers.md#OQ-ML2), read over the union.**
+- **The start model follows [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger), read over the union.**
   yolo picks only when the model the agent would start on is not one of the set's models (a
   wrong-family id, a model of a provider that left the set, or none). A valid choice on any
   entry, the user's or the agent's own, is never steered unless config opts in. opencode is the
@@ -315,7 +315,7 @@ error, a narrowing, or a bridge feature.
 
 ### 4.7 Defaults, layered
 
-Per [OQ-ML1](model-lists-and-pickers.md#OQ-ML1)'s ruling, each provider declares its own
+Per [OQ-ML1](model-lists-and-pickers.md#16-decision-ledger)'s ruling, each provider declares its own
 default in its own pack, and a company pack, a user pack or user config overrides it. A set adds
 nothing to that: each entry's provider carries its own layered default, and the primary's is the
 one [§4.4](#44-models-the-union-and-the-start-model) reads when yolo must pick. The other
@@ -403,7 +403,7 @@ and [declaration parity](declaration-parity.md#1-the-principle-and-what-it-does-
 - **How yolo learns the model an agent would start on.** That is ML2's build, in
   [`model-lists-and-pickers.md`](model-lists-and-pickers.md).
 - **A `models` kind, or a company pack narrowing a list.** That is
-  [OQ-BR12](model-lists-and-pickers.md#OQ-BR12). A narrowed list narrows its provider's share of
+  [OQ-BR12](model-lists-and-pickers.md#16-decision-ledger). A narrowed list narrows its provider's share of
   the union and nothing else.
 - **A pack activating a provider.** The `profile` key is user-scope-only
   ([OQ-CS5](../reference/providers.md#oq-cs5)).
@@ -556,8 +556,8 @@ made in this doc, and every one yields to a ruling on the questions above.
 | [OQ-AP1](#OQ-AP1) | **Maintainer ruling:** A; a comma continues an agent's list, first entry is where a session starts | 2026-09-29 | [§10](#10-open-questions) | ✅ 2026-09-29 (`config.ParseProfileFlag`, read through `parseProfileValue`; `validateProfile` on the `profile` key, [AP-D13](#AP-D13)); review fix: an empty pair beside another (`-p pi=,claude=zai`) selects nothing for its CLI again |
 | [OQ-AP2](#OQ-AP2) | **Maintainer ruling:** A; a list named at a single-provider agent is refused, naming the fix | 2026-09-29 | [§10](#10-open-questions) | ✅ 2026-09-29 (`validateProfile`, for a list named in the `profile` key; `checkProfileTargets`, `packload.ProfileSetProblems` at both notches); review fix: the refusal names the missing `provider_sets`, since opencode and oh-omp can hold several providers |
 | [OQ-AP3](#OQ-AP3) | **Maintainer ruling:** C; a bare list goes whole to set-capable agents and its first entry to single-provider agents, with one launch line naming what they ignore | 2026-09-29 | [§10](#10-open-questions) | ✅ 2026-09-29 (`config.FoldProfiles`, for a bare `-p` and the key's list form and `"*"` alike; `narrowHostBareList` for a typed bare list at `yolo host`; `packload.BareListNote`); review fixes: an ignored entry must still be declared (`checkProfileDeclarations`, `hostBareListUndeclared`, `composeHostVarsWith`), and the line names the missing `provider_sets` rather than saying the agent runs one provider |
-| <a id="DIR-AP1"></a>DIR-AP1 | **Maintainer direction:** an agent may run on several explicitly activated providers and switch freely between them in pi, spelled as a list; providers scope the models, and every session starts on one of them. *"we will want to be able to activate multiple providers explicitly. Like if you want, you should be able to use two providers within Pi and switch freely between them. We should allow like, you know, a comma list or something like that … providers will scope to models. And whenever you start up a session, we always want to make sure that we have picked one of those models. You just want a valid configuration, basically."* Split off from [OQ-ML1](model-lists-and-pickers.md#OQ-ML1). A direction, so no question id | 2026-09-29 | [§1](#1-the-verdict-and-the-words-it-uses) | — |
-| <a id="AP-D1"></a>AP-D1 | *Implementation decision.* The first entry is the primary: its provider is `ctx.selected_provider` for every derive, and its default is the one [OQ-ML2](model-lists-and-pickers.md#OQ-ML2)'s pick reads | 2026-09-29 | [§4.4](#44-models-the-union-and-the-start-model) | ✅ 2026-09-29 (`packload.ProfileTable` lowers a list to its primary) |
+| <a id="DIR-AP1"></a>DIR-AP1 | **Maintainer direction:** an agent may run on several explicitly activated providers and switch freely between them in pi, spelled as a list; providers scope the models, and every session starts on one of them. *"we will want to be able to activate multiple providers explicitly. Like if you want, you should be able to use two providers within Pi and switch freely between them. We should allow like, you know, a comma list or something like that … providers will scope to models. And whenever you start up a session, we always want to make sure that we have picked one of those models. You just want a valid configuration, basically."* Split off from [OQ-ML1](model-lists-and-pickers.md#16-decision-ledger). A direction, so no question id | 2026-09-29 | [§1](#1-the-verdict-and-the-words-it-uses) | — |
+| <a id="AP-D1"></a>AP-D1 | *Implementation decision.* The first entry is the primary: its provider is `ctx.selected_provider` for every derive, and its default is the one [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger)'s pick reads | 2026-09-29 | [§4.4](#44-models-the-union-and-the-start-model) | ✅ 2026-09-29 (`packload.ProfileTable` lowers a list to its primary) |
 | <a id="AP-D2"></a>AP-D2 | *Implementation decision.* An agent is set-capable only when its pack declares it; the declaration fails closed where a derive older than sets would fail open | 2026-09-29 | [§4.3](#43-which-agents-take-a-set) | ✅ 2026-09-29 (`provider_sets` on `program`; `packs/pi` declares it, and `packs/opencode` since 2026-09-30, [AP-D15](#AP-D15)) |
 | <a id="AP-D3"></a>AP-D3 | *Implementation decision.* A set is refused when empty, when it names a profile twice, when two entries resolve to one provider, or when any entry is undeclared or lacks its key; yolo never runs the valid remainder | 2026-09-29 | [§4.2](#42-the-sets-rules), [§4.5](#45-credentials) | ✅ 2026-09-29 (`packload.ProfileSetProblems`; each entry declared, a bare list's ignored entries included; `packload.ProviderCredentialGapsIn`) |
 | <a id="AP-D4"></a>AP-D4 | *Implementation decision.* A typed `-p` pair replaces a CLI's set in the config key whole for the launch, never appending | 2026-09-29 | [§4.2](#42-the-sets-rules) | ✅ 2026-09-29 (`config.FoldProfiles`, at `effectiveUseProfiles` and `effectiveHostProfiles`) |
@@ -581,7 +581,7 @@ made in this doc, and every one yields to a ruling on the questions above.
 
 | Doc | Why it reads with this one |
 | :--- | :--- |
-| [`model-lists-and-pickers.md`](model-lists-and-pickers.md) | [OQ-ML1](model-lists-and-pickers.md#OQ-ML1) split this doc off and layers the per-provider default; [OQ-ML2](model-lists-and-pickers.md#OQ-ML2) is the start-model rule [§4.4](#44-models-the-union-and-the-start-model) reads over the union |
+| [`model-lists-and-pickers.md`](model-lists-and-pickers.md) | [OQ-ML1](model-lists-and-pickers.md#16-decision-ledger) split this doc off and layers the per-provider default; [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger) is the start-model rule [§4.4](#44-models-the-union-and-the-start-model) reads over the union |
 | [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate) | the gate [§4.5](#45-credentials) widens from one provider to the set, and [OQ-CN4](../reference/providers.md#oq-cn4)'s menu half |
 | [`extension-model-defaults.md`](../research/extension-model-defaults.md#OQ-XM3) | [OQ-XM3](../research/extension-model-defaults.md#OQ-XM3), the child-agent rule [§4.6](#46-child-agents) reads for a set, and [XM-D1](../research/extension-model-defaults.md#XM-D1)'s helper |
 | [`providers-and-profiles-redesign.md`](providers-and-profiles-redesign.md) | [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1), what `-p` names, and [OQ-PP3](providers-and-profiles-redesign.md#OQ-PP3), which [OQ-AP3](#OQ-AP3) meets |
