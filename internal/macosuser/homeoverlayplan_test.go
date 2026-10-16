@@ -96,8 +96,13 @@ func TestHomeOverlayStagingReplacesRatherThanMerges(t *testing.T) {
 	if !strings.Contains(all, mvBin+" -f "+dst+".new "+dst) {
 		t.Errorf("the staged tree is not moved into place atomically:\n%s", all)
 	}
-	// World-readable, or the sandbox uid cannot read what root just staged.
-	if !strings.Contains(all, chmodBin+" -R a+rX "+dst+".new") {
-		t.Errorf("the staged overlay is never made readable to the sandbox:\n%s", all)
+	// Sealed: world-readable, or the sandbox uid cannot read what the host user just staged,
+	// and writable by no account, or the sandbox could rewrite the instructions it follows.
+	if !strings.Contains(all, chmodBin+" -R "+sealTreeMode+" "+dst+".new") {
+		t.Errorf("the staged overlay is never sealed readable to the sandbox:\n%s", all)
+	}
+	// And the previous launch's sealed tree is unsealed first, or its owner cannot remove it.
+	if !strings.Contains(all, unsealScriptName+" "+dst+"\n"+rmBin+" -rf "+dst+"\n") {
+		t.Errorf("the sealed destination is not unsealed right before its removal:\n%s", all)
 	}
 }

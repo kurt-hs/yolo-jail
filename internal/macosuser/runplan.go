@@ -24,7 +24,7 @@ type RunPlan struct {
 	// Cname is the WORKSPACE's container name: the launch lock and the staged trees are keyed
 	// by it, and shared by every session of the workspace. SessionID is this session's own id
 	// (SessionPlaceholder in a plan no launch minted one for), and SessionKey(Cname, SessionID)
-	// names every root-owned file only this session writes: its profile, its env and daemons env
+	// names every staged file only this session writes: its profile, its env and daemons env
 	// files and its CA files (sessionfiles.go).
 	Cname       string
 	SessionID   string
@@ -32,26 +32,26 @@ type RunPlan struct {
 	Seatbelt    string
 	// ProfileRemoveCommands remove the session's Seatbelt profile when the session ends.
 	ProfileRemoveCommands [][]string
-	// StagedDir is the root-owned state dir; StagedYolo is the staged yolo
+	// StagedDir is the host-owned staging root; StagedYolo is the staged yolo
 	// binary the sandbox self-execs. StageCommands stage that binary
 	// (fresh-inode copy).
 	StagedDir     string
 	StagedYolo    string
 	StageCommands [][]string
-	// PackRoot is the root-owned staged pack tree this session's bootstrap renders
+	// PackRoot is the sealed staged pack tree this session's bootstrap renders
 	// from (YOLO_PACK_ROOT in BootstrapArgv), or "" when the launch staged no packs.
 	PackRoot string
-	// CtxRoot is the root-owned staged CONTEXT tree this session's bootstrap reads host
+	// CtxRoot is the sealed staged CONTEXT tree this session's bootstrap reads host
 	// bytes out of (YOLO_CTX_ROOT in BootstrapArgv), or "" when the host CLI composed
 	// none. Absence is the honest way to say "this launch carried no host bytes"; it is
 	// also what makes the host-layer report say `unsupported`, so the two can never
 	// disagree about whether this backend delivered.
 	CtxRoot string
 	// ContextDir is what $YOLO_CONTEXT_DIR names for the agent and the bootstrap: the same
-	// root-owned tree as CtxRoot, but set on EVERY launch and staged every launch, empty when
+	// sealed tree as CtxRoot, but set on EVERY launch and staged every launch, empty when
 	// nothing was composed (docs/design/context-mounts.md CX-D4).
 	ContextDir string
-	// ContextLinks are the context mounts this launch delivers, each a root-owned link in
+	// ContextLinks are the context mounts this launch delivers, each a host-owned link in
 	// ContextDir with the profile deciding access to its source (ctxlinks.go); ContextPreflight
 	// is the DAC preflight the launch asks before the sandbox starts, and ContextOccupied the
 	// context-dir paths yolo's own staging uses, which no link may touch. All empty with no
@@ -170,7 +170,7 @@ type RunPlan struct {
 	// delivered no content. Carried so a reader can check the profile against the
 	// delivery rather than re-deriving one from the other.
 	HomeReadonly HomeReadonly
-	// CapturesDir is the root-owned staged copy of the install-capture store this launch's
+	// CapturesDir is the sealed staged copy of the install-capture store this launch's
 	// launchers materialize from (StagedCapturesRoot, what entrypoint.CapturesDirEnv names to the
 	// bootstrap), "" when the launch stages no capture; Captures are the entries it stages there
 	// (HostContext.Captures, less any a root script may not be handed), for the dry run and for
@@ -268,7 +268,7 @@ type HostContext struct {
 	GlobalGitignore string
 	// Links are the CONTEXT MOUNTS this launch delivers — config `mounts` elements and pack
 	// `mount` grants — each sited by the caller with SiteContextLinks against its resolved
-	// source (docs/design/context-mounts.md §3). Not bytes: each becomes a root-owned link in
+	// source (docs/design/context-mounts.md §3). Not bytes: each becomes a host-owned link in
 	// the context dir, so nothing is copied (DP-D15's size argument stands) and the bytes the
 	// agent reads are live. The caller's for the same reason as the rest of this struct:
 	// resolving a source is a read of the invoking user's filesystem.
@@ -335,8 +335,9 @@ func darwinSystemLabel(d *Darwin) string {
 }
 
 // DarwinBootstrapArgv returns the self-exec bootstrap argv (J2 §3): run the
-// staged yolo binary AS the sandbox user via `sudo --user=<sb> /usr/bin/env -i
-// K=V… <stagedYolo> internal darwin-bootstrap`.
+// staged yolo binary AS the sandbox user via `/usr/bin/sudo -n --user=<sb> /usr/bin/env -i
+// K=V… <stagedYolo> internal darwin-bootstrap`, the run-as rule's one crossing
+// (RunAsSandboxArgv). The last parameter is unused: the rule names one account, SandboxUser.
 //
 // The env is baked onto the argv the same way LaunchArgv bakes the launch env
 // (env -i K=V…; secrets normally ride ${VAR} placeholders).
@@ -345,10 +346,7 @@ func darwinSystemLabel(d *Darwin) string {
 // YOLO_DARWIN_* extras (workspace, macos-log, login-path) ride verbatim. No
 // --set-home: the subcommand self-sets HOME/JAIL_HOME, and env -i controls the
 // environment precisely.
-func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, user string) []string {
-	if user == "" {
-		user = SandboxUser
-	}
+func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap, _ string) []string {
 	if home == "" {
 		home = SandboxHome()
 	}
@@ -366,12 +364,7 @@ func DarwinBootstrapArgv(stagedYolo, home string, bootstrapEnv *jsonx.OrderedMap
 			envPairs = append(envPairs, k+"="+asStr(v))
 		}
 	}
-	out := []string{
-		"sudo",
-		"--user=" + user,
-		"/usr/bin/env",
-		"-i",
-	}
+	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, envPairs...)
 	out = append(out, stagedYolo, "internal", "darwin-bootstrap")
 	return out
@@ -493,7 +486,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	}
 
 	cname := cnameFor(workspace)
-	// THE SESSION'S OWN NAMES (sessionfiles.go): every root-owned file only this session writes
+	// THE SESSION'S OWN NAMES (sessionfiles.go): every staged file only this session writes
 	// is named by its key, never by the workspace's cname, which every terminal in the workspace
 	// shares.
 	sessionID := session.ID
@@ -552,7 +545,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	if len(captures) > 0 {
 		capturesRoot = StagedCapturesRoot("")
 	}
-	// THE CONTEXT DIR (docs/design/context-mounts.md CX-D4): the same root-owned tree, named
+	// THE CONTEXT DIR (docs/design/context-mounts.md CX-D4): the same sealed tree, named
 	// to the AGENT on every launch whether or not anything was composed into it, so pack
 	// text and agents spell a context path `$YOLO_CONTEXT_DIR/<rel>` here as on a container
 	// (where it is /ctx). The tree is staged every launch for that reason — empty when the
@@ -702,7 +695,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	stageCommands := append([][]string{}, StageBinaryCommands(selfExe, "")...)
 	stageCommands = append(stageCommands, StagePackCommands(hostPackRoot, cname, "")...)
 	stageCommands = append(stageCommands, StageHomeOverlayCommands(hostHomeOverlay.Tree, cname, "")...)
-	// THE CONTEXT DIR, with the composed tree in it when there is one and a root-owned link per
+	// THE CONTEXT DIR, with the composed tree in it when there is one and a host-owned link per
 	// delivered context mount (ctxlinks.go). The links ride the same `.new`-then-swap as the
 	// tree, so a mount dropped from the config stops being named on the next launch.
 	ctxLinks := append([]ContextLink(nil), hostCtx.Links...)
@@ -1046,7 +1039,7 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	// it arrives as hostCtx.HostFiles, already RESOLVED by the host CLI. That is DP-L1:
 	// until 2026-09-13 this backend DROPPED the source-bearing half outright, because the
 	// bytes cross on a /ctx mount and there were no mounts; they now cross by COPY into
-	// the root-owned tree ctxRoot names, so the entries cross with them.
+	// the sealed tree ctxRoot names, so the entries cross with them.
 	//
 	// ⚠ RESOLVED, not "staged": an entry is on the wire whether or not its host file
 	// EXISTS. An absent dotfile is a normal state, the destination then renders from its
@@ -1107,7 +1100,7 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	bootstrapEnv.Set(packload.HostLayerEnvVar, hostLayerWire(ctxRoot, hostCtx))
 
 	// YOLO_PACK_ROOT — the same generator-contract variable the container entrypoint
-	// reads off its /ctx/packs mount, pointed at the root-owned staged copy. Without it
+	// reads off its /ctx/packs mount, pointed at the sealed staged copy. Without it
 	// RunDarwinBootstrap's LoadJailPacks returns nothing and every pack loop below it
 	// (ConfigurePackSurfaces, RunPackHooks) iterates an empty list — silently, since
 	// "no packs mounted" is a legitimate state that renders nothing rather than failing
@@ -1201,12 +1194,12 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 func PlanInvariants(plan RunPlan) []string {
 	var problems []string
 
-	// B2 (Go): the staged yolo binary must live under the root-owned state dir,
+	// B2 (Go): the staged yolo binary must live under the host-owned staging root,
 	// and the bootstrap argv must self-exec THAT staged path — never the host
 	// checkout (unreadable to the sandbox uid) or a bare "yolo" off PATH.
 	if !strings.HasPrefix(plan.StagedYolo, plan.StagedDir+"/") {
 		problems = append(problems,
-			"staged yolo "+plan.StagedYolo+" is not under the root-owned state dir "+
+			"staged yolo "+plan.StagedYolo+" is not under the host-owned staging root "+
 				plan.StagedDir+"; the sandbox could rewrite its own launch binary")
 	}
 	if !containsArg(plan.BootstrapArgv, plan.StagedYolo) {
@@ -1239,6 +1232,24 @@ func PlanInvariants(plan RunPlan) []string {
 				"neutral ground. Move it under "+SharedRootDefault()+".")
 	}
 
+	// NOR INSIDE THE STAGING ROOT OR THE CAPTURE ROOT. Both now sit under /Users/Shared beside
+	// the shared workspace root, and the session profile lets the sandbox WRITE its workspace: a
+	// workspace inside the staging root would let it rewrite what the next launch stages and
+	// trusts, and one inside the capture root would let it edit a capture's scratch tree.
+	for _, root := range []string{plan.StagedDir, CaptureRootDefault()} {
+		if pathWithin(plan.Workspace, root, macOSHomes.foldCase) {
+			problems = append(problems,
+				"workspace "+plan.Workspace+" is inside "+root+", which yolo stages into and the "+
+					"sandbox must not write. Move it under "+SharedRootDefault()+".")
+		}
+	}
+
+	// EVERY CROSSING INTO THE SANDBOX ACCOUNT IS THE ONE RUN-AS RULE (OQ-MP10 in
+	// docs/design/macos-user-privilege-lifecycle.md): `/usr/bin/sudo -n [--set-home]
+	// --user=_yolojail /usr/bin/env …`. Any other shape prompts for a password, runs as root, or
+	// fails under the rule setup installs (RunAsArgvProblems says which).
+	problems = append(problems, crossingArgvProblems(plan)...)
+
 	// Git identity must reach the BOOTSTRAP env (baked onto the self-exec argv).
 	bootStr := strings.Join(plan.BootstrapArgv, " ")
 	for _, k := range plan.GitIdentity.Keys() {
@@ -1255,7 +1266,7 @@ func PlanInvariants(plan RunPlan) []string {
 	if plan.PackRoot != "" {
 		if !strings.HasPrefix(plan.PackRoot, plan.StagedDir+"/") {
 			problems = append(problems,
-				"staged pack root "+plan.PackRoot+" is not under the root-owned state dir "+
+				"staged pack root "+plan.PackRoot+" is not under the host-owned staging root "+
 					plan.StagedDir+"; the sandbox could rewrite a pack manifest and grant "+
 					"itself host access on the next launch")
 		}
@@ -1277,7 +1288,7 @@ func PlanInvariants(plan RunPlan) []string {
 	//
 	//   - staged somewhere the sandbox cannot REWRITE, or an agent edits the very bytes
 	//     its own config is composed from on the next launch — the same argument that
-	//     makes the pack root root-owned, one step closer to the credential;
+	//     stages the pack root sealed, one step closer to the credential;
 	//   - actually COPIED, or the bootstrap opens an empty directory;
 	//   - NAMED to the bootstrap, or the entrypoint's readers stay pointed at the literal
 	//     /ctx, which does not exist on macOS at all, and every surface silently composes
@@ -1285,7 +1296,7 @@ func PlanInvariants(plan RunPlan) []string {
 	if plan.CtxRoot != "" {
 		if !strings.HasPrefix(plan.CtxRoot, plan.StagedDir+"/") {
 			problems = append(problems,
-				"staged context root "+plan.CtxRoot+" is not under the root-owned state dir "+
+				"staged context root "+plan.CtxRoot+" is not under the host-owned staging root "+
 					plan.StagedDir+"; the sandbox could rewrite the host bytes its own config "+
 					"surfaces are composed from")
 		}
@@ -1305,7 +1316,7 @@ func PlanInvariants(plan RunPlan) []string {
 
 	// THE GLOBAL GITIGNORE IS READ FROM THE STAGED TREE OR NOT AT ALL. The bootstrap runs
 	// outside Seatbelt as the sandbox account and sets core.excludesFile to whatever this names,
-	// so a path outside the root-owned tree is a file the agent could write and every git in the
+	// so a path outside the sealed staged tree is a file the agent could write and every git in the
 	// sandbox would then obey.
 	if v, ok := argvEnvValue(plan.BootstrapArgv, GlobalGitignoreEnv); ok &&
 		(plan.CtxRoot == "" || !strings.HasPrefix(v, plan.CtxRoot+"/")) {
@@ -1316,13 +1327,13 @@ func PlanInvariants(plan RunPlan) []string {
 	}
 
 	// THE CONTEXT DIR IS NAMED AND IT EXISTS (CX-D4). Every launch tells the agent where its
-	// context mounts live, so the name must be the root-owned staged tree — never a path the
+	// context mounts live, so the name must be the sealed staged tree — never a path the
 	// agent can write, where a context tree could be re-pointed — something must stage it,
 	// and both the bootstrap and the agent's env file must carry it.
 	if plan.ContextDir == "" || !strings.HasPrefix(plan.ContextDir, plan.StagedDir+"/") {
 		problems = append(problems,
-			"the context dir "+quoteOrNone(plan.ContextDir)+" is not under the root-owned state "+
-				"dir "+plan.StagedDir+"; $"+paths.ContextDirEnv+" would name a tree the agent "+
+			"the context dir "+quoteOrNone(plan.ContextDir)+" is not under the host-owned staging "+
+				"root "+plan.StagedDir+"; $"+paths.ContextDirEnv+" would name a tree the agent "+
 				"can rewrite, or nothing")
 	} else {
 		if !stagesTreeAt(plan.StageCommands, plan.ContextDir) {
@@ -1652,12 +1663,12 @@ func PlanInvariants(plan RunPlan) []string {
 					"composed — no provider credentials, no env_sources, no git identity")
 		}
 	}
-	// The file itself must sit under the root-owned state dir, for the staged binary's
+	// The file itself must sit under the host-owned staging root, for the staged binary's
 	// reason: a file the sandbox could REWRITE is a sandbox that chooses its own
 	// environment, and this one is sourced by the shell that execs the agent.
 	if plan.EnvFile != "" && !strings.HasPrefix(plan.EnvFile, plan.StagedDir+"/") {
 		problems = append(problems,
-			"session env file "+plan.EnvFile+" is not under the root-owned state dir "+
+			"session env file "+plan.EnvFile+" is not under the host-owned staging root "+
 				plan.StagedDir+"; the sandbox could rewrite the environment it is launched with")
 	}
 	// AND THE BOOTSTRAP IS TOLD WHERE THE FILE IS. It renders every agent's MCP table, and the
@@ -1682,8 +1693,7 @@ func PlanInvariants(plan RunPlan) []string {
 
 // captureStoreInvariants is PlanInvariants' rule for the staged install-capture store (H4): the
 // bootstrap is told a store exactly when the plan stages an entry, the store it is told is under
-// the root-owned state dir and under no spelling of /Users, and every entry the plan carries has
-// its stage command. Each is a way a launch could look healthy and hand every launcher a store
+// the host-owned staging root, and every entry the plan carries has its stage command. Each is a way a launch could look healthy and hand every launcher a store
 // the sandbox can rewrite — the bytes every workspace on the machine then runs — or a store
 // nothing filled, which downloads in silence.
 func captureStoreInvariants(plan RunPlan) []string {
@@ -1701,15 +1711,14 @@ func captureStoreInvariants(plan RunPlan) []string {
 			"env but the plan stages no install capture; every launcher would ask a store "+
 			"nothing filled")
 	}
+	// UNDER THE STAGING ROOT, AND ONLY THAT. The staging root sits under /Users/Shared, whose
+	// reads the session profile denies but for the staging root's own read allow (seatbelt.go),
+	// so the store must be the sealed copy there and nowhere else under /Users: a capture's own
+	// scratch files are the sandbox account's.
 	if !strings.HasPrefix(v, plan.StagedDir+"/") {
-		problems = append(problems, entrypoint.CapturesDirEnv+"="+v+" is not under the root-owned "+
-			"state dir "+plan.StagedDir+"; the sandbox could rewrite captured bytes every "+
-			"workspace on this machine runs")
-	}
-	if underUsersRoot(v) {
-		problems = append(problems, entrypoint.CapturesDirEnv+"="+v+" is under /Users, which the "+
-			"session profile denies reads of and where a capture's own files are the sandbox "+
-			"account's; the store must be the root-owned copy under "+plan.StagedDir)
+		problems = append(problems, entrypoint.CapturesDirEnv+"="+v+" is not under the host-owned "+
+			"staging root "+plan.StagedDir+"; the sandbox could rewrite captured bytes every "+
+			"workspace on this machine runs, or could not read them")
 	}
 	for _, c := range plan.Captures {
 		if !containsCommand(plan.CaptureStageCommands, stageCaptureArgv(v, c)) {
@@ -1729,15 +1738,44 @@ func captureStoreInvariants(plan RunPlan) []string {
 	return problems
 }
 
-// underUsersRoot reports whether p is any spelling of the users root (macOSHomes) or lies beneath
-// it, /Users/Shared included.
-func underUsersRoot(p string) bool {
-	for _, q := range append([]string{p}, pathParents(p)...) {
-		if macOSHomes.isUsersRoot(q) {
-			return true
-		}
+// crossingArgvProblems checks every argv the plan runs as the sandbox account against the run-as
+// rule's shape: the bootstrap, the provisioning stage, the agent, the supervisor, the service
+// witness, and each context and cache-relocation probe. An empty argv is a stage this plan does
+// not run.
+func crossingArgvProblems(plan RunPlan) []string {
+	type crossing struct {
+		label string
+		argv  []string
 	}
-	return false
+	crossings := []crossing{
+		{"bootstrap", plan.BootstrapArgv},
+		{"provisioning stage", plan.ProvisionArgv},
+		{"launch", plan.LaunchArgv},
+		{"jail-daemon supervisor", plan.JailDaemonArgv},
+		{"host-service witness", plan.ProbeArgv},
+	}
+	for _, p := range plan.ContextPreflight {
+		crossings = append(crossings, crossing{"context preflight", p.Argv})
+	}
+	for _, p := range plan.CacheRelocationPreflight {
+		crossings = append(crossings, crossing{"cache relocation preflight", p.Argv})
+	}
+	for _, p := range plan.CacheRelocationProbes {
+		crossings = append(crossings, crossing{"cache relocation probe", p.Argv})
+	}
+	var problems []string
+	for _, c := range crossings {
+		if len(c.argv) == 0 {
+			continue
+		}
+		if c.argv[0] != sudoBin {
+			problems = append(problems, "the "+c.label+" argv does not cross through "+sudoBin+
+				" and the run-as rule: "+strings.Join(c.argv, " "))
+			continue
+		}
+		problems = append(problems, RunAsArgvProblems("the "+c.label+" argv", c.argv)...)
+	}
+	return problems
 }
 
 // containsCommand reports whether cmds holds want, argv for argv.
@@ -1754,7 +1792,7 @@ func containsCommand(cmds [][]string, want []string) bool {
 // the plan's "a plan carrying a payload must carry a daemon argv" in full: the supervisor
 // exists exactly when the payload names a daemon, it runs UNDER THE SESSION'S SEATBELT
 // PROFILE (OQ-DP9), it reads its own env file and carries no composed value on its argv, that
-// file sits in the root-owned state dir, and the binary it names is one this plan stages
+// file sits in the host-owned staging root, and the binary it names is one this plan stages
 // there. Each half is a way a plan could look healthy and run a daemon unconfined, run none,
 // or run one out of a directory the sandbox can rewrite.
 func jailDaemonInvariants(plan RunPlan) []string {
@@ -1827,14 +1865,14 @@ func jailDaemonInvariants(plan RunPlan) []string {
 	}
 	if plan.DaemonEnvFile != "" && !strings.HasPrefix(plan.DaemonEnvFile, plan.StagedDir+"/") {
 		problems = append(problems, "jail-daemon env file "+plan.DaemonEnvFile+" is not "+
-			"under the root-owned state dir "+plan.StagedDir)
+			"under the host-owned staging root "+plan.StagedDir)
 	}
 	if !SandboxEnvFileKeysInclude(plan.DaemonEnvFileContent, jailDaemonsEnv) {
 		problems = append(problems, "the jail-daemon env file does not set "+jailDaemonsEnv+
 			"; the supervisor would exit with nothing to supervise")
 	}
 	if !strings.HasPrefix(GuestBinDir(plan.StagedDir), plan.StagedDir+"/") {
-		problems = append(problems, "the guest bin dir is not under the root-owned state dir")
+		problems = append(problems, "the guest bin dir is not under the host-owned staging root")
 	}
 	staged := false
 	for _, c := range plan.StageCommands {
@@ -1951,7 +1989,7 @@ func stagesPackTreeAt(cmds [][]string, dest string) bool {
 			copyAt = i
 		}
 		if len(cmd) == 4 && cmd[0] == chmodBin && cmd[1] == "-R" &&
-			cmd[2] == "a+rX" && cmd[3] == dest {
+			cmd[2] == sealTreeMode && cmd[3] == dest {
 			chmodAt = i
 		}
 	}

@@ -63,7 +63,7 @@ func TestTheGuestPlanStartsTheDeclaredDaemonVerbatimInsideTheSeatbeltProfile(t *
 		t.Fatalf("the supervisor is not started under the session's Seatbelt profile "+
 			"(confined at %d, supervise at %d):\n%s", ci, si, argv)
 	}
-	if !strings.HasPrefix(argv, "sudo -n --set-home --user="+SandboxUser+" /usr/bin/env -i ") {
+	if !strings.HasPrefix(argv, "/usr/bin/sudo -n --set-home --user="+SandboxUser+" /usr/bin/env -i ") {
 		t.Errorf("the supervisor does not run as the sandbox account through a non-interactive sudo:\n%s", argv)
 	}
 	// The PATH the supervisor (and so every daemon it execs) resolves names on.
@@ -367,7 +367,7 @@ func TestTheOrchestratorStartsTheSupervisorBeforeTheAgentAndStopsItAfter(t *test
 		}
 		return -1
 	}
-	boot, start, proxy, stop := idx("run:sudo --user="+SandboxUser+" /usr/bin/env -i"), idx("start:"),
+	boot, start, proxy, stop := idx("run:/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env -i"), idx("start:"),
 		idx("proxy:"), idx("stop")
 	if boot < 0 || start < 0 || proxy < 0 || stop < 0 || !(boot < start && start < proxy && proxy < stop) {
 		t.Fatalf("want bootstrap < supervisor start < agent < supervisor stop; got %d %d %d %d:\n%s",

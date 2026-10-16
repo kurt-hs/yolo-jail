@@ -63,7 +63,7 @@ func TestRunPlanStagesAndNamesTheContextRoot(t *testing.T) {
 		switch {
 		case len(c) >= 4 && c[0] == cpBin && c[2] == hostCtxTree:
 			sawCopy = true
-		case len(c) >= 3 && c[0] == chmodBin && c[2] == "a+rX" &&
+		case len(c) >= 3 && c[0] == chmodBin && c[2] == sealTreeMode &&
 			strings.HasPrefix(c[len(c)-1], plan.CtxRoot):
 			sawChmod = true
 		case len(c) >= 3 && c[0] == mvBin && c[len(c)-1] == plan.CtxRoot:
@@ -74,10 +74,11 @@ func TestRunPlanStagesAndNamesTheContextRoot(t *testing.T) {
 		t.Errorf("the context tree is never staged into %s (copy=%v move=%v): %v",
 			plan.CtxRoot, sawCopy, sawMove, plan.StageCommands)
 	}
-	// a+rX is load-bearing: the sandbox uid is not the invoking user, so a tree left at
-	// the invoking user's own modes is a tree the agent's surfaces cannot read.
+	// The seal's a+rX is load-bearing: the sandbox uid is not the invoking user, so a tree left
+	// at the invoking user's own modes is a tree the agent's surfaces cannot read; its a-w keeps
+	// the sandbox from rewriting it.
 	if !sawChmod {
-		t.Errorf("the staged context tree is never made readable to the sandbox uid: %v",
+		t.Errorf("the staged context tree is never sealed readable to the sandbox uid: %v",
 			plan.StageCommands)
 	}
 	if !containsArg(plan.BootstrapArgv, "YOLO_CTX_ROOT="+plan.CtxRoot) {
@@ -335,7 +336,7 @@ func TestPlanInvariantCatchesAContextRootOutsideTheStateDir(t *testing.T) {
 	plan.CtxRoot = "/Users/Shared/yolo/proj/.yolo/home/ctx"
 
 	probs := strings.Join(PlanInvariants(plan), " ")
-	if !strings.Contains(probs, "root-owned state dir") {
+	if !strings.Contains(probs, "host-owned staging root") {
 		t.Errorf("a context root inside the AGENT-WRITABLE workspace tier passed the "+
 			"siting check; the agent could rewrite the bytes its own surfaces compose "+
 			"from: %v", probs)
@@ -455,7 +456,7 @@ func TestPlanRenderNamesTheContextTreeEitherWay(t *testing.T) {
 			"indistinguishable from a backend that cannot carry any:\n%s", bare.String())
 	}
 	// A path that BEGINS at /ctx, not one containing it: the staged tree itself is
-	// /var/yolo-jail/ctx/<cname>, which every plan now names as $YOLO_CONTEXT_DIR (CX-D4).
+	// <staging root>/ctx/<cname>, which every plan now names as $YOLO_CONTEXT_DIR (CX-D4).
 	if regexp.MustCompile(`(^|[\s=:'"])` + regexp.QuoteMeta(packload.CtxRoot+"/")).MatchString(bare.String()) {
 		t.Errorf("the plan names a literal /ctx path, which cannot exist on macOS:\n%s",
 			bare.String())
@@ -464,8 +465,8 @@ func TestPlanRenderNamesTheContextTreeEitherWay(t *testing.T) {
 
 // THE STAGED TREE'S ROOT IS OPENED TO THE SANDBOX ACCOUNT ALONE, through the plan: a composed
 // tree holds the user's own files (a directory host_files entry is routinely ~/.aws), so the
-// contents' a+rX is reachable only past a 0700 root carrying one `user:` ACE for the sandbox,
-// both set after the recursive chmod (which would otherwise reopen the root) and before the swap
+// contents' a+rX is reachable only past a 0500 root carrying one `user:` ACE for the sandbox,
+// both set after the recursive seal (which would otherwise reopen the root) and before the swap
 // (which would otherwise publish the tree open for a moment).
 func TestTheStagedContextTreeIsOpenedToTheSandboxAlone(t *testing.T) {
 	plan := planWithCtx(t, deliveredCtx())
@@ -473,9 +474,9 @@ func TestTheStagedContextTreeIsOpenedToTheSandboxAlone(t *testing.T) {
 	recursive, closed, ace, swap := -1, -1, -1, -1
 	for i, c := range plan.StageCommands {
 		switch {
-		case len(c) == 4 && c[0] == chmodBin && c[1] == "-R" && c[2] == "a+rX" && c[3] == tmp:
+		case len(c) == 4 && c[0] == chmodBin && c[1] == "-R" && c[2] == sealTreeMode && c[3] == tmp:
 			recursive = i
-		case len(c) == 3 && c[0] == chmodBin && c[1] == "0700" && c[2] == tmp:
+		case len(c) == 3 && c[0] == chmodBin && c[1] == "0500" && c[2] == tmp:
 			closed = i
 		case len(c) == 4 && c[0] == chmodBin && c[1] == "+a" &&
 			c[2] == "user:"+SandboxUser+" allow list,search" && c[3] == tmp:
@@ -486,11 +487,11 @@ func TestTheStagedContextTreeIsOpenedToTheSandboxAlone(t *testing.T) {
 	}
 	if recursive < 0 || closed < 0 || ace < 0 || swap < 0 {
 		t.Fatalf("the staged context tree is not closed to other accounts and opened to %s "+
-			"(recursive=%d 0700=%d ace=%d swap=%d): %v", SandboxUser, recursive, closed, ace, swap,
+			"(recursive=%d 0500=%d ace=%d swap=%d): %v", SandboxUser, recursive, closed, ace, swap,
 			plan.StageCommands)
 	}
 	if !(recursive < closed && closed < ace && ace < swap) {
-		t.Errorf("the root is closed out of order (recursive=%d 0700=%d ace=%d swap=%d): %v",
+		t.Errorf("the root is closed out of order (recursive=%d 0500=%d ace=%d swap=%d): %v",
 			recursive, closed, ace, swap, plan.StageCommands)
 	}
 }

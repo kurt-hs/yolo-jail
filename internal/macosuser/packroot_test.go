@@ -12,7 +12,7 @@ import (
 
 // The macos-user half of B-0: the staged pack tree has to (a) be copied somewhere the
 // sandbox uid can read, (b) be named to the bootstrap as YOLO_PACK_ROOT, and (c) be
-// root-owned, for the same reason the container mounts /ctx/packs :ro — a pack manifest
+// sealed, for the same reason the container mounts /ctx/packs :ro — a pack manifest
 // is an INPUT to composition, so an agent that could rewrite one could grant its own
 // pack a host file on the next launch.
 //
@@ -62,7 +62,7 @@ func TestRunPlanStagesAndNamesThePackRoot(t *testing.T) {
 		t.Fatalf("plan.PackRoot = %q, want %q", plan.PackRoot, want)
 	}
 	if !strings.HasPrefix(plan.PackRoot, stateDir+"/") {
-		t.Errorf("pack root %q is not under the root-owned state dir %q — the sandbox "+
+		t.Errorf("pack root %q is not under the host-owned staging root %q — the sandbox "+
 			"could rewrite a manifest it renders from", plan.PackRoot, stateDir)
 	}
 	var sawCopy, sawChmod, sawReserve bool
@@ -70,14 +70,14 @@ func TestRunPlanStagesAndNamesThePackRoot(t *testing.T) {
 		switch {
 		case len(c) == 4 && c[0] == cpBin && c[1] == "-R" && strings.TrimSuffix(c[2], string(os.PathSeparator)+".") == hostStaged && c[3] == plan.PackRoot:
 			sawCopy = true
-		case len(c) == 4 && c[0] == chmodBin && c[1] == "-R" && c[2] == "a+rX" && c[3] == plan.PackRoot:
+		case len(c) == 4 && c[0] == chmodBin && c[1] == "-R" && c[2] == sealTreeMode && c[3] == plan.PackRoot:
 			sawChmod = true
 		case isPackTreeReservationCommand(c, plan.PackRoot):
 			sawReserve = true
 		}
 	}
 	if !sawCopy || !sawChmod || !sawReserve {
-		t.Errorf("the pack tree is not exclusively copied into %s and made readable (copy=%v chmod=%v reserve=%v): %v",
+		t.Errorf("the pack tree is not exclusively copied into %s and sealed (copy=%v chmod=%v reserve=%v): %v",
 			plan.PackRoot, sawCopy, sawChmod, sawReserve, plan.StageCommands)
 	}
 	// And the bootstrap is told where it is — the container's YOLO_PACK_ROOT contract,
@@ -172,11 +172,11 @@ func TestPlanInvariantCatchesAnUnstagedPackRoot(t *testing.T) {
 
 // TestStagePackCommandsReserveWithoutReplacing: every pack stage owns one destination derived
 // from the existing host tree leaf. It reserves that path exclusively before copying the
-// source contents and makes the finished copy readable without granting guest writes.
+// source contents and seals the finished copy: readable by all, writable by no account.
 func TestStagePackCommandsReserveWithoutReplacing(t *testing.T) {
 	cmds := StagePackCommands(hostStaged, "proj", "")
 	dst := StagedPackTreeRoot("proj", hostStaged, "")
-	if len(cmds) != 4 || !isPackTreeReservationCommand(cmds[1], dst) ||
+	if len(cmds) != 5 || !isPackTreeReservationCommand(cmds[2], dst) ||
 		!stagesPackTreeAt(cmds, dst) {
 		t.Fatalf("stage commands do not exclusively reserve, copy and protect %s: %v", dst, cmds)
 	}
@@ -332,7 +332,7 @@ func TestAnEnvSourcesValueCannotTurnOnAutopruneAtTheBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
-	vars[SandboxEnvFileEnv] = file // the plan's path is /var/yolo-jail; the bytes are the plan's
+	vars[SandboxEnvFileEnv] = file // the plan's path is in the staging root; the bytes are the plan's
 	vars["JAIL_HOME"], vars["HOME"] = home, home
 	vars["YOLO_DARWIN_WORKSPACE"] = t.TempDir()
 	vars["MISE_DATA_DIR"] = t.TempDir()

@@ -9,8 +9,8 @@ package macosuser
 // ⚠ NONE OF THIS HAS EXECUTED ON A MAC. What only a Mac can settle: that sandbox-exec admits the
 // staged yolo's `internal probe-services` under the session profile, that the sandbox account's
 // read on a granted endpoint really lets the dial through, that an UNGRANTED endpoint really
-// comes back EACCES or EPERM (faultUnreadable) rather than something else, and that the plain
-// sudo's prompt after a long provisioning stage is answerable on the launch's terminal
+// comes back EACCES or EPERM (faultUnreadable) rather than something else, and that the run-as
+// rule lets the `-n` sudo through with no password
 // (TestMacosUserServiceProbeRefusesAnEndpointTheSandboxCannotRead in integration/).
 
 import (
@@ -39,7 +39,7 @@ func probePlan(t *testing.T, env *jsonx.OrderedMap) RunPlan {
 		"/opt/yolo/bin/yolo", "", HomeOverlay{}, HostContext{}, env, mockDarwin(), nil)
 }
 
-// THE PROBE ARGV, EXACTLY: plain sudo as the sandbox account, the closed `env -i` list,
+// THE PROBE ARGV, EXACTLY: the run-as rule's crossing as the sandbox account, the closed `env -i` list,
 // sandbox-exec under THIS session's profile, the env-file reader over the session env file, and
 // the staged yolo's probe verb last.
 func TestBuildRunPlanEmitsTheConfinedProbeArgvForAPublishedEndpoint(t *testing.T) {
@@ -51,12 +51,15 @@ func TestBuildRunPlanEmitsTheConfinedProbeArgvForAPublishedEndpoint(t *testing.T
 	if len(argv) == 0 {
 		t.Fatal("a plan carrying a published endpoint runs no witness stage")
 	}
-	if got := strings.Join(argv[:4], " "); got != "sudo --user="+SandboxUser+" /usr/bin/env -i" {
-		t.Errorf("the probe does not open with a PLAIN sudo as the sandbox account: %q", got)
+	if got := strings.Join(argv[:5], " "); got != "/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env -i" {
+		t.Errorf("the probe does not open with the run-as rule's crossing as the sandbox account: %q", got)
+	}
+	if p := RunAsArgvProblems("probe", argv); len(p) > 0 {
+		t.Errorf("the probe's crossing leaves the run-as rule: %v", p)
 	}
 	for _, w := range argv {
-		if w == "-n" || w == "--login" {
-			t.Errorf("the probe's sudo carries %q; it runs in the foreground and must be able to prompt", w)
+		if w == "--login" {
+			t.Errorf("the probe's sudo carries %q, which rewrites the command it is given", w)
 		}
 	}
 	if !containsArgPair(argv, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) {
@@ -115,10 +118,12 @@ func TestPlanInvariantsCatchAMissingOrUnconfinedProbe(t *testing.T) {
 		return out
 	}
 	for name, mutate := range map[string]func(*RunPlan){
-		"no probe":     func(p *RunPlan) { p.ProbeArgv = nil },
-		"unconfined":   func(p *RunPlan) { p.ProbeArgv = drop(p.ProbeArgv, "/usr/bin/sandbox-exec", 4) },
-		"no env file":  func(p *RunPlan) { p.ProbeArgv = drop(p.ProbeArgv, sandboxEnvShell, 5) },
-		"sudo -n":      func(p *RunPlan) { p.ProbeArgv = append([]string{"sudo", "-n"}, p.ProbeArgv[1:]...) },
+		"no probe":    func(p *RunPlan) { p.ProbeArgv = nil },
+		"unconfined":  func(p *RunPlan) { p.ProbeArgv = drop(p.ProbeArgv, "/usr/bin/sandbox-exec", 4) },
+		"no env file": func(p *RunPlan) { p.ProbeArgv = drop(p.ProbeArgv, sandboxEnvShell, 5) },
+		"a login sudo": func(p *RunPlan) {
+			p.ProbeArgv = append([]string{p.ProbeArgv[0], p.ProbeArgv[1], "--login"}, p.ProbeArgv[2:]...)
+		},
 		"another verb": func(p *RunPlan) { p.ProbeArgv[len(p.ProbeArgv)-1] = "footer" },
 		"no disposition": func(p *RunPlan) {
 			p.EnvFileContent = strings.ReplaceAll(p.EnvFileContent,
@@ -183,7 +188,7 @@ func TestTheOrchestratorRunsTheProbeAfterTheDaemonsAndBeforeTheAgent(t *testing.
 	}
 	start := probeRecIndex(rec, func(r string) bool { return strings.HasPrefix(r, "start:") })
 	probe := probeRecIndex(rec, func(r string) bool {
-		return strings.HasPrefix(r, "run:sudo --user="+SandboxUser+" ") && strings.HasSuffix(r, " internal "+ProbeServicesVerb)
+		return strings.HasPrefix(r, "run:/usr/bin/sudo -n --user="+SandboxUser+" ") && strings.HasSuffix(r, " internal "+ProbeServicesVerb)
 	})
 	proxy := probeRecIndex(rec, func(r string) bool { return strings.HasPrefix(r, "proxy:") })
 	if start < 0 || probe < 0 || proxy < 0 || !(start < probe && probe < proxy) {
@@ -291,7 +296,7 @@ func TestTheDryRunNamesTheWitness(t *testing.T) {
 
 	out := render(brokerEndpointEnv())
 	argv := underHeader(out)
-	for _, want := range []string{"  sudo --user=" + SandboxUser + " /usr/bin/env -i ", "/usr/bin/sandbox-exec -f ",
+	for _, want := range []string{"  /usr/bin/sudo -n --user=" + SandboxUser + " /usr/bin/env -i ", "/usr/bin/sandbox-exec -f ",
 		" internal " + ProbeServicesVerb} {
 		if !strings.Contains(argv, want) {
 			t.Errorf("the line under the witness header is not the stage's argv (want %q): %q", want, argv)

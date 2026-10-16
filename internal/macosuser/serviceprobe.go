@@ -42,18 +42,15 @@ import (
 // the argv here and the dispatch in internal/cli/internal.go.
 const ProbeServicesVerb = "probe-services"
 
-// ProbeServicesArgv builds the witness stage's argv: `sudo --user=<sb> /usr/bin/env -i <the
-// closed identity list> /usr/bin/sandbox-exec -f <profile> -- <env-file reader> <staged yolo>
-// internal probe-services`.
+// ProbeServicesArgv builds the witness stage's argv: `/usr/bin/sudo -n --user=<sb> /usr/bin/env
+// -i <the closed identity list> /usr/bin/sandbox-exec -f <profile> -- <env-file reader> <staged
+// yolo> internal probe-services`.
 //
-// LaunchArgv's shape for the reason JailDaemonArgv has it, with ONE DIFFERENCE from that argv:
-// PLAIN sudo, never `-n`. The supervisor runs in the background beside a terminal the agent is
-// about to own, so it must fail rather than prompt; this stage runs in the FOREGROUND before
-// the agent, on the launch's own terminal, so a prompt is answerable — and the credential cache
-// the staging steps warmed may have expired by now, a provisioning stage being able to take
-// longer than sudo's timeout. A `-n` there would turn a slow first launch into a refusal.
+// LaunchArgv's shape for the reason JailDaemonArgv has it, through the same crossing
+// (RunAsSandboxArgv). The `-n` costs nothing here: the run-as rule needs no password, so no
+// credential cache can expire during a long provisioning stage and turn this into a refusal.
 //
-// stagedYolo is the root-owned copy the bootstrap self-execs (StagedYoloPath): the host's own
+// stagedYolo is the sealed copy the bootstrap self-execs (StagedYoloPath): the host's own
 // binary may sit where the sandbox account cannot read it.
 func ProbeServicesArgv(stagedYolo, profilePath, envFile, user, home string, pathPrefix []string) []string {
 	if user == "" {
@@ -62,12 +59,7 @@ func ProbeServicesArgv(stagedYolo, profilePath, envFile, user, home string, path
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := []string{
-		"sudo",
-		"--user=" + user,
-		"/usr/bin/env",
-		"-i",
-	}
+	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, ExecWithEnvFile(envFile, []string{stagedYolo, "internal", ProbeServicesVerb})...)
@@ -96,7 +88,8 @@ func carriesServiceEndpoint(env *jsonx.OrderedMap) bool {
 // serviceProbeInvariants is PlanInvariants' rule for the witness stage. A plan whose session env
 // carries a published endpoint must run the probe, and the probe must run the way the agent
 // will: confined under THIS session's profile, reading the session env file, executing the
-// staged yolo's probe verb, carrying no composed value on its argv, with a plain sudo. And the
+// staged yolo's probe verb, carrying no composed value on its argv, through the run-as rule with
+// no login shell (PlanInvariants checks the rule's shape over every crossing). And the
 // env file must say `shared`, or the witness reads the disposition as unattributed and no
 // failure it finds can refuse anything.
 func serviceProbeInvariants(plan RunPlan) []string {
@@ -139,10 +132,9 @@ func serviceProbeInvariants(plan RunPlan) []string {
 		if w == "/usr/bin/env" {
 			break // the end of sudo's own flags
 		}
-		if w == "-n" || w == "--non-interactive" || w == "--login" || w == "-i" {
-			problems = append(problems, "the host-service witness's sudo carries `"+w+"`; it runs in "+
-				"the foreground and must be able to prompt (the cache may have expired during a long "+
-				"provisioning stage), and a login sudo rewrites the command it is given")
+		if w == "--login" || w == "-i" {
+			problems = append(problems, "the host-service witness's sudo carries `"+w+"`; a login "+
+				"sudo rewrites the command it is given")
 		}
 	}
 	problems = append(problems, SandboxArgvEnvProblems("host-service witness", argv)...)

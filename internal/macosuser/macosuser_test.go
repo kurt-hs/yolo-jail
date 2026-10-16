@@ -1,6 +1,7 @@
 package macosuser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -120,7 +121,7 @@ func TestLaunchArgv(t *testing.T) {
 	const envFile = "/var/yolo-jail/env/yolo-ws-abcd1234.env"
 	argv := LaunchArgv([]string{"claude", "--x"}, "/var/yolo-jail/p.sb", envFile,
 		"/Users/Shared/proj", "", "", []string{"/nix/store/a-jq/bin"})
-	if argv[0] != "sudo" || !inSlice(argv, "--user=_yolojail") {
+	if argv[0] != "/usr/bin/sudo" || !inSlice(argv, "-n") || !inSlice(argv, "--user=_yolojail") {
 		t.Error("must run as sandbox via sudo")
 	}
 	i := idxSlice(argv, "/usr/bin/env")
@@ -450,5 +451,120 @@ func TestEndpointGrantCommandsAreACLsNotAChmodWalk(t *testing.T) {
 	custom := EndpointGrantCommands(endpoint, "_other")
 	if !hasPrefix(custom[0][2], "user:_other allow ") {
 		t.Errorf("explicit user ignored: %q", custom[0][2])
+	}
+}
+
+// EVERY CROSSING INTO THE SANDBOX ACCOUNT IS THE ONE RULE, AND NO STAGING STEP RUNS SUDO: the
+// plan's half of OQ-MP10 (docs/design/macos-user-privilege-lifecycle.md). A crossing that leaves
+// the rule's shape prompts for a password or fails under the narrowed grant; a staging argv that
+// runs sudo is a root act the ruling removed.
+func TestEveryPlanArgvIsTheRuleOrRunsAsTheHost(t *testing.T) {
+	plan := sessionPlan(t, "0123456789abcdef")
+	links := []ContextLink{{Source: "/Users/Shared/data", Dest: "/ctx/data", Dir: true}}
+	plan.ContextPreflight = ContextPreflight(links, "")
+	var argvs [][]string
+	argvs = append(argvs, plan.BootstrapArgv, plan.ProvisionArgv, plan.LaunchArgv, plan.JailDaemonArgv)
+	for _, p := range plan.ContextPreflight {
+		argvs = append(argvs, p.Argv)
+	}
+	for _, a := range argvs {
+		if len(a) == 0 {
+			continue
+		}
+		if a[0] != "/usr/bin/sudo" {
+			t.Errorf("crossing does not start with /usr/bin/sudo: %q", a)
+		}
+		if p := RunAsArgvProblems("t", a); len(p) > 0 {
+			t.Errorf("%v", p)
+		}
+	}
+	for _, c := range append(append([][]string{}, plan.StageCommands...), plan.CaptureStageCommands...) {
+		if len(c) > 0 && (c[0] == "sudo" || c[0] == "/usr/bin/sudo") {
+			t.Errorf("a staging argv runs sudo: %q", c)
+		}
+	}
+	if plan.StagedDir != "/Users/Shared/yolo-staged" {
+		t.Errorf("StagedDir = %q", plan.StagedDir)
+	}
+}
+
+// PlanInvariants CARRIES THE RULE'S SHAPE over every crossing, so a builder that drifts from
+// RunAsSandboxArgv fails the plan rather than prompting, or failing under the narrowed grant, on
+// a real Mac. Each case breaks one crossing of an otherwise good plan.
+func TestPlanInvariantsRefuseACrossingOutsideTheRule(t *testing.T) {
+	good := sessionPlan(t, "0123456789abcdef")
+	good.ContextPreflight = ContextPreflight([]ContextLink{{Source: "/Users/Shared/data", Dest: "/ctx/data", Dir: true}}, "")
+	for name, mutate := range map[string]func(*RunPlan){
+		"a launch that may prompt": func(p *RunPlan) {
+			p.LaunchArgv = append([]string{sudoBin}, p.LaunchArgv[2:]...)
+		},
+		"a bootstrap through sudo on PATH": func(p *RunPlan) {
+			p.BootstrapArgv = append([]string{"sudo"}, p.BootstrapArgv[1:]...)
+		},
+		"a provisioning stage as root": func(p *RunPlan) {
+			p.ProvisionArgv = append([]string{sudoBin, "-n"}, p.ProvisionArgv[3:]...)
+		},
+		"a bare /bin/test preflight": func(p *RunPlan) {
+			p.ContextPreflight = []ContextProbe{{Access: "read",
+				Argv: []string{sudoBin, "-n", "--user=" + SandboxUser, testBin, "-r", "/Users/Shared/data"}}}
+		},
+	} {
+		p := good
+		mutate(&p)
+		if len(crossingArgvProblems(p)) == 0 || len(PlanInvariants(p)) == 0 {
+			t.Errorf("%s: PlanInvariants accepted the plan", name)
+		}
+	}
+	if probs := crossingArgvProblems(good); len(probs) > 0 {
+		t.Errorf("a good plan's crossings fail the rule's shape:\n%s", strings.Join(probs, "\n"))
+	}
+}
+
+// A WORKSPACE INSIDE THE STAGING ROOT OR THE CAPTURE ROOT is refused: both sit under /Users/Shared
+// beside the shared workspace root now, and the sandbox writes its workspace.
+func TestPlanInvariantsRefuseAWorkspaceInsideYolosOwnRoots(t *testing.T) {
+	for _, ws := range []string{StagingRoot() + "/proj", CaptureRootDefault() + "/proj", StagingRoot()} {
+		p := sessionPlan(t, "0123456789abcdef")
+		p.Workspace = ws
+		if !strings.Contains(strings.Join(PlanInvariants(p), "\n"), "which yolo stages into") {
+			t.Errorf("a workspace at %s passed the invariants", ws)
+		}
+	}
+	for _, ws := range []string{"/Users/Shared/yolo/proj", StagingRoot() + "-other/proj"} {
+		p := sessionPlan(t, "0123456789abcdef")
+		p.Workspace = ws
+		if strings.Contains(strings.Join(PlanInvariants(p), "\n"), "which yolo stages into") {
+			t.Errorf("a workspace at %s was refused as inside yolo's own roots", ws)
+		}
+	}
+}
+
+// EVERY REMOVAL OF A STAGED TREE IS UNSEALED FIRST, and every category directory gets its mode
+// explicitly. A sealed (0555) directory blocks its owner's `rm -rf` too, so a removal that forgets
+// fails every relaunch after the first; unsealCommands is the one spelling, and this holds every
+// staging builder to it through a full plan's stage commands.
+func TestEveryStagedRemovalIsUnsealedFirstAndEveryCategoryHasItsMode(t *testing.T) {
+	plan := planWithCtx(t, deliveredCtx())
+	plan.StageCommands = append(plan.StageCommands,
+		StageHomeOverlayCommands("/tmp/overlay", plan.Cname, "")...)
+	removals, categories := 0, 0
+	for i, c := range plan.StageCommands {
+		if len(c) == 3 && c[0] == rmBin && c[1] == "-rf" {
+			removals++
+			if i == 0 || strings.Join(plan.StageCommands[i-1], "\x00") != strings.Join(unsealCommands(c[2])[0], "\x00") {
+				t.Errorf("%v is not preceded by the unseal of the same path", c)
+			}
+		}
+		if len(c) >= 3 && c[0] == mkdirBin && c[1] == "-p" && strings.HasPrefix(c[2], plan.StagedDir+"/") &&
+			!strings.Contains(c[2], ".new") {
+			categories++
+			next := append([]string{chmodBin, categoryDirMode}, c[2:]...)
+			if i+1 >= len(plan.StageCommands) || strings.Join(plan.StageCommands[i+1], "\x00") != strings.Join(next, "\x00") {
+				t.Errorf("category directory %v is not given mode %s right after it is made", c[2:], categoryDirMode)
+			}
+		}
+	}
+	if removals == 0 || categories == 0 {
+		t.Fatalf("the fixture removed %d trees and made %d categories, so it checked nothing", removals, categories)
 	}
 }
