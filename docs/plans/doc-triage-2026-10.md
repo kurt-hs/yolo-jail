@@ -38,7 +38,7 @@ content moves into a reference doc under `docs/reference/`, and the design doc i
 #### 3. Does the Kilo-specific code in the pi and claude config generators stay? ([OQ-GP4](../design/gateway-provider-packs.md#OQ-GP4))
 - **Why:** a 2026-09-16 change made both generators spot Kilo by its name or URL. They rewrite `deepseek-` model ids, assume a context window and accept an unmapped model name as a literal id. That contradicts the doc's own section 3 rule. It also causes a live bug: claude believes **every** Kilo model has a 1M-token window, so on a smaller model it compacts too late ([§6](../design/gateway-provider-packs.md#6-the-kilo-special-casing-in-the-pi-and-claude-derives)).
 - **Options:** (A) split it: keep the literal-id fallback for every provider, move context windows into the user's model map, and keep the `deepseek-` rewrite only with a dated source comment, or drop it. (B) keep everything and rewrite the rules to match. (C) remove everything.
-- **My opinion:** A. Whatever you rule, the 1M-window assumption is wrong today and should go.
+- **My opinion:** A. The 1M-window assumption itself was removed on 2026-10-16, whatever you rule.
 - **To graduate:** amend section 3, then fold the doc into [`providers.md`](../reference/providers.md), which already covers OpenRouter.
 
 #### 4. Does a fetched pack's host-side half run at `yolo host` and on macos-user? ([OQ-HS5](../design/host-notch-services.md#OQ-HS5))
@@ -158,8 +158,6 @@ Things only you can do, on your own machines.
 
 Removed as each lands.
 
-- Fix the `null`-deletion data loss in `yolo config diff` and `promote`: a `null` you added reads as a deletion, and accepting the promotion writes a real deletion into your local pack. It is the first known gap in [`config-ownership.md`](../reference/config-ownership.md).
-- Remove claude's assumption that every Kilo model has a 1M-token context window, whatever item 3 rules.
 - Graduate [`model-lists-and-pickers.md`](../design/model-lists-and-pickers.md): no question is open in it.
 - Act on each "yes" above as it is ruled.
 
