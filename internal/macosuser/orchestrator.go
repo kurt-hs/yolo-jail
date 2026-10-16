@@ -108,6 +108,14 @@ type Deps struct {
 	// with no arm — the `yolo macos-*` commands and a test — and RunMacosUser then arms its own
 	// nix stop (nixchildren.StopOnSignal) around its host nix builds, as it always did.
 	Ending func() (status int, ending bool)
+	// StagingRootFacts observes a staging root without following a link (stagingRootFactsReal):
+	// the launch's half of the staging-root preconditions, which JudgeStagingRoot decides. nil
+	// is a root that could not be inspected, which refuses.
+	StagingRootFacts func(path string) StagingRootFacts
+	// RunAsGrant reports whether readiness probe G2 (RunAsGrantProbeArgv) exits 0: the one-time
+	// setup's run-as rule is installed and lets this user run commands as the sandbox account
+	// without a password. nil answers no, which refuses.
+	RunAsGrant func() bool
 	// TakenIDs returns the union of existing UIDs+GIDs (macos_setup).
 	TakenIDs func() map[int]struct{}
 	// SetRandomPassword sets a random password on the sandbox account.
@@ -2186,6 +2194,8 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		PathExists:         pathExistsReal,
 		ReadFile:           readFileReal,
 		RemoveFile:         removeFileReal,
+		StagingRootFacts:   stagingRootFactsReal,
+		RunAsGrant:         runAsGrantReal,
 		Out:                LaunchWriter(),
 		Color:              color,
 	}

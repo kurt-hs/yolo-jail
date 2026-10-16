@@ -228,7 +228,7 @@ func (f *Floor) installFromBuild(ctx context.Context, p Program, dir string) (*R
 func (f *Floor) buildHow() string {
 	if f.GOOS == "darwin" {
 		return "as the macos-user sandbox account, sealed under Seatbelt in a throwaway home (once per " +
-			"commit per Mac; sudo may ask for your password)"
+			"commit per Mac)"
 	}
 	return "in a sealed jail (once per commit per machine, and every jail on this machine reuses it)"
 }

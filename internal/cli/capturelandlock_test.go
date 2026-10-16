@@ -15,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -58,9 +59,21 @@ func onCaptureGOOS(t *testing.T, goos string) {
 }
 
 // macSetup is a Mac as the floor's capture predicate reads it. The zero value is a Mac before
-// `yolo macos-setup`: not root, Seatbelt present, no sandbox account, no terminal, no sudo credentials.
+// `yolo macos-setup`: not root, Seatbelt present, no sandbox account, and none of the setup's
+// privilege facts (privilege) — no run-as rule for the sandbox account, no staging root of its own.
 type macSetup struct {
-	root, noSeatbelt, account, terminal, sudo bool
+	root, noSeatbelt, account, privilege bool
+}
+
+// runAsGrantPrecondition is the launch's own run-as-grant precondition: the one a Mac without the
+// setup's rule fails first among the privilege facts (macosuser.PrivilegeUnmet).
+func runAsGrantPrecondition() macosuser.Precondition {
+	for _, c := range macosuser.LaunchPreconditions() {
+		if c.ID == macosuser.PreconditionRunAsGrant {
+			return c
+		}
+	}
+	panic("no " + macosuser.PreconditionRunAsGrant + " precondition")
 }
 
 func (m macSetup) probes() macCaptureProbes {
@@ -71,10 +84,14 @@ func (m macSetup) probes() macCaptureProbes {
 			}
 			return 501
 		},
-		Which:               func(name string) bool { return name == "sandbox-exec" && !m.noSeatbelt },
-		SandboxUserExists:   func() bool { return m.account },
-		StdinIsTerminal:     func() bool { return m.terminal },
-		SudoWithoutPassword: func() bool { return m.sudo },
+		Which:             func(name string) bool { return name == "sandbox-exec" && !m.noSeatbelt },
+		SandboxUserExists: func() bool { return m.account },
+		Privilege: func() (macosuser.Precondition, bool) {
+			if m.privilege {
+				return macosuser.Precondition{}, false
+			}
+			return runAsGrantPrecondition(), true
+		},
 	}
 }
 
@@ -93,7 +110,7 @@ func noRuntimeHere(t *testing.T) {
 }
 
 // THE MAC'S FLOOR CAPTURES THROUGH THE MACOS-USER ACT (HP-D2), at its call site: a Mac with the
-// sandbox account set up, no capture of nativecli, and a terminal: `yolo host -- nativecli` runs the
+// sandbox account and its run-as rule set up, no capture of nativecli: `yolo host -- nativecli` runs the
 // capture act once under the macos-user runtime — handed to the act, never set in the environment the
 // agent is exec'd with — and then execs the floor's copy of what it captured. The container act is
 // never run: on a Mac it would record a Linux entry, which this floor cannot run. Drop the runtime
@@ -110,7 +127,7 @@ func TestAMacsFloorCapturesThroughTheMacosUserAct(t *testing.T) {
 		return f
 	}
 	t.Cleanup(func() { newHostFloor = orig })
-	withMac(t, macSetup{account: true, terminal: true})
+	withMac(t, macSetup{account: true, privilege: true})
 	t.Setenv("YOLO_RUNTIME", "")
 	origAct, origOn := hostFloorCaptureAct, hostFloorCaptureActOn
 	hostFloorCaptureAct = func(args []string, _, _ io.Writer, _ bool) int {
@@ -182,8 +199,8 @@ func TestTheMacosUserCaptureActHandsItsRuntimeToTheRunPipelineAlone(t *testing.T
 
 // EACH REASON A MAC CANNOT CAPTURE, with the step that ends it, as the floor reports it: no floor
 // entry, so the launch runs the PATH copy (OQ-HE11) instead of failing an install; and with the act
-// able to run — the account set up, and a terminal for sudo or sudo needing none — the entry is the
-// floor's to install.
+// able to run — the account set up, and the setup's run-as rule and staging root in place — the entry
+// is the floor's to install, with or without a terminal: the rule asks for no password.
 func TestAMacsFloorNamesWhyTheMacosUserActCannotRun(t *testing.T) {
 	home := floortest.ResolvedTemp(t)
 	t.Setenv("HOME", home)
@@ -195,18 +212,20 @@ func TestAMacsFloorNamesWhyTheMacosUserActCannotRun(t *testing.T) {
 		mac  macSetup
 		want string // "" for an installable entry
 	}{
-		{"before macos-setup", macSetup{terminal: true},
+		{"before macos-setup", macSetup{},
 			"the sandbox account _yolojail, which a capture on a Mac runs its installer as, does not exist — run the " +
 				"one-time setup, `yolo macos-setup`, and the next `yolo host` launch captures it"},
-		{"as root", macSetup{root: true, account: true, terminal: true},
+		{"as root", macSetup{root: true, account: true, privilege: true},
 			"run `yolo host` without sudo, and it captures it"},
-		{"no Seatbelt", macSetup{noSeatbelt: true, account: true, terminal: true},
+		{"no Seatbelt", macSetup{noSeatbelt: true, account: true, privilege: true},
 			"sandbox-exec (Apple Seatbelt), which confines a capture's installer on a Mac, is not on PATH"},
-		{"no terminal for sudo", macSetup{account: true},
-			"run `YOLO_RUNTIME=macos-user yolo capture claude` once in a terminal, and every later `yolo host` launch " +
-				"uses its result"},
-		{"a terminal", macSetup{account: true, terminal: true}, ""},
-		{"no terminal, sudo needing none", macSetup{account: true, sudo: true}, ""},
+		{"no run-as rule", macSetup{account: true},
+			"a capture on a Mac runs as the sandbox account through the one-time setup's sudo rule, which this " +
+				"Mac does not have (sudo cannot run commands as _yolojail without a password) — Run the one-time " +
+				"setup as your normal admin user: yolo macos-setup. It installs one rule, /etc/sudoers.d/yolo-jail, " +
+				"which runs commands as _yolojail, never as root. On a managed Mac that refuses it, ask your " +
+				"administrator to allow that rule., and the next `yolo host` launch captures it"},
+		{"set up", macSetup{account: true, privilege: true}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			withMac(t, c.mac)
@@ -216,6 +235,10 @@ func TestAMacsFloorNamesWhyTheMacosUserActCannotRun(t *testing.T) {
 			if c.want == "" {
 				if st.Disposition != hostfloor.Missing {
 					t.Fatalf("Status = %s (%s), want missing: the act can run", st.Disposition, st.Reason)
+				}
+				// The setup's run-as rule asks for no password, so the capture line promises none.
+				if how := f.CaptureHow(); !strings.Contains(how, "sandbox account") || strings.Contains(how, "password") {
+					t.Errorf("the Mac's capture line is %q: not the sandbox account's, or it warns of a password", how)
 				}
 				return
 			}
