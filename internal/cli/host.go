@@ -3534,7 +3534,7 @@ func macosUserGuestRuns(packs []*packload.Pack, service string) bool {
 
 // hostScopedEnvSources returns cfg with any still-RELATIVE env_sources file entry
 // dropped — one warning per dropped entry, naming the remedy — for the host notch's env
-// composition. Under the 2026-08-30 ruling (envsource-relative-paths.md OQ-E1) a
+// composition. Under the 2026-08-30 ruling (agent-credentials.md OQ-E1) a
 // relative entry in a real config is legal and arrives already ANCHORED beside its
 // declaring file (config.AnchorEnvSources runs in the loader), so what reaches this
 // filter unanchored is a hand-built config or a pre-ruling artifact — sources whose

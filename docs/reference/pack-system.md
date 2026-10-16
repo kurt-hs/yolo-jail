@@ -1677,7 +1677,7 @@ launch prints a warning and continues, and `yolo check` reports a WARN. No flag 
 silences that warning. The pack owns the knowledge and core names no variable: `packs/aws-auth`
 declares that a Bedrock bearer or a static AWS key pair beats its credentials pointer, and that
 a `~/.aws` grant may
-([`sso-backed-bedrock.md` OQ-SSO8](../design/sso-backed-bedrock.md#OQ-SSO8)). The schema and its
+([`agent-credentials.md` OQ-SSO8](agent-credentials.md#OQ-SSO8)). The schema and its
 rules are `packdecl.EnvOverride`'s doc comment.
 
 An `env` contribution whose variables point a client at a yolo jail daemon declares that daemon

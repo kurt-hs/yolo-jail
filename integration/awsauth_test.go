@@ -18,7 +18,7 @@ import (
 // THE aws-auth CREDENTIAL CHANNEL, END TO END, OVER THE REAL LOOPBACK HOP.
 //
 // packs/aws-auth turns a host `aws sso login` into a credential a jail can use without ever
-// holding the login (docs/design/sso-backed-bedrock.md). The chain has five links and each
+// holding the login (docs/reference/agent-credentials.md). The chain has five links and each
 // has unit tests of its own: the host daemon mints by shelling out to `aws`
 // (internal/awsauthdaemon), yolo's front publishes it to the jail over loopback-TLS
 // (internal/svcendpoint), the in-jail adapter serves the AWS container-credentials protocol

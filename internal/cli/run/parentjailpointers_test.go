@@ -1,6 +1,6 @@
 package run
 
-// parentjailpointers_test.go pins docs/design/sso-backed-bedrock.md SSO-D2 to SSO-D5 on the
+// parentjailpointers_test.go pins docs/reference/agent-credentials.md SSO-D2 to SSO-D5 on the
 // launcher: a podman launch from inside a jail whose environment carries aws-auth's pointer starts
 // neither of aws-auth's daemons and hands the nested Bedrock agent the launching jail's own
 // pointer and region; with the pointer absent, or from the host, the launch is today's. Driven

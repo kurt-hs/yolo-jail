@@ -836,7 +836,7 @@ func TestApplyHostWrappersRemovedWhenPacksIsEmptied(t *testing.T) {
 }
 
 // TestHostEnvResolvesConfigRelativeEntriesBesideTheConfig pins the ruling's host-notch
-// half (envsource-relative-paths.md OQ-E1, 2026-08-30): a relative env_sources entry in
+// half (agent-credentials.md OQ-E1, 2026-08-30): a relative env_sources entry in
 // the USER config resolves beside the config that declared it — because the loader
 // anchors it at load time (config.AnchorEnvSources), NOT against the current directory,
 // which a workspace controls. The cwd's same-named file must not leak; the config-dir

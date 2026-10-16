@@ -148,7 +148,7 @@ func writeFileIn(t *testing.T, path, body string) {
 }
 
 // TestEnvSourcesAnchorBesideTheDeclaringFile is the unified ruling's pin
-// (envsource-relative-paths.md OQ-E1/E2, ruled 2026-08-30): a relative env_sources
+// (agent-credentials.md OQ-E1/E2, ruled 2026-08-30): a relative env_sources
 // file entry resolves beside the file that DECLARED it — the user config at
 // ~/.config/yolo-jail/, an include at the include's own directory, the workspace
 // config at the workspace root (which is why jail behavior for workspace-declared
