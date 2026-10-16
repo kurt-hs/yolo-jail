@@ -39,7 +39,7 @@ upstreams, the newest-fit walk over each, two trees built, and one fork's `dist/
 series without it; and an extension run end to end through a real build jail in the integration
 suite. UNMEASURED: no pi has loaded a tree yolo built ([§16](#16-unbuilt-and-unmeasured)); the
 pre-launch refresh is unit-tested only, never observed in a real jail ([§17](#17-the-pre-launch-refresh)).
-One question is open ([OQ-PPX3](#OQ-PPX3)). The recovery hatches for an extension
+No question is open. The recovery hatches for an extension
 ([§9.1](#91-recovery-hatches-for-an-extension)) were verified 2026-10-16 against `15c739590`, from
 the code and its unit tests.
 
@@ -402,8 +402,9 @@ or the pack, to run without it; and the recovery hatches that would get the laun
 ([§9.1](#91-recovery-hatches-for-an-extension)). `YOLO_SKIP_EXTENSIONS` is the one that starts pi
 without the extension. `YOLO_ALLOW_MISSING_PROGRAMS`, the readiness act's bypass, still starts the
 jail and says so, but pi's launchers stop for the missing tree, so only the shell works. It is decided where the trees are, before the image step, reading no command:
-yolo never reads the command line ([HP-DIR2](host-agent-environment.md#HP-DIR2)). Whether
-a build that fails while the good build serves should refuse too is [OQ-PPX3](#OQ-PPX3).
+yolo never reads the command line ([HP-DIR2](host-agent-environment.md#HP-DIR2)). A build
+that fails while a good build exists refuses too, unless a recovery hatch is set
+([OQ-PPX3](#OQ-PPX3)).
 
 - **Each cause is said once** ([PPX-D42](#PPX-D42)), with every extension it left without a build. A
   refused boot writes its structured cause beside its `boot.log`, and the host reads it rather than
@@ -714,22 +715,7 @@ which composes with that missing half.
 
 ## Open questions
 
-1. 💬 **OQ-PPX3: Is the recorded reading of "if a build fails, of course that's fatal" the right one?**
-
-   <!-- vantage: question id=OQ-PPX3 leaning="Confirm the reading: a build that fails while the last good build still serves keeps serving with a warning; only no good build at all is fatal" -->
-
-   _Leaning:_ Confirm the reading: a build that fails while the last good build still serves keeps
-   serving with a warning; only no good build at all is fatal
-
-   The ruling of 2026-10-05 is built ([PPX-D40](#PPX-D40), and the fork side
-   [`patched-forks.md` PF-D77](patched-forks.md#PF-D77)): with no build to run, a fresh launch
-   refuses before booting. Its recorder read "a build fails" as "there is no build to run", so a
-   notch that builds no tree keeps its line and refuses nothing. The maintainer has not confirmed
-   that reading. A series that does not *apply* is no longer covered by it: [PF-D81](patched-forks.md#PF-D81)
-   made that fatal even while a good build serves.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+None open.
 
 ## Current values
 
@@ -769,6 +755,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 
 | ID | Ruling |
 | :--- | :--- |
+| <a id="OQ-PPX3"></a>[OQ-PPX3](#OQ-PPX3) | **The maintainer's ruling, 2026-10-16, correcting the reading recorded under [PPX-D40](#PPX-D40):** a build that fails is fatal even while a last good build exists; yolo never falls back to an older build on its own, because a warning can be missed. Only a recovery hatch the user sets runs an older build ([§9.1](#91-recovery-hatches-for-an-extension): `YOLO_USE_CACHED_GOOD`, `YOLO_ALLOW_PATCH_FAILURES`, `YOLO_ALLOW_OLDER_UPSTREAM`), or an `agent_updates` hold the user declared. *"if a build fails, we don't want to automatically roll back to some other version because warnings may be missed but if the escape hatch is used it should be able to go back. None of this happens without one of the escape hatches selected."* Applies to patched forks and patched extensions alike ([OQ-PBR6](patched-forks.md#why-its-this-way)). **Not built:** today a newer build that fails while the good build serves keeps serving it with a warning ([PPX-D14](#PPX-D14), [`patched-forks.md` PF-D8](patched-forks.md#PF-D8)). |
 | <a id="PPX-D1"></a>PPX-D1 | A patched extension is a `files` contribution with `source` and a series in place of `from`; there is no new kind; `from`, `fork_of`, `agent` and `agents` are refused beside `source` |
 | <a id="PPX-D2"></a>PPX-D2 | The extension key is `<pack>/<last segment of into>`, unique per pack across its patched extensions and its patched programs' bins; every record, lock, selection, message and explicit act uses it |
 | <a id="PPX-D3"></a>PPX-D3 | `into` is required and may not land on PATH, for any pack; `build` is optional and the sealed jail runs either way; `produces` is optional and tree-relative |
