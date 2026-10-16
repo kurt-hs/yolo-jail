@@ -24,6 +24,11 @@ type npmCaptureRecord struct {
 	Identity, Entry    string
 	CheckedAt          time.Time
 	Failure            string
+	// FailedRelease is the release whose preparation Failure records, set only when the check
+	// that failed had resolved a candidate other than the admitted generation: a newer version
+	// yolo FOUND and could not prepare (PD-NF1). "" when the check failed before it resolved
+	// anything, which is the could-not-check case, the admitted generation running.
+	FailedRelease string
 }
 
 func npmCaptureRecordPath(store *capture.Store, in npmCaptureInput) string {
@@ -133,10 +138,14 @@ func advanceNPMCapture(ctx context.Context, store *capture.Store, in npmCaptureI
 		return r, err
 	}
 	resolution, err := resolveSelectedNPMCapture(ctx, store, in, w)
+	failedRelease := ""
 	if err == nil {
 		resolution.Fingerprint = fingerprint
 		var entry *capture.Entry
 		entry, err = prepareSelectedNPMCapture(ctx, store, *resolution, w, guard)
+		if err != nil && r.Fingerprint == fingerprint && !errors.Is(err, errNPMCaptureUnsupported) {
+			failedRelease = newerCandidate(r, *resolution)
+		}
 		if err == nil {
 			inputs, _ := resolution.inputs()
 			identity, _ := inputs.Identity()
@@ -160,6 +169,7 @@ func advanceNPMCapture(ctx context.Context, store *capture.Store, in npmCaptureI
 			return withNPMCaptureRecordMode(ctx, store, in, false, func(current *npmCaptureRecord) error {
 				if current.Started == sequence {
 					current.Failure = err.Error()
+					current.FailedRelease = failedRelease
 				}
 				return nil
 			})
@@ -167,6 +177,24 @@ func advanceNPMCapture(ctx context.Context, store *capture.Store, in npmCaptureI
 		return r, err
 	}
 	return r, nil
+}
+
+// newerCandidate is the release of resolved when it is not the generation admitted reaches: a
+// candidate the check FOUND, whose failed preparation PD-NF1 will not run the older generation
+// past. "" when resolved is the admitted generation itself, or when nothing is admitted (no older
+// generation exists to fall back to).
+func newerCandidate(admitted npmCaptureRecord, resolved npmCaptureResolution) string {
+	if admitted.Resolution == nil || admitted.Identity == "" {
+		return ""
+	}
+	inputs, err := resolved.inputs()
+	if err != nil {
+		return ""
+	}
+	if identity, err := inputs.Identity(); err != nil || identity == admitted.Identity {
+		return ""
+	}
+	return resolved.Release
 }
 
 // ordinaryMetadataGuard retries ONLY no-wait short-lock contention, outside all

@@ -18,6 +18,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/provision"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 // ProgramCaptureRequest is the fresh launch's selected ordinary installation vector.
@@ -117,11 +118,35 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 			fmt.Fprintln(o.Stderr, unavailable)
 			return provision.RefusedStatus
 		}
-		fmt.Fprintln(o.Stderr, "selected ordinary preparation failed:", err, "— retry a fresh launch")
+		out := o.pr(o.Stderr)
+		// PD-NF1's refusal shape: a preparation names its own block (a newer version that failed
+		// over a prepared one, or a program with nothing prepared); anything else gets the same
+		// shape naming the act.
+		var refusal interface{ Render(color bool) string }
+		if !errors.As(err, &refusal) {
+			refusal = preparationRefusal{err}
+		}
+		_, _ = io.WriteString(out.rt.W, refusal.Render(out.rt.Color))
 		return 1
 	}
 	o.programCaptures = deliveries
 	return 0
+}
+
+// preparationRefusal is a failed ordinary preparation no program's own block names: the ERROR line,
+// the facts, a blank line and the repair.
+type preparationRefusal struct{ err error }
+
+func (r preparationRefusal) Render(color bool) string {
+	var b strings.Builder
+	b.WriteString(richtext.Render("[bold red]"+richtext.Escape("ERROR: preparing this launch's programs failed")+"[/bold red]", color) + "\n")
+	for _, l := range strings.Split(strings.TrimRight(fmt.Sprint(r.err), "\n"), "\n") {
+		b.WriteString("  " + l + "\n")
+	}
+	b.WriteString("\n" + richtext.Render("[bold]Repair:[/bold]", color) + "\n")
+	b.WriteString("  fix what the error names, then retry the launch:\n")
+	b.WriteString("    yolo\n")
+	return b.String()
 }
 
 // launchImageIdentity is the ordinary preparation's lazy view of this launch's image identity. It
