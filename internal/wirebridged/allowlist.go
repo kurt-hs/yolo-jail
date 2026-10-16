@@ -7,8 +7,8 @@ package wirebridged
 // THE LIST IS NOT A SECOND LIST (OQ-WG3, ruled 2026-09-25: "If we put it in the model picker,
 // it's allowed"). It is the provider's composed list after a `models` `only`
 // (model-lists-and-pickers.md OQ-BR12), which the launch marks `models_only` on the composed
-// entry, the same list every picker renders. A list no `only` narrowed refuses nothing, also on a
-// gateway that serves more than it lists (model-lists-and-pickers.md OQ-MM3, ruled 2026-10-15).
+// entry, the same list every picker renders. A list no `only` narrowed refuses nothing, which on a
+// gateway that serves more is OQ-MM3's ruling (2026-10-15).
 //
 // THE SWITCH is the profile's `enforce_models`, on unless the profile says false (MM-D5, MM-D13),
 // the one switch that governs every refusal yolo installs. Off, the list only shapes the menus.

@@ -1033,10 +1033,9 @@ rewrites the file from its layers every boot, so a key no layer asserts simply s
 falls through to a lower layer that still asserts it. A selected key never lingers in the
 [captured overlay](config-migration-to-prism.md#vocabulary): the overlay is narrowed every boot
 against the computed layer, which asserts the key while it is selected (`narrowOverlay`). So the
-value a clear returns to is pi's host layer where one is set, and otherwise the agent's own
-default. **Only pi has a host layer to return to.** Of the three surfaces that carry selection
-keys, only pi's `settings` declares `readsHost`, so for codex and opencode a clear always means
-the agent's own default.
+value a clear returns to is the host layer where the surface declares `readsHost` (pi's
+`settings` and claude's `settings` do) and the host file sets the key, and otherwise the agent's
+own default.
 
 > [!WARNING]
 > **Do not clear with a tombstone.** A tombstone in the computed layer deletes the key through
@@ -1083,14 +1082,34 @@ gets a verbosity ([`OQ-DB1`](../design/diagnostics-past-the-boundary.md#oq-db1),
 promoting the line to the terminal is a change at `noteSelectionClears` alone.
 
 > [!IMPORTANT]
-> **Claude needs no clear, so do not add one.** Claude resolves a tier name such as `opus` to a
-> provider's id itself, so yolo never writes claude a model id through the selection namespace.
-> The claude env derive emits `ANTHROPIC_MODEL` and the per-tier variables only while a provider
-> is selected, and they are process environment rebuilt on every launch, so a deselect simply
-> stops emitting them. The codex profile's picker keys in `claude/settings` (`availableModels`,
-> `modelPicker`) are ordinary computed keys, re-asserted every boot. They leave with the profile
-> for the same reason. At `yolo host apply`, whose `rmw` write re-reads your real file, a computed
-> key the derive stops asserting leaves by the computed-leaf clear
+> **Claude's saved `model` is written once per provider change, and cleared like any selection.**
+> The `model` key of `~/.claude/settings.json` is the `/model` choice claude starts on. When the
+> selected provider changes, the claude settings derive writes it through the selection namespace:
+> the previous model's equivalent on the new provider, matched by claude's tier word (`opus`,
+> `sonnet`, `haiku`), else the new provider's default
+> ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3),
+> [MM-D43](../design/model-lists-and-pickers.md#MM-D43)). The selection carries a **trigger** (a
+> term coined in `agentcfg.SelectionTriggerKey`: the value whose change, and only whose change,
+> makes the selection a new choice): the provider, whether claude reaches it through the wire
+> bridge, and the profile's `model` and `pin_model`
+> ([MM-D44](../design/model-lists-and-pickers.md#MM-D44)). So while those stay the same a
+> `/model` pick of yours stands, and so does choosing claude's Default, which removes the key. A
+> launch with no recorded trigger, the first after an upgrade included, reads as a change. On
+> every change a value valid on the new route is its own equivalent, kept with its version and
+> `[1m]`: a Bedrock id or tier name on claude's own Bedrock client, a typed id on a gateway such
+> as z.ai, a claude id such as `claude-opus-5-5[1m]` on claude's own login, so a value your host
+> `settings.json` supplies stands, at a jail and at `yolo host apply`. Only a value the new route
+> cannot call is replaced: by its tier equivalent, else the provider's default, and where there
+> is neither the key is removed, your own value included, so claude uses its own default. A
+> Bedrock-only id you picked also leaves with Bedrock through the provider keys. No per-launch `ANTHROPIC_MODEL` competes with the saved value any more; it is set only on
+> a profile's `pin_model` opt-in. The per-tier variables are process environment rebuilt on every
+> launch, so a deselect simply stops emitting them, except on claude's own Bedrock client, where
+> the tiers a list names by alias (and every tier under an `only`) are also written into
+> `settings.json`'s `env` block beside `CLAUDE_CODE_USE_BEDROCK`, so a bare `claude` keeps them;
+> off Bedrock the provider keys drop those. The picker keys in `claude/settings`
+> (`availableModels`, `modelPicker`) are ordinary computed keys, re-asserted every boot, and leave
+> with the profile for the same reason. At `yolo host apply`, whose `rmw` write re-reads your real
+> file, a computed key the derive stops asserting leaves by the computed-leaf clear
 > ([HC-D25](../design/host-computed-layer.md#HC-D25)) rather than by omission: claude's Bedrock
 > switch is the case that matters, since the host leaves claude's `codex` profile out.
 
