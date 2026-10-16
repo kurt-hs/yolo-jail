@@ -45,6 +45,15 @@ import (
 // carries one setting of git's environment scope, core.hooksPath=os.DevNull, which replaces
 // $GIT_DIR/hooks as well as any configured hooks folder.
 //
+// NOTHING OUTLIVES THE RUN. A `git commit`, `git am` or `git fetch` starts
+// `git maintenance run --auto --detach` by default, in a new session that keeps running after
+// the command returns (measured with git 2.55), so it can still be writing into a fixture's
+// t.TempDir() when the test's cleanup removes it. That failed a test on macOS CI with
+// "TempDir RemoveAll cleanup: … .git: directory not empty". The environment also sets
+// maintenance.auto=false, gc.auto=0 (the same for a git older than maintenance, 2.29) and
+// core.fsmonitor=false, which a repository's own config could otherwise turn on and whose
+// daemon outlives the run the same way.
+//
 // Compose it with packsrc.CleanGitEnv, which drops a different set (git's repository-state
 // variables): testsupport cannot call it, because packsrc's own tests import this package.
 //
@@ -66,10 +75,24 @@ func HermeticGitEnv(env []string) []string {
 }
 
 // hermeticGitSettings is what HermeticGitEnv appends: no global or system configuration file,
-// and hooks off.
-var hermeticGitSettings = []string{
-	"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
-	envConfigCount + "=1", envConfigKey + "0=core.hooksPath", envConfigValue + "0=" + os.DevNull,
+// hooks off, and no background process left behind.
+var hermeticGitSettings = append([]string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"},
+	configEnv([][2]string{
+		{"core.hooksPath", os.DevNull},
+		{"maintenance.auto", "false"},
+		{"gc.auto", "0"},
+		{"core.fsmonitor", "false"},
+	})...)
+
+// configEnv spells settings in git's environment scope: GIT_CONFIG_COUNT and its
+// GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n> pairs.
+func configEnv(settings [][2]string) []string {
+	out := []string{envConfigCount + "=" + strconv.Itoa(len(settings))}
+	for i, kv := range settings {
+		n := strconv.Itoa(i)
+		out = append(out, envConfigKey+n+"="+kv[0], envConfigValue+n+"="+kv[1])
+	}
+	return out
 }
 
 // ArmGitConfigTripwire makes every git run this process starts, and every run their children

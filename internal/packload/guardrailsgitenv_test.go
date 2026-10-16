@@ -81,7 +81,8 @@ func runGuardrailsRequiredGitWritesRespectIndexLock(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	runGit := func(args ...string) ([]byte, error) {
-		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		// maintenance.auto/gc.auto: no detached maintenance outliving git into t.TempDir's cleanup.
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "maintenance.auto=false", "-c", "gc.auto=0"}, args...)...)
 		cmd.Env = gitEnv
 		return cmd.CombinedOutput()
 	}
