@@ -568,7 +568,7 @@ func (a *advance) actStopped() advanceResult {
 	f := a.f
 	a.stopSaid = true
 	if !(a.serves() && (run.PatchedForkHold(f) != "" || a.walkBackHolds())) {
-		// A held serving build runs whatever is recorded (§6.3, §6.4 of the recovery design).
+		// A held serving build runs whatever is recorded (docs/reference/patched-forks.md §3.4, §8.6).
 		failure := a.deliveryPatchFailure(false)
 		if failure.State == "unavailable" {
 			return a.unavailableDetachedAuthority(failure)
@@ -1369,7 +1369,7 @@ func (a *advance) run() advanceResult {
 				"`yolo pack update` checks now", f.Label(), found.FetchErr, a.runsNow())
 		}
 		if a.walkBackHolds() && !a.o.force {
-			// THE WALK-BACK HOLDS (§6.4 of the recovery design): the newest entry is still the one the
+			// THE WALK-BACK HOLDS (docs/reference/patched-forks.md §8.6): the newest entry is still the one the
 			// series did not take, so the walked-back good build runs, held, and nothing is built or
 			// refused until a check lists something newer.
 			return a.finish(nil, forkBuild{}, 0, nil, "")

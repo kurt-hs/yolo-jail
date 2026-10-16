@@ -127,7 +127,7 @@ type Fork struct {
 	// place in the contributing pack's lists wherever a launch hands no tree (ApplyTreeFallbacks).
 	Fallback string
 	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
-	// (docs/design/patched-build-recovery.md §6.5, YOLO_SKIP_PATCHES): the upstream's newest list entry
+	// (docs/reference/patched-forks.md §8.5, "Skip the patches", YOLO_SKIP_PATCHES): the upstream's newest list entry
 	// built under the fork's own build recipe with no series applied. Its Patches and PatchBranch are
 	// empty, its series is the empty one, and its Key carries UpstreamKeySuffix, so its check record,
 	// build lock, receipts and reaps are its own and never the series'. Made by UpstreamBuild only.
