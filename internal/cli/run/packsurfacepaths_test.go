@@ -1,7 +1,7 @@
 package run
 
 // packsurfacepaths_test.go covers the collector feeding OQ-LM6's two-writers refusal
-// (docs/research/local-model-endpoints.md).
+// (docs/reference/providers.md#oq-lm6).
 //
 // ⚠ SCOPE, stated rather than implied: this pins the COLLECTOR, not the refusal's call site in
 // runContainer. That call sits after the image load and before the argv assembly, on a path that

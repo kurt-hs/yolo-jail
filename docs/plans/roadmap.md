@@ -214,7 +214,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     installs](../reference/agent-install-in-ci.md), and the linux/arm64 copilot cell for [GitHub's own installer](../design/program-delivery.md#OQ-NI1);
     rule the silent drops [the setup census](../design/backend-parity.md#42-what-was-built-2026-10-05-and-what-it-found)
     found; graduate into system docs [config ownership](../design/config-ownership-and-promotion.md), [pi's package
-    folder](../design/pack-pi-resources.md), [the extension model defaults](../research/extension-model-defaults.md), and
+    folder](../design/pack-pi-resources.md), and
     run a dotted `packages` entry on a `macos-user` launch, the one
     [UNMEASURED half of the attribute-path resolver](../reference/image-staging-vs-baking.md#what-a-packages-entry-names).
 34. Rulings nothing shipped waits on. Gating one later step: [the host-file permission asymmetry](BACKLOG.md#E2) with

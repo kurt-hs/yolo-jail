@@ -1,7 +1,7 @@
 package cli
 
 // configreftieraliases_test.go: `yolo config-ref` names every conventional tier alias the
-// derive helper warns about (docs/research/extension-model-defaults.md OQ-XM2 added
+// derive helper warns about (docs/reference/providers.md#oq-xm2: OQ-XM2 added
 // `frontier`). It reads the list from luahook rather than retyping it, so adding a fifth alias
 // there without documenting it fails here.
 

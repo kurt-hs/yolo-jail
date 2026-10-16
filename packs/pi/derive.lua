@@ -1090,7 +1090,7 @@ local function subagentModel(ctx, value, where)
 end
 
 -- piSubagents is pi-subagents' `subagents` block for the launch's provider, the same shape
--- for EVERY provider (docs/research/extension-model-defaults.md OQ-XM3, ruled 2026-09-28,
+-- for EVERY provider (docs/reference/providers.md#oq-xm3, ruled 2026-09-28,
 -- which also answered the since-deleted pi-model-selection-ux.md's OQ-PM1). The maintainer: "always
 -- the default … unless there's some very clear exception stated. And regardless, it
 -- shouldn't be able to cross providers."
@@ -1131,7 +1131,7 @@ end
 --     scope with none would refuse every child anyway. `*` becomes `.*`, which crosses the
 --     slashes of an id such as kilo's `deepseek/deepseek-v4.1-flash`, and still never
 --     another provider's prefix. That is the recorded implementation decision
---     (extension-model-defaults.md, Decision Ledger).
+--     (XM-D4, docs/reference/providers.md#XM-D4).
 --
 -- A computed key, not a selection one: the selection lifts scalars and arrays of scalars
 -- only (docs/reference/providers.md, Selection), and this is an object. So it is
