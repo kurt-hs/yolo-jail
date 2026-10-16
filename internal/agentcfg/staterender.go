@@ -465,7 +465,11 @@ func ComposeStateful(in StatefulInputs) (*StatefulOutput, error) {
 					return nil, cerr
 				}
 				delta := mergeDiff(lastMap, curMap)
-				overlay = mergeAccumulate(overlayMap, delta)
+				// A null the file HOLDS is not a deletion, though mergeDiff spells the two
+				// alike: drop every tombstone at a keypath the current file holds as a
+				// literal null (dropHeldNullTombstones; config-ownership.md#CO-D20). On the
+				// ACCUMULATED overlay, so a sidecar an older yolo polluted heals here too.
+				overlay = dropHeldNullTombstones(mergeAccumulate(overlayMap, delta), literalNullSkeleton(curMap))
 			} else if !reflect.DeepEqual(lastRender, current) {
 				overlay = current
 			}
