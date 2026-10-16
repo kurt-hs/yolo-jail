@@ -110,7 +110,7 @@ What a provider and a profile should mean at all is
 [`bedrock-plumbing.md`](bedrock-plumbing.md) (which transport each agent has),
 [`model-lists-and-pickers.md`](model-lists-and-pickers.md) (what a model list holds, what each
 picker shows, and the bridge's `/v1/models`), [`bedrock-web-search.md`](bedrock-web-search.md)
-(the search proxy that shares the signer), [`sso-backed-bedrock.md`](sso-backed-bedrock.md)
+(the search proxy that shares the signer), [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth)
 (where the bridge's credential comes from), and
 [`gateway-provider-packs.md`](gateway-provider-packs.md) (OpenRouter and Kilo).
 
@@ -145,7 +145,7 @@ MEASURED from the code at `5e8e64f6`; the symbols named were re-checked present 
 **So today the bridge reaches Bedrock with an API key and nothing else.** A **Bedrock API key**
 is AWS's Bedrock-only credential, sent as-is as a bearer from `AWS_BEARER_TOKEN_BEDROCK`. It is
 one of the three credentials yolo supports; the others are a static key pair and an SSO session
-through `aws-auth` ([OQ-SSO7](sso-backed-bedrock.md#13-decision-ledger);
+through `aws-auth` ([OQ-SSO7](../reference/agent-credentials.md#sso-decision-ledger);
 [`bedrock-plumbing.md`](bedrock-plumbing.md#64-the-credential-three-are-supported)). A user
 provider pointing `endpoints.openai` at runtime's `/openai/v1` with
 `wire_api: "openai-chat-completions"` and such a key should give claude and copilot every
@@ -155,7 +155,7 @@ SigV4: `vendor/` holds no AWS module, and nothing under `internal/` or `cmd/` si
 Three consequences, all of which fall away for claude and copilot once the bridge signs:
 
 1. An SSO or static-key user has no way onto the bridge except a key minted from their
-   credentials: [`sso-backed-bedrock.md`](sso-backed-bedrock.md#4-five-options)'s option D,
+   credentials: [`agent-credentials.md`](../reference/agent-credentials.md#sso-options)'s option D,
    unbuilt.
 2. The credential preflight demands `AWS_BEARER_TOKEN_BEDROCK`, and a jail that also carries
    `aws-auth`'s pointer is refused at launch. So the bridge and the SSO arm cannot share a jail.
@@ -198,7 +198,7 @@ the hermetic build.
 a Bedrock API key minted from the session (option D). A key minted from `aws-auth`'s narrowed
 session lives **at most an hour**. The narrowed credential is an assumed role taken from an SSO
 role session, which is
-[role chaining](sso-backed-bedrock.md#33-four-aws-words-this-doc-leans-on), and STS caps role
+[role chaining](../reference/agent-credentials.md#permission-modes), and STS caps role
 chaining at one hour. A bearer inherits that expiry and is frozen for the launch. From an
 un-narrowed permission-set session it lasts that session's remaining one to twelve hours.
 INFERRED from the two documented caps; not measured. A minted key also fails outright where a
@@ -217,7 +217,7 @@ job: there is no AWS binary event stream to decode.
 
 **What it buys.** The SSO credential refreshes itself inside a running jail, and an org denying
 `CallWithBearerToken` still works. Option D becomes unnecessary for every shipped agent, copilot
-included; retiring it stays [`sso-backed-bedrock.md`](sso-backed-bedrock.md)'s call. This is
+included; retiring it stays [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth)'s call. This is
 **not** that doc's rejected option E, a host-side signing proxy: the credential still crosses as
 the `aws-auth` pointer, the signer runs in the jail, and the host sees no prompt. It amends
 [WB-D4](../reference/wire-bridge.md#wb-d4), whose outbound credential is today one key file read
@@ -1191,7 +1191,7 @@ The **subscription arm** *(coined in [`bedrock-plumbing.md`](bedrock-plumbing.md
 Teams login routed through the wire bridge like any other upstream: the bridge forwards claude's
 request untranslated, with the subscription's OAuth bearer it arrived with, to Anthropic. That
 claude sends that bearer to whatever `ANTHROPIC_BASE_URL` names is MEASURED
-([`agent-auth-modes.md` §8.1](agent-auth-modes.md#81-measured-2026-09-02-the-subscription-bearer-follows-anthropic_base_url)).
+([`wire-bridge.md`](../reference/wire-bridge.md#the-subscription-bearer-follows-anthropic_base_url)).
 [OQ-BR16](#OQ-BR16) puts it on the everything profile, [OQ-BR17](#OQ-BR17) rules opt-in
 failover, and [OQ-BR18](#OQ-BR18) clears the terms question. Then:
 
@@ -1205,7 +1205,7 @@ failover, and [OQ-BR18](#OQ-BR18) clears the terms question. Then:
   with its usage-limit response, the bridge resends that request to Bedrock under the mapped id,
   and keeps doing so for that model until the limit resets. It is enabled per profile, and every
   switch is disclosed. This reverses the deferral in
-  [`agent-auth-modes.md` OQ-1](agent-auth-modes.md#12-decision-ledger), because the bridge
+  the deleted `agent-auth-modes.md`'s first question, because the bridge
   removes all three of its reasons: the limit is no longer opaque to yolo; the switch is per
   model, not global; and claude never changes credentials mid-session.
 
@@ -1371,7 +1371,7 @@ Three earlier non-licenses are reopened here by name:
   [What this does not license](../reference/wire-bridge.md#what-this-does-not-license).
   **Reversed** for routing by model (Part 2), failover (Part 4), and per-agent routing and
   allowlists (Part 5). Budgets stay refused.
-- [`sso-backed-bedrock.md` §9](sso-backed-bedrock.md#9-non-goals): *"Not a gateway, not a
+- [`agent-credentials.md`](../reference/agent-credentials.md#sso-non-goals): *"Not a gateway, not a
   proxy, not a model router."* **Reopened** by [DIR-WG1](#DIR-WG1) for the in-jail bridge only.
   The non-goal still holds for the credential service that doc builds, and its option E, a
   *host-side* proxy, stays rejected.
@@ -1455,8 +1455,8 @@ Three earlier non-licenses are reopened here by name:
 
 | Alternative | Verdict |
 | :--- | :--- |
-| **Mint a Bedrock API key for the bridge** ([option D](sso-backed-bedrock.md#4-five-options)) | **Superseded by [OQ-BR10](#OQ-BR10).** At most an hour over the narrowed session, frozen for the launch, and refused where `CallWithBearerToken` is denied. |
-| **A host-side signing proxy** ([option E](sso-backed-bedrock.md#4-five-options)) | **Not needed.** An in-jail signer gets the refresh and the policy resilience without the host seeing any prompt. |
+| **Mint a Bedrock API key for the bridge** ([option D](../reference/agent-credentials.md#sso-options)) | **Superseded by [OQ-BR10](#OQ-BR10).** At most an hour over the narrowed session, frozen for the launch, and refused where `CallWithBearerToken` is denied. |
+| **A host-side signing proxy** ([option E](../reference/agent-credentials.md#sso-options)) | **Not needed.** An in-jail signer gets the refresh and the policy resilience without the host seeing any prompt. |
 | **Vendor the AWS SDK's signer** ([OQ-BR10](#OQ-BR10)'s option C) | **Not taken; the implementer's call**, to keep the hermetic build free of an AWS module. The test vectors pin the standard-library signer instead. |
 | **Two claude profiles, no routing by model** ([OQ-BR11](bedrock-plumbing.md#OQ-BR11)'s leaning) | **Overruled**: one session could never switch between Claude and an OpenAI model. |
 | **Refuse a launch on an id outside the provider's `models`** ([providers reference](../reference/providers.md#no-launch-time-model-id-refusal)) | **Still rejected as the enforcement point**; its intent moves to the bridge ([OQ-WG3](#OQ-WG3)). |
@@ -1799,7 +1799,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | OQ-BR10 | **The bridge signs its own requests (option A: a standard-library signer pinned by AWS's test vectors).** Answered by DIR-BR2: SSO on the bridge route rules out option B, whose minted key lives at most an hour. A over C (vendoring the AWS SDK's signer) is the implementer's call, taken to keep the hermetic build free of an AWS module | 2026-09-24 | [§2](#2-part-1--the-bridge-signs-its-own-upstream-requests-ruled) (moved from [`bedrock-plumbing.md`](bedrock-plumbing.md)) | 2026-09-25: `internal/sigv4`, pinned by AWS's SigV4 test suite; the bridge signs through `internal/wirebridged/signing.go`. Accepted by live Bedrock on 2026-10-01, under the SSO credential ([§2.4](#24-the-first-live-requests-measured-2026-10-01)) |
 | OQ-BR18 | **Yes, the bridge may carry a Claude subscription.** The maintainer's call on Anthropic's terms and company policy | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-BR16 | **The everything profile carries the subscription too**, forwarded untranslated with its own bearer, so one model list spans Teams and Bedrock. *"yes that would be amazing"* | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
-| OQ-BR17 | **Opt-in automatic failover, per model, from the subscription to Bedrock** on the subscription's usage-limit response, every switch disclosed. *"yes, opt in"*. Supersedes [agent-auth-modes OQ-1](agent-auth-modes.md#12-decision-ledger)'s deferral for this path | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
+| OQ-BR17 | **Opt-in automatic failover, per model, from the subscription to Bedrock** on the subscription's usage-limit response, every switch disclosed. *"yes, opt in"*. Supersedes the deleted agent-auth-modes.md's failover deferral for this path | 2026-09-24 | [§5](#5-part-4--the-subscription-arm-and-opt-in-failover-ruled) (moved) | — |
 | OQ-WG1 | **The signer keys on the upstream host now** (`bedrock-runtime.<region>.amazonaws.com`, `*.gateway.bedrock-agentcore.<region>.amazonaws.com`), **and re-keys on the provider's Bedrock marker once [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) gives one** — host patterns cannot know other people's configurations | 2026-09-25 | [§2.1](#21-behavior-the-signer-fixes) | 2026-09-25, (a): `sigv4.BedrockRuntimeRegion` decides at boot (`route.SignRegion`). (b), the marker re-key, 2026-09-30 as [WG-I37](#WG-I37): `wirebridged.bedrockSigning` |
 | OQ-WG6 | **A profile field (`via: "bridge"`) puts its agent on the bridge path**: the derive writes the agent's base URL as the bridge's per-agent path (WG4), and `routeFor` takes the upstream from the provider's own `openai` endpoint; no new provider vocabulary | 2026-09-25 | [OQ-WG6](#OQ-WG6) | 2026-09-25, [§4.1](#41-how-it-is-built) |
 | OQ-WG7 | **The multi-route bridge, as tabled**: existing adapter routes stay at their ports' roots; one new declared address carries every `via` route under `/agent/<name>/`; `via`'s value names the service pack, which selecting the profile adds like `needs`; a per-agent `ctx.via_url` derive input; credentials per route from the provider's `api_key_env_name`, Bedrock through the signer chain. An implementation decision, recorded as one | 2026-09-25 | [OQ-WG7](#OQ-WG7) | 2026-09-25, [§4.1](#41-how-it-is-built) |
@@ -1849,7 +1849,7 @@ rather than as the agent encoded it, which is the same bytes for every id the ro
 | OQ-WG3 | **One list** (the picker's effective list after an `only`), **and a separate enforcement switch** on the profile, **default on**; off means the list only shapes pickers | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design) | 2026-09-30, [§6.1](#61-how-the-allowlist-is-built): the bridge refuses a model off a narrowed list while `enforce_models` is on ([WG-I40](#WG-I40)–[WG-I43](#WG-I43)) |
 | OQ-WG4 | **A path prefix per agent on the one listen port**, written by each derive; an unknown prefix is refused; a port per agent only for an agent measured to drop a base URL's path (delegated, decided in review) | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design) | — |
 | OQ-WG5 | **Each profile picks one path, native or the bridge**; a bridged profile passes the native protocol through or translates it; every native wire gets a pass-through route, Converse included | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design), [§8](#8-build-order) | — |
-| DIR-WG1 | **An option to send every agent's model traffic through the wire bridge, so it can filter models and route each agent to its own upstream.** *"having an option to send all traffic through wire bridge or whatever for all endpoints so that we can do things like filter models — like when I'm using OpenRouter I'd want to set a specific set of models and not allow it to use other models … the only way to do that even if you're talking about pi … is through wire bridge … maybe we can identify specific agents so we can route them to different places … give them different endpoints … another design doc spawning out of this"*. Given in answer to [OQ-BR4](../reference/providers.md#oq-br4). Reverses [`wire-bridge.md`](../reference/wire-bridge.md#what-a-wire-bridge-is-not)'s "Not a gateway". Reopens, for the in-jail bridge only, the stance of [`sso-backed-bedrock.md` §9](sso-backed-bedrock.md#9-non-goals) ("not a model router"), whose non-goal still holds for the credential service that doc builds; with [OQ-BR10](#OQ-BR10), amends WB-D4. Built through [OQ-WG2](#OQ-WG2)–[OQ-WG5](#OQ-WG5). A direction, so no question id | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design) | — |
+| DIR-WG1 | **An option to send every agent's model traffic through the wire bridge, so it can filter models and route each agent to its own upstream.** *"having an option to send all traffic through wire bridge or whatever for all endpoints so that we can do things like filter models — like when I'm using OpenRouter I'd want to set a specific set of models and not allow it to use other models … the only way to do that even if you're talking about pi … is through wire bridge … maybe we can identify specific agents so we can route them to different places … give them different endpoints … another design doc spawning out of this"*. Given in answer to [OQ-BR4](../reference/providers.md#oq-br4). Reverses [`wire-bridge.md`](../reference/wire-bridge.md#what-a-wire-bridge-is-not)'s "Not a gateway". Reopens, for the in-jail bridge only, the stance of [`agent-credentials.md`](../reference/agent-credentials.md#sso-non-goals) ("not a model router"), whose non-goal still holds for the credential service that doc builds; with [OQ-BR10](#OQ-BR10), amends WB-D4. Built through [OQ-WG2](#OQ-WG2)–[OQ-WG5](#OQ-WG5). A direction, so no question id | 2026-09-25 | [§6](#6-part-5--all-traffic-through-the-bridge-new-direction-design) | — |
 
 Part 2 rests on [OQ-BR11](bedrock-plumbing.md#OQ-BR11) (2026-09-24), and Part 3 on
 [OQ-BR5](bedrock-plumbing.md#OQ-BR5) (2026-09-25) for pi and

@@ -170,7 +170,7 @@ func TestShippedManifestsDecodeStrictly(t *testing.T) {
 	//                         both with an adapter that can never answer.
 	//   aws-auth              false, and it is the only one whose value carries a
 	//                         BEHAVIOUR the framework cannot otherwise spell.
-	//                         docs/design/sso-backed-bedrock.md §8, degenerate inputs:
+	//                         the deleted SSO design's degenerate inputs:
 	//                         "the loophole does not start ... Not an error: a selected
 	//                         pack with no configuration is inert". Nothing supports a
 	//                         setting-conditional spawn, so `false` IS those two clauses
@@ -690,7 +690,7 @@ func TestShippedAWSAuthFields(t *testing.T) {
 			"default ON — awsauthdaemon reads the frame through hostservice.ServeFrontedUnix " +
 			"and the jail= on its audit lines is host-asserted only because of it")
 	}
-	// THE LAUNCH CHECK (docs/design/sso-backed-bedrock.md SSO-D1): design §8's "the launch
+	// THE LAUNCH CHECK (docs/reference/agent-credentials.md SSO-D1): design §8's "the launch
 	// warns with the `aws sso login` command and proceeds" is this declaration, since the
 	// launch asks only a daemon whose record carries it. Dropping it turns the warning off
 	// with every unit test of the daemon's answer still green.

@@ -45,8 +45,7 @@ which scheduler. The rest follows from it.
 
 **Needs your ruling:** [OQ-IO3](#OQ-IO3), [OQ-IO4](#OQ-IO4), [OQ-IO6](#OQ-IO6), [OQ-IO7](#OQ-IO7).
 
-**Reads with:** [`io-priority-plan.md`](io-priority-plan.md) (the implementation sketch for step 6,
-blocked, and the record of step 5), [`backend-parity.md`](backend-parity.md) (the disposition words
+**Reads with:** [`backend-parity.md`](backend-parity.md) (the disposition words
 [§5.2](#52-the-launcher-one-decision-per-backend-and-the-disk-it-lands-on) uses),
 [`declaration-parity.md`](declaration-parity.md) (P1, which decides the failure paths, and P4,
 which bounds who may declare it at the host notch).
@@ -421,6 +420,25 @@ already decide how it behaves ([OQ-IO2](#11-decision-ledger), [IO-D6](#11-decisi
    Then the user logs out and back in. The line also says what delegation does not change:
    which disks honor the setting ([§3.3](#33-what-that-means-on-real-hosts)).
 
+**Where it would land**, should one ship ([§9](#9-what-i-would-build-in-order) step 6):
+
+| Where | What changes |
+| :--- | :--- |
+| [`internal/cli/run/hostloopback.go`](../../internal/cli/run/hostloopback.go) | `podmanInfo.Host` gains `CgroupControllers []string` (`json:"cgroupControllers"`), the gate [IO-D6](#11-decision-ledger) names |
+| [`internal/cli/run/backendcaps.go`](../../internal/cli/run/backendcaps.go) | the flag decision beside `appliedIOPriority`, so the argv and the briefing read one answer |
+| `internal/ioprio.Parse` | admits `weight` only if option (a) ships; today it is an unknown key, and `TestParseRefusesEverythingElse` pins that |
+| [`cmd/yolo-cglimit`](../../cmd/yolo-cglimit) | only if [OQ-IO4](#OQ-IO4) says yes |
+
+- ⚠ crun fails container creation on an io file the cgroup lacks, which is why the flag is emitted
+  only on the positive answer above.
+- ⚠ An attach briefs what the jail was launched with, never the current config
+  ([IO-D12](#11-decision-ledger)). `refreshJailBriefings` takes the priority from its caller for
+  that reason, and a cgroup half's briefing line needs the same treatment: on an attach, what the
+  container was created with, from its `inspect`.
+- Reuse: `noteIOPriority` (`internal/cli/run/iopriority.go`) is where a dropped flag's one launch
+  line goes, and `sectionIOPriority` is where the delegation row goes, as a `hostFact` `[SKIP]` in
+  a jail.
+
 ### 5.4 `yolo check`: the disk under the workspace
 
 - **A row only when a priority is declared** other than `"normal"`. An undeclared key prints
@@ -511,6 +529,13 @@ Built 2026-10-04 ([IO-D7](#11-decision-ledger), [IO-D13](#11-decision-ledger)).
   scheduler and writeback clauses, which describe a mechanism this backend does not use. `yolo
   check` prints a `[PASS]` naming the policy ([§5.4](#54-yolo-check-the-disk-under-the-workspace)).
   The "resources are NOT enforced on macos-user" line no longer names `io` at all.
+- **Where it landed.** [`internal/ioprio`](../../internal/ioprio) (`Priority.DarwinPolicy`, the
+  darwin calls and a refusing stub off darwin);
+  [`orchestrator.go`](../../internal/macosuser/orchestrator.go) (the set and read-back through the
+  `SetDiskIOPolicy` and `DiskIOPolicy` seams, `unenforcedResourceKeys`, the dry-run plan);
+  [`backendcaps.go`](../../internal/cli/run/backendcaps.go) (`appliedIOPriority`);
+  [`briefing.go`](../../internal/jailcontent/briefing.go) (the briefing line); and
+  [`section_iopriority.go`](../../internal/cli/check/section_iopriority.go) (the `[PASS]` row).
 - [DP-D1](declaration-parity.md#7-ruled-divergent-and-the-ones-i-would-re-open) does not rule this
   out. It rejected `RLIMIT_AS` and `RLIMIT_NPROC` as stand-ins for `memory` and `pids_limit`, not a
   disk policy.

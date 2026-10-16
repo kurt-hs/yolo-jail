@@ -1,7 +1,7 @@
 package integration
 
 // attachprofile_test.go is the end-to-end acceptance of PER-ENTRY channel delivery
-// (docs/design/agent-auth-modes.md §4.3, implemented as the yolo-user-env.sh channel
+// (docs/reference/providers.md "What crosses to the jail": the yolo-user-env.sh channel
 // section): a jail launched with NO profile selected carries no provider environment
 // in its frozen container env, and an attach that selects one DELIVERS it — same
 // running jail, per-session env. Until per-entry delivery shipped, 'yolo -p zai --

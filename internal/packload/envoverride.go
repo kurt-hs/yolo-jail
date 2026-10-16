@@ -10,7 +10,7 @@ package packload
 // The rule's first home was a core package that named the Bedrock bearer variable and the
 // container-credentials pointer itself (deleted by OQ-SSO8), and config.ValidateConfig,
 // which knew which home directory an AWS SDK reads. Both were facts about one ecosystem's
-// resolution order living in the launch path, and OQ-SSO8 (docs/design/sso-backed-bedrock.md, ruled
+// resolution order living in the launch path, and OQ-SSO8 (docs/reference/agent-credentials.md, ruled
 // 2026-09-25) moved them into the pack that owns the channel: *"this needs to be contained
 // within the pack. So we can't like hard code anything into core to look for this stuff."*
 // packs/aws-auth now declares all three overrides of its pointer; a made-up pack declaring

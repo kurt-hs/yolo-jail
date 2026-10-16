@@ -17,7 +17,7 @@ package run
 // is backend-agnostic, so both reproduce on Linux, through the call the launch makes:
 // stageRunPacks, which Run calls once per launch above the backend dispatch.
 //
-// The ruled behavior these pin (docs/design/pi-git-extension-caching.md OQ-2 and OQ-3, and
+// The ruled behavior these pin (docs/design/pi-extension-store-builds.md OQ-2 and OQ-3, and
 // docs/reference/pack-system.md#concurrent-launches-of-one-workspace): a launch's result never
 // depends on another launch's. The first fix made the second launch WAIT at staging; ONE PACK
 // TREE PER LAUNCH (packtree.go, OQ-PK2 (c)) removed the need to, since no launch writes a tree

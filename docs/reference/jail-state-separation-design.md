@@ -39,7 +39,7 @@ tier shares), [`jail-home.md`](jail-home.md) (the `:ro` machine base and the per
 overlays this leans on),
 [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md) (what a mise-installed toolchain
 needs at run time),
-[`../research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md) (the
+the deleted `mise-host-jail-path-mismatch.md` (the
 per-incident investigation that motivated the store split).
 
 For `per_side_paths` as a config key, run `yolo config-ref`.

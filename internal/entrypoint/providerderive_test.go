@@ -432,7 +432,7 @@ func zaiEndpointsTable() map[string]map[string]any {
 }
 
 // TestProviderDerivesResolveAnEndpointsOnlyProvider pins the resolution half of the
-// endpoints schema (zai-plumbing.md §5, closure rule 2) against the canonical vocabulary
+// endpoints schema (providers.md OQ-Z6, closure rule 2) against the canonical vocabulary
 // (docs/reference/providers.md): the composed wire_api is YOLO's canonical protocol
 // name, so what reaches an agent is that agent's own spelling of the protocol its endpoint
 // resolves to — or, when the agent cannot speak it, NO entry at all.
@@ -584,7 +584,7 @@ func TestProviderDerivesResolveAnEndpointsOnlyProvider(t *testing.T) {
 // what an omitted wire_api means for it; pi has NO default (an absent api is a
 // composition error that deletes the provider, pi 0.84.4 provider-composer.js:48-52), so
 // the derive must choose, and it chooses pi's chat-completions spelling — the protocol
-// the `openai` endpoint key names (zai-plumbing.md §5). The last row is not a default at
+// the `openai` endpoint key names (providers.md, provider reach). The last row is not a default at
 // all but the version-skew case: a canonical name these derives predate, which both maps
 // must treat as unspeakable rather than pass through.
 func TestProviderDerivesTranslateTheCanonicalVocabulary(t *testing.T) {
@@ -728,7 +728,7 @@ func TestProviderDerivesSkipAProviderWithNoURLForThem(t *testing.T) {
 			"__yolo_table_probe__": map[string]any{"command": "probe"},
 			// Anthropic-endpoint-only. pi CAN speak Anthropic Messages
 			// (anthropic-messages is in its registry) — the reason this is not a pi row
-			// is the resolution table (zai-plumbing.md §5): pi resolves `openai`, and an
+			// is the resolution rule (providers.md OQ-Z6): pi resolves `openai`, and an
 			// endpoints-only provider with no openai endpoint names no URL for the
 			// protocol pi resolves to. Inventing an entry here would point pi's
 			// chat-completions api at an anthropic URL.

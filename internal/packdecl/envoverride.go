@@ -17,7 +17,7 @@ import (
 // contribution is silently unused while every request still succeeds. A launch that
 // would deliver both is REFUSED, fatally and with no escape hatch, when the override is
 // CERTAIN; when it is only possible (`certain: false`) the launch WARNS and continues
-// (docs/design/sso-backed-bedrock.md, OQ-SSO8).
+// (docs/reference/agent-credentials.md, OQ-SSO8).
 //
 // # Why the pack declares this, and core does not
 //

@@ -13,8 +13,7 @@ import (
 )
 
 // RENDER-MARK PARITY ON macos-user, ASKED OF A REAL SANDBOX
-// (docs/design/notch-scoped-config-contributions.md §4.3, NS-D3;
-// docs/plans/handoff-guest-notch-macos.md §4).
+// (docs/design/notch-scoped-config-contributions.md §4.3, NS-D3).
 //
 // THE RULE. A `readsHost` host file yolo has already rendered into the home is yolo's own
 // output, not the user's, so a jail must compose that surface WITHOUT it: a key yolo wrote must

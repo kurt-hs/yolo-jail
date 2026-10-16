@@ -171,22 +171,23 @@ func (r *report) verify(formula, want string) {
 		r.ok("yolo on PATH is %s, this keg's binary", yolo)
 	}
 
+	var hash string
 	ver, _, err := capture(time.Minute, "", cleanEnv(), yolo, "--version")
 	if err != nil {
 		r.fail(err)
-	} else if err := checkVersionLine(string(ver), tap.Version); err != nil {
+	} else if hash, err = checkVersionLine(string(ver), tap.Version); err != nil {
 		r.fail(err)
 	} else {
 		r.ok("`yolo --version` prints %q", strings.TrimSpace(string(ver)))
 	}
 
-	r.verifyCheck(yolo, tap.Version, keg)
+	r.verifyCheck(yolo, tap.Version, hash, keg)
 }
 
 // verifyCheck runs `yolo check --no-build --format json` in an empty directory —
 // never the checkout, whose yolo-jail.jsonc is this repository's own development
 // config, written for the tree and not for the published binary under test.
-func (r *report) verifyCheck(yolo, version, keg string) {
+func (r *report) verifyCheck(yolo, version, versionHash, keg string) {
 	ws, err := os.MkdirTemp("", "tap-install-check-workspace-")
 	if err != nil {
 		r.fail(err)
@@ -204,7 +205,7 @@ func (r *report) verifyCheck(yolo, version, keg string) {
 	}
 	printFindings(r.out, out)
 
-	bundle, errs := judgeCheck(out, rc, version, keg)
+	bundle, errs := judgeCheck(out, rc, version, versionHash, keg)
 	for _, e := range errs {
 		r.fail(e)
 	}

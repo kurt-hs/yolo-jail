@@ -342,7 +342,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   entry**: Claude Code's Bash tool defines `grep` and `find` as functions that run its bundled search tools
   (measured on Claude Code 2.1.289 and 2.1.290), so Claude's own commands never meet the guardrails blocks,
   which still apply to everything that runs them by PATH. `yolo host --` applies the same blocks at the host
-  and says both limits at every launch ([HE-D11](docs/design/host-launch-environment.md#he-d11)).
+  and says both limits at every launch ([HE-D11](docs/reference/host-agent-environment.md#he-d11)).
 - **Use `shquote.Join`** (`internal/shquote`) for anything crossing into the container's `bash -c`.
 - **A LAUNCH HAS NO QUIET MODE, by ruling** ([`OQ-RO3`](docs/reference/report-tiers.md#why-its-this-way)).
   Progress may be COMPRESSED to a line — that is the whole density control a launch gets — but a
@@ -565,7 +565,7 @@ the leading dot stripped) and on macos-user (the account home's links point ther
 **[`CHANGELOG.md`](CHANGELOG.md)'s section for a version IS its GitHub release body, word for word**,
 and `just release <version>` is the one path to a tag: rename `[Unreleased]` to
 `[<version>] - <YYYY-MM-DD>`, run `just pin-pack-binaries <version>`, and commit both first, and the
-recipe refuses a bad version, a dirty tree, an existing tag (a request may only [resume a tag-only release](docs/design/pre-tag-release-gate.md#resuming-a-tag-only-release)), a HEAD origin cannot see, an official pack
+recipe refuses a bad version, a dirty tree, an existing tag (a request may only [resume a tag-only release](docs/reference/release-process.md#resuming-a-tag-only-release)), a HEAD origin cannot see, an official pack
 binary whose pinned digest the tree does not rebuild (`tools/pack-binaries` checks that, and
 `release.yml` and `publish.yml` run it too: [BP-D9](docs/design/broker-as-a-pack.md#BP-D9)), or a section
 [`scripts/changelog-section.sh`](scripts/changelog-section.sh) rejects. That script is the gate

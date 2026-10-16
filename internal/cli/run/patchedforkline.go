@@ -46,6 +46,37 @@ func WithPatches(label string, n int) string {
 	return label + " + " + PatchCount(n)
 }
 
+// WithSeries is WithPatches for a series as read: "<label> + N patches", or for a PATCH BRANCH
+// (docs/design/patched-forks.md §3.5) "<label> + patch branch <ref>@<commit>".
+func WithSeries(label string, s *packsrc.Series) string {
+	if s == nil {
+		return label
+	}
+	if s.PatchBranch != nil {
+		return label + " + patch branch " + s.PatchBranch.Label()
+	}
+	return WithPatches(label, s.Len())
+}
+
+// WithGood is WithSeries for a good build as the record keeps it: its patch count, or its patch branch.
+func WithGood(label string, g *packsrc.GoodBuild) string {
+	if g != nil && g.PatchBranch != "" {
+		return label + " + patch branch " + g.PatchBranch
+	}
+	if g == nil {
+		return label
+	}
+	return WithPatches(label, g.Patches)
+}
+
+// SeriesWhat is what a series applies, as a line names it: "N patches", or "patch branch <ref>@<commit>".
+func SeriesWhat(s *packsrc.Series) string {
+	if s.PatchBranch != nil {
+		return "patch branch " + s.PatchBranch.Label()
+	}
+	return PatchCount(s.Len())
+}
+
 // FloorCopy is the host floor's installed copy of a patched fork's program, which its line names as
 // what runs: the upstream commit and recipe it is a build of, and its label ("v1.1.0 (3f2a9c1e) + 2
 // patches").
@@ -74,10 +105,14 @@ func patchedForkLine(p packload.ForkPin, rebuilds string) (string, bool) {
 func patchedForkLineOf(f packload.Fork, floor *FloorCopy, rebuilds string) (string, bool) {
 	head := "fork " + f.Pack + ": " + f.Bin + " (in place of pack " + f.Base + "'s) is a patched fork of " + f.Source
 	series, err := f.ReadSeries()
+	if err == nil && series.Unresolved() {
+		return head + " + the patch branch " + f.PatchBranch + " — not fetched on this machine yet; " + rebuilds +
+			" fetches and builds it, or `yolo pack update` fetches it now", true
+	}
 	if err != nil {
 		return head + " — its patch series cannot be read: " + err.Error(), true
 	}
-	head += " + " + PatchCount(series.Len()) + " (series " + series.ShortDigest() + ")"
+	head += " + " + series.Describe()
 	if config.InJail() {
 		return head + " — checked and built on the host", false
 	}
@@ -112,19 +147,25 @@ func patchedForkLineOf(f packload.Fork, floor *FloorCopy, rebuilds string) (stri
 
 // BaseLagNote is a series' base lag (packsrc.BaseLag) as a line says it: "its base v1.0.0 (…) is 2
 // releases behind: v1.1.0, v1.2.0", the names elided to the oldest and the newest past three, and
-// which of them are known to take the series as it stands.
+// which of them are known to take the series as it stands. A PATCH BRANCH's base is its merge base with the
+// upstream, so its lag is the patch branch's behind the upstream: "the patch branch's merge base with upstream … is
+// 2 releases behind", and a release that takes it merges it cleanly.
 func BaseLagNote(lag *packsrc.BaseLag) string {
 	n := len(lag.Newer)
-	s := fmt.Sprintf("its base %s is %d %s behind: %s", lag.Base.Label(), n, plural(n, "release", "releases"),
+	subject, takes := "its base", "the series as it stands"
+	if lag.PatchBranch {
+		subject, takes = "the patch branch's merge base with upstream", "the patch branch cleanly"
+	}
+	s := fmt.Sprintf("%s %s is %d %s behind: %s", subject, lag.Base.Label(), n, plural(n, "release", "releases"),
 		lagTags(lag.Newer))
 	switch k := len(lag.Applies); {
 	case k == 0:
 	case k == n && n == 1:
-		s += ", which takes the series as it stands"
+		s += ", which takes " + takes
 	case k == n:
-		s += ", each of which takes the series as it stands"
+		s += ", each of which takes " + takes
 	default:
-		s += "; " + lagTags(lag.Applies) + plural(k, " takes", " take") + " the series as it stands"
+		s += "; " + lagTags(lag.Applies) + plural(k, " takes ", " take ") + takes
 	}
 	return s
 }
@@ -137,6 +178,10 @@ func BaseLagSteps(f packload.Fork, lag *packsrc.BaseLag, indent string) []string
 	newest := lag.Newer[len(lag.Newer)-1]
 	if len(lag.Applies) == 0 || lag.Applies[len(lag.Applies)-1].Commit != newest.Commit {
 		return nil
+	}
+	if lag.PatchBranch {
+		return f.RebaseRecipe().Repair(newest, "to bring the patch branch up to "+newest.Tag+", merge it in "+
+			"with git (it merges cleanly):", indent)
 	}
 	return f.RebaseRecipe().Repair(newest, "to re-anchor the series on "+newest.Tag+", rebase it with git "+
 		"(it applies there as it stands):", indent)
@@ -256,7 +301,7 @@ func (o *Options) noteAttachForkBuilds(handed map[string]HandedFork) {
 		runs := WithPatches(packsrc.ListEntry{Commit: h.Commit, Tag: h.Tag}.Label(), h.Patches)
 		line := "this jail runs fork " + h.Fork + " at " + runs
 		if rec, err := patchedPacksStore().LoadCheckRecord(h.Fork); err == nil && rec.Good != nil && rec.Good.Entry != h.Key {
-			line += "; " + WithPatches(GoodBuildLabel(rec.Good), rec.Good.Patches) + " is built, and the " +
+			line += "; " + WithGood(GoodBuildLabel(rec.Good), rec.Good) + " is built, and the " +
 				"next fresh launch, once this jail stops, runs it"
 		}
 		out.printf("[dim]%s[/dim]", richtext.Escape(line))

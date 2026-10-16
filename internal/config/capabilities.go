@@ -1,7 +1,7 @@
 package config
 
 // capabilities.go is THE CAPABILITY CENSUS behind `required_capabilities`
-// (docs/design/agent-auth-modes.md §6.2, OQ-CAP2): which named jobs a launch can count as
+// (docs/reference/mcp-configuration.md#the-capability-gate, OQ-CAP2): which named jobs a launch can count as
 // done, so that a config declaring it needs one that nothing does is refused before any backend
 // starts. THREE CALLERS answer from this one census: a jail launch's gate
 // (`run.refuseUnmetCapabilities`), the same gate at the host notch, which `yolo host -- <cmd>`
@@ -59,7 +59,7 @@ import (
 
 // CapabilityBaseline is the capability set every agent yolo can launch meets without anything
 // declaring it: editing files and running commands are the floor of "a coding agent", so
-// agent-auth-modes.md §6.2 makes them the default requirement. Named rather than left implicit
+// docs/reference/mcp-configuration.md#the-capability-gate makes them the default requirement. Named rather than left implicit
 // because `"required_capabilities": ["code_editing"]` is the example the shipped config
 // reference carries, and a gate that refused the floor would refuse the documented spelling.
 var CapabilityBaseline = []string{"code_editing", "command_execution"}

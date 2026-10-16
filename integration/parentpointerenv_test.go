@@ -3,7 +3,7 @@ package integration
 // parentpointerenv_test.go keeps an in-jail run of this suite from borrowing the jail's own
 // credential pointers. A podman launch made from inside a jail takes a declaring loophole's pointer
 // from the launching environment instead of starting the loophole's daemons
-// (docs/design/sso-backed-bedrock.md SSO-D2), and every launch here inherits this process's
+// (docs/reference/agent-credentials.md SSO-D2), and every launch here inherits this process's
 // environment. Run from an agent in a Bedrock jail, the aws-auth tests would then be served by
 // that jail's real service rather than by the fake `aws` they install, and would pass or fail for
 // a reason CI never sees. So the suite unsets every variable a shipped loophole's

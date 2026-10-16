@@ -1027,7 +1027,7 @@ func shippedPiLauncher(t *testing.T) (launcher, home, log string) {
 	if !strings.Contains(string(body), "REFRESH_ARGV=(update --extensions)") {
 		t.Fatalf("the shipped pi launcher does not bake `update --extensions`:\n%s", body)
 	}
-	// The first-install race's trigger (pi-git-extension-caching.md): pi's settings name its
+	// The first-install race's trigger (docs/reference/pack-system.md, `program`): pi's settings name its
 	// extensions, so a change there must route their install through the locked refresh.
 	if !strings.Contains(string(body), "\nREFRESH_DUE_ON_CHANGE=(.pi/agent/settings.json)\n") ||
 		!strings.Contains(string(body), "\nHAS_REFRESH_DUE=1\n") {

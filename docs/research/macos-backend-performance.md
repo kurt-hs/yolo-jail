@@ -21,7 +21,7 @@ measured on different days, so each is compared with its own day's native run. T
 grew out of the results:
 [why Apple Container's file work is slow](apple-container-file-cost.md) (per-file cost, not
 bandwidth, and what that means for a large Python monorepo),
-[whether any macOS VM can give memory back](macos-vm-memory-reclaim.md), and
+[whether any macOS VM can give memory back](macos-vm-runtime-comparison.md#4-memory-does-a-vm-give-a-freed-2-gib-back), and
 [a Python, Django and Postgres workload on three macOS VMs](macos-vm-runtime-comparison.md). CI logs hold launch times for each backend, but they come from two different Macs. The
 upstream source was read on 2026-09-30, at apple/container `0a48a1bd` (one day after release 1.5.0)
 and apple/containerization `f24df2ac` (1.5.0 is built on its tag 0.47.0). yolo evidence is at
@@ -127,12 +127,12 @@ of them cites a measurement on one Mac.
 | C6 | The maintainer's reading: Apple Container "dynamically allocates RAM and will return it to the operating system" | the request quoted above | **Half right:** allocation on demand, yes (C4); return only when the container stops (C5). |
 | C7 | "a filesystem boundary over the workspace" | [direction, problem statement](../reference/macos-no-vm-direction.md#the-macos-direction--three-axes-one-composed-product), [direction, warning](../reference/macos-no-vm-direction.md#refuted-alternatives) | **Supported, and probably the largest cost.** Every shared folder is virtiofs through one VZ device (MEASURED, by reading the source); yolo shares the workspace, the home and the cache that way (SOURCED by code); the same macOS mechanism measured about 2.7 times native for an `npm install` (SOURCED). |
 | C8 | "the VM overhead is bad enough that a reasonable person reaches for a different tool" | [direction, Refuted alternatives](../reference/macos-no-vm-direction.md#refuted-alternatives) | **No source settles it.** The benchmark measures its parts. |
-| C9 | Mac container startup is "~2-3s" | [platform-comparison.md](platform-comparison.md#performance-differences), [sandbox-comparison.md](sandbox-comparison.md#honest-limitations-of-yolo-jail) | **Contradicted for a yolo launch:** about 9 s on Apple Container in CI (MEASURED), of which the VM is under 1 s (SOURCED). The first doc is marked partly stale. |
-| C10 | virtiofs is "near-native"; CPU work is "~95-98% native" | [platform-comparison.md](platform-comparison.md#performance-differences) | **Files: contradicted** for metadata-heavy work (SOURCED). **CPU: plausible**, within a few percent of other runtimes, with no native baseline published (SOURCED). |
+| C9 | Mac container startup is "~2-3s" | `platform-comparison.md`, `sandbox-comparison.md` (both deleted 2026-10-16) | **Contradicted for a yolo launch:** about 9 s on Apple Container in CI (MEASURED), of which the VM is under 1 s (SOURCED). The first doc was marked partly stale. |
+| C10 | virtiofs is "near-native"; CPU work is "~95-98% native" | `platform-comparison.md` (deleted 2026-10-16) | **Files: contradicted** for metadata-heavy work (SOURCED). **CPU: plausible**, within a few percent of other runtimes, with no native baseline published (SOURCED). |
 | C11 | Parallel jails are bounded by memory, and Apple Container's per-VM footprint "is the real cap" | [integration-parallelism.md](../plans/integration-parallelism.md#the-work-in-order), [its risks](../plans/integration-parallelism.md#risks) | **Consistent with C5** (INFERRED); never measured. |
 | C12 | On Apple Container the scratch folders "are always held in memory" and count against the cap | [macos.md](../../userguide/guides/macos.md#apple-container-runtime-container--what-it-does-not-do) | **SOURCED by code** ([assemble_parts.go](../../internal/cli/run/assemble_parts.go)'s `appleContainerBaseMounts`). INFERRED from C5: a deleted temporary file's pages stay with the VM until it stops. |
 | C13 | macos-user has "No resource limits. Nothing caps memory or CPU" | [macos.md](../../userguide/guides/macos.md#macos-user-trade-offs) | **SOURCED by code.** INFERRED: memory a sandboxed process frees goes back to macOS at once, as for any process. |
-| C14 | "AC's non-reclaiming memory balloon: accepted" | [macos-revival-and-distribution-plan.md](../plans/macos-revival-and-distribution-plan.md#risks--watch-items) | **Consistent with C5, with one correction:** there is no balloon device at all (MEASURED). |
+| C14 | "AC's non-reclaiming memory balloon: accepted" | the risk list of `macos-revival-and-distribution-plan.md` (deleted 2026-10-16) | **Consistent with C5, with one correction:** there is no balloon device at all (MEASURED). |
 
 ---
 
@@ -193,7 +193,7 @@ of them cites a measurement on one Mac.
    (SOURCED, through the GitHub API's issue events). And driving VZ's balloon may not return
    memory to macOS at all: the one published host-side measurement saw the guest give up 7 GiB and
    the host's footprint rise
-   ([memory-reclaim research](macos-vm-memory-reclaim.md#3-what-virtualizationframework-offers)).
+   ([memory-reclaim research](macos-vm-runtime-comparison.md#41-why-virtualizationframework-keeps-the-pages)).
    Apple's guest kernel config does enable `CONFIG_VIRTIO_BALLOON` and `CONFIG_PAGE_REPORTING`
    ([config-arm64:920](https://github.com/apple/containerization/blob/f24df2ac817df66fe149a80103251dec987c32dc/kernel/config-arm64#L920),
    [config-arm64:3047](https://github.com/apple/containerization/blob/f24df2ac817df66fe149a80103251dec987c32dc/kernel/config-arm64#L3047));
@@ -823,12 +823,12 @@ direction already points at
 
 **Done:**
 
-- **[platform-comparison.md](platform-comparison.md#performance-differences)**'s macOS column
+- **`platform-comparison.md`**'s macOS column (that doc was deleted 2026-10-16)
   now carries the measured launch, file and CPU figures in place of "~2-3s", "near-native" and
   "~95-98% native" (C9, C10).
-- **[sandbox-comparison.md](sandbox-comparison.md#honest-limitations-of-yolo-jail)**'s startup
+- **`sandbox-comparison.md`**'s startup (that doc was deleted 2026-10-16)
   line takes M1's and M3's figures (C9).
-- **[macos-revival-and-distribution-plan.md](../plans/macos-revival-and-distribution-plan.md#risks--watch-items)**
+- **`macos-revival-and-distribution-plan.md`** (deleted 2026-10-16)
   no longer names a balloon; Apple Container has none (C14).
 - **[macos-user-provisioning.md](../reference/macos-user-provisioning.md#the-one-unmeasured-claim--what-a-first-stage-costs)**
   now says CI has one cold first launch, of the floor alone, 73.61 s on a hosted runner, and that

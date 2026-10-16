@@ -238,7 +238,7 @@ func TestLaunchLogFailureLeavesTheLaunchAlone(t *testing.T) {
 // them: the dry-run plan, the Seatbelt profile, the three argvs, every
 // `not enforced on macos-user` warning and every setup and teardown line, including the
 // pack read/exec banners that are the trust boundary
-// (docs/plans/handoff-macos-user-open-threads.md §7).
+// (docs/plans/runbooks/macos-user-manual-checks.md, "Launch output reaches the launch log").
 //
 // The closure below builds its deps the way the front door does rather than taking a
 // writer the test chose, because the defect was in what the PRODUCTION composition

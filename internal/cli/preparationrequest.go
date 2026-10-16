@@ -51,7 +51,7 @@ func freshPreparationIdentity(f packload.Fork, platform string) (string, error) 
 	var series *packsrc.Series
 	var err error
 	if f.Patched() || f.IsTree() {
-		series, err = f.ReadSeries()
+		series, err = f.DeclaredSeries() // a patch branch: its address, never the commit a check records
 	}
 	if err != nil {
 		return "", err

@@ -131,10 +131,10 @@ func TestServiceAndInterceptCarryTheirOwnRefusalReason(t *testing.T) {
 		}
 	}
 	// And the old reason is gone from the one kind that still carries a shim's name: "yolo owns no
-	// PATH entry" stopped being true of `yolo host --` when it composed the child's PATH (HE-D1).
+	// PATH entry" stopped being true of `yolo host --` when it composed the child's PATH (HE-D16).
 	if strings.Contains(fields.Refuse(packdecl.KindIntercept), "owns no PATH entry") {
 		t.Errorf("intercept's reason still says yolo owns no PATH entry off-container, which "+
-			"`yolo host --` has since HE-D1: %q", fields.Refuse(packdecl.KindIntercept))
+			"`yolo host --` has since HE-D16: %q", fields.Refuse(packdecl.KindIntercept))
 	}
 }
 

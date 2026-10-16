@@ -266,8 +266,10 @@ func TestProviderKeysFollowTheSelectionBothWays(t *testing.T) {
 	if _, set := envOf(got)["CLAUDE_CODE_USE_BEDROCK"]; set {
 		t.Errorf("off Bedrock the switch must be gone: %v", envOf(got))
 	}
-	if _, set := got["model"]; set {
-		t.Errorf("off Bedrock the Bedrock-only model must be gone: %v", got["model"])
+	// Off Bedrock the Bedrock-only id is gone, and the provider change writes its tier's word in
+	// its place, which claude resolves on its own login (MM-D43).
+	if got["model"] != "sonnet" {
+		t.Errorf("off Bedrock the Bedrock-only model must give way to its tier word sonnet, got %v", got["model"])
 	}
 	f.edit(func(m map[string]any) { m["model"] = "opus[1m]" })
 	got, _ = f.boot("")
@@ -300,8 +302,13 @@ func TestAProfileChoiceOverridesTheImportedHostSettingsInAJail(t *testing.T) {
 	if v := env["ANTHROPIC_BASE_URL"]; v == "http://127.0.0.1:9/gw" {
 		t.Errorf("the host file's gateway reached a claude on codex: %v", env)
 	}
-	if env["MY_OWN"] != "kept" || got["theme"] != "dark" || got["model"] != "opus" {
+	if env["MY_OWN"] != "kept" || got["theme"] != "dark" {
 		t.Errorf("every other host key must still reach the jail: %v", got)
+	}
+	// The host's saved model is the host's, not an in-jail pick (OQ-SW1), so the selection's saved
+	// model outranks it: codex's list has no Opus-tier model, so its default (MM-D43).
+	if got["model"] != "gpt-6.1-sol" {
+		t.Errorf("model = %v, want the codex list's default over the host's opus", got["model"])
 	}
 	for _, want := range []string{
 		"claude/settings: your host ~/.claude/settings.json sets env.CLAUDE_CODE_USE_BEDROCK = \"1\"",

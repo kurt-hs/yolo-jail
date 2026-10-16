@@ -14,6 +14,11 @@ build/
 # exact source drift this design eliminates. Only shipped/baked path: bundles
 # carry bin/, never the repo.
 /bin/
+# A bundle's build stamp (flake.nix: buildStamp), written by
+# scripts/stage-source-bundle.sh into the bundle it stages. A copy tracked at the
+# repo root would be read by the git flake and stamp every source build with a
+# commit that is not the one being built.
+/yolo-build-stamp.json
 # Stray root-level Go build artifacts: a bare `go build ./cmd/<x>` or
 # `go build ./tools/<x>` drops the binary here. The real build channel is
 # dist-go/; these should never be tracked (a stale root yolo-parity was committed

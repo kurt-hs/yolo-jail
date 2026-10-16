@@ -38,7 +38,8 @@ environment.
 **Reads with:** [`mcp-configuration.md`](mcp-configuration.md#the-nodenpx-wrapper) (the
 wrappers, and what is left of their job),
 [`image-staging-vs-baking.md`](image-staging-vs-baking.md) (what the image bakes and why),
-[`nix-across-backends.md`](nix-across-backends.md) (how `packages:` reaches each backend).
+[`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#how-nix-works-here) (how `packages:` reaches
+macos-user, which has no image).
 
 ---
 

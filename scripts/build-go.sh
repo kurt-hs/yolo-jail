@@ -60,8 +60,11 @@ fi
 # source tarball has no .git). Otherwise best-effort from git — stamp EMPTY when
 # git is unavailable (never the literal "unknown": a stamp is authoritative,
 # and an "unknown" stamp would shadow the binary's live-describe fallback).
-VERSION="${VERSION:-$(git describe --tags --dirty --always 2>/dev/null || true)}"
-COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+# --long so a build on its tag still names its commit (0.14.0+g<hash>, the release
+# form, OQ-DA2): every version string carries the hash. 12 digits, as flake.nix's
+# buildStamp and the release stamps use.
+VERSION="${VERSION:-$(git describe --tags --dirty --always --long --abbrev=12 2>/dev/null || true)}"
+COMMIT="${COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || true)}"
 
 # -trimpath, matching the hermetic build in flake.nix (OQ-WP2). Without it the
 # link output carries the absolute directory the build ran in, and Go's build

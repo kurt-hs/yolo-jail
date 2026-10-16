@@ -1,7 +1,7 @@
 package run
 
 // credentialgate_test.go pins the credential gate's done conditions
-// (docs/design/provider-credential-scope.md §5) on the CONTAINER vehicle, end to end: what
+// (docs/reference/providers.md, the credential-gate done conditions) on the CONTAINER vehicle, end to end: what
 // each agent's PROCESS receives in a jail, not what a writer was handed.
 //
 // The chain is the real one, every link of it: composePackChannel over the SHIPPED packs

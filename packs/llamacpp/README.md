@@ -7,7 +7,7 @@ shape [`zai`](../zai/README.md) and [`cerebras`](../cerebras/README.md) ship. Th
 no `llm_endpoints` key, and there is deliberately never going to be one: a bare
 `{base_url, model}` pair splits a switch into halves that can land separately, which is
 the measured failure this project already paid for once
-([`agent-auth-modes.md`](../../docs/design/agent-auth-modes.md)).
+([`bedrock-plumbing.md`'s P1](../../docs/design/bedrock-plumbing.md#1-verdict-and-principles)).
 
 The pack installs **no CLI** and **needs no credential**. It points at
 [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server` on the machine that

@@ -3,7 +3,7 @@
 // that hands it to any AWS SDK over the container-credentials protocol.
 //
 // How it behaves is docs/reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth;
-// the rulings cited below by id are in docs/design/sso-backed-bedrock.md's Decision Ledger. The
+// the rulings cited below by id are in docs/reference/agent-credentials.md's SSO-backed Bedrock decision ledger. The
 // host half is internal/awsauth (mint, cache, lock, narrowing) wrapped by internal/awsauthdaemon;
 // the jail half is internal/awscredadapter. Nothing here is per-agent: the protocol
 // is one every AWS SDK already speaks, which is the whole reason this shape was
@@ -125,7 +125,7 @@
   //
   // `launch_check` is design §8's "profile configured, no SSO session ever established ->
   // the launch warns with the `aws sso login` command and proceeds", and the lapsed session
-  // beside it (docs/design/sso-backed-bedrock.md SSO-D1). A launch whose agents reach the
+  // beside it (docs/reference/agent-credentials.md SSO-D1). A launch whose agents reach the
   // adapter below asks the daemon, through the front it just published, whether their first
   // Bedrock request would be served; the daemon answers from its cache when that is warm, and
   // otherwise from the mint that request would have made, within the launch's budget
@@ -205,7 +205,7 @@
   },
 
   // A NESTED JAIL BORROWS THIS JAIL'S POINTER rather than starting a service of its own
-  // (docs/design/sso-backed-bedrock.md SSO-D2 to SSO-D5). Inside a jail there is no `aws` CLI
+  // (docs/reference/agent-credentials.md SSO-D2 to SSO-D5). Inside a jail there is no `aws` CLI
   // and no SSO session, so a nested launch's host daemon could never mint. A podman jail
   // launched from inside a jail is forced onto that jail's network namespace, so the
   // launching jail's adapter, at the address its own AWS_CONTAINER_CREDENTIALS_FULL_URI names,

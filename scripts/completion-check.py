@@ -46,10 +46,6 @@ GLOBAL_FILES = {
 }
 GLOBAL_PREFIXES = ("vendor/", ".github/", "scripts/")
 
-# Documents whose Markdown findings are deliberate: specimens of the checker's own rules, which
-# the document says must never be linked away (its opening NOTE). Their reader tests still run.
-MARKDOWN_SPECIMENS = {"docs/research/vantage-check-0.5.9-findings.md"}
-
 # Context that decides what an inherited result means. A baseline recorded under any other
 # value is not used.
 GO_ENV_KEYS = ["GOVERSION", "GOOS", "GOARCH", "GOROOT", "GOFLAGS", "CGO_ENABLED", "GOEXPERIMENT",
@@ -370,9 +366,7 @@ def plan_selective(root, base, entries, readers):
         if path == "CHANGELOG.md":
             changelog = True
         if is_markdown(path):
-            if path in MARKDOWN_SPECIMENS:
-                plan.notes.append(f"{path}: not Markdown-checked, a specimen document")
-            elif status != "D":
+            if status != "D":
                 docs.append(path)
             continue
         if path == READERS_FILE:
@@ -571,7 +565,6 @@ def main():
             # Changed documents get their own checks too; check-ci covers only the guide and changelog.
             if entries:
                 docs = sorted(p for s, p, _, _ in entries if is_markdown(p) and s != "D"
-                              and p not in MARKDOWN_SPECIMENS
                               and not p.startswith("userguide/") and p != "CHANGELOG.md"
                               and not _under_go_dir(root, p))
                 if docs:

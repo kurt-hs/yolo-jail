@@ -236,7 +236,7 @@ func launchWrapper(bin, launchDir, fallback, provider, note string,
 // moves the answer.
 const launchWrapperTemplate = `#!/bin/bash
 # Launch-flag WRAPPER (declaration-parity.md §5.6, DP-B44), and the credential gate's carrier
-# (provider-credential-scope.md, OQ-CN6). yolo installs nothing for this name — PROVIDER below
+# (providers.md, OQ-CN6). yolo installs nothing for this name — PROVIDER below
 # says what does. All this script adds, to every invocation in any shell, is what a pack
 # declared for the name: its launch flags when there are any, and this agent's own env file.
 # Delete-proof by construction: it is regenerated at each boot from the pack manifest.

@@ -139,11 +139,29 @@ else
   ARCHES=(amd64 arm64)
 fi
 
+# The version + commit stamp, computed ONCE and exported, so every build-go.sh run
+# below stamps the same strings (build-go.sh documents the defaults and why an
+# unavailable git stamps empty) and the bundle's stamp file names exactly what its
+# binaries carry. A caller's VERSION/COMMIT wins, as in build-go.sh: the Homebrew
+# formula passes VERSION because its source tarball has no .git.
+VERSION="${VERSION:-$(git describe --tags --dirty --always --long --abbrev=12 2>/dev/null || true)}"
+COMMIT="${COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || true)}"
+export VERSION COMMIT
+
 rm -rf "$DEST"
 mkdir -p "$DEST"
 
 cp "$REPO_ROOT/flake.nix" "$DEST/flake.nix"
 cp "$REPO_ROOT/flake.lock" "$DEST/flake.lock"
+
+# yolo-build-stamp.json: the bundle is a `path:` flake with no git metadata, so
+# this file is how its flake knows the version and commit (flake.nix: buildStamp).
+json_string() {
+  local s="${1//\\/\\\\}"
+  printf '"%s"' "${s//\"/\\\"}"
+}
+printf '{"version":%s,"commit":%s}\n' "$(json_string "$VERSION")" "$(json_string "$COMMIT")" \
+  > "$DEST/yolo-build-stamp.json"
 
 # Cross-compile each Linux arch into dist-go/linux-<arch>/, then copy just the
 # ship set into the bundle. build-go.sh builds every cmd/ (goprobe included);

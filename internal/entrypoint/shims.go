@@ -121,7 +121,7 @@ type BlockerRender struct {
 	//
 	// Nil keeps the script every jail has written: past the refusal it runs nothing, so the hatch
 	// exits 0 having done nothing. `yolo host --` sets it (HE-D12,
-	// docs/design/host-launch-environment.md); the jail's boot does not yet, which HE-D12 states.
+	// docs/reference/host-agent-environment.md); the jail's boot does not yet, which HE-D12 states.
 	Behind func(name string) string
 	// NoReplacement is told of an entry skipped because its replacement is not on that PATH.
 	// The words are the caller's: the next step differs (a jail adds the replacement to

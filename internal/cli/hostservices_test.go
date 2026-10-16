@@ -386,7 +386,7 @@ func TestHostBridgesPickedPortsAreStillItsOwnWhenAnotherListenerAsksFirst(t *tes
 	assertServiceGone(t, l)
 }
 
-// THE FLOOR ON THE LAUNCH-OWNED-SERVICES PATH (HP-DIR4, HE-D1): `yolo host -p codex -- claude` is
+// THE FLOOR ON THE LAUNCH-OWNED-SERVICES PATH (HP-DIR4, HE-D16): `yolo host -p codex -- claude` is
 // the main way claude runs through a service, and it must run the floor's copy with the floor's
 // PATH exactly as the exec path does. The floor holds claude from the machine's capture (Linux's
 // recipe; the platform is the test's, so this runs on every host), its copy marks itself on the

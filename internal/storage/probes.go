@@ -145,7 +145,7 @@ func (v NixVersion) Describe() string {
 // beside confPath would take effect: confPath includes that file, and assigns key itself
 // nowhere after its last include of it. nix reads an include where it stands and keeps a
 // setting's LAST assignment, so a nix.conf setting the key again below the include overrides the
-// custom file's line (measured on a real Mac: docs/plans/runbooks/mac-sandvault-session.md §5).
+// custom file's line (measured on a real Mac, 2026-07-21).
 // An `extra-<key>` line appends rather than assigns, so it does not count.
 //
 // known is false when confPath cannot be read (missing, a directory, a permission error).

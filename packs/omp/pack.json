@@ -9,7 +9,7 @@
       // never run: every provider its bundled packages/ai/src/models.json lists, and the local and
       // gateway ones its key map (serviceProviderMap) adds. yolo writes no model entry over one
       // (docs/design/pi-codex-provider-shadowing.md OQ-3). omp's own zai speaks Anthropic Messages
-      // at api.z.ai/api/anthropic, the coding plan's Anthropic route (docs/reference/zai-plumbing.md),
+      // at api.z.ai/api/anthropic, the coding plan's Anthropic route (packs/zai/README.md),
       // reading ZAI_API_KEY, so yolo's zai needs no plan.
       "built_in_providers": {
         "names": [

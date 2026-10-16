@@ -1049,8 +1049,8 @@ leaning a ruling changed, it says so.
 The case this is built for is the maintainer's own. His user config selects his pack by a
 `file://` path into a dotfiles tree he shares between machines, and it already includes a
 machine-local `overrides.jsonc` only if that file is found
-([`macos-revival-and-distribution-plan.md`](../plans/macos-revival-and-distribution-plan.md)
-records the layout). A `ci-watch` declaration he adds to that pack on one machine reaches every
+(the deleted `macos-revival-and-distribution-plan.md`
+recorded the layout). A `ci-watch` declaration he adds to that pack on one machine reaches every
 other machine at the next sync. Under this doc as first written, it would then start
 everywhere, with nobody having chosen that.
 

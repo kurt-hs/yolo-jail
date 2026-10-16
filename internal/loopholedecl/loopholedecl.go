@@ -201,7 +201,7 @@ type HostDaemon struct {
 	// `request_end: "framed"`, since the check is one framed request, and transport
 	// loopback-tls, since the launch sends it through the endpoint it publishes. aws-auth
 	// declares it, so a launch says when its SSO session cannot mint
-	// (docs/design/sso-backed-bedrock.md SSO-D1).
+	// (docs/reference/agent-credentials.md SSO-D1).
 	LaunchCheck bool
 	// StartupReason opts this daemon into one bounded, attempt-specific refusal record over fd 3.
 	StartupReason bool

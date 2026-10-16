@@ -13,7 +13,7 @@ import (
 // WorkspaceSkillDirs is the workspace skills layer's SOURCE SET, in the order a jail reads it
 // (workspaceSkillDirs: the selected packs' project_dirs in config order, then every shipped
 // pack's by name). `yolo host -- <agent>`'s in-workspace link picks its source from this list
-// (docs/design/workspace-skills.md WS-D20).
+// (docs/reference/agent-briefings.md WS-D20).
 func WorkspaceSkillDirs(selected []*packload.Pack) []string {
 	return workspaceSkillDirs(selected)
 }

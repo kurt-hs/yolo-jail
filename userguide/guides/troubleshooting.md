@@ -12,7 +12,7 @@ yolo check --no-build   # the fast version
 still shows. Mac-specific problems are in [macOS](macos.md#troubleshooting).
 
 When you report a bug, include the first line every `yolo` command prints, such as
-`yolo-jail 0.10.0 | darwin/arm64 | host`: it names the version, the platform and whether you ran it
+`yolo-jail 0.15.0+g1a2b3c4d5e6f | darwin/arm64 | host`: it names the version, the platform and whether you ran it
 inside a jail.
 
 ## Installing and launching

@@ -240,6 +240,8 @@ func deriveAgentEnv(script string, owner *Pack, packs []*Pack, providers *jsonx.
 		// hands its derives, so an env derive and a config derive cannot disagree about which
 		// provider the agent reaches through its own client.
 		BuiltInProviders: BuiltInProvidersFor(packs, agent),
+		// Whether the agent reads a model file's shared form (ML-D11), the surface path's answer.
+		ReadsSharedModels: ReadsSharedModels(packs, agent),
 		Tables: map[string]map[string]any{
 			manifest.SourceProviders:   table,
 			manifest.SourceUseProfiles: plainProfiles(useProfiles),

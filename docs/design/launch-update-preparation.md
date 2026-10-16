@@ -19,7 +19,7 @@ next: "Complete independent combined-source review and final runtime/platform ac
 
 **Needs your ruling:** None. [OQ-PD23](program-delivery.md#decision-ledger) includes ordinary CLI and yolo-installed MCP programs; remaining capture acceptance is agent engineering.
 
-**Reads with:** [source research](../research/launch-preparation.md), [ready independent implementation plan](launch-update-preparation-plan.md), [capture-only sketch](launch-program-capture-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
+**Reads with:** [ready independent implementation plan](launch-update-preparation-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
 
 ---
 

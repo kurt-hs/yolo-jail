@@ -130,13 +130,32 @@ func (o *Options) refusePatchFailures(rt string) bool {
 		return false
 	}
 	labels := make([]string, len(blocking))
+	patchBranches := 0
 	for i, f := range blocking {
 		labels[i] = f.label
+		if f.recipe.PatchBranchRepo != "" {
+			patchBranches++
+		}
 	}
-	out.print("[bold red]" + richtext.Escape("Refusing to launch: the patch series of "+entrypoint.JoinAnd(labels)+" "+
-		plural(len(blocking), "does", "do")+" not apply (the ERROR above), and a launch does not run an older build "+
+	// A PATCH BRANCH (docs/design/patched-forks.md §3.5) is merged, not applied: its refusal says so.
+	what, verb := "the patch series of", plural(len(blocking), "does", "do")+" not apply"
+	switch {
+	case patchBranches == len(blocking):
+		what, verb = "the patch branch of", plural(len(blocking), "does", "do")+" not merge"
+	case patchBranches > 0:
+		what, verb = "the patch series or patch branch of", plural(len(blocking), "does", "do")+" not apply"
+	}
+	out.print("[bold red]" + richtext.Escape("Refusing to launch: "+what+" "+entrypoint.JoinAnd(labels)+" "+
+		verb+" (the ERROR above), and a launch does not run an older build "+
 		"in its place unless asked.") + "[/bold red]")
-	out.print(richtext.Escape("  Repair: the git commands under the ERROR's Repair line; the next fresh launch builds the repaired series."))
+	repaired := "the next fresh launch builds the repaired series"
+	switch {
+	case patchBranches == len(blocking):
+		repaired = "push the merged branch, and the next check fetches it and builds"
+	case patchBranches > 0:
+		repaired = "the next fresh launch builds the repaired series, and the next check fetches a pushed branch"
+	}
+	out.print(richtext.Escape("  Repair: the git commands under the ERROR's Repair line; " + repaired + "."))
 	out.print(richtext.Escape("  Bypass: " + paths.AllowPatchFailuresEnv + "=1 yolo — runs the intact admitted " +
 		plural(len(blocking), "build", "builds") + " named above for this one launch."))
 	if o.Getenv(paths.AllowMissingProgramsEnv) != "" {

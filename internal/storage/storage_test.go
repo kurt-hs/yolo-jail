@@ -58,7 +58,7 @@ func TestNixCustomConfTakesEffect(t *testing.T) {
 		{"unrelated relative include", "!include machines.conf\n", false},
 		// nix keeps a setting's LAST assignment and reads an include where it stands, so nix.conf
 		// assigning the key itself after the include overrides the custom file's line. Measured on
-		// a real Mac: docs/plans/runbooks/mac-sandvault-session.md §5, item 2.
+		// a real Mac on 2026-07-21.
 		{"assigned again after the include", "!include /etc/nix/nix.custom.conf\ntrusted-users = root matt\n", false},
 		{"assigned again after the include, unspaced", "!include nix.custom.conf\ntrusted-users=root\n", false},
 		// Before the include, an `extra-` append, a comment or another key does not override it.

@@ -268,7 +268,7 @@ provider to a refusal; the workspace file stays named, for an MCP or LSP server,
 accepts and an agent in the jail can edit. It names each kind's config table rather than one,
 because no declaration tells core which config table a pack's derive builds a table from, and
 that is the form the host's twin, `mcpEntryRemedy`, already gives the same loss class
-([HC-D20](host-computed-layer.md#HC-D20)). It offers no `config-overlay`, unlike the host's: in a
+([HC-D20](../reference/host-agent-environment.md#HC-D20)). It offers no `config-overlay`, unlike the host's: in a
 jail an `rmw` render asserts overlays before the derived tables and then clears each table it
 regenerates (`applyRMWLayers`, `internal/entrypoint/prism.go`), so an overlay's entry
 under one is dropped and announced like any other. Pinned through the boot loop by

@@ -9,7 +9,7 @@ import (
 )
 
 // shippedZaiPack returns a pack declaring the zai provider with both protocols, the
-// canonical shape zai-plumbing.md §4 ships.
+// canonical shape packs/zai ships.
 func shippedZaiPack(t *testing.T) *Pack {
 	return &Pack{Name: "zai", Decl: declFrom(t, `{"contributes":[
 	  {"kind":"provider","name":"zai",
@@ -143,7 +143,7 @@ func TestARepointedAliasKeepsTheVendorTheUserDeclares(t *testing.T) {
 // TestComposeProvidersShipsUnderUserConfig pins the composition and its direction: the
 // pack's SERVICE facts arrive whole, and the user's config wins PER FIELD — an override
 // of one model alias or one endpoint's URL must not force restating the rest, which is
-// the entire reason the facts are shipped rather than authored (zai-plumbing.md §7).
+// the entire reason the facts are shipped rather than authored (packs/zai/README.md, Selection).
 func TestComposeProvidersShipsUnderUserConfig(t *testing.T) {
 	pack := shippedZaiPack(t)
 

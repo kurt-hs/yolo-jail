@@ -134,7 +134,7 @@ type Setting struct {
 	// whenever this key's RESOLVED value is true. "" means the key discloses nothing.
 	//
 	// It is how a key that WIDENS what a loophole hands out says so at every launch
-	// without core naming the loophole (docs/design/sso-backed-bedrock.md OQ-SSO10):
+	// without core naming the loophole (docs/reference/agent-credentials.md OQ-SSO10):
 	// a host-singleton daemon prints its own spawn line once and then serves every
 	// later launch in silence, so the launch is the only place a widening is re-read
 	// each time. The launch prints it as a DISCLOSURE, which no flag hides
