@@ -224,7 +224,7 @@ const (
 // Only a real directory is touched: a path that is absent needs nothing, a file is removed by its
 // parent's write bit, and a symbolic link is never followed (BSD `chmod -R` does not follow links
 // below the top, and the top is refused here).
-var unsealScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` -R u+w -- "$1"; fi`
+var unsealScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` -R -- u+w "$1"; fi`
 
 // unsealCommands returns the argv that make a sealed tree at path removable by its owner. Every
 // site that removes or replaces a sealed tree builds its removal from this, so none forgets.
@@ -658,7 +658,7 @@ var stageCaptureScript = strings.Join([]string{
 // shell word: give the owner write back on a sealed directory before removing it. It never ends
 // the script on its own, so the removal after it is what reports.
 func unsealInScript(word string) string {
-	return `if [ -d ` + word + ` ] && [ ! -L ` + word + ` ]; then ` + chmodBin + ` -R u+w -- ` + word + ` || :; fi`
+	return `if [ -d ` + word + ` ] && [ ! -L ` + word + ` ]; then ` + chmodBin + ` -R -- u+w ` + word + ` || :; fi`
 }
 
 // pruneCapturesScript removes every staged entry the user's store no longer selects: $1 the

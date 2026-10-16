@@ -434,7 +434,7 @@ func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 // takes the rest. The sandbox account owns what the installer wrote, so this needs no root.
 func CaptureScratchGuestCommands(stagingRoot string) [][]string {
 	return [][]string{
-		RunAsSandboxArgv(nil, chmodBin, "-R", "u+w", "--", stagingRoot),
+		RunAsSandboxArgv(nil, chmodBin, "-R", "--", "u+w", stagingRoot),
 		RunAsSandboxArgv(nil, rmBin, "-rf", "--", stagingRoot),
 	}
 }

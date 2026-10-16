@@ -1188,7 +1188,7 @@ type macosUserFlavor struct {
 // 0555, which blocks its owner's rm as well, so a tree's removal unseals it first.
 var stagingFlavor = macosUserFlavor{
 	section: SectionMacosUser, keyPrefix: "macos.state.", owned: "host-owned",
-	removeTree: func(p string) string { return "chmod -R u+w -- " + p + " && rm -rf -- " + p },
+	removeTree: func(p string) string { return "chmod -R -- u+w " + p + " && rm -rf -- " + p },
 	removeFiles: func(ps ...string) string {
 		return "rm -f -- " + strings.Join(ps, " ")
 	},
