@@ -218,7 +218,7 @@ rewritten as a patched fork:
 | :--- | :--- | :--- |
 | `source` | The upstream repository, with the mandatory `?ref=` ([`addr.go:17`](../../internal/packsrc/addr.go#L17)) naming a branch to follow, or a tag or a full commit to hold at. `HEAD` and an abbreviated commit are refused, since neither names whether it moves | as today ([`fork.go:169-180`](../../internal/packdecl/fork.go#L169-L180)); the ref's kind at the check |
 | `patches` | A clean pack-relative directory holding the series ([§3.2](#32-the-series)). Its presence is the opt-in to this mode | statically: relative, no `..`, only beside `via: "source"`; its contents at each advance |
-| `follow` | What a branch ref yields: `release` (the newest version tag on it), `release:<prefix>` (the same, among tags named `<prefix><version>`), or `head` (its newest commit). Default: [OQ-PFK2](#OQ-PFK2)'s leaning, `release` | statically: the grammar, and only beside `patches` or `patch_branch` |
+| `follow` | What a branch ref yields: `release` (the newest version tag on it), `release:<prefix>` (the same, among tags named `<prefix><version>`), or `head` (its newest commit). Default: [OQ-PFK2](#decision-ledger)'s leaning, `release` | statically: the grammar, and only beside `patches` or `patch_branch` |
 | `patch_branch` | In place of `patches`: a git address with `?ref=` naming the branch whose commits are merged against the upstream ([§3.5](#35-a-patch-branch-instead-of-a-series)) | statically: a git address with a ref, not `HEAD`, no `//subdir`, never beside `patches` ([PF-D87](#PF-D87)); its commit at each check |
 
 `follow` without `patches` is refused, naming the reason: a plain fork's pin moves only by
@@ -1293,7 +1293,7 @@ Every row is reversible, and the Built column says what has been built of each.
 and [PF-D77](#PF-D77) the maintainer's rulings in review on 2026-10-05, and [PF-D81](#PF-D81) and
 [PF-D82](#PF-D82) his ruling and request of 2026-10-09, and [OQ-PFK6](#OQ-PFK6) his ruling of
 2026-10-15, with [PF-D87](#PF-D87), [PF-D89](#PF-D89) and [PF-D90](#PF-D90) the implementation decisions under it. [PF-D23](#PF-D23)–[PF-D26](#PF-D26) are the four questions that were the
-maintainer's, [OQ-PFK1](#OQ-PFK1)–[OQ-PFK4](#OQ-PFK4), decided on their leanings on 2026-10-04 under
+maintainer's, [OQ-PFK1](#decision-ledger)–[OQ-PFK4](#decision-ledger), decided on their leanings on 2026-10-04 under
 his delegation, and still his to overrule. [PF-D8](#PF-D8),
 [PF-D16](#PF-D16) and [PF-D19](#PF-D19) apply rulings of
 [`program-delivery.md`](program-delivery.md#decision-ledger) rather than making one.

@@ -4004,7 +4004,7 @@ other two ([`OQ-RO3`](report-tiers.md#why-its-this-way): a launch has no quiet m
 > the row down — correct at runtime, loud in review.
 
 **A wrapped plugin's code is disclosed as JAIL code**, a fourth class beside read, exec and skip
-([`OQ-TP10`](../design/trust-paths.md#oq-tp10--a-wrapped-plugins-hooks-reach-the-agents-lifecycle-and-appear-in-no-launch-banner)).
+([`OQ-TP10`](../design/trust-paths.md#decision-ledger)).
 The claim is reported under the `skills` kind, which stays skip, and is reclassified per claim
 when the plugin runs code. What counts as code is a plugin's hooks, MCP and LSP servers,
 monitors, `bin/` executables, a `subagentStatusLine` setting, workflow scripts and the
