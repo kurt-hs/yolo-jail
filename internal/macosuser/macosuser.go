@@ -33,19 +33,27 @@ const (
 	// the safe, collision-free range).
 	sandboxMinID = 600
 
-	// stateDir is the root-owned, 0444 state dir holding the per-session
-	// Seatbelt profile, the entrypoint bootstrap, and a root-owned copy of the
-	// stdlib-only `entrypoint` package.
-	stateDir = "/var/yolo-jail"
+	// stateDir is the host-owned staging root every launch stages into (StagingRoot; PL-1 in
+	// docs/design/macos-user-privilege-lifecycle-plan.md): the per-session Seatbelt profiles,
+	// the staged guest binaries, and each session's pack, content and context trees.
+	stateDir = stagingRoot
 
-	// Absolute paths to the system tools the run path invokes under sudo —
-	// pinned so the argv is deterministic regardless of the caller's PATH.
+	// Absolute paths to the system tools the staging and setup paths invoke — pinned so the
+	// argv is deterministic regardless of the caller's PATH.
 	mkdirBin = "/bin/mkdir"
 	teeBin   = "/usr/bin/tee"
 	chmodBin = "/bin/chmod"
 	cpBin    = "/bin/cp"
 	mvBin    = "/bin/mv"
 	rmBin    = "/bin/rm"
+	shBin    = "/bin/sh"
+
+	// The account tools setup runs as root, by absolute path for the same reason (point 4 of
+	// the 2026-10-15 walkthrough in docs/design/macos-user-privilege-lifecycle.md).
+	dsclBin          = "/usr/bin/dscl"
+	dseditgroupBin   = "/usr/sbin/dseditgroup"
+	createhomedirBin = "/usr/sbin/createhomedir"
+	chownBin         = "/usr/sbin/chown"
 
 	// packsLeaf is the state-dir subdir holding each session's staged pack tree.
 	packsLeaf = "packs"
@@ -55,7 +63,7 @@ const (
 	// ctxLeaf is the state-dir subdir holding each session's staged CONTEXT tree —
 	// the HOST BYTES a `/ctx` mount carries on every other backend.
 	ctxLeaf = "ctx"
-	// capturesLeaf is the state-dir subdir holding the root-owned copy of the install-capture
+	// capturesLeaf is the state-dir subdir holding the host-owned copy of the install-capture
 	// store's entries this backend's launches materialize from (StagedCapturesRoot). One per
 	// MACHINE, not per session: its entries are content-addressed, so a copy made for one
 	// workspace serves every other.
@@ -108,23 +116,23 @@ func CreateUserCommands(uid, gid int, hostUser string) [][]string {
 	group := SandboxGroup
 	cmds := [][]string{
 		// Group
-		{"dscl", ".", "-create", "/Groups/" + group},
-		{"dscl", ".", "-create", "/Groups/" + group, "PrimaryGroupID", itoa(gid)},
-		{"dscl", ".", "-create", "/Groups/" + group, "RealName", "YOLO Jail"},
+		{dsclBin, ".", "-create", "/Groups/" + group},
+		{dsclBin, ".", "-create", "/Groups/" + group, "PrimaryGroupID", itoa(gid)},
+		{dsclBin, ".", "-create", "/Groups/" + group, "RealName", "YOLO Jail"},
 		// User
-		{"dscl", ".", "-create", "/Users/" + user},
-		{"dscl", ".", "-create", "/Users/" + user, "UniqueID", itoa(uid)},
-		{"dscl", ".", "-create", "/Users/" + user, "PrimaryGroupID", itoa(gid)},
-		{"dscl", ".", "-create", "/Users/" + user, "RealName", "YOLO Jail"},
-		{"dscl", ".", "-create", "/Users/" + user, "NFSHomeDirectory", SandboxHome()},
-		{"dscl", ".", "-create", "/Users/" + user, "UserShell", "/bin/zsh"},
+		{dsclBin, ".", "-create", "/Users/" + user},
+		{dsclBin, ".", "-create", "/Users/" + user, "UniqueID", itoa(uid)},
+		{dsclBin, ".", "-create", "/Users/" + user, "PrimaryGroupID", itoa(gid)},
+		{dsclBin, ".", "-create", "/Users/" + user, "RealName", "YOLO Jail"},
+		{dsclBin, ".", "-create", "/Users/" + user, "NFSHomeDirectory", SandboxHome()},
+		{dsclBin, ".", "-create", "/Users/" + user, "UserShell", "/bin/zsh"},
 		// Hidden from the login window
-		{"dscl", ".", "-create", "/Users/" + user, "IsHidden", "1"},
+		{dsclBin, ".", "-create", "/Users/" + user, "IsHidden", "1"},
 		// Not a real login user: strip from staff
-		{"dseditgroup", "-o", "edit", "-d", user, "-t", "user", "staff"},
+		{dseditgroupBin, "-o", "edit", "-d", user, "-t", "user", "staff"},
 		// Shared group membership (host user + sandbox user) for the ACL
-		{"dseditgroup", "-o", "edit", "-a", user, "-t", "user", group},
-		{"dseditgroup", "-o", "edit", "-a", hostUser, "-t", "user", group},
+		{dseditgroupBin, "-o", "edit", "-a", user, "-t", "user", group},
+		{dseditgroupBin, "-o", "edit", "-a", hostUser, "-t", "user", group},
 	}
 	// Provision the home dir with correct ownership + 0750.
 	return append(cmds, ProvisionHomeCommands()...)
@@ -132,7 +140,7 @@ func CreateUserCommands(uid, gid int, hostUser string) [][]string {
 
 // ProvisionHomeCommands returns the argv that make the account home exist with the
 // ownership and mode the backend needs: `createhomedir`, then `chown -R` + `chmod 750`.
-// Run under sudo.
+// Run as root, by setup alone (the administrator act).
 //
 // SEPARATE FROM CreateUserCommands (which ends with exactly these) because the ACCOUNT and
 // its HOME are two facts that can be true independently, and only one of them was ever
@@ -144,9 +152,9 @@ func CreateUserCommands(uid, gid int, hostUser string) [][]string {
 func ProvisionHomeCommands() [][]string {
 	home := SandboxHome()
 	return [][]string{
-		{"createhomedir", "-c", "-u", SandboxUser},
-		{"chown", "-R", SandboxUser + ":" + SandboxGroup, home},
-		{"chmod", "750", home},
+		{createhomedirBin, "-c", "-u", SandboxUser},
+		{chownBin, "-R", SandboxUser + ":" + SandboxGroup, home},
+		{chmodBin, "750", home},
 	}
 }
 
@@ -158,16 +166,18 @@ func DeleteUserCommands(hostUser string) [][]string {
 	group := SandboxGroup
 	home := SandboxHome()
 	return [][]string{
-		{"dseditgroup", "-o", "edit", "-d", hostUser, "-t", "user", group},
-		{"dscl", ".", "-delete", "/Users/" + user},
-		{"dscl", ".", "-delete", "/Groups/" + group},
-		{"rm", "-rf", home},
+		{dseditgroupBin, "-o", "edit", "-d", hostUser, "-t", "user", group},
+		{dsclBin, ".", "-delete", "/Users/" + user},
+		{dsclBin, ".", "-delete", "/Groups/" + group},
+		{rmBin, "-rf", home},
 	}
 }
 
 // SharedRootProvisionCommands returns the mkdir/chown/chmod argv to provision
 // the neutral shared root — owned by the host user, group _yolojail, mode 2770
-// (setgid), plus the inheriting ACL ACEs applied to the root itself.
+// (setgid), plus the inheriting ACL ACEs applied to the root itself. Setup runs it as root;
+// a capture runs it as the host user over its own scratch root, so every argv here stays one
+// the host user can run on a directory it owns.
 func SharedRootProvisionCommands(root, hostUser string) [][]string {
 	if root == "" {
 		root = SharedRootDefault()
@@ -175,20 +185,73 @@ func SharedRootProvisionCommands(root, hostUser string) [][]string {
 	group := SandboxGroup
 	aces := WorkspaceACLAces(group)
 	return [][]string{
-		{"mkdir", "-p", root},
-		{"chown", hostUser + ":" + group, root},
-		{"chmod", "2770", root},
-		{"chmod", "+a", aces["dir"], root},
-		{"chmod", "+a", aces["file_inherit"], root},
+		{mkdirBin, "-p", root},
+		{chownBin, hostUser + ":" + group, root},
+		{chmodBin, "2770", root},
+		{chmodBin, "+a", aces["dir"], root},
+		{chmodBin, "+a", aces["file_inherit"], root},
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Staging the yolo binary into the root-owned state dir
+// Sealing: what the host user stages, the sandbox reads and cannot change
+// ---------------------------------------------------------------------------
+
+// THE STAGING ROOT IS THE HOST USER'S, AND WHAT IT HOLDS IS SEALED rather than root-owned
+// (PL-2 in docs/design/macos-user-privilege-lifecycle-plan.md, under OQ-MP10 in
+// docs/design/macos-user-privilege-lifecycle.md). The sandbox account is neither the owner nor
+// in the owner's group, so a 0755 category directory and a 0555/0444 per-launch tree give it
+// read and search and nothing else, exactly as root ownership did. A category directory stays
+// 0755 rather than sealed, because sealing it would need a `u+w` flip on every launch, which
+// races two concurrent launches of different workspaces writing the same category.
+const (
+	// categoryDirMode is the mode of the staging root's category directories (bin/, packs/,
+	// home-overlay/, ctx/, captures/ and its entries/ and staging/).
+	categoryDirMode = "0755"
+	// sealedBinaryMode is a staged guest binary's mode, and an empty per-launch directory's:
+	// read and execute (search) for every account, write for none.
+	sealedBinaryMode = "0555"
+	// sealTreeMode is the symbolic mode that seals a per-launch tree: no write for any account,
+	// read for all, and search on directories (and execute on what already had it).
+	sealTreeMode = "a-w,a+rX"
+	// unsealScriptName is the $0 of unsealCommands' script, so `ps` and a failure name it.
+	unsealScriptName = "yolo-unseal"
+)
+
+// unsealScript gives the owner write back on a sealed tree ($1) so it can be removed or
+// replaced. ⚠ A 0555 directory blocks its owner too: `rm -rf` of a sealed tree fails with
+// `Permission denied` for the host user who made it, so every removal of one runs this first.
+// Only a real directory is touched: a path that is absent needs nothing, a file is removed by its
+// parent's write bit, and a symbolic link is never followed (BSD `chmod -R` does not follow links
+// below the top, and the top is refused here).
+var unsealScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` -R u+w -- "$1"; fi`
+
+// unsealCommands returns the argv that make a sealed tree at path removable by its owner. Every
+// site that removes or replaces a sealed tree builds its removal from this, so none forgets.
+func unsealCommands(path string) [][]string {
+	return [][]string{{shBin, "-c", unsealScript, unsealScriptName, path}}
+}
+
+// removeSealedCommands is unsealCommands followed by the removal itself.
+func removeSealedCommands(path string) [][]string {
+	return append(unsealCommands(path), []string{rmBin, "-rf", path})
+}
+
+// categoryDirCommands makes category directories and sets their mode explicitly, rather than
+// leaving it to the host user's umask: the sandbox has to search each to reach what it holds.
+func categoryDirCommands(dirs ...string) [][]string {
+	return [][]string{
+		append([]string{mkdirBin, "-p"}, dirs...),
+		append([]string{chmodBin, categoryDirMode}, dirs...),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Staging the yolo binary into the host-owned staging root
 // ---------------------------------------------------------------------------
 // StagedYoloPath returns where the running yolo binary is staged for the sandbox
-// user to self-exec (root-owned so the sandbox can't rewrite the launch binary;
-// world-readable+executable so it can run).
+// user to self-exec (host-owned and sealed 0555, so the sandbox can run it and cannot
+// rewrite it).
 //
 // IN GuestBinDir, beside the darwin in-jail binaries (jaildaemon.go), since OQ-DP8: the
 // guest's one prefix of yolo's own binaries, the counterpart of a container's
@@ -198,16 +261,16 @@ func StagedYoloPath(sd string) string {
 	return GuestBinaryPath("yolo", sd)
 }
 
-// StageBinaryCommands returns the sudo argv that stage the running yolo binary
-// (selfExe = os.Executable()) into the root-owned state dir for the sandbox user
+// StageBinaryCommands returns the argv, run as the host user, that stage the running yolo binary
+// (selfExe = os.Executable()) into the host-owned staging root for the sandbox user
 // to self-exec as `yolo internal darwin-bootstrap` (J2 §3). This replaces the
 // old StageEntrypointCommands, which copied the deleted src/entrypoint tree.
 //
 // Staging goes copy-to-temp then atomic mv, guaranteeing a FRESH INODE: macOS
 // caches Mach-O code signatures per vnode, so overwriting a previously staged
 // binary in place gets the next exec SIGKILLed (invalid signature). A rename
-// over the old path drops the old vnode. The staged copy is chmod a+rX so the
-// sandbox uid can read+exec it, and the host checkout (which may be unreadable
+// over the old path drops the old vnode. The staged copy is sealed 0555 so the
+// sandbox uid can read+exec it and no account can write it, and the host checkout (which may be unreadable
 // to the sandbox uid) is never on the launch path — self-staging serves Track D
 // too (an installed-only Mac has no checkout).
 func StageBinaryCommands(selfExe, sd string) [][]string {
@@ -216,18 +279,17 @@ func StageBinaryCommands(selfExe, sd string) [][]string {
 	}
 	dst := StagedYoloPath(sd)
 	tmp := dst + ".new"
-	return [][]string{
-		{mkdirBin, "-p", filepath.Dir(dst)},
-		{cpBin, "-f", selfExe, tmp},
-		{chmodBin, "a+rX", tmp},
-		{mvBin, "-f", tmp, dst}, // atomic rename → fresh inode, drops the cached-signature vnode
-	}
+	return append(categoryDirCommands(filepath.Dir(dst)),
+		[]string{cpBin, "-f", selfExe, tmp},
+		[]string{chmodBin, sealedBinaryMode, tmp},
+		[]string{mvBin, "-f", tmp, dst}, // atomic rename → fresh inode, drops the cached-signature vnode
+	)
 }
 
 // ---------------------------------------------------------------------------
-// Staging the pack trees into the root-owned state dir
+// Staging the pack trees into the host-owned staging root
 // ---------------------------------------------------------------------------
-// StagedPackRoot returns the legacy workspace-keyed root in the root-owned state dir.
+// StagedPackRoot returns the legacy workspace-keyed root in the staging root.
 // Live launches use StagedPackTreeRoot so a later launch cannot replace bytes a guest
 // supervisor may still read or restart from.
 func StagedPackRoot(cname, sd string) string {
@@ -255,8 +317,9 @@ func StagedPackTreeRoot(cname, hostPackRoot, sd string) string {
 	return filepath.Join(sd, packsLeaf, cname+"."+treeID)
 }
 
-// StagePackCommands returns the sudo argv that exclusively create and fill this host pack
-// tree's root-owned guest destination, world-readable, for the bootstrap to render from.
+// StagePackCommands returns the argv, run as the host user, that exclusively create, fill and
+// seal this host pack tree's guest destination, readable by every account and writable by none,
+// for the bootstrap to render from.
 // Empty when there is no host tree to copy — a launch with no packs stages nothing rather
 // than an empty directory.
 //
@@ -276,12 +339,11 @@ func StagePackCommands(hostPackRoot, cname, sd string) [][]string {
 		return nil
 	}
 	sourceContents := filepath.Clean(hostPackRoot) + string(os.PathSeparator) + "."
-	return [][]string{
-		{mkdirBin, "-p", filepath.Join(sd, packsLeaf)},
-		{mkdirBin, dst},
-		{cpBin, "-R", sourceContents, dst},
-		{chmodBin, "-R", "a+rX", dst},
-	}
+	return append(categoryDirCommands(filepath.Join(sd, packsLeaf)),
+		[]string{mkdirBin, dst},
+		[]string{cpBin, "-R", sourceContents, dst},
+		[]string{chmodBin, "-R", sealTreeMode, dst},
+	)
 }
 
 // isPackTreeReservationCommand identifies the exclusive mkdir whose successful return gives
@@ -291,13 +353,13 @@ func isPackTreeReservationCommand(cmd []string, packRoot string) bool {
 }
 
 // isPackTreeWriterCommand identifies a command that may still be changing this launch's
-// reserved tree after its sudo parent returns.
+// reserved tree after it returns: the copy, and the chmod that seals it.
 func isPackTreeWriterCommand(cmd []string, packRoot string) bool {
 	if packRoot == "" || len(cmd) != 4 || cmd[3] != packRoot {
 		return false
 	}
 	return (cmd[0] == cpBin && cmd[1] == "-R") ||
-		(cmd[0] == chmodBin && cmd[1] == "-R" && cmd[2] == "a+rX")
+		(cmd[0] == chmodBin && cmd[1] == "-R" && cmd[2] == sealTreeMode)
 }
 
 // printPackTreeReservationFailure names an untouched collision and gives the only safe
@@ -306,11 +368,12 @@ func printPackTreeReservationFailure(out printer, packRoot string) {
 	path := shquote.QuoteDisplay(packRoot)
 	out.printf("[bold red]Could not reserve guest pack tree %s; the existing destination was not changed.[/bold red] "+
 		"Retry this action as a fresh invocation so yolo stages a new tree identity, and inspect the "+
-		"collision with `sudo ls -la -- %s`. Do not remove it.", path, path)
+		"collision with `ls -la -- %s`. Do not remove it.", path, path)
 }
 
-// StagedHomeOverlay is where a session's composed CONTENT tree lands, root-owned and
-// world-readable so the sandbox uid can read it and cannot rewrite it.
+// StagedHomeOverlay is where a session's composed CONTENT tree lands, host-owned and sealed
+// (readable by every account, writable by none) so the sandbox uid can read it and cannot
+// rewrite it.
 //
 // Beside the packs and staged the same way, for the same reason: both are host-composed
 // input the sandbox must READ and must not be able to edit into something the next
@@ -324,13 +387,15 @@ func StagedHomeOverlay(cname, sd string) string {
 	return filepath.Join(sd, homeOverlayLeaf, cname)
 }
 
-// StageHomeOverlayCommands returns the sudo argv that stage the composed content tree
+// StageHomeOverlayCommands returns the argv, run as the host user, that stage the composed content tree
 // (skills + briefings, already laid out at their home-relative paths) for this session.
 // Empty hostOverlay → no commands, so a jail with no content to deliver pays nothing.
 //
-// Same rm-then-mv shape as the packs: the destination is REPLACED rather than merged
-// into, because a destination that left the config must stop being delivered and a
-// merge would keep serving it forever.
+// An rm-then-mv shape: the destination is REPLACED rather than merged into, because a
+// destination that left the config must stop being delivered and a merge would keep serving it
+// forever. The copy is sealed before the rename, and a sealed tree is unsealed before it is
+// removed (unsealCommands). The rename stays within one parent, so it needs no write on the
+// sealed directory it moves (a directory moved to ANOTHER parent does, for its `..`).
 func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 	if hostOverlay == "" {
 		return nil
@@ -340,18 +405,18 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 	}
 	dst := StagedHomeOverlay(cname, sd)
 	tmp := dst + ".new"
-	return [][]string{
-		{mkdirBin, "-p", filepath.Join(sd, homeOverlayLeaf)},
-		{rmBin, "-rf", tmp},
-		{cpBin, "-R", hostOverlay, tmp},
-		{chmodBin, "-R", "a+rX", tmp},
-		{rmBin, "-rf", dst},
-		{mvBin, "-f", tmp, dst},
-	}
+	cmds := categoryDirCommands(filepath.Join(sd, homeOverlayLeaf))
+	cmds = append(cmds, removeSealedCommands(tmp)...)
+	cmds = append(cmds,
+		[]string{cpBin, "-R", hostOverlay, tmp},
+		[]string{chmodBin, "-R", sealTreeMode, tmp},
+	)
+	cmds = append(cmds, removeSealedCommands(dst)...)
+	return append(cmds, []string{mvBin, "-f", tmp, dst})
 }
 
 // ---------------------------------------------------------------------------
-// Staging the /ctx CONTEXT TREE into the root-owned state dir
+// Staging the /ctx CONTEXT TREE into the host-owned staging root
 // ---------------------------------------------------------------------------
 // StagedCtxRoot returns where this session's CONTEXT TREE is staged for the
 // sandbox user to read: <stateDir>/ctx/<cname>. It is what $YOLO_CTX_ROOT names,
@@ -368,19 +433,21 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 // (docs/reference/macos-user-home-tiers.md), which is inside the profile's `(subpath ws)`
 // and therefore AGENT-WRITABLE. A context tree the agent can rewrite is not a context
 // tree: it is an input to config composition, so an agent able to edit one composes its
-// own next launch. Under /var it is root-owned AND outside the profile's enumerated
-// writable set, which is where the read-only half comes from for free.
+// own next launch. In the staging root it is the host user's, sealed, AND outside the
+// profile's enumerated writable set, which is where the read-only half comes from for free.
 //
 // THE `:ro` HALF COSTS NO SBPL, AND THAT IS MEASURED. SeatbeltProfile is
 // `(deny file-write* (subpath "/"))` followed by an enumerated allow — workspace,
 // sandbox home, /tmp, /private/tmp, /var/folders, /private/var/folders, /dev — and
-// /var/yolo-jail is in none of them, while reads land on `(allow default)`. Measured on
-// hardware 2026-09-13 (macOS 26.5, arm64): under a real session profile over this tree,
+// the staging root is in none of them. Measured on hardware 2026-09-13 (macOS 26.5, arm64),
+// at the old root-owned root /var/yolo-jail, under a real session profile over this tree:
 // `head -c 4 /var/yolo-jail/yolo` succeeded and `touch /var/yolo-jail/canary` gave
 // `Operation not permitted`, where the same touch UNSANDBOXED gives `Permission denied`.
 // EPERM vs EACCES is what proves the MAC half is doing the work rather than the
 // directory's owner — which is stronger than the container backends' `host_files
 // readonly`, whose own reference text concedes "0444 is DAC, not kernel enforcement".
+// Under /Users/Shared the profile's /Users read deny needs the staging root's read allow
+// (seatbelt.go); the write half is unchanged.
 func StagedCtxRoot(cname, sd string) string {
 	if sd == "" {
 		sd = stateDir
@@ -388,8 +455,8 @@ func StagedCtxRoot(cname, sd string) string {
 	return filepath.Join(sd, ctxLeaf, cname)
 }
 
-// StageCtxCommands returns the sudo argv that copy the host-side composed context tree
-// into the root-owned state dir, readable by the sandbox account and by no other, for the
+// StageCtxCommands returns the argv, run as the host user, that copy the host-side composed
+// context tree into the staging root, readable by the sandbox account and by no other, for the
 // bootstrap to compose from.
 // Empty hostCtxTree → no commands, so a launch with no host bytes to carry pays nothing.
 //
@@ -418,29 +485,30 @@ func StageCtxCommands(hostCtxTree, cname, sd string) [][]string {
 	}
 	dst := StagedCtxRoot(cname, sd)
 	tmp := dst + ".new"
-	return [][]string{
-		{mkdirBin, "-p", filepath.Join(sd, ctxLeaf)},
-		{rmBin, "-rf", tmp},
-		{cpBin, "-R", hostCtxTree, tmp},
-		{chmodBin, "-R", "a+rX", tmp},
+	cmds := categoryDirCommands(filepath.Join(sd, ctxLeaf))
+	cmds = append(cmds, removeSealedCommands(tmp)...)
+	cmds = append(cmds,
+		[]string{cpBin, "-R", hostCtxTree, tmp},
+		[]string{chmodBin, "-R", sealTreeMode, tmp},
 		// THE TREE'S ROOT IS CLOSED TO EVERY OTHER ACCOUNT, and opened to the sandbox's alone:
 		// these are the user's own files — a directory host_files entry is routinely ~/.aws — and
-		// `a+rX` alone left every one readable by any local account under /var. The contents keep
-		// `a+rX`, which the sandbox account's reads need; nobody else can reach them past a 0700
-		// root. A `user:` ACE for sandboxFileReadAce's reason (SandboxGroup holds the host user),
+		// a sealed tree alone leaves every one readable by any local account. The contents stay
+		// readable, which the sandbox account's reads need; nobody else can reach them past a 0500
+		// root (the owner needs no write on a sealed tree). A `user:` ACE for sandboxFileReadAce's
+		// reason (SandboxGroup holds the host user),
 		// with list as well as search, because the bootstrap and the agent walk this directory
 		// (SandboxEnvDirCommands grants search alone: a file there is opened by name).
 		// UNMEASURED on a Mac (context-mounts.md CX-D26): both rights are spelled as in the
 		// shared root's provisioning ACE (dirRights), but no Mac has yet run a launch through a
 		// root closed this way, and if the ACE does not admit the sandbox nothing here arrives.
-		{chmodBin, "0700", tmp},
-		{chmodBin, "+a", "user:" + SandboxUser + " allow list,search", tmp},
-		{rmBin, "-rf", dst},
-		{mvBin, "-f", tmp, dst},
-	}
+		[]string{chmodBin, "0500", tmp},
+		[]string{chmodBin, "+a", "user:" + SandboxUser + " allow list,search", tmp},
+	)
+	cmds = append(cmds, removeSealedCommands(dst)...)
+	return append(cmds, []string{mvBin, "-f", tmp, dst})
 }
 
-// StageEmptyCtxCommands stages an EMPTY root-owned directory at StagedCtxRoot, for a launch
+// StageEmptyCtxCommands stages an EMPTY sealed directory at StagedCtxRoot, for a launch
 // whose host CLI composed no context tree: $YOLO_CONTEXT_DIR is exported on every launch
 // (docs/design/context-mounts.md CX-D4), so the directory it names must exist even when
 // nothing is in it — an empty one says "no context mounts", which is true. Same rm-then-mv
@@ -451,18 +519,18 @@ func StageEmptyCtxCommands(cname, sd string) [][]string {
 	}
 	dst := StagedCtxRoot(cname, sd)
 	tmp := dst + ".new"
-	return [][]string{
-		{mkdirBin, "-p", filepath.Join(sd, ctxLeaf)},
-		{rmBin, "-rf", tmp},
-		{mkdirBin, tmp},
-		{chmodBin, "755", tmp},
-		{rmBin, "-rf", dst},
-		{mvBin, "-f", tmp, dst},
-	}
+	cmds := categoryDirCommands(filepath.Join(sd, ctxLeaf))
+	cmds = append(cmds, removeSealedCommands(tmp)...)
+	cmds = append(cmds,
+		[]string{mkdirBin, tmp},
+		[]string{chmodBin, sealedBinaryMode, tmp},
+	)
+	cmds = append(cmds, removeSealedCommands(dst)...)
+	return append(cmds, []string{mvBin, "-f", tmp, dst})
 }
 
 // ---------------------------------------------------------------------------
-// Staging the INSTALL-CAPTURE STORE's entries into the root-owned state dir
+// Staging the INSTALL-CAPTURE STORE's entries into the host-owned staging root
 // ---------------------------------------------------------------------------
 
 // CaptureEntry is one install-capture store entry (internal/capture) a launch stages for the
@@ -477,27 +545,27 @@ type CaptureEntry struct {
 	// Key is the entry's store key: its directory name under the store's entries/.
 	Key string
 	// Source is the entry directory in the user's store (<CapturesDir>/entries/<key>), read by
-	// root when it is copied and never by the sandbox.
+	// the host user when it is copied and never by the sandbox.
 	Source string
 }
 
-// StagedCapturesRoot is the root-owned copy of the install-capture store a macos-user sandbox
+// StagedCapturesRoot is the host-owned, sealed copy of the install-capture store a macos-user sandbox
 // reads: <stateDir>/captures, laid out as the store is (entries/<key>), so the launcher's
 // `capture-materialize --store=` takes it unchanged. It is what entrypoint.CapturesDirEnv names
 // to the bootstrap, which bakes it into every generated launcher.
 //
 // docs/plans/install-capture.md hand-off H4, answered (b): a neutral machine store outside every
-// home, root-owned and read-only to the sandbox — an implementation decision under the
-// maintainer's 2026-10-04 delegation, reversible. It changes no byte of the session Seatbelt
-// profile: reads outside /Users, /Volumes and the keychains fall on its `(allow default)`, and
-// reads under /var/yolo-jail were MEASURED on hardware 2026-09-13 (StagedCtxRoot). It is the
-// pattern StagedPackRoot and StageCtxCommands follow, for their reason: the user's store sits
-// under the invoking user's home, which the sandbox account may not traverse.
+// home, read-only to the sandbox — an implementation decision under the maintainer's 2026-10-04
+// delegation, reversible. It adds no rule to the session Seatbelt profile beyond the staging
+// root's read allow, which every staged tree needs (StagedCtxRoot). It is the pattern
+// StagedPackRoot and StageCtxCommands follow, for their reason: the user's store sits under the
+// invoking user's home, which the sandbox account may not traverse.
 //
 // A COPY, never a link of the store's inodes. An entry a macos-user capture made holds files the
 // sandbox account owns, under the shared-group ACL its staging tree carries (CaptureStagingCommands),
 // so a hardlink of one would let the sandbox rewrite bytes every workspace on the machine runs
-// (INFERRED from that ownership; no Mac has tried it). Copied by root, every byte here is root's.
+// (INFERRED from that ownership; no Mac has tried it). Copied by the host user and sealed, every
+// byte here is the host user's and writable by no account.
 // The store is not a confidentiality boundary, here or on a container, where every jail reads it
 // whole through a `:ro` bind (internal/cli/run's captures.go).
 func StagedCapturesRoot(sd string) string {
@@ -515,7 +583,7 @@ const (
 	capturesStagingLeaf = "staging"
 )
 
-// stageCaptureScriptName and pruneCapturesScriptName are the $0 of the two root scripts below,
+// stageCaptureScriptName and pruneCapturesScriptName are the $0 of the two scripts below,
 // so `ps` and a failure message name which one ran.
 const (
 	stageCaptureScriptName  = "yolo-stage-capture"
@@ -523,15 +591,20 @@ const (
 )
 
 // stageCaptureScript copies ONE entry into the staged store unless it is already there: $1 the
-// staged root, $2 the key, $3 the entry in the user's store. Run by root (sudo), so the copy is
-// root's; `cp -R` copies a link as a link and follows none, on BSD and GNU alike. The copy is
-// made under staging/ and renamed into entries/ last, so a reader scanning entries/ never meets
-// a half-copied entry: a `<key>.new` beside the entries would be scanned, and would win
+// staged root, $2 the key, $3 the entry in the user's store. Run by the host user, so the copy is
+// the host user's; `cp -R` copies a link as a link and follows none, on BSD and GNU alike. The
+// copy is made under staging/ and renamed into entries/ last, so a reader scanning entries/ never
+// meets a half-copied entry: a `<key>.new` beside the entries would be scanned, and would win
 // selection's tie-break over the entry it copies.
+//
+// SEALED IN TWO STEPS, because the rename moves a directory to ANOTHER parent, which needs write on
+// the directory itself (to rewrite its `..`): the tree is sealed with its top left owner-writable,
+// renamed, and its top sealed last. A copy that dies between the two is still writable by no
+// account but its owner.
 //
 // "ALREADY THERE" IS A FACT ABOUT THE KEY, and a key is a content address: an entry staged under
 // it holds the bytes it names, so it is copied once per machine. Decided when the command runs,
-// as root, rather than by the host CLI reading /var/yolo-jail first, so a plan stays a pure
+// as the host user, rather than by the host CLI reading the staged store first, so a plan stays a pure
 // function of its inputs and no check can be stale by the time the copy would have run.
 //
 // A COPY THAT FAILS REMOVES WHAT IT MADE and exits non-zero. Any step can fail — a full disk
@@ -549,12 +622,12 @@ const (
 // fcopyfile(…, COPYFILE_ACL)`) and a directory's only under -p (cp.c, preserve_dir_acls). The
 // extended attributes it copies without -p are what flistxattr lists (copyfile.c's
 // copyfile_xattr), and that the kernel leaves the ACL out of that list is INFERRED, not read. Nor
-// can a copy inherit one: yolo sets no inheritable ACE on the state dir or under it (the context
+// can a copy inherit one: yolo sets no inheritable ACE on the staging root or under it (the context
 // tree's root, the env-file dir and the files in it carry `user:` ACEs with no inherit flag).
 //
 // `chmod -R -N` IS NOT ADDED AS A SECOND GUARD, on purpose: under -R, Apple's chmod clears an ACL
 // through chmodx_np, which follows a symlink (chmod/chmod.c asks it to follow for every -R entry,
-// and chmod_acl.c's clear branch calls chmodx_np), so run as root it would clear the ACL of
+// and chmod_acl.c's clear branch calls chmodx_np), so it would clear the ACL of
 // whatever a captured link names outside this tree, and fail on a dangling link. A Mac checks the
 // outcome instead (integration/macosusercapture_test.go: no ACE on the staged tree, and the
 // sandbox cannot open a staged file for append).
@@ -563,25 +636,36 @@ var stageCaptureScript = strings.Join([]string{
 	`dst="$1/` + capturesEntriesLeaf + `/$2"`,
 	`if [ -d "$dst" ]; then exit 0; fi`,
 	`tmp="$1/` + capturesStagingLeaf + `/$2"`,
+	unsealInScript(`"$tmp"`),
 	rmBin + ` -rf "$tmp"`,
 	// One `&&` chain inside an `if`, where `set -e` does not end the script, so a failure of any
 	// step reaches the cleanup below it.
 	"if " + strings.Join([]string{
 		cpBin + ` -R "$3" "$tmp"`,
-		// Readable and searchable by every account, writable by no account but root, which
-		// owns every byte: the store already froze its files (internal/capture's freezeTree),
-		// and the sandbox could change neither a root-owned file's bytes nor its mode.
-		chmodBin + ` -R a+rX,go-w "$tmp"`,
+		// Readable and searchable by every account, writable by none: the sandbox can change
+		// neither a file's bytes nor its mode, since it owns neither.
+		chmodBin + ` -R ` + sealTreeMode + ` "$tmp"`,
+		chmodBin + ` u+w "$tmp"`,
 		mvBin + ` "$tmp" "$dst"`,
+		chmodBin + ` a-w "$dst"`,
 	}, " && ") + "; then exit 0; fi",
+	unsealInScript(`"$tmp"`),
 	rmBin + ` -rf "$tmp"`,
 	"exit 1",
 }, "; ")
 
+// unsealInScript is unsealScript's test as one statement of a `set -eu` script, over a quoted
+// shell word: give the owner write back on a sealed directory before removing it. It never ends
+// the script on its own, so the removal after it is what reports.
+func unsealInScript(word string) string {
+	return `if [ -d ` + word + ` ] && [ ! -L ` + word + ` ]; then ` + chmodBin + ` -R u+w -- ` + word + ` || :; fi`
+}
+
 // pruneCapturesScript removes every staged entry the user's store no longer selects: $1 the
 // staged root, every later argument a key to keep. A superseded capture and one reaped from the
 // user's store (`yolo prune`) go at the next launch, so internal/prune needs no second root.
-// Anything left under staging/ is a copy a killed launch did not finish, and goes too.
+// Anything left under staging/ is a copy a killed launch did not finish, and goes too. Every
+// entry is sealed, so each is unsealed before it is removed.
 var pruneCapturesScript = strings.Join([]string{
 	"set -eu",
 	"root=$1",
@@ -591,19 +675,23 @@ var pruneCapturesScript = strings.Join([]string{
 		`k=${d##*/}`,
 		"keep=no",
 		`for want in "$@"; do if [ "$k" = "$want" ]; then keep=yes; fi; done`,
-		`if [ "$keep" = no ]; then ` + rmBin + ` -rf "$d"; fi`,
+		`if [ "$keep" = no ]; then ` + unsealInScript(`"$d"`) + "; " + rmBin + ` -rf "$d"; fi`,
 	}, "; ") + "; done",
-	rmBin + ` -rf "$root"/` + capturesStagingLeaf + `/*`,
+	`for s in "$root"/` + capturesStagingLeaf + `/*; do ` + strings.Join([]string{
+		`if [ ! -e "$s" ] && [ ! -L "$s" ]; then continue; fi`,
+		unsealInScript(`"$s"`),
+		rmBin + ` -rf "$s"`,
+	}, "; ") + "; done",
 }, "; ")
 
 // stageCaptureArgv is the one command that stages entry e under root.
 func stageCaptureArgv(root string, e CaptureEntry) []string {
-	return []string{"/bin/sh", "-c", stageCaptureScript, stageCaptureScriptName, root, e.Key, e.Source}
+	return []string{shBin, "-c", stageCaptureScript, stageCaptureScriptName, root, e.Key, e.Source}
 }
 
-// stageableCaptures is the subset of entries a root script may be handed: a key that is one
+// stageableCaptures is the subset of entries a staging script may be handed: a key that is one
 // plain store key and a source that is an absolute path. Anything else came from a store yolo
-// did not write and is dropped rather than spliced into a path root writes under.
+// did not write and is dropped rather than spliced into a path the script writes under.
 func stageableCaptures(entries []CaptureEntry) []CaptureEntry {
 	var out []CaptureEntry
 	for _, e := range entries {
@@ -627,7 +715,7 @@ func captureKeyOK(k string) bool {
 	return true
 }
 
-// StageCaptureCommands returns the sudo argv that bring the staged store up to date for this
+// StageCaptureCommands returns the argv, run as the host user, that bring the staged store up to date for this
 // launch: make it, drop every staged entry outside entries' and kept's keys, then copy in each of
 // entries that is not there yet (stageCaptureScript). Empty when entries is, so a launch that
 // stages no capture runs nothing and leaves the store as the last launch that did left it.
@@ -662,13 +750,11 @@ func StageCaptureCommands(entries []CaptureEntry, kept []string, sd string) [][]
 			keep = append(keep, k)
 		}
 	}
-	cmds := [][]string{
-		{mkdirBin, "-p", filepath.Join(root, capturesEntriesLeaf), filepath.Join(root, capturesStagingLeaf)},
-		// Explicit, rather than whatever umask sudo runs under: the sandbox has to search both to
-		// reach an entry, and a launcher that cannot reach one downloads instead, saying nothing.
-		{chmodBin, "755", root, filepath.Join(root, capturesEntriesLeaf)},
-		append([]string{"/bin/sh", "-c", pruneCapturesScript, pruneCapturesScriptName, root}, keep...),
-	}
+	// The mode is explicit (categoryDirCommands): the sandbox has to search the root and entries/
+	// to reach an entry, and a launcher that cannot reach one downloads instead, saying nothing.
+	cmds := categoryDirCommands(root, filepath.Join(root, capturesEntriesLeaf), filepath.Join(root, capturesStagingLeaf))
+	cmds = append(cmds,
+		append([]string{shBin, "-c", pruneCapturesScript, pruneCapturesScriptName, root}, keep...))
 	for _, e := range entries {
 		cmds = append(cmds, stageCaptureArgv(root, e))
 	}
@@ -963,7 +1049,7 @@ func FixPermissionsScript(root, group string) string {
 // WHAT THIS DOES AND DOES NOT PROVE. It detects the KNOWN cause — the ACE yolo
 // itself applies is absent — and it is exact for that. It is not a general
 // writability oracle: only the sandbox uid can answer that, and probing as it
-// would cost a sudo prompt of its own before the one the launch already spends.
+// would cost a crossing of its own through the run-as rule.
 // So the bootstrap's own failure remains the backstop for everything else, and
 // this exists to convert the common case from a dead end into one command.
 func WorkspaceGrantedScript(dir, group string) string {
@@ -1036,7 +1122,7 @@ func WorkspaceACLStripScript(workspace string) string {
 }
 
 // ---------------------------------------------------------------------------
-// Launch — sudo -u + env -i + sandbox-exec, SandVault-style
+// Launch — the run-as rule + env -i + sandbox-exec, SandVault-style
 // ---------------------------------------------------------------------------
 // SandboxPath returns the PATH for the sandboxed agent — the two generated dirs, then its
 // own install prefixes, then the `prefix` (darwin store bin dirs), then system.
@@ -1067,7 +1153,7 @@ func WorkspaceACLStripScript(workspace string) string {
 // functions that open `command -v yolo || return` — `_refresh_servers` (the MCP/LSP server
 // refresh) and `_try_materialize` (program-delivery.md §6.3's "use an already-captured
 // install instead of downloading it") — and on this backend both returned at that line on
-// every invocation, because the only yolo the sandbox can reach is the root-owned copy
+// every invocation, because the only yolo the sandbox can reach is the sealed copy
 // StageBinaryCommands stages at StagedYoloPath, which was on no PATH at all. Armed,
 // generated, baked with SERVERS_ENABLED=1, and unreachable: neither failed, both no-oped.
 //
@@ -1077,7 +1163,8 @@ func WorkspaceACLStripScript(workspace string) string {
 // answer to "where is yolo?" into a generator whose whole value is having one. PATH is
 // also the wider fix — every other consumer in the sandbox (a `requires` probe, a hook, an
 // agent shelling out) gets the same resolution — and it costs no new trust: the binary is
-// root-owned and `a+rX` precisely so the sandbox uid may exec and not rewrite it.
+// sealed 0555 in the host-owned staging root precisely so the sandbox uid may exec and not
+// rewrite it.
 //
 // WHERE IT SITS mirrors the container, where `yolo` is a `/bin/<name>` symlink into the
 // mounted prefix and `/bin` is the LAST entry (AGENTS.md, PATH order): after the store
@@ -1102,7 +1189,9 @@ func SandboxPath(home string, prefix []string) string {
 	return strings.Join(parts, ":")
 }
 
-// LaunchArgv builds the `sudo -u … env -i … sandbox-exec -f … -- <agent>` argv.
+// LaunchArgv builds the `/usr/bin/sudo -n --set-home --user=_yolojail /usr/bin/env -i …
+// sandbox-exec -f … -- <agent>` argv: the one crossing the run-as rule admits
+// (RunAsSandboxArgv), so it never prompts.
 //
 // `envFile` is the session env file (SandboxEnvFile) carrying everything the launch
 // composed — git identity, TERM, the profile/provider channel, the hydrated env_sources.
@@ -1125,7 +1214,7 @@ func LaunchArgv(agentArgv []string, profilePath, envFile string, workspace, user
 //
 // THERE, AND NOWHERE ELSE. After the reader, so the guard runs with the session's composed
 // environment and inside the sandbox, as the account whose processes it reads; before the
-// shell, so everything the agent starts is its descendant. stagedYolo is the root-owned copy
+// shell, so everything the agent starts is its descendant. stagedYolo is the sealed copy
 // the sandbox already execs for its bootstrap (StagedYoloPath), never the host's own binary,
 // which the sandbox account cannot read.
 //
@@ -1167,13 +1256,7 @@ func LaunchArgvWithGuard(agentArgv []string, profilePath, envFile string, worksp
 	// not be measured at all until the probe was rewritten without variables. Without it,
 	// the same probe resolves all nine into the store profile and item 3's `fzf` still beats
 	// Homebrew's. PlanInvariants pins the absence on both argvs.
-	out := []string{
-		"sudo",
-		"--set-home",
-		"--user=" + user,
-		"/usr/bin/env",
-		"-i",
-	}
+	out := RunAsSandboxArgv([]string{"--set-home"}, "-i")
 	out = append(out, envPairs...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	session := append(guard.Argv(stagedYolo), "/bin/zsh", "-c", inner)
@@ -1287,7 +1370,7 @@ func EndpointGrantCommands(endpointPath, user string) [][]string {
 // ---------------------------------------------------------------------------
 // Helpers (small; pure)
 // ---------------------------------------------------------------------------
-// SessionProfilePath returns the root-owned per-session Seatbelt profile path:
+// SessionProfilePath returns the per-session Seatbelt profile path in the staging root:
 // <stateDir>/profile-<key>.sb. A launch passes its session key (SessionKey: <cname>.<session id>,
 // sessionfiles.go), so a second terminal in the workspace cannot rewrite the profile a running
 // sandbox was started under, and removes the one it wrote when it ends; an install capture passes

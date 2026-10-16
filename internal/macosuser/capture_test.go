@@ -491,7 +491,7 @@ func TestCapturePackTreeWriterFailureRetainsAndReservationCollisionIsUntouched(t
 			t.Errorf("the unowned collision path was removed: %s", joined)
 		}
 		for _, want := range []string{"Could not reserve guest pack tree", plan.PackRoot,
-			"fresh invocation", "sudo ls -la --"} {
+			"fresh invocation", "`ls -la --"} {
 			if !strings.Contains(c.out.String(), want) {
 				t.Errorf("reservation refusal does not name %q: %s", want, c.out.String())
 			}
@@ -577,7 +577,7 @@ func TestCaptureExecutorDoesNotRemoveExistingReservationCollision(t *testing.T) 
 		t.Errorf("capture cleanup removed an unowned collision: %v", ran)
 	}
 	for _, want := range []string{"Could not reserve guest pack tree", plan.PackRoot,
-		"fresh invocation", "sudo ls -la --"} {
+		"fresh invocation", "`ls -la --"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("collision refusal does not name %q: %s", want, out.String())
 		}

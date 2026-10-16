@@ -10,16 +10,15 @@ import (
 	"testing"
 )
 
-// staging_darwin_test.go EXECUTES the staging commands the run plan emits, with the
-// `sudo` prefix dropped and the destination redirected under a temp dir.
+// staging_darwin_test.go EXECUTES the staging commands the run plan emits, as the invoking
+// user (which is who runs them on a launch) with the destination redirected under a temp dir.
 //
-// WHY THIS IS WORTH DOING WITHOUT PRIVILEGE. The plan tests assert the argv is
-// right; nothing asserted the argv WORKS. Everything about these commands except
-// where they write is privilege-independent — the copy, the mode bits, and the
-// atomic replace all behave identically against /tmp — so redirecting the
-// destination buys real coverage of the one part of the macos-user launch that
-// touches the filesystem. What is left needing root is the destination being
-// /var/yolo-jail and the owner being root, which is two facts, not a mechanism.
+// WHY THIS IS WORTH DOING. The plan tests assert the argv is right; nothing asserted the argv
+// WORKS. The commands need no privilege — the host user stages into a staging root it owns — and
+// the copy, the sealed modes, the unseal before a replacement and the atomic replace all behave
+// identically against a temp dir, so redirecting the destination buys real coverage of the one
+// part of the macos-user launch that touches the filesystem. What is left is the destination
+// being /Users/Shared/yolo-staged, which is a fact, not a mechanism.
 //
 // It also covers the J2 FRESH-INODE RULE, which is the trap here and is invisible to
 // an argv assertion: macOS caches Mach-O code signatures per vnode, so overwriting a
@@ -27,7 +26,7 @@ import (
 // copy-to-temp then atomic mv precisely to avoid that, and re-running them has to
 // leave a binary that still runs.
 
-// runStaged executes plan commands with sudo dropped and the state dir redirected.
+// runStaged executes plan commands with the state dir redirected.
 func runStaged(t *testing.T, cmds [][]string) {
 	t.Helper()
 	for _, cmd := range cmds {
@@ -45,6 +44,7 @@ func runStaged(t *testing.T, cmds [][]string) {
 // matters — survives being run twice.
 func TestStageBinaryCommandsExecuteAndReStage(t *testing.T) {
 	sd := t.TempDir()
+	unsealOnCleanup(t, sd)
 
 	// A real Mach-O to stage: this test binary itself. A shell script would not
 	// exercise the vnode signature cache the fresh-inode rule exists for.
@@ -60,10 +60,14 @@ func TestStageBinaryCommandsExecuteAndReStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nothing was staged: %v", err)
 	}
-	// a+rX: the sandbox uid must be able to read and exec what root staged.
-	if mode := info.Mode().Perm(); mode&0o055 != 0o055 {
-		t.Errorf("staged binary mode = %o, want world read+exec (the sandbox uid "+
-			"cannot run it otherwise)", mode)
+	// Sealed 0555: the sandbox uid must be able to read and exec what the host user staged,
+	// and no account may rewrite it.
+	if mode := info.Mode().Perm(); mode != 0o555 {
+		t.Errorf("staged binary mode = %o, want 0555 (world read+exec, so the sandbox uid "+
+			"can run it, and writable by none)", mode)
+	}
+	if mode := fileMode(t, filepath.Dir(staged)); mode != 0o755 {
+		t.Errorf("the bin category directory is %o, want 0755", mode)
 	}
 	firstIno := inodeOf(t, staged)
 
@@ -84,12 +88,28 @@ func TestStageBinaryCommandsExecuteAndReStage(t *testing.T) {
 // contract in TestStagedPackTreesAreImmutableAndDistinct.
 func TestStagedTreesReplaceRatherThanMerge(t *testing.T) {
 	sd, src := t.TempDir(), t.TempDir()
+	unsealOnCleanup(t, sd)
 	if err := os.WriteFile(filepath.Join(src, "current"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runStaged(t, StageHomeOverlayCommands(src, "proj", sd))
-	stale := filepath.Join(StagedHomeOverlay("proj", sd), "removed-by-a-config-change")
-	if err := os.WriteFile(stale, []byte("x"), 0o644); err != nil {
+	overlay := StagedHomeOverlay("proj", sd)
+	if mode := fileMode(t, overlay); mode != 0o555 {
+		t.Errorf("the staged overlay is %o, want sealed 0555", mode)
+	}
+	if mode := fileMode(t, filepath.Join(overlay, "current")); mode != 0o444 {
+		t.Errorf("a staged overlay file is %o, want sealed 0444", mode)
+	}
+	// A file an earlier launch shipped, in a tree sealed again as the stage leaves it: the
+	// re-stage has to unseal the tree before it can remove it.
+	if err := os.Chmod(overlay, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(overlay, "removed-by-a-config-change")
+	if err := os.WriteFile(stale, []byte("x"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(overlay, 0o555); err != nil {
 		t.Fatal(err)
 	}
 	runStaged(t, StageHomeOverlayCommands(src, "proj", sd))
@@ -103,6 +123,7 @@ func TestStagedTreesReplaceRatherThanMerge(t *testing.T) {
 
 func TestStagedPackTreesAreImmutableAndDistinct(t *testing.T) {
 	sd := t.TempDir()
+	unsealOnCleanup(t, sd)
 	sourceA, sourceB, sourceC := t.TempDir(), t.TempDir(), t.TempDir()
 	legacy := StagedPackRoot("proj", sd)
 	if err := os.MkdirAll(legacy, 0o755); err != nil {
@@ -146,6 +167,11 @@ func TestStagedPackTreesAreImmutableAndDistinct(t *testing.T) {
 	}
 	if mode := fileMode(t, filepath.Join(rootA, "local", "data")); mode&0o111 != 0 {
 		t.Errorf("non-executable data gained execute bits: %o", mode)
+	}
+	for _, p := range []string{rootA, stagedA, filepath.Join(rootA, "local", "data")} {
+		if mode := fileMode(t, p); mode&0o222 != 0 {
+			t.Errorf("%s is %o after staging, want sealed: writable by no account", p, mode)
+		}
 	}
 
 	runStaged(t, StagePackCommands(sourceB, "proj", sd))
