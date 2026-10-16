@@ -383,6 +383,67 @@ func TestSetupInstallsTheRuleAndWarnsWhenTheConfigFailsTheSameWithoutIt(t *testi
 	}
 }
 
+// Moving the parked rule back after the comparison accepted it fails: a stop saying the rule is
+// not installed, the pre-existing complaints, their fixes and the re-run, and no probe.
+func TestSetupStopsWhenTheParkedRuleCannotMoveBack(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	without := "/private/etc/sudoers.d/00-matt: bad permissions, should be mode 0440\n"
+	f := wholeCheck(&rec, 1, 1, &d, without, without)
+	moves := 0
+	d.Run = func(argv []string) int {
+		if "run:"+strings.Join(argv, " ") == unparkRule {
+			if moves++; moves == 2 {
+				rec = append(rec, unparkRule)
+				return 1
+			}
+		}
+		return f.run(argv)
+	}
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d\n%s", rc, buf.String())
+	}
+	if recAt(rec, "-n --user=_yolojail") >= 0 {
+		t.Errorf("went on to the probe:\n%s", strings.Join(rec, "\n"))
+	}
+	if !strings.HasSuffix(strings.Join(rec, "\n"), "run:/usr/bin/sudo /bin/rm -f "+SudoersStagingFile) {
+		t.Errorf("the parked rule was not removed last:\n%s", strings.Join(rec, "\n"))
+	}
+	want := "\n✗ yolo's sudo rule is not installed: " + unparkRule[len("run:"):] + " failed.\n\n" +
+		indented(without) + "\n" +
+		"  sudo chmod 0440 /private/etc/sudoers.d/00-matt\n" +
+		"  yolo macos-setup\n\n"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("stop lacks\n%s\ngot:\n%s", want, buf.String())
+	}
+}
+
+// The first move into place fails: the same stop, with only the re-run.
+func TestSetupStopsWhenTheRuleCannotMoveIntoPlace(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	d.Run = func(argv []string) int {
+		joined := strings.Join(argv, " ")
+		rec = append(rec, "run:"+joined)
+		if "run:"+joined == unparkRule {
+			return 1
+		}
+		return 0
+	}
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d", rc)
+	}
+	want := "\n✗ yolo's sudo rule is not installed: " + unparkRule[len("run:"):] + " failed.\n\n" +
+		"  yolo macos-setup\n\n"
+	if !strings.Contains(buf.String(), want) || slices.Contains(rec, "run:"+visudoConfigCheck) {
+		t.Errorf("stop lacks\n%s\ngot:\n%s\nran:\n%s", want, buf.String(), strings.Join(rec, "\n"))
+	}
+}
+
 // Each kind of pre-existing problem gets its own fix: a bad mode one chmod for all its files, a
 // wrong owner one chown, anything else a visudo -f per file.
 func TestSudoersRemediesPerKindOfProblem(t *testing.T) {

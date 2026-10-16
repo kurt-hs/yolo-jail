@@ -848,6 +848,9 @@ file in flux. Every task runs `just format` before its commit and stages only it
     visudo's complaints, a blank line, then the fixes at the paths visudo printed: one
     `sudo chmod 0440 <files>` for the bad modes, one `sudo chown root:wheel <files>` for the bad
     owners, `sudo visudo -f <path>` for each other file named, and `sudo visudo -c`.
+  - Moving the checked rule into place fails, first or after the comparison accepted it:
+    `✗ yolo's sudo rule is not installed: <the mv> failed.`, the pre-existing complaints when
+    there are any, their fixes, then `yolo macos-setup`.
   - Both fail with nothing captured to compare:
     `✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.`, then
     the same fixes, `sudo visudo -c`, `yolo macos-setup`.
