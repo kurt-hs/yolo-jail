@@ -216,9 +216,9 @@ designs chose, not of what the maintainer ruled.
 | :--- | :--- | :--- |
 | Event-watcher sidecars and the ping box | host-side sidecars are children of the launch that creates the container, and an attach starts none ([EW-D10](../design/agent-event-watchers.md#EW-D10)). How a sidecar notices its launch died is left to the implementer | [`agent-event-watchers.md` §3.2](../design/agent-event-watchers.md#32-lifecycle-per-side-and-per-notch) |
 | The GitHub boundary broker | "a loophole host daemon, one per jail" ([BB-D1](../design/boundary-broker.md#BB-D1)); "a jail stopping ends every grant it holds"; expiry checked at use, never by a sweeper; decided records kept 7 days "then go", in a store mutated under one flock by one function ([BB-D10](../design/boundary-broker.md#BB-D10)). ⚠ Spawned by today's `Setsid` path, it would inherit the orphan defect in [§2.3](#23-reaped-at-the-next-launch-or-by-yolo-prune) where that still holds, and "a jail stopping ends every grant" would fail for a SIGKILLed keeper off Linux (INFERRED; on Linux the keeper's parent-death signal ends it) | [`boundary-broker.md` §7](../design/boundary-broker.md#7-grants-and-the-request-store) |
-| The podman reboot readiness gate | a host-wide advisory flock with a shared deadline, owned by whichever launch arrives first. Its own scope boundary says the design "must not … start a host service": a limit on that gate, not a ruling against any host process | [`podman-reboot-readiness.md`](../design/podman-reboot-readiness.md#verdict-and-boundary) |
+| The podman reboot readiness gate | a host-wide advisory flock with a shared deadline, owned by whichever launch arrives first. Its own scope boundary says the design "must not … start a host service": a limit on that gate, not a ruling against any host process | [`podman-reboot-readiness.md`](../reference/podman-readiness.md) |
 | In-jail nix roots | a raw host-auto observer cannot identify a producing jail or recover pruned payloads; it is best effort. A cooperative per-workspace producer protocol is distinct, unbuilt and not permission to start a central service | [`in-jail-nix-roots.md`, the root watcher](../reference/in-jail-nix-roots.md#the-root-watcher), [what it does not license](../reference/in-jail-nix-roots.md#what-this-does-not-license) |
-| The durable-dir report | computed at each fresh launch and in `yolo check` / `yolo stores`; never deletes | [`durable-scratch-space.md` §5.4](../design/durable-scratch-space.md#54-the-durable-dir-report) |
+| The durable-dir report | computed at each fresh launch and in `yolo check` / `yolo stores`; never deletes | [`durable-scratch-space.md` §5.4](../reference/jail-home.md) |
 
 ### 2.6 Done by nobody
 
@@ -633,5 +633,5 @@ does not re-derive them. None is built, because nothing here is proposed.
 | [`agent-event-watchers.md`](../design/agent-event-watchers.md#32-lifecycle-per-side-and-per-notch) | sidecars per launch ([EW-D10](../design/agent-event-watchers.md#EW-D10)) |
 | [`in-jail-nix-roots.md`](../reference/in-jail-nix-roots.md#what-this-does-not-license) | why raw auto-only reconciliation cannot provide attribution or synchronized safety |
 | [`disk-footprint.md`](../reference/disk-footprint.md#why-its-this-way) | A6, the rejected timer for reclaim |
-| [`podman-reboot-readiness.md`](../design/podman-reboot-readiness.md#verdict-and-boundary) | the boot race; the in-review gate deliberately starts no host service |
+| [`podman-reboot-readiness.md`](../reference/podman-readiness.md) | the boot race; the in-review gate deliberately starts no host service |
 | [`image-retention.md`](../reference/image-retention.md#what-this-does-not-license) | which reapers are automatic and which are `yolo prune` only |

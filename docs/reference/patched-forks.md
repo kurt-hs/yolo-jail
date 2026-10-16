@@ -794,7 +794,7 @@ write: a recorded patch failure is read before the render with no advance.
 
 **A patched fork with nothing to run refuses the launch** ([PF-D77](#PF-D77)). Wherever a row below
 leaves nothing, a fresh launch at a notch that builds forks refuses before booting, whatever the
-command, since yolo never reads the command line ([HP-DIR2](../design/host-tool-provisioning.md#HP-DIR2)).
+command, since yolo never reads the command line ([HP-DIR2](host-agent-environment.md#HP-DIR2)).
 Its reason is that row's message and next step, and it also names `yolo pack series check` and the
 rebase recipe for a series that no longer applies, `yolo capture <bin>` to retry, and dropping the
 fork pack to run without it. The fork's in-jail launcher, which refuses when it was handed no build,
@@ -917,7 +917,7 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 launch delivers no fork's program at all, for three reasons not specific to patched forks — that
 backend's run pipeline returns before the fresh-launch slot; no launch there can read the capture
 store, which install-capture's
-[hand-off H4](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
+[hand-off H4](install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
 holds as a ruling; and a build there would be a darwin build in that backend's capture sandbox, which
 no fork has had. A patched fork reaches macos-user only with the fork route's own macos-user step,
 after H4.

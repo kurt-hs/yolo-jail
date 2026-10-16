@@ -259,7 +259,7 @@ process, same lifetime, same environment.
 store outputs, the shared cache's measure and (with consent) purge, the mise store's measure and
 (with consent) removal, agent-staging orphans with retired loophole state, image tars,
 superseded flake-bundle generations, and the start of the detached scratch-volume remover
-([`durable-scratch-space.md`](../design/durable-scratch-space.md)). `runHousekeeping` is the
+([`durable-scratch-space.md`](jail-home.md)). `runHousekeeping` is the
 list.
 
 Three properties anything added must respect:
@@ -353,10 +353,10 @@ close it:
   loser skips its pass and leaves its debounce unstamped.
 
 The shared lock used to be held for a whole pass, which kept a launch's re-inspect waiting for
-it ([OQ-PR2](../design/podman-reboot-readiness.md#decision-ledger)). While an upgrade mixes
+it ([OQ-PR2](podman-readiness.md#why-its-this-way)). While an upgrade mixes
 versions, an older pass that knows only the shared lock can run between a newer pass's
 deletions; their deletions still never overlap
-([PR-D14](../design/podman-reboot-readiness.md#PR-D14)).
+([PR-D14](podman-readiness.md#PR-D14)).
 
 **Failure paths.** A measurement that fails skips its class silently. A delete that fails midway
 stops the class, names what was and was not removed, and does not stamp. A store deletion nix

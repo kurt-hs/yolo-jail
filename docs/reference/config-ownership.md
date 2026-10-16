@@ -103,7 +103,7 @@ Two more words have narrow meanings here:
 
 - **Unset** — `host_management` has no value at all. Not *undeclared*, which this corpus
   reserves for the input-closure tier of
-  [`yolo apply --sealed`](../design/yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails):
+  [`yolo apply --sealed`](what-yolo-is.md):
   a value inside an agent's config that shapes an environment while nothing names it. An
   undeclared key is promoted or discarded; an unset key is written.
 - **Adoption** — the first owned render into a home that already holds the file: yolo captures
@@ -601,7 +601,7 @@ promote refuses and prints the host command (`refuseInJailPromote`, the mirror o
 | `--keys` names a key not in the capture | error, exit 2, naming it |
 | destination pack is fetched, or is a `pack.jsonc` | refused, naming what it found |
 | destination pack has no `pack.json` | one is created with the pack's name |
-| destination pack has problems every launch refuses it over | the write is refused, exit 1, naming each and `yolo pack lint`; `--plan` says so and exits 0 ([NS-D16](../design/notch-scoped-config-contributions.md#10-decision-ledger)) |
+| destination pack has problems every launch refuses it over | the write is refused, exit 1, naming each and `yolo pack lint`; `--plan` says so and exits 0 ([NS-D16](pack-system.md#why-its-this-way)) |
 | the surface is keyless (`lines`/`raw`) | refused: the whole file is one captured value, so `yolo config reset` is the only exit |
 | the surface is `rmw`, `computed` or `unrendered` | refused: no capture overlay |
 | two workspaces captured one key differently | one promotion at a time; the second reports the overwrite |

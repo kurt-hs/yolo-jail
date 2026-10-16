@@ -22,7 +22,7 @@ summary: "How a launch and `yolo check` wait for Podman: one patient, budget-bou
 # Podman readiness — the launch's one patient `podman info`
 
 **Status:** Verified 2026-10-16 against `8e65f344`. Graduated from the design doc
-`docs/design/podman-reboot-readiness.md`, which git history keeps. MEASURED by unit tests through
+`docs/reference/podman-readiness.md`, which git history keeps. MEASURED by unit tests through
 `run.Run`, runtime selection and `check.Check`, on a fake podman whose clock the test drives, and by
 the attempt runner on real subprocesses ([Testing](#testing)). UNMEASURED: a real reboot, and a
 rootless podman at all. A nested jail's podman is rootful, so the rootless row of
@@ -385,7 +385,7 @@ comments and sibling docs cite. Three standing rules bind the rows that cite the
 quiet mode ([OQ-RO3](report-tiers.md#why-its-this-way)); "could not ask the runtime" is never a yes
 (the tri-state rule in [AGENTS.md](../../AGENTS.md#architecture)); and an escape hatch is for broken
 user config, never for a yolo bug
-([attach-skew-and-contract-guardrails.md](../design/attach-skew-and-contract-guardrails.md#decision-ledger)).
+([attach-skew-and-contract-guardrails.md](attach-skew.md#why-its-this-way)).
 
 | ID | Ruling |
 | :--- | :--- |

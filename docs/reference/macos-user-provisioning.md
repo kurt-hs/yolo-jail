@@ -45,7 +45,7 @@ updated on 2026-09-30 for [AR-L3](agent-program-runtimes.md#ar-l3),
 [PS-D1](../design/provisioner-sets.md#PS-D1), read from code and unit tests only. The per-session
 file names, the liveness record and the CA files were added on 2026-10-04
 ([`<session>`](#the-session-key), [PS-D10](../design/provisioner-sets.md#PS-D10)), read from code and
-unit tests only. The [guest pack tree](#the-guest-pack-tree--one-per-launch-never-replaced) and the JD rows were added on 2026-10-16, checked against `8e65f3444`, when the jail-daemon plan graduated here; its native behavior is UNMEASURED. Program readiness joined the same stage on 2026-10-06 ([JR-D2](../design/jail-notch-readiness.md#JR-D2)); permanent fixture-based tests run in the macOS CI job, but a green native run and manual hardware verification are still pending.
+unit tests only. The [guest pack tree](#the-guest-pack-tree--one-per-launch-never-replaced) and the JD rows were added on 2026-10-16, checked against `8e65f3444`, when the jail-daemon plan graduated here; its native behavior is UNMEASURED. Program readiness joined the same stage on 2026-10-06 ([JR-D2](program-readiness.md#JR-D2)); permanent fixture-based tests run in the macOS CI job, but a green native run and manual hardware verification are still pending.
 
 A container jail gets its tools from two places: an image **floor** that exists before any
 config asks for anything, and an imperative **stage** that runs inside the jail before the

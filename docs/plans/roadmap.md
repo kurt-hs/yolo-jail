@@ -118,9 +118,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     render-mark twin](../reference/config-target-resolution.md#where-this-does-not-reach),
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../reference/agent-footer.md#what-has-and-has-not-been-observed), [the
-    build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
+    build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../reference/context-mounts.md),
     [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../reference/image-staging-vs-baking.md#the-first-load), [the login
-    seed](../design/base-home-legacy-state.md) and [the storage classes](../design/durable-scratch-space.md).
+    seed](../reference/jail-home.md) and [the storage classes](../reference/jail-home.md).
 
     Build [the bounded privilege lifecycle](../design/macos-user-privilege-lifecycle.md) from
     [its plan](../design/macos-user-privilege-lifecycle-plan.md), with the native readiness work:
@@ -158,7 +158,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     — what most agents' menus show turns on the first, and no agent gets search from Bedrock on runtime.
 24. [Decide whether pack-declared traps fold into the agent directory map](../design/agent-directory-map.md) — the map
     would supersede [the traps design](../design/pack-declared-file-diagnostics.md), so rule it before building either.
-25. [Measure the in-jail nix root watcher end to end](../design/in-jail-nix-roots.md#9-watcher-measurement-and-remaining-host-observation) — the running jail observed a tiny build through the watcher, but host root resolution remains unverified; the attempted shared-store root query pruned stale entries, so finish with a safe host-side observation.
+25. [Measure the in-jail nix root watcher end to end](../reference/in-jail-nix-roots.md) — the running jail observed a tiny build through the watcher, but host root resolution remains unverified; the attempted shared-store root query pruned stale entries, so finish with a safe host-side observation.
 26. [Review H4's staged capture store on macos-user](../reference/install-capture.md#build-order), [rule whether integration
     sharding unparks](integration-parallelism.md) with [the test suite's other levers](test-suite-speed.md), and [name
     the real forked program](../design/forked-programs-as-packs.md), the last input its step 7 needs.
@@ -207,7 +207,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [macos-user's item 2 twin](runbooks/macos-user-manual-checks.md#2-seatbelt-is-actually-applied);
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
     [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); [the disk levers'
-    re-measure](../reference/disk-footprint.md#owed-measurements); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).
+    re-measure](../reference/disk-footprint.md#owed-measurements); and the pi guide's line on [a package the refresh missed](../reference/pi-extensions.md).
 33. Verify [the exact-commit release gate](../reference/release-process.md) before the next publication request,
     because offline fixtures do not prove live Actions or publisher permissions. What the 2026-10-05 and 2026-10-06
     builds still owe: read the first scheduled macos-user nightly with [the vendor
@@ -260,7 +260,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     for [Claude's login without interception](../design/claude-login-without-interception.md), on a Mac and for a day
     on a rootless host, which releases [`yolo host -- claude` joining the shared login](../reference/claude-oauth-interposition.md),
     and records one browser login and one shared expiry for [the OpenAI service](../reference/agent-credentials.md#openai-measured).
-42. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../design/podman-reboot-readiness.md#testing-and-the-real-host-check),
+42. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../reference/podman-readiness.md),
     [a low-space collection with a jail up](../reference/image-retention.md#owed-host-steps), [the keeper's scope move and logout](../design/jail-lifetime-last-session-wins.md#8-what-done-looks-like),
     and HD-R1's first launch once item 2 lands.
 43. One live agent session per check, which no test may start: [the footer](../reference/agent-footer.md#what-has-and-has-not-been-observed),

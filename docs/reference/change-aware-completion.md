@@ -16,7 +16,7 @@ summary: "How `just done` checks a finished task without rewriting it: it refuse
 # Change-aware completion — what `just done` checks, and why it never rewrites
 
 **Status:** Verified 2026-10-16 against `8e65f344`. Graduated from the design doc
-`docs/design/change-aware-completion.md`, which git history keeps. MEASURED: every route on a
+`docs/reference/change-aware-completion.md`, which git history keeps. MEASURED: every route on a
 synthetic repository (`scripts/test-completion-check.py`, run by `lint-ci`), and the wall times in
 [Measured on 2026-10-09](#measured-on-2026-10-09).
 
