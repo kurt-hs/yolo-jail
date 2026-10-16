@@ -136,7 +136,7 @@ func TestAHostApplyStopsOnAPatchBranchsRecordedFailureBeforeItWrites(t *testing.
 	}
 	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	fx.later(2 * time.Hour)
-	if rc, _, out := fx.hostLaunch(t); rc == 0 || !strings.Contains(out, "the patch branch does not merge") {
+	if rc, _, out := fx.hostLaunch(t); rc == 0 || !strings.Contains(out, "patch branch does not merge into upstream") {
 		t.Fatalf("the launch that records the failure: rc=%d\n%s", rc, out)
 	}
 	var out, errw bytes.Buffer
@@ -220,7 +220,7 @@ func TestAPatchBranchConflictRefusesNamingThePaths(t *testing.T) {
 	var block bytes.Buffer
 	writePatchFailure(&block, pf, fx.fork(t), packsrc.PatchBypass{}, "")
 	for _, w := range []string{"patch branch does not merge into upstream v1.1.0", "Conflict: f.txt",
-		packsrc.PatchBranchRecipeLead, "git checkout mine", "git merge " + pf.Target.Commit, "git push origin mine"} {
+		"\nRepair:\n", "git checkout mine", "git merge " + pf.Target.Commit, "git push origin mine"} {
 		if !strings.Contains(block.String(), w) {
 			t.Errorf("the error block lacks %q:\n%s", w, block.String())
 		}

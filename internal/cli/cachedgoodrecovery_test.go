@@ -279,8 +279,8 @@ func TestCachedGoodDisclosureKeepsCurrentTypedPatchFailureOnSuccessAndRefusal(t 
 		t.Fatal(err)
 	}
 	d, refusal := askForCachedGood(t, fx, fork.Key())
-	if d.Key != "" || !strings.Contains(refusal, "ERROR: forkpack/tool: patch application failed") ||
-		!strings.Contains(refusal, "  Repair: "+packsrc.RecipeLead) ||
+	if d.Key != "" || !strings.Contains(refusal, "ERROR: forkpack/tool: patch series does not apply") ||
+		!strings.Contains(refusal, "\nRepair:\n") ||
 		!strings.Contains(refusal, "No prior build was delivered") {
 		t.Errorf("validation refusal omitted current typed failure/repair: delivery=%+v\n%s", d, refusal)
 	}

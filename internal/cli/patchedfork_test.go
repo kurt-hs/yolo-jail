@@ -270,7 +270,7 @@ func TestPackInstallConsumesTypedFailureBeforeGoodSkip(t *testing.T) {
 			fx, oldKey, v12 := explicitGoodAndConflict(t)
 			before := fx.record(t).Good
 			if rc, out, errw := packVerb(t, "update"); rc == 0 ||
-				!strings.Contains(errw, "ERROR: forkpack/tool: patch application failed") {
+				!strings.Contains(errw, "ERROR: forkpack/tool: patch series does not apply") {
 				t.Fatalf("forced update did not record the conflict: rc=%d\n%s\n%s", rc, out, errw)
 			}
 			t.Setenv("YOLO_ALLOW_PATCH_FAILURES", tc.bypass)
@@ -459,7 +459,7 @@ func TestPackInstallOpaqueApplyErrorIsNotTextClassified(t *testing.T) {
 	}
 	usePatchedForkGit(t, git)
 	rc, out, errw := packVerb(t, "install")
-	if rc != 0 || strings.Contains(out+errw, "git-was-called") || strings.Contains(errw, "patch application failed") {
+	if rc != 0 || strings.Contains(out+errw, "git-was-called") || strings.Contains(errw, "patch series does not apply") {
 		t.Fatalf("opaque text was inferred as current failure or install ran git: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	after := fx.record(t)
@@ -769,7 +769,7 @@ func (w *errorSignalWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	n, err := w.buf.Write(p)
 	w.mu.Unlock()
-	if bytes.Contains(p, []byte("patch application failed")) {
+	if bytes.Contains(p, []byte("patch series does not apply")) {
 		w.signalOnce.Do(func() { close(w.signal) })
 	}
 	return n, err
@@ -1231,7 +1231,7 @@ func TestPackUpdateStopsOnAConflictBeforeOlderFit(t *testing.T) {
 	}
 	for _, w := range []string{
 		"ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 (" + short8(v12) + ")",
-		"Patch: 0001-ten.patch", "Conflict: f.txt", "Operation stopped; no older fit or base will be built.",
+		"Patch: 0001-ten.patch", "Conflict: f.txt", "\nRepair:\n",
 	} {
 		if !strings.Contains(errw, w) {
 			t.Errorf("update error lacks %q:\n%s\n%s", w, out, errw)
@@ -1464,7 +1464,7 @@ func TestPatchedForkLinesNameOnlyVerbsThatExist(t *testing.T) {
 	_, out, errw := packVerb(t, "update")
 	_, sout, serr := packVerb(t, "status")
 	all := out + errw + sout + serr
-	if !strings.Contains(errw, "patch application failed") || !strings.Contains(sout, "does not take") {
+	if !strings.Contains(errw, "patch series does not apply") || !strings.Contains(sout, "does not take") {
 		t.Fatalf("the explicit conflict or status line was missing:\n%s\n%s\n%s", all, sout, serr)
 	}
 	if !strings.Contains(all, packsrc.RecipeLead) || !strings.Contains(all, "git rebase ") {

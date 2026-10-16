@@ -53,7 +53,8 @@ func treeDigest(t *testing.T, dir string) string {
 func recipeCommands(printed string) []string {
 	var cmds []string
 	for _, line := range strings.Split(printed, "\n") {
-		if c, ok := strings.CutPrefix(line, "      "); ok && (strings.HasPrefix(c, "git ") || strings.HasPrefix(c, "test ")) {
+		// The error block indents a command four spaces, `yolo pack status` six.
+		if c := strings.TrimLeft(line, " "); len(line)-len(c) >= 4 && (strings.HasPrefix(c, "git ") || strings.HasPrefix(c, "test ")) {
 			cmds = append(cmds, c)
 		}
 	}
