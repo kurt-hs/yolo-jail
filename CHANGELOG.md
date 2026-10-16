@@ -55,6 +55,7 @@ your patches, or start pi without an extension. See [Patch series](userguide/gui
 - A launch refused while it prepared a patched build no longer leaves a background `nix eval` running after it exits.
 - A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
 - With `agent_updates` off, a patched fork or extension now keeps running its good build even after a newer version failed.
+- The printed command that exports a rebased patch series now writes a series that applies under git 2.50, Apple's included.
 
 ## [0.14.0] - 2026-10-15
 
