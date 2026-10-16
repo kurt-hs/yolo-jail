@@ -1,6 +1,6 @@
 package cli
 
-// features_test.go pins `yolo features` (docs/design/patched-forks.md PF-D71): the front door is
+// features_test.go pins `yolo features` (docs/reference/patched-forks.md PF-D71): the front door is
 // registered, the text form is one name per line a script can match whole, and the JSON form is
 // one document carrying the same list with what each name is for.
 

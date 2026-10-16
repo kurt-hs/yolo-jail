@@ -233,7 +233,7 @@ build, which the link `yolo host apply` owns at the extension's place in the hom
 never mounted into a jail in any mode, because the host agent loads that code, and self-bounded, a
 render keeping the build its link names and the one before, `yolo host apply --assert` removing a
 dropped extension's copies and `--revert` all of them
-([`patched-extensions.md` §8.3](../design/patched-extensions.md#83-at-the-host)).
+([`pi-extensions.md` §8.3](pi-extensions.md#83-at-the-host)).
 
 **`embedded-packs/`** holds the on-disk copy of the packs compiled into the binary: one
 read-only tree per build, named by a content hash of the embedded pack files, populated by

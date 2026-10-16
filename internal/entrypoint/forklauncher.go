@@ -157,7 +157,7 @@ func forkReasonSaid(d ForkDelivery) string {
 }
 
 // forkUpdateNote is what a fork's launcher says in update mode: what moves the fork's build, which
-// for a PATCHED fork is a fresh launch on the host (docs/design/patched-forks.md §7), never a pin.
+// for a PATCHED fork is a fresh launch on the host (docs/reference/patched-forks.md §7), never a pin.
 func forkUpdateNote(inst *packdecl.Install) string {
 	if inst.IsPatchedFork() {
 		return "a patched fork: a fresh launch on the host checks its upstream and builds what moved " +

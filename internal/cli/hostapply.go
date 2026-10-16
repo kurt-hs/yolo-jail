@@ -132,7 +132,7 @@ func hostApplyRefreshAndRender(out, errw io.Writer, color, write bool, stdin io.
 	sp.End()
 	defer hostApplySpan("host_apply.render").End()
 	// THE PATCHED EXTENSIONS' CHECK AND ADVANCE, before the render reads their good builds
-	// (docs/design/patched-extensions.md §8.3, PPX-D11): the acting posture only, since a dry run
+	// (docs/reference/pi-extensions.md §8.3, PPX-D11): the acting posture only, since a dry run
 	// checks nothing. Inside the render's span, beside the floor stage's patched forks.
 	// One act (PF-D57): a Ctrl-C that ends an extension's wait here ends the floor stage's patched
 	// forks' waits too.

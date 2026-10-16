@@ -306,7 +306,7 @@ var stateReclaimers = map[string]Reclaimer{
 	// (modelmenu.Request.WriteIn), so no sweep of prune's has anything to add.
 	"model-menus": {Detail: "self-bounded: a `yolo host --` that writes a new menu removes the program's others once no program holding one runs", Trigger: "the next `yolo host --` that writes a menu"},
 	// The host's copies of each patched extension's good build (paths.HostTreesDir;
-	// docs/design/patched-extensions.md §8.3), which the links `yolo host apply` owns at `~/<into>`
+	// docs/reference/pi-extensions.md §8.3), which the links `yolo host apply` owns at `~/<into>`
 	// name and the host agent loads. All historical versions are conservatively retained because no
 	// tracked host-session liveness maps a running agent to the version it may still read. A dropped
 	// extension's copies still go at `yolo host apply --assert` under host_management "own", and

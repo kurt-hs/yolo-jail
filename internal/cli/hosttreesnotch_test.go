@@ -1,6 +1,6 @@
 package cli
 
-// hosttreesnotch_test.go pins PPX-D35 at the host notch (docs/design/patched-extensions.md): a tree
+// hosttreesnotch_test.go pins PPX-D35 at the host notch (docs/reference/pi-extensions.md): a tree
 // whose list entry reaches the host (a guarded posture list) is built and linked by `yolo host apply
 // --assert`, while one whose entry reaches jails alone (an autonomous posture list) is neither built
 // nor linked there, and a link to it an earlier render left is retired with its copies.

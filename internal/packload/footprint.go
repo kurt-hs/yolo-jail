@@ -157,7 +157,7 @@ func (c Claim) DisclosureSentence() string {
 		// names it on a line of its own (OQ-FP6); this one says which act pins it, and which moves
 		// it (FP-D18).
 		// A PATCHED fork's: its bytes follow the upstream rather than a pin, so the line says what
-		// it follows and what moves it (docs/design/patched-forks.md §6.1, PF-D8).
+		// it follows and what moves it (docs/reference/patched-forks.md §6.1, PF-D8).
 		if build, ok := strings.CutPrefix(c.Detail, patchedForkClaimDetailPrefix); ok {
 			return "RUNS a program built from source, INSIDE THE JAIL (not on your machine), as " +
 				c.Target + ": " + build + " — at the upstream's newest commit that rule names and the " +

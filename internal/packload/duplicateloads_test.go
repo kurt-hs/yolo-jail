@@ -1,7 +1,7 @@
 package packload
 
 // duplicateloads_test.go pins the DUPLICATE-LOAD LINT (duplicateloads.go;
-// docs/design/patched-extensions.md PPX-D34): a list holding a patched extension's `~/<into>` and a
+// docs/reference/pi-extensions.md PPX-D34): a list holding a patched extension's `~/<into>` and a
 // `git:` or `npm:` entry of the same final name loads the extension twice, and the lint names the
 // entry to drop; an entry of another name, a local path, another list or a posture the tree's
 // entry never shares a notch with is no duplicate.

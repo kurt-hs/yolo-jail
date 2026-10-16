@@ -1,7 +1,7 @@
 package cli
 
 // patchedtagless_test.go drives a PATCHED fork's advance over an upstream branch that carries no
-// version tag the default release rule reads (docs/design/patched-forks.md PF-D60): the series' base
+// version tag the default release rule reads (docs/reference/patched-forks.md PF-D60): the series' base
 // is built, as for a branch whose versions all predate it, and the launch says once that the series
 // stays there until a tag appears or `follow` changes.
 

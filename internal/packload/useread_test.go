@@ -1,6 +1,6 @@
 package packload
 
-// useread_test.go pins the host's USE READ (LoadDirForUse, docs/design/patched-forks.md PF-D68):
+// useread_test.go pins the host's USE READ (LoadDirForUse, docs/reference/patched-forks.md PF-D68):
 // on the host, outside TolerateSkew, a contribution this build cannot read is skipped and named
 // in Pack.SkewNotes, while LoadDir — the authoring read `yolo pack lint` runs — still refuses the
 // same manifest. And the tree record carries the notes a launch printed, for the boot.

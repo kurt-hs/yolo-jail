@@ -2,7 +2,7 @@ package packsrc
 
 // rebaserecipe.go is the REBASE RECIPE (a term coined here): the git commands, with the commits
 // filled in, that rebase a patch series onto an upstream commit it no longer fits, for the user or
-// their agent to run (docs/design/patched-forks.md §8.4, PF-D85, which retired `yolo pack
+// their agent to run (docs/reference/patched-forks.md §8.4, PF-D85, which retired `yolo pack
 // rebase`). Every line that names the repair of a series prints it through RebaseRecipe.Repair:
 // the error block (PatchFailure.Block), `yolo pack update` and `yolo pack status`, `yolo pack
 // series check`, cached-good recovery and the base lag's re-anchoring. yolo never runs it and

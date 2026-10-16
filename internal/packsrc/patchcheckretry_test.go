@@ -1,7 +1,7 @@
 package packsrc
 
 // patchcheckretry_test.go pins what a check that could not REACH its upstream leaves on the record
-// (patchcheck.go; docs/design/patched-forks.md §4.2): a failed fetch — DNS, a refused connection,
+// (patchcheck.go; docs/reference/patched-forks.md §4.2): a failed fetch — DNS, a refused connection,
 // TLS — is a fault of the moment, which a caller with nothing built to run (RetryFailedFetch) does
 // not wait out; an answer from the upstream (a base it lacks after a fetch that worked) still
 // holds for the interval; and a by-id fetch of the base that could not reach the upstream is a

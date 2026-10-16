@@ -1,7 +1,7 @@
 package cli
 
 // patchedbase_test.go drives a PATCHED fork's advance where it falls back to the series' base and
-// where a replay fails (patchedadvance.go; docs/design/patched-forks.md §6.4, §8.1, PF-D23, PF-D40,
+// where a replay fails (patchedadvance.go; docs/reference/patched-forks.md §6.4, §8.1, PF-D23, PF-D40,
 // PF-D44, PF-D45): with nothing serving, a newest fit whose build fails sends the same advance on to
 // the base, and so does a walk that stopped on an apply error; a branch with nothing newer than the
 // base builds it with no hold said; a build stopped at the bound is a failed build however far its

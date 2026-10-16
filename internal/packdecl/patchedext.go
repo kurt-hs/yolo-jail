@@ -1,6 +1,6 @@
 package packdecl
 
-// patchedext.go is the vocabulary of a PATCHED EXTENSION (docs/design/patched-extensions.md §4,
+// patchedext.go is the vocabulary of a PATCHED EXTENSION (docs/reference/pi-extensions.md §4,
 // PPX-D1 to PPX-D3, PPX-D6): a `files` contribution that names an upstream `source` and a
 // `patches` series in place of `from`. Its bytes are the upstream at a commit with the series
 // replayed, built in the sealed capture jail and admitted as a tree, which a fresh launch mounts
@@ -30,7 +30,7 @@ import (
 // extension's build copies its checkout into, one directory per extension name (PPX-D5's fixed
 // final step): under `.local`, which is a program surface the capture driver already walks, so the
 // driver is unchanged and the admitted delta holds the tree. The spelling is this
-// implementation's (patched-extensions.md §7.1 leaves it to the implementer).
+// implementation's (pi-extensions.md §7.1 leaves it to the implementer).
 const TreeReservedRoot = ".local/share/yolo-tree"
 
 // IsPatchedExtension reports whether c is a PATCHED EXTENSION: a `files` contribution that
@@ -39,7 +39,7 @@ func (c Contribution) IsPatchedExtension() bool {
 	return c.Kind == KindFiles && (c.Patches != "" || c.PatchBranch != "")
 }
 
-// IsBuiltTree reports whether c declares a BUILT TREE (patched-extensions.md §1): a `files`
+// IsBuiltTree reports whether c declares a BUILT TREE (pi-extensions.md §1): a `files`
 // contribution naming an upstream `source` or a `patches` series in place of `from` — a patched
 // extension, or an UNMODIFIED one (docs/design/pi-extension-store-builds.md §4.1, XB-D1), which is a
 // patched extension with no series. Both are built, admitted, delivered and followed by one
@@ -114,7 +114,7 @@ func TreeBuildLine(source, patches, build string) string {
 }
 
 // TreeListEntry is the list entry an agent loads a built tree landing at into through
-// (patched-extensions.md §8.2, XB-D6): `~/<into>`, with no trailing slash, or for an npm source the
+// (pi-extensions.md §8.2, XB-D6): `~/<into>`, with no trailing slash, or for an npm source the
 // package inside the npm prefix the tree is, `~/<into>/node_modules/<name>`. The lint, the owning
 // agent pack and the fallback compare that exact string; core reads none of the agent's grammar.
 func TreeListEntry(source, into string) string {
@@ -132,7 +132,7 @@ func (c Contribution) TreeListEntry() string { return TreeListEntry(c.Source, c.
 // leaves its tree in (TreeReservedRoot).
 func TreeReservedDir(name string) string { return TreeReservedRoot + "/" + name }
 
-// TreeRecipe is a patched extension's RECIPE HASH (patched-extensions.md §7.2, PPX-D6): the sha256,
+// TreeRecipe is a patched extension's RECIPE HASH (pi-extensions.md §7.2, PPX-D6): the sha256,
 // in hex, of the JSON array ["tree", build, sorted produces, subdir, series digest]. The leading
 // "tree" tag means a tree's recipe can never equal a program's, whose arrays carry no tag
 // (ForkRecipe, PatchedForkRecipe), so no lookup of one ever serves the other.
@@ -154,7 +154,7 @@ func TreeSourceRecipe(source, build string, produces []string, series string) st
 	return TreeRecipe(build, produces, sub, series)
 }
 
-// patchedExtensionProblems validates a patched extension (patched-extensions.md §4, PPX-D1 to
+// patchedExtensionProblems validates a patched extension (pi-extensions.md §4, PPX-D1 to
 // PPX-D3): `source`, `patches` and `into` required; `from`, `fork_of`, `agent` and `agents`
 // refused beside `source`, each naming why; `build` one command line when it is there; `produces`
 // clean tree-relative paths; and the series, the ref and `follow` as a patched fork's

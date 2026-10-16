@@ -35,7 +35,7 @@ func loadAll(t *testing.T) []*packload.Pack {
 // consequence so a future author adding one has to confirm they mean it.
 //
 // ⚠ A THIRD ENTRY WAS HERE AND LEFT. `.pi-shared-npm`, pi's extension package store, was
-// added deliberately on 2026-09-21 (docs/design/pi-extension-lifecycle.md OQ-1) so every
+// added deliberately on 2026-09-21 (docs/reference/pi-extensions.md OQ-1) so every
 // workspace ran one version of an extension, and it went on 2026-10-05 (XB-D14 of
 // docs/design/pi-extension-store-builds.md): one jail's refresh rewrote the npm prefix every
 // pi jail loaded from, against the no-leakage ruling. pi now unshares the link a home kept to

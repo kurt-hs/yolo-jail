@@ -55,7 +55,7 @@ type packFilesTarget struct {
 	Root string
 	From string
 
-	// Tree is a PATCHED EXTENSION's extension key (docs/design/patched-extensions.md §8.1), "" for
+	// Tree is a PATCHED EXTENSION's extension key (docs/reference/pi-extensions.md §8.1), "" for
 	// a pack's own tree. Its Src is the launch's per-launch copy of the good build, beside the pack
 	// tree and never in it, and a tree with no copy this launch is no target at all: it mounts
 	// nothing, and needs no mountpoint, since an empty directory at `into` is one an agent may try

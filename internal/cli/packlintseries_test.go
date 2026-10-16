@@ -1,7 +1,7 @@
 package cli
 
 // packlintseries_test.go pins `yolo pack lint` reading a pack's PATCH SERIES
-// (packlintseries.go; docs/design/patched-forks.md PF-D63, PF-D64; patched-extensions.md PPX-D34):
+// (packlintseries.go; docs/reference/patched-forks.md PF-D63, PF-D64; pi-extensions.md PPX-D34):
 // a series a launch cannot read fails lint with the read's own remedy, for a patched fork and a
 // patched extension alike, read in the pack's own directory as every reader of a series reads it;
 // `--online` checks each upstream in a scratch mirror it deletes; and a list that would load a

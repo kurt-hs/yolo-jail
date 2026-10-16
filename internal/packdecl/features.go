@@ -2,7 +2,7 @@ package packdecl
 
 // features.go is the list `yolo features` prints: what this build of yolo can read in a pack, so
 // a pack author or a script can ask a host whether a pack will work there before selecting it
-// (docs/design/patched-forks.md PF-D71). It is a property of the build, not of the machine: a
+// (docs/reference/patched-forks.md PF-D71). It is a property of the build, not of the machine: a
 // capability a backend does not support yet is still listed, and the launch on that backend says
 // where it works instead.
 

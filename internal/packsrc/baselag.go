@@ -3,7 +3,7 @@ package packsrc
 // baselag.go is a series' BASE LAG (a term coined here): the version tags of the followed branch that
 // are newer than the series' base, as the last finished check listed them. A series that still
 // applies is otherwise silent about how old the base it was written against is, so `yolo pack status`
-// and a launch's fork line name the lag (docs/design/patched-forks.md §7). Read from the check record
+// and a launch's fork line name the lag (docs/reference/patched-forks.md §7). Read from the check record
 // alone: no git, no network.
 
 // BaseLag is a series' base lag: Base is the base as a list entry (its tag when a version names it),

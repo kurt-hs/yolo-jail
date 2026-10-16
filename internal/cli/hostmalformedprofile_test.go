@@ -82,7 +82,7 @@ func TestHostLaunchNamesTheMalformedPackDeclaringTheSelectedProfile(t *testing.T
 //
 // "Does not decode" is a value of the wrong type: one every build refuses. A field from a newer
 // yolo used to stand in for it here, and no longer does — a host launch reads such a pack and names
-// what it skips (docs/design/patched-forks.md PF-D68, pinned by
+// what it skips (docs/reference/patched-forks.md PF-D68, pinned by
 // TestHostLaunchRunsAPackWithAFieldFromANewerYolo).
 func TestHostLaunchNamesAnUnusablePackBeforeAnUndeclaredProfile(t *testing.T) {
 	for _, broken := range []bool{true, false} {

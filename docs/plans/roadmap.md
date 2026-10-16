@@ -58,9 +58,10 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 
 ## The queue
 
-1. [Finish the patched-fork mode's verification](../design/patched-forks.md), with [its pi-extension
-   companion](../design/patched-extensions.md) — the compatibility release is published; keep the remaining
-   verification ahead of dependent work. Beside it: [the build line shown by its
+1. [Finish the patched-fork mode's verification](../reference/patched-forks.md#14-unbuilt-and-unmeasured), with
+   [its pi-extension companion](../reference/pi-extensions.md#16-unbuilt-and-unmeasured) — the compatibility
+   release is published; keep the remaining verification ahead of dependent work, and the maintainer's
+   confirmation of [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3)'s recorded reading. Beside it: [the build line shown by its
    digest](../reference/report-tiers.md#why-its-this-way), built 2026-10-08 with `yolo pack status`; [whether a Mac fork build
    installs its base's `node_floor` first](../design/forked-programs-as-packs.md#OQ-FP11); his test with the migration kit.
 2. [Per-jail host daemons (HD-R1)](../design/host-daemon-ownership.md) — brought up to date with main and finished on
@@ -206,8 +207,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     primary; [the empty-list line in `yolo check`](../design/model-lists-and-pickers.md#72-composition-rules);
     [macos-user's item 2 twin](runbooks/macos-user-manual-checks.md#2-seatbelt-is-actually-applied);
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
-    [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); [the disk levers'
-    re-measure](../design/disk-levers-and-backfill.md); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).
+    [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); and [the disk levers'
+    re-measure](../design/disk-levers-and-backfill.md).
 33. Verify [the exact-commit release gate](../reference/release-process.md) before the next publication request,
     because offline fixtures do not prove live Actions or publisher permissions. What the 2026-10-05 and 2026-10-06
     builds still owe: read the first scheduled macos-user nightly with [the vendor
@@ -237,7 +238,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     2026-10-15 ([IA-D1](../design/isolated-agent-model-auth.md#IA-D1)); its six questions are moot.
 37. Work the asks a downstream pack consumer is still waiting on ([downstream-asks.md](downstream-asks.md)) — each
     with the shape a landed version takes; three open ones are owned by [the patched-fork
-    design](../design/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), three
+    design](../reference/patched-forks.md) and [the model-list design](../design/model-lists-and-pickers.md), three
     by [the tracker's own questions](downstream-asks.md#open-questions) (one of them a small diagnostics build,
     two awaiting ratification of what was built 2026-10-15), and the rest are answered, declined or built.
 
@@ -342,7 +343,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 
 | Item | Class | Disposition |
 |---|---|---|
-| 1 — finish the patched-fork mode's verification | X / D | W9 #2's Linux nested-jail checks pass, and the build-line digest disclosure was already built and is now reverified through its production call-site tests ([evidence](../design/patched-forks.md#7-the-build-and-the-launch)); no listed Linux-local build remains. Remaining: #3 is X (a real rootless host or CI), #8–10 are X (a Mac), the migration-kit measurement needs the maintainer's real series, and [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11)/[OQ-PFK5](../design/patched-forks.md#decision-ledger)/[OQ-PFK6](../design/patched-forks.md#OQ-PFK6) are D; [OQ-PFK7](../design/patched-forks.md#decision-ledger) was settled 2026-10-15 by [PF-D85](../design/patched-forks.md#PF-D85). |
+| 1 — finish the patched-fork mode's verification | X / D | W9 #2's Linux nested-jail checks pass, and the build-line digest disclosure was already built and is now reverified through its production call-site tests ([evidence](../reference/patched-forks.md#7-the-build-and-the-launch)); no listed Linux-local build remains. Remaining: #3 is X (a real rootless host or CI), #8–10 are X (a Mac), the migration-kit measurement needs the maintainer's real series, and [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11) and [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3) are D. [OQ-PFK5](../reference/patched-forks.md#why-its-this-way) was ruled (defer macos-user delivery), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) ruled 2026-10-15 and built 2026-10-16, and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) settled 2026-10-15 by [PF-D85](../reference/patched-forks.md#PF-D85). |
 | 2 — per-jail host daemons (HD-R1) | A | Coexistence answered 2026-10-16 ([HD-D26](../design/host-daemon-ownership.md#HD-D26)); [OQ-HD9](../design/host-daemon-ownership.md#11-decision-ledger), [OQ-HD5](../design/host-daemon-ownership.md#11-decision-ledger) and [OQ-HD4](../design/host-daemon-ownership.md#11-decision-ledger) built on `hd-r1-land`. **Maintainer** merges; the real-host and macos-user checks in item 42 and the design's `next` are X. |
 | 3 — rulings that hold a build | D | [OQ-PD19](../design/program-delivery.md#OQ-PD19)–[OQ-PD23](../design/program-delivery.md#decision-ledger) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer**. |
 | 4 — rulings that hold a defect's fix | D | The Kilo special-casing (claude gives undeclared-window Kilo models 1M context), [OQ-CDX3](../research/codex-background-service.md#OQ-CDX3) (`--no-daemon` for in-jail codex), whose OpenAI login host pi uses, and the leftover `mcp-adapter.json` ([OQ-MC1](../reference/mcp-configuration.md#OQ-MC1)/[OQ-MC2](../reference/mcp-configuration.md#OQ-MC2)). **Maintainer**. |
@@ -408,7 +409,7 @@ The ruling set, in the order it unblocks work:
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
-- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11), [OQ-PFK5](../design/patched-forks.md#decision-ledger), [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) — the three open patched-fork rulings (item 1; the last filed 2026-10-13 by a downstream consumer, whose other, [OQ-PFK7](../design/patched-forks.md#decision-ledger), was settled 2026-10-15)
+- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11), [OQ-PPX3](../reference/pi-extensions.md#OQ-PPX3) — the two open patched-fork rulings (item 1); [OQ-PFK5](../reference/patched-forks.md#why-its-this-way), [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) and [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) are ruled
 - The W1(e) `yolo run` progress golden sign-off (item 32)
 
 Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 27, 28, 29, 34, 35 and 36.

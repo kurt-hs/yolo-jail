@@ -1,7 +1,7 @@
 package packload
 
 // duplicateloads_ref_test.go pins two readings of the duplicate-load lint (duplicateloads.go,
-// docs/design/patched-extensions.md PPX-D34) that its first tests left open: a remote entry whose
+// docs/reference/pi-extensions.md PPX-D34) that its first tests left open: a remote entry whose
 // ref holds a slash still has the package's own final name, as pi splits the ref off at the path's
 // first "@"; and a list entry loads the tree by the one rule an owner reads (loadsTree, PPX-D36), so
 // a folder inside the tree holds it and a path that only begins with it does not.

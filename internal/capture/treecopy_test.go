@@ -1,6 +1,6 @@
 package capture
 
-// treecopy_test.go pins CopyTree (docs/design/patched-extensions.md §8.1, PPX-D7): one subtree of an
+// treecopy_test.go pins CopyTree (docs/reference/pi-extensions.md §8.1, PPX-D7): one subtree of an
 // admitted entry copied into a directory of its own, with the prefix cut and the manifest's modes,
 // by reflink or copy and NEVER by hardlink — the arm Materialize tries second, and the one that
 // would hand a jail that can write its mount the store's own inode.

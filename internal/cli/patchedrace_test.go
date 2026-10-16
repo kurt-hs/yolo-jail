@@ -1,7 +1,7 @@
 package cli
 
 // patchedrace_test.go drives two PATCHED-fork advances at once (patchedadvance.go;
-// docs/design/patched-forks.md §6.1, §6.6, PF-D17, PF-D20, PF-D46): a waiter takes the winner's
+// docs/reference/patched-forks.md §6.1, §6.6, PF-D17, PF-D20, PF-D46): a waiter takes the winner's
 // failure even when the winner's record write is held up, since the winner records it before it lets
 // the build lock go; a move never reaps a build another advance has admitted and not yet settled; a
 // build that loses the swap to a newer check's is reaped and the jail runs the winner's; and the good

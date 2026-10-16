@@ -1,7 +1,7 @@
 package cli
 
 // patchedrekey_test.go pins the RE-KEY of a good build recorded under its series' LEGACY digest
-// (docs/design/patched-forks.md PF-D62, run/patchedrekey.go): the digest of the same files before
+// (docs/reference/patched-forks.md PF-D62, run/patchedrekey.go): the digest of the same files before
 // PF-D61 left git's mbox first line and signature out of it. Such a build is a build of the series as
 // it stands, so every reader of the record keeps it serving and moves it to the digest as it stands —
 // the advance, its recovery from the store, `yolo pack status`, `yolo pack update`, `yolo pack

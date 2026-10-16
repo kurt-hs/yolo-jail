@@ -1,7 +1,7 @@
 package run
 
 // patchedrekey.go is the RE-KEY of a patched build recorded under its series' LEGACY digest
-// (docs/design/patched-forks.md PF-D62): the digest of the same series files before PF-D61 took the
+// (docs/reference/patched-forks.md PF-D62): the digest of the same series files before PF-D61 took the
 // mbox first line and git's signature out of it. Such a good build is a build of the series as it
 // stands, so it must keep serving: reading it as the user's own edit would rebuild every series on
 // the machine at the first launch after an upgrade, and leave a program missing wherever that build

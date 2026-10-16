@@ -321,7 +321,7 @@ func disclosureClassOfClaim(c packload.Claim) disclosureClass {
 	}
 	// A PATCHED EXTENSION's claim is disclosed with the launch banner, as a patched fork's program
 	// claim is (`program` is disclosureRead): an upstream's code, built from source, that the agent
-	// loading the tree runs (docs/design/patched-extensions.md PPX-D15). Per claim, since `files` is
+	// loading the tree runs (docs/reference/pi-extensions.md PPX-D15). Per claim, since `files` is
 	// disclosureSkip for every other tree, which is the pack's own content.
 	if c.IsBuiltTree() {
 		return disclosureRead

@@ -1,6 +1,6 @@
 package cli
 
-// sealnarrowing_test.go pins the build act's half of PPX-D39 (docs/design/patched-extensions.md):
+// sealnarrowing_test.go pins the build act's half of PPX-D39 (docs/reference/pi-extensions.md):
 // a build jail that stops before its build line ran is relayed with the lines it printed last — its
 // own refusal — at a launch's tree arm and at `yolo capture <pack>/<name>`, and blames no runtime;
 // and a patched extension's seal carries the configured base of every fork its pack declares,

@@ -1,6 +1,6 @@
 package run
 
-// treenotch_test.go pins PPX-D35 and PPX-D36 (docs/design/patched-extensions.md) from Run's own entry
+// treenotch_test.go pins PPX-D35 and PPX-D36 (docs/reference/pi-extensions.md) from Run's own entry
 // point: a patched extension whose list entry reaches the host alone (a guarded posture list) is
 // built and mounted in no jail and never stops the agent there, while the launch's block still names
 // it; and a list entry under `~/<into>/` loads the tree, so the jail stops the owning agent when that

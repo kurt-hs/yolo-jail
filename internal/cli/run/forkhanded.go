@@ -1,6 +1,6 @@
 package run
 
-// forkhanded.go is a fresh launch's DELIVERY RECORD for its forks (docs/design/patched-forks.md
+// forkhanded.go is a fresh launch's DELIVERY RECORD for its forks (docs/reference/patched-forks.md
 // §6.3, §7, PF-D20): what the launch handed its jail per forked program — the store key the
 // jail's source launcher materializes, or why there is none — written beside the jail's own pack
 // tree, as `<tree>.forks.json`.
@@ -63,7 +63,7 @@ type handedForksFile struct {
 	Schema int                   `json:"schema"`
 	Forks  map[string]HandedFork `json:"forks"`
 	// Trees are what the launch handed its jail per PATCHED EXTENSION, by extension key
-	// (docs/design/patched-extensions.md §8.1): an attach's line reads it. Additive, so a record
+	// (docs/reference/pi-extensions.md §8.1): an attach's line reads it. Additive, so a record
 	// an older yolo wrote reads with none, and an older yolo reading this one ignores it.
 	Trees map[string]HandedTree `json:"trees,omitempty"`
 }

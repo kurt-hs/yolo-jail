@@ -104,7 +104,7 @@ func TestNeedsValidationRunsOnTheTolerantPath(t *testing.T) {
 
 // TestNeedsTolerantPathSkipsWhatItDoesNotKnow: the tolerant path is for reading a
 // manifest some OTHER build wrote. A key this build has never heard of is ignored and
-// NAMED, like every other unknown top-level key (docs/design/patched-forks.md PF-D68: it
+// NAMED, like every other unknown top-level key (docs/reference/patched-forks.md PF-D68: it
 // used to be ignored in silence), while `needs` itself — which this build knows — is still
 // parsed and still validated. The strict path refuses the same manifest, because
 // an unknown key is an authoring problem there.

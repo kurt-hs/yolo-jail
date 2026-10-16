@@ -209,7 +209,7 @@ func TestCacheKeyDistinguishesRefAndPath(t *testing.T) {
 }
 
 // A PATCHED fork's build identity names the repository and subdirectory and never the ref
-// (docs/design/patched-forks.md §6.3), so two refs of one repository name one build, the subdirectory
+// (docs/reference/patched-forks.md §6.3), so two refs of one repository name one build, the subdirectory
 // is kept apart from the root, and what does not parse as git is returned as given.
 func TestBuildSourceDropsTheRefAndKeepsTheSubdirectory(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{

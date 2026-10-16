@@ -666,7 +666,7 @@ The same mechanism for a whole subdirectory instead of one file, requested by a 
 pack names becomes a relative symlink AT the machine-scope directory it declares, so every
 workspace on the machine reads and writes one store. No shipped pack declares it. `packs/pi`
 did, for `~/.pi/agent/npm` → `~/.pi-shared-npm`, its extension package store, from 2026-09-21
-([`OQ-1`](../design/pi-extension-lifecycle.md#7-decision-ledger)) until 2026-10-05, when one jail's
+([`OQ-1`](pi-extensions.md#why-its-this-way)) until 2026-10-05, when one jail's
 refresh rewriting the prefix every pi jail loaded from ended it
 ([XB-D14](../design/pi-extension-store-builds.md#XB-D14)): pi's `unshare_directory` hook now
 replaces the link with the workspace's own directory, and a fresh launch on a container backend

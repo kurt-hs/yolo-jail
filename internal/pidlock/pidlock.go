@@ -42,7 +42,7 @@ type Mode struct {
 	Bound time.Duration
 	// Cancel, with Wait, gives up with ErrCanceled once it is closed: a launch's patched-fork
 	// advance, whose Ctrl-C ends the wait and starts the jail on the good build
-	// (docs/design/patched-forks.md PF-D25). nil never cancels.
+	// (docs/reference/patched-forks.md PF-D25). nil never cancels.
 	Cancel <-chan struct{}
 }
 

@@ -309,13 +309,13 @@ type Install struct {
 	Source   string   `json:"source,omitempty"`
 	Build    string   `json:"build,omitempty"`
 	Produces []string `json:"produces,omitempty"`
-	// Patches and Follow are a PATCHED FORK's (docs/design/patched-forks.md): the pack-relative
+	// Patches and Follow are a PATCHED FORK's (docs/reference/patched-forks.md): the pack-relative
 	// series directory, relative to the FORK pack's root (ForkedBy's), and the follow rule as
 	// written ("" meaning the default, "release"). Both empty for a plain fork. The Contribution
 	// fields of the same names carry the grammar.
 	Patches string `json:"patches,omitempty"`
 	Follow  string `json:"follow,omitempty"`
-	// PatchBranch is a PATCH BRANCH fork's (docs/design/patched-forks.md §3.5): the patch branch repository and branch
+	// PatchBranch is a PATCH BRANCH fork's (docs/reference/patched-forks.md §3.5): the patch branch repository and branch
 	// as the fork writes it, in place of Patches. The Contribution field of the same name carries the
 	// grammar.
 	PatchBranch string `json:"patch_branch,omitempty"`
@@ -328,7 +328,7 @@ type Install struct {
 	ForkRoot string `json:"-"`
 	// Gate is NOT a manifest field, and no manifest can set it: the jail's launcher generator sets
 	// it on its copy of an OWNING AGENT PACK's program when a patched extension that agent loads
-	// has no build this launch (docs/design/patched-extensions.md PPX-D18), and the launcher stops
+	// has no build this launch (docs/reference/pi-extensions.md PPX-D18), and the launcher stops
 	// before exec with it. "" for every program that may start.
 	Gate string `json:"-"`
 	// RefreshTiming is NOT a manifest field either, for Gate's reason: a pack declares HOW its
@@ -348,7 +348,7 @@ type Install struct {
 }
 
 // Refresh declares a program's PRE-LAUNCH REFRESH — a term coined here (2026-09-25) for the
-// step docs/design/pi-extension-lifecycle.md §3.2 calls the execution tier: an argv the
+// step docs/reference/pi-extensions.md §17.2 calls the execution tier: an argv the
 // generated launcher runs the INSTALLED program with, before exec'ing it, to bring up to
 // date what the program manages BESIDE ITSELF. Pi's extension packages are the case that
 // bought it: `pi update --extensions` refreshes the workspace's own npm prefix and git
@@ -592,7 +592,7 @@ func Decode(data []byte) (*Manifest, []string) {
 }
 
 // unknownFieldHint is the next step a strict decode's unknown-field refusal names, "" for any
-// other decode error (docs/design/patched-forks.md PF-D1). A field this build does not know is
+// other decode error (docs/reference/patched-forks.md PF-D1). A field this build does not know is
 // either a typo or a field a NEWER yolo reads — a pack published for a newer yolo, such as a
 // patched fork's `patches` read by a yolo older than the mode — and encoding/json's bare
 // `json: unknown field "x"` names neither. It helps the next new field, not one an older binary
@@ -723,7 +723,7 @@ func DecodeTolerant(data []byte) (m *Manifest, problems, skipped []string) {
 	}
 	// A FIELD this build does not know, which json.Unmarshal above ignores, is the same class as
 	// an unknown kind one level down, and is read as the host's use read reads it
-	// (DecodeForUse, docs/design/patched-forks.md PF-D68 and PF-D69), so a jail renders what
+	// (DecodeForUse, docs/reference/patched-forks.md PF-D68 and PF-D69), so a jail renders what
 	// its launch said it would: the contribution holding it is skipped and named, unless its
 	// kind only restricts the agent, which is kept without the field. It used to be ignored in
 	// silence here, which rendered a contribution with half its declaration, and that half could

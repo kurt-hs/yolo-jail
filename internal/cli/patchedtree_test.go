@@ -1,7 +1,7 @@
 package cli
 
 // patchedtree_test.go drives a PATCHED EXTENSION's tree build and delivery
-// (docs/design/patched-extensions.md §7, §8.1; PPX-D5 to PPX-D7) against a real local upstream, with
+// (docs/reference/pi-extensions.md §7, §8.1; PPX-D5 to PPX-D7) against a real local upstream, with
 // the build jail substituted: a launch's tree arm runs the shared advance, builds the tree in a jail
 // sealed to the contributing pack with the tree's final copy, admits it under a tree's recipe and a
 // receipt naming the extension key, and copies it beside the launch's pack tree — reflink or copy,

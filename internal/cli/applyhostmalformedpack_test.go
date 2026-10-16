@@ -105,7 +105,7 @@ func TestApplyHostAssertRefusesAPackWithManifestProblems(t *testing.T) {
 // A MANIFEST WITH A FIELD FROM A NEWER YOLO is the case a host yolo OLDER than a field meets
 // (notch-scoped-config-contributions.md §4.5, the host-manifest-read row). It used to not decode:
 // LoadDir substituted an empty manifest and still returned the pack, so the old resolver applied
-// the pack's conventional skills/ as if it declared nothing. Since docs/design/patched-forks.md
+// the pack's conventional skills/ as if it declared nothing. Since docs/reference/patched-forks.md
 // PF-D68 the use read ignores and names the field, so the pack resolves, and a launch runs it;
 // the apply still refuses it whole, naming the field (PF-D70), because a real home is never
 // rendered around what this yolo cannot read.

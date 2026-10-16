@@ -41,7 +41,7 @@
 //     macos-user fork-build act, Seatbelt and the sandbox account under the seal (FP-D24). A Node
 //     script among them is started by the floor's own Node, as an npm program is. A PATCHED fork's
 //     (patched.go) is the build of its GOOD BUILD instead, and its install runs the fork's advance
-//     first (docs/design/patched-forks.md §9); it is Linux's alone.
+//     first (docs/reference/patched-forks.md §9); it is Linux's alone.
 //
 // # The layout (every name below is this package's)
 //
@@ -295,7 +295,7 @@ type Floor struct {
 	// and only when it is of that commit and the fork's current recipe — never a near-miss).
 	// nil => this host has no capture store.
 	ResolveBuild func(p Program, commit string) (*capture.Entry, error)
-	// Patched reads a PATCHED fork's program (docs/design/patched-forks.md §9, patched.go): the
+	// Patched reads a PATCHED fork's program (docs/reference/patched-forks.md §9, patched.go): the
 	// recipe its series asks for now and the good build that serves it, from this machine's check
 	// record and capture store, offline — file reads, never git or the network, so Status may ask
 	// it. nil => this floor holds no patched fork.
@@ -459,7 +459,7 @@ func declared(in packdecl.Install) string {
 	case packdecl.InstallKindSource:
 		if in.IsPatchedFork() {
 			// A PATCHED fork's build is identified by its repository and subdirectory, never its ref
-			// (docs/design/patched-forks.md §6.3), so moving a hold from `?ref=main` to `?ref=v1.0.1`
+			// (docs/reference/patched-forks.md §6.3), so moving a hold from `?ref=main` to `?ref=v1.0.1`
 			// is not a new declaration: the good build it names is the record's to compare.
 			return packsrc.BuildSource(in.Source)
 		}

@@ -1,7 +1,7 @@
 package run
 
 // patchedtreescallsite_test.go pins the launch pipeline's patched-extension CALL SITES from Run's own
-// entry point (docs/design/patched-extensions.md §8.1, §9), where patchedtrees_test.go pins most of
+// entry point (docs/reference/pi-extensions.md §8.1, §9), where patchedtrees_test.go pins most of
 // the callees: the line a launch that delivers no tree says for each; the delivery record a fresh
 // launch writes, read back by an attach to its jail; the delivered tree's mountpoint in the home
 // skeleton and in the workspace state, retired once nothing is delivered there; and the staging

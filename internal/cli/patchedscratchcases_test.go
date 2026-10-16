@@ -1,7 +1,7 @@
 package cli
 
 // patchedscratchcases_test.go pins the scratch acts' cases the first tests left open
-// (docs/design/patched-forks.md PF-D65, PF-D74): a series based past every version, which the check
+// (docs/reference/patched-forks.md PF-D65, PF-D74): a series based past every version, which the check
 // walks at its base; a plain fork beside a patched one, which the check leaves alone; a scratch copy refused
 // inside yolo's state directory, and a TMPDIR that cannot hold one, each naming TMPDIR; and a
 // macos-user sandbox, which reads every pack path as the host's own.

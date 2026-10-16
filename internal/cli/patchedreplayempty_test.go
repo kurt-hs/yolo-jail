@@ -1,7 +1,7 @@
 package cli
 
 // patchedreplayempty_test.go pins the REPORTED reason for an ORIGINALLY EMPTY member of a patch
-// series (internal/packsrc/replay.go, `pick`; docs/design/patched-forks.md §5, PF-D6, PF-D29): a
+// series (internal/packsrc/replay.go, `pick`; docs/reference/patched-forks.md §5, PF-D6, PF-D29): a
 // member whose commit changed nothing when it was written — its tree is its parent's — makes no
 // change of its own, and the replay's pick changes nothing either, but NOTHING about it is upstream.
 // It must not be reported as "already upstream" (the reason a member the upstream already holds

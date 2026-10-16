@@ -1,6 +1,6 @@
 package run
 
-// patchfailures.go is A JAIL LAUNCH'S PATCH FAILURE (docs/design/patched-forks.md §8, PF-D81, PF-D83):
+// patchfailures.go is A JAIL LAUNCH'S PATCH FAILURE (docs/reference/patched-forks.md §8, PF-D81, PF-D83):
 // as soon as the fork-build slot ends, before any line the launch prints about what the slot
 // delivered and before the image step and the boot, the launch prints the error block of each selected patched fork
 // and patched extension whose series does not apply — the slot's advances hand the typed failure and
@@ -137,7 +137,7 @@ func (o *Options) refusePatchFailures(rt string) bool {
 			patchBranches++
 		}
 	}
-	// A PATCH BRANCH (docs/design/patched-forks.md §3.5) is merged, not applied: its refusal says so.
+	// A PATCH BRANCH (docs/reference/patched-forks.md §3.5) is merged, not applied: its refusal says so.
 	what, verb := "the patch series of", plural(len(blocking), "does", "do")+" not apply"
 	switch {
 	case patchBranches == len(blocking):

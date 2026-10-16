@@ -1,7 +1,7 @@
 package packload
 
 // treenotch.go says WHERE a patched extension's tree is delivered, and which list entries count as
-// loading it (docs/design/patched-extensions.md PPX-D35, PPX-D36).
+// loading it (docs/reference/pi-extensions.md PPX-D35, PPX-D36).
 //
 // A TREE IS BUILT AND MOUNTED ONLY AT A NOTCH ITS LIST ENTRY REACHES (PPX-D35). The owning agent
 // pack's entry naming the tree says where the agent loads it: a `config-list` at every notch, an
