@@ -219,6 +219,88 @@ func TestPiBedrockRowsMergeOverPisCatalogAndTombstonesRemove(t *testing.T) {
 	}
 }
 
+// namedFixturePack loads a pack named name whose contributions are contributes.
+func namedFixturePack(t *testing.T, name, contributes string) *packload.Pack {
+	t.Helper()
+	dir := t.TempDir()
+	writeHostFile(t, filepath.Join(dir, "pack.json"), `{"name":"`+name+`","description":"d","contributes":[`+contributes+`]}`)
+	p, problems := packload.LoadDir(dir, name)
+	if p == nil || len(problems) != 0 {
+		t.Fatalf("the %s fixture did not load: %v", name, problems)
+	}
+	return p
+}
+
+// A PARTIAL COST INHERITS THE CATALOG'S OTHER RATES (OQ-ML4: "don't drop things unnecessarily").
+// A pack states one rate; models.json, whose schema needs all four, fills the rest with 0, but the
+// menu row states that one rate alone and the extension merges it over the catalog's cost rate by
+// rate, so the three rates nobody stated keep pi's values.
+func TestPiPartialCostKeepsTheCatalogsOtherRates(t *testing.T) {
+	br := namedFixturePack(t, "mybr", `{"kind":"provider","name":"mybr","platform":"aws-bedrock",
+	  "models":{"global.anthropic.claude-opus-5-5":"global.anthropic.claude-opus-5-5"},
+	  "model_options":{"global.anthropic.claude-opus-5-5":{"cost_input":"9"}}}`)
+	table, err := packload.ComposeProviders(nil, append(testPacksForAgent(t, "pi"), br))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newPioencodeRender(t, mustCompactJSON(t, table))
+	r.render(t, `{"pi":"mybr"}`)
+
+	row := piRow(t, r.piModels(t), "amazon-bedrock", "global.anthropic.claude-opus-5-5")
+	if want := map[string]any{"input": float64(9), "output": float64(0), "cacheRead": float64(0), "cacheWrite": float64(0)}; !reflect.DeepEqual(row["cost"], want) {
+		t.Errorf("models.json cost = %v, want %v (its schema needs all four)", row["cost"], want)
+	}
+	entry := piModelListsFile(t, r)["amazon-bedrock"]
+	models, _ := entry["models"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("menu entry = %v", entry)
+	}
+	if got := models[0].(map[string]any)["cost"]; !reflect.DeepEqual(got, map[string]any{"input": float64(9)}) {
+		t.Errorf("menu row cost = %v, want the stated rate alone", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.e.Home, filepath.FromSlash(piModelListsRel(t))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runPiModelListsExtension(t, raw, piBedrockCatalogStub, piCompatStub)
+	if len(run.Registrations) != 1 {
+		t.Fatalf("registrations = %+v", run.Registrations)
+	}
+	for _, m := range run.Registrations[0].Models {
+		if m["id"] != "global.anthropic.claude-opus-5-5" {
+			continue
+		}
+		want := map[string]any{"input": float64(9), "output": float64(25), "cacheRead": 0.5, "cacheWrite": 6.25}
+		if !reflect.DeepEqual(m["cost"], want) {
+			t.Errorf("registered cost = %v, want %v: the stated rate over the catalog's others", m["cost"], want)
+		}
+	}
+}
+
+// BEDROCK UNDER AN `only` IS A NARROWED MENU, NOT A CATALOG COMPLETION: the model-lists entry is the
+// ordinary narrowed one (no `keep_catalog`, enforced while the switch is on), and pi-subagents'
+// scope is strict over the narrowed list (OQ-MM3).
+func TestPiBedrockUnderAnOnlyIsNarrowedAndStrict(t *testing.T) {
+	const opus, sol = "global.anthropic.claude-opus-5-5", "us.openai.gpt-6.1-sol"
+	packs := append(testPacksForAgent(t, "pi", "bedrock"), companyModelsPack(t, bedrockListAdd),
+		namedFixturePack(t, "narrower", `{"kind":"models","provider":"bedrock","only":["`+opus+`","`+sol+`"]}`))
+	providersJSON, wire := bedrockTablesFor(t, packs, `{"bedrock":{"region":"eu-west-1"}}`, nil)
+	r := newPioencodeRender(t, providersJSON)
+	r.wireProfiles(wire)
+	r.render(t, `{"pi":"bedrock"}`)
+	entry := piModelListsFile(t, r)["amazon-bedrock"]
+	if entry == nil {
+		t.Fatal("no narrowed amazon-bedrock entry")
+	}
+	if _, has := entry["keep_catalog"]; has || entry["enforce"] != true {
+		t.Errorf("narrowed entry = %v, want no keep_catalog and enforce true", entry)
+	}
+	got := subagentScope(t, r.piSettings(t))
+	if len(got) != 2 || !slices.Contains(got, any("amazon-bedrock/"+opus)) || !slices.Contains(got, any("amazon-bedrock/"+sol)) {
+		t.Errorf("subagent scope = %v, want strict over the two narrowed ids", got)
+	}
+}
+
 // A `keep_catalog` LIST WITH NO CATALOG TO COMPLETE REGISTERS NOTHING: the registration would only
 // replace pi's list with yolo's rows, and the models.json rows pi already loaded say as much
 // without narrowing the menu.

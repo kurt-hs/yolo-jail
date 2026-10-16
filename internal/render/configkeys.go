@@ -93,6 +93,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"by `yolo host apply` and resolved by `yolo host --`"},
 	"profiles":  {KeyHonored, "user-declared profiles the host resolves the selection over"},
 	"providers": {KeyHonored, "the provider table the host's derives and `yolo host --` compose"},
+	"model_facts": {KeyHonored, "facts a model's routes share, composed under each route's own by " +
+		"cli.composedHostProviders (packload.WithModelFacts)"},
 	"adapters": {KeyHonored, "the address an adapted provider is reached at, read by `yolo host --`'s " +
 		"provider composition (LoadAdapterAddresses)"},
 	"env_sources": {KeyHonored, "the dotenv files and values `yolo host --` and `yolo host env` " +

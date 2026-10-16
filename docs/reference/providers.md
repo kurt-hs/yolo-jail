@@ -1513,7 +1513,7 @@ catalog. The tombstone reaches the derive as `ctx.tombstone` under `model_option
 a `models.json` row leaves the field out, so pi applies its own default. Where pi has a catalog for
 the provider, its own Bedrock client, the extension completes the rows: the same rows ride
 `yolo-model-lists.json` marked `keep_catalog`, and the extension registers pi's catalog with each
-row merged over its own entry field by field, the row's `tombstones` removed
+row merged over its own entry field by field (`cost` rate by rate, so a row stating one rate keeps the catalog's others), the row's `tombstones` removed
 ([ML-D12](../design/model-lists-and-pickers.md#ML-D12)).
 
 **Facts one model shares across its routes** are written once, in the top-level `model_facts`,
