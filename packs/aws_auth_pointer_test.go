@@ -140,8 +140,7 @@ func TestEveryShippedListenPointerNamesADaemonThatDeclaresOne(t *testing.T) {
 
 // TestAWSAuthPointerIsPlatformGated: selecting this pack must change NOTHING observable
 // until an agent is actually pointed at Bedrock
-// ([sso-backed-bedrock.md §12](../docs/design/sso-backed-bedrock.md#12-what-i-would-build-in-order)
-// step 4).
+// (the SSO design's build step 4; [agent-credentials.md](../docs/reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth)).
 //
 // The gate is the PROVIDER'S PLATFORM, "aws-bedrock"
 // ([`OQ-BR8`](../docs/design/providers-and-profiles-redesign.md#OQ-BR8), ruled 2026-09-29,
@@ -237,7 +236,7 @@ func containsArg(argv []string, want string) bool {
 }
 
 // TestAWSAuthInheritsExactlyItsPointer: a nested launch takes aws-auth's pointer from the
-// launching jail (the manifest's `inherit_from_parent_jail`, docs/design/sso-backed-bedrock.md
+// launching jail (the manifest's `inherit_from_parent_jail`, docs/reference/agent-credentials.md
 // SSO-D2), and the credential gate withholds every pointer variable the block does not carry.
 // So the block names exactly the variables the pack's env contribution `served_by` aws-auth
 // declares: one fewer is a nested agent handed half a pointer, one more is a launching-jail

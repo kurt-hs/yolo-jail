@@ -6,7 +6,7 @@
 // A vendor installer that has to survive `curl | sh` reads its questions from /dev/tty rather
 // than from stdin, so a /dev/null stdin alone does not stop it asking: codex's installer asked
 // `Start Codex now? [y/N]` on /dev/tty mid-probe, measured on a Mac
-// (docs/plans/runbooks/mac-provisioner-measurements.md). /dev/tty is the process's controlling
+// (docs/design/provisioner-sets.md §15, item M1). /dev/tty is the process's controlling
 // terminal, so the child is started in a session of its own (setsid), which has none: opening
 // /dev/tty then fails, and a prompt either takes its default or fails. The accepted cost is
 // PS-D1's: an installer that needs an answer fails instead of asking.

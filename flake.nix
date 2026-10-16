@@ -9,7 +9,7 @@
   # Cachix cache lets every macOS user *download* it instead (zero setup).
   #
   # ENABLED (2026-07-20).  Rename `yolo-jail` throughout if you claim a
-  # different cache name (see docs/plans/handoff-cachix-cache.md).
+  # different cache name (also `just cachix-push`'s CACHE default and the CACHIX_CACHE repository variable).
   nixConfig = {
     extra-substituters = [ "https://yolo-jail.cachix.org" ];
     extra-trusted-public-keys = [ "yolo-jail.cachix.org-1:6SMCmaSd8DsVfj5EHAdpgIZi0RE14zyYrAWnV8WxFLM=" ];
@@ -119,6 +119,72 @@
           + "flake.nix ${builtins.hashFile "sha256" ./flake.nix}\n"
           + "flake.lock ${builtins.hashFile "sha256" ./flake.lock}\n"
         );
+
+      # ── The build stamp: the version and commit every Go build carries ───
+      # The owner's ruling (2026-10-16, OQ-DA2 in docs/plans/downstream-asks.md):
+      # every build's version string carries the git hash, nix builds included.
+      # scripts/build-go.sh and `just install` stamp
+      # `internal/version.buildVersion` (raw `git describe`) and `GitCommit` via
+      # -ldflags; the derivations below stamp the SAME two variables from this
+      # one value, so a nix-built yolo no longer reports `commit: unknown`.
+      #
+      # Two sources, first match wins:
+      #
+      #   1. A STAMP FILE, `yolo-build-stamp.json` ({"version", "commit"}) at
+      #      the flake root. scripts/stage-source-bundle.sh writes it into every
+      #      bundle it stages (`just install`, goreleaser, the Homebrew formula),
+      #      and installPrefix copies it into the prefix's own bundle, because a
+      #      bundle is a `path:` flake with no git metadata. It is the same
+      #      VERSION/COMMIT the bundle's prebuilt binaries were stamped with, so
+      #      the flake states what it ships. Never commit one at the repo root:
+      #      a git flake sees tracked files only, and a tracked stamp would name
+      #      a commit that is not the one being built (.gitignore lists it).
+      #   2. THE FLAKE'S OWN GIT METADATA, when the source is a git checkout
+      #      (`self.rev`, or `self.dirtyRev` for uncommitted work). Nix has the
+      #      commit but not the tags, so the version cannot be `git describe`'s
+      #      `<tag>+<n>.g<hash>`: it is `<release>+g<hash>[.dirty]`, the release
+      #      being the newest `## [x.y.z]` heading in CHANGELOG.md (which
+      #      `just release` writes before it tags) and the distance `<n>` left
+      #      out because nothing nix can read knows it. The hash is 12 hex
+      #      digits: long enough that version.SourceSkew's `git rev-parse` of
+      #      GitCommit never hits an ambiguous prefix.
+      #
+      # Neither source applies (a `path:` flake of a checkout copy with no
+      # stamp): both strings are empty, the binary is unstamped, as before.
+      #
+      # THE COST, chosen deliberately: the stamp is per commit, so `goBinaries`
+      # (and guestPrefix) rebuild on EVERY commit, docs-only ones included,
+      # where they used to rebuild only when `goSrc` moved. A dirty tree keeps
+      # one stamp (`dirtyRev` is HEAD's), so edit-and-rebuild loops cost what
+      # they did. The IMAGE does not read this value — only the Go binaries'
+      # derivations do, and `imageIdentity` above hashes flake.nix and
+      # flake.lock alone — so no commit gains an image rebuild or reload.
+      buildStamp =
+        let
+          stampFile = ./. + "/yolo-build-stamp.json";
+          fromFile = builtins.fromJSON (builtins.readFile stampFile);
+          rev = self.rev or self.dirtyRev or "";
+          dirty = !(self ? rev) && (self ? dirtyRev);
+          hash = builtins.substring 0 12 rev;
+          changelog = ./. + "/CHANGELOG.md";
+          releases =
+            if builtins.pathExists changelog then
+              builtins.filter (m: m != null) (map
+                (builtins.match "## [[]([0-9]+[.][0-9]+[.][0-9]+)[]].*")
+                (builtins.filter builtins.isString
+                  (builtins.split "\n" (builtins.readFile changelog))))
+            else [ ];
+          release = if releases == [ ] then "0" else builtins.head (builtins.head releases);
+        in
+        if builtins.pathExists stampFile then {
+          version = fromFile.version or "";
+          commit = fromFile.commit or "";
+        }
+        else if rev != "" then {
+          version = "${release}+g${hash}" + (if dirty then ".dirty" else "");
+          commit = hash;
+        }
+        else { version = ""; commit = ""; };
     in
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -220,6 +286,18 @@
         # method, two outcomes decided purely by what is on disk — this is what
         # makes "two files and a binary" build the same image the source tree
         # does.
+        # The -ldflags both compiling derivations stamp: buildStamp (top of this
+        # file) into the same two variables scripts/build-go.sh sets, shell-quoted
+        # because a bundle's stamp file is data, not code.
+        goStampLdflags = pkgs.lib.escapeShellArg (
+          "-X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=${buildStamp.version}"
+          + " -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${buildStamp.commit}");
+        # The derivation's own `version`, which lands in its store name: the
+        # stamp, or 0-dev when it is empty or holds a character a store name
+        # refuses (a stamp file is free text).
+        goDrvVersion =
+          if builtins.match "[A-Za-z0-9.+_-]+" buildStamp.version != null
+          then buildStamp.version else "0-dev";
         prebuiltBinDir = ./. + "/bin/linux-${goArch}";
         goBinaries =
           if builtins.pathExists prebuiltBinDir then
@@ -230,7 +308,7 @@
             ''
           else pkgs.stdenv.mkDerivation {
             pname = "yolo-jail-go";
-            version = "0-dev";
+            version = goDrvVersion;
             src = goSrc;
             nativeBuildInputs = [ pkgs.go ];
             # Hermetic: no network in the Nix sandbox. Vendored deps (or an
@@ -248,7 +326,7 @@
               for d in cmd/*/; do
                 name="$(basename "$d")"
                 echo "go build $name -> $out/bin/$name (linux/${goArch})"
-                go build -trimpath -o "$out/bin/$name" "./$d"
+                go build -trimpath -ldflags ${goStampLdflags} -o "$out/bin/$name" "./$d"
               done
               runHook postBuild
             '';
@@ -1316,6 +1394,13 @@
           # through, so no nested jail ever compiles Go to get its own prefix.
           cp ${./flake.nix} $out/opt/yolo-jail/share/yolo-jail/flake.nix
           cp ${./flake.lock} $out/opt/yolo-jail/share/yolo-jail/flake.lock
+          # The bundle's build stamp (buildStamp at the top of this file): the
+          # copied bundle is a `path:` flake with no git metadata, so this file
+          # is how it keeps knowing the version and commit its binaries carry.
+          ${pkgs.lib.optionalString (buildStamp.version != "" || buildStamp.commit != "") ''
+            cp ${builtins.toFile "yolo-build-stamp.json" (builtins.toJSON buildStamp)} \
+              $out/opt/yolo-jail/share/yolo-jail/yolo-build-stamp.json
+          ''}
 
           for name in ${builtins.concatStringsSep " " shippedBinaries}; do
             src="${goBinaries}/bin/$name"
@@ -1372,7 +1457,7 @@
             ''
           else pkgs.stdenv.mkDerivation {
             pname = "yolo-jail-guest";
-            version = "0-dev";
+            version = goDrvVersion;
             src = goSrc;
             nativeBuildInputs = [ pkgs.go ];
             buildPhase = ''
@@ -1387,7 +1472,7 @@
               mkdir -p $out/bin
               for name in ${builtins.concatStringsSep " " guestBinaries}; do
                 echo "go build $name -> $out/bin/$name (darwin/${goArch})"
-                go build -trimpath -o "$out/bin/$name" "./cmd/$name"
+                go build -trimpath -ldflags ${goStampLdflags} -o "$out/bin/$name" "./cmd/$name"
               done
               runHook postBuild
             '';
@@ -2208,5 +2293,9 @@
     # system and has to stay that way — see its definition at the top for the
     # nightly that a per-system identity cost. Putting it back inside would
     # compile, evaluate, and quietly reintroduce the whole defect.
-    // { inherit imageIdentity; };
+    #
+    # `buildStamp` rides along for the same reason of shape: it is system-free,
+    # and `nix eval --json .#buildStamp` is the cheap way to ask which version
+    # and commit this flake stamps into its Go builds.
+    // { inherit imageIdentity buildStamp; };
 }

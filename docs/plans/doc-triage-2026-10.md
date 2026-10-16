@@ -5,148 +5,60 @@ status: in-review
 stage: DESIGN
 next: "Owner picks which groups to act on"
 tags: [docs, triage, cleanup]
-summary: "Every Markdown file under docs/ (287) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review; no doc has moved. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
+summary: "Every Markdown file under docs/ (287 on 2026-10-15) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review. The whole Delete group (44) was deleted on 2026-10-16, each deferred idea moved to BACKLOG.md first, so it leaves this record. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
 vantage:
   status-chip: true
 ---
 
 # Doc triage, 2026-10-15
 
-**Status:** 2026-10-16. Only what is still to decide is listed; docs already acted on were removed from this record (`git log` has them). Seven read-only
+**Status:** 2026-10-16. Only what is still to decide is listed; docs already acted on were removed from this record (`git log` has them). All 44 Delete docs were deleted on 2026-10-16, and later that day 21 more (11 merges, the 6 graduated stubs, the 2 Fix docs and the 2 misfiled references, which moved to docs/reference/ rather than being deleted), after every deferred idea they held moved to [the backlog](BACKLOG.md#ideas-from-deleted-docs) or a live doc; none was left as a judgment call. Seven read-only
 agents read each doc's frontmatter, status line, headings, open questions and ledger, and
 spot-checked the code where a category depended on it. They did not compare every doc line by line with today's code.
-Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. **No Graduate doc was deleted**: every one still holds content, or ids that other docs and code link to, that no reference doc carries. The group is split below.
+Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. None could be deleted as it stood: each held content, or ids that other docs and code link to, that no reference doc carried. The 6 stubs and 2 misfiled references have since been moved; the rest are split below.
 
 **What the groups mean.**
 
-- **Delete**: superseded by a later doc or ruling, stale, or a finished plan. Proposed: delete it after repointing its links; git history keeps it. Nothing is archived.
 - **Merge**: overlaps another doc; fold it into the named target.
 - **Graduate** *(the term is [the house rule](../../AGENTS.md#where-things-live)'s: a built design's lasting reference moves to a system doc under `docs/reference/`, and the design doc is deleted)*: built; move what still matters, then retire the design doc.
-- **Fix**: a reference doc that describes something removed or renamed.
 - **Keep**: active work, or a current reference doc.
 
 | Group | Docs |
 | :--- | ---: |
-| [Delete](#delete-44) | 44 |
-| [Merge](#merge-13) | 13 |
-| [Graduate](#graduate-none-was-a-clean-delete) | 48 |
-| &nbsp;&nbsp;[Stub: ids still cited](#stub-ids-still-cited-6) | 6 |
+| [Merge](#merge-2) | 2 |
+| [Graduate](#graduate-none-was-a-clean-delete) | 40 |
 | &nbsp;&nbsp;[One ruling first](#one-ruling-first-10) | 10 |
-| &nbsp;&nbsp;[Misfiled reference](#misfiled-reference-2) | 2 |
 | &nbsp;&nbsp;[Needs graduation work](#needs-graduation-work-30) | 30 |
-| [Fix](#fix-2) | 2 |
 | [Keep: active](#keep-active-96) | 96 |
 | [Keep: reference](#keep-reference-56) | 56 |
 
 ## What stands out
 
 - **Built, waiting only on a human check.** About a dozen built docs stay open only for a hand check (a live agent footer, a pty restart prompt, a hardware run) or for recording a CI run that already passed. Moving those checks onto the roadmap lets the docs retire.
-- **Graduation has to move links.** AGENTS.md and code comments cite ledger IDs in several design docs (broker-as-a-pack, context-mounts, disk-levers, change-aware-completion, sso-backed-bedrock). Graduating them means moving those ledgers into reference docs first.
-- **Wrong today.** omp-and-codex-claude-profile.md (reference) still says the claude pack owns the codex profile. repo-root-and-distribution.md (research, marked current) says /opt/yolo-jail is baked into the image; it is two bind mounts.
-- **Misfiled.** pre-tag-release-gate.md and research/tool-provisioning.md (72 inbound links) are reference docs. Nine *-plan.md files sit in docs/design/.
+- **Graduation has to move links.** AGENTS.md and code comments cite ledger IDs in several design docs (broker-as-a-pack, context-mounts, disk-levers, change-aware-completion). Graduating them means moving those ledgers into reference docs first.
+- **Wrong today.** repo-root-and-distribution.md (research, marked current) says /opt/yolo-jail is baked into the image; it is two bind mounts.
+- **Misfiled.** Several *-plan.md files sit in docs/design/.
 - **Too big to review.** pack-system.md (4,073 lines), provisioner-sets (2,803), boundary-broker (2,754), model-lists-and-pickers (2,563), agent-event-watchers (2,532), jail-lifetime-last-session-wins (2,453).
 
-## Delete (44)
-
-Superseded, stale, or a finished plan. Proposed: delete after repointing links.
-
-**Two rows below are blocked:** their own text says delete, but other docs link to a section only they hold. Move that section, then delete:
-
-- [`plans/sequencing-2026-07.md`](sequencing-2026-07.md): [`boundary-broker.md`](../design/boundary-broker.md) links its section 4e anchor, `#4e-open-questions-the-maintainer-must-decide` (the open questions on agent auth), which [`roadmap.md`](roadmap.md) does not carry; [`README.md`](README.md) also links its `#runbooks` section.
-- [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md): links in five runbook, plan and research docs cite its [`OQ-1`](runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) (the path_helper question) through its section anchor, and no other doc defines that id.
-
-| Doc | Lines | Category | Target | Reason |
-| :--- | ---: | :--- | :--- | :--- |
-| [`design/agent-auth-modes.md`](../design/agent-auth-modes.md) | 523 | superseded | docs/reference/providers.md | Own status: "superseded in part by [`providers.md`](../reference/providers.md)"; only [`OQ-9`](../design/agent-auth-modes.md#OQ-9) (AWS credential pair) remains, and it says "rule together with [`OQ-CN1`](../design/provider-credential-scope.md#OQ-CN1)", which lives in [`providers.md`](../reference/providers.md): move [`OQ-9`](../design/agent-auth-modes.md#OQ-9) there and retire |
-| [`design/boundary-broker-plan.md`](../design/boundary-broker-plan.md) | 137 | done-plan | [`boundary-broker.md`](../design/boundary-broker.md) | Slice built: `internal/brokerstore/` and `internal/cli/approve.go` exist; remainder is deferred to the design's next slice |
-| [`design/forked-programs-as-packs-plan.md`](../design/forked-programs-as-packs-plan.md) | 511 | done-plan | [`forked-programs-as-packs.md`](../design/forked-programs-as-packs.md) | stage BUILT, steps 1–6 built; only the step-7 measurement is left, and it waits on the maintainer naming a fork. Move that note into the design and archive the plan |
-| [`design/openai-auth-broker-plan.md`](../design/openai-auth-broker-plan.md) | 322 | done-plan | docs/reference/agent-credentials.md | `stage: BUILT`. Only the human checks remain (a browser login end to end, and two agents crossing one expiry); move them to the roadmap |
-| [`design/pack-pi-resources-plan.md`](../design/pack-pi-resources-plan.md) | 114 | done-plan |  | `stage: BUILT` 2026-10-05; only a human pi load check remains |
-| [`design/packs-and-the-prism.md`](../design/packs-and-the-prism.md) | 528 | superseded | docs/reference/pack-system.md | `stage: SUPERSEDED`; kept only for its argument |
-| [`design/patched-forks-plan.md`](../design/patched-forks-plan.md) | 387 | done-plan |  | Its `next` says it was built and integrated at e87f1ba88 (2026-10-05); the code map should fold into the future patched-forks reference |
-| [`design/pi-codex-provider-shadowing-plan.md`](../design/pi-codex-provider-shadowing-plan.md) | 210 | done-plan |  | `stage: BUILT` (section 2.1, [`OQ-3`](../design/notch-scoped-config-contributions.md#OQ-3) broad reading, BI-D9). The one remaining item is the design's [`OQ-4`](../design/pi-codex-provider-shadowing.md#OQ-4) |
-| [`design/pi-extension-store-builds-plan.md`](../design/pi-extension-store-builds-plan.md) | 123 | superseded | docs/design/launch-update-preparation-plan.md | Its own `next` calls it a "historical sketch, not a handoff"; build slices come from [`launch-update-preparation-plan.md`](../design/launch-update-preparation-plan.md) |
-| [`design/pi-git-extension-caching-plan.md`](../design/pi-git-extension-caching-plan.md) | 71 | stale |  | Describes a build on the held branch `held/pi-extension-store` (d44cb88b9), which never merged; no `held/*` branch is visible in this repo now |
-| [`design/pi-git-extension-caching.md`](../design/pi-git-extension-caching.md) | 507 | superseded | docs/design/pi-extension-store-builds.md (XB-D35 to XB-D38) | [`OQ-6`](../design/pi-git-extension-caching.md#OQ-6) (c) was built through store-builds 2026-10-05; `next`: "Nothing"; the held branch is only "the record of option (a)" |
-| [`design/pi-startup-cancellation-plan.md`](../design/pi-startup-cancellation-plan.md) | 31 | done-plan |  | All lane items are checked; the repair is now in the tree (`internal/cli/forkbuildchild_cancel_linux_test.go`). The status line still says "not on main", which is stale |
-| [`design/synced-skill-trees-plan.md`](../design/synced-skill-trees-plan.md) | 295 | done-plan |  | stage GRADUATED; "nothing is owed"; keeps only measurement transcripts the graduated stub cites |
-| [`design/workspace-widening-plan.md`](../design/workspace-widening-plan.md) | 174 | done-plan | [`workspace-widening.md`](../design/workspace-widening.md) | stage BUILT 2026-10-05 in one landing; kept only until the design graduates |
-| [`plans/agent-config-packs.md`](agent-config-packs.md) | 1816 | superseded | docs/reference/pack-system.md | Status says "largely OVERTAKEN by what shipped" (packs key, lockfile, `yolo pack`). Only [`OQ-ACP4`](agent-config-packs.md#OQ-ACP4) is open (pruning/telemetry, leaning "out of scope"). Rule it on its leaning or move it into [`pack-system.md`](../reference/pack-system.md), then archive |
-| [`plans/further-roadmap-ideas.md`](further-roadmap-ideas.md) | 371 | stale | [`roadmap.md`](roadmap.md) | A 2026-08-23 SKETCH of candidates. Its own `next` says I2 and I5 are closed and I3's premise no longer holds; [`roadmap.md`](roadmap.md) calls it "a shelf of unverified candidates" |
-| [`plans/handoff-cachix-cache.md`](handoff-cachix-cache.md) | 255 | done-plan | facts → [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) / userguide macos.md | Cachix pushes on every release and nightly (`nightly-macos.yml`), and the Mac nightly measured substitution 2026-10-03. Left: a human Apple-silicon check, plus option B (push 13–15 darwin derivations), which belongs on the roadmap |
-| [`plans/handoff-fzf-pack-adoption.md`](handoff-fzf-pack-adoption.md) | 321 | done-plan |  | It says "Nothing is left in the tree". The only remaining step is the maintainer's copy on the host |
-| [`plans/handoff-mac-unmeasured-claims.md`](handoff-mac-unmeasured-claims.md) | 566 | done-plan |  | Status: "all measured". The leftover nightly-greenness item needs no Mac and [`OQ-MX2`](../research/macos-support-matrix.md#OQ-MX2) made the skip question moot |
-| [`plans/macos-revival-and-distribution-plan.md`](macos-revival-and-distribution-plan.md) | 1310 | done-plan | facts → [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md), macos.md | "Every track is built"; L part 2 moved to [`boundary-broker.md`](../design/boundary-broker.md). One 💬 left (question SH-1, self-hosting) "blocks nothing" — rule it or move to [`retired-decisions.md`](retired-decisions.md) |
-| [`plans/native-installer-migration.md`](native-installer-migration.md) | 438 | done-plan | [`program-delivery.md`](../design/program-delivery.md) (question PD13) | `stage: BUILT`: codex flipped, then copilot flipped 2026-10-05 ([`OQ-NI1`](native-installer-migration.md#OQ-NI1)). Left: one CI cell (copilot linux/arm64) to read |
-| [`plans/runbooks/claude-plugin-registration-probe.md`](runbooks/claude-plugin-registration-probe.md) | 146 | stale | [`pack-system.md`](../reference/pack-system.md) reserved children (2026-09-22) | Its Q3 "no longer decides a design". Q1/Q2 settle one unverified note in [`synced-skill-trees.md`](../design/synced-skill-trees.md) section 2.4 and have not run since 2026-09-19 |
-| [`plans/runbooks/mac-agent-guide.md`](runbooks/mac-agent-guide.md) | 242 | stale | macos-revival plan done; [`macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) | Sequencer for Track M (M0→M1→M2), all done. It assumes a Mac 531 commits stale with an `agents` key, and points at the stale go-port runbook and sequencing-2026-07 |
-| [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md) | 222 | stale (blocked) |  | Self-declared SUPERSEDED 2026-08-23: its diff-against-Python method died with the Python tree; "recommended for git rm" |
-| [`plans/runbooks/mac-macos-user-e2e.md`](runbooks/mac-macos-user-e2e.md) | 144 | stale | [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) + macos-user.yml CI | M1 gate PASSED 2026-07-21. It cites Python-era internals (`getpass.getuser()`, `_refuse_if_root`); the Go refusal now lives in `internal/macosuser/capture.go` |
-| [`plans/runbooks/mac-provisioner-measurements.md`](runbooks/mac-provisioner-measurements.md) | 355 | done-plan | design/provisioner-sets.md | "All five items have been RUN", with results inline. Results belong in [`provisioner-sets.md`](../design/provisioner-sets.md) / [`provisioner-evidence.md`](../design/provisioner-evidence.md) |
-| [`plans/runbooks/mac-sandvault-session.md`](runbooks/mac-sandvault-session.md) | 213 | done-plan |  | M0/M1 recipe; both PASSED 2026-07-21. It records the SandVault setup for a finished track |
-| [`plans/sequencing-2026-07.md`](sequencing-2026-07.md) | 770 | superseded (blocked) | [`roadmap.md`](roadmap.md) | Self-declared SUPERSEDED 2026-08-17; a historical snapshot |
-| [`plans/workspace-config-lock-briefing.md`](workspace-config-lock-briefing.md) | 42 | done-plan |  | PR #51 merged (4fd929dc9); roadmap commit 2a0142a60 struck it |
-| [`research/agent-config-distribution.md`](../research/agent-config-distribution.md) | 833 | superseded | docs/reference/pack-system.md | The direction it fed (cross-agent config distribution) shipped as packs. Its own 2026-08-23 postscript retracts the agent-registry claims, and the external survey has not been re-gathered since 2026-07-25. The "lessons" list could be kept as one paragraph in pack-system's why-section. |
-| [`research/completion-check-inputs.md`](../research/completion-check-inputs.md) | 221 | superseded | docs/design/change-aware-completion.md (stage BUILT) | It fed the change-aware `just done`, which is built and maintained through scripts/completion-readers.json. |
-| [`research/copilot-as-a-provider.md`](../research/copilot-as-a-provider.md) | 318 | stale |  | The question is closed with a "no": a Copilot subscription cannot legitimately back Claude Code (2026-09-17). Nothing builds on it, nothing in docs/ or userguide/ links to it, and its terms of service readings will go stale. Archive as a closed negative answer. |
-| [`research/gateway-providers.md`](../research/gateway-providers.md) | 57 | superseded | docs/design/gateway-provider-packs.md | Its evidence fed that design, and packs/openrouter and packs/kilo exist. The design still owns the one open item ([`OQ-GP4`](../design/gateway-provider-packs.md#OQ-GP4)). |
-| [`research/host-service-startup-diagnostics.md`](../research/host-service-startup-diagnostics.md) | 159 | superseded | docs/reference/host-service-startup-diagnostics.md | Frontmatter says stage GRADUATED, and the reference describes the repair as built. Runtime acceptance is tracked in plans/host-service-startup-diagnostics-{tasks,qa}.md. |
-| [`research/launch-preparation.md`](../research/launch-preparation.md) | 61 | superseded | docs/design/launch-update-preparation.md (DECIDED) | A 61-line source audit whose verdicts have been absorbed into the design, and its own `next` says to "use the preparation design". |
-| [`research/macos-container-builder-exploration.md`](../research/macos-container-builder-exploration.md) | 172 | superseded | docs/reference/nix-across-backends.md (`internal/containerbuilder`) | Self-described HISTORICAL. The container builder won and shipped, and `internal/builder` and `yolo builder` were deleted (re-checked 2026-08-23). |
-| [`research/macos-linux-builder-explained.md`](../research/macos-linux-builder-explained.md) | 250 | superseded | docs/reference/nix-across-backends.md | It recommends a VM builder that is retired (self-described SUPERSEDED IN PART). The section 0 "Rosetta stone" explainer is the only part still valid and could move into nix-across-backends's macOS builder section. |
-| [`research/mise-host-jail-path-mismatch.md`](../research/mise-host-jail-path-mismatch.md) | 460 | superseded | docs/reference/jail-state-separation-design.md | Self-described CLOSED, with all five question MP entries answered and Python-era paths. The resolving design is in the reference. |
-| [`research/openai-subscription-auth.md`](../research/openai-subscription-auth.md) | 185 | superseded | docs/reference/agent-credentials.md (OpenAI subscription credential service) | It fed design/openai-auth-broker.md, which is now stage GRADUATED, and the result lives in [`agent-credentials.md`](../reference/agent-credentials.md). |
-| [`research/pi-model-selection-ux.md`](../research/pi-model-selection-ux.md) | 243 | superseded | docs/reference/providers.md ("pi enabledModels is a shortlist") + design/model-lists-and-pickers.md | The section 4 recommendation is built, and [`providers.md`](../reference/providers.md) re-measured it at pi 0.87.1. Ongoing picker work lives in model-lists-and-pickers. |
-| [`research/platform-comparison.md`](../research/platform-comparison.md) | 340 | stale | superseded in practice by research/macos-support-matrix.md, userguide settings-per-setup.md | Self-described PARTLY STALE: every file it names is a Python name that no longer exists, it never mentions the macos-user backend, and it has not been re-gathered since before the Go port. |
-| [`research/rocm-gpu-jail-findings.md`](../research/rocm-gpu-jail-findings.md) | 203 | superseded | docs/reference/rocm-passthrough.md | Self-described SUPERSEDED IN PART. It is a ROCm 7.1.1 incident record, and the passthrough has since shipped. |
-| [`research/sandbox-comparison.md`](../research/sandbox-comparison.md) | 492 | stale | framing superseded by reference/what-yolo-is.md and research/agent-safehouse.md | The Claude Code side was gathered 2026-07-18 and never re-gathered. Its "container vs syscall filter" framing breaks with macos-user, and the doc predates the environment-first positioning. Only four docs link to it. |
-| [`research/vantage-check-0.5.9-findings.md`](../research/vantage-check-0.5.9-findings.md) | 273 | stale | upstream vantage-check issue tracker | A bug report written for an external tool, not a yolo direction. It was re-checked at 0.7.0 (2026-09-24), with six defects still reproducing. Its four 💬 markers are specimens (D12), not open yolo questions. File it upstream if not already filed, then archive. |
-
-## Merge (13)
+## Merge (2)
 
 Overlaps another doc. Proposed: fold into the named target.
 
 | Doc | Lines | Category | Target | Reason |
 | :--- | ---: | :--- | :--- | :--- |
-| [`design/io-priority-plan.md`](../design/io-priority-plan.md) | 71 | merge | [`io-priority.md`](../design/io-priority.md) | 71-line sketch: step 5 is built (IO-D13) and step 6 is blocked on [`OQ-IO7`](../design/io-priority.md#OQ-IO7); nothing in it is a hand-off |
-| [`design/launch-program-capture-plan.md`](../design/launch-program-capture-plan.md) | 208 | merge | [`launch-update-preparation-plan.md`](../design/launch-update-preparation-plan.md) | Same "combined candidate" and the same remaining acceptance as the preparation plan, which it depends on; two plans for one build |
 | [`design/pack-declared-file-diagnostics-plan.md`](../design/pack-declared-file-diagnostics-plan.md) | 33 | merge | docs/design/agent-directory-map.md | 33-line sketch; its own `next` says retire it if agent-directory-map absorbs traps ([`OQ-AM8`](../design/agent-directory-map.md#OQ-AM8)) |
-| [`design/pack-declared-file-diagnostics.md`](../design/pack-declared-file-diagnostics.md) | 198 | merge | docs/design/agent-directory-map.md | [`agent-directory-map.md`](../design/agent-directory-map.md) [`OQ-AM8`](../design/agent-directory-map.md#OQ-AM8) leans "A: a trap is a map entry with a note, and this doc is superseded". Its own 3 OQs are answered by that ruling |
-| [`design/pi-launch-selection-flags.md`](../design/pi-launch-selection-flags.md) | 53 | merge | docs/design/model-lists-and-pickers.md (its future reference) | Built and on main; its own `next` says fold it into the model-lists reference. Left: a nested-jail check of `yolo host -p pi=` |
-| [`plans/handoff-guest-notch-macos.md`](handoff-guest-notch-macos.md) | 401 | merge | [`environment-manager-plan.md`](environment-manager-plan.md) (+ [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md)) | All 4 of its questions are answered and its next step "is owned by [`environment-manager-plan.md`](environment-manager-plan.md)". What remains is a twin run to record, which already lives in those docs |
-| [`plans/handoff-macos-user-open-threads.md`](handoff-macos-user-open-threads.md) | 409 | merge | [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) | Its remaining threads are item 1/item 2 twins that macos-user-manual-checks.md's `next` already tracks, almost word for word |
-| [`reference/cerebras-pack-and-copilot-delivery.md`](../reference/cerebras-pack-and-copilot-delivery.md) | 241 | merge | [`providers.md`](../reference/providers.md) (§Per-agent delivery) + packs/cerebras/README.md | "Which agents a provider can reach" duplicates [`providers.md`](../reference/providers.md) per-agent delivery, and is now wrong: says "seven" agent packs (muse-code added 0c6ae5356, 2026-10-12) and "the bridge translates exactly one pair" ([`wire-bridge.md`](../reference/wire-bridge.md) now has a Codex Responses route) |
-| [`reference/envsource-relative-paths.md`](../reference/envsource-relative-paths.md) | 128 | merge | [`agent-credentials.md`](../reference/agent-credentials.md) §`env_sources` | 128-line single rule (relative `env_sources` anchors beside declaring file) about the channel [`agent-credentials.md`](../reference/agent-credentials.md) already owns |
-| [`reference/nix-across-backends.md`](../reference/nix-across-backends.md) | 246 | merge | container half -> [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md); macos-user half -> [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md) | Oldest verification in chunk (2026-09-04, ef5945e3); every section restates one of those two; also stale: says the /lib farm is "backed by an LD_LIBRARY_PATH baked into the image", which AGENTS.md now forbids (LD_LIBRARY_PATH never names /lib) |
-| [`research/claude-oauth-refresh-mechanics.md`](../research/claude-oauth-refresh-mechanics.md) | 1192 | merge | docs/reference/claude-oauth-interposition.md (why-appendix) | The broker is built (`internal/oauthbroker`). Only section 10 (Claude Code 2.1.278, 2026-09-20) is current, and section 10.8 itself says it supersedes much of section 1–9 (the 2.1.143 layer, Python-era paths). Fold section 10.7's "keep the proactive loop" and the section 10.9 unmeasured items into the reference, then archive. |
-| [`research/claude-token-logouts.md`](../research/claude-token-logouts.md) | 155 | merge | packs/claude/loopholes/claude-oauth-broker/README.md (Operations) | An incident record from 2026-07/08 whose fix column uses Python-era names. The one live part is the operator triage for repeated `/login` 401s, and that belongs beside the broker's Operations section. |
-| [`research/macos-vm-memory-reclaim.md`](../research/macos-vm-memory-reclaim.md) | 251 | merge | docs/research/macos-vm-runtime-comparison.md (section 4) | A small follow-up. The comparison's section 4 measurement already contradicts this doc's libkrun row. What it still owes (filing an FB request, a krunkit debug run) is listed in the comparison's planned arm too. |
+| [`design/pack-declared-file-diagnostics.md`](../design/pack-declared-file-diagnostics.md) | 198 | merge | docs/design/agent-directory-map.md | [`agent-directory-map.md`](../design/agent-directory-map.md) [`OQ-AM8`](../design/agent-directory-map.md#OQ-AM8) leans "A: a trap is a map entry with a note, and this doc is superseded". Its own 3 OQs are answered by that ruling. **Waits on [`OQ-AM8`](../design/agent-directory-map.md#OQ-AM8)**, which is still a leaning, not a ruling (checked 2026-10-16) |
 
 ## Graduate: none was a clean delete
 
-Every one of the 48 Graduate docs was checked on 2026-10-15 against its target reference doc, and **none could be deleted**: each still holds either content no reference doc carries, or ids and section anchors that other docs and code comments link to and that no reference doc defines. Deleting one would break those links.
+Every one of the original 48 Graduate docs was checked on 2026-10-15 against its target reference doc, and **none could be deleted**: each still holds either content no reference doc carries, or ids and section anchors that other docs and code comments link to and that no reference doc defines. Deleting one would break those links.
 
-The 48 split four ways:
+The 40 left split two ways:
 
 | Group | Docs | What it takes |
 | :--- | ---: | :--- |
-| [Stub: ids still cited](#stub-ids-still-cited-6) | 6 | Mechanical: copy the cited ledger rows into the reference doc as anchors, repoint the links, delete |
 | [One ruling first](#one-ruling-first-10) | 10 | Reclassified: the doc's own next step is a ruling; rule it, then it joins one of the other groups |
-| [Misfiled reference](#misfiled-reference-2) | 2 | Reclassified: already a reference doc; a `git mv` into docs/reference/, not a graduation |
 | [Needs graduation work](#needs-graduation-work-30) | 30 | A system doc has to be written or extended from the design |
-
-### Stub: ids still cited (6)
-
-Already graduated stubs whose body lives in the reference. What keeps each one is a ledger that other docs or code comments link to.
-
-| Doc | Lines | Category | Target | What has to happen |
-| :--- | ---: | :--- | :--- | :--- |
-| [`design/host-computed-layer.md`](../design/host-computed-layer.md) | 175 | graduate-stub | docs/reference/host-agent-environment.md (graduated 2026-10-01) | Moves: the HC-D1 to HC-D28 ledger. Comments in 27 code files and four reference docs (providers, pack-system, mcp-configuration, host-apply-staleness) cite HC-D ids here; the section 8 host pi launch report also waits on the maintainer |
-| [`design/host-launch-environment.md`](../design/host-launch-environment.md) | 71 | graduate-stub | docs/reference/host-agent-environment.md (graduated 2026-10-01) | Moves: the HE-D1 to HE-D12 ledger, as anchors in the reference. AGENTS.md, packs/guardrails/README.md, the reference itself and comments in 13 code files cite HE-D2, HE-D7, HE-D10 and HE-D11 here, and the reference has its own, different HE-D1 and HE-D2 |
-| [`design/provider-credential-scope.md`](../design/provider-credential-scope.md) | 108 | graduate-stub | `reference/providers.md` (credential gate) | Moves: the CN-D1 to CN-D25 ledger and its done-conditions. 24 files, 11 of them code, cite CN-D ids that providers.md does not carry as anchors |
-| [`design/sso-backed-bedrock.md`](../design/sso-backed-bedrock.md) | 1506 | graduate-stub | `reference/agent-credentials.md` (SSO-backed Bedrock section) | Moves: the SSO-D ledger and [`OQ-SSO8`](../design/sso-backed-bedrock.md#OQ-SSO8) to [`OQ-SSO10`](../design/sso-backed-bedrock.md#OQ-SSO10), which other docs link here (46 files cite this doc); the file stays whole (1,506 lines) as argument, so cutting it to a ledger stub is the first step |
-| [`design/synced-skill-trees.md`](../design/synced-skill-trees.md) | 206 | graduate-stub | `reference/pack-system.md` (reserved children) | Moves: section 2's measured vendor facts and the [`OQ-ST1`](../design/synced-skill-trees.md#OQ-ST1), [`OQ-ST3`](../design/synced-skill-trees.md#OQ-ST3) and [`OQ-ST5`](../design/synced-skill-trees.md#OQ-ST5) anchors, cited from agent-directory-map, notch-convergence, the roadmap and the plugin-registration runbook; plus a home for [`OQ-ST2`](../design/synced-skill-trees.md#OQ-ST2)'s one unruled sub-question |
-| [`design/workspace-skills.md`](../design/workspace-skills.md) | 193 | graduate-stub | `reference/agent-briefings.md` (workspace layer) | Moves: the host half's body (WS-D19 to WS-D23) into agent-briefings.md's workspace layer (nine code files cite this doc for it); [`OQ-WS6`](../design/workspace-skills.md#OQ-WS6) awaits the maintainer's confirmation |
 
 ### One ruling first (10)
 
@@ -165,13 +77,6 @@ Built, but the doc's own next step is a ruling still open.
 | [`design/workspace-widening.md`](../design/workspace-widening.md) | 863 | ruling-first | new reference for the github-broker scope (or [`loophole-system.md`](../reference/loophole-system.md)) | Own `next`: rule [`OQ-WW1`](../design/workspace-widening.md#OQ-WW1), then reconcile the build and its plan; stage is still DESIGN |
 | [`plans/pack-host-management-plan.md`](pack-host-management-plan.md) | 1059 | ruling-first | [`pack-system.md`](../reference/pack-system.md) (question B → [`BACKLOG.md`](BACKLOG.md) with E1/E2) | Own `next`: rule [`OQ-B`](pack-host-management-plan.md#open-questions) together with BACKLOG E1 and E2; Phases 0 to 11 shipped |
 
-### Misfiled reference (2)
-
-| Doc | Lines | Category | Target | What has to happen |
-| :--- | ---: | :--- | :--- | :--- |
-| [`design/pre-tag-release-gate.md`](../design/pre-tag-release-gate.md) | 70 | misfiled-reference | new `reference/release-process.md` | A current reference in design/: `git mv` it to docs/reference/ and repoint AGENTS.md's "Resuming a tag-only release" link and the roadmap's; nothing to rewrite |
-| [`research/tool-provisioning.md`](../research/tool-provisioning.md) | 522 | misfiled-reference | new docs/reference/tool-provisioning.md (move as-is) | Self-described CURRENT reference in research/: `git mv` it to docs/reference/ and repoint its inbound links; nothing to rewrite |
-
 ### Needs graduation work (30)
 
 Built, but no reference doc carries the content or the ids that other docs cite. Each line says what would have to move. Nothing was moved in this pass.
@@ -189,13 +94,13 @@ Built, but no reference doc carries the content or the ids that other docs cite.
 | [`design/durable-scratch-space.md`](../design/durable-scratch-space.md) | 983 | graduate | docs/reference/jail-home.md or [`storage-and-config.md`](../reference/storage-and-config.md) ([`agent-briefings.md`](../reference/agent-briefings.md) already cites it) | DS-D ids, [`OQ-DS1`](../design/durable-scratch-space.md#OQ-DS1) and [`OQ-DS3`](../design/durable-scratch-space.md#OQ-DS3), and sections 5.2 and 5.4 are cited from 39 files; no reference carries them |
 | [`design/host-notch-readiness.md`](../design/host-notch-readiness.md) | 268 | graduate | docs/reference/host-agent-environment.md | HNR-D1, D2, D4 and D6 are cited from 20 files; host-agent-environment.md does not carry them |
 | [`design/host-tool-provisioning.md`](../design/host-tool-provisioning.md) | 774 | graduate | docs/reference/host-agent-environment.md | The HP-D and HP-DIR ledger and [`OQ-HP1`](../design/host-tool-provisioning.md#OQ-HP1) to HP7 are cited from 73 files; host-agent-environment.md does not carry them |
-| [`design/in-jail-nix-roots.md`](../design/in-jail-nix-roots.md) | 591 | graduate | new reference (or [`storage-and-config.md`](../reference/storage-and-config.md) / nix-across-backends.md) | No reference covers nix-roots; NR-D ids and sections 4 to 9 are cited from 37 files |
+| [`design/in-jail-nix-roots.md`](../design/in-jail-nix-roots.md) | 591 | graduate | new reference (or [`storage-and-config.md`](../reference/storage-and-config.md) / [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md)) | No reference covers nix-roots; NR-D ids and sections 4 to 9 are cited from 37 files |
 | [`design/jail-daemon-on-macos-user-plan.md`](../design/jail-daemon-on-macos-user-plan.md) | 176 | graduate | docs/reference/macos-user-provisioning.md or [`loophole-system.md`](../reference/loophole-system.md) (already cite JD ids) | JD-4, JD-9 and JD-10 and the ledger are cited from 22 files; neither target carries them. JD-10 is unmeasured natively |
 | [`design/jail-notch-readiness.md`](../design/jail-notch-readiness.md) | 404 | graduate | new "program readiness" reference, or [`program-delivery.md`](../design/program-delivery.md) (AGENTS.md cites [`OQ-JR1`](../design/jail-notch-readiness.md#OQ-JR1) here) | JR-D ids and [`OQ-JR1`](../design/jail-notch-readiness.md#OQ-JR1) (cited by AGENTS.md) and [`OQ-JR3`](../design/jail-notch-readiness.md#OQ-JR3) need a reference home; none exists |
 | [`design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) | 915 | graduate | docs/reference/storage-and-config.md (or image-retention.md) | [`OQ-DF2`](../design/minimal-disk-footprint.md#OQ-DF2) to DF4 and a dozen sections are cited from 36 files; neither target carries them |
 | [`design/notch-scoped-config-contributions.md`](../design/notch-scoped-config-contributions.md) | 651 | graduate | docs/reference/config-target-resolution.md or [`pack-system.md`](../reference/pack-system.md) | NS-D19 to NS-D24, [`OQ-3`](../design/notch-scoped-config-contributions.md#OQ-3), [`OQ-5`](../design/notch-scoped-config-contributions.md#OQ-5) and the ledger are cited from 48 files; neither target carries them |
 | [`design/pack-pi-resources.md`](../design/pack-pi-resources.md) | 390 | graduate | docs/reference/pack-system.md | Sections 1 to 4, [`OQ-PR1`](../design/pack-pi-resources.md#OQ-PR1) and the ledger are cited from 25 files; pack-system.md does not carry them |
-| [`design/package-nested-attribute-paths.md`](../design/package-nested-attribute-paths.md) | 388 | graduate | new reference (or [`nix-across-backends.md`](../reference/nix-across-backends.md) / image-staging-vs-baking.md) | No reference covers the resolver, its refusals or the /lib-farm base rule (its own `next`); two code comments and the roadmap cite it |
+| [`design/package-nested-attribute-paths.md`](../design/package-nested-attribute-paths.md) | 388 | graduate | new reference (or [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md)) | No reference covers the resolver, its refusals or the /lib-farm base rule (its own `next`); two code comments and the roadmap cite it |
 | [`design/patched-extensions.md`](../design/patched-extensions.md) | 894 | graduate | new "patched forks and extensions" reference, plus userguide/guides/patch-series.md | The PPX-D ledger (about 40 ids) and [`OQ-PPX1`](../design/patched-extensions.md#OQ-PPX1) and PPX3 are cited from 77 files; no reference exists |
 | [`design/pi-extension-lifecycle.md`](../design/pi-extension-lifecycle.md) | 702 | graduate | new pi-extensions reference, merged with pi-extension-store-builds' built parts | Sections 3.1 to 3.5 and [`OQ-1`](../design/pi-extension-lifecycle.md#OQ-1) to [`OQ-4`](../design/pi-extension-lifecycle.md#OQ-4) are cited from 22 files; no pi-extensions reference exists |
 | [`design/pi-startup-cancellation.md`](../design/pi-startup-cancellation.md) | 41 | graduate | new patched-forks / fork-build reference | No fork-build reference exists to take section 3's repair contract, which three code comments cite; the status line ("not on main") is stale |
@@ -208,15 +113,6 @@ Built, but no reference doc carries the content or the ids that other docs cite.
 | [`research/local-model-endpoints.md`](../research/local-model-endpoints.md) | 1395 | graduate | docs/reference/providers.md (llamacpp rows) + packs/llamacpp/README.md | [`OQ-LM1`](../research/local-model-endpoints.md#oq-lm1), LM3 and LM6 are cited from 19 files; providers.md does not carry them |
 | [`research/macos-layer-reusing-image-delivery.md`](../research/macos-layer-reusing-image-delivery.md) | 760 | graduate | docs/reference/image-staging-vs-baking.md ("the delta archive") | [`OQ-LR1`](../research/macos-layer-reusing-image-delivery.md#OQ-LR1) to LR3 and the Mac results are cited from 9 files; image-staging-vs-baking.md does not carry them |
 | [`research/repo-root-and-distribution.md`](../research/repo-root-and-distribution.md) | 512 | graduate | docs/reference/image-staging-vs-baking.md + [`storage-and-config.md`](../reference/storage-and-config.md) (flake-bundle) | Section 6 (the fatal missing root) is cited; no reference carries it, and its /opt/yolo-jail claim is wrong today |
-
-## Fix (2)
-
-A reference doc that describes something removed or renamed.
-
-| Doc | Lines | Category | Target | Reason |
-| :--- | ---: | :--- | :--- | :--- |
-| [`reference/omp-and-codex-claude-profile.md`](../reference/omp-and-codex-claude-profile.md) | 163 | reference-stale | fold into [`wire-bridge.md`](../reference/wire-bridge.md) (Responses route) + [`providers.md`](../reference/providers.md) (omp) | Says the `codex` profile is "a profile of the Claude pack" and claude `needs` openai-auth unconditionally; 042aff131 (2026-10-12, "decouple bedrock and openai-auth from agent packs") moved `codex` to packs/openai-auth/pack.json and claude's `needs` is wire-bridge only |
-| [`reference/zai-plumbing.md`](../reference/zai-plumbing.md) | 190 | reference-stale | fold into [`providers.md`](../reference/providers.md) + packs/zai/README.md | Closure rule 1 says "`base_url` is valid only alone"; [`protocol-resolution.md`](../reference/protocol-resolution.md) §"The single-protocol base_url shorthand is removed" says bare `base_url` is now a refusal. Verified only to b3c60ee9 (2026-09-09); it calls itself a worked example that defers to [`providers.md`](../reference/providers.md) |
 
 ## Keep: active (96)
 

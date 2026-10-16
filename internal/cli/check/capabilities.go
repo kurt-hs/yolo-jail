@@ -11,7 +11,7 @@ package check
 // ONE CENSUS, NOT A COPY. This file used to restate the launch's census, on the argument that
 // it was twelve lines of map-building and reaching the launch's would drag run.Options' printer
 // along. The census stopped being twelve lines when the selected packs' own declarations began
-// to count (agent-auth-modes.md §6.1 clause 1: each installed agent's active source, the
+// to count (mcp-configuration.md's capability gate: each installed agent's active source, the
 // provider its profile selects or its built-in login), so it moved to config.UnmetCapabilities,
 // which both call. What is still this file's own is the LAUNCH handed to it: the launch hands
 // its own (its `-p` picks profiles and can add a `via` pack), and `check` hands the one its

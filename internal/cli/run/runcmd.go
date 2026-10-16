@@ -294,7 +294,7 @@ type Options struct {
 	jailBound []string
 	// parentPointers are the loopholes whose credential pointer the last jail-daemon payload this
 	// process composed takes from the launching jail instead of running their daemons
-	// (parentjailpointers.go, docs/design/sso-backed-bedrock.md SSO-D2), each mapped to the
+	// (parentjailpointers.go, docs/reference/agent-credentials.md SSO-D2), each mapped to the
 	// launching environment's value of every variable its pointer carries. Recorded beside the
 	// payload so servedDaemons delivers them, and read by the one disclosure that says so
 	// (noteParentJailPointers). VALUES ARE CREDENTIALS: never printed, never logged. nil when none.

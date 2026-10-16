@@ -40,7 +40,7 @@ is trusted on disk and prompts nowhere — see [Why user config never prompts](#
 (why a gate only earns its place where authority changes hands),
 [`loophole-system.md`](loophole-system.md#why-its-this-way) ([`OQ-A13`](loophole-system.md#oq-a13)
 makes this diff the disclosure for enabling a host-reaching loophole),
-[`envsource-relative-paths.md`](envsource-relative-paths.md) (what a relative path in a
+[`agent-credentials.md`](agent-credentials.md#where-a-relative-env_sources-path-resolves) (what a relative path in a
 config file points at). For the config keys themselves, run `yolo config-ref`.
 
 ---

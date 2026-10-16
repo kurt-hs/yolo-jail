@@ -341,7 +341,7 @@ func floorForkBuild(p hostfloor.Program, commit string) forkBuild {
 		// Patches and Follow too, so a patched fork reads as one to the pinner, which never pins it
 		// (packload.PinForks, PF-D16); and the fork pack's root, which its series is read from.
 		Fork: packload.Fork{Pack: in.ForkedBy, Base: p.Pack, Bin: in.Bin, Source: in.Source, Build: in.Build,
-			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow,
+			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, PatchBranch: in.PatchBranch,
 			Root: in.ForkRoot},
 		Commit:   commit,
 		Platform: hostFloorCapturePlatform(),
@@ -677,7 +677,7 @@ func floorPatchedBuild(p hostfloor.Program, g *packsrc.GoodBuild, receiptRecipe 
 		return nil, nil
 	}
 	patched := &hostfloor.PatchedBuild{Commit: g.Commit, Recipe: g.Recipe,
-		Label: run.WithPatches(run.GoodBuildLabel(g), g.Patches)}
+		Label: run.WithGood(run.GoodBuildLabel(g), g)}
 	if g.Entry == "" {
 		return patched, nil
 	}
@@ -767,7 +767,7 @@ func captureRuntime() string {
 }
 
 // hostFloorBinDir is the floor's bin/, the directory a host launch appends last to its child's
-// PATH (HE-D1).
+// PATH (HE-D16).
 func hostFloorBinDir() string { return (&hostfloor.Floor{Dir: paths.HostFloorDir()}).BinDir() }
 
 // floorDeliveredBins is every program of packs the floor answers for on this machine — the
@@ -1011,14 +1011,14 @@ type hostTarget struct {
 // That lookup is the launch PATH's (lp, host-agent-environment.md, the launch PATH: the PATH yolo was started
 // with, then `host_path`'s folders not already on it) through its one lookup (HE-D5), as the
 // child searches it (hostChildLaunch) — the child's PATH less the floor's bin/, which it ends with
-// (HE-D1). Every name in bin/ is a floor entry, and one a selected pack delivers never reaches the
+// (HE-D16). Every name in bin/ is a floor entry, and one a selected pack delivers never reaches the
 // lookup (it runs by path), so a hit there could only be a DESELECTED ENTRY: one a deselected pack
 // — or one `host_floor` now leaves out — left behind until the next `yolo host apply --assert`
 // removes it (§4, "Deselection"). yolo host runs its floor copy of what a selected pack delivers
 // and of nothing else (HP-DIR4), so a deselected entry is never run, in either case, and a launch
 // that finds nothing else says what it is and what removes it.
 //
-// A bare name the lookup misses prints the MISS LINE (§4.2, HE-D2) in place of the lookup's own
+// A bare name the lookup misses prints the MISS LINE (HE-D17) in place of the lookup's own
 // error: the whole PATH searched, `host_path`'s part marked, and the `host_path` fix.
 //
 // The second return is the exit code of a launch this refuses (127: the program is not
@@ -1156,7 +1156,7 @@ func (o *orderedCopy) missLine(bin string) string {
 		o.via, bin, install, bin, o.via)
 }
 
-// ensureMCPPrograms is decision HC-D28 (docs/design/host-computed-layer.md): a `yolo host --
+// ensureMCPPrograms is decision HC-D28 (docs/reference/host-agent-environment.md): a `yolo host --
 // <agent>` launch also makes sure yolo's floor holds every program a selected pack's MCP server
 // runs (the `mcp` contribution's `bin`), since the agent starts that server whenever it starts
 // and the host has no lazy launcher to install it on first use, as a jail does. Only a server the
@@ -1243,7 +1243,7 @@ func homeTilde(p string) string {
 	return p
 }
 
-// hostChildPath is the PATH a host launch hands its child (OQ-HE10, ruled (c), and HE-D1): the
+// hostChildPath is the PATH a host launch hands its child (OQ-HE10, ruled (c), and HE-D16): the
 // launch PATH — the caller's own PATH, then each `host_path` folder not already on it (HE-D3) —
 // then the floor's bin/, duplicates removed with the first kept. The caller's PATH comes first
 // because the commands a host agent runs see the user's own environment, mise included (OQ-HP7);

@@ -154,8 +154,7 @@ func TestSourceSkewSilentOnTheSameCommit(t *testing.T) {
 // compared, and the skew it would have caught goes back to being discovered at boot.
 //
 // It reads the fileset's `./x` entries plus the two flake files, which are not in
-// goSrc but decide the image just as much (packages, Env, installPrefix) — the same
-// union `nix eval .#installPrefix.outPath` covers.
+// goSrc but decide the image just as much (packages, Env, installPrefix).
 func TestImageSourcePathsMatchTheFlake(t *testing.T) {
 	flake, err := os.ReadFile(filepath.Join("..", "..", "flake.nix"))
 	if err != nil {

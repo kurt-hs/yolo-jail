@@ -45,7 +45,7 @@ const channelSectionHeader = entrypoint.EntryChannelSectionHeader
 // stale copy of a previous entry's providers.
 //
 // This file and the per-agent files are the channel's ONLY crossings (per-entry env
-// delivery, agent-auth-modes.md §4.3): the podman argv carries none of it, so the
+// delivery, providers.md "What crosses to the jail"): the podman argv carries none of it, so the
 // container's frozen environment holds no provider state for a later exec to
 // inherit. The bind is live — writing the file in place is visible inside a
 // running jail, which is how an attach delivers (write, then `podman exec`; the

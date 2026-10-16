@@ -254,7 +254,7 @@ func TestTheHostCodexAdapterServesOnlyTheMarkerItWrote(t *testing.T) {
 
 // TWO HOST CODEX SESSIONS AT ONCE BOTH REFRESH. Every `yolo host -- codex` shares ONE managed
 // CODEX_HOME, so one auth.json, and Codex reloads that file before each refresh
-// (docs/research/openai-subscription-auth.md §1.2). When each launch minted its own caller token,
+// (docs/reference/agent-credentials.md, "One writer, and a view per agent"). When each launch minted its own caller token,
 // the second launch's token replaced the first's in the shared file, and the first session's
 // Codex then sent a marker its own adapter refused 401: two concurrent host sessions, which
 // worked before the adapter authenticated its caller, broke. Concurrent launches of one managed

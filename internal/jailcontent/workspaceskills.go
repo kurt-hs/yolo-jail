@@ -416,7 +416,7 @@ type WorkspaceSkillSourceCheck struct {
 }
 
 // CheckWorkspaceSkillSource is P5's check of ONE source dir, for the host notch's in-workspace
-// link (OQ-WS5's mechanism B, docs/design/workspace-skills.md WS-D21): the reader this layer
+// link (OQ-WS5's mechanism B, docs/reference/agent-briefings.md WS-D21): the reader this layer
 // stages through, run over dir alone, so the link `yolo host --` writes points only at a tree
 // this reader would deliver whole. Any refusal, the cap's included, is the caller's reason to
 // write no link: a link would hand the agent the escaping entry the mirror skips, through a path

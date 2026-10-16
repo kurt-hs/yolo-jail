@@ -60,7 +60,7 @@ went to [`disk-levers-and-backfill.md`](disk-levers-and-backfill.md) ([§8](#8-w
 - [`../plans/storage-lifecycle.md`](../plans/storage-lifecycle.md) — the shipped GC work the ruling calls "nowhere near enough"; [§1.2](#12-where-the-shipped-gc-work-stops--the-precise-referent-for-nowhere-near-enough) says exactly where it stops.
 - [`../plans/cache-relocation.md`](../plans/cache-relocation.md) — the settled threat model (yolo does not manage host symlinks or mounts) that bounds anything proposed here.
 - [`../reference/storage-and-config.md`](../reference/storage-and-config.md) — where these bytes live, and the state/config separation a budget has to respect.
-- [`../plans/handoff-cachix-cache.md`](../plans/handoff-cachix-cache.md) — the binary cache that makes *deletion cheaper to undo*: a complement to keep-zero, never an alternative.
+- [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-binary-cache) — the binary cache that makes *deletion cheaper to undo*: a complement to keep-zero, never an alternative.
 
 ---
 
@@ -617,7 +617,7 @@ Concretely, on this machine on 2026-08-25, the fallback would not have fired no 
 > the full answer block.
 
 > [!NOTE]
-> **The cachix work is what makes zero cheap.** A populated binary cache ([`../plans/handoff-cachix-cache.md`](../plans/handoff-cachix-cache.md)) does not reduce *retention* cost at all — it reduces the cost of having deleted something, by making the rebuild a download. It is a complement to keep-zero, not an alternative to it, and it is the surface [OQ-3](../reference/image-staging-vs-baking.md#why-its-this-way)'s *"we have plans on making cachix useful"* clause is about — the **nix binary cache**, not the podman image tag.
+> **The cachix work is what makes zero cheap.** A populated binary cache ([`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#the-binary-cache)) does not reduce *retention* cost at all — it reduces the cost of having deleted something, by making the rebuild a download. It is a complement to keep-zero, not an alternative to it, and it is the surface [OQ-3](../reference/image-staging-vs-baking.md#why-its-this-way)'s *"we have plans on making cachix useful"* clause is about — the **nix binary cache**, not the podman image tag.
 
 ---
 

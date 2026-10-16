@@ -9,7 +9,7 @@ import (
 )
 
 // A2'S TWIN: A DECLARED PACKAGE WITH NO DARWIN BUILD ABORTS THE LAUNCH, NAMING IT
-// (docs/plans/macos-revival-and-distribution-plan.md, A2).
+// (docs/reference/macos-user-nix-and-features.md, "Ordering, and what aborts"; DP-D11).
 //
 // THE GAP. A2 piece 1 shipped on 2026-09-04: a `packages:` entry the darwin flake eval skips is
 // FATAL, raised host-side after the eval (internal/macosuser/orchestrator.go, the "These packages

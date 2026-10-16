@@ -926,7 +926,7 @@ file in flux. Every task runs `just format` before its commit and stages only it
 - `docs/reference/macos-user-provisioning.md` `~:227` to `~:267` and the paths table `~:764` to
   `~:766`: the run-as argv with `-n` and `/usr/bin/sudo`, the host-owned files and modes, the
   teardown and sweep without root, the legacy sweep.
-- `docs/plans/runbooks/mac-macos-user-e2e.md`: the [owner's check](#the-owners-mac) as a section.
+- `docs/plans/runbooks/macos-user-manual-checks.md`: the [owner's check](#the-owners-mac) as a section.
 - `CHANGELOG.md` `[Unreleased]`: under `### Changed`, one bold-lead entry and the one action:
   "**macos-user launches no longer ask for a password.** Run `yolo macos-setup` once after
   upgrading; it asks for your admin password and installs one rule that runs commands as the

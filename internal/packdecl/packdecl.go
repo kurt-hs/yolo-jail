@@ -315,6 +315,10 @@ type Install struct {
 	// fields of the same names carry the grammar.
 	Patches string `json:"patches,omitempty"`
 	Follow  string `json:"follow,omitempty"`
+	// PatchBranch is a PATCH BRANCH fork's (docs/design/patched-forks.md §3.5): the patch branch repository and branch
+	// as the fork writes it, in place of Patches. The Contribution field of the same name carries the
+	// grammar.
+	PatchBranch string `json:"patch_branch,omitempty"`
 	// ForkedBy names the fork pack whose build this program is, "" for every program that is
 	// not a fork's. Provenance only: every line that says what a source-built program is names
 	// the pack that supplied its bytes, not only the pack that owns its name.
@@ -394,7 +398,7 @@ type Refresh struct {
 	// Pi installs a newly configured extension itself, at startup, whenever the refresh is not
 	// due; per workspace that was harmless, but a machine-shared store makes it two jails
 	// cloning one checkout at once, where the loser's cleanup deletes the winner's tree
-	// (docs/design/pi-git-extension-caching.md, "The first-install race"). Watching the file
+	// (docs/reference/pack-system.md, `program`, "the first-install race"). Watching the file
 	// that names the add-ons routes their first install through the locked refresh.
 	//
 	// CONTENT, not mtime: yolo rewrites a composed config file on every boot, so its mtime

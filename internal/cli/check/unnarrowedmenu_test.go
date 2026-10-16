@@ -78,7 +78,7 @@ func TestCheckSaysTheSwitchLeavesOpencodesSubscriptionMenuUnnarrowed(t *testing.
 }
 
 // NOTHING TO SAY: the switch on (the shipped `zai` profile says nothing, so it is on), a list no
-// `only` narrowed (what an `add` shows is OQ-MM1's and refuses nothing either way), and an agent
+// `only` narrowed (an `add` sits beside the agent's catalog, OQ-MM1, and refuses nothing), and an agent
 // whose pack declares no refusing menu (pi narrows by registration, with or without the switch).
 func TestCheckSaysNothingWhereTheSwitchDoesNotDecideTheMenu(t *testing.T) {
 	for _, tc := range []struct{ name, models, agent, profile string }{

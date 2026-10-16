@@ -2,23 +2,21 @@
 title: "What only a Mac can verify"
 status: accepted
 stage: CURRENT
-next: "Record item 1's twin as run, in §0.1's map and in item 1: the 2026-10-03 scheduled macos-user.yml run (GitHub Actions run 37121866798, at 0e34798c6) passed TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace. Then write item 2's automated twin, a launch whose probe reads a mode-0644 file the host user made for it (§0.5)"
+next: "Write item 4's automated twin (§0.5): a launch with a pack selected that reads ~/.claude/skills and the briefing's first line, asserting a named subset rather than a count. Then the open threads at the end of this file"
 ---
 
 # What only a Mac can verify
 
-**Status:** what only a Mac can verify; seven of the ten items now have an automated twin on the
-scheduled `macos-user.yml` job, item 1's written on 2026-10-01 and not yet run there.
+**Status:** what only a Mac can verify; eight of the ten items now have an automated twin on the
+scheduled `macos-user.yml` job, and items 1's and 2's, the last two written, have both passed there.
 
 
 **Audience:** whoever has a Mac and five minutes — and, since 2026-09-12, a nightly CI
-job that stands in for them on six of the ten items below, with a seventh twin (item 1's,
-written 2026-10-01) scheduled there and not yet run.
+job that stands in for them on eight of the ten items below.
 
 > [!IMPORTANT]
 > **This file was called *What only a Mac with a password can verify*, and the title had
-> to go.** Six items run unattended on a Mac with **no** password, and item 1's twin is
-> written for the same host — a host with
+> to go.** Eight items run unattended on a Mac with **no** password — a host with
 > passwordless `sudo`, which is what a GitHub-hosted macOS runner is. The password was
 > never a property of the backend; it was a property of the maintainer's laptop. What is
 > irreducible is the **Mac**, and for three items a **human at a keyboard**.
@@ -63,12 +61,12 @@ What remains needs either root, a kernel, or a human at a password prompt.
 > exists.** Its wiring defect was closed on 2026-09-13, and on 2026-09-25 yolo stopped installing
 > language servers on every backend ([`OQ-LSP1`](../../reference/mcp-configuration.md#oq-lsp1)),
 > so the subtest went with the recipe table it tested and item 9 is `mise_tools` only. The remaining open threads are
-> collected in [`../handoff-macos-user-open-threads.md`](../handoff-macos-user-open-threads.md).
+> collected in [Open threads from the first hardware run](#open-threads-from-the-first-hardware-run).
 >
-> ⚠ **Defect 2 is why "single-line is immune" was wrong** (it was published in what is now
-> [the Mac measurements runbook's ordering
-> note](mac-provisioner-measurements.md#why-no-linux-jail-can-answer-these-and-how-the-five-are-ordered),
-> which carries the retraction): single-line survives the newline half only. Any forwarded command
+> ⚠ **Defect 2 is why "single-line is immune" was wrong** (it was published in the Mac provisioner-measurements runbook, deleted 2026-10-16;
+> the retraction now lives in [no `sudo --login` anywhere in this
+> backend](../../reference/macos-user-provisioning.md#no-sudo---login-anywhere-in-this-backend)):
+> single-line survives the newline half only. Any forwarded command
 > containing a shell variable was silently rewritten. Item 6 could not be measured at all until
 > its probe was rewritten without variables — and after the fix, the item's own spelling works.
 
@@ -121,8 +119,8 @@ rather than by a list somebody maintains.
 
 | # | Automated twin | Still a human's, and why |
 |---|---|---|
-| 1 | `TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace` (written 2026-10-01, not yet run on a Mac) | nothing of the item itself; the one sudo prompt is a human's only on a Mac whose sudo asks |
-| 2 | none | all of it — and ⚠ one of its two probes proves nothing; see the item |
+| 1 | `TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace` (written 2026-10-01, passed on the scheduled job 2026-10-03) | nothing of the item itself; the one sudo prompt is a human's only on a Mac whose sudo asks |
+| 2 | `TestMacosUserLaunchDeniesReadOfHost0644File` (written 2026-10-13, passed on the scheduled job 2026-10-15) | nothing of the denial; the item's own two probes stay a human's smoke test, and ⚠ one of them proves nothing; see the item |
 | 3 | partly: `TestMacosUserFloorReachesTheSandboxPath` makes the same re-prepend assertion for the packages the FLOOR declares | naming a package **your own config** declares, which is what the acceptance bar is about |
 | 4 | none | all of it. Needs a launch with a pack selected; nobody has written it |
 | 5 | `TestMacosUserHomeTierIsPerWorkspace` | nothing of the item itself |
@@ -132,9 +130,8 @@ rather than by a list somebody maintains.
 | 9 | `TestMacosUserDeclaredToolsArrive` (three subtests, one launch) | nothing. Its fourth subtest, `lsp_servers`, was deleted on 2026-09-25 with the LSP install recipes; see the item |
 | 10 | (a) `TestMacosUserLayoutRefusesAnOccupiedSidecarMirror` | (b) never, deliberately: it poisons an account home permanently |
 
-Seven of the ten have an unattended twin, item 1's written on 2026-10-01 and not yet run on a
-Mac. **Three do not, and one of those three is the one that establishes the backend is a
-sandbox at all** (item 2).
+Eight of the ten have an unattended twin, item 2's among them, which is the one that
+establishes the backend is a sandbox at all. **Two do not**: item 3 only partly, and item 4.
 
 ### 0.2 The job that runs them
 
@@ -222,11 +219,16 @@ Not a gap to be lamented; a piece of work nobody has done. All four are automata
 passwordless host the other six need, and items 1, 2 and 4 could share one launch's probes:
 
 - **1** — `whoami` is `_yolojail` and `pwd` is the workspace. Two assertions on one probe.
+  **Written and passed**; see item 1.
 - **2** — a file the host user creates for the purpose, mode 0644, plus the keychain path. Not
-  the `~/.ssh` line, and the item says why.
+  the `~/.ssh` line, and the item says why. **Written and passed**; see item 2.
 - **3** — a workspace whose `packages:` declares one non-floor package, and one extra darwin
   derivation to build. The only one of the four with a cost beyond the launch.
 - **4** — a launch with a pack selected, then `~/.claude/skills` and the briefing's first line.
+  ⚠ **It must not assert a skill COUNT.** Item 4's two runs recorded fourteen and thirteen, and
+  both were right: `developing-yolo-jail` is the source-tree-only skill, and the second run used
+  a workspace that is not this repo. Assert a named subset plus the source-tree skill's presence
+  *keyed on the workspace*, or the test encodes a bug.
 
 ### 0.6 The FIRST run is different, and the section above does not apply to it
 
@@ -298,8 +300,9 @@ self-exec'd as that user (`internal/macosuser/runplan.go` builds both argvs).
 > `TestMacosUserLaunchRunsAsTheSandboxAccountInTheWorkspace`
 > (`integration/macosuseridentity_test.go`), on the same passwordless host the other twins
 > require ([§0.5](#05-what-would-close-items-1-4)). It asserts the item's two facts on one probe,
-> plus `id -un`, the uid the host resolves for `_yolojail`, and `$HOME`. UNMEASURED until the
-> scheduled job runs it on a Mac.
+> plus `id -un`, the uid the host resolves for `_yolojail`, and `$HOME`.
+> `TestMacosUserIdentityProbeParsesAnUnsandboxedRun` runs the same probe unsandboxed under
+> `-short`. **Passed** on the scheduled job's 2026-10-03 run (GitHub Actions run 37121866798).
 
 ## 2. Seatbelt is actually applied
 
@@ -353,8 +356,15 @@ The `~/.ssh` line was deliberately not run, per the ⚠ below.
 > construction rather than by a claim about somebody's home directory.
 
 > [!NOTE]
-> **No automated twin.** This is the item that says the backend is a sandbox, and it is the one
-> the nightly does not make ([§0.5](#05-what-would-close-items-1-4)).
+> **The automated twin was written on 2026-10-13**: `TestMacosUserLaunchDeniesReadOfHost0644File`
+> (`integration/macosuserread0644_test.go`) launches the real sandbox against a host-created
+> **mode-0644 harmless marker** under `/Users/Shared`, outside the workspace and the home. The
+> same sandbox account first reads it without Seatbelt, which excludes the POSIX layer as the
+> cause of the refusal. **0644 is the marker's mode, not the profile's**: the production
+> root-owned Seatbelt profile remains 0444. `TestMacosUserRead0644ProbeReadsUnsandboxedFixture`
+> checks the fixture's permissions, path quoting and probe parser on Linux, with a failed-read
+> control; that is not Seatbelt verification. **Passed** on the scheduled job's 2026-10-15 run
+> (GitHub Actions run 38733308150), the first native execution.
 
 ## 3. The acceptance bar — `packages:` reaches the agent
 
@@ -379,13 +389,20 @@ $ YOLO_RUNTIME=macos-user yolo -- bash -lc 'which just'   # or any declared pack
 > outing and got that non-answer. Use a package the config declares, or the check
 > cannot distinguish "nix delivered it" from "macOS already had it".
 
+<a id="OQ-1"></a>**[OQ-1](#OQ-1), the `path_helper` question.** A login shell (`bash -l`, `zsh -l`, and the
+default `zsh` REPL) runs macOS `path_helper`, which puts the system paths (`/usr/local/bin`,
+`/opt/homebrew/bin`) ahead of the sandbox PATH. The darwin bootstrap writes `.zprofile`, `.zshrc`
+and `.bash_profile` so that the sandbox PATH is prepended again after it. The question asked whether that
+re-prepend wins on real hardware, and this item is its check. It was filed in the Go-port Mac
+runbook (deleted 2026-10-16) and answered yes on 2026-07-21, 2026-09-10 and 2026-09-12.
+
 This is the backend's founding requirement — it honors `packages:` via native nix or
 it does not ship. It exercises the whole native chain in one command: the build, the
 GC root, the PATH prefix, and the login-rc re-prepend surviving macOS `path_helper`
-(the [OQ-1](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) question). A Homebrew path here means the re-prepend lost.
+(the [OQ-1](#OQ-1) question). A Homebrew path here means the re-prepend lost.
 
 **PASSED 2026-09-10**, same session as items 1 and 2, and it answers
-[`OQ-1`](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown):
+[`OQ-1`](#OQ-1):
 the re-prepend HOLDS. Both declared packages resolved into the store profile —
 
 ```
@@ -405,7 +422,7 @@ to `/nix/store/…-yolo-noncontainer-profile/bin/fzf` (Homebrew's copy still pre
 beaten), so the re-prepend holds now that its value arrives as `$YOLO_DARWIN_LOGIN_PATH` rather
 than baked. **Then measured a second time**, deliberately, as the regression check on the
 `--login` removal (defect 2): same answer, which is what proved
-[`OQ-1`](mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown)
+[`OQ-1`](#OQ-1)
 never depended on that flag. Note the profile's name has changed since the 2026-09-10 record —
 `yolo-noncontainer-profile`, was `yolo-noncontainer-packages`.
 
@@ -578,8 +595,8 @@ Apple's own binary answering.
 
 > [!WARNING]
 > ⚠ **THIS ITEM COULD NOT BE MEASURED AT ALL ON ITS FIRST ATTEMPT, and finding out why is what
-> exposed defect 2.** The command above is single-line, which [the Mac measurements
-> runbook](mac-provisioner-measurements.md#why-no-linux-jail-can-answer-these-and-how-the-five-are-ordered)
+> exposed defect 2.** The command above is single-line, which the Mac provisioner-measurements
+> runbook (deleted 2026-10-16)
 > said was immune to the forwarding defect. It is not: sudo(8) leaves **dollar signs** unescaped as well,
 > so an intermediate login shell expanded `$b` and `$(command -v $b)` against an empty
 > environment and the probe printed **nine blank lines** — with exit 0, the failure mode this
@@ -863,6 +880,62 @@ route.
 > poisoned account home** whose only remedy destroys the machine tier the shared-credentials hook
 > exists to preserve. No CI job should be able to reach that state by accident, on a Mac that
 > belongs to somebody. If it is ever run, it is run on a machine nobody cares about.
+
+---
+
+## Open threads from the first hardware run
+
+The 2026-09-12 session left these open. None is a product defect that a Mac has shown; each is
+either test design or a hardware observation owed by a fix written off a Mac. Item 8's
+`sandbox-exec` seam and item 10's never-automate ruling are recorded at those items.
+
+### The twin suite is not idempotent on a persistent Mac
+
+Every twin launches into its own workspace, and a launch repoints the **machine-scope** account
+home's layout symlinks at that workspace. The test then deletes the workspace, leaving
+`/Users/_yolojail`'s links dangling for whatever runs next. A launch no longer refuses over a
+stale link it does not declare, and `ensureLayoutSymlink` repoints a link yolo wrote on the next
+launch, so the suite is green; but the account home's last state is whichever test ran last. A
+GitHub-hosted runner is fresh every night and never sees it; the maintainer's Mac saw three
+tests fail on residue an earlier test in the same run had left.
+
+**What to weigh, not yet decided:** a `t.Cleanup` that removes the links a test's launch created
+is the obvious move, but the links are a shared, machine-scope resource, and a cleanup that
+deletes the wrong link would brick a developer's account home rather than a temporary
+directory. The safer shape may be one launch-shaped fixture the whole file shares. Either way,
+ask of the test: **does it fail if the cleanup is deleted?**
+
+### Credentials moved off the sandbox argvs
+
+Until 2026-09-13 every composed credential (hydrated `env_sources`, provider credentials, the
+pack env fold) rode the launch, provisioning and capture-driver argvs in cleartext, because
+`sudo` scrubs the environment. They now ride the root-owned `0600` session env file the argvs
+are wrapped to read ([the session env
+file](../../reference/macos-user-provisioning.md#the-session-env-file-is-the-stages-environment)),
+and `SandboxArgvEnvProblems` refuses any key outside a closed allowlist. `chmod +a` is an Apple
+ACL extension, so the next hardware pass owes:
+
+- the env file's mode and its read ACE for `_yolojail`, as they land on a real Mac;
+- whether another account, and separately the invoking user whose `sudo` started it, can read a
+  sandbox process's argv on macOS (`sysctl kern.procargs2`; on Linux `/proc/<pid>/cmdline` is
+  world-readable, which is why the fix landed regardless);
+- whether `sudo` records the `K=V` words of an argv it authorized in that Mac's unified log,
+  which depends on the machine's sudoers.
+
+**Deliberately not covered:** the bootstrap argv, which carries the darwin bootstrap's wire
+tables rather than composed values. Its one residual is `YOLO_MCP_SERVERS`: an `mcp_servers`
+entry may hold a literal key in its `env` block, and that JSON rides the bootstrap argv here and
+the podman `-e` line on the container backends. It is a cross-backend question about config
+literals, left open; the config's `${VAR}` placeholder hydrated from `env_sources` already
+points away from it.
+
+### Launch output reaches the launch log
+
+Until 2026-09-17 nothing the macos-user backend printed reached `<workspace>/.yolo/launch.log`:
+the dry-run plan, the Seatbelt profile, the argvs, the warnings and the pack banners were on the
+terminal only. `macosuser.SetLaunchWriter` now publishes the pipeline's tee to the backend. A Mac
+still owes one observation: that a live launch's plan, profile and argv lines actually land in
+the file.
 
 ---
 

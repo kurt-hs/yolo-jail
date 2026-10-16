@@ -14,7 +14,7 @@ package wirebridged
 // for anyone; and a port the bridge does not hold yet is one such a process can take first, so
 // a client that sends its real credential
 // there hands it over. Claude sends its saved login's OAuth bearer to whatever
-// ANTHROPIC_BASE_URL names when no ANTHROPIC_AUTH_TOKEN is set (agent-auth-modes.md §8.1).
+// ANTHROPIC_BASE_URL names when no ANTHROPIC_AUTH_TOKEN is set (docs/reference/wire-bridge.md, "Caller authentication").
 //
 // THE TOKEN. The launcher mints it per launch (crypto/rand, 256 bits), an attach reuses the
 // running jail's, and it reaches this daemon through the same 0600 per-entry channel the

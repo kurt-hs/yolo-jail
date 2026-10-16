@@ -1,6 +1,6 @@
 package entrypoint
 
-// pimodelsproviders_test.go pins HC-D1 (docs/design/host-computed-layer.md §7): every
+// pimodelsproviders_test.go pins HC-D1 (docs/reference/host-agent-environment.md): every
 // ~/.pi/agent/models.json yolo writes carries an object-valued `providers`.
 //
 // pi 0.87.1's ModelsConfigSchema REQUIRES `providers` (dist/core/model-config.js), so a

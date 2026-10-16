@@ -48,7 +48,7 @@ import (
 // docs/design/host-daemon-ownership.md).
 //
 // First consumer: packs/aws-auth, whose daemon answers with the mint failure that would fail
-// the jail's first Bedrock request (docs/design/sso-backed-bedrock.md SSO-D1).
+// the jail's first Bedrock request (docs/reference/agent-credentials.md SSO-D1).
 
 // LaunchCheckAction is the launch check's `action`.
 const LaunchCheckAction = "launch-check"

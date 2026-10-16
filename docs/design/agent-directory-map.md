@@ -261,7 +261,7 @@ exist:
 
 | Finding | When | Printed |
 | :--- | :--- | :--- |
-| **dangling link** | the entry is a [dangling link](#terms-in-plain-words). Two cases are exempt: a laid link ([§3.6](#36-the-hard-cases)), and a **composed file at the host notch** whose chain ends in a directory that exists, because host apply creates the file through the link ([HC-D4](host-computed-layer.md#HC-D4)). Nothing else is exempt, and a directory entry never is | every time ([P5](#1-the-verdict-and-the-principles-it-rests-on)) |
+| **dangling link** | the entry is a [dangling link](#terms-in-plain-words). Two cases are exempt: a laid link ([§3.6](#36-the-hard-cases)), and a **composed file at the host notch** whose chain ends in a directory that exists, because host apply creates the file through the link ([HC-D4](../reference/host-agent-environment.md#HC-D4)). Nothing else is exempt, and a directory entry never is | every time ([P5](#1-the-verdict-and-the-principles-it-rests-on)) |
 | **wrong type** | the entry's declared shape (a trailing `/` means a directory) differs from what it **resolves to**: for a plain entry its `Lstat` type, and for a link the type where its chain ends. A link at `npm/` that ends at a regular file is wrong type. A dangling link has no resolved type, so it is reported as dangling only | every time |
 | **shadow** | an entry declared `shadows: <path>` is present, so the agent loads it **instead of** a composed file | every time |
 | **relocated** | a variable the entry names as relocating it is set in the agent's environment, so the agent reads somewhere else while yolo still writes the literal path. **A variable yolo's own launch sets is never this finding**: the directory it names is a derived root ([AM-D6](#AM-D6)) | every time, once per variable |
@@ -270,7 +270,7 @@ exist:
 **Why the destination rule is not reused unchanged.** `FindBrokenLink` exempts a link at the
 destination itself whenever the directory holding its target exists
 ([`hostbrokenlink.go`](../../internal/entrypoint/hostbrokenlink.go)). That exemption was made for a
-file host apply writes through ([HC-D4](host-computed-layer.md#HC-D4)), and it holds only there. For a
+file host apply writes through ([HC-D4](../reference/host-agent-environment.md#HC-D4)), and it holds only there. For a
 directory it hides the incident's own crash: with `npm -> dot/npm`, `dot/` present and `dot/npm`
 absent, pi's `ensureNpmProject` sees `existsSync` false, and then `mkdirSync` and `writeFileSync`
 both fail `ENOENT`, which is the error pi crashed with. The maintainer's links broke one after
@@ -749,7 +749,7 @@ this doc's survey ([Appendix A](#appendix-a-evidence)).
   **authoring aid**, offline, never at runtime ([§10](#10-alternatives-considered)).
 - **`skills/`**: composed, with vendor-owned children. `synced` is already `reserved`. The bundle's
   sync-owned prefixes make `.trash` and `.staging` **siblings** of `synced`, while
-  [`synced-skill-trees.md` §2.3](synced-skill-trees.md#23-reserved-siblings) says they are **inside**
+  [`pack-system.md`'s record of the sync root](../reference/pack-system.md#sync-root-reserved-siblings) says they are **inside**
   it. Measure which before the slice. `.trash` holds recoverable skills, so it is state.
 - **Credentials in four places**, and one of them has no path: `.credentials.json` (laid in a jail,
   and a credential by derivation from the claude pack's `shared_credentials` hook, so the claude map
@@ -1131,7 +1131,7 @@ first row and are independent of the map.
 | <a id="AM-D2"></a>AM-D2 | Composed, laid and retired are derived. The closed class set cannot spell them, so plain validation refuses them as unknown classes; an entry at a composed, laid or retired path is expected and never refused, and carries the vendor's class there. The one "declared twice" refusal is a `credential` mark that the same pack's `shared_credentials` hook already derives | 2026-09-28 | [§3.2](#32-derived-statuses-what-yolo-does-to-the-path-at-this-notch), [§5.2](#52-what-the-map-derives-and-from-where) | — |
 | <a id="AM-D3"></a>AM-D3 | The evaluator uses `ReadDir` and `Lstat`, plus `Readlink` and `Stat` along one link's chain to classify that link. It never opens a file, never descends through a link below a root, and never writes under one | 2026-09-28 | [§8](#8-degenerate-inputs-failure-paths-and-forbidden-behavior) | — |
 | <a id="AM-D4"></a>AM-D4 | A foreign link that resolves is classified by its name and is not a finding. Only a dangling link is, plus a link at a `no_link` entry from the claude slice on. This refines the proposal's "foreign symlink" | 2026-09-28 | [§3.3](#33-unexplained-and-the-structural-findings) | — |
-| <a id="AM-D5"></a>AM-D5 | The map's finding is the **dangling link**, not `FindBrokenLink`'s broken link reused unchanged: that predicate's exemption for a link whose target's directory exists holds only for a composed file at the host notch, which host apply creates through the link ([HC-D4](host-computed-layer.md#HC-D4)), and never for a directory entry. Wrong type compares the declared shape against the link's resolved type. The link-chain walk is one shared implementation, not a second copy | 2026-09-28 | [§3.3](#33-unexplained-and-the-structural-findings) | — |
+| <a id="AM-D5"></a>AM-D5 | The map's finding is the **dangling link**, not `FindBrokenLink`'s broken link reused unchanged: that predicate's exemption for a link whose target's directory exists holds only for a composed file at the host notch, which host apply creates through the link ([HC-D4](../reference/host-agent-environment.md#HC-D4)), and never for a directory entry. Wrong type compares the declared shape against the link's resolved type. The link-chain walk is one shared implementation, not a second copy | 2026-09-28 | [§3.3](#33-unexplained-and-the-structural-findings) | — |
 | <a id="AM-D6"></a>AM-D6 | A vendor relocation variable **the user sets** is named, not followed. The entry is not walked, and the finding says yolo still writes the literal path. One that **yolo's own launch sets** is never a finding: the directory it names is a derived root ([AM-D13](#AM-D13)) | 2026-09-28 | [§3.5](#35-marks-and-attributes-on-an-entry) | — |
 | <a id="AM-D7"></a>AM-D7 | The map runs at every `host_management` value, `none` included | 2026-09-28 | [§4.1](#41-where-the-map-is-evaluated) | — |
 | <a id="AM-D8"></a>AM-D8 | The most specific entry wins. An equal-specificity conflict is skipped with a warning and is never fatal | 2026-09-28 | [§5.3](#53-the-shape-at-altitude) | — |

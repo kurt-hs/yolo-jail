@@ -87,7 +87,7 @@ func openAIAuthLoopholeActive(cfg *jsonx.OrderedMap) bool {
 // packloopholes.go carries the whole reasoning at the line that used to hold the branch.
 //
 // WHAT WAS DELIBERATELY NOT DONE WITH IT, so the next reader does not take it for an
-// oversight: openai-auth-broker-plan.md's step 10 also proposes WITHHOLDING
+// oversight: the OpenAI broker plan's step 10 (deleted 2026-10-16) also proposed WITHHOLDING
 // `YOLO_SERVICE_OPENAI_AUTH_BROKER_ENDPOINT` on Apple Container. That is not done here, and
 // the reason is not scope:
 //

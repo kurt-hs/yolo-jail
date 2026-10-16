@@ -82,6 +82,22 @@ type DeriveCtx struct {
 	// the agent's own choice of model stays untouched.
 	Profile map[string]string
 
+	// Saved is the surface file's own top-level STRING values as the file holds them before
+	// this render writes it, exposed as ctx.saved (always a table, empty when the file is
+	// absent or undecodable, or the call renders no surface). It exists for a selection value
+	// computed from the agent's previous choice: claude's saved `model` is written, on a
+	// provider change, as the previous model's equivalent on the new provider
+	// (docs/design/model-lists-and-pickers.md MM-D43). Strings only, and top level only,
+	// because that is all a selection key is; nested tables (claude's `env`) never cross.
+	Saved map[string]string
+
+	// SavedTrigger is the selection trigger the surface's selection record holds from the last
+	// render (agentcfg.SelectionTriggerKey), exposed as ctx.saved_trigger; "" when none is
+	// recorded. A derive whose trigger has parts reads it to tell WHICH part changed: claude's
+	// writes the new profile's model when only the profile's `model` moved, and the previous
+	// model's equivalent when the provider or route did (model-lists-and-pickers.md MM-D44).
+	SavedTrigger string
+
 	// ActiveSet is the agent's whole ACTIVE SET (docs/design/active-provider-sets.md §4.3: the
 	// ordered list of profiles one agent runs on for one launch, a term that doc coins), exposed
 	// as ctx.active_set: one table per entry, in set order, with the entry's profile_name, the
@@ -181,6 +197,14 @@ type DeriveCtx struct {
 	// empty table to the derive, so an entrypoint older than the field hands every derive the
 	// world before the ruling.
 	BuiltInProviders map[string]BuiltInProvider
+
+	// ReadsSharedModels is what the agent's own pack declares about the model file its program
+	// reads (packdecl.Contribution.ReadsSharedModels, read through packload.ReadsSharedModels
+	// by bin ownership, as BuiltInProviders is), exposed as ctx.reads_shared_models: true when
+	// the program reads the shared form, `sharedModels` with rows saying `extends`
+	// (docs/design/model-lists-and-pickers.md ML-D11). False, the zero value, asks for every
+	// row in full.
+	ReadsSharedModels bool
 
 	// UnknownAPI, when non-nil, makes an unknown `yolo.<name>` member TOLERATED
 	// instead of fatal, and is the callback that reports each one (once per name per
@@ -688,6 +712,14 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		L.SetField(profile, k, lua.LString(ctx.Profile[k]))
 	}
 	L.SetField(t, "profile", profile)
+	// ctx.saved, always a table (DeriveCtx.Saved): the surface file's own top-level string
+	// values before this render. Keys sorted for the reason ctx.profile's are.
+	saved := L.NewTable()
+	for _, k := range sortedStringKeys(ctx.Saved) {
+		L.SetField(saved, k, lua.LString(ctx.Saved[k]))
+	}
+	L.SetField(t, "saved", saved)
+	L.SetField(t, "saved_trigger", lua.LString(ctx.SavedTrigger))
 	// ctx.active_set, always a list: one table per entry of the agent's active set, in order,
 	// each with the fields ctx carries for the primary (profile_name, the selected provider as
 	// `provider`, its row's `platform`, the option map as `profile`, and its profile's
@@ -734,6 +766,8 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		L.SetField(builtIn, name, own)
 	}
 	L.SetField(t, "built_in_providers", builtIn)
+	// ctx.reads_shared_models, always a boolean (DeriveCtx.ReadsSharedModels).
+	L.SetField(t, "reads_shared_models", lua.LBool(ctx.ReadsSharedModels))
 	have := sourceCapabilities(ctx)
 	for _, src := range knownDeriveSources {
 		table := ctx.Tables[src]
@@ -747,9 +781,61 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		if err != nil {
 			return nil, fmt.Errorf("luahook: marshalling ctx.%s: %w", src, err)
 		}
+		if src == sourceProviders {
+			if lt, ok := lv.(*lua.LTable); ok {
+				markModelFactTombstones(L, lt, table, sentinel)
+			}
+		}
 		L.SetField(t, src, lv)
 	}
 	return t, nil
+}
+
+// markModelFactTombstones sets ctx.tombstone in lt wherever the providers table holds a null
+// model FACT: under `model_options.<alias>.<fact>` and `model_shared.<name>.<fact>`. A null there
+// is a tombstone (docs/design/model-lists-and-pickers.md ML-D10), "this model has no such fact",
+// and a Lua table cannot hold nil, so goToLua alone would make it an absent key, which means the
+// opposite: inherit. Nowhere else in the table is a null touched: a null option default, for one,
+// still reads as absent, as every derive was written to expect.
+func markModelFactTombstones(L *lua.LState, lt *lua.LTable, providers map[string]any, sentinel *lua.LUserData) {
+	for name, pv := range providers {
+		entry, ok := pv.(map[string]any)
+		if !ok {
+			continue
+		}
+		lentry, ok := lt.RawGetString(name).(*lua.LTable)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"model_options", "model_shared"} {
+			byAlias, ok := entry[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			for alias, fv := range byAlias {
+				facts, ok := fv.(map[string]any)
+				if !ok {
+					continue
+				}
+				for fact, v := range facts {
+					if v != nil {
+						continue
+					}
+					group, _ := lentry.RawGetString(key).(*lua.LTable)
+					if group == nil {
+						group = L.NewTable()
+						lentry.RawSetString(key, group)
+					}
+					row, _ := group.RawGetString(alias).(*lua.LTable)
+					if row == nil {
+						row = L.NewTable()
+						group.RawSetString(alias, row)
+					}
+					row.RawSetString(fact, sentinel)
+				}
+			}
+		}
+	}
 }
 
 // selectedPlatform is the `platform` of the selected provider's row in ctx's providers table,
@@ -775,7 +861,7 @@ func providerPlatform(ctx *DeriveCtx, provider string) string {
 }
 
 // sourceCapabilities resolves the ACTIVE authentication source's capability set —
-// agent-auth-modes.md §6.1's "if the active agent/mode already has capability C" — as a
+// mcp-configuration.md's capability-driven MCP delivery ("if the active agent/mode already has capability C") — as a
 // set, for eligibleMCPServers to ask membership of.
 //
 // An authentication source (docs/reference/mcp-configuration.md#authentication-source)

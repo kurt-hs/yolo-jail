@@ -1,6 +1,6 @@
 package cli
 
-// hostapplymcpremedy_test.go pins HC-D2 (docs/design/host-computed-layer.md §7): the remedy a
+// hostapplymcpremedy_test.go pins HC-D2 (docs/reference/host-agent-environment.md): the remedy a
 // host apply prints for a dropped MCP entry is one that KEEPS the entry at the host.
 //
 // HC-D2 first made it name a per-surface `config-overlay`, because `mcp_servers` reached no

@@ -53,7 +53,7 @@ away anything it already shows? Bedrock cost is a later design ([Later](#later-c
 [`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#OQ-BR11)) and
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the bridge signer [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) and
 subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
-[`handoff-guest-notch-macos.md`](../plans/handoff-guest-notch-macos.md) (the three notches, and why `guest` was unbuilt; on macOS it launches since 2026-10-04).
+[`confinement.md`](../../userguide/guides/confinement.md) (the three notches; `guest` launches on macOS since 2026-10-04) and [`environment-manager-plan.md`](../plans/environment-manager-plan.md) Phase 7 (why `guest` was unbuilt, and what it still owes).
 
 ## Settled questions
 
@@ -79,7 +79,7 @@ subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
 - **Notch**: one setting of yolo's `confinement` dial: `jail` (a container, the default), `guest` (a confined real
   home: on macOS the macos-user backend, not built on Linux) or `host` (your real machine, where `yolo host apply` writes your agents' config and
   `yolo host -- <agent>` launches one)
-  ([the three notches](../plans/handoff-guest-notch-macos.md#1-what-the-three-notches-are-and-why-the-middle-one-matters)).
+  ([the three notches](../../userguide/guides/confinement.md)).
 - **Adapter** *(coined here)*: the per-agent piece an agent pack ships to connect the renderer to that agent's hook,
   through a **contribution kind**: one of the fixed kinds of thing a manifest may add
   ([`pack-system.md`](../reference/pack-system.md)).

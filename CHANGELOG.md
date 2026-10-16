@@ -10,11 +10,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
+- A model list with no `only` no longer refuses a model you type; it goes to the provider. pi's child agents may use any model of their provider unless an `only` narrows the list.
+- Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
+
 ### Added
 
 **A launch says when the jail has no internet.** If nothing outside answers, the launch warns,
 names what failed, and gives the next step for your setup, such as restarting Apple Container's
 services. See [Troubleshooting](userguide/guides/troubleshooting.md).
+
+**Keep your patches on a branch.** A patched fork or pi extension can name a `patch_branch` in
+place of `patches`; yolo merges it into each new upstream version and names the conflicting files
+when it does not merge. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
+
+**pi model facts merge instead of replace.** A model row keeps every fact from pi's catalog it does
+not state, such as thinking levels; `null` removes one, and `model_facts` with `extends` shares a
+model's facts across providers with per-provider overrides. See `yolo config-ref`.
+
+- A company list that only adds models now shows in Claude Code after Claude's own models.
 
 ### Fixed
 

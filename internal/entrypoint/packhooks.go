@@ -223,7 +223,7 @@ func (e *Env) linkSharedDirectory(p *packload.Pack, h packdecl.Hook) error {
 // to any other target, or an absent path are all left untouched, and the store the link
 // pointed at is never read or removed: on a machine it is every other workspace's view too,
 // until each of them boots once. First used for pi's git checkouts
-// (docs/design/pi-git-extension-caching.md §3.5), reverting c402dd43's shared store, and since
+// (docs/design/pi-extension-store-builds.md, "The held store"), reverting c402dd43's shared store, and since
 // XB-D14 of docs/design/pi-extension-store-builds.md for pi's npm prefix too. The host's launch
 // says when the old directory is still in the machine store (run.noteRetiredSharedDirs).
 func (e *Env) unshareDirectory(p *packload.Pack, h packdecl.Hook) error {

@@ -1,6 +1,6 @@
 package entrypoint
 
-// hostcreatedfile_test.go pins HC-D4 (docs/design/host-computed-layer.md §7) at the render: a
+// hostcreatedfile_test.go pins HC-D4 (docs/reference/host-agent-environment.md) at the render: a
 // host apply that CREATES a file reports it as a change, in the dry run and in the --assert,
 // through either of an owned host's mechanisms (hostMechanisms).
 //

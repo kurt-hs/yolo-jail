@@ -35,7 +35,7 @@ installed binary or npm bundle in this jail — not just vendor docs, and carrie
 provenance tag saying which. Claims that could not be confirmed from a primary
 source are marked **UNCONFIRMED**.
 
-Companion docs: [`agent-config-distribution.md`](agent-config-distribution.md)
+Companion docs: [`pack-system.md`](../reference/pack-system.md)
 (how config is *shared*; this doc is how it is *pointed*) and
 [`../reference/loopback-tls-reachability.md`](../reference/loopback-tls-reachability.md)
 (why host-reachability is the load-bearing half).
@@ -1134,11 +1134,11 @@ Carry these forward; do not build on them without re-checking.
 
 > IDs use the `LM` prefix (minted 2026-08-23; the only other `OQ-LM*` in the
 > repo is in `docs/plans/roadmap.md`, which points back at these). They were bare numeric ids until then, which collided with the
-> [`OQ-1`](../design/agent-auth-modes.md#12-decision-ledger)…[`OQ-9`](../design/agent-auth-modes.md#12-decision-ledger) in `docs/design/agent-auth-modes.md` — the very doc [OQ-LM1](#oq-lm1) is
+> the nine questions in `docs/design/agent-auth-modes.md` (deleted 2026-10-16) — the very doc [OQ-LM1](#oq-lm1) is
 > about. Nothing outside this file cited the old spellings.
 
 1. <a id="oq-lm1"></a>✅ **OQ-LM1: Is `llm_endpoints` the thin version of B3, or a
-   competing design?** `docs/design/agent-auth-modes.md:60-72` argues that **a
+   competing design?** the since-deleted `docs/design/agent-auth-modes.md` argued (now [`bedrock-plumbing.md`'s P1](../design/bedrock-plumbing.md#1-verdict-and-principles)) that **a
    mode is a bundle** (credential + env + model IDs) and that splitting them is
    exactly how a real switch silently half-lands — that document was written from
    a measured Bedrock→Teams miss. A bare `{base_url, model}` key re-creates that

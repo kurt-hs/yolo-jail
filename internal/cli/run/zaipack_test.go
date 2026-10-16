@@ -1,7 +1,7 @@
 package run
 
 // zaipack_test.go pins the FIRST REAL CONSUMER of the provider/profile pair — the shipped
-// packs/zai (zai-plumbing.md §4 route B, §7's acceptance story) — against the pack the
+// packs/zai (packs/zai/README.md) — against the pack the
 // binary actually embeds rather than a fixture shaped like it. providershapeenv_test.go
 // proves the composition MECHANISM with a hand-written manifest; what only this file can
 // prove is that the manifest zai ships resolves to the facts the design measured: claude
@@ -142,8 +142,8 @@ func TestZaiPackFiresClaudeAtGLM(t *testing.T) {
 	}
 }
 
-// TestZaiPackComposesNoEnvWithoutTheProfile: presence is not selection (zai-plumbing.md §7
-// — "Without -p zai the catalogs still contain zai"). The pack selected and the key hydrated
+// TestZaiPackComposesNoEnvWithoutTheProfile: presence is not selection (packs/zai/README.md,
+// Selection). The pack selected and the key hydrated
 // still puts neither var on the argv, because an unprofiled launch that quietly pointed
 // claude at z.ai would reroute a subscription user without a line saying so.
 func TestZaiPackComposesNoEnvWithoutTheProfile(t *testing.T) {

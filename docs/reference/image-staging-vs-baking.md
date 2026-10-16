@@ -61,8 +61,8 @@ it builds contains none of them.
 | Store-delivered packages, jail half | `internal/entrypoint` (`StoreProfilesEnv`, `StoreFHSProfilesEnv`, `StorePackagesRoot`, `imageProbePath`) |
 | The bundle an install stages | `scripts/stage-source-bundle.sh`, `scripts/build-go.sh` |
 
-**Reads with:** [`nix-across-backends.md`](nix-across-backends.md) (what nix produces for each
-backend, and the `macos-user` path that has no image at all),
+**Reads with:** [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#how-nix-works-here)
+(the `macos-user` path, where nix builds a native profile and there is no image at all),
 [`image-retention.md`](image-retention.md) (which loaded images and GC roots are kept, and why the
 image's constant `created` no longer matters to that),
 [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md)
@@ -350,8 +350,7 @@ and the prefix.
 **In-jail nix on the two container Macs is possible but not planned for now** (ruled 2026-09-24).
 Apple Container never gets the delegation mounts, whatever is set, and podman on macOS gets them
 only with both claims above; the route that would make it work is recorded as a gap rather than
-built. What to use instead, and the `macos-user` path that runs the Mac's own nix client, are in
-[`nix-across-backends.md`](nix-across-backends.md) and
+built. The `macos-user` path, which runs the Mac's own nix client, is in
 [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#nix-inside-the-sandbox).
 
 The refusal is keyed on darwin, not on the runtime, so Apple Container gets it too. That
@@ -360,6 +359,31 @@ launches ran a command in the jail ([Archive destinations](#archive-destinations
 itself has not been watched firing there. Podman on Linux (including the nested jail this repo
 develops in) and macOS podman with `/nix` shared are the other measured arms. `macos-user` needed nothing: it runs no container, loads no image, and its `yolo` is the
 host's own binary. See [`../guides/macos.md`](../../userguide/guides/macos.md#running-a-live-checkout-on-podman).
+
+### The macOS Linux builder, for a Linux reader
+
+An OCI image is a Linux artifact, so a Mac cannot build one natively: on a Mac, nix builds
+Mach-O programs, and any package of the jail image missing from a binary cache has to be built
+on a Linux kernel. When the image build needs that, `AutoLoadImage` offloads it to
+`internal/containerbuilder`, the zero-sudo offload that replaced an earlier VM builder.
+
+It uses nix's ordinary remote-builder mechanism: the host nix daemon connects over SSH
+(`ssh-ng`), runs `nix-daemon --stdio` on the far end, and copies the result back into the local
+store, the same thing as offloading builds to a Linux box on your LAN. `internal/containerbuilder`
+makes that Linux machine a short-lived container on the runtime already running, from an image of
+nix plus sshd; a builder image must contain nix, so nix's own closure is its size floor.
+
+| macOS term | The Linux thing you know |
+| :--- | :--- |
+| launchd, a LaunchDaemon, a LaunchAgent | systemd, a system unit, a `systemd --user` unit |
+| `launchctl` | `systemctl` |
+| Virtualization.framework | KVM: Apple's built-in hypervisor API |
+| nix-darwin | NixOS-style declarative system config layered on macOS; not nix itself |
+| Determinate Nix | a vendor distribution of nix (its own installer and daemon) |
+| Seatbelt (`sandbox-exec`) | roughly seccomp plus namespaces; what macos-user confines with |
+
+`macos-user` needs no Linux builder: it builds natively for the Mac
+([what nix produces there](macos-user-nix-and-features.md#what-nix-produces)).
 
 ### Two halves, two cadences
 
@@ -391,9 +415,12 @@ cannot prove — an unstamped binary, a stamp naming a commit this repo lacks, n
 cannot prove is not one it reports. `macos-user` is exempt: no image, no second binary, nothing
 to skew.
 
-The stamp comes from `scripts/build-go.sh` and `just install` (`-ldflags -X` into
-`internal/version`); the from-source nix build stamps nothing, which is why the in-jail binary
-of a live-checkout nested jail never trips the gate.
+The stamp comes from `scripts/build-go.sh`, `just install` and every flake build (`-ldflags -X`
+into `internal/version`; the flake's `buildStamp`, from its git metadata or a bundle's
+`yolo-build-stamp.json`). So the in-jail `yolo` of a live-checkout jail is stamped with the
+commit its jail was built from, and trips the gate once the tree's HEAD moves through an image
+path: inside a jail, launch a nested jail with the by-path binary `just build-go` writes,
+`/workspace/dist-go/linux-<arch>/yolo`, which is stamped with the current HEAD.
 
 ## What the image bakes
 
@@ -434,6 +461,12 @@ only `mise` itself is baked. Which of these is in the image is documented in
 [`../reference/jail-home.md`](jail-home.md) and
 [`../design/program-delivery.md`](../design/program-delivery.md); this doc owns the two that are
 about the image itself — yolo's binaries, above, and `packages:`, below.
+
+**Nix inside a podman jail on Linux delegates to the host daemon.** When the host runs a nix
+daemon, the launch bind-mounts its socket and the store read-only and sets `NIX_REMOTE=daemon`;
+without that, nix in the jail fails with "build users group has no members". On the two
+container Macs the same mounts are gated as [macOS and the runtime VM](#macos-and-the-runtime-vm)
+describes.
 
 ## The build and load pipeline
 
@@ -495,6 +528,25 @@ A **reload** happens only when the runtime lacks the image for the resulting sto
 decision is `image inspect <content ref>`; the load sentinel only explains *why*. A launch that
 matched [the stock tag](#the-stock-tag-and-the-question-asked-before-the-build) reaches neither:
 it runs the stock ref, and roots the store path its load recorded rather than evaluating one.
+
+### Which packages reach the build
+
+**The declared list is filtered by platform before nix sees it.** An entry may carry
+`platforms`, and `config.EffectivePackages` takes the target platform and drops non-matching
+entries before anything is realized. The image path always asks for Linux, whatever the host is,
+and `macos-user` asks for darwin, so one config yields a different list on each, and a package
+excluded on one platform never appears in the other's skip list. Marking a package Linux-only is
+how a config keeps it in the image and out of a Mac's native profile.
+
+**A package with no Linux build is not filtered out of the baked image.** The flake's
+availability filter (`yoloUnavailablePackages`) covers only the non-container attrs; the image
+path is untouched by it, so such a package fails the image build, which
+[is fatal](#a-failed-build-is-fatal) like any other. A
+[store-delivered](#store-delivered-packages) launch builds through the filtered attr instead and
+refuses when its skip list is non-empty, matching `macos-user`'s
+[A2](macos-user-nix-and-features.md#why-its-this-way): a typo and a package with no build
+are indistinguishable from the skip list, and either way the jail would start without a tool the
+user declared.
 
 ### A failed build is fatal
 
@@ -1444,6 +1496,14 @@ only the stock attributes, so a baked `packages:` user is a cache miss by constr
 delivery is what makes the cache useful to them — complements, not alternatives. `macos-user` has
 no image and nothing to substitute.
 
+**On a Mac** (measured by the macOS nightly on 2026-10-03, `TestMacImageSubstitutesFromCachix` on
+an Intel runner): every Linux path of the stock image is fetched, from `cache.nixos.org` or this
+cache, and no Linux derivation is built, so a Mac needs no Linux builder for the stock image. It
+still builds 13 to 15 small darwin-system helpers locally (nix2container, its JSON metadata and
+three symlink trees), because the flake builds them with the host's package set and only Linux
+runners push. To use a cache name other than `yolo-jail`, change the `nixConfig` URL and key in
+`flake.nix`, the `CACHE` default of `just cachix-push`, and the `CACHIX_CACHE` repository variable.
+
 ## Backends
 
 | Backend | Image | yolo's binaries | `packages:` |
@@ -1451,7 +1511,7 @@ no image and nothing to substitute.
 | podman on Linux | `skopeo copy nix:… containers-storage:…`, layer-negotiated, no archive; on a rootless store inside `podman unshare` and into the store podman reports, named | two `:ro` mounts; prebuilt or `nix build .#installPrefix` | baked, or store-delivered on opt-in |
 | podman on macOS | a [delta archive](#the-delta-archive) — `skopeo copy nix:… oci:…`, tarred, then `podman load -i`, then both are removed; the archive leaves out the layers podman already holds, because the store is inside the Podman Machine VM, which does not share `/nix`, so there is no local store to negotiate with; [measured on an Intel Podman Machine](#archive-destinations) on 2026-09-25. The nix build may offload to a builder container | same mounts; a built (store-path) prefix is refused unless the VM shares `/nix` and `YOLO_NIX_HOST_DAEMON` says so | baked (no shared store) |
 | Apple Container | a [delta archive](#the-delta-archive) — `skopeo copy nix:… oci:…`, tarred, then `container image load -i`, then both are removed; the present set is yolo's own delivery record; [measured on an arm64 Mac](#archive-destinations) on 2026-09-25 | same mounts, `:ro` honored from `container` 1.1.0 and ignored below it; run on hardware from a staged bundle on 2026-09-25 | baked (cannot bind-mount the store) |
-| `macos-user` | none | the host's own binary | a `buildEnv` profile on PATH — [`nix-across-backends.md`](nix-across-backends.md) |
+| `macos-user` | none | the host's own binary | a `buildEnv` profile on PATH, and no `/lib` farm, since it composes no filesystem — [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#how-nix-works-here) |
 
 ## Non-goals
 
@@ -1468,7 +1528,7 @@ no image and nothing to substitute.
 - **Image content policy.** Whether `chromium` or `gcc` belongs in a jail is a product question;
   the lean image only changes where they are delivered from.
 - **The `macos-user` backend**, beyond being the existence proof store delivery reused —
-  [`nix-across-backends.md`](nix-across-backends.md).
+  [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md#how-nix-works-here).
 - **Skipping an unproven build.** A missing record, invalid store path or absent runtime
   image always falls through to the build.
 

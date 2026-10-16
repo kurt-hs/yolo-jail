@@ -15,8 +15,7 @@ import (
 )
 
 // I/O PRIORITY BUILD STEP 5'S MEASUREMENT: DOES A PROCESS I/O POLICY SET ON THE LAUNCHER SURVIVE
-// THE macos-user LAUNCH ARGV? (docs/design/io-priority.md §5.5 and IO-D7;
-// docs/design/io-priority-plan.md, step 5.)
+// THE macos-user LAUNCH ARGV? (docs/design/io-priority.md §5.5, IO-D7 and §9 step 5.)
 //
 // ANSWERED: the scheduled run of 2026-10-03 (GitHub Actions run 37121866798) logged IOPOL
 // VERDICT: SURVIVES, and step 5 is built on it — TestMacosUserIOPriorityIsApplied below checks
@@ -106,7 +105,7 @@ func TestMacosUserIOPolicyAcrossTheLaunchArgv(t *testing.T) {
 		"- `sudo -n --user="+macosuser.SandboxUser+" /usr/bin/env -i` alone: "+ioPolicyDescribe(viaSudo, sudoOut),
 		"- `sandbox-exec` alone, as the invoking user: "+ioPolicyDescribe(viaSandbox, sandboxOut),
 		"- the whole launch (the sandbox's "+ioPolicyReaderLine(body)+"): "+ioPolicyDescribe(launch, body),
-		"- record it in docs/design/io-priority.md (IO-D7) and io-priority-plan.md step 5",
+		"- record it in docs/design/io-priority.md (IO-D7) and its §9 step 5",
 		"")
 }
 

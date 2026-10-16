@@ -24,7 +24,7 @@ import (
 )
 
 // DOES A MAC SUBSTITUTE THE JAIL IMAGE FROM THIS PROJECT'S CACHE, OR BUILD IT?
-// (docs/plans/handoff-cachix-cache.md, its `next`; nightly-macos.yml's `Load jail image` step.)
+// (docs/reference/image-staging-vs-baking.md, "The binary cache"; nightly-macos.yml's `Load jail image` step.)
 //
 // THE GAP. CI pushes the image closure to the project's Cachix cache on every nightly
 // (`build-image` for x86_64-linux, `push-arm-image-cache` for aarch64-linux) and on every
@@ -310,7 +310,7 @@ func cachixMeasureAndReport(variants []cachixVariantSpec, hostGOOS, hostGOARCH, 
 		verdicts = append(verdicts, "- "+measured.verdict)
 	}
 	report.summary = append(append(rows, ""), append(verdicts,
-		"Record it in docs/plans/handoff-cachix-cache.md (its status line and the Final test).", "")...)
+		"Record it in docs/reference/image-staging-vs-baking.md (The binary cache).", "")...)
 	deliverSummary(report.summary)
 	return report, nil
 }

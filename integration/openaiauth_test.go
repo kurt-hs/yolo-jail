@@ -1,6 +1,6 @@
 package integration
 
-// openaiauth_test.go is step 12's first artifact in docs/design/openai-auth-broker-plan.md: a
+// openaiauth_test.go is the reachability check in docs/reference/agent-credentials.md ("What has been watched running"): a
 // jail whose `packs` selects `codex`, completing a brokered token round trip through the
 // endpoint Codex is told to use. It is the one test the unit suite cannot represent, because
 // every hop it crosses is a different process on a different side of the jail boundary:

@@ -1,6 +1,6 @@
 package entrypoint
 
-// hostownedlosses_test.go pins HC-D5 (docs/design/host-computed-layer.md §7): under
+// hostownedlosses_test.go pins HC-D5 (docs/reference/host-agent-environment.md): under
 // `host_management: own` the host apply's loss report names an entry as dropped or replaced
 // only when the `stateful` write actually drops or replaces it.
 //
