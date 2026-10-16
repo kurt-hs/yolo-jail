@@ -84,7 +84,7 @@ in `~/.local/share/yolo-jail/host-floor`:
   container runtime that is the same capture your jails use. With none, yolo runs the installer on
   your machine instead, confined by Landlock to a throwaway home, and that capture serves yolo's own
   copy alone: your jails capture their own. On a Mac the installer runs as the sandbox account
-  `yolo macos-setup` makes, and sudo may ask for your password once.
+  `yolo macos-setup` makes, through the rule setup installs, with no password.
 - **Keeping it current.** The floor updates an agent the way a jail does: at most once an hour, when
   you start it, unless `agent_updates` freezes that pack. It says when it is checking for a newer
   version, so a slow package registry is not a launch that hangs saying nothing. An agent with its
