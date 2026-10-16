@@ -402,7 +402,7 @@ live, so edits are visible on the host instantly — there is no sync step.
   launch names in a disclosure line; a relocation gets no such line on a container backend (macos-user names each link it lays). A recognised **content-addressed** host
   cache is aliased at the path the jail's own copy of the tool already uses, so it stops existing twice
   (`internal/hostcas`, [`hostcasalias.go`](internal/cli/run/hostcasalias.go);
-  [`OQ-BF10`](docs/design/disk-levers-and-backfill.md#OQ-BF10)). Today that set is pants' `lmdb_store`
+  [`OQ-BF10`](docs/design/disk-levers-and-backfill.md#111-decision-ledger)). Today that set is pants' `lmdb_store`
   alone. **The gate is CONTENT ADDRESSING, and the reason is injection rather than size**: a path-keyed cache
   lets a jail write content the host tool later reads *because of where it sits*, the jail choosing both key
   and bytes, while a CAS rejects a blob whose digest does not match its key. ⚠ **npm's `_cacache` and Go's

@@ -1046,7 +1046,7 @@ every jail mount. A record
 counts only while `container image inspect <ref>` exits 0, the same exit-status question the
 launch already asks to decide whether a ref is loaded, so no Apple Container output format is
 parsed. A record whose ref is gone is deleted when it is next read: Apple Container has no yolo
-image reaper to do it ([`OQ-BF6`](../design/disk-levers-and-backfill.md#OQ-BF6)), so this is how a record is reaped with its image. A record whose
+image reaper to do it ([`OQ-BF6`](../design/disk-levers-and-backfill.md#111-decision-ledger)), so this is how a record is reaped with its image. A record whose
 inspect could not run at all is kept and not counted, because "gone" and "could not ask" are
 different answers.
 
@@ -1154,7 +1154,7 @@ serialization, not a cold-store copy. Its rules:
   idempotent and the ref content-addressed.
 - **It is not the housekeeping lock, and must not share its file.** A housekeeping pass may *skip*
   when another pass is running, and takes that lock one deletion at a time
-  ([OQ-PR2](../design/podman-reboot-readiness.md#OQ-PR2)); a copy waiter must never skip, skipping
+  ([OQ-PR2](../design/podman-reboot-readiness.md#decision-ledger)); a copy waiter must never skip, skipping
   being exactly how the duplicate copy happens. And parking every reaper pass behind a
   multi-minute copy would be its own defect.
 - **It is taken in-jail too.** A nested jail's podman store is shared by every launch out of that

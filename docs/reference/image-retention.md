@@ -181,23 +181,6 @@ reaped once old, even under a running image.
 > break it. That is how a host GC left a running jail's `/bin` dangling on 2026-07-22
 > ([`storage-lifecycle.md`](../plans/storage-lifecycle.md)).
 
-- ✅ <a id="oq-ls4"></a>**[`OQ-LS4`](#oq-ls4) — does [OQ-LS1](#why-its-this-way)'s premise, that
-  losing an image root costs a rebuild and never a running jail, hold on podman/Linux?** There,
-  with a host nix daemon, the host `/nix/store` is bind-mounted read-only over the jail's
-  (`hostNixStore`, `internal/cli/run/assemble.go`), which is how a host GC broke a running jail's
-  `/bin` on 2026-07-22 ([`storage-lifecycle.md`](../plans/storage-lifecycle.md)). A jail up for
-  more than the retention horizon on an image no later launch rebuilt then has an unrooted closure
-  again. Read from code, not measured. Filed 2026-09-26.
-
-  <!-- vantage: question id=OQ-LS4 -->
-
-  **Answer:** (ruled 2026-09-28) No, it does not hold for a running image. Proposed to the
-  maintainer: *"rule [OQ-LS4](#oq-ls4) so the image root of a running container is held by liveness, the way
-  the mounted yolo binaries' roots already are — the age reaper skips any image a container is
-  running on; then plain nix-collect-garbage on any schedule is safe for every yolo jail, and the
-  guard becomes redundant and can be deleted"*. The maintainer: *"yes, record that ruling"*. How it
-  was built is in [the ledger](#why-its-this-way), [OQ-LS4](#oq-ls4) and LS-D1 to LS-D5.
-
 ## The store GC's refusal
 
 `yolo prune --nix-gc` runs a bounded `nix store gc`, capped at a size ceiling, and refuses inside a
@@ -274,11 +257,11 @@ To make "declined" mean *prevented work* rather than *fresh machine*, the candid
 
 Rulings a maintainer reading only the normative text would otherwise undo. The ids are cited from
 `internal/prune`, `internal/cli` and `AGENTS.md`. The `LS-D` rows are implementation decisions made
-while building [OQ-LS4](#oq-ls4) on 2026-09-28, not maintainer rulings.
+while building [OQ-LS4](#why-its-this-way) on 2026-09-28, not maintainer rulings.
 
 | ID | Ruling | Why it holds |
 | :--- | :--- | :--- |
-| OQ-LS1 | **No liveness veto for the GC-root reaper — an age cutoff, and a size cap only after age.** Ruled *against* the leaning. *Amended by [OQ-LS4](#oq-ls4)* for the root of an image a container is running on | The question is a prediction about future want, and liveness is a wrong predictor in both directions. The reaper loses its protected set and its liveness gate, and [P3](#principles) stopped applying to it (until [OQ-LS4](#oq-ls4)) because an age policy consults no authority it could fail to reach |
+| OQ-LS1 | **No liveness veto for the GC-root reaper — an age cutoff, and a size cap only after age.** Ruled *against* the leaning. *Amended by [OQ-LS4](#why-its-this-way)* for the root of an image a container is running on | The question is a prediction about future want, and liveness is a wrong predictor in both directions. The reaper loses its protected set and its liveness gate, and [P3](#principles) stopped applying to it (until [OQ-LS4](#why-its-this-way)) because an age policy consults no authority it could fail to reach |
 | OQ-LS2 | **A decline says so: an error where the user asked, and nothing where they did not** | The proposed "one dim line" was the wrong volume — the only routine case says nothing at all. Moving the candidate listing before the guards is what makes "declined" mean *prevented work* rather than *fresh machine* |
 | OQ-LS3 | **A global keep-count is the wrong mechanism, not the wrong number, and there is no undo** | The window was global and had no notion of a workspace or a configuration. The unit is the configuration and the superseded-per-config count is zero, which leaves a count with no depth to bound. It was replaced by the per-workspace pointers, not tuned |
 | OQ-LS4 | **The root of an image a container is running on is held by liveness, like the install prefix's roots; the age cutoff keeps every other root.** Ruled 2026-09-28: *"yes, record that ruling"* | [OQ-LS1](#why-its-this-way)'s premise, that a lost root costs only a rebuild, is false for a running image on podman/Linux, where the jail executes from the host store. With the running roots held, a plain `nix-collect-garbage` on any schedule is safe for every jail yolo can map, and the store GC's refusal shrinks to what liveness cannot give (LS-D4). The reaper asks the runtime again, so [P3](#principles) applies to it again |

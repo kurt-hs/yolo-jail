@@ -33,12 +33,12 @@ safe to run at an arbitrary moment. This plan sequenced the fix.
 >   on podman/Linux with a host nix daemon, the host `/nix/store` is bind-mounted `:ro` over the
 >   jail's (`hostNixStore`, `internal/cli/run/assemble.go`), which is how a host GC broke a running
 >   jail's `/bin` on 2026-07-22. **Ruled 2026-09-28 as
->   [`OQ-LS4`](../reference/image-retention.md#oq-ls4):** the root of an image a container is
+>   [`OQ-LS4`](../reference/image-retention.md#why-its-this-way):** the root of an image a container is
 >   running on is held by liveness again, and the age cutoff keeps every other root.
 > - **The image no longer contains yolo.** The `yolo`/`yolo-entrypoint` binaries are a separate,
 >   mounted prefix with their own durable roots under `build/prefix-roots/`
 >   (`image.RegisterPrefixRoot`), and those keep a liveness guarantee rather than an age cutoff
->   ([`OQ-BF4`](../design/disk-levers-and-backfill.md#OQ-BF4)). The closure list under
+>   ([`OQ-BF4`](../design/disk-levers-and-backfill.md#111-decision-ledger)). The closure list under
 >   [The core invariant](#the-core-invariant) predates that split.
 > - **Delivery keeps no image tars.** The launch copies the image layer by layer into the
 >   runtime's store (`skopeo copy`), and Apple Container's archive is a temporary file, so the
@@ -54,7 +54,7 @@ safe to run at an arbitrary moment. This plan sequenced the fix.
   (`build/roots/<sha16>`), retained across runs. `yolo prune` reaped roots no
   live jail needed (tri-state fail-safe) until
   [`OQ-LS1`](../reference/image-retention.md#why-its-this-way) replaced that with a one-week
-  age cutoff, and [`OQ-LS4`](../reference/image-retention.md#oq-ls4) put liveness back for the
+  age cutoff, and [`OQ-LS4`](../reference/image-retention.md#why-its-this-way) put liveness back for the
   roots of running images (see the note above). Mechanism verified in-jail.
 - **[§2](#2-auto-gc-safety-net-min-freemax-free--only-after-1)** — `yolo check` warns when the host nix daemon's auto-GC is off
   (`min-free == 0`), the safety net that [§1](#1-root-the-running-images-closure--first-everything-depends-on-it) makes safe to enable. Host-owns the
@@ -279,7 +279,7 @@ This is **host-gated and last in priority**; it must not ship before rooting ([�
   delete nothing. **Superseded 2026-09-08 by
   [`OQ-LS1`](../reference/image-retention.md#why-its-this-way):** the reaper
   (`PruneOrphanImageRoots`) became a one-week age cutoff with no liveness check, and
-  [`OQ-LS4`](../reference/image-retention.md#oq-ls4) (2026-09-28) restored the liveness check
+  [`OQ-LS4`](../reference/image-retention.md#why-its-this-way) (2026-09-28) restored the liveness check
   for the roots of images a container is running on.
 - [x] **Fix `BuildOCIImage`** (`internal/image/build.go`) — the check
   preflight's `defer os.Remove(outPath)` is acceptable *only* because check

@@ -43,7 +43,7 @@ durable dir holds anything. Worktrees accumulate until someone removes them.
 
 **Start at [§3](#3-the-storage-classes)**, the classes. The rest applies them.
 
-**Needs your ruling:** None of this doc's own; the three rulings are in [§11](#11-rulings). One
+**Needs your ruling:** None of this doc's own; the three rulings are in [§12](#12-decision-ledger). One
 question elsewhere decides part of what was built: the claude and pi packs' addressed prose lines
 open a version-skew window ([DS-D33](#DS-D33)), and accepting it waits on
 [OQ-D6](slots-and-contributions.md#OQ-D6).
@@ -77,7 +77,7 @@ Four principles carry the design, numbered so the ledger can cite them:
   concluded the same: *"the fix is the LOCATION, not a check before using it."*
 - <a id="DS-P4"></a>**DS-P4. yolo reports what accumulates and never deletes it.** Only the
   agent that made a worktree knows whether it holds unlanded work. yolo's job is to keep the
-  growth visible, at every launch and in `yolo check` ([OQ-DS2](#OQ-DS2)'s ruling).
+  growth visible, at every launch and in `yolo check` ([OQ-DS2](#12-decision-ledger)'s ruling).
 
 ### 1.1 The incident
 
@@ -473,11 +473,11 @@ path that does not exist ([§5.6](#56-failure-paths)).
 - **The variable.** `YOLO_DURABLE_DIR` holds the absolute in-jail path. It is set in the
   environment every process in the jail inherits, attaches included, **only when the directory
   exists at launch**. It is never set to a missing path, and never at the host notch
-  ([OQ-DS3](#OQ-DS3)'s ruling).
+  ([OQ-DS3](#12-decision-ledger)'s ruling).
 - **Forbidden.** Host code never follows a link, reads a file's content, or removes anything
   beneath the durable dir. The host-side report ([§5.4](#54-the-durable-dir-report)) reads
   metadata only (`lstat` sizes and times) and the worktree admin files' bytes, beneath an
-  `os.Root`, with no link followed. `yolo prune` never deletes from it ([OQ-DS2](#OQ-DS2)'s
+  `os.Root`, with no link followed. `yolo prune` never deletes from it ([OQ-DS2](#12-decision-ledger)'s
   ruling).
 - **No exclude writes.** `.yolo/.gitignore`'s `*` already hides it, so yolo adds nothing to a
   repository's `.gitignore` or `.git/info/exclude` ([DS-D6](#DS-D6)).
@@ -665,7 +665,7 @@ from git only where Claude Code wrote the exclude, so the core section never nam
 | Launch line | yes | yes | yes | none |
 | `/tmp` sentence | deleted at exit | in RAM, deleted at exit | the machine's own, shared, cleared at reboot | the machine's own |
 
-The host sentence, per [OQ-DS3](#OQ-DS3)'s ruling: *"`/tmp` is this machine's own: it survives an
+The host sentence, per [OQ-DS3](#12-decision-ledger)'s ruling: *"`/tmp` is this machine's own: it survives an
 agent restart but may not survive a reboot; put worktrees you need later inside the repository or
 beside it."*
 
@@ -685,7 +685,7 @@ beside it."*
 | | Alternative | Verdict |
 | :--- | :--- | :--- |
 | **A** | A generated briefing section of storage classes | **Taken** ([§5.1](#51-the-storage-class-map-and-the-briefing-section)). The floor the maintainer asked for, and it fixes the one false line |
-| **B** | A durable, agent-neutral dir at `.yolo/durable` with a variable | **Taken** ([§5.2](#52-the-durable-dir), [OQ-DS1](#OQ-DS1)). A path the briefing can name on every backend, with no new mount |
+| **B** | A durable, agent-neutral dir at `.yolo/durable` with a variable | **Taken** ([§5.2](#52-the-durable-dir), [OQ-DS1](#12-decision-ledger)). A path the briefing can name on every backend, with no new mount |
 | **B′** | Also mount it at a fixed path such as `~/durable` or `/durable`, so a literal works everywhere | **Rejected** ([DS-D8](#DS-D8)). A new punch in the podman skeleton and a new link on macos-user to save one variable, and a worktree made through the alias records a path whose geometry the host does not share, so even `--relative-paths` stops working |
 | **B″** | Endorse `.claude/worktrees` as the place for every agent | **Rejected.** It names one agent's directory in core, violates [DS-P2](#DS-P2), sits in the project tree rather than under `.yolo`, and is git-excluded only where Claude Code wrote the exclude |
 | **B‴** | Put the durable dir outside the workspace, in the machine store under `~/.local/share/yolo-jail`, one per workspace | **Rejected** ([DS-D9](#DS-D9)). The per-workspace home is already inside the workspace at `<ws>/.yolo/home`, so it separates nothing the agent dirs share. It orphans the dir when the workspace is deleted, needs a new mount on each container backend and a new Seatbelt allow on macos-user, makes a durable worktree an illegal host workspace (`paths.WorkspaceScopeBreach` refuses a workspace inside the state dir), and breaks `--relative-paths`. The tools that walk the workspace already skip `.yolo` ([§5.2](#52-the-durable-dir)) |
@@ -695,7 +695,7 @@ beside it."*
 | **E** | Make `/tmp` durable (a per-workspace volume) | **Rejected** ([DS-P3](#DS-P3)). The volumes are per-launch because podman *"silently reuses a named volume that exists"*: a relaunch would be handed the last session's sockets and locks (`OVERMIND_SOCKET=/tmp/overmind.sock` is set in every jail) and the nested podman store. Their deletion cost is exactly what Window A measured at 32 s, and a durable `/tmp` would have no liveness signal to reap it by, only an age rule |
 | **E′** | Point `TMPDIR` at the durable dir | **Rejected** for E's reasons: tools assume `TMPDIR` is cleaned for them |
 | **F** | Configure each agent's worktree tool at the durable dir | **Taken only for pi-subagents** ([§5.5](#55-every-agent-learns-it-each-through-its-own-pack)), the one tool whose default is per-launch. Claude's `WorktreeCreate` hook is rejected ([DS-D5](#DS-D5)); codex and opencode have no setting and need none |
-| **G** | Age-reap the durable dir in `yolo prune` | **Rejected** by [OQ-DS2](#OQ-DS2)'s ruling. A worktree's value is its unlanded commits and uncommitted files, which age says nothing about |
+| **G** | Age-reap the durable dir in `yolo prune` | **Rejected** by [OQ-DS2](#12-decision-ledger)'s ruling. A worktree's value is its unlanded commits and uncommitted files, which age says nothing about |
 
 ## 7. Costs and risks
 
@@ -804,50 +804,16 @@ What I would build, in order, each step shippable alone.
 No sibling ledger had ruled on a durable directory or on the briefing's path claims; the search
 was `rg -i 'durable scratch|YOLO_SCRATCH|\.yolo/scratch|scratch space' docs userguide`, which
 found only the per-launch scratch volumes. All three questions were ruled in review on
-2026-09-28 and are folded into the body; the ledger ([§12](#12-decision-ledger)) records them.
-
-1. ✅ <a id="OQ-DS1"></a>**[OQ-DS1](#OQ-DS1): What is the durable dir called, and where does it
-   live? — RESOLVED (2026-09-28)** The path every briefing names and every agent writes into
-   memory.
-
-   <!-- vantage: question id=OQ-DS1 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** A, `<workspace>/.yolo/durable` and
-   > `$YOLO_DURABLE_DIR`, *"because the name must say durable and scratch already means the
-   > per-launch volumes here."* Folded into [§5.2](#52-the-durable-dir).
-
-2. ✅ <a id="OQ-DS2"></a>**[OQ-DS2](#OQ-DS2): Who reclaims the durable dir? — RESOLVED
-   (2026-09-28)** Whether yolo ever deletes an agent's work, and how the growth stays visible.
-
-   <!-- vantage: question id=OQ-DS2 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned and extended:** A, report and never delete. The
-   > maintainer: *"we shouldn't be responsible for deleting them, but let's definitely print some
-   > valuable information at startup saying just like … how many work trees you have and how big
-   > they are and how old the oldest one is, something like that … anything that lets them just
-   > not slip by forever. And of course, in yolo check, a more complete stores or whatever, more
-   > complete view of this stuff."* Folded into [DS-P4](#DS-P4) and
-   > [§5.4](#54-the-durable-dir-report).
-
-3. ✅ <a id="OQ-DS3"></a>**[OQ-DS3](#OQ-DS3): What does the host notch get? — RESOLVED
-   (2026-09-28)** Whether the same variable exists at every notch.
-
-   <!-- vantage: question id=OQ-DS3 -->
-
-   **Answer:**
-   > **Ruled in review 2026-09-28, as leaned:** A, one static sentence in the host header and no
-   > variable, *"because host /tmp is the machine's own and a per-launch variable cannot reach
-   > host apply's files."* Folded into [§5.7](#57-every-notch-and-backend).
+2026-09-28 and are folded into the body; the ledger ([§12](#12-decision-ledger)) records them as
+[OQ-DS1](#12-decision-ledger) to [OQ-DS3](#12-decision-ledger).
 
 ## 12. Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| [`OQ-DS1`](#OQ-DS1) | The durable dir is `<workspace>/.yolo/durable`, exported as `$YOLO_DURABLE_DIR`; "scratch" is taken by the per-launch volumes | 2026-09-28 | [§5.2](#52-the-durable-dir) | `7ef2a99b` |
-| [`OQ-DS2`](#OQ-DS2) | yolo never deletes the durable dir's contents. Every fresh launch prints one line (worktree count, size, oldest idle); `yolo check` lists each worktree with size, idle, branch, unique commits and changed files; `yolo stores` gives each workspace's dir a row | 2026-09-28 | [§5.4](#54-the-durable-dir-report) | `2c828cca`, `0ff39d7d` |
-| [`OQ-DS3`](#OQ-DS3) | The host notch gets one static sentence in the host header and no variable | 2026-09-28 | [§5.7](#57-every-notch-and-backend) | `7ef2a99b` |
+| OQ-DS1 | The durable dir is `<workspace>/.yolo/durable`, exported as `$YOLO_DURABLE_DIR`, *"because the name must say durable and scratch already means the per-launch volumes here"* | 2026-09-28 | [§5.2](#52-the-durable-dir) | `7ef2a99b` |
+| OQ-DS2 | yolo never deletes the durable dir's contents. The maintainer: *"we shouldn't be responsible for deleting them, but let's definitely print some valuable information at startup saying just like … how many work trees you have and how big they are and how old the oldest one is, something like that … anything that lets them just not slip by forever. And of course, in yolo check, a more complete stores or whatever, more complete view of this stuff."* Every fresh launch prints one line (worktree count, size, oldest idle); `yolo check` lists each worktree with size, idle, branch, unique commits and changed files; `yolo stores` gives each workspace's dir a row | 2026-09-28 | [§5.4](#54-the-durable-dir-report) | `2c828cca`, `0ff39d7d` |
+| OQ-DS3 | The host notch gets one static sentence in the host header and no variable, *"because host /tmp is the machine's own and a per-launch variable cannot reach host apply's files"* | 2026-09-28 | [§5.7](#57-every-notch-and-backend) | `7ef2a99b` |
 | <a id="DS-D1"></a>[`DS-D1`](#12-decision-ledger) | *Implementation decision,* [DS-P1](#DS-P1). The section is rendered from the storage-class map, which reads the argv's own definitions, and a unit test compares the map against the assembled golden argv per backend in both directions. It must fail when a writable mount is added without the map knowing, which is the "does it fail if I delete the call site" test | 2026-09-28 | [§5.1](#51-the-storage-class-map-and-the-briefing-section) | `ebae2a6a` |
 | <a id="DS-D2"></a>[`DS-D2`](#12-decision-ledger) | *Implementation decision.* The launcher is the one writer of the durable dir, beneath a root on `.yolo`, on every fresh launch; it exports the variable only on success, and a failure never refuses the launch | 2026-09-28 | [§5.2](#52-the-durable-dir) | `7ef2a99b` |
 | <a id="DS-D3"></a>[`DS-D3`](#12-decision-ledger) | *Implementation decision.* Host code never follows a link, reads file content, or removes anything beneath the durable dir. Its only contact is the report's `lstat` walk and the admin files' bytes, beneath an `os.Root`, and it runs no `git` in the workspace | 2026-09-28 | [§5.2](#52-the-durable-dir), [§5.4](#54-the-durable-dir-report) | `2c828cca`, `0ff39d7d` |
@@ -858,7 +824,7 @@ found only the per-launch scratch volumes. All three questions were ruled in rev
 | <a id="DS-D8"></a>[`DS-D8`](#12-decision-ledger) | *Implementation decision.* The durable dir has no mount of its own; it is reached through the workspace's mount at the workspace's spelling, which keeps host and jail geometry identical | 2026-09-28 | [§5.2](#52-the-durable-dir) | `7ef2a99b` |
 | <a id="DS-D9"></a>[`DS-D9`](#12-decision-ledger) | *The maintainer, in review 2026-09-28:* keeping the durable dir outside the workspace is not a requirement, *"agent home is in the workspace as well, so that's a weird constraint to have."* Row B‴ records why | 2026-09-28 | [§6](#6-alternatives-considered) | — |
 | <a id="DS-D10"></a>[`DS-D10`](#12-decision-ledger) | *Implementation decision.* The briefing tells agents to make durable worktrees with `git worktree add --lock`; `--relative-paths` is named as the user's opt-in and never set by yolo, since its extension makes a git older than 2.48 refuse the repository | 2026-09-28 | [§5.3](#53-the-worktree-convention) | `7ef2a99b` |
-| <a id="DS-D11"></a>[`DS-D11`](#12-decision-ledger) | *Implementation decision,* [OQ-DS2](#OQ-DS2). The launch line is computed in the jail at every fresh launch, never at an attach, with a 2 s size-walk budget; git-derived columns are computed only where the agent runs | 2026-09-28 | [§5.4](#54-the-durable-dir-report) | `2c828cca` |
+| <a id="DS-D11"></a>[`DS-D11`](#12-decision-ledger) | *Implementation decision,* [OQ-DS2](#12-decision-ledger). The launch line is computed in the jail at every fresh launch, never at an attach, with a 2 s size-walk budget; git-derived columns are computed only where the agent runs | 2026-09-28 | [§5.4](#54-the-durable-dir-report) | `2c828cca` |
 | <a id="DS-D13"></a>[`DS-D13`](#12-decision-ledger) | **Ruled by the maintainer, 2026-09-28**, [DS-P2](#DS-P2): *"we can't have a claude-only solution … we need to be clear about lifecycles, storage profiles, whatever. and give guidance."* The section is framed as **storage classes**, agent-neutral, in the order per launch, per workspace, every workspace on the machine, the workspace itself; each says where it is, what it survives, who shares it and what yolo cleans up. The workspace is its own class, the user's project and not a scratch area, and the per-side shadows beneath it are per workspace. It recommends no worktree location, in the workspace or out of it, and names no agent's directory; it closes with *"Put nothing that must survive a restart under `/tmp`; a dedicated durable directory for worktrees and scratch is being designed."* A same-day preference for keeping worktrees out of the workspace was withdrawn, so that line names no location | 2026-09-28 | [§4.1](#51-the-storage-class-map-and-the-briefing-section) | `6c4944b4` |
 | <a id="DS-D14"></a>[`DS-D14`](#12-decision-ledger) | *Implementation decision.* The map covers the workspace and its per-side shadows, the home binds, the selected packs' writable and shared dirs, `writable_home_dirs`, `/mise` and the per-launch set. It leaves out a `host_files` entry's staged parent dir (resolved after the briefing is written), a loophole's own bind mounts and the nix daemon socket; none is a place for work, and the pin's fixture declares none of them | 2026-09-28 | [§4.1](#51-the-storage-class-map-and-the-briefing-section) | `ebae2a6a` |
 | <a id="DS-D15"></a>[`DS-D15`](#12-decision-ledger) | *Implementation decision.* The design's read-only class carries no entries: the section states it as the rest of the home. A class the design lacks, **internal**, holds the writable mounts that are yolo's own: `~/.yolo/bin`, which every boot rewrites, and the single-file binds (logs, a lock, the CA bundle, the shell history). They are in the map so the pin covers them, and the section never names them; its read-only bullet says *"apart from a few files yolo keeps there itself"* | 2026-09-28 | [§4.1](#51-the-storage-class-map-and-the-briefing-section) | `ebae2a6a` |
