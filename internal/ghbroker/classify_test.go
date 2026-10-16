@@ -362,6 +362,44 @@ func TestNewScopeDropsMalformedAndDuplicates(t *testing.T) {
 	if want := []string{"b/a", "o/r"}; !reflect.DeepEqual(s.Repos(), want) {
 		t.Fatalf("scope %v, want %v", s.Repos(), want)
 	}
+	// A whole-segment wildcard is an entry; a partial glob is not (WW-D31).
+	if got := NewScope([]string{"*/*", "org*/*", "o/r"}).Repos(); !reflect.DeepEqual(got, []string{"*/*", "o/r"}) {
+		t.Fatalf("scope %v", got)
+	}
+}
+
+// A wildcard scope entry admits the repositories it covers, and the jail can never widen a
+// scope by NAMING a wildcard: the repository a command names is checked by ValidRepo, which
+// refuses one (docs/design/workspace-widening.md, WW-D31).
+func TestClassifyAWildcardScope(t *testing.T) {
+	all := NewScope([]string{"*/*"})
+	for _, argv := range []string{"pr view 1 -R anyone/anywhere", "repo view other/x"} {
+		d := Classify(splitArgv(argv), "", all)
+		if d.Outcome != OutcomeStanding || d.Set != SetReadOnly {
+			t.Errorf("gh %s under */*: %+v", argv, d)
+		}
+	}
+	one := NewScope([]string{"o/*"})
+	if d := Classify(splitArgv("pr view 1 -R o/r"), "", one); d.Outcome != OutcomeStanding {
+		t.Errorf("o/* did not admit o/r: %+v", d)
+	}
+	if d := Classify(splitArgv("pr view 1 -R p/r"), "", one); d.Outcome != OutcomeOutOfScope {
+		t.Errorf("o/* admitted p/r: %+v", d)
+	}
+	if d := Classify(splitArgv("pr view 1 -R */*"), "", all); d.Outcome != OutcomeRefused {
+		t.Errorf("-R */* ran: %+v", d)
+	}
+	if d := Classify(splitArgv("pr view 1"), "*/*", all); d.Outcome != OutcomeRefused {
+		t.Errorf("the forwarder's repository */* ran: %+v", d)
+	}
+	// A write under a wildcard scope is still windowed, not standing.
+	if d := Classify(splitArgv("pr comment 1 -R anyone/anywhere --body hi"), "", all); d.Outcome != OutcomeWindowed {
+		t.Errorf("a write under */* = %+v", d)
+	}
+	// A message that names the scope says what the wildcard admits, not just its token.
+	if got := all.describe(); !strings.Contains(got, "every repository on github.com") {
+		t.Errorf("describe = %q", got)
+	}
 }
 
 // BB-D59: a write that acts on an organization's or a user's secret or variable, rather than

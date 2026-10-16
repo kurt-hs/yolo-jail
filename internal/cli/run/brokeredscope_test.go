@@ -407,6 +407,39 @@ func TestAWorkspaceEntryIsApprovedAtTheGateAndReachesTheBroker(t *testing.T) {
 	}
 }
 
+// A workspace lists every repository it can reach with a whole-segment wildcard (WW-D31): the
+// gate shows what the wildcard admits rather than leaving the human to read the token as one
+// repository's name, the scope file carries the token, and the launch line says what it admits.
+func TestAWildcardEntryIsApprovedAtTheGateAndReachesTheBroker(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture daemon is /bin/cp")
+	}
+	o, buf, marker := brokeredFixture(t)
+	writeWorkspaceConfig(t, o.Workspace, `{"brokered": {"gbsrc": {"repos": ["*/*"]}}}`)
+	o.AcceptConfigChanges = true
+	if !o.checkConfigChanges(gbOn(), "podman") {
+		t.Fatalf("an accepted gate refused:\n%s", buf.String())
+	}
+	gate := buf.String()
+	for _, want := range []string{"*/*", "every repository on github.com"} {
+		if !strings.Contains(gate, want) {
+			t.Errorf("the gate did not show %q:\n%s", want, gate)
+		}
+	}
+
+	handles := o.startLoopholes("yolo-brokered-wildcard", "podman", gbOn())
+	t.Cleanup(func() {
+		o.stopLoopholes(handles, hostServiceSocketsDir("yolo-brokered-wildcard", false), "", "")
+	})
+	f := readHandedScope(t, marker, buf)
+	if strings.Join(f.Repos, ",") != "*/*,o/r" {
+		t.Fatalf("scope file repos %v, want the wildcard and the remote", f.Repos)
+	}
+	if want := `gb: scope for this workspace: */* (every repository on github.com; yolo-jail.jsonc), o/r (remote "origin")`; !strings.Contains(buf.String(), want) {
+		t.Errorf("the launch line is not %q:\n%s", want, buf.String())
+	}
+}
+
 // WW-P2: the scope file holds what THIS gate approved, held in memory. An edit to the entry
 // after the y, and an approval another session records between this gate and the spawn, both
 // wait for the next fresh launch.
