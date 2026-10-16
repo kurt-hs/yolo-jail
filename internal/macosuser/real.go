@@ -471,3 +471,68 @@ func verifyCAReal(pemBlock string) bool {
 	argv := verifyCAArgv(f.Name())
 	return runWithTimeout(exec.Command(argv[0], argv[1:]...), 15*time.Second) == 0
 }
+
+// stagingRootFactsReal observes the staging root at path without following a link: os.Lstat for
+// what it is, its owner and its mode, and `/bin/ls -lde` for an access list (lsShowsACL), asked
+// only of a directory, the one kind whose access list JudgeStagingRoot reads. The judgment is
+// JudgeStagingRoot's (privilege.go); this is the impure half.
+func stagingRootFactsReal(path string) StagingRootFacts {
+	return stagingRootFactsWith(path, func(p string) (string, bool) {
+		out, rc := outputWithTimeout(exec.Command("/bin/ls", "-lde", p), 10*time.Second)
+		return out, rc == 0
+	})
+}
+
+// stagingRootFactsWith is stagingRootFactsReal with its `ls -lde` as listACL, so the Lstat half is
+// testable on any OS (`-e` is macOS's flag). A listing that fails is an Err: unknown refuses.
+func stagingRootFactsWith(path string, listACL func(path string) (string, bool)) StagingRootFacts {
+	fi, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return StagingRootFacts{}
+	}
+	if err != nil {
+		return StagingRootFacts{Err: err}
+	}
+	f := StagingRootFacts{
+		Exists:    true,
+		IsDir:     fi.IsDir(),
+		IsSymlink: fi.Mode()&os.ModeSymlink != 0,
+		Mode:      fi.Mode().Perm(),
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		f.Err = errors.New("no owner reported for " + path)
+		return f
+	}
+	f.UID = st.Uid
+	if f.IsDir {
+		out, ok := listACL(path)
+		if !ok {
+			f.Err = errors.New("`/bin/ls -lde " + path + "` failed")
+			return f
+		}
+		f.HasACL = lsShowsACL(out)
+	}
+	return f
+}
+
+// lsShowsACL reads the output of `/bin/ls -lde <one path>`: the first line is the entry itself,
+// and every non-blank line after it is one access-control entry (` 0: group:… allow …`).
+func lsShowsACL(out string) bool {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for _, l := range lines[1:] {
+		if strings.TrimSpace(l) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// runAsGrantReal is readiness probe G2: RunAsGrantProbeArgv with no stdin, so it can never wait on
+// a password, bounded at 10 s. Anything but exit 0 is no.
+func runAsGrantReal() bool {
+	argv := RunAsGrantProbeArgv()
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = nil
+	return runWithTimeout(cmd, 10*time.Second) == 0
+}

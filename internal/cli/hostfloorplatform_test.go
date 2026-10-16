@@ -67,7 +67,7 @@ func TestTheNoCopyLineNamesTheFloorsPlatform(t *testing.T) {
 		refused         bool
 	}{
 		{name: "an installer agent on a Mac before macos-setup", goos: "darwin", bin: "nativecli",
-			setup: func(t *testing.T) { nativeFloorFixture(t); withMac(t, macSetup{terminal: true}) },
+			setup: func(t *testing.T) { nativeFloorFixture(t); withMac(t, macSetup{}) },
 			want: []string{"yolo host: yolo has no copy of nativecli on this Mac (there is no capture of nativecli " +
 				"on this machine, and the sandbox account _yolojail",
 				"run the one-time setup, `yolo macos-setup`, and the next `yolo host` launch captures it)" +

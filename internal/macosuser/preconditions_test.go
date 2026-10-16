@@ -2,6 +2,8 @@ package macosuser
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,6 +27,26 @@ var failOne = map[string]func(d *Deps) string{
 	},
 	PreconditionSandboxHome: func(d *Deps) string {
 		d.PathIsDir = func(p string) bool { return p != SandboxHome() }
+		return "/Users/Shared/yolo/proj"
+	},
+	PreconditionStagingRoot: func(d *Deps) string {
+		d.StagingRootFacts = func(string) StagingRootFacts { return StagingRootFacts{} }
+		return "/Users/Shared/yolo/proj"
+	},
+	PreconditionStagingRootOwner: func(d *Deps) string {
+		d.StagingRootFacts = func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 602, Mode: 0o755}
+		}
+		return "/Users/Shared/yolo/proj"
+	},
+	PreconditionStagingRootSafe: func(d *Deps) string {
+		d.StagingRootFacts = func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o775}
+		}
+		return "/Users/Shared/yolo/proj"
+	},
+	PreconditionRunAsGrant: func(d *Deps) string {
+		d.RunAsGrant = func() bool { return false }
 		return "/Users/Shared/yolo/proj"
 	},
 	PreconditionNeutralGround: func(d *Deps) string { return "/Users/matt/code/proj" },
@@ -74,6 +96,21 @@ func TestThePreconditionListIsCompleteAndOrdered(t *testing.T) {
 	}
 	if seen[PreconditionNeutralGround] > seen[PreconditionWorkspaceShared] {
 		t.Error("the ACL probe is asked before the in-home rule — its remedy refuses every path under a home")
+	}
+}
+
+// The staging root's three facts and the run-as rule are asked after the account and its home
+// and before the workspace's, in this order: the ruled privilege preflight (G2 and the staging
+// root, docs/design/macos-user-privilege-lifecycle-plan.md task 4).
+func TestTheLaunchAsksForTheStagingRootAndTheRunAsGrant(t *testing.T) {
+	var ids []string
+	for _, c := range LaunchPreconditions() {
+		ids = append(ids, c.ID)
+	}
+	want := "macos,not-root,sandbox-exec,sandbox-user,sandbox-home,staging-root," +
+		"staging-root-owner,staging-root-safe,run-as-grant,workspace-location,workspace-shared"
+	if got := strings.Join(ids, ","); got != want {
+		t.Errorf("preconditions = %s\nwant %s", got, want)
 	}
 }
 
@@ -187,6 +224,91 @@ func TestTheSharingRemedyQuotesTheWorkspace(t *testing.T) {
 	for _, c := range LaunchPreconditions() {
 		if c.ID == PreconditionWorkspaceShared && !strings.Contains(c.Fix(ws), want) {
 			t.Errorf("yolo check's fix does not say %q:\n%s", want, c.Fix(ws))
+		}
+	}
+}
+
+// PrivilegeUnmet is what the capture and fork-build acts and the host floor ask: the first unmet
+// one of the four privilege facts or of their requirements, in the launch's order, and nothing a
+// workspace decides.
+func TestPrivilegeUnmetAsksThePrivilegeFactsAndTheirRequirementsOnly(t *testing.T) {
+	for _, id := range []string{PreconditionMacOS, PreconditionNotRoot, PreconditionSandboxUser, PreconditionStagingRoot,
+		PreconditionStagingRootOwner, PreconditionStagingRootSafe, PreconditionRunAsGrant} {
+		d := mockDeps(nil)
+		failOne[id](&d)
+		if c, unmet := PrivilegeUnmet(d.launchProbes()); !unmet || c.ID != id {
+			t.Errorf("%s fails: PrivilegeUnmet = %q, %v", id, c.ID, unmet)
+		}
+	}
+	for _, id := range []string{PreconditionSeatbelt, PreconditionSandboxHome,
+		PreconditionNeutralGround, PreconditionWorkspaceShared} {
+		d := mockDeps(nil)
+		failOne[id](&d)
+		if c, unmet := PrivilegeUnmet(d.launchProbes()); unmet {
+			t.Errorf("%s fails: PrivilegeUnmet named %q, which is not a privilege fact", id, c.ID)
+		}
+	}
+	// A caller that wired no probe is unknown, which refuses.
+	p := mockDeps(nil).launchProbes()
+	p.StagingRoot, p.RunAsGrant = nil, nil
+	if c, unmet := PrivilegeUnmet(p); !unmet || c.ID != PreconditionStagingRoot {
+		t.Errorf("no probes: PrivilegeUnmet = %q, %v, want the staging root unmet", c.ID, unmet)
+	}
+}
+
+// The impure half of the staging-root probe, on whatever OS runs the test: an absent path, a
+// directory with its owner and mode, the `ls -lde` listing's access list, a failed listing, and
+// a link that is neither followed nor listed.
+func TestStagingRootFactsReadsWithoutFollowingALink(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "staged")
+	noACL := func(string) (string, bool) { return "drwxr-xr-x  2 matt  wheel  64 Oct 16 10:00 x\n", true }
+	if f := stagingRootFactsWith(root, noACL); f.Exists || f.Err != nil {
+		t.Errorf("absent: %+v", f)
+	}
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := stagingRootFactsWith(root, noACL)
+	if !f.Exists || !f.IsDir || f.IsSymlink || f.HasACL || f.Mode != 0o755 ||
+		f.UID != uint32(os.Geteuid()) || f.Err != nil {
+		t.Errorf("a directory of mine: %+v", f)
+	}
+	if v := JudgeStagingRoot(f, os.Geteuid()); v != StagingRootOK {
+		t.Errorf("a 0755 directory of mine is %v, not ok: %+v", v, f)
+	}
+	withACL := func(string) (string, bool) {
+		return "drwxr-xr-x+ 2 matt  wheel  64 Oct 16 10:00 x\n 0: group:_yolojail allow list,search\n", true
+	}
+	if f := stagingRootFactsWith(root, withACL); !f.HasACL {
+		t.Errorf("an access list was not seen: %+v", f)
+	}
+	if f := stagingRootFactsWith(root, func(string) (string, bool) { return "", false }); f.Err == nil {
+		t.Errorf("a failed listing is not unknown: %+v", f)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	f = stagingRootFactsWith(link, func(string) (string, bool) { listed = true; return "", true })
+	if !f.Exists || !f.IsSymlink || f.IsDir || listed {
+		t.Errorf("a link was followed or listed (listed=%v): %+v", listed, f)
+	}
+}
+
+func TestLsShowsACLReadsTheLinesAfterTheFirst(t *testing.T) {
+	for out, want := range map[string]bool{
+		"":                                      false,
+		"drwxr-xr-x  2 m  wheel  64 Oct 16 x\n": false,
+		"drwxr-xr-x  2 m  wheel  64 Oct 16 x\n\n":                                  false,
+		"drwxr-xr-x+ 2 m  wheel  64 Oct 16 x\n 0: user:_yolojail allow add_file\n": true,
+	} {
+		if got := lsShowsACL(out); got != want {
+			t.Errorf("lsShowsACL(%q) = %v, want %v", out, got, want)
 		}
 	}
 }
