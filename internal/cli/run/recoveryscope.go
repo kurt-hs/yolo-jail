@@ -4,7 +4,7 @@ package run
 // patched-build-recovery.md §6.1, PBR-D3): said once per launch, never a refusal.
 //
 //   - A FRESH LAUNCH on a container runtime warns, for each scoped hatch (patchrecovery.Scoped) that
-//     is set, of the names that cover none of the patched builds it selects — its patched forks and
+//     is set (but the two below), of the names that cover none of the patched builds it selects — its patched forks and
 //     its built extensions — in patchrecovery.UnmatchedLine's one shape. A hatch left in a shell
 //     profile must not stop a workspace that does not select the pack it names.
 //   - AN ATTACH, A LAUNCH IN A JAIL, OR macos-user builds and delivers no patched build, so a set
@@ -50,7 +50,7 @@ func (o *Options) noteRecoveryHatches(rt string, attach bool) {
 		where = "on macos-user"
 	}
 	subs := o.recoverySubjects()
-	for _, env := range patchrecovery.Scoped {
+	for _, env := range noterHatches() {
 		s := patchrecovery.Read(o.Getenv, env)
 		if !s.Set() {
 			continue
@@ -61,9 +61,22 @@ func (o *Options) noteRecoveryHatches(rt string, attach bool) {
 			}
 			continue
 		}
-		if env == patchrecovery.UseCachedGoodEnv || env == patchrecovery.SkipExtensionsEnv {
-			continue
-		}
 		out.print("[yellow]" + richtext.Escape(env+" has no effect "+where) + "[/yellow]")
 	}
 }
+
+// noterHatches are the scoped hatches this file speaks for: every one but
+// patchrecovery.UseCachedGoodEnv (selectCachedGood says its own) and patchrecovery.SkipExtensionsEnv
+// (skipextensions.go says its own).
+func noterHatches() []string {
+	var out []string
+	for _, env := range patchrecovery.Scoped {
+		if env != patchrecovery.UseCachedGoodEnv && env != patchrecovery.SkipExtensionsEnv {
+			out = append(out, env)
+		}
+	}
+	return out
+}
+
+// NoterHatches is noterHatches for `yolo host`'s half (internal/cli's hostrecoveryscope.go).
+func NoterHatches() []string { return noterHatches() }

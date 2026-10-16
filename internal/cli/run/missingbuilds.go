@@ -115,7 +115,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 			if skip.Covers(patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}) {
 				continue // this launch starts its owner without it (patched-build-recovery.md §6.6)
 			}
-			if d, ok := o.treeDelivered[f.Key()]; ok && d.Dir == "" {
+			if d, ok := o.treeDelivered[f.Key()]; ok && d.Dir == "" && !d.Skipped {
 				out = append(out, missingBuild{label: f.Label(), key: f.Key(), capture: f.CaptureArg(),
 					reason: patchFailureReason(d.Reason, d.PatchFailure != nil), cause: d.Cause,
 					unsaid: d.Unsaid, owner: f.Owner, needed: f.Owner != "" && f.ListedInJail, patchFailure: d.PatchFailure != nil,
