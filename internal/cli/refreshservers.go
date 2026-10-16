@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -33,13 +34,16 @@ import (
 //
 // Ordinary refresh reports an absent server it could not install and remains advisory, preserving
 // the launcher's established behavior. An explicit `--fresh` request returns non-zero on a failed
-// refresh, so the prelude never starts the target on bytes it cannot claim are fresh.
+// refresh, so the prelude never starts the target on bytes it cannot claim are fresh. A stale
+// server whose NEWER version was found and did not install exits entrypoint.UpdateRefusedStatus,
+// its refusal said (docs/design/program-delivery.md PD-NF1), and the launcher passes that status on
+// instead of exec'ing its agent; `--bin` names that agent, the command the refusal says to retry.
 
 // There is no `--go` list any more: its only source was the deleted LSP recipe's go arm
 // (docs/reference/mcp-configuration.md#oq-lsp1), and the launchers stopped passing it in the
 // same change.
 const refreshServersUsage = "usage: yolo internal refresh-servers [--home=DIR] " +
-	"[--npm=\"pkg pkg\"] [--updates=0|1] [--fresh]"
+	"[--npm=\"pkg pkg\"] [--updates=0|1] [--fresh] [--bin=NAME]"
 
 // runRefreshServers is the `yolo internal refresh-servers` entry.
 func runRefreshServers(args []string) int {
@@ -52,6 +56,7 @@ func runRefreshServers(args []string) int {
 	// reached by a hand invocation.
 	updates := true
 	fresh := false
+	bin := ""
 	for _, a := range args {
 		switch {
 		case strings.HasPrefix(a, "--home="):
@@ -62,6 +67,8 @@ func runRefreshServers(args []string) int {
 			updates = strings.TrimPrefix(a, "--updates=") == "1"
 		case a == "--fresh":
 			fresh = true
+		case strings.HasPrefix(a, "--bin="):
+			bin = strings.TrimPrefix(a, "--bin=")
 		default:
 			fmt.Fprintf(os.Stderr, "refresh-servers: unexpected argument %q\n%s\n",
 				a, refreshServersUsage)
@@ -108,9 +115,16 @@ func runRefreshServers(args []string) int {
 		NpmSpecs: npmSpecs,
 		Updates:  updates,
 		Stderr:   os.Stderr,
+		Bin:      bin,
 	})
 	if serverErr == nil && ctx.Err() != nil {
 		serverErr = ctx.Err()
+	}
+	// A server whose newer version did not install has had its refusal said (PD-NF1): the status
+	// tells the launcher not to exec its agent.
+	var refusal *entrypoint.ServerUpdateRefusal
+	if errors.As(serverErr, &refusal) {
+		return entrypoint.UpdateRefusedStatus
 	}
 	if serverErr != nil {
 		fmt.Fprintln(os.Stderr, "refresh-servers:", serverErr)

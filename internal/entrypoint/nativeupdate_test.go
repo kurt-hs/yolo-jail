@@ -36,6 +36,13 @@ type updateProbe struct {
 // REAL_BIN the launcher takes the cold-install arm, which is a different cell.
 func newUpdateProbe(t *testing.T, verb []string, updates bool, install bool) *updateProbe {
 	t.Helper()
+	return newUpdateProbeAt(t, verb, updates, install, "https://example.invalid/never-fetched.sh")
+}
+
+// newUpdateProbeAt is newUpdateProbe with the pack's installer URL, which a failed update's
+// upstream probe asks (PD-NF3): answeringHost or silentHost.
+func newUpdateProbeAt(t *testing.T, verb []string, updates bool, install bool, url string) *updateProbe {
+	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not found")
 	}
@@ -59,7 +66,7 @@ func newUpdateProbe(t *testing.T, verb []string, updates bool, install bool) *up
 	launcher := nativeAgentLauncher("probe",
 		&packdecl.Install{
 			Kind: "native", Bin: "probetool",
-			InstallerURL: "https://example.invalid/never-fetched.sh",
+			InstallerURL: url,
 			UpdateVerb:   verb,
 		},
 		p.stamps,
@@ -286,11 +293,13 @@ func TestNativeLauncherReleasesTheLock(t *testing.T) {
 	}
 }
 
-// TestNativeLauncherReportsAFailedUpdateAndStillLaunches: an update that fails is scoped to
-// the update. The user asked to run the agent, not to update it, so a working binary must
-// still run — and the failure must be said out loud rather than swallowed.
+// TestNativeLauncherReportsAFailedUpdateAndStillLaunches: an update that fails while its
+// upstream cannot be reached could not check for a newer version (PD-NF1, PD-NF3), so it is
+// scoped to the update: the working binary still runs, and the failure is said out loud rather
+// than swallowed. One whose upstream answers refuses instead
+// (TestNativeLauncherRefusesAFailedUpdateWhoseUpstreamAnswers).
 func TestNativeLauncherReportsAFailedUpdateAndStillLaunches(t *testing.T) {
-	p := newUpdateProbe(t, []string{"update"}, true, true)
+	p := newUpdateProbeAt(t, []string{"update"}, true, true, silentHost(t))
 	// Re-point the fake program at a body that fails for the update argv and succeeds for
 	// the bare launch — the shape of a vendor updater that cannot reach its release host.
 	body := "#!/bin/bash\nprintf '%s\\n' \"RAN:$*\" >> " + shellQuoteForTest(p.log) + "\n" +
@@ -304,8 +313,8 @@ func TestNativeLauncherReportsAFailedUpdateAndStillLaunches(t *testing.T) {
 		t.Errorf("a failed UPDATE must not fail the invocation — there is a working binary "+
 			"to run: rc=%d\n%s", rc, out)
 	}
-	if !strings.Contains(out, "update failed") {
-		t.Errorf("the failure must be reported, got:\n%s", out)
+	if !strings.Contains(out, "its update (probetool update) failed (status 7), and its upstream could not be reached") {
+		t.Errorf("the failure must be reported, with why the launch goes on, got:\n%s", out)
 	}
 	got := p.argvLog(t)
 	if len(got) != 2 || got[1] != "RAN:" {

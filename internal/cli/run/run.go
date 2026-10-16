@@ -3074,6 +3074,9 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 	// NO_COLOR rides the exec itself — and a NO_COLOR the launch froze is cleared when
 	// this invocation has none (attachNoColorEnvArgs says why).
 	execFlags = append(execFlags, o.attachNoColorEnvArgs(envLines)...)
+	// And this invocation's YOLO_USE_INSTALLED, the hatch a launcher's update refusal names, which
+	// the same reasoning makes this invocation's rather than the launch's (attachUseInstalledArgs).
+	execFlags = append(execFlags, o.attachUseInstalledArgs(envLines)...)
 	// THIS SESSION'S NAME in the jail, which its signal arm hands back to end its processes
 	// there (sessionhangup.go); none for a jail that cannot hang a session up.
 	sessionID := attachSessionID(envLines)

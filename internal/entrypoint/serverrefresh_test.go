@@ -198,6 +198,14 @@ type refreshProbe struct {
 	out  strings.Builder
 	now  time.Time
 	ctxs []context.Context
+	// latest is what the registry answers for every package's version, "" or viewErr for a
+	// registry that did not answer; "9.9.9" (newer than installed's 1.0.0) unless a cell says
+	// otherwise. viewed records each package asked about.
+	latest  string
+	viewErr error
+	viewed  []string
+	// hatch is the user's YOLO_USE_INSTALLED for the run.
+	hatch string
 }
 
 func newRefreshProbe(t *testing.T, vars map[string]string) *refreshProbe {
@@ -208,9 +216,10 @@ func newRefreshProbe(t *testing.T, vars map[string]string) *refreshProbe {
 		all[k] = v
 	}
 	p := &refreshProbe{
-		e:    NewEnv(all),
-		fail: map[string]bool{},
-		now:  time.Unix(1_700_000_000, 0),
+		e:      NewEnv(all),
+		fail:   map[string]bool{},
+		now:    time.Unix(1_700_000_000, 0),
+		latest: "9.9.9",
 	}
 	p.stampDir = filepath.Join(home, ".cache", "yolo-agent-stamps", "servers")
 	// A real prefix, so the presence stats have somewhere to look.
@@ -277,6 +286,17 @@ func (p *refreshProbe) run(npmSpecs string, updates bool) error {
 			}
 			return nil
 		},
+		View: func(_ context.Context, pkg string) (string, error) {
+			p.viewed = append(p.viewed, pkg)
+			return p.latest, p.viewErr
+		},
+		Bin: "claude",
+		Getenv: func(k string) string {
+			if k == "YOLO_USE_INSTALLED" {
+				return p.hatch
+			}
+			return ""
+		},
 	})
 }
 
@@ -328,33 +348,131 @@ func TestAnAbsentServerThatCannotBeInstalledIsReported(t *testing.T) {
 	}
 }
 
-// A STALE server is refreshed under a deadline, and a failure is SWALLOWED: the copy on disk
-// is the fallback, so an offline registry costs the user a message and nothing else.
+// A STALE server whose registry did not answer is left as it is, bounded and swallowed: nothing
+// says a newer version exists (PD-NF1), so an offline registry costs the user a message and
+// nothing else. The stamp moves, so an offline jail does not ask again on every invocation.
 func TestAStaleServerIsRefreshedBoundedAndSwallowed(t *testing.T) {
+	p := newRefreshProbe(t, nil)
+	p.installed(t, "chrome-devtools-mcp")
+	staleAt := p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+	p.viewErr = errors.New("ENOTFOUND")
+
+	if err := p.run("chrome-devtools-mcp", true); err != nil {
+		t.Fatalf("a registry that did not answer is not an error: %v", err)
+	}
+	if len(p.viewed) != 1 || p.viewed[0] != "chrome-devtools-mcp" || len(p.ran) != 0 {
+		t.Fatalf("viewed %v and ran %v, want one version query and no install", p.viewed, p.ran)
+	}
+	if !strings.Contains(p.out.String(), "could not ask the npm registry for a newer version — keeping the installed 1.0.0") {
+		t.Errorf("the could-not-check line is missing:\n%s", p.out.String())
+	}
+	// MTIME, not existence: the stamp file is this cell's own fixture, so what must have
+	// happened is that the stamp MOVED to now. Without it an offline jail would spend the
+	// budget again on every single agent invocation.
+	if at := p.stampTime(t, serverNpm, "chrome-devtools-mcp"); !at.Equal(p.now) {
+		t.Errorf("a refresh that could not check did not advance the stamp (%v, was %v)", at, staleAt)
+	}
+
+	// The registry answers the installed version: nothing is newer, nothing is installed.
+	p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+	p.viewErr, p.latest = nil, "1.0.0"
+	if err := p.run("chrome-devtools-mcp", true); err != nil || len(p.ran) != 0 {
+		t.Fatalf("a current server was installed (%v) or failed (%v)", p.ran, err)
+	}
+	if at := p.stampTime(t, serverNpm, "chrome-devtools-mcp"); !at.Equal(p.now) {
+		t.Errorf("a server found current did not advance its stamp (%v)", at)
+	}
+}
+
+// A STALE server whose NEWER version was found and did not install REFUSES (PD-NF1): the refusal
+// is said in the launchers' shape, naming the versions and the hatch, the error is the typed
+// refusal the CLI maps to UpdateRefusedStatus, and the stamp does not move, so the next invocation
+// retries. The install is bounded. The hatch, naming the server's package, keeps the installed
+// version instead; one naming something else does not.
+func TestAStaleServerWhoseNewerVersionFailsRefuses(t *testing.T) {
 	p := newRefreshProbe(t, nil)
 	p.installed(t, "chrome-devtools-mcp")
 	staleAt := p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
 	p.fail["chrome-devtools-mcp"] = true
 
-	if err := p.run("chrome-devtools-mcp", true); err != nil {
-		t.Fatalf("a failed refresh of an INSTALLED server must not be an error: %v", err)
+	err := p.run("chrome-devtools-mcp", true)
+	var refusal *ServerUpdateRefusal
+	if !errors.As(err, &refusal) || len(refusal.Specs) != 1 || refusal.Specs[0] != "chrome-devtools-mcp" {
+		t.Fatalf("a newer server that did not install must be refused, got %v", err)
 	}
 	if len(p.ran) != 1 {
-		t.Fatalf("ran %v, want one refresh", p.ran)
+		t.Fatalf("ran %v, want one install", p.ran)
 	}
 	if _, ok := p.ctxs[0].Deadline(); !ok {
-		t.Error("the stale refresh carries no deadline — a hung updater would hang the " +
-			"command the user typed")
+		t.Error("the stale install carries no deadline — a hung updater would hang the command the user typed")
 	}
-	// MTIME, not existence. The stamp file is this cell's own fixture, so
-	// `hasStamp` is vacuously true and a mutation that skipped the touch on failure kept
-	// it green (measured). What must have happened is that the stamp MOVED to now: without
-	// it an offline jail would spend the whole budget again on every single agent
-	// invocation. That is _do_install's rule (`touch "$STAMP"` sits outside its success
-	// branch) and it matters more here, because the cost is paid before an exec.
-	if at := p.stampTime(t, serverNpm, "chrome-devtools-mcp"); !at.Equal(p.now) {
-		t.Errorf("a FAILED refresh did not advance the stamp (%v, was %v) — one attempt "+
-			"per interval is the throttle, and success is not its condition", at, staleAt)
+	for _, want := range []string{
+		"yolo: ERROR: npm server chrome-devtools-mcp 1.0.0 → 9.9.9: installing the newer version failed\n",
+		"  npm install -g --prefer-online chrome-devtools-mcp: probe: install refused (its output is above).\n",
+		"\nRepair:\n", "then run claude again", "    claude\n",
+		"\nStart anyway:\n", "  YOLO_USE_INSTALLED=chrome-devtools-mcp claude    run the installed 1.0.0\n",
+	} {
+		if !strings.Contains(p.out.String(), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, p.out.String())
+		}
+	}
+	if at := p.stampTime(t, serverNpm, "chrome-devtools-mcp"); !at.Equal(staleAt) {
+		t.Errorf("a refused server's stamp moved (%v, was %v): the next invocation would not retry it", at, staleAt)
+	}
+
+	p.hatch = "other"
+	if err := p.run("chrome-devtools-mcp", true); !errors.As(err, &refusal) {
+		t.Errorf("a hatch naming another program must not cover this server: %v", err)
+	}
+	for _, hatch := range []string{"chrome-devtools-mcp", "1"} {
+		p.hatch = hatch
+		p.out.Reset()
+		if err := p.run("chrome-devtools-mcp", true); err != nil {
+			t.Errorf("YOLO_USE_INSTALLED=%s must keep the installed server: %v", hatch, err)
+		}
+		if !strings.Contains(p.out.String(), "keeping the installed version, as YOLO_USE_INSTALLED asks") {
+			t.Errorf("YOLO_USE_INSTALLED=%s: the kept server is not said:\n%s", hatch, p.out.String())
+		}
+		p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+	}
+}
+
+// A budget that runs out under the install of a NEWER version is that install failing: refused. A
+// Ctrl-C there (the caller's cancellation) is the user's own hatch (PD-NF4): the installed version
+// is kept, and nothing is refused.
+func TestAStaleServerWhoseBudgetRunsOutAfterANewerWasFoundRefuses(t *testing.T) {
+	for _, interrupted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "budget", true: "ctrl-c"}[interrupted], func(t *testing.T) {
+			p := newRefreshProbe(t, nil)
+			p.installed(t, "chrome-devtools-mcp")
+			p.stamp(t, serverNpm, "chrome-devtools-mcp", 2*ServerRefreshInterval*time.Second)
+			// A parent DEADLINE stands in for the budget, which the child context inherits.
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			err := RefreshServers(ServerRefreshRequest{Context: ctx, Env: p.e, NpmSpecs: "chrome-devtools-mcp", Updates: true,
+				Stderr: &p.out, Now: func() time.Time { return p.now }, Bin: "claude", Getenv: func(string) string { return "" },
+				View: func(context.Context, string) (string, error) { return "9.9.9", nil },
+				Run: func(ctx context.Context, _ io.Writer, _ []string) error {
+					if interrupted {
+						cancel()
+					}
+					<-ctx.Done()
+					return ctx.Err()
+				}})
+			var refusal *ServerUpdateRefusal
+			if interrupted {
+				if err != nil || !strings.Contains(p.out.String(), "its refresh was interrupted — keeping the installed version") {
+					t.Errorf("a Ctrl-C at the install must keep the installed server, got %v:\n%s", err, p.out.String())
+				}
+				return
+			}
+			if !errors.As(err, &refusal) {
+				t.Fatalf("an install the budget ended after a newer version was found must refuse, got %v", err)
+			}
+			if !strings.Contains(p.out.String(), "ran out of the 60s server refresh budget") {
+				t.Errorf("the refusal must say the budget ran out:\n%s", p.out.String())
+			}
+		})
 	}
 }
 
