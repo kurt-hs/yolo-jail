@@ -25,7 +25,7 @@ questions other docs own, and item 31 on [OQ-NC7](#7-decision-ledger)'s ruling. 
 `/tmp` against a binary built from that commit.
 
 > **In short.** A notch *(the confinement setting a launch runs at: jail, guest or host; see
-> [the dial](../design/yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches))* should
+> [the dial](../reference/what-yolo-is.md#the-confinement-dial))* should
 > choose how the agent is confined and nothing else. Today it also chooses the flag parser, the pack
 > set, the provider table, the env order and the render loop, and on some notches it removes the
 > security premise a loopback service was built on.

@@ -13,7 +13,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// THE MAC'S HOST FLOOR, from an installer's capture (docs/design/host-tool-provisioning.md HP-D2):
+// THE MAC'S HOST FLOOR, from an installer's capture (docs/reference/host-agent-environment.md HP-D2):
 // on a Mac the floor's copy of an installer agent is the macos-user capture act's entry — the
 // vendor installer run once as the sandbox account under the capture's Seatbelt profile, in a
 // throwaway home — materialized into the floor's own prefix. The recording half of that act was

@@ -5,7 +5,7 @@ import "github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 // PackPolicyDecision reads the shared boolean or refresh-timing policy for a pack:
 // a valid specific entry beats "*", which beats the open, at-launch default.
 // This is the common reader for host_floor and agent_updates; see
-// docs/design/host-tool-provisioning.md and docs/design/program-delivery.md §3.5.
+// docs/reference/host-agent-environment.md and docs/design/program-delivery.md §3.5.
 // Moving the read here lets configuration validation use the production rule
 // without importing entrypoint, which already depends on config.
 func PackPolicyDecision(wire, pack string) (allowed bool, timing string) {

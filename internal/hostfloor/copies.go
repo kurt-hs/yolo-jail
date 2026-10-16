@@ -8,7 +8,7 @@ import (
 
 // copies.go names the OTHER copies of a floor program on this machine — the one a user installed
 // by hand, Homebrew's, mise's — so the second copy HP-DIR4 creates is never a surprise
-// (host-tool-provisioning.md §4, "The other copy is named, never hidden"). It only reports:
+// (host-agent-environment.md, "When the floor installs", existing copies). It only reports:
 // nothing here decides what runs.
 
 // HintLocations is the compiled list host-agent-environment.md's miss line names: the directories an

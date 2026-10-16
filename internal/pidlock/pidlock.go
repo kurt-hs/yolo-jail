@@ -1,5 +1,5 @@
 // Package pidlock is an exclusive file lock whose holder writes its pid into the file: the
-// shape the host floor's one-install-per-program rule has (docs/design/host-tool-provisioning.md
+// shape the host floor's one-install-per-program rule has (docs/reference/host-agent-environment.md
 // §4, "Concurrency"), lifted out so the fork build's lock (docs/design/forked-programs-as-packs.md
 // FP-D1) is the same lock rather than a second one.
 //

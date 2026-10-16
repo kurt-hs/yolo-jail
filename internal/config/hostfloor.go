@@ -3,7 +3,7 @@ package config
 import "github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 
 // hostfloor.go is the `host_floor` key: which selected packs' programs yolo keeps in the HOST
-// AGENT FLOOR (docs/design/host-tool-provisioning.md) — its own host prefix, from which
+// AGENT FLOOR (docs/reference/host-agent-environment.md) — its own host prefix, from which
 // `yolo host -- <agent>` runs them whatever PATH its launcher held.
 //
 // # The value, and why it is agent_updates' shape

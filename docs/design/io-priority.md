@@ -679,7 +679,7 @@ severity) are answered from existing rulings.
 3. 💬 <a id="OQ-IO6"></a>**[OQ-IO6](#OQ-IO6): Does `yolo host -- <cmd>` set the priority?** The
    filing said it would. No ruling decides it, and two things weigh against it. The one sketch of
    the host notch's `check` output,
-   [`yolo-as-environment-manager.md` §3.4](yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here),
+   [`what-yolo-is.md`, `check` at a notch](../reference/what-yolo-is.md#check-at-a-notch),
    lists `resources` as *"nothing to confine"*. And
    [P4](declaration-parity.md#1-the-principle-and-what-it-does-not-say) has `yolo host` read the
    user-scope config only, so a workspace's `resources.io` could never reach it.

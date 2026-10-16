@@ -947,7 +947,7 @@ func PackBinariesDirUnder(home string) string {
 const hostFloorLeaf = "host-floor"
 
 // HostFloorDir returns $HOME/.local/share/yolo-jail/host-floor — the HOST PREFIX
-// (docs/design/host-tool-provisioning.md §3): the directory yolo installs the `program`
+// (docs/reference/host-agent-environment.md, "The host prefix"): the directory yolo installs the `program`
 // binaries of the user-scope selected packs into, and that `yolo host -- <agent>` execs them
 // from by absolute path.
 //

@@ -216,7 +216,7 @@ mounted `:ro` at `/ctx/captures`), `packs/` (the content-addressed pack store),
 directory a *user* is asked to prepend to their own PATH), and `host-floor/` (the **host agent
 floor**: yolo's own copies of the selected packs' agents, which `yolo host` runs by path; `0700`,
 on no PATH of the user's, and never mounted into a jail in any mode, because the host executes it
-— [`host-tool-provisioning.md`](../design/host-tool-provisioning.md)), and `pack-binaries/` (the
+— [`host-agent-environment.md`](host-agent-environment.md#the-host-agent-floor)), and `pack-binaries/` (the
 programs loophole manifests declare as downloads, at `<sha256>/<name>`, mode `0555`, fetched
 into only by `yolo pack install`, and seeded by a from-source `just install` with the tree's own
 builds of the official ones; never mounted as a directory, since a host daemon's build runs from

@@ -71,7 +71,7 @@ the code; the nearest thing is the confinement Profile's one provisioning primit
 ([§1.1](#11-five-findings-the-table-forces), F4).
 
 Notches are the three values of the confinement dial —
-[`yolo-as-environment-manager.md` §4](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches).
+[`what-yolo-is.md`, the confinement dial](../reference/what-yolo-is.md#the-confinement-dial).
 **guest** below means the shipped `macos-user` backend; the Linux guest is unbuilt and has no
 row.
 
@@ -260,7 +260,7 @@ survive the ruling:
    CLIs. `fzf` is in nixpkgs, brew, apt and pacman alike; for that class a nix profile is
    overkill.
 3. **The printed remedy is the floor the design deliberately guarantees** (env-manager
-   [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest):
+   [dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning):
    *"the composed manifest is always the floor"*). Anything driven is an *additional* offer, never
    a replacement for the floor — which is exactly how [`OQ-PS2`](provisioner-sets.md#decision-ledger) was ruled on
    2026-09-11 ([the drive-the-winner ruling](provisioner-sets.md#decision-ledger)): the
@@ -400,14 +400,14 @@ stable path *with* generations, rollback and `nix profile list` provenance. Veri
 > made [`OQ-PS10`](provisioner-sets.md#decision-ledger) answerable. Sealing's rule over the closure tiers is *"`--sealed`
 > refuses the **Undeclared** tier and **reports** the Declared-impure tier"*, and its criterion is
 > **nameability**
-> ([`yolo-as-environment-manager.md` §3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)).
+> ([`what-yolo-is.md`, the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing)).
 > A profile at a path yolo names is therefore **Declared-impure** — the tier `mise_tools` already
 > occupies — so it is reported and never refused. Confirmed against the code: `applySealed` refuses
 > exactly two inputs, a present `yolo-jail.local.jsonc` and outstanding capture overlay keys
 > (`internal/cli/apply.go:800-833`, read 2026-09-11); it reads no toolchain and no store path.
 > ⚠ Do not reintroduce a "sealing forbids a mutable profile" argument anywhere in this corpus —
 > at `guest` and `host`
-> [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)
+> [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing)
 > already puts the **whole toolchain** outside the sealed closure, and
 > that is the design, not an oversight.
 

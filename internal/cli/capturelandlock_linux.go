@@ -22,7 +22,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-// capturelandlock_linux.go is the HOST CAPTURE on Linux (docs/design/host-tool-provisioning.md
+// capturelandlock_linux.go is the HOST CAPTURE on Linux (docs/reference/host-agent-environment.md
 // HP-D18): `yolo capture <installer bin>` on a machine with no container runtime, the vendor's
 // installer run once on the host, confined by Landlock to a throwaway home (internal/capture's
 // landlock_linux.go says what the confinement allows, and what it leaves open).

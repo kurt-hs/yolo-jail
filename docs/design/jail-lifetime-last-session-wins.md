@@ -180,7 +180,7 @@ them for the jail's life has to start them itself.
   roster and starts nothing the keeper holds ([§9.9.5](#995-how-a-second-launch-joins)).
 - **Notch.** The confinement level a launch runs at: `jail` (a container backend), `guest` (on
   a Mac, the macos-user account) or `host` (`yolo host`, no confinement). Coined in
-  [`yolo-as-environment-manager.md` §4](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches).
+  [`what-yolo-is.md`, the confinement dial](../reference/what-yolo-is.md#the-confinement-dial).
   It is not the backend: podman and Apple Container are two backends of one notch.
 - **Pane close.** A terminal multiplexer closing one of its terminals. herdr, the one this doc
   measured against, signals every process in that terminal's session: SIGHUP, SIGTERM about

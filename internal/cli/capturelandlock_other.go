@@ -9,7 +9,7 @@ import (
 	goruntime "runtime"
 )
 
-// capturelandlock_other.go is the host capture's non-Linux half (docs/design/host-tool-provisioning.md
+// capturelandlock_other.go is the host capture's non-Linux half (docs/reference/host-agent-environment.md
 // HP-D18): Landlock is Linux's, so chooseCaptureArm never picks the host capture here, and the
 // confining verb refuses. A Mac's floor captures through the macos-user capture act instead (HP-D2).
 

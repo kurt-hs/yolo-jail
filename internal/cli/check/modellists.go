@@ -230,7 +230,7 @@ type declaredCatalog struct {
 // declaredCatalogs lists the model catalogs the selected packs' npm programs declare, each with
 // the package directory this notch installed it into: in a jail the jail's npm prefix
 // (<prefix>/lib/node_modules/<package>, where its launcher installs it), at the host the host
-// floor's copy, which is what `yolo host -- <agent>` runs (host-tool-provisioning.md).
+// floor's copy, which is what `yolo host -- <agent>` runs (host-agent-environment.md).
 //
 // THE JAIL'S PREFIX IS THE ENTRYPOINT'S RULE (entrypoint.NewEnv: $NPM_CONFIG_PREFIX, else
 // $HOME/.npm-global), the one every generated launcher installs by, never a second reading of it:

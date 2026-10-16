@@ -80,9 +80,9 @@ func (f FieldSet) Refuse(k packdecl.Kind) string {
 // either kind is told apart per contribution (cli's hostNotchOutcomeOf), not per kind.
 var refusalReasons = map[packdecl.Kind]string{
 	packdecl.KindProgram: "install is refused below jail (a pack must not mutate a real toolchain unprompted)",
-	// A GRANT THROUGH A JAIL'S WALL, not a missing mechanism (docs/design/yolo-as-environment-manager.md
-	// §4: the grants are "negotiating a boundary rather than creating one, so at lower notches
-	// they are inert"). The old reason, "needs a mount namespace", was false of macos-user, which
+	// A GRANT THROUGH A JAIL'S WALL, not a missing mechanism (docs/reference/what-yolo-is.md,
+	// the confinement dial: the grants are holes through a wall, and "below `jail` there is no
+	// wall, so they are inert"). The old reason, "needs a mount namespace", was false of macos-user, which
 	// delivers a context mount with no mount namespace at all (DP-B34's reason text).
 	packdecl.KindMount: "mount grants a jail a host folder through the jail's wall — at the host " +
 		"there is no wall, and the folder is already where you are",

@@ -651,7 +651,7 @@ which for pi are one workspace's
 floor's, one on the launch PATH, or a path given), under the same hourly rule, `due_on_change` and
 `agent_updates`. Its stamp and its lock there are the host floor's own, a `flock` under the floor
 prefix, never `lock`: that names the jails' store, which a host program does not write
-([HP-D19](../design/host-tool-provisioning.md#HP-D19)). A `yolo host` inside a jail leaves it to
+([HP-D19](host-agent-environment.md#HP-D19)). A `yolo host` inside a jail leaves it to
 the jail's launcher. It is bounded by the same timeout as an update, reads
 nothing from the terminal, writes its stdout to stderr, and runs only while it holds `lock`.
 `lock` is a non-blocking `mkdir`: a lock another jail holds skips the refresh, and so does a
@@ -1102,7 +1102,7 @@ mounts no capture store, so the launch builds nothing and each fork's launcher s
 
 **`yolo host` runs the same build, on Linux**
 ([FP-D16](../design/forked-programs-as-packs.md#FP-D16)). The
-[host agent floor](../design/host-tool-provisioning.md) holds a forked program as the capture
+[host agent floor](host-agent-environment.md#the-host-agent-floor) holds a forked program as the capture
 store's build of its pinned commit, found by the same hit check a launch makes, built on a miss by
 the same build act, and materialized into the floor's own install directory by the confined,
 relocating materialize an installer's capture takes. A Node script is started by the floor's own

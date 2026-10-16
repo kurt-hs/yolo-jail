@@ -951,7 +951,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		survey.noteStageFailure(stageWrappers)
 	}
 	sp.End()
-	// THE HOST AGENT FLOOR (host-tool-provisioning.md): the same provisioning a launch does, for
+	// THE HOST AGENT FLOOR (host-agent-environment.md): the same provisioning a launch does, for
 	// every program the selection delivers, and the one place an entry no selected pack delivers
 	// any more is removed. After the surfaces for the wrappers' reason: it writes outside them.
 	if survey.floorStage {

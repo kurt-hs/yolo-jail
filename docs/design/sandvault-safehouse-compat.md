@@ -76,7 +76,7 @@ sketch, which is incomplete while questions are open).
 
 yolo's charter puts the environment first and confinement second
 ([`what-yolo-is.md`](../reference/what-yolo-is.md),
-[`yolo-as-environment-manager.md` §1](yolo-as-environment-manager.md#1-the-one-sentence-answer-to-how-is-this-different-from-sandvault)).
+[`what-yolo-is.md`, the one-sentence answer](../reference/what-yolo-is.md#the-one-sentence-answer)).
 Both neighboring tools are confinement-first by their own descriptions. SandVault calls itself
 *"a limited user account to sandbox shell commands and AI agents"*, and Safehouse calls itself
 *"a macOS sandbox wrapper for coding agents"*. Their setups contain almost no environment:

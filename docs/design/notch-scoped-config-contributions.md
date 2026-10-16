@@ -145,11 +145,11 @@ rule. Since [OQ-3](#10-decision-ledger)'s build nothing confines it: a patch on 
 ## 2. Load-bearing principles
 
 - **P1. Content conditional on confinement lives in `autonomy`.** The notch decides the posture;
-  a pack declares what each posture means. Env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger)
+  a pack declares what each posture means. Env-manager [OQ-11](../reference/what-yolo-is.md#why-its-this-way)
   chose a dedicated kind over a `when`-discriminator so a conditional key cannot sit in the
   always-on half by accident, and [PV-OQ-1](../reference/providers.md#pv-oq-1) rules that
   *"the confinement-conditional keys live in `autonomy` and nowhere else"*. Env-manager
-  [§4.2](yolo-as-environment-manager.md#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config)
+  [autonomy as a confinement policy](../reference/what-yolo-is.md#autonomy-is-a-confinement-policy)
   names this direction for pi by name: pi is permissive by default, so *"the `host` notch must
   add a restriction"* — and a permission gate is that restriction. Conditioning on the notch for an
   environment dependency instead (host Docker, a native keychain) has no shipped or reported
@@ -352,7 +352,7 @@ one field: a `posture: "guarded"` modifier. What building it takes:
   [§3.1](#31-collection-is-notch-blind) and every test caller; the boot passes
   `e.renderTarget().KindOf()`, never a literal.
 - **Two rulings amended.** [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager
-  [OQ-11](yolo-as-environment-manager.md#9-decision-ledger).
+  [OQ-11](../reference/what-yolo-is.md#why-its-this-way).
 - **Skew fails open** ([§4.5](#45-failure-paths)).
 
 ### 4.3 Render-mark parity on `macos-user`
@@ -470,7 +470,7 @@ included) and in no jail.
    footprint and the notch line, with tests for decode, `Collect` at both bits, the jail boot,
    `RenderHostPack` with its insert record, and `config ls`/`render` at both notches. Then the
    docs, `just check-ci` and the nested-jail check. It is what [PV-OQ-1](../reference/providers.md#pv-oq-1)
-   and [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) already prescribe;
+   and [OQ-11](../reference/what-yolo-is.md#why-its-this-way) already prescribe;
    [OQ-5](#10-decision-ledger) only asks whether to depart from them. The review's estimate: 60–80 lines of
    production Go, 200–250 of tests, half a day to a day. **As built:** every listed test, plus
    the real `yolo host apply --assert`, the malformed and ownerless cases at both bits, and
@@ -519,7 +519,7 @@ it leaks on `macos-user`, and it depends on the mark outliving the `assert` reti
 
 | Alternative | Verdict |
 | :--- | :--- |
-| **A. `notches` modifier on `config-list` and `config-overlay`** (the first draft's proposal) | **Not recommended.** It conflicts with [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) as written, adds the notch-name edge [§6c](../reference/pack-system.md#batch-6c) rules out, fails open under skew, and changes `Collect`'s signature at every call site. Buildable if [OQ-5](#10-decision-ledger) amends both rulings, and then as B |
+| **A. `notches` modifier on `config-list` and `config-overlay`** (the first draft's proposal) | **Not recommended.** It conflicts with [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](../reference/what-yolo-is.md#why-its-this-way) as written, adds the notch-name edge [§6c](../reference/pack-system.md#batch-6c) rules out, fails open under skew, and changes `Collect`'s signature at every call site. Buildable if [OQ-5](#10-decision-ledger) amends both rulings, and then as B |
 | **B. `posture: "guarded"` modifier on the same kinds** | **The fallback if [OQ-5](#10-decision-ledger) amends the rulings** ([§4.2](#42-the-first-drafts-modifier-corrected)). The draft rejected it as the sole selector for host packages that need the host's environment rather than its permission policy (1Password, host notifications). No such case is shipped or reported; when one arrives, the predicate is a capability such as "a real home on the real filesystem", not a notch name |
 | **C. Posture `lists` inside `autonomy`** | **Recommended** ([§4.1](#41-recommended-posture-lists-inside-autonomy)), pending [OQ-5](#10-decision-ledger). The draft's rejection rested on two facts that do not hold: `autonomy` is one declaration per pack that any pack may make, not reserved to agent-owning packs; and [OQ-PT8](../reference/providers.md#oq-pt8) moved `profile`'s config patch into gated contribution kinds, while [PV-OQ-1](../reference/providers.md#pv-oq-1) keeps `autonomy` a separate bundling kind on purpose |
 | **D. Mount the host's `list-record.json` and subtract** | **Moot.** The zero-mount signal it wanted already crosses as the launcher's `rendered` label ([`OQ-CR6`](../reference/config-target-resolution.md#oq-cr6)) |
@@ -539,7 +539,7 @@ it leaks on `macos-user`, and it depends on the mark outliving the `assert` reti
 | **The `assert` retirement moves the default to `none`** | An unset home stops receiving the entry | Done conditions name `own`; the mark is durable |
 | **The inertness test goes red** | A reviewer reads the pinned contract as broken | Rewrite it to pin identities and ownership only, and add a test that fails when the gate is deleted — done in `bbe5c878` (`TestCollectAutonomySelectsPostureLists`) |
 | **A user's own identical entry** | Removed by yolo? | Never: `ReconcileInsertedList` leaves an unrecorded entry alone (the sanitizer, F, would have stripped it) |
-| **A custom confinement with prompts on** ([env-manager §4.2](yolo-as-environment-manager.md#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config)) | Should get the gate | The posture shape gives it one; a notch-name match would not |
+| **A custom confinement with prompts on** ([autonomy as a confinement policy](../reference/what-yolo-is.md#autonomy-is-a-confinement-policy)) | Should get the gate | The posture shape gives it one; a notch-name match would not |
 
 ---
 
@@ -582,7 +582,7 @@ answer; `NS` is this file's name, notch-scoped.
 | OQ-2 | *Answered — moot.* Filtering host-only entries out of a `readsHost` layer: the render mark already delivers a managed home's host file as a baseline, not a layer, on podman and Apple Container. The residual `macos-user` leak is NS-D3. The sanitizer and the host-record mount are rejected ([§6](#6-alternatives-considered), D and F) | 2026-09-27 | [§3.2](#32-the-host-layer-is-already-a-baseline-on-container-backends) | ✅ `369c6f63` (containers); `macos-user` by NS-D3 |
 | OQ-4 | *Answered — moot; the rest is NS-D1 and NS-D2.* `yolo config ls` and `yolo config render` already pass `render.ProfileFor(t.notch).AgentAutonomy`, so `--at host` and `--at jail` follow the gate with no change | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878`, pinned by `TestConfigRenderAndLsFollowAPostureListsNotch` with no change to either verb |
 | OQ-3 | **Maintainer ruling**, against the leaning: *"do it now. extension point."* A posture's `config` may patch a surface another pack owns, so a posture can carry a host-only scalar | 2026-09-28 | [§8](#8-what-this-does-not-propose), [§9](#9-open-questions) | ✅ `12032eb2` (NS-D19 to NS-D26) |
-| OQ-5 | **Maintainer ruling**, as leaned: [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](yolo-as-environment-manager.md#9-decision-ledger) hold for a non-owning pack's host-only entry; posture lists inside `autonomy`, not a `posture` modifier on `config-list` and `config-overlay`: the shape needs no `Collect` signature change and no notch names in manifests, and an older in-jail reader drops a nested posture field where it would render a modifier-gated list unconditionally | 2026-09-28 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
+| OQ-5 | **Maintainer ruling**, as leaned: [PV-OQ-1](../reference/providers.md#pv-oq-1) and env-manager [OQ-11](../reference/what-yolo-is.md#why-its-this-way) hold for a non-owning pack's host-only entry; posture lists inside `autonomy`, not a `posture` modifier on `config-list` and `config-overlay`: the shape needs no `Collect` signature change and no notch names in manifests, and an older in-jail reader drops a nested posture field where it would render a modifier-gated list unconditionally | 2026-09-28 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
 | NS-D1 | *Implementation decision.* The gate sits after the list decode and before the owner check; an unselected contribution is a clean skip (no problem, no orphan, no applied row), as the `profile` gate is | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878` |
 | NS-D2 | *Implementation decision.* `yolo pack footprint` claims a gated list unconditionally and names the posture in the detail; `surveyNotchFacts.AutonomyFolds` counts posture lists | 2026-09-27 | [§4.1](#41-recommended-posture-lists-inside-autonomy) | ✅ `bbe5c878`; the claim is the `autonomy` one (NS-D4); the fold count narrowed to placed lists by NS-D12 (`2ab44527`) |
 | NS-D3 | *Implementation decision*, under [`OQ-CR6`](../reference/config-target-resolution.md#oq-cr6). `macos-user` computes `Rendered` with `hostLayerIsRender` in `buildMacosCtxTree` and emits `entrypoint.HostLayerWire` from `macosuser.hostLayerWire` | 2026-09-27 | [§4.3](#43-render-mark-parity-on-macos-user) | ✅ `499a332f`, unit-tested only |

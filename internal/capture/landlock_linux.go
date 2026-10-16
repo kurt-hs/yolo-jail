@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// landlock_linux.go is the HOST CAPTURE's confinement on Linux (docs/design/host-tool-provisioning.md
+// landlock_linux.go is the HOST CAPTURE's confinement on Linux (docs/reference/host-agent-environment.md
 // HP-D18): a vendor installer run on the host, with no container, under Landlock (the kernel's
 // unprivileged path-based access control, Documentation/userspace-api/landlock.rst) and a small
 // seccomp filter, so `yolo capture <bin>` works on a Linux machine with no container runtime.

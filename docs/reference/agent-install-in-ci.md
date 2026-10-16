@@ -128,7 +128,7 @@ yolo's own and has no coverage question in it. The fix is attribution
   code path already bought ([P2](#p2)). No fewer, because each mechanism's cell is the only thing
   on the push path that watches an install *arrive* ([P3](#p3)). The host floor installs both
   declarations with code of its own: npm on the floor's own Node, and an installer as a capture
-  materialized into the floor ([`host-tool-provisioning.md`](../design/host-tool-provisioning.md)).
+  materialized into the floor ([`host-agent-environment.md`](host-agent-environment.md#the-host-agent-floor)).
   So it has two cells of its own under the same rule. Its npm cell is not the second npm cell
   [OQ-CI2](#oq-ci2) ruled out: the interpreter, the npm invocation and the prefix are the floor's,
   and none of them is the jail launcher's.

@@ -47,7 +47,7 @@ func agentUpdatesRefreshTiming(e *Env, pack string) string {
 // or unparseable. It is THE reader of that shape at the host too — `agent_updates` for the host
 // agent floor's evergreen refresh, and `host_floor` (config.HostFloorWire), which takes the same
 // shape by design — so the two notches, and the two keys, cannot come to read one value
-// differently (docs/design/host-tool-provisioning.md). A timing is a yes: it says WHEN a pack's
+// differently (docs/reference/host-agent-environment.md). A timing is a yes: it says WHEN a pack's
 // pre-launch refresh runs, and the host notch runs none (OQ-PD31). `host_floor`'s validator
 // refuses a timing, so one reaches this reader there only from a config `yolo check` reports.
 func PackPolicyAllows(wire, pack string) bool { return agentUpdatesValue(wire, pack) }

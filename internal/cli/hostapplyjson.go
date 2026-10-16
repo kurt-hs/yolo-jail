@@ -94,7 +94,7 @@ type hostApplyDoc struct {
 	// Groups are the remedy contract's tier-3 groups — every loss and blocker, grouped by remedy
 	// key, each with its class and its pasteable fix.
 	Groups []hostApplyDocGroup `json:"groups"`
-	// HostFloor is the host agent floor stage (host-tool-provisioning.md §4), the rows the text
+	// HostFloor is the host agent floor stage (host-agent-environment.md, "When the floor installs"), the rows the text
 	// report prints for it: every program the selected packs declare, with its disposition and
 	// what an --assert would do about it, and every entry an --assert would remove.
 	HostFloor []hostApplyDocFloorEntry `json:"host_floor"`
