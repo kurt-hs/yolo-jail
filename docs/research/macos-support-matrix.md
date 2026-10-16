@@ -24,7 +24,7 @@ dispatch-only). A cell a test on either job pins is marked [CI]. On **2026-10-05
 maintainer deferred [OQ-MX1](#OQ-MX1), what replaces the Intel runner, until Nix actually drops
 Intel Macs.
 
-**Needs your ruling:** [OQ-SH1](#OQ-SH1), whether macos-user self-hosting is worth pursuing; it blocks nothing. [OQ-MX1](#OQ-MX1) (what replaces `macos-26-intel`) was deferred in review on 2026-10-05 until Nix actually drops Intel Macs, when nixpkgs 26.05's security support ends on 2026-12-31, and is 🔒 until then. [OQ-MX2](#OQ-MX2) is moot since 2026-09-30: the three `packages:` tests no longer fail on the nightly's runner. *MX* stands for this matrix; the prefix was coined for these two questions on 2026-09-26.
+**Needs your ruling:** [OQ-SH1](#OQ-SH1), whether macos-user self-hosting is worth pursuing; it blocks nothing. [OQ-MX1](#OQ-MX1) (what replaces `macos-26-intel`) was deferred in review on 2026-10-05 until Nix actually drops Intel Macs, when nixpkgs 26.05's security support ends on 2026-12-31, and is 🔒 until then. [OQ-MX2](#decision-ledger) is moot since 2026-09-30: the three `packages:` tests no longer fail on the nightly's runner. *MX* stands for this matrix; the prefix was coined for these two questions on 2026-09-26.
 
 > [!NOTE]
 > **Code citations name a FILE, not a line** (since 2026-09-24). The line numbers this tracker
@@ -107,28 +107,17 @@ and nothing else here does.** Verified against `flake.nix` 2026-08-23.
 | **Darwin warmup: RUNS, and stays** | Skipped from 2026-08-23 (`e5b60902`), when every darwin launch realised an image and the warmup wasted 12m0s a night, to 2026-09-25 (`0c4bdbee`), once the stock short-circuit stopped that. MEASURED on the eight nightlies of 2026-09-26 → 2026-09-29: it warmed 91 of 93 shards in 1m59s–4m45s, each shard's first container test fell back to its steady-state cost, and no test timed out ([`agent-install-in-ci.md`](../reference/agent-install-in-ci.md#suite-warmup)). Linux CI keeps it too | 2026-09-30 |
 | Image-skew oracle on darwin | **auto-downgraded to `warn`** — a Linux-runner-built image can never match a darwin `nix eval`, so on a Mac you do **not** get the stale-image protection. Check by hand | 2026-08-23 |
 
-- ✅ <a id="OQ-MX2"></a>**[OQ-MX2](#OQ-MX2): Should the three `packages:`-declaring tests SKIP
-  rather than fail on a builder-less runner?** `TestExtraPackageLibFarm`,
-  `TestExtraPackagesFromMountedStore` and `TestDevPackageLinksRuntimeLib` declare `packages:`,
-  which makes them genuinely non-stock, so they build an image, and the nightly's runner has no
-  Linux builder. Failing there is the designed behavior, not a bug; nobody has ruled whether they
-  should skip instead. Filed 2026-09-26 from
-  the now-deleted `handoff-mac-unmeasured-claims.md`,
-  where it was recorded without an id.
-
-  <!-- vantage: question id=OQ-MX2 -->
-
-  **Answer:** moot (2026-09-30): the failure it asks about no longer happens. The nightly's
-  `build-image` job realizes the `zbar` and `libsodium.dev` image variants on Linux and pushes
-  them to the project's Cachix, so the Mac substitutes them rather than building
-  (`nightly-macos.yml`, the "non-stock variants" block of the build step). And
-  `TestExtraPackagesFromMountedStore` skips on `GOOS != "linux"` before it launches
-  (`integration/packages_test.go`), since store delivery is Linux-only. MEASURED in the scheduled
-  run of 2026-09-29, `36566584474`: `TestExtraPackageLibFarm` PASS (676.51s),
-  `TestDevPackageLinksRuntimeLib` PASS (431.33s), `TestExtraPackagesFromMountedStore` SKIP
-  (0.00s). That run failed on `TestYoloCheckValidConfig`, which is not one of the three. A cache
-  miss would make the two baked-path tests build and fail again, and that failure is the one
-  worth seeing: a stale or unbuilt image is never a basis for an integration result.
+- **The three `packages:`-declaring tests do not fail on the builder-less nightly runner**
+  ([OQ-MX2](#decision-ledger), moot 2026-09-30). `TestExtraPackageLibFarm` and
+  `TestDevPackageLinksRuntimeLib` declare `packages:`, so they need a non-stock image, and the
+  nightly's `build-image` job realizes those variants on Linux and pushes them to the project's
+  Cachix, so the Mac substitutes them rather than building (`nightly-macos.yml`, the "non-stock
+  variants" block of the build step). `TestExtraPackagesFromMountedStore` skips on
+  `GOOS != "linux"` before it launches (`integration/packages_test.go`), since store delivery is
+  Linux-only. MEASURED in the scheduled run of 2026-09-29, `36566584474`: the first two PASS
+  (676.51s, 431.33s), the third SKIP. A cache miss would make the two baked-path tests build and
+  fail again, and that failure is the one worth seeing: a stale or unbuilt image is never a
+  basis for an integration result.
 
 **Observed since (2026-09-30):** with the skip in place, on the nightlies of
 2026-09-22 → 2026-09-25, a shard's first container test took 129s–562s; with the
@@ -401,3 +390,4 @@ for the first time:
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | [OQ-MX1](#OQ-MX1) | **Deferred until it happens, none of the options:** what replaces `macos-26-intel` is decided when Nix drops Intel Macs, when nixpkgs 26.05's security support ends on 2026-12-31; until then the podman macOS suite stays on the Intel runner and the 26.05 pin | 2026-10-05 | [OQ-MX1](#OQ-MX1), [§0](#0-the-platform-deadline--x86_64-darwin-is-on-a-clock) | deferred |
+| OQ-MX2 | **Moot:** the three `packages:`-declaring tests no longer fail on the builder-less nightly runner, so no skip is needed. The nightly substitutes their image variants from Cachix, and the store-delivery test skips off Linux; a cache miss failing them is the wanted signal | 2026-09-30 | [§0.1](#01-ci-status--the-macos-nightly) | ✅ measured 2026-09-29 |

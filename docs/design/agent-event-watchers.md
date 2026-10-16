@@ -324,7 +324,7 @@ joins a container already running for the workspace.
 | :--- | :--- | :--- |
 | **Container jail** (podman, Apple Container) | A daemon under `yolo-jaild supervise`, started before the agent, stopped when the container stops. One per container, so an attach adds none. Not started when another keeper on this machine already runs it for this workspace ([EW-D25](#EW-D25)) | A child of the jail's keeper, started after the pre-flights and before the container, and stopped when the jail ends. An attach starts none of its own and says so. The same one-instance rule ([EW-D25](#EW-D25)) |
 | **`yolo host -- <agent>`** | Same as `host`. A sidecar a workspace declares does not run here ([EW-D18](#EW-D18)) | A child of the workspace's `yolo host` keeper ([`jail-lifetime-last-session-wins.md` §9.9](jail-lifetime-last-session-wins.md#99-the-keeper-at-yolo-host-and-macos-user)), spawned by the first `yolo host` launch in the workspace that has a sidecar to start and ended with the last `yolo host` session there. Sidecars start before the agent. A second `yolo host` in the same workspace joins that keeper: it starts none and shares the box, and nothing passes from launch to launch ([EW-D25](#EW-D25)). A host launch that has a keeper stays resident as its agent's parent instead of exec'ing (`hostExec` in [`host.go`](../../internal/cli/host.go) execs today; [JL-D36](jail-lifetime-last-session-wins.md#JL-D36)) |
-| **`yolo host env`, `yolo host apply`, an agent started without yolo** | Runs no sidecar. The same rule [OQ-HS3](host-notch-services.md#OQ-HS3) ruled for host services: an agent launched outside yolo lacks the feature, and that is accepted | Same |
+| **`yolo host env`, `yolo host apply`, an agent started without yolo** | Runs no sidecar. The same rule [OQ-HS3](host-notch-services.md#11-decision-ledger) ruled for host services: an agent launched outside yolo lacks the feature, and that is accepted | Same |
 | **macos-user** | **Not started**, and the launch line says it does not run on macos-user yet ([§12.5](#125-what-the-launch-says)); the launch is not refused. The guest's supervisor could run it: [OQ-DP8](declaration-parity.md#OQ-DP8) is ruled and built for loophole jail daemons. What holds it back is [EW-D25](#EW-D25)'s one-instance rule, which nothing there can keep. That supervisor is each session's, runs as the sandbox account and is started by the session's own `sudo`, so two sandboxes in one workspace would each run the sidecar and both would ping, the duplicate [EW-DIR1](#EW-DIR1) and [EW-D25](#EW-D25) exist to prevent; a keeper cannot start what runs as the sandbox account, and only keepers take EW-D25's lock. That is a named limit, not a carve-out ([`jail-lifetime-last-session-wins.md` §9.9.10](jail-lifetime-last-session-wins.md#9910-every-feasibility-problem-found), row 9). The same sidecar declared host side runs there | A child of the workspace's macos-user keeper, as at the host, with the same one-instance rule ([EW-D25](#EW-D25)). Two sandboxes in one workspace are two sessions of that keeper |
 
 The container row changes with
@@ -878,7 +878,7 @@ session-owned watcher by hand.
 - **Waking a session that has exited.** A ping no live master took waits for the next master of
   the same box, or ends with the box's keeper ([§3.6](#36-which-session-a-ping-wakes-the-master)).
 - **Scheduling.** A sidecar that wants cron semantics sleeps in its own loop.
-- **Agents launched outside yolo.** They get no sidecars and no deliverer, as [OQ-HS3](host-notch-services.md#OQ-HS3)
+- **Agents launched outside yolo.** They get no sidecars and no deliverer, as [OQ-HS3](host-notch-services.md#11-decision-ledger)
   accepted for host services.
 
 ## 10. What I would build, in order
@@ -1685,7 +1685,7 @@ The setups, the options in full, and the history each question carried, moved he
 As filed for [OQ-EW1](#OQ-EW1).
 
 A host-side sidecar runs its command on the host, outside every confinement, at every launch.
-[OQ-HS4](host-notch-services.md#OQ-HS4) limited a *service's* host half to embedded
+[OQ-HS4](host-notch-services.md#11-decision-ledger) limited a *service's* host half to embedded
 official packs, but that was about a third party's daemon, and here the author is usually
 the user.
 
@@ -1975,7 +1975,7 @@ which the keeper turns into "the next fresh launch".
 
    _Leaning:_ **A.** A command in his own config is his, as much as his shell's rc file is. A
    path-selected pack is one he named. A fetched pack stays refused until someone rules on trust
-   for third-party host code, as [OQ-HS4](host-notch-services.md#OQ-HS4) left it. The boundary
+   for third-party host code, as [OQ-HS4](host-notch-services.md#11-decision-ledger) left it. The boundary
    is disclosure, which [OQ-TP9](trust-paths.md#decision-ledger) chose over approval.
 
    <!-- vantage: question id=OQ-EW1 -->
@@ -2413,7 +2413,7 @@ recorded so an implementer does not reopen them.
 
 | Doc | Why it reads with this one |
 | :--- | :--- |
-| [`host-notch-services.md`](host-notch-services.md#44-lifetime) | The resident host launch and its stop timings, which host-side sidecars reuse; [OQ-HS3](host-notch-services.md#OQ-HS3)'s ruling on agents launched outside yolo; [OQ-HS4](host-notch-services.md#OQ-HS4)'s embedded-only rule, which [OQ-EW1](#OQ-EW1) is asked beside |
+| [`host-notch-services.md`](host-notch-services.md#44-lifetime) | The resident host launch and its stop timings, which host-side sidecars reuse; [OQ-HS3](host-notch-services.md#11-decision-ledger)'s ruling on agents launched outside yolo; [OQ-HS4](host-notch-services.md#11-decision-ledger)'s embedded-only rule, which [OQ-EW1](#OQ-EW1) is asked beside |
 | [`host-daemon-ownership.md`](host-daemon-ownership.md#HD-R1) | [HD-R1](host-daemon-ownership.md#HD-R1): a host process lives as long as the launch that wanted it |
 | [`providers.md`'s OQ-BR4](../reference/providers.md#oq-br4) | The ruling that credential delivery is as specific as possible, which `host_env` follows |
 | [`declaration-parity.md`](declaration-parity.md#OQ-DP8) | [OQ-DP8](declaration-parity.md#OQ-DP8), how a jail daemon runs on macos-user, which the agent side waits on there |

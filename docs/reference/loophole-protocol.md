@@ -498,7 +498,7 @@ so it kept running through the upgrade. The launch stops before the jail starts,
 predates this yolo, and names `yolo host-daemon restart <name>`, which is safe for the jails
 already running: each one's front dials the daemon's socket for every connection, so it reaches
 the new daemon on its next request. No launch restarts the daemon itself
-([OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)). A host-wide daemon that does not speak
+([OQ-HD11](../design/host-daemon-ownership.md#11-decision-ledger)). A host-wide daemon that does not speak
 the connection preamble refuses the launch the same way, and is not asked
 ([`HD-D5`](../design/host-daemon-ownership.md#HD-D5)).
 

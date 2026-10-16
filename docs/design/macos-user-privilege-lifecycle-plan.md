@@ -17,7 +17,7 @@ built. Passwordless startup is **UNMEASURED** until [task 9](#task-9--integratio
 runs on macOS CI and the [owner's check](#the-owners-mac) runs on a real Mac.
 
 **Design:** [`macos-user-privilege-lifecycle.md`](macos-user-privilege-lifecycle.md), the ruling
-in [OQ-MP10](macos-user-privilege-lifecycle.md#OQ-MP10) and
+in [OQ-MP10](macos-user-privilege-lifecycle.md#decision-ledger) and
 [walkthrough points 1 to 4](macos-user-privilege-lifecycle.md#points-settled-in-the-walkthrough-2026-10-15).
 Its helper sections, [the authority boundary](macos-user-privilege-lifecycle.md#3-the-authority-boundary) through [exit and restart](macos-user-privilege-lifecycle.md#6-normal-switch-exit-stop-and-restart), are the **fallback**, not this plan: build none of them.
 

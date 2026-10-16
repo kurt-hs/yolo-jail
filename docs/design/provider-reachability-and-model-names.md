@@ -18,14 +18,14 @@ built**. Evidence read against the tree at `ab9cf2f90`. The two topics are one s
 writes nothing for a provider an agent has built in, so other mechanisms have to decide what that
 means, and today they disagree.
 
-> **In short.** The 2026-10-05 [OQ-3](pi-codex-provider-shadowing.md#OQ-3) ruling made yolo write no
+> **In short.** The 2026-10-05 [OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) ruling made yolo write no
 > model entry over any provider an agent has built in. The derives, the launch profile line and the
 > via gate were all built to honor it; the provider-table gate that every launch reduces through was
 > not. So a profile naming one of pi's 43 built-in providers — or omp's 49, or opencode's 225 — is
 > refused before any of them runs. The same seam leaves a friendly model name with nowhere to live
 > when the model comes from the agent's own catalog.
 
-**Why it matters.** [OQ-3](pi-codex-provider-shadowing.md#OQ-3)'s ruling says a profile whose plan
+**Why it matters.** [OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger)'s ruling says a profile whose plan
 needs another address selects *the agent's own provider for that plan*. Today that promise holds
 only for built-in names a pack also declares. A name the agent has and no pack ships — pi's `meta`
 is the example — cannot be selected at all, and the refusal is the wrong sentence: it says the
@@ -58,7 +58,7 @@ provider and profile reference).
 
 ## 1. One seam, two mechanisms
 
-[OQ-3](pi-codex-provider-shadowing.md#OQ-3) was ruled 2026-10-05, the broad reading, and built as
+[OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) was ruled 2026-10-05, the broad reading, and built as
 [BI-D1](pi-codex-provider-shadowing.md#BI-D1) to [BI-D12](pi-codex-provider-shadowing.md#BI-D12). In
 the maintainer's words it settled three things:
 
@@ -186,7 +186,7 @@ the launch line. Three things follow:
   whose credential warning runs at
   [`profiledisclosure.go:281`](../../internal/packload/profiledisclosure.go#L281);
 - [R3](pi-codex-provider-shadowing.md#8-risks-and-invariants) changes shape: under
-  [OQ-3](pi-codex-provider-shadowing.md#OQ-3) a stale list costs only a collision with a provider of
+  [OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) a stale list costs only a collision with a provider of
   that name, but a gate that reads the list makes staleness decide **selectability** — a provider an
   agent added, not yet in its pack's list, would be refused. **This doc amends
   [R3](pi-codex-provider-shadowing.md#8-risks-and-invariants)** to say so;
@@ -307,7 +307,7 @@ built-in provider's list, a name may ride that list, closing part of this gap wi
 | [MM-D7](model-lists-and-pickers.md#MM-D7) | its reach: a display name currently has a home only where a row is written; naming a built-in provider's own model needs a home that is not a row, per model entry ([§5](#5-topic-b-where-a-name-has-nowhere-to-live), [OQ-MN2](#9-decision-ledger)) |
 | [`../reference/providers.md`](../reference/providers.md) | gains one normative statement of the built-in rule, with each mechanism linking to it ([OQ-PR5](#9-decision-ledger)) |
 
-**Merely relied on, unchanged:** [OQ-3](pi-codex-provider-shadowing.md#OQ-3) (the ruling itself),
+**Merely relied on, unchanged:** [OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) (the ruling itself),
 [BI-D2](pi-codex-provider-shadowing.md#BI-D2),
 [BI-D4](pi-codex-provider-shadowing.md#BI-D4) to [BI-D6](pi-codex-provider-shadowing.md#BI-D6),
 [BI-D9](pi-codex-provider-shadowing.md#BI-D9) to [BI-D12](pi-codex-provider-shadowing.md#BI-D12),
@@ -363,7 +363,7 @@ ruled on 2026-10-12 and is compacted into [§9](#9-decision-ledger).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| OQ-PR1 | **The provider-table gate reads the declaration.** A built-in name resolves even when the composed table lacks it, exactly as the derive already assumes, so [OQ-3](pi-codex-provider-shadowing.md#OQ-3)'s "selects the agent's own provider" holds for a name no pack ships. Not "auto-detection": the pack declares, core reads. The one reader set this makes is [BI-D3](pi-codex-provider-shadowing.md#BI-D3)'s amendment. Option C's narrower plan-level gate is [OQ-PR6](#OQ-PR6) | 2026-10-12 | [§2](#2-topic-a-the-provider-table-gate-does-not-know) | — |
+| OQ-PR1 | **The provider-table gate reads the declaration.** A built-in name resolves even when the composed table lacks it, exactly as the derive already assumes, so [OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger)'s "selects the agent's own provider" holds for a name no pack ships. Not "auto-detection": the pack declares, core reads. The one reader set this makes is [BI-D3](pi-codex-provider-shadowing.md#BI-D3)'s amendment. Option C's narrower plan-level gate is [OQ-PR6](#OQ-PR6) | 2026-10-12 | [§2](#2-topic-a-the-provider-table-gate-does-not-know) | — |
 | OQ-PR2 | **The concept is the "built-in provider"**, the term [`pi-codex-provider-shadowing.md`](pi-codex-provider-shadowing.md#terms-in-plain-words) already coined. One agent may have MULTIPLE built-in providers; a built-in provider's credential is either an API key or obtained by the agent itself; sharing an agent-obtained credential across jails is an **accepted gap**, and its absence must not block. That sharing mechanism is BUILT and generic and needs no core code — a pack declares a machine-scope `state` dir plus the `shared_credentials` hook, as [`packs/claude`](../../packs/claude/pack.json) and [`packs/agy`](../../packs/agy/pack.json) do ([`internal/entrypoint/packhooks.go`](../../internal/entrypoint/packhooks.go) `HookSharedCredentials`) — so what does not exist is a per-agent **opt-in**: each pack must declare the pair itself, and most, [`packs/muse-code`](../../packs/muse-code/pack.json) included, do not. It is pack-declared ONLY: no config key expresses it, and a read-write `mounts` element cannot substitute, being refused outside `/ctx/` ([`internal/config/mounts.go`](../../internal/config/mounts.go)). Providers are adopted INCREMENTALLY, one at a time, not all of what an agent supports at once. ⚠ **Amended 2026-10-12 — that hook is not the only route to a shared credential.** A user-SUPPLIED one takes a different, already-built path a pack carries as a NAME, never a value: [`packs/zai`](../../packs/zai/pack.json) declares a provider whose `api_key_env_name` is `ZAI_API_KEY` (a pack's `kind: "env"` holds static literals only, [`packdecl`](../../internal/packdecl/contributes.go)), and the user supplies the value through `env_sources`, resolved on the HOST ([`internal/config/envsources.go`](../../internal/config/envsources.go)), conventionally at `~/.config/yolo-jail/env` (0600) — at either scope, a workspace unsetting an inherited name as `{"NAME": null}`. WHETHER such a name reaches an agent is decided by a CLAIM, not the hook: [`ScopeCredentials`](../../internal/packload/credentialscope.go) delivers a claimed name only to the agents whose profile selects a claimant, through that agent's own `~/.config/yolo-agent-env/<agent>.sh`, and an unclaimed one to every process ([the credential gate](../reference/providers.md#the-credential-gate) is where that rule and its delivery are stated). The claim is launch-wide and effectively exclusive: a selected pack's provider claims its variable for the whole launch even when no agent selects it, withholding it from every other process — which is why an unclaimed `META_API_KEY` serves the pi agent and the Muse Code CLI at once today, and why a Meta provider declaring one later would lock the Muse CLI out until Muse declares a claimant too. The value lands on the jail's disk (the shared `<workspace>/.yolo/home/yolo-user-env.sh`, 0600, bind-mounted; a claimed one in the agent's own 0600 env file beneath it) and never in `launch.log`, `boot.log`, the terminal or the `podman run` argv, while an INLINE `{"KEY":"value"}` entry additionally lands in `<workspace>/.yolo/config-assembled.json` at 0644, so a dotenv path is the preferred form | 2026-10-12 | [§6](#6-what-this-does-not-cover) | — |
 | OQ-PR3 | **The `null` plan is removed** — a profile must resolve to a concrete plan. This amends [BI-D1](pi-codex-provider-shadowing.md#BI-D1)'s `plans` shape and [BI-D7](pi-codex-provider-shadowing.md#BI-D7)'s launch line; the built declaration ([`internal/packdecl/builtinproviders.go`](../../internal/packdecl/builtinproviders.go)), its reference ([`pack-system.md`](../reference/pack-system.md#built_in_providers)) and [`providers.md`](../reference/providers.md) still carry `null`, and the removal is unbuilt. What replaces the case `null` served is [OQ-PR7](#OQ-PR7) | 2026-10-12 | [§1](#1-one-seam-two-mechanisms) | — |
 | OQ-PR4 | **The launch line owns an endpoint-less built-in, and the refusal does not.** The launch proceeds; the line says the route is the agent's own client and nothing this launch configures delivers a credential, naming the login the agent reads, so failure moves to the first request. A launch-time credential refusal is ruled out: it needs a per-agent name→credential map [BI-D1](pi-codex-provider-shadowing.md#BI-D1) keeps out of core | 2026-10-12 | [§3](#3-topic-a-the-consequence-of-closing-it) | — |

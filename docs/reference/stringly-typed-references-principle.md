@@ -217,7 +217,7 @@ decides it, so a reader can re-measure rather than trust a tally.
 > [!IMPORTANT]
 > **The supersession match departed from R1–R5 until 2026-09-30, and no longer does.** It was
 > reported, not refused, while where its refusal should land was
-> [`OQ-RM2`](../design/reference-mismatch-diagnostics.md#OQ-RM2) (refuse the launch, or refuse
+> [`OQ-RM2`](../design/reference-mismatch-diagnostics.md#decision-ledger) (refuse the launch, or refuse
 > the pack?). [`OQ-TP6`](../design/trust-paths.md#decision-ledger) answered it (refuse the
 > launch), and
 > [`reference-mismatch-diagnostics.md`](../design/reference-mismatch-diagnostics.md) moved the
