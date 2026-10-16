@@ -216,6 +216,7 @@ func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTarget
 		ancestors +
 		"    (subpath " + ws + ")\n" +
 		"    (subpath " + home + ")\n" +
+		"    ;; #seatbelt-test-id:staging-root-read-allow#\n" +
 		stagingRootReadClause() + ")\n" +
 		contextReadAllow(ctx) +
 		relocationReadAllow(relocs) +

@@ -3,10 +3,10 @@ package integration
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -92,7 +92,7 @@ func TestMacosUserTerminateEndsTheSessionThroughItsTeardown(t *testing.T) {
 
 			for _, name := range mine {
 				f := filepath.Join(macosUserEnvDir(), name)
-				if exec.Command("sudo", "-n", "test", "-e", f).Run() == nil {
+				if _, err := os.Lstat(f); err == nil {
 					t.Errorf("the session's %s survives its teardown%s", f, diag())
 				}
 			}
@@ -111,14 +111,20 @@ func TestMacosUserTerminateEndsTheSessionThroughItsTeardown(t *testing.T) {
 // macosUserEnvDir is the state dir's env/ directory, where each session's env files live.
 func macosUserEnvDir() string { return filepath.Join(macosuser.StateDir(), "env") }
 
-// macosUserSessionEnvFiles lists the env/ directory as root (it is 0700 root).
+// macosUserSessionEnvFiles lists the env/ directory as this user, with no sudo: the launch
+// stages it host-owned (0700 plus the sandbox account's search ACE), so it is ours to read
+// (docs/design/macos-user-privilege-lifecycle-plan.md PL-2).
 func macosUserSessionEnvFiles(t *testing.T) []string {
 	t.Helper()
-	out, err := exec.Command("sudo", "-n", "/bin/ls", "-1", macosUserEnvDir()).Output()
+	entries, err := os.ReadDir(macosUserEnvDir())
 	if err != nil {
 		return nil // absent before any session made it
 	}
-	return strings.Fields(string(out))
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 // macosUserNewNames is the names in after that before lacks.

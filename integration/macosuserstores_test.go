@@ -11,7 +11,7 @@ import (
 )
 
 // `yolo stores` ON A MAC THAT RUNS macos-user. The inventory used to omit that backend's storage
-// entirely: the root-owned copies each launch stages under /var/yolo-jail, and the sandbox
+// entirely: the host-owned copies each launch stages under macosuser.StateDir(), and the sandbox
 // account's machine-tier stores in /Users/_yolojail. It now lists them, as the host user, with no
 // sudo (internal/cli/stores/inventory.go, macosUserStores).
 //

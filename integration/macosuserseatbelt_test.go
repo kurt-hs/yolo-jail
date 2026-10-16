@@ -96,6 +96,10 @@ var seatbeltRules = []seatbeltRule{
 	{id: "raw-device-deny"},
 	{id: "users-read-deny"},
 	{id: "workspace-read-allow"},
+	// THE STAGING ROOT (docs/design/macos-user-privilege-lifecycle-plan.md PL-1, task 3): the
+	// host-owned tree a launch stages the guest's yolo, env files and trees into, read past the
+	// /Users deny and never written (staging_root_write_refused, under write-outside-deny).
+	{id: "staging-root-read-allow"},
 	{id: "library-keychains-deny"},
 	{id: "system-keychains-deny"},
 	{id: "cross-process-procargs-deny"},
@@ -197,6 +201,11 @@ type seatbeltFixtures struct {
 	relocTarget  string // <root>/caches/hf         — the relocation target, read+write
 	relocSibling string // <root>/caches/other      — granted by nothing
 	relocs       []macosuser.CacheRelocation
+	// THE STAGING ROOT: a directory this run made under the REAL macosuser.StagingRoot(), since
+	// the profile's read allow names that path and no other, holding a seed file. Set on a Mac
+	// only (seatbeltFixture); stagedWhy says why it is empty when it is.
+	staged    string
+	stagedWhy string
 }
 
 type seatbeltCase struct {
@@ -238,6 +247,38 @@ func seatbeltCases() []seatbeltCase {
 				return "cat " + sh(f.ws+"/seed")
 			},
 			want: wantAllowed,
+		},
+		{
+			name: "staging_root_read_allowed",
+			id:   "staging-root-read-allow",
+			why: "the guest execs the staged yolo, sources its env file and reads the staged " +
+				"trees from the host-owned staging root under /Users/Shared, which the /Users " +
+				"read deny covers. Without the re-allow every launch dies at its first exec with " +
+				"\"Operation not permitted\" after a start that looked fine.",
+			script: func(f seatbeltFixtures) string {
+				if f.staged == "" {
+					return stagingFixtureMissing(f)
+				}
+				return "cat " + sh(f.staged+"/seed")
+			},
+			want: wantAllowed,
+		},
+		{
+			name: "staging_root_write_refused",
+			id:   "write-outside-deny",
+			why: "the staging root is read-allowed and nothing more: a guest that could write it " +
+				"could rewrite the yolo it execs or the profile it is confined by. No write allow " +
+				"names it, so the deny-everywhere write rule is what refuses it, and EPERM (not " +
+				"the file mode's EACCES: the bare control, as the owner, can write) says so.",
+			script: func(f seatbeltFixtures) string {
+				if f.staged == "" {
+					return stagingFixtureMissing(f)
+				}
+				p := sh(f.staged + "/probe")
+				return "touch " + p + " && rm -f " + p
+			},
+			want:    wantRefused,
+			refusal: "Operation not permitted",
 		},
 		{
 			name: "ancestor_grant_does_not_reach_downward",
@@ -1166,8 +1207,45 @@ func seatbeltFixture(t *testing.T) seatbeltFixtures {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	f := seatbeltTree(t, root)
+	f.staged, f.stagedWhy = seatbeltStagingFixture(t)
 	f.canaryPID, f.canaryWord = startSeatbeltCanary(t)
 	return f
+}
+
+// seatbeltStagingFixture makes a directory under the real staging root holding a seed file, and
+// removes it at cleanup. The profile's read allow names macosuser.StagingRoot() itself, so a temp
+// root elsewhere would measure nothing. When the root is absent (`yolo macos-setup` has not run)
+// it is made here, owned by this user at mode 0755 as setup makes it, and removed again at
+// cleanup if it is then empty. When it cannot be used, it returns "" and why, and only the two
+// staging_root cases fail, naming that reason as a broken control; the rest of the suite runs.
+func seatbeltStagingFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root := macosuser.StagingRoot()
+	if _, err := os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(root, 0o755); err != nil {
+			return "", fmt.Sprintf("creating the absent staging root %s: %v", root, err)
+		}
+		if err := os.Chmod(root, 0o755); err != nil {
+			return "", fmt.Sprintf("setting %s to 0755: %v", root, err)
+		}
+		t.Cleanup(func() { _ = os.Remove(root) })
+	}
+	dir, err := os.MkdirTemp(root, "yolo-sb-")
+	if err != nil {
+		return "", fmt.Sprintf("making a fixture directory under the staging root %s (owned by "+
+			"another account? `ls -lde %s`): %v", root, root, err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.WriteFile(filepath.Join(dir, "seed"), []byte(seatbeltOK+"\n"), 0o644); err != nil {
+		return "", fmt.Sprintf("writing the seed under %s: %v", dir, err)
+	}
+	return dir, ""
+}
+
+// stagingFixtureMissing is the script a staging_root case runs when seatbeltStagingFixture could
+// not make its directory: it fails, bare as well, so the case reports a broken control naming why.
+func stagingFixtureMissing(f seatbeltFixtures) string {
+	return "echo " + sh("no staging-root fixture: "+f.stagedWhy) + " >&2; exit 1"
 }
 
 // seatbeltTree lays the fixture tree out under root (which must exist) and fills every
@@ -1199,7 +1277,7 @@ func seatbeltTree(t *testing.T, root string) seatbeltFixtures {
 	f.ctxRW = filepath.Join(f.ctxRoot, "rw")
 	f.ctxSibling = filepath.Join(f.ctxRoot, "other")
 	// On a Mac the links sit where the base policy reads and the root write deny refuses, as
-	// /var/yolo-jail does. Anywhere else this tree exists only to run the bare controls, and a
+	// macosuser.StateDir() does. Anywhere else this tree exists only to run the bare controls, and a
 	// path under / would be one more directory a Linux test run leaves on the machine.
 	linkBase := "/private/var/tmp"
 	if goruntime.GOOS != "darwin" {
