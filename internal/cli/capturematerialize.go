@@ -374,7 +374,7 @@ func macosUserCaptures(dir string, bins []string, platform string) (stage []maco
 	return stage, kept
 }
 
-// hostOriginMark is what a HOST capture (host-tool-provisioning.md HP-D18) adds to the platform its
+// hostOriginMark is what a HOST capture (host-agent-environment.md HP-D18) adds to the platform its
 // record receipt names: "linux/amd64+host". It is the capture's RECORDED ORIGIN, and it is in the
 // platform because the platform is what selection and its complement, the reap, key on
 // (capture.Program): a jail asks for its own platform (resolveCaptureFor, with capture.Platform()),

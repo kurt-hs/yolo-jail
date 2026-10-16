@@ -12,7 +12,7 @@ import (
 )
 
 // hostfloornewer_test.go pins, at each call site, that a host floor record a newer yolo wrote is
-// refused rather than installed over (hostfloor.Floor.Ensure; docs/design/host-tool-provisioning.md
+// refused rather than installed over (hostfloor.Floor.Ensure; docs/reference/host-agent-environment.md
 // HP-D8): the launch, `yolo host apply`'s dry run and --assert, and the dependency line
 // check-deps prints. Each used to read the record's error as "missing", and the launch and the
 // --assert installed this yolo's copy over the newer one's. Each apply's user config declares

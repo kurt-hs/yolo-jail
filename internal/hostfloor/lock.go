@@ -4,8 +4,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
 
-// lock.go is the floor's one-install-per-program rule (host-tool-provisioning.md §4,
-// "Concurrency"): a per-program flock in the prefix. Installs of DIFFERENT programs never wait on
+// lock.go is the floor's one-install-per-program rule (host-agent-environment.md,
+// "When the floor installs"): a per-program flock in the prefix. Installs of DIFFERENT programs never wait on
 // each other; two launches of one program produce one install.
 //
 // THE LOCK IS internal/pidlock, which this file's own implementation was lifted into so the fork

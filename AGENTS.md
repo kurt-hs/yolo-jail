@@ -6,8 +6,8 @@ agent runs. Confinement is one setting of that description: a jail (a container,
 macOS account) is the strongest and the default, and `yolo host` is none.
 
 **Describe yolo environment-first and confinement second** in every tagline, summary and guide.
-The charter is [`what-yolo-is.md`](docs/reference/what-yolo-is.md), ruled in
-[`yolo-as-environment-manager.md` §1](docs/design/yolo-as-environment-manager.md#1-the-one-sentence-answer-to-how-is-this-different-from-sandvault).
+The charter is [`what-yolo-is.md`](docs/reference/what-yolo-is.md), ruled in its
+[one-sentence answer](docs/reference/what-yolo-is.md#the-one-sentence-answer).
 
 **This file is the guide for developing yolo-jail itself**, and it is deliberately terse: each rule keeps
 its imperative, the file that enforces it, and its escape hatch — the linked authority carries the

@@ -45,7 +45,7 @@ written — they corrected four of the five items that asked them, one of them o
 [`OQ-PS8`](#decision-ledger), and one retracted a claim that had been gating [`OQ-PS10`](#decision-ledger)
 ([§15](#15-what-a-mac-session-should-measure)).
 **Five questions were narrowed on 2026-09-29 by principle
-[`HP-DIR3`](host-tool-provisioning.md#HP-DIR3)** (at the host, yolo manages the agent's
+[`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3)** (at the host, yolo manages the agent's
 environment and never provisions or activates the workspace's runtime): [`OQ-PS1`](#decision-ledger),
 whose `packages:` half is answered no, and [`OQ-PS10`](#decision-ledger), [`OQ-NX4`](#OQ-NX4),
 [`OQ-NX5`](#decision-ledger) and [`OQ-NX8`](#OQ-NX8), whose host halves follow from it. Each keeps a
@@ -57,7 +57,7 @@ non-container notch needs, the corporate-certificate trap, and an extension-poin
 opened [`OQ-PS14`](#OQ-PS14) and [`OQ-PS15`](#OQ-PS15).
 **Triaged 2026-09-30 against the later rulings.** [`OQ-PS6`](#decision-ledger) and [`OQ-PS9`](#decision-ledger)
 are answered by [`OQ-PS1`](#decision-ledger)'s ruling and the host floor's
-([`HP-DIR4`](host-tool-provisioning.md#HP-DIR4)): the default order puts each pack's own recipe
+([`HP-DIR4`](../reference/host-agent-environment.md#HP-DIR4)): the default order puts each pack's own recipe
 first everywhere, so `depcheck`'s pack-first precedence is kept as the default rather than
 reversed, and the user's nix is no longer a host provisioner yolo would install.
 [`OQ-PS8`](#decision-ledger), [`OQ-PS10`](#decision-ledger), [`OQ-PS12`](#decision-ledger), [`OQ-PS13`](#decision-ledger) and
@@ -152,14 +152,14 @@ it before citing one.
 Then: [`program-delivery.md`](program-delivery.md) (the jail's delivery classes and
 resolvers — not restated here), [`../reference/macos-user-provisioning.md`](../reference/macos-user-provisioning.md) (the
 guest's missing floor and stage),
-[`yolo-as-environment-manager.md` §3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)
+[`what-yolo-is.md`, dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning)
 (*declare once, check once, hand off* — the host design this generalises),
 [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) and
 [`../reference/macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md#how-nix-works-here)
 (what each backend's nix path produces, as built),
 [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) (Phase 4.3 shipped
 as the host install offer; Phase 6.4's elevation-class batching is still owed —
-[`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger)), [`../reference/report-tiers.md`](../reference/report-tiers.md) (the `--assert` fatal), and
+[`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way)), [`../reference/report-tiers.md`](../reference/report-tiers.md) (the `--assert` fatal), and
 [`../reference/pack-system.md`](../reference/pack-system.md) (the kinds). **No companion sketch
 yet** — nothing here is settled enough to hold one; it opens with the first ruling that picks a
 mechanism.
@@ -251,7 +251,7 @@ words appears in the code; the nearest thing is the confinement Profile's one pr
 primitive (F4 below).
 
 Notches are the three values of the confinement dial —
-[`yolo-as-environment-manager.md` §4](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches).
+[`what-yolo-is.md`, the confinement dial](../reference/what-yolo-is.md#the-confinement-dial).
 **guest** means the shipped `macos-user` backend; the Linux guest is unbuilt and has no row.
 
 ### 3.1 Five findings the table forces
@@ -386,7 +386,7 @@ where it does not, it is left alone.
   *"installer that just does whatever"* the capture jail already contains.
 - **`provides` / `depends`** is AUR's spelling of the relation `program` / `requires` strains to
   express, and it is verb/verb. The env-manager design's own sketch reached for it —
-  `provides_from` in [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)'s
+  `provides_from` in [dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning)'s
   example — and the field never shipped: none of a `program`'s accepted fields is a
   provides-shaped relation (the field set is the `Contribution` struct in
   `internal/packdecl/contributes.go`; it has grown `node_floor` and `platforms` since this was
@@ -483,7 +483,7 @@ traps cost a measurement to find.
   does. That is F1 from the resolver's side — **one notch, one backend, no non-macOS coverage of
   the diagnostics, and no host caller** — and it is exactly what [`OQ-PS1`](#decision-ledger) asks.
   ⚠ *Since 2026-09-29 that half of [`OQ-PS1`](#decision-ledger) is answered no, by principle
-  [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3): `packages:` is the workspace's runtime, which
+  [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3): `packages:` is the workspace's runtime, which
   yolo never provisions at the host, so the attribute gets no host caller.*
 - **A nix tool environment is orthogonal to the *enforcement* primitives and load-bearing for the
   *provisioning* one.** It is not a peer of the confinement dial; it is what fills the
@@ -798,7 +798,7 @@ qualifiers carry as much weight as the verb.
    machine's toolchain in one step would make a single failure ambiguous between the two.
 3. **The written manifest stays the floor.** The env-manager guarantee — *"the composed manifest
    is always the floor"*
-   ([§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest))
+   ([dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning))
    — survives the ruling intact. `check-deps` keeps writing `~/.config/yolo/Brewfile` and kin
    whether or not the offer is taken, and a declined offer leaves a user exactly where today's
    yolo leaves them. Running it is an **offer on top**, never a replacement.
@@ -834,7 +834,7 @@ decided was purely *does yolo execute the winner*.
 > [§8.2](#82-the-ruling-a-shipped-default-order-the-user-config-overrides) as inverting, and which
 > [`OQ-PS6`](#decision-ledger)'s answer (2026-09-30) keeps as the default. So three
 > of this section's terms no longer describe the tree: driving is not last, it is not behind
-> [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase)'s per-elevation-class batching (which [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger)
+> [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase)'s per-elevation-class batching (which [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way)
 > asked about, answered 2026-09-30: not owed), and a decline is fatal where [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) made the manifest a floor to continue over. **What
 > is still true:** no system-manager command runs without the confirm, and `check-deps` still
 > writes the manifest and installs nothing. Whether [§9](#9-what-i-would-build-in-order) step 4's
@@ -912,7 +912,7 @@ question and should not wait on one.
    order, 2026-09-11:** `yolo host apply --assert`'s dependency gate drives the pack-first remedy
    behind one prompt ([§8.5](#85-the-ruling-yolo-drives-the-winner-behind-the-confirm-and-last)'s
    warning). What is left of this step is running the *resolved* winner; the elevation-class
-   batching is not owed ([`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger), answered 2026-09-30).
+   batching is not owed ([`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way), answered 2026-09-30).
 
 Steps 1–3 are defect-shaped and ruled by P3 and by the two narrow halves already leaning; steps
 4–5 are the design, and their order was ruled rather than merely preferred — and has since been
@@ -990,7 +990,7 @@ shipped status so nobody re-opens a settled fork.
 | [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md), [`../reference/macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md#how-nix-works-here) | what each backend's nix path produces, as built | The evergreen references for the mechanism the evidence doc's [shipped-state table](provisioner-evidence.md#31-what-is-already-solved-stated-precisely) enumerates. ⚠ Most of that nix depth is shipped-system material that should eventually graduate into these references; not done in the split, and named as a follow-up. |
 | [`../reference/macos-user-provisioning.md`](../reference/macos-user-provisioning.md) | the guest's floor and stage | Takes its four-keys table as the guest column's basis, **corrected** in one cell: the agent launchers are generated *and run* there, failing for want of npm — not inert. |
 | [`../reference/macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md) | the guest's home tiers and the symlink layout that separates them | Nothing directly, but [M4](#15-what-a-mac-session-should-measure) is its measurement, because a provisioner that stages into the sandbox home depends on that layout resolving. |
-| [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) | *declare once, check once, hand off* ([§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)); [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger) | Generalises [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) from "the host hands off" to "each environment resolves". [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger) used to say `FieldSet` *refuses* `program` at host; it was narrowed on 2026-09-22 to *is the elevation-class batching still owed?*, because `HostFields()` honours `program` and the confirm-gated install shipped. ⚠ Its promised `✗ packages   yolo does not manage packages here` line was read as contradicted by shipped `describe` and due to be retired; since principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3) (2026-09-29) it is true of the host, and only its *"(no image to bake)"* reason needs changing — [`OQ-NX8`](#OQ-NX8). |
+| [`what-yolo-is.md`](../reference/what-yolo-is.md) | *declare once, check once, hand off* ([dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning)); [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way) | Generalises [dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning) from "the host hands off" to "each environment resolves". [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way) used to say `FieldSet` *refuses* `program` at host; it was narrowed on 2026-09-22 to *is the elevation-class batching still owed?*, because `HostFields()` honours `program` and the confirm-gated install shipped. ⚠ Its promised `✗ packages   yolo does not manage packages here` line was read as contradicted by shipped `describe` and due to be retired; since principle [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3) (2026-09-29) it is true of the host, and only its *"(no image to bake)"* reason needs changing — [`OQ-NX8`](#OQ-NX8). |
 | [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) | Phase 6.4 and 4.3, [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) | **[`OQ-PS2`](#decision-ledger) ruled 2026-09-11 that they get built** — as *the host's driven provisioner*, behind that plan's own already-ruled confirm, and sequenced after the print-only precedence order. ⚠ **Overtaken:** Phase 4.3 shipped as the `--assert` dependency gate (one prompt, decline fatal, pack-first remedy), which that plan records as its [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) consumer and as reversing that question's non-fatal half; only 6.4's elevation-class batching is still owed ([§8.5](#85-the-ruling-yolo-drives-the-winner-behind-the-confirm-and-last)'s warning). |
 | [`../reference/report-tiers.md`](../reference/report-tiers.md) | the `--assert` fatal, [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) | **RO7 was RULED and BUILT 2026-09-11** — *both kinds fatal, only `program` gets the offer* — and [`OQ-PS3`](#decision-ledger)'s recipe model **reinforces** that predicate rather than disturbing it ([§3.1](#31-five-findings-the-table-forces) F2): a `requires` is a need with no runnable recipe, so there is nothing to offer. ⚠ What is still unsettled is the *spelling*: RO7's rule keys on the **kind**, and under P1 the offer keys on *whether a provisioner covers this binary here*. [`OQ-PS11`](#OQ-PS11) decides whether there is still a kind to key on. |
 | [`host-render-target.md`](host-render-target.md) | the host as a reduced render target | ⚠ Its [§2.2](host-render-target.md#22-so-which-is-it-a-command-or-a-mode) table marks `macos-user · program: ✅ (native nix)`; that cell describes `packages:`, not `program` — no `program` is provisioned by nix on any notch. |
@@ -1630,7 +1630,7 @@ The fallback is to refuse the kind and `packages[].env` by name on the container
 one of these is built. Either way the answer is written down and not left to the default.
 
 **Never at the host.** The new kind is refused at the host, with a reason naming
-[`HP-DIR3`](host-tool-provisioning.md#HP-DIR3), written the way the existing refusals are
+[`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3), written the way the existing refusals are
 (`refusalReasons`, `internal/render/fieldset.go` lines 61-104). It cannot simply be left out of
 `render.HostFields`. That set is *"the reduced set a host/guest target honors"*, and
 `Target.Fields()` returns it for `KindGuest` too (fieldset.go lines 298-304), so leaving the kind
@@ -1700,18 +1700,18 @@ the user's override ranks it up, never by default**, and the floor's default sou
 agent's official installer, captured. An *agent need* is something the agent itself runs on: an
 agent CLI, the floor's Node, or a binary a pack lists under `requires`.
 
-**`packages:` gets no host caller**, by principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3):
+**`packages:` gets no host caller**, by principle [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3):
 at the host yolo manages the agent's environment and never provisions or activates the
 workspace's runtime (*"we don't maintain the host development environment, the workspace's
 runtime"*). `yoloNoncontainerPackages` is the declared `packages:` list and nothing else
 (`flake.nix`; its sibling `yoloNoncontainerProfile` adds the
 [macos-user package floor](../reference/macos-user-provisioning.md) to it, for a notch with no
 image). `packages:` is a [project dependency](program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03),
-and [`host-tool-provisioning.md` §2](host-tool-provisioning.md#2-the-floor-what-it-contains-and-what-it-doesnt)
-and [§9](host-tool-provisioning.md#9-non-goals) leave it out of the
-[host agent floor](host-tool-provisioning.md#defined-terms) for that reason. At a host launch the
+and [`host-agent-environment.md`, what the host agent floor holds](../reference/host-agent-environment.md#what-the-floor-holds)
+and [what the host notch does not license](../reference/host-agent-environment.md#what-this-does-not-license) leave it out of the
+[host agent floor](../reference/host-agent-environment.md#host-floor-terms) for that reason. At a host launch the
 user's own tools arrive through the user's carried PATH
-([`HP-DIR2`](host-tool-provisioning.md#HP-DIR2), [`OQ-HP7`](host-tool-provisioning.md#decision-ledger)),
+([`HP-DIR2`](../reference/host-agent-environment.md#HP-DIR2), [`OQ-HP7`](../reference/host-agent-environment.md#OQ-HP7)),
 not through a closure yolo builds. In a jail, including the macos-user account, delivering
 `packages:` stays yolo's job, and `packages:` gains no meaning at the host
 ([`OQ-NX8`](#OQ-NX8)).
@@ -1809,8 +1809,8 @@ shapes it chose between:
 | **A yolo-owned mutable profile** | `nix profile add --profile <dir>` into a yolo path ([the mechanism, worked through](provisioner-evidence.md#33-nix-profile---profile-dir-the-only-candidate-that-reaches-a-users-own-path)) | a generation-tracked directory: rollback, `nix profile list` provenance, a stable path a user could put on their own PATH |
 
 The profile's advantages are gone at the host: its stable path because the prefix is on no user
-PATH ([`OQ-HP2`](host-tool-provisioning.md#decision-ledger)), its rollback because the floor keeps
-each program's previous version ([`HP-D8`](host-tool-provisioning.md#HP-D8)). MEASURED
+PATH ([`OQ-HP2`](../reference/host-agent-environment.md#OQ-HP2)), its rollback because the floor keeps
+each program's previous version ([`HP-D8`](../reference/host-agent-environment.md#HP-D8)). MEASURED
 2026-09-11, a `--profile` entry locks to whatever channel tarball `nixpkgs#…` resolved to, not to
 yolo's `flake.lock` ([M3](#15-what-a-mac-session-should-measure)).
 
@@ -1819,7 +1819,7 @@ yolo's `flake.lock` ([M3](#15-what-a-mac-session-should-measure)).
 > `yolo-jail.local.jsonc` and outstanding capture overlay keys (`internal/cli/apply.go`); it reads
 > no toolchain and no store path. Sealing's rule over the closure tiers is *"refuses the
 > **Undeclared** tier and **reports** the Declared-impure tier"*
-> ([`yolo-as-environment-manager.md` §3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)),
+> ([`what-yolo-is.md`, the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing)),
 > whose criterion is nameability, so a profile at a path yolo names is Declared-impure, the tier
 > `mise_tools` already occupies.
 
@@ -1839,7 +1839,7 @@ macOS's `/usr/bin/grep` on the guest agent's PATH, and nothing warns: that is wh
 declared. yolo's own floor stays BSD-clean by
 [`OQ-P2`](../reference/macos-user-provisioning.md#why-it-is-this-way), so any GNU shadow is one
 the user declared. At the host the case cannot arise: yolo builds no `packages:` profile there,
-and the [host prefix](host-tool-provisioning.md#3-the-host-prefix) holds only floor names and is
+and the [host prefix](../reference/host-agent-environment.md#the-host-prefix) holds only floor names and is
 on no PATH of the user's.
 
 ### 17.6 `yolo check`'s nix probes off macOS
@@ -1957,7 +1957,7 @@ recommendation the doc rests on.
     so?**
 
     At the host, `packages:` is permanently inert under
-    [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3), so what is left is the report's wording. The
+    [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3), so what is left is the report's wording. The
     history, HP-DIR3's three consequences, the setup and the `guest` notch: [background](#background-to-oq-nx8).
 
     **Q1: at the host, what should `check` print?**
@@ -2074,9 +2074,9 @@ to key on. **Upstream of [`OQ-PS5`](#OQ-PS5)** — rule this one first, because 
 there is one kind to name or two.
 
 ⚠ **Restated 2026-09-30: the host now tells the two apart as well.** Since the
-[host agent floor](host-tool-provisioning.md#defined-terms) was built (2026-09-29), a `program`
+[host agent floor](../reference/host-agent-environment.md#host-floor-terms) was built (2026-09-29), a `program`
 gets a floor entry that yolo installs with no prompt and a `requires` does not
-([`host-tool-provisioning.md` §2](host-tool-provisioning.md#2-the-floor-what-it-contains-and-what-it-doesnt)),
+([`host-agent-environment.md`, what the host agent floor holds](../reference/host-agent-environment.md#what-the-floor-holds)),
 so F3's *"collapse at the host"* no longer holds. At every notch the difference between them is
 now whether a recipe exists, which is the leaning's argument.
 
@@ -2149,15 +2149,15 @@ can add one, and how early.
   cacert's setup hook sets only Mozilla's bundle.
 
 **Not at the host: settled 2026-09-29 by principle
-[`HP-DIR3`](host-tool-provisioning.md#HP-DIR3).** At the host yolo manages the agent's
+[`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3).** At the host yolo manages the agent's
 environment and never provisions the workspace's runtime, so there is no `packages:` profile
 there ([`OQ-PS1`](#decision-ledger)'s narrowing), and the agent's commands see the user's own shell
-environment ([`OQ-HP7`](host-tool-provisioning.md#decision-ledger)). Under (a), the new kind is
+environment ([`OQ-HP7`](../reference/host-agent-environment.md#OQ-HP7)). Under (a), the new kind is
 refused at the host alone, with a reason naming HP-DIR3. The host's field set is also the
 guest's today, so leaving the kind out of it would refuse it at `guest` too
 ([§16.5](#165-the-extension-point-declared-rows), "Never at the host"). A `packages:` entry's
 `env` is inert at the host because `packages:` is ([`OQ-NX8`](#OQ-NX8)). The floor agent's own startup
-variables are a separate matter, [`HP-DIR2`](host-tool-provisioning.md#HP-DIR2) item 2's.
+variables are a separate matter, [`HP-DIR2`](../reference/host-agent-environment.md#HP-DIR2) item 2's.
 
 #### Background to [OQ-NX8](#OQ-NX8)
 
@@ -2175,7 +2175,7 @@ The old leaning's narrow half, making `yolo host apply` say what `describe` says
 2026-09-17** ([§9](#9-what-i-would-build-in-order) step 3), and it handed the policy half,
 should `host` manage packages at all, to [`OQ-PS1`](#decision-ledger).
 
-**Narrowed 2026-09-29 by principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3): at the
+**Narrowed 2026-09-29 by principle [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3): at the
 host, `packages:` is permanently inert, not inert for now.** HP-DIR3 says that at the host
 yolo manages the agent's environment and never provisions the workspace's runtime, so yolo
 never provisions `packages:` there ([`OQ-PS1`](#decision-ledger)'s narrowing). The host report names it
@@ -2183,7 +2183,7 @@ inert, the same way [`OQ-NC8`](../plans/notch-convergence.md#7-decision-ledger)'
 `mise_tools` inert at the host. Three consequences:
 
 - The env-manager's promised line `✗ packages   yolo does not manage packages here`
-  ([`yolo-as-environment-manager.md` §3.4](yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here))
+  ([`what-yolo-is.md`, `check` at a notch](../reference/what-yolo-is.md#check-at-a-notch))
   is true of the host after all. The old leaning retired it on the premise that the host might
   report a resolved profile, and HP-DIR3 removes that premise. Its *"(no image to bake)"*
   reason should cite HP-DIR3 instead.
@@ -2207,7 +2207,7 @@ WARN saying nothing materializes it at the host notch "yet".
   [`OQ-NC8`](../plans/notch-convergence.md#7-decision-ledger)'s *"named as inert"* for `mise_tools`.
 - **(c)** Name it inert, and also probe whether the package's binaries are on the host,
   detection only (the hand-off shape of
-  [env-manager §3.4](yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here)).
+  [`check` at a notch](../reference/what-yolo-is.md#check-at-a-notch)).
 
 **Q2**, on `confinement: host` plus `runtime: macos-user`: Today `yolo host apply` and `describe` say *"a run
 materializes it"* there, because the macos-user backend builds a profile for its own account.
@@ -2370,9 +2370,9 @@ inherited from the retired doc with their rulings intact.
 | [`OQ-NX6`](#decision-ledger) | **Warn-and-skip, via `meta.available`** — an unfree attr in `packages:` is skipped with a named reason instead of aborting the build; yolo never sets `allowUnfree` for the user, and an opted-in user still gets the package. Shipped `e40df9f1` | 2026-08-02 | [`provisioner-evidence.md`](provisioner-evidence.md#37-macos-vs-linux-coverage-freshness-and-the-traps), and its unfree warning block |
 | `N2` | **The nix mechanism is per-system and its name says so**: `yoloNoncontainerPackages` / `yoloUnavailablePackages` / `NativeSystem()`. Rejected the proposed `yoloHostPackages` — the axis is "no baked image", not "macOS", and not "`host`" either. Shipped `11f8bb72` | 2026-08-05 | [the shipped-state table](provisioner-evidence.md#31-what-is-already-solved-stated-precisely) and the [orthogonality finding](provisioner-evidence.md#34-not-orthogonal-to-confinement-the-provisioning-primitive-below-jail) |
 | — | The two `install_hints` defects (brew-cask Brewfile verb; unfree hint) — **both fixed** `e40df9f1`. ✅ **Both exercised on a Mac 2026-09-11** — the cask verb by [M2](#15-what-a-mac-session-should-measure), the unfree refusal by [M3](#15-what-a-mac-session-should-measure), which also found that the env-var opt-in needs `--impure` | 2026-08-02 | [§10](#10-alternatives-each-with-a-verdict) alternative G |
-| [`OQ-PS6`](#decision-ledger) | **Answered by [`OQ-PS1`](#decision-ledger)'s ruling and [`HP-DIR4`](host-tool-provisioning.md#HP-DIR4)**, the maintainer: *"it's actually desirable to use the official installer, so there's no additional things layered on top of that and we can manage that ourselves."* The default order puts each pack's own recipe first at every notch: the host agent floor at the host, the launcher and the capture store in a jail. The user's nix or a system manager serves an agent only where the user's override ([`OQ-PS7`](#decision-ledger)) ranks it up. The leaning's brew-first macOS row and nix-first Linux row are withdrawn; the jail row stands, never nix for an agent CLI (the absorbed [`OQ-7`](#question-id-map-old-spelling--new)); a `requires` keeps the detected manager's hint. `depcheck`'s pack-first order is kept as the default rather than reversed | 2026-09-30 (rulings 2026-09-29) | [§17.1](#171-the-users-nix-is-not-a-default-source-for-an-agent) |
+| [`OQ-PS6`](#decision-ledger) | **Answered by [`OQ-PS1`](#decision-ledger)'s ruling and [`HP-DIR4`](../reference/host-agent-environment.md#HP-DIR4)**, the maintainer: *"it's actually desirable to use the official installer, so there's no additional things layered on top of that and we can manage that ourselves."* The default order puts each pack's own recipe first at every notch: the host agent floor at the host, the launcher and the capture store in a jail. The user's nix or a system manager serves an agent only where the user's override ([`OQ-PS7`](#decision-ledger)) ranks it up. The leaning's brew-first macOS row and nix-first Linux row are withdrawn; the jail row stands, never nix for an agent CLI (the absorbed [`OQ-7`](#question-id-map-old-spelling--new)); a `requires` keeps the detected manager's hint. `depcheck`'s pack-first order is kept as the default rather than reversed | 2026-09-30 (rulings 2026-09-29) | [§17.1](#171-the-users-nix-is-not-a-default-source-for-an-agent) |
 | [`OQ-PS9`](#decision-ledger) | **Answered by the maintainer's reframe**, *"If we can help the user install nix, that sounds like a good idea. Not sure how tough that is, and not a huge blocker right now"*, **narrowed by [`OQ-PS1`](#decision-ledger)**: yes in principle, not now. The user's nix is never a default host provisioner, so an install yolo helped with would serve the nix `yolo check` already requires, not an agent need; when it is built is the roadmap's | 2026-09-30 (reframe 2026-09-11) | [§17.3](#173-helping-a-user-install-nix-yes-in-principle-not-now) |
-| `OQ-PS1` | **Ruled 2026-09-29, as leaned: (b). The user's nix serves an agent need only when the user's override ranks it up ([`OQ-PS7`](#decision-ledger)), never by default; the floor's default source is each agent's official installer, captured as the floor already does ([`OQ-HP3`](host-tool-provisioning.md#decision-ledger)).** The maintainer: *"maybe we can allow you to use Nix here for where you get the host floor, but in general, I think if we're going to be capturing these in a way like the Arch AUR does it, it's actually desirable to use the official installer, so there's no additional things layered on top of that and we can manage that ourselves."* The `packages:` half was already answered no by [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3) | 2026-09-29 | [§17.1](#171-the-users-nix-is-not-a-default-source-for-an-agent) |
+| `OQ-PS1` | **Ruled 2026-09-29, as leaned: (b). The user's nix serves an agent need only when the user's override ranks it up ([`OQ-PS7`](#decision-ledger)), never by default; the floor's default source is each agent's official installer, captured as the floor already does ([`OQ-HP3`](../reference/host-agent-environment.md#OQ-HP3)).** The maintainer: *"maybe we can allow you to use Nix here for where you get the host floor, but in general, I think if we're going to be capturing these in a way like the Arch AUR does it, it's actually desirable to use the official installer, so there's no additional things layered on top of that and we can manage that ourselves."* The `packages:` half was already answered no by [`HP-DIR3`](../reference/host-agent-environment.md#HP-DIR3) | 2026-09-29 | [§17.1](#171-the-users-nix-is-not-a-default-source-for-an-agent) |
 | `OQ-PS7` | **Ruled in review, as leaned (A): a per-environment ordered list is the advertised surface, with a per-package override that exists but is not advertised.** Per-environment, never global: a jail's list is not a host's. Recorded as [`PS-D9`](#PS-D9), built as [`PS-D11`](#PS-D11) | 2026-10-05 | [§8.3](#83-what-the-ruling-does-not-settle) |
 | `OQ-PS8` | **Decided as an implementation choice, [`PS-D1`](#PS-D1), reversible: core runs every vendor installer with no controlling terminal, and no per-recipe env field is added for it.** A variable an installer needs in order to *succeed* becomes a recipe field when [`OQ-PD13`](program-delivery.md#decision-ledger)'s flip is decided | 2026-09-30 | [§17.2](#172-a-vendor-installer-runs-with-no-terminal) |
 | `OQ-PS10` | **Decided as an implementation choice, [`PS-D2`](#PS-D2), reversible: (a), a closure pinned by yolo's own `flake.lock`, built into that program's floor entry and GC-rooted inside the host prefix, with no `nix profile`.** It survives only for a user whose override ranks their nix up, since [`OQ-PS1`](#decision-ledger) was ruled (b) | 2026-09-30 | [§17.4](#174-what-the-hosts-nix-provisioner-leaves-behind) |
@@ -2381,8 +2381,8 @@ inherited from the retired doc with their rulings intact.
 | `OQ-NX5` | **Ruled 2026-09-29, as leaned: (a). The claim is "no undeclared pollution", and yolo builds no warner.** The maintainer: *"the warning is in principle useful, but seems like it's hard to implement, and yes, like you did this, so like this is what happens to you. We can't warn against everything like that."* | 2026-09-29 | [§17.5](#175-a-declared-package-that-shadows-a-system-command) |
 | `OQ-NX9` | **Decided as an implementation choice, [`PS-D5`](#PS-D5), reversible, once [`OQ-PS1`](#decision-ledger) was ruled: the daemon connectivity probe runs wherever `nix` is found, with that OS's restart remedy; the trusted-user verdict and the extra-platforms and Linux-builder block stay macOS-only.** The profile-report half shipped 2026-09-14 | 2026-09-30 | [§17.6](#176-yolo-checks-nix-probes-off-macos) |
 | <a id="PS-D1"></a>PS-D1 | *Implementation decision, reversible, answering [`OQ-PS8`](#decision-ledger):* every vendor installer yolo runs gets no controlling terminal and a `/dev/null` stdin: the capture jail (built 2026-09-09, `022defbb`), the jail launcher's `_run_installer` on first use and on update (built 2026-09-30, through `yolo internal no-terminal`), and a `via: installer` remedy the host dependency gate runs (built 2026-09-30). A system-manager hint the gate runs keeps the terminal, because its `sudo` asks for a password there. No per-recipe env field is added for non-interactivity; a variable an installer needs in order to succeed is added to the recipe when a flip needs one (copilot's `PREFIX`, [`OQ-PD13`](program-delivery.md#decision-ledger)). **Why:** having no terminal prevents *an installer waiting for a human* for every vendor, where a named variable covers only the vendors already met. The accepted cost is the leaning's: an installer that needs an answer fails instead of prompting | 2026-09-30 | [§17.2](#172-a-vendor-installer-runs-with-no-terminal) |
-| <a id="PS-D2"></a>PS-D2 | *Implementation decision, reversible, answering [`OQ-PS10`](#decision-ledger):* (a). When a user's override ranks their nix up for an agent, yolo builds a closure pinned by its own `flake.lock` into that program's floor entry, GC-rooted inside the host prefix, and makes no `nix profile`. Nothing is built before [`OQ-PS7`](#decision-ledger)'s override exists. ⚠ *The override shipped 2026-10-06 and this build did not: until it does, an agent the order ranks to nix keeps the floor's entry ([`PS-D13`](#PS-D13)).* **Why:** the maintainer's *"maybe we can allow you to use Nix here for where you get the host floor"* ([`OQ-PS1`](#decision-ledger)) makes nix a source of the floor's entry; [`HP-D2`](host-tool-provisioning.md#HP-D2) gives the floor one materialization path; a launch-only prepend would add a folder the ruled child PATH lacks ([`OQ-HE10`](../reference/host-agent-environment.md#oq-he10)); and a profile's stable path and rollback are already covered by [`OQ-HP2`](host-tool-provisioning.md#decision-ledger) and [`HP-D8`](host-tool-provisioning.md#HP-D8) | 2026-09-30 | [§17.4](#174-what-the-hosts-nix-provisioner-leaves-behind) |
-| <a id="PS-D3"></a>PS-D3 | *Implementation decision, reversible, answering [`OQ-PS12`](#decision-ledger):* the override re-ranks recipes the selected packs declare and refuses a recipe no selected pack ships. The refusal names the route that exists: leave the pack out of the floor with `host_floor` ([`HP-D5`](host-tool-provisioning.md#HP-D5)), install the program another way, and `yolo host` runs the copy on the launch PATH ([`OQ-HE11`](../reference/host-agent-environment.md#oq-he11), ruled (a)). **Why:** *"Claude from brew"* is a re-ranking of `packs/claude`'s `brew-cask` hint, and a user-named recipe would add only yolo running the user's own command, behind a new trust surface. Built when someone asks for that by name | 2026-09-30 | [§8.3](#83-what-the-ruling-does-not-settle) |
+| <a id="PS-D2"></a>PS-D2 | *Implementation decision, reversible, answering [`OQ-PS10`](#decision-ledger):* (a). When a user's override ranks their nix up for an agent, yolo builds a closure pinned by its own `flake.lock` into that program's floor entry, GC-rooted inside the host prefix, and makes no `nix profile`. Nothing is built before [`OQ-PS7`](#decision-ledger)'s override exists. ⚠ *The override shipped 2026-10-06 and this build did not: until it does, an agent the order ranks to nix keeps the floor's entry ([`PS-D13`](#PS-D13)).* **Why:** the maintainer's *"maybe we can allow you to use Nix here for where you get the host floor"* ([`OQ-PS1`](#decision-ledger)) makes nix a source of the floor's entry; [`HP-D2`](../reference/host-agent-environment.md#HP-D2) gives the floor one materialization path; a launch-only prepend would add a folder the ruled child PATH lacks ([`OQ-HE10`](../reference/host-agent-environment.md#oq-he10)); and a profile's stable path and rollback are already covered by [`OQ-HP2`](../reference/host-agent-environment.md#OQ-HP2) and [`HP-D8`](../reference/host-agent-environment.md#HP-D8) | 2026-09-30 | [§17.4](#174-what-the-hosts-nix-provisioner-leaves-behind) |
+| <a id="PS-D3"></a>PS-D3 | *Implementation decision, reversible, answering [`OQ-PS12`](#decision-ledger):* the override re-ranks recipes the selected packs declare and refuses a recipe no selected pack ships. The refusal names the route that exists: leave the pack out of the floor with `host_floor` ([`HP-D5`](../reference/host-agent-environment.md#HP-D5)), install the program another way, and `yolo host` runs the copy on the launch PATH ([`OQ-HE11`](../reference/host-agent-environment.md#oq-he11), ruled (a)). **Why:** *"Claude from brew"* is a re-ranking of `packs/claude`'s `brew-cask` hint, and a user-named recipe would add only yolo running the user's own command, behind a new trust surface. Built when someone asks for that by name | 2026-09-30 | [§8.3](#83-what-the-ruling-does-not-settle) |
 | <a id="PS-D4"></a>PS-D4 | *Implementation decision, reversible, answering [`OQ-PS13`](#decision-ledger):* (b). A `via: installer` remedy is printed and run as a download-check-run command: fetch to a temporary file, refuse a web page, a binary or non-text bytes naming the URL, then run the file. **Why:** the prompt keeps listing the exact command ([`report-tiers.md`'s dependency rule](../reference/report-tiers.md#the-dependency-rule), point 3, unchanged), and the host refuses the same fault the jail's launcher refuses. Whether the two share one implementation of the check is the implementer's ([`PS-D6`](#PS-D6)). **Built 2026-09-30** (`packdecl.InstallerRemedy`, `yolo internal installer-check`) | 2026-09-30 | [§17.7](#177-the-dependency-gates-installer-body-check) |
 | <a id="PS-D5"></a>PS-D5 | *Implementation decision, reversible, answering [`OQ-NX9`](#decision-ledger) once [`OQ-PS1`](#decision-ledger) was ruled:* `yolo check`'s daemon connectivity probe (`nix store info`: its timeout, its failure) runs on every OS where `nix` is found, with the restart remedy for that OS's service manager, except in a container jail whose launch mounted no host nix daemon (no socket and no `NIX_REMOTE`): there it is a [SKIP] saying the jail has none, since nix there has only the image's read-only store and no daemon to restart (2026-10-02, found by the macOS podman nightly). The trusted-user verdict and the extra-platforms and Linux-builder block stay macOS-only. **Why:** a Linux container launch runs its image build through the host's nix and bind-mounts the daemon socket when it exists (`internal/cli/run/assemble.go`), which the leaning's *"no notch-shaped reason"* missed; the trusted-user and builder lines diagnose the macOS builder offload and would be noise on Linux. **Built 2026-09-30**: off macOS the restart is `sudo systemctl restart nix-daemon` where `systemctl` is on the PATH, and otherwise a sentence naming the service; a failed connection off macOS carries it beside nix's own first line | 2026-09-30 | [§17.6](#176-yolo-checks-nix-probes-off-macos) |
 | <a id="PS-D6"></a>PS-D6 | *Implementation decision, reversible, inside [`PS-D4`](#PS-D4)'s open choice:* **the body check keeps two implementations, held to one table.** The jail's launcher keeps its shell check (`_installer_body_kind`), and the host's remedy runs a Go one (`internal/installerbody`, through `yolo internal installer-check`). `installerbody.Fixtures` is the table both answer to, and a parity test cuts the shell function out of the rendered launcher and runs every fixture through both. **Why:** the launcher's check must work where no `yolo` is on the PATH and under macOS's stock bash 3.2, so a shell copy stays whatever the host does, and the host cannot use that copy, because the prompt prints the exact command and a forty-line shell function inside it is not a command anyone can read before answering. One table catches a rule changed in one copy and not the other, which is the drift a second implementation risks. The host remedy spells the check as bare `yolo`, found on the PATH the install runs with; where there is none, the `&&` chain runs nothing | 2026-09-30 | [§17.7](#177-the-dependency-gates-installer-body-check) |

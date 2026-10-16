@@ -115,7 +115,7 @@ type Options struct {
 	// measured 2026-09-03. Both host acts ask for it: macos-user's capture runs against a
 	// throwaway staging home whose path is not the final home path (program-delivery.md
 	// §6.3), and a container capture's entry is materialized by the host agent floor into the
-	// floor's own prefix as well as into a jail's /home/agent (host-tool-provisioning.md
+	// floor's own prefix as well as into a jail's /home/agent (host-agent-environment.md
 	// OQ-HP3). Without it an unrecorded reference materializes as a dead path, which is why
 	// Materialize refuses a move without it.
 	ScanContentRefs bool

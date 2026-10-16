@@ -7,7 +7,7 @@ import "strings"
 //
 // It lives in this dependency-free package because TWO installers read it: the jail's
 // generated npm launcher (internal/entrypoint, npmspec.go, which delegates here) and the host
-// agent floor (internal/hostfloor, docs/design/host-tool-provisioning.md). Two parsers of one
+// agent floor (internal/hostfloor, docs/reference/host-agent-environment.md). Two parsers of one
 // declaration would be two answers to "is this pinned?", which decides whether a program is
 // ever updated.
 //

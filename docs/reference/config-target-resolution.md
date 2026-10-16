@@ -74,7 +74,7 @@ and `reset` could disagree about which store they meant, and nothing on screen n
 **Terms.** A **notch** is the confinement level an operation acts at — `jail`, `guest` or
 `host` — which decides whose home its files are; the vocabulary is `internal/render`'s `Kind`
 and it is coined in
-[`../design/yolo-as-environment-manager.md`](../design/yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches).
+[`what-yolo-is.md`](what-yolo-is.md#the-confinement-dial).
 A **capture store** is the per-surface sidecar directory holding a jail's captured edits and
 the baseline they diverge from; the state machine that writes it is
 [`config-migration-to-prism.md`](config-migration-to-prism.md). A **surface** is one composed

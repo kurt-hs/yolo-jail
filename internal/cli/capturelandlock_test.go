@@ -21,7 +21,7 @@ import (
 )
 
 // capturelandlock_test.go pins the capture act's two new arms at their call sites
-// (docs/design/host-tool-provisioning.md HP-D2, HP-D18): the floor on a Mac capturing through the
+// (docs/reference/host-agent-environment.md HP-D2, HP-D18): the floor on a Mac capturing through the
 // macos-user act, under that runtime and through no environment variable; the floor on Linux with no
 // runtime capturing on the host, where the kernel can confine it; `yolo capture`'s own choice of arm;
 // and the recorded origin that keeps a host capture out of every jail. The confined run itself is

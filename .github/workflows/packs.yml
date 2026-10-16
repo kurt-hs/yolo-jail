@@ -2,7 +2,7 @@ name: Pack Installs
 
 # Asks ONE question the every-push gate deliberately does not: do the shipped packs'
 # programs still install from their vendors — in a jail, and into yolo's host floor
-# (`yolo host -- <bin>`, docs/design/host-tool-provisioning.md)?
+# (`yolo host -- <bin>`, docs/reference/host-agent-environment.md)?
 #
 # It is a separate workflow because the trigger is the whole point
 # (docs/reference/agent-install-in-ci.md#three-triggers-matched-to-three-causes — "the trigger should match the causation"):

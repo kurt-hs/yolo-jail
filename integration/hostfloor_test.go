@@ -18,7 +18,7 @@ import (
 )
 
 // hostfloor_test.go is the REAL-HOST tier of the host agent floor
-// (docs/design/host-tool-provisioning.md §8): `yolo host -- <bin>` run on the machine the suite runs
+// (docs/reference/host-agent-environment.md, "What only a real host can confirm"): `yolo host -- <bin>` run on the machine the suite runs
 // on, with the floor's own Node fetched from nodejs.org and checked against the digest compiled into
 // yolo, the npm that tarball carries, and a real `yolo capture` in a real capture jail. Every test of
 // internal/hostfloor serves a fake Node distribution, a fake registry and a fake capture store

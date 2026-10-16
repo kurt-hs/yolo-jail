@@ -136,7 +136,7 @@ ruled the notches onto one code path per concern
 ### 1.2 Terms
 
 - **Notch**: one setting of the confinement dial (`jail`, `guest`, `host`), defined in
-  [`yolo-as-environment-manager.md` §4](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches).
+  [`what-yolo-is.md`, the confinement dial](../reference/what-yolo-is.md#the-confinement-dial).
 - **Service**, and its **host half**: a service is a daemon a pack contributes, *"a jail daemon,
   a host daemon, or both"*, with *"No grants, no boundary, no host state"*
   ([`wire-bridge.md`](../reference/wire-bridge.md#kind-service--the-vocabulary-it-landed-as)).

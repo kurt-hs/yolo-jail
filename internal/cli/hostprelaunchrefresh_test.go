@@ -1,7 +1,7 @@
 package cli
 
 // hostprelaunchrefresh_test.go pins pi's PRE-LAUNCH REFRESH at `yolo host --`
-// (docs/design/host-tool-provisioning.md HP-D19) at its call site, hostLaunch, through hostMain with
+// (docs/reference/host-agent-environment.md HP-D19) at its call site, hostLaunch, through hostMain with
 // the exec replaced: the shipped pi pack, which declares `update --extensions` watching
 // ~/.pi/agent/settings.json; a stub pi on PATH, which the user-scope `host_floor` makes the copy
 // that runs; and a log the stub's refresh and the exec stand-in both append to, so "before the exec"

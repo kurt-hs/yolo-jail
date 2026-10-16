@@ -99,7 +99,7 @@ type launchPathDep struct {
 // launchPathDeps is every binary the selected packs' `requires` and `program` contributions
 // declare, sorted, less the programs the floor answers for: those run from the floor whatever a PATH
 // holds, or, with no floor entry on this machine, are refused rather than looked up on a PATH
-// (host-notch-readiness.md HNR-D2), and sectionHostFloor reports them. A program that is not the
+// (host-agent-environment.md HNR-D2), and sectionHostFloor reports them. A program that is not the
 // floor's to hold (Floor.OutsideTheFloor, HNR-D4) is looked up on the PATH, so it stays.
 func (o *Options) launchPathDeps() []launchPathDep {
 	var in []hostfloor.PackPrograms

@@ -1090,7 +1090,7 @@ func checkOptions(args []string, errw io.Writer) (check.Options, bool) {
 	// terminal, so a piped stdin cannot be read as an implicit yes.
 	opts.Stdin = os.Stdin
 	// The host agent floor the launch itself builds, so the floor rows `yolo check` prints are
-	// read from the same construction `yolo host --` installs through (host-tool-provisioning.md
+	// read from the same construction `yolo host --` installs through (host-agent-environment.md
 	// §7). Observe only: the section asks dispositions, never installs.
 	opts.HostFloor = func(progs []hostfloor.Program) *hostfloor.Floor { return newHostFloor(io.Discard, progs) }
 	// Before the sections, one of which is a nix image build: a rejected --format
