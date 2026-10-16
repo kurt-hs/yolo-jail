@@ -883,6 +883,44 @@ route.
 
 ---
 
+## 11. Passwordless start and stop: the owner's check — NEW 2026-10-16, NEVER RUN
+
+**Needs the owner's explicit authorization before it runs**: step 1 installs a
+sudo rule on a real machine ([MP-B1](../../design/macos-user-privilege-lifecycle.md#decision-ledger)
+authorizes the source change only). This is the check
+[the plan](../../design/macos-user-privilege-lifecycle-plan.md#the-owners-mac)
+names. Run it on a Mac set up by an older yolo, with one old session left
+running in another terminal.
+
+1. `yolo macos-setup`: one password prompt. It prints
+   `Installed /etc/sudoers.d/yolo-jail; visudo accepts it.`, then the probe
+   `/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true` running with
+   no password and an empty sudo cache, and its ready verdict ends
+   "Launches start and stop with no password from now on." The old session
+   keeps running.
+2. `sudo -k; yolo check --no-build`: these four rows pass in the macOS-user
+   section:
+   - `Staging directory /Users/Shared/yolo-staged is present`
+   - `Staging directory /Users/Shared/yolo-staged is yours`
+   - `Staging directory /Users/Shared/yolo-staged is a directory only you can write, with no access list`
+   - `sudo runs commands as _yolojail without a password (/etc/sudoers.d/yolo-jail)`
+3. `sudo -k; yolo -- /bin/sh -c 'id -un' </dev/null`: prints `_yolojail`, no
+   prompt.
+4. In a project with a pack whose program installs by capture:
+   `sudo -k; yolo capture <bin>`: no prompt.
+5. `sudo -k; yolo -- sleep 600 &`, then from a second terminal in the same
+   project `sudo -k; yolo stop`: the session ends, no prompt, and
+   `ls /Users/Shared/yolo-staged/env` shows none of its files.
+6. End the old session. If it ended without removing its files (killed, or its
+   sudo could not authenticate at exit), the next `yolo` launch warns
+   `Warning: a macos-user session from an older yolo left root-owned files in /var/yolo-jail`
+   and names `yolo macos-setup`; running that removes them and prints
+   `Removed the root-owned files of 1 ended session(s) an older yolo left in /var/yolo-jail.`
+   If the old session removed its own files, there is no warning, and that is a
+   pass too.
+7. Record each result, with the macOS version, in the
+   [design doc's status line](../../design/macos-user-privilege-lifecycle.md).
+
 ## Open threads from the first hardware run
 
 The 2026-09-12 session left these open. None is a product defect that a Mac has shown; each is

@@ -55,6 +55,7 @@ func TestSiteCacheRelocationsRefusesEachUndeliverableTarget(t *testing.T) {
 		{"a privacy-guarded dir", CacheRelocation{Subdir: "hf", Target: "/Users/matt/Documents/hf"}, "/Users/matt/Documents, which macOS's privacy controls guard"},
 		{"the state dir", CacheRelocation{Subdir: "hf", Target: "/private/var/yolo-jail/hf"}, "yolo's state directory"},
 		{"an ancestor of the state dir", CacheRelocation{Subdir: "hf", Target: "/var"}, "contains yolo's state directory /var/yolo-jail"},
+		{"the staging root", CacheRelocation{Subdir: "hf", Target: "/Users/Shared/yolo-staged/hf"}, "yolo's state directory"},
 		{"every volume", CacheRelocation{Subdir: "hf", Target: "/Volumes"}, "is or contains /Volumes"},
 		{"inside the workspace", CacheRelocation{Subdir: "hf", Target: relocWS + "/.cache-hf"}, "is inside the workspace"},
 		{"containing the workspace", CacheRelocation{Subdir: "hf", Target: "/Users/Shared/yolo"}, "contains the workspace"},
@@ -114,7 +115,8 @@ func TestPlanWithCacheRelocationsHoldsEveryInvariant(t *testing.T) {
 	// The write probe runs as the sandbox account, under THIS session's profile, on a file the
 	// session names, handed to the shell as an argument.
 	p := plan.CacheRelocationProbes[0].Argv
-	if p[0] != "sudo" || p[1] != "--user="+SandboxUser || !containsArgPair(p, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) ||
+	if len(RunAsArgvProblems("write probe", p)) > 0 || p[0] != "/usr/bin/sudo" ||
+		!containsArgPair(p, "/usr/bin/sandbox-exec", "-f", plan.ProfilePath) ||
 		p[len(p)-1] != CacheRelocationProbeFile(sharedReloc.Target, plan.SessionID) {
 		t.Errorf("the write probe is not a confined write by the sandbox account on the session's file: %v", p)
 	}
@@ -249,7 +251,7 @@ func TestTheDryRunPlanNamesEachRelocation(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		"cache:       " + SandboxHome() + "/.cache/huggingface → " + sharedReloc.Target,
-		"sudo --user=" + SandboxUser + " " + testBin + " -w " + sharedReloc.Target,
+		"/usr/bin/sudo -n --user=" + SandboxUser + " /usr/bin/env " + testBin + " -w " + sharedReloc.Target,
 		shquote.JoinDisplay(plan.CacheRelocationProbes[0].Argv),
 		"#seatbelt-test-id:cache-relocation-write-allow#",
 	} {
@@ -335,14 +337,16 @@ func TestTheLaunchProbesEachRelocationTargetBeforeTheAgent(t *testing.T) {
 		t.Fatalf("rc = %d, want the agent's\n%s", rc, out)
 	}
 	idx := func(match func(string) bool) int { return probeRecIndex(rec, match) }
-	preflight := idx(func(r string) bool { return r == "run:sudo --user="+SandboxUser+" "+testBin+" -w "+sharedReloc.Target })
-	install := idx(func(r string) bool { return strings.HasPrefix(r, "install:") && strings.HasSuffix(r, ".sb") })
+	preflight := idx(func(r string) bool {
+		return r == "run:/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env "+testBin+" -w "+sharedReloc.Target
+	})
+	install := idx(func(r string) bool { return strings.HasPrefix(r, "write:") && strings.HasSuffix(r, ".sb") })
 	write := idx(func(r string) bool {
-		return strings.HasPrefix(r, "run:sudo --user="+SandboxUser+" /usr/bin/env -i") &&
+		return strings.HasPrefix(r, "run:/usr/bin/sudo -n --user="+SandboxUser+" /usr/bin/env -i") &&
 			strings.Contains(r, "/usr/bin/sandbox-exec -f ") &&
 			strings.Contains(r, sharedReloc.Target+"/.yolo-relocation-probe-")
 	})
-	stage := idx(func(r string) bool { return strings.HasPrefix(r, "run:sudo "+mkdirBin+" -p ") })
+	stage := idx(func(r string) bool { return strings.HasPrefix(r, "run:"+mkdirBin+" -p ") })
 	agent := idx(func(r string) bool { return strings.HasPrefix(r, "proxy:") })
 	materialize := idx(func(r string) bool { return strings.HasPrefix(r, "materialize:") })
 	if preflight < 0 || materialize < 0 || install < 0 || write < 0 || stage < 0 || agent < 0 ||
@@ -357,7 +361,7 @@ func TestTheLaunchProbesEachRelocationTargetBeforeTheAgent(t *testing.T) {
 func TestARelocationTheSandboxCannotUseRefusesTheLaunch(t *testing.T) {
 	for name, failing := range map[string]func([]string) bool{
 		"the DAC preflight": func(argv []string) bool {
-			return len(argv) == 5 && argv[2] == testBin && argv[3] == "-w"
+			return len(argv) == 7 && argv[4] == testBin && argv[5] == "-w"
 		},
 		"the write under the profile": func(argv []string) bool {
 			return containsArg(argv, "/usr/bin/sandbox-exec") && strings.Contains(argv[len(argv)-1], ".yolo-relocation-probe-")

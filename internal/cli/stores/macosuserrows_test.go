@@ -14,9 +14,11 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
 )
 
-// macosuserrows_test.go pins `yolo stores`'s macos-user section: the backend's root-owned state
-// dir (/var/yolo-jail) and the sandbox account's machine-tier stores, which the inventory used to
-// omit entirely, and the not-applicable rows the container-only sections get on that runtime.
+// macosuserrows_test.go pins `yolo stores`'s macos-user sections: the backend's host-owned staging
+// root (/Users/Shared/yolo-staged) and the sandbox account's machine-tier stores, which the
+// inventory used to omit entirely; the root-owned /var/yolo-jail an older yolo staged into, listed
+// with the manual sudo commands only when it is present; and the not-applicable rows the
+// container-only sections get on that runtime.
 
 // productionMacosUserRoots is macosUserRoots as the binary has it, kept before TestMain points
 // the variable at nothing.
@@ -25,25 +27,26 @@ var productionMacosUserRoots = macosUserRoots
 // TestMain keeps every test in this package off the machine's real sandbox account: a test that
 // leaves Options.MacosUser nil gets no macos-user section (macosUserRoots says why).
 func TestMain(m *testing.M) {
-	macosUserRoots = func() (string, string, bool) { return "", "", false }
+	macosUserRoots = func() MacosUserRoots { return MacosUserRoots{} }
 	os.Exit(m.Run())
 }
 
 // TestTheMacosUserSeamDefaultsToTheBackendsOwnRoots: an unset seam is the production answer, the
-// state dir and home internal/macosuser names, on macOS alone. Deleting fillDefaults' line, or
-// pointing the variable anywhere else, fails here.
+// staging root, the legacy state dir and the home internal/macosuser names, on macOS alone.
+// Deleting fillDefaults' line, or pointing the variable anywhere else, fails here.
 func TestTheMacosUserSeamDefaultsToTheBackendsOwnRoots(t *testing.T) {
-	stateDir, home, ok := productionMacosUserRoots()
-	if stateDir != macosuser.StateDir() || home != macosuser.SandboxHome() || ok != paths.IsMacOS {
-		t.Errorf("production roots = (%q, %q, %v), want (%q, %q, %v)", stateDir, home, ok,
-			macosuser.StateDir(), macosuser.SandboxHome(), paths.IsMacOS)
+	got := productionMacosUserRoots()
+	want := MacosUserRoots{StateDir: macosuser.StateDir(), LegacyDir: macosuser.LegacyStateDir(),
+		Home: macosuser.SandboxHome(), OK: paths.IsMacOS}
+	if got != want {
+		t.Errorf("production roots = %+v, want %+v", got, want)
 	}
-	if stateDir != "/var/yolo-jail" || home != "/Users/_yolojail" {
-		t.Errorf("the roots moved to %q and %q; the section's notes name them", stateDir, home)
+	if got.StateDir != "/Users/Shared/yolo-staged" || got.LegacyDir != "/var/yolo-jail" || got.Home != "/Users/_yolojail" {
+		t.Errorf("the roots moved to %+v; the sections' notes and the help text name them", got)
 	}
 	called := false
 	prev := macosUserRoots
-	macosUserRoots = func() (string, string, bool) { called = true; return "", "", false }
+	macosUserRoots = func() MacosUserRoots { called = true; return MacosUserRoots{} }
 	t.Cleanup(func() { macosUserRoots = prev })
 	var o Options
 	fillDefaults(&o)
@@ -53,13 +56,14 @@ func TestTheMacosUserSeamDefaultsToTheBackendsOwnRoots(t *testing.T) {
 	}
 }
 
-// macosUserFixture lays out a state dir and a sandbox home the way a Mac that has run macos-user
-// launches has them, under temp roots, and returns options pointed at both.
+// macosUserFixture lays out a staging root and a sandbox home the way a Mac that has run macos-user
+// launches has them, under temp roots, and returns options pointed at both. Its legacy dir does
+// not exist: a Mac set up after the one-rule contract has none.
 func macosUserFixture(t *testing.T) (Options, string, string) {
 	t.Helper()
 	o, _ := testOptions(t)
 	root := t.TempDir()
-	stateDir, home := filepath.Join(root, "var-yolo-jail"), filepath.Join(root, "Users-_yolojail")
+	stateDir, home := filepath.Join(root, "Users-Shared-yolo-staged"), filepath.Join(root, "Users-_yolojail")
 	writeFile(t, filepath.Join(stateDir, "bin", "yolo"), 1000)
 	writeFile(t, filepath.Join(stateDir, "bin", "yolo-jaild"), 500)
 	writeFile(t, filepath.Join(stateDir, "packs", "yolo-a-1", "claude", "pack.json"), 30)
@@ -74,8 +78,24 @@ func macosUserFixture(t *testing.T) (Options, string, string) {
 	// Everything else in the home is not this command's to walk.
 	writeFile(t, filepath.Join(home, "Documents", "private"), 99999)
 	writeFile(t, filepath.Join(home, ".claude", "settings.json"), 77)
-	o.MacosUser = func() (string, string, bool) { return stateDir, home, true }
+	legacy := filepath.Join(root, "var-yolo-jail")
+	o.MacosUser = func() MacosUserRoots {
+		return MacosUserRoots{StateDir: stateDir, LegacyDir: legacy, Home: home, OK: true}
+	}
 	return o, stateDir, home
+}
+
+// legacyFixture adds to macosUserFixture's Mac the root-owned /var/yolo-jail an older yolo staged
+// into, and returns its path.
+func legacyFixture(t *testing.T, o *Options) string {
+	t.Helper()
+	legacy := o.MacosUser().LegacyDir
+	writeFile(t, filepath.Join(legacy, "bin", "yolo"), 800)
+	writeFile(t, filepath.Join(legacy, "packs", "yolo-old-1", "claude", "pack.json"), 40)
+	writeFile(t, filepath.Join(legacy, "home-overlay", "yolo-old", ".claude", "CLAUDE.md"), 60)
+	writeFile(t, filepath.Join(legacy, "env", "yolo-old.env"), 9)
+	writeFile(t, filepath.Join(legacy, "profile-yolo-old.sb"), 150)
+	return legacy
 }
 
 func sectionRows(rep Report, section string) map[string]Store {
@@ -88,10 +108,12 @@ func sectionRows(rep Report, section string) map[string]Store {
 	return out
 }
 
-// TestTheMacosUserSectionListsTheStateDirAndTheHomesStores: one row per child of the state dir,
-// its loose profiles in one row, and the home's mise store and cache — each measured, none with a
-// reclaimer, each the user's to decide about with a note saying how. Only the named home stores
-// are walked.
+// TestTheMacosUserSectionListsTheStateDirAndTheHomesStores: one row per child of the staging
+// root, its loose profiles in one row, and the home's mise store and cache — each measured, none
+// with a reclaimer, each the user's to decide about with a note saying how. The staging root is
+// the host user's, so every command a row names runs without sudo, and a sealed tree is unsealed
+// before it is removed. Only the named home stores are walked, and with no legacy dir there is no
+// legacy section.
 func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 	o, stateDir, home := macosUserFixture(t)
 	var walked []string
@@ -130,27 +152,51 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 	if s := rows["macos.state._files"]; s.Count != 2 || !strings.Contains(s.Note, "profile-<cname>.sb") {
 		t.Errorf("the loose-files row = %+v, want the two Seatbelt profiles named", s)
 	}
+	for key, s := range rows {
+		if strings.Contains(s.Note, "sudo") || strings.Contains(s.Note, "root-owned") {
+			t.Errorf("%s names sudo or root ownership, but the staging root is the host user's: %s", key, s.Note)
+		}
+		if strings.HasPrefix(key, "macos.state.") && !strings.Contains(s.Note, "host-owned") {
+			t.Errorf("%s does not say the staging root is host-owned: %s", key, s.Note)
+		}
+	}
+	if legacy := sectionRows(Inventory(o), SectionMacosUserLegacy); len(legacy) != 0 {
+		t.Errorf("no legacy dir exists, yet the legacy section has rows %v", keysIn(legacy))
+	}
 	packs := rows["macos.state.packs"]
 	for _, want := range []string{"per-launch immutable guest trees", "exact retained path printed by the launch",
-		"sudo ls -la -- <exact-path>", "yolo macos-teardown"} {
+		"`ls -la -- <exact-path>`", "`chmod -R u+w -- <exact-path> && rm -rf -- <exact-path>`", "yolo macos-teardown"} {
 		if !strings.Contains(packs.Note, want) {
 			t.Errorf("the packs row does not name %q: %s", want, packs.Note)
 		}
 	}
-	if strings.Contains(packs.Note, "sudo rm -rf "+filepath.Join(stateDir, "packs", "<cname>")) {
+	if strings.Contains(packs.Note, "rm -rf -- "+filepath.Join(stateDir, "packs", "<cname>")) {
 		t.Errorf("the packs row recommends workspace-wide removal of possibly held trees: %s", packs.Note)
 	}
-	// env/ is root's and 0700, so the user's own shell cannot list it: a glob there is expanded
-	// before sudo runs and matches nothing (zsh refuses "no matches found"; bash hands rm the
-	// literal pattern, which -f then ignores, exit 0). The note names each file literally.
+	// A per-launch tree is sealed 0555, which blocks its owner's rm too: the removal unseals
+	// first, by the tree's own spelling in internal/macosuser.
+	for key, tree := range map[string]string{
+		"macos.state.home-overlay": macosuser.StagedHomeOverlay("<cname>", stateDir),
+		"macos.state.ctx":          macosuser.StagedCtxRoot("<cname>", stateDir),
+	} {
+		want := "`chmod -R u+w -- " + tree + " && rm -rf -- " + tree + "`"
+		if !strings.Contains(rows[key].Note, want) {
+			t.Errorf("%s does not name the unseal-then-remove %s: %s", key, want, rows[key].Note)
+		}
+	}
+	// env/ names each file literally, never a glob: the same command reads the same in either
+	// root, and in the legacy one only root can list the dir, where a glob expands to nothing.
 	env := filepath.Join(stateDir, "env")
 	envNote := rows["macos.state.env"].Note
-	wantRm := "`sudo rm -f " + filepath.Join(env, "<cname>.env") + " " + filepath.Join(env, "<cname>.daemons.env") + "`"
+	wantRm := "`rm -f -- " + filepath.Join(env, "<cname>.env") + " " + filepath.Join(env, "<cname>.daemons.env") + "`"
 	if !strings.Contains(envNote, wantRm) {
 		t.Errorf("the env row's note does not name its per-workspace files as %s: %s", wantRm, envNote)
 	}
 	if strings.Contains(envNote, "*") {
-		t.Errorf("the env row's note names a glob the user's shell cannot expand in a dir only root can list: %s", envNote)
+		t.Errorf("the env row's note names a glob: %s", envNote)
+	}
+	if want := "`rm -f -- " + filepath.Join(stateDir, "profile-<cname>.sb") + "`"; !strings.Contains(rows["macos.state._files"].Note, want) {
+		t.Errorf("the profiles row does not name %s: %s", want, rows["macos.state._files"].Note)
 	}
 	// The spellings are internal/macosuser's own, so the note cannot drift from the files.
 	if got := macosuser.SandboxEnvFile("<cname>", stateDir); got != filepath.Join(env, "<cname>.env") {
@@ -167,11 +213,100 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableStateDirChildIsUnknownAndNamesSudoDu: env/ is 0700 and root's, so the host
-// user's walk reads nothing there. That is unknown, never "≥ 0 B", and the row names the one
-// command that measures it, which this command does not run. Both shapes an unreadable root
-// takes: the walk refusing outright, and the real walk's lower bound with nothing under it.
-func TestAnUnreadableStateDirChildIsUnknownAndNamesSudoDu(t *testing.T) {
+// TestTheLegacyStateDirIsItsOwnSectionWithTheManualSudoCommands: a Mac that ran an older yolo
+// keeps the root-owned /var/yolo-jail, which nothing in yolo removes (PL-8). `yolo stores` lists
+// it in a section of its own, one row per child plus its loose profiles, each root-owned, each
+// naming the sudo command the user runs by hand (this command runs none), and each saying a launch
+// no longer writes there while an older yolo's running sessions may. env/ is 0700 root, so it is
+// never walked: its size is unknown and the row names `sudo du -sh`.
+func TestTheLegacyStateDirIsItsOwnSectionWithTheManualSudoCommands(t *testing.T) {
+	o, stateDir, _ := macosUserFixture(t)
+	legacy := legacyFixture(t, &o)
+	legacyEnv := filepath.Join(legacy, "env")
+	walk := o.Walk
+	o.Walk = func(root string, cutoff time.Time, budget time.Duration, now func() time.Time) (WalkResult, error) {
+		if root == legacyEnv || strings.HasPrefix(root, legacyEnv+"/") {
+			t.Errorf("the inventory walked %s, a dir only root can read", root)
+		}
+		return walk(root, cutoff, budget, now)
+	}
+	rep := Inventory(o)
+	rows := sectionRows(rep, SectionMacosUserLegacy)
+
+	want := map[string]int64{
+		"macos.legacy.bin": 800, "macos.legacy.packs": 40, "macos.legacy.home-overlay": 60,
+		"macos.legacy._files": 150,
+	}
+	for key, bytes := range want {
+		s, ok := rows[key]
+		if !ok {
+			t.Errorf("no %s row (have %v)", key, keysIn(rows))
+			continue
+		}
+		if s.Sizing != SizingMeasured || s.Bytes != bytes {
+			t.Errorf("%s = %s %d B, want measured %d B", key, s.Sizing, s.Bytes, bytes)
+		}
+	}
+	if len(rows) != len(want)+1 {
+		t.Errorf("the legacy section has %d rows, want %d: %v", len(rows), len(want)+1, keysIn(rows))
+	}
+	for key, s := range rows {
+		if s.Reclaimer.Func != "" || s.Verdict != VerdictHuman {
+			t.Errorf("%s: reclaimer %+v verdict %q; nothing in yolo removes the legacy dir", key, s.Reclaimer, s.Verdict)
+		}
+		for _, want := range []string{"root-owned", "launch no longer writes " + legacy,
+			"an older yolo's still-running sessions may", "end them first"} {
+			if !strings.Contains(s.Note, want) {
+				t.Errorf("%s's note does not say %q: %s", key, want, s.Note)
+			}
+		}
+		if !strings.Contains(s.Note, "`sudo ") {
+			t.Errorf("%s's note names no sudo command, but the dir is root's: %s", key, s.Note)
+		}
+		if strings.Contains(s.Note, "replaced in place") || strings.Contains(s.Reclaimer.Detail, "replaces") ||
+			strings.Contains(s.Reclaimer.Detail, "rewrites") {
+			t.Errorf("%s says a launch replaces it, but no launch writes the legacy dir: %s / %s", key, s.Reclaimer.Detail, s.Note)
+		}
+	}
+	env := rows["macos.legacy.env"]
+	if env.Sizing != SizingUnknown || !strings.Contains(env.Note, "sudo du -sh "+legacyEnv) {
+		t.Errorf("the legacy env row = %s, note %s; want unknown, naming `sudo du -sh %s`", env.Sizing, env.Note, legacyEnv)
+	}
+	wantRm := "`sudo rm -f " + macosuser.SandboxEnvFile("<cname>", legacy) + " " + macosuser.SandboxDaemonEnvFile("<cname>", legacy) + "`"
+	if !strings.Contains(env.Note, wantRm) || strings.Contains(env.Note, "*") {
+		t.Errorf("the legacy env row does not name its files literally as %s: %s", wantRm, env.Note)
+	}
+	if want := "`sudo rm -rf " + macosuser.StagedHomeOverlay("<cname>", legacy) + "`"; !strings.Contains(rows["macos.legacy.home-overlay"].Note, want) {
+		t.Errorf("the legacy home-overlay row does not name %s: %s", want, rows["macos.legacy.home-overlay"].Note)
+	}
+	if want := "`sudo ls -la -- <exact-path>`"; !strings.Contains(rows["macos.legacy.packs"].Note, want) {
+		t.Errorf("the legacy packs row does not name %s: %s", want, rows["macos.legacy.packs"].Note)
+	}
+	if want := "`sudo rm -f " + filepath.Join(legacy, "profile-<cname>.sb") + "`"; !strings.Contains(rows["macos.legacy._files"].Note, want) {
+		t.Errorf("the legacy profiles row does not name %s: %s", want, rows["macos.legacy._files"].Note)
+	}
+	// The staging root's own rows are untouched by the legacy dir's presence.
+	if s := sectionRows(rep, SectionMacosUser)["macos.state.bin"]; s.Bytes != 1500 || s.Path != filepath.Join(stateDir, "bin") {
+		t.Errorf("the staging root's bin row = %+v", s)
+	}
+
+	// Rendered, in its own section after the staging root's and before the summary.
+	out := new(strings.Builder)
+	o.Out, o.NoRecord = out, true
+	if rc := Run(o); rc != 0 {
+		t.Fatalf("Run = %d", rc)
+	}
+	text := out.String()
+	i, j := strings.Index(text, SectionMacosUser+"  "), strings.Index(text, SectionMacosUserLegacy)
+	if i < 0 || j < 0 || j < i || j > strings.Index(text, "What nothing reclaims") {
+		t.Errorf("the legacy section is not rendered after the staging root's and before the summary:\n%s", text)
+	}
+}
+
+// TestAnUnreadableStagingRootChildIsUnknownWithoutSudo: the staging root is the host user's, so an
+// unreadable child is a fault, not root's privacy. It is unknown, never "≥ 0 B", and the row
+// names `ls -ld` to see who owns it, never a sudo command.
+func TestAnUnreadableStagingRootChildIsUnknownWithoutSudo(t *testing.T) {
 	for name, result := range map[string]func() (WalkResult, error){
 		"refused": func() (WalkResult, error) {
 			return WalkResult{}, &fs.PathError{Op: "open", Err: fs.ErrPermission}
@@ -192,13 +327,8 @@ func TestAnUnreadableStateDirChildIsUnknownAndNamesSudoDu(t *testing.T) {
 			if s.Sizing != SizingUnknown {
 				t.Errorf("env/ = %s %d B, want unknown", s.Sizing, s.Bytes)
 			}
-			if !strings.Contains(s.Note, "sudo du -sh "+env) {
-				t.Errorf("env/'s note does not name `sudo du -sh %s`: %s", env, s.Note)
-			}
-			// The unreadable dir is exactly where a glob cannot expand, so the removal it names
-			// spells each file.
-			if !strings.Contains(s.Note, "sudo rm -f "+filepath.Join(env, "<cname>.env")) || strings.Contains(s.Note, "*") {
-				t.Errorf("env/'s note does not name its files literally: %s", s.Note)
+			if !strings.Contains(s.Note, "`ls -ld "+env+"`") || strings.Contains(s.Note, "sudo") {
+				t.Errorf("env/'s note does not name `ls -ld %s` without sudo: %s", env, s.Note)
 			}
 		})
 	}
@@ -209,8 +339,9 @@ func TestAnUnreadableStateDirChildIsUnknownAndNamesSudoDu(t *testing.T) {
 func TestWithNeitherRootTheSectionIsOneAbsentRowNamingSetup(t *testing.T) {
 	o, _ := testOptions(t)
 	gone := t.TempDir()
-	o.MacosUser = func() (string, string, bool) {
-		return filepath.Join(gone, "var-yolo-jail"), filepath.Join(gone, "Users-_yolojail"), true
+	o.MacosUser = func() MacosUserRoots {
+		return MacosUserRoots{StateDir: filepath.Join(gone, "Users-Shared-yolo-staged"),
+			LegacyDir: filepath.Join(gone, "var-yolo-jail"), Home: filepath.Join(gone, "Users-_yolojail"), OK: true}
 	}
 	rows := sectionRows(Inventory(o), SectionMacosUser)
 	s, ok := rows["macos.absent"]
@@ -218,7 +349,9 @@ func TestWithNeitherRootTheSectionIsOneAbsentRowNamingSetup(t *testing.T) {
 		t.Errorf("rows = %+v, want one absent row naming `yolo macos-setup`", rows)
 	}
 
-	o.MacosUser = func() (string, string, bool) { return "/var/yolo-jail", "/Users/_yolojail", false }
+	o.MacosUser = func() MacosUserRoots {
+		return MacosUserRoots{StateDir: "/Users/Shared/yolo-staged", LegacyDir: "/var/yolo-jail", Home: "/Users/_yolojail"}
+	}
 	if rows := sectionRows(Inventory(o), SectionMacosUser); len(rows) != 0 {
 		t.Errorf("not a Mac, yet the section has rows %v", keysIn(rows))
 	}

@@ -129,6 +129,27 @@ func processRunsWithHome(pid int, home string) bool {
 // a shell list, so the shell keeps the argv rather than exec'ing `sleep` in its place.
 func fakeHomeDaemon(t *testing.T, name, home string, life time.Duration) *exec.Cmd {
 	t.Helper()
+	cmd := fakeHostDaemonProcess(t, name, home)
+	pidFile := paths.HostSingletonPIDFile(name)
+	for p, body := range map[string]string{
+		paths.HostSingletonLock(name):   "",
+		pidFile:                         strconv.Itoa(cmd.Process.Pid) + "\n",
+		pidFile + ".capability":         "fake\n",
+		pidFile + ".launch-check":       "fake\n",
+		pidFile + ".settings":           "{}\n",
+		paths.HostSingletonSocket(name): "",
+	} {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cmd
+}
+
+// fakeHostDaemonProcess starts the stand-in process alone: `sleep`, running with HOME=home,
+// killed at the test's end, and returned only once /proc shows that HOME.
+func fakeHostDaemonProcess(t *testing.T, name, home string) *exec.Cmd {
+	t.Helper()
 	if goruntime.GOOS != "linux" {
 		t.Skip("the harness identifies a daemon's HOME through /proc, which this host lacks " +
 			"(homedaemons_test.go's header); it waits for nothing here, so there is nothing to test")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -169,21 +170,42 @@ func runBashReal(script string) int {
 	return runReal([]string{"bash", "-c", script})
 }
 
-// tee <path> (content on stdin, stdout to /dev/null), sudo chmod <mode> <path>.
-// Any failure → false.
-func installRootFileReal(path, content, mode string) bool {
-	parent := filepath.Dir(path)
-	if runReal([]string{"sudo", mkdirBin, "-p", parent}) != 0 {
+// writeHostFileReal writes one per-launch file AS THE HOST USER, at its final mode from the first
+// instant (docs/design/macos-user-privilege-lifecycle-plan.md, task 5): the staging root is the
+// host user's own, so no sudo is needed, and none is run. The parent is created 0755 when absent
+// (the env dir is made 0700 by its own commands before any file in it is written).
+//
+// THE OPEN IS EXCLUSIVE AND NEVER FOLLOWS A LINK (O_EXCL|O_NOFOLLOW): every file is named by a
+// fresh session key, so one already there is not ours, and a write through a planted link would
+// put the session's credentials wherever it points. The mode is set again with Fchmod, so the
+// umask cannot widen or narrow it. Any failure removes what THIS call created and returns false;
+// a file that was already there is never touched.
+func writeHostFileReal(path, content string, mode os.FileMode) bool {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: %v\n", err)
 		return false
 	}
-	tee := exec.Command("sudo", teeBin, path)
-	tee.Stdin = strings.NewReader(content)
-	tee.Stdout = nil // discard tee's stdout echo
-	tee.Stderr = os.Stderr
-	if err := tee.Run(); err != nil {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, mode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: %v\n", err)
 		return false
 	}
-	return runReal([]string{"sudo", chmodBin, mode, path}) == 0
+	err = f.Chmod(mode)
+	if err == nil {
+		_, err = f.WriteString(content)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: writing %s: %v\n", path, err)
+		_ = os.Remove(path)
+		return false
+	}
+	return true
 }
 
 // GIDs (Groups/PrimaryGroupID) via dscl, timeout 10s each. Best-effort.
@@ -216,7 +238,7 @@ func takenIDsReal() map[int]struct{} {
 // password on STDIN (never argv, so it can't show in `ps`; never env, which
 // sudo's env_reset strips — see the finding-6 fix below).
 func setRandomPasswordReal(user string) bool {
-	rand := exec.Command("openssl", "rand", "-base64", "32")
+	rand := exec.Command("/usr/bin/openssl", "rand", "-base64", "32")
 	pwOut, rc := outputWithTimeout(rand, 5*time.Second)
 	if rc != 0 {
 		return false
@@ -224,12 +246,11 @@ func setRandomPasswordReal(user string) bool {
 	pw := strings.TrimSpace(pwOut)
 	// Finding 6: pass the password via STDIN to the root shell, never via
 	// cmd.Env — sudo's env_reset strips arbitrary env vars, so the previous
-	// YOLO_SBPW-on-env approach set an EMPTY password. `read -r pw` on stdin is
-	// the same pattern installRootFileReal uses (strings.NewReader stdin), and
-	// keeps the secret off argv (which would leak in `ps`). NOTE: the actual
+	// YOLO_SBPW-on-env approach set an EMPTY password. `read -r pw` on stdin
+	// (strings.NewReader) keeps the secret off argv (which would leak in `ps`). NOTE: the actual
 	// password-apply + dscl empty-string semantics are M1-verified on hardware.
-	cmd := exec.Command("sudo", "/bin/sh", "-c",
-		"read -r pw; dscl . -passwd /Users/"+user+" \"$pw\"")
+	cmd := exec.Command(sudoBin, shBin, "-c",
+		"read -r pw; "+dsclBin+" . -passwd /Users/"+user+" \"$pw\"")
 	cmd.Stdin = strings.NewReader(pw + "\n")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run() == nil
@@ -470,4 +491,90 @@ func verifyCAReal(pemBlock string) bool {
 	}
 	argv := verifyCAArgv(f.Name())
 	return runWithTimeout(exec.Command(argv[0], argv[1:]...), 15*time.Second) == 0
+}
+
+// stagingRootFactsReal observes the staging root at path without following a link: os.Lstat for
+// what it is, its owner and its mode, and `/bin/ls -lde` for an access list (lsShowsACL), asked
+// only of a directory, the one kind whose access list JudgeStagingRoot reads. The judgment is
+// JudgeStagingRoot's (privilege.go); this is the impure half.
+func stagingRootFactsReal(path string) StagingRootFacts {
+	return stagingRootFactsWith(path, func(p string) (string, bool) {
+		out, rc := outputWithTimeout(exec.Command("/bin/ls", "-lde", p), 10*time.Second)
+		return out, rc == 0
+	})
+}
+
+// stagingRootFactsWith is stagingRootFactsReal with its `ls -lde` as listACL, so the Lstat half is
+// testable on any OS (`-e` is macOS's flag). A listing that fails is an Err: unknown refuses.
+func stagingRootFactsWith(path string, listACL func(path string) (string, bool)) StagingRootFacts {
+	fi, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return StagingRootFacts{}
+	}
+	if err != nil {
+		return StagingRootFacts{Err: err}
+	}
+	f := StagingRootFacts{
+		Exists:    true,
+		IsDir:     fi.IsDir(),
+		IsSymlink: fi.Mode()&os.ModeSymlink != 0,
+		Mode:      fi.Mode().Perm(),
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		f.Err = errors.New("no owner reported for " + path)
+		return f
+	}
+	f.UID = st.Uid
+	if f.IsDir {
+		out, ok := listACL(path)
+		if !ok {
+			f.Err = errors.New("`/bin/ls -lde " + path + "` failed")
+			return f
+		}
+		f.HasACL = lsShowsACL(out)
+	}
+	return f
+}
+
+// lsShowsACL reads the output of `/bin/ls -lde <one path>`: the first line is the entry itself,
+// and every non-blank line after it is one access-control entry (` 0: group:… allow …`).
+func lsShowsACL(out string) bool {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for _, l := range lines[1:] {
+		if strings.TrimSpace(l) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// runAsGrantReal is readiness probe G2: RunAsGrantProbeArgv with no stdin, so it can never wait on
+// a password, bounded at 10 s. Anything but exit 0 is no.
+func runAsGrantReal() bool {
+	argv := RunAsGrantProbeArgv()
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = nil
+	return runWithTimeout(cmd, 10*time.Second) == 0
+}
+
+// accountNameOfUIDReal names the account uid belongs to through `/usr/bin/id -un <uid>`, which asks
+// the directory service (os/user's pure-Go path reads /etc/passwd, which a Mac's accounts are not
+// in). "" when it cannot.
+func accountNameOfUIDReal(uid uint32) string {
+	out, rc := outputWithTimeout(exec.Command("/usr/bin/id", "-un", strconv.FormatUint(uint64(uid), 10)), 10*time.Second)
+	if rc != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// primaryGroupOfReal is user's primary group's name through `/usr/bin/id -gn <user>`, "" when it
+// cannot be read.
+func primaryGroupOfReal(user string) string {
+	out, rc := outputWithTimeout(exec.Command("/usr/bin/id", "-gn", "--", user), 10*time.Second)
+	if rc != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }

@@ -15,6 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `yolo --version` now names the commit in every build, releases included, as in `yolo-jail 0.15.0+g0123456789ab`.
 - A model list with no `only` no longer refuses a model you type; it goes to the provider. pi's child agents may use any model of their provider unless an `only` narrows the list.
 - Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
+- **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading: it asks for your admin password and installs one sudo rule that runs commands only as the sandbox account, never as root. The backend now supports one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
 
 ### Added
 

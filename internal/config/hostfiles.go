@@ -1040,7 +1040,7 @@ func UnmarshalHostFiles(s string) ([]HostFileEntry, error) {
 // (DP-L1). That backend used to pass ONLY these through YOLO_HOST_FILES, because a
 // source crossed on a /ctx mount it does not have and a source-bearing entry would
 // have rendered with no host layer; filtering kept the deficiency explicit rather
-// than half-working. The bytes cross now, by a host-side COPY into a root-owned tree
+// than half-working. The bytes cross now, by a host-side COPY into a sealed, host-owned tree
 // the sandbox reads, so macosuser.hostFilesWire emits BOTH halves: these entries from
 // the merged config, plus the source-bearing entries the host CLI resolved and staged.
 // What survives of the old split is the purity contract above, not a missing mechanism.

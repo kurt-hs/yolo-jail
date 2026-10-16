@@ -26,7 +26,7 @@ package macosuser
 //
 // # The mechanism
 //
-// One per-session file, root-owned 0600, with a single `user:` ACE granting the sandbox
+// One per-session file, the host user's at 0600, with a single `user:` ACE granting the sandbox
 // account read — the SAME shape the container backends already use for the two secrets
 // they carry, and no new idea: a host service's bearer token rides a 0600 endpoint file
 // (internal/svcendpoint, and run.TestNoTokenInLaunchArgv asserts it is not on the podman
@@ -88,7 +88,7 @@ const sandboxEnvLeaf = "env"
 // sandboxFileReadRights is the ACE right-set a file the sandbox must READ needs, and
 // nothing more. Read, never write: a file the sandbox could rewrite is a sandbox that
 // chooses its own environment, which is the same rule the staged yolo binary is under
-// (PlanInvariants' root-owned-state-dir check).
+// (PlanInvariants' host-owned-staging-root check).
 const sandboxFileReadRights = "read,readattr,readextattr,readsecurity"
 
 // SandboxEnvFile is the per-session env file: <stateDir>/env/<key>.env.
@@ -186,14 +186,12 @@ func SandboxEnvFileKeys(content string) []string {
 	return out
 }
 
-// SandboxEnvDirCommands prepare the env file's directory: root-owned, 0700, with a SEARCH
+// SandboxEnvDirCommands prepare the env file's directory: the host user's, 0700, with a SEARCH
 // ace for the sandbox account.
 //
 // THEY MUST RUN BEFORE THE FILE IS WRITTEN, and that ordering is the whole reason they are
-// a separate list from SandboxEnvGrantCommands. InstallRootFile writes through `sudo tee`,
-// which creates the file 0644 and narrows it a command later; in a 0700 directory that
-// window is unreachable by anyone, while in the state dir's own 0755 it is a world-readable
-// copy of every credential for as long as two subprocesses take to start.
+// a separate list from SandboxEnvGrantCommands: the write (WriteHostFile) creates the file at
+// 0600 in a directory nobody else can list, so no other account ever sees it, even by name.
 //
 // 0700 plus a search ACE, not 0755: search is traverse-not-list, so the sandbox can open
 // the file it is told about and cannot enumerate other sessions' files beside it.
@@ -213,8 +211,7 @@ func SandboxEnvDirCommands(envFile, user string) [][]string {
 }
 
 // SandboxEnvGrantCommands grant the sandbox account read on the written file. They run
-// AFTER the write, because `sudo tee` replaces the file and an ACE set beforehand would be
-// set on a file that no longer exists.
+// AFTER the write, because the write creates the file: before it there is nothing to grant on.
 func SandboxEnvGrantCommands(envFile, user string) [][]string {
 	if envFile == "" {
 		return nil
@@ -235,8 +232,8 @@ func SandboxEnvRemoveCommands(envFile string) [][]string {
 	return [][]string{{rmBin, "-f", envFile}}
 }
 
-// sandboxFileReadAce is the one `chmod +a` that lets the sandbox uid read one root-owned
-// file. Shared by the env file and by EndpointGrantCommands, which is the same grant on a
+// sandboxFileReadAce is the one `chmod +a` that lets the sandbox uid read one file it does not
+// own. Shared by the env file and by EndpointGrantCommands, which is the same grant on a
 // host service's endpoint — one spelling, so the two cannot drift into different right-sets.
 //
 // A `user:` ACE, not a `group:` one: SandboxGroup contains the host user
@@ -316,9 +313,10 @@ func ProtectedSandboxEnvNames() []string {
 }
 
 // installSandboxEnvFile writes one session env file and grants the sandbox account read on
-// it, in the only order that has no window: prepare the 0700 directory, write through
-// `sudo tee` (InstallRootFile — content on STDIN, never argv, the same rule
-// setRandomPasswordReal follows for the account password), then add the read ACE.
+// it, in the only order that has no window: prepare the 0700 directory, write the file at 0600
+// as the host user (WriteHostFile — content written by this process, never on an argv, the same
+// rule setRandomPasswordReal follows for the account password), then add the read ACE. No step
+// runs sudo.
 //
 // IT FAILS CLOSED and its callers abort. The `sh -c` reader on each argv also fails closed,
 // so a launch that continued here would die a step later with a shell error naming a path;
@@ -333,24 +331,25 @@ func installSandboxEnvFile(deps Deps, out printer, plan sandboxEnvPlan) bool {
 	if envFile == "" {
 		return true
 	}
-	// Each failure is said unless a signal is ending the launch, which is then why its sudo failed
-	// (Deps.sayFailed); the caller returns the signal's status.
+	// Each failure is said unless a signal is ending the launch, which is then why its command
+	// failed (Deps.sayFailed); the caller returns the signal's status.
 	dirCmds, grantCmds := plan.envFileCommands()
 	for _, cmd := range dirCmds {
-		if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+		if deps.Run(cmd) != 0 {
 			deps.sayFailed(out, fmt.Sprintf("[bold red]Could not prepare the session environment "+
 				"directory (%s).[/bold red]", strings.Join(cmd, " ")))
 			return false
 		}
 	}
-	if !deps.InstallRootFile(envFile, content, "0600") {
+	if !deps.WriteHostFile(envFile, content, 0o600) {
 		deps.sayFailed(out, fmt.Sprintf("[bold red]Could not write the session environment file "+
 			"%s.[/bold red]\nIt carries everything this launch composed — the profile/provider "+
 			"channel and the hydrated env_sources — so the sandbox would start with none of it.", envFile))
 		return false
 	}
 	for _, cmd := range grantCmds {
-		if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+		if deps.Run(cmd) != 0 {
+
 			deps.sayFailed(out, fmt.Sprintf("[bold red]Could not grant %s read on %s (%s).[/bold red]",
 				SandboxUser, envFile, strings.Join(cmd, " ")))
 			return false

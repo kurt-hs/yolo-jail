@@ -26,7 +26,7 @@ import (
 // `sudo --user=… /usr/bin/env -i … darwin-bootstrap` with no sandbox-exec
 // (macosuser/runplan.go); this used to be dated as a 2026-09-11 measurement, and it is a
 // source reading, available from Linux and never run on a Mac — and that is
-// tolerable only because it executes yolo's own code against a root-owned staged tree
+// tolerable only because it executes yolo's own code against a sealed staged tree the guest cannot write
 // (the design's principle P4). THE STAGE RUNS VENDOR CODE: `npm install` postinstall
 // hooks and mise plugins. The container runs that inside the jail, so running it
 // unconfined here would be a regression the container never had. It therefore runs under
@@ -99,7 +99,7 @@ func ProvisionScript(workspace, bootstrapScript string, color bool) string {
 
 // ProvisionArgv builds the stage's privileged argv:
 //
-//	sudo --user=<sb> /usr/bin/env -i YOLO_BYPASS_SHIMS=1 <env…> \
+//	/usr/bin/sudo -n --user=<sb> /usr/bin/env -i YOLO_BYPASS_SHIMS=1 <env…> \
 //	    /usr/bin/sandbox-exec -f <profile> -- /bin/bash -c <script>
 //
 // ⚠ NO `--login`, AND THAT IS A CORRECTNESS REQUIREMENT RATHER THAN A PREFERENCE.
@@ -122,7 +122,8 @@ func ProvisionScript(workspace, bootstrapScript string, color bool) string {
 //
 // THE STAGE ROUTED AROUND IT FIRST; THE LAUNCH ARGV WAS FIXED ON 2026-09-12 and no argv in
 // this backend carries the flag any more. The stage took the BOOTSTRAP argv's shape, which
-// has never had it: `sudo --user=… /usr/bin/env -i …`. That cost nothing, because the login
+// has never had it: `/usr/bin/sudo -n --user=… /usr/bin/env -i …`, the run-as rule's shape
+// (RunAsSandboxArgv). That cost nothing, because the login
 // shell's rc work is discarded by the very next word in every one of these argvs —
 // `/usr/bin/env -i` wipes the environment it just built — and the PATH the stage actually
 // runs with is the explicit `PATH=` in the env list below, the same value SandboxPath gives
@@ -152,13 +153,7 @@ func ProvisionArgv(script, profilePath, envFile string,
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := []string{
-		"sudo",
-		"--user=" + user,
-		"/usr/bin/env",
-		"-i",
-		"YOLO_BYPASS_SHIMS=1",
-	}
+	out := RunAsSandboxArgv(nil, "-i", "YOLO_BYPASS_SHIMS=1")
 	// The AGENT'S OWN environment, from the same function the launch argv uses — now the
 	// identity quartet plus the session env file's PATH, with the composed values inside
 	// the file (envfile.go). The stage installs into the prefixes the agent resolves

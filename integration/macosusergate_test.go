@@ -21,7 +21,8 @@ import (
 // A SUITE THAT SKIPS MUST NOT BE INDISTINGUISHABLE FROM A SUITE THAT PASSES.
 //
 // THE PROBLEM. The macos-user backend is darwin-only and privilege-bearing: every
-// launch leads with `sudo --user=_yolojail` (internal/macosuser/runplan.go) and
+// crossing into the sandbox account is `/usr/bin/sudo -n --user=_yolojail /usr/bin/env …`
+// (macosuser.RunAsSandboxArgv), through the one rule `yolo macos-setup` installs, and
 // confines what follows with `sandbox-exec`. No machine that develops this repo can
 // run one — the development jail is Linux and has no `sudo` at all — so every test
 // written against that backend SKIPS everywhere it is normally run. `go test` reports
@@ -85,8 +86,9 @@ type macosUserOutcome struct {
 	gate   string
 }
 
-// The gates. macosUserGateLaunch needs the _yolojail account, a shared root and
-// passwordless sudo, because it starts a real launch; macosUserGateSeatbelt (declared
+// The gates. macosUserGateLaunch needs the _yolojail account, a shared root and the
+// run-as rule (sudo runs commands as _yolojail with no password), because it starts a
+// real launch; macosUserGateSeatbelt (declared
 // in macosuserseatbelt_test.go, where its own gate lives) needs only sandbox-exec.
 const macosUserGateLaunch = "launch"
 
@@ -171,7 +173,7 @@ func macosUserVacuityVerdict(declared bool, outcomes []macosUserOutcome) (report
 	if len(ran) > 0 {
 		// PER GATE, AND THIS IS THE HALF THAT ARRIVED WITH THE SECOND ONE. The policy
 		// suite's gate is much cheaper to satisfy than the launch gate — sandbox-exec and
-		// a writable /Users/Shared, against an account plus passwordless sudo — so a
+		// a writable /Users/Shared, against an account plus the run-as rule — so a
 		// machine where `yolo macos-setup` silently did not take would run the policy
 		// tests, skip every launch test, and report GREEN on the count above. That is
 		// exactly the outcome this file exists to prevent, reintroduced by adding tests to
@@ -252,7 +254,7 @@ type macosUserHost struct {
 	sandboxExec bool // sandbox-exec resolvable (built into macOS)
 	sandboxUser bool // the _yolojail account exists (`yolo macos-setup` ran)
 	sharedRoot  bool // the shared root exists, so a granted workspace can be made in it
-	sudoQuiet   bool // `sudo -n true` succeeds: sudo will not stop to ask for a password
+	runAsQuiet  bool // the G2 probe (macosuser.RunAsGrantProbeArgv) succeeds: sudo runs commands as _yolojail with no password
 }
 
 // gate returns the reason this host cannot run a macos-user test, or ok. The order is
@@ -279,13 +281,13 @@ func (h macosUserHost) gate() (reason string, ok bool) {
 		return fmt.Sprintf("%s does not exist, so there is nowhere to put a workspace "+
 			"the sandbox user can write — run `yolo macos-setup`",
 			macosuser.SharedRootDefault()), false
-	case !h.sudoQuiet:
-		return "`sudo -n true` fails, so sudo would stop and ask for a password. Every " +
-			"macos-user argv leads with `sudo --user=_yolojail`, and a test that blocks " +
-			"on a password prompt is worse than one that skips — it hangs the run until " +
-			"its deadline. Authenticate once first (`sudo -v`) and re-run within the " +
-			"timestamp window, or run this on a host with passwordless sudo (a " +
-			"GitHub-hosted macOS runner is one)", false
+	case !h.runAsQuiet:
+		return fmt.Sprintf("`%s` fails, so sudo cannot run commands as %s without a "+
+			"password, and every macos-user launch crosses into the sandbox that way. Run "+
+			"the one-time setup as your normal admin user, not with sudo: `yolo macos-setup` "+
+			"installs the one rule (%s) that runs commands as %s, never as root, and asks "+
+			"for your password once", strings.Join(macosuser.RunAsGrantProbeArgv(), " "),
+			macosuser.SandboxUser, macosuser.SudoersFile, macosuser.SandboxUser), false
 	}
 	return "", true
 }
@@ -293,8 +295,13 @@ func (h macosUserHost) gate() (reason string, ok bool) {
 // probeMacosUserHost measures the facts gate() decides on. Impure by design and
 // deliberately thin: everything that could be got wrong lives in gate().
 //
-// `sudo -n true` CANNOT HANG — -n makes sudo fail rather than prompt — which is what
-// makes it safe to probe before anything else spends a password.
+// The G2 probe CANNOT HANG — -n makes sudo fail rather than prompt — which is what makes
+// it safe to probe before anything else spends a password. It is the launch's own readiness
+// probe, not `sudo -n true`: a launch needs only the run-as rule, and the narrow-sudo CI
+// step (.github/workflows/macos-user.yml) takes root sudo away on purpose, so a root probe
+// would skip the very tests that measure a launch without it. ⚠ A cached credential from a
+// recent password passes this probe through a broad rule; the tests that measure the rule
+// itself run `/usr/bin/sudo -k` first.
 func probeMacosUserHost() macosUserHost {
 	h := macosUserHost{short: testing.Short(), goos: goruntime.GOOS, euid: os.Geteuid()}
 	if h.goos != "darwin" {
@@ -306,7 +313,7 @@ func probeMacosUserHost() macosUserHost {
 	if fi, err := os.Stat(macosuser.SharedRootDefault()); err == nil && fi.IsDir() {
 		h.sharedRoot = true
 	}
-	h.sudoQuiet = runQuiet(20*time.Second, "sudo", "-n", "true")
+	h.runAsQuiet = runQuiet(20*time.Second, macosuser.RunAsGrantProbeArgv()...)
 	return h
 }
 
@@ -373,7 +380,7 @@ var macosUserHostProbe = probeMacosUserHost
 func fakeReadyMacosUserHost(t *testing.T) *macosUserLedger {
 	t.Helper()
 	ready := macosUserHost{goos: "darwin", euid: 501, sandboxExec: true, sandboxUser: true,
-		sharedRoot: true, sudoQuiet: true}
+		sharedRoot: true, runAsQuiet: true}
 	if why, ok := ready.gate(); !ok {
 		t.Fatalf("fakeReadyMacosUserHost's host does not pass the gate, which now also asks "+
 			"for something it lacks: %s", why)
@@ -455,9 +462,12 @@ func macosUserWorkspace(t *testing.T, configJSON string) string {
 // (umask 022) is not writable by us — we can see its children and cannot unlink them.
 // The ACL grants the _yolojail GROUP, which the invoking user is not in.
 //
-// So the escalation is `sudo /bin/rm -rf`, available because the gate already required
-// passwordless sudo. The prefix assertion before it is not paranoia theatre: this is
-// the one `rm -rf` in the suite that runs as root, and it must be impossible for it to
+// So the escalation is first `/bin/rm -rf` AS THE SANDBOX ACCOUNT, through the run-as rule
+// the gate already required: _yolojail owns what it made, which is the part we cannot
+// unlink. Then a plain RemoveAll again for what is left, and only then root
+// `sudo /bin/rm -rf`, which the narrow-sudo CI step has taken away and a developer's Mac
+// may not have. The prefix assertion before both is not paranoia theatre: this is the one
+// `rm -rf` in the suite that runs as another account, and it must be impossible for it to
 // name anything but a directory this file minted under the shared root.
 func removeMacosUserWorkspace(t *testing.T, dir string) {
 	t.Helper()
@@ -468,6 +478,10 @@ func removeMacosUserWorkspace(t *testing.T, dir string) {
 	if !strings.HasPrefix(dir, root+string(os.PathSeparator)) || strings.Contains(dir, "..") {
 		t.Fatalf("refusing to escalate removal of %s: it is not a fixture directory "+
 			"under %s", dir, root)
+	}
+	_ = runQuiet(2*time.Minute, macosuser.RunAsSandboxArgv(nil, "/bin/rm", "-rf", dir)...)
+	if err := os.RemoveAll(dir); err == nil {
+		return
 	}
 	if !runQuiet(2*time.Minute, "sudo", "-n", "/bin/rm", "-rf", dir) {
 		t.Logf("could not remove the macos-user workspace %s even with sudo; it holds "+
@@ -545,7 +559,7 @@ func macosUserOutcomeFor(name string, skipped bool, reason, gate string) macosUs
 func macosUserRunnableHost() macosUserHost {
 	return macosUserHost{
 		goos: "darwin", euid: 501,
-		sandboxExec: true, sandboxUser: true, sharedRoot: true, sudoQuiet: true,
+		sandboxExec: true, sandboxUser: true, sharedRoot: true, runAsQuiet: true,
 	}
 }
 
@@ -574,7 +588,8 @@ func TestMacosUserGateRefusesEveryHostThatCannotRunOne(t *testing.T) {
 		{"no-sandbox-exec", func() macosUserHost { h := macosUserRunnableHost(); h.sandboxExec = false; return h }(), "sandbox-exec"},
 		{"no-account", func() macosUserHost { h := macosUserRunnableHost(); h.sandboxUser = false; return h }(), "yolo macos-setup"},
 		{"no-shared-root", func() macosUserHost { h := macosUserRunnableHost(); h.sharedRoot = false; return h }(), "yolo macos-setup"},
-		{"sudo-would-prompt", func() macosUserHost { h := macosUserRunnableHost(); h.sudoQuiet = false; return h }(), "sudo -v"},
+		{"run-as-would-prompt", func() macosUserHost { h := macosUserRunnableHost(); h.runAsQuiet = false; return h }(), "yolo macos-setup"},
+		{"run-as-would-prompt-names-the-probe", func() macosUserHost { h := macosUserRunnableHost(); h.runAsQuiet = false; return h }(), "/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

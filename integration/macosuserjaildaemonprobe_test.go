@@ -22,7 +22,7 @@ func TestMacosUserJailDaemonProbeRefusesAMarkerItsOwnOutputQuotes(t *testing.T) 
 	script := jailDaemonProbeScript("/w/.seen")
 	quoted := "_yolojail        bash -lc " + strings.ReplaceAll(script, "\n", `\012`)
 	stdout := strings.Join([]string{
-		jdProbeMarker, "JAILD=/var/yolo-jail/bin/yolo-jaild",
+		jdProbeMarker, "JAILD=" + macosuser.StateDir() + "/bin/yolo-jaild",
 		jdLogMarker, "serving on 127.0.0.1:1460",
 		jdSeenMarker, quoted,
 		jdEndMarker, "",
@@ -33,18 +33,18 @@ func TestMacosUserJailDaemonProbeRefusesAMarkerItsOwnOutputQuotes(t *testing.T) 
 	}
 
 	clean := strings.Join([]string{
-		jdProbeMarker, "JAILD=/var/yolo-jail/bin/yolo-jaild",
+		jdProbeMarker, "JAILD=" + macosuser.StateDir() + "/bin/yolo-jaild",
 		jdLogMarker, "serving on 127.0.0.1:1460",
-		jdSeenMarker, "399 812 /var/yolo-jail/bin/yolo-jaild supervise",
+		jdSeenMarker, "399 812 " + macosuser.StateDir() + "/bin/yolo-jaild supervise",
 		jdEndMarker, "",
 	}, "\n")
 	p, err := parseJailDaemonProbe(clean)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(p.probe, "JAILD=/var/yolo-jail/bin/yolo-jaild") ||
+	if !strings.Contains(p.probe, "JAILD="+macosuser.StateDir()+"/bin/yolo-jaild") ||
 		!strings.Contains(p.log, "serving on") ||
-		!strings.Contains(p.seen, "/var/yolo-jail/bin/yolo-jaild supervise") {
+		!strings.Contains(p.seen, macosuser.StateDir()+"/bin/yolo-jaild supervise") {
 		t.Errorf("the sections are not what the output says: %+v", p)
 	}
 	if _, err := parseJailDaemonProbe(strings.Replace(clean, jdSeenMarker, "", 1)); err == nil {
@@ -97,9 +97,9 @@ func TestMacosUserJailDaemonProbeScriptRunsAndParses(t *testing.T) {
 func TestMacosUserGuestSupervisorLineIsTheSandboxJaildNotItsSudo(t *testing.T) {
 	jaild := macosuser.GuestBinaryPath(macosuser.JaildName, "")
 	listing := strings.Join([]string{
-		"    0   801 sudo -n --set-home --user=_yolojail /usr/bin/env -i HOME=/Users/_yolojail " +
-			"/usr/bin/sandbox-exec -f /var/yolo-jail/profiles/x.sb -- /bin/sh -c . \"$1\" yolo-sandbox-env " +
-			"/var/yolo-jail/env/x.daemons.env " + jaild + " supervise",
+		"    0   801 /usr/bin/sudo -n --set-home --user=_yolojail /usr/bin/env -i HOME=/Users/_yolojail " +
+			"/usr/bin/sandbox-exec -f " + macosuser.StateDir() + "/profiles/x.sb -- /bin/sh -c . \"$1\" yolo-sandbox-env " +
+			macosuser.StateDir() + "/env/x.daemons.env " + jaild + " supervise",
 		"  399   812 " + jaild + " supervise",
 		"  399   813 yolo-jaild openai-auth-adapter --listen 127.0.0.1:41460",
 		"  399   900 bash -lc echo " + jaild + " supervise",

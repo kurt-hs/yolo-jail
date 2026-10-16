@@ -4,7 +4,7 @@ package macosuser
 // crypto/x509 makes here: the filter keeps a CA macOS trusts for TLS and drops an expired one, a
 // leaf, a client-only CA and one macOS rejects; the bundle is the profile's roots plus the kept
 // CAs; the env file sets the five bundle variables, and NODE_EXTRA_CA_CERTS only when there are
-// extras; the files are written dir, then tee, then the read ACE, and swept with the env file; and
+// extras; the files are written dir, then the host write, then the read ACE, and swept with the env file; and
 // the disclosure names each CA. The launch and the capture are driven through RunMacosUser,
 // RunCaptureAct and RunCapturePlan, so deleting either's wiring fails a test here.
 
@@ -17,6 +17,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -246,8 +247,8 @@ func TestALaunchWritesTheCABundleBesideItsEnvFileAndNamesItsCAs(t *testing.T) {
 	var rec []string
 	d := caDeps(t, &rec, f)
 	contents := map[string]string{}
-	d.InstallRootFile = func(path, content, mode string) bool {
-		rec = append(rec, "install:"+path+" "+mode)
+	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
+		rec = append(rec, fmt.Sprintf("write:%s %#o", path, mode))
 		contents[path] = content
 		return true
 	}
@@ -259,7 +260,7 @@ func TestALaunchWritesTheCABundleBesideItsEnvFileAndNamesItsCAs(t *testing.T) {
 	}
 	var key string
 	for _, r := range rec {
-		if rest, ok := strings.CutPrefix(r, "install:"+stateDir+"/profile-"); ok {
+		if rest, ok := strings.CutPrefix(r, "write:"+stateDir+"/profile-"); ok {
 			key = strings.TrimSuffix(strings.Fields(rest)[0], ".sb")
 		}
 	}
@@ -269,11 +270,11 @@ func TestALaunchWritesTheCABundleBesideItsEnvFileAndNamesItsCAs(t *testing.T) {
 	envFile, bundle, extras := SandboxEnvFile(key, ""), CABundleFile(key, ""), CAExtrasFile(key, "")
 	joined := strings.Join(rec, "\n")
 	order := []string{
-		"install:" + envFile + " 0600",
-		"install:" + bundle + " 0600",
-		"run:sudo " + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + bundle,
-		"install:" + extras + " 0600",
-		"run:sudo " + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + extras,
+		"write:" + envFile + " 0600",
+		"write:" + bundle + " 0600",
+		"run:" + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + bundle,
+		"write:" + extras + " 0600",
+		"run:" + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + extras,
 		"internal darwin-bootstrap",
 	}
 	at := -1
@@ -293,7 +294,7 @@ func TestALaunchWritesTheCABundleBesideItsEnvFileAndNamesItsCAs(t *testing.T) {
 		t.Errorf("the env file the launch wrote does not name its CA files:\n%s", contents[envFile])
 	}
 	for _, f := range []string{bundle, extras} {
-		if !strings.Contains(joined, "run:sudo "+rmBin+" -f "+f) {
+		if !strings.Contains(joined, "run:"+rmBin+" -f "+f) {
 			t.Errorf("%s is not removed when the session ends", f)
 		}
 	}
@@ -314,8 +315,8 @@ func TestAnUnreadableKeychainWarnsAndPointsAtThePublicRoots(t *testing.T) {
 	d := caDeps(t, &rec, f)
 	d.ReadSystemKeychain = func() (string, error) { return "", errors.New("security: SecKeychainOpen failed") }
 	contents := map[string]string{}
-	d.InstallRootFile = func(path, content, mode string) bool {
-		rec = append(rec, "install:"+path)
+	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
+		rec = append(rec, "write:"+path)
 		contents[path] = content
 		return true
 	}
@@ -369,8 +370,8 @@ func TestACaptureWritesTheSameCAFiles(t *testing.T) {
 		t.Fatalf("rc = %d", rc)
 	}
 	joined := strings.Join(rec, "\n")
-	env, bundle := strings.Index(joined, "install:"+plan.EnvFile), strings.Index(joined, "install:"+plan.CABundleFile)
-	if env < 0 || bundle < env || !strings.Contains(joined, "install:"+plan.CAExtrasFile) {
+	env, bundle := strings.Index(joined, "write:"+plan.EnvFile), strings.Index(joined, "write:"+plan.CABundleFile)
+	if env < 0 || bundle < env || !strings.Contains(joined, "write:"+plan.CAExtrasFile) {
 		t.Errorf("the capture does not write its CA files after its env file:\n%s", joined)
 	}
 }
@@ -562,8 +563,8 @@ func TestALaunchWithAUserBundleNamesItForEveryTool(t *testing.T) {
 				d.ReadSystemKeychain = func() (string, error) { return "", tc.readErr }
 			}
 			contents := map[string]string{}
-			d.InstallRootFile = func(path, content, mode string) bool {
-				rec = append(rec, "install:"+path)
+			d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
+				rec = append(rec, "write:"+path)
 				contents[path] = content
 				return true
 			}
@@ -627,18 +628,18 @@ func TestACaptureFollowsAUserBundleVariable(t *testing.T) {
 
 // EVERY REFUSAL TO INSTALL A CA FILE NAMES THE NEXT STEP: the directory, the write and the read ACE
 // each stop the launch, since the variables already name the file, and each says to run it again
-// and how to see every privileged command. Driven through RunMacosUser for the ACE, the one a
+// and how to see every command it runs. Driven through RunMacosUser for the ACE, the one a
 // launch can reach after the env file prepared the directory; the directory branch is asked of
 // the installer directly.
 func TestARefusedCAFileInstallNamesTheNextStep(t *testing.T) {
-	const next = "run it again, and if this repeats, `yolo run --dry-run` prints every privileged command"
+	const next = "run it again, and if this repeats, `yolo run --dry-run` prints every command it runs"
 	f := newKeychainFixture(t)
 	var rec []string
 	d := caDeps(t, &rec, f)
 	run := d.Run
 	d.Run = func(argv []string) int {
 		rc := run(argv)
-		if len(argv) > 1 && argv[1] == chmodBin && strings.HasSuffix(argv[len(argv)-1], caBundleSuffix) {
+		if len(argv) > 1 && argv[0] == chmodBin && strings.HasSuffix(argv[len(argv)-1], caBundleSuffix) {
 			return 1
 		}
 		return rc
@@ -654,7 +655,8 @@ func TestARefusedCAFileInstallNamesTheNextStep(t *testing.T) {
 
 	out.Reset()
 	d.Run = func([]string) int { return 1 }
-	files := caTrustFiles("", "/var/yolo-jail/env/k.ca-bundle.crt", "x", "", "")
+	files := caTrustFiles("", StagingRoot()+"/env/k.ca-bundle.crt", "x", "", "")
+
 	if installCATrustFiles(d, printer{w: &out}, files) || !strings.Contains(out.String(), next) {
 		t.Errorf("a failed directory command names no next step:\n%s", out.String())
 	}

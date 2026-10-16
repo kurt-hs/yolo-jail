@@ -215,7 +215,9 @@ func seatbeltProfile(workspace, sandboxHome string, readonlyRels, readonlyTarget
 		"    (literal \"/Users/Shared\")\n" +
 		ancestors +
 		"    (subpath " + ws + ")\n" +
-		"    (subpath " + home + "))\n" +
+		"    (subpath " + home + ")\n" +
+		"    ;; #seatbelt-test-id:staging-root-read-allow#\n" +
+		stagingRootReadClause() + ")\n" +
 		contextReadAllow(ctx) +
 		relocationReadAllow(relocs) +
 		"\n" +
@@ -526,4 +528,17 @@ func ancestorLiterals(paths ...string) string {
 		}
 	}
 	return b.String()
+}
+
+// stagingRootReadClause is the `(subpath …)` read clause both profiles carry for
+// StagingRoot(), the host-owned tree a launch stages the guest's yolo, env files, packs,
+// overlays and context trees into (docs/design/macos-user-privilege-lifecycle-plan.md PL-1,
+// task 3). The root is under /Users/Shared, so the /Users read deny refuses it unless a later
+// allow re-opens it; without this the guest's first exec of the staged yolo fails with
+// "Operation not permitted". READ only: no write allow names the root, so the deny-`/` write
+// rule keeps it the host user's alone. It is depth one under /Users/Shared, whose literal both
+// profiles already grant, so it needs no ancestor literals. No trailing newline: the caller
+// closes the form after it.
+func stagingRootReadClause() string {
+	return "    (subpath " + sbplStr(StagingRoot()) + ")"
 }

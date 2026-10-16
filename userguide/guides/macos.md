@@ -45,8 +45,8 @@ VM, so a Mac without it may show different ratios.
 
 | | Apple Container | `macos-user` |
 |---|---|---|
-| A fresh start | about 7 s, with install recording off (see below) | about 5.5 s, plus typing your password when `sudo` asks |
-| A second terminal in the same project | about 2 s: it joins the running jail | another fresh start, with `sudo` again, which joins the host services the first one started |
+| A fresh start | about 7 s, with install recording off (see below) | about 5.5 s |
+| A second terminal in the same project | about 2 s: it joins the running jail | another fresh start, which joins the host services the first one started |
 | Work on the project's files: `git status`, searching, `npm ci` | 3 to 5 times slower than on the Mac | as fast as on the Mac |
 | One-thread CPU work | as fast as on the Mac | as fast as on the Mac |
 | A parallel build | half your cores by default, and about 16% slower on the same number of cores | every core, as fast as on the Mac |
@@ -191,12 +191,22 @@ trusted, and a one-time setup.
 > and the features listed below are missing. It is planned to become the main Mac setup once it is
 > finished; until then, use Apple Container.
 
-**One-time setup.** Run it as your normal admin user, **not** with `sudo`; it asks for your password
-for each step that needs it:
+**One-time setup.** Run it as your normal admin user, **not** with `sudo`; it asks for your admin
+password once:
 
 ```bash
-yolo macos-setup      # creates the hidden _yolojail user and /Users/Shared/yolo
+yolo macos-setup      # creates the hidden _yolojail user, /Users/Shared/yolo and the one sudo rule
 ```
+
+Setup installs one sudo rule, `/etc/sudoers.d/yolo-jail`, which lets you run commands as the
+sandbox user, never as root, without a password. From then on, launches start and stop with no
+password prompt. It also creates `/Users/Shared/yolo-staged`, owned by you, where each launch puts
+what the sandbox reads. One macOS user per Mac can use this backend: setup refuses a second user
+while the first is set up, and `yolo macos-teardown` removes the rule and that folder again.
+
+**Upgrading from an older yolo?** Run `yolo macos-setup` once more. Until you do, a launch stops
+and names it. Older versions kept their files in `/var/yolo-jail`; setup removes the ones an ended
+session left there, and `yolo stores` lists the rest, with the command that removes them.
 
 **Where projects live.** The sandbox user cannot work inside your home folder, so a project must be
 outside every user's home. Setup prepares `/Users/Shared/yolo` for this; put projects under it:
@@ -210,12 +220,11 @@ A launch from a project inside your home stops before it builds anything, and pr
 commands that move the project under `/Users/Shared/yolo` and share it there. A fresh clone or a
 copy made there is shared as it is created.
 
-`sudo` asks for your password once per launch to enter the sandbox; that is expected.
-
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the
-sandbox user and its home folder, that the project is outside every user's home and shared with
-the sandbox, and Nix. Each failure names the command that fixes it.
+sandbox user and its home folder, that `/Users/Shared/yolo-staged` is yours and safe, that the sudo
+rule lets you run commands as the sandbox user with no password, that the project is outside every
+user's home and shared with the sandbox, and Nix. Each failure names the command that fixes it.
 `YOLO_RUNTIME=macos-user yolo --dry-run` prints the full launch plan. Neither needs `sudo`.
 
 **Company certificates.** If IT installed a certificate authority in your Mac's System keychain,
@@ -361,8 +370,8 @@ behind; `yolo ps` lists each session that is still running and its project folde
 on a Mac. A `macos-user` launch reclaims old loophole state by itself, and offers to clear the
 shared build cache that container jails on the same Mac fill once it is large. To reclaim more
 disk, use `yolo prune`, a dry run until you add `--apply`; see [Storage](storage.md). On `macos-user`, `yolo stores` also
-lists what that backend keeps under `/var/yolo-jail` and in the sandbox account's home, and how to
-remove each one.
+lists what that backend keeps under `/Users/Shared/yolo-staged` and in the sandbox account's home,
+and anything an older yolo left in `/var/yolo-jail`, and how to remove each one.
 
 ## Troubleshooting
 

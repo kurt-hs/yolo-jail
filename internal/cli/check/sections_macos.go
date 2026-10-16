@@ -36,6 +36,12 @@ func (o *Options) macosLaunchProbes() macosuser.LaunchProbes {
 			}
 			return res.RC
 		},
+		StagingRoot: o.MacosStagingRoot,
+		// Readiness probe G2, the launch's own argv, through this package's Exec seam.
+		RunAsGrant: func() bool {
+			res := o.Exec(macosuser.RunAsGrantProbeArgv(), "", nil, 10*time.Second)
+			return res.Ran && !res.Timeout && res.RC == 0
+		},
 	}
 }
 

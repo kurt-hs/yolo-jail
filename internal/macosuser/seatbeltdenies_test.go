@@ -250,3 +250,28 @@ func mustPrecede(t *testing.T, profile, first, second, why string) {
 		t.Errorf("%q (at %d) must precede %q (at %d): %s", first, a, second, b, why)
 	}
 }
+
+// TestBothProfilesLetTheGuestReadTheStagingRootAndNotWriteIt pins the staging root's read
+// allow (docs/design/macos-user-privilege-lifecycle-plan.md task 3): the guest execs the
+// staged yolo, sources the env file and reads the per-launch trees from under StagingRoot(),
+// which sits under the /Users read deny. The allow must FOLLOW that deny — last match wins —
+// and no write allow may name the root, since the host user alone writes there.
+func TestBothProfilesLetTheGuestReadTheStagingRootAndNotWriteIt(t *testing.T) {
+	allow := "(subpath \"/Users/Shared/yolo-staged\")"
+	for name, p := range map[string]string{
+		"session": SeatbeltProfile("/Users/Shared/yolo/proj", SandboxHome(), nil, HomeReadonly{}),
+		"capture": SeatbeltCaptureProfile("/Users/Shared/yolo-captures/jq"),
+	} {
+		i := strings.Index(p, "(deny file-read* (subpath \"/Users\"))")
+		j := strings.LastIndex(p, allow)
+		if i < 0 || j < i {
+			t.Errorf("%s profile: no read allow for the staging root after the /Users deny", name)
+		}
+		if w := strings.Index(p, "(allow file-write*"); w >= 0 {
+			end := strings.Index(p[w:], "\n\n")
+			if end > 0 && strings.Contains(p[w:w+end], allow) {
+				t.Errorf("%s profile: the staging root is writable", name)
+			}
+		}
+	}
+}

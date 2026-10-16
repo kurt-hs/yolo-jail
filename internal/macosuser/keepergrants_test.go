@@ -32,10 +32,10 @@ func TestTheStageSkipsAGrantAnotherSessionMadeAndRecordsWhatItNamed(t *testing.T
 		t.Fatalf("rc = %d\n%s", rc, buf.String())
 	}
 	ran := strings.Join(rec, "\n")
-	if strings.Contains(ran, "run:sudo "+chmodBin+" +a user:"+SandboxUser+" allow "+sandboxFileReadRights+" "+file) {
+	if strings.Contains(ran, "run:"+chmodBin+" +a user:"+SandboxUser+" allow "+sandboxFileReadRights+" "+file) {
 		t.Errorf("the stage granted %s, which SkipGrant said a session granted already:\n%s", file, ran)
 	}
-	if !strings.Contains(ran, "run:sudo "+chmodBin+" +a user:"+SandboxUser+" allow search "+dir) {
+	if !strings.Contains(ran, "run:"+chmodBin+" +a user:"+SandboxUser+" allow search "+dir) {
 		t.Errorf("the stage skipped the grant on %s, which SkipGrant did not name:\n%s", dir, ran)
 	}
 	if !slices.Contains(staged, file) || !slices.Contains(staged, dir) {
