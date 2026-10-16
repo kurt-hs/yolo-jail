@@ -40,10 +40,10 @@ package agentcfg
 //     comment made the second claim until it was measured on 2026-09-12. It holds on the
 //     ADOPTION branch, where dropNullLeaves strips the residue's nulls before promote can
 //     see them. On the STEADY-STATE branch the overlay DOES carry `k: null`, because
-//     mergeDiff cannot tell a key added-as-null from a deleted one, so promote reads it as
-//     a captured DELETION and will write it into the local pack — where it deletes the key
-//     the user was trying to set. A known gap in
-//     docs/reference/config-ownership.md#known-gaps, with the shape of the fix.
+//     mergeDiff cannot tell a key added-as-null from a deleted one. Promote and diff tell
+//     them apart by the last render, which holds the reinstated null and never a deleted
+//     key, and drop the tombstone as redundant
+//     (docs/reference/config-ownership.md#CO-D20).
 
 // literalNullSkeleton returns the marked-keypath skeleton of a DECODED surface
 // file: a map mirroring m in which a `nil` leaf marks a key the file holds with a
