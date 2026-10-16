@@ -126,7 +126,7 @@ and a patch series that no longer applies stops the launch instead of running an
 **Nix builds in a jail survive host garbage collection.** A `result` link, profile or nix-direnv
 cache made in a podman jail is kept for a week after its last build; `yolo nix-roots` lists and
 releases them.
-See [In-jail Nix roots](docs/design/in-jail-nix-roots.md#8-what-is-built).
+See [In-jail Nix roots](docs/reference/in-jail-nix-roots.md).
 
 **Pi keeps to the active profile set.** With a profile set active, Pi refuses and hides every provider
 outside it, saved logins included, and names the set to relaunch with. See [the provider policy](docs/design/simultaneous-auth-and-pack-isolation.md#3-accepted-provider-use-policy).

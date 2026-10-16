@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// nixrootwatcher.go starts the ROOT WATCHER (docs/design/in-jail-nix-roots.md §5, option C;
+// nixrootwatcher.go starts the ROOT WATCHER (docs/reference/in-jail-nix-roots.md "The root watcher", option C;
 // internal/nixroots/watch.go) as a detached child of the boot: `yolo-jaild nix-roots`.
 //
 // NOT THROUGH THE SUPERVISOR, by implementation decision NR-D6: YOLO_JAIL_DAEMONS is the

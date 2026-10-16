@@ -309,7 +309,7 @@ The backend proofs "known quiescent" relies on are written as predicates:
 
 ### Consent, reach and the outstanding capacity decision
 
-Preserve [OQ-BF1/BF2](disk-levers-and-backfill.md#111-decision-ledger)'s **2026-09-08**
+Preserve [OQ-BF1/BF2](../reference/disk-footprint.md#why-its-this-way)'s **2026-09-08**
 offered policy: known default cache classes age out after 30 days; a standing yes permits
 automatic housekeeping, not-now defers, never stops asking, and heavy re-fetch stays opt-in.
 Make inspection, offers, manual prune and the post-launch slot cover the newly admitted
@@ -317,7 +317,7 @@ workspace scopes, including exited workspaces and the native backend's actual ba
 The native reclaimer is owed with isolation, not “container cleanup also runs on a Mac”.
 Leave host-owned exceptions and opaque legacy data out of automatic deletion.
 
-[OQ-DF4](minimal-disk-footprint.md#111-decision-ledger) was ruled **2026-10-05**: policy, **no budget key**,
+[OQ-DF4](../reference/disk-footprint.md#why-its-this-way) was ruled **2026-10-05**: policy, **no budget key**,
 and cleanup of unused shared mise versions through the offered tier. Its scope was measured
 residual machine storage, narrowed to mise; it did not choose a strict cap for multiplied
 private cache working sets. [OQ-CI2](#OQ-CI2) asks whether that policy still suffices here.
@@ -428,7 +428,7 @@ Completion must demonstrate, using harmless offline fixtures rather than live ag
    - **A — Keep policy, no budget key.** Inspect and reclaim inactive known caches;
      hot, opaque, unknown or non-consented bytes can still grow.
    - **B — Require a strict capacity guarantee.** Revisit the 2026-10-05
-     [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger) ruling explicitly; guarantee/failure behavior
+     [OQ-DF4](../reference/disk-footprint.md#why-its-this-way) ruling explicitly; guarantee/failure behavior
      needs a follow-up design, not a chosen cap here.
 
    <!-- vantage: question id=OQ-CI2 leaning="A — preserve the ruled no-budget-key policy while delivering honest coverage and inactive-cache reclamation; a strict guarantee needs an explicit revision, not a claim that age limits bytes." -->

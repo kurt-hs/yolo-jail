@@ -18,7 +18,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// translatedroots_test.go pins both halves of docs/design/in-jail-nix-roots.md §4 as a
+// translatedroots_test.go pins both halves of docs/reference/in-jail-nix-roots.md "Translated roots and the host path map" as a
 // launch uses them, at their PRODUCTION call sites: the four places yolo registers its own GC
 // roots (NR-D2), each driven through the function a launch calls and checked at a fake nix
 // daemon, and the host path map the assembler states for the jail it starts.

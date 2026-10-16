@@ -195,7 +195,7 @@ func TestAutoReapOldImagesDeclinesWithNoCurrentPointers(t *testing.T) {
 // by CreatedAt, which is where the rule this replaced went wrong. CreatedAt is
 // when the archive was streamed, so a workspace that has been on the same image
 // for a week sorts first, and "keep the newest N" selected it first
-// (minimal-disk-footprint.md §3.3's exact scenario). Under OQ-LS3 position
+// (disk-footprint.md "Ledger C"'s exact scenario). Under OQ-LS3 position
 // decides nothing.
 func TestAutoReapOldImagesNeverRemovesAPointedImage(t *testing.T) {
 	buildDir := t.TempDir()

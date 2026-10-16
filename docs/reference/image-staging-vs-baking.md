@@ -69,8 +69,7 @@ it builds contains none of them.
 (the `macos-user` path, where nix builds a native profile and there is no image at all),
 [`image-retention.md`](image-retention.md) (which loaded images and GC roots are kept, and why the
 image's constant `created` no longer matters to that),
-[`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md)
-and [`../design/disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md) (what
+[`disk-footprint.md`](disk-footprint.md) (what
 reclaims the images, tars and store outputs this pipeline leaves behind),
 [`../reference/jail-home.md`](jail-home.md) (every other mount).
 
@@ -817,7 +816,7 @@ repository and removes with `rmi -f`; while one tag named everything the query r
 and the global keep-window of the day could select nothing (that window is gone — see [`OQ-LS3`](image-retention.md#why-its-this-way)). With a row per name it could select a second workspace's live
 image, so the same change deduplicated by image ID and added a liveness veto read from the
 sentinel, later hardened to decline when the ledger cannot be read. The retention *number* and
-its trigger belong to [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md).
+its trigger belong to [`disk-footprint.md`](disk-footprint.md#ledger-c).
 
 ### The stock tag, and the question asked before the build
 
@@ -1269,7 +1268,7 @@ every jail mount. A record
 counts only while `container image inspect <ref>` exits 0, the same exit-status question the
 launch already asks to decide whether a ref is loaded, so no Apple Container output format is
 parsed. A record whose ref is gone is deleted when it is next read: Apple Container has no yolo
-image reaper to do it ([`OQ-BF6`](../design/disk-levers-and-backfill.md#111-decision-ledger)), so this is how a record is reaped with its image. A record whose
+image reaper to do it ([`OQ-BF6`](disk-footprint.md#why-its-this-way)), so this is how a record is reaped with its image. A record whose
 inspect could not run at all is kept and not counted, because "gone" and "could not ask" are
 different answers.
 
@@ -1505,7 +1504,7 @@ jail's closure. On the host that is `nix-store --add-root`. Inside a jail it can
 daemon resolves a root's path on the host, and the jail's spelling of its own home is not there,
 so the root is pruned as stale. An in-jail launch therefore registers a *translated root*, the
 same root sent under the host's spelling of the link, which the jail's launcher states in
-`YOLO_HOST_PATH_MAP` ([`in-jail-nix-roots.md` §8](../design/in-jail-nix-roots.md#8-what-is-built)).
+`YOLO_HOST_PATH_MAP` ([`in-jail-nix-roots.md`, translated roots](in-jail-nix-roots.md#translated-roots)).
 With no map, as from a launcher older than the variable, the in-jail seam is a no-op. The prefix
 root and the package-profile roots follow the same rule.
 
@@ -1692,8 +1691,7 @@ creation on podman and swept nothing, and layer-aware delivery then gave the two
 cannot be copied into directly a [temporary archive](#archive-destinations) the launch removes,
 so Apple Container stopped retaining one per store path; the backlog,
 and every other store this pipeline fills, are
-[`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md)'s and
-[`../design/disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md)'s.
+[`disk-footprint.md`](disk-footprint.md)'s.
 
 Two stores the pipeline fills and does not itself collect: podman's image store, reaped by
 `PruneOldImages` on the launch path (debounced, vetoed by liveness, opt out with
@@ -1752,9 +1750,8 @@ runners push. To use a cache name other than `yolo-jail`, change the `nixConfig`
 - **A deduplicating storage driver** — `zstd:chunked`, composefs. Those are destination-side and
   would compose with layer-aware delivery rather than replace it.
 - **Disk reclamation** — which images, tars, roots and store outputs get deleted, when, by whom:
-  [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) and
-  [`../design/disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md). Where they
-  state a retention number, they win.
+  [`disk-footprint.md`](disk-footprint.md) and [`image-retention.md`](image-retention.md). Where
+  they state a retention number, they win.
 - **Image content policy.** Whether `chromium` or `gcc` belongs in a jail is a product question;
   the lean image only changes where they are delivered from.
 - **The `macos-user` backend**, beyond being the existence proof store delivery reused —
@@ -1800,7 +1797,7 @@ ones cited from sibling docs and code comments and are never renumbered.
 | OQ-2 | A build that **ran and failed** is fatal: the classification and nix's own stderr are printed and the launch refuses. The opt-out is `YOLO_ALLOW_STALE_IMAGE=1`, not a TTY test; `SkipBuild`'s silence is untouched. This knowingly diverges from [`../reference/gate-placement-principle.md`](gate-placement-principle.md)'s "tell a human from a pipe": what makes a stale run safe is that somebody *said* it may be stale. | 2026-08-15 |
 | OQ-3 | **Content-addressed image tags**; the LRU-membership variant on `:latest` is refused. `localhost/yolo-jail:latest` is not a public surface. The "making cachix useful" caveat concerns the nix binary cache, a different surface. | 2026-08-25 |
 | OQ-4 | **`packages:` stays workspace-scope** — "yes, has to be". Fix the cost, never the scope. | 2026-08-25 |
-| OQ-5 | Retained image tars are a **bug**, not a configuration; the goal is minimal disk; yolo may delete cached tars without `--apply`. Executed in [`../design/minimal-disk-footprint.md`](../design/minimal-disk-footprint.md). | 2026-08-25 |
+| OQ-5 | Retained image tars are a **bug**, not a configuration; the goal is minimal disk; yolo may delete cached tars without `--apply`. Executed in [`disk-footprint.md`](disk-footprint.md#ledger-b). | 2026-08-25 |
 | OQ-6 | A stable layer chain gets built by a **successor mechanism**, not by reordering `streamLayeredImage`, which cannot express a written layer plan; never a `fromImage` base, which re-emits the base layers into the stream. The go/no-go was GRANTED and BUILT on 2026-09-09 as [layer-aware delivery](#delivering-into-the-runtime): nix2container plus a three-tier layer plan plus a negotiating `skopeo copy`, with `streamLayeredImage` deleted from the jail image in the same change. | 2026-09-08 |
 | OQ-7 | **Do not strip the `git describe` stamp from the bundle's binaries.** The stamp no longer moves the image (stamped bytes are prefix content), so removing it would buy a cheaper `runCommand` at the price of the fallback the in-jail version banner keeps. | 2026-09-06 |
 | C9 | **Layer-aware delivery** is the candidate id for [the layer plan plus the negotiating copy](#delivering-into-the-runtime), cited by that id from `internal/image`, `internal/prune`, `internal/cli/check` and the integration harness. It is a name, not a ruling; the rulings are the `OQ-LI` rows. | 2026-09-09 |
@@ -1851,7 +1848,7 @@ values themselves are stated.
 | Layer budget | base tier 90, extras tier 1 (omitted when `packages:` is empty), top tier 1 — at most 92 layers | `baseTier`, `extrasTier`, `n2c.buildImage` in `mkOciImage` (`flake.nix`) |
 | Image creation time | absent, so nix2container's constant `0001-01-01T00:00:00Z` | `mkOciImage` (`flake.nix`) |
 | The copier | `.#imageCopier` = nix2container's `skopeo-nix2container`, built against this flake's own nixpkgs | `packages.imageCopier` (`flake.nix`); `image.ImageCopierAttr` |
-| Copier out-link (its GC root) | `build/image-copier-<sha16 of repo root>`; in a jail nix registers it under the jail's spelling, so it is registered again as a translated root ([`in-jail-nix-roots.md` §8](../design/in-jail-nix-roots.md#8-what-is-built)) | `image.ImageCopierOutLink`; `AutoLoadOptions.RootCopier` |
+| Copier out-link (its GC root) | `build/image-copier-<sha16 of repo root>`; in a jail nix registers it under the jail's spelling, so it is registered again as a translated root ([`in-jail-nix-roots.md`, yolo's own roots](in-jail-nix-roots.md#yolos-own-roots)) | `image.ImageCopierOutLink`; `AutoLoadOptions.RootCopier` |
 | Copy argv | `[<runtime> unshare --] <copier> --insecure-policy copy [--dest-oci-accept-uncompressed-layers] nix:<image.json> <dest>`, the flag on an `oci:` layout destination only | `copyArgv`, `StoreWritePrefix` |
 | podman/Linux destination | `containers-storage:[<driver>@<graphRoot>+<runRoot>[:<driver options>]]<ref>` from `podman info`'s `store` (on the launch path, the readiness gate's answer); on a rootless podman only; bare `containers-storage:<ref>` when rootful, unknown, or the store is not reported or not spellable | `ContainersStorageDestFor`, `ParsePodmanStoreFacts`, `run.storeFactsFromGate` |
 | Copy retries | at most 1, immediate; none for a denylisted cause; no timeout | `copyImageWithRetry`, `retryWouldHelp` |

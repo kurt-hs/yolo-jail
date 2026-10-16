@@ -1,6 +1,6 @@
 package integration
 
-// versionprune_test.go is the launch tier of L7 (docs/design/disk-levers-and-backfill.md §3,
+// versionprune_test.go is the launch tier of L7 (docs/reference/disk-footprint.md "The levers",
 // BF-D1): the native launcher a real jail generates for claude prunes its superseded versions on
 // a run that installs nothing and updates nothing. The unit cells
 // (internal/entrypoint/versionprune_test.go) run the template's body against a fake program; only

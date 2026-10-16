@@ -20,7 +20,7 @@ import (
 )
 
 // housekeeping.go is the POST-LAUNCH SLOT and the lock that serialises it
-// (disk-levers-and-backfill.md §5.1, OQ-BF5).
+// (disk-footprint.md "The housekeeping slot", OQ-BF5).
 //
 // HOUSEKEEPING SLOT — the window in the host `yolo` process AFTER the container
 // is running and attached, while the launcher is otherwise waiting on its child.
@@ -377,7 +377,7 @@ func fmtCachePurgeDetail(files int) string {
 }
 
 // measureAndPurgeMiseVersions is the second offered class's slot half
-// (minimal-disk-footprint.md OQ-DF4, ruled 2026-10-05): it judges the shared mise
+// (disk-footprint.md OQ-DF4, ruled 2026-10-05): it judges the shared mise
 // tool store against every jail's use record (internal/miseuse), stamps what it
 // found for the next launch to offer on, and removes the versions no jail has used
 // for 30 days only if this launch has consent — the cache class's shape, reused.

@@ -190,7 +190,7 @@ workaround that does not exist:
 > `planHostCASAlias` in `internal/cli/run/hostcasalias.go`). It is handed this map and
 > **never aliases a segment the user relocated**, so a relocation always wins over the
 > alias. The rules for that alias are in
-> [`disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md#111-decision-ledger).
+> [`disk-footprint.md`](../reference/disk-footprint.md#host-cas-aliasing).
 
 ### macos-user: a link plus Seatbelt rules
 

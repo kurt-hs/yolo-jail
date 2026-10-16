@@ -11,7 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/nixroots"
 )
 
-// translatedroots.go is both halves of docs/design/in-jail-nix-roots.md §4 as a launch uses
+// translatedroots.go is both halves of docs/reference/in-jail-nix-roots.md "Translated roots and the host path map" as a launch uses
 // them: the HOST PATH MAP a launch states for the jail it starts, and the ROOTER a launch
 // uses for yolo's own GC roots (NR-D2) — nix-store on the host, a translated root in a jail.
 //

@@ -11,7 +11,7 @@ import (
 )
 
 // daemon.go is the one nix worker-protocol operation yolo speaks: the handshake, then
-// AddIndirectRoot (in-jail-nix-roots.md §4, "The protocol client").
+// AddIndirectRoot (in-jail-nix-roots.md "Translated roots and the host path map", "The protocol client").
 //
 // THE CLIENT ADVERTISES PROTOCOL 1.37 ON PURPOSE. 1.38 adds a feature negotiation this
 // client has no use for; a daemon answers an older client in the older dialect as a matter
@@ -81,7 +81,7 @@ func AddIndirectRoot(socket, path string, timeout time.Duration) error {
 
 // Conn is one handshaken connection to the daemon, for a caller that must send more than one
 // operation on it: a TEMP ROOT lasts exactly as long as the connection that added it
-// (in-jail-nix-roots.md §2.3), so the pin and the registration it guards share one.
+// (in-jail-nix-roots.md "What already protects a jail"), so the pin and the registration it guards share one.
 type Conn struct {
 	nc      net.Conn
 	c       *wire

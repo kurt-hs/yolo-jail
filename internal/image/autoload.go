@@ -169,7 +169,7 @@ type AutoLoadOptions struct {
 	//
 	// In a jail it is not: nix there registers the jail's spelling of the link, which
 	// the host daemon resolves on the host, finds missing and prunes as stale, so the
-	// run slice hands the translated root (docs/design/in-jail-nix-roots.md NR-D2) —
+	// run slice hands the translated root (docs/reference/in-jail-nix-roots.md NR-D2) —
 	// or nil, where the jail's launcher stated no host path map. Unrooted, a host GC
 	// can cost the next nested launch a from-source rebuild of skopeo.
 	RootCopier func(link, storePath string)
@@ -204,13 +204,13 @@ type AutoLoadOptions struct {
 	LoadArchive func(path string) bool
 	// RegisterRoot registers a durable nix GC root for the loaded image's store
 	// path so a `nix-collect-garbage` at any moment cannot delete the running
-	// jail's closure (the storage-lifecycle §1 invariant). Called on every
+	// jail's closure (the image-retention.md "A GC is safe at any moment" invariant). Called on every
 	// success return where the store path is known — idempotent, so an
 	// already-loaded image re-asserts (and self-heals) its root each run.
 	//
 	// The run slice injects image.RegisterImageRoot with the Rooter for where it
 	// runs: AddRoot on the host, and in a jail the translated root
-	// (docs/design/in-jail-nix-roots.md §4), because a jail's own `nix-store
+	// (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map"), because a jail's own `nix-store
 	// --add-root` is a root the host daemon prunes as stale. A jail whose launcher
 	// stated no host path map gets nil, as every jail did before.
 	// nil => a no-op (tests, and any caller that cannot register a root the host honors).
@@ -654,7 +654,7 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 		// what lands is imageName either way.
 		cacheDir := filepath.Join(paths.GlobalCache(), "images")
 		for _, tarFile := range newestTars(cacheDir) {
-			// P4 (minimal-disk-footprint.md §5, §10 step 2): newestTars is a
+			// P4 (disk-footprint.md "The reclaimer invariants", §10 step 2): newestTars is a
 			// LISTING, and by the time a candidate's turn comes a concurrent `yolo
 			// prune --apply` may have taken it. This reader runs on EVERY backend,
 			// which is why the guard is here and not only on the converter path
@@ -741,7 +741,7 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	// recorded for that image; one with no valid record appends nothing, having no
 	// path to name (stockimage.go).
 	contentRef := JailImageRef(o.Runtime, currentPath)
-	// SERIALISED AGAINST THE REAPER (disk-levers-and-backfill.md OQ-BF5). The
+	// SERIALISED AGAINST THE REAPER (disk-footprint.md OQ-BF5). The
 	// window this closes is narrow and real: this launch inspects, decides the
 	// image is present, and only records it in the sentinel much further down —
 	// and in between, another launch's housekeeping pass can see an image with
@@ -1019,7 +1019,7 @@ func AutoLoadImage(opts AutoLoadOptions) LoadResult {
 	// run image A while the sentinel's newest entry is B: leave the append on the
 	// load path and A ages out of the ten-entry LRU while a jail is running on it
 	// — which, while the store GC read this list (until OQ-LS4), stopped
-	// protecting its closure from a `nix-collect-garbage` (storage-lifecycle §1).
+	// protecting its closure from a `nix-collect-garbage` (image-retention.md "A GC is safe at any moment").
 	// Appending on use also makes the LRU mean "recently used" rather than
 	// "recently built", which is what the load diagnosis reports.
 	o.recordPackagesImage(launchKey, currentPath)
@@ -1507,7 +1507,7 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-// ConfirmLoaded is OQ-BF5's inspect-and-record bracket (disk-levers-and-backfill.md), the one
+// ConfirmLoaded is OQ-BF5's inspect-and-record bracket (disk-footprint.md), the one
 // AutoLoadImage runs before deciding whether to load: with lock held (nil => unlocked), it asks
 // run whether ref is loaded in runtime and, when it is, records storePath in that runtime's load
 // sentinel before the lock is let go. "" records nothing, there being no path to name.

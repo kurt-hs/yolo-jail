@@ -8,7 +8,7 @@ import (
 )
 
 // agentLogWorkspaceSubdirs are the per-workspace overlay log dirs safe to
-// age-purge (storage-lifecycle §4). Each lives under <ws>/.yolo/home/<subdir>
+// age-purge (disk-footprint.md "Lifecycle sweeps"). Each lives under <ws>/.yolo/home/<subdir>
 // and holds pure diagnostic logs with no regeneration cost — the tool rewrites
 // them on its next run.
 //

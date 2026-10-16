@@ -114,7 +114,7 @@ var hostPathEnvByDesign = map[string]string{
 	// the host-side `yolo ps` display (runtime/display.go) — every one of them treats it as
 	// a string. Nothing opens it; the workspace itself is at /workspace.
 	"YOLO_HOST_DIR": "a label for where the workspace came from, never opened in-jail",
-	// The host path map (docs/design/in-jail-nix-roots.md §4): which host directory each
+	// The host path map (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map"): which host directory each
 	// mount is. Read by an in-jail `yolo` (run's gcRooter), which SENDS the host spelling
 	// of a link to the host's nix daemon for the daemon to resolve on the host; the jail
 	// opens the link at its jail path and never opens a host path from the map.

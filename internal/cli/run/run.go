@@ -536,7 +536,7 @@ func Run(opts Options) (rc int) {
 		if !o.DryRun && !o.checkConfigChanges(cfg, rt) {
 			return 1
 		}
-		// THE OFFERED TIER (disk-levers-and-backfill.md §5.3's trigger), on this arm too: beside
+		// THE OFFERED TIER (disk-footprint.md "Triggers and defaults"'s trigger), on this arm too: beside
 		// the approval prompt, while the terminal is still ours and before any setup, reading
 		// what the last launch's housekeeping pass measured. Its answer goes to this launch's
 		// slot (startMacosUserHousekeeping, below). A dry run starts no slot, so it offers nothing.
@@ -1963,7 +1963,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		}
 	}
 
-	// L9's host-CAS alias (disk-levers-and-backfill.md OQ-BF10), decided and
+	// L9's host-CAS alias (disk-footprint.md OQ-BF10), decided and
 	// provisioned in the same window and for the same two reasons as the
 	// relocations above: a missing bind source kills the container, and a
 	// destination whose mountpoint does not exist gets a root-owned one invented

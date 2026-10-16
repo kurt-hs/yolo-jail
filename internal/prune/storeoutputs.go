@@ -10,7 +10,7 @@ import (
 )
 
 // storeoutputs.go reclaims YOLO'S OWN superseded /nix/store outputs
-// (disk-levers-and-backfill.md OQ-BF3, L3). Measured there at ≥ 28.8 GB with
+// (disk-footprint.md OQ-BF3, L3). Measured there at ≥ 28.8 GB with
 // ≈ 0.43 GB/day of accrual and NO collector at all: `nix store gc` is reachable
 // only through `yolo prune --nix-gc --apply` (host-only, default off) and the
 // daemon's min-free of 0.

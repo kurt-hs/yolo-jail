@@ -8,7 +8,7 @@ import (
 )
 
 // SweepDanglingOutLinks removes build/run-result-* symlinks whose nix store
-// target no longer exists (storage-lifecycle §4). These are the per-build
+// target no longer exists (disk-footprint.md "Lifecycle sweeps"). These are the per-build
 // out-links image.AutoLoadImage creates and then removes on the success path;
 // a crash between build and removal — or the store path being GC'd out from
 // under a leftover link — leaves a dangling symlink. It protects nothing (its

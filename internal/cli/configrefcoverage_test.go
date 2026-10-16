@@ -42,7 +42,7 @@ func configRefText(t *testing.T) string {
 // Two of the three went away by RETIREMENT rather than by documentation — they
 // are in config.RetiredConfigKeys() now, and the test below therefore does not
 // ask about them at all — while the one it named that IS still live, `prune`, was
-// the one hole this check did not close. docs/design/minimal-disk-footprint.md
+// the one hole this check did not close. docs/reference/disk-footprint.md
 // reached the same conclusion independently on 2026-08-25.
 //
 // So the predicted list was wrong in both directions, which is the argument for

@@ -13,13 +13,23 @@ covers:
   - internal/cli/run/currentimage.go
   - internal/image/image.go
   - internal/image/stockimage.go
+  - internal/image/gcroot.go
+  - internal/image/build.go
+  - internal/prune/nixgc.go
+  - internal/cli/check/section_autogc.go
 tags: [prune, images, storage, retention, gc-roots]
 summary: "What a reap may delete, and on what evidence. A container image's reaper asks liveness and gets it from the runtime. The nix GC-root reaper never reaps the root of an image a container is running on, also asked of the runtime, and ages out every other root after a week. Image retention is one pointer per workspace at that workspace's current image, with no undo buffer and no global count; an unreachable authority declines the sweep rather than sweeping."
 ---
 
 # Image and GC-root retention — two reapers, two questions
 
-**Status:** CURRENT as of 2026-09-24, verified against `f491d192`.
+**Status:** CURRENT as of 2026-09-24, verified against `f491d192`. The sections from
+[a GC is safe at any moment](#a-gc-is-safe-at-any-moment) to [owed host steps](#owed-host-steps)
+were graduated from the plan `storage-lifecycle.md` on 2026-10-16 and checked against
+`8e65f3444`. MEASURED 2026-09-30, from a jail on the maintainer's host: the store path behind
+the jail's `/bin/git` listed two `build/roots/<sha16>` image roots. UNMEASURED: the bounded store
+GC against a real host store, and a forced low-space GC with a jail up ([owed host
+steps](#owed-host-steps)).
 
 yolo reclaims two different kinds of bytes, and confusing them once destroyed four running
 jails. A **container image** in the runtime's own storage backs running containers: removing one
@@ -179,7 +189,7 @@ reaped once old, even under a running image.
 > up. That is survivable only because of the liveness half. Before [OQ-LS4](#why-its-this-way), a
 > jail up for longer than the horizon lost its root, and on podman/Linux the next store GC could
 > break it. That is how a host GC left a running jail's `/bin` dangling on 2026-07-22
-> ([`storage-lifecycle.md`](../plans/storage-lifecycle.md)).
+> ([a GC is safe at any moment](#a-gc-is-safe-at-any-moment)).
 
 ## The store GC's refusal
 
@@ -197,6 +207,76 @@ Each refused image is named with its reason. The remedy is a **fresh** host laun
 workspace, which registers the root and, for a stock image, writes the stock record. It is not an
 attach, which loads no image. It is not `just load` either, which registers no root under the
 build dir. A container yolo did not start has to be stopped for the length of the GC.
+
+## A GC is safe at any moment
+
+<a id="a-gc-is-safe-at-any-moment"></a>
+
+> **A garbage collection must be safe to run at any moment.**
+
+The store closure of every image a jail runs on, and of the install prefix it runs yolo from,
+is reachable from a registered GC root for as long as a jail runs against it. This is the
+invariant every reaper on this page serves, and it is the reason automatic collection (the host
+daemon's `min-free`, or anything of yolo's) is safe to turn on at all: before it held, auto-GC
+was a defect amplifier that turned "a GC someday" into "a GC on a timer".
+
+The incident behind it: a host `nix-collect-garbage` reclaiming ~2.5 TiB swept a running jail
+image's own store closure on 2026-07-22, leaving 235 of 467 `/bin` symlinks dangling (git, gh,
+node, yolo and the rest). The container kept running with its tools broken. On podman/Linux with
+a host nix daemon the host `/nix/store` is mounted read-only over the jail's, so a running jail
+depends on live store paths, and the runtime's own image store holds no `/nix/store` reference.
+
+How the invariant is held:
+
+- **The image root.** A launch registers a durable indirect root at `build/roots/<sha16>` for the
+  image's store path before it drops the build's per-process out-link, and re-asserts it on every
+  run, so a reaped root heals at the next launch (`image.RegisterImageRoot`, `AutoLoadImage`).
+  One root on the image's store path covers every `/bin` tool, since they are all in its closure.
+- **The prefix root** for the mounted yolo binaries, held by liveness
+  ([prefix roots](disk-footprint.md#prefix-roots)).
+- **Roots made in a jail** are registered under the host's spelling of the link
+  ([`in-jail-nix-roots.md`](in-jail-nix-roots.md)); a jail-spelled root is one the host deletes as
+  stale.
+
+> [!WARNING]
+> **Only the `yolo check` preflight may drop its out-link.** It builds the image to prove it can,
+> and never loads or runs it, so an unrooted result is correct there (`BuildOCIImage`). Copying
+> that removal into a load path reopens the incident.
+
+`build/restore-result` on the maintainer's machine is a manual recovery root from the incident,
+made by no yolo code; the dangling-out-link sweep never touches it. It can be retired by hand
+now that roots are automatic.
+
+## The host's auto-GC: warn, never edit
+
+<a id="the-hosts-auto-gc-warn-never-edit"></a>
+
+`yolo check` reads the nix daemon's `min-free` and warns when it is zero, the nix default, which
+means the daemon never collects on its own. The remedy names the file the setting takes effect in
+on that install and the restart that applies it. It is a warning, never a failure: an unbounded
+store is a hygiene risk, and on a large disk may be deliberate. Determinate Nix collects by disk
+pressure independently of `min-free`, so a zero there gets an informational line.
+
+- **yolo never edits `nix.conf`.** The values are the human's ([owed host
+  steps](#owed-host-steps)).
+- **Inside a container jail the reading is the jail's own nix config**, not the host daemon's,
+  because `nix config show` reports the process that runs it (MEASURED 2026-10-01). A `macos-user`
+  jail runs the host's nix client against the host's config, so it is graded as the host is.
+
+## Owed host steps
+
+<a id="owed-host-steps"></a>
+
+Two steps only the maintainer's host can take, carried from the plan this section replaces:
+
+1. **Set `min-free` and `max-free`** in the host's `/etc/nix/nix.conf` (or Determinate's
+   `nix.custom.conf`), so the store self-limits by collecting unrooted paths when space runs low.
+   The values are the maintainer's, sized to the headroom of the device the store shares with the
+   home and the workspaces; the plan's 50 GiB / 200 GiB was a placeholder. Safe only because of
+   [the invariant above](#a-gc-is-safe-at-any-moment): auto-GC honors roots.
+2. **Run the host acceptance**: with those values set and a jail up, force a low-space GC and
+   confirm the jail's `/bin` tools stay live; and run `yolo prune --nix-gc --apply` against the
+   real host store. Neither can run in a jail: the store and its `gcroots/` are the host's.
 
 ## Declining, and how loud
 
@@ -287,3 +367,5 @@ the values themselves are stated.
 | Automatic-reap hatch | `YOLO_NO_AUTO_IMAGE_REAP=1` | `internal/cli/run` |
 | The removed flag | `--keep-images` — **refused**, not ignored | `internal/cli` (`commands.go`, `subhelp.go`) |
 | Housekeeping record | `<workspace>/.yolo/housekeeping.log` | `internal/cli/run` |
+| Image GC roots | `build/roots/<sha16>`, the first 16 hex digits of the store path's SHA-256 | `image.ImageRootsDir`, `image.ImageStoreKey` |
+| Store GC | opt-in `yolo prune --nix-gc`, a bounded `nix store gc`, refused in a jail | `internal/prune` (`RunNixStoreGC`) |

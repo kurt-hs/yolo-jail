@@ -10,7 +10,7 @@ import (
 )
 
 // What survives of P4 — "no reclaimer may delete an artifact an in-flight launch
-// is between steps on" (docs/design/minimal-disk-footprint.md §5 P4). The racer
+// is between steps on" (docs/reference/disk-footprint.md "The reclaimer invariants" P4). The racer
 // is `yolo prune --apply`'s keep-N tail-drop, which deletes cache/images/*.tar by
 // mtime and knows nothing about which tar a launch is mid-flight on.
 //

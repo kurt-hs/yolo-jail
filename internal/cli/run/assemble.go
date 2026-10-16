@@ -143,7 +143,7 @@ type assembleInput struct {
 	cacheRelocations []config.CacheRelocation
 	// hostCASAlias is L9's settled decision for this launch — which recognised
 	// content-addressed host caches this jail shares instead of pooling a second
-	// copy of (docs/design/disk-levers-and-backfill.md OQ-BF10). One entry per
+	// copy of (docs/reference/disk-footprint.md OQ-BF10). One entry per
 	// recognised store, aliased or not, so the disclosure can explain a decline;
 	// assembly emits a -v only for the aliased ones.
 	//
@@ -564,7 +564,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 			"-v", hostNixStore+":"+hostNixStore+":ro",
 			"-e", "NIX_REMOTE=daemon")
 		// The host's gcroots/auto, read-only, for the in-jail root watcher
-		// (docs/design/in-jail-nix-roots.md §5, option C; OQ-NR2 permits it with no launch
+		// (docs/reference/in-jail-nix-roots.md "The root watcher", option C; OQ-NR2 permits it with no launch
 		// line of its own). Not under the seal: a fork build has no daemon to root through.
 		runCmd = append(runCmd, o.hostGCRootsAutoMountArgs()...)
 	} else if msg := o.nixDelegationSkipNotice(rt); msg != "" {
@@ -1123,7 +1123,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		runCmd = append(runCmd, serviceEndpointEnvArgs(in, o)...)
 	}
 
-	// --- the host path map (docs/design/in-jail-nix-roots.md §4) ---
+	// --- the host path map (docs/reference/in-jail-nix-roots.md "Translated roots and the host path map") ---
 	// LAST BEFORE THE IMAGE, because it is read off every mount above: which host directory
 	// each one is, so an in-jail `yolo` can register its GC roots under the host's spelling
 	// (translatedroots.go). Only with the host nix daemon mounted, the one reader.
