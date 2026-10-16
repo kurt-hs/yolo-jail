@@ -220,7 +220,6 @@ A launch from a project inside your home stops before it builds anything, and pr
 commands that move the project under `/Users/Shared/yolo` and share it there. A fresh clone or a
 copy made there is shared as it is created.
 
-
 **Check without changing anything.** Run `yolo check` from the project. It checks each thing a
 launch refuses to start without: that you are on macOS and not running as root, Seatbelt, the
 sandbox user and its home folder, that `/Users/Shared/yolo-staged` is yours and safe, that the sudo
