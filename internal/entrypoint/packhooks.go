@@ -62,7 +62,7 @@ const (
 	// copies that drift apart.
 	//
 	// NAMED FOR THE SHAPE, NOT FOR WHAT ANY PACK PUTS IN IT. The design that asked for
-	// it (docs/design/pi-extension-lifecycle.md §3.1) proposed `shared_extension_storage`
+	// it (docs/reference/pi-extensions.md §17.1) proposed `shared_extension_storage`
 	// for pi's npm store, and an "extension storage" hook is the `claude_plugins` shape
 	// this file's header rules out one step removed — a name only one pack could ever
 	// want, for a mechanism any pack can use. What it does is the DIRECTORY twin of
@@ -198,7 +198,7 @@ func (e *Env) unlinkForCredentialView(p *packload.Pack, h packdecl.Hook) error {
 // What it buys is stated as a ruling rather than a convenience: N workspaces each keeping
 // their own copy of a package store waste disk, and — the load-bearing half — leave one jail
 // silently running a different version of a tool's extensions from its neighbour
-// (docs/design/pi-extension-lifecycle.md, OQ-1).
+// (docs/reference/pi-extensions.md, OQ-1).
 //
 // SAME LEAK, SAME BOUND as the credential hook: it reaches only a directory the pack declared
 // `scope: machine`, so what crosses between workspaces is readable from the manifest — and for

@@ -1,6 +1,6 @@
 package cli
 
-// patchedfork.go is the explicit acts' half of a PATCHED FORK (docs/design/patched-forks.md §8.3,
+// patchedfork.go is the explicit acts' half of a PATCHED FORK (docs/reference/patched-forks.md §8.3,
 // PF-D12): `yolo pack update` and `yolo pack install` force its check and replay its series down
 // the walk's list, record each outcome, and report the candidate and whether the series replays
 // there; `yolo pack status` reports the same from the check record, offline. None of them builds,

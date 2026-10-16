@@ -1,7 +1,7 @@
 package check
 
 // skewedpack_test.go pins `yolo check` over a configured pack holding a contribution this yolo
-// cannot read (docs/design/patched-forks.md PF-D68): a WARNING naming it, not a failure, because
+// cannot read (docs/reference/patched-forks.md PF-D68): a WARNING naming it, not a failure, because
 // the launch runs the pack without it and says so; and a pass with nothing to say when the same
 // pack is readable whole.
 

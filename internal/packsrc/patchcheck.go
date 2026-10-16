@@ -1,6 +1,6 @@
 package packsrc
 
-// patchcheck.go is a patched fork's CHECK (docs/design/patched-forks.md §4, PF-D5): the act that
+// patchcheck.go is a patched fork's CHECK (docs/reference/patched-forks.md §4, PF-D5): the act that
 // reads the upstream for a newer candidate, keyed by the OWNER KEY (PF-D22) so a patched extension
 // runs the same one.
 //

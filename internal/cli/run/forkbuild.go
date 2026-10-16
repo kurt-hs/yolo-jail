@@ -34,7 +34,7 @@ type ForkBuildRequest struct {
 	FreshBoundaryErr map[string]error
 	FreshIdentity    map[string]string
 	// Pins are the forks to deliver: each PLAIN fork with its pinned commit, and each PATCHED fork,
-	// which has no pin by design (docs/design/patched-forks.md §6.5) and whose delivery its advance
+	// which has no pin by design (docs/reference/patched-forks.md §6.5) and whose delivery its advance
 	// decides.
 	Pins []packload.ForkPin
 	// CachedGoodOwner is the one selected patched-program owner whose recorded Good.Entry is
@@ -70,7 +70,7 @@ type ForkBuildRequest struct {
 // this launch carries, the store key its jail materializes, or why there is none — building a
 // pinned fork the machine holds no build of, through the injected build act (Options.BuildForks).
 //
-// A PATCHED FORK (docs/design/patched-forks.md) has no pin by design, so it is never given the
+// A PATCHED FORK (docs/reference/patched-forks.md) has no pin by design, so it is never given the
 // no-pin reason: it goes to the build act too, whose ADVANCE checks its upstream, replays its
 // series and builds the newest fit, a first advance included (§6.5). The advance's lines follow the
 // launch's "Forks this launch" block, so its move line names the build this jail gets (§7). Never in
@@ -202,7 +202,7 @@ func (o *Options) actInterrupt() *ActInterrupt {
 // noteMacosUserForks is FP-D3's line: a macos-user launch that carries a fork says it delivers no
 // program for it, and why. On this backend the build trigger sits below the arm's return and no
 // launch can read the capture store yet (install-capture.md hand-off H4), so a silent absence would
-// read as the fork being broken. A PATCHED fork says what it is too (docs/design/patched-forks.md
+// read as the fork being broken. A PATCHED fork says what it is too (docs/reference/patched-forks.md
 // §9): its upstream is checked and its series replayed by the same fresh-launch slot, which this
 // backend never reaches either.
 func (o *Options) noteMacosUserForks() {

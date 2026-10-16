@@ -54,7 +54,7 @@ const patchedForkClaimDetailPrefix = "patched fork build: "
 
 // forkClaimDetail is a fork claim's Detail: the source address and the build command, verbatim,
 // so two forks that differ in either render as two lines. A PATCHED fork's names its series too
-// (docs/design/patched-forks.md §7) — the directory and the follow rule, and the patch count and
+// (docs/reference/patched-forks.md §7) — the directory and the follow rule, and the patch count and
 // series digest when root's series reads — since two series of one upstream would otherwise
 // render identically.
 func forkClaimDetail(root string, c packdecl.Contribution) string {
@@ -93,10 +93,10 @@ type Fork struct {
 	Platforms []string
 	// Root is the fork pack's root directory, which a patched fork's series is read from.
 	Root string
-	// Patches and Follow are a PATCHED fork's (docs/design/patched-forks.md): the series directory,
+	// Patches and Follow are a PATCHED fork's (docs/reference/patched-forks.md): the series directory,
 	// relative to Root, and the follow rule as written. Both "" for a plain fork.
 	Patches, Follow string
-	// PatchBranch is a PATCH BRANCH's address (docs/design/patched-forks.md §3.5), in Patches' place: the fork is
+	// PatchBranch is a PATCH BRANCH's address (docs/reference/patched-forks.md §3.5), in Patches' place: the fork is
 	// patched, its series the patch branch's commit as the last check resolved it. "" otherwise.
 	PatchBranch string
 	// PackBases is the base of every fork the fork pack declares, this one's included, and in turn
@@ -104,12 +104,12 @@ type Fork struct {
 	// carry, since a selection holding a fork whose base it lacks is refused (ApplyForks) on the
 	// host and again by the jail's own loader, and a base that forks another pack's program is such
 	// a fork. A base yolo ships joins by itself; a configured one is in the selection only when the
-	// seal names it (docs/design/patched-extensions.md PPX-D39).
+	// seal names it (docs/reference/pi-extensions.md PPX-D39).
 	PackBases []string
 	// NodeFloor is the base program's declared Node floor. A cached source build's env-node entrypoint
 	// remains compatible only when the selected base keeps its runtime floor.
 	NodeFloor string
-	// Into is a PATCHED EXTENSION's home-relative landing (docs/design/patched-extensions.md;
+	// Into is a PATCHED EXTENSION's home-relative landing (docs/reference/pi-extensions.md;
 	// patchedtrees.go), "" for every fork of a program. With it set the value is an extension:
 	// Bin is its name, the last segment of Into; Base is ""; and Produces are tree-relative.
 	Into string
@@ -136,7 +136,7 @@ func (f Fork) Unmodified() bool { return f.IsTree() && f.Patches == "" && f.Patc
 func (f Fork) Npm() bool { return packsrc.IsNpmSource(f.Source) }
 
 // FollowsUpstream reports whether f is checked and advanced against its upstream by the ratchet
-// (patched-forks.md PF-D8, patched-extensions.md PPX-D1): a patched fork, and every built tree,
+// (patched-forks.md PF-D8, pi-extensions.md PPX-D1): a patched fork, and every built tree,
 // patched or not. A plain fork's pin moves only by `yolo pack update` (FP-D18).
 func (f Fork) FollowsUpstream() bool { return f.Patched() || f.IsTree() }
 

@@ -1,7 +1,7 @@
 package packsrc
 
 // seriesprobe.go is the SERIES PROBE (a term coined here): `yolo pack lint --online`'s question
-// about one patch series (docs/design/patched-forks.md PF-D64). It is the check a launch runs,
+// about one patch series (docs/reference/patched-forks.md PF-D64). It is the check a launch runs,
 // forced, and then the series replayed at its own base, with nothing picked onto any upstream
 // version:
 //

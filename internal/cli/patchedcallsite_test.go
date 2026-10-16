@@ -1,7 +1,7 @@
 package cli
 
 // patchedcallsite_test.go pins call sites of a PATCHED fork's advance that only its callers reach
-// (patchedadvance.go, capturehost.go; docs/design/patched-forks.md §3.4, §7, §8.3, PF-D19, PF-D25,
+// (patchedadvance.go, capturehost.go; docs/reference/patched-forks.md §3.4, §7, §8.3, PF-D19, PF-D25,
 // PF-D38, PF-D42): a Ctrl-C in the check's fetch ends the check, clears its stamp and starts the jail
 // on the good build; a Ctrl-C in the wait for another build's lock ends the wait; `agent_updates` off
 // for the fork pack or its base runs no check at a launch, and an edit under that hold is built at

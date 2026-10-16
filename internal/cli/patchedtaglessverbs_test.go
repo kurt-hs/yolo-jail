@@ -1,7 +1,7 @@
 package cli
 
 // patchedtaglessverbs_test.go pins what the explicit acts say of a patched fork over an upstream
-// branch that carries no version tag the default release rule reads (docs/design/patched-forks.md
+// branch that carries no version tag the default release rule reads (docs/reference/patched-forks.md
 // PF-D60): `yolo pack series check` says why the list is empty and names `follow: "head"`, as `yolo
 // pack update` and `status` do, and the note a
 // launch says once is said again when what the check reads changes.

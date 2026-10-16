@@ -12,7 +12,7 @@ import (
 )
 
 // patchedextension_test.go is the container-level cell for a PATCHED EXTENSION
-// (docs/design/patched-extensions.md §16's "done looks like" for steps 2 to 5): a pack whose `files`
+// (docs/reference/pi-extensions.md §8, delivery): a pack whose `files`
 // contribution names an upstream and a `git format-patch --base` series in place of `from`, and an
 // agent pack that owns the list entry naming the tree, delivered by fresh launches with nobody
 // pinning anything. No agent is started (AGENTS.md: no agent tests); the jail runs bash, and the
@@ -167,7 +167,7 @@ echo "AUTOMODE=$(tr -d ' \n' < "$HOME/` + patchTreeAutomode + `")"`
 		t.Errorf("a patched extension was pinned in the fork lock:\n%s", data)
 	}
 
-	// 2. A VERSION THE SERIES DOES NOT FIT is FATAL (docs/design/patched-forks.md PF-D81): the update
+	// 2. A VERSION THE SERIES DOES NOT FIT is FATAL (docs/reference/patched-forks.md PF-D81): the update
 	// FAILS with the conflict's error, whose Repair recipe rebases onto the conflicting commit, and
 	// builds no older fit or base; the next launch refuses before its jail starts, its error block
 	// naming the rebase and the bypass that mounts the previous build; with that bypass the jail

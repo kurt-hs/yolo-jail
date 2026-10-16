@@ -3,7 +3,7 @@
 package cli
 
 // forkbuildretained_test.go pins how a fork build treats a capture jail that is not yet known gone
-// (docs/design/pi-startup-cancellation.md §3): a finished build waits out late `--rm` removal before
+// (docs/reference/patched-forks.md §7.1): a finished build waits out late `--rm` removal before
 // it gives up, and a build whose jail stays present is RETAINED, never a failed build, so a patched
 // advance records nothing against the commit and the next launch builds it.
 

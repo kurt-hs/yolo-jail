@@ -136,7 +136,7 @@ func pinForks(forks []Fork, lockPath string, store *packsrc.Store, repin bool,
 	if len(forks) == 0 {
 		return nil
 	}
-	// A PATCHED FORK IS NEVER PINNED (docs/design/patched-forks.md §6.5, PF-D16): it follows its
+	// A PATCHED FORK IS NEVER PINNED (docs/reference/patched-forks.md §6.5, PF-D16): it follows its
 	// upstream through a machine-local good build, and forks.lock.json holds no entry for it. It is
 	// kept out HERE, the one pinner every act that readies a fork's program reaches — a launch, the
 	// host floor's install and `yolo capture` — so no caller can pin one at a branch head and build

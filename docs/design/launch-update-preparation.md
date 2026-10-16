@@ -19,7 +19,7 @@ next: "Complete independent combined-source review and final runtime/platform ac
 
 **Needs your ruling:** None. [OQ-PD23](program-delivery.md#decision-ledger) includes ordinary CLI and yolo-installed MCP programs; remaining capture acceptance is agent engineering.
 
-**Reads with:** [ready independent implementation plan](launch-update-preparation-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](patched-forks.md).
+**Reads with:** [ready independent implementation plan](launch-update-preparation-plan.md), [build timing authority](pi-extension-store-builds.md), [patched-fork safety](../reference/patched-forks.md).
 
 ---
 
@@ -35,12 +35,12 @@ It includes the settled [machine-level CLI/MCP capture architecture](program-del
 - **P2 — Admission before delivery:** checks and candidate builds do not constitute a usable generation. Existing guarded admission, completion receipts and compare-and-swap remain authoritative.
 - **P3 — Preparation is not rendering:** timers may update build/capture stores and outcome records, never host agent settings, host floor links, workspace homes or running-jail copies.
 - **P4 — Policy survives speed:** user-scope `agent_updates` controls automatic timing. Absent/true/`launch` retains foreground behavior; `next-launch` enables ongoing preparation; false freezes an established revision automatically. Explicit human update overrides that automatic freeze and stamps/backoff, not explicit source constraints. With no good artifact or recorded initial identity, preserve today's initial cold resolution and mandatory readiness; do not invent held bytes. Plain fork standing branch pins move only through authorized manual resolution, never on a timer.
-- **P5 — Failure evidence survives:** known applicable patch failures refuse affected launches under [PF-D81](patched-forks.md#PF-D81), even with a serving build. Background completion, notice consumption and busy skips cannot clear that evidence.
+- **P5 — Failure evidence survives:** known applicable patch failures refuse affected launches under [PF-D81](../reference/patched-forks.md#PF-D81), even with a serving build. Background completion, notice consumption and busy skips cannot clear that evidence.
 
 A normal `next-launch` launch reads a valid admitted build without network/check/build waits,
 except cold establishment where neither usable build nor authorized fallback exists.
 A changed recipe/series/platform is not a valid serving build. The existing explicit
-[PF-D82](patched-forks.md#PF-D82) historical cached-good route stays separate: validate the prior receipt and runtime,
+[PF-D82](../reference/patched-forks.md#PF-D82) historical cached-good route stays separate: validate the prior receipt and runtime,
 disclose its old contents, retain current failure/edits, and never manufacture current success.
 A launch need not check the network to discover a failure not yet observed; once failure evidence is recorded,
 the next applicable launch must enforce it.
@@ -155,7 +155,7 @@ An unsupported/unavailable runtime leaves due keys deferred with a reason, not a
 | Explicit wait meets an older check | Registration snapshots the short per-key ledger epoch and monotonic started-check sequence. Only a greater sequence in that epoch with identical inputs qualifies; concurrent requests before that check share it. A check already running cannot qualify: reread its winner then run one follow-up fresh check. Wall time alone never qualifies work across clock rollback. |
 | Inputs move during work | Guarded settle rejects stale admission. Automatic work requeues the newest authorized identity; an explicit request fails with a retry command rather than silently changing its selected vector. Retain detailed outcome. |
 | Off/removal during work | Cancel before new check/build/admission; do not undo a generation already admitted before the policy change. |
-| Waiter Ctrl-C | Detach that waiter from shared work. For ordinary existing foreground advances retain [PF-D25](patched-forks.md#PF-D25) and shared act-interrupt behavior. Explicit freshness wait cancels the launch, never silently claims freshness or starts stale. |
+| Waiter Ctrl-C | Detach that waiter from shared work. For ordinary existing foreground advances retain [PF-D25](../reference/patched-forks.md#PF-D25) and shared act-interrupt behavior. Explicit freshness wait cancels the launch, never silently claims freshness or starts stale. |
 | No serving build and interruption | Launch stops; readiness cannot invent a program. Shared work with other demand may finish. |
 | Worker SIGINT/SIGTERM/SIGHUP | Stop dispatch; cancel children, existing process-group signal then kill grace, remove only known owned build jails. Preserve pending/failure evidence. |
 | Explicit worker stop | Same shutdown, no restart in that invocation; next eligible launch or explicit start can resume. Status names this. |

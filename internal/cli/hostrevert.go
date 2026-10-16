@@ -119,7 +119,7 @@ func hostRevert(out, errw io.Writer, color bool, write bool) int {
 		fmt.Fprintf(errw, "yolo host apply --revert: %v\n", rerr)
 		return 1
 	}
-	// THE PATCHED EXTENSIONS' LINKS (hosttrees.go, docs/design/patched-extensions.md §8.3): each one
+	// THE PATCHED EXTENSIONS' LINKS (hosttrees.go, docs/reference/pi-extensions.md §8.3): each one
 	// the render owns goes, and the host's versioned copies with it.
 	var links []string
 	var generations int

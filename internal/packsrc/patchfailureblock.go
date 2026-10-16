@@ -8,7 +8,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// patchfailureblock.go is PF-D81's ERROR BLOCK (docs/design/patched-forks.md §8): the one text every
+// patchfailureblock.go is PF-D81's ERROR BLOCK (docs/reference/patched-forks.md §8): the one text every
 // actor prints for a patch series that does not apply — a jail launch, `yolo host`, the host floor,
 // `yolo pack update`, `yolo capture`, cached-good recovery — so the copyable shape is written once.
 // It names the subject, the upstream target, the patch and its conflict or cause, that the operation

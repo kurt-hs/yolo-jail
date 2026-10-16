@@ -2,7 +2,7 @@ package run
 
 // interruptscope.go is an INTERRUPT SCOPE, a term coined here: a stretch of a launch during which a
 // Ctrl-C ends one piece of work rather than the launch. Its one user is a patched fork's ADVANCE at a
-// fresh launch (docs/design/patched-forks.md §7, PF-D25): the launch waits for the build of a newer
+// fresh launch (docs/reference/patched-forks.md §7, PF-D25): the launch waits for the build of a newer
 // upstream, and a Ctrl-C ends that build and starts the jail on the good build the machine already
 // has. An act that runs several advances shares one ActInterrupt across their scopes, so that one
 // Ctrl-C ends the act's whole wait (PF-D57).

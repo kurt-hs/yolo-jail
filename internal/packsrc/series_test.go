@@ -1,6 +1,6 @@
 package packsrc
 
-// series_test.go pins the series read (series.go; docs/design/patched-forks.md §3.2, PF-D2): its
+// series_test.go pins the series read (series.go; docs/reference/patched-forks.md §3.2, PF-D2): its
 // members, order, base and digest, and each refusal with the fix it names.
 
 import (

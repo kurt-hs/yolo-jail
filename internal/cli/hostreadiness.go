@@ -25,7 +25,7 @@ import (
 // `yolo host -- <cmd>` launch installs every program a user-scope selected pack declares into
 // yolo's floor BEFORE it resolves the target, whatever the command, and a program it cannot
 // install STOPS the launch unless paths.AllowMissingProgramsEnv is set. A typed patch-application
-// failure follows the one rule a jail launch follows too (docs/design/patched-forks.md PF-D83): when
+// failure follows the one rule a jail launch follows too (docs/reference/patched-forks.md PF-D83): when
 // an intact admitted build of the series, or an installed copy, is on this machine, the missing-program
 // hatch does not waive it and only paths.AllowPatchFailuresEnv goes on, running that build; when
 // nothing of the program would run (hostfloor.ErrPatchFailureNothingRuns), the missing-program hatch

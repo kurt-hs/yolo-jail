@@ -1,6 +1,6 @@
 package cli
 
-// patchedactinterrupt_test.go pins AN ACT'S INTERRUPT (run.ActInterrupt; docs/design/patched-forks.md
+// patchedactinterrupt_test.go pins AN ACT'S INTERRUPT (run.ActInterrupt; docs/reference/patched-forks.md
 // PF-D57) at every act that runs several advances: one Ctrl-C, landing in the first patched build an
 // act waits for, ends the act's whole wait — a jail launch's later patched forks, its plain forks'
 // builds and its patched extensions; `yolo host -- <bin>`'s program after its extensions; and `yolo

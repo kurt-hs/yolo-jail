@@ -426,7 +426,7 @@ because a command's own 64, 69 or 75 would otherwise read as one of `wait`'s sta
 | Agent | Mechanism | Evidence |
 | :--- | :--- | :--- |
 | **Claude Code** | `wait` run through Bash with `run_in_background: true`; the model is told when the task ends | UNMEASURED for `wait`. The maintainer reports that Claude Code ends a background Bash task after 2 h, also unmeasured here, hence `wait`'s 100-minute exit 75 and the "start it again" line |
-| **pi, with the pi-background-tasks extension** | the extension runs `wait` and continues the model when it finishes | UNMEASURED end to end. `packs/pi` does not ship the extension; the maintainer's personal pack does ([`patched-extensions.md`](patched-extensions.md)) |
+| **pi, with the pi-background-tasks extension** | the extension runs `wait` and continues the model when it finishes | UNMEASURED end to end. `packs/pi` does not ship the extension; the maintainer's personal pack does ([`pi-extensions.md`](../reference/pi-extensions.md)) |
 | **pi without it, codex, opencode, copilot, agy, a shell** | the human types "done", and the agent runs `show <token>` | no wake mechanism until `yolo notify` lands |
 
 Even the last row removes the copy-back: the human says one word instead of pasting output.

@@ -8,7 +8,7 @@ package packdecl
 // job is to refuse. Both are strict about everything this build knows. They differ only about
 // what it does not know: an authoring read refuses a field, a kind or a `via` this build has never
 // heard of, and a use read skips the contribution that holds it and says so in one line
-// (docs/design/patched-forks.md PF-D68). Every host read used to be an authoring read, so a pack
+// (docs/reference/patched-forks.md PF-D68). Every host read used to be an authoring read, so a pack
 // written for a newer yolo, such as a patched fork's `patches` read by a yolo older than the mode,
 // failed every launch on that host, not only the contribution's.
 

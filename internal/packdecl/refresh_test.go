@@ -6,7 +6,7 @@ import (
 )
 
 // refresh_test.go covers `program`'s `refresh` object: the PRE-LAUNCH REFRESH (a term coined
-// for the field on 2026-09-25) that docs/design/pi-extension-lifecycle.md §3.2 calls the
+// for the field on 2026-09-25) that docs/reference/pi-extensions.md §17.2 calls the
 // execution tier — an argv the launcher runs the installed program with before exec'ing it,
 // under the lock §3.3 names.
 //

@@ -60,7 +60,7 @@ func forkFields(c Contribution) []struct {
 }
 
 // IsPatchedFork reports whether c is a PATCHED FORK's own program contribution: a fork that
-// declares `patches` (docs/design/patched-forks.md PF-D1) or a `patch_branch` in its place (§3.5). Its
+// declares `patches` (docs/reference/patched-forks.md PF-D1) or a `patch_branch` in its place (§3.5). Its
 // `source` names the upstream, and its bytes are that upstream at a commit with the series
 // replayed, or with the patch branch merged.
 func (c Contribution) IsPatchedFork() bool {
@@ -96,7 +96,7 @@ func patchedForkFields(c Contribution) []struct {
 // check. A patched fork's two fields, `patches` and `follow`, are refused in the same place with
 // the declaration that does read them named.
 //
-// A PATCHED EXTENSION is the one other placement (docs/design/patched-extensions.md §4, PPX-D1):
+// A PATCHED EXTENSION is the one other placement (docs/reference/pi-extensions.md §4, PPX-D1):
 // `source`, `build`, `produces`, `patches` and `follow` on `files` beside `patches`, which
 // patchedExtensionProblems validates, refusing `fork_of` there by name. A `files` contribution
 // with any of them and no `patches` is refused here, with this message unchanged.
@@ -223,7 +223,7 @@ func forkProblems(label string, c Contribution) []string {
 }
 
 // patchedForkProblems validates a fork's `patches` and `follow` statically
-// (docs/design/patched-forks.md §3.1, PF-D1 to PF-D3): the series directory is a clean
+// (docs/reference/patched-forks.md §3.1, PF-D1 to PF-D3): the series directory is a clean
 // pack-relative path, `follow` is in its grammar and only beside `patches`, and a patched fork's
 // ref is not `HEAD`. What the directory holds is read at each check, never here, so a broken
 // series is the fork's reason at launch rather than a pack this build refuses to load.
@@ -260,7 +260,7 @@ func patchedForkProblems(label string, c Contribution) []string {
 	return problems
 }
 
-// patchBranchProblems validates a `patch_branch` statically (docs/design/patched-forks.md §3.5): a git address,
+// patchBranchProblems validates a `patch_branch` statically (docs/reference/patched-forks.md §3.5): a git address,
 // local or remote, with a `?ref=` naming the branch to merge, and never `HEAD`, which moves with
 // whatever the repository has checked out. The commit graph it names is fetched and asked about at
 // each check, never here.
@@ -463,7 +463,7 @@ func ForkRecipe(build string, produces []string, subdir string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// PatchedForkRecipe is a PATCHED fork build's recipe hash (docs/design/patched-forks.md §6.3,
+// PatchedForkRecipe is a PATCHED fork build's recipe hash (docs/reference/patched-forks.md §6.3,
 // PF-D7): ForkRecipe's canonical array with the series digest appended, [build, sorted produces,
 // subdir, series digest]. A patched build's bytes are the upstream commit with the series
 // replayed, so two series must never share an entry, and the series digest is the one input

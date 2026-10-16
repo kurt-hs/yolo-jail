@@ -1,7 +1,7 @@
 package run
 
-// missingbuilds.go is THE LAUNCH'S REFUSAL OF A MISSING PATCHED BUILD (docs/design/patched-extensions.md
-// PPX-D40, docs/design/patched-forks.md PF-D77; OQ-PPX3, ruled in review 2026-10-05: "if a build
+// missingbuilds.go is THE LAUNCH'S REFUSAL OF A MISSING PATCHED BUILD (docs/reference/pi-extensions.md
+// PPX-D40, docs/reference/patched-forks.md PF-D77; OQ-PPX3, ruled in review 2026-10-05: "if a build
 // fails, of course that's fatal. we should offer solutions and workarounds when that happens for
 // happy path, but it's fatal").
 //

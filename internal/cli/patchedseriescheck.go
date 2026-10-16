@@ -1,7 +1,7 @@
 package cli
 
 // patchedseriescheck.go is `yolo pack series check [<pack-dir>] [--onto <ref>]`
-// (docs/design/patched-forks.md PF-D65): the verdict a launch would reach on the patch series of
+// (docs/reference/patched-forks.md PF-D65): the verdict a launch would reach on the patch series of
 // every patched fork and patched extension in a local pack's directory, reached in a SCRATCH MIRROR
 // (a term coined here: a pack store rooted in a new private temporary directory, outside yolo's
 // state directory and outside the pack, which the check fetches the upstream into and which is

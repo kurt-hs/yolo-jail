@@ -2,7 +2,7 @@ package cli
 
 // packupdatepatched_test.go pins that the host apply `yolo pack update` runs on the host
 // (packupdate.go, OQ-3) builds no patched fork and no patched extension: the update checks and
-// replays them and builds nothing (docs/design/patched-forks.md §8.3, PF-D12; patched-extensions.md
+// replays them and builds nothing (docs/reference/patched-forks.md §8.3, PF-D12; pi-extensions.md
 // PPX-D28), so its own line, "the next launch builds it", stays true. `yolo host apply --assert`
 // typed by itself still runs the advance (PF-D50, PPX-D25), and so does `yolo host -- <bin>`.
 //

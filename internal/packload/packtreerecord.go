@@ -35,7 +35,7 @@ type PackTreeEntry struct {
 	Dir string `json:"dir"`
 	// Skipped are the version-skew notes the launch already printed for this pack (Pack.SkewNotes
 	// without their "pack <name>: " prefix, since the boot names a pack by its directory): what
-	// the use read skipped, kept without a field, or ignored (docs/design/patched-forks.md
+	// the use read skipped, kept without a field, or ignored (docs/reference/patched-forks.md
 	// PF-D68). The boot reads the same skips from the same manifest, and logs a note found here
 	// to boot.log only rather than printing the launch's line a second time; a note the launch
 	// did not print, as from an entrypoint of another build, still warns. Absent from a tree an

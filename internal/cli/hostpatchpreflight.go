@@ -17,7 +17,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// hostpatchpreflight.go is PF-D81's CHECK BEFORE A HOST WRITE (docs/design/patched-forks.md §8): a
+// hostpatchpreflight.go is PF-D81's CHECK BEFORE A HOST WRITE (docs/reference/patched-forks.md §8): a
 // host verb that renders into the real home — `yolo host -- <bin>` under host_apply_on_launch, whose
 // launch gate may apply, and `yolo host apply --assert` — asks each selected patched fork's program
 // whether a patch failure is already recorded for its series as it stands, BEFORE the first write.

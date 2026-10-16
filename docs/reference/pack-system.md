@@ -454,11 +454,11 @@ pre-`just load` entrypoint does not know still boots the jail, warning by name. 
 and verbs read through the one resolver's `packload.LoadDirForUse`, which skips the same
 contributions, an unknown `via` or field included, and names each in one line, so a pack written for
 a newer yolo no longer fails every launch on an older host
-([PF-D68](../design/patched-forks.md#PF-D68)). A contribution whose kind only restricts
+([PF-D68](patched-forks.md#PF-D68)). A contribution whose kind only restricts
 (`blocked-tool`, `intercept`, `autonomy`) is kept without the unknown field instead
-([PF-D69](../design/patched-forks.md#PF-D69)), and `yolo host apply --assert` writes nothing while a
-contribution is skipped ([PF-D70](../design/patched-forks.md#PF-D70)). `yolo features` lists the
-kinds, `via`s and named capabilities a build reads ([PF-D71](../design/patched-forks.md#PF-D71)).
+([PF-D69](patched-forks.md#PF-D69)), and `yolo host apply --assert` writes nothing while a
+contribution is skipped ([PF-D70](patched-forks.md#PF-D70)). `yolo features` lists the
+kinds, `via`s and named capabilities a build reads ([PF-D71](patched-forks.md#PF-D71)).
 
 > [!WARNING]
 > **Tolerance is for a kind, not for a CONSTRAINT.** A settings declaration is refused on
@@ -665,7 +665,7 @@ run it. `refresh` is read on `program` alone. `packdecl` refuses an empty `argv`
 whose name does not start with `.yolo-`: the lock sits inside the store, and that prefix is what
 tells yolo's bookkeeping apart from the tool's content when the `shared_directory` hook asks
 whether the store is empty.
-[`pi-extension-lifecycle.md`](../design/pi-extension-lifecycle.md#32-execution-tier-pre-launch-auto-refresh)
+[`pi-extensions.md`](pi-extensions.md#172-the-execution-tier)
 is the design.
 
 `due_on_change`, optional, lists home-relative **files** whose content makes the refresh due
@@ -1057,7 +1057,7 @@ that ask whether another selected pack provides what one pack names (an `agents`
 `supersedes` claim, a via profile's route, `required_capabilities`) do not run in a build jail,
 since the narrowing is what dropped that pack, and a build jail that stops before its build line
 runs is reported with the last lines it printed
-([PPX-D39](../design/patched-extensions.md#PPX-D39)). The build launch's pack disclosure
+([PPX-D39](pi-extensions.md#PPX-D39)). The build launch's pack disclosure
 lists only what the build fetches or runs, and counts every other claim in one line,
 `Sealed build: … declared by <packs> are withheld`
 ([FP-D21](../design/forked-programs-as-packs.md#FP-D21)), which counts the user's withheld
@@ -1632,7 +1632,7 @@ An opaque tree the pack owns outright, bind-mounted `:ro` at `into` in the jail.
 required and honored **on a contribution**: there is no conventional location for an opaque tree,
 so the declaration is the only thing that can name it. A **built tree** names an upstream `source`
 in place of `from`: a patched extension, with a `patches` series or a `patch_branch`
-([`patched-extensions.md` §4](../design/patched-extensions.md#4-the-declaration)), or an unmodified
+([`pi-extensions.md` §4](pi-extensions.md#4-the-declaration)), or an unmodified
 extension, with none, from a git address or `npm:<name>[@<spec>]` and an optional `fallback`
 ([`pi-extension-store-builds.md` §4.1](../design/pi-extension-store-builds.md#41-the-declaration)).
 yolo builds it on the host in a sealed capture jail and mounts a per-launch copy at `into`. The source bound is the pack's **staged**
@@ -4038,7 +4038,7 @@ included, because a flat skills dir can carry none of them.
 | Verb | What it does |
 | :--- | :--- |
 | `yolo pack init [dir]` | scaffold a valid skeleton (`briefing/<pack>.md`, an example skill, `README.md`); never a `pack.json` |
-| `yolo pack lint [--online] [dir]` | run the real staging executor **and** validate the manifest — every problem, not the first — then print the pack's footprint and every delivery, implicit broadcasts included, plus an info line for each conventional-looking file it will not ship (a root `AGENTS.md`, a subdirectory or non-`.md` file in `briefing/`). It reads each patch series as a launch does, and `--online` checks each series' upstream in a scratch mirror ([`patched-forks.md` PF-D63, PF-D64](../design/patched-forks.md#PF-D63)) |
+| `yolo pack lint [--online] [dir]` | run the real staging executor **and** validate the manifest — every problem, not the first — then print the pack's footprint and every delivery, implicit broadcasts included, plus an info line for each conventional-looking file it will not ship (a root `AGENTS.md`, a subdirectory or non-`.md` file in `briefing/`). It reads each patch series as a launch does, and `--online` checks each series' upstream in a scratch mirror ([`patched-forks.md` PF-D63, PF-D64](patched-forks.md#PF-D63)) |
 | `yolo pack ls` | list configured packs and what each stages |
 | `yolo pack explain <name>` | stage one pack and show what it stages and what it dropped (`file://` local only) |
 | `yolo pack footprint [ref]` | claims + cross-pack collisions + review summary; `[ref]` may be an embedded pack name or a local path, so you can inspect a pack you are authoring |
@@ -4046,7 +4046,7 @@ included, because a flat skills dir can carry none of them.
 | `yolo pack update` | everything `install` does, plus the refresh of npm-declared programs |
 | `yolo pack status` | show locked commits and flag config/lock drift |
 | `yolo pack status <pack>/<name>` | print one selected fork's or built tree's build line whole, with its recipe digest: the digest a launch's disclosure block shows in the line's place ([`OQ-RO9`](report-tiers.md#OQ-RO9)) |
-| `yolo pack series check [<pack-dir>] [--onto <ref>]` | the verdict a launch would reach on each patch series of the local pack in that directory, `.` by default: whether the newest version takes it, or the patch that stops it and the git commands that rebase it ([`patched-forks.md` §8.4](../design/patched-forks.md#84-rebasing-the-series)), reached in a scratch copy of the upstream with no check record read or written, so it runs in a jail as on the host ([PF-D65](../design/patched-forks.md#PF-D65)) |
+| `yolo pack series check [<pack-dir>] [--onto <ref>]` | the verdict a launch would reach on each patch series of the local pack in that directory, `.` by default: whether the newest version takes it, or the patch that stops it and the git commands that rebase it ([`patched-forks.md` §8.4](patched-forks.md#84-rebasing-the-series)), reached in a scratch copy of the upstream with no check record read or written, so it runs in a jail as on the host ([PF-D65](patched-forks.md#PF-D65)) |
 
 **No `yolo pack` verb asks a question, and `packMain` takes no stdin at all.** `install` and
 `update` fetch and report; `series check` fetches into a scratch copy it deletes, printing the git

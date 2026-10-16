@@ -665,7 +665,7 @@ type Options struct {
 	// BuildForks builds, for every pinned fork in the request, the store entry the jail needs at
 	// its platform when the machine holds none, and returns per bin the entry's key or why there is
 	// none (docs/design/forked-programs-as-packs.md OQ-FP4, FP-D1, FP-D8); for a PATCHED fork it
-	// runs the advance (docs/design/patched-forks.md §6, §7), which the request's Hand records. It
+	// runs the advance (docs/reference/patched-forks.md §6, §7), which the request's Hand records. It
 	// blocks while it works — waiting, bounded, for a build another launch is already running — and
 	// never fails the launch.
 	//
@@ -673,7 +673,7 @@ type Options struct {
 	// which imports this package; the front door injects it. nil builds nothing, and every fork
 	// then reaches its jail with the reason that says so.
 	BuildForks func(req ForkBuildRequest) map[string]entrypoint.ForkDelivery
-	// BuildTrees is the TREE ARM's act (docs/design/patched-extensions.md §6.1, §8.1;
+	// BuildTrees is the TREE ARM's act (docs/reference/pi-extensions.md §6.1, §8.1;
 	// patchedtrees.go): for every patched extension in the request, the check and the advance
 	// (unless the request says this launch builds nothing), then the per-launch copy of the good
 	// build beside this launch's pack tree, by extension key. Injected for BuildForks' reason, and
@@ -701,7 +701,7 @@ type Options struct {
 	Sealed bool
 	// SealedTree is, under the seal, the name of the PATCHED EXTENSION this launch builds, "" for a
 	// fork's build: the jail is told it (entrypoint.TreeBuildEnv), since its selection is the
-	// contributing pack alone (docs/design/patched-extensions.md PPX-D5, PPX-D30).
+	// contributing pack alone (docs/reference/pi-extensions.md PPX-D5, PPX-D30).
 	SealedTree string
 	// OnlyPacks, when non-nil, narrows this launch's `packs` entries to the ones named here, before
 	// the selection closure runs (so the packs those entries need or fork still join). The build

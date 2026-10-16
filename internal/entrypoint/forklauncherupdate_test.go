@@ -1,7 +1,7 @@
 package entrypoint
 
 // forklauncherupdate_test.go pins what a fork's source launcher says in update mode
-// (forklauncher.go; docs/design/patched-forks.md §7): a plain fork's pin moves it, and a PATCHED
+// (forklauncher.go; docs/reference/patched-forks.md §7): a plain fork's pin moves it, and a PATCHED
 // fork's build moves at a fresh launch on the host, which never names a pin it does not have.
 
 import (

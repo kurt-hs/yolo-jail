@@ -1,6 +1,6 @@
 package cli
 
-// patchedpatchbranch_test.go drives a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6; packsrc/patchbranch.go)
+// patchedpatchbranch_test.go drives a PATCH BRANCH (docs/reference/patched-forks.md §3.5, OQ-PFK6; packsrc/patchbranch.go)
 // through the real launch advance, `yolo pack lint` and `yolo pack status`, against local
 // repositories with the build jail substituted: a clean merge builds the merged tree and keys the
 // good build on the patch branch's commit; a moved branch rebuilds; a conflict refuses naming the paths and

@@ -1,6 +1,6 @@
 package packload
 
-// treenotch_test.go pins PPX-D35 and PPX-D36 (docs/design/patched-extensions.md): a list entry under
+// treenotch_test.go pins PPX-D35 and PPX-D36 (docs/reference/pi-extensions.md): a list entry under
 // `~/<into>/` loads the tree, for the owning agent pack, where it reaches, and the lint, and a tree is
 // delivered only at a notch its owner's entry reaches.
 

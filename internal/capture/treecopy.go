@@ -1,7 +1,7 @@
 package capture
 
 // treecopy.go puts ONE SUBTREE of an admitted entry at a directory of its own: a PATCHED
-// EXTENSION's built tree (docs/design/patched-extensions.md §8, PPX-D7), which a fresh jail launch
+// EXTENSION's built tree (docs/reference/pi-extensions.md §8, PPX-D7), which a fresh jail launch
 // copies beside its pack tree and mounts read-only, and the Linux host copies into a versioned
 // directory it links `~/<into>` to.
 //

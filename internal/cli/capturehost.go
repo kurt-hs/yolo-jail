@@ -161,7 +161,7 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 		return 2
 	}
 	// A PATCHED EXTENSION is captured by its extension key, `<pack>/<name>`
-	// (docs/design/patched-extensions.md §6.1, PF-D12 generalized): the check forced, then the
+	// (docs/reference/pi-extensions.md §6.1, PF-D12 generalized): the check forced, then the
 	// pending candidate built, or the good build's own inputs rebuilt, through the swap.
 	if strings.Contains(bin, "/") {
 		if rc, handled := captureTree(bin, out, errw, color); handled {
@@ -408,7 +408,7 @@ func captureFork(f packload.Fork, out, errw io.Writer, color bool) int {
 	return 0
 }
 
-// capturePatchedFork is `yolo capture <bin>` of a PATCHED fork (docs/design/patched-forks.md
+// capturePatchedFork is `yolo capture <bin>` of a PATCHED fork (docs/reference/patched-forks.md
 // §8.3, PF-D12): the check forced, then the pending candidate built now, ignoring a back-off; with
 // none pending, the good build's own inputs rebuilt, as it force-rebuilds a plain fork. Its build
 // goes through the swap like any advance's (patchedadvance.go), and it REFUSES on contention, as a

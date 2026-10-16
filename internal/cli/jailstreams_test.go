@@ -3,7 +3,7 @@ package cli
 // jailstreams_test.go pins that a build jail which stopped before its build line ran is relayed with
 // what the JAIL said — its runtime client's and pid 1's lines, which a launch relays apart from its
 // own (run.Options.JailStdout and JailStderr) — and not with its keeper's last lines, in the build
-// act's own process and in the child a serving advance runs (docs/design/patched-extensions.md
+// act's own process and in the child a serving advance runs (docs/reference/pi-extensions.md
 // PPX-D39).
 
 import (

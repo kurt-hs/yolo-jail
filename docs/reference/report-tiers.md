@@ -412,7 +412,7 @@ which his first patched launch printed there in full on 2026-10-05. Every act th
 names the build line whole, under the seal it runs in, before the sealed jail runs it, which is
 when the line matters: a jail launch on the build's start line, `yolo capture` and `yolo host` on
 the line under the build's own (`cli/buildreport.go`,
-[PF-D79](../design/patched-forks.md#PF-D79)). So [OQ-RO9](#OQ-RO9) asked whether the block may stop
+[PF-D79](patched-forks.md#PF-D79)). So [OQ-RO9](#OQ-RO9) asked whether the block may stop
 repeating it. **Truncation is no answer**: a payload can sit at character 590. Ruled 2026-10-05:
 the block shows the digest, as the answer below records.
 
@@ -481,7 +481,7 @@ builds and their upstream checks. One renderer,
 A progress line is not a density control and hides nothing, so P4 and [`OQ-RO3`](#why-its-this-way) are untouched.
 
 **A launch's builds are one progress line, their jails' output in the file**
-([PF-D79](../design/patched-forks.md#PF-D79), [PF-D80](../design/patched-forks.md#PF-D80)). A
+([PF-D79](patched-forks.md#PF-D79), [PF-D80](patched-forks.md#PF-D80)). A
 launch's fork or patched build runs a whole nested launch, whose provenance, provisioning and build
 output used to land among the launch's own lines. Now the builds run at once under one progress
 line, and the terminal shows each build's start line at once, which carries its disclosures (the

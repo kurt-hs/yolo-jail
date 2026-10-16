@@ -138,7 +138,7 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 		},
 		// The store's build at that pin and the build act (ResolveBuild, Build) are wired below, by
 		// the floor's platform (wireFloorBuild).
-		// A PATCHED FORK's program (docs/design/patched-forks.md §9, PF-D14): no pin, so the floor reads
+		// A PATCHED FORK's program (docs/reference/patched-forks.md §9, PF-D14): no pin, so the floor reads
 		// the GOOD BUILD where a plain fork's reads the pin — offline, from this machine's check record
 		// and capture store — and its install runs the fork's ADVANCE first, the one a fresh jail launch
 		// runs (patchedadvance.go), waiting for it as that launch does (PF-D25).
@@ -1132,7 +1132,7 @@ func resolveHostLaunchTarget(packs []*packload.Pack, cmd0 string, lp *hostpath.L
 		return hostTarget{}, 127
 	}
 	if prog.Install.IsPatchedFork() && st.Record != nil {
-		// A PATCHED FORK'S LINE (docs/design/patched-forks.md §7, PF-D11, PF-D53), the one a jail
+		// A PATCHED FORK'S LINE (docs/reference/patched-forks.md §7, PF-D11, PF-D53), the one a jail
 		// launch's fork block prints, of the build the FLOOR runs: the series, that build, and the held
 		// suffix while something holds the newest upstream back — or, when the floor runs another build
 		// than the good build, both. A disclosure, so on every launch (OQ-RO3).

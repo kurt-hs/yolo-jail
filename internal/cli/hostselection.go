@@ -104,7 +104,7 @@ func (s hostPackSet) joined(name string) (string, bool) {
 
 // skewNotes is every selected pack's version-skew notes (packload.Pack.SkewNotes, each naming its
 // pack): what the use read skipped, kept without a field, or ignored because this yolo cannot read
-// it (docs/design/patched-forks.md PF-D68). In the selection's precedence order.
+// it (docs/reference/patched-forks.md PF-D68). In the selection's precedence order.
 func (s hostPackSet) skewNotes() []string {
 	var out []string
 	for _, p := range s.packs {

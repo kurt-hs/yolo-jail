@@ -1,6 +1,6 @@
 package entrypoint
 
-// patchedtrees_test.go pins the jail's half of a PATCHED EXTENSION (docs/design/patched-extensions.md
+// patchedtrees_test.go pins the jail's half of a PATCHED EXTENSION (docs/reference/pi-extensions.md
 // §8.1, §9; PPX-D8, PPX-D18): GenerateAgentLaunchers reads YOLO_PATCHED_TREES once, and the launchers
 // of the pack that owns a tree the host says has nothing to serve stop before exec, naming the
 // extension and the host's reason — the npm launcher, the native one and a fork's source launcher alike — while

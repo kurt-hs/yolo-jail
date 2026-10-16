@@ -577,7 +577,7 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 		resolvedAll = false
 	}
 	// A CONTRIBUTION THIS YOLO CANNOT READ is the same hole one level down
-	// (docs/design/patched-forks.md PF-D70). The pack resolves, and a launch runs it without the
+	// (docs/reference/patched-forks.md PF-D70). The pack resolves, and a launch runs it without the
 	// contribution, saying so (PF-D68); but an --assert rendered around it would retire from the
 	// real home whatever an earlier render of that contribution wrote, which is the half state
 	// the ruling above refuses. So it joins the incomplete set: named here, refused at --assert,

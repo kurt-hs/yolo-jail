@@ -310,7 +310,7 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 	case "series":
 		return packSeries(args[1:], out, errw, color)
 	case "rebase":
-		// RETIRED (docs/design/patched-forks.md PF-D85): named so the stop says what replaced it.
+		// RETIRED (docs/reference/patched-forks.md PF-D85): named so the stop says what replaced it.
 		fmt.Fprintln(errw, "yolo pack rebase was removed: a series that stops applying is rebased with plain git. "+
 			"Its error, `yolo pack status` and `yolo pack series check` print the commands with the commits "+
 			"filled in; run them yourself or hand them to an agent.")
@@ -793,7 +793,7 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	pr.Printf("[green]✓[/green] pack ok — %d file(s) stage", len(res.Staged))
 	printPackDeliveries(pr, pack, skillSources, briefingSources)
 	printUnshippedNotes(pr, notes)
-	// A PATCHED EXTENSION NO LIST ENTRY NAMES (docs/design/patched-extensions.md §8.2, PPX-D10): a
+	// A PATCHED EXTENSION NO LIST ENTRY NAMES (docs/reference/pi-extensions.md §8.2, PPX-D10): a
 	// warning, not a failure — the tree is built and mounted, and no agent loads it. And one a list
 	// loads twice, from its tree and from a remote entry of the same name (PPX-D34): a warning too,
 	// since the agent still starts.

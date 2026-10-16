@@ -1,6 +1,6 @@
 package packsrc
 
-// follow.go is a patched fork's FOLLOW RULE (docs/design/patched-forks.md §3.3, PF-D3, PF-D4,
+// follow.go is a patched fork's FOLLOW RULE (docs/reference/patched-forks.md §3.3, PF-D3, PF-D4,
 // PF-D24): which commit of its upstream a patched fork takes when its `?ref=` names a branch, and
 // the version grammar the release rule reads tag names with.
 //

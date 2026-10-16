@@ -1,7 +1,7 @@
 package run
 
 // missingbuilds_test.go pins THE LAUNCH'S REFUSAL OF A MISSING PATCHED BUILD (missingbuilds.go;
-// docs/design/patched-extensions.md PPX-D40, patched-forks.md PF-D77) at its call site, from Run's
+// docs/reference/pi-extensions.md PPX-D40, patched-forks.md PF-D77) at its call site, from Run's
 // own entry point: a fresh launch whose patched extension a selected agent pack loads, or whose
 // patched fork, has no build refuses before the image step, whatever its command, naming the cause
 // once, who can fix it and the ways back; YOLO_ALLOW_MISSING_PROGRAMS=1 goes on with a warning; a

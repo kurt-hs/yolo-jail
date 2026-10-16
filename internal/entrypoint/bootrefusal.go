@@ -3,7 +3,7 @@ package entrypoint
 // bootrefusal.go is a refused boot's STRUCTURED CAUSE: for each config generator that failed, what
 // it was doing in plain words, the pack whose contribution it was, the path its error names and
 // whether that path was read-only, written beside boot.log as <workspace>/.yolo/boot-refusal.json
-// (docs/design/patched-extensions.md PPX-D42).
+// (docs/reference/pi-extensions.md PPX-D42).
 //
 // # Who reads it
 //

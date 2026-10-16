@@ -207,7 +207,7 @@ func hostApplyGate(errw io.Writer, stdin io.Reader, bin string) bool {
 	if survey != nil && len(survey.UnresolvedPacks()) > 0 {
 		// A pack whose only fault is a contribution this yolo cannot read is not one the launch
 		// refuses: the composition reads it as this yolo can and says what it skips
-		// (docs/design/patched-forks.md PF-D68). So with nothing else wrong the hook renders
+		// (docs/reference/patched-forks.md PF-D68). So with nothing else wrong the hook renders
 		// nothing, as for any incomplete set, and launches on the last apply (PF-D70).
 		if skewOnly(survey.UnresolvedPacks()) {
 			reportHostApplyGateSkewedSet(errw, bin, survey.UnresolvedPacks())

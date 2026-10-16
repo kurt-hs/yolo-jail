@@ -43,8 +43,8 @@ Ordinary CLI/MCP producer details are in [Ordinary CLI and MCP capture](#ordinar
 - A retained workspace's original ownership is checked before asking whether a new Apple build
   may start. Runtime admission cannot retarget retained evidence to the current backend.
 - Freshness is not force-rebuild. Explicit failure cannot deliver historical success;
-  [PF-D81](patched-forks.md#PF-D81) strict failure and
-  [PF-D82](patched-forks.md#PF-D82) ordinary disclosed historical recovery remain distinct.
+  [PF-D81](../reference/patched-forks.md#PF-D81) strict failure and
+  [PF-D82](../reference/patched-forks.md#PF-D82) ordinary disclosed historical recovery remain distinct.
 - A generated warm launcher validates its actual runtime before marker success or exec. This
   validation cannot install, materialize, mutate receipts or run a registry lookup.
 - In a test of host exec, install the exec-capture fixture before calling the real front door.
@@ -242,7 +242,7 @@ These establish local behavior, **not** a sealed runtime launch or capture repla
 The ordinary adapter extends only the generic shared-demand dispatch and scheduler record kind.
 Independent source-fork, host/Apple/liveness repairs retain their committed owning-task behavior
 and permanent tests. Existing
-[PF-D81 / PF-D82](patched-forks.md#decision-ledger) authority is untouched; no new compatibility
+[PF-D81 / PF-D82](../reference/patched-forks.md#why-its-this-way) authority is untouched; no new compatibility
 field is required of their historically valid receipts.
 
 ## Remaining acceptance
