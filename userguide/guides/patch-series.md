@@ -327,11 +327,9 @@ matches nothing here only prints a warning, so one left in your shell profile do
 | `YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo` | Runs the last good build of your current patches, skipping the new version. |
 | `YOLO_ALLOW_OLDER_UPSTREAM=pi-mine/pi yolo` | Tries your patches on older upstream releases, newest first, and runs the first one that builds. It says which version it picked, and keeps it on later launches until upstream releases something newer. |
 | `YOLO_USE_CACHED_GOOD=pi-mine/pi yolo` | Runs the last good build of your previous patches, for one fresh launch: useful when your own edit is what broke. It does not include that edit. |
+| `YOLO_SKIP_PATCHES=pi-mine/pi yolo` | Runs the upstream program or extension with none of your patches, built and kept separately, so your own good build is untouched. |
 | `YOLO_SKIP_EXTENSIONS=mine/ext-a yolo` | Starts pi without that extension. |
 | `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` | Starts the jail without a patched program that has no build. The shell works; the program does not. |
-
-`YOLO_SKIP_PATCHES=pi-mine/pi yolo` runs the upstream program or extension with none of your
-patches, built and kept separately, so your own good build is untouched.
 
 For `yolo host` and `yolo capture`, the error prints the same lines with that command in place of
 `yolo`. On an attach to a running jail, inside a jail, or on `macos-user`, the variables do nothing,

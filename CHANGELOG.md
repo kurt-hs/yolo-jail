@@ -33,8 +33,8 @@ not state, such as thinking levels; `null` removes one, and `model_facts` with `
 model's facts across providers with per-provider overrides. See `yolo config-ref`.
 
 **Ways past a broken patched build.** When your patches or the upstream break, the error lists
-commands that start anyway: run your last good build, build on an older release, or start pi without
-an extension. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
+commands that start anyway: run your last good build, build on an older release, run upstream without
+your patches, or start pi without an extension. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
 
 - A company list that only adds models now shows in Claude Code after Claude's own models.
 - A launch refreshes your shared Claude login when it is close to expiring, and a host service that crashes mid-session is restarted, up to five times in a row.

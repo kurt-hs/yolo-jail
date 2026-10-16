@@ -1,6 +1,6 @@
 package cli
 
-// skippatches.go is YOLO_SKIP_PATCHES (patchrecovery.SkipPatchesEnv; docs/design/patched-build-recovery.md
+// skippatches.go is YOLO_SKIP_PATCHES (patchrecovery.SkipPatchesEnv; docs/reference/patched-forks.md §8.5
 // §6.5): for a covered patched fork or patched extension, this run delivers its UPSTREAM BUILD — the
 // upstream's newest list entry, as the fork's follow rule picks it, built with no series under the
 // fork's own build recipe — in the series' place.

@@ -1,6 +1,6 @@
 package cli
 
-// skippatches_test.go drives YOLO_SKIP_PATCHES (docs/design/patched-build-recovery.md §6.5) through
+// skippatches_test.go drives YOLO_SKIP_PATCHES (docs/reference/patched-forks.md §8.5, "Skip the patches") through
 // its real call sites — a fresh jail launch's fork-build slot and tree arm, `yolo host -- <bin>`,
 // `yolo capture` — and the background advance, which never reads it.
 

@@ -64,8 +64,8 @@ whose nested podman reported `rootless=false`. UNMEASURED: a real rootless host,
 backend, a patched fork's host-floor install with a real sealed build, and the motivating fork's
 migration against the maintainer's own series ([§14](#14-unbuilt-and-unmeasured)). The recovery
 hatches ([§8.5](#85-recovery-hatches) to [§8.7](#87-the-refusal-and-the-hatches-it-lists)) and the
-rules they amend were verified 2026-10-16 against `15c739590`, from the code and its unit tests;
-`YOLO_SKIP_PATCHES` was not built at that commit ([Skip the patches](#skip-the-patches)).
+rules they amend were verified 2026-10-16 against `15c739590`, and `YOLO_SKIP_PATCHES` against
+`4a02ccfc5`, from the code and its unit tests.
 
 A **patched fork** is a forked program (the fork route of
 [`forked-programs-as-packs.md`](../design/forked-programs-as-packs.md)) whose pack names the
@@ -1002,13 +1002,14 @@ check throttle. It says one disclosure line every run,
 `fork pi-fork/pi: running upstream v1.4.0 without its 3 patches`, and if the upstream build itself
 fails the launch refuses, listing the hatches left. An unmodified extension has no patches to skip.
 
-> [!NOTE]
-> Not built at `15c739590`: the refusal already lists `YOLO_SKIP_PATCHES`, but no act reads it yet.
-> This subsection states the ruled design so the build can be checked against it.
+The upstream build is the fork with its series cleared, run through the same advance under its own
+owner key, `<pack>/<bin>#upstream` (`packload.Fork.UpstreamBuild`): its own check record, build lock,
+receipts and reaps, so neither build's move reaps the other's entry. The background advance never
+reads the variable, and under `--update` it says one line and the series is prepared as usual.
 
 ### 8.6 The walk-back
 
-The **walk-back** *(coined in the recovery design, [OQ-PBR2](#why-its-this-way))* is
+The **walk-back** *(coined here)* is
 `YOLO_ALLOW_OLDER_UPSTREAM`: one run tries older upstream releases when the newest does not take the
 series or does not build with it. It replaces nothing [PF-D81](#PF-D81) rules for a run that did not
 ask: without the variable a conflict at the newest still stops the operation.
@@ -1027,7 +1028,7 @@ ask: without the variable a conflict at the newest still stops the operation.
   clean entry is built until one is admitted, within a small fixed budget of builds per key per run
   ([OQ-PBR4](#why-its-this-way)), the newest's own failed build and the base each counting as one.
 - **What it records.** The admitted build becomes the good build, and the record keeps a **walk-back
-  hold** *(coined in the recovery design: the newest entry the series did not take, beside the build
+  hold** *(coined here: the newest entry the series did not take, beside the build
   the walk-back admitted in its place; `CheckRecord.WalkBack`)*. The newest's own failure stays
   recorded as it was.
 - **What it says.** One disclosure line per key, which no flag hides:
@@ -1231,7 +1232,7 @@ each of these is for; this table is the only place the numbers themselves are st
 | Cached-good recovery | `YOLO_USE_CACHED_GOOD=<1 or names>` | `patchrecovery.UseCachedGoodEnv` |
 | The walk-back | `YOLO_ALLOW_OLDER_UPSTREAM=<1 or names>` | `patchrecovery.AllowOlderUpstreamEnv` |
 | The walk-back's build budget | 3 builds per key per run | `walkBackBuilds` (`internal/cli/patchedadvance.go`) |
-| Skip the patches (not built at `15c739590`) | `YOLO_SKIP_PATCHES=<1 or names>` | `patchrecovery.SkipPatchesEnv` |
+| Skip the patches | `YOLO_SKIP_PATCHES=<1 or names>` | `patchrecovery.SkipPatchesEnv` |
 | Skip an extension | `YOLO_SKIP_EXTENSIONS=<1 or names>` | `patchrecovery.SkipExtensionsEnv` |
 | Missing-program bypass | `YOLO_ALLOW_MISSING_PROGRAMS` (any non-empty value) | `paths.AllowMissingProgramsEnv` |
 | A refusal's hatch heading | `Start anyway:` | `patchrecovery.StartAnyway` |
@@ -1359,8 +1360,8 @@ says it is an implementation decision. **Built** was read in the code at `15c739
 | OQ-PBR3 | The walk-back's result sticks until upstream changes ([§8.6](#86-the-walk-back)). *"The walkback's result should stick up until upstream changes and we should try again."* | ✅ |
 | OQ-PBR4 | At most three builds per walk-back ([§8.6](#86-the-walk-back)). *"yes, let's take three, but I think in practice it won't be that bad because we will likely already have had a successful one."* | ✅ |
 | OQ-PBR5 | A hold runs what you have, whatever is recorded ([§3.4](#34-holding-a-patched-fork)). *"Your prior state should have absolutely no bearing on your current state if you turn off updates or whatever."* | ✅ |
-| OQ-PBR6 | Every hatch works for forks and extensions alike, cached-good included ([§8.5](#85-recovery-hatches)). *"All of my opinions here go for anything that could be patched, the PI agent or PI extensions."* | ✅, but for `YOLO_SKIP_PATCHES` ([PBR-R7](#PBR-R7)) |
-| <a id="PBR-R7"></a>PBR-R7 | An opt-in hatch that applies no patches: *"just use upstream directly"* ([Skip the patches](#skip-the-patches)) | — |
+| OQ-PBR6 | Every hatch works for forks and extensions alike, cached-good included ([§8.5](#85-recovery-hatches)). *"All of my opinions here go for anything that could be patched, the PI agent or PI extensions."* | ✅ |
+| <a id="PBR-R7"></a>PBR-R7 | An opt-in hatch that applies no patches: *"just use upstream directly"* ([Skip the patches](#skip-the-patches)) | ✅ |
 | <a id="PBR-R8"></a>PBR-R8 | An opt-in hatch that starts pi without a patched extension ([`pi-extensions.md` §9.1](pi-extensions.md#91-recovery-hatches-for-an-extension)) | ✅ |
 | <a id="PBR-R9"></a>PBR-R9 | A hatch may name a pack: *"Yes, definitely allow naming a specific pack."* ([the value grammar](#the-value-grammar)) | ✅ |
 | <a id="PBR-R10"></a>PBR-R10 | Refusal output is a normal tool's: *"named very clearly and very readable, set off by, you know, a blank line, maybe using colors … I don't want weird prose justifying these decisions in the user output here. Just do something normal like a normal tool would do."* ([§8.7](#87-the-refusal-and-the-hatches-it-lists)) | ✅ |
