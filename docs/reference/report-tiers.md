@@ -728,7 +728,7 @@ Six properties an implementer would otherwise decide by accident:
   not change what `Changes()` means, and the launch gate keeps reading the same struct — one
   collector, both consumers.
 - **Not a remedy for managed-key overwrites**, which is
-  [`config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md)'s.
+  [`config-ownership.md`](config-ownership.md)'s.
 - **Not a change to what an apply writes, nor to the existing loss confirmation.** `--assert` has
   exactly one refusal the report added — a missing declared dependency whose install is declined.
 - **Not a ruling on `yolo check-deps`' future.** The overlap between it and `apply` is recorded

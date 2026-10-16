@@ -1,6 +1,6 @@
 package entrypoint
 
-// hostownednullprecedence_test.go measures ONE case of §11's criterion end to end, because
+// hostownednullprecedence_test.go measures ONE case of config-ownership.md's keys-and-values criterion end to end, because
 // it is the case the unit tests beside it cannot state: a key whose value is `null` AND
 // which a pack layer also declares.
 //
@@ -20,7 +20,7 @@ package entrypoint
 // `assert` is retired (OQ-CO14), but its mechanism, rmw, is not, and a home it wrote into is
 // still switched to `own`, so the baseline is that home (renderAsRetiredAssert). Both halves
 // are asserted below, in that order, so the case cannot be "fixed" by making rmw stop filling
-// defaults. §11 (OQ-CO12) requires the switch to keep every key AND
+// defaults. the keys-and-values criterion (OQ-CO12) requires the switch to keep every key AND
 // EVERY VALUE; a value that changes is a violation under the relaxed criterion exactly as it
 // was under the byte one — the relaxation freed FORMATTING, not values.
 //
@@ -141,7 +141,7 @@ func TestSwitchingToOwnKeepsANullThatALowerLayerDeclares(t *testing.T) {
 				"value. Getting %q here means reinstateAt is treating a layer BELOW the "+
 				"overlay as evidence against the file, through `spoken` "+
 				"(agentcfg.Compose's overlayIdx) or through `present` "+
-				"(agentcfg.reinstateAt). docs/design/config-ownership-and-promotion.md §11, "+
+				"(agentcfg.reinstateAt). docs/reference/config-ownership.md#keys-and-values-invariance, "+
 				"OQ-CO12: the switch keeps every key AND every value.\n%s",
 				pass, v, v, owned)
 		}

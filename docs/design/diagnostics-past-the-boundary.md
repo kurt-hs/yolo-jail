@@ -236,7 +236,7 @@ The wrong-remedy message is worth stating precisely, because the fault was mis-a
 during the investigation and the mis-attribution points at the wrong file. `dropComputedTables`
 (`internal/agentcfg/staterender.go`) reports **nothing at all** — it silently drops keys from
 an adopted residue. The over-drop it was known for was
-fixed on 2026-09-25 by [`CO13`](config-ownership-and-promotion.md#built-2026-09-25--what-shipped):
+fixed on 2026-09-25 by [`CO13`](../reference/config-ownership.md#in-full-tables):
 it now takes whole only a table its derive declares in full. The message naming `mcp_servers` comes from a
 different pass in a different package: `noteDroppedManagedEntries`
 (`internal/entrypoint/prism.go`), which interpolates the dropped table's name into the

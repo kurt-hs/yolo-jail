@@ -43,7 +43,7 @@ import (
 // overlay, selection) for THIS target. In a jail that is the workspace's gitignored .yolo/ —
 // the overlay is per-workspace scope (§4) and the agent never sees it; at the host notch
 // under `host_management: own` it is the state-dir capture store
-// (docs/design/config-ownership-and-promotion.md §6.2). EMPTY at a target that keeps no
+// (docs/reference/config-ownership.md#the-host-capture-store). EMPTY at a target that keeps no
 // capture state, which every caller here already treats as "do not write one".
 //
 // Target-resolved, never hand-built: the three paths below are the file-NAMING half, and the
@@ -546,7 +546,7 @@ func composeStatefulSurface(e *Env, surface manifest.Surface, hostBytes []byte, 
 	surfacePath := t.SurfacePath(surface)
 
 	// THE READ FAILS CLOSED ON ANYTHING BUT ABSENCE, and the three-way distinction is the
-	// whole point (OQ-CO7's D2, docs/design/config-ownership-and-promotion.md §6.3.3):
+	// whole point (OQ-CO7's D2, docs/reference/config-ownership.md#the-adoption-archive):
 	//
 	//	absent                  => nil bytes, an ordinary first render. The common case, and
 	//	                           the one that must never refuse: most homes have no
@@ -740,7 +740,7 @@ func persistStatefulSurface(e *Env, r *statefulRender) error {
 	// in a real home and the overlay holds whatever the user's file held that yolo's layers do
 	// not, a credential included — while the jail's workspace tree stays 0755/0644. ⚠ 0600 is
 	// a FILE mode: a directory without its execute bit cannot be traversed, so even the owner
-	// would get EACCES opening anything in it (§6.2, measured).
+	// would get EACCES opening anything in it (config-ownership.md#the-host-capture-store, measured).
 	target := e.renderTarget()
 	if err := os.MkdirAll(prismSidecarDir(e), target.SidecarDirMode()); err != nil {
 		return err
@@ -1459,7 +1459,7 @@ func retireUnclaimed(prov, previous map[string]string) map[string]string {
 // leaves. Unobservable for the shipped packs — every object-valued key a shipped rmw
 // surface's derive returns is declared — and left so on purpose: whether rmw should assert
 // such a table's leaves or skip it is a ruling, not a guess
-// (docs/design/config-ownership-and-promotion.md, "Built 2026-09-25 — what shipped").
+// (docs/reference/config-ownership.md, "Built 2026-09-25 — what shipped").
 func regenerateManagedTables(e *Env, surface manifest.Surface, obj *jsonx.OrderedMap, computed map[string]any) {
 	for _, to := range sortedKeys(computed) {
 		table, isObj := computed[to].(map[string]any)

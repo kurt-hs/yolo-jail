@@ -220,7 +220,7 @@ func undecidedReasons(reason string) map[string]string {
 // notch is the census KEY: the pair a target's mode policy is a function of. It was the Kind
 // alone until `own`, and the widening is the point rather than a complication — "which
 // mechanisms does the host run?" has two answers and the USER picks one
-// (config-ownership-and-promotion.md §4.1), so a table keyed on Kind could only have held one
+// (docs/reference/config-ownership.md#the-host_management-key), so a table keyed on Kind could only have held one
 // of them and inferred the rest. It stays ENUMERABLE, which is what keeps the drift test
 // (modes_test.go's allNotches) able to name every entry the table owes an answer for.
 type notch struct {

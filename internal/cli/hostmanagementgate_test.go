@@ -10,7 +10,7 @@ import (
 )
 
 // hostManagementFixture builds a scratch home carrying one pack that owns one rmw surface,
-// plus a hand-written user key in that surface's real file — the shape §11's non-regression
+// plus a hand-written user key in that surface's real file — the shape config-ownership.md#keys-and-values-invariance's non-regression
 // criterion is stated over ("an undeclared key is left byte-identical").
 //
 // It returns the home and the surface path. mode is written into the user config verbatim; ""
@@ -86,7 +86,7 @@ func TestHostManagementUnsetIsNoneAndSaysSoOnlyAtTheAct(t *testing.T) {
 //
 // `own` WAS IN THIS LOOP and is deliberately not any more: it refused only because whole-file
 // composition at the host notch was unbuilt, and it is built
-// (docs/design/config-ownership-and-promotion.md §10's last step). What replaces its row here
+// (docs/reference/config-ownership.md#the-host-notch-under-own). What replaces its row here
 // is TestHostManagementOwnApplies, one function down — the same fixture, asserting the
 // opposite outcome, so "own no longer refuses" is a statement something checks rather than a
 // row that quietly disappeared.
@@ -351,11 +351,11 @@ func TestHostManagementOwnApplies(t *testing.T) {
 	}
 }
 
-// TestHostApplyGateIsANoOpUnderHostManagementNone is §4.1's consequence: under `none` there
+// TestHostApplyGateIsANoOpUnderHostManagementNone is a consequence of config-ownership.md#the-host_management-key: under `none` there
 // is no rendered host surface, so `host_apply_on_launch` has nothing to check and the launch
 // check becomes a NO-OP rather than a nag.
 //
-// The home is left deliberately UNAPPLIED with the opt-in ON — the strictest row in §4.3's
+// The home is left deliberately UNAPPLIED with the opt-in ON — the strictest row in host-apply-staleness.md §4.3's
 // table (no TTY, no approval), which without this branch refuses the launch outright and
 // prints a remedy naming a command that itself refuses. So this fails if the branch in
 // hostApplyGate is deleted, and it fails loudly: `false` means a `none` user's `claude` stops

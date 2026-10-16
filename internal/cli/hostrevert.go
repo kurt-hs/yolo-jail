@@ -2,7 +2,7 @@ package cli
 
 // hostrevert.go is the `yolo host apply --revert` call site: withdraw yolo from the config
 // files it has written into the user's real home, on the authority of the provenance record
-// it wrote there (docs/design/config-ownership-and-promotion.md §10 step 3).
+// it wrote there (docs/reference/config-ownership.md#revert).
 //
 // The mechanism is entrypoint.RevertHostRender, which owns the record reading, the
 // eligibility rules and the RMW write — the same walk PruneHostOverlayKeys makes, with a

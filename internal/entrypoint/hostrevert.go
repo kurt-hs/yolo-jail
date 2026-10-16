@@ -2,7 +2,7 @@ package entrypoint
 
 // hostrevert.go is `yolo host apply --revert`: remove from the user's real home every key
 // yolo ASSERTED there, on the authority of the provenance record, and delete the record
-// (docs/design/config-ownership-and-promotion.md §10 step 3).
+// (docs/reference/config-ownership.md#revert).
 //
 // It reverses env-manager plan OQ-1 ("is there a `--revert` verb on the host target? →
 // RESOLVED: NO", 2026-08-01), deliberately and on grounds that ruling did not have: it named
@@ -125,7 +125,7 @@ func RevertHostRender(candidates []*packload.Pack, homeDir string, observe bool)
 	//
 	// NO `host_management` CONTRACT, deliberately: nothing on this walk asks the mode census,
 	// and the provenance record's location does not depend on the contract (`own` keeps it
-	// under host-provenance/, §6.2, where the retired `assert` kept it). That independence is
+	// under host-provenance/, config-ownership.md#the-host-capture-store, where the retired `assert` kept it). That independence is
 	// what lets the CLI run a revert under `none` on a home `assert` wrote into (OQ-CO14). A
 	// revert is an rmw-shaped operation — it exists because rmw cannot express removal. Under
 	// `own` a composed surface withdraws a dropped key by regenerating without it, and the CLI
@@ -266,7 +266,7 @@ func withdrawHostSurface(e *Env, s manifest.Surface, observe bool, out *HostReve
 		}
 	}
 	// THE FILE IS NOT DELETED even when every key in it was yolo's and it is now empty.
-	// Deletion is the host notch's one legitimate asymmetry (§6.3), and an empty object
+	// Deletion is the host notch's one legitimate asymmetry (config-ownership.md#deletion-and-adoption), and an empty object
 	// is recoverable by hand while a deleted file is not — so a revert that emptied a
 	// surface leaves `{}` rather than guessing that yolo created the file. That is why an
 	// empty declared default stays (keptWhyShape): the file left behind has to be one

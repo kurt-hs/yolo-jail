@@ -2,7 +2,7 @@ package cli
 
 // hostownedreset_test.go pins host-side `yolo config reset` and `yolo config capture` across
 // the two `host_management` values, the unset key and the retired `"assert"`
-// (docs/design/config-ownership-and-promotion.md §6.1, §6.3.3, OQ-CO3, OQ-CO14).
+// (docs/reference/config-ownership.md#the-host-notch-under-own, OQ-CO3, OQ-CO14).
 //
 // # Why `own` unlocks reset, and why that is not parity
 //
@@ -10,7 +10,7 @@ package cli
 // surface to its pure render. Without the truncation the sequence is reset → no baseline →
 // adopt, and adoption puts back exactly the edits the user asked to discard — reset as a
 // silent no-op. So an owned home whose reset refused would have an adoption path with nothing
-// to discard against, which is why §10's `own` step lands the two together.
+// to discard against, which is why the `own` build step landed the two together.
 //
 // Under `none` the refusal stays: the guard's premise is a file yolo does not own in this
 // context, and that contract is that premise. It is also the unset key's since the `assert`
@@ -621,7 +621,7 @@ func TestOwnedCaptureVerbCapturesAHostFileAsTheApplyRendersIt(t *testing.T) {
 // — the autonomous posture — whose own docstring says "The host path calls
 // SurfacesFor(false)". Printing a pack's autonomous declarations at either notch is harmless;
 // composing them into a real ~/.claude/settings.json is the leak the 2026-08-01
-// autonomy-as-notch-policy ruling exists to prevent (§4.2), and which
+// autonomy-as-notch-policy ruling exists to prevent (config-ownership.md#invariants), and which
 // internal/entrypoint/hostrender.go states in as many words where it resolves the same
 // posture from the Target's Profile.
 //

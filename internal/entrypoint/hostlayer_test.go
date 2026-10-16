@@ -1,7 +1,7 @@
 package entrypoint
 
 // hostlayer_test.go pins the FAIL-CLOSED host-layer read (OQ-CO10,
-// docs/design/config-ownership-and-promotion.md §5.1.1) and the one carve-out it has.
+// docs/reference/config-ownership.md#the-read-in-host-layer) and the one carve-out it has.
 //
 // The four cases differ in ONE byte of environment and nothing else — same pack, same
 // absent /ctx file, same home — which is the point: what decides whether a jail refuses is

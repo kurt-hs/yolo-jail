@@ -1,8 +1,8 @@
 package cli
 
 // configpromote.go is `yolo config promote` — the way OUT of capture
-// (docs/design/config-ownership-and-promotion.md §5), and the verb a shipped refusal
-// message has advised in English prose since before it existed (§1 P4).
+// (docs/reference/config-ownership.md#promotion), and the verb a shipped refusal
+// message has advised in English prose since before it existed (config-ownership.md#principles).
 //
 // A key typed inside a jail has had exactly one exit until now: `yolo config reset`, which
 // DISCARDS it. Promotion is the other one — it takes the captured key and DECLARES it,
@@ -11,7 +11,7 @@ package cli
 //
 // # This file is the CLASSIFICATION. configpromotewrite.go is the write.
 //
-// §10 splits the verb in two because the halves have different risk: the analysis writes
+// The verb is split in two because the halves have different risk: the analysis writes
 // nothing and is useful on its own, and the write is the dangerous part. The split survives
 // in the code — everything here answers "what would happen", and nothing here touches a
 // file.
@@ -21,7 +21,7 @@ package cli
 // docs/reference/report-tiers.md's first forbidden thing, and here it is load-bearing
 // twice over rather than a convention inherited: the values in question are CAPTURED
 // CONFIG, this repo has one measured in a live overlay
-// (`mcp.tavily.environment.TAVILY_API_KEY`, §5.3), and a plan is the output most likely to
+// (`mcp.tavily.environment.TAVILY_API_KEY`, config-ownership.md#what-promote-does), and a plan is the output most likely to
 // be pasted into a bug report or handed to another agent. The classification below can
 // therefore say a key is sensitive, and name the key path that made it so, without ever
 // being the thing that leaks it. `yolo config diff` still prints values — it is the
@@ -29,7 +29,7 @@ package cli
 //
 // # Host-side only, and for a boundary rather than a preference
 //
-// §5.5: the capture sidecars are in the workspace (a host directory either way), but the
+// config-ownership.md#where-promote-runs: the capture sidecars are in the workspace (a host directory either way), but the
 // DESTINATIONS are under the host's `~/.config/yolo-jail/`, which no jail may write — a
 // manifest is an input to composition, so an agent that could rewrite one in-jail could
 // grant its own pack a host file on the next boot. refuseInJailPromote is the mirror of
@@ -65,13 +65,13 @@ const (
 	// promotionPromotable: the key survives every mechanical check and would be written.
 	promotionPromotable = "promotable"
 	// promotionRedundant: identical to yolo's own last render, so declaring it would
-	// declare a value the layers already produce (§5.2 step 2, the free and common case).
+	// declare a value the layers already produce (step 2 of config-ownership.md#what-promote-does, the free and common case).
 	promotionRedundant = "redundant"
 	// promotionDead: an owning layer overrides it where it already sits, and the
 	// destination is LOWER in the fold, so the move cannot help it.
 	promotionDead = "dead"
 	// promotionSensitive: the key, or a key nested under it, is named like a credential.
-	// Refused, never redacted (§5.3) — see configpromotesensitive.go.
+	// Refused, never redacted (config-ownership.md#what-promote-does) — see configpromotesensitive.go.
 	promotionSensitive = "sensitive"
 	// promotionEnvironmentBound: the value is an artifact of the jail it was set in — it
 	// names the workspace root or the jail home. Refused rather than rewritten, and reported
@@ -79,7 +79,7 @@ const (
 	// "looks like a credential" when it holds /workspace is a wrong answer they cannot act on.
 	promotionEnvironmentBound = "environment-bound"
 	// promotionOutranked: a later-folding pack's config-overlay sets the same key, so the
-	// promoted value would lose at the destination (§5.4's "wins after" half).
+	// promoted value would lose at the destination (config-ownership.md#precedence--promotion-moves-a-key-down-the-stack's "wins after" half).
 	promotionOutranked = "outranked"
 	// promotionNoPackOwner: the surface has no owner among the loaded packs, so a
 	// config-overlay naming it would be INERT — packoverlay's ruling R2 reports such an
@@ -91,7 +91,7 @@ const (
 )
 
 // promoteFlagForce is the per-key override for a SENSITIVE refusal. It is not
-// promoteFlagAccept's synonym and the two stay separate flags (§5.7): --force overrides a
+// promoteFlagAccept's synonym and the two stay separate flags (config-ownership.md#what-promote-does): --force overrides a
 // REFUSAL, --accept-promotion confirms an INTENDED write. Collapsing them is how --force
 // becomes the flag people paste without reading, which for this verb means pasting a
 // credential into a pack.
@@ -169,7 +169,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 			o.dest = strings.TrimPrefix(a, "--to=")
 		case a == promoteFlagForce:
 			// NAMED KEYS, ALWAYS. A bare --force would be the paste-without-reading flag
-			// §5.7 refuses: the user has to type the key whose credential check they are
+			// config-ownership.md#what-promote-does refuses: the user has to type the key whose credential check they are
 			// overriding, so the act is specific to that key and to this run.
 			if !needsValue(i, a) {
 				fmt.Fprintf(errw, "  %s overrides a refusal for the keys it NAMES "+
@@ -273,7 +273,7 @@ func configPromote(t configTarget, args []string, out, errw io.Writer, color boo
 	return applyPromotion(plan, o, pr, errw)
 }
 
-// refuseInJailPromote is §5.5's boundary: promote is a HOST-side verb, and in a jail it
+// refuseInJailPromote is config-ownership.md#where-promote-runs's boundary: promote is a HOST-side verb, and in a jail it
 // refuses and prints the host command. The mirror image of refuseHostSideWrite, which
 // refuses host-side capture/reset and points into the jail.
 //
@@ -313,7 +313,7 @@ type promotePlan struct {
 	Agent string
 	Dest  promoteDest
 	// Surfaces carries one entry per capture surface INSPECTED, including those whose
-	// overlay held nothing: "no captures here" is an answer, and §5.6 requires it be said
+	// overlay held nothing: "no captures here" is an answer, and config-ownership.md#degenerate-inputs requires it be said
 	// rather than left as silence.
 	Surfaces []promoteSurface
 	// Unresolved names configured packs this run could not read (a git pack the pack store
@@ -355,7 +355,7 @@ type promoteKey struct {
 	Reason string
 	// Forced records that a sensitive key was promoted because --force named it, so the
 	// report and the document both say the override happened rather than showing a clean
-	// promotion (§5.3).
+	// promotion (config-ownership.md#what-promote-does).
 	Forced bool
 	// value is the captured value the writer declares. Lower-case: it is NOT part of any
 	// view, and the document type has no field for it.
@@ -365,7 +365,7 @@ type promoteKey struct {
 // promotable reports whether this key would be written.
 func (k promoteKey) promotable() bool { return k.Disposition == promotionPromotable }
 
-// buildPromotePlan runs §5.2 steps 1-4: read the overlay, drop redundant and dead keys,
+// buildPromotePlan runs steps 1-4 of config-ownership.md#what-promote-does: read the overlay, drop redundant and dead keys,
 // classify the rest, and check each survivor still wins at the destination. It writes
 // nothing. rc != 0 means a MISUSE the caller returns (a named key nothing captured, an
 // agent with no capture surfaces).
@@ -411,7 +411,7 @@ func buildPromotePlan(t configTarget, o promoteOptions, dest promoteDest, errw i
 		}
 		plan.Surfaces = append(plan.Surfaces, ps)
 	}
-	// §5.6: `--keys` naming a key nothing captured is an ERROR, not an empty promotion. A
+	// config-ownership.md#degenerate-inputs: `--keys` naming a key nothing captured is an ERROR, not an empty promotion. A
 	// user who misspells a key must not be told "nothing to do" — that reads as "already
 	// promoted".
 	var missing []string
@@ -441,7 +441,7 @@ func filterPromoteKeys(keys []promoteKey, selected map[string]bool) []promoteKey
 	return out
 }
 
-// promoteNonCaptureHint names the §5.6 reason when the surface the user asked for EXISTS
+// promoteNonCaptureHint names the config-ownership.md#degenerate-inputs reason when the surface the user asked for EXISTS
 // but keeps no overlay — `rmw`, `computed` and `unrendered` surfaces write no sidecar, so
 // there is nothing to promote and "no capture surfaces" alone would read as a typo.
 func promoteNonCaptureHint(agent, surface string) string {
@@ -489,7 +489,7 @@ func promoteListNote(f captureFile) string {
 		"config-list path are not keys; `yolo config diff` lists them", n, unit, strings.Join(named, ", "))
 }
 
-// classifyPromoteSurface is §5.2 steps 1-4 for ONE surface.
+// classifyPromoteSurface is steps 1-4 of config-ownership.md#what-promote-does for ONE surface.
 func classifyPromoteSurface(t configTarget, s manifest.Surface, o promoteOptions, dest promoteDest, fold promoteFold) promoteSurface {
 	ps := promoteSurface{Surface: s}
 	// Every store file through the target's opener (wsOverlayFile): host-side, where promote
@@ -563,7 +563,7 @@ func unownedSurfaceReason(s manifest.Surface) string {
 	return "declared by a pack that is not in `packs` — select that pack and re-run"
 }
 
-// classifyPromoteKey decides ONE key. The order is §5.2's and it is load-bearing: the free
+// classifyPromoteKey decides ONE key. The order is config-ownership.md#what-promote-does's and it is load-bearing: the free
 // mechanical drops come first, so a redundant key is never reported as a credential and a
 // dead key is never reported as losing precedence — each key gets the reason that actually
 // stopped it.
@@ -608,7 +608,7 @@ func classifyPromoteKey(s manifest.Surface, st overlayKeyState, value any, dead 
 	return k
 }
 
-// promotableReason is what a promotable key's line says. It carries the JUDGEMENT §5.3
+// promotableReason is what a promotable key's line says. It carries the JUDGEMENT config-ownership.md#what-promote-does
 // leaves to a human — mechanically this key is fine, and whether it BELONGS in a pack
 // shared with a team is not a question any heuristic should pretend to answer.
 func promotableReason(st overlayKeyState, dest promoteDest) string {
@@ -681,10 +681,10 @@ func (f promoteFold) ownedByPack(s manifest.Surface) bool {
 // outrankedBy names the pack whose config-overlay would beat this key once it is declared
 // at dest, or "" when the promotion wins.
 //
-// This is §5.4's "wins AFTER" half; the "wins now" half is the dead check above, which is
+// This is config-ownership.md#precedence--promotion-moves-a-key-down-the-stack's "wins AFTER" half; the "wins now" half is the dead check above, which is
 // the same question asked of the layers that outrank the capture overlay itself. Both are
 // pure functions of the layer set, and a key that fails either is refused BY NAME with the
-// winning layer rather than promoted with a warning (§5.4).
+// winning layer rather than promoted with a warning (config-ownership.md#precedence--promotion-moves-a-key-down-the-stack).
 func (f promoteFold) outrankedBy(s manifest.Surface, key string, dest promoteDest) string {
 	destIdx, known := f.order[dest.pack]
 	if !known {

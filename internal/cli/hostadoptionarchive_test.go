@@ -1,7 +1,7 @@
 package cli
 
 // hostadoptionarchive_test.go is the CROSS-PACKAGE half of OQ-CO7's adoption archive
-// (docs/design/config-ownership-and-promotion.md §6.3.3): the three facts that are true of the
+// (docs/reference/config-ownership.md#the-adoption-archive): the three facts that are true of the
 // archive only in relation to code outside internal/entrypoint, and that a test inside it
 // therefore cannot state.
 //

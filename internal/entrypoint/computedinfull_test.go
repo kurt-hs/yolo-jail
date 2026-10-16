@@ -1,6 +1,6 @@
 package entrypoint
 
-// computedinfull_test.go pins CO13 (docs/design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided)
+// computedinfull_test.go pins CO13 (docs/reference/config-ownership.md#co13)
 // end to end, through the SHIPPED packs and the production call sites — the boot loop
 // (ConfigurePackByName → renderPackSet → renderPlannedSurface) and the host notch
 // (RenderHostPack → hostTableKeys). The engine-level halves are agentcfg's; these are the ones that fail if a

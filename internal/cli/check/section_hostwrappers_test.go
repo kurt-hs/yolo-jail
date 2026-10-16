@@ -303,7 +303,7 @@ func TestHostWrappersWarnsOnEmptyDir(t *testing.T) {
 }
 
 // TestHostManagementRowWarnsWhenTheApplyCannotRun is why this row rides the WRAPPERS section
-// rather than one of its own (docs/design/config-ownership-and-promotion.md §4.1).
+// rather than one of its own (docs/reference/config-ownership.md#the-host_management-key).
 //
 // `none` refuses `yolo host apply`, and that same command is what GENERATES the wrappers this
 // section is about — so a home with host_wrappers on and host_management "none" has a wrapper
@@ -315,7 +315,7 @@ func TestHostWrappersWarnsOnEmptyDir(t *testing.T) {
 //
 // ⚠ `own` WAS IN THIS LOOP and is deliberately not any more: it warned only because the apply
 // refused while whole-file host composition was unbuilt, and it is built now
-// (docs/design/config-ownership-and-promotion.md §10's last step). Its replacement is
+// (docs/reference/config-ownership.md#the-host-notch-under-own). Its replacement is
 // TestHostManagementRowPassesUnderOwn — the same fixture asserting the opposite outcome, so
 // "own no longer warns" is something a test says rather than a row that quietly vanished.
 func TestHostManagementRowWarnsWhenTheApplyCannotRun(t *testing.T) {

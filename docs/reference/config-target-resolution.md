@@ -22,7 +22,7 @@ summary: "One resolved config target per `yolo config` invocation — notch, wor
 **Status:** CURRENT as of 2026-09-18, verified against `434b2c2e`. The `macos-user` label and
 the end-to-end test of the fifth disposition were added on 2026-09-27, in the change that builds
 them, and no later commit has verified those passages. The `assert` passages were rewritten on
-2026-10-05 in the change that retires it ([OQ-CO14](../design/config-ownership-and-promotion.md#oq-co14)).
+2026-10-05 in the change that retires it ([OQ-CO14](config-ownership.md#oq-co14)).
 
 **MEASURED:** the resolution and its disclosure, the marker and the unknown states, the
 presence answer, `--at`, the preview's host layer in every disposition, and the host-side
@@ -46,7 +46,7 @@ runtime bind a managed home's file. See
 
 > [!IMPORTANT]
 > **`host_management: assert` is retired** (ruled 2026-09-20, built 2026-10-05 as
-> [OQ-CO14](../design/config-ownership-and-promotion.md#oq-co14) ruled). `none` and `own` remain,
+> [OQ-CO14](config-ownership.md#oq-co14) ruled). `none` and `own` remain,
 > `none` is the unset answer, and a config still saying `"assert"` is refused by name. A home
 > `assert` wrote into keeps its files and its provenance mark. Why, and the part most easily got
 > wrong (why the DEFAULT had to move with the value), are in
@@ -87,7 +87,7 @@ the baseline they diverge from; the state machine that writes it is
 file a pack declares; the schema is [`pack-system.md`](pack-system.md).
 
 **Reads with:**
-[`../design/config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md)
+[`config-ownership.md`](config-ownership.md)
 (the write side: ownership is declared in one user-scope key, and `host_management` decides
 whether a host home keeps a capture store at all);
 [`../design/host-render-target.md`](../design/host-render-target.md)
@@ -368,7 +368,7 @@ adoption archive, which is not a layer and must not become one.
 > is unset, so the posture says `none`, while its file holds keys yolo wrote — and a posture test
 > would compose them into every jail as the user's own, the laundering the `retired:` provenance
 > label exists to stop. The ruling keeps the mark for exactly that home
-> ([OQ-CO14](../design/config-ownership-and-promotion.md#oq-co14), read from the ruling).
+> ([OQ-CO14](config-ownership.md#oq-co14), read from the ruling).
 
 ### How it travels
 
@@ -513,9 +513,9 @@ running both commands rather than by comparing two lists.
   surface, run in observe, so it records what the next `yolo host apply` would rather than
   composing the capture the jail's way — which its first build did, erasing a captured
   `permissions.deny` the apply keeps
-  ([`OQ-CO3`](../design/config-ownership-and-promotion.md#13-decision-ledger), ruled
+  ([`OQ-CO3`](config-ownership.md#oq-co3), ruled
   yes-under-own 2026-09-10; the mechanism and its measurement are in
-  [§6.2](../design/config-ownership-and-promotion.md#62-host-capture-and-the-privacy-ruling-it-has-to-answer-to)).
+  [the host capture store](config-ownership.md#the-host-capture-store)).
 - **No new store, no new sidecar, no new file format, and no migration.** Every path here is
   derived at read time.
 - **No `guest` notch.** `--at guest` is refused by name, with the same sentence `apply` prints.
@@ -563,14 +563,14 @@ and its original anchor, because they are cited from code comments across `inter
 `own`, and **`none` becomes the unset answer**. The maintainer's reason, verbatim: *"shouldn't
 they just be a single promote away from having their configs managed correctly? assert is just
 too fragile in general."* It **reverses**
-[`OQ-CO1`](../design/config-ownership-and-promotion.md#13-decision-ledger), whose recorded
+[`OQ-CO1`](config-ownership.md#oq-co1), whose recorded
 reasoning weighed MIGRATION cost and never MECHANISM cost; `yolo config promote` declares a
 captured key into the conventional local pack and clears only that key
 (`TestPromoteDeclaresTheKeyLocallyAndClearsOnlyThatKey`), so the escalation it feared is not
 forced.
 
 **What it does to an installation, 2026-10-05**
-([OQ-CO14](../design/config-ownership-and-promotion.md#oq-co14)), as built:
+([OQ-CO14](config-ownership.md#oq-co14)), as built:
 
 - A config that says `"assert"` is **refused by name**, naming `none` and `own`
   (`config.HostManagementRetired`): by validation (so a jail launch and `yolo check`), and by

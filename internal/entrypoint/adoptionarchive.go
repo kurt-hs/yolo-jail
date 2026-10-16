@@ -1,7 +1,7 @@
 package entrypoint
 
 // adoptionarchive.go is OQ-CO7's ONE-TIME ADOPTION ARCHIVE
-// (docs/design/config-ownership-and-promotion.md §6.3.3): before the first render that
+// (docs/reference/config-ownership.md#the-adoption-archive): before the first render that
 // composes a surface file WHOLESALE out of what that file already holds, the pre-existing
 // content is copied once, so a key the adoption drops is still somewhere.
 //
@@ -55,7 +55,7 @@ import (
 //     deliberately: the trigger is ADOPTION, not "a render that might drop keys". Widening it
 //     to the second makes this the per-apply snapshot with a retention policy the ruling
 //     explicitly refuses to be, and a one-per-surface slot is the wrong shape for a sidecar
-//     that can be lost more than once. It is live residue, recorded with the rest in §6.3.3.
+//     that can be lost more than once. It is live residue, recorded with the rest in config-ownership.md#known-gaps.
 //   - Some bytes to archive. An ABSENT file is the overwhelmingly common case (every surface
 //     of a fresh jail home) and there is nothing to lose; an EMPTY one is the same answer for
 //     the same reason — a user restoring either gets the same result, and an archive of zero
@@ -67,7 +67,7 @@ import (
 //
 // ⚠ THE THIRD CONDITION IS NOT "WOULD THE RENDER CHANGE THE FILE?", which is the attractive
 // predicate and the wrong one. That one (r.text() versus r.current, the writer's own bytes)
-// is available here for free, and it would mean the `assert` -> `own` switch §11 governs —
+// is available here for free, and it would mean the `assert` -> `own` switch config-ownership.md's keys-and-values criterion governs —
 // the transition this net exists for — leaves no archive at all, because adoption reproduces
 // the file it just read. It makes the net conditional on the render being CORRECT, deploying
 // only when adoption is believed to have lost nothing, and the archive exists precisely

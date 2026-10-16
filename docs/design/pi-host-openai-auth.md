@@ -735,7 +735,7 @@ a macos-user launch hands it only to the services and doorways it runs outside t
 - **A host `-p` moving pi's file-held selection.** That is [OQ-MM5](model-lists-and-pickers.md#16-decision-ledger)'s
   subject; E would enable it and nothing here requires it.
 - **The `host_management` default.** Retiring `assert` moves the default to `none`
-  ([`config-ownership-and-promotion.md`](config-ownership-and-promotion.md)). That is not built, and
+  ([`config-ownership.md`](../reference/config-ownership.md)). That is not built, and
   no option here depends on it.
 - **macos-user.** The directory map says that backend's merge lands in a sidecar; this doc changes
   nothing there.

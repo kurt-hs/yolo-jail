@@ -820,8 +820,7 @@ func TestComposeStatefulFirstMigrationDropsComputedTableWholesale(t *testing.T) 
 }
 
 // TestComposeStatefulFirstMigrationKeepsResidueUnderAnEmptyComputedTable is the
-// 2026-09-20 ruling at its narrowest (docs/design/config-ownership-and-promotion.md
-// §6.3.1): the adoption drop rests on the leaves yolo REGENERATED, and a computed
+// 2026-09-20 ruling at its narrowest (docs/reference/config-ownership.md#adoption-is-capture-then-regenerate): the adoption drop rests on the leaves yolo REGENERATED, and a computed
 // table that is present-and-EMPTY regenerated none, so it may claim none of the
 // file's.
 //
@@ -880,8 +879,7 @@ func TestComposeStatefulFirstMigrationKeepsResidueUnderAnEmptyComputedTable(t *t
 }
 
 // TestComposeStatefulFirstMigrationKeepsTheUnassertedLeavesOfAPartlyAssertedTable is
-// CO13's data-loss case at the engine (docs/design/config-ownership-and-promotion.md
-// §6.3.2): a NON-EMPTY computed table the derive did NOT declare it regenerates in full
+// CO13's data-loss case at the engine (docs/reference/config-ownership.md#what-adoption-does-not-cover): a NON-EMPTY computed table the derive did NOT declare it regenerates in full
 // claims only the leaves it names, so the rest of the file's table is adopted.
 //
 // This is claude/settings' `env`. yolo asserts ENABLE_LSP_TOOL and can never own the rest

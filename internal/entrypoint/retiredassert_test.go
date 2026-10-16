@@ -1,8 +1,8 @@
 package entrypoint
 
 // retiredassert_test.go builds a home AS THE RETIRED `assert` LEFT IT, for the tests whose
-// subject is what happens to such a home after the retirement (config-ownership-and-promotion.md
-// §4.5, OQ-CO14 face 2): switching it to `own`, reading it into a jail, reverting it.
+// subject is what happens to such a home after the retirement (docs/reference/config-ownership.md#the-retired-assert,
+// OQ-CO14 face 2): switching it to `own`, reading it into a jail, reverting it.
 //
 // `host_management: "assert"` is gone, and with it render.OwnershipAssert and its census, so no
 // production entry renders under it any more. What it DID is still exactly expressible, because
