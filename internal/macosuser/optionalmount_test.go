@@ -77,3 +77,21 @@ func TestARequiredContextMountTheSandboxCannotReachStillRefuses(t *testing.T) {
 		t.Errorf("no refusal:\n%s", buf.String())
 	}
 }
+
+// THE SAFETY PREDICATES WIN OVER RULE ORDER. A link refused first for a delivery reason (a jail
+// path outside /ctx, a Data-volume spelling) must still be marked Unsafe when a later safety rule
+// holds, because "optional" skips only the delivery reasons. Both cases are the review's
+// reproductions on 309018a70.
+func TestAnUnsafeSourceIsUnsafeWhicheverRuleRefusesItFirst(t *testing.T) {
+	s := DarwinContextSiting()
+	for _, l := range []ContextLink{
+		{Dest: "/data", Source: "/Users", Optional: true, Dir: true},
+		{Dest: "/ctx/staged", Source: "/System/Volumes/Data" + stateDir, Optional: true, Dir: true},
+		{Dest: "/ctx/sbx", Source: "/System/Volumes/Data" + SandboxHome() + "/x", Optional: true, Dir: true},
+	} {
+		got := SiteContextLinks(s, "/Users/Shared/yolo/proj", []ContextLink{l}, nil)
+		if len(got) != 1 || !got[0].Unsafe {
+			t.Errorf("%s → %s: refusals %+v, want one marked Unsafe", l.Source, l.Dest, got)
+		}
+	}
+}

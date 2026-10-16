@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
+	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -222,4 +223,61 @@ func TestMacosUserBriefsNoSkippedOptionalMount(t *testing.T) {
 	if got := o.briefedCtxMounts("macos-user", "/var/yolo-jail/ctx/x", cfg, nil); len(got) != 0 {
 		t.Errorf("briefed %+v, want nothing: the optional mount was skipped", got)
 	}
+}
+
+// A DELIVERED OPTIONAL MOUNT IS BRIEFED AS "optional; may be absent": on macos-user the sandbox
+// account's access check runs after the briefing is written and may still skip it. Through the
+// briefing's decider and the renderer both, so deleting either half fails here.
+func TestTheBriefingMarksAnOptionalMountMayBeAbsent(t *testing.T) {
+	lib := filepath.Join(floortest.ResolvedTemp(t), "lib")
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := newConfig("mounts", []any{optionalRO(lib, "/ctx/lib")})
+	o := &Options{Workspace: t.TempDir(), Getenv: func(string) string { return "" }}
+	o.macosCtxSiting = sitingWritable(t, "")
+	const dir = "/var/yolo-jail/ctx/x"
+	got := o.briefedCtxMounts("macos-user", dir, cfg, nil)
+	if len(got) != 1 || !got[0].Optional {
+		t.Fatalf("briefed %+v, want one optional entry", got)
+	}
+	body := jailcontent.BriefingContent(jailcontent.BriefingInput{Workspace: "/Users/Shared/yolo/p",
+		Mechanism: "macos-user", ContextDir: dir, ContextMounts: got})
+	if want := "- `" + dir + "/lib` (optional; may be absent; read-only;"; !strings.Contains(body, want) {
+		t.Errorf("the briefing lacks %q:\n%s", want, body)
+	}
+}
+
+// THE REVIEW'S REPRODUCTIONS, through Run(): an optional entry refused first for a delivery reason
+// (an `at` outside /ctx; a Data-volume spelling) but unsafe underneath still refuses the launch.
+func TestMacosUserRefusesAnOptionalUnsafeMountWhicheverRuleSeesItFirst(t *testing.T) {
+	t.Run("the users root at an at outside /ctx", func(t *testing.T) {
+		users := floortest.ResolvedTemp(t)
+		ctxLaunchHome(t, `, "mounts": [{"host": "`+users+`", "at": "/data", "mode": "ro", "optional": true}]`)
+		out := runMacosUserExpectingRefusal(t, t.TempDir(), func(o *Options) {
+			s := sitingWritable(t, "")
+			s.UsersRoot, s.UsersRootAliases = users, nil
+			o.macosCtxSiting = s
+		})
+		if !strings.Contains(out, "it contains every home on this Mac") {
+			t.Errorf("not refused for containing every home:\n%s", out)
+		}
+	})
+	t.Run("the state dir spelled through the Data volume", func(t *testing.T) {
+		data := floortest.ResolvedTemp(t)
+		const state = "/Users/Shared/yolo-staged"
+		src := filepath.Join(data, state)
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ctxLaunchHome(t, `, "mounts": [{"host": "`+src+`", "at": "/ctx/staged", "mode": "ro", "optional": true}]`)
+		out := runMacosUserExpectingRefusal(t, t.TempDir(), func(o *Options) {
+			s := sitingWritable(t, "")
+			s.DataVolume, s.StateDirs = data, []string{state, data + state}
+			o.macosCtxSiting = s
+		})
+		if !strings.Contains(out, "yolo's state directory") {
+			t.Errorf("not refused for overlapping yolo's state directory:\n%s", out)
+		}
+	})
 }

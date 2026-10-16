@@ -7,6 +7,7 @@ package config
 // element.
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +93,37 @@ func TestLoadRWMountsCarriesOptional(t *testing.T) {
 	}
 	if len(rw) != 1 || !rw[0].Optional {
 		t.Fatalf("LoadRWMounts = %+v, want one optional element", rw)
+	}
+}
+
+// A `:optional` STRING SUFFIX is refused as `:rw` is, naming the object form, and the suggestion
+// pasted back in validates.
+func TestAnOptionalStringSuffixIsRefusedWithTheObjectForm(t *testing.T) {
+	src := mountSourceDir(t, "lib")
+	h := newMountsHost(t)
+	h.user(t, `{"mounts": ["`+src+`:/ctx/lib:optional"]}`)
+	errs, _ := h.validate(t)
+	want := `{"host": "` + src + `", "at": "/ctx/lib", "mode": "ro", "optional": true}`
+	if got := joined(errs); !strings.Contains(got, `ends in ":optional"`) || !strings.Contains(got, want) {
+		t.Fatalf("errors = %q, want the :optional refusal suggesting %s", errs, want)
+	}
+	h.user(t, `{"mounts": [`+want+`]}`)
+	if errs, _ := h.validate(t); len(errs) != 0 {
+		t.Fatalf("the suggestion does not validate: %q", errs)
+	}
+}
+
+// OptionalSpelling is JSON, not Go syntax: a host path with a quote, a backslash or a control
+// byte still yields a line encoding/json parses back to the same path.
+func TestOptionalSpellingIsValidJSON(t *testing.T) {
+	host := "/tmp/a\"b\\c\x01d e"
+	var back struct {
+		Host     string `json:"host"`
+		Optional bool   `json:"optional"`
+	}
+	s := ContextMount{Host: host}.OptionalSpelling()
+	if err := json.Unmarshal([]byte(s), &back); err != nil || back.Host != host || !back.Optional {
+		t.Fatalf("OptionalSpelling = %s: %v, parsed %+v", s, err, back)
 	}
 }
 

@@ -644,17 +644,21 @@
     does not exist is skipped with a warning, as on every backend.
     [bold]"optional": true[/bold] (object entries only; default false) marks an entry
     this backend may not be able to deliver.  Where a required entry would
-    refuse the launch — macos-user can't reach the folder, Apple Container
-    can't make it read-only, the macOS Podman Machine doesn't share it — an
-    optional one is skipped with one line and the launch goes on:
+    refuse the launch (macos-user can't reach the folder; the macOS Podman
+    Machine doesn't share it) or be skipped with a warning (a read-only entry
+    on an Apple Container older than 1.1.0; a source that does not exist), an
+    optional one is skipped with one plain line and the launch goes on:
       {"host": "~/.local/share/yolo-jail/logs", "at": "/ctx/host-yolo-logs",
        "mode": "ro", "optional": true}
       skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (macos-user can't reach a folder inside a home)
-    A missing source is skipped the same way, with no warning.  `yolo check`
-    lists what this backend will skip as information.  Optional never
-    softens a safety refusal: a read-write source in the refused set above,
-    a source containing every home, or one in yolo's own state directory
-    still refuses, as does a jail-path collision.
+    The agent's briefing marks an optional entry "may be absent".  `yolo
+    check` lists what this backend will skip as information.  A string entry
+    has no optional form: a ":optional" suffix is a `yolo check` error naming
+    the object form.  Optional never softens a safety refusal: a read-write
+    source in the refused set above, a source the broker mount fence refuses,
+    and on macos-user a source containing every home, inside the sandbox
+    account's home, or in yolo's own state directory all still refuse, as
+    does a jail-path collision.
 
   [bold]cache_relocations[/bold] (object): Put a jail cache subdir on other storage.
     Keys are cache SUBDIR NAMES, not paths — a single path segment, no "/",

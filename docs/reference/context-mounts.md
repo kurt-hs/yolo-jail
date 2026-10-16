@@ -181,7 +181,12 @@ skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (m
   (`paths.WritableSourceScopeBreach` included), the broker mount fence, a `yolo check` destination
   collision, or the three macos-user siting reasons marked `Unsafe`: a source containing every home,
   inside the sandbox account's home, or overlapping yolo's state directory. Those refuse an
-  optional element exactly as a required one.
+  optional element exactly as a required one, and they are asked on their own whenever a link is
+  refused at all (`ContextSiting.unsafeVerdict`, over every alias spelling of the source), so a
+  delivery rule that happens to refuse first, such as an `at` outside `/ctx` or a Data-volume
+  spelling, cannot hide one.
+- **The string form has no optional spelling:** a `:optional` suffix is refused, as `:rw` is,
+  with the object form to paste.
 - **A missing source** is a skip line for an optional element and no validation warning, so the
   launch says it once; a required element keeps its warning and file location, unchanged
   ([CX-D24](#CX-D24), [CX-D29](#CX-D29)).
@@ -193,8 +198,9 @@ skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (m
 - **The macos-user refusal** now reads as a headline, the refused mounts with their brief reasons,
   then the fixes: copy the folder under the shared root, mark it optional (with the exact JSON for
   each element that may be), remove it, or use a container runtime.
-- **Known gap:** the macos-user briefing is composed before the DAC preflight runs, so an optional
-  element skipped by the preflight alone may still be listed there. The skip line names it.
+- **The briefing marks every optional element "optional; may be absent".** The macos-user
+  briefing is composed before the DAC preflight runs, so an element skipped by the preflight alone
+  is still listed there; the marker and the launch's skip line say it may not be present.
 
 ### Where a read-write mount may be declared
 
