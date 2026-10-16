@@ -585,9 +585,9 @@ func TestMacosUserRefusesADeclaredConfigMountItCannotDeliver(t *testing.T) {
 
 	for _, want := range []string{
 		"Refusing the macos-user launch",
-		"/ctx/ref-repo",               // the bare-path entry, at the destination it would have taken
-		"/ctx/logs",                   // the host:container entry, at the one it named
-		"which the sandbox may write", // the REASON, per entry — not one sentence for all
+		"/ctx/ref-repo", // the bare-path entry, at the destination it would have taken
+		"/ctx/logs",     // the host:container entry, at the one it named
+		"macos-user can't mount read-only where the sandbox writes", // the REASON, per entry — not one sentence for all
 		"container runtime",
 		macosuser.SharedRootDefault(), // where to move it
 	} {
@@ -612,7 +612,7 @@ func TestMacosUserRefusesAReadWriteMountOutsideTheSharedRootAndADryRunToo(t *tes
 		o.DryRun = true
 		deliveringSiting(t, "/Users/Shared/yolo")(o)
 	})
-	for _, want := range []string{"/ctx/data (read-write)", "a read-write source must sit under /Users/Shared/yolo"} {
+	for _, want := range []string{"/ctx/data (read-write", "macos-user writes only under /Users/Shared/yolo"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refusal did not say %q:\n%s", want, out)
 		}
@@ -634,7 +634,7 @@ func TestMacosUserRefusesASourceInsideAHome(t *testing.T) {
 		s.UsersRoot, s.UsersRootAliases = users, nil
 		o.macosCtxSiting = s
 	})
-	if want := "is inside the home folder " + filepath.Join(users, "alice"); !strings.Contains(out, want) {
+	if want := notes + " → /ctx/notes (read-only, `mounts`): macos-user can't reach a folder inside a home"; !strings.Contains(out, want) {
 		t.Errorf("the refusal did not say %q:\n%s", want, out)
 	}
 }
@@ -667,7 +667,7 @@ func TestMacosUserRefusesAMountAroundAPackHostFileDestination(t *testing.T) {
 	ctxLaunchHome(t, `, "mounts": ["`+lib+`:/ctx/host-claude"]`)
 
 	out := runMacosUserExpectingRefusal(t, t.TempDir(), deliveringSiting(t, ""))
-	if want := "contains /ctx/host-claude/settings.json, which yolo's own staging uses"; !strings.Contains(out, want) {
+	if want := "macos-user can't nest it with yolo's own /ctx/host-claude/settings.json"; !strings.Contains(out, want) {
 		t.Errorf("the refusal did not say %q:\n%s", want, out)
 	}
 }
@@ -731,7 +731,7 @@ func TestMacosUserDeliversAReadOnlyConfigMountAsALink(t *testing.T) {
 
 	ctx, out := runMacosUserCapturingCtx(t, t.TempDir(), deliveringSiting(t, ""))
 
-	want := macosuser.ContextLink{Dest: "/ctx/lib", Source: lib, Dir: true}
+	want := macosuser.ContextLink{Dest: "/ctx/lib", Source: lib, Named: alias, Dir: true}
 	if len(ctx.Links) != 1 || ctx.Links[0] != want {
 		t.Fatalf("Links = %+v, want exactly %+v — the backend was not handed the mount to link", ctx.Links, want)
 	}
