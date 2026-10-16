@@ -621,7 +621,7 @@ const WorkspaceStateIgnoreName = ".gitignore"
 //
 // WHY IT IS NOT OPTIONAL. What lands under .yolo is not merely noise. `launch.log` tees
 // everything the launcher printed, and a --dry-run's printed argv IS its env list, provider
-// secrets and all (docs/plans/handoff-macos-user-open-threads.md §6). `archive/config/` holds
+// secrets and all (docs/plans/runbooks/macos-user-manual-checks.md, "Credentials moved off the sandbox argvs"). `archive/config/` holds
 // VERBATIM copies of the user's own pre-yolo agent config files — exactly where credentials
 // live — and render.Target.ArchivePath is shaped to keep them forever. `home/` is the jail's
 // entire home overlay. This repo happens to ignore .yolo/ by a hand-written line in its own
