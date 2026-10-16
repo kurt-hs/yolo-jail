@@ -192,6 +192,17 @@ func notUsersPackRoot(root string) bool {
 // whose recipe no build carries. ReadSeriesFrom reads another store's record.
 func (f Fork) ReadSeries() (*packsrc.Series, error) { return f.ReadSeriesFrom(nil) }
 
+// DeclaredSeries is the series as the manifest declares it, for an identity that must not move under
+// a check: ReadSeries for a patch series, whose bytes are the pack's; for a PATCH BRANCH, the branch's
+// address alone (packsrc.UnresolvedPatchBranchSeries), since its commit is what the check itself
+// resolves and records, so reading it would change the identity in the middle of the run that checks.
+func (f Fork) DeclaredSeries() (*packsrc.Series, error) {
+	if f.PatchBranch != "" {
+		return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
+	}
+	return f.ReadSeries()
+}
+
 // ReadSeriesFrom is ReadSeries reading a patch branch's record from store, the machine's pack store when nil.
 func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 	if f.PatchBranch != "" {
@@ -199,9 +210,14 @@ func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
 			store = &packsrc.Store{Dir: paths.PacksDir()}
 		}
 		s, err := store.ReadPatchBranch(f.Key(), f.PatchBranch, f.Source)
-		if err != nil {
-			// NOT RESOLVED HERE YET (or a record that cannot be read, which the advance recovers): the
-			// unresolved patch branch, whose recipe no build carries; the next check resolves it.
+		switch {
+		case packsrc.IsPatchBranchRecordError(err):
+			// A RECORD THAT CANNOT BE READ is said as that, never as "not fetched yet": an act that
+			// checks starts it over and reads the branch as unresolved (UnresolvedPatchBranchSeries).
+			return nil, err
+		case err != nil:
+			// NOT RESOLVED HERE YET: the unresolved patch branch, whose recipe no build carries; the
+			// next check resolves it.
 			return packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
 		}
 		return s, nil

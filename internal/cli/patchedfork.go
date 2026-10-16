@@ -99,6 +99,9 @@ func checkPatchedForks(pr richtext.Printer, errw io.Writer, forks []packload.For
 // checkPatchedFork is one patched fork's explicit check and walk.
 func checkPatchedFork(pr richtext.Printer, errw io.Writer, store *packsrc.Store, f packload.Fork) int {
 	series, err := f.ReadSeriesFrom(store) // a patch branch not resolved yet: this check resolves it
+	if packsrc.IsPatchBranchRecordError(err) {
+		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil // this check starts the record over
+	}
 	if err != nil {
 		fmt.Fprintf(errw, "yolo pack: %s: %v\n", f.Label(), err)
 		return 1

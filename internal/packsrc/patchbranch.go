@@ -36,7 +36,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -111,10 +110,35 @@ func (s *Store) ReadPatchBranch(owner, source, upstream string) (*Series, error)
 		if errors.Is(err, ErrNoCheckRecord) {
 			return nil, &PatchBranchUnresolvedError{Source: source}
 		}
-		return nil, fmt.Errorf("reading the patch branch %s from the check record: %w", source, err)
+		return nil, &PatchBranchRecordError{Source: source, Err: err}
 	}
 	return PatchBranchSeries(source, upstream, rec)
 }
+
+// PatchBranchRecordError is a check record that holds a patch branch's commit and cannot be read:
+// not "not fetched yet", since a check did resolve it. A check starts the record over (§6.2), so an
+// act that checks reads it as unresolved and goes on; every other reader says it.
+type PatchBranchRecordError struct {
+	Source string
+	Err    error
+}
+
+func (e *PatchBranchRecordError) Error() string {
+	return "the check record holding the commit of the patch branch " + e.Source + " cannot be read (" +
+		oneLine(e.Err) + ") — `yolo pack update` checks it again and starts the record over"
+}
+
+func (e *PatchBranchRecordError) Unwrap() error { return e.Err }
+
+// IsPatchBranchRecordError reports whether err is a PatchBranchRecordError.
+func IsPatchBranchRecordError(err error) bool {
+	var r *PatchBranchRecordError
+	return errors.As(err, &r)
+}
+
+// localRetry is the next step after a git that could not answer about a mirror this machine holds (a
+// timeout, a lock, a busy disk): the next check asks again, and `yolo pack update` asks now.
+const localRetry = " — the next check asks again, or `yolo pack update` now"
 
 // lockMirrors takes the mirror locks of repos, each once, in one order (sorted by repository), so
 // two processes taking an upstream's and a patch branch's never wait on each other the other way round.
@@ -168,7 +192,7 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 	kind, _, commit, err := s.classifyRef(mirror, c.Ref)
 	switch {
 	case err != nil:
-		return nil, "could not read the patch branch " + c.Raw + ": " + oneLine(err), fetchErr
+		return nil, "could not read the patch branch " + c.Raw + ": " + oneLine(err) + localRetry, fetchErr
 	case kind == refUnresolved && fetchErr != "":
 		return nil, "the patch branch's ?ref=" + c.Ref + " is not in this machine's copy of " + c.Repo + ", and " +
 			fetchFailed(fetchErr), fetchErr
@@ -181,7 +205,7 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 	}
 	sc, err := newScratchOf(s.git(), b, s.mirrorPath(upstream), mirror)
 	if err != nil {
-		return nil, "could not ask for the patch branch's merge base: " + oneLine(err), fetchErr
+		return nil, "could not ask for the patch branch's merge base: " + oneLine(err) + localRetry, fetchErr
 	}
 	defer sc.remove()
 	out, code, err := sc.gitStatus("", "merge-base", commit, tip)
@@ -191,7 +215,7 @@ func (s *Store) resolvePatchBranch(b budget, c Addr, upstream, tip string, now t
 			" — git refuses to merge unrelated histories; a patch branch is a branch whose history includes the " +
 			"upstream's: start it from an upstream commit and merge the upstream into it", fetchErr
 	case err != nil:
-		return nil, "could not ask for the patch branch's merge base with " + upstream + ": " + oneLine(err), fetchErr
+		return nil, "could not ask for the patch branch's merge base with " + upstream + ": " + oneLine(err) + localRetry, fetchErr
 	}
 	return &PatchBranchResolved{Source: c.Raw, Upstream: upstream, Commit: commit, Base: strings.TrimSpace(out)}, "", fetchErr
 }

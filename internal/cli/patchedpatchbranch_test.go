@@ -9,6 +9,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +18,13 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// patchBranchAdvanceFixture is the patched advance fixture with its series replaced by a patch branch: a clone of
-// the upstream whose branch `patch_branch`, started at v1.0.0, makes the series' two edits as commits.
+// patchBranchAdvanceFixture is the patched advance fixture with its series replaced by a patch branch: a
+// clone of the upstream whose branch `mine`, started at v1.0.0, makes the series' two edits as commits.
 type patchBranchAdvanceFixture struct {
 	*patchedAdvanceFixture
 	patchBranch string
@@ -30,7 +32,13 @@ type patchBranchAdvanceFixture struct {
 
 func newPatchBranchAdvanceFixture(t *testing.T) *patchBranchAdvanceFixture {
 	t.Helper()
-	fx := &patchBranchAdvanceFixture{patchedAdvanceFixture: newPatchedAdvanceFixture(t, "")}
+	return withPatchBranch(t, newPatchedAdvanceFixture(t, ""))
+}
+
+// withPatchBranch replaces base's series by the patch branch: any patched fixture, the host floor's too.
+func withPatchBranch(t *testing.T, base *patchedAdvanceFixture) *patchBranchAdvanceFixture {
+	t.Helper()
+	fx := &patchBranchAdvanceFixture{patchedAdvanceFixture: base}
 	fx.patchBranch = filepath.Join(t.TempDir(), "branch")
 	upstreamGit(t, filepath.Dir(fx.patchBranch), "clone", "-q", fx.repo, fx.patchBranch)
 	upstreamGit(t, fx.patchBranch, "checkout", "-q", "-b", "mine", fx.base)
@@ -112,6 +120,89 @@ func TestAMovedPatchBranchRebuilds(t *testing.T) {
 	}
 	if g := fx.record(t).Good; g == nil || g.Series != packsrc.PatchBranchDigest(moved) || g.Entry != r.delivery.Key {
 		t.Errorf("the good build = %+v, want it keyed on the moved patch branch %s", g, moved)
+	}
+}
+
+// THE HOST FLOOR'S PREFLIGHT reads a patch branch's recorded failure as it reads a series': `yolo host
+// apply --assert` stops before its first write. Red with hostPatchPreflight skipping a fork with no
+// `patches`, as it did.
+func TestAHostApplyStopsOnAPatchBranchsRecordedFailureBeforeItWrites(t *testing.T) {
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
+	fx := withPatchBranch(t, patchedFloorFixture(t))
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	fx.writeUserConfig(t, `,"host_management":"own"`)
+	if rc, _, out := fx.hostLaunch(t); rc != 0 {
+		t.Fatalf("the first launch: rc=%d\n%s", rc, out)
+	}
+	fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
+	fx.later(2 * time.Hour)
+	if rc, _, out := fx.hostLaunch(t); rc == 0 || !strings.Contains(out, "the patch branch does not merge") {
+		t.Fatalf("the launch that records the failure: rc=%d\n%s", rc, out)
+	}
+	var out, errw bytes.Buffer
+	rc := hostApplyRefreshAndRender(&out, &errw, false, true, nil, "", "")
+	if rc == 0 || strings.Contains(out.String(), "host apply — applying into") ||
+		!strings.Contains(errw.String(), "ERROR: fork forkpack/tool: the patch branch does not merge into upstream v1.2.0") {
+		t.Errorf("an apply over a patch branch's recorded failure: rc=%d, want a refusal before its render\n%s\n%s",
+			rc, out.String(), errw.String())
+	}
+}
+
+// AN UNREADABLE CHECK RECORD is said as one, never as a branch not fetched yet, with the act that
+// starts the record over.
+func TestAnUnreadableRecordIsNotAPatchBranchNotFetchedYet(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	good, out, _ := fx.launch(t, "podman")
+	if good.delivery.Key == "" {
+		t.Fatalf("the first launch handed nothing\n%s", out)
+	}
+	rec := (&packsrc.Store{Dir: paths.PacksDir()}).CheckRecordPath("forkpack/tool")
+	if err := os.WriteFile(rec, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, status, _ := packVerb(t, "status")
+	if strings.Contains(status, "not fetched on this machine yet") || !strings.Contains(status, "cannot be read") ||
+		!strings.Contains(status, "`yolo pack update` checks it again") {
+		t.Errorf("status does not say the record cannot be read, with its next step:\n%s", status)
+	}
+}
+
+// freshUpdate runs one fresh-check advance as `yolo --update` does: a preparation request registered
+// first, its identity and boundary handed to the advance, and the request's guard at admission.
+func (fx *patchBranchAdvanceFixture) freshUpdate(t *testing.T) advanceResult {
+	t.Helper()
+	f := fx.fork(t)
+	req, err := newPreparationRequest(context.Background(), []packload.Fork{f}, "podman", patchedTestPlatform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	r := advancePatchedFork(f, advanceOptions{freshCheck: true, freshIdentity: req.Keys[0].InputIdentity,
+		freshBoundary: req.Boundaries[f.Key()], platform: patchedTestPlatform, runtime: "podman", launch: true,
+		ctx: context.Background(), out: &out, errw: &out,
+		admitGuard: func(commit func() error) error { return req.Guard(f.Key(), commit) }})
+	if err := qualifyPreparationResult(req, f.Key(), r); err != nil {
+		t.Fatalf("the fresh update did not qualify: %v\n%s", err, out.String())
+	}
+	return r
+}
+
+// A FRESH UPDATE (`yolo --update`) ADMITS A PATCH BRANCH it resolves for the first time and one that
+// moved: the request's identity is fixed before the check records the branch's new commit.
+func TestAFreshUpdateAdmitsAMovedPatchBranch(t *testing.T) {
+	fx := newPatchBranchAdvanceFixture(t)
+	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
+	if r := fx.freshUpdate(t); !r.built || len(fx.builds) != 1 {
+		t.Fatalf("the first fresh update built %d (result %+v)", len(fx.builds), r)
+	}
+	moved := fx.patchBranchCommit(t, map[int]string{10: "ten", 12: "twelve", 20: "twenty"})
+	r := fx.freshUpdate(t)
+	if !r.built || len(fx.builds) != 2 {
+		t.Fatalf("the fresh update after the branch moved built %d (result %+v)", len(fx.builds), r)
+	}
+	if g := fx.record(t).Good; g == nil || g.Series != packsrc.PatchBranchDigest(moved) {
+		t.Errorf("the good build = %+v, want it keyed on the moved branch %s", g, moved)
 	}
 }
 

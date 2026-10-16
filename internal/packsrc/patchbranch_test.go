@@ -1,11 +1,12 @@
 package packsrc
 
-// patchbranch_test.go drives a PATCH BRANCH (patchbranch.go; docs/design/patched-forks.md §3.5, OQ-PFK6) through the
-// real check and walk against local repositories: the check fetches the patch branch into the upstream's
-// mirror and resolves its commit and merge base; the walk merges it into the newest candidate it
-// fits, its tree both sides' changes; a conflict names the patch branch and the paths; a moved branch is a
-// new digest; a patch branch with no shared history is the check's problem; a patch branch repository that
-// cannot be reached is the check's failed fetch (PF-D88); and an old git is refused by name.
+// patchbranch_test.go drives a PATCH BRANCH (patchbranch.go; docs/design/patched-forks.md §3.5,
+// OQ-PFK6) through the real check and walk against local repositories: the check fetches the patch
+// branch's repository into a mirror of its own and resolves its commit and merge base; the walk merges
+// it into the newest candidate it fits, its tree both sides' changes; a conflict names the patch branch
+// and the paths; a moved branch is a new digest; a patch branch with no shared history is the check's
+// problem; a patch branch repository that cannot be reached is the check's failed fetch (PF-D88); and an
+// old git is refused by name.
 
 import (
 	"errors"
