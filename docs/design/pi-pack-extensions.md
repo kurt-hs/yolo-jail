@@ -98,7 +98,7 @@ stopped, with [`OQ-D6`](slots-and-contributions.md#OQ-D6) the blocker. The surfa
 
 **Reads with:** [`slots-and-contributions.md`](slots-and-contributions.md) (**supersedes this
 doc's encoding**), [`manifest-language.md`](manifest-language.md) (the surface),
-[`workspace-skills.md` §2.1](workspace-skills.md#21-where-each-agent-reads-skills--measured) (the measured
+[`agent-briefings.md`'s table of where each agent reads skills](../reference/agent-briefings.md#where-each-agent-reads-skills) (the measured
 formats), [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) (the fetch axis),
 [`mcp-configuration.md`](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin) (the one live consumer of the retired hook),
 [`agent-briefings.md`](../reference/agent-briefings.md#audiences-what-varies-per-destination) (the `agent`/`agents` mechanism this reuses),

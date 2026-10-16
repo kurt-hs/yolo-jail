@@ -305,7 +305,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 - **With no id at all:** [Go comments citing sections by number](README.md#the-dangling-n-citations-in-go-comments),
   [check 2's two marker conventions](README.md#check-2-has-two-known-errors-and-a-convention-question-under-each),
   [the storage lifecycle's `min-free` values](storage-lifecycle.md#open-questions), the unruled half of
-  [OQ-ST2](../design/synced-skill-trees.md#OQ-ST2) on user-reserved skill children, and whether a bare `-p` whose
+  [OQ-ST2](../reference/pack-system.md#OQ-ST2) on user-reserved skill children, and whether a bare `-p` whose
   packs install no CLI should say it selects nothing (`checkProfileTargets`, `internal/cli/run/packs.go`).
 
 ## Disposition of open items (2026-10-13)
