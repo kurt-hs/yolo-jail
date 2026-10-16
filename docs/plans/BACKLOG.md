@@ -9,7 +9,7 @@ tags: [backlog, packs, composed-config]
 # Backlog — the one implementable list
 
 **Status:** The single entry point for *what to build next* on the composed-config /
-packs cluster, and **six questions are live** in its stages. Created 2026-07-26; **restamped
+packs cluster, and **seven questions are live** in its stages. Created 2026-07-26; **restamped
 2026-08-23** (header + Stage E + Stage G); **re-checked 2026-09-24** against the tree and the
 designs it points at (E5's trigger fired, `file:line` anchors replaced by symbols).
 
@@ -263,7 +263,7 @@ restating them. **This section is their doc.**
 > not an E-series backlog ID, and re-spelling it would silently orphan those references.
 
 **Index.** The 💬 glyph lives on the section heading below, once per question, so
-`rg -n '^### 💬' docs/plans/BACKLOG.md` counts this stage exactly — **six open**. This table
+`rg -n '^### 💬' docs/plans/BACKLOG.md` counts this stage exactly — **seven open**. This table
 carries none, deliberately.
 
 | ID | Question | State |
@@ -639,6 +639,10 @@ entries, which get `raw` by auto-detect and keep their bytes exactly.
 
 **Answer:**
 > _(empty — fill in when decided)_
+
+### <a id="OQ-MM3-upgrade"></a>💬 **Claude's saved `model` survives the first launch after upgrading (gap in [OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3))**
+
+On the first launch after upgrading, a stale `model` saved from the user's own Claude login, with no tier word in it (a full model id, for example), is not cleared. With no selection record yolo keeps a value that differs from its own last write as the user's, and the fix is unbuilt; see [OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3).
 
 ---
 
