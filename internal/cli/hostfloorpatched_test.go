@@ -109,9 +109,9 @@ func TestHostPatchFailureRefusesDespiteAValidOldFloor(t *testing.T) {
 // PF-D81'S ERROR IS SAID ONCE AT THE HOST: the advance that finds the conflict prints its error
 // block, and the floor's preparation, handed that failure, does not print the same block again; a
 // later launch, which reads the failure from the record with no advance to say it, prints it once
-// itself. Bypassed or not; and under the bypass its CONTINUING line is said once as well. Red with
+// itself. Bypassed or not; and under the bypass its one Continuing line is said once as well, with no hatch list. Red with
 // floorAdvanceState dropping the advance's "said" marks, or the floor printing its block or its
-// CONTINUING line unconditionally.
+// Continuing line unconditionally.
 func TestHostPatchFailureErrorIsSaidOnce(t *testing.T) {
 	for _, bypass := range []string{"", "1"} {
 		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
@@ -134,14 +134,18 @@ func TestHostPatchFailureErrorIsSaidOnce(t *testing.T) {
 					t.Errorf("bypass %q, %s: %q said %d times, want once:\n%s", bypass, launch, line, n, out)
 				}
 			}
-			// The hatch that runs the good build is listed once.
+			// The hatch that runs the good build is listed once; with it set, no list at all.
 			hatch := "  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool "
-			if n := strings.Count(out, hatch); n != 1 {
-				t.Errorf("bypass %q, %s: %q said %d times, want once:\n%s", bypass, launch, hatch, n, out)
+			if n, want := strings.Count(out, hatch), map[string]int{"": 1, "1": 0}[bypass]; n != want {
+				t.Errorf("bypass %q, %s: %q said %d times, want %d:\n%s", bypass, launch, hatch, n, want, out)
 			}
-			// The bypass's CONTINUING line is said once too, whether the advance or the floor says it.
-			if n, want := strings.Count(out, "CONTINUING: "), map[string]int{"": 0, "1": 1}[bypass]; n != want {
-				t.Errorf("bypass %q, %s: CONTINUING said %d times, want %d:\n%s", bypass, launch, n, want, out)
+			if n, want := strings.Count(out, "Start anyway:"), map[string]int{"": 1, "1": 0}[bypass]; n != want {
+				t.Errorf("bypass %q, %s: a hatch list said %d times, want %d:\n%s", bypass, launch, n, want, out)
+			}
+			// The bypass's one Continuing line is said once too, whether the advance or the floor says it.
+			if n, want := strings.Count(out, "Continuing with v1.1.0 ("), map[string]int{"": 0, "1": 1}[bypass]; n != want ||
+				strings.Contains(out, "CONTINUING") || want == 1 && !strings.Contains(out, " (YOLO_ALLOW_PATCH_FAILURES)\n") {
+				t.Errorf("bypass %q, %s: Continuing said %d times, want %d in its one form:\n%s", bypass, launch, n, want, out)
 			}
 		}
 	}

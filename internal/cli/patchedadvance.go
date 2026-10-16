@@ -77,6 +77,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -945,9 +946,20 @@ func (a *advance) patchFailureText(pf *packsrc.PatchFailure) string {
 	return report.String()
 }
 
-// patchBypass is what this advance's error block offers: the hatch list (recoveryHatches).
+// patchBypass is what this advance's error block offers: the hatch list (recoveryHatches) — none
+// when the patch-failure bypass is set and the run continues past the failure, which the one
+// Continuing line then says (patchFailureResult).
 func (a *advance) patchBypass() packsrc.PatchBypass {
+	if a.continuesPastFailure() {
+		return packsrc.PatchBypass{Key: a.f.Key()}
+	}
 	return packsrc.PatchBypass{Command: a.bypassCommand(), Key: a.f.Key(), Hatches: a.recoveryHatches()}
+}
+
+// continuesPastFailure reports whether the patch-failure bypass covers this act and a build serves
+// for it to run in the failed series' place.
+func (a *advance) continuesPastFailure() bool {
+	return allowPatchFailures(a.f) && !a.o.freshCheck && !a.o.background && a.serves()
 }
 
 // bypassCommand is the act every hatch is put in front of: the caller's own (`yolo host apply
@@ -1005,7 +1017,15 @@ func (a *advance) recoveryHatches() []patchrecovery.Hatch {
 	if !f.IsTree() && jailLaunch && !a.serves() {
 		add(patchrecovery.AllowMissingProgramsEnv, "1", "start without it")
 	}
-	return out
+	return withoutTriedHatches(out, recoverySubject(f))
+}
+
+// withoutTriedHatches drops from hatches every scoped hatch whose variable already covers sub: this
+// act read it, and it did not get the act running, so listing it again offers what already failed.
+func withoutTriedHatches(hatches []patchrecovery.Hatch, sub patchrecovery.Subject) []patchrecovery.Hatch {
+	return slices.DeleteFunc(hatches, func(h patchrecovery.Hatch) bool {
+		return slices.Contains(patchrecovery.Scoped, h.Env) && patchrecovery.Read(os.Getenv, h.Env).Covers(sub)
+	})
 }
 
 // withRecovery sets r's delivery's hatch list when r hands nothing or carries a patch failure.
@@ -1062,7 +1082,7 @@ func (a *advance) patchFailureResult(pf *packsrc.PatchFailure) advanceResult {
 	a.patchFailure = pf
 	text := a.patchFailureText(pf)
 	a.reportPatchFailure(pf, text)
-	if allowPatchFailures(a.f) && !a.o.freshCheck && !a.o.background && a.serves() {
+	if a.continuesPastFailure() {
 		r := a.finish(nil, forkBuild{}, 0, nil, "")
 		if a.serving != nil && r.delivery.Key == "" {
 			r.failed = true
@@ -1074,17 +1094,13 @@ func (a *advance) patchFailureResult(pf *packsrc.PatchFailure) advanceResult {
 			return r
 		}
 		if r.delivery.Key != "" {
-			admitted := r.delivery.Key
-			if good := a.goodBuild(); good != nil {
-				admitted = fmt.Sprintf("%s (%s; %s)", a.servingLine(), good.Commit, admitted)
-			}
 			r.bypassed = true
 			if !a.launchSaysPatchFailure() {
-				a.dim("CONTINUING: using intact admitted build %s; skips this subject's advance.", admitted)
+				a.dim("Continuing with %s (%s)", a.servingLine(), allowPatchFailuresEnv)
 				r.continuingSaid = true
 			}
 		} else if a.installed != nil {
-			a.dim("CONTINUING: using installed build %s; skips this subject's advance.", a.installed.label)
+			a.dim("Continuing with %s (%s)", a.installed.label, allowPatchFailuresEnv)
 			r.bypassed, r.continuingSaid = true, true
 		}
 		return r
@@ -2125,8 +2141,10 @@ func (a *advance) walk(list []packsrc.ListEntry, ofList bool) packsrc.WalkResult
 			pf.Log = filepath.Join(a.o.workspace, ".yolo", "launch.log")
 		}
 		a.patchFailure = pf
-		if !a.walkingBack {
-			// A walk-back's older conflict is recorded, and the newest's block is the one said.
+		// A walk-back's older conflict is recorded, and the newest's block is the one said — and only
+		// once the walk-back has run out: one that succeeds says its disclosure line alone, and one that
+		// runs out says the block with the hatch list as it then stands (patchFailureResult).
+		if !a.walkingBack && (pf.Kind == "base" || !a.walkBackOn()) {
 			a.reportPatchFailure(pf, a.patchFailureText(pf))
 		}
 	}

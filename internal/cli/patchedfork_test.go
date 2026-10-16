@@ -285,8 +285,8 @@ func TestPackInstallConsumesTypedFailureBeforeGoodSkip(t *testing.T) {
 				t.Fatalf("install rc=%d want %d or called git after cached authority: out=%s err=%s", rc, tc.wantRC, out, errw)
 			}
 			if tc.bypass == "1" {
-				if !strings.Contains(out+errw, "CONTINUING: using intact admitted build") ||
-					!strings.Contains(out+errw, "skips this subject's advance") {
+				if !strings.Contains(out+errw, "Continuing with ") ||
+					!strings.Contains(out+errw, "fork forkpack/tool: skipped this explicit subject") {
 					t.Fatalf("literal bypass did not identify the skipped subject:\n%s\n%s", out, errw)
 				}
 			} else if !strings.Contains(errw, "ERROR: forkpack/tool: patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
@@ -415,7 +415,7 @@ func TestPackUpdateLiteralBypassSkipsOnlyTheCurrentGoodSubject(t *testing.T) {
 	rc, out, errw := packVerb(t, "update")
 	if rc != 0 || !strings.Contains(out, "skipped this explicit subject; no build or fallback was accepted") ||
 		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") ||
-		!strings.Contains(errw, "CONTINUING: using intact admitted build") {
+		!strings.Contains(errw, "Continuing with ") {
 		t.Fatalf("literal bypass did not skip only this explicit subject: rc=%d\n%s\n%s", rc, out, errw)
 	}
 	if len(fx.builds) != 1 || fx.record(t).Good == nil || fx.record(t).Good.Entry != oldKey ||
@@ -431,7 +431,7 @@ func TestPackUpdateLiteralBypassWithoutGoodStillFails(t *testing.T) {
 	f.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
 	v12 := f.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 	rc, out, errw := packVerb(t, "update")
-	if rc == 0 || strings.Contains(out+errw, "CONTINUING: using intact admitted build") ||
+	if rc == 0 || strings.Contains(out+errw, "Continuing with ") ||
 		!strings.Contains(errw, "patch series does not apply to upstream v1.2.0 ("+short8(v12)+")") {
 		t.Fatalf("bypass accepted a subject without Good: rc=%d\n%s\n%s", rc, out, errw)
 	}

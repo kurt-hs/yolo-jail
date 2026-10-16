@@ -82,7 +82,7 @@ type PatchedState struct {
 	AuthorityError string
 	// AdvanceBypassed records that Advance itself took the literal foreground compatibility skip.
 	AdvanceBypassed bool
-	// ContinuingSaid records that the Advance which took that skip already printed its CONTINUING
+	// ContinuingSaid records that the Advance which took that skip already printed its Continuing
 	// line on this operation's stream, so the floor does not say the bypass continues a second time,
 	// as PatchFailureSaid does for the error block.
 	ContinuingSaid bool
@@ -334,6 +334,17 @@ func (f *Floor) writePatchFailureOnce(p Program, state PatchedState, runs string
 		return
 	}
 	f.writePatchFailure(p, state.PatchFailure, state.Rebase, runs, state.Recovery)
+}
+
+// writeContinuingPatchFailureOnce is writePatchFailureOnce when the bypass is set and the run goes on:
+// the block with no hatch list, the Continuing line said after it standing in for one.
+func (f *Floor) writeContinuingPatchFailureOnce(p Program, state PatchedState) {
+	if state.PatchFailureSaid {
+		return
+	}
+	out := f.out()
+	_, _ = io.WriteString(out, state.PatchFailure.Render("fork "+p.Install.ForkedBy+"/"+p.Bin(), state.Rebase,
+		packsrc.PatchBypass{Key: p.Install.ForkedBy + "/" + p.Bin()}, colorFor(out)))
 }
 
 // writePatchFailure prints pf's error block. Its hatch list is the advance's (recovery, put in front

@@ -87,15 +87,25 @@ func patchFailureCommand(bin string, host bool) string {
 
 // writePatchFailure prints PF-D81's error block (packsrc.PatchFailure.Block) for fork, its Bypass
 // line offering only what works on this machine (PF-D83), and — when the bypass is set and
-// admitted names the intact build it runs — the CONTINUING line.
+// admitted names the intact build it runs — no hatch list but the one Continuing line.
 func writePatchFailure(w io.Writer, f *packsrc.PatchFailure, fork packload.Fork, bypass packsrc.PatchBypass, admitted string) {
 	if f == nil {
 		return
 	}
-	_, _ = io.WriteString(w, f.Block(fork.Key(), fork.RebaseRecipe(), bypass))
-	if allowPatchFailures(fork) && admitted != "" {
-		fmt.Fprintf(w, "CONTINUING: using intact admitted build %s; skips this subject's advance.\n", admitted)
+	continuing := allowPatchFailures(fork) && admitted != ""
+	if continuing {
+		bypass = packsrc.PatchBypass{Key: fork.Key()}
 	}
+	_, _ = io.WriteString(w, f.Block(fork.Key(), fork.RebaseRecipe(), bypass))
+	if continuing {
+		sayContinuing(w, admitted)
+	}
+}
+
+// sayContinuing is the one line a run says when the patch-failure bypass runs build in the failed
+// series' place: the form the jail launch says too.
+func sayContinuing(w io.Writer, build string) {
+	fmt.Fprintf(w, "Continuing with %s (%s)\n", build, allowPatchFailuresEnv)
 }
 
 func printableFailureText(s string) string { return packsrc.PrintableFailureText(s) }

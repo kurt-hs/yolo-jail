@@ -511,7 +511,7 @@ func TestAConflictingTagFailsAndOnlyExplicitBypassContinues(t *testing.T) {
 	fx.later(2 * time.Hour)
 	slotted, term := fx.launchReported(t)
 	if slotted.delivery.Key != r.delivery.Key || slotted.delivery.PatchFailure == nil || slotted.delivery.Runs == "" ||
-		strings.Contains(term, "ERROR: ") || strings.Contains(term, "CONTINUING") {
+		strings.Contains(term, "ERROR: ") || strings.Contains(term, "Continuing with ") {
 		t.Errorf("the slot's act handed %+v, or printed the launch's block:\n%s", slotted.delivery, term)
 	}
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
