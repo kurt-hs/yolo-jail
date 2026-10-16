@@ -64,7 +64,7 @@ func newStubMachine(t *testing.T) *stubMachine {
 			t.Fatal(err)
 		}
 	}
-	m.checkJSON, m.checkRC = bareMacCheck(t, "0.11.0", m.bundle)
+	m.checkJSON, m.checkRC = bareMacCheck(t, "0.11.0+g0123456789ab", m.bundle)
 	return m
 }
 

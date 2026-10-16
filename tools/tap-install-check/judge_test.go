@@ -65,7 +65,7 @@ func bareMacCheck(t *testing.T, version, bundle string) ([]byte, int) {
 // line, its JSON field names, and its FAIL set.
 func requireTheJudgeAccepts(t *testing.T, whose string, out []byte, rc int, version, keg, bundle string) {
 	t.Helper()
-	got, errs := judgeCheck(out, rc, version, keg)
+	got, errs := judgeCheck(out, rc, version, "", keg)
 	for _, err := range errs {
 		t.Errorf("the judge refused %s report: %v", whose, err)
 	}
@@ -105,6 +105,24 @@ func TestTheJudgeAcceptsWhatCheckReportsOnABareMac(t *testing.T) {
 	keg, bundle := fakeKeg(t)
 	out, rc := bareMacCheck(t, "0.11.0", bundle)
 	requireTheJudgeAccepts(t, "this tree's", out, rc, "0.11.0", keg, bundle)
+
+	// A release names its commit (OQ-DA2): the formula's 0.11.0 against a binary that
+	// reports 0.11.0+g<hash12>, the same commit its --version names.
+	out, rc = bareMacCheck(t, "0.11.0+g0123456789ab", bundle)
+	requireTheJudgeAccepts(t, "this tree's hashed", out, rc, "0.11.0", keg, bundle)
+	if _, errs := judgeCheck(out, rc, "0.11.0", "0123456789ab", keg); len(errs) != 0 {
+		t.Errorf("the judge refused a hashed report whose commit --version also named: %v", errs)
+	}
+	_, errs := judgeCheck(out, rc, "0.11.0", "fedcba987654", keg)
+	if len(errs) == 0 || !strings.Contains(errs[0].Error(), "must name one commit") {
+		t.Errorf("the judge accepted a report naming another commit than --version: %v", errs)
+	}
+	for _, v := range []string{"0.11.0+g0123456", "0.11.0+3.g0123456789ab", "0.11.0+g0123456789ab.dirty"} {
+		out, rc := bareMacCheck(t, v, bundle)
+		if _, errs := judgeCheck(out, rc, "0.11.0", "", keg); len(errs) == 0 {
+			t.Errorf("the judge accepted a report of version %q for release 0.11.0", v)
+		}
+	}
 }
 
 // TestTheJudgeRefusesTheCheckReportsThatMeanABrokenInstall mutates the real report
@@ -196,7 +214,7 @@ func TestTheJudgeRefusesTheCheckReportsThatMeanABrokenInstall(t *testing.T) {
 		{"a macOS Platform fail that is not the Nix volume", edit(addFail("macOS Platform", "Podman Machine: broken")), rc, "0.11.0", `unexpected FAIL in "macOS Platform"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, errs := judgeCheck(tc.report, tc.rc, tc.version, keg)
+			_, errs := judgeCheck(tc.report, tc.rc, tc.version, "", keg)
 			if len(errs) == 0 {
 				t.Fatalf("judgeCheck accepted it")
 			}
@@ -260,11 +278,14 @@ func TestParseBrewInfo(t *testing.T) {
 }
 
 func TestCheckVersionLine(t *testing.T) {
-	if err := checkVersionLine("yolo-jail 0.11.0+g0123456789ab\n", "0.11.0"); err != nil {
-		t.Errorf("the formula's own stamp was refused: %v", err)
+	if hash, err := checkVersionLine("yolo-jail 0.11.0+g0123456789ab\n", "0.11.0"); err != nil || hash != "0123456789ab" {
+		t.Errorf("the formula's own stamp = %q, %v; want its commit 0123456789ab", hash, err)
+	}
+	// A release from before the OQ-DA2 stamp, which the tap may still carry.
+	if hash, err := checkVersionLine("yolo-jail 0.11.0\n", "0.11.0"); err != nil || hash != "" {
+		t.Errorf("a pre-stamp release's line = %q, %v; want accepted with no commit", hash, err)
 	}
 	for _, out := range []string{
-		"yolo-jail 0.11.0\n",                     // a release stamp naming no commit (OQ-DA2)
 		"yolo-jail 0.11.0+g0123456\n",            // a short hash is not the release's 12 digits
 		"yolo-jail 0.11.0+g0123456789ab.dirty\n", // a dirty build is not a release
 		"yolo-jail 0.11.0+3.gabc1234\n",          // a from-source describe: contains the version, is not it
@@ -273,7 +294,7 @@ func TestCheckVersionLine(t *testing.T) {
 		"0.11.0\n",
 		"yolo-jail 0.11.0\nyolo-jail 0.11.0\n",
 	} {
-		if err := checkVersionLine(out, "0.11.0"); err == nil {
+		if _, err := checkVersionLine(out, "0.11.0"); err == nil {
 			t.Errorf("checkVersionLine accepted %q for 0.11.0", out)
 		}
 	}
