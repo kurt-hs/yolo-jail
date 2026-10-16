@@ -54,6 +54,25 @@ import (
 // config key.
 const SelectionKey = "selection"
 
+// SelectionTriggerKey is the reserved entry of a selection body that carries its TRIGGER, a
+// term coined here (docs/design/model-lists-and-pickers.md MM-D43): a string naming the
+// choice whose change, and only whose change, makes the selection a NEW one that outranks a
+// user's edit. claude's settings derive emits its selected provider there, because the value
+// it selects (claude's saved `model`) is computed from the file's own current value, so it
+// moves whenever the user picks another model, and "a new value outranks a stale edit" would
+// then write over every pick. Under a trigger:
+//
+//	trigger unchanged    a user's value stands, and a key the user removed stays removed;
+//	                     yolo's own unedited value still moves with the selection
+//	trigger changed      every selected value is written, over a user's edit too
+//	no trigger recorded  read as unchanged (an upgrade cannot know the previous choice)
+//
+// A key the selection stops naming is cleared by the ordinary rule, trigger or not: only while
+// the file holds what yolo wrote. The trigger is never lifted into the file; it is kept in the
+// selection record beside the values, under this same key, so the next render can compare.
+// A selection without one behaves exactly as before the trigger existed.
+const SelectionTriggerKey = "@trigger"
+
 // TakeSelection splits a computed layer into its ordinary keys and its selection.
 // rest is every key except the reserved one (a new map; the input is never
 // mutated), selection is the validated flat scalar map (nil when the derive emitted
@@ -195,10 +214,21 @@ func ApplySelectionReport(selection, file, record map[string]any, hostOwned map[
 	if len(selection) == 0 && len(record) == 0 {
 		return nil, nil, nil
 	}
+	// The trigger (SelectionTriggerKey) is taken out of both sides before the per-key walk:
+	// it is not a file key, so it is never lifted, cleared or compared with the file.
+	trigger, triggered := selection[SelectionTriggerKey]
+	prevTrigger, hadTrigger := record[SelectionTriggerKey]
+	triggerMoved := triggered && hadTrigger && !sameScalar(trigger, prevTrigger)
+	selection = withoutKey(selection, SelectionTriggerKey)
+	record = withoutKey(record, SelectionTriggerKey)
+
 	lift = map[string]any{}
 	next = map[string]any{}
 	for k, v := range record {
 		next[k] = v
+	}
+	if triggered {
+		next[SelectionTriggerKey] = trigger
 	}
 	// The key set is the union: a key the selection stopped naming still needs its
 	// current value lifted (the never-clear case), and a key only the record
@@ -206,6 +236,24 @@ func ApplySelectionReport(selection, file, record map[string]any, hostOwned map[
 	for _, k := range unionKeys(selection, record) {
 		V, selected := selection[k]
 		cur, inFile := file[k]
+		if triggered && selected {
+			// Under a trigger the edge is the trigger's, not the value's
+			// (SelectionTriggerKey).
+			wrote, recorded := record[k]
+			switch {
+			case triggerMoved, !inFile && !recorded:
+				lift[k] = V
+				next[k] = V
+			case !inFile:
+				// The user removed a value yolo wrote: their choice, until the trigger moves.
+			case recorded && sameScalar(cur, wrote), hostOwned[k], !recorded && sameScalar(cur, V):
+				lift[k] = V
+				next[k] = V
+			case isSelectionValue(cur):
+				lift[k] = cur
+			}
+			continue
+		}
 		switch {
 		case !selected:
 			// Deactivated. If yolo wrote this value (cur == record[k]), clear it:

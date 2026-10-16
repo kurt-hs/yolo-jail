@@ -448,6 +448,7 @@ func deriveCtx(e *Env, surface manifest.Surface, sel surfaceSelection, tables ma
 		ProfileName:        sel.Profile,
 		SelectedProvider:   sel.Provider,
 		Profile:            activeProfileOptions(e, sel.Profile),
+		Saved:              savedSurfaceStrings(e, surface),
 		ActiveSet:          sel.ActiveSet,
 		NativeCapabilities: sel.NativeCapabilities,
 		BuiltInProviders:   sel.BuiltInProviders,
@@ -461,6 +462,30 @@ func deriveCtx(e *Env, surface manifest.Surface, sel surfaceSelection, tables ma
 		// agent like the skew note above, so one finding prints once per boot.
 		Warn: func(msg string) { e.warnOnce("pack derive for " + surface.Agent + ": " + msg) },
 	}
+}
+
+// savedSurfaceStrings is the surface file's own top-level string values at this notch, as the
+// file holds them before the render (luahook.DeriveCtx.Saved), or nil when there is no home to
+// resolve it in or no file that decodes. Fail-silent like DecodeSurfaceObject: a value the
+// derive cannot read is a previous choice it does not know, which it treats as none.
+func savedSurfaceStrings(e *Env, surface manifest.Surface) map[string]string {
+	if e == nil || e.Home == "" {
+		return nil
+	}
+	data, err := os.ReadFile(e.renderTarget().SurfacePath(surface))
+	if err != nil {
+		return nil
+	}
+	var out map[string]string
+	for k, v := range agentcfg.DecodeSurfaceObject(surface.Codec, data) {
+		if s, ok := v.(string); ok {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[k] = s
+		}
+	}
+	return out
 }
 
 // unknownDeriveAPINote is the skew line for one `yolo.<name>` this build does not know,

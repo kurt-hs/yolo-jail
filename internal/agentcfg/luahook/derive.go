@@ -82,6 +82,15 @@ type DeriveCtx struct {
 	// the agent's own choice of model stays untouched.
 	Profile map[string]string
 
+	// Saved is the surface file's own top-level STRING values as the file holds them before
+	// this render writes it, exposed as ctx.saved (always a table, empty when the file is
+	// absent or undecodable, or the call renders no surface). It exists for a selection value
+	// computed from the agent's previous choice: claude's saved `model` is written, on a
+	// provider change, as the previous model's equivalent on the new provider
+	// (docs/design/model-lists-and-pickers.md MM-D43). Strings only, and top level only,
+	// because that is all a selection key is; nested tables (claude's `env`) never cross.
+	Saved map[string]string
+
 	// ActiveSet is the agent's whole ACTIVE SET (docs/design/active-provider-sets.md §4.3: the
 	// ordered list of profiles one agent runs on for one launch, a term that doc coins), exposed
 	// as ctx.active_set: one table per entry, in set order, with the entry's profile_name, the
@@ -688,6 +697,13 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		L.SetField(profile, k, lua.LString(ctx.Profile[k]))
 	}
 	L.SetField(t, "profile", profile)
+	// ctx.saved, always a table (DeriveCtx.Saved): the surface file's own top-level string
+	// values before this render. Keys sorted for the reason ctx.profile's are.
+	saved := L.NewTable()
+	for _, k := range sortedStringKeys(ctx.Saved) {
+		L.SetField(saved, k, lua.LString(ctx.Saved[k]))
+	}
+	L.SetField(t, "saved", saved)
 	// ctx.active_set, always a list: one table per entry of the agent's active set, in order,
 	// each with the fields ctx carries for the primary (profile_name, the selected provider as
 	// `provider`, its row's `platform`, the option map as `profile`, and its profile's
