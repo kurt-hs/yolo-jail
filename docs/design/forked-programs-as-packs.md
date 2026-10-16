@@ -8,7 +8,7 @@ stage: DESIGN
 next: "Rule OQ-FP11 (a Mac build's node_floor). Rerun the host notch's measurement (§11) once the maintainer names the motivating fork (address, build line and produces); the host notch's floor arms are built on the stand-in's shape. Dispatch macos-user.yml for the Mac floor's fork build (FP-D24), then run `yolo host -- <forked bin>` on a Mac with a real fork"
 depends-on:
   - ../reference/install-capture.md
-  - host-tool-provisioning.md
+  - ../reference/host-agent-environment.md
 ---
 
 # A fork is a package with no registry — distributing source-built programs through a pack
