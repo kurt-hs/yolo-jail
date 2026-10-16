@@ -14,6 +14,9 @@
 #
 # Version stamping: internal/version resolves a baked stamp before live
 # `git describe`, so these ldflags are what a released binary reports. buildVersion is intentionally unexported — -X reaches it fine.
+# A release names its commit, `0.14.0+g<12 hex>` (OQ-DA2, ruled 2026-10-16: "hashes are
+# _actually_ immutable"), the same `+g<hash>` form a flake build and a --long describe
+# on the tag stamp; build metadata after "+" never orders a version (selfupdate.Newer).
 version: 2
 
 before:
@@ -44,8 +47,8 @@ builds:
     binary: yolo
     ldflags: &ldflags
       - -s -w
-      - -X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion={{.Version}}
-      - -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion={{.Version}}+g{{ slice .FullCommit 0 12 }}
+      - -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit={{ slice .FullCommit 0 12 }}
     env: &buildenv
       - CGO_ENABLED=0
     goos: &oses

@@ -373,7 +373,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 34 — rulings nothing shipped waits on | D | The host-file permission asymmetry (E2), skills fan-out ([OQ-S4](./BACKLOG.md#OQ-S4)), shared claimed names ([OQ-ES6](../design/credential-sources-separation.md#OQ-ES6)), pack-file conventions, loophole env/guest fields, workspace MCP files, Seatbelt deny-default, host apply's posture, and the I/O priority default. **Maintainer**. |
 | 35 — the four calls from the open-source audit | D | The audit report is outside this repository, so this is their only record. **Maintainer**. |
 | 36 — how far one login is shared | D | Sharing with the host and between two agents of one provider, plus the canonical copy's location so a state reset cannot destroy a login. **Maintainer**. Model auth for an isolated agent process was declined 2026-10-15 ([IA-D1](../design/isolated-agent-model-auth.md#IA-D1)). |
-| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); [OQ-DA2](downstream-asks.md#OQ-DA2) and [OQ-DA4](downstream-asks.md#OQ-DA4) await ratification of what was built; three carries are owned by items 1 and 23. |
+| 37 — downstream pack consumer asks | D | The small diagnostics build is gated by [OQ-DA3](downstream-asks.md#OQ-DA3); [OQ-DA4](downstream-asks.md#OQ-DA4) awaits ratification of what was built ([OQ-DA2](downstream-asks.md#OQ-DA2) was ruled 2026-10-16); three carries are owned by items 1 and 23. |
 
 ### External waits
 

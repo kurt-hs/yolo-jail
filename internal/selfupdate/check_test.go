@@ -29,6 +29,12 @@ func TestNewer(t *testing.T) {
 		// A from-HEAD build's metadata does not make it newer than its release.
 		{"0.10.0", "0.10.0+510.gcfefa8bf", false},
 		{"0.10.0+510.gcfefa8bf", "0.10.0", false},
+		// A release names its commit (OQ-DA2, 2026-10-16): 0.14.0+g<hash> IS 0.14.0.
+		{"0.15.0", "0.14.0+g0123456789ab", true},
+		{"0.14.0+g0123456789ab", "0.15.0", false},
+		{"0.14.0", "0.14.0+g0123456789ab", false},
+		{"0.14.0+g0123456789ab", "0.14.0", false},
+		{"0.14.1", "0.14.0+g0123456789ab", true},
 		// A pre-release sorts before its release.
 		{"0.11.0", "0.11.0-rc1", true},
 		{"0.11.0-rc1", "0.11.0", false},
@@ -45,6 +51,13 @@ func TestNewer(t *testing.T) {
 	}
 	if !AtLeast("0.11.0+3.gabc", "0.11.0") {
 		t.Error("build metadata must not make an installed release older")
+	}
+	// The release stamp and its bare version are equal both ways.
+	if !AtLeast("0.14.0+g0123456789ab", "0.14.0") || !AtLeast("0.14.0", "0.14.0+g0123456789ab") {
+		t.Error("0.14.0+g<hash> and 0.14.0 must compare equal")
+	}
+	if AtLeast("0.14.0+g0123456789ab", "0.15.0") {
+		t.Error("0.14.0+g<hash> must be older than 0.15.0")
 	}
 	if AtLeast("0.10.0", "0.11.0") {
 		t.Error("an older installed release must fail verification")
