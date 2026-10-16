@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// sectionHostFloor reports the HOST AGENT FLOOR (docs/design/host-tool-provisioning.md §7): one
+// sectionHostFloor reports the HOST AGENT FLOOR (docs/reference/host-agent-environment.md, "What `yolo check` reports for the floor"): one
 // row per program the selected packs declare, with its disposition — provisioned (the copy
 // `yolo host` runs: its version, when it was installed, where it is), missing (and what installs
 // it), or no floor entry (why, and what `yolo host` runs instead) — and beside it every OTHER copy
@@ -84,7 +84,7 @@ func (o *Options) sectionHostFloor(r *reporter) {
 		case hostfloor.NoEntry:
 			if !floor.OutsideTheFloor(p) {
 				// THIS MACHINE cannot hold it: `yolo host` refuses to launch it rather than run a PATH
-				// copy, and every launch's readiness act stops on it (host-notch-readiness.md HNR-D1,
+				// copy, and every launch's readiness act stops on it (host-agent-environment.md HNR-D1,
 				// HNR-D2). The reason carries its own fix.
 				// A WARNING, not a fact about the machine: every `yolo host` launch refuses on it.
 				r.warn(fmt.Sprintf("%s — no floor entry: %s", p.Bin(), st.Reason),

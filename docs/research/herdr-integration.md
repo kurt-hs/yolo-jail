@@ -558,15 +558,15 @@ yolo only hands them to the child and decides nothing with them. That doc's gove
 *decisions*, and it carries session variables through on purpose. It was revised for PATH on
 2026-09-29 ([HE-DIR1](../reference/host-agent-environment.md#he-dir1)): yolo's checks read the
 caller's PATH. Two 2026-09-29 rulings in
-[`host-tool-provisioning.md`](../design/host-tool-provisioning.md) refine that:
+[`host-agent-environment.md`](../reference/host-agent-environment.md#the-host-agent-floor) refine that:
 
-- **[HP-DIR2](../design/host-tool-provisioning.md#HP-DIR2), the maintainer's direction on two
+- **[HP-DIR2](../reference/host-agent-environment.md#HP-DIR2), the maintainer's direction on two
   environment layers.** (1) `yolo host -- <cmd>` composes an environment on top of the user's
   PATH, project tools and mise shims included, with yolo's floor as a fallback. (2) An agent yolo
   delivers from the floor starts in a set, predictable environment: the floor's own node by
   absolute path, mise stripped.
-- **[OQ-HP7](../design/host-tool-provisioning.md#decision-ledger), ruled (a) under principle
-  [HP-DIR3](../design/host-tool-provisioning.md#HP-DIR3).** Only the delivered agent's own startup
+- **[OQ-HP7](../reference/host-agent-environment.md#OQ-HP7), ruled (a) under principle
+  [HP-DIR3](../reference/host-agent-environment.md#HP-DIR3).** Only the delivered agent's own startup
   is fixed. The commands the agent runs see the user's own shell environment.
 
 Neither layer, as written, drops a carried variable such as `HERDR_*`: layer 2 fixes the agent's

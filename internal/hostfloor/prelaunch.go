@@ -23,7 +23,7 @@ import (
 // bought it (docs/design/pi-extension-lifecycle.md §3.2). The jail's launchers run it
 // (internal/entrypoint's prelaunchrefresh.go); `yolo host -- pi` did not, so at the host pi's
 // extensions stayed as old as the user's last hand-run update, and pi kept showing its "Package
-// Updates Available" box there (docs/design/host-tool-provisioning.md HP-D19).
+// Updates Available" box there (docs/reference/host-agent-environment.md HP-D19).
 //
 // # What it keeps of the jail's launcher, and why
 //

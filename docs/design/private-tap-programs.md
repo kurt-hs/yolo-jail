@@ -38,8 +38,8 @@ token expires, which is also the day the host stops working.
 [OQ-PT4](#OQ-PT4), [OQ-PT5](#OQ-PT5).
 
 **Reads with:** [`program-delivery.md`](program-delivery.md) (the delivery classes this adds
-to), [`host-tool-provisioning.md`](host-tool-provisioning.md) and
-[`host-notch-readiness.md`](host-notch-readiness.md) (the host floor and its readiness act),
+to), [`host-agent-environment.md`](../reference/host-agent-environment.md#the-host-agent-floor) and
+[`host-agent-environment.md`](../reference/host-agent-environment.md#the-host-readiness-act) (the host floor and its readiness act),
 [`boundary-broker.md`](boundary-broker.md) (the GitHub broker this design does not use, and why),
 and [`loophole-system.md`](../reference/loophole-system.md#a-program-the-loophole-downloads)
 (the digest-pinned download cache this reuses in shape).
@@ -78,7 +78,7 @@ Constraints this design does not reopen:
 - **Agents and tools are packs; core knows no tool by name**
   ([`AGENTS.md`](../../AGENTS.md#packs-and-what-core-does-not-know)).
 - **A launch is a readiness act** at the jail ([`OQ-JR1`](jail-notch-readiness.md#9-decision-ledger)) and at
-  the host ([`HNR-D1`](host-notch-readiness.md#HNR-D1)). A declared program that cannot be made
+  the host ([`HNR-D1`](../reference/host-agent-environment.md#HNR-D1)). A declared program that cannot be made
   present stops the launch, and `YOLO_ALLOW_MISSING_PROGRAMS=1` is the bypass.
 - **The trust boundary today is disclosure, not consent**
   ([`pack-system.md`](../reference/pack-system.md#the-credential-boundary-disclosure-not-consent)).
@@ -110,7 +110,7 @@ Constraints this design does not reopen:
 | :--- | :--- |
 | A `program` is delivered `via` `npm`, `installer` or `source`; nothing names Homebrew | [`contributes.go`](../../internal/packdecl/contributes.go) (`Via`) |
 | The user-scope `provisioners` order can rank `brew` first **at the host** to install an agent. It covers only host installs, and no jail reads it | [`provisioners.go`](../../internal/config/provisioners.go), [`PS-D9`](provisioner-sets.md#PS-D9) |
-| `install_hints` may name `owner/tap/name`. With `provisioners.host` ranking `brew` first, `hostfloor.Outranking` hands that program to brew at the host: the floor keeps no entry, a host launch runs brew's copy, and the stop names `brew install <hint>`. This is the exception [`HNR-D2`](host-notch-readiness.md#HNR-D2) allows | [`installhints.go`](../../internal/packdecl/installhints.go), [`hostfloor/provisioners.go`](../../internal/hostfloor/provisioners.go) |
+| `install_hints` may name `owner/tap/name`. With `provisioners.host` ranking `brew` first, `hostfloor.Outranking` hands that program to brew at the host: the floor keeps no entry, a host launch runs brew's copy, and the stop names `brew install <hint>`. This is the exception [`HNR-D2`](../reference/host-agent-environment.md#HNR-D2) allows | [`installhints.go`](../../internal/packdecl/installhints.go), [`hostfloor/provisioners.go`](../../internal/hostfloor/provisioners.go) |
 | The GitHub broker refuses `gh release download`, *"it writes files on the host"*, and every verb outside the workspace's approved repositories | [`policy.go`](../../internal/ghbroker/policy.go) |
 | A loophole's `binaries` are downloaded **host-side** by `yolo pack install` and checked against a pinned sha256. They are kept in a content-addressed cache that no jail mounts whole, and delivered as one read-only file bind per build | [`loophole-system.md`](../reference/loophole-system.md#a-program-the-loophole-downloads) |
 | macos-user has no bind mounts. Its launchers run captured programs from a **root-owned copy** under the backend's state directory | [`install-capture.md` H4](../reference/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it) |
@@ -213,7 +213,7 @@ trees, but it never fetches: it joins a jail whose bytes are already delivered, 
 bytes never change ([§4.3](#43-delivery-per-backend)). So an offline attach always succeeds. When
 the attach's staged tree has a tap program the running jail lacks, the existing "trees differ" line
 names it. If [OQ-PT2](#OQ-PT2) rules for a floor copy, the fetch also runs in the host readiness act
-([`HNR-D1`](host-notch-readiness.md#HNR-D1)). Each launch fetches only the jail platform it is
+([`HNR-D1`](../reference/host-agent-environment.md#HNR-D1)). Each launch fetches only the jail platform it is
 starting.
 
 **Why at launch.** The loophole `binaries` cache it resembles is filled only by `yolo pack install`,
@@ -341,7 +341,7 @@ a tap program is [OQ-PT2](#OQ-PT2):
 
 - **brew's copy.** The program takes the hand-off the `provisioners` order already performs
   (`hostfloor.Outranking`): the floor keeps no entry, and a host launch runs brew's copy, which
-  [`HNR-D2`](host-notch-readiness.md#HNR-D2) already excepts. The new part is that the readiness act
+  [`HNR-D2`](../reference/host-agent-environment.md#HNR-D2) already excepts. The new part is that the readiness act
   runs `brew install org/tap/tool` for a missing one, where today it only names the command.
 - **Floor copy.** yolo places the tap store's host-platform file in the floor prefix, and the
   readiness act fetches it.

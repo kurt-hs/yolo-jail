@@ -36,7 +36,7 @@ macos-user. [OQ-CDX1](#decision-ledger) and [OQ-CDX2](#decision-ledger) were rul
 daemon talks to), [`host-notch-services.md`](../design/host-notch-services.md#HS-D15) (the doorway
 rule), [`host-daemon-ownership.md`](../design/host-daemon-ownership.md#HD-R1) (HD-R1, no host
 singletons), [`central-yolo-watcher.md`](central-yolo-watcher.md) (the watcher exploration), and
-[`host-tool-provisioning.md`](../design/host-tool-provisioning.md) (the host agent floor).
+[`host-agent-environment.md`](../reference/host-agent-environment.md#the-host-agent-floor) (the host agent floor).
 
 ---
 
@@ -591,10 +591,10 @@ so the host broker can serve it without touching the user's own `~/.codex`
   user's `~/.codex` daemon does not share. A stale list there has the same cause as in
   [§2.7](#27-the-model-list-and-the-refresh-live-in-the-daemon): the daemon's version, not the cache.
 - **The host agent floor** — the set of agents yolo guarantees on the host, installed into a
-  yolo-owned prefix ([`host-tool-provisioning.md`](../design/host-tool-provisioning.md#defined-terms)) —
+  yolo-owned prefix ([`host-agent-environment.md`](../reference/host-agent-environment.md#host-floor-terms)) —
   holds codex on Linux since 2026-10-05, materialized from the machine's capture
-  ([OQ-HP3](../design/host-tool-provisioning.md#decision-ledger),
-  [HP-D17](../design/host-tool-provisioning.md#HP-D17)); on macOS it waits for the host capture. Three
+  ([OQ-HP3](../reference/host-agent-environment.md#OQ-HP3),
+  [HP-D17](../reference/host-agent-environment.md#HP-D17)); on macOS it waits for the host capture. Three
   consequences follow (INFERRED unless marked):
   - The capture must keep the complete package layout, or Codex 0.157 and later refuses to open at
     the host while the daemon is on. A capture walks `~/.codex/packages/standalone` as one of its
@@ -602,7 +602,7 @@ so the host broker can serve it without touching the user's own `~/.codex`
   - A copy outside `CODEX_HOME/packages/standalone/releases` cannot run `codex update`, so the floor
     updates by re-capturing and never through the pack's `update` verb. Built: it captures again once
     its newest capture is a day old, and installs only a newer release
-    ([HP-D16](../design/host-tool-provisioning.md#HP-D16)).
+    ([HP-D16](../reference/host-agent-environment.md#HP-D16)).
   - A floor update moves the CLI and not the daemon package, so with the daemon on, the floor would
     also have to run `codex app-server daemon update --from-cli --yes` after each update. Not built.
 - **Not affected:** the user's own `codex` in `~/.codex`, which is a different socket and a

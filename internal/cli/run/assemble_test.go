@@ -1210,7 +1210,7 @@ func TestAssembleNeverMountsTheEmbeddedPackCache(t *testing.T) {
 }
 
 // TestAssembleNeverMountsTheHostFloor pins the host agent floor's one security property at the
-// launcher (docs/design/host-tool-provisioning.md §3, "Never under a segment a jail mounts"): the
+// launcher (docs/reference/host-agent-environment.md, "The host prefix": under no segment a jail mounts): the
 // host executes the floor's programs with the user's full authority, so no launch may bind the
 // floor, anything under it, or an ancestor that would carry it in wholesale — in ANY mode, since
 // even a read-only view would let a jail read the prefix's receipts and records. A floor that

@@ -61,7 +61,7 @@ Derived/Shared/State postures this doc reuses).
 Every term below is coined here unless it links to where it is defined.
 
 - **Notch.** A setting of yolo's confinement dial: jail, guest or host
-  ([the dial](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches)). This doc
+  ([the dial](../reference/what-yolo-is.md#the-confinement-dial)). This doc
   treats **macos-user** separately from the container jail wherever the two differ.
 - **Surface.** One agent config file a pack declares, with a **mode** of `stateful`, `computed`,
   `rmw` or `unrendered` ([the four modes](config-ownership-and-promotion.md#22-the-four-surface-modes)).

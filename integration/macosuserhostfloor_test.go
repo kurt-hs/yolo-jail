@@ -13,7 +13,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// THE HOST FLOOR IS THE HOST USER'S ALONE, measured on a Mac (docs/design/host-tool-provisioning.md
+// THE HOST FLOOR IS THE HOST USER'S ALONE, measured on a Mac (docs/reference/host-agent-environment.md
 // §3 and §8, HP-D8): the floor is a tree of executables `yolo host` runs with the user's full
 // authority, and the macos-user sandbox account is another uid on the same machine. What keeps that
 // account from reading or replacing them is the prefix's 0700 mode, which only a Mac can confirm:

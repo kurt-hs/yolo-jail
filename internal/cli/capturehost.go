@@ -200,7 +200,7 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 	if target.Fork != nil {
 		return captureFork(*target.Fork, out, errw, color)
 	}
-	// WHICH ARM (host-tool-provisioning.md HP-D18): a capture jail, or — on Linux, with no runtime
+	// WHICH ARM (host-agent-environment.md HP-D18): a capture jail, or — on Linux, with no runtime
 	// selected and none on PATH — this host, the installer confined by Landlock. A fork's build above
 	// never comes here: it builds in a sealed jail or not at all (forked-programs-as-packs.md §12).
 	arm := chooseCaptureArm(captureHostGOOS, act.runtime)
@@ -691,7 +691,7 @@ const packdeclNPMKind = "npm"
 // --scan-content-refs: THE FULL REFERENCE SCAN, on the container backends too. A jail
 // materializes the entry into the /home/agent it was captured in, which needs no scan; the host
 // agent floor materializes the SAME entry into its own prefix on the host
-// (docs/design/host-tool-provisioning.md OQ-HP3, "one package inside and outside"), a different
+// (docs/reference/host-agent-environment.md OQ-HP3, "one package inside and outside"), a different
 // home, which capture.Materialize allows only for a manifest whose full scan found every
 // reference it would have to rewrite. The scan reads the delta once, at capture time — an act
 // that already downloads and installs the whole thing.
@@ -837,7 +837,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	// installer and admitted an entry. Still unmeasured on a Mac: that Seatbelt DENIES the shared
 	// home during a capture, since a capture that silently wrote to it looks identical to one
 	// that did not (install-capture.md slice 6's item 3, a case with no green run recorded); the
-	// materialize half; and the host floor's run of a real capture (host-tool-provisioning.md
+	// materialize half; and the host floor's run of a real capture (host-agent-environment.md
 	// HP-D2).
 	//
 	// The homeOverlay the pipeline composed is DROPPED here, and that is the capture's
@@ -1083,7 +1083,7 @@ func humanBytes(n int64) string {
 // through (capturelandlock_linux.go): it restricts itself with Landlock and execs the capture driver.
 const landlockExecVerb = "landlock-exec"
 
-// captureArm is which act one `yolo capture` of an installer program runs (host-tool-provisioning.md
+// captureArm is which act one `yolo capture` of an installer program runs (host-agent-environment.md
 // HP-D18), and when neither can run, why.
 type captureArm struct {
 	// runtime is the runtime the capture jail boots with: one its caller named for this act, or ""

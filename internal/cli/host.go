@@ -828,7 +828,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// (OQ-HE10 (c), HE-D16), which is also the PATH the child is handed below. The launch PATH is
 	// resolved once, here, for both.
 	//
-	// THE READINESS ACT first (docs/design/host-notch-readiness.md HNR-D1, hostreadiness.go):
+	// THE READINESS ACT first (docs/reference/host-agent-environment.md HNR-D1, hostreadiness.go):
 	// every program a selected pack declares is installed into the floor before the target
 	// resolves, whatever the command, and one that cannot be STOPS the launch unless
 	// YOLO_ALLOW_MISSING_PROGRAMS is set — the jail's readiness act, at the host.
@@ -847,7 +847,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 		return rc
 	}
 	target := resolved.Path
-	// THE PROGRAM'S PRE-LAUNCH REFRESH (packdecl.Refresh; docs/design/host-tool-provisioning.md
+	// THE PROGRAM'S PRE-LAUNCH REFRESH (packdecl.Refresh; docs/reference/host-agent-environment.md
 	// HP-D19, hostfloor/prelaunch.go): pi's `update --extensions`, run against the target that
 	// resolved — the floor's copy, a PATH copy or a path given — before the model menu and the
 	// OpenAI prelaunch, as the jail's launcher runs it, and before the blocked tools join the

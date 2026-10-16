@@ -161,7 +161,7 @@ See [When your patches stop applying](userguide/guides/patch-series.md#when-your
 
 **`yolo host` installs every declared program.** `yolo host -- <command>` installs your selected
 packs' programs first, as a jail does, and never falls back to a copy on your PATH. Keep your own copy
-with `"host_floor": {"<pack>": false}` in your user config. See [host readiness](docs/design/host-notch-readiness.md).
+with `"host_floor": {"<pack>": false}` in your user config. See [host readiness](docs/reference/host-agent-environment.md#the-host-readiness-act).
 
 - A `shared_credentials` or `shared_directory` hook whose `at` is not a machine-scope `state` of its pack is refused: declare that path as one.
 - `macos_log` is refused: delete it and select the `macos-log` pack ([how](packs/macos-log/README.md#turning-it-on)).

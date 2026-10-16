@@ -45,7 +45,7 @@ sibling docs and plans — do not renumber them.
 > remedy is no longer only "discard it". Q1 is still open (see there).
 
 Five worked stories of people (and one agent) encountering yolo as
-[an environment manager whose confinement is a dial](yolo-as-environment-manager.md) —
+[an environment manager whose confinement is a dial](../reference/what-yolo-is.md) —
 `jail` (default), `guest`, `host` — rather than as a container product with config
 composition bolted inside it. The lens is **the moment the reframing pays off, and the moment it
 bites**: every story is written so the new verbs (`apply`, `describe`, `check --at`) get used in
@@ -64,8 +64,8 @@ Terminal output below is real where it can be (`yolo config ls`, `yolo config di
 banner, `yolo pack ls`, the empty-packs notice) and follows the design doc's samples where the
 feature does not exist yet.
 
-**Reads with:** [yolo-as-environment-manager.md](yolo-as-environment-manager.md) (the design
-these stories exercise), [host-render-target.md](host-render-target.md) ([§6](host-render-target.md#6-the-host-as-a-reduced-target) is where the
+**Reads with:** [what-yolo-is.md](../reference/what-yolo-is.md) (the charter and confinement dial
+these stories exercise, graduated there 2026-10-16 from the environment-manager design), [host-render-target.md](host-render-target.md) ([§6](host-render-target.md#6-the-host-as-a-reduced-target) is where the
 failures in story 2 were probed), [../plans/BACKLOG.md](../plans/BACKLOG.md) Stage G.
 
 ---
@@ -137,7 +137,7 @@ when the definition does not bind. If yolo's answer to "is this the environment 
    > "nothing surfaces that the environment has a machine-shaped input".
    >
    > The standing decision this used to collide with is **gone the other way**:
-   > [OQ-3](yolo-as-environment-manager.md#9-decision-ledger) — *retire the read-in `host` layer,
+   > [OQ-3](../plans/environment-manager-plan.md#decision-ledger) — *retire the read-in `host` layer,
    > express personal settings as a local pack* (2026-08-01) — was **REVERSED 2026-09-12** by
    > [`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger), which ruled the layer
    > **stays**: deciding its binding, failure direction and coverage is deciding that it exists.
@@ -243,7 +243,7 @@ when the definition does not bind. If yolo's answer to "is this the environment 
    error on first use.
 
    > [!NOTE]
-   > **Decided and shipped as a FLAG — verified 2026-08-23.** The design doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) rules
+   > **Decided and shipped as a FLAG — verified 2026-08-23.** The [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) rules
    > "`--sealed` is an opt-in flag, not the default, and the split is the point," and the code
    > agrees (`internal/cli/apply.go`). Maya's complaint therefore stands as written —
    > the guarantee is off until she asks. **Q1a is not closed by this**, because its leaning was a
@@ -353,7 +353,7 @@ exactly what she needs and exactly why she's here: **a real home on the real fil
    `port`) that yolo does not have and that goes stale. The honest version is a pack-declarable
    field — a pack that needs `redis` says how to get it outside a jail, once, in the manifest,
    rather than every yolo release guessing on every distro. That parallels the `install` rule
-   exactly: **yolo names the remedy but never runs it below `jail`** ([§4.1](yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story)), so this is advice,
+   exactly: **yolo names the remedy but never runs it below `jail`** ([`program` below `jail`](../reference/what-yolo-is.md#program-below-jail)), so this is advice,
    not a second package manager.
 
    **Gap:** "verify system deps are present" needs a name for the dependency that is *not* the
@@ -382,7 +382,7 @@ exactly what she needs and exactly why she's here: **a real home on the real fil
    over an empty list on every single launch. Eleven surfaces are declared; zero render; nothing
    errors. `../reference/macos-user-nix-and-features.md:174` still claims pack selection works.
 
-   The design doc's own [§8](yolo-as-environment-manager.md#8-what-this-costs) says it out loud: *"`guest` must actually work before any of this is
+   The design doc's own [what it costs](../reference/what-yolo-is.md#what-it-costs) says it out loud: *"`guest` must actually work before any of this is
    honest. A three-notch story with a broken middle is worse than a one-notch story that
    works."* Priya is what that sentence looks like from the outside.
 
@@ -550,7 +550,7 @@ right, and this story is the argument for not announcing three notches until G3 
 >   2026-09-24:* the confirm-gated install this bullet called unbuilt **shipped 2026-09-12** —
 >   `yolo host apply --assert` offers a missing declared dependency's install behind one prompt
 >   (`internal/cli/applyhostdepgate.go`); the elevation-class batching is not owed
->   ([`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger), answered 2026-09-30). And the posture the host renders under
+>   ([`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way), answered 2026-09-30). And the posture the host renders under
 >   is now the user-scope `host_management` key (`none`/`assert`/`own`), whose `assert` value was
 >   retired by ruling on 2026-09-20 and is not yet out of the code
 >   ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
@@ -679,7 +679,7 @@ Ash then does what a jailed agent reasonably does: to test the pyenv theory they
 undo by restarting the jail. **There is no jail to restart.** Ash has just uninstalled the
 human's Python.
 
-This is not a hypothetical failure mode. It is the specific reason [§6](yolo-as-environment-manager.md#6-the-environment-describes-itself-to-its-own-agent) of the design exists: *an
+This is not a hypothetical failure mode. It is the specific reason [the briefing states the notch](../reference/what-yolo-is.md#the-briefing-states-the-notch) of the design exists: *an
 agent that believes it is disposable when it is not will take a disposable agent's risks.*
 
 **What happens with a self-describing briefing:**
@@ -867,7 +867,7 @@ before the response is due and she is not going to read `docs/design/`.
    Yes. `--at host` is a flag, and the design has no org-level control over it.
 
    **Gap:** there is no way to say "this machine may not run at `host`," and no audit trail when
-   someone does. The design's [§8](yolo-as-environment-manager.md#8-what-this-costs) admits `host` will be over-used and calls it a
+   someone does. The design's [what it costs](../reference/what-yolo-is.md#what-it-costs) admits `host` will be over-used and calls it a
    product-discipline risk with no technical fix. That's defensible for a solo user; it is not an
    answer for Lisa, who has to write something into a customer document. The minimum viable
    control is that the *user config* can pin `"maxConfinement": "jail"` — a floor she can
@@ -923,9 +923,9 @@ shipped as the separate verb `yolo check-deps`. *Re-checked 2026-09-24:* the `pa
 row is **not** a refusal any more. `render.HostFields` honors `program`, and
 `yolo host apply --assert` offers the install behind one prompt, with a decline fatal
 (`internal/cli/applyhostdepgate.go`) — the design doc's
-[§4.1](yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story)
+[`program` below `jail`](../reference/what-yolo-is.md#program-below-jail)
 *confirm-gated* position, shipped 2026-09-12. `FieldSet.Refuse`'s "install is refused below jail"
-string is unreachable. What is left is [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger).
+string is unreachable. What is left is [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way).
 
 ### The closure: what is in the definition, and what escapes it
 
@@ -960,10 +960,10 @@ jail at all, and killing it would break the feature packs exist to provide.
 >   It remains an **undeclared** input, which is what the row is actually for, so the tier is
 >   right and the parenthetical is not.
 > - The **`host` layer** row was under a standing decision to be *removed*, not reported: design
->   doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) / plan [OQ-3](../plans/environment-manager-plan.md#decision-ledger) resolved 2026-08-01 to retire the read-in layer in favour of a local
+>   doc [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) / plan [OQ-3](../plans/environment-manager-plan.md#decision-ledger) resolved 2026-08-01 to retire the read-in layer in favour of a local
 >   pack. **That decision was REVERSED 2026-09-12** by
 >   [`OQ-CO10`/`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger): the layer stays,
->   declared on the surface and read fail-closed ([`OQ-EM2`](yolo-as-environment-manager.md#9-decision-ledger)).
+>   declared on the surface and read fail-closed ([`OQ-EM2`](../reference/what-yolo-is.md#why-its-this-way)).
 >   So the row stands as written — a declared impurity — and its *report* half is what is owed.
 
 ### What goes into the description hash
@@ -1050,7 +1050,7 @@ docs and plans — do not renumber, do not delete.**
    promote verb, or the interactive notice is just the boot banner again — visible and unbinding.
 
    _Shipped since (2026-08-23):_ **it shipped as a plain flag, defaulting off** — parsed and
-   dispatched in `internal/cli/apply.go`, and the design doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) argues for
+   dispatched in `internal/cli/apply.go`, and [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) argues for
    exactly that. The question is **not** thereby closed: its leaning proposed a third shape
    (default-on when non-TTY, flag-on interactively, with the interactive path *printing* the
    open-closure summary), and `applySealed` consults no TTY state at all. So today the flag is
@@ -1069,7 +1069,7 @@ docs and plans — do not renumber, do not delete.**
 
    _Leaning:_ pack- and config-declarable `provides: ["psql"]` plus an optional per-notch
    `remedy` string, and report unprobeable entries as unprobeable rather than as present. yolo
-   names the remedy and never runs it below `jail` — same rule as `install` ([§4.1](yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story)), so this is
+   names the remedy and never runs it below `jail` — same rule as `install` ([`program` below `jail`](../reference/what-yolo-is.md#program-below-jail)), so this is
    advice, not a second package manager. A built-in attr→brew/apt table is the tempting version
    and it goes stale on every distro release.
 
@@ -1089,7 +1089,7 @@ docs and plans — do not renumber, do not delete.**
    the rule is [`report-tiers.md`'s dependency rule](../reference/report-tiers.md#the-dependency-rule)).
    `yolo check-deps` still only probes. So this question now decides only whether the inert-key
    handoff also belongs in `check --at <notch>`; what is left of the elevation batching is
-   [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger).
+   [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way).
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -1164,7 +1164,7 @@ docs and plans — do not renumber, do not delete.**
    > _(empty — fill in when decided)_
 
 5. 💬 <a id="Q5"></a>**[Q5](#Q5) — whether the user config can set a confinement floor.**
-   Lisa needs to distribute "this machine may not run at `host`." [§8](yolo-as-environment-manager.md#8-what-this-costs) currently calls `host`
+   Lisa needs to distribute "this machine may not run at `host`." [what it costs](../reference/what-yolo-is.md#what-it-costs) currently calls `host`
    over-use a product-discipline risk with no technical fix, which is true for one user and
    insufficient for 31.
 
@@ -1268,7 +1268,7 @@ docs and plans — do not renumber, do not delete.**
 
 9. 💬 <a id="Q9"></a>**[Q9](#Q9) — whether the notch names are defensible as terminology.**
    The middle notch was `sandbox` in the first draft of these stories, and it does not survive
-   scrutiny (design doc [§4.0](yolo-as-environment-manager.md#40-why-the-middle-notch-is-not-called-sandbox)): "sandbox" is the industry's *generic* term for the whole column —
+   scrutiny ([why the middle notch is `guest`](../reference/what-yolo-is.md#why-guest-not-sandbox)): "sandbox" is the industry's *generic* term for the whole column —
    Kubernetes' `PodSandbox`, gVisor, Firecracker, Chrome's seccomp/Seatbelt renderer — so it names
    containers and VMs too. This codebase already spends the word on the jail three times
    (`internal/cli/help.go` "a sandboxed container jail", `internal/jailcontent/briefing.go`,
