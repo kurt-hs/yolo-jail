@@ -3578,34 +3578,33 @@ longer waits for the other launch's staging.
   real overlapping-session/restart behavior remain **UNMEASURED**.
 - **A lock file that cannot be opened** warns and leaves the launch unserialised, because the
   workspace lock is a courtesy (`acquireWorkspaceLock`).
-- <a id="oq-pk3-background"></a>**Background to [`OQ-PK3`](#oq-pk3), below: what a host-scoped
-  singleton loses when its launch's tree goes.** A
-  singleton that reads its module dir after it starts (a lazy import, a data file) then loses it;
-  under the shared tree the dir lasted until the pack left `packs`. No shipped pack is affected:
-  the shipped singletons self-exec `yolo internal daemon …`, and the one shipped `{loophole_dir}`,
-  the audio pack's, is a per-jail bind. ⚠ [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) (built
-  2026-10-06) retired that singleton: every host daemon now ends with the jail that started it.
-  What is left is narrower, a daemon declaring `detach` still finishing a request after its jail
-  ended, which outlives its launch's tree by at most its upstream deadline.
-- 💬 <a id="oq-pk3"></a>**[`OQ-PK3`](#oq-pk3) — a host-scoped singleton that names `{loophole_dir}` in its `host_daemon.cmd` resolves it
-  inside the launch's own tree**, and that tree goes once the launch's container is known gone,
-  while the singleton, by design, outlives the jail that started it (`internal/broker`). What it
-  loses then, and why no shipped pack is affected: [the background above](#oq-pk3-background).
+- <a id="oq-pk3-background"></a>**Background to [`OQ-PK3`](#oq-pk3), below: what a host daemon
+  loses when its launch's tree goes.** The question was asked about a host-scoped singleton, which
+  outlived the jail that started it and so could outlive the tree its `{loophole_dir}` named.
+  [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) (built 2026-10-06) retired that scope: the
+  strict manifest loader refuses `host_daemon.scope: "host"` and the tolerant one reads it as
+  `"jail"` with a note, so every host daemon is spawned by one launch and ends with it. What is
+  left is narrower: a daemon declaring `detach` still finishing a request after its jail ended,
+  which outlives its launch's tree by at most its upstream deadline. No shipped pack is affected
+  either way: the shipped credential daemons self-exec `yolo internal daemon …`, and the one shipped
+  `{loophole_dir}`, the audio pack's, is a per-jail bind.
+- 💬 <a id="oq-pk3"></a>**[`OQ-PK3`](#oq-pk3) — a host daemon that names `{loophole_dir}` in its
+  `host_daemon.cmd` resolves it inside the launch's own tree**, and that tree goes once the
+  launch's container is known gone. Since HD-R1 no daemon outlives its launch except a `detach`
+  straggler, briefly; [the background above](#oq-pk3-background) has the detail.
 
-  **Needs a ruling**, since each remedy changes something a
-  pack author sees or adds a store:
+  **Needs a ruling**, now on whether anything is left to decide. The remedies first proposed were:
 
-  - keep a tree while a singleton spawned from it lives (which
+  - keep a tree while a daemon spawned from it lives (which
     also needs the orphan-staging reaper to honour that veto);
-  - resolve the token, for host scope
-    only, against a stable content-addressed copy with its own liveness collection;
-  - or refuse the
-    token in a host-scoped `cmd` and say why.
+  - resolve the token against a stable content-addressed copy with its own liveness collection;
+  - or refuse the token in a daemon's `cmd` and say why.
 
-  <!-- vantage: question id=OQ-PK3 leaning="Refuse {loophole_dir} in a host-scoped host_daemon.cmd, naming why: no shipped pack uses it, and keeping a tree alive for a singleton (a reaper veto) or a content-addressed host-scope copy (a new store) each add machinery for a case nobody has." -->
+  <!-- vantage: question id=OQ-PK3 leaning="Close it as dissolved by HD-R1: no host daemon outlives its launch any more except a detach straggler finishing one request, and no shipped pack names {loophole_dir} in a host daemon's cmd." -->
 
-  _Leaning:_ refuse the token in a host-scoped `cmd`, naming why: no shipped pack uses it, and the
-  other two add a veto or a store for a case nobody has yet.
+  _Leaning:_ close it as dissolved by HD-R1: no daemon outlives its launch any more except a
+  `detach` straggler finishing one request, and no shipped pack names `{loophole_dir}` in a host
+  daemon's `cmd`.
 
 - **Not verified on the macOS backends.** The unit and integration tests run on Linux podman.
   Whether `TestMacosUserTwoConcurrentLaunchesOfOneWorkspace` reaches its sessions, and whether an
