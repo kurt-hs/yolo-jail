@@ -2,9 +2,12 @@ package logcap
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -108,5 +111,46 @@ func TestAppendBeneathNeverFollowsArchiveOrLockLinks(t *testing.T) {
 				t.Fatalf("followed %s: %q", name, got)
 			}
 		})
+	}
+}
+
+// A LOCK CREATE THAT LOSES A RACE: on macOS an O_CREATE open of the sidecar lock, racing other
+// first appends to the same sink, has failed with ENOENT although its directory exists (the
+// maintainer's Mac, 2026-10-16: TestAppendBeneathSerializesTrimAndConcurrentAppends lost the
+// records of the appends that hit it). The append opens the lock again rather than dropping
+// its record.
+func TestAppendBeneathRetriesALockCreateThatReportsNoSuchFile(t *testing.T) {
+	ws := t.TempDir()
+	if err := os.Mkdir(filepath.Join(ws, ".yolo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	failures := 2
+	open := func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		if name == "receipts.jsonl.lock" && flag&os.O_CREATE != 0 && failures > 0 {
+			failures--
+			return nil, &fs.PathError{Op: "openat", Path: name, Err: syscall.ENOENT}
+		}
+		return paths.OpenWorkspaceStateFile(ws, name, flag, perm)
+	}
+	if err := AppendBeneath(open, "receipts.jsonl", []byte("record\n")); err != nil {
+		t.Fatalf("the append gave up on a lock create that lost a race: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(ws, ".yolo", "receipts.jsonl")); string(got) != "record\n" {
+		t.Fatalf("the log holds %q, want the record", got)
+	}
+}
+
+// A LOCK THAT CANNOT BE OPENED AT ALL is still the open's error, after a bounded number of tries.
+func TestAppendBeneathReportsALockThatNeverOpens(t *testing.T) {
+	calls := 0
+	open := func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		calls++
+		return nil, &fs.PathError{Op: "openat", Path: name, Err: syscall.ENOENT}
+	}
+	if err := AppendBeneath(open, "receipts.jsonl", []byte("record\n")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want the open's ENOENT", err)
+	}
+	if calls > 10 {
+		t.Fatalf("the lock open was tried %d times, want a small bound", calls)
 	}
 }

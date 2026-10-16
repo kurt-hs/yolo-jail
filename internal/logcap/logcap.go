@@ -108,7 +108,7 @@ func ResetBeneath(open OpenFunc, name string, data []byte) error {
 }
 
 func appendBeneath(open OpenFunc, name string, data []byte, reset bool) error {
-	lock, err := open(name+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := openLock(open, name+".lock")
 	if err != nil {
 		return err
 	}
@@ -133,6 +133,25 @@ func appendBeneath(open OpenFunc, name string, data []byte, reset bool) error {
 		return err
 	}
 	return f.Close()
+}
+
+// lockOpenTries bounds openLock's tries.
+const lockOpenTries = 5
+
+// openLock opens the sidecar lock, creating it when absent. Every writer's first append creates
+// it, and on macOS an O_CREATE open racing other creators of the same name has returned ENOENT
+// although the directory exists (the maintainer's Mac, 2026-10-16: two of eight concurrent first
+// appends, whose records were then dropped). Nothing removes the lock once made, so the open is
+// tried again; a lock that still cannot be opened returns the last open's error.
+func openLock(open OpenFunc, name string) (*os.File, error) {
+	var err error
+	for i := 0; i < lockOpenTries; i++ {
+		var f *os.File
+		if f, err = open(name, os.O_CREATE|os.O_RDWR, 0o600); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return f, err
+		}
+	}
+	return nil, err
 }
 
 // TrimBeneath bounds the log at name, opened read-write through open, on Trim's terms: past
