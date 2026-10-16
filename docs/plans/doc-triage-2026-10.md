@@ -5,21 +5,21 @@ status: in-review
 stage: DESIGN
 next: "Owner picks which other groups to act on; the No-brainer groups are done, except two blocked NB2 docs"
 tags: [docs, triage, cleanup]
-summary: "Every Markdown file under docs/ (287) sorted into a proposed action: archive, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review; no doc has moved. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
+summary: "Every Markdown file under docs/ (287) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review; no doc has moved. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
 vantage:
   status-chip: true
 ---
 
 # Doc triage, 2026-10-15
 
-**Status:** 2026-10-15. A proposal only: no doc has been moved, merged or deleted. Seven read-only
+**Status:** 2026-10-16. 28 docs were deleted on 2026-10-15 ([the no-brainers](#no-brainers)), and `workspace-path-mirroring.md` moved to `docs/reference/`. Everything else below is still a proposal. Seven read-only
 agents read each doc's frontmatter, status line, headings, open questions and ledger, and
 spot-checked the code where a category depended on it. They did not compare every doc line by line with today's code.
 Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. **No Graduate doc was deleted**: every one still holds content, or ids that other docs and code link to, that no reference doc carries. The group is split below, and the [No-brainers](#no-brainers) section lists the 30 docs whose own text already decides their fate.
 
 **What the groups mean.**
 
-- **Archive**: superseded by a later doc or ruling, stale, or a finished plan. Proposed: move to `docs/archive/` for the owner to look over.
+- **Delete**: superseded by a later doc or ruling, stale, or a finished plan. Proposed: delete it after repointing its links; git history keeps it. Nothing is archived.
 - **Merge**: overlaps another doc; fold it into the named target.
 - **Graduate** *(the term is [the house rule](../../AGENTS.md#where-things-live)'s: a built design's lasting reference moves to a system doc under `docs/reference/`, and the design doc is deleted)*: built; move what still matters, then retire the design doc.
 - **Fix**: a reference doc that describes something removed or renamed.
@@ -27,7 +27,7 @@ Later on 2026-10-15 each Graduate doc was checked against its target reference d
 
 | Group | Docs |
 | :--- | ---: |
-| [Archive](#archive-72) | 72 |
+| [Delete](#delete-44) | 44 |
 | [Merge](#merge-13) | 13 |
 | [Graduate](#graduate-none-was-a-clean-delete) | 48 |
 | &nbsp;&nbsp;[Stub: ids still cited](#stub-ids-still-cited-6) | 6 |
@@ -69,9 +69,9 @@ Inbound links were repointed at what replaced each doc, then the docs were delet
 - **Misfiled.** pre-tag-release-gate.md and research/tool-provisioning.md (72 inbound links) are reference docs. cached-good-recovery-qa.md is a committed test log. Nine *-plan.md files sit in docs/design/.
 - **Too big to review.** pack-system.md (4,073 lines), provisioner-sets (2,803), boundary-broker (2,754), model-lists-and-pickers (2,563), agent-event-watchers (2,532), jail-lifetime-last-session-wins (2,453).
 
-## Archive (72)
+## Delete (44)
 
-Superseded, stale, or a finished plan. Proposed: move to docs/archive/ for you to look over.
+Superseded, stale, or a finished plan. Proposed: delete after repointing links.
 
 | Doc | Lines | Category | Target | Reason |
 | :--- | ---: | :--- | :--- | :--- |
