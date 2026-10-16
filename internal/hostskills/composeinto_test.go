@@ -1,7 +1,7 @@
 package hostskills
 
 // composeinto_test.go pins ComposeInto, the jail's entry into the one layer writer
-// (docs/plans/notch-convergence.md#OQ-NC11): the same tiers and the same collision refusal as the
+// (docs/plans/notch-convergence.md#7-decision-ledger): the same tiers and the same collision refusal as the
 // host render, over a directory yolo owns wholesale, and a reserved child never composed.
 
 import (

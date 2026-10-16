@@ -685,10 +685,10 @@ that writes a launch's environment for one notch or backend. There are three:
     env derive runs for a name no pack installs, and a CLI-less pack's gated env (`aws-auth`'s
     pointer) does not fire for it
     ([`OQ-ES7`](../design/credential-sources-separation.md#OQ-ES7), moot since
-    [OQ-NC5](../plans/notch-convergence.md#OQ-NC5)). A `profile` key
+    [OQ-NC5](../plans/notch-convergence.md#7-decision-ledger)). A `profile` key
     naming a command no resolvable pack installs is refused here with the validator's message,
     as `yolo check` and every jail launch refuse it
-    ([OQ-NC5](../plans/notch-convergence.md#OQ-NC5), which retired ES-D1;
+    ([OQ-NC5](../plans/notch-convergence.md#7-decision-ledger), which retired ES-D1;
     [ES-D2 to ES-D5](../design/credential-sources-separation.md#10-decision-ledger)).
   - **Its disclosure says what this notch can do about it.** For an ad-hoc command a withheld
     line names the grant, `yolo host --with-credentials <provider> -- <cmd>`. For an agent it
@@ -801,7 +801,7 @@ Three consequences to know:
   The host notch applies its composition over the shell it inherits, so there a profile's
   composed value replaces one your shell exports: your shell has no say over a name yolo
   composes, as the host's environment has none in a jail
-  ([OQ-NC13](../plans/notch-convergence.md#OQ-NC13), ruled 2026-10-05). The menu half of
+  ([OQ-NC13](../plans/notch-convergence.md#7-decision-ledger), ruled 2026-10-05). The menu half of
 [`OQ-CN4`](#oq-cn4) is each agent's own key:
 opencode's derive writes `enabled_providers: [<selected provider>]` beside its selected model,
 or every provider of its [active set](#an-active-set-several-profiles-for-one-agent), the primary
@@ -819,7 +819,7 @@ so for pi the only lever on what it can reach is the credential. For `openai-cod
   pack's value of that name, and at the host the shell's, but never the profile's, so a null
   cannot leave claude zai's key with no zai address. The host exec, a jail's shared and
   per-agent files and the macos-user session serialize one composition
-  (`CredentialScope.EnvFor`, [OQ-NC12](../plans/notch-convergence.md#OQ-NC12), ruled
+  (`CredentialScope.EnvFor`, [OQ-NC12](../plans/notch-convergence.md#7-decision-ledger), ruled
   2026-10-05), so a name has one winner wherever the agent runs. A value meant to beat the
   profile has the per-command spelling above. In a jail, a name the agent and every other
   process get the same value for is left in the agent's process as the jail shell holds it, so
@@ -827,7 +827,7 @@ so for pi the only lever on what it can reach is the credential. For `openai-cod
   `YOLO_PROFILES`, `YOLO_USE_PROFILES`) are written after that composition at every notch, so no
   `env_sources` value or null replaces or removes one.
 - <a id="every-launch-names-what-it-shadowed"></a>**Every launch names what that order
-  shadowed** ([OQ-NC12](../plans/notch-convergence.md#OQ-NC12)'s disclosure,
+  shadowed** ([OQ-NC12](../plans/notch-convergence.md#7-decision-ledger)'s disclosure,
   [NC-D73 to NC-D76](../plans/notch-convergence.md#NC-D73)). A source is *shadowed* when another
   of the three, higher in the order above, sets the same variable to something else. For each
   such variable a launch prints one line on stderr, naming the winning source and every losing
@@ -845,7 +845,7 @@ so for pi the only lever on what it can reach is the credential. For `openai-cod
   script. A `removal` is an `env_sources` null or a derive's tombstone. Nothing is printed when
   nothing is shadowed: one source per name, a loser that sets the same value, two packs' `env`
   of one name (their own order, [OQ-8](#pv-oq-8)), and the three tables above say nothing. Your
-  shell at the host is no source of yolo's ([OQ-NC13](../plans/notch-convergence.md#OQ-NC13)),
+  shell at the host is no source of yolo's ([OQ-NC13](../plans/notch-convergence.md#7-decision-ledger)),
   so it never appears in a line. The line is a disclosure, which no flag hides
   ([OQ-RO3](report-tiers.md#why-its-this-way)). `yolo check` prints none: it runs no derive and
   sees no `-p`, so it cannot see a profile's half; where it predicts an override refusal, it names
@@ -2384,7 +2384,7 @@ above explains what each is for; this table is the only place the exact spelling
 | pi's copy of that list | `~/.pi/agent/yolo-openai-codex-models.json`, the computed surface `pi/codex-models`: `{"models": [{"id", "base", "name", "contextWindow"}, …], "enforce": <bool>}`, `enforce` being the switch of the profile that governs `openai-codex` (`piEnforceFor`); `{}` for an empty list. Read by the openai-auth extension at load, which refuses an unlisted id only when `enforce` is `true`. `yolo host apply` renders it at the host notch too, over the configured profile ([OQ-HC1](host-agent-environment.md#oq-hc1)) | `packs/pi/pack.json`, `packs/pi/derive.lua`, `packs/pi/extensions/yolo-openai-auth.js` |
 | opencode on `openai-codex` | `provider.openai` in `~/.config/opencode/opencode.json`: `models` keyed by each listed id (`name`; `limit` `{context, input}` at the declared window, `output` 0; `id` the base for a `[1m]` variant), `options.apiKey` the literal `yolo-chatgpt-subscription-needs-the-shared-login`, `whitelist` the ids while `enforce_models` is on; no `npm`, no `baseURL`; `model`/`small_model` `openai/<id>`, `enabled_providers` `openai`. The prelaunch `--opencode-auth` writes `{"openai": {"type": "oauth", "refresh": "yolo-broker:<n>", "access", "expires", "accountId"}}` into `~/.local/share/opencode/auth.json`, keeping every other key; the plugin `~/.config/opencode/plugins/yolo-openai-auth.js` serves requests on that credential | `packs/opencode/pack.json`, `packs/opencode/derive.lua`, `packs/opencode/plugins/yolo-openai-auth.js`, `internal/openauthclient/opencode.go` |
 | User config keys | `providers` (merged-scope — **except the ADDRESS**), `profiles` / `profile` (user-scope-only); `use_profiles` and `agent_profiles` refused by name as old spellings of `profile` | `internal/config` |
-| Provider credential-routing scope | Every provider field that decides where a credential goes is **USER-SCOPE ONLY**: a workspace `yolo-jail.jsonc` or `yolo-jail.local.jsonc` carrying one is a fatal config error naming the field and the user config. The address, `endpoints.<protocol>.base_url`, since 2026-09-17 ([`OQ-LM3`](../research/local-model-endpoints.md#oq-lm3)). Since 2026-09-28 ([OQ-NC6](../plans/notch-convergence.md#OQ-NC6), the field list [NC-D63](../plans/notch-convergence.md#NC-D63)) also the rest of `endpoints` in any form (a protocol with no URL, a `wire_api`, a null removing an endpoint or the map), `api_key_env_name` (a value re-points the claim, a null unclaims the key so every process receives it), and a null provider or null `providers`, which remove claims. Since 2026-09-29 also `platform`, which decides which agents a pack's credential pointer reaches ([PP-D7](../design/providers-and-profiles-redesign.md#PP-D7)). `models`, `options`, `region` and `capabilities` still merge from either scope, a `region` only as one DNS label ([a region is a host-name part](#a-region-is-a-host-name-part)). The reason is the workspace file is AGENT-EDITABLE, and these fields decide where a credential and the inference behind it go. The entry-level `base_url` shorthand is refused at any scope | `internal/config/validate.go` (`validateProviderCredentialScope`, `validateProviderRegion`) |
+| Provider credential-routing scope | Every provider field that decides where a credential goes is **USER-SCOPE ONLY**: a workspace `yolo-jail.jsonc` or `yolo-jail.local.jsonc` carrying one is a fatal config error naming the field and the user config. The address, `endpoints.<protocol>.base_url`, since 2026-09-17 ([`OQ-LM3`](../research/local-model-endpoints.md#oq-lm3)). Since 2026-09-28 ([OQ-NC6](../plans/notch-convergence.md#7-decision-ledger), the field list [NC-D63](../plans/notch-convergence.md#NC-D63)) also the rest of `endpoints` in any form (a protocol with no URL, a `wire_api`, a null removing an endpoint or the map), `api_key_env_name` (a value re-points the claim, a null unclaims the key so every process receives it), and a null provider or null `providers`, which remove claims. Since 2026-09-29 also `platform`, which decides which agents a pack's credential pointer reaches ([PP-D7](../design/providers-and-profiles-redesign.md#PP-D7)). `models`, `options`, `region` and `capabilities` still merge from either scope, a `region` only as one DNS label ([a region is a host-name part](#a-region-is-a-host-name-part)). The reason is the workspace file is AGENT-EDITABLE, and these fields decide where a credential and the inference behind it go. The entry-level `base_url` shorthand is refused at any scope | `internal/config/validate.go` (`validateProviderCredentialScope`, `validateProviderRegion`) |
 | Missing-provider hatch | `YOLO_ALLOW_MISSING_PROVIDERS=1`, for the credential and the region preflights | `internal/paths` |
 | Provider platform | `platform`, one token, open vocabulary; `aws-bedrock` is the one value read today (the claude, codex, opencode and pi derives, aws-auth's gate, the region preflight); a derive reads the selected provider's as `ctx.selected_platform` | `packdecl.PlatformProblem`, `luahook` (`selectedPlatform`) |
 | The shipped Bedrock provider | `bedrock` in the bedrock pack: `"platform": "aws-bedrock"`, no endpoints, no region, no options, the six AWS credential names under `api_key_env_name`; needed by claude, codex, opencode and pi, and needing aws-auth | `packs/bedrock/pack.json`, each agent pack's `needs` |

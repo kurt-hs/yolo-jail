@@ -149,7 +149,7 @@ therefore differs from the existing courtesy locks and session-file sweeps.
 
 ## Prior rulings constrain the proposal
 
-- [OQ-DF4](../design/minimal-disk-footprint.md#OQ-DF4), **2026-10-05**:
+- [OQ-DF4](../design/minimal-disk-footprint.md#111-decision-ledger), **2026-10-05**:
   policy, no budget key; the residual shared mise versions join offered cleanup.
   Duplicated private working sets are a new cost, not evidence that this ruling chose a cap.
 - [OQ-BF1/BF2](../design/disk-levers-and-backfill.md#111-decision-ledger), **2026-09-08**:

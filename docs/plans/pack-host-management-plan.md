@@ -54,7 +54,7 @@ not here:
   anything is written. A decline stops the run
   ([the dependency rule](../reference/report-tiers.md#the-dependency-rule)). The batching by
   elevation class is not owed: it was
-  [`OQ-EM1`](../design/yolo-as-environment-manager.md#OQ-EM1)'s, answered 2026-09-30.
+  [`OQ-EM1`](../design/yolo-as-environment-manager.md#9-decision-ledger)'s, answered 2026-09-30.
 - **Phase 9's paths.** The records and the archive live under the state dir
   `~/.local/share/yolo-jail/` (`host-skills-manifest.json`, `archive/<bucket>/<stamp>/`), not
   under `~/.local/state/`.

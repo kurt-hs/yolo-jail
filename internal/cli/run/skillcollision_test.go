@@ -1,6 +1,6 @@
 package run
 
-// skillcollision_test.go pins OQ-NC11 (docs/plans/notch-convergence.md#OQ-NC11, ruled 2026-09-28
+// skillcollision_test.go pins OQ-NC11 (docs/plans/notch-convergence.md#7-decision-ledger, ruled 2026-09-28
 // by parity) through the production call sites: a skill-name collision refuses a jail launch
 // host-side and before any container work, an attach too, with the host's message; and the jail
 // stages skills through the host's layer plan, so a namespaced pack's skill is /<pack>:<skill> in

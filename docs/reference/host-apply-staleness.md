@@ -94,7 +94,7 @@ the gate's own budget. There is no stored state on the render side.
 `--accept-config-changes`. The host launch's one remaining question, a first apply dropping MCP
 servers yolo does not declare, is a one-way door asked only at a terminal: the environment
 variable [OQ-HS10](#why-its-this-way) designed for the wrapper path was retired unread
-([OQ-NC10](../plans/notch-convergence.md#OQ-NC10), ruled 2026-09-28), and `yolo host` refuses the
+([OQ-NC10](../plans/notch-convergence.md#7-decision-ledger), ruled 2026-09-28), and `yolo host` refuses the
 flag by name. Never a config key — that is the one spelling that is genuinely standing consent,
 and it stays refused.
 
@@ -305,7 +305,7 @@ declared nothing.
 | An `--assert` would ask something: a skills or briefing adoption, a dropped pack's retire, a missing declared dependency (its install offer or refusal), or a briefing composition the dry run cannot preview | **Render nothing**, print each question and `yolo host apply --assert` (which asks them where they can be answered), and exec. The auto-apply's report is buffered, so a question asked there is one the user cannot see: measured, that was a launch hanging after the banner on a TTY, a silent "no" off one followed by a `synchronized` notice for work that did not happen, and a declined install of *another* pack's missing binary refusing this program's launch. |
 | Safe managed changes | **Auto-apply silently**, emit a single stderr notice (`yolo host: synchronized host configuration (<targets>)`), and exec immediately. Under `own`, updating managed keys is idempotent policy synchronization, not data loss. The apply never reads stdin, and the notice names what the apply itself changed, never what the observe pass predicted. |
 | First apply overwriting unmanaged keys (`FirstApply && EntryLosses`), TTY | Show the change list, prompt, apply on accept. A **decline aborts the launch**, as it does in the jail: launching anyway would make the question a formality, and applying anyway would make "no" mean nothing. |
-| First apply overwriting unmanaged keys, no TTY | **Refuse**, and apply nothing, naming `yolo host apply --assert`. The prompt is the guard that makes an irreversible config-surface loss safe, and no flag or variable stands in for it ([OQ-NC10](../plans/notch-convergence.md#OQ-NC10)). |
+| First apply overwriting unmanaged keys, no TTY | **Refuse**, and apply nothing, naming `yolo host apply --assert`. The prompt is the guard that makes an irreversible config-surface loss safe, and no flag or variable stands in for it ([OQ-NC10](../plans/notch-convergence.md#7-decision-ledger)). |
 | Something cannot be written: a pack's render errored, or a destination is a [broken link](report-tiers.md#broken-links) | **Judged by whose it is** ([OQ-HS17](#oq-hs17)). In the launched program's own configuration: **refuse**, naming each failure and its fix. Anywhere else: the rest of the home is synchronized, each failure is named with its fix, and the program **launches**. A standing one is named on every launch until it is fixed, since nothing else says it between explicit applies. |
 | Cannot determine | **Exec**, with at most one line to stderr. See [below](#cannot-determine-versus-determined). |
 
@@ -328,7 +328,7 @@ the program, so a user typing `claude --print foo` has **no slot for a yolo-leve
 asking, and its last reader went with that change. The one question the gate still asks is the
 first-apply loss of undeclared MCP servers, a one-way door the gate keeps behind a terminal, and
 off one it refused without consulting the variable. So
-[OQ-NC10](../plans/notch-convergence.md#OQ-NC10) retired the variable rather than giving it that
+[OQ-NC10](../plans/notch-convergence.md#7-decision-ledger) retired the variable rather than giving it that
 door: a scripted launch that meets the question answers it once, at a terminal, with
 `yolo host apply --assert`, and `yolo host --accept-config-changes` is refused by name, its
 refusal saying the host launch has nothing to approve.
@@ -337,7 +337,7 @@ refusal saying the host launch has nothing to approve.
 > **Do not re-create a host approval for the first-apply loss.** A flag or variable that let a
 > scripted first launch drop the user's MCP servers is the one-way door this gate keeps behind a
 > terminal; one typed to get past a prompt that no longer exists would open it
-> ([OQ-NC10](../plans/notch-convergence.md#OQ-NC10)'s option B, not taken).
+> ([OQ-NC10](../plans/notch-convergence.md#7-decision-ledger)'s option B, not taken).
 
 > [!WARNING]
 > **Do not teach `yolo host apply` an `--accept-config-changes` flag** so the refusal can name a
@@ -506,7 +506,7 @@ from code comments, and this appendix is where they resolve.
 | **[OQ-HS5](#why-its-this-way)** — declining aborts the launch | Launching anyway makes the question a formality. |
 | **[OQ-HS6](#why-its-this-way)** — non-TTY first-apply loss refuses, applying nothing | When FirstApply with EntryLosses has no terminal, the launch refuses to prevent irreversible loss. Safe updates auto-apply without requiring a TTY (amended by [`OQ-2`](#why-its-this-way)). |
 | **[OQ-HS9](#why-its-this-way)** — the gate compares the render, not the config | A config-approval snapshot is cheaper and needs no predicate, and is blind to a hand-edited destination. The jail's two readings coincide only because it re-renders unconditionally afterwards. |
-| **[OQ-HS10](#why-its-this-way)** — the non-TTY approval is an environment variable, on this path only. *Retired 2026-09-28 by [OQ-NC10](../plans/notch-convergence.md#OQ-NC10):* there is no host launch approval | On a fixed wrapper the choice was env-var-vs-nothing; no flag can reach the process. The zero-prompt auto-apply left the variable nothing to approve and no reader, and the one question left, the first-apply MCP loss, stays `yolo host apply --assert`'s at a terminal. |
+| **[OQ-HS10](#why-its-this-way)** — the non-TTY approval is an environment variable, on this path only. *Retired 2026-09-28 by [OQ-NC10](../plans/notch-convergence.md#7-decision-ledger):* there is no host launch approval | On a fixed wrapper the choice was env-var-vs-nothing; no flag can reach the process. The zero-prompt auto-apply left the variable nothing to approve and no reader, and the one question left, the first-apply MCP loss, stays `yolo host apply --assert`'s at a terminal. |
 | **[OQ-HS11](#why-its-this-way)** — both sides normalize through the same codec | A literal raw-byte comparison reports a change forever for canonical-TOML reordering and non-2-space JSON, with no loss recorded — `R3` by the back door. This makes the formatting carve-out structural instead of checked. |
 | **[OQ-HS12](#why-its-this-way)** — the wrapper dir is a fifth surveyed destination | A pack added since the last apply has no wrapper, and nothing else in the survey would say so. |
 | **[OQ-HS13](#why-its-this-way)** — "TTY" means stdin | A redirected stdout with a live terminal is a launch that can be asked. |
@@ -525,7 +525,7 @@ place the values themselves are stated.
 | Opt-in key | `host_apply_on_launch`, boolean, default matches `host_wrappers` (true when enabled), **user scope only** | `config.HostApplyOnLaunchEnabled`; `yolo config-ref` is the user-facing authority |
 | `host_wrappers` default | unset ⇒ on exactly when `host_management` is declared `"own"` | `config.hostWrappersValue` |
 | Pack update coupling | `yolo pack update` runs `host apply --assert` under `own` on host, and refuses its host half under the retired `"assert"` | `cli.packUpdate`, `cli.hostApplyFromPackUpdate` |
-| Non-TTY approval | none: the first-apply loss refuses off a terminal, naming `yolo host apply --assert`; `yolo host` refuses `--accept-config-changes` by name ([OQ-NC10](../plans/notch-convergence.md#OQ-NC10)) | `cli.hostApplyGate`, `cli.acceptConfigChangesAtHost` |
+| Non-TTY approval | none: the first-apply loss refuses off a terminal, naming `yolo host apply --assert`; `yolo host` refuses `--accept-config-changes` by name ([OQ-NC10](../plans/notch-convergence.md#7-decision-ledger)) | `cli.hostApplyGate`, `cli.acceptConfigChangesAtHost` |
 | Observe budget | 1s, then cannot-determine | `cli.hostApplyGateBudget` |
 | Per-home lock | a flock under the global storage lock dir, keyed by the resolved home | `cli.hostApplyLockPath`, `cli.tryHostApplyLock` |
 | Host provenance record | `<home>/.local/share/yolo-jail/host-provenance/<agent>-<name>.provenance` | `internal/render` target layout |

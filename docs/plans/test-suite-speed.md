@@ -14,7 +14,7 @@ summary: "The suite-speed investigation, changes built so far, measurement recip
 
 **Status:** 2026-09-27. Evidence measured 2026-09-27 against `71114ecc` and its parents.
 Five work items are ruled and being built, and some have landed, among them the **integration**
-partition's two isolations ([OQ-TS1](#OQ-TS1)'s answer names the commits). Read in the tree on
+partition's two isolations ([OQ-TS1](#decision-ledger)'s answer names the commits). Read in the tree on
 2026-09-30, not re-measured: most of the other four partitions' fixes are in too
 (`startExternalServiceHarness` takes a readiness deadline, the bounded-wait test fakes its clock,
 the bootstrap tests carry a fake `fc-cache`, `TestASocketPathThatExistsAccepts` runs 500 rounds,
@@ -24,7 +24,7 @@ and `check-ci` is `[parallel]`), while `perf.SlowSpanThreshold` is still a fixed
 test-cache hit (6.4 s); the unit target does not (69.0 s, `internal/cli/run` 67.5 s), nor the
 integration one (498.0 s, one run); and nothing of the five items as written is left, the misses
 coming from tests added since. Four questions each
-asked for one more lever. [OQ-TS1](#OQ-TS1) and [OQ-TS3](#OQ-TS3) were answered 2026-09-29, both as
+asked for one more lever. [OQ-TS1](#decision-ledger) and [OQ-TS3](#decision-ledger) were answered 2026-09-29, both as
 leaned and both adding no lever ([Decision Ledger](#decision-ledger)). [OQ-TS2](#OQ-TS2) and
 [OQ-TS4](#OQ-TS4) are still open, and none of the five work items waits on them.
 
@@ -245,6 +245,16 @@ Two tests failed:
   machine-wide image-copy lock and removes the jail image's names from the shared podman store, so a
   concurrent run both waits on that lock and loses the image it expected.
 
+Both are isolated, and no suite-wide lock serializes runs ([OQ-TS1](#decision-ledger)):
+
+- `bef9fc90` makes `TestYoloCheckValidConfig` set aside a failure row that names another run's
+  jail. Any other failure still fails the test.
+- `2a50babc` isolates `TestImageCopyLockSerializesConcurrentLaunches` with a cross-run lock of its
+  own, which is not a suite-wide lock. Every integration test holds it shared, so two runs'
+  ordinary tests still interleave. Only the tests that take machine-wide state over hold it
+  exclusively and run alone: the image-copy lock test, and the openai-auth and aws-auth broker
+  tests, which own a host daemon whose socket and port are fixed per machine.
+
 ### Frequency: the rule that raised it has been replaced
 
 A memory rule written on 09-26 told every builder to run the integration suite. After that, each code
@@ -318,6 +328,10 @@ run, not how the code is written.
   covers that, and it stays parked.
 - The CI runners' cold nix store. Its cause is inferred, not measured, so there is nothing to fix yet.
 - Model turn latency. It did not change.
+- A variable that skips the store-changing integration tests outside a landing
+  ([OQ-TS3](#decision-ledger)). A run that is not a landing already runs only the integration
+  tests its change reaches, so the switch would save nothing and add a way to land with those
+  tests skipped.
 
 ## Measurement recipe
 
@@ -367,36 +381,7 @@ two depend on how a particular day's agents were scheduled.
 
 ## Open Questions
 
-1. ✅ <a id="OQ-TS1"></a>**OQ-TS1: Should a machine-wide lock let only one full integration suite run at
-   a time?** A lock would stop overlapping runs from failing, and it would do that without fixing each
-   test. It would also make every other agent that reaches its landing wait for the current run to
-   finish.
-
-   <!-- vantage: question id=OQ-TS1 -->
-
-   _Leaning:_ No. A suite-wide lock works against the maintainer's standing preference not to limit
-   parallelism ([TS-D1](#TS-D1)). Isolating the two tests that share state (the **integration**
-   partition) fixes the cause, and the lock would only hide it.
-
-   **Answer:**
-   > **Answered 2026-09-29 by [TS-D1](#TS-D1)**, the maintainer's standing preference of
-   > 2026-09-27, as leaned: no lock lets only one suite run at a time. A lock that makes every other
-   > landing wait for the current run limits how much runs at once, which is what that preference
-   > rules out.
-   >
-   > Isolating the two tests that share state stays the fix. It is the **integration** partition's
-   > work item, and it has landed:
-   >
-   > - `bef9fc90` makes `TestYoloCheckValidConfig` set aside a failure row that names another run's
-   >   jail. Any other failure still fails the test.
-   > - `2a50babc` isolates `TestImageCopyLockSerializesConcurrentLaunches`. It adds a cross-run lock
-   >   of its own, and that lock is not the one this question asked about. Every integration test
-   >   holds it shared, so two runs' ordinary tests still interleave. Only the tests that take
-   >   machine-wide state over hold it exclusively and run alone: the image-copy lock test, and the
-   >   openai-auth and aws-auth broker tests, which own a host daemon whose socket and port are fixed
-   >   per machine.
-
-2. 💬 <a id="OQ-TS2"></a>**OQ-TS2: Should `ci.yml` set `concurrency: cancel-in-progress`?** Today
+1. 💬 <a id="OQ-TS2"></a>**OQ-TS2: Should `ci.yml` set `concurrency: cancel-in-progress`?** Today
    `ci.yml` has no `concurrency` block, so each push to a pull request runs the whole workflow again
    while the earlier run keeps going. At 1085 s for the x64 integration job, that adds up.
 
@@ -409,28 +394,7 @@ two depend on how a particular day's agents were scheduled.
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. ✅ <a id="OQ-TS3"></a>**OQ-TS3: Should the integration tests that change the shared image store be
-   skipped unless a variable turns them on, for runs that are not a landing?** Tests such as the
-   image-copy lock and archive-delta tests are among the slowest in the suite, and they touch state
-   that other runs share. The repository already uses this pattern once: `YOLO_TEST_REAL_PACK_INSTALLS`,
-   which the `test` recipe in the [`Justfile`](../../Justfile) sets.
-
-   <!-- vantage: question id=OQ-TS3 -->
-
-   _Leaning:_ No. The full suite now runs only at landing, so a run that is not a landing already
-   executes only the tests its change reaches. A second switch would add another way to land with
-   those tests skipped.
-
-   **Answer:**
-   > **Answered 2026-09-29 by the once-per-landing rule
-   > ([AGENTS.md Testing](../../AGENTS.md#testing)), as leaned:** no variable, because the question
-   > is moot. The full suite runs only at landing. A run that is not a landing already runs only the
-   > integration tests that read what its change touched, picked with `go test -run`. So a
-   > store-changing test runs there only when the change reaches it, and then it is a test that run
-   > needs. The switch would save nothing on the runs it was meant for. Its one new effect would be
-   > a way to land with those tests skipped.
-
-4. 💬 <a id="OQ-TS4"></a>**OQ-TS4: Should the darwin lint pass run in CI only, and not in the local
+2. 💬 <a id="OQ-TS4"></a>**OQ-TS4: Should the darwin lint pass run in CI only, and not in the local
    `just check-ci`?** That pass has cost 43 s since 09-13. Taking it out of the local gate would cut
    that time for everyone, but a darwin-only finding would then first appear after a push.
 
@@ -448,6 +412,6 @@ two depend on how a particular day's agents were scheduled.
 
 | ID | Ruling / Decision | Date | Settled in |
 | :--- | :--- | :--- | :--- |
-| <a id="TS-D1"></a>TS-D1 | **Maintainer ruling, a standing preference.** Slow agent work is answered by cutting duplicated work and slow tests, never by limiting how much runs at once. Given when a workflow that took hours drew the offer to run one workflow at a time: *"I don't want you to limit parallelism, I just want you to optimize things."* | 2026-09-27 | [OQ-TS1](#OQ-TS1) |
-| [OQ-TS1](#OQ-TS1) | **Answered by [TS-D1](#TS-D1), as leaned.** No machine-wide lock lets only one full integration suite run at a time. Isolating the two tests that share state is the fix instead, the **integration** partition's work item, landed in `bef9fc90` and `2a50babc` | 2026-09-29 | [OQ-TS1](#OQ-TS1), [Work items](#work-items-being-built-now) |
-| [OQ-TS3](#OQ-TS3) | **Answered by the once-per-landing rule ([AGENTS.md Testing](../../AGENTS.md#testing)), as leaned: moot.** No variable skips the store-changing integration tests. A run that is not a landing already runs only the tests its change reaches, so the switch's one new effect would be a way to land with those tests skipped | 2026-09-29 | [OQ-TS3](#OQ-TS3) |
+| <a id="TS-D1"></a>TS-D1 | **Maintainer ruling, a standing preference.** Slow agent work is answered by cutting duplicated work and slow tests, never by limiting how much runs at once. Given when a workflow that took hours drew the offer to run one workflow at a time: *"I don't want you to limit parallelism, I just want you to optimize things."* | 2026-09-27 | [Concurrency](#concurrency-overlapping-runs-fail-and-the-failures-cost-more-than-the-runs) |
+| OQ-TS1 | **Answered by [TS-D1](#TS-D1), as leaned.** No machine-wide lock lets only one full integration suite run at a time: a lock that makes every other landing wait limits how much runs at once. Isolating the two tests that share state is the fix instead, the **integration** partition's work item, landed in `bef9fc90` and `2a50babc` | 2026-09-29 | [Concurrency](#concurrency-overlapping-runs-fail-and-the-failures-cost-more-than-the-runs), [Work items](#work-items-being-built-now) |
+| OQ-TS3 | **Answered by the once-per-landing rule ([AGENTS.md Testing](../../AGENTS.md#testing)), as leaned: moot.** No variable skips the store-changing integration tests. A run that is not a landing already runs only the tests its change reaches, so the switch's one new effect would be a way to land with those tests skipped | 2026-09-29 | [Out of scope](#out-of-scope) |

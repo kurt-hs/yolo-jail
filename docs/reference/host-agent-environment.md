@@ -31,7 +31,7 @@ remedies for an ad-hoc command (execution flow step 2, and the paragraph after i
 2026-09-27 ([ES-D2 to ES-D5](../design/credential-sources-separation.md#10-decision-ledger), with
 the remedy's corrections in ES-D10 to ES-D12), and are pinned by unit tests through `hostMain`;
 since 2026-09-28 a bare `-p` reaches agent CLIs only here, as in a jail
-([OQ-NC5](../plans/notch-convergence.md#OQ-NC5), which retired ES-D1's `-p` grant). So is
+([OQ-NC5](../plans/notch-convergence.md#7-decision-ledger), which retired ES-D1's `-p` grant). So is
 the `--with-credentials` grant beside it, from 2026-09-27
 ([OQ-ES5](../design/credential-sources-separation.md#OQ-ES5)'s host half, ES-D13 to ES-D17), and
 the refusal of a profile the in-jail bridge would serve (ES-D18 to ES-D20). The removal of
@@ -309,7 +309,7 @@ refused for naming no command, the host verb having no default one.
    effective `env` for the active workspace. The profile is a typed `-p`, else the command's
    entry in the `profile` key, else its `"*"` (or the key's string form) when a selected pack
    installs the command. A typed `-p` for a command no selected pack installs is refused, naming
-   `--with-credentials` ([OQ-NC5](../plans/notch-convergence.md#OQ-NC5)), and a `profile`
+   `--with-credentials` ([OQ-NC5](../plans/notch-convergence.md#7-decision-ledger)), and a `profile`
    key no resolvable pack installs is refused with the validator's message
    ([ES-D5](../design/credential-sources-separation.md#10-decision-ledger)), so no profile
    selects for such a command.
@@ -349,7 +349,7 @@ withheld.
 **`-p` reaches agent CLIs only, as it does in a jail.** `yolo host -p zai -- pi` runs pi on the
 zai profile, because a selected pack installs pi. `yolo host -p zai -- curl …` is refused before
 anything runs, naming `yolo host --with-credentials zai -- curl …`, the grant for an ad-hoc
-command ([OQ-NC5](../plans/notch-convergence.md#OQ-NC5)).
+command ([OQ-NC5](../plans/notch-convergence.md#7-decision-ledger)).
 `eval "$(yolo host env --with-credentials zai)"` puts the same keys in the current shell. Each
 withheld line in the disclosure names the fix: the grant for an ad-hoc command, and for an agent
 a `-p` with a declared profile resolving to the claiming provider that the agent can run on, or a

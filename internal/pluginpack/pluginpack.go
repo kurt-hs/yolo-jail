@@ -738,7 +738,7 @@ func Discover(packRoot string) []*Plugin { return DiscoverIn(packRoot, nil) }
 //	                                                   source of the pack
 //
 // Both notches deliver both through one writer, hostskills' (docs/plans/notch-convergence.md
-// #OQ-NC11): a jail used to copy a pack's skills subtree flat, so a wrap-in-place plugin never
+// #7-decision-ledger): a jail used to copy a pack's skills subtree flat, so a wrap-in-place plugin never
 // reached it and a portable one arrived as a bare directory whatever the pack's tier.
 func DiscoverIn(packRoot string, skillsDirs []string) []*Plugin {
 	var out []*Plugin
