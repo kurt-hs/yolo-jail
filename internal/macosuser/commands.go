@@ -2,6 +2,7 @@ package macosuser
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -128,8 +129,11 @@ func MacosSetup(deps Deps) int {
 	out.printf("• Sharing existing projects under [bold]%s[/bold] with %s "+
 		"(idempotent; safe to re-run).", SharedRootDefault(), SandboxUser)
 	if deps.RunBash(FixPermissionsScript(SharedRootDefault(), "")) != 0 {
-		out.print("  [yellow]Some ACL entries could not be applied; the rest were. " +
-			"Re-run `yolo macos-fix-permissions` to see which.[/yellow]")
+		out.print("  [yellow]Some ACL entries could not be applied; the rest were.[/yellow] " +
+			"chmod named each file above: it belongs to another account or is locked " +
+			"(`ls -leO <file>` shows which). Take it back with `sudo chown $USER <file>` " +
+			"(or unlock it with `chflags nouchg <file>`), then run " +
+			"[bold]yolo macos-fix-permissions <its directory>[/bold].")
 	} else {
 		out.print("  [green]done[/green]")
 	}
@@ -363,6 +367,9 @@ const (
 	trueBin   = "/usr/bin/true"
 )
 
+// issuesURL is where a refusal that is yolo's own fault sends the report.
+const issuesURL = "https://github.com/mschulkind-oss/yolo-jail/issues"
+
 // firstHumanUID is the lowest uid macOS gives an account a person logs in to.
 const firstHumanUID = 501
 
@@ -448,11 +455,12 @@ func refuseSecondUser(out printer, name string) {
 // refuseAnotherUsersRule asks whether the installed rule is this user's, through sudo because the
 // file is 0440 root (PL-3): grep exits 0 for this user's rule and 2 when there is no file, and
 // setup goes on for both; 1 is a file without this user's rule, which is another user's
-// enrollment. ⚠ sudo also exits 1 when it could not authenticate, so a 1 is read as grep's only
+// enrollment. -s keeps grep quiet about the missing file, the normal first run; it changes no
+// exit status. ⚠ sudo also exits 1 when it could not authenticate, so a 1 is read as grep's only
 // once `sudo -n` shows sudo did run (the credentials just given are cached).
 func refuseAnotherUsersRule(deps Deps, out printer, user string) int {
 	ours := user + " ALL=(" + SandboxUser + ") NOPASSWD: " + envBin
-	if deps.Run(rootArgv([]string{grepBin, "-qxF", "-e", ours, SudoersFile})) != 1 {
+	if deps.Run(rootArgv([]string{grepBin, "-s", "-qxF", "-e", ours, SudoersFile})) != 1 {
 		return 0
 	}
 	if deps.Run([]string{sudoBin, "-n", trueBin}) != 0 {
@@ -503,10 +511,50 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 		out.printf("[bold red]✗ setup step failed:[/bold red] %s", shquote.JoinDisplay(cmd))
 		return 1
 	}
-	rejected := func() int {
-		out.print("[bold red]✗ visudo rejected the rule, so nothing was installed[/bold red] and your " +
-			"sudo configuration is unchanged:\n(visudo's output is above)\nThis is a yolo bug; report " +
-			"it at https://github.com/mschulkind-oss/yolo-jail/issues with that output.")
+	// printRule writes the rule verbatim, not through the markup renderer, so a report carries
+	// exactly the bytes visudo read.
+	printRule := func() {
+		out.print("The rule yolo wrote:")
+		fmt.Fprint(out.w, rule)
+	}
+	reportBug := func() {
+		out.print("This is a yolo bug; report it at " + issuesURL + " with visudo's output and the rule.")
+	}
+	// visudo runs without -q in both checks, so its reason (file, line, what it could not
+	// parse) is printed above each of these messages, on the inherited stderr.
+	ruleRejected := func() int {
+		out.print("[bold red]✗ visudo rejected the rule file on its own, so nothing was installed" +
+			"[/bold red] and your sudo configuration is unchanged. visudo's reason is above.")
+		printRule()
+		reportBug()
+		return 1
+	}
+	// configRejected is the whole-configuration check failing with the rule in place. Setup
+	// takes the rule back out and checks again, which says whose problem it is: a configuration
+	// that still fails was broken before yolo touched it.
+	configRejected := func() int {
+		rm := rootArgv([]string{rmBin, "-f", SudoersFile})
+		if deps.Run(rm) != 0 {
+			out.printf("[bold red]✗ visudo rejected your sudo configuration with yolo's rule in place, "+
+				"and setup could not remove the rule: %s is still installed.[/bold red] visudo's "+
+				"reason is above. Remove it with `%s`, then run `sudo visudo -c` to see whether "+
+				"the rest of your sudo configuration passes.", SudoersFile, shquote.JoinDisplay(rm))
+			return 1
+		}
+		if deps.Run(rootArgv([]string{visudoBin, "-c"})) != 0 {
+			out.printf("[bold red]✗ Your sudo configuration fails visudo's check even without yolo's "+
+				"rule[/bold red], so it was invalid before setup ran; setup removed %s again and "+
+				"nothing else was changed. visudo's output above names the file and line. Fix "+
+				"that file (edit it with `sudo visudo -f <file>`), confirm with `sudo visudo -c`, "+
+				"then run [bold]yolo macos-setup[/bold] again.", SudoersFile)
+			return 1
+		}
+		out.printf("[bold red]✗ visudo rejected your sudo configuration with yolo's rule in "+
+			"place.[/bold red] Setup removed %s again, and without it visudo accepts the "+
+			"configuration, so the rule is what it rejects; nothing else was changed. visudo's "+
+			"reason is in the first check's output above.", SudoersFile)
+		printRule()
+		reportBug()
 		return 1
 	}
 	dir, err := os.MkdirTemp("", "yolo-sudoers-")
@@ -531,17 +579,16 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 			return stepFailed(cmd)
 		}
 	}
-	if deps.Run(rootArgv([]string{visudoBin, "-c", "-q", "-f", SudoersStagingFile})) != 0 {
+	if deps.Run(rootArgv([]string{visudoBin, "-c", "-f", SudoersStagingFile})) != 0 {
 		deps.Run(dropStaged)
-		return rejected()
+		return ruleRejected()
 	}
 	if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
 		deps.Run(dropStaged)
 		return stepFailed(mv)
 	}
-	if deps.Run(rootArgv([]string{visudoBin, "-c", "-q"})) != 0 {
-		deps.Run(rootArgv([]string{rmBin, "-f", SudoersFile}))
-		return rejected()
+	if deps.Run(rootArgv([]string{visudoBin, "-c"})) != 0 {
+		return configRejected()
 	}
 	out.printf("• Installed [bold]%s[/bold]; visudo accepts it.", SudoersFile)
 	return 0
