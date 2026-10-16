@@ -683,6 +683,18 @@ macOS host it stops nothing, and a test there can still fail its temp-directory 
 gateway route that takes an API key, but `packs/aws-auth/README.md` never says so. Found
 2026-10-16 while compacting that question.
 
+### <a id="profile-line-grouping"></a>🔧 **The unreached-agents launch line repeats a shared reason**
+
+Since 2026-10-16 a bare `-p` names every agent it does not reach on one line, each with its own
+reason and fix. Agents that share a reason (two agents on the Bedrock platform case, say) repeat it
+in full, so the line grows by a paragraph per agent. Group agents that share a reason. Found by the
+review of the one-line change.
+
+### <a id="capture-store-comment"></a>🔧 **`internal/capture/store.go`'s package comment says hardlink**
+
+It says a materialized file is a hardlink; the code tries a reflink first. Found 2026-10-16 while
+graduating the install-capture plan.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
