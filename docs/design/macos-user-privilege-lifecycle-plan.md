@@ -80,7 +80,7 @@ Mechanism choices the ruling leaves open, decided for the build. Each is reversi
 | PL-15 | A staged capture entry is sealed with its top left owner-writable, renamed into `entries/`, then its top sealed. Context links are made after the recursive seal, in parents opened one at a time, which are then sealed again. | A rename into another parent needs write on the moved directory itself, and a link cannot be made in a `0555` directory. Opening only the parents keeps a recursive `chmod` from meeting a link. |
 | PL-16 | The integration Seatbelt registry claims the `staging-root-read-allow` marker, with two runtime cases: a read of the staging root allowed, and a write refused by the write deny. | The registry must name every marker the profile carries, with a runtime case or a written reason why none can run (a Linux test enforces it); the write case shows the read allow grants nothing more. |
 | PL-17 | Integration fixture cleanup removes a workspace as `_yolojail` through the rule before falling back to root `sudo`. | The narrow-sudo step takes root `sudo` away, and `_yolojail` owns what it made. |
-| PL-18 | The narrow-sudo CI step moves aside every `/etc/sudoers.d` file granting `NOPASSWD: ALL`, except yolo's own, in one `sudo` invocation, and fails naming the reviewer's choice if root `sudo` is still passwordless, the blanket rule then living in `/etc/sudoers` itself. | After the first move, no further `sudo` works; editing the main file is the reviewer's choice ([task 9](#task-9--integration-and-the-narrow-sudo-ci-step)). |
+| PL-18 | The narrow-sudo CI step, in one `sudo` invocation, moves aside every `/etc/sudoers.d` file granting `NOPASSWD: ALL` except yolo's own, and in `/etc/sudoers` comments out only the `NOPASSWD: ALL` lines for `%admin` or the runner user, adding the stock macOS `%admin ALL = (ALL) ALL` after each `%admin` one. The edited `/etc/sudoers` is checked with `visudo -c -f` before it is installed by one rename, and everything is restored if the final `visudo -c` fails. | After the first change, no further `sudo` works. The hosted runner keeps the `%admin` grant in `/etc/sudoers` itself (run 38913640055), and the maintainer approved editing it on this ephemeral runner (2026-10-16) ([task 9](#task-9--integration-and-the-narrow-sudo-ci-step)). |
 
 ## Map
 
@@ -759,9 +759,9 @@ file in flux. Every task runs `just format` before its commit and stages only it
   		t.Fatalf("rc = %d", rc)
   	}
   	order := []string{
-  		"run:/usr/bin/sudo /usr/sbin/visudo -c -q -f /etc/sudoers.d/.yolo-jail.new",
+  		"run:/usr/bin/sudo /usr/sbin/visudo -c -f /etc/sudoers.d/.yolo-jail.new",
   		"run:/usr/bin/sudo /bin/mv -f /etc/sudoers.d/.yolo-jail.new /etc/sudoers.d/yolo-jail",
-  		"run:/usr/bin/sudo /usr/sbin/visudo -c -q",
+  		"run:/usr/bin/sudo /usr/sbin/visudo -c",
   		"run:/usr/bin/sudo -k",
   		"run:/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true",
   	}
@@ -801,8 +801,8 @@ file in flux. Every task runs `just format` before its commit and stages only it
   1. Enrollment: judge the staging root. Foreign with a human uid (≥ 501, not `_yolojail`) →
      second-enrollment refusal, naming the owner (`os/user.LookupId`); foreign otherwise → squat
      refusal. Both before any `sudo`. Then ask the existing rule through `deps.Run`:
-     `/usr/bin/sudo /usr/bin/grep -qxF -e '<user> ALL=(_yolojail) NOPASSWD: /usr/bin/env'
-     /etc/sudoers.d/yolo-jail`. Exit 0 is ours, 2 is absent (both continue), 1 is another
+     `/usr/bin/sudo /usr/bin/grep -s -qxF -e '<user> ALL=(_yolojail) NOPASSWD: /usr/bin/env'
+     /etc/sudoers.d/yolo-jail` (`-s`: a first run has no file, and grep says nothing about it). Exit 0 is ours, 2 is absent (both continue), 1 is another
      user's rule: the second-enrollment refusal, naming "another macOS user".
   2. Disclose: `• Granting <user> one standing right: run commands as _yolojail, never as root,
      without a password (/etc/sudoers.d/yolo-jail). Launches then start and stop with no prompt.`
@@ -812,9 +812,10 @@ file in flux. Every task runs `just format` before its commit and stages only it
      `/usr/bin/sudo /usr/sbin/chown <user>:<primary group> <root>` (the group from `id -gn`), then
      the host's two `chmod`s.
   4. The rule: `SudoersRule(user)` into a host temp file; `sudo /bin/cp` to the `.new` name,
-     `sudo /usr/sbin/chown root:wheel`, `sudo /bin/chmod 0440`, `sudo /usr/sbin/visudo -c -q -f`,
-     `sudo /bin/mv -f`, then `sudo /usr/sbin/visudo -c -q`; if that last check fails,
-     `sudo /bin/rm -f /etc/sudoers.d/yolo-jail` and refuse.
+     `sudo /usr/sbin/chown root:wheel`, `sudo /bin/chmod 0440`, `sudo /usr/sbin/visudo -c -f`,
+     `sudo /bin/mv -f`, then `sudo /usr/sbin/visudo -c`; if that last check fails,
+     `sudo /bin/rm -f /etc/sudoers.d/yolo-jail`, then `sudo /usr/sbin/visudo -c` again without the
+     rule, which decides the refusal. Neither check takes `-q`, which would hide visudo's reason.
   5. Legacy sweep (PL-8): for each claimable record whose legacy profile exists, `sudo /bin/rm -f`
      the five legacy paths, then remove the record; print the count and `yolo stores` for the
      legacy trees.
@@ -828,7 +829,18 @@ file in flux. Every task runs `just format` before its commit and stages only it
 - **Texts:**
   - Second user: `[bold red]This Mac's macos-user backend is set up for another macOS user (<name>).[/bold red] One user per Mac. That user runs [bold]yolo macos-teardown[/bold], then you run [bold]yolo macos-setup[/bold]. If that account is gone, an administrator runs `sudo rm -f /etc/sudoers.d/yolo-jail && sudo rm -rf /Users/Shared/yolo-staged`, then you run [bold]yolo macos-setup[/bold].`
   - Squat: `[bold red]/Users/Shared/yolo-staged already exists and belongs to <owner>, not to you.[/bold red] Setup does not adopt it: whoever owns it controls what the sandbox reads. Inspect it with `ls -leR /Users/Shared/yolo-staged`, remove it with `sudo rm -rf /Users/Shared/yolo-staged`, then run [bold]yolo macos-setup[/bold] again.`
-  - visudo rejects: `[bold red]✗ visudo rejected the rule, so nothing was installed[/bold red] and your sudo configuration is unchanged:\n<visudo output>\nThis is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues with that output.`
+  - Every visudo refusal: one red `✗` headline, a blank line, visudo's captured output (a passing
+    check prints nothing), a blank line, then the commands, one per line, with no placeholders.
+  - The rule file alone fails: `✗ visudo rejected yolo's sudo rule. Nothing was installed.`, then
+    `This is a yolo bug. Report it with the output above and this rule:`, the rule, the issues URL.
+  - The whole configuration fails with and without the rule:
+    `✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.`, then
+    `sudo visudo -f <path>` for each file visudo's output names, `sudo visudo -c`, `yolo macos-setup`.
+  - It fails only with the rule: `✗ visudo rejected your sudo configuration with yolo's rule in
+    place. The rule was removed again.`, then the yolo-bug lines.
+  - The rule cannot be removed after that: `sudo rm -f /etc/sudoers.d/yolo-jail`, a no-sudo
+    fallback (`osascript -e 'do shell script "/bin/rm -f /etc/sudoers.d/yolo-jail" with
+    administrator privileges'`), then `yolo macos-setup`.
   - Probe fails after install: `[bold red]✗ The rule is installed, but sudo still asks for a password to run as _yolojail.[/bold red] Check that /etc/sudoers reads /private/etc/sudoers.d (`sudo grep -n includedir /etc/sudoers`); a managed Mac may block it, and then your administrator has to allow the rule. Run [bold]yolo macos-setup[/bold] again afterwards.`
   - Unsafe user name: `[bold red]Your user name <name> cannot be written into a sudo rule safely.[/bold red] The macos-user backend supports names of letters, digits, '_', '.' and '-'.` (that is the whole remedy: there is no workaround to offer).
 - `internal/cli/commands.go`: `macosSetupUsage` names the rule and the staging root and says
@@ -918,9 +930,8 @@ file in flux. Every task runs `just format` before its commit and stages only it
     `sudo -k; ! sudo -n true`; then a step running
     `go test -count=1 -timeout 0 -v -run '^TestMacosUser(PasswordlessStartAndExit|TheGuestCannotWriteTheStagingRoot|TerminateEndsTheSessionThroughItsTeardown)$' ./integration`
     with `YOLO_TEST_MACOS_USER=1` and `YOLO_TEST_MACOS_USER_NARROW_SUDO=1`. Both steps are last:
-    nothing after them may need root. **Stop and report** if the runner's rule is not in a file
-    that can be moved aside (for example inside `/etc/sudoers` itself with no `sudoers.d` entry):
-    editing the main file is a choice for the reviewer.
+    nothing after them may need root. The runner's `%admin` rule turned out to live in
+    `/etc/sudoers` itself, so the step also comments out that line, as PL-18 records.
 - **Gates:** `go test -short ./integration` on Linux (compile and the gate's table tests); then
   `gh workflow run macos-user.yml` on the pushed branch is the measurement, which the owner
   triggers (pushing is the human's).

@@ -7,6 +7,7 @@ package run
 // evaluated once; and the delivery record loses no hand that the pool's advances make at once.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,7 +133,7 @@ func TestTheImageIdentityIsEvaluatedOnce(t *testing.T) {
 	release := make(chan struct{})
 	fail := false
 	prev := identityEval
-	identityEval = func(string) (string, bool) {
+	identityEval = func(context.Context, string) (string, bool) {
 		mu.Lock()
 		evals++
 		f := fail
@@ -177,7 +178,7 @@ func TestALaunchsPrewarmAndImageStepShareOneIdentityEval(t *testing.T) {
 	var mu sync.Mutex
 	evals := 0
 	prev := identityEval
-	identityEval = func(string) (string, bool) {
+	identityEval = func(context.Context, string) (string, bool) {
 		mu.Lock()
 		defer mu.Unlock()
 		evals++
