@@ -1,10 +1,12 @@
 package hostfloor
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -32,8 +34,10 @@ import (
 // `agent_updates` lets the pack move (UpdatesAllowed); bounded by the jail's UPDATE_TIMEOUT
 // (pollTimeout) with its UPDATE_GRACE (RefreshKillAfter) before the kill; stdin from /dev/null and
 // no controlling terminal (notty; program-delivery.md OQ-PD22), its output on the launch's stderr; one refresh at a time
-// per program; and a failure that is reported and launches the program anyway. Its lines are the
-// launcher's, under the floor's prefix.
+// per program. Its lines are the launcher's, under the floor's prefix. One guarantee is NOT kept: a
+// failure no longer launches the program anyway. By PD-NF1 a refresh that reached upstream and then
+// failed or timed out stops the launch unless the user's patchrecovery.UseInstalledEnv hatch covers
+// it, and an upstream it cannot reach skips it with a could-not-check line (PD-NF3).
 //
 // # What differs, and why
 //
@@ -84,6 +88,10 @@ const (
 	// refresh then exited with: one that handles the signal and exits with a status is stopped too.
 	// The lock is released and the caller ends the launch, as that signal asked.
 	RefreshStopped
+	// RefreshUnchecked: the program's upstream could not be reached, so nothing ran and the launch
+	// runs what is installed: a refresh that cannot reach upstream cannot know there is anything
+	// newer, which PD-NF1 does not count as a failure (PD-NF3). Stamped, so an offline hour asks once.
+	RefreshUnchecked
 )
 
 // RefreshResult is one PrelaunchRefresh: its outcome, and what a caller needs to say or do about it.
@@ -93,13 +101,20 @@ type RefreshResult struct {
 	Signal syscall.Signal
 	// Status is a RefreshFailed refresh's exit status (notty.ExitCode), 0 otherwise.
 	Status int
+	// Refused is set for a RefreshFailed or RefreshTimedOut automatic refresh the user's
+	// patchrecovery.UseInstalledEnv hatch does not cover: its refusal block is printed, and the
+	// caller ends the launch (PD-NF1) rather than running the program with its add-ons as they were.
+	Refused bool
+	// Err is the refusal, an *UpdateRefusal, when Refused is set.
+	Err error
 }
 
 // PrelaunchRefresh runs p's declared pre-launch refresh against exe, the binary the launch is about
 // to exec, in env, when it is due — and prints, through the floor's Out under its Prefix, the
-// launcher's own lines for each outcome. It never returns an error: launching the program outranks
-// refreshing it, so the only outcome that should stop the launch is RefreshStopped, a signal that
-// asked for exactly that.
+// launcher's own lines for each outcome. Two outcomes stop the launch: RefreshStopped, a signal that
+// asked for exactly that, and a Refused failure (PD-NF1): a refresh that reached upstream and then
+// failed or timed out is a failed update, which runs the program only under the user's
+// patchrecovery.UseInstalledEnv hatch. A Ctrl-C still runs it: the interrupt was the user's.
 //
 // env is the refresh's whole environment, PATH included; the caller builds it (the launch's own
 // environment with none of the credentials it composes for the program, packdecl.Refresh's "none
@@ -169,24 +184,65 @@ func (f *Floor) prelaunchRefresh(p Program, exe string, env []string, manual boo
 	}
 	defer lk.Release()
 
+	if !manual {
+		// THE PROBE FIRST (PD-NF3): the refresh is itself the check for newer add-ons, so an upstream
+		// it cannot reach is a check that cannot run — said, stamped like a failed poll, and the
+		// program runs what is installed — rather than a bounded hang ending in a refusal.
+		if url := refreshUpstream(p, env); url != "" {
+			if why := f.upstreamUnreachable(context.Background(), url); why != nil {
+				f.say("%s: could not check for newer add-ons: %s is unreachable (%v) — running what is installed",
+					bin, url, why)
+				f.touchRefreshStamp(bin)
+				return RefreshResult{Outcome: RefreshUnchecked}
+			}
+		}
+	}
+
 	// SAID BEFORE IT RUNS (OQ-RO3): the refresh is the network, and a launch has no quiet mode.
 	f.say("Refreshing %s (%s)...", bin, strings.Join(r.Argv, " "))
 	res := f.runRefresh(exe, r.Argv, env)
-	// Stamped on EVERY outcome, as the launcher's is: an offline hour must not retry per launch.
-	f.touchRefreshStamp(bin)
+	var failure error
 	switch res.Outcome {
-	case RefreshRan:
+	case RefreshTimedOut:
+		failure = fmt.Errorf("it timed out after %s", f.pollTimeout())
+	case RefreshFailed:
+		failure = fmt.Errorf("it exited with status %d", res.Status)
+	}
+	refuse := failure != nil && !manual && !f.useInstalled(p)
+	// Stamped on every outcome but a refusal, as the launcher's is: the stamp throttles retries,
+	// and a refused refresh must be retried by the next launch, not skipped for an interval while
+	// the program runs with its add-ons as they were (PD-NF1). Offline never gets here (the probe).
+	if !refuse {
+		f.touchRefreshStamp(bin)
+	}
+	act := "the pre-launch refresh (" + strings.Join(r.Argv, " ") + ")"
+	switch {
+	case res.Outcome == RefreshRan:
 		// The content key only on SUCCESS: a failed refresh leaves the change due, so the next
 		// launch retries the install under the lock instead of leaving it to the program.
 		f.recordSeen(bin, key)
-	case RefreshInterrupted:
+	case res.Outcome == RefreshInterrupted:
 		f.say("%s: the pre-launch refresh was interrupted (Ctrl-C) — running what is installed", bin)
-	case RefreshTimedOut:
-		f.say("%s: the pre-launch refresh timed out after %s — running what is installed", bin, f.pollTimeout())
-	case RefreshFailed:
-		f.say("%s: the pre-launch refresh failed (status %d) — running what is installed", bin, res.Status)
+	case refuse:
+		res.Refused = true
+		res.Err = f.refuseRefresh(p, act, failure)
+	case manual && res.Outcome == RefreshTimedOut:
+		f.say("%s: the pre-launch refresh timed out after %s", bin, f.pollTimeout())
+	case manual && res.Outcome == RefreshFailed:
+		f.say("%s: the pre-launch refresh failed (status %d)", bin, res.Status)
+	case failure != nil:
+		f.sayUsingInstalled(p, "add-ons", act, failure)
 	}
 	return res
+}
+
+// refuseRefresh prints a failed refresh's refusal block, its repair the launch itself.
+func (f *Floor) refuseRefresh(p Program, act string, err error) error {
+	r := &UpdateRefusal{Bin: p.Bin(), Pack: p.Pack, Act: act, Err: err, Runs: "run it with what is installed",
+		Repair: f.hatchCommand(p), Command: f.hatchCommand(p)}
+	out := f.out()
+	_, _ = io.WriteString(out, r.Render(colorFor(out)))
+	return r
 }
 
 // runRefresh runs exe argv in env under the refresh's bound, its output on the floor's Out nested

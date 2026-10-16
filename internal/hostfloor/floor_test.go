@@ -294,8 +294,10 @@ func TestManualUpdateStillRespectsFixedNpmVersion(t *testing.T) {
 	}
 }
 
-// TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval.
-func TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval(t *testing.T) {
+// TestAFailedUpdateRefusesAndTheNextLaunchRetries is PD-NF1 for an npm program: a newer release
+// found and its install failing is a refusal, never the installed version run with a warning, and
+// its stamp is taken back so the next launch tries again rather than running 1.0.0 for an hour.
+func TestAFailedUpdateRefusesAndTheNextLaunchRetries(t *testing.T) {
 	w := newWorld(t)
 	clk := &clock{t: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
 	w.floor.Now = clk.now
@@ -307,13 +309,21 @@ func TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval(t *testing.
 	w.publish("opencode-ai", "2.0.0", "bin=opencode", "fail")
 	clk.t = clk.t.Add(2 * time.Hour)
 	st, outcome, err := w.floor.Ensure(context.Background(), p)
-	if err != nil || outcome != Kept || st.Record.Version != "1.0.0" {
-		t.Fatalf("failed update: outcome %s, record %+v, err %v", outcome, st.Record, err)
+	var refusal *UpdateRefusal
+	if !errors.As(err, &refusal) || outcome == Kept || refusal.Installed != "1.0.0" || refusal.Newer != "2.0.0" {
+		t.Fatalf("failed update: outcome %s, err %v (%+v)", outcome, err, refusal)
+	}
+	if st.Record == nil || st.Record.Version != "1.0.0" {
+		t.Errorf("a refused update moved the record: %+v", st.Record)
+	}
+	if strings.Contains(w.out.String(), "running the installed") {
+		t.Errorf("a refused update still said it runs the installed version:\n%s", w.out)
 	}
 	polls := len(w.npmCalls("view"))
 	clk.t = clk.t.Add(10 * time.Minute)
-	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil || len(w.npmCalls("view")) != polls {
-		t.Errorf("a failed update was retried inside the interval (%d polls, was %d)", len(w.npmCalls("view")), polls)
+	if _, _, err := w.floor.Ensure(context.Background(), p); !errors.As(err, &refusal) || len(w.npmCalls("view")) != polls+1 {
+		t.Errorf("the launch after a refused update: %v, %d polls (was %d), want it retried and refused again",
+			err, len(w.npmCalls("view")), polls)
 	}
 }
 

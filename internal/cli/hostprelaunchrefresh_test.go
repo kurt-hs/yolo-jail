@@ -10,6 +10,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,6 +33,10 @@ import (
 // answers it as a real pi with nothing to update does. It runs before TestMain's dispatch, in the
 // child the stand-in's script execs.
 func init() {
+	// NO TEST HERE PROBES A REAL UPSTREAM: every floor this package builds finds the npm registry
+	// reachable, so a pre-launch refresh runs (PD-NF3's probe, hostfloor.ProbeUpstreamDefault) unless
+	// a test says otherwise.
+	hostfloor.ProbeUpstreamDefault = func(context.Context, string) error { return nil }
 	if len(os.Args) == 4 && (os.Args[1] == testFakeAgentArg || os.Args[1] == testFakeAWSAgentArg) &&
 		os.Args[2] == "update" && os.Args[3] == "--extensions" {
 		os.Exit(0)
@@ -214,14 +220,27 @@ func TestHostPiRefreshFollowsAgentUpdates(t *testing.T) {
 	}
 }
 
-func TestHostPiRefreshFailureIsALineAndPiStillStarts(t *testing.T) {
+// PD-NF1 at the call site: a refresh that reached its upstream and then failed stops the launch with
+// the floor's refusal block and the line that says so; pi is not started. Remove refreshRefusalExit's
+// call from the launch and pi starts.
+func TestHostPiRefreshFailureRefusesTheLaunch(t *testing.T) {
 	h := newRefreshHost(t, piOnItsPathCopy, "  exit 7")
 	r := h.launch(t)
-	if r.rc != 0 || r.execEnv == nil {
-		t.Fatalf("a failed refresh stopped the launch: rc=%d\n%s", r.rc, r.errs)
+	if r.rc != 1 || r.execEnv != nil {
+		t.Fatalf("a failed refresh: rc=%d, exec reached %v, want the refusal (1) and no exec\n%s",
+			r.rc, r.execEnv != nil, r.errs)
 	}
-	if !strings.Contains(r.errs, "yolo host: pi: the pre-launch refresh failed (status 7) — running what is installed\n") {
-		t.Errorf("the failure was not said in the launcher's words:\n%s", r.errs)
+	for _, want := range []string{
+		"ERROR: pi: the pre-launch refresh (update --extensions) failed\n  it exited with status 7\n",
+		"Start anyway:\n  YOLO_USE_INSTALLED=pi yolo host -- pi",
+		"yolo host: refusing to launch pi: its pre-launch refresh failed\n",
+	} {
+		if !strings.Contains(r.errs, want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, r.errs)
+		}
+	}
+	if strings.Contains(r.errs, "running what is installed") {
+		t.Errorf("a refused refresh said it runs what is installed:\n%s", r.errs)
 	}
 	seen := filepath.Join(paths.HostFloorDirUnder(h.home), "refresh", "pi.seen")
 	if entries, _ := os.ReadDir(seen); len(entries) != 0 {
@@ -233,20 +252,47 @@ func TestHostPiRefreshFailureIsALineAndPiStillStarts(t *testing.T) {
 	}
 }
 
-func TestHostPiRefreshThatHangsIsBoundedAndPiStillStarts(t *testing.T) {
+func TestHostPiRefreshThatHangsIsBoundedAndRefused(t *testing.T) {
 	boundRefreshes(t, 300*time.Millisecond)
 	h := newRefreshHost(t, piOnItsPathCopy, "  exec sleep 30")
 	start := time.Now()
 	r := h.launch(t)
-	if r.rc != 0 || r.execEnv == nil {
-		t.Fatalf("a hung refresh stopped the launch: rc=%d\n%s", r.rc, r.errs)
+	if r.rc != 1 || r.execEnv != nil {
+		t.Fatalf("a hung refresh: rc=%d, exec reached %v, want the refusal (1)\n%s", r.rc, r.execEnv != nil, r.errs)
 	}
 	if took := time.Since(start); took > hostfloor.RefreshKillAfter+10*time.Second {
 		t.Errorf("the launch waited %s on a refresh bounded at 300ms", took)
 	}
-	if !strings.Contains(r.errs, "yolo host: pi: the pre-launch refresh timed out after 300ms — running what is installed\n") {
-		t.Errorf("the timeout was not said:\n%s", r.errs)
+	if !strings.Contains(r.errs, "ERROR: pi: the pre-launch refresh (update --extensions) failed\n  it timed out after 300ms\n") {
+		t.Errorf("the timeout was not refused:\n%s", r.errs)
 	}
+}
+
+// The hatch starts pi past a failed refresh, and an unreachable registry skips the refresh and
+// starts pi with a could-not-check line (PD-NF3).
+func TestHostPiStartsPastAFailedRefreshOnlyUnderTheHatchOrOffline(t *testing.T) {
+	t.Run("YOLO_USE_INSTALLED", func(t *testing.T) {
+		h := newRefreshHost(t, piOnItsPathCopy, "  exit 7")
+		t.Setenv("YOLO_USE_INSTALLED", "pi")
+		if r := h.launch(t); r.rc != 0 || r.execEnv == nil ||
+			!strings.Contains(r.errs, "YOLO_USE_INSTALLED is set, so yolo runs the installed add-ons\n") {
+			t.Fatalf("under the hatch: rc=%d, exec reached %v\n%s", r.rc, r.execEnv != nil, r.errs)
+		}
+	})
+	t.Run("offline", func(t *testing.T) {
+		h := newRefreshHost(t, piOnItsPathCopy, "  exit 7")
+		orig := hostfloor.ProbeUpstreamDefault
+		hostfloor.ProbeUpstreamDefault = func(context.Context, string) error { return errors.New("no route to host") }
+		t.Cleanup(func() { hostfloor.ProbeUpstreamDefault = orig })
+		r := h.launch(t)
+		if r.rc != 0 || r.execEnv == nil || h.refreshes(t) != 0 {
+			t.Fatalf("offline: rc=%d, exec reached %v, %d refreshes, want pi started and no refresh\n%s",
+				r.rc, r.execEnv != nil, h.refreshes(t), r.errs)
+		}
+		if !strings.Contains(r.errs, "yolo host: pi: could not check for newer add-ons: ") {
+			t.Errorf("the could-not-check line was not said:\n%s", r.errs)
+		}
+	})
 }
 
 func TestHostPiRefreshSkipsAHeldLockWithOneLine(t *testing.T) {

@@ -250,6 +250,13 @@ type Floor struct {
 	// the operation this floor serves (`yolo host apply --assert`, `yolo host -- <cmd>`); "" names
 	// `yolo host -- <bin>` of the program itself.
 	PatchBypassCommand string
+	// UseInstalled reports whether the user's patchrecovery.UseInstalledEnv hatch covers p, letting
+	// the installed version run past a failed update (PD-NF1, nofallback.go). nil => that variable
+	// in this process's environment.
+	UseInstalled func(p Program) bool
+	// ProbeUpstream tells an unreachable upstream from a failed act where the act itself is the
+	// check (PD-NF3): nil when url answers, else why not. nil => ProbeUpstreamDefault.
+	ProbeUpstream func(ctx context.Context, url string) error
 	// ResolveCapture finds the capture store's entry for bin on this host's platform, the same
 	// selection a jail's materialize makes. nil => this host has no capture store.
 	ResolveCapture func(bin string) (*capture.Entry, error)
