@@ -13,6 +13,16 @@ package run
 // prewarm's nix too, as the terminal's whole foreground group, and the image step then builds again.
 // A signal that ends the launch stops it with every other nix of the launch (nixchildren).
 //
+// EVERY OTHER END OF THE LAUNCH STOPS IT TOO, before Run returns (stopImagePrewarm, deferred at the
+// top of Run): a refusal after the slot (a patch that does not apply, a missing build), an error
+// return, and a launch that ran its jail and ended. Without it a refused launch left its
+// `nix eval --impure --raw .#imageIdentity` running with parent pid 1 for up to its two-minute limit,
+// writing the user's nix cache (reported 2026-10-16). STOPPED, NOT AWAITED TO ITS END: what the
+// prewarm makes is for this launch's own image step, which by the time Run returns has run or never
+// will, so nothing reads a result it would finish; and a refusal waiting minutes for a build it
+// refused to use is the wrong trade. The stop interrupts its nix as a Ctrl-C would and waits for it
+// to exit (image.AutoLoadOptions.Context), so Run returns with none of it running.
+//
 // THE IDENTITY IS EVALUATED ONCE for the launch (identityMemo): the image step asks the eval the
 // prewarm already ran, or waits for the one it is running, rather than evaluating again.
 //
@@ -23,6 +33,7 @@ package run
 // (which has no slot to run beside), and a launch whose image step is a test's fake.
 
 import (
+	"context"
 	"sync"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
@@ -45,10 +56,30 @@ func (o *Options) startImagePrewarm(cfg *jsonx.OrderedMap, rt, repoRoot string) 
 	if o.IsMacOS || o.DryRun || o.subLaunch() || repoRoot == "" || envTruthy(o.Getenv(StorePackagesOptInEnv)) {
 		return
 	}
-	o.imageIdentity = &identityMemo{}
+	ctx, cancel := context.WithCancel(context.Background())
+	o.imageIdentity = &identityMemo{ctx: ctx}
 	opts := o.imageLoadOptions(cfg, rt, repoRoot, storePackagesPlan{})
 	opts.Perf = nil // its spans would read as the image step's
-	go safeRun(func() { prewarm(opts) })
+	opts.Context = ctx
+	done := make(chan struct{})
+	o.prewarmStop = func() {
+		cancel()
+		<-done
+	}
+	go safeRun(func() {
+		defer close(done)
+		prewarm(opts)
+	})
+}
+
+// stopImagePrewarm ends the prewarm this launch started, if it started one, and returns once its
+// goroutine has: a nix it has running is interrupted and waited for, and none starts after. Run
+// defers it, so every return of a launch runs it. Idempotent.
+func (o *Options) stopImagePrewarm() {
+	if stop := o.prewarmStop; stop != nil {
+		o.prewarmStop = nil
+		stop()
+	}
 }
 
 // identityMemo is one launch's image identity, evaluated by whichever of the prewarm and the image
@@ -56,6 +87,9 @@ func (o *Options) startImagePrewarm(cfg *jsonx.OrderedMap, rt, repoRoot string) 
 // not kept: the next to ask evaluates again, as the image step would have (a Ctrl-C at the terminal
 // fails the prewarm's).
 type identityMemo struct {
+	// ctx ends an eval in flight (image.EvalImageIdentityContext): the prewarm's, ended when the
+	// launch returns. nil is context.Background().
+	ctx     context.Context
 	mu      sync.Mutex
 	running chan struct{} // closed when the eval in flight ends; nil before the first
 	id      string
@@ -69,7 +103,7 @@ func (m *identityMemo) eval(repoRoot string) (string, bool) {
 		running := make(chan struct{})
 		m.running = running
 		m.mu.Unlock()
-		id, ok := identityEval(repoRoot)
+		id, ok := identityEval(m.context(), repoRoot)
 		m.mu.Lock()
 		m.id, m.ok = id, ok
 		m.mu.Unlock()
@@ -83,13 +117,21 @@ func (m *identityMemo) eval(repoRoot string) (string, bool) {
 	id, ok := m.id, m.ok
 	m.mu.Unlock()
 	if !ok {
-		return identityEval(repoRoot)
+		return identityEval(m.context(), repoRoot)
 	}
 	return id, ok
 }
 
+// context is m.ctx, or context.Background() when it is nil.
+func (m *identityMemo) context() context.Context {
+	if m.ctx == nil {
+		return context.Background()
+	}
+	return m.ctx
+}
+
 // identityEval is the eval itself: a var so a test can count evals.
-var identityEval = image.EvalImageIdentity
+var identityEval = image.EvalImageIdentityContext
 
 // isClosed reports whether c is closed, without blocking.
 func isClosed(c chan struct{}) bool {

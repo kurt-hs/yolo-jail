@@ -690,6 +690,8 @@ type Options struct {
 	// imageIdentity is this launch's image identity, evaluated once whether the prewarm or the image
 	// step asks first (imageprewarm.go); nil evaluates it as the image step always did.
 	imageIdentity *identityMemo
+	// prewarmStop ends the prewarm startImagePrewarm started (stopImagePrewarm); nil when none did.
+	prewarmStop func()
 	// Sealed is THE SEAL (docs/design/forked-programs-as-packs.md FP-D9; seal.go): this launch is
 	// a fork BUILD, whose command is arbitrary code from a repository a pack named, so the jail is
 	// handed no credential and nothing that writes outside its own workspace and home. Every
