@@ -9,13 +9,23 @@ import (
 	runpkg "github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 const allowPatchFailuresEnv = paths.AllowPatchFailuresEnv
 
-var allowPatchFailures = func() bool { return os.Getenv(allowPatchFailuresEnv) == "1" }
+// allowPatchFailures reports whether YOLO_ALLOW_PATCH_FAILURES covers f: `1`, or a name equal to
+// its key, its pack or its bin or extension name (patchrecovery's grammar).
+var allowPatchFailures = func(f packload.Fork) bool {
+	return patchrecovery.Read(os.Getenv, allowPatchFailuresEnv).Covers(recoverySubject(f))
+}
+
+// recoverySubject is f as a hatch's names match it.
+func recoverySubject(f packload.Fork) patchrecovery.Subject {
+	return patchrecovery.Subject{Key: f.Key(), Pack: f.Pack, Name: f.Bin}
+}
 
 func currentPatchFailure(f packload.Fork) *packsrc.PatchFailure {
 	series, err := f.ReadSeries()
@@ -83,7 +93,7 @@ func writePatchFailure(w io.Writer, f *packsrc.PatchFailure, fork packload.Fork,
 		return
 	}
 	_, _ = io.WriteString(w, f.Block(fork.Key(), fork.RebaseRecipe(), bypass))
-	if allowPatchFailures() && admitted != "" {
+	if allowPatchFailures(fork) && admitted != "" {
 		fmt.Fprintf(w, "CONTINUING: using intact admitted build %s; skips this subject's advance.\n", admitted)
 	}
 }

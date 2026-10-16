@@ -78,7 +78,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 			if !f.DeliveredAtHost() || currentPatchFailure(f) == nil {
 				continue
 			}
-			if entry, _, _ := hostTreeServing(f); entry != nil && allowPatchFailures() {
+			if entry, _, _ := hostTreeServing(f); entry != nil && allowPatchFailures(f) {
 				continue // the bypass: the render links the good build, as it does for an advance's
 			}
 			stopped = append(stopped, f.Label())

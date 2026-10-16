@@ -12,6 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 )
 
 // patched.go is the floor's arm for a PATCHED FORK's program (docs/reference/patched-forks.md §9,
@@ -67,6 +68,9 @@ type PatchedState struct {
 	// error block on this operation's stream, so the floor does not print the same block again. It
 	// is false for a failure read from the record, which nothing in this operation has said yet.
 	PatchFailureSaid bool
+	// Recovery is the hatch list the advance decided would get `yolo host` running past PatchFailure
+	// (patchrecovery.Hatch), which the error block lists; nil when no advance decided one.
+	Recovery []patchrecovery.Hatch
 	// Rebase is the fork's rebase recipe, which PatchFailure's error block prints as its repair
 	// (packsrc.RebaseRecipe, patched-forks.md PF-D85).
 	Rebase packsrc.RebaseRecipe
@@ -328,16 +332,24 @@ func (f *Floor) writePatchFailureOnce(p Program, state PatchedState, runs string
 	if state.PatchFailureSaid {
 		return
 	}
-	f.writePatchFailure(p, state.PatchFailure, state.Rebase, runs)
+	f.writePatchFailure(p, state.PatchFailure, state.Rebase, runs, state.Recovery)
 }
 
-func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, recipe packsrc.RebaseRecipe, runs string) {
+// writePatchFailure prints pf's error block. Its hatch list is the advance's (recovery, put in front
+// of this floor's command), or, when no advance decided one, the bypass that runs runs.
+func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, recipe packsrc.RebaseRecipe, runs string,
+	recovery []patchrecovery.Hatch) {
 	owner := p.Install.ForkedBy + "/" + p.Bin()
 	command := f.PatchBypassCommand
 	if command == "" {
 		command = "yolo host -- " + p.Bin()
 	}
-	_, _ = io.WriteString(f.out(), pf.Block("fork "+owner, recipe, packsrc.PatchBypass{Command: command, Runs: runs}))
+	bypass := packsrc.PatchBypass{Command: command, Key: owner, Runs: runs}
+	for _, h := range recovery {
+		h.Command = command
+		bypass.Hatches = append(bypass.Hatches, h)
+	}
+	_, _ = io.WriteString(f.out(), pf.Block("fork "+owner, recipe, bypass))
 }
 
 // ensurePatched is Ensure for a patched fork's program: the advance first, outside the floor's lock

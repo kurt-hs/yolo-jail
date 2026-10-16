@@ -69,7 +69,7 @@ func (f *Floor) PreparePatched(ctx context.Context, p Program, allowAdvance bool
 		return preparation, nil
 	}
 
-	bypass := f.AllowPatchFailures != nil && f.AllowPatchFailures()
+	bypass := f.AllowPatchFailures != nil && f.AllowPatchFailures(p)
 	preparation.bypassRequested = bypass
 	// WHAT THE BYPASS WOULD RUN (PF-D83): the installed copy when it is a build of the series as it
 	// stands, else the admitted store build of it; the error block offers the bypass only then.

@@ -315,8 +315,13 @@ func TestPatchFailureAllSurveyCleanNewestThenOlderConflictSelectsOlder(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failure := current.CurrentPatchFailure(in, series); failure == nil || failure.Target.Commit != "c11" {
-		t.Fatalf("selected authority = %#v, want remaining older conflict at c11", failure)
+	if failure := current.PatchFailure; failure == nil || failure.Target.Commit != "c11" {
+		t.Fatalf("recorded authority = %#v, want remaining older conflict at c11", failure)
+	}
+	// A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (docs/design/patched-build-recovery.md §6.2): the
+	// older conflict is recorded, but the clean newest passes it by, so it does not govern.
+	if failure := current.CurrentPatchFailure(in, series); failure != nil {
+		t.Fatalf("selected authority = %#v, want none while the newest c12 replays cleanly", failure)
 	}
 	var cleanNewest bool
 	for _, outcome := range current.Outcomes {

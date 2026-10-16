@@ -76,7 +76,7 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 		UpdatesAllowed: func(pack string) bool {
 			return entrypoint.PackPolicyAllows(updatesWire, pack)
 		},
-		AllowPatchFailures: allowPatchFailures,
+		AllowPatchFailures: func(p hostfloor.Program) bool { return allowPatchFailures(floorForkBuild(p, "").Fork) },
 		// The floor's steps, timed into the running host act's record (hostactperf.go).
 		Span: floorSpan,
 		// Either origin (resolveFloorCapture): a capture jail's, or this host's own capture (HP-D18),
@@ -383,6 +383,7 @@ func floorAdvanceState(p hostfloor.Program, result advanceResult) hostfloor.Patc
 	if failure != nil {
 		state.PatchFailure = failure
 		state.PatchFailureSaid = result.patchFailureSaid
+		state.Recovery = result.delivery.Recovery
 	}
 	state.OperationError = result.operationError
 	if reason := result.delivery.FreshFailure; reason != "" {
@@ -440,8 +441,11 @@ func floorResolvePatched(ctx context.Context, p hostfloor.Program, out io.Writer
 		appendFloorAuthorityError(&state, message)
 		authorityBlocked = true
 	case "failure":
-		if authority.Failure != nil {
+		if authority.Failure != nil && walkBackAsked(fork, authority.Failure) {
+			state.PatchFailure = nil // the walk-back is asked for: the advance decides
+		} else if authority.Failure != nil {
 			state.PatchFailure = authority.Failure
+			state.Recovery = a.recoveryHatches()
 			authorityBlocked = true
 		} else {
 			appendFloorAuthorityError(&state, "the local patch-failure authority has no classified failure")
@@ -625,7 +629,9 @@ func floorPatchedStateRecord(p hostfloor.Program, recorded *packsrc.CheckRecord,
 		}
 		patchFailure = rec.CurrentPatchFailure(in, series.Digest)
 	}
-	ps.PatchFailure = patchFailure
+	if !walkBackAsked(f, patchFailure) {
+		ps.PatchFailure = patchFailure // with the walk-back asked for, the advance decides (walkBackAsked)
+	}
 	if !fixed && g == nil {
 		g = recoverGoodBuild(store, f.Key(), platform, recipe, series.Len())
 		if g == nil && series.LegacyDigest != "" && series.LegacyDigest != series.Digest {
