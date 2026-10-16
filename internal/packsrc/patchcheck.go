@@ -12,7 +12,9 @@ package packsrc
 // and never the mirror's, because the launch's pack refresh runs first and would leave the
 // mirror's fresh for a branch pack on the same repository — and reading the mirror's runs a
 // `rev-parse` first. An attempt counts, so an offline machine retries hourly rather than paying a
-// fetch timeout every launch.
+// fetch timeout every launch. ONE CALLER TAKES IT BACK (CheckOptions.RetryFailedFetch): an advance
+// with nothing built to run, for which a failed fetch is no state of the upstream but a fault of
+// the moment — the network not up yet at boot — and an hour's wait a refused launch for nothing.
 //
 // # The check itself (§4.3)
 //
@@ -86,6 +88,15 @@ type CheckOptions struct {
 	// Force is an EXPLICIT ACT's check (`yolo pack update`, `yolo pack install`, `yolo capture`):
 	// it ignores the throttle and the mirror's own stamp and fetches, still putting tags back.
 	Force bool
+	// RetryFailedFetch is a caller with NOTHING BUILT TO RUN, which a failed fetch on the record does
+	// not hold inside the interval: the record's last check could not reach the upstream (its
+	// FetchErr — DNS, a refused or timed-out connection, TLS, a server error), which says nothing
+	// about the upstream, and the throttle's purpose — not paying a fetch timeout on every launch
+	// while a good build runs (§4.2) — has no good build to protect. The check runs, its fetch under
+	// the store's usual timeout. A check that DID reach the upstream and found a problem (a base the
+	// upstream lacks, a ref naming nothing) still holds for the interval: that is the upstream's
+	// answer.
+	RetryFailedFetch bool
 	// Now is the clock; nil means time.Now. Interval overrides BranchRefreshInterval (tests).
 	Now      func() time.Time
 	Interval time.Duration
@@ -127,7 +138,7 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	}
 	// THE THROTTLE, A FILE READ: no lock and no git when the stamp is fresh.
 	rec, readErr := s.LoadCheckRecord(w.Owner)
-	if readErr == nil && !opts.Force && opts.FreshAfter == nil {
+	if readErr == nil && !opts.Force && opts.FreshAfter == nil && !retryFetch(opts, rec, in) {
 		if due, _ := CheckDue(rec, in, now(), opts.Interval); !due {
 			return CheckResult{Record: rec, Inputs: in}
 		}
@@ -151,7 +162,8 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 			return false, nil
 		}
 		// RE-READ UNDER THE LOCK: another launch may have checked while this one waited.
-		if !opts.Force && opts.FreshAfter == nil && recErr == nil {
+		retry := recErr == nil && retryFetch(opts, r, in)
+		if !opts.Force && opts.FreshAfter == nil && recErr == nil && !retry {
 			if due, _ := CheckDue(r, in, now(), opts.Interval); !due {
 				res.Record = r
 				return false, nil
@@ -160,6 +172,8 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		_, res.Due = CheckDue(r, in, now(), opts.Interval)
 		if opts.Force {
 			res.Due = "an explicit act checks now"
+		} else if retry {
+			res.Due = "the last check could not reach the upstream, and nothing is built to run"
 		}
 		// THE ATTEMPT COUNTS, written before the fetch: a check that dies in it still waits out the
 		// interval, rather than every launch paying the same timeout. The STAMP ALONE: what the
@@ -224,6 +238,12 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 	return res
 }
 
+// retryFetch reports whether opts asks a failed fetch to be retried (RetryFailedFetch) and r's last
+// check of in is one: its fetch failed, whatever it then made of the mirror it had.
+func retryFetch(opts CheckOptions, r *CheckRecord, in CheckInputs) bool {
+	return opts.RetryFailedFetch && r != nil && r.Check != nil && r.Read == in && r.Check.FetchErr != ""
+}
+
 // keepListedOutcomes drops the outcomes of commits no longer on the list: the record keeps one
 // outcome per entry of the walk's list, so it stays the size of that list.
 func keepListedOutcomes(outcomes []EntryOutcome, list []ListEntry) []EntryOutcome {
@@ -265,8 +285,7 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, force boo
 		found.FetchErr = oneLine(step.fetchErr)
 	}
 	if !mirrorExists(mirror) {
-		found.Problem = "this machine has never fetched " + a.Repo + ", and fetching it failed (" +
-			found.FetchErr + ") — the next check, in an hour, tries again, or `yolo pack update` checks now"
+		found.Problem = "this machine has never fetched " + a.Repo + ", and " + fetchFailed(found.FetchErr)
 		return found
 	}
 	kind, name, tip, err := s.classifyRef(mirror, a.Ref)
@@ -277,8 +296,7 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, force boo
 	case kind == refUnresolved:
 		if found.FetchErr != "" {
 			found.Problem = "?ref=" + a.Ref + " is not in this machine's copy of " + a.Repo + ", and " +
-				"fetching it failed (" + found.FetchErr + ") — the next check, in an hour, tries again, " +
-				"or `yolo pack update` checks now"
+				fetchFailed(found.FetchErr)
 		} else {
 			found.Problem = "?ref=" + a.Ref + " names no branch, tag or commit of " + a.Repo +
 				" — check the fork's ?ref="
@@ -295,7 +313,13 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, force boo
 	// (docs/design/pi-extension-store-builds.md §4.2): its walk's list is every entry the follow
 	// rule names.
 	if base != "" {
-		if why := s.ensureBase(b, mirror, a, base, found.FetchErr); why != "" {
+		why, fetchErr := s.ensureBase(b, mirror, a, base, found.FetchErr)
+		if fetchErr != "" {
+			// THE BASE'S OWN FETCH COULD NOT REACH THE UPSTREAM: a failed fetch, as the step's would be,
+			// never the verdict that the upstream lacks the commit.
+			found.FetchErr = fetchErr
+		}
+		if why != "" {
 			found.Problem = why
 			return found
 		}
@@ -362,32 +386,84 @@ func noVersionNote(a Addr, follow FollowRule) string {
 
 // ensureBase makes the series' base present in the mirror, fetching it by its id when no branch or
 // tag brought it, and says why not, or "". A base the mirror cannot get is no candidate list at
-// all: the walk lists only versions that contain it, and the replay starts there.
-func (s *Store) ensureBase(b budget, mirror string, a Addr, base, fetchErr string) string {
+// all: the walk lists only versions that contain it, and the replay starts there. Its second result
+// is a by-id fetch that could not REACH the upstream (TransportFailure), which the caller records as
+// the check's failed fetch: the upstream was not asked, so "not a commit of" would be no answer.
+func (s *Store) ensureBase(b budget, mirror string, a Addr, base, fetchErr string) (string, string) {
 	if base == "" {
-		return "the series names no base commit — re-export it with `git format-patch --base=<upstream commit>`"
+		return "the series names no base commit — re-export it with `git format-patch --base=<upstream commit>`", ""
 	}
 	if sha, err := s.revParse(mirror, base); err != nil {
-		return "could not read the series' base " + shortCommit(base) + " in " + a.Repo + "'s mirror: " + oneLine(err)
+		return "could not read the series' base " + shortCommit(base) + " in " + a.Repo + "'s mirror: " + oneLine(err), ""
 	} else if sha != "" {
-		return ""
+		return "", ""
 	}
 	if fetchErr != "" {
 		return "the series' base " + shortCommit(base) + " is not in this machine's copy of " + a.Repo +
-			", and fetching failed (" + fetchErr + ") — the next check, in an hour, tries again, or " +
-			"`yolo pack update` checks now"
+			", and " + fetchFailed(fetchErr), ""
 	}
 	_, err := s.runIn(b, mirror, withFsck("-c", "gc.auto=0", "fetch", "origin", "--no-tags",
 		"--no-write-fetch-head", "--recurse-submodules=no", base)...)
 	if sha, rerr := s.revParse(mirror, base); rerr == nil && sha != "" {
-		return ""
+		return "", ""
+	}
+	if err != nil && TransportFailure(err.Error()) {
+		failed := "fetching " + shortCommit(base) + " from " + a.Repo + ": " + oneLine(err)
+		return "the series' base " + shortCommit(base) + " is not in this machine's copy of " + a.Repo +
+			", and " + fetchFailed(failed), failed
 	}
 	why := "the series' base " + shortCommit(base) + " is not a commit of " + a.Repo
 	if err != nil {
 		why += " (fetching it by its id failed: " + oneLine(err) + ")"
 	}
 	return why + " — a series is exported from a branch of its upstream: re-export it with " +
-		"`git format-patch --base=<an upstream commit>`"
+		"`git format-patch --base=<an upstream commit>`", ""
+}
+
+// fetchFailed is a check's problem clause for a fetch that failed with err, with its next step: the
+// network named as the cause when err is a failure to reach the upstream (TransportFailure). It
+// promises no "in an hour": an advance with nothing built to run fetches again at its next run
+// (CheckOptions.RetryFailedFetch), and one with a good build says its own next check.
+func fetchFailed(err string) string {
+	if TransportFailure(err) {
+		return "fetching failed because the upstream could not be reached (" + err + ")" + unreachedNext(err)
+	}
+	return "fetching failed (" + err + ")" + unreachedNext(err)
+}
+
+// unreachedNext is the next step after a check that could not ask its upstream, err its failure:
+// the network, when err says the upstream could not be reached, and `yolo pack update` either way.
+func unreachedNext(err string) string {
+	if TransportFailure(err) {
+		return " — the network looks down or not up yet; once it is up, `yolo pack update` checks now"
+	}
+	return " — `yolo pack update` checks now"
+}
+
+// transportFailures are git's and curl's words for failing to REACH a remote — name resolution, a
+// connection, TLS, a timeout, a server error — as against an answer from it (a ref or an object it
+// does not have, a refused credential).
+var transportFailures = []string{
+	"could not resolve host", "could not resolve proxy", "temporary failure in name resolution",
+	"name or service not known", "nodename nor servname", "failed to connect", "connection refused",
+	"connection timed out", "connection reset", "operation timed out", "timed out after", "timeout was reached",
+	"network is unreachable", "no route to host", "ssl", "tls", "gnutls", "certificate",
+	"the requested url returned error: 5", "rpc failed", "early eof", "unexpected disconnect",
+	// Go's resolver and dialer, as an npm check's registry request reports them.
+	"no such host", "server misbehaving", "i/o timeout", "did not answer within",
+}
+
+// TransportFailure reports whether a fetch's error says the remote could not be REACHED — a fault of
+// this machine's network or the remote's host, which the next attempt may not meet — rather than
+// an answer about what the remote holds.
+func TransportFailure(err string) bool {
+	low := strings.ToLower(err)
+	for _, w := range transportFailures {
+		if strings.Contains(low, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // isAncestor reports whether ancestor is an ancestor of (or equal to) commit in the mirror, with no
