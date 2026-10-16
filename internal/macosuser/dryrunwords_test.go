@@ -55,15 +55,15 @@ func TestPrintPlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	}
 }
 
-// The capture's dry run prints its privileged commands the same way, for the same reader.
+// The capture's dry run prints its commands the same way, for the same reader, and like the
+// launch's it prints no root sudo: a capture runs as the host user and crosses into the sandbox
+// account only through the one-time setup's rule.
 func TestPrintCapturePlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	plan := BuildCapturePlan(testCaptureOptions())
 	var want [][]string
 	for _, cmds := range [][][]string{plan.PrepareCommands, plan.StageCommands, plan.EnvFileCommands,
-		plan.EnvFileGrantCommands} {
-		for _, c := range cmds {
-			want = append(want, append([]string{"sudo"}, c...))
-		}
+		plan.EnvFileGrantCommands, plan.CleanupCommands, plan.ScratchGuestCommands} {
+		want = append(want, cmds...)
 	}
 	want = append(want, plan.BootstrapArgv, plan.DriverArgv)
 	if !slices.ContainsFunc(want, func(argv []string) bool {
@@ -78,6 +78,16 @@ func TestPrintCapturePlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	for _, argv := range want {
 		if !slices.ContainsFunc(printed, func(got []string) bool { return slices.Equal(got, argv) }) {
 			t.Errorf("the capture dry run prints no line that reads back as %q:\n%s", argv, buf.String())
+		}
+	}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "sudo ") {
+			t.Errorf("the capture dry run prints a root sudo: %q", line)
+		}
+	}
+	for _, p := range []string{plan.ProfilePath, plan.EnvFile} {
+		if !strings.Contains(buf.String(), "write "+p) && !strings.Contains(buf.String(), "write '"+p+"'") {
+			t.Errorf("the capture dry run does not name the host write of %s:\n%s", p, buf.String())
 		}
 	}
 }
