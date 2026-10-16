@@ -161,8 +161,8 @@ func (l *workspaceLock) handOff() {
 //
 // It exists for ONE caller outside this package — the macos-user backend, whose
 // provisioning stage writes the same per-workspace npm prefix and mise store a
-// concurrent launch's stage would (docs/design/macos-user-provisioning.md §4,
-// "Concurrency"). That backend has no attach, so two launches on one workspace really do
+// concurrent launch's stage would (docs/reference/macos-user-provisioning.md,
+// "The workspace lock"). That backend has no attach, so two launches on one workspace really do
 // run two stages; the container serialises the same window with the same lock and then
 // attaches instead.
 //

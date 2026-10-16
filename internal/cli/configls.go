@@ -291,8 +291,8 @@ func hostFileLayers(e config.HostFileEntry) []string {
 // recorded in t's refusals for the verb to name; the count reads it as 0.
 //
 // ⚠ IT IS DELIBERATELY NOT THE CONFIG TARGET'S. See workspaceRoot, one file over: whether
-// `applySealed` takes the resolved target is Blocker 3 of
-// docs/design/config-target-resolution-plan.md and is unruled, so this keeps the bare-cwd
+// `applySealed` takes the resolved target is gap 3 of
+// docs/reference/config-target-resolution.md ("Where this does not reach") and is unruled, so this keeps the bare-cwd
 // answer that verb has always been given. Every `yolo config` verb reads
 // overlayKeyCountAt(configTarget.overlayFile(...)) instead.
 func overlayKeyCount(t configTarget, agent, name string) int {

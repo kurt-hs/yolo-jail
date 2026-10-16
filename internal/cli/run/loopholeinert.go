@@ -331,7 +331,7 @@ func inertLineFor(pack string, note loopholes.InertNote) string {
 // workspace on the machine, because SandboxHome() is a constant. They are not, since the
 // home-tier layout: each one is a symlink into <workspace>/.yolo/home, the same sidecar the
 // container backends bind from (entrypoint.DeriveDarwinHomeLayout,
-// docs/design/macos-user-home-tiers.md). A warning that describes a closed gap is worse than
+// docs/reference/macos-user-home-tiers.md). A warning that describes a closed gap is worse than
 // no warning — it teaches the reader to distrust the ones that are still true — which is the
 // rule noteMacosUserContentGaps was rewritten under before it, too, was retired (below).
 

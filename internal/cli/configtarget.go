@@ -303,8 +303,8 @@ func resolveWorkspaceRoot() (string, bool) {
 // docs/reference/config-target-resolution.md never names — from a directory with no workspace it
 // resolves an empty store, finds nothing undeclared, and reports **"sealed"**, the confident
 // empty answer, in the one verb whose entire job is refusing on undeclared input. Whether it
-// takes the target or keeps the bare cwd is Blocker 3 of
-// docs/design/config-target-resolution-plan.md and is unruled, so this keeps its behaviour
+// takes the target or keeps the bare cwd is gap 3 of
+// docs/reference/config-target-resolution.md ("Where this does not reach") and is unruled, so this keeps its behaviour
 // byte-identical rather than letting the resolution decide it silently. `yolo config`'s own
 // verbs never call it.
 func workspaceRoot() string {

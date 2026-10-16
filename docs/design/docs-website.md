@@ -16,8 +16,7 @@ vantage:
 [`../reference/docs-website.md`](../reference/docs-website.md), which is the authority for how the
 guide is built, served and deployed, and where [`OQ-DW1`](../reference/docs-website.md#oq-dw1),
 [`OQ-DW2`](../reference/docs-website.md#oq-dw2), [`DW-D1`](../reference/docs-website.md#dw-d1) and
-[`DW-D2`](../reference/docs-website.md#dw-d2) now resolve. The companion implementation sketch,
-[`docs-website-plan.md`](docs-website-plan.md), is retired to a pointer: its four steps are done. This file holds the one
+[`DW-D2`](../reference/docs-website.md#dw-d2) now resolve. The companion implementation sketch was deleted on 2026-10-15: its four steps are done. This file holds the one
 question the design left open, filed with an id on 2026-10-01. The design's argument, its
 alternatives and its measurement of Vantage's setup are in git history
 (`git log --follow -- docs/design/docs-website.md`).

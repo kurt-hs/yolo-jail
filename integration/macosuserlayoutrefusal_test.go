@@ -13,7 +13,7 @@ import (
 
 // RUNBOOK ITEM 10 — the two layout defects a mutation pass found on 2026-09-12, neither of
 // which leaves the tree red (docs/plans/runbooks/macos-user-manual-checks.md §10;
-// docs/design/macos-user-home-tiers.md §10, the two bullets after "NOT fixed here").
+// docs/reference/macos-user-home-tiers.md, "What is still shared, and what that costs").
 //
 // ⚠ THIS FILE COVERS THE FIRST ONLY. The second — a transient `LoadJailPacks` failure
 // deriving an EMPTY link set, so `install_home_overlay` writes a REAL ~/.claude and every

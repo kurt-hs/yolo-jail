@@ -915,7 +915,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// an empty profile, so there was nothing to build and nothing to put on PATH.
 	// The floor makes an empty `packages:` the COMMON case that most needs the
 	// build — a launch that skipped it is exactly the jail with no mise, no node
-	// and no git that docs/design/macos-user-provisioning.md §1 is about.
+	// and no git that docs/reference/macos-user-provisioning.md's floor is about.
 	//
 	// The cost is real and is the one OQ-P1 accepted: every macos-user launch now
 	// needs a repo root and a nix that can evaluate this flake, where a bare
@@ -1287,7 +1287,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 
 	// 3.5 THE PROVISIONING STAGE — the third privileged step, between the bootstrap and
-	// the agent (docs/design/macos-user-provisioning.md half two). Confined under the same
+	// the agent (docs/reference/macos-user-provisioning.md, "The stage"). Confined under the same
 	// Seatbelt profile the agent gets, which step 2 already installed; empty when the
 	// config declares no tools, and then this costs nothing at all.
 	steps.begin("provision")

@@ -25,7 +25,7 @@ wins on behavior, and nobody builds from this sketch.
   `internal/basehome/decls_test.go`, `sharedstore_test.go`, `internal/packload/packproperties_test.go`
   (`TestMachineGlobalTierStaysNarrow`), `internal/storage/shareddirs_test.go`, and the docs
   [`jail-home.md`](../reference/jail-home.md) and
-  [`macos-user-home-tiers.md`](macos-user-home-tiers.md).
+  [`macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md).
 - **The stamp beside the lock**, in the same change. `REFRESH_STAMP` and `REFRESH_SEEN_DIR` in
   `internal/entrypoint/prelaunchrefresh.go` derive from `REFRESH_STORE` (the lock's parent) instead
   of `STAMP_DIR`. Check that macos-user's baked paths still resolve under `env -i`.

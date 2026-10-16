@@ -76,10 +76,7 @@ first three were ruled 2026-09-20; see
 under `update`, and non-interactive. Measured statically from the bundle, so the no-agent-probing rule
 holds. See [`OQ-2`](#OQ-2).
 
-**Reads with:** [`pi-extension-lifecycle-plan.md`](pi-extension-lifecycle-plan.md)
-(the companion implementation sketch — its blocking questions were ruled 2026-09-20, so what it owes
-now is completion against the tree rather than a decision),
-[`pi-pack-extensions.md`](pi-pack-extensions.md) (the accepted sibling that assigns this doc the
+**Reads with:** [`pi-pack-extensions.md`](pi-pack-extensions.md) (the accepted sibling that assigns this doc the
 fetch/resolve axis and names `internal/packsrc` + `packs.lock.json`),
 [`slots-and-contributions.md`](slots-and-contributions.md) (the role model of the same
 constellation), [`program-delivery.md`](program-delivery.md) (the launcher and `agent_updates`

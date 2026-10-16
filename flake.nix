@@ -588,7 +588,7 @@
         # x86_64-linux exactly as it does for aarch64-darwin.  The axis is
         # "no baked image", not "macOS" — the `guest` notch needs a tool
         # closure for precisely the reason `host` does
-        # (docs/design/noncontainer-nix-environment.md §7), and a
+        # (docs/design/provisioner-sets.md, which absorbed that design), and a
         # darwin-shaped name would have to be renamed again to serve it.
         noncontainerResolved = map (spec:
           let
@@ -723,7 +723,7 @@
             (builtins.concatMap (r: selectOutputs r.drv r.outputs) noncontainerKept)
             noncontainerSkipped;
 
-        # ── The non-container FLOOR (docs/design/macos-user-provisioning.md) ──
+        # ── The non-container FLOOR (docs/reference/macos-user-provisioning.md) ──
         # OQ-P1, ruled 2026-09-11 AGAINST its leaning: the floor a non-container
         # notch gets is EVERYTHING THE IMAGE BAKES, minus an EXPLICIT exclusion
         # list.  A package that is neither buildable for the target system nor
@@ -834,7 +834,7 @@
             else throw ("yolo: the non-container package FLOOR has a hole in it: "
               + "\"${n}\" has no ${system} build.\n\n"
               + "The floor is everything the container image bakes, minus an "
-              + "EXPLICIT exclusion list\n(docs/design/macos-user-provisioning.md, "
+              + "EXPLICIT exclusion list\n(docs/reference/macos-user-provisioning.md, "
               + "OQ-P1).  This is FATAL rather than a silent\nskip so the hole gets "
               + "fixed instead of shipped: a floor with a hole in it is not a "
               + "floor.\n\n"
@@ -1454,7 +1454,7 @@
         # Before 2026-09-12 this was a list of ``imagePkgs.<name>`` derivations
         # and there was no floor at all — macos-user got ``packages:`` and
         # nothing else, so mise, node, git and ripgrep were simply absent
-        # (docs/design/macos-user-provisioning.md §1).  Naming the entries is
+        # (docs/reference/macos-user-provisioning.md, "The floor").  Naming the entries is
         # what lets a second backend take the same list without a second list.
         coreFloorNames = [
           "bashInteractive"

@@ -48,7 +48,7 @@ built today; the credential boundary and the per-backend table),
 [`provider-reachability-and-model-names.md`](provider-reachability-and-model-names.md#9-decision-ledger)
 ([OQ-PR2](provider-reachability-and-model-names.md#9-decision-ledger), the ruling this design extends: pack-declared only, adopted incrementally),
 [`claude-login-without-interception.md`](claude-login-without-interception.md) (the one host view
-that exists), [`openai-auth-broker.md`](openai-auth-broker.md) and
+that exists), [`agent-credentials.md`'s OpenAI section](../reference/agent-credentials.md#the-openai-subscription-credential-service) and
 [`keychain-from-a-jail.md`](keychain-from-a-jail.md) (the host-canonical and native-store
 directions), [`universal-login-sharing-plan.md`](universal-login-sharing-plan.md) (the implementation
 sketch — incomplete while the questions are open).
@@ -92,7 +92,7 @@ replacing both.
 | Mechanism | Canonical copy | Who reads it | Declared by | Built in |
 | :--- | :--- | :--- | :--- | :--- |
 | **Machine-shared agent file** | a pack's machine-scope `state` dir (`paths.GlobalHome()`, `<GlobalStorage>/home`) | every jail (a relative symlink from the agent's own path, `linkSharedCredential` → `linkThroughShared`) | the `state` contribution plus the `shared_credentials` hook | [`packhooks.go`](../../internal/entrypoint/packhooks.go), [`sharedlink.go`](../../internal/entrypoint/sharedlink.go) |
-| **Host-owned credential service** | the host daemon's own state (OpenAI subscription, AWS SSO) | Codex, Pi and opencode through yolo-managed views; an in-jail adapter | the pack's loophole and `env_sources/awsauth` pointer | [`openai-auth-broker.md`](openai-auth-broker.md), [`aws-auth`](../../packs/aws-auth) |
+| **Host-owned credential service** | the host daemon's own state (OpenAI subscription, AWS SSO) | Codex, Pi and opencode through yolo-managed views; an in-jail adapter | the pack's loophole and `env_sources/awsauth` pointer | [`agent-credentials.md`'s OpenAI section](../reference/agent-credentials.md#the-openai-subscription-credential-service), [`aws-auth`](../../packs/aws-auth) |
 
 Three facts about the first mechanism decide most of the design:
 

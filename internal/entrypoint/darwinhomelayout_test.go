@@ -13,7 +13,7 @@ import (
 )
 
 // darwinhomelayout_test.go covers the macos-user workspace tier
-// (docs/design/macos-user-home-tiers.md, alternative A′).
+// (docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror").
 //
 // ⚠ READ §6's WARNING BEFORE ADDING TO THIS FILE. The obvious test for the SharedDirs
 // mirror pins nothing: one that stubs the mirror and asserts a link resolves is satisfied
@@ -583,7 +583,7 @@ func TestTheHomeLayoutsTiersComeFromThePackDeclaration(t *testing.T) {
 }
 
 // THE REFUSAL'S REMEDY HAS TO REACH THE PATH IT NAMES — the first of the two defects a
-// mutation pass found on 2026-09-12 and left unfixed (macos-user-home-tiers.md §10; the
+// mutation pass found on 2026-09-12 and left unfixed (macos-user-home-tiers.md, "What is still shared, and what that costs"; the
 // runbook's item 10, docs/plans/runbooks/macos-user-manual-checks.md).
 //
 // THE DEFECT. `Apply` collected every occupied path into ONE list and always prescribed

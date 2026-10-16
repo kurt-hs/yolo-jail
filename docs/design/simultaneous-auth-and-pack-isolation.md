@@ -32,8 +32,7 @@ auth before every request, so each one ends with yolo's denial.
 
 **Needs your ruling:** none; [OQ-PAS2](#OQ-PAS2) was ruled 2026-10-08 (no Pi fork).
 
-**Reads with:** [implementation handoff](simultaneous-auth-and-pack-isolation-plan.md),
-[`active-provider-sets.md`](active-provider-sets.md) (active-set semantics),
+**Reads with:** [`active-provider-sets.md`](active-provider-sets.md) (active-set semantics),
 [`providers.md`](../reference/providers.md) (credential delivery),
 [`pi-host-openai-auth.md`](pi-host-openai-auth.md) (stored-login behavior).
 
@@ -267,7 +266,7 @@ On 2026-10-07, the installed public extension docs/declarations, request-event r
 model-registry facade, agent-session auth preflights and model-runtime dispatch were rechecked. Package metadata names the source
 repository [earendil-works/pi](https://github.com/earendil-works/pi). The configured `pi-fork` source
 pack independently declares that upstream's `main` plus a format-patch series; it is not a distinct
-GitHub fork. Its first patch's base is recorded in the [plan](simultaneous-auth-and-pack-isolation-plan.md),
+GitHub fork. Its first patch's base is recorded in the retired implementation plan (git history),
 not assumed to identify installed bytes. A scout must pin/replay the declared source and series in a
 writable candidate before assigning the API writer. No installed Pi file was edited; no auth/settings
 file, account endpoint or live model was used.

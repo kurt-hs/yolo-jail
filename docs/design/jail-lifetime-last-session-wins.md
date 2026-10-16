@@ -860,8 +860,7 @@ sibling doc's subject ([`central-yolo-watcher.md`](../research/central-yolo-watc
    the first terminal gets its prompt back.
    - **Built** 2026-09-30, at the container backends, from a hand-off plan that was retired on
      2026-10-01 once its traps moved to the next bullet
-     ([`jail-lifetime-last-session-wins-plan.md`](jail-lifetime-last-session-wins-plan.md) is now
-     a pointer). The keeper is `yolo internal daemon jail-keeper`
+     (it was deleted on 2026-10-15). The keeper is `yolo internal daemon jail-keeper`
      ([`run/keeper.go`](../../internal/cli/run/keeper.go)), wired by the CLI through
      `internaldaemon.JailKeeper`; its plan is [`run/keeperplan.go`](../../internal/cli/run/keeperplan.go),
      its output [`run/keeperframe.go`](../../internal/cli/run/keeperframe.go), its locks and records

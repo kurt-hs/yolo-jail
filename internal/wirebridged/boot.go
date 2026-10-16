@@ -861,7 +861,7 @@ func WillServe(providers, useProfiles *jsonx.OrderedMap,
 // only consumer the design knew; the shipped tree outgrew that the day
 // cerebras's manifest declared the bridge's loopback URL as its anthropic
 // endpoint, because copilot's derive PREFERS the anthropic endpoint of any
-// provider that declares one (cerebras-pack-and-copilot-delivery.md D-3 — a
+// provider that declares one (docs/reference/cerebras-pack-and-copilot-delivery.md D-3 — a
 // standing ruling this build will not fork). From that moment the URL in the
 // composed table reaches every derive that reads it, so the serve decision
 // reads the same table the derives do: EVERY active profile is a candidate,

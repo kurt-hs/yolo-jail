@@ -6,8 +6,7 @@ package entrypoint
 // home and persists the §5 sidecars so in-jail edits survive regeneration.
 //
 // This is the first entrypoint code to import internal/agentcfg — the
-// config-composition cutover (docs/plans/agent-settings-composition.md §6,
-// docs/reference/config-migration-to-prism.md). Each Configure*Prism function
+// config-composition cutover (docs/reference/config-migration-to-prism.md). Each Configure*Prism function
 // replaces one bespoke Configure* writer once its surface is verified at parity;
 // pi is the proof-of-concept (§4.3). The bespoke writers are deleted in Phase C.
 //

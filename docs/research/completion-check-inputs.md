@@ -19,8 +19,8 @@ production input-closure findings.
 > **Finding.** A small documentation shortcut is defensible; a Markdown-extension shortcut is not.
 > Completion also needs a successful baseline covering earlier commits, not just an empty working diff.
 
-**Reads with:** [the behavior design](../design/change-aware-completion.md),
-[its implementation sketch](../design/change-aware-completion-plan.md), and
+**Reads with:** [the behavior design](../design/change-aware-completion.md) (its
+[What shipped](../design/change-aware-completion.md#what-shipped) replaced the implementation sketch), and
 [the suite-speed investigation](../plans/test-suite-speed.md) (measurements, not selection).
 
 ## The recipe names describe different coverage
@@ -137,7 +137,7 @@ First full preserves normal provisioning and captures effective metadata automat
 payloads still need content/read identities, not a no-bootstrap certificate.
 [Model/API opt-in](../../internal/wirebridged/handler_test.go#L234-L243) is a known safety refusal in this
 unauthorized lane: name and unset `YOLO_TEST_CODEX_RESPONSES` for ordinary completion, never silently
-clear it; run the smoke separately only when authorized. The [typed interface](../design/change-aware-completion-plan.md#verification-context)
+clear it; run the smoke separately only when authorized. The [recorded `go env` context](../design/change-aware-completion.md#CAC-D11)
 keeps the resolver seam explicit; normal gate provisioning is unchanged and real acceptance follows implementation.
 
 ## Renderer, checker and source citations are different mechanisms
@@ -179,8 +179,7 @@ full-control lint/unit/pin assertions, then failed the no-Go prose assertion as 
 copied recipe's `check` dependency made the coverage assertion fail with an empty argv log even
 though the recipe printed success. Restoring the recipe recovered the full control, not a feature
 green. These are diagnostic reds, not landed tests, runtime execution or performance evidence.
-The [complete diagnostic listing](../design/change-aware-completion-plan.md#diagnostic-test-listing)
-is reproducible; its fake context is deliberately not accepted as a production baseline proof.
+The complete diagnostic listing was in the superseded sketch, now in git history; its fake context is deliberately not accepted as a production baseline proof.
 
 ## Bounded positive diagnostic
 
@@ -212,7 +211,7 @@ contains five paths, not all documentation. The reader survey found source citat
 plan and roadmap, but no direct executable body reader for these five paths; that finding is bounded
 by this checkout and must be rechecked before implementation. Structural changes still fall back.
 
-The next source investigation is [sketch promotion](../design/change-aware-completion-plan.md#before-promotion):
+The next source investigation was sketch promotion, which the build replaced ([What shipped](../design/change-aware-completion.md#what-shipped)):
 close a reachable supported context profile, provisioned renderer adapter and complete input
 observer, then finish persistence/history/error cases in the real-front-door fixture. Baseline
 commands, record ordering and deterministic caller/prose reds are prepared, not implemented.

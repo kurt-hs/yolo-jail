@@ -2,7 +2,7 @@ package entrypoint
 
 // darwinfloor_test.go pins the three generators that CHANGE THEIR ANSWER the
 // moment the non-container floor reaches $YOLO_DARWIN_LOGIN_PATH
-// (docs/design/macos-user-provisioning.md, half one).
+// (docs/reference/macos-user-provisioning.md, "The floor").
 //
 // None of them needed a code change for it, and that is exactly why they need a
 // test. All three already ask entrypoint.agentPath "will the agent have this

@@ -76,7 +76,7 @@ func SandboxHome() string { return "/Users/" + SandboxUser }
 // the one exception, a disk per workspace, only because a disk image attaches to one VM at
 // a time (OQ-MB1, docs/research/macos-backend-performance.md); no such constraint applies
 // to a directory in this account's home.
-// docs/design/macos-user-home-tiers.md §5 states this as a precondition of the layout, and
+// docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror", states this as a precondition of the layout, and
 // macos-user-provisioning.md's OQ-P3 takes its answer from it.
 //
 // Under ~/.yolo because that is yolo's own namespace in the home. Its sibling ~/.yolo/bin
@@ -365,7 +365,7 @@ func StageHomeOverlayCommands(hostOverlay, cname, sd string) [][]string {
 // YOLO_PACK_ROOT and entrypoint.CapturesDirEnv already follow.
 //
 // WHY NOT THE HOME TIERS. The per-workspace tier resolves to <workspace>/.yolo/home
-// (docs/design/macos-user-home-tiers.md), which is inside the profile's `(subpath ws)`
+// (docs/reference/macos-user-home-tiers.md), which is inside the profile's `(subpath ws)`
 // and therefore AGENT-WRITABLE. A context tree the agent can rewrite is not a context
 // tree: it is an input to config composition, so an agent able to edit one composes its
 // own next launch. Under /var it is root-owned AND outside the profile's enumerated

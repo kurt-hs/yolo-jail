@@ -66,9 +66,7 @@ placed by the `config-overlay` path at the posture that selects it (NS-D19 to NS
 how a host-only scalar exists. It is measured by unit tests and the in-process chain only, like
 the rest of this build.
 
-**Reads with:** [`notch-scoped-config-contributions-plan.md`](notch-scoped-config-contributions-plan.md)
-(the implementation sketch, superseded by the build),
-[`config-target-resolution.md`](../reference/config-target-resolution.md#a-staged-copy-is-not-always-a-layer)
+**Reads with:** [`config-target-resolution.md`](../reference/config-target-resolution.md#a-staged-copy-is-not-always-a-layer)
 (the render mark), and [`pack-system.md`](../reference/pack-system.md#autonomy) (posture lists and
 posture overlays as built).
 

@@ -146,7 +146,7 @@ mise manages the *interactive* / *project* toolchains. Two config scopes:
 
   > **The surface itself is the prism's, and that is the part that shipped** — the port
   > this section used to describe as pending
-  > ([../plans/agent-settings-composition.md](../plans/agent-settings-composition.md)).
+  > ([`pack-system.md`'s compose engine](../reference/pack-system.md#config-surfaces-and-the-compose-engine)).
   > What did *not* retire with it is the `YOLO_MISE_TOOLS` env plumbing and
   > `MergeMiseTools`: the prism owns the composition and the file, the launcher still
   > hands the pins in on an env var. Two side effects stay bespoke on purpose — the
