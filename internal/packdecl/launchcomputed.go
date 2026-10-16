@@ -103,6 +103,12 @@ func MergeForkComputed(base, fork []LaunchComputedFlag, forkPack string) []Launc
 		if i, ok := byKey[f.Key]; ok {
 			prev := out[i]
 			if prev.ForkedBy != "" {
+				// Merging over an earlier merge: replace what the base had, or nothing when the
+				// key was the fork's alone.
+				if prev.Replaces == nil {
+					out[i] = g
+					continue
+				}
 				prev = *prev.Replaces
 			}
 			g.Replaces = &prev

@@ -1918,7 +1918,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -3288,8 +3287,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {
