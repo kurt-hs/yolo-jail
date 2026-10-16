@@ -23,7 +23,7 @@ package macosuser
 //     sandbox-exec -f <the session profile> → the env-file reader → `yolo-jaild supervise`,
 //     the same four layers the agent and the provisioning stage run under, as the sandbox
 //     account. Callers authenticate with the launch's caller tokens (NC-D2), which reach the
-//     supervisor in a root-owned 0600 file only that account is granted read on — this
+//     supervisor in a host-owned 0600 file only that account is granted read on — this
 //     backend has no network isolation, so the file's ownership and ACE are the boundary.
 //
 // # The loophole clients the agent runs (the same ruling, one step over)
@@ -372,9 +372,9 @@ func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix
 	return out
 }
 
-// sessionFilePlan is one more root-owned file a session writes beside its env file, installable
+// sessionFilePlan is one more host-owned file a session writes beside its env file, installable
 // through installSandboxEnvFile, the one installer the session file and the capture's file
-// already share: 0700 directory first, content on stdin through `sudo tee`, the sandbox's read
+// already share: 0700 directory first, content written by the host (WriteHostFile), the sandbox's read
 // ACE after. The daemon env file is one, and the CA files are the others (cabundle.go).
 type sessionFilePlan struct {
 	path, content string
