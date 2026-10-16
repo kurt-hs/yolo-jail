@@ -676,7 +676,7 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
   nothing. Revisit only if a Copilot plan's included credits clearly beat Anthropic's list prices
   or GitHub publishes an inference API, and re-read GitHub's terms first. From
   `copilot-as-a-provider.md`, deleted 2026-10-16. Owner:
-  [Copilot's BYOK contract](../reference/cerebras-pack-and-copilot-delivery.md#copilots-byok-contract).
+  [Copilot's BYOK contract](../reference/providers.md#copilots-byok-contract).
 - **pi's model picker: make the provider visible.** pi's `/model` rows end with the provider in
   brackets (`gpt-oss-120b [cerebras]`), which is easy to miss. If that still confuses people,
   propose a small upstream pi change that shows the provider first; ship a yolo picker extension,
@@ -723,7 +723,7 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
   install, and whether switching organizations adds a second sync folder or replaces the first.
   Then correct the unverified notes. From `claude-plugin-registration-probe.md`, deleted
   2026-10-16. Owner:
-  [two sync roots](../design/synced-skill-trees.md#24-two-sync-roots-one-bucket-name-and-only-one-is-exposed).
+  [two sync roots](../reference/pack-system.md#sync-root-two-roots).
 
 ### pi extensions
 
@@ -760,6 +760,12 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
 
 ### macOS
 
+- **macos-user agent-auth parity: find out whether four defects are still real.** An older
+  version of the agent-auth design listed four macos-user agent-auth defects whose fixes needed a
+  Mac to verify. By 2026-09-30 that doc no longer named them, so whether they were fixed or moved
+  is unknown. Read them from `git show 937bddf27^:docs/design/agent-auth-modes.md` and check each
+  against today's macos-user launch. From `handoff-macos-user-open-threads.md`, deleted 2026-10-16.
+  Owner: [the macos-user manual checks](runbooks/macos-user-manual-checks.md).
 - **The macos-user floor carries the image's core packages but not its extras.** The [`OQ-P1`](../reference/macos-user-provisioning.md#oq-p1)
   ruling says the floor is "everything the image bakes", but the floor's list excludes the image's
   extra packages, such as chromium. Either add the extras with explicit darwin exclusions, or
@@ -783,12 +789,12 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
   pulled by the `:latest` tag; the exploration that chose a yolo-built image recommended pinning
   it by digest so a build always uses a known builder. From
   `macos-container-builder-exploration.md`, deleted 2026-10-16. Owner:
-  [how the container path works](../reference/nix-across-backends.md#how-the-container-path-works).
+  [how the container path works](../reference/image-staging-vs-baking.md#the-macos-linux-builder-for-a-linux-reader).
 - **Measure the macOS builder's startup cost.** Nobody has measured how long the builder container
   takes to start on each build, or how long the first image pull takes. If it is slow, one builder
   container could stay warm for a session. From `macos-container-builder-exploration.md`, deleted
   2026-10-16. Owner:
-  [how the container path works](../reference/nix-across-backends.md#how-the-container-path-works).
+  [how the container path works](../reference/image-staging-vs-baking.md#the-macos-linux-builder-for-a-linux-reader).
 
 ### Other platforms and hardware
 
