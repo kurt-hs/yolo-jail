@@ -12,14 +12,16 @@ package entrypoint
 // and no agent is started (AGENTS.md, "No agent tests").
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
-	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 )
 
 // warmNpmProbe is an npm probe holding tool 1.0.0, installed, with its update due.
@@ -50,8 +52,7 @@ func TestANewerNpmVersionThatFailsToInstallRefuses(t *testing.T) {
 		"Repair:\n" +
 		"  fix what stopped it (its output is above), then run tool again, which retries the update:\n" +
 		"    tool\n" +
-		patchrecovery.Section(patchrecovery.StartAnyway, []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv,
-			Value: "tool", Command: "tool", Label: "run the installed 1.0.0"}}, false)
+		"\nStart anyway:\n" + useInstalledLines("tool", "tool", "1.0.0")
 	if !strings.HasSuffix(out, want) {
 		t.Errorf("the refusal does not end with\n%s\ngot:\n%s", want, out)
 	}
@@ -162,7 +163,7 @@ func TestANativeVerbThatFailsIsJudgedByItsUpstream(t *testing.T) {
 			t.Fatalf("rc=%d, want %d:\n%s", rc, UpdateRefusedStatus, out)
 		}
 		for _, want := range []string{"yolo: ERROR: probetool: its update (probetool update) failed (status 7)\n",
-			"\nRepair:\n", "\nStart anyway:\n", "YOLO_USE_INSTALLED=probetool probetool    run the installed version\n"} {
+			"\nRepair:\n", "\nStart anyway:\n", useInstalledLines("probetool", "probetool", "version")} {
 			if !strings.Contains(out, want) {
 				t.Errorf("the refusal lacks %q:\n%s", want, out)
 			}
@@ -183,6 +184,42 @@ func TestANativeVerbThatFailsIsJudgedByItsUpstream(t *testing.T) {
 			t.Errorf("an unreachable upstream must run the installed version, saying so (rc=%d):\n%s", rc, out)
 		}
 	})
+}
+
+// THE PROBE'S CLASSIFICATION is the host floor's (hostfloor.probeUpstreamHEAD): a server error is
+// an upstream that could not be checked, so a failed update verb runs the installed version; any
+// other HTTP status, a 404 or a 405 for HEAD, is an upstream that answered, and the launch refuses.
+func TestTheJailsUpstreamProbeClassifiesAsTheHostDoes(t *testing.T) {
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not found")
+	}
+	for _, tc := range []struct {
+		status    int
+		reachable bool
+	}{{404, true}, {405, true}, {500, false}, {503, false}} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(srv.Close)
+			p := newUpdateProbeAt(t, []string{"update"}, true, true, srv.URL+"/install.sh")
+			body := "#!/bin/bash\nprintf '%s\\n' \"RAN:$*\" >> " + shellQuoteForTest(p.log) + "\n" +
+				"if [ \"${1:-}\" = update ]; then exit 7; fi\n"
+			if err := os.WriteFile(p.realBin, []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out, rc := p.run(t)
+			if tc.reachable {
+				if rc != UpdateRefusedStatus {
+					t.Errorf("an upstream answering %d answered: the launch must refuse, rc=%d:\n%s", tc.status, rc, out)
+				}
+				return
+			}
+			if rc != 0 || !strings.Contains(out, "could not be reached to check for a newer version") {
+				t.Errorf("an upstream answering %d could not be checked: the installed version must run (rc=%d):\n%s", tc.status, rc, out)
+			}
+		})
+	}
 }
 
 // A vendor INSTALLER re-run (no verb declared): one that was fetched and failed refuses, its host
@@ -247,7 +284,7 @@ func TestAFailedPrelaunchRefreshWhoseRegistryAnswersRefuses(t *testing.T) {
 		t.Fatalf("rc=%d, want %d:\n%s", code, UpdateRefusedStatus, stderr)
 	}
 	for _, want := range []string{"yolo: ERROR: tool: the pre-launch refresh (update --extensions) failed (status 3)\n",
-		"\nRepair:\n", "\nStart anyway:\n", "  YOLO_USE_INSTALLED=tool tool    run the installed version\n"} {
+		"\nRepair:\n", "\nStart anyway:\n", useInstalledLines("tool", "tool", "version")} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, stderr)
 		}
@@ -338,5 +375,34 @@ func TestALauncherPassesAServerRefusalOn(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A HATCHED REFUSAL LEAVES NOTHING BEHIND: a failed update the hatch ran past must not hand its head
+// to a later act in the same run, so a pre-launch refresh that then could not check says only that,
+// rather than repeating the update's failure as its own.
+func TestAHatchedRefusalLeavesNoHeadForTheNextAct(t *testing.T) {
+	fn := strings.NewReplacer(useInstalledSplices("tool", "probe")...).Replace(updateBoundShellFn)
+	script := "BIN=tool\nUPDATE_TIMEOUT=60\n" + fn + `
+_YOLO_FAIL_HEAD="tool 1.0.0 → 9.9.9: the first act failed"
+_YOLO_FAIL_FACT="its output is above."
+_YOLO_FAIL_VER=1.0.0
+_yolo_refuse_failed ""
+_yolo_failed_act 3 "the second act" false
+_yolo_refuse_failed ""
+echo "END:[$_YOLO_FAIL_HEAD][$_YOLO_FAIL_FACT][$_YOLO_FAIL_VER]"
+`
+	cmd := exec.Command("bash", "-c", script)
+	cmd.Env = append(os.Environ(), "YOLO_USE_INSTALLED=tool")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the hatched run must not refuse (%v):\n%s", err, out)
+	}
+	if n := strings.Count(string(out), "the first act failed"); n != 1 {
+		t.Errorf("the first act's failure must be said once, said %d times:\n%s", n, out)
+	}
+	if !strings.Contains(string(out), "tool: the second act failed (status 3), and its upstream could not be reached") ||
+		!strings.Contains(string(out), "END:[][][]") {
+		t.Errorf("the second act must speak for itself and leave nothing set:\n%s", out)
 	}
 }

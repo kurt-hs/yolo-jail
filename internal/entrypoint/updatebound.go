@@ -2,6 +2,7 @@ package entrypoint
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -205,13 +206,20 @@ _yolo_registry_reachable() {
     YOLO_BYPASS_SHIMS=1 npm ping --fetch-retries=0 --fetch-timeout="$((PROBE_TIMEOUT * 1000))" </dev/null >/dev/null 2>&1
 }
 
-# _yolo_url_reachable URL probes an installer's host, bounded by PROBE_TIMEOUT: a HEAD with no -f, so
-# ANY HTTP answer (a 405 for HEAD included) is "reachable" and only no answer at all is not. 0 with no
-# URL or no curl: no probe target known.
+# _yolo_url_reachable URL probes an installer's host, bounded by PROBE_TIMEOUT, with one HEAD whose
+# status it reads. The host floor's probe classifies the same way (hostfloor.probeUpstreamHEAD): no
+# answer (curl's 000: a connection error or a timeout) or a server error (5xx) is unreachable, 1; any
+# other HTTP status, a 404 or a 405 for HEAD included, is an upstream that answered, 0. 0 with no URL
+# or no curl: no probe target known.
 _yolo_url_reachable() {
     [ -n "${1:-}" ] || return 0
     command -v curl >/dev/null 2>&1 || return 0
-    YOLO_BYPASS_SHIMS=1 curl -sSI -o /dev/null --max-time "$PROBE_TIMEOUT" "$1" </dev/null >/dev/null 2>&1
+    local code
+    code=$(YOLO_BYPASS_SHIMS=1 curl -sS -o /dev/null -I -w '%{http_code}' --max-time "$PROBE_TIMEOUT" "$1" </dev/null 2>/dev/null) || true
+    case "$code" in
+    "" | 000 | 5??) return 1 ;;
+    esac
+    return 0
 }
 
 # _yolo_failed_act RC WHAT PROBE... classifies an update act that has NO version query and failed
@@ -251,7 +259,7 @@ _yolo_update_refused() {
         return 0
     fi
     if [ -n "$stamp" ]; then rm -f "$stamp" 2>/dev/null || true; fi
-    if [ -n "$ver" ]; then s="${s/the installed version/the installed $ver}"; fi
+    if [ -n "$ver" ]; then s="${s//the installed version/the installed $ver}"; fi
     {
         echo "yolo: ERROR: $head"
         echo "  $fact"
@@ -264,10 +272,14 @@ _yolo_update_refused() {
     exit "$UPDATE_REFUSED"
 }
 
-# _yolo_refuse_failed STAMP refuses with what a failed act left, if it left anything.
+# _yolo_refuse_failed STAMP refuses with what a failed act left, if it left anything. What it left is
+# consumed here: when the hatch runs past the refusal, a later act in the same run must not find this
+# act's failure and say it again as its own.
 _yolo_refuse_failed() {
     [ -n "$_YOLO_FAIL_HEAD" ] || return 0
-    _yolo_update_refused "$1" "$_YOLO_FAIL_HEAD" "$_YOLO_FAIL_FACT" "$_YOLO_FAIL_VER"
+    local head="$_YOLO_FAIL_HEAD" fact="$_YOLO_FAIL_FACT" ver="$_YOLO_FAIL_VER"
+    _YOLO_FAIL_HEAD="" _YOLO_FAIL_FACT="" _YOLO_FAIL_VER=""
+    _yolo_update_refused "$1" "$head" "$fact" "$ver"
 }
 `
 
@@ -277,13 +289,31 @@ _yolo_refuse_failed() {
 // exits with it for an MCP server's refusal, and the launchers pass it through.
 const UpdateRefusedStatus = 75
 
-// useInstalledLabel is the hatch line's label; the shell puts the installed version in place of its
-// last word when it knows it.
-const useInstalledLabel = "run the installed version"
+// useInstalledVersion is the words of a hatch label that name what runs; the shell and
+// WithInstalledVersion put the installed version in place of "version" when they know it.
+const useInstalledVersion = "the installed version"
 
-// UseInstalledHatches is the refusal's hatch list for one program: its bin in front of its bin.
-func UseInstalledHatches(bin, command string) []patchrecovery.Hatch {
-	return []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv, Value: bin, Command: command, Label: useInstalledLabel}}
+// UseInstalledHatches is the refusal's hatch list: value (the program's bin, or the refused
+// packages) in front of bin, typed in this jail, and in front of `yolo -- bin`, typed on the host,
+// where a bare bin would run the host's own binary (PD-NF2). With no bin there is only one form.
+func UseInstalledHatches(value, bin string) []patchrecovery.Hatch {
+	if bin == "" {
+		return []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv, Value: value, Command: "yolo",
+			Label: "run " + useInstalledVersion}}
+	}
+	q := shquote.Quote(bin)
+	return []patchrecovery.Hatch{
+		{Env: patchrecovery.UseInstalledEnv, Value: value, Command: q, Label: "in this jail: run " + useInstalledVersion},
+		{Env: patchrecovery.UseInstalledEnv, Value: value, Command: "yolo -- " + q, Label: "from the host: run " + useInstalledVersion},
+	}
+}
+
+// WithInstalledVersion names version in every hatch label of hs, in place of "version".
+func WithInstalledVersion(hs []patchrecovery.Hatch, version string) []patchrecovery.Hatch {
+	for i := range hs {
+		hs[i].Label = strings.Replace(hs[i].Label, useInstalledVersion, "the installed "+version, 1)
+	}
+	return hs
 }
 
 // useInstalledSplices renders the refusal's baked values for one launcher: the pack its hatch may

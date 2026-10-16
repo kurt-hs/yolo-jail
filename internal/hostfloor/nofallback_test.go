@@ -8,12 +8,14 @@ package hostfloor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 )
 
@@ -173,9 +175,37 @@ func TestARecaptureFailingWithItsUpstreamReachableRefuses(t *testing.T) {
 	}
 }
 
-// PD-NF3 for the pre-launch refresh: an upstream it cannot reach skips it with a could-not-check
-// line, runs nothing, and stamps, so an offline hour asks once.
-func TestPrelaunchRefreshSkipsAnUnreachableUpstream(t *testing.T) {
+// PD-NF5 for a capture: another `yolo capture` of the program holds its lock, so this launch checked
+// nothing. The installed version runs with a line saying so, never the refusal however reachable the
+// upstream, and the stamp is put back, so the launch after it looks again.
+func TestABusyCaptureLockIsNotAFailedUpdate(t *testing.T) {
+	e := newEvergreenWorld(t)
+	e.capturing = func(string) error { return fmt.Errorf("`yolo capture claude` exited 75: %w", ErrCaptureBusy) }
+	probes := 0
+	e.floor.ProbeUpstream = func(context.Context, string) error { probes++; return nil }
+	e.clk.t = e.clk.t.Add(25 * time.Hour)
+	st, outcome, err := e.ensure()
+	if err != nil || outcome == Updated {
+		t.Fatalf("a busy capture lock: %s %v, want the installed version kept\n%s", outcome, err, e.out)
+	}
+	if st.Record == nil || st.Record.Version != "2.1.267" {
+		t.Errorf("a busy lock moved the record: %+v", st.Record)
+	}
+	if !strings.Contains(e.out.String(), "claude: another `yolo capture claude` is in progress; running the installed 2.1.267") {
+		t.Errorf("the busy line was not said:\n%s", e.out)
+	}
+	if probes != 0 {
+		t.Errorf("a busy lock is no failure to judge, yet the upstream was probed %d times", probes)
+	}
+	e.clk.t = e.clk.t.Add(10 * time.Minute)
+	if _, _, _ = e.ensure(); e.captures != 2 {
+		t.Errorf("the next launch did not look again (%d captures)", e.captures)
+	}
+}
+
+// PD-NF3 for the pre-launch refresh: the probe follows a FAILED refresh. One whose upstream cannot
+// be reached could not check: said, not refused, and stamped, so an offline hour asks once.
+func TestAFailedPrelaunchRefreshOfflineCouldNotCheck(t *testing.T) {
 	w := newRefreshWorld(t, "exit 3")
 	var probed []string
 	w.f.ProbeUpstream = func(_ context.Context, url string) error {
@@ -184,19 +214,65 @@ func TestPrelaunchRefreshSkipsAnUnreachableUpstream(t *testing.T) {
 	}
 	got := w.f.PrelaunchRefresh(refreshProgram(), w.stub, []string{"PATH=/usr/bin:/bin",
 		"npm_config_registry=https://registry.example.invalid/"})
-	if got.Outcome != RefreshUnchecked || got.Refused || w.runs(t) != 0 {
-		t.Fatalf("an unreachable registry: %+v, %d runs, want nothing run and nothing refused\n%s", got, w.runs(t), w.out)
+	if got.Outcome != RefreshUnchecked || got.Refused || got.Err != nil || w.runs(t) != 1 {
+		t.Fatalf("a failed refresh with an unreachable registry: %+v, %d runs, want it run once and not refused\n%s",
+			got, w.runs(t), w.out)
 	}
 	if len(probed) != 1 || probed[0] != "https://registry.example.invalid/" {
 		t.Errorf("the probe asked %q, want the refresh environment's registry", probed)
 	}
-	if !strings.Contains(w.out.String(), "yolo host: pi: could not check for newer add-ons: "+
-		"https://registry.example.invalid/ is unreachable") {
+	if !strings.Contains(w.out.String(), "yolo host: pi: the pre-launch refresh (update --extensions) failed "+
+		"(it exited with status 3), and could not check for newer add-ons: https://registry.example.invalid/ is unreachable") {
 		t.Errorf("the could-not-check line was not said:\n%s", w.out)
 	}
-	if w.refresh(refreshProgram()); len(probed) != 1 {
-		t.Errorf("an offline launch inside the interval probed again (%d probes)", len(probed))
+	if w.refresh(refreshProgram()); len(probed) != 1 || w.runs(t) != 1 {
+		t.Errorf("an offline launch inside the interval asked again (%d probes, %d runs)", len(probed), w.runs(t))
 	}
+}
+
+// PD-NF3's "after": a refresh that succeeds costs no network call of yolo's own.
+func TestASucceedingPrelaunchRefreshIsNeverProbed(t *testing.T) {
+	w := newRefreshWorld(t, "")
+	w.f.ProbeUpstream = func(context.Context, string) error {
+		t.Errorf("a refresh that succeeded was probed")
+		return nil
+	}
+	if got := w.refresh(refreshProgram()); got.Outcome != RefreshRan || w.runs(t) != 1 {
+		t.Fatalf("a succeeding refresh: %+v, %d runs\n%s", got, w.runs(t), w.out)
+	}
+}
+
+// A FORK keeps its base's refresh (packdecl/fork.go): a patched pi, install kind "source", runs
+// `pi update --extensions` too, and its failure is judged by the same registry probe. Offline it
+// could not check and pi runs; with the registry answering it refuses.
+func TestAForksFailedRefreshIsJudgedByTheRegistry(t *testing.T) {
+	fork := func() Program {
+		p := refreshProgram()
+		p.Install.Kind, p.Install.Package = packdecl.InstallKindSource, ""
+		return p
+	}
+	t.Run("offline", func(t *testing.T) {
+		w := newRefreshWorld(t, "exit 3")
+		w.f.ProbeUpstream = unreachable
+		got := w.refresh(fork())
+		if got.Outcome != RefreshUnchecked || got.Refused || got.Err != nil {
+			t.Fatalf("a fork's failed refresh offline: %+v, want could-not-check\n%s", got, w.out)
+		}
+		if !strings.Contains(w.out.String(), "could not check for newer add-ons: "+defaultNpmRegistry+" is unreachable") {
+			t.Errorf("the could-not-check line was not said:\n%s", w.out)
+		}
+	})
+	t.Run("reachable", func(t *testing.T) {
+		w := newRefreshWorld(t, "exit 3")
+		probes := 0
+		w.f.ProbeUpstream = func(context.Context, string) error { probes++; return nil }
+		got := w.refresh(fork())
+		var refusal *UpdateRefusal
+		if !got.Refused || !errors.As(got.Err, &refusal) || probes != 1 {
+			t.Fatalf("a fork's failed refresh with its registry answering: %+v (%d probes), want the refusal\n%s",
+				got, probes, w.out)
+		}
+	})
 }
 
 // The hatch runs a failed refresh's program with what is installed.

@@ -366,6 +366,47 @@ func TestAFailedBackgroundRefreshRefusesWhenTheRetryFails(t *testing.T) {
 	}
 }
 
+// TestAFailedBackgroundRefreshIsNotRetriedUnderAnUpdatesHold: an `agent_updates` hold set after a
+// background refresh failed (UPDATES_ENABLED=0 in the regenerated launcher) runs what is installed,
+// as a hold always does (PD-NF1): the stored result is said once and deleted, and the launch neither
+// retries the refresh in front nor refuses, though the retry would fail with its registry answering.
+func TestAFailedBackgroundRefreshIsNotRetriedUnderAnUpdatesHold(t *testing.T) {
+	p := newTimingProbe(t, false, false)
+	p.run(t, "", "FAKE_REFRESH_RC=3")
+	waitForJobs(t, p, 1)
+	if _, err := os.Stat(p.jobResult()); err != nil {
+		t.Fatalf("a failed background refresh must leave its result: %v", err)
+	}
+
+	p.updates = false
+	refreshes := countLine(p.logLines(t), "REFRESH")
+	stdout, stderr, err := p.runStatus(t, "", "FAKE_REFRESH_RC=3")
+	if err != nil {
+		t.Fatalf("a launch under an agent_updates hold must not refuse (%v):\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "RAN") {
+		t.Errorf("the hold must run what is installed: %q", stdout)
+	}
+	if n := countLine(p.logLines(t), "REFRESH"); n != refreshes {
+		t.Errorf("a hold must not retry the refresh (ran %d more):\n%s", n-refreshes, stderr)
+	}
+	for _, want := range []string{"⚠ tool: the background refresh (update --extensions) failed (status 3)", "agent_updates"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the launch must say %q:\n%s", want, stderr)
+		}
+	}
+	if strings.Contains(stderr, "retrying it") {
+		t.Errorf("a hold must not announce a retry:\n%s", stderr)
+	}
+	if _, err := os.Stat(p.jobResult()); !os.IsNotExist(err) {
+		t.Errorf("a launch under a hold must delete the failed result (err=%v)", err)
+	}
+	_, stderr = p.run(t, "")
+	if strings.Contains(stderr, "background refresh") {
+		t.Errorf("the failure must be said once:\n%s", stderr)
+	}
+}
+
 // TestABackgroundRefreshThatCouldNotCheckLeavesNothing: a job whose act failed while its registry
 // could not be reached could not check for a newer version (PD-NF3): nothing is left for the next
 // launch, which runs the program with no retry inside the hour, the failed job having stamped.

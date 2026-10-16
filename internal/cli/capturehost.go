@@ -137,6 +137,11 @@ type captureAct struct {
 	jailStdout io.Writer
 }
 
+// captureBusyStatus is `yolo capture`'s status when another capture of the program holds its lock:
+// 75, sysexits' EX_TEMPFAIL ("try again later"), apart from 1 (the capture failed), so the host
+// floor's Capture can return hostfloor.ErrCaptureBusy for it (wireFloorCapture).
+const captureBusyStatus = 75
+
 // captureHostWith is captureHost under act.
 func captureHostWith(args []string, out, errw io.Writer, color bool, act captureAct) int {
 	var bin string
@@ -213,7 +218,9 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 			"enabled, %s.\n", arm.missing, captureAgain(bin))
 	}
 
-	// ONE CAPTURE OF ONE BIN AT A TIME, non-blocking. Two concurrent captures of the same
+	// ONE CAPTURE OF ONE BIN AT A TIME, non-blocking. A refusal by the lock exits captureBusyStatus,
+	// not 1, so the host floor can tell "another capture is running" (nothing was checked, PD-NF5)
+	// from a capture that failed. Two concurrent captures of the same
 	// program would run the vendor's installer twice into two jails and race to admit the
 	// result; the admit itself is idempotent (identical bytes, identical key), but the two
 	// runs cost the download twice and can differ, so the second entry would silently be a
@@ -228,7 +235,7 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 		fmt.Fprintf(errw, "yolo capture: another capture of %s is already running "+
 			"(lock: %s) — nothing was captured\n", bin, captureLockPath(bin))
 		fmt.Fprintf(errw, "  %s\n", captureWaitStep(bin))
-		return 1
+		return captureBusyStatus
 	}
 	defer lock.Close()
 
