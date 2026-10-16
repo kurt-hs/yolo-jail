@@ -22,7 +22,7 @@ package packsrc
 //     --base=<target>` into it, reading the BRANCH, never HEAD, with `.patch` names and a/ b/
 //     prefixes whatever the user's config says, since the series reads only `.patch` files and
 //     `git am` strips one path component. The prefixes are flags, never `-c format.noprefix=false`:
-//     git 2.50 (Apple Git 2.50.1 among them) reads ANY value of format.noprefix as true, so that
+//     some git versions (measured: 2.44.2 and 2.50.1, Apple Git 2.50.1 among them) read ANY value of format.noprefix as true, so that
 //     setting exported a series with no prefixes at all, which `git am` refuses;
 //   - the two renames and the `rm`, so a launch never reads an empty or partial series.
 
