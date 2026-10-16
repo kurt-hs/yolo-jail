@@ -3,7 +3,7 @@ title: "Doc triage, 2026-10-15"
 date: 2026-10-15
 status: in-review
 stage: DESIGN
-next: "Owner picks which other groups to act on; the No-brainer groups are done, except two blocked NB2 docs"
+next: "Owner picks which groups to act on"
 tags: [docs, triage, cleanup]
 summary: "Every Markdown file under docs/ (287) sorted into a proposed action: delete, merge, graduate, fix, or keep, with a one-line reason for each. A proposal for the owner to review; no doc has moved. The Graduate group was re-checked doc by doc on 2026-10-15: none was a clean delete, and it is split into four sub-groups."
 vantage:
@@ -12,10 +12,10 @@ vantage:
 
 # Doc triage, 2026-10-15
 
-**Status:** 2026-10-16. 28 docs were deleted on 2026-10-15 ([the no-brainers](#no-brainers)), and `workspace-path-mirroring.md` moved to `docs/reference/`. Everything else below is still a proposal. Seven read-only
+**Status:** 2026-10-16. Only what is still to decide is listed; docs already acted on were removed from this record (`git log` has them). Seven read-only
 agents read each doc's frontmatter, status line, headings, open questions and ledger, and
 spot-checked the code where a category depended on it. They did not compare every doc line by line with today's code.
-Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. **No Graduate doc was deleted**: every one still holds content, or ids that other docs and code link to, that no reference doc carries. The group is split below, and the [No-brainers](#no-brainers) section lists the 30 docs whose own text already decides their fate.
+Later on 2026-10-15 each Graduate doc was checked against its target reference doc and its inbound links. **No Graduate doc was deleted**: every one still holds content, or ids that other docs and code link to, that no reference doc carries. The group is split below.
 
 **What the groups mean.**
 
@@ -38,40 +38,22 @@ Later on 2026-10-15 each Graduate doc was checked against its target reference d
 | [Keep: active](#keep-active-96) | 96 |
 | [Keep: reference](#keep-reference-56) | 56 |
 
-## No-brainers
-
-Docs whose own text already decides what happens to them, so they need no judgment from you. The four groups are answered: NB1 to NB4 were deleted on 2026-10-15, except the two NB2 docs listed as blocked, which keep their **NB2** mark in the Archive table.
-
-| Group | Docs | Rule | Proposed |
-| :--- | ---: | :--- | :--- |
-| [NB1 and NB2: graduated stubs and self-declared superseded](#nb1-and-nb2-graduated-stubs-and-self-declared-superseded-23-deleted-2026-10-15) | 23 | The doc's own status says GRADUATED or SUPERSEDED and names what replaced it | Deleted 2026-10-15; two are blocked |
-| [NB3 and NB4: finished plans and test logs](#nb3-and-nb4-finished-plans-and-committed-test-logs-5-deleted-2026-10-15) | 5 | A plan whose own `next` says nothing is left, or a record of one QA run | Deleted 2026-10-15 |
-
-### NB1 and NB2: graduated stubs and self-declared superseded (23), deleted 2026-10-15
-
-Inbound links were repointed at what replaced each doc, then the docs were deleted: `agent-program-runtimes`, `cerebras-pack-and-copilot-delivery`, `config-target-resolution-plan`, `docs-website-plan`, `host-computed-layer-plan`, `jail-lifetime-last-session-wins-plan`, `macos-user-home-tiers`, `macos-user-provisioning`, `openai-auth-broker`, `proposed-fixes-open-findings`, `attach-skew-and-contract-guardrails-plan`, `change-aware-completion-plan`, `host-tool-provisioning-plan`, `in-jail-nix-roots-plan`, `notch-scoped-config-contributions-plan`, `pi-extension-lifecycle-plan`, `pi-pack-extensions-plan`, `simultaneous-auth-and-pack-isolation-plan`, `workspace-skills-plan`, `noncontainer-nix-environment`, `agent-settings-composition`, `composed-config-work` and `unblocking-deferred-env-manager-work`. `git log` recovers them.
-
-**Blocked, not deleted (2 of NB2).** Each has inbound links to an anchor that only it defines, and no replacement doc carries that content:
-
-- [`plans/sequencing-2026-07.md`](sequencing-2026-07.md): [`boundary-broker.md`](../design/boundary-broker.md) links its section 4e anchor, `#4e-open-questions-the-maintainer-must-decide` (the open questions on agent auth), which [`roadmap.md`](roadmap.md) does not carry; [`README.md`](README.md) also links its `#runbooks` section.
-- [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md): links in five runbook, plan and research docs cite its [`OQ-1`](runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) (the path_helper question) through its section anchor, and no other doc defines that id.
-
-### NB3 and NB4: finished plans and committed test logs (5), deleted 2026-10-15
-
-`podman-reboot-readiness-plan`, `host-service-startup-diagnostics-tasks`, `cached-good-recovery-qa`, `host-service-startup-diagnostics-qa` and `pi-startup-cancellation-qa`. `git log` recovers them.
-
 ## What stands out
 
-- **Rulings that free whole docs.** [`OQ-WP8`](../reference/workspace-path-mirroring.md#OQ-WP8) was ruled yes on 2026-10-15, but workspace-path-mirroring was kept as an evergreen reference rather than retired ([`OQ-WP7`](../reference/workspace-path-mirroring.md#OQ-WP7)). D on [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1) retires workspace-config-trust (682); D is already what the code does. Three plans (agent-config-packs, the macOS revival plan, pack-host-management) stay open for one question each, about 4,200 lines between them.
 - **Built, waiting only on a human check.** About a dozen built docs stay open only for a hand check (a live agent footer, a pty restart prompt, a hardware run) or for recording a CI run that already passed. Moving those checks onto the roadmap lets the docs retire.
 - **Graduation has to move links.** AGENTS.md and code comments cite ledger IDs in several design docs (broker-as-a-pack, context-mounts, disk-levers, change-aware-completion, sso-backed-bedrock). Graduating them means moving those ledgers into reference docs first.
 - **Wrong today.** omp-and-codex-claude-profile.md (reference) still says the claude pack owns the codex profile. repo-root-and-distribution.md (research, marked current) says /opt/yolo-jail is baked into the image; it is two bind mounts.
-- **Misfiled.** pre-tag-release-gate.md and research/tool-provisioning.md (72 inbound links) are reference docs. cached-good-recovery-qa.md is a committed test log. Nine *-plan.md files sit in docs/design/.
+- **Misfiled.** pre-tag-release-gate.md and research/tool-provisioning.md (72 inbound links) are reference docs. Nine *-plan.md files sit in docs/design/.
 - **Too big to review.** pack-system.md (4,073 lines), provisioner-sets (2,803), boundary-broker (2,754), model-lists-and-pickers (2,563), agent-event-watchers (2,532), jail-lifetime-last-session-wins (2,453).
 
 ## Delete (44)
 
 Superseded, stale, or a finished plan. Proposed: delete after repointing links.
+
+**Two rows below are blocked:** their own text says delete, but other docs link to a section only they hold. Move that section, then delete:
+
+- [`plans/sequencing-2026-07.md`](sequencing-2026-07.md): [`boundary-broker.md`](../design/boundary-broker.md) links its section 4e anchor, `#4e-open-questions-the-maintainer-must-decide` (the open questions on agent auth), which [`roadmap.md`](roadmap.md) does not carry; [`README.md`](README.md) also links its `#runbooks` section.
+- [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md): links in five runbook, plan and research docs cite its [`OQ-1`](runbooks/mac-go-port-verification.md#2-macos-user-backend--real-launch-oq-1-the-load-bearing-unknown) (the path_helper question) through its section anchor, and no other doc defines that id.
 
 | Doc | Lines | Category | Target | Reason |
 | :--- | ---: | :--- | :--- | :--- |
@@ -98,11 +80,11 @@ Superseded, stale, or a finished plan. Proposed: delete after repointing links.
 | [`plans/native-installer-migration.md`](native-installer-migration.md) | 438 | done-plan | [`program-delivery.md`](../design/program-delivery.md) (question PD13) | `stage: BUILT`: codex flipped, then copilot flipped 2026-10-05 ([`OQ-NI1`](native-installer-migration.md#OQ-NI1)). Left: one CI cell (copilot linux/arm64) to read |
 | [`plans/runbooks/claude-plugin-registration-probe.md`](runbooks/claude-plugin-registration-probe.md) | 146 | stale | [`pack-system.md`](../reference/pack-system.md) reserved children (2026-09-22) | Its Q3 "no longer decides a design". Q1/Q2 settle one unverified note in [`synced-skill-trees.md`](../design/synced-skill-trees.md) section 2.4 and have not run since 2026-09-19 |
 | [`plans/runbooks/mac-agent-guide.md`](runbooks/mac-agent-guide.md) | 242 | stale | macos-revival plan done; [`macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) | Sequencer for Track M (M0→M1→M2), all done. It assumes a Mac 531 commits stale with an `agents` key, and points at the stale go-port runbook and sequencing-2026-07 |
-| [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md) | 222 | **NB2** stale |  | Self-declared SUPERSEDED 2026-08-23: its diff-against-Python method died with the Python tree; "recommended for git rm" |
+| [`plans/runbooks/mac-go-port-verification.md`](runbooks/mac-go-port-verification.md) | 222 | stale (blocked) |  | Self-declared SUPERSEDED 2026-08-23: its diff-against-Python method died with the Python tree; "recommended for git rm" |
 | [`plans/runbooks/mac-macos-user-e2e.md`](runbooks/mac-macos-user-e2e.md) | 144 | stale | [`runbooks/macos-user-manual-checks.md`](runbooks/macos-user-manual-checks.md) + macos-user.yml CI | M1 gate PASSED 2026-07-21. It cites Python-era internals (`getpass.getuser()`, `_refuse_if_root`); the Go refusal now lives in `internal/macosuser/capture.go` |
 | [`plans/runbooks/mac-provisioner-measurements.md`](runbooks/mac-provisioner-measurements.md) | 355 | done-plan | design/provisioner-sets.md | "All five items have been RUN", with results inline. Results belong in [`provisioner-sets.md`](../design/provisioner-sets.md) / [`provisioner-evidence.md`](../design/provisioner-evidence.md) |
 | [`plans/runbooks/mac-sandvault-session.md`](runbooks/mac-sandvault-session.md) | 213 | done-plan |  | M0/M1 recipe; both PASSED 2026-07-21. It records the SandVault setup for a finished track |
-| [`plans/sequencing-2026-07.md`](sequencing-2026-07.md) | 770 | **NB2** superseded | [`roadmap.md`](roadmap.md) | Self-declared SUPERSEDED 2026-08-17; a historical snapshot |
+| [`plans/sequencing-2026-07.md`](sequencing-2026-07.md) | 770 | superseded (blocked) | [`roadmap.md`](roadmap.md) | Self-declared SUPERSEDED 2026-08-17; a historical snapshot |
 | [`plans/workspace-config-lock-briefing.md`](workspace-config-lock-briefing.md) | 42 | done-plan |  | PR #51 merged (4fd929dc9); roadmap commit 2a0142a60 struck it |
 | [`research/agent-config-distribution.md`](../research/agent-config-distribution.md) | 833 | superseded | docs/reference/pack-system.md | The direction it fed (cross-agent config distribution) shipped as packs. Its own 2026-08-23 postscript retracts the agent-registry claims, and the external survey has not been re-gathered since 2026-07-25. The "lessons" list could be kept as one paragraph in pack-system's why-section. |
 | [`research/completion-check-inputs.md`](../research/completion-check-inputs.md) | 221 | superseded | docs/design/change-aware-completion.md (stage BUILT) | It fed the change-aware `just done`, which is built and maintained through scripts/completion-readers.json. |
@@ -142,7 +124,7 @@ Overlaps another doc. Proposed: fold into the named target.
 
 ## Graduate: none was a clean delete
 
-Every one of the 48 Graduate docs was checked on 2026-10-15 against its target reference doc, and **none could be deleted**: each still holds either content no reference doc carries, or ids and section anchors that other docs and code comments link to and that no reference doc defines. Deleting one would break those links. The docs that really are graduated and owe nothing are pointer stubs that this triage filed under Archive; they were [No-brainer group NB1](#nb1-and-nb2-graduated-stubs-and-self-declared-superseded-23-deleted-2026-10-15), deleted 2026-10-15.
+Every one of the 48 Graduate docs was checked on 2026-10-15 against its target reference doc, and **none could be deleted**: each still holds either content no reference doc carries, or ids and section anchors that other docs and code comments link to and that no reference doc defines. Deleting one would break those links.
 
 The 48 split four ways:
 
@@ -307,7 +289,6 @@ Open questions or unbuilt work that is still wanted.
 | [`design/wire-bridge-gateway.md`](../design/wire-bridge-gateway.md) | 1986 | active | (built parts → `reference/wire-bridge.md`) | stage DECIDED; Parts 1, 2, 3, 5 built (WG-I30..44); Part 4 (opt-in failover) still to build and two human-sent measurement turns owed; 1986 lines, graduate the built parts |
 | [`design/workspace-config-trust.md`](../design/workspace-config-trust.md) | 682 | active | (iceboxed) | Tag `icebox`; [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1) (C or D, and stay iced?) open; status quo already equals option D (rw `mounts` user-scope only, `config.LoadRWMounts`), so ruling D archives it |
 | [`design/workspace-mcp-sources.md`](../design/workspace-mcp-sources.md) | 166 | active |  | One open question [`OQ-WM1`](../design/workspace-mcp-sources.md#OQ-WM1) (precedence); removal in section 3 built |
-| [`reference/workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) | 1744 | kept |  | All questions ruled ([`OQ-WP8`](../reference/workspace-path-mirroring.md#OQ-WP8): no mirroring); kept as an evergreen reference ([`OQ-WP7`](../reference/workspace-path-mirroring.md#OQ-WP7)) and moved to docs/reference on 2026-10-15 |
 | [`plans/BACKLOG.md`](BACKLOG.md) | 694 | active |  | 6 live rulings (E1, E2, E5, [`OQ-CO`](BACKLOG.md#OQ-CO), [`OQ-S4`](BACKLOG.md#OQ-S4), [`OQ-E4`](BACKLOG.md#OQ-E4)); it is the one "what to build" list for the packs/composed-config cluster |
 | [`plans/README.md`](README.md) | 592 | active | (overlaps [`roadmap.md`](roadmap.md)) | Index of plans/designs, 9 💬 markers. Its own header admits rows drift (4 of them were wrong on 2026-08-23); worth shrinking to a pointer list beside [`roadmap.md`](roadmap.md) |
 | [`plans/cache-relocation.md`](cache-relocation.md) | 651 | active | (later GRADUATE → storage-and-config.md) | Items 1–10 are built and measured (`TestACacheRelocationReceivesTheJailsWrites`). [`OQ-CR1`](cache-relocation.md#OQ-CR1)/CR2 are open, and item 11 (`yolo cache relocate`) waits on them |
