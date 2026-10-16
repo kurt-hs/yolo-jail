@@ -396,15 +396,19 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	if req.Forks != nil && req.Forks.FreshUpdate {
 		fresh := *req.Forks
 		fresh.FreshBoundary, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]packsrc.CheckStart{}, map[string]error{}, map[string]string{}
-		if fresh.CachedGoodOwner != "" {
-			fresh.FreshBoundaryErr[fresh.CachedGoodOwner] = errors.New("historical cached-good recovery cannot satisfy a fresh update request")
-			fresh.CachedGoodOwner = ""
+		for _, key := range cachedGoodOwnerKeys(fresh.CachedGoodOwner) {
+			fresh.FreshBoundaryErr[key] = errors.New("historical cached-good recovery cannot satisfy a fresh update request")
 		}
+		fresh.CachedGoodOwner = ""
 		req.Forks = &fresh
 	}
 	if req.Trees != nil && req.Trees.FreshUpdate {
 		fresh := *req.Trees
 		fresh.FreshBoundary, fresh.FreshBoundaryErr, fresh.FreshIdentity = map[string]packsrc.CheckStart{}, map[string]error{}, map[string]string{}
+		for _, key := range fresh.CachedGood {
+			fresh.FreshBoundaryErr[key] = errors.New("historical cached-good recovery cannot satisfy a fresh update request")
+		}
+		fresh.CachedGood = nil
 		req.Trees = &fresh
 	}
 	var workspace, rt string
@@ -443,19 +447,25 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 	trees := map[string]run.TreeDelivery{}
 	if fr := req.Forks; fr != nil {
 		if fr.CachedGoodOwner != "" {
+			// THE OWNER KEYS, comma-separated (run.ForkBuildRequest.CachedGoodOwner): each selected
+			// patched fork among them is handed its recorded good build; a key no pin carries any more
+			// is answered with why.
+			owners := cachedGoodOwnerKeys(fr.CachedGoodOwner)
 			filtered := *fr
 			filtered.Pins = make([]packload.ForkPin, 0, len(fr.Pins))
-			found := false
+			found := map[string]bool{}
 			for _, pin := range fr.Pins {
-				if pin.Fork.Key() == fr.CachedGoodOwner && pin.Fork.Patched() && !found {
-					found = true
+				if key := pin.Fork.Key(); slices.Contains(owners, key) && pin.Fork.Patched() && !found[key] {
+					found[key] = true
 					forks[pin.Fork.Bin] = runCachedGoodFork(pin.Fork, *fr, stream)
 					continue
 				}
 				filtered.Pins = append(filtered.Pins, pin)
 			}
-			if !found {
-				forks[fr.CachedGoodOwner] = entrypoint.ForkDelivery{Reason: "cached-good selector no longer names a selected patched program — run `yolo pack status` and select the owner key shown there"}
+			for _, key := range owners {
+				if !found[key] {
+					forks[key] = entrypoint.ForkDelivery{Reason: "cached-good selector no longer names a selected patched program — run `yolo pack status` and select the owner key shown there"}
+				}
 			}
 			filtered.CachedGoodOwner = ""
 			req.Forks = &filtered
@@ -467,6 +477,21 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 			defer mu.Unlock()
 			forks[bin] = d
 		})
+	}
+	if tr := req.Trees; tr != nil && len(tr.CachedGood) > 0 {
+		// CACHED-GOOD EXTENSIONS (patched-build-recovery.md §6.7): the record's older good build,
+		// validated, is each one's per-launch copy, with no advance and no next-launch registration.
+		filtered := *tr
+		filtered.Trees = nil
+		for _, f := range tr.Trees {
+			if slices.Contains(tr.CachedGood, f.Key()) {
+				trees[f.Key()] = runCachedGoodTree(f, *tr, stream, color)
+				continue
+			}
+			filtered.Trees = append(filtered.Trees, f)
+		}
+		filtered.CachedGood = nil
+		req.Trees = &filtered
 	}
 	if tr := req.Trees; tr != nil {
 		for _, f := range tr.Trees {
