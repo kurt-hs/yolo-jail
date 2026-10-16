@@ -646,6 +646,15 @@ On the first launch after upgrading, a stale `model` saved from the user's own C
 
 ---
 
+### <a id="census-stale-paths"></a>🔧 **The completion census keeps a deleted doc's path**
+
+`python3 scripts/completion-census.py` regenerates `scripts/completion-readers.json` from what each
+test opens or stats. `TestEveryDocCitationFromGoResolves` stats every doc path that file lists, so
+the census records a deleted doc's path again, and the same test then fails on it. Found
+2026-10-16, when 11 deleted docs survived a census run and had to be removed by hand. A fix is to
+leave paths that do not exist out of the census, or to keep the citation test's own stats out of
+it.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
