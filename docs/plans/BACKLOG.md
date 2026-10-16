@@ -273,7 +273,7 @@ carries none, deliberately.
 | ✅ E3 | Capture timing | **SHIPPED 2026-08-15** — both halves. See below |
 | ✅ E4 | Comment preservation on `json`/`toml` surfaces | **mostly shipped 2026-08-12**; the one live residue is [`OQ-E4`](#OQ-E4) |
 | **E5** | `managed`/`defaults` array-append pinning | **open** — surveyed 2026-10-01: no surface needs the append, so the call is whether E5 closes |
-| ✅ S5 | A jail resolves a skill-name collision silently | **ANSWERED 2026-09-28 by [OQ-NC11](notch-convergence.md#OQ-NC11)** — a launch refusal, built. See below |
+| ✅ S5 | A jail resolves a skill-name collision silently | **ANSWERED 2026-09-28 by [OQ-NC11](notch-convergence.md#7-decision-ledger)** — a launch refusal, built. See below |
 | **OQ-CO** | Two packs writing one `config-overlay` key | **open** — nothing blocked; no shipped pack collides |
 | **OQ-S4** | Should the jail narrow its skills fan-out to match the host? | **open** — a product call about what `into` promises |
 | **OQ-E4** | Do `stateful` surfaces get comment preservation too? | **open** — `rmw` shipped, `computed`/`json` ruled out |
@@ -476,12 +476,12 @@ not "consistent with the host" in cost — the host user re-runs a command, the 
 a session.
 
 *(2026-09-28: notch-convergence item 25 raises this again as
-[OQ-NC11](notch-convergence.md#OQ-NC11). That entry adds that the jail ignores `skills_tier`, and
+[OQ-NC11](notch-convergence.md#7-decision-ledger). That entry adds that the jail ignores `skills_tier`, and
 leans toward a refusal at launch, run on the host before any container starts, rather than an A12
 boot failure. Answering either question answers both.)*
 
 **Answer:**
-> **Answered 2026-09-28 by [OQ-NC11](notch-convergence.md#OQ-NC11)** (the maintainer, ruling
+> **Answered 2026-09-28 by [OQ-NC11](notch-convergence.md#7-decision-ledger)** (the maintainer, ruling
 > by parity: *"yes, NC as parity for sure"*), which takes neither option (1) nor option (3) as
 > written: a skill-name collision is **fatal at the launch, host-side, before the container
 > exists**, and on an attach too. It is a launch pre-flight beside the agent-name one, not an A12

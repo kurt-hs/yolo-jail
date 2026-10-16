@@ -32,7 +32,7 @@ import (
 // PrepareSkillsWith) only fills names nothing above took. There is no layer reading a
 // destination back in: that one was S3's defect, and the workspace layer reads sources.
 //
-// TWO PACKS MAY NOT SHIP ONE NAME (docs/plans/notch-convergence.md#OQ-NC11, ruled 2026-09-28 by
+// TWO PACKS MAY NOT SHIP ONE NAME (docs/plans/notch-convergence.md#7-decision-ledger, ruled 2026-09-28 by
 // parity): the pack layers are the HOST's layer plan, composed by hostskills.ComposeInto, so two
 // packs claiming one unnamespaced name at one destination refuse the launch — the local pack
 // included, as at the host — instead of the later one winning silently. "The local pack last" is

@@ -159,7 +159,7 @@ guest's missing floor and stage),
 (what each backend's nix path produces, as built),
 [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) (Phase 4.3 shipped
 as the host install offer; Phase 6.4's elevation-class batching is still owed —
-[`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1)), [`../reference/report-tiers.md`](../reference/report-tiers.md) (the `--assert` fatal), and
+[`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger)), [`../reference/report-tiers.md`](../reference/report-tiers.md) (the `--assert` fatal), and
 [`../reference/pack-system.md`](../reference/pack-system.md) (the kinds). **No companion sketch
 yet** — nothing here is settled enough to hold one; it opens with the first ruling that picks a
 mechanism.
@@ -834,7 +834,7 @@ decided was purely *does yolo execute the winner*.
 > [§8.2](#82-the-ruling-a-shipped-default-order-the-user-config-overrides) as inverting, and which
 > [`OQ-PS6`](#OQ-PS6)'s answer (2026-09-30) keeps as the default. So three
 > of this section's terms no longer describe the tree: driving is not last, it is not behind
-> [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase)'s per-elevation-class batching (which [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1)
+> [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase)'s per-elevation-class batching (which [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger)
 > asked about, answered 2026-09-30: not owed), and a decline is fatal where [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) made the manifest a floor to continue over. **What
 > is still true:** no system-manager command runs without the confirm, and `check-deps` still
 > writes the manifest and installs nothing. Whether [§9](#9-what-i-would-build-in-order) step 4's
@@ -912,7 +912,7 @@ question and should not wait on one.
    order, 2026-09-11:** `yolo host apply --assert`'s dependency gate drives the pack-first remedy
    behind one prompt ([§8.5](#85-the-ruling-yolo-drives-the-winner-behind-the-confirm-and-last)'s
    warning). What is left of this step is running the *resolved* winner; the elevation-class
-   batching is not owed ([`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1), answered 2026-09-30).
+   batching is not owed ([`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger), answered 2026-09-30).
 
 Steps 1–3 are defect-shaped and ruled by P3 and by the two narrow halves already leaning; steps
 4–5 are the design, and their order was ruled rather than merely preferred — and has since been
@@ -990,7 +990,7 @@ shipped status so nobody re-opens a settled fork.
 | [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md), [`../reference/macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md#how-nix-works-here) | what each backend's nix path produces, as built | The evergreen references for the mechanism the evidence doc's [shipped-state table](provisioner-evidence.md#31-what-is-already-solved-stated-precisely) enumerates. ⚠ Most of that nix depth is shipped-system material that should eventually graduate into these references; not done in the split, and named as a follow-up. |
 | [`../reference/macos-user-provisioning.md`](../reference/macos-user-provisioning.md) | the guest's floor and stage | Takes its four-keys table as the guest column's basis, **corrected** in one cell: the agent launchers are generated *and run* there, failing for want of npm — not inert. |
 | [`../reference/macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md) | the guest's home tiers and the symlink layout that separates them | Nothing directly, but [M4](#15-what-a-mac-session-should-measure) is its measurement, because a provisioner that stages into the sandbox home depends on that layout resolving. |
-| [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) | *declare once, check once, hand off* ([§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)); [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1) | Generalises [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) from "the host hands off" to "each environment resolves". [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1) used to say `FieldSet` *refuses* `program` at host; it was narrowed on 2026-09-22 to *is the elevation-class batching still owed?*, because `HostFields()` honours `program` and the confirm-gated install shipped. ⚠ Its promised `✗ packages   yolo does not manage packages here` line was read as contradicted by shipped `describe` and due to be retired; since principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3) (2026-09-29) it is true of the host, and only its *"(no image to bake)"* reason needs changing — [`OQ-NX8`](#OQ-NX8). |
+| [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) | *declare once, check once, hand off* ([§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)); [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger) | Generalises [§3.5](yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) from "the host hands off" to "each environment resolves". [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger) used to say `FieldSet` *refuses* `program` at host; it was narrowed on 2026-09-22 to *is the elevation-class batching still owed?*, because `HostFields()` honours `program` and the confirm-gated install shipped. ⚠ Its promised `✗ packages   yolo does not manage packages here` line was read as contradicted by shipped `describe` and due to be retired; since principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3) (2026-09-29) it is true of the host, and only its *"(no image to bake)"* reason needs changing — [`OQ-NX8`](#OQ-NX8). |
 | [`../plans/environment-manager-plan.md`](../plans/environment-manager-plan.md) | Phase 6.4 and 4.3, [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) | **[`OQ-PS2`](#decision-ledger) ruled 2026-09-11 that they get built** — as *the host's driven provisioner*, behind that plan's own already-ruled confirm, and sequenced after the print-only precedence order. ⚠ **Overtaken:** Phase 4.3 shipped as the `--assert` dependency gate (one prompt, decline fatal, pack-first remedy), which that plan records as its [`OQ-9`](../plans/environment-manager-plan.md#open-questions-to-resolve-before-their-phase) consumer and as reversing that question's non-fatal half; only 6.4's elevation-class batching is still owed ([§8.5](#85-the-ruling-yolo-drives-the-winner-behind-the-confirm-and-last)'s warning). |
 | [`../reference/report-tiers.md`](../reference/report-tiers.md) | the `--assert` fatal, [`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) | **RO7 was RULED and BUILT 2026-09-11** — *both kinds fatal, only `program` gets the offer* — and [`OQ-PS3`](#decision-ledger)'s recipe model **reinforces** that predicate rather than disturbing it ([§3.1](#31-five-findings-the-table-forces) F2): a `requires` is a need with no runnable recipe, so there is nothing to offer. ⚠ What is still unsettled is the *spelling*: RO7's rule keys on the **kind**, and under P1 the offer keys on *whether a provisioner covers this binary here*. [`OQ-PS11`](#OQ-PS11) decides whether there is still a kind to key on. |
 | [`host-render-target.md`](host-render-target.md) | the host as a reduced render target | ⚠ Its [§2.2](host-render-target.md#22-so-which-is-it-a-command-or-a-mode) table marks `macos-user · program: ✅ (native nix)`; that cell describes `packages:`, not `program` — no `program` is provisioned by nix on any notch. |
@@ -2557,7 +2557,7 @@ should `host` manage packages at all, to [`OQ-PS1`](#OQ-PS1).
 host, `packages:` is permanently inert, not inert for now.** HP-DIR3 says that at the host
 yolo manages the agent's environment and never provisions the workspace's runtime, so yolo
 never provisions `packages:` there ([`OQ-PS1`](#OQ-PS1)'s narrowing). The host report names it
-inert, the same way [`OQ-NC8`](../plans/notch-convergence.md#OQ-NC8)'s parity ruling names
+inert, the same way [`OQ-NC8`](../plans/notch-convergence.md#7-decision-ledger)'s parity ruling names
 `mise_tools` inert at the host. Three consequences:
 
 - The env-manager's promised line `✗ packages   yolo does not manage packages here`
@@ -2582,7 +2582,7 @@ WARN saying nothing materializes it at the host notch "yet".
 
 - **(a)** Keep the WARN, because the key has no effect here.
 - **(b)** A by-design inert line at info level, matching `yolo host apply` and
-  [`OQ-NC8`](../plans/notch-convergence.md#OQ-NC8)'s *"named as inert"* for `mise_tools`.
+  [`OQ-NC8`](../plans/notch-convergence.md#7-decision-ledger)'s *"named as inert"* for `mise_tools`.
 - **(c)** Name it inert, and also probe whether the package's binaries are on the host,
   detection only (the hand-off shape of
   [env-manager §3.4](yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here)).

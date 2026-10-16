@@ -531,7 +531,7 @@ match on the endpoint.
 > still unauthenticated**: Claude's `/login` exchange carries no secret the jail holds and a stranger
 > does not, so a caller that reaches the port can complete its own login and have the proxy mirror
 > write it to the shared file. That residual is recorded against
-> [OQ-NC2](../plans/notch-convergence.md#OQ-NC2), the terminator on a shared namespace, which is the
+> [OQ-NC2](../plans/notch-convergence.md#7-decision-ledger), the terminator on a shared namespace, which is the
 > only place a stranger reaches the port.
 
 ## Why there is a file on disk at all
@@ -1006,7 +1006,7 @@ What that does to each choice:
 
 ### The host
 
-[OQ-NC7](../plans/notch-convergence.md#OQ-NC7) keeps host claude on its own login until this
+[OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) keeps host claude on its own login until this
 question is ruled, because a shared store without interception would race the broker. It was
 ruled on 2026-10-05: host claude joins through a view once the view's measures pass
 ([OQ-CI1](#OQ-CI1)). A view
@@ -1088,7 +1088,7 @@ Evidence: [above](#sharing-the-login-what-each-choice-keeps-and-pays).
   about every four weeks; pays an outage of every jail at once when it dies.
 - **B — A, plus `yolo host -- claude`** through a view of its own. Keeps one login for the host
   too; pays the host's yolo-launched claude joining that outage, and reopens
-  [OQ-NC7](../plans/notch-convergence.md#OQ-NC7).
+  [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger).
 - **C — One login per workspace.** Keeps Claude's own refresh path and deletes the broker; pays a
   manual-paste `/login` per workspace about every four weeks, and a refresh token in every jail.
 
@@ -1105,7 +1105,7 @@ together, and nothing warns ahead of it until something reads `refreshTokenExpir
 > credential view, a copy of the login with no refresh token that the host broker keeps fresh, the
 > way `yolo host -- codex` shares the OpenAI login ([OQ-OA3](agent-credentials.md#oq-oa3)), once the
 > view's measures pass. A host claude that yolo did not start keeps its own login. This settles what
-> [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) waited on, and its build is row 31 of
+> [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) waited on, and its build is row 31 of
 > [the plan's build list](../plans/notch-convergence.md#4-the-ordered-build-list), which waits on a human running
 > [the view's measures](../plans/runbooks/claude-credential-view-measures.md). Whether a macOS host
 > claude reads the view or its Keychain is still unmeasured. Not built yet.

@@ -114,7 +114,7 @@ Numbered so later sections can cite them.
   reclaim opt-out, `YOLO_NO_AUTO_IMAGE_REAP`, is read from the environment by the floor functions
   themselves (SOURCED: `internal/cli/run/autoreapimages.go:17`, read at `scratchremoval.go:194`
   among others), and it is a ruled hatch
-  ([`minimal-disk-footprint.md`](../design/minimal-disk-footprint.md#OQ-DF3)). A process that
+  ([`minimal-disk-footprint.md`](../design/minimal-disk-footprint.md#111-decision-ledger)). A process that
   systemd or launchd starts does not inherit the user's shell environment, so the same function
   called from a tick would silently ignore a standing opt-out: one code path, a different
   effective policy. Before any tick calls a floor, its opt-outs move to configuration or to a

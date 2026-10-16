@@ -1372,7 +1372,7 @@ The one part of the fence's ruling still open:
 > user's pre-existing tree keeps both copies (`mine`, `mine-from-codex`), because those are two
 > different situations.
 >
-> **The jail half is [`OQ-NC11`](../plans/notch-convergence.md#OQ-NC11)** (ruled 2026-09-28 by
+> **The jail half is [`OQ-NC11`](../plans/notch-convergence.md#7-decision-ledger)** (ruled 2026-09-28 by
 > parity). It is a launch pre-flight beside the agent-name one, so it refuses host-side before
 > any container exists, on an attach too, with the host's message; it is not a boot failure
 > inside a running jail. The jail composes through the host's layer plan and writer, so the
@@ -2306,7 +2306,7 @@ defaults < host < workspace < config-overlay < config-list < capture-overlay < l
   workspace config is writable from inside the jail, so this layer must never reach a real home.
 - **`config-overlay`** carries the keys OTHER packs contribute to a surface this one owns, in
   the one pack order (later wins): `packs`-list order, then the packs a `needs` pulled in, then
-  the local pack, at every notch ([OQ-NC4](../plans/notch-convergence.md#OQ-NC4)). Below
+  the local pack, at every notch ([OQ-NC4](../plans/notch-convergence.md#7-decision-ledger)). Below
   `managed`, so the owner still wins a genuine conflict.
 - **`config-list`** is not a merge-patch layer. It appends entries to one array each, after
   every `config-overlay` ([below](#adding-entries-to-an-array-config-list)).
@@ -3559,7 +3559,7 @@ same files. So an entry's `only`/`exclude` decides what reaches the real home ex
 decides what reaches a jail, an embedded entry's included. A fetched pack with a symlink pointing
 out of the pack is refused, as the launch refuses it. A local pack's symlinks, filtered or not,
 are followed wherever they point, as the launch follows them
-([OQ-NC9](../plans/notch-convergence.md#OQ-NC9)). **An incomplete set is refused whole**: if any configured
+([OQ-NC9](../plans/notch-convergence.md#7-decision-ledger)). **An incomplete set is refused whole**: if any configured
 pack cannot be resolved, `--assert` writes nothing and exits 1, naming each pack and its
 reason. The dry run says it would refuse. A pack whose manifest has problems, the ones
 `yolo check` and every launch refuse, counts as unresolvable here: it is named with each
