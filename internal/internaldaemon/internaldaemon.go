@@ -44,9 +44,9 @@ func IsDaemonArgv(argv []string) bool {
 // (--socket, --self-check, --init-ca, …) is byte-identical to its standalone binary.
 //
 // The MEMBERS are the switch below and the usage line beside it, never a count in this
-// comment. Nor are they all host-scoped — `scope: "host"` is a manifest fact per loophole
-// (`rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc`), and a daemon in this group
-// may be either.
+// comment. Each runs as one jail's own host daemon (HD-R1 retired the machine-wide
+// `scope: "host"`), and whether a jail's end lets it finish its work in flight is the manifest's
+// `detach`, a fact per loophole (`rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc`).
 //
 // `broker-relay` was a member and is GONE. It fronted the broker singleton for one jail and
 // stamped a host-asserted jail_id into the request; both jobs are the framework's now —

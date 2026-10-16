@@ -41,7 +41,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -102,8 +101,15 @@ func (o *Options) planMacosUserDoorways(rt string, specs []loopholes.JailDaemonS
 // this session published (the front the guest's copy would have dialed, which is how aws-auth's
 // adapter forwards) and the OpenAI service's private socket (HS-D3's route, which the Codex
 // adapter `yolo host -- codex` serves takes). The caller token is added by launchservice.Start.
-func doorwayInput(launchEnv *jsonx.OrderedMap) map[string]string {
-	env := map[string]string{openauthclient.HostSocketEnv: openaiauthhost.HostSocketPath()}
+//
+// THE PRIVATE SOCKET IS THIS SESSION'S OWN DAEMON'S (openAIHostSocket), never a machine-wide
+// one: under HD-R1 each session runs its own (hostdaemonperjail.go). hostSocket is "" when the
+// session started none, and then the variable is not set rather than naming another launch's.
+func doorwayInput(launchEnv *jsonx.OrderedMap, hostSocket string) map[string]string {
+	env := map[string]string{}
+	if hostSocket != "" {
+		env[openauthclient.HostSocketEnv] = hostSocket
+	}
 	if launchEnv != nil {
 		for _, k := range launchEnv.Keys() {
 			if isServiceEndpointEnv(k) {
@@ -122,8 +128,9 @@ func doorwayInput(launchEnv *jsonx.OrderedMap) map[string]string {
 // launch: this is host code running outside Seatbelt, and a launch has no quiet mode. It returns
 // the stop for the arm to defer and what it started, or the refusal naming the doorway that did not
 // start, which the launch-owned mechanism's contract makes a refusal before the command runs (§4.5).
-// before, when not nil, is called with each plan just before its start: a keeper hands each its
-// reserved sockets there (keeper.adoptReservedFor).
+// hostSocket is the private socket of the OpenAI daemon this session, or the keeper holding the
+// workspace's sessions, started (doorwayInput). before, when not nil, is called with each plan
+// just before its start: a keeper hands each its reserved sockets there (keeper.adoptReservedFor).
 //
 // EACH ONE IS SUPERVISED FROM ITS START (launchservice.Running.Supervise, HS-D28), as a service's
 // host half is (startMacosUserServices): a doorway that dies while the command runs is named and
@@ -135,7 +142,7 @@ func doorwayInput(launchEnv *jsonx.OrderedMap) map[string]string {
 // the workspace's macos-user sessions', not one launch's: the line says so, and the keeper stops
 // them when the last session leaves.
 func (o *Options) startMacosUserDoorways(plans []*launchservice.Plan, launchEnv *jsonx.OrderedMap,
-	before func(*launchservice.Plan)) (func(), []launchedHeld, error) {
+	hostSocket string, before func(*launchservice.Plan)) (func(), []launchedHeld, error) {
 	var running []launchedHeld
 	stop := func() {
 		for _, r := range running {
@@ -149,7 +156,7 @@ func (o *Options) startMacosUserDoorways(plans []*launchservice.Plan, launchEnv 
 		if before != nil {
 			before(plan)
 		}
-		r, log, err := startMacosUserDoorway(plan, doorwayInput(launchEnv))
+		r, log, err := startMacosUserDoorway(plan, doorwayInput(launchEnv, hostSocket))
 		if err != nil {
 			stop()
 			return func() {}, nil, err

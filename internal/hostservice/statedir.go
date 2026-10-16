@@ -5,10 +5,12 @@ package hostservice
 //
 // # Why a daemon can outlive its state dir at all
 //
-// A host-wide daemon (`host_daemon.scope: "host"`, internal/broker) is spawned detached and
-// reused by every later launch that finds it alive, keyed by its loophole NAME alone. Its
-// state dir is not: it is a path under the HOME of whichever launch spawned it
-// (loopholes.StateDirFor). Two things remove that dir while the daemon keeps running:
+// A host daemon's state dir is a path under the HOME of the launch that spawned it
+// (loopholes.StateDirFor), and the daemon is not stopped with the dir. This was first written
+// for the host-wide daemon an older yolo shared across launches, keyed by its loophole NAME
+// alone; since HD-R1 each launch stops its own daemon when its jail ends, and a daemon that
+// declares `detach` still finishes its work in flight after that, so a daemon can still
+// outlive a dir its launch removes. Two things remove that dir while the daemon keeps running:
 //
 //   - RETIREMENT. A launch whose `packs` no longer selects the loophole's pack archives the
 //     dir into `state/.retired/<stamp>/` (internal/packstage.RetireLoopholeState). Nothing

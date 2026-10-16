@@ -31,7 +31,7 @@ import (
 // for ps (nil: the real one).
 func managedDaemonDeps(root string, procs *daemonProcs) deps {
 	return deps{
-		ensure: func(io.Writer) (string, error) { return "/tmp/broker.host", nil },
+		ensure: func(io.Writer) (string, func(), error) { return "/tmp/broker.host", func() {}, nil },
 		request: func(_ string, request any, _ io.Writer) (json.RawMessage, error) {
 			if request.(map[string]any)["action"] == "status" {
 				return json.RawMessage(`{"logged_in":true}`), nil

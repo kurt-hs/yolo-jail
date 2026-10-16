@@ -20,7 +20,7 @@ func openAIAuthFixture(t *testing.T, approved bool) {
 	manifest := `{"name":"openai-auth-broker","description":"fixture","version":1,` +
 		`"default_enabled":true,"transport":"loopback-tls","lifecycle":"spawned",` +
 		`"host_daemon":{"cmd":["yolo","internal","daemon","openai-auth-broker","--socket","{socket}"],` +
-		`"publishes":"socket","scope":"host"},` +
+		`"publishes":"socket","detach":true},` +
 		`"jail_daemon":{"cmd":["yolo-jaild","openai-auth-adapter"],"restart":"on-failure"}}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)

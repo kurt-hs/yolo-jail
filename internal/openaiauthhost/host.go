@@ -16,15 +16,10 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
-	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
-	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthadapter"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthdaemon"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
@@ -35,7 +30,9 @@ const BrokerName = "openai-auth-broker"
 type requestFunc func(string, any, io.Writer) (json.RawMessage, error)
 
 type deps struct {
-	ensure    func(io.Writer) (string, error)
+	// ensure starts this launch's own OpenAI credential daemon (startPrivate) and returns its
+	// private socket and the stop that ends it.
+	ensure    func(io.Writer) (string, func(), error)
 	request   requestFunc
 	listen    func(string, string) (net.Listener, error)
 	home      func() string
@@ -74,6 +71,32 @@ type Launch struct {
 	// notServed is why a launch that did not start leaves unset each variable a started one sets
 	// from a server of its own, keyed by variable (notStarted, NotServed). It sets nothing.
 	notServed map[string]string
+	// stopDaemon ends this launch's own OpenAI credential daemon (startPrivate), nil when it
+	// started none. Close and Run call it; a launch that execs its agent never does, and the
+	// daemon then ends with the agent (`--end-with-pid`).
+	stopDaemon func()
+	// hostSocket is that daemon's private socket, "" when it started none.
+	hostSocket string
+}
+
+// HostSocket is this launch's own OpenAI credential daemon's private socket, for a host-side
+// consumer the launch starts beside it (a launch-owned service), or "" when it started none.
+func (l *Launch) HostSocket() string {
+	if l == nil {
+		return ""
+	}
+	return l.hostSocket
+}
+
+// Close ends this launch's own OpenAI credential daemon, if it started one, without waiting: the
+// daemon finishes a refresh in flight and exits on its own. Idempotent, and safe on nil.
+func (l *Launch) Close() {
+	if l == nil || l.stopDaemon == nil {
+		return
+	}
+	stop := l.stopDaemon
+	l.stopDaemon = nil
+	stop()
 }
 
 // RefreshURLEnv is the variable Codex reads its token-refresh URL from, which a managed Codex
@@ -134,7 +157,7 @@ func (p Prelaunch) Declared() bool { return p.Flag != "" || p.Login }
 // refresh adapter), a launch that sets nothing and says why that variable is unset (NotServed).
 func Prepare(p Prelaunch, stderr io.Writer) (*Launch, error) {
 	d := deps{
-		ensure: ensureSingleton, request: openauthclient.RequestUnix,
+		ensure: startPrivate, request: openauthclient.RequestUnix,
 		listen: net.Listen, home: paths.Home, storage: paths.GlobalStorage,
 		workspace: os.Getwd, newToken: svcendpoint.NewToken, getenv: os.Getenv,
 	}
@@ -168,9 +191,22 @@ func prepare(d deps, p Prelaunch, stderr io.Writer) (*Launch, error) {
 		return nil, fmt.Errorf("%s: the host serves no OpenAI view %q (it serves %s, %s and %s)",
 			p.Bin, p.Flag, CodexViewFlag, PiViewFlag, OpencodeViewFlag)
 	}
-	socket, err := d.ensure(stderr)
+	// THIS LAUNCH'S OWN DAEMON (privatedaemon.go, HD-R1): started for the prelaunch, kept by the
+	// launch returned for the agent that reads it, and ended on every other way out of here.
+	socket, stop, err := d.ensure(stderr)
 	if err != nil {
 		return nil, err
+	}
+	kept := false
+	defer func() {
+		if !kept {
+			stop()
+		}
+	}()
+	owned := func(l *Launch) *Launch {
+		kept = true
+		l.stopDaemon, l.hostSocket = stop, socket
+		return l
 	}
 	loggedIn, err := ensureLogin(socket, d.request, p, stderr)
 	if err != nil {
@@ -183,12 +219,12 @@ func prepare(d deps, p Prelaunch, stderr io.Writer) (*Launch, error) {
 	case "":
 		return nil, nil
 	case PiViewFlag:
-		return &Launch{vars: map[string]string{openauthclient.HostSocketEnv: socket}}, nil
+		return owned(&Launch{vars: map[string]string{openauthclient.HostSocketEnv: socket}}), nil
 	case OpencodeViewFlag:
 		if notice := opencodeHostLoginNotice(d); notice != "" {
 			fmt.Fprintln(stderr, notice)
 		}
-		return &Launch{vars: map[string]string{openauthclient.HostSocketEnv: socket}}, nil
+		return owned(&Launch{vars: map[string]string{openauthclient.HostSocketEnv: socket}}), nil
 	}
 	launch := &Launch{vars: map[string]string{openauthclient.HostSocketEnv: socket}}
 	key := p.Pack
@@ -242,7 +278,7 @@ func prepare(d deps, p Prelaunch, stderr io.Writer) (*Launch, error) {
 	launch.adapterEnd = end
 	launch.vars["CODEX_HOME"] = managedHome
 	launch.vars[RefreshURLEnv] = "http://" + listener.Addr().String() + "/oauth/token"
-	return launch, nil
+	return owned(launch), nil
 }
 
 // opencodeHostAuthPath is the auth store opencode reads at the host, the one yolo's opencode
@@ -630,6 +666,8 @@ func (l *Launch) Run(target string, argv, environ []string, stdin io.Reader, std
 		if l.live != nil {
 			_ = l.live.Close()
 		}
+		// The launch's own credential daemon goes with the agent it served.
+		l.Close()
 	}()
 	cmd := exec.Command(target, argv[1:]...)
 	cmd.Args = argv
@@ -649,54 +687,8 @@ func (l *Launch) Run(target string, argv, environ []string, stdin io.Reader, std
 	return 0, true
 }
 
-// HostSocketPath is the host broker's private socket, the path ensureSingleton publishes and every
-// host-side consumer of the OpenAI credential service dials: managed Codex, pi's view, and a
-// launch-owned service's host half (docs/design/host-notch-services.md HS-D3).
-func HostSocketPath() string {
-	return openaiauthdaemon.HostSocketPath(paths.HostSingletonSocket(BrokerName))
-}
-
-func ensureSingleton(stderr io.Writer) (string, error) {
-	fronted := paths.HostSingletonSocket(BrokerName)
-	hostSocket := openaiauthdaemon.HostSocketPath(fronted)
-	state := filepath.Join(loopholes.StateDirFor(BrokerName), "credentials.json")
-	argv := execx.SelfExecArgv([]string{"yolo", "internal", "daemon", BrokerName,
-		"--socket", fronted, "--state-file", state})
-	d := broker.SingletonDeps(BrokerName, argv)
-	d.Out = stderr
-	broker.BrokerSpawn(d)
-	if !broker.BrokerIsAlive(d) {
-		return "", fmt.Errorf("OpenAI credential service did not start; see %s", d.LogPath)
-	}
-	waitForSocket := func() error {
-		return waitHostSocket(hostSocket, 2*time.Second, openauthclient.RequestUnix)
-	}
-	if err := waitForSocket(); err == nil {
-		return hostSocket, nil
-	}
-	// A live singleton from an older yolo may lack the host socket. Replace it
-	// once so managed host launches upgrade without a reboot, then give the new
-	// process the same bounded startup window as the first one.
-	broker.BrokerKill(d, syscall.SIGTERM, 2*time.Second)
-	broker.BrokerSpawn(d)
-	if err := waitForSocket(); err != nil {
-		return "", fmt.Errorf("OpenAI host credential socket unavailable: %w", err)
-	}
-	return hostSocket, nil
-}
-
-func waitHostSocket(socket string, timeout time.Duration, request requestFunc) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for {
-		if _, err := request(socket, map[string]any{"action": "ping"}, io.Discard); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-		if time.Now().After(deadline) {
-			return lastErr
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-}
+// StartPrivate starts the OpenAI credential daemon of a launch with no jail and returns its private
+// host-to-host socket and the stop that ends it (privatedaemon.go): what a `yolo host` launch hands
+// a launch-owned service that reaches the credential service host to host
+// (docs/design/host-notch-services.md HS-D3), when its prelaunch started none. stop does not wait.
+func StartPrivate(stderr io.Writer) (string, func(), error) { return startPrivate(stderr) }

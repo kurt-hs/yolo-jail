@@ -297,14 +297,14 @@ func warmJail() {
 	elapsed := time.Since(start).Round(time.Second)
 	forceRemoveContainer(dir)
 	// Before the deferred RemoveAlls: the launch's scratch remover logs into this workspace
-	// after yolo has exited, and a host-wide daemon it spawned runs under this home
+	// after yolo has exited, and a host daemon it ran may still be exiting under this home
 	// (detachedwriters_test.go). The warmup selects no packs, so the second finds nothing —
 	// and is here anyway, so "every launch this suite makes" stays one rule.
 	if werr := run.WaitForScratchRemovers(dir, detachedWriterWait); werr != nil {
 		degraded("warmup: %v", werr)
 	}
-	if _, serr := stopHomeHostDaemons(home); serr != nil {
-		degraded("warmup: stopping its host-wide daemons: %v", serr)
+	if left := awaitHomeHostDaemons(home, homeDaemonBound); len(left) > 0 {
+		degraded("warmup: host daemons outlived it and were killed: %s", strings.Join(left, ", "))
 	}
 
 	if err != nil {

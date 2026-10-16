@@ -334,12 +334,14 @@ It bundles two jobs.
 2. **Serialize the refresh HTTP call.** A host-side daemon holds a flock
    (`oauthbroker.RefreshLockPath`) around every refresh, so concurrent jails cannot burn the
    token. What the job needs is that the lock be taken **host-side**, where every backend agrees
-   on the inode; it does not need the daemon to be a singleton. Because Claude Code refreshes *itself* and will never voluntarily take yolo's lock, an
+   on the inode; it does not need the daemon to be a singleton, and since
+   [`HD-R1`](../design/host-daemon-ownership.md#HD-R1) it is not: each jail runs its own broker,
+   and every copy takes the one lock. Because Claude Code refreshes *itself* and will never voluntarily take yolo's lock, an
    in-jail TLS terminator intercepts the refresh host (via an `--add-host` mapping to loopback)
    and routes the call through a loopback-TLS front — a goroutine in the jail's keeper, the process
    the launching `yolo run` spawns to hold a container jail's host services for its life
-   ([`jail-home.md`](jail-home.md)), splicing to the singleton's socket — to the daemon under its
-   flock.
+   ([`jail-home.md`](jail-home.md)), splicing to the jail's own broker's socket — to the daemon
+   under its flock.
 
 **Selecting the `claude` pack is the dependency.** The broker is a *contribution* of
 `packs/claude`, not a pack of its own, because the dependency is structural. Its manifest ships
@@ -382,10 +384,12 @@ a view yet; the measures it waits on, and the deletion of the interception after
 > fail **loudly at spawn**, not disappear from `yolo loopholes list`.
 
 > [!WARNING]
-> **`scope: "host"` requires `publishes: "socket"`, refused otherwise at load.** An endpoint file
-> carries **one jail's** bearer token, so a host-wide publisher would hand every jail the same
-> credential. And do not express "one daemon per machine" by testing the loophole's *name*, which
-> is how the run pipeline used to do it — `scope` is the declaration.
+> **A jail's end must not kill a refresh in flight**, so the broker declares `detach`: the jail's
+> end SIGTERMs the broker alone and leaves it to finish a refresh that may already have redeemed
+> the single-use token upstream, write the replacement and exit
+> ([§1.3](../design/host-daemon-ownership.md#13-the-disposition-detach-do-not-drain-do-not-reap)).
+> And do not express a daemon's lifetime by testing the loophole's *name*, which is how the run
+> pipeline once did it — the manifest is the declaration.
 
 > [!WARNING]
 > **There is deliberately NO token environment variable for this hop.** An env var is inherited by
@@ -459,7 +463,8 @@ Three beliefs about it were measured false, and each one had been load-bearing s
   (`DoRefreshAsCaller`). The presented token is compared and never spent; the refresh is always
   made from the canonical login under the flock. The check exists because the terminator's port
   is a loopback port, which anything sharing that loopback can reach.
-- **It does not need to be a singleton.** See the flock note above — host-side is the requirement.
+- **It is not a singleton.** Each jail runs its own; see the flock note above — host-side is the
+  requirement.
 - **It does not trigger the vendor's dead-token disk clear, and cannot surface a real one
   either.** The vendor classifies a dead token by the **top-level `error` string**, not the status
   code (`jd(e.response.data).code==="invalid_grant"`). None of the refresh path's codes —
@@ -501,7 +506,8 @@ its binary).
 ### The OpenAI subscription credential service
 
 Codex, Pi and opencode use one machine-wide OpenAI subscription grant without sharing any agent's
-whole home. The `openai-auth` pack owns a host singleton named `openai-auth-broker`, and every
+whole home. The `openai-auth` pack owns a host service named `openai-auth-broker`, one copy per
+jail sharing one credentials file and the lock beside it, and every
 agent pack that can use the subscription `needs` that pack, so selecting any of them selects the
 same service rather than declaring a second refresh owner ([`OQ-OA1`](#oq-oa1)). Sharing the
 credential files alone would race on a single-use refresh token; a login per workspace and agent
@@ -511,7 +517,8 @@ would avoid the race by making the user repeat the browser login every time.
 
 #### One writer, and a view per agent
 
-The host service is the **only writer** of the canonical credential: the access, identity and
+The host service — every jail's copy of it, each under the one lock — is the **only writer** of
+the canonical credential: the access, identity and
 refresh tokens, their expiry, the OpenAI account id, and a monotonically increasing
 **generation**. The file lives under the loophole's host state directory and never crosses into a
 jail. Login, refresh, replacement and logout all take one machine-wide file lock, and every update
@@ -531,10 +538,11 @@ finishes and persists the rotation before it releases the lock.
 
 One prerelease build passed the literal relative path `{state}/credentials.json` to the daemon.
 The next launch checks only two bounded locations for that file: the current workspace and, on
-Linux, the recorded singleton process's working directory under `/proc`. While holding the same
-singleton lock used for startup, it validates the file, moves it into the canonical private state
-directory, removes the empty literal `{state}` directory, and replaces the daemon so later writes
-use the canonical path (`prepareLegacyOpenAIAuthState`, `internal/cli/run`). It never searches
+Linux, the working directory under `/proc` of the host-wide daemon an older yolo recorded. While
+holding the machine-wide lock that older yolo took for startup, it validates the file, moves it
+into the canonical private state directory, removes the empty literal `{state}` directory, and
+stops that older daemon when it is the one writing the literal path, so later writes use the
+canonical path (`prepareLegacyOpenAIAuthState`, `internal/cli/run`). It never searches
 other workspaces. If both a legacy and canonical file exist, or more than one bounded candidate
 exists, yolo refuses to choose and prints the paths: preserving both for a deliberate manual
 choice is safer than overwriting a refresh authority.
@@ -638,7 +646,7 @@ The refresh algorithm is the same on every backend, and none intercepts `auth.op
 - **Container jails** use the per-jail authenticated loopback-TLS front and its endpoint file.
   The Codex adapter is the loophole's `jail_daemon`, inside the jail. Pi's extension and the
   opencode plugin call the same front.
-- **`macos-user`** starts the same host singleton, and the sandboxed account reaches its front on
+- **`macos-user`** starts the same host service, one per session, and the sandboxed account reaches its front on
   the Mac's loopback, reading the endpoint credential from the sandbox-visible state the launch
   prepared. The Codex adapter is a **doorway** (the thin adapter that checks the launch's caller
   token and forwards to the host service): the launch opens it outside the sandbox as a listener
@@ -994,16 +1002,17 @@ mint a Bedrock credential for this launch: …`, in the same words as the `4xx` 
 to add the profile or point the setting at another for a profile the host's `~/.aws/config` does
 not have. The line ends by saying when the fix reaches the running jail. A fix outside yolo does
 with no relaunch, since every mint runs `aws` afresh; that is all a lapsed session or a missing
-CLI can need. The service reads `loopholes.aws-auth.settings` only when it starts, and a launch
-of a new jail is what restarts it on a change, so a line whose fix can be a setting says both.
+CLI can need. The service reads `loopholes.aws-auth.settings` only when it starts, and each
+jail's launch starts its own, so a settings change reaches the next launch; a line whose fix can
+be a setting says both.
 The jail then starts as it would have. A mint still running when the budget runs out is
 reported by the previous attempt's failure and its age, or, when there is none, by a dim line
-saying the launch could not tell. A service that cannot be asked gets a dim line too, but for one
-started by an older yolo. Nothing restarts the host-wide service when yolo is upgraded, and the one
-still running does not know the question, so the launch **refuses**: it says the service predates
-this yolo and names `yolo host-daemon restart aws-auth`, which the jails already running survive,
-since each reconnects on its next request. The launch restarts nothing itself
-([OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)). A warning is a disclosure, so no flag
+saying the launch could not tell. A service that cannot be asked gets a dim line too. Since
+[`HD-R1`](../design/host-daemon-ownership.md#HD-R1) the service a launch asks is always the one it
+just started, so it cannot predate the launch. What can is a machine-wide service an older yolo
+left running through the upgrade: while it runs, a launch **refuses**, naming
+`yolo host-daemon stop --host-wide aws-auth`, and restarts and stops nothing itself
+([`HD-D21`](../design/host-daemon-ownership.md#HD-D21)). A warning is a disclosure, so no flag
 hides it ([`OQ-RO3`](report-tiers.md#why-its-this-way)).
 
 An attach asks too: a new agent entering a jail that is already running, such as
@@ -1225,9 +1234,9 @@ fully open.
 | Per-agent host settings grant | `/ctx/host-<pack>/` `:ro` mount, then boot compose | materialized copy, then boot compose | copied into the root-owned `/ctx` tree the launch stages (`YOLO_CTX_ROOT`, 2026-09-13), then boot compose; a copy that fails ends the launch |
 | User `host_files` | source-bearing: `/ctx/host-user/<slug>` `:ro`; source-less: composed | source-less composes; a **file** `source` is materialized (copied into the workspace home, since Apple Container cannot bind a single file there); a **directory** `source` binds `:ro` from Apple Container 1.1.0 and is skipped with a named reason below it or when the version is unreadable | source-less composes; a **file** `source` is copied into a root-owned `/ctx` tree (2026-09-13), and a **directory** `source` into the same tree, confined to its source and capped (2026-10-05); one over the cap, or that cannot be copied whole, ends the launch naming the entry |
 | Claude shared credentials | shared bind + relative symlink | shared bind **nested inside** the whole-home bind, then the same relative symlink — one mount per declared shared dir (2026-08-24; before that the single bind put the creds in the per-workspace home) | the account home's own `.claude-shared-credentials`, the machine tier, reached by the same relative symlink through the workspace tier's mirror |
-| claude-oauth-broker | active when the `claude` pack is selected | **skipped whole**: the host-service start admits only the OpenAI service, and the container args drop the loophole for its `intercepts` (which need `--add-host`). A launch that opts into the credential view also starts the singleton, which writes the view into the home the guest binds; no endpoint is published to the jail. UNMEASURED on this backend | **host half runs, jail half does not.** The singleton is ensured and a per-jail front publishes `claude-oauth-broker.endpoint` (measured, unit, 2026-09-18). Nothing uses it: the guest runs jail daemons, but it declines the TLS terminator because the interception needs an `--add-host` and a bind to port 443, and the sandbox has neither. So refreshes are not serialized here, and the launch names the declined terminator. The credential view can be opted into on this backend too; it is UNMEASURED there |
+| claude-oauth-broker | active when the `claude` pack is selected | **skipped whole**: the host-service start admits only the OpenAI service, and the container args drop the loophole for its `intercepts` (which need `--add-host`). A launch that opts into the credential view also starts its own broker, which writes the view into the home the guest binds; no endpoint is published to the jail. UNMEASURED on this backend | **host half runs, jail half does not.** The session starts its own broker and its front publishes `claude-oauth-broker.endpoint` (measured, unit, 2026-09-18). Nothing uses it: the guest runs jail daemons, but it declines the TLS terminator because the interception needs an `--add-host` and a bind to port 443, and the sandbox has neither. So refreshes are not serialized here, and the launch names the declined terminator. The credential view can be opted into on this backend too; it is UNMEASURED there |
 | OpenAI subscription credentials | canonical host-service state; Codex, Pi and opencode get workspace views | the **one** service this backend starts for every launch, endpoint file mounted — and measured unreachable from the guest, so the agent sees "OpenAI login is required" ([G6](../plans/setup-support-gaps.md#2-ranked-gap-backlog)). The launch **names the cause** in its inert report. The endpoint variable and the mount are still emitted — the measurement is per BACKEND, so withholding one service's pointer would patch a per-service hole in a per-backend fact | host daemon started like every other, and a launch that cannot start it is the one that is **refused**; the endpoint path rides the sandbox env instead of a mount. Its refresh adapter is a doorway: it declares a host argv, so the launch opens it outside the sandbox as a listener it owns rather than in the guest, and Codex's refresh URL names that port (2026-09-29, HS-D15; MEASURED on a hosted Mac 2026-09-30, with no Codex run) |
-| AWS SSO credentials (`aws-auth`) | host singleton; adapter in the jail; pointer and caller token in the env file of the agent on a Bedrock provider. MEASURED, in daily use (2026-09-29) | not started: this backend starts no host service but the OpenAI one and, for an opted-in credential view, the Claude broker | host singleton; the adapter opens outside the Seatbelt sandbox as a listener the launch owns, on the Mac's loopback the agent shares, and the pointer names its port. UNMEASURED: its hardware test ran on a hosted Mac on 2026-09-30 and was refused at the region pre-flight before its probe, so nothing past the launch was observed. `yolo host`, which is no backend, does the same for the one agent it runs when that agent is on a Bedrock provider ([`host-notch-services.md` §4.8](../design/host-notch-services.md#48-yolo-host)), MEASURED by unit tests with a fake agent and a fake `aws` |
+| AWS SSO credentials (`aws-auth`) | host service, one per jail; adapter in the jail; pointer and caller token in the env file of the agent on a Bedrock provider. MEASURED, in daily use (2026-09-29) | not started: this backend starts no host service but the OpenAI one and, for an opted-in credential view, the Claude broker | host service, the jail's own (the workspace's keeper's, for every session of it, when one holds them); the adapter opens outside the Seatbelt sandbox as a listener the launch owns, on the Mac's loopback the agent shares, and the pointer names its port. UNMEASURED: its hardware test ran on a hosted Mac on 2026-09-30 and was refused at the region pre-flight before its probe, so nothing past the launch was observed. `yolo host`, which is no backend, does the same for the one agent it runs when that agent is on a Bedrock provider ([`host-notch-services.md` §4.8](../design/host-notch-services.md#48-yolo-host)), MEASURED by unit tests with a fake agent and a fake `aws` |
 | Host-service loopholes | endpoint file + `YOLO_SERVICE_*_ENDPOINT` | only the OpenAI credential service starts, and the Claude broker for an opted-in credential view; the OpenAI endpoint file crosses in the host-services dir bind, gated on the loophole being active and its pack cleared to run host code. Every other pack host daemon is skipped and each one is reported inert | **every host daemon starts**, through the same spawn boundary and the same exec disclosure the container path uses; each endpoint's path rides the sandbox env with a per-file ACL grant instead of a mount. The inert report here is the PLATFORM axis only. The `jail_daemon` half runs in the guest, as the sandbox account under the session's Seatbelt profile (`yolo-jaild supervise`, since 2026-09-28; MEASURED with a local pack on a hosted Mac, 2026-09-30). The guest declines by name an intercepting daemon (the Claude terminator), the wire bridge's (its host half serves its adaptation instead) and any pack service's that publishes an endpoint file, a doorway declaring `host_cmd` (opened outside the sandbox, HS-D15), a Linux executable in a loophole's folder, and an argv naming a container-only path (a `{jail_binary:}` path, or a loophole mount the sandbox has no copy of); every other pack service's daemon and a `{jail_loophole_dir}` program run in the guest ([JD-9](../design/jail-daemon-on-macos-user-plan.md#JD-9), [JD-10](../design/jail-daemon-on-macos-user-plan.md#JD-10)) |
 | Per-workspace cred isolation | per-workspace `.yolo/home` overlay | one whole-home bind per workspace, with the machine-scope shared dirs (`.claude-shared-credentials` among them) bound inside it and shared across workspaces | a per-workspace tier: each agent state dir podman would bind is a symlink from the account home into `<workspace>/.yolo/home`; credentials stay in the one account home, shared by every session |
 | Isolation boundary | userns (Linux) / VM (macOS) + read-only root | VM + read-only root | Unix user + Seatbelt — weaker, deliberately |
@@ -1313,11 +1322,11 @@ Rulings a future change would otherwise undo, kept with their original IDs.
 
 The prose above explains what each of these is for; this table is the only place the values
 themselves are stated. Every row names where its value is defined, so a row is checkable against
-that file rather than against a commit stamp. The host singletons are the rows that grow: they are
-whatever this prints, and nothing else in the tree enumerates them —
+that file rather than against a commit stamp. The credential daemons are the rows that grow: they
+are whatever this prints, and nothing else in the tree enumerates them —
 
 ```console
-$ rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc
+$ rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc
 ```
 
 | Value | Setting | Defined in |
@@ -1339,16 +1348,16 @@ $ rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc
 | Shared credentials file | `<global home>/.claude-shared-credentials/.credentials.json`, what an interception jail's Claude reads | `internal/storage` (`ensure.go`), `internal/oauthbroker` (`LegacyCredsPath`) |
 | Claude credential view | opted in by `YOLO_CLAUDE_CREDENTIAL_VIEW=1` in the host environment, off by default on every backend; the view is `<workspace>/.yolo/home/<claude dir>/.credentials.json`, one registration per workspace under `<broker state>/claude-views` | `internal/claudeview` (`SwitchEnv`, `DefaultOn`, `ViewRel`); `internal/oauthbroker/store.go` (`ViewRegistryDir`) |
 | Claude host verbs | `yolo claude-auth status`, `inspect <file>`, `refresh`, `logout`; `refresh` and `logout` refuse inside a jail | `internal/cli/claudeauth.go` |
-| Broker daemon | `yolo internal daemon claude-oauth-broker`, `scope: "host"` | `internal/broker`; `packs/claude/loopholes/claude-oauth-broker/manifest.jsonc` |
+| Broker daemon | `yolo internal daemon claude-oauth-broker`, one per jail, `detach: true` | `internal/broker`; `packs/claude/loopholes/claude-oauth-broker/manifest.jsonc` |
 | OpenAI canonical state | `<loophole state>/credentials.json`, mode `0600`; parent and lock are private | `internal/openaiauth`; `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
-| OpenAI credential daemon | `yolo internal daemon openai-auth-broker`, `scope: "host"` | `internal/openaiauthdaemon`; `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
+| OpenAI credential daemon | `yolo internal daemon openai-auth-broker`, one per jail, `detach: true` | `internal/openaiauthdaemon`; `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
 | OpenAI jail endpoint | `YOLO_SERVICE_OPENAI_AUTH_BROKER_ENDPOINT` | `internal/openauthclient` |
 | OpenAI refresh lead, and the proactive tick (verified at `d4e435a3`) | 5 min; checked every minute | `openaiauth.DefaultRefreshLead`; the daemon's `-refresh-interval` (`internal/openaiauthdaemon`) |
 | OpenAI login callback (verified at `d4e435a3`) | `http://localhost:<port>/auth/callback`, port `1455`, else `1457`; abandoned after 15 min | `internal/openaiauthdaemon` (`loginPorts`, the daemon's `-login-timeout`) |
 | OpenAI upstream request timeout (verified at `d4e435a3`) | 30 s | `internal/openaiauthdaemon` (`upstream.go`) |
 | OpenAI view markers (verified at `d4e435a3`) | `yolo-broker:<generation>` in Pi's and opencode's views; `yolo-broker:<generation>.<caller token>` in Codex's, the adapter stripping the suffix | `internal/openauthclient` (`pi.go`, `opencode.go`, `callermarker.go`) |
 | opencode's view (verified at `d4e435a3`) | the `openai` key of opencode's `auth.json`, merged by `yolo internal openai-auth-client token --opencode-auth`; at the host, `$XDG_DATA_HOME/opencode/auth.json`, else `~/.local/share/opencode/auth.json`, which yolo never writes | `internal/openauthclient/opencode.go`; `internal/openaiauthhost` (`opencodeHostAuthPath`) |
-| AWS credential daemon | `yolo internal daemon aws-auth`, `scope: "host"` | `internal/awsauthdaemon`; `packs/aws-auth/loopholes/aws-auth/manifest.jsonc` |
+| AWS credential daemon | `yolo internal daemon aws-auth`, one per jail, `detach: true` | `internal/awsauthdaemon`; `packs/aws-auth/loopholes/aws-auth/manifest.jsonc` |
 | AWS settings keys | `loopholes.aws-auth.settings.profile`, `.role_arn`, `.session_policy` (strings) and `.unnarrowed` (bool, default `false`), every one `scope: "user"`; the loophole ships `default_enabled: false` | `packs/aws-auth/loopholes/aws-auth/manifest.jsonc`; `internal/awsauth` (`settings.go`) |
 | AWS pointer | `AWS_CONTAINER_CREDENTIALS_FULL_URI=http://{listen}/credentials` and `AWS_CONTAINER_AUTHORIZATION_TOKEN={caller_token}`, gated on the agent's provider declaring `"platform": "aws-bedrock"`, `served_by: "aws-auth"` | `packs/aws-auth/pack.json` |
 | AWS mint timing | re-mint below **10 min** of remaining life (twice the SDK's five-minute window), a pre-mint tick at half that; `AssumeRole` asks **3600 s**, the role-chaining ceiling, as session name `yolo-jail` | `internal/awsauth` (`RemintLead`, `Broker.TickInterval`, `MintDuration`, `SessionName`) |
@@ -1358,8 +1367,8 @@ $ rg -n '"scope": "host"' packs/*/loopholes/*/manifest.jsonc
 | AWS service log | `~/.local/share/yolo-jail/logs/host-service-aws-auth.log` on the host: the profile, the narrowing and the SSO form at start, then each failed mint the pre-mint ticker or a launch check ran | `internal/awsauthdaemon` (`reportStartup`, `mintTracker`) |
 | AWS launch check | declared as `host_daemon.launch_check: true`; asked by a launch that serves the adapter; answered from the cache, or from the mint a cold cache needs, within a **2 s** budget the daemon clamps to at most **5 s**, the launch reading **1 s** past it; a failure prints `loophole aws-auth: cannot mint a Bedrock credential for this launch: …` | `packs/aws-auth/loopholes/aws-auth/manifest.jsonc`; `internal/hostservice` (`LaunchCheckBudget`, `LaunchCheckBudgetCap`), `internal/awsauthdaemon` (`launchcheck.go`), `internal/cli/run` (`launchcheck.go`, `launchCheckMargin`) |
 | AWS canonical state | `<loophole state>/credentials.json`, mode `0600` in a `0700` directory | `internal/awsauth` (`state.go`) |
-| AWS model list | the `bedrock-models` action, host socket only, `{"region", "budget_ms"}`; answered from `<loophole state>/bedrock-models.json` (`0600`) when the region's list is under a day old, else fetched within the launch's budget (at most **5 s**), else the cache's last good list with why | `internal/awsauth` (`modellist.go`, `modelcache.go`), `internal/awsauthdaemon` (`modellists.go`), `internal/cli/run` (`bedrockmodels.go`) |
-| AWS jail endpoint | `YOLO_SERVICE_AWS_AUTH_ENDPOINT`, read by the in-jail adapter, which listens on `127.0.0.1:1461` (its `jail_daemon.listen`), or on a port the launch picked when the jail shares its launcher's network namespace. Emitted by any launch where the loophole is active and its pack may run host code, like every other `scope: "host"` loophole's — `hostServicesMountArgs` derives the set from the manifests rather than naming services one by one, which it did until 2026-09-20 (two names, and this one was the third, so the adapter answered `ServiceUnreachable` for every request while the launch reported a healthy jail). On `macos-user` the launch runs the adapter outside the sandbox instead, through `jail_daemon.host_cmd`, and `yolo host --` runs it the same way for an agent on a Bedrock provider, handing the adapter the endpoint of a front of its own in its input file (`internal/cli/run/hostdoorways.go`). ⚠ Not on Apple Container, which starts no aws-auth service | `internal/awscredadapter` (`EndpointEnv`); `internal/cli/run/assemble_parts.go` |
+| AWS model list | the `bedrock-models` action, host socket only, `{"region", "budget_ms"}`; answered from `<loophole state>/bedrock-models.json` (`0600`) when the region's list is under a day old, else fetched within the launch's budget (at most **5 s**), else the cache's last good list with why. A launch asks no running service: it runs the same fetch itself before it starts its own ([`HD-D22`](../design/host-daemon-ownership.md#HD-D22)) | `internal/awsauth` (`modellist.go`, `modelcache.go`), `internal/awsauthdaemon` (`modellists.go`), `internal/cli/run` (`bedrockmodels.go`) |
+| AWS jail endpoint | `YOLO_SERVICE_AWS_AUTH_ENDPOINT`, read by the in-jail adapter, which listens on `127.0.0.1:1461` (its `jail_daemon.listen`), or on a port the launch picked when the jail shares its launcher's network namespace. Emitted by any launch where the loophole is active and its pack may run host code, like every other credential daemon's (`detach: true`) — `hostServicesMountArgs` derives the set from the manifests rather than naming services one by one, which it did until 2026-09-20 (two names, and this one was the third, so the adapter answered `ServiceUnreachable` for every request while the launch reported a healthy jail). On `macos-user` the launch runs the adapter outside the sandbox instead, through `jail_daemon.host_cmd`, and `yolo host --` runs it the same way for an agent on a Bedrock provider, handing the adapter the endpoint of a front of its own in its input file (`internal/cli/run/hostdoorways.go`). ⚠ Not on Apple Container, which starts no aws-auth service | `internal/awscredadapter` (`EndpointEnv`); `internal/cli/run/assemble_parts.go` |
 | Codex refresh adapter | `http://{listen}/oauth/token`: `127.0.0.1:1460` on a jail with its own network namespace, a port the launch picked on one sharing its launcher's (`network.mode: "host"`, or nested) | `internal/openaiauthadapter`; the pointer in `packs/codex/pack.json`, the port as `jail_daemon.listen` in `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
 | Git identity keys carried | `user.name`, `user.email`, plus an in-jail `core.excludesFile` | `internal/cli/run` (`composeGitconfig`), `internal/entrypoint/identity.go` |
 | `macos-user` identity replay vars | `YOLO_GIT_NAME`, `YOLO_GIT_EMAIL`, from the launch env; `YOLO_GLOBAL_GITIGNORE`, the staged copy of the global gitignore, set on the bootstrap by the plan | `internal/macosuser` (`MacosSandboxEnv`, `buildBootstrapEnv`), `internal/entrypoint/identity.go` |

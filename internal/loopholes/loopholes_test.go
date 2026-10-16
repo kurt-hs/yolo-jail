@@ -883,9 +883,10 @@ func TestHostDaemonFieldsSurviveLoad(t *testing.T) {
 		"Publishes":     "socket",
 		"RequestEnd":    "framed",
 		"Preamble":      true,
-		"Scope":         "host",
+		"Scope":         "jail",
 		"LaunchCheck":   true,
 		"StartupReason": true,
+		"Detach":        true,
 	}
 	typ := reflect.TypeOf(HostDaemon{})
 	for i := 0; i < typ.NumField(); i++ {
@@ -915,6 +916,7 @@ func TestHostDaemonFieldsSurviveLoad(t *testing.T) {
 			"scope":          declared["Scope"],
 			"launch_check":   declared["LaunchCheck"],
 			"startup_reason": declared["StartupReason"],
+			"detach":         declared["Detach"],
 		},
 		"settings": map[string]any{"value": map[string]any{"type": "string", "default": "x"}},
 	})

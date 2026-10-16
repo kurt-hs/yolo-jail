@@ -307,7 +307,7 @@ func TestALocalAdapterWithoutAHostArgvRunsInTheGuest(t *testing.T) {
 		"transport": "loopback-tls", "lifecycle": "spawned",
 		"host_daemon": {"cmd": ["yolo", "internal", "daemon", "openai-auth-broker",
 		  "--socket", "{socket}", "--state-file", "{state}/credentials.json"],
-		  "publishes": "socket", "scope": "host"},
+		  "publishes": "socket", "detach": true},
 		"jail_daemon": {"cmd": ["yolo-jaild", "openai-auth-adapter", "--listen", "{listen}"],
 		  "listen": "127.0.0.1:1460", "restart": "on-failure", "caller_token": true},
 		"state_files": [".mount-sentinel"]}`)

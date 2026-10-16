@@ -105,7 +105,7 @@ replacing the file. To remove the loophole, delete its folder and its two entrie
     "publishes": "socket",        // required in a pack: write it every time
     "request_end": "framed",      // or "eof"; default "framed"
     "preamble": true,             // default true
-    "scope": "jail",              // or "host" (one per machine); default "jail"
+    "detach": false,              // let work in flight finish when the jail ends; default false
     "launch_check": false         // answers the launch's check, below; default false
   },
   "jail_daemon": {                // optional; a program run INSIDE the jail
@@ -232,25 +232,29 @@ Three keys shape the connection:
 - **`preamble`**: every connection starts with a short message from yolo naming the jail, so your
   program knows which jail is calling. Set `false` only if your protocol cannot accept that message;
   you then know only what the caller claims.
-- **`scope`**: `"jail"`, the default, runs one copy of your program per jail and stops it with the
-  jail. `"host"` runs one copy for the whole machine, shared by every jail, and it keeps running
-  when a jail exits. Use `"host"` when a second copy would be a bug, such as a program holding a
-  single-use login. Check on it with `yolo loopholes status`.
+- **Each jail runs its own copy** of your program, started by its launch and stopped when the jail
+  ends. If copies must not step on each other, such as programs sharing a single-use login, have
+  them share a file in the loophole's state folder and lock it while they change it.
+  `yolo host-daemon status` lists the copies running.
+- **`detach`**: with `true`, a jail's end asks your program to stop and leaves it to finish what it
+  is doing, instead of waiting for it and then killing it. Use it when cutting off a request half
+  way would lose something, such as a refreshed login already paid for. Your program must still
+  exit soon after the signal.
+- **`scope`** is retired. `"jail"` is the only value left. A manifest that still says `"host"` runs
+  one copy per jail with a warning, and `yolo pack lint` refuses it: delete the line, and add
+  `"detach": true` if the program must finish its work in flight.
 
 **`launch_check: true`** lets your program warn the user before their jail starts. Right after
-starting your program, or finding it already running, the launch sends it one request,
+starting your program, the launch sends it one request,
 `{"action": "launch-check", "budget_ms": <n>}`, and your program answers
 `{"warnings": [...], "notes": [...]}`: each warning prints as a yellow line naming your loophole,
 each note as a dim one, and then the jail starts anyway. Answer within the budget, from what your
 program already knows; a program that does not answer in time, or at all, gets a dim line saying
-so. A `"host"` program started by an older yolo keeps running after the user upgrades, and when
-it answers `unknown action: launch-check` on stderr with a non-zero exit, the launch stops, saying
-it predates this yolo and naming `yolo host-daemon restart <name>`, which the jails already
-running survive. If your program gives that answer after this yolo started it, the launch prints a
-yellow line saying your manifest declares a check your program does not answer, and goes on. The
-launch asks only when the jail uses your loophole's jail program, or when you declare none, and a
-new agent attaching to a running jail is asked about the same way, but is never stopped.
-`aws-auth` uses it to say that an SSO session has lapsed. The
+so. If your program answers `unknown action: launch-check` on stderr with a non-zero exit, the
+launch prints a yellow line saying your manifest declares a check your program does not answer,
+and goes on. The launch asks only when the jail uses your loophole's jail program, or when you
+declare none, and a new agent attaching to a running jail is asked about the same way, but is
+never stopped. `aws-auth` uses it to say that an SSO session has lapsed. The
 [frame protocol](https://github.com/mschulkind-oss/yolo-jail/blob/main/docs/reference/loophole-protocol.md#the-launch-check)
 has the details.
 

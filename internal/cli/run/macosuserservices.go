@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -44,7 +45,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -293,18 +293,22 @@ func viaURLsThrough(channel *packChannel, service string) map[string]string {
 }
 
 // launchServiceInput is what a macos-user launch hands each launch-owned service: the channel's
-// three wire tables, the host broker's private socket, and, for each agent the service carries
-// (serviceAgents), the env_sources the credential gate delivers to it for its providers only
-// (AgentDelivery.EnvSources) and the doorway pointers and region variables the gate composed for it
-// (packload.ServiceCredentialVars, HS-D32): what a jail's bridge reads from that agent's own env
-// file. Into the service's input alone; the agent's own environment is the gate's, unchanged. The
-// caller token is added by launchservice.Start.
-func (c *packChannel) launchServiceInput(agents []string) map[string]string {
+// three wire tables, the private socket of the OpenAI credential daemon this session, or the
+// keeper holding the workspace's sessions, started (openAIHostSocket; unset when none did, and
+// filled by startMacosUserServices for a keeper's, which the launch composes before it starts),
+// and, for each agent the service carries (serviceAgents), the env_sources the credential gate
+// delivers to it for its providers only (AgentDelivery.EnvSources) and the doorway pointers and
+// region variables the gate composed for it (packload.ServiceCredentialVars, HS-D32): what a
+// jail's bridge reads from that agent's own env file. Into the service's input alone; the agent's
+// own environment is the gate's, unchanged. The caller token is added by launchservice.Start.
+func (c *packChannel) launchServiceInput(agents []string, hostSocket string) map[string]string {
 	env := map[string]string{
 		entrypoint.ProvidersWireEnv:   jsonDumpsOrEmptyObj(c.providers),
 		entrypoint.ProfilesWireEnv:    jsonDumpsOrEmptyObj(packload.ProfilesWireTable(c.resolvedProfiles)),
 		entrypoint.UseProfilesWireEnv: jsonDumpsOrEmptyObj(c.profiles),
-		openauthclient.HostSocketEnv:  openaiauthhost.HostSocketPath(),
+	}
+	if hostSocket != "" {
+		env[openauthclient.HostSocketEnv] = hostSocket
 	}
 	for _, agent := range agents {
 		d := c.scope.Agent(agent)
@@ -340,11 +344,12 @@ type serviceStart struct {
 }
 
 // macosUserServiceStarts is the start of every launch-owned service this launch planned, from its
-// channel.
-func (o *Options) macosUserServiceStarts(channel *packChannel) []serviceStart {
+// channel. hostSocket is the session's own OpenAI daemon's private socket (launchServiceInput), ""
+// for a launch whose keeper starts that daemon after this composes.
+func (o *Options) macosUserServiceStarts(channel *packChannel, hostSocket string) []serviceStart {
 	var out []serviceStart
 	for _, plan := range o.launchServices {
-		st := serviceStart{plan: plan, input: channel.launchServiceInput(o.serviceAgents(plan, channel)),
+		st := serviceStart{plan: plan, input: channel.launchServiceInput(o.serviceAgents(plan, channel), hostSocket),
 			worker: isWorkerPlan(plan)}
 		if st.worker {
 			st.pointedAt = workerPointedAt(channel, plan.Service)
@@ -359,15 +364,18 @@ func (o *Options) macosUserServiceStarts(channel *packChannel) []serviceStart {
 // startMacosUserServices starts every planned launch-owned service and says so, one line each,
 // on every launch (a launch has no quiet mode, and this is host code running outside Seatbelt).
 // It returns the stop for the arm to defer and what it started, or the refusal naming the service
-// that did not start. before, when not nil, is called with each plan just before its start
-// (startMacosUserDoorways says why).
+// that did not start. hostSocket, when not "", is the private socket of the OpenAI daemon the
+// session or its keeper started, set in every input that does not name it (a keeper's inputs were
+// composed by its launch before that daemon existed). before, when not nil, is called with each
+// plan just before its start (startMacosUserDoorways says why).
 //
 // EACH ONE IS SUPERVISED FROM ITS START (launchservice.Running.Supervise, HS-D28), on this arm's
 // stderr, so a service that dies while the sandboxed command runs is named and restarted on the
 // address the command was pointed at; the arm's deferred stop is its own teardown and says
 // nothing. A local pack's host half is named, argv and all, before it starts, by this launch or by
 // the launch that spawned the keeper that starts it (startMacosUserDoorways says why).
-func (o *Options) startMacosUserServices(starts []serviceStart, before func(*launchservice.Plan)) (func(), []launchedHeld, error) {
+func (o *Options) startMacosUserServices(starts []serviceStart, hostSocket string,
+	before func(*launchservice.Plan)) (func(), []launchedHeld, error) {
 	var running []launchedHeld
 	stop := func() {
 		for _, r := range running {
@@ -382,7 +390,15 @@ func (o *Options) startMacosUserServices(starts []serviceStart, before func(*lau
 		if before != nil {
 			before(plan)
 		}
-		r, log, err := startMacosUserService(plan, st.input)
+		input := st.input
+		if _, named := input[openauthclient.HostSocketEnv]; hostSocket != "" && !named {
+			input = maps.Clone(input)
+			if input == nil {
+				input = map[string]string{}
+			}
+			input[openauthclient.HostSocketEnv] = hostSocket
+		}
+		r, log, err := startMacosUserService(plan, input)
 		if err != nil {
 			stop()
 			return func() {}, nil, err

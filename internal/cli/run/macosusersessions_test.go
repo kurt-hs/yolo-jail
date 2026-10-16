@@ -24,7 +24,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"net"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -103,33 +102,29 @@ func endpointsIn(env *jsonx.OrderedMap, broker, proxy string) sessionEndpoints {
 // and exits, and A's jail must still reach both of its services through the endpoints it was
 // handed. Two services, because the defect had two halves:
 //
-//   - a HOST-SCOPED service (the claude-oauth-broker's shape): one daemon on the machine, one
-//     front per session. The daemon is a fixture that is already running, so neither launch
-//     spawns it and the test is about the fronts and their endpoint files alone.
+//   - a service that USED TO BE HOST-WIDE (the claude-oauth-broker's shape, `scope: "host"`):
+//     under HD-R1 it is the jail's own, and on macos-user the jail of a workspace's sessions is
+//     its keeper (docs/design/jail-lifetime-last-session-wins.md §9.9), so the pair shares the
+//     keeper's one daemon, keyed by the keeper's dir, and nothing is at the machine-wide
+//     rendezvous. It used to be one machine-wide daemon behind a front per session, and B's
+//     teardown removed A's front's endpoint file.
 //   - a PER-JAIL fronted service: one daemon per session behind its own upstream socket, which
 //     the shared dir's hash also keyed, so B's spawn unlinked A's upstream socket and B's
 //     teardown retired it.
 func TestAMacosUserSessionsExitLeavesAConcurrentSessionsEndpointsWorking(t *testing.T) {
 	if goruntime.GOOS != "linux" {
-		t.Skip("binds host-wide singleton paths and spawns a host daemon")
+		t.Skip("spawns host daemons")
 	}
 	home := packHome(t)
 	ws := t.TempDir()
 	cname := yoloruntime.FromWorkspace(ws)
 
 	const broker, proxy = "yjtest-hd10-broker", "yjtest-hd10-proxy"
-	singletonFixture(t, broker)
-	stamp := paths.HostSingletonPIDFile(broker) + ".capability"
-	if err := os.WriteFile(stamp, []byte("fronted-preamble-v1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(stamp) })
-	spawned := filepath.Join(t.TempDir(), "spawned")
 	writeLocalLoopholeModules(t, home, map[string]string{
-		broker: `{"name": "` + broker + `", "description": "host-wide fixture",
+		broker: `{"name": "` + broker + `", "description": "formerly host-wide fixture",
 			"default_enabled": true, "transport": "loopback-tls",
-			"host_daemon": {"publishes": "socket", "scope": "host",
-				"cmd": ["/bin/touch", "` + spawned + `"]}}`,
+			"host_daemon": {"publishes": "socket", "preamble": false,
+				"detach": true, "cmd": ` + testHostDaemonCmdJSON("hd10-broker") + `}}`,
 		proxy: `{"name": "` + proxy + `", "description": "per-jail fixture",
 			"default_enabled": true, "transport": "loopback-tls",
 			"host_daemon": {"publishes": "socket", "preamble": false,
@@ -189,18 +184,34 @@ func TestAMacosUserSessionsExitLeavesAConcurrentSessionsEndpointsWorking(t *test
 				"defect)\n%s", name, []string{a.broker, a.proxy}[i], aAfter[i], aAfterErr[i], logs)
 		}
 	}
-	if fileExists(spawned) {
-		t.Error("a launch SPAWNED the host-scoped daemon although one was already running")
+	// BOTH SESSIONS SHARE THE KEEPER'S ONE DAEMON of the formerly host-wide service, keyed by the
+	// keeper's dir: the second launch joined the keeper and started nothing.
+	sockA := frontSocketFile(frontShortHash(filepath.Dir(a.broker)), broker)
+	if a.broker != b.broker {
+		t.Errorf("the two sessions of one workspace were handed different %s endpoints (%s, %s); "+
+			"the workspace's keeper holds one for both", broker, a.broker, b.broker)
 	}
-	// A's own teardown still removes A's own dir: per-session state must not become litter.
-	if fileExists(filepath.Dir(a.broker)) {
-		t.Errorf("session A's host-services dir %s outlived session A", filepath.Dir(a.broker))
+	if fileExists(paths.HostSingletonSocket(broker)) || fileExists(paths.HostSingletonPIDFile(broker)) {
+		t.Errorf("a session touched the machine-wide rendezvous %s, which only an older yolo's "+
+			"singleton uses now", paths.HostSingletonSocket(broker))
 	}
-	// And no teardown touched the host-wide daemon both sessions were fronting.
-	if conn, err := net.DialTimeout("unix", paths.HostSingletonSocket(broker), time.Second); err != nil {
-		t.Errorf("the host-wide daemon stopped answering after the sessions ended: %v", err)
+	// The workspace's spawn guard was taken and released by the keeper (HD-D4): it is free now.
+	if lock, err := os.OpenFile(hostDaemonSpawnGuardPath(cname), os.O_RDWR, 0); err != nil {
+		t.Errorf("the keeper did not take the workspace's host-service spawn guard %s: %v",
+			hostDaemonSpawnGuardPath(cname), err)
 	} else {
-		_ = conn.Close()
+		if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			t.Errorf("the workspace's host-service spawn guard is still held after both sessions ended: %v", err)
+		}
+		_ = lock.Close()
+	}
+	// The keeper's end, after the last session, removes its dir and daemon socket: per-jail state
+	// must not become litter.
+	if fileExists(filepath.Dir(a.broker)) {
+		t.Errorf("the keeper's host-services dir %s outlived the last session", filepath.Dir(a.broker))
+	}
+	if fileExists(sockA) {
+		t.Errorf("the keeper's daemon socket %s outlived the last session", sockA)
 	}
 }
 
@@ -401,7 +412,7 @@ func TestADryRunNamesTheSessionDirsShapeAndItsGrant(t *testing.T) {
 	writeLocalLoopholePack(t, home, openAIAuthBrokerName, `{"name": "`+openAIAuthBrokerName+`",
 		"description": "credential service fixture", "default_enabled": true,
 		"transport": "loopback-tls",
-		"host_daemon": {"publishes": "socket", "scope": "host", "cmd": ["/bin/true"]}}`)
+		"host_daemon": {"publishes": "socket", "detach": true, "cmd": ["/bin/true"]}}`)
 	writeUserConfigJSON(t, home, `{"packs": []}`)
 
 	var stdout, stderr bytes.Buffer

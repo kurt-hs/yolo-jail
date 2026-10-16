@@ -867,7 +867,7 @@ hostname from it and knows no tool; `packs/github`'s `github-broker` is the firs
 - **At the spawn**, core writes the list that gate approved to that launch's scope file under
   `~/.local/share/yolo-jail/broker/<source>/scope/` and substitutes its path for the
   `{repository_scope}` token in `host_daemon.cmd`. The token and the block are held together at
-  load, a brokered daemon may not be `scope: "host"`, and the file goes with the daemon.
+  load, and the file goes with the daemon.
 - **With the pack selected**, a workspace `mounts` entry reaching yolo's broker directory or a
   `credential_paths` entry is refused, and one from the user config is disclosed
   (`config/brokerfence.go`).
@@ -888,11 +888,15 @@ daemon deliberately placed outside its own group — a shell-profile line, a cro
 double-forked reparented process. No packaging design changes that, and this one does not claim
 to.
 
-A **host-wide daemon** (`host_daemon.scope: "host"`) is the exception to "teardown kills it": it
-serves every jail, so no jail's teardown stops it. The three yolo ships — `claude-oauth-broker`,
-`openai-auth-broker` and `aws-auth` — instead **exit on their own when their state directory is
-removed or replaced**, which is what retirement does to it, and none of them recreates that
-directory in the meantime ([`statedir.go`](../../internal/hostservice/statedir.go)). So the next
+A **detaching daemon** (`host_daemon.detach: true`) is the one exception to "teardown kills the
+group": a jail's end SIGTERMs it alone and leaves it to finish its work in flight
+([`HD-R1`](../design/host-daemon-ownership.md#HD-R1),
+[§1.3 there](../design/host-daemon-ownership.md#13-the-disposition-detach-do-not-drain-do-not-reap)). The three yolo ships that do —
+`claude-oauth-broker`, `openai-auth-broker` and `aws-auth` — also **exit on their own when their
+state directory is removed or replaced**, which is what retirement does to it, and none of them
+recreates that directory in the meantime ([`statedir.go`](../../internal/hostservice/statedir.go)).
+That rule was written for the host-wide daemons an older yolo shared across jails, which no
+teardown stopped, and it still covers one of those left running. So the next
 launch that selects the pack again finds no daemon and spawns one against the state that exists
 now, rather than adopting one whose state was archived — for the Claude broker, one that would
 never mint the CA again, since it mints only when it starts.

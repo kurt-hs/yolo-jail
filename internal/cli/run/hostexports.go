@@ -32,10 +32,11 @@ func ClaudeSharedCredentialDir(packs []*packload.Pack) string {
 	return claudeSharedCredentialDir(packs)
 }
 
-// HostScopedEndpoints is hostScopedEndpoints: the host-scoped loopholes that are active and whose
-// pack may run host code, for runtime rt over cfg's `loopholes` block. The host notch asks it
-// whether the claude-oauth-broker may run for a `yolo host -- claude` launch (CL-D27), the same
-// predicate a jail launch's brokerLoopholeActive is.
-func HostScopedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
-	return hostScopedEndpoints(rt, cfg)
+// PromisedEndpoints is promisedEndpoints: the credential loopholes (`detach`, loopback-tls) that
+// are active and whose pack may run host code, for runtime rt over cfg's `loopholes` block. The
+// host notch asks it whether the claude-oauth-broker may run for a `yolo host -- claude` launch
+// (CL-D27), the same predicate a jail launch's brokerLoopholeActive is. It was
+// HostScopedEndpoints until HD-R1 retired `host_daemon.scope: "host"`, which keyed the set.
+func PromisedEndpoints(rt string, cfg *jsonx.OrderedMap) []string {
+	return promisedEndpoints(rt, cfg)
 }

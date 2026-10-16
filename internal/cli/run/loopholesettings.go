@@ -94,7 +94,9 @@ func (o *Options) publishLoopholeSettings(plan *preparedLoopholeSettings) {
 	}
 	o.settingsSnapshots = make(map[string]*ownedSettingsSnapshot)
 	for _, lp := range plan.candidates {
-		if plan.checked[lp.Name] && lp.HostDaemon != nil && lp.HostDaemon.Scope != loopholes.ScopeHost {
+		// EVERY CHECKED DAEMON GETS A PRIVATE SNAPSHOT: since HD-R1 each host daemon is this
+		// launch's own, so another workspace cannot swap the bytes it starts on.
+		if plan.checked[lp.Name] {
 			path, cleanup, err := loopholes.WritePrivateSettingsSnapshot(lp, plan.bytes[lp.Name])
 			if err != nil {
 				o.cleanupSettingsSnapshots()
@@ -105,12 +107,6 @@ func (o *Options) publishLoopholeSettings(plan *preparedLoopholeSettings) {
 			}
 			o.settingsSnapshots[lp.Name] = &ownedSettingsSnapshot{
 				path: path, bytes: append([]byte(nil), plan.bytes[lp.Name]...), cleanup: cleanup,
-			}
-			continue
-		}
-		if plan.checked[lp.Name] {
-			o.settingsSnapshots[lp.Name] = &ownedSettingsSnapshot{
-				path: loopholes.SettingsFileFor(lp.Name), bytes: append([]byte(nil), plan.bytes[lp.Name]...),
 			}
 			continue
 		}

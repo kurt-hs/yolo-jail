@@ -27,8 +27,8 @@ package run
 //
 // It mirrors per-launch pack trees (docs/reference/pack-system.md#oq-pk2): each launch owns
 // what it writes, tears down only its own, and a dead owner's copy is collected on evidence.
-// The host-wide daemon behind a `scope: "host"` loophole is untouched by any of this: it was
-// never in the dir, and each session's front over it lives in that session's own yolo process.
+// A host-wide daemon an older yolo started is untouched by any of this: it was never in the
+// dir, and no session of this yolo fronts or starts one.
 
 import (
 	"fmt"

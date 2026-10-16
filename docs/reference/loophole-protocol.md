@@ -195,7 +195,7 @@ version at startup.
 
 `internal/hostservice` owns the accept loop and the request harness but **not** a
 transport — it owns three, and each caller names the one it wants. There is deliberately
-**no `Serve`**: the unqualified name is what carried the host-wide broker singleton across
+**no `Serve`**: the unqualified name is what carried the broker (then a host-wide singleton) across
 a transport boundary by accident, with its signature preserved and every test still green.
 
 | Entry point | Binds / publishes | Who dials it | Tier 2? |
@@ -491,24 +491,22 @@ launch waits for the answer. The daemon answers within it, from what it already 
 enough, and clamps it to a cap whoever sends it. A non-zero exit, a malformed answer or no answer
 within the budget plus a short margin prints one dim line saying the daemon could not be asked.
 
-**One non-zero exit refuses a fresh launch**: a `scope: "host"` daemon whose first stderr line
-starts `unknown action:` and names `launch-check`, the answer yolo's daemons give an action they do
-not know, when an earlier yolo started it. Nothing restarts a host-wide daemon when yolo changes,
-so it kept running through the upgrade. The launch stops before the jail starts, says the daemon
-predates this yolo, and names `yolo host-daemon restart <name>`, which is safe for the jails
-already running: each one's front dials the daemon's socket for every connection, so it reaches
-the new daemon on its next request. No launch restarts the daemon itself
-([OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)). A host-wide daemon that does not speak
-the connection preamble refuses the launch the same way, and is not asked
-([`HD-D5`](../design/host-daemon-ownership.md#HD-D5)).
+**One fact refuses a fresh launch, and no answer does**: a machine-wide copy of a daemon this
+launch starts, left running by a yolo older than
+[`HD-R1`](../design/host-daemon-ownership.md#HD-R1), which gives each jail its own. It works on
+the same credential as this launch's copy without the record this yolo's copies share, so the
+launch stops before the jail starts, names `yolo host-daemon stop --host-wide <name>`, and says
+that the jails the older yolo launched lose that service until they are launched again. No launch
+stops the older copy itself ([`HD-D21`](../design/host-daemon-ownership.md#HD-D21), which keeps
+[OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)'s refusal for the one host-wide daemon that
+can still exist).
 
-Three cases keep a yellow line instead. An attach prints the line naming the same command and
-enters the jail. A `scope: "jail"` daemon that gives the same answer was just started by this
-launch, and a host-wide one that this yolo, or another that knows the check, started gives it
-too; either way the manifest declares a check its program does not answer, and no restart
-changes the program, so the line says that and names no command. Which yolo started a host-wide
-daemon is read from the `<pid file>.launch-check` stamp its spawn writes
-([`HD-D6`](../design/host-daemon-ownership.md#HD-D6)).
+The daemon a fresh launch asks is always the copy it just started, so a daemon that answers
+`unknown action:` naming `launch-check` has a manifest declaring a check its program does not
+answer: the line says that and names no command. An attach never refuses. Entering a jail an older
+yolo launched, it reaches that yolo's machine-wide copy, and when that copy gives the same answer
+the line names its stop and launching the jail again.
+
 The first daemon to declare it is `aws-auth`
 ([`agent-credentials.md`](agent-credentials.md#when-the-sso-session-lapses)).
 

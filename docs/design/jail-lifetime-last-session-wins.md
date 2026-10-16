@@ -362,7 +362,7 @@ and the cells marked MEASURED.
 | The cgroup delegate | a goroutine (`startCgroupDelegateInProc`) | stopped | stopped | dies with the process |
 | Loophole fronts | goroutines (`frontRun`), each publishing an endpoint file into the host-services dir | closed, and the dir removed by `stopLoopholes`' guards | the same | die; their endpoint files name dead ports until a reaper's `stopLoopholes(nil, …)` |
 | Fronted per-jail daemons | Setsid children whose stop handle only it holds (`startExternalService`, `killServiceGroup`) | group SIGTERM, 5 s, SIGKILL | the same | orphaned: the reaper removes their dir, not them, INFERRED from `stopLoopholes(nil, …)` |
-| Host-wide singletons (the Claude broker and the other `scope: "host"` daemons) | ensured, not owned (`brokerEnsure`, `startHostSingleton`) | outlive it by design, until [HD-R1](host-daemon-ownership.md#HD-R1) is built | the same | the same |
+| The credential daemons (the Claude broker, the OpenAI service, `aws-auth`), host-wide singletons until [HD-R1](host-daemon-ownership.md#HD-R1) | the keeper's own since HD-R1 (2026-10-06): started with the jail's other host services and detached at its end (the manifest's `detach`), a refresh in flight finishing first | end with it | the same | the same |
 | The credential-view registration | a record the broker keeps (`registerClaudeCredentialView`) | outlives it | outlives it | outlives it |
 | Tracking file, owner-PID file, home skeleton, pack tree and its live-tree record | files only this launch knows the names of | removed once the container is known gone (`forgetGoneContainer`, `clearOwnerPID`) | the same | left for the reaper and `yolo prune` |
 | Scratch volumes | their names, minted per launch (`newScratchLaunchID`) | handed to the detached remover | the same | left for the housekeeping slot's reap |
@@ -388,8 +388,8 @@ Setsid fronted daemons are orphaned by a SIGKILL there too, INFERRED. SOURCED ot
 [`host.go`](../../internal/cli/host.go)), so no yolo process remains. When a launch-owned service
 or the managed Codex adapter is needed, it stays resident as their parent
 (`launchservice.RunAgent`, [`agent.go`](../../internal/launchservice/agent.go)): Setpgid
-children with a lifeline, stopped when the agent exits. Two host launches share the host-wide
-brokers, and every `yolo host -- codex` on the machine, in any workspace, also shares one managed
+children with a lifeline, stopped when the agent exits. Since HD-R1 each host launch starts the
+credential daemons it needs as its own (HD-D11, HD-D23 in host-daemon-ownership.md), and every `yolo host -- codex` on the machine, in any workspace, also shares one managed
 Codex home (`host-agents/<pack>` under the machine-wide store, `prepare` in
 [`host.go`](../../internal/openaiauthhost/host.go)): its `auth.json`, one caller token, and a
 shared lock that counts the home's live launches (`sharedCallerToken`,

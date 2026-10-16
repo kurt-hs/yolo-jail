@@ -1275,7 +1275,9 @@ func (o *Options) macosUserKeeperPlanFor(cfg *jsonx.OrderedMap, rt, cname string
 			listens[a] = true
 		}
 	}
-	for _, st := range o.macosUserServiceStarts(channel) {
+	// No OpenAI socket yet: the keeper starts that daemon after this, and fills it in
+	// (startMacosUserServices).
+	for _, st := range o.macosUserServiceStarts(channel, "") {
 		h := heldFrom(st.plan)
 		h.Input, h.PointedAt, h.Worker = st.input, st.pointedAt, st.worker
 		plan.LaunchServices = append(plan.LaunchServices, h)

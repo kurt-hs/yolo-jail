@@ -28,6 +28,10 @@ func (f *fakeManagedHostLaunch) Argv(argv []string) ([]string, []string) {
 
 func (*fakeManagedHostLaunch) NotServed(string) string { return "" }
 
+func (*fakeManagedHostLaunch) HostSocket() string { return "" }
+
+func (*fakeManagedHostLaunch) Close() {}
+
 func TestGeneratedCodexWrapperReachesManagedHostLaunch(t *testing.T) {
 	const yolo = "/usr/local/bin/yolo"
 	if body := hostwrap.BodyFor(yolo, "codex"); !strings.Contains(body, `exec `+yolo+` host -- codex "$@"`) {

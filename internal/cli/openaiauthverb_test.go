@@ -15,16 +15,53 @@ package cli
 // some callee changes: revert the registry row and the first fails, revert the
 // `case "openai-auth"` arm in runInternal and the second does.
 //
-// ⚠ NO SUBCOMMAND IS EXERCISED, deliberately. `status`, `import` and `logout` each
-// resolve the daemon's private socket through ensureSingleton, which SPAWNS the
-// machine-wide credential daemon — a unit test must not start a host daemon, and
-// the two mutations act on a real credential. The bare verb and `--help` are the
-// two paths that return before any of that.
+// ONE SUBCOMMAND IS EXERCISED, and only since HD-R1 (docs/design/host-daemon-ownership.md):
+// `status` starts the verb's OWN daemon (openaiauthhost's startPrivate), under the test's
+// temp HOME and at a socket no other launch uses, and ends it with the verb. It used to
+// ensure the machine-wide daemon, which no unit test may start. The two mutations stay
+// unexercised here: they act on a credential, and openaiauthhost's operator tests drive them
+// against a daemon of their own.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/openaiauth"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
+
+// THE VERB'S OWN DAEMON, START TO END (HD-R1): `yolo openai-auth status` on a machine with no
+// login starts a daemon of its own, which answers, and is gone with its sockets once the verb
+// returns; nothing appears at the machine-wide rendezvous an older yolo's daemon used. Hand the
+// verb a daemon that is never stopped and its private socket outlives it.
+func TestOpenAIAuthStatusStartsAndEndsItsOwnDaemon(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	rc, stdout, stderr := captureDispatchRC(t, []string{"openai-auth", "status"})
+	if rc != 0 || !strings.Contains(stdout, "logged_in") {
+		t.Fatalf("`yolo openai-auth status` rc = %d, want 0 and a status\nstdout: %s\nstderr: %s",
+			rc, stdout, stderr)
+	}
+	pattern := filepath.Join(paths.HostSingletonDir, "yolo-openai-host-*")
+	var left []string
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		left, _ = filepath.Glob(pattern)
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
+	}
+	if len(left) > 0 {
+		t.Errorf("the verb's own daemon left %v after the verb returned: it was not ended with it", left)
+	}
+	if _, err := os.Lstat(paths.HostSingletonSocket(openaiauth.LoopholeName)); err == nil {
+		t.Errorf("the verb created the machine-wide %s, which only an older yolo's daemon uses",
+			paths.HostSingletonSocket(openaiauth.LoopholeName))
+	}
+}
 
 // TestOpenAIAuthIsAPublicVerb pins the registry row itself, through the front door
 // every other dispatch test in this package uses. Without the row, dispatchNative

@@ -152,9 +152,8 @@ func TestPrepareMountSentinelsSkipsWhatTheArgvWouldNotMount(t *testing.T) {
 }
 
 // THE MISSING-STATE-FILE WARNING NAMES ITS NEXT STEP (docs/reference/happy-path-principle.md),
-// and the step depends on who writes the file: a host-scoped daemon's file is restored by
-// restarting that daemon, so the line names the one command that does it; a per-jail host
-// daemon writes its file when this launch starts it, so the line says the next launch has it
+// and the step depends on who writes the file: a host daemon writes its file when this launch
+// starts it (HD-R1 retired the host-wide daemon whose file a restart restored), so the line says the next launch has it
 // and names `yolo check` for when it does not; a file nothing yolo runs writes is the
 // manifest's to fix; and the sentinel is yolo's own marker, whose failure to write was reported
 // above it.
@@ -162,14 +161,6 @@ func TestMissingStateFileWarningNamesTheNextStep(t *testing.T) {
 	unsetJail(t)
 	root := sentinelState(t)
 	md := modsDir(t)
-	host := mkdir(t, filepath.Join(md, "hosted"))
-	writeManifest(t, host, map[string]any{
-		"name": "hosted", "description": "x", "transport": "loopback-tls",
-		"state_files": []any{"leaf.crt"},
-		"host_daemon": map[string]any{"cmd": []any{"/bin/true", "--socket", "{socket}"},
-			"publishes": "socket", "scope": "host"},
-		"jail_daemon": map[string]any{"cmd": []any{"true"}, "restart": "no"},
-	})
 	perJail := mkdir(t, filepath.Join(md, "perjail"))
 	writeManifest(t, perJail, map[string]any{
 		"name": "perjail", "description": "x", "transport": "loopback-tls",
@@ -180,7 +171,7 @@ func TestMissingStateFileWarningNamesTheNextStep(t *testing.T) {
 	})
 	sentinelModule(t, md, "bare", []any{"handmade.txt"})
 	sentinelModule(t, md, "marked", []any{MountSentinelName})
-	for _, name := range []string{"hosted", "perjail", "bare", "marked"} {
+	for _, name := range []string{"perjail", "bare", "marked"} {
 		mkdir(t, filepath.Join(root, name))
 	}
 	warnings := captureWarnings(t)
@@ -189,9 +180,6 @@ func TestMissingStateFileWarningNamesTheNextStep(t *testing.T) {
 	_ = set.RuntimeArgsFor(set.Enabled(), "")
 	got := strings.Join(*warnings, "\n")
 	for _, want := range []string{
-		"loophole hosted: skipping state file, host source missing: " +
-			filepath.Join(root, "hosted", "leaf.crt") +
-			" — its host daemon writes it: restart that daemon with `yolo host-daemon restart hosted`, then launch again",
 		"loophole perjail: skipping state file, host source missing: " +
 			filepath.Join(root, "perjail", "leaf.crt") +
 			" — its host daemon writes it once this launch starts it, after the mounts are assembled; " +

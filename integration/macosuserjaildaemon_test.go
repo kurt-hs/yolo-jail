@@ -289,7 +289,7 @@ const localGuestAdapterManifest = `{
     "cmd": ["yolo", "internal", "daemon", "openai-auth-broker",
             "--socket", "{socket}", "--state-file", "{state}/credentials.json"],
     "publishes": "socket",
-    "scope": "host"
+    "detach": true
   },
   "jail_daemon": {
     "cmd": ["yolo-jaild", "openai-auth-adapter", "--listen", "{listen}"],

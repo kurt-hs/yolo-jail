@@ -48,8 +48,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
-	"github.com/mschulkind-oss/yolo-jail/internal/openauthclient"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -340,6 +338,21 @@ func notOpenedWhy(set loopholes.Set, refused []launchservice.RefusedDoorway, nam
 	return "which this launch does not open: its loophole composes no doorway at the host"
 }
 
+// HostOpenAIServiceOn reports whether a `yolo host` launch of packs, under the user-scope cfg,
+// runs the OpenAI credential service: its loophole is enabled and active, and its pack's host code
+// may run. A launch-owned service that reaches the credential service host to host (the wire
+// bridge's Codex route, HS-D3) is then handed a daemon of the launch's own (HD-R1), started for
+// it when the prelaunch started none.
+func HostOpenAIServiceOn(cfg *jsonx.OrderedMap, packs []*packload.Pack) bool {
+	set := loopholes.NewSet(loopholes.DiscoverOptions{
+		LoopholesConfig:   cfgMap(cfg, "loopholes"),
+		PackModules:       packLoopholeModules(packs),
+		PackSupersessions: packSupersessions(packs),
+	})
+	lp, ok := set.Lookup(openAIAuthBrokerName)
+	return ok && lp.Active() && set.MayRunHostCode(lp)
+}
+
 // ForService is every doorway this launch opens for the launch-owned service that carries its
 // clientless agent, and not for the agent (PlanHostDoorwaysFor), sorted; nil for none. Only the
 // ones it opens: a doorway left closed (its loophole off) is not the service's either.
@@ -402,7 +415,7 @@ func (d *HostDoorways) CallerTokens() map[string]string {
 type HostDoorwayStart func(*launchservice.Plan, map[string]string) (*launchservice.Running, error)
 
 // Start opens every planned doorway for the command agent, after the host services they
-// forward to: each doorway's loophole's host service, ensured as the host-wide singleton it is
+// forward to: each doorway's loophole's host service, spawned for this launch alone (HD-R1)
 // and fronted for this launch in a session dir of the launch's own (startLoopholesMatching). It
 // returns the running doorways for the agent's parent to stop when the agent exits, and stop,
 // which closes the fronts and removes the session dir after them; lines is what the launch
@@ -433,32 +446,38 @@ func (d *HostDoorways) Start(cfg *jsonx.OrderedMap, workspace, agent string, std
 	// Narrowed to the loopholes this start runs, the doorways' own services (the allow the spawn
 	// below is handed), so another loophole those packs ship is not announced.
 	names := launchservice.Names(d.plans)
-	o.notePackHostExec(d.packs, func(name string) bool {
-		return slices.Contains(names, name)
-	})
-	handles := o.startLoopholesMatching(d.set, runtime.FromWorkspace(workspace), hostNotchRuntime, cfg,
-		allow)
+	o.notePackHostExec(d.packs, func(name string) bool { return slices.Contains(names, name) })
+	// THIS LAUNCH'S OWN HOST SERVICES (HD-R1, hostdaemonperjail.go), started under the
+	// workspace's spawn guard as a macos-user session's are: two `yolo host` launches of one
+	// workspace are one identity too.
+	cname := runtime.FromWorkspace(workspace)
+	guard, gerr := o.takeHostDaemonSpawnGuard(cname)
+	if gerr != nil {
+		return nil, stop, nil, errors.New(hostDaemonSpawnGuardProblem(cname, gerr))
+	}
+	handles := o.startLoopholesMatching(d.set, cname, hostNotchRuntime, cfg, allow)
+	guard.Close()
 	stopServices := func() { o.endServicesSession(handles) }
 	if o.startupRefusal != nil {
 		stopServices()
 		return nil, func() {}, lines, o.startupRefusal
 	}
-	// A HOST-WIDE DAEMON THAT PREDATES THE PREAMBLE REFUSES THIS LAUNCH TOO (HD-D5 (3)): its doorway
-	// would forward every request through a front it misreads, so the agent would start without the
-	// service. This notch asks no launch check, so the preamble is the only half of the jail
-	// launch's refusal it owes (olderDaemonRefusal).
-	if refused := preambleRefusal(handles); refused != nil {
+	// AN OLDER YOLO'S MACHINE-WIDE COPY OF A SERVICE THIS LAUNCH STARTED REFUSES IT TOO (HD-D21), as
+	// it refuses a jail launch: it works on the same credential without the record this launch's
+	// copy shares. This notch asks no launch check, so it takes the refusal alone
+	// (olderHostWideRefusal).
+	if refused := olderHostWideRefusal(handles); refused != nil {
 		stopServices()
 		return nil, func() {}, nil, errors.New(refused.text())
 	}
 	// The two routes a doorway reaches its host daemon by (doorwayInput's, for macos-user): the
-	// endpoint file of each host service this session published, and the OpenAI service's
-	// private socket.
-	env := map[string]string{openauthclient.HostSocketEnv: openaiauthhost.HostSocketPath()}
+	// endpoint file of each host service this session published, and the private socket of the
+	// OpenAI service this session started, when it started one.
+	env := doorwayInput(nil, openAIHostSocket(handles))
 	for _, h := range handles {
 		env[hostServiceLaunchEnvVar(h)] = h.hostPath
-		lines = append(lines, fmt.Sprintf("using the host-wide %q service for this launch, "+
-			"through a front of its own that closes when %s exits: %s", h.name, agent, h.hostPath))
+		lines = append(lines, fmt.Sprintf("started the %q service for this launch, behind a front "+
+			"of its own; both end when %s exits: %s", h.name, agent, h.hostPath))
 	}
 	for _, plan := range d.plans {
 		r, serr := start(plan, env)

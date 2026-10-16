@@ -603,7 +603,7 @@ type PackLoopholeDecl struct {
 // selects the pack.
 //
 // WHAT NOW PROTECTS `claude-oauth-broker`, the one name yolo still keys on by hand
-// (`yolo broker status`, `yolo check`'s broker section, brokerEnsure, the in-jail
+// (`yolo broker status`, `yolo check`'s broker section, mintBrokerCertificates, the in-jail
 // terminator's endpoint variable), is this function's REMAINING half plus the origin gate,
 // and both are worth stating because neither is a list:
 //

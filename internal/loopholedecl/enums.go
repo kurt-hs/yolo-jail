@@ -81,41 +81,35 @@ const (
 	RequestEndEOF = "eof"
 )
 
-// host_daemon.scope values: WHO THE DAEMON BELONGS TO — one process per jail, or
-// one process per HOST serving every jail on it.
+// host_daemon.scope values: WHO THE DAEMON BELONGS TO. One answer is left.
 //
-// This is the third question in the same grammar as `publishes` (what the daemon
-// brings up) and `request_end` (how a request ends on it), and it is deliberately
-// a scope rather than a `singleton: true` bool. The dimension is "what is this
-// daemon shared across", and naming it for today's only interesting answer would
-// make a third answer look like a violation instead of an addition — the same
-// argument docs/design/broker-as-a-pack.md §5.5 makes for calling the connection
-// preamble a preamble rather than an identity frame.
+// The key used to have two: ScopeJail, and "host", ONE daemon per host serving every jail on
+// it, ensured under a host-wide flock and never stopped by a jail's end. "host" is RETIRED
+// (docs/design/host-daemon-ownership.md, HD-R1, ruled 2026-09-20): every host daemon is now
+// spawned by the launch that wants it and ends with it. The reason the value existed, that a
+// second copy of the Claude OAuth broker would race the single-use refresh token, was false in
+// the code: each daemon serializes on a flock keyed by its state file, never by the process, so
+// N copies in one home take one kernel lock (that doc's §1.1). What stays shared is that state.
 //
-// It exists because ONE loophole in the tree cannot be spawned per jail at all:
-// the Claude OAuth broker holds the flock that stops two jails burning the same
-// single-use refresh token, so a second copy of it is not a second daemon, it is
-// the race the loophole exists to prevent (docs/reference/agent-credentials.md §2.5,
-// broker-as-a-pack.md §5.2). Before this key, the run pipeline expressed that by
-// testing the loophole's NAME.
+// The key survives so a manifest that spells the default still decodes; "host" is refused by
+// the strict (authoring) decoder with the migration (retiredScopeHint), the way a retired
+// transport is, and read as ScopeJail with a skew note across the version boundary
+// (readRetiredScopeAsJail), since every jail an older yolo launched booted manifests saying it.
 const (
-	// ScopeJail (the default): one daemon per jail. yolo spawns it at launch,
-	// waits for it, and kills its process group when the jail ends.
+	// ScopeJail (the default, and the only value): one daemon per jail. yolo spawns it at
+	// launch, waits for it, and stops it when the jail ends (`detach` says how).
 	ScopeJail = "jail"
-	// ScopeHost: ONE daemon per host, serving every jail on the machine. yolo
-	// ENSURES it (idempotently, under a host-wide flock) instead of spawning it,
-	// binds it at a fixed host-wide socket derived from the loophole's name
-	// (paths.HostSingletonSocket), and gives each jail its own front over that one
-	// socket. A jail ending closes ITS FRONT and never touches the daemon, which
-	// other jails are still using.
-	//
-	// It requires PublishesSocket, and that is refused at load rather than
-	// documented: under PublishesEndpoint the daemon publishes the endpoint file
-	// itself, and an endpoint file carries ONE jail's bearer token — so a
-	// host-wide daemon publishing one would hand every jail the same credential,
-	// or hand N-1 of them a credential minted for someone else.
-	ScopeHost = "host"
+	// RetiredScopeHost is the retired value, named so its refusal can carry the migration.
+	RetiredScopeHost = "host"
 )
+
+// retiredScopeHint is the migration a manifest declaring `"scope": "host"` is refused with.
+func retiredScopeHint() string {
+	return " — 'host' was retired (docs/design/host-daemon-ownership.md, HD-R1): every jail now " +
+		"starts its own host daemon and ends it with the jail, and the state the daemons share " +
+		"(a credentials file and the flock beside it) is what serializes them. Delete 'scope'. " +
+		"A daemon whose work in flight must finish when its jail ends declares 'detach': true."
+}
 
 // Valid enum values. Kept as ordered slices in sorted order so the
 // "not in [...]" error strings render deterministically. Unexported because a
@@ -126,7 +120,7 @@ var (
 	validRestarts    = []string{"always", "on-failure", "no"}
 	validPublishes   = []string{PublishesEndpoint, PublishesSocket}
 	validRequestEnds = []string{RequestEndEOF, RequestEndFramed}
-	validScopes      = []string{ScopeHost, ScopeJail}
+	validScopes      = []string{ScopeJail}
 )
 
 // ValidTransports returns the accepted `transport` values.

@@ -54,8 +54,9 @@ var registerView = func(loc claudeview.Location, rt, cname string) (oauthbroker.
 
 // registerClaudeCredentialView registers this workspace's view with the host broker and writes
 // it from the machine's login, when the launch delivers the view. It runs after the host
-// services started, because the broker singleton's ensure is what creates the state directory
-// the registration lives in.
+// services started, because the broker's start is what creates the state directory the
+// registration lives in. That broker is this jail's own where HD-R1 is built
+// (hostdaemonperjail.go), and it keeps every registered view current while the jail runs.
 //
 // Never fatal. A launch whose registration failed still starts, and says why: its Claude will
 // ask for /login, which is the failure the user can see and act on, and a refused launch would

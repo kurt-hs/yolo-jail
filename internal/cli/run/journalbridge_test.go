@@ -48,12 +48,6 @@ func TestMain(m *testing.M) {
 	if len(os.Args) >= 4 && os.Args[1] == "-front-upstream-child" {
 		os.Exit(frontUpstreamChildMain(os.Args[2], os.Args[3]))
 	}
-	// `<test-binary> -settings-echo-child <socket> <settings>` is the fake host-wide daemon
-	// for the settings-restart tests (singletonsettings_test.go): it reads its settings file
-	// ONCE, at startup, as every real one does, and answers each connection with it.
-	if len(os.Args) >= 4 && os.Args[1] == "-settings-echo-child" {
-		os.Exit(settingsEchoChildMain(os.Args[2], os.Args[3]))
-	}
 	if len(os.Args) >= 4 && os.Args[1] == "-settings-check-child" {
 		os.Exit(settingsCheckChildMain(os.Args[2], os.Args[3], "validator"))
 	}
@@ -69,10 +63,11 @@ func TestMain(m *testing.M) {
 	if len(os.Args) >= 5 && os.Args[1] == "-settings-snapshot-daemon" {
 		os.Exit(settingsSnapshotDaemonChildMain(os.Args[2], os.Args[3], os.Args[4]))
 	}
-	// `<test-binary> -launch-check-older-child <socket>` is a per-launch daemon behind yolo's front
-	// that does not know the launch check (launchcheck_test.go).
-	if len(os.Args) >= 3 && os.Args[1] == "-launch-check-older-child" {
-		os.Exit(launchCheckOlderChildMain(os.Args[2]))
+	// `<test-binary> -splice-child <socket> <upstream>` is a spawned per-jail daemon that relays
+	// every connection to a handler the test serves in its own process (hostdaemonperjail_test.go),
+	// so a per-jail spawn reaches the real handler a fixture stands up.
+	if len(os.Args) >= 4 && os.Args[1] == "-splice-child" {
+		os.Exit(spliceChildMain(os.Args[2], os.Args[3]))
 	}
 	// `<test-binary> -bind-probe-child <host:port>` binds the address once, as a jail daemon does
 	// at boot, and says whether it could (keeperreservedports_test.go).

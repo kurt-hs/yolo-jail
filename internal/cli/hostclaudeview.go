@@ -19,93 +19,92 @@ package cli
 // nothing changed, Claude on the user's own login, and says why and what to look at.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/execx"
+	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// hostClaudeBrokerEnsure starts the host-wide claude-oauth-broker when none is running, and
-// refuses one too old to keep a host view current (ensureHostViewBroker), with its lines on errw
-// (a host agent's stdout is its own). A variable so a test can stand in for the daemon; the
-// registration after it is real.
-var hostClaudeBrokerEnsure = func(errw io.Writer) error {
-	return ensureHostViewBroker(broker.RealDeps(), errw)
-}
-
-// hostViewsMarkGrace is how long after its spawn a broker has to mark itself as keeping host
-// views (oauthbroker.HostViewsKeptBy) before a launch takes it for one that never will. Its first
-// tick runs as it starts, so a broker of this build marks itself at once unless another process
-// holds the refresh lock; the grace is for a broker another launch started moments ago.
-const hostViewsMarkGrace = 10 * time.Second
-
-// ensureHostViewBroker is the ensure behind hostClaudeBrokerEnsure, over deps: nil when a broker
-// that keeps host views is running once it returns.
+// hostClaudeBrokerEnsure starts THIS LAUNCH'S OWN claude-oauth-broker, which keeps the view
+// current for as long as the launch's process lives, with its lines on errw (a host agent's stdout
+// is its own). A variable so a test can stand in for the daemon; the registration after it is
+// real.
 //
-// A BROKER OLDER THAN HOST VIEWS IS NAMED, NOT REPLACED (CL-D28). A live broker a yolo from before
-// CL-D27 started answers every connection, and skips every dir-only registration as unparseable,
-// so the view this launch registers would be written at registration and never refreshed: host
-// Claude would lose its login when that token expires, with nothing saying why. The running
-// broker marks itself when it keeps host views; one that has not, past hostViewsMarkGrace from its
-// spawn, is reported, with the command that replaces it, and the launch sets nothing. It is not
-// stopped here, for HD-D2's reason (docs/design/host-daemon-ownership.md, item 6, and its modes 3
-// and 4): a version difference warns and never kills, since the broker's background refresh is
-// not drained on SIGTERM and a restart could cut a single-use refresh in flight.
-func ensureHostViewBroker(deps broker.Deps, errw io.Writer) error {
-	deps.Out = errw
-	oauthbroker.ConfigureStore()
-	started := false
-	if !broker.BrokerIsAlive(deps) {
-		ensured := broker.EnsureSingleton(deps)
-		if ensured.Stale != nil {
-			return fmt.Errorf("the host-wide broker is running other settings (%s) and could not be "+
-				"restarted; `yolo host-daemon restart %s` restarts it",
-				strings.Join(ensured.Stale.Changed, ", "), broker.BrokerLoopholeName)
-		}
-		started = ensured.Started
-	}
-	if !broker.BrokerIsAlive(deps) {
-		return fmt.Errorf("the host-wide %s is not running, so nothing would keep the view current "+
-			"(its log: %s); `yolo host-daemon restart %s` starts it", broker.BrokerLoopholeName,
-			deps.LogPath, broker.BrokerLoopholeName)
-	}
-	if started {
-		return nil // this build's own broker, spawned just now
-	}
-	pid, _ := broker.BrokerReadPID(deps)
-	if awaitHostViewsMark(deps, pid) {
-		return nil
-	}
-	return fmt.Errorf("the host-wide %s running now (pid %d) was started by a yolo older than "+
-		"`yolo host` views and would never refresh this one; `yolo host-daemon restart %s` "+
-		"replaces it (yolo does not stop a shared broker itself, which could cut a refresh in flight)",
-		broker.BrokerLoopholeName, pid, broker.BrokerLoopholeName)
+// A DAEMON OF ITS OWN, AS EVERY JAIL-LESS ACTOR'S IS (HD-R1, HD-D11 and HD-D23 in
+// docs/design/host-daemon-ownership.md): it used to ensure the one machine-wide broker, which
+// HD-R1 retired, and to refuse one too old to keep host views (CL-D28's mark). The daemon spawned
+// here is this build's, so it keeps host views by construction. It is handed this process's pid
+// (`--end-with-pid`), which the exec into Claude keeps, so it ends with the agent; it shares the
+// credential, the refresh lock and the replaced-token record with every jail's broker (HD-D16).
+var hostClaudeBrokerEnsure = func(errw io.Writer) error {
+	_, err := startHostViewBroker(errw)
+	return err
 }
 
-// awaitHostViewsMark reports whether the broker running as pid has marked itself as keeping host
-// views, waiting for the mark until hostViewsMarkGrace past its pid file's write (its spawn).
-func awaitHostViewsMark(deps broker.Deps, pid int) bool {
-	deadline := deps.Now()
-	if fi, err := os.Stat(deps.PIDFilePath); err == nil {
-		deadline = fi.ModTime().Add(hostViewsMarkGrace)
+// hostViewBrokerStartTimeout bounds the wait for the spawned broker's socket to accept.
+const hostViewBrokerStartTimeout = 5 * time.Second
+
+// hostViewBrokerArgv is the private broker's argv: yolo's own daemon at socket, ending with pid.
+func hostViewBrokerArgv(socket string, pid int) []string {
+	return execx.SelfExecArgv([]string{"yolo", "internal", "daemon", broker.BrokerLoopholeName,
+		"--socket", socket, "--end-with-pid", strconv.Itoa(pid)})
+}
+
+// startHostViewBroker spawns the private broker and returns its socket once it accepts. Its log is
+// the one every copy of the broker appends to (broker.BrokerLogPath).
+func startHostViewBroker(errw io.Writer) (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("name the broker's socket: %w", err)
 	}
-	for {
-		if oauthbroker.HostViewsKeptBy(pid) {
-			return true
+	socket := filepath.Join(paths.HostSingletonDir,
+		fmt.Sprintf("yolo-claude-host-%d-%s.sock", os.Getpid(), hex.EncodeToString(b)))
+	argv := hostViewBrokerArgv(socket, os.Getpid())
+	logPath := broker.BrokerLogPath()
+	_ = os.MkdirAll(filepath.Dir(logPath), 0o755)
+	cmd := exec.Command(argv[0], argv[1:]...)
+	if lf, lerr := logcap.Open(logPath, 0o644); lerr == nil {
+		cmd.Stdout, cmd.Stderr = lf, lf
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start the %s for this launch: %w", broker.BrokerLoopholeName, err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	for deadline := time.Now().Add(hostViewBrokerStartTimeout); ; time.Sleep(25 * time.Millisecond) {
+		if broker.SingletonReachable(socket, time.Second) {
+			return socket, nil
 		}
-		if !deps.Now().Before(deadline) {
-			return false
+		select {
+		case <-exited:
+			return "", fmt.Errorf("the %s this launch started exited at startup; its log: %s",
+				broker.BrokerLoopholeName, logPath)
+		default:
 		}
-		deps.Sleep(broker.SocketPollInterval)
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
+			return "", fmt.Errorf("the %s this launch started did not answer within %s; its log: %s",
+				broker.BrokerLoopholeName, hostViewBrokerStartTimeout, logPath)
+		}
 	}
 }
 
@@ -114,7 +113,7 @@ func awaitHostViewsMark(deps broker.Deps, pid int) bool {
 // not ends it silently: the switch resolves on for the host; the launched program's own pack
 // links Claude's credential through a `shared_credentials` hook (the pack is the Claude the view is
 // for, run.ClaudeSharedCredentialDir); and the claude-oauth-broker loophole is active with a pack
-// that may run host code (run.HostScopedEndpoints, the jail launch's own predicate).
+// that may run host code (run.PromisedEndpoints, the jail launch's own predicate).
 func hostClaudeView(launch *hostComposition, environ []string, errw io.Writer) []string {
 	if config.InJail() || !claudeview.Selected(claudeview.HostRuntime, os.Getenv) {
 		return environ
@@ -123,7 +122,7 @@ func hostClaudeView(launch *hostComposition, environ []string, errw io.Writer) [
 	if pack == nil || run.ClaudeSharedCredentialDir([]*packload.Pack{pack}) == "" {
 		return environ
 	}
-	if !slices.Contains(run.HostScopedEndpoints(claudeview.HostRuntime, launch.cfg), broker.BrokerLoopholeName) {
+	if !slices.Contains(run.PromisedEndpoints(claudeview.HostRuntime, launch.cfg), broker.BrokerLoopholeName) {
 		fmt.Fprintf(errw, "yolo host: %s=1 asks for the machine's shared Claude login, and the "+
 			"%s loophole is not active here (disabled in your config, or its pack may not run host "+
 			"code), so %s starts on its own login in ~/.claude; `yolo loopholes status` says "+
@@ -153,7 +152,7 @@ func hostClaudeView(launch *hostComposition, environ []string, errw io.Writer) [
 	return setEnviron(environ, claudeview.SecureStorageEnv, loc.Dir)
 }
 
-// registerHostClaudeView ensures the broker and registers loc with it.
+// registerHostClaudeView starts this launch's broker and registers loc with it.
 func registerHostClaudeView(loc claudeview.Location, errw io.Writer) (oauthbroker.RegisterResult, error) {
 	if err := hostClaudeBrokerEnsure(errw); err != nil {
 		return oauthbroker.RegisterResult{}, err

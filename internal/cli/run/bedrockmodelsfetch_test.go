@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,10 +15,12 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/awsauth"
 	"github.com/mschulkind-oss/yolo-jail/internal/awsauthdaemon"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// bedrockmodelsfetch_test.go pins DefaultFetchModelList's order (bedrockmodels.go): the running
-// service's answer first, else the same fetch run by the launch. A stand-in `aws` answers every
+// bedrockmodelsfetch_test.go pins fetchModelListAt's order (bedrockmodels.go): the running
+// service's answer first, else the same fetch run by the launch; and that DefaultFetchModelList
+// asks no service at all (HD-D22). A stand-in `aws` answers every
 // invocation; nothing reaches AWS.
 
 // standInAws is a stand-in `aws` for the list fetch: each subcommand's canned answer.
@@ -94,5 +97,61 @@ func TestWithNoServiceTheLaunchFetchesTheListItself(t *testing.T) {
 	if got := DefaultFetchModelList(ModelListRequest{Service: "aws-auth", Region: "us-east-1"}); got.Has() ||
 		!strings.Contains(got.Note, "not enabled") {
 		t.Errorf("a disabled service: %+v, want why", got)
+	}
+}
+
+// TestTheLaunchAsksNoOlderYolosMachineWideCopyForAList pins DefaultFetchModelList's call site
+// (HD-D22): since HD-R1 the one aws-auth daemon a launch could ask before it starts its own is a
+// machine-wide copy an older yolo left running, which fetches as ITS configured profile. One is
+// served at that copy's private host socket here, and the launch must run its own fetch as the
+// configured profile instead, through a stand-in `aws` on PATH, and never ask the older copy.
+func TestTheLaunchAsksNoOlderYolosMachineWideCopyForAList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("AF_UNIX and a shell stand-in")
+	}
+	saved := hostservice.Logger
+	hostservice.Logger = log.New(io.Discard, "", 0)
+	t.Cleanup(func() { hostservice.Logger = saved })
+	t.Setenv("HOME", t.TempDir())
+	bin := t.TempDir()
+	argvLog := filepath.Join(bin, "argv.log")
+	script := "#!/bin/sh\necho \"$*\" >> '" + argvLog + "'\n" +
+		"echo 'An error occurred (AccessDeniedException): stand-in aws refuses every call' >&2\nexit 254\n"
+	if err := os.WriteFile(filepath.Join(bin, "aws"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var olderCalls atomic.Int32
+	socket := awsauthdaemon.HostSocketPath(paths.HostSingletonSocket(awsauthdaemon.LoopholeName))
+	assertSockPathFits(t, socket)
+	_ = os.Remove(socket)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = hostservice.ServeUnix(awsauthdaemon.BuildHandler(awsauthdaemon.HandlerConfig{
+			ModelLists: awsauthdaemon.ModelListSource{CachePath: filepath.Join(t.TempDir(), awsauth.ModelCacheFileName),
+				Profile: "the-older-copys-profile", Lister: awsauth.ModelLister{Run: standInAws(&olderCalls)},
+				Tracker: awsauthdaemon.NewModelListTracker()}}), socket, stop)
+	}()
+	t.Cleanup(func() { close(stop); <-done; _ = os.Remove(socket) })
+	for i := 0; i < 500; i++ {
+		if _, err := os.Stat(socket); err == nil {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	ans := DefaultFetchModelList(ModelListRequest{Service: awsauthdaemon.LoopholeName, Enabled: true,
+		Profile: "stand-in-profile", Region: "us-east-1"})
+	if olderCalls.Load() != 0 {
+		t.Errorf("the launch asked the older yolo's machine-wide copy for its list (%d invocations "+
+			"as that copy's profile): %+v", olderCalls.Load(), ans)
+	}
+	logged, _ := os.ReadFile(argvLog)
+	if !strings.Contains(string(logged), "stand-in-profile") {
+		t.Errorf("the launch did not run its own fetch as the configured profile; the stand-in "+
+			"`aws` saw:\n%s", logged)
 	}
 }

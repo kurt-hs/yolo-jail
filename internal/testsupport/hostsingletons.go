@@ -10,8 +10,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// IsolateHostSingletons points paths.HostSingletonDir at a fresh private directory and
-// returns the cleanup that undoes it. Call it from the TestMain of every package whose
+// IsolateHostSingletons points paths.HostSingletonDir, and paths.FrontSocketDir where each
+// launch's own host daemons bind (HD-R1), at a fresh private directory and returns the
+// cleanup that undoes it. Call it from the TestMain of every package whose
 // tests spawn a real host-wide singleton daemon (a launch through the run pipeline, the
 // broker's ensure, `yolo host-daemon`), with the cleanup after m.Run.
 //
@@ -41,6 +42,7 @@ func IsolateHostSingletons() (cleanup func()) {
 	if dir := os.Getenv(inheritEnv); dir != "" {
 		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 			paths.HostSingletonDir = dir
+			paths.FrontSocketDir = dir
 			return func() {}
 		}
 	}
@@ -49,12 +51,14 @@ func IsolateHostSingletons() (cleanup func()) {
 		panic("testsupport: creating a private host-singleton dir: " + err.Error())
 	}
 	heldchildren.Enable()
-	prev := paths.HostSingletonDir
+	prev, prevFront := paths.HostSingletonDir, paths.FrontSocketDir
 	paths.HostSingletonDir = dir
+	paths.FrontSocketDir = dir
 	_ = os.Setenv(inheritEnv, dir)
 	return func() {
 		heldchildren.StopAll(stopGrace)
 		paths.HostSingletonDir = prev
+		paths.FrontSocketDir = prevFront
 		_ = os.Unsetenv(inheritEnv)
 		_ = os.RemoveAll(dir)
 	}
