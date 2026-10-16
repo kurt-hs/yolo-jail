@@ -156,6 +156,88 @@ func TestReadRemotesRefusesAWorktreePointerAtAnotherProject(t *testing.T) {
 	}
 }
 
+// A scope entry may hold a whole-segment wildcard; a repository that NAMES one, a remote, and
+// every partial glob may not (docs/design/workspace-widening.md, WW-D31).
+func TestValidPatternAndAdmits(t *testing.T) {
+	for pattern, ok := range map[string]bool{
+		"o/r":       true,
+		"a.b/c_d-e": true,
+		"*/*":       true,
+		"o/*":       true,
+		"*/r":       true,
+		"O/R":       true,
+		// Not a pattern: the wildcard is the segment alone, and there are exactly two segments.
+		"*":      false,
+		"*/*/*":  false,
+		"o/r/x":  false,
+		"org*/*": false,
+		"o/r*":   false,
+		"*/r*":   false,
+		"o/:":    false,
+		"o/..":   false,
+		"o/.":    false,
+		"/r":     false,
+		"o/":     false,
+		"o/r ":   false,
+		" ":      false,
+	} {
+		if got := ValidPattern(pattern); got != ok {
+			t.Errorf("ValidPattern(%q) = %v, want %v", pattern, got, ok)
+		}
+	}
+	// ValidRepo refuses every wildcard, so a remote can never reduce to one.
+	for _, s := range []string{"*/*", "o/*", "*/r", "*"} {
+		if ValidRepo(s) {
+			t.Errorf("ValidRepo(%q) = true, want false", s)
+		}
+	}
+	for _, tc := range []struct {
+		pattern, repo string
+		want          bool
+	}{
+		{"o/r", "o/r", true},
+		{"o/r", "O/R", true},
+		{"*/*", "o/r", true},
+		{"*/*", "anyone/anything-else", true},
+		{"o/*", "o/r", true},
+		{"o/*", "o/other", true},
+		{"o/*", "p/r", false},
+		{"*/r", "o/r", true},
+		{"*/r", "o/other", false},
+		{"o/r", "o/other", false},
+		{"o/r", "other/r", false},
+		// A malformed side admits nothing, and is admitted by nothing.
+		{"o/r", "o/r/x", false},
+		{"o/r/x", "o/r", false},
+		{"o/*", "*/*", false},
+		{"*/*", "/", false},
+		{"*/*", "o/bad repo", false},
+		{"o/*", "o/bad repo", false},
+		{"a b/c", "a b/c", false},
+		{"/", "/", false},
+	} {
+		if got := Admits(tc.pattern, tc.repo); got != tc.want {
+			t.Errorf("Admits(%q, %q) = %v, want %v", tc.pattern, tc.repo, got, tc.want)
+		}
+	}
+	for pattern, want := range map[string]string{
+		"*/*": "every repository on github.com",
+		"o/*": "every repository under o on github.com",
+		"*/r": "every repository named r, under any owner on github.com",
+		"o/r": "",
+		"*":   "",
+		// A partial glob is not a pattern, so it gets no note and is no wildcard.
+		"org*/*": "",
+	} {
+		if got := WildcardNote(pattern, "github.com"); got != want {
+			t.Errorf("WildcardNote(%q) = %q, want %q", pattern, got, want)
+		}
+	}
+	if got := WildcardNote("*/*", ""); got != "every repository" {
+		t.Errorf("WildcardNote with no host = %q", got)
+	}
+}
+
 func TestRepoFromRemoteURL(t *testing.T) {
 	for raw, want := range map[string]string{
 		"https://github.com/o/r":              "o/r",
@@ -178,6 +260,35 @@ func TestRepoFromRemoteURL(t *testing.T) {
 		if got := RepoFromRemoteURL(raw, "github.com"); got != want {
 			t.Errorf("RepoFromRemoteURL(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// ValidateCurrent admits a repository under an approved wildcard entry, and fails closed on a
+// scope file whose entry is malformed (the write-grant gate's read).
+func TestValidateCurrentAdmitsUnderAWildcardAndFailsClosedOnAMalformedEntry(t *testing.T) {
+	home := resolvedTempDir(t)
+	t.Setenv("HOME", home)
+	id, err := NewLaunchID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := File{Source: "github", LaunchID: id, Workspace: "/w", Container: "c", PID: os.Getpid(),
+		Repos: []string{"*/*"}}
+	path, err := Write(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCurrent(path, f, "anything/at-all"); err != nil {
+		t.Fatalf("an approved wildcard scope did not admit a repository: %v", err)
+	}
+	bad := File{Source: "github", LaunchID: "bad", Workspace: "/w", Container: "c", PID: os.Getpid(),
+		Repos: []string{"org*/*"}}
+	badPath, err := Write(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCurrent(badPath, bad, "o/r"); err == nil {
+		t.Fatal("a malformed scope entry admitted a repository")
 	}
 }
 

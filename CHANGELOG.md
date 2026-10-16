@@ -21,6 +21,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**The GitHub broker can reach every repository.** A project's `brokered.github.repos` list takes
+wildcards: `*/*` is every repository your `gh` login can reach, `OWNER/*` is every repository of
+one owner, and `*/REPO` is that name under any owner. The repository-scope prompt says what a
+wildcard admits, and it stays read-only, with account-wide commands still refused.
+See [GitHub](userguide/guides/github.md#every-repository-or-every-repository-of-one-owner).
+
 **A launch says when the jail has no internet.** If nothing outside answers, the launch warns,
 names what failed, and gives the next step for your setup, such as restarting Apple Container's
 services. See [Troubleshooting](userguide/guides/troubleshooting.md).

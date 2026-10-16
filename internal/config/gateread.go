@@ -83,7 +83,7 @@ func (r *WorkspaceRead) Entry(source string) []EntryRepo {
 	var files [][]*srcFile
 	for i, e := range list {
 		repo, ok := e.(string)
-		if !ok || !brokerscope.ValidRepo(repo) {
+		if !ok || !brokerscope.ValidPattern(repo) {
 			continue
 		}
 		k := strings.ToLower(repo)

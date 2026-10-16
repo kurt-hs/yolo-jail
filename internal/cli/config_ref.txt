@@ -406,10 +406,14 @@
     • The source key is the one the loophole's manifest declares as
       `brokered.source`; the github pack's is "github".  A source no selected
       pack brokers is a host `yolo check` warning; a launch says nothing.
-    • Each repos entry is OWNER/REPO, with no host.  A listed repository is in
-      scope exactly as a remote is: its reads run, and its writes need the same
-      approval.  No entry admits a command across your whole account, such as a
-      search with no repository.
+    • Each repos entry is OWNER/REPO, with no host, or a whole-segment
+      wildcard: "*/*" for every repository the login can reach, "OWNER/*" for
+      every repository of one owner, "*/REPO" for that name under any owner.
+      A partial glob such as "org*" is refused.  An entry is in scope exactly
+      as a remote is: its reads run, and its writes need the same approval.
+      A wildcard widens which repositories run, and nothing else; no entry
+      admits a command across your whole account, such as a search with no
+      repository.
     • Lists merge across the workspace's files, compared without case, and
       "repos": null in the local file clears the list.  A `brokered` key from a
       file outside the workspace, reached through an include or a link, is

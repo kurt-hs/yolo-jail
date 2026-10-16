@@ -193,7 +193,7 @@ func ValidateCurrent(path string, expected File, repo string) error {
 		return err
 	}
 	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
-		if !ValidRepo(r) {
+		if !ValidPattern(r) {
 			return errors.New("corrupt repository scope; relaunch the jail")
 		}
 	}
@@ -204,7 +204,7 @@ func ValidateCurrent(path string, expected File, repo string) error {
 		return errors.New("invalid repository; use an approved owner/repo")
 	}
 	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
-		if r == repo {
+		if Admits(r, repo) {
 			return nil
 		}
 	}
