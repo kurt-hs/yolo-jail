@@ -40,9 +40,37 @@ type ContextMount struct {
 	At string
 	// RW is true only for an object element that says "mode": "rw".
 	RW bool
+	// Optional is true only for an object element that says "optional": true: a backend that
+	// cannot deliver it skips it with one line and the launch goes on, where a required element
+	// refuses (docs/reference/context-mounts.md#optional-mounts). It never softens a refusal
+	// about safety rather than delivery (the read-write refusal set, the broker mount fence, a
+	// destination collision): "optional" says "may be absent", never "may be unsafe".
+	Optional bool
 	// Spec renders the element as written — the string itself, or the object's compact
 	// JSON — for messages that must name the entry the user wrote.
 	Spec string
+}
+
+// OptionalSpelling is the element as an object with "optional": true: the exact JSON a refusal
+// hands the user to paste in its place. It keeps the host as written, the destination when one
+// was written, and the mode, so the pasted element validates and lands where this one would.
+func (m ContextMount) OptionalSpelling() string {
+	mode := "ro"
+	if m.RW {
+		mode = "rw"
+	}
+	if m.At != "" {
+		return fmt.Sprintf(`{"host": %q, "at": %q, "mode": %q, "optional": true}`, m.Host, m.At, mode)
+	}
+	return fmt.Sprintf(`{"host": %q, "mode": %q, "optional": true}`, m.Host, mode)
+}
+
+// OptionalMountSkipLine is the one line every backend prints for an optional `mounts` element it
+// does not deliver: the host path as written, the jail path, and why in a few words. Plain, no
+// markup and no advice, by the maintainer's ruling: the user marked it optional, so the skip is
+// the expected outcome rather than a problem to fix (docs/reference/context-mounts.md#optional-mounts).
+func OptionalMountSkipLine(host, dest, why string) string {
+	return "skipped optional mount: " + host + " → " + dest + " (" + why + ")"
 }
 
 // DestFor is the element's jail path, given its resolved host source.
@@ -64,7 +92,7 @@ func SplitMountString(s string) (host, at string) {
 }
 
 // mountObjectKeys are the object form's keys; any other key is a typo, reported as one.
-var mountObjectKeys = map[string]struct{}{"host": {}, "at": {}, "mode": {}}
+var mountObjectKeys = map[string]struct{}{"host": {}, "at": {}, "mode": {}, "optional": {}}
 
 // ParseMountElement parses one `mounts` element. `where` names it in problems (e.g.
 // "config.mounts[2]"); a non-empty problem list means the element is refused and m is
@@ -100,7 +128,7 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 	m.Spec, _ = jsonx.DumpsCompact(obj)
 	for _, k := range obj.Keys() {
 		if _, known := mountObjectKeys[k]; !known {
-			problems = append(problems, fmt.Sprintf("%s: unknown key %q (known: at, host, mode)", where, k))
+			problems = append(problems, fmt.Sprintf("%s: unknown key %q (known: at, host, mode, optional)", where, k))
 		}
 	}
 	hostV, _ := obj.Get("host")
@@ -128,6 +156,14 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 	case mode != "ro":
 		problems = append(problems, fmt.Sprintf(`%s: "mode" must be "ro" or "rw" (got %s)`,
 			where, reprAny(modeV)))
+	}
+	if optV, hasOpt := obj.Get("optional"); hasOpt {
+		b, ok := optV.(bool)
+		if !ok {
+			problems = append(problems, fmt.Sprintf(`%s: "optional" must be true or false (got %s)`,
+				where, reprAny(optV)))
+		}
+		m.Optional = b
 	}
 	if atV, hasAt := obj.Get("at"); hasAt {
 		at, ok := asStr(atV)
@@ -394,7 +430,9 @@ func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]s
 			continue
 		}
 		resolvedHost := expandAndResolve(m.Host)
-		if !pathExists(resolvedHost) {
+		// An OPTIONAL element's missing source is no finding here: the launch prints its one
+		// skip line and `yolo check` reports it as information (context-mounts.md#optional-mounts).
+		if !pathExists(resolvedHost) && !m.Optional {
 			add(warns, fmt.Sprintf("%s: host path does not exist and will be skipped: %s",
 				where, resolvedHost))
 		}

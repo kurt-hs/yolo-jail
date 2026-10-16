@@ -21,16 +21,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 **A launch says when the jail has no internet.** If nothing outside answers, the launch warns,
-names what failed, and gives the next step for your setup, such as restarting Apple Container's
-services. See [Troubleshooting](userguide/guides/troubleshooting.md).
+names what failed, and gives the next step for your setup. See [Troubleshooting](userguide/guides/troubleshooting.md).
+
+**Optional mounts.** A `mounts` entry marked `"optional": true` is skipped with one line where a
+setup can't deliver it, such as a home folder on macOS, instead of stopping the launch. See
+[Settings per setup](userguide/reference/settings-per-setup.md#workspace-mounts-and-host-files).
 
 **Keep your patches on a branch.** A patched fork or pi extension can name a `patch_branch` in
 place of `patches`; yolo merges it into each new upstream version and names the conflicting files
 when it does not merge. See [Patch series](userguide/guides/patch-series.md#keep-your-patches-on-a-branch).
 
 **pi model facts merge instead of replace.** A model row keeps every fact from pi's catalog it does
-not state, such as thinking levels; `null` removes one, and `model_facts` with `extends` shares a
-model's facts across providers with per-provider overrides. See `yolo config-ref`.
+not state; `null` removes one, and `model_facts` with `extends` shares facts across providers.
+See `yolo config-ref`.
 
 **Ways past a broken patched build.** When your patches or the upstream break, the error lists
 commands that start anyway: run your last good build, build on an older release, run upstream without

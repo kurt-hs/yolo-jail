@@ -49,7 +49,10 @@ var configKeys = map[string]Entry{
 		MacosUser: honoredBy("planMacosUserCtxMounts and macosCtxLinks (ctxmounts.go, " +
 			"macosctxtree.go): a root-owned link in $YOLO_CONTEXT_DIR plus Seatbelt rules, no " +
 			"bind; an entry under a home folder refuses the launch, naming it (DP-D15)"),
-		Guide: []string{"`mounts` — host dirs read-only", "`mounts` read-write form"},
+		// The "optional" row shares these dispositions: an optional entry a setup cannot deliver
+		// is skipped with one line (config.OptionalMountSkipLine, context-mounts.md#optional-mounts).
+		Guide: []string{"`mounts` — host dirs read-only", "`mounts` read-write form",
+			"`mounts` entry with `\"optional\": true`"},
 		Aspects: map[string]Entry{
 			// An entry whose folder is inside a user's home (`~/notes`), the guide's own example.
 			"under_a_home": {
