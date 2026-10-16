@@ -81,7 +81,7 @@ yet* means they have not. The subsections and tables further down have the detai
 
 [^cap-ac-stop]: On Apple Container a jail left behind by a closed window is not cleaned up. Run `yolo stop` in its project to stop it.
 
-[^cap-mu-start]: A project inside a home folder is refused. `yolo macos-setup` prepares `/Users/Shared/yolo`, so a project created under it, such as `/Users/Shared/yolo/<name>`, needs nothing more. Launch with `YOLO_RUNTIME=macos-user yolo`, and expect `sudo` to ask for your password. There is no image to build, but the first launch builds the sandbox's tools with nix, which can take many minutes. See [the macos-user backend](../guides/macos.md#the-macos-user-backend).
+[^cap-mu-start]: A project inside a home folder is refused. `yolo macos-setup` prepares `/Users/Shared/yolo`, so a project created under it, such as `/Users/Shared/yolo/<name>`, needs nothing more. Launch with `YOLO_RUNTIME=macos-user yolo`; after that one-time setup, a launch asks for no password. There is no image to build, but the first launch builds the sandbox's tools with nix, which can take many minutes. See [the macos-user backend](../guides/macos.md#the-macos-user-backend).
 
 [^cap-omp]: A jail on an Apple silicon Mac runs ARM Linux, and the `omp` vendor publishes no ARM Linux build, so the launch says `omp` is unavailable. The same is true on an ARM Linux machine. On `macos-user` it is the other way round: `omp` has a build for Apple silicon Macs but not for Intel ones. That depends on the vendor, not on yolo.
 
@@ -93,7 +93,7 @@ yet* means they have not. The subsections and tables further down have the detai
 
 [^login-mu]: yolo's OpenAI login service must come up for a `macos-user` launch to go ahead; if it does not, the launch stops. `codex` refreshes its token through a helper that each launch runs on the Mac, outside the sandbox, so a long session keeps its login; the sandbox shares the Mac's network, so `codex` reaches it there, and it answers only requests that carry that launch's token, which any program in that sandbox can read. `pi` reaches the same login service through the extension yolo copies into its home and does not need that helper. Bedrock through `aws-auth` works the same way: its credential helper runs outside the sandbox when an agent is on a Bedrock provider (`-p bedrock`, or a profile or provider of your own with `"platform": "aws-bedrock"`). Each helper listens on a port the launch picks, so two sandboxes do not collide, and stops when the launch ends. None of this has been tried on a real Mac yet.
 
-[^cap-mu-keys]: The keys are kept in a file that only the sandbox can read, and yolo deletes it when the session ends. Closing the session's window or ending yolo with `kill` deletes it too, before yolo exits; only a yolo killed outright (`kill -9`) leaves it in yolo's state folder, and the next launch deletes it. If yolo cannot run `sudo` without a password at that moment, it prints the command that deletes the file. Not yet tried on a Mac.
+[^cap-mu-keys]: The keys are kept in a file that only the sandbox can read, and yolo deletes it when the session ends. Closing the session's window or ending yolo with `kill` deletes it too, before yolo exits; only a yolo killed outright (`kill -9`) leaves it in yolo's state folder, and the next launch deletes it. If that removal fails, yolo prints the command that deletes the file. Not yet tried on a Mac.
 
 [^cap-pkg-mac]: The jail is Linux, so every package is built for Linux. When the nix binary cache does not have one, yolo starts a temporary Linux builder container for you; that needs the runtime running and your user trusted by the nix daemon (see [Trust your user](../getting-started.md#trust-your-user-required-on-a-mac)).
 
@@ -279,8 +279,8 @@ This block is what the jail can see of your machine's filesystem, and what it ma
 | `cache_relocations` — move a jail cache to other storage | works — a provisioning failure refuses the launch | expected to work, never measured[^vm-share] | `absent, warns` — not built[^cachegap] | works, `~/.cache` only — not yet tried on a Mac[^mureloc] | fresh launch |
 | `host_files` modes `readonly` / `once` / `copy` | works | works | works | works[^dac] | fresh launch |
 | `host_files` mode `capture` — keep your local edits | works | works | works | works — needs a workspace ACL[^acl] | fresh launch |
-| `host_files` source is a **file** | works — read-only bind | works[^vm-share] | works — copied in, **agent-writable**[^achostlayer] | works — root-owned copy at launch[^snap] | fresh launch |
-| `host_files` source is a **directory** | works | works[^vm-share] | works on 1.1.0+; older: `absent, warns`[^acdir] | works — root-owned copy at launch, size-capped[^mudir] | fresh launch |
+| `host_files` source is a **file** | works — read-only bind | works[^vm-share] | works — copied in, **agent-writable**[^achostlayer] | works — read-only copy at launch[^snap] | fresh launch |
+| `host_files` source is a **directory** | works | works[^vm-share] | works on 1.1.0+; older: `absent, warns`[^acdir] | works — read-only copy at launch, size-capped[^mudir] | fresh launch |
 | `host_files` destination: writable, and private per workspace | works | works | works — whole home is per-workspace | works under `~/.config` and at the home root (home root never run on a Mac); a new top-level folder **shared, silent**[^mutier] | fresh launch |
 | `host_files` entries with a `source:` come from your user config only | works | works | works | works | n/a — a repo's config cannot name host bytes |
 | `host_management`, `host_wrappers`, `host_apply_on_launch`, `host_floor`, `host_path`, `provisioners`, `promotion_target` | works | works | works | works | any entry — host-side keys[^hostside][^wrappath] |
@@ -318,7 +318,7 @@ This block is what the jail can see of your machine's filesystem, and what it ma
 
 [^achostlayer]: Apple Container cannot bind a single file, so the host bytes are copied into the jail's home. That home is bound writable, so the agent can rewrite the host layer its own composed file is built from — where `podman` keeps that layer read-only. Nothing warns.
 
-[^snap]: A root-owned copy taken at launch, not a live view. Every consumer reads its config at boot, so this is equivalent in practice. Symlinking the real file was measured and rejected: the sandbox runs as a different account, and a macOS home need not be readable by it.
+[^snap]: A read-only copy taken at launch, not a live view. Every consumer reads its config at boot, so this is equivalent in practice. Symlinking the real file was measured and rejected: the sandbox runs as a different account, and a macOS home need not be readable by it.
 
 [^acdir]: A directory source is bound read-only from Apple Container 1.1.0. Below that version, or when yolo cannot read `container --version`, the entry is skipped with one `Skipping host_files directory ~/<path> …` line naming the reason, rather than bound writable, and nothing appears at the destination. Like the `mounts` skip lines, it prints only while a fresh launch builds the container.
 
