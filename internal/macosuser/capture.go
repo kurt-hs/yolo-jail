@@ -52,8 +52,8 @@ package macosuser
 // STILL NOT MEASURED: the MATERIALIZE half. Its rewrite (install-capture.md hand-off H2,
 // internal/capture/rewrite.go) is built and measured on Linux against temp dirs standing in for
 // this backend's two homes. Since hand-off H4 a launch here reaches it: the host CLI picks each
-// selected installer program's entry, the launch stages a root-owned copy of it under the state
-// dir (StagedCapturesRoot, StageCaptureCommands), and the bootstrap bakes that store into the
+// selected installer program's entry, the launch stages a sealed, host-owned copy of it under the staging
+// root (StagedCapturesRoot, StageCaptureCommands), and the bootstrap bakes that store into the
 // generated launcher, whose `_try_materialize` hands it to `capture-materialize`; and a launch
 // auto-captures what the store lacks (internal/cli/run/autocapture.go). No Mac has run that
 // path. Podman-in-podman cannot exercise this backend at all, so no nested jail will ever cover
