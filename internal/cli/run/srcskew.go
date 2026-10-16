@@ -3,6 +3,7 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -40,6 +41,7 @@ func (o *Options) refuseOnSourceSkew(repoRoot string) bool {
 	if skew == nil {
 		return false
 	}
+	changes, fix, ifRan := sourceSkewNextStep(repoRoot, o.Getenv("YOLO_VERSION") != "")
 	o.pr(o.Stderr).print(
 		"[bold red]Refusing to launch: this yolo is older than the source tree it would " +
 			"build the jail from.[/bold red]\n\n" +
@@ -50,16 +52,38 @@ func (o *Options) refuseOnSourceSkew(repoRoot string) bool {
 			"  they differ in  " + strings.Join(skew.Changed, ", ") + "\n\n" +
 			"The jail's yolo-entrypoint is BUILT AND MOUNTED from the tree on every launch\n" +
 			"(and the image is rebuilt from it too). The yolo you just ran\n" +
-			"changes only when you run `just install`. Launching now would pair a launcher\n" +
+			changes + " Launching now would pair a launcher\n" +
 			"and a yolo-entrypoint built from different source — which fails deep inside the\n" +
 			"boot, naming neither half (the last one refused with\n" +
 			"`mkdir /home/agent/.yolo: read-only file system`).\n\n" +
-			"[bold]Fix:[/bold]  (cd " + shquote.Quote(repoRoot) + " && just install)\n\n" +
-			"[bold]If you just ran that[/bold], the path above is not where it installed — compare it\n" +
-			"with `go env GOBIN` (or `$(go env GOPATH)/bin`), check `command -v -a yolo` for an\n" +
-			"older copy earlier on PATH, and `hash -r` if your shell cached the old location.\n\n" +
+			"[bold]Fix:[/bold]  " + fix + "\n\n" +
+			ifRan +
 			"To launch anyway and own the mismatch: [bold]" + AllowSourceSkewEnv + "=1[/bold]")
 	return true
+}
+
+// sourceSkewNextStep returns the refusal's sentence about when the running yolo
+// changes, its fix, and its paragraph for a reader who already applied that fix.
+//
+// IN A JAIL THE HOST'S FIX IS WRONG: `just install` refuses there, and the jail's own
+// yolo is frozen for its session (AGENTS.md, "Build & deploy"). A flake build stamps
+// the commit its jail was built from (flake.nix: buildStamp), so once the tree moves
+// through an image path this refusal fires in a jail too, and the next step is the
+// by-path binary `just build-go` writes, which carries the current HEAD.
+func sourceSkewNextStep(repoRoot string, inJail bool) (changes, fix, ifRan string) {
+	if inJail {
+		bin := filepath.Join(repoRoot, "dist-go", "linux-"+runtime.GOARCH, "yolo")
+		return "is this jail's own, frozen for its session.",
+			"(cd " + shquote.Quote(repoRoot) + " && just build-go), then launch with\n" +
+				"      " + shquote.Quote(bin) + " instead of `yolo`,\n" +
+				"      from a directory outside /workspace (AGENTS.md, nested-jail verification).",
+			""
+	}
+	return "changes only when you run `just install`.",
+		"(cd " + shquote.Quote(repoRoot) + " && just install)",
+		"[bold]If you just ran that[/bold], the path above is not where it installed — compare it\n" +
+			"with `go env GOBIN` (or `$(go env GOPATH)/bin`), check `command -v -a yolo` for an\n" +
+			"older copy earlier on PATH, and `hash -r` if your shell cached the old location.\n\n"
 }
 
 // runningBinary is the path of the executable printing this refusal.

@@ -4,11 +4,20 @@
 set -euo pipefail
 : "${VERSION:?VERSION is required}"
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
+: "${RELEASE_SHA:?RELEASE_SHA is required}"
 : "${HOMEBREW_TAP_TOKEN:?HOMEBREW_TAP_TOKEN is required}"
 if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || [ "$RELEASE_TAG" != "v${VERSION}" ]; then
   echo "✗ Refusing Homebrew update for a malformed or mismatched immutable version/tag; no tap write occurred." >&2
   exit 1
 fi
+# The commit the binary and the bundle stamp (internal/version.GitCommit, and the
+# bundle's yolo-build-stamp.json): the tag's tarball has no .git, so without it a
+# Homebrew install carries the hash nowhere, not even in `yolo --version --full`.
+if ! printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "✗ Refusing Homebrew update: RELEASE_SHA is not a full commit sha; no tap write occurred." >&2
+  exit 1
+fi
+COMMIT="${RELEASE_SHA:0:12}"
 TARBALL="https://github.com/mschulkind-oss/yolo-jail/archive/refs/tags/${RELEASE_TAG}.tar.gz"
 SHA256=$(curl -fsSL --retry 3 "$TARBALL" | sha256sum | cut -d' ' -f1)
 if ! printf '%s\n' "$SHA256" | grep -Eq '^[0-9a-f]{64}$'; then
@@ -30,11 +39,12 @@ class YoloJail < Formula
     ldflags = %W[
       -s -w
       -X github.com/mschulkind-oss/yolo-jail/internal/version.buildVersion=#{version}
+      -X github.com/mschulkind-oss/yolo-jail/internal/version.GitCommit=${COMMIT}
     ]
     system "go", "build", *std_go_args(output: bin/"yolo", ldflags: ldflags.join(" ")), "./cmd/yolo"
 
     # Stage the prebuilt source bundle beside the binary for checkout-less installs.
-    with_env("VERSION" => version.to_s) do
+    with_env("VERSION" => version.to_s, "COMMIT" => "${COMMIT}") do
       system "scripts/stage-source-bundle.sh", pkgshare.to_s
     end
   end
