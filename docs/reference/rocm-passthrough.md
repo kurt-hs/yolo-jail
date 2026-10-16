@@ -188,12 +188,10 @@ comparing its owning GID against the caller's groups, so the report distinguishe
 group but this process has not picked it up"* — remedy: a fresh login — from *"you are not in the
 group"* — remedy: add yourself.
 
-> [!WARNING]
-> **The AMD section's two in-jail guards are load-bearing, and its NVIDIA twin does not have
-> them.** Inside a jail, the module check and the device-node checks report skipped-because-managed
-> -by-host rather than failing on host facts an in-jail process cannot see. `sectionGPUNvidia` has
-> no such guard and does fail on them. **This section is the reference for fixing that twin, not
-> the thing that needs fixing** — do not "unify" the two by removing these guards.
+The AMD section's in-jail guards are load-bearing. Inside a jail, its module check and device-node
+checks report skipped-because-managed-by-host rather than failing on host facts an in-jail process
+cannot see, and `sectionGPUNvidia` does the same with one host-fact line. Do not remove these guards
+when the two sections are touched.
 
 ## Security surface
 
