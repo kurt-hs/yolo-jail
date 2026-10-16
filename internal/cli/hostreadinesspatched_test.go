@@ -47,12 +47,12 @@ func TestHostPatchFatalReadinessMissingBypassDoesNotWaiveFailure(t *testing.T) {
 	if rc == 0 {
 		t.Fatalf("missing-program bypass waived the typed patch-application refusal:\n%s", errw.String())
 	}
-	// PF-D83: an intact build is here, so the refusal names the patch failure's own bypass, the one
-	// that runs it, and says the missing-program hatch does not leave the program out.
+	// PF-D83: an intact build is here, so the refusal lists the patch failure's own hatch, the one
+	// that runs it, and never offers the missing-program hatch, which does not leave the program out.
 	if !strings.Contains(errw.String(), "0001-ten.patch") ||
-		!strings.Contains(errw.String(), "  Bypass: YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- other-command\n") ||
-		!strings.Contains(errw.String(), "YOLO_ALLOW_MISSING_PROGRAMS does not leave it out") ||
-		!strings.Contains(errw.String(), "YOLO_ALLOW_PATCH_FAILURES=1 yolo host -- other-command") {
+		!strings.Contains(errw.String(), "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- other-command ") ||
+		!strings.Contains(errw.String(), "yolo host: refusing to launch: a patch series does not apply\n") ||
+		strings.Contains(errw.String(), "YOLO_ALLOW_MISSING_PROGRAMS=1 yolo host") {
 		t.Fatalf("readiness did not retain the concrete patch failure and refusal:\n%s", errw.String())
 	}
 }
@@ -76,8 +76,7 @@ func TestHostPatchFailureWithNothingToRunIsAMissingProgram(t *testing.T) {
 		t.Fatalf("a patch failure with nothing to run started the launch without the hatch:\n%s", refused.String())
 	}
 	if !strings.Contains(refused.String(), "0001-ten.patch") ||
-		!strings.Contains(refused.String(), "Bypass: none on this machine") ||
-		strings.Contains(refused.String(), "Bypass: YOLO_ALLOW_PATCH_FAILURES") ||
+		strings.Contains(refused.String(), "YOLO_ALLOW_PATCH_FAILURES=") ||
 		!strings.Contains(refused.String(), "YOLO_ALLOW_MISSING_PROGRAMS=1 yolo host -- other-command") {
 		t.Fatalf("the refusal of a patch failure with nothing to run:\n%s", refused.String())
 	}

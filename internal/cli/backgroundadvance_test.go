@@ -2178,7 +2178,7 @@ func TestBackgroundNoFitReportsItsCauseWhileLastGoodServes(t *testing.T) {
 	fx.setNow(fx.now.Add(2 * time.Hour))
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(f.Key()), &out)
 	if !strings.Contains(out.String(), "ERROR: "+f.Key()+": patch series does not apply to upstream v1.1.0") ||
-		!strings.Contains(out.String(), "Operation stopped; no older fit or base will be built.") {
+		!strings.Contains(out.String(), "\nRepair:\n") {
 		t.Fatalf("the genuine conflict was not fatal before any older fit or base:\n%s", out.String())
 	}
 	o := outcomeOf(t, f.Key())
