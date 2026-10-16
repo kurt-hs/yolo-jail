@@ -329,7 +329,7 @@ func TestApplyHostBriefingDroppingThePackLeavesNoOrphan(t *testing.T) {
 
 	// The prose pack leaves. `claude` still NAMES the destination, so yolo still owns it and
 	// composes the host base into it, followed by the claude pack's own prose (its worktree
-	// section, docs/design/durable-scratch-space.md DS-D33); the dropped pack's rule is gone,
+	// section, docs/reference/jail-home.md#DS-D33); the dropped pack's rule is gone,
 	// and nothing is archived.
 	selectPacks(t, home, `"claude"`)
 	rc, report := applyWith(t, true, strings.NewReader("y\n"))

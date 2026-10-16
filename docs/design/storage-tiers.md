@@ -40,7 +40,7 @@ rest follows from it.
 [OQ-BS4](#OQ-BS4)'s questions of another directory ([§8.3](#83-rule-these-together)).
 
 **Reads with:** [implementation sketch](storage-tiers-plan.md) (incomplete, not a build hand-off),
-[durable scratch](durable-scratch-space.md) (restart survival, which this does not change),
+[durable scratch](../reference/jail-home.md#storage-classes-and-the-durable-dir) (restart survival, which this does not change),
 [cache relocation](../plans/cache-relocation.md) (machine caches, which are not workspace parts),
 [VM-local volumes](vm-local-volumes.md) (where a VM jail's jail-only copies go).
 
@@ -111,15 +111,15 @@ Re-read at `ccf073633`; links are evidence, not an edit plan.
 | Per-side shadows ([`venvShadowMountArgs`](../../internal/cli/run/mounts.go#L105-L148)) | A jail-only copy is already a bind from `<workspace>/.yolo/home/venv-shadows/<rel>`; choosing its source is all a tier needs | A part that is a **link on the host is skipped** with a warning, and the jail then uses the host's copy ([`mounts.go:116`](../../internal/cli/run/mounts.go#L116-L121)) |
 | Podman makes mountpoints in the live workspace | Documented and accepted ([`mounts.go`](../../internal/cli/run/mounts.go#L122-L138)) | Nothing |
 | `cache_relocations` | Trusted user-scope loading ([`relocations.go`](../../internal/config/relocations.go)) | Machine caches only. Its presence check is that the target's parent exists, and then [`EnsureCacheRelocations`](../../internal/storage/ensure.go#L90) creates the last component, so a target under an unmounted drive's mountpoint lands on the disk beneath it |
-| Read-write context mounts | The refusal set ([`rwMountRefusal`](../../internal/config/mounts.go#L338), [§2.3](context-mounts.md#23-refusal-set)) and the writable-source scope rule ([`WritableSourceScopeBreach`](../../internal/paths/workspacescope.go#L169)) | One source for every workspace, at `/ctx/...`, not inside the workspace tree |
+| Read-write context mounts | The refusal set ([`rwMountRefusal`](../../internal/config/mounts.go#L338), [here](../reference/context-mounts.md#the-refusal-set)) and the writable-source scope rule ([`WritableSourceScopeBreach`](../../internal/paths/workspacescope.go#L169)) | One source for every workspace, at `/ctx/...`, not inside the workspace tree |
 | Per-workspace properties file ([`workspacefile.go`](../../internal/config/workspacefile.go)) | Host-side, yolo-written per-workspace state, named `<folder>-<hash>` | No tier key |
 | macos-user relocation links ([`ctxlinks.go`](../../internal/macosuser/ctxlinks.go)) | macos-user already delivers by laying links plus Seatbelt rules, and admits targets under `/Volumes` with a write probe ([CR-D2](../plans/cache-relocation.md#CR-D2)) | Not wired to workspace parts |
 
 Rulings this does not reopen:
 
-- [DS-D9](durable-scratch-space.md#DS-D9): durable scratch stays inside the workspace by default.
+- [DS-D9](../reference/jail-home.md#DS-D9): durable scratch stays inside the workspace by default.
   A part under `.yolo/durable/` is opt-in ([§4.2](#42-what-may-be-a-part)).
-- [DS-D35](durable-scratch-space.md#DS-D35): durable scratch is temporary agent work; tiering a
+- [DS-D35](../reference/jail-home.md#DS-D35): durable scratch is temporary agent work; tiering a
   subdirectory of it does not change that.
 - [Cache relocation's scope boundary](../plans/cache-relocation.md#threat-model-why-user-scope-is-the-whole-design):
   a writable host-path grant is user scope only. Tier roots follow it.
@@ -419,7 +419,7 @@ size it is about to copy and asks before copying more than 1 GiB. `--yes` skips 
 | Python's `venv` refuses to create into a linked `.venv` (measured, 3.14.7; `uv venv` writes through the link) | Jail-only `.venv` is a real directory in the jail. A host link exists only if [OQ-BS5](#OQ-BS5) rules B |
 | The jail rewrites a link to reach host files | Mounts come from trusted roots and the id only. `move` acts only on links into this workspace's tier directories ([BS-D5](#decision-ledger)) |
 | A launch now fails when a disk does | That is the purpose (P3), and `forget` handles a disk that is gone for good |
-| Files root owns on a rootful Podman tier | Same as every rootful bind ([context-mounts §2.5](context-mounts.md#25-ownership)); `move` reports what it could not delete |
+| Files root owns on a rootful Podman tier | Same as every rootful bind ([context-mounts](../reference/context-mounts.md#ownership)); `move` reports what it could not delete |
 | A filesystem without links, permission bits or 4 GiB files (exFAT, NTFS, FAT32) | The `init` probe records it, jail-only parts are refused there, and the briefing names the limit |
 | A nested jail cannot verify rootless ownership | Real rootless-host verification before landing ([AGENTS.md carve-outs](../../AGENTS.md#testing)) |
 

@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
-// CONTEXT MOUNTS ON A REAL macos-user LAUNCH (docs/design/context-mounts.md §4 steps 4-5): the
+// CONTEXT MOUNTS ON A REAL macos-user LAUNCH (docs/reference/context-mounts.md#tests-and-mac-probes): the
 // probes §4 lists that need the sandbox ACCOUNT, which macosuserseatbelt_test.go's policy suite
 // does not have — the DAC preflight asked as _yolojail, a launch that delivers a read-only and
 // a read-write mount through $YOLO_CONTEXT_DIR, the sealed staged link the agent cannot replace,
@@ -210,7 +210,7 @@ func TestMacosUserContextVolumesAndPrivacyDirsMeasurement(t *testing.T) {
 	}
 }
 
-// A PACK'S SINGLE-FILE `mount` IS COPIED INTO THE CONTEXT DIR (context-mounts.md CX-D25): from the
+// A PACK'S SINGLE-FILE `mount` IS COPIED INTO THE CONTEXT DIR (context-mounts.md#CX-D25): from the
 // user's home, which no link reaches on this backend, to the grant's own path under
 // $YOLO_CONTEXT_DIR, host-owned and sealed. The sandbox reads it and cannot write, replace or delete
 // it — the sealed tree outside the profile's writable set is the read-only half, with no rule of

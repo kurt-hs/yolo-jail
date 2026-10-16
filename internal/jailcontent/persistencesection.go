@@ -8,7 +8,7 @@ import (
 )
 
 // DurableDir is what the briefing says about the launch's durable dir (a term coined in
-// docs/design/durable-scratch-space.md §1.2: `<workspace>/.yolo/durable`, exported as
+// docs/reference/jail-home.md#storage-class-terms: `<workspace>/.yolo/durable`, exported as
 // $YOLO_DURABLE_DIR). The run pipeline fills it from the one place that made the directory
 // on a fresh launch, or, on an attach, from the variable the running jail was started with.
 type DurableDir struct {
@@ -29,7 +29,7 @@ type DurableDir struct {
 // directory … is being designed", and an agent reading that put its clones and drafts in
 // /tmp and then in `~/.local`: the section named what vanishes and never where to go
 // instead, and listed the home dirs as surviving without saying they are the agents' and
-// tools' own (docs/design/durable-scratch-space.md §9).
+// tools' own (docs/reference/jail-home.md#the-storage-class-briefing-section).
 //
 // Each class says where it is, what it survives, who shares it and what yolo cleans up. A
 // class with no members renders no bullet (the design's degenerate-inputs rule).
@@ -68,7 +68,7 @@ func persistenceSection(m *PersistenceMap, d *DurableDir, workspace, hostWorkspa
 	if m == nil {
 		// macos-user: it mounts nothing, so there are no classes to derive from mounts; the
 		// durable answer, and the one fact about /tmp that differs most from a container's
-		// (docs/design/durable-scratch-space.md §2.2).
+		// (docs/reference/jail-home.md#the-storage-classes).
 		if workspace != "/workspace" {
 			lines = append(lines, "- **`/tmp`** is this Mac's own: it survives this launch, is shared "+
 				"with every workspace and the host user, and is cleared at reboot. Give anything "+
@@ -85,7 +85,7 @@ func persistenceSection(m *PersistenceMap, d *DurableDir, workspace, hostWorkspa
 		// (run.startScratchRemoval). In RAM — Apple Container always, podman under
 		// `ephemeral_storage: "tmpfs"` — they are tmpfs: nothing of yolo's deletes them, they
 		// are gone when the jail stops, and every byte there is memory the jail's other
-		// processes do not get (docs/design/durable-scratch-space.md §3.5). The podman
+		// processes do not get (docs/reference/jail-home.md#the-storage-classes). The podman
 		// sentence said "yolo deletes these once the jail exits" of both (§9 step 6).
 		backing := "on disk"
 		survives := "Survives nothing: a restart is a new launch with new, empty ones, and yolo " +

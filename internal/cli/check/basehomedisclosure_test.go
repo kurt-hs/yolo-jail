@@ -1,6 +1,6 @@
 // basehomedisclosure_test.go pins `yolo check`'s report of legacy bytes in <state>/home —
 // the only base-home report left, since the launch refusal went with the shared mount
-// (docs/design/base-home-legacy-state.md#decision-ledger, OQ-BH13).
+// (docs/reference/jail-home.md#oq-bh13, OQ-BH13).
 //
 // The call site here CANNOT be reached behaviourally: baseOptions sets
 // SkipEnsureStorage: true and no test in this package sets it false, so the whole

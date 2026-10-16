@@ -2,7 +2,7 @@
 // (paths.GlobalHome) — the one host directory every podman jail used to mount as its home,
 // a union of tiers that were never supposed to share a directory. Nothing mounts it at
 // /home/agent any more: each podman jail gets its own read-only skeleton
-// (docs/design/base-home-legacy-state.md#1-the-question-and-the-answer), and <state>/home
+// (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches), and <state>/home
 // stays only as the machine store of the shared dirs and the Claude login seed. So the
 // legacy bytes this package finds are unmounted and unread, and its one consumer is `yolo
 // check`'s detection-only report, whose printed `mv` is optional cleanup (the maintainer's
@@ -12,9 +12,9 @@
 // quarantine that was dropped once the shared base itself was found to be the defect. Read
 // them in `git show 030c8f52:docs/design/base-home-legacy-state.md` — §5.1 Detection, §5.2
 // Classification, §5.8 Disclosure, §6 Prevention, §8 What this does not cover, §11
-// Sequencing. The current doc, rewritten in 8c7eb2b9, numbers its sections differently and
-// keeps none of those rules as design; they survive here only as what the report
-// classifies by.
+// Sequencing. The design was rewritten in 8c7eb2b9 and later graduated into
+// docs/reference/jail-home.md, which keeps none of those rules; they survive here only as
+// what the report classifies by.
 //
 // THIS PACKAGE OBSERVES. It opens no file, follows no symlink, and writes nothing: the
 // walk is Lstat/ReadDir only. Every mutating verb the pre-rewrite design named — the move,

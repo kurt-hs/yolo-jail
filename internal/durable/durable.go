@@ -1,4 +1,4 @@
-// Package durable is the durable dir (a term coined in docs/design/durable-scratch-space.md
+// Package durable is the durable dir (a term coined in docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §1.2): `<workspace>/.yolo/durable`, the one agent-neutral directory every jail backend
 // exports as $YOLO_DURABLE_DIR: an agent's scratch space for what it does not want a restart to
 // wipe, such as worktrees and clones (OQ-DS1). It is not part of the project, and the user never
@@ -37,7 +37,7 @@ const (
 	// and never at the host notch (OQ-DS3).
 	EnvVar = "YOLO_DURABLE_DIR"
 	// WorktreesDir is the subdirectory the briefing sends hand-made worktrees to
-	// (docs/design/durable-scratch-space.md §5.3).
+	// (docs/reference/jail-home.md#the-durable-worktree-convention).
 	WorktreesDir = "worktrees"
 	// ContainerJailPath is the durable dir on both container backends: reached through the
 	// workspace's own bind at /workspace, with no mount of its own (DS-D8), so the host and
@@ -56,7 +56,7 @@ const RemoveAdvice = "Remove one with `git worktree unlock <path> && git worktre
 // check` both name it. `.yolo` is an untracked directory whose every file is ignored, so only
 // a clean told both to descend into untracked directories (`-d`) and to take ignored files
 // (`-x` or `-X`) reaches it; `git clean -fx` alone leaves it (MEASURED,
-// docs/design/durable-scratch-space.md Appendix A).
+// docs/reference/jail-home.md#the-durable-dir).
 const CleanCommand = "`git clean -fdx` (or `-fdX`)"
 
 // HostPath is the durable dir of workspace, on the host's side. It creates nothing.
@@ -93,7 +93,7 @@ func Ensure(workspace string) (string, error) {
 }
 
 // Reason renders an Ensure failure as the words the briefing and the launch line both print
-// (docs/design/durable-scratch-space.md §5.6): short, naming the path the jail can see.
+// (docs/reference/jail-home.md#durable-dir-failure-paths): short, naming the path the jail can see.
 func Reason(err error, workspace string) string {
 	var linked *paths.LinkedStateDirError
 	if errors.As(err, &linked) {

@@ -10,7 +10,7 @@ import (
 // THE SECTION LEADS WITH THE ANSWER. An agent reading the first version — which named what
 // vanishes, listed the home dirs as surviving, and closed with "a dedicated durable directory
 // … is being designed" — put its clones and drafts in /tmp, and corrected, chose `~/.local`
-// (docs/design/durable-scratch-space.md §9). So the first words under the heading are where
+// (docs/reference/jail-home.md#the-storage-class-briefing-section). So the first words under the heading are where
 // work goes, the variable and its path; then how to make a worktree there; then the classes
 // in the maintainer's order, each home dir said to be the agents' and tools' own; and no
 // sentence may say the directory is still being designed.
@@ -96,7 +96,7 @@ func TestTheDurableLineNamesTheVariable(t *testing.T) {
 
 // A launch with no durable dir says so and why, and names NO path to put work in: the
 // variable is unset, and a briefing pointing at it would send the agent to nothing
-// (docs/design/durable-scratch-space.md §5.6).
+// (docs/reference/jail-home.md#durable-dir-failure-paths).
 func TestADurableDirThatCouldNotBeMadeIsSaidAndNotOffered(t *testing.T) {
 	out := BriefingContent(BriefingInput{Workspace: "/w", Mechanism: "podman", Persistence: podmanShapedMap(),
 		Durable: &DurableDir{Unavailable: "`.yolo` is a symbolic link"}})
@@ -157,7 +157,7 @@ func TestTheMacosUserSectionIsTheDurableAnswerAtTheRealPath(t *testing.T) {
 // `--LOCK` SAYS WHY ONLY WHERE THE WHY IS TRUE: git on the host drops the registration of a
 // worktree whose recorded path it cannot resolve, which happens only when the jail's
 // spelling of the workspace differs from the host's (DS-D10,
-// docs/design/durable-scratch-space.md §2.6). Through BriefingContent, so a call site that
+// docs/reference/jail-home.md#a-worktree-records-absolute-paths). Through BriefingContent, so a call site that
 // passed the jail's spelling twice, or none, fails here too.
 func TestTheLockSaysWhyOnlyWhereTheHostSeesAnotherPath(t *testing.T) {
 	const why = ": git records it under this jail's `/workspace`, a path the host does not have, " +
@@ -186,7 +186,7 @@ func TestTheLockSaysWhyOnlyWhereTheHostSeesAnotherPath(t *testing.T) {
 	}
 }
 
-// APPLE CONTAINER'S SECTION SAYS WHAT IS TRUE THERE (docs/design/durable-scratch-space.md §9
+// APPLE CONTAINER'S SECTION SAYS WHAT IS TRUE THERE (docs/reference/jail-home.md#the-storage-class-briefing-section
 // step 6). It used to be podman's text with two words changed, which told an Apple Container
 // agent that yolo deletes a tmpfs after the jail exits, that `yolo prune` ages out log files
 // it cannot find there, and nothing at all about yolo's own files in a home that has no

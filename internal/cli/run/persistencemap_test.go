@@ -17,7 +17,7 @@ import (
 )
 
 // THE PERSISTENCE MAP IS THE MOUNT PLAN, OR THE BRIEFING LIES (DS-D1,
-// docs/design/durable-scratch-space.md). The line this replaced — "Home: /home/agent
+// docs/reference/jail-home.md#storage-classes-and-the-durable-dir). The line this replaced — "Home: /home/agent
 // (persistent across sessions)" — was hand-written, and it was false the day the home went
 // :ro. So the map is compared against the ASSEMBLED ARGV, per backend, in both directions:
 //
@@ -201,7 +201,7 @@ func TestTheBriefingNamesEveryPathInThePersistenceMap(t *testing.T) {
 				t.Errorf("the %s Home line is not %q:\n%s", rt, wantHome, body)
 			}
 
-			// APPLE CONTAINER GETS ITS OWN WORDING, NOT PODMAN'S (docs/design/durable-scratch-space.md
+			// APPLE CONTAINER GETS ITS OWN WORDING, NOT PODMAN'S (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 			// §9 step 6), from the two facts this backend's map carries: the per-launch set is
 			// tmpfs, which nothing of yolo's deletes and which costs the jail memory, and the
 			// home is one writable per-workspace bind, so there is no read-only rest and yolo's

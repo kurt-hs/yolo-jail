@@ -220,7 +220,7 @@ func appliedNetMode(rt, netMode string, inContainer bool) string {
 // (DP-B1 / DP-L7). Both halves left: the `:ro` floor is applied PER ENTRY by the deciders the
 // argv uses (configCtxMounts, packCtxMounts; CX-D13), and macos-user delivers its context
 // mounts by link and briefs exactly what its own decider delivers (briefedCtxMounts →
-// macosCtxLinks; docs/design/context-mounts.md §4 step 4). With nothing left to filter, the
+// macosCtxLinks; docs/reference/context-mounts.md#tests-and-mac-probes). With nothing left to filter, the
 // function went with them.
 
 // limitSource says where an applied resource limit's value came from. It exists so the

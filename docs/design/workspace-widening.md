@@ -113,7 +113,7 @@ see how it goes"* ([OQ-BB6](boundary-broker.md#15-decision-ledger)).
   record stays in host-side state no jail mounts, and a launch with no terminal never auto-accepts.
   This channel joins that conditional. *"If either is ever reverted, this answer goes with it."*
 - **It matches the read-only mount, for reads.** A workspace `mounts` element reaches any host path
-  read-only, behind the same gate ([`context-mounts.md` §2.2](context-mounts.md#22-where-an-rw-mount-may-be-declared-deferred)), while
+  read-only, behind the same gate ([`context-mounts.md`](../reference/context-mounts.md#where-a-read-write-mount-may-be-declared)), while
   read-write reach stays user-scope-only. Writes differ, and the difference is a cost. A listed
   repository joins the scope for every permission set ([OQ-BB9](boundary-broker.md#15-decision-ledger)). So once
   read-write grants are built, it is covered by every read-write window the human grants: the

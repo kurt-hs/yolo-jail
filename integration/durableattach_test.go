@@ -1,6 +1,6 @@
 package integration
 
-// durableattach_test.go is the end-to-end half of DS-D36 (docs/design/durable-scratch-space.md):
+// durableattach_test.go is the end-to-end half of DS-D36 (docs/reference/jail-home.md#storage-classes-and-the-durable-dir):
 // the durable dir's launch line is the launch's, said once by the jail's own boot, and an attach
 // neither walks the dir again nor prints the line on its terminal. The unit tier
 // (internal/entrypoint durablereportpass_test.go) drives the step table's session-pass rule; only

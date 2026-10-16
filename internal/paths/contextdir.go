@@ -1,7 +1,7 @@
 package paths
 
 // contextdir.go names the CONTEXT DIR to the agent: the directory context mounts appear
-// under, which docs/design/context-mounts.md coins as a term (its Defined terms) and whose
+// under, which docs/reference/context-mounts.md#defined-terms defines and whose
 // variable its CX-D4 decided.
 //
 // ONE SPELLING ON EVERY BACKEND is the whole point. A container binds context mounts under
@@ -25,7 +25,7 @@ const ContainerContextDir = "/ctx"
 
 // YOLO'S OWN CHILDREN OF THE CONTEXT DIR, on the container backends. Each is a bind the
 // launch makes itself, so a context mount the user declares shares a namespace with them
-// (docs/design/context-mounts.md §3.2), and the `yolo check` duplicate-destination error
+// (docs/reference/context-mounts.md#where-the-bytes-are-named), and the `yolo check` duplicate-destination error
 // refuses a `mounts` element at, inside or containing one (config.validateMountDestinations):
 // podman refuses two binds at one path, and for a nested pair it creates the inner mountpoint
 // in the outer bind's HOST directory, even through a `:ro` bind. The run pipeline's own

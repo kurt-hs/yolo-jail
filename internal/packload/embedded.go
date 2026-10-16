@@ -19,7 +19,7 @@ package packload
 // staging under, and which path segments writable_home_dirs may not claim, were read from
 // here on the argument that a list gated on the loaded packs would let an entry claim a path
 // a pack added tomorrow needs. The maintainer ruled the other way (OQ-BH14,
-// docs/design/base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories):
+// docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory):
 // an unselected pack is treated as if it does not exist, and the shipped set never covered a
 // configured pack anyway. Those lists take the SELECTED packs now (config.WritableHomeDirs,
 // config.HostFileEntry.StagingFor), and config validation resolves the selection itself,

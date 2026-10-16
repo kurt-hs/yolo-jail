@@ -140,7 +140,7 @@ func TestMacosUserCacheRelocationRefusesAPopulatedTargetWithoutAccess(t *testing
 }
 
 // THE /Volumes MEASUREMENT (CX-D5 narrowed for this key; OQ-CX8 in
-// docs/design/context-mounts.md): macos-user.yml attaches two APFS disk images under /Volumes, one
+// docs/reference/context-mounts.md): macos-user.yml attaches two APFS disk images under /Volumes, one
 // with ownership on and one with it off, and an exFAT one, which takes no access entries (CR-D7 in
 // docs/plans/cache-relocation.md), and names them in macosUserRelocationVolumesEnv. For
 // each, a launch relocates a subdir to a folder on it and writes there. RECORDED, never asserted:

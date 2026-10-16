@@ -163,7 +163,7 @@ func TestEveryAgentPackDeclaresItsBriefingIdentity(t *testing.T) {
 // older entrypoint, and a shipped pack that dropped `into` would brick exactly those boots;
 // re-pairing the halves (`just install`) is the recovery.
 //
-// ONE ADDRESSED SHAPE IS SHIPPED, ON PURPOSE (docs/design/durable-scratch-space.md DS-D33): an
+// ONE ADDRESSED SHAPE IS SHIPPED, ON PURPOSE (docs/reference/jail-home.md#DS-D33): an
 // agent pack's own content for its OWN agent, `{"kind": "briefing", "from": …, "agents":
 // [<its own agent>]}`. The claude and pi packs ship worktree prose that way, because it names
 // one agent's tool, and no other shape delivers it to that agent alone: a `briefing/` file

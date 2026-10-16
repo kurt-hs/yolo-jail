@@ -446,7 +446,7 @@ func podmanLinuxGolden(home string) []string {
 		"--security-opt", "unmask=/proc/sys", "--unsetenv", "LD_LIBRARY_PATH", "--sig-proxy=false", "--detach-keys=")
 	// podman base mounts. The home root is THIS JAIL'S skeleton, not the machine store
 	// (<state>/home) every podman jail used to share: that store's only mounts left are the
-	// selected packs' shared dirs, below (docs/design/base-home-legacy-state.md#29-backends).
+	// selected packs' shared dirs, below (docs/reference/jail-home.md#backend-differences).
 	add("-v", ws+":/workspace",
 		"-v", goldenHomeSkeleton+":/home/agent:ro",
 		"-v", wsState+"/npm-global:/home/agent/.npm-global",
@@ -550,7 +550,7 @@ func podmanLinuxGolden(home string) []string {
 		"-e", "YOLO_RUNTIME=podman",
 	)
 	// The context dir, on every container launch whether or not a context mount was declared
-	// (context-mounts.md CX-D4).
+	// (context-mounts.md#CX-D4).
 	add("-e", "YOLO_CONTEXT_DIR=/ctx")
 	// Claude's credential store, pointed at the machine-scope directory bound above (CL-D22):
 	// Claude opens the real file there, with no symlink in its credential path. Off only on a

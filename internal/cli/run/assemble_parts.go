@@ -136,7 +136,7 @@ func (in *assembleInput) miseSource(volume string) string {
 // jail shared, which is how one workspace's pack dirs, host_files links and old bytes — and
 // a claude-less jail's view of the machine's Claude credential file — reached every jail.
 // It is now in.homeSkeleton, built from THIS launch's selected packs and config
-// (buildHomeSkeleton, docs/design/base-home-legacy-state.md#2-the-design-a-per-jail-skeleton).
+// (buildHomeSkeleton, docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches).
 // Still bound :ro, so writing an undeclared home path fails with EROFS as before.
 func podmanBaseMounts(rt string, runFlags []string, workspace string, in *assembleInput, isMacOS bool) []string {
 	ws := in.wsState

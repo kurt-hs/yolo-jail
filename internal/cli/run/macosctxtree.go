@@ -76,7 +76,7 @@ import (
 // container bind resolves nothing outside it) and CAPPED (macosDirHostFileEntryCap), and a
 // copy that fails or crosses the cap ends the launch naming the entry.
 //
-// ⚠ AND A PACK `mount` OF ONE FILE IS COPIED TOO (context-mounts.md CX-D25). A pack grant names
+// ⚠ AND A PACK `mount` OF ONE FILE IS COPIED TOO (context-mounts.md#CX-D25). A pack grant names
 // a path in the user's home, which a link cannot serve here (OQ-CX7: the sandbox account
 // reaches nothing inside a real home), and one file has none of DP-D15's size problem. The
 // decider hands those grants over as copies (macosCtxLinks) and this function lands each at
@@ -377,7 +377,7 @@ func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.Capture
 }
 
 // macosCtxLinks is the macos-user decider for the two context-mount declarations
-// (docs/design/context-mounts.md §3, §4 steps 4-5): every config `mounts` element and every
+// (docs/reference/context-mounts.md#delivery-on-macos-user): every config `mounts` element and every
 // selected pack's `mount` grant this launch would deliver — as the LINK macosuser stages for it,
 // or, for a pack grant whose source is a single FILE, as the COPY buildMacosCtxTree lands at its
 // /ctx path (CX-D25) — and every one this backend cannot deliver, with its reason.
@@ -485,7 +485,7 @@ func (o *Options) planMacosUserCtxMounts(cfg *jsonx.OrderedMap, packs []*packloa
 		"there, so the folder must be one the sandbox account can reach and must not overlap " +
 		"anything else it writes: a read-only one outside every home and outside the " +
 		"sandbox's writable places (under /Users/Shared, or outside /Users), a read-write one " +
-		"under " + macosuser.SharedRootDefault() + " (docs/design/context-mounts.md §3). A " +
+		"under " + macosuser.SharedRootDefault() + " (docs/reference/context-mounts.md#delivery-on-macos-user). A " +
 		"pack's single-file `mount` is copied there instead, and refuses only where its path " +
 		"collides with another. Move the folder there, remove the entry (or the pack) for this " +
 		"workspace, or use a container runtime (`runtime: \"podman\"` or `\"container\"`)" +

@@ -794,7 +794,7 @@ updated. `appliedNetMode` and `appliedResourceLimits` live in
 "feed `BriefingContent` from what `assembleRunCmd` actually emitted" fix this section asked for.
 The third, `appliedCtxMounts`, was deleted on 2026-10-01: the context-mount list is now decided per
 entry by the same functions the argv uses (`internal/cli/run/ctxmounts.go`), and on macos-user by
-that backend's own decider ([`context-mounts.md` CX-D20](context-mounts.md#CX-D20)).
+that backend's own decider ([`context-mounts.md` CX-D20](../reference/context-mounts.md#CX-D20)).
 *(Verified 2026-09-02. No `Cell`/`Disposition` TYPE exists anywhere in the tree, and that is no
 longer the same statement as "the census is unbuilt": since 2026-09-14 the dispositions are
 enforced as line annotations instead — [§4.1](#41-what-shipped-instead-the-census-as-an-annotation).)*

@@ -1,7 +1,7 @@
 package run
 
 // legacyseed_test.go pins that the machine store seeds nothing into a new workspace but the
-// Claude login (docs/design/base-home-legacy-state.md#27-the-seed).
+// Claude login (docs/reference/jail-home.md#the-claudejson-seed).
 //
 // seedAgentDir copied every top-level regular file of <state>/home/.<dir> into each new
 // workspace's overlay for every selected pack. Its only inputs since the base went read-only

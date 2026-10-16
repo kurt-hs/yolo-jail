@@ -2,7 +2,7 @@ package run
 
 // ctxmounts.go is how a launch reads the config `mounts` key and a pack's `mount` grants:
 // which ones this launch delivers, at which jail path, in which mode, and what it says
-// about each (docs/design/context-mounts.md §2, §3.8).
+// about each (docs/reference/context-mounts.md#read-write-context-mounts).
 //
 // ONE READING, THREE CONSUMERS: the container argv (assembleRunCmd), the agent's briefing
 // (prepare) and the read-write disclosure. The briefing listing a mount the argv skipped is
@@ -89,7 +89,7 @@ func (o *Options) configCtxMounts(rt string, cfg *jsonx.OrderedMap, note func(st
 // exist, and it names the next step (docs/reference/happy-path-principle.md): the element as
 // written and the file, line and column that wrote it (config.MountElementWhere, read only on
 // this path), then both fixes and the check that confirms either (CX-D24 in
-// docs/design/context-mounts.md). It used to name the resolved path alone, on every launch.
+// docs/reference/context-mounts.md). It used to name the resolved path alone, on every launch.
 func (o *Options) missingMountSourceWarning(m config.ContextMount, source string) string {
 	where := "the `mounts` element `" + m.Spec + "`"
 	if _, locs := config.MountElementWhere(o.Workspace, m); len(locs) > 0 {
@@ -110,7 +110,7 @@ func (m configCtxMount) bindArg() string {
 }
 
 // rwMountDisclosure is the launch line every read-write mount gets, EVERY launch
-// (docs/design/context-mounts.md §2.4). It is a disclosure in OQ-RO3's sense: nothing
+// (docs/reference/context-mounts.md#the-launch-disclosure). It is a disclosure in OQ-RO3's sense: nothing
 // suppresses it — not YOLO_NO_BANNER, which is the version line and nothing else — and it is
 // teed to launch.log with everything else the launch prints.
 //

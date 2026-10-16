@@ -164,7 +164,7 @@ conditional sections that appear only when their data exists. Emission order, fr
 6. **The `rg --replace` trap** warning.
 7. **Storage classes** — leads with the launch's durable dir, `$YOLO_DURABLE_DIR`, as the
    place for work that must survive a restart and for `--lock`ed worktrees, or says why this
-   launch has none ([`durable-scratch-space.md`](../design/durable-scratch-space.md)). On a
+   launch has none ([`jail-home.md`](jail-home.md#storage-classes-and-the-durable-dir)). On a
    container backend the jail's storage classes follow (per launch, per workspace, every
    workspace on the machine, the workspace itself), each with its paths, what it survives, who
    shares it and what yolo cleans up, rendered from the launch's persistence map (see below).
@@ -189,7 +189,7 @@ conditional sections that appear only when their data exists. Emission order, fr
    labelled read-only or read-write, a grant with its pack, under a line naming what
    `$YOLO_CONTEXT_DIR` is on this backend. On macos-user a pack's single-file `mount` is a copy,
    and its entry says "copied at launch; host edits arrive at the next launch"
-   ([`context-mounts.md` CX-D25](../design/context-mounts.md#CX-D25)).
+   ([`context-mounts.md` CX-D25](context-mounts.md#CX-D25)).
 12. **Limitations**, **Packages & Resource Limits**, **Skills** — the three standing
     sections. On a backend with no container the middle one is **Packages**: it offers no
     resource cap and says outright that `resources` is not enforced there.
@@ -219,7 +219,7 @@ never a root `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`, which is the pack reposito
 ([`pack-system.md`](pack-system.md#what-a-pack-is-on-disk)). Two shipped agent packs carry
 prose of their own, each addressed to its own agent alone: the claude and pi packs say where
 their agent's own workflow tools put worktrees
-([DS-D33](../design/durable-scratch-space.md#DS-D33)).
+([DS-D33](jail-home.md#DS-D33)).
 
 **At the host notch, prose about a jail-only kind is left out.** A contribution that declares
 `describes` reaches a destination only where every kind it names applies
@@ -259,7 +259,7 @@ asked for. This is one rule with several call sites, and each was a real defect:
   list advertises daemons that do not exist. An agent reading a false capability list does
   not merely lack a feature — it plans around one it does not have.
 - **Paths** come from the **persistence map** (a term coined in
-  [`durable-scratch-space.md`](../design/durable-scratch-space.md#12-terms)): each path the
+  [`jail-home.md`](jail-home.md#storage-class-terms)): each path the
   launch mounts writable, with a durability class, built from the same lists the mount argv
   iterates. A unit test compares it against the assembled argv in both directions, so a
   writable mount added without the map fails the gate. The Home line points at the section and

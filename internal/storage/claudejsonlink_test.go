@@ -16,7 +16,7 @@ import (
 // user, on the next fresh launch. So a jail that replaced that file with a link chose which
 // host file the host would read (the reverse pass then copies whatever login keys it holds
 // into the machine seed) and which host file it would overwrite (the forward pass rewrote
-// the link's target with the seed's JSON). docs/design/base-home-legacy-state.md#22-where-it-lives-host-only-never-in-wsstate names
+// the link's target with the seed's JSON). docs/reference/jail-home.md#where-a-skeleton-lives-and-when-it-goes names
 // jail-planted links in wsState as the hazard.
 
 // writeLinkFixture and readLinkFixture are this file's own, so it builds without any other

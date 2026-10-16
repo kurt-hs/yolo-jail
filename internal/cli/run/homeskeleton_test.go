@@ -1,7 +1,7 @@
 package run
 
 // homeskeleton_test.go pins the per-jail home skeleton (homeskeleton.go;
-// docs/design/base-home-legacy-state.md#8-build-order-and-done-conditions).
+// docs/reference/jail-home.md#what-pins-the-skeleton).
 //
 // Four halves, each answering a different way the feature could quietly stop working:
 //
@@ -388,7 +388,7 @@ func TestEachFreshLaunchGetsANewSkeleton(t *testing.T) {
 }
 
 // TestSkeletonFailuresNameThePath pins the fatal/best-effort split of
-// docs/design/base-home-legacy-state.md#23-when-it-is-built: a core failure is FATAL and names the
+// docs/reference/jail-home.md#when-a-skeleton-is-built: a core failure is FATAL and names the
 // path; a config-driven one is a warning that names it.
 func TestSkeletonFailuresNameThePath(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
@@ -682,7 +682,7 @@ func TestRunContainerBuildsTheSkeletonOnTheFreshPath(t *testing.T) {
 		t.Fatal("runContainer no longer calls buildHomeSkeleton: podman binds an empty source at " +
 			"/home/agent, or — if the bind was pointed back at paths.GlobalHome() — every jail " +
 			"shares one home again, with every unselected pack's dirs and the machine's shared " +
-			"credential dirs visible in it (docs/design/base-home-legacy-state.md#1-the-question-and-the-answer)")
+			"credential dirs visible in it (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches)")
 	}
 	if len(buildPos) > 1 {
 		t.Errorf("runContainer calls buildHomeSkeleton %d times; one fresh launch builds ONE "+
