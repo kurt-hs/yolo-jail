@@ -191,6 +191,54 @@ func TestSetupStagesExactlyTheRuleUnderTheInertName(t *testing.T) {
 	}
 }
 
+// captureVia gives d a RunCapture that answers through d.Run (so the recording and the exit
+// codes stay the test's) and prints output[joined] for the command, the way visudo would.
+func captureVia(d *Deps, output map[string]string) {
+	run := d.Run
+	d.RunCapture = func(argv []string) (string, int) {
+		return output[strings.Join(argv, " ")], run(argv)
+	}
+}
+
+const (
+	visudoRuleCheck   = "/usr/bin/sudo /usr/sbin/visudo -c -f " + SudoersStagingFile
+	visudoConfigCheck = "/usr/bin/sudo /usr/sbin/visudo -c"
+)
+
+// indented is s as the refusals print captured text and the rule: each line after two spaces.
+func indented(s string) string {
+	var b strings.Builder
+	for _, l := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+		b.WriteString("  " + l + "\n")
+	}
+	return b.String()
+}
+
+// A passing check stays quiet: visudo's "parsed OK" lines are not the user's business.
+func TestSetupDoesNotPrintVisudoOutputWhenTheChecksPass(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	captureVia(&d, map[string]string{
+		visudoRuleCheck:   SudoersStagingFile + ": parsed OK\n",
+		visudoConfigCheck: "/etc/sudoers: parsed OK\n",
+	})
+	if rc := MacosSetup(d); rc != 0 {
+		t.Fatalf("rc = %d\n%s", rc, buf.String())
+	}
+	if strings.Contains(buf.String(), "parsed OK") {
+		t.Errorf("printed visudo's output for a passing check:\n%s", buf.String())
+	}
+}
+
+// Production wires the capture: without it every check would print through the terminal.
+func TestRealDepsCaptureVisudoOutput(t *testing.T) {
+	if RealDeps(nil, nil, false).RunCapture == nil {
+		t.Fatal("RealDeps has no RunCapture, so visudo's checks are not quiet on success")
+	}
+}
+
 func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 	var rec []string
 	var buf bytes.Buffer
@@ -199,11 +247,13 @@ func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 	d.Run = func(argv []string) int {
 		joined := strings.Join(argv, " ")
 		rec = append(rec, "run:"+joined)
-		if joined == "/usr/bin/sudo /usr/sbin/visudo -c -f "+SudoersStagingFile {
+		if joined == visudoRuleCheck {
 			return 1
 		}
 		return 0
 	}
+	reason := ">>> " + SudoersStagingFile + ": syntax error near line 3 <<<\n"
+	captureVia(&d, map[string]string{visudoRuleCheck: reason})
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
@@ -216,11 +266,9 @@ func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 	out := buf.String()
 	rule, _ := SudoersRule("matt")
 	for _, want := range []string{
-		"✗ visudo rejected the rule file on its own, so nothing was installed and your sudo " +
-			"configuration is unchanged.",
-		"visudo's reason is above",
-		rule,
-		"This is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues",
+		"✗ visudo rejected yolo's sudo rule. Nothing was installed.\n\n" + indented(reason) + "\n",
+		"This is a yolo bug. Report it with the output above and this rule:\n\n" + indented(rule) +
+			"\n  https://github.com/mschulkind-oss/yolo-jail/issues\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("visudo refusal lacks %q:\n%s", want, out)
@@ -240,7 +288,7 @@ func wholeCheckRun(rec *[]string, withRule, withoutRule int) func([]string) int 
 			installed = true
 		case "/usr/bin/sudo /bin/rm -f " + SudoersFile:
 			installed = false
-		case "/usr/bin/sudo /usr/sbin/visudo -c":
+		case visudoConfigCheck:
 			if installed {
 				return withRule
 			}
@@ -264,35 +312,38 @@ func inOrder(t *testing.T, rec, want []string) {
 }
 
 // The rule passes on its own but the whole configuration fails with it in place, and fails again
-// once setup has removed it: the configuration was already broken, which is not yolo's bug.
+// once setup has removed it: the configuration was already broken, which is not yolo's bug, and
+// the refusal names the file visudo blames in a command that edits it.
 func TestSetupBlamesTheExistingConfigWhenItFailsWithoutTheRuleToo(t *testing.T) {
 	var rec []string
 	var buf bytes.Buffer
 	d := mockDeps(&rec)
 	d.Out = &buf
 	d.Run = wholeCheckRun(&rec, 1, 1)
+	reason := ">>> /etc/sudoers.d/corp: syntax error near line 3 <<<\n" +
+		"/etc/sudoers.d/other:2:5: syntax error\n"
+	captureVia(&d, map[string]string{visudoConfigCheck: reason})
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
 	inOrder(t, rec, []string{
 		"run:/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile,
-		"run:/usr/bin/sudo /usr/sbin/visudo -c",
+		"run:" + visudoConfigCheck,
 		"run:/usr/bin/sudo /bin/rm -f " + SudoersFile,
-		"run:/usr/bin/sudo /usr/sbin/visudo -c",
+		"run:" + visudoConfigCheck,
 	})
 	if recAt(rec, "-n --user=_yolojail") >= 0 {
 		t.Errorf("went on after the whole-configuration check failed:\n%s", strings.Join(rec, "\n"))
 	}
 	out := buf.String()
-	for _, want := range []string{
-		"✗ Your sudo configuration fails visudo's check even without yolo's rule",
-		"removed " + SudoersFile + " again",
-		"`sudo visudo -c`",
-		"yolo macos-setup",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("refusal lacks %q:\n%s", want, out)
-		}
+	want := "✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.\n\n" +
+		indented(reason) + "\nFix it, then run setup again:\n\n" +
+		"  sudo visudo -f /etc/sudoers.d/corp\n" +
+		"  sudo visudo -f /etc/sudoers.d/other\n" +
+		"  sudo visudo -c\n" +
+		"  yolo macos-setup\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("refusal lacks\n%s\ngot:\n%s", want, out)
 	}
 	if strings.Contains(out, "yolo bug") {
 		t.Errorf("called a pre-existing sudo problem a yolo bug:\n%s", out)
@@ -306,16 +357,17 @@ func TestSetupCallsItAYoloBugWhenOnlyTheRuleBreaksTheConfig(t *testing.T) {
 	d := mockDeps(&rec)
 	d.Out = &buf
 	d.Run = wholeCheckRun(&rec, 1, 0)
+	reason := ">>> " + SudoersFile + ": syntax error near line 3 <<<\n"
+	captureVia(&d, map[string]string{visudoConfigCheck: reason})
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
 	out := buf.String()
 	rule, _ := SudoersRule("matt")
 	for _, want := range []string{
-		"✗ visudo rejected your sudo configuration with yolo's rule in place",
-		"removed " + SudoersFile + " again, and without it visudo accepts the configuration",
-		rule,
-		"This is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues",
+		"✗ visudo rejected your sudo configuration with yolo's rule in place. The rule was " +
+			"removed again.\n\n" + indented(reason) + "\n",
+		"This is a yolo bug. Report it with the output above and this rule:\n\n" + indented(rule),
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("refusal lacks %q:\n%s", want, out)
@@ -323,8 +375,9 @@ func TestSetupCallsItAYoloBugWhenOnlyTheRuleBreaksTheConfig(t *testing.T) {
 	}
 }
 
-// When the removal of a rule the whole check rejected fails, the rule is still in place: setup
-// says so and names the command that removes it.
+// When the removal of a rule the whole check rejected fails, the rule is still in place, and
+// sudo itself may be what broke: the refusal gives the sudo removal, a fallback that needs no
+// sudo, and the re-run, each on its own line.
 func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
 	var rec []string
 	var buf bytes.Buffer
@@ -338,13 +391,18 @@ func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
 		}
 		return inner(argv)
 	}
+	captureVia(&d, nil)
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "is still installed") ||
-		!strings.Contains(out, "`/usr/bin/sudo /bin/rm -f "+SudoersFile+"`") {
-		t.Errorf("refusal does not name the removal:\n%s", out)
+	want := "Remove the rule, then run setup again:\n\n" +
+		"  sudo rm -f /etc/sudoers.d/yolo-jail\n" +
+		"  # or, if sudo itself fails:\n" +
+		"  osascript -e 'do shell script \"/bin/rm -f /etc/sudoers.d/yolo-jail\" with administrator privileges'\n" +
+		"  yolo macos-setup\n"
+	if !strings.Contains(out, "removing the rule failed") || !strings.Contains(out, want) {
+		t.Errorf("refusal lacks\n%s\ngot:\n%s", want, out)
 	}
 }
 

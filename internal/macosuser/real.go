@@ -103,12 +103,24 @@ func RunStdoutTo(w io.Writer) func(argv []string) int {
 
 // runStdoutTo runs argv with stdin and stderr inherited and its stdout on w, starting it through the
 // published foreground runner and returning its returncode; a start failure yields 1.
-func runStdoutTo(w io.Writer, argv []string) int {
+func runStdoutTo(w io.Writer, argv []string) int { return runOutputsTo(w, os.Stderr, argv) }
+
+// runCaptureReal is Deps.RunCapture: runReal with stdout and stderr captured together and
+// returned. stdin stays the terminal's, and sudo asks for a password on the terminal device
+// itself, so a prompt is not captured.
+func runCaptureReal(argv []string) (string, int) {
+	var buf bytes.Buffer
+	rc := runOutputsTo(&buf, &buf, argv)
+	return buf.String(), rc
+}
+
+// runOutputsTo is runStdoutTo with stderr on errw too.
+func runOutputsTo(w, errw io.Writer, argv []string) int {
 	if len(argv) == 0 {
 		return 1
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w, os.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w, errw
 	done, err := startForegroundProcess(func() (*os.Process, error) {
 		if err := cmd.Start(); err != nil {
 			return nil, err
