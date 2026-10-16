@@ -147,7 +147,8 @@ func SeatbeltCaptureProfile(stagingRoot string) string {
 		ancestors +
 		stagingClause +
 		"    (literal \"/Users\")\n" +
-		"    (literal \"/Users/Shared\"))\n" +
+		"    (literal \"/Users/Shared\")\n" +
+		stagingRootReadClause() + ")\n" +
 		"\n" +
 		";; --- Keychains: System.keychain is world-readable (0644) on stock macOS ---\n" +
 		"(deny file-read* (subpath \"/Library/Keychains\"))\n" +
