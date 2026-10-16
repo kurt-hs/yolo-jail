@@ -40,8 +40,10 @@ import (
 //     build). Only a current entry under `agent_updates` off skips it — the refresh arm's
 //     UpdatesAllowed, asked for the fork pack and its base (PF-D19) — and the advance runs no git
 //     inside its own hourly throttle (P4).
-//   - A NEWER UPSTREAM THAT FAILS KEEPS THE INSTALLED COPY (PF-D8): the advance leaves the good
-//     build where it was. A user's own edit to the series, `build` or `produces` is not held
+//   - A NEWER UPSTREAM THAT FAILS LEAVES THE INSTALLED COPY IN PLACE BUT STOPS THE LAUNCH (PF-D8,
+//     superseded for what runs by OQ-PPX3, 2026-10-16): the advance leaves the good build where it
+//     was and hands the failure, which refuses unless a recovery hatch runs the installed copy or
+//     an `agent_updates` hold does. A user's own edit to the series, `build` or `produces` is not held
 //     (PF-D23): an installed copy of another recipe is a near-miss, and a failed install removes it,
 //     as FP-D17 removes a plain fork's build at a moved pin.
 //   - A MOVED GOOD BUILD THAT CANNOT LEAVE THE JAIL'S HOME HAS NO FLOOR ENTRY (§9), whatever the
@@ -413,7 +415,8 @@ func (f *Floor) removeInstalled(p Program) {
 // patchedServesANearMiss is servesANearMiss's patched arm: an installed copy serves a near-miss when
 // it is not a build of this fork's series and recipe as they stand — another repository, a plain
 // fork's build or the base's upstream program, or the user's edit (PF-D23). Its upstream commit may
-// lag the good build's, which a newer upstream that fails leaves it at (PF-D8).
+// lag the good build's, which a newer upstream that fails leaves it at (PF-D8), where it runs only
+// under a recovery hatch or a hold (OQ-PPX3).
 func (f *Floor) patchedServesANearMiss(p Program, rec *Record) bool {
 	ps := f.patched(p)
 	return rec.Via != packdecl.ViaSource || rec.Declared != declared(p.Install) || ps.Recipe == "" ||
