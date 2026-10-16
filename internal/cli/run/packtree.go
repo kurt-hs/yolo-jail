@@ -24,7 +24,7 @@ package run
 //     the runtime's answer that no container of that name exists. "Could not ask" removes
 //     nothing. A launch killed without a teardown leaves its tree to the reaper that already
 //     removes a gone jail's whole AGENTS_DIR/<cname> (prune.PruneOrphanAgentStaging). That is
-//     the home skeleton's lifecycle (docs/design/base-home-legacy-state.md#OQ-BH10, OQ-BH16),
+//     the home skeleton's lifecycle (docs/design/base-home-legacy-state.md#decision-ledger, OQ-BH16),
 //     and it is the precedent the ruling names.
 //
 // WHAT IT REPLACED. Every launch, an attach included, used to re-stage one shared tree,

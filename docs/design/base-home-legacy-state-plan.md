@@ -19,8 +19,8 @@ bad verdict. UNMEASURED: current native target-path mutation/restoration and aut
 is still live work, not a completed plan to delete.
 
 **Original build record, 2026-09-25:** every design question is settled,
-including the two found in the build, [OQ-BH15](base-home-legacy-state.md#OQ-BH15) and
-[OQ-BH16](base-home-legacy-state.md#OQ-BH16), both built the same day. **Every step built 2026-09-25**: 1, 2 and 3 first, then 4, 4a and 5, then the review
+including the two found in the build, [OQ-BH15](base-home-legacy-state.md#decision-ledger) and
+[OQ-BH16](base-home-legacy-state.md#decision-ledger), both built the same day. **Every step built 2026-09-25**: 1, 2 and 3 first, then 4, 4a and 5, then the review
 fixes and follow-ups below. `integration/homeskeleton_test.go` passed in a nested, rootful jail
 the same day, and **ROOTLESS in CI** on both arches (`ci.yml` run 36167524940 at `e56d871e`,
 `integration (ubuntu-latest)` and `integration (ubuntu-24.04-arm)`, the same jobs' concurrency
@@ -70,7 +70,7 @@ superseded and lives in git history.
   `writable_home_dirs` keeps reserving `.claude` in every workspace, as the first segment of
   core's redirect target `.claude/claude.json`; and `host_files`' surface-path reservation,
   which the ruling's wording (directories) did not reach, followed it later as
-  [OQ-BH15](base-home-legacy-state.md#OQ-BH15) (`selectedSurfacePaths`, built 2026-09-25).
+  [OQ-BH15](base-home-legacy-state.md#decision-ledger) (`selectedSurfacePaths`, built 2026-09-25).
 - **Review fixes to steps 4 and 4a.** A `host_files` destination under a `writable_home_dirs`
   entry or a selected pack's shared dir is not staged (it was a second bind at one
   destination); Apple Container emits no `host_files` staging bind; the legacy migrations
@@ -136,14 +136,14 @@ place; no priority change or whole-roadmap replacement is needed for this reconc
 
 ## Step 2 — the skeleton
 
-- **Root path** ([OQ-BH9](base-home-legacy-state.md#OQ-BH9)):
+- **Root path** ([OQ-BH9](base-home-legacy-state.md#decision-ledger)):
   `filepath.Join(paths.AgentsDir(), cname, "home")`, and a `paths` helper keeps the spelling in
   one place.
 - **Builder:** one function taking the root, the selected packs, the config, the `host_files`
   entries and `rt`. It runs for podman only, on the fresh-launch path, where `prepareWsState`
   and `prepareHostFiles` run today. `prepareHostFiles` runs later in `run.go` than
   `prepareWsState`, so either call the builder after both inputs exist, or split it into two
-  calls that share the root. Per [OQ-BH10](base-home-legacy-state.md#OQ-BH10), each fresh
+  calls that share the root. Per [OQ-BH10](base-home-legacy-state.md#decision-ledger), each fresh
   launch builds a new skeleton directory and never edits an old one; old ones go with the jail's
   `AgentsDir` entry.
 - **Re-point:** move the home loops, `fileMountpoints` and `HomeFileRedirects` out of
@@ -164,7 +164,7 @@ place; no priority change or whole-roadmap replacement is needed for this reconc
 
 ## Step 3 — the refusal and the check report
 
-Per [OQ-BH13](base-home-legacy-state.md#OQ-BH13), in the same change as step 2:
+Per [OQ-BH13](base-home-legacy-state.md#decision-ledger), in the same change as step 2:
 
 - `noteLegacyBaseHome` and `legacyBaseHomeHatch` (`internal/cli/run/basehomedisclosure.go`)
   and their tests go, and `ensureStorage` returns only `EnsureGlobalStorage`'s error.
@@ -172,12 +172,12 @@ Per [OQ-BH13](base-home-legacy-state.md#OQ-BH13), in the same change as step 2:
 
 ## Step 4 — the Apple Container seed
 
-Per [OQ-BH12](base-home-legacy-state.md#OQ-BH12): runtime-aware seed paths in `prepareWsState`
+Per [OQ-BH12](base-home-legacy-state.md#decision-ledger): runtime-aware seed paths in `prepareWsState`
 (on `rt=container`, sync `wsState/.claude.json` and create the dotted dirs). It needs a Mac.
 
 ## Step 4a — reservation covers only the selected packs
 
-Per [OQ-BH14](base-home-legacy-state.md#OQ-BH14):
+Per [OQ-BH14](base-home-legacy-state.md#decision-ledger):
 
 - `reservedHomeDirs` and its segment set (`internal/config/writablehome.go`) and
   `hostFileWritableRoots` (`internal/config/hostfiles.go`) take the selected packs instead of
@@ -216,7 +216,7 @@ Per [OQ-BH14](base-home-legacy-state.md#OQ-BH14):
   unreaped for as long as the workspace was in use. **Fixed in the follow-ups:** the launch
   removes the tracking file once the container is known gone. What was left, a workspace used
   alone on its machine, whose own launches' housekeeping always keeps its name, is closed by
-  [OQ-BH16](base-home-legacy-state.md#OQ-BH16): each end removes the launch's own skeleton on
+  [OQ-BH16](base-home-legacy-state.md#decision-ledger): each end removes the launch's own skeleton on
   the same evidence (built 2026-09-25).
 - `jailcontent.PrepareSkills` clears only the contents of `skills-*` under `AgentsDir/<cname>`,
   so it never touches a sibling `home/`.

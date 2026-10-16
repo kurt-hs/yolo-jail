@@ -4,7 +4,7 @@ package config
 // that run before staging and have to know what the SELECTED packs declare: validation's name
 // reservation, and the capability census behind `required_capabilities` (capabilities.go).
 //
-// The maintainer's OQ-BH14 ruling (docs/design/base-home-legacy-state.md#9-open-questions) is
+// The maintainer's OQ-BH14 ruling (docs/design/base-home-legacy-state.md#decision-ledger) is
 // that a `writable_home_dirs` entry may not claim a directory a SELECTED pack declares, and an
 // unselected pack is treated as if it does not exist: "packs could come from anywhere and be
 // added, removed, whatever". Before it, the reservation was every pack yolo ships

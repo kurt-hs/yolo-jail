@@ -5,7 +5,7 @@ package run
 // wrote it has observed the container gone.
 //
 // WHY IT EXISTS: the per-jail home skeleton's cleanup depends on it. The maintainer's OQ-BH10
-// ruling (docs/design/base-home-legacy-state.md#OQ-BH10) is that old skeletons go with the
+// ruling (docs/design/base-home-legacy-state.md#decision-ledger) is that old skeletons go with the
 // jail's AGENTS_DIR/<cname> entry through prune.PruneOrphanAgentStaging, and that reaper
 // keeps every name that is live OR TRACKED. Every jail runs `--rm`, yet nothing on a normal
 // exit removed its tracking file: only a stale-container removal, `yolo ps`, `yolo check`'s

@@ -118,19 +118,19 @@ loses its subject entirely.
 
 Each one pins a shape the inventory above could otherwise only describe two ways.
 
-- **Composition is HOST-SIDE** ([OQ-MP4](mcp-presets-removal.md#OQ-MP4) was *dissolved* 2026-09-20 —
+- **Composition is HOST-SIDE** ([OQ-MP4](mcp-presets-removal.md#decision-ledger) was *dissolved* 2026-09-20 —
   its premise, that the host cannot know a jail path, was false). An `mcp` declaration composes
   exactly like `providers`, because `paths.JailPathHomeDirs` is a host-side constant naming the jail's
   PATH directories and `TestJailPathHomeDirsCoversBootPath` keeps it in step with `BootPath`. So the
   composed table crosses as a host-assembled env pair the way `YOLO_PROVIDERS` does, and the in-jail
   side READS it: `liveTables` gains a reader, not a composer. No new placeholder vocabulary is owed —
   that list is the vocabulary.
-- **One plain wrapper script, carrying `--executablePath`** ([OQ-MP8](mcp-presets-removal.md#OQ-MP8),
+- **One plain wrapper script, carrying `--executablePath`** ([OQ-MP8](mcp-presets-removal.md#decision-ledger),
   2026-09-20 — not a service, not a daemon, and not the orphan's `--browser-url` shape). So
   `GenerateMCPWrappers` loses exactly one writer, the fat `chrome-devtools-mcp-wrapper`, and keeps the
   two thin ones (`mcp-wrappers/node`, `mcp-wrappers/npx`), which are not preset-specific.
 
-⚠ **What the removal is still gated on is [OQ-MP7](mcp-presets-removal.md#OQ-MP7)'s consequence, not
+⚠ **What the removal is still gated on is [OQ-MP7](mcp-presets-removal.md#decision-ledger)'s consequence, not
 on anything in this file.** The ruling redraws the `packs` scope rule on **host reach** rather than on
 install, and that redrawing is [`OQ-PK1`](../reference/pack-system.md#oq-pk1), still open, which names
 [`loophole-system.md`](../reference/loophole-system.md#principles)'s `R5` as the wording it amends.

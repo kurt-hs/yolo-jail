@@ -196,7 +196,7 @@ every one. The four that carry meaning for how a jail behaves:
   ([`jail-home.md`](jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches)).
   Per-workspace bytes an older yolo left here, from when this was the shared *writable* home,
   are unmounted and unread; `yolo check` reports them and prints an optional `mv`
-  (the maintainer's [`OQ-BH13`](../design/base-home-legacy-state.md#OQ-BH13) ruling).
+  (the maintainer's [`OQ-BH13`](../design/base-home-legacy-state.md#decision-ledger) ruling).
 - **`cache/`** — mounted read-write at `~/.cache` in every jail. A shared download cache.
 - **`mise/`** — the jail-land mise store, mounted at `/mise`. Shared by every jail. **The
   host's own mise installation is never a party to this** and is never mounted.

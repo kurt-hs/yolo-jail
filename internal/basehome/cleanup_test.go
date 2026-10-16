@@ -12,7 +12,7 @@ import (
 )
 
 // TestCleanupLinesAreOptionalAndNameOnlyDeclaredRootsWithBytes pins the reworded report
-// (the maintainer's OQ-BH13 ruling, docs/design/base-home-legacy-state.md#10-decision-ledger):
+// (the maintainer's OQ-BH13 ruling, docs/design/base-home-legacy-state.md#decision-ledger):
 // the bytes are unmounted and unread, so the `mv` is OPTIONAL — and it is offered only for a
 // root that carries bytes AND that a shipped pack declares, the rule the deleted launch
 // refusal used. An undeclared root may hold a local pack's own content, so it is reported by
