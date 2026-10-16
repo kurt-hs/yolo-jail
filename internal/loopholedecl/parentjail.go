@@ -10,7 +10,7 @@ import (
 // parentjail.go is the `inherit_from_parent_jail` manifest block: a loophole's statement that a
 // NESTED launch may take the credential pointer this loophole serves from the launching jail's own
 // environment, instead of starting the loophole's daemons
-// (docs/design/sso-backed-bedrock.md SSO-D2 to SSO-D5).
+// (docs/reference/agent-credentials.md SSO-D2 to SSO-D5).
 //
 // # What core does with it, and what core does not know
 //

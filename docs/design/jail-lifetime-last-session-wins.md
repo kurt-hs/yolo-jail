@@ -1801,7 +1801,7 @@ session.
 **A long-lived keeper needs nothing for a re-login.** The aws-auth service mints from the host SSO
 login per request. On 2026-09-29 one ran about ten hours across the maintainer's four-hourly SSO
 logout and login, with no restart and no failed request
-([`sso-backed-bedrock.md` §11](sso-backed-bedrock.md#11-evidence-and-how-to-re-check-it),
+([`agent-credentials.md`](../reference/agent-credentials.md#sso-chain-order),
 done-condition 4, from the service log and the maintainer's report). He repeated it while this
 section was reviewed: *"I have something that logs out and logs back in, specifically the SSO
 profile, every four hours on the host. And it's been much more than four hours. And I haven't

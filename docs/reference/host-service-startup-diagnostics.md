@@ -328,7 +328,7 @@ refused; real errors and the pack's read/exec trust disclosures are unchanged.
 
 > [!WARNING]
 > **Do not reintroduce a routine `unnarrowed` notice** (owner ruling, 2026-10-07, superseding the
-> older disclosure requirement in [the SSO design's ledger](../design/sso-backed-bedrock.md#13-decision-ledger)),
+> older disclosure requirement in [the SSO design's ledger](agent-credentials.md#sso-decision-ledger)),
 > and do not add an AWS-name branch or a new severity feature in core to express it.
 
 ## Current values

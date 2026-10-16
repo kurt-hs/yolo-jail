@@ -1,7 +1,7 @@
 package run
 
 // parentjailpointers.go is the launcher half of a loophole's `inherit_from_parent_jail` block
-// (loopholedecl/parentjail.go; docs/design/sso-backed-bedrock.md SSO-D2 to SSO-D5): a podman jail
+// (loopholedecl/parentjail.go; docs/reference/agent-credentials.md SSO-D2 to SSO-D5): a podman jail
 // launched from INSIDE a jail takes a declaring loophole's credential pointer from the launching
 // jail's own environment, and starts neither of the loophole's daemons.
 //

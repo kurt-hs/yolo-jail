@@ -472,7 +472,7 @@ func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
 //
 // NOT relative paths. "./x" and "../x" stay refused: the anchor a relative entry
 // would need is "beside the declaring file" (the ruling env_sources implements,
-// docs/reference/envsource-relative-paths.md), packs loads through loadUserScopeConfig
+// docs/reference/agent-credentials.md), packs loads through loadUserScopeConfig
 // rather than the LoadJSONCWithIncludes funnel anchoring lives in, and packsrc.Parse
 // rejects ".." outright — so the natural spelling for a tree outside
 // ~/.config/yolo-jail/ would be refused a layer down even if the anchor existed.

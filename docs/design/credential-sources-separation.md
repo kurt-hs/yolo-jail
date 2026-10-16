@@ -778,7 +778,7 @@ works:
    [CN-D4](provider-credential-scope.md#CN-D4), an implementation decision, whose
    rule "a table key naming no CLI any selected pack installs activates nothing" the host relies
    on by name. The stakes: SSO is the primary Bedrock route
-   ([`OQ-SSO7`](sso-backed-bedrock.md#13-decision-ledger)), so for most Bedrock users a grant
+   ([`OQ-SSO7`](../reference/agent-credentials.md#sso-decision-ledger)), so for most Bedrock users a grant
    without the pointer delivers nothing usable.
 
    _Leaning:_ Yes, for a typed `-p` only. The user named the profile for this one process, and no
