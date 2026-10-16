@@ -915,9 +915,8 @@ func (o *Options) logPackJailCodeItems(packs []*packload.Pack) {
 // a started daemon says will fail for this launch prints here or nowhere. payload is the
 // launch's composed jail-daemon payload (jailDaemonsFor), which says whose jail daemon this
 // launch serves, and which of the jail daemons it names the jail runs. The refusal beside the
-// handles is a host-wide daemon older than this yolo's (servicesRefusal, launchcheck.go):
-// non-nil, the caller prints it and refuses the launch, unwinding those handles as it does on any
-// other refusal.
+// handles is a started daemon's startup refusal (servicesRefusal, launchcheck.go): non-nil, the
+// caller prints it and refuses the launch, unwinding those handles as it does on any other refusal.
 func (o *Options) startLoopholesDisclosed(cname, rt string, cfg *jsonx.OrderedMap,
 	packs []*packload.Pack, payload []loopholes.JailDaemonSpec) ([]loopholeDaemon, *servicesRefusal) {
 	o.discloseLoopholes(rt, cfg, packs, payload)

@@ -26,8 +26,8 @@
 //
 // # WHEN IT RUNS
 //
-// At every open (Open), which is every spawn, and wherever a launch reuses a live writer
-// (broker.EnsureSingleton calls Trim for a host-wide daemon it does not respawn). So the log
+// At every open (Open), which is every spawn and every supervised restart of a jail's host daemon,
+// and wherever a caller reuses a live writer and calls Trim. So the log
 // holds at most MaxBytes plus what its writers wrote since the last launch that touched it.
 // Nothing trims it while no yolo command runs, so a daemon that writes heavily between two
 // launches still grows its log past the cap until the next one; the archive never passes it.
