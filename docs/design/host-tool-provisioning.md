@@ -564,187 +564,14 @@ empty environment, not `yolo host`.
 | Install silently on a non-TTY first launch | **No.** A background widget would block for minutes on a download nobody consented to |
 | Require the user to arrange PATH (`host_path` only) | **No.** That is today's burden, which the maintainer's comment asks yolo to carry for what it knows |
 
-## Open Questions
-
-1. ✅ <a id="OQ-HP1"></a>**[OQ-HP1](#OQ-HP1): Is the floor on by default?**
-   **Stakes:** whether a bare `"packs": ["claude"]` host user gets offered installs they never
-   asked for.
-
-   - **(a)** On by default: every launch checks, and installs happen only on consent
-     ([§4](#4-when-provisioning-runs)).
-   - **(b)** Opt-in through a user-scope key.
-   - **(c)** Off, with
-     the check reported by `yolo check` only.
-
-   _Leaning:_ **(a).** The check is cheap, the install is always consented to, and a floor
-   nobody turns on guarantees nothing. [`OQ-HE0`](../reference/host-agent-environment.md#oq-he0) isn't
-   engaged, because the prefix is machine state yolo owns rather than an ambient input.
-
-   <!-- vantage: question id=OQ-HP1 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29: (a), on by default.** The maintainer: *"this floor should be on by
-      > default for the host agent stuff because you're going to already have to have opted into
-      > host management … Obviously, let it be configured. You could even configure a floor of
-      > nothing … By default, if you include the claude pack, it should also have the floor include
-      > claude on the host."* The floor is the programs of the user-scope selected packs (selecting
-      > the claude pack puts claude in it); it is configurable, down to an empty floor; installs
-      > still need consent. Host wrappers stay optional: they are sugar for `yolo host`.
-
-2. ✅ <a id="OQ-HP2"></a>**[OQ-HP2](#OQ-HP2): Where does the prefix sit on the composed host PATH?**
-   **Stakes:** whether yolo's copy or the user's declared copy wins when both exist.
-
-   - **(a)** First, ahead of `host_path`.
-   - **(b)** After `host_path` and before the baseline, as a fallback.
-   - **(c)** Last.
-
-   _Leaning:_ **(a).** `bin/` holds only floor names ([§3](#3-the-host-prefix)), and only ones
-   nothing on the composed PATH provided at install time. A user who wants their own copy says
-   so through [OQ-PS7](provisioner-sets.md#decision-ledger)'s override, and then the prefix never holds
-   that name. It also matches the jail, where the launch dir precedes every install prefix.
-
-   <!-- vantage: question id=OQ-HP2 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29: moot — the prefix is on no PATH of the user's.** The maintainer: *"It
-      > sits nowhere, right? … This is only going to work with the wrappers or with yolo host. So I
-      > don't think this should change the user's environment by default other than through those
-      > wrappers … if you launch the agent not through the wrapper, we don't care if it's broken."*
-      > yolo host (and the wrappers, which are `yolo host`) runs the floor's program directly; the
-      > user's shell PATH is never changed. Inside a yolo host launch the composed PATH handed to
-      > the agent carries the prefix first, so an agent that starts another agent gets the floor's
-      > copy ([HP-D1](#HP-D1)); that is within the launch yolo owns, not the user's environment.
-      >
-      > **Superseded in part (recorder's note, 2026-09-29):** the last sentence's "prefix first" is
-      > the recorder's gloss, not the maintainer's words, and [HP-DIR2](#HP-DIR2) replaced it. By
-      > [HE-D16](../reference/host-agent-environment.md#he-d16) the prefix's `bin/` is last in the PATH the agent
-      > is handed, after the launch PATH (the caller's PATH, then `host_path`'s folders), so an
-      > agent that starts another agent by bare name gets the floor's copy only where nothing
-      > earlier on that PATH has one.
-
-3. ✅ <a id="OQ-HP3"></a>**[OQ-HP3](#OQ-HP3): How do the installer-recipe agents (`claude`, `codex`, `agy`) reach the prefix?**
-   **Stakes:** the three most-used agents. What (a) and (b) each left unmeasured, or would
-   re-open, is in [§3](#3-the-host-prefix).
-
-   - **(a)** Materialize a `yolo capture` of the
-     installer into the prefix, where the host's OS and architecture match the capture jail's
-     (Linux), and leave them hint-only on macOS.
-   - **(b)** Run the vendor script under a prefix-private `$HOME`, the
-     way macos-user runs it in the guest's home. That covers macOS.
-   - **(c)** Keep installer programs out of the floor, reported as **missing** with the pack's
-     hint.
-
-   _Leaning:_ **(a), with (c) on macOS**, pending a measurement that a captured `claude` runs on
-   a Linux host. It is the only option that keeps the standing ruling.
-
-   <!-- vantage: question id=OQ-HP3 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29: (a), and on macOS a host capture instead of hint-only.** The maintainer:
-      > *"I want to reuse the yolo capture. Like, that would be great if we just have one package
-      > inside and outside the jail that is captured in this way. Otherwise, can we do like a host
-      > capture … if it's not possible, like on a Mac, can we just do it again in a way that is
-      > possible? I want it to be part of the floor, for sure."* Installer agents (claude, codex,
-      > agy) are in the floor. Where the host matches the capture jail (Linux, same arch) the floor
-      > materializes the same `yolo capture` the jails use, one package inside and outside. Where it
-      > cannot (macOS), yolo runs an equivalent **host capture**: the vendor installer in a
-      > throwaway, confined environment with a private `$HOME`, its result stored in the same
-      > read-only capture-store shape and then materialized into the prefix ([HP-D2](#HP-D2)). Both
-      > need their measurement before they ship: a captured binary running on the host.
-
-4. ✅ <a id="OQ-HP4"></a>**[OQ-HP4](#OQ-HP4): Where does the prefix's Node come from?**
-   **Stakes:** the four npm agents can't install or run without an interpreter, and the floor
-   may not assume one on the ambient PATH.
-
-   - **(a)** The official Node tarball for the platform,
-     verified against the release's published checksums, at a version yolo ships. It is raised to
-     the highest `node_floor` a selected pack declares.
-   - **(b)** The user's nix when present
-     ([OQ-PS1](provisioner-sets.md#decision-ledger)).
-   - **(c)** The user's mise when present.
-
-   _Leaning:_ **(a)**, with (b) and (c) left to [OQ-PS6](provisioner-sets.md#decision-ledger)'s ranking
-   later. It is the only source present on every host, and it lives entirely inside the prefix.
-
-   <!-- vantage: question id=OQ-HP4 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29, as leaned: (a).** The official Node tarball, checksum-verified, at a
-      > version yolo ships raised to the highest selected `node_floor`. The maintainer: *"Using the
-      > official node tarball sounds good."*
-
-5. ✅ <a id="OQ-HP5"></a>**[OQ-HP5](#OQ-HP5): Does one consent cover the evergreen refresh?**
-   **Stakes:** [`provisioner-sets.md` §8.5](provisioner-sets.md#85-the-ruling-yolo-drives-the-winner-behind-the-confirm-and-last)
-   says driving is *"a per-launch offer, never a background action."* It was ruled about
-   system-manager commands. **(a)** Yes: the first consent covers the throttled refresh of the
-   same recipe, as the jail's launchers refresh with no prompt. **(b)** No: every version change
-   prompts, and a non-TTY launch never updates.
-
-   _Leaning:_ **(a).** An agent dependency *"wants to be current"*
-   ([P6](program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03)).
-   The refresh runs at the agent's own invocation rather than in the background, and a changed
-   recipe prompts again ([§4](#4-when-provisioning-runs)).
-
-   <!-- vantage: question id=OQ-HP5 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29, past both options: no consent prompt at all.** The maintainer: *"why is
-      > yolo even asking if you want to install this? If pi is going to be available, it's because
-      > you've already configured that pack in your config file. You've acknowledged this already.
-      > We don't have to ask again … certainly not the second time."* Selecting the pack in user
-      > config IS the consent. The floor installs and keeps current what the selected packs declare,
-      > the same way a jail's launchers do (throttled, at the agent's own invocation); no install or
-      > update prompt. This also retires the consent clause of [OQ-HP1](#OQ-HP1)'s answer and [§4](#4-when-provisioning-runs)'s
-      > consent design ([HP-D3](#HP-D3)).
-
-6. ✅ <a id="OQ-HP6"></a>**[OQ-HP6](#OQ-HP6): Does yolo run `mise install` on the stale-shim verdict?**
-   **Stakes:** the maintainer's *"by default when you run on the host we should probably run
-   the mise install."*
-
-   - **(a)** Yes, at a TTY, as [§5](#5-mise-the-stale-shim-verdict) scopes it:
-     one tool, in the invocation's cwd, printed before it runs, with mise's own trust as the gate.
-   - **(b)** Yes, including non-TTY launches.
-   - **(c)** No: print the remedy, as
-     [`host-agent-environment.md`'s launch PATH](../reference/host-agent-environment.md#the-launch-path-and-which-copy-of-a-program-runs)
-     has it.
-
-   _Leaning:_ **(a).** It is what the user's own `mise.toml` asks for. mise's trust prompt
-   already guards a cloned repository's config. A widget can't consent to a download.
-
-   <!-- vantage: question id=OQ-HP6 -->
-
-      **Answer:**
-      > **Ruled 2026-09-29: never** ([HP-DIR3](#HP-DIR3)). The maintainer: *"when you're inside of
-      > the jail, you can't really truly manage all the things in the environment … it's the safer
-      > contained thing. So, that's okay to do there. But on the host, the host agent could run the
-      > mise whatever it needs to once it starts up … we don't maintain the host development
-      > environment, the workspace's runtime … and extend that ruling to whatever other questions it
-      > applies to."* At the host yolo does not provision the workspace's runtime: no `mise
-      > install`, no `mise env` or activation, no direnv. A missing project tool behaves as when the
-      > user types the command, and the host agent can run `mise install` itself if the work needs
-      > it.
-
-7. ✅ <a id="OQ-HP7"></a>**[OQ-HP7](#OQ-HP7): When a delivered agent runs project commands, which environment do they see?**
-   Raised in review 2026-09-29 by [HP-DIR2](#HP-DIR2): a delivered agent starts in a set
-   environment (the floor's node by absolute path, mise stripped). **(a)** Only the agent's own
-   startup is fixed; what it runs sees the user's own shell environment. **(b)** The set
-   environment all the way down, so `npm test` runs on the floor's node.
-
-   <!-- vantage: question id=OQ-HP7 -->
-
-   **Answer:**
-   > **Ruled 2026-09-29: (a)** ([HP-DIR3](#HP-DIR3)). Only a delivered agent's own startup runs in
-   > the set environment; the commands the agent runs see the user's own shell environment, mise
-   > included, exactly as the user would run them.
-
 ## Decision Ledger
 
 | ID | Ruling | Date | Built |
 | :--- | :--- | :--- | :--- |
-| [OQ-HP1](#OQ-HP1) | **Maintainer ruling:** the floor is on by default: the programs of the user-scope selected packs, configurable down to empty, installed with consent | 2026-09-29 | **Built.** On by default; configurable down to empty by the user-scope `host_floor` key ([HP-D5](#HP-D5)). The consent clause is withdrawn by HP-D3 |
-| [OQ-HP2](#OQ-HP2) | **Maintainer ruling:** moot; the prefix is on no user PATH, and only `yolo host` and the wrappers use it | 2026-09-29 | **Built.** The prefix is `~/.local/share/yolo-jail/host-floor` ([HP-D8](#HP-D8)), on no PATH of the user's; `yolo host env` emits no PATH line |
+| OQ-HP1 | **Maintainer ruling: on by default.** *"this floor should be on by default for the host agent stuff because you're going to already have to have opted into host management … Obviously, let it be configured. You could even configure a floor of nothing … By default, if you include the claude pack, it should also have the floor include claude on the host."* The floor is the programs of the user-scope selected packs, configurable down to an empty floor. Its "installs still need consent" clause is withdrawn by [HP-D3](#HP-D3). Host wrappers stay optional: they are sugar for `yolo host` | 2026-09-29 | **Built.** On by default; configurable down to empty by the user-scope `host_floor` key ([HP-D5](#HP-D5)). The consent clause is withdrawn by HP-D3 |
+| OQ-HP2 | **Maintainer ruling: moot; the prefix is on no PATH of the user's.** *"It sits nowhere, right? … This is only going to work with the wrappers or with yolo host. So I don't think this should change the user's environment by default other than through those wrappers … if you launch the agent not through the wrapper, we don't care if it's broken."* `yolo host` (and the wrappers, which are `yolo host`) runs the floor's program directly; the user's shell PATH is never changed. The recorder's gloss that a launch puts the prefix first ([HP-D1](#HP-D1)) was not the maintainer's words and is replaced by [HP-DIR2](#HP-DIR2): by [HE-D16](../reference/host-agent-environment.md#he-d16) the prefix's `bin/` is last in the PATH the agent is handed, so an agent that starts another by bare name gets the floor's copy only where nothing earlier on that PATH has one | 2026-09-29 | **Built.** The prefix is `~/.local/share/yolo-jail/host-floor` ([HP-D8](#HP-D8)), on no PATH of the user's; `yolo host env` emits no PATH line |
 | <a id="HP-D1"></a>HP-D1 | *Implementation decision under HP2:* a yolo host launch execs the floor's program by path and puts the prefix first on the composed PATH it hands the agent, so a child agent resolves the floor's copy; the user's shell is untouched. Its "prefix first" is superseded by [HP-DIR2](#HP-DIR2) and [HE-D16](../reference/host-agent-environment.md#he-d16) (the prefix last); the exec by path stands | 2026-09-29 | **Built** for the exec by path: `yolo host` execs `bin/<bin>`, which starts the program by absolute path ([HP-D4](#HP-D4)) |
-| [OQ-HP3](#OQ-HP3) | **Maintainer ruling:** installer agents are in the floor, from the jail's `yolo capture` where the host matches, and from a host capture where it does not (macOS) | 2026-09-29 | **Built on Linux** ([HP-D7](#HP-D7)): the capture store's entry, relocated into the prefix, and on a host with no container runtime a capture on the host ([HP-D18](#HP-D18)). **Built for a Mac** 2026-10-05 ([HP-D2](#HP-D2)) |
+| OQ-HP3 | **Maintainer ruling: installer agents (claude, codex, agy) are in the floor, from the jail's `yolo capture` where the host matches the capture jail (Linux, same arch), and from a host capture where it does not (macOS).** *"I want to reuse the yolo capture. Like, that would be great if we just have one package inside and outside the jail that is captured in this way. Otherwise, can we do like a host capture … if it's not possible, like on a Mac, can we just do it again in a way that is possible? I want it to be part of the floor, for sure."* The host capture runs the vendor installer in a throwaway, confined environment with a private `$HOME` and stores the result in the capture store's shape ([HP-D2](#HP-D2)); each needs its measurement, a captured binary running on the host, before it ships | 2026-09-29 | **Built on Linux** ([HP-D7](#HP-D7)): the capture store's entry, relocated into the prefix, and on a host with no container runtime a capture on the host ([HP-D18](#HP-D18)). **Built for a Mac** 2026-10-05 ([HP-D2](#HP-D2)) |
 | <a id="HP-D2"></a>HP-D2 | *Implementation decision under HP3:* the host capture runs the vendor installer confined (on macOS, Seatbelt with a throwaway `$HOME`, the capture jail's recipe, no network beyond the vendor's), and writes the capture store's existing shape, so the floor has one materialization path for both; it is measured on a Mac before it ships. **Amended 2026-10-05**, *an implementation decision taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible:* the Mac's host capture **is the existing macos-user capture act** (`macosuser.RunCaptureAct`: Seatbelt's capture profile, a throwaway `$HOME` under `/Users/Shared/yolo-captures`, run as the sandbox account), whose recording half was measured on hardware on 2026-09-11, so no separate measurement round precedes it. The floor runs it as `yolo capture <bin>` on the macos-user runtime, handed to that one act and never set in the environment the agent is exec'd with: a container capture on a Mac records a Linux entry, which this floor cannot run. Its reasons for no floor entry are the act's own refusals, asked before it starts, each with its step: yolo run as root; `sandbox-exec` not on PATH; no sandbox account (`yolo macos-setup`); and no terminal for sudo with `sudo -n true` failing (`YOLO_RUNTIME=macos-user yolo capture <bin>` once in a terminal). A Mac's floor given no capture act holds no installer agent | 2026-09-29 | **Built** 2026-10-05: `noEntryReason` (`internal/hostfloor/floor.go`), `wireFloorCapture` and `macCaptureBlocked` (`internal/cli/hostfloor.go`), `captureAct` (`internal/cli/capturehost.go`); `TestAnInstallerProgramOnAMacIsItsCaptureMaterialized`, `TestAMacsFloorCapturesThroughTheMacosUserAct`, `TestTheMacosUserCaptureActHandsItsRuntimeToTheRunPipelineAlone`, `TestAMacsFloorNamesWhyTheMacosUserActCannotRun`. **NOT MEASURED on a Mac:** the floor's materialize of a real macos-user capture, relocated out of the staging home (`TestMacosUserHostFloorMaterializesAFixtureInstallerCapture`, Mac-only), a real claude or agy capture relocatable, sudo asking once at a terminal, and a launch with no terminal falling back to the PATH copy |
 | OQ-HP4 | **Maintainer ruling, as leaned: the prefix's Node is the official tarball, checksum-verified, at a version yolo ships raised to the highest selected `node_floor`.** *"Using the official node tarball sounds good."* | 2026-09-29 | **Built** ([HP-D6](#HP-D6)): Node v24.21.0 with its published sha256 compiled in, raised to a higher `node_floor` |
 | OQ-HP5 | **Maintainer ruling, past both options: no consent prompt at all.** *"why is yolo even asking if you want to install this? If pi is going to be available, it's because you've already configured that pack in your config file. You've acknowledged this already. We don't have to ask again … certainly not the second time."* Selecting the pack in user config is the consent; the floor installs and keeps current what the selected packs declare the way a jail's launchers do (throttled, at the agent's own invocation), with no install or update prompt. Retires [OQ-HP1](#decision-ledger)'s consent clause and [§4](#4-when-provisioning-runs)'s consent design ([HP-D3](#HP-D3)) | 2026-09-29 | **Built.** Nothing prompts |
@@ -760,7 +587,7 @@ empty environment, not `yolo host`.
 | <a id="HP-D7"></a>HP-D7 | *Implementation decision under [OQ-HP3](#decision-ledger):* container captures now record the full reference scan (`--scan-content-refs`), without which `capture.Materialize` refuses to move an entry out of `/home/agent`; the floor materializes the store's selected entry into its own install directory and relocates it. An entry recorded before the scan is recaptured once. With no capture in the store, the floor runs `yolo capture <bin>` when a container runtime is on PATH; with none, the program has no floor entry here, and neither has one whose only capture was recorded for a jail's home (**revised 2026-10-05 by [HP-D18](#HP-D18)**: with none, a Linux host whose kernel offers Landlock captures it on the host). A capture whose `~/.local/bin/<bin>` is not in the capture has no floor entry either: codex's installer links it into `~/.codex`, which no capture records (measured 2026-09-29 against this machine's store; its claude 2.1.267 and agy entries hold their program, and no file in either names `/home/agent`, so a full scan finds them relocatable). An installer program is refreshed when the store's selected entry changes; the vendor's own update verb is never run against the real home. **Revised 2026-10-05 by [HP-D17](#HP-D17):** codex is in the floor; its exclusion rested on a capture recorded before its payload was a capture surface, and the recapture now comes before the program check. **Revised 2026-10-05 by [HP-D16](#HP-D16):** the refresh installs a newer release only, and captures again once the newest capture is a day old | 2026-09-29 | **Built** (`internal/hostfloor/ensure.go`, `captured.go`; `captureJailArgv`). A capture jail's entry run from the floor on a real host is pinned by `TestHostFloorRunsARealCaptureOfAnInstallerFixture` (every push, Linux: a real capture jail, the confined materialize, the relocated link) for a hermetic fixture, and by `TestHostFloorInstallsTheVendorsRelease` (Pack Installs, Ubuntu) for claude, agy and codex. **Where the capture jail writes** (2026-10-05; implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible): its own stdout, like its stderr, goes to this process's stderr, the raw stream rather than the launch's teed one, so the host launch log keeps only yolo's own lines; the floor's fork build and every advance at the host do the same (`hostJailStdout`). Until then it reached the launch's stdout, ahead of the agent's output. Pinned by `TestTheFloorsCaptureJailWritesItsOutputToTheLaunchsStderr` and its siblings in `hostfloorjailstdout_test.go`, and on a real host by the capture cell's stdout assertion |
 | <a id="HP-D8"></a>HP-D8 | *Implementation decision:* the prefix is `host-floor/` under the state dir, `0700`: `bin/`, `node/v<version>/`, `programs/<bin>/<id>/` (a completion marker written last), `records/<bin>.json`, `receipts.jsonl`, `locks/`. Each install keeps its program's current and previous version. The per-program lock is a `flock` the kernel drops with its holder, so no lock can be held by a dead pid; `yolo check` reports an install running now and an interrupted one's leftover, which `yolo prune --apply` alone reclaims. `yolo host apply --assert` installs every missing entry and removes one no selected pack delivers, but only when the whole selection resolved; the launch gate's apply takes neither step. A `records/<bin>.json` whose schema is newer than this yolo's is refused and never installed over, as a pack lockfile of a newer schema is: `yolo host -- <bin>` and `yolo host apply --assert` refuse it and name two steps: `yolo update`, and, for a machine where the update finds nothing newer (the prefix is every yolo's on the machine, so the record can be another install's), removing the record, after which this yolo installs its own copy. While such a record is in the prefix, an `--assert` drops no Node release, since this yolo cannot read which one that record runs on (decided 2026-10-01) | 2026-09-29 | **Built.** `internal/hostfloor`, `internal/prune/hostfloor.go`, `yolo stores` |
 | <a id="HP-D9"></a>HP-D9 | *Implementation decision under [the one resolver](../reference/host-agent-environment.md#one-resolver):* the dependency probe of `yolo host apply` (and so the launch gate's survey) and `yolo check-deps` answers a program the floor delivers by its floor entry, as satisfied (provisioned, or the floor's to install), never by a PATH lookup, so a not-yet-installed agent is not a missing-dependency blocker | 2026-09-29 | **Built.** `resolveHostDeps`, `configuredDepRequirements` |
-| <a id="HP-D10"></a>HP-D10 | *Implementation decision under [OQ-HP3](#OQ-HP3), from the build's review:* the floor's materialize runs on the HOST, following a manifest the capture driver wrote inside the capture jail, so the manifest is treated as that jail's claim. Every materialize, in a jail too, refuses before its first write a manifest whose entries are not a tree under the home (an empty, absolute, unclean or climbing path, one listed twice, an unknown kind, one beneath a non-directory entry) and a file entry whose store source is not a regular file; none of these can come from a capture's own walk. The floor's is a **confined** materialize, which also requires an empty home, keeps every entry inside the capture surfaces, and checks each directory on the way to an entry with `Lstat`, so it writes through no link (the one case the entry checks cannot see is two names one directory on a case-insensitive filesystem). A jail's home is never confined: macos-user's reaches `.local` through a link it must follow | 2026-09-29 | **Built.** `internal/capture/confine.go` (`MaterializeOptions.Confined`); the floor sets it in `installFromCapture` |
+| <a id="HP-D10"></a>HP-D10 | *Implementation decision under [OQ-HP3](#decision-ledger), from the build's review:* the floor's materialize runs on the HOST, following a manifest the capture driver wrote inside the capture jail, so the manifest is treated as that jail's claim. Every materialize, in a jail too, refuses before its first write a manifest whose entries are not a tree under the home (an empty, absolute, unclean or climbing path, one listed twice, an unknown kind, one beneath a non-directory entry) and a file entry whose store source is not a regular file; none of these can come from a capture's own walk. The floor's is a **confined** materialize, which also requires an empty home, keeps every entry inside the capture surfaces, and checks each directory on the way to an entry with `Lstat`, so it writes through no link (the one case the entry checks cannot see is two names one directory on a case-insensitive filesystem). A jail's home is never confined: macos-user's reaches `.local` through a link it must follow | 2026-09-29 | **Built.** `internal/capture/confine.go` (`MaterializeOptions.Confined`); the floor sets it in `installFromCapture` |
 | <a id="HP-D11"></a>HP-D11 | *Implementation decision under [HP-DIR4](#HP-DIR4), from the build's review:* a [deselected entry](#defined-terms) is never run. The launch's PATH lookup skips the floor's `bin/` for every name, one lookup for a program with no floor entry and for any other name: every name in `bin/` is a floor entry, and one a selected pack delivers runs by path before the lookup, so a hit there could only be a deselected entry. A launch that finds no other copy says the floor still holds one it does not run and that `yolo host apply --assert` removes it; `yolo check` says the same beside the no-floor-entry row. The child's PATH still ends with the floor's `bin/` ([HE-D16](../reference/host-agent-environment.md#he-d16)), deselected entry included, until the apply removes it | 2026-09-29 | **Built.** `resolveHostLaunchTarget`; `hostfloordeselected_test.go` |
 | <a id="HP-D12"></a>HP-D12 | *Implementation decision under [HE-D16](../reference/host-agent-environment.md#he-d16), from the build's review:* a caller that passes no PATH at all (`env -i`) gets the floor installer's system baseline (`hostfloor.BaselinePath`, the per-OS system directories that exist) in place of its PATH, ahead of the floor's `bin/`. Otherwise the child would hold the floor's `bin/` alone, and every command an agent runs by name would be unfound, where before the floor a child with no PATH at least had libc's default search path | 2026-09-29 | **Built.** `hostChildPath`, through `hostpath.Launch.Child`. It stands in for the PATH the caller did not pass, and `host_path`'s folders follow it ([HE-D3](../reference/host-agent-environment.md#he-d3)); yolo's checks keep `host_path` alone ([HE-D4](../reference/host-agent-environment.md#he-d4)) |
 | <a id="HP-D13"></a>HP-D13 | *Implementation decision under [OQ-RO3](../reference/report-tiers.md#why-its-this-way) (a launch has no quiet mode), from the build's review:* the evergreen refresh prints one line, naming the program, its installed version and the poll's bound, before its `npm view`. The poll is bounded at 60 s and runs before the hand-over line, so a slow or unreachable registry was otherwise a launch that waited up to a minute, once an hour, saying nothing | 2026-09-29 | **Built.** `newerThan`; `refreshnotice_test.go`. The installer recipe's refresh reads the capture store offline, and prints one line, naming the program and its installed version, before the capture it runs once its newest capture is a day old ([HP-D16](#HP-D16)) |
