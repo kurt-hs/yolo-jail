@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Ratify OQ-DA2 and OQ-DA4, both built on their leanings; rule OQ-DA3 (a small diagnostics build); the three mechanism questions owned by design docs; ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
+next: "Ratify OQ-DA2 and OQ-DA4, both built on their leanings; rule OQ-DA3 (a small diagnostics build); build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
 depends-on:
   - ../design/patched-forks.md#OQ-PFK6
   - ../design/patched-forks.md#OQ-PFK7
@@ -42,9 +42,9 @@ only where a question has no design doc of its own. The source handoff lives out
 | [3](#3-a-build-has-no-version-identity) | two binaries from one revision are distinguishable, and a broadcast clause records its version | landed | ratify [OQ-DA2](#OQ-DA2) |
 | [4](#4-a-reduced-window-child) | a reduced-window child does not silently inherit the small window | narrowed — yolo's part done | decision recorded below; the owner's declaration is the consumer's |
 | [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../design/patched-forks.md#decision-ledger) |
-| [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | open | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
+| [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | ruled 2026-10-16, not built | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
 | [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | ruled 2026-10-15, not built | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
-| [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | open | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
+| [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | ruled 2026-10-16, not built | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | partially landed | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
 | [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo's part built, off by default; waits on pi-subagents | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
@@ -130,16 +130,18 @@ does ([PF-D86](../design/patched-forks.md#PF-D86)).
 **Ask.** A `models.json` row that states no thinking levels keeps pi's catalog map, so
 `--thinking xhigh` is not silently clamped on a declared model.
 
-**State.** `open` on the reported surface; **partially landed** on the other. **Evidence:** the
+**State.** `ruled 2026-10-16, not built` on the reported surface; **partially landed** on the other. **Evidence:** the
 `base` key inherits the pi catalog's thinking levels, inputs, limits and cost — but
 `config-ref` states the two keys that do this are "read by PI's model-list render alone"
 ([`config_ref.txt`](../../internal/cli/config_ref.txt)), and the reported symptom is on a
 `models.json` row. So the model-list surface is covered and the `models.json` derive is not.
 
-**Landed.** Either the derive merges catalog facts into a declared row that states none, or the
-record states plainly that `base` covers the model-list surface only.
+**Landed.** The derive merges catalog facts into a declared row that states none, the first of
+the two outcomes the ask offered; the ruling took it.
 
-**Owner.** [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4).
+**Owner.** [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4), ruled 2026-10-16: the derive
+merges a row over pi's catalog field by field, in both files, and a fact goes only when the row
+writes it as `null` ([ML-D10](../design/model-lists-and-pickers.md#ML-D10)). Not built.
 
 ## 7. The `carry` key
 
@@ -165,7 +167,7 @@ name; `patches` is otherwise unchanged.
 model and `extends: "<name>"` on the rows, on **both** rendered surfaces —
 `~/.pi/agent/models.json` and `~/.pi/agent/yolo-model-lists.json`.
 
-**State.** `open` on the yolo side; the pi extension half is the consumer's. **Evidence:** zero
+**State.** `ruled 2026-10-16, not built` on the yolo side; the pi extension half is the consumer's. **Evidence:** zero
 occurrences of `sharedModels` in `internal/`, `cmd/` or `packs/`.
 
 **Landed.** (Verbatim acceptance from the consumer's design.) The rendered surfaces carry
@@ -174,7 +176,13 @@ test fails on a same-value restatement; an unresolvable reference is refused by 
 pi naming the row; a route lowering `contextWindow` under an inherited `workingContextWindow` fails
 loudly rather than clamping.
 
-**Owner.** [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5). ⚠ `extends` is a different
+**Owner.** [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5), ruled 2026-10-16: facts may be
+shared across a model's routes, and every route can override any shared fact, since providers
+differ for the same model. The shared form is written only for a pi that reads it, and full
+merged rows otherwise, because stock pi ignores both keys without an error
+([ML-D11](../design/model-lists-and-pickers.md#ML-D11)); so the verbatim acceptance above changes
+where it fails a test on a repeated value, which a route may now restate on purpose. Not built.
+⚠ `extends` is a different
 mechanism from the `base` key of [ask 6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels);
 the consumer's design argues why `base` does not subsume it.
 
@@ -223,10 +231,10 @@ on 2026-10-15; the flag ships off until pi-subagents registers it.
 
 ## Open Questions
 
-The three mechanism asks still open in a design doc of their own are owned there:
-[OQ-PFK6](../design/patched-forks.md#OQ-PFK6),
-[OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4),
-[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5); [OQ-PFK7](../design/patched-forks.md#decision-ledger)
+The mechanism asks owned by a design doc of their own are all ruled there:
+[OQ-PFK6](../design/patched-forks.md#OQ-PFK6) (2026-10-15),
+[OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) and
+[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../design/patched-forks.md#decision-ledger)
 is settled. Of the four with no other home, [OQ-DA1](#decision-ledger) is settled and the three below
 remain; two of them only await ratification of what was built.
 
