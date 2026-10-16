@@ -1,7 +1,7 @@
 package capture
 
 // patchedselect_test.go pins how a PATCHED fork's build is selected and reaped (select.go, gc.go;
-// docs/design/patched-forks.md §6.3, PF-D7): by its fork key, never its source, so no plain fork's
+// docs/reference/patched-forks.md §6.3, PF-D7): by its fork key, never its source, so no plain fork's
 // query and no other fork's selects it, and `yolo prune` keeps the newest build per fork; and the
 // move's own reap (ReapEntry), marker first.
 

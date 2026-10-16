@@ -1,7 +1,7 @@
 package entrypoint
 
 // prelaunchrefresh_test.go RUNS the pre-launch refresh (prelaunchrefresh.go) — the execution
-// and concurrency tiers of docs/design/pi-extension-lifecycle.md, §3.2 and §3.3.
+// and concurrency tiers of docs/reference/pi-extensions.md, §17.2 and §17.3.
 //
 // Every cell drives a FAKE program: a shell script at the launcher's REAL_BIN that logs its
 // argv and, when run with the refresh argv, can fail, block, or tamper with the lock on

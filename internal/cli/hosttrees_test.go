@@ -1,6 +1,6 @@
 package cli
 
-// hosttrees_test.go pins a PATCHED EXTENSION at the host notch (docs/design/patched-extensions.md
+// hosttrees_test.go pins a PATCHED EXTENSION at the host notch (docs/reference/pi-extensions.md
 // §8.3, §11; PPX-D11, PPX-D18): the render links `~/<into>` to a versioned copy of the good build in
 // the host-private trees directory, through an owned link swapped by rename, keeps the previous
 // version until the next move, never takes a path the user owns, and says on a macOS host that it

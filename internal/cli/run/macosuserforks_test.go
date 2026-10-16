@@ -1,7 +1,7 @@
 package run
 
 // macosuserforks_test.go pins what a macos-user launch says and hands its sandbox for a fork, plain
-// or PATCHED (docs/design/forked-programs-as-packs.md FP-D3; docs/design/patched-forks.md §9): that
+// or PATCHED (docs/design/forked-programs-as-packs.md FP-D3; docs/reference/patched-forks.md §9): that
 // backend delivers no fork's build — its launch never reaches the fresh-launch slot, and no launch
 // there can read the capture store (install-capture.md hand-off H4) — so the launch says so with the
 // next step, a container backend, and the sandbox's own launcher for the program repeats that reason

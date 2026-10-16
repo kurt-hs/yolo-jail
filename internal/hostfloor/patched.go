@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
-// patched.go is the floor's arm for a PATCHED FORK's program (docs/design/patched-forks.md §9,
+// patched.go is the floor's arm for a PATCHED FORK's program (docs/reference/patched-forks.md §9,
 // PF-D14): a fork whose `source` names the upstream and whose bytes are that upstream at a commit
 // with the fork pack's patch series replayed. Its host copy is the capture store's build of its
 // GOOD BUILD — this machine's record of the last build of the fork it admitted — relocated into the

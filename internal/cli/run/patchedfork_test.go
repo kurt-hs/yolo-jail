@@ -1,6 +1,6 @@
 package run
 
-// patchedfork_test.go pins the launch's half of a PATCHED fork (docs/design/patched-forks.md §6.3,
+// patchedfork_test.go pins the launch's half of a PATCHED fork (docs/reference/patched-forks.md §6.3,
 // §6.5, §7, PF-D20, PF-D25): the fresh-launch slot hands a patched fork to the build act's advance
 // rather than giving it the no-pin reason, and never in a jail; the delivery record each fresh
 // launch leaves beside its pack tree, read by a move's reap and gone with the tree; the fork block's

@@ -9,7 +9,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 )
 
-// patchbranch_test.go is the container-level cell for a PATCH BRANCH (docs/design/patched-forks.md §3.5,
+// patchbranch_test.go is the container-level cell for a PATCH BRANCH (docs/reference/patched-forks.md §3.5,
 // OQ-PFK6): the patched-fork fixture with its series replaced by a branch of a clone of the
 // upstream that patches line ten, delivered by fresh launches.
 //

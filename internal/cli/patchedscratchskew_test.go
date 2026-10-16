@@ -1,7 +1,7 @@
 package cli
 
 // patchedscratchskew_test.go pins that the scratch act, `yolo pack series check`, reads a pack as a
-// launch does, a USE READ (docs/design/patched-forks.md PF-D68), and says each contribution it skips
+// launch does, a USE READ (docs/reference/patched-forks.md PF-D68), and says each contribution it skips
 // as a launch says it (PF-D72): a contribution this yolo cannot read leaves the rest of the pack
 // checked, and a patched fork skipped for a field this yolo does not know is named rather than read as
 // a pack that declares none.

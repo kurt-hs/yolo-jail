@@ -1,6 +1,6 @@
 package packsrc
 
-// patchcheck_test.go pins a patched fork's CHECK (patchcheck.go; docs/design/patched-forks.md §4,
+// patchcheck_test.go pins a patched fork's CHECK (patchcheck.go; docs/reference/patched-forks.md §4,
 // PF-D5, PF-D10) against a real upstream repository: the follow rule and the walk's list, the
 // throttle that runs no git, the attempt that counts, the fetch with no checkout, and the lock
 // order.

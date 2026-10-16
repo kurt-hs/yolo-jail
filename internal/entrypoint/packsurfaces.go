@@ -196,7 +196,7 @@ func loadJailPack(e *Env, dir, name string, disclosed []string) (*packload.Pack,
 	// tomorrow must not make it six.
 	//
 	// A note the LAUNCH already printed (the host's use read skips what this read skips,
-	// docs/design/patched-forks.md PF-D68, and the tree's record lists what it printed) goes to
+	// docs/reference/patched-forks.md PF-D68, and the tree's record lists what it printed) goes to
 	// boot.log only, so a skip is one line on the terminal, not one from each half. Matched
 	// without the "pack <name>: " prefix, since the launch names a pack by its config name and
 	// this side by its directory.

@@ -10,7 +10,7 @@ import (
 
 // prelaunchrefresh.go is the launcher half of a program's PRE-LAUNCH REFRESH (packdecl.Refresh,
 // a term coined for that field): the execution and concurrency tiers of
-// docs/design/pi-extension-lifecycle.md, §3.2 and §3.3.
+// docs/reference/pi-extensions.md, §17.2 and §17.3.
 //
 // WHAT IT IS FOR. Pi showed its "Package Updates Available" box until a human ran
 // `pi update --extensions` by hand. The refresh is that command, run by the launcher the user
@@ -72,7 +72,7 @@ import (
 // sentinel is a shquote'd literal in a bare position. HAS_REFRESH gates every expansion of
 // REFRESH_ARGV for HAS_UPDATE_VERB's reason — bash before 4.4 treats "${arr[@]}" on an EMPTY
 // array as unbound under "set -u", and macos-user runs these launchers on a stock bash 3.2.
-const refreshDeclShell = `# The pack's declared PRE-LAUNCH REFRESH (packdecl.Refresh; pi-extension-lifecycle.md §3.2):
+const refreshDeclShell = `# The pack's declared PRE-LAUNCH REFRESH (packdecl.Refresh; pi-extensions.md §17.2):
 # the program's own argv, bin omitted, and the home-relative LOCK DIRECTORY inside the store
 # the refresh writes (§3.3). BAKED, like everything above: a jail cannot talk it into one.
 HAS_REFRESH=__YOLO_HAS_REFRESH__
@@ -148,7 +148,7 @@ REFRESH_ONLY_IF_CONTAINS=(__YOLO_REFRESH_ONLY_IF_CONTAINS__)
 // dead job's lock as held: it skips its refresh, and one whose watched content is new waits for
 // the lock first, up to UPDATE_TIMEOUT.
 const prelaunchRefreshShellFn = programPhasePerfShellFn + `
-# --- pre-launch refresh (pi-extension-lifecycle.md §3.2, §3.3) -------------------------
+# --- pre-launch refresh (pi-extensions.md §17.2, §17.3) -------------------------
 # The stamp has the LOCK'S SCOPE (pi-extension-store-builds.md XB-D14): it lives beside the
 # lock, in the store the lock's parent names, so it throttles exactly the launches the lock
 # excludes. For pi that store is the workspace's own .pi, so one refresh an hour per workspace.

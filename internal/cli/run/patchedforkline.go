@@ -1,6 +1,6 @@
 package run
 
-// patchedforkline.go is a PATCHED fork's lines at a launch (docs/design/patched-forks.md §7, §8,
+// patchedforkline.go is a PATCHED fork's lines at a launch (docs/reference/patched-forks.md §7, §8,
 // PF-D11): its line in the "Forks this launch" block, which every launch prints above the dispatch,
 // an attach included — the series it applies, the GOOD BUILD this machine runs it at, and the HELD
 // SUFFIX while something holds the newest candidate back — and an attach's line naming the build the
@@ -47,7 +47,7 @@ func WithPatches(label string, n int) string {
 }
 
 // WithSeries is WithPatches for a series as read: "<label> + N patches", or for a PATCH BRANCH
-// (docs/design/patched-forks.md §3.5) "<label> + patch branch <ref>@<commit>".
+// (docs/reference/patched-forks.md §3.5) "<label> + patch branch <ref>@<commit>".
 func WithSeries(label string, s *packsrc.Series) string {
 	if s == nil {
 		return label
@@ -83,7 +83,7 @@ func SeriesWhat(s *packsrc.Series) string {
 type FloorCopy struct{ Commit, Recipe, Label string }
 
 // PatchedForkLine is a patched fork's line as `yolo host -- <bin>` prints it once the floor installed
-// the program (docs/design/patched-forks.md §7: every fork line names the series, and a later launch
+// the program (docs/reference/patched-forks.md §7: every fork line names the series, and a later launch
 // carries the held suffix), and whether it is a warning. It names floor, the build that runs (PF-D53):
 // while that is the good build, the jail's fork-block line, with rebuilds naming the act that builds
 // an edited series there; otherwise that build, and the good build when the record names one.

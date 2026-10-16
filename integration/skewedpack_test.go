@@ -1,7 +1,7 @@
 package integration
 
 // skewedpack_test.go is request 1's verification end to end in a real container
-// (docs/design/patched-forks.md PF-D68): a pack holding a contribution with a field this yolo does
+// (docs/reference/patched-forks.md PF-D68): a pack holding a contribution with a field this yolo does
 // not know — the shape a patched extension's `patches` had for a yolo older than the mode —
 // launches, the readable part of the pack reaches the jail, the skipped part does not, and the
 // launch says so in ONE line: the host prints it, and the boot, which skips the same contribution,

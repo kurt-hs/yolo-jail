@@ -985,7 +985,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		runCmd = append(runCmd, "-e", entrypoint.ForkBuildsEnv+"="+wire)
 	}
 	// --- PATCHED EXTENSIONS: what each one was handed, and whether its agent's launchers stop ---
-	// (patchedtrees.go, docs/design/patched-extensions.md PPX-D8, PPX-D18).
+	// (patchedtrees.go, docs/reference/pi-extensions.md PPX-D8, PPX-D18).
 	if wire := entrypoint.PatchedTreesWire(in.patchedTrees); wire != "" {
 		runCmd = append(runCmd, "-e", entrypoint.PatchedTreesEnv+"="+wire)
 	}

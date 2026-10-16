@@ -1,7 +1,7 @@
 package entrypoint
 
 // packskewdisclosed_test.go pins the boot's half of one skipped contribution being ONE line
-// (docs/design/patched-forks.md PF-D68): the host's use read skips what the boot's tolerant read
+// (docs/reference/patched-forks.md PF-D68): the host's use read skips what the boot's tolerant read
 // skips, the launch prints it and records it in the tree (packload.PackTreeEntry.Skipped), and the
 // boot logs a recorded note to boot.log instead of printing it a second time. A note the launch
 // did not record — an entrypoint of another build finding what the host could read — still warns.

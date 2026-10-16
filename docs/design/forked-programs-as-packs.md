@@ -94,7 +94,7 @@ run the program.
   ⚠ **Amended 2026-10-03** by the maintainer's request for a second mode: *"I want another mode
   where you can specify a set of patches that will then get applied to the latest of the upstream
   … so that we don't have to just do essentially clean rebases for every new upstream version."*
-  The non-goal stands for a fork pinned at one revision; [`patched-forks.md`](patched-forks.md)
+  The non-goal stands for a fork pinned at one revision; [`patched-forks.md`](../reference/patched-forks.md)
   designs the mode, for forks whose manifest declares `patches`.
 - **Agent-specific anything.** A forked agent is the motivating case and gets no special
   path; see [§3](#3-why-this-is-not-an-agent-feature).
@@ -466,11 +466,11 @@ One is open, [OQ-FP11](#OQ-FP11), raised by building [FP-D24](#FP-D24) on 2026-1
 [OQ-FP7](#14-decision-ledger) to [OQ-FP10](#14-decision-ledger) are compacted into the
 [Decision Ledger](#14-decision-ledger).
 
-**See also** [`patched-forks.md`](patched-forks.md), in design since 2026-10-03: a fork that names
+**See also** [`patched-forks.md`](../reference/patched-forks.md), in design since 2026-10-03: a fork that names
 its upstream and a patch series instead of a fork repository, and follows the upstream while the
 series applies and builds. For forks that declare `patches`, and only those, it overrides several of
 this route's rules, [§9](#9-failure-modes)'s *"never rebuild on a timer"* among them; its
-[PF-D8](patched-forks.md#PF-D8) names each one, and its open questions are its own.
+[PF-D8](../reference/patched-forks.md#PF-D8) names each one, and its open questions are its own.
 
 1. <a id="OQ-FP11"></a>**[OQ-FP11](#OQ-FP11): does a Mac's fork build install its base's `node_floor` before the build line?**
    The user config's `mise_tools` are already excluded by [OQ-FP10](#14-decision-ledger).

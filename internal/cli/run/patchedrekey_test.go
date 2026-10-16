@@ -1,7 +1,7 @@
 package run
 
 // patchedrekey_test.go pins the launch block's half of the RE-KEY (patchedrekey.go,
-// docs/design/patched-forks.md PF-D62): a patched fork's line and a patched extension's line, which
+// docs/reference/patched-forks.md PF-D62): a patched fork's line and a patched extension's line, which
 // every launch prints before its advance, read a good build recorded under the series' legacy digest
 // as the build of the series as it stands — never as the user's edit — and leave it re-keyed; and the
 // re-key itself names the store entry under the new recipe, once, keeping the receipt's time.

@@ -1,6 +1,6 @@
 package cli
 
-// skewedpackreview_test.go pins what the first skew tests left open (docs/design/patched-forks.md
+// skewedpackreview_test.go pins what the first skew tests left open (docs/reference/patched-forks.md
 // PF-D68 to PF-D71, PF-D75): a host refusal of a pack the use read still refuses names what it
 // skipped; `yolo host apply`'s closing verdict over a skipped contribution says the pack could not be
 // read whole, as the report above it does; `--format json` carries the skips; and `yolo features`

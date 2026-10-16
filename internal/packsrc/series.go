@@ -1,6 +1,6 @@
 package packsrc
 
-// series.go reads a patched fork's PATCH SERIES (docs/design/patched-forks.md §3.2, PF-D2): the
+// series.go reads a patched fork's PATCH SERIES (docs/reference/patched-forks.md §3.2, PF-D2): the
 // ordered `git format-patch` files a patched fork replays onto its upstream.
 //
 //   - Its MEMBERS are the regular files in the `patches` directory whose names end in `.patch`,
@@ -72,7 +72,7 @@ type Series struct {
 	// LegacyDigest is the digest the same files had before PF-D61, over their raw bytes: what a good
 	// build recorded before then names, which the re-key moves to Digest (PF-D62). Nothing records it.
 	LegacyDigest string
-	// PatchBranch is set when the series is a PATCH BRANCH (patchbranch.go; docs/design/patched-forks.md §3.5): no
+	// PatchBranch is set when the series is a PATCH BRANCH (patchbranch.go; docs/reference/patched-forks.md §3.5): no
 	// members, its Base the patch branch's merge base with the upstream and its Digest PatchBranchDigest of the
 	// patch branch's commit. nil for a patch series and the empty one.
 	PatchBranch *SeriesPatchBranch
@@ -143,7 +143,7 @@ func (e *SeriesError) Unwrap() error { return e.Err }
 // ReadSeries reads a patched fork's series in the directory rel of the pack rooted at packRoot.
 func ReadSeries(packRoot, rel string) (*Series, error) { return readSeries(packRoot, rel, forkSeries) }
 
-// ReadTreeSeries is ReadSeries for a patched extension's series (patched-extensions.md PPX-D37): the
+// ReadTreeSeries is ReadSeries for a patched extension's series (pi-extensions.md PPX-D37): the
 // same read, whose errors name an extension's remedies. An extension has no unpatched form a pack
 // can declare in its place, so an empty series names the export alone.
 func ReadTreeSeries(packRoot, rel string) (*Series, error) {

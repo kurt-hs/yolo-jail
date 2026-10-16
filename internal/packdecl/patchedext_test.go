@@ -1,6 +1,6 @@
 package packdecl
 
-// patchedext_test.go pins the manifest half of a PATCHED EXTENSION (docs/design/patched-extensions.md
+// patchedext_test.go pins the manifest half of a PATCHED EXTENSION (docs/reference/pi-extensions.md
 // §4, PPX-D1 to PPX-D3, PPX-D6): `source` and `patches` on `files` in place of `from`; `from`,
 // `fork_of`, `agent` and `agents` refused beside them, each naming why; the fork fields still
 // refused on a `files` contribution with no series, with their message unchanged; the extension
@@ -96,7 +96,7 @@ func TestPatchedExtensionRefusals(t *testing.T) {
 }
 
 // WITHOUT A SOURCE OR A SERIES the fork fields are still a fork's alone on `files`, with the message
-// they had (patched-extensions.md §4: "a `files` contribution with `build` and no series is still
+// they had (pi-extensions.md §4: "a `files` contribution with `build` and no series is still
 // refused, with the fork fields' message"). `source` itself left this table on 2026-10-05: with no
 // `patches` it is an UNMODIFIED EXTENSION (docs/design/pi-extension-store-builds.md §4.1, XB-D1, which
 // reverses PF alternative H for `files`), and beside `from` it is refused as one

@@ -2,7 +2,7 @@ package entrypoint
 
 // sealedbuild.go is the jail's half of a SEALED BUILD JAIL: a jail the host launched to build a
 // fork's program or a patched extension's tree under the seal (docs/design/forked-programs-as-packs.md
-// FP-D9), with its pack selection narrowed to the packs that build needs (patched-extensions.md
+// FP-D9), with its pack selection narrowed to the packs that build needs (pi-extensions.md
 // PPX-D5, PPX-D39). It runs one build line and no agent, so the boot renders no pack-declared
 // surface and runs no pack hook there (PPX-D41): each one is an agent's configuration or an agent's
 // session state, and the narrowing leaves a contributing pack's surface for another pack's agent

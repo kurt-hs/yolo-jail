@@ -14,7 +14,7 @@ import (
 )
 
 // patchedfork_test.go is the container-level cell for a PATCHED fork
-// (docs/design/patched-forks.md §14 step 2's "done looks like"): a fork pack that names its
+// (docs/reference/patched-forks.md §6, the good build as a ratchet): a fork pack that names its
 // upstream and carries a `git format-patch --base` series, delivered by fresh launches with nobody
 // pinning anything.
 //
@@ -158,7 +158,7 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 		return out
 	}
 	// jailGone waits for the last launch's jail to be known gone: its keeper removes the jail's pack
-	// tree, and the delivery record beside it, once the container is (docs/design/patched-forks.md
+	// tree, and the delivery record beside it, once the container is (docs/reference/patched-forks.md
 	// §6.3). Until then a move keeps the build that jail was handed.
 	jailGone := func() {
 		t.Helper()
@@ -209,7 +209,7 @@ func TestPatchedForkFollowsItsUpstreamAndHoldsAtAConflict(t *testing.T) {
 		t.Errorf("after the move %d new entries are live, want the good build's alone: %v\n%s", len(live), live, out)
 	}
 
-	// 3. A VERSION THE SERIES DOES NOT FIT is FATAL (docs/design/patched-forks.md PF-D81): the update
+	// 3. A VERSION THE SERIES DOES NOT FIT is FATAL (docs/reference/patched-forks.md PF-D81): the update
 	// FAILS on the conflict, naming the version, the patch, its rebase onto the conflicting commit and
 	// the bypass, and builds no older fit or base; the next launch refuses before its jail starts,
 	// its error block naming the patch, the repair and the bypass that runs v1.2.0's build; with that

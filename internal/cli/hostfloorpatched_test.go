@@ -1,6 +1,6 @@
 package cli
 
-// hostfloorpatched_test.go drives a PATCHED fork at the HOST notch (docs/design/patched-forks.md §9,
+// hostfloorpatched_test.go drives a PATCHED fork at the HOST notch (docs/reference/patched-forks.md §9,
 // §14 step 4; PF-D14, PF-D19, PF-D25) through the call sites a user reaches: `yolo host -- <bin>`
 // runs the fork's advance — the fresh jail launch's own, against a real local upstream repository —
 // then installs the good build it leaves and runs the floor's copy; a new upstream version moves it,

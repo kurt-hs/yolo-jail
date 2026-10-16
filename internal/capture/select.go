@@ -52,7 +52,7 @@ type Program struct {
 	// it, and a query for one fork never selects another's: an installer capture's is empty.
 	Source string
 	// Fork is a PATCHED fork's key ("<pack>/<bin>") for an entry its build made
-	// (docs/design/patched-forks.md §6.3, PF-D7), "" for every other entry. A patched build is
+	// (docs/reference/patched-forks.md §6.3, PF-D7), "" for every other entry. A patched build is
 	// selected by its fork, never its source: two forks of one upstream share a source and never
 	// a key, and an edited `?ref=` is the same fork. So its Program carries Fork and no Source, and
 	// no plain fork's query, which carries a Source and no Fork, can select one.
@@ -180,7 +180,7 @@ type Scanned struct {
 
 // Scan reads every complete entry's candidate records, in key order: the scan Select chooses
 // from, for a reader that asks a question selection does not — a PATCHED fork's EXACT lookup
-// (docs/design/patched-forks.md §6.3: by its fork and its exact inputs, never newest-then-compare)
+// (docs/reference/patched-forks.md §6.3: by its fork and its exact inputs, never newest-then-compare)
 // and the reap of a fork's builds when its good build moves. A torn entry is not listed, and an
 // entry whose receipts cannot be read is listed with no records, as Select reads both.
 func Scan(s *Store, read Records) ([]Scanned, error) {

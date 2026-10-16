@@ -1,7 +1,7 @@
 package cli
 
 // patchedrecipe_test.go pins the REBASE RECIPE where a conflict is said (packsrc.RebaseRecipe;
-// docs/design/patched-forks.md §8.4, PF-D85, which retired `yolo pack rebase`): the error block of
+// docs/reference/patched-forks.md §8.4, PF-D85, which retired `yolo pack rebase`): the error block of
 // `yolo pack update` prints the git commands with the commits filled in, and run as printed — the
 // conflict resolved by hand where they stop — they replace the series with one the next fresh
 // launch builds and moves the good build to (§14's done condition).

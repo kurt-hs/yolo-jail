@@ -365,7 +365,7 @@ func Run(opts Options) (rc int) {
 		return 1
 	}
 	// THE PATCHED EXTENSIONS' block, above the dispatch beside the forks', and for its reason: every
-	// backend and an attach say what each one is at (docs/design/patched-extensions.md §10).
+	// backend and an attach say what each one is at (docs/reference/pi-extensions.md §10).
 	o.patchedTrees = o.notePatchedTrees(staged.packs)
 
 	// THE ARRIVAL AT A macos-user KEY (keeperspawn.go's arriveMacosUser; docs/design/
@@ -892,7 +892,7 @@ func Run(opts Options) (rc int) {
 		if wire := o.macosUserForkWire(); wire != "" {
 			launchEnv.Set(entrypoint.ForkBuildsEnv, wire)
 		}
-		// Nor any patched extension (docs/design/patched-extensions.md §11, FP-D3's shape).
+		// Nor any patched extension (docs/reference/pi-extensions.md §11, FP-D3's shape).
 		o.noteMacosUserTrees()
 		// YOLO_STORE_PACKAGES's only consumer (planStorePackages) is below this arm's
 		// return, so on this backend the dial vanished without a line. A NOTICE, not a
@@ -1722,7 +1722,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// and then attaches to it.
 	//
 	// THE TREE ARM, beside the fork builds in their slot and for their reasons (patchedtrees.go;
-	// docs/design/patched-extensions.md §6.1, §8.1): each patched extension's check and advance, and
+	// docs/reference/pi-extensions.md §6.1, §8.1): each patched extension's check and advance, and
 	// the per-launch copy its jail mounts read-only. Below every attach site, under the launch lock.
 	//
 	// ONE ACT FOR BOTH (buildslot.go, XB-D10): every key of the slot runs at once in the build act's

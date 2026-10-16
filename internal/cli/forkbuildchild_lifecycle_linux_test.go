@@ -189,7 +189,7 @@ func waitForLifecycleFile(t *testing.T, path string, timeout time.Duration) {
 
 // A Ctrl-C that stops a build child before run.Run recorded a runtime, its whole group confirmed
 // gone, dispatched no backend: the workspace is cleaned, not retained, and the next build of the
-// same key runs instead of refusing for an operator check (pi-startup-cancellation §3).
+// same key runs instead of refusing for an operator check (patched-forks.md §7.1).
 func TestACancelledForkBuildThatDispatchedNothingIsNotRetained(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	f := forkBuildHome(t)

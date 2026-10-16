@@ -56,12 +56,12 @@ is in `packdecl`.
    materialized and the agent reads it.
 5. **Hooks are disclosed, not gated.** Same trust class as skills and briefings, which can
    already instruct arbitrary action.
-6. **Fetching is a different axis**, owned by [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md).
+6. **Fetching is a different axis**, owned by [`pi-extensions.md`](../reference/pi-extensions.md#17-the-pre-launch-refresh).
    ⚠ **Corrected 2026-09-30:** this line said the resolver half ships and the materializer half does
    not, which is the other way round. The pack resolver ships (`internal/packsrc` +
    `packs.lock.json`), but it resolves packs, not Pi packages; the materializer, a pack-declared
    `refresh` running `pi update --extensions`, shipped 2026-09-25, and nothing in yolo resolves a Pi
-   package's version yet ([`OQ-2`](pi-extension-lifecycle.md#7-decision-ledger) there).
+   package's version yet ([`OQ-2`](../reference/pi-extensions.md#why-its-this-way) there).
 7. **`claude_plugins` is retired**, and nothing like it replaces it — no agent-named hook:
    deliver plugin trees locally, decompose them, or author one YOLO-owned Agent Plugins 1.0
    plugin rather than calling `claude plugins install`. ✅ **Built 2026-09-20**: the hook and
@@ -99,7 +99,7 @@ stopped, with [`OQ-D6`](slots-and-contributions.md#OQ-D6) the blocker. The surfa
 **Reads with:** [`slots-and-contributions.md`](slots-and-contributions.md) (**supersedes this
 doc's encoding**), [`manifest-language.md`](manifest-language.md) (the surface),
 [`agent-briefings.md`'s table of where each agent reads skills](../reference/agent-briefings.md#where-each-agent-reads-skills) (the measured
-formats), [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) (the fetch axis),
+formats), [`pi-extensions.md`](../reference/pi-extensions.md#17-the-pre-launch-refresh) (the fetch axis),
 [`mcp-configuration.md`](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin) (the one live consumer of the retired hook),
 [`agent-briefings.md`](../reference/agent-briefings.md#audiences-what-varies-per-destination) (the `agent`/`agents` mechanism this reuses),
 [`extension-point-principle.md`](../reference/extension-point-principle.md).
@@ -192,7 +192,7 @@ standard, so saying so needs no parse.
 | Axis | Who does the work | Authority |
 | :--- | :--- | :--- |
 | **Delivery** | YOLO — place a tree, `:ro` | **this document** |
-| **Fetch / resolve** | YOLO too, via `packsrc`'s pinned resolver | [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) |
+| **Fetch / resolve** | YOLO too, via `packsrc`'s pinned resolver | [`pi-extensions.md`](../reference/pi-extensions.md#17-the-pre-launch-refresh) |
 | **Knowledge / config** | YOLO derives | [`gateway-provider-packs.md`](gateway-provider-packs.md), `derive.lua` |
 
 A Pi package (`"packages": [...]` in `settings.json`) rides the **fetch** axis, and a pack can

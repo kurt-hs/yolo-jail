@@ -420,7 +420,7 @@ func TestHostModelMenusRowIsYolosOwn(t *testing.T) {
 	}
 }
 
-// THE HOST'S PATCHED-EXTENSION TREES ARE YOLO'S OWN (docs/design/patched-extensions.md §8.3): the
+// THE HOST'S PATCHED-EXTENSION TREES ARE YOLO'S OWN (docs/reference/pi-extensions.md §8.3): the
 // row for paths.HostTreesDir's leaf says what bounds it, and offers the user nothing to delete —
 // the host agent loads these trees through the links `yolo host apply` owns, so a deletion the
 // listing invited would leave those links dangling.

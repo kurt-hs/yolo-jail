@@ -64,7 +64,7 @@ func TestAForkFootprintKeysApartFromItsBase(t *testing.T) {
 
 // TestEveryForkCarriesItsPacksForkBases: a pack forking two bases' programs hands each fork both
 // bases (Fork.PackBases), which a build sealed to that pack carries so the rewrite of the other fork
-// finds its base (docs/design/patched-extensions.md PPX-D39).
+// finds its base (docs/reference/pi-extensions.md PPX-D39).
 func TestEveryForkCarriesItsPacksForkBases(t *testing.T) {
 	p := claimPack(t, "forks", forkContribution("pi", "pi"), forkContribution("claude", "claude"),
 		forkContribution("pi2", "pi"))
@@ -84,7 +84,7 @@ func TestEveryForkCarriesItsPacksForkBases(t *testing.T) {
 // sealed to the fork pack and its bases is a selection the fork rewrite accepts, as it accepts the
 // user's whole selection; a fork rewrite refused for a base it lacks is what a build jail met
 // before its build line ran ("basepack forks pack cpack's "c", and cpack is not in this selection",
-// docs/design/patched-extensions.md PPX-D39). A cycle of forks ends the walk. Red if PackBases
+// docs/reference/pi-extensions.md PPX-D39). A cycle of forks ends the walk. Red if PackBases
 // stops at the fork pack's own bases.
 func TestPackBasesFollowAConfiguredBasesOwnForks(t *testing.T) {
 	cpack := claimPack(t, "cpack", packdecl.Contribution{Kind: packdecl.KindProgram, Bin: "c", Via: "npm", Package: "c"})

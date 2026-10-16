@@ -718,7 +718,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	if refused {
 		return 1
 	}
-	// THE PATCHED EXTENSIONS this program loads (docs/design/patched-extensions.md §8.3, PPX-D11):
+	// THE PATCHED EXTENSIONS this program loads (docs/reference/pi-extensions.md §8.3, PPX-D11):
 	// their check and advance BEFORE the gate compares the render, and outside that comparison, so
 	// it sees the build the apply would install — scoped to the owning agent's programs, so a
 	// launch of any other bin waits on no extension's fetch or build. Inside the gate's span: it is
@@ -1753,7 +1753,7 @@ func (c *hostComposition) envOverrideLines(getenv func(string) string) (refusal 
 func (c *hostComposition) selectionLines() []string {
 	lines := append([]string(nil), c.selection.causes...)
 	// Then each contribution the selection's use read skipped, or kept without a field, because
-	// this yolo cannot read it (docs/design/patched-forks.md PF-D68): the line a jail launch
+	// this yolo cannot read it (docs/reference/patched-forks.md PF-D68): the line a jail launch
 	// prints for it (run's noteSkippedContributions), at this notch's front doors. A disclosure,
 	// so `yolo host --` and `yolo host env` both print it (OQ-RO3).
 	for _, note := range c.selection.skewNotes() {

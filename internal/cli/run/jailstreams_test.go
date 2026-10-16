@@ -19,7 +19,7 @@ import (
 // TestTheJailsOwnLinesGoToItsJailWriters: what the runtime client prints when it refuses the
 // container reaches Options.JailStdout and JailStderr, and not the launch's own writers. A build
 // jail's act reads them there to say why a jail stopped before its build line ran (cli's jailTail,
-// docs/design/patched-extensions.md PPX-D39). Red if Run's relay goes back to the process's own
+// docs/reference/pi-extensions.md PPX-D39). Red if Run's relay goes back to the process's own
 // streams, which the act cannot read.
 func TestTheJailsOwnLinesGoToItsJailWriters(t *testing.T) {
 	packHome(t)

@@ -1,7 +1,7 @@
 package cli
 
 // patchedfetchretry_test.go pins what a FAILED FETCH leaves behind for the next launch
-// (patchedadvance.go, packsrc/patchcheck.go; docs/design/patched-forks.md §4.2, §8.1): a check that
+// (patchedadvance.go, packsrc/patchcheck.go; docs/reference/patched-forks.md §4.2, §8.1): a check that
 // could not reach the upstream — the machine's network not up yet at boot — is a transient fault,
 // never the upstream's answer. A later fresh launch with nothing built to run fetches again itself,
 // inside the hour the earlier attempt's stamp would otherwise hold, and builds; and the refusal the

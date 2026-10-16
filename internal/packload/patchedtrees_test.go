@@ -1,7 +1,7 @@
 package packload
 
 // patchedtrees_test.go pins the pack-set half of a PATCHED EXTENSION
-// (docs/design/patched-extensions.md §1, §4, §8.2, §10): the selection lists each one as a Fork
+// (docs/reference/pi-extensions.md §1, §4, §8.2, §10): the selection lists each one as a Fork
 // with its landing, its OWNING AGENT PACK is read off the contributing pack's list entry equal to
 // `~/<into>` (PPX-D4) with where that entry reaches, `agent_updates` holds it from the contributing
 // pack, the owner and the owner's forks (PPX-D9), the one lint names the line to add (PPX-D10),
@@ -63,7 +63,7 @@ func TestPatchedTreesListEachExtensionWithItsOwningAgentPack(t *testing.T) {
 	}
 }
 
-// A GUARDED POSTURE LIST reaches the host and no jail (patched-extensions.md §3.2, pi-automode), and
+// A GUARDED POSTURE LIST reaches the host and no jail (pi-extensions.md PPX-D35, pi-automode), and
 // no list entry at all is no owner.
 func TestTheOwnersReachIsTheListEntrysAndNoEntryIsNoOwner(t *testing.T) {
 	pi := embeddedPack(t, "pi")

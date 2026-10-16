@@ -796,7 +796,7 @@ topic now. They are listed by area, in no priority order; nothing here is ranked
 - **A patched fork's host-floor install on a real host.** Replay and build a series in a real
   sealed jail, then run it from the floor with `yolo host -- <bin>`. Every floor test so far stands
   the build jail in. From `patched-forks-plan.md`, deleted 2026-10-16. Owner:
-  [what to build, in order](../design/patched-forks.md#14-what-i-would-build-in-order).
+  [unbuilt and unmeasured](../reference/patched-forks.md#14-unbuilt-and-unmeasured).
 - **The patch-series guide's export command fails for a fork with merges.** `git format-patch`
   refuses when the fork merged upstream releases, and a series cut at the merge base does not
   apply when it merged its own branches. The workaround found while migrating the maintainer's

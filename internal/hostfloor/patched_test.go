@@ -1,6 +1,6 @@
 package hostfloor
 
-// patched_test.go is the floor's PATCHED-FORK arm (patched.go; docs/design/patched-forks.md §9,
+// patched_test.go is the floor's PATCHED-FORK arm (patched.go; docs/reference/patched-forks.md §9,
 // PF-D14, PF-D19, PF-D23, PF-D25): a fork whose host copy is the store's build of its GOOD BUILD,
 // and whose install runs the fork's ADVANCE first. The advance and the good-build read are the
 // caller's (internal/cli's floorAdvance and floorPatchedState, driven end to end in

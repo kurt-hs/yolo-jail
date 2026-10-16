@@ -1,6 +1,6 @@
 package packsrc
 
-// patchbranch_test.go drives a PATCH BRANCH (patchbranch.go; docs/design/patched-forks.md §3.5,
+// patchbranch_test.go drives a PATCH BRANCH (patchbranch.go; docs/reference/patched-forks.md §3.5,
 // OQ-PFK6) through the real check and walk against local repositories: the check fetches the patch
 // branch's repository into a mirror of its own and resolves its commit and merge base; the walk merges
 // it into the newest candidate it fits, its tree both sides' changes; a conflict names the patch branch

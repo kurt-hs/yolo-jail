@@ -1,7 +1,7 @@
 package cli
 
 // patchedadvance_test.go drives a PATCHED fork's advance (patchedadvance.go;
-// docs/design/patched-forks.md §6, §7, §8) against a real local upstream repository, with the build
+// docs/reference/patched-forks.md §6, §7, §8) against a real local upstream repository, with the build
 // jail substituted: the first advance builds the newest fit and hands it; a launch inside the hour
 // runs no git; a new tag moves the good build and reaps what no running jail was handed; a
 // conflicting tag is said once and held with the previous build serving; a failed build backs off

@@ -54,7 +54,7 @@ func TestABoundedWaitTimesOut(t *testing.T) {
 }
 
 // A CANCELLED WAIT ends with ErrCanceled, bounded or not (a patched fork's advance, whose Ctrl-C
-// ends the wait: docs/design/patched-forks.md PF-D25).
+// ends the wait: docs/reference/patched-forks.md PF-D25).
 func TestACancelledWaitEnds(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.lock")
 	first, err := Acquire(path, NoWait, nil)

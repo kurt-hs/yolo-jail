@@ -3,7 +3,7 @@ package packsrc
 // patched_fixture_test.go is the upstream every patched-fork test here replays against: a real git
 // repository standing in for the upstream's remote, a two-member `git format-patch --base` series
 // exported from a branch of it into a pack directory, and upstream versions the series fits and
-// does not — the shapes the design measured (docs/design/patched-forks.md §5.2).
+// does not — the shapes the design measured (docs/reference/patched-forks.md §5.2).
 
 import (
 	"fmt"

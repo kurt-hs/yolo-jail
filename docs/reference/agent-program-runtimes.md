@@ -244,7 +244,7 @@ in `internal/entrypoint` holds it.
 > the splice asserts over *every* exec line, never the first match.
 
 The program's **pre-launch refresh** (a pack-declared step the launcher runs just before the
-exec, [`../design/pi-extension-lifecycle.md`](../design/pi-extension-lifecycle.md)) also runs
+exec, [`pi-extensions.md` §17](pi-extensions.md#17-the-pre-launch-refresh)) also runs
 under the same prefix, so a `#!/usr/bin/env node` program is refreshed under the interpreter it
 is launched under. So does the program's **model menu** query, which runs the program once to
 read its own model catalog before the exec

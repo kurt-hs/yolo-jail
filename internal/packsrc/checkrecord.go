@@ -1,12 +1,12 @@
 package packsrc
 
-// checkrecord.go is a patched fork's CHECK RECORD and its lock (docs/design/patched-forks.md §6.2,
+// checkrecord.go is a patched fork's CHECK RECORD and its lock (docs/reference/patched-forks.md §6.2,
 // PF-D9, PF-D22): one record per OWNER KEY in the pack store — the check stamp and what the last
 // check read, the last check's commit and the walk's list with its sequence number, the good
 // build, and one outcome per entry of the list.
 //
 // THE OWNER KEY (a term coined in the design, PF-D22) is `<pack>/<bin>` for a patched fork and
-// `<pack>/<name>` for a patched extension (patched-extensions.md), so one record and one lock
+// `<pack>/<name>` for a patched extension (pi-extensions.md), so one record and one lock
 // serve both routes; nothing here knows which it is keyed for.
 //
 // MACHINE-LOCAL BY DESIGN: the record never leaves this machine and nothing writes it to the fork

@@ -1,6 +1,6 @@
 package cli
 
-// patchedadvance.go is a PATCHED fork's ADVANCE (docs/design/patched-forks.md §6, §7; PF-D8,
+// patchedadvance.go is a PATCHED fork's ADVANCE (docs/reference/patched-forks.md §6, §7; PF-D8,
 // PF-D10, PF-D20, PF-D23, PF-D25): the act that takes a candidate to a GOOD BUILD — check the
 // upstream (throttled), replay the series down the walk's list on the host, build the newest fit in
 // the sealed capture jail, and, once that build is admitted, move the good build — and the decision
@@ -595,7 +595,7 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 			a.packs = &local
 		}
 	}
-	// A PATCH BRANCH NO CHECK HAS RESOLVED YET (docs/design/patched-forks.md §3.5) reads as the unresolved
+	// A PATCH BRANCH NO CHECK HAS RESOLVED YET (docs/reference/patched-forks.md §3.5) reads as the unresolved
 	// patch branch: its check fetches and resolves it, and the advance takes the resolved series once that
 	// check has run (patchBranchResolved). Until then it stands for nothing a build carries.
 	series, err := f.ReadSeriesFrom(a.packs)
@@ -1060,7 +1060,7 @@ func (a *advance) lockHeldSkip(err error) bool {
 // entry, or the floor's installed copy (PF-D55).
 func (a *advance) serves() bool { return a.serving != nil || a.installed != nil }
 
-// patchBranchResolved takes a PATCH BRANCH's series as the check just recorded it (docs/design/patched-forks.md
+// patchBranchResolved takes a PATCH BRANCH's series as the check just recorded it (docs/reference/patched-forks.md
 // §3.5), and reports whether that moved it: a branch that moved, or one the advance started without
 // (packsrc.UnresolvedPatchBranchSeries). The recipe follows the patch branch's commit, and what serves is again
 // only a build of that recipe, as for an edited series (PF-D23). False for a patch series, and when
@@ -2256,7 +2256,7 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 		return a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
 	case errors.Is(err, errForkBuildWorkspaceRetained):
 		// A PREVIOUS OR THIS BUILD'S JAIL IS NOT YET KNOWN GONE: no verdict on the commit, so nothing
-		// is recorded, no back-off starts, and the next launch tries again (pi-startup-cancellation §3).
+		// is recorded, no back-off starts, and the next launch tries again (patched-forks.md §7.1).
 		a.warn("%s: %v — %s", f.Label(), err, a.runsNow())
 		r := a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
 		r.retained = run.WithSeries(b.Entry.Label(), b.Series) + " pending — " + oneLineErr(err)
@@ -2525,7 +2525,7 @@ func (a *advance) takes(e packsrc.ListEntry) string {
 }
 
 // applyingIts is the first build's account of what it applies: "replaying its N patches", or
-// "merging its patch branch <ref>@<commit>" (docs/design/patched-forks.md §3.5).
+// "merging its patch branch <ref>@<commit>" (docs/reference/patched-forks.md §3.5).
 func (a *advance) applyingIts() string {
 	if a.series.PatchBranch != nil {
 		return "merging its " + run.SeriesWhat(a.series)

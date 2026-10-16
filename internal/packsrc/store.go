@@ -91,7 +91,7 @@ type Store struct {
 	// Ctx, when non-nil, is the parent of every budget this store starts (newBudget, and a
 	// replay's walk): cancelling it ends the git it runs. A launch's patched-fork advance sets it,
 	// so a Ctrl-C ends the advance's check and walk and the launch starts on the good build
-	// (docs/design/patched-forks.md PF-D25). Nil means none, as every other store has.
+	// (docs/reference/patched-forks.md PF-D25). Nil means none, as every other store has.
 	Ctx context.Context
 	// NoWait makes a mirror's lock and a check record's lock a TRY, never a wait: one held by
 	// another process fails at once with ErrLockHeld, and the caller skips the key. The BACKGROUND

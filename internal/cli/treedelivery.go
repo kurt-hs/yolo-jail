@@ -1,7 +1,7 @@
 package cli
 
 // treedelivery.go is run.Options.BuildTrees: a fresh launch's TREE ARM for its PATCHED EXTENSIONS
-// (docs/design/patched-extensions.md §6.1, §8.1, §9; PPX-D7). For each one: its advance — the check,
+// (docs/reference/pi-extensions.md §6.1, §8.1, §9; PPX-D7). For each one: its advance — the check,
 // the replay down the walk's list and the build of the newest fit, through the one implementation
 // patched forks use (patchedadvance.go, keyed by the extension key) — and then a PER-LAUNCH COPY of
 // the good build's tree beside the launch's pack tree, which the `files` emitter mounts read-only.

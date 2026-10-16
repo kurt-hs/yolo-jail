@@ -404,7 +404,7 @@ type fetchStepResult struct {
 
 // fetchStep is THE PER-MIRROR STEP'S FETCH (the design's term, forked-programs-as-packs.md
 // FP-D18), split from refreshMirror above its resolution and checkout so a patched fork's check
-// can take it with no checkout (docs/design/patched-forks.md §4.3). The caller holds the
+// can take it with no checkout (docs/reference/patched-forks.md §4.3). The caller holds the
 // mirror's lock and owns the budget.
 //
 // Each address's ref is classified with no network (classifyRef), and a fetch runs when one has

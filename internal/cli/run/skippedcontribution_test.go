@@ -1,7 +1,7 @@
 package run
 
 // skippedcontribution_test.go pins a jail launch over a configured pack holding a contribution
-// this yolo cannot read (docs/design/patched-forks.md PF-D68): a field a newer yolo reads. The
+// this yolo cannot read (docs/reference/patched-forks.md PF-D68): a field a newer yolo reads. The
 // launch used to refuse such a pack — and so every launch on the host, whichever pack it was. Now
 // it stages the pack, skips the contribution, says so in one line, and records the line in the
 // tree so the jail's boot logs it instead of printing it again.

@@ -220,7 +220,7 @@ func lostBy(er entryRecords, selected map[Program]Selected) []Superseded {
 
 // ReapEntry reaps the entry key as the prune does (reapEntry): its completion marker first, then
 // its tree, the metadata beside it kept. For the one reclaimer outside the prune, a PATCHED fork's
-// move (docs/design/patched-forks.md §6.3, PF-D20), which reaps the builds of its fork that no
+// move (docs/reference/patched-forks.md §6.3, PF-D20), which reaps the builds of its fork that no
 // running jail was handed; a key that is not one entry name is refused.
 func (s *Store) ReapEntry(key string) error {
 	if err := validSegment(key); err != nil {

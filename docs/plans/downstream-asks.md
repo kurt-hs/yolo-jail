@@ -5,8 +5,8 @@ status: in-review
 stage: DESIGN
 next: "Build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
 depends-on:
-  - ../design/patched-forks.md#OQ-PFK6
-  - ../design/patched-forks.md#OQ-PFK7
+  - ../reference/patched-forks.md#OQ-PFK6
+  - ../reference/patched-forks.md#OQ-PFK7
   - ../design/model-lists-and-pickers.md#OQ-ML4
   - ../design/model-lists-and-pickers.md#OQ-ML5
 tags: [handoff, downstream, packs, launcher, tracker]
@@ -41,9 +41,9 @@ only where a question has no design doc of its own. The source handoff lives out
 | [2](#2-a-pack-cannot-declare-the-yolo-version-it-needs) | a pack can declare a minimum yolo, or lint judges it against an older build | declined | [OQ-DA1](#decision-ledger) |
 | [3](#3-a-build-has-no-version-identity) | two binaries from one revision are distinguishable, and a broadcast clause records its version | first half landed, releases included; second declined | [OQ-DA2](#OQ-DA2), ruled 2026-10-16 |
 | [4](#4-a-reduced-window-child) | a reduced-window child does not silently inherit the small window | narrowed — yolo's part done | decision recorded below; the owner's declaration is the consumer's |
-| [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../design/patched-forks.md#decision-ledger) |
+| [5](#5-a-clean-replay-discards-the-clone-it-built) | a clean replay keeps the clone, and a stale series is signalled | settled — no clone, base lag built | [OQ-PFK7](../reference/patched-forks.md#why-its-this-way) |
 | [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | ruled 2026-10-16, not built | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
-| [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | landed, as `patch_branch` | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
+| [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | landed, as `patch_branch` | [OQ-PFK6](../reference/patched-forks.md#why-its-this-way) |
 | [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | ruled 2026-10-16, not built | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | declined 2026-10-16 (the skill half landed) | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
@@ -120,17 +120,17 @@ an automatic floor, and `yolo config-ref` documents it under `profiles.<name>.su
 a series gone stale against its upstream.
 
 **State.** `settled` 2026-10-15 by the maintainer's ruling
-[PF-D85](../design/patched-forks.md#PF-D85), which compacted
-[OQ-PFK7](../design/patched-forks.md#decision-ledger). **Evidence:** `yolo pack rebase` and its clone are gone
-([PF-D85](../design/patched-forks.md#PF-D85)): every conflict prints the git commands that rebase
+[PF-D85](../reference/patched-forks.md#PF-D85), which compacted
+[OQ-PFK7](../reference/patched-forks.md#why-its-this-way). **Evidence:** `yolo pack rebase` and its clone are gone
+([PF-D85](../reference/patched-forks.md#PF-D85)): every conflict prints the git commands that rebase
 the series, so the clone is the user's own, and `yolo pack status` prints the same commands under a
 series' base lag when the newest version takes it as it stands, which re-anchors it. The base lag
 names a stale series on `yolo pack status` and on the launch's fork line
 ([`baselag.go`](../../internal/packsrc/baselag.go)); no `yolo check` warning exists. A launch's
 replay also drops a member upstream already carries, even one upstream edited again, as `git rebase`
-does ([PF-D86](../design/patched-forks.md#PF-D86)).
+does ([PF-D86](../reference/patched-forks.md#PF-D86)).
 
-**Owner.** [OQ-PFK7](../design/patched-forks.md#decision-ledger), compacted.
+**Owner.** [OQ-PFK7](../reference/patched-forks.md#why-its-this-way), compacted.
 
 ## 6. A declared model row loses the catalog's thinking levels
 
@@ -157,7 +157,7 @@ branch, resolved to a commit, against which the launch asks git whether the carr
 (`git merge-tree`, no working tree) and refuses, naming the paths, when it does not. Report the
 carry's lag behind upstream.
 
-**State.** `landed` 2026-10-16 as `patch_branch`, the owner's name for the key ([OQ-PFK6](../design/patched-forks.md#OQ-PFK6), [PF-D89](../design/patched-forks.md#PF-D89)); a pack that writes `carry` is refused as an unknown field. **Evidence before it:** no `Carry` field existed and `yolo pack lint` refused
+**State.** `landed` 2026-10-16 as `patch_branch`, the owner's name for the key ([OQ-PFK6](../reference/patched-forks.md#why-its-this-way), [PF-D89](../reference/patched-forks.md#PF-D89)); a pack that writes `carry` is refused as an unknown field. **Evidence before it:** no `Carry` field existed and `yolo pack lint` refused
 `json: unknown field "carry"`; worse, an unknown contribution field is *skipped* with a warning, so
 a pack cannot migrate to it even if it were ignored. The full ruled model is the consumer's
 (`pi/carries/`), not yolo's.
@@ -166,7 +166,7 @@ a pack cannot migrate to it even if it were ignored. The full ruled model is the
 resolved commit; a conflict refuses naming paths; naming both `patches` and `carry` is refused by
 name; `patches` is otherwise unchanged.
 
-**Owner.** [OQ-PFK6](../design/patched-forks.md#OQ-PFK6), ruled 2026-10-15: both `carry` and `patches` are supported, and one contribution naming both is a fatal conflict; on 2026-10-16 the owner named the key `patch_branch` ([PF-D87](../design/patched-forks.md#PF-D87)). Built 2026-10-16, on `files` extensions and forked programs alike; the lag is reported as the patch branch's merge base behind upstream releases ([PF-D90](../design/patched-forks.md#PF-D90)).
+**Owner.** [OQ-PFK6](../reference/patched-forks.md#why-its-this-way), ruled 2026-10-15: both `carry` and `patches` are supported, and one contribution naming both is a fatal conflict; on 2026-10-16 the owner named the key `patch_branch` ([PF-D87](../reference/patched-forks.md#PF-D87)). Built 2026-10-16, on `files` extensions and forked programs alike; the lag is reported as the patch branch's merge base behind upstream releases ([PF-D90](../reference/patched-forks.md#PF-D90)).
 
 ## 8. Model inheritance — emit `sharedModels` and `extends`
 
@@ -239,9 +239,9 @@ on 2026-10-15; the flag ships off until pi-subagents registers it.
 ## Open Questions
 
 The mechanism asks owned by a design doc of their own are all ruled there:
-[OQ-PFK6](../design/patched-forks.md#OQ-PFK6) (2026-10-15),
+[OQ-PFK6](../reference/patched-forks.md#why-its-this-way) (2026-10-15),
 [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) and
-[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../design/patched-forks.md#decision-ledger)
+[OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../reference/patched-forks.md#why-its-this-way)
 is settled. Of the four with no other home, [OQ-DA1](#decision-ledger), [OQ-DA2](#OQ-DA2), [OQ-DA3](#OQ-DA3) and
 [OQ-DA4](#OQ-DA4) are all settled; none remains open.
 

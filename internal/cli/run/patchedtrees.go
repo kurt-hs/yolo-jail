@@ -1,11 +1,11 @@
 package run
 
-// patchedtrees.go is the launch's half of a PATCHED EXTENSION (docs/design/patched-extensions.md §6.1,
+// patchedtrees.go is the launch's half of a PATCHED EXTENSION (docs/reference/pi-extensions.md §6.1,
 // §8.1, §9, §11): the tree arm beside the fork builds in their slot, the per-launch copy beside the
 // pack tree, the read-only mount from that copy, YOLO_PATCHED_TREES, the launch's lines and an
 // attach's.
 //
-// THE TERMS are the designs' (patched-forks.md and patched-extensions.md §1): a PATCHED EXTENSION is
+// THE TERMS are the designs' (patched-forks.md and pi-extensions.md §1): a PATCHED EXTENSION is
 // a `files` contribution with `source` and `patches`, keyed by its EXTENSION KEY `<pack>/<name>`; its
 // BUILT TREE is what the sealed build leaves and the store admits; the GOOD BUILD is this machine's
 // record of the last one it admitted; the OWNING AGENT PACK is the selected pack declaring the
@@ -241,7 +241,7 @@ func inJailTreeReason(f packload.Fork) string {
 // treeDeliveriesFor is THE TREE ARM, in the fork-build slot beside the fork builds: for every
 // patched extension this launch carries, the per-launch copy its jail mounts, or why there is none.
 // Nothing here fails the launch; with nothing to serve a needed tree, the launch refuses right
-// after this slot (missingbuilds.go, patched-extensions.md PPX-D40).
+// after this slot (missingbuilds.go, pi-extensions.md PPX-D40).
 func (o *Options) treeDeliveriesFor(rt string) map[string]TreeDelivery {
 	out, req := o.treeBuildPlan(rt)
 	if out == nil {
@@ -272,7 +272,7 @@ func (o *Options) treeBuildPlan(rt string) (map[string]TreeDelivery, *TreeBuildR
 		}
 		return out, nil
 	}
-	floor := o.roBindsUnsupported(rt) // parity: Honored — below Apple Container's read-only floor the tree arm checks and builds nothing and still copies a good build already on this machine (patched-extensions.md §11)
+	floor := o.roBindsUnsupported(rt) // parity: Honored — below Apple Container's read-only floor the tree arm checks and builds nothing and still copies a good build already on this machine (pi-extensions.md §11)
 	if o.BuildTrees == nil && o.BuildSlot == nil {
 		for _, f := range o.patchedTrees {
 			out[f.Key()] = TreeDelivery{Reason: "this launch builds no extension"}
@@ -313,7 +313,7 @@ func (o *Options) patchedTreeDirs() map[string]string {
 
 // treesBuildHere reports whether a launch on rt builds patched extensions at all: the notches
 // PPX-D18 does not exempt. A launch inside a jail builds none, and Apple Container below its
-// read-only floor builds none (patched-extensions.md §9, §11).
+// read-only floor builds none (pi-extensions.md §9, §11).
 func (o *Options) treesBuildHere(rt string) bool {
 	return !config.InJail() && o.roBindsUnsupported(rt) == ""
 }
@@ -430,7 +430,7 @@ func patchedTreeCopyDir(copyRoot, key string) string {
 func PatchedTreeCopyDir(copyRoot, key string) string { return patchedTreeCopyDir(copyRoot, key) }
 
 // noteAttachTreeBuilds is an attach's line for each patched extension its jail was handed
-// (docs/design/patched-extensions.md §8.1 step 4), from the running jail's delivery record
+// (docs/reference/pi-extensions.md §8.1 step 4), from the running jail's delivery record
 // (noteAttachHandedBuilds reads it): the build it mounts, and, when this machine's good build has
 // moved since the jail booted, that the next fresh launch, once this jail stops, mounts that one.
 // Silent for a jail launched before patched extensions, whose record has no trees.

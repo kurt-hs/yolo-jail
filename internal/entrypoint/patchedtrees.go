@@ -1,7 +1,7 @@
 package entrypoint
 
 // patchedtrees.go is the jail's half of a PATCHED EXTENSION's delivery
-// (docs/design/patched-extensions.md §8.1, §9; PPX-D8, PPX-D18): what the host handed this jail per
+// (docs/reference/pi-extensions.md §8.1, §9; PPX-D8, PPX-D18): what the host handed this jail per
 // extension key, read once at boot from YOLO_PATCHED_TREES, and the GATE it puts on the owning
 // agent pack's launchers.
 //
@@ -29,7 +29,7 @@ import (
 const PatchedTreesEnv = "YOLO_PATCHED_TREES"
 
 // TreeBuildEnv names, in a PATCHED EXTENSION's sealed build jail alone, the extension the jail builds
-// (docs/design/patched-extensions.md §7.1, PPX-D30). That jail's seal selects the contributing pack
+// (docs/reference/pi-extensions.md §7.1, PPX-D30). That jail's seal selects the contributing pack
 // and no other (PPX-D5), so the pack's own list entry naming `~/<into>` has no owner there by
 // construction. The boot reads it as a sealed build's gate (launchedSealed, PPX-D41), beside
 // SealedBuildEnv, and so renders no pack surface and names no orphaned overlay or list there, rather
@@ -225,7 +225,7 @@ func treeGateWhy(t TreeDelivery) string {
 // version probe (XB-D24) is not stopped: it loads no extension. Nor is install-only mode
 // (InstallOnlyEnv: the readiness act, `yolo capture`), which installs and runs no program, and which
 // the gate's move to the top would otherwise have put behind it.
-const treeGateShell = `# --- a patched extension this agent loads, with no build (patched-extensions.md PPX-D18) ---
+const treeGateShell = `# --- a patched extension this agent loads, with no build (pi-extensions.md PPX-D18) ---
 # Checked FIRST (pi-extension-store-builds.md XB-D25): a launch this stops pays for no install,
 # update or refresh.
 TREE_GATE=__YOLO_TREE_GATE__

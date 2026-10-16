@@ -1,6 +1,6 @@
 package packload
 
-// patchedtrees.go is the pack-set half of a PATCHED EXTENSION (docs/design/patched-extensions.md):
+// patchedtrees.go is the pack-set half of a PATCHED EXTENSION (docs/reference/pi-extensions.md):
 // which patched extensions a selection carries, the OWNING AGENT PACK of each, and the lint that
 // says when no list entry names the tree.
 //

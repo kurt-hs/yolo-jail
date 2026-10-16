@@ -1,7 +1,7 @@
 package cli
 
 // packlintseries.go is `yolo pack lint`'s read of a pack's PATCH SERIES, and its opt-in online
-// check of each upstream (docs/design/patched-forks.md PF-D63, PF-D64).
+// check of each upstream (docs/reference/patched-forks.md PF-D63, PF-D64).
 //
 // THE SERIES IS READ AS A LAUNCH READS IT (packsrc.ReadSeries), for every patched fork and patched
 // extension the pack declares, and a series that does not read is a lint FAILURE carrying the
@@ -78,7 +78,7 @@ func lintSeries(pack *packload.Pack, root string) ([]lintedSeries, []string) {
 	for _, f := range patchedOfPack(pack, root) {
 		if f.PatchBranch != "" {
 			// A PATCH BRANCH has nothing in the pack to read: its address is the manifest's to check, and
-			// `--online` fetches and resolves it (docs/design/patched-forks.md §3.5).
+			// `--online` fetches and resolves it (docs/reference/patched-forks.md §3.5).
 			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedPatchBranchSeries(f.PatchBranch)})
 			continue
 		}

@@ -18,7 +18,7 @@ func contains(list []string, want string) bool {
 
 // TestARetiredSharedPackageStoreIsNeverSwept covers pi's extension package store,
 // `.pi-shared-npm`, one of the two members the machine tier ever had that were NOT credential
-// dirs, `.pi-shared-git` being the other (docs/design/pi-extension-lifecycle.md §3.1). It left that tier on 2026-10-05 (XB-D14 of
+// dirs, `.pi-shared-git` being the other (docs/reference/pi-extensions.md §17.1). It left that tier on 2026-10-05 (XB-D14 of
 // docs/design/pi-extension-store-builds.md): pi's npm prefix is per workspace again, and pi
 // unshares the link a home kept to the store. The store itself stays in every base home that
 // had it, full of `node_modules`, until a human deletes it, and a jail an older yolo launched

@@ -1,7 +1,7 @@
 package cli
 
 // skewedpack_test.go pins the host notch's handling of a configured pack holding a contribution
-// this yolo cannot read (docs/design/patched-forks.md PF-D68 to PF-D70): a field a newer yolo
+// this yolo cannot read (docs/reference/patched-forks.md PF-D68 to PF-D70): a field a newer yolo
 // reads. The one pack resolver reads it as a USE READ (packload.LoadDirForUse), so the pack
 // resolves and the contribution is skipped and named. Each verb then keeps its own disposition:
 // `yolo host --` launches and prints the line, `yolo host apply --assert` refuses and writes

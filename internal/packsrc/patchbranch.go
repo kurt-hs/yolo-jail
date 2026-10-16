@@ -1,6 +1,6 @@
 package packsrc
 
-// patchbranch.go is a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6): a commit graph a patched fork
+// patchbranch.go is a PATCH BRANCH (docs/reference/patched-forks.md §3.5, OQ-PFK6): a commit graph a patched fork
 // or extension names in place of a `patches` series — a repository and a branch whose ancestry
 // includes the upstream's — merged against each upstream candidate by `git merge-tree
 // --write-tree` instead of replayed.

@@ -1,6 +1,6 @@
 package run
 
-// sealnarrowing_test.go pins PPX-D39 (docs/design/patched-extensions.md; selectionNarrowed, seal.go)
+// sealnarrowing_test.go pins PPX-D39 (docs/reference/pi-extensions.md; selectionNarrowed, seal.go)
 // from Run's own entry point: a build jail's NARROWED selection is not refused by a gate asking
 // whether another selected pack provides what one names, because the narrowing is what dropped that
 // pack. Each fixture is a config the user's own launch accepts; its build jail, sealed to the pack
