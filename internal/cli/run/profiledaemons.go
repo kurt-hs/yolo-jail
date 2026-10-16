@@ -53,7 +53,7 @@ func profileDaemonSkew(missing []string) attachSkew {
 		quoted[i] = strconv.Quote(m)
 	}
 	why := "Its launch selected no profile that daemon serves, so it was not started " +
-		"(provider-credential-scope.md OQ-CN7), and an attach starts no daemon: the pointer this " +
+		"(providers.md OQ-CN7), and an attach starts no daemon: the pointer this " +
 		"entry would hand an agent would point at nothing."
 	return attachSkew{
 		jail: "was started without the " + strings.Join(quoted, ", ") + " jail daemon that this " +

@@ -175,7 +175,7 @@ one untranslated only when a list names it Anthropic's.
 
 **Reads with** [`providers.md`](../reference/providers.md) (catalog, selection, derives,
 `wire_api`), [`protocol-resolution.md`](../reference/protocol-resolution.md) (why an endpoint-less
-provider passes), [`zai-plumbing.md`](../reference/zai-plumbing.md) (the predecessor) and
+provider passes), [`packs/zai/README.md`](../../packs/zai/README.md) (the predecessor) and
 [`local-model-endpoints.md`](../research/local-model-endpoints.md) (per-agent config surfaces). The
 sibling [`sso-backed-bedrock.md`](sso-backed-bedrock.md) owns where the credential comes from. Its
 service, adapter and `packs/aws-auth` landed 2026-09-18 (`b94351fe`, `e76e43b2`, `9fc4879d`), and a
@@ -460,7 +460,7 @@ There is no endpoint-family field ([OQ-BR7](#OQ-BR7)): consumers compose runtime
 names one for the credential's profile ([BR-DIR1](#BR-DIR1)), or the launch is refused (a
 shipped region would make the refusal unreachable, since the composed entry would always carry
 one). The provider keeps the six AWS credential names packs/claude's `bedrock` claimed under
-`api_key_env_name` ([CN-D2](provider-credential-scope.md#CN-D2)), which the
+`api_key_env_name` ([CN-D2](../reference/providers.md#CN-D2)), which the
 credential gate withholds by; a list of several points an agent at none of them, so one entry
 still serves all three credentials ([§6.4](#64-the-credential-three-are-supported)). The
 snippet was corrected on 2026-09-29, when it paired a shipped region with the refusal's field.

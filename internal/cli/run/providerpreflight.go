@@ -14,7 +14,7 @@ import (
 // (docs/reference/providers.md#the-credential-preflight, #pv-oq-13): a SELECTED pack that requires
 // a provider — by shipping one, or by a variant naming one — is refused when the composed
 // providers table has no such entry or when the credential variable that entry points at
-// does not reach every agent that selected it (provider-credential-scope.md CN-D25). It
+// does not reach every agent that selected it (providers.md CN-D25). It
 // returns the lines to print and whether
 // the caller must stop: lines alone cannot carry that, because the escape hatch turns a
 // refusal into a LOUD CONTINUATION, and a caller that only looked at len(lines) would exit

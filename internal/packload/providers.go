@@ -32,7 +32,7 @@ import (
 //
 // The merge is per FIELD, not per provider: a user who wants z.ai with one more model
 // alias overrides `models.fast` and keeps the pack's endpoints, which is the whole point
-// of shipping the facts (zai-plumbing.md §7 — "overrides, not authoring"). Objects merge
+// of shipping the facts (packs/zai/README.md — overrides, not authoring). Objects merge
 // recursively; every other value replaces. A null user entry DROPS the provider outright,
 // the same convention the `providers` config key already has for a null entry — and a null
 // NESTED in an entry is a delete too, at every depth (see mergeUnder), so an alias can be

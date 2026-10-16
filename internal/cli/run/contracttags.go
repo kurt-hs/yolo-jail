@@ -78,7 +78,7 @@ const (
 	contractEntryChannel = "entry-channel"
 	// contractAgentEnvFiles: the jail's launchers source ~/.config/yolo-agent-env/<agent>.sh, so
 	// a value the credential gate scopes to one agent reaches that agent
-	// (provider-credential-scope.md, CN-D7 and CN-D10). LEGACY inference, for a jail with no
+	// (providers.md, CN-D7 and CN-D10). LEGACY inference, for a jail with no
 	// tags: present when entrypoint.AgentEnvFilesEnv is set, the marker the gate froze before
 	// this list existed.
 	contractAgentEnvFiles = "agent-env-files"

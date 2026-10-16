@@ -4352,7 +4352,7 @@ func validateContribution(label string, c Contribution) []string {
 					problems = append(problems, fmt.Sprintf(
 						"%s: env var %q names %q in a contribution with no gate, which every "+
 							"process of the jail receives — a caller token is delivered only to the "+
-							"agents whose selection reaches it (provider-credential-scope.md OQ-CN7), "+
+							"agents whose selection reaches it (providers.md OQ-CN7), "+
 							"so declare the \"platform\" (or \"profile\") it serves",
 						label, k, loopholedecl.TokenCallerToken))
 				case v != loopholedecl.TokenCallerToken:
@@ -4822,7 +4822,7 @@ func validateAutonomyPosture(label string, p *AutonomyPosture) []string {
 // protocol is in play.
 const ProviderAddressConflictMessage = "base_url and endpoints are both set — base_url is " +
 	"the single-protocol shorthand and cannot be combined with it; move the URL into " +
-	"endpoints, under the protocol it speaks (zai-plumbing.md §5)"
+	"endpoints, under the protocol it speaks (protocol-resolution.md)"
 
 // endpointURLProblems is the ONE rule for every address a manifest ships — a provider's
 // `endpoints.<protocol>.base_url` and an adapter's `address`. One function rather than two
