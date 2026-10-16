@@ -465,8 +465,8 @@ func Compose(in Inputs) (*Result, error) {
 	// `"k": null` puts a TOMBSTONE in the overlay, which then deletes the key it was
 	// meant to record. MEASURED on a real jail boot 2026-09-12, and invisible to the
 	// host-notch tests, which only ever exercise the adoption branch. It also self-heals
-	// an overlay an older yolo already polluted, which is why the tombstone is left in
-	// the sidecar rather than swept: removing durable state deserves its own argument.
+	// an overlay an older yolo already polluted; since 2026-10-16 the capture also sweeps a
+	// tombstone the current file holds as null (dropHeldNullTombstones, CO-D20).
 	//
 	// ⚠ THE TOMBSTONE IS INERT FOR THE RENDER, AND THE REPORT HAS TO BE TOLD. `yolo config
 	// diff` and `yolo config promote` read the sidecar directly, and until 2026-10-16 called

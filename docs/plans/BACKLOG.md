@@ -695,6 +695,19 @@ review of the one-line change.
 It says a materialized file is a hardlink; the code tries a reflink first. Found 2026-10-16 while
 graduating the install-capture plan.
 
+### <a id="claude-double-1m"></a>🔧 **claude's env derive can spell a model `x[1m][1m]`**
+
+A declared window of 1M or more on a model id that already ends in `[1m]` gets a second suffix,
+on every provider: the env derive's `selected .. suffix` has no guard, unlike `routedSpelling`.
+Found 2026-10-16 by the review of the Kilo window fix.
+
+### <a id="teardown-drops-top-level-deletion"></a>🔧 **The teardown capture drops a real top-level deletion**
+
+The teardown capture and `yolo config capture` run the compose engine with no config layers, so
+`retireConvergedOverlay` reads a real top-level deletion as already matching and drops its
+tombstone. The next boot's capture records it again, so it is late rather than lost. Found
+2026-10-16 while fixing the added-`null` data loss.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
