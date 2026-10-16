@@ -436,51 +436,82 @@ func TestARestartThatExits85BeforeReadyIsAnOrdinaryFailedRestart(t *testing.T) {
 	}
 }
 
-// A TEARDOWN AFTER THE CURRENT PROCESS HAS EXITED SIGNALS NOTHING: during a backoff wait, or
-// after a give-up, the process the supervisor holds is already reaped, and its pid may be
-// another process's by now.
-func TestATeardownSignalsNoProcessThatHasAlreadyExited(t *testing.T) {
-	exited := make(chan struct{})
-	s := newDaemonSupervisor("reaped", "", nil, exited)
-	signaled := 0
-	sig := func(*exec.Cmd, <-chan struct{}) { signaled++ }
-	close(exited)
-	s.stop(sig)
-	if signaled != 0 {
-		t.Errorf("the teardown signaled a process that had already exited (%d signals)", signaled)
-	}
-	if !s.isStopping() {
-		t.Error("the teardown did not mark the supervisor stopping")
-	}
-	live := newDaemonSupervisor("live", "", nil, make(chan struct{}))
-	live.stop(sig)
-	if signaled != 1 {
-		t.Errorf("the teardown did not signal a process that is still running (%d signals)", signaled)
+// THE KILL PATH'S TEARDOWN REACHES THE GROUP EVEN WHEN ITS LEADER IS REAPED: a daemonizing wrapper
+// exits 0 once its service is reachable, and a crashed leader may have forked a child before it
+// died; either way the process the supervisor holds is gone and a child is left in its group. The
+// group signal is what ends that child with the jail (a group whose members are all gone answers
+// ESRCH, so no pid-reuse risk arises on this path). During a backoff the teardown also spawns
+// nothing.
+func TestATeardownReachesTheGroupOfAReapedLeader(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		backoff      time.Duration
+	}{
+		// The daemonizing wrapper: its child serves; it exits 0, and supervision ends there.
+		{"wrapper", `echo $$ >> "$PIDS"; sleep 30 & echo $! >> "$PIDS"; : > "$1"; exit 0`, 5 * time.Millisecond},
+		// A crashed leader with a forked child, the teardown landing in the backoff wait.
+		{"backoff", `echo $$ >> "$PIDS"; sleep 30 & echo $! >> "$PIDS"; : > "$1"; sleep 0.1; exit 3`, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSupervisedFixture(t)
+			fastHostDaemonRestarts(t, tc.backoff, 30*time.Second, 5)
+			f.o.ServiceTermGrace = time.Second
+			name := "reaped-" + tc.name
+			h := f.spawnScript(name, tc.script, nil)
+			if !waitFor(5*time.Second, func() bool { return len(f.spawned()) == 2 && !processLive(f.spawned()[0]) }) {
+				t.Fatalf("the leader never exited; spawns %v, host log:\n%s", f.spawned(), hostLog(name))
+			}
+			if tc.name == "backoff" && !waitFor(5*time.Second, func() bool { return strings.Contains(hostLog(name), "restarting it in 10s") }) {
+				t.Fatalf("the death was never reported; host log:\n%s", hostLog(name))
+			}
+			child := f.spawned()[1]
+			if !processLive(child) {
+				t.Fatalf("the child (pid %d) is not running before the teardown", child)
+			}
+			h.stop()
+			if !waitFor(5*time.Second, func() bool { return !processLive(child) }) {
+				t.Errorf("the child in the reaped leader's group (pid %d) outlived its jail's teardown", child)
+			}
+			if n := len(f.spawned()); n != 2 {
+				t.Errorf("a process was spawned after the teardown (%d pids recorded)", n)
+			}
+		})
 	}
 }
 
-// THE SAME, THROUGH THE CALL SITE: a teardown during the backoff wait ends supervision and spawns
-// nothing, and the kill path's grace never runs for the reaped process (no "ignored SIGTERM").
-func TestATeardownDuringTheBackoffSpawnsAndSignalsNothing(t *testing.T) {
-	f := newSupervisedFixture(t)
-	fastHostDaemonRestarts(t, 10*time.Second, 30*time.Second, 5)
-	f.o.ServiceTermGrace = 50 * time.Millisecond
-	h := f.spawnScript("inbackoff", `echo $$ >> "$PIDS"; : > "$1"; sleep 0.1; exit 3`, nil)
-	if !waitFor(5*time.Second, func() bool { return strings.Contains(hostLog("inbackoff"), "restarting it in 10s") }) {
-		t.Fatalf("the death was never reported; host log:\n%s", hostLog("inbackoff"))
+// THE DETACH PATH SIGNALS NO PROCESS ALREADY REAPED: detach signals a bare pid, and once the
+// child's Wait has returned (during a backoff wait, or after a give-up) that pid may be another
+// process's. A stand-in process plays the reused pid: it must not be signaled.
+func TestADetachTeardownSignalsNoProcessAlreadyReaped(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("reads /proc")
 	}
-	h.stop()
-	if !ended(h, 5*time.Second) {
-		t.Fatal("supervision did not end with a teardown during its backoff")
+	o := &Options{}
+	fillDefaults(o)
+	var out syncBuffer
+	o.Stdout = &out
+	stranger := exec.Command("sleep", "30")
+	if err := stranger.Start(); err != nil {
+		t.Fatal(err)
 	}
-	if how := h.end.how(); how != stoppedByTeardown {
-		t.Errorf("the end's account is %q, want %q", how, stoppedByTeardown)
+	strangerExited := make(chan struct{})
+	go func() { _ = stranger.Wait(); close(strangerExited) }()
+	t.Cleanup(func() { _ = stranger.Process.Kill() })
+	reaped := make(chan struct{})
+	close(reaped)
+	hd := &loopholes.HostDaemon{Detach: true}
+	o.stopService(o.pr(o.Stdout), "detached", hd, stranger, reaped)
+	select {
+	case <-strangerExited:
+		t.Fatal("the detach teardown signaled the pid of a process already reaped")
+	case <-time.After(200 * time.Millisecond):
 	}
-	if n := len(f.spawned()); n != 1 {
-		t.Errorf("a process was spawned after the teardown (%d spawns)", n)
-	}
-	if strings.Contains(f.terminal.String(), "ignored SIGTERM") {
-		t.Errorf("the teardown signaled the reaped process and waited out its grace:\n%s", f.terminal.String())
+	// The control: while the child's exit is still unseen, detach signals it.
+	o.stopService(o.pr(o.Stdout), "detached", hd, stranger, make(chan struct{}))
+	select {
+	case <-strangerExited:
+	case <-time.After(5 * time.Second):
+		t.Error("the detach teardown did not signal a process still running")
 	}
 }
 
@@ -595,5 +626,63 @@ func TestAStaleStopMarkerDoesNotSuppressALaterCrashsRestart(t *testing.T) {
 	}
 	if _, err := os.Lstat(hostservice.StopMarkerPath(h.upstream)); !os.IsNotExist(err) {
 		t.Errorf("the restart left the stale marker in place (%v)", err)
+	}
+}
+
+// A STOP BY THE VERB DURING A RESTART'S READINESS WAIT IS STILL A STOP: the restarted process,
+// stopped by `yolo host-daemon stop` before its wait passed, fails that wait, and the supervisor
+// reads the marker for its pid rather than counting a failed restart and spawning another.
+func TestAStopByTheVerbDuringARestartsReadinessWaitIsNotRestarted(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("spawns host processes")
+	}
+	socket := filepath.Join(t.TempDir(), "d.sock")
+	spawn := func() (*exec.Cmd, <-chan struct{}, error) {
+		cmd := exec.Command("sleep", "30")
+		if err := cmd.Start(); err != nil {
+			return nil, nil, err
+		}
+		exited := make(chan struct{})
+		go func() { _ = cmd.Wait(); close(exited) }()
+		return cmd, exited, nil
+	}
+	first, firstExited, err := spawn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines syncBuffer
+	s := newDaemonSupervisor("midready", "", first, firstExited)
+	s.policy = daemonRestartPolicy{initial: 5 * time.Millisecond, ceiling: 10 * time.Second, restarts: 5}
+	s.say = func(l string) { _, _ = lines.Write([]byte(l + "\n")) }
+	s.wrapperExit = func(*exec.Cmd) bool { return false }
+	s.stoppedByVerb = func(pid int) bool { return hostservice.TakeStopMarker(socket, pid) }
+	restarts := 0
+	s.start = func() (*exec.Cmd, <-chan struct{}, error) { restarts++; return spawn() }
+	// The verb's stop, as it lands mid-wait: the marker for the restarted pid, then its signal.
+	s.ready = func(cmd *exec.Cmd, exited <-chan struct{}) string {
+		if err := hostservice.WriteStopMarker(socket, []int{cmd.Process.Pid}); err != nil {
+			t.Error(err)
+		}
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		<-exited
+		return "exited at startup (signal: terminated)"
+	}
+	s.abandon = func(*exec.Cmd) {}
+	go s.run()
+	t.Cleanup(func() { s.stop(func(c *exec.Cmd, _ <-chan struct{}) { _ = c.Process.Kill() }) })
+	_ = first.Process.Kill()
+	select {
+	case <-s.done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("supervision did not end with the verb's stop mid-restart; lines:\n%s", lines.String())
+	}
+	if how := s.end().how(); how != stoppedByVerbAccount {
+		t.Errorf("the end's account is %q, want %q", how, stoppedByVerbAccount)
+	}
+	if restarts != 1 {
+		t.Errorf("the supervisor spawned %d restarts, want 1: the stopped one was restarted", restarts)
+	}
+	if !strings.Contains(lines.String(), "was stopped by `yolo host-daemon stop`; not restarted") {
+		t.Errorf("the stop was not said:\n%s", lines.String())
 	}
 }
