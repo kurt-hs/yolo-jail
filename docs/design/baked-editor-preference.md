@@ -13,7 +13,7 @@ vantage:
 # yolo has an editor, and it should not — neovim is baked into every jail on every backend
 
 **Status:** 2026-09-30 — three rulings owed, [OQ-ED1](#OQ-ED1) to [OQ-ED3](#OQ-ED3).
-[OQ-ED4](#OQ-ED4) was decided as an implementation choice ([ED-D1](#ED-D1)): this doc rules on
+[OQ-ED4](#8-decision-ledger) was decided as an implementation choice ([ED-D1](#ED-D1)): this doc rules on
 neovim alone. Nothing built — re-verified 2026-09-30: `"neovim"` is still in `coreFloorNames` and both
 `VISUAL=nvim` copies are still constants. Code is cited by symbol, not by line.
 
@@ -37,7 +37,7 @@ decides what the floor is for. The seven sites fall out of it.
 
 **Needs your ruling:** [OQ-ED1](#OQ-ED1) (does nvim leave, and what does `VISUAL` become?),
 [OQ-ED2](#OQ-ED2) (where the host nvim config copy lives), [OQ-ED3](#OQ-ED3) (the `vi`/`vim` aliases,
-and whether to state a rule). [OQ-ED4](#OQ-ED4) was decided as an implementation choice,
+and whether to state a rule). [OQ-ED4](#8-decision-ledger) was decided as an implementation choice,
 [ED-D1](#ED-D1).
 
 **Reads with:** [`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md)
@@ -106,6 +106,37 @@ its own copy of anything the user declared themselves, and says why (the comment
 That reasoning is not backend-specific. It is applied on `macos-user` only because that is where a
 version collision made it urgent.
 
+### The rest of the floor: measured, and left to a follow-up
+
+**`neovim` is not the only preference in the floor, and this doc rules on it alone**
+([ED-D1](#ED-D1)). MEASURED 2026-09-22: `coreFloorNames` held 36 entries, and
+`darwinpkg.ImageCoreNames` matched it entry for entry, so the drift gate holds. Applying the test
+above mechanically (zero exec, zero env reference, zero manifest reference across `internal/`,
+`cmd/` and `packs/`) split them 21 dependency, 13 preference, 2 pack-dependency.
+
+The 13 with no consumer: `neovim`, `gh`, `sox`, `overmind`, `which`, `gnupatch`, `diffutils`,
+`gzip`, `bzip2`, `xz`, `gnutar`, `unzip`, `zip`. In measured-bytes order the only ones worth a
+decision are **neovim ~220 MB, sox ~100 MB, gh 41 MB, overmind 18 MB**; the remaining nine are
+under 10 MB combined. Each other entry is its own call about what every jail carries, so a
+follow-up takes them in that byte order, each with its own ruling, and none rides on neovim's.
+
+> [!WARNING]
+> **Two entries look like candidates and are not what they seem.**
+>
+> - **`ripgrep` and `fd` are NOT stale.** They are live dependencies of `packs/guardrails`, which
+>   declares `requires` for both, and a blocker shim is generated only when its `replacement`
+>   resolves on the agent's PATH. Drop them and guardrails **silently stops blocking** `grep`
+>   and `find`, which is the failure mode that pack exists to prevent.
+> - **`overmind`'s baked justification is false, but not for the reason to act on.** `flake.nix`
+>   says "exercised by overmind isolation tests"; the test only echoes `$OVERMIND_SOCKET` and
+>   `cat`s the socket path. The binary is never run.
+
+The same audit found that `briefing.txt` and `config_ref.txt` told every agent that `gh` was
+pre-authenticated, which nothing in a jail makes true. Both say it is not signed in since
+2026-09-25, held by `TestBriefingDoesNotClaimGhIsAuthenticated` and
+`TestConfigRefDoesNotClaimGhIsAuthenticated` (`internal/cli/briefingclaims_test.go`).
+
+## 3. The proposal
 ## 3. The proposal
 
 1. **`neovim` leaves `coreFloorNames`.** The fatal floor gate needs no change — dropping an entry is
@@ -266,64 +297,12 @@ leaves the image they point at nothing, so keeping them unchanged is not offered
    **Answer:**
    > _(empty — fill in when decided)_
 
-<a id="oq-ed4-background"></a>**Background to [OQ-ED4](#OQ-ED4), below: the measurement.**
-
-✅ **MEASURED 2026-09-22, and the answer is: it is a floor AUDIT.** `coreFloorNames` holds **36**
-entries (not the ~40 this doc guessed), and `darwinpkg.ImageCoreNames` matches it entry-for-entry,
-so the drift gate holds. Applying [§2](#2-dependency-or-preference--the-test-the-floor-does-not-apply)'s
-test mechanically — zero exec, zero env reference, zero manifest reference across `internal/`,
-`cmd/` and `packs/` — splits them **21 dependency, 13 preference, 2 pack-dependency**.
-
-The 13 with no consumer: `neovim`, `gh`, `sox`, `overmind`, `which`, `gnupatch`, `diffutils`,
-`gzip`, `bzip2`, `xz`, `gnutar`, `unzip`, `zip`. In measured-bytes order the only ones worth a
-decision are **neovim ~220 MB, sox ~100 MB, gh 41 MB, overmind 18 MB**; the remaining nine are
-under 10 MB combined and are not worth a doc between them.
-
-> [!WARNING]
-> **Two of this question's own guesses were WRONG, and both would have cost something.**
->
-> - **`ripgrep`/`fd` are NOT stale.** They are live dependencies of `packs/guardrails`, which
->   declares `requires` for both — and a blocker shim is generated only when its `replacement`
->   resolves on the agent's PATH. Drop them and guardrails **silently stops blocking** `grep`
->   and `find`, which is the failure mode that pack exists to prevent.
-> - **`overmind`'s baked justification is false, but not for the reason to act on.** `flake.nix`
->   says "exercised by overmind isolation tests"; the test only echoes `$OVERMIND_SOCKET` and
->   `cat`s the socket path. The binary is never run.
->
-> And one adjacent doc defect the audit found: `briefing.txt` told every agent "GitHub CLI (gh)
-> is pre-authenticated", but nothing grants a token and `~/.config/gh` does not exist in a jail —
-> so that line was false regardless of what this question rules. **Fixed 2026-09-25**: the
-> briefing now says gh is not signed in, and `TestBriefingDoesNotClaimGhIsAuthenticated`
-> (`internal/cli/briefingclaims_test.go`) holds it there. `config_ref.txt`'s *Identity & Auth*
-> block made the same claim ("pre-authenticated via the shared home"); **fixed 2026-09-25** to
-> say gh is not signed in, held by `TestConfigRefDoesNotClaimGhIsAuthenticated` in the same
-> file.
-
-4. ✅ <a id="OQ-ED4"></a>**[OQ-ED4](#OQ-ED4): is `neovim` the only preference in the floor?**
-   [§2](#2-dependency-or-preference--the-test-the-floor-does-not-apply)'s test is cheap to apply to
-   the rest of the list, and `gh` is the obvious next candidate — nothing in yolo requires the GitHub
-   CLI. `ripgrep` and `fd` are the interesting case: they were dependencies of the *default* blocked
-   list, and that default is now empty and opt-in, so their justification may have moved out from
-   under them. The stakes: whether this is one removal or a floor audit.
-   The measurement that answered it is [in the background above](#oq-ed4-background).
-
-   _Leaning:_ **Rule on `neovim` alone here; the table above is what a follow-up sprint would take.**
-   That was the leaning before the measurement and it survives it — the audit's value is that the
-   follow-up now has a priority order set by bytes rather than by guesswork.
-
-   <!-- vantage: question id=OQ-ED4 -->
-
-   **Answer:**
-   > Decided as an implementation choice ([ED-D1](#ED-D1)), reversible: this doc rules on `neovim`
-   > alone. The other twelve entries with no consumer are left to a follow-up in the byte order above,
-   > each needing its own ruling, and `ripgrep` and `fd` stay as live dependencies of the guardrails
-   > pack.
-
 ## 8. Decision Ledger
 
-No rulings yet, and one implementation decision. Rows land here as [§7](#7-open-questions)'s
-questions are answered, and each ruling moves into the body section it governs.
+No rulings yet; one question decided as an implementation choice. Rows land here as
+[§7](#7-open-questions)'s questions are answered, and each ruling moves into the body section it governs.
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| <a id="ED-D1"></a>ED-D1 | *Implementation decision, [OQ-ED4](#OQ-ED4).* **This doc rules on `neovim` alone; the rest of the floor audit is a follow-up.** The measurement in [OQ-ED4](#OQ-ED4) answered the factual question (neovim is not the only entry with no consumer), and what is left is the scope of this doc. Each other entry is a separate call about what every jail carries, so none is decided here, and none should ride on neovim's ruling. The follow-up takes them in the measured byte order: `sox`, `gh`, `overmind`, then the nine small ones. `ripgrep` and `fd` are not candidates: `packs/guardrails` generates its blockers only when they are on the agent's PATH. Reversible: the follow-up can be folded back into this doc | 2026-09-30 | [§7](#7-open-questions) | nothing to build |
+| OQ-ED4 | **Is `neovim` the only preference in the floor? No; this doc rules on `neovim` alone.** Decided as an implementation choice, [ED-D1](#ED-D1), reversible: the other twelve entries with no consumer go to a follow-up in measured byte order, each needing its own ruling, and `ripgrep` and `fd` stay as live dependencies of the guardrails pack | 2026-09-30 | [The rest of the floor](#the-rest-of-the-floor-measured-and-left-to-a-follow-up) | nothing to build |
+| <a id="ED-D1"></a>ED-D1 | *Implementation decision, [OQ-ED4](#8-decision-ledger).* **This doc rules on `neovim` alone; the rest of the floor audit is a follow-up.** The [measurement](#the-rest-of-the-floor-measured-and-left-to-a-follow-up) answered the factual question (neovim is not the only entry with no consumer), and what is left is the scope of this doc. Each other entry is a separate call about what every jail carries, so none is decided here, and none should ride on neovim's ruling. The follow-up takes them in the measured byte order: `sox`, `gh`, `overmind`, then the nine small ones. `ripgrep` and `fd` are not candidates: `packs/guardrails` generates its blockers only when they are on the agent's PATH. Reversible: the follow-up can be folded back into this doc | 2026-09-30 | [The rest of the floor](#the-rest-of-the-floor-measured-and-left-to-a-follow-up) | nothing to build |

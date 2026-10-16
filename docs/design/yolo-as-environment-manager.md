@@ -17,7 +17,7 @@ key all ship (env-manager plan Phases 0–6, 8, 9). **No live question remains**
 [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)
 (the `host` layer stays), and [`OQ-EM1`](#OQ-EM1), whether the elevation-class batching around the
 shipped confirm-gated install is still owed, is answered no by
-[`OQ-HP5`](host-tool-provisioning.md#OQ-HP5). Two parts are unbuilt, so work is owed:
+[`OQ-HP5`](host-tool-provisioning.md#decision-ledger). Two parts are unbuilt, so work is owed:
 [§3.4](#34-check-becomes-is-this-description-satisfiable-here)'s `check --at <notch>` (re-checked
 2026-09-30: `yolo check` parses no `--at`), whose delivery shape is the user stories'
 [Q1b](environment-manager-user-stories.md#Q1b), and Linux `guest` (plan Phase 7, which has no code
@@ -917,7 +917,7 @@ there and from `BACKLOG.md`; the `OQ-EM` spellings are this doc's own and start 
 | OQ-8 | The dep-checker boundary is a **declared schema** a third-party doctor can read, not an importable Go package | 2026-08-01 | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) | ✅ `install_hints` + `internal/depcheck/` |
 | OQ-EM2 | **The read-in `host` layer STAYS, disclosed per surface** — answered on the config-ownership axis rather than here ([`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)), which supersedes [`OQ-3`](#9-decision-ledger). The cost the question rested on is gone too: the hand-maintained `surfaceHasHostLayer` map was deleted 2026-09-09 and both provenance columns are derived | 2026-09-11 | [§10](#10-open-questions) | ✅ `manifest.Surface.ReadsHost` is the predicate, `packload.SurfaceHostFile` derives the `/ctx` path, and the read fails closed |
 | OQ-9 | Offer-to-run confirms are **batched by elevation class**, `sudo` first, never per-command | 2026-08-01 | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) | ⚠ **a consumer exists since 2026-09-12, and it reverses half of this row.** `yolo host apply --assert`'s dependency gate ([`internal/cli/applyhostdepgate.go`](../../internal/cli/applyhostdepgate.go)) offers the install behind **one** prompt listing every missing dependency — not one per elevation class — and **a decline is FATAL at the prompt**, where this row's *"the manifest is still the floor"* made it non-fatal. [`../reference/report-tiers.md`](../reference/report-tiers.md#why-its-this-way) [`OQ-RO6`](../reference/report-tiers.md#why-its-this-way)/[`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) rule that reversal for this verb and state the reason: an `--assert`'s promise is a ready environment. The elevation-class batching itself is unbuilt, and since 2026-09-30 is not owed ([`OQ-EM1`](#OQ-EM1)) |
-| OQ-EM1 | **No elevation-class batching and no second prompt; plan Phase 4.3 shrinks to the disclosure that already ships**, each install's exact command printed above the one prompt, so a `sudo` is visible before the answer. Answered by [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5) (2026-09-29), where the maintainer rejected asking again for what a selected pack declares: *"If pi is going to be available, it's because you've already configured that pack in your config file. You've acknowledged this already. We don't have to ask again … certainly not the second time."* | 2026-09-30 | [§10](#10-open-questions) | ✅ nothing to build |
+| OQ-EM1 | **No elevation-class batching and no second prompt; plan Phase 4.3 shrinks to the disclosure that already ships**, each install's exact command printed above the one prompt, so a `sudo` is visible before the answer. Answered by [`OQ-HP5`](host-tool-provisioning.md#decision-ledger) (2026-09-29), where the maintainer rejected asking again for what a selected pack declares: *"If pi is going to be available, it's because you've already configured that pack in your config file. You've acknowledged this already. We don't have to ask again … certainly not the second time."* | 2026-09-30 | [§10](#10-open-questions) | ✅ nothing to build |
 
 > [!WARNING]
 > **A trap this ledger exists to preserve: an unsealed `describe --hash` is worse than no hash.**
@@ -994,7 +994,7 @@ elevation class*: [`OQ-7`](../plans/environment-manager-plan.md#blocks-phase-43-
    <!-- vantage: question id=OQ-EM1 -->
 
    **Answer:**
-   > Answered by [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5) (2026-09-29): no. The maintainer
+   > Answered by [`OQ-HP5`](host-tool-provisioning.md#decision-ledger) (2026-09-29): no. The maintainer
    > ruled against asking again for what a selected pack declares: *"why is yolo even asking if you
    > want to install this? If pi is going to be available, it's because you've already configured
    > that pack in your config file. You've acknowledged this already. We don't have to ask again …
