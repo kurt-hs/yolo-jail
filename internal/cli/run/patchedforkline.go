@@ -295,12 +295,18 @@ func (o *Options) noteAttachForkBuilds(handed map[string]HandedFork) {
 		if h.Fork == "" {
 			continue // a plain fork's program: its pin, in the fork block above, is what it runs
 		}
+		// The handed key is the record's; the line names the fork as every line does (Fork.Label): an
+		// upstream build as the fork's upstream.
+		label := "fork " + h.Fork
+		if series, ok := strings.CutSuffix(h.Fork, packload.UpstreamKeySuffix); ok {
+			label = "fork " + series + " (upstream)"
+		}
 		if h.Key == "" {
-			out.printf("[yellow]this jail has no %s from fork %s: %s[/yellow]", bin, h.Fork, richtext.Escape(h.Reason))
+			out.printf("[yellow]this jail has no %s from %s: %s[/yellow]", bin, richtext.Escape(label), richtext.Escape(h.Reason))
 			continue
 		}
 		runs := WithPatches(packsrc.ListEntry{Commit: h.Commit, Tag: h.Tag}.Label(), h.Patches)
-		line := "this jail runs fork " + h.Fork + " at " + runs
+		line := "this jail runs " + label + " at " + runs
 		if rec, err := patchedPacksStore().LoadCheckRecord(h.Fork); err == nil && rec.Good != nil && rec.Good.Entry != h.Key {
 			line += "; " + WithGood(GoodBuildLabel(rec.Good), rec.Good) + " is built, and the " +
 				"next fresh launch, once this jail stops, runs it"

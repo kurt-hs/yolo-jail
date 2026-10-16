@@ -170,6 +170,32 @@ func TestAMissingForksPatchFailureNamesItsOwnBypass(t *testing.T) {
 	}
 }
 
+// WITH THE MISSING-PROGRAM HATCH SET the same launch goes on without the fork: its error block, then
+// the one warning line, and no hatch list offering the hatch already set.
+func TestAMissingForksPatchFailureWithItsHatchSetListsNothing(t *testing.T) {
+	patchedLaunchHome(t)
+	pf := &packsrc.PatchFailure{Owner: "forkpack/tool", Target: packsrc.ListEntry{Commit: strings.Repeat("c", 40), Tag: "v1.2.0"},
+		Kind: "conflict", Member: "0001-ten.patch", Paths: []string{"f.txt"}}
+	argv, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.Getenv = func(key string) string {
+			switch key {
+			case "YOLO_RUNTIME":
+				return "podman"
+			case paths.AllowMissingProgramsEnv:
+				return "1"
+			}
+			return ""
+		}
+		o.BuildForks = func(ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			return map[string]entrypoint.ForkDelivery{"tool": {Reason: pf.Error(), PatchFailure: pf}}
+		}
+	})
+	if argv == nil || strings.Contains(printed, "Start anyway:") ||
+		!strings.Contains(printed, "starting without it ("+paths.AllowMissingProgramsEnv+")") {
+		t.Errorf("the hatch-set launch did not start, or listed a hatch (started %v):\n%s", argv != nil, printed)
+	}
+}
+
 // A MISSING BUILD WITH ANOTHER CAUSE does not name the patch failure's bypass.
 func TestAMissingBuildWithoutAPatchFailureNamesNoPatchBypass(t *testing.T) {
 	patchedLaunchHome(t)
@@ -218,7 +244,7 @@ func TestOneCauseIsSaidOnceForEveryBuildItLeftWithout(t *testing.T) {
 			"  extensions treepack/a and treepack/b: their build jail refused to start on the host:\n",
 		"once it is fixed, `yolo capture treepack/c`.\n",
 		"\n\nRetry:\n  yolo capture treepack/a\n  yolo capture treepack/b\n",
-		"\n\nStart anyway:\n  " + patchrecovery.SkipExtensionsEnv + "=treepack/a,treepack/b yolo    start agentpack without it\n",
+		"\n\nStart anyway:\n  " + patchrecovery.SkipExtensionsEnv + "=treepack/a,treepack/b yolo    start agentpack without them\n",
 	} {
 		if !strings.Contains(got, w) {
 			t.Errorf("the refusal lacks %q:\n%s", w, got)

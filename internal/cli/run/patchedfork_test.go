@@ -258,8 +258,17 @@ func forkPatchedRecipe(f packload.Fork, s *packsrc.Series) string {
 }
 
 // AN ATTACH SAYS WHAT ITS JAIL RUNS (§7), from what the jail was handed, and that the next fresh
-// launch runs a good build that moved since. Red when the attach stops calling noteAttachForkBuilds.
+// launch runs a good build that moved since; an upstream build (YOLO_SKIP_PATCHES) is named as the
+// fork's upstream, never by its internal record key. Red when the attach stops calling
+// noteAttachForkBuilds, or prints the handed key as it is.
 func TestAnAttachSaysWhichPatchedBuildItsJailRuns(t *testing.T) {
+	for key, label := range map[string]string{"forkpack/tool": "fork forkpack/tool",
+		"forkpack/tool#upstream": "fork forkpack/tool (upstream)"} {
+		t.Run(label, func(t *testing.T) { attachSaysWhichPatchedBuildItsJailRuns(t, key, label) })
+	}
+}
+
+func attachSaysWhichPatchedBuildItsJailRuns(t *testing.T, key, label string) {
 	patchedLaunchHome(t)
 	var cname string
 	_, printed := fakePodmanLaunch(t, func(o *Options) {
@@ -271,11 +280,11 @@ func TestAnAttachSaysWhichPatchedBuildItsJailRuns(t *testing.T) {
 		if err := writeLivePackTree(cname, tree); err != nil {
 			t.Fatal(err)
 		}
-		if err := recordHandedFork(tree, "tool", HandedFork{Key: "k-old", Fork: "forkpack/tool", Commit: patchedBase,
+		if err := recordHandedFork(tree, "tool", HandedFork{Key: "k-old", Fork: key, Commit: patchedBase,
 			Tag: "v1.0.0", Patches: 1}); err != nil {
 			t.Fatal(err)
 		}
-		if err := patchedPacksStore().WithCheckRecord("forkpack/tool", nil, func(r *packsrc.CheckRecord, _ error, _ func() error) (bool, error) {
+		if err := patchedPacksStore().WithCheckRecord(key, nil, func(r *packsrc.CheckRecord, _ error, _ func() error) (bool, error) {
 			r.Good = &packsrc.GoodBuild{Commit: strings.Repeat("b", 40), Tag: "v1.1.0", Patches: 1, Entry: "k-new"}
 			return true, nil
 		}); err != nil {
@@ -299,7 +308,7 @@ func TestAnAttachSaysWhichPatchedBuildItsJailRuns(t *testing.T) {
 	if !strings.Contains(printed, "Attaching to existing jail") {
 		t.Fatalf("the fixture did not attach:\n%s", printed)
 	}
-	want := "this jail runs fork forkpack/tool at v1.0.0 (01234567) + 1 patch; v1.1.0 (bbbbbbbb) + 1 patch is built, " +
+	want := "this jail runs " + label + " at v1.0.0 (01234567) + 1 patch; v1.1.0 (bbbbbbbb) + 1 patch is built, " +
 		"and the next fresh launch, once this jail stops, runs it"
 	if !strings.Contains(printed, want) {
 		t.Errorf("the attach does not name the build its jail runs and the one built since:\n%s", printed)
