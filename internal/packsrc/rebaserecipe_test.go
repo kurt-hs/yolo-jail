@@ -18,9 +18,15 @@ import (
 // returns the output and whether the last command succeeded.
 func recipeShell(t *testing.T, dir string, lines ...string) (string, bool) {
 	t.Helper()
+	return recipeShellEnv(t, dir, nil, lines...)
+}
+
+// recipeShellEnv is recipeShell with env appended last, so a variable there wins.
+func recipeShellEnv(t *testing.T, dir string, env []string, lines ...string) (string, bool) {
+	t.Helper()
 	cmd := exec.Command("bash", "-c", strings.Join(lines, "\n"))
 	cmd.Dir = dir
-	cmd.Env = append(gitTestEnv(), "GIT_EDITOR=true")
+	cmd.Env = append(append(gitTestEnv(), "GIT_EDITOR=true"), env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err == nil
 }
@@ -50,7 +56,7 @@ func TestTheRebaseRecipeRunsAsPrintedAndItsExportWaitsForTheRebase(t *testing.T)
 	if len(cmds) != 4 {
 		t.Fatalf("want four command lines, got:\n%s", strings.Join(lines, "\n"))
 	}
-	for _, w := range []string{"git rebase " + v11, "--base=" + v11, "format.noprefix=false", "--no-signature",
+	for _, w := range []string{"git rebase " + v11, "--base=" + v11, "--src-prefix=a/ --dst-prefix=b/", "--no-signature",
 		"--suffix=.patch", "mkdir " + shquote.QuoteDisplay(patches+".new"), "rm -r " + shquote.QuoteDisplay(patches+".old")} {
 		if !strings.Contains(strings.Join(lines, "\n"), w) {
 			t.Errorf("the recipe lacks %q:\n%s", w, strings.Join(lines, "\n"))
@@ -72,11 +78,20 @@ func TestTheRebaseRecipeRunsAsPrintedAndItsExportWaitsForTheRebase(t *testing.T)
 	}
 	mustNotExist(t, patches+".new", "the export mid-rebase made it")
 
-	// RESOLVED, the export replaces the series with one based on the target.
+	// RESOLVED, the export replaces the series with one based on the target, its a/ b/ prefixes
+	// whatever the user's git configuration says (a global file asking for none, or for others).
 	if err := os.WriteFile(filepath.Join(clone, "f.txt"), []byte(thirtyLines(map[int]string{10: "ten"})), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, ok := recipeShell(t, clone, "git add f.txt && git rebase --continue", cmds[3]); !ok {
+	userConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(userConfig, []byte("[format]\n\tnoprefix = true\n[diff]\n\tnoprefix = true\n"+
+		"\tmnemonicPrefix = true\n\tsrcPrefix = x/\n\tdstPrefix = y/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, ok := recipeShell(t, clone, "git add f.txt && git rebase --continue"); !ok {
+		t.Fatalf("the rebase did not continue:\n%s", out)
+	}
+	if out, ok := recipeShellEnv(t, clone, []string{"GIT_CONFIG_GLOBAL=" + userConfig}, cmds[3]); !ok {
 		t.Fatalf("the export after the rebase failed:\n%s", out)
 	}
 	mustNotExist(t, patches+".new", "the export left it")
@@ -84,6 +99,11 @@ func TestTheRebaseRecipeRunsAsPrintedAndItsExportWaitsForTheRebase(t *testing.T)
 	series := u.series(t)
 	if series.Base != v11 || series.Len() != 2 {
 		t.Fatalf("the exported series has base %s and %d members, want v1.1.0 and 2", series.Base, series.Len())
+	}
+	for _, m := range series.Members {
+		if !strings.Contains(string(m.Data), "\ndiff --git a/f.txt b/f.txt\n") {
+			t.Errorf("%s lacks the a/ b/ prefixes `git am` strips:\n%s", m.Name, m.Data)
+		}
 	}
 	_, list := u.checked(t)
 	w := u.store.WalkSeries(mustAddr(t, u.source("main")).Repo, "", series, list[:1], WalkOptions{})

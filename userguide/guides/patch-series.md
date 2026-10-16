@@ -223,7 +223,7 @@ Repair:
     git checkout -q -b yolo-rebase 5d1e07b2… && git am ~/packs/pi-mine/patches/*.patch && git tag yolo-applied
     git rebase cd32f7729e1b…
   resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes nothing until the rebase is done:
-    test -n "$(git rev-list -n 1 yolo-rebase --not cd32f7729e1b… yolo-applied --)" && mkdir ~/packs/pi-mine/patches.new && git -c format.noprefix=false format-patch … && mv … && rm -r ~/packs/pi-mine/patches.old
+    test -n "$(git rev-list -n 1 yolo-rebase --not cd32f7729e1b… yolo-applied --)" && mkdir ~/packs/pi-mine/patches.new && git format-patch … && mv … && rm -r ~/packs/pi-mine/patches.old
 
 Start anyway:
   YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo    run v1.0.0 (a13d35a7) + 7 patches

@@ -885,7 +885,7 @@ Repair:
     git checkout -q -b yolo-rebase 5d1e07b2… && git am ~/packs/pi-fork/patches/*.patch && git tag yolo-applied
     git rebase 3f2a9c1e…
   resolve each stop (edit, git add, git rebase --continue), then replace the series — this line changes nothing until the rebase is done:
-    test -n "$(git rev-list -n 1 yolo-rebase --not 3f2a9c1e… yolo-applied --)" && mkdir ~/packs/pi-fork/patches.new && git -c format.noprefix=false format-patch --no-signature --suffix=.patch --base=3f2a9c1e… -o ~/packs/pi-fork/patches.new 3f2a9c1e…..yolo-rebase && mv ~/packs/pi-fork/patches ~/packs/pi-fork/patches.old && mv ~/packs/pi-fork/patches.new ~/packs/pi-fork/patches && rm -r ~/packs/pi-fork/patches.old
+    test -n "$(git rev-list -n 1 yolo-rebase --not 3f2a9c1e… yolo-applied --)" && mkdir ~/packs/pi-fork/patches.new && git format-patch --src-prefix=a/ --dst-prefix=b/ --no-signature --suffix=.patch --base=3f2a9c1e… -o ~/packs/pi-fork/patches.new 3f2a9c1e…..yolo-rebase && mv ~/packs/pi-fork/patches ~/packs/pi-fork/patches.old && mv ~/packs/pi-fork/patches.new ~/packs/pi-fork/patches && rm -r ~/packs/pi-fork/patches.old
 
 Start anyway:
   YOLO_ALLOW_PATCH_FAILURES=pi-fork/pi yolo    run v0.99.2 (8092abf0) + 3 patches

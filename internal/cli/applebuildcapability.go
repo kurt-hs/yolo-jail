@@ -17,8 +17,12 @@ func (e appleBuildDeferred) Error() string { return e.reason }
 // unknown, never evidence that the build is safe.
 var appleContainerBuildCapability = appleContainerCanBuildNow
 
+// appleListingBound bounds the `container ls` that decides it; a variable so a test of the bound
+// need not wait it out.
+var appleListingBound = 2 * time.Second
+
 func appleContainerCanBuildNow(parent context.Context) (bool, string) {
-	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	ctx, cancel := context.WithTimeout(parent, appleListingBound)
 	defer cancel()
 	out, err := applePreparationListing(ctx)
 	if ctx.Err() != nil {
