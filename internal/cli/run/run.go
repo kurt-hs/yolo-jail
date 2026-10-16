@@ -2009,7 +2009,7 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 	// the reservation there covers embedded packs only. Here the packs are loaded.
 	//
 	// Fatal rather than a warning, unlike every other host_files failure above it, and the
-	// asymmetry is the ruling (OQ-LM6, docs/research/local-model-endpoints.md): a missing SOURCE
+	// asymmetry is the ruling (OQ-LM6, docs/reference/providers.md#oq-lm6): a missing SOURCE
 	// degrades to the defaults layer, which is the feature working; two writers for one
 	// destination is a config that cannot be satisfied, and picking a winner quietly is how a
 	// working :ro-mounted file gets overwritten.

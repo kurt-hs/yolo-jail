@@ -1213,7 +1213,7 @@ func (e HostFileEntry) WritableParent() string {
 
 // SurfaceCollisions reports each host_files entry whose destination is also a surface some
 // LOADED pack composes — the two-writers case OQ-LM6 ruled is a fatal error rather than a merge
-// or a precedence rule (docs/research/local-model-endpoints.md).
+// or a precedence rule (docs/reference/providers.md#oq-lm6).
 //
 // # Why this is not in checkHostFiles
 //
