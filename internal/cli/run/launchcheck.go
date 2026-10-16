@@ -393,7 +393,7 @@ func firstNonEmptyLine(s, fallback string) string {
 // this entry's payload (what its selection runs), exactly as runLaunchChecks applies it.
 //
 // IT ASKS AND NEVER STARTS. An attach runs above the config-change approval gate and never
-// starts, ensures or restarts a service (noteSingletonSettingsDrift's rule), and a front belongs
+// starts or restarts a service (HD-D2 part 5 in docs/design/host-daemon-ownership.md), and a front belongs
 // to the jail's keeper. So a loophole with no published endpoint is not asked: its launch did not
 // start it, or the backend does not run it (Apple Container starts no aws-auth service). An
 // endpoint file left by a keeper that has since died is dialled and fails, which prints the dim

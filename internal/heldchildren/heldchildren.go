@@ -1,9 +1,11 @@
 // Package heldchildren lets a test process stop the detached daemons it started itself,
 // through the process handles it holds, and nothing else.
 //
-// A host singleton (broker.EnsureSingleton) is spawned detached and is meant to outlive
-// the launch that started it, so production never stops one. A test binary that spawned
-// one must, or the daemon outlives the test run. Finding it again by a PID read from a
+// It was written for the host singleton broker.EnsureSingleton spawned detached, meant to
+// outlive the launch that started it; HD-R1 (docs/design/host-daemon-ownership.md) retired
+// that spawn, so nothing in production calls Hold today and the test harness's StopAll is a
+// guard that finds nothing held. A detached daemon a test spawns must be stopped, or it
+// outlives the test run. Finding it again by a PID read from a
 // file is unsafe on a machine many test runs share: the file can be another run's, and
 // the kernel may have handed the PID to an unrelated process since. So the spawner
 // hands its *os.Process here, and a test stops only what is held. Signalling through the
