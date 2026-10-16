@@ -70,7 +70,7 @@ func modsDir(t *testing.T) string {
 // user loopholes channel; then it pointed the BUNDLED root at it, chosen over pack
 // modules because these tests exercise the FULL manifest vocabulary (`jail_env`,
 // absolute bind hosts, `publishes: "endpoint"`) that the pack loader refuses. The
-// bundled channel is retired too now (docs/design/broker-as-a-pack.md OQ-BP4), so PACK
+// bundled channel is retired too now (docs/reference/loophole-system.md OQ-BP4), so PACK
 // MODULES ARE THE ONLY MODULE SOURCE LEFT and the subset is not avoidable any more.
 //
 // That is not a loss of coverage, it is a relocation of it: a test whose subject IS the
@@ -420,7 +420,7 @@ func TestRequiresCommandOnPath(t *testing.T) {
 // like a weakening. A pack-shipped loophole may not write `${XDG_RUNTIME_DIR}/...` at all
 // — the subset refuses it, since a variable naming an absolute host path one indirection
 // later would make the rule about spelling — and packs are the only module source left
-// after `bundled_loopholes/` was retired (docs/design/broker-as-a-pack.md OQ-BP4). So
+// after `bundled_loopholes/` was retired (docs/reference/loophole-system.md OQ-BP4). So
 // routing this through discovery would silently stop testing expansion and start testing
 // the refusal, which packshipped_test.go already owns.
 //
@@ -505,7 +505,7 @@ func containsStr(list []string, s string) bool {
 // `bundled_loopholes/` there instead of degrading to an empty in-jail path and dropping
 // every bundled loophole. Both halves of that sentence are gone — the function and the
 // directory — because the bundled channel is retired
-// (docs/design/broker-as-a-pack.md OQ-BP4). Nothing resolves a loophole manifest through
+// (docs/reference/loophole-system.md OQ-BP4). Nothing resolves a loophole manifest through
 // reporoot any more; a pack's module dir is its STAGED copy under paths.AgentsDir(), which
 // no repo walk is involved in finding.
 //

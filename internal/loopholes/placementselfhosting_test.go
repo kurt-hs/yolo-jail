@@ -21,7 +21,7 @@ import (
 //
 // # Why the exemption is gone, and why the case cannot recur through it
 //
-// `bundled_loopholes/` is retired (docs/design/broker-as-a-pack.md OQ-BP4) and yolo's own
+// `bundled_loopholes/` is retired (docs/reference/loophole-system.md OQ-BP4) and yolo's own
 // loopholes are OFFICIAL PACKS. A pack's module dir is its STAGED copy under
 // paths.AgentsDir(), which is outside every workspace by construction — so the collision
 // the exemption existed for is unrepresentable rather than exempted, which is the stronger

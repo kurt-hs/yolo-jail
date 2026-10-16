@@ -6,7 +6,7 @@ package check
 // servedDaemons does; it declines the wire bridge's jail daemon (the launch runs that service's
 // host half instead, for its adaptation), so the prediction serves that one only on a container
 // runtime; and it runs every other pack service's daemon, so the prediction serves a service with
-// no host half the launch runs on both (docs/design/jail-daemon-on-macos-user-plan.md JD-9). Every
+// no host half the launch runs on both (docs/reference/macos-user-provisioning.md JD-9). Every
 // case goes through loopholes.ServedJailDaemonNames, the one split the launch reads, so deleting
 // it from predictedServed fails this. A doorway's host argv and a service's host half pass the
 // same admissions the launch applies (launchservice.AdmitDoorways, AdmitServiceHosts) before
@@ -142,7 +142,7 @@ func TestCheckPredictsTheGuestDaemonsServedOnMacosUser(t *testing.T) {
 }
 
 // A PACK SERVICE WITH NO HOST HALF THE LAUNCH RUNS IS PREDICTED SERVED ON MACOS-USER, because the
-// guest runs its jail daemon as a container does (OQ-DP8; jail-daemon-on-macos-user-plan.md JD-9):
+// guest runs its jail daemon as a container does (OQ-DP8; macos-user-provisioning.md JD-9):
 // one with no host_daemon at all, and one whose host_daemon a pack yolo does not ship declares
 // (launchservice.AdmitServiceHosts clears it). Deleting the admission from predictedServed fails
 // the second case: the guest would decline the daemon for a host half that never starts.

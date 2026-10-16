@@ -18,7 +18,7 @@ import (
 // commit. `loopholes.ReservedLoopholeNames` and the pack-vs-reserved half of the
 // launch pre-flight were deleted on 2026-08-19 when the broker's manifest became a
 // contribution of `packs/claude` — the broker was the set's last entry, so retiring
-// it emptied the whole reserved namespace (docs/design/broker-as-a-pack.md §13). The
+// it emptied the whole reserved namespace (docs/reference/loophole-system.md, 'What emptying the bundled channel left behind'). The
 // reference was not touched in that commit.
 //
 // A stated refusal that does not happen is worse than an unstated one: it is the
@@ -62,7 +62,7 @@ func TestConfigRefClaimsNoLoopholeReservation(t *testing.T) {
 		t.Error("yolo config-ref says a loopholes name \"is reserved and cannot be used\", but " +
 			"ValidateConfig accepts it as an inline service — there is no reserved loophole " +
 			"namespace left (loopholes.ReservedLoopholeNames was deleted with the broker's move " +
-			"into packs/claude; docs/design/broker-as-a-pack.md §13). Either restore the " +
+			"into packs/claude; docs/reference/loophole-system.md, 'What emptying the bundled channel left behind'). Either restore the " +
 			"refusal or stop documenting one.")
 	}
 	if reservationEnforced && !claimsReservation {

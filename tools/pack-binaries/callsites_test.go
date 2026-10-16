@@ -16,7 +16,7 @@ import (
 )
 
 // The pin tool's CALL SITES are the release's three gates and the recipe that pins
-// (docs/design/broker-as-a-pack.md §14.4, steps 4 to 6), and what main pins between releases
+// (docs/reference/pack-binaries.md, "The pin tool and the three gates"), and what main pins between releases
 // (step 7, BP-D15): the check `just check-ci` runs, the seed `just install` runs, and the seed
 // the integration harness runs. Each runs only when a release is cut, a host installs, or a full
 // container run starts — none of them in the short suite — so nothing would notice one being

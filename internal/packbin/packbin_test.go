@@ -154,7 +154,7 @@ func TestPresentWantsAnExecutableRegularFile(t *testing.T) {
 	}
 }
 
-// HTTPS ALL THE WAY, not only at the first hop (broker-as-a-pack.md BP-D4). The manifest's URL
+// HTTPS ALL THE WAY, not only at the first hop (pack-binaries.md BP-D4). The manifest's URL
 // is refused unless it is https, but a server may answer it with a redirect, and Go's client
 // follows one to plain http by default: the request for the build would then cross the network
 // in the clear. The redirect is refused before it is followed, so the http server is never

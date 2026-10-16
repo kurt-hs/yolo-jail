@@ -386,7 +386,7 @@ func TestPackShippedErrorCarriesTheProblems(t *testing.T) {
 //
 // It was TestBundledManifestsAreInsideThePackShippedSubset, iterating one hardcoded
 // name, and both halves of that were already false when it landed: there is no
-// bundled channel left to have manifests in (docs/design/broker-as-a-pack.md
+// bundled channel left to have manifests in (docs/reference/loophole-system.md
 // OQ-BP4, same sprint), and a list of one is a whitelist rather than a rule. It
 // drives `shippedManifestHome` now, which TestShippedManifestHomeIsTotal forces to
 // cover every loophole in the pack embed — so a NEW shipped manifest is judged by
@@ -403,7 +403,7 @@ func TestPackShippedErrorCarriesTheProblems(t *testing.T) {
 // predate rather than one that was ever relaxed for them: `claude-oauth-broker`
 // published its own endpoint file (`publishes` defaulting to "endpoint", which the
 // subset refuses in every spelling INCLUDING the default) and that was the blocker
-// docs/design/broker-as-a-pack.md §6.1 was written about — `publishes: "socket"` +
+// docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack" was written about — `publishes: "socket"` +
 // `scope: "host"` removed it;
 // `host-processes` left the same way; `audio` left on 2026-08-18, when OQ-LP14
 // withdrew the bind-host path rule and its remaining three refusals each got a fix

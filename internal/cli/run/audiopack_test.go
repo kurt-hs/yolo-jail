@@ -50,7 +50,7 @@ func shippedAudioPack(t *testing.T) *packload.Pack {
 //
 // IT USED TO ALSO ASSERT THAT "audio" WAS NOT IN loopholes.ReservedLoopholeNames(). That
 // function is gone: every name yolo reserved has become a pack's own, `claude-oauth-broker`
-// last (docs/design/broker-as-a-pack.md §10 step 5), so the reserved namespace was deleted
+// last (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack"), so the reserved namespace was deleted
 // with its final entry. The property the absence-check protected is unchanged and is now
 // carried entirely by the call below — PackLoopholeNameConflicts is the thing that would
 // refuse the launch, so asserting over IT rather than over the set it consulted is the

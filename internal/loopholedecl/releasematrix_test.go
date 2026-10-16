@@ -11,7 +11,7 @@ import (
 )
 
 // TestEveryOfficialBinaryIsOnTheReleaseMatrix is the RELEASE MATRIX's census
-// (docs/design/broker-as-a-pack.md §14.4, step 2), over every loophole manifest the packs embed
+// (docs/reference/pack-binaries.md, "The pin tool and the three gates"), over every loophole manifest the packs embed
 // carries, rebuilding nothing.
 //
 // An official pack's `binaries` names files at URLs, and for a program yolo builds itself those

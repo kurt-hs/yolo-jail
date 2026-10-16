@@ -154,7 +154,7 @@ func Main(argv []string) int {
 	//
 	// This used to be ServeUnix, on the true premise that the daemon was
 	// host-to-host: the per-jail relay dialed it and stamped a jail_id into the
-	// request. The relay is GONE (docs/design/broker-as-a-pack.md §7). The manifest
+	// request. The relay is GONE (docs/reference/loophole-system.md, "The per-jail relay is gone"). The manifest
 	// declares `publishes: "socket"`, so yolo runs the jail's svcendpoint front over
 	// this socket (one daemon per jail since HD-R1), and every connection that
 	// arrives here has crossed a jail boundary and carries yolo's CONNECTION

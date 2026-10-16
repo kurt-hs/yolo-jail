@@ -3,14 +3,14 @@
 One `loophole` contribution and nothing else. The daemon (`internal/hostprocesses`) and the
 in-jail client (`cmd/yolo-ps`) stay **baked into the yolo binaries** — an official pack may
 name a baked client, so this conversion needed none of the pack-shipped-binary capability
-([`broker-as-a-pack.md` §3.1](../../docs/design/broker-as-a-pack.md#31-what-is-actually-unresolved-here)).
+([`pack-binaries.md`](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable)).
 
 It was `bundled_loopholes/host-processes/` until 2026-08-18, and it is the sprint's
-**proving ground** ([§12 of that doc](../../docs/design/broker-as-a-pack.md#12-host-processes-as-the-proving-ground)): the conversion that exercises pack staging, the
+**proving ground** ([the loophole reference](../../docs/reference/loophole-system.md#host-processes-the-proving-ground)): the conversion that exercises pack staging, the
 pack-shipped subset, the name pre-flight, `publishes: "socket"` and `doctor_cmd` with none
 of the broker's complexity — no relay, no CA, no intercept, no credential file.
 
-**The subset accepted the manifest unchanged.** That was [§12](../../docs/design/broker-as-a-pack.md#12-host-processes-as-the-proving-ground)'s change 5 and it is a
+**The subset accepted the manifest unchanged.** That was [the proving ground](../../docs/reference/loophole-system.md#host-processes-the-proving-ground)'s change 5 and it is a
 verification rather than an edit: `publishes: "socket"` was already declared,
 `requires.command_on_path` is not one of the path-scoped fields, and there is no
 `jail_env`, no `host_bind_mounts` and no `ca_cert` for the subset to refuse. The only edits

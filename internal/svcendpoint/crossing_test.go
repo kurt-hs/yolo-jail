@@ -383,7 +383,7 @@ func TestUnreachableUpstreamRecorded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The connection preamble (docs/design/broker-as-a-pack.md §5.5)
+// The connection preamble (docs/reference/loophole-transport.md, "The connection preamble")
 // ---------------------------------------------------------------------------
 
 // TestPreambleIsNotCountedAsJailTraffic is THE test for the highest-consequence

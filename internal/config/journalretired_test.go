@@ -160,7 +160,7 @@ func TestTheInheritCensusStopsEmittingJournal(t *testing.T) {
 // nobody editing this file.
 //
 // IT USED TO READ TWO EMBEDS. `bundled_loopholes/` was the other, and it is retired
-// (docs/design/broker-as-a-pack.md OQ-BP4) — every loophole yolo ships is a pack's now,
+// (docs/reference/loophole-system.md OQ-BP4) — every loophole yolo ships is a pack's now,
 // which is why one read covers the same set it always did.
 //
 // BOTH SPELLINGS, because the collision is a spelling apart: a loophole's name is

@@ -3,7 +3,7 @@
 One `loophole` contribution and nothing else. The daemon (`internal/journald`) and the
 in-jail client (`cmd/yolo-journalctl`) stay **baked into the yolo binaries** — an official
 pack may name a baked client, so this conversion needed none of the pack-shipped-binary
-capability ([`broker-as-a-pack.md`](../../docs/design/broker-as-a-pack.md) §3.1).
+capability ([`pack-binaries.md`](../../docs/reference/pack-binaries.md)).
 
 **It was not a bundled loophole. It was not a loophole at all.** Until 2026-08-18 the
 bridge was a *builtin service*: a Go function the run pipeline called by hand, switched by

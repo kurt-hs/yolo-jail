@@ -767,7 +767,7 @@ func TestLintReportsTheSubsetAndTheTypoTogether(t *testing.T) {
 	}
 }
 
-// A DOWNLOADED BINARY is claimed once per BUILD (docs/design/broker-as-a-pack.md BP-D1): its
+// A DOWNLOADED BINARY is claimed once per BUILD (docs/reference/pack-binaries.md BP-D1): its
 // bytes are not in the pack's tree, so the claim is the only line that says what runs, and it
 // carries the URL, the pinning digest and where the program runs. Every build is claimed, not only
 // this machine's, so the footprint reads the same everywhere. Deleting the binaries loop in

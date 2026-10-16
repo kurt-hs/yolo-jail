@@ -24,7 +24,7 @@ func writeSrc(t *testing.T, body []byte) string {
 
 // A seeded build lands where a fetched one would, through the same verified rename: at its
 // digest, under its name, 0555 — so every reader of the cache finds the tree's build exactly
-// where it would find a release's (broker-as-a-pack.md BP-D15). Nothing is downloaded: no
+// where it would find a release's (pack-binaries.md BP-D15). Nothing is downloaded: no
 // client and no server exists in this test.
 func TestSeedAdmitsAVerifiedCopyWhereAFetchWouldPutIt(t *testing.T) {
 	body := []byte("#!/bin/sh\necho built from the tree\n")

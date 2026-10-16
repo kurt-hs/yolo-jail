@@ -269,7 +269,7 @@
             #
             # `bundled_loopholes/` was the OTHER entry of this shape and is deleted
             # (2026-08-19): its last manifest became a contribution of `packs/claude`
-            # and the channel was retired (docs/design/broker-as-a-pack.md OQ-BP4).
+            # and the channel was retired (docs/reference/loophole-system.md OQ-BP4).
             # It was listed under `pathExists`, so removing the directory alone would
             # have left a working build and a stale comment — this is the comment.
             ++ pkgs.lib.optionals (builtins.pathExists ./packs) [ ./packs ]

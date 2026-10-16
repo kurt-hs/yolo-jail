@@ -108,7 +108,7 @@ func captureLog(t *testing.T) *syncBuf {
 // "forever". It is not: on a preamble-bearing connection yolo asserts the jail
 // host-side, from the same derivation tier 1 uses, so the two tiers now AGREE by
 // construction and a spoofed jail_id is overridden in both
-// (docs/design/broker-as-a-pack.md §5.5).
+// (docs/reference/loophole-transport.md, "The connection preamble").
 func TestFramedDaemonProducesBothTiers(t *testing.T) {
 	advertiseLoopback(t)
 

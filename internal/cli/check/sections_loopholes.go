@@ -199,7 +199,7 @@ func (o *Options) checkLoopholes(r *reporter) {
 		// broker's daemon-liveness block under it.
 		if reason, inert := inertReason(lp); inert {
 			// The one inactive answer with a fix the user runs: a downloaded binary not
-			// fetched yet (docs/design/broker-as-a-pack.md BP-D5). A launch never
+			// fetched yet (docs/reference/pack-binaries.md BP-D5). A launch never
 			// fetches, so this loophole the user switched on stays off until they do;
 			// that is a warning, where an unsupported platform is a fact to note.
 			if why, unfetched := lp.UnfetchedBinaryReason(); unfetched && why == reason {
@@ -524,7 +524,7 @@ func (o *Options) reportBrokerDaemon(r *reporter) {
 //
 // It was called checkBrokerRelay, and there is no relay: the per-jail process it
 // named is deleted and svcendpoint's front does its job
-// (docs/design/broker-as-a-pack.md §7). The hop this walks is unchanged.
+// (docs/reference/loophole-system.md, "The per-jail relay is gone"). The hop this walks is unchanged.
 func (o *Options) checkBrokerEndpoint(r *reporter, label, endpointPath, rt, cname string) {
 	if !o.PathExists(endpointPath) {
 		r.fail(label+": broker endpoint missing",
