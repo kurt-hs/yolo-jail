@@ -521,7 +521,7 @@ pin-pack-binaries *version:
 # target-source preparation run in read-only jobs; a separate trusted mutation job creates the
 # immutable tag, waits for the exact original Release/GoReleaser run to succeed, then dispatches
 # publish.yml on main. Dispatch acceptance is not publication success; inspect Actions. See
-# docs/design/pre-tag-release-gate.md for capability boundaries and fail-closed partial state.
+# docs/reference/release-process.md for capability boundaries and fail-closed partial state.
 release version:
     #!/usr/bin/env bash
     set -euo pipefail
