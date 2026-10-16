@@ -1,6 +1,10 @@
 package oauthbroker
 
-import "strings"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // catchup.go is the AT-LAUNCH CATCH-UP REFRESH of the machine's Claude login
 // (docs/design/host-daemon-ownership.md, OQ-HD9, ruled 2026-10-15): nothing of yolo's runs when
@@ -79,17 +83,21 @@ func LaunchCatchUpRefresh(credsPath string, leadSeconds int) RefreshResult {
 // otherwise refresh. The headroom is read unlocked, as the background tick reads it; the refresh
 // re-reads it under the lock.
 func CatchUpAtLaunch(credsPath string, leadSeconds int, nowMS int64, refresh CatchUpRefreshFunc) CatchUp {
-	oauth, err := oauthFromCreds(storeFor(credsPath).readPath())
+	readPath := storeFor(credsPath).readPath()
+	oauth, err := oauthFromCreds(readPath)
 	if err != nil {
+		logInfo("at_launch: no login to catch up (%s)", describeCreds(readPath))
 		return CatchUp{Outcome: CatchUpNoLogin}
 	}
 	if rt, _ := stringField(oauth, "refreshToken"); rt == "" {
+		logInfo("at_launch: no login to catch up (no refresh token) shared=%s", describeCreds(readPath))
 		return CatchUp{Outcome: CatchUpNoLogin}
 	}
 	v, ok := oauth.Get("expiresAt")
 	if !ok {
 		// No expiry to judge by: the background refresher does not refresh such a login either
 		// (RefreshDue), and Claude refreshes on its own 401.
+		logInfo("at_launch: skip (no expiresAt) shared=%s", describeCreds(readPath))
 		return CatchUp{Outcome: CatchUpNotDue}
 	}
 	expiresAtMS, ok := asInt64(v)
@@ -98,9 +106,12 @@ func CatchUpAtLaunch(credsPath string, leadSeconds int, nowMS int64, refresh Cat
 	}
 	out := CatchUp{HeadroomMS: expiresAtMS - nowMS}
 	if out.HeadroomMS >= int64(leadSeconds)*1000 {
+		logInfo("at_launch: skip (not due: %ds left, lead %ds)", out.HeadroomMS/1000, leadSeconds)
 		out.Outcome = CatchUpNotDue
 		return out
 	}
+	logInfo("at_launch: due (%ds left, lead %ds) shared=%s", out.HeadroomMS/1000, leadSeconds,
+		describeCreds(readPath))
 	result := refresh(credsPath, leadSeconds)
 	if result == nil {
 		out.Outcome, out.Error = CatchUpFailed, "no_result"
@@ -117,11 +128,41 @@ func CatchUpAtLaunch(credsPath string, leadSeconds int, nowMS int64, refresh Cat
 		} else if b, ok := result.Get("body"); ok {
 			out.Detail = stringOf(b)
 		}
+		logWarn("at_launch: refresh failed error=%s status=%d message=%s", out.Error, out.Status, out.Detail)
 		return out
 	}
 	out.Outcome = CatchUpRefreshed
 	if v, ok := result.Get("expires_in"); ok {
 		out.ExpiresInS, _ = asInt64(v)
 	}
+	logInfo("at_launch: ok expires_in=%d", out.ExpiresInS)
 	return out
+}
+
+// CatchUpAtLaunchLogged is CatchUpAtLaunch with the broker's forensic lines (the decision, and
+// the refresh path's own cache-hit / refreshed / upstream lines) appended to logPath, the log
+// the claude-oauth-broker daemon writes (broker.BrokerLogPath), so a later diagnosis reads a
+// launch's refresh beside the daemons' own. The file is opened O_APPEND, as every daemon's copy
+// of it is, so these lines interleave whole with a running daemon's; every line names
+// "at_launch" or follows the "do_refresh: at-launch catch-up" line. A log that cannot be opened
+// costs the lines and nothing else.
+//
+// The package logger is swapped for the call and restored after it: the launch process has no
+// broker log of its own, and the catch-up runs on the launch's one goroutine before anything else
+// in that process uses this package's log.
+func CatchUpAtLaunchLogged(logPath, credsPath string, leadSeconds int, nowMS int64,
+	refresh CatchUpRefreshFunc) CatchUp {
+	if logPath != "" {
+		_ = os.MkdirAll(filepath.Dir(logPath), 0o755)
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			savedLogger, savedVerbose := logger, logVerbose
+			setupLogWriter(f, false)
+			defer func() {
+				logger, logVerbose = savedLogger, savedVerbose
+				_ = f.Close()
+			}()
+			logInfo("at_launch: catch-up by launch pid %d", os.Getpid())
+		}
+	}
+	return CatchUpAtLaunch(credsPath, leadSeconds, nowMS, refresh)
 }

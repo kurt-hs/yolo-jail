@@ -167,6 +167,18 @@ func TestALaunchStartingClaudesBrokerCatchesUpANearExpiryLogin(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Errorf("the launch did not say it refreshed the login; want %q in:\n%s", want, out)
 	}
+	// THE FORENSIC LINES land in the broker's own log, where a diagnosis reads every daemon's
+	// refresh lines (broker.BrokerLogPath).
+	logged, err := os.ReadFile(broker.BrokerLogPath())
+	if err != nil {
+		t.Fatalf("the catch-up wrote nothing to the broker's log %s: %v", broker.BrokerLogPath(), err)
+	}
+	for _, w := range []string{"at_launch: catch-up by launch pid", "at_launch: due (600s left, lead 1800s)",
+		"at_launch: ok expires_in=28800"} {
+		if !strings.Contains(string(logged), w) {
+			t.Errorf("the broker's log lacks the catch-up's %q:\n%s", w, logged)
+		}
+	}
 }
 
 // TestALaunchWithoutClaudesBrokerDoesNotCatchUp: the catch-up belongs to the launch that starts
