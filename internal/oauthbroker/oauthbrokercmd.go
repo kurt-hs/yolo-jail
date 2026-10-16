@@ -101,6 +101,15 @@ func Main(argv []string) int {
 	// that has already redeemed the single-use refresh token upstream write its replacement
 	// before the process goes. Its bound is the upstream request's own deadline (httpClient).
 	// Serving stops first, and ServeFrontedUnix already waits for every handler it accepted.
+	//
+	// THE HANDLER GOES IN BEFORE THE REFRESHER STARTS: the refresher's first tick runs at once
+	// and can be talking to the upstream within a millisecond, so a SIGTERM arriving before
+	// signal.Notify would take the default disposition and kill that refresh mid-flight.
+	// hostservice.ServeUnix installs its own SIGTERM/SIGINT handler too; this one closes the
+	// stop channel so the background refresher goroutine exits with the process.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() { <-sigCh; shutdown() }()
 	background := make(chan struct{})
 	if *noBgRefresh {
 		close(background)
@@ -112,12 +121,6 @@ func Main(argv []string) int {
 		}()
 	}
 	defer func() { shutdown(); <-background }()
-
-	// hostservice.ServeUnix installs its own SIGTERM/SIGINT handler; wire a stop
-	// channel too so the background refresher goroutine exits with the process.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	go func() { <-sigCh; shutdown() }()
 
 	// The state dir holds what this process minted at startup (EnsureCAAndLeaf above)
 	// and the refresh lock. When it goes — a launch retiring the loophole, a deleted HOME —
