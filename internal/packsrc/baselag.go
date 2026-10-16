@@ -13,6 +13,8 @@ type BaseLag struct {
 	Base    ListEntry
 	Newer   []ListEntry
 	Applies []ListEntry
+	// PatchBranch is set when the lag is a patch branch's (patchbranch.go): Base is its merge base with the upstream.
+	PatchBranch bool
 }
 
 // BaseLag is the series' base lag by the last finished check of in, or nil: when that check read
@@ -20,16 +22,21 @@ type BaseLag struct {
 // or listed no version newer than the base. series is the series' digest, which the outcomes are
 // keyed by.
 func (r *CheckRecord) BaseLag(in CheckInputs, series string) *BaseLag {
-	if !r.Answers(in) || r.Check.RefKind != "branch" || in.Base == "" {
+	base := in.Base
+	if in.PatchBranch != "" && r.Check != nil && r.Check.PatchBranch != nil {
+		// A PATCH BRANCH'S LAG is its merge base's: the newest upstream commit the branch already holds.
+		base = r.Check.PatchBranch.Base
+	}
+	if !r.Answers(in) || r.Check.RefKind != "branch" || base == "" {
 		return nil
 	}
-	lag := &BaseLag{Base: ListEntry{Commit: in.Base}}
+	lag := &BaseLag{Base: ListEntry{Commit: base}, PatchBranch: in.PatchBranch != ""}
 	// The list is newest first, and holds only versions containing the base, the base's own tag
 	// included: every other version entry is a descendant of it, so newer.
 	for i := len(r.Check.List) - 1; i >= 0; i-- {
 		e := r.Check.List[i]
 		switch {
-		case e.Commit == in.Base:
+		case e.Commit == base:
 			if e.Tag != "" {
 				lag.Base = ListEntry{Commit: e.Commit, Tag: e.Tag, Version: e.Version}
 			}

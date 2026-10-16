@@ -118,7 +118,7 @@ Every refusal names its remedy in the spelling its reader can actually use: the 
   `lsp_servers` and your `profile` selection), so the rows a wrapped launch's automatic apply writes are
   the rows `yolo host apply --assert` writes, and a settled home reads as settled
   ([OQ-HC1](host-agent-environment.md#oq-hc1),
-  [HC-D11](../design/host-computed-layer.md#HC-D11)).
+  [HC-D11](host-agent-environment.md#HC-D11)).
 
 - **The gate adds a new MOMENT for the existing prompts, never a second mechanism.** An accepted
   prompt runs the ordinary writing `applyHost`, so `confirmHostLosses` and the skills and

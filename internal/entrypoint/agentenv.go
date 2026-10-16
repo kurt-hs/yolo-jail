@@ -35,7 +35,7 @@ const AgentEnvDirRel = ".config/yolo-agent-env"
 
 // AgentEnvFilesEnv is the LEGACY spelling of the `agent-env-files` contract tag
 // (ContractTagsEnv). The credential gate's first build froze it as "1" into every container it
-// launched, the first named contract marker in practice (provider-credential-scope.md, CN-D18),
+// launched, the first named contract marker in practice (providers.md, CN-D18),
 // and the tag set folded it in (attach-skew-and-contract-guardrails.md, OQ-SK2). No launch
 // writes it any more. It is still READ, by internal/cli/run's jailContractTags, for a container
 // that carries no ContractTagsEnv: a jail launched between the gate and the tags must keep
@@ -74,7 +74,7 @@ func ProviderKeysFile(home, agent string) string {
 // .config/yolo-agent-env), and the templates already name their install prefixes through
 // $HOME. A missing file is the ordinary case — an agent this launch scoped nothing to — and
 // sources nothing.
-const agentEnvShellFn = `# --- this agent's own environment (provider-credential-scope.md, OQ-CN6) ----------------
+const agentEnvShellFn = `# --- this agent's own environment (providers.md, OQ-CN6) ----------------
 # The credentials and profile-gated variables a launch scoped to THIS agent alone, written
 # per entry by yolo from its one credential gate. Absent when the launch scoped nothing here.
 if [ -r "$HOME/` + AgentEnvDirRel + `/$BIN.sh" ]; then

@@ -938,7 +938,7 @@ file in flux. Every task runs `just format` before its commit and stages only it
 - `docs/reference/macos-user-provisioning.md` `~:227` to `~:267` and the paths table `~:764` to
   `~:766`: the run-as argv with `-n` and `/usr/bin/sudo`, the host-owned files and modes, the
   teardown and sweep without root, the legacy sweep.
-- `docs/plans/runbooks/mac-macos-user-e2e.md`: the [owner's check](#the-owners-mac) as a section.
+- `docs/plans/runbooks/macos-user-manual-checks.md`: the [owner's check](#the-owners-mac) as a section.
 - `CHANGELOG.md` `[Unreleased]`: under `### Changed`, one bold-lead entry and the one action:
   "**macos-user launches no longer ask for a password.** Run `yolo macos-setup` once after
   upgrading; it asks for your admin password and installs one rule that runs commands as the
@@ -967,7 +967,7 @@ file in flux. Every task runs `just format` before its commit and stages only it
 Needs the owner's explicit authorization ([what may happen next](macos-user-privilege-lifecycle.md#what-may-happen-next)):
 it installs the rule on a real machine. On a Mac set up by an older yolo, with one old session
 left running in another terminal. The
-[runbook](../plans/runbooks/mac-macos-user-e2e.md#8-passwordless-start-and-stop-the-owners-check)
+[runbook](../plans/runbooks/macos-user-manual-checks.md#11-passwordless-start-and-stop-the-owners-check--new-2026-10-16-never-run)
 carries this check as run, with each row's exact text.
 
 1. `yolo macos-setup`: one password prompt; it reports installing the rule, and its ready

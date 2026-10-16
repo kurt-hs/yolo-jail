@@ -2,7 +2,8 @@ package image
 
 // How this relates to the native (macos-user) nix path — what each produces, the
 // rebuild/reload cost model, and the macOS Linux-builder offload:
-// docs/reference/nix-across-backends.md
+// docs/reference/image-staging-vs-baking.md and
+// docs/reference/macos-user-nix-and-features.md (How nix works here)
 
 import (
 	"errors"

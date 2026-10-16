@@ -1,7 +1,7 @@
 package cli
 
 // hostchromedevtools_test.go pins the chrome-devtools pack at the HOST notch
-// (docs/design/host-computed-layer.md HC-D26 to HC-D28, revising HC-D6 and HC-D16): the real
+// (docs/reference/host-agent-environment.md HC-D26 to HC-D28, revising HC-D6 and HC-D16): the real
 // `yolo host apply --assert` composes the pack's `mcp` entry under your mcp_servers, joined to
 // your real home, into claude's, copilot's and codex's files; writes the wrapper the entry runs;
 // provisions chrome-devtools-mcp into yolo's floor from a fake Node distribution; and a run of the

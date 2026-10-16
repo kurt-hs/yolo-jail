@@ -1,6 +1,6 @@
 package cli
 
-// hostcapabilities.go is OQ-CAP2's gate at the HOST notch (docs/design/agent-auth-modes.md §6.2):
+// hostcapabilities.go is OQ-CAP2's gate at the HOST notch (docs/reference/mcp-configuration.md#the-capability-gate):
 // a user config declaring `required_capabilities` that nothing in the launch satisfies refuses
 // `yolo host -- <cmd>` exactly as it refuses a jail launch, in the same words
 // (config.UnmetCapabilityRefusal). Until 2026-10-04 the host launched without asking it, so the

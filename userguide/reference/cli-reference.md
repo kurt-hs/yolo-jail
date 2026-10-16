@@ -158,7 +158,7 @@ See [macOS](../guides/macos.md#the-macos-user-backend).
 platform, and whether it runs on the host or inside a jail:
 
 ```text
-yolo-jail 0.10.0 | darwin/arm64 | host
+yolo-jail 0.15.0+g1a2b3c4d5e6f | darwin/arm64 | host
 ```
 
 Include it in a bug report; `yolo check 2>&1 | pbcopy` captures it on a Mac. It never goes to

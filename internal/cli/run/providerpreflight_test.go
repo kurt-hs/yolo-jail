@@ -398,7 +398,7 @@ func TestFreshLaunchChecksProviderCredentialsOnTheAssembledEnv(t *testing.T) {
 
 // guard: the fixture above must never be able to satisfy the check by accident. The shipped
 // packs were credential-silent for exactly as long as none of them shipped a provider; zai
-// ends that (zai-plumbing.md §4), so the guard narrows instead of dying: every pack that
+// ends that (packs/zai), so the guard narrows instead of dying: every pack that
 // INSTALLS something must still need no key — a golden-argv launch or an integration jail
 // selects one of those, and a key-bearing program pack would refuse every one of them — and
 // the exception must be a pack no launch reaches without naming it. That is what keeps "the

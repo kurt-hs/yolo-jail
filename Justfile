@@ -88,8 +88,8 @@ install:
         exit 1
     fi
 
-    VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
-    COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    VERSION="$(git describe --tags --always --dirty --long --abbrev=12 2>/dev/null || echo unknown)"
+    COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     # SourceDir records THIS checkout so `yolo update` knows what to pull and
     # redeploy (internal/selfupdate). Only this recipe stamps it: a release
     # build's checkout path means nothing on the machine the binary lands on.
@@ -521,7 +521,7 @@ pin-pack-binaries *version:
 # target-source preparation run in read-only jobs; a separate trusted mutation job creates the
 # immutable tag, waits for the exact original Release/GoReleaser run to succeed, then dispatches
 # publish.yml on main. Dispatch acceptance is not publication success; inspect Actions. See
-# docs/design/pre-tag-release-gate.md for capability boundaries and fail-closed partial state.
+# docs/reference/release-process.md for capability boundaries and fail-closed partial state.
 release version:
     #!/usr/bin/env bash
     set -euo pipefail

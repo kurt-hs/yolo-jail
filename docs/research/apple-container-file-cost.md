@@ -198,8 +198,8 @@ VM-local volumes before the design is written, and its results go in this sectio
 - **First stop:** `apple-container.yml`'s fork guard and its `set-safe-directory: false` checkout,
   without which each run adds a line to the runner owner's `~/.gitconfig`.
 - **Evidence:** no doc measures how many volumes one VM takes. The ~22 bind-mount figure in
-  [`platform-comparison.md`](platform-comparison.md) and
-  [`sandbox-comparison.md`](sandbox-comparison.md) cites no source, and
+  `platform-comparison.md` and
+  `sandbox-comparison.md` (both deleted 2026-10-16) cited no source, and
   [`assemble_parts.go`](../../internal/cli/run/assemble_parts.go#L72-L80) declines to repeat it.
   Nobody has nested a volume under the workspace or measured that mixed placement.
 - **When it runs:** the maintainer pushes the workflow and dispatches it once, after the runner's

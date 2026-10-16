@@ -440,7 +440,7 @@ func TestEveryCodexModelConsumerReadsTheOneDeclaration(t *testing.T) {
 	// 1-2. The declaration, and the rule over it. The literal pins the RULE: the order, the
 	// variant placement and the [1m] spelling, stated once here rather than per consumer.
 	decl := shippedCodexDeclaration(t)
-	shipped := expandCodexModels(decl.Models, decl.ModelOptions)
+	shipped := expandCodexModels(decl.Models, decl.ModelOptions.Strings())
 	wantIDs := []any{"gpt-6.1-sol", "gpt-6.1-sol[1m]", "gpt-6-astra", "gpt-6-astra[1m]", "gpt-6-luna", "gpt-6-luna[1m]"}
 	if got := codexIDs(shipped, ""); !reflect.DeepEqual(got, wantIDs) {
 		t.Fatalf("the shipped declaration expands to %v, want %v", got, wantIDs)
@@ -553,7 +553,7 @@ func registeredCodexIDs(t *testing.T, out []byte) []any {
 // it fills only a fact that one lacks, which the added id below pins.
 func TestAnAliasForADeclaredCodexIDChangesNoConsumer(t *testing.T) {
 	decl := shippedCodexDeclaration(t)
-	shipped := expandCodexModels(decl.Models, decl.ModelOptions)
+	shipped := expandCodexModels(decl.Models, decl.ModelOptions.Strings())
 
 	user := jsonx.NewOrderedMap()
 	codexOverride := jsonx.NewOrderedMap()

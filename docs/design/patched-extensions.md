@@ -77,11 +77,11 @@ this mode as written ([§12](#12-dependencies)).
 ([PPX-D40](#PPX-D40)); the reading of "a build fails" it records is yours to confirm.
 
 **Reads with:** [`patched-forks.md`](patched-forks.md) (the mode this extends; every PF term and PF-D
-row cited here is its), [`pi-git-extension-caching.md`](pi-git-extension-caching.md) (pi git
-extensions as immutable local trees; its [OQ-2](pi-git-extension-caching.md#OQ-2) is what
+row cited here is its), [the held store](pi-extension-store-builds.md#the-held-store) (pi git
+extensions as immutable local trees; its [OQ-2](pi-extension-store-builds.md#OQ-2) is what
 [OQ-PPX1](#OQ-PPX1) collides with), [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) (the
 pre-launch refresh, and the pin [OQ-PPX2](#OQ-PPX2) weighs), [`pack-pi-resources.md`](pack-pi-resources.md)
-(the other route that hands pi a local package), [`patched-forks-plan.md`](patched-forks-plan.md) (the
+(the other route that hands pi a local package), the deleted `patched-forks-plan.md` (the
 implementation sketch for both routes, incomplete while questions are open).
 
 ---
@@ -97,7 +97,7 @@ Coined here unless a link says otherwise:
   `git:` package (pi never fetches, installs or updates it).
 - **Built tree**: the directory a patched extension's build leaves and the capture store admits. Not
   PF's [patched tree](patched-forks.md#53-the-patched-tree), which is the git tree object recorded
-  before the build, and not the [tree](pi-git-extension-caching.md#defined-terms) of the caching
+  before the build, and not the [the held store](pi-extension-store-builds.md#the-held-store) of the caching
   design, which a jail builds into a store every jail can write.
 - **Extension key**: `<pack>/<name>`, where `<pack>` is the contributing pack and `<name>` the last
   segment of `into`. It is PF's fork key `<pack>/<bin>` for a tree.
@@ -439,7 +439,7 @@ reaped before the copy began.
   which loads the extension twice. A warning at `yolo pack lint` when one list holds `~/<into>` and
   a `git:` or `npm:` entry, or a URL, of the extension's name or its upstream's. Telling every old
   entry apart would mean parsing pi's package-source grammar, which core does not do
-  ([caching §5](pi-git-extension-caching.md#5-alternatives)). The final name is the question the
+  ([the held store](pi-extension-store-builds.md#the-held-store)). The final name is the question the
   pi pack's subagents render already asks, and an entry under another name is still
   [§13](#13-migrating-the-maintainers-five-forks)'s guidance.
 
@@ -470,7 +470,7 @@ tree alone is 1,386 files (MEASURED).
   swapped by writing a new link beside it and renaming it over.
 - **The previous version is kept until the next move**, so a host pi already running keeps reading the
   tree it loaded. INFERRED: jiti 2.7.0, pi's loader, resolves a loaded file to its real path (READ,
-  minified `jiti.cjs`), as [the caching design's §3.7](pi-git-extension-caching.md#37-running-sessions-and-moving-pointers)
+  minified `jiti.cjs`), as [the held store](pi-extension-store-builds.md#the-held-store)
   also infers; UNMEASURED with pi.
 - **A revert removes the link** the `files` ownership record says the render wrote, and the versioned
   directories with it ([PPX-D31](#PPX-D31)). A plain `files` tree's output is not withdrawn by a
@@ -514,11 +514,11 @@ as it skips a missing path: it tries to load the directory itself as one extensi
 [`pack-pi-resources.md` §1](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)).
 Under option A the launch's line has to name it.
 
-**What [OQ-2](pi-git-extension-caching.md#OQ-2) asks, in two halves.** A launch starts pi on nothing
+**What [OQ-2](pi-extension-store-builds.md#OQ-2) asks, in two halves.** A launch starts pi on nothing
 but what its config calls for, never on what another launch left; and a launch that waited for
 another never inherits that launch's failure, but retries the failed step once itself (READ
-[caching §3.5](pi-git-extension-caching.md#35-locks-waits-and-bounds) and
-[§3.6](pi-git-extension-caching.md#36-failure-paths)). Patched forks depart from the second half by
+[the held store](pi-extension-store-builds.md#the-held-store) and
+[the held store](pi-extension-store-builds.md#the-held-store)). Patched forks depart from the second half by
 design: a waiter takes another launch's result, failure included
 ([PF-D17](patched-forks.md#PF-D17)), and a failed build is backed off for a day, doubling to a
 week, while a good build serves ([PF-D9](patched-forks.md#PF-D9)). The notches that build no tree,
@@ -577,7 +577,7 @@ printed right after the trees are decided, was built the day [OQ-PPX3](#OQ-PPX3)
   key and with the walk.
 - Rulings on patched forks' three blocking questions, whose leanings read the same here:
   - [OQ-PFK1](patched-forks.md#OQ-PFK1)'s B also fits the caching design's
-    [OQ-2](pi-git-extension-caching.md#OQ-2);
+    [OQ-2](pi-extension-store-builds.md#OQ-2);
   - under [OQ-PFK3](patched-forks.md#OQ-PFK3)'s A the wait is the build jail's boot plus the build,
     measured at 0.3 s for one tree and 7.4 to 24 s for the other ([§15](#15-risks-and-costs));
   - [OQ-PFK4](patched-forks.md#OQ-PFK4)'s verb takes the `<pack>/<name>` address.
@@ -587,10 +587,10 @@ printed right after the trees are decided, was built the day [OQ-PPX3](#OQ-PPX3)
 **Not needed:**
 
 - **The held extension store.** It can coexist: its rewrite passes local entries through untouched
-  ([caching §3.2](pi-git-extension-caching.md#32-pointing-pi-at-a-tree)). Its store is writable by every
-  jail ([caching §4](pi-git-extension-caching.md#4-invariants-and-done-conditions)), so nothing in it
+  ([the held store](pi-extension-store-builds.md#the-held-store)). Its store is writable by every
+  jail ([the held store](pi-extension-store-builds.md#the-held-store)), so nothing in it
   may ever feed a host build.
-- **[OQ-6](pi-git-extension-caching.md#OQ-6) and [`OQ-LT2`](../reference/pack-system.md#oq-lt2)**:
+- **[OQ-6](pi-extension-store-builds.md#OQ-6) and [`OQ-LT2`](../reference/pack-system.md#oq-lt2)**:
   nothing is rewritten (PE7).
 - **[OQ-PR1](pack-pi-resources.md#OQ-PR1).** Its slot registers one tree per pack; if it ships, a
   registration per contribution could later write the list entry the author writes by hand here.
@@ -642,8 +642,8 @@ release on skips a contribution it cannot read and names it
 | **C. Patch the published npm package** | **Rejected.** Some are build output: `pi-subagents`' published 0.75.0 names `./index.js`, its git source `./index.ts` (MEASURED), so a series written against the source has nothing to apply to |
 | **D. Land in `extensions/<name>`** | **Rejected.** pi's discovery loads the tree there whether or not a list entry names it, so the entry is no longer the one switch: with no entry the extension loads without its skills and prompts, and it keeps loading after the entry is removed (MEASURED, [§4](#4-the-declaration)). With the entry, pi resolves each file once, so double loading is not the reason |
 | **E. A new contribution kind** | **Rejected.** The delivery is `files`' read-only mount; a kind would be a second path to it |
-| **F. Rewrite the `git:` entry automatically** | **Rejected for now.** It needs [OQ-6](pi-git-extension-caching.md#OQ-6) and an [`OQ-LT2`](../reference/pack-system.md#oq-lt2) amendment (PE7) |
-| **G. The held extension store as the base**, a replay in the jail into its per-commit trees | **Rejected.** It replays in the jail (against P3), runs git on every launch (against P4), stops pi when a new build fails (no ratchet), needs [OQ-6](pi-git-extension-caching.md#OQ-6), has no host delivery, and keeps its records in a store every jail can write. Its walk idea is kept ([§6.2](#62-the-newest-fit-walk)) |
+| **F. Rewrite the `git:` entry automatically** | **Rejected for now.** It needs [OQ-6](pi-extension-store-builds.md#OQ-6) and an [`OQ-LT2`](../reference/pack-system.md#oq-lt2) amendment (PE7) |
+| **G. The held extension store as the base**, a replay in the jail into its per-commit trees | **Rejected.** It replays in the jail (against P3), runs git on every launch (against P4), stops pi when a new build fails (no ratchet), needs [OQ-6](pi-extension-store-builds.md#OQ-6), has no host delivery, and keeps its records in a store every jail can write. Its walk idea is kept ([§6.2](#62-the-newest-fit-walk)) |
 | **H. Bind the store entry read-only, with no copy** | **Rejected.** Reaping becomes a correctness event (PE6), prune must learn about running jails, and below Apple Container's floor no store is mounted |
 | **I. A check record per declaration** | **Rejected.** Packs are user-scope, one pack serving every workspace (READ [`paths.go:921-922`](../../internal/paths/paths.go#L921-L922)), and the exact lookup already keeps each series' build its own |
 | **J. Copy into the pack's staged directory** | **Rejected.** Every attach would report the pack changed ([§8.1](#81-in-a-jail)) |
@@ -705,7 +705,7 @@ release on skips a contribution it cannot read and names it
 
 Every call site gets a test that fails when the call site is deleted: the trigger's arm, the mount's
 source, the host link and the launchers' gate. The traps the implementation must avoid are in the
-[sketch](patched-forks-plan.md#patched-extensions).
+deleted sketch, `patched-forks-plan.md` (git history keeps it).
 
 **Done looks like:**
 
@@ -732,12 +732,12 @@ mode as written, and one ruling of each covers both routes ([§12](#12-dependenc
 
    Patched forks keep the good build when a newer upstream fails ([PF-D8](patched-forks.md#PF-D8)),
    and depart from the second half of the caching design's
-   [OQ-2](pi-git-extension-caching.md#OQ-2) ([§9](#9-failure-and-the-next-step)).
+   [OQ-2](pi-extension-store-builds.md#OQ-2) ([§9](#9-failure-and-the-next-step)).
 
    - **A — pi always starts**, without the extension when nothing serves, and the launch says so.
    - **B — The good build serves; with none, pi's launchers stop before exec.** Notches that build
      no tree are exempt.
-   - **C — Strict [OQ-2](pi-git-extension-caching.md#OQ-2).** pi stops unless the newest fit is
+   - **C — Strict [OQ-2](pi-extension-store-builds.md#OQ-2).** pi stops unless the newest fit is
      admitted; each launch retries a failed build itself, with no back-off.
 
    Under B or C, a fresh offline machine starts no pi until a first build lands; under A the
@@ -745,10 +745,10 @@ mode as written, and one ruling of each covers both routes ([§12](#12-dependenc
 
    <!-- vantage: question id=OQ-PPX1 -->
 
-   _Leaning:_ B — it keeps [OQ-2](pi-git-extension-caching.md#OQ-2)'s first half: a good build is
+   _Leaning:_ B — it keeps [OQ-2](pi-extension-store-builds.md#OQ-2)'s first half: a good build is
    complete, admitted and immutable, where the case it ruled out was a launch that found the
    refresh lock held booting on whatever was installed
-   ([caching §2](pi-git-extension-caching.md#2-how-pi-handles-git-packages-today)), and nothing
+   ([what pi loads](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)), and nothing
    to serve is exactly that ruling's case. It departs from the second half: the good build is
    whatever an earlier launch on this machine admitted, perhaps another workspace's, and a launch
    takes another's failure and its back-off, so which upstream version a launch gets depends on

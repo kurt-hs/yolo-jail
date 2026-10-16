@@ -1,7 +1,7 @@
 package loopholedecl_test
 
 // parentjail_test.go pins the `inherit_from_parent_jail` block (loopholedecl/parentjail.go;
-// docs/design/sso-backed-bedrock.md SSO-D2): the variables a nested launch may take a loophole's
+// docs/reference/agent-credentials.md SSO-D2): the variables a nested launch may take a loophole's
 // pointer from, and the line it prints when it does, carried verbatim and refused where the
 // block could inherit silently or for a loophole with no pointer to stand in for.
 

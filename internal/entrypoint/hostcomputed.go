@@ -1,7 +1,7 @@
 package entrypoint
 
 // hostcomputed.go turns one surface's derive output at the host into the layers each host
-// mechanism writes, by the per-key landing of HC-D10 (docs/design/host-computed-layer.md §6.4):
+// mechanism writes, by the per-key landing of HC-D10 (docs/reference/host-agent-environment.md):
 //
 //  1. A table the derive declares IN FULL (ctx.in_full) is yolo's, written wholesale — with the
 //     entries the pack's declared layers put in it (overlays below the derive, managed above,

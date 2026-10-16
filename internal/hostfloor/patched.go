@@ -367,7 +367,7 @@ func (f *Floor) patchedGoneReason(p Program, g *PatchedBuild) string {
 }
 
 // removeInstalled takes p's launcher and record out of the floor, as Ensure's failed install of a
-// near-miss does: its launcher leaves bin/, which ends every host agent's PATH (HE-D1), and the
+// near-miss does: its launcher leaves bin/, which ends every host agent's PATH (HE-D16), and the
 // install directory stays for the next install to prune (unlinking stops no agent already running).
 func (f *Floor) removeInstalled(p Program) {
 	rec, err := f.readRecord(p.Bin())

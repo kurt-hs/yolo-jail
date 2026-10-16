@@ -1,7 +1,7 @@
 package cli
 
 // hostworkspaceskills_test.go pins the workspace skills layer's host half
-// (docs/design/workspace-skills.md WS-D19 to WS-D23) through `yolo host -- codex`, the real
+// (docs/reference/agent-briefings.md WS-D19 to WS-D23) through `yolo host -- codex`, the real
 // front door: the one link it puts into the repository, the .gitignore line it adds once, every
 // path it must leave alone, and the cases that write nothing. Delete the hostWorkspaceSkills call
 // in hostLaunch and the first test fails: no link appears.

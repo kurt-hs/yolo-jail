@@ -2,7 +2,7 @@ package packload
 
 // foldnote_test.go pins what the posture fold does with a config patch that names no surface
 // its own pack declares: nothing. It used to drop such a patch silently (the OQ-Z5 shape,
-// docs/reference/zai-plumbing.md: a `setings` typo produced no problem, no warning and no
+// docs/reference/providers.md#oq-z5: a `setings` typo produced no problem, no warning and no
 // key), then to report it as a FoldNote. Since OQ-3 the patch is a POSTURE OVERLAY that
 // packoverlay.Collect places on another pack's surface or reports as an orphan, so the fold
 // only has to stay out of its way: no merge, no problem, no note.

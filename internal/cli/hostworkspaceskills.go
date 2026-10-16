@@ -1,6 +1,6 @@
 package cli
 
-// hostworkspaceskills.go is the workspace skills layer's HOST half (docs/design/workspace-skills.md,
+// hostworkspaceskills.go is the workspace skills layer's HOST half (docs/reference/agent-briefings.md,
 // OQ-WS5's mechanism B, built 2026-10-04 under the maintainer's delegation as WS-D19 to WS-D23):
 // `yolo host -- <agent>` puts ONE relative symlink into the workspace, at the first project skills
 // path the agent's pack declares, pointing at the first skills directory the repository already

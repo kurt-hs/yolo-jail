@@ -151,6 +151,9 @@ var inheritCensus = map[string]keyDisposition{
 	// arrives at the scope it was written at, and the inner launch's own gate still refuses
 	// one the inner WORKSPACE adds.
 	"providers": {preflight: true, nested: true, reason: "cloud provider declarations for agent configuration and nested launches"},
+	// `model_facts` is `providers`' companion: the facts a model's routes share, composed into
+	// the same table (packload.WithModelFacts), so it crosses wherever that table is composed.
+	"model_facts": {preflight: true, nested: true, reason: "facts a model's provider routes share, composed into the provider table here and in nested launches"},
 	// `profiles` and `profile` are user-scope-only (OQ-CS5 ruled BOTH keys), exactly
 	// like `packs` three entries up — so a workspace spelling can never reach the render
 	// that this census classifies, because the launch refuses it first. The two keys
@@ -173,7 +176,7 @@ var inheritCensus = map[string]keyDisposition{
 	// `required_capabilities` earns its NESTED seat on a check an inner launch performs,
 	// and its preflight seat on the in-jail readers — the distinction matters to whoever
 	// re-decides it, and it stopped being "shape alone on both sides" on 2026-09-17.
-	// OQ-CAP2's fatal refusal (docs/design/agent-auth-modes.md, which config_ref.txt
+	// OQ-CAP2's fatal refusal (docs/reference/mcp-configuration.md#the-capability-gate, which config_ref.txt
 	// cites for exactly this key) is BUILT: a LAUNCH now refuses when nothing the config or
 	// its selected packs declare satisfies a required name, from inside the config gate
 	// (internal/cli/run/preflight.go refuseUnmetCapabilities), which is why the key has

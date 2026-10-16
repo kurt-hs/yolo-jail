@@ -724,9 +724,9 @@ yolo.derive("opencode", "config", function(ctx)
         -- narrowed. opencode orders the menu itself, newest first, and yolo fakes no
         -- release_date to reorder it.
         --
-        -- NOT for a list no `only` narrowed: what a list that only adds does to opencode's own
-        -- catalog is OQ-MM1's, and whether a list refuses on a gateway serving more than it is
-        -- OQ-MM3's, both unruled; such a row stays as it was.
+        -- NOT for a list no `only` narrowed: a list that only adds sits beside opencode's own
+        -- catalog (OQ-MM1, ruled 2026-10-15), and refuses nothing on a gateway serving more
+        -- than it (OQ-MM3, ruled 2026-10-15); such a row stays as it was.
         --
         -- The switch is the one of the active-set entry on this provider (opencodeEnforceFor):
         -- every entry is live, so each keeps its own profile's.

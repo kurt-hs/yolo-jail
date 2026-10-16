@@ -38,7 +38,7 @@ func newStubMachine(t *testing.T) *stubMachine {
 		root:      root,
 		keg:       filepath.Join(root, "prefix", "Cellar", "yolo-jail", "0.11.0"),
 		log:       filepath.Join(root, "log"),
-		version:   "yolo-jail 0.11.0",
+		version:   "yolo-jail 0.11.0+g0123456789ab",
 		linkedKeg: `"0.11.0"`,
 	}
 	m.bundle = filepath.Join(m.keg, "share", "yolo-jail")
@@ -64,7 +64,7 @@ func newStubMachine(t *testing.T) *stubMachine {
 			t.Fatal(err)
 		}
 	}
-	m.checkJSON, m.checkRC = bareMacCheck(t, "0.11.0", m.bundle)
+	m.checkJSON, m.checkRC = bareMacCheck(t, "0.11.0+g0123456789ab", m.bundle)
 	return m
 }
 
@@ -172,7 +172,7 @@ func TestRunPassesAGoodInstall(t *testing.T) {
 	for _, want := range []string{
 		"ok    " + testFormula + " is installed and linked at 0.11.0",
 		"ok    the tap carries release 0.11.0",
-		"ok    `yolo --version` prints \"yolo-jail 0.11.0\"",
+		"ok    `yolo --version` prints \"yolo-jail 0.11.0+g0123456789ab\"",
 		"found the flake bundle beside the binary, at " + m.bundle,
 		"ok    the bundle holds flake.nix, flake.lock and prebuilt executables of the right format",
 		"(expected: this runner has no container runtime and no Nix)",

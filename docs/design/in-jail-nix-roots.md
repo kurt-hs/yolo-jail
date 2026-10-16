@@ -48,7 +48,8 @@ rebuild restores it ([Known limit](#known-limit)).
 **Needs your ruling:** None.
 
 **Reads with:** [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) (no mirroring needed),
-[`nix-across-backends.md`](../reference/nix-across-backends.md) (backend boundaries).
+[`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) and
+[`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md#how-nix-works-here) (backend boundaries).
 
 ---
 

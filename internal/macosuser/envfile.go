@@ -19,7 +19,8 @@ package macosuser
 // unprivileged uid read a root process's full argv and was refused its environment with
 // EACCES. macOS answers the same question through `sysctl kern.procargs2` instead, and
 // which callers that lets read another account's argv is NOT MEASURED here (see
-// docs/plans/handoff-macos-user-open-threads.md §6). The mechanism below does not depend on
+// docs/plans/runbooks/macos-user-manual-checks.md, "Credentials moved off the sandbox argvs").
+// The mechanism below does not depend on
 // how that resolves, and the guest notch would reuse this argv shape on Linux, where the
 // measurement above IS the answer.
 //
@@ -381,7 +382,8 @@ type sandboxEnvPlan interface {
 //
 // ⚠ IT DELIBERATELY DOES NOT COVER THE BOOTSTRAP ARGV. That argv carries the generator
 // contract — the wire tables the darwin bootstrap reads — and those variables are its
-// command-line interface, not composed user values; see docs/plans/handoff-macos-user-open-threads.md §6
+// command-line interface, not composed user values; see the "Credentials moved off the sandbox argvs"
+// thread in docs/plans/runbooks/macos-user-manual-checks.md
 // for what that argv does and does not hold and why the one residual there is a
 // cross-backend question rather than this backend's.
 func SandboxArgvEnvProblems(label string, argv []string) []string {

@@ -453,7 +453,7 @@ func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
 // path surface refusing the spelling its neighbours accept. The cost was concrete: a
 // dotfiles tree shared between a Linux host and a Mac cannot name one pack directory
 // with an absolute path, because "/home/matt" and "/Users/matt" are not the same
-// string (macos-revival-and-distribution-plan.md, 2026-09-03).
+// string (measured on the maintainer's Mac, 2026-09-03).
 //
 // IT GRANTS NO NEW AUTHORITY. `packs` is user-scope only and a user config could
 // already name any absolute path on the machine, so this is a spelling and not a
@@ -472,7 +472,7 @@ func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
 //
 // NOT relative paths. "./x" and "../x" stay refused: the anchor a relative entry
 // would need is "beside the declaring file" (the ruling env_sources implements,
-// docs/reference/envsource-relative-paths.md), packs loads through loadUserScopeConfig
+// docs/reference/agent-credentials.md), packs loads through loadUserScopeConfig
 // rather than the LoadJSONCWithIncludes funnel anchoring lives in, and packsrc.Parse
 // rejects ".." outright — so the natural spelling for a tree outside
 // ~/.config/yolo-jail/ would be refused a layer down even if the anchor existed.

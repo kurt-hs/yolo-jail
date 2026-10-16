@@ -14,7 +14,7 @@ import (
 func TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract(t *testing.T) {
 	root := repositoryRoot(t)
 	targetSHA := strings.TrimSpace(string(mustRun(t, root, "git", "rev-parse", "ce77c0099d4261c54370cecf2652d109075419b3")))
-	assets, err := expectedReleaseAssets(root, targetSHA, "0.12.1", filepath.Join(root, ".goreleaser.yaml"))
+	assets, err := expectedReleaseAssets(root, targetSHA, "0.12.1", pinnedTargetConfig(t, root, targetSHA))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract(t *testing
 		t.Fatalf("target's release asset set = %v, want four archives", assets)
 	}
 	dir := makeAssetFixture(t, assets)
-	got, err := validateReleaseAssetDir(root, targetSHA, "0.12.1", filepath.Join(root, ".goreleaser.yaml"), dir)
+	got, err := validateReleaseAssetDir(root, targetSHA, "0.12.1", pinnedTargetConfig(t, root, targetSHA), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract(t *testing
 func TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests(t *testing.T) {
 	root := repositoryRoot(t)
 	targetSHA := strings.TrimSpace(string(mustRun(t, root, "git", "rev-parse", "ce77c0099d4261c54370cecf2652d109075419b3")))
-	trustedConfig := filepath.Join(root, ".goreleaser.yaml")
+	trustedConfig := pinnedTargetConfig(t, root, targetSHA)
 	assets, err := expectedReleaseAssets(root, targetSHA, "0.12.1", trustedConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -141,4 +141,23 @@ func mustRun(t *testing.T, dir, name string, args ...string) []byte {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, output)
 	}
 	return output
+}
+
+// pinnedTargetConfig writes the pinned target commit's own .goreleaser.yaml to a file
+// and returns its path, for the tests that pin a historical target: the trusted-config
+// equality is what they rely on, not what they test, so they must not break whenever
+// the working tree's release config moves (OQ-DA2's release stamp moved it).
+func pinnedTargetConfig(t *testing.T, root, sha string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), ".goreleaser.yaml")
+	cmd := exec.Command("git", "show", sha+":.goreleaser.yaml")
+	cmd.Dir = root
+	data, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading %s's .goreleaser.yaml: %v", sha, err)
+	}
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

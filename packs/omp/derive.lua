@@ -174,7 +174,7 @@ end)
 -- Under the SELECTION, not the computed layer, as pi's enabledModels is: written on
 -- activation, a user's edit kept, yolo's own list cleared on deselect (OQ-PSW2). Nothing when
 -- no profile is active at omp's CLI name, when the selected provider's list is not narrowed
--- (what a list that only adds does to omp's catalog is OQ-MM1's), or when omp cannot reach it.
+-- (a list that only adds sits beside omp's catalog, OQ-MM1), or when omp cannot reach it.
 -- The scope does not refuse: `--model` still resolves any model omp knows, and `modelRoles`
 -- may name one outside it.
 

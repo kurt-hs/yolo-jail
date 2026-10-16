@@ -825,7 +825,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// selected pack delivers is the FLOOR's copy, installed first when missing; a path is exec'd
 	// as given; anything else is looked up on the child's PATH — the LAUNCH PATH (the caller's
 	// PATH, then `host_path`'s folders not already on it: HE-DIR1, HE-D3), then the floor's bin/
-	// (OQ-HE10 (c), HE-D1), which is also the PATH the child is handed below. The launch PATH is
+	// (OQ-HE10 (c), HE-D16), which is also the PATH the child is handed below. The launch PATH is
 	// resolved once, here, for both.
 	//
 	// THE READINESS ACT first (docs/design/host-notch-readiness.md HNR-D1, hostreadiness.go):
@@ -937,7 +937,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	for _, line := range launch.workerNotes {
 		fmt.Fprintf(errw, "yolo host: %s\n", line)
 	}
-	// THE WORKSPACE SKILLS LINK (OQ-WS5's B; docs/design/workspace-skills.md WS-D19 to WS-D23,
+	// THE WORKSPACE SKILLS LINK (OQ-WS5's B; docs/reference/agent-briefings.md WS-D19 to WS-D23,
 	// hostworkspaceskills.go) is the launch's LAST write, made just before each hand-over below:
 	// after every pre-flight, the prelaunch and every launch-owned service and doorway, so a
 	// launch refused at any of them — a bridge that cannot bind included — writes nothing into
@@ -3045,9 +3045,14 @@ func installingPack(packs []*packload.Pack, bin string) string {
 // disagree about what the launch carries.
 func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	services []*launchservice.Plan) (*jsonx.OrderedMap, []packload.Adaptation, error) {
-	var user *jsonx.OrderedMap
+	var user, shared *jsonx.OrderedMap
 	if v, ok := cfg.Get("providers"); ok {
 		user, _ = v.(*jsonx.OrderedMap)
+	}
+	// The facts a model's routes share (docs/design/model-lists-and-pickers.md OQ-ML5), composed
+	// under each route's own as the jail notch's composedProviders composes them.
+	if v, ok := cfg.Get("model_facts"); ok {
+		shared, _ = v.(*jsonx.OrderedMap)
 	}
 	// A LAUNCH THAT STARTS A SERVICE composes its adaptations at the ports it picked, and a
 	// user's `adapters` override of those conversions does not apply here: the launch-chosen
@@ -3055,7 +3060,8 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	if len(services) > 0 {
 		addresses := launchservice.WithoutOverrides(hostAdapterAddresses(), packs,
 			launchservice.Names(services))
-		return packload.ComposeProvidersAt(user, packs, addresses, launchservice.Served(services))
+		return packload.ComposeProvidersAt(user, packs, addresses, launchservice.Served(services),
+			packload.WithModelFacts(shared))
 	}
 	// NO ADDRESS A PACK'S OWN SERVICE SERVES (docs/design/credential-sources-separation.md
 	// ES-D18): `yolo host` starts no jail daemon, so nothing is served at this notch
@@ -3066,7 +3072,8 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// wire resolves to it directly, and one that cannot refuses at the gate, which
 	// composeHostVars words. The same composition every notch calls (ComposeProvidersAt),
 	// with this notch's served set as its input (notch convergence item 2).
-	return packload.ComposeProvidersAt(user, packs, hostAdapterAddresses(), packload.NothingServed())
+	return packload.ComposeProvidersAt(user, packs, hostAdapterAddresses(), packload.NothingServed(),
+		packload.WithModelFacts(shared))
 }
 
 // hostAdapterAddresses is the user's adapter address overrides, read the same way the jail
@@ -3534,7 +3541,7 @@ func macosUserGuestRuns(packs []*packload.Pack, service string) bool {
 
 // hostScopedEnvSources returns cfg with any still-RELATIVE env_sources file entry
 // dropped — one warning per dropped entry, naming the remedy — for the host notch's env
-// composition. Under the 2026-08-30 ruling (envsource-relative-paths.md OQ-E1) a
+// composition. Under the 2026-08-30 ruling (agent-credentials.md OQ-E1) a
 // relative entry in a real config is legal and arrives already ANCHORED beside its
 // declaring file (config.AnchorEnvSources runs in the loader), so what reaches this
 // filter unanchored is a hand-built config or a pre-ruling artifact — sources whose

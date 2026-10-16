@@ -58,7 +58,7 @@ extend), [`loophole-transport.md`](loophole-transport.md#cooperative-host-daemon
 (the channel's wire summary), [`agent-credentials.md`](agent-credentials.md) (the AWS service),
 [`happy-path-principle.md`](happy-path-principle.md) and [`report-tiers.md`](report-tiers.md)
 (why every stop names a next step and no disclosure is suppressible). The observed incident that
-motivated this is in [the research record](../research/host-service-startup-diagnostics.md).
+motivated this: an aws-auth daemon refused a profile with no narrowing, and the launch showed only the socket, endpoint and reachability failures that followed, offering a bypass variable as the fix (research record of 2026-10-07, deleted 2026-10-16).
 
 ---
 
@@ -328,7 +328,7 @@ refused; real errors and the pack's read/exec trust disclosures are unchanged.
 
 > [!WARNING]
 > **Do not reintroduce a routine `unnarrowed` notice** (owner ruling, 2026-10-07, superseding the
-> older disclosure requirement in [the SSO design's ledger](../design/sso-backed-bedrock.md#13-decision-ledger)),
+> older disclosure requirement in [the SSO design's ledger](agent-credentials.md#sso-decision-ledger)),
 > and do not add an AWS-name branch or a new severity feature in core to express it.
 
 ## Current values

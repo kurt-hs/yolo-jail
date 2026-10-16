@@ -60,7 +60,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	missingHatch := os.Getenv(paths.AllowMissingProgramsEnv) != ""
 	var stopped []string
 	for _, p := range progs {
-		if p.Install.Patches == "" || floor.OutsideTheFloor(p) {
+		if !p.Install.IsPatchedFork() || floor.OutsideTheFloor(p) {
 			continue
 		}
 		_, err := floor.PreparePatched(ctx, p, false)

@@ -70,7 +70,7 @@ existing provider table, which every agent pack derives into its own dialect.
 
 **Needs your ruling:** [OQ-GP4](#OQ-GP4).
 
-**Reads with:** [`gateway-providers.md`](../research/gateway-providers.md) (protocol evidence)
+**Reads with:** [§1](#1-the-provider-facts) (the protocol evidence, verified 2026-09-15)
 and [`providers.md`](../reference/providers.md) (the existing system). The implementation plan
 is retired; its one trap the reference lacked, codex's `env_key` credential field, is now in
 [`providers.md`](../reference/providers.md#per-agent-delivery).

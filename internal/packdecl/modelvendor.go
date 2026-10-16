@@ -28,3 +28,28 @@ func ValidModelVendor(s string) bool {
 	}
 	return true
 }
+
+// ModelFacts is a provider's `model_options`: per alias, the flat string facts its derives
+// read (Contribution.ModelOptions). A nil value is a TOMBSTONE, the fact written as JSON null
+// (docs/design/model-lists-and-pickers.md ML-D10): the model has no such fact, where an absent
+// key inherits it from the layer below.
+type ModelFacts map[string]map[string]*string
+
+// Strings is m's stated facts as plain strings, every tombstone left out: the view of a reader
+// that only asks what a pack declares.
+func (m ModelFacts) Strings() map[string]map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]map[string]string, len(m))
+	for alias, facts := range m {
+		row := make(map[string]string, len(facts))
+		for k, v := range facts {
+			if v != nil {
+				row[k] = *v
+			}
+		}
+		out[alias] = row
+	}
+	return out
+}

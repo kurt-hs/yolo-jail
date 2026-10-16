@@ -608,7 +608,7 @@ func (s *hostApplySurvey) launchPATH() *hostpath.Launch {
 	return hostLaunchPath()
 }
 
-// MissLine is the miss line (host-launch-environment.md §4.2, HE-D2) for a binary this run looked
+// MissLine is the miss line (host-agent-environment.md, HE-D17) for a binary this run looked
 // up on the launch PATH and did not find — the program, the packs that declare it, the whole PATH
 // searched and the `host_path` fix — and "" for any other binary, or in a jail. launch says whether
 // it is a launch's line (the gate's), whose PATH is "this launch's".

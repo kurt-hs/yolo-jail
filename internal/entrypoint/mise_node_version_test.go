@@ -67,7 +67,7 @@ func TestMiseSurfaceInstallsNoBakedRuntime(t *testing.T) {
 		if _, present := s.DefaultsMap()[tool]; present {
 			t.Errorf("mise surface defaults %q, but it is baked into the image — "+
 				"drop it so the default setup doesn't get a duplicate non-nix %s "+
-				"(see docs/research/tool-provisioning.md §2)", tool, tool)
+				"(see docs/reference/tool-provisioning.md §2)", tool, tool)
 		}
 	}
 }

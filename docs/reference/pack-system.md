@@ -48,7 +48,9 @@ change that builds it. The [two provenance derivations](#two-provenance-derivati
 ruling were added on 2026-10-01 from the retired findings index, checked against `d4e435a3`, and
 the reserved-children rules (the withheld shipped name, the recovery report) and the synced
 skill trees rulings ([`OQ-ST2`](#oq-st2), [ST-P1](#st-p1), [ST-P3](#st-p3), [ST3](#st3),
-[ST-N2](#st-n2), [ST-R](#st-r)) the same day, when `synced-skill-trees.md` graduated. UNMEASURED:
+[ST-N2](#st-n2), [ST-R](#st-r)) the same day, when the synced skill trees design graduated. Its
+measured account of [Claude Code's sync root](#claude-sync-root), its remaining ledger rows and the
+unruled half of [`OQ-ST2`](#OQ-ST2) moved in on 2026-10-16, when that design's stub was deleted. UNMEASURED:
 no apply over a non-empty `synced/` bucket on a real host is recorded; the fence and the notice
 are pinned by tests that drive a real apply over fixtures.
 MEASURED in CI at `7ad8358c`
@@ -680,7 +682,7 @@ skipped, with one exception: a launch whose content has never been refreshed wit
 holder, bounded by the update timeout, because running the program instead would let it install
 what that content names outside the lock. It exists for the first-install race of a
 machine-shared store
-([`pi-git-extension-caching.md` §3.12](../design/pi-git-extension-caching.md#312-the-refresh-trigger-that-stays)).
+(pi's, until [XB-D14](../design/pi-extension-store-builds.md#XB-D14) made its npm prefix per workspace).
 `packdecl` refuses an empty list, an empty, absolute, escaping or unclean entry, and a
 duplicate.
 
@@ -1176,7 +1178,7 @@ workspace and outside `.git` and `.yolo`; the field is refused on any other kind
 entry. `yolo host apply` ignores it — it never writes a workspace's skills into a real home
 ([`OQ-WS5`](agent-briefings.md#oq-ws5)) — and `yolo host -- <agent>` reads it to place one link
 at the agent's first declared path when the repository has none of them
-([WS-D20](../design/workspace-skills.md#WS-D20)). What each shipped pack declares is
+([WS-D20](agent-briefings.md#ws-d20)). What each shipped pack declares is
 pinned in `internal/packload/projectskilldirs_test.go` and witnessed against the installed agent
 by `integration/agents_test.go`'s probe, wherever the agent's bundle names the path at project
 scope as text; the probe lists the rows it cannot witness and where each was measured instead.
@@ -1234,6 +1236,129 @@ which looks like success and loses the user's edits later.
   worse than none, since it reads as protection.
 A pack still carrying a per-contribution `"tier"` is refused BY NAME with the migration in
 the message, rather than failing on the strict decoder's bare unknown-field error.
+
+<a id="claude-sync-root"></a>**What Claude Code's sync root is — verified.** The facts the `synced`
+reservation rests on, moved here on 2026-10-16 from the deleted synced skill trees design. They are
+a record of a vendor's behavior on the dates they give; where the tree has moved, the rules above
+win. The user's report was *"appears to come from installing a Claude plugin."* That is the
+natural reading and it is wrong in the way that matters: the directory is not per-plugin, so
+nothing about it is per-install.
+
+The layout facts were read out of the `claude` binary installed in yolo's development jail on
+2026-09-18 and re-checked against two later releases of it on 2026-09-22 — the bucket module is
+unchanged — and the ones in [the two sync roots](#sync-root-two-roots) were then measured on disk —
+never from vendor docs, following the lesson
+[`../plans/pack-host-management-plan.md`](../plans/pack-host-management-plan.md#n6-new--copilot-reads-claudes-plugin-manifests-and-namespaces-plugin-skills)
+records. It is a private layout with no compatibility promise; the cheap re-check on a version
+bump is `grep -a -c '<org>_<account>' <bundle>` over the `claude` bundle under
+`~/.local/share/claude/versions/`: while that redaction template is in the binary, the naming has
+not moved.
+
+- <a id="sync-root-identity"></a>**The two UUIDs are an identity, not a plugin and a version.**
+  `~/.claude/skills/synced/<uuid>_<uuid>/` is **one bucket per Anthropic identity**:
+  `<organizationUuid>_<accountUuid>`, both lowercased, joined by a single underscore. The binary's
+  own parser is unambiguous about this: it splits on `_`, requires exactly two parts, validates
+  each against `/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i`, and returns a record whose two
+  fields the vendor's own code names **`org`** and **`account`**. Three corroborating details from
+  the same module:
+
+  | Fact | Evidence in the binary |
+  | :--- | :--- |
+  | The account half may be absent | It is then the literal string `unbound`, and the parser accepts that spelling in place of a UUID |
+  | The ids come from the signed-in identity | Minted from `CLAUDE_CODE_ORGANIZATION_UUID` / `CLAUDE_CODE_ACCOUNT_UUID`, falling back to the stored auth record's `organizationUuid` / `accountUuid` |
+  | The shape is the vendor's own redaction template | A telemetry helper returns the literal strings `"<org>_<account>"` and `"<org>_unbound"` for exactly these two cases |
+
+  So a user signed into two organizations has **two buckets**, and the same skill name can appear
+  in both. That is the collision the fence had to answer — not a collision between opaque
+  directory names, because the skills inside a bucket are named by human display name, not by id.
+
+  **Confirmed independently of the parser, on 2026-09-18.** The development jail's own `~/.claude`
+  is a *different home* from the maintainer's — a fresh per-workspace overlay, nothing copied from
+  his tree — and it carries a bucket with **the identical name he reported**. Same Anthropic
+  identity (the OAuth credential is shared into the jail), different home, same directory name:
+  the name is derived from the identity and from nothing on disk. One machine and two homes is
+  weaker evidence than two machines would be, and it is still the only thing that could have
+  produced that match.
+
+  **The bucket is minted by identity alone, before anything is installed or synced into it.**
+  Measured there: the bucket directory is **empty**, and `~/.claude/plugins/installed_plugins.json`
+  reads `{"version": 2, "plugins": {}}`. So "it appeared, therefore something was installed" is
+  the wrong inference in both directions — and a user who deletes the directory gets it back,
+  because the registration that regenerates it lives elsewhere
+  ([the two sync roots](#sync-root-two-roots)). **Still unverified:** whether a user switching
+  organizations accumulates buckets or replaces one. Both readings produce "one or more buckets,
+  each possibly holding a same-named skill", which is all any rule above rests on.
+- <a id="sync-root-items"></a>**What lives in a bucket, and how Claude loads it.** A bucket's
+  children are synced **items**, each a directory, of two kinds:
+  - **A synced skill** — a directory with a `SKILL.md`. It gets a synthetic namespace: when their
+    bare names cannot be checked for collisions, the binary reports that synced skills *"answer
+    only to `anthropic-skills:<name>` this session"*. So on the host these skills already have a
+    two-level name the user may be typing.
+  - **A synced plugin** — a directory carrying a plugin manifest. It loads through the same reader
+    that turns `~/.claude/skills/<name>/` into `<name>@skills-dir`, under a third source kind the
+    binary spells `claude.ai-synced`. Only **one synced copy per plugin name** is considered, the
+    rest are reported not-loaded, and a local copy shadows a synced one.
+
+  Item **names** are sanitized display names, not ids: `<>:"|?*\/` become `_`, trailing dots and
+  spaces are stripped, and a duplicate name gets a `~g2` / `~g3` … generation suffix. **The bucket
+  name is throwaway and the item names are already human** — and `review~g2` is a legal thing to
+  find on disk and a nonsense thing to hand to `codex`.
+- <a id="sync-root-reserved-siblings"></a>**Reserved siblings.** Inside the sync root, `.trash`
+  and `.staging` are reserved. The trash is load-bearing: when an organization turns Skills off,
+  the binary's own changelog says synced skills *"now move to the recoverable trash"* rather than
+  being deleted. So the sync root holds content the user may still want and is **not** a pure
+  cache — which rules out "just delete it". `synced` is itself a reserved name in the skills
+  directory: the binary refuses an imported rule named `synced` because *"its name is the skills
+  directory name Claude Code reserves for synced skills, so the skill would never load."*
+- <a id="sync-root-two-roots"></a>**Two sync roots, one bucket name, and only one is exposed.**
+  There are **two** sync roots under `~/.claude`, and they carry the same bucket name:
+
+  | Path | Holds | Is it a yolo-composed destination? |
+  | :--- | :--- | :--- |
+  | `~/.claude/skills/synced/<bucket>/` | synced **skills** | **Yes** — `packs/claude` composes `.claude/skills`. This is the exposure [ST-P1](#st-p1) records |
+  | `~/.claude/plugins/synced/<bucket>/` | installed/synced **plugins** | **No**, and since 2026-09-20 nothing yolo runs writes under `.claude/plugins` at all. No pack composes it; the `claude_plugins` hook that used to reconcile it in-jail against the configured LSP servers never wrote *here* either, and is now retired ([`pi-pack-extensions.md`](../design/pi-pack-extensions.md) [`OQ-2`](../design/pi-pack-extensions.md#10-decision-ledger)) |
+
+  Measured in the development jail on 2026-09-18: the plugins-side root exists and holds an empty
+  bucket, beside a **zero-byte marker file** named `.bucket-<same uuids>` — the `.bucket-` prefix
+  is a constant in the same binary module as the bucket parser. The marker is excluded from
+  adoption twice over: it is dot-prefixed *and* not a directory.
+
+  **The tree regenerates.** The registration that brings it back after a delete is not in the
+  tree, and it is not the same one for the two roots. **The skills root is filled by Claude Code's
+  claude.ai skills sync**: the skills enabled on the claude.ai account or organization, fetched
+  server-side about every ten minutes and removed when disabled there (the `syncClaudeAiSkills`
+  setting, whose only honored value is `false`; organization policy `allow_account_skills_sync`).
+  Read out of the installed Claude Code 2.1.283 binary on 2026-09-28 — its setting description
+  names `~/.claude/skills/synced` — and corrected then: the record used to name
+  `~/.claude/plugins/installed_plugins.json` plus `known_marketplaces.json`, which are the
+  registration of ordinary plugin installs and belong to the *plugins* root (its
+  `syncClaudeAiPlugins` twin writes `~/.claude/plugins/synced`). `claude plugin list` shows a
+  "Synced from claude.ai" section; it is not a view of the skills root, and on the maintainer's
+  machine it printed "No plugins installed" beside a non-empty one. Either way the bucket
+  directory itself is minted from the identity, and its *contents* arrive from the sync — both
+  halves are true, and reading either one as the whole story gets the lifecycle wrong. That single
+  property is why yolo keeps no copy ([ST1](#oq-st1), [ST4](#oq-st4)) and only notices the tree
+  ([ST-N2](#st-n2)): **the source heals itself, and yolo's copy does not.**
+
+  **Not verified, and a jail cannot verify it:** when the *skills*-side root first appears.
+  `~/.claude/skills` in a jail is a `:ro` bind mount of yolo's own staging directory, so a vendor
+  process could not create `synced` under it whatever it wanted to do — its absence in a jail is
+  explained by the mount and proves nothing about the vendor's behavior.
+
+The one part of the fence's ruling still open:
+
+- 💬 **[`OQ-ST2`](#OQ-ST2) (its unruled sub-question) — may a *user* add reserved children in
+  their own config?** The ruled half, that the shipped fence is pack-declared, is
+  [the why-appendix row](#oq-st2). A user-settable escape hatch is a different question from
+  where the shipped name is declared, and nothing in that ruling forecloses it. It gates nothing
+  either way: the fence shipped without it.
+
+  <!-- vantage: question id=OQ-ST2 -->
+
+  No leaning has been stated.
+
+  **Answer:**
+  > _(empty — fill in when decided)_
 
 <a id="skills-collision"></a>
 
@@ -1506,7 +1631,7 @@ author's to move; nothing touches one.
 An opaque tree the pack owns outright, bind-mounted `:ro` at `into` in the jail. `from` is
 required and honored **on a contribution**: there is no conventional location for an opaque tree,
 so the declaration is the only thing that can name it. A **built tree** names an upstream `source`
-in place of `from`: a patched extension, with a `patches` series
+in place of `from`: a patched extension, with a `patches` series or a `patch_branch`
 ([`patched-extensions.md` §4](../design/patched-extensions.md#4-the-declaration)), or an unmodified
 extension, with none, from a git address or `npm:<name>[@<spec>]` and an optional `fallback`
 ([`pi-extension-store-builds.md` §4.1](../design/pi-extension-store-builds.md#41-the-declaration)).
@@ -1677,7 +1802,7 @@ launch prints a warning and continues, and `yolo check` reports a WARN. No flag 
 silences that warning. The pack owns the knowledge and core names no variable: `packs/aws-auth`
 declares that a Bedrock bearer or a static AWS key pair beats its credentials pointer, and that
 a `~/.aws` grant may
-([`sso-backed-bedrock.md` OQ-SSO8](../design/sso-backed-bedrock.md#OQ-SSO8)). The schema and its
+([`agent-credentials.md` OQ-SSO8](agent-credentials.md#OQ-SSO8)). The schema and its
 rules are `packdecl.EnvOverride`'s doc comment.
 
 An `env` contribution whose variables point a client at a yolo jail daemon declares that daemon
@@ -1746,7 +1871,7 @@ declares `at`, that directory is not mounted and the link dangles. The hook repl
 that link, recognised by its target and never followed, with an empty real directory, so the
 tool repopulates its own copy per workspace. A real directory, a link to anything else, or an
 absent path are left alone, and the store the link pointed at is never touched. First used for
-pi's git checkouts ([`pi-git-extension-caching.md`](../design/pi-git-extension-caching.md)), and
+pi's git checkouts ([the held store](../design/pi-extension-store-builds.md#the-held-store)), and
 since 2026-10-05 for its npm prefix
 ([XB-D14](../design/pi-extension-store-builds.md#XB-D14)), so no shipped pack declares
 `shared_directory` any more. A fresh launch on podman or Apple Container that finds a selected
@@ -1906,7 +2031,7 @@ name, so two selected packs shipping one name are refused by validation; `bin` n
 `program` the server runs, which `yolo host -- <agent>` installs into the host floor. Not
 review-worthy: the entry is data in the agent's config file, and the program behind it is its
 own `program` contribution. At the host only a pack yolo ships or one at a path on this machine
-has its entry written ([HC-D26](../design/host-computed-layer.md#HC-D26)). How the table reaches
+has its entry written ([HC-D26](host-agent-environment.md#HC-D26)). How the table reaches
 each agent is [`mcp-configuration.md`](mcp-configuration.md#a-packs-servers-the-mcp-kind)'s.
 
 #### `autonomy`
@@ -3284,6 +3409,21 @@ Whichever is ruled, R5's *"install is user-scope"* in
   **Answer:**
   > _(empty — fill in when decided)_
 
+- 💬 <a id="oq-acp4"></a>**[`OQ-ACP4`](#oq-acp4) — does pruning a shared pack need usage data to be anybody's job?**
+  A shared corpus of skills rots: it accumulates, quality drops, and people go back to their own
+  config. Claude Code can emit OpenTelemetry that includes skill names (`OTEL_LOG_TOOL_DETAILS`),
+  so a `yolo pack usage` view is possible for at least one agent. Moved here on 2026-10-16 from the
+  deleted `agent-config-packs.md` proposal (*ACP*: agent config packs), which kept the id.
+
+  <!-- vantage: question id=OQ-ACP4 leaning="Out of scope: no usage telemetry. Name pruning as a human responsibility in the user docs, and show an owner in yolo pack ls so there is someone to ask." -->
+
+  _Leaning:_ Out of scope: no usage telemetry. Name pruning as a human responsibility in the user
+  docs, and show an owner in `yolo pack ls` so there is someone to ask. Reading agent telemetry is
+  a much larger surface than this feature should open.
+
+  **Answer:**
+  > _(empty — fill in when decided)_
+
 ### Fetch, refresh, lock
 
 **A host launch fetches and refreshes git packs itself, and the ref decides what moves**
@@ -4002,12 +4142,15 @@ in the config-overlay comments (R2, R3) it means the R1–R5 table below, never
 | <a id="q2-1"></a>**Q2.1** — several `program` contributions per pack, each with its own launcher | Exclusivity is per `bin`; `shellcheck` + `shfmt` in one pack is ordinary, and there is no case for constricting packs. |
 | <a id="q3-1"></a>**Q3.1** — prune only unconfigured slugs, contents-only; keep the unresolvable. **Superseded by [OQ-PK2](#oq-pk2)**: each launch stages a tree of its own, so there is no shared tree to prune | Clear-then-restage would discard a pack the user still wants because it could not be fetched; the staging root's inode is captured by a live jail's bind. Both still hold, and per-launch trees meet them by construction: no launch writes another's tree. |
 | <a id="two-provenance-derivations-row"></a>[**Two provenance derivations**](#two-provenance-derivations) (findings index #8, ruled 2026-08-02) — `agentcfg.Compose`'s fold and `entrypoint.rmwProvenance`'s write-order replay both answer "which layer won", and stay two until a third derivation exists | They answer one question about different mechanisms: a fold has every layer in hand, and an `rmw` write has no fold, its precedence being write order. One implementation would need a synthetic layer stack for `rmw` or a simulated write order for the fold. Maintainer ruling: *"yes, wait for 3 to unify."* The shared-corpus parity table is what holds the two to one answer meanwhile. |
-| <a id="oq-st2"></a>[**OQ-ST2**](#oq-st2) (synced skill trees, ruled 2026-09-20) — **the fence is pack-declared** (`reserved` on a `skills` contribution; `packs/claude` declares `synced`), never a name core knows | Hardcoding `synced` into core is how core learns what an agent is, one string at a time, which `internal/hostskills`' tier comment already refuses. ⚠ Whether a USER may add reserved children in their own config is not ruled; it gates nothing, and [the design stub](../design/synced-skill-trees.md#OQ-ST2) holds it. |
+| <a id="oq-st2"></a>[**OQ-ST2**](#oq-st2) (synced skill trees, ruled 2026-09-20) — **the fence is pack-declared** (`reserved` on a `skills` contribution; `packs/claude` declares `synced`), never a name core knows | Hardcoding `synced` into core is how core learns what an agent is, one string at a time, which `internal/hostskills`' tier comment already refuses. ⚠ Whether a USER may add reserved children in their own config is not ruled; it gates nothing, and is [an open question in the `skills` section](#OQ-ST2). |
 | <a id="st-p1"></a>[**ST-P1**](#st-p1) (synced skill trees: that design's P1, prefixed here because this doc has P ids of its own) — **a tree another tool writes continuously is fenced, not adopted** | Adopting it moved the tree into the local pack and composed a byte-identical copy back, which looked like success and lost the user's edits at the vendor's next sync (measured: a second apply deleted a newly synced skill and reverted an edited one, reporting one composed skill). |
 | <a id="st-p3"></a>[**ST-P3**](#st-p3) (synced skill trees: its P3) — **a jail never reads a host skills tree**, because that is a host read | Host material crosses only by the host notch composing it into a pack, or by a declared `host_files` grant the launch discloses; a skills layer reading `~/.<agent>/skills` would be a second, undisclosed channel. The older reason, that the tree is yolo's own output, holds only where yolo composes it, so it is not the reason. |
-| <a id="st3"></a>[**ST3**](#st3) (synced skill trees) — **a sync root is announced at `yolo host apply` only**, never at launch | The apply is where yolo is about to take the folder over. The launch stream discloses what yolo did to a jail, and by [`OQ-RO3`](report-tiers.md#why-its-this-way) a line added there is permanent. |
+| <a id="st3"></a><a id="oq-st3"></a>[**ST3**](#st3) (synced skill trees) — **a sync root is announced at `yolo host apply` only**, never at launch | The apply is where yolo is about to take the folder over. The launch stream discloses what yolo did to a jail, and by [`OQ-RO3`](report-tiers.md#why-its-this-way) a line added there is permanent. |
 | <a id="st-n2"></a>[**ST-N2**](#st-n2) (synced skill trees, 2026-09-28) — **the notice is one line, in the default view only when the tree is new or changed** | The maintainer called the earlier three-part notice "very confusing", and its "how to look" pointed at `claude plugin list`, which does not show this tree. What the tree is comes from the pack (`reserved_notes`), so core still names no vendor. |
 | <a id="st-r"></a>[**ST-R**](#st-r) (synced skill trees) — **a home an earlier apply damaged gets a report, and no offer to put the tree back** | The same move is a tidy-up for one user and data loss for another, and nothing yolo can read distinguishes them, so the move is the user's ([above](#a-home-an-earlier-apply-already-took-from)). |
+| <a id="oq-st1"></a>[**ST1**](#oq-st1) (synced skill trees, 2026-09-20) — ~~which pack owns a snapshotted skill?~~ **DISSOLVED.** There is no snapshot, so nothing is copied into a pack and nothing owns a copy | This was the central ruling of the design's deleted snapshot, which would have copied the sync root into a pack. The source heals itself and a copy does not ([the sync root](#sync-root-two-roots)), so the design dropped the snapshot and the question with it. |
+| <a id="oq-st4"></a>[**ST4**](#oq-st4) (synced skill trees, 2026-09-20) — ~~does drift ever do more than report?~~ **DISSOLVED.** There is no drift report | yolo holds no copy of the tree, so there is nothing to compare against. |
+| <a id="st5"></a><a id="oq-st5"></a>[**ST5**](#st5) (synced skill trees, *implementation decision*, 2026-09-30, answering [OQ-ST5](#oq-st5): what a regenerated table does with keys yolo did not write) — **in a table its derive declares in full (`ctx.in_full`), a key the derive did not write is dropped at a first-migration adoption, and the adoption archive is the way back** — option (c), which is the tree's behavior since [`CO13`](../design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided) was built. Nothing to build: `dropComputedTables` takes a declared table whole and `entrypoint.archiveAdoption` copies the file first | On a first migration nothing records what an earlier yolo wrote, so that key is as likely yolo's own stale output as the user's. Option (a) would keep a removed MCP server and make the declaration inert at adoption; option (b) would refuse over yolo's own leftovers. What a user can feel is which tables are declared, and the contested class, the provider catalogs, is [`OQ-CO16`](../design/config-ownership-and-promotion.md#OQ-CO16)'s. Filed with the synced skill trees design because the question was filed there; it belongs to the config-ownership axis. |
 | <a id="st-transition"></a>[**The transition is a notice**](#st-transition) (synced skill trees, ruled 2026-09-20) — yolo fences, says so on a non-empty reserved child, and copies, moves and tracks nothing | A snapshot verb with a drift report was designed and deleted: the population needing it is probably nobody, and a mechanism nobody needs is a standing obligation. A user who wants that content in a jail copies it into a pack of their own. |
 | **[OQ-PK2](#oq-pk2)** — one immutable pack tree per launch, plus a notice on attach; built 2026-09-26 | An attach that re-staged handed a running jail pack contracts its binaries may not read (v0.10.0 cannot boot on this tree's claude and pi), and left a live jail inconsistent after a changed-config attach. |
 | **WB-D9..D12** — `needs` names an embedded pack, resolves before staging, joins user selection, and always prints | A fetched pack needs-ing another would make selection a supply-chain channel; a silent join is the one forbidden behavior. |

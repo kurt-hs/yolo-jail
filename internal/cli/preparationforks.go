@@ -51,7 +51,7 @@ func preparationForkKind(f packload.Fork) string {
 func preparationForkIdentity(f packload.Fork, commit, runtime, platform string) (string, error) {
 	var series string
 	if f.Patched() {
-		loaded, err := f.ReadSeries()
+		loaded, err := f.DeclaredSeries()
 		if err != nil {
 			return "", err
 		}

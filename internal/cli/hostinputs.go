@@ -322,7 +322,7 @@ func hostMCPPacks(packs []*packload.Pack) (composed []*packload.Pack, omitted []
 			omitted = append(omitted, fmt.Sprintf("mcp %s (pack %s) is not written at the host: the "+
 				"pack was fetched, and an MCP server's command runs unconfined as you whenever the "+
 				"agent starts — to run it here, write the entry under `mcp_servers` in "+
-				"~/.config/yolo-jail/config.jsonc yourself (docs/design/host-computed-layer.md HC-D26)",
+				"~/.config/yolo-jail/config.jsonc yourself (docs/reference/host-agent-environment.md HC-D26)",
 				s.Name, p.Name))
 		}
 	}

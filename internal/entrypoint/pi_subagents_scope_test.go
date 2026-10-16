@@ -2,14 +2,15 @@ package entrypoint
 
 // pi_subagents_scope_test.go pins the maintainer's ruling of 2026-09-28 on pi-subagents'
 // `subagents` block (docs/research/extension-model-defaults.md OQ-XM3, which also answers
-// docs/research/pi-model-selection-ux.md OQ-PM1): pi's settings derive writes it for EVERY
+// the since-deleted pi-model-selection-ux.md's OQ-PM1): pi's settings derive writes it for EVERY
 // provider a pi profile selects, not only openai-codex.
 //
 //   - subagents.defaultModel is the active profile's default model, as `provider/id`, so a
 //     child agent that names no model starts there;
-//   - subagents.modelScope is {enforce, strict, allow} over the selected provider's
-//     configured models, so a child may name another model of that provider and never one
-//     of another provider.
+//   - subagents.modelScope is {enforce, strict, allow}: over the selected provider's
+//     configured models under an `only` (and on openai-codex), else over the whole provider
+//     (docs/design/model-lists-and-pickers.md OQ-MM3), so a child may name another model of
+//     that provider and never one of another provider.
 //
 // Every case renders through ConfigurePackSurfaces, the boot's own loop, over the SHIPPED
 // pi pack and providers composed from the shipped packs, so deleting the block from the
@@ -93,7 +94,8 @@ func wantPiSubagents(profile string) map[string]any {
 		return map[string]any{
 			"defaultProvider": "llamacpp",
 			"defaultModel":    "llamacpp/llama",
-			"modelScope":      scope("llamacpp/llama"),
+			// A configured list no `only` narrowed scopes the whole provider (OQ-MM3).
+			"modelScope": scope("llamacpp/*"),
 		}
 	}
 	panic("no expectation for profile " + profile)
@@ -195,7 +197,8 @@ func TestPiSubagentsMissingDefaultAliasWarnsAndStillScopes(t *testing.T) {
 	r.render(t, `{"pi":"solo"}`)
 	want := map[string]any{
 		"defaultProvider": "solo",
-		"modelScope":      map[string]any{"enforce": true, "strict": true, "allow": []any{"solo/qwen"}},
+		// solo's list is no `only`, so the scope is the whole provider (OQ-MM3).
+		"modelScope": map[string]any{"enforce": true, "strict": true, "allow": []any{"solo/*"}},
 	}
 	if got := r.piSettings(t)["subagents"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("pi subagents = %#v, want %#v", got, want)

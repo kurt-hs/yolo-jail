@@ -134,7 +134,7 @@ type brewFormula struct {
 // tapFacts is what the tap's formula says, checked for internal consistency.
 type tapFacts struct {
 	// Version is the formula's stable version: what the formula stamps into
-	// `yolo --version` (release.yml passes #{version} to -ldflags).
+	// `yolo --version`, before the release's +g<hash12> (update-homebrew.sh's -ldflags).
 	Version string
 	// Keg is the linked keg's directory name — Version, plus `_<revision>` when the
 	// formula carries a revision. It names the Cellar directory.
@@ -176,18 +176,47 @@ func parseBrewInfo(data []byte, formula string) (tapFacts, error) {
 }
 
 // versionLinePrefix is what `yolo --version` prints before the version, and what the
-// formula's own test block asserts (release.yml: `assert_match "yolo-jail #{version}"`).
+// formula's own test block asserts before the release's +g<hash12> (update-homebrew.sh).
 const versionLinePrefix = "yolo-jail "
 
-// checkVersionLine requires `yolo --version` to print exactly one line naming want.
-// Exact, not a substring: a from-source describe such as 0.11.0+3.gabc1234 would
-// contain the version and still be a different binary.
-func checkVersionLine(stdout, want string) error {
-	got := strings.TrimSpace(stdout)
-	if got != versionLinePrefix+want {
-		return fmt.Errorf("`yolo --version` printed %q, want %q", got, versionLinePrefix+want)
+// releaseHashSuffix is the build metadata a release stamps after its version: the
+// commit, 12 hex digits (OQ-DA2, ruled 2026-10-16; update-homebrew.sh, .goreleaser.yaml).
+var releaseHashSuffix = regexp.MustCompile(`^\+g[0-9a-f]{12}$`)
+
+// printedRelease reports whether got is the release version want as a release binary
+// prints it, and returns the commit hash it names. Two forms are accepted: want itself,
+// and want followed by `+g` and exactly 12 hex digits. Exact, not a substring: a
+// from-source describe such as 0.11.0+3.gabc1234 contains the version and is still a
+// different binary.
+//
+// The plain form is what every release before the OQ-DA2 stamp prints, and the tap's
+// published formula is one of those until the next release ships; tap-install.yml
+// checks whatever the tap carries, so a checker change must keep accepting it. Drop the
+// plain form once no release the tap can carry prints it.
+func printedRelease(got, want string) (hash string, ok bool) {
+	rest, ok := strings.CutPrefix(got, want)
+	switch {
+	case !ok:
+		return "", false
+	case rest == "":
+		return "", true
+	case releaseHashSuffix.MatchString(rest):
+		return rest[len("+g"):], true
 	}
-	return nil
+	return "", false
+}
+
+// checkVersionLine requires `yolo --version` to print exactly one line naming want,
+// the formula's version (printedRelease), and returns the commit hash it names, if any.
+func checkVersionLine(stdout, want string) (string, error) {
+	got := strings.TrimSpace(stdout)
+	v, ok := strings.CutPrefix(got, versionLinePrefix)
+	hash, matches := printedRelease(v, want)
+	if !ok || !matches {
+		return "", fmt.Errorf("`yolo --version` printed %q, want %q or %q", got,
+			versionLinePrefix+want, versionLinePrefix+want+"+g<12 hex digits>")
+	}
+	return hash, nil
 }
 
 // checkReport is the part of `yolo check --format json` this tool reads — the
@@ -254,7 +283,10 @@ func expectedOnABareMac(section, message string) bool {
 // exit code, that it names the installed version, that every FAIL is one a bare Mac
 // is expected to report, and that the flake it found is the bundle beside the binary
 // and inside this install's keg.
-func judgeCheck(stdout []byte, rc int, wantVersion, kegDir string) (string, []error) {
+//
+// versionHash is the commit `yolo --version` named ("" for none): when the report's
+// version names one too, the two must agree, because they are one binary.
+func judgeCheck(stdout []byte, rc int, wantVersion, versionHash, kegDir string) (string, []error) {
 	var rep checkReport
 	if err := json.Unmarshal(stdout, &rep); err != nil {
 		return "", []error{fmt.Errorf("`yolo check --format json` (exit %d) did not print a JSON report: %w", rc, err)}
@@ -266,8 +298,12 @@ func judgeCheck(stdout []byte, rc int, wantVersion, kegDir string) (string, []er
 	case (rc == 1) != (rep.Failed > 0):
 		errs = append(errs, fmt.Errorf("`yolo check` exited %d with %d failed findings; the exit code and the report disagree", rc, rep.Failed))
 	}
-	if rep.Version != wantVersion {
-		errs = append(errs, fmt.Errorf("`yolo check` reports version %q, want %q", rep.Version, wantVersion))
+	if hash, ok := printedRelease(rep.Version, wantVersion); !ok {
+		errs = append(errs, fmt.Errorf("`yolo check` reports version %q, want %q or %q", rep.Version,
+			wantVersion, wantVersion+"+g<12 hex digits>"))
+	} else if hash != "" && versionHash != "" && hash != versionHash {
+		errs = append(errs, fmt.Errorf("`yolo check` reports version %q, but `yolo --version` named commit %s: "+
+			"they are one binary and must name one commit", rep.Version, versionHash))
 	}
 
 	var flakePath, via string

@@ -101,7 +101,7 @@ The capability: get a runnable Linux OCI image on any host.
   user *downloads* the prebuilt image; no builder, no VM, no Nix knowledge. We pay the one-time cost.
   This is the answer for everybody, everywhere. The substituter and its trusted key are declared in
   `flake.nix`'s `nixConfig`; the delivery work is
-  [`handoff-cachix-cache.md`](../plans/handoff-cachix-cache.md).
+  [`image-staging-vs-baking.md`](image-staging-vs-baking.md#the-binary-cache).
 - **Single fallback, only when the cache can't help: the on-demand container builder.** Needed just
   for a custom package that isn't cached, or before the cache is live. A normal `yolo` run offloads
   the from-source build to a tiny nix+sshd Linux builder *container* on whichever runtime is already

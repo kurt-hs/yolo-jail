@@ -285,7 +285,7 @@ func TryWorkspaceLaunchLockFor(cname string) (func(), bool) {
 // A second launch of the workspace therefore WAITS, with the "Waiting for concurrent jail
 // launch" notice, instead of rewriting the staging under the first. That is the ruled behavior:
 // a launch's result never depends on another's, and it waits for what it needs
-// (docs/design/pi-git-extension-caching.md OQ-2).
+// (docs/design/pi-extension-store-builds.md OQ-2).
 //
 // The degraded mode is acquireWorkspaceLock's: a lock file that cannot be opened warns and
 // leaves this launch unserialised, because a workspace lock is a courtesy and not a reason to

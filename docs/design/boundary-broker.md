@@ -21,7 +21,7 @@ built 2026-09-29** (the read path, the repository scope, the audit log, the moun
 `integration/githubbroker_test.go`), and **step 2's user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
 The real handler has host authority adapters and a delivery-gated request/wait/status/consume
 path, tested through the transport with a fake executor. Production still provides no delivery
-readiness, so writes refuse immediately without filing requests. See [the build plan](boundary-broker-plan.md).
+readiness, so writes refuse immediately without filing requests. See [§7](#7-grants-and-the-request-store).
 Notifications, explicit admission rules and step 3 are not built. Revised
 around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#OQ-BB1), [OQ-BB2](#OQ-BB2), [OQ-BB3](#OQ-BB3), [OQ-BB4](#OQ-BB4),
@@ -89,10 +89,10 @@ the answer rides back on), [`loophole-system.md`](../reference/loophole-system.m
 [`loophole-transport.md`](../reference/loophole-transport.md) (what the broker is and how a jail
 reaches it), [`config-safety.md`](../reference/config-safety.md) (the config-change gate the
 scope is approved through), [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate)
-(delivery as specific as possible), [`sso-backed-bedrock.md`](sso-backed-bedrock.md) (the second consumer waiting for a
+(delivery as specific as possible), [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth) (the second consumer waiting for a
 request shape), [`host-run-mailbox.md`](host-run-mailbox.md) (the paste-to-host stopgap
 for everything this design does not yet cover, planned to become one more front-end of its
-store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). The bounded host-store slice is recorded in [the build plan](boundary-broker-plan.md).
+store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). The bounded host-store slice is recorded in [§7](#7-grants-and-the-request-store).
 
 ---
 
@@ -225,7 +225,7 @@ Every term here is coined in this doc unless it says otherwise.
 **The old letters.** Three sibling docs cite work here by this doc's 2026-08 numbering: **B1b**
 is the credential-injecting proxy for git ([§13](#13-what-this-does-not-cover-and-the-other-two-tiers)),
 **B2** the approval queue, which is now this whole design, and **B3** auth-mode modeling, split out
-to [`agent-auth-modes.md`](agent-auth-modes.md). The roadmap never carried them; cite an OQ id.
+to `agent-auth-modes.md` (deleted 2026-10-16; its result is [`providers.md`](../reference/providers.md)). The roadmap never carried them; cite an OQ id.
 
 ### 1.4 Principles
 
@@ -1863,8 +1863,8 @@ covered:
   cover them, and nothing here waits on it.
 - **Other services.** The store, the notifier, `yolo approve` and the audit log are service-neutral
   by construction (`service` in every record); a second broker is a new classifier, not a new
-  design. The AWS SSO case [`sso-backed-bedrock.md`](sso-backed-bedrock.md#13-decision-ledger)
-  parked here ([`OQ-SSO6`](sso-backed-bedrock.md#13-decision-ledger)) is the likeliest second.
+  design. The AWS SSO case [`agent-credentials.md`](../reference/agent-credentials.md#sso-decision-ledger)
+  parked here ([`OQ-SSO6`](../reference/agent-credentials.md#sso-decision-ledger)) is the likeliest second.
 - **Agent-internal prompts moved to the boundary.** The 2026-08 draft's use case B, gating every
   crossing the way an agent gates its own tool calls, is the long-run generalization of this
   design, not a part of it. It only ever sees what crosses, so it is never a replacement for the
@@ -2278,7 +2278,7 @@ covered:
 | OQ-E | **Ruled by the brief: the human answers in a persistent desktop notification on Linux and macOS,** with Allow, Deny and a duration. `yolo approve` is the fallback front-end. Its security half, settled 2026-08-12, stands: authority stays with host processes, never an HTTP port | 2026-09-28 | [§6](#6-the-doorbell-a-persistent-desktop-notification) | — |
 | OQ-C | **Maintainer ruling (2026-09-29), confirming the reading:** stdout, stderr and the exit code of a brokered command cross verbatim. With the rule that bounds it: *"If that access is somehow dangerous this command that we're wrapping just isn't a candidate for this"* — a command whose output would hand the agent something it must not have is refused, never brokered with a filtered result | 2026-09-29 | [§4.2](#42-what-crosses-back) | built: `ghbroker.Forward`, pinned by `TestForwardThroughTheFront` |
 | OQ-B | Approvals are **per action by default**; a reusable grant is bounded by duration **and** use count; the human may only **narrow**: policy ceiling ≥ request ≥ grant. Held: an earlier draft had the human widening a grant, which unYOLO's `validApprovalConstraints` rejects and which would decay a grant into an allowlist. **Partly superseded 2026-09-29 by [OQ-BB2](#OQ-BB2):** the default grant is now a whole windowed set, not per action. The narrowing-only half stands, with the set's ceiling as the policy ([BB-D29](#BB-D29)), and so does the use count ([BB-D21](#BB-D21)) | 2026-08-12 · partly superseded 2026-09-29 | [§7](#7-grants-and-the-request-store) | — |
-| OQ-D | **A pointer, not a question:** delegated to [`agent-auth-modes.md`](agent-auth-modes.md) [OQ-1](agent-auth-modes.md#12-decision-ledger), ruled there 2026-08-29 (launch-time selection, failover deferred), so this broker holds no auth-mode state | 2026-08-12 · delegate ruled 2026-08-29 | [§13](#13-what-this-does-not-cover-and-the-other-two-tiers) | — |
+| OQ-D | **A pointer, not a question:** delegated to the since-deleted `agent-auth-modes.md` (its first question, ruled there 2026-08-29 as launch-time selection with failover deferred), so this broker holds no auth-mode state | 2026-08-12 · delegate ruled 2026-08-29 | [§13](#13-what-this-does-not-cover-and-the-other-two-tiers) | — |
 | <a id="BB-D1"></a>[`BB-D1`](#15-decision-ledger) | *Implementation decision.* The broker is a loophole host daemon, one per jail, in a new `github` pack, off until enabled; the jail reaches it over the loopback-TLS transport, and every grant and request is keyed on the preamble's host-asserted jail id, never on a request field | 2026-09-28 | [§4.4](#44-per-notch-and-backend) | built: `ghbroker.Broker.Handle`, pinned by `TestForwardThroughTheFront`, and the pack's loophole, `packs/github/loopholes/github-broker/manifest.jsonc`, pinned by `TestGitHubBrokerRunsAReadAgainstTheHostGH` |
 | <a id="BB-D2"></a>[`BB-D2`](#15-decision-ledger) | *Implementation decision.* The broker runs `gh` from a canonical argv it rebuilt, in an empty broker-owned cwd, with an environment built from nothing, a broker-owned `GH_CONFIG_DIR` holding only `hosts.yml`, empty XDG data, cache and state dirs, `GH_HOST=github.com`, an explicit two-segment `-R`, a 300-second timeout and a 16 MiB output cap | 2026-09-28 | [§4.1](#41-how-the-broker-runs-gh) | built: `ghbroker.Runner.Run`, pinned by `TestRunnerRunsGHUnderConditionsItOwns`, `TestRunnerStopsAtTheTimeout` and `TestRunnerCutsOutputAtTheCap`; the timeout holds when the broker is stopped mid-call ([BB-D51](#BB-D51), `TestAStoppedBrokerEndsItsGHAndRemovesItsCopy`) |
 | <a id="BB-D3"></a>[`BB-D3`](#15-decision-ledger) | *Implementation decision.* The classifier parses flags anywhere against each command's flag grammar as measured from `gh`, matches command paths exactly, and refuses an unknown word, an unknown flag or an argv that does not parse. *Revised 2026-09-29:* an unknown flag used to make a command a write, which a human saw every time; under a read-write grant nobody sees it, so it is refused | 2026-09-28 · revised 2026-09-29 | [§5.1](#51-the-rule) | partly: the grammar and the refusals (`ghbroker.Classify`, pinned by `TestClassify`). *Amended 2026-10-09:* the grammar applies at every host `gh` version; it used to apply only inside a tested range, outside which no set applied ([BB-D70](#BB-D70)) |
@@ -2665,7 +2665,7 @@ same shape without contact, and that is still the most useful signal in this sec
 
 - **It does nothing for Claude auth.** unYOLO brokers *third-party service* credentials. There is no
   OAuth-subscription handling, no provider switching, no Bedrock. Row **B3** and
-  [`agent-auth-modes.md`](agent-auth-modes.md) are untouched — still a mildly interesting negative
+  [`providers.md`](../reference/providers.md) are untouched — still a mildly interesting negative
   result, since the nearest prior art declines the hardest part of our version.
 - **Its threat model assumes what yolo provides, and vice versa.** Verified at
   `docs/security/THREAT_MODEL.md:124-128`: it does *not* sandbox provider code, validate arbitrary
@@ -2676,7 +2676,7 @@ same shape without contact, and that is still the most useful signal in this sec
   the same admission as *do not let this become a general RPC* — and `sudo-broker` is exactly the
   product shaped like that risk. Still worth reading before writing any yolo verb that shells out.
 - **The threat model does not address prompt injection** or distinguish a malicious agent from a
-  confused one — the same gap `sequencing-2026-07.md` [§4e](../plans/sequencing-2026-07.md#4e-open-questions-the-maintainer-must-decide) names for yolo. **The HN thread's one real critique
+  confused one — a gap yolo shares: its subsystems each name their own adversary (a [sibling jail](../reference/loophole-transport.md#threat-model) for the loophole transport), and none says whether a malicious dependency inside the jail is in scope. **The HN thread's one real critique
   ([§A.5](#a5-the-hacker-news-thread--retrieved-and-nearly-empty)) is precisely this**, and it went unanswered. Neither project has an answer.
 
 ### A.8 What it changed in the plan

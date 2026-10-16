@@ -621,7 +621,7 @@ const WorkspaceStateIgnoreName = ".gitignore"
 //
 // WHY IT IS NOT OPTIONAL. What lands under .yolo is not merely noise. `launch.log` tees
 // everything the launcher printed, and a --dry-run's printed argv IS its env list, provider
-// secrets and all (docs/plans/handoff-macos-user-open-threads.md §6). `archive/config/` holds
+// secrets and all (docs/plans/runbooks/macos-user-manual-checks.md, "Credentials moved off the sandbox argvs"). `archive/config/` holds
 // VERBATIM copies of the user's own pre-yolo agent config files — exactly where credentials
 // live — and render.Target.ArchivePath is shaped to keep them forever. `home/` is the jail's
 // entire home overlay. This repo happens to ignore .yolo/ by a hand-written line in its own
@@ -832,7 +832,7 @@ func WrapDirUnder(home string) string {
 
 // HostBlockDir returns $HOME/.local/share/yolo-jail/bin/block — where `yolo host --` keeps the
 // blocked-tool shims it puts first on the PATH of the program it starts
-// (docs/design/host-launch-environment.md HE-D11): one CONTENT-ADDRESSED child per distinct set
+// (docs/reference/host-agent-environment.md HE-D11): one CONTENT-ADDRESSED child per distinct set
 // of scripts, named by their digest, written once and then reused, so two launches with the same
 // blockers share one directory and one with different blockers never edits another's.
 //
@@ -854,7 +854,7 @@ const hostWorkspaceSkillsLeaf = "host-workspace-skills"
 
 // HostWorkspaceSkillsDir returns $HOME/.local/share/yolo-jail/host-workspace-skills — the RECORD
 // of each link `yolo host -- <agent>` put into a workspace for the workspace skills layer
-// (docs/design/workspace-skills.md WS-D19 to WS-D23): one file per workspace and link, keyed by a
+// (docs/reference/agent-briefings.md WS-D19 to WS-D23): one file per workspace and link, keyed by a
 // digest of the workspace's resolved path and the link's path in it. The record is what makes a
 // link yolo's to refresh or remove, so it is host-side and never in the workspace's own .yolo/,
 // which the repository's agent can write. No jail mounts it.
@@ -952,7 +952,7 @@ const hostFloorLeaf = "host-floor"
 // that no mount source a launch emits is at, under, or an ancestor of it.
 //
 // It is also on NO user PATH: the user's shell never sees it (OQ-HP2), and a host launch
-// appends its bin/ LAST to the agent's PATH (HE-D1).
+// appends its bin/ LAST to the agent's PATH (HE-D16).
 func HostFloorDir() string { return HostFloorDirUnder(home()) }
 
 // HostFloorDirUnder is HostFloorDir under an EXPLICIT home — see GlobalStorageUnder for why a

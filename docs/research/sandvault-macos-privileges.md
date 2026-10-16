@@ -63,8 +63,8 @@ replaced an all-commands restricted-account rule with named executables and adde
 noninteractive launch probe.
 
 The v1.23.0 source already contains this policy. That is the version our
-[original hardware notes](../plans/runbooks/mac-sandvault-session.md) identify.
-Our own [macos-user runbook](../plans/runbooks/mac-macos-user-e2e.md) explicitly says setup
+original hardware notes (the deleted `mac-sandvault-session.md`) identify.
+Our own macos-user runbook (the deleted `mac-macos-user-e2e.md`) said setup
 installs no passwordless sudo rule. The contrast is a missing privilege mechanism in yolo,
 not evidence that SandVault recently stopped switching users.
 

@@ -1,6 +1,6 @@
 package cli
 
-// hostapplycreated_test.go pins HC-D4 (docs/design/host-computed-layer.md §7) where a user
+// hostapplycreated_test.go pins HC-D4 (docs/reference/host-agent-environment.md) where a user
 // meets it: a host apply that CREATES a config file counts it as a change, in the dry run and
 // in the --assert, and never among the destinations "already in sync".
 //

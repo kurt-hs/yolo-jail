@@ -1,13 +1,13 @@
 package cli
 
 // hostblockers.go puts blocked tools at the head of the PATH of the program `yolo host --`
-// starts (docs/design/host-launch-environment.md HE-D11): the selected packs' `blocked-tool`
+// starts (docs/reference/host-agent-environment.md HE-D11): the selected packs' `blocked-tool`
 // contributions (the guardrails pack's grep and find) and the user-scope `security.blocked_tools`,
 // rendered by the jail's own writer (entrypoint.RenderBlockers) into a directory yolo keeps on the
 // host, first on the child's PATH.
 //
 // WHY THE HOST CAN DO THIS NOW. The census used to refuse the kind off-container because "yolo
-// owns no PATH entry to put one in". Since HE-D1, `yolo host --` composes the child's PATH itself
+// owns no PATH entry to put one in". Since HE-D16, `yolo host --` composes the child's PATH itself
 // (hostChildPath: the launch PATH, then the floor's bin/), so for this verb yolo does own one, for
 // that process only. `yolo host apply` still launches nothing and owns no PATH, so it writes no
 // file for the kind, which is delivered at launch only (render.HostAtLaunch).

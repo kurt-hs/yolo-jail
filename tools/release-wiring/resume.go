@@ -17,7 +17,7 @@ import (
 // and nothing after the tag left any state. It skips tag creation and goes on
 // from the Release dispatch under a fresh request run. Every precondition is
 // read-only and each one refuses rather than guessing; see
-// docs/design/pre-tag-release-gate.md, "Resuming a tag-only release".
+// docs/reference/release-process.md, "Resuming a tag-only release".
 
 const (
 	pypiProjectURL     = "https://pypi.org/pypi/yolo-jail/json"

@@ -7,8 +7,7 @@ token, no `~/.aws`.
 
 How it behaves:
 [`agent-credentials.md`'s SSO-backed Bedrock section](../../docs/reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth).
-Why: [`sso-backed-bedrock.md`](../../docs/design/sso-backed-bedrock.md), the graduated design
-and its decision ledger.
+Why: [the options weighed](../../docs/reference/agent-credentials.md#sso-options) and [the decision ledger](../../docs/reference/agent-credentials.md#sso-decision-ledger).
 
 ```
 host                                          jail
@@ -97,7 +96,7 @@ container-credentials provider in every SDK's chain, so the jail silently goes b
 using the whole permission set and every narrowing you configured is inert.
 
 That is the tempting option and it deserves naming rather than discovering. The design
-calls it [**option A, "mount the wallet"**](../../docs/design/sso-backed-bedrock.md#4-five-options),
+calls it [**option A, "mount the wallet"**](../../docs/reference/agent-credentials.md#sso-options),
 and refuses it: the jail gets every
 permission the permission set grants, plus the refresh token, plus every other profile
 in the file. It is also the only option that satisfies the refresh requirement for
@@ -127,7 +126,7 @@ SDK resolves, and a region-only config does not, so the entry is declared `certa
 The warning is printed on every such launch and cannot be switched off. `yolo check` predicts
 all three, the two refusals as FAIL and the grant as WARN, and `yolo pack footprint aws-auth`
 lists the three lines. Core names none of these variables; the rule is this pack's
-declaration ([`OQ-SSO8`](../../docs/design/sso-backed-bedrock.md#OQ-SSO8)).
+declaration ([`OQ-SSO8`](../../docs/reference/agent-credentials.md#OQ-SSO8)).
 
 "Delivers" means into the jail, through `env_sources` or a pack. A variable exported only in
 the shell you run `yolo` from never reaches the jail, so it is not refused, and an
@@ -275,7 +274,7 @@ the narrowing shown by a denied call, was run the same day: S3 and EC2 calls wer
 Bedrock answered. Step 5 is covered too: the
 maintainer's host logs the SSO profile out and back in every four hours, and running jails
 kept working across it with no relaunch. A turn during a longer lapse has not been watched. What was and was not observed is in
-[the design's evidence](../../docs/design/sso-backed-bedrock.md#11-evidence-and-how-to-re-check-it).
+[what has been watched running](../../docs/reference/agent-credentials.md#what-has-been-watched-running-1).
 The steps stay here for anyone trying it on another host.
 
 About 20–30 minutes on a Linux host with rootless podman, AWS CLI v2, a working

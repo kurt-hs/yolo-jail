@@ -57,8 +57,8 @@ func TestUnmetCapabilitiesCensusOfTheConfig(t *testing.T) {
 	}
 }
 
-// TestUnmetCapabilitiesCountsTheSelectedPacks is the census's pack half (agent-auth-modes.md
-// §6.1 clause 1, §6.2's "the active agent"), over selections resolved the way validation resolves
+// TestUnmetCapabilitiesCountsTheSelectedPacks is the census's pack half (docs/reference/mcp-configuration.md#the-capability-gate,
+// "the active agent"), over selections resolved the way validation resolves
 // them and profiles folded from the config's `profile` key, as `yolo check` hands them.
 func TestUnmetCapabilitiesCountsTheSelectedPacks(t *testing.T) {
 	cases := []struct {

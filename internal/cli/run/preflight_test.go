@@ -11,7 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
 
-// preflight_test.go pins OQ-CAP2's refusal (docs/design/agent-auth-modes.md §6.2): a
+// preflight_test.go pins OQ-CAP2's refusal (docs/reference/mcp-configuration.md#the-capability-gate): a
 // config that DECLARES it needs a capability, and declares nothing that provides it,
 // stops the launch instead of starting a jail whose agent discovers the hole at its
 // first request.
@@ -240,7 +240,7 @@ func TestTheRefusalNamesEachGapOnceInDeclarationOrder(t *testing.T) {
 	}
 }
 
-// --- A SELECTED PACK'S OWN DECLARATIONS (agent-auth-modes.md §6.1 clause 1) ---
+// --- A SELECTED PACK'S OWN DECLARATIONS (mcp-configuration.md#the-capability-gate) ---
 //
 // The cases above pin the census of the user's config. These pin its third surface: a pack
 // declares what its agent's built-in login does (`capabilities` on its `program`) and what the

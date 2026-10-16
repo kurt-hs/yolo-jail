@@ -56,7 +56,7 @@ func TestClaudeOnBedrockStartsOnlyOnAnAnthropicModel(t *testing.T) {
 	const opus = "global.anthropic.claude-opus-5-5"
 	const sol = "us.openai.gpt-6.1-sol"
 	pinned := func(id string) []string {
-		return []string{"ANTHROPIC_MODEL=" + id, "ANTHROPIC_DEFAULT_OPUS_MODEL=" + id,
+		return []string{"ANTHROPIC_DEFAULT_OPUS_MODEL=" + id,
 			"ANTHROPIC_DEFAULT_SONNET_MODEL=" + id, "ANTHROPIC_DEFAULT_HAIKU_MODEL=" + id,
 			"ANTHROPIC_SMALL_FAST_MODEL=" + id}
 	}
@@ -158,7 +158,7 @@ func TestClaudeOnBedrockTakesNothingItsOwnClientCannotUse(t *testing.T) {
 		got := la.channelEnv(t, claudeModelKeys...)
 		slices.Sort(got)
 		want := []string{"ANTHROPIC_DEFAULT_HAIKU_MODEL=" + opus, "ANTHROPIC_DEFAULT_OPUS_MODEL=" + opus,
-			"ANTHROPIC_DEFAULT_SONNET_MODEL=" + opus, "ANTHROPIC_MODEL=" + opus, "ANTHROPIC_SMALL_FAST_MODEL=" + opus}
+			"ANTHROPIC_DEFAULT_SONNET_MODEL=" + opus, "ANTHROPIC_SMALL_FAST_MODEL=" + opus}
 		if !slices.Equal(got, want) {
 			t.Errorf("claude's model env = %q, want every tier on %s", got, opus)
 		}
