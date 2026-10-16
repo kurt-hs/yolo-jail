@@ -219,7 +219,7 @@ root `sudo`: the host user writes every per-launch file into the host-owned stag
 `/Users/Shared/yolo-staged` (`macosuser.StagingRoot`), and every crossing into the sandbox account
 is `/usr/bin/sudo -n --user=_yolojail /usr/bin/env …`, the one rule `yolo macos-setup` installs
 (`macosuser.RunAsSandboxArgv`;
-[OQ-MP10](../design/macos-user-privilege-lifecycle.md#OQ-MP10)). The `-n` makes a missing rule fail
+[OQ-MP10](../design/macos-user-privilege-lifecycle.md#decision-ledger)). The `-n` makes a missing rule fail
 rather than prompt, and the launch asks for the rule before any of this
 ([`run-as-grant`](../../internal/macosuser/preconditions.go)):
 

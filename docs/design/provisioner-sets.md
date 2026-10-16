@@ -2178,7 +2178,7 @@ should `host` manage packages at all, to [`OQ-PS1`](#decision-ledger).
 **Narrowed 2026-09-29 by principle [`HP-DIR3`](host-tool-provisioning.md#HP-DIR3): at the
 host, `packages:` is permanently inert, not inert for now.** HP-DIR3 says that at the host
 yolo manages the agent's environment and never provisions the workspace's runtime, so yolo
-never provisions `packages:` there ([`OQ-PS1`](#OQ-PS1)'s narrowing). The host report names it
+never provisions `packages:` there ([`OQ-PS1`](#decision-ledger)'s narrowing). The host report names it
 inert, the same way [`OQ-NC8`](../plans/notch-convergence.md#7-decision-ledger)'s parity ruling names
 `mise_tools` inert at the host. Three consequences:
 

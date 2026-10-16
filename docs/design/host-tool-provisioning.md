@@ -600,7 +600,7 @@ empty environment, not `yolo host`.
 
    _Leaning:_ **(a).** `bin/` holds only floor names ([§3](#3-the-host-prefix)), and only ones
    nothing on the composed PATH provided at install time. A user who wants their own copy says
-   so through [OQ-PS7](provisioner-sets.md#OQ-PS7)'s override, and then the prefix never holds
+   so through [OQ-PS7](provisioner-sets.md#decision-ledger)'s override, and then the prefix never holds
    that name. It also matches the jail, where the launch dir precedes every install prefix.
 
    <!-- vantage: question id=OQ-HP2 -->
@@ -660,10 +660,10 @@ empty environment, not `yolo host`.
      verified against the release's published checksums, at a version yolo ships. It is raised to
      the highest `node_floor` a selected pack declares.
    - **(b)** The user's nix when present
-     ([OQ-PS1](provisioner-sets.md#OQ-PS1)).
+     ([OQ-PS1](provisioner-sets.md#decision-ledger)).
    - **(c)** The user's mise when present.
 
-   _Leaning:_ **(a)**, with (b) and (c) left to [OQ-PS6](provisioner-sets.md#OQ-PS6)'s ranking
+   _Leaning:_ **(a)**, with (b) and (c) left to [OQ-PS6](provisioner-sets.md#decision-ledger)'s ranking
    later. It is the only source present on every host, and it lives entirely inside the prefix.
 
    <!-- vantage: question id=OQ-HP4 -->

@@ -786,7 +786,7 @@ a macos-user launch hands it only to the services and doorways it runs outside t
    <!-- vantage: question id=OQ-3 leaning="A — the user's own login wins and refreshes through OpenAI by the marker dispatch; yolo's login serves only a missing or broker-marked entry. It fixes today's silent replacement without a file write and matches OQ-NC7 A; codex's precedent, OQ-OA3, is C's shape, which costs E's managed directory." -->
 
    _Leaning:_ A. It fixes today's silent replacement without a file write, so it composes with [OQ-1](#decision-ledger)'s
-   D2, and it matches [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A, where host claude keeps its own
+   D2, and it matches [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger) A, where host claude keeps its own
    login. The codex precedent is C's shape instead: `yolo host -- codex` uses the broker through a
    managed home while a direct host codex stays untouched
    ([OQ-OA3](../reference/agent-credentials.md#oq-oa3)). A keeps that second half, and C would cost E,

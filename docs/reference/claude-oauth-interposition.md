@@ -1027,7 +1027,7 @@ such a session. A `/login` there enrolls the machine, as a jail's does. Because 
 running yolo's own, it always keeps the view current; the refusal of a broker too old to do so
 ([CL-D28](../design/claude-login-without-interception.md#CL-D28)) went with the machine-wide broker.
 Without the switch nothing
-changes, which is [OQ-NC7](../plans/notch-convergence.md#OQ-NC7)'s ruling for every default user; making the view host Claude's default is
+changes, which is [OQ-NC7](../plans/notch-convergence.md#7-decision-ledger)'s ruling for every default user; making the view host Claude's default is
 this question's answer to give.
 
 ### The maintainer's words, and one phrase that is not theirs

@@ -288,7 +288,7 @@ without the part that keeps a stranger from asking.
 ### 3.6 Two later rulings that bear on C against D
 
 Moved here from [OQ-WT1](#OQ-WT1). Two later rulings point different ways, and neither is about a writable path.
-[OQ-EW1](agent-event-watchers.md#OQ-EW1) (A, 2026-09-29) refuses a helper that runs on the host from workspace
+[OQ-EW1](agent-event-watchers.md#14-decision-ledger) (A, 2026-09-29) refuses a helper that runs on the host from workspace
 config entirely. [OQ-BB7](boundary-broker.md#15-decision-ledger) (2026-09-29) lets agent-editable workspace state widen what
 a host-side broker may reach, once the config-change prompt approves it.
 

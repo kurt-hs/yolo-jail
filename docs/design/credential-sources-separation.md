@@ -663,7 +663,7 @@ works:
    2026-09-27; the jail half RULED 2026-10-05**
 
 
-   The filed cases and options, (i) and (ii), are in the [background](#background-to-oq-es5); the
+   The filed cases and options, (i) and (ii), are in the [background](#10-decision-ledger); the
    note under the Answer restates the options as (A) and (B).
 
    _Leaning:_ (ii). The flag needs four properties, following the 2026-09-26 acknowledgment rule
