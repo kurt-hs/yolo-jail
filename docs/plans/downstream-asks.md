@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Ratify OQ-DA2 and OQ-DA4, both built on their leanings; rule OQ-DA3 (a small diagnostics build); build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
+next: "Ratify OQ-DA2, built on its leaning; build asks 6 and 8 (OQ-ML4 and OQ-ML5, ruled 2026-10-16); ask 11 waits on its own owner; ask 10 was declined 2026-10-15"
 depends-on:
   - ../design/patched-forks.md#OQ-PFK6
   - ../design/patched-forks.md#OQ-PFK7
@@ -45,7 +45,7 @@ only where a question has no design doc of its own. The source handoff lives out
 | [6](#6-a-declared-model-row-loses-the-catalogs-thinking-levels) | a `models.json` row keeps pi's catalog thinking levels | ruled 2026-10-16, not built | [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) |
 | [7](#7-the-carry-key) | a `files` contribution may name a commit graph instead of a series | ruled 2026-10-15, not built | [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) |
 | [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | ruled 2026-10-16, not built | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
-| [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | partially landed | [OQ-DA3](#OQ-DA3) |
+| [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | declined 2026-10-16 (the skill half landed) | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
 | [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo's part built, off by default; waits on pi-subagents | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
 
@@ -67,7 +67,7 @@ only way to drop one element is to restate every sibling's — silently owning t
 
 **Landed.** A contribution can remove a named entry; removing an absent one is a no-op.
 
-**Owner.** [OQ-DA4](#OQ-DA4), open only for the maintainer to ratify what was built.
+**Owner.** [OQ-DA4](#OQ-DA4), ratified 2026-10-16.
 
 ## 2. A pack cannot declare the yolo version it needs
 
@@ -191,14 +191,14 @@ the consumer's design argues why `base` does not subsume it.
 **Ask.** A `yolo check` notice naming a `~/.pi/agent/APPEND_SYSTEM.md` that no projection mounts
 into a jail, pointing at the briefing audience as the route.
 
-**State.** `partially landed`. **Evidence:** the shipped `configuring-the-jail` skill states that
+**State.** `declined` 2026-10-16 for the notice ([OQ-DA3](#OQ-DA3)); the skill half landed. **Evidence:** the shipped `configuring-the-jail` skill states that
 the host's `~` is never projected and names `host_files` and the briefing route
 ([`SKILL.md`](../../internal/jailcontent/builtinskills/configuring-the-jail/SKILL.md)); the
 `yolo check` notice itself does not exist.
 
 **Landed.** `yolo check` prints the notice.
 
-**Owner.** [OQ-DA3](#OQ-DA3).
+**Owner.** [OQ-DA3](#OQ-DA3): declined 2026-10-16, so the notice will not be built.
 
 ## 10. Model auth for an isolated agent process
 
@@ -235,8 +235,8 @@ The mechanism asks owned by a design doc of their own are all ruled there:
 [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) (2026-10-15),
 [OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4) and
 [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) (2026-10-16), none built yet; [OQ-PFK7](../design/patched-forks.md#decision-ledger)
-is settled. Of the four with no other home, [OQ-DA1](#decision-ledger) is settled and the three below
-remain; two of them only await ratification of what was built.
+is settled. Of the four with no other home, [OQ-DA1](#decision-ledger), [OQ-DA3](#OQ-DA3) and [OQ-DA4](#OQ-DA4) are settled; the one below
+only awaits ratification of what was built.
 
 1. 💬 **OQ-DA2: What identity does a build carry beyond its revision?**
 
@@ -260,47 +260,11 @@ remain; two of them only await ratification of what was built.
    **Answer:**
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-DA3: Does `yolo check` warn about a bypassed `APPEND_SYSTEM.md`?**
-
-   Decides [ask 9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd)'s remaining half. The
-   skill already says the thing; the question is whether a diagnostic should repeat it.
-
-   - **A — Yes, warn at `yolo check` when a `~/.pi/agent/APPEND_SYSTEM.md` exists on the host.**
-   - **B — No.** The briefing skill is the one place the rule is stated; a second copy drifts.
-
-   <!-- vantage: question id=OQ-DA3 leaning="A: the skill reaches an agent only if it reads the skill, while `yolo check` is the tool a human runs when a projection is not taking effect, and the message is one line." -->
-
-   _Leaning:_ A: the skill reaches an agent only if it reads the skill, while `yolo check` is the
-   tool a human runs when a projection is not taking effect, and the message is one line.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 **OQ-DA4: Does `config-list` gain a `remove:` form?**
-
-   Decides [ask 1](#1-remove-for-config-list). *Since 2026-10-15* option A is built, with a
-   `profile` gate beside it; a ruling ratifies or reverses it. The kind's owner is
-   [`pack-system.md`](../reference/pack-system.md#adding-entries-to-an-array-config-list), whose
-   other live questions ([OQ-AL1](../reference/pack-system.md#oq-al1) to [OQ-AL4](../reference/pack-system.md#oq-al4)) share the additive-config-lists topic.
-
-   - **A — A `remove:` key taking the same entry shape as `add`**, applied after additions, a
-     removal of an absent entry being a no-op.
-   - **B — No.** Keep the kind additive; a pack that must drop an entry restates the array.
-   - **C — A `remove:` that takes a whole-array replacement instead**, leaving `config-overlay` as
-     the only mechanism for it (rejected: same effect, more ambiguity).
-
-   <!-- vantage: question id=OQ-DA4 leaning="A: it is the missing half of the kind, the leaking-ownership failure is real, and `OQ-AL3`'s own options already assume the mechanism can express a removal." -->
-
-   _Leaning:_ A: it is the missing half of the kind, the leaking-ownership failure is real, and
-   [`OQ-AL3`](../reference/pack-system.md#oq-al3)'s own options already assume the mechanism can
-   express a removal.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | — | A reduced-window child is the profile's declaration, not an automatic floor: `profiles.<name>.subagents.default` shipped instead. | 2026-10-12 | [ask 4](#4-a-reduced-window-child) | ✅ |
+| <a id="OQ-DA3"></a>[OQ-DA3](#OQ-DA3) | **Maintainer ruling, B — no `yolo check` notice.** *"I don't see how we could possibly do this YOLO check thing. That's like, how could you warn about every single possible thing that could go wrong? ... there's no way we can help with that one."* A host file in the user's own home that an agent reads (here pi's `~/.pi/agent/APPEND_SYSTEM.md`) reaches no jail by design; the shipped skill says so, and a pack's briefing is the route. Rejected: A, a check for one agent's file | 2026-10-16 | [ask 9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | — (nothing to build) |
+| <a id="OQ-DA4"></a>[OQ-DA4](#OQ-DA4) | **Maintainer ruling, A — `config-list` takes `remove:`**, ratifying what was built: *"of course we can say remove an entry. It seems super useful ... why would we not have this?"* An entry equal to a listed one leaves the array; an absent one is a no-op; within one contribution `remove` runs before `add`; a `profile` gate applies to both | 2026-10-16 | [ask 1](#1-remove-for-config-list) | ✅ `e57c7862c` |
 | OQ-DA1 | **Maintainer ruling, A — neither:** *"Nobody's running old versions."* No pack version declaration and no `yolo pack lint --for-version`. The unknown-field skip a launch has made since 0.12.0 and the source-skew refusal cover a pack ahead of its yolo. Rejected: B, an advisory declaration; C, a lint against an older build | 2026-10-15 | [ask 2](#2-a-pack-cannot-declare-the-yolo-version-it-needs) | — (nothing to build) |
