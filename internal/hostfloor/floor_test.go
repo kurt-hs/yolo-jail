@@ -956,3 +956,28 @@ func TestACaptureRecordedBeforeTheSurfaceItsProgramIsInIsRecapturedOnce(t *testi
 		t.Errorf("with no runtime: %s (%s), want no floor entry naming the step", st.Disposition, st.Reason)
 	}
 }
+
+// A PREPARED SELECTION'S CHECK IS BOUNDED BY THE INSTALL TIMEOUT, not the poll's (PD-NF8): on the
+// host it may retry a newer generation that failed, which installs, so a poll-sized bound would kill
+// a working retry and turn it into a refusal.
+func TestAPreparedSelectionOnAWarmFloorIsBoundedByTheInstallTimeout(t *testing.T) {
+	w := newWorld(t)
+	w.publish("opencode-ai", "1.0.0", "bin=opencode")
+	p := npmProgram("opencode", "opencode", "opencode-ai")
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	w.floor.PollTimeout = 10 * time.Millisecond
+	w.floor.InstallTimeout = 10 * time.Second
+	w.floor.PrepareNPM = func(ctx context.Context, _ Program, _ string, _ bool) (*PreparedNPM, error) {
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatalf("a prepared check longer than the poll bound failed the launch: %v", err)
+	}
+}

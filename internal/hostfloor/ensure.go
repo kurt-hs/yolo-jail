@@ -225,7 +225,7 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	selectedChanged := false
 	invalidatedCapture := false
 	if p.Install.Kind == "npm" && !f.ManualUpdate && f.PrepareNPM != nil {
-		selected, err := f.selectPreparedNPM(ctx, p, f.nodeBin(rec.Node), false, f.pollTimeout())
+		selected, err := f.selectPreparedNPM(ctx, p, f.nodeBin(rec.Node), false, f.installTimeout())
 		if err != nil {
 			return st, Kept, err
 		}
