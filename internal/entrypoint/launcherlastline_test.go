@@ -73,34 +73,47 @@ func TestInstallOnlyModeSaysAFailedInstallFailed(t *testing.T) {
 }
 
 // Update mode runs nothing, so an update that failed leaves the installed version where it is, and
-// the line says that and how to retry; a launch due the same update still runs the installed one.
+// the line says that and how to retry. A launch due the same update REFUSES when its upstream
+// answered (PD-NF1): the ERROR line, Repair: and the hatch, and nothing runs. One whose upstream
+// cannot be reached could not check (PD-NF3), and still runs the installed version, saying so.
 func TestAFailedUpdateSaysWhatEachModeDoesNext(t *testing.T) {
-	url := installerURL(t, "#!/bin/bash\nexit 0\n")
+	up := installerURL(t, "#!/bin/bash\nexit 0\n")
+	down := silentHost(t)
 	for _, tc := range []struct {
 		name string
+		url  string
 		env  []string
-		want string
+		want []string
+		ran  bool
 	}{
-		{"yolo pack update", []string{packUpdateEnv},
-			"  ⚠ misnative: update failed (status 3) — the installed version stays. Run 'yolo pack update' again to retry.\n"},
-		{"a launch due an update", nil,
-			"  ⚠ misnative: update failed (status 3) — running the installed version.\n"},
+		{"yolo pack update", up, []string{packUpdateEnv},
+			[]string{"  ⚠ misnative: update failed (status 3) — the installed version stays. Run 'yolo pack update' again to retry.\n"}, false},
+		{"a launch due an update", up, nil,
+			[]string{"yolo: ERROR: misnative: its update (misnative selfupdate) failed (status 3)\n",
+				"\nRepair:\n", "    misnative\n", "\nStart anyway:\n",
+				useInstalledLines("misnative", "misnative", "version")}, false},
+		{"a launch due an update its upstream cannot answer", down, nil,
+			[]string{"  misnative: its update (misnative selfupdate) failed (status 3), and its upstream could not be reached to check for a newer version — running what is installed.\n"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, pathEnv, _ := misplacedFixture(t, `{"kind":"program","bin":"misnative","via":"installer",`+
-				`"url":"`+url+`","update":["selfupdate"]}`)
+				`"url":"`+tc.url+`","update":["selfupdate"]}`)
 			realBin := filepath.Join(e.Home, ".local", "bin", "misnative")
 			writeTestFile(t, realBin, "#!/bin/sh\nif [ \"$1\" = selfupdate ]; then exit 3; fi\necho RAN_INSTALLED\n")
 			if err := os.Chmod(realBin, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			out, _ := runGeneratedLauncher(t, e, pathEnv, "misnative", tc.env...)
-			if !strings.Contains(out, tc.want) {
-				t.Errorf("the failed update does not say\n%s\ngot:\n%s", tc.want, out)
+			out, rc := runGeneratedLauncher(t, e, pathEnv, "misnative", tc.env...)
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("the failed update does not say\n%s\ngot:\n%s", want, out)
+				}
 			}
-			ran := strings.Contains(out, "RAN_INSTALLED")
-			if ran != (tc.env == nil) {
-				t.Errorf("ran the installed version: %v, want %v:\n%s", ran, tc.env == nil, out)
+			if ran := strings.Contains(out, "RAN_INSTALLED"); ran != tc.ran {
+				t.Errorf("ran the installed version: %v, want %v:\n%s", ran, tc.ran, out)
+			}
+			if tc.env == nil && !tc.ran && rc != UpdateRefusedStatus {
+				t.Errorf("a refused launch exits %d, want %d", rc, UpdateRefusedStatus)
 			}
 		})
 	}

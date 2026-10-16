@@ -5,6 +5,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -136,7 +137,8 @@ REFRESH_ONLY_IF_CONTAINS=(__YOLO_REFRESH_ONLY_IF_CONTAINS__)
 //
 // It writes nothing to the terminal once the program runs. The launch says ONE line, before the
 // exec, naming the log; a job that did not succeed leaves REFRESH_RESULT, which the next launch
-// prints once and deletes.
+// prints once and deletes — except a FAILED act whose upstream answered, which the next launch
+// retries in front of the program and refuses on if it fails again (PD-NF1, _refresh_report_last).
 //
 // A job that never reaches its own ending is reported too. A podman or Apple Container jail that
 // exits SIGKILLs every process in it, so no trap of the job's runs: its lock is left behind, to age
@@ -375,6 +377,8 @@ _refresh_act() {
     # it records is past UPDATE_INTERVAL (XB-D26), not at every launch an offline hour makes.
     if [ "$rc" = 0 ]; then
         _refresh_record_seen || true
+        # A refresh that succeeded clears a failed background refresh's report (_refresh_report_last).
+        rm -f "$REFRESH_RESULT" 2>/dev/null || true
     else
         _refresh_record_failed || true
     fi
@@ -396,17 +400,63 @@ _refresh_note_result() {
         mv -f "$REFRESH_RESULT.tmp" "$REFRESH_RESULT" 2>/dev/null || true
 }
 
+# _refresh_note_failed WHAT leaves a FAILED result (PD-NF1): the job's act failed and its upstream
+# answered. Its first line is "failed", which _refresh_report_last acts on rather than only says.
+_refresh_note_failed() {
+    {
+        printf 'failed\n'
+        printf '  ⚠ %s: the background refresh (%s) %s — its log is %s.\n' \
+            "$BIN" "${REFRESH_ARGV[*]}" "$1" "$REFRESH_LOG"
+    } > "$REFRESH_RESULT.tmp" 2>/dev/null &&
+        mv -f "$REFRESH_RESULT.tmp" "$REFRESH_RESULT" 2>/dev/null || true
+}
+
+# _REFRESH_RETRY is 1 once _refresh_report_last found a FAILED background refresh: this launch runs
+# the refresh again IN FRONT of the program, whatever the stamp and the timing say, and refuses if it
+# fails again with its upstream reachable (PD-NF1).
+_REFRESH_RETRY=0
+
 # _refresh_report_last says, once, how the last background refresh this home started ended, when
 # it did not succeed. A success leaves nothing to say. A PROVISIONAL result is the job's own
 # "did not finish", which the job replaces under its lock when its act ends: while the lock still
 # carries the job's token and is no older than STALE_LOCK the job may still be running, so it waits
 # for a later launch. Read once, so what is said is one whole result.
+#
+# A FAILED result (the job's act failed and its upstream answered) is not only said (PD-NF1): under
+# the user's hatch it is said, deleted, and what is installed runs; otherwise it is said and KEPT, and
+# this launch retries the refresh in front of the program (_REFRESH_RETRY), refusing if that fails as
+# well. THE CLEAR RULE: a failed result is deleted by a refresh that succeeds (foreground or
+# background, _refresh_act), by a launch the hatch covers, and by a retry that could not reach the
+# upstream (nothing is then known to be newer); a refused retry keeps it, so the next launch retries in
+# front again rather than starting a background refresh and running the older version meanwhile.
 _refresh_report_last() {
     [ -s "$REFRESH_RESULT" ] || return 0
     local said first nl='
 '
     { said=$(<"$REFRESH_RESULT"); } 2>/dev/null || return 0
     first=${said%%"$nl"*}
+    if [ "$first" = "failed" ]; then
+        case $said in
+        *"$nl"*) said=${said#*"$nl"} ;;
+        *) said="" ;;
+        esac
+        [ -z "$said" ] || printf '%s\n' "$said" >&2
+        # An agent_updates hold (UPDATES_ENABLED, which _refresh_due is otherwise the only reader of)
+        # runs what is installed, as it does for every update act: no retry, so no refusal.
+        if [ "$UPDATES_ENABLED" != "1" ]; then
+            echo "  $BIN: agent_updates holds its updates, so it is not retried — running what is installed." >&2
+            rm -f "$REFRESH_RESULT" 2>/dev/null || true
+            return 0
+        fi
+        if _yolo_use_installed; then
+            echo "  $BIN: running what is installed, as ` + patchrecovery.UseInstalledEnv + ` asks." >&2
+            rm -f "$REFRESH_RESULT" 2>/dev/null || true
+            return 0
+        fi
+        echo "  $BIN: retrying it before $BIN starts." >&2
+        _REFRESH_RETRY=1
+        return 0
+    fi
     if [ "${first%% *}" = "pending" ]; then
         if [ -d "$REFRESH_LOCK" ] &&
             [ "$(_refresh_lock_owner)" = "${first#pending }" ] &&
@@ -469,14 +519,19 @@ _refresh_job() {
 # one. Both run under the lock, inside the shield, so a launch that finds the lock released finds
 # the result final.
 _refresh_job_act() {
-    local rc=0 retry="A launch after an hour tries again; to retry now, run: $BIN ${REFRESH_ARGV[*]}"
+    local rc=0
     _refresh_act detached || rc=$?
     if [ "$rc" = 0 ]; then
         rm -f "$REFRESH_RESULT" 2>/dev/null || true
+    elif ! _yolo_registry_reachable; then
+        # COULD NOT CHECK (PD-NF3): its upstream did not answer, so nothing says a newer version
+        # exists. Nothing for the next launch to act on; the log says what happened.
+        echo "--- the refresh did not succeed, and the npm registry could not be reached to check for a newer version."
+        rm -f "$REFRESH_RESULT" 2>/dev/null || true
     elif [ "$rc" = 124 ]; then
-        _refresh_note_result "timed out after ${UPDATE_TIMEOUT}s" "$retry"
+        _refresh_note_failed "timed out after ${UPDATE_TIMEOUT}s"
     else
-        _refresh_note_result "failed (status $rc)" "$retry"
+        _refresh_note_failed "failed (status $rc)"
     fi
     return "$rc"
 }
@@ -518,18 +573,24 @@ if [ "${_YOLO_REFRESH_JOB:-}" = "$BIN" ]; then
     exit 0
 fi
 
-# _prelaunch_refresh ALWAYS RETURNS 0: launching the program outranks refreshing it (§4.1
-# invariant 2), so no outcome here may stop the exec below. What varies is what it says.
+# _prelaunch_refresh RETURNS 0 or STOPS THE COMMAND. Launching the program outranks refreshing it
+# (§4.1 invariant 2) for every outcome but one: a refresh that failed while its upstream answered,
+# which refuses (PD-NF1) unless the user's hatch covers the program. A held lock, a store it cannot
+# write, an unreachable upstream and a Ctrl-C all still run what is installed.
 _prelaunch_refresh() {
     [ "$HAS_REFRESH" = "1" ] || return 0
     [ -x "$REAL_BIN" ] || return 0
     _refresh_report_last
-    _refresh_worth || return 0
-    _refresh_due || return 0
+    if ! _refresh_worth; then
+        # Nothing here is worth refreshing any more, so a failed result has nothing to retry.
+        if [ "$_REFRESH_RETRY" = 1 ]; then rm -f "$REFRESH_RESULT" 2>/dev/null || true; fi
+        return 0
+    fi
+    [ "$_REFRESH_RETRY" = 1 ] || _refresh_due || return 0
     # NEXT-LAUNCH (OQ-PD30): the refresh runs behind the program instead of in front of it —
     # unless this launch's watched content is new, which is the first install of what the
-    # settings name, and stays in front (OQ-PD31).
-    if [ "$REFRESH_TIMING" = "next-launch" ] && ! _refresh_content_unseen; then
+    # settings name, and stays in front (OQ-PD31), or a background refresh failed (_REFRESH_RETRY).
+    if [ "$REFRESH_TIMING" = "next-launch" ] && [ "$_REFRESH_RETRY" != 1 ] && ! _refresh_content_unseen; then
         local brc=0
         _refresh_in_background || brc=$?
         if [ "$brc" = 0 ]; then
@@ -585,11 +646,19 @@ _prelaunch_refresh() {
     if [ "$rc" = 0 ]; then
         :
     elif [ "$_YOLO_INTERRUPTED" = 1 ]; then
+        # The user's own Ctrl-C is the hatch at that moment (PD-NF4).
         echo "  ⚠ $BIN: the pre-launch refresh was interrupted (Ctrl-C) — running what is installed." >&2
-    elif [ "$rc" = 124 ]; then
-        echo "  ⚠ $BIN: the pre-launch refresh timed out after ${UPDATE_TIMEOUT}s — running what is installed." >&2
     else
-        echo "  ⚠ $BIN: the pre-launch refresh failed (status $rc) — running what is installed." >&2
+        # A FAILED REFRESH has no version query (PD-NF3): its upstream decides. Unreachable runs
+        # what is installed, said in one line, and clears a failed background result (nothing is
+        # known to be newer); reachable REFUSES (PD-NF1), with the refresh's stamp removed so the
+        # next launch retries it rather than running the older content for an hour. A launch the
+        # hatch covers clears the background result too.
+        _yolo_failed_act "$rc" "the pre-launch refresh (${REFRESH_ARGV[*]})" _yolo_registry_reachable
+        if [ -z "$_YOLO_FAIL_HEAD" ] || _yolo_use_installed; then
+            rm -f "$REFRESH_RESULT" 2>/dev/null || true
+        fi
+        _yolo_refuse_failed "$REFRESH_STAMP"
     fi
     return 0
 }

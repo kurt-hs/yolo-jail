@@ -103,6 +103,9 @@ type prelaunchProbe struct {
 	probe []string
 	// servers is the baked MCP server set; empty, so no server refresh, unless a cell sets it.
 	servers launcherServers
+	// registry is fakeRegistryDir, first on every run's PATH, so a failed refresh's registry probe
+	// (PD-NF3) reaches no network; a cell passes registryDownEnv to make it unreachable.
+	registry string
 }
 
 // newPrelaunchProbe seeds a fake program at REAL_BIN (so the launch path, not the cold-install
@@ -204,6 +207,16 @@ func (p *prelaunchProbe) write(t *testing.T) {
 // stderr SEPARATELY — the refresh's output must land on the second, never the first.
 func (p *prelaunchProbe) run(t *testing.T, pathPrefix string, env ...string) (stdout, stderr string) {
 	t.Helper()
+	stdout, stderr, err := p.runStatus(t, pathPrefix, env...)
+	if err != nil {
+		t.Fatalf("launcher failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	return stdout, stderr
+}
+
+// runStatus is run without the verdict: the launcher's exit error, nil on success.
+func (p *prelaunchProbe) runStatus(t *testing.T, pathPrefix string, env ...string) (stdout, stderr string, err error) {
+	t.Helper()
 	p.write(t)
 	cmd := exec.Command(p.script)
 	cmd.Dir = p.home
@@ -211,6 +224,12 @@ func (p *prelaunchProbe) run(t *testing.T, pathPrefix string, env ...string) (st
 	if p.path != "" {
 		path = p.path
 	}
+	// The registry stand-in goes ahead of the PATH it was given and behind a cell's own prefix,
+	// whose fakes (an npm of its own) must still win.
+	if p.registry == "" {
+		p.registry = fakeRegistryDir(t)
+	}
+	path = p.registry + ":" + path
 	if pathPrefix != "" {
 		path = pathPrefix + ":" + path
 	}
@@ -221,10 +240,8 @@ func (p *prelaunchProbe) run(t *testing.T, pathPrefix string, env ...string) (st
 	if p.stderrWatch != nil {
 		cmd.Stderr = io.MultiWriter(&errb, p.stderrWatch)
 	}
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("launcher failed: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errb.String())
-	}
-	return out.String(), errb.String()
+	err = cmd.Run()
+	return out.String(), errb.String(), err
 }
 
 func (p *prelaunchProbe) logLines(t *testing.T) []string { return logLines(t, p.log) }
@@ -462,10 +479,13 @@ func TestPrelaunchRefreshNamesWhatToCheckWhenTheStoreIsThereButTheLockIsNot(t *t
 // program still runs.
 func TestPrelaunchRefreshFailureStillLaunches(t *testing.T) {
 	p := newPrelaunchProbe(t, false)
-	stdout, stderr := p.run(t, "", "FAKE_REFRESH_RC=3")
+	// OFFLINE: the registry cannot be reached, so nothing says a newer version exists and the
+	// failure is not one the launch stops on (PD-NF1). One whose registry answered refuses:
+	// TestAFailedPrelaunchRefreshWhoseRegistryAnswersRefuses.
+	stdout, stderr := p.run(t, "", "FAKE_REFRESH_RC=3", registryDownEnv)
 	log := p.logLines(t)
-	if !strings.Contains(stderr, "pre-launch refresh failed (status 3)") {
-		t.Errorf("the failure must be reported with its status:\n%s", stderr)
+	if !strings.Contains(stderr, "pre-launch refresh (update --extensions) failed (status 3), and its upstream could not be reached") {
+		t.Errorf("the failure must be reported with its status and why the launch goes on:\n%s", stderr)
 	}
 	if _, err := os.Stat(p.stampPath()); err != nil {
 		t.Errorf("a failed refresh must still stamp (§4.1 invariant 3): %v", err)
@@ -481,14 +501,16 @@ func TestPrelaunchRefreshFailureStillLaunches(t *testing.T) {
 // timeout. DETACHED, yolo's bounded no-terminal verb (the stand-in runs the real one) ends a
 // refresh that would block for twenty seconds once the shortened bound has passed. With no yolo,
 // the FALLBACK is GNU timeout with the same grace, in the terminal's foreground group: a fake
-// timeout records its argv, then either runs the command or reports expiry.
+// timeout records its argv, then either runs the command or reports expiry. The registry cannot
+// be reached in these cells, so the program then runs (PD-NF3); a timeout whose registry answers
+// refuses (TestAFailedPrelaunchRefreshWhoseRegistryAnswersRefuses).
 func TestPrelaunchRefreshIsBoundedByUpdateTimeout(t *testing.T) {
 	t.Run("detached", func(t *testing.T) {
 		p := newPrelaunchProbe(t, false)
 		p.path = yoloStandIn(t) + ":" + pathWithout(t, "yolo")
 		p.bodyPatch = map[string]string{"\nUPDATE_TIMEOUT=60 ": "\nUPDATE_TIMEOUT=1 ", "\nUPDATE_GRACE=5\n": "\nUPDATE_GRACE=1\n"}
 		begun := time.Now()
-		stdout, stderr := p.run(t, "", "FAKE_REFRESH_WAIT="+filepath.Join(p.home, "never"))
+		stdout, stderr := p.run(t, "", "FAKE_REFRESH_WAIT="+filepath.Join(p.home, "never"), registryDownEnv)
 		if took := time.Since(begun); took > 12*time.Second {
 			t.Errorf("the refresh outlived its 1s bound by %s", took)
 		}
@@ -527,7 +549,7 @@ func TestPrelaunchRefreshIsBoundedByUpdateTimeout(t *testing.T) {
 		if err := os.Remove(p.log); err != nil {
 			t.Fatal(err)
 		}
-		stdout, stderr := p.run(t, fake, "FAKE_TIMEOUT_EXPIRE=1")
+		stdout, stderr := p.run(t, fake, "FAKE_TIMEOUT_EXPIRE=1", registryDownEnv)
 		if !strings.Contains(stderr, "timed out after 60s") {
 			t.Errorf("an expired bound must be reported as a timeout:\n%s", stderr)
 		}

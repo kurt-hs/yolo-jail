@@ -143,7 +143,7 @@ func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDi
 		"__YOLO_EXEC_PREFIX__", token,
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(launchFlagSplices(flags), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplices(inst, true)...)...)...)
+	}, append(append(append(launchFlagSplices(flags), useInstalledSplices(inst.Bin, inst.ForkedBy)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplices(inst, true)...)...)...)
 	return strings.Split(r.Replace(sourceLauncherTemplate), token)
 }
 
@@ -261,10 +261,15 @@ if [ "${` + InstallOnlyEnv + `:-}" = "1" ]; then
 fi
 
 _refresh_servers() {
+    local rc=0
     command -v yolo >/dev/null 2>&1 || return 0
     YOLO_BYPASS_SHIMS=1 yolo internal refresh-servers \
         --home="$HOME" --npm="$SERVERS_NPM" \
-        --updates="$UPDATES_ENABLED" >&2 || true
+        --updates="$UPDATES_ENABLED" --bin="$BIN" >&2 || rc=$?
+    # UPDATE_REFUSED is a server whose NEWER version did not install (PD-NF1): the subcommand has
+    # said the refusal, and the command stops. Any other status is advisory, as above.
+    if [ "$rc" = "$UPDATE_REFUSED" ]; then exit "$UPDATE_REFUSED"; fi
+    return 0
 }
 
 if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then

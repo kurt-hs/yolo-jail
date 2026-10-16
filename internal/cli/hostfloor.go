@@ -220,6 +220,9 @@ func wireFloorCapture(f *hostfloor.Floor, out io.Writer) {
 		} else {
 			rc = hostFloorCaptureAct([]string{bin}, out, out, false)
 		}
+		if rc == captureBusyStatus {
+			return fmt.Errorf("`yolo capture %s` exited %d: %w", bin, rc, hostfloor.ErrCaptureBusy)
+		}
 		if rc != 0 {
 			return fmt.Errorf("`yolo capture %s` exited %d", bin, rc)
 		}
@@ -1325,9 +1328,12 @@ func hostRefreshProgram(packs []*packload.Pack, cmd0 string) (hostfloor.Program,
 // hostPrelaunchRefresh runs prog's pre-launch refresh against target, the binary the launch is about
 // to exec, through the machine's floor (Floor.PrelaunchRefresh: its stamp, its lock and the
 // `agent_updates` policy), in the environment refreshEnviron builds, its lines and its output on
-// errw. It returns 0 to go on — a refresh that failed, timed out or was interrupted with Ctrl-C
-// included, since launching the program outranks refreshing it — and the status to end the launch
-// with when a SIGTERM or SIGHUP stopped the refresh, as the jail's launcher ends.
+// errw. It returns 0 to go on: a refresh that ran, was not due, found its lock held, was
+// interrupted with Ctrl-C (PD-NF4), or failed or timed out while its npm registry could not be
+// reached (could not check, PD-NF3), or one YOLO_USE_INSTALLED runs past. A refresh that failed or
+// timed out with its registry answering REFUSES (PD-NF1): the floor has printed the refusal block
+// and this returns 1. A SIGTERM or SIGHUP that stopped the refresh returns the status to end the
+// launch with, as the jail's launcher ends.
 func hostPrelaunchRefresh(launch *hostComposition, prog hostfloor.Program, progs []hostfloor.Program,
 	target, childPath string, errw io.Writer) int {
 	return hostPrelaunchRefreshMode(launch, prog, progs, target, childPath, errw, false)
@@ -1348,6 +1354,10 @@ func hostPrelaunchRefreshMode(launch *hostComposition, prog hostfloor.Program, p
 		res = floor.PrelaunchRefresh(prog, target, launch.refreshEnviron(childPath))
 	}
 	if !fresh {
+		// A FAILED REFRESH STOPS THE LAUNCH (PD-NF1): the block names the repair and the hatch.
+		if rc := refreshRefusalExit(res, prog.Bin(), errw); rc != 0 {
+			return rc
+		}
 		if res.Outcome != hostfloor.RefreshStopped {
 			return 0
 		}

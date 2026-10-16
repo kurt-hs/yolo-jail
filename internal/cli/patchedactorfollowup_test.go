@@ -710,10 +710,15 @@ func TestPatchActorOpaqueUnavailableDeduplicatesAndLaterRetries(t *testing.T) {
 		_, trees := runBuildSlot(run.BuildSlotRequest{Trees: &req}, &output, false)
 		delivered := trees[treeKeyCLI]
 		current, err := store.LoadCheckRecord(treeKeyCLI)
-		if delivered.Dir == "" || delivered.Entry != old.Entry || delivered.PatchFailure != nil || len(fx.builds) != beforeBuilds ||
+		// AN UNCLASSIFIED APPLY ERROR STOPS THE LAUNCH (PD-NF1, superseding PF-D45's serving) beside the
+		// admitted tree a hatch would run, as a failed newer build does — never as a typed patch failure,
+		// which only the local replay's verdict writes.
+		pf := delivered.PatchFailure
+		if delivered.Dir == "" || delivered.Entry != old.Entry || pf == nil || pf.Kind != packsrc.PatchFailureBuild ||
+			pf.Cause != packsrc.BuildCauseReplay || pf.Target.Tag != "v1.2.0" || len(fx.builds) != beforeBuilds ||
 			err != nil || current.PatchFailure != nil || current.ApplyErrAtLastCheck() == nil || current.ApplyErr.Legacy == nil ||
 			current.ApplyErr.Legacy.State != "unavailable" || current.ApplyErr.Legacy.Target.Tag != "v1.2.0" {
-			t.Fatalf("unavailable opaque attempt %d became fatal or lost evidence: delivery=%+v record=%+v builds=%d/%d err=%v\n%s",
+			t.Fatalf("unavailable opaque attempt %d did not stop on the apply error, or lost evidence: delivery=%+v record=%+v builds=%d/%d err=%v\n%s",
 				attempt+1, delivered, current, len(fx.builds), beforeBuilds, err, output.String())
 		}
 	}

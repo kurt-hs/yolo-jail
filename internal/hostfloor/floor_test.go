@@ -294,8 +294,10 @@ func TestManualUpdateStillRespectsFixedNpmVersion(t *testing.T) {
 	}
 }
 
-// TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval.
-func TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval(t *testing.T) {
+// TestAFailedUpdateRefusesAndTheNextLaunchRetries is PD-NF1 for an npm program: a newer release
+// found and its install failing is a refusal, never the installed version run with a warning, and
+// its stamp is taken back so the next launch tries again rather than running 1.0.0 for an hour.
+func TestAFailedUpdateRefusesAndTheNextLaunchRetries(t *testing.T) {
 	w := newWorld(t)
 	clk := &clock{t: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
 	w.floor.Now = clk.now
@@ -307,13 +309,21 @@ func TestAFailedUpdateKeepsTheInstalledVersionAndWaitsOutTheInterval(t *testing.
 	w.publish("opencode-ai", "2.0.0", "bin=opencode", "fail")
 	clk.t = clk.t.Add(2 * time.Hour)
 	st, outcome, err := w.floor.Ensure(context.Background(), p)
-	if err != nil || outcome != Kept || st.Record.Version != "1.0.0" {
-		t.Fatalf("failed update: outcome %s, record %+v, err %v", outcome, st.Record, err)
+	var refusal *UpdateRefusal
+	if !errors.As(err, &refusal) || outcome == Kept || refusal.Installed != "1.0.0" || refusal.Newer != "2.0.0" {
+		t.Fatalf("failed update: outcome %s, err %v (%+v)", outcome, err, refusal)
+	}
+	if st.Record == nil || st.Record.Version != "1.0.0" {
+		t.Errorf("a refused update moved the record: %+v", st.Record)
+	}
+	if strings.Contains(w.out.String(), "running the installed") {
+		t.Errorf("a refused update still said it runs the installed version:\n%s", w.out)
 	}
 	polls := len(w.npmCalls("view"))
 	clk.t = clk.t.Add(10 * time.Minute)
-	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil || len(w.npmCalls("view")) != polls {
-		t.Errorf("a failed update was retried inside the interval (%d polls, was %d)", len(w.npmCalls("view")), polls)
+	if _, _, err := w.floor.Ensure(context.Background(), p); !errors.As(err, &refusal) || len(w.npmCalls("view")) != polls+1 {
+		t.Errorf("the launch after a refused update: %v, %d polls (was %d), want it retried and refused again",
+			err, len(w.npmCalls("view")), polls)
 	}
 }
 
@@ -944,5 +954,30 @@ func TestACaptureRecordedBeforeTheSurfaceItsProgramIsInIsRecapturedOnce(t *testi
 	other.floor.CaptureUnavailable = func() string { return "no container runtime (podman) is on PATH" }
 	if st := other.floor.Status(codex); st.Disposition != NoEntry || !strings.Contains(st.Reason, "recaptures it") {
 		t.Errorf("with no runtime: %s (%s), want no floor entry naming the step", st.Disposition, st.Reason)
+	}
+}
+
+// A PREPARED SELECTION'S CHECK IS BOUNDED BY THE INSTALL TIMEOUT, not the poll's (PD-NF8): on the
+// host it may retry a newer generation that failed, which installs, so a poll-sized bound would kill
+// a working retry and turn it into a refusal.
+func TestAPreparedSelectionOnAWarmFloorIsBoundedByTheInstallTimeout(t *testing.T) {
+	w := newWorld(t)
+	w.publish("opencode-ai", "1.0.0", "bin=opencode")
+	p := npmProgram("opencode", "opencode", "opencode-ai")
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	w.floor.PollTimeout = 10 * time.Millisecond
+	w.floor.InstallTimeout = 10 * time.Second
+	w.floor.PrepareNPM = func(ctx context.Context, _ Program, _ string, _ bool) (*PreparedNPM, error) {
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if _, _, err := w.floor.Ensure(context.Background(), p); err != nil {
+		t.Fatalf("a prepared check longer than the poll bound failed the launch: %v", err)
 	}
 }

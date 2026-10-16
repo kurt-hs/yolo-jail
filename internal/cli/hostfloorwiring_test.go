@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -163,6 +164,53 @@ func TestTheProductionFloorsRefreshRecapturesAnInstallerAgentThroughTheCaptureAc
 		if out, err := cmd.CombinedOutput(); err != nil || string(out) != want {
 			t.Errorf("launch %d: the floor's copy ran %q (%v), want %q\n%s", i+1, out, err, want, errw.String())
 		}
+	}
+}
+
+// TestTheProductionFloorRunsTheInstalledCopyWhileAnotherCaptureHoldsTheLock drives newHostFloor's
+// own Capture wiring past a busy capture lock (PD-NF5): the recapture's act exits captureBusyStatus,
+// as `yolo capture` does when another capture of the program is running, and the launch runs the
+// installed copy with a line saying so, rather than probing the upstream and refusing.
+func TestTheProductionFloorRunsTheInstalledCopyWhileAnotherCaptureHoldsTheLock(t *testing.T) {
+	nativeFloorFixture(t)
+	orig := newHostFloor
+	newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Floor {
+		f := productionHostFloor(out, progs)
+		f.GOOS = "linux"
+		f.Node.BaseURL = "http://127.0.0.1:1/test-guard-no-node-download"
+		f.UpdateInterval, f.CaptureRefreshAge = time.Nanosecond, time.Nanosecond
+		f.ProbeUpstream = func(context.Context, string) error { return nil }
+		return f
+	}
+	t.Cleanup(func() { newHostFloor = orig })
+	t.Setenv("YOLO_RUNTIME", "podman")
+	stubBins(t, "podman")
+	calls := 0
+	origAct := hostFloorCaptureAct
+	hostFloorCaptureAct = func(args []string, out, errw io.Writer, color bool) int {
+		calls++
+		if calls > 1 {
+			return captureBusyStatus
+		}
+		admitRelocatableCapture(t, args[0], "#!/bin/sh\necho nativecli capture 1\n")
+		return 0
+	}
+	t.Cleanup(func() { hostFloorCaptureAct = origAct })
+
+	got := captureHostExec(t)
+	launcher := filepath.Join(paths.HostFloorDir(), "bin", "nativecli")
+	for i := 1; i <= 2; i++ {
+		time.Sleep(time.Millisecond)
+		var errw bytes.Buffer
+		if rc := hostExec(nil, []string{"nativecli"}, io.Discard, &errw, nil); rc != 0 || got.target != launcher {
+			t.Fatalf("launch %d: rc=%d target=%s, want the floor's copy run\n%s", i, rc, got.target, errw.String())
+		}
+		if i == 2 && !strings.Contains(errw.String(), "another `yolo capture nativecli` is in progress; running the installed") {
+			t.Errorf("launch 2 did not say another capture is in progress:\n%s", errw.String())
+		}
+	}
+	if calls != 2 {
+		t.Errorf("the capture act ran %d times, want 2", calls)
 	}
 }
 
