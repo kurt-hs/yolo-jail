@@ -326,7 +326,7 @@ a key while Bedrock's is the AWS chain ([BR-D10](../design/bedrock-plumbing.md#B
 | claude | `CLAUDE_CODE_USE_BEDROCK` | the switch, `AWS_REGION` from the provider's `region`, and a model only as above |
 | codex | built-in `amazon-bedrock-runtime` | `model_provider = "amazon-bedrock-runtime"`, `model`, and `[model_providers.amazon-bedrock-runtime.aws] region` only for a provider-declared region; no other field, since codex refuses them |
 | opencode | built-in `amazon-bedrock` | `provider["amazon-bedrock"]` with the list's models and `options.region` only for a provider-declared region, no `npm` and no endpoint; `model` and `small_model` `amazon-bedrock/<id>`, `enabled_providers` naming it; as a later entry of an [active set](#an-active-set-several-profiles-for-one-agent), the same row, and `amazon-bedrock` in `enabled_providers` after the entries before it |
-| pi | built-in `amazon-bedrock` on Converse | `providers["amazon-bedrock"].models` in models.json with each entry's facts and no `baseUrl`, `api` or `apiKey`; `defaultProvider`/`defaultModel`, `enabledModels` and pi-subagents' policy over the list; `AWS_REGION` from the provider's `region` in pi's environment |
+| pi | built-in `amazon-bedrock` on Converse | `providers["amazon-bedrock"].models` in models.json with each entry's facts and no `baseUrl`, `api` or `apiKey`; `defaultProvider`/`defaultModel` and `enabledModels` over the list, and pi-subagents' policy over it under an `only` (else all of `amazon-bedrock`); the same rows in `yolo-model-lists.json` as `keep_catalog`, so the extension merges each over pi's catalog entry; `AWS_REGION` from the provider's `region` in pi's environment |
 
 opencode reads `AWS_REGION` and not `AWS_DEFAULT_REGION`, and falls back to `us-east-1`, so its
 pack says so under `platform_regions` and [the region preflight](#the-region-preflight) counts
@@ -1274,7 +1274,7 @@ What each agent actually receives, from one composed table and one selection:
 | Agent | Catalog | Selection |
 | :--- | :--- | :--- |
 | codex | `~/.codex/config.toml` `[model_providers.<id>]` (TOML); never a row for `openai-codex` | top-level `model_provider` + `model`; `model` alone for `openai-codex` ([above](#selecting-openai-codex-for-codex)) |
-| pi | `~/.pi/agent/models.json` `providers.<id>` (JSON; credential as `apiKey: "${VAR}"` config-value syntax); never a row for `openai-codex`, whose models the extension registers from [the declared list](#the-openai-codex-model-list) | `~/.pi/agent/settings.json` `defaultProvider` + `defaultModel` (a pair of bare ids), and `enabledModels` (the scoped list, default first), which is not written for `openai-codex`. Also, for every provider, pi-subagents' `subagents` block: `defaultModel` as `<provider>/<id>` (the same model), and `modelScope` `{enforce, strict, allow}` over the provider's configured ids, or `<provider>/*` when it configures none, so a child agent never crosses providers ([XM-D3](../research/extension-model-defaults.md#XM-D3), [XM-D4](../research/extension-model-defaults.md#XM-D4)). For an [active set](#an-active-set-several-profiles-for-one-agent) the pair stays the primary's, `enabledModels` is each entry's run in set order, each led by its own default (an `openai-codex` entry adds its declared base ids, never a `[1m]` variant, since `enabledModels` are minimatch patterns), and `modelScope.allow` is the union, so a child may use any listed provider and none other; each entry's profile options reach its own catalog row, and the OpenAI login pre-launches when any entry is `openai-codex` |
+| pi | `~/.pi/agent/models.json` `providers.<id>` (JSON; credential as `apiKey: "${VAR}"` config-value syntax); never a row for `openai-codex`, whose models the extension registers from [the declared list](#the-openai-codex-model-list) | `~/.pi/agent/settings.json` `defaultProvider` + `defaultModel` (a pair of bare ids), and `enabledModels` (the scoped list, default first), which is not written for `openai-codex`. Also, for every provider, pi-subagents' `subagents` block: `defaultModel` as `<provider>/<id>` (the same model), and `modelScope` `{enforce, strict, allow}` over the provider's configured ids when an `only` narrowed them (and on `openai-codex`), else `<provider>/*` ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)), so a child agent never crosses providers ([XM-D3](../research/extension-model-defaults.md#XM-D3), [XM-D4](../research/extension-model-defaults.md#XM-D4)). For an [active set](#an-active-set-several-profiles-for-one-agent) the pair stays the primary's, `enabledModels` is each entry's run in set order, each led by its own default (an `openai-codex` entry adds its declared base ids, never a `[1m]` variant, since `enabledModels` are minimatch patterns), and `modelScope.allow` is the union, so a child may use any listed provider and none other; each entry's profile options reach its own catalog row, and the OpenAI login pre-launches when any entry is `openai-codex` |
 | opencode | `~/.config/opencode/opencode.json` `provider.<id>` — `baseURL`/`apiKey` live UNDER `options`; `npm` `@ai-sdk/openai-compatible` for an `openai` endpoint, `@ai-sdk/openai` for an `openai-responses` one; never a row for `openai-codex`, whose list rides opencode's own `openai` row ([above](#selecting-openai-codex-for-opencode)) | top-level `model = "<provider>/<model>"` and `small_model`, written only when a model resolves, and `enabled_providers` naming the selected provider whether or not one does, so opencode on a provider that declares no models chooses among that provider's own ([AP-D17](../design/active-provider-sets.md#AP-D17)). For an [active set](#an-active-set-several-profiles-for-one-agent) `model` and `small_model` stay the primary's and `enabled_providers` names every entry in set order, a Bedrock entry as `amazon-bedrock` wherever it sits and an entry whose provider names no endpoint by that provider's name, which must be opencode's own id for it (`anthropic`), since yolo writes such an entry no row; opencode reads that key as a filter ("When set, ONLY these providers will be enabled", its 1.18.32 schema), so the order states the set and does not order opencode's menu. Each entry's own `enforce_models` decides the `whitelist` on its provider's row. A model picked in opencode lasts for that run of it: the `model` yolo writes outranks opencode's saved recent picks at its next start ([AP-D15](../design/active-provider-sets.md#AP-D15)) |
 | omp | `~/.oh-omp/agent/models.yml` `providers.<id>` (YAML; credential as the provider's env-var NAME, which oh-omp resolves before treating it as a literal) | **no start model** — the derive writes a catalog, so a selected profile makes the provider *available* and the user chooses it inside the agent. Under an `only`, `~/.oh-omp/agent/config.yml` `enabledModels` scopes the narrowed list, default first ([MM-D8](../design/model-lists-and-pickers.md#MM-D8)). For an [active set](#an-active-set-several-profiles-for-one-agent) each entry's key reaches oh-omp, and once any entry is narrowed the scope holds every entry in set order: a narrowed entry's run, default first, and `<provider>/*` for any other, since oh-omp's selector shows nothing outside a scope; with none narrowed nothing is written, as for one profile ([AP-D18](../design/active-provider-sets.md#AP-D18)) |
 | copilot | in a jail, for a provider whose list names a model, `providers.json`: an [agent file](pack-system.md#agent_files) beside copilot's env file, `~/.config/yolo-agent-env/copilot.providers.json`, which copilot reads from `COPILOT_PROVIDERS_CONFIG`. One provider and a row per entry of the list, its key as literal text; GitHub's own models appear beside it ([MM-D31](../design/model-lists-and-pickers.md#MM-D31)) | process env from the copilot pack's env derive: `COPILOT_PROVIDER_BASE_URL` (the sole activation gate), `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_WIRE_API` (openai type only), `COPILOT_MODEL` (required — a provider with no resolvable alias composes nothing at all; `<provider>/<id>` where the file is written), `COPILOT_PROVIDER_API_KEY` (a placeholder for a keyless loopback endpoint), `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` ← the provider's `context_window` option. The file, once it declares anything, replaces these `COPILOT_PROVIDER_*` variables; at `yolo host`, which writes no agent file, they are copilot's one model |
@@ -1489,18 +1489,53 @@ thinking level included), `inputLimits`, `compat` and every other catalog fact, 
 is merged into the registered model's `compat.openRouterRouting`, which pi sends as the
 request's `provider` field.
 
-Two consequences follow from a registration replacing the menu. **The declared rows are the
-menu**: with the example above, `pi --list-models` offers those two models under `openrouter`,
-not pi's whole gateway catalog. And **`enforce_models` applies**: while it is on — the default
-— `pi --model openrouter/<unlisted>` ends its turn with yolo's refusal. Set
-`"enforce_models": false` on the profile to make the registration only shape the menu. Nothing
+A registration replaces the menu, so **the declared rows are the menu**: with the example
+above, `pi --list-models` offers those two models under `openrouter`, not pi's whole gateway
+catalog. **Nothing is refused for being off it**: no `only` narrowed the list, so
+`pi --model openrouter/<unlisted>` goes to OpenRouter, which serves it or returns an error
+([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)). Under an `only`, `enforce_models`
+decides: while it is on, the default, that command ends its turn with yolo's refusal. Nothing
 here is a pack's: a plain user config declares the routes, and a config with no routing fact
 renders and registers nothing at all.
 
 The provider's `options` is the **fallback**: a fact common to every model is declared once
 there, and a per-model value overrides it for that alias. The facts are **additive** — an alias
 that declares none renders the same `models.json` row it did before, leaving pi's own defaults
-(`reasoning: false`, `input: ["text"]`, zero cost) in place. pi's schema accepts all of these
+(`reasoning: false`, `input: ["text"]`, zero cost) in place.
+
+**A fact you leave out inherits; a fact you write as `null` is removed**
+([OQ-ML4](../design/model-lists-and-pickers.md#OQ-ML4),
+[ML-D10](../design/model-lists-and-pickers.md#ML-D10)). The layers, top first, are the alias's
+own facts (yours over a pack's), the shared facts it `extends`, and pi's own catalog entry for the
+id or its `base`. A `null` is a **tombstone**: the model has no such fact, whatever a layer below
+says, so `"reasoning": null` over a pack's `true` removes the flag rather than falling back to the
+catalog. The tombstone reaches the derive as `ctx.tombstone` under `model_options.<alias>`, and
+a `models.json` row leaves the field out, so pi applies its own default. Where pi has a catalog for
+the provider, its own Bedrock client, the extension completes the rows: the same rows ride
+`yolo-model-lists.json` marked `keep_catalog`, and the extension registers pi's catalog with each
+row merged over its own entry field by field (`cost` rate by rate, so a row stating one rate keeps the catalog's others), the row's `tombstones` removed
+([ML-D12](../design/model-lists-and-pickers.md#ML-D12)).
+
+**Facts one model shares across its routes** are written once, in the top-level `model_facts`,
+and each route's object-form entry names them with `extends`
+([OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5)):
+
+```jsonc
+"model_facts": { "opus-5.5": { "reasoning": true, "input": ["text", "image"], "max_tokens": 128000 } },
+"providers": {
+  "bedrock":    { "models": { "opus": { "id": "global.anthropic.claude-opus-5-5", "extends": "opus-5.5",
+                                        "context_window": 200000 } } },
+  "openrouter": { "models": { "opus": { "id": "anthropic/claude-opus-5-5", "extends": "opus-5.5" } } }
+}
+```
+
+The composition lays the shared facts under each route's own, so a route that serves a smaller
+context or charges another price states just that. pi gets every row **in full**: stock pi
+ignores `sharedModels` and `extends`, so a row relying on them would silently take its generic
+sizes. Only a pi whose pack declares `reads_shared_models` on its program gets the short form,
+the facts once as `sharedModels` and each row saying `extends` with what it overrides
+([ML-D11](../design/model-lists-and-pickers.md#ML-D11)). A row that tombstones a shared fact stays
+full there, since leaving a fact out of an `extends` row inherits it. pi's schema accepts all of these
 (`dist/core/model-config.js`, `ModelDefinitionSchema`), but its `modelFromJson` fills those
 defaults for an absent field — so before this the derive was the only path from config to the
 file, and a user-set capability read as inert. All four cost rates are required (pi's
@@ -2391,7 +2426,8 @@ above explains what each is for; this table is the only place the exact spelling
 | The Bedrock model list | none ships ([MM-D32](../design/model-lists-and-pickers.md#MM-D32), 2026-10-05, withdrawing [BR-D19](../design/bedrock-plumbing.md#BR-D19)'s three entries): each agent starts on its own Bedrock default; a pack's `models` contribution or the user's `providers.bedrock.models` supplies one | `packs/bedrock/pack.json`, `packs/bedrock/README.md` |
 | copilot's Bedrock start model | `openai.gpt-oss-120b-1:0`, through the bridge, when no profile and no list names one ([MM-D34](../design/model-lists-and-pickers.md#MM-D34)) | `packs/copilot/derive.lua` (`bedrockStartModel`) |
 | Model vendor | `vendor`, one lowercase token (`[a-z0-9][a-z0-9._-]*`), in a pack's `model_options.<alias>` or a user's object-form `models.<alias>`; an entry with none is offered to every agent | `packdecl.ValidModelVendor`, `config.validateModelEntry`, `packload.flattenModelFacts` |
-| Per-model OpenRouter routing | `openrouter_routing`, an object sent verbatim as OpenRouter's request `provider` field, and `base`, the pi catalog model id a variant row inherits its facts from. Declared on a user's object-form `models.<alias>` only. Both lower into the composed entry (`openrouter_routing` into the sibling `model_routing.<alias>`, `base` into `model_options.<alias>.base`) and reach pi through the `pi/model-lists` registration, whose extension lowers the routing into `compat.openRouterRouting` | `config.validateModelEntry`, `packload.liftModelFacts`, `packs/pi/derive.lua` (`model-lists`), `packs/pi/extensions/yolo-model-lists.js` (`definition`); [§Per-model OpenRouter routing](#per-model-openrouter-routing) |
+| Per-model OpenRouter routing | `openrouter_routing`, an object sent verbatim as OpenRouter's request `provider` field, and `base`, the pi catalog model id a variant row inherits its facts from. Declared on a user's object-form `models.<alias>` only. Both lower into the composed entry (`openrouter_routing` into the sibling `model_routing.<alias>`, `base` into `model_options.<alias>.base`) and reach pi through the `pi/model-lists` registration, whose extension lowers the routing into `compat.openRouterRouting`; with no `only` nothing refuses a model off the list ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3)) | `config.validateModelEntry`, `packload.liftModelFacts`, `packs/pi/derive.lua` (`model-lists`), `packs/pi/extensions/yolo-model-lists.js` (`definition`); [§Per-model OpenRouter routing](#per-model-openrouter-routing) |
+| Model fact tombstones and shared facts | A model fact written as `null` (a user's object-form `models.<alias>`, a pack's `model_options.<alias>`, a `model_facts` entry) lowers as a null and reaches each derive as `ctx.tombstone`; `extends` lays the named top-level `model_facts` entry under the alias's own facts and records it once as the entry's `model_shared.<name>`. pi leaves a tombstoned field out of a `models.json` row, names it in a menu row's `tombstones`, and writes `sharedModels`/`extends` only when its pack declares `reads_shared_models` | `config.validateModelFacts`, `packload.liftModelFacts` (`WithModelFacts`), `luahook.markModelFactTombstones`, `packdecl.Contribution.ReadsSharedModels`, `packs/pi/derive.lua` (`piShareRow`), `packs/pi/extensions/yolo-model-lists.js` (`definition`, `withCatalog`); [the paragraph above](#per-model-openrouter-routing) |
 | Makers each Bedrock client calls | claude `anthropic`; codex `openai`; opencode and pi every maker | `packs/{claude,codex,opencode,pi}/derive.lua` (`callableModels`) |
 | Bedrock built-in provider ids | codex `amazon-bedrock-runtime`; opencode `amazon-bedrock`; pi `amazon-bedrock` | `packs/{codex,opencode,pi}/derive.lua` |
 | The bridge-forcing Bedrock profile | `bedrock-bridge` = `{provider: bedrock, via: wire-bridge}` | `packs/bedrock/pack.json` |
@@ -2405,7 +2441,7 @@ above explains what each is for; this table is the only place the exact spelling
 | Profile flag grammar | `-p` / `--profile`: a bare name or comma list, or `cli=name` pairs (comma-separated, a bare name after a pair continuing that CLI's list, repeatable), on every notch; at `yolo host` / `yolo host env` a pair may name only the one command composed | `config.ParseProfileFlag`, through `parseProfileValue` (`applyProfileValue` on the run path, `hostProfileFor` at the host) |
 | Profile disclosure line | `Profile <name>: declared by <packs, or your config's profiles>; <agent> → provider "<p>", <route>; …`, then one `Warning: profile "<name>" …` line per agent the selection reaches nothing for or delivers no credential to | `packload.ProfileDisclosures`; printed by `run.noteUseProfiles` and `hostComposition.profileLines` |
 | Conventional tier aliases | `default`, `fast`, `balanced`, `frontier`; a missing one warns at boot as `pack derive for <agent>: provider "<name>" declares no "<alias>" model alias …`, and only when a derive asks `yolo.model_for` for it | `luahook.ConventionalModelAliases`, `luahook.MissingTierAliasNote` |
-| pi-subagents' block | `subagents.defaultProvider`, `subagents.defaultModel` (`<provider>/<id>`, deleted when no default resolves), `subagents.modelScope` `{enforce: true, strict: true, allow}` (the configured ids, or `<provider>/*`), in `~/.pi/agent/settings.json` whenever a pi profile selects `openai-codex`, a provider pi can reach, or a Bedrock provider on pi's own client (then `amazon-bedrock`) | `packs/pi/derive.lua` (`piSubagents`) |
+| pi-subagents' block | `subagents.defaultProvider`, `subagents.defaultModel` (`<provider>/<id>`, deleted when no default resolves), `subagents.modelScope` `{enforce: true, strict: true, allow}` (the configured ids under an `only` and on `openai-codex`, else `<provider>/*`), in `~/.pi/agent/settings.json` whenever a pi profile selects `openai-codex`, a provider pi can reach, or a Bedrock provider on pi's own client (then `amazon-bedrock`) | `packs/pi/derive.lua` (`piSubagents`) |
 | zai model IDs | `glm-4.6`, `glm-5.3`, `glm-5.3-flash`; the default is `glm-5.3`. These are wire-true IDs; Claude alone appends `[1m]` when `context_window` ≥ 1000000. | `packs/zai/pack.json` |
 | zai Coding Plan OpenAI endpoint | `https://api.z.ai/api/coding/paas/v4` (`openai-chat-completions`) | `packs/zai/pack.json` |
 | zai provider options | `model: glm-5.3`, `context_window: 1000000`, `api_timeout_ms: 3000000` | `packs/zai/pack.json` |

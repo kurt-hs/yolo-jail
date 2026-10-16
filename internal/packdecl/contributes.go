@@ -855,7 +855,14 @@ type Contribution struct {
 	// `vendor`, the maker of the id declared here, which the wire bridge routes on;
 	// only a vendor the user's own entry declares describes the user's id
 	// (packload.dropRepointedVendors).
-	ModelOptions map[string]map[string]string `json:"model_options,omitempty"`
+	//
+	// A fact written as JSON null is a TOMBSTONE (docs/design/model-lists-and-pickers.md
+	// ML-D10): the model has no such fact, whatever a layer below says, pi's own catalog
+	// included, where leaving the fact out inherits it. It is carried through the composed
+	// table as a null under `model_options.<alias>`, and each derive reads it as ctx.tombstone.
+	// `extends` names the user's `model_facts` entry this model's routes share (OQ-ML5); the
+	// composition lays those shared facts under this alias's own.
+	ModelOptions ModelFacts `json:"model_options,omitempty"`
 	// Options is the profile surface the provider DECLARES (docs/reference/providers.md,
 	// OQ-CS4): a FLAT map of option name to default value, read exactly like its neighbour
 	// Models — no `kind`, no `values`, no wrapper object. The flat form is the ruling (that
@@ -1033,6 +1040,19 @@ type Contribution struct {
 	// the program adds a provider, and until its pack names the new one yolo writes over it
 	// (the design's R3).
 	BuiltInProviders *BuiltInProviders `json:"built_in_providers,omitempty"`
+	// ReadsSharedModels declares that this program reads the SHARED FORM of a model file: a
+	// top-level `sharedModels` holding a model's facts once, and a model row saying `extends`
+	// to use them (docs/design/model-lists-and-pickers.md OQ-ML5, ML-D11). Core reads it for
+	// each derive's ctx.reads_shared_models (packload.ReadsSharedModels), and a derive writes
+	// the shared form only when it is true; otherwise it writes every row with its facts in
+	// full. The form is a downstream pi build's: stock pi (1.0.1, measured) accepts both keys
+	// and ignores them, so a row relying on them silently gets pi's generic sizes, which is why
+	// the default is full rows and why the pack that ships a pi build reading the form, not
+	// core, is the one that says so.
+	//
+	// A PACK FACT for `built_in_providers`' reason: what a binary reads is that binary's fact,
+	// and core names no agent. ON `program` ALONE.
+	ReadsSharedModels bool `json:"reads_shared_models,omitempty"`
 
 	// --- adapter (docs/reference/protocol-resolution.md#the-three-declarations, OQ-PR1) ---
 	// Adapts is the protocol PAIR this contribution converts, and Address is where the
@@ -1910,7 +1930,7 @@ type ProviderContribution struct {
 	// see the field's own comment on Contribution.
 	RegionFile   *RegionFile
 	Models       map[string]string
-	ModelOptions map[string]map[string]string
+	ModelOptions ModelFacts
 	// Options is the profile surface this provider declares — the key set a profile for
 	// it may carry, with each option's default. The profile-schema owner (OQ-CS4); see
 	// the field's own comment on Contribution for why it is flat and what null means.
@@ -3961,6 +3981,14 @@ func validateContribution(label string, c Contribution) []string {
 				"installs holds several providers in one session, so only \"program\" has an agent "+
 				"to declare it for", label, c.Kind))
 	}
+	// `reads_shared_models` is program's alone, for `built_in_providers`' reason: it says what
+	// the program reads, so only a kind that installs one has a program to say it of.
+	if c.ReadsSharedModels && c.Kind != KindProgram {
+		problems = append(problems, fmt.Sprintf(
+			"%s: kind %q does not take \"reads_shared_models\" — it declares that the PROGRAM this "+
+				"contribution installs reads a model file's shared form, so only \"program\" has a "+
+				"program to declare it for", label, c.Kind))
+	}
 	// `model_catalog` is an npm program's alone: its entries are relative to the directory npm
 	// installs the program's package into, so no other kind, and no other via, has that
 	// directory for them to name a file in.
@@ -4451,9 +4479,9 @@ func validateContribution(label string, c Contribution) []string {
 			if len(facts) == 0 {
 				problems = append(problems, fmt.Sprintf("%s: model_options.%s has no facts", label, alias))
 			}
-			if v, has := facts["vendor"]; has && !ValidModelVendor(v) {
+			if v, has := facts["vendor"]; has && v != nil && !ValidModelVendor(*v) {
 				problems = append(problems, fmt.Sprintf("%s: model_options.%s.vendor %q is not one lowercase "+
-					"token naming the model's maker, such as \"anthropic\" or \"openai\"", label, alias, v))
+					"token naming the model's maker, such as \"anthropic\" or \"openai\"", label, alias, *v))
 			}
 		}
 		// The option NAMES are the one thing here worth checking: they are the key set

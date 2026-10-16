@@ -87,7 +87,8 @@ func TestPiRendersItsWholeActiveSet(t *testing.T) {
 		t.Errorf("subagents start = %v/%v, want the primary's zhipu/glm-5.3", sub["defaultProvider"], sub["defaultModel"])
 	}
 	scope, _ := sub["modelScope"].(map[string]any)
-	wantAllow := []string{"zhipu/glm-5.3", "zhipu/glm-4.6", "router/vendor/b", "router/vendor/a"}
+	// Neither list is narrowed by an `only`, so each entry scopes its whole provider (OQ-MM3).
+	wantAllow := []string{"zhipu/*", "router/*"}
 	if got := strs(scope["allow"]); !reflect.DeepEqual(got, wantAllow) || scope["strict"] != true || scope["enforce"] != true {
 		t.Errorf("subagents.modelScope = %#v, want an enforced strict allow of %v", scope, wantAllow)
 	}
