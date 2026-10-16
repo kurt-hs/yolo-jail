@@ -29,7 +29,9 @@ import (
 // behave differently per machine — the dependence on the launcher's environment the floor exists
 // to remove. What the jail's launcher DECIDES is kept, and nothing else: install on first use, at
 // most one poll per UPDATE_INTERVAL when `agent_updates` allows it, a pinned package never
-// polled, a failed update keeping the installed version, one writer per install prefix. The
+// polled, a poll that cannot reach upstream keeping the installed version, one writer per install
+// prefix — and, by PD-NF1 (nofallback.go), a failed update STOPPING the launch rather than running
+// the installed version unless the user's hatch says to. The
 // launcher this package writes into bin/ only starts the installed program; the deciding happens
 // in yolo, before the exec, on the launch that asked for it.
 //
@@ -50,7 +52,9 @@ const (
 	Installed Outcome = "installed"
 	// Updated: the evergreen refresh moved it to a newer version.
 	Updated Outcome = "updated"
-	// Kept: a reinstall or refresh failed and the previous install still runs.
+	// Kept: a reinstall or refresh failed and the previous install still runs — only under the
+	// user's patchrecovery.UseInstalledEnv hatch, or after a capture whose upstream could not be
+	// reached (PD-NF1, PD-NF3); otherwise the failure is an UpdateRefusal.
 	Kept Outcome = "kept"
 )
 
@@ -121,9 +125,20 @@ func (f *Floor) Ensure(ctx context.Context, p Program) (Status, Outcome, error) 
 	rec, err := f.install(ctx, p)
 	if err != nil {
 		if st.Disposition == Provisioned && !f.servesANearMiss(p, st.Record) {
-			// A reinstall failed, and the previous install is intact: it keeps serving.
-			f.say("could not reinstall %s (%v); running the installed %s", p.Bin(), err, st.Record.Version)
-			return st, Kept, nil
+			// A REINSTALL THE PACK NOW ASKS FOR FAILED, and the previous install is intact. It runs
+			// only under the user's hatch (PD-NF1): a moved declaration is a known target, so this
+			// refuses offline too (PD-NF6), and no `agent_updates` hold reaches it — a declaration
+			// that moved is not an update.
+			act := "the reinstall the pack now asks for (" + why + ")"
+			if f.useInstalled(p) {
+				f.sayUsingInstalled(p, st.Record.Version, act, err)
+				return st, Kept, nil
+			}
+			target := ""
+			if d := declared(p.Install); d != st.Record.Declared {
+				target = d
+			}
+			return st, "", f.refuseUpdate(p, st.Record.Version, target, act, err)
 		}
 		if st.Disposition == Provisioned {
 			// A FORK'S BUILD IS NEVER KEPT PAST ITS PIN (servesANearMiss): the installed copy is not
@@ -193,8 +208,9 @@ func (f *Floor) describeRecipe(p Program) string {
 
 // refresh is the evergreen half: at most one poll per UpdateInterval, only when `agent_updates`
 // allows the pack to move, and a pinned npm package never polled (the declaration IS the answer,
-// and a moved declaration is Pending, handled by Ensure). A failed poll or update keeps the
-// installed version and waits out the interval — the jail launcher's stamp-on-failure rule.
+// and a moved declaration is Pending, handled by Ensure). A poll that cannot reach upstream keeps
+// the installed version and waits out the interval — the jail launcher's stamp-on-failure rule. A
+// failed update past a newer version found is PD-NF1's refusal (failedUpdate), its stamp taken back.
 //
 // A FORK'S BUILD IS NEVER POLLED: its pin moves it (`yolo pack update`, on the host), which
 // Status reports as Pending, and a poll of anything would be the rebuild on a timer
@@ -244,7 +260,9 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	}
 	defer lk.release()
 	// Stamped FIRST, whatever the poll says: a registry that is down is asked again in an hour,
-	// not on every launch until it answers.
+	// not on every launch until it answers. A failed update takes it back (failedUpdate): the
+	// next launch retries, rather than running the older version quietly for an interval.
+	checked := rec.Checked
 	rec.Checked = f.now().UTC()
 	_ = f.writeRecord(rec)
 
@@ -267,12 +285,20 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 		// contended capture keeps the installed version, and the stamp above holds the next automatic
 		// try off for the interval, as a failed npm update does.
 		if newer, err = f.recaptureWhenOld(p, rec, f.ManualUpdate); err != nil {
-			f.say("%s: could not capture a newer release (%v); running the installed %s", p.Bin(), err,
-				rec.Version)
 			if f.ManualUpdate {
+				f.say("%s: could not capture a newer release (%v)", p.Bin(), err)
 				return st, Kept, fmt.Errorf("could not capture a newer release for %s: %w", p.Bin(), err)
 			}
-			return st, Kept, nil
+			// THE CAPTURE IS THE CHECK (PD-NF3): a capture that failed because the installer's
+			// upstream cannot be reached is a check that could not run, so the installed version
+			// runs and the stamp holds the next try off for the interval, as an npm poll's does.
+			// Any other failure, or one the probe cannot vouch for, is a failed update.
+			if why := f.upstreamUnreachable(ctx, p.Install.InstallerURL); why != nil {
+				f.say("%s: could not check for a newer release: %s is unreachable (%v), and the capture "+
+					"failed (%v); running the installed %s", p.Bin(), p.Install.InstallerURL, why, err, rec.Version)
+				return st, Kept, nil
+			}
+			return f.failedUpdate(p, st, checked, "", "capturing a newer release", err)
 		}
 	}
 	if newer == "" {
@@ -281,14 +307,30 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 	f.say("updating %s %s → %s in yolo's floor", p.Bin(), rec.Version, newer)
 	next, err := f.install(ctx, p)
 	if err != nil {
-		f.say("could not update %s (%v); running the installed %s", p.Bin(), err, rec.Version)
 		if f.ManualUpdate {
+			f.say("could not update %s (%v)", p.Bin(), err)
 			return st, Kept, fmt.Errorf("could not update %s: %w", p.Bin(), err)
 		}
-		return st, Kept, nil
+		return f.failedUpdate(p, st, checked, newer, "the update", err)
 	}
 	f.say("updated %s to %s", p.Bin(), next.Version)
 	return f.Status(p), Updated, nil
+}
+
+// failedUpdate is a failed automatic update of p past a newer version found (newer, "" when the act
+// that failed was the one that would have named it): PD-NF1's refusal, unless the user's hatch
+// covers p, when the installed version runs with one line saying so. Either way the record's stamp
+// goes back to checked, so the next launch tries again instead of running the older version quietly
+// until the interval passes.
+func (f *Floor) failedUpdate(p Program, st Status, checked time.Time, newer, act string, err error) (Status, Outcome, error) {
+	rec := st.Record
+	rec.Checked = checked
+	_ = f.writeRecord(rec)
+	if f.useInstalled(p) {
+		f.sayUsingInstalled(p, rec.Version, act, err)
+		return st, Kept, nil
+	}
+	return st, "", f.refuseUpdate(p, rec.Version, newer, act, err)
 }
 
 // replaceInvalidatedNPM repairs dependencies for the same installed release. It is

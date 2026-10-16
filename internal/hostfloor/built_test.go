@@ -337,8 +337,9 @@ func TestAFailedBuildAtAMovedPinDoesNotKeepTheOldBuildServing(t *testing.T) {
 }
 
 // THE NEAR-MISS RULE IS ABOUT WHICH BUILD, both ways round. A fork's build at its pin that is pending
-// only for a raised node_floor IS the build the lock names, so a failed reinstall keeps it serving,
-// as an npm program keeps its version. And a fork's build left in the floor once the program is the
+// only for a raised node_floor IS the build the lock names, so a failed reinstall may keep it serving
+// — under the user's YOLO_USE_INSTALLED, as an npm program's version may (PD-NF1); without it the
+// failure refuses, and the build stays installed for the hatch to run. And a fork's build left in the floor once the program is the
 // base's again (the fork pack dropped) is not what the pack asks for, so a failed install of the
 // base's own package does not leave it running under the base's name.
 func TestAFailedReinstallKeepsAForkBuildOnlyWhenItIsThePinsBuild(t *testing.T) {
@@ -353,8 +354,18 @@ func TestAFailedReinstallKeepsAForkBuildOnlyWhenItIsThePinsBuild(t *testing.T) {
 	w.floor.NodeFloor = "99.1"
 	w.floor.Node.BaseURL = "http://127.0.0.1:1" // nothing listens: the new Node cannot be fetched
 	st, outcome, err := w.floor.Ensure(context.Background(), raised)
+	var refusal *UpdateRefusal
+	if !errors.As(err, &refusal) || outcome == Kept {
+		t.Fatalf("a raised node_floor whose reinstall failed: %s %v, want PD-NF1's refusal\n%s",
+			outcome, err, w.out.String())
+	}
+	if _, lerr := os.Stat(w.floor.Launcher("forkcli")); lerr != nil {
+		t.Errorf("a refused reinstall removed the pin's build: %v", lerr)
+	}
+	w.floor.UseInstalled = func(p Program) bool { return p.Bin() == "forkcli" }
+	st, outcome, err = w.floor.Ensure(context.Background(), raised)
 	if err != nil || outcome != Kept || st.Record == nil || st.Record.Revision != forkCommitOne {
-		t.Fatalf("a raised node_floor whose reinstall failed: %s %v %+v, want the pin's build kept\n%s",
+		t.Fatalf("a raised node_floor whose reinstall failed, under the hatch: %s %v %+v, want the pin's build kept\n%s",
 			outcome, err, st.Record, w.out.String())
 	}
 	if _, lerr := os.Stat(w.floor.Launcher("forkcli")); lerr != nil {
