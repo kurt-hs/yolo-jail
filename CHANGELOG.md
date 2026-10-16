@@ -16,6 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A model list with no `only` no longer refuses a model you type; it goes to the provider. pi's child agents may use any model of their provider unless an `only` narrows the list.
 - Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading: it asks for your admin password and installs one sudo rule that runs commands only as the sandbox account, never as root. The backend now supports one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
+- **Each jail now runs its own credential services** for Claude, OpenAI and AWS logins, started and ended with it. An older yolo's machine-wide service is left running for the jails it started; once they end, stop it with `yolo host-daemon stop --host-wide <name>`, or reboot. See [host services](userguide/guides/host-services.md).
 
 ### Added
 
@@ -32,6 +33,7 @@ not state, such as thinking levels; `null` removes one, and `model_facts` with `
 model's facts across providers with per-provider overrides. See `yolo config-ref`.
 
 - A company list that only adds models now shows in Claude Code after Claude's own models.
+- A launch refreshes your shared Claude login when it is close to expiring, and a host service that crashes mid-session is restarted, up to five times in a row.
 
 ### Fixed
 
