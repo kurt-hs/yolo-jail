@@ -1094,14 +1094,14 @@ promoting the line to the terminal is a change at `noteSelectionClears` alone.
 > bridge, and the profile's `model` and `pin_model`
 > ([MM-D44](../design/model-lists-and-pickers.md#MM-D44)). So while those stay the same a
 > `/model` pick of yours stands, and so does choosing claude's Default, which removes the key. A
-> launch with no recorded trigger, the first after an upgrade included, reads as a change; a
-> value valid on the provider is its own equivalent, so only a stale one is replaced. On claude's
-> own login that includes a full claude id such as `claude-opus-5-5[1m]`, so a value your host
-> `settings.json` supplies stands, at a jail and at `yolo host apply`, and is never shortened to
-> its tier word. When the new provider has no equivalent and no default, the derive selects
-> nothing, and the ordinary clear above applies: the value goes only while it still holds what
-> yolo wrote, and a Bedrock-only id you picked still leaves with Bedrock through the provider
-> keys. No per-launch `ANTHROPIC_MODEL` competes with the saved value any more; it is set only on
+> launch with no recorded trigger, the first after an upgrade included, reads as a change. On
+> every change a value valid on the new route is its own equivalent, kept with its version and
+> `[1m]`: a Bedrock id or tier name on claude's own Bedrock client, a typed id on a gateway such
+> as z.ai, a claude id such as `claude-opus-5-5[1m]` on claude's own login, so a value your host
+> `settings.json` supplies stands, at a jail and at `yolo host apply`. Only a value the new route
+> cannot call is replaced: by its tier equivalent, else the provider's default, and where there
+> is neither the key is removed, your own value included, so claude uses its own default. A
+> Bedrock-only id you picked also leaves with Bedrock through the provider keys. No per-launch `ANTHROPIC_MODEL` competes with the saved value any more; it is set only on
 > a profile's `pin_model` opt-in. The per-tier variables are process environment rebuilt on every
 > launch, so a deselect simply stops emitting them, except on claude's own Bedrock client, where
 > the tiers a list names by alias (and every tier under an `only`) are also written into

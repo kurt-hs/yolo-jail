@@ -136,22 +136,6 @@ func TestClaudeSavedModelIsTheTierWordWhereTheProviderHasNoList(t *testing.T) {
 	}
 }
 
-// A CHANGE THAT WRITES NOTHING CLEARS ONLY YOLO'S VALUE. The user's own pick on z.ai is theirs,
-// so a move to a provider with no default keeps it, as every deselect does.
-func TestClaudeSavedModelChangeKeepsTheUsersOwnValueWhenItWritesNothing(t *testing.T) {
-	h := newClaudeHome(t, bedrockTierPack(t))
-	if m, _ := savedModel(h.boot("zai")); m != "glm-5.3[1m]" {
-		t.Fatalf("model = %q on the first z.ai launch, want its default", m)
-	}
-	h.pick("glm-4.6[1m]")
-	if m, _ := savedModel(h.boot("zai")); m != "glm-4.6[1m]" {
-		t.Errorf("model = %q on the same provider, want the user's pick", m)
-	}
-	if m, _ := savedModel(h.boot("")); m != "glm-4.6[1m]" {
-		t.Errorf("model = %q after a move that writes nothing, want the user's own value kept", m)
-	}
-}
-
 // THE CHOICE OF claude's DEFAULT STANDS. Choosing Default in /model removes the key; the next
 // launch on the same provider does not put it back.
 func TestClaudeSavedModelLeavesARemovedKeyAloneOnTheSameProvider(t *testing.T) {

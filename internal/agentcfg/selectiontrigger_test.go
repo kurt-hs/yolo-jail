@@ -102,12 +102,23 @@ func TestApplySelectionTrigger(t *testing.T) {
 			wantClear: []string{"model"},
 		},
 		{
-			name:      "a change to no value keeps the user's own value",
+			// The derive selects nothing on a change only when no value is valid on the new
+			// choice, so the user's own value goes too (claude's own login cannot call a z.ai id).
+			name:      "a change to no value clears the user's own value too",
 			selection: map[string]any{trig: ""},
 			file:      map[string]any{"model": "glm-4.6"},
 			record:    map[string]any{trig: "zai", "model": "glm-5.3"},
+			wantLift:  map[string]any{},
+			wantNext:  map[string]any{trig: ""},
+			wantClear: []string{"model"},
+		},
+		{
+			name:      "while the trigger is unchanged, no value keeps the user's own value",
+			selection: map[string]any{trig: "zai"},
+			file:      map[string]any{"model": "glm-4.6"},
+			record:    map[string]any{trig: "zai", "model": "glm-5.3"},
 			wantLift:  map[string]any{"model": "glm-4.6"},
-			wantNext:  map[string]any{trig: "", "model": "glm-5.3"},
+			wantNext:  map[string]any{trig: "zai", "model": "glm-5.3"},
 		},
 		{
 			// An upgrade, or a first render: no trigger was recorded, so whether the provider

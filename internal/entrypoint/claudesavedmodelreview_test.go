@@ -133,6 +133,50 @@ func TestClaudeProfileModelChangeWritesTheNewModelOnce(t *testing.T) {
 	}
 }
 
+// A VALUE VALID ON THE ROUTE IS ITS OWN EQUIVALENT, on every route, so a first launch after an
+// upgrade (no recorded trigger, a change) rewrites none of these: each was kept before the saved
+// model existed, and each is a model the route can call.
+func TestClaudeUpgradeKeepsAValueValidOnItsRoute(t *testing.T) {
+	bedrockList := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
+	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic","alias":"opus"}]}`)
+	for _, tc := range []struct {
+		name, profile, value string
+		packs                []*packload.Pack
+	}{
+		{"native Bedrock, a 1M id", "bedrock", "global.anthropic.claude-opus-5-5[1m]", testPacksForAgent(t, "claude", "bedrock")},
+		{"native Bedrock, a dated id", "bedrock", "us.anthropic.claude-sonnet-4-5-20250929-v1:0", testPacksForAgent(t, "claude", "bedrock")},
+		{"native Bedrock, a tier with 1M", "bedrock", "opus[1m]", testPacksForAgent(t, "claude", "bedrock")},
+		{"a Bedrock list naming opus, its id with 1M", "bedrock", "global.anthropic.claude-opus-5-5[1m]",
+			append(testPacksForAgent(t, "claude", "bedrock"), bedrockList)},
+		{"z.ai, a typed id off the list", "zai", "glm-4.5-air", testPacksForAgent(t, "claude", "zai")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newClaudeHome(t, tc.packs)
+			if err := os.MkdirAll(h.e.ClaudeDir(), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(h.e.ClaudeDir(), "settings.json"),
+				[]byte(`{"model":"`+tc.value+`"}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if m, _ := savedModel(h.boot(tc.profile)); m != tc.value {
+				t.Errorf("model = %q, want %q kept: it is valid on this route", m, tc.value)
+			}
+		})
+	}
+}
+
+// A VALUE THE NEW ROUTE CANNOT CALL NEVER SURVIVES A CHANGE: a z.ai pick on claude's own login,
+// which has no equivalent for it and no default, is removed, so claude uses its own.
+func TestClaudeChangeRemovesAPickTheNewRouteCannotCall(t *testing.T) {
+	h := newClaudeHome(t, testPacksForAgent(t, "claude", "zai"))
+	h.boot("zai")
+	h.pick("glm-4.6[1m]")
+	if m, ok := savedModel(h.boot("")); ok {
+		t.Errorf("model = %q on claude's own login, want the z.ai pick removed", m)
+	}
+}
+
 // ON CLAUDE'S OWN BEDROCK CLIENT a profile naming the Anthropic entry is the saved model, and one
 // naming another maker's entry, which that client cannot call, saves nothing.
 func TestClaudeNativeBedrockSavesOnlyAnAnthropicModel(t *testing.T) {

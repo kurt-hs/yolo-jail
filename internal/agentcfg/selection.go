@@ -64,12 +64,14 @@ const SelectionKey = "selection"
 //
 //	trigger unchanged    a user's value stands, and a key the user removed stays removed;
 //	                     yolo's own unedited value still moves with the selection
-//	trigger changed      every selected value is written, over a user's edit too
+//	trigger changed      every selected value is written, over a user's edit too, and a key
+//	                     the selection does not name is cleared, the user's value included:
+//	                     the derive names a value valid on the new choice whenever one is
 //	no trigger recorded  read as a change (an upgrade or a first render cannot know the
 //	                     previous choice; a value valid on the new one is its own equivalent)
 //
-// A key the selection stops naming is cleared by the ordinary rule, trigger or not: only while
-// the file holds what yolo wrote. The trigger is never lifted into the file; it is kept in the
+// While the trigger is unchanged, a key the selection stops naming is cleared by the ordinary
+// rule: only while the file holds what yolo wrote. The trigger is never lifted into the file; it is kept in the
 // selection record beside the values, under this same key, so the next render can compare.
 // A selection without one behaves exactly as before the trigger existed.
 const SelectionTriggerKey = "@trigger"
@@ -237,6 +239,16 @@ func ApplySelectionReport(selection, file, record map[string]any, hostOwned map[
 	for _, k := range unionKeys(selection, record) {
 		V, selected := selection[k]
 		cur, inFile := file[k]
+		if triggered && !selected && triggerMoved {
+			// A change that selects nothing: the derive found no value valid on the new
+			// choice, so whatever the file holds goes, the user's own value included
+			// (SelectionTriggerKey).
+			delete(next, k)
+			if inFile && isSelectionValue(cur) {
+				cleared = append(cleared, SelectionClear{Key: k, Value: cur})
+			}
+			continue
+		}
 		if triggered && selected {
 			// Under a trigger the edge is the trigger's, not the value's
 			// (SelectionTriggerKey).
