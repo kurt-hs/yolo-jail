@@ -466,7 +466,7 @@ func TestPatchActorDueForcedAndNewerVersionRetriesKeepExactFailure(t *testing.T)
 			}
 			current := fx.record(t)
 			if mode == "newer-version" {
-				// A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (docs/design/patched-build-recovery.md §6.2,
+				// A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (docs/reference/patched-forks.md §6.2,
 				// OQ-PBR1): the newer v1.3.0 that takes the series is built past the v1.2.0 failure.
 				if !retried.built || retried.patchFailure != nil || current.Good == nil || current.Good.Tag != "v1.3.0" ||
 					len(fx.builds) != 2 {

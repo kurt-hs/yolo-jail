@@ -1,7 +1,7 @@
 package cli
 
 // patchrecoveryadvance_test.go drives the advance's half of the way back from a broken patched build
-// (docs/design/patched-build-recovery.md §6) through its real call sites — a fresh jail launch's
+// (docs/reference/patched-forks.md §8.5) through its real call sites — a fresh jail launch's
 // advance, `yolo capture`, `yolo pack update`, `yolo host -- <bin>` and a launch's tree arm:
 //
 //   - A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST (§6.2, OQ-PBR1): Appendix A's scenarios 1, 5 and 6

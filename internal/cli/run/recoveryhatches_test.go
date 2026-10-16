@@ -1,7 +1,7 @@
 package run
 
-// recoveryhatches_test.go pins the launch's RECOVERY-HATCH OUTPUT (docs/design/
-// patched-build-recovery.md §6.1, §6.8; the maintainer's output ruling of 2026-10-16) at Run's own
+// recoveryhatches_test.go pins the launch's RECOVERY-HATCH OUTPUT
+// (docs/reference/patched-forks.md §8.5, §8.7; the maintainer's output ruling of 2026-10-16) at Run's own
 // entry point: the missing-build refusal's whole text, its color through the launch's gate, the
 // advance's Recovery list printed as is, patchrecovery.SkipExtensionsEnv leaving a build uncounted,
 // and what a set hatch reaches at a fresh launch, an attach and in a jail.

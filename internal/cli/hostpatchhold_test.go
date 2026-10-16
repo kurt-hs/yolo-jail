@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// A HOLD HOLDS AT THE HOST'S PRE-WRITE CHECK TOO (docs/design/patched-build-recovery.md §6.3, OQ-PBR5:
+// A HOLD HOLDS AT THE HOST'S PRE-WRITE CHECK TOO (docs/reference/patched-forks.md §3.4, OQ-PBR5:
 // "Your prior state should have absolutely no bearing on your current state if you turn off
 // updates"): under an `agent_updates` hold, a patched fork's recorded patch failure does not stop
 // `yolo host apply --assert` while a good build of it serves; without the hold it does. Red with

@@ -16,7 +16,7 @@ const CachedGoodEnv = patchrecovery.UseCachedGoodEnv
 // extension sets. It does not grant a build, host-floor, attach, or in-jail capability.
 //
 // THE GRAMMAR is patchrecovery's: `1`, or names matching a patched fork or a built extension by key,
-// pack or name (docs/design/patched-build-recovery.md §6.1, §6.7). A name covering nothing selected
+// pack or name (docs/reference/patched-forks.md §8.5). A name covering nothing selected
 // is a warning line. The one refusal for coverage is a value that covers nothing at all and is a
 // single exact owner key (`<pack>/<name>`): what used to be the selector's only form, and a typo of
 // one names a build the user asked for by its key.

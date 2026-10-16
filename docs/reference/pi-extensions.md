@@ -16,6 +16,8 @@ covers:
   - internal/cli/run/patchedtrees.go
   - internal/cli/run/treenotch.go
   - internal/cli/run/missingbuilds.go
+  - internal/cli/run/skipextensions.go
+  - internal/packload/treefallback.go
   - internal/cli/run/seal.go
   - internal/entrypoint/patchedtrees.go
   - internal/entrypoint/sealedbuild.go
@@ -37,7 +39,9 @@ upstreams, the newest-fit walk over each, two trees built, and one fork's `dist/
 series without it; and an extension run end to end through a real build jail in the integration
 suite. UNMEASURED: no pi has loaded a tree yolo built ([§16](#16-unbuilt-and-unmeasured)); the
 pre-launch refresh is unit-tested only, never observed in a real jail ([§17](#17-the-pre-launch-refresh)).
-One question is open ([OQ-PPX3](#OQ-PPX3)).
+One question is open ([OQ-PPX3](#OQ-PPX3)). The recovery hatches for an extension
+([§9.1](#91-recovery-hatches-for-an-extension)) were verified 2026-10-16 against `15c739590`, from
+the code and its unit tests.
 
 yolo delivers a pi extension two ways. A **patched extension** follows an upstream with a patch
 series of the user's own: the patched-fork mode of [`patched-forks.md`](patched-forks.md) checks the
@@ -383,7 +387,7 @@ listed only in a guarded posture list, the step that works ([PPX-D38](#PPX-D38))
 
 | Failure | What serves | Said, with the next step |
 | :--- | :--- | :--- |
-| A newer upstream does not replay | nothing new: the operation stops by default, and `YOLO_ALLOW_PATCH_FAILURES=1` mounts the good build for that launch ([PF-D81](patched-forks.md#PF-D81)) | the error block, whose recipe rebases the series |
+| A newer upstream does not replay | nothing new: the operation stops by default, and `YOLO_ALLOW_PATCH_FAILURES` mounts the good build for that launch ([PF-D81](patched-forks.md#PF-D81)); the other hatches are in [§9.1](#91-recovery-hatches-for-an-extension) | the error block, whose recipe rebases the series and whose hatch list names the extension's key |
 | A newer upstream replays but does not build | the good build ([PPX-D14](#PPX-D14)) | the held suffix, naming `yolo pack status` |
 | A `produces` path is missing, the tree names the build's home, or the delta has strays | the good build; a failed build with back-off | the paths, and the build line as the fix |
 | The entry was reaped between the lookup and the copy, or during it | the partial copy removed and the record re-read once; else rebuilt | as a first build |
@@ -394,8 +398,10 @@ listed only in a guarded posture list, the step that works ([PPX-D38](#PPX-D38))
 owning agent pack's list entry reaches it, whatever the command, naming the extension, the cause and
 the ways back: the fix the build's own failure names; `yolo pack series check` and the rebase recipe
 for a series that no longer applies; `yolo capture <pack>/<name>` to retry; dropping the list entry,
-or the pack, to run without it. `YOLO_ALLOW_MISSING_PROGRAMS`, the readiness act's bypass, launches
-anyway and says so. It is decided where the trees are, before the image step, reading no command:
+or the pack, to run without it; and the recovery hatches that would get the launch running
+([§9.1](#91-recovery-hatches-for-an-extension)). `YOLO_SKIP_EXTENSIONS` is the one that starts pi
+without the extension. `YOLO_ALLOW_MISSING_PROGRAMS`, the readiness act's bypass, still starts the
+jail and says so, but pi's launchers stop for the missing tree, so only the shell works. It is decided where the trees are, before the image step, reading no command:
 yolo never reads the command line ([HP-DIR2](host-agent-environment.md#HP-DIR2)). Whether
 a build that fails while the good build serves should refuse too is [OQ-PPX3](#OQ-PPX3).
 
@@ -428,6 +434,35 @@ a build that fails while the good build serves should refuse too is [OQ-PPX3](#O
 that launch's result, failure included ([PF-D17](patched-forks.md#PF-D17)), and a failed build is
 backed off while a good build serves ([PF-D9](patched-forks.md#PF-D9)). Without them, a build that
 keeps failing would cost every fresh launch a rebuild.
+
+### 9.1 Recovery hatches for an extension
+
+The [recovery hatches of `patched-forks.md`](patched-forks.md#85-recovery-hatches) serve an extension
+as they serve a fork ([OQ-PBR6](patched-forks.md#why-its-this-way)), named by the extension's key
+(`<pack>/<name>`), its pack or its name, under the same grammar. What differs:
+
+- **`YOLO_SKIP_EXTENSIONS`** ([PBR-R8](patched-forks.md#PBR-R8)) covers a built extension, patched or
+  unmodified. For that launch it is not advanced, built, copied or mounted, and **every entry of the
+  owning agent pack's own lists that loads it is left out** (`packload.ApplyTreeLists`), so pi starts
+  without it rather than failing on an empty mountpoint. A fresh jail launch marks it `skipped` on the
+  wire to the jail's boot, which drops the entries and stops no launcher for it; the missing-build
+  refusal does not count it; one line names each skipped extension, and an extension with a
+  `fallback` takes no fallback while skipped. At the host, `yolo host apply --assert` and `yolo host
+  -- pi` leave it out the same way: no link is written or moved and the entries are dropped from the
+  render. Nothing is recorded, so the next launch without the variable delivers it as before. An
+  entry the user wrote, or another pack's, is not touched. An attach keeps the extensions its jail
+  booted with, and a launch in a jail or on macos-user delivers no tree; each says the variable has
+  no effect there.
+- **`YOLO_USE_CACHED_GOOD`** takes an extension's key too: the record's older good build's tree,
+  validated as a fork's is, becomes the launch's per-launch copy, with one line naming the older
+  build. No check, replay or build runs, and the record is not written. With nothing usable it hands
+  no copy, and the missing-build refusal says why.
+- **The walk-back** (`YOLO_ALLOW_OLDER_UPSTREAM`, [`patched-forks.md` §8.6](patched-forks.md#86-the-walk-back))
+  runs through the same advance, with the same budget, hold and disclosure line, which names the
+  extension: `extension <key>: walked back to v1.1.0; upstream v1.2.0 does not take the series`.
+- **`YOLO_ALLOW_MISSING_PROGRAMS` is not the way past a missing extension.** It starts the jail, and
+  the owner's launchers still stop for the missing tree ([PPX-D18](#PPX-D18)), so the refusal lists
+  `YOLO_SKIP_EXTENSIONS` for an extension instead.
 
 ## 10. Trust and disclosure
 
@@ -712,6 +747,8 @@ back-off) are in [`patched-forks.md`](patched-forks.md#current-values).
 | A sealed build jail | `YOLO_SEALED_BUILD=1` | `entrypoint.SealedBuildEnv` |
 | A refused boot's structured cause | `<workspace>/.yolo/boot-refusal.json` | `entrypoint.BootRefusalName` |
 | Missing-build bypass | `YOLO_ALLOW_MISSING_PROGRAMS` (any non-empty value) | `paths.AllowMissingProgramsEnv` |
+| Skip an extension | `YOLO_SKIP_EXTENSIONS=<1 or names>` | `patchrecovery.SkipExtensionsEnv` |
+| The wire's mark for a skipped extension | `"skipped": true` in its `YOLO_PATCHED_TREES` entry | `entrypoint.TreeDelivery.Skipped` |
 | pi's refresh | `"refresh": {"argv": ["update", "--extensions"], "due_on_change": [".pi/agent/settings.json"], "lock": ".pi/.yolo-update.lock", "only_if": …}` | `packs/pi/pack.json` |
 | The refresh's stamp and seen markers | `.pi/.yolo-refresh/`, beside the lock | `entrypoint.RefreshStateDirName` |
 | Refresh throttle | `UPDATE_INTERVAL`, 3600 s | the launcher templates |
@@ -771,7 +808,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D37"></a>PPX-D37 | A patched extension's series is read by the same reader as a patched fork's, and its errors name the extension's own remedies, never "declare a plain fork instead" |
 | <a id="PPX-D38"></a>PPX-D38 | On a host that builds no tree for itself (a macOS host), a tree listed only in a guarded posture list reaches no notch that has it, and each line says so with the step that works: move the entry to a `config-list`, or drop it |
 | <a id="PPX-D39"></a>PPX-D39 | The seal does not trip over its own narrowing: a build jail whose selection the seal narrowed runs none of the launch gates that ask whether another selected pack provides what one names (an `agents` selector, a `supersedes` capability, a via route, a required capability), and the seal carries the base of every fork the contributing pack declares, down the chain. A build jail that stops before its build line is relayed with its own last lines. Found at the maintainer's first real launch |
-| <a id="PPX-D40"></a>PPX-D40 | The maintainer's ruling in review of [OQ-PPX3](#OQ-PPX3), 2026-10-05: *"if a build fails, of course that's fatal. we should offer solutions and workarounds when that happens for happy path, but it's fatal"*. A fresh jail launch refuses before booting when a patched extension a selected pack needs has no build to deliver at a notch that builds trees, whatever the command, decided where the trees are, before the image step, naming the ways back; `YOLO_ALLOW_MISSING_PROGRAMS` launches anyway. Supersedes [PPX-D12](#PPX-D12)'s "never refused". The reading of "a build fails" awaits confirmation ([OQ-PPX3](#OQ-PPX3)); a patch failure is fatal even with a good build ([PF-D81](patched-forks.md#PF-D81)) |
+| <a id="PPX-D40"></a>PPX-D40 | The maintainer's ruling in review of [OQ-PPX3](#OQ-PPX3), 2026-10-05: *"if a build fails, of course that's fatal. we should offer solutions and workarounds when that happens for happy path, but it's fatal"*. A fresh jail launch refuses before booting when a patched extension a selected pack needs has no build to deliver at a notch that builds trees, whatever the command, decided where the trees are, before the image step, naming the ways back; `YOLO_ALLOW_MISSING_PROGRAMS` launches anyway, and since [PBR-R8](patched-forks.md#PBR-R8) `YOLO_SKIP_EXTENSIONS` starts the owning agent without it. Supersedes [PPX-D12](#PPX-D12)'s "never refused". The reading of "a build fails" awaits confirmation ([OQ-PPX3](#OQ-PPX3)); a patch failure is fatal even with a good build ([PF-D81](patched-forks.md#PF-D81)) |
 | <a id="PPX-D41"></a>PPX-D41 | A sealed build jail renders no pack-declared surface and runs no pack hook, a patched extension's and a fork's alike, told by `YOLO_SEALED_BUILD=1` read before the user's env is hydrated, so only the launcher can make a boot a sealed build. Found at the maintainer's launch: a pack surface under a directory only a dropped pack made writable refused every build jail at boot |
 | <a id="PPX-D42"></a>PPX-D42 | A refused boot writes its structured cause (`boot-refusal.json`) and the host reads it rather than parse prose; each **build cause** is said once, with every build it left without; one config refusal at boot stops the later builds sealed the same way; a read-only path under a directory the user's own jail makes writable is yolo's bug, said so with where to report it. Found when one file's refusal was relayed four times in unreadable form |
 | <a id="PPX-D43"></a>PPX-D43 | Superseded 2026-10-06 by [PPX-D40](#PPX-D40) and deleted: a host-side line, keyed on the command's base name, warning that the program would not start |

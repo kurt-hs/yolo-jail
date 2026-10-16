@@ -22,8 +22,8 @@ package run
 //     failure as the fallback line's reason (noteTreeDeliveries); one no selected agent pack loads in
 //     a jail stops nothing, its block saying so.
 //
-// THE HATCH LIST is the delivery's Recovery when the advance set it (docs/design/
-// patched-build-recovery.md §6.8, PBR-D5: the advance is its one authority); a delivery without one
+// THE HATCH LIST is the delivery's Recovery when the advance set it
+// (docs/reference/patched-forks.md §8.7, PBR-D5: the advance is its one authority); a delivery without one
 // derives it here from what the slot handed (Runs, CachedGood). The block is the one shape
 // (packsrc.PatchFailure.Render), colored through the launch's own gate (Options.pr).
 
