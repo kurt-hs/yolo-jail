@@ -19,6 +19,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -170,10 +171,15 @@ func TestAFirstAdvanceWhoseWalkHitsAnApplyErrorBuildsTheBase(t *testing.T) {
 	}
 }
 
-// AN APPLY ERROR IS SAID ONCE, AND THE NEXT CHECK RETRIES IT (§6.2, PF-D45): a launch inside the hour
-// runs no git at all and says nothing, the fork's line carries the held suffix, and the launch after
-// the next check builds what then replays.
+// AN APPLY ERROR STOPS THE LAUNCH, AND THE NEXT CHECK RETRIES IT (§6.2; PD-NF1, superseding PF-D45's
+// serving): the launch that met it refuses with the error block — the replay's error, the repair and
+// the hatches — beside the good build it would run only under a hatch; a launch inside the hour runs
+// no replay and stops on the recorded error; YOLO_ALLOW_PATCH_FAILURES runs the good build; and the
+// launch after the next check builds what then replays.
 func TestAnApplyErrorIsRetriedByTheNextCheckNotEveryLaunch(t *testing.T) {
+	for _, env := range patchrecovery.Scoped {
+		t.Setenv(env, "")
+	}
 	fx, _, _, r, _, _ := firstAdvance(t)
 	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	failFile := filepath.Join(t.TempDir(), "fail")
@@ -181,9 +187,28 @@ func TestAnApplyErrorIsRetriedByTheNextCheckNotEveryLaunch(t *testing.T) {
 	logPath := patchedGitWrapper(t, failReadingFilesAt(failFile))
 	fx.later(2 * time.Hour)
 	got, out, _ := fx.launch(t, "podman")
-	if got.patchFailure != nil || got.delivery.PatchFailure != nil || got.delivery.Key != r.delivery.Key || len(fx.builds) != 1 || !strings.Contains(out, "could not replay the series") ||
-		!strings.Contains(out, "the next check, in an hour, retries it") {
-		t.Fatalf("the apply error handed %+v after %d builds\n%s", got.delivery, len(fx.builds), out)
+	stopped := func(when string, got advanceResult, out string) {
+		t.Helper()
+		pf := got.delivery.PatchFailure
+		if !got.failed || pf == nil || pf.Kind != packsrc.PatchFailureBuild || pf.Cause != packsrc.BuildCauseReplay ||
+			pf.Target.Commit != v13 || got.delivery.Key != r.delivery.Key || len(fx.builds) != 1 {
+			t.Fatalf("%s: the apply error handed %+v after %d builds, want the launch stopped beside the good build\n%s",
+				when, got, len(fx.builds), out)
+		}
+		if strings.Contains(out, "still running v1.1.0") {
+			t.Errorf("%s: a line says the older build runs:\n%s", when, out)
+		}
+	}
+	stopped("the launch that met it", got, out)
+	for _, w := range []string{"ERROR: forkpack/tool: the patch series could not be replayed onto upstream v1.3.0 (" + shortSHA(v13) + ")",
+		"  Replay: ", "simulated: cannot read", "\nRepair:\n", "    yolo capture tool\n",
+		"YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo", "YOLO_USE_CACHED_GOOD=forkpack/tool yolo"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("the refusal lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "YOLO_ALLOW_OLDER_UPSTREAM") {
+		t.Errorf("the refusal offers the walk-back past an apply error, which meets the same replay:\n%s", out)
 	}
 	if err := os.Remove(logPath); err != nil {
 		t.Fatal(err)
@@ -192,10 +217,10 @@ func TestAnApplyErrorIsRetriedByTheNextCheckNotEveryLaunch(t *testing.T) {
 	beforeProbe := fx.record(t)
 	again, out, _ := fx.launch(t, "podman")
 	probed := fx.record(t)
-	if again.patchFailure != nil || again.delivery.PatchFailure != nil || again.delivery.Key != r.delivery.Key || len(fx.builds) != 1 ||
-		probed.Seq != beforeProbe.Seq || probed.CheckedAt != beforeProbe.CheckedAt || probed.ApplyErr == nil || probed.ApplyErr.Legacy == nil ||
+	stopped("inside the hour", again, out)
+	if probed.Seq != beforeProbe.Seq || probed.CheckedAt != beforeProbe.CheckedAt || probed.ApplyErr == nil || probed.ApplyErr.Legacy == nil ||
 		probed.ApplyErr.Legacy.State != "unavailable" {
-		t.Errorf("the one bounded legacy diagnosis changed the check, build, or served key: result=%+v record=%+v\n%s", again, probed, out)
+		t.Errorf("the one bounded legacy diagnosis changed the check or the record: result=%+v record=%+v\n%s", again, probed, out)
 	}
 	if logged, err := os.ReadFile(logPath); err != nil {
 		t.Errorf("the local-only classification made no bounded Git attempt: %v", err)
@@ -212,13 +237,17 @@ func TestAnApplyErrorIsRetriedByTheNextCheckNotEveryLaunch(t *testing.T) {
 	}
 	fx.later(time.Minute)
 	cached, out, _ := fx.launch(t, "podman")
-	if cached.patchFailure != nil || cached.delivery.PatchFailure != nil || cached.delivery.Key != r.delivery.Key ||
-		len(fx.builds) != 1 || strings.Contains(out, "could not replay") {
-		t.Errorf("an unchanged unavailable diagnosis changed ordinary launch behavior:\n%s", out)
-	}
+	stopped("an unchanged unavailable diagnosis", cached, out)
 	if logged, err := os.ReadFile(logPath); err == nil && len(logged) > 0 {
 		t.Errorf("an unchanged unavailable attempt repeated member replay:\n%s", logged)
 	}
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "forkpack/tool")
+	fx.later(time.Minute)
+	if continued, out, _ := fx.launch(t, "podman"); continued.failed || continued.delivery.Key != r.delivery.Key ||
+		len(fx.builds) != 1 || !strings.Contains(out, "Continuing with v1.1.0") {
+		t.Errorf("YOLO_ALLOW_PATCH_FAILURES did not run the good build past the apply error: %+v\n%s", continued, out)
+	}
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "")
 	f := fx.fork(t)
 	series := mustSeries(t, fx)
 	in, _, _, _ := f.CheckWant(series).Inputs()
@@ -359,8 +388,9 @@ func (fx *patchedAdvanceFixture) recipe(t *testing.T) string {
 
 // A GIT TOO OLD FOR THE REPLAY names updating git as the next step (PF-D58): the series' base is not
 // tried, since it would meet the same git, and neither the launch's line nor the jail's reason offers
-// a retry that cannot help. With a good build serving, the jail starts on it and the line says when the
-// series is replayed again once git is updated.
+// a retry that cannot help. With a good build serving, the launch STOPS (PD-NF1, superseding PF-D45's
+// serving): the error block names git as what to fix, `yolo capture` as the retry and the hatches,
+// and the next launch inside the check's window stops on the recorded error with no replay.
 func TestAnOldGitOnTheHostNamesUpdatingGitAsTheNextStep(t *testing.T) {
 	fx := newPatchedAdvanceFixture(t, "")
 	fx.commit(t, "v1.1.0", map[int]string{14: "fourteen"})
@@ -395,11 +425,24 @@ func TestAnOldGitOnTheHostNamesUpdatingGitAsTheNextStep(t *testing.T) {
 	fx.later(2 * time.Hour)
 	patchedGitWrapper(t, oldGit)
 	r, out, _ = fx.launch(t, "podman")
-	if r.delivery.Key != good.delivery.Key || len(fx.builds) != 1 {
-		t.Fatalf("under git 2.39.5 the serving launch handed %+v after %d builds\n%s", r.delivery, len(fx.builds), out)
+	pf := r.delivery.PatchFailure
+	if !r.failed || pf == nil || pf.Kind != packsrc.PatchFailureBuild || pf.Cause != packsrc.BuildCauseReplay ||
+		r.delivery.Key != good.delivery.Key || len(fx.builds) != 1 {
+		t.Fatalf("under git 2.39.5 the serving launch handed %+v after %d builds, want it stopped\n%s", r, len(fx.builds), out)
 	}
-	if !strings.Contains(out, "this host's git is 2.39.5 — still running v1.1.0") ||
-		!strings.Contains(out, "; update git, then the next check, in an hour, retries it, or `yolo pack update` now") {
-		t.Errorf("the serving launch does not name updating git, then the retry:\n%s", out)
+	for _, w := range []string{"ERROR: forkpack/tool: the patch series could not be replayed onto upstream v1.3.0",
+		"  Replay: replaying a patch series needs git 2.40 or newer (`git merge-tree --merge-base`), and this host's git is 2.39.5\n",
+		"git 2.40 or newer on the host", "    yolo capture tool\n", "YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("the serving launch's refusal lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "still running v1.1.0") {
+		t.Errorf("the refusal says the older build runs:\n%s", out)
+	}
+	fx.later(time.Minute)
+	again, out, _ := fx.launch(t, "podman")
+	if again.delivery.PatchFailure == nil || again.delivery.PatchFailure.Cause != packsrc.BuildCauseReplay || len(fx.builds) != 1 {
+		t.Errorf("inside the check's window the next launch did not stop on the recorded error: %+v\n%s", again, out)
 	}
 }

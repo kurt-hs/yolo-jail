@@ -53,7 +53,35 @@ type PatchFailure struct {
 	// Retry is a build failure's retry command (`yolo capture <arg>`), which its error block's Repair
 	// names. Never recorded: a build failure is read from the record's outcomes, never kept here.
 	Retry string `json:"-"`
+	// Cause is, for a PatchFailureBuild, which of YOLO'S OWN BUILD STEPS stopped the newer build
+	// (PD-NF1, the maintainer's ruling of 2026-10-16: docs/design/program-delivery.md): one of the
+	// BuildCause constants, "" when the build line ran and failed. It names the error block's head and
+	// its repair.
+	Cause string `json:"cause,omitempty"`
 }
+
+// The BuildCause values name YOLO'S OWN BUILD STEP that stopped a newer build (PatchFailure.Cause,
+// EntryOutcome.Cause; PD-NF1). Each stops the act as a failed build does: the older build runs only
+// under a recovery hatch or an `agent_updates` hold.
+const (
+	// BuildCauseJail: the build jail did not start, or stopped before its build line ran
+	// (docs/reference/patched-forks.md PF-D21, superseded). Recorded, with the back-off.
+	BuildCauseJail = "jail"
+	// BuildCauseLock: the wait for another build of the same candidate ran out (forkBuildWaitBound).
+	BuildCauseLock = "lock"
+	// BuildCauseRuntime: the runtime cannot start a build jail now, as Apple Container cannot beside
+	// a running jail, or cannot say whether one runs.
+	BuildCauseRuntime = "runtime"
+	// BuildCauseWorkspace: an earlier build jail of the candidate is not yet known gone, so its
+	// staging is kept and no build starts.
+	BuildCauseWorkspace = "workspace"
+	// BuildCauseReplay: the series could not be replayed onto the candidate — an APPLY ERROR (a
+	// failed git command, an object that could not be fetched, a replay that ran out of time, or a
+	// host git older than the replay needs), in the walk of the check's list or in the build's own
+	// replay (PF-D45, superseded). Read from CheckRecord.ApplyErr while the check that met it is the
+	// last.
+	BuildCauseReplay = "replay"
+)
 
 // PatchFailureBuild is the Kind of a FAILED NEWER BUILD (OQ-PPX3, the maintainer's ruling of
 // 2026-10-16): the newest candidate took the series but its build failed while a good build of the
@@ -72,16 +100,30 @@ func (f *PatchFailure) Summary() string {
 	return "patch application failure"
 }
 
+// BuildHead is what a PatchFailureBuild's head says stopped it, before "upstream <target>": "the
+// build failed at" for a build line that ran and failed, "the patch series could not be replayed
+// onto" for an apply error, and "yolo could not build" for any other of yolo's own steps (Cause).
+func (f *PatchFailure) BuildHead() string {
+	switch f.Cause {
+	case "":
+		return "the build failed at"
+	case BuildCauseReplay:
+		return "the patch series could not be replayed onto"
+	}
+	return "yolo could not build"
+}
+
 func (f *PatchFailure) Error() string {
 	if f == nil {
 		return ""
 	}
 	// The target's label already carries its commit (ListEntry.Label), so it is said once.
 	if f.Kind == PatchFailureBuild {
+		head := f.BuildHead() + " upstream " + f.Target.Label()
 		if f.Detail == "" {
-			return "the build failed at upstream " + f.Target.Label()
+			return head
 		}
-		return fmt.Sprintf("the build failed at upstream %s: %s", f.Target.Label(), f.Detail)
+		return fmt.Sprintf("%s: %s", head, f.Detail)
 	}
 	if f.Member == "" {
 		return "patch application failed at " + f.Target.Label()
@@ -348,6 +390,9 @@ type EntryOutcome struct {
 	Error string `json:"error,omitempty"`
 	Count int    `json:"count,omitempty"`
 	At    int64  `json:"at,omitempty"`
+	// Cause is a build failure's, when one of yolo's own build steps stopped it rather than its build
+	// line (a BuildCause constant, PD-NF1); "" for a build line that ran and failed.
+	Cause string `json:"cause,omitempty"`
 }
 
 // RekeySeries moves the good build, typed failure, unavailable legacy attempt and matching outcomes
