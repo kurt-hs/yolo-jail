@@ -109,8 +109,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 11. Record the Mac runs of 2026-10-02 and 2026-10-03 where each doc's `next` names them — agent work now, ahead of the
     rulings below because the context-mount cases free one: [the AWS doorway](../design/host-notch-services.md), [its
     Bedrock design](../design/sso-backed-bedrock.md), [A2's twin](../reference/macos-user-nix-and-features.md#ordering-and-what-aborts), [the
-    render-mark twin](handoff-guest-notch-macos.md) and [its design](../design/notch-scoped-config-contributions.md#43-render-mark-parity-on-macos-user),
-    [item 1's twin](handoff-macos-user-open-threads.md) and [its runbook row](runbooks/macos-user-manual-checks.md),
+    render-mark twin](../design/notch-scoped-config-contributions.md#43-render-mark-parity-on-macos-user),
+    [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
     build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
     [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../research/macos-layer-reusing-image-delivery.md), [the login
@@ -199,7 +199,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     another Mac option without restoring Docker first.
 32. Builds no ruling holds: [the readiness act on macos-user](../design/jail-notch-readiness.md#JR-D2) — **built 2026-10-06**: host-side admission starts the existing confined stage for an absent/unknown selected program and its generated bootstrap runs the shared readiness act; fixture tests are in `integration/macosuserprogramreadiness_test.go`, with native macOS execution pending; [a provider set's overlay modifier](../design/active-provider-sets.md#13-what-was-built-2026-09-29), which reads only the
     primary; [the empty-list line in `yolo check`](../design/model-lists-and-pickers.md#72-composition-rules);
-    [macos-user's item 2 twin](handoff-macos-user-open-threads.md);
+    [macos-user's item 2 twin](runbooks/macos-user-manual-checks.md#2-seatbelt-is-actually-applied);
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
     [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); [the disk levers'
     re-measure](../design/disk-levers-and-backfill.md); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).

@@ -3,7 +3,7 @@ title: "Host-only config contributions — the gate is missing, and the jail lea
 date: 2026-09-27
 status: accepted
 stage: BUILT
-next: "Record §4.3's Mac check: the 2026-10-03 scheduled macos-user.yml run (GitHub Actions run 37121866798, at 0e34798c6) passed TestMacosUserComposesARenderedHostFileAsABaseline. Then step 2 of §5, the maintainer's by hand: add the guarded posture list to the matt pack, run yolo host apply --assert on the host, and confirm pi-automode loads there and in no jail"
+next: "Step 2 of §5, the maintainer's by hand: add the guarded posture list to the matt pack, run yolo host apply --assert on the host, and confirm pi-automode loads there and in no jail"
 tags: [packs, notch, autonomy, host, config-list, config-overlay, pi, permissions]
 summary: "A pack could not declare a config-list entry for the host alone, because packoverlay.Collect placed every list at every notch. A host-applied entry coming back into a jail through a readsHost mount was already prevented on podman and Apple Container by the OQ-CR6 render mark, and happened only on macos-user. Recommended, and built on 2026-09-27 on OQ-5's leaning: posture-selected lists inside the autonomy kind, where standing rulings put confinement-conditional content, plus render-mark parity on macos-user (unit-tested only)."
 vantage:
@@ -38,8 +38,8 @@ under `autonomous` and `npm:posture-host-only` under `guarded`. The jail's
 `~/.pi/agent/settings.json` held the first once and not the second, and `yolo config render
 pi/settings --at host` from the same isolated home held the second and not the first. With the
 gate in `packoverlay.Collect` disabled, the jail held both and the test failed (revert-checked).
-**UNMEASURED:** `macos-user` parity is unit-tested only — no Mac has run it. No real host has run a
-posture list.
+`macos-user` parity passed on a Mac through the scheduled job on 2026-10-03
+([§4.3](#43-render-mark-parity-on-macos-user)). **UNMEASURED:** no real host has run a posture list.
 
 > **In short.** What was missing is collection: `packoverlay.Collect` placed every `config-list`
 > at every notch, so no pack could declare an entry for the host alone. An `autonomy` posture's
@@ -377,7 +377,7 @@ private state dir and launches again, where the key must not. It asserts bytes a
 The "baseline and not a layer" note was discarded on this backend when the test was written,
 because the macos-user bootstrap kept no boot log. Since 2026-10-04 it keeps the container's
 `<workspace>/.yolo/boot.log` and the note lands there, but the bytes are still the assertion.
-UNMEASURED until that job runs it.
+**Passed** on the scheduled job's 2026-10-03 run (GitHub Actions run 37121866798).
 
 ### 4.4 Behavior at each target, and the degenerate cases
 
