@@ -357,6 +357,13 @@ func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy 
 		return *early, nil
 	}
 	patch := a.deliveryPatchFailure(probeLegacy)
+	if patch.State != "failure" {
+		// AN APPLY ERROR THE LAST CHECK MET — the background advance's included — stops this read as a
+		// failed newer build does (PD-NF1, superseding PF-D45's serving), until the next check.
+		if pf := a.replayFailure(); pf != nil {
+			patch.State, patch.Failure = "failure", pf
+		}
+	}
 	if patch.State == "unavailable" {
 		return a.unavailableDetachedAuthority(patch), a
 	}

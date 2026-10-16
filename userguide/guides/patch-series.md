@@ -309,6 +309,32 @@ holds it too.
     YOLO_SKIP_PATCHES=pi-mine/pi yolo            run upstream without the patches
   ```
 
+- **yolo itself cannot build the new version:** the same happens when the new version never gets
+  to build. Its build jail does not start (on Apple Container, because another jail is running),
+  another launch's build of it holds its lock past the 20-minute wait, or yolo cannot apply your
+  patches because a git command or the network failed, or your git is older than 2.40. The error says
+  `yolo could not build`, or `the patch series could not be replayed`, with the cause on the next
+  line and what to fix first. A build jail that did not start stops every launch until yolo tries
+  again after a wait or `yolo capture` builds it; a replay that could not run stops every launch
+  until the next check, an hour later.
+
+  ```text
+  ERROR: fork pi-mine/pi: yolo could not build upstream v1.0.2 (cd32f772)
+    Cause: Apple Container has running yolo jail(s): yolo-other-project
+
+  Repair:
+    once `container ls` shows no running yolo jail, retry it:
+      yolo capture pi
+
+  Start anyway:
+    YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo    run v1.0.0 (a13d35a7) + 7 patches
+    YOLO_USE_CACHED_GOOD=pi-mine/pi yolo         run the last good build v1.0.0 (a13d35a7) + 7 patches
+    YOLO_SKIP_PATCHES=pi-mine/pi yolo            run upstream without the patches
+  ```
+
+- **yolo cannot reach upstream:** offline, or the upstream is down. This is not a failure: yolo
+  cannot know whether there is a new version, so it runs your good build and says it could not
+  check. That holds for `yolo host` too.
 - **Your own edit fails:** if you change the series, `build` or `produces` and the result does not
   build, yolo tries your series on its base version. If that fails too, nothing is left to run.
 - **Nothing to run:** when a patched program, or a pi extension a pack loads, has no build at all,
@@ -359,7 +385,7 @@ and the launch says so.
 | Where | Patched program | Patched pi extension |
 | :--- | :--- | :--- |
 | Jail, Podman (Linux, or a Mac's Podman machine) | Works | Works |
-| Jail, Apple Container 1.1.0 or later | Works. A new build cannot start while another jail is running: the good build runs meanwhile, and `yolo capture` builds it once the other jails stop. | Works, the same way |
+| Jail, Apple Container 1.1.0 or later | Works. A new build cannot start while another jail is running: the launch stops and says so, and `yolo capture` builds it once the other jails stop. To run your good build meanwhile, use `YOLO_USE_CACHED_GOOD`. | Works, the same way |
 | Jail, older Apple Container | Doesn't: the launch says so | No new builds; a good build already on this Mac is still copied in |
 | `macos-user` | Doesn't yet. The launch says so and names a container backend, where it works. | Doesn't yet; the same line |
 | `yolo host`, Linux | Works: `yolo host -- <bin>` and `yolo host apply --assert` build and install it | Works: `yolo host apply --assert` builds it and links `~/<into>` to a copy yolo keeps, and so does `yolo host -- pi` with `host_apply_on_launch` on. `yolo host -- pi` does not start pi while an extension it loads has no build. |
@@ -371,7 +397,7 @@ run installs only builds that already exist; it builds nothing new.
 Everywhere, applying your patches needs **git 2.40 or newer** on your machine (the host, not the
 jail). Run `git --version` to check. Debian 12's and Ubuntu 22.04's git are older, and so is the git
 in Apple's Xcode 16 Command Line Tools; Homebrew's `git` is new enough. With an older git, nothing is
-built, and the launch says to update git.
+built, and the launch stops and says to update git, even when a good build is on your machine.
 
 ## Going back to a fork
 

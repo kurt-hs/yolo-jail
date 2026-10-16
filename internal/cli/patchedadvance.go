@@ -17,9 +17,12 @@ package cli
 //
 // What runs moves only once a build is admitted (P2): a newer upstream that does not apply or
 // build leaves the good build in place (PF-D8) — but STOPS the act (PF-D81 for a series that does
-// not apply; OQ-PPX3, 2026-10-16, for a build that fails, failedNewerBuild): the good build runs in
-// its place only under a recovery hatch the user set or an `agent_updates` hold, never on its own,
-// since a warning can be missed. The good build SERVES when its series digest and
+// not apply; OQ-PPX3, 2026-10-16, for a build that fails, failedNewerBuild; PD-NF1, the same day,
+// for one of yolo's own build steps — the build jail not starting, a lock wait that runs out, an
+// error replaying the series — yoloStepFailure and replayFailure): the good build runs in its place
+// only under a recovery hatch the user set or an `agent_updates` hold, never on its own, since a
+// warning can be missed. An upstream that cannot be reached is no failure: what is here runs, and
+// the act says it could not check. The good build SERVES when its series digest and
 // recipe are the manifest's and its store entry is there; a user's own edit to the series, `build`
 // or `produces` is not held (PF-D23): nothing serves until the edited series builds, at the newest
 // fit or, failing that, at its own base.
@@ -1394,7 +1397,12 @@ func (a *advance) run() advanceResult {
 		found := a.rec.Check
 		a.seq = found.Seq
 		if res.Ran && found.FetchErr != "" {
-			a.operationError = found.FetchErr
+			// UPSTREAM UNREACHABLE IS NOT A FAILURE (PD-NF1): yolo cannot know a newer version exists, so
+			// what is here runs, and this line says it could not check. At the host it is no operation
+			// error either, which the floor would refuse on; `yolo capture`, an explicit check, keeps it.
+			if !a.o.host || a.o.force {
+				a.operationError = found.FetchErr
+			}
 			a.warn("%s: could not check its upstream (%s) — %s; the next check is in an hour, or "+
 				"`yolo pack update` checks now", f.Label(), found.FetchErr, a.runsNow())
 		}
@@ -1456,6 +1464,11 @@ func (a *advance) run() advanceResult {
 		if !res.Ran {
 			legacy := a.deliveryPatchFailure(true)
 			if legacy.State == "unavailable" {
+				// THE APPLY ERROR THE LAST CHECK MET, still unclassified by a local replay, STOPS THE ACT
+				// (PD-NF1, superseding PF-D45's serving): it is a newer candidate yolo could not replay.
+				if pf := a.replayFailure(); pf != nil {
+					return a.patchFailureResult(pf)
+				}
 				return a.unavailableDetachedAuthority(legacy)
 			}
 			if legacy.State == "failure" && legacy.Failure != nil {
@@ -1497,9 +1510,14 @@ func (a *advance) run() advanceResult {
 			return a.finish(nil, forkBuild{}, 0, nil, "")
 		}
 		if a.serves() && !res.Ran && !a.o.force && a.rec.ApplyErrAtLastCheck() != nil {
-			// THE LAST WALK OF THIS CHECK'S LIST ENDED IN AN APPLY ERROR (§6.2's row, PF-D45), said on
-			// the launch that met it: the good build runs, the fork's line carries the held suffix,
-			// and the next check retries — never every launch inside the hour, each paying the walk.
+			// THE LAST WALK OF THIS CHECK'S LIST ENDED IN AN APPLY ERROR (§6.2's row): the next check
+			// retries it — never every launch inside the hour, each paying the walk — and meanwhile
+			// every act that would run the good build STOPS on it (PD-NF1, superseding PF-D45's
+			// serving), unless a hatch or a hold runs the good build. The background advance and a
+			// shared lane, which run no program, carry the held suffix.
+			if pf := a.replayFailure(); pf != nil {
+				return a.patchFailureResult(pf)
+			}
 			return a.finish(nil, forkBuild{}, 0, nil, "")
 		}
 	}
@@ -1619,11 +1637,25 @@ func (a *advance) run() advanceResult {
 		a.warn("%s: %s", f.Label(), w.Base.Error())
 		return a.serveOr(fmt.Sprintf("%s's series does not apply at its own base (%s)", f.Label(), w.Base.Error()))
 	case w.Fit < 0:
+		// AN APPLY ERROR WHILE A GOOD BUILD SERVES STOPS THE ACT (PD-NF1, superseding PF-D45's serving):
+		// the entry the walk stopped at is a newer candidate yolo could not replay. The record keeps the
+		// error (finish), so every act inside this check's window stops on it too (replayFailure).
+		target := list[0]
+		if n := len(w.Results); n > 0 {
+			target = w.Results[n-1].Entry
+		}
 		var old *packsrc.GitTooOldError
 		if errors.As(w.Err, &old) {
+			if pf := a.yoloStepFailure(target, packsrc.BuildCauseReplay, fmt.Sprintf("%s, and this host's git is %s",
+				old.Need(), old.Have)); pf != nil {
+				return a.patchFailureResult(pf)
+			}
 			return a.gitTooOld(old)
 		}
 		if err := a.walkErr(w); err != nil {
+			if pf := a.yoloStepFailure(target, packsrc.BuildCauseReplay, oneLineErr(err)); pf != nil {
+				return a.patchFailureResult(pf)
+			}
 			a.warn("%s: could not replay the series: %v — %s; %s", f.Label(), err, a.runsNow(), a.retryStep())
 			return a.serveOr(fmt.Sprintf("%s's series could not be replayed on the host (%v)", f.Label(), err))
 		}
@@ -1705,7 +1737,7 @@ func holdPassesOver(f packload.Fork, good *packsrc.GoodBuild, pf *packsrc.PatchF
 }
 
 func walkBackAsked(f packload.Fork, pf *packsrc.PatchFailure) bool {
-	if pf == nil || pf.Kind == "base" ||
+	if pf == nil || pf.Kind == "base" || pf.Cause != "" ||
 		!patchrecovery.Read(os.Getenv, patchrecovery.AllowOlderUpstreamEnv).Covers(recoverySubject(f)) {
 		return false
 	}
@@ -1746,7 +1778,7 @@ func (a *advance) walkBackList() []packsrc.ListEntry {
 // walk-back has something left to try.
 func (a *advance) walkBackWouldTry() bool {
 	if a.f.Upstream || a.o.background || a.o.sharedOwned || a.rec == nil || a.rec.Check == nil || a.rec.Check.RefKind != "branch" ||
-		a.patchFailure != nil && a.patchFailure.Kind == "base" {
+		a.patchFailure != nil && (a.patchFailure.Kind == "base" || a.patchFailure.Cause != "") {
 		return false
 	}
 	return len(a.walkBackList()) > 0
@@ -1785,7 +1817,9 @@ func (a *advance) failureAtGood(good *packsrc.GoodBuild) *packsrc.PatchFailure {
 // walk-back does not act: not asked for, a failure of the series at its own base, or nothing left to
 // try, so the caller's own end stands.
 func (a *advance) walkBack(newest packsrc.ListEntry, kind string, pf *packsrc.PatchFailure, edited bool) (advanceResult, bool) {
-	if !a.walkBackOn() || pf != nil && pf.Kind == "base" {
+	// NOT PAST ONE OF YOLO'S OWN STEPS (pf.Cause, PD-NF1): an older release meets the same jail, lock,
+	// runtime or git, and a walk-back hold would pin it past a cause that clears by itself.
+	if !a.walkBackOn() || pf != nil && (pf.Kind == "base" || pf.Cause != "") {
 		return advanceResult{}, false
 	}
 	if a.tried == nil {
@@ -2156,10 +2190,57 @@ func (a *advance) buildFailure(commit string) *packsrc.EntryOutcome {
 // capture` and a fresh preparation — and for the background advance and a shared lane, which
 // record and report a failure but serve no launch.
 func (a *advance) failedNewerBuild() *packsrc.PatchFailure {
-	if a.o.background || a.o.sharedOwned || a.o.force || a.o.freshCheck || a.series == nil || !a.serves() {
+	if !a.stopsOnNewerFailure() {
 		return nil
 	}
 	return buildFailureOf(a.f, a.rec, a.in, a.series, a.recipe, a.o.workspace)
+}
+
+// stopsOnNewerFailure reports whether this act STOPS when a newer candidate's build comes to nothing
+// while a good build of the series as it stands serves (OQ-PPX3; PD-NF1 for yolo's own build steps,
+// the maintainer's ruling of 2026-10-16: docs/design/program-delivery.md): a foreground act that would
+// run the program — a jail launch, `yolo host -- <bin>`, `yolo host apply` — so the older build runs
+// only under a recovery hatch or an `agent_updates` hold, never on its own. Not `yolo capture` or a
+// fresh preparation, which fail on their own terms; not the background advance or a shared lane,
+// which record what failed for the next launch to stop on; not an upstream build (YOLO_SKIP_PATCHES),
+// itself a hatch.
+func (a *advance) stopsOnNewerFailure() bool {
+	return !a.o.background && !a.o.sharedOwned && !a.o.force && !a.o.freshCheck && a.series != nil && a.serves() &&
+		!a.f.Upstream && run.PatchedForkHold(a.f) == ""
+}
+
+// replayFailure is this advance's APPLY ERROR read from its record as what stops the act
+// (replayFailureOf, PD-NF1), nil for an act that does not stop on it (stopsOnNewerFailure).
+func (a *advance) replayFailure() *packsrc.PatchFailure {
+	if !a.stopsOnNewerFailure() {
+		return nil
+	}
+	return replayFailureOf(a.f, a.rec, a.in, a.series, a.recipe)
+}
+
+// yoloStepFailure is PD-NF1's stop for a newer candidate, target, whose build one of YOLO'S OWN
+// STEPS kept from running or finishing (cause, a packsrc.BuildCause; detail what it said): as a
+// PatchFailure of Kind packsrc.PatchFailureBuild, which patchFailureResult refuses with the one
+// error block, naming the repair for that step and the hatches. nil when this act does not stop on
+// it (stopsOnNewerFailure), during the walk-back, whose older builds it tries in turn, and while the
+// series' base is built next (thenBase, with nothing serving). Never written to the record: the
+// causes a later launch must stop on as well are recorded where they are met (a build jail that did
+// not start, as a failed build; an apply error, as CheckRecord.ApplyErr).
+func (a *advance) yoloStepFailure(target packsrc.ListEntry, cause, detail string) *packsrc.PatchFailure {
+	if a.walkBackHold != nil || a.thenBase || !a.stopsOnNewerFailure() {
+		return nil
+	}
+	return &packsrc.PatchFailure{Owner: a.f.Key(), Inputs: a.in, Series: a.series.Digest, Target: target,
+		Kind: packsrc.PatchFailureBuild, Cause: cause, Detail: detail, Seq: a.seq,
+		Retry: "yolo capture " + shquote.Quote(a.f.CaptureArg())}
+}
+
+// recordsYoloStep reports whether a build of a newer candidate that yolo's own step kept from running
+// is recorded as that candidate's failed build (PD-NF1): while a good build serves, whatever the act,
+// so the background advance's and `yolo capture`'s stop the next launch too; never during the
+// walk-back or before the series' base, nor for an upstream build, whose back-off is its own.
+func (a *advance) recordsYoloStep() bool {
+	return a.serves() && a.series != nil && !a.thenBase && a.walkBackHold == nil && !a.f.Upstream
 }
 
 // walk replays the series down list and records each outcome, and says each conflict and each
@@ -2341,6 +2422,13 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 	// own config was refused, would be refused the same way, so it is not started.
 	if refused := a.o.report.refusedSeal(f); refused != nil {
 		a.o.report.skipLine(f, refused, a.o.errw)
+		// WITH A GOOD BUILD SERVING, IT STOPS THE ACT (PD-NF1): nothing ran for this key, so nothing is
+		// recorded, and the next launch tries again.
+		if pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseJail, "its build jail was not started: one sealed as "+
+			"it is, "+refused.label+"'s, refused to start at this launch"); pf != nil {
+			a.holdStopped(refused.cause)
+			return a.patchFailureResult(pf)
+		}
 		return a.notStarted(refused.cause)
 	}
 	wait := ""
@@ -2400,7 +2488,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		mode.keepJailOutput = true
 	}
 	if a.o.launch {
-		mode.lock = pidlock.Mode{Wait: true, Bound: forkBuildWaitBound, Cancel: a.ctx.Done()}
+		mode.lock = pidlock.Mode{Wait: true, Bound: forkBuildLockBound, Cancel: a.ctx.Done()}
 		if a.o.background {
 			mode.lock = pidlock.NoWait // a held build lock skips the key (§6.2 rule 5)
 		}
@@ -2477,6 +2565,11 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		reason := deferred.reason
 		if pending != nil {
 			reason = pending.Reason
+		}
+		// A NEWER CANDIDATE APPLE CONTAINER WILL NOT BUILD NOW STOPS THE ACT while a good build serves
+		// (PD-NF1): nothing ran, so nothing is recorded, and the next launch asks the runtime again.
+		if pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseRuntime, reason); pf != nil {
+			return a.patchFailureResult(pf)
 		}
 		return a.deferAppleCandidate(b.Entry, reason)
 	}
@@ -2617,26 +2710,44 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 		r.fellShort = true
 		return r
 	case errors.As(err, &lockTimeout):
+		// THE WAIT RAN OUT (PD-NF1): with a good build serving, the act stops, the error block naming
+		// the pid. Nothing is recorded — that build's own result is — and the next launch waits again.
+		if pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseLock, oneLineErr(err)); pf != nil {
+			return a.patchFailureResult(pf)
+		}
 		a.warn("%s: %v — %s; the next launch takes that build's result, and if that pid has hung, "+
 			"stopping it lets the next launch build", f.Label(), err, a.runsNow())
 		return a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
 	case errors.Is(err, errForkBuildLocked):
+		// THE LOCK THAT IS NOT WAITED FOR is `yolo capture`'s and the background advance's alone (every
+		// launch and `yolo host` wait, bounded, above): another build of this candidate is running and
+		// records its own result, so this is no failure of it (PD-NF1). `yolo capture` fails on it with
+		// the step that waits; the background skips the key (lockHeldSkip, above).
 		a.warn("%s: %v", f.Label(), err)
 		a.dim("  %s", captureWaitStep(f.CaptureArg()))
 		return a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
 	case errors.Is(err, errForkBuildWorkspaceRetained):
 		// A PREVIOUS OR THIS BUILD'S JAIL IS NOT YET KNOWN GONE: no verdict on the commit, so nothing
-		// is recorded, no back-off starts, and the next launch tries again (patched-forks.md §7.1).
+		// is recorded, no back-off starts, and the next launch tries again (patched-forks.md §7.1). With
+		// a good build serving, this act stops on it (PD-NF1).
+		if pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseWorkspace, oneLineErr(err)); pf != nil {
+			r := a.patchFailureResult(pf)
+			r.retained = run.WithSeries(b.Entry.Label(), b.Series) + " pending — " + oneLineErr(err)
+			return r
+		}
 		a.warn("%s: %v — %s", f.Label(), err, a.runsNow())
 		r := a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
 		r.retained = run.WithSeries(b.Entry.Label(), b.Series) + " pending — " + oneLineErr(err)
 		return r
 	case errors.Is(err, errForkBuildNotStarted):
-		// THE BUILD JAIL STOPPED BEFORE ITS BUILD LINE RAN (PF-D21): not a failed build, so nothing is
-		// recorded and the candidate stays pending. What stopped it is the jail's to say, and the
-		// error relays what it said (forkBuildNotStarted, PPX-D39, PPX-D42): a launch pre-flight's
+		// THE BUILD JAIL STOPPED BEFORE ITS BUILD LINE RAN. What stopped it is the jail's to say, and
+		// the error relays what it said (forkBuildNotStarted, PPX-D39, PPX-D42): a launch pre-flight's
 		// refusal, a runtime that would not start it, or a boot that failed, whose record names each
-		// failed generator's pack and file.
+		// failed generator's pack and file. WHILE A GOOD BUILD SERVES IT IS THE CANDIDATE'S FAILED BUILD
+		// (PD-NF1, superseding PF-D21): recorded with its cause and the back-off, so this act stops and
+		// so does every act inside the back-off — the background advance's next launch included — until
+		// `yolo capture` builds it or the back-off ends. With nothing serving, nothing is recorded and
+		// the launch's missing-build refusal says the cause, as before.
 		var ns forkBuildNotStarted
 		errors.As(err, &ns)
 		cause := ns.buildCause(sealPacks(f))
@@ -2646,10 +2757,28 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 		if ns.configRefused(f) {
 			a.o.report.noteRefused(f, cause)
 		}
+		recorded := a.recordsYoloStep()
+		if recorded {
+			a.recordOnly(&packsrc.EntryOutcome{Commit: b.Commit, Kind: packsrc.OutcomeBuildFailed, Series: a.series.Digest,
+				Yolo: a.yolo, Recipe: a.recipe, Error: oneLineErr(err), Count: 1, At: patchedNow().Unix(),
+				Cause: packsrc.BuildCauseJail})
+		}
+		pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseJail, oneLineErr(err))
+		retry := a.retryNotStarted()
+		if recorded {
+			retry = "`yolo capture " + a.f.CaptureArg() + "` builds it"
+		}
 		if a.o.report == nil {
 			// AN ACT OF ITS OWN (`yolo capture`, `yolo host`) says it here, the cause on lines of its own.
-			a.warn("%s: %v — %s", f.Label(), err, a.runsNow())
-			for _, l := range notStartedLines(err, sealPacks(f), "  ", a.retryNotStarted()) {
+			tail := a.runsNow()
+			switch {
+			case pf != nil:
+				tail = "the error below names the ways on"
+			case recorded && a.o.background:
+				tail = "the next fresh launch stops on it until a build of it succeeds"
+			}
+			a.warn("%s: %v — %s", f.Label(), err, tail)
+			for _, l := range notStartedLines(err, sealPacks(f), "  ", retry) {
 				a.epr.Print(richtext.Escape(l))
 			}
 			if a.o.runtime == "container" {
@@ -2657,11 +2786,23 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 					"stopped it, `yolo capture %s` builds it once the other jails stop", f.CaptureArg())
 			}
 		}
+		if pf != nil {
+			if cause.Log != "" {
+				pf.Log = cause.Log
+			}
+			a.holdStopped(cause)
+			return a.patchFailureResult(pf)
+		}
 		return a.notStarted(cause)
 	case errors.As(err, &source):
 		// AN APPLY ERROR in the build's own replay: nothing recorded against the entry, and the next
 		// check retries it (PF-D45).
 		a.applyErr = &packsrc.ApplyError{Seq: a.seq, Error: oneLineErr(err)}
+		// With a good build serving it stops the act (PD-NF1, superseding PF-D45's serving); finish
+		// records the error, which stops the acts after it until the next check.
+		if pf := a.yoloStepFailure(b.Entry, packsrc.BuildCauseReplay, oneLineErr(err)); pf != nil {
+			return a.patchFailureResult(pf)
+		}
 		tail := a.runsNow() + "; " + a.retryStep()
 		if a.thenBase {
 			tail = a.baseNext()
@@ -2697,6 +2838,18 @@ func (a *advance) notStarted(cause *entrypoint.BuildCause) advanceResult {
 		a.o.report.hold(a.f, a.runsNow(), a.retryNotStarted(), a.o.runtime, cause)
 	}
 	return r
+}
+
+// holdStopped is buildReport.hold for a newer build whose jail did not start and which STOPS this act
+// (PD-NF1): its cause is said once per cause when the act's builds end, beside every key it stopped,
+// and the error block names the ways on. Under the patch-failure bypass, which runs the good build
+// in its place, the group says what still runs instead.
+func (a *advance) holdStopped(cause *entrypoint.BuildCause) {
+	runs := ""
+	if a.continuesPastFailure() {
+		runs = a.runsNow()
+	}
+	a.o.report.hold(a.f, runs, "`yolo capture "+a.f.CaptureArg()+"` builds it", a.o.runtime, cause)
 }
 
 // retryNotStarted is what builds a build whose jail stopped before its build line, once its cause

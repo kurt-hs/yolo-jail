@@ -804,12 +804,37 @@ func (r *CheckRecord) CurrentBuildFailure(in CheckInputs, series, recipe, yolo s
 			if o.Kind == OutcomeBuildFailed && o.Commit == e.Commit && o.Series == series && o.Recipe == recipe &&
 				o.Yolo == yolo {
 				return &PatchFailure{Owner: r.Owner, Inputs: in, Series: series, Target: e, Kind: PatchFailureBuild,
-					Detail: o.Error, Seq: r.Seq}, &o
+					Detail: o.Error, Seq: r.Seq, Cause: o.Cause}, &o
 			}
 		}
 		return nil, nil
 	}
 	return nil, nil
+}
+
+// CurrentReplayFailure is the APPLY ERROR the record holds for a check of in, read as what stops a
+// launch (PD-NF1, the maintainer's ruling of 2026-10-16, superseding PF-D45's serving): the last
+// walk of the last check's list, or the build's own replay, could not replay the series as it stands
+// (CheckRecord.ApplyErr), while a good build of this series and recipe is here, as a PatchFailure of
+// Kind PatchFailureBuild and Cause BuildCauseReplay, aimed at the newest candidate the walk would
+// reach. nil when there is none, when nothing is pending, or while a walk-back hold holds. It is
+// bound to that check (ApplyErrAtLastCheck): the next check replays the list again.
+func (r *CheckRecord) CurrentReplayFailure(in CheckInputs, series, recipe string) *PatchFailure {
+	if r == nil || r.Owner == "" || !r.Answers(in) || r.ApplyErrAtLastCheck() == nil || r.Good == nil ||
+		r.Good.Series != series || r.Good.Recipe != recipe || r.WalkBackHolds(in, series) != nil {
+		return nil
+	}
+	for _, e := range r.Candidates(in) {
+		if r.conflictedUnder(e.Commit, series) {
+			continue
+		}
+		if e.Commit == r.Good.Commit {
+			return nil
+		}
+		return &PatchFailure{Owner: r.Owner, Inputs: in, Series: series, Target: e, Kind: PatchFailureBuild,
+			Cause: BuildCauseReplay, Detail: r.ApplyErr.Error, Seq: r.Seq}
+	}
+	return nil
 }
 
 func successfulCheck(r *CheckRecord) bool {

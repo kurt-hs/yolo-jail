@@ -134,7 +134,11 @@ The five principles, numbered so other documents can cite them:
   opt-in recovery hatches ([§8.5](#85-recovery-hatches)); and, as amended by
   [OQ-PPX3](pi-extensions.md#OQ-PPX3) (2026-10-16), so does a newer version that applies but fails
   to *build*: the good build stays on this machine, and runs only under a hatch or an
-  `agent_updates` hold ([§8](#8-failure-and-the-next-step)).
+  `agent_updates` hold ([§8](#8-failure-and-the-next-step)). As amended by
+  [PD-NF1](../design/program-delivery.md#PD-NF1) (2026-10-16), the same holds when one of yolo's own
+  build steps keeps the newer version from building: the build jail not starting, a lock wait
+  running out, an error replaying the series. An upstream yolo cannot reach is no failure: the good
+  build runs, and the line says yolo could not check.
 
 ## 2. Where the code lives
 
@@ -425,7 +429,8 @@ bar a hand rebase meets, since a rebase is the same picks.
 - **A conflict** is a pick that stopped with conflicting paths while every object it read was
   present. Anything else that stops the replay (a missing blob, a git that failed or ran out of time,
   a git older than 2.40) is an **apply error** *(coined here)*: the candidate stays pending and the
-  next check retries it.
+  next check retries it; meanwhile, while a good build serves, every act that would run it stops
+  ([PF-D93](#PF-D93)).
 
 > [!WARNING]
 > **Do not replace the replay with `git am --3way` onto the candidate.** A later member's preimage is
@@ -517,14 +522,18 @@ without a lock.
 | the **failed newer build** *(coined here: the newest entry the walk reaches, whose build of the series and recipe as they stand failed under this yolo, while a good build of them is here)*, inside its back-off | stop by default, as for the recorded patch failure ([OQ-PPX3](pi-extensions.md#OQ-PPX3)); no rebuild. A newer release passes it by, and `agent_updates` holding the fork runs the good build past it |
 | pending | run the advance; the launch waits for it, bounded ([§7](#7-the-build-and-the-launch)) |
 | pending, and the last fetch failed | run the good build; no advance until a check fetches (with nothing to serve, fetch again: [PF-D88](#PF-D88)) |
-| apply error | run the good build; the next check retries ([PF-D45](#PF-D45)) |
+| apply error | stop by default, as for the failed newer build, until the next check replays the list again; `yolo capture` replays it now ([PD-NF1](../design/program-delivery.md#PD-NF1), [PF-D93](#PF-D93); PF-D45's "run the good build" is superseded) |
 | did not apply (the member, its paths), for (entry, series digest, yolo version, git version) | the walk passes that entry over, and no launch replays that key again. A new commit, an edited series, another yolo or another git is a new key, since an upgrade may be the fix |
 | the **recorded patch failure** *(coined here: the one typed failure the record keeps, with its target, member and paths)*, for (check inputs, series digest) | stop by default ([PF-D81](#PF-D81)) while it governs, as below. At each check that ran, its target is replayed again |
-| build failed (the error, the yolo version, the count), for that entry | the failed newer build, above, while a good build is here; retried after [OQ-PD26](../design/program-delivery.md#decision-ledger)'s back-off, reset by another candidate or another yolo, and a retry that fails stops again. With nothing to serve, every fresh launch retries instead |
+| build failed (the error, the yolo version, the count, and the **cause** when one of yolo's own steps stopped it), for that entry | the failed newer build, above, while a good build is here; retried after [OQ-PD26](../design/program-delivery.md#decision-ledger)'s back-off, reset by another candidate or another yolo, and a retry that fails stops again. With nothing to serve, every fresh launch retries instead |
 
-Never recorded as an outcome: a lost build-lock wait, a build jail that stopped before its build line
-ran, a retained build workspace ([§7.1](#71-cancelling-a-launchs-builds)), and an advance a Ctrl-C
-ended. Each leaves the candidate pending.
+A build jail that stopped before its build line ran is recorded as the candidate's failed build,
+with that cause, while a good build serves ([PF-D92](#PF-D92)); with nothing to serve it is not
+recorded, and every fresh launch tries again. Never recorded as an outcome: a lost build-lock wait, a
+build jail the runtime would not start now (Apple Container beside a running jail), a retained build
+workspace ([§7.1](#71-cancelling-a-launchs-builds)), and an advance a Ctrl-C ended. Each leaves the
+candidate pending, and all but the Ctrl-C stop the act that met them while a good build serves
+([PD-NF1](../design/program-delivery.md#PD-NF1)).
 
 **A recorded patch failure follows upstream's newest** ([OQ-PBR1](#why-its-this-way)). It governs
 only while its target is the newest candidate not already passed over by a conflict of this series,
@@ -588,8 +597,9 @@ it; a hold's commit, and a list read under another ref or `follow` than the good
 the good build's commit instead ([PF-D34](#PF-D34)).
 
 - **Replays run down the list**, each entry's blobs prefetched first. A conflict is recorded against
-  its entry, and an entry with one is passed over with no replay; an apply error ends the walk and
-  leaves the entries it did not settle pending.
+  its entry, and an entry with one is passed over with no replay; an apply error ends the walk,
+  leaves the entries it did not settle pending, and, while a good build serves, stops the act
+  ([PF-D93](#PF-D93)).
 - **The first clean entry is the newest fit, and the advance builds it**, replaying it again under
   its build lock to put the source in `src/` ([PF-D44](#PF-D44)).
 - **Bound:** the walk and the build's replay share one budget, apart from the check's fetch, so git
@@ -671,9 +681,10 @@ candidate again.
   over a series that does not apply, even while a good build serves, unless the bypass is set; and
   with nothing to serve, a fresh launch at a notch that builds forks refuses before booting
   ([PF-D77](#PF-D77)). A check that could not fetch while a good build serves refuses nothing.
-- **Never falls back to an older build on its own** ([OQ-PPX3](pi-extensions.md#OQ-PPX3)): a newer
-  build that fails stops the act as a patch failure does, and the good build runs in its place only
-  under a recovery hatch the user set or an `agent_updates` hold.
+- **Never falls back to an older build on its own** ([OQ-PPX3](pi-extensions.md#OQ-PPX3),
+  [PD-NF1](../design/program-delivery.md#PD-NF1)): a newer build that fails, or that one of yolo's
+  own steps keeps from running, stops the act as a patch failure does, and the good build runs in its
+  place only under a recovery hatch the user set or an `agent_updates` hold.
 
 ## 7. The build and the launch
 
@@ -689,25 +700,29 @@ flowchart TD
   diff -- "yes" --> replay["replay the series on the host, newest first, down the walk's list"]
   first --> replay
   replay -- "a member conflicts" --> stop["patch failure: the operation stops; the bypass runs the good build"]
+  replay -- "an apply error" --> stopped
   replay -- "the newest fit" --> build["build in the sealed jail"]
-  build -- "fails" --> held["held: said once; the good build runs, or nothing on a first advance"]
+  build -- "fails, or yolo's own step stops it" --> stopped["the operation stops; a hatch runs the good build; nothing on a first advance"]
   build -- "admitted" --> move["move the good build; this jail gets it"]
 ```
 
 **The build is the fork route's build act**: the same sealed jail, the same `produces` and link
 checks, the same per-build lock and its bounded wait (`forkBuildWaitBound`). Its checkout differs
 ([§5.1](#51-where-it-runs)), its identity ignores the ref ([§6.3](#63-what-is-served-and-the-store-key)),
-and a waiter takes the winner's result ([§6.6](#66-locks-and-their-order)). A build jail that never
-ran its build line is not a failed build ([PF-D21](#PF-D21), [PF-D39](#PF-D39)): the toolchain record
-its script writes first tells the two apart, and only a build line that ran and failed is recorded. A
+and a waiter takes the winner's result ([§6.6](#66-locks-and-their-order)). The toolchain record a
+build jail's script writes first tells a build line that ran and failed from a jail that never ran
+it ([PF-D39](#PF-D39)), and the error block says which; while a good build serves, both stop the act
+and both are recorded as the candidate's failed build, the second with its cause
+([PF-D92](#PF-D92), superseding [PF-D21](#PF-D21)). A
 sealed build jail renders no pack-declared surface and runs no pack hook ([PF-D78](#PF-D78)), and its
 seal does not trip over its own narrowing ([`pi-extensions.md` PPX-D39](pi-extensions.md#PPX-D39)).
 
 **The launch that finds a candidate waits for it** ([PF-D25](#PF-D25)), bounded at
-`forkBuildWaitBound` and ended early by a Ctrl-C. The jail starts on the good build as the record
-names it when the advance ends: the new build on success, the previous one on any failure, at the
-bound, or after a Ctrl-C. A build stopped at the bound is recorded as failed; one a Ctrl-C ended is
-not. **One Ctrl-C ends an act's whole wait** ([PF-D57](#PF-D57)): every advance of one act shares one
+`forkBuildWaitBound` and ended early by a Ctrl-C. The jail starts on the new build on success, and
+on the previous one after a Ctrl-C; a failure of any kind, the bound and a wait for another build's
+lock that runs out included, stops the launch, which runs the previous build only under a recovery
+hatch ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [PD-NF1](../design/program-delivery.md#PD-NF1)). A
+build stopped at the bound is recorded as failed; one a Ctrl-C ended is not. **One Ctrl-C ends an act's whole wait** ([PF-D57](#PF-D57)): every advance of one act shares one
 **act interrupt** *(coined in PF-D57)*, so an advance that begins after a Ctrl-C ran no check and is
 handed what serves, with nothing handed when nothing serves.
 
@@ -779,8 +794,9 @@ whole wait; the TTY proxy, which wraps the container command later, and pi's own
   never recorded a runtime never dispatched, so its workspace is cleaned.
 - **A finished build waits out late container removal** for a bounded time before declaring its
   output unowned, since `--rm` removal can trail the keeper.
-- **A retained workspace is no failed build**: the advance records no outcome and starts no back-off,
-  and the next launch builds the commit.
+- **A retained workspace is no recorded failed build**: the advance records no outcome and starts no
+  back-off, and the next launch builds the commit. While a good build serves, the act that met it
+  still stops ([PF-D92](#PF-D92)).
 - **On macos-user** there is no container listing or capture-completion witness, so an abnormal stop
   stays unknown; the refusal names the build ID and retained paths and asks a host operator to verify
   that capture has ended before clearing them.
@@ -814,6 +830,19 @@ good build or try an older release. Inside the failure's back-off every launch s
 with no rebuild; past it, the next launch builds it again. A newer release passes it by, and an
 `agent_updates` hold runs the good build past it ([OQ-PBR5](#why-its-this-way)). Fetch, interruption
 and platform-support failures keep their own dispositions below.
+
+**So is a newer build one of yolo's own steps keeps from running** (the maintainer's ruling of
+2026-10-16, [PD-NF1](../design/program-delivery.md#PD-NF1)): the build jail not starting, Apple
+Container unable to start one beside a running jail, a wait for another build's lock that runs out,
+an earlier build jail not yet known gone, an error replaying the series. These were "not failed
+builds" under [PF-D21](#PF-D21) and [PF-D45](#PF-D45), which kept the good build running with a
+warning; now the act stops with the same block. Its head says `yolo could not build upstream
+v1.3.0 (…)`, or `the patch series could not be replayed onto upstream v1.3.0 (…)` for an apply
+error; its `Cause:` or `Replay:` line says what stopped it; its repair names what to fix before
+`yolo capture <bin>` ([PF-D91](#PF-D91)). Which of them later launches stop on too is
+[PF-D92](#PF-D92) and [PF-D93](#PF-D93). **Being unable to reach upstream is not a failure**: yolo
+cannot know a newer version exists, so the good build runs and the line says yolo could not check
+([PF-D95](#PF-D95)).
 
 **Explicit recovery from an older build** ([PF-D82](#PF-D82)): `YOLO_USE_CACHED_GOOD` runs the
 record's older good build for one fresh jail launch, after validating its store entry and receipt,
@@ -851,17 +880,19 @@ prints the git commands that rebase it"*.
 
 | Failure | What runs | Recorded | Said, with the next step |
 | :--- | :--- | :--- | :--- |
-| The check's fetch fails | the good build; with none, a fresh fetch at every launch ([PF-D88](#PF-D88)) | the attempt, and that the fetch failed | once per failed check: the error and `yolo pack update` |
+| The check's fetch fails | the good build, at a jail launch and at `yolo host -- <bin>` alike: not a failure ([PF-D95](#PF-D95)); with none, a fresh fetch at every launch ([PF-D88](#PF-D88)) | the attempt, and that the fetch failed | once per failed check: that yolo could not check, the error and `yolo pack update` |
 | The ref is `HEAD`, an abbreviated commit, or names nothing | the good build, held; without one, the launch refuses | — | the ref, and the spellings that work |
 | A release rule finds no version tag on the branch ([PF-D60](#PF-D60)) | the good build; with none, the series' base | the check's note | once: that the series stays there until a tag appears or `follow` changes, naming `follow: "head"`; and in `yolo pack status` and `update` |
 | The series cannot be read: missing, unreadable or empty, a link on its path, a plain diff, no `base-commit:` | nothing ([PF-D23](#PF-D23)), so the launch refuses | — | the file, and the fix for its cause |
 | The series does not apply at its own base | as the row above | — | the member, and re-exporting with `git format-patch --base` |
 | A member conflicts at the newest version | nothing new; the operation stops, its good build included, unless a recovery hatch is set ([PF-D81](#PF-D81), [§8.5](#85-recovery-hatches)) | the recorded patch failure, for the series as it stands, until a newer release passes it by ([§6.2](#62-the-check-record-and-what-is-pending)) | once: the error block ([§8.2](#82-the-conflict-message)) |
-| An object the replay needs cannot be fetched, git fails, or git is older than 2.40 | the good build | apply error; the next check retries | once: the error, and `yolo pack update`, or updating git ([PF-D58](#PF-D58)) |
+| An object the replay needs cannot be fetched, git fails, or git is older than 2.40, in the walk or in the build's own replay | nothing new; the operation stops, its good build included, unless a recovery hatch is set ([PF-D93](#PF-D93)); with nothing serving, the series' base | apply error; every act stops on it until the next check replays the list | the error block: the replay's error, what to fix (git, the network), `yolo capture <bin>`, and the hatches ([PF-D58](#PF-D58)) |
 | A member is already upstream | the new build: the series is clean | — | once per candidate, naming the file to drop |
-| The build jail stops before its build line runs | the good build; with none, the launch refuses with this row's lines | nothing; the candidate stays pending | its cause in plain words, from its boot's record or its last lines ([`pi-extensions.md` PPX-D42](pi-extensions.md#PPX-D42)); for a yolo bug, where to report it; on Apple Container, that a capture jail cannot start beside a running one |
+| The build jail stops before its build line runs | nothing new; the operation stops, its good build included, unless a recovery hatch is set ([PF-D92](#PF-D92)); with none, the launch refuses with this row's lines | with a good build here, build failed with its cause and the back-off; with none, nothing | its cause in plain words, from its boot's record or its last lines ([`pi-extensions.md` PPX-D42](pi-extensions.md#PPX-D42)), once per cause; for a yolo bug, where to report it; on Apple Container, that a capture jail cannot start beside a running one; then the error block |
+| Apple Container cannot start a build jail now (another jail runs, or `container ls` cannot say) | nothing new; the operation stops, unless a recovery hatch is set ([PF-D92](#PF-D92)) | nothing; the next launch asks again | the error block: the running jails, and `yolo capture <bin>` once `container ls` shows none |
 | The build fails, or runs past `forkBuildWaitBound` | nothing new; the operation stops, its good build included, unless a recovery hatch is set ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [§8.5](#85-recovery-hatches)) | build failed, with back-off; inside it every launch stops again with no rebuild | the error block, after the build's last lines and both logs at a jail launch ([PF-D79](#PF-D79)): `yolo capture <bin>` to retry, and the hatches |
-| Another build of this candidate holds the build lock past the wait | the good build | nothing | the pid holding it, and that the next launch takes its result |
+| Another build of this candidate holds the build lock past the wait | nothing new; the operation stops, unless a recovery hatch is set ([PF-D92](#PF-D92)) | nothing: that build records its own result | the error block: the pid holding it, and `yolo capture <bin>` once that build ends or is stopped |
+| An earlier build jail of this candidate is not yet known gone ([§7.1](#71-cancelling-a-launchs-builds)) | nothing new; the operation stops, unless a recovery hatch is set ([PF-D92](#PF-D92)) | nothing; the next launch tries again | the error block: the retained workspace, and `yolo capture <bin>` once that jail is gone |
 | Another launch's build of this candidate failed while this one waited | as the row above: the operation stops | already, by that launch | that launch's error, in the error block |
 | The user's own edit does not apply or build, nor at the series' base | nothing ([PF-D23](#PF-D23)), so the launch refuses | as the cause's row | the cause, and that reverting the edit brings back the good build |
 | The good build's entry is gone (a prune, a wiped store) | rebuilt from its own inputs | — | as a first build |
@@ -959,9 +990,9 @@ a manifest, and never forwarded into a jail. Without one, a failure still stops 
 
 | Hatch | Gets the act running by | For |
 | :--- | :--- | :--- |
-| `YOLO_ALLOW_PATCH_FAILURES` | running the intact admitted build of the series as it stands, past a recorded patch failure, for this run ([PF-D83](#PF-D83)) | forks and extensions |
-| `YOLO_USE_CACHED_GOOD` | running the record's good build for one fresh jail launch, with no check or build: an older one whose series or recipe is no longer the manifest's ([PF-D82](#PF-D82)), or the good build a newer build failed past ([OQ-PPX3](pi-extensions.md#OQ-PPX3)) | forks and extensions |
-| `YOLO_ALLOW_OLDER_UPSTREAM` | the **walk-back**: building the series on an older upstream release when the newest does not take it or does not build ([§8.6](#86-the-walk-back)) | forks and extensions |
+| `YOLO_ALLOW_PATCH_FAILURES` | running the intact admitted build of the series as it stands, past a recorded patch failure, a failed newer build or one of yolo's own steps that stopped it ([PD-NF1](../design/program-delivery.md#PD-NF1)), for this run ([PF-D83](#PF-D83)) | forks and extensions |
+| `YOLO_USE_CACHED_GOOD` | running the record's good build for one fresh jail launch, with no check or build: an older one whose series or recipe is no longer the manifest's ([PF-D82](#PF-D82)), or the good build a newer build failed past ([OQ-PPX3](pi-extensions.md#OQ-PPX3)), whether its build line failed or yolo's own step stopped it | forks and extensions |
+| `YOLO_ALLOW_OLDER_UPSTREAM` | the **walk-back**: building the series on an older upstream release when the newest does not take it or does not build ([§8.6](#86-the-walk-back)); never past one of yolo's own steps ([PF-D91](#PF-D91)) | forks and extensions |
 | `YOLO_SKIP_PATCHES` | building and running the upstream with no series applied ([Skip the patches](#skip-the-patches)) | forks and patched extensions |
 | `YOLO_SKIP_EXTENSIONS` | starting the owning agent without a built extension ([`pi-extensions.md` §9.1](pi-extensions.md#91-recovery-hatches-for-an-extension)) | built extensions, patched or unmodified |
 | `YOLO_ALLOW_MISSING_PROGRAMS` | starting the jail without a program it cannot deliver; the program's own launcher still refuses ([PF-D77](#PF-D77)) | any program, by any non-empty value |
@@ -1029,8 +1060,9 @@ ask: without the variable a conflict at the newest still stops the operation.
 
 - **When it acts.** For a covered key whose newest entry conflicts, at a check or as the recorded
   patch failure, or whose newest fit fails to build. Not for a failure of the series at its own base,
-  and only while the source follows a branch: a tag or commit `?ref=` names the version, so there is
-  nothing older to choose.
+  nor past one of yolo's own build steps — a build jail that did not start, a lock wait, an apply
+  error — which an older release would meet as well ([PF-D91](#PF-D91)); and only while the source
+  follows a branch: a tag or commit `?ref=` names the version, so there is nothing older to choose.
 - **What it tries.** The walk's list, newest first ([§6.4](#64-the-newest-fit-and-the-first-advance)),
   passing over recorded conflicts, builds still backing off, and what this run already tried; then,
   with nothing serving, the series' base. It walks release tags, never the commits between them.
@@ -1073,8 +1105,8 @@ listed only when it would get that act running:
 | Hatch | Listed when |
 | :--- | :--- |
 | `YOLO_ALLOW_PATCH_FAILURES` | a build of the series as it stands serves |
-| `YOLO_USE_CACHED_GOOD` | the act is a fresh jail launch, the record's good build validates, and either nothing serves or a newer build failed while it serves ([OQ-PPX3](pi-extensions.md#OQ-PPX3)) |
-| `YOLO_ALLOW_OLDER_UPSTREAM` | the act reads it, the source follows a branch, the failure is not the series' own at its base, and the walk-back has an entry left to try |
+| `YOLO_USE_CACHED_GOOD` | the act is a fresh jail launch, the record's good build validates, and either nothing serves or a newer build failed, or one of yolo's own steps stopped it, while it serves ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [PD-NF1](../design/program-delivery.md#PD-NF1)) |
+| `YOLO_ALLOW_OLDER_UPSTREAM` | the act reads it, the source follows a branch, the failure is not the series' own at its base nor one of yolo's own steps ([PF-D91](#PF-D91)), and the walk-back has an entry left to try |
 | `YOLO_SKIP_PATCHES` | the build applies a series |
 | `YOLO_SKIP_EXTENSIONS` | an extension an agent pack loads |
 | `YOLO_ALLOW_MISSING_PROGRAMS` | a fork at a jail launch with nothing to run |
@@ -1093,9 +1125,9 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 | Notch / backend | Patched fork |
 | :--- | :--- |
 | **jail, podman (Linux or a macOS VM)** | yes: the check, the host replay and the sealed build run at a fresh launch |
-| **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so. A capture jail cannot start beside a running jail (INFERRED), so while another workspace's jail runs an advance cannot build: nothing is recorded, the candidate stays pending, the good build runs, and the line names `yolo capture <bin>` once the other jails stop. With no good build, the launch refuses with that line |
+| **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so. A capture jail cannot start beside a running jail (INFERRED), so while another workspace's jail runs an advance cannot build: nothing is recorded, the candidate stays pending, and the launch stops, naming `yolo capture <bin>` once the other jails stop and the hatches that run the good build meanwhile ([PF-D92](#PF-D92)). With no good build, the launch refuses with that line |
 | **jail, macos-user** | none: the fork route delivers nothing there ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)). The launch says why, names both container backends, and hands the sandbox's launcher the same reason ([PF-D54](#PF-D54)). Delivery is deferred ([OQ-PFK5](#why-its-this-way), [PF-D59](#PF-D59)) |
-| **`yolo host`, Linux** | yes ([PF-D14](#PF-D14), [PF-D50](#PF-D50)–[PF-D53](#PF-D53), [PF-D55](#PF-D55)): the floor's install act runs the advance first, outside the floor's own lock and the render gate's budget, honoring `agent_updates` for the fork pack and its base. Its readers of the recipe read the good build's. A newer upstream that fails keeps the installed copy, which `yolo host -- <bin>` then runs only under a recovery hatch or a hold ([OQ-PPX3](pi-extensions.md#OQ-PPX3)); the user's own edit that does not build removes it. The floor's installed copy serves while the good build's store entry is gone |
+| **`yolo host`, Linux** | yes ([PF-D14](#PF-D14), [PF-D50](#PF-D50)–[PF-D53](#PF-D53), [PF-D55](#PF-D55)): the floor's install act runs the advance first, outside the floor's own lock and the render gate's budget, honoring `agent_updates` for the fork pack and its base. Its readers of the recipe read the good build's. A newer upstream that fails, or that one of yolo's own steps keeps from building, keeps the installed copy, which `yolo host -- <bin>` then runs only under a recovery hatch or a hold ([OQ-PPX3](pi-extensions.md#OQ-PPX3), [PD-NF1](../design/program-delivery.md#PD-NF1)); an upstream it cannot reach runs the installed copy, said ([PF-D95](#PF-D95)); the user's own edit that does not build removes it. The floor's installed copy serves while the good build's store entry is gone |
 | **`yolo host`, macOS** | none, as for every fork: the build is of the jail's platform. The no-copy line names a jail on a container backend ([PF-D54](#PF-D54)) |
 | **guest** | unbuilt, as every verb there is |
 
@@ -1205,7 +1237,9 @@ keeps the plain-fork manifest where older users point and publishes the patched 
   mapping on a rootless podman are verified only by CI and a real host.
 - **macOS.** Apple Container and a podman machine are unverified by any run of this mode; the Linux
   pty tests do not prove macOS terminal signal ordering, rootless teardown, Apple Container or
-  macos-user cancellation ([§7.1](#71-cancelling-a-launchs-builds)).
+  macos-user cancellation ([§7.1](#71-cancelling-a-launchs-builds)). Nor is [PF-D92](#PF-D92)'s stop
+  beside a running Apple Container jail seen on a Mac: the tests stand the runtime's listing and its
+  refusal in.
 - **The host floor with a real sealed build.** Every floor test stands the build jail in; a series
   replayed and built in a real sealed jail, then run with `yolo host -- <bin>`, has not been observed.
 - **The migration kit against the maintainer's own series**: the fork route's
@@ -1270,7 +1304,7 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D6"></a>PF-D6 | The replay: `git am` at the base, then each commit picked three-way onto the candidate; clean when neither step stops; a pick that changes nothing is clean (already upstream, or empty when written); a conflict needs every object present, anything else is an apply error. Chosen over `git am --3way`, measured unable to replay a stacked series |
 | <a id="PF-D7"></a>PF-D7 | The revision stays the upstream commit; a patched recipe appends the series digest and a plain one stays byte-identical; the receipt gains `fork`, `series`, `tree`; a patched build is selected by fork key, identified without the ref, and found by an exact lookup |
 | <a id="PF-D8"></a>PF-D8 | What runs moves only after a candidate's build is admitted here, by a compare-and-swap under the record lock that prefers the newer check, with a disclosure line; a newer upstream that does not build leaves the good build running. Overrides, for a patched fork only, the fork route's no-timer, exact-key, drift-reported, standing-pin, unpolled-floor and same-binary rules ([§6.1](#61-the-good-build-is-a-ratchet)). Amended by [PF-D77](#PF-D77) and, for a patch failure, [PF-D81](#PF-D81). **Its "leaves the good build running" is superseded by [OQ-PPX3](pi-extensions.md#OQ-PPX3), 2026-10-16:** a newer upstream that does not build leaves the good build in place but stops the act, which runs it only under a recovery hatch or an `agent_updates` hold |
-| <a id="PF-D9"></a>PF-D9 | A machine-local check record per owner key, written under its lock and read without one, with one outcome per entry of the walk's list; a conflict is never replayed again for the same (entry, series, yolo, git); a build failure backs off while a good build serves and is retried every launch while nothing serves; an apply error, failed fetch, lost lock wait, unstarted build jail and Ctrl-C record nothing; a lost record is recovered from the store. Amended by [OQ-PBR1](#why-its-this-way): the recorded patch failure follows upstream's newest. **Amended by [OQ-PPX3](pi-extensions.md#OQ-PPX3), 2026-10-16:** while a good build is here, a build failure inside its back-off stops every launch, as a patch failure does, with no rebuild; the back-off now spaces the retries rather than keeping the good build running |
+| <a id="PF-D9"></a>PF-D9 | A machine-local check record per owner key, written under its lock and read without one, with one outcome per entry of the walk's list; a conflict is never replayed again for the same (entry, series, yolo, git); a build failure backs off while a good build serves and is retried every launch while nothing serves; an apply error, failed fetch, lost lock wait, unstarted build jail and Ctrl-C record nothing; a lost record is recovered from the store. Amended by [OQ-PBR1](#why-its-this-way): the recorded patch failure follows upstream's newest. **Amended by [OQ-PPX3](pi-extensions.md#OQ-PPX3), 2026-10-16:** while a good build is here, a build failure inside its back-off stops every launch, as a patch failure does, with no rebuild; the back-off now spaces the retries rather than keeping the good build running. **Amended by [PD-NF1](../design/program-delivery.md#PD-NF1), 2026-10-16:** an unstarted build jail is recorded as a failed build, with its cause, while a good build serves ([PF-D92](#PF-D92)), and the record's apply error stops every act until the next check ([PF-D93](#PF-D93)) |
 | <a id="PF-D10"></a>PF-D10 | Every advance takes the newest fit down a list (the tip under `follow: "head"`, then the version tags containing the base, above the good build); conflicts recorded per entry; the walk has its own bound; with no fit the good build holds; a first advance builds the base and writes the good build only after its admit. Replaces "the newest, else the base" |
 | <a id="PF-D11"></a>PF-D11 | Each failure is said once, on the launch that found it, with its next step; later launches carry a held suffix naming the step; every fork line names the series; an attach names the build its jail was handed |
 | <a id="PF-D12"></a>PF-D12 | `yolo pack update` and `install` force the check and the replay and record the outcome, never building or moving the good build; `yolo capture <bin>` builds the candidate now or rebuilds the good build, through the swap; `yolo pack status` reads the good build and the candidate apart |
@@ -1282,7 +1316,7 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D18"></a>PF-D18 | The replay runs in a scratch repository outside the staging workspace, borrowing the mirror's objects after a prefetch under its lock, with no user git config; the fetch keeps the store's regime for credentials; `src/` is copied with no link followed |
 | <a id="PF-D19"></a>PF-D19 | `agent_updates` off for the fork pack or its base holds a patched fork: no check, an edit built at the good build's commit, and a first advance still runs. Amended by [OQ-PBR5](#why-its-this-way): a recorded failure never refuses a held launch |
 | <a id="PF-D20"></a>PF-D20 | The move reaps every other build of the key no running jail was handed, keeps every build when a delivery record cannot be read, and reaps a swap-loser at once; `yolo prune` is unchanged |
-| <a id="PF-D21"></a>PF-D21 | A build jail the runtime would not start is not a failed build: nothing recorded, the candidate pending, the line naming the runtime's error and the step that builds it; with nothing to serve the launch refuses with that line |
+| <a id="PF-D21"></a>PF-D21 | ~~A build jail the runtime would not start is not a failed build: nothing recorded, the candidate pending, the line naming the runtime's error and the step that builds it~~; with nothing to serve the launch refuses with that line. **Superseded 2026-10-16 by [PD-NF1](../design/program-delivery.md#PD-NF1)** for a newer build while a good build serves: it stops the act, and is recorded as that candidate's failed build with its cause ([PF-D92](#PF-D92)) |
 | <a id="PF-D22"></a>PF-D22 | The check, its record and lock, the replay and walk, the ratchet and the explicit acts are keyed by an owner key, `<pack>/<bin>` or `<pack>/<name>`; one implementation serves patched forks and patched extensions, and a pack's owner keys are unique across both |
 | <a id="PF-D23"></a>PF-D23 | ([OQ-PFK1](#why-its-this-way).) A user's own edit to the series, `build` or `produces` that fails is not held on the good build: the base is tried in the same advance, and with nothing built the program is missing and the launch refuses |
 | <a id="PF-D24"></a>PF-D24 | ([OQ-PFK2](#why-its-this-way).) With no `follow`, a patched fork follows its upstream's newest version tag (`packsrc.DefaultFollow`) |
@@ -1306,7 +1340,7 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D42"></a>PF-D42 | The good build's version is its entry's, the newest version a followed tip contains, or none for the base; a Ctrl-C that cuts a check's fetch clears the stamp |
 | <a id="PF-D43"></a>PF-D43 | The launch's fork block names the series and the good build with the held suffix, read from the record with no git (`CheckRecord.HeldAt`), on every launch including an attach |
 | <a id="PF-D44"></a>PF-D44 | An advance replays the newest fit twice — the walk finds it, the build replays it under its build lock into `src/` — sharing the walk's bound; the base built afterward gets a bound of its own |
-| <a id="PF-D45"></a>PF-D45 | An apply error is no outcome; the record keeps the check whose list the last walk could not replay (`CheckRecord.ApplyErr`), so a serving launch reading the same check replays nothing and shows a held suffix, while nothing serving retries every launch and builds the base meanwhile |
+| <a id="PF-D45"></a>PF-D45 | An apply error is no outcome; the record keeps the check whose list the last walk could not replay (`CheckRecord.ApplyErr`), so a serving launch reading the same check replays nothing ~~and shows a held suffix~~, while nothing serving retries every launch and builds the base meanwhile. **Superseded 2026-10-16 by [PD-NF1](../design/program-delivery.md#PD-NF1)** for what a serving launch does: it stops on the kept error, as on a failed newer build, until the next check ([PF-D93](#PF-D93)) |
 | <a id="PF-D46"></a>PF-D46 | A patched build is **settled** under the record lock while its build lock is still held, so the next waiter reads the result; a reap passes over a build whose build lock another holds; the good build never moves to a build that left the store before its move |
 | <a id="PF-D47"></a>PF-D47 | Superseded by [PF-D85](#PF-D85): the retired rebase verb's clone |
 | <a id="PF-D48"></a>PF-D48 | Superseded by [PF-D85](#PF-D85): the retired rebase verb's directory rules |
@@ -1319,7 +1353,7 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D55"></a>PF-D55 | At the host, the floor's installed copy serves while no store entry of the good build does: the advance treats it as a serving good build, never builds the base in its place, and does not rebuild the good build merely because its entry is gone |
 | <a id="PF-D56"></a>PF-D56 | The host apply `yolo pack update` runs builds no patched fork and no patched extension: it installs what is admitted and renders what is built, naming `yolo host apply --assert` or the next `yolo host` launch as the act that builds |
 | <a id="PF-D57"></a>PF-D57 | One Ctrl-C ends an act's whole wait: an **act interrupt** is shared by every advance of one act, and an advance that begins after a Ctrl-C runs no check, replay or build; the bound stays per build, so a healthy later build is never stopped early and recorded failed |
-| <a id="PF-D58"></a>PF-D58 | A host git older than 2.40 is its own error (`packsrc.GitTooOldError`), and every line that meets it names updating git rather than a retry |
+| <a id="PF-D58"></a>PF-D58 | A host git older than 2.40 is its own error (`packsrc.GitTooOldError`), and every line that meets it names updating git rather than a retry. While a good build serves it is an apply error that stops the act, whose repair names git first ([PF-D93](#PF-D93)) |
 | <a id="PF-D59"></a>PF-D59 | ([OQ-PFK5](#why-its-this-way).) A patched fork reaches macos-user only with the fork route's own macos-user step, after install-capture H4; until then the launch names a container backend |
 | <a id="PF-D60"></a>PF-D60 | Under a release rule, a branch with no version tag at all is the same empty list as one whose versions predate the base: the base is built and a good build keeps running; the check records a note, never a problem, said once at a launch and every time by the explicit acts, naming `follow: "head"` |
 | <a id="PF-D61"></a>PF-D61 | The series digest is taken over each file's **digested bytes**, less the mbox `From` line and git's own version signature, so a re-export of the same patches is no edit |
@@ -1349,9 +1383,14 @@ adjust later."*), and remain his to overrule.
 | <a id="PF-D85"></a>PF-D85 | The maintainer's ruling, 2026-10-15, overruling [PF-D26](#PF-D26): *"either it's automatic or it's not a command"*. `yolo pack rebase` is retired; a conflict prints the git rebase recipe; yolo still never writes the fork pack |
 | <a id="PF-D86"></a>PF-D86 | A member whose pick conflicts is already upstream when its `git patch-id --stable` equals an upstream commit's between the base and the entry; checked only for a conflicting member, so one upstream merged and later reverted is still applied |
 | <a id="PF-D87"></a>PF-D87 | A contribution naming both `patch_branch` and `patches` is refused at decode, before any fetch, naming the owner key, both fields and which to keep |
-| <a id="PF-D88"></a>PF-D88 | A failed fetch is a fault of the moment, never the upstream's answer, and with nothing to serve it is not waited out: the advance checks again whenever the last check could not fetch; an answer the upstream gave still holds for the interval |
-| <a id="PF-D89"></a>PF-D89 | A patch branch is a series whose one input is a commit, so the check, record, lock, throttle, walk, ratchet, store key and explicit acts serve it unchanged |
+| <a id="PF-D88"></a>PF-D88 | A failed fetch is a fault of the moment, never the upstream's answer, and with nothing to serve it is not waited out: the advance checks again whenever the last check could not fetch; an answer the upstream gave still holds for the interval || <a id="PF-D89"></a>PF-D89 | A patch branch is a series whose one input is a commit, so the check, record, lock, throttle, walk, ratchet, store key and explicit acts serve it unchanged |
 | <a id="PF-D90"></a>PF-D90 | How a patch branch is said: *"+ patch branch `<ref>@<commit>` of `<repository>`"* in the fork and extension lines, its lag as its merge base's base lag, a `patch branch:` line in `yolo pack status`; lint reads nothing of it offline; a `//subdir` patch branch is refused |
+| <a id="PF-D91"></a>PF-D91 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1), 2026-10-16: one of yolo's own build steps that keeps a known newer candidate from building, while a build of the series as it stands serves, stops every act that would run that build (a jail launch, `yolo host -- <bin>`, `yolo host apply`) through the one path a failed newer build takes: a `PatchFailure` of kind `build` with a **cause** *(coined here: which of yolo's own steps stopped it — the build jail, a lock wait, the runtime, a retained workspace, the replay; `packsrc.BuildCause*`)*. The cause names the error block's head (*"yolo could not build upstream …"*, or *"the patch series could not be replayed onto upstream …"*), its `Cause:` or `Replay:` line and its repair. The walk-back is neither run nor listed past a cause, since an older release meets the same jail, lock, runtime or git, and its hold would pin a release past a cause that clears by itself. A hatch or an `agent_updates` hold runs the good build, as for any failed newer build. Not `yolo capture` or a fresh preparation, which fail on their own terms, nor the background advance or a shared lane, which run no program |
+| <a id="PF-D92"></a>PF-D92 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): which causes later acts stop on too. **A build jail that stops before its build line** is recorded, while a good build serves, as the candidate's failed build with its cause and [OQ-PD26](../design/program-delivery.md#decision-ledger)'s back-off, so a background advance's or a `yolo capture`'s stops the next launch, and every launch inside the back-off stops with no retry (`yolo capture` retries at once; on Apple Container, once no other jail runs). The others are not recorded and the next launch tries again: **a lock wait that runs out** (that build records its own result), **Apple Container not starting a build jail now** (re-read in two seconds at every launch), **an earlier build jail not yet known gone**, and **a seal an earlier build of the same launch saw refused**. Supersedes [PF-D21](#PF-D21) |
+| <a id="PF-D93"></a>PF-D93 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): an **apply error**, in the walk of the check's list or in the build's own replay, git older than 2.40 included, stops the act while a good build serves, and the record's `ApplyErr` stops every act after it — a jail launch inside the check throttle, the next-launch read after a background advance, the pre-write read of a patched extension by the apply `yolo pack update` runs (and, for a fork at the host, [PF-D94](#PF-D94)) — until the next check replays the list (`packsrc.CheckRecord.CurrentReplayFailure`, current only while the check is not due). A local replay that reclassifies the error as a conflict still wins, as the recorded patch failure. Supersedes [PF-D45](#PF-D45)'s serving |
+| <a id="PF-D94"></a>PF-D94 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): at the host floor an apply error that a local replay cannot classify stays the floor's **unresolved authority**, which refuses and which no hatch waives, as before; a jail launch stops on the same error as [PF-D93](#PF-D93) does, which the hatches waive. The stricter host rule is the floor's own, kept rather than loosened here |
+| <a id="PF-D95"></a>PF-D95 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): **an upstream yolo cannot reach is not a failure**. The check's failed fetch runs the good build with the line *"could not check its upstream (…) — still running …"*, at a jail launch and at `yolo host -- <bin>` alike: the fetch failure is no longer the host floor's operation error, which refused. `yolo capture`, an explicit check, still fails on it. Kept as they were, and not failures of a newer candidate: a check that could not run at all (its record lock or record, before any candidate is known), which serves with its warning; a replay whose check authority another check replaced (another process owns the candidate now); a busy lock `yolo capture` does not wait for, and the background advance's skip of a held lock; a check-record write that failed; and the background advance's retained workspace, which leaves the candidate pending for the next background advance |
+| <a id="PF-D96"></a>PF-D96 | Implementation decision under [PD-NF1](../design/program-delivery.md#PD-NF1): Apple Container's **check-only** background advance is not a failed build: by design it builds nothing, and leaves the candidate pending for the next fresh launch, whose own advance builds it or, beside a running jail, stops ([PF-D92](#PF-D92)) |
 | OQ-PFK1 | Decided on its leaning (B) under delegation: a user's own failed edit is not held on the previous good build. Recorded as [PF-D23](#PF-D23), amended by [PF-D77](#PF-D77) |
 | OQ-PFK2 | Decided on its leaning (A) under delegation: with no `follow`, the newest version tag. Recorded as [PF-D24](#PF-D24) |
 | OQ-PFK3 | Decided on its leaning (A) under delegation: the launch that finds a candidate waits for its build, bounded, and a Ctrl-C ends the advance, not the launch. Recorded as [PF-D25](#PF-D25) |
