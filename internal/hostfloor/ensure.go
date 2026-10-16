@@ -289,6 +289,16 @@ func (f *Floor) refresh(ctx context.Context, p Program, st Status) (Status, Outc
 				f.say("%s: could not capture a newer release (%v)", p.Bin(), err)
 				return st, Kept, fmt.Errorf("could not capture a newer release for %s: %w", p.Bin(), err)
 			}
+			// ANOTHER CAPTURE HOLDS ITS LOCK (PD-NF5): this launch checked nothing, so the installed
+			// version runs, said in one line, and the stamp goes back so the next launch looks again
+			// rather than an interval later, as a busy update lock never stamps at all.
+			if errors.Is(err, ErrCaptureBusy) {
+				rec.Checked = checked
+				_ = f.writeRecord(rec)
+				f.say("%s: another `yolo capture %s` is in progress; running the installed %s",
+					p.Bin(), p.Bin(), rec.Version)
+				return st, Kept, nil
+			}
 			// THE CAPTURE IS THE CHECK (PD-NF3): a capture that failed because the installer's
 			// upstream cannot be reached is a check that could not run, so the installed version
 			// runs and the stamp holds the next try off for the interval, as an npm poll's does.
