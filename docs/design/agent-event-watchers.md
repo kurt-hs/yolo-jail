@@ -878,7 +878,7 @@ session-owned watcher by hand.
 - **Waking a session that has exited.** A ping no live master took waits for the next master of
   the same box, or ends with the box's keeper ([§3.6](#36-which-session-a-ping-wakes-the-master)).
 - **Scheduling.** A sidecar that wants cron semantics sleeps in its own loop.
-- **Agents launched outside yolo.** They get no sidecars and no deliverer, as [OQ-HS3](host-notch-services.md#OQ-HS3)
+- **Agents launched outside yolo.** They get no sidecars and no deliverer, as [OQ-HS3](host-notch-services.md#11-decision-ledger)
   accepted for host services.
 
 ## 10. What I would build, in order

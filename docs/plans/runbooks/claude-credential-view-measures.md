@@ -11,7 +11,7 @@ summary: "The measures the Claude credential view owes before the interception c
 # RUNBOOK — the Claude credential view's measures, M1 to M11 and H1 to H5, on a real host
 
 **Status:** A procedure. None of it has run yet. It is what
-[OQ-CL1](../../design/claude-login-without-interception.md#OQ-CL1)'s ruled order puts between the
+[OQ-CL1](../../design/claude-login-without-interception.md#11-decision-ledger)'s ruled order puts between the
 built view and the deletion of the interception: the measures pass, the view runs a day on a real
 rootless host, then the interception goes ([CL-D7](../../design/claude-login-without-interception.md#CL-D7)).
 
@@ -331,7 +331,7 @@ snapshot, which is why this is measured separately from M3.
 
 ## Part C — /login, /logout and the machine sign-out, with the switch on
 
-These are [OQ-CL2](../../design/claude-login-without-interception.md#OQ-CL2)'s rulings, built as
+These are [OQ-CL2](../../design/claude-login-without-interception.md#11-decision-ledger)'s rulings, built as
 [CL-D4](../../design/claude-login-without-interception.md#CL-D4) and
 [CL-D14](../../design/claude-login-without-interception.md#CL-D14).
 

@@ -27,11 +27,11 @@ first question is built, the other two were dissolved by
 [HD-R1](host-daemon-ownership.md#HD-R1), and all three drifted documents now say the right thing
 ([what was pruned](#what-was-pruned-and-why)). What is left is the material a plan for HD-R1 will
 need: [what the spawn flock covers today](#what-the-spawn-flock-covers-today), which is
-what [OQ-HD10](host-daemon-ownership.md#OQ-HD10) has to answer for, the
+what [OQ-HD10](host-daemon-ownership.md#11-decision-ledger) has to answer for, the
 [spawn sites the ruling reworks](#the-spawn-sites-hd-r1-reworks), the
 [OQ-HD4](host-daemon-ownership.md#OQ-HD4) note, and the timing facts. Nothing here plans HD-R1
 itself, and nothing here has been watched running beyond what the design records. Since
-2026-10-05 [OQ-HD10](host-daemon-ownership.md#OQ-HD10) is answered from its Mac runs
+2026-10-05 [OQ-HD10](host-daemon-ownership.md#11-decision-ledger) is answered from its Mac runs
 ([HD-D4](host-daemon-ownership.md#HD-D4)): per-jail daemons owe macos-user a per-workspace spawn
 guard, and the table below is what that guard answers for.
 
@@ -54,8 +54,8 @@ Each entry below was checked against the tree at `d4e435a3` on 2026-10-01.
 | Entry | Disposition | Evidence |
 | :--- | :--- | :--- |
 | Blocked on [OQ-HD2](host-daemon-ownership.md#OQ-HD2): generalize the management surface | **Built** 2026-09-20 | `yolo host-daemon {status,stop,restart,logs}` is `runHostDaemon` in [`commands.go`](../../internal/cli/commands.go). The wrong-command line the entry quoted now prints `broker.CycleCommand(name)` ([`hostdaemoncmd.go`](../../internal/broker/hostdaemoncmd.go)), from `startHostSingleton` in [`loopholesruntime.go`](../../internal/cli/run/loopholesruntime.go) and from [`launchcheck.go`](../../internal/cli/run/launchcheck.go). `yolo check`'s broker probe takes its socket and PID paths from `paths.HostSingleton*` ([`check/broker.go`](../../internal/cli/check/broker.go)), so the third copy of those paths is gone |
-| Blocked on [OQ-HD1](host-daemon-ownership.md#OQ-HD1): a version in the rendezvous | **Dissolved** by HD-R1 | A launcher-spawned child is one build, so there is nothing for a version to tell apart. The entry was also stale: the three byte-frozen copies of the broker's paths it counted are one now, since `broker.BrokerSingletonSocket` and its siblings call `paths.HostSingleton*` ([`brokerlifecycle.go`](../../internal/broker/brokerlifecycle.go)) |
-| Blocked on [OQ-HD6](host-daemon-ownership.md#OQ-HD6): making an idle singleton visible | **Dissolved** by HD-R1 | The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) row for `yolo check`'s zero-jails blind spot: with no jail running there is no daemon to report. The early return the entry described is still in `checkHostServiceLiveness` ([`sections_loopholes.go`](../../internal/cli/check/sections_loopholes.go)), and it becomes correct under the ruling rather than a gap |
+| Blocked on [OQ-HD1](host-daemon-ownership.md#11-decision-ledger): a version in the rendezvous | **Dissolved** by HD-R1 | A launcher-spawned child is one build, so there is nothing for a version to tell apart. The entry was also stale: the three byte-frozen copies of the broker's paths it counted are one now, since `broker.BrokerSingletonSocket` and its siblings call `paths.HostSingleton*` ([`brokerlifecycle.go`](../../internal/broker/brokerlifecycle.go)) |
+| Blocked on [OQ-HD6](host-daemon-ownership.md#11-decision-ledger): making an idle singleton visible | **Dissolved** by HD-R1 | The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) row for `yolo check`'s zero-jails blind spot: with no jail running there is no daemon to report. The early return the entry described is still in `checkHostServiceLiveness` ([`sections_loopholes.go`](../../internal/cli/check/sections_loopholes.go)), and it becomes correct under the ruling rather than a gap |
 | Documentation drift: the loopholes guide's manifest census omitted `host_daemon.scope` | **Fixed** | The census moved to [`writing-loopholes.md`](../../userguide/guides/writing-loopholes.md), which shows `scope` in the manifest example and has a `scope` bullet saying a `"host"` program keeps running when a jail exits |
 | Documentation drift: `agent-credentials.md`'s current values named two `scope: "host"` daemons and not `aws-auth` | **Fixed** | Its current-values table has a row for each of the three, `aws-auth` included ([`agent-credentials.md`](../reference/agent-credentials.md)) |
 | Documentation drift: the user guide's host-service lifecycle list had no host-scope carve-out | **Fixed** | The list moved to [`host-services.md`](../../userguide/guides/host-services.md), which describes a service declared in the user config; the carve-out for a pack's `"host"` program is the `scope` bullet in `writing-loopholes.md` |
@@ -66,21 +66,21 @@ Each entry below was checked against the tree at `d4e435a3` on 2026-10-01.
 
 The spawn flock is `paths.HostSingletonLock(name)`. `broker.EnsureSingleton` takes it, blocking,
 and does all of the following inside it; `broker.BrokerSpawn` is the same call returning only the
-socket path ([`brokerlifecycle.go`](../../internal/broker/brokerlifecycle.go)). [OQ-HD10](host-daemon-ownership.md#OQ-HD10) asks what
+socket path ([`brokerlifecycle.go`](../../internal/broker/brokerlifecycle.go)). [OQ-HD10](host-daemon-ownership.md#11-decision-ledger) asks what
 replaces it; this is the list of what it covers today, so an answer can be checked against each row. A
-**rider** is [OQ-HD10](host-daemon-ownership.md#OQ-HD10)'s word for a duty the flock performs without being asked to, such as a
+**rider** is [OQ-HD10](host-daemon-ownership.md#11-decision-ledger)'s word for a duty the flock performs without being asked to, such as a
 write the child makes while the spawner holds it. READ FROM CODE 2026-10-01; none of the "under
 HD-R1" cells is measured, because nothing is built.
 
 | What the flock covers | Today | Under HD-R1 |
 | :--- | :--- | :--- |
 | **Socket ownership and process identity**: the name-keyed socket, the PID file, the capability stamp and the settings record | The flock, at the `paths.HostSingleton*` paths | On macos-user the socket half has no shared path left to guard, if the retired daemons take the per-jail spawn path that the design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) names. Since [HD-D1](host-daemon-ownership.md#HD-D1) each macos-user session has a host-services dir of its own, and a per-jail fronted daemon's upstream socket is keyed by that dir (`frontShortHash` and `frontSocketFile` in [`loopholesruntime.go`](../../internal/cli/run/loopholesruntime.go); [`servicessession.go`](../../internal/cli/run/servicessession.go)). So two sessions of one workspace would not share a socket. UNMEASURED: no per-jail credential daemon exists to run |
-| **The Claude broker's CA and leaf mint**, which the child runs at startup while the spawner holds the flock across its socket wait | A lock of its own as well, `cert.lock`, taken by `EnsureCAAndLeaf` through `withCertLock` ([`cert.go`](../../internal/oauthbroker/cert.go)), since `4ac8f11bc` (2026-09-20) | Already independent of the spawn flock. [OQ-HD10](host-daemon-ownership.md#OQ-HD10) named this rider as an unlanded change; it landed |
+| **The Claude broker's CA and leaf mint**, which the child runs at startup while the spawner holds the flock across its socket wait | A lock of its own as well, `cert.lock`, taken by `EnsureCAAndLeaf` through `withCertLock` ([`cert.go`](../../internal/oauthbroker/cert.go)), since `4ac8f11bc` (2026-09-20) | Already independent of the spawn flock. [OQ-HD10](host-daemon-ownership.md#11-decision-ledger) named this rider as an unlanded change; it landed |
 | **Refreshes and the shared state they write** | `refresh.lock` for the Claude broker (`ConfigureStore` in [`store.go`](../../internal/oauthbroker/store.go)) and the OpenAI one (`openaiauth.Broker.LockPath`), `mint.lock` for `aws-auth` | Unchanged. This is the design's [§1.1](host-daemon-ownership.md#11-the-premise-the-scope-was-built-on-is-false) |
-| **The OpenAI legacy-state migration**, the ensure's `PrepareLocked` hook | Runs inside the flock and takes no other lock. `prepareLegacyOpenAIAuthState` ([`openaiauthmigration.go`](../../internal/cli/run/openaiauthmigration.go)) reads the singleton's PID file to find a legacy daemon's working directory and argv, and returns the step that moves a `{state}` credential file into the canonical state dir; the ensure stops the running daemon before it runs that step | The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) keeps it ("migrate, then spawn") without naming the lock it runs under. Without the spawn flock, two launches could run the relocation at once, and its legacy-daemon test has no singleton PID to read. [OQ-HD10](host-daemon-ownership.md#OQ-HD10)'s text does not list this rider |
+| **The OpenAI legacy-state migration**, the ensure's `PrepareLocked` hook | Runs inside the flock and takes no other lock. `prepareLegacyOpenAIAuthState` ([`openaiauthmigration.go`](../../internal/cli/run/openaiauthmigration.go)) reads the singleton's PID file to find a legacy daemon's working directory and argv, and returns the step that moves a `{state}` credential file into the canonical state dir; the ensure stops the running daemon before it runs that step | The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) keeps it ("migrate, then spawn") without naming the lock it runs under. Without the spawn flock, two launches could run the relocation at once, and its legacy-daemon test has no singleton PID to read. [OQ-HD10](host-daemon-ownership.md#11-decision-ledger)'s text does not list this rider |
 | **A changed-settings restart** ([HD-D2](host-daemon-ownership.md#HD-D2)) | Inside the flock, so two launches with the same new settings restart the daemon once | Retires with the singleton, as HD-D2 says |
 
-**A second population has the same question, and [OQ-HD10](host-daemon-ownership.md#OQ-HD10)'s text names only
+**A second population has the same question, and [OQ-HD10](host-daemon-ownership.md#11-decision-ledger)'s text names only
 macos-user.** Three host-side actors reach the OpenAI daemon with no jail at all, by its
 machine-wide name: `yolo host -- codex`, `yolo host -- pi` (the prelaunch, `Prepare`) and
 `yolo openai-auth <status|import|logout>` ([`operator.go`](../../internal/openaiauthhost/operator.go)).
@@ -93,7 +93,7 @@ readers are [`internal/cli/host.go`](../../internal/cli/host.go),
 
 The design's [§5.2](host-daemon-ownership.md#52-what-the-ruling-deletes-from-that-table) covers only `ensureSingleton`'s kill-and-replace, as gone. Under
 HD-R1 these actors still need a daemon. What they spawn, at what path, and what serializes two of
-them at once is [OQ-HD10](host-daemon-ownership.md#OQ-HD10)'s question again, about the machine rather than a workspace.
+them at once is [OQ-HD10](host-daemon-ownership.md#11-decision-ledger)'s question again, about the machine rather than a workspace.
 
 [OQ-HD9](host-daemon-ownership.md#OQ-HD9) is the other ruling a build waits on: it decides whether
 the retirement must add a refresh for when no jail runs, which today's background refreshers in the

@@ -1148,7 +1148,7 @@ single-executable binary.
 
 - **Narrowing does not reopen the shadowing trap** (MEASURED for the models-only form). A
   registration passing only `models` keeps the built-in provider's address, wire and credential,
-  so it works however [pi-codex-provider-shadowing OQ-3](pi-codex-provider-shadowing.md#OQ-3) is
+  so it works however [pi-codex-provider-shadowing OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger) is
   ruled. The refusing form cannot be models-only: pi 0.99.1's `validateExtensionProvider` throws
   *"\"api\" is required when registering streamSimple"* (provider-composer.js:326-328), so it
   carries `models`, `api` and `streamSimple`. That this form still authenticates through pi's own
@@ -1570,7 +1570,7 @@ with the choices the build made ledgered as [MM-D28](#MM-D28)
    menu.
 
 A codex started outside yolo, from an IDE or a shell without yolo's wrappers, gets no menu at the
-host: [OQ-HS3](host-notch-services.md#OQ-HS3) ruled that an agent launched outside yolo lacks a
+host: [OQ-HS3](host-notch-services.md#11-decision-ledger) ruled that an agent launched outside yolo lacks a
 launch-owned feature, and this is one.
 
 ### 14.8 What was built at the host (2026-09-30)
@@ -1686,7 +1686,7 @@ A via row in pi's `models.json` also stays the configured provider's. A subcomma
 1.0.1's `auth`, `config`, `install`, `list`, `mcp`, `remove`, `uninstall` and `update`, and every
 name and alias in oh-omp 0.15.3's command table, `launch` among them, plus `help` (read in the
 installed dist and the shipped binary, never run). A codex started outside yolo moves on nothing, as it gets no menu
-([OQ-HS3](host-notch-services.md#OQ-HS3)).
+([OQ-HS3](host-notch-services.md#11-decision-ledger)).
 
 **What only a real run can confirm.** That codex names the `-p`'s provider in `/status` and still
 does after `/new` (it re-applies the launch's `-c` at every thread start, SOURCED at 0.159.2); that

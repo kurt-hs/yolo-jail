@@ -1052,7 +1052,7 @@ That is the **delta archive**: its manifest names every layer, and its `blobs/` 
 layers outside the **present set** (the layer digests the destination already holds). Both terms
 were coined in
 [the research that ruled it](../research/macos-layer-reusing-image-delivery.md#terms)
-([`OQ-LR1`](../research/macos-layer-reusing-image-delivery.md#OQ-LR1)). A docker-archive cannot carry one, because its reader refuses a tarball with a layer
+([`OQ-LR1`](../research/macos-layer-reusing-image-delivery.md#decision-ledger)). A docker-archive cannot carry one, because its reader refuses a tarball with a layer
 file missing, which is why podman on macOS moved off it.
 
 The existing copier writes one through **placeholder seeding** (`deltaarchive.go`):
@@ -1088,7 +1088,7 @@ research's alternative, the "robust variant", writes the full layout and deletes
 before tarring. It relies on nothing in the copier, but it pays a full local write on every
 delivery, which is most of what the delta removes. It is the fallback if that pin ever goes red.
 
-**Apple Container's present set is yolo's own delivery record** ([`OQ-LR3`](../research/macos-layer-reusing-image-delivery.md#OQ-LR3)). After a successful load,
+**Apple Container's present set is yolo's own delivery record** ([`OQ-LR3`](../research/macos-layer-reusing-image-delivery.md#decision-ledger)). After a successful load,
 `image-delivery/<key>.delivered.json` records the ref and the layer digests just delivered. Only
 yolo writes these records: they sit in the state directory beside the attempt directories, outside
 every jail mount. A record
@@ -1156,7 +1156,7 @@ That answers the three questions this section left open for Apple Container:
    and the load together, so B's 19.4 s is the whole delta delivery, not the unpack alone.
 
 On the Intel podman machine, A's first delivery is the full 3.2 GB upload into the VM, and it
-dominates the launch. The same job's [`OQ-LR2`](../research/macos-layer-reusing-image-delivery.md#OQ-LR2) step
+dominates the launch. The same job's [`OQ-LR2`](../research/macos-layer-reusing-image-delivery.md#decision-ledger) step
 ([the research](../research/macos-layer-reusing-image-delivery.md)) timed a cold
 `podman load` of A at 14 min 6 s uncompressed and 13 min 49 s from a 1.1 GB gzip archive, one
 sample each.

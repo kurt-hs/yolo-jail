@@ -408,7 +408,7 @@ The ruling set, in the order it unblocks work:
 - [OQ-BB10](../design/boundary-broker.md#OQ-BB10) — how a host daemon hands the launching terminal a line (items 3, 30)
 - [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1) — activate late profile daemons additively, or refuse conflicting late bridge plans? (IC1)
 - The motivating fork's name — its source, build line and `produces` list (item 26)
-- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11), [OQ-PFK5](../design/patched-forks.md#OQ-PFK5), [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) — the three open patched-fork rulings (item 1; the last filed 2026-10-13 by a downstream consumer, whose other, [OQ-PFK7](../design/patched-forks.md#decision-ledger), was settled 2026-10-15)
+- [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11), [OQ-PFK5](../design/patched-forks.md#decision-ledger), [OQ-PFK6](../design/patched-forks.md#OQ-PFK6) — the three open patched-fork rulings (item 1; the last filed 2026-10-13 by a downstream consumer, whose other, [OQ-PFK7](../design/patched-forks.md#decision-ledger), was settled 2026-10-15)
 - The W1(e) `yolo run` progress golden sign-off (item 32)
 
 Plus the queue's remaining rulings: items 2, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 27, 28, 29, 34, 35 and 36.

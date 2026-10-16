@@ -340,7 +340,7 @@ func hd10SurvivorFailure(fa map[string]string) string {
 		" endpoint was " + verdict + ". One macos-user session's exit must never remove or " +
 		"invalidate an endpoint another live session of the same workspace uses: the workspace's " +
 		"keeper holds them until its last session leaves " +
-		"(docs/design/jail-lifetime-last-session-wins.md §9.9; docs/design/host-daemon-ownership.md#OQ-HD10)"
+		"(docs/design/jail-lifetime-last-session-wins.md §9.9; docs/design/host-daemon-ownership.md#11-decision-ledger)"
 }
 
 // hd10Broker is the host-scoped loophole whose spawn this measures.

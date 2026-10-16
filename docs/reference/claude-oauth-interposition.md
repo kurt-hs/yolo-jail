@@ -55,7 +55,7 @@ view's measures pass. That is not built yet.
 > [the credential view](#the-credential-view-behind-a-switch); the design is
 > [`claude-login-without-interception.md`](../design/claude-login-without-interception.md), and the
 > interception is deleted once its measures pass
-> ([OQ-CL1](../design/claude-login-without-interception.md#OQ-CL1)).
+> ([OQ-CL1](../design/claude-login-without-interception.md#11-decision-ledger)).
 
 Two things make this doc necessary rather than a restatement. First, the mechanism reads far more
 invasive than it is, and the scope is checkable in one command. Second, "why is a file involved?" has a
@@ -876,7 +876,7 @@ five things:
 - **`/login` and `/logout` change meaning.** A jail's `/login` still enrolls the machine: the view
   shows up carrying a refresh token, which the broker redeems once and adopts. A jail's `/logout`
   signs out only that workspace, until its next launch, which says so. Signing the machine out is
-  `yolo claude-auth logout` ([OQ-CL2](../design/claude-login-without-interception.md#OQ-CL2)).
+  `yolo claude-auth logout` ([OQ-CL2](../design/claude-login-without-interception.md#11-decision-ledger)).
 - **Four hazards above do not arise**: the unauthenticated proxy branch, the `invalid_grant`
   blank of the machine-wide file, the doc-fetch coupling and the symlink in the credential path.
   One remains until the deletion: the machine-scope `.claude-shared-credentials` directory is
@@ -944,7 +944,7 @@ easy to over-read:
 every mechanism above exists to share it. Two things have moved since it was first asked: a ruling
 changed what sharing costs, and a measurement changed how often anyone pays for a login.
 
-**What [OQ-CL1](../design/claude-login-without-interception.md#OQ-CL1) already removes.** The
+**What [OQ-CL1](../design/claude-login-without-interception.md#11-decision-ledger) already removes.** The
 ruling deletes the interception at every notch once the credential view passes its measures. Most
 of the costs this question was first asked about go with it: the CA, the terminator, the
 unauthenticated proxy branch, the doc-fetch coupling, the symlink in the credential path and the
@@ -1032,12 +1032,12 @@ this question's answer to give.
 
 ### The maintainer's words, and one phrase that is not theirs
 
-- On [OQ-CL2](../design/claude-login-without-interception.md#OQ-CL2), whose leaning has `/login`
+- On [OQ-CL2](../design/claude-login-without-interception.md#11-decision-ledger), whose leaning has `/login`
   in any jail still enroll the machine: *"all of that sounds right"* (2026-09-28). The text it
   approved assumes one login per machine: a jail's `/login` enrolls the machine, a jail's
   `/logout` signs out only that workspace, and `yolo claude-auth logout` on the host signs the
   machine out. Whether approving it was also a ruling on sharing is this question's to say.
-- On [OQ-CL1](../design/claude-login-without-interception.md#OQ-CL1): *"we can just write the new
+- On [OQ-CL1](../design/claude-login-without-interception.md#11-decision-ledger): *"we can just write the new
   one in there and it just picks it up. If that's the case, then yes, we should do that."*
   (2026-09-28). That approves the mechanism that shares the grant. It does not rule on sharing.
 - On the host: *"host is supposed to act like everywhere else"* (2026-09-27,

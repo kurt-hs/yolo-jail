@@ -1285,7 +1285,7 @@ the picked port have not run on a Mac: the macos-user arm is pinned by unit test
 - **No gateway features** — routing, failover, budgets, multi-provider fan-out, or model-name
   remapping beyond passthrough.
 - **No long-lived host bridge.** A host bridge lives only for the launch that starts it
-  ([OQ-HS3](../design/host-notch-services.md#OQ-HS3), ruled 2026-09-28), so nothing at the host
+  ([OQ-HS3](../design/host-notch-services.md#11-decision-ledger), ruled 2026-09-28), so nothing at the host
   listens between launches and no file names its address. An agent started without yolo runs
   without the bridge, which the ruling accepts.
 - **No unauthenticated caller.** It stopped being true that the jail is the trust boundary, so the
