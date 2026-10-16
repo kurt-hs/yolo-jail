@@ -1,7 +1,7 @@
 package run
 
 // retire_bench_test.go is MEASUREMENT ONLY, for OQ-WP9
-// (docs/design/workspace-path-mirroring.md): is reading the ELF program interpreter
+// (docs/reference/workspace-path-mirroring.md): is reading the ELF program interpreter
 // (PT_INTERP) of the Python a venv's pyvenv.cfg names cheap enough to add to
 // retireJailMadeVenv, which runs on every fresh-container launch? Nothing here is wired
 // into production — the readers below live in this file on purpose, so the benchmark

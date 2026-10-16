@@ -29,7 +29,7 @@ place no restriction on where it lives on the host, so none of this applies to t
 there is no mount and no namespace: the agent runs as a second local account reading the same
 filesystem you do, and the Seatbelt profile is the whole boundary.
 
-**Reads with:** [`workspace-path-mirroring.md` §12.8](workspace-path-mirroring.md) (the
+**Reads with:** [`workspace-path-mirroring.md` §12.8](../reference/workspace-path-mirroring.md) (the
 neutral-ground ruling this builds on), [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md)
 (the backend as built), [`../reference/macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md) (where per-workspace
 state lives, which is a different question — see [§7](#7-what-this-does-not-propose)).
@@ -240,7 +240,7 @@ Collected so an implementer does not discover them one at a time.
   backend is a separate question, and it is answered: `HOME` stays the machine tier and a
   per-workspace tier of symlinks sits inside it
   ([`OQ-HT4`](../reference/macos-user-home-tiers.md#oq-ht4), which answers
-  [`OQ-WP12`](workspace-path-mirroring.md#OQ-WP12)).
+  [`OQ-WP12`](../reference/workspace-path-mirroring.md#OQ-WP12)).
 
 ## 8. Open questions
 

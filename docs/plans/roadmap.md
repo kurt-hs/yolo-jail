@@ -217,7 +217,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [loophole env and guest fields](../design/loophole-packaging.md), [workspace MCP files](../design/workspace-mcp-sources.md),
     [Seatbelt deny-default](../research/agent-safehouse.md), [host apply's posture](../design/host-render-target.md),
     [the I/O priority default](../design/io-priority.md). Only closing a document: [an unmatched-reference hatch](../design/reference-mismatch-diagnostics.md),
-    [path mirroring](../design/workspace-path-mirroring.md), [pack telemetry](agent-config-packs.md), [AWS's key
+    [path mirroring](../reference/workspace-path-mirroring.md), [pack telemetry](agent-config-packs.md), [AWS's key
     pair](../design/agent-auth-modes.md#OQ-9), [stateful-surface comments](BACKLOG.md#OQ-E4), [the upstream mise
     issue](../design/jail-state-separation-design.md), and [macos-user's stale home-root file and two workspaces at
     once](../reference/macos-user-home-tiers.md).
