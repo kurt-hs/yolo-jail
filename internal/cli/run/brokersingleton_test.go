@@ -42,7 +42,7 @@ func TestBrokerEndpointEnvVarDoesNotDrift(t *testing.T) {
 // real packs.
 //
 // A PACK MODULE, not a bundled dir. The broker's manifest is a contribution of
-// `packs/claude` as of 2026-08-19 (docs/design/broker-as-a-pack.md §10 step 5) and the
+// `packs/claude` as of 2026-08-19 (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack") and the
 // bundled channel it used to live in is retired, so a fixture in the old shape would be
 // testing a source that no longer exists. Two consequences the fixture has to honor:
 // `publishes: "socket"` is REQUIRED of a pack-shipped daemon (the default, "endpoint", is

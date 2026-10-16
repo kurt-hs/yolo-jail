@@ -341,7 +341,7 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 		//
 		// TWO LABELS, AND NO EXEMPTION LEFT. `SourceUser` went with OQ-LP10's
 		// hand-placed directory and `SourceBundled` went with `bundled_loopholes/` on
-		// 2026-08-19 (docs/design/broker-as-a-pack.md OQ-BP4) — and the placement
+		// 2026-08-19 (docs/reference/loophole-system.md OQ-BP4) — and the placement
 		// exemption that label carried went with it, so "least-privileged" is now the
 		// only property this default is leaning on. It used to default to the retired
 		// `user` label, which was the opposite direction.
@@ -383,7 +383,7 @@ func resolve(m *loopholedecl.Manifest, modulePath string) *Loophole {
 //
 // A BINARY WITH NO BUILD FOR THIS MACHINE is the same answer on the same axis: the loophole
 // runs a file nobody built for this platform, so nothing is missing and nothing can be
-// installed (docs/design/broker-as-a-pack.md §3.1: "a missing build for this machine is an
+// installed (docs/reference/pack-binaries.md, "A pack's own tree cannot carry an executable": "a missing build for this machine is an
 // honest inert report through the mechanism `platforms` already established"). The
 // `platforms` declaration is asked first, since it is the author's own statement of where
 // the loophole runs.

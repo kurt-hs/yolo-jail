@@ -1,7 +1,7 @@
 package cli
 
 // Between releases main pins its own build of each official program while each url still names
-// the last release (docs/design/broker-as-a-pack.md BP-D15), so `yolo pack install` of a yolo
+// the last release (docs/reference/pack-binaries.md BP-D15), so `yolo pack install` of a yolo
 // installed from a checkout that changed a program meets the release's file failing its digest.
 // That stop names the step back: `just install` in that checkout, which builds the program into
 // the cache with no download. Only for an official pack, whose manifest is the checkout's, and

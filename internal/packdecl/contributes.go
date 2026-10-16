@@ -1095,7 +1095,7 @@ type Contribution struct {
 	// macos-user an admitted host half that serves the pack's adaptation is why the guest
 	// declines the service's JailDaemon; a refused one, or one serving no adaptation, leaves
 	// the JailDaemon to run in the guest unless the guest declines it for a reason of its own,
-	// such as a declared Endpoint (docs/design/jail-daemon-on-macos-user-plan.md JD-9 (b)), so a
+	// such as a declared Endpoint (docs/reference/macos-user-provisioning.md JD-9 (b)), so a
 	// fetched pack's service that declares one runs on neither side.
 	HostDaemon *ServiceHostDaemon `json:"host_daemon,omitempty"`
 	// Endpoint is the service's endpoint FILE NAME: the file lands at
@@ -2132,7 +2132,7 @@ type ServiceJailDaemon struct {
 // fetched pack's is refused by name (HS-D27, OQ-HS5), and on macos-user its service's jail
 // daemon then runs in the guest instead, unless the service declares an Endpoint, which the
 // guest declines whatever its host half's admission (launchservice.AdmitServiceHosts;
-// jail-daemon-on-macos-user-plan.md JD-9 (b)). One that dies while its agent runs is restarted on
+// macos-user-provisioning.md JD-9 (b)). One that dies while its agent runs is restarted on
 // its address under the service's `jail_daemon.restart`, "on-failure" when it declares none
 // (HS-D28).
 type ServiceHostDaemon struct {

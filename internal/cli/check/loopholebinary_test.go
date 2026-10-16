@@ -10,7 +10,7 @@ import (
 )
 
 // A loophole the user has on, whose downloaded program is not fetched yet, is WARNED in
-// `yolo check` rather than noted: a launch never downloads one (docs/design/broker-as-a-pack.md
+// `yolo check` rather than noted: a launch never downloads one (docs/reference/pack-binaries.md
 // BP-D5), so the loophole stays off until the user runs the command the row names. Deleting the
 // UnfetchedBinaryReason branch in checkLoopholes turns the row into a quiet [OK] and fails this.
 //

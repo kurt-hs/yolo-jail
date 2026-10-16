@@ -494,7 +494,7 @@ func workerPointedAt(channel *packChannel, service string) string {
 // selection's gate asks for, read off the channel's own selection
 // (packload.UnselectedProfileServedDaemons, the jail payload's filter). A worker that declares a
 // jail daemon is not planned: the guest runs that half, confined
-// (docs/design/jail-daemon-on-macos-user-plan.md JD-9, confinement preferred). added reports that
+// (docs/reference/macos-user-provisioning.md JD-9, confinement preferred). added reports that
 // it planned one this launch had not.
 //
 // One with no jail daemon this launch does not start is named in notes, with why and the next

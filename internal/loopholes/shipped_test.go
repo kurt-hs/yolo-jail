@@ -27,7 +27,7 @@ func repoRootDir(t *testing.T) string {
 // IT HAD A SECOND SHAPE OF ROW UNTIL 2026-08-19 — an empty pack name meant
 // `bundled_loopholes/`, the channel yolo's own loophole manifests used to live in. The
 // sprint emptied it one conversion at a time and `claude-oauth-broker` was the last one
-// out (docs/design/broker-as-a-pack.md OQ-BP4), so every row now names a pack and the
+// out (docs/reference/loophole-system.md OQ-BP4), so every row now names a pack and the
 // column that recorded WHICH CHANNEL is gone with the choice it recorded.
 //
 // The broker's row is the one to read twice: its pack is `claude`, the AGENT pack, not a
@@ -46,7 +46,7 @@ var shippedLoopholes = []struct{ name, pack string }{
 	{"aws-auth", "aws-auth"},
 	{"github-broker", "github"},
 	// A throwaway pack that exists to EXERCISE the pack-shipped jail-binary path rather
-	// than to serve a user (docs/design/broker-as-a-pack.md §10, step two). It found that
+	// than to serve a user (docs/reference/pack-binaries.md, "A pack's own tree cannot carry an executable"). It found that
 	// path half-broken: an embedded pack cannot carry an exec bit at all, so this row is
 	// here to keep the experiment wired up, not to bless a shipping feature.
 	{"hello-daemon", "hello-daemon"},

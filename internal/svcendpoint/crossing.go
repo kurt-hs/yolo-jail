@@ -261,7 +261,7 @@ type countingConn struct {
 	start              time.Time
 
 	// pre is the connection preamble still owed to whoever reads this connection
-	// (preamble.go, docs/design/broker-as-a-pack.md §5.5), or nil for a listener
+	// (preamble.go, docs/reference/loophole-transport.md, "The connection preamble"), or nil for a listener
 	// that does not send one. It is a window onto the Listener's ONE shared,
 	// never-mutated frame: only this slice header moves, so a preamble costs a
 	// reslice per connection rather than a marshal.

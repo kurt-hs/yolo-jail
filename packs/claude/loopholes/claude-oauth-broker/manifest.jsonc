@@ -5,10 +5,10 @@
 //
 // IT WAS `bundled_loopholes/claude-oauth-broker/` UNTIL 2026-08-19, and it was the
 // LAST inhabitant of that channel — moving it is what emptied and retired it
-// (docs/design/broker-as-a-pack.md §10 step 5, OQ-BP4).
+// (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack", OQ-BP4).
 //
 // A CONTRIBUTION OF `packs/claude`, NOT A PACK OF ITS OWN (loophole-activation.md
-// OQ-A10, correcting broker-as-a-pack.md §6).  The dependency is structural — this
+// OQ-A10, now in docs/reference/loophole-system.md).  The dependency is structural — this
 // loophole exists to serve claude and serves nothing else — so SELECTING THE CLAUDE
 // PACK is the dependency, and a `packs/claude-oauth-broker` would reinstate exactly
 // the second selection step R6 deletes.  A user who does not want it (a Bedrock
@@ -94,7 +94,7 @@
   // `publishes: "socket"` is required of a pack-shipped loophole: the daemon binds
   // {socket}, a path yolo derives from this jail and this loophole's name, and yolo runs
   // the jail's loopback-TLS FRONT over it.  The per-jail relay that used to do that job
-  // is deleted (docs/design/broker-as-a-pack.md §7).
+  // is deleted (docs/reference/loophole-system.md, "The per-jail relay is gone").
   //
   // The jail-facing hop is therefore that front's ENDPOINT FILE at
   // /run/yolo-services/claude-oauth-broker.endpoint, named by

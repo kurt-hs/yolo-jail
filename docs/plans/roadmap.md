@@ -291,7 +291,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 49. The maintainer files the upstream reports drafted with the VM-local design, on [VZ's virtio-fs cache policy](../research/apple-container-file-cost.md#21-per-file-cost-not-bandwidth)
     and [VZ keeping freed guest memory](../research/macos-vm-runtime-comparison.md#42-adding-a-balloon-to-apple-container-ourselves)
     — last, since only Apple can ship either fix.
-50. Native macOS verification of [JD-10's guest pack-tree lifetime](../design/jail-daemon-on-macos-user-plan.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
+50. Native macOS verification of [JD-10's guest pack-tree lifetime](../reference/macos-user-provisioning.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
 
 ## Boundaries
 
@@ -306,7 +306,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
   [Q2 and Q3](../design/macos-user-build-step-threat-model.md#Q2), [SS-6](../design/jail-state-separation-design.md#ss-6),
   [E1, E2, E5 and CO](BACKLOG.md#E1), [the host-files mode](pack-host-management-plan.md#open-questions), and two
   outside this queue: [OQ-SH1](../research/macos-support-matrix.md#OQ-SH1),
-  which blocks nothing, and [JD-4](../design/jail-daemon-on-macos-user-plan.md#decision-ledger), a maintainer follow-up.
+  which blocks nothing, and [JD-4](../reference/macos-user-provisioning.md#JD-4), a maintainer follow-up.
 - **With no id at all:** [Go comments citing sections by number](README.md#the-dangling-n-citations-in-go-comments),
   [check 2's two marker conventions](README.md#check-2-has-two-known-errors-and-a-convention-question-under-each),
   [the storage lifecycle's `min-free` values](storage-lifecycle.md#open-questions), the unruled half of

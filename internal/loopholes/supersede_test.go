@@ -44,7 +44,7 @@ func discoverWith(root string, claims []PackSupersession) Set {
 // test must not spawn yolo's own daemons.
 //
 // It replaces an `onlyBundled` that pointed BundledLoopholesDir at the tree; with the
-// bundled channel retired (docs/design/broker-as-a-pack.md OQ-BP4), a pack module dir is
+// bundled channel retired (docs/reference/loophole-system.md OQ-BP4), a pack module dir is
 // the only source left that reads a manifest a test can write. The manifests written here
 // stay inside the pack-shipped subset, which is what makes the substitution honest rather
 // than merely compiling.

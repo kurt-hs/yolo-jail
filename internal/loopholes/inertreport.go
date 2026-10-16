@@ -20,7 +20,7 @@ import "github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 // AxisBackend. Neither producer prints, so neither can print twice.
 //
 // A THIRD AXIS, AxisBinary (binaries.go), joined when a loophole could ship a program as a
-// download (docs/design/broker-as-a-pack.md BP-D1): a declared build not fetched yet.
+// download (docs/reference/pack-binaries.md BP-D1): a declared build not fetched yet.
 // Its producer, BinaryInertNotes, sits beside the platform one and is read by the same
 // report. A binary with NO build for this machine is not on it: that is the platform
 // axis's answer, through SupportedHere.

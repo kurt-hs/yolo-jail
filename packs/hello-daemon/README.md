@@ -1,15 +1,15 @@
 # `hello-daemon` — the pack-shipped-jail-binary experiment
 
 An **experiment**, not a feature. It is
-[`broker-as-a-pack.md`](../../docs/design/broker-as-a-pack.md) [§10](../../docs/design/broker-as-a-pack.md#10-sequencing)'s second sequencing
-step, quoted whole:
+the second sequencing step of the design behind
+[`pack-binaries.md`](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable), quoted whole:
 
 > **Second, prove P1 cheaply** — a throwaway local pack whose `jail_daemon.cmd` is
 > `["{jail_loophole_dir}/bin/hello"]`, carrying a statically linked two-line binary.
 > This is an afternoon, and it converts "the mechanism appears to exist" into "the
 > mechanism works".
 
-[§3](../../docs/design/broker-as-a-pack.md#3-blocker-1-re-examined--the-jail-side-binary-is-already-expressible)'s inventory says every clause a pack-shipped jail binary needs is already built —
+[The design's inventory](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) said every clause a pack-shipped jail binary needs is already built —
 the module dir is bind-mounted `:ro` **without `noexec`**, `{jail_loophole_dir}` is
 legal in `jail_daemon.cmd`, the pack-shipped subset never constrained `jail_daemon`,
 and `yolo-jaild supervise` spawns the argv with no per-loophole code — and then says
@@ -50,10 +50,10 @@ spawn-failure arm that discarded the error and retried for the life of the jail,
 `~/.local/state/yolo-jail-daemons/hello-daemon.log` empty. That arm now writes
 `spawn failed: …` to the log and obeys the restart policy, so this manifest's
 `"restart": "no"` gives up after one line that names the error
-([§10](../../docs/design/broker-as-a-pack.md#10-sequencing) records the fix).
+([the reference](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) records the fix).
 
 **The embedded route has an answer now, and it is not this tree** (2026-09-30,
-[`broker-as-a-pack.md`](../../docs/design/broker-as-a-pack.md) BP-D1). A pack that must
+[`pack-binaries.md`](../../docs/reference/pack-binaries.md), [BP-D1](../../docs/reference/pack-binaries.md#BP-D1)). A pack that must
 work when selected by bare name declares its program as a DOWNLOAD in the loophole's
 manifest — `binaries`, one build per platform with a mandatory `sha256` — and names it
 `{jail_binary:<name>}` in `jail_daemon.cmd`. `yolo pack install` fetches and verifies each
@@ -63,7 +63,7 @@ throwaway has no release to download from.
 
 ## Why it ships a script and not an ELF binary
 
-[§10](../../docs/design/broker-as-a-pack.md#10-sequencing) says "statically linked two-line binary". This ships a two-line `#!/bin/sh`
+[The design](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) said "statically linked two-line binary". This ships a two-line `#!/bin/sh`
 program instead, and the substitution is deliberate.
 
 Every property the experiment is about is **identical** for the two: a file the pack
@@ -75,12 +75,12 @@ still finds the gap above rather than dodging it.
 What a committed ELF would have cost is the reason not to: `packs/` is inside
 [`flake.nix`](../../flake.nix)'s `goSrc` fileset **and** inside
 [`packs/embed.go`](../embed.go), so the blob would ride in every `yolo` binary and every
-hermetic image build — once per platform, under [§3.1](../../docs/design/broker-as-a-pack.md#31-what-is-actually-unresolved-here)'s `bin/<goos>-<goarch>/`
+hermetic image build — once per platform, under [the design's](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable) `bin/<goos>-<goarch>/`
 convention — forever, for a throwaway. And it would not have worked anyway: the embed
 channel would have stripped its exec bit just the same.
 
 **What the script therefore leaves unproven is the ELF half**: that a non-nix,
-dynamically-linked binary finds its interpreter through `nix-ld` inside the jail. [§3](../../docs/design/broker-as-a-pack.md#3-blocker-1-re-examined--the-jail-side-binary-is-already-expressible)
+dynamically-linked binary finds its interpreter through `nix-ld` inside the jail. [The design](../../docs/reference/pack-binaries.md#a-packs-own-tree-cannot-carry-an-executable)
 claims that from `nix-ld`'s shipped behaviour; this pack does not test it. A
 *statically* linked binary needs no interpreter and should need nothing beyond what is
 measured here.
@@ -118,7 +118,7 @@ the staged packs. Its guest root uses this host tree's unique directory leaf and
 exclusively, so a later launch cannot replace it. For the embedded `hello-daemon` pack, the
 illustrative guest path is `/var/yolo-jail/packs/<jail>.<host-tree-leaf>/_official/hello-daemon/loopholes/hello-daemon/bin/hello`.
 The bootstrap and session environments name that same root with `YOLO_PACK_ROOT`
-([JD-10](../../docs/design/jail-daemon-on-macos-user-plan.md#JD-10)). The log remains at
+([JD-10](../../docs/reference/macos-user-provisioning.md#JD-10)). The log remains at
 `<workspace>/.yolo/home/local/state/yolo-jail-daemons/hello-daemon.log` on the Mac. This describes
 source behavior, not a native run: root ownership and modes, Seatbelt execution and
 overlapping-session restart behavior remain **UNMEASURED**. The code allows a macOS script there;

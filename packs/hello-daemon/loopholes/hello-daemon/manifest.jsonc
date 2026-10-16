@@ -1,5 +1,5 @@
-// The `hello-daemon` loophole — the EXPERIMENT broker-as-a-pack.md §10 step 2 asks
-// for: "a throwaway local pack whose `jail_daemon.cmd` is
+// The `hello-daemon` loophole — the EXPERIMENT behind pack-binaries.md's "A pack's own tree cannot carry an
+// executable"; its design asked for: "a throwaway local pack whose `jail_daemon.cmd` is
 // `["{jail_loophole_dir}/bin/hello"]`, carrying a statically linked two-line binary".
 //
 // It exists to answer one question and nothing else: can a PACK ship the executable
@@ -21,7 +21,7 @@
 // binary and every hermetic image build, once per platform, forever.
 {
   "name": "hello-daemon",
-  "description": "Experiment: runs a two-line program this pack ships, to prove a pack can deliver a jail-side daemon's executable (broker-as-a-pack.md §3/§10).",
+  "description": "Experiment: runs a two-line program this pack ships, to prove a pack can deliver a jail-side daemon's executable (docs/reference/pack-binaries.md).",
   "version": 1,
   // NO DAEMON ON THE HOST, so there is no transport to speak of.  `none` is the
   // enum's own word for it (loopholedecl/enums.go: "TransportNone means NO DAEMON,

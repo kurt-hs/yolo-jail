@@ -10,7 +10,7 @@ import "github.com/mschulkind-oss/yolo-jail/internal/config"
 // config package owns the interface, this package supplies the implementation.
 //
 // IT HAD ONE FIELD, `IncludeBundled`, and it always held true. The bundled channel is
-// retired (docs/design/broker-as-a-pack.md OQ-BP4), so the switch named a source that
+// retired (docs/reference/loophole-system.md OQ-BP4), so the switch named a source that
 // no longer exists; the struct is kept empty rather than replaced by a bare function
 // because it is the type config.LoopholeResolver is satisfied by.
 type Resolver struct{}

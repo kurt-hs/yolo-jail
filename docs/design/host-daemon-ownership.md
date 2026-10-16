@@ -78,7 +78,7 @@ plan),
 [`../reference/loophole-transport.md`](../reference/loophole-transport.md) (**the
 authority** for `scope`, the ensure-under-flock model, the teardown asymmetry and the
 stale-daemon warning — all of which describe the built tree and none of which this ruling
-has changed), [`broker-as-a-pack.md`](broker-as-a-pack.md) (where `scope: "host"` was
+has changed), [`loophole-system.md`](../reference/loophole-system.md#the-claude-oauth-broker-a-contribution-of-the-claude-pack) (where `scope: "host"` was
 invented, on the premise [§1.1](#11-the-premise-the-scope-was-built-on-is-false)
 refutes), [`../reference/loophole-system.md`](../reference/loophole-system.md)
 (activation, the origin gate, what a pack may declare),
@@ -438,7 +438,7 @@ for the same lock, every front splices to the same socket, and `yolo broker` and
 a manifest naming its own host-wide socket would be a host path claim yolo would then have
 to gate, and two manifests could name the same one
 ([`paths.go`](../../internal/paths/paths.go), `HostSingletonSocket`; ruled in
-[`broker-as-a-pack.md`](broker-as-a-pack.md)). The name itself is pinned to the loophole's
+[`loophole-system.md`](../reference/loophole-system.md#the-claude-oauth-broker-a-contribution-of-the-claude-pack)). The name itself is pinned to the loophole's
 directory name at load ([`loopholedecl.go`](../../internal/loopholedecl/loopholedecl.go),
 `walk`), which keeps it a path *component* rather than a path.
 
@@ -1257,7 +1257,7 @@ retiring `scope: "host"` removes one instance of it rather than the shape.
   promises a jail. [`OQ-HD2`](#11-decision-ledger) was the *management-surface* half — what a
   human can type — and deliberately did not decide it.
 - **Whether a fetched pack may ship a host daemon binary** — that is
-  [`OQ-BP6`](broker-as-a-pack.md#decision-ledger)'s, answered 2026-09-30: yes, disclosed.
+  [`OQ-BP6`](../reference/pack-binaries.md#OQ-BP6)'s, answered 2026-09-30: yes, disclosed.
 - **What each loophole does, or whether it should exist.** Nothing here argues three
   credential daemons is too many.
 - **The in-jail halves' design.** The OAuth terminator and the two adapters are jail daemons;

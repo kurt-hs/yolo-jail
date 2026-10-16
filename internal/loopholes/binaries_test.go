@@ -1,7 +1,7 @@
 package loopholes
 
 // binaries_test.go pins where a manifest's `binaries` meets this machine (binaries.go,
-// docs/design/broker-as-a-pack.md BP-D1): the argvs resolve to the cache and the container path,
+// docs/reference/pack-binaries.md BP-D1): the argvs resolve to the cache and the container path,
 // a build that is not fetched keeps the loophole off and names `yolo pack install`, a platform
 // with no build is the platform axis's answer, the jail's build is mounted read-only from the
 // cache — carrying an exec bit the pack's own tree does not have — and the macos-user guest and

@@ -323,7 +323,7 @@ func packPathScopeClause(value string) string {
 // names '{state}/ca.crt' — inside the subset, and only because {state} is name-keyed and
 // survives restaging. There is no wider-vocabulary source left to fall back to: the
 // bundled channel that used to keep one is retired
-// (docs/design/broker-as-a-pack.md OQ-BP4).
+// (docs/reference/loophole-system.md OQ-BP4).
 func (m *Manifest) packCACertProblems(manifestPath string) []string {
 	if !m.CACertSet {
 		return nil
@@ -471,7 +471,7 @@ func packWritableBindProblem(manifestPath, field string, bm HostBindMount) strin
 //
 // `publishes: "endpoint"` USED TO STAY AVAILABLE to a BUNDLED loophole, because that was
 // yolo's own code publishing yolo's own credential. As of 2026-08-19 NO LOOPHOLE ANYWHERE
-// CAN DECLARE IT: the bundled channel is empty and retired (broker-as-a-pack.md OQ-BP4),
+// CAN DECLARE IT: the bundled channel is empty and retired (loophole-system.md OQ-BP4),
 // so every module manifest yolo reads is pack-shipped and reaches this refusal. The value
 // survives in the enum with no possible declarer, which is a genuine follow-on the design
 // names and does not require: retiring the key itself is a two-line deletion once someone
@@ -496,6 +496,6 @@ func (m *Manifest) packPublishesProblems(manifestPath string) []string {
 			" yours. NO loophole may self-publish now: the bundled channel that used to"+
 			" permit it — yolo's own code publishing yolo's own credential — is retired"+
 			" (docs/reference/loophole-transport.md#two-server-shapes-and-how-a-manifest-selects-one,"+
-			" broker-as-a-pack.md OQ-BP4)",
+			" loophole-system.md OQ-BP4)",
 		manifestPath, pytext.Repr(m.HostDaemon.Publishes), "{socket}")}
 }

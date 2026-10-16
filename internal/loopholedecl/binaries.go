@@ -1,7 +1,7 @@
 package loopholedecl
 
 // binaries.go is the `binaries` key: an EXECUTABLE A LOOPHOLE SHIPS AS A DECLARED DOWNLOAD,
-// pinned by a mandatory sha256 (docs/design/broker-as-a-pack.md BP-D1), and the two tokens an
+// pinned by a mandatory sha256 (docs/reference/pack-binaries.md BP-D1), and the two tokens an
 // argv names one with.
 //
 // # Why a download and not a file in the pack tree
@@ -9,7 +9,7 @@ package loopholedecl
 // A file committed to the tree reaches a jail with its exec bit only from a pack configured BY
 // PATH (packstage.copyFile carries 0o111). An EMBEDDED pack, the shape every official pack has,
 // cannot carry one at all: `embed.FS` reads every file back 0444, and the leased per-build tree
-// is sealed read-only (broker-as-a-pack.md §3.1 option A, measured with packs/hello-daemon). So
+// is sealed read-only (pack-binaries.md, "A pack's own tree cannot carry an executable", measured with packs/hello-daemon). So
 // the bytes live OUTSIDE every pack tree. `yolo pack install` fetches each build this machine
 // needs, verifies it against the digest written here, and caches it by digest with the exec bit
 // set (internal/packbin); the launch reads the cache and never fetches. The manifest pins the

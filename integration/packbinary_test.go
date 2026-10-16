@@ -14,7 +14,7 @@ import (
 )
 
 // TestAJailRunsAPackBinaryItDownloaded is a loophole's DOWNLOADED BINARY end to end in a real
-// container (docs/design/broker-as-a-pack.md BP-D1 to BP-D6): the one thing the unit tests
+// container (docs/reference/pack-binaries.md BP-D1 to BP-D6): the one thing the unit tests
 // cannot show is that the cached build, mounted as a single read-only file bind, is executable
 // in the jail and run by the supervisor.
 //

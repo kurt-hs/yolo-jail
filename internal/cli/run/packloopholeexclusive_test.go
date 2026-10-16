@@ -7,7 +7,7 @@ package run
 // IT HAD A SECOND HALF — pack-vs-RESERVED, against the names yolo answered to itself.
 // `loopholes.ReservedLoopholeNames()` was deleted on 2026-08-19 when the last name in it,
 // `claude-oauth-broker`, became a contribution of `packs/claude`
-// (docs/design/broker-as-a-pack.md §10 step 5). The tests for that half are gone with it;
+// (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack"). The tests for that half are gone with it;
 // what replaced them is TestEveryShippedLoopholePackSurvivesThePreflight below, which is
 // the assertion that actually protects a user — a reservation left standing over a
 // pack-shipped name refuses every launch that selects the pack.

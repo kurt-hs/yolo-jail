@@ -47,7 +47,7 @@ password, one enrolled host user per Mac, and a migration off root-owned `/var/y
 **Reads with:** [the privilege research](../research/sandvault-macos-privileges.md),
 [the keychain design](keychain-from-a-jail.md), [workspace policy](configurable-workspace-root.md),
 [session lifetime](jail-lifetime-last-session-wins.md#99-the-keeper-at-yolo-host-and-macos-user),
-[guest-tree retention](jail-daemon-on-macos-user-plan.md#ownership-and-cleanup-unknown-keeps-the-bytes),
+[guest-tree retention](../reference/macos-user-provisioning.md#the-guest-pack-tree--one-per-launch-never-replaced),
 and [the implementation plan](macos-user-privilege-lifecycle-plan.md).
 
 ---
@@ -82,7 +82,7 @@ exact grants.
 | Workspace | [OQ-CW2](configurable-workspace-root.md#OQ-CW2) and its sibling questions still own the whitelist and root policy. The current neutral-ground check is not proof that every real home is excluded; this design neither widens it nor claims to fix it. |
 | Runtime and authentication | No auto-detection change, provider/auth change, pack consent change or credential-refresh ownership change. Password-free sudo operations do not guarantee a client never presents a keychain or login dialog. |
 | Services and stop | [The keeper's ownership](jail-lifetime-last-session-wins.md#994-what-the-keeper-owns-there), [stop semantics](jail-lifetime-last-session-wins.md#996-what-the-first-terminal-sees-and-how-the-keeper-ends) and held [HD-R1](host-daemon-ownership.md#HD-R1) stay independent. No resident root service, keeper migration or host-daemon deployment is proposed. |
-| Guest trees | [JD-10](jail-daemon-on-macos-user-plan.md#JD-10) remains the retention contract, including possible writer dispatch. Its native overlap/restart/capture proof is still owed. |
+| Guest trees | [JD-10](../reference/macos-user-provisioning.md#JD-10) remains the retention contract, including possible writer dispatch. Its native overlap/restart/capture proof is still owed. |
 | Other Mac feedback | A reported edit-to-check failure needs its own reproduction; this source review proves no such bug. Storage relocation and VM/backend work are separate. |
 
 ## 2. What the source actually does today
@@ -216,7 +216,7 @@ not archives with implicit path traversal or links to source inodes.
   inode as the [existing Mach-O staging rule](../../internal/macosuser/macosuser.go#L202-L226)
   requires. No guest-prefix executable is ever run with root credentials.
 - **Pack trees:** Use the host tree's unique leaf and the existing
-  [JD-10 destination rule](jail-daemon-on-macos-user-plan.md#source-behavior-one-destination-one-writer-no-reuse).
+  [JD-10 destination rule](../reference/macos-user-provisioning.md#the-guest-pack-tree--one-per-launch-never-replaced).
   Exclusive reservation, no collision adoption, no merge/replacement, no mutation after commit.
 - **Overlay/context trees:** Only their existing workspace-derived target classes. Replacement
   is serialized with the existing workspace staging/provisioning lock and an additional
@@ -451,7 +451,7 @@ already copied into memory, and is not a secure-erasure claim.
   restrictions and additive-service design are not settled by this proposal.
 - **Retention:** Mark both writer and guest-consumer possible dispatch before sending a request.
   Loss of an acknowledgement, helper exit or supervisor stop is not a no-holder proof.
-  [JD-10](jail-daemon-on-macos-user-plan.md#ownership-and-cleanup-unknown-keeps-the-bytes) retains
+  [JD-10](../reference/macos-user-provisioning.md#the-guest-pack-tree--one-per-launch-never-replaced) retains
   the exact guest tree after either dispatch, even on normal return. A session-file sweep never
   removes it. Pre-dispatch cleanup can remove only its own exclusive reservation; collision
   recovery still recommends a fresh invocation and exact-path inspection, not deletion.
@@ -648,7 +648,7 @@ standing grants are **G1** to **G10**. "Today" means the current plain-`sudo` so
 | G4 | Write the session and daemon env files, which hold credentials | Today `mkdir`, `chmod 0700`, `chmod +a "user:_yolojail allow search"` on `env/`; `sudo tee`, `chmod 0600`, a guest read ACL on each file ([env protection](../../internal/macosuser/envfile.go#L187-L225)) | Guest can read but not write or list; no other local account can read | ⚠ None: SandVault puts the environment on argv | Fixed names from the key; root-only `0700` parent; [publication](#profile-and-credential-file-publication) | Per-launch prompt |
 | G5 | Write the CA bundle and extra-CA files | Same commands as G4, only when the System keychain adds a CA | As G4 | ⚠ None | As G4 | Per-launch prompt |
 | G6 | Stage yolo's guest binaries | Today `sudo mkdir -p`, `cp -f <host yolo> <dst>.new`, `chmod a+rX`, `mv -f` ([staging](../../internal/macosuser/macosuser.go#L202-L226)). Proposed: the caller streams bytes; the helper writes a fresh inode | The guest may run them but not alter them; the prefix is root-owned | Root home sync. Its result ends guest-owned; yolo's stays root-owned | Fixed ship-set names only; root reads no source path and runs none of these bytes | Per-launch prompt |
-| G7 | Stage pack, overlay and context trees | Today root copy and permission commands ([staging](../../internal/macosuser/runplan.go#L698-L710)). Proposed: a typed tree stream, no links followed | As G6 | Root home sync | Existing target classes; [JD-10](jail-daemon-on-macos-user-plan.md#JD-10) reservation, no merge | Per-launch prompt |
+| G7 | Stage pack, overlay and context trees | Today root copy and permission commands ([staging](../../internal/macosuser/runplan.go#L698-L710)). Proposed: a typed tree stream, no links followed | As G6 | Root home sync | Existing target classes; [JD-10](../reference/macos-user-provisioning.md#JD-10) reservation, no merge | Per-launch prompt |
 | G8 | Remove this session's own files at exit or sweep | Today `sudo rm -f` on the [five fixed paths](../../internal/macosuser/sessionfiles.go#L97-L109) ([teardown](../../internal/macosuser/sessionfiles.go#L189-L230)). Proposed: helper `cleanup`, `unlinkat` on recorded inodes | The files are root-owned in a root-only directory | ⚠ None per session. SandVault's root removals are account-wide | Owned key, receipt and a claimed liveness record; no path or glob | Prompt at exit; on failure the credential file stays, with today's warning |
 | G9 | Capture and fork-build's protected files | G3 to G5 and G8 again, keyed per capture attempt ([scratch](../../internal/macosuser/capture.go#L381-L406), [cleanup](../../internal/macosuser/capture.go#L810-L819)) | As G3 to G5 | ⚠ None | Per-attempt key and receipt; scratch itself runs without root | Prompt when startup reaches capture |
 | G10 | Ownership receipts | Helper writes and reads root-only records under its protected directory | Records must not be forgeable by the host or guest | ⚠ None | Written only by the helper; [receipts](#session-ownership-is-not-caller-supplied-authority) | No helper, so nothing to record |

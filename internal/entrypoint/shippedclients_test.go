@@ -44,7 +44,7 @@ import (
 // "absent from the ship set" has to be a decision rather than an oversight; an
 // accidental omission is otherwise indistinguishable from the intended one.
 //
-// An OFFICIAL PACK BINARY joins it (docs/design/broker-as-a-pack.md §14.4, step
+// An OFFICIAL PACK BINARY joins it (docs/reference/pack-binaries.md, "The release matrix", step
 // 3): a cmd/<name> that a loophole manifest in the packs embed declares under
 // `binaries`. `yolo pack install` downloads it from the release and a launch
 // binds it into a jail from the cache, so it is never mounted from the prefix,
@@ -188,7 +188,7 @@ func TestLoopholeClientsAreBaked(t *testing.T) {
 func shipEnumerated(set map[string]bool, name string) bool { return set[name] }
 
 // TestAnOfficialPackBinaryIsDownloadedNeverMounted is the program's place in the
-// tree (docs/design/broker-as-a-pack.md §14.4, step 3), over every binary a
+// tree (docs/reference/pack-binaries.md, "The release matrix", step 3), over every binary a
 // loophole manifest in the packs embed declares. Each is built from its cmd/<name>
 // by the pin tool and reaches a jail as a download, so it is exempt from the ship
 // set beside goprobe and in neither ship list: the flake and the bundle compile

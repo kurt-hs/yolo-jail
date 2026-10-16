@@ -2,7 +2,7 @@
 // window onto the host's systemd journal, reached from inside the jail as
 // `yolo-journalctl`.  See internal/journald for the daemon and cmd/yolo-journalctl
 // for the jail-side client, both of which stay BAKED: an official pack may name a
-// baked client (broker-as-a-pack.md §12).
+// baked client (loophole-system.md, "host-processes converted first").
 //
 // IT WAS NOT A LOOPHOLE AT ALL UNTIL 2026-08-18, and that is the whole point of this
 // file.  It was a BUILTIN SERVICE — a Go function the run pipeline called by hand

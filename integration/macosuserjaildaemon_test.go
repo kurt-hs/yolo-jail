@@ -147,7 +147,7 @@ func requireNoGuestSupervisorLeft(t *testing.T, diag func() string) {
 }
 
 // TestMacosUserRunsAPackServiceJailDaemonInTheGuest is the one guest rule on the hardware
-// (docs/design/jail-daemon-on-macos-user-plan.md JD-9, under OQ-DP8): a pack SERVICE that
+// (docs/reference/macos-user-provisioning.md JD-9, under OQ-DP8): a pack SERVICE that
 // declares a jail daemon and no host half, from the conventional local pack, runs confined in the
 // guest as a container runs it, instead of being declined as one whose host half runs here. The
 // daemon writes one line and stays up; the probe waits for that line in its log, which the
@@ -195,7 +195,7 @@ func TestMacosUserRunsAPackServiceJailDaemonInTheGuest(t *testing.T) {
 }
 
 // TestMacosUserRunsAModuleDirJailDaemonInTheGuest is the hello-daemon shape on the hardware
-// (docs/design/jail-daemon-on-macos-user-plan.md JD-10): a loophole jail daemon whose argv is
+// (docs/reference/macos-user-provisioning.md JD-10): a loophole jail daemon whose argv is
 // `{jail_loophole_dir}/bin/hello`, a 0755 script its pack ships, runs in the guest from the
 // sandbox's root-owned copy of the launch's staged packs (macosuser.StagedPackRoot). The script
 // prints the path it was run from and stays up, so its log says the copy's path, which proves the

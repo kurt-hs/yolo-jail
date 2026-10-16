@@ -18,7 +18,7 @@ import (
 // ARGV BUILDER over a resolved record — every field it can emit, `jail_env`, an absolute
 // `ca_cert`, a writable bind, `publishes: "endpoint"` included. Packs are the only module
 // source discovery has left since `bundled_loopholes/` was retired
-// (docs/design/broker-as-a-pack.md OQ-BP4), and the pack-shipped subset refuses several of
+// (docs/reference/loophole-system.md OQ-BP4), and the pack-shipped subset refuses several of
 // those, so routing these through discovery would silently turn "does RuntimeArgsFor emit
 // the device flag" into "does the subset permit a device" — a question packshipped_test.go
 // already owns, and one whose failure looks identical here (the loophole vanishes).
