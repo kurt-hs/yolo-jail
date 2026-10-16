@@ -21,7 +21,7 @@ measured on different days, so each is compared with its own day's native run. T
 grew out of the results:
 [why Apple Container's file work is slow](apple-container-file-cost.md) (per-file cost, not
 bandwidth, and what that means for a large Python monorepo),
-[whether any macOS VM can give memory back](macos-vm-memory-reclaim.md), and
+[whether any macOS VM can give memory back](macos-vm-runtime-comparison.md#4-memory-does-a-vm-give-a-freed-2-gib-back), and
 [a Python, Django and Postgres workload on three macOS VMs](macos-vm-runtime-comparison.md). CI logs hold launch times for each backend, but they come from two different Macs. The
 upstream source was read on 2026-09-30, at apple/container `0a48a1bd` (one day after release 1.5.0)
 and apple/containerization `f24df2ac` (1.5.0 is built on its tag 0.47.0). yolo evidence is at
@@ -193,7 +193,7 @@ of them cites a measurement on one Mac.
    (SOURCED, through the GitHub API's issue events). And driving VZ's balloon may not return
    memory to macOS at all: the one published host-side measurement saw the guest give up 7 GiB and
    the host's footprint rise
-   ([memory-reclaim research](macos-vm-memory-reclaim.md#3-what-virtualizationframework-offers)).
+   ([memory-reclaim research](macos-vm-runtime-comparison.md#41-why-virtualizationframework-keeps-the-pages)).
    Apple's guest kernel config does enable `CONFIG_VIRTIO_BALLOON` and `CONFIG_PAGE_REPORTING`
    ([config-arm64:920](https://github.com/apple/containerization/blob/f24df2ac817df66fe149a80103251dec987c32dc/kernel/config-arm64#L920),
    [config-arm64:3047](https://github.com/apple/containerization/blob/f24df2ac817df66fe149a80103251dec987c32dc/kernel/config-arm64#L3047));

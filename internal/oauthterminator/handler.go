@@ -112,7 +112,7 @@ const PresentedRefreshTokenKey = "presented_refresh_token"
 // CallerUnauthenticated is the broker's error for a refresh whose caller did not present
 // the machine's Claude login. This terminator answers it 401. It is deliberately not
 // `invalid_grant`, which Claude answers by blanking the shared credentials file (P2 in
-// docs/research/claude-oauth-refresh-mechanics.md).
+// docs/reference/claude-oauth-interposition.md).
 const CallerUnauthenticated = "caller_unauthenticated"
 
 // PresentedRefreshToken is the refresh_token a refresh-grant body carries, "" when it has

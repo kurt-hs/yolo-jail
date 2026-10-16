@@ -3,7 +3,7 @@ title: "Which macOS VM runs a Python, Django and Postgres workload best? Apple C
 date: 2026-10-03
 status: in-review
 stage: DESIGN
-next: "The maintainer decides between OrbStack as a podman host (closed source, paid for commercial use, and the fastest shared folders and the only memory return measured here; it needs no Docker-API backend, orbstack-as-a-podman-host.md) and VM-local volumes for chosen workspace folders on the backends yolo already has (apple-container-file-cost.md §4); no open shared-folder stack tried in §6 beat VZ, and NFS, the one candidate left, needs sudo"
+next: "The maintainer decides between OrbStack as a podman host (closed source, paid for commercial use, and the fastest shared folders and the only memory return measured here; it needs no Docker-API backend, orbstack-as-a-podman-host.md) and VM-local volumes for chosen workspace folders on the backends yolo already has (apple-container-file-cost.md §4); no open shared-folder stack tried in §6 beat VZ, and NFS, the one candidate left, needs sudo. Also owed (§4.4): the maintainer files the Feedback Assistant request drafted in §4.3; and a krunkit 1.3.2 run at its debug log level, failing which the Lima krunkit driver, to find out why libkrun's reporting returned nothing"
 tags: [research, macos, apple-container, podman, libkrun, orbstack, virtiofs, memory, postgres, benchmark]
 summary: "The maintainer asked whether re-adding a Docker-style backend on macOS would make development faster, and whether keeping hot files on the VM's own disk would. The same Python, Django and Postgres workload ran natively and in four VMs, each on a shared Mac folder and on a VM-local disk, without yolo. On a VM-local disk every VM beat native macOS at the Python steps (pytest 0.9 s against 1.85 s, pip install 1.8 to 2.0 s against 4.0 s). On a shared folder, the two Virtualization.framework VMs took 2 to 5 times native on file-heavy steps and libkrun up to 9 times slower again, while OrbStack came within 1.3 to 2.6 times native on all but one step and ran Postgres's reads at 90 percent of native. OrbStack was also the only VM to give a freed 2 GiB back to macOS, within 10 s; libkrun's free page reporting returned nothing even under pressure. No open alternative tried beat VZ's shared folder: libkrun with permissionSemantics=complete tied it, and QEMU with a macOS virtiofsd port was slower even at its most aggressive caching. OrbStack is closed source and paid for commercial use; Docker Desktop was not run, its licence ruling it out for the maintainer's commercial work."
 vantage:
@@ -21,9 +21,11 @@ vantage:
 - **INFERRED:** every reading of the numbers that a row does not show directly.
 - Nothing is ruled.
 
-It follows [the macOS backend benchmark](macos-backend-performance.md),
-[why Apple Container's file work is slow](apple-container-file-cost.md) and
-[whether a macOS VM can give memory back](macos-vm-memory-reclaim.md).
+It follows [the macOS backend benchmark](macos-backend-performance.md) and
+[why Apple Container's file work is slow](apple-container-file-cost.md). The earlier question of
+whether a macOS VM can give memory back at all, and why Apple Container cannot, is folded into
+[§4.1](#41-why-virtualizationframework-keeps-the-pages) and
+[§4.2](#42-adding-a-balloon-to-apple-container-ourselves).
 
 **The question,** in the maintainer's words (2026-10-03): *"I would be willing to consider adding
 back support for Docker or OrbStack or whatever on a Mac. If they're going to give us meaningful
@@ -68,8 +70,11 @@ whatever we can, without yolo support yet."*
   protocol both VZ and libkrun use. It is the path a yolo workspace takes today.
 - **VM-local disk**: a disk image that the guest formats and serves itself: a named volume on
   Apple Container, or the Podman Machine's own disk for a podman volume.
-- **Free page reporting**: the virtio balloon feature by which a guest tells the host which pages
-  it has freed (defined in [the memory reclaim doc](macos-vm-memory-reclaim.md#terms)).
+- **Free page reporting**: the virtio balloon feature (`VIRTIO_BALLOON_F_REPORTING`, feature
+  bit 5) by which a guest tells the host, on its own, which pages it has freed, with no host-side
+  policy loop. Linux's guest side is `CONFIG_PAGE_REPORTING`.
+- **Footprint**: macOS's `phys_footprint`, the figure `top`'s MEM column and Activity Monitor show
+  for a process. A page freed with `MADV_FREE` stays in it until macOS needs the memory.
 - **OrbStack**: a closed-source macOS app from OrbStack, Inc. running one Linux VM that serves the
   Docker API. It is free for personal use and paid for commercial use
   ([pricing](https://orbstack.dev/pricing); SOURCED).
@@ -304,6 +309,161 @@ means something only for the VZ runtimes, and the table uses RSS.
 
 ⚠ **Running `pressure.py` costs the Mac.** It pushed 9 GiB into the compressor and evicted most
 of the file cache, both recovered within minutes. Run it on a Mac nobody is using.
+
+### 4.1 Why Virtualization.framework keeps the pages
+
+Read on 2026-10-03 through the GitHub API, Apple's documentation and the issue trackers named
+here, to answer the maintainer's *"I thought apple container had a balloon to get memory back?
+can we tune that?"*. A **memory balloon** is a virtio device through which the host asks the guest
+to give up memory; a **traditional balloon** acts only when the host sets a target size.
+
+- **Apple Container attaches no balloon, so there is nothing to tune.** Its own documentation
+  says freed guest memory is not returned (SOURCED).
+- **VZ has one device, the traditional balloon, since macOS 11.** Apple's
+  [documentation](https://developer.apple.com/documentation/virtualization/vzvirtiotraditionalmemoryballoondevice)
+  says that when the target is lowered, "the virtual machine releases those pages back to the host"
+  (SOURCED). VZ has no free page reporting device.
+- **The one published measurement contradicts that documentation.** On macOS 26.5.2, a commenter
+  on [lima-vm/lima #4220](https://github.com/lima-vm/lima/issues/4220) lowered the target from
+  8 GiB to 1 GiB. The guest gave up exactly 7 GiB, and the host's footprint rose by about 2 GB and
+  never fell. VZ offered only the `MUST_TELL_HOST` and `DEFLATE_ON_OOM` feature bits, not
+  `REPORTING` (SOURCED, one run by one person). OrbStack's author found the same in 2023: "nothing
+  actually seems to get freed" ([Hacker News](https://news.ycombinator.com/item?id=34720219)).
+- **No VZ-based tool drives the balloon.** Lima, UTM and vfkit attach it and never set a target;
+  Lima's adaptive controller, [#4828](https://github.com/lima-vm/lima/pull/4828), was still open
+  (SOURCED).
+- **Apple's guest kernel is ready**: it enables `CONFIG_VIRTIO_BALLOON` and
+  `CONFIG_PAGE_REPORTING`
+  ([§2.2 of the benchmark](macos-backend-performance.md#22-memory-backed-on-first-touch-kept-until-the-container-stops)).
+  The host side is what is missing.
+
+How the other macOS VMs compared, from others' reports before this doc's own run:
+
+| | Open source | Gives memory back while running | Usable as a yolo backend |
+| :--- | :--- | :--- | :--- |
+| Apple Container (VZ) | yes, Apache-2.0 | no | yes, today |
+| Lima or Colima on `vz` | yes | no ([lima #2789](https://github.com/lima-vm/lima/issues/2789), open) | no |
+| Lima with its krunkit driver | yes | reported yes, through libkrun (lima #4220) | no |
+| Tart (VZ) | source-available | no balloon in its code | no |
+| UTM, Apple backend | yes | attaches a balloon, never drives it | no |
+| Podman Machine, libkrun provider | yes | reported yes by others; **not on this Mac** ([§4](#4-memory-does-a-vm-give-a-freed-2-gib-back)) | yes, today |
+| OrbStack | no | yes, by an undisclosed mechanism since 1.7.0 ([blog](https://orbstack.dev/blog/dynamic-memory)); measured here | no Docker-API backend needed ([orbstack-as-a-podman-host.md](orbstack-as-a-podman-host.md)) |
+| Docker Desktop | no | stops the VM when idle ([Resource Saver](https://docs.docker.com/desktop/use-desktop/resource-saver/)); Docker VMM returns idle memory ([docs](https://docs.docker.com/desktop/features/vmm/)) | no; Docker was removed |
+
+Firecracker, the microVM that prompted the original question, is Linux and KVM only and does not
+run on macOS ([the benchmark's sources](macos-backend-performance.md#sources)).
+
+### 4.2 Adding a balloon to Apple Container ourselves
+
+- **Apple Container is open source and takes outside work.**
+  [apple/container](https://github.com/apple/container) and
+  [apple/containerization](https://github.com/apple/containerization) are Apache-2.0, and their
+  [CONTRIBUTING.md](https://github.com/apple/containerization/blob/main/CONTRIBUTING.md) welcomes
+  contributions, asks that large features start as an issue, and deprioritizes "low-effort,
+  unexplained submissions". Outside PRs were merged in both repositories in the two months before
+  2026-10-03 (SOURCED: GitHub search).
+- **The one proposal was not rejected on its merits.** An outside contributor's RFC,
+  [containerization #882](https://github.com/apple/containerization/issues/882), and two PRs,
+  [#893](https://github.com/apple/containerization/pull/893) (attach the VZ balloon and a call
+  that sets the target, compacting the guest first) and
+  [#894](https://github.com/apple/containerization/pull/894) (an opt-in reclaim loop that sets the
+  target to the guest's anonymous memory plus 256 MiB and backs off when the guest refaults), were
+  closed by a listed maintainer on 2026-08-28 with no comment, in one sweep with the roughly 30 PRs
+  that contributor opened the day before (SOURCED: the issue events API). INFERRED: a reaction to
+  the batch, not a ruling on ballooning. #893's test checks only that the guest's `MemFree` drops,
+  not, as its description says, that the host's footprint falls. No maintainer has replied to the
+  related requests, container [#1698](https://github.com/apple/container/issues/1698),
+  [#1867](https://github.com/apple/container/issues/1867) and
+  [#1921](https://github.com/apple/container/issues/1921).
+- **It is small.** About 20 lines attach the device in containerization's
+  `VZVirtualMachineInstance.swift`, about 50 add a setter and its protocol, and about 370 make a
+  policy loop that reads guest memory through `vminitd`, all already written in the closed PRs.
+- **It can be done as a fork**, which Apache-2.0 allows, but `container` would then have to be
+  rebuilt against the fork, signed and shipped, which yolo does not do today. Upstreaming would
+  start with a design issue, given how #882 went.
+- **Its costs** (INFERRED): a traditional balloon returns memory to the guest only when the host
+  raises the target, so a lagging loop can push the guest into its OOM killer (`DEFLATE_ON_OOM`
+  softens that), and compacting the guest costs CPU.
+- **It would probably gain nothing**, because the one host-side measurement
+  ([§4.1](#41-why-virtualizationframework-keeps-the-pages)) shows VZ keeping the pages. Before
+  writing a patch, reproduce that with incompressible data and read host memory pressure and the
+  compressor, not footprint.
+- **What would actually help is a free page reporting device in VZ**, which only Apple can add:
+  the request is drafted in [§4.3](#43-draft-feedback-assistant-request). WWDC26 session 224's
+  custom virtio devices for apps (macOS 27) might let a third party supply one; not checked.
+
+Until then the levers on Apple Container are the ones the benchmark already names: stop jails
+sooner, and lower the memory cap yolo passes (half of host RAM, at least 4 GB).
+
+### 4.3 Draft: Feedback Assistant request
+
+**A draft for the maintainer to file**, written 2026-10-08 from this Mac's own runs
+([§4](#4-memory-does-a-vm-give-a-freed-2-gib-back) and
+[the benchmark's memory session](macos-backend-performance.md#memory-m4-apple-container)).
+Nothing below has been sent. Feedback Assistant asks for a title, an area, a type and a
+description; the area and type are suggestions. Attach [`memsess.sh`](#appendix-a-the-scripts)
+and its output, and a sysdiagnose taken while the VM holds the freed memory.
+
+**Filed:** not yet. Record the FB number and the date here once filed.
+
+- **Title:** Virtualization: support free page reporting so a running Linux guest can return
+  freed memory to macOS
+- **Area:** Virtualization framework
+- **Type:** Suggestion
+
+> **Summary.** A Linux guest under Virtualization.framework never gives freed memory back to macOS
+> while it runs. Once the guest touches a page, the VM process keeps it until the VM stops, even
+> after the guest has freed it. Please add a virtio-balloon free page reporting device
+> (`VIRTIO_BALLOON_F_REPORTING`), or an equivalent, so a guest can tell the host which pages it
+> has freed and the host can reclaim them without a policy loop.
+>
+> **Why it matters.** Container tools on macOS, Apple's `container` among them, run a Linux VM
+> per container or per machine. A developer workload (a build, a test run, a database) touches a
+> few GiB for a few minutes. With no reclaim, the VM keeps that memory for as long as it runs,
+> which for a development container is hours, and several VMs add up on a 16 or 32 GB Mac.
+>
+> **What we measured.** Apple M1 Max, 32 GB, macOS 26.5 (25F71). In each VM a process held 2 GiB
+> of random bytes for 20 seconds and exited, and we read the VM process's resident size 120
+> seconds later:
+>
+> | VM | Idle | Holding 2 GiB | 120 s after exit |
+> | :--- | ---: | ---: | ---: |
+> | Apple `container` 1.1.0 | 617 MiB | 2,751 MiB | 2,752 MiB |
+> | Podman Machine on Virtualization.framework (applehv) | 1,636 MiB | 3,725 MiB | 3,725 MiB |
+> | OrbStack 2.2.3, for comparison | 1,181 MiB | 3,118 MiB | 1,066 MiB |
+>
+> Inside the guests the memory was free again within 30 seconds. On the Virtualization.framework
+> VMs the host never got it back; it returned only when the VM stopped. OrbStack returned it
+> within 10 seconds, so prompt reclaim is possible on this hardware. In a separate run through
+> `container`, a guest that loaded and freed 2 GiB was still charged 104% of it 120 seconds
+> later.
+>
+> **What we tried.** `VZVirtioTraditionalMemoryBalloonDevice` is the only reclaim device
+> available. It needs the host to set a target, and a public report on macOS 26.5.2 (Lima issue
+> 4220) found that lowering the target from 8 GiB to 1 GiB made the guest give up 7 GiB while the
+> host's footprint rose by about 2 GB and did not fall. The device offered only
+> `VIRTIO_BALLOON_F_MUST_TELL_HOST` and `VIRTIO_BALLOON_F_DEFLATE_ON_OOM`. The guest kernels we
+> use already enable `CONFIG_PAGE_REPORTING`, so only the host side is missing.
+>
+> **What we are asking for.** A free page reporting device, or a documented way for the host to
+> drop guest pages the guest has reported free, so that memory a running guest frees comes back
+> to macOS. If the traditional balloon is meant to do this already, please document how, since
+> lowering its target did not reduce the host's footprint in the report above.
+
+Before filing, check two things the draft states from others' runs: that VZ on the current macOS
+release still offers no reporting feature bit (read the guest's
+`/sys/bus/virtio/devices/*/features` in an Apple Container jail), and that lima #4220's
+measurement still stands.
+
+### 4.4 Still owed
+
+- **File the Feedback Assistant request** in [§4.3](#43-draft-feedback-assistant-request) and
+  record its FB number there. The maintainer's step.
+- **Find out why libkrun's reporting returned nothing here**, when
+  [libkrun #703](https://github.com/containers/libkrun/pull/703)'s author and lima #4220 saw memory
+  come back. The planned arm: run krunkit 1.3.2 at its debug log level, which may show whether
+  reports reach the device without a debug build of libkrun; failing that, try Lima's krunkit
+  driver. Docker Desktop is not tested, its licence ruling it out for commercial work.
 
 ## 5. What this means for the maintainer's question
 

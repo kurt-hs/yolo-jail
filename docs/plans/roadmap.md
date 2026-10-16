@@ -94,7 +94,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    [`~/.cache`](../design/vm-local-volumes.md#OQ-VL2), [database folders](../design/vm-local-volumes.md#OQ-VL3) and
    [how a new disk fills](../design/vm-local-volumes.md#OQ-VL4),
    with [the probe that checks its premise](../research/apple-container-file-cost.md#5-a-planned-probe-on-the-mac-runner)
-   and [VZ's memory request](../research/macos-vm-memory-reclaim.md#6-draft-feedback-assistant-request) to file — the
+   and [VZ's memory request](../research/macos-vm-runtime-comparison.md#43-draft-feedback-assistant-request) to file — the
    largest Mac speedup measured waits on it (pip install 8.35 s on a shared folder, 2.01 s on Apple Container's own disk).
    Beside it, the maintainer's 2026-10-08 request: [tools from a private Homebrew tap in every jail](../design/private-tap-programs.md),
    whose build waits on [a pack or a config key](../design/private-tap-programs.md#OQ-PT1),
@@ -284,7 +284,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 48. Nix dropping Intel Macs, when nixpkgs 26.05's security fixes stop on 2026-12-31, brings back [what replaces the
     Intel macOS runner](../research/macos-support-matrix.md#OQ-MX1), deferred until then.
 49. The maintainer files the upstream reports drafted with the VM-local design, on [VZ's virtio-fs cache policy](../research/apple-container-file-cost.md#21-per-file-cost-not-bandwidth)
-    and [VZ keeping freed guest memory](../research/macos-vm-memory-reclaim.md#5-adding-it-to-apple-container-ourselves)
+    and [VZ keeping freed guest memory](../research/macos-vm-runtime-comparison.md#42-adding-a-balloon-to-apple-container-ourselves)
     — last, since only Apple can ship either fix.
 50. Native macOS verification of [JD-10's guest pack-tree lifetime](../design/jail-daemon-on-macos-user-plan.md#JD-10): observe root ownership and modes and Seatbelt execution while overlapping launches use distinct trees, A's daemon restarts from A's unchanged module after B changes or drops its module, and capture leaves both trees unchanged. The source gates passed, but no native execution has established these properties; they remain **UNMEASURED**.
 
