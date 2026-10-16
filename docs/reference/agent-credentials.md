@@ -259,9 +259,9 @@ The resolved entry list travels to the entrypoint in an environment variable, so
 the single source of truth and the entrypoint never re-reads config. `macos-user` carries the same
 list, in two halves that come from different places: the source-less entries are read out of the
 merged config by the pure plan builder, and the source-bearing ones are resolved by the host CLI,
-which also **copies each file source** into a root-owned tree the sandbox reads and names it with
-`YOLO_CTX_ROOT`. There is still no bind mount anywhere on that backend; the bytes arrive by copy,
-and the same root-owned tree carries each pack's `reads-host` grant. One shape is skipped there —
+which also **copies each file source** into a read-only tree the sandbox reads, owned by the host
+user under `/Users/Shared/yolo-staged`, and names it with `YOLO_CTX_ROOT`. There is still no bind
+mount anywhere on that backend; the bytes arrive by copy, and the same tree carries each pack's `reads-host` grant. One shape is skipped there —
 a `source` naming a **directory**, which a copy does not scale to — and the launch names it in a
 warning rather than dropping it in silence.
 

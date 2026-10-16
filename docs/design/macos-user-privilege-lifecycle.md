@@ -1,7 +1,7 @@
 ---
 status: accepted
-stage: DECIDED
-next: "Building the reduced grant from the implementation plan (authorized 2026-10-16), task 1 first; then macos-user.yml on macOS CI, and the owner's Mac check, which needs its own authorization"
+stage: BUILT
+next: "Push the lane branch and run `gh workflow run macos-user.yml` (its narrow-sudo step is the first measurement); then the owner's Mac check, which needs its own authorization"
 verified: 2026-10-09
 tags: [macos-user, privileges, security, lifecycle, sudo]
 summary: "Ruled contract: after one administrator setup, routine native startup and exit never ask for a sudo password. Setup installs one rule, `(_yolojail) NOPASSWD: /usr/bin/env`, for one enrolled host user per Mac; the host user writes and removes every per-launch file in a host-owned staging root under /Users/Shared; no root helper. The helper design is kept as the fallback. Keychain, workspace and lifetime policies remain independent."
@@ -19,8 +19,11 @@ fallback, kept in case a later fact breaks the condition; they are not the plan.
 2026-10-09 at `b2eeffc12`. The
 [implementation plan](macos-user-privilege-lifecycle-plan.md) was written against the tree on
 2026-10-15. **2026-10-16: the owner authorized building it** ([MP-B1](#decision-ledger)); that
-covers the source change only, not installing anything on a Mac. Passwordless startup is
-**UNMEASURED**.
+covers the source change only, not installing anything on a Mac. **2026-10-16: the source change
+is built on the lane branch, not yet merged to main** (the plan's tasks 1 to 10). Nothing was
+measured: passwordless startup stays **UNMEASURED** until `macos-user.yml`'s narrow-sudo step runs
+on macOS CI and [the owner's Mac check](macos-user-privilege-lifecycle-plan.md#the-owners-mac)
+runs, which needs its own authorization.
 
 > **In short.** Yolo manages the agent's environment; its native macOS confinement option should
 > authorize bounded routine operations at administrator setup, not ask for a password at every
@@ -505,16 +508,17 @@ not an acceptance shortcut or unlock-policy ruling here.
 
 [OQ-MP10](#OQ-MP10) is ruled and its condition held as `_yolojail`
 ([walkthrough point 2](#points-settled-in-the-walkthrough-2026-10-15)). The code-grounded
-[implementation plan](macos-user-privilege-lifecycle-plan.md) is written: build it in its task
-order, then run its macOS CI step and, with the owner's authorization, its check on a real Mac.
+[implementation plan](macos-user-privilege-lifecycle-plan.md) is built on the lane branch
+(2026-10-16, not yet merged to main): next run its macOS CI step and, with the owner's
+authorization, its check on a real Mac.
 
 **Why this is on the critical path.** The owner wants an agent able to start and stop
 `macos-user` jails with nobody at a password prompt, so that it can test and develop that
-backend unattended. Installing the run-as rule alone does not deliver that. Today's source still
-runs root `sudo` for every per-launch write and removal: the profile `tee`, the env files, the
-staging copies and the `rm` at exit (G3 to G9). An agent's launch therefore still stops at a
-prompt. Both halves are needed: the source change that moves those writes to the host user, and
-setup installing the one rule.
+backend unattended. Installing the run-as rule alone does not deliver that. Until the lane
+branch merges, main still runs root `sudo` for every per-launch write and removal: the profile
+`tee`, the env files, the staging copies and the `rm` at exit (G3 to G9). An agent's launch from
+main therefore still stops at a prompt. Both halves are needed: the source change that moves
+those writes to the host user, and setup installing the one rule.
 
 Native installation and measurement are separate: obtain explicit authorization for
 an isolated native test installation before either occurs. That installation approval is not
@@ -749,8 +753,8 @@ workspace, keeper and guest-tree rulings remain in
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| MP-B1 | **Build authorized.** The owner, asked whether to build the [implementation plan](macos-user-privilege-lifecycle-plan.md): *"yes I want to go ahead on 1. tell me what to do."* It authorizes the source change in the plan's tasks 1 to 10. It does not authorize installing anything: no `sudo`, no `/etc/sudoers.d` write, nothing under `/var/yolo-jail` or `/Users` on any machine; [the owner's Mac check](macos-user-privilege-lifecycle-plan.md#the-owners-mac) still needs its own authorization. | 2026-10-16 | [What may happen next](#what-may-happen-next) | In progress |
-| OQ-MP10 | **Signed off, reduced.** G1 and G2 as one SandVault-form rule, `(_yolojail) NOPASSWD: /usr/bin/env`, with no root helper; G3 to G10 dropped if `_yolojail` can read host-owned `0444` files in a host-owned directory, which held as `_yolojail` on 2026-10-15 ([point 2](#points-settled-in-the-walkthrough-2026-10-15)); one enrolled host user per Mac, a second refused at setup. The owner's words are in [the answer](#OQ-MP10). | 2026-10-15 | [§8](#8-the-grant-inventory) | No: nothing built or installed |
+| MP-B1 | **Build authorized.** The owner, asked whether to build the [implementation plan](macos-user-privilege-lifecycle-plan.md): *"yes I want to go ahead on 1. tell me what to do."* It authorizes the source change in the plan's tasks 1 to 10. It does not authorize installing anything: no `sudo`, no `/etc/sudoers.d` write, nothing under `/var/yolo-jail` or `/Users` on any machine; [the owner's Mac check](macos-user-privilege-lifecycle-plan.md#the-owners-mac) still needs its own authorization. | 2026-10-16 | [What may happen next](#what-may-happen-next) | Built on the lane branch 2026-10-16, not yet merged to main; nothing installed or measured |
+| OQ-MP10 | **Signed off, reduced.** G1 and G2 as one SandVault-form rule, `(_yolojail) NOPASSWD: /usr/bin/env`, with no root helper; G3 to G10 dropped if `_yolojail` can read host-owned `0444` files in a host-owned directory, which held as `_yolojail` on 2026-10-15 ([point 2](#points-settled-in-the-walkthrough-2026-10-15)); one enrolled host user per Mac, a second refused at setup. The owner's words are in [the answer](#OQ-MP10). | 2026-10-15 | [§8](#8-the-grant-inventory) | Built on the lane branch 2026-10-16, not yet merged to main ([the plan](macos-user-privilege-lifecycle-plan.md)). UNMEASURED: passwordless startup waits on `macos-user.yml`'s narrow-sudo step and the owner's Mac check |
 | OQ-MP1 | **Partial: yes to A in principle.** Explicit administrator setup may grant the enrolled host user standing, bounded authority for routine startup and exit, and SandVault's model is the one to adopt. The owner's words: *"Yes, but before we do this, we need to talk about precisely what it is we're granting and how and why. This is exactly what we need to adopt from SandVault. We should use their model, but still, got to go through this more specifically."* Not authorization to build or install; the exact grants wait on [OQ-MP10](#OQ-MP10). | 2026-10-10 | [§8](#8-the-grant-inventory) | No: nothing built or installed |
 
 For this privilege policy alone, paste this into Vantage's planning-page Filter box:

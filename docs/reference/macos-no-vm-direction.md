@@ -72,8 +72,7 @@ Podman's applehv provider run on, and **libkrun** is the library behind Podman's
 are [the benchmark's metrics](../research/macos-backend-performance.md#42-the-metrics).
 
 **The answer, performance first.** `macos-user` is the Mac at native speed, and memory it used
-comes back; it pays macOS's cost of starting processes, `sudo`, and a fresh launch for
-every terminal. A VM backend is Linux: fast at starting processes and on its own disk, slow on
+comes back; it pays macOS's cost of starting processes and a fresh launch for every terminal. A VM backend is Linux: fast at starting processes and on its own disk, slow on
 every file it shares with the Mac, and it holds memory while its VM runs. So which is faster
 depends on how much of the work touches the shared folders.
 
@@ -85,7 +84,7 @@ natively on the same day.
 | Dimension | `macos-user` | Apple Container | Podman Machine | Source |
 | :--- | :--- | :--- | :--- | :--- |
 | Fresh launch, to a prompt | **5.5 s**, with `sudo` already authorized | 6.9 s with auto-capture off; 67.3 s as run, [a defect](#what-will-change) | not measured on Apple silicon | [M1, Apple Container](../research/macos-backend-performance.md#launch-m1-to-m3); [M1, macos-user](../research/macos-backend-performance.md#macos-user-2026-10-03) |
-| A second terminal in the same workspace | another fresh launch and `sudo` again; INFERRED from M1's 5.5 s, not timed beside a running jail | **an attach, 1.8 s** | an attach; not measured | [M3](../research/macos-backend-performance.md#launch-m1-to-m3); `sudo` per launch: READ, [the user guide](../../userguide/guides/macos.md#the-macos-user-backend) |
+| A second terminal in the same workspace | another fresh launch; INFERRED from M1's 5.5 s, not timed beside a running jail | **an attach, 1.8 s** | an attach; not measured | [M3](../research/macos-backend-performance.md#launch-m1-to-m3) |
 | Workspace file work: `git status`, ripgrep and `npm ci` over a 100,000-file tree | **native** | 5.3, 5.0 and 3.2 times native | *without yolo*: applehv within about 25% of Apple Container; libkrun 1.6 to 9 times slower than VZ on all but one step | [M5 to M7](../research/macos-backend-performance.md#timings-m5-to-m12); [on a shared folder](../research/macos-vm-runtime-comparison.md#32-on-a-shared-mac-folder) |
 | Folders only the jail uses (`.venv`, `node_modules`, `~/.cache`, the home), where yolo puts them today | the Mac's own disk; the Mac and the sandbox share `.venv` and `node_modules` | READ: shared folders, at the workspace's cost; only `/mise` is a VM-local disk, and scratch is RAM | READ: shared folders; `/mise` and scratch are on the VM's disk | [Apple Container's mounts](../../internal/cli/run/assemble_parts.go#L59-L71); [Podman's](../../internal/cli/run/assemble_parts.go#L139-L205) and [its scratch](../../internal/cli/run/runmount.go#L34-L56); [the jail's own copies](../../internal/cli/run/mounts.go#L124-L127) |
 | One-thread CPU | native | native | not measured | [M9](../research/macos-backend-performance.md#timings-m5-to-m12) |
@@ -94,7 +93,7 @@ natively on the same day.
 | Memory after a 2 GiB load ends | **returned**: 0 to 2% still held 120 s later | held: 104% still charged 120 s later, until the jail stops | *without yolo*: held, on both providers | [M4](../research/macos-backend-performance.md#memory-m4-apple-container); [macos-user](../research/macos-backend-performance.md#macos-user-2026-10-03); [without yolo](../research/macos-vm-runtime-comparison.md#4-memory-does-a-vm-give-a-freed-2-gib-back) |
 | Idle memory | recorded on the Mac, not copied into the repository (`results-20261003-131315/memory.tsv`); no VM holds memory for it | the VM's footprint 878 MiB and resident size 1,062 MiB under a 16 GiB cap; READ: the default cap is half of host RAM, at least 4 GB | *without yolo*: one VM for every jail, resident 1,540 MiB on libkrun and 1,636 MiB on applehv | [M4](../research/macos-backend-performance.md#memory-m4-apple-container); [the cap](../../internal/cli/run/helpers.go#L174-L199); [without yolo](../research/macos-vm-runtime-comparison.md#4-memory-does-a-vm-give-a-freed-2-gib-back) |
 | Several jails at once | not measured | **no**: a second workspace's jail is refused on `container` 1.1.0 | not measured; one VM serves every jail | [the two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk) |
-| `sudo` | at every launch | never | never | READ, [the user guide](../../userguide/guides/macos.md#the-macos-user-backend); [side by side](../research/macos-backend-performance.md#the-two-backends-side-by-side) |
+| A password | only at `yolo macos-setup`, which installs one rule that runs commands as the sandbox account, never as root; launches then ask for none (UNMEASURED on a Mac, [the plan](../design/macos-user-privilege-lifecycle-plan.md)) | never | never | READ, [the user guide](../../userguide/guides/macos.md#the-macos-user-backend); [side by side](../research/macos-backend-performance.md#the-two-backends-side-by-side) |
 | Disk | the [darwin floor](macos-user-provisioning.md#the-floor)'s closure 2.2 GiB, the sandbox home 566 MiB, `/var/yolo-jail` 58 MiB | the data root 26.0 GiB, where `container system df` counts 26.72 GB of images, 93% reclaimable | not measured | [M13](../research/macos-backend-performance.md#disk-m13); [macos-user](../research/macos-backend-performance.md#macos-user-2026-10-03) |
 | Cold first launch | 73.61 s on a hosted CI runner; never recorded on a developer Mac | machine-cold not measured; a first image delivery into a warm content store 45 s, a `packages:` change 30 s | on GitHub's Intel runner: a first delivery 18 min 6 s, a `packages:` change 1 min 46 s | [CI logs](../research/macos-backend-performance.md#26-what-ci-logs-already-hold); [image delivery](../research/macos-layer-reusing-image-delivery.md#mac-results-2026-09-25) |
 
@@ -130,7 +129,7 @@ it came to 2.3 GiB in the 2026-10-02 run ([M13](../research/macos-backend-perfor
   [process start](../research/macos-backend-performance.md#25-process-start-new-binaries-networking)),
   and CrowdStrike Falcon was active on the Mac; neither has been separated from macOS's own cost.
 - **Re-entry.** A VM backend attaches a second terminal to the running jail. `macos-user` has no
-  attach, so every terminal is a fresh launch and a `sudo` (READ,
+  attach, so every terminal is a fresh launch (READ,
   [the benchmark's terms](../research/macos-backend-performance.md#terms)).
 - **Linux against darwin.** A VM jail runs the Linux image; `macos-user` runs darwin builds of
   the same package names on BSD tools, and a package with no darwin build stops the launch
