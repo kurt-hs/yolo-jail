@@ -615,7 +615,7 @@ func FootprintOf(p *Pack) Footprint {
 			}
 			//
 			// A posture's LISTS are named here too, and here rather than as config-list
-			// claims (notch-scoped-config-contributions.md NS-D2): the claim leads with the kind
+			// claims (docs/reference/pack-system.md NS-D2): the claim leads with the kind
 			// the author WROTE, which is `autonomy`, and the posture is the gate a reader
 			// needs beside the entries — the `profile` modifier's precedent, where the gate
 			// is spelled in the detail of an unconditional claim. Unconditional here as well:

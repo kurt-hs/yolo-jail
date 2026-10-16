@@ -1,7 +1,7 @@
 package packload
 
 // registration_test.go pins what a REGISTERING files slot asks for (registration.go;
-// docs/design/pack-pi-resources.md §3.3): one entry per landed tree, at the landing delivery uses,
+// docs/reference/pack-system.md, pi packages): one entry per landed tree, at the landing delivery uses,
 // attributed to the tree's pack — and the advisory `expects` check beside it.
 
 import (

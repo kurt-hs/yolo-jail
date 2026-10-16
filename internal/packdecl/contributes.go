@@ -374,7 +374,7 @@ type Contribution struct {
 	// the top-level entries a well-formed tree holds, and a tree holding none of them is warned
 	// about, never refused. Both are a slot's alone (`agent` + `into`) and refused on every other
 	// contribution; the shape, the rules and why core knows no agent here are filesregister.go's
-	// (docs/design/pack-pi-resources.md §3).
+	// (docs/reference/pack-system.md, pi packages).
 	Register *FilesRegister `json:"register,omitempty"`
 	Expects  []string       `json:"expects,omitempty"`
 	// NodeFloor is the MINIMUM Node version this program's entrypoint requires. `program` only.
@@ -541,7 +541,7 @@ type Contribution struct {
 	// Core knows notch NAMES only at render's two edges (docs/reference/pack-system.md#batch-6c),
 	// so a manifest spelling `"host"` or a notch-named sub-convention such as `briefing/jail/`
 	// is ruled out; the predicate has to be a capability
-	// (docs/design/notch-scoped-config-contributions.md §6, alternative B). A kind the pack
+	// (docs/reference/pack-system.md, notch-scoped OQ-5). A kind the pack
 	// declares is that capability, and whether it applies at a notch is already the census's
 	// answer (internal/render), so the pack states what its prose is about and core decides
 	// where that holds.
@@ -1655,7 +1655,7 @@ type AutonomyPosture struct {
 	//     (packload.SurfacesFor), above capture and host: the pack asserting its own
 	//     permission keys per notch (claude's bypass keys in a jail, its prompts at the host).
 	//   - On a surface ANOTHER pack declares, it is a POSTURE OVERLAY — a term coined by
-	//     docs/design/notch-scoped-config-contributions.md (OQ-3's build, NS-D19) for a
+	//     docs/reference/pack-system.md (notch-scoped OQ-3's build, NS-D19) for a
 	//     config-overlay body gated on the posture. It takes the config-overlay path
 	//     (packoverlay.Collect): the same owner check, the same fold slot BELOW the owner's
 	//     managed ("owner still wins"), the same later-wins order at the autonomy
@@ -1675,7 +1675,7 @@ type AutonomyPosture struct {
 	// ["--dangerously-skip-permissions"] for autonomous, [] for guarded).
 	Launch []AutonomyLaunch `json:"launch,omitempty"`
 	// Lists are this posture's POSTURE LISTS — a term coined by
-	// docs/design/notch-scoped-config-contributions.md §4.1 for a `config-list` body declared
+	// docs/reference/pack-system.md, posture lists for a `config-list` body declared
 	// inside a posture: entries appended to an array of a pack-owned surface ONLY while the
 	// notch selects this posture. `guarded.lists` therefore reach the host notch (and an
 	// unset target) and no jail; `autonomous.lists` reach every jail and not the host.
@@ -2642,7 +2642,7 @@ func (m *Manifest) ConfigOverlayContributions() []ConfigOverlay {
 // "agent/name" from the entry.
 //
 // A CANDIDATE, because an autonomy entry is a POSTURE OVERLAY only when it names a surface its
-// own pack does not declare (OQ-3's ruling, notch-scoped-config-contributions.md NS-D19). One
+// own pack does not declare (notch-scoped OQ-3's ruling, docs/reference/pack-system.md NS-D19). One
 // that names the pack's own surface still folds into that surface's managed layer
 // (packload.SurfacesFor), and telling the two apart needs the pack's decoded surfaces, which
 // are the engine's. So every entry is yielded and the collector (packoverlay.Collect) skips
@@ -3122,7 +3122,7 @@ func (m *Manifest) validateServicePointers() []string {
 // The failure it replaces is the silent kind. One contribution per posture is the natural way
 // to write two postures, and it used to decode clean: the second one's lists and flags rendered
 // at no notch, with no problem, no orphan and no note, while `yolo pack footprint` claimed they
-// appended (notch-scoped-config-contributions.md NS-D11). packload.Collisions cannot see it,
+// appended (docs/reference/pack-system.md NS-D11). packload.Collisions cannot see it,
 // because the autonomy claim's target is the pack's own name and one pack is never a collision.
 //
 // Strict path only, like validateFilesDestinations and for the same reason: the boot path

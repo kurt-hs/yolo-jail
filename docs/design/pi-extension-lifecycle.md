@@ -536,7 +536,7 @@ but hands a local path to `resolveLocalExtensionSource` and moves on without ins
 anything; the updater still skips a pinned npm source and never touches a local one. (Read
 statically, as the facts above were, and confirmed by running the resolver once on a scratch
 local package with no agent session: see
-[`pack-pi-resources.md`](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form).)
+[pack-system.md, pi packages](../reference/pack-system.md#pi-what-loads).)
 [the held store](pi-extension-store-builds.md#the-held-store)'s
 [OQ-5](pi-extension-store-builds.md#OQ-5), ruled 2026-09-26, rewrites every `npm:` entry to a
 pointer pi loads as a local package. Once that half is built, pi's own startup never reaches

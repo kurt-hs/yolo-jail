@@ -494,7 +494,7 @@ no quiet mode ([OQ-RO3](../reference/report-tiers.md#why-its-this-way)); "could
 not ask the runtime" is never a yes (the tri-state rule in
 [AGENTS.md](../../AGENTS.md#architecture)); and an escape hatch is for broken
 user config, never for a yolo bug
-([attach-skew-and-contract-guardrails.md](attach-skew-and-contract-guardrails.md#decision-ledger)).
+([attach-skew.md](../reference/attach-skew.md#why-its-this-way)).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |

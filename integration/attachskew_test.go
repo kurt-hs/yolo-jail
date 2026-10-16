@@ -1,7 +1,7 @@
 package integration
 
 // attachskew_test.go is the real-runtime half of the attach contract gate
-// (internal/cli/run/contracttags.go; docs/design/attach-skew-and-contract-guardrails.md). The
+// (internal/cli/run/contracttags.go; docs/reference/attach-skew.md). The
 // unit tier drives every disposition against a faked runtime; what only a real podman can say
 // is whether the gate reads a real container's frozen environment and its live exec sessions
 // the way the fake assumes. attachskewrestart_linux_test.go drives the restart at a real pty.

@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// THE CAPTURE STORE ON macos-user (docs/plans/install-capture.md hand-off H4, answered (b)): a
+// THE CAPTURE STORE ON macos-user (docs/reference/install-capture.md hand-off H4, answered (b)): a
 // launch stages a ROOT-OWNED COPY of each selected installer program's entry under the backend's
 // state dir (macosuser.StagedCapturesRoot) and names it to the bootstrap, so the generated launcher
 // materializes the capture into the sandbox home instead of running the vendor installer; and a

@@ -1,6 +1,6 @@
 package entrypoint
 
-// pifolderregistration_test.go is the behavioral proof of OQ-PR1 (docs/design/pack-pi-resources.md):
+// pifolderregistration_test.go is the behavioral proof of OQ-PR1 (docs/reference/pack-system.md):
 // a content pack that addresses pi with ONE folder is listed in pi's `packages` beside the user's
 // own entries, in a jail and at `yolo host apply`, and leaves that list when the pack is dropped
 // or yolo is reverted out of the home. The slot owner is the SHIPPED pi pack, so deleting its

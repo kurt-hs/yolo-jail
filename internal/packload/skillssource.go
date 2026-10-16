@@ -50,7 +50,7 @@ import (
 // the same reach: `from` is manifest data, packdecl.Validate rejects ".." at the authoring
 // boundary, but a caller may hold a pack whose Decode problems it discarded. `yolo host apply`
 // did, through internal/cli's resolveConfiguredPack, until that resolver began refusing a pack
-// with problems (notch-scoped-config-contributions.md NS-D14); the check stays for the next
+// with problems (docs/reference/pack-system.md NS-D14); the check stays for the next
 // caller that discards them, since LoadDir still returns the pack beside its problems. It is
 // lexical, so it bounds a declared path and not a symlink inside the tree; on the jail path
 // packstage has already refused escaping symlinks, and on the host path an unstaged tree is

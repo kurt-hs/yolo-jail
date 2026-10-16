@@ -1,7 +1,7 @@
 package packdecl
 
 // postureoverlay_test.go pins the declaration half of a POSTURE OVERLAY — a term coined by
-// docs/design/notch-scoped-config-contributions.md (OQ-3's build, NS-D19) for one entry of an
+// docs/reference/pack-system.md (notch-scoped OQ-3's build, NS-D19) for one entry of an
 // autonomy posture's `config` that names a surface its own pack does not declare. Such an
 // entry decodes exactly as every posture patch does, and the one projection that carries it to
 // the collector, OverlayContributions, walks it at its autonomy contribution's position among

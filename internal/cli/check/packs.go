@@ -263,7 +263,7 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 
 	// A `files` tree landing in a slot whose `expects` it misses, over the same selected set. A
 	// WARNING: the launch still delivers and registers the tree, and whether it loads is the
-	// agent's to say (docs/design/pack-pi-resources.md PR-D4).
+	// agent's to say (docs/reference/pack-system.md PR-D4).
 	for _, n := range packload.ExpectsNotes(loaded, loaded) {
 		r.warn(n.Msg, n.Fix)
 	}

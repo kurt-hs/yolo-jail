@@ -1277,7 +1277,7 @@ reasons, none of them specific to patched forks, so a plain fork waits on the sa
 - that backend's run pipeline returns before the fresh-launch slot that runs a fork's build and a
   patched fork's advance;
 - no launch there can read the capture store, which
-  [hand-off H4](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
+  [hand-off H4](../reference/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
   holds as a ruling, because every way through changes what that backend's sandbox may read;
 - a build for it would be a darwin build in that backend's capture sandbox, which no fork has had.
 
@@ -1396,7 +1396,7 @@ his delegation, and still his to overrule. [PF-D8](#PF-D8),
 | OQ-PFK2 | **A, decided 2026-10-04 on the leaning under the same delegation:** with no `follow`, a patched fork on a branch takes its upstream's newest version tag; `follow: "head"` still follows the head. Recorded as [PF-D24](#PF-D24) | 2026-10-04 | [§3.3](#33-what-the-latest-of-the-upstream-is) | ✅ `packsrc.DefaultFollow` |
 | OQ-PFK3 | **A, decided 2026-10-04 on the leaning under the same delegation:** at a fresh jail launch and at `yolo host -- <bin>`, the launch that finds a new candidate waits for its build up to `forkBuildWaitBound` (20 minutes); a Ctrl-C ends the advance, not the launch, and any stop starts on the good build. Recorded as [PF-D25](#PF-D25) | 2026-10-04 | [§7](#7-the-build-and-the-launch) | as [PF-D25](#PF-D25) |
 | OQ-PFK4 | **A, decided 2026-10-04 under the same delegation — then overruled 2026-10-15 by the maintainer ([PF-D85](#PF-D85)):** `yolo pack rebase` is retired, and a conflict prints a git recipe instead. *"either it's automatic or it's not a command."* Recorded as [PF-D26](#PF-D26), superseded | 2026-10-04, 2026-10-15 | [§8.4](#84-rebasing-the-series) | as [PF-D85](#PF-D85) |
-| OQ-PFK5 | **Ruled in review, as leaned (A): *"defer"*.** A patched fork, like a plain one, reaches a macos-user sandbox only once install-capture [hand-off H4](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it) settles where the build store lives for the sandbox account, with the fork route's own macos-user step; until then the launch says to use a container backend. Recorded as [PF-D59](#PF-D59) | 2026-10-05 | [§9](#9-notch-coverage) | deferred; the line naming a container backend is built ([PF-D54](#PF-D54)) |
+| OQ-PFK5 | **Ruled in review, as leaned (A): *"defer"*.** A patched fork, like a plain one, reaches a macos-user sandbox only once install-capture [hand-off H4](../reference/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it) settles where the build store lives for the sandbox account, with the fork route's own macos-user step; until then the launch says to use a container backend. Recorded as [PF-D59](#PF-D59) | 2026-10-05 | [§9](#9-notch-coverage) | deferred; the line naming a container backend is built ([PF-D54](#PF-D54)) |
 
 ## Combined preparation boundary (2026-10-14 candidate)
 

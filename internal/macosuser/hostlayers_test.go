@@ -81,7 +81,7 @@ func TestHostLayerReportIsTheShapeTheJailParses(t *testing.T) {
 	}
 }
 
-// RENDER-MARK PARITY (docs/design/notch-scoped-config-contributions.md §4.3, NS-D3): the plan
+// RENDER-MARK PARITY (docs/reference/config-target-resolution.md NS-D3): the plan
 // carries the launcher's `rendered` label on the same wire, so the jail reads a managed home's
 // host file as a BASELINE here exactly as it does under a container ([OQ-CR6]).
 //

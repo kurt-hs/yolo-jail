@@ -23,7 +23,7 @@ summary: "Add profile-served daemons to a running jail through its existing supe
 
 **Needs your ruling:** [OQ-AD1](#OQ-AD1).
 
-**Reads with:** [providers](../reference/providers.md#the-credential-gate) (selection and credential scope), [wire bridge](../reference/wire-bridge.md) (route ownership), [jail lifetime](jail-lifetime-last-session-wins.md) (sessions and keeper), [attach guardrails](attach-skew-and-contract-guardrails.md) (older contracts).
+**Reads with:** [providers](../reference/providers.md#the-credential-gate) (selection and credential scope), [wire bridge](../reference/wire-bridge.md) (route ownership), [jail lifetime](jail-lifetime-last-session-wins.md) (sessions and keeper), [attach guardrails](../reference/attach-skew.md) (older contracts).
 
 ---
 
@@ -157,7 +157,7 @@ The supervisor retains each admitted child's immutable startup inputs for its ex
 
 The 30-second readiness deadline excludes the bounded five-second teardown grace; the caller allows that grace and a one-second reporting margin before declaring cleanup unconfirmed. A timed-out control helper is only a messenger: killing it must not kill the supervisor or any already-ready child.
 
-[OQ-R8](../reference/loopback-tls-reachability.md#OQ-R8)'s `YOLO_ALLOW_UNREACHABLE_SERVICES=1` remains the explicit way to enter despite a service-readiness failure. It prints what is not working; no success line or fabricated ready result follows. It does not bypass the eligible-addition boundary, locks, identity validation, file-publication failure or orphan refusal. [Attach skew acknowledgment](attach-skew-and-contract-guardrails.md#5-remediation-what-happens-when-skew-is-detected) remains whole-channel withholding, not permission to activate an unknown command.
+[OQ-R8](../reference/loopback-tls-reachability.md#OQ-R8)'s `YOLO_ALLOW_UNREACHABLE_SERVICES=1` remains the explicit way to enter despite a service-readiness failure. It prints what is not working; no success line or fabricated ready result follows. It does not bypass the eligible-addition boundary, locks, identity validation, file-publication failure or orphan refusal. [Attach skew acknowledgment](../reference/attach-skew.md#the-disposition) remains whole-channel withholding, not permission to activate an unknown command.
 
 ## 6. The jail owns daemons; sessions own commands
 

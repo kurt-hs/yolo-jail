@@ -80,7 +80,7 @@ this mode as written ([§12](#12-dependencies)).
 row cited here is its), [the held store](pi-extension-store-builds.md#the-held-store) (pi git
 extensions as immutable local trees; its [OQ-2](pi-extension-store-builds.md#OQ-2) is what
 [OQ-PPX1](#decision-ledger) collides with), [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) (the
-pre-launch refresh, and the pin [OQ-PPX2](#decision-ledger) weighs), [`pack-pi-resources.md`](pack-pi-resources.md)
+pre-launch refresh, and the pin [OQ-PPX2](#decision-ledger) weighs), [pack-system.md, pi packages](../reference/pack-system.md#pi-packages)
 (the other route that hands pi a local package), the deleted `patched-forks-plan.md` (the
 implementation sketch for both routes, incomplete while questions are open).
 
@@ -159,7 +159,7 @@ pi 0.99.1, `dist/core/package-manager.js` in this jail's install, and the tree a
 | A `git:` entry is cloned into `~/.pi/agent/git/<host>/<path>` and its dependencies installed with `install --omit=dev --legacy-peer-deps`, no `--ignore-scripts`; a failed install deletes the clone | `package-manager.js:1483-1499`, `:1565-1578` | READ |
 | `pi update --extensions` takes every `git:` entry, pinned or not, fetches its ref, and runs `git reset --hard` and `git clean -fdx` in any checkout whose HEAD is not that commit, so a local commit is always erased | `:861-879`, `:1581-1593`, `:1625-1666` | READ |
 | A local path is loaded in place, never installed; a path that does not exist is skipped with no message; update collects only npm and git entries | `:1067-1091`, `:861-879` | READ |
-| A local package loads its `package.json` `pi` manifest, else its conventional `extensions/`, `skills/`, `prompts/`, `themes/` | `:1848-1886`; resolved this way in pi 0.99.2 by [`pack-pi-resources.md`](pack-pi-resources.md) | READ; MEASURED there |
+| A local package loads its `package.json` `pi` manifest, else its conventional `extensions/`, `skills/`, `prompts/`, `themes/` | `:1848-1886`; resolved this way in pi 0.99.2 by [pack-system.md, pi packages](../reference/pack-system.md#pi-packages) | READ; MEASURED there |
 | Identity is `npm:<name>`, `git:<host>/<path>` or `local:<resolved path>`, so one extension as a `git:` and a local entry loads twice | `:1392-1406` | READ |
 | pi serves its own packages and `typebox` to every extension, so a tree carries only its other dependencies | `dist/core/extensions/virtual-modules.js:13-37` | READ |
 | npm 11.17.0 runs a package's `prepare` and `postinstall` under pi's dependency argv, and neither with `--ignore-scripts` | a toy package in scratch | MEASURED |
@@ -245,7 +245,7 @@ there. Validation is static, and the series' contents are read at each advance, 
 
 **Where to land it.** Outside every directory the agent discovers by itself. For pi that means outside
 `~/.pi/agent/extensions/`, where a subdirectory loads only through its manifest's extensions or an
-index file ([`pack-pi-resources.md`](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)).
+index file ([pack-system.md, pi packages](../reference/pack-system.md#pi-what-loads)).
 There, the list entry stops being the one switch. Without it pi still loads the extension, but not
 its skills and prompts; with it, pi resolves each file once, because it keeps one entry per
 absolute path (READ `package-manager.js:2102-2107`); and once the entry is removed, discovery keeps
@@ -511,7 +511,7 @@ and pi there starts without it. A mountpoint podman made on an earlier launch ma
 `~/<into>` (INFERRED: `.pi` is a workspace state directory on the host). pi does not skip an empty directory
 as it skips a missing path: it tries to load the directory itself as one extension, which fails
 (READ `package-manager.js:1079-1085`;
-[`pack-pi-resources.md` §1](pack-pi-resources.md#1-what-pi-loads-from-where-and-in-what-form)).
+[pack-system.md, what pi loads](../reference/pack-system.md#pi-what-loads)).
 Were [OQ-PPX1](#decision-ledger) overruled to A (pi always starts), the launch's line would have to name it.
 
 **What [OQ-2](pi-extension-store-builds.md#OQ-2) asks, in two halves.** A launch starts pi on nothing
@@ -592,7 +592,7 @@ printed right after the trees are decided, was built the day [OQ-PPX3](#OQ-PPX3)
   may ever feed a host build.
 - **[OQ-6](pi-extension-store-builds.md#OQ-6) and [`OQ-LT2`](../reference/pack-system.md#oq-lt2)**:
   nothing is rewritten (PE7).
-- **[OQ-PR1](pack-pi-resources.md#OQ-PR1).** Its slot registers one tree per pack; if it ships, a
+- **[OQ-PR1](../reference/pack-system.md#oq-pr1).** Its slot registers one tree per pack; if it ships, a
   registration per contribution could later write the list entry the author writes by hand here.
 
 ## 13. Migrating the maintainer's five forks
@@ -621,7 +621,7 @@ For each extension:
 - **On macos-user and a macOS host every migrated extension is absent**, where today pi installs each
   fork from its `git:` entry there (INFERRED from [§3.1](#31-how-pi-takes-an-extension-and-where-yolo-can-put-a-tree)'s
   first row). Step 2 drops that entry from a list that reaches every notch
-  (READ [`notch-scoped-config-contributions.md`](notch-scoped-config-contributions.md)'s summary:
+  (READ [the posture lists](../reference/pack-system.md#posture-lists):
   a list is placed at every notch, and only a posture list narrows it), no list can be narrowed to
   those notches alone ([§14](#14-alternatives-and-what-this-does-not-cover)), and those notches build
   no tree ([§11](#11-notch-coverage)). Each says so once and names `YOLO_RUNTIME=podman`.
@@ -651,7 +651,7 @@ release on skips a contribution it cannot read and names it
 **Not covered:**
 
 - **A tree with no build, admitted without a jail.** It would reach macos-user; deferred.
-- **Writing the list entry for the author.** It waits on [OQ-PR1](pack-pi-resources.md#OQ-PR1).
+- **Writing the list entry for the author.** It waits on [OQ-PR1](../reference/pack-system.md#oq-pr1).
 - **Moving a tree inside a running jail.** A running jail keeps what it booted with.
 - **A `files` contribution scoped to a posture or notch**, and a list entry scoped to a notch, which
   could keep the `git:` entry on macos-user and a macOS host

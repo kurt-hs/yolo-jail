@@ -649,7 +649,7 @@ type Options struct {
 	// MacosUserCaptures picks, from the install-capture store at dir (CapturesDir's answer), the
 	// entry the materialize path's own resolver chooses for each of bins at platform, and names
 	// the store's other current entries there (kept) — the macos-user launch's half of hand-off
-	// H4 (docs/plans/install-capture.md): the backend stages a root-owned copy of each picked
+	// H4 (docs/reference/install-capture.md): the backend stages a root-owned copy of each picked
 	// entry and names that store to its launchers (macosuser.StageCaptureCommands).
 	//
 	// A seam for AutoCapture's reason: the resolver and the receipt adapter it reads through live

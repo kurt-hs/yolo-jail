@@ -719,7 +719,7 @@ jiti's path-and-hash cache key). A machine-wide one is ruled out by
 - **Delivering a newer tree into a running jail** ([§10](#10-alternatives)).
 - **Private registries and authenticated git** for a captured extension.
 - **pi's own CLI in the background mode**, which waits on [OQ-PD23](program-delivery.md#decision-ledger)'s combined runtime acceptance.
-- **Writing the list entry for the author**, which waits on [OQ-PR1](pack-pi-resources.md#OQ-PR1).
+- **Writing the list entry for the author**, which waits on [OQ-PR1](../reference/pack-system.md#oq-pr1).
 - **The compile caches and the shim**, routed to the [roadmap](../plans/roadmap.md).
 
 ## 14. What I would build, in order

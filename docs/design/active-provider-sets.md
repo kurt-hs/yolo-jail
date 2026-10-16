@@ -358,7 +358,7 @@ and [declaration parity](declaration-parity.md#1-the-principle-and-what-it-does-
 - **The contract into a jail changes shape**, since it must carry a list per CLI. An attach to a
   jail launched before this cannot receive a set, so the change ships behind a new contract tag
   and takes the existing disposition: at a terminal, `Restart jail now? [Y/n]`; elsewhere, a
-  refusal naming `yolo stop` ([attach guardrails](attach-skew-and-contract-guardrails.md#what-was-built-2026-09-26)).
+  refusal naming `yolo stop` ([attach guardrails](../reference/attach-skew.md#how-the-gate-works)).
   An attach whose every set has one entry needs no tag, as an entry scoping nothing needs none
   today.
 - **Removing an entry deselects it** through the existing rules

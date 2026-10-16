@@ -3,7 +3,7 @@ title: "Plan sketch: pack-file conventions"
 date: 2026-10-05
 status: draft
 stage: SKETCH
-next: "Nothing to plan until OQ-PC3, OQ-PC1 and OQ-PC2 are ruled, except PC-D4, which rides pack-pi-resources.md's emission step (`packload.Registrations`); an implementation-plan pass then re-reads the tree"
+next: "Nothing to plan until OQ-PC3, OQ-PC1 and OQ-PC2 are ruled, except PC-D4, which rides the pi packages emission step (`packload.Registrations`); an implementation-plan pass then re-reads the tree"
 depends-on:
   - pack-conventions.md#OQ-PC1
   - pack-conventions.md#OQ-PC2
@@ -97,6 +97,6 @@ settled detail the design does not need.
 
 ## Order
 
-1. PC-D4 with pack-pi-resources' build.
+1. PC-D4 with the pi packages build.
 2. C1, after [OQ-PC3](pack-conventions.md#OQ-PC3).
 3. C2, after [OQ-PC1](pack-conventions.md#OQ-PC1); C3, after [OQ-PC2](pack-conventions.md#OQ-PC2).

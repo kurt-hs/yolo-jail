@@ -22,7 +22,7 @@ package run
 //  3. THE BOOT. entrypoint.ConfigurePackSurfaces over the same packs, handed exactly the wire
 //     step 2 produced and the bytes it staged.
 //
-// The fixture is the motivating case of docs/design/notch-scoped-config-contributions.md: a
+// The fixture is the motivating case of docs/reference/pack-system.md: a
 // personal pack whose GUARDED posture adds pi-automode to pi's `packages`, over a host file
 // that already holds one package of the user's own. The host gets the entry; the jail must get
 // neither the entry nor — because a managed home's host file is a baseline, not a layer — the

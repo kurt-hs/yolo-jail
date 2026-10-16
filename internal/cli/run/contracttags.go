@@ -16,7 +16,7 @@ import (
 
 // contracttags.go is the attach's CONTRACT GATE: before an attach hands a running jail
 // anything, it asks whether that jail's binaries can receive it, and when they cannot the
-// attach never proceeds on its own (docs/design/attach-skew-and-contract-guardrails.md,
+// attach never proceeds on its own (docs/reference/attach-skew.md,
 // OQ-SK1 to OQ-SK3, ruled 2026-09-26).
 //
 // WHY AN ATTACH NEEDS ONE. A running jail keeps the binaries it launched with: its
