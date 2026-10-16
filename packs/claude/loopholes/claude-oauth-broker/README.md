@@ -3,7 +3,7 @@
 A contribution of the official **`claude` pack** — `packs/claude/pack.json` declares
 `{"kind": "loophole", "from": "loopholes/claude-oauth-broker"}`, so selecting `packs: ["claude"]` is
 what installs it. Serializes Claude OAuth refreshes so multi-jail setups don't burn the single-use
-refresh token. See [`docs/research/claude-oauth-refresh-mechanics.md`](../../../../docs/research/claude-oauth-refresh-mechanics.md) for design rationale, [`docs/research/claude-token-logouts.md`](../../../../docs/research/claude-token-logouts.md) for operator triage, [`userguide/guides/loopholes.md`](../../../../userguide/guides/loopholes.md) for the loophole system.
+refresh token. See [`docs/reference/claude-oauth-interposition.md`](../../../../docs/reference/claude-oauth-interposition.md) for design rationale, [the operator triage below](#repeated-login-401s) for repeated `/login` prompts, [`userguide/guides/loopholes.md`](../../../../userguide/guides/loopholes.md) for the loophole system.
 
 It was `bundled_loopholes/claude-oauth-broker/` until 2026-08-19, and it was the **last** inhabitant
 of that channel: this move is what emptied and retired it
@@ -113,13 +113,63 @@ tail -F ~/.local/share/yolo-jail/logs/host-service-claude-oauth-broker.log
 cat ~/.local/state/yolo-jail-daemons/claude-oauth-broker.log
 ```
 
+### Repeated `/login` 401s
+
+The entry point when a jail prompts `Please run /login · API Error: 401` more often than about
+once a month. A login itself lasts about four weeks however often it is refreshed
+([why](../../../../docs/reference/claude-oauth-interposition.md#two-logins-each-lived-about-four-weeks-however-often-they-were-refreshed)),
+so one prompt a month is expected. Everything below runs on the host unless it says otherwise.
+
+1. **`yolo check`** (alias `yolo doctor`). Its Loopholes section carries this loophole's
+   `--self-check` lines:
+
+   | Line | Means | Do |
+   | :--- | :--- | :--- |
+   | `ca.crt and server.crt not yet generated` (or one of them) | The broker's state was never primed | `just deploy`, or `yolo internal daemon claude-oauth-broker --init-ca` |
+   | `shared creds expired … ago` | Refreshes are not landing | `/login` from inside a jail, then read the broker log (step 2) for why |
+   | `shared creds expire in …` | Under an hour left with no refresh landed; a healthy cadence keeps it above an hour | Watch it; if it reaches zero, treat it as expired |
+   | `shared creds valid for …` | The credential is fine | Look at steps 3 and 4 |
+   | `… does not exist — run Claude and /login first` | No login yet | `/login` from inside a jail |
+
+   On a backend that does not start this broker (Apple Container), the expired line names that
+   instead: Claude in the jail refreshes for itself, so check the jail's outbound network, not the
+   broker.
+
+2. **The broker itself:** `yolo broker status`, then `yolo broker logs -n 50`. Restart a dead or
+   unresponsive broker with `yolo broker restart`; it is safe under running jails, and a request
+   in flight at that instant fails once and succeeds on retry. The log has one
+   `action=refresh|proxy` line per jail request, and a failed upstream refresh logs as
+   `upstream <status> for rt=<fingerprint>: <body>`. A background-refresh failure logs as
+   `bg_refresh: refresh failed error=<code>`.
+
+3. **Server-side revocation.** An `upstream 400` whose body names `invalid_grant` means Anthropic
+   revoked the refresh token, even if `expiresAt` is still in the future. The only fix is `/login`
+   from inside a jail; the broker mirrors the new login into the shared file.
+
+4. **The refresh never reached the broker.** Inside the jail, the terminator log
+   (`~/.local/state/yolo-jail-daemons/claude-oauth-broker.log`) has a `request:` line per request
+   with `is_refresh=true|false`. If it shows only `is_refresh=false` (the `/login` exchange) and
+   the broker log is quiet, Claude in the jail is not sending refresh grants through the broker.
+   Check the interception itself:
+   - `getent hosts platform.claude.com` in the jail should answer `127.0.0.1`; without that host
+     entry Claude reaches Anthropic directly and the broker is bypassed.
+   - `NODE_EXTRA_CA_CERTS` in the jail should name the broker's `ca.crt`; otherwise the TLS
+     handshake to the terminator fails.
+   - The terminator must be running; its log above says whether it started.
+   - Interception runs on podman only, and only with `YOLO_CLAUDE_CREDENTIAL_VIEW` off
+     ([backends carrying the interception](../../../../docs/reference/claude-oauth-interposition.md#current-values)).
+
+5. **Right after a laptop wakes.** A 401 in the first seconds after resume, before the network is
+   back, is the one window the broker cannot close: the background refresher retries every 5 s
+   for about a minute once the network is up. Retry the request; `/login` only if it persists.
+
 ## Refresh: on demand, and proactively
 
 **On demand.** When a jail POSTs to `/v1/oauth/token`, the host daemon takes the flock, checks on-disk expiry, and either returns the cached tokens (still valid, ≥ 90 s headroom) or calls Anthropic once and rewrites the shared file.
 
-**Proactively.** The daemon also runs a background refresher **by default** (`RunBackgroundRefresher`, started in `oauthbrokercmd.go` unless `--no-background-refresh` is passed). It ticks every `BackgroundRefreshTickSeconds` = 60 s and refreshes when the shared token is within `BackgroundRefreshLeadSeconds` = 300 s of expiry. A tick that fails with `upstream_unreachable` while still due fast-retries every 5 s, up to 12 consecutive times — added for suspend/resume, where the token expires during sleep and the first post-wake tick fires before DNS is up.
+**Proactively.** The daemon also runs a background refresher **by default** (`RunBackgroundRefresher`, started in `oauthbrokercmd.go` unless `--no-background-refresh` is passed). It ticks every `BackgroundRefreshTickSeconds` = 60 s and refreshes when the shared token is within `BackgroundRefreshLeadSeconds` = 1800 s (thirty minutes) of expiry. A tick that fails with `upstream_unreachable` while still due fast-retries every 5 s, up to 12 consecutive times — added for suspend/resume, where the token expires during sleep and the first post-wake tick fires before DNS is up.
 
-The proactive loop is architectural, not an optimization: Claude Code has **no** proactive refresh of its own for Pro/Max tokens — it refreshes reactively, after a 401, and gives up after a bounded number of retries. A jail that idles past expiry, or a host that suspends through it, would otherwise wake up logged out. Rationale and the tick/lead choices: [`docs/research/claude-oauth-refresh-mechanics.md`](../../../../docs/research/claude-oauth-refresh-mechanics.md), [§5](../../../../docs/research/claude-oauth-refresh-mechanics.md#5-why-writing-the-disk-file-is-the-right-hook) and [§6](../../../../docs/research/claude-oauth-refresh-mechanics.md#6-architecture-decisions).
+The proactive loop is architectural, not an optimization: Claude Code has **no** proactive refresh of its own for Pro/Max tokens — it refreshes reactively, after a 401, and gives up after a bounded number of retries. A jail that idles past expiry, or a host that suspends through it, would otherwise wake up logged out. Why the loop stays, and what closes the other failure paths: [the background refresh loop stays on](../../../../docs/reference/claude-oauth-interposition.md#the-background-refresh-loop-stays-on).
 
 (The legacy standalone `claude-token-refresher` **is** gone — the broker became the single refresh authority and absorbed the job. Earlier revisions of this file read that as "there is no background timer", which was never true of the Go daemon.)
 

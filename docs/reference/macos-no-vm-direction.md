@@ -46,8 +46,8 @@ throwing away the things that make this yolo rather than a sandbox wrapper.
 | The runtime enumeration and its refusals | `internal/config` (`validate.go`) |
 
 **Reads with:** [`macos-user-nix-and-features.md`](macos-user-nix-and-features.md) (that
-backend as built), [`nix-across-backends.md`](nix-across-backends.md) (what nix produces for
-each), [`fill-the-matrix-principle.md`](fill-the-matrix-principle.md) (one path per
+backend as built, and what nix produces there), [`image-staging-vs-baking.md`](image-staging-vs-baking.md)
+(what nix produces for the container backends), [`fill-the-matrix-principle.md`](fill-the-matrix-principle.md) (one path per
 matrix cell), [`../guides/macos.md`](../../userguide/guides/macos.md) (user-facing setup).
 
 ---
@@ -118,7 +118,7 @@ it came to 2.3 GiB in the 2026-10-02 run ([M13](../research/macos-backend-perfor
 - **Apple Container's and Podman Machine's VMs hold the memory they touched while they run**:
   on Apple Container until the jail stops (MEASURED, M4), and on Podman Machine, whose one VM
   serves every jail, until the machine stops (INFERRED). VZ offers no free page reporting (SOURCED,
-  [what VZ offers](../research/macos-vm-memory-reclaim.md#3-what-virtualizationframework-offers)),
+  [what VZ offers](../research/macos-vm-runtime-comparison.md#41-why-virtualizationframework-keeps-the-pages)),
   Apple Container attaches no balloon (MEASURED by a source search,
   [the benchmark's §2.2, item 4](../research/macos-backend-performance.md#22-memory-backed-on-first-touch-kept-until-the-container-stops)),
   and libkrun's reporting returned nothing in the one run here (MEASURED without yolo,
