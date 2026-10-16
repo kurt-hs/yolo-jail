@@ -2355,7 +2355,8 @@ states a smaller context size uses that size and shares everything else. A row t
 
 Both rulings are built ([ML-D12](#ML-D12) says how): the merge with pi's catalog runs in
 yolo's pi extension, the shared facts are a top-level `model_facts` map named by a model entry's
-`extends`, and pi's pack declares `reads_shared_models` for a pi that takes the short form.
+`extends`, and the pack that installs a pi taking the short form declares `reads_shared_models`
+on its program; packs/pi does not, so stock pi gets full rows.
 
 ---
 

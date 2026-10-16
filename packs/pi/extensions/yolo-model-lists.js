@@ -174,14 +174,20 @@ function definition(provider, entry, lookup) {
 		}
 		return out;
 	};
+	// `cost` merges RATE BY RATE: a row may state only some rates (the derive emits only the
+	// declared ones), and each rate it leaves out keeps the catalog's, or the loader's 0.
+	const withCost = (under) =>
+		declared.cost && typeof declared.cost === "object" ? { cost: { ...(under ?? {}), ...declared.cost } } : {};
 	const builtin = lookup(provider, base ?? entry.id);
 	if (builtin) {
-		return withRouting(withoutTombstoned({ ...catalogFacts(builtin), ...declared, name: declared.name ?? builtin.name }));
+		const facts = catalogFacts(builtin);
+		return withRouting(withoutTombstoned({ ...facts, ...declared, ...withCost(facts.cost), name: declared.name ?? builtin.name }));
 	}
 	return withRouting(withoutTombstoned({
 		name: entry.id,
 		...structuredClone(LOADER_DEFAULTS),
 		...declared,
+		...withCost(LOADER_DEFAULTS.cost),
 	}));
 }
 

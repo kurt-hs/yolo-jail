@@ -229,7 +229,11 @@ end
 -- filled with 0: pi's ModelCostSchema requires all four keys, and pi discards the WHOLE FILE
 -- on a schema failure (`models.json is invalid` — the same all-or-nothing that makes the
 -- empty `models` key omitted below), so a partial object is worse than a defaulted one.
-local function piModelFacts(mopts, prov, ctx, provName)
+--
+-- statedCost asks for the rates declared and no others: a menu row, which the extension merges
+-- over pi's catalog rate by rate, so an undeclared rate inherits the catalog's rather than being
+-- zeroed (OQ-ML4). models.json, whose schema requires all four, never asks for it.
+local function piModelFacts(mopts, prov, ctx, provName, statedCost)
   local function fact(name)
     if type(mopts) == "table" and mopts[name] ~= nil then
       return mopts[name]
@@ -266,7 +270,11 @@ local function piModelFacts(mopts, prov, ctx, provName)
   for _, row in ipairs(costFields) do
     local rate = tonumber(fact(row.option))
     if rate ~= nil then
-      cost = cost or { input = 0, output = 0, cacheRead = 0, cacheWrite = 0 }
+      if statedCost then
+        cost = cost or {}
+      else
+        cost = cost or { input = 0, output = 0, cacheRead = 0, cacheWrite = 0 }
+      end
       cost[row.field] = rate
     end
   end
@@ -1749,7 +1757,7 @@ yolo.derive("pi", "model-lists", function(ctx)
         if type(routing) == "table" then
           m.openrouter_routing = routing
         end
-        local facts = piModelFacts(mopts, prov, ctx, name)
+        local facts = piModelFacts(mopts, prov, ctx, name, true)
         if facts then
           for k, v in pairs(facts) do m[k] = v end
         end
@@ -1776,7 +1784,7 @@ yolo.derive("pi", "model-lists", function(ctx)
       if cw then m.contextWindow = cw end
       if maxTokens then m.maxTokens = maxTokens end
       if type(e.facts.base) == "string" and e.facts.base ~= "" then m.base = e.facts.base end
-      local facts = piModelFacts(e.facts, p, ctx, bedrockName)
+      local facts = piModelFacts(e.facts, p, ctx, bedrockName, true)
       if facts then
         for k, v in pairs(facts) do m[k] = v end
       end

@@ -528,6 +528,9 @@ var configKeys = map[string]Entry{
 	"required_capabilities": everywhere(honored("refuseUnmetCapabilities runs inside "+
 		"loadAndValidateConfig, above the dispatch, so a capability nothing satisfies refuses "+
 		"the same way on every setup (preflight.go)"), "`required_capabilities`"),
+	"model_facts": everywhere(honored("composedProviders (assemble.go), its macos-user variant "+
+		"composedProvidersFor and the host's composedHostProviders pass it to the provider "+
+		"composition (packload.WithModelFacts) above the dispatch"), "`model_facts`"),
 	"adapters": everywhere(honored("composedProviders reads config.LoadAdapterAddresses from "+
 		"the user file above the dispatch (assemble.go); on macos-user a launch-owned "+
 		"service's conversions take the launch's own ports instead of an override "+
