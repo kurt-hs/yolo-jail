@@ -912,7 +912,7 @@ const openDirScriptName = "yolo-open-dir"
 
 // openDirScript gives the owner write on one sealed directory ($1), not recursively, when it is a
 // real directory; an absent path needs nothing (mkdir -p makes it) and a link is never followed.
-var openDirScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` u+w -- "$1"; fi`
+var openDirScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` -- u+w "$1"; fi`
 
 // contextLinkCommands opens the sealed `.new` root, makes each link's parents (top-down), makes
 // the links, then seals each parent 0555 and closes the root's owner write again: the root keeps

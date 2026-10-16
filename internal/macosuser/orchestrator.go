@@ -1436,7 +1436,7 @@ func finishPackTree(deps Deps, out printer, packRoot string, owned, writerDispat
 	}
 	out.printf("[yellow]Could not remove unused reserved guest pack tree %s[/yellow] before any "+
 		"consumer was dispatched. Inspect this exact path with `ls -la -- %s`, then remove "+
-		"only this path with `%s -R u+w -- %s && %s -rf -- %s` before retrying.",
+		"only this path with `%s -R -- u+w %s && %s -rf -- %s` before retrying.",
 		path, path, chmodBin, path, rmBin, path)
 }
 

@@ -213,7 +213,7 @@ func TestAnUnusedReservedPackTreeIsUnsealedAndRemovedAsTheHost(t *testing.T) {
 	d.Run = func([]string) int { return 1 }
 	finishPackTree(d, printer{w: &out}, root, true, false, false)
 	if !strings.Contains(out.String(), "Could not remove unused reserved guest pack tree") ||
-		!strings.Contains(out.String(), chmodBin+" -R u+w -- "+root) || strings.Contains(out.String(), "sudo") {
+		!strings.Contains(out.String(), chmodBin+" -R -- u+w "+root) || strings.Contains(out.String(), "sudo") {
 		t.Errorf("a failed removal does not name the host's commands:\n%s", out.String())
 	}
 }

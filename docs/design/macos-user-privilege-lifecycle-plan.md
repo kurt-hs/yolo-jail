@@ -199,7 +199,7 @@ absolute paths (task 7).
   `/usr/bin/sudo -k` before its own G2 probe, and every verification step does the same.
 - **A `0555` directory blocks its owner too.** `rm -rf` of a sealed tree fails with
   `Permission denied` for the host user who made it. Every host removal or replacement of a sealed
-  tree runs `/bin/chmod -R u+w -- <path>` first (BSD `chmod -R` does not follow links).
+  tree runs `/bin/chmod -R -- u+w <path>` first (BSD `chmod -R` does not follow links).
 - **`captureStoreInvariants` refuses any store under `/Users`** (`underUsersRoot`). With the root
   under `/Users/Shared` every launch with a capture fails its invariants. Rewrite that rule to
   "under `plan.StagedDir`"; the Seatbelt read allow is what makes `/Users/Shared/yolo-staged`
