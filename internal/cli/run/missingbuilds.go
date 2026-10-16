@@ -242,6 +242,10 @@ func missingRecovery(needed []missingBuild) []patchrecovery.Hatch {
 		if cur.Label != h.Label {
 			cur.Label = mergedHatchLabels[cur.Env]
 		}
+		// One label covering several builds speaks of them: "start pi without them".
+		if lead, ok := strings.CutSuffix(cur.Label, " without it"); ok {
+			cur.Label = lead + " without them"
+		}
 	}
 	slices.SortStableFunc(out, func(a, b patchrecovery.Hatch) int { return rank(a.Env) - rank(b.Env) })
 	return out

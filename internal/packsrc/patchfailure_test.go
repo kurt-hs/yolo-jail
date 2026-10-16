@@ -292,7 +292,7 @@ func TestPatchFailureLegacyNewerConflictMaterializesOverOlderReplay(t *testing.T
 	}
 }
 
-func TestPatchFailureAllSurveyCleanNewestThenOlderConflictSelectsOlder(t *testing.T) {
+func TestPatchFailureCleanNewestThenOlderConflictRecordsOlderButSelectsNone(t *testing.T) {
 	in := CheckInputs{Repo: "example/repo", Ref: "main", Follow: "release", Base: "base"}
 	series := "series1"
 	targets := []ListEntry{{Commit: "c12", Tag: "v1.2.0", Version: "1.2.0"}, {Commit: "c11", Tag: "v1.1.0", Version: "1.1.0"}}
