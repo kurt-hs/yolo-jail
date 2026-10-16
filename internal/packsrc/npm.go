@@ -369,8 +369,8 @@ func (s *Store) findNpmCandidates(n NpmSource) CheckFound {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				found.FetchErr = fmt.Sprintf("the registry did not answer within %s", s.timeout().Round(time.Second))
 			}
-			found.Problem = "could not ask the registry about " + n.Repo() + " (" + found.FetchErr + ") — the " +
-				"next check, in an hour, tries again, or `yolo pack update` checks now"
+			found.Problem = "could not ask the registry about " + n.Repo() + " (" + found.FetchErr + ")" +
+				unreachedNext(found.FetchErr)
 			return found
 		}
 		if version, err = p.pick(n); err != nil {

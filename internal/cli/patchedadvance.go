@@ -1183,8 +1183,13 @@ func (a *advance) run() advanceResult {
 		checked := a.checkSlot(func() {
 			slotWait.End()
 			defer advanceSpan(f, "check").End()
+			// NOTHING BUILT TO RUN: a failed fetch an earlier check recorded — a launch or the
+			// background advance at boot, before the network was up — does not hold this one inside
+			// the hour; it fetches itself, as a failed build with nothing to serve is retried by every
+			// fresh launch (§6.2). With a good build to run the throttle stands (§4.2).
 			res = a.packs.CheckPatched(f.CheckWant(a.series), packsrc.CheckOptions{Force: a.o.force,
-				FreshAfter: a.freshCheckBoundary(), InputIdentity: a.o.freshIdentity, StartGuard: a.o.admitGuard, Now: patchedNow,
+				RetryFailedFetch: !a.serves(),
+				FreshAfter:       a.freshCheckBoundary(), InputIdentity: a.o.freshIdentity, StartGuard: a.o.admitGuard, Now: patchedNow,
 				Begin: func() (func(string), func()) {
 					if a.o.slot != nil {
 						// IN A JAIL LAUNCH'S POOL THE CHECK IS ITS LINE'S "checking N" (buildpool.go), and a
@@ -1322,6 +1327,11 @@ func (a *advance) run() advanceResult {
 			if res.Ran {
 				a.warn("%s: %s — %s", f.Label(), found.Problem, a.runsNow())
 				a.problem = found.Problem
+			}
+			if found.FetchErr != "" {
+				// THE UPSTREAM WAS NOT ASKED: no verdict about what it holds, and the next run with nothing
+				// built to run fetches again (RetryFailedFetch above), so the refusal's "tries again" holds.
+				return a.serveOr(fmt.Sprintf("%s's upstream could not be fetched (%s)", f.Label(), found.Problem))
 			}
 			return a.serveOr(fmt.Sprintf("%s's upstream names nothing to build (%s)", f.Label(), found.Problem))
 		}
