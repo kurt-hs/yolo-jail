@@ -9,6 +9,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
@@ -127,10 +128,50 @@ func TestSelectedOrdinaryPreparationFailureRefusesColdAndFreshBeforeRuntime(t *t
 					return nil, fmt.Errorf("synthetic selected installer failed")
 				}
 			})
-			if argv != nil || !strings.Contains(printed, "synthetic selected installer failed") {
-				t.Fatalf("failed required preparation fell back/executed runtime: %v\n%s", argv, printed)
+			want := "ERROR: preparing this launch's programs failed\n" +
+				"  synthetic selected installer failed\n" +
+				"\n" +
+				"Repair:\n" +
+				"  fix what the error names, then retry the launch:\n" +
+				"    yolo\n"
+			if argv != nil || !strings.Contains(printed, want) {
+				t.Fatalf("failed required preparation fell back/executed runtime, or left the refusal shape: %v\n%s", argv, printed)
 			}
 		})
+	}
+}
+
+// A preparation's own refusal block (PD-NF1: a newer version whose preparation failed over a
+// prepared one) is what the launch prints, whole, and the launch stops before the runtime.
+func TestOrdinaryPreparationRefusalPrintsItsOwnBlock(t *testing.T) {
+	refusal := &hostfloor.UpdateRefusal{Bin: "probe", Pack: "fixture", Installed: "1.0.0", Newer: "2.0.0",
+		Act: "preparing the newer version", Err: fmt.Errorf("synthetic install failed"), Repair: "yolo", Command: "yolo",
+		Runs: "run the prepared 1.0.0"}
+	argv, printed := fakePodmanLaunch(t, func(o *Options) {
+		repo, _ := o.RepoRoot()
+		for _, name := range []string{"flake.nix", "flake.lock"} {
+			if err := os.WriteFile(filepath.Join(repo.Root, name), []byte("fixture"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		o.PreparePrograms = func(ProgramCaptureRequest) (map[string]entrypoint.ProgramCaptureDelivery, error) {
+			return nil, fmt.Errorf("wrapped: %w", refusal)
+		}
+	})
+	want := "ERROR: probe 1.0.0 → 2.0.0: preparing the newer version failed\n" +
+		"  synthetic install failed\n" +
+		"\n" +
+		"Repair:\n" +
+		"  fix what the error names, then retry it:\n" +
+		"    yolo\n" +
+		"\n" +
+		"Start anyway:\n" +
+		"  YOLO_USE_INSTALLED=probe yolo    run the prepared 1.0.0\n"
+	if argv != nil || !strings.Contains(printed, want) {
+		t.Fatalf("the launch did not stop on the preparation's refusal block: %v\n%s", argv, printed)
+	}
+	if strings.Contains(printed, "ERROR: preparing this launch's programs failed") {
+		t.Fatalf("the generic block replaced the preparation's own:\n%s", printed)
 	}
 }
 
