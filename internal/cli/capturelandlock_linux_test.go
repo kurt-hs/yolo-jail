@@ -26,7 +26,7 @@ import (
 )
 
 // capturelandlock_linux_test.go runs the HOST CAPTURE end to end on this machine's kernel
-// (docs/design/host-tool-provisioning.md HP-D18): `yolo capture` with no runtime, its fixture
+// (docs/reference/host-agent-environment.md HP-D18): `yolo capture` with no runtime, its fixture
 // installer — a file:// script — run confined by Landlock, admitted, and materialized by the floor.
 // This test binary stands in for yolo through the whole confined chain (testAsYoloArg), so the
 // chain is the production one: landlock-exec, capture-run, the generated launcher, no-terminal.

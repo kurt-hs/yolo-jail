@@ -18,8 +18,8 @@ macos-user backend with no `runtime` key, decided by [EMP-D1](#EMP-D1) and [EMP-
 `internal/cli/run/run.go`), as does `yolo apply --at guest` there (`internal/cli/apply.go`;
 [EMP-D3](#EMP-D3)), and it also waits on
 [user-stories Q7](../design/environment-manager-user-stories.md#Q7), whether Linux `guest`
-stays a promise. Sequences [`../design/yolo-as-environment-manager.md`](../design/yolo-as-environment-manager.md)
-(the vision — finalized, the maintainer is happy with it) into buildable phases.
+stays a promise. Sequences the environment-manager design (the vision — finalized, the maintainer is happy with it;
+graduated 2026-10-16 into [`what-yolo-is.md`](../reference/what-yolo-is.md)) into buildable phases.
 
 > **Build status — verified against the tree 2026-08-23; rows 1, 5 and 6 corrected 2026-09-24.**
 > Read this table, not the 2026-08-01 summary it replaces: that summary said "Phases 0–6, 8, 9
@@ -34,7 +34,7 @@ stays a promise. Sequences [`../design/yolo-as-environment-manager.md`](../desig
 > | **3** — `apply` + `describe` | ✅ **SHIPPED** (`internal/cli/apply.go`, `describe.go`) | none |
 > | **4** — `yolo host apply` | ✅ **SHIPPED**, 4.3 included | `internal/cli/applyhostdeps.go` resolves a pack's `program` AND `requires` into the host's real dep state and offers the install; its own package comment records that it **replaces** the static "not run by `apply --host` yet" line this row used to cite, which was *"true and useless: the gate is real, but the line never said WHICH binary was missing"* |
 > | **5** — `--sealed` + closure | ✅ **SHIPPED** — 5.1/5.2/5.4, and **5.3 on 2026-09-12** (`4223ca95`, `yolo config promote`) | none — `applySealed`'s refusal now names `yolo config promote` as a command beside `yolo config reset` |
-> | **6** — dep provisioning | ✅ **SHIPPED** — 6.1/6.2/6.3 (`internal/depcheck/`, `yolo check-deps`), and **6.4's offer by 2026-09-12** (`f94b2c97`, the `yolo host apply --assert` dependency gate) | the offer is ONE prompt, not batched by elevation class; that batching was [`OQ-EM1`](../design/yolo-as-environment-manager.md#9-decision-ledger)'s, answered 2026-09-30: not owed |
+> | **6** — dep provisioning | ✅ **SHIPPED** — 6.1/6.2/6.3 (`internal/depcheck/`, `yolo check-deps`), and **6.4's offer by 2026-09-12** (`f94b2c97`, the `yolo host apply --assert` dependency gate) | the offer is ONE prompt, not batched by elevation class; that batching was [`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way)'s, answered 2026-09-30: not owed |
 > | **7** — the `guest` notch | ⚠️ **PARTIAL** — 7.1 (macOS) built 2026-10-04, unmeasured on a Mac; 7.2 (Linux) not built | see below |
 > | **8** — self-describing briefing | ⚠️ **PARTIAL** — 8.1 shipped (`confinementHeader`, `internal/jailcontent/briefing.go`); **8.2 is MOOT** | the `jail-startup` built-in no longer exists |
 > | **9** — agent autonomy | ✅ **SHIPPED** 2026-08-01 | none |
@@ -279,7 +279,7 @@ and the byte-equality gate is green.
 > policy knob beside them). 2.3's mechanism-beside-notch printing is
 > `printConfinementVector` (`internal/cli/describe.go`).
 
-**Design:** design doc [§4](../design/yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches), [§4.0](../design/yolo-as-environment-manager.md#40-why-the-middle-notch-is-not-called-sandbox).
+**Design:** [the confinement dial](../reference/what-yolo-is.md#the-confinement-dial), [why the middle notch is `guest`](../reference/what-yolo-is.md#why-guest-not-sandbox).
 **Depends on:** Phase 1 (so a notch is a `Target`, not a code branch).
 **Before you start — decide:** [OQ-10](#decision-ledger) (the composable-primitive model shape) — but it is a
 "decide at this phase" item, not a blocker you owe an answer up front. Phase 2 ships the
@@ -315,21 +315,21 @@ and the primitive model exists internally even though only three presets are exp
 > jail provision" as a deferred within-phase increment; `apply` provisions without launching
 > today.
 
-**Design:** design doc [§3](../design/yolo-as-environment-manager.md#3-the-verbs), [§3.1](../design/yolo-as-environment-manager.md#31-apply-is-the-verb-the-current-design-is-missing), [§3.2](../design/yolo-as-environment-manager.md#32-describe-is-the-reproducibility-claim-made-checkable).
+**Design:** [the verbs](../reference/what-yolo-is.md#the-verbs), [`apply`](../reference/what-yolo-is.md#apply), [`describe`](../reference/what-yolo-is.md#describe).
 **Depends on:** Phase 1 (apply renders through the one renderer), Phase 2 (a notch to
 apply at). Phase 3 does jail level only; the host notch is Phase 4.
 
 - **3.1** `yolo apply`: split provision from launch. At `jail`, builds image + stages
   packs + renders config and exits. `yolo -- <cmd>` becomes "apply, then exec" — same
   behavior, now with a name. The manual-apply cases (set-up-don't-launch, CI provision
-  step) are the [§3.1](../design/yolo-as-environment-manager.md#31-apply-is-the-verb-the-current-design-is-missing) enumeration.
+  step) are the [`apply`](../reference/what-yolo-is.md#apply) enumeration.
 - **3.2** `yolo describe`: print the resolved description; **absorb the shipped `config
-  dump`** (canonical form) as `describe --json`. Add the human table ([§3.2](../design/yolo-as-environment-manager.md#32-describe-is-the-reproducibility-claim-made-checkable)) and
+  dump`** (canonical form) as `describe --json`. Add the human table ([`describe`](../reference/what-yolo-is.md#describe)) and
   `describe --hash`. **`--hash` over an unsealed environment prints marked or refuses**
-  ([§3.2](../design/yolo-as-environment-manager.md#32-describe-is-the-reproducibility-claim-made-checkable) caveat) — it is not authoritative until Phase 5's sealing exists, so gate the
+  ([`describe`](../reference/what-yolo-is.md#describe) caveat) — it is not authoritative until Phase 5's sealing exists, so gate the
   bare hash on `--sealed` or mark it.
 - **3.3** `--at <level>` plumbing on `yolo`/`apply`, so a verb can target a notch other
-  than the configured default (the mechanism the escape valve [§4.1](../design/yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story) uses).
+  than the configured default (the mechanism the escape valve [`program` below `jail`](../reference/what-yolo-is.md#program-below-jail) uses).
 
 **Done when:** `apply` provisions-without-launch at `jail`, `describe` prints the
 description (and `--json` supersedes `config dump`), and `--at` selects a notch.
@@ -352,7 +352,7 @@ description (and `--json` supersedes `config dump`), and `--at` selects a notch.
 > position.** `FieldSet` refuses `program` outright below `jail` — *"install is refused below
 > jail (a pack must not mutate a real toolchain unprompted)"*
 > (`internal/render/fieldset.go`) — which is the design's **original** rule, not the revised
-> confirm-gated one that [§4.1](../design/yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story) of the design doc and item 4.3 below both specify. `yolo host apply`
+> confirm-gated one that [`program` below `jail`](../reference/what-yolo-is.md#program-below-jail) and item 4.3 below both specify. `yolo host apply`
 > prints a static pointer instead: *"apply --host reports host deps; it installs nothing. The
 > confirm-gated install is env-manager plan Phase 4.3"*
 > (`internal/cli/applyhostdeps.go` — ⚠ the static line this passage describes is GONE; the file now
@@ -360,7 +360,7 @@ description (and `--json` supersedes `config dump`), and `--at` selects a notch.
 > unconsumed. This is the single largest gap between the design doc and the tree.
 
 **Design/reasoning:** `host-render-target.md` [§6](../design/host-render-target.md#6-the-host-as-a-reduced-target) (the whole section), [§6.5](../design/host-render-target.md#65-the-posture-stated-as-a-table) postures,
-[§7.2](../design/host-render-target.md#72-the-human-manages-their-own-machine); design doc [§4.1](../design/yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story).
+[§7.2](../design/host-render-target.md#72-the-human-manages-their-own-machine); [`program` below `jail`](../reference/what-yolo-is.md#program-below-jail).
 **Depends on:** Phase 1 (`render.Host`), Phase 3 (`apply`), Phase 2 (`--at host`).
 **Before you start — decide:** nothing outstanding. [OQ-1](#decision-ledger)..[OQ-9](#decision-ledger) are all RESOLVED ([OQ-5](#decision-ledger)
 moot); the host-render shape (pure `rmw`, user-scoped, no read-in layer, no capture) and
@@ -384,13 +384,13 @@ the confirm-gated-install detail ([OQ-6](#decision-ledger)/7) are settled and as
   (2026-09-12): the reversal below made the mechanism a function of a declared key, so under
   `own` the same surfaces render `stateful` with a capture store. `assert` is the default and
   the unset state, so the sentence above still describes what an unconfigured machine does.
-- **4.3** `program` (install) below `jail` is **confirm-gated, not refused** ([§4.1](../design/yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story), the
+- **4.3** `program` (install) below `jail` is **confirm-gated, not refused** ([`program` below `jail`](../reference/what-yolo-is.md#program-below-jail), the
   reviewed position): TTY-only, permission-bounded. Per [OQ-6](#decision-ledger) the confirm shows the resolved
   **URL only** (not the fetched script); per [OQ-7](#decision-ledger)/[OQ-9](#decision-ledger) confirmations are **batched by
   elevation class** — one approval for all no-elevation remedies, one for all `sudo` ones
   (sudo first, so the OS password prompt comes up once at the front).
 - **4.4** `check --at host` reports host-render drift and hands off to `apply --at host`
-  ([§3.4](../design/yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here)) — the host-side twin of the shipped `config drift`. `check` never writes.
+  ([`check` at a notch](../reference/what-yolo-is.md#check-at-a-notch)) — the host-side twin of the shipped `config drift`. `check` never writes.
 
 **Done when:** `yolo host apply` regenerates a pack's `managed` config keys into the
 real home (behind `observe`/`assert`) without clobbering the user's own keys, and
@@ -424,14 +424,14 @@ inapplicable kinds are refused by name.
 > closure problem rather than a correctness one. **This is
 > user-stories Q1's unbuilt half.**
 
-**Design:** design doc [§3.3](../design/yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) (the full-closure table + the sealing rule).
+**Design:** [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) (the full-closure table + the sealing rule).
 **Depends on:** Phase 3 (`apply`). Independent of the host notch — sealing is a
-host-side check that needs no container ([§3.3](../design/yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)).
+host-side check that needs no container ([the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing)).
 **Note:** [OQ-3](#decision-ledger) (retire the host read-in layer) is RESOLVED yes, so the closure table's
 `host`-layer row has moved from Declared-impure to Declared — one fewer impure input for
 sealing to report.
 
-- **5.1** Enumerate the closure at apply time against the [§3.3](../design/yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) four-tier table
+- **5.1** Enumerate the closure at apply time against [the input closure and sealing](../reference/what-yolo-is.md#the-input-closure-and-sealing) four-tier table
   (Locked / Declared / Declared-impure / Undeclared). This is the machine-readable
   version of `describe`.
 - **5.2** `apply --sealed`: refuse the Undeclared tier (`yolo-jail.local.jsonc`, an
@@ -480,12 +480,12 @@ from declared inputs, and its `--hash` is a reproducibility pin.
 > still unbuilt** — what shipped is the offer, not [OQ-9](#decision-ledger)'s shape for it. `yolo check-deps`
 > still installs nothing.
 
-**Design:** design doc [§3.4](../design/yolo-as-environment-manager.md#34-check-becomes-is-this-description-satisfiable-here), [§3.5](../design/yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest).
+**Design:** [`check` at a notch](../reference/what-yolo-is.md#check-at-a-notch), [dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning).
 **Depends on:** Phase 1 (`FieldSet`/notch-aware render), Phase 4 (host apply is where a
 missing dep bites). At `jail` this is a near-formality (the toolchain is in the sealed
 image); below `jail` it is the real work.
 **Before you start — decide:** nothing outstanding — [OQ-8](#decision-ledger) (checker boundary) and [OQ-9](#decision-ledger)
-(confirm UX) are RESOLVED. [§3.5](../design/yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) fixes the *shape*, not the schema.
+(confirm UX) are RESOLVED. [dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning) fixes the *shape*, not the schema.
 
 - **6.1** Pack-authored `provides`/`install_hints` (per-system: `brew`/`apt`/`dnf`/`nix`),
   declared by the pack that *introduces* the dep (no re-declaring others' deps).
@@ -545,12 +545,12 @@ manifest surface, and (behind a confirm) can run the remedies including `sudo`.
 > **The ordering risk this phase now carries:** the three-notch *vocabulary* shipped in Phase 2
 > ahead of the notch — `confinement: guest` validates, `apply --at guest` parses, `describe`
 > prints it, and the briefing has a `guest` body (`confinementHeader`, `internal/jailcontent/briefing.go`). That
-> is exactly what the design doc [§8](../design/yolo-as-environment-manager.md#8-what-this-costs) warned against (*"a three-notch story with a broken middle"*)
+> is exactly what [what it costs](../reference/what-yolo-is.md#what-it-costs) warns against (*"a three-notch story with a broken middle"*)
 > and what user-stories **Q7** asks a ruling on.
 
-**Design:** design doc [§4](../design/yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches), [§4.0](../design/yolo-as-environment-manager.md#40-why-the-middle-notch-is-not-called-sandbox); `host-render-target.md` [§9.7](../design/host-render-target.md#9-open-questions--the-discussion-part), [§9.8](../design/host-render-target.md#9-open-questions--the-discussion-part).
+**Design:** [the confinement dial](../reference/what-yolo-is.md#the-confinement-dial), [why the middle notch is `guest`](../reference/what-yolo-is.md#why-guest-not-sandbox); `host-render-target.md` [§9.7](../design/host-render-target.md#9-open-questions--the-discussion-part), [§9.8](../design/host-render-target.md#9-open-questions--the-discussion-part).
 **Depends on:** Phase 1 (guest is a `Target`), Phase 2 (the notch exists). This is where
-"three-notch story with a broken middle" ([§8](../design/yolo-as-environment-manager.md#8-what-this-costs)) gets fixed.
+"three-notch story with a broken middle" ([what it costs](../reference/what-yolo-is.md#what-it-costs)) gets fixed.
 
 - **7.1** macOS `guest`: the existing macos-user backend, but rendering surfaces (Phase
   1.4 already fixes the zero-surfaces bug) — separate user + Seatbelt as composed
@@ -585,7 +585,7 @@ real, LSM-confined home on both platforms, and `describe` prints the composed pr
 > reality at startup — so a `host` briefing left on disk and read inside a jail is unremarked.
 > Deleting the skill removed the place the check was going to live. That is user-stories **Q4**.
 
-**Design:** design doc [§6](../design/yolo-as-environment-manager.md#6-the-environment-describes-itself-to-its-own-agent).
+**Design:** [the briefing states the notch](../reference/what-yolo-is.md#the-briefing-states-the-notch).
 **Depends on:** Phase 2 (a notch to name). Small, high-value, can land any time after
 Phase 2.
 
@@ -601,7 +601,7 @@ take a disposable agent's risks.
 
 ## Phase 9 — Agent autonomy as a confinement policy  *(SHIPPED 2026-08-01)*
 
-**Design:** design doc [§4.2](../design/yolo-as-environment-manager.md#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) (the whole subsection). **Depends on:** Phase 1
+**Design:** [autonomy as a confinement policy](../reference/what-yolo-is.md#autonomy-is-a-confinement-policy) (the whole subsection). **Depends on:** Phase 1
 (`render.Profile`/`Target`), Phase 2 (the notch), Phase 4 (`yolo host apply` is where the
 defect bites). **Motivated by:** a host agent following the migration guide would
 `apply --host --assert` the `claude` pack's jail-bypass keys (`acceptEdits`,
@@ -692,9 +692,9 @@ The cost of A is one new kind (13 → the closed set grows by one) and the schem
 posture block. Accepted.
 
 - **9.1** Add an `agent-autonomy` **policy** to `render.Profile` (composes beside the
-  [§4.0](../design/yolo-as-environment-manager.md#40-why-the-middle-notch-is-not-called-sandbox) enforcement primitives; it is a policy knob, not an enforcement one). Preset
+  [why the middle notch is `guest`](../reference/what-yolo-is.md#why-guest-not-sandbox) enforcement primitives; it is a policy knob, not an enforcement one). Preset
   defaults: `jail` → on, `guest` → on, `host` → off. `describe` prints it. A composed
-  custom confinement can set it explicitly (the [§4.2](../design/yolo-as-environment-manager.md#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) composability requirement).
+  custom confinement can set it explicitly (the [autonomy as a confinement policy](../reference/what-yolo-is.md#autonomy-is-a-confinement-policy) composability requirement).
 - **9.2** Packs declare autonomy postures as data, **bidirectionally** (the subtle half):
   a pack states *both* the `autonomous` posture (config keys + launch flags meaning "no
   prompts") and the `guarded` posture (meaning "prompt"). Guarded-by-default agents
@@ -766,10 +766,10 @@ first two as a proposal with a leaning; each was taken on that leaning.
 | OQ-4 | **On the host notch, pure `rmw`:** yolo rewrites only the keys it declares (its `managed` block and dynamic tables), fills `defaults` where a key is absent, and touches nothing else, so a key yolo owns is overwritten on the next apply and a key the agent owns is never touched. ⚠ **REVERSED 2026-09-11** by [`OQ-CO3`](../design/config-ownership-and-promotion.md#13-decision-ledger): `own` composes the whole file with a host capture store | 2026-08-01; reversed 2026-09-11 | ⚠ reversed; the reversal built 2026-09-12 |
 | OQ-5 | **Where a host capture overlay lives:** moot under [OQ-4](#decision-ledger)'s pure `rmw`. Revived by the [OQ-4](#decision-ledger) reversal, and answered by the store `<home>/.local/share/yolo-jail/host-capture/` | 2026-08-01 | ✅ the host capture store |
 | OQ-6 | **The curl-to-shell install confirm shows the resolved install URL only**, not the fetched script or a hash: the confirm approves running *this command*, it is not a code review of the payload | 2026-08-01 | ✅ the `--assert` dependency gate prints each exact install command above its one prompt (`internal/cli/applyhostdepgate.go`) |
-| OQ-7 | **The elevation line per remedy:** category (a) writes only under the user's own tree (user `brew`, `pip --user`, `~`); category (b) is anything else (a system `apt install`). Used only to batch confirmations by elevation class ([OQ-9](#decision-ledger)) | 2026-08-01 | — no consumer; the batching is not owed since 2026-09-30 ([`OQ-EM1`](../design/yolo-as-environment-manager.md#9-decision-ledger)) |
-| OQ-8 | **The dep-checker boundary is a declared schema** a third-party doctor can read, evolvable into a Go helper if a spec proves too weak ([design §3.5](../design/yolo-as-environment-manager.md#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)) | 2026-08-01 | ✅ `install_hints` + `internal/depcheck/` |
-| OQ-9 | **Offer-to-run confirms are batched by elevation class**: one approval per class, `sudo` first so its password prompt comes once at the front; declining a batch leaves the manifest written but not run. ⚠ **Half-reversed 2026-09-12** by [`report-tiers.md`](../reference/report-tiers.md#why-its-this-way) for `yolo host apply --assert`: one prompt, and a decline is FATAL | 2026-08-01; half-reversed 2026-09-12 | ⚠ one unbatched prompt (`internal/cli/applyhostdepgate.go`); the batching is not owed ([`OQ-EM1`](../design/yolo-as-environment-manager.md#9-decision-ledger)) |
-| OQ-10 | **The composable-primitive model shape** (separate user, Seatbelt, bwrap, namespace as independent knobs), decided at Phase 2 so the three notches are presets rather than monoliths ([design §4.0](../design/yolo-as-environment-manager.md#40-why-the-middle-notch-is-not-called-sandbox)). Answered in the build | 2026-08-01 | ✅ `internal/render/confinement.go`; `describe` prints it (`printConfinementVector`) |
+| OQ-7 | **The elevation line per remedy:** category (a) writes only under the user's own tree (user `brew`, `pip --user`, `~`); category (b) is anything else (a system `apt install`). Used only to batch confirmations by elevation class ([OQ-9](#decision-ledger)) | 2026-08-01 | — no consumer; the batching is not owed since 2026-09-30 ([`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way)) |
+| OQ-8 | **The dep-checker boundary is a declared schema** a third-party doctor can read, evolvable into a Go helper if a spec proves too weak ([dependency provisioning](../reference/what-yolo-is.md#dependency-provisioning)) | 2026-08-01 | ✅ `install_hints` + `internal/depcheck/` |
+| OQ-9 | **Offer-to-run confirms are batched by elevation class**: one approval per class, `sudo` first so its password prompt comes once at the front; declining a batch leaves the manifest written but not run. ⚠ **Half-reversed 2026-09-12** by [`report-tiers.md`](../reference/report-tiers.md#why-its-this-way) for `yolo host apply --assert`: one prompt, and a decline is FATAL | 2026-08-01; half-reversed 2026-09-12 | ⚠ one unbatched prompt (`internal/cli/applyhostdepgate.go`); the batching is not owed ([`OQ-EM1`](../reference/what-yolo-is.md#why-its-this-way)) |
+| OQ-10 | **The composable-primitive model shape** (separate user, Seatbelt, bwrap, namespace as independent knobs), decided at Phase 2 so the three notches are presets rather than monoliths ([why the middle notch is `guest`](../reference/what-yolo-is.md#why-guest-not-sandbox)). Answered in the build | 2026-08-01 | ✅ `internal/render/confinement.go`; `describe` prints it (`printConfinementVector`) |
 | OQ-11 | **A pack encodes its autonomy postures as a dedicated `autonomy` kind** (Encoding A of [§9.0](#90-the-sketch-that-resolved-oq-11-two-encodings-vs-the-real-packs)). Delegated by the maintainer (*"do the sketch now, I'm not sure I care"*); the discriminator-field encoding would split the `claude` settings surface into a conditional and an always-on half, which is how a jail-bypass key gets left in the unconditional half by accident | 2026-08-01 | ✅ Phase 9 |
 | <a id="EMP-D1"></a>EMP-D1 | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* **Which backend a `confinement: guest` launch runs.** On macOS the guest notch selects the macos-user runtime with no `runtime` key: `config.NotchRuntime` returns it, and every runtime reader weighs it after YOLO_RUNTIME and the `runtime` key and before the platform probe (`config.SelectedRuntime`: the launch's `resolveRuntime`, `yolo check`, `yolo describe`, `yolo ps`/`prune`). An explicit YOLO_RUNTIME or `runtime` naming podman or Apple Container together with guest is REFUSED as a contradiction, naming both inputs and how to keep either (`config.NotchRuntimeConflict`; the launch's notch gate, and a `yolo check` [FAIL]), rather than letting one input silently win. `runtime: "macos-user"` at the jail notch keeps working, and `runtime: "macos-user"` with guest is one launch said twice. `--at guest` is the same launch, and the briefing names the guest notch for it too. | 2026-10-04 | ✅ built, unmeasured on a Mac |
 | <a id="EMP-D2"></a>EMP-D2 | *Implementation decision, taken under the same delegation; reversible.* **The guest notch's mode policy on macOS.** The macOS guest renders exactly what macos-user renders at `confinement: jail`: the bootstrap's `render.Jail` target and its census (`(*Env).renderTarget`, `internal/entrypoint/env.go`), so the render fingerprint is unchanged. No `KindGuest` Target is built for it: `HostFields` and `UndecidedModes` would cut the surfaces the backend renders today. The `KindGuest` row in `internal/render/modes.go` stays undecided and is now the Linux guest's alone (Phase 7.2), its reason saying so. The launch-flag posture follows (`jailLaunchAutonomy`, autonomy on), as does the profile (`render.GuestProfileMacOS`). | 2026-10-04 | ✅ built |
@@ -789,5 +789,5 @@ first two as a proposal with a leaning; each was taken on that leaning.
   `contributes[]` substrate; `provides`/`install_hints` (Phase 6) is the one additive
   field, and it is additive.
 - **It does not touch the happy path.** `yolo -- claude` in a fresh repo stays one
-  command, jail, credentials-omitted, at every phase (design doc [§7](../design/yolo-as-environment-manager.md#7-what-does-not-change)). A phase that costs
+  command, jail, credentials-omitted, at every phase ([what does not change](../reference/what-yolo-is.md#what-does-not-change)). A phase that costs
   the happy path anything is wrong.

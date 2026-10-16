@@ -1111,7 +1111,7 @@ func floorOn(t *testing.T, goos string) func([]hostfloor.Program) *hostfloor.Flo
 
 // floorLeavingOut is floorOn with the user-scope host_floor leaving the named packs out, which makes
 // their programs not the floor's to hold (hostfloor.Floor.OutsideTheFloor): `yolo host -- <bin>` looks
-// such a program up on the launch's PATH (host-notch-readiness.md HNR-D4), so it is the only kind a
+// such a program up on the launch's PATH (host-agent-environment.md HNR-D4), so it is the only kind a
 // launcher can need host_path for. A no-entry program the floor does answer for is refused instead
 // (HNR-D2), which no folder changes.
 func floorLeavingOut(t *testing.T, goos string, packs ...string) func([]hostfloor.Program) *hostfloor.Floor {

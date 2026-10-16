@@ -20,7 +20,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-// hostreadiness.go is the host notch's READINESS ACT (docs/design/host-notch-readiness.md,
+// hostreadiness.go is the host notch's READINESS ACT (docs/reference/host-agent-environment.md,
 // HNR-D1), the host's copy of the jail's (internal/entrypoint/readiness.go, OQ-JR1): every
 // `yolo host -- <cmd>` launch installs every program a user-scope selected pack declares into
 // yolo's floor BEFORE it resolves the target, whatever the command, and a program it cannot

@@ -568,7 +568,7 @@ needs no ceremony of its own — **the default carries the whole migration.**
 > [!NOTE]
 > **"Unset", deliberately, and not "undeclared".** *Undeclared* already has a
 > formal meaning three sections of this corpus rely on: the
-> [Undeclared tier of the input closure](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails)
+> [Undeclared tier of the input closure](../reference/what-yolo-is.md#the-input-closure-and-sealing)
 > — an input that shapes an environment while nothing names it, which is a
 > statement about **a value inside an agent's config file**. This section is about
 > **a yolo config key that has no value at all**, which is the ordinary word

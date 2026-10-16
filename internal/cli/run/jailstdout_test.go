@@ -12,7 +12,7 @@ import (
 // at both call sites in runContainer's path. The host floor's capture and build jails set both to
 // the launch's stderr: an agent's stdout is routinely parsed, and a first `yolo host -- <bin>` that
 // captured printed its installer's lines there, ahead of the agent's own
-// (host-tool-provisioning.md §8).
+// (host-agent-environment.md, "What only a real host can confirm").
 
 // TestASessionStdoutTakesTheSessionsStdout: the session's client writes its stdout to
 // SessionStdout, and its stderr to this process's stderr as before.

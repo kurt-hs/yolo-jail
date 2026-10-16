@@ -862,7 +862,7 @@ func installerEnvWords(env map[string]string) string {
 	return strings.Join(words, " ")
 }
 
-// NativeCaptureLauncher is the native launcher a HOST capture runs (docs/design/host-tool-provisioning.md
+// NativeCaptureLauncher is the native launcher a HOST capture runs (docs/reference/host-agent-environment.md
 // HP-D18): this file's own launcher for inst, rendered for a capture's staging home, so a capture on
 // the host installs exactly what a capture jail's would. Its stamps go under home, as a boot's go
 // under the jail's; receiptsPath is where its install receipt lands. It has no capture store to

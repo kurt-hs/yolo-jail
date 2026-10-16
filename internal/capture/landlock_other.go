@@ -8,7 +8,7 @@ import (
 )
 
 // landlock_other.go is the non-Linux half of the host capture's confinement
-// (docs/design/host-tool-provisioning.md HP-D18): Landlock is a Linux security module, so a host here
+// (docs/reference/host-agent-environment.md HP-D18): Landlock is a Linux security module, so a host here
 // has none, and the host capture is never chosen. A Mac's host capture is the macos-user capture act
 // (HP-D2), Seatbelt and the sandbox account, which needs nothing from this file.
 

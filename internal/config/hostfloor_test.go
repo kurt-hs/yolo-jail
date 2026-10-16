@@ -9,7 +9,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// hostfloor_test.go covers the `host_floor` key (docs/design/host-tool-provisioning.md OQ-HP1):
+// hostfloor_test.go covers the `host_floor` key (docs/reference/host-agent-environment.md OQ-HP1):
 // read from user scope only, on by default (an empty wire, which the one reader defaults open),
 // agent_updates' two shapes, and refused at workspace scope. Every validation assertion goes
 // through ValidateConfig, the call site `yolo check` and a launch reach.

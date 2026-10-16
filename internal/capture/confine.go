@@ -24,7 +24,7 @@ import (
 // must follow (dirExists). Taken as given, an entry spelled with `..`, or one listed beneath a
 // symlink entry the same run creates, is written outside the home. Inside a container that is a
 // write the jail could make anyway; the host agent floor materializes on the HOST
-// (internal/hostfloor, host-tool-provisioning.md OQ-HP3), where it is a write with the user's
+// (internal/hostfloor, host-agent-environment.md OQ-HP3), where it is a write with the user's
 // full authority.
 //
 // # Two levels

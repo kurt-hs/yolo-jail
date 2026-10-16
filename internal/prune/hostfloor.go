@@ -5,7 +5,7 @@ import (
 )
 
 // PruneHostFloor reclaims what an interrupted install left in the HOST AGENT FLOOR
-// (paths.HostFloorDir, docs/design/host-tool-provisioning.md): an install directory with no
+// (paths.HostFloorDir, docs/reference/host-agent-environment.md): an install directory with no
 // completion marker, and a Node download or unpack scratch tree, each only when no process holds
 // the lock that would be writing it. Returns (bytesRemoved, itemsRemoved); apply=false reports
 // without touching disk.

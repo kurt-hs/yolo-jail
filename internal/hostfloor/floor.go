@@ -1,4 +1,4 @@
-// Package hostfloor is the HOST AGENT FLOOR (docs/design/host-tool-provisioning.md): the
+// Package hostfloor is the HOST AGENT FLOOR (docs/reference/host-agent-environment.md): the
 // `program` binaries of the packs the user-scope config selects, installed by yolo into a
 // directory it owns — the HOST PREFIX, paths.HostFloorDir — and run from there by absolute
 // path, so `yolo host -- <agent>` starts the same agent whichever launcher started yolo (a
@@ -87,8 +87,8 @@ type Program struct {
 // Bin is the program's binary name, which is also its floor entry's name.
 func (p Program) Bin() string { return p.Install.Bin }
 
-// Disposition is a FLOOR ENTRY DISPOSITION (coined in host-tool-provisioning.md's Defined
-// terms): what `yolo check` and a launch say about one entry.
+// Disposition is a FLOOR ENTRY DISPOSITION (defined in host-agent-environment.md's floor
+// vocabulary): what `yolo check` and a launch say about one entry.
 type Disposition string
 
 const (
@@ -99,7 +99,7 @@ const (
 	// (Status.Newer), which nothing here installs over.
 	Missing Disposition = "missing"
 	// NoEntry: the floor cannot hold it on this machine. Status.Reason says why. `yolo host`
-	// refuses to launch it (host-notch-readiness.md HNR-D2), unless OutsideTheFloor says the
+	// refuses to launch it (host-agent-environment.md HNR-D2), unless OutsideTheFloor says the
 	// launch's PATH answers for it instead.
 	NoEntry Disposition = "no floor entry"
 )
@@ -107,7 +107,7 @@ const (
 // OutsideTheFloor reports whether the floor holds no entry for p because it is not the floor's to
 // hold at all, rather than because this machine cannot: the user-scope `host_floor` leaves its pack
 // out, the user's `provisioners` order gives it to another manager, or its vendor publishes no build
-// for this platform (host-notch-readiness.md HNR-D4). For such a program `yolo host -- <bin>` runs
+// for this platform (host-agent-environment.md HNR-D4). For such a program `yolo host -- <bin>` runs
 // the copy on the launch's PATH, and the launch's readiness act does not install it; for every other
 // no-entry program a launch refuses (HNR-D2). The first two are the user's own decisions; the last is
 // the jail's own rule, which writes no launcher for an unpublished program.
@@ -606,7 +606,7 @@ func (f *Floor) recipeNoEntryReason(p Program) string {
 		}
 		// THE INTERPRETER'S LOADER, before any download (HP-D15): Node's official Linux build
 		// cannot start without it, so a machine that lacks it gets no floor entry and a refusal that
-		// says why (host-notch-readiness.md HNR-D2), not a fetched tarball that exits 127.
+		// says why (host-agent-environment.md HNR-D2), not a fetched tarball that exits 127.
 		return f.nodeLoaderProblem()
 	case "native":
 		switch f.GOOS {
@@ -740,7 +740,7 @@ func (f *Floor) buildPending(p Program, rec *Record) string {
 // provisionable turns a Missing installer or source-built program into NoEntry when this machine
 // can neither materialize it (the store has no entry for it) nor capture or build one (cannotCapture,
 // cannotBuild): the floor cannot provision it HERE, so a launch refuses it with that reason
-// (host-notch-readiness.md HNR-D2) instead of failing an install. So is one whose store entry
+// (host-agent-environment.md HNR-D2) instead of failing an install. So is one whose store entry
 // holds no program that runs here: none outside a jail, or one asking for a dynamic loader this
 // machine lacks (HP-D15). It reads the store offline, never the network. A provisioned entry never comes through here: the
 // floor already holds it, whatever the store says now.
@@ -900,7 +900,7 @@ func (f *Floor) readRecord(bin string) (*Record, error) {
 
 // ErrNewerRecord matches (errors.Is) the error for a record a newer yolo wrote, which Ensure
 // returns rather than install over it: a newer schema is refused, never rewritten, as a pack
-// lockfile's is (docs/design/host-tool-provisioning.md, HP-D8). The error's text is
+// lockfile's is (docs/reference/host-agent-environment.md, HP-D8). The error's text is
 // updatehint.NewerSchema's, naming `yolo update`, then the removal that installs this yolo's own
 // copy, for the machine whose update finds nothing newer.
 var ErrNewerRecord = errors.New("host floor record written by a newer yolo")

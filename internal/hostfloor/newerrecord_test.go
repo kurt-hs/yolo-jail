@@ -49,7 +49,7 @@ func TestARecordANewerYoloWroteNamesTheUpdate(t *testing.T) {
 // "missing" and installed over it, replacing the newer yolo's launcher and record with this
 // one's, though `yolo check` was saying to run `yolo update`. It now refuses, with that step, and
 // leaves both files as the newer yolo wrote them, as a pack lockfile of a newer schema is refused
-// rather than rewritten (docs/design/host-tool-provisioning.md, HP-D8).
+// rather than rewritten (docs/reference/host-agent-environment.md, HP-D8).
 func TestEnsureRefusesToInstallOverANewerYolosRecord(t *testing.T) {
 	t.Setenv("YOLO_VERSION", "")
 	w := newWorld(t)

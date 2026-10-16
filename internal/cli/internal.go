@@ -187,7 +187,7 @@ func runInternal(args []string) int {
 		return runProbeServices(args[1:], os.Environ(), os.Stderr)
 	case landlockExecVerb:
 		// The HOST CAPTURE's confinement on Linux (capturelandlock_linux.go,
-		// docs/design/host-tool-provisioning.md HP-D18): with --supervise, this process runs the
+		// docs/reference/host-agent-environment.md HP-D18): with --supervise, this process runs the
 		// confinement as a subreaper and kills what it leaves running; otherwise it restricts itself
 		// with Landlock and execs the capture driver. Either runs nothing it cannot. Hidden: its caller
 		// is `yolo capture` on a machine with no container runtime.

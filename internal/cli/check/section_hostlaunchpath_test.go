@@ -178,7 +178,7 @@ func TestCheckHostLaunchPathIsSilentWithNothingToSay(t *testing.T) {
 
 // TestCheckHostLaunchPathLeavesARefusedProgramToTheFloorSection: a program with no floor entry on a
 // machine the floor still answers for is refused by `yolo host`, never looked up on a PATH
-// (host-notch-readiness.md HNR-D2), so this section does not resolve it; one `host_floor` leaves out
+// (host-agent-environment.md HNR-D2), so this section does not resolve it; one `host_floor` leaves out
 // is looked up there (HNR-D4), so it does. Drop the OutsideTheFloor half of launchPathDeps' filter,
 // and the first half fails.
 func TestCheckHostLaunchPathLeavesARefusedProgramToTheFloorSection(t *testing.T) {

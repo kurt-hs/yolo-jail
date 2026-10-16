@@ -623,7 +623,7 @@ func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]st
 	}
 }
 
-// validateHostFloor shape-checks the `host_floor` opt-out (docs/design/host-tool-provisioning.md
+// validateHostFloor shape-checks the `host_floor` opt-out (docs/reference/host-agent-environment.md
 // OQ-HP1): `agent_updates`' two boolean shapes, without its timing values (a floor has no
 // timing), and user scope only — the floor installs programs the host runs with the user's
 // authority, so a workspace spelling (which an agent can edit) is refused rather than left looking

@@ -14,7 +14,7 @@ import (
 )
 
 // elfinterp.go asks one question of a program before the floor serves it: does this machine have
-// the dynamic loader the program asks for? (host-tool-provisioning.md HP-D15)
+// the dynamic loader the program asks for? (host-agent-environment.md HP-D15)
 //
 // A Linux program linked against glibc names its loader, its PT_INTERP, by absolute path. Node's
 // official build asks for /lib64/ld-linux-x86-64.so.2 on x86-64 and /lib/ld-linux-aarch64.so.1 on
@@ -26,7 +26,7 @@ import (
 // check that only asks whether the loader exists misses NixOS's own default.
 //
 // Such a program has NO FLOOR ENTRY on that machine, so a launch refuses it and says why, with the
-// step that changes it (host-notch-readiness.md HNR-D2, which replaced OQ-HE11 (a)'s PATH copy).
+// step that changes it (host-agent-environment.md HNR-D2, which replaced OQ-HE11 (a)'s PATH copy).
 // The floor reads PT_INTERP itself: the header, the program headers and the string, and not
 // debug/elf, which also reads the section headers at the far end of the file. It resolves the loader under Floor.Root as the kernel would,
 // an absolute link target read from that root too.

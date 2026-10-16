@@ -14,7 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// section_hostfloor_test.go pins §7 of docs/design/host-tool-provisioning.md: a row per floor
+// section_hostfloor_test.go pins docs/reference/host-agent-environment.md's "What `yolo check` reports for the floor": a row per floor
 // entry with its disposition, the other copies named as not run by `yolo host`, an interrupted
 // install warned about — and nothing installed by the observe verb. TestEverySectionIsWired pins
 // the call from Check().

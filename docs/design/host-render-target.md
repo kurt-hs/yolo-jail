@@ -1200,7 +1200,7 @@ is even reachable.
 ## 9. Open questions — the discussion part
 
 **IDs `9.N` are an API** — `9.1` and `9.7` are cited by name from
-[`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) and
+[`what-yolo-is.md`](../reference/what-yolo-is.md) and
 [`../plans/BACKLOG.md`](../plans/BACKLOG.md), so the numbering below is frozen even
 where an entry is now settled. Status marks added 2026-08-23; every settled entry is
 compacted into the ledger below and kept in place only as an anchor.
@@ -1209,9 +1209,9 @@ compacted into the ledger below and kept in place only as an anchor.
 
 | ID | Ruling / Outcome | Date | Settled in / Evidence |
 | :--- | :--- | :--- | :--- |
-| 9.1 | **The second sense** — yolo is an interface for describing environments agents run in; the host target is one notch of a `confinement` dial, not a special case | 2026-07-27 | [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md); shipped as `internal/render/confinement.go` + the `confinement` config key (`internal/config/confinement.go`) |
+| 9.1 | **The second sense** — yolo is an interface for describing environments agents run in; the host target is one notch of a `confinement` dial, not a special case | 2026-07-27 | [`what-yolo-is.md`](../reference/what-yolo-is.md); shipped as `internal/render/confinement.go` + the `confinement` config key (`internal/config/confinement.go`) |
 | 9.3 | **`capture` does not redact — it REFUSES.** Host-side `capture`/`reset` abort unless `--force`, which removes the leak path wholesale; no notion of "sensitive key" was invented. **Amended 2026-09-12:** `reset` is now EXEMPT under `host_management: own`, because that contract answers the guard's own premise — the files are yolo's derived output, so truncating one to its pure render is the operation working rather than data loss, and adoption depends on it. **Amended 2026-10-04:** `capture` is exempt under `own` too, as [`OQ-CO3`](config-ownership-and-promotion.md#13-decision-ledger) ruled — its privacy premise is a credential copied into the WORKSPACE tree, and under `own` it writes the host's own `0600` capture store. What it writes is the capture half of the host apply's own render of the surface, run in observe (`entrypoint.HostRenderResult.Capture`) — the configured pack at the host posture, with the computed layer — so the bytes are the ones the next apply records there; its first build composed the capture the jail's way instead and erased edits the apply keeps ([§6.2](config-ownership-and-promotion.md#62-host-capture-and-the-privacy-ruling-it-has-to-answer-to)). Under `none` and `assert` there is no store, so `capture` refuses there even with `--force` and names `own` instead | 2026-08-23; amended 2026-09-12, 2026-10-04 | `refuseHostSideWrite` and the resolved target's `hostOwned()`, [`internal/cli/configdiff.go`](../../internal/cli/configdiff.go) |
-| 9.4 | **`program` at a host target means OFFERED behind a confirm, not "never"** — and the answer came from the tree plus [`report-tiers.md`](../reference/report-tiers.md#the-dependency-rule)'s dependency rule, not from this doc. `HostFields` honors the kind (*"honored but confirm-gated by the caller"*); at `yolo host apply --assert` a missing declared dependency prints the exact install command, one prompt covers the set, a decline is FATAL with nothing written, and an install that leaves the binary missing counts as a decline. The per-invocation grant 9.4 said would need its own design got one | 2026-09-12 | `render.HostFields` + `internal/cli/applyhostdepgate.go`; [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md#9-decision-ledger) carries what is left (the elevation-class batching) |
+| 9.4 | **`program` at a host target means OFFERED behind a confirm, not "never"** — and the answer came from the tree plus [`report-tiers.md`](../reference/report-tiers.md#the-dependency-rule)'s dependency rule, not from this doc. `HostFields` honors the kind (*"honored but confirm-gated by the caller"*); at `yolo host apply --assert` a missing declared dependency prints the exact install command, one prompt covers the set, a decline is FATAL with nothing written, and an install that leaves the binary missing counts as a decline. The per-invocation grant 9.4 said would need its own design got one | 2026-09-12 | `render.HostFields` + `internal/cli/applyhostdepgate.go`; [`what-yolo-is.md`](../reference/what-yolo-is.md#why-its-this-way) carries what is left (the elevation-class batching) |
 | 9.5 | **User/machine-scoped, never workspace-scoped**, exactly as [§6.6](#66-a-host-target-is-user-scoped-not-workspace-scoped) argued. The "two workspaces collide" framing was dissolved rather than answered | 2026-08-01 | `Target.ProvenanceDir()` → `<home>/.local/share/yolo-jail/host-provenance/` (`internal/render/target.go`), with the two rejected alternatives written into the doc comment |
 | 9.7 | **Fixed** — macos-user is the `guest` notch and receives packs; measured on a Mac 2026-09-10 and again 2026-09-12 ([runbook item 4](../plans/runbooks/macos-user-manual-checks.md#4-content-actually-reached-the-agent)) | 2026-08-23 (verified) | `YOLO_PACK_ROOT` set in `buildBootstrapEnv` (`internal/macosuser/runplan.go`), asserted in `PlanInvariants`; `render.GuestProfileMacOS` (`confinement.go`) |
 | 9.8 | **A real fourth row, and it needed no new concept** — as predicted. Declared in the vocabulary; no backend fills it yet | 2026-08-23 (verified) | `render.GuestProfileLinux()` = namespaces + Landlock (`internal/render/confinement.go`) |
@@ -1245,7 +1245,7 @@ The original prose for all eight follows, unedited apart from the status marks.
 
 **✅ 9.1 — RESOLVED (2026-07-27). Is yolo "a jail" or "an interface for describing environments agents run in"?**
 **Answered 2026-07-27, in the second sense** — see
-[yolo-as-environment-manager.md](yolo-as-environment-manager.md), which takes [§2.2](#22-so-which-is-it-a-command-or-a-mode)'s confinement
+[what-yolo-is.md](../reference/what-yolo-is.md), which takes [§2.2](#22-so-which-is-it-a-command-or-a-mode)'s confinement
 axis as the product's organizing idea (a `confinement: jail|sandbox|host` dial, with `runtime`
 demoted to a mechanism hint) and makes this doc's host target one notch of it rather than a
 special case. The reasoning below is what the question looked like before that ruling, and its
@@ -1337,7 +1337,7 @@ the reason [§8](#8-what-i-would-actually-do-in-order) puts it before `FieldSet`
 > **Keep the finding.** "A backend rendering zero surfaces every launch, with nothing
 > in the output to say so" is the reason `FieldSet` refuses by name instead of
 > skipping ([§6.2](#62-the-four-targets-and-what-fieldset-is-for)), and it is cited from
-> [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md) as the canonical
+> [`what-yolo-is.md`](../reference/what-yolo-is.md) as the canonical
 > example of a silent skip. It is documentation, not archaeology.
 
 **✅ 9.8 — RESOLVED (2026-08-23): a real row, declared as `GuestProfileLinux`. Is a "macos-user for Linux" a real fourth row, or a distraction?** A bwrap/Landlock

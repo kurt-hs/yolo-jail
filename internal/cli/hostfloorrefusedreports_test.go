@@ -10,7 +10,7 @@ import (
 // hostfloorrefusedreports_test.go pins what the reporting verbs say about a declared program the
 // floor cannot hold on this machine (an installer agent on a Mac whose sandbox account is not set
 // up). `yolo host` refuses to launch it rather than run a copy on the PATH
-// (host-notch-readiness.md HNR-D2), so `yolo host apply` and `yolo check-deps` must say that, and
+// (host-agent-environment.md HNR-D2), so `yolo host apply` and `yolo check-deps` must say that, and
 // must not answer for it with whatever copy a PATH holds.
 
 // refusedOnThisMac is nativeFloorFixture on a Mac before `yolo macos-setup`, with a hand-installed

@@ -31,7 +31,7 @@ import (
 )
 
 // hostfloor.go wires the HOST AGENT FLOOR (internal/hostfloor,
-// docs/design/host-tool-provisioning.md) into the host verbs: which programs are in it (the
+// docs/reference/host-agent-environment.md) into the host verbs: which programs are in it (the
 // user-scope selection's `program` contributions), every policy input it reads (`host_floor`,
 // `agent_updates`, the capture store and the capture act), and the one question a launch asks of
 // it — which binary runs for a bare name.
@@ -782,7 +782,7 @@ func hostFloorBinDir() string { return (&hostfloor.Floor{Dir: paths.HostFloorDir
 // keyed by bin. A dependency probe answers these from the floor rather than from any PATH
 // (host-agent-environment.md, one resolver). That includes a program with no floor entry here
 // that is still the floor's to hold: `yolo host` refuses it rather than look it up on a PATH
-// (host-notch-readiness.md HNR-D2), so a PATH copy says nothing about it. Only a program outside
+// (host-agent-environment.md HNR-D2), so a PATH copy says nothing about it. Only a program outside
 // the floor (Floor.OutsideTheFloor, HNR-D4) is left to the PATH probe. It reads the prefix and nothing else, and it is empty in a jail,
 // whose own launchers answer for its programs.
 func floorDeliveredBins(packs []*packload.Pack) map[string]hostfloor.Status {
@@ -1012,7 +1012,7 @@ type hostTarget struct {
 //     user's `host_floor` leaves its pack out, the `provisioners` order gives it to a manager, or
 //     its vendor publishes no build here), with one line saying so (HNR-D4);
 //   - a selected pack's program the floor cannot hold on THIS MACHINE is refused, naming the
-//     floor's reason: a PATH copy is never its substitute (host-notch-readiness.md HNR-D2, which
+//     floor's reason: a PATH copy is never its substitute (host-agent-environment.md HNR-D2, which
 //     reversed OQ-HE11 (a)).
 //
 // That lookup is the launch PATH's (lp, host-agent-environment.md, the launch PATH: the PATH yolo was started
@@ -1281,7 +1281,7 @@ func hostChildPath(lp *hostpath.Launch, floorBin string) string {
 // the selected packs' declaration of cmd0's base name, the first one winning as the floor's and the
 // jail launcher generator's do, when that declaration has a refresh. Whichever copy the launch
 // execs, so a target given as a path or found on the launch PATH is refreshed too
-// (docs/design/host-tool-provisioning.md HP-D19). Never in a jail, whose own launcher on PATH runs
+// (docs/reference/host-agent-environment.md HP-D19). Never in a jail, whose own launcher on PATH runs
 // the refresh (internal/entrypoint's prelaunchrefresh.go) and whose state this would not be.
 func hostRefreshProgram(packs []*packload.Pack, cmd0 string) (hostfloor.Program, []hostfloor.Program, bool) {
 	if config.InJail() {

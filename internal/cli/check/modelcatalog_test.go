@@ -165,7 +165,7 @@ func TestCheckDoesNotReadAFloorCopyYoloHostDoesNotRun(t *testing.T) {
 
 // A program the floor cannot hold for this machine (Node publishes no build for riscv64, so there
 // is no interpreter to run it on) is not one the user left out: `yolo host -- agentx` refuses to
-// launch it until the floor holds it (host-notch-readiness.md HNR-D2), and the row must say so.
+// launch it until the floor holds it (host-agent-environment.md HNR-D2), and the row must say so.
 func TestCheckSaysYoloHostRefusesAProgramTheFloorCannotHold(t *testing.T) {
 	out, _ := runHostCatalogCheck(t, &hostfloor.Floor{Dir: t.TempDir(), GOOS: "linux", GOARCH: "riscv64", Root: checkLoaderRoot(t)})
 	if !strings.Contains(out, "agentx: no floor entry:") ||

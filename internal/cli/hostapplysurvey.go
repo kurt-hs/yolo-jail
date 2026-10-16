@@ -191,7 +191,7 @@ type hostApplySurvey struct {
 	// floorStage is whether this run takes the host agent floor stage (applyHostFloor): set by
 	// the verb — `yolo host apply`, `yolo apply --at host` — and never by the launch gate's
 	// apply, because a launch installs the one agent it starts and removes nothing
-	// (host-tool-provisioning.md §4).
+	// (host-agent-environment.md, "When the floor installs").
 	floorStage bool
 	// floor is what the floor stage reported, one row per line it printed (applyHostFloor), for
 	// the machine document: the text report's floor rows, which outfmt.Sink discards in the JSON

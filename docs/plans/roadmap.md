@@ -144,7 +144,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 18. [Rule the provisioner's remaining calls](../design/provisioner-sets.md), corporate-CA trust first — it shipped on its
     leanings under delegation (PS-D10, reversible), so a ruling confirms or undoes what every macos-user launch now does.
 19. [Rule what the environment manager promises at each notch](../design/environment-manager-user-stories.md) — Q1b
-    decides [`yolo check --at`](../design/yolo-as-environment-manager.md) and Q7 [the Linux guest notch](environment-manager-plan.md).
+    decides [`yolo check --at`](../reference/what-yolo-is.md#check-at-a-notch) and Q7 [the Linux guest notch](environment-manager-plan.md).
 20. [Rule the keychain from a jail](../design/keychain-from-a-jail.md), which settles [Copilot's machine-wide
     login](../research/copilot-token-storage.md). Review its broader native-credential-store direction with the
     sandbox account's missing-keychain reports: storing suitable tokens responsibly must not wait on Copilot alone,
@@ -246,7 +246,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     — [auto-capture](../design/program-delivery.md#decision-ledger), macos-user's `go test`, Podman Machine on applehv
     and [NFS from macOS's `nfsd`](../research/macos-vm-runtime-comparison.md#6-is-there-an-open-stack-with-faster-shared-folders)
     — first, as [the comparison's refresh](../reference/macos-no-vm-direction.md#when-to-refresh-this) waits on it. It
-    also runs `yolo host -- claude` and `yolo host -- agy` for [the host floor's installer agents](../design/host-tool-provisioning.md#HP-D2),
+    also runs `yolo host -- claude` and `yolo host -- agy` for [the host floor's installer agents](../reference/host-agent-environment.md#HP-D2),
     and a macos-user launch with a dotted `packages` entry, which no CI job runs.
 39. [The two-jail check](../research/macos-backend-performance.md#7-found-on-the-way-two-apple-container-jails-may-mount-one-ext4-disk)
     has held since each workspace got its own `/mise` disk: run 37832291377 (2026-10-08, `container` 1.1.0)

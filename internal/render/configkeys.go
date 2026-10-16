@@ -152,8 +152,8 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"(composeHostBlockers, HE-D11); a workspace's are never read at the host"},
 
 	// ---- Not applicable: the key means nothing off-container -------------------------
-	// A GRANT, not a mechanism (docs/design/yolo-as-environment-manager.md §4: "the grants stay
-	// where they are … at lower notches they are inert"). The reason used to be "a mount needs a
+	// A GRANT, not a mechanism (docs/reference/what-yolo-is.md, the confinement dial: "the grants stay
+	// where they are … below `jail` there is no wall, so they are inert"). The reason used to be "a mount needs a
 	// mount namespace", false of macos-user, which links a context mount into its sandbox with
 	// none.
 	"mounts": {KeyNotApplicable, "a mount grants a jail a host folder through the jail's wall; at " +
@@ -195,7 +195,7 @@ var hostConfigKeys = map[string]keyCensusEntry{
 		"agent binaries in its home; the host floor removes a deselected program on an owned " +
 		"host's `yolo host apply --assert` whatever this key says (HP-D8), and under \"none\" " +
 		"`yolo check` names the removal by hand"},
-	// Not unbuilt: host-tool-provisioning.md's HP-DIR3 (2026-09-29) rules that at the host yolo
+	// Not unbuilt: host-agent-environment.md's HP-DIR3 (2026-09-29) rules that at the host yolo
 	// manages the agent's environment and never the workspace's runtime, which is what
 	// `packages:` declares, so provisioner-sets.md's OQ-PS1 gives darwinpkg.MaterializeAt no host
 	// caller and OQ-NX8 calls the key permanently inert here.
