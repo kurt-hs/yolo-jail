@@ -18,7 +18,6 @@ package entrypoint
 import (
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -237,14 +236,15 @@ func TestClaudeOnAGatewayWithNoListKeepsItsMenu(t *testing.T) {
 			entry.Set("models", models)
 			user.Set(gw, entry)
 			got = renderClaudeModels(t, packs, user, nil, gw)
-			// One row, the user's model, in the gateway's own spelling (kilo's carries a
-			// context suffix, routedSpelling's business rather than this test's).
+			// One row, the user's model, spelled as typed: no window is declared, so not even
+			// kilo's gains `[1m]` (claude's derive used to assume 1M for every Kilo model,
+			// docs/design/gateway-provider-packs.md §6).
 			ids := pickerIDs(t, got.settings)
 			id := ""
 			if len(ids) == 1 {
 				id, _ = ids[0].(string)
 			}
-			if !strings.HasPrefix(id, "mine-1") {
+			if id != "mine-1" {
 				t.Errorf("modelPicker ids = %v, want one row for the user's own mine-1", ids)
 			}
 		})

@@ -338,9 +338,10 @@ end
 -- routedSpelling returns the function that spells a provider's wire id the way claude sends it
 -- on that provider, the rule the env derive below applies to its tier pins: Kilo's bare
 -- `deepseek-` ids gain their `deepseek/` vendor prefix, and every id gains `[1m]` when the
--- provider's context window (the profile's, else the provider's; Kilo's 1,048,576 when neither
--- says) is 1,000,000 tokens or more, claude's own spelling for the 1M-context beta. A picker
--- row spelled differently from the tier pins would be a second model to claude.
+-- provider's context window (the profile's, else the provider's) is 1,000,000 tokens or more,
+-- claude's own spelling for the 1M-context beta. No window declared means no suffix, on Kilo
+-- too (docs/design/gateway-provider-packs.md §6). A picker row spelled differently from the
+-- tier pins would be a second model to claude.
 local function routedSpelling(ctx, p)
   local provOpts = (type(p) == "table" and type(p.options) == "table" and p.options) or {}
   local profileOpts = (type(ctx.profile) == "table" and ctx.profile) or {}
@@ -349,7 +350,6 @@ local function routedSpelling(ctx, p)
     and string.find(p.endpoints.openai.base_url or "", "api%.kilo%.ai") ~= nil)
   local cw = profileOpts.context_window or profileOpts.max_context_tokens or provOpts.context_window
     or provOpts.max_context_tokens
-  if not cw and kilo then cw = "1048576" end
   local cwNum = tonumber(cw or "")
   local suffix = (cwNum and cwNum >= 1000000) and "[1m]" or ""
   return function(id)
@@ -1123,10 +1123,10 @@ yolo.env("claude", function(ctx)
 
   local profileOpts = (type(ctx.profile) == "table" and ctx.profile) or {}
   local provOpts = (type(p) == "table" and type(p.options) == "table" and p.options) or {}
+  -- No window declared means none is emitted, and claude keeps its own default. Kilo used to be
+  -- told 1,048,576 here whatever its model, so claude on a smaller one compacted too late
+  -- (docs/design/gateway-provider-packs.md §6).
   local cw = profileOpts.context_window or profileOpts.max_context_tokens or provOpts.context_window or provOpts.max_context_tokens
-  if not cw and isKilo then
-    cw = "1048576"
-  end
   if cw then
     out.CLAUDE_CODE_MAX_CONTEXT_TOKENS = tostring(cw)
     out.CLAUDE_CODE_AUTO_COMPACT_WINDOW = tostring(cw)

@@ -3,7 +3,7 @@ title: "Gateway packs expose stable endpoints while users curate selectable mode
 date: 2026-09-15
 status: in-review
 stage: DESIGN
-next: "Rule OQ-GP4 — until it does, claude's derive gives every Kilo model with no declared window a 1M-token context"
+next: "Rule OQ-GP4 — whether the deepseek- id rewrite and the literal-id fallback stay"
 tags: [providers, packs, openrouter, kilo, models]
 summary: "A built design for opt-in OpenRouter and Kilo packs whose model lists are supplied by user configuration. One question is open: OQ-GP4, whether the Kilo special-casing a later change added to the pi and claude derives stays."
 vantage:
@@ -186,10 +186,18 @@ carries the provenance comment a derive's gateway vocabulary needs.
 
 **Restated 2026-09-30, against the derives at `927bb54d`.** One fact above is narrower than
 the code. pi supplies the 1M-token context window only for a `deepseek/` id on Kilo, but
-claude's derive sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to
-`1048576` for **every** Kilo launch whose profile and provider declare no window, whatever the
-model. So claude on a smaller Kilo model believes it has 1M tokens and compacts too late. The
-literal-id fallback sits closer to a later ruling than it did: [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger)
+claude's derive set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to
+`1048576` for **every** Kilo launch whose profile and provider declared no window, whatever the
+model, so claude on a smaller Kilo model compacted too late.
+
+**Fixed 2026-10-16: claude's 1M assumption is removed.** A bug fix, not a ruling on
+[OQ-GP4](#OQ-GP4): with no window declared on the profile or the provider, claude's derive now
+emits neither variable and adds no `[1m]` to any id, on Kilo as on every other provider, so
+claude keeps its own default. A Kilo user on a 1M model declares `context_window` on the
+profile or provider. pi's window for a `deepseek/` id, the `deepseek-` rewrite and the
+literal-id fallback are untouched and stay under [OQ-GP4](#OQ-GP4).
+
+The literal-id fallback sits closer to a later ruling than it did: [OQ-ML2](model-lists-and-pickers.md#16-decision-ledger)
 (2026-09-29) says yolo never steers a valid choice the user's config makes, and a profile
 naming an exact id is such a choice.
 
@@ -202,8 +210,8 @@ The options, lettered here for the first time, with what each costs:
   a Kilo user on a 1M model writes the window once, or claude and pi fall back to their own
   defaults.
 - **(B)** Keep everything as shipped, and amend [§3](#3-failure-and-safety-rules) and
-  [OQ-GP2](#decision-ledger) to describe it, with provenance comments. Cost: claude keeps
-  assuming 1M for every Kilo model, and gateway policy stays hard-coded in two derives.
+  [OQ-GP2](#decision-ledger) to describe it, with provenance comments. Cost: gateway
+  policy stays hard-coded in two derives (claude's 1M assumption is already gone, above).
 - **(C)** Remove all of it and restore [§3](#3-failure-and-safety-rules) as written. Cost: a
   profile naming an exact id selects nothing, a bare `deepseek-` id is sent to Kilo as typed,
   and every window must be declared.
