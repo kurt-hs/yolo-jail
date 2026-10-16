@@ -885,6 +885,11 @@ func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
 	cmd.Env = hd10LaunchEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	// The sandbox's sleep inherits the launch's stdout and stderr and outlives the SIGKILLed
+	// launcher, so cmd.Wait would block on those pipes until the sleep ends, an hour later. The
+	// sleep is stopped before every wait below; WaitDelay bounds the wait if anything else in the
+	// sandbox still holds them.
+	cmd.WaitDelay = 10 * time.Second
 	awaitDetachedWriters(t, ws, launchHome(cmd.Env))
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting the first launch: %v", err)
@@ -896,8 +901,8 @@ func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		<-exited
 		stopSandbox()
+		<-exited
 	})
 
 	envFile := ""
@@ -918,8 +923,8 @@ func TestMacosUserSweepsAKilledSessionsFiles(t *testing.T) {
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("SIGKILL of the first launch: %v", err)
 	}
-	<-exited
 	stopSandbox()
+	<-exited
 
 	key := strings.TrimSuffix(filepath.Base(envFile), ".env")
 	files := macosuser.SessionFilePaths(key, "")
