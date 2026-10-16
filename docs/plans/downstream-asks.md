@@ -89,12 +89,15 @@ record in [`keys.go`](../../internal/loopholedecl/keys.go).
 a broadcast clause record the version that added it.
 
 **State.** The identity half is `landed`; the version-record half is `declined`, both by the
-owner's ruling of 2026-10-16 ([OQ-DA2](#OQ-DA2)). **Evidence:** every build's version string
-carries the git hash, nix builds included: a flake build now stamps the version and commit a Go
-build does (`e5c807f13`, `buildStamp` in [`flake.nix`](../../flake.nix)). `yolo --version --full`
-adds the build stamp, the commit and the sha256 of the running executable (`8198098ab`,
-[`identity.go`](../../internal/version/identity.go)); the sha256 stays, because builds from one
-dirty tree share a version string. `yolo config-ref` records no version for a rule: its "as of
+owner's ruling of 2026-10-16 ([OQ-DA2](#OQ-DA2)). **Evidence:** source and nix builds carry the
+hash in the version string: a flake build now stamps the version and commit a Go build does
+(`e5c807f13`, `buildStamp` in [`flake.nix`](../../flake.nix)). Every build, releases and Homebrew
+included, carries the commit in `yolo --version --full`; the Homebrew formula stamps it from the
+release commit ([`update-homebrew.sh`](../../tools/release-wiring/update-homebrew.sh)), since its
+tarball has no git metadata. A release built on its tag prints a plain version string; the owner
+is deciding whether to add the hash there. `--full` also prints the build stamp and the sha256 of
+the running executable (`8198098ab`, [`identity.go`](../../internal/version/identity.go)); the
+sha256 stays, because builds from one dirty tree share a version string. `yolo config-ref` records no version for a rule: its "as of
 0.9.0" on the broadcast clause is removed.
 
 **Owner.** [OQ-DA2](#OQ-DA2), compacted.
@@ -285,4 +288,4 @@ settled and the two below remain; one of them only awaits ratification of what w
 | :--- | :--- | :--- | :--- | :--- |
 | — | A reduced-window child is the profile's declaration, not an automatic floor: `profiles.<name>.subagents.default` shipped instead. | 2026-10-12 | [ask 4](#4-a-reduced-window-child) | ✅ |
 | OQ-DA1 | **Maintainer ruling, A — neither:** *"Nobody's running old versions."* No pack version declaration and no `yolo pack lint --for-version`. The unknown-field skip a launch has made since 0.12.0 and the source-skew refusal cover a pack ahead of its yolo. Rejected: B, an advisory declaration; C, a lint against an older build | 2026-10-15 | [ask 2](#2-a-pack-cannot-declare-the-yolo-version-it-needs) | — (nothing to build) |
-| <a id="OQ-DA2"></a>[OQ-DA2](#OQ-DA2) | **Owner's ruling:** *"our version string should always have the git hash or a chunk of it in it ... why does it matter when rules were added? that seems like impossible ongoing work. I don't want to set that precedent. why can't nix know a commit?"* Every build's version string carries the git hash, nix builds included; `yolo --version --full`'s binary sha256 stays for builds that share a string (a dirty tree). The ask's second half, recording the version that added a rule, is declined: docs carry no per-rule version history, as with [OQ-DA1](#decision-ledger). Superseded: the A/B/C options of the 2026-10-15 question | 2026-10-16 | [ask 3](#3-a-build-has-no-version-identity) | 2026-10-16, `e5c807f13`: `buildStamp` in `flake.nix`; pinned by `version.TestTheFlakeStampsWhatBuildGoStamps` and the integration `TestTheJailsYoloCarriesTheCheckoutsCommit`. The sha256 line since `8198098ab` |
+| <a id="OQ-DA2"></a>[OQ-DA2](#OQ-DA2) | **Owner's ruling:** *"our version string should always have the git hash or a chunk of it in it ... why does it matter when rules were added? that seems like impossible ongoing work. I don't want to set that precedent. why can't nix know a commit?"* Source and nix builds carry the hash in the version string; every build, releases and Homebrew included, carries the commit in `yolo --version --full`; a release built on its tag prints a plain version string (the owner is deciding whether to add the hash there). `--full`'s binary sha256 stays for builds that share a string (a dirty tree). The ask's second half, recording the version that added a rule, is declined: docs carry no per-rule version history, as with [OQ-DA1](#decision-ledger). Superseded: the A/B/C options of the 2026-10-15 question | 2026-10-16 | [ask 3](#3-a-build-has-no-version-identity) | 2026-10-16, `e5c807f13`: `buildStamp` in `flake.nix`; pinned by `version.TestTheFlakeStampsWhatBuildGoStamps` and the integration `TestTheJailsYoloCarriesTheCheckoutsCommit`. Homebrew's commit stamp: `update-homebrew.sh`, pinned by `TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill`. The sha256 line since `8198098ab` |

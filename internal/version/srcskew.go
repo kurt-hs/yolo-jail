@@ -18,11 +18,11 @@ import (
 // the install prefix.
 //
 // It is the source CONTENT `.#installPrefix` is built from. Its store path is no
-// longer a proxy for that set: since every flake build stamps the commit
-// (flake.nix: buildStamp), the path also moves with commits that touch none of
-// these paths. This comparison is the one the integration harness cannot make: the
-// harness always builds a fresh CLI, so it can never observe a host binary older
-// than the tree.
+// longer a proxy for that set: every flake build stamps the commit (flake.nix:
+// buildStamp), so the path also moves with commits that touch none of these paths.
+// This comparison is the one the integration harness cannot make: the harness
+// always builds a fresh CLI, so it can never observe a host binary older than the
+// tree.
 //
 // TestImageSourcePathsMatchTheFlake pins it against flake.nix's own fileset, because
 // a path that drifts out of this list makes SourceSkew silent about exactly the
@@ -95,11 +95,12 @@ type Skew struct {
 //
 // # It returns nil rather than guessing
 //
-// No repoRoot, no stamp (an unstamped `go build`, or a nix build from a `path:` flake
-// with neither git metadata nor a stamp file; flake.nix: buildStamp), a stamp naming a commit this repo does not have (a
-// binary from another checkout), or git unavailable: all nil. A skew this cannot
-// PROVE is not one it reports — the same disposition rule the reachability witness
-// follows, where a host yolo could not ask is never refused for what it cannot help.
+// No repoRoot, no stamp (an unstamped `go build`, or a nix build from a `path:`
+// flake with neither git metadata nor a stamp file; flake.nix: buildStamp), a stamp
+// naming a commit this repo does not have (a binary from another checkout), or git
+// unavailable: all nil. A skew this cannot PROVE is not one it reports — the same
+// disposition rule the reachability witness follows, where a host yolo could not
+// ask is never refused for what it cannot help.
 func SourceSkew(repoRoot string) *Skew {
 	if repoRoot == "" || GitCommit == "" || GitCommit == "unknown" {
 		return nil

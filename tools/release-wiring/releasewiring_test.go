@@ -1662,11 +1662,17 @@ func TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill(t *te
 					t.Fatal(e)
 				}
 			}
-			out, e := runScript(t, root, filepath.Join(repositoryRoot(t), "tools/release-wiring/update-homebrew.sh"), bin, trace, "VERSION=9.8.7", "RELEASE_TAG=v9.8.7", "HOMEBREW_TAP_TOKEN=offline-tap-token")
+			out, e := runScript(t, root, filepath.Join(repositoryRoot(t), "tools/release-wiring/update-homebrew.sh"), bin, trace, "VERSION=9.8.7", "RELEASE_TAG=v9.8.7", "RELEASE_SHA="+testSHA, "HOMEBREW_TAP_TOKEN=offline-tap-token")
 			if e != nil {
 				t.Fatalf("formula generation failed: %v %s", e, out)
 			}
 			formula := readFile(t, filepath.Join(root, "tap/Formula/yolo-jail.rb"))
+			// The tag's tarball has no .git, so the release commit reaches the Homebrew binary
+			// and its bundle's stamp only through the formula (OQ-DA2, 2026-10-16).
+			if !strings.Contains(formula, "internal/version.GitCommit="+testSHA[:12]) ||
+				!strings.Contains(formula, `"COMMIT" => "`+testSHA[:12]+`"`) {
+				t.Fatalf("%s formula does not stamp the release commit into the binary and the bundle:\n%s", id, formula)
+			}
 			lines := readTrace(t, trace)
 			if traceIndex(lines, "FORBIDDEN yolo") >= 0 || !strings.Contains(formula, "The first `yolo` run in a workspace") {
 				t.Fatalf("%s formula executed literal caveat command or lost backticks: trace=%v formula=%s", id, lines, formula)
