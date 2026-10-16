@@ -735,7 +735,11 @@ func applyHostSurveyed(out, errw io.Writer, color bool, write bool, stdin io.Rea
 	// active at the surface's agent.
 	// AN UNMODIFIED EXTENSION THE HOST HAS NO TREE FOR takes its fallback here, in its own pack's
 	// lists, before they fold (hostTreeFallbacks, XB-D7): its tree arm below says why there is none.
+	// A SKIPPED one (YOLO_SKIP_EXTENSIONS) has its entries left out there too, and its arm says so.
 	listPacks, _ := hostTreeFallbacks(loaded)
+	if line := hostSkipUnmatchedLine(loaded); line != "" {
+		pr.Printf("  [yellow]%s[/yellow]", richtext.Escape(line))
+	}
 	overlays := packoverlay.Collect(listPacks, render.Host(home, nil, hostOwnership()).Profile().AgentAutonomy,
 		overlayGateProfiles(render.KindHost, loaded))
 	for _, prob := range overlays.Problems {

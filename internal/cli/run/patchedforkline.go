@@ -261,6 +261,7 @@ func PatchedForkHold(f packload.Fork) string {
 // what follows. Silent for a jail whose tree this attach could not find, and for one launched before
 // delivery records.
 func (o *Options) noteAttachHandedBuilds(view attachPackView) {
+	o.noteAttachSkipExtensions() // whatever the record says: an attach changes no extension
 	if view.unfound != "" || view.unreadable || view.staged.root == "" {
 		return
 	}
