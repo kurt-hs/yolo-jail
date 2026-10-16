@@ -12,9 +12,12 @@ package entrypoint
 // and no agent is started (AGENTS.md, "No agent tests").
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -183,6 +186,42 @@ func TestANativeVerbThatFailsIsJudgedByItsUpstream(t *testing.T) {
 			t.Errorf("an unreachable upstream must run the installed version, saying so (rc=%d):\n%s", rc, out)
 		}
 	})
+}
+
+// THE PROBE'S CLASSIFICATION is the host floor's (hostfloor.probeUpstreamHEAD): a server error is
+// an upstream that could not be checked, so a failed update verb runs the installed version; any
+// other HTTP status, a 404 or a 405 for HEAD, is an upstream that answered, and the launch refuses.
+func TestTheJailsUpstreamProbeClassifiesAsTheHostDoes(t *testing.T) {
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl not found")
+	}
+	for _, tc := range []struct {
+		status    int
+		reachable bool
+	}{{404, true}, {405, true}, {500, false}, {503, false}} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(srv.Close)
+			p := newUpdateProbeAt(t, []string{"update"}, true, true, srv.URL+"/install.sh")
+			body := "#!/bin/bash\nprintf '%s\\n' \"RAN:$*\" >> " + shellQuoteForTest(p.log) + "\n" +
+				"if [ \"${1:-}\" = update ]; then exit 7; fi\n"
+			if err := os.WriteFile(p.realBin, []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out, rc := p.run(t)
+			if tc.reachable {
+				if rc != UpdateRefusedStatus {
+					t.Errorf("an upstream answering %d answered: the launch must refuse, rc=%d:\n%s", tc.status, rc, out)
+				}
+				return
+			}
+			if rc != 0 || !strings.Contains(out, "could not be reached to check for a newer version") {
+				t.Errorf("an upstream answering %d could not be checked: the installed version must run (rc=%d):\n%s", tc.status, rc, out)
+			}
+		})
+	}
 }
 
 // A vendor INSTALLER re-run (no verb declared): one that was fetched and failed refuses, its host

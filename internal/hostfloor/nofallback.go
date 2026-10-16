@@ -134,10 +134,15 @@ func (f *Floor) sayUsingInstalled(p Program, installed, act string, err error) {
 // UpstreamProbeTimeout bounds one probe of a program's upstream.
 const UpstreamProbeTimeout = 8 * time.Second
 
-// ProbeUpstreamDefault is the probe a Floor with no ProbeUpstream uses: one HEAD request to url,
-// bounded by UpstreamProbeTimeout. Any answer below 500 is a reachable upstream; no answer, or a
-// server error, is not. A variable so a test can keep the network out of every floor it builds.
-var ProbeUpstreamDefault = func(ctx context.Context, url string) error {
+// ProbeUpstreamDefault is the probe a Floor with no ProbeUpstream uses, probeUpstreamHEAD. A
+// variable so a test can keep the network out of every floor it builds.
+var ProbeUpstreamDefault = probeUpstreamHEAD
+
+// probeUpstreamHEAD is one HEAD request to url, bounded by UpstreamProbeTimeout. Its classification
+// is the jail launchers' too (_yolo_url_reachable): no answer (a connection error, a timeout) or a
+// server error (5xx) is an unreachable upstream, the could-not-check case; any other HTTP status, a
+// 404 or a 405 for HEAD included, is an upstream that answered.
+func probeUpstreamHEAD(ctx context.Context, url string) error {
 	ctx, cancel := context.WithTimeout(ctx, UpstreamProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
