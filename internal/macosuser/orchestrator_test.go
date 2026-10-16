@@ -566,10 +566,10 @@ func TestMacosSetupCreatesWhenMissing(t *testing.T) {
 		t.Errorf("rc = %d", rc)
 	}
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(joined, "run:sudo /usr/bin/dscl . -create /Users/_yolojail") {
+	if !strings.Contains(joined, "run:/usr/bin/sudo /usr/bin/dscl . -create /Users/_yolojail") {
 		t.Errorf("user creation not run:\n%s", joined)
 	}
-	if !strings.Contains(joined, "run:sudo /bin/mkdir -p /Users/Shared/yolo") {
+	if !strings.Contains(joined, "run:/usr/bin/sudo /bin/mkdir -p /Users/Shared/yolo") {
 		t.Error("shared root not provisioned")
 	}
 }
@@ -597,9 +597,9 @@ func TestMacosSetupReprovisionsAMissingHome(t *testing.T) {
 	}
 	joined := strings.Join(rec, "\n")
 	for _, want := range []string{
-		"run:sudo /usr/sbin/createhomedir -c -u _yolojail",
-		"run:sudo /usr/sbin/chown -R _yolojail:_yolojail /Users/_yolojail",
-		"run:sudo /bin/chmod 750 /Users/_yolojail",
+		"run:/usr/bin/sudo /usr/sbin/createhomedir -c -u _yolojail",
+		"run:/usr/bin/sudo /usr/sbin/chown -R _yolojail:_yolojail /Users/_yolojail",
+		"run:/usr/bin/sudo /bin/chmod 750 /Users/_yolojail",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q:\n%s", want, joined)
