@@ -36,7 +36,7 @@ const AgentEnvDirRel = ".config/yolo-agent-env"
 // AgentEnvFilesEnv is the LEGACY spelling of the `agent-env-files` contract tag
 // (ContractTagsEnv). The credential gate's first build froze it as "1" into every container it
 // launched, the first named contract marker in practice (providers.md, CN-D18),
-// and the tag set folded it in (attach-skew-and-contract-guardrails.md, OQ-SK2). No launch
+// and the tag set folded it in (attach-skew.md, OQ-SK2). No launch
 // writes it any more. It is still READ, by internal/cli/run's jailContractTags, for a container
 // that carries no ContractTagsEnv: a jail launched between the gate and the tags must keep
 // counting as one whose launchers source the per-agent files.

@@ -11,7 +11,7 @@ import (
 )
 
 // A POSTURE LIST IS DISCLOSED ON THE AUTONOMY CLAIM, NAMING ITS POSTURE
-// (docs/design/notch-scoped-config-contributions.md NS-D2). `yolo pack footprint` and
+// (docs/reference/pack-system.md NS-D2). `yolo pack footprint` and
 // `yolo pack lint` are where an author sees what a pack does before any launch, and a posture
 // list appends into a surface another pack owns — squarely a statement of what the pack does
 // to its environment — so it cannot be absent from the claim for the kind that declares it.

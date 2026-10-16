@@ -5,7 +5,7 @@
 // cross-pack join and are collected in the same pass against the same owner set
 // (OverlaySet.ListsFor), and so are an autonomy posture's `lists` and its `config` entries on
 // another pack's surface, each gated on the posture the caller's notch selects
-// (docs/design/notch-scoped-config-contributions.md §4.1 and OQ-3): a posture's lists join the
+// (docs/reference/pack-system.md, posture lists and notch-scoped OQ-3): a posture's lists join the
 // lists, and its overlays join the overlays (OverlaySet.For).
 //
 // CROSS-PACK BY CONSTRUCTION, and that is the one structural fact worth stating: an
@@ -163,7 +163,7 @@ func (s *OverlaySet) ListsFor(agent, name string) []agentcfg.ListContribution {
 // the set. A declared posture list is not enough — an unselected one is skipped and an
 // ownerless one is an orphan, and neither lands in a surface — so this is the question
 // `yolo host apply`'s notch line asks before it says the posture "folded into the config
-// surfaces below" (notch-scoped-config-contributions.md NS-D12).
+// surfaces below" (docs/reference/pack-system.md NS-D12).
 func (s *OverlaySet) PlacesPostureListFrom(pack string) bool {
 	if s == nil {
 		return false
@@ -175,7 +175,7 @@ func (s *OverlaySet) PlacesPostureListFrom(pack string) bool {
 // collection PLACED a posture overlay the named pack declares — an autonomy posture's `config`
 // entry on a surface another pack owns, whose posture the collecting notch selects and whose
 // surface has an owner in the set. `yolo host apply`'s notch line asks it for the same reason
-// (notch-scoped-config-contributions.md NS-D24): an ownerless one is an orphan and folds into
+// (docs/reference/pack-system.md NS-D24): an ownerless one is an orphan and folds into
 // nothing below.
 func (s *OverlaySet) PlacesPostureConfigFrom(pack string) bool {
 	if s == nil {
@@ -206,7 +206,7 @@ func (s *OverlaySet) For(agent, name string) []agentcfg.Overlay {
 //   - It selects which posture the OWNER's surfaces are decoded under, so the owner set
 //     matches the render the contributions will fold into.
 //   - It selects which posture's cross-pack contributions are placed: its LISTS
-//     (packdecl.AutonomyPosture.Lists, docs/design/notch-scoped-config-contributions.md §4.1)
+//     (packdecl.AutonomyPosture.Lists, docs/reference/pack-system.md, posture lists)
 //     and its OVERLAYS, the `config` entries naming a surface the declaring pack does not own
 //     (packdecl.AutonomyPosture.Config, OQ-3's ruling). The guarded posture's while the bit is
 //     off, the autonomous posture's while it is on. A config-overlay and a plain config-list
@@ -298,7 +298,7 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 	// from every other multi-pack kind. Two declarations take this pass: a `config-overlay`
 	// contribution, and a POSTURE OVERLAY — an autonomy posture's `config` entry naming a
 	// surface its own pack does not declare (OQ-3's ruling, "do it now. extension point.";
-	// notch-scoped-config-contributions.md NS-D19), which stands at its autonomy
+	// docs/reference/pack-system.md NS-D19), which stands at its autonomy
 	// contribution's position, so "later wins" between the two is declaration order.
 	selected := packdecl.PostureOf(autonomy)
 	for _, p := range packs {
@@ -507,7 +507,7 @@ type placedRegistration struct {
 }
 
 // registrationsOf is the list entries the REGISTERING `files` slots in `packs` ask for, keyed by
-// the CONTRIBUTING pack (packload.Registrations; docs/design/pack-pi-resources.md §3.3), and it adds
+// the CONTRIBUTING pack (packload.Registrations; docs/reference/pack-system.md, pi packages), and it adds
 // a Problem to `set` for each slot whose `register` names a surface its own pack does not declare.
 //
 // Each entry is an ordinary config-list entry of the pack whose tree landed, which is the whole

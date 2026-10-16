@@ -114,7 +114,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 11. Record the Mac runs of 2026-10-02 and 2026-10-03 where each doc's `next` names them — agent work now, ahead of the
     rulings below because the context-mount cases free one: [the AWS doorway](../design/host-notch-services.md), [its
     Bedrock design](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth), [A2's twin](../reference/macos-user-nix-and-features.md#ordering-and-what-aborts), [the
-    render-mark twin](../design/notch-scoped-config-contributions.md#43-render-mark-parity-on-macos-user),
+    render-mark twin](../reference/config-target-resolution.md#where-this-does-not-reach),
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
     build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
@@ -158,7 +158,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
 24. [Decide whether pack-declared traps fold into the agent directory map](../design/agent-directory-map.md) — the map
     would supersede [the traps design](../design/pack-declared-file-diagnostics.md), so rule it before building either.
 25. [Measure the in-jail nix root watcher end to end](../design/in-jail-nix-roots.md#9-watcher-measurement-and-remaining-host-observation) — the running jail observed a tiny build through the watcher, but host root resolution remains unverified; the attempted shared-store root query pruned stale entries, so finish with a safe host-side observation.
-26. [Review H4's root-owned capture store on macos-user](install-capture.md#build-order), [rule whether integration
+26. [Review H4's staged capture store on macos-user](../reference/install-capture.md#build-order), [rule whether integration
     sharding unparks](integration-parallelism.md) with [the test suite's other levers](test-suite-speed.md), and [name
     the real forked program](../design/forked-programs-as-packs.md), the last input its step 7 needs.
     Beside suite speed, [make completion change-aware and read-only](../design/change-aware-completion.md),
@@ -213,9 +213,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     builds still owe: read the first scheduled macos-user nightly with [the vendor
     installs](../reference/agent-install-in-ci.md), and the linux/arm64 copilot cell for [GitHub's own installer](../design/program-delivery.md#OQ-NI1);
     rule the silent drops [the setup census](../design/backend-parity.md#42-what-was-built-2026-10-05-and-what-it-found)
-    found; graduate into system docs [config ownership](../design/config-ownership-and-promotion.md), [pi's package
-    folder](../design/pack-pi-resources.md), and
-    run a dotted `packages` entry on a `macos-user` launch, the one
+    found; run a dotted `packages` entry on a `macos-user` launch, the one
     [UNMEASURED half of the attribute-path resolver](../reference/image-staging-vs-baking.md#what-a-packages-entry-names).
 34. Rulings nothing shipped waits on. Gating one later step: [the host-file permission asymmetry](BACKLOG.md#E2) with
     [its host-side twin](pack-host-management-plan.md), [the skills fan-out](BACKLOG.md#OQ-S4), [sharing a claimed
@@ -256,7 +254,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     `apple-container.yml` dispatch re-asks [the keeper's remaining Apple Container runs](../design/jail-lifetime-last-session-wins.md#7-what-i-would-build-in-order);
     someone at the runner Mac upgrades `container` to 1.5.0 (its kernel prompt is interactive) before the VM-local probe.
 40. The next `macos-user.yml` run carries the Mac checks built since 2026-10-04: [I/O priority](../design/io-priority.md#9-what-i-would-build-in-order),
-    the macos-user keeper, [the capture fixtures](install-capture.md), the host floor's fixture capture, the Mac floor's
+    the macos-user keeper, [the capture fixtures](../reference/install-capture.md), the host floor's fixture capture, the Mac floor's
     fork build and [the guest notch](environment-manager-plan.md); each doc's `next` names its test.
 41. A human with a subscription login runs [the credential-view runbook](runbooks/claude-credential-view-measures.md)
     for [Claude's login without interception](../design/claude-login-without-interception.md), on a Mac and for a day
@@ -269,8 +267,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [Claude's LSP plugin](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin), [the via route](../design/wire-bridge-gateway.md#41-how-it-is-built),
     [menus under a model list](../design/model-lists-and-pickers.md#13-build-order-and-what-done-looks-like), [a switch in
     a provider set](../design/active-provider-sets.md#9-what-done-looks-like), [Copilot's config migration](../design/agent-directory-map.md#74-copilot),
-    [a Kilo session](../design/gateway-provider-packs.md), [the restart prompt](../design/attach-skew-and-contract-guardrails.md),
-    [pi loading a pack's folder](../design/pack-pi-resources.md), [host Chrome from `yolo host -- claude` and under
+    [a Kilo session](../design/gateway-provider-packs.md), [the restart prompt](../reference/attach-skew.md),
+    [pi loading a pack's folder](../reference/pack-system.md#pi-packages), [host Chrome from `yolo host -- claude` and under
     macos-user](../design/mcp-presets-removal.md#13-what-i-would-build-in-order), and [codex, opencode and pi on
     Bedrock](../design/bedrock-plumbing.md#8-behaviour-this-design-fixes) under SSO. Check [Pi launch selection](../design/model-lists-and-pickers.md#1411-pis-provider-flag-travels-only-with-an-explicit-model-built-2026-10-07)
     and [simultaneous native authentication](../design/simultaneous-auth-and-pack-isolation.md) in a live session;
@@ -279,7 +277,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [an SSO lapse mid-turn](../reference/agent-credentials.md#sso-chain-order), [settings-only Bedrock mode](../reference/providers.md#two-channels-split-by-payload-type),
     [an AgentCore gateway](../design/bedrock-web-search.md) and [a Claude usage-limit response](../design/wire-bridge-gateway.md#5-part-4--the-subscription-arm-and-opt-in-failover-ruled).
 45. The maintainer's own commits and launches clear [the `matt` pack's `briefing/`](../reference/pack-system.md#briefing),
-    [its posture list at the host](../design/notch-scoped-config-contributions.md#5-fastest-path-to-the-motivating-case),
+    [its posture list at the host](../reference/pack-system.md#posture-lists-owed),
     [a dropped pack's host output](../reference/pack-system.md#retiring-a-dropped-packs-host-output), [the fzf
     pack](../examples/claude-fzf-pack/README.md#adopting-it), his pack's move to pi's package folder, [the listen-port fix where reported](../reference/wire-bridge.md#what-can-hold-the-listen-port-before-the-bridge-does)
     and [the runner Mac's published-ports change](runbooks/mac-actions-runner.md).
@@ -333,7 +331,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 
 | Item | Class | Disposition |
 |---|---|---|
-| IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger) disposition, not a defect. |
+| IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness

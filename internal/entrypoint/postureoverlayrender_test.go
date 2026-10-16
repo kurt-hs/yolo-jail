@@ -1,7 +1,7 @@
 package entrypoint
 
 // postureoverlayrender_test.go is the BEHAVIORAL proof of OQ-3's ruling ("do it now. extension
-// point.", docs/design/notch-scoped-config-contributions.md): an autonomy posture's `config`
+// point.", docs/reference/pack-system.md): an autonomy posture's `config`
 // patch on a surface another pack owns — a POSTURE OVERLAY — renders at the posture its notch
 // selects and nowhere else, at both render boundaries, as a config-overlay does: the jail boot
 // (ConfigurePackSurfaces, which derives the bit from its own target) and the host apply

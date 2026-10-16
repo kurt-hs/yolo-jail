@@ -1,7 +1,7 @@
 package macosuser
 
 // seatbeltcapture.go is the narrowed Seatbelt profile an INSTALL CAPTURE runs under
-// (docs/design/program-delivery.md §6.3, docs/plans/install-capture.md slice 6).
+// (docs/design/program-delivery.md §6.3, docs/reference/install-capture.md slice 6).
 //
 // # Why this backend needs a second profile at all
 //

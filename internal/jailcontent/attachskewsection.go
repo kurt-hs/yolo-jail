@@ -5,7 +5,7 @@ import (
 )
 
 // attachskewsection.go renders the ACKNOWLEDGED-ATTACH section of the briefing
-// (docs/design/attach-skew-and-contract-guardrails.md, OQ-SK4 decided as SK-D15).
+// (docs/reference/attach-skew.md, OQ-SK4 decided as SK-D15).
 //
 // An attach whose running jail cannot receive what the entry delivers never proceeds on its own
 // (OQ-SK1): it asks for a restart at a terminal and refuses elsewhere, and only

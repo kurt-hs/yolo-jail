@@ -364,7 +364,7 @@ func newUnresolvedPack(e config.PackEntry, err error) unresolvedPack {
 // the launch's error). The pack still LOADS: packload.LoadDir returns it beside its problems,
 // with whatever part of the manifest decoded. Reading that part is the defect this type ends:
 // `yolo host apply --assert` wrote a pack with two `autonomy` contributions into a real home at
-// rc=0 (notch-scoped-config-contributions.md NS-D14). problems carry no "pack <name>: " prefix.
+// rc=0 (docs/reference/pack-system.md NS-D14). problems carry no "pack <name>: " prefix.
 type manifestProblemsError struct {
 	name     string
 	problems []string

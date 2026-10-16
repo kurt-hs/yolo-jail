@@ -1,4 +1,4 @@
-// rewrite.go is the REWRITE half of relocation (docs/plans/install-capture.md slice 6,
+// rewrite.go is the REWRITE half of relocation (docs/reference/install-capture.md slice 6,
 // hand-off H2): materializing an entry into a home OTHER than the one it was captured under, by
 // rewriting every absolute reference the record found from the capture home to the destination.
 //

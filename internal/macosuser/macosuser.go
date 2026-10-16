@@ -554,7 +554,7 @@ type CaptureEntry struct {
 // `capture-materialize --store=` takes it unchanged. It is what entrypoint.CapturesDirEnv names
 // to the bootstrap, which bakes it into every generated launcher.
 //
-// docs/plans/install-capture.md hand-off H4, answered (b): a neutral machine store outside every
+// docs/reference/install-capture.md hand-off H4, answered (b): a neutral machine store outside every
 // home, read-only to the sandbox — an implementation decision under the maintainer's 2026-10-04
 // delegation, reversible. It adds no rule to the session Seatbelt profile beyond the staging
 // root's read allow, which every staged tree needs (StagedCtxRoot). It is the pattern

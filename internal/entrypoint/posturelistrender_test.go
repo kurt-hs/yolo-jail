@@ -1,7 +1,7 @@
 package entrypoint
 
 // posturelistrender_test.go is the BEHAVIORAL proof that a POSTURE LIST
-// (docs/design/notch-scoped-config-contributions.md §4.1) renders at the posture its notch
+// (docs/reference/pack-system.md, posture lists) renders at the posture its notch
 // selects and nowhere else, at both render boundaries: the jail boot (ConfigurePackSurfaces,
 // the loop the entrypoint runs, which derives the bit from its own render target) and the
 // host apply (RenderHostPack, driven the way `yolo host apply` drives it). Each test reads

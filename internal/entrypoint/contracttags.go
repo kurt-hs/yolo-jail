@@ -1,7 +1,7 @@
 package entrypoint
 
 // ContractTagsEnv carries a jail's CONTRACT TAGS: the comma-separated names of what this jail's
-// frozen binaries can receive from a LATER attach (docs/design/attach-skew-and-contract-guardrails.md,
+// frozen binaries can receive from a LATER attach (docs/reference/attach-skew.md,
 // OQ-SK2, which ruled named tags over a version counter; "contract tag" is that doc's term).
 //
 // The host launcher that creates a container freezes it into the container's environment,

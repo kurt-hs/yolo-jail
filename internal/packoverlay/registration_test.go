@@ -2,7 +2,7 @@ package packoverlay
 
 // registration_test.go pins where a REGISTERING files slot's entries are placed: as config-list
 // entries of the pack whose tree landed, on the slot owner's surface, ahead of that pack's own
-// lists (docs/design/pack-pi-resources.md §3.3, PR-D2), and refused when the slot names a surface
+// lists (docs/reference/pack-system.md, pi packages, PR-D2), and refused when the slot names a surface
 // its own pack does not declare.
 
 import (

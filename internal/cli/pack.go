@@ -804,7 +804,7 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 		pr.Printf("[yellow]⚠[/yellow] %s", richtext.Escape(w))
 	}
 	printExpectsNotes(pr, []*packload.Pack{pack})
-	// A tree shipping skills/ for one agent: a note, lint's alone (pack-pi-resources.md §3.4), since
+	// A tree shipping skills/ for one agent: a note, lint's alone (docs/reference/pack-system.md, pi packages), since
 	// giving skills to one agent is a choice and the route to every agent is the author's to take.
 	for _, n := range packload.SkillsInTreeNotes([]*packload.Pack{pack}, withShippedSlots(pack)) {
 		pr.Printf("[yellow]ℹ[/yellow] %s. %s", richtext.Escape(n.Msg), richtext.Escape(n.Fix))
@@ -884,7 +884,7 @@ func overlayProblems(p *packload.Pack) []string {
 }
 
 // printExpectsNotes warns about each addressed `files` tree of `packs` that lands in a slot whose
-// `expects` it misses (packload.ExpectsNotes; docs/design/pack-pi-resources.md PR-D4). A warning,
+// `expects` it misses (packload.ExpectsNotes; docs/reference/pack-system.md PR-D4). A warning,
 // never a failure: the tree still lands and is still registered.
 //
 // ONE pack is read against the slots the packs yolo ships declare, as reportShippedSurfaceClash

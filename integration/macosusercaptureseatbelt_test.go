@@ -15,7 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
-// THE INSTALL-CAPTURE PROFILE'S DENIAL PROBE (docs/plans/install-capture.md, slice 6's hardware
+// THE INSTALL-CAPTURE PROFILE'S DENIAL PROBE (docs/reference/install-capture.md, slice 6's hardware
 // item 3): the profile a capture runs a vendor installer under (macosuser.SeatbeltCaptureProfile),
 // loaded by the kernel as the sandbox account, and the kernel's answer for each path that profile
 // names. The recording half of a capture was measured on hardware on 2026-09-11; that a capture
