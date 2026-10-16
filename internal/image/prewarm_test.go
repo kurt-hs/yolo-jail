@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 // PREWARM IS THE BUILD'S FIRST HALF AND NOTHING ELSE (prewarm.go): with the runtime holding this
@@ -62,6 +65,40 @@ func TestAPrewarmWhoseContextEndedBuildsNothing(t *testing.T) {
 		return "", nil
 	}
 	Prewarm(o)
+}
+
+// AN ENDED CONTEXT INTERRUPTS THE IDENTITY EVAL'S NIX (EvalImageIdentityContext): as a Ctrl-C would,
+// and the eval answers ok=false once it has exited. Red with the eval's interruptOnCancel deleted,
+// which leaves exec's default kill, which the stand-in's trap never sees.
+func TestAnEndedContextInterruptsTheIdentityEvalsNix(t *testing.T) {
+	s := freshNixChildren(t)
+	started, interrupted := startMark(t), filepath.Join(t.TempDir(), "interrupted")
+	standInNix(t, testsupport.UntilInterrupted(": >"+shquote.Quote(interrupted), started))
+	ctx, cancel := context.WithCancel(context.Background())
+	type evaluated struct {
+		id string
+		ok bool
+	}
+	done := make(chan evaluated, 1)
+	go func() {
+		id, ok := EvalImageIdentityContext(ctx, t.TempDir())
+		done <- evaluated{id, ok}
+	}()
+	awaitTracked(t, s, 1)
+	awaitStarted(t, started)
+	cancel()
+	select {
+	case e := <-done:
+		if e.ok {
+			t.Errorf("an interrupted eval answered identity %q", e.id)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the eval did not return after its context ended")
+	}
+	if _, err := os.Stat(interrupted); err != nil {
+		t.Errorf("the eval's nix was not interrupted: %v", err)
+	}
+	awaitTracked(t, s, 0)
 }
 
 // AN ENDED CONTEXT INTERRUPTS THE BUILD'S NIX (runNixBuildContext): as a Ctrl-C would, and the

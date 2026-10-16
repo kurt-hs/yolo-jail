@@ -12,23 +12,29 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
 // A REFUSED LAUNCH LEAVES NO PREWARM NIX RUNNING: a fresh launch whose slot hands no build is
 // refused (missingbuilds.go) while its prewarm's `nix eval .#imageIdentity` still runs, and Run
-// returns only once that nix has ended. Red with Run's deferred stopImagePrewarm deleted: the
-// stand-in nix is still running, and in a real launch it went on with parent pid 1 for up to its
-// two-minute limit, writing the user's nix cache.
+// returns promptly, once it has INTERRUPTED that nix and the nix has ended. Red with Run's deferred
+// stopImagePrewarm deleted: the stand-in nix is still running, and in a real launch it went on with
+// parent pid 1 for up to its two-minute limit, writing the user's nix cache. Red too with the eval
+// not ending with the prewarm's context (identityMemo's ctx): Run then waits out the stand-in's own
+// limit, and no interrupt reaches it.
 func TestARefusedLaunchLeavesNoPrewarmNixRunning(t *testing.T) {
 	slotLaunchHome(t)
 	set := nixchildren.Isolate(t)
-	started := filepath.Join(t.TempDir(), "started")
+	marks := t.TempDir()
+	started, interrupted := filepath.Join(marks, "started"), filepath.Join(marks, "interrupted")
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "nix"),
-		[]byte("#!/bin/sh\n"+testsupport.UntilInterrupted(":", started)+"\n"), 0o755); err != nil {
+		[]byte("#!/bin/sh\n"+testsupport.UntilInterrupted(": >"+shquote.Quote(interrupted), started)+"\n"),
+		0o755); err != nil {
 		t.Fatal(err)
 	}
+	var returned time.Time
 	argv, printed := fakePodmanLaunch(t, func(o *Options) {
 		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 		o.prewarmImage = image.Prewarm
@@ -43,10 +49,19 @@ func TestARefusedLaunchLeavesNoPrewarmNixRunning(t *testing.T) {
 					break
 				}
 			}
+			returned = time.Now()
 			return map[string]entrypoint.ForkDelivery{"tool": {Reason: "test"}},
 				map[string]TreeDelivery{treeKey: {Reason: "test"}}
 		}
 	})
+	// From the slot's end, the refusal and the stop take well under the stand-in's 30-second limit:
+	// the interrupt ends it at once.
+	if took := time.Since(returned); took > 10*time.Second {
+		t.Errorf("the refused launch took %s after its slot to return; its prewarm's nix was not interrupted", took)
+	}
+	if _, err := os.Stat(interrupted); err != nil {
+		t.Errorf("the refused launch did not interrupt its prewarm's nix: %v", err)
+	}
 	if argv != nil {
 		t.Fatalf("the launch was not refused\n%s", printed)
 	}
