@@ -12,6 +12,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
 // wireFloorOrdinaryCapture is compatibility-gated reuse, not a native producer.
@@ -66,48 +68,56 @@ func wireFloorOrdinaryCapture(f *hostfloor.Floor, store *capture.Store, out io.W
 		if err != nil || identity != record.Identity {
 			return nil, nil
 		}
+		// PD-NF1 (docs/design/program-delivery.md §3.6), by the jail launch's own rule
+		// (admittedServes, retriedAdmitted): a prepared generation whose last check found a newer
+		// version and failed to prepare it is not served in silence. Unless a hold, the hatch or a
+		// check that never resolved anything serves it, this act retries the newer version in front
+		// of the program.
+		var admitted *npmCaptureRecord
+		var recovery admittedRecovery
+		if !fresh && record.Failure != "" {
+			recovery = hostAdmittedRecovery(f, p, in)
+			if !admittedServes(in, record, recovery, out) {
+				prior := record
+				admitted, fresh = &prior, true
+			}
+		}
 		if fresh {
-			d := preparationDemand{Kind: preparationOrdinaryProgramKind, Key: ordinaryProgramKey(in), Runtime: captureRuntime(), Platform: actual.Platform}
-			current, fingerprint, release, err := resolveOrdinaryPreparation(ctx, d)
-			release()
-			if errors.Is(err, errSharedPreparationForegroundOnly) {
-				return nil, nil
-			}
-			if err != nil {
-				return nil, err
-			}
-			if current == nil || *current != in {
-				return nil, errPreparationAdmissionStale
-			}
-			d.Identity = ordinaryProgramIdentity(in, fingerprint, d.Runtime, d.Platform)
-			guard := func(commit func() error) error {
-				if ctx.Err() != nil {
-					return ctx.Err()
+			next, err := hostOrdinaryCheck(ctx, in, actual.Platform, out)
+			switch {
+			case admitted != nil && err != nil && !errors.Is(err, errNPMCaptureUnsupported) && !errors.Is(ctx.Err(), context.Canceled):
+				// The retry failed. A newer version found again is the refusal; a check that found
+				// nothing serves the prepared generation, saying it could not check.
+				guard := func(commit func() error) error {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					return commit()
 				}
-				_, _, release, e := resolveOrdinaryPreparation(ctx, d)
-				defer release()
-				if e != nil {
-					return e
+				if _, err = retriedAdmitted(ctx, store, in, *admitted, err, recovery, out, guard); err != nil {
+					var refusal *hostfloor.UpdateRefusal
+					if errors.As(err, &refusal) {
+						_, _ = io.WriteString(out, refusal.Render(floorOutColor(out)))
+					}
+					return nil, err
 				}
-				return commit()
-			}
-			record, err = waitOrdinaryPreparation(ctx, in, fingerprint, d.Runtime, d.Platform, true, out, guard)
-			if errors.Is(err, errNPMCaptureUnsupported) {
+			case errors.Is(err, errSharedPreparationForegroundOnly), errors.Is(err, errNPMCaptureUnsupported):
 				return nil, nil
-			}
-			if err != nil {
+			case err != nil:
 				return nil, err
-			}
-			if record.Resolution == nil || record.Resolution.Runtime != actual {
-				return nil, nil
-			}
-			inputs, err = record.Resolution.inputs()
-			if err != nil {
-				return nil, err
-			}
-			identity, err = inputs.Identity()
-			if err != nil {
-				return nil, err
+			default:
+				record = next
+				if record.Resolution == nil || record.Resolution.Runtime != actual {
+					return nil, nil
+				}
+				inputs, err = record.Resolution.inputs()
+				if err != nil {
+					return nil, err
+				}
+				identity, err = inputs.Identity()
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		entry, _, err := resolveProgramCaptureFor(store, in.Bin, actual.Platform, identity)
@@ -126,4 +136,57 @@ func wireFloorOrdinaryCapture(f *hostfloor.Floor, store *capture.Store, out io.W
 			return ctx.Err()
 		}}, nil
 	}
+}
+
+// hostOrdinaryCheck is the host floor's fresh ordinary preparation of in: the check `yolo host
+// --update` runs, and the retry PD-NF1 runs over a prepared generation whose newer version failed.
+// errSharedPreparationForegroundOnly and errNPMCaptureUnsupported say the floor's bounded installer
+// is the route instead.
+func hostOrdinaryCheck(ctx context.Context, in npmCaptureInput, platform string, out io.Writer) (npmCaptureRecord, error) {
+	d := preparationDemand{Kind: preparationOrdinaryProgramKind, Key: ordinaryProgramKey(in), Runtime: captureRuntime(), Platform: platform}
+	current, fingerprint, release, err := resolveOrdinaryPreparation(ctx, d)
+	release()
+	if err != nil {
+		return npmCaptureRecord{}, err
+	}
+	if current == nil || *current != in {
+		return npmCaptureRecord{}, errPreparationAdmissionStale
+	}
+	d.Identity = ordinaryProgramIdentity(in, fingerprint, d.Runtime, d.Platform)
+	guard := func(commit func() error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		_, _, release, e := resolveOrdinaryPreparation(ctx, d)
+		defer release()
+		if e != nil {
+			return e
+		}
+		return commit()
+	}
+	return waitOrdinaryPreparation(ctx, in, fingerprint, d.Runtime, d.Platform, true, out, guard)
+}
+
+// hostAdmittedRecovery is the host floor's admittedRecovery for p: the floor's own `agent_updates`
+// policy and hatch, its `yolo host` lines, and the floor refusal's repair and hatch commands
+// (hostfloor's refuseUpdate and hatchCommand, which are the floor's own and unexported).
+func hostAdmittedRecovery(f *hostfloor.Floor, p hostfloor.Program, in npmCaptureInput) admittedRecovery {
+	rc := admittedRecovery{Prefix: "yolo host: ", Repair: "yolo host --update -- " + shquote.Quote(p.Bin()),
+		Command: f.PatchBypassCommand}
+	if rc.Command == "" {
+		rc.Command = "yolo host -- " + shquote.Quote(p.Bin())
+	}
+	rc.Held = !f.ManualUpdate && f.UpdatesAllowed != nil && !f.UpdatesAllowed(p.Pack)
+	if f.UseInstalled != nil {
+		rc.UseInstalled = f.UseInstalled(p)
+	} else {
+		rc.UseInstalled = ordinaryUseInstalled(in)
+	}
+	return rc
+}
+
+// floorOutColor is the floor's color decision for its Out (hostfloor's colorFor).
+func floorOutColor(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	return tty.Color(nil, true, ok && tty.IsTerminalFile(file))
 }
