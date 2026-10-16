@@ -926,9 +926,11 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// signal's status, not a refusal.
 
 	steps.begin("context_preflight")
-	if !runContextPreflight(deps, out, opts.HostCtx.Links, containerStep(opts.PackEnv)) {
+	kept, ok := runContextPreflight(deps, out, opts.HostCtx.Links, containerStep(opts.PackEnv))
+	if !ok {
 		return deps.endingOr(1)
 	}
+	opts.HostCtx.Links = kept
 	// AND EVERY CACHE RELOCATION'S TARGET, the same DAC questions as a read-write context source
 	// (CacheRelocationPreflight), asked here for the same reasons. The write under the session's
 	// own profile needs the profile installed, so it waits for that step (relocation_probe).
@@ -1625,9 +1627,14 @@ func applyDiskIOPolicy(deps Deps, out printer, p ioprio.Priority) {
 //
 // No links asks nothing and prints nothing, which is every launch that declares no context mount.
 // step is containerStep's clause for the refusal's container-runtime step.
-func runContextPreflight(deps Deps, out printer, links []ContextLink, step string) bool {
+//
+// AN OPTIONAL LINK THE SANDBOX CANNOT REACH IS SKIPPED, not refused: one line, and it is absent
+// from the links returned, which are the ones the plan stages and the profile opens
+// (docs/reference/context-mounts.md#optional-mounts). The briefing was composed before this
+// question could be asked, so it may still list the skipped path; the skip line is what says so.
+func runContextPreflight(deps Deps, out printer, links []ContextLink, step string) ([]ContextLink, bool) {
 	if len(links) == 0 {
-		return true
+		return links, true
 	}
 	out.printf("[dim]Checking that %s can reach %d context mount source(s).[/dim]",
 		SandboxUser, len(links))
@@ -1637,7 +1644,7 @@ func runContextPreflight(deps Deps, out printer, links []ContextLink, step strin
 	for _, p := range ContextPreflight(links, "") {
 		// A signal ending the launch stops the probing: each probe is a crossing of its own.
 		if _, ending := deps.ending(); ending {
-			return false
+			return nil, false
 		}
 		key := p.Link.Dest + "\x00" + p.Link.Source
 		if refused[key] {
@@ -1645,14 +1652,25 @@ func runContextPreflight(deps Deps, out printer, links []ContextLink, step strin
 		}
 		if deps.Run(p.Argv) != 0 {
 			refused[key] = true
+			if p.Link.Optional {
+				out.print(config.OptionalMountSkipLine(p.Link.NamedSource(), p.Link.Dest,
+					SandboxUser+" cannot "+p.Access+" it"))
+				continue
+			}
 			failed = append(failed, p)
 		}
 	}
 	if len(failed) > 0 {
 		deps.sayFailed(out, ContextPreflightRefusal(failed, step))
-		return false
+		return nil, false
 	}
-	return true
+	kept := make([]ContextLink, 0, len(links))
+	for _, l := range links {
+		if !refused[l.Dest+"\x00"+l.Source] {
+			kept = append(kept, l)
+		}
+	}
+	return kept, true
 }
 
 // runCacheRelocationProbes runs each relocation probe (the DAC preflight's, or the writes under

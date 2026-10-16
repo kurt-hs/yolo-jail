@@ -93,7 +93,7 @@ func TestMacosUserStillRefusesAPackDirectoryMountInAHome(t *testing.T) {
 
 	out := runMacosUserExpectingRefusal(t, t.TempDir(), homeSiting(t, home))
 
-	if want := "is inside the home folder " + home; !strings.Contains(out, want) {
+	if want := "macos-user can't reach a folder inside a home"; !strings.Contains(out, want) {
 		t.Errorf("the refusal did not say %q:\n%s", want, out)
 	}
 }
@@ -113,8 +113,8 @@ func TestMacosUserRefusesAConfigMountAroundACopiedPackFile(t *testing.T) {
 	out := runMacosUserExpectingRefusal(t, t.TempDir(), deliveringSiting(t, ""))
 
 	for _, want := range []string{
-		"contains /ctx/acme/notes.txt, which yolo's own staging uses", // the link's own side
-		"where a link is staged", // the copy's side
+		"macos-user can't nest it with yolo's own /ctx/acme/notes.txt", // the link's own side
+		"macos-user can't nest it with the mount at /ctx/acme",         // the copy's side
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refusal did not say %q:\n%s", want, out)
@@ -132,7 +132,7 @@ func TestMacosUserRefusesACopiedPackFileAtAReadsHostDestination(t *testing.T) {
 
 	out := runMacosUserExpectingRefusal(t, t.TempDir(), deliveringSiting(t, ""))
 
-	if want := "is /ctx/host-claude/settings.json, which yolo's own staging uses"; !strings.Contains(out, want) {
+	if want := "macos-user can't nest it with yolo's own /ctx/host-claude/settings.json"; !strings.Contains(out, want) {
 		t.Errorf("the refusal did not say %q:\n%s", want, out)
 	}
 }
@@ -148,7 +148,7 @@ func TestMacosUserRefusesTwoPackFilesCopiedToOnePath(t *testing.T) {
 
 	out := runMacosUserExpectingRefusal(t, t.TempDir(), deliveringSiting(t, ""))
 
-	if want := "two copied files cannot share or nest a path"; !strings.Contains(out, want) {
+	if want := "macos-user can't nest it with the copy at /ctx/shared/notes.txt"; !strings.Contains(out, want) {
 		t.Errorf("the refusal did not say %q:\n%s", want, out)
 	}
 }

@@ -409,8 +409,8 @@ func (o *Options) macosUserCaptures(packs []*packload.Pack) ([]macosuser.Capture
 func (o *Options) macosCtxLinks(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	note func(string)) (links, copies []macosuser.ContextLink, refused []macosuser.ContextRefusal) {
 	for _, m := range o.configCtxMounts("macos-user", cfg, note) {
-		links = append(links, macosuser.ContextLink{Dest: m.dest, Source: m.source, RW: m.rw,
-			Dir: isDir(m.source)})
+		links = append(links, macosuser.ContextLink{Dest: m.dest, Source: m.source, Named: m.host,
+			RW: m.rw, Optional: m.optional, Dir: isDir(m.source)})
 	}
 	for _, m := range o.packCtxMounts("macos-user", packs, note) {
 		l := macosuser.ContextLink{Dest: m.dest, Source: resolvePath(m.source),
@@ -433,11 +433,50 @@ func (o *Options) macosCtxLinks(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	for _, c := range copies {
 		forLinks = append(forLinks, c.Dest)
 	}
-	refused = macosuser.SiteContextLinks(siting, resolvePath(o.Workspace), links,
-		macosuser.ContextOccupied(forLinks))
-	refused = append(refused, macosuser.SiteContextCopies(siting, copies, links,
-		macosuser.ContextOccupied(declared))...)
-	return links, copies, refused
+	site := func() []macosuser.ContextRefusal {
+		r := macosuser.SiteContextLinks(siting, resolvePath(o.Workspace), links,
+			macosuser.ContextOccupied(forLinks))
+		return append(r, macosuser.SiteContextCopies(siting, copies, links,
+			macosuser.ContextOccupied(declared))...)
+	}
+	// AN OPTIONAL LINK THIS BACKEND CANNOT DELIVER IS DROPPED with one line, and the rest are
+	// sited again without it: a required link refused only for colliding with a dropped one is
+	// then admitted. Dropping only ever removes refusals, so this settles within len(links)
+	// rounds. A reason marked Unsafe is never dropped: "optional" means "may be absent", not
+	// "may be unsafe" (docs/reference/context-mounts.md#optional-mounts).
+	for {
+		refused = site()
+		drop := map[int]bool{}
+		for _, r := range refused {
+			if r.Link.Pack == "" && r.Link.Optional && !r.Unsafe {
+				drop[r.Index] = true
+			}
+		}
+		if len(drop) == 0 {
+			return links, copies, refused
+		}
+		kept := links[:0:0]
+		for i, l := range links {
+			if drop[i] {
+				if note != nil {
+					note(config.OptionalMountSkipLine(l.NamedSource(), l.Dest, skipBrief(refused, i)))
+				}
+				continue
+			}
+			kept = append(kept, l)
+		}
+		links = kept
+	}
+}
+
+// skipBrief is the brief of the link refusal at index i.
+func skipBrief(refused []macosuser.ContextRefusal, i int) string {
+	for _, r := range refused {
+		if r.Link.Pack == "" && r.Index == i {
+			return r.Brief
+		}
+	}
+	return ""
 }
 
 // macosDeclaredHostFileDests is every /ctx destination a selected pack's `reads-host` grant
@@ -473,24 +512,54 @@ func (o *Options) planMacosUserCtxMounts(cfg *jsonx.OrderedMap, packs []*packloa
 	if len(refused) == 0 {
 		return links, copies, true
 	}
-	out := o.pr(o.Stderr)
-	out.print("[bold red]Refusing the macos-user launch: this backend cannot deliver every " +
-		"context mount.[/bold red]")
-	for _, r := range refused {
-		out.print("  • " + r.Link.Origin() + ": " + r.Link.NamedSource() + " → " + r.Link.Dest +
-			" (" + r.Link.Mode() + "): " + r.Reason)
-	}
-	out.print("On macos-user a context mount is a root-owned link in $" + paths.ContextDirEnv +
-		" to the host folder itself, and the Seatbelt profile decides what the sandbox may do " +
-		"there, so the folder must be one the sandbox account can reach and must not overlap " +
-		"anything else it writes: a read-only one outside every home and outside the " +
-		"sandbox's writable places (under /Users/Shared, or outside /Users), a read-write one " +
-		"under " + macosuser.SharedRootDefault() + " (docs/reference/context-mounts.md#delivery-on-macos-user). A " +
-		"pack's single-file `mount` is copied there instead, and refuses only where its path " +
-		"collides with another. Move the folder there, remove the entry (or the pack) for this " +
-		"workspace, or use a container runtime (`runtime: \"podman\"` or `\"container\"`)" +
-		o.containerStepClause() + ".")
+	o.pr(o.Stderr).print(macosCtxRefusal(refused, o.containerStepClause()))
 	return nil, nil, false
+}
+
+// macosCtxRefusal is the macos-user context-mount refusal, in the maintainer's output style: one
+// headline, the offending mounts, then the fixes as lines to copy — "mark it optional" among them
+// with the exact JSON for each `mounts` element that may be, which is every refused config
+// element whose reason is not a safety one (docs/reference/context-mounts.md#optional-mounts).
+// step is the container-runtime step's notch clause (config.ContainerStepClause).
+func macosCtxRefusal(refused []macosuser.ContextRefusal, step string) string {
+	noun := "context mount"
+	if len(refused) != 1 {
+		noun = fmt.Sprintf("%d context mounts", len(refused))
+	}
+	b := "[bold red]Refusing the macos-user launch: it can't deliver " + noun + ".[/bold red]\n\n"
+	var optional []string
+	for _, r := range refused {
+		why := r.Brief
+		if why == "" {
+			why = r.Reason
+		}
+		b += "  " + r.Link.NamedSource() + " → " + r.Link.Dest + " (" + r.Link.Mode() + ", " +
+			r.Link.Origin() + "): " + why + "\n"
+		if r.Link.Pack == "" && !r.Unsafe {
+			optional = append(optional, optionalSpellingOf(r.Link))
+		}
+	}
+	b += "\nFix one:\n"
+	b += "  copy the folder under " + macosuser.SharedRootDefault() + " (cp -R) and point the entry there\n"
+	if len(optional) > 0 {
+		b += "  mark it optional, replacing the `mounts` entry with:\n"
+		for _, s := range optional {
+			b += "    " + s + "\n"
+		}
+	}
+	b += "  remove the entry (or the pack) for this workspace\n"
+	b += "  use a container runtime: \"runtime\": \"podman\" (or \"container\")" + step
+	return b
+}
+
+// optionalSpellingOf is the "mark it optional" JSON for a refused config link: the element as
+// written (Named), its mode, and its jail path when it is not the default one.
+func optionalSpellingOf(l macosuser.ContextLink) string {
+	m := config.ContextMount{Host: l.NamedSource(), RW: l.RW}
+	if l.Dest != paths.ContainerContextDir+"/"+filepath.Base(l.Source) {
+		m.At = l.Dest
+	}
+	return m.OptionalSpelling()
 }
 
 // noteMacosUserRWMounts is §2.4's disclosure on this backend: one line per read-write context

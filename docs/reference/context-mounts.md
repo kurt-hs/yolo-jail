@@ -90,7 +90,8 @@ All but the first two were coined by the design that built this, and survive her
   builder takes rw elements only from sources the trust predicate admits
   ([Where a read-write mount may be declared](#where-a-read-write-mount-may-be-declared)).
 - **Never create, chown or chmod a context source on a container backend.** A missing source,
-  either mode, is skipped with a warning.
+  either mode, is skipped with a warning (an optional one with one skip line).
+- **Optional never skips a safety refusal** ([CX-D28](#CX-D28)).
 - **Never hand out a writable mount as the fallback for a read-only one.** That is
   `roBindsUnsupported`'s rule, and it covers the new mode too.
 - **rw is not gated by `acROBindsFloor`.** The Apple Container floor exists for `:ro`; an rw
@@ -152,6 +153,48 @@ Without it a bare `~/work/packs` passed `yolo check` and podman refused it late,
 one had podman create its mountpoint inside the outer bind's host directory, even through a
 `:ro` bind ([CX-D15](#CX-D15), measured with podman 5.8.7 in a nested, rootful jail). Two
 declarations nesting is the user's own layout and is not refused on the container backends.
+
+### Optional mounts
+
+<a id="CX-D27"></a><a id="CX-D28"></a><a id="CX-D29"></a><a id="CX-D30"></a>
+
+An object element may say `"optional": true` (default `false`), ruled as the
+[`OQ-CX7` amendment](#oq-cx7-amended). A required element a backend cannot deliver refuses as
+before; an optional one is skipped with one plain line and the launch goes on:
+
+```jsonc
+{ "host": "~/.local/share/yolo-jail/logs", "at": "/ctx/host-yolo-logs", "mode": "ro", "optional": true }
+```
+
+```text
+skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (macos-user can't reach a folder inside a home)
+```
+
+- **The key is `optional` on the existing object form**, beside `host`, `at` and `mode`, not a
+  new `source`/`target` spelling ([CX-D27](#CX-D27)). The object form already carries every
+  per-mount option, and `mode` stays required, so an optional element still says its mode. The
+  string form has no optional spelling and always means required.
+- **Optional means "may be absent", never "may be unsafe"** ([CX-D28](#CX-D28)). It skips only
+  delivery failures: a missing source, the macos-user siting's reach and layout rules, the
+  sandbox account's DAC preflight, an Apple Container below the `:ro` floor, and a source a macOS
+  Podman Machine does not share. It never skips the [refusal set](#the-refusal-set)
+  (`paths.WritableSourceScopeBreach` included), the broker mount fence, a `yolo check` destination
+  collision, or the three macos-user siting reasons marked `Unsafe`: a source containing every home,
+  inside the sandbox account's home, or overlapping yolo's state directory. Those refuse an
+  optional element exactly as a required one.
+- **A missing source** is a skip line for an optional element and no validation warning, so the
+  launch says it once; a required element keeps its warning and file location, unchanged
+  ([CX-D24](#CX-D24), [CX-D29](#CX-D29)).
+- **Every backend, one line** (`config.OptionalMountSkipLine`): the host path as written, the jail
+  path, and a few-word reason. On macos-user, dropping an optional link re-sites the rest, so a
+  required link refused only for nesting with it is delivered. `yolo check` prints the same lines
+  as information, never `[WARN]` or `[FAIL]`, through `run.OptionalMountSkips`, which predicts no
+  pack-grant collision, Podman Machine share or Apple Container floor ([CX-D30](#CX-D30)).
+- **The macos-user refusal** now reads as a headline, the refused mounts with their brief reasons,
+  then the fixes: copy the folder under the shared root, mark it optional (with the exact JSON for
+  each element that may be), remove it, or use a container runtime.
+- **Known gap:** the macos-user briefing is composed before the DAC preflight runs, so an optional
+  element skipped by the preflight alone may still be listed there. The skip line names it.
 
 ### Where a read-write mount may be declared
 
@@ -415,7 +458,8 @@ uid. So:
   file in the user's tree is readable but not editable by the user, a silent ownership trap.
 - **A source inside a real home is refused** ([`OQ-CX7`](#oq-cx7), ruled as [CX-D23](#CX-D23)):
   a source to share goes in a shared location. Even where DAC would pass, git-style upward stats
-  need ancestor grants inside the home, which `ancestorLiterals` refuses on purpose.
+  need ancestor grants inside the home, which `ancestorLiterals` refuses on purpose. An
+  [optional](#optional-mounts) element there is skipped instead.
 
 The siting rules are `macosuser.SiteContextLinks`, lexical over the source as the host resolved
 it, with every macOS fact a field of `macosuser.ContextSiting` so a Linux test can state each
@@ -626,4 +670,5 @@ only place the values themselves are stated.
 | <a id="oq-cx3"></a>[`OQ-CX3`](#oq-cx3) | The read-only form keeps its ordinary rules and takes no share of the rw refusal predicate, answered by [OQ-PR3](podman-readiness.md#why-its-this-way) | The maintainer ruled that a jail mounting the logs dir may read it: *"It's just like anything else on the host, it's outside of their view."* The shared predicate would refuse that mount. Whether a workspace config may declare any host mount is a scope question, [OQ-AS3](../research/agent-safehouse.md#OQ-AS3), whose presentation should name a user-scope ro mount of `$HOME`. |
 | <a id="oq-cx5"></a>[`OQ-CX5`](#oq-cx5) | DP-D15 is narrowed: deliver by link plus Seatbelt where the preflight and siting pass, refuse fatally elsewhere | DP-D15 is conditional in the maintainer's words (*"if we can't do it, we can't do it, we'll just make it a fatal error"*), and [OQ-DP4](../design/declaration-parity.md#decision-ledger) asked for delivery *"however we can make it work"*. DP-D15 said "can't" because a copy was the only mechanism; for a reachable source it is not. |
 | <a id="oq-cx7"></a>[`OQ-CX7`](#oq-cx7) | A context source inside a real home stays refused on macos-user; no ACL grant, no per-launch clone ([CX-D23](#CX-D23)) | The maintainer: *"I don't want to start setting ACLs or whatever on files and home directories … If you want to share something, you must put it in a shared location, and I think that's going to solidify mental models … And I also don't want this clone. That could be very slow."* |
+| <a id="oq-cx7-amended"></a>[`OQ-CX7`, amended 2026-10-16](#oq-cx7-amended) | A `mounts` object element may be `"optional": true`: a backend that cannot deliver it skips it with one line instead of refusing ([Optional mounts](#optional-mounts)). A required element, and every safety refusal, is unchanged | The maintainer: *"Yes, I like the optional mount choice. Let's add that."* The home-source refusal stands; optional is how one config serves macos-user and a container backend at once. |
 | <a id="oq-cx8"></a>[`OQ-CX8`](#oq-cx8) | A `/Volumes` source or a privacy-protected folder refuses fatally until measured ([CX-D5](#CX-D5)) | An unmeasured delivery fails only when the agent opens the path. Revisit with the `/Volumes` measurement; the privacy-folder half was measured unreadable. |
