@@ -1252,6 +1252,9 @@ func (o *Options) startExternalService(
 		// daemon's bind with EADDRINUSE, and would satisfy any existence-shaped
 		// wait instantly (the wait below is a connect for exactly that reason).
 		o.reportStaleRemoval("upstream socket", name, daemonPath)
+		// And the stop marker `yolo host-daemon stop` may have left for a copy no supervisor was
+		// watching any more: it names that copy's pids, never this one's (hostdaemonsupervise.go).
+		hostservice.ClearStopMarker(daemonPath)
 	}
 	cmdArgs, ok := o.resolveDaemonArgv(name, spec, daemonPath)
 	if !ok {
@@ -1586,6 +1589,11 @@ func (o *Options) startExternalService(
 	sup := newDaemonSupervisor(name, serviceLog, cmd, exited)
 	sup.say = supervisorSay(serviceLog, launchLogOnly(o.Stdout))
 	sup.wrapperExit = func(*exec.Cmd) bool { return reachable() }
+	if fronted {
+		// The copies `yolo host-daemon stop` acts on are the ones at a front socket, and its marker
+		// sits beside that socket. A restart's removal of the socket's siblings clears it too.
+		sup.stoppedByVerb = func(pid int) bool { return hostservice.TakeStopMarker(daemonPath, pid) }
+	}
 	sup.start = func() (*exec.Cmd, <-chan struct{}, error) {
 		// The dead process's artifact first, as the first spawn removed a predecessor's: a leftover
 		// endpoint file satisfies the wait at once, and a leftover socket fails the bind.

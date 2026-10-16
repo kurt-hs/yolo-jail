@@ -31,16 +31,21 @@ package run
 //     simply restarted;
 //   - a clean exit that leaves the service reachable: the daemonizing wrapper the readiness wait
 //     accepts, whose service lives on in a child this process cannot see. Supervision ends there,
-//     as the keeper's watch always did.
+//     as the keeper's watch always did;
+//   - a stop by `yolo host-daemon stop` (or `yolo broker stop`), which writes a marker beside the
+//     copy's front socket naming the pids it signals before it signals them
+//     (hostservice.WriteStopMarker). A death whose pid the marker names is reported once, not
+//     restarted, and ends supervision with the service down: stop means stop. Every spawn at the
+//     socket removes a marker an earlier copy left, so none outlives the copy it was written for.
 //
 // WHERE IT IS SAID (an implementation decision under HD-D25 (4)): every death, restart and give-up
 // is one line in the daemon's host log (logs/host-service-<name>.log) and one in the workspace's
 // launch.log, and mid-session NOT on the terminal, where the agent's interface owns the screen and
 // a line would land inside it. launchLogOnly picks the launch.log half of the launch's writer. A
 // death before the keeper's ready still reaches the launch's terminal through the keeper's progress
-// pipe, as every keeper line does then. A give-up and a retired exit close the handle's end, so the
-// keeper records them down (recordServiceDown) and tells each session; a restarted death is not
-// down and is not recorded.
+// pipe, as every keeper line does then. A give-up, a retired exit and the verb's stop close the
+// handle's end, so the keeper records them down (recordServiceDown) and tells each session; a
+// restarted death is not down and is not recorded.
 //
 // NOTHING SUPERVISES THE SUPERVISOR (OQ-HD5): if this yolo process dies, its daemons' deaths stand
 // until the next launch, which spawns its own.
@@ -97,6 +102,9 @@ type daemonSupervisor struct {
 	wrapperExit func(cmd *exec.Cmd) bool
 	// say writes one line to the daemon's host log and the launch's log (sayTo).
 	say func(line string)
+	// stoppedByVerb reports, and consumes, the marker `yolo host-daemon stop` leaves for the pid
+	// it signals (hostservice.TakeStopMarker). nil for a daemon the verb never stops.
+	stoppedByVerb func(pid int) bool
 
 	mu       sync.Mutex
 	cmd      *exec.Cmd
@@ -141,6 +149,10 @@ func (s *daemonSupervisor) finish(how string) {
 // whichever process is current to signal (stopService: detach or kill). A restart in flight
 // either sees the mark and spawns nothing, or spawned under the lock before it, in which case
 // signal gets that process.
+//
+// A PROCESS ALREADY REAPED IS NOT SIGNALED: during a backoff wait, and after a give-up, the
+// current process has exited and its Wait has returned, so its pid may belong to another process
+// by now. exited closes only after that Wait, and until then the pid is still this child's.
 func (s *daemonSupervisor) stop(signal func(cmd *exec.Cmd, exited <-chan struct{})) {
 	s.mu.Lock()
 	if !s.stopping {
@@ -149,6 +161,11 @@ func (s *daemonSupervisor) stop(signal func(cmd *exec.Cmd, exited <-chan struct{
 	}
 	cmd, exited := s.cmd, s.exited
 	s.mu.Unlock()
+	select {
+	case <-exited:
+		return
+	default:
+	}
 	signal(cmd, exited)
 }
 
@@ -181,6 +198,10 @@ func (s *daemonSupervisor) logClause() string {
 // stoppedByTeardown is the end's account of a teardown's own stop, which the keeper never records.
 const stoppedByTeardown = "stopped by its jail's end"
 
+// stoppedByVerbAccount is the end's account of a stop by `yolo host-daemon stop`, which the keeper
+// records as the service down, as it does a give-up.
+const stoppedByVerbAccount = "it was stopped by `yolo host-daemon stop`, and is not restarted"
+
 // run is the supervision loop, from the first spawn's ready to supervision's end.
 func (s *daemonSupervisor) run() {
 	restarts := 0
@@ -192,6 +213,13 @@ func (s *daemonSupervisor) run() {
 		<-exited
 		if s.isStopping() {
 			s.finish(stoppedByTeardown)
+			return
+		}
+		if s.stoppedByVerb != nil && cmd.Process != nil && s.stoppedByVerb(cmd.Process.Pid) {
+			s.say(fmt.Sprintf("host service '%s' was stopped by `yolo host-daemon stop`; not "+
+				"restarted. What uses it fails until its jail is launched again, which starts a "+
+				"fresh copy.%s", s.name, s.logClause()))
+			s.finish(stoppedByVerbAccount)
 			return
 		}
 		if st := cmd.ProcessState; st != nil && st.Success() && s.wrapperExit(cmd) {
