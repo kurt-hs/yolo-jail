@@ -10,7 +10,7 @@ the picture stops feeling accidental.
 **Status:** CURRENT — the four-layer model and the whole resolution story
 re-verified against this tree 2026-09-22; findings first gathered 2026-08-05. Updated
 2026-09-25 for the deletion of the LSP install recipes and for the per-program Node floor
-([`agent-program-runtimes.md`](../reference/agent-program-runtimes.md)), which takes an agent CLI
+([`agent-program-runtimes.md`](agent-program-runtimes.md)), which takes an agent CLI
 that declares one out of the workspace pin's reach.
 Citations are by **file and symbol, never by line**: the line numbers this page used to
 carry all drifted, and a wrong one costs more than no pointer at all.
@@ -26,7 +26,7 @@ carry all drifted, and a wrong one costs more than no pointer at all.
 > lazy install on first use, from a generated launcher — is unchanged; only where the spec is
 > read from moved. Which packs install a program is
 > `rg -l '"kind": "program"' packs/*/pack.json`, never a list written down here; see
-> [`../reference/pack-system.md`](../reference/pack-system.md).
+> [`pack-system.md`](pack-system.md).
 
 ---
 
@@ -58,7 +58,7 @@ carry all drifted, and a wrong one costs more than no pointer at all.
   if a workspace pins `node` in `mise.toml` does a mise node reappear and win for
   PATH-resolved commands (mise shims sit before `/bin`); MCP servers → the **baked** `/bin/node` (the wrapper
   execs it by absolute path). This split is deliberate and documented in
-  [`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md).
+  [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md).
 - **A mise runtime is a per-workspace opt-in, not a default.** yolo declares **no default
   mise tools at all** — node, python, and go are all
   baked, so installing a second copy is pure duplication (and was the source of
@@ -113,7 +113,7 @@ packages from `yolo-jail.jsonc`'s `"packages"` array are injected via the
 when this list changes" (`yolo-jail.jsonc`). A launch can also take `packages:` from the
 mounted nix store instead of baking them — `YOLO_STORE_PACKAGES=1`, podman + Linux + a
 running nix daemon — in which case they arrive as a symlink farm at `/run/yolo/packages`
-([`../reference/image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md)).
+([`image-staging-vs-baking.md`](image-staging-vs-baking.md)).
 
 **Baked PATH is minimal on purpose:** the image's `config.Env` sets
 `PATH=/bin:/usr/bin` — "the Default PATH for anything that runs before the Go
@@ -146,7 +146,7 @@ mise manages the *interactive* / *project* toolchains. Two config scopes:
 
   > **The surface itself is the prism's, and that is the part that shipped** — the port
   > this section used to describe as pending
-  > ([`pack-system.md`'s compose engine](../reference/pack-system.md#config-surfaces-and-the-compose-engine)).
+  > ([`pack-system.md`'s compose engine](pack-system.md#config-surfaces-and-the-compose-engine)).
   > What did *not* retire with it is the `YOLO_MISE_TOOLS` env plumbing and
   > `MergeMiseTools`: the prism owns the composition and the file, the launcher still
   > hands the pins in on an env var. Two side effects stay bespoke on purpose — the
@@ -155,7 +155,7 @@ mise manages the *interactive* / *project* toolchains. Two config scopes:
   > user-scope config. A user who needs more than a merge (drop a pin, rewrite a version)
   > writes a `null` tombstone from a declared layer, which deletes a key the layers below
   > supplied; the Lua transform that used to be the answer here was removed on 2026-09-11
-  > ([`OQ-LT1`](../reference/pack-system.md#oq-lt1)).
+  > ([`OQ-LT1`](pack-system.md#oq-lt1)).
 
 - **Workspace** `/workspace/mise.toml` — checked into each repo. This repo's
   (`mise.toml`) pins:
@@ -182,7 +182,7 @@ platform — a yolo-owned host directory on Linux, the `yolo-mise-data-v2` named
 macOS and Apple Container — and the in-jail path is identical either way. The host's own
 mise installation is never mounted, so host↔jail mise skew cannot matter; the design
 history and the path pitfalls are in
-[`jail-state-separation-design.md`](../reference/jail-state-separation-design.md).
+[`jail-state-separation-design.md`](jail-state-separation-design.md).
 
 **When it installs:** provisioning runs `mise install` on every boot
 (`internal/cli/run/command.go`); already-present tools are skipped, so
@@ -209,7 +209,7 @@ Installed into `~/.npm-global/bin` (`NPM_CONFIG_PREFIX`, set in
   - **No LSP servers.** `lsp_servers` renders agent config and installs nothing, on any backend:
     the recipe table that installed `pyright`, `typescript-language-server` + `typescript` and
     `gopls` was deleted on 2026-09-25
-    ([`OQ-LSP1`](../reference/mcp-configuration.md#oq-lsp1)). A configured server's `command`
+    ([`OQ-LSP1`](mcp-configuration.md#oq-lsp1)). A configured server's `command`
     must already resolve on `PATH`. What the recipe installed earlier stays on disk and is
     cataloged as an orphan at boot, for `yolo programs remove` (or `programs.autoprune`).
 - **Lazy per-program launchers** in `~/.yolo/bin/launch/`
@@ -279,7 +279,7 @@ cold start.
 > repo deliberately ended.** The loader problem it used to carry — an FHS node losing
 > `libstdc++` whenever an agent scrubbed the child environment — is covered *structurally*
 > by nix-ld as the FHS ELF interpreter, so the wrapper's remaining job has nothing to do
-> with the loader ([`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md)).
+> with the loader ([`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md)).
 
 ### Why the default is one node — and why an override is still allowed
 
@@ -292,7 +292,7 @@ cold start.
   `mise.toml`) — the legitimate "this project needs a specific version" case,
   no image rebuild. That override is the *only* thing that reintroduces a non-nix
   node, and it is safe because **nix-ld** is the image's `/lib64` interpreter
-  ([`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md)):
+  ([`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md)):
   the pinned mise node links `libstdc++` env-free, so a pin survives a fully scrubbed
   environment without anything on the call path having to re-export
   `LD_LIBRARY_PATH`.
@@ -312,7 +312,7 @@ cold start.
 | Consumer | Node it runs | Why |
 |---|---|---|
 | Bare `node`, shebangs, `npx` | **mise** node | mise shims precede `/bin` in PATH ([§3](#3-path-resolution--precedence)) |
-| An npm-delivered agent CLI whose `program` declares a `node_floor` (today only `pi`, `22.19`) | the node the launcher **resolved for that floor**: the image's `/bin/node` when it satisfies, else the newest satisfying one in the mise store | the generated launcher execs that absolute interpreter instead of the bin's `#!/usr/bin/env node`, so the workspace pin does not reach it ([`agent-program-runtimes.md`, Resolution](../reference/agent-program-runtimes.md#resolution)) |
+| An npm-delivered agent CLI whose `program` declares a `node_floor` (today only `pi`, `22.19`) | the node the launcher **resolved for that floor**: the image's `/bin/node` when it satisfies, else the newest satisfying one in the mise store | the generated launcher execs that absolute interpreter instead of the bin's `#!/usr/bin/env node`, so the workspace pin does not reach it ([`agent-program-runtimes.md`, Resolution](agent-program-runtimes.md#resolution)) |
 | Every other npm-delivered agent CLI (no `node_floor`) | **mise** node | its launcher ends in a bare `exec "$REAL_BIN"`, so the bin's `#!/usr/bin/env node` resolves through PATH |
 | MCP presets | **baked** `/bin/node` | wrapper still execs `/bin/node` explicitly |
 | Custom `mcp_servers` with a bare `node` | **mise** node | not wrapper-routed, so it resolves through PATH like any other bare name — harmless now that nix-ld links it env-free, and the reason the wrappers stopped being the fix |
@@ -452,7 +452,7 @@ from the image:
   installed lazily so boot stays fast.
 
 The *node* duality used to be much sharper than it is, and the reason is the loader wiring
-analyzed in [`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md).
+analyzed in [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md).
 A stock FHS binary in a pure-nix image has an ELF interpreter path (`/lib64/ld-linux-*.so.2`)
 the image does not naturally have, and a mise-downloaded node cannot be patchelf'd — so for a
 while `LD_LIBRARY_PATH` (the baked env plus a wrapper at each call site) was the only runtime
@@ -503,7 +503,7 @@ before restarting.
   (`GenerateBootstrapScript`, `mcpPresetNpmPackages`).
 - LSP servers: none installed. The recipe table (`internal/config/lsp.go`, `config.LSPInstalls`)
   was deleted on 2026-09-25; `lsp_servers` only renders config
-  ([`OQ-LSP1`](../reference/mcp-configuration.md#oq-lsp1)), and the boot catalog's orphan
+  ([`OQ-LSP1`](mcp-configuration.md#oq-lsp1)), and the boot catalog's orphan
   finders (`internal/entrypoint/catalog.go`) name what it left behind.
 - Program install specs: each pack's `packs/<name>/pack.json` (`kind: "program"` — `via`,
   `package` for npm or `url` for an installer, `update`); the schema and its doc comments
@@ -517,6 +517,6 @@ before restarting.
   `internal/macosuser/macosuser.go` (`SandboxPath`, the third list, which takes its head from
   `HomePathDirs`).
 - Node-binary duality, the loader analysis and nix-ld:
-  [`../reference/mise-node-dynamic-linking.md`](../reference/mise-node-dynamic-linking.md).
+  [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md).
 - mise shared-store host↔jail pitfalls:
-  [`jail-state-separation-design.md`](../reference/jail-state-separation-design.md#the-jailjail-residue-in-the-shared-store).
+  [`jail-state-separation-design.md`](jail-state-separation-design.md#the-jailjail-residue-in-the-shared-store).

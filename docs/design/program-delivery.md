@@ -2132,7 +2132,7 @@ the actual launcher, refresh and HOST consumers. Warm invocation validates the a
 before exec or marker success; validation installs nothing and mutates no receipts. Customized
 or unobserved runtimes and unsupported platforms keep their declared bounded installer. The
 cold-only premise of [OQ-CP4](../reference/agent-cli-copies.md#oq-cp4) does not govern this route.
-The [capture plan](launch-program-capture-plan.md) owns final runtime acceptance, not an
+The [preparation plan's ordinary capture section](launch-update-preparation-plan.md#ordinary-cli-and-mcp-capture) owns final runtime acceptance, not an
 unanswered owner choice or a claim of shipping.
 
 ### Compacted questions — headings kept because sibling docs link to them

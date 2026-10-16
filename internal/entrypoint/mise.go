@@ -25,7 +25,7 @@ import "github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 // intentional per-workspace override); mise then installs that non-nix version
 // and its shim wins. That override is the ONLY case that reintroduces a non-nix
 // runtime — exactly the case nix-ld makes robust (env-free libstdc++). See
-// docs/research/tool-provisioning.md §2.
+// docs/reference/tool-provisioning.md §2.
 func loadInjectedTools(e *Env) *jsonx.OrderedMap {
 	raw := e.Getenv("YOLO_MISE_TOOLS")
 	if raw == "" {
