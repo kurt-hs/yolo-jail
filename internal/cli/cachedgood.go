@@ -101,8 +101,8 @@ func cachedGoodOwnerKeys(owners string) []string {
 	return out
 }
 
-// runCachedGoodTree is cached-good recovery for a BUILT EXTENSION (docs/design/patched-build-recovery.md
-// §6.7): the check record's exact Good.Entry, validated as a fork's is (validateCachedGood), copied as
+// runCachedGoodTree is cached-good recovery for a BUILT EXTENSION (docs/reference/patched-forks.md
+// §8.5): the check record's exact Good.Entry, validated as a fork's is (validateCachedGood), copied as
 // this launch's per-launch copy (copyTreeForLaunch) under the record lock, so no reaper removes the
 // bytes in between. No check, replay or build; the record is not written. A refusal is a delivery
 // with no copy, which the launch's missing-build refusal says.

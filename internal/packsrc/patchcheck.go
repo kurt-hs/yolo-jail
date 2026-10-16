@@ -720,7 +720,7 @@ func (r *CheckRecord) CurrentPatchFailure(in CheckInputs, series string) *PatchF
 		return nil
 	}
 	if r.WalkBackHolds(in, series) != nil {
-		// THE WALK-BACK HOLDS (docs/design/patched-build-recovery.md §6.4): the newest's failure is the
+		// THE WALK-BACK HOLDS (docs/reference/patched-forks.md §8.6): the newest's failure is the
 		// hold's, and the walked-back good build runs until upstream lists something newer.
 		return nil
 	}
@@ -743,7 +743,7 @@ func (r *CheckRecord) CurrentPatchFailure(in CheckInputs, series string) *PatchF
 }
 
 // passedBy reports whether a successful check of in lists something the walk reaches before pf's
-// target (docs/design/patched-build-recovery.md §6.2): A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST,
+// target (docs/reference/patched-forks.md §6.2): A RECORDED FAILURE FOLLOWS UPSTREAM'S NEWEST,
 // so it governs only while its target is the newest candidate not already passed over by a conflict
 // of this series. A newer entry that is untried, replays cleanly or failed to build passes it by, and
 // so does a good build of this series that moved past it. A `base` failure, a failure at the good

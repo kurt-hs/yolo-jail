@@ -479,7 +479,7 @@ func runBuildSlot(req run.BuildSlotRequest, stream io.Writer, color bool) (map[s
 		})
 	}
 	if tr := req.Trees; tr != nil && len(tr.CachedGood) > 0 {
-		// CACHED-GOOD EXTENSIONS (patched-build-recovery.md §6.7): the record's older good build,
+		// CACHED-GOOD EXTENSIONS (docs/reference/patched-forks.md §8.5): the record's older good build,
 		// validated, is each one's per-launch copy, with no advance and no next-launch registration.
 		filtered := *tr
 		filtered.Trees = nil

@@ -7,7 +7,7 @@ package packload
 // contributions, before anything folds, so the agent installs the extension itself, exactly as it
 // does with no yolo in between.
 //
-// And a SKIPPED extension (YOLO_SKIP_EXTENSIONS, docs/design/patched-build-recovery.md §6.6): every
+// And a SKIPPED extension (YOLO_SKIP_EXTENSIONS, docs/reference/pi-extensions.md §9.1): every
 // entry of the contributing pack's own lists that loads the tree is left out, so the agent starts
 // without it.
 //

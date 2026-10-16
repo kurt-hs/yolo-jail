@@ -32,6 +32,10 @@ when it does not merge. See [Patch series](userguide/guides/patch-series.md#keep
 not state, such as thinking levels; `null` removes one, and `model_facts` with `extends` shares a
 model's facts across providers with per-provider overrides. See `yolo config-ref`.
 
+**Ways past a broken patched build.** When your patches or the upstream break, the error lists
+commands that start anyway: run your last good build, build on an older release, or start pi without
+an extension. See [Patch series](userguide/guides/patch-series.md#when-a-build-breaks).
+
 - A company list that only adds models now shows in Claude Code after Claude's own models.
 - A launch refreshes your shared Claude login when it is close to expiring, and a host service that crashes mid-session is restarted, up to five times in a row.
 
@@ -44,6 +48,8 @@ model's facts across providers with per-provider overrides. See `yolo config-ref
 - A bare `-p` that some agents can't use now names them all on one line, with the fix for each.
 - `yolo config promote` no longer turns a `null` you set in an agent's config into a deletion in your pack, and `yolo config diff` no longer reports it as deleted.
 - A launch refused while it prepared a patched build no longer leaves a background `nix eval` running for up to two minutes after it exits.
+- A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
+- With `agent_updates` off, a patched fork or extension now keeps running its good build even after a newer version failed.
 
 ## [0.14.0] - 2026-10-15
 

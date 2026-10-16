@@ -358,7 +358,7 @@ type advance struct {
 	problem string
 	// operationError is a current check's fetch failure, retained separately from a patch bypass.
 	operationError string
-	// THE WALK-BACK (docs/design/patched-build-recovery.md §6.4): builds counts the builds this run
+	// THE WALK-BACK (docs/reference/patched-forks.md §8.6): builds counts the builds this run
 	// started, against walkBackBuilds; tried the entries it replayed or built; walkingBack is set while
 	// the walk-back replays an older entry, whose conflict is recorded without its own error block;
 	// walkBackHold is the hold the build under way records once it is admitted; slotHeld says the
@@ -962,8 +962,8 @@ func (a *advance) bypassCommand() string {
 	return patchFailureCommand(a.f.Bin, a.o.host)
 }
 
-// recoveryHatches is THE ONE AUTHORITY FOR A REFUSAL'S HATCH LIST (docs/design/patched-build-recovery.md
-// §6.8, PBR-D5): every hatch that would get this act running past what stopped it, in the order a
+// recoveryHatches is THE ONE AUTHORITY FOR A REFUSAL'S HATCH LIST (docs/reference/patched-forks.md
+// §8.7, PBR-D5): every hatch that would get this act running past what stopped it, in the order a
 // refusal lists them, each naming this key and this act's command. The advance hands it on the
 // delivery, and the launch's refusal prints it as is.
 func (a *advance) recoveryHatches() []patchrecovery.Hatch {
@@ -1244,7 +1244,7 @@ func (a *advance) run() advanceResult {
 	exactGit := false
 	held := hold != "" && good != nil && !a.o.force && !a.o.freshCheck
 	if held {
-		// HELD BY agent_updates (PF-D19; A HOLD HOLDS, docs/design/patched-build-recovery.md §6.3): no
+		// HELD BY agent_updates (PF-D19; A HOLD HOLDS, docs/reference/patched-forks.md §3.4): no
 		// check, and prior state has no bearing — a failure recorded for another version, the
 		// background's included, never refuses. A serving good build is what runs; a change to the
 		// series or the recipe is built at the good build's commit, and only a failure there refuses.
@@ -1614,7 +1614,7 @@ func (a *advance) failedOrWalkBack(pf *packsrc.PatchFailure, edited bool) advanc
 	return a.patchFailureResult(pf)
 }
 
-// walkBackOn reports whether this run may WALK BACK (docs/design/patched-build-recovery.md §6.4,
+// walkBackOn reports whether this run may WALK BACK (docs/reference/patched-forks.md §8.6,
 // OQ-PBR2): YOLO_ALLOW_OLDER_UPSTREAM covers this key, the act is a foreground one — never the
 // background advance or a shared lane, which read no hatch — and the followed ref is a branch, not a
 // tag or commit the user named.

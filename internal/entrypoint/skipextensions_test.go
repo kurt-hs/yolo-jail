@@ -1,7 +1,7 @@
 package entrypoint
 
 // skipextensions_test.go is the jail's half of YOLO_SKIP_EXTENSIONS
-// (docs/design/patched-build-recovery.md §6.6): a key the host's wire marks skipped has every entry
+// (docs/reference/pi-extensions.md §9.1): a key the host's wire marks skipped has every entry
 // that loads it left out of the list the agent reads — no tree entry and no fallback — through the
 // boot's own loop (ConfigurePackSurfaces), and the owner's launcher is not stopped for it.
 
