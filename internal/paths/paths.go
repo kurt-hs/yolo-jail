@@ -832,7 +832,7 @@ func WrapDirUnder(home string) string {
 
 // HostBlockDir returns $HOME/.local/share/yolo-jail/bin/block — where `yolo host --` keeps the
 // blocked-tool shims it puts first on the PATH of the program it starts
-// (docs/design/host-launch-environment.md HE-D11): one CONTENT-ADDRESSED child per distinct set
+// (docs/reference/host-agent-environment.md HE-D11): one CONTENT-ADDRESSED child per distinct set
 // of scripts, named by their digest, written once and then reused, so two launches with the same
 // blockers share one directory and one with different blockers never edits another's.
 //
@@ -952,7 +952,7 @@ const hostFloorLeaf = "host-floor"
 // that no mount source a launch emits is at, under, or an ancestor of it.
 //
 // It is also on NO user PATH: the user's shell never sees it (OQ-HP2), and a host launch
-// appends its bin/ LAST to the agent's PATH (HE-D1).
+// appends its bin/ LAST to the agent's PATH (HE-D16).
 func HostFloorDir() string { return HostFloorDirUnder(home()) }
 
 // HostFloorDirUnder is HostFloorDir under an EXPLICIT home — see GlobalStorageUnder for why a

@@ -33,7 +33,7 @@
 //
 // # When a lookup misses
 //
-// MissLine is the MISS LINE (§4.2, HE-D2): one line naming the program, the pack that requires it,
+// MissLine is the MISS LINE (HE-D17): one line naming the program, the pack that requires it,
 // the whole PATH searched with `host_path`'s part marked, any `host_path` entry the reader refused,
 // and `host_path` as the fix — naming a hint folder only when one really holds the program. A hint
 // folder never resolves anything.

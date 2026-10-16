@@ -2031,7 +2031,7 @@ name, so two selected packs shipping one name are refused by validation; `bin` n
 `program` the server runs, which `yolo host -- <agent>` installs into the host floor. Not
 review-worthy: the entry is data in the agent's config file, and the program behind it is its
 own `program` contribution. At the host only a pack yolo ships or one at a path on this machine
-has its entry written ([HC-D26](../design/host-computed-layer.md#HC-D26)). How the table reaches
+has its entry written ([HC-D26](host-agent-environment.md#HC-D26)). How the table reaches
 each agent is [`mcp-configuration.md`](mcp-configuration.md#a-packs-servers-the-mcp-kind)'s.
 
 #### `autonomy`

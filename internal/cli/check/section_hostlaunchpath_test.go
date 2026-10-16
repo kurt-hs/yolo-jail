@@ -15,7 +15,7 @@ import (
 )
 
 // section_hostlaunchpath_test.go pins `yolo check`'s host launch section
-// (docs/design/host-launch-environment.md §3, HE-D7): it says which PATH it read, names each
+// (docs/reference/host-agent-environment.md HE-D7): it says which PATH it read, names each
 // host_path folder and whether it exists, resolves every dependency the floor does not answer for
 // through the launch PATH's lookup, and warns with the miss line for one it cannot find. Every
 // fixture is a temp HOME and a fake PATH read through the Getenv seam. TestEverySectionIsWired pins
@@ -116,7 +116,7 @@ func TestCheckHostLaunchPathSaysWhichPathItRead(t *testing.T) {
 
 // TestCheckHostLaunchPathGivesAProgramWithNoBuildHereTheMissLine: a program whose vendor publishes no
 // build for this host is not graded — nothing could install it — but it is a program `yolo host`
-// looks up on the launch PATH, so a miss there carries the miss line like any other (HE-D2). Drop the
+// looks up on the launch PATH, so a miss there carries the miss line like any other (HE-D17). Drop the
 // note from the section's no-build row, and this fails.
 func TestCheckHostLaunchPathGivesAProgramWithNoBuildHereTheMissLine(t *testing.T) {
 	other := "darwin"

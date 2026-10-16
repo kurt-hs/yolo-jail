@@ -375,7 +375,7 @@ func TestHostCaptureStoreIsOwnOnly(t *testing.T) {
 }
 
 // THE SELECTION RECORD IS THE CAPTURE STORE'S, and nowhere else (OQ-HC3, HC-D18 in
-// docs/design/host-computed-layer.md, as the `assert` retirement left it). Host apply writes the
+// docs/reference/host-agent-environment.md, as the `assert` retirement left it). Host apply writes the
 // `profile` selection with the jail's edge-triggered rule, which needs a record of what yolo
 // wrote, and the one contract that applies keeps it in its capture store. Until OQ-CO14 an
 // `assert` home kept it beside the provenance record, having no store; that branch went with the

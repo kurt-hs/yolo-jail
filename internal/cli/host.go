@@ -825,7 +825,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	// selected pack delivers is the FLOOR's copy, installed first when missing; a path is exec'd
 	// as given; anything else is looked up on the child's PATH — the LAUNCH PATH (the caller's
 	// PATH, then `host_path`'s folders not already on it: HE-DIR1, HE-D3), then the floor's bin/
-	// (OQ-HE10 (c), HE-D1), which is also the PATH the child is handed below. The launch PATH is
+	// (OQ-HE10 (c), HE-D16), which is also the PATH the child is handed below. The launch PATH is
 	// resolved once, here, for both.
 	//
 	// THE READINESS ACT first (docs/design/host-notch-readiness.md HNR-D1, hostreadiness.go):

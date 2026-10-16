@@ -1110,7 +1110,7 @@ promoting the line to the terminal is a change at `noteSelectionClears` alone.
 > (`availableModels`, `modelPicker`) are ordinary computed keys, re-asserted every boot, and leave
 > with the profile for the same reason. At `yolo host apply`, whose `rmw` write re-reads your real
 > file, a computed key the derive stops asserting leaves by the computed-leaf clear
-> ([HC-D25](../design/host-computed-layer.md#HC-D25)) rather than by omission: claude's Bedrock
+> ([HC-D25](host-agent-environment.md#HC-D25)) rather than by omission: claude's Bedrock
 > switch is the case that matters, since the host leaves claude's `codex` profile out.
 
 ### A selection outranks a host-layer value
@@ -2150,7 +2150,7 @@ claude: ~/.claude/settings.json sets CLAUDE_CODE_USE_BEDROCK, which would put cl
 `~/.claude/settings.json` while claude's host selection (the `profile` key) is on a Bedrock provider
 ([D8](#pv-d8)), and records the value it wrote at `/env/CLAUDE_CODE_USE_BEDROCK` in the host's
 computed-leaf record, beside the provenance record
-([HC-D25](../design/host-computed-layer.md#HC-D25)). When the file holds that recorded value, the
+([HC-D25](host-agent-environment.md#HC-D25)). When the file holds that recorded value, the
 line says `yolo host apply` wrote it for claude's host selection, and that applying with claude on
 a provider of another platform removes it, instead of telling you to remove a key of yours:
 
