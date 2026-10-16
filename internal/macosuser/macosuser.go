@@ -996,15 +996,27 @@ func WorkspaceACLAces(group string) map[string]string {
 // FixPermissionsScript returns the find-based bash script that (re)applies the
 // split ACEs to a tree (the on-demand macos-fix-permissions retrofit, NOT the
 // hot path).
+//
+// IT SKIPS WHAT THE SANDBOX ACCOUNT OWNS. The walk runs as the invoking user, and macOS lets
+// only a file's owner (or root) change its access list, so every file a session wrote under a
+// workspace's .yolo/home (credentials, history, npm and mise state) failed with "Operation not
+// permitted". Those files were created under the inheriting entries and already carry the
+// grant, so leaving them out loses nothing. The exclusion is built only when the account exists:
+// BSD find refuses `-user` naming an unknown user, and with no account no file can be its.
+// `${skip[@]+...}` because bash 3.2, macOS's, calls an empty array unbound under `set -u`.
 func FixPermissionsScript(root, group string) string {
 	aces := WorkspaceACLAces(group)
 	r := shQuote(root)
+	skip := `${skip[@]+"${skip[@]}"}`
 	return "set -euo pipefail\n" +
 		"root=" + r + "\n" +
+		"skip=()\n" +
+		"if /usr/bin/id -u " + SandboxUser + " >/dev/null 2>&1; then skip=('!' -user " +
+		shQuote(SandboxUser) + "); fi\n" +
 		"echo \"Applying shared-group ACLs under $root (this can take a moment on a large tree)…\"\n" +
-		"find \"$root\" -type d -exec chmod -h +a " + shQuote(aces["dir"]) + " {} +\n" +
-		"find \"$root\" -type d -exec chmod -h +a " + shQuote(aces["file_inherit"]) + " {} +\n" +
-		"find \"$root\" ! -type d -exec chmod -h +a " + shQuote(aces["file"]) + " {} +\n" +
+		"find \"$root\" " + skip + " -type d -exec chmod -h +a " + shQuote(aces["dir"]) + " {} +\n" +
+		"find \"$root\" " + skip + " -type d -exec chmod -h +a " + shQuote(aces["file_inherit"]) + " {} +\n" +
+		"find \"$root\" " + skip + " ! -type d -exec chmod -h +a " + shQuote(aces["file"]) + " {} +\n" +
 		"echo \"Done.\"\n"
 }
 

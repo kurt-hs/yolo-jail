@@ -129,8 +129,11 @@ func MacosSetup(deps Deps) int {
 	out.printf("• Sharing existing projects under [bold]%s[/bold] with %s "+
 		"(idempotent; safe to re-run).", SharedRootDefault(), SandboxUser)
 	if deps.RunBash(FixPermissionsScript(SharedRootDefault(), "")) != 0 {
-		out.print("  [yellow]Some ACL entries could not be applied; the rest were. " +
-			"Re-run `yolo macos-fix-permissions` to see which.[/yellow]")
+		out.print("  [yellow]Some ACL entries could not be applied; the rest were.[/yellow] " +
+			"chmod named each file above: it belongs to another account or is locked " +
+			"(`ls -leO <file>` shows which). Take it back with `sudo chown $USER <file>` " +
+			"(or unlock it with `chflags nouchg <file>`), then run " +
+			"[bold]yolo macos-fix-permissions <its directory>[/bold].")
 	} else {
 		out.print("  [green]done[/green]")
 	}
