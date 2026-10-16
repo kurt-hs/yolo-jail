@@ -245,6 +245,14 @@ func MacosTeardown(deps Deps) int {
 		return rc
 	}
 	if !deps.SandboxUserExists() {
+		// An account removed by hand leaves this user's enrollment behind (PL-3: the enrolled
+		// user is whoever owns the staging root), and this command is the remedy setup's
+		// second-user refusal names, so it still removes the rule and the root it owns.
+		if JudgeStagingRoot(rootFacts(deps, StagingRoot()), deps.Geteuid()) == StagingRootOK {
+			out.printf("Sandbox user '%s' does not exist; removing your enrollment.", SandboxUser)
+			removeEnrollment(deps, out)
+			return 0
+		}
 		out.printf("Sandbox user '%s' does not exist — nothing to do.", SandboxUser)
 		return 0
 	}
