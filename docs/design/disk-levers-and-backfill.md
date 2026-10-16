@@ -13,8 +13,8 @@ vantage:
 # Disk levers and backfill — the bytes the fixes left behind, and whether yolo deletes them or offers to
 
 **Status:** 2026-09-08 — all ten questions ruled, re-checked against the tree 2026-09-24.
-Nine rulings are built (2026-09-08/09, [OQ-BF10](#OQ-BF10) last, on 2026-09-09) and the tenth,
-[OQ-BF8](#OQ-BF8), dissolved rather than building anything; [§11.1](#111-decision-ledger)'s Built
+Nine rulings are built (2026-09-08/09, [OQ-BF10](#111-decision-ledger) last, on 2026-09-09) and the tenth,
+[OQ-BF8](#111-decision-ledger), dissolved rather than building anything; [§11.1](#111-decision-ledger)'s Built
 column has the commits. The last build step of [§10](#10-sequencing--what-i-would-build-in-order),
 [§3](#3-the-levers-ranked)'s L7, the version prune at every launcher invocation, was built
 2026-10-01 ([BF-D1](#BF-D1)): MEASURED by unit tests that run the generated launcher with no
@@ -44,7 +44,7 @@ collector has ever visited, because **nothing on this machine ever runs `nix sto
 not the daemon (`min-free = 0`) and not yolo (opt-in, human-typed). [§3](#3-the-levers-ranked) ranks the
 levers by measured bytes and by effort. [§5](#5-the-shape-measure-late-offer-early-delete-in-the-slot)
 proposes the disposition: **automatic** where a reaper's evidence is complete and regeneration is
-cheap (the same footing [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already ruled for images), **offered while non-zero** ([OQ-BF1](#OQ-BF1)) where the
+cheap (the same footing [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) already ruled for images), **offered while non-zero** ([OQ-BF1](#111-decision-ledger)) where the
 evidence is partial, the store is shared, or the re-fetch is expensive — and in both cases a
 first pass over a backlog is a **one-time event per store per machine**, remembered, that must
 never delay a launch.
@@ -253,14 +253,6 @@ Three consequences, stated as findings:
 
 #### Protecting a running jail's prefix
 
-Moved here verbatim from [OQ-BF4](#OQ-BF4), where its answer is.
-
-> [!NOTE]
-> **This entry was unreadable, and the maintainer said so** — *"I don't understand this. is this
-> something that really needs me?"* No, and it should not have been in a list of questions that
-> do. It is restated below in plain words and ruled on its own merits; the mechanism paragraph is
-> kept because the implementer needs it.
-
 **In plain words.** Since C8, the yolo binaries a jail runs — including pid1 — are not in the
 image; they are a directory in `/nix/store` that the launch bind-mounts. Nix will not delete a
 store path that something *roots*, and yolo keeps exactly **one** root per checkout, pointed at
@@ -271,31 +263,72 @@ not bitten: the day anything does — this doc's own [L3](#3-the-levers-ranked),
 that state right now ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding) items 2-3): its prefix is pinned only by two pre-C8 image
 roots that a reap will remove, and the in-jail out-link is not a root at all.
 
-**The mechanism, for the implementer.** One durable root per store path under `BuildDir()`,
-registered at launch the way `RegisterImageRoot` registers an image, protected by the same age
-floor and reaped when no recent launch used it, gated on `!inJail` exactly as `RegisterRoot` is;
-the per-checkout out-link stays as the build's own output link. It is [OQ-BF3](#OQ-BF3)'s stated
-prerequisite, and it is a fix regardless of disk.
+**The ruling** ([OQ-BF4](#111-decision-ledger), 2026-09-08). One durable root per prefix store
+path under `BuildDir()`, registered at launch the way `RegisterImageRoot` registers an image,
+gated on `!inJail` exactly as `RegisterRoot` is, and **held while a container is running from
+it**, reaped once none is. The per-checkout out-link stays as the build's own output link. It is
+[OQ-BF3](#111-decision-ledger)'s stated prerequisite, and a bug fix rather than a disposition:
+there is no version of "a running jail may lose pid1's binary" that is a preference, and the
+alternative is never collecting yolo's own store outputs at all, the state
+[§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding) measures.
+
+> [!WARNING]
+> **Neither the load sentinel's LRU nor an age floor protects a prefix.** The LRU is a
+> most-recently-used cache and cannot answer "is this in use"
+> ([`image-retention.md`](../reference/image-retention.md)'s P1). An age cutoff, the policy
+> [OQ-LS1](../reference/image-retention.md#why-its-this-way) ruled for image closures, is precisely
+> wrong here: the longer a jail runs, the more certainly its prefix would be reaped. One test
+> decides each root's policy: *can losing it cost only a rebuild?* An idle image closure: yes, so
+> age. The prefix of a running jail: no, so liveness. (The same test later held the root of an
+> image a container is running on, [OQ-LS4](../reference/image-retention.md#why-its-this-way).)
+> That is also why prefix roots must not live in `build/roots`, whose reaper deletes any root that
+> is not a loaded image.
 
 #### The prefix on macOS
 
-Moved here verbatim from [OQ-BF7](#OQ-BF7), where its answer is.
-
-> [!NOTE]
-> **The maintainer's ruling was about the entry, not the answer** — *"isn't this an implementation
-> detail? not design?"* Yes. A live outage with one measured cause does not need a disposition; it
-> needs a fix. It stays recorded here because this doc is where the coupling to
-> [OQ-BF3](#OQ-BF3)/[OQ-BF4](#OQ-BF4) was claimed, and that claim turns out to be discharged
-> rather than merely moved — see the Answer. C8 bind-mounts the prefix out of `/nix/store`, and a macOS podman runs in a VM that
-shares no host store. The nightly is a **total outage**: 55 failures and 59
+C8 bind-mounts the prefix out of `/nix/store`, and a macOS podman runs in a VM that
+shares no host store. Before the fix the nightly was a **total outage**: 55 failures and 59
 `statfs /nix/store/…-install-prefix/opt/yolo-jail/share/yolo-jail: no such file or directory`
 (run `34117863296`); the pre-C8 nightly had zero. The constraint was already written down in the
 sibling feature — `storePackagesEligible` refuses macOS with *"a macOS podman runs in a VM that
-shares no /nix/store with the host"* — and `jailprefix.go` has no equivalent guard, because C8
+shares no /nix/store with the host"* — and `jailprefix.go` had no equivalent guard, because C8
 reasoned about the prefix being a *darwin derivation producing linux binaries* and never about the
-*mount* crossing into a VM. This is the one question here that is a live outage rather than a
-disposition, and it belongs to this doc because staging the prefix anywhere else changes what
-roots it ([OQ-BF4](#OQ-BF4), [R7](#8-risks)).
+*mount* crossing into a VM. It was the one live outage among this doc's questions, and it
+belongs to this doc because staging the prefix anywhere else changes what roots it ([OQ-BF4](#111-decision-ledger), [R7](#8-risks)).
+
+**What shipped (`6a855b6d`, [OQ-BF7](#111-decision-ledger)): a refusal, neither staging nor
+baking.** An outage with one measured cause needed a fix, not a disposition.
+`prefixUnreachableFromVM` (`internal/cli/run/jailprefix.go`) declines the launch on darwin when
+either mount source is under `/nix/store` and `YOLO_NIX_HOST_DAEMON` is unset, naming two ways
+forward: share `/nix` with the VM (`podman machine init -v /nix:/nix`, which is init-only) and set
+that variable, or launch from an installed bundle, which stages under `$HOME` and ships prebuilt
+binaries so nothing is built in the store at all. It reuses that variable rather than adding a dial
+because it already means exactly "my runtime VM shares `/nix`".
+
+- **Why not staging under the host home.** It is a ~66 MB copy per build plus a lifecycle to
+  reap: a second delivery mechanism for the binaries, the one thing C8 exists to have only one of.
+  The population it serves is a macOS developer pointed at a live checkout; every Homebrew and
+  `just install` user is already on an `$HOME` bundle and was never broken, and one line of machine
+  setup is cheaper than a mechanism. **Staging is not refuted:** if that population grows it is
+  still the shape, and it would then also remove the refusal.
+- **BF3 and BF4 need no macOS arm.** Under the refusal there is no third location to root: a macOS
+  launch either shares `/nix` and holds a store path, rooted by [OQ-BF4](#111-decision-ledger)'s
+  mechanism exactly as on Linux, or runs from an `$HOME` bundle, which is not a store path and has
+  nothing to root or reclaim.
+- **MEASURED on hardware 2026-09-09 (run 34300425634).** The `statfs` failure is gone, zero
+  occurrences against 59 in the pre-fix run, and it exposed the next layer: every launch got as
+  far as the image build and failed there with
+  `cannot build on 'ssh-ng://root@127.0.0.1:31022': failed to start SSH connection`. A darwin-side
+  eval cannot vouch for a Linux-runner-built image, so the launcher refused it as a different source
+  tree and demanded a from-source rebuild, which offloads to the Linux builder container; that
+  offload had never run in this job. CI answers it with `YOLO_ALLOW_STALE_IMAGE=1`, the hatch's
+  stated purpose, because the loaded image is this commit's, built by the `build-image` job two
+  steps earlier. The container-builder offload on macOS, which the
+  [`macos.md`](../../userguide/guides/macos.md) runbook claims, is still exercised by no CI job.
+- **Not verified on hardware: Apple Container.** The same VM fact applies and no measurement exists
+  ([`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#backends)). The refusal is
+  keyed on darwin, not on the runtime, so that backend now fails with a sentence rather than
+  `statfs`.
 
 > [!WARNING]
 > **`--volume /nix:/nix` in `nightly-macos.yml` is HALF of what shipped, and this warning was
@@ -344,8 +377,8 @@ A retention *count* is the wrong instrument here; the right number is zero.
 
 | Store | The only reader | Read-evidence | Verdict |
 | :--- | :--- | :--- | :--- |
-| Image tars on a streaming runtime (20.6 GB) | `newestTars`, reached only when a build FAILED **and** the operator set `YOLO_ALLOW_STALE_IMAGE=1` **and** no image exists in the runtime (`internal/image/autoload.go`, the `SkipBuild`-or-ignored-failure branch) | all three nested tars were last read **33–72 ms after being written** — that is the write-back — and **not once in the 13 days since** | `keep=3` is not a cache policy, it is insurance whose payout is a two-week-old image. That is the "stale image looked like a working jail" failure C1 exists to end. Keep **0** ([OQ-BF6](#OQ-BF6)) |
-| `*-yolo-jail-go-0-dev` (245 paths, 10.02 GB) | nothing. `installPrefix` **copies** the binaries and `keep-outputs = false`, so no live path references one | n/a — unrooted by construction ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)) | reusable only by rebuilding the identical derivation, which nix short-circuits on the *prefix* anyway. Delete by name ([OQ-BF3](#OQ-BF3)) |
+| Image tars on a streaming runtime (20.6 GB) | `newestTars`, reached only when a build FAILED **and** the operator set `YOLO_ALLOW_STALE_IMAGE=1` **and** no image exists in the runtime (`internal/image/autoload.go`, the `SkipBuild`-or-ignored-failure branch) | all three nested tars were last read **33–72 ms after being written** — that is the write-back — and **not once in the 13 days since** | `keep=3` is not a cache policy, it is insurance whose payout is a two-week-old image. That is the "stale image looked like a working jail" failure C1 exists to end. Keep **0** ([OQ-BF6](#111-decision-ledger)) |
+| `*-yolo-jail-go-0-dev` (245 paths, 10.02 GB) | nothing. `installPrefix` **copies** the binaries and `keep-outputs = false`, so no live path references one | n/a — unrooted by construction ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)) | reusable only by rebuilding the identical derivation, which nix short-circuits on the *prefix* anyway. Delete by name ([OQ-BF3](#111-decision-ledger)) |
 
 **Class B — reuse is real, but the retained size is not what the reuse evidence supports.**
 
@@ -362,7 +395,7 @@ store path and mounts it, which reads its `yolo-entrypoint` — so atime on that
 
 Oldest last-read: **45 days**. So 54 % of the bytes belong to commits no jail has booted in a month,
 and real reuse is concentrated in 28 paths ≈ 2.4 GB. A retention rule of "prefixes read within 7
-days" holds an eighth of what is retained today. This is the evidence [OQ-BF3](#OQ-BF3) needs.
+days" holds an eighth of what is retained today. This is the evidence [OQ-BF3](#111-decision-ledger) needs.
 
 > [!IMPORTANT]
 > **The image store carries two policies with two different justifications, and only one of them is
@@ -374,7 +407,7 @@ days" holds an eighth of what is retained today. This is the evidence [OQ-BF3](#
 > a bare `10` with no derivation. Bounded by its *own* stated purpose it should be the number of jails
 > that can run at once — and after C8 the count of *distinct* images barely moves at all, since the
 > image now changes only on `flake.*` and `packages:`. A liveness veto is doing duty as a reuse cache
-> it was never justified as ([OQ-BF8](#OQ-BF8)).
+> it was never justified as ([OQ-BF8](#111-decision-ledger)).
 
 **Class C — yolo's directory, another workspace's asset, and no per-workspace accounting.** This is
 the largest bucket and the most interesting one, because the first reading of it was wrong twice.
@@ -453,22 +486,110 @@ Whether that is safe splits the pants cache exactly down its middle, and the spl
 
 #### Aliasing a host cache instead of pooling a second copy
 
-Moved here verbatim from [OQ-BF10](#OQ-BF10), where its answer is. This is a third disposition
+This is a third disposition
 the rest of the doc does not have. Backfill deletes what accumulated; retention bounds what accumulates; aliasing makes the store **not exist
 twice**. For pants' content-addressed half that is up to 27 G on this machine, and the same
 question applies to npm, uv, pip and go-build, whose host-side copies a jail cannot see to
 measure. yolo already shares the host's nix store read-only rather than duplicating it
 (`hostNixStore`), so the pattern exists; it has never been applied to a cache.
 
-Three things the ruling has to settle, because they do not follow from each other:
+**The ruling** ([OQ-BF10](#111-decision-ledger), 2026-09-08): content-addressed stores only, and
+the reason is a threat model rather than a size. The maintainer: *"I think it must be CAS only.
+otherwise that's an injection mechanism from jail to host?"* A **content-addressed** store is one
+whose keys are digests of their own contents: a jail writing into it can add a blob, and it can add
+a *wrong* blob only under a name that does not match its digest, which the reading tool rejects. A
+**path-keyed** store like pants' `named_caches` has no such property: the key is a name the jail
+chooses, so a jail write is content the host tool will later read **because of where it sits**.
+That is the injection channel, and it is why `named_caches` is categorically excluded rather than
+"lower value": the same distinction that lets yolo share the host's nix store at all.
 
-1. **which half** — only the content-addressed one; `named_caches` is path-poisoned and must
-   stay per-frame ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C).
-2. **writable or read-only** — a cache is useless read-only, so this is a WRITABLE host bind,
-   which is a strictly bigger trust step than the `:ro` nix store precedent: jail code could
-   then write into the host user's own cache.
-3. **the migration** — aliasing does not delete the 40 G already pooled jail-side; it strands
-   it, so a ruling here creates its own backfill item.
+Three things the ruling settles, because they do not follow from each other:
+
+1. **Which half.** Aliased if and only if content-addressed; `named_caches` is path-poisoned and
+   stays per-frame ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C).
+2. **Writable, and gated.** A cache is useless read-only, so this is a WRITABLE host bind, a
+   strictly bigger trust step than the `:ro` nix store precedent: jail code can write into the host
+   user's own cache. It is gated on the host matching the jail's OS and arch, a writable source, and
+   tools that document a shared per-user store, and it never applies on macOS, where the jail is
+   Linux in a VM and nothing is compatible anyway.
+3. **The migration.** Aliasing does not delete the copy already pooled jail-side; it strands it,
+   and the stranded copy becomes a backfill row on the first aliased launch.
+
+**The scope stops here, deliberately:** *"let's keep it this way and we can analyze storage after
+all this is implemented to see if we should go further."* Widening the aliased set is not a
+follow-up item in this doc; it is a question to re-ask against a post-implementation measurement,
+which [OQ-BF9](#111-decision-ledger)'s sample ledger makes possible.
+
+> [!NOTE]
+> **BUILT 2026-09-09 — `internal/hostcas`**, emitted by `internal/cli/run/hostcasalias.go` and
+> explained by a new `yolo stores` section. Six things the build had to settle that the ruling
+> left implicit, recorded here because each is a decision a reader would otherwise re-litigate:
+>
+> 1. **No config key, and no env dial.** The ruling's "gated on …" list is exhaustive and
+>    contains no user opt-in, the precedent it names (`hostNixStore`) is a capability probe
+>    rather than a dial, and there is nothing for a key to carry: yolo picks BOTH sides of the
+>    mount from a table, so no path is user-supplied. The recognised set is therefore code
+>    (`hostcas.Stores`), which is also what "the scope stops here" needs — a config key would
+>    hand the CAS test to a user who cannot check it.
+> 2. **The set is pants' `lmdb_store` ALONE**, which NARROWS the leaning's "pants
+>    `lmdb_store`, npm, go-build". Under "aliased if and only if content-addressed" npm and
+>    go-build both fail, and the reason is MEASURED rather than cautious: npm's
+>    `_cacache/index-v5` maps a REQUEST URL to an integrity digest (sampled entry keyed
+>    `make-fetch-happen:request-cache:https://registry.npmjs.org/…`), and Go's `<actionID>-a`
+>    maps a writer-chosen action ID to an output ID. In both, a jail that writes the index AND
+>    the blob has the host tool read its bytes for that key — the injection channel, in a store
+>    whose content half really is a CAS. Half a directory whose halves must stay consistent is
+>    not an aliasable unit. `uv` and `pip` are index/URL-keyed too.
+> 3. **The CAS claim is measured, not asserted.** `lmdb_store/immutable/files/<2-hex>/<64-hex>`
+>    — and the 64-hex name IS the sha256 of the file's contents, verified on a 232 MB blob
+>    2026-09-09; those files are mode `r-xr-xr-x`.
+> 4. **Two gates the ruling does not name, both found by asking what the happy path costs.**
+>    (a) **The cold-start refusal.** An EMPTY host store aliased over a warm private copy hides
+>    a cache and buys nothing, forcing exactly the unbounded re-fetch
+>    [§5.2](#52-two-tiers-one-mapping)'s offered tier exists to never impose without asking (P4).
+>    Emptiness is one `ReadDir`, so it costs nothing. The partial case — a small host store over
+>    a large private one — is allowed: it is a one-time partial re-fetch into a store BOTH sides
+>    then reuse. (b) **`cache_relocations` wins.** A user who relocated `pants` moved 40 G off
+>    the disk `$HOME` is on; the alias source IS under the home cache, and both mounts would
+>    apply (podman orders by destination depth, so the deeper alias wins for its own subtree),
+>    putting 27 G of it silently back — *the exact failure `cache_relocations` exists to
+>    prevent, caused by the feature meant to save space*. An explicit config decision outranks
+>    an automatic optimisation, so a store whose cache segment is relocated is never aliased.
+>    It is also the one SILENT decline the user caused, which is where the launch's disclosure
+>    line is drawn: an active alias always prints (a writable bind of the host user's cache is
+>    host access), and so does a decline the user could act on — unwritable, not a directory,
+>    empty over a warm copy, or an unmakeable mountpoint. Everything else is a structural fact
+>    about the machine with no action behind it, and prints nothing, on
+>    [§5.3](#53-triggers-defaults-and-the-post-launch-slot)'s degenerate rule and
+>    [§5.1](#51-the-housekeeping-slot)'s warning about what launch noise costs. `yolo stores` is where every decline is
+>    legible on demand.
+> 5. **Concurrency adds no new class, and yolo serialises nothing.** It cannot: it does not
+>    launch the host's tool. It does not need to either — yolo ALREADY pools one `lmdb_store`
+>    across every workspace's jail (that is how the 27 G got there), and each jail is its own
+>    PID namespace, so concurrent multi-namespace writers are the shipped status quo rather
+>    than something aliasing introduces. What aliasing widens is the participant SET, not its
+>    kind. **The named residual:** LMDB's stale-reader reaping is keyed on pid through an
+>    `fcntl` record lock on `lock.mdb` — namespace-blind and shared, so it cannot reap a LIVE
+>    reader; the failure direction is a slot nothing reclaims, i.e. wasted space, which is the
+>    ruling's own stated worst case. Whether its process-shared robust write mutex recovers a
+>    dead owner whose TID was in another PID namespace is **NOT MEASURED**.
+> 6. **Nothing is recorded, so there is no writer to name.** The decision is a pure function of
+>    the host's filesystem and platform, so the launcher and `yolo stores` re-derive it through
+>    one `hostcas.Plan`. A stamp would be a second source of truth for a question the disk
+>    answers, and it would go stale the first time a user deleted their pants cache.
+>
+> **The stranded copy, per the ruling:** nothing is migrated and nothing is deleted by the
+> alias. The bind lands ON the private copy's own directory, so the bytes simply stop being
+> read; `PurgeCacheByAge` already covers `pants`, and the new `yolo stores` row names the path
+> and the reclaimer (pinned against prune's own subdir list, so the row cannot promise a
+> reclaimer that would not run).
+>
+> **Not double-counted:** the aliased row is its OWN section with verdict `not yolo's`, because
+> [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)'s state-dir row sums the
+> shared-cache section and a host-owned 27 G tree folded in there would inflate yolo's own
+> footprint. `yolo prune` needs no change: `PurgeCacheByAge` is rooted at
+> `paths.GlobalCache()/<subdir>` and the alias source is under the host user's XDG cache root,
+> which the same-tree gate keeps outside it.
 
 ---
 
@@ -480,15 +601,15 @@ turns on.
 
 | # | Lever | Kind | Bytes here (dated 2026-09-06) | What it costs to pull | State |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| L1 | **Run the cache age-purge that already exists** (`PurgeCacheByAge`, 30 d) on the host `GLOBAL_CACHE`; add `nce` to the default list | both | **49.34 GiB** covered + **1.86 GiB** `nce`; steady state unbounded today | a trigger, not a reaper: the walk over ~369 k files is the expensive part (minutes; NOT MEASURED precisely); regeneration is a **re-download of unknown size** (pants 39 GiB). ⚠ The bytes are a THIRD-PARTY build cache yolo pools ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C) | reaper shipped 2026-07-22; offered at launch since 2026-09-08 ([OQ-BF1](#OQ-BF1), `3a08a829`) |
-| L2 | **Let the shipped image reap run** — the first `AutoReapOldImages` pass against the backlog | backfill (steady state shipped) | **≈ 24 GB** of 52.73 here; ~3.5 GB more behind the `<none>` rows ([OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH) | zero code; the cost is **time on the launch path** — fourteen `rmi -f` of multi-GB images before the container starts (NOT MEASURED; see [§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | shipped 2026-09-06; runs in the housekeeping slot since 2026-09-08 ([OQ-BF5](#OQ-BF5), `65ae67c6`) |
-| L3 | **Delete yolo's own superseded store outputs** — named `nix store delete` of unrooted `*-install-prefix` / `*-go-0-dev` paths, never a blanket GC | both | **≥ 28.8 GB**; +0.43 GB/day | new mechanism; **prerequisite: per-jail durable prefix roots** ([OQ-BF4](#OQ-BF4)) or nix's liveness check is the only veto and its view of containers is unestablished; host-only | built 2026-09-08 ([OQ-BF3](#OQ-BF3), `2a49467d`) |
+| L1 | **Run the cache age-purge that already exists** (`PurgeCacheByAge`, 30 d) on the host `GLOBAL_CACHE`; add `nce` to the default list | both | **49.34 GiB** covered + **1.86 GiB** `nce`; steady state unbounded today | a trigger, not a reaper: the walk over ~369 k files is the expensive part (minutes; NOT MEASURED precisely); regeneration is a **re-download of unknown size** (pants 39 GiB). ⚠ The bytes are a THIRD-PARTY build cache yolo pools ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C) | reaper shipped 2026-07-22; offered at launch since 2026-09-08 ([OQ-BF1](#111-decision-ledger), `3a08a829`) |
+| L2 | **Let the shipped image reap run** — the first `AutoReapOldImages` pass against the backlog | backfill (steady state shipped) | **≈ 24 GB** of 52.73 here; ~3.5 GB more behind the `<none>` rows ([OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH) | zero code; the cost is **time on the launch path** — fourteen `rmi -f` of multi-GB images before the container starts (NOT MEASURED; see [§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | shipped 2026-09-06; runs in the housekeeping slot since 2026-09-08 ([OQ-BF5](#111-decision-ledger), `65ae67c6`) |
+| L3 | **Delete yolo's own superseded store outputs** — named `nix store delete` of unrooted `*-install-prefix` / `*-go-0-dev` paths, never a blanket GC | both | **≥ 28.8 GB**; +0.43 GB/day | new mechanism; **prerequisite: per-jail durable prefix roots** ([OQ-BF4](#111-decision-ledger)) or nix's liveness check is the only veto and its view of containers is unestablished; host-only | built 2026-09-08 ([OQ-BF3](#111-decision-ledger), `2a49467d`) |
 | L4 | **`ImageCacheKeep` → 0 where the runtime streams** (podman) | backfill | **≈ 20.6 GB** (10.7 host + 9.9 nested) | one constant, one predicate on the runtime; regeneration = a build; the fallback reader `newestTars` keeps working on whatever exists | knob is [`minimal-disk-footprint.md`](minimal-disk-footprint.md)'s ([OQ-DF1](minimal-disk-footprint.md#112-open-questions) already ruled "keep zero" for the writer) |
 | L5 | **C6 — a stable layer chain** ([OQ-6](../reference/image-staging-vs-baking.md#why-its-this-way)) | steady state | lowers the LRU floor from ~10 × 2.7 GB to ~10 × (trailing layers); saves ~17.6 s of podman write per image that still rebuilds | a `flake.nix` change against an already-loaded base ref; Apple Container unproven | re-priced down for storage by C8 and up as the floor-setter, then **built 2026-09-09** as layer-aware delivery (C9: nix2container, a three-tier layer plan, a negotiating `skopeo copy` — [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#delivering-into-the-runtime)) |
 | L6 | **C4 opt-in (`YOLO_STORE_PACKAGES=1`)** | steady state | one lean image per machine (1.5 GB) instead of one ~3 GB-unique image per distinct `packages:` list | shipped; opt-in per launch | shipped today |
 | L7 | **Run A7's version prune on every launcher invocation**, not only after an update | backfill | **≈ 1.28 GB** per workspace here; × N workspaces | a call-site change in the launcher template; evidence is the live symlink, complete by construction | steady state shipped 2026-09-04; every invocation built 2026-10-01 ([BF-D1](#BF-D1)) |
 | L8 | **Small liveness-gated sweeps into the automatic slot** — agent staging orphans, retired loophole state, superseded captures | both | 36.5 MiB + 1.9 MiB + 0 here | already tri-state gated; trigger only | reapers shipped |
-| L9 | **Alias a host cache instead of pooling a second copy of it** — the CAS half of pants (`lmdb_store`), and the same question for npm/uv/pip/go-build | **neither backfill nor retention — a third kind** | up to **27 G** of pants alone stops existing twice; unmeasured for the others (the host's own copies are not visible from a jail) | a writable host bind is a bigger trust step than the `:ro` nix store precedent (`hostNixStore`, `internal/cli/run/hostprobes.go`); gated on host OS/arch matching, and **only for the content-addressed half** | shipped 2026-09-09 (`internal/hostcas`); [OQ-BF10](#OQ-BF10) |
+| L9 | **Alias a host cache instead of pooling a second copy of it** — the CAS half of pants (`lmdb_store`), and the same question for npm/uv/pip/go-build | **neither backfill nor retention — a third kind** | up to **27 G** of pants alone stops existing twice; unmeasured for the others (the host's own copies are not visible from a jail) | a writable host bind is a bigger trust step than the `:ro` nix store precedent (`hostNixStore`, `internal/cli/run/hostprobes.go`); gated on host OS/arch matching, and **only for the content-addressed half** | shipped 2026-09-09 (`internal/hostcas`); [OQ-BF10](#111-decision-ledger) |
 | — | Worktrees under `/workspace/.claude/worktrees` | not yolo's | 985 MB + 4 M metadata | `git worktree prune` for the two prunable entries; the rest are Claude Code's | out of scope, named so it is not mistaken |
 | — | Host `min-free` | not yolo's to pull | would bound the store's dead set continuously | a human edits `nix.conf`; `yolo check` already warns (P5) | the warning is the hint pattern again |
 
@@ -572,15 +693,15 @@ that needs a TTY runs there — by then the TTY is the container's.
 | Image tars on a streaming runtime | **automatic** | evidence complete (the runtime streams; a tar is one-shot, P3 of minimal-disk); regeneration = a build | `keep=0` on the first pass takes all of it | zero tars |
 | Superseded vendor versions (A7) | **automatic** | evidence complete (the live symlink, per workspace); regeneration = a vendor download of one build, which the launcher does anyway | `_prune_versions` at every launcher invocation, keep 2 | unchanged |
 | Agent staging, loophole state, captures | **automatic** | tri-state gated already; kilobytes to hundreds of MB | in the slot | in the slot |
-| yolo's own unrooted store outputs | **automatic, gated on [OQ-BF4](#OQ-BF4)**; until then **offered** | evidence complete only once every running jail's prefix has a durable root; nix's own liveness check is the second veto; regeneration = a `nix build` | first pass deletes every unrooted `*-install-prefix` / `*-go-0-dev` by name (`nix store delete`, which refuses a live path) | per launch, in the slot, host-only |
-| Cache age-purge (host `GLOBAL_CACHE`) | **offered while non-zero, then automatic** ([OQ-BF1](#OQ-BF1)) | evidence complete (mtime) but regeneration is an unbounded re-fetch — P4 | a prompt with the measured size; **y** deletes in the slot and enables the steady state; **n** asks again in 7 d; **never** opts the class out. The prompt returns whenever the class is ≥ 1 GiB again and no answer stands — this cache grows by normal use, so an offer shown once and retired would be the same trigger defect one level up | automatic, 30 d, in the slot, once consented |
-| Unused mise tool versions (the shared tool store) | **offered while ≥ 1 GiB, then automatic** ([OQ-DF4](minimal-disk-footprint.md#111-decision-ledger), ruled 2026-10-05) | evidence: every jail's [use record](minimal-disk-footprint.md#113-the-mise-use-record-as-built), declining whenever it cannot answer; regeneration is a re-download for a workspace that returns to an old version — P4 | the same prompt, naming the largest versions; **y** removes them in the slot and enables the steady state | automatic, versions no jail used for 30 d, in the slot, host-only, once consented |
-| `<none>` podman rows | **offered** until [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH is ruled — ruled NARROW 2026-09-08: a row carrying yolo's owner label is reaped with the tagged ones; a row older than the label is left alone permanently and surfaced by `yolo stores` | evidence partial (no tag); the store is shared with non-yolo images | the offer names the count and the chain bytes they hold; acceptance is a `podman rmi` of the listed IDs, never `image prune` | the automatic reap for labelled rows; nothing for pre-label rows, by ruling |
+| yolo's own unrooted store outputs | **automatic, gated on [OQ-BF4](#111-decision-ledger)**; until then **offered** | evidence complete only once every running jail's prefix has a durable root; nix's own liveness check is the second veto; regeneration = a `nix build` | first pass deletes every unrooted `*-install-prefix` / `*-go-0-dev` by name (`nix store delete`, which refuses a live path) | per launch, in the slot, host-only |
+| Cache age-purge (host `GLOBAL_CACHE`) | **offered while non-zero, then automatic** ([OQ-BF1](#111-decision-ledger)) | evidence complete (mtime) but regeneration is an unbounded re-fetch — P4 | a prompt with the measured size; **y** deletes in the slot and enables the steady state; **n** asks again in 7 d; **never** opts the class out. The prompt returns whenever the class is ≥ 1 GiB again and no answer stands — this cache grows by normal use, so an offer shown once and retired would be the same trigger defect one level up | automatic, 30 d, in the slot, once consented |
+| Unused mise tool versions (the shared tool store) | **offered while ≥ 1 GiB, then automatic** ([OQ-DF4](minimal-disk-footprint.md#OQ-DF4), ruled 2026-10-05) | evidence: every jail's [use record](minimal-disk-footprint.md#113-the-mise-use-record-as-built), declining whenever it cannot answer; regeneration is a re-download for a workspace that returns to an old version — P4 | the same prompt, naming the largest versions; **y** removes them in the slot and enables the steady state | automatic, versions no jail used for 30 d, in the slot, host-only, once consented |
+| `<none>` podman rows | **offered** until [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH is ruled — ruled NARROW 2026-09-08: a row carrying yolo's owner label is reaped with the tagged ones; a row older than the label is left alone permanently and surfaced by `yolo stores` | evidence partial (no tag); the store is shared with non-yolo images | the offer names the count and the chain bytes they hold; acceptance is a `podman rmi` of the listed IDs, never `image prune` | the automatic reap for labelled rows; nothing for pre-label rows, by ruling |
 | Worktrees | **never** | not yolo's bytes | none | none |
 
 The offer has one shape for every offered class, so a user learns it once — and it is the shape a
 user may meet again, since consent is per class and is not consumed by being given
-([OQ-BF1](#OQ-BF1)):
+([OQ-BF1](#111-decision-ledger)):
 
 ```console
 $ yolo
@@ -608,7 +729,7 @@ Stated once, with units, because "periodically" is not a trigger:
   "not now" and **≥ 7 days** old. Non-TTY: one printed line naming the size and `yolo prune --apply`;
   no prompt, no deletion (the same polarity [`config-safety.md`](../reference/config-safety.md)'s
   [OQ-D2](../reference/config-safety.md#why-its-this-way) chose for a non-interactive config change: never an
-  implicit yes). **This trigger is per class and recurs** — [OQ-BF1](#OQ-BF1) ruled that an offer is
+  implicit yes). **This trigger is per class and recurs** — [OQ-BF1](#111-decision-ledger) ruled that an offer is
   not consumed by being given once. `y` moves the class to the automatic tier so it is never asked
   again; `never` is the only answer that stops the asking without deleting anything; everything else
   is a deferral with a date on it.
@@ -656,7 +777,7 @@ makes podman refuse when a container already exists; neither closes the gap betw
 write and the container's creation.
 
 > [!NOTE]
-> **The lock's scope changed on 2026-09-29 ([OQ-PR2](podman-reboot-readiness.md#OQ-PR2)).** A pass
+> **The lock's scope changed on 2026-09-29 ([OQ-PR2](podman-reboot-readiness.md#decision-ledger)).** A pass
 > no longer holds `housekeeping.lock` for its whole length: it holds a separate pass lock,
 > non-blocking, so two passes still never interleave and a loser still skips, and takes the shared
 > lock around each deletion only, rechecking under it that the item is still unused. (While an
@@ -688,8 +809,8 @@ attempt was refused for liveness.
 
 > [!NOTE]
 > **BUILT 2026-09-08 — `internal/cli/stores`.** `yolo stores [--json] [--age] [--no-record]`,
-> registered in the CLI dispatch table, with [OQ-BF9](#OQ-BF9)'s bounded sample ledger at
-> `<state>/stores/<store>.samples` and the [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH
+> registered in the CLI dispatch table, with [OQ-BF9](#111-decision-ledger)'s bounded sample ledger at
+> `<state>/stores/<store>.samples` and the [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH
 > warning row (untagged podman rows: count, bytes, why yolo declines, and that `podman image
 > prune` is the user's to run). Two deviations from the plan's file map, both forced: the engine
 > lives in the command's own package rather than `internal/prune/stores.go` (that package was
@@ -741,7 +862,7 @@ never launch a container to measure one. `--json` is a first-class output for ag
 `config drift` precedent.
 
 **Growth needs two samples**, which is the one thing a read-only command cannot give itself; see
-[OQ-BF9](#OQ-BF9).
+[OQ-BF9](#111-decision-ledger).
 
 ### 5.6 What done looks like
 
@@ -756,7 +877,7 @@ Observable, on a machine that upgrades onto this:
   on a nested launch without the opt-out, likewise; `build/last-<class>-reap` stamps exist and move.
 - `~/.cache/images` and the nested `cache/images` are empty on a podman machine.
 - `nix-store --query --roots` on the prefix of **every running jail** returns a durable root
-  ([OQ-BF4](#OQ-BF4)); the count of unrooted `*-yolo-jail-install-prefix` paths is ≤ the number of
+  ([OQ-BF4](#111-decision-ledger)); the count of unrooted `*-yolo-jail-install-prefix` paths is ≤ the number of
   checkouts on the machine, and `*-yolo-jail-go-0-dev` paths number 0 after the slot runs.
 - A launch's wall clock is unchanged by any reclaim: measured before and after on the same
   workspace, the cold and warm figures in [the cost model](../reference/image-staging-vs-baking.md#cost-model) hold.
@@ -804,13 +925,13 @@ Observable, on a machine that upgrades onto this:
 
 | # | Risk | Mitigation |
 | :--- | :--- | :--- |
-| R1 | **Deleting the prefix a running jail executes from.** Observed possible today: this jail's prefix has no durable root of its own ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding) item 2). | [OQ-BF4](#OQ-BF4) before L3 is automatic; `nix store delete` refuses a live path as the second veto; never `--ignore-liveness`. |
-| R2 | **A first-pass reap holds the launch** — fourteen `rmi -f` before the container starts. | Move the reap to the housekeeping slot ([OQ-BF5](#OQ-BF5)). |
+| R1 | **Deleting the prefix a running jail executes from.** Observed possible today: this jail's prefix has no durable root of its own ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding) item 2). | [OQ-BF4](#111-decision-ledger) before L3 is automatic; `nix store delete` refuses a live path as the second veto; never `--ignore-liveness`. |
+| R2 | **A first-pass reap holds the launch** — fourteen `rmi -f` before the container starts. | Move the reap to the housekeeping slot ([OQ-BF5](#111-decision-ledger)). |
 | R3 | **The reap-versus-warm-launch race**, now on a schedule set by other people's jails (minimal-disk P7). | The invariant in [§5.4](#54-one-writer-concurrency-failure) and a machine-wide lock; the pass loses ties. |
 | R4 | **An offer on a non-TTY is silently a "no" forever.** | Correct by design (never an implicit yes), and the printed line names `yolo prune --apply`. A CI host has no backlog worth an offer. |
 | R5 | **A cache purge re-fetches something expensive** (pants, uv). | That is why it is offered, once, with the size, and why the 30 d rule is unchanged. |
 | R6 | **The walk itself costs minutes on a 369 k-file cache.** | Runs only in the slot, debounced 24 h, under a 60 s budget with a partial figure. |
-| R7 | **The in-jail out-link is not a root and never was**, so a nested jail's prefix was unrooted from birth. | Gate `BuildJailPrefix`'s rooting the way `RegisterRoot` is gated, and have the *host* root what nested jails run — or accept it as nested-only. Part of [OQ-BF4](#OQ-BF4). **Since 2026-10-01** an in-jail launch registers the prefix root under the host's spelling of its link wherever the jail's launcher states a host path map ([`in-jail-nix-roots.md` NR-D2](in-jail-nix-roots.md#NR-D2)); the out-link itself is still not a root. |
+| R7 | **The in-jail out-link is not a root and never was**, so a nested jail's prefix was unrooted from birth. | Gate `BuildJailPrefix`'s rooting the way `RegisterRoot` is gated, and have the *host* root what nested jails run — or accept it as nested-only. Part of [OQ-BF4](#111-decision-ledger). **Since 2026-10-01** an in-jail launch registers the prefix root under the host's spelling of its link wherever the jail's launcher states a host path map ([`in-jail-nix-roots.md` NR-D2](in-jail-nix-roots.md#NR-D2)); the out-link itself is still not a root. |
 | R8 | **One-machine measurement.** | Stated in [§2.4](#24-caveats); the design rests on shapes, not magnitudes. |
 
 ---
@@ -848,21 +969,21 @@ Observable, on a machine that upgrades onto this:
 ## 10. Sequencing — what I would build, in order
 
 1. **`yolo stores` — the inventory first** ([§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)). It is the maintainer's stated
-   minimum, it is the only item here that needs no ruling on any of [§11.2](#112-the-questions-as-argued)'s questions, and it
+   minimum, it is the only item here that needs none of [§11.1](#111-decision-ledger)'s rulings, and it
    makes every later step checkable: each disposition below can then be shown to have moved a
    number rather than argued to have. It also surfaces the rows nothing owns, which is where the
    next policy will have to come from.
 2. **L4 and L7 — two small changes with no new mechanism.** `ImageCacheKeep` 0 where the runtime
    streams; `_prune_versions` at every launcher invocation. Both are P3-clean, both take a backlog
    with them on their first run, both are testable at the callee *and* the call site. Both are
-   built: L4 as [OQ-BF6](#OQ-BF6), L7 on 2026-10-01 as [BF-D1](#BF-D1).
+   built: L4 as [OQ-BF6](#111-decision-ledger), L7 on 2026-10-01 as [BF-D1](#BF-D1).
 3. **L2's ordering — move the shipped image reap into the housekeeping slot**, with the machine-wide
    lock ([§5.4](#54-one-writer-concurrency-failure)). This is the first thing that makes the slot exist,
    and the first pass over a backlog stops holding a launch. Fold L8's small sweeps into the same
    slot.
 4. **The offer** — the recorded-answer file, the measurement stamp, the pre-attach prompt — with L1
    as its first client. This is where P4 becomes code.
-5. **[OQ-BF4](#OQ-BF4) — durable roots for every running jail's prefix**, and the in-jail gate. A
+5. **[OQ-BF4](#111-decision-ledger) — durable roots for every running jail's prefix**, and the in-jail gate. A
    correctness fix independent of disk, and L3's prerequisite.
 6. **L3 — named `nix store delete` of yolo's own superseded outputs**, automatic in the slot,
    host-only, once 4 has landed. Until then the same set is *offered*, computed by name.
@@ -875,498 +996,161 @@ Observable, on a machine that upgrades onto this:
 
 The maintainer asked two questions; the levers ([§3](#3-the-levers-ranked)) are an answer, the
 disposition ([§5](#5-the-shape-measure-late-offer-early-delete-in-the-slot)) was a proposal and is
-now ruled. [§11.1](#111-decision-ledger) is the durable form; [§11.2](#112-the-questions-as-argued)
-keeps the arguments, because several rulings turn on a distinction that is worth more than its
-verdict.
+now ruled. [§11.1](#111-decision-ledger) is the durable form; [§11.2](#112-why-the-rulings-hold)
+keeps the distinctions several rulings turn on, each worth more than its verdict.
 
 ### 11.1 Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| [OQ-BF1](#OQ-BF1) | **Two tiers — and the offered tier is offered whenever a class has ≥ 1 GiB reclaimable, not once.** `y` promotes the class to automatic; `never` is the only sticky stop. Three of the five backfill classes recur by normal use, so a retired offer would be the trigger defect one level up; for the two that do not, the offer's return **is** the bug report | 2026-09-08 | [§5.2](#52-two-tiers-one-mapping), [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `3a08a829` |
-| [OQ-BF2](#OQ-BF2) | **Yes — offered while non-zero, then automatic in the slot**, 30 d unchanged, `nce` added, `staticcheck` left out. MEASURED: `go-build` and `staticcheck` self-trim (Go's 5-day/1-day trimmer, `trim.txt` present); pants, uv, pip, npm, pex and `nce` do not — so the ones the purge cannot help are exactly the ones that manage themselves, and the 49.34 GiB is almost all pants | 2026-09-08 | [§5.2](#52-two-tiers-one-mapping), [§2.1](#21-every-store-one-table) | ✅ `3a08a829` |
-| [OQ-BF3](#OQ-BF3) | **Yes, once [OQ-BF4](#OQ-BF4) roots every running jail's prefix:** delete unrooted `*-yolo-jail-install-prefix` / `*-yolo-jail-go-0-dev` by name in the slot, host-only, never a blanket gc, never `--ignore-liveness`. Offer the same set until BF4 lands. Go-build outputs are garbage the moment the prefix exists | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§3](#3-the-levers-ranked) L3 | ✅ `2a49467d` |
-| [OQ-BF4](#OQ-BF4) | **Yes — a durable root per prefix store path, registered at launch, gated on `!inJail`, held while a container is running from it.** A bug fix, not a disposition: today a long-running jail's pid1 binary is rooted by nothing. **Neither** the load sentinel's LRU (it cannot answer liveness) **nor** an age cutoff (the policy [OQ-LS1](../reference/image-retention.md#why-its-this-way) ruled for image closures, which would reap a long-running jail's own binaries). One test separates them: can losing it cost only a rebuild? | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§8](#8-risks) R7 | ✅ `8768db9d` |
-| [OQ-BF5](#OQ-BF5) | **Move the image reap into the housekeeping slot, and take the machine-wide housekeeping lock in the same change** — in both the load-and-record step and the pass. The lock is not a follow-up: the slot widens the window the race already has | 2026-09-08 | [§5.1](#51-the-housekeeping-slot), [§5.4](#54-one-writer-concurrency-failure) | ✅ `65ae67c6` |
-| [OQ-BF6](#OQ-BF6) | **`ImageCacheKeep` 0 on podman, unchanged at 3 on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger) names the component that deletes on success. Zero retained tars is not zero tars readable — the fallback READER survives | 2026-09-08 | [§3](#3-the-levers-ranked) L4, [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `a9a7dbb0` |
-| [OQ-BF7](#OQ-BF7) | **Retired from the question list — an outage with one measured cause needs a fix, not a disposition.** Shipped as a **refusal** (`prefixUnreachableFromVM`), not as staging or baking. Its claimed coupling to BF3/BF4 is discharged: under the refusal there is no third place for the prefix to live | 2026-09-08 | [§11.2](#112-the-questions-as-argued) [OQ-BF7](#OQ-BF7) | ✅ `6a855b6d` |
-| [OQ-BF8](#OQ-BF8) | **Dissolved — the premise is being removed.** Liveness moves to `podman ps` ([`image-retention.md`](../reference/image-retention.md)), so the LRU stops being retention and the cap needs no derivation. It is **not** deleted: it keeps its MRU role for GC roots and the load diagnosis, and whether that half survives was [OQ-LS1](../reference/image-retention.md#why-its-this-way) — since ruled (see [§11.2](#112-the-questions-as-argued) [OQ-BF8](#OQ-BF8)) | 2026-09-08 | [§2.2](#22-the-image-reap-priced-against-this-store) | n/a — dissolved |
-| [OQ-BF9](#OQ-BF9) | **Yes — one dated line per store per run, default on, `--no-record` to opt out, `yolo stores` the single writer, bounded to 30 samples per store.** Unblocks [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger), which has been waiting for a first sample; rule this first | 2026-09-08 | [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ `e85e0690` |
-| [OQ-BF10](#OQ-BF10) | **Content-addressed stores only — and the reason is injection, not size.** A path-keyed store like `named_caches` lets a jail write content the host tool reads because of where it sits; a CAS rejects a blob that does not match its digest. Gated on matching OS and arch, writable, never on macOS. Scope stops here pending a post-implementation storage analysis | 2026-09-08 | [§11.2](#112-the-questions-as-argued) [OQ-BF10](#OQ-BF10) | ✅ `hostcas.Plan`, pinned by `TestPlanGates` and `TestPathKeyedStoresAreNeverRecognised` |
+| OQ-BF1 | **Two tiers — and the offered tier is offered whenever a class has ≥ 1 GiB reclaimable, not once.** `y` promotes the class to automatic; `never` is the only sticky stop. Three of the five backfill classes recur by normal use, so a retired offer would be the trigger defect one level up; for the two that do not, the offer's return **is** the bug report | 2026-09-08 | [§5.2](#52-two-tiers-one-mapping), [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `3a08a829` |
+| OQ-BF2 | **Yes — offered while non-zero, then automatic in the slot**, 30 d unchanged, `nce` added, `staticcheck` left out. MEASURED: `go-build` and `staticcheck` self-trim (Go's 5-day/1-day trimmer, `trim.txt` present); pants, uv, pip, npm, pex and `nce` do not — so the ones the purge cannot help are exactly the ones that manage themselves, and the 49.34 GiB is almost all pants | 2026-09-08 | [§5.2](#52-two-tiers-one-mapping), [§2.1](#21-every-store-one-table) | ✅ `3a08a829` |
+| OQ-BF3 | **Yes, once [OQ-BF4](#111-decision-ledger) roots every running jail's prefix:** delete unrooted `*-yolo-jail-install-prefix` / `*-yolo-jail-go-0-dev` by name in the slot, host-only, never a blanket gc, never `--ignore-liveness`. Offer the same set until BF4 lands. Go-build outputs are garbage the moment the prefix exists | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§3](#3-the-levers-ranked) L3 | ✅ `2a49467d` |
+| OQ-BF4 | **Yes — a durable root per prefix store path, registered at launch, gated on `!inJail`, held while a container is running from it.** A bug fix, not a disposition: today a long-running jail's pid1 binary is rooted by nothing. **Neither** the load sentinel's LRU (it cannot answer liveness) **nor** an age cutoff (the policy [OQ-LS1](../reference/image-retention.md#why-its-this-way) ruled for image closures, which would reap a long-running jail's own binaries). One test separates them: can losing it cost only a rebuild? | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§8](#8-risks) R7 | ✅ `8768db9d` |
+| OQ-BF5 | **Move the image reap into the housekeeping slot, and take the machine-wide housekeeping lock in the same change** — in both the load-and-record step and the pass. The lock is not a follow-up: the slot widens the window the race already has | 2026-09-08 | [§5.1](#51-the-housekeeping-slot), [§5.4](#54-one-writer-concurrency-failure) | ✅ `65ae67c6` |
+| OQ-BF6 | **`ImageCacheKeep` 0 on podman, unchanged at 3 on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#OQ-DF2) names the component that deletes on success. Zero retained tars is not zero tars readable — the fallback READER survives | 2026-09-08 | [§3](#3-the-levers-ranked) L4, [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `a9a7dbb0` |
+| OQ-BF7 | **Retired from the question list — an outage with one measured cause needs a fix, not a disposition.** Shipped as a **refusal** (`prefixUnreachableFromVM`), not as staging or baking. Its claimed coupling to BF3/BF4 is discharged: under the refusal there is no third place for the prefix to live | 2026-09-08 | [The prefix on macOS](#the-prefix-on-macos) | ✅ `6a855b6d` |
+| OQ-BF8 | **Dissolved — the premise is being removed.** Liveness moves to `podman ps` ([`image-retention.md`](../reference/image-retention.md)), so the LRU stops being retention and the cap needs no derivation. It is **not** deleted: it keeps its MRU role for GC roots and the load diagnosis, and whether that half survives was [OQ-LS1](../reference/image-retention.md#why-its-this-way) — since ruled (see [the LRU was demoted, not deleted](#the-lru-was-demoted-not-deleted)) | 2026-09-08 | [§2.2](#22-the-image-reap-priced-against-this-store) | n/a — dissolved |
+| OQ-BF9 | **Yes — one dated line per store per run, default on, `--no-record` to opt out, `yolo stores` the single writer, bounded to 30 samples per store.** Unblocks [OQ-DF4](minimal-disk-footprint.md#OQ-DF4), which has been waiting for a first sample; rule this first | 2026-09-08 | [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ `e85e0690` |
+| OQ-BF10 | **Content-addressed stores only — and the reason is injection, not size.** A path-keyed store like `named_caches` lets a jail write content the host tool reads because of where it sits; a CAS rejects a blob that does not match its digest. Gated on matching OS and arch, writable, never on macOS. Scope stops here pending a post-implementation storage analysis | 2026-09-08 | [Aliasing a host cache](#aliasing-a-host-cache-instead-of-pooling-a-second-copy) | ✅ `hostcas.Plan`, pinned by `TestPlanGates` and `TestPathKeyedStoresAreNeverRecognised` |
 | <a id="BF-D1"></a>BF-D1 | *Implementation decision* (BF-D1 is an id coined here). **L7 is built as `_locked_prune`, called once on the native launcher's launch path after the install-or-update branch, whatever that branch did.** Three choices L7 left open: it runs under a frozen `agent_updates` policy too, since the prune moves no version (the live build and one rollback target stay) and a frozen launcher carries no update branch to prune from; it takes the install-prefix lock and, when another writer holds it, deletes nothing and says nothing, since an update in another shell writes the same version directory and prunes on its own success; and it counts the directory's entries with shell builtins first, so a workspace with at most `KEEP_VERSIONS` entries, the steady state, pays no subprocess on the path of every command. It never fails the command: a delete it cannot make is reported and the program still starts, since the launcher runs under `set -e` and this is the prune's first caller outside an `||` list (found by the review, 2026-10-01). `yolo pack update`'s mode is unchanged: it exits before the launch path and prunes on its update's success, as before | 2026-10-01 | [§3](#3-the-levers-ranked) L7, [§10](#10-sequencing--what-i-would-build-in-order) step 2 | ✅ 2026-10-01 (`_locked_prune` in [`shims.go`](../../internal/entrypoint/shims.go); `TestVersionPruneRunsWhenNoUpdateIsDue`, `TestVersionPruneRunsUnderAFrozenUpdatePolicy`, `TestVersionPruneYieldsToAWriterHoldingTheLock`, `TestTheEveryInvocationPruneReleasesTheLock`, `TestAnEveryInvocationPruneThatCannotDeleteStillLaunches` in [`versionprune_test.go`](../../internal/entrypoint/versionprune_test.go); in a real launch, `TestTheClaudeLauncherPrunesSupersededVersionsWithNoUpdate` in [`integration/versionprune_test.go`](../../integration/versionprune_test.go), revert-checked against the call site) |
 | <a id="BF-D2"></a>BF-D2 | *Implementation decision* (BF-D2 is an id coined here), taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible. **On `macos-user`, `yolo prune` asks no container runtime, and `yolo stores` lists that backend's own storage.** The backend runs no container, so both commands used to address their probes to a binary named `macos-user`: `yolo prune` declined its image sweep and exited 1, and `yolo ps` could not list anything. Eight choices. (1) Its running jails are its host-services SESSIONS. A session, a term the code coined, is one macos-user invocation of yolo, or one `yolo host` launch that opens a doorway: one command and the host services started for it, from launch to teardown. Every launch that starts a sandbox already holds an exclusive lock on its own session dir until its teardown, so the held locks are the registry, read with a shared non-blocking probe that removes nothing (`runtime.ListSessions`), and each session now writes a record of its notch, workspace and container name beside its lock before the lock takes its name. No keeper and no new file outside the session dir. (2) Each container-only prune section prints one not-applicable line naming `YOLO_RUNTIME=container yolo prune`, which is never a decline, so the command exits 0; the workspaces it tracks come from the session records. (3) Every agent-staging sweep, under every runtime and in the housekeeping slot, keeps the staging names whose `paths.JailShortHash` is the key of a live or starting session (`prune.SessionStagingNames`). That hazard is INFERRED from the code, not measured: a container runtime's sweep on the same Mac would read a live session's staging as an orphan once it was an hour old. (4) `yolo stores` runs no `sudo`: `env/` is root's and 0700, so it reads as unknown and names `sudo du -sh`; of the sandbox home only the mise store and `~/.cache` are walked. A removal a note names spells each path, never a glob: the user's own shell expands a glob before `sudo` runs, and in `env/`, which only root can list, it matches nothing (found by the review). (5) The session listing reads only the session dirs this user owns, and skips a symlink at a session's name. The base is the machine-wide `/tmp`, and another account's session dir is 0700 with a lock this user cannot open, so it could only list as unknown: a "starting or unknown" row in `yolo ps` and a name every staging sweep keeps, while nothing this user's yolo does depends on another account's sessions. A link is not a session's dir, and following one would read another directory's lock and record. (6) Every staging sweep declines, deleting nothing, when the session listing cannot run, by the same tri-state rule as a container runtime that cannot be asked: a listing that failed and one that found no sessions are different answers, and only the second may let a session's staging go. (7) The workspace durable dirs section of `yolo stores` is not extended to macos-user, so on that runtime it lists none. The session records could name the workspaces of the sessions running now, but [DS-D22](durable-scratch-space.md#DS-D22) already records that the section covers only workspaces with a running jail and names the launch line and `yolo check` as the views that never miss one; the same partial view on a second backend is left for that decision to widen. (8) On macos-user the `/nix/store` rows for install prefixes and Go builds keep their reclaimer, the superseded-store-output pass, and name its trigger as a container runtime's: a container launch's [post-launch slot](#53-triggers-defaults-and-the-post-launch-slot) and `YOLO_RUNTIME=container yolo prune --apply`. That pass asks a container runtime which prefix each running jail executes, so macos-user's own `yolo prune` prints it as not applicable and a macos-user launch runs no post-launch slot. The verdict stays yolo's, because a container runtime on the same Mac runs the pass; with none, nothing does, and the row's note says so (found by the review). The same rule covers every other row whose pass macos-user's `yolo prune` prints as not applicable: the cached image tarballs, the interrupted image deliveries, the containers tracking dir and the image and prefix GC roots under `build/` keep their reclaimer and name `YOLO_RUNTIME=container yolo prune --apply` as the trigger. The tarball row names the keep of each container runtime that runs its sweep, and `build/`'s note adds that macos-user's own prune still sweeps the dangling out-links there (found by the second review). Reclaimers for these stores stay unbuilt ([§9](#9-what-this-does-not-cover)) | 2026-10-04 | [§9](#9-what-this-does-not-cover), [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ 2026-10-04 (`TestPsOnMacosUserListsItsLiveSessions`, `TestPruneOnMacosUserAsksNoRuntimeAndExitsZero`, `TestAContainerRuntimesStagingSweepKeepsALiveMacosUserSession`, `TestHousekeepingKeepsALiveMacosUserSessionsStaging`, `TestTheMacosUserSectionListsTheStateDirAndTheHomesStores`, `TestListSessionsLeavesOutAnotherAccountsSessions`, `TestAStagingSweepDeclinesWhenTheSessionsCannotBeListed`, `TestHousekeepingDeclinesTheStagingSweepWhenTheSessionsCannotBeListed`, `TestContainerOnlySectionsSayTheyDoNotApplyOnMacosUser`, `TestMacosUserRowsNameTheRuntimeThatRunsTheirPass`, `TestAListingIsNotReadAsAHolderByAnotherListing`; on a Mac, `TestMacosUserPsListsItsLiveSession` and `TestMacosUserStoresListsTheSandboxAccount`) |
-| <a id="BF-D3"></a>BF-D3 | *Implementation decision* (BF-D3 is an id coined here), taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible. **A `macos-user` launch runs a housekeeping slot of its own and makes the reclaim offer, for two classes: the retired loophole-state generations, which grow on this backend as on every other, and the shared cache, which this backend does not write and container jails on the same Mac fill.** It revises [BF-D2](#BF-D2) (8)'s "a macos-user launch runs no post-launch slot". Five choices. (1) Two classes: the shared cache's measure-and-purge ([OQ-BF1](#OQ-BF1)'s offered tier), and the retired loophole-state generations, keep 3, on a debounce stamp of their own (`last-loophole-state-reap`) and outside the liveness gate the container slot's small-classes pass puts them behind, since the staging sweep beside them there needs a container runtime's live set and they need none. The container slot is unchanged. (2) Every other class is left out by runtime, with no probe and no note: images, superseded store outputs, flake-bundle generations (liveness-gated, and a container on the same Mac may mount one), agent staging, image tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a day) and scratch volumes. Agent logs and the embedded pack trees stay out on every backend, as before. (3) The offer sits after the config-change approval and before the launch lock, so both prompts come together before any setup and neither holds the lock while a human reads it; a dry run neither offers nor runs a slot. (4) The slot starts on its own goroutine and never after the backend returns, where a pass, which can take a minute or more on a real host, would hold the prompt after the agent exited. Its right moment is when the backend's agent starts, once the backend has released the workspace lock; until the backend has a hook for that moment, the arm starts it just before the dispatch, so the pass can overlap the backend's setup, which reads neither class and to whose terminal it writes nothing. (5) `yolo host` gets no slot: an ordinary host launch execs into its program, and none of the slot's stores grows at the host notch (the jails' shared cache is not the host's own, and the loophole-state retirement pass runs only in a launch through the run pipeline, which `yolo host` is not). The sandbox account's own caches stay unreclaimed ([§9](#9-what-this-does-not-cover)): a reclaimer there would run as that account through `sudo`, which only a Mac can verify | 2026-10-05 | [§9](#9-what-this-does-not-cover), [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ 2026-10-05 (`TestMacosUserLaunchRunsItsHousekeepingSlot`, `TestMacosUserDryRunOffersAndHousekeepsNothing`, `TestMacosUserOfferPrintsOneLineAndDeletesNothingWithoutATerminal`, `TestMacosUserOfferConsentReachesTheSlot`, `TestMacosUserOfferSitsBetweenTheApprovalAndTheLaunchLock`, `TestMacosUserRetiredLoopholeStateReapIsDebounced`, `TestMacosUserRetiredLoopholeStateReapHonorsTheOptOut` in [`housekeepingmacosuser_test.go`](../../internal/cli/run/housekeepingmacosuser_test.go); on a Mac, `TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession`) |
+| <a id="BF-D3"></a>BF-D3 | *Implementation decision* (BF-D3 is an id coined here), taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible. **A `macos-user` launch runs a housekeeping slot of its own and makes the reclaim offer, for two classes: the retired loophole-state generations, which grow on this backend as on every other, and the shared cache, which this backend does not write and container jails on the same Mac fill.** It revises [BF-D2](#BF-D2) (8)'s "a macos-user launch runs no post-launch slot". Five choices. (1) Two classes: the shared cache's measure-and-purge ([OQ-BF1](#111-decision-ledger)'s offered tier), and the retired loophole-state generations, keep 3, on a debounce stamp of their own (`last-loophole-state-reap`) and outside the liveness gate the container slot's small-classes pass puts them behind, since the staging sweep beside them there needs a container runtime's live set and they need none. The container slot is unchanged. (2) Every other class is left out by runtime, with no probe and no note: images, superseded store outputs, flake-bundle generations (liveness-gated, and a container on the same Mac may mount one), agent staging, image tars (this backend writes none, and a stamp written here would delay a podman keep-0 pass by a day) and scratch volumes. Agent logs and the embedded pack trees stay out on every backend, as before. (3) The offer sits after the config-change approval and before the launch lock, so both prompts come together before any setup and neither holds the lock while a human reads it; a dry run neither offers nor runs a slot. (4) The slot starts on its own goroutine and never after the backend returns, where a pass, which can take a minute or more on a real host, would hold the prompt after the agent exited. Its right moment is when the backend's agent starts, once the backend has released the workspace lock; until the backend has a hook for that moment, the arm starts it just before the dispatch, so the pass can overlap the backend's setup, which reads neither class and to whose terminal it writes nothing. (5) `yolo host` gets no slot: an ordinary host launch execs into its program, and none of the slot's stores grows at the host notch (the jails' shared cache is not the host's own, and the loophole-state retirement pass runs only in a launch through the run pipeline, which `yolo host` is not). The sandbox account's own caches stay unreclaimed ([§9](#9-what-this-does-not-cover)): a reclaimer there would run as that account through `sudo`, which only a Mac can verify | 2026-10-05 | [§9](#9-what-this-does-not-cover), [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ 2026-10-05 (`TestMacosUserLaunchRunsItsHousekeepingSlot`, `TestMacosUserDryRunOffersAndHousekeepsNothing`, `TestMacosUserOfferPrintsOneLineAndDeletesNothingWithoutATerminal`, `TestMacosUserOfferConsentReachesTheSlot`, `TestMacosUserOfferSitsBetweenTheApprovalAndTheLaunchLock`, `TestMacosUserRetiredLoopholeStateReapIsDebounced`, `TestMacosUserRetiredLoopholeStateReapHonorsTheOptOut` in [`housekeepingmacosuser_test.go`](../../internal/cli/run/housekeepingmacosuser_test.go); on a Mac, `TestMacosUserHousekeepingReapsRetiredLoopholeStateDuringTheSession`) |
 
-### 11.2 The questions as argued
+### 11.2 Why the rulings hold
 
-Kept rather than compacted away: [OQ-BF2](#OQ-BF2)'s self-trimming measurement,
-[OQ-BF7](#OQ-BF7)'s discharged coupling, [OQ-BF8](#OQ-BF8)'s "not deleted, demoted" correction and
-[OQ-BF10](#OQ-BF10)'s CAS boundary are each worth more than the verdict they support, and a ledger
-row cannot carry them.
+Several rulings turn on a distinction worth more than its verdict, and a ledger row cannot carry
+it. Three live in the body section each governs:
+[protecting a running jail's prefix](#protecting-a-running-jails-prefix) ([OQ-BF4](#111-decision-ledger)),
+[the prefix on macOS](#the-prefix-on-macos) ([OQ-BF7](#111-decision-ledger)) and
+[aliasing a host cache](#aliasing-a-host-cache-instead-of-pooling-a-second-copy)
+([OQ-BF10](#111-decision-ledger)). The rest are here.
 
-1. ✅ <a id="OQ-BF1"></a>**[OQ-BF1](#OQ-BF1) — RULED 2026-09-08: is the two-tier disposition right — automatic where P3
-   holds, offered where P4 does — or does "offer to clean up" mean every backfill is offered?** This is the closure
-   question for the whole doc: it decides whether the first pass over the podman backlog and the
-   dead tars runs on its own (as [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already lets the steady state do) or
-   waits for a prompt like the cache purge does. It also decides the offer's shape — a prompt with
-   `y / n (7 d) / never`, TTY only, non-TTY prints and skips.
+#### The offered tier recurs
 
-   <!-- vantage: question id=OQ-BF1 -->
+Ruled in [OQ-BF1](#111-decision-ledger), 2026-09-08. The maintainer: *"if someone skips it the first time, we should probably offer it again."* An offer
+shown once and never again is a one-shot migration prompt, and the classes on the offered side are
+not one-shot. A class is offered when it has **≥ 1 GiB** reclaimable and no answer is on record,
+or the recorded answer is `not now` and ≥ 7 days old. `never` stays sticky per class and is the
+only answer that stops the asking; `yolo prune` stays available regardless. Consent is not consumed
+by being given once.
 
-   _Leaning:_ **Two tiers.** Automatic where the veto is the one that already protects live state
-   and regeneration is a build or a load; offered once, with the size, where the re-fetch is
-   unbounded or the evidence is partial. Offering everything is inconsistent with what
-   [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already allows daily; automating everything re-fetches 39 GiB of `pants` without asking.
+**Whether a returning offer means a bug depends on the class:**
 
-   **Answer:** (2026-09-08)
-   > **Two tiers — and the offered tier is offered whenever the class has reclaimable bytes, not
-   > once.** The maintainer's reasoning: *"if someone skips it the first time, we should probably
-   > offer it again."* An offer shown once and never again is a one-shot migration prompt, and the
-   > classes on the offered side are not one-shot.
-   >
-   > Concretely, replacing "offered once" everywhere: a class is offered when it has **≥ 1 GiB**
-   > reclaimable, no answer is on record **or** the recorded answer is `not now` and ≥ 7 days old.
-   > `never` stays sticky per class and is the only answer that stops the asking; `yolo prune`
-   > stays available regardless. Nothing about the debounce or the threshold changes — what changes
-   > is that consent is not consumed by being given once.
-   >
-   > **On "these are states we can never get in without a bug": true for two classes and false for
-   > three, and the split is worth stating because it decides what a recurring offer MEANS.**
-   >
-   > | Class | Recurs by normal use? | So a non-zero backfill after the fixes means |
-   > | :--- | :--- | :--- |
-   > | Image tars on podman | **No** — C3 stopped writing them ([OQ-DF1](minimal-disk-footprint.md#112-open-questions)) | a bug, an un-upgraded launcher, or another backend |
-   > | Tagged podman image backlog | **No**, once the reap actually runs | the reap did not run — a bug, or `YOLO_NO_AUTO_IMAGE_REAP` |
-   > | Host cache age-purge | **Yes** — third-party build caches grow by building | nothing; this is the steady state, and 30 d is a retention rule, not a repair |
-   > | yolo's own unrooted store outputs | **Yes** — ≈ 0.43 GB/day, until [OQ-BF4](#OQ-BF4) plus the slot | nothing, until those land; after them, a bug |
-   > | `<none>` podman rows | **Yes** — a tagged twin's removal creates one | nothing |
-   >
-   > Two consequences. The recurring offer is **correct** for the three recurring classes and is the
-   > steady state for them, not a leftover. And for the two one-shot classes the offer reappearing
-   > **is the bug report** — a prompt that comes back for dead tars on a podman host says the writer
-   > or the reaper is broken, which is strictly better than the silence that let 404 GiB accrue.
+| Class | Recurs by normal use? | So a non-zero backfill after the fixes means |
+| :--- | :--- | :--- |
+| Image tars on podman | **No** — C3 stopped writing them ([OQ-DF1](minimal-disk-footprint.md#112-open-questions)) | a bug, an un-upgraded launcher, or another backend |
+| Tagged podman image backlog | **No**, once the reap actually runs | the reap did not run — a bug, or `YOLO_NO_AUTO_IMAGE_REAP` |
+| Host cache age-purge | **Yes** — third-party build caches grow by building | nothing; this is the steady state, and 30 d is a retention rule, not a repair |
+| yolo's own unrooted store outputs | **Yes** — ≈ 0.43 GB/day without [OQ-BF4](#111-decision-ledger)'s roots and the slot | nothing without them; with them, a bug |
+| `<none>` podman rows | **Yes** — a tagged twin's removal creates one | nothing |
 
-2. ✅ <a id="OQ-BF2"></a>**[OQ-BF2](#OQ-BF2) — RULED 2026-09-08: does the cache age-purge get a launch-path trigger at all?** It is the largest
-   measured backfill (49.34 GiB) and the same trigger defect as the tars — a 30-day rule that
-   has never run — but its regeneration cost is the one this doc cannot bound, and the bytes are a
-   third-party build cache yolo pools ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C). The answer decides
-   whether L1 is "offered once, then automatic in the slot" (the [§5.2](#52-two-tiers-one-mapping)
-   row) or stays manual, and whether `nce` and `staticcheck` join the default list.
+So the recurring offer is the steady state for the three recurring classes, and for the two
+one-shot classes the offer reappearing **is the bug report**: a prompt that comes back for dead
+tars on a podman host says the writer or the reaper is broken, which is strictly better than the
+silence that let 404 GiB accrue.
 
-   <!-- vantage: question id=OQ-BF2 -->
+#### Which caches manage their own size
 
-   _Leaning:_ **Yes — offered once for the backlog, then automatic in the slot**, 30 d unchanged;
-   add `nce` to the default list (1.86 GiB dead here) and leave `staticcheck` out until it shows
-   age. The offer is what makes the first pass a consented re-fetch rather than a surprise.
+Ruled in [OQ-BF2](#111-decision-ledger), 2026-09-08. Two of them do. MEASURED in this jail 2026-09-08:
 
-   **Answer:** (2026-09-08)
-   > **Yes — offered while non-zero (per [OQ-BF1](#OQ-BF1)), then automatic in the slot**, 30 d
-   > unchanged, `nce` added, `staticcheck` left out. The one change from the leaning is the trigger's
-   > shape, which BF1 settled for every offered class at once.
-   >
-   > **The maintainer's question — do none of these caches manage their own size? — turned out to
-   > have a measured answer, and it is "two of them do".** MEASURED in this jail 2026-09-08:
-   >
-   > | Cache | Self-manages? | Evidence |
-   > | :--- | :--- | :--- |
-   > | `go-build` | **Yes** | Go's own trimmer: entries unused for **5 days** are evicted, swept **at most once a day** (`trimLimit`/`trimInterval`, `$GOROOT/src/cmd/go/internal/cache/cache.go:341-350`, go1.26.7), with `~/.cache/go-build/trim.txt` recording the last sweep |
-   > | `staticcheck` | **Yes** | same cache library, same marker — `~/.cache/staticcheck/trim.txt` is present |
-   > | `pants`, `uv`, `pip`, `npm`, `pex`, `nce` | **No** | no trim marker, no documented eviction; growth is bounded only by what is built |
-   >
-   > **[§2.1](#21-every-store-one-table)'s own table is the corroboration, and it was hiding in plain
-   > sight**: of the classes measured for files older than 30 days, `go-build` reads **0** — the only
-   > zero in the row — against pants' 39.36 GiB in 211 056 files. An 18 G cache with nothing older
-   > than a month is what a self-trimming cache looks like from outside.
-   >
-   > **This changes two list memberships, and gives the leaning's hunch a reason.**
-   > `staticcheck` stays off the purge list not "until it shows age" but **because it cannot show
-   > age** — it trims itself, so a 30-day rule there can only ever be a no-op that costs a walk.
-   > `go-build` is already on the list and is the same no-op; it stays for now (removing it is a
-   > behaviour change with no bytes behind it) but it must not be cited as evidence the purge works.
-   > **`nce` is the opposite case and is the one to add**: content-addressed, no eviction, 1.86 GiB
-   > already dead, and covered by nothing today.
-   >
-   > So the honest general answer to the question: **no, they do not all self-manage, and the ones
-   > that do are exactly the ones this purge cannot help.** The 49.34 GiB the offer is about is
-   > almost entirely pants — a cache whose own tool ships no reclaimer that has run here.
+| Cache | Self-manages? | Evidence |
+| :--- | :--- | :--- |
+| `go-build` | **Yes** | Go's own trimmer: entries unused for **5 days** are evicted, swept **at most once a day** (`trimLimit`/`trimInterval`, `$GOROOT/src/cmd/go/internal/cache/cache.go:341-350`, go1.26.7), with `~/.cache/go-build/trim.txt` recording the last sweep |
+| `staticcheck` | **Yes** | same cache library, same marker — `~/.cache/staticcheck/trim.txt` is present |
+| `pants`, `uv`, `pip`, `npm`, `pex`, `nce` | **No** | no trim marker, no documented eviction; growth is bounded only by what is built |
 
-3. ✅ <a id="OQ-BF3"></a>**[OQ-BF3](#OQ-BF3) — RULED 2026-09-08 (the maintainer's words, verbatim): may yolo delete its
-   own superseded `/nix/store` outputs by name, automatically, on the host launch path?** This is the C8 finding's remedy ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)):
-   ≥ 28.8 GB today, +0.43 GB/day, no collector. `nix store delete <path>` refuses a live path, so
-   nix's own liveness is a second veto — but it is narrower than the bounded GC of
-   [`../plans/storage-lifecycle.md`](../plans/storage-lifecycle.md) [§3](../plans/storage-lifecycle.md#3-bounded-rooting-aware-store-gc-in-yolo-prune--after-1-and-2)
-   and touches only what yolo realized. The answer decides whether P5 ("never carelessly GC the
-   host store") admits a *named, self-scoped* deletion as something other than a GC.
+[§2.1](#21-every-store-one-table)'s own table corroborates it: of the classes measured for files
+older than 30 days, `go-build` reads **0**, the only zero in the row, against pants' 39.36 GiB in
+211 056 files. That decides the purge list:
 
-   <!-- vantage: question id=OQ-BF3 -->
+- **`staticcheck` stays off** because it cannot show age: it trims itself, so a 30-day rule there
+  is a no-op that costs a walk.
+- **`go-build` stays on**, the same no-op, because removing it is a behavior change with no bytes
+  behind it. It must not be cited as evidence the purge works.
+- **`nce` is added**: content-addressed, no eviction, 1.86 GiB already dead, and covered by nothing
+  before.
 
-   _Leaning:_ **Yes, gated on [OQ-BF4](#OQ-BF4).** Delete unrooted prefixes and Go builds by name in
-   the slot, host-only, never a blanket GC, never `--ignore-liveness`; until BF4 lands, offer the
-   same set. The Go-build outputs are garbage the moment the prefix exists and could go on the
-   write path immediately.
+The caches that do self-manage are exactly the ones this purge cannot help. The 49.34 GiB the offer
+is about is almost entirely pants, a cache whose own tool ships no reclaimer that has run here.
 
-   **Answer:** (2026-09-08)
-   > **"Yes, once [OQ-BF4](#OQ-BF4) has given every running jail's prefix a durable root: delete
-   > unrooted `*-yolo-jail-install-prefix` and `*-yolo-jail-go-0-dev` paths by name in the
-   > housekeeping slot, host-only, never a blanket gc, never `--ignore-liveness`. Until then, offer
-   > the same set by name through the prompt. Go-build outputs are garbage the moment the prefix
-   > exists (`keep-outputs=false`) and could go on the write path immediately."**
-   >
-   > The leaning, ruled as written. Two things this fixes in P5's phrasing: a **named, self-scoped**
-   > deletion of paths yolo itself realized is not the "careless GC of the host store" P5 forbids,
-   > and nix's own refusal to delete a live path stays as the second veto rather than being argued
-   > around. The ordering is load-bearing — until BF4 lands, an automatic pass here can delete the
-   > prefix a running jail's pid1 came from ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)),
-   > which is why "offer until then" is part of the ruling and not a hedge.
+#### A named, self-scoped deletion is not a store GC
 
-4. ✅ <a id="OQ-BF4"></a>**[OQ-BF4](#OQ-BF4) — RULED 2026-09-08, and it needed no maintainer judgment: does a running
-   jail's binaries get protected from deletion?**
+Ruled in [OQ-BF3](#111-decision-ledger), 2026-09-08. The ruling, in the maintainer's words: *"Yes, once [OQ-BF4](#111-decision-ledger) has given every
+running jail's prefix a durable root: delete unrooted `*-yolo-jail-install-prefix` and
+`*-yolo-jail-go-0-dev` paths by name in the housekeeping slot, host-only, never a blanket gc, never
+`--ignore-liveness`. Until then, offer the same set by name through the prompt. Go-build outputs
+are garbage the moment the prefix exists (`keep-outputs=false`) and could go on the write path
+immediately."*
 
-   The maintainer's note on this entry, the question in plain words, and the mechanism for the
-   implementer: [protecting a running jail's prefix](#protecting-a-running-jails-prefix).
+A **named, self-scoped** deletion of paths yolo itself realized is not the "careless GC of the host
+store" P5 forbids, and nix's own refusal to delete a live path stays as the second veto rather than
+being argued around. **The ordering is load-bearing:** without BF4's roots, an automatic pass here
+can delete the prefix a running jail's pid1 came from
+([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)).
 
-   <!-- vantage: question id=OQ-BF4 -->
+#### The lock moved with the reap
 
-   _Leaning:_ **Yes.** Register the prefix as images are registered — a durable root per store
-   path under `BuildDir()`, protected by the same age floor `PruneOrphanImageRoots` applies, reaped
-   when no recent launch used it — and gate it on `!inJail` exactly as `RegisterRoot` is. Keep the
-   per-checkout out-link for the build. A fix regardless of disk.
+Ruled in [OQ-BF5](#111-decision-ledger), 2026-09-08. The ruling, in the maintainer's words: *"Yes, move it, and take the machine-wide housekeeping lock
+in both the load-and-record step and the pass so the reap can never interleave with another
+launch's warm-path sentinel write. Land the lock in the same change: the race exists today and
+automation is what made it load-bearing."*
 
-   **Answer:** (2026-09-08)
-   > **Yes — and this is a bug fix, not a disposition, so it is ruled here rather than escalated.**
-   > There is no version of "a running jail may lose pid1's binary" that is a preference, and no
-   > option on the other side to weigh: the alternative is to never collect yolo's own store outputs
-   > at all, which is the state [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding) measures at ≥ 28.8 GB and ≈ 0.43 GB/day.
-   >
-   > **Two corrections to the leaning as written**, both forced by the sibling doc, and they pull in
-   > opposite directions — which is the point.
-   >
-   > **(1) Not the load sentinel's LRU.** That list is a most-recently-used cache and cannot answer
-   > "is this in use" —
-   > [`image-retention.md`](../reference/image-retention.md)'s
-   > P1 — and protecting a prefix with it is the same class of mistake in a new place.
-   >
-   > **(2) Not an age floor either, which is what this answer first said.**
-   > [OQ-LS1](../reference/image-retention.md#why-its-this-way) ruled image-closure roots to
-   > be **purely age-based**, on the grounds that losing one costs a rebuild and nothing more. **A
-   > prefix fails that test.** A running jail is *executing* from its prefix — pid1 included — so
-   > losing it is not a rebuild, it is a jail with no binaries; and an age cutoff is precisely
-   > wrong for it, because the longer a jail runs the more certainly its prefix would be reaped.
-   >
-   > So the two roots take **opposite policies, from one test** — *can losing it cost only a
-   > rebuild?* Image closure: yes, so age. Prefix of a running jail: no, so a **liveness
-   > guarantee** — the root exists while a container is running from it, and is reaped once none
-   > is. That is what "registered at launch, gated on `!inJail`" has to mean, and why prefix roots
-   > must not live in `build/roots`, whose reaper deletes any root that is not a loaded image.
+**The lock is not a follow-up.** Moving the pass without it turns a race that needs two launches in
+the same second into one with a much wider window, because the slot is where the pass spends its
+time. This also discharges the placement half of
+[OQ-DF3](minimal-disk-footprint.md#OQ-DF3)'s TRIGGER: the trigger stays the launch and the moment
+moves, which is why that ruling's ledger row records the placement as revised rather than reversed.
+The lock's scope has since narrowed to one deletion at a time
+([§5.4](#54-one-writer-concurrency-failure)).
 
-5. ✅ <a id="OQ-BF5"></a>**[OQ-BF5](#OQ-BF5) — RULED 2026-09-08 (the maintainer's words, verbatim): does the shipped
-   image reap move from before the container starts to the housekeeping slot?** It is the difference between a first pass that holds the launch for
-   fourteen `rmi -f` (NOT MEASURED; the deletes were out of bounds) and one the user never
-   notices. The property that placed it — this launch's image is already in the sentinel — holds
-   in the slot. The cost is the machine-wide lock [§5.4](#54-one-writer-concurrency-failure) asks
-   for, which the pre-start placement needs just as much and does not have.
+#### Zero tars kept is not zero tars readable
 
-   <!-- vantage: question id=OQ-BF5 -->
+Ruled in [OQ-BF6](#111-decision-ledger), 2026-09-08. The ruling, in the maintainer's words: *"Yes: 0 on podman (nothing writes a tar there and the
+fallback reader `newestTars` keeps working on whatever exists), unchanged at 3 on Apple Container
+until [OQ-DF2](minimal-disk-footprint.md#OQ-DF2) names the component that deletes on success.
+Automatic under P3: the tar is one-shot (minimal-disk P3), regeneration is a build, the evidence is
+the runtime itself."*
 
-   _Leaning:_ **Yes, move it, and land the lock in the same change.** The race exists today; the
-   pre-start placement neither closes it nor spares the launch.
+`keep=0` changes the **reaper's** default, and the offline fallback is a **reader** that loads
+whatever tar it finds: yolo stops keeping a tar for a case Ledger C already covers. A change that
+also removed `newestTars` would be a different and worse decision, and
+[OQ-DF1](minimal-disk-footprint.md#112-open-questions)'s ledger row says so too.
 
-   **Answer:** (2026-09-08)
-   > **"Yes, move it, and take the machine-wide housekeeping lock in both the load-and-record step
-   > and the pass so the reap can never interleave with another launch's warm-path sentinel write.
-   > Land the lock in the same change: the race exists today and automation is what made it
-   > load-bearing."**
-   >
-   > The leaning, ruled as written, including the part that is easy to drop: **the lock is not a
-   > follow-up.** Moving the pass without it converts a race that currently needs two launches in
-   > the same second into one with a much wider window, because the slot is where the pass now
-   > spends its time. This also discharges the placement half of
-   > [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger)'s TRIGGER — the trigger stays the launch, the
-   > moment moves — and it is why that ruling's ledger row records the placement as revised rather
-   > than reversed.
+#### The LRU was demoted, not deleted
 
-6. ✅ <a id="OQ-BF6"></a>**[OQ-BF6](#OQ-BF6) — RULED 2026-09-08 (the maintainer's words, verbatim): does `ImageCacheKeep` default to 0 where the runtime streams?** ~20.6 GB on this
-   machine (host and nested) is kept by a `3` that predates C3; [OQ-DF1](minimal-disk-footprint.md#112-open-questions)
-   ruled "keep zero" for the *writer* and left the *reaper's* default alone. The knob is
-   [`minimal-disk-footprint.md`](minimal-disk-footprint.md)'s and the component that runs it is
-   [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger)'s; this question only asks whether the number follows the ruling.
+Ruled in [OQ-BF8](#111-decision-ledger), 2026-09-08. The question of the LRU's size dissolved. The maintainer: *"read the latest design docs added,
+there are comments on this LRU and I think we're going to ditch it totally."*
+[`image-retention.md`](../reference/image-retention.md) takes liveness from the runtime, and its P1
+is the general form of what this doc noticed locally: *recency is a cache policy, not a liveness
+proof*. Once the veto is the runtime's, the cap is a pure cache dial and needs no derivation from
+concurrent jails. What survives of the question is its measurement:
+[§2.2](#22-the-image-reap-priced-against-this-store) is where "the LRU, not `--keep-images`, decides
+what survives a reap" was measured, all ten entries mapping to images in the store.
 
-   <!-- vantage: question id=OQ-BF6 -->
+> [!WARNING]
+> **"Ditch it totally" does not mean deleting the sentinel.** It keeps its MRU role for the
+> human-readable "why did this load?" diagnosis
+> ([what it does not license](../reference/image-retention.md#what-this-does-not-license)); what was
+> ditched is its **authority over liveness**. The GC-root reaper consults neither the sentinel nor,
+> for an idle image, liveness ([OQ-LS1](../reference/image-retention.md#why-its-this-way)); it holds
+> the root of any image a container is running on, asked of the runtime, and the store-GC refusal no
+> longer reads the sentinel ([OQ-LS4](../reference/image-retention.md#why-its-this-way)). The load
+> diagnosis is its one remaining reader. And [OQ-BF4](#111-decision-ledger)'s prefix roots must not
+> be protected by the sentinel: that is the same mistake in a new place.
 
-   _Leaning:_ **Yes — 0 on podman, unchanged on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger)
-   rules its component. Automatic under P3: the tar is one-shot, regeneration is a build, the
-   evidence is the runtime itself.
+#### The one write `yolo stores` makes
 
-   **Answer:** (2026-09-08)
-   > **"Yes: 0 on podman (nothing writes a tar there and the fallback reader `newestTars` keeps
-   > working on whatever exists), unchanged at 3 on Apple Container until
-   > [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger) names the component that deletes on success.
-   > Automatic under P3: the tar is one-shot (minimal-disk P3), regeneration is a build, the
-   > evidence is the runtime itself."**
-   >
-   > The leaning, ruled as written, and the parenthesis is the part that makes it safe rather than
-   > merely smaller: `keep=0` changes the **reaper's** default, and the offline fallback is a
-   > **reader** that loads whatever tar it finds. Zero retained tars is not zero tars readable — it
-   > is "yolo stops keeping one for a case Ledger C already covers". A change that also removed
-   > `newestTars` would be a different and worse decision, and
-   > [OQ-DF1](minimal-disk-footprint.md#112-open-questions)'s ledger row says so too.
+Ruled in [OQ-BF9](#111-decision-ledger), 2026-09-08. The ruling, in the maintainer's words: *"Yes: append one dated line per store per run under the
+state dir, default on, `--no-record` to opt out, and the command is the single writer of that
+ledger. Size it bounded (last 30 samples per store) so the handle on growth cannot itself become a
+store that grows. A pure-read command that can never report a rate fails the maintainer's stated
+purpose — keeping a handle on stores whose control comes later."*
 
----
-
-7. ✅ <a id="OQ-BF7"></a>**[OQ-BF7](#OQ-BF7) — RETIRED FROM THIS LIST 2026-09-08: it was never a question for the
-   maintainer, and the outage half is fixed. On macOS, where does the mounted prefix come from — or
-   does that backend keep baking it?**
-
-   Why it was retired from the list, the outage it describes, and the warning about the CI half:
-   [the prefix on macOS](#the-prefix-on-macos).
-
-   <!-- vantage: question id=OQ-BF7 -->
-
-   _Leaning:_ **Stage it under a path the VM already shares** (the host home) rather than mounting
-   it out of `/nix/store`. Baking on macOS only is the safe fallback, but it re-splits the backends
-   C8 just unified. Either way the choice decides what roots the prefix, so it gates
-   [OQ-BF3](#OQ-BF3).
-
-   **Answer:** (2026-09-08) **the outage is fixed by a THIRD option, and the coupling this entry
-   claimed is discharged rather than deferred.**
-   > **What shipped (`6a855b6d`).** Neither staging nor baking: a **refusal**.
-   > `prefixUnreachableFromVM` (`internal/cli/run/jailprefix.go`) declines the launch on darwin when
-   > either mount source is under `/nix/store` and `YOLO_NIX_HOST_DAEMON` is unset, naming two ways
-   > forward — share `/nix` with the VM (`podman machine init -v /nix:/nix`, which is init-only) and
-   > set that variable, or launch from an installed bundle, which stages under `$HOME` and ships
-   > prebuilt binaries so nothing is built in the store at all. It reuses that variable rather than
-   > adding a dial because it already means exactly "my runtime VM shares `/nix`".
-   >
-   > **Why not the leaning.** Staging under the host home is a ~66 MB copy per build plus a
-   > lifecycle to reap — a second delivery mechanism for the binaries, which is the one thing C8
-   > exists to have only one of. And the population it serves is a macOS developer pointed at a live
-   > checkout: every Homebrew and `just install` user is already on an `$HOME` bundle and was never
-   > broken. One line of machine setup is cheaper than a mechanism. **The leaning is not refuted** —
-   > if that population grows, staging is still the shape, and it would then also remove the
-   > refusal.
-   >
-   > **The coupling to [OQ-BF3](#OQ-BF3) is gone, and that is the part worth reading.** This entry
-   > claimed the choice "decides what roots the prefix". Under the refusal there is no third
-   > location to root: a macOS launch either shares `/nix` and holds a store path — rooted by
-   > [OQ-BF4](#OQ-BF4)'s mechanism, identically to Linux — or runs from an `$HOME` bundle, which is
-   > not a store path and has nothing to root or reclaim. So BF3 and BF4 need no macOS arm, and
-   > neither is gated on this any more.
-   >
-   > **MEASURED ON HARDWARE 2026-09-09 (run 34300425634): the statfs failure is GONE — zero
-   > occurrences against 59 in the pre-fix run — and it exposed the next layer.** With the prefix
-   > mount reachable, every launch got as far as the image build and then failed there:
-   >
-   > ```text
-   > IMAGE BUILD FAILED — the jail image was NOT rebuilt from this source tree.
-   >   cannot build on 'ssh-ng://root@127.0.0.1:31022': failed to start SSH connection
-   > ```
-   >
-   > Two facts, both new, and neither is a regression from the fix. **(1)** A darwin-side eval
-   > cannot vouch for a Linux-runner-built image, so the launcher refuses it as "a DIFFERENT source
-   > tree" and demands a from-source rebuild — an `x86_64-linux` derivation on a darwin host, which
-   > offloads to the Linux builder container. **(2) That offload has never run in this job at all**
-   > — 0 starts in the pre-fix run and 0 in the last green nightly (2026-09-04), verified in both
-   > full logs. It was unreachable behind the statfs failure and is now the visible one.
-   >
-   > CI answers this with `YOLO_ALLOW_STALE_IMAGE=1`, which is the hatch's stated purpose: the job
-   > asserts its own state, because the loaded image IS this commit's, built by the `build-image`
-   > job two steps earlier. The harness already downgrades its own skew check on darwin for the
-   > identical structural reason. What stays unproven is the container-builder offload on macOS,
-   > which the [`macos.md`](../../userguide/guides/macos.md) runbook claims and no CI job exercises.
-   >
-   > **Still not verified on hardware:** Apple Container. The same VM fact applies and no
-   > measurement exists ([`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#backends)).
-   > The refusal covers it — it is keyed on darwin, not on the runtime — so that backend now fails
-   > with a sentence rather than `statfs`, which is the most that can be claimed from here.
-
-8. ✅ <a id="OQ-BF8"></a>**[OQ-BF8](#OQ-BF8) — DISSOLVED 2026-09-08 by a sibling doc: is the load sentinel's LRU of 10
-   the right size, now that it is the floor?**
-   [§2.2](#22-the-image-reap-priced-against-this-store) measured that the LRU, not `--keep-images`, decides what survives a reap — all ten
-   entries mapped to images in the store, so `keep=2` protected nothing extra. `AddLoadedPath`
-   justifies the list as a **liveness veto** over *concurrent jails*, not as a reuse cache, and the
-   `10` has no derivation. Bounded by its own stated purpose it is the number of jails that can run
-   at once; after C8 the count of distinct images barely moves at all, since the image now changes
-   only on `flake.*` and `packages:` ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store)).
-
-   <!-- vantage: question id=OQ-BF8 -->
-
-   _Leaning:_ **Keep the veto, stop letting its length set retention.** Size it by concurrent jails
-   — derivable from the container list rather than guessed — and let `--keep-images` own the reuse
-   buffer it is already named for. *(⚠ Preserved as the leaning it was: `--keep-images` no longer
-   exists, deleted 2026-09-09 by [`OQ-LS3`](../reference/image-retention.md#why-its-this-way), so this half of the leaning is now unbuildable as
-   written. The answer below went further in the same direction.)* Lowering `10` to another underived constant repeats the defect
-   at a new number.
-
-   **Answer:** (2026-09-08) **the question dissolves — its premise is being removed, not answered.**
-   > The maintainer pointed at the newer work: *"read the latest design docs added, there are
-   > comments on this LRU and I think we're going to ditch it totally."*
-   > [`image-retention.md`](../reference/image-retention.md)
-   > goes further than this entry's leaning and in the same direction: **liveness comes from
-   > `podman ps`**, and the sentinel stops being cited as liveness anywhere. Its P1 is the general
-   > form of what this entry noticed locally — *recency is a cache policy, not a liveness proof*.
-   >
-   > So "is 10 the right size" has no answer to give, because 10 stops being safety. Once the veto
-   > is the runtime's, the cap is a pure cache dial: it decides how many nix closures yolo would
-   > rather not rebuild, nothing more, and it needs no derivation from concurrent jails. This
-   > entry's actual contribution survives as the measurement that motivated the change —
-   > [§2.2](#22-the-image-reap-priced-against-this-store) is where "the LRU, not `--keep-images`,
-   > decides what survives a reap" was measured, all ten entries mapping to images in the store.
-   >
-   > **One correction to "ditch it totally", so the next reader does not over-apply the ruling.**
-   > That doc explicitly does **not** delete the sentinel: it keeps its MRU role for nix GC-root
-   > retention and for the human-readable "why did this load?" diagnosis, and says so in its
-   > [what it does not license](../reference/image-retention.md#what-this-does-not-license). What is
-   > being ditched is the sentinel's **authority over liveness**. Whether the GC-root half loses it
-   > too was that doc's [OQ-LS1](../reference/image-retention.md#why-its-this-way), since ruled: the
-   > GC-root reaper is a pure age cutoff that consults neither the sentinel nor liveness, and the
-   > sentinel survives for the store-GC refusal's protected set and the load diagnosis.
-   > *Amended 2026-09-28 by [OQ-LS4](../reference/image-retention.md#oq-ls4):* the reaper now holds
-   > the root of any image a container is running on, asked of the runtime, and the store-GC
-   > refusal no longer reads the sentinel; the load diagnosis is its one remaining reader.
-   >
-   > **What this doc must not do in the meantime**, since it proposes new automatic reapers:
-   > [OQ-BF4](#OQ-BF4)'s prefix roots must not be protected by the sentinel — see that entry's
-   > correction, which is this same mistake in a new place.
-
-9. ✅ <a id="OQ-BF9"></a>**[OQ-BF9](#OQ-BF9) — RULED 2026-09-08, BUILT 2026-09-08 (`internal/cli/stores`; the maintainer's words, verbatim): may `yolo stores` write a sample ledger, so growth is measurable at all?** A
-   growth rate needs two dated samples, and a read-only command cannot produce the first one.
-   Almost every "growth" cell in [§2.1](#21-every-store-one-table) reads NOT MEASURED for exactly this reason — there
-   was no second sample — so the inventory would ship able to say how big a store is and unable to
-   say whether it is growing, which is the number that decides whether a store needs a policy at
-   all. The cost is that [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)'s
-   "must never mutate" acquires one exception, and an exception to a forbidden-behavior rule is
-   worth a ruling rather than a default.
-
-   <!-- vantage: question id=OQ-BF9 -->
-
-   _Leaning:_ **Yes — append one dated line per store per run**, default on, `--no-record` to opt
-   out, the command as the ledger's single writer, and the ledger itself **bounded** (last 30
-   samples per store) so the handle on growth cannot become a store that grows. A pure-read command
-   that can never report a rate fails the stated purpose.
-
-   **Answer:** (2026-09-08)
-   > **"Yes: append one dated line per store per run under the state dir, default on, `--no-record`
-   > to opt out, and the command is the single writer of that ledger. Size it bounded (last 30
-   > samples per store) so the handle on growth cannot itself become a store that grows. A pure-read
-   > command that can never report a rate fails the maintainer's stated purpose — keeping a handle
-   > on stores whose control comes later."**
-   >
-   > The leaning, ruled as written. This is the exception [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)'s
-   > "must never mutate" acquires, and it is bounded in three ways rather than one: one writer, one
-   > line per store per run, thirty samples retained.
-   >
-   > **It unblocks a question in another doc**, which is worth recording because that doc has been
-   > waiting on exactly this: [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger) ("a stated number or only
-   > a policy?") held itself open pending a re-measurement that nothing could take, since a rate
-   > needs two dated samples and nothing had ever taken the first. This ledger is that instrument.
-   > **Rule this before DF4**, in that order.
-
-10. ✅ <a id="OQ-BF10"></a>**[OQ-BF10](#OQ-BF10) — RULED 2026-09-08: should yolo ALIAS a host cache rather than pool a
-    second copy of it — and for which caches?** What aliasing is, and the three things the
-    ruling had to settle: [aliasing a host cache](#aliasing-a-host-cache-instead-of-pooling-a-second-copy).
-
-    <!-- vantage: question id=OQ-BF10 -->
-
-    _Leaning:_ **Yes for the content-addressed half only**, gated on the host matching the jail's OS
-    and arch, writable, and limited to caches whose own tool documents a shared per-user store —
-    pants' `lmdb_store`, npm, go-build. Never `named_caches`. Not on macOS at all. And the stranded
-    jail-side copy becomes a backfill row on the first aliased launch, which is the honest cost.
-
-    **Answer:** (2026-09-08)
-    > **CAS only, and the reason is a threat model rather than a size: *"I think it must be CAS
-    > only. otherwise that's an injection mechanism from jail to host?"*** Yes — and that framing is
-    > sharper than the leaning's, so it replaces it as the rule's justification.
-    >
-    > A **content-addressed** store is one whose keys are digests of their own contents. A jail
-    > writing into it can add a blob, and it can add a *wrong* blob only under a name that does not
-    > match its digest, which the reading tool rejects. A **path-keyed** store like pants'
-    > `named_caches` has no such property: the key is a name the jail chooses, so a jail write is
-    > content the host tool will later read **because of where it sits**. That is the injection
-    > channel, and it is why `named_caches` is not "lower value" here but categorically excluded —
-    > the same distinction that lets yolo share the host's nix store at all.
-    >
-    > So the ruling is the leaning **minus any latitude on the CAS boundary**: aliased if and only
-    > if content-addressed, gated on the host matching the jail's OS and arch, writable, limited to
-    > tools that document a shared per-user store; never `named_caches`; never on macOS, where the
-    > jail is Linux in a VM and nothing is compatible anyway. The stranded jail-side copy becomes a
-    > backfill row on the first aliased launch.
-    >
-    > **And the scope stops here, deliberately:** *"let's keep it this way and we can analyze
-    > storage after all this is implemented to see if we should go further."* Widening the aliased
-    > set is not a follow-up item in this doc; it is a question to re-ask against a
-    > post-implementation measurement, which [OQ-BF9](#OQ-BF9)'s sample ledger is what makes
-    > possible.
-
-    > [!NOTE]
-    > **BUILT 2026-09-09 — `internal/hostcas`**, emitted by `internal/cli/run/hostcasalias.go` and
-    > explained by a new `yolo stores` section. Six things the build had to settle that the ruling
-    > left implicit, recorded here because each is a decision a reader would otherwise re-litigate:
-    >
-    > 1. **No config key, and no env dial.** The ruling's "gated on …" list is exhaustive and
-    >    contains no user opt-in, the precedent it names (`hostNixStore`) is a capability probe
-    >    rather than a dial, and there is nothing for a key to carry: yolo picks BOTH sides of the
-    >    mount from a table, so no path is user-supplied. The recognised set is therefore code
-    >    (`hostcas.Stores`), which is also what "the scope stops here" needs — a config key would
-    >    hand the CAS test to a user who cannot check it.
-    > 2. **The set is pants' `lmdb_store` ALONE**, which NARROWS the leaning's "pants
-    >    `lmdb_store`, npm, go-build". Under "aliased if and only if content-addressed" npm and
-    >    go-build both fail, and the reason is MEASURED rather than cautious: npm's
-    >    `_cacache/index-v5` maps a REQUEST URL to an integrity digest (sampled entry keyed
-    >    `make-fetch-happen:request-cache:https://registry.npmjs.org/…`), and Go's `<actionID>-a`
-    >    maps a writer-chosen action ID to an output ID. In both, a jail that writes the index AND
-    >    the blob has the host tool read its bytes for that key — the injection channel, in a store
-    >    whose content half really is a CAS. Half a directory whose halves must stay consistent is
-    >    not an aliasable unit. `uv` and `pip` are index/URL-keyed too.
-    > 3. **The CAS claim is measured, not asserted.** `lmdb_store/immutable/files/<2-hex>/<64-hex>`
-    >    — and the 64-hex name IS the sha256 of the file's contents, verified on a 232 MB blob
-    >    2026-09-09; those files are mode `r-xr-xr-x`.
-    > 4. **Two gates the ruling does not name, both found by asking what the happy path costs.**
-    >    (a) **The cold-start refusal.** An EMPTY host store aliased over a warm private copy hides
-    >    a cache and buys nothing, forcing exactly the unbounded re-fetch
-    >    [§5.2](#52-two-tiers-one-mapping)'s offered tier exists to never impose without asking (P4).
-    >    Emptiness is one `ReadDir`, so it costs nothing. The partial case — a small host store over
-    >    a large private one — is allowed: it is a one-time partial re-fetch into a store BOTH sides
-    >    then reuse. (b) **`cache_relocations` wins.** A user who relocated `pants` moved 40 G off
-    >    the disk `$HOME` is on; the alias source IS under the home cache, and both mounts would
-    >    apply (podman orders by destination depth, so the deeper alias wins for its own subtree),
-    >    putting 27 G of it silently back — *the exact failure `cache_relocations` exists to
-    >    prevent, caused by the feature meant to save space*. An explicit config decision outranks
-    >    an automatic optimisation, so a store whose cache segment is relocated is never aliased.
-    >    It is also the one SILENT decline the user caused, which is where the launch's disclosure
-    >    line is drawn: an active alias always prints (a writable bind of the host user's cache is
-    >    host access), and so does a decline the user could act on — unwritable, not a directory,
-    >    empty over a warm copy, or an unmakeable mountpoint. Everything else is a structural fact
-    >    about the machine with no action behind it, and prints nothing, on
-    >    [§5.3](#53-triggers-defaults-and-the-post-launch-slot)'s degenerate rule and
-    >    [§5.1](#51-the-housekeeping-slot)'s warning about what launch noise costs. `yolo stores` is where every decline is
-    >    legible on demand.
-    > 5. **Concurrency adds no new class, and yolo serialises nothing.** It cannot: it does not
-    >    launch the host's tool. It does not need to either — yolo ALREADY pools one `lmdb_store`
-    >    across every workspace's jail (that is how the 27 G got there), and each jail is its own
-    >    PID namespace, so concurrent multi-namespace writers are the shipped status quo rather
-    >    than something aliasing introduces. What aliasing widens is the participant SET, not its
-    >    kind. **The named residual:** LMDB's stale-reader reaping is keyed on pid through an
-    >    `fcntl` record lock on `lock.mdb` — namespace-blind and shared, so it cannot reap a LIVE
-    >    reader; the failure direction is a slot nothing reclaims, i.e. wasted space, which is the
-    >    ruling's own stated worst case. Whether its process-shared robust write mutex recovers a
-    >    dead owner whose TID was in another PID namespace is **NOT MEASURED**.
-    > 6. **Nothing is recorded, so there is no writer to name.** The decision is a pure function of
-    >    the host's filesystem and platform, so the launcher and `yolo stores` re-derive it through
-    >    one `hostcas.Plan`. A stamp would be a second source of truth for a question the disk
-    >    answers, and it would go stale the first time a user deleted their pants cache.
-    >
-    > **The stranded copy, per the ruling:** nothing is migrated and nothing is deleted by the
-    > alias. The bind lands ON the private copy's own directory, so the bytes simply stop being
-    > read; `PurgeCacheByAge` already covers `pants`, and the new `yolo stores` row names the path
-    > and the reclaimer (pinned against prune's own subdir list, so the row cannot promise a
-    > reclaimer that would not run).
-    >
-    > **Not double-counted:** the aliased row is its OWN section with verdict `not yolo's`, because
-    > [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)'s state-dir row sums the
-    > shared-cache section and a host-owned 27 G tree folded in there would inflate yolo's own
-    > footprint. `yolo prune` needs no change: `PurgeCacheByAge` is rooted at
-    > `paths.GlobalCache()/<subdir>` and the alias source is under the host user's XDG cache root,
-    > which the same-tree gate keeps outside it.
+This is the exception [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims)'s "must
+never mutate" acquires, bounded three ways: one writer, one line per store per run, thirty samples
+retained. A growth rate needs two dated samples, and a read-only command cannot take the first. It
+is the instrument [OQ-DF4](minimal-disk-footprint.md#OQ-DF4) waited on.
 
 ## 12. Inherited rulings
 
@@ -1376,8 +1160,8 @@ are authoritative.
 | ID | Ruling | What it fixes here |
 | :--- | :--- | :--- |
 | `image-staging` [OQ-5](../reference/image-staging-vs-baking.md#why-its-this-way) | The tar backlog is a **bug**; minimal disk is the goal; yolo **may** delete without `--apply`. | Licenses the automatic tier at all; the offered tier is this doc's refinement for classes that ruling did not measure. |
-| `minimal-disk` [OQ-DF1](minimal-disk-footprint.md#112-open-questions) | *"Stream, keep zero tars."* | L4's number is that ruling applied to the reaper's default ([OQ-BF6](#OQ-BF6)). |
-| `minimal-disk` [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) (NUMBER + TRIGGER) | `keep=2`, automatic on the launch path, debounced 24 h, `YOLO_NO_AUTO_IMAGE_REAP=1`. The count has since been deleted by [`OQ-LS3`](../reference/image-retention.md#why-its-this-way); the trigger stands, in the housekeeping slot. | The precedent P3 generalises and P4 distinguishes ([§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition)); its REACH half was ruled NARROW there on 2026-09-08. |
-| `image-staging` [OQ-8](../reference/image-staging-vs-baking.md#why-its-this-way) (C8) | yolo's binaries are delivered by mount; the out-link is the prefix's GC root, keyed by checkout. | The store-garbage finding ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)) and [OQ-BF4](#OQ-BF4). |
+| `minimal-disk` [OQ-DF1](minimal-disk-footprint.md#112-open-questions) | *"Stream, keep zero tars."* | L4's number is that ruling applied to the reaper's default ([OQ-BF6](#111-decision-ledger)). |
+| `minimal-disk` [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) (NUMBER + TRIGGER) | `keep=2`, automatic on the launch path, debounced 24 h, `YOLO_NO_AUTO_IMAGE_REAP=1`. The count has since been deleted by [`OQ-LS3`](../reference/image-retention.md#why-its-this-way); the trigger stands, in the housekeeping slot. | The precedent P3 generalises and P4 distinguishes ([§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition)); its REACH half was ruled NARROW there on 2026-09-08. |
+| `image-staging` [OQ-8](../reference/image-staging-vs-baking.md#why-its-this-way) (C8) | yolo's binaries are delivered by mount; the out-link is the prefix's GC root, keyed by checkout. | The store-garbage finding ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)) and [OQ-BF4](#111-decision-ledger). |
 | [`agent-cli-copies.md`](../reference/agent-cli-copies.md#the-v-axis-prune) A7 | Keep-newest-2 over the vendor's version dir, run by the act that installed the new one. | L7 widens the trigger, not the rule. |
 | `program-delivery` [OQ-PD17](program-delivery.md#decision-ledger) | Capture store reap is the complement of the resolver; K = 1; no age floor. | L8 gives it a trigger, not a policy. |

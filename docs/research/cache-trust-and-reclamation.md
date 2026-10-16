@@ -102,7 +102,7 @@ the lookup and matching content. uv/pip have index-keyed buckets too.
 Concurrent-write compatibility is not protection against an adversarial writer.
 
 **The existing exception is Pants `lmdb_store` alone**, under
-[the 2026-09-08 ruling](../design/disk-levers-and-backfill.md#OQ-BF10).
+[the 2026-09-08 ruling](../design/disk-levers-and-backfill.md#111-decision-ledger).
 It is writable host-tool storage, gated on Linux Podman, matching OS/architecture,
 presence, writability, no relocation of its segment, and an empty host store only when
 it does not hide a warm private copy. An empty host store with nothing warm to hide still aliases.
