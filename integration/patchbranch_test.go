@@ -92,8 +92,8 @@ func TestPatchBranchForkMergesItsBranchAndRefusesAConflict(t *testing.T) {
 		t.Fatalf("yolo pack update did not fail on the patch branch's conflict at v1.2.0:\n%s", r.combined())
 	}
 	refused := runCommand(t, t.TempDir(), append(jailRunArgs(), "--", patchFixtureBin), withHostSemantics())
-	for _, w := range []string{"ERROR: fork " + owner + ": the patch branch does not merge into upstream v1.2.0 (" + v12 + ")",
-		"Conflict: f.txt", "git merge " + v12, "Refusing to launch: the patch branch of fork " + owner + " does not merge"} {
+	for _, w := range []string{"ERROR: fork " + owner + ": patch branch does not merge into upstream v1.2.0 (" + v12[:8] + ")",
+		"Conflict: f.txt", "git merge " + v12, "\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=" + owner + " yolo "} {
 		if !strings.Contains(refused.combined(), w) {
 			t.Errorf("the refused launch lacks %q (rc %d):\n%s", w, refused.rc, refused.combined())
 		}
