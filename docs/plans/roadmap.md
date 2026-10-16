@@ -63,10 +63,15 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
    verification ahead of dependent work. Beside it: [the build line shown by its
    digest](../reference/report-tiers.md#why-its-this-way), built 2026-10-08 with `yolo pack status`; [whether a Mac fork build
    installs its base's `node_floor` first](../design/forked-programs-as-packs.md#OQ-FP11); his test with the migration kit.
-2. [Per-jail host daemons (HD-R1)](../design/host-daemon-ownership.md) — built on branch
-   `hd-r1-held` (tip 47c96456b, 12 commits not on main, last touched 2026-10-06) and held, not landed: it awaits the maintainer's choice of how old jails coexist
-   with it. Next because it retires the machine-wide credential daemons; [who keeps Claude's login fresh with no jail
-   running](../design/host-daemon-ownership.md#OQ-HD9) is still to rule, with the design's two other questions.
+2. [Per-jail host daemons (HD-R1)](../design/host-daemon-ownership.md) — brought up to date with main and finished on
+   branch `hd-r1-land`, ready for the maintainer to merge. The coexistence call it was held on was answered 2026-10-16
+   (*"on 2, of course bring that up to date and merge it. why wouldn't we?"*): jails an older yolo launched keep its
+   machine-wide daemon, left alone until they end or the host reboots
+   ([HD-D26](../design/host-daemon-ownership.md#HD-D26)). The 2026-10-15 rulings are built on the branch: the at-launch
+   catch-up refresh ([OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9)), the supervised restart
+   ([OQ-HD5](../design/host-daemon-ownership.md#OQ-HD5)) and the jail-daemon requirement
+   ([OQ-HD4](../design/host-daemon-ownership.md#OQ-HD4)). Next because it retires the machine-wide credential daemons;
+   after the merge, only a real host and CI can check what item 42 lists.
 3. Rulings that hold a build: [whether a project's mise pin of `pnpm` stays hidden](../design/program-delivery.md#OQ-PD19),
    with [autoprune's `$GOBIN` class](../design/program-delivery.md#OQ-PD20) and [a pack's agent-CLI pin](../design/program-delivery.md#OQ-PD21);
    [how a host daemon hands the terminal a line](../design/boundary-broker.md#OQ-BB10), which the
@@ -338,7 +343,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | Item | Class | Disposition |
 |---|---|---|
 | 1 — finish the patched-fork mode's verification | X / D | W9 #2's Linux nested-jail checks pass, and the build-line digest disclosure was already built and is now reverified through its production call-site tests ([evidence](../design/patched-forks.md#7-the-build-and-the-launch)); no listed Linux-local build remains. Remaining: #3 is X (a real rootless host or CI), #8–10 are X (a Mac), the migration-kit measurement needs the maintainer's real series, and [OQ-FP11](../design/forked-programs-as-packs.md#OQ-FP11)/[OQ-PFK5](../design/patched-forks.md#OQ-PFK5)/[OQ-PFK6](../design/patched-forks.md#OQ-PFK6) are D; [OQ-PFK7](../design/patched-forks.md#decision-ledger) was settled 2026-10-15 by [PF-D85](../design/patched-forks.md#PF-D85). |
-| 2 — per-jail host daemons (HD-R1) | D | How do old jails coexist with per-jail daemons, and who keeps Claude's login fresh with no jail running ([OQ-HD9](../design/host-daemon-ownership.md#OQ-HD9))? **Maintainer**. Built and held on a branch. |
+| 2 — per-jail host daemons (HD-R1) | A | Coexistence answered 2026-10-16 ([HD-D26](../design/host-daemon-ownership.md#HD-D26)); OQ-HD9, OQ-HD5 and OQ-HD4 built on `hd-r1-land`. **Maintainer** merges; the real-host and macos-user checks in item 42 and the design's `next` are X. |
 | 3 — rulings that hold a build | D | [OQ-PD19](../design/program-delivery.md#OQ-PD19)–[OQ-PD23](../design/program-delivery.md#decision-ledger) (project mise pin of pnpm; autoprune's `$GOBIN` class; a pack's agent-CLI pin; whether an agent CLI updates once per machine), [OQ-BB10](../design/boundary-broker.md#OQ-BB10), [OQ-TP11](../design/trust-paths.md#OQ-TP11) and [OQ-BR24](../design/bedrock-plumbing.md#OQ-BR24). **Maintainer**. |
 | 4 — rulings that hold a defect's fix | D | The Kilo special-casing (claude gives undeclared-window Kilo models 1M context), [OQ-CDX3](../research/codex-background-service.md#OQ-CDX3) (`--no-daemon` for in-jail codex), whose OpenAI login host pi uses, and the leftover `mcp-adapter.json` ([OQ-MC1](../reference/mcp-configuration.md#OQ-MC1)/[OQ-MC2](../reference/mcp-configuration.md#OQ-MC2)). **Maintainer**. |
 | 5 — `yolo host apply --assert`'s next command and the dry run's exit | D | May a successful `--assert` name a next command (happy-path rule 2), and does the dry run exit 0 or 1 ([OQ-RO8](../reference/report-tiers.md#OQ-RO8))? **Maintainer**. |
