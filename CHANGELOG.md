@@ -37,6 +37,7 @@ model's facts across providers with per-provider overrides. See `yolo config-ref
 
 ### Fixed
 
+- Claude on Kilo no longer assumes every model has a 1M-token context, which made it compact too late on smaller models; set `context_window` on the profile for a 1M model.
 - `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
 - On Apple Container, `yolo check` no longer sends you to the Claude broker's log for an expired login; it points you at the jail's network.
 - A patched fork with nothing built no longer keeps refusing for an hour after a fetch failed because the network wasn't up yet; the next launch fetches again, and the refusal names the network.
