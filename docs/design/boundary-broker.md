@@ -89,7 +89,7 @@ the answer rides back on), [`loophole-system.md`](../reference/loophole-system.m
 [`loophole-transport.md`](../reference/loophole-transport.md) (what the broker is and how a jail
 reaches it), [`config-safety.md`](../reference/config-safety.md) (the config-change gate the
 scope is approved through), [`providers.md`'s credential gate](../reference/providers.md#the-credential-gate)
-(delivery as specific as possible), [`sso-backed-bedrock.md`](sso-backed-bedrock.md) (the second consumer waiting for a
+(delivery as specific as possible), [`agent-credentials.md`](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth) (the second consumer waiting for a
 request shape), [`host-run-mailbox.md`](host-run-mailbox.md) (the paste-to-host stopgap
 for everything this design does not yet cover, planned to become one more front-end of its
 store: its [§8](host-run-mailbox.md#8-how-the-gateway-absorbs-it)). The bounded host-store slice is recorded in [§7](#7-grants-and-the-request-store).
@@ -1863,8 +1863,8 @@ covered:
   cover them, and nothing here waits on it.
 - **Other services.** The store, the notifier, `yolo approve` and the audit log are service-neutral
   by construction (`service` in every record); a second broker is a new classifier, not a new
-  design. The AWS SSO case [`sso-backed-bedrock.md`](sso-backed-bedrock.md#13-decision-ledger)
-  parked here ([`OQ-SSO6`](sso-backed-bedrock.md#13-decision-ledger)) is the likeliest second.
+  design. The AWS SSO case [`agent-credentials.md`](../reference/agent-credentials.md#sso-decision-ledger)
+  parked here ([`OQ-SSO6`](../reference/agent-credentials.md#sso-decision-ledger)) is the likeliest second.
 - **Agent-internal prompts moved to the boundary.** The 2026-08 draft's use case B, gating every
   crossing the way an agent gates its own tool calls, is the long-run generalization of this
   design, not a part of it. It only ever sees what crosses, so it is never a replacement for the

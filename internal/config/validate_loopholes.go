@@ -867,7 +867,7 @@ func validateInlineService(spec *jsonx.OrderedMap, path string, errs *[]string) 
 // config.ValidateConfig: the `~/.aws` grant check (validateAWSSharedConfigGrant), which
 // internal/loopholes could not host because it imports this package. That check was
 // deleted when OQ-SSO8 moved the grant conflict into packs/aws-auth's own declaration
-// (docs/design/sso-backed-bedrock.md), and every remaining reader — applyWorkspaceOverrides,
+// (docs/reference/agent-credentials.md), and every remaining reader — applyWorkspaceOverrides,
 // the inert-loophole report, `yolo check`'s loophole section — goes through
 // loopholes.ConfigEnabledOverride. So the body could return to internal/loopholes; moving
 // it is a separate refactor, and until then this is the one copy. Its own history is the

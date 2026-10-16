@@ -12,7 +12,7 @@ import (
 //
 // It answers "what will the jail find at this path", which is narrower than "what does the
 // config mention", on purpose: the refusal the answer feeds has no escape hatch and must
-// never fire on a false positive (docs/design/sso-backed-bedrock.md, OQ-SSO8), and an entry
+// never fire on a false positive (docs/reference/agent-credentials.md, OQ-SSO8), and an entry
 // that renders nothing overrides nothing. So it reads the entries exactly as the launch
 // does (LoadHostFiles — the source-bearing half from the USER config alone, which is also
 // why a workspace-scope source-bearing entry is never counted), and then keeps an entry

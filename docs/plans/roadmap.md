@@ -108,7 +108,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     Mac half is compiled, not yet run; one Mac run shows the build skip's saving.
 11. Record the Mac runs of 2026-10-02 and 2026-10-03 where each doc's `next` names them — agent work now, ahead of the
     rulings below because the context-mount cases free one: [the AWS doorway](../design/host-notch-services.md), [its
-    Bedrock design](../design/sso-backed-bedrock.md), [A2's twin](../reference/macos-user-nix-and-features.md#ordering-and-what-aborts), [the
+    Bedrock design](../reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth), [A2's twin](../reference/macos-user-nix-and-features.md#ordering-and-what-aborts), [the
     render-mark twin](../design/notch-scoped-config-contributions.md#43-render-mark-parity-on-macos-user),
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
@@ -270,7 +270,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     and [simultaneous native authentication](../design/simultaneous-auth-and-pack-isolation.md) in a live session;
     launch arguments and source inspection do not establish authentication isolation.
 44. A human with the cloud account clears [a Bedrock API key or static key pair](../design/bedrock-plumbing.md#64-the-credential-three-are-supported),
-    [an SSO lapse mid-turn](../design/sso-backed-bedrock.md#11-evidence-and-how-to-re-check-it), [settings-only Bedrock mode](../reference/providers.md#two-channels-split-by-payload-type),
+    [an SSO lapse mid-turn](../reference/agent-credentials.md#sso-chain-order), [settings-only Bedrock mode](../reference/providers.md#two-channels-split-by-payload-type),
     [an AgentCore gateway](../design/bedrock-web-search.md) and [a Claude usage-limit response](../design/wire-bridge-gateway.md#5-part-4--the-subscription-arm-and-opt-in-failover-ruled).
 45. The maintainer's own commits and launches clear [the `matt` pack's `briefing/`](../reference/pack-system.md#briefing),
     [its posture list at the host](../design/notch-scoped-config-contributions.md#5-fastest-path-to-the-motivating-case),

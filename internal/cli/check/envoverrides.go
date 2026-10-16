@@ -5,7 +5,7 @@ package check
 // (packdecl.EnvOverride — packs/aws-auth's pointer beside a bearer or a static key pair) is
 // refused before it starts, and one beside something the pack declares only MAY override it
 // (`certain: false` — aws-auth's ~/.aws grant) is warned about and launches
-// (internal/cli/run/envoverrides.go; docs/design/sso-backed-bedrock.md, OQ-SSO8).
+// (internal/cli/run/envoverrides.go; docs/reference/agent-credentials.md, OQ-SSO8).
 //
 // It shipped there and only there once already, so without this file a config `yolo check`
 // called clean was still refused at launch — the one thing `check` exists to prevent, and

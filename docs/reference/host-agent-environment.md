@@ -88,7 +88,7 @@ and why "just use wrappers for everything" does not collapse the problem.
 | Where the directory lives | `internal/paths` (`WrapDir`, `WrapDirUnder`, `GeneratedBinDir`) |
 
 **Reads with:** [`providers.md`](providers.md) (what a provider declares, and which agent reads
-which endpoint), [`envsource-relative-paths.md`](envsource-relative-paths.md) (what a relative
+which endpoint), [`agent-credentials.md`](agent-credentials.md#where-a-relative-env_sources-path-resolves) (what a relative
 `env_sources` path points at — the secret channel this composition hydrates),
 [`../design/host-render-target.md`](../design/host-render-target.md) (the host as one notch of
 the confinement dial), [`pack-system.md`](pack-system.md) (the contribution model),

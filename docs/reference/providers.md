@@ -433,7 +433,7 @@ refused, with no hatch, or warned about and let through when the pack declares t
 `certain: false` (`EnvOverrideFindings`, also in `internal/packload`). Core names no variable
 there. `packs/aws-auth` declares the three for its credentials pointer: a Bedrock bearer and a
 static key pair refuse, and a `~/.aws` grant warns
-([`sso-backed-bedrock.md` OQ-SSO8](../design/sso-backed-bedrock.md#OQ-SSO8)).
+([`agent-credentials.md` OQ-SSO8](agent-credentials.md#OQ-SSO8)).
 
 ## The region preflight
 
@@ -2030,7 +2030,7 @@ says so ([what the via does](#routing-a-profile-through-the-bridge-via)). Until 
 > **MEASURED 2026-09-29: Bedrock mode on real credentials. UNMEASURED: the settings-only
 > path.** In the live-login try-out a jail's claude ran in Bedrock mode on credentials `aws-auth`
 > served from a live `aws sso login`
-> ([`sso-backed-bedrock.md` §11](../design/sso-backed-bedrock.md#11-evidence-and-how-to-re-check-it)).
+> ([`agent-credentials.md`](agent-credentials.md#sso-chain-order)).
 > That claude, like every yolo-launched one, had `CLAUDE_CODE_USE_BEDROCK` in its process env as
 > well as in the settings file. [OQ-4](#pv-oq-4) was measured with `ANTHROPIC_BASE_URL` as the
 > witness variable — a controlled listener run showed a settings-only value producing traffic
@@ -2110,7 +2110,7 @@ so do `yolo host --` and `yolo host env`, over the one profile their launch sele
 (`packload.ProfileDisclosures`, the one function every notch calls). It is a disclosure, so no
 flag hides it ([OQ-RO3](report-tiers.md#why-its-this-way)).
 
-The host notch also runs the [OQ-SSO8](../design/sso-backed-bedrock.md#OQ-SSO8) override check
+The host notch also runs the [OQ-SSO8](agent-credentials.md#OQ-SSO8) override check
 a jail launch runs: a pack's env contribution delivered beside a variable the pack declares
 overrides it refuses `yolo host --`, and `yolo host env` prints the same refusal without
 refusing. The one input that differs is the invoking shell, which the agent `yolo host` execs
