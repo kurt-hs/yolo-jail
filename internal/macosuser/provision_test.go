@@ -179,6 +179,27 @@ func TestProvisionArgvIsConfinedUnderThisSessionsProfile(t *testing.T) {
 	}
 }
 
+// THE STAGE RUNS IN THE WORKSPACE. A crossing into the sandbox account starts in `/` (real.go's
+// commandFor), and the stage's `mise ls --missing` / `mise install` find their config upward from
+// the cwd, so the stage's script changes into the workspace first and ends if it cannot, as the
+// container's stage runs under --workdir /workspace.
+func TestProvisionArgvRunsItsScriptInTheWorkspace(t *testing.T) {
+	plan := provisionPlan(t)
+	ws := "/Users/Shared/yolo/proj"
+	if got := commandFor(plan.ProvisionArgv).Dir; got != "/" {
+		t.Fatalf("the stage is not a crossing commandFor starts in /: %q", got)
+	}
+	script := ""
+	for i, a := range plan.ProvisionArgv {
+		if a == "-c" && i > 0 && plan.ProvisionArgv[i-1] == "/bin/bash" && i+1 < len(plan.ProvisionArgv) {
+			script = plan.ProvisionArgv[i+1]
+		}
+	}
+	if want := "cd -- " + shQuote(ws) + " || exit 1\n"; !strings.HasPrefix(script, want) {
+		t.Errorf("the stage script does not start in the workspace (want prefix %q):\n%s", want, script)
+	}
+}
+
 // THE TWO ENDS OF THE STAGE, checked against the paths their OTHER halves use:
 // the script the darwin bootstrap generates, and the log the briefing reads.
 func TestStageExecsTheGeneratedScriptAndLogsWhereTheBriefingLooks(t *testing.T) {

@@ -557,12 +557,54 @@ func TestASignalDuringACaptureCopyEndsTheLaunch(t *testing.T) {
 	}
 }
 
+// A SYMLINKED ENTRY IS REFUSED, NOT FOLLOWED. The copy reads `"$3/."`, which follows a link at $3
+// where the old `cp -R "$3"` copied the link itself, so the script checks first that $3 is a real
+// directory, says why when it is not, and copies nothing. Run for real; the refusal comes before
+// any step that needs a macOS path.
+func TestTheCaptureStageScriptRefusesASymlinkedEntry(t *testing.T) {
+	for _, bin := range []string{"/bin/sh", chmodBin, rmBin} {
+		if _, err := os.Stat(bin); err != nil {
+			t.Skipf("%s is not on this machine, so the stage script cannot run here: %v", bin, err)
+		}
+	}
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(tmp, "elsewhere")
+	mustMkdir(t, filepath.Join(real, "tree"), 0o755)
+	mustWrite(t, filepath.Join(real, "tree", "f"), "bytes", 0o444)
+	link := filepath.Join(tmp, "userstore", "entries", captureKeyA)
+	mustMkdir(t, filepath.Dir(link), 0o755)
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(tmp, "captures")
+	mustMkdir(t, filepath.Join(root, capturesStagingLeaf), 0o755)
+	mustMkdir(t, filepath.Join(root, capturesEntriesLeaf), 0o755)
+
+	argv := stageCaptureArgv(root, CaptureEntry{Bin: "probetool", Key: captureKeyA, Source: link})
+	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	if err == nil {
+		t.Fatalf("the stage script exited 0 for a symlinked entry:\n%s", out)
+	}
+	if !strings.Contains(string(out), "is not a directory (a symlink or missing)") {
+		t.Errorf("the refusal does not say why:\n%s", out)
+	}
+	for _, p := range []string{filepath.Join(root, capturesStagingLeaf, captureKeyA),
+		filepath.Join(root, capturesEntriesLeaf, captureKeyA)} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("a symlinked entry was staged at %s (%v)", p, err)
+		}
+	}
+}
+
 // THE COPY CLEANS UP AFTER ITSELF when any step of it fails, so a launch on a full disk does not
 // keep a half-made copy of a 1.2 GB entry for the rest of its run, and it exits non-zero so the
 // launch can say so. Run for real: entries/ is a file here, so the copy succeeds and the rename
 // into entries/ fails, which works the same as the invoking user and as root.
 func TestAFailedCaptureCopyLeavesNoPartialCopy(t *testing.T) {
-	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin} {
+	for _, bin := range []string{"/bin/sh", cpBin, chmodBin, mvBin, rmBin, mkdirBin, chgrpBin, idBin} {
 		if _, err := os.Stat(bin); err != nil {
 			t.Skipf("%s is not on this machine, so the stage script cannot run here: %v", bin, err)
 		}
