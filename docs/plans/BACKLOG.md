@@ -708,6 +708,12 @@ The teardown capture and `yolo config capture` run the compose engine with no co
 tombstone. The next boot's capture records it again, so it is late rather than lost. Found
 2026-10-16 while fixing the added-`null` data loss.
 
+### <a id="image-identity-twice"></a>🔧 **A launch can evaluate the image identity twice**
+
+`startImagePrewarm` always replaces the launch's image-identity memo, so a memo that
+`launchImageIdentity` installed earlier in the same launch is discarded and the identity is
+evaluated again. Found 2026-10-16 by the review of the prewarm-stop fix.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
