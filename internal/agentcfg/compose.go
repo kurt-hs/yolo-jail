@@ -471,10 +471,10 @@ func Compose(in Inputs) (*Result, error) {
 	// ⚠ THE TOMBSTONE IS INERT FOR THE RENDER, AND THE REPORT HAS TO BE TOLD. `yolo config
 	// diff` and `yolo config promote` read the sidecar directly, and until 2026-10-16 called
 	// a key the file HOLDS a deletion, promote then writing that null into a pack's
-	// config-overlay as a real tombstone at every notch. Their shared reader
-	// (configdiff.go's overlayKeyStates) now drops every null leaf the last render holds as
-	// `null` — this reinstatement is what puts it there — so neither reports one
-	// (docs/reference/config-ownership.md#CO-D20).
+	// config-overlay as a real tombstone at every notch. The steady-state capture now drops
+	// every tombstone at a keypath the current file holds as a literal null
+	// (dropHeldNullTombstones in ComposeStateful), so the sidecar no longer carries one for
+	// them to misread (docs/reference/config-ownership.md#CO-D20).
 	overlayIdx := -1
 	for i, l := range preLayers {
 		if l.name == layerOverlay {
