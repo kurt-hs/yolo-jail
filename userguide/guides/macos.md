@@ -287,7 +287,10 @@ What you give up:
   `$YOLO_CONTEXT_DIR`, not `/ctx`, as a link to the folder itself, so tools that resolve paths show
   the real path, and a subfolder the sandbox account may not read stays unreadable. Any other
   folder, including one in your home, on another disk, in the project or under `/tmp`, stops the
-  launch and says why: move it, or use a container setup for that workspace.
+  launch and says why: move it, mark it optional, or use a container setup for that workspace.
+  An optional entry, such as
+  `{"host": "~/notes", "mode": "ro", "optional": true}`, is skipped here with one
+  `skipped optional mount:` line and the launch goes on; the container setups still mount it.
   This has not yet been tried on a Mac. A pack's `mount` of a single file is copied in at each
   launch instead, and so is a folder in `host_files`, up to 32 MiB (64 MiB across a launch); a
   larger one stops the launch and names the entry.

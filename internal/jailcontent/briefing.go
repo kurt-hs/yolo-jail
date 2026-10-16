@@ -62,6 +62,9 @@ type ContextMount struct {
 	// dir at launch instead of linking (docs/reference/context-mounts.md#CX-D25): the agent reads a
 	// snapshot, and a host edit arrives at the next launch, which the entry says.
 	Copied bool
+	// Optional is true for a config `mounts` element marked "optional"
+	// (docs/reference/context-mounts.md#optional-mounts): the entry says it may be absent.
+	Optional bool
 }
 
 // BriefingInput carries everything the jail-managed briefing content depends
@@ -851,6 +854,11 @@ func BriefingContent(in BriefingInput) string {
 				mode, anyCopied = mode+"; copied at launch; host edits arrive at the next launch", true
 			} else {
 				anyLinked = true
+			}
+			// AN OPTIONAL MOUNT MAY BE ABSENT: a check that runs after the briefing is written (the
+			// macos-user sandbox account's DAC preflight) may still skip it.
+			if m.Optional {
+				mode = "optional; may be absent; " + mode
 			}
 			entry := "- `" + m.Path + "` (" + mode + "; host `" + m.Host + "`"
 			if m.Pack != "" {

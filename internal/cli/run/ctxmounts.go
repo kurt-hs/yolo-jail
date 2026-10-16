@@ -16,6 +16,7 @@ package run
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
@@ -28,12 +29,20 @@ type configCtxMount struct {
 	source string // resolved host path
 	dest   string // jail path
 	rw     bool
+	// host is the host path as written ("~" unexpanded), for messages; optional is the
+	// element's "optional" (docs/reference/context-mounts.md#optional-mounts).
+	host     string
+	optional bool
 }
 
 // configCtxMounts returns the config `mounts` elements a container launch delivers, in
 // order — read-only elements first, as the merged config lists them, then the user scope's
 // read-write ones — and hands `note` one line per element it skips (nil drops them: the
 // briefing's caller, whose launch prints the same lines from the assembler).
+//
+// An OPTIONAL element (docs/reference/context-mounts.md#optional-mounts) is skipped in each case
+// below with config.OptionalMountSkipLine's one plain line instead, and additionally when a macOS
+// Podman Machine does not share its source, which would otherwise refuse the launch.
 //
 // Two skips, both the rule the string form always had and neither a downgrade:
 //
@@ -71,18 +80,57 @@ func (o *Options) configCtxMounts(rt string, cfg *jsonx.OrderedMap, note func(st
 		source := resolveExpand(m.Host)
 		dest := m.DestFor(source)
 		if !fileExists(source) {
-			if !quiet {
+			switch {
+			case m.Optional:
+				note(config.OptionalMountSkipLine(m.Host, dest, "source does not exist"))
+			case !quiet:
 				note("[yellow]Warning: " + o.missingMountSourceWarning(m, source) + "[/yellow]")
 			}
 			continue
 		}
 		if !m.RW && roUnsafe != "" {
-			note("[yellow]Skipping mount " + source + " → " + dest + ": " + roUnsafe + "[/yellow]")
+			if m.Optional {
+				note(config.OptionalMountSkipLine(m.Host, dest, "this Apple Container ignores read-only binds"))
+			} else {
+				note("[yellow]Skipping mount " + source + " → " + dest + ": " + roUnsafe + "[/yellow]")
+			}
 			continue
 		}
-		out = append(out, configCtxMount{source: source, dest: dest, rw: m.RW})
+		// AN OPTIONAL SOURCE THE PODMAN MACHINE DOES NOT SHARE is skipped here, so the argv never
+		// names it and the launch's share pre-flight (unsharedBindSources) never refuses it. A
+		// required one stays in the argv and is refused there, as before.
+		if m.Optional && o.machineCannotSee(rt, source) {
+			note(config.OptionalMountSkipLine(m.Host, dest, "the Podman Machine does not share it"))
+			continue
+		}
+		out = append(out, configCtxMount{source: source, dest: dest, rw: m.RW, host: m.Host,
+			optional: m.Optional})
 	}
 	return out
+}
+
+// OptionalMountSkips is `yolo check`'s prediction of the optional `mounts` elements a launch on
+// rt would skip, as the launch's own skip lines, through the launch's own deciders: configCtxMounts
+// on a container runtime, and macosCtxLinks' siting on macos-user.
+//
+// NARROWER THAN THE LAUNCH, never wider, so it can only under-report: it hands the macos-user
+// siting no pack grants (a collision with one is not predicted), asks no macOS Podman Machine for
+// its shares, and does not read Apple Container's version (so the `:ro` floor is not predicted).
+// Those need probes a check does not run; the launch prints its own line for each.
+func OptionalMountSkips(workspace string, cfg *jsonx.OrderedMap, rt string) []string {
+	var lines []string
+	note := func(line string) {
+		if strings.HasPrefix(line, "skipped optional mount:") {
+			lines = append(lines, line)
+		}
+	}
+	o := &Options{Workspace: workspace, Getenv: func(string) string { return "" }}
+	if rt == "macos-user" { // parity: HonoredBy — macos-user's skips come from its siting (macosCtxLinks), the container runtimes' from configCtxMounts
+		o.macosCtxLinks(cfg, nil, note)
+		return lines
+	}
+	o.configCtxMounts("podman", cfg, note) // the floor and the machine shares need probes; see above
+	return lines
 }
 
 // missingMountSourceWarning is the launch's line for a `mounts` element whose source does not
@@ -209,7 +257,7 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 		var out []jailcontent.ContextMount
 		for _, l := range links {
 			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + l.Rel(),
-				Host: l.Source, ReadWrite: l.RW, Pack: l.Pack})
+				Host: l.Source, ReadWrite: l.RW, Pack: l.Pack, Optional: l.Optional})
 		}
 		for _, c := range copies {
 			out = append(out, jailcontent.ContextMount{Path: ctxDir + "/" + c.Rel(),
@@ -219,7 +267,8 @@ func (o *Options) briefedCtxMounts(rt, ctxDir string, cfg *jsonx.OrderedMap, pac
 	}
 	var out []jailcontent.ContextMount
 	for _, m := range o.configCtxMounts(rt, cfg, nil) {
-		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, ReadWrite: m.rw})
+		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, ReadWrite: m.rw,
+			Optional: m.optional})
 	}
 	for _, m := range o.packCtxMounts(rt, packs, nil) {
 		out = append(out, jailcontent.ContextMount{Path: m.dest, Host: m.source, Pack: m.pack})
