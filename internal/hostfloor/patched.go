@@ -12,6 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
 // patched.go is the floor's arm for a PATCHED FORK's program (docs/reference/patched-forks.md §9,
@@ -337,7 +338,14 @@ func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, recipe pa
 	if command == "" {
 		command = "yolo host -- " + p.Bin()
 	}
-	_, _ = io.WriteString(f.out(), pf.Block("fork "+owner, recipe, packsrc.PatchBypass{Command: command, Runs: runs}))
+	out := f.out()
+	_, _ = io.WriteString(out, pf.Render("fork "+owner, recipe, packsrc.PatchBypass{Command: command, Runs: runs}, colorFor(out)))
+}
+
+// colorFor is the one color gate (tty.Color) for a block written to w: a terminal, and NO_COLOR unset.
+func colorFor(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	return tty.Color(nil, true, ok && tty.IsTerminalFile(file))
 }
 
 // ensurePatched is Ensure for a patched fork's program: the advance first, outside the floor's lock

@@ -504,7 +504,7 @@ func TestBackgroundPatchFailureSurvivesRecordSaveFailureAndClaim(t *testing.T) {
 		t.Fatalf("the fixture retained other current failure authority besides the background outcome: %+v", current)
 	}
 	logged, err := os.ReadFile(backgroundAdvanceLog())
-	if err != nil || !strings.Contains(string(logged), "patch application failed at upstream v1.2.0") {
+	if err != nil || !strings.Contains(string(logged), "patch series does not apply to upstream v1.2.0") {
 		t.Fatalf("the real background log did not retain the operation error: err=%v\n%s", err, logged)
 	}
 	// Reporting is not authority: even a failed notice writer has already claimed the outcome into .said.
@@ -537,7 +537,7 @@ func TestBackgroundPatchFailureSurvivesRecordSaveFailureAndClaim(t *testing.T) {
 	block := delivered.PatchFailure.Block(f.Label(), f.RebaseRecipe(), packsrc.PatchBypass{})
 	if delivered.PatchFailure == nil || delivered.PatchFailure.Owner != pf.Owner || delivered.PatchFailure.Seq != pf.Seq ||
 		delivered.PatchFailure.Target != pf.Target || delivered.PatchFailure.Member != pf.Member ||
-		!strings.Contains(block, "patch application failed at upstream v1.2.0") ||
+		!strings.Contains(block, "patch series does not apply to upstream v1.2.0") ||
 		!strings.Contains(block, "Log: "+backgroundAdvanceLog()) || strings.Contains(foreground, "ERROR: ") {
 		t.Fatalf("foreground delivery lost claimed background authority or its real log, or the slot printed the block the launch prints: got=%+v want=%+v\n%s\nslot said:\n%s",
 			delivered.PatchFailure, pf, block, foreground)
@@ -1476,7 +1476,7 @@ func TestBackgroundAdvanceRepairCoordinationIsNoWaitAndConservative(t *testing.T
 			delivered, _ := servingTreeOf(bg.fork, advanceOptions{platform: patchedTestPlatform, runtime: "podman",
 				launch: true, errw: &report}, "", false)
 			if delivered.patchFailure == nil || delivered.patchFailure.Target != bg.failure.Target ||
-				!strings.Contains(report.String(), "patch application failed at upstream v1.2.0") {
+				!strings.Contains(report.String(), "patch series does not apply to upstream v1.2.0") {
 				t.Fatalf("no-check foreground recovery did not conservatively retain old failure evidence: %+v\n%s", delivered, report.String())
 			}
 			if phase == "repair.observe" && !strings.Contains(output, "could not observe detached failure evidence") {
@@ -2177,7 +2177,7 @@ func TestBackgroundNoFitReportsItsCauseWhileLastGoodServes(t *testing.T) {
 	candidate := fx.commit(t, "v1.1.0", map[int]string{11: "eleven"})
 	fx.setNow(fx.now.Add(2 * time.Hour))
 	runBackgroundAdvanceUnder(context.Background(), bgArgs(f.Key()), &out)
-	if !strings.Contains(out.String(), "ERROR: "+f.Key()+": patch application failed at upstream v1.1.0") ||
+	if !strings.Contains(out.String(), "ERROR: "+f.Key()+": patch series does not apply to upstream v1.1.0") ||
 		!strings.Contains(out.String(), "Operation stopped; no older fit or base will be built.") {
 		t.Fatalf("the genuine conflict was not fatal before any older fit or base:\n%s", out.String())
 	}
