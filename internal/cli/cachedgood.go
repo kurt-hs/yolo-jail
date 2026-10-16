@@ -217,15 +217,17 @@ func writeCachedGoodPatchFailure(w io.Writer, f packload.Fork, record *packsrc.C
 	} else if pf.Detail != "" {
 		fmt.Fprintf(w, "  Application detail: %s\n", printableFailureText(pf.Detail))
 	}
-	if pf.Kind == "base" {
-		fmt.Fprintf(w, "  Repair: re-export the patch series with `git format-patch --base=%s`.\n", pf.Target.Commit)
-	} else {
-		for _, l := range f.RebaseRecipe().Repair(pf.Target, "Repair: "+packsrc.RecipeLead, "  ") {
-			fmt.Fprintln(w, l)
-		}
-	}
 	if pf.Log != "" {
 		fmt.Fprintf(w, "  Log: %s\n", printableFailureText(pf.Log))
+	}
+	// The error block's Repair shape (packsrc.PatchFailure.Render).
+	fmt.Fprint(w, "\nRepair:\n")
+	if pf.Kind == "base" {
+		fmt.Fprintf(w, "  re-export the series: git format-patch --base=%s\n", pf.Target.Commit)
+	} else {
+		for _, l := range f.RebaseRecipe().Lines(pf.Target) {
+			fmt.Fprintln(w, "  "+l)
+		}
 	}
 }
 

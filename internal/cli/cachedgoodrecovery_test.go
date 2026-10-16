@@ -261,7 +261,7 @@ func TestCachedGoodDisclosureKeepsCurrentTypedPatchFailureOnSuccessAndRefusal(t 
 	}
 	d, success := askForCachedGood(t, fx, fork.Key())
 	if d.Key != key || !strings.Contains(success, "Current typed patch failure remains recorded") ||
-		!strings.Contains(success, "  Repair: "+packsrc.RecipeLead) ||
+		!strings.Contains(success, "\nRepair:\n") || strings.Contains(success, packsrc.RecipeLead) ||
 		!strings.Contains(success, "old build does not contain current edits") {
 		t.Errorf("success omitted current typed patch failure or old-build warning: delivery=%+v\n%s", d, success)
 	}

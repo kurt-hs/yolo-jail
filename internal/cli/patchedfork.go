@@ -421,7 +421,7 @@ func reportExplicitPatchFailure(pr richtext.Printer, errw io.Writer, f packload.
 	if !alreadyReported {
 		writePatchFailure(errw, failure, f, explicitPatchBypass(f, series, rec), admitted)
 	} else if admitted != "" {
-		fmt.Fprintf(errw, "CONTINUING: using intact admitted build %s; this explicit subject was skipped.\n", admitted)
+		sayContinuing(errw, admitted)
 	}
 	if admitted != "" {
 		pr.Printf("[dim]%s: skipped this explicit subject; no build or fallback was accepted[/dim]", f.Label())

@@ -62,7 +62,7 @@ func TestAHostLaunchStopsOnATreesPatchFailureBeforeTheGate(t *testing.T) {
 	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
 	errw.Reset()
 	if rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil); rc != 0 || !got.execed ||
-		!strings.Contains(errw.String(), "CONTINUING: using intact admitted build") {
+		!strings.Contains(errw.String(), "Continuing with ") {
 		t.Errorf("the bypass: rc=%d execed %v\n%s", rc, got.execed, errw.String())
 	}
 }

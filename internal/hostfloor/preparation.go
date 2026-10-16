@@ -92,14 +92,14 @@ func (f *Floor) PreparePatched(ctx context.Context, p Program, allowAdvance bool
 	if keepInstalled {
 		preparation.delivery = patchedPreparationKeepInstalled
 		preparation.installed = cloneRecord(currentStatus.Record)
-		f.writePatchFailureOnce(p, state, runs)
-		f.sayContinuingOnce(state, "CONTINUING: using installed compatible build %s; skips this fork's advance", currentStatus.Record.Version)
+		f.writeContinuingPatchFailureOnce(p, state)
+		f.sayContinuingOnce(state, currentStatus.Record.Version)
 		return preparation, nil
 	}
 	if installGood {
 		preparation.delivery = patchedPreparationInstallGood
-		f.writePatchFailureOnce(p, state, runs)
-		f.sayContinuingOnce(state, "CONTINUING: installing the selected admitted build %s; skips this fork's advance", preparation.selectedGood.Label)
+		f.writeContinuingPatchFailureOnce(p, state)
+		f.sayContinuingOnce(state, preparation.selectedGood.Label)
 		return preparation, nil
 	}
 	f.writePatchFailureOnce(p, state, runs)
@@ -114,8 +114,7 @@ var ErrPatchFailureNothingRuns = errors.New("no intact admitted build of it, and
 
 // ErrPatchFailureBypassable marks a patch failure the patch failure's own bypass would continue past,
 // running an intact admitted build of the series as it stands (PF-D81, PF-D83).
-var ErrPatchFailureBypassable = errors.New("an intact admitted build of it is on this machine for " +
-	paths.AllowPatchFailuresEnv + "=1 to run")
+var ErrPatchFailureBypassable = errors.New("an intact admitted build of it is on this machine")
 
 // patchFailureStop is preparationError for a patch failure, marked ErrPatchFailureBypassable when the
 // bypass would run a build (runs), and ErrPatchFailureNothingRuns when nothing of the program would.
@@ -247,13 +246,14 @@ func (f *Floor) EnsurePrepared(ctx context.Context, p Program, prepared *Patched
 	return f.Status(p), outcome, nil
 }
 
-// sayContinuingOnce says the bypass's CONTINUING line unless the advance that took the skip already
-// did: like the error block (writePatchFailureOnce), it is said once per operation.
-func (f *Floor) sayContinuingOnce(state PatchedState, format string, args ...any) {
+// sayContinuingOnce says the bypass's one Continuing line, naming build, the form every patch-failure
+// bypass says, unless the advance that took the skip already did: like the error block
+// (writePatchFailureOnce), it is said once per operation.
+func (f *Floor) sayContinuingOnce(state PatchedState, build string) {
 	if state.ContinuingSaid {
 		return
 	}
-	f.say(format, args...)
+	f.say("Continuing with %s (%s)", build, paths.AllowPatchFailuresEnv)
 }
 
 func mergePreparedPatchedState(initial, resolved PatchedState) PatchedState {

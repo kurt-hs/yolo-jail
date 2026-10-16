@@ -440,7 +440,7 @@ func TestPatchActorFailedReplayRecordingDoesNotAuthorizeOldApplyErrClear(t *test
 	}
 }
 
-func TestPatchActorDueForcedAndNewerVersionRetriesKeepExactFailure(t *testing.T) {
+func TestPatchActorDueAndForcedRetriesKeepExactFailureANewerFitBuildsPastIt(t *testing.T) {
 	for _, mode := range []string{"due", "force", "newer-version"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "")
@@ -573,7 +573,7 @@ func TestPatchActorOnlyLiteralOneBypassesAndBackgroundNeverDoes(t *testing.T) {
 			}
 			result, out, _ := fx.launch(t, "podman")
 			if !result.failed || result.patchFailure == nil || result.delivery.Key != oldKey || len(fx.builds) != 1 ||
-				strings.Contains(out, "CONTINUING:") {
+				strings.Contains(out, "Continuing with ") {
 				t.Fatalf("bypass value %q did not refuse on the intact Good: result=%+v builds=%d\n%s", value, result, len(fx.builds), out)
 			}
 		})
@@ -590,7 +590,7 @@ func TestPatchActorOnlyLiteralOneBypassesAndBackgroundNeverDoes(t *testing.T) {
 		var out bytes.Buffer
 		result := advancePatchedFork(fx.fork(t), advanceOptions{platform: patchedTestPlatform, runtime: "podman", workspace: "/ws",
 			out: &out, errw: &out, launch: true, background: true, act: &run.ActInterrupt{}})
-		if !result.failed || result.patchFailure == nil || result.delivery.Key != oldKey || strings.Contains(out.String(), "CONTINUING:") ||
+		if !result.failed || result.patchFailure == nil || result.delivery.Key != oldKey || strings.Contains(out.String(), "Continuing with ") ||
 			len(fx.builds) != 1 {
 			t.Fatalf("background operation inherited foreground continuation authority: result=%+v builds=%d\n%s",
 				result, len(fx.builds), out.String())
@@ -606,7 +606,7 @@ func TestPatchActorExactBypassRequiresAnIntactCompatibleGood(t *testing.T) {
 		fx.commit(t, "v1.2.0", map[int]string{14: "fourteen", 11: "eleven"})
 		result, out, _ := fx.launch(t, "podman")
 		if !result.failed || result.patchFailure == nil || result.delivery.Key != "" || len(fx.builds) != 0 ||
-			strings.Contains(out, "CONTINUING:") {
+			strings.Contains(out, "Continuing with ") {
 			t.Fatalf("exact bypass manufactured a compatible Good where none existed: result=%+v builds=%d\n%s",
 				result, len(fx.builds), out)
 		}
@@ -623,7 +623,7 @@ func TestPatchActorExactBypassRequiresAnIntactCompatibleGood(t *testing.T) {
 		t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "1")
 		result, out, _ := fx.launch(t, "podman")
 		if !result.failed || result.patchFailure == nil || result.delivery.Key != "" || len(fx.builds) != 1 ||
-			result.delivery.Key == oldKey || strings.Contains(out, "CONTINUING:") {
+			result.delivery.Key == oldKey || strings.Contains(out, "Continuing with ") {
 			t.Fatalf("exact bypass delivered a Good built under the changed recipe: result=%+v old=%s builds=%d\n%s",
 				result, oldKey, len(fx.builds), out)
 		}
@@ -1027,7 +1027,7 @@ func TestPatchActorExactBypassRevalidatesServingKeyBeforeFinish(t *testing.T) {
 	builds := len(fx.builds)
 	result := a.patchFailureResult(failed.patchFailure)
 	if writer.err != nil || result.delivery.Key != "" || !result.failed || result.patchFailure == nil || len(fx.builds) != builds ||
-		strings.Contains(writer.said.String(), "CONTINUING: using intact admitted build") {
+		strings.Contains(writer.said.String(), "Continuing with ") {
 		t.Fatalf("exact bypass reused a reaped serving key or rebuilt instead of preserving the refusal: writer=%v result=%+v builds=%d/%d",
 			writer.err, result, len(fx.builds), builds)
 	}
