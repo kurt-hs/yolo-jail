@@ -2,9 +2,9 @@ package run
 
 // macosuserforks_test.go pins what a macos-user launch says and hands its sandbox for a fork, plain
 // or PATCHED (docs/design/forked-programs-as-packs.md FP-D3; docs/reference/patched-forks.md §9): that
-// backend delivers no fork's build — its launch never reaches the fresh-launch slot, and no launch
-// there can read the capture store (install-capture.md hand-off H4) — so the launch says so with the
-// next step, a container backend, and the sandbox's own launcher for the program repeats that reason
+// backend delivers no fork's build — its launch never reaches the fork-build slot, and a patched fork
+// has no macOS build at all — so the launch says so with the ways out (a container backend, or
+// starting without it), and the sandbox's own launcher for the program repeats that reason
 // rather than blaming a launch that never meant to build it.
 
 import (
@@ -64,15 +64,23 @@ func TestAMacosUserLaunchHandsItsSandboxTheForksReason(t *testing.T) {
 	forkLaunchHome(t, forkPinSource)
 	pinFork(t, strings.Repeat("ef", 20))
 	out, env := macosUserLaunchEnv(t)
-	for _, w := range []string{"tool is not delivered on macos-user", "hand-off H4",
-		"run it on a container backend: YOLO_RUNTIME=container (Apple Container) or YOLO_RUNTIME=podman"} {
+	for _, w := range []string{"tool is not delivered on macos-user",
+		"a macos-user launch does not build fork forkpack",
+		"run it on a container backend with `YOLO_RUNTIME=container yolo` or `YOLO_RUNTIME=podman yolo`",
+		"or start without it with `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo`"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the macos-user launch lacks %q:\n%s", w, out)
 		}
 	}
+	for _, stale := range []string{"capture store yet", "hand-off H4"} {
+		if strings.Contains(out, stale) {
+			t.Errorf("the macos-user launch's fork line still says %q:\n%s", stale, out)
+		}
+	}
 	d := handedOnMacosUser(t, env)["tool"]
-	if d.Key != "" || !strings.Contains(d.Reason, "tool is not delivered on macos-user: fork forkpack builds it") ||
-		!strings.Contains(d.Reason, "YOLO_RUNTIME=container") {
+	if d.Key != "" ||
+		!strings.Contains(d.Reason, "tool is not delivered on macos-user: a macos-user launch does not build fork forkpack") ||
+		!strings.Contains(d.Reason, "YOLO_RUNTIME=container yolo") {
 		t.Errorf("the sandbox is handed %+v for tool, want no build and the launch's reason", d)
 	}
 }
@@ -94,7 +102,9 @@ func TestAMacosUserLaunchNamesWhatRunsAPatchedFork(t *testing.T) {
 	}
 	out, env := macosUserLaunchEnv(t)
 	for _, w := range []string{"tool is not delivered on macos-user",
-		"fork forkpack/tool is a patched fork, whose upstream a fresh launch on a container backend checks",
+		"fork forkpack/tool is a patched fork, which has no macOS build; run it on a container backend with " +
+			"`YOLO_RUNTIME=container yolo` or `YOLO_RUNTIME=podman yolo`, or start without it with " +
+			"`YOLO_ALLOW_MISSING_PROGRAMS=1 yolo`",
 		"with another series or build recipe — a fresh launch on a container backend builds the edited one"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the macos-user launch lacks %q:\n%s", w, out)

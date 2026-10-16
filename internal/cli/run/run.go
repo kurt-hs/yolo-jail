@@ -890,8 +890,8 @@ func Run(opts Options) (rc int) {
 		o.noteMacosUserPlatformGaps(cfg)
 		o.noteMacosUserPortKeys(cfg, portPlan)
 		// A FORK DELIVERS NO PROGRAM ON THIS BACKEND, and says so (FP-D3; forkbuild.go): the build
-		// trigger sits below this arm's return, and the capture store this arm stages (hand-off
-		// H4, macosUserCaptures) carries installer captures alone. The sandbox's own launcher
+		// trigger sits below this arm's return, and a patched fork has no darwin build path at all
+		// (FP-D24 builds only a plain fork, for the host floor). The sandbox's own launcher
 		// for the program is told the same reason (macosUserForkWire), so typing it there names
 		// this backend and the next step.
 		o.noteMacosUserForks()
