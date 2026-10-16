@@ -1213,7 +1213,7 @@ func TestACaptureCleanupFallsBackToTheSandboxAccountAndThenTheHost(t *testing.T)
 	plan := BuildCapturePlan(testCaptureOptions())
 	root := plan.StagingRoot
 	hostRm := rmBin + " -rf " + root
-	guestChmod := strings.Join(RunAsSandboxArgv(nil, chmodBin, "-R", "u+w", "--", root), " ")
+	guestChmod := strings.Join(RunAsSandboxArgv(nil, chmodBin, "-R", "--", "u+w", root), " ")
 	guestRm := strings.Join(RunAsSandboxArgv(nil, rmBin, "-rf", "--", root), " ")
 
 	t.Run("the host removes it", func(t *testing.T) {
