@@ -995,5 +995,11 @@ func (o *Options) startPlannedLoopholes(cname, rt string, cfg *jsonx.OrderedMap,
 	if o.startupRefusal != nil {
 		return started, &olderDaemonRefusal{startup: o.startupRefusal}
 	}
-	return started, o.runLaunchChecks(rt, started, payload, freshLaunchCheck)
+	refused := o.runLaunchChecks(rt, started, payload, freshLaunchCheck)
+	if refused == nil {
+		// OQ-HD9's at-launch catch-up of Claude's shared login, before the agent runs and only for
+		// a launch that goes on (claudelogincatchup.go).
+		o.catchUpClaudeLogin(started)
+	}
+	return started, refused
 }
