@@ -21,9 +21,12 @@ var normalizeCases = []struct {
 	{"0.1.0-3-gabcdef1", "0.1.0+3.gabcdef1"},             // commits past tag
 	{"0.1.0-3-gabcdef1-dirty", "0.1.0+3.gabcdef1.dirty"}, // commits + dirty
 	{"v0.6.0-19-g661ac98", "0.6.0+19.g661ac98"},          // a real describe from this repo
-	{"1.2.3-rc1", "1.2.3-rc1"},                           // hyphenated base, no g-hash: base rejoined
-	{"deadbeef", "deadbeef"},                             // --always fallback (no tag)
-	{"deadbeef-dirty", "deadbeef+dirty"},                 // ...dirty
+	{"v0.14.0-0-g0123456789ab", "0.14.0+g0123456789ab"},  // --long on the tag: the release form
+	{"v0.14.0-0-g0123456789ab-dirty", "0.14.0+g0123456789ab.dirty"},
+	{"0.14.0+g0123456789ab", "0.14.0+g0123456789ab"}, // an already-normal stamp passes through
+	{"1.2.3-rc1", "1.2.3-rc1"},                       // hyphenated base, no g-hash: base rejoined
+	{"deadbeef", "deadbeef"},                         // --always fallback (no tag)
+	{"deadbeef-dirty", "deadbeef+dirty"},             // ...dirty
 }
 
 func TestNormalize(t *testing.T) {

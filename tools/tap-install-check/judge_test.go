@@ -260,12 +260,15 @@ func TestParseBrewInfo(t *testing.T) {
 }
 
 func TestCheckVersionLine(t *testing.T) {
-	if err := checkVersionLine("yolo-jail 0.11.0\n", "0.11.0"); err != nil {
+	if err := checkVersionLine("yolo-jail 0.11.0+g0123456789ab\n", "0.11.0"); err != nil {
 		t.Errorf("the formula's own stamp was refused: %v", err)
 	}
 	for _, out := range []string{
-		"yolo-jail 0.11.0+3.gabc1234\n", // a from-source describe: contains the version, is not it
-		"yolo-jail unknown\n",           // an unstamped build
+		"yolo-jail 0.11.0\n",                     // a release stamp naming no commit (OQ-DA2)
+		"yolo-jail 0.11.0+g0123456\n",            // a short hash is not the release's 12 digits
+		"yolo-jail 0.11.0+g0123456789ab.dirty\n", // a dirty build is not a release
+		"yolo-jail 0.11.0+3.gabc1234\n",          // a from-source describe: contains the version, is not it
+		"yolo-jail unknown\n",                    // an unstamped build
 		"yolo-jail 0.10.0\n",
 		"0.11.0\n",
 		"yolo-jail 0.11.0\nyolo-jail 0.11.0\n",

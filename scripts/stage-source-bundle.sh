@@ -144,8 +144,8 @@ fi
 # unavailable git stamps empty) and the bundle's stamp file names exactly what its
 # binaries carry. A caller's VERSION/COMMIT wins, as in build-go.sh: the Homebrew
 # formula passes VERSION because its source tarball has no .git.
-VERSION="${VERSION:-$(git describe --tags --dirty --always 2>/dev/null || true)}"
-COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+VERSION="${VERSION:-$(git describe --tags --dirty --always --long --abbrev=12 2>/dev/null || true)}"
+COMMIT="${COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || true)}"
 export VERSION COMMIT
 
 rm -rf "$DEST"
