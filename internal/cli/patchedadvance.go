@@ -599,6 +599,10 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 	// patch branch: its check fetches and resolves it, and the advance takes the resolved series once that
 	// check has run (patchBranchResolved). Until then it stands for nothing a build carries.
 	series, err := f.ReadSeriesFrom(a.packs)
+	if packsrc.IsPatchBranchRecordError(err) {
+		// A RECORD THAT CANNOT BE READ is recovered by loadOrRecover and started over by the check.
+		series, err = packsrc.UnresolvedPatchBranchSeries(f.PatchBranch), nil
+	}
 	if err != nil {
 		// THE SERIES CANNOT BE READ (§8.1): nothing serves under PF-D23, since the manifest's recipe
 		// is not known, and the reason names the file and its fix.

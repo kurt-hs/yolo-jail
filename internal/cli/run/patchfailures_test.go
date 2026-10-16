@@ -201,3 +201,30 @@ func TestAPatchFailureBelowAppleContainersReadOnlyFloorStillRefuses(t *testing.T
 		t.Errorf("below the floor the block is missing or offers no bypass:\n%s", stderr.String())
 	}
 }
+
+// A PATCH BRANCH THAT DOES NOT MERGE refuses in its own words (docs/design/patched-forks.md §3.5):
+// the ERROR names the branch and the merge that repairs it, and the refusal's Repair line says to push
+// the merged branch, not that a launch builds a repaired series.
+func TestAPatchBranchThatDoesNotMergeRefusesInItsOwnWords(t *testing.T) {
+	fork := patchedLaunchHome(t)
+	if err := os.WriteFile(fork+"/pack.json", []byte(`{"contributes":[{"kind":"program","bin":"tool",`+
+		`"via":"source","fork_of":"basepack","source":"`+patchedSource+`",`+
+		`"patch_branch":"git+https://github.com/you/tool?ref=patches","build":"make install",`+
+		`"produces":[".local/bin/tool"]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, printed := fakePodmanLaunch(t, func(o *Options) { servingForkWithFailure(o) })
+	for _, w := range []string{
+		"ERROR: fork forkpack/tool: the patch branch does not merge into upstream v1.2.0",
+		"  Repair: " + packsrc.PatchBranchRecipeLead + "\n", "git merge " + pfCommit,
+		"Refusing to launch: the patch branch of fork forkpack/tool does not merge (the ERROR above)",
+		"  Repair: the git commands under the ERROR's Repair line; push the merged branch, and the next check fetches it and builds.",
+	} {
+		if !strings.Contains(printed, w) {
+			t.Errorf("the refused launch lacks %q:\n%s", w, printed)
+		}
+	}
+	if strings.Contains(printed, "repaired series") {
+		t.Errorf("the refusal tells a patch branch's user a launch builds a repaired series:\n%s", printed)
+	}
+}
