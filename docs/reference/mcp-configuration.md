@@ -161,7 +161,7 @@ left out of both.
 
 A pack contributes a server the way it contributes a provider: one `kind: "mcp"` entry per
 server, composed into the table under the user's own (`packload.ComposeMCPServers`,
-[OQ-MP3](../design/mcp-presets-removal.md#OQ-MP3)). `config` is the entry, in exactly the shape a
+[OQ-MP3](../design/mcp-presets-removal.md#decision-ledger)). `config` is the entry, in exactly the shape a
 user writes one under `mcp_servers`:
 
 ```jsonc
@@ -174,7 +174,7 @@ user writes one under `mcp_servers`:
   entry renders for, and the composer writes it absolute: `/home/agent` in a container jail, the
   sandbox account's home on macos-user, yours at the host. An MCP client starts its servers with
   a scrubbed environment, so the path has to be absolute, and the home is a fact the composing
-  side already has ([OQ-MP4](../design/mcp-presets-removal.md#OQ-MP4)). `env` values are
+  side already has ([OQ-MP4](../design/mcp-presets-removal.md#decision-ledger)). `env` values are
   literal, as everywhere.
 - **Composed once per launch, on the host, for that launch's home**: the container launch puts
   the result in `YOLO_MCP_SERVERS`, the macos-user plan composes it from the staged pack tree

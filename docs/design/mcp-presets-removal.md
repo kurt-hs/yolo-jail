@@ -19,7 +19,7 @@ opened, and [§13](#13-what-i-would-build-in-order)'s steps 0, 1 and 2 are built
 chromium-path fix, the `mcp` kind (`packdecl.KindMCP`, composed by
 `packload.ComposeMCPServers`), and `packs/chrome-devtools`, delivered in a container jail, on
 macos-user and at `yolo host`. Step 3, retiring `mcp_presets`, is not: ⚠ one ruling
-([`OQ-MP7`](#OQ-MP7)) rejected its own leaning and redraws the `packs` workspace-scope boundary,
+([`OQ-MP7`](#decision-ledger)) rejected its own leaning and redraws the `packs` workspace-scope boundary,
 and the key a workspace can write cannot retire into a selection only user scope can make until
 that is ruled, at [`OQ-PK1`](../reference/pack-system.md#oq-pk1), open. Steps 1 and 2 went first,
 ahead of it, under the maintainer's 2026-10-04 delegation ([MP-D8](#MP-D8)); until step 3 both
@@ -55,11 +55,11 @@ and [§6](#6-there-is-no-mcp-contribution-kind)'s question falls out of it.
 
 **Needs your ruling:** **One, [`OQ-MP9`](#OQ-MP9), opened by the build.** [MP-D5](#MP-D5)
 reports the browser from the pack's wrapper and declares no `requires`, which departs from half
-of [`OQ-MP5`](#OQ-MP5)'s answer; it is flagged rather than taken as settled. The six questions
+of [`OQ-MP5`](#decision-ledger)'s answer; it is flagged rather than taken as settled. The six questions
 before it were settled 2026-09-20 ([§Decision Ledger](#decision-ledger)): five were ruled, and
-[`OQ-MP4`](#OQ-MP4) was **dissolved** against the tree, its premise being false. One other build
+[`OQ-MP4`](#decision-ledger) was **dissolved** against the tree, its premise being false. One other build
 decision is flagged for your review rather than ruled: [MP-D4](#MP-D4), which leaves a fetched
-pack's server out at the host. ⚠ One ruling ([`OQ-MP7`](#OQ-MP7)) reversed its leaning and opened
+pack's server out at the host. ⚠ One ruling ([`OQ-MP7`](#decision-ledger)) reversed its leaning and opened
 a larger question that lives elsewhere: the `packs` workspace-scope rule should be redrawn on
 host-reach rather than on install, which bears on
 [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer)'s [`OQ-WS1`](../reference/agent-briefings.md#oq-ws1) and on
@@ -144,7 +144,7 @@ Three things, and the third is the only one that is hard:
 3. **A `command` that survives a sanitized environment.** MCP clients spawn servers with scrubbed
    environments, which is why every preset's `command` is an absolute path to a self-contained
    wrapper rather than a PATH lookup. A pack that ships an MCP server has to solve this too, and
-   it is the hard half of [OQ-MP4](#OQ-MP4).
+   it is the hard half of [§6.3](#63-where-it-composes-on-the-host).
 
 ---
 
@@ -185,8 +185,13 @@ path pinned the absolute path with no fallback.
 > inside that `withChromium` block (`flake.nix`). The wired entry now asks
 > `entrypoint.chromiumExecutablePath`, which looks `chromium` up on the image probe path (the
 > store-packages farm included) and falls back to `/usr/bin/chromium` only when nothing resolves.
-> That fix lives in **core**, at boot — the very browser-finding [OQ-MP5](#OQ-MP5) rules out of
+> That fix lives in **core**, at boot — the very browser-finding [OQ-MP5](#decision-ledger) rules out of
 > core — so the pack must still carry its own run-time resolution, and step 3 deletes this one.
+
+**Ruled ([OQ-MP8](#decision-ledger), 2026-09-20): keep it simple.** The pack's shape is an
+executable path, one plain wrapper script, not a service and not a daemon. It must not be
+always-running and must not be orphaned. The `service` conversion is explicitly not taken now; if
+it is ever wanted, it is a later, separate change.
 
 ---
 
@@ -243,7 +248,7 @@ This is the section the design exists for. Twelve dependencies, split by who mus
 | 5 | `--headless`, `--isolated` | `Env.chromeDevtoolsArgs` | **Yes** — inert data in the manifest |
 | 6 | three `--chrome-arg=` sandbox flags | `Env.chromeDevtoolsArgs` | **Yes** — same; see the callout below |
 | 7 | the chromium **binary** | image: `fullPackages`, or `yoloImageExtras` on a lean launch | **No** — image content, and it must stay so |
-| 8 | the path to that binary | resolved at boot by core (wired, `chromiumExecutablePath`) / resolved at run time (orphan script) | **Must be resolved, not declared** — [OQ-MP5](#OQ-MP5) |
+| 8 | the path to that binary | resolved at boot by core (wired, `chromiumExecutablePath`) / resolved at run time (orphan script) | **Must be resolved, not declared** — [OQ-MP5](#decision-ledger) |
 | 9 | fonts: `/etc/fonts`, `/usr/share/fonts`, `FONTCONFIG_*` | image `withChromium` block; `configureStoreFontconfig` on a lean launch | **No** — image and boot |
 | 10 | `/bin/node` (what the thin wrapper execs) | image core floor (`nodejs_24`) | Declarable as `kind: "requires"`, delivered by the image |
 | 11 | `curl` (the orphan script's readiness poll) | image core floor | Declarable as `kind: "requires"`, delivered by the image |
@@ -323,7 +328,7 @@ precedent; the precedent runs the other way.
 
 | Shape | What it is | Verdict |
 | :--- | :--- | :--- |
-| **A. A new `kind: "mcp"`** | A named server entry — `name`, `command`, `args`, `env`, `requires_env`, `provides` — composed into `mcp_servers` exactly as `kind: "provider"` composes into `providers`: pack facts first, user entries merged over per field, `null` removes | **Leaning.** It is the shape the tree already has a worked precedent for, and exclusivity-by-name falls straight out |
+| **A. A new `kind: "mcp"`** | A named server entry — `name`, `command`, `args`, `env`, `requires_env`, `provides` — composed into `mcp_servers` exactly as `kind: "provider"` composes into `providers`: pack facts first, user entries merged over per field, `null` removes | **Ruled ([OQ-MP3](#decision-ledger), 2026-09-20).** It is the shape the tree already has a worked precedent for, and exclusivity-by-name falls straight out |
 | **B. `config-overlay` per agent surface** | Each agent pack owns an MCP surface; a chrome-devtools pack overlays `claude/config`, `copilot/mcp`, `codex/config`… | **Rejected.** It is [`pack-system.md`](../reference/pack-system.md#principles)'s principle 2 violated from the pack side: the contributing pack would have to know every agent's dialect, which is precisely what one canonical table exists to prevent. It also works *today* at the host notch — [the migration guide's host-render preview](../../userguide/guides/migrating-to-packs.md#step-2-apply) keeps a hand-added `mcpServers` entry by declaring it as a `config-overlay` on `claude/config` — which makes it tempting and no less wrong |
 | **C. An `mcp` block on `kind: "program"`** | The server rides along with the npm install that provides it | **Rejected.** It welds two independent claims: a server whose binary the image already bakes (or which is reached by `npx`) has no `program` to hang off, and a `program` that happens to be an MCP server is not one claim on the environment but two, with different combine rules |
 
@@ -339,7 +344,7 @@ preset.
 
 Not negotiable, because each already exists in the table it composes into:
 
-- `command` and `args` — with a path vocabulary, per [OQ-MP4](#OQ-MP4);
+- `command` and `args` — with a path vocabulary, per [§6.3](#63-where-it-composes-on-the-host);
 - `env` — literal strings only, `${VAR}` written verbatim and never interpolated;
 - `requires_env` — the gate that drops a server (with a notice) when a variable is unset, and is
   then **stripped** from the entry before any agent sees it;
@@ -352,7 +357,38 @@ key the entry lands under, two packs shipping one name are each claiming to be "
 single pack shipping several servers is ordinary. **Review-worthiness:** none. A server entry is
 data in a config file; it crosses no boundary, reads no host state and installs nothing. The
 install, where there is one, is the `program` contribution beside it, and that kind already
-carries its own review.
+carries its own review. Both are ruled ([OQ-MP3](#decision-ledger)): exclusive by server name,
+and never review-worthy, so an MCP server declaration, which reaches only the jail, does not
+enter the host-grant banner.
+
+### 6.3 Where it composes: on the host
+
+**Ruled ([OQ-MP4](#decision-ledger), 2026-09-20): host-side, exactly like `providers`.** There is
+no second option and no new placeholder vocabulary. The question was withdrawn rather than
+answered: it assumed *"a preset's `command` is a jail path that the host does not know"*, and
+the host does know it. Three facts in the tree settle it:
+
+- **[`paths.JailPathHomeDirs`](../../internal/paths/paths.go) is a HOST-side constant** naming
+  the jail's PATH directories (`.local/bin`, `.npm-global/bin`, the two `.yolo/bin` script dirs,
+  `go/bin`), each relative to the home. The jail's layout is not discovered at boot; yolo decides
+  it, so the side that decides it can state it.
+- **It cannot silently rot.** `TestJailPathHomeDirsCoversBootPath` pins that list to
+  `entrypoint.BootPath`, so a PATH that gains a home directory cannot leave the host's copy short.
+- **Manifests already name home-relative paths.** `appendPathProblems` refuses an absolute
+  destination outright, so every declaration is already in the only form this needs.
+
+So the closed placeholder vocabulary already exists, closed and tested: it is that list. The
+composer joins the notch's home to a home-relative entry and produces the absolute `command` an
+MCP client needs (absolute because a client spawns servers with a sanitized environment, so no
+PATH lookup happens; that constraint does not require the jail to do the joining).
+
+**The host notch takes the same mechanism.** `yolo host apply` renders into a real home whose
+PATH yolo does not control, so it gets only the overlap, `.local/bin`, and no pretense of
+completeness. One list, one composer, two homes: the host notch narrows rather than diverging.
+
+> [!WARNING]
+> `mcp_presets` composes in-jail today, and it is easy to read the status quo as a constraint.
+> It is not one: the presets mechanism predates `JailPathHomeDirs` and never used it.
 
 ---
 
@@ -400,18 +436,49 @@ the security model: a workspace config travels with the repo and is agent-editab
 carry skills and briefing prose an agent then follows.
 
 **So this change silently demotes the scope of the feature**, and the demotion is a real loss for
-the one case presets were best at. Three responses, and I recommend the first:
+the one case presets were best at. Three responses:
 
 1. **Accept it.** The workspace half survives as `mcp_servers` — a workspace can still write the
    server entry; what it cannot do is cause an install. Users who want the install write one line
-   in their user config, once, per machine.
+   in their user config, once, per machine. **Rejected by the maintainer**
+   ([OQ-MP7](#decision-ledger), 2026-09-20).
 2. Give the pack a workspace-expressible *enable* separate from selection. **Rejected**: that is
    `packs` with a second name, and it re-opens a ruling that is load-bearing.
 3. Keep `mcp_presets` alive as a thin alias for "select this pack". **Rejected**: it preserves
    every one of the seven hardcodings this change exists to delete, and adds a scope laundering
    path from workspace config into pack selection — the exact crossing the `packs` rule forbids.
 
-This is [OQ-MP7](#OQ-MP7).
+**Ruled ([OQ-MP7](#decision-ledger), 2026-09-20): do not just lose it.** Reconsider "no packs in
+workspaces" by defining a **safe subset** of packs a workspace MAY declare. The point of the rule
+was never to stop a workspace configuring the jail; it was to stop a workspace controlling **what
+runs on the host**, and an MCP server for an agent inside the jail is not that. The
+subset itself is not ruled here; it is [OQ-PK1](../reference/pack-system.md#oq-pk1)'s to define.
+
+- **The current rule does not say what it means.**
+  [`loophole-system.md`](../reference/loophole-system.md#principles)'s **R5** is *"install is
+  user-scope; enable is either scope"*, an **install vs enable** axis. The ruling's axis is **host
+  reach vs jail-only**, the one the rest of the codebase already uses (host grants, the read/exec
+  banners, `host_files` being user-scope). Read that way most of `packs` is still refused from a
+  workspace (`host_files`, `mounts`, `env_sources`, a `host_daemon` loophole, a host-side hook),
+  but an `mcp` entry, and content kinds generally, are not. R5's wording is the rule being
+  amended, so it cannot stay as written.
+- **It is probably the answer to a second doc.**
+  [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer)'s
+  [`OQ-WS1`](../reference/agent-briefings.md#oq-ws1), whether a workspace may contribute skills,
+  is the same question one kind over, and the reasoning applies more strongly: committed skills
+  are inert content in a repository whose code you already run. Rule both in the same sitting,
+  since two docs deciding one boundary from opposite sides is how this corpus grew its
+  asymmetries.
+
+> [!WARNING]
+> **The hard case the safe-subset rule must survive is not skills.** An MCP server is code that
+> executes unconditionally at jail start, inside a jail whose home holds real credentials
+> (`.claude/.credentials.json` and the shared-credential symlinks). *"The agent could exfiltrate
+> those anyway"* is not quite an answer: the agent might choose not to, whereas a declared server
+> runs whether or not any agent does anything. The marginal grant is **unconditional
+> execution**, not execution. A safe subset that admits `mcp` has to say why that is acceptable,
+> or admit content kinds first and leave executable kinds for a second ruling. That is
+> deliberately not settled here.
 
 ---
 
@@ -439,7 +506,9 @@ first is obvious.
    y/N diff prompt. That is correct behaviour and needs no special handling — it is named here
    only so nobody treats the drift report as a bug.
 
-**The recommended disposition** ([OQ-MP6](#OQ-MP6)): `mcp_presets` joins
+**The ruled disposition** ([OQ-MP6](#decision-ledger), 2026-09-20): full retirement, both
+names, with no warn-and-ignore release, which would leave the browser **silently gone** from a
+jail whose config still asks for one. `mcp_presets` joins
 `retiredTopLevelConfigKeys` — the same list as `agents`, `journal`, `host_processes`,
 `repo_path` and `agent_profiles` — which keeps the key in the accepted set solely so it earns a
 targeted message instead of a generic *unknown key*. Its message names both outcomes: `packs`
@@ -468,7 +537,7 @@ for the browser, an `mcp_servers` snippet for the other.
   shipping a server writes the literal and the consumer resolves it.
 - **Not** a second preset mechanism under a new name. If the answer to *"how do I get a curated
   server list?"* is a new closed set in core, nothing was learned.
-- **Not** a workspace-scoped `packs` decided here. [OQ-MP7](#OQ-MP7) asks for a safe subset a
+- **Not** a workspace-scoped `packs` decided here. [OQ-MP7](#decision-ledger) asks for a safe subset a
   workspace may declare, and that subset is [OQ-PK1](../reference/pack-system.md#oq-pk1)'s to
   define; nothing in this doc pre-empts it, in either direction. (This bullet used to forbid a
   workspace-scoped `packs` "in any form, including one restricted to safe packs", which the
@@ -487,7 +556,7 @@ for the browser, an `mcp_servers` snippet for the other.
 | :--- | :--- |
 | **Keep both presets; fix the hardcoding by putting the table in one place** | **Rejected.** It is the cheapest change and it fixes the least: core still holds an opinion about which servers exist, macos-user still gets nothing, and the `/usr/bin/chromium` pin still has to be fixed separately. The seven places become one place that is still in core |
 | **Delete both presets; document `mcp_servers` recipes for each** | **Rejected by [OQ-MP2](#decision-ledger)**, and the evidence supports the ruling: chrome-devtools needs five sandbox flags, a resolved executable path, a readiness poll and a fontconfig export. A recipe in a guide rots; a pack is tested |
-| **Ship chrome-devtools as `kind: "service"`** — a supervised headless chromium with an endpoint file, and an MCP entry that dials `--browser-url` | **Rejected for v1, deliberately named.** It is genuinely the right shape for a long-lived browser: the orphan wrapper already starts chromium on `127.0.0.1:9222` and polls it, which is a supervised daemon written by hand. Two things block it. A service's `cmd` is *"the argv, run as-is in the jail. No tokens are substituted"*, and the endpoint file at `/run/yolo-services/<name>.endpoint` is written by the daemon — so a bare `chromium` argv publishes nothing and a `yolo-jaild` subcommand means core ships a chromium supervisor, which is the coupling this change removes. And it still needs the MCP kind for the entry that dials it. One new kind at a time; see [OQ-MP8](#OQ-MP8) |
+| **Ship chrome-devtools as `kind: "service"`** — a supervised headless chromium with an endpoint file, and an MCP entry that dials `--browser-url` | **Rejected for v1, deliberately named.** It is genuinely the right shape for a long-lived browser: the orphan wrapper already starts chromium on `127.0.0.1:9222` and polls it, which is a supervised daemon written by hand. Two things block it. A service's `cmd` is *"the argv, run as-is in the jail. No tokens are substituted"*, and the endpoint file at `/run/yolo-services/<name>.endpoint` is written by the daemon — so a bare `chromium` argv publishes nothing and a `yolo-jaild` subcommand means core ships a chromium supervisor, which is the coupling this change removes. And it still needs the MCP kind for the entry that dials it. One new kind at a time; see [OQ-MP8](#decision-ledger) |
 | **Make `mcp_presets` a thin alias that selects packs** | **Rejected** — [§8](#8-the-scope-demotion-nobody-asked-for), response 3 |
 
 ---
@@ -498,7 +567,7 @@ for the browser, an `mcp_servers` snippet for the other.
 | :--- | :--- |
 | **R1. A user's jail stops having a browser and they do not know why.** The key errors, the pack is not selected, and the failure is at launch rather than at use | The retirement message names `"packs": ["chrome-devtools"]` verbatim. This is the whole reason for the targeted-message treatment over a generic unknown-key error |
 | **R2. The new kind is built for one pack and fits nothing else.** A kind invented around chrome-devtools' needs is a kind shaped by an npm binary and a browser | [§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum) derives the field set from the **table it composes into**, not from chrome-devtools. If a field is in `knownMCPServerKeys` the kind carries it; if it is not, the kind does not invent it |
-| **R3. Composition-site skew.** Presets compose in-jail and providers compose host-side. Getting [OQ-MP4](#OQ-MP4) wrong means one launch composes twice, or the CLI reports a table the jail does not build | Whichever site wins, it is **one** composition, and the other side reads the result — the rule `composePackChannel` already states for the profile/provider channel |
+| **R3. Composition-site skew.** Presets compose in-jail and providers compose host-side. Getting [OQ-MP4](#decision-ledger) wrong means one launch composes twice, or the CLI reports a table the jail does not build | Whichever site wins, it is **one** composition, and the other side reads the result — the rule `composePackChannel` already states for the profile/provider channel |
 | **R4. The lean-launch fix is bundled with a migration and lands untested.** [§3](#3-the-two-scripts-and-the-one-that-is-never-spawned)'s pinned path was a live defect | **Retired.** It was fixed first, as its own change against the existing preset (2026-09-14, [§13](#13-what-i-would-build-in-order) step 0), so the migration inherits working behavior |
 | **R5. A stale `config_ref.txt`.** It documents both preset names and, separately, still claims `mcp_servers.env` expands `${VAR}` — which was removed 2026-08-03 | Both are text edits in one file, and the second is a pre-existing defect this work should not inherit silently |
 
@@ -510,11 +579,11 @@ for the browser, an `mcp_servers` snippet for the other.
 entry resolves chromium (`entrypoint.chromiumExecutablePath`) instead of pinning
 `/usr/bin/chromium`. It was a bug fix against today's mechanism, and it means the migration
 inherits working behaviour rather than carrying a defect across. It resolves at boot, in core, so
-steps 1–3 still replace it with the pack wrapper's run-time resolution ([OQ-MP5](#OQ-MP5)).
+steps 1–3 still replace it with the pack wrapper's run-time resolution ([OQ-MP5](#decision-ledger)).
 
 **Step 1 — the kind.** Register it, give it its footprint row and combine rule, teach the composer
 to fold pack entries under user entries, and wire the composed table into whichever loader
-[OQ-MP4](#OQ-MP4) names. No pack uses it yet, and nothing observable changes.
+[OQ-MP4](#decision-ledger) names. No pack uses it yet, and nothing observable changes.
 
 **Step 2 — the pack.** `packs/chrome-devtools`, added to `packs/embed.go`'s explicit `go:embed`
 list — `packs/` is already a `goSrc` fileset entry, so the directory needs no flake change, only
@@ -570,167 +639,7 @@ Observable outcomes a human can check, not test names:
 
 ## 15. Open Questions
 
-1. ✅ <a id="OQ-MP3"></a> **OQ-MP3: The contribution shape.** A new `kind: "mcp"`, a `config-overlay` per agent
-   surface, or an `mcp` block on `kind: "program"`? This is the doc's closure question: every
-   other answer here is downstream of it, and it is the one that adds a twentieth entry to a
-   deliberately closed registry.
-
-   <!-- vantage: question id=OQ-MP3 -->
-
-   _Leaning:_ **A new `kind: "mcp"`.** The `provider` precedent gives the composition rule, the
-   exclusivity rule and the review posture for free, and shape B is principle 2 violated from the
-   other side. See [§6.1](#61-the-three-candidate-shapes).
-
-   **Answer:** (2026-09-20)
-   > **A new `mcp` kind** — a named server entry composed into `mcp_servers` the way the
-   > `provider` kind composes into `providers`. **Exclusive by server name**, and **never
-   > review-worthy**: an MCP server declaration reaches only the jail, so it does not enter the
-   > host-grant banner.
-
-2. ✅ <a id="OQ-MP4"></a> **OQ-MP4: Does an `mcp` declaration compose on the HOST or inside the JAIL? — DISSOLVED 2026-09-20.**
-
-   <!-- vantage: question id=OQ-MP4 -->
-
-   **The question rested on a false premise and is withdrawn.** It asserted that *"a preset's
-   `command` is a jail path that the host does not know."* **The host does know it**, and the
-   mechanism has been in `internal/paths` the whole time.
-
-   **Answer:** (2026-09-20) **compose HOST-SIDE, exactly like `providers`. There is no second
-   option and no new placeholder vocabulary.**
-
-   Three facts settle it, each verified in the tree rather than reasoned:
-
-   - **[`paths.JailPathHomeDirs`](../../internal/paths/paths.go) is a HOST-side constant** naming
-     the jail's PATH directories — `.local/bin`, `.npm-global/bin`, the two `.yolo/bin` script
-     dirs, `go/bin` — each relative to the home. The jail's layout is not discovered at boot; it
-     is **decided by yolo**, so the side that decides it can obviously state it.
-   - **It cannot silently rot.** `TestJailPathHomeDirsCoversBootPath` pins that list to
-     `entrypoint.BootPath`, so a PATH that gains a home directory cannot leave the host's copy
-     short. That test is the reason this is a real mechanism and not a duplicated constant.
-   - **Manifests already name home-relative paths.** `appendPathProblems` refuses an absolute
-     destination outright, so every existing declaration is already in the only form this needs.
-
-   So the "closed placeholder vocabulary" the old leaning asked for **already exists, is already
-   closed, and is already tested** — it is that list. The composer joins the notch's home to a
-   home-relative entry and produces the absolute `command` an MCP client needs (absolute because a
-   client spawns servers with a sanitized environment, so no PATH lookup happens — that constraint
-   is real, it just does not require the jail to do the joining).
-
-   **The host notch takes the same mechanism, which was the other half of the question.** It is
-   already ruled, in that same constant's comment: `yolo host apply` renders into a real home
-   whose PATH yolo does not control, so it **gets only the overlap — `.local/bin` — and no
-   pretence of completeness.** One list, one composer, two homes; the host notch narrows rather
-   than diverging. That is the "as close as possible in both situations" property, and it is
-   already the design rather than something this doc has to invent.
-
-   ⚠ **Why the old framing was tempting, recorded so it is not re-derived.** `mcp_presets`
-   composes in-jail TODAY, and it is easy to read the status quo as a constraint. It is not one:
-   the presets mechanism predates `JailPathHomeDirs` and never used it. Being the incumbent is not
-   an argument.
-
-
-3. ✅ <a id="OQ-MP5"></a> **OQ-MP5: How the pack names an executable it did not install.** `/usr/bin/chromium` is
-   already wrong on a lean launch and absent on macOS. Options: the pack declares
-   `kind: "requires"` and its wrapper resolves at run time; or the manifest carries a candidate
-   list core resolves at boot; or the entry names a bare binary and something else guarantees
-   PATH.
-
-   <!-- vantage: question id=OQ-MP5 -->
-
-   _Leaning:_ **`requires` plus run-time resolution in the pack's own wrapper.** A candidate list
-   core resolves puts browser-finding back in core; a bare binary name loses to environment
-   sanitization. The existing orphan script is a working implementation of exactly this.
-
-   **Answer:** (2026-09-20)
-   > **`requires` plus run-time resolution in the pack's own wrapper.** Core resolving a
-   > candidate list would put browser-finding logic back in core, which is the thing this change
-   > removes. A bare binary name loses to environment sanitization, so the wrapper resolves at
-   > run time and hands back an absolute path.
-
-4. ✅ <a id="OQ-MP6"></a> **OQ-MP6: What `mcp_presets` does on the day this ships.** Full retirement — host error,
-   in-jail warning, per the `retiredTopLevelConfigKeys` precedent — or one release of
-   warn-and-ignore on both notches? This decides whether an unmigrated user's next launch fails
-   or degrades.
-
-   <!-- vantage: question id=OQ-MP6 -->
-
-   _Leaning:_ **Full retirement.** Warn-and-ignore means the browser silently disappears from a
-   jail that still says it wants one — worse than a refusal that names the replacement. The
-   in-jail warning half is not optional either way: see [§9](#9-the-day-this-ships--pre-existing-state)
-   case 3.
-
-   **Answer:** (2026-09-20)
-   > **Full retirement, both names**, with a targeted message naming the packs to add and an
-   > `mcp_servers` snippet to paste. A warn-and-ignore release means the browser is **silently
-   > gone** from a jail whose config still asks for one, which is strictly worse than a refusal
-   > that says what to type.
-
-5. ✅ <a id="OQ-MP7"></a> **OQ-MP7: Is the scope demotion acceptable? — RULED NO, 2026-09-20, and it reopened a bigger question.**
-
-   <!-- vantage: question id=OQ-MP7 -->
-
-   *The leaning was "accept it: what a workspace loses is the power to cause an install, which is
-   exactly the power the `packs` scope rule withholds on purpose." That was REJECTED.*
-
-   **Answer:** (2026-09-20)
-   > **No — do not just lose it.** The right move is to reconsider "no packs in workspaces" by
-   > defining a **safe subset** of packs a workspace MAY declare. The point of the rule was never
-   > to stop a workspace configuring the jail; it was to stop a workspace controlling **what runs
-   > on the host**. An MCP server for an agent inside the jail is not that.
-
-   **Why the current rule does not say what it means.**
-   [`loophole-system.md`](../reference/loophole-system.md#principles)'s **R5** is *"install is
-   user-scope; enable is either scope"*, justified as *"a workspace may switch on only what the
-   user already installed."* So today's axis is **install vs enable**. The ruling says the axis
-   should be **host reach vs jail-only** — which is the axis the rest of this codebase already
-   uses everywhere else (host grants, the read/exec banners, `host_files` being user-scope).
-
-   Read that way, most of `packs` is still rightly refused from a workspace — `host_files`,
-   `mounts`, `env_sources`, a `host_daemon` loophole, anything with a host-side hook — because
-   each reaches the machine. But an `mcp` entry, and content kinds generally, do not.
-
-   ⚠ **AND THIS IS PROBABLY THE ANSWER TO A SECOND DOC.**
-   [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer)'s [`OQ-WS1`](../reference/agent-briefings.md#oq-ws1) — *may a
-   workspace contribute skills at all?* — is the same question one kind over, and the ruling's
-   reasoning applies to it more strongly than to MCP: a repo that commits skills is shipping
-   **inert content the agent reads**, and you already trusted that repo's code by launching a jail
-   on it. Skills in a repository are just more code in a repo you are running.
-
-   ⚠ **THE HARD CASE THE SAFE-SUBSET RULE MUST SURVIVE, and it is not skills.** Skills are inert;
-   an MCP server is **code that executes unconditionally at jail start**, inside a jail whose home
-   holds real credentials (`.claude/.credentials.json` and the shared-credential symlinks). The
-   obvious objection — *"the agent could exfiltrate those anyway, it has a shell"* — is not quite
-   an answer: the agent might choose not to, whereas a declared server runs whether or not any
-   agent does anything. So the marginal grant is **unconditional execution**, not **execution**.
-   A safe-subset rule that admits `mcp` has to say why that is acceptable, or admit content kinds
-   first and leave executable kinds for a second ruling. That distinction is the design work this
-   answer creates, and it is deliberately NOT settled here.
-
-   **What this obliges, beyond this doc:** R5's wording in
-   [`loophole-system.md`](../reference/loophole-system.md#principles) is the rule being amended,
-   so it cannot stay as written; and [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer) should be ruled
-   in the same sitting rather than separately, because two docs deciding one boundary from
-   opposite sides is how this corpus grew its asymmetries in the first place.
-
-6. ✅ <a id="OQ-MP8"></a> **OQ-MP8: One script or two — and does the browser outlive the MCP server?** Today two
-   shapes exist and only the thin one is wired: `--executablePath` (the MCP server launches its
-   own chromium, one per spawn) versus `--browser-url` (a chromium already running on the jail's
-   loopback, shared across spawns and surviving a server restart). The second is what the orphan
-   script implements and what a future `kind: "service"` would supervise.
-
-   <!-- vantage: question id=OQ-MP8 -->
-
-   _Leaning:_ **One script, the `--browser-url` shape, not yet a service.** It keeps the resolution
-   behaviour that is currently unreachable, deletes the pinned path, and leaves the `service`
-   conversion as a later, free move. Shipping two new kinds in one change is how neither gets
-   reviewed properly.
-
-   **Answer:** (2026-09-20) **keep it simple and unchanged.**
-   > **An executable path — one plain wrapper script, not a service and not a daemon.** It must
-   > not be always-running and must not be orphaned. The `service` conversion is explicitly NOT
-   > taken now; if it is ever wanted it is a later, separate change.
-
-7. 💬 <a id="OQ-MP9"></a>**[OQ-MP9](#OQ-MP9): Is the wrapper's own browser report enough, dropping [`OQ-MP5`](#OQ-MP5)'s `requires` half?**
+1. 💬 <a id="OQ-MP9"></a>**[OQ-MP9](#OQ-MP9): Is the wrapper's own browser report enough, dropping [`OQ-MP5`](#decision-ledger)'s `requires` half?**
 
    The build declared no `requires` ([MP-D5](#MP-D5) says why: a Mac's Chrome is an app
    bundle, not `chromium` on PATH). The report is the wrapper's stderr line at each server start
@@ -758,25 +667,25 @@ Observable outcomes a human can check, not test names:
 ## Decision Ledger
 
 The first two rows were ruled by the maintainer **before this document was drafted**. They are
-premises of the design, not conclusions of it. The other six were settled on 2026-09-20; their full
-answers are in [§15](#15-open-questions).
+premises of the design, not conclusions of it. The other six were settled on 2026-09-20 and are
+folded into the sections each row names.
 
 | ID | Ruling / Decision | Date | Settled in |
 | :--- | :--- | :--- | :--- |
 | OQ-MP1 | `sequential-thinking` is **dropped with no replacement** — not migrated, not re-homed | 2026-09-12 | [§4](#4-sequential-thinking-is-deleted--what-that-costs-and-what-a-user-does-instead) |
 | OQ-MP2 | `chrome-devtools` becomes a **builtin pack**, *"because that has hairy config to get right"* | 2026-09-12 | [§5](#5-the-chrome-devtools-inventory--what-the-pack-carries-what-the-image-keeps) |
-| OQ-MP3 | A new **`mcp` kind**, composed into `mcp_servers` the way `provider` composes into `providers`; exclusive by server name, never review-worthy | 2026-09-20 | [§15](#15-open-questions) |
-| OQ-MP4 | **Dissolved**, its premise false: compose host-side, through `paths.JailPathHomeDirs` | 2026-09-20 | [OQ-MP4](#OQ-MP4) |
-| OQ-MP5 | `requires` plus run-time resolution in the pack's own wrapper. ⚠ The build kept the run-time half and not the `requires` half ([MP-D5](#MP-D5)); open at [`OQ-MP9`](#OQ-MP9) | 2026-09-20 | [§15](#15-open-questions) |
-| OQ-MP6 | Full retirement of both names, with a targeted message | 2026-09-20 | [§15](#15-open-questions) |
-| OQ-MP7 | **No** to the scope demotion: define a safe subset of packs a workspace may declare. The subset itself is not ruled | 2026-09-20 | [OQ-MP7](#OQ-MP7) |
-| OQ-MP8 | One plain wrapper script, not a service | 2026-09-20 | [§15](#15-open-questions) |
+| OQ-MP3 | A new **`mcp` kind**, composed into `mcp_servers` the way `provider` composes into `providers`; exclusive by server name, never review-worthy | 2026-09-20 | [§6.1](#61-the-three-candidate-shapes) |
+| OQ-MP4 | **Dissolved**, its premise false: compose host-side, through `paths.JailPathHomeDirs` | 2026-09-20 | [§6.3](#63-where-it-composes-on-the-host) |
+| OQ-MP5 | `requires` plus run-time resolution in the pack's own wrapper, which hands back an absolute path. Core resolving a candidate list would put browser-finding back in core; a bare binary name loses to environment sanitization. ⚠ The build kept the run-time half and not the `requires` half ([MP-D5](#MP-D5)); open at [`OQ-MP9`](#OQ-MP9) | 2026-09-20 | [§5](#5-the-chrome-devtools-inventory--what-the-pack-carries-what-the-image-keeps) |
+| OQ-MP6 | Full retirement of both names, with a targeted message naming the packs to add and an `mcp_servers` snippet to paste; no warn-and-ignore release | 2026-09-20 | [§9](#9-the-day-this-ships--pre-existing-state) |
+| OQ-MP7 | **No** to the scope demotion: define a safe subset of packs a workspace may declare. The subset itself is not ruled | 2026-09-20 | [§8](#8-the-scope-demotion-nobody-asked-for) |
+| OQ-MP8 | An executable path: one plain wrapper script, not a service and not a daemon; never always-running, never orphaned. The `service` conversion is not taken now | 2026-09-20 | [§3](#3-the-two-scripts-and-the-one-that-is-never-spawned) |
 | <a id="MP-D1"></a>MP-D1 | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* (a) **The wrapper is a `files` tree OFF PATH, at `~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper`, and the entry runs it as `/bin/sh <file>`.** A `files` destination may not land on a PATH dir (`appendJailPathProblems`); a pack selected by its bare name carries no exec bit (`embed.FS` holds none, `packs/hello-daemon/README.md`), so the command is the interpreter and the file its argument. `.local/share` because `yolo host apply` writes the same tree into a real home, where a new top-level dotdir would be clutter | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
 | <a id="MP-D2"></a>MP-D2 | *Implementation decision, as MP-D1.* (b) **The jail-only chrome flags are the autonomy kind's AUTONOMOUS launch flags for `chrome-devtools-mcp`**: `--headless`, `--isolated`, and [§5.1](#51-the-three-sandbox-flags-are-the-packs-and-they-are-not-tuning)'s three `--chrome-arg=` flags. A jail's and macos-user's launcher bakes them in, so every start gets them however the client reached the program; the GUARDED posture, the host's, declares none, so Chrome keeps its own sandbox there, opens a window, and keeps chrome-devtools-mcp's own profile. Never decided from the environment at run time: an MCP client scrubs what a detection would read | 2026-10-05 | [§5.1](#51-the-three-sandbox-flags-are-the-packs-and-they-are-not-tuning) |
-| <a id="MP-D3"></a>MP-D3 | *Implementation decision, as MP-D1.* (c) **`yolo host -- <agent>` also installs into yolo's floor the program each composed entry's `bin` names**, after the agent's own: the host has no lazy launcher to install it on first use. A failure, or a program the floor may not hold, is one line naming `yolo host apply --assert` or the PATH lookup, and costs that server, never the agent ([§9.1](#91-the-degenerate-cases-named)). `bin` is a field of the kind rather than an inference from the pack, so an entry names the program it needs. Recorded for the host as [HC-D28](../reference/host-agent-environment.md#HC-D28) | 2026-10-05 | [§9.1](#91-the-degenerate-cases-named) |
-| <a id="MP-D4"></a>MP-D4 | *Implementation decision, as MP-D1; ⚠ possibly the maintainer's call.* (d) **At the host an entry composes only from a pack yolo ships or one at a path on this machine** (`Pack.MayRunHostHalf`, the predicate a launch asks before it runs a pack's host code); a FETCHED pack's entry is left out and named, with the step that runs it (write it under `mcp_servers` yourself). At the host the entry's command runs unconfined as you whenever the agent starts, which is host code, and [`OQ-HS4`](host-notch-services.md#OQ-HS4) refuses a fetched pack's host code by name until a trust ruling exists; in a jail every pack's entry composes. Recorded for the host as [HC-D26](../reference/host-agent-environment.md#HC-D26) | 2026-10-05 | [OQ-MP3](#OQ-MP3) |
-| <a id="MP-D5"></a>MP-D5 | *Implementation decision, as MP-D1; ⚠ departs from half of [`OQ-MP5`](#OQ-MP5)'s answer, which was "`requires` plus run-time resolution in the pack's own wrapper", and is open for your ruling at [`OQ-MP9`](#OQ-MP9).* (e) **The wrapper resolves the browser at run time** ([`OQ-MP5`](#OQ-MP5)): `chromium`, `chromium-browser`, `google-chrome` or `google-chrome-stable` on PATH, then the standard install paths (`/usr/bin/chromium`, `/opt/google/chrome/chrome`, the store-delivered farm, `/Applications/Google Chrome.app`, `Chromium.app`, the same under `~/Applications`), passed as `--executablePath`; with none, nothing is passed and chrome-devtools-mcp detects Chrome itself. A browser the caller's own arguments name is never overridden. **The browser-presence report is the wrapper's own** — a stderr line at every start, and `--check` — not a `requires` contribution, which names one binary on PATH and cannot see an app bundle or a set of alternatives, so it would report a missing browser on every Mac with Chrome | 2026-10-05 | [OQ-MP5](#OQ-MP5) |
-| <a id="MP-D6"></a>MP-D6 | *Implementation decision, as MP-D1.* **The kind's shape is `{name, bin, config: <entry>}`.** The entry rides the contribution's `config` payload in exactly mcp_servers' shape, its keys pinned to the config's `knownMCPServerKeys` by test ([§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum), risk R2); top-level fields would have collided with the retired `env` tombstone. Its path vocabulary is one prefix, `~/` at the start of a `command` or `args` word, joined by the composer to the notch's home ([`OQ-MP4`](#OQ-MP4): the composing side decides the home) | 2026-10-05 | [§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum) |
+| <a id="MP-D3"></a>MP-D3 | *Implementation decision, as MP-D1.* (c) **`yolo host -- <agent>` also installs into yolo's floor the program each composed entry's `bin` names**, after the agent's own: the host has no lazy launcher to install it on first use. A failure, or a program the floor may not hold, is one line naming `yolo host apply --assert` or the PATH lookup, and costs that server, never the agent ([§9.1](#91-the-degenerate-cases-named)). `bin` is a field of the kind rather than an inference from the pack, so an entry names the program it needs. Recorded for the host as [HC-D28](host-computed-layer.md#HC-D28) | 2026-10-05 | [§9.1](#91-the-degenerate-cases-named) |
+| <a id="MP-D4"></a>MP-D4 | *Implementation decision, as MP-D1; ⚠ possibly the maintainer's call.* (d) **At the host an entry composes only from a pack yolo ships or one at a path on this machine** (`Pack.MayRunHostHalf`, the predicate a launch asks before it runs a pack's host code); a FETCHED pack's entry is left out and named, with the step that runs it (write it under `mcp_servers` yourself). At the host the entry's command runs unconfined as you whenever the agent starts, which is host code, and [`OQ-HS4`](host-notch-services.md#OQ-HS4) refuses a fetched pack's host code by name until a trust ruling exists; in a jail every pack's entry composes. Recorded for the host as [HC-D26](host-computed-layer.md#HC-D26) | 2026-10-05 | [§6.3](#63-where-it-composes-on-the-host) |
+| <a id="MP-D5"></a>MP-D5 | *Implementation decision, as MP-D1; ⚠ departs from half of [`OQ-MP5`](#decision-ledger)'s answer, which was "`requires` plus run-time resolution in the pack's own wrapper", and is open for your ruling at [`OQ-MP9`](#OQ-MP9).* (e) **The wrapper resolves the browser at run time** ([`OQ-MP5`](#decision-ledger)): `chromium`, `chromium-browser`, `google-chrome` or `google-chrome-stable` on PATH, then the standard install paths (`/usr/bin/chromium`, `/opt/google/chrome/chrome`, the store-delivered farm, `/Applications/Google Chrome.app`, `Chromium.app`, the same under `~/Applications`), passed as `--executablePath`; with none, nothing is passed and chrome-devtools-mcp detects Chrome itself. A browser the caller's own arguments name is never overridden. **The browser-presence report is the wrapper's own** — a stderr line at every start, and `--check` — not a `requires` contribution, which names one binary on PATH and cannot see an app bundle or a set of alternatives, so it would report a missing browser on every Mac with Chrome | 2026-10-05 | [§7](#7-macos-user-the-backend-that-can-have-neither) |
+| <a id="MP-D6"></a>MP-D6 | *Implementation decision, as MP-D1.* **The kind's shape is `{name, bin, config: <entry>}`.** The entry rides the contribution's `config` payload in exactly mcp_servers' shape, its keys pinned to the config's `knownMCPServerKeys` by test ([§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum), risk R2); top-level fields would have collided with the retired `env` tombstone. Its path vocabulary is one prefix, `~/` at the start of a `command` or `args` word, joined by the composer to the notch's home ([`OQ-MP4`](#decision-ledger): the composing side decides the home) | 2026-10-05 | [§6.2](#62-what-the-kind-must-be-able-to-carry-at-minimum) |
 | <a id="MP-D7"></a>MP-D7 | *Implementation decision, as MP-D1.* **Composition follows the provider precedent's shape**: the selected packs' entries in pack order, a name two declarations ship held by the later (NC-D59) and refused before any launch by validation (`config.validatePackMCPServers`) and in `yolo pack footprint` (`Collisions`); the user's entry merges over the pack's per field, `env` per variable; a user `null` removes the pack's and stays in the table as a removal, so a jail's preset of that name goes too | 2026-10-05 | [§6.1](#61-the-three-candidate-shapes) |
-| <a id="MP-D8"></a>MP-D8 | *Implementation decision, as MP-D1, amending [§13](#13-what-i-would-build-in-order)'s "Steps 1–3 do not ship separately".* **Steps 1 and 2 ship before step 3**, which waits on [`OQ-PK1`](../reference/pack-system.md#oq-pk1): a key a workspace can write cannot retire into a selection only user scope can make until [`OQ-MP7`](#OQ-MP7)'s demotion is ruled. The cost is two mechanisms at once, bounded by the pack's entry replacing a same-named preset, and the build answers the maintainer's request for the server at `yolo host` ([roadmap](../plans/roadmap.md) item 44: "the maintainer wants it") | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
+| <a id="MP-D8"></a>MP-D8 | *Implementation decision, as MP-D1, amending [§13](#13-what-i-would-build-in-order)'s "Steps 1–3 do not ship separately".* **Steps 1 and 2 ship before step 3**, which waits on [`OQ-PK1`](../reference/pack-system.md#oq-pk1): a key a workspace can write cannot retire into a selection only user scope can make until [`OQ-MP7`](#decision-ledger)'s demotion is ruled. The cost is two mechanisms at once, bounded by the pack's entry replacing a same-named preset, and the build answers the maintainer's request for the server at `yolo host` ([roadmap](../plans/roadmap.md) item 44: "the maintainer wants it") | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |
 | <a id="MP-D9"></a>MP-D9 | *Implementation decision, as MP-D1; fixes a defect review found in the jail half.* **A jail's and macos-user's agent launchers install and refresh a pack server's program before they exec the agent**, as they do a preset's package: a server takes the trigger of the agent that connects to it, and nothing may move at connect time ([program-delivery.md §3.5](program-delivery.md#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03), [`OQ-PD12a`](program-delivery.md#decision-ledger)). The npm `program` an `mcp` entry's `bin` names joins the transitive refresh set while the composed table holds that server, and the program's own launcher, which the server runs through for the posture's flags, bakes no update and no server refresh of its own; its cold install stays, for a server no agent's launcher started. **Every launcher's install writes to stderr**: npm's and an installer's output went to stdout, the server's JSON-RPC channel, ahead of its `initialize` response. An installer program, and an npm one whose pack declares install flags, keep their own launcher's trigger, since the refresh hands npm a spec alone; a pinned one is installed again once at its first start, the refresh writing no record of the declaration its launcher compares | 2026-10-05 | [§13](#13-what-i-would-build-in-order) |

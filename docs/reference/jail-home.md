@@ -600,7 +600,7 @@ Two different things have been spelled with the same list, and they are separate
   `host_files` destination under a dir that is already bound read-write gets no staging.
 
 Reservation covers the **selected** packs only, by the maintainer's ruling
-([`OQ-BH14`](../design/base-home-legacy-state.md#OQ-BH14)), and so does the skeleton: an
+([`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger)), and so does the skeleton: an
 unselected pack is treated as if it does not exist. (The machine store is the exception on the
 creating side, below.) So `writable_home_dirs: [".codex"]` passes in a workspace that does not
 select codex and is refused once it does, naming the pack; one user-scope entry can be legal
@@ -621,7 +621,7 @@ redirect targets `.claude/claude.json`.
   then creates the selected packs' own, on both container backends, so a configured pack's
   shared dir has a source too (`ensureSharedDirSources`).
 - **The `host_files` surface reservation**, in contrast, covers only the SELECTED packs' surfaces, plus core's
-  own ([`OQ-BH15`](../design/base-home-legacy-state.md#OQ-BH15), built 2026-09-25): a destination
+  own ([`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger), built 2026-09-25): a destination
   such as `~/.codex/config.toml` is refused only when a selected pack composes it. A collision
   between two selected writers is still refused at launch (`config.SurfaceCollisions`).
 
@@ -711,7 +711,7 @@ The workspace side is the file the jail reads as `~/.claude.json`, which differs
 (`claudeJSONInWsState`): `<workspace>/.yolo/home/claude/claude.json` on podman, the target of
 the skeleton's redirect, and `<workspace>/.yolo/home/.claude.json` on Apple Container, whose
 whole home is that directory. Apple Container synced the podman path until the design's
-[`OQ-BH12`](../design/base-home-legacy-state.md#OQ-BH12) fix, so the seed never reached one
+[`OQ-BH12`](../design/base-home-legacy-state.md#decision-ledger) fix, so the seed never reached one
 of its jails.
 
 **Seed evidence, reconciled 2026-10-07 against `931489400b`.**
@@ -1065,7 +1065,7 @@ separately.
   packs' dirs at their dotted names (`.claude`, not podman's `claude`) and syncs the login
   seed with `.claude.json`, and creates none of podman's dot-stripped bind sources, which on
   this backend were stray entries in the jail's home (`~/claude`, `~/npm-global`)
-  ([`OQ-BH12`](../design/base-home-legacy-state.md#OQ-BH12)); fake-seed delivery and layout
+  ([`OQ-BH12`](../design/base-home-legacy-state.md#decision-ledger)); fake-seed delivery and layout
   were [observed on hardware](#the-claudejson-seed), without testing real authentication. The
   one-time legacy migrations write to the dotted paths too.
 - **Machine-scope shared dirs still need their own mounts**, nested inside that bind exactly
@@ -1174,8 +1174,8 @@ Forward-facing rulings a maintainer would otherwise undo, with their original id
 | `OQ-6` | Both generated-script dirs live under **one** bind anchor at `~/.yolo/bin` | They need one writable bind, not two, and gathering them in the filesystem is not gathering them on PATH. It also retires the word "shim", which had come to name one of these dirs while colloquially naming the host's launch wrappers — three mechanisms, two of them sharing a word. |
 | `OQ-C` | Skills and briefings are deduplicated **by destination** before the argv | Several packs contributing to one destination is the feature for both kinds, and the old advice — "do not declare an `into` another pack uses" — was unfollowable in the configuration it most matters for: an agent pack naming a skills dir plus a house-rules pack sharing a corpus. podman kills the boot on a duplicate destination, so the rule has to be enforced, not documented. |
 | `#39` | Apple Container mounts machine-scope shared dirs explicitly, and a stranded per-workspace copy is **copied** into place, never moved | The single writable home made a machine-scope credential silently per-workspace. Repairing it by moving would re-run the experiment that destroyed a token on every boot. |
-| `DIR-BH2` / [`OQ-BH10`](../design/base-home-legacy-state.md#10-decision-ledger) | Each podman jail gets its **own** read-only skeleton, a new one per fresh launch, never edited | A shared base leaked one workspace's config and every unselected pack's dirs, and a claude-less jail could read the machine's Claude credential file through it. Editing a skeleton in place would need a liveness answer the launch path cannot give. |
-| [`OQ-BH14`](../design/base-home-legacy-state.md#10-decision-ledger) | Name reservation covers only the **selected** packs | Packs come from anywhere and are added and removed at will, so the shipped set never covered what a jail could select; reserving it was an unselected pack's effect. |
+| `DIR-BH2` / [`OQ-BH10`](../design/base-home-legacy-state.md#decision-ledger) | Each podman jail gets its **own** read-only skeleton, a new one per fresh launch, never edited | A shared base leaked one workspace's config and every unselected pack's dirs, and a claude-less jail could read the machine's Claude credential file through it. Editing a skeleton in place would need a liveness answer the launch path cannot give. |
+| [`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger) | Name reservation covers only the **selected** packs | Packs come from anywhere and are added and removed at will, so the shipped set never covered what a jail could select; reserving it was an unselected pack's effect. |
 | `C8` | The in-jail binaries and flake bundle are **mounted**, not baked | It takes the Go sources out of the image derivation, so a Go-only commit costs no image rebuild. The security delta — what executes in the jail is host-mutable with no rebuild — is the trade being made deliberately; see [`image-staging-vs-baking.md`](image-staging-vs-baking.md#the-security-delta). |
 | `HSD-1` | The host-services dir has **one creator, the spawn**, and the teardown removes it **only when the runtime answers** that no container of that name exists, running or not. (`HSD` stands for host-services dir, an id coined for this ledger.) | A second creation earlier in the launch had no teardown on the refusal paths between it and the spawn, so every refused launch left an empty directory in `/tmp`. The teardown used to read "could not ask the runtime" as "not running" and delete a possibly-live jail's endpoint files on no evidence. It asks whether a container exists, not whether one runs, because a relaunch releases the workspace lock once its bounded wait for a running container gives up, and a container that is only created is invisible to the running-only listing. That is the rule the tracking-file cleanup (`forgetGoneContainer`) already follows in the same teardown. Declining costs one directory, which the next launch of the workspace reuses. |
 | `HSD-2` | The host-services dir is built in `paths.HostSingletonDir`, not in a literal `/tmp` | The two are the same directory in production. A test package that isolates its host singletons (`testsupport.IsolateHostSingletons`) then carries these dirs into its private directory too. Before that, tests that started host services and never stopped them left empty `/tmp/yolo-host-services-<8hex>` dirs on every run. |

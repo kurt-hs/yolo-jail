@@ -214,7 +214,7 @@ new named hook in core.
 
 > [!WARNING]
 > **Name reservation covers only the SELECTED packs** — the maintainer's
-> [`OQ-BH14`](../design/base-home-legacy-state.md#OQ-BH14) ruling, which reversed what this
+> [`OQ-BH14`](../design/base-home-legacy-state.md#decision-ledger) ruling, which reversed what this
 > warning used to say: an unselected pack is treated as if it does not exist. A
 > `writable_home_dirs` entry may not claim a selected pack's writable or shared dir, and the
 > refusal names the pack; a `host_files` destination under a selected pack's writable or
@@ -225,7 +225,7 @@ new named hook in core.
 > `EnsureGlobalStorage` creates before the config is loaded, and `host_files`' surface-path
 > reservation, which the ruling did not reach
 > ([`jail-home.md`](jail-home.md#reserving-a-name-is-not-creating-a-directory); open as
-> [`OQ-BH15`](../design/base-home-legacy-state.md#OQ-BH15)).
+> [`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger)).
 
 > [!WARNING]
 > **`packload.Embedded()` leases one immutable tree per build, shared by every process of
@@ -2021,7 +2021,7 @@ reviewed where it is declared. It does not apply at the host notch.
 #### `mcp`
 
 One MCP server entry, composed into yolo's own `mcp_servers` table the way `provider` composes
-into `providers` ([`mcp-presets-removal.md` OQ-MP3](../design/mcp-presets-removal.md#OQ-MP3)):
+into `providers` ([`mcp-presets-removal.md` OQ-MP3](../design/mcp-presets-removal.md#decision-ledger)):
 `{"kind": "mcp", "name": "chrome-devtools", "bin": "chrome-devtools-mcp", "config": {"command":
 "/bin/sh", "args": ["~/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper"]}}`.
 `config` is the entry in exactly the shape a user writes under `mcp_servers`; a `command` or
@@ -2294,7 +2294,7 @@ defaults < host < workspace < config-overlay < config-list < capture-overlay < l
   the layer for keys a user declares on an agent's file for one workspace's jail,
   and nothing else gives a workspace that today. A `host_files` entry may not write a selected
   pack's surface path (`selectedSurfacePaths` in [`hostfiles.go`](../../internal/config/hostfiles.go),
-  [`OQ-BH15`](../design/base-home-legacy-state.md#OQ-BH15)), and a `config-overlay` comes only from
+  [`OQ-BH15`](../design/base-home-legacy-state.md#decision-ledger)), and a `config-overlay` comes only from
   a pack, which a workspace config may not select (`validatePacks` in
   [`packs.go`](../../internal/config/packs.go)). What a workspace can do instead is commit the
   agent's own project-scope file, which the agent also reads outside the jail, or edit a
@@ -3304,7 +3304,7 @@ corpus. A config still carrying the retired `allow_exec` is refused as an unknow
 a key that does nothing must not be accepted quietly.
 
 <a id="oq-pk1-background"></a>**Background to [`OQ-PK1`](#oq-pk1), below**, which asks for the safe
-subset of packs [`OQ-MP7`](../design/mcp-presets-removal.md#OQ-MP7) ruled a workspace config should
+subset of packs [`OQ-MP7`](../design/mcp-presets-removal.md#decision-ledger) ruled a workspace config should
 be able to declare. The hard case the ruling names is an
 `mcp` entry, which is code that runs unconditionally at jail start in a home holding real
 credentials, so the rule has to say why that is acceptable or admit content kinds first and
@@ -3331,7 +3331,7 @@ the subset:
   not the execution.
 - **Every source but a bare name reaches the host.** A `git+` entry makes the host fetch with
   the user's own git credentials ([fetch](#fetch-refresh-lock)), and a `file://` entry reads
-  whatever host directory it names. On [OQ-MP7](../design/mcp-presets-removal.md#OQ-MP7)'s
+  whatever host directory it names. On [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s
   axis, host reach rather than install, only a pack yolo ships, named by its bare name, reaches
   nothing at selection.
 - **The skills half is already ruled another way.** [`OQ-WS1`](agent-briefings.md#oq-ws1)
@@ -3355,7 +3355,7 @@ The options:
   jail: `skills`, `briefing`, `files`, `config`, `config-overlay`, `config-list`, `env`,
   `models`, `requires` and `blocked-tool`. Any other kind refuses the entry and names the kind,
   and the executable kinds wait for a second ruling. *You see:* a repository that commits
-  `"packs": ["guardrails"]` gets it for every collaborator. *You lose:* [OQ-MP7](../design/mcp-presets-removal.md#OQ-MP7)'s own case. A
+  `"packs": ["guardrails"]` gets it for every collaborator. *You lose:* [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s own case. A
   `chrome-devtools` pack carries an MCP entry, so the scope demotion that ruling rejected stands
   for it until the second ruling.
 - **(b) Shipped packs whose contributions all stay inside the jail, executable kinds
@@ -3378,13 +3378,13 @@ The options:
 
 Whichever is ruled, R5's *"install is user-scope"* in
 [`loophole-system.md`](loophole-system.md#principles) becomes a rule about host reach, as
-[OQ-MP7](../design/mcp-presets-removal.md#OQ-MP7) says.
+[OQ-MP7](../design/mcp-presets-removal.md#decision-ledger) says.
 
 **The question, each option in brief:**
 
 - 💬 <a id="oq-pk1"></a>**[`OQ-PK1`](#oq-pk1) — which packs may a workspace config declare?**
   The user-scope rule above stands in the code, but
-  [`OQ-MP7`](../design/mcp-presets-removal.md#OQ-MP7) ruled on 2026-09-20 that it should not
+  [`OQ-MP7`](../design/mcp-presets-removal.md#decision-ledger) ruled on 2026-09-20 that it should not
   simply stand: define a **safe subset** of packs a workspace may declare, drawn on host reach
   rather than on install. The subset itself is not ruled.
 
@@ -3398,7 +3398,7 @@ Whichever is ruled, R5's *"install is user-scope"* in
 
   <!-- vantage: question id=OQ-PK1 leaning="(b): shipped packs whose contributions all stay inside the jail, executable kinds included. OQ-MP7's own answer says an MCP server for an agent inside the jail is not what the rule protects, and a workspace config can already name any command in mcp_servers. Bare names only, because a git+ or file:// source reaches the host." -->
 
-  _Leaning:_ **(b).** [OQ-MP7](../design/mcp-presets-removal.md#OQ-MP7)'s answer draws the line itself: *"it was to stop a workspace
+  _Leaning:_ **(b).** [OQ-MP7](../design/mcp-presets-removal.md#decision-ledger)'s answer draws the line itself: *"it was to stop a workspace
   controlling what runs on the host. An MCP server for an agent inside the jail is not that."*
   The objection it left open, unconditional execution, is one a workspace already has through
   `mcp_servers`, so (a) would hold back MP7's own motivating case to guard a power the workspace
@@ -3772,7 +3772,7 @@ set. Nothing in the jail is re-rendered from it
   before its entrypoint had read `/ctx/packs`.
 - **(b) One immutable tree per launch.** The jail binds its own tree at `/ctx/packs` and keeps
   it until it stops. Its trees are collected when its container is known gone, the way the home
-  skeleton is ([`OQ-BH10`](../design/base-home-legacy-state.md#OQ-BH10)). This closes the
+  skeleton is ([`OQ-BH10`](../design/base-home-legacy-state.md#decision-ledger)). This closes the
   boot-window mix, and it drops the lock's reason to span the macos-user host-daemon start.
 - **(c) (b), plus a notice on attach** when the config's pack set differs from the one the jail
   booted with.
@@ -3790,7 +3790,7 @@ packs it booted with at `/ctx/packs` for as long as it runs, however the config 
 attach after a change prints, on stderr, which packs were added, removed or changed and that
 `yolo stop` then a launch picks them up. A selection only the configured packs can satisfy (a
 profile only a newly added pack declares), and a jail tree this yolo cannot read, take the
-attach-skew disposition ([OQ-SK1](../design/attach-skew-and-contract-guardrails.md#OQ-SK1)): the
+attach-skew disposition ([OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger)): the
 restart prompt at a terminal, a refusal naming the restart elsewhere, and
 `YOLO_ALLOW_ATTACH_SKEW=1` to attach delivering nothing. The mechanism choices, each made to build
 the ruling and none changing it:
@@ -3843,7 +3843,7 @@ the ruling and none changing it:
    a refusal, an attach, a `--dry-run`, and a macos-user launch, whose sandbox copied the tree at
    its bootstrap and whose host daemons, which run from it, have stopped by then. A launch killed
    without a teardown leaves its tree to the reaper, the residual the home skeleton accepted
-   ([`OQ-BH16`](../design/base-home-legacy-state.md#OQ-BH16)).
+   ([`OQ-BH16`](../design/base-home-legacy-state.md#decision-ledger)).
 8. *Implementation decision.* **The shared tree a pre-change jail binds** (`AGENTS_DIR/<cname>/packs`,
    `paths.LegacyPackStagingDir`) is never written. An attach to such a jail reads it, naming a
    configured pack by the config entry whose slug its directory carries (on podman; item 13 says
@@ -3862,7 +3862,7 @@ the ruling and none changing it:
     the `claude_plugins` hook this build removed, so every jail v0.10.0 launched with claude binds a
     tree this build cannot read. Composing from the configured packs there delivered the newer
     shape, claude's list-valued `api_key_env_name`, into a jail whose derive reads it as a string,
-    which is the ride-along [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#OQ-SK1) rules
+    which is the ride-along [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger) rules
     out. Not a tolerant read of the old tree: the host's loader is strict by design, `TolerateSkew`
     is process-wide and in-jail only, and a read that drops what it does not know composes from a
     guess at the jail's packs. Under the acknowledgment such an attach writes nothing: no channel,
@@ -3871,7 +3871,7 @@ the ruling and none changing it:
     (`TestAnAttachToAJailTheLastReleaseLaunchedNeverRidesAlong`), which the release-decode allowlist
     cites.
 12. *Implementation decision.* **A selection the jail's packs cannot serve takes the same
-    disposition**, where the first build refused it outright. [`OQ-SK1`](../design/attach-skew-and-contract-guardrails.md#OQ-SK1)'s terminal arm applies to
+    disposition**, where the first build refused it outright. [`OQ-SK1`](../design/attach-skew-and-contract-guardrails.md#decision-ledger)'s terminal arm applies to
     every attach that cannot be made compatible, so at a terminal the attach asks
     `Restart jail now? [Y/n]` and a yes continues into the fresh launch, still holding the lock, as
     a missing contract tag does. The headline names the packs the jail lacks (`this jail was
