@@ -277,8 +277,8 @@ be derived.
 ### The overlay replaces its destinations, and nothing else
 
 The host composes the same skills trees and briefings the container mounts, lays them out under
-one root at their home-relative destinations, stages that root root-owned at
-`/var/yolo-jail/home-overlay/<cname>`, and the bootstrap installs it over the home as its last
+one root at their home-relative destinations, stages that root host-owned and read-only at
+`/Users/Shared/yolo-staged/home-overlay/<cname>`, and the bootstrap installs it over the home as its last
 generator step. A bind mount covers exactly its destination — `~/.pi/agent/skills` — and leaves
 every directory above and beside it alone, so the install has to have the same granularity. A
 destination is **replaced whole**, which is what makes a skill the host stopped staging
@@ -365,7 +365,8 @@ The choices behind those rules, made while fixing G36:
 7. *Implementation decision.* **The staged copy is written beneath the same handle**, with each
    directory made by `Mkdir` and each file created exclusively, so nothing already at a staged
    name, a swapped-in link included, is written through. The overlay itself is read by path,
-   because it is root-owned under `/var/yolo-jail` and the sandbox account cannot write it.
+   because it is sealed read-only under `/Users/Shared/yolo-staged` and the sandbox account cannot
+   write it.
 
 ## Isolation: the Seatbelt profile needs no change
 
@@ -848,7 +849,7 @@ against the stamp at the top.
 | Machine-wide cache | `~/.cache` in the account home — deliberately not linked | `internal/entrypoint/darwinhomelayout.go` (by absence); container analogue `paths.GlobalCache` |
 | Cache relocation links | `~/.cache/<subdir> → <target>`, one per user-scope `cache_relocations` entry, crossed as `YOLO_DARWIN_CACHE_RELOCATIONS` (JSON, subdir to target); what was laid is recorded in `~/.cache/.yolo-cache-relocations.json` | `internal/entrypoint/darwinhomelayout.go` (`DarwinCacheRelocationsEnv`, `InstallDarwinCacheRelocations`), set in `internal/macosuser/runplan.go` (`BuildRunPlanWithDaemons`) |
 | Login-rc PATH indirection | `YOLO_DARWIN_LOGIN_PATH`, re-prepended in `.zprofile`, `.zshrc`, `.bash_profile` | `internal/entrypoint/darwinhomelayout.go` (`DarwinLoginPathEnv`), `internal/entrypoint/darwin.go` (`WriteLoginRC`) |
-| Staged content tree | `/var/yolo-jail/home-overlay/<cname>`, root-owned, named by `YOLO_DARWIN_HOME_OVERLAY` | `internal/macosuser/macosuser.go` (`StagedHomeOverlay`, `StageHomeOverlayCommands`), installed by `internal/entrypoint/darwin.go` (`InstallHomeOverlay`) |
+| Staged content tree | `/Users/Shared/yolo-staged/home-overlay/<cname>`, host-owned and sealed read-only, named by `YOLO_DARWIN_HOME_OVERLAY` | `internal/macosuser/macosuser.go` (`StagedHomeOverlay`, `StageHomeOverlayCommands`), installed by `internal/entrypoint/darwin.go` (`InstallHomeOverlay`) |
 | Content write-protection | `(deny file-write* (subpath …))` over each delivered skills dir and briefing, and `(deny file-write-create file-write-unlink (literal …))` over the chain above each; ids `home-content-write-deny`, `home-content-anchor-deny` | `internal/macosuser/homereadonly.go` (`ResolveHomeReadonly`), `internal/macosuser/seatbelt.go` (`homeReadonlyDenies`) |
 | A link where the layout lays a directory | refused before anything is laid, at `<workspace>/.yolo`, the sidecar and every link target's chain; remedy `sudo rm <link>` | `internal/entrypoint/darwinhomelayout.go` (`linkedSidecarPaths`, `LinkedSidecarError`), checked by `Apply` and `internal/entrypoint/darwin.go` (`InstallHomeOverlay`) |
 | The content tree's destination list | `.yolo-home-overlay.json` at the tree's root, one `destinations` array of home-relative paths; never copied into the home | `internal/entrypoint/darwinoverlay.go` (`HomeOverlayManifestName`, `WriteHomeOverlayManifest`), written by `internal/cli/run/macoshomeoverlay.go` (`buildMacosHomeOverlayFor`) |

@@ -320,7 +320,7 @@ this backend runs them the way a container does, in the sandbox:
 
 - **The binaries.** The flake bundle carries a darwin copy of the in-jail set as
   `bin/darwin-<arch>` beside its Linux dirs (`flake.nix`'s `guestBinaries`; today that is
-  `yolo-jaild` alone). The launch copies it into `/var/yolo-jail/bin`, root-owned, beside the
+  `yolo-jaild` alone). The launch copies it into `/Users/Shared/yolo-staged/bin`, host-owned and sealed `0555`, beside the
   `yolo` it already stages for the bootstrap; a checkout with no prebuilt dir builds
   `.#guestPrefix` instead. That directory is on the sandbox's PATH and on no host PATH, so the
   host ship set stays `yolo`.
@@ -354,7 +354,7 @@ this backend runs them the way a container does, in the sandbox:
     runs only for a pack that declares a jail daemon without a host argv;
   - a program in the loophole's folder that is a **Linux executable** (its first bytes are ELF
     magic): `{jail_loophole_dir}` resolves here to the folder's place in this launch's
-    root-owned copy of the staged packs, at the same relative path as in the host tree
+    host-owned, read-only copy of the staged packs, at the same relative path as in the host tree
     ([JD-10](../design/jail-daemon-on-macos-user-plan.md#JD-10)). The guest destination is
     unique to the supplied host tree's directory leaf; the bootstrap, session and daemon argv
     use the same tree. Staging reserves it exclusively and copies before starting consumers,
@@ -395,7 +395,7 @@ bound for that line in the part of the log this start added:
 **The boundary is the token files.** There is no network isolation here, so a caller proves it
 belongs to this launch with the launch's per-launch caller token
 ([NC-D2](../plans/notch-convergence.md#7-decision-ledger)). The supervisor reads every token its
-daemons demand from its own file, `/var/yolo-jail/env/<session>.daemons.env` (`<session>` is [the session key](macos-user-provisioning.md#the-session-key), so each terminal's supervisor reads its own): root-owned, mode
+daemons demand from its own file, `/Users/Shared/yolo-staged/env/<session>.daemons.env` (`<session>` is [the session key](macos-user-provisioning.md#the-session-key), so each terminal's supervisor reads its own): host-owned, mode
 `0600`, in a `0700` directory, with one `user:_yolojail` ACE granting read (and search on the
 directory), installed like the session's env file and swept after the supervisor stops
 ([JD-5](#jd-5)). Not a `group:` ACE, because the `_yolojail` group holds the host user too. The
@@ -407,7 +407,8 @@ of an agent whose profile selects `bedrock`.
 (`integration/macosuserjaildaemon_test.go`), recorded as passing in the `macos-user.yml` run
 36719581090 of 2026-09-30, at `8f7468dd`. Its subject is a local pack's copy of the OpenAI
 refresh adapter less its host argv, since no shipped pack hands the sandbox a daemon. It settles
-that the Linux-built darwin `yolo-jaild` execs from `/var/yolo-jail/bin`, that `sandbox-exec`
+that the Linux-built darwin `yolo-jaild` execs from `/var/yolo-jail/bin` (the root-owned prefix of
+the day; the host-owned `/Users/Shared/yolo-staged/bin` is unmeasured), that `sandbox-exec`
 admits the supervisor and the daemon it starts, that the daemon reads its `0600` env file through
 the `user:` ACE, that the host user reads `supervisor.log` and finds the readiness line, and that
 no supervisor outlives the session. **UNMEASURED:** two concurrent launches of one workspace
@@ -527,7 +528,7 @@ A whole class of container features has no attachment point.
   `UV_PROJECT_ENVIRONMENT=.venv-macos-user`, relative to each project root, under any value the
   user's own env layers set.
 - **config `mounts` and a pack `mount`** — **delivered by link, from outside every home.** Each
-  is a root-owned symbolic link in `$YOLO_CONTEXT_DIR` to the host folder itself, the Seatbelt
+  is a symbolic link the host user makes in `$YOLO_CONTEXT_DIR` to the host folder itself, the Seatbelt
   profile decides access to the folder, and a check run as the sandbox account confirms it can
   reach the folder before the sandbox starts. A folder this backend cannot serve, one in a home
   above all, refuses the launch with its reason
@@ -794,9 +795,9 @@ only place the values themselves are stated.
 | Process visibility | the process list is allowed; another process's command line and environment are denied (procargs and pidinfo), except within the same sandbox | `macosuser.SeatbeltProfile` |
 | The narrower capture profile | drops the workspace and the sandbox home from the write set | `macosuser.SeatbeltCaptureProfile` |
 | Host nix daemon opt-in (container backends only) | `YOLO_NIX_HOST_DAEMON` | `internal/cli/run/hostprobes.go` |
-| The guest prefix, holding the staged `yolo` and the darwin in-jail set | `/var/yolo-jail/bin`, root-owned; the set is `yolo-jaild`, `yolo-serial`, `yolo-ps`, `yolo-log` | `macosuser.GuestBinDir`, `macosuser.GuestBinaries`; `flake.nix` `guestBinaries`; `stage-source-bundle.sh` `GUEST_BINARIES` |
-| The supervisor's env file (verified at `d4e435a3`; named per session since 2026-10-04) | `/var/yolo-jail/env/<session>.daemons.env` ([`<session>`](macos-user-provisioning.md#the-session-key)), `0600` in a `0700` directory, one `user:_yolojail` read ACE | `macosuser.SandboxDaemonEnvFile` |
-| The sandbox's TLS trust (added 2026-10-04) | `NIX_SSL_CERT_FILE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` name `/var/yolo-jail/env/<session>.ca-bundle.crt` (the profile's public roots plus the CAs the System keychain trusts for TLS), or the profile's own bundle when it adds none, and when the launch's own env layers set any of the five, all five name that value instead; `NODE_EXTRA_CA_CERTS` names `<session>.extra-ca.pem` only when there is one and the layers do not set it | `macosuser.ComposeCATrust` (`cabundle.go`); [PS-D10](../design/provisioner-sets.md#PS-D10) |
+| The guest prefix, holding the staged `yolo` and the darwin in-jail set | `/Users/Shared/yolo-staged/bin`, host-owned, each binary `0555`; the set is `yolo-jaild`, `yolo-serial`, `yolo-ps`, `yolo-log` | `macosuser.GuestBinDir`, `macosuser.GuestBinaries`; `flake.nix` `guestBinaries`; `stage-source-bundle.sh` `GUEST_BINARIES` |
+| The supervisor's env file (verified at `d4e435a3`; named per session since 2026-10-04) | `/Users/Shared/yolo-staged/env/<session>.daemons.env` ([`<session>`](macos-user-provisioning.md#the-session-key)), `0600` in a `0700` directory, one `user:_yolojail` read ACE | `macosuser.SandboxDaemonEnvFile` |
+| The sandbox's TLS trust (added 2026-10-04) | `NIX_SSL_CERT_FILE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` name `/Users/Shared/yolo-staged/env/<session>.ca-bundle.crt` (the profile's public roots plus the CAs the System keychain trusts for TLS), or the profile's own bundle when it adds none, and when the launch's own env layers set any of the five, all five name that value instead; `NODE_EXTRA_CA_CERTS` names `<session>.extra-ca.pem` only when there is one and the layers do not set it | `macosuser.ComposeCATrust` (`cabundle.go`); [PS-D10](../design/provisioner-sets.md#PS-D10) |
 | The supervisor's own log (verified at `d4e435a3`) | `<workspace>/.yolo/home/local/state/yolo-jail-daemons/supervisor.log`, `~/.local/state/yolo-jail-daemons` in the sandbox | `macosuser.SupervisorLogName`, `SupervisorLogPath` |
 | The supervisor's readiness line, and the launch's wait for it (verified at `d4e435a3`) | `yolo-jaild supervise: supervising <names>`; 1.5 s | `supervisor.StartedLinePrefix`; `macosuser.supervisorReadyBound` |
 | The supervisor's stop (verified at `d4e435a3`) | SIGTERM to its process group, 10 s, then SIGKILL | `macosuser.jailDaemonStopGrace` (`real.go`) |
