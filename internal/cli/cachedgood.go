@@ -21,6 +21,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/treedigest"
 )
 
@@ -87,6 +88,77 @@ func runCachedGoodFork(f packload.Fork, req run.ForkBuildRequest, out io.Writer)
 	writeCachedGoodFailure(out, f, record, req.Workspace)
 	writeCachedGoodPatchFailure(out, f, record, good.Entry)
 	return delivery
+}
+
+// cachedGoodOwnerKeys is run.ForkBuildRequest.CachedGoodOwner's owner keys, comma-separated.
+func cachedGoodOwnerKeys(owners string) []string {
+	var out []string
+	for _, k := range strings.Split(owners, ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// runCachedGoodTree is cached-good recovery for a BUILT EXTENSION (docs/design/patched-build-recovery.md
+// §6.7): the check record's exact Good.Entry, validated as a fork's is (validateCachedGood), copied as
+// this launch's per-launch copy (copyTreeForLaunch) under the record lock, so no reaper removes the
+// bytes in between. No check, replay or build; the record is not written. A refusal is a delivery
+// with no copy, which the launch's missing-build refusal says.
+func runCachedGoodTree(f packload.Fork, req run.TreeBuildRequest, out io.Writer, color bool) run.TreeDelivery {
+	refuse := func(why string) run.TreeDelivery {
+		return run.TreeDelivery{Reason: "cached good for " + f.Key() + " is unavailable: " + why, Unsaid: true}
+	}
+	if req.CopyRoot == "" {
+		return refuse("this launch staged no pack tree to copy it beside")
+	}
+	baseStore := patchedAdvanceStore(true)
+	storeCopy := *baseStore
+	storeCopy.NoWait = true
+	store := &storeCopy
+	record, err := store.LoadCheckRecord(f.Key())
+	if err != nil {
+		return refuse(fmt.Sprintf("cannot read the recorded good build (%v)", err))
+	}
+	good := cloneGoodBuild(record.Good)
+	if good == nil {
+		return refuse("no good build is recorded")
+	}
+	entry, receipt, why := validateCachedGood(f, req.Platform, good)
+	if why != "" {
+		return refuse(why)
+	}
+	var d run.TreeDelivery
+	err = store.WithCheckRecord(f.Key(), nil, func(current *packsrc.CheckRecord, readErr error,
+		_ func() error) (bool, error) {
+		if readErr != nil || current == nil || !sameGoodBuild(current.Good, good) {
+			return false, fmt.Errorf("the recorded good build changed while selecting it; launch again")
+		}
+		entryAgain, receiptAgain, why := validateCachedGood(f, req.Platform, current.Good)
+		if why != "" || entryAgain.Key != entry.Key || receiptAgain.Digest != receipt.Digest {
+			if why == "" {
+				why = "the recorded good entry changed while selecting it"
+			}
+			return false, fmt.Errorf("%s", why)
+		}
+		dir, err := copyTreeForLaunch(f, entryAgain.Key, req.CopyRoot, out)
+		if err != nil {
+			return false, fmt.Errorf("copying it for this jail: %w", err)
+		}
+		g := current.Good
+		d = run.TreeDelivery{Dir: dir, Entry: entryAgain.Key, Commit: g.Commit, Tag: g.Tag, Patches: g.Patches, Series: g.Series}
+		return false, nil
+	})
+	if err != nil {
+		if errors.Is(err, packsrc.ErrLockHeld) {
+			return refuse("another yolo process holds its record; launch again once it ends")
+		}
+		return refuse(err.Error())
+	}
+	richtext.Printer{W: out, Color: color}.Printf("[yellow]%s[/yellow]", richtext.Escape(fmt.Sprintf(
+		"%s: running the older build %s (%s)", f.Label(), run.WithGood(run.GoodBuildLabel(good), good), run.CachedGoodEnv)))
+	return d
 }
 
 func cachedGoodRefusal(f packload.Fork, record *packsrc.CheckRecord, req run.ForkBuildRequest, out io.Writer, why string) entrypoint.ForkDelivery {
@@ -244,12 +316,25 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	if err != nil {
 		return nil, nil, fmt.Sprintf("cannot read the recorded Good entry's build receipts (%v)", err)
 	}
-	wantRepo, wantSubdir, err := cachedSourceIdentity(f.Source)
-	if err != nil {
-		return nil, nil, fmt.Sprintf("the selected upstream source cannot be checked (%v)", err)
-	}
-	if good.Read != nil && (good.Read.Repo != wantRepo || good.Read.Subdir != wantSubdir) {
-		return nil, nil, "the Good build's recorded source differs from the selected upstream repository or subdirectory"
+	// THE SOURCE IDENTITY: a fork's repository and subdirectory; a BUILT EXTENSION's (an npm source
+	// among them, which no address parse reads) is the build source its receipt records,
+	// packsrc.BuildSource of the source as declared.
+	sameSource := func(string) bool { return false }
+	if f.IsTree() {
+		want := packsrc.BuildSource(f.Source)
+		sameSource = func(source string) bool { return source == want }
+	} else {
+		wantRepo, wantSubdir, err := cachedSourceIdentity(f.Source)
+		if err != nil {
+			return nil, nil, fmt.Sprintf("the selected upstream source cannot be checked (%v)", err)
+		}
+		if good.Read != nil && (good.Read.Repo != wantRepo || good.Read.Subdir != wantSubdir) {
+			return nil, nil, "the Good build's recorded source differs from the selected upstream repository or subdirectory"
+		}
+		sameSource = func(source string) bool {
+			repo, subdir, err := cachedSourceIdentity(source)
+			return err == nil && repo == wantRepo && subdir == wantSubdir
+		}
 	}
 	var matched *entrypoint.BuildReceipt
 	for i := range receipts {
@@ -263,8 +348,7 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 			r.Digest != capture.DigestHash(digest) {
 			continue
 		}
-		repo, subdir, sourceErr := cachedSourceIdentity(r.Source)
-		if sourceErr != nil || repo != wantRepo || subdir != wantSubdir {
+		if !sameSource(r.Source) {
 			continue
 		}
 		matched = r
@@ -272,6 +356,14 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	}
 	if matched == nil {
 		return nil, nil, "the exact Good.Entry has no admission record matching its owner, source, platform, and full content digest"
+	}
+	if f.IsTree() {
+		// A BUILT EXTENSION's output is its tree, in its reserved directory, which the per-launch copy
+		// takes whole: no program to resolve or run.
+		if reserved := packdecl.TreeReservedDir(f.Bin); !manifestContains(manifest, reserved) {
+			return nil, nil, "the recorded Good output holds no tree at " + reserved
+		}
+		return entry, matched, ""
 	}
 	programPath := packdecl.ForkProgramPath(f.Bin, f.Produces)
 	if programPath == "" || !manifestContains(manifest, programPath) {

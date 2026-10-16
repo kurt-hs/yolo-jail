@@ -777,8 +777,11 @@ type Options struct {
 	// forkPinned is this launch's forks with what the fork lock says each is pinned to, read once
 	// above the backend dispatch (noteForkPins) and acted on by the fork build trigger.
 	forkPinned []packload.ForkPin
-	// cachedGoodOwner is the explicit, one-launch selector for a selected patched program.
-	cachedGoodOwner string
+	// cachedGoodOwner is the explicit, one-launch selector for a selected patched program, as typed
+	// (an attach's refusal repeats it); cachedGoodForks and cachedGoodTrees are the keys it covers
+	// (selectCachedGood).
+	cachedGoodOwner                  string
+	cachedGoodForks, cachedGoodTrees []string
 	// recoveryHatchesNoted says this launch has said what its set recovery hatches reach
 	// (noteRecoveryHatches), which it says once.
 	recoveryHatchesNoted bool

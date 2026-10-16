@@ -68,7 +68,8 @@ func applyHostFiles(pr richtext.Printer, errw io.Writer, p *packload.Pack, packs
 		// A FALLBACK TAKEN prints too (pi-extension-store-builds.md XB-D7: "each fallback taken is
 		// said"): the agent installs an extension itself where yolo renders no tree.
 		tier := tierRun
-		if strings.HasPrefix(r.Action, "refused") || strings.HasPrefix(r.Action, hostFallbackAction) {
+		if strings.HasPrefix(r.Action, "refused") || strings.HasPrefix(r.Action, hostFallbackAction) ||
+			strings.HasPrefix(r.Action, hostSkippedAction) {
 			tier = tierLoss
 		}
 		reportDestination(pr, tier, r.WouldChange,
