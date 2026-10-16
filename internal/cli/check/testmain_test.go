@@ -24,12 +24,6 @@ func TestMain(m *testing.M) {
 	if internaldaemon.IsDaemonArgv(os.Args) {
 		os.Exit(internaldaemon.Run(os.Args[3:]))
 	}
-	// `<test-binary> -settings-sleeper-child <socket> <settings>` is a fake host-wide daemon
-	// for singletonsettings_test.go: it binds its socket and accepts until killed. The
-	// settings path is in its argv only so the spawn records what it was handed.
-	if len(os.Args) >= 4 && os.Args[1] == "-settings-sleeper-child" {
-		os.Exit(settingsSleeperChildMain(os.Args[2]))
-	}
 	// THE PODMAN READINESS GATE REFUSES BY DEFAULT HERE (podmanready.go): its real attempt
 	// runner starts `podman info` on whatever PATH the test process has. A test that reaches
 	// the gate says what podman answers (Options.PodmanReadiness, answeringPodman).

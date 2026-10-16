@@ -3,7 +3,10 @@ package oauthbroker
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -90,9 +93,9 @@ func doBackgroundRefresh(credsPath string, leadSeconds int) RefreshResult {
 // (it speaks TLS to a vendor hostname), but it already sends one: the refresh token it re-reads
 // from ~/.claude/.credentials.json, which in a jail is a link to the shared file, immediately
 // before the POST (docs/research/claude-oauth-refresh-mechanics.md §3.4). So the check is that
-// the presented token is the shared file's current one, or one this broker replaced moments ago
-// (the refresh race: another jail, or the background tick, rotated it between Claude's read and
-// its POST). A caller who cannot read the file cannot present either.
+// the presented token is the shared file's current one, or one a broker replaced moments ago
+// (the refresh race: another jail's broker, or a background tick, rotated it between Claude's
+// read and its POST; the memory of replacements is shared by every broker, replacedTokens). A caller who cannot read the file cannot present either.
 //
 // P1 HOLDS: the presented token is compared and never spent. The refresh is still made from
 // the shared file under the flock, so a stale or burnt token a caller holds is not an input to
@@ -112,7 +115,7 @@ func DoRefreshAsCaller(credsPath, presented string) RefreshResult {
 		currentRT, _ := stringField(current, "refreshToken")
 		if !callerPresentsLogin(currentRT, presented) {
 			logWarn("refresh refused: the caller presented rt=%s, which is neither the shared "+
-				"file's current refresh token (rt=%s) nor one this broker just replaced",
+				"file's current refresh token (rt=%s) nor one a broker just replaced",
 				TokenFP(presented), TokenFP(currentRT))
 			return errResult("error", CallerUnauthenticated, "message",
 				"yolo claude-oauth-broker: refused — this refresh did not present the machine's "+
@@ -131,7 +134,7 @@ func DoRefreshAsCaller(credsPath, presented string) RefreshResult {
 const CallerUnauthenticated = oauthterminator.CallerUnauthenticated
 
 // callerPresentsLogin reports whether presented is the shared file's current refresh token or
-// one of the few this broker replaced most recently, compared in constant time. An empty
+// one of the few any broker on this machine replaced most recently, compared in constant time. An empty
 // presented token never matches, and neither does anything when the file holds none.
 func callerPresentsLogin(current, presented string) bool {
 	if presented == "" {
@@ -143,20 +146,108 @@ func callerPresentsLogin(current, presented string) bool {
 	return recentlyReplaced.has(presented)
 }
 
-// replacedTokens remembers the SHA-256 of the last few refresh tokens this broker replaced
-// (never the tokens themselves), so a Claude that read the file just before another refresh
-// rotated it is still recognized. Bounded, because a Claude reads the file immediately before
-// it POSTs, so only a token replaced in that window can be presented honestly; in memory,
-// because the window is seconds and a restarted broker has no such window open.
+// replacedTokens remembers the SHA-256 of the last few refresh tokens a broker replaced (never
+// the tokens themselves), so a Claude that read the file just before another refresh rotated it
+// is still recognized. Bounded, because a Claude reads the file immediately before it POSTs, so
+// only a token replaced in that window can be presented honestly.
+//
+// SHARED BY EVERY BROKER PROCESS, in a file beside the refresh lock. Each jail runs its own
+// claude-oauth-broker (docs/design/host-daemon-ownership.md, HD-R1), and any of them — any jail's
+// background tick — may be the one that rotates the machine's login, so a memory each process
+// kept for itself would answer a jail's Claude 401 whenever ANOTHER jail's broker won the race.
+// The file is read and written only under the refresh flock, which every caller of record and
+// has already holds, and lives in the broker's host-only state directory. With no lock
+// configured (unit tests) it is this process's memory alone.
 type replacedTokens struct {
 	mu   sync.Mutex
+	leaf string // the shared file's name beside RefreshLockPath; "" keeps it in memory only
 	sums [][sha256.Size]byte
 }
 
 // replacedTokenMemory is how many replaced refresh tokens are remembered.
 const replacedTokenMemory = 4
 
-var recentlyReplaced = &replacedTokens{}
+// The shared files' names, beside RefreshLockPath.
+const (
+	replacedTokensFile     = "replaced-refresh-tokens.json"
+	refusedEnrollmentsFile = "refused-enrollments.json"
+)
+
+func newReplacedTokens(leaf string) *replacedTokens { return &replacedTokens{leaf: leaf} }
+
+var recentlyReplaced = newReplacedTokens(replacedTokensFile)
+
+// path is the shared file, or "" when this memory is the process's alone.
+func (r *replacedTokens) path() string {
+	if r.leaf == "" || RefreshLockPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(RefreshLockPath), r.leaf)
+}
+
+// loadLocked replaces r.sums with the shared file's digests: the file is the machine's memory,
+// and every broker's replacements are in it. A file not written yet, or one that cannot be read,
+// leaves what this process remembers, so a broker whose write failed still recognizes its own.
+func (r *replacedTokens) loadLocked() {
+	p := r.path()
+	if p == "" {
+		return
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logWarn("replaced-token memory %s unreadable: %s", p, err)
+		}
+		return
+	}
+	var hexes []string
+	if err := json.Unmarshal(data, &hexes); err != nil {
+		logWarn("replaced-token memory %s is not a digest list: %s", p, err)
+		return
+	}
+	var sums [][sha256.Size]byte
+	for _, h := range hexes {
+		b, err := hex.DecodeString(h)
+		if err != nil || len(b) != sha256.Size {
+			continue
+		}
+		var s [sha256.Size]byte
+		copy(s[:], b)
+		sums = append(sums, s)
+	}
+	r.sums = sums
+}
+
+// saveLocked writes r.sums to the shared file, atomically. A failure is logged and leaves this
+// process's memory intact.
+func (r *replacedTokens) saveLocked() {
+	p := r.path()
+	if p == "" {
+		return
+	}
+	hexes := make([]string, 0, len(r.sums))
+	for _, s := range r.sums {
+		hexes = append(hexes, hex.EncodeToString(s[:]))
+	}
+	data, _ := json.Marshal(hexes)
+	tmp, err := os.CreateTemp(filepath.Dir(p), "."+r.leaf+".*")
+	if err == nil {
+		_, err = tmp.Write(data)
+		if cerr := tmp.Close(); err == nil {
+			err = cerr
+		}
+		if err == nil {
+			err = os.Rename(tmp.Name(), p)
+		}
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+		}
+	}
+	if err != nil {
+		logWarn("replaced-token memory %s not written: %s; only this broker remembers the "+
+			"replacement", p, err)
+	}
+}
 
 func (r *replacedTokens) record(token string) {
 	if token == "" {
@@ -165,16 +256,27 @@ func (r *replacedTokens) record(token string) {
 	sum := sha256.Sum256([]byte(token))
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.sums = append(r.sums, sum)
-	if len(r.sums) > replacedTokenMemory {
-		r.sums = r.sums[len(r.sums)-replacedTokenMemory:]
+	r.loadLocked()
+	// The newest replacement goes last, wherever it was before, so the bound drops the oldest.
+	kept := make([][sha256.Size]byte, 0, len(r.sums)+1)
+	for _, s := range r.sums {
+		if s != sum {
+			kept = append(kept, s)
+		}
 	}
+	kept = append(kept, sum)
+	if len(kept) > replacedTokenMemory {
+		kept = kept[len(kept)-replacedTokenMemory:]
+	}
+	r.sums = kept
+	r.saveLocked()
 }
 
 func (r *replacedTokens) has(token string) bool {
 	sum := sha256.Sum256([]byte(token))
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.loadLocked()
 	found := false
 	for _, s := range r.sums {
 		if subtle.ConstantTimeCompare(s[:], sum[:]) == 1 {

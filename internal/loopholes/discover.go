@@ -291,7 +291,7 @@ func loaderFor(source string) func(string) (*Loophole, error) {
 //     every launch selecting that pack is refused.
 //
 // What still protects the names yolo keys on by hand — `claude-oauth-broker` above all,
-// which `yolo broker status`, `yolo check` and brokerEnsure each reach by literal — is
+// which `yolo broker status`, `yolo check` and the certificate mint each reach by literal — is
 // two things, and neither is a list here. First, run.PackLoopholeNameConflicts' OTHER
 // half: loophole names are exclusive ACROSS PACKS, fatally, so `packs/claude` occupying
 // the name means any other pack claiming it refuses the launch by name. Second, the

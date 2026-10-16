@@ -13,7 +13,7 @@ covers:
   - cmd/yolo-cglimit/
   - cmd/yolo-journalctl/
 tags: [loopholes, transport, tls, security, macos]
-summary: "How a jail reaches a host loophole daemon: `loopback-tls`, a TCP connection to 127.0.0.1 that behaves like an owner-only Unix socket — kernel-assigned port, in-memory certificate, per-(jail, service) bearer token in a published endpoint file re-read on every dial. Covers the two server shapes (publish your own endpoint, or bind a socket and let yolo front it), the host-scoped singleton, the connection preamble, and the one service that cannot move because SO_PEERCRED does not survive the hop."
+summary: "How a jail reaches a host loophole daemon: `loopback-tls`, a TCP connection to 127.0.0.1 that behaves like an owner-only Unix socket — kernel-assigned port, in-memory certificate, per-(jail, service) bearer token in a published endpoint file re-read on every dial. Covers the two server shapes (publish your own endpoint, or bind a socket and let yolo front it), one daemon per jail and `detach`, the connection preamble, and the one service that cannot move because SO_PEERCRED does not survive the hop."
 ---
 
 # The loophole transport — `loopback-tls`
@@ -37,7 +37,7 @@ and a daemon behind the transport never learns which one carried its bytes.
 | The connection preamble | `internal/svcendpoint` (`Preamble`, `PreambleVersion`, `ReadPreamble`) |
 | Tier-1 connection records | `internal/svcendpoint` (`Crossing`, `CrossingViaFront`, `CrossingViaEndpoint`) |
 | The manifest vocabulary: `transport`, `publishes`, `request_end`, `scope` | `internal/loopholedecl` (`enums.go`) |
-| Spawn, readiness, the front goroutine, teardown | `internal/cli/run` (`startExternalService`, `startHostSingleton`, `stopLoopholes`) |
+| Spawn, readiness, the front goroutine, teardown | `internal/cli/run` (`startExternalService`, `detachService`, `stopLoopholes`) |
 | The three server entry points a Go daemon picks from | `internal/hostservice` (`ServeUnix`, `ServeFrontedUnix`, `ServeEndpoint`) |
 | The cross-uid grant for a separate-user sandbox | `internal/macosuser` (`EndpointGrantCommands`) |
 
@@ -236,45 +236,36 @@ upstream socket too, so a daemon that streams until its client leaves (the seria
 > direction ends. The default stays `framed` because a length-prefixed protocol is
 > self-delimiting and does not need the EOF.
 
-### `scope` — one daemon per jail, or one per host
+### One daemon per jail, and `detach`
 
-`host_daemon.scope` says **what the daemon is shared across**. It is a scope rather than a
-`singleton: true` bool deliberately: naming it for today's only interesting answer would
-make a third answer look like a violation instead of an addition.
+**Every host daemon is its jail's own** ([`HD-R1`](../design/host-daemon-ownership.md#HD-R1)):
+yolo spawns it at launch, waits for it, gives the jail its own front over it, and stops it when
+the jail ends. `host_daemon.scope` named what a daemon was shared across, and its second value,
+`"host"` (one daemon per machine serving every jail, ensured under a machine-wide flock), is
+retired: a manifest declaring it is refused at load, and the refusal names the fix (delete the
+key; declare `detach` if the daemon's work in flight must outlive its jail). Copies that must not
+step on each other share state instead: the credential daemons read one credentials file and take
+the refresh flock beside it, which is what serializes them across jails.
 
-- **`jail`** (the default) — yolo spawns it at launch, waits for it, and kills its process
-  **group** at teardown.
-- **`host`** — one daemon per host, serving every jail. yolo **ensures** it (liveness
-  check, then a spawn under a host-wide flock, with the loser of the race observing the
-  winner) rather than spawning it, binds it at a fixed host-wide socket derived from the
-  loophole *name*, and gives each jail its **own front** over that one socket.
+`host_daemon.detach` says **how a jail's end stops the daemon**:
 
-`scope: "host"` **requires** `publishes: "socket"`, refused at load rather than merely
-documented: an endpoint file carries **one** jail's bearer token, so a host-wide publisher
-would hand every jail the same credential, or hand all but one a credential minted for
-someone else.
-
-> [!WARNING]
-> **A jail ending closes ITS FRONT and touches nothing else** for a host-scoped daemon —
-> no process-group kill, no socket unlink — or every other live jail on the machine loses
-> its credential path. This is the asymmetry to preserve when editing teardown: the
-> per-jail path kills the group and unlinks; the host-scoped path does neither.
+- **`false`** (the default) — the jail's end kills the daemon's process **group** and removes its
+  socket.
+- **`true`** — the jail's end closes the jail's front, SIGTERMs the daemon **alone**, and does not
+  wait for it or kill it ([§1.3](../design/host-daemon-ownership.md#13-the-disposition-detach-do-not-drain-do-not-reap)).
+  The daemon closes its listeners, finishes the request in flight (a refresh that already
+  redeemed a single-use token writes its replacement) and exits, bounded by its own upstream
+  deadline. The three credential daemons declare it.
 
 > [!WARNING]
-> **A long-lived host-wide daemon is invisible stale state, and every connect-based
-> liveness gate in the system is designed to be satisfied by it.** A daemon started before
-> its loophole moved behind a front is still listening at the same path and will consume
-> the front's preamble as the client's request: every request fails while liveness reports
-> green. yolo detects that specific state and names the one command that fixes it rather
-> than killing the daemon (two yolo versions on one host would take turns restarting each
-> other's). When verifying transport work from inside a jail, restart the singleton first
-> or the verification measures the previous binary.
->
-> **Stale SETTINGS are the exception: those are restarted, not warned about.** The spawn
-> records a salted digest of each settings key the daemon was handed, and a launch whose
-> settings file differs restarts the daemon, printing the changed keys and never a value.
-> Every jail's front reconnects on its next request
-> ([`HD-D2`](../design/host-daemon-ownership.md#HD-D2)).
+> **A host-wide daemon an older yolo started is still invisible stale state.** It listens at the
+> machine-wide path keyed by the loophole *name* and serves the jails that yolo launched; no launch
+> of this yolo starts, fronts, restarts or stops it, and a fresh launch of a loophole it serves
+> refuses while it runs ([`HD-D21`](../design/host-daemon-ownership.md#HD-D21)).
+> `yolo host-daemon status` lists it as host-wide, and `yolo host-daemon stop --host-wide <name>`
+> ends it, and no jail's own copy; relaunch the jails it served afterwards. When verifying
+> transport work from inside a jail, relaunch the jail you measure, or the verification measures
+> the previous binary.
 
 ## The connection preamble
 
@@ -393,7 +384,8 @@ startup-reason channel's version, limits and classes are documented above.
 | Retired transport values (recognized, refused, with a migration hint) | `unix-socket`, `tls-intercept` | `loopholedecl.RetiredTransportUnixSocket`, `RetiredTransportTLSIntercept` |
 | `publishes` values | `endpoint` (default), `socket` | `loopholedecl.PublishesEndpoint`, `PublishesSocket` |
 | `request_end` values | `framed` (default), `eof` | `loopholedecl.RequestEndFramed`, `RequestEndEOF` |
-| `scope` values | `jail` (default), `host` | `loopholedecl.ScopeJail`, `ScopeHost` |
+| `scope` values | `jail` (default and only); `host` is refused by the strict (authoring) decoder, naming the fix, and read as `jail` with a skew note by the tolerant one discovery uses | `loopholedecl.ScopeJail`, `RetiredScopeHost`, `readRetiredScopeAsJail` |
+| `detach` values | `false` (default), `true` | `loopholedecl` (`keyDetach`); `internal/cli/run` (`detachService`) |
 | Preamble version | `1` | `svcendpoint.PreambleVersion` |
 | Preamble frame cap | 4096 bytes | `internal/svcendpoint/preamble.go` |
 | Token frame cap | 4096 bytes | `internal/svcendpoint/token.go` |

@@ -99,12 +99,13 @@
     }
   },
 
-  // ONE PER MACHINE (`scope: "host"`), with the cache keyed BY PROFILE so one process
-  // still serves several AWS identities (OQ-SSO2). A per-jail daemon would be legal
-  // — P2 removes the single-use-token race that forced the other two brokers to be
-  // singletons — and loses on the warm credential cache, which the design's R1 makes
-  // load-bearing because the mint is the slow step and the adapter's serve budget is
-  // under 200 ms.
+  // ONE PER JAIL, started by the launch and stopped with it
+  // (docs/design/host-daemon-ownership.md, HD-R1, which retired the machine-wide
+  // `scope: "host"` this declared). The cache is keyed BY PROFILE so one process serves
+  // several AWS identities (OQ-SSO2), and it is the shared `{state}/credentials.json`,
+  // so a jail's copy starts warm from what another jail's copy minted: the design's R1
+  // makes that load-bearing, because the mint is the slow step and the adapter's serve
+  // budget is under 200 ms.
   //
   // `publishes: "socket"` is REQUIRED of a pack-shipped loophole
   // (internal/loopholedecl/packshipped.go): the daemon binds a plain AF_UNIX socket at
@@ -142,9 +143,12 @@
       "--settings-check", "--settings", "{settings}"
     ],
     "publishes": "socket",
-    "scope": "host",
     "launch_check": true,
-    "startup_reason": true
+    "startup_reason": true,
+    // A jail's end SIGTERMs this daemon alone and leaves it to finish a mint in flight,
+    // whose `aws` child is not signaled, so the cache it fills is warm for the next jail
+    // (docs/design/host-daemon-ownership.md §1.3).
+    "detach": true
   },
 
   // The jail half: an HTTP endpoint on jail loopback speaking the protocol every AWS

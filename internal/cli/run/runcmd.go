@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/awsauthdaemon"
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostcas"
@@ -256,15 +255,12 @@ type Options struct {
 	// olderDaemonRefusal, while never treating historical log text as evidence.
 	startupRefusal *hostStartupRefusal
 	// startupOutcomes holds this launch's owner-local evidence and is never serialized to a keeper.
-	startupOutcomes []hostservice.StartupOutcome
-	startupAttempt  uint64
-	// singletonDepsForStart is nil in production; it lets owner tests inject lifecycle failures
-	// through the actual startHostSingleton and selected-loop consumption edges.
-	singletonDepsForStart func(string, []string) broker.Deps
-	settingsSnapshots     map[string]*ownedSettingsSnapshot
-	settingsPrepared      bool
-	settingsPlan          *preparedLoopholeSettings
-	settingsFrozen        map[string][]byte
+	startupOutcomes   []hostservice.StartupOutcome
+	startupAttempt    uint64
+	settingsSnapshots map[string]*ownedSettingsSnapshot
+	settingsPrepared  bool
+	settingsPlan      *preparedLoopholeSettings
+	settingsFrozen    map[string][]byte
 	// reachSubject is who a host service's failure leaves unable to reach it, in the warnings
 	// that say so (unreachableBy): "" for a jail launch, which says "the jail", and the agent's
 	// name for a `yolo host` launch opening a doorway (HostDoorways.Start), which runs no jail.

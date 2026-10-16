@@ -30,7 +30,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
-	"github.com/mschulkind-oss/yolo-jail/internal/openaiauthhost"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 	"github.com/mschulkind-oss/yolo-jail/packs"
@@ -128,14 +127,21 @@ func fakeUpstream(t *testing.T) (*httptest.Server, func() []string) {
 	}
 }
 
-// fakeHostBroker serves the OpenAI credential service's access-token view on the host socket a
-// host half dials (openaiauthhost.HostSocketPath, under the package's private singleton dir).
+// fakeHostBroker serves the OpenAI credential service's access-token view on a private socket and
+// stands it in for the daemon a `yolo host` launch starts for its launch-owned services
+// (startHostOpenAIService, HD-R1), so the host half that dials it reaches this fake. The launch
+// handing the service a socket other than the one it started reaches nothing.
 func fakeHostBroker(t *testing.T) {
 	t.Helper()
-	socket := openaiauthhost.HostSocketPath()
-	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
+	dir, err := os.MkdirTemp(paths.HostSingletonDir, "yj-fakebroker-")
+	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "broker.sock.host")
+	orig := startHostOpenAIService
+	startHostOpenAIService = func(io.Writer) (string, func(), error) { return socket, func() {}, nil }
+	t.Cleanup(func() { startHostOpenAIService = orig })
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop); _ = os.Remove(socket) })
 	go func() {

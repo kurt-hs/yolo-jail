@@ -34,7 +34,7 @@ func brokerAndOpenAIFixtureModules(t *testing.T) {
 			`"default_enabled":true,"transport":"` + loopholes.TransportLoopbackTLS + `",` +
 			`"lifecycle":"spawned",` +
 			`"host_daemon":{"cmd":["yolo","internal","daemon","` + name + `","--socket","{socket}"],` +
-			`"publishes":"socket","scope":"host"},` +
+			`"publishes":"socket","detach":true},` +
 			`"jail_daemon":{"cmd":["yolo-jaild","oauth-terminator"],"restart":"on-failure"}}`
 		if err := os.WriteFile(filepath.Join(dir, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
 			t.Fatal(err)

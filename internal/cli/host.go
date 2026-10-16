@@ -911,6 +911,13 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 		fmt.Fprintf(errw, "yolo host: prepare shared OpenAI authentication: %v\n", err)
 		return 1
 	}
+	// THE PRELAUNCH'S OWN CREDENTIAL DAEMON ends with this launch where this process stays
+	// resident (HD-R1, openaiauthhost's privatedaemon.go). On the exec path this never runs, and
+	// the daemon ends with the agent that took this process's place.
+	if managed != nil {
+		defer managed.Close()
+		launch.openAISocket = managed.HostSocket()
+	}
 	// THE MANAGED LAUNCH'S OWN ARGV REWRITE (OQ-CDX1): a managed Codex launch runs with
 	// --no-daemon, so it never attaches to a background server an earlier launch left running
 	// with that launch's refresh address. Before both exec paths below, and disclosed like the
@@ -976,6 +983,22 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 			return 1
 		}
 		defer stopHostServices()
+		// THE CREDENTIAL SERVICE A LAUNCH-OWNED SERVICE REACHES HOST TO HOST (HS-D3), this
+		// launch's own (HD-R1): the prelaunch's daemon when it started one, else one started now
+		// while the OpenAI loophole is on, and ended with the agent. It used to be the one
+		// machine-wide daemon, there only when something else had started it.
+		if launch.openAISocket == "" && len(launch.services)+len(launch.workers) > 0 &&
+			run.HostOpenAIServiceOn(launch.cfg, launch.packs) {
+			socket, stopOpenAI, oerr := startHostOpenAIService(errw)
+			if oerr != nil {
+				fmt.Fprintf(errw, "yolo host: could not start the OpenAI credential service for "+
+					"this launch's services: %v. A service that reaches it fails its requests; fix "+
+					"what the log names and launch again.\n", oerr)
+			} else {
+				defer stopOpenAI()
+				launch.openAISocket = socket
+			}
+		}
 		// The bridged pairing's service, then the pure workers (HS-D29): each one a child of this
 		// process for the agent's life, a start that fails refusing the launch with the ones
 		// already open stopped. Code from a pack yolo does not ship is named, argv and all, BEFORE
@@ -1153,6 +1176,10 @@ func hostPreflight(launch *hostComposition, errw io.Writer) int {
 // startLaunchService starts one launch-owned service; a var so a test can observe what started.
 var startLaunchService = launchservice.Start
 
+// startHostOpenAIService starts this launch's own OpenAI credential daemon for its launch-owned
+// services; a var so a test can observe the start without spawning one.
+var startHostOpenAIService = openaiauthhost.StartPrivate
+
 // noteHostHalfFromALocalPack is the disclosure of a service's host half that a pack yolo does not
 // ship declares, printed BEFORE it starts: a local pack's (launchservice.Declared.Local; HS-D27,
 // the only other origin admission lets through), whose argv is the user's own code, run on their
@@ -1173,14 +1200,17 @@ func noteHostHalfFromALocalPack(errw io.Writer, plan *launchservice.Plan) {
 var hostServiceSignals chan os.Signal
 
 // serviceInput is what every launch-owned service of this composition is handed
-// (launchservice.Input): the three wire tables for the one agent, the host broker's private
-// socket, the doorway pointers and region variables the gate composed for that agent
-// (serviceVars, HS-D32), and the env_sources the credential gate delivers to it for its provider
+// (launchservice.Input): the three wire tables for the one agent, the private socket of this
+// launch's own OpenAI credential daemon (openAISocket), the doorway pointers and region variables
+// the gate composed for that agent (serviceVars, HS-D32), and the env_sources the credential gate
+// delivers to it for its provider
 // (AgentDelivery.EnvSources), so a service reaches exactly the credential of the provider it
 // serves and no other. The caller token is added by launchservice.Start.
 func (c *hostComposition) serviceInput() map[string]string {
 	env := c.wireTables()
-	env[openauthclient.HostSocketEnv] = openaiauthhost.HostSocketPath()
+	if c.openAISocket != "" {
+		env[openauthclient.HostSocketEnv] = c.openAISocket
+	}
 	// The doorway pointers and region variables the gate composed for the agent (HS-D32), which
 	// the service signs a via or carrier route with: into the service's input alone.
 	for k, v := range c.serviceVars {
@@ -1199,12 +1229,14 @@ func (c *hostComposition) serviceInput() map[string]string {
 }
 
 // workerInput is what a pure worker of this composition is handed (hostPureWorkers; HS-D29): the
-// three wire tables and the host broker's private socket, as every launch-owned service is, and
-// no provider credential, since no pairing names one the worker serves. The caller token is
-// added by launchservice.Start.
+// three wire tables and the private socket of this launch's own OpenAI daemon (openAISocket), as
+// every launch-owned service is, and no provider credential, since no pairing names one the
+// worker serves. The caller token is added by launchservice.Start.
 func (c *hostComposition) workerInput() map[string]string {
 	env := c.wireTables()
-	env[openauthclient.HostSocketEnv] = openaiauthhost.HostSocketPath()
+	if c.openAISocket != "" {
+		env[openauthclient.HostSocketEnv] = c.openAISocket
+	}
 	return env
 }
 
@@ -1535,6 +1567,9 @@ type hostComposition struct {
 	// for the doorways' host services, which read the loophole settings from that config.
 	cfg       *jsonx.OrderedMap
 	workspace string
+	// openAISocket is the private socket of this launch's own OpenAI credential daemon, which its
+	// launch-owned services reach the credential service by (serviceInput), "" when it runs none.
+	openAISocket string
 	// selection is the one selection function's answer this launch composed from: packs is its
 	// complete set, and its causes are the packs the closure joined (selectionLines).
 	selection hostPackSet

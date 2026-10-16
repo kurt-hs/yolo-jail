@@ -84,7 +84,7 @@ func TestTheBrokerRefreshesOnlyForACallerPresentingTheLogin(t *testing.T) {
 	dir := t.TempDir()
 	RefreshLockPath = filepath.Join(dir, "refresh.lock")
 	defer func() { RefreshLockPath = "" }()
-	recentlyReplaced = &replacedTokens{}
+	recentlyReplaced = newReplacedTokens(replacedTokensFile)
 	creds := seedCreds(t, dir, "RT_current")
 	endpoint := serveBroker(t, creds)
 

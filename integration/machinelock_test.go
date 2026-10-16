@@ -31,10 +31,11 @@ import (
 //     launch on the machine in that window needs one too, reaches the same image-copy lock, and
 //     can be the one that copies — after which the test's launches all report a peer's delivery
 //     and it fails for a copy it did not make.
-//   - The broker tests (openaiauth_test.go, awsauth_test.go) own a host SINGLETON, whose socket,
-//     PID file and adapter port are fixed per machine (paths.HostSingletonSocket, 127.0.0.1:1460
-//     and :1461). Another run's launch adopts the test's forged daemon, or is the reason the
-//     test finds one already alive.
+//   - The broker tests (openaiauth_test.go, awsauth_test.go) own an in-jail adapter port that is
+//     fixed per bridged jail and reached across the machine's loopback (127.0.0.1:1460 and
+//     :1461), and read their HOME's host daemons from /proc. They used to own a host SINGLETON
+//     too, which another run's launch adopted; since HD-R1 every launch runs its own daemons
+//     (docs/design/host-daemon-ownership.md).
 //
 // # The shape: a readers-writer lock, with a turnstile
 //

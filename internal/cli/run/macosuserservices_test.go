@@ -86,7 +86,7 @@ func TestMacosUserComposesABridgedPairingAgainstALaunchOwnedService(t *testing.T
 	if env["ANTHROPIC_AUTH_TOKEN"] != plan.Token {
 		t.Errorf("claude's ANTHROPIC_AUTH_TOKEN is not the launch's caller token")
 	}
-	in := channel.launchServiceInput(o.launchServiceAgents["wire-bridge"])
+	in := channel.launchServiceInput(o.launchServiceAgents["wire-bridge"], "")
 	if in["CEREBRAS_API_KEY"] != "csk-test" || !strings.Contains(in["YOLO_PROVIDERS"], picked) {
 		t.Errorf("the service's input lacks the provider key or the picked address: %v", in)
 	}

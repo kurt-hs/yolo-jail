@@ -396,12 +396,29 @@ func (k *keeper) run() int {
 		k.socat = o.startPortForwards(p.Forwards, p.Cname, p.ForwardDir)
 		sp.End()
 	}
+	// HD-D4'S PER-WORKSPACE SPAWN GUARD, held by a macos-user keeper while it starts the
+	// workspace's host services (hostdaemonperjail.go): the keeper's arrival lock serializes the
+	// workspace's own macos-user sessions, but `yolo host` of the same workspace starts host
+	// services of its own (HostDoorways.Start) and writes the same settings file, so both take the
+	// guard. A guard the keeper cannot take refuses the launch before any service starts.
+	var guard *workspaceLock
+	if p.Notch != "" && !p.Sealed {
+		g, gerr := o.takeHostDaemonSpawnGuard(p.Cname)
+		if gerr != nil {
+			o.pr(o.Stderr).print(hostDaemonSpawnGuardRefusal(p.Cname, gerr))
+			return k.unwindUnstarted(1)
+		}
+		guard = g
+	}
 	var refused *olderDaemonRefusal
 	if !p.Sealed { // the seal starts no loophole and registers no credential view (seal.go, FP-D15)
 		sp := o.Perf.Span("launch.start_loopholes")
 		k.handles, refused = o.startPlannedLoopholes(p.Cname, p.Runtime, cfg, p.Payload)
 		sp.End()
 		o.registerClaudeCredentialView(p.Runtime, p.Cname, cfg)
+	}
+	if guard != nil {
+		guard.Close()
 	}
 	// A HOST-WIDE DAEMON OLDER THAN THIS YOLO REFUSES THE LAUNCH, before the container (OQ-HD11,
 	// HD-D5, launchcheck.go): its agents would start without the launch check promised to them, or
@@ -1076,7 +1093,10 @@ func (k *keeper) holdKey(cfg *jsonx.OrderedMap) int {
 		doorways = append(doorways, h.plan())
 	}
 	sp := o.Perf.Span("launch.start_doorways")
-	_, started, err := o.startMacosUserDoorways(doorways, launchEnv, k.adoptReservedFor)
+	// THE KEEPER'S OWN OpenAI DAEMON's private socket (HD-R1), for the doorways and the
+	// launch-owned services, which reach it host to host.
+	openAISocket := openAIHostSocket(k.handles)
+	_, started, err := o.startMacosUserDoorways(doorways, launchEnv, openAISocket, k.adoptReservedFor)
 	sp.End()
 	if err != nil {
 		return refuse(err)
@@ -1087,7 +1107,7 @@ func (k *keeper) holdKey(cfg *jsonx.OrderedMap) int {
 		starts = append(starts, serviceStart{plan: h.plan(), input: h.Input, pointedAt: h.PointedAt, worker: h.Worker})
 	}
 	sp = o.Perf.Span("launch.start_services")
-	_, started, err = o.startMacosUserServices(starts, k.adoptReservedFor)
+	_, started, err = o.startMacosUserServices(starts, openAISocket, k.adoptReservedFor)
 	sp.End()
 	if err != nil {
 		return refuse(err)

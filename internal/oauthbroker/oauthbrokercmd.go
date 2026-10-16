@@ -36,6 +36,8 @@ func Main(argv []string) int {
 	logFile := fs.String("log-file", "", "append the operational log here (default: stderr)")
 	verbose := fs.Bool("verbose", false, "Verbose logging")
 	verboseShort := fs.Bool("v", false, "Verbose logging")
+	endWithPID := fs.Int("end-with-pid", 0,
+		"Exit once this process is gone, and remove the socket: a jail-less launch's own broker")
 	_ = fs.Parse(argv)
 
 	// Configure the operational log. Matches the cgd/journald --log-file
@@ -92,10 +94,23 @@ func Main(argv []string) int {
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	shutdown := func() { stopOnce.Do(func() { close(stop) }) }
-	if !*noBgRefresh {
-		go RunBackgroundRefresher(*credsFile, stop,
-			BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+	// THE EXIT WAITS FOR A REFRESH IN FLIGHT, the background one included. A jail's end
+	// SIGTERMs this daemon and does not wait for it (the manifest's `detach`,
+	// docs/design/host-daemon-ownership.md §1.3), so the daemon itself is what lets a refresh
+	// that has already redeemed the single-use refresh token upstream write its replacement
+	// before the process goes. Its bound is the upstream request's own deadline (httpClient).
+	// Serving stops first, and ServeFrontedUnix already waits for every handler it accepted.
+	background := make(chan struct{})
+	if *noBgRefresh {
+		close(background)
+	} else {
+		go func() {
+			defer close(background)
+			RunBackgroundRefresher(*credsFile, stop,
+				BackgroundRefreshTickSeconds, BackgroundRefreshLeadSeconds)
+		}()
 	}
+	defer func() { shutdown(); <-background }()
 
 	// hostservice.ServeUnix installs its own SIGTERM/SIGINT handler; wire a stop
 	// channel too so the background refresher goroutine exits with the process.
@@ -114,16 +129,27 @@ func Main(argv []string) int {
 		fmt.Fprintln(os.Stderr, "yolo-claude-oauth-broker-host: watch the state directory:", err)
 		return 1
 	}
+	// A JAIL-LESS LAUNCH'S OWN BROKER (HD-R1, HD-D23; internal/cli's startHostViewBroker, which
+	// keeps a `yolo host -- claude` credential view current): it ends with the launch's process,
+	// which may have exec'd Claude in its place, and its socket is that launch's alone, so it
+	// removes it as it goes. The exit still waits for a refresh in flight (the deferred wait above).
+	if *endWithPID > 0 {
+		defer func() { _ = os.Remove(*socket) }()
+		hostservice.WatchProcess(*endWithPID, stop, func(reason string) {
+			logInfo("%s", hostservice.ProcessGoneExitLine("yolo-claude-oauth-broker-host", reason))
+			shutdown()
+		})
+	}
 
 	// ServeFrontedUnix, and the third name is the whole point — see the no-`Serve`
 	// note in internal/hostservice for the outage a signature-preserving change to
 	// a shared helper caused here once.
 	//
-	// This used to be ServeUnix, on the true premise that the singleton was
+	// This used to be ServeUnix, on the true premise that the daemon was
 	// host-to-host: the per-jail relay dialed it and stamped a jail_id into the
 	// request. The relay is GONE (docs/design/broker-as-a-pack.md §7). The manifest
-	// now declares `publishes: "socket"` + `scope: "host"`, so yolo runs one
-	// svcendpoint front PER JAIL over this one socket, and every connection that
+	// declares `publishes: "socket"`, so yolo runs the jail's svcendpoint front over
+	// this socket (one daemon per jail since HD-R1), and every connection that
 	// arrives here has crossed a jail boundary and carries yolo's CONNECTION
 	// PREAMBLE. Reading it is what replaces the relay's stamp: the jail_id on this
 	// daemon's audit line stays host-asserted (invariant I1), and the ~100 lines

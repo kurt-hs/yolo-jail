@@ -21,8 +21,8 @@ package integration
 // the stub lives on the host). The access view is a FORGED LOGIN (openaiauth_test.go's term: a
 // Codex-shaped auth.json of random test strings whose access token is a JWT a day from expiry),
 // imported into a private credential state, so the broker serves it from cache and never calls
-// OpenAI. The singleton rules are openaiauth_test.go's, through its own helpers: the machine's
-// real grant is never touched, and the test owns the singleton only while it runs.
+// OpenAI. Every daemon it reaches is its own launch's, under its HOME and private state
+// (openaiauth_test.go's header), so the machine's real grant is never touched.
 
 import (
 	"encoding/json"
@@ -54,7 +54,7 @@ type codexUpstreamRecord struct {
 func TestWireBridgeTranslatesClaudeCodexToResponses(t *testing.T) {
 	requireJail(t)
 	if rt := detectRuntime(); rt != "podman" || goruntime.GOOS != "linux" {
-		t.Skipf("this test proves credential-service singleton ownership from /proc and runs on "+
+		t.Skipf("this test reads its daemons from /proc and runs on "+
 			"podman on Linux, as TestOpenAIAuthBrokerRoundTripsAnImportedToken does; this is %q on %s",
 			rt, goruntime.GOOS)
 	}
@@ -103,23 +103,11 @@ func TestWireBridgeTranslatesClaudeCodexToResponses(t *testing.T) {
 	if !strings.HasPrefix(statePath, paths.GlobalStorage()+string(filepath.Separator)) {
 		t.Fatalf("broker state %s is not under the private state dir %s", statePath, paths.GlobalStorage())
 	}
-	skipIfMachineHoldsAGrant(t, statePath)
-	clearGrantlessSingleton(t)
-	if r := runYoloCLI(t, dir, "openai-auth", "status"); r.rc != 0 {
-		t.Fatalf("`yolo openai-auth status` failed: rc %d\n%s", r.rc, r.combined())
-	}
-	pid := requireOwnSingleton(t, statePath)
-	t.Cleanup(func() {
-		if err := stopSingletonPID(pid); err != nil {
-			t.Errorf("stopping this test's openai-auth-broker singleton: %v", err)
-		}
-	})
+	// Every daemon this test runs is its own launch's, under its HOME and private state (HD-R1;
+	// openaiauth_test.go's header): the import's ends with the verb, the jail's with the jail.
 	forged := forgeCodexLogin(t)
 	if r := runYoloCLI(t, dir, "openai-auth", "import", "--from", forged.path); r.rc != 0 {
 		t.Fatalf("`yolo openai-auth import` failed: rc %d\n%s", r.rc, r.combined())
-	}
-	if got := requireOwnSingleton(t, statePath); got != pid {
-		t.Fatalf("the singleton changed from pid %d to %d during the import", pid, got)
 	}
 
 	// $ANTHROPIC_BASE_URL is claude's alone, in its own env file; source it as claude's

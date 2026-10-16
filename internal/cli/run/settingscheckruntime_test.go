@@ -9,17 +9,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
-	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -91,115 +87,7 @@ func settingsRefusalChildMain(settingsPath string) int {
 	return 1
 }
 
-func TestInvalidSingletonCandidatePreservesLiveDaemonAndExistingFront(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("spawns a host process")
-	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
-	emptyLoopholeDirs(t)
-	isolatePackModules(t)
-
-	oldSingletonDir := paths.HostSingletonDir
-	shortSingletonDir, err := os.MkdirTemp("/tmp", "yhs-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	paths.HostSingletonDir = shortSingletonDir
-	t.Cleanup(func() {
-		paths.HostSingletonDir = oldSingletonDir
-		_ = os.RemoveAll(shortSingletonDir)
-	})
-	module := filepath.Join(t.TempDir(), "live-singleton")
-	if err := os.MkdirAll(module, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	manifest := fmt.Sprintf(`{
-  "name": "live-singleton",
-  "default_enabled": true,
-  "settings": {"profile": {"type": "string", "scope": "user", "default": "good"}},
-  "host_daemon": {
-    "cmd": [%q, "-front-upstream-child", "line", "{socket}", "--settings", "{settings}"],
-    "settings_check": ["/bin/sh", "-c", "if grep -q invalid \"$1\"; then printf '%%s' '{\"reason\":\"candidate rejected\",\"remedy\":\"correct user settings\"}'; exit 1; fi; exit 0", "validator", "{settings}"],
-    "publishes": "socket",
-    "scope": "host"
-  }
-}`, os.Args[0])
-	if err := os.WriteFile(filepath.Join(module, "manifest.jsonc"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	set := loopholes.NewSet(loopholes.DiscoverOptions{
-		PackModules: []loopholes.PackModule{{Dir: module, HostExecApproved: true}},
-	})
-	allow := func(string) bool { return true }
-
-	deps := broker.SingletonDeps("live-singleton", nil)
-	valid := settingsConfig("live-singleton", "valid-profile")
-	first := &Options{Workspace: t.TempDir()}
-	var output strings.Builder
-	first.Stdout, first.Stderr = &output, &output
-	fillDefaults(first)
-	first.ServiceReadyTimeout = 3 * time.Second
-	first.PathExists = func(string) bool { return false }
-	first.discloseSettingsCheckHostExec(nil, set, valid, allow)
-	if !first.prepareLoopholeSettingsForStart(set, valid, allow) {
-		t.Fatalf("valid initial settings refused: %v", first.startupRefusal)
-	}
-	cname := "yolo-singleton-preserve-" + fmt.Sprint(time.Now().UnixNano())
-	handles := first.startLoopholesMatching(set, cname, "podman", valid, allow)
-	if len(handles) != 1 {
-		logData, _ := os.ReadFile(deps.LogPath)
-		t.Fatalf("initial host singleton did not start: handles=%d refusal=%v output=%s log=%s", len(handles), first.startupRefusal, output.String(), logData)
-	}
-	defer first.stopLoopholes(handles, hostServiceSocketsDir(cname, false), cname, "podman")
-	t.Cleanup(func() { _ = broker.BrokerKill(deps, syscall.SIGTERM, 2*time.Second) })
-	pid, ok := broker.BrokerReadPID(deps)
-	if !ok || !broker.BrokerIsAlive(deps) {
-		t.Fatalf("initial host singleton is not live: pid=%d ok=%v", pid, ok)
-	}
-	stable := loopholes.SettingsFileFor("live-singleton")
-	before, err := os.ReadFile(stable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	frontPath := handles[0].hostPath
-	frontBefore, err := os.ReadFile(frontPath)
-	if err != nil {
-		t.Fatalf("initial jail front endpoint is absent: %v", err)
-	}
-
-	invalid := settingsConfig("live-singleton", "invalid-profile")
-	plan := &launchservice.Plan{Declared: launchservice.Declared{Service: "live-singleton", Pack: "fixture"}}
-	doorways := &HostDoorways{plans: []*launchservice.Plan{plan}, set: set}
-	startCalled := false
-	_, stop, _, refusal := doorways.Start(invalid, t.TempDir(), "pi", &output,
-		func(*launchservice.Plan, map[string]string) (*launchservice.Running, error) {
-			startCalled = true
-			return nil, fmt.Errorf("fixture doorway should not start after refusal")
-		})
-	if stop != nil {
-		stop()
-	}
-	if refusal == nil || startCalled || !strings.Contains(refusal.Error(), "candidate rejected") {
-		t.Fatalf("host doorway did not propagate settings refusal before starting: refusal=%v startCalled=%v", refusal, startCalled)
-	}
-	if after, err := os.ReadFile(stable); err != nil || string(after) != string(before) {
-		t.Fatalf("invalid candidate changed singleton settings: before=%q after=%q err=%v", before, after, err)
-	}
-	if after, ok := broker.BrokerReadPID(deps); !ok || after != pid || !broker.BrokerIsAlive(deps) {
-		t.Fatalf("invalid candidate disturbed live singleton: prior pid=%d current=%d ok=%v", pid, after, ok)
-	}
-	if !socketConnectable(paths.HostSingletonSocket("live-singleton"), time.Second) || !broker.BrokerIsAlive(deps) {
-		t.Fatal("invalid candidate made the existing singleton socket unreachable")
-	}
-	if frontAfter, err := os.ReadFile(frontPath); err != nil || string(frontAfter) != string(frontBefore) {
-		t.Fatalf("invalid candidate disturbed the existing jail front: before=%q after=%q err=%v", frontBefore, frontAfter, err)
-	}
-}
-
-func TestManifestSettingsRefusalPreservesHostSingletonSettings(t *testing.T) {
+func TestManifestSettingsRefusalPreservesTheStableSettings(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("spawns a host process")
 	}
@@ -216,8 +104,7 @@ func TestManifestSettingsRefusalPreservesHostSingletonSettings(t *testing.T) {
   "host_daemon": {
     "cmd": [%q, "-front-upstream-child", "line", "{socket}", "--settings", "{settings}"],
     "settings_check": [%q, "-settings-refusal-child", "{settings}"],
-    "publishes": "socket",
-    "scope": "host"
+    "publishes": "socket"
   }
 }`, os.Args[0], os.Args[0])
 	if err := os.WriteFile(filepath.Join(module, "manifest.jsonc"), []byte(manifest), 0o600); err != nil {
@@ -253,7 +140,7 @@ func TestManifestSettingsRefusalPreservesHostSingletonSettings(t *testing.T) {
 	}
 	got, err := os.ReadFile(stable)
 	if err != nil || string(got) != string(before) {
-		t.Fatalf("stable singleton settings changed on refusal: got=%q err=%v", got, err)
+		t.Fatalf("stable settings changed on refusal: got=%q err=%v", got, err)
 	}
 	if strings.Contains(output.String(), "invalid-candidate") || strings.Contains(output.String(), "<profile>") {
 		t.Fatalf("refusal leaked profile or placeholder: %s", output.String())

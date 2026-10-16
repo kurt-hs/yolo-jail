@@ -13,7 +13,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestAWSUnnarrowedRoutineDisclosureDoesNotSuppressOtherPackDisclosures(t *testing.T) {
@@ -106,17 +105,15 @@ func TestAWSUnnarrowedRoutineDisclosureDoesNotSuppressOtherPackDisclosures(t *te
 	}
 }
 
-func TestHostSingletonStartupRefusalReachesSelectedLaunch(t *testing.T) {
+// A host daemon of the launch's own (HD-R1; this pinned the machine-wide singleton before) whose
+// startup-reason record refuses reaches the selected launch as the typed refusal.
+func TestHostDaemonStartupRefusalReachesSelectedLaunch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	emptyLoopholeDirs(t)
 	isolatePackModules(t)
-
-	oldSingletonDir := paths.HostSingletonDir
-	paths.HostSingletonDir = t.TempDir()
-	t.Cleanup(func() { paths.HostSingletonDir = oldSingletonDir })
 
 	script := `import json, os, socket, struct
 record = {"version":1,"service":"host-singleton-fixture","attempt":os.environ["YOLO_HOST_SERVICE_ATTEMPT"],"class":"configuration","reason":"The host singleton rejected this setting.","remedy":"Correct the user-scoped setting and retry."}
@@ -127,7 +124,7 @@ s.sendall(struct.pack(">I", len(data)) + data)
 	manifest := `{
 		"name":"host-singleton-fixture", "default_enabled":true, "transport":"loopback-tls",
 		"host_daemon":{"cmd":["python3","{loophole_dir}/daemon.py","--socket","{socket}"],
-			"scope":"host","publishes":"socket","startup_reason":true}
+			"publishes":"socket","startup_reason":true}
 	}`
 	p := writeRealLoopholePack(t, "fixture", "host-singleton-fixture", manifest)
 	program := filepath.Join(p.Root, "loopholes", "host-singleton-fixture", "daemon.py")
@@ -162,7 +159,7 @@ s.sendall(struct.pack(">I", len(data)) + data)
 			t.Errorf("host singleton launch output lacks attempt-specific %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "did not bind its socket") || strings.Contains(got, "Expected "+paths.HostSingletonSocket("host-singleton-fixture")) {
+	if strings.Contains(got, "did not bind its socket") || strings.Contains(got, "cannot reach it. Expected ") {
 		t.Errorf("typed refusal was replaced by the derived socket symptom:\n%s", got)
 	}
 }

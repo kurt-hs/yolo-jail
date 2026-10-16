@@ -51,7 +51,8 @@ func TestCheckTellsTheSelfCheckWhenTheBackendDoesNotStartItsService(t *testing.T
 					t.Errorf("on Apple Container the liveness rows must say the launch does "+
 						"not start the broker, not promise it will:\n%s", out)
 				}
-			} else if notStartedRow || !strings.Contains(out, "loophole "+brokerLoopholeName+": daemon ") {
+			} else if notStartedRow || !strings.Contains(out, "loophole "+brokerLoopholeName+": no daemon running") {
+				// No jail runs in the fixture, so the liveness row is the HD-R1 pass that says none does.
 				t.Errorf("runtime %q lost the broker liveness rows:\n%s", tc.runtime, out)
 			}
 		})

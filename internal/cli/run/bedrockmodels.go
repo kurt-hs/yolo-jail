@@ -15,16 +15,16 @@ package run
 // since copilot's start model comes from one. So the fetch reads the gate's first answer, writes
 // the list onto the table, and the gate composes again. A launch that wants no list composes once.
 //
-// # How the list is obtained, cheapest first
+// # How the list is obtained
 //
-//  1. THE SERVICE'S OWN ANSWER (awsauthdaemon's modellists.go), asked on its private host socket:
-//     its cache when a day old or less, else a fetch within ModelListBudget, else the cache's last
-//     good list. A warm cache costs one local round trip.
-//  2. THE SAME FETCH, RUN BY THE LAUNCH, when no service is running to ask: the first Bedrock
-//     launch on a machine, which composes before it starts the service. It runs the service's own
-//     code with the configured profile, writes the same cache under the same lock, and is bounded
-//     by the same budget. Without it the first launch would have no list, and one that needs a list
-//     would be refused before it started the service that could fetch it, every time.
+// THE LAUNCH RUNS THE SERVICE'S OWN FETCH (awsauthdaemon's modellists.go) with the configured
+// profile: the shared cache when a day old or less, else a fetch within ModelListBudget, else the
+// cache's last good list, written under the same lock. It asks no running service first (HD-D22 in
+// docs/design/host-daemon-ownership.md): since HD-R1 every launch starts its own aws-auth copy,
+// and only after this composition, so the one daemon a host socket could still reach here is an
+// older yolo's machine-wide copy, which fetches as ITS configured profile rather than this
+// launch's. fetchModelListAt keeps the service-first order for a caller that has a copy of its own
+// to ask.
 //
 // # When it refuses
 //
@@ -52,7 +52,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
@@ -77,8 +76,8 @@ func DefaultFetchModelList(req ModelListRequest) awsauthdaemon.ModelListAnswer {
 		return awsauthdaemon.ModelListAnswer{Note: "the " + req.Service + " service, which fetches it, is not " +
 			"enabled (loopholes." + req.Service + ".enabled)"}
 	}
-	return fetchModelListAt(awsauthdaemon.HostSocketPath(paths.HostSingletonSocket(req.Service)),
-		filepath.Join(loopholes.StateDirFor(req.Service), awsauth.ModelCacheFileName), awsauth.ExecRunner(), req)
+	return fetchModelListHere(filepath.Join(loopholes.StateDirFor(req.Service), awsauth.ModelCacheFileName),
+		awsauth.ExecRunner(), req)
 }
 
 // fetchModelListAt is DefaultFetchModelList over the service's host socket, its cache file and
@@ -87,6 +86,12 @@ func fetchModelListAt(socket, cachePath string, runner awsauth.Runner, req Model
 	if ans, err := askModelListService(socket, req.Region, awsauthdaemon.ModelListBudget); err == nil {
 		return ans
 	}
+	return fetchModelListHere(cachePath, runner, req)
+}
+
+// fetchModelListHere is the fetch the launch runs itself: the service's own code over its cache
+// file, with the configured profile.
+func fetchModelListHere(cachePath string, runner awsauth.Runner, req ModelListRequest) awsauthdaemon.ModelListAnswer {
 	ans := awsauthdaemon.ObtainModelList(awsauthdaemon.ModelListSource{
 		CachePath: cachePath,
 		Profile:   req.Profile,

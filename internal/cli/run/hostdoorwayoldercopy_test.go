@@ -1,10 +1,12 @@
 package run
 
-// hostdoorwaypreamble_test.go pins the `yolo host` half of HD-D5 (3) (docs/design/
-// host-daemon-ownership.md): a launch that opens a doorway to a host-wide daemon which predates
-// the connection preamble refuses before the doorway opens, naming the command that restarts THAT
-// daemon, as a jail launch refuses (launchcheckrefusal_test.go). HostDoorways.Start is the call
-// site; deleting its check fails the first test, and the second is its control.
+// hostdoorwayoldercopy_test.go pins the `yolo host` half of HD-D21 (docs/design/
+// host-daemon-ownership.md): a launch that starts a host service for its doorway while an older
+// yolo's machine-wide copy of that service is still running refuses before the doorway opens,
+// naming the stop of THAT copy, as a jail launch refuses (launchcheckrefusal_test.go). It took
+// over the file of HD-D5 (3)'s preamble refusal, which no launch can meet once no launch fronts a
+// machine-wide daemon. HostDoorways.Start is the call site; deleting its check fails the first
+// test, and the second is its control.
 
 import (
 	"bytes"
@@ -31,7 +33,7 @@ func hostDoorwayStartAgainst(t *testing.T, prep ...func(*testing.T)) (err error,
 	for _, p := range prep {
 		p(t)
 	}
-	pack := writeRealLoopholePack(t, "yjtest-doorway-pack", launchCheckFixtureName, askedEveryLaunchManifest)
+	pack := writeRealLoopholePack(t, "yjtest-doorway-pack", launchCheckFixtureName, askedEveryLaunchManifest(t))
 	packs := []*packload.Pack{pack}
 	d := &HostDoorways{
 		plans: []*launchservice.Plan{launchservice.PlanAt(launchservice.Declared{
@@ -52,26 +54,25 @@ func hostDoorwayStartAgainst(t *testing.T, prep ...func(*testing.T)) (err error,
 	return err, doorwayStarted
 }
 
-func TestAHostDoorwayToADaemonThatPredatesThePreambleRefusesTheLaunch(t *testing.T) {
-	err, started := hostDoorwayStartAgainst(t, predatesThePreamble)
+func TestAHostDoorwayBesideAnOlderYolosCopyRefusesTheLaunch(t *testing.T) {
+	err, started := hostDoorwayStartAgainst(t, anOlderCopy)
 	if started {
-		t.Error("the doorway opened to a daemon that predates the preamble")
+		t.Error("the doorway opened beside an older yolo's machine-wide copy of its service")
 	}
 	if err == nil || errors.Is(err, errDoorwayStub) {
 		t.Fatalf("Start returned %v, want the refusal", err)
 	}
-	for _, want := range []string{"'" + launchCheckFixtureName + "' predates this yolo",
-		"does not speak the connection preamble", broker.CycleCommand(launchCheckFixtureName)} {
+	for _, want := range []string{"a machine-wide daemon for '" + launchCheckFixtureName + "' that an older yolo",
+		broker.StopHostWideCommand(launchCheckFixtureName)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q:\n%v", want, err)
 		}
 	}
-	assertTheDaemonWasNotRestarted(t)
+	assertTheOlderCopyWasNotStopped(t)
 }
 
-// TestAHostDoorwayToADaemonThatSpeaksThePreambleOpens is its control: the same start reaches the
-// doorway.
-func TestAHostDoorwayToADaemonThatSpeaksThePreambleOpens(t *testing.T) {
+// TestAHostDoorwayWithNoOlderCopyOpens is its control: the same start reaches the doorway.
+func TestAHostDoorwayWithNoOlderCopyOpens(t *testing.T) {
 	err, started := hostDoorwayStartAgainst(t)
 	if !started || !errors.Is(err, errDoorwayStub) {
 		t.Errorf("the doorway did not open (started %v, err %v), so its refusal twin proves nothing",

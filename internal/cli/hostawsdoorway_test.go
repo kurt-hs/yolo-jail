@@ -33,11 +33,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/runtime"
@@ -176,12 +174,8 @@ func runDoorwayLaunchAfter(t *testing.T, cfg string, shell map[string]string, fl
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	dump := filepath.Join(t.TempDir(), "agent.json")
 	t.Setenv("YOLO_CLI_TEST_AGENT_DUMP", dump)
-	// The host service is a machine-wide singleton, so each test stops the one its launch
-	// spawned (in this package's private singleton dir), and the next spawns against its own
-	// fake `aws`.
-	t.Cleanup(func() {
-		broker.BrokerKill(broker.SingletonDeps("aws-auth", nil), syscall.SIGTERM, 5*time.Second)
-	})
+	// The host service is this launch's own (HD-R1) and ends with it, so the next test's launch
+	// spawns against its own fake `aws` with nothing to stop here.
 
 	got := doorwayLaunch{argvLog: argvLog}
 	origStart := startLaunchService
@@ -355,7 +349,7 @@ func TestHostDoorwayFrontsInASessionDirNotTheWorkspacesJailDir(t *testing.T) {
 		t.Errorf("the host launch touched the workspace jail's aws-auth endpoint in %s: %q, %v",
 			jailDir, got, err)
 	}
-	const using = `using the host-wide "aws-auth" service for this launch, through a front of its own that closes when pi exits: `
+	const using = `started the "aws-auth" service for this launch, behind a front of its own; both end when pi exits: `
 	i := strings.Index(l.errs, using)
 	if i < 0 {
 		t.Fatalf("the launch must name the front it published:\n%s", l.errs)

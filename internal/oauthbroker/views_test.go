@@ -52,7 +52,7 @@ func newViewFixture(t *testing.T) *viewFixture {
 	t.Setenv("YOLO_BROKER_STATE_DIR", state)
 	saved := []string{RefreshLockPath, CanonicalPath, ViewRegistryDir, RelaySourcePath}
 	savedReplaced, savedRefused := recentlyReplaced, refusedEnrollments
-	recentlyReplaced, refusedEnrollments = &replacedTokens{}, &replacedTokens{}
+	recentlyReplaced, refusedEnrollments = newReplacedTokens(replacedTokensFile), newReplacedTokens(refusedEnrollmentsFile)
 	t.Cleanup(func() {
 		RefreshLockPath, CanonicalPath, ViewRegistryDir, RelaySourcePath = saved[0], saved[1], saved[2], saved[3]
 		recentlyReplaced, refusedEnrollments = savedReplaced, savedRefused

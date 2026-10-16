@@ -1093,6 +1093,7 @@
 "internal/cli",
 "internal/cli/check",
 "internal/cli/stores",
+"internal/cli/testdata",
 "internal/config",
 "internal/containerbuilder",
 "internal/crossaudit",
@@ -1195,6 +1196,34 @@
 ]
 },
 {
+"read": [],
+"listed": [
+".",
+"internal",
+"internal/cli"
+]
+},
+{
+"read": [
+"integration/macosuserdeclparity_test.go"
+],
+"listed": []
+},
+{
+"read": [
+"userguide/reference/settings-per-setup.md"
+],
+"listed": []
+},
+{
+"read": [
+"internal/cli/*.go"
+],
+"listed": [
+"internal/cli"
+]
+},
+{
 "read": [
 "go.mod",
 "internal/cli/go.mod",
@@ -1248,34 +1277,6 @@
 "packs/serial/**",
 "packs/wire-bridge",
 "packs/zai"
-]
-},
-{
-"read": [],
-"listed": [
-".",
-"internal",
-"internal/cli"
-]
-},
-{
-"read": [
-"integration/macosuserdeclparity_test.go"
-],
-"listed": []
-},
-{
-"read": [
-"userguide/reference/settings-per-setup.md"
-],
-"listed": []
-},
-{
-"read": [
-"internal/cli/*.go"
-],
-"listed": [
-"internal/cli"
 ]
 },
 {
@@ -1504,6 +1505,7 @@
 "internal/cli/run/briefingdest.go",
 "internal/cli/run/briefingreadback.go",
 "internal/cli/run/brokenprefix.go",
+"internal/cli/run/brokercerts.go",
 "internal/cli/run/brokeredscope.go",
 "internal/cli/run/buildslot.go",
 "internal/cli/run/cachedgood.go",
@@ -1533,6 +1535,7 @@
 "internal/cli/run/holdonrefusal.go",
 "internal/cli/run/homeskeleton.go",
 "internal/cli/run/hostcasalias.go",
+"internal/cli/run/hostdaemonperjail.go",
 "internal/cli/run/hostexports.go",
 "internal/cli/run/hostfiles.go",
 "internal/cli/run/hostlaunchcontext.go",
@@ -1638,7 +1641,6 @@
 "internal/cli/run/sessionlock.go",
 "internal/cli/run/shareddirsources.go",
 "internal/cli/run/sharednetwork.go",
-"internal/cli/run/singletonsettings.go",
 "internal/cli/run/sliceutil.go",
 "internal/cli/run/srcskew.go",
 "internal/cli/run/stopreason.go",
@@ -1895,6 +1897,7 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
+"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -1906,6 +1909,14 @@
 "internal/cli/run/loopholesruntime.go",
 "internal/cli/run/prepare.go",
 "internal/go.mod"
+],
+"listed": []
+},
+{
+"read": [
+"packs/aws-auth/loopholes/aws-auth/manifest.jsonc",
+"packs/claude/loopholes/claude-oauth-broker/manifest.jsonc",
+"packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc"
 ],
 "listed": []
 },
@@ -2953,7 +2964,6 @@
 "flake.nix",
 "go.mod",
 "integration/*",
-"integration/agents_captureprobe_test.go",
 "internal/agentcfg/*",
 "internal/agentcfg/codec/*",
 "internal/agentcfg/luahook/*",
@@ -2977,6 +2987,7 @@
 "internal/cli/check/*",
 "internal/cli/run/*",
 "internal/cli/stores/*",
+"internal/cli/testdata/pi-subagents-model-settings.golden.json",
 "internal/cli/userconfig.jsonc",
 "internal/config/*",
 "internal/containerbuilder/*",
@@ -3284,7 +3295,8 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts"
+"scripts",
+"scripts/__pycache__"
 ]
 },
 {
@@ -3388,7 +3400,6 @@
 "internal/footer/*",
 "internal/frameproto/*",
 "internal/ghbroker/*",
-"internal/heldchildren/*",
 "internal/hostcas/*",
 "internal/hostfloor/*",
 "internal/hostmigrate/*",
@@ -3711,7 +3722,6 @@
 "internal/footer",
 "internal/frameproto",
 "internal/ghbroker",
-"internal/heldchildren",
 "internal/hostcas",
 "internal/hostfloor",
 "internal/hostmigrate",
@@ -5053,6 +5063,7 @@
 "internal/agentcfg/footerdefault_test.go",
 "internal/agentcfg/keyless_test.go",
 "internal/agentcfg/listcontrib_test.go",
+"internal/agentcfg/listremove_test.go",
 "internal/agentcfg/literalnull_test.go",
 "internal/agentcfg/literalnullprecedence_test.go",
 "internal/agentcfg/luahook/activeset_test.go",
@@ -5093,6 +5104,7 @@
 "internal/awsauth/modellist_test.go",
 "internal/awsauth/nocreatedir_test.go",
 "internal/awsauth/settings_test.go",
+"internal/awsauthdaemon/detach_test.go",
 "internal/awsauthdaemon/handler_test.go",
 "internal/awsauthdaemon/launchcheck_test.go",
 "internal/awsauthdaemon/main_test.go",
@@ -5112,18 +5124,9 @@
 "internal/basehome/sharedstore_test.go",
 "internal/broker/brokercmd_test.go",
 "internal/broker/brokerlifecycle_test.go",
-"internal/broker/hostdaemons_nogate_test.go",
 "internal/broker/hostdaemons_test.go",
-"internal/broker/launchcheckstamp_test.go",
-"internal/broker/logcap_test.go",
+"internal/broker/legacyhome_test.go",
 "internal/broker/reachable_test.go",
-"internal/broker/settingsrecord_test.go",
-"internal/broker/singletondeps_test.go",
-"internal/broker/singletonstamp_test.go",
-"internal/broker/singletonwarning_test.go",
-"internal/broker/startupoutcome_owner_test.go",
-"internal/broker/startupoutcome_test.go",
-"internal/broker/startupreason_test.go",
 "internal/broker/strayscope_test.go",
 "internal/broker/testmain_test.go",
 "internal/brokeraudit/brokeraudit_test.go",
@@ -5229,6 +5232,7 @@
 "internal/cli/captureprecedence_test.go",
 "internal/cli/captureproviderkeys_test.go",
 "internal/cli/capturerelocate_test.go",
+"internal/cli/captureremoverwait_test.go",
 "internal/cli/capturescan_test.go",
 "internal/cli/capturescopecleanup_test.go",
 "internal/cli/capturesecurity_test.go",
@@ -5246,6 +5250,7 @@
 "internal/cli/check/check_test.go",
 "internal/cli/check/configlock_test.go",
 "internal/cli/check/console_test.go",
+"internal/cli/check/doctornotstarted_test.go",
 "internal/cli/check/emptymodellists_matrix_test.go",
 "internal/cli/check/emptymodellists_test.go",
 "internal/cli/check/envoverrides_test.go",
@@ -5305,7 +5310,6 @@
 "internal/cli/check/servedprediction_test.go",
 "internal/cli/check/settingscheck_admission_test.go",
 "internal/cli/check/settingscheck_test.go",
-"internal/cli/check/singletonsettings_test.go",
 "internal/cli/check/skewedpack_test.go",
 "internal/cli/check/skiplevel_test.go",
 "internal/cli/check/supersessionskew_test.go",
@@ -5458,6 +5462,7 @@
 "internal/cli/hostpackrefresh_test.go",
 "internal/cli/hostpackresolve_test.go",
 "internal/cli/hostpatchprewrite_test.go",
+"internal/cli/hostpisubagents_test.go",
 "internal/cli/hostplatformswitch_test.go",
 "internal/cli/hostprelaunch_test.go",
 "internal/cli/hostprelaunchrefresh_test.go",
@@ -5505,6 +5510,7 @@
 "internal/cli/logsink_test.go",
 "internal/cli/loopholesenable_test.go",
 "internal/cli/macosguestbinaries_test.go",
+"internal/cli/macosnightlyregression_test.go",
 "internal/cli/macossessionarm_test.go",
 "internal/cli/macosusercaptures_test.go",
 "internal/cli/macosusergrantswiring_test.go",
@@ -5531,6 +5537,7 @@
 "internal/cli/packinstallrefresh_test.go",
 "internal/cli/packkinddocs_test.go",
 "internal/cli/packlintaudience_test.go",
+"internal/cli/packlintconfiglistremove_test.go",
 "internal/cli/packlintdeliveries_test.go",
 "internal/cli/packlintdescribes_test.go",
 "internal/cli/packlinthookstate_test.go",
@@ -5550,17 +5557,14 @@
 "internal/cli/patchedactorfollowup_test.go",
 "internal/cli/patchedadvance_test.go",
 "internal/cli/patchedbase_test.go",
+"internal/cli/patchedbaselag_test.go",
 "internal/cli/patchedcallsite_test.go",
 "internal/cli/patchedfailureactor_test.go",
+"internal/cli/patchedfetchretry_test.go",
 "internal/cli/patchedfork_test.go",
 "internal/cli/patchedhost_test.go",
 "internal/cli/patchedrace_test.go",
-"internal/cli/patchedrebase_export_test.go",
-"internal/cli/patchedrebase_lines_test.go",
-"internal/cli/patchedrebase_test.go",
-"internal/cli/patchedrebase_tree_test.go",
-"internal/cli/patchedrebaselocks_test.go",
-"internal/cli/patchedrebasescratch_test.go",
+"internal/cli/patchedrecipe_test.go",
 "internal/cli/patchedrekey_test.go",
 "internal/cli/patchedreplayempty_test.go",
 "internal/cli/patchedscratchcases_test.go",
@@ -5605,12 +5609,15 @@
 "internal/cli/programcapturediagnostics_test.go",
 "internal/cli/programcapturehost_test.go",
 "internal/cli/programcapturelifetime_test.go",
+"internal/cli/programcaptureplatform_test.go",
 "internal/cli/programcaptureruntime_test.go",
 "internal/cli/programcapturescheduler_test.go",
 "internal/cli/programcapturesealedintegration_test.go",
+"internal/cli/programimageverdict_test.go",
 "internal/cli/programnpm_test.go",
 "internal/cli/programnpmfloor_test.go",
 "internal/cli/programnpmfloorboundaries_test.go",
+"internal/cli/programnpmimage_test.go",
 "internal/cli/programregistrationtiming_test.go",
 "internal/cli/programs_test.go",
 "internal/cli/providerdocs_test.go",
@@ -5656,6 +5663,7 @@
 "internal/cli/run/backendparity_test.go",
 "internal/cli/run/backendwarns_test.go",
 "internal/cli/run/banner_test.go",
+"internal/cli/run/baselagnote_test.go",
 "internal/cli/run/bedrockclaudemodel_test.go",
 "internal/cli/run/bedrockmodels_test.go",
 "internal/cli/run/bedrockmodelsfetch_test.go",
@@ -5669,6 +5677,7 @@
 "internal/cli/run/briefingports_test.go",
 "internal/cli/run/briefingreadback_test.go",
 "internal/cli/run/brokenprefix_test.go",
+"internal/cli/run/brokercerts_test.go",
 "internal/cli/run/brokeredscope_macosuser_test.go",
 "internal/cli/run/brokeredscope_test.go",
 "internal/cli/run/brokersingleton_test.go",
@@ -5707,6 +5716,7 @@
 "internal/cli/run/ctxmountsrw_test.go",
 "internal/cli/run/currentimage_test.go",
 "internal/cli/run/currentimagecallsite_test.go",
+"internal/cli/run/detachpromise_test.go",
 "internal/cli/run/discardremoval_test.go",
 "internal/cli/run/doorwayrestart_test.go",
 "internal/cli/run/durabledir_test.go",
@@ -5736,8 +5746,9 @@
 "internal/cli/run/homeskeletonleak_test.go",
 "internal/cli/run/homesurfaces_test.go",
 "internal/cli/run/hostcasalias_test.go",
+"internal/cli/run/hostdaemonperjail_test.go",
 "internal/cli/run/hostdoorwaydisclosure_test.go",
-"internal/cli/run/hostdoorwaypreamble_test.go",
+"internal/cli/run/hostdoorwayoldercopy_test.go",
 "internal/cli/run/hostdoorwaysets_test.go",
 "internal/cli/run/hostdoorwayssettings_test.go",
 "internal/cli/run/hostexports_test.go",
@@ -5755,7 +5766,6 @@
 "internal/cli/run/hostpathenv_test.go",
 "internal/cli/run/hostperfscope_test.go",
 "internal/cli/run/hostports_test.go",
-"internal/cli/run/hostscopedendpoints_test.go",
 "internal/cli/run/hostservicelifecycle_test.go",
 "internal/cli/run/hostservices_test.go",
 "internal/cli/run/hostservicesleak_test.go",
@@ -6514,45 +6524,45 @@
 "TestThePreflightRunsEveryBootGenerator": 31
 },
 "internal/cli/run": {
-"TestADaemonThatCannotAnswerIsSaidSo": 37,
-"TestADaemonsWordsCannotRestyleOrSplitTheLaunchOutput": 37,
+"TestADaemonThatCannotAnswerIsSaidSo": 36,
+"TestADaemonsWordsCannotRestyleOrSplitTheLaunchOutput": 36,
+"TestADetachingSocketDaemonKeepsItsSocketVariable": 36,
 "TestAFailedMiseInstallStillRunsTheBootstrap": 3,
-"TestAHealthyMintPrintsNoLaunchCheckLine": 37,
-"TestAHostWideDaemonOlderThanTheLaunchCheckRefusesTheLaunch": 37,
-"TestAHostWideDaemonThatPredatesThePreambleRefusesTheLaunch": 37,
-"TestAHostWideDaemonThisYoloStartedThatLacksTheCheckWarns": 37,
-"TestALaunchWhoseAgentsDoNotReachTheServiceAsksNothing": 37,
-"TestAPerLaunchDaemonThatDoesNotKnowTheCheckWarnsAndProceeds": 37,
+"TestAFreshLaunchsOwnDaemonThatDoesNotKnowTheCheckNamesNoRestart": 36,
+"TestAHealthyMintPrintsNoLaunchCheckLine": 36,
+"TestALaunchWhoseAgentsDoNotReachTheServiceAsksNothing": 36,
 "TestARefusedFloorSkipsNoUnrelatedStep": 3,
 "TestARefusedStageNeverReachesTheTarget": 3,
-"TestAStaleLaunchCheckStampStillRefuses": 37,
 "TestAWSUnnarrowedRoutineDisclosureDoesNotSuppressOtherPackDisclosures": 42,
-"TestAnAttachAsksTheRunningJailsServiceToo": 37,
-"TestAnAttachKeepsTheLineAndEntersPastADaemonOlderThanTheLaunchCheck": 37,
-"TestAnAttachKeepsTheLineForADaemonOlderThanTheCheck": 37,
-"TestAnAttachProceedsPastADaemonThatAnswers": 37,
-"TestAnAttachSaysADaemonThisYoloStartedLacksTheCheck": 37,
-"TestAnAttachWhoseAgentDoesNotReachTheServiceAsksNothing": 37,
+"TestAnAttachAsksTheRunningJailsServiceToo": 36,
+"TestAnAttachIntoAnOlderYolosJailKeepsTheLineAndNamesTheStop": 36,
+"TestAnAttachIntoThisYolosJailThatLacksTheCheckBlamesTheManifest": 36,
+"TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy": 36,
+"TestAnAttachProceedsPastADaemonThatAnswers": 36,
+"TestAnAttachWhoseAgentDoesNotReachTheServiceAsksNothing": 36,
+"TestAnOlderCopyUnderAnotherHomeDoesNotRefuse": 36,
+"TestAnOlderYolosMachineWideCopyRefusesAFreshLaunch": 36,
 "TestAnOrdinaryBootstrapFailureStillReachesTheTarget": 3,
 "TestConfigRefAgreesWithTheMiseStoreScope": 34,
 "TestConfigRefStatesTheAppleContainerReadOnlyFloor": 34,
-"TestEveryPerLaunchPackRecordIsScoped": 40,
-"TestEveryShippedHostScopedLoopholeGetsItsEndpointVariable": 36,
+"TestEveryPerLaunchPackRecordIsScoped": 39,
+"TestEveryShippedDetachedLoopholeGetsItsEndpointVariable": 40,
 "TestFlakeAndLauncherAgreeOnThePrefixLayout": 4,
-"TestMacosUserDeclParityBriefingRowsHoldForTheComposedBriefing": 38,
-"TestMacosUserDisclosureNamesEveryPackItNowStarts": 37,
+"TestMacosUserDeclParityBriefingRowsHoldForTheComposedBriefing": 37,
+"TestMacosUserDisclosureNamesEveryPackItNowStarts": 36,
 "TestNoOtherHatchAcknowledgesAttachSkew": 35,
 "TestNoShippedDaemonSelfExecRunsTheSuite": 41,
-"TestOpenAIAuthSubsetSpawnDisclosesBeforeItSpawns": 37,
-"TestRealLoopholePackDisclosesItsDaemonBeforeTheSpawn": 37,
-"TestSelectedServiceStartupRefusalReachesLaunchOutput": 37,
-"TestSettingsPerSetupAgreesWithTheMiseStoreScope": 39,
-"TestSpawnBoundaryAnnouncesHostExecution": 37,
-"TestStartLoopholesDisclosesAWideningSetting": 37,
-"TestStartLoopholesRoutesByScope": 37,
-"TestStartLoopholesWritesTheSettingsFile": 37,
+"TestOnPodmanACredentialDaemonRunsAsTheJailsOwn": 36,
+"TestOpenAIAuthSubsetSpawnDisclosesBeforeItSpawns": 36,
+"TestRealLoopholePackDisclosesItsDaemonBeforeTheSpawn": 36,
+"TestSelectedServiceStartupRefusalReachesLaunchOutput": 36,
+"TestSettingsPerSetupAgreesWithTheMiseStoreScope": 38,
+"TestSpawnBoundaryAnnouncesHostExecution": 36,
+"TestStartLoopholesDisclosesAWideningSetting": 36,
+"TestStartLoopholesWritesTheSettingsFile": 36,
 "TestTheContainerScriptHonorsNoColor": 3,
-"TestTheLaunchWarnsForEachWayTheAWSSessionCannotMint": 37
+"TestTheLaunchWarnsForEachWayTheAWSSessionCannotMint": 36,
+"TestWithNoOlderCopyAFreshLaunchIsNotRefused": 36
 },
 "internal/cli/stores": {
 "TestEveryNamedReclaimerExists": 43
@@ -6683,41 +6693,42 @@
 "TestEveryOfficialBinaryIsOnTheReleaseMatrix": 53
 },
 "internal/loopholes": {
+"TestAnOlderJailsShippedCredentialLoopholesStayInTheSet": 56,
 "TestCensusIsSevenSurfaces": 55,
 "TestEveryDiscoverCallSiteIsConverged": 54,
-"TestEveryShippedLoopholeHasARow": 58,
-"TestShippedBrokerNeverMountsItsPrivateKey": 57,
-"TestShippedLoopholePlatformDeclarations": 56,
-"TestShippedManifestsParse": 56,
+"TestEveryShippedLoopholeHasARow": 59,
+"TestShippedBrokerNeverMountsItsPrivateKey": 58,
+"TestShippedLoopholePlatformDeclarations": 57,
+"TestShippedManifestsParse": 57,
 "TestSkippedDirsAreTopLevelOnly": 45
 },
 "internal/macosuser": {
 "TestDeviceIoctlPathsRefusesNonDevicesAndRawDisks": 25,
-"TestEachGuestClientReadsTheEndpointItIsStagedOn": 61,
+"TestEachGuestClientReadsTheEndpointItIsStagedOn": 62,
 "TestEveryGuestBinaryIsAShippedBinary": 4,
 "TestGuestBinariesMatchTheFlakeAndTheBundleScript": 50,
-"TestTheBundleStagesDarwinGuestDirsForBothArchesUnderItsShareDir": 59,
-"TestTheHostShipSetStaysYoloAlone": 60
+"TestTheBundleStagesDarwinGuestDirsForBothArchesUnderItsShareDir": 60,
+"TestTheHostShipSetStaysYoloAlone": 61
 },
 "internal/packdecl": {
-"TestDecodeForUseMatchesDecodeWhenNothingIsSkipped": 65,
-"TestEveryShippedAndExampleInstallHintNamesItsSource": 63,
-"TestEveryShippedAndExamplePackHasNoInstallHintProblem": 63,
-"TestLlamacppDeclaresTheAttributionHeaderAsAProviderOption": 64,
-"TestLlamacppDeclaresTheOptionsAProfileMayTune": 64,
-"TestLlamacppNamesNoCredentialVariable": 64,
-"TestLlamacppShipsOneProviderAndTheProfileOverIt": 64,
-"TestShippedManifestsSurviveTheBriefingDefaultsRefusals": 62
+"TestDecodeForUseMatchesDecodeWhenNothingIsSkipped": 66,
+"TestEveryShippedAndExampleInstallHintNamesItsSource": 64,
+"TestEveryShippedAndExamplePackHasNoInstallHintProblem": 64,
+"TestLlamacppDeclaresTheAttributionHeaderAsAProviderOption": 65,
+"TestLlamacppDeclaresTheOptionsAProfileMayTune": 65,
+"TestLlamacppNamesNoCredentialVariable": 65,
+"TestLlamacppShipsOneProviderAndTheProfileOverIt": 65,
+"TestShippedManifestsSurviveTheBriefingDefaultsRefusals": 63
 },
 "internal/packload": {
-"TestAPackShippedJailBinaryReachesTheContainerArgv": 69,
-"TestEmbedMatchesTree": 66,
-"TestNoFetchedPackHostAccessGateExists": 67,
-"TestTheDisclosureThatReplacedTheGateIsStillWired": 68,
-"TestTheSubsetAcceptsAJailOnlyLoophole": 69
+"TestAPackShippedJailBinaryReachesTheContainerArgv": 70,
+"TestEmbedMatchesTree": 67,
+"TestNoFetchedPackHostAccessGateExists": 68,
+"TestTheDisclosureThatReplacedTheGateIsStillWired": 69,
+"TestTheSubsetAcceptsAJailOnlyLoophole": 70
 },
 "internal/paths": {
-"TestEveryDocCitationFromGoResolves": 70,
+"TestEveryDocCitationFromGoResolves": 71,
 "TestTheGatesPythonBytecodeIsIgnored": 3
 },
 "internal/provision": {
@@ -6728,32 +6739,32 @@
 },
 "internal/prune": {
 "TestOwnerLabelSpellingMatchesTheFlake": 4,
-"TestPrefixBinMountDestMatchesTheLauncher": 71
+"TestPrefixBinMountDestMatchesTheLauncher": 72
 },
 "internal/releasematrix": {
-"TestEmbedChainAgreesWithTheMeasuredTree": 72,
+"TestEmbedChainAgreesWithTheMeasuredTree": 73,
 "TestReleasePlatformsAreTheYoloBuildsOfTheRealConfig": 53
 },
 "internal/render": {
-"TestGuestNotchSentenceHasExactlyOneHome": 73,
-"TestTheEngineHasOneCaller": 74
+"TestGuestNotchSentenceHasExactlyOneHome": 74,
+"TestTheEngineHasOneCaller": 75
 },
 "internal/runtime": {
-"TestEveryRunAndExecIntoAJailTurnsOffTheDetachSequence": 75
+"TestEveryRunAndExecIntoAJailTurnsOffTheDetachSequence": 76
 },
 "internal/setupcensus": {
-"TestEveryCitedFileAndFunctionIsWhereTheReasonSays": 77,
-"TestEveryGuideLabelNamesOneRow": 39,
-"TestEveryGuideRowNamingAKeyOrKindIsClaimed": 39,
-"TestEveryKeyAndKindHasAGuideRow": 39,
-"TestEveryNoticeIsReadByItsPrinter": 76,
-"TestEverySilentOrRefusingGuideAnswerIsACensusCell": 39,
-"TestNoUserGuidePageMakesAClaimTheCensusContradicts": 78,
-"TestTheGuideAgreesWithTheCensus": 39
+"TestEveryCitedFileAndFunctionIsWhereTheReasonSays": 78,
+"TestEveryGuideLabelNamesOneRow": 38,
+"TestEveryGuideRowNamingAKeyOrKindIsClaimed": 38,
+"TestEveryKeyAndKindHasAGuideRow": 38,
+"TestEveryNoticeIsReadByItsPrinter": 77,
+"TestEverySilentOrRefusingGuideAnswerIsACensusCell": 38,
+"TestNoUserGuidePageMakesAClaimTheCensusContradicts": 79,
+"TestTheGuideAgreesWithTheCensus": 38
 },
 "internal/tty": {
-"TestEveryColorEmitterIsInventoried": 79,
-"TestNoPrivateTerminalProbe": 79
+"TestEveryColorEmitterIsInventoried": 80,
+"TestNoPrivateTerminalProbe": 80
 },
 "internal/version": {
 "TestBuildVersionPrecedence": 3,
@@ -6761,72 +6772,72 @@
 "TestImageSourcePathsMatchTheFlake": 4
 },
 "internal/wirebridged": {
-"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 80
+"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 81
 },
 "packs": {
 "TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram": 28,
-"TestShippedPacksDecodeUnderTheLastRelease": 81
+"TestShippedPacksDecodeUnderTheLastRelease": 82
 },
 "tools/build-wheels": {
-"TestPublishRequiresTrustedPublishing": 82,
-"TestTheRealReadmeKeepsNoRelativeLink": 83
+"TestPublishRequiresTrustedPublishing": 83,
+"TestTheRealReadmeKeepsNoRelativeLink": 84
 },
 "tools/completion-experiment": {
-"TestGoEmitterCompiledPrefixDispatchRunsActualMain": 84
+"TestGoEmitterCompiledPrefixDispatchRunsActualMain": 85
 },
 "tools/pack-binaries": {
-"TestGoreleaserStagesThePackBinariesAndPublishesThem": 86,
+"TestGoreleaserStagesThePackBinariesAndPublishesThem": 87,
 "TestJustCheckCIChecksThePinsAgainstTheTree": 26,
 "TestJustInstallKeepsTheTreeForAnUpdate": 26,
 "TestJustInstallSeedsTheTreesProgramsBeforeItInstalls": 26,
 "TestJustPinPackBinariesRunsThePinVerb": 26,
 "TestJustReleaseChecksThePinsBeforeItDispatchesTheFrozenRequest": 26,
-"TestPublishUsesTheSharedExactCommitPreflightBeforeAnythingIsPublished": 82,
-"TestReleasePreflightsBeforeGoReleaserAndHomebrew": 87,
-"TestTheIntegrationHarnessSeedsItsRunsCache": 85,
-"TestTheToolReadsTheManifestsTheEmbedCarries": 88,
+"TestPublishUsesTheSharedExactCommitPreflightBeforeAnythingIsPublished": 83,
+"TestReleasePreflightsBeforeGoReleaserAndHomebrew": 88,
+"TestTheIntegrationHarnessSeedsItsRunsCache": 86,
+"TestTheToolReadsTheManifestsTheEmbedCarries": 89,
 "TestToolchainIsAtOrAboveGoMod": 28
 },
 "tools/release-wiring": {
-"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 94,
-"TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialState": 89,
-"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 82,
+"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 95,
+"TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialState": 90,
+"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 83,
 "TestConcurrentActualRequestCallersHaveOneCreateOnlyTagWinner": 3,
-"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 82,
-"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 92,
-"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 91,
-"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 92,
+"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 83,
+"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 93,
+"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 92,
+"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 93,
 "TestHomebrewReleasePresenceGateRefusesDraftOrUnknown": 3,
 "TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalPinCheck": 3,
-"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 82,
-"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 82,
-"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 82,
-"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 92,
-"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 90,
-"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 95,
-"TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests": 89,
-"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 93,
-"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 90,
+"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 83,
+"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 83,
+"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 83,
+"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 93,
+"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 91,
+"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 96,
+"TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests": 90,
+"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 94,
+"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 91,
 "TestRequestCallerRejectsWrongRefAndRerunBeforeAnyWrite": 3,
 "TestRequestHostRecipeDoesNotTagLocally": 26,
-"TestRequestJobTimeoutExceedsItsWaits": 93,
+"TestRequestJobTimeoutExceedsItsWaits": 94,
 "TestRequestMainCallerWaitsForExactOriginalReleaseSuccessBeforePublishDispatch": 3,
 "TestRequestResumesATagOnlyReleaseWithoutTouchingTheTag": 3,
 "TestRequestTapDispatchFailureLeavesTheRequestGreen": 3,
-"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 90,
+"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 91,
 "TestStandaloneCLIHasNoFixtureTrustHook": 3,
-"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 93,
+"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 94,
 "TestTrustedHelperCLIUsesOnlyExplicitFixtureRoots": 3,
-"TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract": 89,
-"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 90
+"TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract": 90,
+"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 91
 },
 "tools/tap-install-check": {
-"TestReleasePushesTheFormulaTheDocsInstall": 100,
-"TestReleaseRunNameTransportReachesTheProductionTapCaller": 92,
-"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 96,
-"TestTheWorkflowCarriesNoSecrets": 99,
-"TestTheWorkflowInstallsWhatTheDocsSay": 97,
-"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 98
+"TestReleasePushesTheFormulaTheDocsInstall": 101,
+"TestReleaseRunNameTransportReachesTheProductionTapCaller": 93,
+"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 97,
+"TestTheWorkflowCarriesNoSecrets": 100,
+"TestTheWorkflowInstallsWhatTheDocsSay": 98,
+"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 99
 }
 }
 }

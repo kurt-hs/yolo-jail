@@ -323,8 +323,9 @@ func signOutViewsLocked() int {
 }
 
 // refusedEnrollments remembers the refresh tokens (their digests) an enrollment could not
-// redeem, so one bad view costs one upstream request rather than one a minute.
-var refusedEnrollments = &replacedTokens{}
+// redeem, so one bad view costs one upstream request rather than one a minute — machine-wide,
+// since any jail's broker may maintain any view (the memory is shared, replacedTokens).
+var refusedEnrollments = newReplacedTokens(refusedEnrollmentsFile)
 
 // viewSource is what views are written from: the canonical login, or when it holds none, the
 // relay source (CL-D6). nil when there is neither.
@@ -413,7 +414,7 @@ func nonEmpty(m *jsonx.OrderedMap, key string) bool {
 // The token is REDEEMED ONCE, here, so the copy the jail's Claude still holds in memory is
 // spent and can race nothing; the result becomes the next canonical generation, and every view
 // is rewritten from it, this one included, without a refresh token. A token that is already
-// the machine's, or that this broker replaced or refused, is only stripped. The inference-scope
+// the machine's, or that a broker replaced or refused, is only stripped. The inference-scope
 // gate is the proxy mirror's (maybePropagateTokenResponse); its client-id gate has no input in
 // a view, and the redemption is the check in its place, since it is made with Claude Code's
 // client id and fails for a token issued to any other.
@@ -572,8 +573,8 @@ type RegisterResult struct {
 
 // RegisterView records that a launch selected the credential view for loc, and writes loc's
 // view from the machine's login now, so the jail starts with one (CL-D3). It needs the store
-// configured (ConfigureStore) and the broker's state directory to exist, which the launch's
-// ensure of the singleton provides; it creates neither.
+// configured (ConfigureStore) and the broker's state directory to exist, which the start of the
+// launch's own broker provides; it creates neither.
 func RegisterView(loc claudeview.Location, runtime, container string) (RegisterResult, error) {
 	var res RegisterResult
 	if ViewRegistryDir == "" || CanonicalPath == "" {

@@ -16,6 +16,11 @@ type managedOpenAIHostLaunch interface {
 	// from a server of its own, "" for any other: a managed Codex launch that did not start for
 	// want of a login names the refresh URL (openaiauthhost's notStarted). managedHostVars reads it.
 	NotServed(string) string
+	// HostSocket is the private socket of the launch's own OpenAI credential daemon, "" for none:
+	// what the launch-owned services beside it reach the credential service by (serviceInput).
+	HostSocket() string
+	// Close ends that daemon without waiting, a refresh in flight left to finish (HD-R1).
+	Close()
 }
 
 // hostPrelaunch is the declarative OpenAI prelaunch a host launch carries.

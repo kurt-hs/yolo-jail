@@ -1,14 +1,9 @@
 package broker
 
 import (
-	"bytes"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -18,7 +13,7 @@ import (
 // fakeDeps returns a Deps wired to a temp dir with controllable probes. The
 // filesystem paths are real temp files (so BrokerReadPID / os.WriteFile /
 // removeIgnoreMissing exercise the real code), but liveness / ping / kill /
-// pgrep / spawn are fakes.
+// pgrep are fakes.
 type fakeState struct {
 	alive   map[int]bool
 	reachOK bool
@@ -27,12 +22,8 @@ type fakeState struct {
 		pid int
 		sig syscall.Signal
 	}
-	spawnPID    int
-	spawnExited bool
-	spawnErr    error
-	spawnArgv   []string
-	now         time.Time
-	mu          sync.Mutex
+	now time.Time
+	mu  sync.Mutex
 }
 
 func newFakeDeps(t *testing.T, st *fakeState) Deps {
@@ -44,16 +35,10 @@ func newFakeDeps(t *testing.T, st *fakeState) Deps {
 		PIDFilePath: filepath.Join(dir, "broker.pid"),
 		LockPath:    filepath.Join(dir, "broker.lock"),
 		LogPath:     filepath.Join(dir, "broker.log"),
-		// A DISTINCTIVE argv, deliberately not the broker's own. The engine is
-		// general now (SingletonDeps builds one of these from any loophole's
-		// manifest), so what the spawn tests must pin is that it launches WHAT IT
-		// WAS GIVEN. RealDeps' broker-specific argv is pinned separately, at the
-		// call site that produces it.
-		Argv:       []string{"/fixture/daemon", "--socket", filepath.Join(dir, "broker.sock")},
-		Now:        func() time.Time { return st.now },
-		Sleep:      func(d time.Duration) { st.now = st.now.Add(d) },
-		PathExists: func(p string) bool { _, err := os.Lstat(p); return err == nil },
-		Reachable:  func(string, time.Duration) bool { return st.reachOK },
+		Now:         func() time.Time { return st.now },
+		Sleep:       func(d time.Duration) { st.now = st.now.Add(d) },
+		PathExists:  func(p string) bool { _, err := os.Lstat(p); return err == nil },
+		Reachable:   func(string, time.Duration) bool { return st.reachOK },
 		Alive: func(pid int) bool {
 			st.mu.Lock()
 			defer st.mu.Unlock()
@@ -69,17 +54,6 @@ func newFakeDeps(t *testing.T, st *fakeState) Deps {
 			return nil
 		},
 		Pgrep: func() []int { return st.pgrep },
-		Spawn: func(argv []string, _ string) (int, func() bool, error) {
-			st.spawnArgv = argv
-			if st.spawnErr != nil {
-				return 0, nil, st.spawnErr
-			}
-			return st.spawnPID, func() bool { return st.spawnExited }, nil
-		},
-		// Discard by default: several spawn cases below fail on purpose, and
-		// their warning is asserted by the tests that care (which install their
-		// own buffer) rather than dumped into every other test's stderr.
-		Out: io.Discard,
 	}
 }
 
@@ -87,75 +61,6 @@ func writePID(t *testing.T, deps Deps, pid int) {
 	t.Helper()
 	if err := os.WriteFile(deps.PIDFilePath, []byte(strconv.Itoa(pid)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestBrokerSpawnRunsPrepareUnderSingletonLockBeforeAliveReturn(t *testing.T) {
-	st := &fakeState{alive: map[int]bool{42: true}, reachOK: true}
-	deps := newFakeDeps(t, st)
-	writePID(t, deps, 42)
-	if err := os.WriteFile(deps.SocketPath, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	called := false
-	deps.PrepareLocked = func() (func() error, error) {
-		called = true
-		second, err := os.OpenFile(deps.LockPath, os.O_WRONLY, 0o600)
-		if err != nil {
-			return nil, err
-		}
-		defer second.Close()
-		if err := syscall.Flock(int(second.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-			return nil, errors.New("prepare hook ran without the singleton lock held")
-		}
-		return nil, nil
-	}
-
-	BrokerSpawn(deps)
-	if !called {
-		t.Fatal("prepare hook was skipped because the old singleton was already alive")
-	}
-	if len(st.spawnArgv) != 0 {
-		t.Errorf("healthy singleton was respawned: %v", st.spawnArgv)
-	}
-}
-
-func TestBrokerSpawnStopsOldDaemonBeforePreparedMigration(t *testing.T) {
-	st := &fakeState{alive: map[int]bool{42: true}, reachOK: true, spawnPID: 77}
-	deps := newFakeDeps(t, st)
-	writePID(t, deps, 42)
-	if err := os.WriteFile(deps.SocketPath, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	deps.Kill = func(pid int, sig syscall.Signal) error {
-		st.alive[pid] = false
-		return nil
-	}
-	actionRan := false
-	deps.PrepareLocked = func() (func() error, error) {
-		return func() error {
-			actionRan = true
-			if st.alive[42] {
-				return errors.New("migration ran while the old daemon was alive")
-			}
-			second, err := os.OpenFile(deps.LockPath, os.O_WRONLY, 0o600)
-			if err != nil {
-				return err
-			}
-			defer second.Close()
-			if err := syscall.Flock(int(second.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-				return errors.New("migration ran without the singleton lock held")
-			}
-			return nil
-		}, nil
-	}
-
-	BrokerSpawn(deps)
-	if !actionRan {
-		t.Fatal("prepared migration action did not run")
-	}
-	if len(st.spawnArgv) == 0 {
-		t.Fatal("singleton was not respawned after migration")
 	}
 }
 
@@ -343,237 +248,6 @@ func TestBrokerKillPgrepFallback(t *testing.T) {
 	}
 	if len(st.killed) != 2 {
 		t.Errorf("both strays should be signaled, got %v", st.killed)
-	}
-}
-
-func TestBrokerSpawnArgv(t *testing.T) {
-	// The bare "yolo" launcher expands to the `internal daemon` invocation.
-	got := BrokerSpawnArgv([]string{"yolo"}, "/tmp/yolo-claude-oauth-broker.sock")
-	want := []string{"yolo", "internal", "daemon", "claude-oauth-broker", "--socket", "/tmp/yolo-claude-oauth-broker.sock"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("argv = %v, want %v", got, want)
-	}
-	// A resolved absolute launcher (the self-exec'd yolo path) keeps the tail.
-	got2 := BrokerSpawnArgv([]string{"/opt/yolo/bin/yolo"}, "/s.sock")
-	want2 := []string{"/opt/yolo/bin/yolo", "internal", "daemon", "claude-oauth-broker", "--socket", "/s.sock"}
-	if !reflect.DeepEqual(got2, want2) {
-		t.Errorf("argv = %v, want %v", got2, want2)
-	}
-}
-
-func TestBrokerSpawnHappy(t *testing.T) {
-	st := &fakeState{spawnPID: 4321}
-	deps := newFakeDeps(t, st)
-	// The spawned daemon binds its socket "immediately": create it so
-	// brokerWaitForSocketUntil returns on the first poll.
-	touch(t, deps.SocketPath)
-	sock := BrokerSpawn(deps)
-	if sock != deps.SocketPath {
-		t.Errorf("spawn returned %q, want %q", sock, deps.SocketPath)
-	}
-	// The engine spawns THE ARGV IT WAS HANDED, verbatim. That is what makes
-	// `host_daemon.scope: "host"` a declaration rather than a second name for the
-	// broker: the run pipeline builds this argv from the manifest's own
-	// host_daemon.cmd (SingletonDeps), and nothing in here knows which loophole it
-	// belongs to.
-	if !reflect.DeepEqual(st.spawnArgv, deps.Argv) {
-		t.Errorf("spawn argv = %v, want the Deps.Argv %v", st.spawnArgv, deps.Argv)
-	}
-	// PID file written.
-	pid, ok := BrokerReadPID(deps)
-	if !ok || pid != 4321 {
-		t.Errorf("pid file = (%d,%v), want (4321,true)", pid, ok)
-	}
-}
-
-func TestBrokerSpawnSkipsWhenAlreadyAlive(t *testing.T) {
-	// Inside the lock, a live broker means the race loser returns without
-	// spawning.
-	st := &fakeState{alive: map[int]bool{11: true}, reachOK: true}
-	deps := newFakeDeps(t, st)
-	writePID(t, deps, 11)
-	touch(t, deps.SocketPath)
-	_ = BrokerSpawn(deps)
-	if st.spawnArgv != nil {
-		t.Errorf("should not spawn when already alive, got argv %v", st.spawnArgv)
-	}
-}
-
-func TestBrokerSpawnStaleSocketCleared(t *testing.T) {
-	// Not alive (no pid), stale socket present → BrokerSpawn unlinks it before
-	// spawning. The fake Spawn does not re-bind, so after spawn the socket is
-	// gone and the wait times out (D12: PID file left for status).
-	st := &fakeState{spawnPID: 7, spawnExited: false}
-	deps := newFakeDeps(t, st)
-	touch(t, deps.SocketPath)
-	_ = BrokerSpawn(deps)
-	if st.spawnArgv == nil {
-		t.Fatal("should have spawned")
-	}
-	if deps.PathExists(deps.SocketPath) {
-		t.Error("stale socket should have been cleared before spawn")
-	}
-	// PID file is still present (D12 behavior).
-	if _, ok := BrokerReadPID(deps); !ok {
-		t.Error("PID file should be left for `yolo broker status` after a failed bind")
-	}
-}
-
-func TestBrokerSpawnDeadChildFast(t *testing.T) {
-	// A child that exits immediately without binding → brokerWaitForSocketUntil
-	// returns fast (exited() true), no full-deadline burn.
-	st := &fakeState{spawnPID: 8, spawnExited: true}
-	deps := newFakeDeps(t, st)
-	start := deps.Now()
-	_ = BrokerSpawn(deps)
-	// With the fake clock, Sleep advances now; a dead-child fast path means at
-	// most one poll interval elapsed.
-	if deps.Now().Sub(start) > SocketPollInterval {
-		t.Errorf("dead child should short-circuit; elapsed %v", deps.Now().Sub(start))
-	}
-}
-
-// The three tests below pin the ONE property the 2,549-failure incident turned
-// on: brokerWaitForSocketUntil's answer must reach a human at spawn time. Before
-// this, every one of these cases printed nothing at all — the detector was
-// right and silent (docs/reference/claude-oauth-interposition.md#a-failed-spawn-reports-itself).
-
-func TestBrokerSpawnWarnsOnDeadChild(t *testing.T) {
-	// The missing-openssl shape: the daemon exits at startup, so the socket
-	// never appears. The warning must say the child EXITED (which sends the
-	// reader to the log's tail, where the reason is), name the socket the jail
-	// will look for, and name the log.
-	st := &fakeState{spawnPID: 8, spawnExited: true}
-	deps := newFakeDeps(t, st)
-	var buf bytes.Buffer
-	deps.Out = &buf
-	_ = BrokerSpawn(deps)
-
-	out := buf.String()
-	if !strings.Contains(out, "exited at startup") {
-		t.Errorf("dead child must be reported as an exit, got:\n%s", out)
-	}
-	if !strings.Contains(out, deps.SocketPath) {
-		t.Errorf("warning must name the expected socket %q, got:\n%s", deps.SocketPath, out)
-	}
-	if !strings.Contains(out, deps.LogPath) {
-		t.Errorf("warning must name the log %q, got:\n%s", deps.LogPath, out)
-	}
-	// Color is off in fake Deps, so the style markup must be rendered away
-	// rather than printed at the reader.
-	if strings.Contains(out, "[yellow]") || strings.Contains(out, "\x1b[") {
-		t.Errorf("markup leaked with Color off:\n%q", out)
-	}
-}
-
-func TestBrokerSpawnWarnsOnBindTimeout(t *testing.T) {
-	// The other fault class: the child is still alive but never binds. It must
-	// NOT be reported as an exit — a live-but-stuck daemon has a different
-	// cause and often an empty log.
-	st := &fakeState{spawnPID: 9, spawnExited: false}
-	deps := newFakeDeps(t, st)
-	var buf bytes.Buffer
-	deps.Out = &buf
-	_ = BrokerSpawn(deps)
-
-	out := buf.String()
-	if !strings.Contains(out, "did not bind its socket within "+BrokerSpawnTimeout.String()) {
-		t.Errorf("timeout must be reported with the deadline, got:\n%s", out)
-	}
-	if strings.Contains(out, "exited") {
-		t.Errorf("a live child must not be reported as exited, got:\n%s", out)
-	}
-}
-
-func TestBrokerSpawnSilentWhenSocketBinds(t *testing.T) {
-	// A healthy spawn says nothing: a warning on every launch would be noise
-	// that trains the reader to skip the line that matters.
-	st := &fakeState{spawnPID: 4321}
-	deps := newFakeDeps(t, st)
-	var buf bytes.Buffer
-	deps.Out = &buf
-	// The socket has to be created BY the spawn, not before it: BrokerSpawn
-	// unlinks a stale socket on its way past, so a pre-touched file is gone by
-	// the time the wait looks for it.
-	deps.Spawn = func(argv []string, _ string) (int, func() bool, error) {
-		st.spawnArgv = argv
-		touch(t, deps.SocketPath)
-		return st.spawnPID, func() bool { return false }, nil
-	}
-	_ = BrokerSpawn(deps)
-	if buf.Len() != 0 {
-		t.Errorf("successful spawn must be silent, got:\n%s", buf.String())
-	}
-}
-
-// TestRealDepsDeliversTheFailedSpawnWarning closes the hole the three tests above
-// leave open, and it is the hole the whole change is about.
-//
-// Each of them installs its OWN buffer on Deps.Out, so all three stay green for a
-// RealDeps that wires no writer at all — and reportFailedSpawn returns early on a
-// nil Out by design ("a zero-value Deps in a test stays quiet without wiring
-// anything"). The two production entry points, run's brokerEnsure and the CLI's
-// Restart, both take their Deps from RealDeps. So a one-word edit there —
-// `Out: nil`, or an io.Discard someone reached for to quieten a test — restores
-// the exact silence of the 2,549-failure incident while every test that claims to
-// pin the warning keeps passing. Verified: it does.
-//
-// So this asserts the delivery BEHAVIOURALLY rather than comparing the field to
-// os.Stdout. The one thing taken from production is the writer; every effect that
-// would touch the machine (paths, spawn, liveness) comes from the fake, and
-// os.Stdout is redirected to a pipe first so RealDeps resolves its writer to
-// something this test can read back. Comparing the field would pass just as well
-// for an os.Stdout that reportFailedSpawn never reaches.
-//
-// The pipe is also why the warning must be SMALL: a pipe buffer fills at 64 KiB
-// and this is one line, so a plain read after the restore cannot deadlock.
-func TestRealDepsDeliversTheFailedSpawnWarning(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdout
-	os.Stdout = w
-	// RealDeps is called INSIDE the redirection: it captures os.Stdout by value,
-	// so a Deps built before the swap would hold the real terminal and this test
-	// would hang waiting for a line it can never see.
-	realOut := RealDeps().Out
-	if realOut == nil {
-		os.Stdout = orig
-		_ = w.Close()
-		_ = r.Close()
-		t.Fatal("RealDeps().Out is nil, so reportFailedSpawn returns before writing: " +
-			"a broker that dies at startup is silent again on every real launch")
-	}
-
-	st := &fakeState{spawnPID: 8, spawnExited: true}
-	deps := newFakeDeps(t, st)
-	deps.Out = realOut
-	deps.Color = RealDeps().Color
-	_ = BrokerSpawn(deps)
-
-	os.Stdout = orig
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	out := string(got)
-	if !strings.Contains(out, "exited at startup") || !strings.Contains(out, deps.LogPath) {
-		t.Errorf("the failed-spawn warning did not reach the writer RealDeps hands the "+
-			"launcher, so nothing a user can see reports a dead broker singleton:\n%q", out)
-	}
-	// Color is resolved by RealDeps against the real terminal, and a pipe is not
-	// one — so the markup must be rendered away here for the same reason a
-	// redirected launch log stays clean.
-	if strings.Contains(out, "[yellow]") || strings.Contains(out, "\x1b[") {
-		t.Errorf("markup reached a non-terminal writer:\n%q", out)
 	}
 }
 
