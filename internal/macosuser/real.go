@@ -114,12 +114,48 @@ func runCaptureReal(argv []string) (string, int) {
 	return buf.String(), rc
 }
 
+// commandFor is exec.Command(argv…) with the working directory a crossing into the sandbox
+// account can read. sudo keeps the caller's cwd, and the caller's is usually under the invoking
+// user's home or its per-user temp dir, which _yolojail cannot traverse: every shell the guest
+// starts there prints `shell-init: error retrieving current directory: getcwd: cannot access
+// parent directories`, and a relative path resolves nowhere. So a crossing (isRunAsSandboxArgv)
+// starts in `/`; what needs a directory names it (the session's inner `cd <workspace>`,
+// LaunchArgv). Every other command keeps the caller's cwd.
+func commandFor(argv []string) *exec.Cmd {
+	cmd := exec.Command(argv[0], argv[1:]...)
+	if isRunAsSandboxArgv(argv) {
+		cmd.Dir = sandboxCwd
+	}
+	return cmd
+}
+
+// sandboxCwd is where a crossing into the sandbox account starts: a directory every account
+// can search.
+const sandboxCwd = "/"
+
+// isRunAsSandboxArgv reports whether argv is RunAsSandboxArgv's shape: sudo by absolute path
+// whose `--user=` is the sandbox account.
+func isRunAsSandboxArgv(argv []string) bool {
+	if len(argv) == 0 || argv[0] != sudoBin {
+		return false
+	}
+	for _, a := range argv[1:] {
+		if a == envBin {
+			return false
+		}
+		if a == "--user="+SandboxUser {
+			return true
+		}
+	}
+	return false
+}
+
 // runOutputsTo is runStdoutTo with stderr on errw too.
 func runOutputsTo(w, errw io.Writer, argv []string) int {
 	if len(argv) == 0 {
 		return 1
 	}
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := commandFor(argv)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w, errw
 	done, err := startForegroundProcess(func() (*os.Process, error) {
 		if err := cmd.Start(); err != nil {
@@ -382,7 +418,7 @@ func startBackgroundReal(argv []string) (Background, error) {
 	if len(argv) == 0 {
 		return Background{}, errors.New("empty argv")
 	}
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := commandFor(argv)
 	captured := &cappedBuffer{max: backgroundOutputCap}
 	// ONE writer for both, so exec.Cmd makes one pipe and the two streams keep their order.
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, captured, captured
@@ -564,8 +600,7 @@ func lsShowsACL(out string) bool {
 // runAsGrantReal is readiness probe G2: RunAsGrantProbeArgv with no stdin, so it can never wait on
 // a password, bounded at 10 s. Anything but exit 0 is no.
 func runAsGrantReal() bool {
-	argv := RunAsGrantProbeArgv()
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := commandFor(RunAsGrantProbeArgv())
 	cmd.Stdin = nil
 	return runWithTimeout(cmd, 10*time.Second) == 0
 }
