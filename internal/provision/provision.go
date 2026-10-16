@@ -5,7 +5,7 @@
 // package floor exists and before the agent starts: the store prune, `mise install`, and
 // the generated bootstrap script that npm-installs MCP tools and installs — or refuses the
 // launch over — a Node floor a selected pack declares (RefusedStatus). The word is
-// docs/design/macos-user-provisioning.md's; it is not a config key and it names nothing a
+// docs/reference/macos-user-provisioning.md's; it is not a config key and it names nothing a
 // user types.
 //
 // WHY IT IS A PACKAGE OF ITS OWN. Two backends run the stage and they cannot see each

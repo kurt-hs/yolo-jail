@@ -55,7 +55,7 @@ func TestMacosUserPinnedNpmProgramInstallsUnderItsNodeFloor(t *testing.T) {
 	ws := macosUserWorkspace(t, `{}`)
 
 	// The interpreter is read off the launcher's own exec line, the one the generator spliced
-	// it into (agent-program-runtimes.md, "The launcher"), and then run: a path is a claim and
+	// it into (docs/reference/agent-program-runtimes.md, "The launcher"), and then run: a path is a claim and
 	// its --version is the answer.
 	launcher := `"$HOME/.yolo/bin/launch/` + pinnedNpmBin + `"`
 	r := macosUserRunProbe(t, "npm", ws, strings.Join([]string{

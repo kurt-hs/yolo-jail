@@ -34,7 +34,7 @@ is kept as the argument that produced that shape, not as a description of it.
 proposal — this doc is the higher-level frame around it),
 [`../reference/composed-file-permissions.md`](../reference/composed-file-permissions.md) (the
 prism's posture rules),
-[agent-settings-composition.md](../plans/agent-settings-composition.md) (the engine).
+[`pack-system.md`'s compose engine](../reference/pack-system.md#config-surfaces-and-the-compose-engine) (the engine).
 
 **Two questions this doc raised and does not answer** — *how would pack-shipped logic be
 built and cached?* and *where does the config system end and the jail begin?* — are

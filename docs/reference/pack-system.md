@@ -2166,8 +2166,7 @@ defaults < host < workspace < config-overlay < config-list < capture-overlay < l
   above `host` and below every `config-overlay`, but neither render entry sets it
   (`Target.Compose` and `Target.ComposeStateful` in [`surface.go`](../../internal/render/surface.go)),
   `render.Layers` has no field for it, and no config key feeds it. It was settled on 2026-07-20 as
-  the layer for keys a user declares on an agent's file for one workspace's jail
-  ([`agent-settings-composition.md` §4](../plans/agent-settings-composition.md#4-layers-and-scope)),
+  the layer for keys a user declares on an agent's file for one workspace's jail,
   and nothing else gives a workspace that today. A `host_files` entry may not write a selected
   pack's surface path (`selectedSurfacePaths` in [`hostfiles.go`](../../internal/config/hostfiles.go),
   [`OQ-BH15`](../design/base-home-legacy-state.md#OQ-BH15)), and a `config-overlay` comes only from

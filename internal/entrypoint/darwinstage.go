@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 )
 
-// darwinstage.go is step 8 of docs/design/macos-user-provisioning.md half two: the
+// darwinstage.go is "The stage" of docs/reference/macos-user-provisioning.md: the
 // macos-user bootstrap starts GENERATING the script the provisioning stage runs, so that
 // there is something for the stage to exec.
 //
@@ -14,7 +14,7 @@ import (
 // is the bind's appearance and the sidecar path is where the bytes are. macos-user has no
 // binds and one account home shared by every workspace, so writing it home-rooted here
 // would put one workspace's generated script at a path the next workspace's launch
-// overwrites: the cross-workspace write-write race docs/design/macos-user-home-tiers.md
+// overwrites: the cross-workspace write-write race docs/reference/macos-user-home-tiers.md
 // exists to end, re-introduced by half two rather than inherited from it.
 //
 // Naming the sidecar path directly is therefore not a second dialect — it is the SAME

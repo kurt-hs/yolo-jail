@@ -12,8 +12,8 @@ import (
 // docs/plans/runbooks/macos-user-manual-checks.md §8, written 2026-09-12 and never run.
 //
 // THE RULE, and why it needed a test on hardware. §4 of
-// docs/design/macos-user-provisioning.md says in bold that a failing stage must not abort
-// the launch, and the code INVERTED that rule until 2026-09-12 (§10.7): a workspace that
+// docs/reference/macos-user-provisioning.md says that a failing stage does not abort
+// the launch, and the code INVERTED that rule until 2026-09-12: a workspace that
 // merely DECLARED mise_tools could not launch at all when the stage returned non-zero,
 // and the message blamed the user for it.
 //
@@ -93,7 +93,7 @@ func TestMacosUserAFailingProvisioningStageDoesNotAbortTheLaunch(t *testing.T) {
 	// THE RULE ITSELF (§4). The stage failed; the launch must have continued to the agent.
 	if !strings.Contains(r.stdout, "=== AGENT ===") {
 		t.Errorf("runbook item 8: THE FAILING STAGE KILLED THE LAUNCH — the agent never "+
-			"printed its marker. §4 of docs/design/macos-user-provisioning.md says in bold "+
+			"printed its marker. docs/reference/macos-user-provisioning.md says "+
 			"that a failing stage must not abort the launch: a workspace whose declared "+
 			"tools cannot install is still a workspace the user asked to open, and the "+
 			"record in %s is the whole remedy. This is the exact inversion §10.7 "+

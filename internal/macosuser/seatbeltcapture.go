@@ -11,8 +11,8 @@ package macosuser
 // /Users/_yolojail (SandboxHome), and it stays that way deliberately — the home-tier layout
 // symlinks the per-workspace directories out of it into <workspace>/.yolo/home rather than
 // moving HOME, so a capture still faces one shared account home holding the machine tier
-// (docs/design/macos-user-home-tiers.md, alternative A′; a per-workspace HOME is alternative
-// A and is the recorded runner-up).
+// (docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror"; a per-workspace
+// HOME was the recorded runner-up).
 //
 // ⚠ The earlier claim here, that the single home IS this backend's shared-credentials
 // mechanism, is RETRACTED (§3). The mechanism is the `shared_credentials` hook, which runs

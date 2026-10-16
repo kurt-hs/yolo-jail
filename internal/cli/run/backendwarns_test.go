@@ -164,7 +164,7 @@ func TestConfigDeclaredLoopholesAreReportedInert(t *testing.T) {
 // mise_tools and lsp_servers BOTH warned that they install nothing on macos-user, and
 // both gaps are CLOSED as of 2026-09-12: the floor puts mise and node on the sandbox
 // PATH, and the confined provisioning stage runs `mise install` and the generated
-// bootstrap script before the agent starts (docs/design/macos-user-provisioning.md).
+// bootstrap script before the agent starts (docs/reference/macos-user-provisioning.md).
 //
 // So the requirement inverted, and this test inverted with it — the same move
 // TestMacosUserNoLongerClaimsMachineWideWorkspaceState made, for the same reason: a

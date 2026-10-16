@@ -375,7 +375,7 @@ func TestDiffRefusesOnAnUnreadableStore(t *testing.T) {
 //
 // `workspaceRoot` and `sealedWorkspaceStore` are the declared exemptions and they name their
 // reason: `yolo apply --sealed` reads the bare cwd, and whether it should take the resolved
-// target is Blocker 3 of docs/design/config-target-resolution-plan.md, unruled.
+// target is gap 3 of docs/reference/config-target-resolution.md ("Where this does not reach"), unruled.
 func TestTheRetiredPredicatesHaveNoOtherCallers(t *testing.T) {
 	retired := map[string]bool{
 		"surfacesAreLocal":    true,

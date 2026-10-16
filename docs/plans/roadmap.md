@@ -157,7 +157,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     sharding unparks](integration-parallelism.md) with [the test suite's other levers](test-suite-speed.md), and [name
     the real forked program](../design/forked-programs-as-packs.md), the last input its step 7 needs.
     Beside suite speed, [make completion change-aware and read-only](../design/change-aware-completion.md),
-    with [its sketch](../design/change-aware-completion-plan.md) and [input research](../research/completion-check-inputs.md)
+    with [input research](../research/completion-check-inputs.md)
     — avoid irrelevant repeated gates without changing source landing or CI coverage.
     Keep its [unconnected component experiment](../../tools/completion-experiment/README.md) separate
     from production completion; input closure, baseline publication and command dispatch remain open.

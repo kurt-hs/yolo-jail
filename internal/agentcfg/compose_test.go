@@ -8,8 +8,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
 )
 
-// piSurface is the builtin pi manifest from docs/plans/agent-settings-composition.md
-// §6.5 ①: json codec, a defaults layer, and a jail-enforced managed key.
+// piSurface is a pi manifest in the shape docs/reference/pack-system.md,
+// "Config surfaces and the compose engine", describes: json codec, a defaults layer, and a jail-enforced managed key.
 func piSurface() manifest.Surface {
 	return manifest.Surface{
 		Agent:    "pi",

@@ -15,7 +15,7 @@ import (
 // WHAT IT SETTLES. `OQ-P1`'s FLOOR — the native darwin closure every macos-user launch
 // builds, so the sandbox has mise, node, git, ripgrep and the rest of what the container
 // image bakes (darwinpkg.FloorNames(): that image core, minus what darwin cannot build
-// and minus the GNU userland OQ-P2 rules out; docs/design/macos-user-provisioning.md §9)
+// and minus the GNU userland OQ-P2 rules out; docs/reference/macos-user-provisioning.md, "The floor")
 // — is the single largest unmeasured claim on this backend. Nothing has ever observed it
 // reaching a sandbox's PATH. Its other half is `OQ-P2`'s ruling that the floor carries
 // NO GNU userland, which is a claim about the shipped article and not about the

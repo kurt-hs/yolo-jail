@@ -10,8 +10,7 @@ import (
 )
 
 // Go <-> Lua marshalling for the config value model
-// (docs/plans/agent-settings-composition.md §3.2 "plain Lua over a plain
-// table"). The engine's decoded-config value model is exactly:
+// (plain Lua over a plain table; docs/reference/pack-system.md). The engine's decoded-config value model is exactly:
 //
 //	map[string]any  ·  []any  ·  string  ·  float64  ·  bool  ·  nil
 //

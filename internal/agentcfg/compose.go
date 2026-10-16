@@ -2,7 +2,7 @@ package agentcfg
 
 // compose.go is the exported orchestrator that stitches the pure engine
 // (engine.go) to the codec and manifest subpackages into the runnable
-// pipeline of docs/plans/agent-settings-composition.md §3.1:
+// pipeline of docs/reference/pack-system.md, "Config surfaces and the compose engine":
 //
 //	decode(host) ─┐
 //	defaults ─────┤ deepMerge → merged → enforce(managed) → encode

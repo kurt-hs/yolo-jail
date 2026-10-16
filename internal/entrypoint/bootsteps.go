@@ -201,7 +201,7 @@ func bootSteps() []bootStep {
 		},
 		{
 			// THE HOME LAYOUT, ABOVE EVERY GENERATOR — the workspace tier macos-user otherwise
-			// has no way to express (docs/design/macos-user-home-tiers.md, alternative A′).
+			// has no way to express (docs/reference/macos-user-home-tiers.md, "The layout: what is a symlink, what is a mirror").
 			// Above generate_shims and not merely before the pack hooks, because ~/.yolo/bin is
 			// itself one of the links and GenerateShims writes THROUGH it: a shim generated into
 			// the account home before the link was laid would be a blocker in the wrong tier,
@@ -469,7 +469,7 @@ func bootSteps() []bootStep {
 			notContainer: "skills, briefings and pack files are bind-mounted read-only by the launcher",
 		},
 		{
-			// THE PROVISIONING STAGE'S SCRIPT (step 8 of macos-user-provisioning.md half two).
+			// THE PROVISIONING STAGE'S SCRIPT ("The stage" of macos-user-provisioning.md).
 			// Written LAST among the generators that produce content, because it is the only one
 			// nothing here consumes: the stage is a separate, Seatbelt-confined process the
 			// launcher runs after this bootstrap returns (macosuser.ProvisionArgv). Its

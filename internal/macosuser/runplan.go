@@ -641,7 +641,7 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	stagedYolo := StagedYoloPath("")
 	offendingHome, offendingSet := HomeContaining(workspace)
 
-	// THE PROVISIONING STAGE (docs/design/macos-user-provisioning.md half two), composed
+	// THE PROVISIONING STAGE (docs/reference/macos-user-provisioning.md, "The stage"), composed
 	// here so the dry-run plan shows it and PlanInvariants can check it — the two things
 	// a step assembled inside the orchestrator would be invisible to.
 	//
@@ -1390,7 +1390,7 @@ func PlanInvariants(plan RunPlan) []string {
 	// THE WORKSPACE TIER crosses as exactly one env var, and nothing downstream reports its
 	// absence: a bootstrap that is not told the sidecar lays no layout, every pack `state`
 	// dir stays in the shared account home, and the launch looks perfectly healthy — which
-	// is the defect docs/design/macos-user-home-tiers.md exists to end, reachable again by
+	// is the defect docs/reference/macos-user-home-tiers.md exists to end, reachable again by
 	// deleting one line in BuildRunPlan. Checked against the workspace's own sidecar path
 	// rather than "some value", because a layout pointed at another workspace's sidecar is
 	// the collapse with extra steps.
@@ -1462,7 +1462,7 @@ func PlanInvariants(plan RunPlan) []string {
 				"is given: it concatenates and backslash-escapes it, dropping newlines and "+
 				"letting an intermediate login shell expand every `$var` against an empty "+
 				"environment. A forwarded command would be silently rewritten and would "+
-				"still exit 0 — see docs/design/macos-user-provisioning.md §1.1")
+				"still exit 0 — see docs/reference/macos-user-provisioning.md, \"No sudo --login, anywhere in this backend\"")
 	}
 
 	// THE AGENT'S OWN ARGV MUST BE CONFINED, UNDER THIS SESSION'S PROFILE — the check
@@ -1572,7 +1572,7 @@ func PlanInvariants(plan RunPlan) []string {
 					"the command it is given: it concatenates and backslash-escapes it, and "+
 					"leaves `$` for the login shell to expand. The stage script would be "+
 					"mangled and would exit 0 having provisioned nothing — see "+
-					"docs/design/macos-user-provisioning.md §1.1")
+					"docs/reference/macos-user-provisioning.md, \"No sudo --login, anywhere in this backend\"")
 		}
 		// CONFINED, under THIS session's profile. The stage runs vendor code (npm
 		// postinstall hooks, mise plugins), which the container runs inside its jail; the
@@ -1627,7 +1627,7 @@ func PlanInvariants(plan RunPlan) []string {
 		problems = append(problems,
 			"the native package closure was materialized but contributed no bin dir "+
 				"to PATH; the floor (mise, node, git, ripgrep, …) would be absent "+
-				"from the sandbox — see docs/design/macos-user-provisioning.md")
+				"from the sandbox — see docs/reference/macos-user-provisioning.md")
 	}
 
 	// NO COMPOSED VALUE ON A COMMAND LINE, AND THE FILE ACTUALLY READ. The two halves of
