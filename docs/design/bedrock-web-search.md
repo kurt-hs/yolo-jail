@@ -689,12 +689,12 @@ unchanged. Its *"queries stay in AWS"* holds only if those per-agent tools are a
 
     **Answer:**
     > **Answered 2026-09-29 by rulings ([DIR-BR4](#DIR-BR4),
-    > [OQ-MP3](mcp-presets-removal.md#OQ-MP3), [OQ-MP6](mcp-presets-removal.md#OQ-MP6),
+    > [OQ-MP3](mcp-presets-removal.md#decision-ledger), [OQ-MP6](mcp-presets-removal.md#decision-ledger),
     > [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2),
     > [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8)):** A. [DIR-BR4](#DIR-BR4) puts search
     > on by default on every Bedrock profile, which rules out C, a recipe.
-    > [OQ-MP3](mcp-presets-removal.md#OQ-MP3) fixes the vehicle, a pack's `mcp` entry, and
-    > [OQ-MP6](mcp-presets-removal.md#OQ-MP6) retires the core preset list, which rules out B.
+    > [OQ-MP3](mcp-presets-removal.md#decision-ledger) fixes the vehicle, a pack's `mcp` entry, and
+    > [OQ-MP6](mcp-presets-removal.md#decision-ledger) retires the core preset list, which rules out B.
     > [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) spells the gate: a provider declares what
     > service it is in a `platform` field, and the entry is delivered to a render target whose
     > selected provider declares `"platform": "aws-bedrock"`.
@@ -736,7 +736,7 @@ unchanged. Its *"queries stay in AWS"* holds only if those per-agent tools are a
 | :--- | :--- | :--- | :--- | :--- |
 | DIR-BR4 | **Every Bedrock profile, in every agent and for every model, gets web search as an MCP tool served by an AgentCore gateway the company creates once.** *"we could also integrate search for agent core and get search for all models?"*, then *"let's skip mantle"*, refined: *"it'll probably just be a mcp preconfig like devtools, and easy to include with bedrock by default just like we can include tavily optionally by capability."* So the tool is an MCP preset the Bedrock pack contributes, on by default on Bedrock profiles and keyed the way Tavily is keyed, reached through an in-jail signing proxy. How it is built is [OQ-BR19](#OQ-BR19)–[OQ-BR23](#OQ-BR23). A direction, so no question id | 2026-09-25 | [§4](#4-the-shape) (was [`bedrock-plumbing.md`](bedrock-plumbing.md) section 6.9) | — |
 | [OQ-BR21](#OQ-BR21) | **Implementation decision, no ruling needed:** A, the signing proxy is a stdio MCP server that is a hidden `yolo` subcommand, signing with `internal/sigv4` (`AgentCoreService`, `AgentCoreGatewayRegion`, `Chain`). No config schema change. B, a wire-bridge loopback route, is the later upgrade path; C is refused because it would run third-party code holding the jail's AWS credentials. The proxy never sends the chain's unsigned bearer | 2026-09-29 | [§14](#14-open-questions) | pending (the signer is built, 2026-09-25, `226d2b3a`; the proxy is not) |
-| [OQ-BR22](#OQ-BR22) | **Answered by rulings** [DIR-BR4](#DIR-BR4), [OQ-MP3](mcp-presets-removal.md#OQ-MP3), [OQ-MP6](mcp-presets-removal.md#OQ-MP6), [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) and [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8): A, the Bedrock pack ships `agentcore-web-search` as an `mcp` entry delivered to a render target whose selected provider declares `"platform": "aws-bedrock"`. Gated on the platform alone, so `-p bedrock-bridge` gets it too | 2026-09-29 | [§14](#14-open-questions) | pending (waits on the `platform` field and the `mcp` kind) |
+| [OQ-BR22](#OQ-BR22) | **Answered by rulings** [DIR-BR4](#DIR-BR4), [OQ-MP3](mcp-presets-removal.md#decision-ledger), [OQ-MP6](mcp-presets-removal.md#decision-ledger), [OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2) and [OQ-BR8](providers-and-profiles-redesign.md#OQ-BR8): A, the Bedrock pack ships `agentcore-web-search` as an `mcp` entry delivered to a render target whose selected provider declares `"platform": "aws-bedrock"`. Gated on the platform alone, so `-p bedrock-bridge` gets it too | 2026-09-29 | [§14](#14-open-questions) | pending (waits on the `platform` field and the `mcp` kind) |
 
 ---
 

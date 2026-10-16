@@ -245,7 +245,7 @@ The init-time constraint this section used to call the sharpest one is gone with
 registered from an `init()`, and a lazier or more fallible pack set would have made it reserve
 nothing, silently. It is now a function of the packs it is handed, and it reads no pack itself.
 `builtinSurfacePaths` was already lazy (a `sync.Once` behind a function) and still reads every
-shipped pack, a list [`OQ-BH15`](base-home-legacy-state.md#OQ-BH15) leaves open.
+shipped pack, a list [`OQ-BH15`](base-home-legacy-state.md#decision-ledger) leaves open.
 
 **(2) In-jail rendering — `internal/entrypoint`, 1,027 non-test lines of `prism*.go` +
 `pack*.go`.** `LoadJailPacks` → `ConfigurePackSurfaces` → `renderDeclaredSurface`

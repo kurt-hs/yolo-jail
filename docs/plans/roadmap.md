@@ -327,7 +327,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 
 | Item | Class | Disposition |
 |---|---|---|
-| IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#OQ-SK1) disposition, not a defect. |
+| IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../design/attach-skew-and-contract-guardrails.md#decision-ledger) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness

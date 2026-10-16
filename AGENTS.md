@@ -79,7 +79,7 @@ run too) with **no switch on any tool name**. Three things to know before debugg
   `config.WritableHomeDirs` and `HostFileEntry.StagingFor`, and validation resolves the same selection
   itself (`resolveSelectedPacks`, [`selectedpacks.go`](internal/config/selectedpacks.go)). **Do not read
   `packload.Embedded*` to reserve a name.** `host_files`' surface-path reservation follows the same
-  selection (`selectedSurfacePaths`, [`OQ-BH15`](docs/design/base-home-legacy-state.md#OQ-BH15)). One
+  selection (`selectedSurfacePaths`, [`OQ-BH15`](docs/design/base-home-legacy-state.md#decision-ledger)). One
   shipped-set reader remains: `storage.EnsureGlobalStorage` makes every shipped pack's shared dir in the
   machine store, because it runs before config loads; that is a bind source a jail mounts only when it
   selects the pack (the launch makes the selected packs' own, a configured pack's included:
