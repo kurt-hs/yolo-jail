@@ -40,9 +40,9 @@ package agentcfg
 //     comment made the second claim until it was measured on 2026-09-12. It holds on the
 //     ADOPTION branch, where dropNullLeaves strips the residue's nulls before promote can
 //     see them. On the STEADY-STATE branch the overlay DOES carry `k: null`, because
-//     mergeDiff cannot tell a key added-as-null from a deleted one. Promote and diff tell
-//     them apart by the last render, which holds the reinstated null and never a deleted
-//     key, and drop the tombstone as redundant
+//     mergeDiff cannot tell a key added-as-null from a deleted one. The capture now drops
+//     every such tombstone the current file contradicts (dropHeldNullTombstones, below), so
+//     neither promote nor diff ever reads one
 //     (docs/reference/config-ownership.md#CO-D20).
 
 // literalNullSkeleton returns the marked-keypath skeleton of a DECODED surface
@@ -68,6 +68,55 @@ func literalNullSkeleton(m map[string]any) map[string]any {
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// dropHeldNullTombstones removes from a steady-state capture overlay every null
+// tombstone at a keypath the CURRENT file holds as a literal null (skeleton, from
+// literalNullSkeleton), and every object the removal leaves empty. It returns a new
+// map and never mutates overlay.
+//
+// WHY THE CURRENT FILE (docs/reference/config-ownership.md#CO-D20). mergeDiff spells a
+// key the file gained as `"k": null` and a key the user deleted with one token, so the
+// overlay alone cannot tell them apart. The file can: a decoded file holds no tombstones,
+// so a null in it is a value the user wrote, which reinstateLiteralNulls carries at the
+// overlay's own precedence. A tombstone there therefore says nothing the render needs,
+// and left in place it is read as a captured DELETION by `config diff` and by `config
+// promote`, which would write it into a pack where it deletes the key at every notch.
+// last_render is not the authority: the teardown capture and `yolo config capture`
+// rewrite only the overlay, so it can lag the file by a session.
+//
+// A real deletion is untouched: its key is absent from the file, so the skeleton never
+// marks it. An object the user wrote empty is untouched too, because only an object this
+// removal emptied is dropped.
+func dropHeldNullTombstones(overlay, skeleton map[string]any) map[string]any {
+	if len(skeleton) == 0 || len(overlay) == 0 {
+		return overlay
+	}
+	out := make(map[string]any, len(overlay))
+	for k, v := range overlay {
+		mark, marked := skeleton[k]
+		if !marked {
+			out[k] = v
+			continue
+		}
+		if mark == nil {
+			if v == nil {
+				continue
+			}
+			out[k] = v
+			continue
+		}
+		sub, isMap := v.(map[string]any)
+		markMap, _ := mark.(map[string]any)
+		if !isMap || len(sub) == 0 {
+			out[k] = v
+			continue
+		}
+		if narrowed := dropHeldNullTombstones(sub, markMap); len(narrowed) > 0 {
+			out[k] = narrowed
+		}
 	}
 	return out
 }

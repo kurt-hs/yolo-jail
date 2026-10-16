@@ -669,10 +669,11 @@ contract.
 
 <a id="residue"></a>
 
-- **A stale null tombstone stays in the overlay sidecar.** When a file gains `"k": null` in
-  steady state, the overlay records `{"k": null}`, the same token as a deletion. The render keeps
-  the key, and `config diff` and `promote` read it as redundant rather than deleted
-  ([`CO-D20`](#CO-D20)), so nothing acts on the tombstone; the sidecar itself is not swept.
+- **A null tombstone an older yolo wrote lasts until the next capture.** Every capture — the
+  boot render, `yolo config capture` and the teardown fold — now drops a tombstone at a keypath
+  the file holds as `null` ([`CO-D20`](#CO-D20)). A sidecar an older yolo polluted is healed by
+  the first of those, and `config diff` and `promote` run before it still misread the
+  tombstone as a deletion.
 - **A lost overlay sidecar is a silent, unnetted loss.** On an adopted home, deleting only
   `<agent>-<name>.overlay.json` and keeping `last_render` leaves the next render in steady
   state: the overlay reads as empty and the render collapses to the pure layers. No archive
@@ -794,7 +795,7 @@ question.
 | <a id="CO-D15"></a>[`CO-D15`](#CO-D15) | **`own`'s stateful writer keeps the computed-leaf record**, except for a value the file held before that no record claimed | Otherwise a value `own` wrote reads as the user's and `--revert` cannot withdraw it |
 | <a id="CO-D16"></a>[`CO-D16`](#CO-D16) | **The Bedrock-switch line names a fix that runs here**: remove the key by hand, or `--revert`, when no host apply renders | Telling a `none` user to apply names a command that refuses; "set `own` and apply" adopts the switch as the user's key ([`providers.md`](providers.md)) |
 | <a id="CO-D18"></a>[`CO-D18`](#CO-D18) | **Remedies say set `"own"`, then promote** | Under `none` there is no host capture store, so promote has nothing until `own`'s adoption captures the keys |
-| <a id="CO-D20"></a>[`CO-D20`](#CO-D20) | **`config diff` and `promote` drop every captured null leaf whose keypath the last render holds as `null`**, in the one reader they share (`overlayKeyStates`); the sidecar is not swept and the render path is unchanged. An implementation decision, reversible | A genuine deletion leaves its key absent from the render, while a null the user added is reinstated there, so the last render separates the two where the overlay cannot. Fixing the reader also heals a sidecar an older yolo polluted, and leaves the durable state alone |
+| <a id="CO-D20"></a>[`CO-D20`](#CO-D20) | **The steady-state capture drops every null tombstone at a keypath the current surface file holds as `null`**, and any object that leaves empty, on the accumulated overlay (`dropHeldNullTombstones` in `ComposeStateful`). `config diff` and `promote` read the sidecar unchanged. An implementation decision, reversible | A decoded file holds no tombstones, so a null in it is one the user wrote, which the render already carries through the literal-null channel; a real deletion is absent from the file and keeps its tombstone. `last_render` cannot decide it, because the teardown capture and `yolo config capture` rewrite only the overlay and it lags by a session. The one engine call covers the boot, `config capture` and the teardown alike, and running on the accumulated overlay heals a sidecar an older yolo polluted |
 | <a id="co-d-folded"></a>CO-D1, CO-D2, CO-D4–CO-D6, CO-D8–CO-D11, CO-D17, CO-D19 | <a id="CO-D1"></a><a id="CO-D2"></a><a id="CO-D4"></a><a id="CO-D5"></a><a id="CO-D6"></a><a id="CO-D8"></a><a id="CO-D9"></a><a id="CO-D10"></a><a id="CO-D11"></a><a id="CO-D17"></a><a id="CO-D19"></a>Implementation decisions building [`OQ-CO14`](#oq-co14), folded into the body: the one retirement message (D1), the unset default (D2), the rewritten remedies (D4), the census losing `HostAssertModes` and its coercion (D5), `--to host` dissolved (D6), `yolo pack update`'s host half under `own` only (D8), a home `assert` wrote into rebuilt in tests by the arm it ran rather than a frozen golden (D9), `yolo check`'s FAIL row for the retired value (D10), the selection record's writer making its directory (D11), the refused `--format json` document (D17), and four vacuous tests restored (D19) | Each is reversible; the body states the behavior it produced |
 | <a id="unset-not-undeclared"></a>— | **The absent key is the *unset* state, never "undeclared"** | *Undeclared* is the input-closure tier's word, with the opposite remedy |
 
