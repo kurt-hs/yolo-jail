@@ -452,7 +452,7 @@ func refuseSecondUser(out printer, name string) {
 // once `sudo -n` shows sudo did run (the credentials just given are cached).
 func refuseAnotherUsersRule(deps Deps, out printer, user string) int {
 	ours := user + " ALL=(" + SandboxUser + ") NOPASSWD: " + envBin
-	if deps.Run(rootArgv([]string{grepBin, "-qx", "-e", ours, SudoersFile})) != 1 {
+	if deps.Run(rootArgv([]string{grepBin, "-qxF", "-e", ours, SudoersFile})) != 1 {
 		return 0
 	}
 	if deps.Run([]string{sudoBin, "-n", trueBin}) != 0 {

@@ -98,7 +98,7 @@ func grepRun(rec *[]string, grepRC, rootRC int) func([]string) int {
 		joined := strings.Join(argv, " ")
 		*rec = append(*rec, "run:"+joined)
 		switch {
-		case strings.HasPrefix(joined, "/usr/bin/sudo /usr/bin/grep -qx"):
+		case strings.HasPrefix(joined, "/usr/bin/sudo /usr/bin/grep -qxF"):
 			return grepRC
 		case joined == "/usr/bin/sudo -n /usr/bin/true":
 			return rootRC
@@ -118,7 +118,7 @@ func TestSetupRefusesWhenTheInstalledRuleNamesAnotherUser(t *testing.T) {
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
-	if i := slices.Index(rec, "run:/usr/bin/sudo /usr/bin/grep -qx -e matt ALL=(_yolojail) "+
+	if i := slices.Index(rec, "run:/usr/bin/sudo /usr/bin/grep -qxF -e matt ALL=(_yolojail) "+
 		"NOPASSWD: /usr/bin/env /etc/sudoers.d/yolo-jail"); i < 0 {
 		t.Errorf("the existing rule was not asked about:\n%s", strings.Join(rec, "\n"))
 	}

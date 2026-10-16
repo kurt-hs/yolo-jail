@@ -221,10 +221,10 @@ func TestAMacsFloorNamesWhyTheMacosUserActCannotRun(t *testing.T) {
 			"sandbox-exec (Apple Seatbelt), which confines a capture's installer on a Mac, is not on PATH"},
 		{"no run-as rule", macSetup{account: true},
 			"a capture on a Mac runs as the sandbox account through the one-time setup's sudo rule, which this " +
-				"Mac does not have (sudo cannot run commands as _yolojail without a password) — Run the one-time " +
+				"Mac does not have (sudo cannot run commands as _yolojail without a password) — run the one-time " +
 				"setup as your normal admin user: yolo macos-setup. It installs one rule, /etc/sudoers.d/yolo-jail, " +
 				"which runs commands as _yolojail, never as root. On a managed Mac that refuses it, ask your " +
-				"administrator to allow that rule., and the next `yolo host` launch captures it"},
+				"administrator to allow that rule, and the next `yolo host` launch captures it"},
 		{"set up", macSetup{account: true, privilege: true}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {

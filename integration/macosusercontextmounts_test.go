@@ -57,15 +57,17 @@ func ctxSourceUnder(t *testing.T, parent string, mode os.FileMode) string {
 	return resolved
 }
 
-// runPreflight runs one DAC preflight argv with `sudo -n` (the gate proved it cannot prompt)
-// and reports whether the kernel granted the access.
+// runPreflight runs one DAC preflight argv as the plan built it — through the one run-as rule,
+// already carrying `-n` — and reports whether the kernel granted the access.
 func runPreflight(t *testing.T, argv []string) bool {
 	t.Helper()
-	if len(argv) == 0 || argv[0] != "sudo" {
-		t.Fatalf("a preflight argv that does not start with sudo: %v", argv)
+	if len(argv) == 0 || argv[0] != "/usr/bin/sudo" {
+		t.Fatalf("a preflight argv that does not start with /usr/bin/sudo: %v", argv)
 	}
-	full := append([]string{"sudo", "-n"}, argv[1:]...)
-	return runQuiet(30*time.Second, full...)
+	if p := macosuser.RunAsArgvProblems("preflight", argv); len(p) > 0 {
+		t.Fatalf("a preflight argv off the run-as rule's shape: %v", p)
+	}
+	return runQuiet(30*time.Second, argv...)
 }
 
 // THE DAC PREFLIGHT, asked of the kernel as the sandbox account (§3.5): a source the sandbox
