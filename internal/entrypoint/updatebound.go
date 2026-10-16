@@ -205,13 +205,20 @@ _yolo_registry_reachable() {
     YOLO_BYPASS_SHIMS=1 npm ping --fetch-retries=0 --fetch-timeout="$((PROBE_TIMEOUT * 1000))" </dev/null >/dev/null 2>&1
 }
 
-# _yolo_url_reachable URL probes an installer's host, bounded by PROBE_TIMEOUT: a HEAD with no -f, so
-# ANY HTTP answer (a 405 for HEAD included) is "reachable" and only no answer at all is not. 0 with no
-# URL or no curl: no probe target known.
+# _yolo_url_reachable URL probes an installer's host, bounded by PROBE_TIMEOUT, with one HEAD whose
+# status it reads. The host floor's probe classifies the same way (hostfloor.probeUpstreamHEAD): no
+# answer (curl's 000: a connection error or a timeout) or a server error (5xx) is unreachable, 1; any
+# other HTTP status, a 404 or a 405 for HEAD included, is an upstream that answered, 0. 0 with no URL
+# or no curl: no probe target known.
 _yolo_url_reachable() {
     [ -n "${1:-}" ] || return 0
     command -v curl >/dev/null 2>&1 || return 0
-    YOLO_BYPASS_SHIMS=1 curl -sSI -o /dev/null --max-time "$PROBE_TIMEOUT" "$1" </dev/null >/dev/null 2>&1
+    local code
+    code=$(YOLO_BYPASS_SHIMS=1 curl -sS -o /dev/null -I -w '%{http_code}' --max-time "$PROBE_TIMEOUT" "$1" </dev/null 2>/dev/null) || true
+    case "$code" in
+    "" | 000 | 5??) return 1 ;;
+    esac
+    return 0
 }
 
 # _yolo_failed_act RC WHAT PROBE... classifies an update act that has NO version query and failed
