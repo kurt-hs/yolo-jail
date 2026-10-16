@@ -383,7 +383,7 @@ func (c *captureDeps) deps() Deps {
 			}
 			return 0
 		},
-		InstallRootFile: func(path, _, _ string) bool {
+		WriteHostFile: func(path, _ string, _ os.FileMode) bool {
 			c.files = append(c.files, path)
 			return !c.failFile
 		},

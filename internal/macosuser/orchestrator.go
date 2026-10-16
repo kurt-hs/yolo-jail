@@ -43,7 +43,7 @@ type Deps struct {
 	// SandboxUserExists reports `id <SANDBOX_USER>` returned 0.
 	SandboxUserExists func() bool
 	// SelfExe returns the path to the running yolo binary (os.Executable()),
-	// staged into the root-owned state dir for the sandbox to self-exec as the
+	// staged into the host-owned staging root for the sandbox to self-exec as the
 	// bootstrap (J2 §3).
 	SelfExe func() string
 	// GitConfig reads a host git config value best-effort ("" + false if unset).
@@ -53,7 +53,8 @@ type Deps struct {
 	// HostUser is the invoking (admin) user ("" on failure).
 	HostUser func() string
 	// Run runs argv (inherit stdio) and returns the returncode. Used for the
-	// sudo command lists + the bootstrap launch.
+	// host-run staging and removal commands, and for each crossing into the sandbox account
+	// (RunAsSandboxArgv), the bootstrap's among them.
 	Run func(argv []string) int
 	// RunBash runs `bash -c <script>` and returns the returncode (unshare /
 	// fix-permissions).
@@ -64,8 +65,9 @@ type Deps struct {
 	// MacosUserArm.RunSession), which absorbs SIGINT and SIGQUIT and forwards SIGTERM and SIGHUP
 	// to the command's sudo.
 	RunWithProxy func(argv []string) int
-	// InstallRootFile writes content to a root-owned file (sudo mkdir+tee+chmod).
-	InstallRootFile func(path, content, mode string) bool
+	// WriteHostFile writes content to a new per-launch file as the host user, at mode from its
+	// first instant, never following a link or replacing a file (writeHostFileReal). No sudo.
+	WriteHostFile func(path, content string, mode os.FileMode) bool
 	// MaterializeDarwin realizes `packages:` natively (nix build). ok=false with
 	// a non-empty err aborts the run (DarwinPackagesError). A nil result with
 	// ok=true means "no packages" (materialize not called).
@@ -95,18 +97,17 @@ type Deps struct {
 	// never nil when it admits, or a refusal that names the live workspace and the next step,
 	// ending with step, the container-runtime clause this launch's notch needs (containerStep).
 	//
-	// Asked BEFORE the native nix build, so a refusal costs seconds, and before the first sudo (the
-	// context preflight's), so a refused launch never prompts for a password; released when the
-	// session's teardown has run. A SEAM for LockWorkspace's reason: the implementation lives in
+	// Asked BEFORE the native nix build, so a refusal costs seconds, and before the first crossing
+	// into the sandbox account (the context preflight's); released when the session's teardown
+	// has run. A SEAM for LockWorkspace's reason: the implementation lives in
 	// internal/cli/run (run.HoldAccountHome), which imports this package. nil takes no hold, which
 	// is what the four `yolo macos-*` commands get (RealDeps): none of them lays the links.
 	HoldAccountHome func(workspace, cname, step string) (release func(), refusal string)
 	// Ending reports that a signal has begun ending this launch, with the status it ends with
 	// (128+N): the launch's signal arm's answer (internal/cli/run's macosuserarm.go). RunMacosUser
-	// asks it at each step boundary and returns that status, so every deferred teardown runs, and
-	// its teardown's sudo runs non-interactively once it is true (teardownDeps). nil is a caller
-	// with no arm — the `yolo macos-*` commands and a test — and RunMacosUser then arms its own
-	// nix stop (nixchildren.StopOnSignal) around its host nix builds, as it always did.
+	// asks it at each step boundary and returns that status, so every deferred teardown runs. nil
+	// is a caller with no arm — the `yolo macos-*` commands and a test — and RunMacosUser then
+	// arms its own nix stop (nixchildren.StopOnSignal) around its host nix builds, as it always did.
 	Ending func() (status int, ending bool)
 	// StagingRootFacts observes a staging root without following a link (stagingRootFactsReal):
 	// the launch's half of the staging-root preconditions, which JudgeStagingRoot decides. nil
@@ -209,7 +210,7 @@ type Options struct {
 	// briefings — as a tree already laid out at the home-relative paths it belongs at
 	// (Tree "" when there is nothing to deliver), with the destinations that tree holds.
 	// The container backends mount each staged dir `:ro` at its destination; this one
-	// has no mounts, so the tree is staged root-owned beside the packs and copied over
+	// has no mounts, so the tree is staged read-only beside the packs and copied over
 	// the sandbox home by the bootstrap, and the destinations become Seatbelt write
 	// denies (homereadonly.go). See internal/cli/run/macoshomeoverlay.go for why it
 	// crosses as a TREE rather than as a mapping the bootstrap would have to
@@ -220,7 +221,7 @@ type Options struct {
 	// pipeline put in it: pack `reads-host` grants and the user's source-bearing
 	// `host_files` entries, laid out at the /ctx-relative paths the jail reads. The
 	// container backends carry those bytes on a `:ro` mount; this one has no mounts, so
-	// the tree is staged root-owned beside the packs and named to the bootstrap as
+	// the tree is staged read-only beside the packs and named to the bootstrap as
 	// YOLO_CTX_ROOT (DP-L1, docs/design/declaration-parity.md §6.1).
 	//
 	// A PARAMETER and not something this package composes, for the reason HostContext
@@ -234,7 +235,7 @@ type Options struct {
 	// needs no source tree, only the flake root for darwin packages.
 	RepoRoot string
 	// HostPackRoot is the host-side staged pack tree (the run pipeline's stagePacks
-	// root), copied into the root-owned state dir by the plan's stage commands and
+	// root), copied into the host-owned staging root by the plan's stage commands and
 	// named to the bootstrap as YOLO_PACK_ROOT. Empty means this launch staged no
 	// packs, and the bootstrap is told nothing rather than pointed at an absent dir.
 	HostPackRoot string
@@ -880,9 +881,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// THE ACCOUNT HOME'S HOLD (Deps.HoldAccountHome), before the nix build for the preconditions'
 	// reason: a launch of another workspace while a session runs here would repoint the links that
 	// session's agent reads through, so it is refused now, in seconds, rather than after a
-	// half-hour build. And before the context preflight, the first step that may run sudo: the hold
-	// runs none, so a launch it refuses never prompts for a password. Held until this function
-	// returns — after the session and after every teardown deferred below, which run first.
+	// half-hour build. And before the context preflight, the first step that crosses into the
+	// sandbox account: the hold runs none. Held until this function returns — after the session
+	// and after every teardown deferred below, which run first.
 	steps.begin("account_home")
 	if deps.HoldAccountHome != nil {
 		releaseHome, refusal := deps.HoldAccountHome(opts.Workspace, cnameFor(opts.Workspace),
@@ -899,8 +900,9 @@ func RunMacosUser(deps Deps, opts Options) int {
 	// preconditions above are: it is cheap, it is a fact about this machine, and a refusal after
 	// a half-hour build is the worst place to learn it. The same probes the plan carries
 	// (BuildRunPlan → ContextPreflight over the same links), which PlanInvariants checks. Its
-	// probes run `sudo -u _yolojail`, whose password prompt a Ctrl-C can end: that is the signal's
-	// status, not a refusal.
+	// probes run as _yolojail through the setup's rule, and a Ctrl-C that ends one ends it with the
+	// signal's status, not a refusal.
+
 	steps.begin("context_preflight")
 	if !runContextPreflight(deps, out, opts.HostCtx.Links, containerStep(opts.PackEnv)) {
 		return deps.endingOr(1)
@@ -1143,35 +1145,32 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 	defer release()
 
-	out.print("[dim]Setting up the sandbox (Seatbelt profile + bootstrap) — sudo may " +
-		"prompt for your password once.[/dim]")
+	out.print("[dim]Setting up the sandbox (Seatbelt profile + bootstrap).[/dim]")
 
 	// 1.5 THIS SESSION'S LIVENESS RECORD, THEN THE SWEEP (sessionfiles.go), before the first
-	// root-owned write. The record is held until this function returns and ended LAST, after
+	// per-launch write. The record is held until this function returns and ended LAST, after
 	// every one of this session's files, so a sweeper never finds it free while a file it names
 	// is still in use. Every removal below goes through the teardown, which unlinks the record
 	// only when each one succeeded: one that failed keeps it, free, for the next launch's sweep,
 	// and warns with the command. The sweep removes what sessions that ended without their
 	// teardown left in the state dir, every workspace's that this macOS user launched (the
-	// records are in this user's own state dir), and keeps everything it cannot prove ended. It
-	// runs `sudo rm -f`, so it sits after the notice above.
+	// records are in this user's own state dir), and keeps everything it cannot prove ended. Every
+	// removal runs as the host user, which owns the staging root, so none can prompt.
 	steps.begin("session_sweep")
 	sessionKey := SessionKey(plan.Cname, plan.SessionID)
 	record := openSessionRecordOrWarn(deps, out, sessionKey)
-	teardown := &sessionTeardown{deps: teardownDeps(deps)}
+	teardown := &sessionTeardown{deps: deps}
 	defer teardown.finish(out, record, sessionKey, plan.StagedDir)
 	if deps.SessionRecordDir != nil {
 		sweepGoneSessions(deps, out, deps.SessionRecordDir())
 	}
 
-	// 2. Install the root-owned Seatbelt profile (0444) + stage entrypoint. Its removal is
-	// deferred FIRST, so it runs whether the install succeeded or failed half-way: no launch
+	// 2. Write the Seatbelt profile (0444, the host user's) + stage entrypoint. Its removal is
+	// deferred FIRST, so it runs whether the write succeeded or failed half-way: no launch
 	// used to remove its profile, and every one left a file behind.
 	defer func() { teardown.remove(plan.ProfileRemoveCommands) }()
-	// This step usually holds the launch's first sudo, so its span includes the password prompt
-	// (the context preflight's probes, and a sweep with something to remove, ask first).
 	steps.begin("install_profile")
-	if !deps.InstallRootFile(plan.ProfilePath, plan.Seatbelt, "0444") {
+	if !deps.WriteHostFile(plan.ProfilePath, plan.Seatbelt, 0o444) {
 		if rc, ending := deps.ending(); ending {
 			return rc
 		}
@@ -1193,7 +1192,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 	}
 	steps.begin("stage")
 	// A pack tree becomes ours only at its successful exclusive mkdir. Mark any copy or chmod
-	// writer before dispatch: the returned sudo status does not prove its command stopped. Before
+	// writer before dispatch: the returned status does not prove its command stopped. Before
 	// that first writer, cleanup can remove only this reservation; afterward retain and disclose
 	// because writer completion is unknown. Bootstrap is the first guest consumer, and after its
 	// dispatch yolo also cannot prove readers and restart capability ended.
@@ -1214,7 +1213,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 		if isPackTreeWriterCommand(cmd, plan.PackRoot) {
 			packTreeWriterDispatched = true
 		}
-		if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+		if deps.Run(cmd) != 0 {
 			if rc, ending := deps.ending(); ending {
 				return rc
 			}
@@ -1238,7 +1237,7 @@ func RunMacosUser(deps Deps, opts Options) int {
 		return rc
 	}
 
-	// 2.5 THE SESSION ENV FILE — everything this launch composed, delivered as a root-owned
+	// 2.5 THE SESSION ENV FILE — everything this launch composed, delivered as a host-owned
 	// 0600 file the sandbox account may read, instead of as words on three command lines
 	// (envfile.go). Before the bootstrap, because the bootstrap is the first thing that reads
 	// it: its argv names the file (SandboxEnvFileEnv), and the MCP requires_env gate it renders
@@ -1380,7 +1379,7 @@ func (d Deps) ending() (int, bool) {
 }
 
 // sayFailed prints msg, a step's failure, unless a signal is ending the launch. A step the signal
-// cut short failed because the signal reached its child — a sudo stopped at its password prompt
+// cut short failed because the signal reached its child — a crossing the signal interrupted
 // fails like any refusal — so its message would name a cause that is not the cause; the launch
 // returns the signal's status instead (endingOr).
 func (d Deps) sayFailed(out printer, msg string) {
@@ -1399,7 +1398,7 @@ func (d Deps) endingOr(rc int) int {
 }
 
 // finishPackTree removes only a tree this launch exclusively reserved when no pack writer or
-// guest consumer was dispatched. Once a writer is dispatched, the returned sudo status cannot
+// guest consumer was dispatched. Once a writer is dispatched, the returned status cannot
 // prove its child ended; once bootstrap is dispatched, no current artifact proves guest readers
 // and restart capability ended. Both cases disclose and retain the exact path.
 func finishPackTree(deps Deps, out printer, packRoot string, owned, writerDispatched, consumerDispatched bool) {
@@ -1419,37 +1418,26 @@ func finishPackTree(deps Deps, out printer, packRoot string, owned, writerDispat
 			reason += "a guest consumer was dispatched and yolo cannot prove its readers or restart capability ended"
 		}
 		out.printf("[yellow]Retaining guest pack tree %s[/yellow] because %s. Inspect this exact "+
-			"path with `sudo ls -la -- %s`; do not remove it while a writer or guest process may "+
+			"path with `ls -la -- %s`; do not remove it while a writer or guest process may "+
 			"still access it.", path, reason, path)
 		return
 	}
-	cleanup := teardownDeps(deps)
-	if cleanup.Run != nil && cleanup.Run([]string{"sudo", rmBin, "-rf", "--", packRoot}) == 0 {
+	// THE TREE IS SEALED (0555 directories), and a 0555 directory blocks its owner too, so the
+	// removal unseals it first (unsealCommands), as the host user that made it.
+	removed := deps.Run != nil
+	for _, cmd := range append(unsealCommands(packRoot), []string{rmBin, "-rf", "--", packRoot}) {
+		if !removed {
+			break
+		}
+		removed = deps.Run(cmd) == 0
+	}
+	if removed {
 		return
 	}
 	out.printf("[yellow]Could not remove unused reserved guest pack tree %s[/yellow] before any "+
-		"consumer was dispatched. Inspect this exact path with `sudo ls -la -- %s`, then remove "+
-		"only this path with `sudo rm -rf -- %s` before retrying.", path, path, path)
-}
-
-// teardownDeps is deps for the session's removal of its own files (sessionTeardown). Once a signal
-// is ending the launch, each removal's sudo runs NON-INTERACTIVELY (`sudo -n`): the terminal may
-// be gone (a closed window's SIGHUP), and a password prompt nobody can answer would hold the
-// teardown, and every teardown after it, until sudo gave up. A removal that cannot run so fails,
-// and the teardown then keeps the session's record and names the command (finish), which the next
-// launch's sweep runs. With no arm, deps is unchanged.
-func teardownDeps(deps Deps) Deps {
-	if deps.Ending == nil || deps.Run == nil {
-		return deps
-	}
-	run, ending := deps.Run, deps.Ending
-	deps.Run = func(argv []string) int {
-		if _, signaled := ending(); signaled && len(argv) > 1 && argv[0] == "sudo" && argv[1] != "-n" {
-			argv = append([]string{"sudo", "-n"}, argv[1:]...)
-		}
-		return run(argv)
-	}
-	return deps
+		"consumer was dispatched. Inspect this exact path with `ls -la -- %s`, then remove "+
+		"only this path with `%s -R u+w -- %s && %s -rf -- %s` before retrying.",
+		path, path, chmodBin, path, rmBin, path)
 }
 
 // launchSteps spans RunMacosUser's steps one after another on the launch's collector, as
@@ -1485,7 +1473,7 @@ func (s *launchSteps) end() {
 // stage command: true is returned with it.
 func stageCaptures(deps Deps, out printer, plan RunPlan) (int, bool) {
 	for _, cmd := range plan.CaptureStageCommands {
-		if deps.Run(append([]string{"sudo"}, cmd...)) == 0 {
+		if deps.Run(cmd) == 0 {
 			continue
 		}
 		if rc, ending := deps.ending(); ending {
@@ -1619,12 +1607,13 @@ func runContextPreflight(deps Deps, out printer, links []ContextLink, step strin
 	if len(links) == 0 {
 		return true
 	}
-	out.printf("[dim]Checking that %s can reach %d context mount source(s) — sudo may "+
-		"prompt for your password.[/dim]", SandboxUser, len(links))
+	out.printf("[dim]Checking that %s can reach %d context mount source(s).[/dim]",
+		SandboxUser, len(links))
+
 	var failed []ContextProbe
 	refused := map[string]bool{}
 	for _, p := range ContextPreflight(links, "") {
-		// A signal ending the launch stops the probing: each probe is a sudo that may prompt.
+		// A signal ending the launch stops the probing: each probe is a crossing of its own.
 		if _, ending := deps.ending(); ending {
 			return false
 		}
@@ -1655,7 +1644,7 @@ func runCacheRelocationProbes(deps Deps, out printer, probes []CacheRelocationPr
 	var failed []CacheRelocationProbe
 	refused := map[string]bool{}
 	for _, p := range probes {
-		// A signal ending the launch stops the probing: each probe is a sudo that may prompt.
+		// A signal ending the launch stops the probing: each probe is a crossing of its own.
 		if _, ending := deps.ending(); ending {
 			return false
 		}
@@ -1782,8 +1771,8 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.print("host bytes:  [dim]none staged — `reads-host` surfaces and source-bearing " +
 			"host_files compose from their lower layers[/dim]")
 	} else {
-		p.printf("host bytes:  %s [dim](root-owned; the sandbox reads it and cannot "+
-			"write it)[/dim]", plan.CtxRoot)
+		p.printf("host bytes:  %s [dim](staged by you, read-only; the sandbox reads it and "+
+			"cannot write it)[/dim]", plan.CtxRoot)
 	}
 	// THE CONTEXT MOUNTS, named on the same rule: "this launch declares none" and "this
 	// backend delivers none" were one statement until §4 step 4. Each is the link the agent
@@ -1793,8 +1782,8 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.print("context:     [dim]no context mounts[/dim]")
 	} else {
 		for _, l := range plan.ContextLinks {
-			p.printf("context:     %s/%s → %s [dim](%s, %s; a root-owned link, and the "+
-				"profile decides access)[/dim]", plan.ContextDir, l.Rel(), l.Source, l.Mode(), l.Origin())
+			p.printf("context:     %s/%s → %s [dim](%s, %s; a read-only link you staged, and "+
+				"the profile decides access)[/dim]", plan.ContextDir, l.Rel(), l.Source, l.Mode(), l.Origin())
 		}
 		for _, c := range plan.ContextCopies {
 			p.printf("context:     %s/%s ← %s [dim](read-only, %s; copied at launch, so a host "+
@@ -1818,8 +1807,8 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		for _, c := range plan.Captures {
 			staged = append(staged, c.Bin+" "+c.Key)
 		}
-		p.printf("captures:    %s ← %s [dim](root-owned copies, made once per machine; a "+
-			"program's launcher materializes its entry instead of downloading)[/dim]",
+		p.printf("captures:    %s ← %s [dim](read-only copies you staged, made once per machine; "+
+			"a program's launcher materializes its entry instead of downloading)[/dim]",
 			plan.CapturesDir, strings.Join(staged, ", "))
 	}
 	p.printf("git identity: %s", gitIdentityRepr(plan.GitIdentity))
@@ -1833,7 +1822,7 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	if plan.EnvFile == "" {
 		p.print("env file:    [dim]none — this launch composed no environment[/dim]")
 	} else {
-		p.printf("env file:    %s [dim](0600, root-owned, read by %s only)[/dim]",
+		p.printf("env file:    %s [dim](0600, yours, and read by %s alone besides you)[/dim]",
 			plan.EnvFile, SandboxUser)
 		p.printf("  [dim]sets, values not shown:[/dim] %s",
 			strings.Join(SandboxEnvFileKeys(plan.EnvFileContent), ", "))
@@ -1880,7 +1869,7 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		if len(plan.GuestClients) > 0 {
 			p.printf("  [dim]and for the agent's %s[/dim]", strings.Join(plan.GuestClients, ", "))
 		}
-		p.printf("  env file:   %s [dim](0600, root-owned, read by %s only)[/dim]",
+		p.printf("  env file:   %s [dim](0600, yours, and read by %s alone besides you)[/dim]",
 			plan.DaemonEnvFile, SandboxUser)
 		p.printf("  log:        %s [dim](the supervisor's own stdout and stderr)[/dim]",
 			plan.SupervisorLog)
@@ -1918,11 +1907,45 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 	}
 	p.print("")
 
-	p.print("[bold]── privileged commands (run via sudo) ──[/bold]\n" +
-		"[dim]sudo may prompt for your password, on this terminal, which every command " +
-		"below runs on.[/dim]")
-	// The DAC preflight first, as the launch runs it: before the nix build, as the sandbox
-	// account. Each is the whole argv, `sudo` included.
+	// WHAT THE LAUNCH DOES AS YOU, with no sudo (docs/design/macos-user-privilege-lifecycle-plan.md,
+	// task 5): every per-launch file is written and removed by the host user in the staging root
+	// it owns, so nothing here can ask for a password.
+	p.print("[bold]── as you (no sudo) ──[/bold]")
+	p.printf("  write %s  [dim](0444, content never on argv)[/dim]", shquote.QuoteDisplay(plan.ProfilePath))
+	for _, cmd := range plan.StageCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	// The capture store's, after them as the launch runs them, and marked: a failure of one warns
+	// and the launch goes on (stageCaptures).
+	for _, cmd := range plan.CaptureStageCommands {
+		p.print("  " + shquote.JoinDisplay(cmd) + "  [dim](best-effort)[/dim]")
+	}
+	// The env-file steps, in the order they run and NAMED — the directory's mode and the
+	// sandbox's read ACE are the whole of what keeps this file private, so a dry run that
+	// hid them would hide the security property it is being read to check.
+	for _, cmd := range plan.EnvFileCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	if plan.EnvFile != "" {
+		p.printf("  write %s  [dim](0600, content never on argv)[/dim]", shquote.QuoteDisplay(plan.EnvFile))
+	}
+	for _, cmd := range plan.EnvFileGrantCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	for _, f := range plan.caTrustFilePlans() {
+		for _, cmd := range f.dir {
+			p.print("  " + shquote.JoinDisplay(cmd))
+		}
+		p.printf("  write %s  [dim](0600, content never on argv)[/dim]", shquote.QuoteDisplay(f.path))
+		for _, cmd := range f.grant {
+			p.print("  " + shquote.JoinDisplay(cmd))
+		}
+	}
+	p.print("")
+	// THE CROSSINGS INTO THE SANDBOX ACCOUNT, each the whole argv: every one is the one-time
+	// setup's rule (RunAsSandboxArgv), `-n` included, so none prompts. The DAC preflight first,
+	// as the launch runs it: before the nix build.
+	p.printf("[bold]── as %s (the one-time setup's sudo rule, no password) ──[/bold]", SandboxUser)
 	for _, probe := range plan.ContextPreflight {
 		p.print("  " + shquote.JoinDisplay(probe.Argv) + "  [dim](can " + SandboxUser + " " +
 			probe.Access + " it?)[/dim]")
@@ -1931,61 +1954,29 @@ func PrintPlan(w io.Writer, plan RunPlan, problems []string) {
 		p.print("  " + shquote.JoinDisplay(probe.Argv) + "  [dim](can " + SandboxUser + " " +
 			probe.Access + " it?)[/dim]")
 	}
-	// The relocation writes run once the profile is installed (it is printed below), before the
-	// stage commands.
+	// The relocation writes run once the profile is written, before the stage commands.
 	for _, probe := range plan.CacheRelocationProbes {
 		p.print("  " + shquote.JoinDisplay(probe.Argv) + "  [dim](can " + SandboxUser + " " +
 			probe.Access + "?)[/dim]")
 	}
-	for _, cmd := range plan.StageCommands {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
-	}
-	// The capture store's, after them as the launch runs them, and marked: a failure of one warns
-	// and the launch goes on (stageCaptures).
-	for _, cmd := range plan.CaptureStageCommands {
-		p.print("  sudo " + shquote.JoinDisplay(cmd) + "  [dim](best-effort)[/dim]")
-	}
-	// The env-file steps, in the order they run and NAMED — the directory's mode and the
-	// sandbox's read ACE are the whole of what keeps this file private, so a dry run that
-	// hid them would hide the security property it is being read to check.
-	for _, cmd := range plan.EnvFileCommands {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
-	}
-	if plan.EnvFile != "" {
-		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, shquote.QuoteDisplay(plan.EnvFile))
-		p.printf("  sudo %s 0600 %s", chmodBin, shquote.QuoteDisplay(plan.EnvFile))
-	}
-	for _, cmd := range plan.EnvFileGrantCommands {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
-	}
-	for _, f := range plan.caTrustFilePlans() {
-		for _, cmd := range f.dir {
-			p.print("  sudo " + shquote.JoinDisplay(cmd))
-		}
-		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, shquote.QuoteDisplay(f.path))
-		p.printf("  sudo %s 0600 %s", chmodBin, shquote.QuoteDisplay(f.path))
-		for _, cmd := range f.grant {
-			p.print("  sudo " + shquote.JoinDisplay(cmd))
-		}
-	}
-	p.print("  sudo " + shquote.JoinDisplay(plan.BootstrapArgv[1:]))
+	p.print("  " + shquote.JoinDisplay(plan.BootstrapArgv))
 	// NAMED EVEN WHEN THERE IS NO STAGE, for the reason the pack line above is: "this
 	// launch installs nothing" and "this backend cannot install anything" were
 	// indistinguishable until half two, and a dry run that simply omitted the step would
 	// keep them that way.
 	if len(plan.ProvisionArgv) > 0 {
-		p.print("  sudo " + shquote.JoinDisplay(plan.ProvisionArgv[1:]))
+		p.print("  " + shquote.JoinDisplay(plan.ProvisionArgv))
 	}
 	if len(plan.ProbeArgv) > 0 {
-		p.print("  sudo " + shquote.JoinDisplay(plan.ProbeArgv[1:]))
+		p.print("  " + shquote.JoinDisplay(plan.ProbeArgv))
 	}
 	p.print("")
 	// WHAT THE SESSION REMOVES WHEN IT ENDS, its own files only (sessionfiles.go): a session
 	// killed before this leaves them to the next launch's sweep.
-	p.print("[bold]── when the session ends (run via sudo) ──[/bold]")
+	p.print("[bold]── when the session ends (as you, no sudo) ──[/bold]")
 	for _, cmd := range append(append(append([][]string{}, plan.DaemonEnvRemoveCommands...),
 		plan.EnvFileRemoveCommands...), plan.ProfileRemoveCommands...) {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
+		p.print("  " + shquote.JoinDisplay(cmd))
 	}
 	p.print("")
 
@@ -2177,7 +2168,7 @@ func RealDeps(runProxy func(argv []string) int, materialize func(repoRoot string
 		Run:                runReal,
 		RunBash:            runBashReal,
 		RunWithProxy:       runProxy,
-		InstallRootFile:    installRootFileReal,
+		WriteHostFile:      writeHostFileReal,
 		MaterializeDarwin:  materialize,
 		StartBackground:    startBackgroundReal,
 		SessionRecordDir:   SessionRecordsDir,

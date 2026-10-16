@@ -20,6 +20,7 @@ package macosuser
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,7 +207,7 @@ func TestTheOrchestratorResolvesTheGuestSetForAClientAlone(t *testing.T) {
 	if asked != 1 {
 		t.Errorf("Deps.GuestBinaries was asked %d times for a launch carrying the serial endpoint", asked)
 	}
-	if !strings.Contains(strings.Join(rec, "\n"), "run:sudo "+mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+
+	if !strings.Contains(strings.Join(rec, "\n"), "run:"+mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+
 		GuestBinaryPath("yolo-serial", "")) {
 		t.Errorf("the launch did not stage yolo-serial:\n%s", strings.Join(rec, "\n"))
 	}
@@ -288,17 +289,17 @@ func TestGuestBinariesAreStagedIntoTheRootOwnedPrefixOnly(t *testing.T) {
 
 // THE CALLER-TOKEN FILE'S PERMISSIONS ARE THE BOUNDARY (OQ-DP9: "no network isolation on
 // macos-user, so the token files' ownership and permissions are the boundary"). The supervisor's
-// file is written ROOT-OWNED 0600 through `sudo tee` into a 0700 directory, and ONE `user:` ACE
+// file is written by the HOST USER at 0600 into a 0700 directory, with no sudo, and ONE `user:` ACE
 // grants the sandbox account read — search on the directory, read on the file, never write, and
 // never a `group:` ACE, because SandboxGroup holds the host user too. Driven through
 // RunMacosUser, so the installer call and its mode are the launch's, not a helper's.
-func TestTheDaemonTokenFileIsRootOwned0600AndReadableByTheSandboxAccountOnly(t *testing.T) {
+func TestTheDaemonTokenFileIsHostOwned0600AndReadableByTheSandboxAccountOnly(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
 	var modes []string
-	d.InstallRootFile = func(path, content, mode string) bool {
-		rec = append(rec, "install:"+path)
-		modes = append(modes, path+" "+mode)
+	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
+		rec = append(rec, "write:"+path)
+		modes = append(modes, fmt.Sprintf("%s %#o", path, mode))
 		return true
 	}
 	fakeSupervisor(&d, &rec, "/Users/Shared/yolo/proj", "", readyLine, "", false)
@@ -313,7 +314,7 @@ func TestTheDaemonTokenFileIsRootOwned0600AndReadableByTheSandboxAccountOnly(t *
 	// The session's own file, named by the key this launch minted (sessionfiles.go).
 	file := SandboxDaemonEnvFile(launchedSessionKey(t, rec, "/Users/Shared/yolo/proj"), "")
 	if !strings.HasPrefix(file, stateDir+"/"+sandboxEnvLeaf+"/") {
-		t.Fatalf("the daemon env file %s is not in the root-owned env dir", file)
+		t.Fatalf("the daemon env file %s is not in the staging root's env dir", file)
 	}
 	found := false
 	for _, m := range modes {
@@ -322,14 +323,14 @@ func TestTheDaemonTokenFileIsRootOwned0600AndReadableByTheSandboxAccountOnly(t *
 		}
 	}
 	if !found {
-		t.Errorf("the daemon env file is not installed root-owned 0600 (installs: %v)", modes)
+		t.Errorf("the daemon env file is not written 0600 (writes: %v)", modes)
 	}
 	joined := strings.Join(rec, "\n")
 	dir := pathParent(file)
 	for _, want := range []string{
-		"run:sudo " + chmodBin + " 0700 " + dir,
-		"run:sudo " + chmodBin + " +a user:" + SandboxUser + " allow search " + dir,
-		"run:sudo " + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + file,
+		"run:" + chmodBin + " 0700 " + dir,
+		"run:" + chmodBin + " +a user:" + SandboxUser + " allow search " + dir,
+		"run:" + chmodBin + " +a user:" + SandboxUser + " allow " + sandboxFileReadRights + " " + file,
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the launch does not run %q:\n%s", want, joined)
@@ -340,7 +341,8 @@ func TestTheDaemonTokenFileIsRootOwned0600AndReadableByTheSandboxAccountOnly(t *
 		t.Errorf("the token file is granted to the group (which holds the host user) or writable")
 	}
 	// Swept when the session ends, after the supervisor stops.
-	if !strings.Contains(joined, "stop\nrun:sudo "+rmBin+" -f "+file) {
+	if !strings.Contains(joined, "stop\nrun:"+rmBin+" -f "+file) {
+
 		t.Errorf("the daemon env file is not swept after the supervisor stops:\n%s", joined)
 	}
 }
@@ -468,7 +470,7 @@ func TestADaemonsEnvFileWhoseInstallFailsIsRemovedThroughTheTeardown(t *testing.
 	ws := "/Users/Shared/yolo/proj"
 	for _, tc := range []struct {
 		name               string
-		installFails       bool // the tee ran and the chmod after it failed
+		installFails       bool // the host write failed
 		grantFails, rmFail bool
 	}{
 		{name: "the install", installFails: true},
@@ -482,8 +484,8 @@ func TestADaemonsEnvFileWhoseInstallFailsIsRemovedThroughTheTeardown(t *testing.
 			d.SessionRecordDir = func() string { return dir }
 			fakeSupervisor(&d, &rec, ws, "", readyLine, "", false)
 			d.GuestBinaries = func(string) (string, error) { return "/opt/yolo/bin/darwin-arm64", nil }
-			install := d.InstallRootFile
-			d.InstallRootFile = func(path, content, mode string) bool {
+			install := d.WriteHostFile
+			d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
 				ok := install(path, content, mode)
 				return ok && !(tc.installFails && strings.HasSuffix(path, ".daemons.env"))
 			}
@@ -494,7 +496,7 @@ func TestADaemonsEnvFileWhoseInstallFailsIsRemovedThroughTheTeardown(t *testing.
 				if !strings.HasSuffix(last, ".daemons.env") {
 					return rc
 				}
-				if (tc.grantFails && argv[1] == chmodBin) || (tc.rmFail && argv[1] == rmBin) {
+				if (tc.grantFails && argv[0] == chmodBin) || (tc.rmFail && argv[0] == rmBin) {
 					return 1
 				}
 				return rc
@@ -508,7 +510,7 @@ func TestADaemonsEnvFileWhoseInstallFailsIsRemovedThroughTheTeardown(t *testing.
 			}
 			key := launchedSessionKey(t, rec, ws)
 			daemonsEnv := SandboxDaemonEnvFile(key, "")
-			if !strings.Contains(strings.Join(rec, "\n"), "run:sudo "+rmBin+" -f "+daemonsEnv) {
+			if !strings.Contains(strings.Join(rec, "\n"), "run:"+rmBin+" -f "+daemonsEnv) {
 				t.Errorf("the half-written daemons env file %s is never removed:\n%s",
 					daemonsEnv, strings.Join(rec, "\n"))
 			}
@@ -518,7 +520,7 @@ func TestADaemonsEnvFileWhoseInstallFailsIsRemovedThroughTheTeardown(t *testing.
 				if err != nil {
 					t.Errorf("the daemons env file could not be removed and the record naming it is gone: %v", err)
 				}
-				if !strings.Contains(out.String(), "sudo "+rmBin+" -f "+strings.Join(SessionFilePaths(key, ""), " ")) {
+				if !strings.Contains(out.String(), rmBin+" -f "+strings.Join(SessionFilePaths(key, ""), " ")) {
 					t.Errorf("the failed removal does not warn with the command:\n%s", out.String())
 				}
 			} else if !os.IsNotExist(err) {
@@ -545,7 +547,7 @@ func TestTheDryRunNamesTheGuestSetStagedForAClient(t *testing.T) {
 	if !strings.Contains(out, "jail daemons: none run in the sandbox for this launch") || !strings.Contains(out, want) {
 		t.Errorf("the dry run does not name the guest set staged for yolo-serial (want %q):\n%s", want, out)
 	}
-	if !strings.Contains(out, "sudo "+mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+GuestBinaryPath("yolo-serial", "")) {
+	if !strings.Contains(out, mvBin+" -f "+GuestBinaryPath("yolo-serial", "")+".new "+GuestBinaryPath("yolo-serial", "")) {
 		t.Errorf("the dry run's privileged commands do not stage yolo-serial:\n%s", out)
 	}
 }

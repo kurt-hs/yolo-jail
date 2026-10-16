@@ -257,7 +257,7 @@ func TestASupervisorThatExitsBeforeStartingIsDisclosedWithItsLog(t *testing.T) {
 	if strings.Contains(joined, "proxy:") {
 		t.Error("the agent ran after its supervisor failed")
 	}
-	if !strings.Contains(joined, "stop\nrun:sudo "+rmBin+" -f "+SandboxDaemonEnvFile(launchedSessionKey(t, rec, ws), "")) {
+	if !strings.Contains(joined, "stop\nrun:"+rmBin+" -f "+SandboxDaemonEnvFile(launchedSessionKey(t, rec, ws), "")) {
 		t.Errorf("the failed supervisor is not stopped and its env file swept:\n%s", joined)
 	}
 }

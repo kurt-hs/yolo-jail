@@ -69,8 +69,8 @@ func TestAForkBuildActComposesTheLaunchsTrust(t *testing.T) {
 	}
 	opts, tmp := forkBuildActOptions(t)
 	written := map[string]string{}
-	install := d.InstallRootFile
-	d.InstallRootFile = func(path, content, mode string) bool {
+	install := d.WriteHostFile
+	d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
 		written[path] = content
 		return install(path, content, mode)
 	}

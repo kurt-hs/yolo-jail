@@ -19,13 +19,14 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 // launchedSessionKey is the session key a recorded RunMacosUser minted, read off the profile it
 // installed: <stateDir>/profile-<key>.sb.
 func launchedSessionKey(t *testing.T, rec []string, ws string) string {
 	t.Helper()
-	prefix := "install:" + stateDir + "/profile-" + cnameFor(resolvePathAbs(ws)) + "."
+	prefix := "write:" + stateDir + "/profile-" + cnameFor(resolvePathAbs(ws)) + "."
 	for _, r := range rec {
 		if rest, ok := strings.CutPrefix(r, prefix); ok {
 			if sid, ok := strings.CutSuffix(rest, ".sb"); ok {
@@ -149,7 +150,7 @@ func TestALaunchHoldsItsRecordAndRemovesItsOwnFilesLast(t *testing.T) {
 		base := d.Run
 		recordAtProfileRm := false
 		d.Run = func(argv []string) int {
-			if len(argv) == 4 && argv[1] == rmBin && strings.Contains(argv[3], "/profile-") {
+			if len(argv) == 3 && argv[0] == rmBin && strings.Contains(argv[2], "/profile-") {
 				matches, _ := filepath.Glob(filepath.Join(dir, "*"+sessionRecordSuffix))
 				recordAtProfileRm = len(matches) == 1
 			}
@@ -164,7 +165,7 @@ func TestALaunchHoldsItsRecordAndRemovesItsOwnFilesLast(t *testing.T) {
 		keys = append(keys, key)
 		joined := strings.Join(rec, "\n")
 		for _, f := range []string{SessionProfilePath(key, ""), SandboxEnvFile(key, "")} {
-			if !strings.Contains(joined, "run:sudo "+rmBin+" -f "+f) {
+			if !strings.Contains(joined, "run:"+rmBin+" -f "+f) {
 				t.Errorf("launch %d does not remove %s when it ends:\n%s", i, f, joined)
 			}
 		}
@@ -238,7 +239,7 @@ func TestTheSweepRemovesOnlyAnEndedSessionsFiles(t *testing.T) {
 	var out bytes.Buffer
 	sweepGoneSessions(d, printer{w: &out}, dir)
 
-	want := "run:sudo " + rmBin + " -f " + strings.Join(SessionFilePaths(gone, ""), " ")
+	want := "run:" + rmBin + " -f " + strings.Join(SessionFilePaths(gone, ""), " ")
 	if len(rec) != 1 || rec[0] != want {
 		t.Fatalf("the sweep ran %q, want exactly %q", rec, want)
 	}
@@ -274,8 +275,67 @@ func TestASweepWhoseRemovalFailsKeepsTheRecord(t *testing.T) {
 	if _, err := os.Lstat(p); err != nil {
 		t.Errorf("a record whose files could not be removed was removed: %v", err)
 	}
-	if !strings.Contains(out.String(), "sudo "+rmBin+" -f "+SandboxEnvFile(key, "")) {
+	if !strings.Contains(out.String(), rmBin+" -f "+SandboxEnvFile(key, "")) {
 		t.Errorf("the warning does not name the command that removes the files:\n%s", out.String())
+	}
+}
+
+// A SESSION AN OLDER YOLO STARTED (PL-8, docs/design/macos-user-privilege-lifecycle-plan.md): its
+// files are root's, in the legacy state dir, and a launch runs no root command, so the sweep keeps
+// its record rather than unlinking the only pointer to them, removes nothing for it, and warns ONCE
+// per launch however many such records there are, naming setup and the exact five paths. It reads
+// the legacy dir only to ask whether that one session's profile is there. An ordinary ended
+// session beside them is still swept, as the host.
+func TestTheSweepKeepsALegacySessionsRecordAndWarnsOnce(t *testing.T) {
+	dir := t.TempDir()
+	cname := cnameFor("/Users/Shared/yolo/proj")
+	legacyA := SessionKey(cname, "0123456789abcdef")
+	legacyB := SessionKey(cname, "1123456789abcdef")
+	ordinary := SessionKey(cname, "2123456789abcdef")
+	recA, recB := freeRecord(t, dir, legacyA), freeRecord(t, dir, legacyB)
+	recOrdinary := freeRecord(t, dir, ordinary)
+
+	var rec, asked []string
+	d := mockDeps(&rec)
+	d.PathExists = func(p string) bool {
+		asked = append(asked, p)
+		return p == SessionProfilePath(legacyA, LegacyStateDir()) ||
+			p == SessionProfilePath(legacyB, LegacyStateDir())
+	}
+	var out bytes.Buffer
+	sweepGoneSessions(d, printer{w: &out}, dir)
+
+	want := "run:" + rmBin + " -f " + strings.Join(SessionFilePaths(ordinary, ""), " ")
+	if len(rec) != 1 || rec[0] != want {
+		t.Errorf("the sweep ran %q, want only the ordinary session's host removal %q", rec, want)
+	}
+	if len(asked) != 3 {
+		t.Errorf("the sweep asked about %q, want one legacy profile per ended session", asked)
+	}
+	for _, p := range asked {
+		if !strings.HasPrefix(p, LegacyStateDir()+"/profile-") {
+			t.Errorf("the sweep looked at %s; a launch stats nothing but a legacy profile", p)
+		}
+	}
+	for _, kept := range []string{recA, recB} {
+		if _, err := os.Lstat(kept); err != nil {
+			t.Errorf("a legacy session's record was removed, the only pointer to its root files: %v", err)
+		}
+	}
+	if _, err := os.Lstat(recOrdinary); !os.IsNotExist(err) {
+		t.Errorf("the ordinary ended session's record survived its sweep")
+	}
+	text := out.String()
+	if n := strings.Count(text, "a macos-user session from an older yolo left root-owned files"); n != 1 {
+		t.Errorf("the legacy warning was printed %d times, want once per launch:\n%s", n, text)
+	}
+	wantLine := richtext.Render("[yellow]Warning: a macos-user session from an older yolo left "+
+		"root-owned files in /var/yolo-jail[/yellow] (session "+legacyA+"). Launches no longer run "+
+		"root commands, so they cannot remove them. Run [bold]yolo macos-setup[/bold] (it asks for "+
+		"your password once), or remove them yourself: `sudo rm -f "+
+		strings.Join(SessionFilePaths(legacyA, LegacyStateDir()), " ")+"`.", false)
+	if !strings.Contains(text, wantLine) {
+		t.Errorf("the legacy warning is not the ruled text:\n got: %s\nwant: %s", text, wantLine)
 	}
 }
 
@@ -295,8 +355,8 @@ func TestALaunchSweepsAnEndedSessionsFilesBeforeItWritesItsOwn(t *testing.T) {
 		t.Fatalf("rc = %d\n%s", rc, out.String())
 	}
 	joined := strings.Join(rec, "\n")
-	sweep := strings.Index(joined, "run:sudo "+rmBin+" -f "+strings.Join(SessionFilePaths(gone, ""), " "))
-	install := strings.Index(joined, "install:"+stateDir+"/profile-")
+	sweep := strings.Index(joined, "run:"+rmBin+" -f "+strings.Join(SessionFilePaths(gone, ""), " "))
+	install := strings.Index(joined, "write:"+stateDir+"/profile-")
 	if sweep < 0 {
 		t.Fatalf("the launch did not sweep the ended session's files:\n%s", joined)
 	}
@@ -420,9 +480,9 @@ func TestParseSessionKeyIsStrict(t *testing.T) {
 
 // A TEARDOWN WHOSE REMOVAL FAILS KEEPS THE RECORD, free, for the next launch's sweep, and warns
 // with the command. The record is the only pointer to a session's files once the session ends
-// (env/ is a directory only root can list, and the names carry an id nothing else remembers), so
-// unlinking it after a removal that failed, say the teardown's sudo not authenticating after a
-// long session, left the env file and its credentials under a name no sweep would ever find.
+// (the names carry an id nothing else remembers), so unlinking it after a removal that failed,
+// say a file the host user's rm could not remove, left the env file and its credentials under a
+// name no sweep would ever find.
 // Driven through RunMacosUser for each of the session's removals, the supervisor's on both its
 // exits; fails if any of them goes around the teardown, or if the teardown unlinks the record
 // regardless.
@@ -450,10 +510,11 @@ func TestATeardownWhoseRemovalFailsKeepsTheRecordForTheNextSweep(t *testing.T) {
 			failed := ""
 			d.Run = func(argv []string) int {
 				rc := base(argv)
-				if len(argv) == 4 && argv[0] == "sudo" && argv[1] == rmBin && argv[2] == "-f" && tc.fails(argv[3]) {
-					failed = argv[3]
-					return 1 // e.g. sudo could not authenticate at the end of a long session
+				if len(argv) == 3 && argv[0] == rmBin && argv[1] == "-f" && tc.fails(argv[2]) {
+					failed = argv[2]
+					return 1 // e.g. an I/O error, or a file its owner can no longer unlink
 				}
+
 				return rc
 			}
 			var out bytes.Buffer
@@ -476,7 +537,7 @@ func TestATeardownWhoseRemovalFailsKeepsTheRecordForTheNextSweep(t *testing.T) {
 				t.Fatalf("removing %s failed, and the record is %v after the session ended, want "+
 					"kept and free for the next sweep (records left: %v)", failed, state, dirNames(t, dir))
 			}
-			want := "sudo " + rmBin + " -f " + strings.Join(SessionFilePaths(key, ""), " ")
+			want := rmBin + " -f " + strings.Join(SessionFilePaths(key, ""), " ")
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("the failed removal does not warn with %q:\n%s", want, out.String())
 			}

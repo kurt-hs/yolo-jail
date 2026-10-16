@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -169,21 +170,42 @@ func runBashReal(script string) int {
 	return runReal([]string{"bash", "-c", script})
 }
 
-// tee <path> (content on stdin, stdout to /dev/null), sudo chmod <mode> <path>.
-// Any failure → false.
-func installRootFileReal(path, content, mode string) bool {
-	parent := filepath.Dir(path)
-	if runReal([]string{"sudo", mkdirBin, "-p", parent}) != 0 {
+// writeHostFileReal writes one per-launch file AS THE HOST USER, at its final mode from the first
+// instant (docs/design/macos-user-privilege-lifecycle-plan.md, task 5): the staging root is the
+// host user's own, so no sudo is needed, and none is run. The parent is created 0755 when absent
+// (the env dir is made 0700 by its own commands before any file in it is written).
+//
+// THE OPEN IS EXCLUSIVE AND NEVER FOLLOWS A LINK (O_EXCL|O_NOFOLLOW): every file is named by a
+// fresh session key, so one already there is not ours, and a write through a planted link would
+// put the session's credentials wherever it points. The mode is set again with Fchmod, so the
+// umask cannot widen or narrow it. Any failure removes what THIS call created and returns false;
+// a file that was already there is never touched.
+func writeHostFileReal(path, content string, mode os.FileMode) bool {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: %v\n", err)
 		return false
 	}
-	tee := exec.Command("sudo", teeBin, path)
-	tee.Stdin = strings.NewReader(content)
-	tee.Stdout = nil // discard tee's stdout echo
-	tee.Stderr = os.Stderr
-	if err := tee.Run(); err != nil {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, mode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: %v\n", err)
 		return false
 	}
-	return runReal([]string{"sudo", chmodBin, mode, path}) == 0
+	err = f.Chmod(mode)
+	if err == nil {
+		_, err = f.WriteString(content)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "yolo: writing %s: %v\n", path, err)
+		_ = os.Remove(path)
+		return false
+	}
+	return true
 }
 
 // GIDs (Groups/PrimaryGroupID) via dscl, timeout 10s each. Best-effort.
@@ -224,9 +246,8 @@ func setRandomPasswordReal(user string) bool {
 	pw := strings.TrimSpace(pwOut)
 	// Finding 6: pass the password via STDIN to the root shell, never via
 	// cmd.Env — sudo's env_reset strips arbitrary env vars, so the previous
-	// YOLO_SBPW-on-env approach set an EMPTY password. `read -r pw` on stdin is
-	// the same pattern installRootFileReal uses (strings.NewReader stdin), and
-	// keeps the secret off argv (which would leak in `ps`). NOTE: the actual
+	// YOLO_SBPW-on-env approach set an EMPTY password. `read -r pw` on stdin
+	// (strings.NewReader) keeps the secret off argv (which would leak in `ps`). NOTE: the actual
 	// password-apply + dscl empty-string semantics are M1-verified on hardware.
 	cmd := exec.Command("sudo", "/bin/sh", "-c",
 		"read -r pw; dscl . -passwd /Users/"+user+" \"$pw\"")

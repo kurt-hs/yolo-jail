@@ -213,12 +213,12 @@ func TestPrintPlanNamesTheStagedCaptures(t *testing.T) {
 	var buf bytes.Buffer
 	PrintPlan(&buf, planWithCtx(t, stagedCaptureCtx()), nil)
 	line := lineWith(buf.String(), "captures:")
-	for _, want := range []string{StagedCapturesRoot(""), "probetool " + captureKeyA, "root-owned"} {
+	for _, want := range []string{StagedCapturesRoot(""), "probetool " + captureKeyA, "read-only copies you staged"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("the dry run's captures line does not name %q:\n%s", want, line)
 		}
 	}
-	// Its copies are listed with the privileged commands, marked as the launch runs them: a
+	// Its copies are listed with what the launch runs as you, marked as it runs them: a
 	// failure of one warns and the launch goes on.
 	if line := lineWith(buf.String(), stageCaptureScriptName); !strings.Contains(line, "(best-effort)") {
 		t.Errorf("the dry run does not list the capture copy as best-effort: %q", line)
@@ -467,7 +467,7 @@ func TestACaptureStoreThatCannotBePreparedDoesNotRefuseTheLaunch(t *testing.T) {
 	run := d.Run
 	d.Run = func(argv []string) int {
 		rc := run(argv)
-		if len(argv) > 1 && argv[1] == mkdirBin && strings.Contains(strings.Join(argv, " "), StagedCapturesRoot("")) {
+		if len(argv) > 1 && argv[0] == mkdirBin && strings.Contains(strings.Join(argv, " "), StagedCapturesRoot("")) {
 			return 1
 		}
 		return rc
