@@ -5,22 +5,29 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
 // patchfailureblock.go is PF-D81's ERROR BLOCK (docs/reference/patched-forks.md §8): the one text every
 // actor prints for a patch series that does not apply — a jail launch, `yolo host`, the host floor,
 // `yolo pack update`, `yolo capture`, cached-good recovery — so the copyable shape is written once.
-// It names the subject, the upstream target, the patch and its conflict or cause, that the operation
-// stopped, the repair (the rebase recipe, rebaserecipe.go), and the ONE bypass that works on this
-// machine (PatchBypass, PF-D83), and is plain text: conspicuous without color.
+// Its shape, ruled 2026-10-16: one ERROR line naming the subject and the upstream target, the facts
+// under it (the patch, the conflict, the log), a blank line and the repair (the rebase recipe,
+// rebaserecipe.go), then a blank line and the hatches that would get THIS operation running, each a
+// copyable command (patchrecovery.Section). No prose justifying any of it.
 
-// PatchBypass is what the block's Bypass line may offer, decided by the caller from what is on this
-// machine (PF-D83): the bypass is named only when it will work.
+// PatchBypass is what the block's hatch list may offer, decided by the caller from what is on this
+// machine (PF-D83): a hatch is listed only when it would get that operation running.
 type PatchBypass struct {
-	// Command is the operation the bypass variable is put in front of: "yolo", "yolo host -- pi",
+	// Command is the operation every hatch is put in front of: "yolo", "yolo host -- pi",
 	// "yolo pack update".
 	Command string
+	// Key is the subject's owner key, the value each scoped hatch names; "" derives it from the
+	// block's label.
+	Key string
+	// Hatches is the list, in order. When it is empty the legacy fields below derive it (List).
+	Hatches []patchrecovery.Hatch
 	// Runs is the label of the intact admitted build paths.AllowPatchFailuresEnv runs in the failed
 	// series' place; "" when there is none, and then that variable is not offered.
 	Runs string
@@ -35,41 +42,47 @@ type PatchBypass struct {
 	Unneeded bool
 }
 
-// CachedGoodEnv is the jail launch's cached-good recovery selector (internal/cli/run's
-// CachedGoodEnv, PF-D82), spelled here so the block can offer it.
-const CachedGoodEnv = "YOLO_USE_CACHED_GOOD"
+// CachedGoodEnv is the jail launch's cached-good recovery selector (PF-D82), spelled here so the
+// block can offer it.
+const CachedGoodEnv = patchrecovery.UseCachedGoodEnv
 
-// lines is the Bypass line and the line under it saying what it runs or leaves out.
-func (b PatchBypass) lines() []string {
+// List is the hatches the block lists for key: Hatches, or what the legacy fields name.
+func (b PatchBypass) List(key string) []patchrecovery.Hatch {
+	if len(b.Hatches) > 0 || b.Unneeded {
+		return b.Hatches
+	}
+	if b.Key != "" {
+		key = b.Key
+	}
 	cmd := b.Command
 	if cmd == "" {
 		cmd = "yolo"
 	}
+	var out []patchrecovery.Hatch
 	switch {
-	case b.Unneeded:
-		return []string{"Bypass: none needed — no selected agent pack loads it here, so this launch goes on"}
 	case b.Runs != "":
-		return []string{"Bypass: " + paths.AllowPatchFailuresEnv + "=1 " + cmd,
-			"  (runs the intact admitted build " + b.Runs + " for this one run, skipping this update; " +
-				"it does not repair the series)"}
+		out = append(out, patchrecovery.Hatch{Env: patchrecovery.AllowPatchFailuresEnv, Value: key, Command: cmd,
+			Label: "run " + b.Runs})
 	case b.CachedGood != "":
-		return []string{"Bypass: " + CachedGoodEnv + "=" + b.CachedGood + " " + cmd,
-			"  (runs the older admitted build " + b.CachedGoodLabel + " for this one fresh launch; it lacks the current " +
-				"series and build line, and no intact build of the current series is on this machine for " +
-				paths.AllowPatchFailuresEnv + "=1 to run)"}
-	case b.Missing:
-		return []string{"Bypass: " + paths.AllowMissingProgramsEnv + "=1 " + cmd,
-			"  (starts without it: no intact admitted build of it is on this machine for " +
-				paths.AllowPatchFailuresEnv + "=1 to run)"}
+		out = append(out, patchrecovery.Hatch{Env: patchrecovery.UseCachedGoodEnv, Value: b.CachedGood, Command: cmd,
+			Label: "run the older build " + b.CachedGoodLabel})
 	}
-	return []string{"Bypass: none on this machine — no intact admitted build of it is here for " +
-		paths.AllowPatchFailuresEnv + "=1 to run; repair the series, or drop its pack"}
+	if b.Missing {
+		out = append(out, patchrecovery.Hatch{Env: patchrecovery.AllowMissingProgramsEnv, Value: "1", Command: cmd,
+			Label: "start without it"})
+	}
+	return out
 }
 
-// Block is the error block for f: label names the subject ("fork pi-mine/pi", or an owner key),
-// recipe is the subject's rebase recipe (RebaseRecipe, PF-D85), and bypass what the Bypass line
-// offers.
+// Block is the error block for f without color (Render).
 func (f *PatchFailure) Block(label string, recipe RebaseRecipe, bypass PatchBypass) string {
+	return f.Render(label, recipe, bypass, false)
+}
+
+// Render is the error block for f: label names the subject ("fork pi-mine/pi", "extension <key>"),
+// recipe is the subject's rebase recipe (RebaseRecipe, PF-D85), and bypass what the hatch list
+// offers; color styles the ERROR line, the headings and the hatch commands.
+func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchBypass, color bool) string {
 	if f == nil {
 		return ""
 	}
@@ -78,17 +91,14 @@ func (f *PatchFailure) Block(label string, recipe RebaseRecipe, bypass PatchBypa
 	if target == "" {
 		target = f.Target.Commit
 	}
+	what, member := "patch series does not apply to", "Patch"
 	if recipe.PatchBranchRepo != "" {
-		// A PATCH BRANCH (patchbranch.go): one commit graph merged, not a member of a series applied.
-		fmt.Fprintf(&b, "ERROR: %s: the patch branch does not merge into upstream %s (%s)\n", label, target, f.Target.Commit)
-		if f.Member != "" {
-			fmt.Fprintf(&b, "  Patch branch: %s\n", PrintableFailureText(f.Member))
-		}
-	} else {
-		fmt.Fprintf(&b, "ERROR: %s: patch application failed at upstream %s (%s)\n", label, target, f.Target.Commit)
-		if f.Member != "" {
-			fmt.Fprintf(&b, "  Patch: %s\n", PrintableFailureText(f.Member))
-		}
+		what, member = "patch branch does not merge into", "Patch branch"
+	}
+	head := fmt.Sprintf("ERROR: %s: %s upstream %s (%s)", label, what, target, shortCommit(f.Target.Commit))
+	b.WriteString(richtext.Render("[bold red]"+richtext.Escape(head)+"[/bold red]", color) + "\n")
+	if f.Member != "" {
+		fmt.Fprintf(&b, "  %s: %s\n", member, PrintableFailureText(f.Member))
 	}
 	switch f.Kind {
 	case "conflict":
@@ -102,21 +112,28 @@ func (f *PatchFailure) Block(label string, recipe RebaseRecipe, bypass PatchBypa
 	default:
 		fmt.Fprintf(&b, "  Application command: %s\n", PrintableFailureText(f.Detail))
 	}
-	b.WriteString("  Operation stopped; no older fit or base will be built.\n")
-	if f.Kind == "base" {
-		fmt.Fprintf(&b, "  Repair: re-export the series with git format-patch --base=%s\n", f.Target.Commit)
-	} else {
-		for _, l := range recipe.Repair(f.Target, "Repair: "+RecipeLead, "  ") {
-			b.WriteString(l + "\n")
-		}
-	}
-	for _, l := range bypass.lines() {
-		b.WriteString("  " + l + "\n")
-	}
 	if f.Log != "" {
 		if st, err := os.Stat(f.Log); err == nil && !st.IsDir() {
 			fmt.Fprintf(&b, "  Log: %s\n", PrintableFailureText(f.Log))
 		}
+	}
+	b.WriteString("\n" + richtext.Render("[bold]Repair:[/bold]", color) + "\n")
+	if f.Kind == "base" {
+		fmt.Fprintf(&b, "  re-export the series: git format-patch --base=%s\n", f.Target.Commit)
+	} else {
+		for _, l := range recipe.Lines(f.Target) {
+			b.WriteString("  " + l + "\n")
+		}
+	}
+	key := bypass.Key
+	if key == "" {
+		key = strings.TrimPrefix(strings.TrimPrefix(label, "fork "), "extension ")
+	}
+	switch hatches := bypass.List(key); {
+	case bypass.Unneeded:
+		b.WriteString("\nNo selected agent pack loads it here; this launch goes on.\n")
+	case len(hatches) > 0:
+		b.WriteString(patchrecovery.Section(patchrecovery.StartAnyway, hatches, color))
 	}
 	return b.String()
 }

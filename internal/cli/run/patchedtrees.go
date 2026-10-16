@@ -46,6 +46,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/progress"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
@@ -126,6 +127,9 @@ type TreeDelivery struct {
 	// Unsaid says the build act said nothing of Reason, leaving it to the launch's refusal or warning
 	// (missingbuilds.go), as entrypoint.ForkDelivery.Unsaid.
 	Unsaid bool
+	// Recovery is the hatch list the advance decided would get this launch running, as
+	// entrypoint.ForkDelivery.Recovery.
+	Recovery []patchrecovery.Hatch
 }
 
 // goodLabelOf is a build as lines name it: its tag and short commit, or the commit alone.

@@ -32,6 +32,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -61,6 +62,9 @@ type ForkDelivery struct {
 	// when Key is "" (PF-D82). Host-only, as PatchFailure is.
 	Runs       string `json:"-"`
 	CachedGood string `json:"-"`
+	// Recovery is the hatch list the advance decided would get this launch running
+	// (patchrecovery.Hatch), which the launch's refusal prints as is. Host-only.
+	Recovery []patchrecovery.Hatch `json:"-"`
 	// Unsaid says the host's build act said nothing of Reason, leaving it to the launch's refusal or
 	// warning (internal/cli/run's missingbuilds.go), which then says it once. The host's alone: never
 	// on the wire.
