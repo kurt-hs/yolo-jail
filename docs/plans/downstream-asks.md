@@ -3,7 +3,7 @@ title: "What a downstream pack consumer is still waiting on from yolo"
 date: 2026-10-13
 status: in-review
 stage: DESIGN
-next: "Ask 11 waits on pi-subagents registering --subagents-model-settings; then turn YOLO_PI_SUBAGENTS_MODEL_SETTINGS on by default (MM-D42). Asks 6 and 8 are built (2026-10-16); ask 10 was declined 2026-10-15"
+next: "Asks 6 and 8 are built (2026-10-16); ask 10 was declined 2026-10-15"
 depends-on:
   - ../reference/patched-forks.md#OQ-PFK6
   - ../reference/patched-forks.md#OQ-PFK7
@@ -47,7 +47,7 @@ only where a question has no design doc of its own. The source handoff lives out
 | [8](#8-model-inheritance--emit-sharedmodels-and-extends) | the pi derive emits `sharedModels` and `extends` on both surfaces | ruled 2026-10-16, not built | [OQ-ML5](../design/model-lists-and-pickers.md#OQ-ML5) |
 | [9](#9-the-yolo-check-notice-for-a-bypassed-append_systemmd) | `yolo check` names a bypassed `~/.pi/agent/APPEND_SYSTEM.md` | declined 2026-10-16 (the skill half landed) | [OQ-DA3](#OQ-DA3) |
 | [10](#10-model-auth-for-an-isolated-agent-process) | an isolated agent process gets model auth without a copy of the login | declined 2026-10-15 | [IA-D1](../design/isolated-agent-model-auth.md#IA-D1) |
-| [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo's part built, off by default; waits on pi-subagents | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
+| [11](#11-the-host--p-profile-governs-pi-subagents-children) | an explicit `yolo host -p` governs pi-subagents' child defaults and model scope | yolo ships nothing for it (2026-10-16); the consumer declares `launch_computed` in their own pack | [MM-D42](../design/model-lists-and-pickers.md#MM-D42) |
 
 ## 1. `remove:` for `config-list`
 
@@ -228,11 +228,14 @@ mocked offline tests are not blocked. [OQ-IA1](../design/isolated-agent-model-au
 **Ask.** An explicit `yolo host -p` profile governs pi-subagents' profile-derived child defaults and
 model scope, not only the parent session.
 
-**State.** `yolo's part built` 2026-10-15 (`985c2c8d5`), **off by default**. **Evidence:** the pi
-pack hands the profile's `subagents` block as `--subagents-model-settings <json>` for one launch,
-writing nothing, only under `YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1`, because pi exits on a flag no
-loaded extension registers and pi-subagents registers none yet. The Pi side accepted the interface
-on 2026-10-15; the flag ships off until pi-subagents registers it.
+**State.** `yolo ships nothing for it` (2026-10-16). The generic
+[`launch_computed`](../reference/pack-system.md#launch_computed) kind hands a `-p` profile's
+computed block as argv for one launch; the pi pack's declaration of a pi-subagents flag was removed
+by the maintainer's ruling, *"yolo shouldn't depend on my custom pi fork in any way, or even know
+it exists"*, since upstream pi-subagents registers no such flag. The consumer declares
+`launch_computed` for `pi` in the pack that forks pi
+([LC-D1](../reference/pack-system.md#LC-D1)); the pi derive still composes the `subagents` block
+it reads.
 
 **Owner.** [MM-D42](../design/model-lists-and-pickers.md#MM-D42).
 

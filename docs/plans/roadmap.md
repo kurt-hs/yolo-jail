@@ -42,10 +42,9 @@ candidate state, acceptance gaps and verification; a place here does not make it
 
 Pi's existing profile-set/provider-seal extension is built, including its required child guard.
 [MM-D42](../design/model-lists-and-pickers.md#MM-D42)'s process-local profile-derived child
-defaults and model restrictions: **YOLO side built, waits on Pi** (2026-10-15). A `yolo host -p`
-hands pi-subagents the profile's policy as `--subagents-model-settings`, off by default behind
-`YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1` until pi-subagents registers the flag; the Pi side accepted the
-interface on 2026-10-15. Do not invent a yolo settings overlay or rewrite shared settings. Other
+defaults and model restrictions: **the mechanism is built, and yolo ships no declaration of it**
+(2026-10-16). A pack of the user's own may declare `launch_computed` for a pi-subagents that reads
+a flag; yolo depends on no fork. Do not invent a yolo settings overlay or rewrite shared settings. Other
 accepted limits remain in
 [its design's §3.4](../design/simultaneous-auth-and-pack-isolation.md#34-what-the-extension-cannot-close),
 and a pi-subagents registry several extensions can share stays in item 28.
