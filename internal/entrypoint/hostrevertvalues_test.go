@@ -1,7 +1,6 @@
 package entrypoint
 
-// hostrevertvalues_test.go pins CO-D12 to CO-D14 (docs/design/config-ownership-and-promotion.md
-// §13): `yolo host apply --revert` withdraws the VALUES yolo wrote, never a whole key holding the
+// hostrevertvalues_test.go pins CO-D12 to CO-D14 (docs/reference/config-ownership.md#why-its-this-way): `yolo host apply --revert` withdraws the VALUES yolo wrote, never a whole key holding the
 // user's own beside them, and it forgets the records an owned apply would otherwise replay.
 //
 // The homes are written as the retired `assert` wrote them (asRetiredAssert: every surface through

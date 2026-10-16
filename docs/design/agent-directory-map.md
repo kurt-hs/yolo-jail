@@ -64,7 +64,7 @@ Every term below is coined here unless it links to where it is defined.
   ([the dial](yolo-as-environment-manager.md#4-confinement-a-dial-with-three-notches)). This doc
   treats **macos-user** separately from the container jail wherever the two differ.
 - **Surface.** One agent config file a pack declares, with a **mode** of `stateful`, `computed`,
-  `rmw` or `unrendered` ([the four modes](config-ownership-and-promotion.md#22-the-four-surface-modes)).
+  `rmw` or `unrendered` ([the four modes](../reference/config-ownership.md#surface-modes-and-the-layer-stack)).
 - **Agent directory.** A home-relative directory, or single file, that an agent reads and writes as
   its own: `~/.pi`, `~/.claude`, `~/.claude.json`, `~/.codex`. It is not the same thing as a `state`
   contribution. A `state` contribution is a jail mount ([§5.1](#51-a-new-kind-not-an-extension-of-state)),

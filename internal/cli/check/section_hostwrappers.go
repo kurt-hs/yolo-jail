@@ -522,7 +522,7 @@ func shadowedNames(sh []hostwrap.Shadow) []string {
 }
 
 // hostManagementRow says who owns the config files yolo renders into this home — the
-// declared ownership contract (docs/design/config-ownership-and-promotion.md §4) — and reports
+// declared ownership contract (docs/reference/config-ownership.md#the-host_management-key) — and reports
 // whether it took over the section's generation rows.
 //
 // IT RIDES THE WRAPPERS SECTION, beside host_apply_on_launch, and the placement earns itself

@@ -14,7 +14,7 @@ import (
 // `apply --sealed`'s refusal for an outstanding capture overlay offered two exits and
 // spelled only one of them as a command: *"promote them into a pack or `yolo config reset
 // <agent>/<surface>` to discard"*. `yolo config promote` has shipped since
-// config-ownership-and-promotion.md §5 landed (cli.configRunW's `case "promote"`,
+// docs/reference/config-ownership.md#promotion landed (cli.configRunW's `case "promote"`,
 // internal/cli/configpromote.go), so the reader was handed a runnable command for the
 // exit that DESTROYS their edits and English prose for the one that keeps them.
 //

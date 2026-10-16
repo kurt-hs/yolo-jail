@@ -221,7 +221,7 @@ func encodeScalar(v any) (string, error) {
 		// The non-finite floats FIRST: TOML spells them `inf`, `-inf` and `nan`, and
 		// FormatFloat's `+Inf`/`-Inf`/`NaN` are not TOML at all — with the `.0` below
 		// appended they were written as `+Inf.0`, which the next decode of the file
-		// refuses (docs/design/config-ownership-and-promotion.md §11, residue item 6).
+		// refuses (found verifying OQ-CO12, fixed 2026-09-25).
 		// A NaN's sign is dropped: TOML allows `-nan`, but which bit pattern it names is
 		// implementation-defined, and the decode of both spellings is a NaN either way.
 		switch {

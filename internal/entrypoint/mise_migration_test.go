@@ -15,7 +15,7 @@ import (
 // first-migration seed rather than by a special-case scrub.
 //
 // ⚠ THE NO-PIN HALF OF THAT GUARANTEE IS WITHDRAWN, by the 2026-09-20 adoption ruling
-// (docs/design/config-ownership-and-promotion.md §6.3.1): the adoption drop narrows to
+// (docs/reference/config-ownership.md#adoption-is-capture-then-regenerate): the adoption drop narrows to
 // the leaves yolo actually asserted, and on a jail with no YOLO_MISE_TOOLS pin the
 // computed [tools] table is present-and-EMPTY — it asserts none. So a line in that
 // table is no longer taken to be yolo's own stale output, because nothing this boot

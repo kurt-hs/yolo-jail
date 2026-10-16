@@ -64,7 +64,7 @@ type Target struct {
 	kind Kind
 
 	// ownership is the user's DECLARED host-management contract (config `host_management`,
-	// docs/design/config-ownership-and-promotion.md §4), set by render.Host and meaningless
+	// docs/reference/config-ownership.md#the-host_management-key), set by render.Host and meaningless
 	// at every other notch. It is the second half of this target's notch: Modes() is a
 	// function of the PAIR, because "which mechanisms does the host run?" has two answers
 	// and the user picks one.
@@ -75,7 +75,7 @@ type Target struct {
 	// TestModesIsAFunctionOfTheNotchAlone exists to prevent. A fifth Kind is worse — every
 	// switch over Kind in this file would need a case for it, and the one that matters
 	// (ProvenanceDir) would fall into its `default:` and return "", leaving an owned host
-	// with no provenance record at all, which is what §6.3's adoption story reads.
+	// with no provenance record at all, which is what the adoption story (config-ownership.md#deletion-and-adoption) reads.
 	// Unexported for the reason `kind` is: a struct literal assembled outside this package
 	// cannot claim a contract, and gets OwnershipUnstated — the guarded answer.
 	ownership HostOwnership
@@ -83,7 +83,7 @@ type Target struct {
 
 // HostOwnership is the declared ownership contract for the files yolo renders into a real
 // home — config's `host_management` key, at the render boundary
-// (docs/design/config-ownership-and-promotion.md §4.1). It answers "who owns this file",
+// (docs/reference/config-ownership.md#the-host_management-key). It answers "who owns this file",
 // which is a DIFFERENT axis from Kind's "how is this target confined" (P2): collapsing the
 // two is what made "the host is different" look arbitrary, since the host is differently
 // CONFINED, which says nothing about who owns its files.
@@ -109,7 +109,7 @@ const (
 	// whole-file and captures edits — the jail's own mechanism, at a real home.
 	//
 	// There is no third contract. `assert` — shared ownership, the host notch pure
-	// read-modify-write — was retired (config-ownership-and-promotion.md §4.5, OQ-CO14), and
+	// read-modify-write — was retired (docs/reference/config-ownership.md#the-retired-assert, OQ-CO14), and
 	// with it the coercion that forced every composing surface through `rmw`. A surface its
 	// PACK declares `rmw` still runs rmw here, under OwnershipOwn (HostOwnedModes).
 	OwnershipOwn
@@ -330,7 +330,7 @@ func inferKindFromShape(t Target) Kind {
 // had to hold both or lie about one.
 //
 // IT DOES NOT MOVE, and the two dirs are separate because they have two LIFETIMES
-// (config-ownership-and-promotion.md §6.2). Provenance is per-key attribution, written at
+// (docs/reference/config-ownership.md#the-host-capture-store). Provenance is per-key attribution, written at
 // every writing host apply and left by every one the retired `assert` ran, and it is what
 // `yolo host apply --revert` consumes — under `none` too, on a home `assert` wrote into
 // (OQ-CO14); capture is `own`-only state a host-side `yolo config reset` is entitled to
@@ -341,7 +341,7 @@ const hostProvenanceLeaf = "host-provenance"
 // hostCaptureLeaf is the state-dir leaf holding the host notch's CAPTURE sidecars under
 // `host_management: own` — the same three files a jail keeps under <workspace>/.yolo/prism/,
 // with the same names, because they are what `stateful` composition needs and `own` is that
-// composition at the host notch (config-ownership-and-promotion.md §6.2): the baseline a
+// composition at the host notch (docs/reference/config-ownership.md#the-host-capture-store): the baseline a
 // capture diffs against (last_render), the captured edits themselves (overlay.json), and the
 // recorded selection (selection.json).
 //
@@ -407,7 +407,7 @@ func (t Target) SidecarDir() string {
 //
 // The jail's tree stays 0755/0644, which is not an oversight: it lives in the workspace, is
 // read by the human on the host side, and is the notch whose capture mode
-// config-ownership-and-promotion.md §6.2 lists for the roadmap rather than changes here.
+// docs/reference/config-ownership.md#known-gaps records as a gap rather than changes here.
 func (t Target) SidecarDirMode() os.FileMode {
 	if t.KindOf() == KindHost {
 		return 0o700
@@ -572,7 +572,7 @@ func (t Target) ProvenancePath(agent, name string) string {
 
 // archiveLeaf and configArchiveBucket spell the ADOPTION ARCHIVE's location: the copy of a
 // pre-existing file taken once, before the first render that ADOPTS it
-// (docs/design/config-ownership-and-promotion.md §6.3.3, OQ-CO7).
+// (docs/reference/config-ownership.md#the-adoption-archive, OQ-CO7).
 //
 // `archive/` is the subsystem's existing root — the same directory `yolo host apply` already
 // writes its replaced skills, files and briefings into (internal/cli.hostArchiveRoot) — and
@@ -595,7 +595,7 @@ const (
 //     `yolo host apply` already mints, so "what did yolo move out of my way?" has one answer.
 //   - jail / preview: <workspace>/.yolo/archive/config/. The workspace, because a jail's own
 //     net has to survive in the tree the human reads from the host side — and because a boot
-//     has NO TTY to prompt on, so the copy is the only net that path can have (§6.3.3).
+//     has NO TTY to prompt on, so the copy is the only net that path can have (config-ownership.md#the-adoption-archive).
 //
 // WHY THE WORKSPACE IS THE JAIL'S ANCHOR, and why it needs no per-backend spelling: the two
 // backends reach a per-workspace directory INSIDE THE HOME by different primitives (the

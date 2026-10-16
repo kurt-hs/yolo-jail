@@ -321,7 +321,7 @@ func workspaceRoot() string {
 // render.Target for the CWD's workspace, whatever workspaceRoot resolved.
 //
 // It exists so the Blocker-3 path has a name rather than a hand-joined path at each call
-// site — the hazard docs/design/config-ownership-and-promotion.md §6.2 states as *"the
+// site — the hazard docs/reference/config-ownership.md#the-host-capture-store states as *"the
 // directory is RESOLVED, never hand-built"*. It is deliberately NOT the config target: see
 // workspaceRoot above for why that question is unruled.
 func sealedWorkspaceStore() render.Target {
@@ -386,7 +386,7 @@ func (t configTarget) sidecarDir() string { return t.store.SidecarDir() }
 
 // overlayPath, lastRenderPath and provenancePath are one surface's records under THIS
 // target. All three come off the resolved store — the rule
-// docs/design/config-ownership-and-promotion.md §6.2 stated as *"the directory is RESOLVED,
+// docs/reference/config-ownership.md#the-host-capture-store stated as *"the directory is RESOLVED,
 // never hand-built"* and that the readers then broke.
 func (t configTarget) overlayPath(agent, name string) string {
 	return t.store.OverlayPath(agent, name)

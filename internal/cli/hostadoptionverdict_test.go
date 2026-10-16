@@ -1,7 +1,7 @@
 package cli
 
 // hostadoptionverdict_test.go is OQ-CO7's D3: the VERDICT half of the byte-identical adoption
-// (docs/design/config-ownership-and-promotion.md §6.3.3, docs/reference/report-tiers.md's
+// (docs/reference/config-ownership.md#the-adoption-archive, docs/reference/report-tiers.md's
 // verdict block).
 //
 // hostadoptionarchivetier_test.go pinned the HEADING — an adopting render is a tier-3

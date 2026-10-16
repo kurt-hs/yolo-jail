@@ -121,7 +121,7 @@ func hostApplyGate(errw io.Writer, stdin io.Reader, bin string) bool {
 	}
 	// NOTHING TO CHECK WITHOUT A RENDER. Under `host_management: none` yolo writes no host
 	// surface, so there is no staleness for this gate to find and the check is a NO-OP rather
-	// than a nag (config-ownership-and-promotion.md §4.1). The two keys are orthogonal and both
+	// than a nag (docs/reference/config-ownership.md#the-host_management-key). The two keys are orthogonal and both
 	// are read — this one says HOW the host renders, host_apply_on_launch says WHEN a re-render
 	// is checked (§4.4).
 	//

@@ -17,7 +17,7 @@ Written as design 2026-07-27, fact-checked 2026-07-30, **re-verified against the
 2026-08-23**, **[§3.4](#34-what-this-buys-immediately-before-any-host-target-exists)'s two tables retired 2026-09-09** (see the shipped-status postscript
 below). **Re-checked against the tree 2026-09-24**: the one thing that moved under this doc since is a
 RULING, not a build — `host_management: "assert"` was retired on 2026-09-20
-([`config-ownership-and-promotion.md` §4.5](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)),
+([`config-ownership.md`](../reference/config-ownership.md#the-retired-assert)),
 recorded and unbuilt, so every `assert` below still describes shipped behavior with a known expiry
 (Postscript 2 carries it).
 
@@ -77,7 +77,7 @@ recorded and unbuilt, so every `assert` below still describes shipped behavior w
 > steps 1 and 3. The finding is historical; the diagnosis is not.
 >
 > **Postscript 2, 2026-09-12 — three more of the body's claims were superseded by
-> [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md), which shipped that
+> [`config-ownership.md`](../reference/config-ownership.md), which shipped that
 > day.** Each is marked in place; they are listed together here because they are one change.
 > [§6.3](#63-the-structural-problem-on-a-host-target-the-host-layer-is-the-output)'s rule
 > *"on a host target, every surface is `rmw`"* is now the `assert` row of a three-value
@@ -91,12 +91,12 @@ recorded and unbuilt, so every `assert` below still describes shipped behavior w
 > what moved is which of them a given host render runs.
 >
 > ⚠ **And the `assert` row is itself on its way out (ruled 2026-09-20, NOT built).**
-> [`config-ownership-and-promotion.md` §4.5](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)
-> reverses its own [`OQ-CO1`](config-ownership-and-promotion.md#13-decision-ledger): `host_management` keeps `none` and `own`, and `none` becomes the
+> [`config-ownership.md`](../reference/config-ownership.md#the-retired-assert)
+> reverses its own [`OQ-CO1`](../reference/config-ownership.md#oq-co1): `host_management` keeps `none` and `own`, and `none` becomes the
 > unset answer. The code still accepts all three values (`config.HostManagementAssert`), so the
 > present tense below is still true of the tree. What the retirement does to a config that says
 > `"assert"` and to a home yolo has already asserted into — including whether `--revert` stays
-> the remedy there — is [`OQ-CO14`](config-ownership-and-promotion.md#oq-co14), open. So
+> the remedy there — is [`OQ-CO14`](../reference/config-ownership.md#oq-co14), open. So
 > [§6.3](#63-the-structural-problem-on-a-host-target-the-host-layer-is-the-output)'s `rmw`-everywhere
 > rule is headed from "one row of three" to "no row at all": after the build, a host render either
 > writes nothing or owns the file.
@@ -913,7 +913,7 @@ That has a crisp consequence worth stating as a rule:
 > about the user who has ADOPTED `yolo host apply` as their source of truth — for whom
 > "undeclared keys are preserved for free" is not a benefit but the thing they are trying to
 > stop, and who wants composition, a capture overlay and a `--revert` exactly as a jail has
-> them. [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md) ruled that
+> them. [`config-ownership.md`](../reference/config-ownership.md) ruled that
 > the missing variable is an ownership DECLARATION rather than a notch, and **that design is
 > BUILT**: a user-scope `host_management: none | assert | own` key
 > ([`internal/config/hostmanagement.go`](../../internal/config/hostmanagement.go)) selects the
@@ -922,8 +922,8 @@ That has a crisp consequence worth stating as a rule:
 > `none` renders nothing, `assert` is the `rmw` above, and `own` composes the whole file with
 > a host capture store at `<home>/.local/share/yolo-jail/host-capture/`. ⚠ `assert` was
 > **retired by ruling on 2026-09-20** and is still built
-> ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key);
-> migration open as [`OQ-CO14`](config-ownership-and-promotion.md#oq-co14)). The mechanism claim
+> ([the retired `assert` there](../reference/config-ownership.md#the-retired-assert);
+> migration open as [`OQ-CO14`](../reference/config-ownership.md#oq-co14)). The mechanism claim
 > is untouched — `rmw` really does preserve the agent's keys for free — but **"every surface
 > is `rmw`" is no longer true of every host render**, and the one asymmetry that survives is
 > still deletion from a real home.
@@ -992,11 +992,11 @@ renderer is allowed to do*. This is `Target.Posture` from [§3.3](#33-what-each-
 > than a third value of `Target.Posture` — the posture dial that reaches the user is the
 > two-valued dry-run/`--assert` one, and the word `observe` no longer appears in the report
 > at all ([`../reference/report-tiers.md`](../reference/report-tiers.md#the-report-vocabulary)). Read
-> [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#4-declaring-ownership--the-host_management-key)
-> for the key and [its §6](config-ownership-and-promotion.md#6-the-host-as-a-notch-like-any-other)
+> [`config-ownership.md`](../reference/config-ownership.md#the-host_management-key)
+> for the key and [its the host notch under `own`](../reference/config-ownership.md#the-host-notch-under-own)
 > for what `own` composes; this table is the shape the argument arrived at, not the shipped
 > surface. The `assert` value of that key was retired by ruling on 2026-09-20 and is not yet
-> removed from the code ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
+> removed from the code ([the retired `assert` there](../reference/config-ownership.md#the-retired-assert)).
 
 Note what this table makes possible that nothing currently did: **`assert` across every agent
 from one declaration**.
@@ -1105,7 +1105,7 @@ $ yolo config apply --host --revert     # removes exactly what the sidecar says 
 > line told a later author to *strike this design from [§6.5](#65-the-posture-stated-as-a-table),
 > [§7.2](#72-the-human-manages-their-own-machine) and [§9.5](#9-open-questions--the-discussion-part)* —
 > and that ruling was reversed by
-> [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#10-what-i-would-build-in-order)
+> [`config-ownership.md`](../reference/config-ownership.md#revert)
 > step 3.
 > **Do not strike it.** What it consumes is the per-key host provenance record
 > (`<home>/.local/share/yolo-jail/host-provenance/<agent>-<name>.provenance`), not a reconcile
@@ -1115,7 +1115,7 @@ $ yolo config apply --host --revert     # removes exactly what the sidecar says 
 > ⚠ `assert` is **retired by ruling (2026-09-20), not yet in code**, so `--revert` loses the only
 > value it runs at once the retirement is built. Whether the retirement clears yolo's marks or
 > names `--revert` as the remedy is part of
-> [`OQ-CO14`](config-ownership-and-promotion.md#oq-co14).
+> [`OQ-CO14`](../reference/config-ownership.md#oq-co14).
 
 Three things to notice. `mise/config` is *refused* rather than truncated — probe 2 turned into
 a designed outcome, and it is refused because `render.Host()` declares `Tables` empty rather
@@ -1210,7 +1210,7 @@ compacted into the ledger below and kept in place only as an anchor.
 | ID | Ruling / Outcome | Date | Settled in / Evidence |
 | :--- | :--- | :--- | :--- |
 | 9.1 | **The second sense** — yolo is an interface for describing environments agents run in; the host target is one notch of a `confinement` dial, not a special case | 2026-07-27 | [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md); shipped as `internal/render/confinement.go` + the `confinement` config key (`internal/config/confinement.go`) |
-| 9.3 | **`capture` does not redact — it REFUSES.** Host-side `capture`/`reset` abort unless `--force`, which removes the leak path wholesale; no notion of "sensitive key" was invented. **Amended 2026-09-12:** `reset` is now EXEMPT under `host_management: own`, because that contract answers the guard's own premise — the files are yolo's derived output, so truncating one to its pure render is the operation working rather than data loss, and adoption depends on it. **Amended 2026-10-04:** `capture` is exempt under `own` too, as [`OQ-CO3`](config-ownership-and-promotion.md#13-decision-ledger) ruled — its privacy premise is a credential copied into the WORKSPACE tree, and under `own` it writes the host's own `0600` capture store. What it writes is the capture half of the host apply's own render of the surface, run in observe (`entrypoint.HostRenderResult.Capture`) — the configured pack at the host posture, with the computed layer — so the bytes are the ones the next apply records there; its first build composed the capture the jail's way instead and erased edits the apply keeps ([§6.2](config-ownership-and-promotion.md#62-host-capture-and-the-privacy-ruling-it-has-to-answer-to)). Under `none` and `assert` there is no store, so `capture` refuses there even with `--force` and names `own` instead | 2026-08-23; amended 2026-09-12, 2026-10-04 | `refuseHostSideWrite` and the resolved target's `hostOwned()`, [`internal/cli/configdiff.go`](../../internal/cli/configdiff.go) |
+| 9.3 | **`capture` does not redact — it REFUSES.** Host-side `capture`/`reset` abort unless `--force`, which removes the leak path wholesale; no notion of "sensitive key" was invented. **Amended 2026-09-12:** `reset` is now EXEMPT under `host_management: own`, because that contract answers the guard's own premise — the files are yolo's derived output, so truncating one to its pure render is the operation working rather than data loss, and adoption depends on it. **Amended 2026-10-04:** `capture` is exempt under `own` too, as [`OQ-CO3`](../reference/config-ownership.md#oq-co3) ruled — its privacy premise is a credential copied into the WORKSPACE tree, and under `own` it writes the host's own `0600` capture store. What it writes is the capture half of the host apply's own render of the surface, run in observe (`entrypoint.HostRenderResult.Capture`) — the configured pack at the host posture, with the computed layer — so the bytes are the ones the next apply records there; its first build composed the capture the jail's way instead and erased edits the apply keeps ([the host capture store](../reference/config-ownership.md#the-host-capture-store)). Under `none` and `assert` there is no store, so `capture` refuses there even with `--force` and names `own` instead | 2026-08-23; amended 2026-09-12, 2026-10-04 | `refuseHostSideWrite` and the resolved target's `hostOwned()`, [`internal/cli/configdiff.go`](../../internal/cli/configdiff.go) |
 | 9.4 | **`program` at a host target means OFFERED behind a confirm, not "never"** — and the answer came from the tree plus [`report-tiers.md`](../reference/report-tiers.md#the-dependency-rule)'s dependency rule, not from this doc. `HostFields` honors the kind (*"honored but confirm-gated by the caller"*); at `yolo host apply --assert` a missing declared dependency prints the exact install command, one prompt covers the set, a decline is FATAL with nothing written, and an install that leaves the binary missing counts as a decline. The per-invocation grant 9.4 said would need its own design got one | 2026-09-12 | `render.HostFields` + `internal/cli/applyhostdepgate.go`; [`yolo-as-environment-manager.md`](yolo-as-environment-manager.md#9-decision-ledger) carries what is left (the elevation-class batching) |
 | 9.5 | **User/machine-scoped, never workspace-scoped**, exactly as [§6.6](#66-a-host-target-is-user-scoped-not-workspace-scoped) argued. The "two workspaces collide" framing was dissolved rather than answered | 2026-08-01 | `Target.ProvenanceDir()` → `<home>/.local/share/yolo-jail/host-provenance/` (`internal/render/target.go`), with the two rejected alternatives written into the doc comment |
 | 9.7 | **Fixed** — macos-user is the `guest` notch and receives packs; measured on a Mac 2026-09-10 and again 2026-09-12 ([runbook item 4](../plans/runbooks/macos-user-manual-checks.md#4-content-actually-reached-the-agent)) | 2026-08-23 (verified) | `YOLO_PACK_ROOT` set in `buildBootstrapEnv` (`internal/macosuser/runplan.go`), asserted in `PlanInvariants`; `render.GuestProfileMacOS` (`confinement.go`) |

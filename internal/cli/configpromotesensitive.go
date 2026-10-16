@@ -3,11 +3,11 @@ package cli
 // configpromotesensitive.go is the classification promote does that NOTHING ELSE IN THE
 // TREE DOES: deciding, from a captured key alone, whether moving it into a pack manifest
 // would move a credential or a machine-local path with it
-// (docs/design/config-ownership-and-promotion.md §5.3).
+// (docs/reference/config-ownership.md#what-promote-does).
 //
 // # It is new work, and the design said otherwise
 //
-// §5.3 describes the sensitive check as "a key on a deny-list of name patterns, or on a
+// config-ownership.md#what-promote-does describes the sensitive check as "a key on a deny-list of name patterns, or on a
 // surface a pack marks sensitive", and its own warning admits the deny-list "does not exist
 // yet" — but the prose still reads as though one were being reused. Nothing in
 // internal/agentcfg, internal/packdecl or the config verbs matched `sensitive`, `deny-list`
@@ -18,7 +18,7 @@ package cli
 //
 // BUILT: a name-pattern check over the captured subtree, walked to its leaves. The measured
 // case this has to catch is four levels down — `mcp.tavily.environment.TAVILY_API_KEY`, a
-// live-looking value in this repo's own jail (§5.3) — and its TOP-LEVEL key is `mcp`, which
+// live-looking value in this repo's own jail (config-ownership.md#what-promote-does) — and its TOP-LEVEL key is `mcp`, which
 // carries no signal at all. A top-level-only check would have promoted it on the first run
 // of the verb, which is the outcome the ruling exists to prevent.
 //
@@ -34,7 +34,7 @@ package cli
 //
 // # Refuse, never redact
 //
-// §5.3's ruling, and it is the same one host-side capture already took rather than
+// config-ownership.md#what-promote-does's ruling, and it is the same one host-side capture already took rather than
 // inventing a notion of redactable secret. A redaction would put a placeholder in a pack
 // that renders into a real config file, which is how a working agent quietly stops
 // authenticating. So a sensitive key is REFUSED, with the key path that tripped it named,
@@ -74,7 +74,7 @@ func sensitiveKeyPath(key string, value any) string {
 // environmentBoundPath walks a captured value for a string that is an artifact of the JAIL
 // it was set in, returning the key path and the marker it found, or ("", "").
 //
-// §5.3's "environment-bound by construction": detectable by inspection and REFUSED rather
+// config-ownership.md#what-promote-does's "environment-bound by construction": detectable by inspection and REFUSED rather
 // than rewritten. Rewriting would mean guessing which occurrence of `/workspace` is the
 // workspace and which is a literal the agent meant, in a value yolo does not own.
 //

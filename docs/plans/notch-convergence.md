@@ -7,7 +7,7 @@ next: "Land item 16 with the parity build: the order (B17) and OQ-NC12's disclos
 depends-on:
   - ../design/credential-sources-separation.md#OQ-ES5
   - ../research/agent-safehouse.md#OQ-AS3
-  - ../design/config-ownership-and-promotion.md#OQ-CO15
+  - ../reference/config-ownership.md#OQ-CO15
 tags: [plan, notches, host, parity, security, loopback]
 summary: "Five audits found that the host notch, the container jail and macos-user reach one declaration through different code for flags, pack selection, providers, env order and render, and that the loopback services serving credentials are safe only while the jail has its own network namespace. The plan: one description, one code path per concern, the notch choosing only the confinement. Caller authentication comes first, because network.mode host and macos-user already share the host's loopback. Then an ordered build list: pure merges that need no ruling, and behavior changes gated on this plan's own questions and on questions other docs own."
 ---
@@ -128,7 +128,7 @@ serves:
   jail half, [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3),
   [`OQ-HC1`](../reference/host-agent-environment.md#oq-hc1),
   [`OQ-HC3`](../reference/host-agent-environment.md#oq-hc3) and
-  [`OQ-CO15`](../design/config-ownership-and-promotion.md#OQ-CO15). Two more,
+  [`OQ-CO15`](../reference/config-ownership.md#OQ-CO15). Two more,
   [`OQ-CN8`](../reference/providers.md#oq-cn8) and
   [`OQ-CN9`](../reference/providers.md#oq-cn9), were ruled and built on 2026-09-28:
   the second built item 17 ([NC-D67](#NC-D67)), and the first decided part of item 16, whose rest
@@ -444,7 +444,7 @@ the host's.
 | D8 | `files` kind | `packFilesTargets` → a `:ro` bind; addressed files resolved by its own `aliasByAgent` | `RenderHostFiles` over `ResolveDestinations` | **absent, silently** (`preparePackFiles` gated off) | pi's extensions never reach macos-user | The macos overlay carries files; `ResolveDestinations` everywhere | — |
 | D9 | Posture launch flags | `InjectLaunchFlags` → `launchFlagClaims(packs, true)`, hardcoded | never called | as jail | A `guarded.launch` entry reaches no notch | `InjectLaunchFlags` takes the target profile's autonomy bit | — ([§6c](../reference/pack-system.md#batch-6c)) |
 | D10 | macos-user boot steps | the `boot.go` step list | — | `RunDarwinBootstrap`'s own list: catalog and reconcile skipped on a false premise; git identity through `configureGit` | A new step must be added twice | One step table with declared platform exclusions | — |
-| D11 | The `rmw` write rule | every object-valued derive key is regenerated | `in_full` tables only | as jail | No shipped surface hits it yet | One rule at both notches | [`OQ-CO15`](../design/config-ownership-and-promotion.md#OQ-CO15) |
+| D11 | The `rmw` write rule | every object-valued derive key is regenerated | `in_full` tables only | as jail | No shipped surface hits it yet | One rule at both notches | [`OQ-CO15`](../reference/config-ownership.md#OQ-CO15) |
 | D12 | `host_files` and `mise_tools` | `ConfigureHostFiles`, `ConfigureMisePrism` | neither, and nothing says so | as jail | MEASURED: a source-less `host_files` entry is inert at the host with no report line | — | [OQ-NC8](#7-decision-ledger) |
 
 #### Row D6: skill-name collisions in a jail
@@ -577,7 +577,7 @@ after it, except where its **After** cell says otherwise.
 | 25 | One skills composer | D6 | **behavior-changing**, ruled by [OQ-NC11](#7-decision-ledger) (A, by parity), which also answers [S5](BACKLOG.md#S5). Filed as ruled (S1, [§6a-2](../reference/pack-system.md#batch-6a)); building it found an open question on the same behavior and two changes S1 does not decide | 24 | The same collision refuses at both notches. ✅ **Built** `45c53ed1` ([NC-D52](#NC-D52) to [NC-D56](#NC-D56)) |
 | 26 | One briefing composer with a notch-aware base; `agents_md_extra` at the host | D7 | **behavior-changing, ruled** ([§6a](../reference/pack-system.md#batch-6a), Phase 8) | 24 | A host agent is told it is on the real machine. **Built** `180deba3` ([NC-D30](#NC-D30)) |
 | 27 | The host profile table fed into render | D1 | **behavior-changing, ruled** ([`OQ-HC3`](../reference/host-agent-environment.md#oq-hc3), as leaned). ✅ **Built** `358f877d` ([HC-D17](../reference/host-agent-environment.md#HC-D17), [HC-D18](../reference/host-agent-environment.md#HC-D18)): host apply composes the `profile` selection once per invocation and hands it to the derives, pinned by `TestHostApplyWritesTheUseProfilesSelectionOnTheEdge` | 11, 24 | — |
-| 28 | Derives at the host; one `rmw` rule | D4, D11 | **behavior-changing.** ✅ The [`OQ-HC1`](../reference/host-agent-environment.md#oq-hc1) half, derives at the host, ruled and built `358f877d` ([what each surface gets at the host](../reference/host-agent-environment.md#what-each-surface-gets-at-the-host)), pinned by `TestTheHostRendersEachDerivedSurfaceClass` and `TestYoloHostApplyAssertWritesTheComputedLayer`. The one `rmw` rule is gated on [`OQ-CO15`](../design/config-ownership-and-promotion.md#OQ-CO15) | 24 | — |
+| 28 | Derives at the host; one `rmw` rule | D4, D11 | **behavior-changing.** ✅ The [`OQ-HC1`](../reference/host-agent-environment.md#oq-hc1) half, derives at the host, ruled and built `358f877d` ([what each surface gets at the host](../reference/host-agent-environment.md#what-each-surface-gets-at-the-host)), pinned by `TestTheHostRendersEachDerivedSurfaceClass` and `TestYoloHostApplyAssertWritesTheComputedLayer`. The one `rmw` rule is gated on [`OQ-CO15`](../reference/config-ownership.md#OQ-CO15) | 24 | — |
 | 29 | `host_files` and `mise_tools` at the host | D12 | **behavior-changing, ruled** ([OQ-NC8](#7-decision-ledger) A). ✅ **Built** `7f77a618` ([NC-D48](#NC-D48) to [NC-D51](#NC-D51)) | 24 | A source-less entry renders at the host through the one loop and a later apply removes what it wrote once the entry goes; a source-bearing entry and `mise_tools` are named as inert |
 | 30 | Autonomy on a shared namespace | E4 | **behavior-changing, ruled** ([OQ-NC3](#7-decision-ledger) A). ✅ **Built** `9a5c5b68` ([NC-D47](#NC-D47)). Verified by unit tests through `Run` and `refreshJailBriefings`; the real `network.mode: "host"` arm is in the reachability carve-out below | 1 | A shared-namespace jail keeps autonomy and says so at launch and in its briefing; a bridged one says nothing |
 | 31 | Claude OAuth at the host | C8 | **behavior-changing, ruled** by [`OQ-CI1`](../reference/claude-oauth-interposition.md#OQ-CI1) (B, 2026-10-05), which [OQ-NC7](#7-decision-ledger)'s ruling (A, 2026-09-28) waited on: `yolo host -- claude` joins the one shared login through a credential view, and a host claude yolo did not start keeps its own. **Held** until a human runs [the view's measures](runbooks/claude-credential-view-measures.md); host claude keeps its own login until then. The opt-in half is built: the jails' switch gives one `yolo host -- claude` launch a view in a store yolo manages, `~/.claude` untouched ([CL-D27](../design/claude-login-without-interception.md#CL-D27), 2026-10-04) | 1 | — |

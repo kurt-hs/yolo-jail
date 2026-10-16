@@ -276,7 +276,7 @@ func applyAtHost(out, errw io.Writer, color, write, revert bool, stdin io.Reader
 // home (env-manager plan Phase 4). Default posture is OBSERVE (dry-run): it prints what
 // would change and writes nothing; --assert (write=true) actually renders. Pure RMW, no
 // computed layer over the host's own inputs since OQ-HC1, user-scoped — the resolved OQ-2..4 model. (OQ-1's "no --revert" half was
-// REVERSED on 2026-09-11 by docs/design/config-ownership-and-promotion.md §10 step 3, on
+// REVERSED on 2026-09-11 by docs/reference/config-ownership.md#revert, on
 // grounds that ruling did not have: it named the missing memory as the blocker, and the
 // provenance record is that memory. The verb is hostrevert.go; this render is untouched by
 // it.) Non-config
@@ -1553,17 +1553,17 @@ func embeddedPacksForPrune() []*packload.Pack { return packload.Embedded() }
 //     itself declared, which is why this is not "every declared layer"), yet nothing
 //     declares them (they are a staging area to promote, §3.3).
 //   - an UNSET `host_management`: the host-ownership contract is unstated
-//     (docs/design/config-ownership-and-promotion.md §4.3 item 3).
+//     (docs/reference/config-ownership.md#the-unset-state item 3).
 //
 // ⚠ THE THIRD IS A DIFFERENT SENSE OF "UNDECLARED", and the two are four lines apart. The
 // first two are the input-closure tier: a VALUE inside an agent's config file that shapes
 // the environment while nothing names it, whose remedy is to promote it or discard it. The
 // third is the ordinary word UNSET: a yolo config key with no value at all, whose remedy is
-// to write it. §4.3's note reserves "undeclared" for the closure sense on purpose, so the
+// to write it. config-ownership.md#the-unset-state's note reserves "undeclared" for the closure sense on purpose, so the
 // refusal below says "unset" and the ones above say "declares".
 //
 // It belongs here rather than in the apply because this is where the user asked the question
-// about declaredness. An unset key changes NO apply — §4.3 rules the default carries the
+// about declaredness. An unset key changes NO apply — config-ownership.md#the-unset-state rules the default carries the
 // whole migration, silently — so `--sealed` is the one place it bites, and a `--sealed` that
 // passed while the ownership contract was unstated would be answering a narrower question
 // than the one it was asked.

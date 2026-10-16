@@ -1,11 +1,11 @@
 package cli
 
 // hostadoptionarchivetier_test.go is the ZERO-BYTES half of OQ-CO7's disclosure
-// (docs/design/config-ownership-and-promotion.md §6.3.3, §11).
+// (docs/reference/config-ownership.md#the-adoption-archive).
 //
 // hostadoptionarchive_test.go pins that `yolo host apply` NAMES the copy, on a fixture whose
 // render visibly rewrites the file. That leaves the canonical case unmeasured, and it is the
-// case the ruling exists for: §11's criterion says switching a home from `host_management:
+// case the ruling exists for: the keys-and-values invariance criterion (config-ownership.md#keys-and-values-invariance) says switching a home from `host_management:
 // assert` to `own` changes ZERO BYTES, so the adoption that archives usually reports
 // WouldChange=false — and a tier-2 destination's own line lives behind --verbose. The archive
 // line does not (OQ-RO3 forbids hiding a disclosure), so the default view printed the indented

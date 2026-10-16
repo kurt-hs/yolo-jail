@@ -29,7 +29,7 @@ local function providerEndpoint(prov)
 end
 
 -- in_full declares a table this derive regenerates in full — ctx.in_full, the CO13 sentinel
--- (docs/design/config-ownership-and-promotion.md): its entries track a live table, so one on
+-- (docs/reference/config-ownership.md): its entries track a live table, so one on
 -- disk this run did not produce is yolo's own stale output. A table returned without it is
 -- one the derive only asserts leaves of. The fallback is for an entrypoint older than the
 -- sentinel, which treated every non-empty table as regenerated in full anyway.

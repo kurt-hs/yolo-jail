@@ -1,7 +1,7 @@
 package entrypoint
 
 // adoptionarchivelosses_test.go measures OQ-CO7's archive AGAINST ADOPTIONS THAT ACTUALLY LOSE
-// (docs/design/config-ownership-and-promotion.md §6.3.3).
+// (docs/reference/config-ownership.md#the-adoption-archive).
 //
 // ⚠ WHY THIS IS A SEPARATE MEASUREMENT FROM adoptionarchive_test.go. Every fixture there is one
 // adoption PRESERVES: the seeds carry an undeclared top-level key and an undeclared leaf under a

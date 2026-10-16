@@ -27,7 +27,7 @@ package luahook
 //     the derive path, reproducing the DSL's tombstone semantics exactly.
 //   - the EMPTY-ARRAY sentinel, ctx.empty_array (see newDeriveSession).
 //   - the IN-FULL sentinel, ctx.in_full(t), which wraps a table the derive
-//     regenerates in full (CO13, docs/design/config-ownership-and-promotion.md
+//     regenerates in full (CO13, docs/reference/config-ownership.md
 //     #co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided). It is the
 //     one sentinel that carries a DECLARATION rather than a value: the table decodes to
 //     the plain object it always was, and the key it sat under is reported beside the
@@ -343,7 +343,7 @@ type DeriveOutput struct {
 	// ⚠ NOT every reader of the computed layer consults it. The jail's rmw arm
 	// (entrypoint.regenerateManagedTables) still regenerates EVERY object-valued computed
 	// key wholesale, declared or not — a residual awaiting a ruling, unobservable for the
-	// shipped packs (docs/design/config-ownership-and-promotion.md, "Built 2026-09-25 —
+	// shipped packs (docs/reference/config-ownership.md, "Built 2026-09-25 —
 	// what shipped").
 	InFull []string
 }

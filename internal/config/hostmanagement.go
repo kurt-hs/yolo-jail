@@ -6,19 +6,19 @@ import (
 )
 
 // hostManagementKey is the top-level declaration of WHO OWNS the config files yolo renders
-// into the user's real home (docs/design/config-ownership-and-promotion.md §4).
+// into the user's real home (docs/reference/config-ownership.md#the-host_management-key).
 const hostManagementKey = "host_management"
 
 // HostManagement is the declared ownership contract for the host notch. It is the value of
 // `host_management`, and it selects the surface mode the host renders in — which is what
-// makes "ownership is declared, never inferred" (§1 P1) literally true rather than
+// makes "ownership is declared, never inferred" (config-ownership.md#principles, P1) literally true rather than
 // aspirational.
 type HostManagement string
 
 const (
 	// HostManagementNone: the user owns their files entirely. Host surfaces are
 	// `unrendered`, and `yolo host apply` refuses, naming this key. It is also the UNSET
-	// state since the `assert` retirement (OQ-CO14, §4.5), so a home yolo wrote into under
+	// state since the `assert` retirement (OQ-CO14, config-ownership.md#the-retired-assert), so a home yolo wrote into under
 	// `assert` keeps exactly the bytes `assert` last rendered and nothing rewrites them.
 	HostManagementNone HostManagement = "none"
 	// HostManagementOwn: yolo owns the file; it is derived output. Host surfaces compose
@@ -29,7 +29,7 @@ const (
 )
 
 // retiredHostManagementAssert is the value OQ-CO14 RETIRED (ruled 2026-10-05, building the
-// 2026-09-20 ruling in config-ownership-and-promotion.md §4.5). It was shared ownership: yolo
+// 2026-09-20 ruling in docs/reference/config-ownership.md#the-retired-assert). It was shared ownership: yolo
 // read-modify-wrote the keys its packs declare into a file the user also wrote.
 //
 // It is kept ONLY so a config still spelling it earns its own targeted refusal rather than the
@@ -48,7 +48,7 @@ var KnownHostManagements = []HostManagement{HostManagementNone, HostManagementOw
 // # It is read from the USER config directly, and that is the security boundary
 //
 // The same construction `host_files`, `host_wrappers` and `host_apply_on_launch` use
-// (§4.2), for a reason that is at its sharpest here: this key decides whether yolo may
+// (config-ownership.md#invariants), for a reason that is at its sharpest here: this key decides whether yolo may
 // write the user's real `$HOME` at all, and — at `own` — whether their hand-written keys
 // become derived output. Of the places a config key can come from, two are jail-writable:
 // the workspace `yolo-jail{,.local}.jsonc` (/workspace is bind-mounted rw, so an agent can
@@ -62,7 +62,7 @@ var KnownHostManagements = []HostManagement{HostManagementNone, HostManagementOw
 //
 // UserScopeConfigOrEmpty returns an empty map for BOTH "there is no user config" and "the
 // user config could not be read", so a reader built on it cannot tell the two apart — and
-// §4.2 gives them opposite answers:
+// config-ownership.md#invariants gives them opposite answers:
 //
 //   - ABSENT KEY (including no config file at all) ⇒ `none`, with declared=false. Since the
 //     `assert` retirement the unset state writes nothing (OQ-CO14, ruled 2026-10-05): no
@@ -90,7 +90,7 @@ func HostManagementMode() HostManagement {
 
 // HostManagementDeclared is HostManagementMode plus whether the user actually WROTE the key.
 //
-// The second return is what `yolo apply --sealed` needs and nothing else does (§4.3 item 3):
+// The second return is what `yolo apply --sealed` needs and nothing else does (config-ownership.md#the-unset-state):
 // an environment whose host-ownership contract is unstated is not sealed, and that is the
 // ONE place the unset state bites. Every other caller wants the mode, in which unset and
 // `none` are the same answer by ruling (OQ-CO14) — so the distinction is offered here rather

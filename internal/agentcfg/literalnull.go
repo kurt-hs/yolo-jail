@@ -14,8 +14,8 @@ package agentcfg
 //
 // WHAT THAT COST. A user's `~/.acme/settings.json` holding `"apiKeyHelper": null`
 // composes to a file WITHOUT that key, so switching a home to `own` deleted it and
-// no loss field named the deletion — §11's second measured bug
-// (docs/design/config-ownership-and-promotion.md §11, OQ-CO12). It is not the same
+// no loss field named the deletion — the second bug the keys-and-values criterion measured
+// (docs/reference/config-ownership.md#keys-and-values-invariance, OQ-CO12). It is not the same
 // bug as the `{}` one beside it in that table: an empty object reaches the overlay
 // perfectly well once dropNullLeaves stops eating it, and is then carried by the
 // fold unharmed. Only the null needs a channel of its own.
@@ -42,8 +42,8 @@ package agentcfg
 //     see them. On the STEADY-STATE branch the overlay DOES carry `k: null`, because
 //     mergeDiff cannot tell a key added-as-null from a deleted one, so promote reads it as
 //     a captured DELETION and will write it into the local pack — where it deletes the key
-//     the user was trying to set. Live residue in
-//     docs/design/config-ownership-and-promotion.md §11, with the shape of the fix.
+//     the user was trying to set. A known gap in
+//     docs/reference/config-ownership.md#known-gaps, with the shape of the fix.
 
 // literalNullSkeleton returns the marked-keypath skeleton of a DECODED surface
 // file: a map mirroring m in which a `nil` leaf marks a key the file holds with a
@@ -113,7 +113,7 @@ func reinstateAt(cfg map[string]any, k string, marked any, layers []map[string]a
 		// `workspace` or `config-overlay` value — and those lose to a captured value
 		// (Compose's overlayIdx comment measures the case: `"theme": null` against a
 		// `defaults` of `"system"` kept the null under `assert` and took the default
-		// under `own`, which is §11's criterion broken). Declining on `present` made
+		// under `own`, which breaks the keys-and-values criterion). Declining on `present` made
 		// the null the ONLY captured value in the engine that a lower layer could
 		// overwrite.
 		if spoken {
@@ -137,8 +137,8 @@ func reinstateAt(cfg map[string]any, k string, marked any, layers []map[string]a
 	// an object, and the leaf branch above would assign into it and panic. The one producer
 	// is a `managed` block holding a typed-nil map (enforceValue deep-copies it to nil);
 	// encoding/json never yields one, so no shipped surface reaches this — which is why the
-	// guard was missing, not why it is optional (config-ownership-and-promotion.md §11,
-	// live residue item 4).
+	// guard was missing, not why it is optional (found verifying OQ-CO12 and fixed
+	// 2026-09-25).
 	allocated := curMap == nil
 	if allocated {
 		curMap = map[string]any{}

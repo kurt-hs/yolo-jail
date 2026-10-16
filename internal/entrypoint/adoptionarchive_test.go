@@ -1,7 +1,7 @@
 package entrypoint
 
 // adoptionarchive_test.go measures OQ-CO7's one-time adoption archive
-// (docs/design/config-ownership-and-promotion.md §6.3.3) AT BOTH NOTCHES, and every test here
+// (docs/reference/config-ownership.md#the-adoption-archive) AT BOTH NOTCHES, and every test here
 // drives a REAL adoption path rather than the writer:
 //
 //	host   RenderHostPack(..., render.OwnershipOwn, ...) — what `yolo host apply --assert` calls
@@ -56,7 +56,7 @@ func jailConfigArchive(workspace, agent, name, basename string) string {
 // re-emits canonically — so that "the archive holds the seed" is a statement about the
 // PRE-RENDER bytes rather than about a file the render happened to leave alone. The assert ->
 // own transition below is the opposite fixture on purpose: adoption there is byte-identical by
-// construction (the `assert` -> `own` switch §11 governs), which is the transition the ruling is about. Two
+// construction (the `assert` -> `own` switch config-ownership.md's keys-and-values criterion governs), which is the transition the ruling is about. Two
 // fixtures, one for each claim.
 //
 // ⚠ NEITHER OF THEM PINS THE CALL'S POSITION, and it would be easy to read this one as doing
@@ -248,7 +248,7 @@ func TestOwnAdoptionArchivesOnlyTheFirstTime(t *testing.T) {
 // proves against a control render that the canonical re-emit moves it.
 //
 // The assert -> own home this used to use could not: adoption there is byte-identical by
-// construction (the `assert` -> `own` switch §11 governs), so writeInPlaceString rewrites the same bytes and
+// construction (the `assert` -> `own` switch config-ownership.md's keys-and-values criterion governs), so writeInPlaceString rewrites the same bytes and
 // an inverted call site passes. Measured — moving archiveAdoption below the surface write left
 // the whole suite green.
 func TestOwnAdoptionRefusesWhenTheArchiveCannotBeWritten(t *testing.T) {

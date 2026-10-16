@@ -1,6 +1,6 @@
 package luahook
 
-// The in-full sentinel, ctx.in_full (CO13, docs/design/config-ownership-and-promotion.md
+// The in-full sentinel, ctx.in_full (CO13, docs/reference/config-ownership.md
 // #co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided): a derive's
 // declaration that it regenerates a computed table in full. What these pin is the decode:
 // the wrapper leaves the layer entirely, the key it sat under is reported beside it, and
@@ -207,7 +207,7 @@ func deriveWithoutInFull(t *testing.T, script string, ctx *DeriveCtx) (map[strin
 //  1. WHICH tables are declared. Every table whose entries TRACK a live table (an MCP, LSP
 //     or provider catalog) is declared in full; a table with a FIXED key set (claude's
 //     `env`, `modelPicker`; pi's `subagents`) is not. That is the classification the CO13
-//     section of docs/design/config-ownership-and-promotion.md measures a declaration
+//     section of docs/reference/config-ownership.md measures a declaration
 //     against, and a surface missing from `want` fails, so a new producer has to be
 //     classified by whoever adds it. Both halves are checked by PRODUCING the table: a
 //     declared key the probe worlds never produce, or a fixed-key-set table (`notInFull`)
