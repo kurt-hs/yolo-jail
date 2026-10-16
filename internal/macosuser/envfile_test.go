@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -183,7 +184,7 @@ func TestSandboxEnvFileIsReadableOnlyByTheSandboxAccount(t *testing.T) {
 		t.Errorf("the sandbox account is never granted read on the env file:\n%s", grant)
 	}
 	// THE CONTENT IS NEVER A COMMAND ARGUMENT. installSandboxEnvFile writes through
-	// InstallRootFile, which feeds `sudo tee` on stdin — the same rule
+	// WriteHostFile, which writes the bytes from this process — the same rule
 	// setRandomPasswordReal follows for the account password. A command list that carried
 	// the bytes would have moved the leak rather than closed it.
 	all := strings.Join(append(flatten(plan.EnvFileCommands), flatten(plan.EnvFileGrantCommands)...), " ")
@@ -358,5 +359,36 @@ func TestAnEnvGatedServerSurvivesTheLaunchToBootstrapCrossing(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"gh"`) {
 		t.Errorf("the env-gated server is missing from claude's config:\n%s\nterminal:\n%s", raw, term.String())
+	}
+}
+
+// THE HOST WRITE (writeHostFileReal) creates a per-launch file at its final mode, so a
+// credential file is never readable by another account for an instant, and it never follows a
+// link or replaces a file already there: the staging root is the host user's, but a write that
+// followed a planted link would put the session's credentials wherever the link points.
+func TestWriteHostFileCreatesAtItsFinalModeAndNeverFollowsOrReplaces(t *testing.T) {
+	old := syscall.Umask(0)
+	defer syscall.Umask(old)
+	dir := t.TempDir()
+	p := filepath.Join(dir, "k.env")
+	if !writeHostFileReal(p, "export A='1'\n", 0o600) {
+		t.Fatal("write failed")
+	}
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v", fi.Mode().Perm())
+	}
+	if writeHostFileReal(p, "x", 0o600) {
+		t.Error("replaced an existing file")
+	}
+	if b, _ := os.ReadFile(p); string(b) != "export A='1'\n" {
+		t.Errorf("a refused write changed the file already there: %q", b)
+	}
+	link := filepath.Join(dir, "l")
+	_ = os.Symlink(filepath.Join(dir, "target"), link)
+	if writeHostFileReal(link, "x", 0o444) {
+		t.Error("wrote through a symlink")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "target")); err == nil {
+		t.Error("created the link's target")
 	}
 }
