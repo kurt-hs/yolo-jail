@@ -715,7 +715,7 @@ beside it."*
 | :--- | :--- |
 | The section is ignored, as the harness's own instructions were | it states consequences, not preferences, and replaces the false line that invited the mistake; the launch line's prunable-registration count shows the pattern recurring; [§6](#6-alternatives-considered) D is the escalation |
 | The section drifts from the mounts | [DS-D1](#DS-D1)'s pin fails the build when a writable destination in the assembled argv is missing from the map, or the reverse |
-| A host-side `git worktree prune`, `git gc` or `git clean -fdx` loses a jail-made worktree, because its links name `/workspace/…` | `--lock` stops prune and gc ([DS-D10](#DS-D10)); `git clean -fdx` on the host already deletes `.yolo/home` today (without `-d` a clean does not reach `.yolo`), and [§5.2](#52-the-durable-dir) names it; `--relative-paths` is the full fix where every git is 2.48 or newer. Mirroring the workspace path is [`workspace-path-mirroring.md`](workspace-path-mirroring.md)'s, whose verdict is no |
+| A host-side `git worktree prune`, `git gc` or `git clean -fdx` loses a jail-made worktree, because its links name `/workspace/…` | `--lock` stops prune and gc ([DS-D10](#DS-D10)); `git clean -fdx` on the host already deletes `.yolo/home` today (without `-d` a clean does not reach `.yolo`), and [§5.2](#52-the-durable-dir) names it; `--relative-paths` is the full fix where every git is 2.48 or newer. Mirroring the workspace path is [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md)'s, whose verdict is no |
 | The host report becomes a host-read channel | metadata and admin-file bytes only, beneath an `os.Root`, no link followed, bounded size; no git run on the host ([§5.4](#54-the-durable-dir-report)) |
 | An agent writes into `.yolo` outside the durable dir, next to files yolo reads (`handover.md`, `config-boot.json`) | the section names only `$YOLO_DURABLE_DIR`, never `.yolo` itself; the jail could already write `.yolo`, so no capability is added |
 | A host `yolo` from this tree stages the claude or pi pack for an entrypoint older than the audiences field, which refuses the pack's addressed prose line and fails the boot ([DS-D33](#DS-D33)) | pairing only: `just install` and a release each publish both halves together. The source-skew gate catches a from-source launch only when its checkout contains the binary's commit. Measured, such an entrypoint already refuses both manifests for other reasons ([Appendix A](#appendix-a--the-measured-runs)). Accepting the rest waits on [OQ-D6](slots-and-contributions.md#OQ-D6) |
@@ -726,7 +726,7 @@ beside it."*
 
 - **Relative worktree paths as a default.** A repository-format change is the user's
   ([DS-D10](#DS-D10)); mirroring the workspace path belongs with
-  [`workspace-path-mirroring.md`](workspace-path-mirroring.md).
+  [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md).
 - **Backups.** Durable means the next launch, not a copy.
 - **Sharing work between workspaces.** The durable dir is per workspace; the machine-shared class
   is for caches and stays out of the section's worktree advice.
@@ -893,7 +893,7 @@ found only the per-launch scratch volumes. All three questions were ruled in rev
 | [`perf-logging.md`](../reference/perf-logging.md#the-linger-was-the-scratch-volumes) | the Window A fix, and the coined term **scratch volumes** this doc avoids reusing |
 | [`reference/macos-user-home-tiers.md`](../reference/macos-user-home-tiers.md) | the machine, workspace and session **tiers**, which are the sharing half of a storage class, and the macos-user wording |
 | [`agent-briefings.md`](../reference/agent-briefings.md) | how the briefing is composed and where each pack's prose lands |
-| [`workspace-path-mirroring.md`](workspace-path-mirroring.md) | the jail-path-in-admin-file risk ([§2.6](#26-a-worktree-records-absolute-paths-measured)), which mounting the workspace at the host's path would also close |
+| [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) | the jail-path-in-admin-file risk ([§2.6](#26-a-worktree-records-absolute-paths-measured)), which mounting the workspace at the host's path would also close |
 | [`disk-levers-and-backfill.md`](disk-levers-and-backfill.md), [`minimal-disk-footprint.md`](minimal-disk-footprint.md) | the measured cost of durable worktrees, and the rule that agents' worktrees are not yolo's to reclaim |
 | [`host-notch-services.md`](host-notch-services.md) | the host notch's shape, and [OQ-HS3](host-notch-services.md#OQ-HS3)'s acceptance of partial features outside `yolo host --` |
 

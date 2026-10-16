@@ -38,7 +38,7 @@ import (
 //	#8  TestAppleContainerBriefingAdvertisesNoLoopholes    the briefing that ARRIVES lists no loophole the backend never started
 //	#10 TestAppleContainerExplicitHostModeKeepsPublishedPorts  an explicit `network.mode: host` still publishes `network.ports`
 //
-// plus OQ-WP5 (docs/design/workspace-path-mirroring.md), TestAppleContainerBindsADeepDestination.
+// plus OQ-WP5 (docs/reference/workspace-path-mirroring.md), TestAppleContainerBindsADeepDestination.
 //
 // # Both answers PASS. Only a run that failed to conduct the experiment is red
 //
@@ -103,7 +103,7 @@ func acParityRun(t *testing.T, fix, dir, script string, extra ...string) result 
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
 // TestAppleContainerBindsADeepDestination answers OQ-WP5
-// (docs/design/workspace-path-mirroring.md#OQ-WP5): can Apple Container bind a directory at a
+// (docs/reference/workspace-path-mirroring.md#OQ-WP5): can Apple Container bind a directory at a
 // deep destination the image does not have? Workspace path mirroring's option A would mount the
 // workspace at its host path (`/Users/<you>/code/<proj>`) instead of `/workspace`, and move the
 // per-side shadows with it, so a *yes* there needs this answered. It does not block the doc's
@@ -215,14 +215,14 @@ func TestAppleContainerBindsADeepDestination(t *testing.T) {
 		t.Logf("AC-WP5 VERDICT: SUPPORTED — Apple Container binds a directory at every deep "+
 			"destination shape asked (`container` %s).\n%s\n"+
 			"OQ-WP5's answer is yes: nothing about Apple Container blocks a mirrored workspace "+
-			"destination. Record it in docs/design/workspace-path-mirroring.md#OQ-WP5.", version, record.String())
+			"destination. Record it in docs/reference/workspace-path-mirroring.md#OQ-WP5.", version, record.String())
 		return
 	}
 	t.Logf("AC-WP5 VERDICT: NOT SUPPORTED for %v (`container` %s).\n%s\n"+
 		"OQ-WP5's answer is no for those shapes: a mirrored workspace destination (option A) has "+
 		"no spelling on this backend there. The per-case lines say whether the read-only rootfs "+
 		"or the destination itself is what refused. Record it in "+
-		"docs/design/workspace-path-mirroring.md#OQ-WP5.", unsupported, version, record.String())
+		"docs/reference/workspace-path-mirroring.md#OQ-WP5.", unsupported, version, record.String())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────

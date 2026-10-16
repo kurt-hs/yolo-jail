@@ -48,7 +48,7 @@ rebuild restores it ([Known limit](#known-limit)).
 **Needs your ruling:** None.
 
 **Reads with:** [implementation sketch](in-jail-nix-roots-plan.md) (superseded by the build),
-[`workspace-path-mirroring.md`](workspace-path-mirroring.md) (no mirroring needed),
+[`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md) (no mirroring needed),
 [`nix-across-backends.md`](../reference/nix-across-backends.md) (backend boundaries).
 
 ---
@@ -349,7 +349,7 @@ the map exists.
 | Alternative | Verdict |
 |---|---|
 | **Protocol proxy**: a yolo socket in front of the daemon that rewrites `AddIndirectRoot` in flight | Rejected. It is the only fully transparent option, but the worker protocol is not self-delimiting, so the proxy must frame every op, NAR streams included, for every protocol version. One bug breaks every nix command in every jail |
-| **Mirror the workspace at its host path** | Out of scope here, and not needed. [`workspace-path-mirroring.md`](workspace-path-mirroring.md#OQ-WP1) asks whether a fourth absolute-path problem exists. This is one, but translated roots fix it without mirroring, so it does not move that verdict |
+| **Mirror the workspace at its host path** | Out of scope here, and not needed. [`workspace-path-mirroring.md`](../reference/workspace-path-mirroring.md#OQ-WP1) asks whether a fourth absolute-path problem exists. This is one, but translated roots fix it without mirroring, so it does not move that verdict |
 | **Trust the jail** (`trusted-users`) for `AddPermRoot` | Rejected. The root would still be created in the daemon's namespace at a path the jail must spell for the host, so translation is still needed. And a trusted client is root-equivalent on the host |
 | **Temp-root keeper**: an in-jail process holding one connection and `AddTempRoot`ing what the jail references | Rejected as the primary mechanism. It protects only while the jail runs, needs a list of what to keep, and has no way to drop one root short of reconnecting |
 | **Host-side reconciler** reading only `gcroots/auto` | Rejected. Raw entries contain no producing-jail identity, and the host cannot see a jail's paths to check them. The watcher is the same reader run inside the jail, where those paths exist ([§5.1](#51-what-option-c-can-actually-observe)) |

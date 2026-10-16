@@ -551,7 +551,7 @@ workspace on the machine writes into one key,
 `-workspace`. Its contents are interleaved MCP logs and nothing else (measured 2026-09-30: four
 `mcp-logs-*` directories, 1.8 MB). A per-workspace bind over that one path would be a mount made
 for one vendor's cache layout, so none is made
-([`WP-D1`](../design/workspace-path-mirroring.md#WP-D1)).
+([`WP-D1`](workspace-path-mirroring.md#WP-D1)).
 
 ### Why the home root is a read-only skeleton, with symlink hatches
 
