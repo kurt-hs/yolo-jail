@@ -451,6 +451,8 @@ func TestAQuitThatLeavesOthersIsToldOfAServiceThatDied(t *testing.T) {
 	})
 	oB.Args, oB.ProfileName = []string{"claude"}, "cerebras"
 	rcB := -1
+	const deathLine = `keeper: the "wire-bridge" service's host half went down at `
+	var deathLogged bool
 	oA, outA := keeperLaunch(t, ws, func(*jsonx.OrderedMap) int {
 		go func() {
 			defer close(bDone)
@@ -464,7 +466,14 @@ func TestAQuitThatLeavesOthersIsToldOfAServiceThatDied(t *testing.T) {
 			return 0
 		}
 		close(held.done)
-		waitFor(5*time.Second, func() bool { rec, ok := readKeeperRecord(key); return ok && len(rec.Down) > 0 })
+		// The keeper writes a death's record BEFORE its log line (recordServiceDown), and the quit
+		// prints from the log, so the quit waits for the line: a record alone leaves a window in which
+		// the quit runs before the line exists.
+		deathLogged = waitFor(5*time.Second, func() bool {
+			rec, ok := readKeeperRecord(key)
+			b, _ := os.ReadFile(keeperLogPath(key))
+			return ok && len(rec.Down) > 0 && strings.Contains(string(b), deathLine)
+		})
 		return 0
 	})
 	oA.Args, oA.ProfileName = []string{"claude"}, "cerebras"
@@ -477,7 +486,10 @@ func TestAQuitThatLeavesOthersIsToldOfAServiceThatDied(t *testing.T) {
 	if !strings.Contains(outA.String(), "This workspace's macos-user host services stay up (keeper pid ") {
 		t.Fatalf("the first to quit did not leave the services up for the other session:\n%s", outA.String())
 	}
-	if !strings.Contains(outA.String(), `keeper: the "wire-bridge" service's host half went down at `) {
+	if !deathLogged {
+		t.Fatalf("the keeper did not record and log the bridge's death within 5s:\n%s", outA.String())
+	}
+	if !strings.Contains(outA.String(), deathLine) {
 		t.Errorf("the first to quit must be told of the death the keeper recorded while it was in:\n%s", outA.String())
 	}
 	assertKeyEnded(t, key, "")
