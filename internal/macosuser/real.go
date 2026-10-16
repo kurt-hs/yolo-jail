@@ -238,7 +238,7 @@ func takenIDsReal() map[int]struct{} {
 // password on STDIN (never argv, so it can't show in `ps`; never env, which
 // sudo's env_reset strips — see the finding-6 fix below).
 func setRandomPasswordReal(user string) bool {
-	rand := exec.Command("openssl", "rand", "-base64", "32")
+	rand := exec.Command("/usr/bin/openssl", "rand", "-base64", "32")
 	pwOut, rc := outputWithTimeout(rand, 5*time.Second)
 	if rc != 0 {
 		return false
@@ -249,8 +249,8 @@ func setRandomPasswordReal(user string) bool {
 	// YOLO_SBPW-on-env approach set an EMPTY password. `read -r pw` on stdin
 	// (strings.NewReader) keeps the secret off argv (which would leak in `ps`). NOTE: the actual
 	// password-apply + dscl empty-string semantics are M1-verified on hardware.
-	cmd := exec.Command("sudo", "/bin/sh", "-c",
-		"read -r pw; dscl . -passwd /Users/"+user+" \"$pw\"")
+	cmd := exec.Command(sudoBin, shBin, "-c",
+		"read -r pw; "+dsclBin+" . -passwd /Users/"+user+" \"$pw\"")
 	cmd.Stdin = strings.NewReader(pw + "\n")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run() == nil
@@ -556,4 +556,25 @@ func runAsGrantReal() bool {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = nil
 	return runWithTimeout(cmd, 10*time.Second) == 0
+}
+
+// accountNameOfUIDReal names the account uid belongs to through `/usr/bin/id -un <uid>`, which asks
+// the directory service (os/user's pure-Go path reads /etc/passwd, which a Mac's accounts are not
+// in). "" when it cannot.
+func accountNameOfUIDReal(uid uint32) string {
+	out, rc := outputWithTimeout(exec.Command("/usr/bin/id", "-un", strconv.FormatUint(uint64(uid), 10)), 10*time.Second)
+	if rc != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// primaryGroupOfReal is user's primary group's name through `/usr/bin/id -gn <user>`, "" when it
+// cannot be read.
+func primaryGroupOfReal(user string) string {
+	out, rc := outputWithTimeout(exec.Command("/usr/bin/id", "-gn", "--", user), 10*time.Second)
+	if rc != 0 {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }

@@ -40,13 +40,19 @@ creates the ` + "`_yolojail`" + ` account (random password, no login shell) if i
 missing, sets up the shared group, and prepares the shared root. Idempotent —
 re-running it reuses an existing account.
 
-sudo is invoked for the account steps, so macOS may prompt for your admin
-password. macOS only: on any other platform it refuses.
+It also creates the staging directory /Users/Shared/yolo-staged, owned by you,
+and installs one sudo rule, /etc/sudoers.d/yolo-jail, which lets you run
+commands as ` + "`_yolojail`" + `, never as root, without a password. Launches then start
+and stop with no password prompt. One macOS user per Mac: setup refuses a
+second while another user's rule or staging directory is in place.
+
+Run it as your normal admin user, not with sudo. It asks for your admin password
+once. macOS only: on any other platform it refuses.
 
   --help, -h  Show this help. Answered before anything is created.
 
 Examples:
-  yolo macos-setup                    # create the sandbox account (idempotent)
+  yolo macos-setup                    # create the sandbox account and the rule (idempotent)
 
 See ` + "`yolo config-ref`" + ` for the ` + "`runtime`" + ` key, and ` + "`yolo macos-teardown`" + ` to remove
 the account again.`
@@ -54,7 +60,11 @@ the account again.`
 const macosTeardownUsage = `Usage: yolo macos-teardown
 
 Remove the ` + "`_yolojail`" + ` sandbox user and its group — the undo of
-` + "`yolo macos-setup`" + `. Does nothing (exit 0) when the account does not exist.
+` + "`yolo macos-setup`" + `. It also removes the sudo rule /etc/sudoers.d/yolo-jail
+and, when it is yours, the staging directory /Users/Shared/yolo-staged, which
+frees the Mac for another user's ` + "`yolo macos-setup`" + `. /var/yolo-jail, left by
+an older yolo, stays; ` + "`yolo stores`" + ` lists it. Does nothing (exit 0) when the
+account does not exist.
 
 sudo is invoked for the deletion, so macOS may prompt for your admin password.
 macOS only: on any other platform it refuses.
@@ -62,7 +72,7 @@ macOS only: on any other platform it refuses.
   --help, -h  Show this help. Answered before anything is deleted.
 
 Examples:
-  yolo macos-teardown                 # remove the account and its group`
+  yolo macos-teardown                 # remove the account, its group, the rule and the staging dir`
 
 const macosUnshareUsage = `Usage: yolo macos-unshare <workspace>
 
