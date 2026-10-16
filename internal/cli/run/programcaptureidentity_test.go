@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +16,7 @@ import (
 func TestOrdinaryPreparationIsHandedTheLaunchsImageIdentity(t *testing.T) {
 	evals := 0
 	prev := identityEval
-	identityEval = func(string) (string, bool) { evals++; return "sha256:launch", true }
+	identityEval = func(context.Context, string) (string, bool) { evals++; return "sha256:launch", true }
 	t.Cleanup(func() { identityEval = prev })
 	var got string
 	var gotOK bool
