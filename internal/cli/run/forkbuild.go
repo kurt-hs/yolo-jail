@@ -201,11 +201,11 @@ func (o *Options) actInterrupt() *ActInterrupt {
 }
 
 // noteMacosUserForks is FP-D3's line: a macos-user launch that carries a fork says it delivers no
-// program for it, and why. On this backend the build trigger sits below the arm's return and no
-// launch can read the capture store yet (install-capture.md hand-off H4), so a silent absence would
-// read as the fork being broken. A PATCHED fork says what it is too (docs/reference/patched-forks.md
-// §9): its upstream is checked and its series replayed by the same fresh-launch slot, which this
-// backend never reaches either.
+// program for it, and why. On this backend the fork-build slot sits below the arm's return, so a
+// silent absence would read as the fork being broken. A PATCHED fork says what it is too
+// (docs/reference/patched-forks.md §9): FP-D24's darwin build covers only a plain fork, and a
+// patched fork's advance (its upstream check and series replay) runs only in a container launch's
+// build slot, so a patched fork has no macOS build at all.
 func (o *Options) noteMacosUserForks() {
 	for _, p := range o.forkPinned {
 		o.pr(o.Stderr).print("[yellow]Warning: " + p.Fork.Bin + " is not delivered on macos-user[/yellow] — " +
@@ -218,14 +218,12 @@ func (o *Options) noteMacosUserForks() {
 // (macosUserForkWire), so `<bin>` typed in the sandbox says what the launch said. step is the
 // launch's containerStepClause, which a guest's container backend needs (EMP-D5).
 func macosUserForkWhy(f packload.Fork, step string) string {
-	what := "fork " + f.Pack + " builds it from source in a capture jail"
+	what := "a macos-user launch does not build fork " + f.Pack
 	if f.Patched() {
-		what = "fork " + f.Key() + " is a patched fork, whose upstream a fresh launch on a container backend " +
-			"checks and whose patch series it replays and builds in a capture jail — which no macos-user launch " +
-			"runs"
+		what = "fork " + f.Key() + " is a patched fork, which has no macOS build"
 	}
-	return what + ", and no macos-user launch can read the capture store yet (install-capture.md hand-off " +
-		"H4); run it on a container backend: YOLO_RUNTIME=container (Apple Container) or YOLO_RUNTIME=podman" + step
+	return what + "; run it on a container backend with `YOLO_RUNTIME=container yolo` or " +
+		"`YOLO_RUNTIME=podman yolo`, or start without it with `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo`" + step
 }
 
 // macosUserForkWire is the fork decisions a macos-user launch hands its sandbox (entrypoint.ForkBuildsEnv):

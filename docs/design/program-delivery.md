@@ -1563,12 +1563,9 @@ entry landed in the machine store
 ([M4](provisioner-sets.md#15-what-a-mac-session-should-measure)).
 The rewrite that record exists for (H2) **landed 2026-09-26**: a relocatable entry materialized
 into a home other than the one it was captured under has every recorded reference rewritten, and
-refuses before writing anything when a reference cannot be rewritten (measured on Linux only). A
-capture on that backend is still a recorded artefact nobody materializes, because no launch there
-is told where the store is, and the sandbox could not read it if it were — hand-off H4 of
-[`install-capture.md`](../reference/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it),
-which needs a ruling. That is also why the auto-capture trigger sits below the `macos-user`
-return.
+refuses before writing anything when a reference cannot be rewritten (measured on Linux only).
+Hand-off [H4](../reference/install-capture.md#H4) landed 2026-10-05: a `macos-user` launch
+auto-captures, stages a sealed copy of the selected entries, and its launchers materialize from it.
 
 Distributing captures between machines is deliberately out of scope ([§7](#7-what-this-does-not-cover)): a capture made
 here is used here, and publishing one is a provenance question for

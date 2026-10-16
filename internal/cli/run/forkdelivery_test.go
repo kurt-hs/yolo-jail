@@ -167,7 +167,8 @@ func TestAMacosUserLaunchSaysItDeliversNoFork(t *testing.T) {
 	forkLaunchHome(t, forkPinSource)
 	pinFork(t, strings.Repeat("ef", 20))
 	out := launchToDispatch(t)
-	if !strings.Contains(out, "tool is not delivered on macos-user") || !strings.Contains(out, "hand-off H4") {
+	if !strings.Contains(out, "tool is not delivered on macos-user") ||
+		!strings.Contains(out, "a macos-user launch does not build fork forkpack") {
 		t.Errorf("the macos-user launch does not name the undelivered fork:\n%s", out)
 	}
 }

@@ -1119,10 +1119,11 @@ home, and has no update step: `yolo pack update` in the jail says the pin moves 
 `node_floor`, or its base's, joins the launcher's exec prefix as an npm launcher's does.
 
 Two backends deliver no fork yet. A `macos-user` launch carrying one says that its program is not
-delivered there and names hand-off H4
-([FP-D3](../design/forked-programs-as-packs.md#FP-D3)); H4 itself landed on 2026-10-05 for
-installer captures ([`install-capture.md`](install-capture.md#build-order)),
-and what keeps a fork off this backend is that its build is a container one. Apple Container below its read-only floor
+delivered there and names the ways out: a container backend, or starting without it
+([FP-D3](../design/forked-programs-as-packs.md#FP-D3)). What keeps a fork off this backend is that
+the launch's fork-build slot sits below its return, and a patched fork has no darwin build at all
+([FP-D24](../design/forked-programs-as-packs.md#FP-D24) builds only a plain fork, for the host
+floor). Apple Container below its read-only floor
 mounts no capture store, so the launch builds nothing and each fork's launcher says why.
 
 **`yolo host` runs the same build, on Linux**

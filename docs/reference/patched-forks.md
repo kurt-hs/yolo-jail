@@ -1096,17 +1096,17 @@ A notch is where an agent runs: a jail, the host through `yolo host`, or the unb
 | **jail, Apple Container** | as a plain fork: above the read-only bind floor, yes; below it, no store is mounted and the fork's reason says so. A capture jail cannot start beside a running jail (INFERRED), so while another workspace's jail runs an advance cannot build: nothing is recorded, the candidate stays pending, the good build runs, and the line names `yolo capture <bin>` once the other jails stop. With no good build, the launch refuses with that line |
 | **jail, macos-user** | none: the fork route delivers nothing there ([FP-D3](../design/forked-programs-as-packs.md#FP-D3)). The launch says why, names both container backends, and hands the sandbox's launcher the same reason ([PF-D54](#PF-D54)). Delivery is deferred ([OQ-PFK5](#why-its-this-way), [PF-D59](#PF-D59)) |
 | **`yolo host`, Linux** | yes ([PF-D14](#PF-D14), [PF-D50](#PF-D50)–[PF-D53](#PF-D53), [PF-D55](#PF-D55)): the floor's install act runs the advance first, outside the floor's own lock and the render gate's budget, honoring `agent_updates` for the fork pack and its base. Its readers of the recipe read the good build's. A newer upstream that fails keeps the installed copy, which `yolo host -- <bin>` then runs only under a recovery hatch or a hold ([OQ-PPX3](pi-extensions.md#OQ-PPX3)); the user's own edit that does not build removes it. The floor's installed copy serves while the good build's store entry is gone |
-| **`yolo host`, macOS** | none, as for every fork: the build is of the jail's platform. The no-copy line names a jail on a container backend ([PF-D54](#PF-D54)) |
+| **`yolo host`, macOS** | none: the Mac's darwin build ([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) is a plain fork's only. The no-copy line names a jail on a container backend ([PF-D54](#PF-D54)) |
 | **guest** | unbuilt, as every verb there is |
 
 **Why a patched fork does not reach macos-user** ([OQ-PFK5](#why-its-this-way), ruled "defer"): a macos-user
-launch delivers no fork's program at all, for three reasons not specific to patched forks — that
-backend's run pipeline returns before the fresh-launch slot; no launch there can read the capture
-store, which install-capture's
-[hand-off H4](install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it)
-holds as a ruling; and a build there would be a darwin build in that backend's capture sandbox, which
-no fork has had. A patched fork reaches macos-user only with the fork route's own macos-user step,
-after H4.
+launch delivers no fork's program, because that backend's run pipeline returns before the
+fresh-launch slot. A patched fork has no darwin build path at all: the darwin build
+([FP-D24](../design/forked-programs-as-packs.md#FP-D24)) covers only a plain fork, and the
+patched-fork advance runs only in a container launch's build slot. The launch's line names the ways
+out: a container backend, or starting without the program. (Install-capture's
+[hand-off H4](install-capture.md#H4), which once also kept the capture store out of reach there,
+landed 2026-10-05.)
 
 ## 10. Migration from a plain fork
 
