@@ -921,7 +921,7 @@ type Contribution struct {
 	// launch says so in one line naming both fixes (a `-p` over a provider of the platform, or
 	// removing the key; docs/design/providers-and-profiles-redesign.md PP-D1). A switch the
 	// agent's own derive wrote there at `yolo host apply` is yolo's: the line says so, and the
-	// next apply that stops asserting it removes it (docs/design/host-computed-layer.md HC-D25).
+	// next apply that stops asserting it removes it (docs/reference/host-agent-environment.md HC-D25).
 	// See PlatformSwitch.
 	//
 	// A PACK FACT because core knows no agent's settings file or variable (OQ-CS8): the pack

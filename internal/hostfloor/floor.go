@@ -8,7 +8,7 @@
 //
 //   - ONLY FLOOR NAMES IN bin/. bin/ holds exactly one executable per PROVISIONED entry and
 //     nothing else: no node, no npm, no package's secondary binaries. A host launch appends
-//     bin/ LAST to the agent's PATH (HE-D1), and this rule is what makes that safe — it adds
+//     bin/ LAST to the agent's PATH (HE-D16), and this rule is what makes that safe — it adds
 //     agent names only, and being last it supplies one only where nothing earlier has it. It
 //     can never put a `node` ahead of the project's.
 //   - NEVER JAIL-REACHABLE. The host executes these files with the user's full authority, so
@@ -402,7 +402,7 @@ func (f *Floor) captureRefreshAge() time.Duration {
 }
 
 // BinDir is the prefix's bin/: the one directory of it a host launch puts on the agent's PATH,
-// last (HE-D1).
+// last (HE-D16).
 func (f *Floor) BinDir() string { return filepath.Join(f.Dir, "bin") }
 
 // span starts the floor step <bin>.<step>'s span (Span), floor.<bin>.<step>; its end is a no-op

@@ -129,28 +129,28 @@ destination rather than asking which one is Claude's.
 derive boundary on, with the same derives
 ([OQ-HC1](host-agent-environment.md#oq-hc1)). The tables come from the USER config alone,
 composed in `internal/cli`'s `composeHostInputs` and handed to the render as the same wire
-variables a launch exports ([HC-D13](../design/host-computed-layer.md#HC-D13)). Three things
+variables a launch exports ([HC-D13](host-agent-environment.md#HC-D13)). Three things
 differ, each named in the report:
 
 - **No preset is expanded.** Its command is a wrapper only a jail's boot writes
-  ([HC-D16](../design/host-computed-layer.md#HC-D16)), and the line names the pack that ships
+  ([HC-D16](host-agent-environment.md#HC-D16)), and the line names the pack that ships
   a server of that name, the `chrome-devtools` pack for that preset
-  ([HC-D27](../design/host-computed-layer.md#HC-D27)).
+  ([HC-D27](host-agent-environment.md#HC-D27)).
 - **A pack's `mcp` entry composes, joined to your real home**, under your own `mcp_servers`,
   when the pack is one yolo ships or one at a path on this machine. A fetched pack's entry is
   left out and named: its command would run unconfined as you whenever the agent starts
-  ([HC-D26](../design/host-computed-layer.md#HC-D26)).
+  ([HC-D26](host-agent-environment.md#HC-D26)).
 - **An entry whose command or arguments name a jail-only path** (`/workspace`, the jail home,
   `/ctx`, the install prefix, `/run/yolo`) is left out, and a surface whose derive output still
   names one is refused rather than written
-  ([HC-D14](../design/host-computed-layer.md#HC-D14)).
+  ([HC-D14](host-agent-environment.md#HC-D14)).
 - **`requires_env` is asked of each agent's host composition**, the environment `yolo host env
   --agent <agent>` prints, over the invoking shell's.
 
 `yolo host -- <agent>` also installs into yolo's floor the program each such server runs (its
 `bin`), since the host has no lazy launcher to install it on first use; a failure costs that
 server, never the agent, and its line names `yolo host apply --assert`
-([HC-D28](../design/host-computed-layer.md#HC-D28)).
+([HC-D28](host-agent-environment.md#HC-D28)).
 
 Claude at the host gets its `yolo-lsp` plugin, rendered from the same composed table into every
 skills destination of the real home ([below](#at-the-host-yolo-host-apply-writes-it)), beside

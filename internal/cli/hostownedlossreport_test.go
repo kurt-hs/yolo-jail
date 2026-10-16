@@ -1,6 +1,6 @@
 package cli
 
-// hostownedlossreport_test.go pins HC-D5 (docs/design/host-computed-layer.md §7) where the user
+// hostownedlossreport_test.go pins HC-D5 (docs/reference/host-agent-environment.md) where the user
 // meets it: `yolo host apply` under `host_management: own` names an MCP entry as dropped only
 // when the owned write drops it, and so does not ask the first-apply confirmation for a loss
 // that never happens.

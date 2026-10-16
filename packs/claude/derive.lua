@@ -602,7 +602,7 @@ yolo.derive("claude", "settings", function(ctx)
   -- yolo launches. Asserted, never tombstoned: a user's own switch here is theirs, and yolo
   -- deletes nothing it did not write (PP-D1). One this derive wrote into the real file at
   -- `yolo host apply` is yolo's, and that apply clears it once this stops asserting it, from
-  -- the host's computed-leaf record (docs/design/host-computed-layer.md HC-D25).
+  -- the host's computed-leaf record (docs/reference/host-agent-environment.md HC-D25).
   if nativeBedrock(ctx) then env.CLAUDE_CODE_USE_BEDROCK = "1" end
   local out = {
     mcpServers = ctx.tombstone,

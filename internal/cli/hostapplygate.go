@@ -395,7 +395,7 @@ func reportHostApplyGateDecisions(errw io.Writer, bin string, decisions []string
 	fmt.Fprintf(errw, "  Launching %s against the configuration your last apply left in place.\n", bin)
 }
 
-// reportGateMisses prints the miss line (host-launch-environment.md §4.2, HE-D2) for every declared
+// reportGateMisses prints the miss line (host-agent-environment.md, HE-D17) for every declared
 // dependency the observe pass found missing on this launch's PATH: the program, the packs that
 // need it, the whole PATH searched and the `host_path` fix. Once per missing program: the one this
 // launch starts is left to the exec's own lookup, which prints the same line moments later if it

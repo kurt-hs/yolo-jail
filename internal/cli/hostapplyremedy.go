@@ -21,7 +21,7 @@ package cli
 // (P2: copy-paste form, and the scope the remedy covers). That scope was itself wrong at this
 // notch while host apply ran no derive for content: "one `mcp_servers` entry reaches every
 // agent" was a jail's behavior, and here it left the entry dropped, so HC-D2
-// (docs/design/host-computed-layer.md §7) named a `config-overlay` per surface instead. Since
+// (docs/reference/host-agent-environment.md) named a `config-overlay` per surface instead. Since
 // OQ-HC1 the host runs the jail's derives over the user's own tables, so the remedy names
 // `mcp_servers`, `lsp_servers` and `providers` first again, with the per-surface overlay as the
 // one-agent alternative (HC-D20); what keeps it one group is that the declaration goes in one
@@ -254,7 +254,7 @@ func missingDepGroups(s *hostApplySurvey) []remedyGroup {
 	return out
 }
 
-// printUnpublishedDepMisses prints the miss line (host-launch-environment.md §4.2, HE-D2) of every
+// printUnpublishedDepMisses prints the miss line (host-agent-environment.md, HE-D17) of every
 // program this run found absent whose vendor publishes no build for this host, in the default view,
 // just above the verdict that counts them. Not a tier-3 group: it is neither a loss nor a blocker,
 // since nothing could install it. But the lookup that found nothing was the launch PATH's, and

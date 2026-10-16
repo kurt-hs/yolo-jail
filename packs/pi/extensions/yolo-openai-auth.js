@@ -30,7 +30,7 @@ function inJail() {
 // brokerFailure is the error a failed client call reports. The one case it rewrites is the
 // one the client cannot word for a person: no route at all, outside a jail. That is pi started
 // directly or from an IDE on the host, and the fix is the launch, not the variable
-// (docs/design/host-computed-layer.md §8.1 item 3). The client's own words stay in parentheses.
+// (docs/reference/host-agent-environment.md, item 3 of the measured host pi findings). The client's own words stay in parentheses.
 function brokerFailure(detail) {
 	if (!process.env[BROKER_ENDPOINT_ENV] && !process.env[HOST_SOCKET_ENV] && !inJail()) {
 		return new Error(

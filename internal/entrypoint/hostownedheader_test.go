@@ -1,7 +1,6 @@
 package entrypoint
 
-// hostownedheader_test.go pins the header half of HC-D5 (docs/design/host-computed-layer.md
-// §7): the banner an owned host render writes into a real TOML file names the host apply,
+// hostownedheader_test.go pins the header half of HC-D5 (docs/reference/host-agent-environment.md): the banner an owned host render writes into a real TOML file names the host apply,
 // not a jail start, and yolo still recognises either wording as its own.
 //
 // Measured before the fix: `yolo host apply --assert` under `host_management: own` wrote

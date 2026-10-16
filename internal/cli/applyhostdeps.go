@@ -186,7 +186,7 @@ var hostDepProbe = resolveHostDeps
 //
 // THE LAUNCH PATH IS RESOLVED ONCE HERE, for the whole run, and recorded in the survey: every
 // pack's probe reads it, the dependency gate's install runs with it and its re-probe reads it
-// (HE-D6), and each missing binary's miss line names it (HE-D2). So one run asks one PATH.
+// (HE-D6), and each missing binary's miss line names it (HE-D17). So one run asks one PATH.
 func probeHostDeps(loaded []*packload.Pack, fields render.FieldSet,
 	survey *hostApplySurvey) hostDepPreflight {
 	pf := hostDepPreflight{byPack: make(map[*packload.Pack]*hostDeps, len(loaded))}
