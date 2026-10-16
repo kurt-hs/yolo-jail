@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -43,6 +44,7 @@ func MacosSetup(deps Deps) int {
 	if rc := refuseForeignEnrollment(deps, out); rc != 0 {
 		return rc
 	}
+	announceSudo(deps, out, "set up the sandbox account and its rule ("+SudoersFile+")")
 	if rc := refuseAnotherUsersRule(deps, out, hostUser); rc != 0 {
 		return rc
 	}
@@ -82,8 +84,7 @@ func MacosSetup(deps Deps) int {
 		}
 	} else {
 		uid := NextFreeID(deps.TakenIDs(), sandboxMinID)
-		out.printf("• Creating sandbox user [bold]%s[/bold] (uid %d); "+
-			"you may be prompted for your admin password by sudo.", SandboxUser, uid)
+		out.printf("• Creating sandbox user [bold]%s[/bold] (uid %d).", SandboxUser, uid)
 		for _, cmd := range CreateUserCommands(uid, uid, hostUser) {
 			if deps.Run(rootArgv(cmd)) != 0 {
 				out.printf("[bold red]✗ setup step failed:[/bold red] %s", strings.Join(cmd, " "))
@@ -251,12 +252,14 @@ func MacosTeardown(deps Deps) int {
 		// second-user refusal names, so it still removes the rule and the root it owns.
 		if JudgeStagingRoot(rootFacts(deps, StagingRoot()), deps.Geteuid()) == StagingRootOK {
 			out.printf("Sandbox user '%s' does not exist; removing your enrollment.", SandboxUser)
+			announceSudo(deps, out, "remove yolo's sudo rule ("+SudoersFile+")")
 			removeEnrollment(deps, out)
 			return 0
 		}
 		out.printf("Sandbox user '%s' does not exist — nothing to do.", SandboxUser)
 		return 0
 	}
+	announceSudo(deps, out, "remove the sandbox account and its rule ("+SudoersFile+")")
 	for _, cmd := range DeleteUserCommands(deps.HostUser()) {
 		deps.Run(rootArgv(cmd))
 	}
@@ -448,6 +451,17 @@ func refuseSecondUser(out printer, name string) {
 		name, SudoersFile, StagingRoot())
 }
 
+// announceSudo says why sudo is about to ask for a password, before the first sudo that may ask.
+// It asks `sudo -n` first and says nothing when that runs: the credentials are cached, so no
+// prompt comes, and a line announcing one would be wrong. The probe runs captured, so sudo's
+// "a password is required" does not reach the terminal.
+func announceSudo(deps Deps, out printer, why string) {
+	if _, rc := runQuietly(deps, []string{sudoBin, "-n", trueBin}); rc == 0 {
+		return
+	}
+	out.printf("• sudo needs your password to %s.", why)
+}
+
 // refuseAnotherUsersRule asks whether the installed rule is this user's, through sudo because the
 // file is 0440 root (PL-3): grep exits 0 for this user's rule and 2 when there is no file, and
 // setup goes on for both; 1 is a file without this user's rule, which is another user's
@@ -604,9 +618,9 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 		out.printf("• Installed [bold]%s[/bold]; visudo accepts it.", SudoersFile)
 		return 0
 	}
-	// The whole configuration fails with the rule in place. Setup takes the rule back out and
-	// checks again, and the second answer says whose problem it is.
-	if deps.Run(rootArgv([]string{rmBin, "-f", SudoersFile})) != 0 {
+	// The whole configuration fails with the rule in place. Setup parks the rule under the inert
+	// staging name, checks again, and compares: the rule stays only if it adds no failure.
+	if park := rootArgv([]string{mvBin, "-f", SudoersFile, SudoersStagingFile}); deps.Run(park) != 0 {
 		stop("visudo rejected your sudo configuration with yolo's rule in place, and removing the "+
 			"rule failed.", withRule)
 		out.print("Remove the rule, then run setup again:")
@@ -622,18 +636,41 @@ func installSudoersRule(deps Deps, out printer, rule string) int {
 	}
 	without, rc := runQuietly(deps, configCheck)
 	if rc == 0 {
+		deps.Run(dropStaged)
 		stop("visudo rejected your sudo configuration with yolo's rule in place. The rule was "+
 			"removed again.", withRule)
+		return reportBug()
+	}
+	pre := sudoersComplaints(without)
+	added := complaintsAdded(sudoersComplaints(withRule), pre)
+	if len(pre) > 0 && len(added) == 0 {
+		// Every failure is one the configuration had before yolo's rule. sudo itself reads a
+		// sudoers.d file that is root's and not writable by others, whatever its other mode bits,
+		// and skips one it cannot trust without dropping the rest; only visudo insists on 0440. So
+		// the rule goes back in, and proveRunAsGrant then shows sudo honors it.
+		if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
+			deps.Run(dropStaged)
+			return stepFailed(mv)
+		}
+		out.blank()
+		out.printf("[bold yellow]⚠ Installed %s. visudo -c also fails without it:[/bold yellow]", SudoersFile)
+		out.blank()
+		out.verbatim(strings.Join(pre, "\n"))
+		out.blank()
+		out.commands(append(sudoersRemedies(pre), "sudo visudo -c")...)
+		out.blank()
+		return 0
+	}
+	deps.Run(dropStaged)
+	if len(added) > 0 {
+		stop("visudo rejected your sudo configuration with yolo's rule in place. The rule was "+
+			"removed again.", strings.Join(added, "\n"))
 		return reportBug()
 	}
 	stop("Your sudo configuration is invalid without yolo's rule too. Nothing was installed.", without)
 	out.print("Fix it, then run setup again:")
 	out.blank()
-	var cmds []string
-	for _, f := range sudoersFilesBlamed(without) {
-		cmds = append(cmds, shquote.JoinDisplay([]string{"sudo", "visudo", "-f", f}))
-	}
-	out.commands(append(cmds, "sudo visudo -c", "yolo macos-setup")...)
+	out.commands(append(sudoersRemedies(pre), "sudo visudo -c", "yolo macos-setup")...)
 	out.blank()
 	return 1
 }
@@ -648,25 +685,99 @@ func runQuietly(deps Deps, argv []string) (string, int) {
 	return deps.RunCapture(argv)
 }
 
-// visudoBlame matches the file a visudo complaint names, in the three shapes sudo 1.9 prints:
-// `>>> /etc/sudoers.d/x: syntax error near line 3 <<<`, `/etc/sudoers.d/x:3:5: syntax error`,
-// and `visudo: /etc/sudoers.d/x: bad permissions, should be mode 0440`.
-var visudoBlame = regexp.MustCompile(`(?m)(?:^>>> (/[^\s:]+): |^(/[^\s:]+):\d+(?::\d+)?: |^visudo: (/[^\s:]+): )`)
+// sudoersComplaints is each line of `visudo -c` output that reports a problem: every non-blank
+// line but the "<file>: parsed OK" ones, trimmed, in order.
+func sudoersComplaints(output string) []string {
+	var lines []string
+	for _, l := range strings.Split(output, "\n") {
+		l = strings.TrimSpace(l)
+		if l != "" && !strings.HasSuffix(l, ": parsed OK") {
+			lines = append(lines, l)
+		}
+	}
+	return lines
+}
 
-// sudoersFilesBlamed is each file visudo's output blames, once, in order, SudoersFile aside:
-// setup has removed it by the time this is printed.
-func sudoersFilesBlamed(output string) []string {
-	var files []string
-	seen := map[string]bool{SudoersFile: true}
-	for _, m := range visudoBlame.FindAllStringSubmatch(output, -1) {
-		for _, f := range m[1:] {
-			if f != "" && !seen[f] {
-				seen[f] = true
-				files = append(files, f)
+// complaintsAdded is each complaint in with that without lacks.
+func complaintsAdded(with, without []string) []string {
+	var added []string
+	for _, l := range with {
+		if !slices.Contains(without, l) {
+			added = append(added, l)
+		}
+	}
+	return added
+}
+
+// The two complaints visudo's permission check prints, after the file's path
+// (plugins/sudoers/visudo.c, check_file: "%s: bad permissions, should be mode 0%o" and
+// "%s: wrong owner (uid, gid) should be (%u, %u)"), an older visudo prefixing "visudo: ".
+var (
+	visudoBadMode  = regexp.MustCompile(`^(?:visudo: )?(/[^\s:]+): bad permissions, should be mode (0[0-7]+)$`)
+	visudoBadOwner = regexp.MustCompile(`^(?:visudo: )?(/[^\s:]+): wrong owner \(uid, gid\) should be \((\d+), (\d+)\)$`)
+)
+
+// visudoBlame matches the file any other visudo complaint names: `>>> /etc/sudoers.d/x: syntax
+// error near line 3 <<<`, `/etc/sudoers.d/x:3:5: syntax error`, `visudo: /etc/sudoers.d/x: …`
+// and `/etc/sudoers.d/x: …`.
+var visudoBlame = regexp.MustCompile(`^(?:>>> |visudo: )?(/[^\s:]+):`)
+
+// sudoersRemedies is the commands that fix complaints, at the paths visudo printed: one chmod
+// per mode for every file at a bad mode, one chown per owner for every file with a wrong owner,
+// then `sudo visudo -f` for each other file blamed. SudoersFile is never named: setup has
+// installed it or taken it out by the time this is printed.
+func sudoersRemedies(complaints []string) []string {
+	type group struct {
+		verb, arg string
+		files     []string
+	}
+	var groups []*group
+	add := func(verb, arg, file string) {
+		for _, g := range groups {
+			if g.verb == verb && g.arg == arg {
+				if !slices.Contains(g.files, file) {
+					g.files = append(g.files, file)
+				}
+				return
+			}
+		}
+		groups = append(groups, &group{verb, arg, []string{file}})
+	}
+	var edit []string
+	ours := func(f string) bool { return f == SudoersFile || f == "/private"+SudoersFile }
+	for _, l := range complaints {
+		if m := visudoBadMode.FindStringSubmatch(l); m != nil {
+			if !ours(m[1]) {
+				add("chmod", m[2], m[1])
+			}
+			continue
+		}
+		if m := visudoBadOwner.FindStringSubmatch(l); m != nil {
+			if !ours(m[1]) {
+				owner := m[2] + ":" + m[3]
+				if owner == "0:0" {
+					owner = "root:wheel"
+				}
+				add("chown", owner, m[1])
+			}
+			continue
+		}
+		if m := visudoBlame.FindStringSubmatch(l); m != nil && !ours(m[1]) && !slices.Contains(edit, m[1]) {
+			edit = append(edit, m[1])
+		}
+	}
+	var cmds []string
+	for _, verb := range []string{"chmod", "chown"} {
+		for _, g := range groups {
+			if g.verb == verb {
+				cmds = append(cmds, shquote.JoinDisplay(append([]string{"sudo", g.verb, g.arg}, g.files...)))
 			}
 		}
 	}
-	return files
+	for _, f := range edit {
+		cmds = append(cmds, shquote.JoinDisplay([]string{"sudo", "visudo", "-f", f}))
+	}
+	return cmds
 }
 
 // sweepLegacySessions is the administrator's half of PL-8: for each session record this user's

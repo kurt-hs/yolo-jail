@@ -277,25 +277,53 @@ func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 }
 
 // wholeCheckRun is mockDeps' Run with the whole-configuration check (`visudo -c`) answering
-// withRule while the rule is in place and withoutRule once setup has removed it again.
+// withRule while the rule is in place and withoutRule once setup has parked it under the inert
+// staging name (or removed it).
 func wholeCheckRun(rec *[]string, withRule, withoutRule int) func([]string) int {
-	installed := false
-	return func(argv []string) int {
+	return wholeCheck(rec, withRule, withoutRule, nil, "", "").run
+}
+
+type wholeCheckFake struct {
+	installed bool
+	run       func([]string) int
+}
+
+// wholeCheck builds the fake and, when d is non-nil, wires d's Run and RunCapture to it, the
+// capture answering withOut while the rule is in place and withoutOut once it is out.
+func wholeCheck(rec *[]string, withRule, withoutRule int, d *Deps, withOut, withoutOut string) *wholeCheckFake {
+	f := &wholeCheckFake{}
+	f.run = func(argv []string) int {
 		joined := strings.Join(argv, " ")
 		*rec = append(*rec, "run:"+joined)
 		switch joined {
 		case "/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile:
-			installed = true
-		case "/usr/bin/sudo /bin/rm -f " + SudoersFile:
-			installed = false
+			f.installed = true
+		case "/usr/bin/sudo /bin/mv -f " + SudoersFile + " " + SudoersStagingFile,
+			"/usr/bin/sudo /bin/rm -f " + SudoersFile:
+			f.installed = false
 		case visudoConfigCheck:
-			if installed {
+			if f.installed {
 				return withRule
 			}
 			return withoutRule
 		}
 		return 0
 	}
+	if d != nil {
+		d.Run = f.run
+		d.RunCapture = func(argv []string) (string, int) {
+			installed := f.installed
+			rc := f.run(argv)
+			if strings.Join(argv, " ") != visudoConfigCheck {
+				return "", rc
+			}
+			if installed {
+				return withOut, rc
+			}
+			return withoutOut, rc
+		}
+	}
+	return f
 }
 
 // inOrder fails t unless every entry of want appears in rec, in order (repeats allowed).
@@ -311,42 +339,124 @@ func inOrder(t *testing.T, rec, want []string) {
 	}
 }
 
-// The rule passes on its own but the whole configuration fails with it in place, and fails again
-// once setup has removed it: the configuration was already broken, which is not yolo's bug, and
-// the refusal names the file visudo blames in a command that edits it.
-func TestSetupBlamesTheExistingConfigWhenItFailsWithoutTheRuleToo(t *testing.T) {
+const (
+	parkRule   = "run:/usr/bin/sudo /bin/mv -f " + SudoersFile + " " + SudoersStagingFile
+	unparkRule = "run:/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile
+)
+
+// The maintainer's Mac (2026-10-16): two sudoers.d files at a mode other than 0440 fail
+// `visudo -c` whether or not yolo's rule is there, while sudo itself reads them. yolo's rule adds
+// no failure, so setup installs it, goes on to prove it, and warns with the one chmod that fixes
+// both files, at the paths visudo printed.
+func TestSetupInstallsTheRuleAndWarnsWhenTheConfigFailsTheSameWithoutIt(t *testing.T) {
 	var rec []string
 	var buf bytes.Buffer
 	d := mockDeps(&rec)
 	d.Out = &buf
-	d.Run = wholeCheckRun(&rec, 1, 1)
-	reason := ">>> /etc/sudoers.d/corp: syntax error near line 3 <<<\n" +
-		"/etc/sudoers.d/other:2:5: syntax error\n"
-	captureVia(&d, map[string]string{visudoConfigCheck: reason})
+	without := "/private/etc/sudoers.d/00-matt: bad permissions, should be mode 0440\n" +
+		"/private/etc/sudoers.d/50-nopasswd-for-sandvault-matt: bad permissions, should be mode 0440\n" +
+		"/private/etc/sudoers: parsed OK\n"
+	with := without + "/private/etc/sudoers.d/yolo-jail: parsed OK\n"
+	wholeCheck(&rec, 1, 1, &d, with, without)
+	if rc := MacosSetup(d); rc != 0 {
+		t.Fatalf("rc = %d\n%s", rc, buf.String())
+	}
+	inOrder(t, rec, []string{
+		unparkRule,
+		"run:" + visudoConfigCheck,
+		parkRule,
+		"run:" + visudoConfigCheck,
+		unparkRule,
+		"run:/usr/bin/sudo -k",
+		"run:/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true",
+	})
+	want := "\n⚠ Installed /etc/sudoers.d/yolo-jail. visudo -c also fails without it:\n\n" +
+		"  /private/etc/sudoers.d/00-matt: bad permissions, should be mode 0440\n" +
+		"  /private/etc/sudoers.d/50-nopasswd-for-sandvault-matt: bad permissions, should be mode 0440\n\n" +
+		"  sudo chmod 0440 /private/etc/sudoers.d/00-matt /private/etc/sudoers.d/50-nopasswd-for-sandvault-matt\n" +
+		"  sudo visudo -c\n\n"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("warning lacks\n%s\ngot:\n%s", want, buf.String())
+	}
+	if strings.Contains(buf.String(), "✗") {
+		t.Errorf("refused or failed a step:\n%s", buf.String())
+	}
+}
+
+// Each kind of pre-existing problem gets its own fix: a bad mode one chmod for all its files, a
+// wrong owner one chown, anything else a visudo -f per file.
+func TestSudoersRemediesPerKindOfProblem(t *testing.T) {
+	out := "/private/etc/sudoers.d/a: wrong owner (uid, gid) should be (0, 0)\n" +
+		"/private/etc/sudoers.d/b: wrong owner (uid, gid) should be (0, 0)\n" +
+		"/private/etc/sudoers.d/c: bad permissions, should be mode 0440\n" +
+		">>> /etc/sudoers.d/corp: syntax error near line 3 <<<\n" +
+		"/etc/sudoers.d/other:2:5: syntax error\n" +
+		"visudo: /etc/sudoers.d/third: bad permissions, should be mode 0440\n" +
+		"/etc/sudoers: parsed OK\n"
+	got := sudoersRemedies(sudoersComplaints(out))
+	want := []string{
+		"sudo chmod 0440 /private/etc/sudoers.d/c /etc/sudoers.d/third",
+		"sudo chown root:wheel /private/etc/sudoers.d/a /private/etc/sudoers.d/b",
+		"sudo visudo -f /etc/sudoers.d/corp",
+		"sudo visudo -f /etc/sudoers.d/other",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("remedies =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// yolo's rule adds a failure the configuration does not have without it: refused, the rule taken
+// back out, and only the added failure shown, as a yolo bug.
+func TestSetupRefusesWhenTheRuleAddsAFailure(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	without := "/private/etc/sudoers.d/00-matt: bad permissions, should be mode 0440\n"
+	added := ">>> /private/etc/sudoers.d/yolo-jail: syntax error near line 1 <<<\n"
+	wholeCheck(&rec, 1, 1, &d, without+added, without)
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
 	inOrder(t, rec, []string{
-		"run:/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile,
+		unparkRule,
 		"run:" + visudoConfigCheck,
-		"run:/usr/bin/sudo /bin/rm -f " + SudoersFile,
+		parkRule,
 		"run:" + visudoConfigCheck,
+		"run:/usr/bin/sudo /bin/rm -f " + SudoersStagingFile,
 	})
-	if recAt(rec, "-n --user=_yolojail") >= 0 {
-		t.Errorf("went on after the whole-configuration check failed:\n%s", strings.Join(rec, "\n"))
+	if strings.Count(strings.Join(rec, "\n"), unparkRule) != 1 || recAt(rec, "-n --user=_yolojail") >= 0 {
+		t.Errorf("went on after the rule added a failure:\n%s", strings.Join(rec, "\n"))
 	}
 	out := buf.String()
-	want := "✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.\n\n" +
-		indented(reason) + "\nFix it, then run setup again:\n\n" +
-		"  sudo visudo -f /etc/sudoers.d/corp\n" +
-		"  sudo visudo -f /etc/sudoers.d/other\n" +
-		"  sudo visudo -c\n" +
-		"  yolo macos-setup\n"
+	want := "✗ visudo rejected your sudo configuration with yolo's rule in place. The rule was " +
+		"removed again.\n\n" + indented(added) + "\nThis is a yolo bug."
 	if !strings.Contains(out, want) {
 		t.Errorf("refusal lacks\n%s\ngot:\n%s", want, out)
 	}
-	if strings.Contains(out, "yolo bug") {
-		t.Errorf("called a pre-existing sudo problem a yolo bug:\n%s", out)
+	if strings.Contains(out, "00-matt") {
+		t.Errorf("listed a pre-existing problem as the rule's:\n%s", out)
+	}
+}
+
+// With no output to compare (both checks fail with nothing captured), setup cannot tell whether
+// the rule adds a failure, so it refuses and names the fix.
+func TestSetupRefusesWhenTheChecksFailWithNothingToCompare(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	wholeCheck(&rec, 1, 1, &d, "", "")
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d", rc)
+	}
+	if recAt(rec, "-n --user=_yolojail") >= 0 {
+		t.Errorf("went on:\n%s", strings.Join(rec, "\n"))
+	}
+	want := "✗ Your sudo configuration is invalid without yolo's rule too. Nothing was installed.\n\n" +
+		"Fix it, then run setup again:\n\n  sudo visudo -c\n  yolo macos-setup\n"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("refusal lacks\n%s\ngot:\n%s", want, buf.String())
 	}
 }
 
@@ -362,6 +472,9 @@ func TestSetupCallsItAYoloBugWhenOnlyTheRuleBreaksTheConfig(t *testing.T) {
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
+	if slices.Index(rec, "run:/usr/bin/sudo /bin/rm -f "+SudoersStagingFile) < 0 {
+		t.Errorf("the parked rule was not removed:\n%s", strings.Join(rec, "\n"))
+	}
 	out := buf.String()
 	rule, _ := SudoersRule("matt")
 	for _, want := range []string{
@@ -375,7 +488,7 @@ func TestSetupCallsItAYoloBugWhenOnlyTheRuleBreaksTheConfig(t *testing.T) {
 	}
 }
 
-// When the removal of a rule the whole check rejected fails, the rule is still in place, and
+// When taking a rule the whole check rejected back out fails, the rule is still in place, and
 // sudo itself may be what broke: the refusal gives the sudo removal, a fallback that needs no
 // sudo, and the re-run, each on its own line.
 func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
@@ -385,8 +498,8 @@ func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
 	d.Out = &buf
 	inner := wholeCheckRun(&rec, 1, 0)
 	d.Run = func(argv []string) int {
-		if strings.Join(argv, " ") == "/usr/bin/sudo /bin/rm -f "+SudoersFile {
-			rec = append(rec, "run:"+strings.Join(argv, " "))
+		if "run:"+strings.Join(argv, " ") == parkRule {
+			rec = append(rec, parkRule)
 			return 1
 		}
 		return inner(argv)
@@ -403,6 +516,91 @@ func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
 		"  yolo macos-setup\n"
 	if !strings.Contains(out, "removing the rule failed") || !strings.Contains(out, want) {
 		t.Errorf("refusal lacks\n%s\ngot:\n%s", want, out)
+	}
+}
+
+// recWriter records each line written to it into rec, so a test can place output among the
+// commands run.
+type recWriter struct{ rec *[]string }
+
+func (w recWriter) Write(p []byte) (int, error) {
+	for _, l := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		*w.rec = append(*w.rec, "out:"+l)
+	}
+	return len(p), nil
+}
+
+// firstPromptingSudo is the index of the first sudo in rec that may prompt (not `sudo -n`).
+func firstPromptingSudo(rec []string) int {
+	return slices.IndexFunc(rec, func(r string) bool {
+		return strings.HasPrefix(r, "run:/usr/bin/sudo ") && !strings.HasPrefix(r, "run:/usr/bin/sudo -n ")
+	})
+}
+
+// sudoNotCached answers the `sudo -n true` probe with 1: sudo has no cached credentials.
+func sudoNotCached(rec *[]string) func([]string) int {
+	return func(argv []string) int {
+		joined := strings.Join(argv, " ")
+		*rec = append(*rec, "run:"+joined)
+		if joined == "/usr/bin/sudo -n /usr/bin/true" {
+			return 1
+		}
+		return 0
+	}
+}
+
+// The password prompt sudo prints is explained by the line before it.
+func TestSetupSaysWhySudoPromptsBeforeTheFirstSudo(t *testing.T) {
+	var rec []string
+	d := mockDeps(&rec)
+	d.Out = recWriter{&rec}
+	d.Run = sudoNotCached(&rec)
+	if rc := MacosSetup(d); rc != 0 {
+		t.Fatalf("rc = %d\n%s", rc, strings.Join(rec, "\n"))
+	}
+	line := "out:• sudo needs your password to set up the sandbox account and its rule (" +
+		SudoersFile + ")."
+	at, first := slices.Index(rec, line), firstPromptingSudo(rec)
+	if at < 0 || first < 0 || at > first {
+		t.Errorf("line at %d, first prompting sudo at %d:\n%s", at, first, strings.Join(rec, "\n"))
+	}
+}
+
+// Cached credentials mean no prompt, so no line announcing one.
+func TestSetupSaysNothingAboutAPromptWhenSudoIsCached(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	if rc := MacosSetup(d); rc != 0 {
+		t.Fatalf("rc = %d", rc)
+	}
+	if strings.Contains(buf.String(), "sudo needs your password") {
+		t.Errorf("announced a prompt sudo will not show:\n%s", buf.String())
+	}
+}
+
+func TestTeardownSaysWhySudoPromptsBeforeTheFirstSudo(t *testing.T) {
+	for _, exists := range []bool{true, false} {
+		var rec []string
+		d := mockDeps(&rec)
+		d.Out = recWriter{&rec}
+		d.Run = sudoNotCached(&rec)
+		d.SandboxUserExists = func() bool { return exists }
+		d.StagingRootFacts = func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		}
+		if rc := MacosTeardown(d); rc != 0 {
+			t.Fatalf("rc = %d", rc)
+		}
+		at := slices.IndexFunc(rec, func(r string) bool {
+			return strings.HasPrefix(r, "out:• sudo needs your password to remove")
+		})
+		first := firstPromptingSudo(rec)
+		if at < 0 || first < 0 || at > first {
+			t.Errorf("account exists %v: line at %d, first prompting sudo at %d:\n%s",
+				exists, at, first, strings.Join(rec, "\n"))
+		}
 	}
 }
 
