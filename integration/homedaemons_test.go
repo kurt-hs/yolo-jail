@@ -129,27 +129,6 @@ func processRunsWithHome(pid int, home string) bool {
 // a shell list, so the shell keeps the argv rather than exec'ing `sleep` in its place.
 func fakeHomeDaemon(t *testing.T, name, home string, life time.Duration) *exec.Cmd {
 	t.Helper()
-	cmd := fakeHostDaemonProcess(t, name, home)
-	pidFile := paths.HostSingletonPIDFile(name)
-	for p, body := range map[string]string{
-		paths.HostSingletonLock(name):   "",
-		pidFile:                         strconv.Itoa(cmd.Process.Pid) + "\n",
-		pidFile + ".capability":         "fake\n",
-		pidFile + ".launch-check":       "fake\n",
-		pidFile + ".settings":           "{}\n",
-		paths.HostSingletonSocket(name): "",
-	} {
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return cmd
-}
-
-// fakeHostDaemonProcess starts the stand-in process alone: `sleep`, running with HOME=home,
-// killed at the test's end, and returned only once /proc shows that HOME.
-func fakeHostDaemonProcess(t *testing.T, name, home string) *exec.Cmd {
-	t.Helper()
 	if goruntime.GOOS != "linux" {
 		t.Skip("the harness identifies a daemon's HOME through /proc, which this host lacks " +
 			"(homedaemons_test.go's header); it waits for nothing here, so there is nothing to test")
@@ -172,6 +151,40 @@ func fakeHostDaemonProcess(t *testing.T, name, home string) *exec.Cmd {
 		if time.Now().After(deadline) {
 			t.Fatalf("the stand-in %s (pid %d) never showed as a host daemon under %s", name,
 				cmd.Process.Pid, home)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return cmd
+}
+
+// fakeHostDaemonProcess starts the stand-in process alone: `sleep`, running with HOME=home,
+// killed at the test's end, and returned only once /proc shows that HOME.
+func fakeHostDaemonProcess(t *testing.T, name, home string) *exec.Cmd {
+	t.Helper()
+	if goruntime.GOOS != "linux" {
+		t.Skip("the harness identifies a daemon's HOME through /proc, which this host lacks " +
+			"(homedaemons_test.go's header); it stops nothing here, so there is nothing to test")
+	}
+	cmd := exec.Command("sleep", "600")
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-exited
+	})
+	// Start returns once the child's execve has closed its close-on-exec fds, which the kernel
+	// does BEFORE it records where the new image's environment lives, so for a moment
+	// /proc/<pid>/environ reads empty and the process "runs with no HOME". A real daemon is
+	// long past that window when the harness looks; this stand-in is looked at at once, so
+	// wait until it shows the HOME it was given (a CI flake, 1 in ~400 under load, until this).
+	for deadline := time.Now().Add(10 * time.Second); !processRunsWithHome(cmd.Process.Pid, home); {
+		if time.Now().After(deadline) {
+			t.Fatalf("the stand-in %s (pid %d) never showed HOME=%s in /proc/%d/environ",
+				name, cmd.Process.Pid, home, cmd.Process.Pid)
 		}
 		time.Sleep(time.Millisecond)
 	}
