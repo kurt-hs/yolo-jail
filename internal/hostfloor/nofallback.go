@@ -182,12 +182,12 @@ func (f *Floor) upstreamUnreachable(ctx context.Context, url string) error {
 // defaultNpmRegistry is the registry an npm-backed refresh reaches when its environment names none.
 const defaultNpmRegistry = "https://registry.npmjs.org/"
 
-// refreshUpstream is the URL a pre-launch refresh of p reaches, read from the refresh's own
-// environment: the npm registry for an npm program, "" for anything else (no probe).
-func refreshUpstream(p Program, env []string) string {
-	if p.Install.Kind != "npm" {
-		return ""
-	}
+// refreshUpstream is the URL a failed pre-launch refresh is judged by (PD-NF3), read from the
+// refresh's own environment: the npm registry, for every program that declares a refresh, whatever
+// its install kind, as the jail's launchers probe it (_yolo_registry_reachable). A fork (kind
+// "source") keeps its base's refresh (packdecl/fork.go), so a patched pi still runs `pi update
+// --extensions`, which reaches the registry the same way.
+func refreshUpstream(env []string) string {
 	for _, key := range []string{"npm_config_registry", "NPM_CONFIG_REGISTRY"} {
 		for _, kv := range env {
 			if v, ok := strings.CutPrefix(kv, key+"="); ok && v != "" {
