@@ -495,7 +495,7 @@ func TestMacosUserDryRunStillComposesTheContextTree(t *testing.T) {
 	}
 }
 
-// THE CONTEXT MOUNTS ON THIS ARM (docs/design/context-mounts.md §4 steps 3-5). A declared
+// THE CONTEXT MOUNTS ON THIS ARM (docs/reference/context-mounts.md#tests-and-mac-probes). A declared
 // config `mounts` element or pack `mount` grant is DELIVERED as a root-owned link plus
 // Seatbelt rules where the siting rules admit its source, and REFUSES the launch, named, with
 // its reason, everywhere else — DP-D15's "a fatal error … rather than having it be surprisingly

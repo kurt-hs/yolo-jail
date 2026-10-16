@@ -169,7 +169,7 @@ Defects and unbuilt work behind some of the numbers above:
   macOS runner.
 - **The durable-dir size walk** runs once per launch: in the main process's boot on both
   container backends, which every session's pass, an attach's included, now skips
-  ([DS-D36](../design/durable-scratch-space.md#DS-D36)), and in the `macos-user` bootstrap. Each
+  ([DS-D36](jail-home.md#DS-D36)), and in the `macos-user` bootstrap. Each
   walk stops at 2 s (READ, [report.go](../../internal/durable/report.go)). Until 2026-10-06 an
   attach walked it again, so Apple Container's 1.8 s attach included one walk (INFERRED). On the
   maintainer's Linux host one launch's two passes took 0.95 s and 0.30 s on 2026-10-04 (MEASURED,

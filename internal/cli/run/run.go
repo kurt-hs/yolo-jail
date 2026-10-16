@@ -486,7 +486,7 @@ func Run(opts Options) (rc int) {
 		if o.Sealed {
 			return o.runSealedMacosUser(cfg, rt, repoRoot, staged, injectedArgs, channel)
 		}
-		// THE CONTEXT MOUNTS, first on this arm (docs/design/context-mounts.md §4 steps 3-5):
+		// THE CONTEXT MOUNTS, first on this arm (docs/reference/context-mounts.md#tests-and-mac-probes):
 		// each declared one this backend can deliver becomes a root-owned link plus Seatbelt
 		// rules — or, for a pack's single-file `mount`, a copy the context tree composed below
 		// carries (CX-D25) — and one it cannot ends the launch HERE, naming each, before the
@@ -1314,7 +1314,7 @@ func (o *Options) warnIfNoPacks() {
 //
 // EVERY BACKEND PRINTS THE SAME CLAIMS. macos-user left its pack `mount` claims out while it
 // delivered no pack `mount` (DP-B2: a disclosure of a read that does not happen is worse than
-// silence); it delivers them by link since docs/design/context-mounts.md §4 step 4, and refuses
+// silence); it delivers them by link since docs/reference/context-mounts.md#tests-and-mac-probes, and refuses
 // the launch where it cannot, so the exception went with the gap.
 //
 // UNDER THE SEAL the same rule cuts the other way: a sealed build is handed no pack env, no
@@ -1426,7 +1426,7 @@ func (o *Options) noteUseProfiles(channel *packChannel, loadedPacks []*packload.
 // is gone with the shared mount it guarded: no jail mounts <state>/home at /home/agent any
 // more and no seed copies from it, so its legacy bytes are unmounted, unread, and nothing
 // a launch has cause to refuse over (the maintainer's OQ-BH13 ruling,
-// docs/design/base-home-legacy-state.md#decision-ledger). `yolo check` still reports
+// docs/reference/jail-home.md#why-its-this-way). `yolo check` still reports
 // them, as optional cleanup.
 func (o *Options) ensureStorage() error {
 	return storage.EnsureGlobalStorage(func() {

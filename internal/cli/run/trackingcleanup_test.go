@@ -4,7 +4,7 @@ package run
 // jail's tracking file once it has OBSERVED the container gone, which is what lets
 // prune.PruneOrphanAgentStaging reap the jail's AGENTS_DIR entry and the home skeletons in it,
 // as the maintainer's OQ-BH10 ruling assumed it did
-// (docs/design/base-home-legacy-state.md#decision-ledger). Before this, a --rm jail's tracking file
+// (docs/reference/jail-home.md#why-its-this-way). Before this, a --rm jail's tracking file
 // outlived every normal exit, the reaper kept every tracked name, and a workspace in use
 // gained one skeleton per fresh launch until someone ran `yolo ps`.
 
@@ -277,7 +277,7 @@ func TestEveryEndOfTheLaunchForgetsTheContainer(t *testing.T) {
 	}
 }
 
-// TestAGoneContainersSkeletonGoesWithItsTracking pins OQ-BH16 (docs/design/base-home-legacy-state.md):
+// TestAGoneContainersSkeletonGoesWithItsTracking pins OQ-BH16 (docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches):
 // on the same known-gone evidence that drops the tracking file, the launch also removes the
 // skeleton IT built, so a workspace used alone no longer keeps one skeleton per launch until
 // `yolo prune --apply`. Driven through the real normal-exit teardown. It removes only the

@@ -870,7 +870,7 @@ disclosed only by the config-change diff.
 *Re-checked 2026-09-30.* Two narrower refusals have landed since, and neither answers this
 question. A read-write `mounts` element is refused from a workspace config
 (`validateMountScope`, `internal/config/mounts.go`, from
-[`context-mounts.md`](../design/context-mounts.md)), and a workspace mount of a path a
+[`context-mounts.md`](../reference/context-mounts.md)), and a workspace mount of a path a
 brokered loophole fences is refused (`validateBrokerMountFence`,
 `internal/config/brokerfence.go`). A read-only string element and every `env_sources` entry
 still pass from a workspace config.

@@ -10,7 +10,7 @@ import (
 
 // noteLegacyBaseHome is `yolo check`'s report of legacy bytes in <state>/home — the one base
 // home report left, since the launch's refusal went with the shared mount it guarded (the
-// maintainer's OQ-BH13 ruling, docs/design/base-home-legacy-state.md#decision-ledger).
+// maintainer's OQ-BH13 ruling, docs/reference/jail-home.md#oq-bh13).
 //
 // Detection only, and REWORDED for what the bytes are now: unmounted and unread. Every podman
 // jail binds its own home skeleton rather than <state>/home, and no workspace is seeded from

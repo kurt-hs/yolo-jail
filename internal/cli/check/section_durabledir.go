@@ -19,7 +19,7 @@ const durableCheckBudget = 10 * time.Second
 // sectionDurableDir is the fuller view the maintainer's OQ-DS2 ruling asked for beside the
 // launch line: every durable worktree with its size, idle time, branch, unique commits and
 // changed files, the other entries, and the registrations that point at nothing
-// (docs/design/durable-scratch-space.md §5.4). It prints NOTHING when the workspace has no
+// (docs/reference/jail-home.md#the-durable-dir-report). It prints NOTHING when the workspace has no
 // durable dir, so a check of a workspace that never launched reads as it always did.
 //
 // THE TWO FRAMES COMPUTE DIFFERENT COLUMNS (DS-D3). In a jail every column is computed, git
@@ -159,7 +159,7 @@ func durableCount(n int, one, many string) string {
 	return strconv.Itoa(n) + " " + many
 }
 
-// durableUniqueCommits is a coined column (docs/design/durable-scratch-space.md §5.4): the
+// durableUniqueCommits is a coined column (docs/reference/jail-home.md#the-durable-dir-report): the
 // commits reachable from the worktree's HEAD and from no other local branch and no
 // remote-tracking ref — what deleting the worktree AND its branch would lose. In-jail only.
 func (o *Options) durableUniqueCommits(w durable.Worktree, timeout time.Duration) string {

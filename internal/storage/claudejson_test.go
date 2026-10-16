@@ -9,7 +9,7 @@ import (
 )
 
 // claudejson_test.go pins the seed's FORWARD pass to the same allowlist as its reverse pass
-// (docs/design/base-home-legacy-state.md#27-the-seed).
+// (docs/reference/jail-home.md#the-claudejson-seed).
 //
 // The two passes used to disagree. Reverse (workspace → seed) wrote only claudeJSONSeedKeys,
 // but forward (seed → workspace) copied EVERY key the workspace lacked, so a legacy seed — one

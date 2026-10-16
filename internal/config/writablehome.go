@@ -122,7 +122,7 @@ var reservedHomeSubtrees = []string{
 // dirs of the SELECTED packs.
 //
 // THE SELECTED PACKS, NOT EVERY PACK YOLO SHIPS — the maintainer's OQ-BH14 ruling
-// (docs/design/base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories):
+// (docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory):
 // an unselected pack is treated as if it does not exist, so `writable_home_dirs:
 // [".codex"]` is legal in a workspace that does not select codex and refused once it
 // does. The shipped set never was the right universe anyway: packs can come from

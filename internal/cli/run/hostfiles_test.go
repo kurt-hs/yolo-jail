@@ -295,7 +295,7 @@ func TestHostFilesWireCarriesEveryFieldTheEntrypointNeeds(t *testing.T) {
 }
 
 // TestAHostFilesEntryUnderAnUnselectedPacksDirIsStaged is the run side of the OQ-BH14 ruling
-// (docs/design/base-home-legacy-state.md#28-reservation-is-a-rule-about-config-names-not-about-directories):
+// (docs/reference/jail-home.md#reserving-a-name-is-not-creating-a-directory):
 // an unselected pack's directory is an ordinary path. `~/.codex/prompts/review.md` in a claude-only
 // jail used to be judged "already under a rw bind" because codex SHIPS, so it got no staging,
 // the skeleton had no ~/.codex, and the entrypoint's write failed EROFS. Now it is staged like

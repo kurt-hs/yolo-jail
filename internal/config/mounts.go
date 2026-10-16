@@ -1,6 +1,6 @@
 package config
 
-// mounts.go is the `mounts` key: its two element forms (docs/design/context-mounts.md §2.1),
+// mounts.go is the `mounts` key: its two element forms (docs/reference/context-mounts.md#the-config-shape),
 // and the two gates the read-write form adds — WHERE one may be declared (§2.2's trust
 // predicate) and WHICH host sources may be one (§2.3's refusal set).
 //
@@ -210,7 +210,7 @@ const (
 	mountScopeWorkspace
 )
 
-// rwMountTrusted is THE TRUST PREDICATE of docs/design/context-mounts.md §2.2: may a
+// rwMountTrusted is THE TRUST PREDICATE of docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared: may a
 // read-write element declared in this scope be honored?
 //
 // Its COMPUTATION is not this doc's, and it is kept one function so that it can change in
@@ -247,7 +247,7 @@ func rwElements(cfg *jsonx.OrderedMap, scope mountScope) []ContextMount {
 // THIS IS THE BOUNDARY, for LoadCacheRelocations' reason: the merge records no provenance,
 // so a builder reading rw elements out of it could not say whether one came from a file the
 // agent can edit. The run pipeline therefore takes read-only elements from the merged
-// config and read-write ones from HERE (context-mounts.md §2.2), and validateMountScope's
+// config and read-write ones from HERE (context-mounts.md#where-a-read-write-mount-may-be-declared), and validateMountScope's
 // refusal of a workspace-scope element is the loud half, not the boundary itself.
 //
 // Inside a jail the user scope is that jail's own (the generated config.jsonc, which never
@@ -313,7 +313,7 @@ var rwBoundaryConsequence = map[paths.ScopeRootKind]string{
 		"NEXT launch's packs, host files and mounts",
 }
 
-// rwMountRefusal is docs/design/context-mounts.md §2.3's refusal set for a read-write
+// rwMountRefusal is docs/reference/context-mounts.md#the-refusal-set's refusal set for a read-write
 // source, on RESOLVED paths: "" when the source may be mounted writable, else why not.
 //
 //  1. The credential-boundary predicate, SHARED rather than copied: the source is or
@@ -373,7 +373,7 @@ func pathUnderOrEqual(child, base string) bool {
 
 // validateMounts checks the `mounts` key: each element's shape, the existence warning, and
 // for the read-write form the trust predicate, the refusal set and the duplicate-destination
-// rule (docs/design/context-mounts.md §2.1–§2.3).
+// rule (docs/reference/context-mounts.md#the-config-shape).
 func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {
 	mountsV, present := config.Get(mountsKey)
 	if !present || mountsV == nil {
@@ -433,7 +433,7 @@ func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]stri
 		}
 		msg := fmt.Sprintf("config.mounts: %s is in the workspace config, and a read-write "+
 			"mount is user-scope only — move it to %s. A workspace config is agent-editable, "+
-			"so it cannot grant a read-write host mount (docs/design/context-mounts.md §2.2; "+
+			"so it cannot grant a read-write host mount (docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared; "+
 			"a read-only entry may stay where it is)", m.Spec, paths.UserConfigPath())
 		add(errs, locatedAt(wsNode.key(mountsKey).elem(indices[n]), msg))
 	}
@@ -467,7 +467,7 @@ func validateRWMountSources(config *jsonx.OrderedMap, workspace string, errs *[]
 // against another, against a SELECTED pack's `mount` at /ctx/<into>, or at, inside or
 // containing one of yolo's own children of /ctx (paths.ReservedContextPaths). Before this, a
 // collision was a launch podman refused late ("duplicate mount destination",
-// context-mounts.md §2.1 and §3.2).
+// context-mounts.md#the-config-shape).
 //
 // Only collisions a `mounts` element is party to are this key's to report; the pack set is
 // resolved only when there is an element to compare it with.

@@ -1,7 +1,7 @@
 package run
 
 // contextdir_test.go pins $YOLO_CONTEXT_DIR on the container backends
-// (docs/design/context-mounts.md §4 step 2, CX-D4). The podman half is the golden argv
+// (docs/reference/context-mounts.md#tests-and-mac-probes, CX-D4). The podman half is the golden argv
 // (TestAssembleRunCmdPodmanLinuxGolden); this is the Apple Container half, through the same
 // assembler, so deleting the one `-e` emission fails both.
 

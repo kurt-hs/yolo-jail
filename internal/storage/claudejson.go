@@ -27,7 +27,7 @@ var claudeJSONSeedKeys = []string{"oauthAccount", "hasCompletedOnboarding"}
 //     a seed written by a yolo whose home was shared and writable also holds another
 //     workspace's `projects` and `mcpServers`, and forwarding every key carried those
 //     into each new workspace on the machine
-//     (docs/design/base-home-legacy-state.md#27-the-seed).
+//     (docs/reference/jail-home.md#the-claudejson-seed).
 //   - Reverse (workspace → seed): if the workspace has oauthAccount and the
 //     seed lacks it, write the allowlisted login keys up into the seed,
 //     preserving unrelated seed keys.
@@ -46,7 +46,7 @@ var claudeJSONSeedKeys = []string{"oauthAccount", "hasCompletedOnboarding"}
 // into the machine seed; following one ABOVE it (wsState/claude -> a host directory) let the
 // forward pass create <that directory>/claude.json holding the seed's login. The root refuses
 // every path that leaves it, so the second is closed by construction
-// (docs/design/base-home-legacy-state.md#22-where-it-lives-host-only-never-in-wsstate names
+// (docs/reference/jail-home.md#where-a-skeleton-lives-and-when-it-goes names
 // jail-planted links in wsState as the hazard). A missing file is still fine: it reads as {},
 // and the forward pass creates it.
 //

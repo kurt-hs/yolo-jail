@@ -44,7 +44,7 @@ type Loophole struct {
 }
 
 // ContextMount is one entry of the "Additional Context Mounts" section: a context mount
-// (docs/design/context-mounts.md, Defined terms) this launch actually BOUND.
+// (docs/reference/context-mounts.md#defined-terms) this launch actually BOUND.
 //
 // A struct, where it used to be a "host:container" string: a string cannot carry a mode,
 // and its reader split on the FIRST colon, which is the wrong half of the split the string
@@ -59,7 +59,7 @@ type ContextMount struct {
 	// Pack names the pack whose `mount` grant this is; "" for a config `mounts` element.
 	Pack string
 	// Copied is true for a pack's single-file `mount` that macos-user COPIES into the context
-	// dir at launch instead of linking (docs/design/context-mounts.md CX-D25): the agent reads a
+	// dir at launch instead of linking (docs/reference/context-mounts.md#CX-D25): the agent reads a
 	// snapshot, and a host edit arrives at the next launch, which the entry says.
 	Copied bool
 }
@@ -191,7 +191,7 @@ type BriefingInput struct {
 	// Persistence is the launch's persistence map (persistence.go): which paths survive a
 	// restart, which are shared by every workspace, and which are gone once the jail
 	// exits. The run pipeline builds it from the definitions the mount argv reads, and it
-	// renders the storage-classes section (docs/design/durable-scratch-space.md
+	// renders the storage-classes section (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 	// §4.1). Nil renders no section: macos-user, the host notch and a hand-built input.
 	Persistence *PersistenceMap
 
@@ -362,7 +362,7 @@ func confinementHeader(confinement, mechanism string, isMacOS bool) []string {
 			"machine, with no container around you. Changes are NOT disposable.",
 			"You have: their real credentials, their real dotfiles, no snapshot to fall back on.",
 			"Absent: nothing is mounted read-only; there is no jail to restart; `sudo` is real.",
-			// OQ-DS3 (docs/design/durable-scratch-space.md §5.7): one static sentence and no
+			// OQ-DS3 (docs/reference/jail-home.md#the-storage-classes): one static sentence and no
 			// variable, because host /tmp is the machine's own and a per-launch variable
 			// cannot reach the files `yolo host apply` writes.
 			"`/tmp` is this machine's own: it survives an agent restart but may not survive a reboot; put worktrees you need later inside the repository or beside it.",
@@ -723,7 +723,7 @@ func BriefingContent(in BriefingInput) string {
 			"  `/workspace` — including the built-in ones — mean the path above.",
 			// Not "persistent across sessions": true of this account home, but it hid the
 			// fact that matters, that one home serves every workspace on the machine
-			// (docs/design/durable-scratch-space.md §2.2, §4.1).
+			// (docs/reference/jail-home.md#the-storage-classes).
 			"- **Home**: `"+home+"` (one account home, shared by every workspace on this",
 			"  machine; its per-workspace directories are links into this workspace's `.yolo/home`)",
 			"- **OS**: macOS, Seatbelt-confined (no container, no systemd, no sudo)",
@@ -738,7 +738,7 @@ func BriefingContent(in BriefingInput) string {
 			// NOT "(persistent across sessions)", which this line said until the durable-paths
 			// slice: on podman the home is a read-only bind, so the claim invited writes that
 			// fail, and the agent fell back to /tmp, which is deleted after the jail exits
-			// (docs/design/durable-scratch-space.md §2.5).
+			// (docs/reference/jail-home.md#storage-classes-and-the-durable-dir).
 			"- **Home**: `"+home+"`"+homeLineNote(in.Persistence, home),
 			"- **OS**: NixOS-based minimal container (no systemd, no sudo)",
 		)
@@ -776,7 +776,7 @@ func BriefingContent(in BriefingInput) string {
 	)
 	// Right after the Environment block whose Home line points at it, and before every
 	// capability section: where work survives decides where an agent puts it, so it has to
-	// be read before the agent plans anything (docs/design/durable-scratch-space.md §4.1).
+	// be read before the agent plans anything (docs/reference/jail-home.md#the-storage-class-briefing-section).
 	wsShown := "/workspace"
 	if slices.Contains(paths.NativeRuntimes, in.Mechanism) {
 		wsShown = in.Workspace
@@ -828,7 +828,7 @@ func BriefingContent(in BriefingInput) string {
 
 	// THE MODE IS PER ENTRY, where the heading used to say "(read-only)" for all of them:
 	// a read-write config element is the host's own directory, and an agent told it was a
-	// read-only view would treat a write there as scratch (docs/design/context-mounts.md
+	// read-only view would treat a write there as scratch (docs/reference/context-mounts.md
 	// §3.8). The path printed is the one the agent opens on THIS backend, and the context
 	// dir's variable is named so pack prose spelling `$YOLO_CONTEXT_DIR/<rel>` resolves.
 	if len(in.ContextMounts) > 0 {
@@ -864,7 +864,7 @@ func BriefingContent(in BriefingInput) string {
 				"is what the host reads.")
 		}
 		// THE LINK DELIVERY'S TWO DELTAS, said where an agent would trip on them
-		// (docs/design/context-mounts.md §3.7, §3.8). With no container there is no mount
+		// (docs/reference/context-mounts.md#what-cannot-be-matched). With no container there is no mount
 		// namespace: each entry is a link to the host folder itself, so a tool that resolves
 		// paths reports the host's, and the sandbox account's file permissions apply below the
 		// folder, which a container's root would have read past.

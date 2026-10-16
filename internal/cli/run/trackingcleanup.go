@@ -5,7 +5,7 @@ package run
 // wrote it has observed the container gone.
 //
 // WHY IT EXISTS: the per-jail home skeleton's cleanup depends on it. The maintainer's OQ-BH10
-// ruling (docs/design/base-home-legacy-state.md#decision-ledger) is that old skeletons go with the
+// ruling (docs/reference/jail-home.md#why-its-this-way) is that old skeletons go with the
 // jail's AGENTS_DIR/<cname> entry through prune.PruneOrphanAgentStaging, and that reaper
 // keeps every name that is live OR TRACKED. Every jail runs `--rm`, yet nothing on a normal
 // exit removed its tracking file: only a stale-container removal, `yolo ps`, `yolo check`'s
@@ -51,7 +51,7 @@ const trackingProbeTimeout = 10 * time.Second
 //
 // skeleton is the per-jail home skeleton THIS launch built, or "" (an attach, Apple Container,
 // or a launch that built none). On the same known-gone evidence it goes too (OQ-BH16,
-// docs/design/base-home-legacy-state.md): this launch is the only one that knows its name, and
+// docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches): this launch is the only one that knows its name, and
 // the one container that could hold it is gone. That is not the edit of a live skeleton the
 // design's rule 2 forbids. A skeleton this declines to remove stays for the reaper, which then
 // holds only launches that died with no teardown at all (SIGKILL, OOM).

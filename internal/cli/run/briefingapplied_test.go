@@ -485,7 +485,7 @@ func TestMacosUserBriefingSaysHostNetworkingAndAdvertisesNoPorts(t *testing.T) {
 }
 
 // DP-B1 / DP-L7, BOTH briefing sites, now that macos-user delivers context mounts by link
-// (docs/design/context-mounts.md §4 step 4). A mount the backend REFUSES must not be listed —
+// (docs/reference/context-mounts.md#tests-and-mac-probes). A mount the backend REFUSES must not be listed —
 // a section naming it is a file-path map of a filesystem that does not exist, and the
 // `## Limitations` bullet must not describe a context tree nothing linked. A mount it DELIVERS
 // is listed at the path the agent opens — under the context dir, never /ctx — with the two

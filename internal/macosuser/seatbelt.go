@@ -115,14 +115,14 @@ func SeatbeltProfile(workspace, sandboxHome string, readonlyRels []string, homeR
 // file-write* besides the workspace and the sandbox home. ONE LIST, read by the profile below
 // and by the context-mount siting (DarwinContextSiting's WritableRoots), so "a read-only source
 // inside the writable set is refused" is never judged against a different set from the one the
-// kernel is handed (docs/design/context-mounts.md §3.4).
+// kernel is handed (docs/reference/context-mounts.md#the-seatbelt-rules).
 var profileWritableRoots = []string{"/tmp", "/private/tmp", "/var/folders", "/private/var/folders", "/dev"}
 
 // bootVolume is the one entry under /Volumes the profile re-allows reads of.
 const bootVolume = "/Volumes/Macintosh HD"
 
 // SeatbeltProfileWithContext is SeatbeltProfile plus the CONTEXT MOUNTS this launch delivers by
-// link (ctxlinks.go; docs/design/context-mounts.md §3.4). With none it is byte-identical to
+// link (ctxlinks.go; docs/reference/context-mounts.md#the-seatbelt-rules). With none it is byte-identical to
 // SeatbeltProfile. Each link adds its RESOLVED source to three blocks, each placed by what it
 // must beat, because last-match-wins is decided among the rules that match ONE operation:
 //

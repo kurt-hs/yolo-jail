@@ -1,6 +1,6 @@
 package jailcontent
 
-// The briefing's storage-classes section (docs/design/durable-scratch-space.md §4.1, reframed
+// The briefing's storage-classes section (docs/reference/jail-home.md#the-storage-class-briefing-section, reframed
 // by the maintainer on 2026-09-28 as storage classes with their lifecycles: DS-D13). This file
 // RENDERS a persistence map; it never decides one. What each path is comes from the run
 // pipeline, which builds the map from the same definitions the launch's mount argv reads
@@ -64,7 +64,7 @@ type PersistentPath struct {
 }
 
 // PersistenceMap is the launch's persistence map (a term coined in
-// docs/design/durable-scratch-space.md §1.2): the paths it makes writable, each with a storage
+// docs/reference/jail-home.md#storage-class-terms): the paths it makes writable, each with a storage
 // class. A nil map renders no section, which is every caller that has not resolved a
 // container backend (the host notch, macos-user, and unit tests that build a BriefingInput by
 // hand).

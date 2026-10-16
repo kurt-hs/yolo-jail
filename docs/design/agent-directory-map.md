@@ -339,7 +339,7 @@ A mark adds rules to an entry's class. It does not change the class. The pi slic
 | macos-user | the sandbox account's home as its agent sees it, whether walked in the sandbox or by the launcher through the workspace sidecar the layout links point into | there is no mount namespace, so a link resolves the same from either side, and the sidecar holds real copies rather than mountpoints |
 | Host | the real `$HOME` | at **every** `host_management` value, `none` included ([AM-D7](#AM-D7)). Observing writes nothing, and the rcm case is precisely a home yolo does not manage |
 
-Only the **selected** packs' roots are walked, which is [`OQ-BH14`](base-home-legacy-state.md#decision-ledger)'s
+Only the **selected** packs' roots are walked, which is [`OQ-BH14`](../reference/jail-home.md#oq-bh14)'s
 rule: an unselected pack is treated as if it does not exist.
 
 ### 4.2 Each verb
@@ -435,7 +435,7 @@ derives credential files, surface paths, content destinations and redirects from
 ([`decls.go`](../../internal/basehome/decls.go)). It cannot be the map's evaluator, for three reasons:
 
 - it classifies a base home for migration over the **shipped** pack union, while the map evaluates
-  the **selected** packs ([`OQ-BH14`](base-home-legacy-state.md#decision-ledger));
+  the **selected** packs ([`OQ-BH14`](../reference/jail-home.md#oq-bh14));
 - it reads surfaces in one posture and carries no notch field set, while composed is per notch;
 - it matches a credential **by basename anywhere**, which [§8](#8-degenerate-inputs-failure-paths-and-forbidden-behavior)
   forbids the map.

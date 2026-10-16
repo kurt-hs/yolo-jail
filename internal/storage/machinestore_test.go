@@ -14,7 +14,7 @@ import (
 
 // TestEnsureGlobalStorageProvisionsNoHome pins what <state>/home is now: a MACHINE STORE,
 // holding the machine-scope shared dirs and the credential migration's file, and nothing a
-// home needs (docs/design/base-home-legacy-state.md#25-the-machine-store-stays).
+// home needs (docs/reference/jail-home.md#the-machine-store).
 //
 // Every podman jail used to bind <state>/home at /home/agent, so this function created the
 // union of every shipped pack's writable dirs, core's own dirs, the single-file mountpoints

@@ -1,6 +1,6 @@
 package macosuser
 
-// contextdir_test.go pins $YOLO_CONTEXT_DIR on this backend (docs/design/context-mounts.md
+// contextdir_test.go pins $YOLO_CONTEXT_DIR on this backend (docs/reference/context-mounts.md
 // §4 step 2, CX-D4) through the PLAN BUILDER — the value a launch really carries — and the
 // PlanInvariants guard that fails a plan which loses any half of it.
 

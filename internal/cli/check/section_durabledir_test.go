@@ -66,7 +66,7 @@ func runDurableSection(o *Options, ws string) string {
 }
 
 // ON THE HOST the git-derived columns say "in-jail only" and no git runs at all: the
-// workspace's .git/config is jail-writable (docs/design/durable-scratch-space.md §4). Size,
+// workspace's .git/config is jail-writable (docs/reference/jail-home.md#the-durable-dir). Size,
 // idle and branch come from metadata and git's admin files, and a worktree made in the jail —
 // whose admin file names /workspace/… — is found at the host's own path.
 func TestTheHostDurableSectionRunsNoGit(t *testing.T) {

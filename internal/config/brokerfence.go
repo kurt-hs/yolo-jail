@@ -23,7 +23,7 @@ import (
 // entry, and DISCLOSED from the user config, where it is the user's own authority (§9.6).
 // The approvals directory is not fenced (BB-D34): no mount can write an approval — a read-only
 // one cannot write anything, and a read-write one is refused for any source inside yolo's
-// state directory (context-mounts.md §2.3 clause 1, config.rwMountRefusal).
+// state directory (context-mounts.md#the-refusal-set clause 1, config.rwMountRefusal).
 
 func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver,
 	errs, warns *[]string) {
@@ -110,7 +110,7 @@ func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolv
 
 // mountHostSources maps each `mounts` element, keyed by how it was written, to its resolved
 // host source and whether it is read-write. Through ParseMounts, so an object element is
-// fenced exactly as a string one is (context-mounts.md CX-D1: a string-only reader here would
+// fenced exactly as a string one is (context-mounts.md#CX-D1: a string-only reader here would
 // skip every object element in silence).
 func mountHostSources(config *jsonx.OrderedMap) map[string]fencedMount {
 	out := map[string]fencedMount{}

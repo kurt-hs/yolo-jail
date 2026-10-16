@@ -1,7 +1,7 @@
 package run
 
 // acseed_test.go pins prepareWsState's per-backend layout, the fix for the Apple Container
-// seed defect (docs/design/base-home-legacy-state.md#3-the-apple-container-seed-defect,
+// seed defect (docs/reference/jail-home.md#the-claudejson-seed,
 // OQ-BH12).
 //
 // prepareWsState stripped the leading dot of every path with no runtime branch, so on

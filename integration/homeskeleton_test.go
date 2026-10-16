@@ -10,7 +10,7 @@ import (
 )
 
 // TestPodmanHomeIsAPerJailReadOnlySkeleton asserts, from INSIDE a real container, what the
-// per-jail home skeleton promises (docs/design/base-home-legacy-state.md#8-build-order-and-done-conditions):
+// per-jail home skeleton promises (docs/reference/jail-home.md#what-pins-the-skeleton):
 //
 //   - /home/agent is a read-only bind of THIS jail's skeleton under
 //     <state>/agents/<cname>/home/, not of the machine store <state>/home every podman jail
@@ -117,7 +117,7 @@ echo "SEARCH done"
 		}
 		// The host side, after the jail has exited: the skeleton it was bound from is GONE.
 		// A launch removes the skeleton it built once the runtime answers that its container
-		// no longer exists (OQ-BH16, docs/design/base-home-legacy-state.md). mountinfo names
+		// no longer exists (OQ-BH16, docs/reference/jail-home.md#why-the-home-root-is-a-read-only-skeleton-with-symlink-hatches). mountinfo names
 		// the bind SOURCE, the skeleton's host path, so it can be checked directly.
 		if _, err := os.Stat(root); err == nil {
 			t.Errorf("the skeleton %s this jail was bound from still exists after its exit — "+

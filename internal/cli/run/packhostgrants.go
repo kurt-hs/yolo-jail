@@ -194,7 +194,7 @@ const acCtxDirRel = ".yolo-ctx"
 //
 // WHICH grants are delivered, and every skip line, is packCtxMounts' decision
 // (ctxmounts.go), shared with the briefing so the agent is told of exactly the /ctx paths
-// this argv binds — pack mounts are listed there too now (context-mounts.md §3.8).
+// this argv binds — pack mounts are listed there too now (context-mounts.md#what-the-briefing-says).
 func (o *Options) hostMountArgs(in *assembleInput) []string {
 	var args []string
 	for _, m := range o.packCtxMounts(in.rt, in.packs, o.pr(o.Stdout).print) {

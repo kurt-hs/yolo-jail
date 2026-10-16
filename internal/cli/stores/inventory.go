@@ -977,7 +977,7 @@ func sizeClass(s *Store, roots []string, o Options) {
 	}
 }
 
-// SectionDurable is every known workspace's durable dir (docs/design/durable-scratch-space.md
+// SectionDurable is every known workspace's durable dir (docs/reference/jail-home.md#storage-classes-and-the-durable-dir
 // §5.4): the agents' scratch worktrees and clones under `<workspace>/.yolo/durable`.
 const SectionDurable = "workspace durable dirs"
 
