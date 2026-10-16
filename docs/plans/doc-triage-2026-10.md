@@ -46,8 +46,7 @@ Docs whose own text already decides what happens to them, so they need no judgme
 | :--- | ---: | :--- | :--- |
 | [NB1: graduated pointer stubs](#nb1-graduated-pointer-stubs-10) | 10 | The doc's own status says GRADUATED or SUPERSEDED into a reference doc and that nothing is owed | Repoint its inbound links to the reference, then delete |
 | [NB2: self-declared superseded](#nb2-self-declared-superseded-15) | 15 | The doc's own frontmatter or status says SUPERSEDED or "do not build from this", and names what replaced it | Archive |
-| [NB3: finished plans](#nb3-finished-plans-2) | 2 | A plan whose own `next` says nothing is left to build | Archive |
-| [NB4: committed test logs](#nb4-committed-test-logs-3) | 3 | A record of one QA run; the tests in the tree are the record now | Archive |
+| [NB3 and NB4: finished plans and test logs](#nb3-and-nb4-finished-plans-and-committed-test-logs-5-deleted-2026-10-15) | 5 | A plan whose own `next` says nothing is left, or a record of one QA run | Deleted 2026-10-15 |
 
 ### NB1: graduated pointer stubs (10)
 
