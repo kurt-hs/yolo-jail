@@ -76,6 +76,12 @@ func lintSeries(pack *packload.Pack, root string) ([]lintedSeries, []string) {
 	var read []lintedSeries
 	var problems []string
 	for _, f := range patchedOfPack(pack, root) {
+		if f.Carry != "" {
+			// A CARRY has nothing in the pack to read: its address is the manifest's to check, and
+			// `--online` fetches and resolves it (docs/design/patched-forks.md §3.5).
+			read = append(read, lintedSeries{fork: f, series: packsrc.UnresolvedCarrySeries(f.Carry)})
+			continue
+		}
 		if packdecl.PatchesDirProblem(f.Patches) != "" {
 			continue // the manifest's own problem names the value, and the read would say it again
 		}
@@ -147,6 +153,9 @@ func printLines(pr richtext.Printer, lines []string) {
 // onlineVerdict is what lint says of one series probe: the problems that fail lint, the warnings and
 // the notes, each without the fork's label. See the file doc for whose verdict it is.
 func onlineVerdict(f packload.Fork, s *packsrc.Series, p packsrc.SeriesProbe) (problems, warnings, notes []string) {
+	if p.Carry != nil {
+		s = p.Carry // the carry as the probe's check resolved it
+	}
 	found := p.Found
 	switch {
 	case p.Err != nil:
@@ -171,6 +180,9 @@ func onlineVerdict(f packload.Fork, s *packsrc.Series, p packsrc.SeriesProbe) (p
 			lintOnlineAgain)
 	case w.Err != nil:
 		problems = append(problems, "could not replay the series at its base: "+w.Err.Error()+" — "+lintOnlineAgain)
+	case p.Carry != nil:
+		notes = append(notes, fmt.Sprintf("the carry %s resolves, and its merge base with upstream is %s",
+			p.Carry.Carry.Label(), shortSHA(p.Carry.Base)))
 	default:
 		notes = append(notes, fmt.Sprintf("the series (%d %s, series %s) replays at its base %s", s.Len(),
 			plural(s.Len(), "patch", "patches"), s.ShortDigest(), shortSHA(s.Base)))

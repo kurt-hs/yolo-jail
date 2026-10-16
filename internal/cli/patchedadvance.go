@@ -595,7 +595,10 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 			a.packs = &local
 		}
 	}
-	series, err := f.ReadSeries()
+	// A CARRY NO CHECK HAS RESOLVED YET (docs/design/patched-forks.md §3.5) reads as the unresolved
+	// carry: its check fetches and resolves it, and the advance takes the resolved series once that
+	// check has run (carryResolved). Until then it stands for nothing a build carries.
+	series, err := f.ReadSeriesFrom(a.packs)
 	if err != nil {
 		// THE SERIES CANNOT BE READ (§8.1): nothing serves under PF-D23, since the manifest's recipe
 		// is not known, and the reason names the file and its fix.
@@ -956,7 +959,7 @@ func (a *advance) cachedGoodLabel() string {
 	if _, _, why := validateCachedGood(a.f, a.o.platform, a.rec.Good); why != "" {
 		return ""
 	}
-	return run.WithPatches(run.GoodBuildLabel(a.rec.Good), a.rec.Good.Patches)
+	return run.WithGood(run.GoodBuildLabel(a.rec.Good), a.rec.Good)
 }
 
 // launchSaysPatchFailure reports whether a jail launch says this advance's patch failure itself
@@ -1053,6 +1056,31 @@ func (a *advance) lockHeldSkip(err error) bool {
 // entry, or the floor's installed copy (PF-D55).
 func (a *advance) serves() bool { return a.serving != nil || a.installed != nil }
 
+// carryResolved takes a CARRY's series as the check just recorded it (docs/design/patched-forks.md
+// §3.5), and reports whether that moved it: a branch that moved, or one the advance started without
+// (packsrc.UnresolvedCarrySeries). The recipe follows the carry's commit, and what serves is again
+// only a build of that recipe, as for an edited series (PF-D23). False for a patch series, and when
+// the record names nothing newer than the advance read.
+func (a *advance) carryResolved() bool {
+	if a.f.Carry == "" || a.rec == nil {
+		return false
+	}
+	s, err := packsrc.CarrySeries(a.f.Carry, a.f.Source, a.rec)
+	if err != nil || s.Digest == a.series.Digest {
+		return false
+	}
+	a.series = s
+	a.recipe = forkBuild{Fork: a.f, Series: s}.recipe()
+	a.serving, a.installed = nil, nil
+	if a.rec.Good != nil && a.rec.Good.Recipe == a.recipe {
+		a.serving = a.exactGood(a.rec.Good)
+	}
+	if a.serving == nil && a.o.installed != nil && a.o.installed.recipe == a.recipe {
+		a.installed = a.o.installed
+	}
+	return true
+}
+
 // installedIsGood reports whether the floor's copy that serves is the good build itself, whose store
 // entry is then not built again for it (PF-D55).
 func (a *advance) installedIsGood() bool {
@@ -1139,7 +1167,7 @@ func (a *advance) sayUnlessReport(format string, args ...any) {
 // goodLine is the good build as the lines name what keeps running: "<label> + N patches".
 func (a *advance) goodLine() string {
 	g := a.rec.Good
-	return run.WithPatches(run.GoodBuildLabel(g), g.Patches)
+	return run.WithGood(run.GoodBuildLabel(g), g)
 }
 
 // run is the advance proper, from the check to the hand.
@@ -1257,6 +1285,10 @@ func (a *advance) run() advanceResult {
 			}
 		}
 		a.rec = res.Record
+		if a.carryResolved() {
+			// A MOVED OR NEWLY RESOLVED CARRY is an edit of what is applied, as an edited series is.
+			edited = good != nil && good.Recipe != a.recipe
+		}
 		found := a.rec.Check
 		a.seq = found.Seq
 		if res.Ran && found.FetchErr != "" {
@@ -1415,7 +1447,7 @@ func (a *advance) run() advanceResult {
 	case good == nil:
 		a.why = ", the first build of it on this machine"
 		a.sayUnlessReport("%s: no build of it on this machine yet; %s", f.Label(),
-			a.replaying("replaying its "+run.PatchCount(a.series.Len())))
+			a.replaying(a.applyingIts()))
 	}
 	// A BUILD SLOT OF THE POOL (XB-D10), for the walk, the replay and the build, which are CPU's: taken
 	// as soon as this key's own check named something to walk, never after another key's check.
@@ -1907,7 +1939,7 @@ func (a *advance) entryWithVersion(e packsrc.ListEntry) packsrc.ListEntry {
 // next steps — or, when the series' base is built next (thenBase), that.
 func (a *advance) buildFailedLines(b forkBuild, err error, retryAt time.Time) {
 	f := a.f
-	what := run.WithPatches(b.Entry.Label(), b.Series.Len())
+	what := run.WithSeries(b.Entry.Label(), b.Series)
 	tail := a.runsNow()
 	if a.thenBase {
 		tail = a.baseNext()
@@ -1980,7 +2012,7 @@ func (a *advance) build(b forkBuild, base baseWhy, edited bool) advanceResult {
 		if base != baseNone {
 			why = a.baseClause(base)
 		}
-		what := run.WithPatches(b.Entry.Label(), b.Series.Len())
+		what := run.WithSeries(b.Entry.Label(), b.Series)
 		if b.Series.Len() > 0 {
 			what += " (series " + b.Series.ShortDigest() + ")"
 		}
@@ -2223,7 +2255,7 @@ func (a *advance) settle(b forkBuild, entry *capture.Entry, err error, base base
 		// is recorded, no back-off starts, and the next launch tries again (pi-startup-cancellation §3).
 		a.warn("%s: %v — %s", f.Label(), err, a.runsNow())
 		r := a.serveOr(fmt.Sprintf("%s: %v", f.Label(), err))
-		r.retained = run.WithPatches(b.Entry.Label(), b.Series.Len()) + " pending — " + oneLineErr(err)
+		r.retained = run.WithSeries(b.Entry.Label(), b.Series) + " pending — " + oneLineErr(err)
 		return r
 	case errors.Is(err, errForkBuildNotStarted):
 		// THE BUILD JAIL STOPPED BEFORE ITS BUILD LINE RAN (PF-D21): not a failed build, so nothing is
@@ -2328,7 +2360,7 @@ func (a *advance) buildFailed(b forkBuild, err error) advanceResult {
 		a.buildFailedLines(b, err, autoCaptureRetryAt(capture.AutoFailure{Failures: o.Count, Last: now}))
 	}
 	r.failed, r.fellShort = true, true
-	r.failWhat, r.failErr = run.WithPatches(b.Entry.Label(), b.Series.Len()), oneLineErr(err)
+	r.failWhat, r.failErr = run.WithSeries(b.Entry.Label(), b.Series), oneLineErr(err)
 	r.retryAt = autoCaptureRetryAt(capture.AutoFailure{Failures: o.Count, Last: now})
 	return r
 }
@@ -2431,7 +2463,7 @@ func (a *advance) moved(b forkBuild, entry *capture.Entry, base baseWhy, edited 
 		return r
 	}
 	r.built = true
-	r.to = run.WithPatches(b.Entry.Label(), b.Series.Len())
+	r.to = run.WithSeries(b.Entry.Label(), b.Series)
 	if prev != nil {
 		r.from = run.GoodBuildLabel(prev)
 	}
@@ -2443,7 +2475,7 @@ func (a *advance) moved(b forkBuild, entry *capture.Entry, base baseWhy, edited 
 	}
 	// THE MOVE LINE (PF-D8), the disclosure of what now runs, which no flag hides (OQ-RO3): with a
 	// report, the build's result line, with the store's key, paths and size folded in.
-	what := run.WithPatches(b.Entry.Label(), b.Series.Len())
+	what := run.WithSeries(b.Entry.Label(), b.Series)
 	var line string
 	switch {
 	case prev == nil:
@@ -2455,8 +2487,8 @@ func (a *advance) moved(b forkBuild, entry *capture.Entry, base baseWhy, edited 
 			a.editedSeries(b) + "; " + a.runner() + " runs the new build" + a.baseClause(base)
 	default:
 		count := ""
-		if b.Series.Len() > 0 {
-			count = ", " + run.PatchCount(b.Series.Len())
+		if b.Series.Replays() {
+			count = ", " + run.SeriesWhat(b.Series)
 		}
 		line = "updated " + a.f.Label() + ": " + run.GoodBuildLabel(prev) + " → " + b.Entry.Label() + count + "; " +
 			a.runner() + " runs the new build" + a.baseClause(base)
@@ -2468,7 +2500,7 @@ func (a *advance) moved(b forkBuild, entry *capture.Entry, base baseWhy, edited 
 // unmodified reports whether this advance is an UNMODIFIED EXTENSION's: an empty series, which every
 // entry of the walk's list fits, so nothing is replayed and nothing is held at a base
 // (docs/design/pi-extension-store-builds.md §4.2).
-func (a *advance) unmodified() bool { return a.series != nil && a.series.Len() == 0 }
+func (a *advance) unmodified() bool { return a.series != nil && !a.series.Replays() }
 
 // replaying is what the advance does next with the upstream: patched, the replay its lines name;
 // unmodified, a build of the upstream as it is.
@@ -2488,9 +2520,30 @@ func (a *advance) takes(e packsrc.ListEntry) string {
 	return e.Label() + " takes the series"
 }
 
+// applyingIts is the first build's account of what it applies: "replaying its N patches", or
+// "merging its carry <ref>@<commit>" (docs/design/patched-forks.md §3.5).
+func (a *advance) applyingIts() string {
+	if a.series.Carry != nil {
+		return "merging its " + run.SeriesWhat(a.series)
+	}
+	return "replaying its " + run.PatchCount(a.series.Len())
+}
+
+// carryLabel is a carry's label for the good build's record, "" for a patch series.
+func carryLabel(s *packsrc.Series) string {
+	if s == nil || s.Carry == nil {
+		return ""
+	}
+	return s.Carry.Label()
+}
+
 // editedSeries is the move line's account of an edited recipe: the series' count and digest for a
-// patched build, nothing for an unmodified one, whose series cannot change.
+// patched build, the carry's commit for a carry, nothing for an unmodified one, whose series cannot
+// change.
 func (a *advance) editedSeries(b forkBuild) string {
+	if b.Series.Carry != nil {
+		return ", the carry " + b.Series.Carry.Label()
+	}
 	if b.Series.Len() == 0 {
 		return ", the edited build"
 	}
@@ -2618,7 +2671,7 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 				default:
 					read := r.Read
 					r.Good = &packsrc.GoodBuild{Commit: b.Commit, Tag: b.Entry.Tag, Version: b.Entry.Version,
-						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(),
+						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(), Carry: carryLabel(b.Series),
 						Seq: seq, Read: &read, Entry: built.Key, At: patchedNow().Unix()}
 					dropBuildFailure(r, b.Commit)
 					moved, changed = true, true
@@ -2745,7 +2798,7 @@ func (a *advance) handedLabel(g *packsrc.GoodBuild) string {
 	if g == nil {
 		return a.servingLine()
 	}
-	return run.WithPatches(run.GoodBuildLabel(g), g.Patches)
+	return run.WithGood(run.GoodBuildLabel(g), g)
 }
 
 // handReason hands the jail reason with no record touched (a series that cannot be read).

@@ -130,11 +130,23 @@ func (o *Options) refusePatchFailures(rt string) bool {
 		return false
 	}
 	labels := make([]string, len(blocking))
+	carries := 0
 	for i, f := range blocking {
 		labels[i] = f.label
+		if f.recipe.CarryRepo != "" {
+			carries++
+		}
 	}
-	out.print("[bold red]" + richtext.Escape("Refusing to launch: the patch series of "+entrypoint.JoinAnd(labels)+" "+
-		plural(len(blocking), "does", "do")+" not apply (the ERROR above), and a launch does not run an older build "+
+	// A CARRY (docs/design/patched-forks.md §3.5) is merged, not applied: its refusal says so.
+	what, verb := "the patch series of", plural(len(blocking), "does", "do")+" not apply"
+	switch {
+	case carries == len(blocking):
+		what, verb = "the carry of", plural(len(blocking), "does", "do")+" not merge"
+	case carries > 0:
+		what, verb = "the patch series or carry of", plural(len(blocking), "does", "do")+" not apply"
+	}
+	out.print("[bold red]" + richtext.Escape("Refusing to launch: "+what+" "+entrypoint.JoinAnd(labels)+" "+
+		verb+" (the ERROR above), and a launch does not run an older build "+
 		"in its place unless asked.") + "[/bold red]")
 	out.print(richtext.Escape("  Repair: the git commands under the ERROR's Repair line; the next fresh launch builds the repaired series."))
 	out.print(richtext.Escape("  Bypass: " + paths.AllowPatchFailuresEnv + "=1 yolo — runs the intact admitted " +

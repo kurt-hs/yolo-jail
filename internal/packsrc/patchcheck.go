@@ -50,8 +50,11 @@ type PatchedWant struct {
 	// Source is the upstream address as the manifest writes it, Follow the follow rule as written
 	// ("" for the default).
 	Source, Follow string
-	// Base is the series' base commit (Series.Base).
+	// Base is the series' base commit (Series.Base); "" for a carry, whose base the check resolves.
 	Base string
+	// Carry is a CARRY's address as written (carry.go), "" for a patch series: the check fetches
+	// it with the upstream and resolves it, its commit and its merge base with the upstream.
+	Carry string
 }
 
 // Inputs is what a check of w reads (CheckInputs), or why w cannot be checked at all. An npm
@@ -76,6 +79,12 @@ func (w PatchedWant) Inputs() (CheckInputs, Addr, FollowRule, error) {
 	f, err := ParseFollow(w.Follow)
 	if err != nil {
 		return CheckInputs{}, Addr{}, FollowRule{}, err
+	}
+	if w.Carry != "" {
+		if _, err := Parse(w.Carry); err != nil {
+			return CheckInputs{}, Addr{}, FollowRule{}, fmt.Errorf("the carry: %w", err)
+		}
+		return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), Carry: w.Carry}, a, f, nil
 	}
 	return CheckInputs{Repo: a.Repo, Subdir: a.Path, Ref: a.Ref, Follow: f.String(), Base: w.Base}, a, f, nil
 }
@@ -195,7 +204,12 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		if n, err := ParseNpm(w.Source); err == nil {
 			found = s.findNpmCandidates(n)
 		} else {
-			found = s.findCandidates(addr, follow, w.Base, opts.Force || opts.FreshAfter != nil, now(), waiting)
+			var carry *Addr
+			if w.Carry != "" {
+				c, _ := Parse(w.Carry) // Inputs parsed it
+				carry = &c
+			}
+			found = s.findCandidates(addr, follow, w.Base, carry, opts.Force || opts.FreshAfter != nil, now(), waiting)
 		}
 		if found.lockHeld != nil {
 			// A NoWait STORE MET A HELD MIRROR LOCK: nothing was fetched or listed, so the attempt's
@@ -213,6 +227,11 @@ func (s *Store) CheckPatched(w PatchedWant, opts CheckOptions) CheckResult {
 		r.Seq++
 		found.Seq, found.At = r.Seq, now().Unix()
 		r.Read, r.Check = in, &found
+		if found.Carry != nil {
+			resolved := *found.Carry
+			resolved.At = found.At
+			r.Carry = &resolved
+		}
 		if pf := r.PatchFailure; pf != nil {
 			switch {
 			case pf.Inputs != in:
@@ -262,10 +281,10 @@ func keepListedOutcomes(outcomes []EntryOutcome, list []ListEntry) []EntryOutcom
 
 // findCandidates is the check's fetch and ref rule, under the mirror's lock, with no checkout: the
 // fetch step, then the ref read afresh, the series' base made present, and the walk's list.
-func (s *Store) findCandidates(a Addr, follow FollowRule, base string, force bool, now time.Time,
+func (s *Store) findCandidates(a Addr, follow FollowRule, base string, carry *Addr, force bool, now time.Time,
 	waiting func(string)) CheckFound {
 	var found CheckFound
-	unlock, err := s.lockMirror(a.Repo, waiting)
+	unlock, err := s.lockMirrors(mirrorsOf(a.Repo, carry), waiting)
 	if err != nil {
 		if errors.Is(err, ErrLockHeld) {
 			found.lockHeld = err
@@ -309,10 +328,28 @@ func (s *Store) findCandidates(a Addr, follow FollowRule, base string, force boo
 		return found
 	}
 	found.Tip = tip
-	// AN UNMODIFIED EXTENSION has no series, so no base to make present
-	// (docs/design/pi-extension-store-builds.md §4.2): its walk's list is every entry the follow
-	// rule names.
-	if base != "" {
+	// A CARRY (carry.go): fetched from its own repository into this mirror, under this lock and
+	// budget, whenever a check runs, and resolved to a commit and its merge base with the tip, which
+	// is its base from here on. A fetch that fails is this check's failed fetch, and the copy the
+	// mirror holds answers meanwhile, as the upstream's does.
+	if carry != nil {
+		resolved, why, fetchErr := s.resolveCarry(b, *carry, a.Repo, tip, now)
+		if fetchErr != "" {
+			if found.FetchErr != "" {
+				found.FetchErr += "; " + fetchErr
+			} else {
+				found.FetchErr = fetchErr
+			}
+		}
+		if why != "" {
+			found.Problem = why
+			return found
+		}
+		found.Carry, base = resolved, resolved.Base
+	} else if base != "" {
+		// AN UNMODIFIED EXTENSION has no series, so no base to make present
+		// (docs/design/pi-extension-store-builds.md §4.2): its walk's list is every entry the follow
+		// rule names.
 		why, fetchErr := s.ensureBase(b, mirror, a, base, found.FetchErr)
 		if fetchErr != "" {
 			// THE BASE'S OWN FETCH COULD NOT REACH THE UPSTREAM: a failed fetch, as the step's would be,
@@ -876,7 +913,7 @@ func (s *Store) ReclassifyLegacyApplyError(snapshot ReplaySnapshot, series *Seri
 		result.State, result.Err = "stale", ErrStaleReplay
 		return result
 	}
-	if series.Len() == 0 || strings.HasPrefix(snapshot.Inputs.Repo, NpmSourcePrefix) {
+	if !series.Replays() || strings.HasPrefix(snapshot.Inputs.Repo, NpmSourcePrefix) {
 		return result
 	}
 	record, err := s.LoadCheckRecord(snapshot.Owner)

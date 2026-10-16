@@ -78,9 +78,17 @@ func (f *PatchFailure) Block(label string, recipe RebaseRecipe, bypass PatchBypa
 	if target == "" {
 		target = f.Target.Commit
 	}
-	fmt.Fprintf(&b, "ERROR: %s: patch application failed at upstream %s (%s)\n", label, target, f.Target.Commit)
-	if f.Member != "" {
-		fmt.Fprintf(&b, "  Patch: %s\n", PrintableFailureText(f.Member))
+	if recipe.CarryRepo != "" {
+		// A CARRY (carry.go): one commit graph merged, not a member of a series applied.
+		fmt.Fprintf(&b, "ERROR: %s: the carry does not merge into upstream %s (%s)\n", label, target, f.Target.Commit)
+		if f.Member != "" {
+			fmt.Fprintf(&b, "  Carry: %s\n", PrintableFailureText(f.Member))
+		}
+	} else {
+		fmt.Fprintf(&b, "ERROR: %s: patch application failed at upstream %s (%s)\n", label, target, f.Target.Commit)
+		if f.Member != "" {
+			fmt.Fprintf(&b, "  Patch: %s\n", PrintableFailureText(f.Member))
+		}
 	}
 	switch f.Kind {
 	case "conflict":

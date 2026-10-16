@@ -72,6 +72,35 @@ type Series struct {
 	// LegacyDigest is the digest the same files had before PF-D61, over their raw bytes: what a good
 	// build recorded before then names, which the re-key moves to Digest (PF-D62). Nothing records it.
 	LegacyDigest string
+	// Carry is set when the series is a CARRY (carry.go; docs/design/patched-forks.md §3.5): no
+	// members, its Base the carry's merge base with the upstream and its Digest CarryDigest of the
+	// carry's commit. nil for a patch series and the empty one.
+	Carry *SeriesCarry
+}
+
+// Unresolved reports whether the series is a carry no check has resolved on this machine yet
+// (UnresolvedCarrySeries): no commit, no base, nothing to walk.
+func (s *Series) Unresolved() bool { return s.Carry != nil && s.Carry.Commit == "" }
+
+// Replays reports whether a walk has anything to apply: a member, or a carry. False for the EMPTY
+// SERIES alone (an unmodified extension), which every entry fits as it stands.
+func (s *Series) Replays() bool { return s.Len() > 0 || s.Carry != nil }
+
+// Describe is the series as a fork's line names it: "N patches (series S)", or
+// "carry <ref>@<commit> of <repo>" for a carry.
+func (s *Series) Describe() string {
+	if s.Carry != nil {
+		if s.Carry.Commit == "" {
+			return "carry " + s.Carry.Source + " (not fetched yet)"
+		}
+		return "carry " + s.Carry.Label() + " of " + s.Carry.Repo
+	}
+	n := s.Len()
+	word := "patches"
+	if n == 1 {
+		word = "patch"
+	}
+	return fmt.Sprintf("%d %s (series %s)", n, word, s.ShortDigest())
 }
 
 // SeriesMember is one patch of a series, with the bytes the read took.

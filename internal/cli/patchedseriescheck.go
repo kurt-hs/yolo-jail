@@ -218,6 +218,13 @@ func packSeriesCheck(args []string, out, errw io.Writer, color bool) int {
 // directory, onto --onto's ref or "".
 func seriesCheckOne(ctx context.Context, pr richtext.Printer, errw io.Writer, f packload.Fork, packDir, onto string) int {
 	again := seriesCheckLine(packDir, onto)
+	if f.Carry != "" {
+		// A CARRY has no series in the pack to check: its merge is asked of the upstream by every check.
+		pr.Printf("[dim]%s[/dim]", richtext.Escape(f.Label()+": merges the carry "+f.Carry+", not a patch series, "+
+			"so there is nothing here to check — `yolo pack update` fetches it and merges it against the upstream, "+
+			"and `yolo pack status` says how it stands"))
+		return 0
+	}
 	series, err := f.ReadSeries()
 	if err != nil {
 		pr.Printf("[yellow]%s[/yellow]", richtext.Escape("⚠ "+f.Label()+": "+err.Error()))

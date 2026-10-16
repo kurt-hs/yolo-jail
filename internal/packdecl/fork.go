@@ -60,16 +60,17 @@ func forkFields(c Contribution) []struct {
 }
 
 // IsPatchedFork reports whether c is a PATCHED FORK's own program contribution: a fork that
-// declares `patches` (docs/design/patched-forks.md PF-D1). Its `source` names the upstream, and
-// its bytes are that upstream at a commit with the series replayed.
+// declares `patches` (docs/design/patched-forks.md PF-D1) or a `carry` in its place (§3.5). Its
+// `source` names the upstream, and its bytes are that upstream at a commit with the series
+// replayed, or with the carry merged.
 func (c Contribution) IsPatchedFork() bool {
-	return c.IsFork() && c.Patches != ""
+	return c.IsFork() && (c.Patches != "" || c.Carry != "")
 }
 
 // IsPatchedFork reports whether this Install is a patched fork's delivery: a base program the
-// fork rewrite gave a fork's build whose fork declares `patches`.
+// fork rewrite gave a fork's build whose fork declares `patches` or a `carry`.
 func (in Install) IsPatchedFork() bool {
-	return in.Kind == InstallKindSource && in.Patches != ""
+	return in.Kind == InstallKindSource && (in.Patches != "" || in.Carry != "")
 }
 
 // patchedForkFields are the two fields a PATCHED fork adds to a fork's four, for the placement
@@ -84,6 +85,7 @@ func patchedForkFields(c Contribution) []struct {
 	}{
 		{"patches", c.Patches != ""},
 		{"follow", c.Follow != ""},
+		{"carry", c.Carry != ""},
 	}
 }
 
@@ -227,28 +229,88 @@ func forkProblems(label string, c Contribution) []string {
 // series is the fork's reason at launch rather than a pack this build refuses to load.
 func patchedForkProblems(label string, c Contribution) []string {
 	var problems []string
-	if c.Follow != "" && c.Patches == "" {
+	if c.Follow != "" && c.Patches == "" && c.Carry == "" {
 		problems = append(problems, fmt.Sprintf("%s: \"follow\" needs \"patches\" — following an "+
 			"upstream is a PATCHED fork's opt-in, and a plain fork's pin moves only by `yolo pack "+
 			"update` (FP-D18); add a \"patches\" directory holding a `git format-patch --base` "+
-			"series, or drop \"follow\"", label))
+			"series (or a \"carry\" branch), or drop \"follow\"", label))
 	}
 	if c.Follow != "" {
 		if _, err := packsrc.ParseFollow(c.Follow); err != nil {
 			problems = append(problems, fmt.Sprintf("%s.follow: %v", label, err))
 		}
 	}
-	if c.Patches == "" {
+	if c.Carry != "" {
+		problems = append(problems, carryProblems(label, c.Carry)...)
+	}
+	if c.Patches == "" && c.Carry == "" {
 		return problems
 	}
-	if why := PatchesDirProblem(c.Patches); why != "" {
-		problems = append(problems, fmt.Sprintf("%s.patches %q: %s", label, c.Patches, why))
+	if c.Patches != "" {
+		if why := PatchesDirProblem(c.Patches); why != "" {
+			problems = append(problems, fmt.Sprintf("%s.patches %q: %s", label, c.Patches, why))
+		}
 	}
 	if a, err := packsrc.Parse(c.Source); err == nil && a.Ref == "HEAD" {
 		problems = append(problems, fmt.Sprintf("%s.source %q: a patched fork's ?ref= names a branch "+
 			"to follow, or a tag or a full commit to hold at, and HEAD is none of them — it moves "+
 			"with its branch whenever the mirror is fetched, so it would read as held while it "+
 			"moves; name the branch (?ref=main), a tag or a full commit", label, c.Source))
+	}
+	return problems
+}
+
+// carryProblems validates a `carry` statically (docs/design/patched-forks.md §3.5): a git address,
+// local or remote, with a `?ref=` naming the branch to merge, and never `HEAD`, which moves with
+// whatever the repository has checked out. The commit graph it names is fetched and asked about at
+// each check, never here.
+func carryProblems(label, carry string) []string {
+	if why := ForkSourceProblem(carry); why != "" {
+		return []string{fmt.Sprintf("%s.carry %q: %s — a carry is the repository and branch whose "+
+			"commits are merged against the upstream, e.g. git+https://github.com/you/pi?ref=carry",
+			label, carry, why)}
+	}
+	a, err := packsrc.Parse(carry)
+	if err != nil {
+		return nil // ForkSourceProblem said it
+	}
+	if a.Ref == "HEAD" {
+		return []string{fmt.Sprintf("%s.carry %q: ?ref=HEAD is whatever the repository has checked "+
+			"out, not a branch — name the carry branch (?ref=carry), or a full commit to hold at",
+			label, carry)}
+	}
+	if a.Path != "" {
+		return []string{fmt.Sprintf("%s.carry %q: a carry is merged as a whole repository, so it names "+
+			"no //%s — the subdirectory the build runs in is the upstream \"source\"'s; drop it from the carry",
+			label, carry, a.Path)}
+	}
+	return nil
+}
+
+// validateCarryOrSeries refuses one contribution naming both `carry` and `patches` (PF-D87, under
+// OQ-PFK6): the two answer one question, what is applied to the upstream, in two ways, and a
+// contribution that names both says two things about one OWNER KEY (PF-D22). Refused here, at the
+// pack's decode, before any check fetches either. Two contributions of one pack, one with each,
+// are two owner keys and fine.
+func (m *Manifest) validateCarryOrSeries() []string {
+	pack := m.Name
+	if pack == "" {
+		pack = "<pack>"
+	}
+	var problems []string
+	for i, c := range m.Contributes {
+		if c.Carry == "" || c.Patches == "" {
+			continue
+		}
+		name := c.Bin
+		if c.Kind == KindFiles {
+			name = ExtensionName(c.Into)
+		}
+		problems = append(problems, fmt.Sprintf("contributes[%d]: names both \"patches\" (%q) and "+
+			"\"carry\" (%q) for the owner key %s/%s — one contribution takes one of them, and both "+
+			"is a conflict: keep \"carry\" to merge a branch whose history includes the upstream's, or "+
+			"keep \"patches\" to replay a `git format-patch` series, and delete the other",
+			i, c.Patches, c.Carry, pack, name))
 	}
 	return problems
 }
@@ -435,7 +497,7 @@ func ForkSourceRecipe(source, build string, produces []string) string {
 // "" matches no build a store holds, so a reader that missed the patched arm finds nothing to
 // serve rather than a plain fork's build of the unpatched upstream.
 func (in Install) SourceRecipe() string {
-	if in.Kind != InstallKindSource || in.Patches != "" {
+	if in.Kind != InstallKindSource || in.Patches != "" || in.Carry != "" {
 		return ""
 	}
 	return ForkSourceRecipe(in.Source, in.Build, in.Produces)
