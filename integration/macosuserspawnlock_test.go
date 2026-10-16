@@ -21,7 +21,7 @@ import (
 )
 
 // OQ-HD10'S MEASUREMENT: TWO macos-user LAUNCHES OF ONE WORKSPACE, AT ONCE
-// (docs/design/host-daemon-ownership.md#OQ-HD10).
+// (docs/design/host-daemon-ownership.md#11-decision-ledger).
 //
 // THE QUESTION. Retiring `host_daemon.scope: "host"` (HD-R1) removes the spawn flock,
 // paths.HostSingletonLock, along with the singleton it guards. On macos-user there is no
@@ -220,7 +220,7 @@ func TestMacosUserTwoConcurrentLaunchesOfOneWorkspace(t *testing.T) {
 		fa["A_SAW_B_EXIT"], hd10Probe(fa, "A_AFTER"))
 	t.Logf("HD10 WARNINGS: A:\n%s\nB:\n%s", hd10Warnings(rA.combined()), hd10Warnings(rB.combined()))
 	t.Logf("HD10 VERDICT: %s; the survivor's endpoint after the other session ended: %s. "+
-		"Record both in docs/design/host-daemon-ownership.md#OQ-HD10.",
+		"Record both in docs/design/host-daemon-ownership.md#11-decision-ledger.",
 		spawn, hd10AfterVerdict(fa))
 	if failure := hd10SurvivorFailure(fa); failure != "" {
 		t.Errorf("%s\nA rc=%d:\n%s\nB rc=%d:\n%s", failure,
@@ -347,7 +347,7 @@ func hd10SurvivorFailure(fa map[string]string) string {
 		" endpoint was " + verdict + ". One macos-user session's exit must never remove or " +
 		"invalidate an endpoint another live session of the same workspace uses: the workspace's " +
 		"keeper holds them until its last session leaves " +
-		"(docs/design/jail-lifetime-last-session-wins.md §9.9; docs/design/host-daemon-ownership.md#OQ-HD10)"
+		"(docs/design/jail-lifetime-last-session-wins.md §9.9; docs/design/host-daemon-ownership.md#11-decision-ledger)"
 }
 
 // hd10Broker is the host-scoped loophole whose spawn this measures.

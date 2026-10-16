@@ -10,7 +10,7 @@ summary: "Adding an openai-responses endpoint to the openai-codex provider allow
 
 # Why a bridge endpoint shadowed Pi's Codex provider — and how ambient keys took over
 
-**Status:** 2026-10-09 — [OQ-3](#OQ-3) is ruled, the broad reading: yolo writes no model entry
+**Status:** 2026-10-09 — [OQ-3](#10-decision-ledger) is ruled, the broad reading: yolo writes no model entry
 over any provider an agent has built in, and the agent uses its own list. Built 2026-10-05
 ([§6.5](#65-what-the-build-decided), [BI-D1](#BI-D1) to [BI-D10](#BI-D10)): pi, omp and
 opencode declare their own providers in `built_in_providers`, their derives write no row under
@@ -22,7 +22,7 @@ boot and host selection and run the actual via-pointer scan; **no Codex CLI sess
 or provider request was run**. These tags are a source baseline, not a claim about the latest
 published release. [OQ-4](#OQ-4) remains open and unchanged: it holds the `openai-codex` and Bedrock lists,
 and models-only narrowing on a built-in provider.
-The 2026-10-05 [OQ-3](#OQ-3) work was measured by unit tests through the boot render and integration
+The 2026-10-05 [OQ-3](#10-decision-ledger) work was measured by unit tests through the boot render and integration
 launches; no pi, omp or opencode session was run. The `openai-codex` exclusion is built,
 2026-09-26, at `92c20cc6` (pi) and `4ed48212` (omp); codex already excluded it. Measured through
 the boot render by the catalog tests, which compose each agent's `needs` closure since 2026-09-27
@@ -45,10 +45,10 @@ service account key.
 **The shape.** Filter first-party subscription providers out of Pi's `models.json` catalog generation
 (matching Codex CLI's derive), align unit test pack sets with production composition, and preserve
 the boundary between subscription OAuth tokens and ambient platform API keys. Since
-[OQ-3](#OQ-3) (2026-10-05) the filter covers every provider an agent has built in, in every
+[OQ-3](#10-decision-ledger) (2026-10-05) the filter covers every provider an agent has built in, in every
 agent's derive.
 
-**Cost.** The `openai-codex` exclusion cost none. [OQ-3](#OQ-3)'s broad reading changes what pi,
+**Cost.** The `openai-codex` exclusion cost none. [OQ-3](#10-decision-ledger)'s broad reading changes what pi,
 omp and opencode do on `zai`, `cerebras`, `openrouter` and `kilo`: each uses its own model list,
 and a profile routing one of them through the wire bridge stops doing so in that agent
 ([what the ruling settles](#what-the-ruling-settles)).
@@ -56,12 +56,12 @@ and a profile routing one of them through the wire bridge stops doing so in that
 **Start at [§3](#3-the-mechanism-of-shadowing-how-modelsjson-overrode-pis-native-client)** — how the shadow happened. The rest falls out of it.
 
 **Needs your ruling:** [OQ-4](#OQ-4) (**new**, 2026-10-05): does the ruling reach a list a pack
-declares for a provider an agent has built in? [OQ-3](#OQ-3) was ruled in review on 2026-10-05:
+declares for a provider an agent has built in? [OQ-3](#10-decision-ledger) was ruled in review on 2026-10-05:
 the rule covers every provider an agent has built in.
 
 **Released:** pi's Converse route through the wire bridge. [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)
 was decided on 2026-09-30 as [WG-I36](wire-bridge-gateway.md#WG-I36), which left where pi's
-override row lives to [OQ-3](#OQ-3). Under the ruling it may not sit on pi's built-in
+override row lives to [OQ-3](#10-decision-ledger). Under the ruling it may not sit on pi's built-in
 `amazon-bedrock`, so it sits under yolo's own provider key (the shipped `bedrock`) with
 `api: "bedrock-converse-stream"`, which pi 1.0.4's source shows pi dispatches to its Converse
 client with no built-in provider behind it. Built 2026-10-08 as
@@ -76,7 +76,7 @@ client with no built-in provider behind it. Built 2026-10-08 as
 ## Terms, in plain words
 
 - **Built-in provider.** A provider an agent ships its own client and model list for, under its
-  own key: `zai`, `openai-codex` and `amazon-bedrock` in pi, for example. [OQ-3](#OQ-3) ruled that
+  own key: `zai`, `openai-codex` and `amazon-bedrock` in pi, for example. [OQ-3](#10-decision-ledger) ruled that
   yolo writes no model entry over one.
 - **First-party / subscription provider.** A provider backed by an interactive user subscription
   (e.g., ChatGPT Plus/Pro) using OAuth refresh tokens rather than a metered API key. In yolo,
@@ -116,8 +116,8 @@ Three principles govern the fix:
   If an agent CLI possesses built-in client logic, headers, and OAuth handling for a named
   subscription provider (as both Codex CLI and Pi do for `openai-codex`), yolo must not emit a
   catalog entry for that provider into the agent's configuration file. The first sentence and
-  the ruling ([OQ-2](#OQ-2)) name every natively implemented provider, while this example names a
-  subscription one. Which of the two the rule means was [OQ-3](#OQ-3), ruled on 2026-10-05: every
+  the ruling ([OQ-2](#10-decision-ledger)) name every natively implemented provider, while this example names a
+  subscription one. Which of the two the rule means was [OQ-3](#10-decision-ledger), ruled on 2026-10-05: every
   natively implemented provider.
 - **P2. Adaptation endpoints must not corrupt native consumers.** Declaring an endpoint on a pack
   contribution to enable third-party adapters (like `wire-bridge` translating Anthropic calls to
@@ -430,7 +430,7 @@ or masked to prevent tools or subagents from inadvertently picking them up.
 
 ### 6.4 What each reading of the rule changes
 
-Moved here verbatim from [OQ-3](#OQ-3), which asked which reading of [OQ-2](#OQ-2)'s rule holds.
+Moved here verbatim from [OQ-3](#10-decision-ledger), which asked which reading of [OQ-2](#10-decision-ledger)'s rule holds.
 It ruled the broad reading on 2026-10-05; [what the ruling settles](#what-the-ruling-settles)
 follows the two readings, and replaces the broad reading's costs where the two differ.
 
@@ -470,7 +470,7 @@ oh-omp 0.15.3, opencode 1.18.32; none of them run):
   under a key pi does not implement, where whether pi's Converse client still serves it is
   unverified, or its option (c).
 - **The exclusion list is per agent and per version**, because each agent's built-in set moves
-  with its releases. Keeping it true is the provider marker [OQ-1](#OQ-1) deferred.
+  with its releases. Keeping it true is the provider marker [OQ-1](#10-decision-ledger) deferred.
 
 **Under the narrow reading**, nothing built changes. `openai-codex` stays excluded in pi, omp
 and codex, and every row above is kept, via rows included. [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s override is allowed, since
@@ -583,94 +583,14 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
 | :--- | :--- | :--- |
 | **R1. Pi cannot reach custom Codex proxies** | A user configuring a private reverse proxy for Codex via `providers.openai-codex.endpoints` would have their URL ignored if `openai-codex` is unconditionally skipped. | If custom endpoint overrides for Codex are ever needed in Pi, they must specify `wire_api: "openai-codex-responses"` or be routed through a distinct provider name. Built-in subscription providers must not be repurposed as custom endpoints. |
 | **R2. Test pack omission re-occurs** | A future agent test might omit required dependencies and miss catalog collisions. | The helper `testPacksForAgent(agent)` resolves pack `needs` so unit tests test the full closure that production runs. Built 2026-09-27 on the launch's own resolver ([§6.2](#62-test-composition-alignment)). |
-| **R3. An agent's built-in provider list goes stale** | Under [OQ-3](#OQ-3)'s ruling each agent pack declares its built-in provider names, and an agent release adding one leaves the list short. Until it is updated, yolo writes its own row over the new built-in, which is the original shadowing failure, only rarer. | The trap was stated with the ruling. The build read each list from the agent's own code and wrote where each came from in its `pack.json` comment ([BI-D2](#BI-D2)); a missed name costs only a collision with a provider of that name. Nothing yet keeps the lists true across releases: pi's `model_catalog` files are named by provider id, so `yolo check` could compare them, unbuilt. |
+| **R3. An agent's built-in provider list goes stale** | Under [OQ-3](#10-decision-ledger)'s ruling each agent pack declares its built-in provider names, and an agent release adding one leaves the list short. Until it is updated, yolo writes its own row over the new built-in, which is the original shadowing failure, only rarer. | The trap was stated with the ruling. The build read each list from the agent's own code and wrote where each came from in its `pack.json` comment ([BI-D2](#BI-D2)); a missed name costs only a collision with a provider of that name. Nothing yet keeps the lists true across releases: pi's `model_catalog` files are named by provider id, so `yolo check` could compare them, unbuilt. |
 
 ---
 
 ## 9. Open Questions
 
-1. ✅ <a id="OQ-1"></a>**OQ-1: Distinguishing first-party subscription providers in agent derives.** Should
-   `packs/pi/derive.lua` exclude `openai-codex` by bare name (matching `packs/codex/derive.lua`),
-   or should `kind: "provider"` declare an explicit capability/flag (such as `is_subscription`
-   or `native`) that all derives inspect?
-
-
-   _Leaning:_ Name exclusion (`name ~= "openai-codex"`) in `packs/pi/derive.lua` for v1. Codex CLI
-   already uses this exact check (`if name ~= "openai-codex"` in `packs/codex/derive.lua:139`). Adding
-   a new manifest schema field to `packdecl` for a single provider is unnecessary complexity when
-   `openai-codex` is already recognized across core as the sole subscription provider.
-
-   <!-- vantage: question id=OQ-1 -->
-
-   **Answer:**
-   > **Name exclusion for v1**, ruled in review 2026-09-26: *"to match Codex CLI, deferring schema
-   > changes until another subscription provider exists."* `packs/pi/derive.lua` skips `openai-
-   > codex` when it builds `models.json`, exactly as `packs/codex/derive.lua` does. A provider-
-   > level flag waits until a second subscription provider exists (it is the same question as [OQ-
-   > BR2](providers-and-profiles-redesign.md#OQ-BR2)'s marker). Built in `92c20cc6`.
-
-2. ✅ <a id="OQ-2"></a>**OQ-2: Packaging of inter-agent adaptation endpoints.** Does `packs/openai-auth` legitimately
-   own `endpoints["openai-responses"]` on `openai-codex`, or should inter-agent adapter targets
-   be declared in a separate namespace or contribution that catalog derives ignore?
-
-
-   _Leaning:_ Keep the endpoint on `openai-codex` in `packs/openai-auth`. The endpoint declaration
-   is factually true: ChatGPT's backend does expose an `openai-responses` wire API at that URL. The
-   architectural defect was not declaring the endpoint; it was Pi's derive assuming that any declared
-   endpoint must be cataloged in `models.json`, even for providers Pi implements natively.
-
-   <!-- vantage: question id=OQ-2 -->
-
-   **Answer:**
-   > **Keep the endpoint on `openai-codex` in `packs/openai-auth`, and establish the rule**, ruled
-   > in review 2026-09-26 as leaned: *"Keep the endpoint on openai-codex in packs/openai-auth, but
-   > establish the rule that an agent never derives catalog entries from providers it natively
-   > implements."* The declaration is true and stays; the defect was a derive cataloging a provider
-   > its agent already implements. Every agent derive was checked against the rule for
-   > `openai-codex`: omp had the same defect, fixed in `4ed48212` (omp applies a `models.yml` row's
-   > `baseUrl` to its built-in provider of that name); claude, copilot, agy and opencode catalog
-   > nothing that shadows a native subscription client. How far "natively implements" reaches past
-   > that case is [OQ-3](#OQ-3).
-
-3. ✅ <a id="OQ-3"></a>**OQ-3: How far does the natively-implements rule reach?**
-   [OQ-2](#OQ-2) ruled that an
-   agent never derives catalog entries from providers it natively implements. Does that cover
-   **every** provider an agent ships its own client for under the key a yolo provider uses (the
-   broad reading)? Or does it cover only a **subscription** provider the agent implements with its
-   own client and login (the narrow reading), which is how [P1](#1-verdict-and-core-principles)'s
-   example describes it? The two readings agree on `openai-codex`, the only shipped provider the
-   narrow reading reaches today. The broad reading also changes four other providers' rows in three
-   agents, and it decides [OQ-WG8](wire-bridge-gateway.md#OQ-WG8), which defers to this rule.
-
-   What each reading changes, agent by agent:
-   [§6.4](#64-what-each-reading-of-the-rule-changes).
-
-   _Leaning:_ **The narrow reading.** It is narrower than the words ruled, so it is offered for the
-   maintainer to confirm or overrule, and nothing is built on it until then. The harm
-   [P1](#1-verdict-and-core-principles) was written against is a subscription client displaced by
-   a key-driven wire that then finds an ambient platform key. A same-named metered provider's row
-   carries the same kind of credential the agent's own client reads, an API key, so that harm
-   cannot arise there. The broad reading would take away behavior the shipped packs rely on, above
-   all opencode's zai coding plan. It would also turn off via for every same-named provider and
-   forbid [OQ-WG8](wire-bridge-gateway.md#OQ-WG8)'s shape, and it fixes no reported failure.
-
-   **Answer:**
-   > **Ruled in review 2026-10-05: the broad reading, against the leaning above.** The maintainer
-   > first asked *"why wouldn't it cover all? we don't want to maintain model catalogs."*, and on
-   > the question restated with the broad reading as its (A) and new leaning, answered *"168 A"*.
-   > yolo writes no model entry over any provider an agent has built in, pi, omp and opencode
-   > included, and the agent uses its own list. Where a profile's plan needs a different address
-   > from the agent's built-in provider (z.ai's coding plan, against its pay-per-use API), yolo
-   > selects the agent's own provider for that plan when the agent has one; when it has none, the
-   > launch says the profile cannot reach that agent's own client. Each agent pack declares the
-   > names of its built-in providers, since core knows no agent: yolo keeps names, never models.
-   > Routing those providers through yolo's wire bridge stops for them. The leaning's two costs are
-   > met that way: opencode's zai stays on the coding plan through opencode's own
-   > `zai-coding-plan`, and via stops by the ruling's own terms. What it settles, agent by agent,
-   > and the two lists it leaves to [OQ-4](#OQ-4): [what the ruling settles](#what-the-ruling-settles).
-
-4. 💬 <a id="OQ-4"></a>**OQ-4: Does the ruling reach a list a pack declares for a provider an agent
-   has built in?** Filed 2026-10-05 by ruling [OQ-3](#OQ-3). The two lists and what placed them:
+1. 💬 <a id="OQ-4"></a>**OQ-4: Does the ruling reach a list a pack declares for a provider an agent
+   has built in?** Filed 2026-10-05 by ruling [OQ-3](#10-decision-ledger). The two lists and what placed them:
    [what the ruling settles](#what-the-ruling-settles).
 
    - **(A) Yes, every list.** pi and opencode show their own codex catalogs; a pack's Bedrock
@@ -685,7 +605,7 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
    <!-- vantage: question id=OQ-4 leaning="(C): it keeps both of the maintainer's 2026-10-05 sentences as said, 'we don't want to maintain model catalogs' (OQ-3) and 'allow packs to override that if needed' (MM-D32), where (A) narrows the second to agents without a catalog and (B) gives up the first. The openai-codex list's loss costs pi only the [1m] variants, since pi 1.0.1's own catalog lists the three GPT-6 ids." -->
 
    _Leaning:_ **(C)** — it keeps both of the maintainer's 2026-10-05 sentences as said: *"we don't
-   want to maintain model catalogs"* ([OQ-3](#OQ-3)) and *"allow packs to override that if
+   want to maintain model catalogs"* ([OQ-3](#10-decision-ledger)) and *"allow packs to override that if
    needed"* ([MM-D32](model-lists-and-pickers.md#MM-D32)), where (A) narrows the second to agents
    without a catalog and (B) gives up the first. The `openai-codex` list's loss costs pi only
    yolo's `[1m]` variants, since pi 1.0.1's own catalog lists the three GPT-6 ids. ⚠ What
@@ -700,12 +620,12 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| OQ-1 | **Exclude `openai-codex` from pi's catalog by name**, matching `packs/codex/derive.lua`; a provider flag waits for a second subscription provider ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s marker). ⚠ Widened 2026-10-05 by [OQ-3](#OQ-3): the name check becomes a list of built-in provider names each agent pack declares | 2026-09-26 | [OQ-1](#OQ-1) | yes, 2026-09-26 (`92c20cc6`) |
-| OQ-2 | **Keep the `openai-responses` endpoint on `openai-codex`**, and the rule: an agent never derives catalog entries from providers it natively implements. How far that reaches past `openai-codex` is [OQ-3](#OQ-3) | 2026-09-26 | [OQ-2](#OQ-2) | for `openai-codex`, 2026-09-26 (omp `4ed48212`; the other derives needed nothing). opencode, which had no route to the subscription then, gained one 2026-10-01 under the rule: no row for `openai-codex`, a via row included, and its own built-in `openai` client, with the list as model rows of that provider and no `npm` or `baseURL` (`TestOpencodeOnCodexRendersItsOwnOpenAIProvider`) |
-| OQ-3 | **Ruled in review, the broad reading:** yolo writes no model entry over any provider an agent has built in (pi, omp and opencode included), and the agent uses its own list. A profile whose plan needs another address selects the agent's own provider for that plan when it has one, and the launch says when it has none. Each agent pack declares its built-in provider names; yolo keeps names, never models. Routing those providers through the wire bridge stops for them, and [WG-I36](wire-bridge-gateway.md#WG-I36)'s row may not sit on pi's `amazon-bedrock`. Widens [OQ-1](#OQ-1)'s name check into the packs' lists. The two pack-declared lists on a built-in provider are [OQ-4](#OQ-4)'s | 2026-10-05 | [OQ-3](#OQ-3), [what the ruling settles](#what-the-ruling-settles) | yes, 2026-10-05, as [BI-D1](#BI-D1) to [BI-D10](#BI-D10) ([§6.5](#65-what-the-build-decided)): `TestNoAgentCataloguesAProviderItHasBuiltIn`, `TestPiTakesItsOwnZaiWithNothingFromYolosList`, `TestOpencodeTakesZaisPlanThroughItsOwnCodingPlanProvider`, `TestOmpOnZaiRunsItsOwnZai` (boot render), `TestShippedDerivesHonorTheAgentsOwnProviders` (the derives' `false` branch), `TestAProfileOnAPlanTheAgentHasNoProviderOfItsOwnForSaysSo` (the launch line), `TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider`, `TestShippedViaOverABuiltInProviderRepointsNothing`; at a launch, `TestPiAndOpencodeSelectionFollowTheActiveProfile` |
-| <a id="BI-D1"></a>BI-D1 | *Implementation decision, building [OQ-3](#OQ-3).* **The declaration is a program's `built_in_providers` field** (`internal/packdecl/builtinproviders.go`), not the provider/profile machinery: which providers a binary implements is that binary's fact, as `platform_switches` and `exact_menu_refuses` are, and core must read it for the launch line, which a derive cannot print. A provider-level flag would have yolo's provider state facts about agents. It holds `names` and `plans`: a plan maps a yolo provider name to the agent's own provider for that plan, with `api_key_env_name` when that provider reads another variable, or to `null` when the agent has the name built in for another plan and none of its own for this one. A plan's provider must be one of the names; the field is refused on any other kind and on a fork, whose base keeps it. ⚠ Amended 2026-10-12: the `null` plan is removed ([provider-reachability-and-model-names.md OQ-PR3](provider-reachability-and-model-names.md#9-decision-ledger)) — a `plans` entry must resolve to a concrete provider; the code still carries `null` until built | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `TestBuiltInProvidersIsAProgramsFact`, `TestBuiltInProvidersIsRefusedWhereNothingCouldReadIt` |
+| OQ-1 | **Exclude `openai-codex` from pi's catalog by name**, matching `packs/codex/derive.lua` (*"to match Codex CLI, deferring schema changes until another subscription provider exists"*); a provider flag waits for a second subscription provider ([OQ-BR2](providers-and-profiles-redesign.md#OQ-BR2)'s marker). ⚠ Widened 2026-10-05 by [OQ-3](#10-decision-ledger): the name check becomes a list of built-in provider names each agent pack declares | 2026-09-26 | [§6.1](#61-catalog-exclusion-in-pis-derive) | yes, 2026-09-26 (`92c20cc6`) |
+| OQ-2 | **Keep the `openai-responses` endpoint on `openai-codex`**, and the rule: an agent never derives catalog entries from providers it natively implements (*"Keep the endpoint on openai-codex in packs/openai-auth, but establish the rule that an agent never derives catalog entries from providers it natively implements."*). omp had the same defect and was fixed; claude, copilot, agy and opencode catalog nothing that shadows a native subscription client. How far that reaches past `openai-codex` is [OQ-3](#10-decision-ledger) | 2026-09-26 | [§1](#1-verdict-and-core-principles) P1 | for `openai-codex`, 2026-09-26 (omp `4ed48212`; the other derives needed nothing). opencode, which had no route to the subscription then, gained one 2026-10-01 under the rule: no row for `openai-codex`, a via row included, and its own built-in `openai` client, with the list as model rows of that provider and no `npm` or `baseURL` (`TestOpencodeOnCodexRendersItsOwnOpenAIProvider`) |
+| OQ-3 | **Ruled in review, the broad reading, against the leaning** (the maintainer: *"why wouldn't it cover all? we don't want to maintain model catalogs."*, then *"168 A"* on the restated question): yolo writes no model entry over any provider an agent has built in (pi, omp and opencode included), and the agent uses its own list. A profile whose plan needs another address selects the agent's own provider for that plan when it has one, and the launch says when it has none. Each agent pack declares its built-in provider names; yolo keeps names, never models. Routing those providers through the wire bridge stops for them, and [WG-I36](wire-bridge-gateway.md#WG-I36)'s row may not sit on pi's `amazon-bedrock`. Widens [OQ-1](#10-decision-ledger)'s name check into the packs' lists. The two pack-declared lists on a built-in provider are [OQ-4](#OQ-4)'s | 2026-10-05 | [what the ruling settles](#what-the-ruling-settles) | yes, 2026-10-05, as [BI-D1](#BI-D1) to [BI-D10](#BI-D10) ([§6.5](#65-what-the-build-decided)): `TestNoAgentCataloguesAProviderItHasBuiltIn`, `TestPiTakesItsOwnZaiWithNothingFromYolosList`, `TestOpencodeTakesZaisPlanThroughItsOwnCodingPlanProvider`, `TestOmpOnZaiRunsItsOwnZai` (boot render), `TestShippedDerivesHonorTheAgentsOwnProviders` (the derives' `false` branch), `TestAProfileOnAPlanTheAgentHasNoProviderOfItsOwnForSaysSo` (the launch line), `TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider`, `TestShippedViaOverABuiltInProviderRepointsNothing`; at a launch, `TestPiAndOpencodeSelectionFollowTheActiveProfile` |
+| <a id="BI-D1"></a>BI-D1 | *Implementation decision, building [OQ-3](#10-decision-ledger).* **The declaration is a program's `built_in_providers` field** (`internal/packdecl/builtinproviders.go`), not the provider/profile machinery: which providers a binary implements is that binary's fact, as `platform_switches` and `exact_menu_refuses` are, and core must read it for the launch line, which a derive cannot print. A provider-level flag would have yolo's provider state facts about agents. It holds `names` and `plans`: a plan maps a yolo provider name to the agent's own provider for that plan, with `api_key_env_name` when that provider reads another variable, or to `null` when the agent has the name built in for another plan and none of its own for this one. A plan's provider must be one of the names; the field is refused on any other kind and on a fork, whose base keeps it. ⚠ Amended 2026-10-12: the `null` plan is removed ([provider-reachability-and-model-names.md OQ-PR3](provider-reachability-and-model-names.md#9-decision-ledger)) — a `plans` entry must resolve to a concrete provider; the code still carries `null` until built | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `TestBuiltInProvidersIsAProgramsFact`, `TestBuiltInProvidersIsRefusedWhereNothingCouldReadIt` |
 | <a id="BI-D2"></a>BI-D2 | *Implementation decision.* **Each list holds every provider id the agent's own code registers**, not only the ones a shipped provider shares, so a user's provider of such a name is caught too, as the plan's step 1 offered. Read 2026-10-05, never run: pi 1.0.1's `builtinProviders()` and its `llama.cpp` extension (43), oh-omp 0.15.3's bundled `models.json` and key map (49), and the models snapshot in opencode 1.18.34's binary (225; opencode also fetches models.dev at run time). Each `pack.json` says where its list came from. The cost is three lists to refresh with each agent's releases; a stale one misses only a collision ([R3](#8-risks-and-invariants)) | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `packs/pi/pack.json`, `packs/omp/pack.json`, `packs/opencode/pack.json`; the shipped names [§6.4](#64-what-each-reading-of-the-rule-changes)'s table lists are pinned by `TestNoAgentCataloguesAProviderItHasBuiltIn`, which fails when one is dropped |
-| <a id="BI-D3"></a>BI-D3 | *Implementation decision.* **Core reads the declaration by bin ownership and hands each derive the answer** as `ctx.built_in_providers`, keyed by yolo provider name (`{ id, api_key_env_name }`, or `false` for a `null` plan), on every path that runs a derive: the boot and `yolo check` (`surfaceSelectionFor`), the via-pointer scan (`DerivedViaPointers`), and the env derive. The derives test membership where they tested `openai-codex` by name, and keep that name as a fallback, so an entrypoint older than the table still keeps the subscription client unshadowed | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ revert-checked: deleting the boot's or the scan's call site, or a derive's check, fails the tests the [OQ-3](#OQ-3) row names |
+| <a id="BI-D3"></a>BI-D3 | *Implementation decision.* **Core reads the declaration by bin ownership and hands each derive the answer** as `ctx.built_in_providers`, keyed by yolo provider name (`{ id, api_key_env_name }`, or `false` for a `null` plan), on every path that runs a derive: the boot and `yolo check` (`surfaceSelectionFor`), the via-pointer scan (`DerivedViaPointers`), and the env derive. The derives test membership where they tested `openai-codex` by name, and keep that name as a fallback, so an entrypoint older than the table still keeps the subscription client unshadowed | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ revert-checked: deleting the boot's or the scan's call site, or a derive's check, fails the tests the [OQ-3](#10-decision-ledger) row names |
 | <a id="BI-D4"></a>BI-D4 | *Implementation decision.* **From yolo's list, only the profile's `model` option reaches a built-in provider, as the agent's own id**, never resolved through yolo's alias table, so `default` and any other alias name nothing. pi gets `defaultProvider` and that `defaultModel`, `enabledModels` of `<id>/*` and a pi-subagents scope of `<id>/*`: pi takes the saved pair only whole (`findInitialModel`, pi 1.0.1), and with nothing it starts on the first provider it finds a login for, which may be another; the scope keeps a fresh session on the provider, its first model when the pair does not resolve. opencode gets `model` and `small_model` only from the profile's own options, and `enabled_providers` naming its own id; oh-omp nothing, as before. ⚠ So the shipped zai profile still names `glm-5.3`, packs/zai's declared default, which pi's own zai lists; cerebras's declared `default` names nothing, and pi starts on its own cerebras scope. Whether even that one id should go is the maintainer's to say | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `TestPiTakesItsOwnZaiWithNothingFromYolosList`, `TestOpencodeTakesZaisPlanThroughItsOwnCodingPlanProvider`, `TestPiSubagentsBlockFollowsEveryProvidersProfile` |
 | <a id="BI-D5"></a>BI-D5 | *Implementation decision, the ruling's "the agent's own provider for that plan".* **opencode's yolo zai is its own `zai-coding-plan`, and the launch delivers zai's key to it as `ZHIPU_API_KEY`**, the variable that provider reads (opencode's own `zai` is the metered `api.z.ai/api/paas/v4`). Core composes it from the plan's `api_key_env_name` in `AgentEnv`, so it rides the agent's own env file through the credential gate, for every entry of an active set; the agent's own derive still wins a name it sets. It counts as a relay for the launch-shell pre-flight, so a zai key left only in the launching shell now reaches opencode. pi's own zai already calls the coding plan, and oh-omp's speaks Anthropic Messages at `api.z.ai/api/anthropic`, the plan's Anthropic route ([zai-plumbing.md](../reference/zai-plumbing.md)), both reading `ZAI_API_KEY`, so neither needs a plan | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider`, `TestAKeyOnlyInTheLaunchShellCountsOnlyForAnAgentWhoseDeriveRelaysIt`; at a launch, `TestOpencodeRunsOnEveryProviderOfItsSet` |
 | <a id="BI-D6"></a>BI-D6 | *Implementation decision.* **No `YOLO_MODEL_<ROLE>` variable is composed for an agent on a built-in provider**: its tiers are composed as if the selection named none, which removes the ones another provider of the table names. A role variable is `<yolo name>/<yolo's id>`, a model from yolo's list, and on opencode's zai it would name a provider opencode knows as `zai-coding-plan` | 2026-10-05 | [§6.5](#65-what-the-build-decided) | ✅ `TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider` |

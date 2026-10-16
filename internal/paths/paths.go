@@ -511,7 +511,7 @@ var HostSingletonDir = DefaultHostSingletonDir
 // no container, so two terminals in one workspace are two live sessions of one cname, and a
 // dir keyed by the cname alone was one dir for both: the second session's front replaced the
 // first's endpoint file, and the first teardown removed the dir under the survivor
-// (docs/design/host-daemon-ownership.md#OQ-HD10). Each macos-user session creates its own
+// (docs/design/host-daemon-ownership.md#11-decision-ledger). Each macos-user session creates its own
 // dir instead, named by HostServicesSessionPrefix (internal/cli/run/servicessession.go).
 func HostServicesDir(cname string, isMacOS bool) string {
 	return filepath.Join(HostServicesBase(isMacOS), HostServicesDirName(JailShortHash(cname)))

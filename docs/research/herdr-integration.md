@@ -582,7 +582,7 @@ restore all work. INFERRED; nothing was run.
   first on `PATH`, `claude` is `exec yolo host -- claude`, so both restore and
   `herdr agent start` come back through yolo. `host_wrappers` is on by default under
   `host_management: "own"` (`yolo config-ref`). Without the wrappers, a bare host claude runs
-  without yolo's composed environment. [OQ-HS3](../design/host-notch-services.md#OQ-HS3)'s ruling
+  without yolo's composed environment. [OQ-HS3](../design/host-notch-services.md#11-decision-ledger)'s ruling
   accepted exactly that. The maintainer: *"I'm totally fine with agents either being broken or not
   having features (same as broken) if not launched correctly once host management is on."*
   INFERRED.

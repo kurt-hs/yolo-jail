@@ -96,7 +96,7 @@ being an N×M problem:
 
 **pi, oh-omp and opencode run zai on their own providers**, because yolo writes no model entry over
 a provider an agent has built in
-([OQ-3](../design/pi-codex-provider-shadowing.md#OQ-3), ruled 2026-10-05): each agent's pack names
+([OQ-3](../design/pi-codex-provider-shadowing.md#10-decision-ledger), ruled 2026-10-05): each agent's pack names
 its own providers in `built_in_providers`, and opencode's maps yolo's zai to `zai-coding-plan`, since
 its own `zai` is the metered `api.z.ai/api/paas/v4`. Each uses its own model list, so `packs/zai`'s
 models reach claude and copilot only.

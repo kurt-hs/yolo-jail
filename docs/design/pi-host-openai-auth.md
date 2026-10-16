@@ -10,7 +10,7 @@ summary: "Pi gates a provider's models on a stored credential or a configured ke
 
 # Why host Pi cannot select OpenAI Codex — and how to seed its auth
 
-**Status:** 2026-10-04. [OQ-1](#OQ-1) decided as D2 on its leaning under the maintainer's delegation of that
+**Status:** 2026-10-04. [OQ-1](#decision-ledger) decided as D2 on its leaning under the maintainer's delegation of that
 day, open to his revision, and built ([§5.1](#51-as-built-the-native-registration)); a session of host pi has not been
 run on it yet. [OQ-2](#OQ-2) and [OQ-3](#OQ-3) are open. Diagnosis measured live on the maintainer's host
 2026-09-30, then re-verified against pi 0.99.2 and the tree at `2f579bb9` with offline probes of pi's own
@@ -40,7 +40,7 @@ the write families mutate the user's credential file.
 [§3.1](#31-what-nc-d37-protects) for what the host is protecting.
 
 **Needs your ruling:** [OQ-2](#OQ-2), [OQ-3](#OQ-3). **Decided under your delegation of 2026-10-04, yours to
-overrule:** [OQ-1](#OQ-1) D2, on its leaning ([PH-D1](#PH-D1)).
+overrule:** [OQ-1](#decision-ledger) D2, on its leaning ([PH-D1](#PH-D1)).
 
 **Reads with:** [`notch-convergence.md`](../plans/notch-convergence.md) (NC-D37's host prelaunch rule),
 [`agent-credentials.md`'s OpenAI service](../reference/agent-credentials.md#the-openai-subscription-credential-service) (the one refresh owner, and the pi view it serves),
@@ -258,7 +258,7 @@ The related rulings: [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A (*"Host cl
 login … a shared store without interception races the broker"*, with OpenAI having *"one
 machine-wide login lineage for the host and the jails"*); NC-D1 (*"host is supposed to act like
 everywhere else"*, [ledger](../plans/notch-convergence.md#7-decision-ledger)); and
-[OQ-HS3](host-notch-services.md#OQ-HS3) (*"fine with agents either being broken or not having
+[OQ-HS3](host-notch-services.md#11-decision-ledger) (*"fine with agents either being broken or not having
 features … if not launched correctly"*).
 
 ### 3.2 What a seeded entry does afterwards: refresh, rotation, the lock
@@ -322,7 +322,7 @@ extension installed in `~/.pi/agent/extensions/`:
   the launch hands pi no socket, and [`brokerFailure`](../../packs/pi/extensions/yolo-openai-auth.js)
   cannot tell that case from a direct launch.
 
-[OQ-HS3](host-notch-services.md#OQ-HS3) covers the direct launch. It does not obviously cover a
+[OQ-HS3](host-notch-services.md#11-decision-ledger) covers the direct launch. It does not obviously cover a
 correct launch replacing the user's account.
 
 **A buildable fix** *(the marker dispatch, coined here)* (INFERRED). `refreshToken` sends a credential
@@ -340,18 +340,18 @@ should win at all is [OQ-3](#OQ-3). Its options in full:
   says when an own login is serving.
 - **B — yolo's login wins under `yolo host` with the `codex` profile.** An own login is replaced, as
   today, but disclosed. Pi's resolve order puts a stored credential first, so B forces a file write,
-  ruling out D for [OQ-1](#OQ-1).
-- **C — Two lineages, kept apart.** [OQ-1](#OQ-1)'s E: the managed directory serves `yolo host`, and the
+  ruling out D for [OQ-1](#decision-ledger).
+- **C — Two lineages, kept apart.** [OQ-1](#decision-ledger)'s E: the managed directory serves `yolo host`, and the
   user's `~/.pi/agent` keeps its own login untouched.
 
 What each option does to an own login is a column of the table in [§3.4](#34-for-the-authjson-seeding-the-option-space).
 
 ### 3.4 For the auth.json seeding: the option space
 
-A, B and C are the first draft's [OQ-1](#OQ-1) options, and E takes the place of its third
+A, B and C are the first draft's [OQ-1](#decision-ledger) options, and E takes the place of its third
 seeding option; A′, D and F come from reading pi's runtime and the codex precedent.
 
-In brief, as [OQ-1](#OQ-1) first listed them:
+In brief, as [OQ-1](#decision-ledger) first listed them:
 
 - **A — Host prelaunch merges `auth.json` (amend NC-D37).** `openaiauthhost.Prepare` calls
   `WritePiAuth` on `~/.pi/agent/auth.json` on every `codex`-profile launch. It keeps other
@@ -618,7 +618,7 @@ test has to fail when the production call site is deleted, not only when the cal
    broker and any other to pi's built-in refresh.
    - Through the extension's node harness: a marker credential reaches the client; an own credential
      reaches the stubbed built-in refresh and never the client.
-3. **The native registration ([OQ-1](#OQ-1) D2).** The extension registers `openai-codex` as a native
+3. **The native registration ([OQ-1](#decision-ledger) D2).** The extension registers `openai-codex` as a native
    provider whose key check answers only when `YOLO_OPENAI_AUTH_HOST_SOCKET` is set. The model list,
    name and refusal move onto it. **Built 2026-10-04** ([§5.1](#51-as-built-the-native-registration)).
    - The existing list, refusal and naming tests in
@@ -641,7 +641,7 @@ profile starts on the saved `openai-codex` default, lists the subscription model
 `pi` afterwards shows no `openai-codex` model and advises `yolo host -- pi`. A pre-existing own
 login is still the stored entry after a session.
 
-If [OQ-1](#OQ-1) is ruled for a file write instead, step 3 becomes A′'s gated writer, with exit-75
+If [OQ-1](#decision-ledger) is ruled for a file write instead, step 3 becomes A′'s gated writer, with exit-75
 handling and a test that an own entry and a symlinked file survive a `codex`-profile launch.
 
 ### 5.1 As built: the native registration
@@ -748,37 +748,7 @@ a macos-user launch hands it only to the services and doorways it runs outside t
 
 ## Open Questions
 
-1. ✅ **OQ-1: How host Pi receives its initial `openai-codex` credential.**
-   Pi counts `openai-codex` as configured only with a stored credential or a key method, and the host
-   writes neither today. What should bridge this gap? The answer decides whether yolo's login ever
-   enters the user's `auth.json`,
-   and whether plain `pi` keeps a working subscription after a `yolo host` launch. Each option is in
-   [§3.4](#34-for-the-authjson-seeding-the-option-space).
-
-   - **A — Host prelaunch merges `auth.json` (amend NC-D37).**
-   - **A′ — Marker-gated merge (amend NC-D37).**
-   - **B — `yolo-openai-auth.js` seeds `auth.json` on extension load.**
-   - **C — Require explicit `/login` once on the host.**
-   - **D — Mark the provider configured with no file write.**
-   - **E — A managed pi agent directory.**
-   - **F — `yolo host apply` seeds under `host_management`.**
-
-   <!-- vantage: question id=OQ-1 leaning="D2 — a native openai-codex provider whose key check answers only with the host socket: it writes nothing, so NC-D37 stands as written, and pi then acts at the host as it does in a jail. If a file write is preferred, A′ rather than A, because A deletes an own login." -->
-
-   _Leaning:_ D2. It writes nothing, so NC-D37 stands as written and the host acts as a jail does at
-   start. The plain-pi loss is what [OQ-HS3](host-notch-services.md#OQ-HS3) already accepts. A's
-   stated basis, that `WritePiAuth` preserves existing host credentials, is false for its own key
-   ([§3.4](#34-for-the-authjson-seeding-the-option-space), option A). If a file write is
-   preferred, A′ rather than A.
-
-   **Answer:**
-   > **D2**, decided 2026-10-04 on its leaning under the maintainer's delegation of that day
-   > ("make them and build it … adjust later"), open to his revision: a native `openai-codex` provider
-   > whose key check answers only with the host socket, so nothing is written into the user's
-   > `auth.json` and [NC-D37](../plans/notch-convergence.md#NC-D37) stands as written. Built
-   > ([§5.1](#51-as-built-the-native-registration), [PH-D1](#PH-D1)).
-
-2. 💬 **OQ-2: Handling catalog refresh failures for unscoped providers.**
+1. 💬 **OQ-2: Handling catalog refresh failures for unscoped providers.**
    Under credential scoping, `models.json` rows for unselected providers make pi's model picker report
    refresh failures. Should yolo suppress unselected providers in `models.json`? The stakes are noise
    only: no option shows or hides a model the others do not
@@ -801,21 +771,21 @@ a macos-user launch hands it only to the services and doorways it runs outside t
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. 💬 **OQ-3: Whose OpenAI login does host pi use when the user has their own?**
+2. 💬 **OQ-3: Whose OpenAI login does host pi use when the user has their own?**
    A host pi may hold an `openai-codex` login of its own, made before yolo's extension was installed.
    Today the first refresh under `yolo host` replaces it with yolo's
    ([§3.3](#33-a-host-pi-that-already-has-its-own-openai-codex-login), which also has each option
-   in full). The answer decides what [OQ-1](#OQ-1)'s
+   in full). The answer decides what [OQ-1](#decision-ledger)'s
    options may do to that entry and which refresh pi runs.
 
    - **A — The user's own login wins.**
    - **B — yolo's login wins under `yolo host` with the `codex` profile.** It forces a file write,
-     ruling out D for [OQ-1](#OQ-1).
-   - **C — Two lineages, kept apart.** [OQ-1](#OQ-1)'s E.
+     ruling out D for [OQ-1](#decision-ledger).
+   - **C — Two lineages, kept apart.** [OQ-1](#decision-ledger)'s E.
 
    <!-- vantage: question id=OQ-3 leaning="A — the user's own login wins and refreshes through OpenAI by the marker dispatch; yolo's login serves only a missing or broker-marked entry. It fixes today's silent replacement without a file write and matches OQ-NC7 A; codex's precedent, OQ-OA3, is C's shape, which costs E's managed directory." -->
 
-   _Leaning:_ A. It fixes today's silent replacement without a file write, so it composes with [OQ-1](#OQ-1)'s
+   _Leaning:_ A. It fixes today's silent replacement without a file write, so it composes with [OQ-1](#decision-ledger)'s
    D2, and it matches [OQ-NC7](../plans/notch-convergence.md#OQ-NC7) A, where host claude keeps its own
    login. The codex precedent is C's shape instead: `yolo host -- codex` uses the broker through a
    managed home while a direct host codex stays untouched
@@ -831,13 +801,13 @@ a macos-user launch hands it only to the services and doorways it runs outside t
 
 ## Decision Ledger
 
-Every row is reversible. [PH-D1](#PH-D1) is [OQ-1](#OQ-1), which was the maintainer's, decided on its
+Every row is reversible. [PH-D1](#PH-D1) is [OQ-1](#decision-ledger), which was the maintainer's, decided on its
 leaning on 2026-10-04 under his delegation of that day; the rest are implementation decisions taken
 building it.
 
 | ID | Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
-| <a id="PH-D1"></a>PH-D1 | **[OQ-1](#OQ-1): D2.** Decided on its leaning under the maintainer's 2026-10-04 delegation (*"make them and build it … adjust later"*), open to his revision. Host pi gets a native `openai-codex` provider whose key check answers `oauth` only while the host socket is set, so pi counts the provider configured with nothing stored, and yolo writes nothing into the user's `auth.json`: [NC-D37](../plans/notch-convergence.md#NC-D37) stands as written | 2026-10-04 | [§3.4](#34-for-the-authjson-seeding-the-option-space) D, [§5](#5-build-order-and-the-tests-that-pin-each-step) step 3 | ✅ 2026-10-04 ([§5.1](#51-as-built-the-native-registration)); a host pi session not yet run on it |
+| <a id="PH-D1"></a>PH-D1 | **OQ-1: D2.** Decided on its leaning under the maintainer's 2026-10-04 delegation (*"make them and build it … adjust later"*), open to his revision. Host pi gets a native `openai-codex` provider whose key check answers `oauth` only while the host socket is set, so pi counts the provider configured with nothing stored, and yolo writes nothing into the user's `auth.json`: [NC-D37](../plans/notch-convergence.md#NC-D37) stands as written | 2026-10-04 | [§3.4](#34-for-the-authjson-seeding-the-option-space) D, [§5](#5-build-order-and-the-tests-that-pin-each-step) step 3 | ✅ 2026-10-04 ([§5.1](#51-as-built-the-native-registration)); a host pi session not yet run on it |
 | <a id="PH-D2"></a>PH-D2 | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* **The native registration only where the host socket is set; everywhere else the `ProviderConfig` as it was.** The alternative was the native provider everywhere, which a jail would notice in two ways: pi wraps only its own built-ins in its remote catalog refresh (`ModelRuntime.create`, SOURCED on pi 1.0.1), so a jail with no rendered list would lose that refresh, and pi's `/login` would gain an API-key entry, since it lists one for every key method. A jail gains nothing in return, having stored its login before pi starts. The socket is set only by `yolo host --`, so a jail's and a directly started pi's registration stay what they were, field for field | 2026-10-04 | [§5.1](#51-as-built-the-native-registration) | ✅ 2026-10-04; `TestPiOpenAIAuthJailRouteNeverRegistersNatively` fails with the gate removed |
 | <a id="PH-D3"></a>PH-D3 | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* **The key method's `resolve` reuses the broker's view until five minutes before it expires**, pi's own refresh window for a stored login (pi-ai `auth/resolve.js`), instead of asking the client on every request. A token the broker replaced meanwhile is used until then, exactly as pi uses a stored login's, the jail's included | 2026-10-04 | [§5.1](#51-as-built-the-native-registration) | ✅ 2026-10-04; `TestPiOpenAIAuthHostRouteRegistersPisBuiltInAsANativeProvider` and `TestPiOpenAIAuthHostRouteAsksAgainForATokenNearItsEnd` |
 | <a id="PH-D4"></a>PH-D4 | *Implementation decision, taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible.* **Nothing to register natively falls back to the `ProviderConfig`**: a pi whose root's `ModelRuntime` has no `registerNativeProvider`, the method its loader hands a provider object to, or whose `providers/all` exports no `builtinProviders`, none for `openai-codex`, or one not serving `openai-codex-responses`. Such a pi keeps the host behavior it had before D2, `/login` included. The route is chosen by asking for the method, not by a throw: pi 0.80.10 exports the built-in, and its `registerProvider` took a provider object for a name, threw nothing, and failed applying it, which lost the registration and reported the extension as failed under the `try`/`catch` this row first named (MEASURED 2026-10-04). 0.81.0, the next release, has the method, as do 0.87.1, 0.99.2, 1.0.1 and 1.0.2 (MEASURED), and 0.81.0's changelog records the registration (SOURCED, its `CHANGELOG.md`) | 2026-10-04 | [§5.1](#51-as-built-the-native-registration) | ✅ 2026-10-04; `TestPiOpenAIAuthHostRouteFallsBackToTheProviderConfig`, whose cases fail with the method check or the api check removed |

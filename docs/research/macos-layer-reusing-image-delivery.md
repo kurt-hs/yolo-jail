@@ -6,24 +6,22 @@ status: accepted
 tags: [research, macos, image-delivery, podman, apple-container]
 summary: "Can podman-on-macOS and Apple Container get the per-layer reuse skopeo gives podman on Linux? Measured on Linux, sourced for the Mac side. A delta archive gets it with no new listener, but Apple Container still rebuilds its ext4 snapshot for every new image."
 stage: BUILT
-next: "Record the in-VM copier's first completed run in OQ-LR2: the 2026-10-02 dispatched macOS nightly (37056529987, at 0e34798c6) logged OQ-LR2 IN-VM COPIER: LANDED in 32m0.3s against 17m0.3s for the archive path. With gzip also losing, no first-load candidate wins and nothing more is built; the 2026-10-03 scheduled run timed out in that step and kept no log"
+next: "Graduate into docs/reference/image-staging-vs-baking.md (the delta archive): every question is ruled and no first-load candidate won"
 vantage:
   status-chip: true
 ---
 
 # Layer-reusing image delivery on the two Mac backends
 
-**Status:** 2026-09-24; research, with all three questions ruled the same day ([Decisions](#decisions)) — build the delta archive, and improve the first load where it measurably can be. **Built the same day** in `deliverViaArchive` (placeholder seeding, the Apple Container delivery record, the single empty-set retry); how it works and what it measured through the real launch path are in [The delta archive](../reference/image-staging-vs-baking.md#the-delta-archive). Everything on Linux here is **MEASURED** in this jail. Everything
+**Status:** 2026-09-24; research, with all three questions ruled the same day ([Decision Ledger](#decision-ledger)) — build the delta archive, and improve the first load where it measurably can be. **Built the same day** in `deliverViaArchive` (placeholder seeding, the Apple Container delivery record, the single empty-set retry); how it works and what it measured through the real launch path are in [The delta archive](../reference/image-staging-vs-baking.md#the-delta-archive). Everything on Linux here is **MEASURED** in this jail. Everything
 about the Mac was **SOURCED** (read in upstream source at a named commit) or **INFERRED** when
 this was written, and no Mac was used. [What only a Mac can confirm](#what-only-a-mac-can-confirm)
 lists the commands that settle each Mac claim. ⚠ **Since 2026-09-25 the built delta archive is
 MEASURED on both Mac backends**, through real launches in CI rather than through those commands:
-[Mac results](#mac-results-2026-09-25) has the numbers. What is left is
-[`OQ-LR2`](#OQ-LR2)'s first-load work: the gzip candidate has lost in every later sample, and
-the in-VM copier has not yet produced a time. On Linux its last step, after `Writing manifest`,
-took about 0.1 s of a 51 s cold copy (MEASURED 2026-10-01), and the nightly's copier now reports
-its own exit and a goroutine dump at an in-VM deadline, so the next run can say whether the copy
-or the session hung.
+[Mac results](#mac-results-2026-09-25) has the numbers. The first-load work
+([`OQ-LR2`](#decision-ledger)) found no winner: the gzip candidate lost in every later sample, and
+the in-VM copier's first completed run (2026-10-02) took 32 min against 17 min for the archive
+([First-load candidates](#first-load-candidates)).
 
 **The question** (the maintainer, 2026-09-24): on podman-on-macOS and on Apple Container, can
 image delivery get the layer reuse that `skopeo copy nix: → containers-storage:` gives podman on
@@ -208,7 +206,7 @@ store the default connection uses. That only holds if yolo's connection is the d
 **Verdict: rejected as the primary route.** It works only through an SSH hop into one machine
 chosen by name, and it is podman-only. What it does offer is a *first* load read over virtiofs
 rather than uploaded over the API socket, which may be faster. That is only measurable on a Mac,
-so it stays [open](#OQ-LR2).
+so it was listed as a [first-load candidate](#first-load-candidates).
 
 ### Option 2 — a local read-only registry
 
@@ -325,7 +323,7 @@ a blob from the content store before it touches the layout (containerization `bc
 archive missing blobs the store already holds should import. Two things are Mac-only:
 
 - Whether `LocalOCILayoutClient` complains about the missing files before `fetch` is reached.
-- How to probe AC's present set. See [OQ-LR3](#OQ-LR3).
+- How to probe AC's present set. See [OQ-LR3](#decision-ledger).
 
 **Verdict: recommended.** See [below](#recommendation-and-its-cost).
 
@@ -336,7 +334,7 @@ archive missing blobs the store already holds should import. Two things are Mac-
 | **A lazy registry inside yolo that tars layers straight from the nix store**, with no layout on disk | **Deferred.** It is the minimum in bytes, but it needs nix2container's layer writer as a Go dependency, which [`layercopy.go`](../../internal/image/layercopy.go) deliberately avoids. It also has to reproduce, byte for byte, the tar whose digest was computed at build time. The delta archive gets the same bytes-on-the-wire from the existing copier. |
 | **A persistent uncompressed layout on the Mac** (option 1's layout kept between loads) | **Not needed.** It costs about 3.45 GB of Mac disk and needs its own GC. Placeholder seeding makes the layout transient and only 28 MB. |
 | **The full layout written each time, with the present blobs deleted before tarring** | **The robust variant.** It gives the same delta archive without relying on the destination's `os.Stat`-only reuse check, at the cost of a full local write (6.1–7.6 s here, measured as the A write). Take it if pinning the placeholder behavior with a test proves too fragile. |
-| **`podman machine ssh` running a Linux `skopeo copy nix: → containers-storage:` inside the VM** | **Only where `/nix` is shared with the VM**: `podman machine init -v /nix:/nix`, a fresh machine, which the macOS nightly already does ([macOS and the runtime VM](../reference/image-staging-vs-baking.md#macos-and-the-runtime-vm)). It is exactly the Linux path, reading the store over virtiofs with no archive at all. It needs a Linux copier binary visible to the VM, and default machines don't have one. A candidate for CI's first load; [OQ-LR2](#OQ-LR2). |
+| **`podman machine ssh` running a Linux `skopeo copy nix: → containers-storage:` inside the VM** | **Only where `/nix` is shared with the VM**: `podman machine init -v /nix:/nix`, a fresh machine, which the macOS nightly already does ([macOS and the runtime VM](../reference/image-staging-vs-baking.md#macos-and-the-runtime-vm)). It is exactly the Linux path, reading the store over virtiofs with no archive at all. It needs a Linux copier binary visible to the VM, and default machines don't have one. A candidate for CI's first load; [OQ-LR2](#decision-ledger). |
 | **A containers-storage store on a shared mount** (`additionalimagestores`) | **Rejected (INFERRED).** The host copy would have to write an overlay store from macOS, and c/storage's overlay driver and its ownership mapping are Linux-only. |
 | **Writing blobs directly into Apple Container's content store** | **Rejected.** It is an internal on-disk layout with no stability promise, and `load` and `pull` already skip what it holds. |
 | **Compressing the podman archive** (gzip `oci-archive` instead of `docker-archive`) | **A first-load lever, and orthogonal to reuse.** 2.8× fewer bytes to upload for about 7–13 s of gzip here (MEASURED above). Worth measuring on the Intel CI Mac, where first load is the only load. One sample there, on 2026-09-25, showed no measurable win ([Mac results](#mac-results-2026-09-25)). |
@@ -449,7 +447,7 @@ allows, and not a fallback transport.
 - Unit tests, including **one that fails if containers/image stops treating a bare file as a
   present blob**. The placeholder trick depends on that `os.Stat` check. If it breaks, the
   robust variant from the table above replaces it.
-- An Apple Container present-set probe ([OQ-LR3](#OQ-LR3)).
+- An Apple Container present-set probe ([OQ-LR3](#decision-ledger)).
 
 **No new binary, no listener, and no change to the image or the flake.** It is testable end to
 end on Linux against `podman --remote`, as done here, because that is where the podman half
@@ -485,11 +483,11 @@ What that settles:
   `container image load` exit 1 with `missingContent(…)` and leave no image, so the single retry
   fires.
 - **On Podman Machine the upload is most of the incremental cost**, the first half of
-  [`OQ-LR1`](#OQ-LR1)'s leaning: B's delta took 48 s where A's full archive took 16.5 min.
+  [`OQ-LR1`](#decision-ledger)'s leaning: B's delta took 48 s where A's full archive took 16.5 min.
 - **The x86_64-darwin copier builds.** `macArchiveRealize` realized `.#imageCopier` on the Intel
   runner (56 paths substituted, one derivation built, 2 min 28 s), so the darwin skopeo, an older
   minor under the same `nix:` patch, has now run a delivery.
-- **The gzip half of [`OQ-LR2`](#OQ-LR2) ran in the same job**, one sample each into a store with
+- **The gzip half of [`OQ-LR2`](#decision-ledger) ran in the same job**, one sample each into a store with
   A evicted: a cold `podman load` of A took 14 min 6 s from the 3.2 GB uncompressed archive and
   13 min 49 s from a 1.1 GB gzip archive, whose write took 15 s longer. At one sample, that is no
   measurable win. The in-VM copier test landed after `22011184` and has not run.
@@ -551,7 +549,7 @@ What each step settles:
   headline number.
 - **Step 3** confirms that `host.containers.internal` from the VM reaches the Mac's loopback.
 - **Step 4 against step 1's first load** compares virtiofs with the API upload for a cold
-  store ([OQ-LR2](#OQ-LR2)).
+  store ([OQ-LR2](#decision-ledger)).
 
 On the Intel CI runner, step 1's first load is the 10–33 min figure. Timing the gzip variant
 there as well (`oci-archive:` instead of `docker-archive:`) answers whether compression helps
@@ -595,133 +593,107 @@ What each step settles:
 
 ---
 
-## Decisions
+## First-load candidates
 
-1. ✅ <a id="OQ-LR1"></a>**[OQ-LR1](#OQ-LR1) (ruled): Build the delta archive for the two Mac backends?** It is the only option that
-   reuses layers with no listener and no new binary. It helps the maintainer's day-to-day Mac and
-   does nothing for CI's ephemeral runners.
+By the maintainer's ruling ([`OQ-LR2`](#decision-ledger)), the first load is improved only where a
+candidate measurably wins. On CI's ephemeral Intel runners reuse cannot help, so the candidates
+were a gzip archive (2.8× fewer bytes, CPU paid), `podman machine ssh` reading over virtiofs, and,
+where `/nix` is shared with the VM, the Linux copier running inside the VM, which is exactly the
+Linux path.
 
-   <!-- vantage: question id=OQ-LR1 -->
+**Neither measured candidate wins, so nothing more is built.** The virtiofs read was never
+measured; the ruling named the other two. The gzip archive lost in every sample after the
+first, and the in-VM copier's first completed run, the 2026-10-02 dispatched macOS nightly
+(`37056529987`, at `0e34798c6`), logged `IN-VM COPIER: LANDED` in 32 min 0.3 s against
+17 min 0.3 s for the archive path. The 2026-10-03 scheduled run timed out in that step and kept
+no log. The measurements behind that verdict follow.
 
+**The first gzip sample (2026-09-25).** Nightly run
+`36128365198` timed the gzip candidate once: 13 min 49 s from gzip against 14 min 6 s
+uncompressed, no measurable win at one sample ([Mac results](#mac-results-2026-09-25)).
+The in-VM copier test landed after that run's commit. Both run in `nightly-macos.yml`'s
+`archive-delivery-macos` job, in the step named for this question (its name continues
+`— time a cold first load, uncompressed vs gzip vs the in-VM copier`), which selects every `TestMacArchiveFirstLoad…` test in
+[`macarchivedelivery_test.go`](../../integration/macarchivedelivery_test.go).
+`TestMacArchiveFirstLoadCompressionOnPodman` times the gzip candidate against today's
+uncompressed archive. `TestMacArchiveFirstLoadInVMCopierOnPodman` is the second candidate. It
+evicts image A, then runs the Linux delivery argv itself inside the VM: `podman machine ssh --
+[podman unshare --] <copier> --insecure-policy copy nix:<image.json> containers-storage:<ref>`.
+The test takes everything after `--` from `image.DeliveryCopyArgv`, a delegate to the builder a
+Linux launch execs, so a flag the Linux delivery gains reaches this candidate too.
+The copier is the Linux one, realized from Cachix for the VM's architecture, and it reads image A
+over the VM's `/nix` share. Every outcome of the copy passes and is reported: a time, a store the
+Mac's default connection does not read, a failure, or a timeout. The test fails only when the
+experiment could not happen: the VM's arch is unreadable, the copier cannot be realized, or the
+VM cannot see the image or the copier. **How to read it:** the job's step summary has one
+section per candidate, and the job log has a line that starts with this question's id followed
+by `IN-VM COPIER:`, carrying the argv and the output. **The step's cap was raised from 80 to 125 minutes, and the job's from 210 to 255,** to
+fit the third cold delivery. The in-VM copy also carries its own deadline inside the test. **On 2026-10-03 the step's went to 190 minutes**, and the job's
+with it, because the tests' own deadlines add up to 175 minutes and a 125-minute cap could end
+the step before the in-VM copy's deadline printed its verdict.
 
-   _Leaning:_ Yes, once the Mac commands above confirm two things. First, that on Podman Machine
-   the upload is most of today's incremental cost. Second, that `container image load` imports a
-   layout with missing blobs. If Apple Container refuses, ship the podman half and take the
-   registry route for Apple Container.
+**Three more nightlies have run both candidates (read 2026-09-30 from the job logs).** One
+cold `podman load` sample each, into a store with A evicted, on GitHub's `macos-26-intel`:
 
-   **Answer:**
-   > **Ruled 2026-09-24 (maintainer): build it.** "yes build" — for both Mac backends, in `deliverViaArchive`, with the empty present set as today's full archive and the single retry. Built after this ruling, not after the Mac run; the Mac run now verifies it rather than gating it.
+| Nightly run (commit) | Uncompressed load | gzip load | In-VM copier |
+| :--- | :--- | :--- | :--- |
+| `36470275574` (`5e7213da`, 2026-09-28) | 11 min 32 s | 20 min 42 s | failed at once: `mkdir /run/containers/storage: permission denied` |
+| `36566584474` (`4a2f2506`, 2026-09-29) | 10 min 53 s | 15 min 32 s | the same failure |
+| `36711874486` (`8f7468dd`, 2026-09-30) | 15 min 25 s | 30 min 41 s | killed at its 45-minute cap |
 
-2. ✅ <a id="OQ-LR2"></a>**[OQ-LR2](#OQ-LR2) (ruled): Is the first load worth its own work?** On CI's ephemeral Intel runners, reuse
-   cannot help. The candidates are:
-   - a gzip archive (2.8× fewer bytes, CPU paid);
-   - `podman machine ssh` reading over virtiofs;
-   - on machines with `/nix` shared, a Linux copier running inside the VM, which is exactly the
-     Linux path.
+- **gzip loses.** In each of the three runs the gzip archive took longer to load than the
+  uncompressed one, where the first sample had called them even.
+- **The in-VM copier's first two failures were the rootless-store fault of issue #47.** Both
+  runs predate `b32eb058` and `d7bd57e0`, which name podman's store on a rootless copy, and
+  the 2026-09-30 run, which has both, carried the store in the destination
+  (`containers-storage:[overlay@/var/home/core/.local/share/containers/storage+/run/user/501/containers]`).
+- **The 2026-09-30 copy got to its last step and did not return.** Its output lists every
+  blob copied, then `Writing manifest to image destination`, then `signal: killed` at 45
+  minutes. Whether the copy was slow to commit or the `podman machine ssh` session never
+  exited is not known, so the in-VM copier still has no time.
 
-   <!-- vantage: question id=OQ-LR2 -->
+**On Linux, the step after `Writing manifest` is about a tenth of a second (MEASURED
+2026-10-01).** The same copier (`.#imageCopier`, skopeo 1.24.1) and the same image.json
+(`.#ociImage` at `d4e435a3`), writing a NAMED store as a rootless delivery does, into an empty
+scratch store inside a jail, rootful and with no `podman unshare`, every output line
+timestamped from the start:
 
+```console
+$ skopeo --insecure-policy copy nix:<image.json> \
+    'containers-storage:[overlay@<scratch>/graph+<scratch>/run:overlay.mount_program=<fuse-overlayfs>]localhost/yolo-jail:oqlr2-probe'
+    0.1  Getting image source signatures
+    8.7  Copying blob sha256:8dba2418…   (the last of 91 such lines, all printed by 8.7 s)
+   50.9  Copying config sha256:b617a1ad…
+   50.9  Writing manifest to image destination
+rc=0 total=51.0
+```
 
-   _Leaning:_ Measure before building. The in-VM copier is the only candidate that removes the
-   archive entirely, and CI already shares `/nix`. Every other candidate is a constant-factor
-   change to a cost CI pays once per job.
+Without a terminal the copier prints a blob's line when it starts it, so the 42 s between the
+last of them and `Copying config` is the layers being written; the store held 3.4 GB after.
+The one-minute load average was 40 to 45 from other agents' work. So on Linux nothing heavy is
+left once `Writing manifest` prints. INFERRED for the Mac: a copy that printed it and then ran
+45 minutes was not slow at writing layers. It was stopped in its last step, a lock or the
+store's final record, or it had exited into an ssh session that never returned. UNMEASURED: the
+rootless half, since `podman unshare` refuses on this jail's rootful podman, and the VM itself.
 
-   **Answer:**
-   > **Ruled 2026-09-24 (maintainer): yes, where it can be improved.** "if we can improve it, yes" — measure the candidates (the gzip archive, and the in-VM copier where `/nix` is shared) on the Mac runners, then build what measurably wins.
+**The next nightly can tell those apart (2026-10-01).** `inVMCopyArgv` now runs the copier
+under `timeout -s QUIT -k 60 <the test's deadline less five minutes>`, between the namespace
+prefix and the copier, and the VM's shell prints `yolo in-VM copier exited rc=<status>` when
+it returns. A copier still running at its deadline is sent SIGQUIT and prints every goroutine's
+stack, which the test logs from `SIGQUIT: quit` on, so the dump names where it waited; a marker
+followed by a kill at the outer deadline says the session hung after the copy. The argv is
+otherwise the Linux delivery's, as before (`TestInVMCopyArgvIsTheLinuxDeliveryArgv`), and the
+readers are pinned under `-short` (`TestTheInVMCopierReportReadsWhatTheVMPrints`). Checked on
+Linux against a stand-in Go program that never returns: `SIGQUIT: quit`, its stacks, then
+`yolo in-VM copier exited rc=124`.
 
-   **The gzip half has run; the in-VM copier half has not (2026-09-25).** Nightly run
-   `36128365198` timed the gzip candidate once: 13 min 49 s from gzip against 14 min 6 s
-   uncompressed, no measurable win at one sample ([Mac results](#mac-results-2026-09-25)).
-   The in-VM copier test landed after that run's commit, so it has no result yet. Both run in `nightly-macos.yml`'s
-   `archive-delivery-macos` job, in the step named for this question (its name continues
-   `— time a cold first load, uncompressed vs gzip vs the in-VM copier`), which selects every `TestMacArchiveFirstLoad…` test in
-   [`macarchivedelivery_test.go`](../../integration/macarchivedelivery_test.go).
-   `TestMacArchiveFirstLoadCompressionOnPodman` times the gzip candidate against today's
-   uncompressed archive. `TestMacArchiveFirstLoadInVMCopierOnPodman` is the second candidate. It
-   evicts image A, then runs the Linux delivery argv itself inside the VM: `podman machine ssh --
-   [podman unshare --] <copier> --insecure-policy copy nix:<image.json> containers-storage:<ref>`.
-   The test takes everything after `--` from `image.DeliveryCopyArgv`, a delegate to the builder a
-   Linux launch execs, so a flag the Linux delivery gains reaches this candidate too.
-   The copier is the Linux one, realized from Cachix for the VM's architecture, and it reads image A
-   over the VM's `/nix` share. Every outcome of the copy passes and is reported: a time, a store the
-   Mac's default connection does not read, a failure, or a timeout. The test fails only when the
-   experiment could not happen: the VM's arch is unreadable, the copier cannot be realized, or the
-   VM cannot see the image or the copier. **How to read it:** the job's step summary has one
-   section per candidate, and the job log has a line that starts with this question's id followed
-   by `IN-VM COPIER:`, carrying the argv and the output. **The step's cap was raised from 80 to 125 minutes, and the job's from 210 to 255,** to
-   fit the third cold delivery. The in-VM copy has no measurement yet, so it also carries its own
-   deadline inside the test. **On 2026-10-03 the step's went to 190 minutes**, and the job's
-   with it, because the tests' own deadlines add up to 175 minutes and a 125-minute cap could end
-   the step before the in-VM copy's deadline printed its verdict.
+## Decision Ledger
 
-   **Three more nightlies have run both candidates (read 2026-09-30 from the job logs).** One
-   cold `podman load` sample each, into a store with A evicted, on GitHub's `macos-26-intel`:
-
-   | Nightly run (commit) | Uncompressed load | gzip load | In-VM copier |
-   | :--- | :--- | :--- | :--- |
-   | `36470275574` (`5e7213da`, 2026-09-28) | 11 min 32 s | 20 min 42 s | failed at once: `mkdir /run/containers/storage: permission denied` |
-   | `36566584474` (`4a2f2506`, 2026-09-29) | 10 min 53 s | 15 min 32 s | the same failure |
-   | `36711874486` (`8f7468dd`, 2026-09-30) | 15 min 25 s | 30 min 41 s | killed at its 45-minute cap |
-
-   - **gzip loses.** In each of the three runs the gzip archive took longer to load than the
-     uncompressed one, where the first sample had called them even.
-   - **The in-VM copier's first two failures were the rootless-store fault of issue #47.** Both
-     runs predate `b32eb058` and `d7bd57e0`, which name podman's store on a rootless copy, and
-     the 2026-09-30 run, which has both, carried the store in the destination
-     (`containers-storage:[overlay@/var/home/core/.local/share/containers/storage+/run/user/501/containers]`).
-   - **The 2026-09-30 copy got to its last step and did not return.** Its output lists every
-     blob copied, then `Writing manifest to image destination`, then `signal: killed` at 45
-     minutes. Whether the copy was slow to commit or the `podman machine ssh` session never
-     exited is not known, so the in-VM copier still has no time.
-
-   **On Linux, the step after `Writing manifest` is about a tenth of a second (MEASURED
-   2026-10-01).** The same copier (`.#imageCopier`, skopeo 1.24.1) and the same image.json
-   (`.#ociImage` at `d4e435a3`), writing a NAMED store as a rootless delivery does, into an empty
-   scratch store inside a jail, rootful and with no `podman unshare`, every output line
-   timestamped from the start:
-
-   ```console
-   $ skopeo --insecure-policy copy nix:<image.json> \
-       'containers-storage:[overlay@<scratch>/graph+<scratch>/run:overlay.mount_program=<fuse-overlayfs>]localhost/yolo-jail:oqlr2-probe'
-       0.1  Getting image source signatures
-       8.7  Copying blob sha256:8dba2418…   (the last of 91 such lines, all printed by 8.7 s)
-      50.9  Copying config sha256:b617a1ad…
-      50.9  Writing manifest to image destination
-   rc=0 total=51.0
-   ```
-
-   Without a terminal the copier prints a blob's line when it starts it, so the 42 s between the
-   last of them and `Copying config` is the layers being written; the store held 3.4 GB after.
-   The one-minute load average was 40 to 45 from other agents' work. So on Linux nothing heavy is
-   left once `Writing manifest` prints. INFERRED for the Mac: a copy that printed it and then ran
-   45 minutes was not slow at writing layers. It was stopped in its last step, a lock or the
-   store's final record, or it had exited into an ssh session that never returned. UNMEASURED: the
-   rootless half, since `podman unshare` refuses on this jail's rootful podman, and the VM itself.
-
-   **The next nightly can tell those apart (2026-10-01).** `inVMCopyArgv` now runs the copier
-   under `timeout -s QUIT -k 60 <the test's deadline less five minutes>`, between the namespace
-   prefix and the copier, and the VM's shell prints `yolo in-VM copier exited rc=<status>` when
-   it returns. A copier still running at its deadline is sent SIGQUIT and prints every goroutine's
-   stack, which the test logs from `SIGQUIT: quit` on, so the dump names where it waited; a marker
-   followed by a kill at the outer deadline says the session hung after the copy. The argv is
-   otherwise the Linux delivery's, as before (`TestInVMCopyArgvIsTheLinuxDeliveryArgv`), and the
-   readers are pinned under `-short` (`TestTheInVMCopierReportReadsWhatTheVMPrints`). Checked on
-   Linux against a stand-in Go program that never returns: `SIGQUIT: quit`, its stacks, then
-   `yolo in-VM copier exited rc=124`.
-
-3. ✅ <a id="OQ-LR3"></a>**[OQ-LR3](#OQ-LR3) (decided): What is Apple Container's present-set probe?** Podman has one:
-   `PresentLayerDigests`. For Apple Container the choice is `container image inspect`, if it
-   lists layer digests, or yolo's own record of which image.json it last delivered, confirmed by
-   `container image list`.
-
-   <!-- vantage: question id=OQ-LR3 -->
-
-
-   _Leaning:_ yolo's own record. It depends on no Apple Container output format, and a wrong
-   answer only costs one retry with an empty set.
-
-   **Answer:**
-   > **Delegated 2026-09-24 (maintainer: "isn't this an implementation question for you?"), decided as the leaning:** yolo's own record of the image it last delivered, valid only while `container image list` still shows that ref. It depends on no Apple Container output format, and a wrong answer costs one retry with an empty present set.
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| OQ-LR1 | Build the delta archive for both Mac backends, in `deliverViaArchive`, with the empty present set as today's full archive and the single retry ("yes build"). Built after the ruling, not after the Mac run; the Mac run verifies it rather than gating it | 2026-09-24 | [Option 3](#option-3--a-delta-archive-through-the-existing-loaders), [Recommendation](#recommendation-and-its-cost) | ✅ `internal/image/deltaarchive.go` |
+| OQ-LR2 | Improve the first load where it can be ("if we can improve it, yes"): measure the candidates (the gzip archive, and the in-VM copier where `/nix` is shared) on the Mac runners, then build what measurably wins | 2026-09-24 | [First-load candidates](#first-load-candidates) | Measurement only (`integration/macarchivedelivery_test.go`); no candidate won, so no delivery code |
+| OQ-LR3 | Delegated ("isn't this an implementation question for you?"), decided as the leaning: Apple Container's present set is yolo's own record of the image it last delivered, valid only while `container image list` still shows that ref. It depends on no Apple Container output format, and a wrong answer costs one retry with an empty present set | 2026-09-24 | [Option 3](#option-3--a-delta-archive-through-the-existing-loaders) | ✅ `internal/image/deltaarchive.go` |
 
 ---
 

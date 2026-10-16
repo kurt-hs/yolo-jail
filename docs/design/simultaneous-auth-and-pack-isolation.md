@@ -11,7 +11,7 @@ summary: "An active Pi profile set is enforced by a Pi extension yolo ships, whi
 # An active Pi profile must constrain supported model calls, not saved logins
 
 **Status:** 2026-10-08. Owner policy is settled ([OQ-PAS1](#decision-ledger)); the enforcement point
-is ruled ([OQ-PAS2](#OQ-PAS2): an extension yolo ships, never a Pi fork) and built as
+is ruled ([OQ-PAS2](#decision-ledger): an extension yolo ships, never a Pi fork) and built as
 [`yolo-provider-policy.js`](../../packs/pi/extensions/yolo-provider-policy.js) ([PAS-D1](#decision-ledger)).
 It was measured inside stock npm Pi 1.0.1's own runtime and yolo's Pi 1.0.4 build, offline, with no model called.
 The [startup flag repair](pi-launch-selection-flags.md) remains separate and does not restrict calls.
@@ -30,7 +30,7 @@ auth before every request, so each one ends with yolo's denial.
 
 **Start at [§3](#3-accepted-provider-use-policy)** — the boundary, how the extension holds it, and its leaks.
 
-**Needs your ruling:** none; [OQ-PAS2](#OQ-PAS2) was ruled 2026-10-08 (no Pi fork).
+**Needs your ruling:** None.
 
 **Reads with:** [`active-provider-sets.md`](active-provider-sets.md) (active-set semantics),
 [`providers.md`](../reference/providers.md) (credential delivery),
@@ -124,6 +124,10 @@ already running. Explicitly disabling extensions disables the block ([§3.4](#34
 
 ### 3.2 How the extension holds the boundary
 
+The enforcement is an extension yolo ships and never a Pi fork, by the maintainer's ruling
+([OQ-PAS2](#decision-ledger)): if no extension could hold the boundary, the policy would be
+dropped rather than half-enforced.
+
 The extension registers, for each provider ID outside the set, a **native provider** (Pi's
 one-argument `registerProvider`). Pi then dispatches that ID to it instead of to its built-in
 provider. The candidates are Pi's built-in providers, `models.json` rows, and any provider the
@@ -206,38 +210,12 @@ Measured in stock Pi 1.0.1 or read in upstream `70759f48`:
   ("blocked by yolo's profile set").
 - **An old Pi** without `registerNativeProvider` (before 0.81.0) cannot take the block, and is warned.
 
-## Open questions
-
-1. ✅ **OQ-PAS2: Enforce the active set inside yolo alone, or by changing Pi?** <a id="OQ-PAS2"></a>
-
-   With the `codex` profile active and a saved Anthropic login, you pick a Claude model in Pi.
-
-   - **A — Yolo only.** A per-launch view of Pi's login store holds only the active set's
-     providers; other providers' key variables are dropped. Pi is unchanged. **You'd see:** Pi's
-     own "No API key found" or "run /login". **Cost:** an auth failure, not a denial; `/login`,
-     Bedrock/Vertex ambient credentials and keys in `models.json` get around it.
-   - **B — Patch Pi** (as written). **You'd see:** a yolo denial naming the profile. **Cost:** a
-     Pi patch series to carry; a stock npm Pi must refuse every profile launch.
-
-   <!-- vantage: question id=OQ-PAS2 leaning="None yet: A keeps Pi unmodified but only narrows access; B enforces the ruled policy but ties profiles to yolo's Pi build." -->
-
-   _Leaning:_ none yet. A keeps Pi unmodified but only narrows access; B enforces the ruled
-   policy but ties profiles to yolo's Pi build. B is already built, so either is cheap.
-
-   **Answer:**
-
-   > **Ruled 2026-10-08: not B.** In the maintainer's words: *"if we can ship a Pi extension to do
-   > this, great. Shipped with YoloJail. I can't rely on a fork of Pi. That's unworkable. But if this
-   > is just not doable with Pi, that's fine. We just won't do it."* Enforcement must be an extension
-   > yolo ships (or yolo-only launch shaping, A); a Pi fork is ruled out. If neither works, the policy
-   > is dropped rather than half-enforced. Pi's own credential store is outside yolo's management.
-
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
 | OQ-PAS1 | Owner: yes, an active profile set constrains normal supported Pi calls despite saved credentials; no-profile launches preserve native behavior and saved login files remain untouched. Vantage comment `e5b4ea51`, round 0 | 2026-10-07 | [§3](#3-accepted-provider-use-policy) | ✅ |
-| OQ-PAS2 | Owner: no Pi fork; a Pi extension yolo ships, or no enforcement | 2026-10-08 | [OQ-PAS2](#OQ-PAS2) | ✅ |
+| OQ-PAS2 | Owner: no Pi fork. Enforcement is an extension yolo ships (or yolo-only launch shaping); if neither works the policy is dropped rather than half-enforced, and Pi's own credential store stays outside yolo's management. The maintainer's words: *"if we can ship a Pi extension to do this, great. Shipped with YoloJail. I can't rely on a fork of Pi. That's unworkable. But if this is just not doable with Pi, that's fine. We just won't do it."* | 2026-10-08 | [§3.2](#32-how-the-extension-holds-the-boundary) | ✅ |
 | PAS-D1 | Agent: enforce with a native blocking provider per out-of-set ID that refuses from auth, so every runtime call and preflight is refused before the provider's own credential resolver or refresh runs | 2026-10-08 | [§3.2](#32-how-the-extension-holds-the-boundary) | ✅ |
 | PAS-D2 | Agent: the policy travels as `YOLO_PI_PROVIDER_POLICY` (allowed IDs plus profile names, for the wording); an unreadable one blocks every provider | 2026-10-08 | [§3.1](#31-the-request-boundary) | ✅ |
 | PAS-D3 | Agent: a blocked provider counts configured but lists no available model, so `/model` hides it and a selection meets yolo's denial, not Pi's `/login` advice | 2026-10-08 | [§3.2](#32-how-the-extension-holds-the-boundary) | ✅ |

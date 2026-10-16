@@ -1005,7 +1005,7 @@ started by an older yolo. Nothing restarts the host-wide service when yolo is up
 still running does not know the question, so the launch **refuses**: it says the service predates
 this yolo and names `yolo host-daemon restart aws-auth`, which the jails already running survive,
 since each reconnects on its next request. The launch restarts nothing itself
-([OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)). A warning is a disclosure, so no flag
+([OQ-HD11](../design/host-daemon-ownership.md#11-decision-ledger)). A warning is a disclosure, so no flag
 hides it ([`OQ-RO3`](report-tiers.md#why-its-this-way)).
 
 An attach asks too: a new agent entering a jail that is already running, such as

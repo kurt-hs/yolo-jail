@@ -1267,7 +1267,7 @@ type lr2Sample struct{ write, load time.Duration }
 var oqLR2Uncompressed lr2Sample
 
 // TestMacArchiveFirstLoadInVMCopierOnPodman is OQ-LR2's SECOND candidate
-// (docs/research/macos-layer-reusing-image-delivery.md#OQ-LR2), measured: a cold first delivery
+// (docs/research/macos-layer-reusing-image-delivery.md#decision-ledger), measured: a cold first delivery
 // of image A made by the LINUX copier running inside the Podman Machine VM, reading the image
 // over the VM's /nix share and writing straight into the machine's own containers-storage.
 //
