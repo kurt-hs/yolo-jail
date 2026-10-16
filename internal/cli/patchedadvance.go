@@ -974,6 +974,17 @@ func (a *advance) recoveryHatches() []patchrecovery.Hatch {
 	add := func(env, value, label string) {
 		out = append(out, patchrecovery.Hatch{Env: env, Value: value, Command: cmd, Label: label})
 	}
+	if f.Upstream {
+		// AN UPSTREAM BUILD THAT FAILED (§6.5): no series to bypass or walk back, so only the hatches
+		// that start without the build remain, each naming the fork's own key.
+		if f.IsTree() && f.Owner != "" {
+			add(patchrecovery.SkipExtensionsEnv, f.SeriesKey(), "start "+f.Owner+" without it")
+		}
+		if !f.IsTree() && jailLaunch && !a.serves() {
+			add(patchrecovery.AllowMissingProgramsEnv, "1", "start without it")
+		}
+		return out
+	}
 	switch {
 	case a.serves():
 		add(patchrecovery.AllowPatchFailuresEnv, key, "run "+a.servingLine())
@@ -985,7 +996,7 @@ func (a *advance) recoveryHatches() []patchrecovery.Hatch {
 	if a.walkBackWouldTry() {
 		add(patchrecovery.AllowOlderUpstreamEnv, key, "build on an older release")
 	}
-	if a.series != nil && a.series.Replays() {
+	if a.series != nil && a.series.Replays() && !upstreamBuildBackingOff(f) {
 		add(patchrecovery.SkipPatchesEnv, key, "run upstream without the patches")
 	}
 	if f.IsTree() && f.Owner != "" {
@@ -1619,7 +1630,7 @@ func (a *advance) failedOrWalkBack(pf *packsrc.PatchFailure, edited bool) advanc
 // background advance or a shared lane, which read no hatch — and the followed ref is a branch, not a
 // tag or commit the user named.
 func (a *advance) walkBackOn() bool {
-	if a.o.background || a.o.sharedOwned || a.o.checkOnly || a.rec == nil || a.rec.Check == nil ||
+	if a.f.Upstream || a.o.background || a.o.sharedOwned || a.o.checkOnly || a.rec == nil || a.rec.Check == nil ||
 		a.rec.Check.RefKind != "branch" {
 		return false
 	}
@@ -1671,7 +1682,7 @@ func (a *advance) walkBackList() []packsrc.ListEntry {
 // act reads it, the ref is a branch, the failure is not the series' own at its base, and the
 // walk-back has something left to try.
 func (a *advance) walkBackWouldTry() bool {
-	if a.o.background || a.o.sharedOwned || a.rec == nil || a.rec.Check == nil || a.rec.Check.RefKind != "branch" ||
+	if a.f.Upstream || a.o.background || a.o.sharedOwned || a.rec == nil || a.rec.Check == nil || a.rec.Check.RefKind != "branch" ||
 		a.patchFailure != nil && a.patchFailure.Kind == "base" {
 		return false
 	}

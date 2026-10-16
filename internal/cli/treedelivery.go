@@ -161,12 +161,25 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	}()
 	errw := it.stream()
 	pr := richtext.Printer{W: errw, Color: color}
+	if req.FreshUpdate {
+		noteSkipPatchesFresh(errw, color, f)
+	}
 	if req.FreshUpdate && !req.Build {
 		return run.TreeDelivery{Reason: fmt.Sprintf("%s cannot be freshly prepared on this runtime while its build floor is unavailable — use a supported fresh launch", f.Label())}, false
 	}
-	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
-	// whatever this launch's timing.
-	again := noteBackgroundOutcome(f, pr)
+	// YOLO_SKIP_PATCHES (skippatches.go): adv is the upstream build, advanced at this launch whatever
+	// the timing, its copy made where the extension's own would be; nothing of the series is read or
+	// written — not even its background outcome's notice. --update prepares the series alone.
+	adv, skip := f, !req.FreshUpdate && skipsPatches(f)
+	if skip {
+		adv = f.UpstreamBuild()
+	}
+	again := false
+	if !skip {
+		// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
+		// whatever this launch's timing.
+		again = noteBackgroundOutcome(f, pr)
+	}
 	after := req.FreshBoundary[f.Key()]
 	boundaryErr := req.FreshBoundaryErr[f.Key()]
 	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
@@ -174,7 +187,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 		freshCheck: req.FreshUpdate && f.IsTree(), freshBoundary: after, freshBoundaryErr: boundaryErr,
 		freshIdentity: req.FreshIdentity[f.Key()]}
 	nextLaunch := false
-	if req.Build && !req.FreshUpdate && treeUpdateTiming(f) == timingNextLaunch {
+	if req.Build && !req.FreshUpdate && !skip && treeUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)
 		if !nextLaunch {
 			pr.Printf("[dim]%s[/dim]", richtext.Escape(fmt.Sprintf("%s: `agent_updates` asks for the next launch, and on %s this yolo runs no background advance — it updates at this launch", f.Label(), runtimeName(req.Runtime))))
@@ -184,7 +197,7 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 	for attempt := 0; ; attempt++ {
 		var r advanceResult
 		if !req.Build {
-			r = servingTree(f, o, req.BuildFloor)
+			r = servingTree(adv, o, req.BuildFloor)
 		} else {
 			switch {
 			case nextLaunch:
@@ -218,10 +231,10 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 						"the next launch — a background advance builds it"}, true
 				}
 				r = treeAdvance(f, o)
-			case currentPatchFailure(f) != nil:
+			case !skip && currentPatchFailure(f) != nil:
 				r = treeAdvance(f, o)
 			default:
-				r = treeAdvance(f, o)
+				r = treeAdvance(adv, o)
 			}
 		}
 		recovery = r.delivery.Recovery
@@ -256,6 +269,9 @@ func deliverTree(f packload.Fork, req run.TreeBuildRequest, report *buildReport,
 			if g := r.good; g != nil {
 				d.Commit, d.Tag, d.Patches, d.Series = g.Commit, g.Tag, g.Patches, g.Series
 			}
+			if skip {
+				sayUpstreamBuild(errw, color, "", "running", f, r.good)
+			}
 			return d, later
 		case errors.Is(err, errTreeEntryGone) && attempt == 0:
 			// THE ONE RE-READ (§8.1): another launch's move reaped the entry before or during the copy.
@@ -285,11 +301,16 @@ func deliverPatchedFork(f packload.Fork, req run.ForkBuildRequest, report *build
 	color bool) entrypoint.ForkDelivery {
 	errw := it.stream()
 	pr := richtext.Printer{W: errw, Color: color}
+	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
+		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
+	if skipsPatches(f) {
+		// YOLO_SKIP_PATCHES (skippatches.go): the upstream build, advanced at this launch whatever the
+		// timing, and nothing of the series read or written — not even its background outcome's notice.
+		return advanceUpstreamBuild(f, o).forkDelivery()
+	}
 	// THE LAST BACKGROUND ADVANCE'S OUTCOME, said once at whichever launch reads it first (XB-D20),
 	// whatever this launch's timing.
 	noteBackgroundOutcome(f, pr)
-	o := advanceOptions{platform: req.Platform, runtime: req.Runtime, workspace: req.Workspace, out: errw,
-		errw: errw, color: color, launch: true, hand: req.Hand, act: req.Interrupt, report: report, slot: it}
 	nextLaunch := false
 	if forkUpdateTiming(f) == timingNextLaunch {
 		nextLaunch = run.BackgroundChecksOn(req.Runtime, req.Platform)

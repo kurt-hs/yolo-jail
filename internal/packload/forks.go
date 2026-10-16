@@ -126,11 +126,35 @@ type Fork struct {
 	// XB-D7), "" when it declares none and always for a patched one: what takes the tree's list entry's
 	// place in the contributing pack's lists wherever a launch hands no tree (ApplyTreeFallbacks).
 	Fallback string
+	// Upstream marks the UPSTREAM BUILD of a patched fork or patched extension
+	// (docs/design/patched-build-recovery.md §6.5, YOLO_SKIP_PATCHES): the upstream's newest list entry
+	// built under the fork's own build recipe with no series applied. Its Patches and PatchBranch are
+	// empty, its series is the empty one, and its Key carries UpstreamKeySuffix, so its check record,
+	// build lock, receipts and reaps are its own and never the series'. Made by UpstreamBuild only.
+	Upstream bool
 }
 
+// UpstreamKeySuffix ends an upstream build's Key: "<pack>/<bin>#upstream". No pack or bin name holds
+// a '#', so it never names a fork of its own.
+const UpstreamKeySuffix = "#upstream"
+
+// UpstreamBuild is f's UPSTREAM BUILD (Fork.Upstream): f with no series, under an identity of its own.
+func (f Fork) UpstreamBuild() Fork {
+	f.Upstream = true
+	f.Patches, f.PatchBranch = "", ""
+	return f
+}
+
+// SeriesKey is the key of the fork as its manifest declares it, "<pack>/<bin>", which an upstream
+// build's lines and hatches name: its Key without UpstreamKeySuffix.
+func (f Fork) SeriesKey() string { return f.Pack + "/" + f.Bin }
+
 // Unmodified reports whether f is an UNMODIFIED EXTENSION: a built tree with no series, the upstream
-// at one commit or version (XB-D1). Its series is the empty one (ReadSeries).
-func (f Fork) Unmodified() bool { return f.IsTree() && f.Patches == "" && f.PatchBranch == "" }
+// at one commit or version (XB-D1). Its series is the empty one (ReadSeries). An upstream build is not
+// one: its manifest declares a series, which this build leaves out.
+func (f Fork) Unmodified() bool {
+	return f.IsTree() && f.Patches == "" && f.PatchBranch == "" && !f.Upstream
+}
 
 // Npm reports whether f follows an npm package rather than a git repository (XB-D5).
 func (f Fork) Npm() bool { return packsrc.IsNpmSource(f.Source) }
@@ -143,10 +167,16 @@ func (f Fork) FollowsUpstream() bool { return f.Patched() || f.IsTree() }
 // Key is the fork's identity in the fork lock and everywhere a fork is named by one string:
 // "<fork pack>/<bin>" (FP-D7). A pack may fork several programs, each its own key. For a patched
 // fork it is the OWNER KEY too (PF-D22): its check record, its lock and its explicit acts use it.
-func (f Fork) Key() string { return f.Pack + "/" + f.Bin }
+func (f Fork) Key() string {
+	if f.Upstream {
+		return f.SeriesKey() + UpstreamKeySuffix
+	}
+	return f.SeriesKey()
+}
 
-// Patched reports whether the fork is a PATCHED fork: one that declares `patches`, or a `patch_branch`.
-func (f Fork) Patched() bool { return f.Patches != "" || f.PatchBranch != "" }
+// Patched reports whether the fork is a PATCHED fork: one that declares `patches`, or a `patch_branch`
+// — or the upstream build of one, which goes through the same advance with the empty series.
+func (f Fork) Patched() bool { return f.Patches != "" || f.PatchBranch != "" || f.Upstream }
 
 // RebaseRecipe is what the printed git recipe that rebases f's series needs (packsrc.RebaseRecipe;
 // patched-forks.md §8.4, PF-D85): its upstream, the series' base, and the series directory when it
@@ -205,6 +235,9 @@ func (f Fork) DeclaredSeries() (*packsrc.Series, error) {
 
 // ReadSeriesFrom is ReadSeries reading a patch branch's record from store, the machine's pack store when nil.
 func (f Fork) ReadSeriesFrom(store *packsrc.Store) (*packsrc.Series, error) {
+	if f.Upstream {
+		return packsrc.EmptySeries(), nil // the upstream build applies nothing
+	}
 	if f.PatchBranch != "" {
 		if store == nil {
 			store = &packsrc.Store{Dir: paths.PacksDir()}
