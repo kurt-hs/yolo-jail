@@ -68,7 +68,9 @@ func TestClaudeTierVendorNameWinsOverTheConventionalAlias(t *testing.T) {
 
 // ON CLAUDE'S OWN BEDROCK CLIENT the conventional names are read too, held to the makers that
 // client can call: a `sonnet` naming another maker's model gives way to the tier's next name,
-// `balanced` (MM-D18), rather than leaving the tier on the default.
+// `balanced` (MM-D18). The list only adds, so it sits beside claude's own rows and only the tiers
+// it names by alias are pinned (OQ-MM1, MM-D2): the `default` entry pins no tier, and is the
+// saved model this first launch on the provider writes instead (MM-D43).
 func TestClaudeNativeBedrockTiersReadTheConventionalAliases(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
 	    {"id":"us.anthropic.claude-opus-5-6","vendor":"anthropic","alias":"default"},
@@ -77,7 +79,6 @@ func TestClaudeNativeBedrockTiersReadTheConventionalAliases(t *testing.T) {
 	    {"id":"us.anthropic.claude-haiku-5","vendor":"anthropic","alias":"fast"}]}`)
 	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude", "bedrock"), company), nil, nil, "bedrock")
 	want := map[string]string{
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "us.anthropic.claude-opus-5-6",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-5",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "us.anthropic.claude-haiku-5",
 		"ANTHROPIC_SMALL_FAST_MODEL":     "us.anthropic.claude-haiku-5",
@@ -86,6 +87,12 @@ func TestClaudeNativeBedrockTiersReadTheConventionalAliases(t *testing.T) {
 		if got.env[k] != v {
 			t.Errorf("%s = %q, want %q", k, got.env[k], v)
 		}
+	}
+	if v, set := got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"]; set {
+		t.Errorf("ANTHROPIC_DEFAULT_OPUS_MODEL = %q, want claude's own: the list names no opus alias", v)
+	}
+	if got.settings["model"] != "us.anthropic.claude-opus-5-6" {
+		t.Errorf("settings model = %v, want the list's default entry", got.settings["model"])
 	}
 }
 

@@ -133,10 +133,10 @@ func TestClaudeOnTheCodexListPinsTheStartOnlyOnTheOptIn(t *testing.T) {
 // rows — spelled as claude sends them, with the [1m] the provider's 1M context window earns — and
 // every tier, fable included, is pinned to a list id with the entry's name (MM-D2).
 //
-// What stays as today, and why: no availableModels on a list that no `only` narrowed, since z.ai
-// serves more than yolo lists and whether a list refuses there is OQ-MM3's; and the start pin,
-// ANTHROPIC_MODEL, since it is the only check on claude's start where the allowlist does not
-// render, until OQ-MM3 says what replaces it (§14.4 step 1).
+// No availableModels on a list that no `only` narrowed, since z.ai serves more than yolo lists
+// and such a list refuses nothing there; and no start pin, ANTHROPIC_MODEL, which overrode every
+// /model choice at every launch: the saved model the settings derive writes once per provider
+// change keeps the start valid instead (OQ-MM3, ruled 2026-10-15; MM-D43).
 func TestClaudeOnARoutedProviderShowsTheListAndPinsEveryTier(t *testing.T) {
 	packs := testPacksForAgent(t, "claude", "zai")
 	user := jsonx.NewOrderedMap()
@@ -191,8 +191,11 @@ func TestClaudeOnARoutedProviderShowsTheListAndPinsEveryTier(t *testing.T) {
 			t.Errorf("%s = %q is not a modelPicker row %v", k, got.env[k], ids)
 		}
 	}
-	if got.env["ANTHROPIC_MODEL"] != "glm-5.3[1m]" {
-		t.Errorf("ANTHROPIC_MODEL = %q, want today's start pin kept until OQ-MM3 is ruled", got.env["ANTHROPIC_MODEL"])
+	if v, set := got.env["ANTHROPIC_MODEL"]; set {
+		t.Errorf("ANTHROPIC_MODEL = %q, want no per-launch start pin (MM-D43)", v)
+	}
+	if got.settings["model"] != "glm-5.3[1m]" {
+		t.Errorf("settings model = %v, want the list's default, written on this first launch on z.ai", got.settings["model"])
 	}
 }
 
@@ -278,8 +281,8 @@ func pickerIDs(t *testing.T, settings map[string]any) []any {
 // UNDER AN `only` ON A ROUTED PROVIDER (§14.1, claude routed): the narrowed list is the menu,
 // claude's allowlist refuses what is off it while the profile's switch is on, and — the allowlist
 // now keeping the session valid — the start is pinned only on pin_model (MM-D1, MM-D3, MM-D5).
-// With the switch off the list only shapes the menu, and the start pin stays until OQ-MM3 says
-// what replaces it.
+// With the switch off the list only shapes the menu, and the saved model written on a provider
+// change keeps the start valid, so the start is still pinned only on pin_model (MM-D43).
 func TestClaudeUnderAnOnlyOnARoutedProvider(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"zai","only":["glm-5.3","glm-5.3-flash"]}`)
 	packs := append(testPacksForAgent(t, "claude", "zai"), company)
@@ -295,7 +298,7 @@ func TestClaudeUnderAnOnlyOnARoutedProvider(t *testing.T) {
 		{"a profile opting in with pin_model", map[string]packload.UserProfile{
 			"zai-pin": {Provider: "zai", Options: map[string]string{"pin_model": "true"}}}, "zai-pin", true, true},
 		{"a profile with enforcement off", map[string]packload.UserProfile{
-			"zai-open": {Provider: "zai", EnforceModels: &off}}, "zai-open", false, true},
+			"zai-open": {Provider: "zai", EnforceModels: &off}}, "zai-open", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := renderClaudeModels(t, packs, nil, tc.profiles, tc.profile)
@@ -375,23 +378,47 @@ func TestClaudeUnderAnOnlyOnItsOwnBedrockClient(t *testing.T) {
 	}
 }
 
-// A LIST THAT ONLY ADDS KEEPS TODAY'S RENDERING on claude's own Bedrock client: what an `add`
-// does to the agent's own catalog is OQ-MM1's, unruled, so no picker, no allowlist and no pins
-// come of it.
-func TestClaudeKeepsItsOwnMenuForAListThatOnlyAdds(t *testing.T) {
+// A LIST THAT ONLY ADDS SITS BESIDE CLAUDE'S OWN ROWS on its own Bedrock client (OQ-MM1, ruled
+// 2026-10-15, A; MM-D1, MM-D2): the list's Anthropic rows are appended to claude's built-in
+// picker rows, nothing is refused, and only the tiers the list names by alias are pinned, in
+// settings.json's `env` block and the launched process alike, so the retained built-in rows keep
+// resolving as claude resolves them.
+func TestClaudeAppendsAListThatOnlyAddsBesideItsOwnMenu(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
-	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic"}]}`)
+	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic","alias":"opus","name":"Claude Opus 5.5"},
+	    {"id":"global.moonshot.kimi-k3","vendor":"moonshot","name":"Kimi K3"}]}`)
 	got := renderClaudeModels(t, append(testPacksForAgent(t, "claude", "bedrock"), company), nil, nil, "bedrock")
-	for _, k := range []string{"modelPicker", "availableModels", "enforceAvailableModels"} {
+	picker, _ := got.settings["modelPicker"].(map[string]any)
+	want := []any{map[string]any{"model": "global.anthropic.claude-opus-5-5", "label": "Claude Opus 5.5"}}
+	if picker["replaceBuiltInOptions"] != false || !reflect.DeepEqual(picker["options"], want) {
+		t.Errorf("modelPicker = %v, want %v appended beside claude's built-in rows", got.settings["modelPicker"], want)
+	}
+	for _, k := range []string{"availableModels", "enforceAvailableModels"} {
 		if v, present := got.settings[k]; present {
-			t.Errorf("settings %s = %v, want it absent for a list no `only` narrowed (OQ-MM1)", k, v)
+			t.Errorf("settings %s = %v, want no refusal for a list no `only` narrowed (OQ-MM1)", k, v)
+		}
+	}
+	settingsEnv, _ := got.settings["env"].(map[string]any)
+	if settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" ||
+		got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" {
+		t.Errorf("opus pin = %v in settings, %q in the process, want the list's opus alias in both",
+			settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"], got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+	}
+	for _, tier := range []string{"SONNET", "HAIKU", "FABLE"} {
+		k := "ANTHROPIC_DEFAULT_" + tier + "_MODEL"
+		if v, set := settingsEnv[k]; set {
+			t.Errorf("settings env %s = %v, want it unpinned: the list names no %s alias", k, v, tier)
+		}
+		if v, set := got.env[k]; set {
+			t.Errorf("process env %s = %q, want it unpinned: the list names no %s alias", k, v, tier)
 		}
 	}
 }
 
 // THE SWITCH GOVERNS openai-codex's REFUSAL TOO (MM-D5: "one switch decides every refusal"):
 // with enforce_models off the declared list only shapes the picker, and, no allowlist keeping
-// the session valid, the start pin stays (OQ-MM3 is what would replace it).
+// the session valid, the saved model written on the provider change does (MM-D43), never a
+// per-launch start pin.
 func TestClaudeOnTheCodexListWithEnforcementOff(t *testing.T) {
 	off := false
 	got := renderClaudeModels(t, testPacksForAgent(t, "claude", "openai-auth"), nil, map[string]packload.UserProfile{
@@ -405,7 +432,10 @@ func TestClaudeOnTheCodexListWithEnforcementOff(t *testing.T) {
 	if ids := pickerIDs(t, got.settings); len(ids) == 0 {
 		t.Error("the picker went with the refusal; the list must still shape the menu")
 	}
-	if got.env["ANTHROPIC_MODEL"] != "gpt-6.1-sol" {
-		t.Errorf("ANTHROPIC_MODEL = %q, want the start pinned while nothing refuses", got.env["ANTHROPIC_MODEL"])
+	if v, set := got.env["ANTHROPIC_MODEL"]; set {
+		t.Errorf("ANTHROPIC_MODEL = %q, want no per-launch start pin (MM-D43)", v)
+	}
+	if got.settings["model"] != "gpt-6.1-sol" {
+		t.Errorf("settings model = %v, want the list's default, written on this first launch", got.settings["model"])
 	}
 }
