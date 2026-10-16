@@ -107,7 +107,7 @@ type notchFacts struct {
 	// IS the tightening). The line below promises the fold "in the config surfaces below", and
 	// for a pack set like that one there is nothing below to point at.
 	//
-	// A PLACED POSTURE LIST COUNTS AS A FOLD (notch-scoped-config-contributions.md NS-D2): its
+	// A PLACED POSTURE LIST COUNTS AS A FOLD (docs/reference/pack-system.md NS-D2): its
 	// entries land in a config surface below exactly as a config patch's keys do, so a pack
 	// whose guarded posture is lists alone — a personal pack adding a host-only package to a
 	// surface another pack owns — must not read as "no selected pack's guarded posture patches

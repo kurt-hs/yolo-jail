@@ -9,7 +9,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// C3, as rewritten for posture lists (docs/design/notch-scoped-config-contributions.md §4.1).
+// C3, as rewritten for posture lists (docs/reference/pack-system.md, posture lists).
 // Collect's `autonomy` parameter has TWO effects and this file pins both halves, so neither
 // can drift while looking like the other.
 //

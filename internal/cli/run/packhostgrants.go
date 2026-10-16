@@ -232,7 +232,7 @@ func (o *Options) hostMountArgs(in *assembleInput) []string {
 // carries `host_files` and `mount` contributions, which are not config layers at all.
 //
 // TWO CALLERS, ONE ANSWER: hostFileArgs for the container backends and buildMacosCtxTree for
-// macos-user (render-mark parity, notch-scoped-config-contributions.md NS-D3). A second
+// macos-user (render-mark parity, docs/reference/config-target-resolution.md NS-D3). A second
 // predicate on the other backend is how one home would come to be a baseline in a container
 // and a layer in a sandbox.
 func hostLayerIsRender(p *packload.Pack, dest string) bool {

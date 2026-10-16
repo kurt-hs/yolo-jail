@@ -214,7 +214,7 @@ func (o *Options) buildMacosCtxTree(staging string, packs []*packload.Pack,
 			// one home differently. A surface yolo has already rendered into this home is
 			// labelled a render, and the jail keeps it as a baseline instead of folding yolo's
 			// own keys and entries back in as the user's ([OQ-CR6]; render-mark parity,
-			// notch-scoped-config-contributions.md NS-D3). Without it this was the one backend
+			// docs/reference/config-target-resolution.md NS-D3). Without it this was the one backend
 			// on which a host-only entry `yolo host apply` wrote reached a jail.
 			if hostLayerIsRender(p, dest) {
 				out.ctx.Rendered = append(out.ctx.Rendered, dest)
@@ -346,7 +346,7 @@ func (o *Options) buildMacosCtxTree(staging string, packs []*packload.Pack,
 }
 
 // macosUserCaptures is the install-capture store's half of the host context
-// (docs/plans/install-capture.md hand-off H4): for each selected pack's `via: "installer"`
+// (docs/reference/install-capture.md hand-off H4): for each selected pack's `via: "installer"`
 // program, the entry the materialize path's own resolver chooses at the sandbox's platform, and
 // the keys of the store's other current entries there, through the seam internal/cli fills
 // (Options.MacosUserCaptures). The backend stages a root-owned copy of each picked entry and

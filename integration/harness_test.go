@@ -1229,7 +1229,7 @@ func requireRealPackInstalls(t *testing.T) {
 // select claude hits instead of capturing. That is realistic rather than a leak (a store
 // is machine-wide by design, and `yolo prune` reaps it), but it does mean this suite
 // cannot assert "this launch captured" — the nested-jail check in
-// docs/plans/install-capture.md slice 7 is where that is measured.
+// docs/reference/install-capture.md slice 7 is where that is measured.
 func autoCaptureEnvForSuite() []string {
 	if os.Getenv(realPackInstallsEnv) != "" {
 		return nil

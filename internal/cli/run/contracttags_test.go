@@ -1,7 +1,7 @@
 package run
 
 // contracttags_test.go pins the attach's contract gate (contracttags.go;
-// docs/design/attach-skew-and-contract-guardrails.md, OQ-SK1 to OQ-SK3): which tags a jail has,
+// docs/reference/attach-skew.md, OQ-SK1 to OQ-SK3): which tags a jail has,
 // which an attach needs, and the disposition when one is missing — the acknowledgment, the
 // terminal's restart prompt, and the refusal — driven through the real attachExisting and, for
 // the restart's continuation into a fresh launch, through runContainer.

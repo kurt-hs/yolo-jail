@@ -44,7 +44,7 @@ func (o *Options) warnIfJailIsOlderThanTheLauncher(rt, cname, baked string) {
 
 // stopRemedy names the command that stops cname's jail on rt, for a message that prescribes a
 // restart: `yolo stop` from the workspace, on every runtime (SK-D14,
-// docs/design/attach-skew-and-contract-guardrails.md). Apple Container's was `container stop
+// docs/reference/attach-skew.md). Apple Container's was `container stop
 // <name>` while `yolo stop` read an AC jail through a Go-template inspect that runtime does not
 // take, and so said "No jail running" while the jail ran (G11, docs/plans/setup-support-gaps.md).
 // Since JL-D79 (docs/design/jail-lifetime-last-session-wins.md) `yolo stop` asks the runtime that

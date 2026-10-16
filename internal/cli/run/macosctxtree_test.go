@@ -164,7 +164,7 @@ func TestMacosUserLaunchClaimsNothingForAnAbsentHostFile(t *testing.T) {
 	}
 }
 
-// RENDER-MARK PARITY, the launcher half (docs/design/notch-scoped-config-contributions.md
+// RENDER-MARK PARITY, the launcher half (docs/reference/config-target-resolution.md
 // §4.3, NS-D3). Two launches of one home with the same delivered file, differing only in
 // whether yolo has rendered claude/settings into that home: the first is the user's own file
 // and is NOT labelled, the second is yolo's render and IS — read off the provenance mark with

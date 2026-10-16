@@ -1,7 +1,7 @@
 package run
 
 // attachskewbriefing.go puts an ACKNOWLEDGED attach's skew into the briefing the attach refreshes
-// (docs/design/attach-skew-and-contract-guardrails.md, OQ-SK4 decided as SK-D15).
+// (docs/reference/attach-skew.md, OQ-SK4 decided as SK-D15).
 //
 // Under AllowAttachSkewEnv an attach goes ahead into a jail that cannot take what the entry
 // delivers, withholds the entry's whole provider/profile channel, and says so on stderr

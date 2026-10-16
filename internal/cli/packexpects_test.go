@@ -1,7 +1,7 @@
 package cli
 
 // packexpects_test.go pins the authoring half of a REGISTERING files slot's `expects`
-// (docs/design/pack-pi-resources.md PR-D4): `yolo pack lint` and `yolo pack footprint` of a pack
+// (docs/reference/pack-system.md PR-D4): `yolo pack lint` and `yolo pack footprint` of a pack
 // whose pi folder holds none of the names the shipped pi pack's slot expects warn, naming the folder
 // and the next step, and say nothing about a folder laid out as a pi package. A warning, never a
 // failure: both still exit 0.
@@ -59,7 +59,7 @@ func TestPackLintAndFootprintWarnAboutAPiFolderPiCannotLoad(t *testing.T) {
 	}
 }
 
-// A PI FOLDER SHIPPING skills/ (docs/design/pack-pi-resources.md §3.4): pi loads those skills for
+// A PI FOLDER SHIPPING skills/ (docs/reference/pack-system.md, pi packages): pi loads those skills for
 // pi alone, so `yolo pack lint` notes that the `skills` kind reaches every agent, and how to move
 // them there. A note, never a failure; and nothing is said of a folder with no skills/.
 func TestPackLintNotesThatAPiFoldersSkillsReachPiAlone(t *testing.T) {

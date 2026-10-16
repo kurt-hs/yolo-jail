@@ -149,7 +149,7 @@ const (
 	// flags merge into the binary's. Sole-owned by the pack (one autonomy declaration
 	// per pack), and it never collides across packs the way a second config writer would.
 	// Two halves may name another pack's surface: its POSTURE LISTS (`lists`, config-list
-	// bodies gated on the posture — docs/design/notch-scoped-config-contributions.md §4.1),
+	// bodies gated on the posture — docs/reference/pack-system.md, posture lists),
 	// which only append, and its POSTURE OVERLAYS (`config` entries on a surface the pack
 	// does not declare, OQ-3), which fold at config-overlay's slot below the owner's managed,
 	// where later wins by pack order as it does for every overlay (AutonomyPosture.Config).

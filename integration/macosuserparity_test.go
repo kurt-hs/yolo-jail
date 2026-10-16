@@ -301,7 +301,7 @@ func TestMacosUserDeliversHostBytesByCopy(t *testing.T) {
 		`{"path": "~/.config/yolo-it-mu-dir/", "source": "~/yolo-it-mu-srcdir/"}]}`)
 	home := os.Getenv("HOME")
 	// RENDER-MARK PARITY made this backend label a host layer yolo has rendered, as the
-	// container backends already did (notch-scoped-config-contributions.md NS-D3). So the
+	// container backends already did (docs/reference/config-target-resolution.md NS-D3). So the
 	// MACHINE's host-render mark, linked into this isolated home through the shared state dir,
 	// would now drop the hand-written settings.json below as "yolo's own render" — and the
 	// self-hosted Mac runs as the maintainer's own account, whose home has been host-rendered

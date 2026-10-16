@@ -166,7 +166,7 @@ What the maintainer said:
     and a disclosure is never suppressible
     ([`OQ-RO3`](../reference/report-tiers.md#why-its-this-way)).
   - An override has to be acknowledged in as many words, and it *"shouldn't just silently ride
-    along"* ([OQ-SK1](attach-skew-and-contract-guardrails.md#decision-ledger), 2026-09-26).
+    along"* ([OQ-SK1](../reference/attach-skew.md#why-its-this-way), 2026-09-26).
 - **P4. A value no provider claims reaches every process**
   ([CN-D3](../reference/providers.md#CN-D3)). The catch is that "claimed" is not
   the same as "secret". bedrock's claim list includes `AWS_PROFILE`, which is a profile name

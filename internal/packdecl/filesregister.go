@@ -2,12 +2,12 @@ package packdecl
 
 // filesregister.go is a `files` SLOT's two optional fields: `register`, which asks core to name
 // every tree landing in the slot in a list inside a surface the slot's own pack declares, and
-// `expects`, the top-level names a well-formed tree holds (docs/design/pack-pi-resources.md §3.1).
+// `expects`, the top-level names a well-formed tree holds (docs/reference/pack-system.md, pi packages).
 //
 // pi is why they exist, and core never learns it. pi's `packages` setting loads a local directory
 // laid out as a pi package — extensions/, themes/, prompts/ — with no list of its files, while its
 // extensions folder loads a subdirectory only through a manifest naming every file
-// (pack-pi-resources.md §1). So packs/pi declares a slot outside every folder pi scans by itself,
+// (docs/reference/pack-system.md, pi packages). So packs/pi declares a slot outside every folder pi scans by itself,
 // with `register` naming its settings surface and `/packages`, and a content pack reaches pi with
 // one entry, `{"kind": "files", "agents": ["pi"], "from": "<folder>"}`, and no pi path. Core knows
 // a slot, a surface, a pointer and a template, and nothing about pi.
@@ -15,7 +15,7 @@ package packdecl
 // The entry core appends is an ordinary config-list entry, attributed to the CONTRIBUTING pack
 // (packoverlay.Collect places it; packload.Registrations computes it): it folds beside the user's
 // own entries, is captured per entry in a jail, is recorded as inserted at the host, and leaves
-// when its pack is dropped, by config-list's rules and no new ones (pack-pi-resources.md PR-D2).
+// when its pack is dropped, by config-list's rules and no new ones (pack-system.md PR-D2).
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ const TokenLanding = "{landing}"
 
 // DefaultRegisterEntry is what a registration appends when it names no `entry`: the landing under
 // `~`. Home-relative rather than absolute because the jail's home and the host's are different
-// paths, and the one settings file must name the tree at both (pack-pi-resources.md PR-D3). It is
+// paths, and the one settings file must name the tree at both (pack-system.md PR-D3). It is
 // the default so the common slot spells only where the list is.
 const DefaultRegisterEntry = "~/" + TokenLanding
 

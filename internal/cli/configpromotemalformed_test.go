@@ -2,7 +2,7 @@ package cli
 
 // configpromotemalformed_test.go pins `yolo config promote` refusing to WRITE into a destination
 // pack whose manifest has problems — the ones every launch and `yolo host apply --assert` refuse
-// the pack over (resolveConfiguredPack, notch-scoped-config-contributions.md NS-D14).
+// the pack over (resolveConfiguredPack, docs/reference/pack-system.md NS-D14).
 //
 // The bug: promote reads its fold through configuredPacksForInspection, which reports such a pack
 // as "not inspected" and carries on, and then wrote the promoted keys into that very manifest,

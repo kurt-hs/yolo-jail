@@ -2,7 +2,7 @@ package packoverlay
 
 // postureoverlay_test.go pins the collection of a POSTURE OVERLAY — an autonomy posture's
 // `config` patch naming a surface its own pack does not declare (OQ-3's ruling, "do it now.
-// extension point.", docs/design/notch-scoped-config-contributions.md NS-D19 to NS-D24). It
+// extension point.", docs/reference/pack-system.md NS-D19 to NS-D24). It
 // takes the config-overlay path: the same owner check, the same fold slot below the owner's
 // managed, the same later-wins order, gated on the posture the bit selects. Each test runs at
 // both values of the bit.

@@ -3,7 +3,7 @@ title: "A pack file should state only what is particular to it: three convention
 date: 2026-10-05
 status: in-review
 stage: DESIGN
-next: "Rule OQ-PC3, then OQ-PC1 and OQ-PC2, which depends on it; each leans toward keeping what packs write today. Nothing here gates the patch-series work, which waits on a release carrying the launch's skip with every host on it (§11 step 0). PC-D4 needs no ruling and rides pack-pi-resources.md's build"
+next: "Rule OQ-PC3, then OQ-PC1 and OQ-PC2, which depends on it; each leans toward keeping what packs write today. Nothing here gates the patch-series work, which waits on a release carrying the launch's skip with every host on it (§11 step 0). PC-D4 needs no ruling and rides the pi packages build"
 tags: [packs, manifest, conventions, pi, patched-extensions, skew, design]
 summary: "Pack files repeat facts the system already knows: a patched pi extension and the list entry naming its own path, one entry per file in a shared folder, prose addressed by a line rather than by a folder, a loophole line naming its own folder. Each convention weighed here is a load-time expansion into contributions the pack could have written, so validation, the footprint, the launch's disclosures and the render never know it exists, and the pack that owns a layout declares the convention about it so core applies it by name. Reviewed the day it was drafted: across today's packs the three save about five lines in all, each amends or reverses a standing ruling, and every new pack field is refused at every launch by every released yolo, so each question leans toward keeping today's written form until every host runs a release that skips what it cannot read."
 vantage:
@@ -44,7 +44,7 @@ pack decides what shape every convention may take.
 **Needs your ruling:** [OQ-PC3](#OQ-PC3) first, then [OQ-PC1](#OQ-PC1), then [OQ-PC2](#OQ-PC2),
 which is asked only if [OQ-PC1](#OQ-PC1) allows folders.
 
-**Reads with:** [`pack-pi-resources.md`](pack-pi-resources.md) (the slot [OQ-PC3](#OQ-PC3) would
+**Reads with:** [pack-system.md, pi packages](../reference/pack-system.md#pi-packages) (the slot [OQ-PC3](#OQ-PC3) would
 widen), [`patched-extensions.md`](patched-extensions.md) (the tree and its entry),
 [`pi-pack-extensions.md`](pi-pack-extensions.md) (the per-pack landing [OQ-PC3](#OQ-PC3) would
 amend), [`agent-briefings.md`](../reference/agent-briefings.md) (the audience rules
@@ -78,7 +78,7 @@ activation rulings [OQ-PC2](#OQ-PC2) bears on), [`manifest-language.md`](manifes
   `yolo features` lists it as `skips-unreadable-contributions`. It is on `main` since 2026-10-05
   and in no release yet.
 - **Slot**, **addressed tree**, **landing** and **registration**: as
-  [`pack-pi-resources.md`](pack-pi-resources.md#defined-terms) defines them. A slot is a `files`
+  [pack-system.md, pi packages](../reference/pack-system.md#pi-packages) defines them. A slot is a `files`
   destination an agent pack declares; an addressed tree is content sent to it with `agents`; its
   landing is `<slot>/<pack>`; a registration is the list entry core adds for a landed tree. A
   **registering slot** is a slot that declares `register`.
@@ -185,7 +185,7 @@ packs, and where each one is taken. Counts are in [Appendix A](#appendix-a-count
 | Repetition | Where | Here |
 | :--- | :--- | :--- |
 | A patched extension's `files` contribution plus a list entry that is `~/` and its own `into` | The maintainer's five trees, three of them with a root entry a convention could remove; the patch-series guide; the integration fixture | [C1](#41-c1-a-patched-extension-in-pis-package-folder-loads-with-no-list-entry), [OQ-PC3](#OQ-PC3) |
-| One `files` entry per file in a folder the user and other packs share | The maintainer's pi extensions and his tok-stats mod | Route C (ruled, [OQ-PR1](pack-pi-resources.md#OQ-PR1)), then [C2](#42-c2-a-folder-named-after-an-agent-is-addressed-to-it), [OQ-PC1](#OQ-PC1) |
+| One `files` entry per file in a folder the user and other packs share | The maintainer's pi extensions and his tok-stats mod | Route C (ruled, [OQ-PR1](../reference/pack-system.md#oq-pr1)), then [C2](#42-c2-a-folder-named-after-an-agent-is-addressed-to-it), [OQ-PC1](#OQ-PC1) |
 | Briefing prose addressed to one agent | The maintainer's pi rules, the claude and pi packs' worktree notes | [C2](#42-c2-a-folder-named-after-an-agent-is-addressed-to-it), [OQ-PC1](#OQ-PC1) |
 | `{"kind": "loophole", "from": "loopholes/<name>"}` | Every loophole yolo ships, one per pack | [C3](#43-c3-a-loophole-folder-is-the-loophole), [OQ-PC2](#OQ-PC2) |
 | A `files` entry whose `into` ends in its `from` file's name | The pi pack's four extensions, opencode's plugin | Not proposed: pi's own extensions are a [non-goal](#8-non-goals), and opencode's is one line |
@@ -215,11 +215,11 @@ plain tree. A plain tree written into the slot would be delivered and never load
 which [P4](#p4) forbids. A plain `files` contribution, a tree or a single file, takes route C's
 addressed form, which the slot registers.
 
-[`pack-pi-resources.md`](pack-pi-resources.md#33-what-core-does) registers addressed trees only;
+[pack-system.md, pi packages](../reference/pack-system.md#pi-registration) registers addressed trees only;
 C1 would widen it. The slot is the one that doc already specifies, unchanged:
 
 ```jsonc
-// packs/pi/pack.json (pack-pi-resources.md §3.1)
+// packs/pi/pack.json (pack-system.md, pi packages)
 { "kind": "files", "agent": "pi", "into": ".pi/agent/yolo-packs",
   "register": { "surface": "pi/settings", "path": "/packages", "entry": "~/{landing}" },
   "expects": ["extensions", "themes", "skills", "prompts", "package.json"] }
@@ -550,7 +550,7 @@ go once every host reads the convention. It is never a warning, and the exit sta
 | C1: the tree has no build at this notch | The registration counts as a written entry would, and [PPX-D18](patched-extensions.md#PPX-D18) and [PPX-D40](patched-extensions.md#PPX-D40) decide. The refusal names the implied registration and its ways off ([§4.1](#41-c1-a-patched-extension-in-pis-package-folder-loads-with-no-list-entry)) |
 | C1: no registering slot is selected | Nothing is registered, and the patched-tree lint fires, naming the entry `~/<into>` and no agent ([PC-D4](#PC-D4)) |
 | C1: a tree's landing equals another pack's addressed landing | Refused at the launch, naming both packs, by the check over resolved landings C1 adds. Nothing compares them today |
-| C1: the pack is dropped | The registration goes with it, at both notches: `config-list`'s rule ([`pack-pi-resources.md`](pack-pi-resources.md#34-behavior-in-every-case)) |
+| C1: the pack is dropped | The registration goes with it, at both notches: `config-list`'s rule ([pack-system.md, pi packages](../reference/pack-system.md#pi-registration-cases)) |
 | C2 ([OQ-PC1](#OQ-PC1) A or B): an agent folder in an opted-in pack, naming an agent in the selected vocabulary | Delivered as the written addressed contribution would be, the no-destination report included |
 | C2: the folder names an agent a shipped pack claims and this jail does not select | Fatal, as a written `agents` entry is, under A. Reported and skipped under B |
 | C2: no shipped or selected pack claims the name | A plain folder. Lint names it |
@@ -561,7 +561,7 @@ go once every host reads the convention. It is never a warning, and the exit sta
 | C3: a directory there with no `manifest.jsonc` | Nothing. Lint names it |
 | A yolo with the skip, older than a convention | That part is left out and named: C1 by the patched-tree lint, C2 and C3 by the ignored opt-in line |
 | A release through v0.11.1 | Under C1 the content pack writes no new field, so it reads as today (and `patches` is refused, as today). The opt-in line refuses the pack and every launch on that host |
-| macos-user and Apple Container | Whatever the written form does there. C1 and C2 ride the addressed-tree delivery, **UNVERIFIED** per backend as in [`pack-pi-resources.md`](pack-pi-resources.md#34-behavior-in-every-case) |
+| macos-user and Apple Container | Whatever the written form does there. C1 and C2 ride the addressed-tree delivery, **UNVERIFIED** per backend as in [pack-system.md, pi packages](../reference/pack-system.md#pi-registration-cases) |
 
 **Forbidden.** Core never names an agent in a convention, nor in its messages. An implied
 contribution is never left out of a report a written one appears in. A convention never fills in
@@ -578,7 +578,7 @@ a field an author left out, and never makes a pack that a yolo with the skip ref
 | `each`: one declaration fanned out to one claim per file of a folder | **Not proposed.** Route C covers the only folder with several writers in the corpus, pi's extensions. Revisit when a second agent's shared folder appears |
 | A provider implying its same-named profile | **Rejected.** It saves two lines per provider pack, all shipped, and a selector a user types belongs in the file that defines it; `openai-codex`'s profile is named `codex` in the packs that use it |
 | One `install_hints` value for every manager | **Rejected.** The value is per manager by nature, a shipped hint must cite a source per manager (`TestEveryShippedAndExampleInstallHintNamesItsSource`), and the skip-safe spelling would be a second field for one map |
-| **A posture naming a surface instead of restating it** (the first draft's C4: `"managed": {"pi/settings": {…}}` in place of each `config` entry) | **Handed to [OQ-M1](manifest-language.md#OQ-M1).** It is a second spelling of the pack's own declaration, not an expansion, so it is syntax ([§8](#8-non-goals)). Review found four costs. It saves 10 entries, all in packs yolo ships, which travel with their own binary. On a yolo with the skip but without it, the `guarded` half is kept without its keys, and the posture left behind validates empty (`validateAutonomyPosture`). So the host agent runs without yolo's guarded settings while the kept-without-field line says the restriction holds, which reverses [PF-D69](patched-forks.md#PF-D69)'s premise; every release refuses it outright. On another pack's surface it has no `path` and `codec` to carry, which the config engine requires and [NS-D21](notch-scoped-config-contributions.md#NS-D21) compares. And four readers decode posture entries, not `packdecl`. [OQ-M1](manifest-language.md#OQ-M1)'s rewrite of every posture would also make it a third spelling |
+| **A posture naming a surface instead of restating it** (the first draft's C4: `"managed": {"pi/settings": {…}}` in place of each `config` entry) | **Handed to [OQ-M1](manifest-language.md#OQ-M1).** It is a second spelling of the pack's own declaration, not an expansion, so it is syntax ([§8](#8-non-goals)). Review found four costs. It saves 10 entries, all in packs yolo ships, which travel with their own binary. On a yolo with the skip but without it, the `guarded` half is kept without its keys, and the posture left behind validates empty (`validateAutonomyPosture`). So the host agent runs without yolo's guarded settings while the kept-without-field line says the restriction holds, which reverses [PF-D69](patched-forks.md#PF-D69)'s premise; every release refuses it outright. On another pack's surface it has no `path` and `codec` to carry, which the config engine requires and [NS-D21](../reference/pack-system.md#ns-d21) compares. And four readers decode posture entries, not `packdecl`. [OQ-M1](manifest-language.md#OQ-M1)'s rewrite of every posture would also make it a third spelling |
 | A shared-dir hook implying its machine `state` | **Not proposed.** Three pairs, all in shipped packs. Found on the way, a lint bug: `Decode` checked only that a hook's `at` was present, and the match against the pack's machine `state` was made only at boot, so `yolo pack lint` and `yolo check` passed a pack whose boot then failed. Fixed by [PC-D15](#PC-D15) |
 | A manifest written in Lua or Starlark | [`manifest-language.md`](manifest-language.md)'s [OQ-M2](manifest-language.md#OQ-M2) and [OQ-M3](manifest-language.md#OQ-M3) |
 
@@ -591,7 +591,7 @@ a field an author left out, and never makes a pack that a yolo with the skip ref
 - **A registration that loads part of a tree, or reaches one posture.** The written entry does
   that, and replaces the registration ([PC-D2](#PC-D2)).
 - **Moving the pi pack's own `yolo-*.js` extensions** into its package folder. Possible under
-  route C, and a change to pi's own pack that [`pack-pi-resources.md`](pack-pi-resources.md#34-behavior-in-every-case)
+  route C, and a change to pi's own pack that [pack-system.md, pi packages](../reference/pack-system.md#pi-registration-cases)
   leaves unchanged.
 
 ## 9. Risks
@@ -630,7 +630,7 @@ a field an author left out, and never makes a pack that a yolo with the skip ref
    patch-series request, and it is not this doc's build. It gates every new pack field anywhere,
    this doc's included: until a host runs it, a field that host's yolo does not know refuses every
    launch there. It is also what the patch-series work waits on. Nothing below is.
-1. **[PC-D4](#PC-D4), inside [`pack-pi-resources.md`](pack-pi-resources.md)'s build**: the
+1. **[PC-D4](#PC-D4), inside the [pi packages](../reference/pack-system.md#pi-packages) build**: the
    patched-tree lint names the list from the registering slot's `register`, and the missing-`into`
    refusal drops pi's path. That build registers addressed trees only. Keep its emission a loop
    over landings, so [OQ-PC3](#OQ-PC3)'s option A, if ruled, is one more predicate.
@@ -720,7 +720,7 @@ to overrule. A decision under an open question applies only if that question is 
 | <a id="PC-D1"></a>PC-D1 | **Withdrawn in review, 2026-10-05: now [OQ-PC3](#OQ-PC3).** It registered a written `into` directly in a registering slot as an implementation decision. That amends [`pi-pack-extensions.md`](pi-pack-extensions.md)'s [OQ-4](pi-pack-extensions.md#10-decision-ledger), [OQ-6](pi-pack-extensions.md#10-decision-ledger) and [invariant 2](pi-pack-extensions.md#8-invariants-and-failure-modes), and [BA-P4](../reference/agent-briefings.md#ba-p4) | A ledger decision may not override a ruling | — |
 | <a id="PC-D2"></a>PC-D2 | Under [OQ-PC3](#OQ-PC3) A: a written list entry of the **contributing pack** that loads a tree (`loadsTree`, [PPX-D36](patched-extensions.md#PPX-D36)), in any list or posture, replaces that tree's registration | [P5](#p5); `owningAgentPack` reads only the contributing pack's lists; lets a monorepo tree and a guarded-only tree live in the folder | — |
 | <a id="PC-D3"></a>PC-D3 | Under [OQ-PC3](#OQ-PC3) A: a tree deeper than a direct child of a registering slot is not registered; lint and `yolo check` warn, naming the direct-child form; never refused | A deeper tree can sit inside another pack's landing, and a new refusal on a use read refuses a launch | — |
-| <a id="PC-D4"></a>PC-D4 | The patched-tree lint names the list from the `register` of a registering slot the selected packs declare (the shipped packs, at `yolo pack lint`), not pi's surface. With none selected it names the entry `~/<into>` and no agent. The missing-`into` refusal gives no agent's path. Needs no ruling, and rides [`pack-pi-resources.md`](pack-pi-resources.md)'s build | [P2](#p2): core's text names pi today, at `patchedtrees.go:199` and in the missing-`into` refusal's example in `patchedext.go` | — |
+| <a id="PC-D4"></a>PC-D4 | The patched-tree lint names the list from the `register` of a registering slot the selected packs declare (the shipped packs, at `yolo pack lint`), not pi's surface. With none selected it names the entry `~/<into>` and no agent. The missing-`into` refusal gives no agent's path. Needs no ruling, and rides the [pi packages](../reference/pack-system.md#pi-packages) build | [P2](#p2): core's text names pi today, at `patchedtrees.go:199` and in the missing-`into` refusal's example in `patchedext.go` | — |
 | <a id="PC-D5"></a>PC-D5 | **Withdrawn in review, 2026-10-05: the posture spelling is handed to [OQ-M1](manifest-language.md#OQ-M1)** ([§7](#7-considered-and-not-proposed)) | It is syntax, and review found it reverses [PF-D69](patched-forks.md#PF-D69)'s premise for `guarded` on an older host | — |
 | <a id="PC-D6"></a>PC-D6 | Each convention gets a `yolo features` name in the commit that builds it; names provisional | [PF-D71](patched-forks.md#PF-D71)'s rule: a yolo without it would skip that use | — |
 | <a id="PC-D7"></a>PC-D7 | An implied contribution carries its rule and declaring pack, never serialized into a manifest; footprint, lint, `yolo check`, the launch and `yolo host apply` name it; JSON outputs carry `implied_by` | [P4](#p4) | — |

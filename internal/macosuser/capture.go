@@ -1,7 +1,7 @@
 package macosuser
 
 // capture.go is the macos-user half of INSTALL CAPTURE (docs/design/program-delivery.md §6.3,
-// docs/plans/install-capture.md slice 6): run a vendor installer once, against a throwaway home,
+// docs/reference/install-capture.md slice 6): run a vendor installer once, against a throwaway home,
 // under the narrowed Seatbelt profile in seatbeltcapture.go, and leave an entry-shaped
 // proto-entry the host act admits into the machine store.
 //
@@ -1121,7 +1121,7 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 // # NO CALL SITE YET — deliberately, and it is a hand-off, not an oversight
 //
 // `yolo capture`'s macos-user arm still prints slice 3's refusal; wiring this in is one closure
-// in internal/cli/capturehost.go, written out in docs/plans/install-capture.md's slice 6
+// in internal/cli/capturehost.go, written out in docs/reference/install-capture.md's slice 6
 // section. That file is being edited by the slice this one must not collide with. The precedent
 // for landing the mechanism ahead of its wiring is EndpointGrantCommands in this same package.
 func RunCaptureAct(deps Deps, opts CaptureOptions, dest string, dryRun bool) int {

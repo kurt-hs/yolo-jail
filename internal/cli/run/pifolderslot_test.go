@@ -1,6 +1,6 @@
 package run
 
-// pifolderslot_test.go pins the DELIVERY half of OQ-PR1 (docs/design/pack-pi-resources.md) against
+// pifolderslot_test.go pins the DELIVERY half of OQ-PR1 (docs/reference/pack-system.md) against
 // the SHIPPED pi pack: a pack's one pi folder is bound read-only at the slot's landing in the jail,
 // written there at the host, and that landing is the very path pi's settings list
 // (packload.Registrations), so a folder is never listed where it was not delivered.

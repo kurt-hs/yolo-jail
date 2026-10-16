@@ -17,7 +17,7 @@ import (
 // flattened boolean entries, features/src/lib.rs; read by tui/src/startup_orchestration.rs).
 //
 // It rides the codex pack's AUTONOMOUS posture, the one notch-scoping mechanism
-// (docs/design/notch-scoped-config-contributions.md P1): every jail boot renders that posture —
+// (docs/reference/pack-system.md, notch-scoped P1): every jail boot renders that posture —
 // podman, Apple Container and macos-user alike (render.Jail from Env.renderTarget) — and
 // `yolo host apply` renders the guarded one into the user's own ~/.codex. So deleting the key
 // from packs/codex/pack.json fails the first test, and moving it into the always-on `managed`

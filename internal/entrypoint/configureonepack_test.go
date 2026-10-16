@@ -2,7 +2,7 @@ package entrypoint
 
 // configureonepack_test.go pins the autonomy bit `yolo check`'s dry-run probe hands to
 // packoverlay.Collect (configureOnePack, behind ConfigurePackByName). The bit's one visible
-// effect there is which POSTURE LIST renders (docs/design/notch-scoped-config-contributions.md
+// effect there is which POSTURE LIST renders (docs/reference/pack-system.md
 // §4.1), and no embedded pack declares one, so without a fixture the argument could be
 // inverted with the whole suite green (NS-D13).
 

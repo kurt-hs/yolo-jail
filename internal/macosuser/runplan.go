@@ -281,7 +281,7 @@ type HostContext struct {
 	// in their filesystem are host acts, and the plan builder is pure.
 	Relocations []CacheRelocation
 	// Captures are the install-capture store entries this launch stages for its launchers
-	// (CaptureEntry; docs/plans/install-capture.md hand-off H4): for each selected pack's
+	// (CaptureEntry; docs/reference/install-capture.md hand-off H4): for each selected pack's
 	// `via: "installer"` program, the entry the materialize path's own resolver chooses at this
 	// backend's platform, darwin. The caller's because the store is in the invoking user's state
 	// dir. Empty stages nothing and names no store to the bootstrap, so every launcher downloads,
@@ -2195,7 +2195,7 @@ func hostFilesWire(cfg *jsonx.OrderedMap, hostCtx HostContext) string {
 // []strings, which cannot fail to marshal.
 //
 // IT IS entrypoint.HostLayerWire, THE CONTAINER LAUNCHER'S TYPE, and not a bare
-// packload.HostLayerReport — render-mark parity (docs/design/notch-scoped-config-contributions.md
+// packload.HostLayerReport — render-mark parity (docs/reference/config-target-resolution.md
 // §4.3, NS-D3). The bare report has no field for the fifth disposition, so until this
 // marshalled the wire type a managed home's host file composed into the sandbox as the
 // user's layer here while every container backend kept it as a baseline: the one backend on

@@ -92,7 +92,7 @@ staging-removal half shipped and whose install-removal half did not),
 [`agent-cli-copies.md`](../reference/agent-cli-copies.md) (the disk measurement that reversed the build order),
 and the two plans that built [§3.5](#35-the-second-axis-who-the-dependency-serves-amendment-2026-09-03) and [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package) —
 `evergreen-agent-updates.md` (retired 2026-09-27; `git log -- docs/plans/evergreen-agent-updates.md`) and
-[`../plans/install-capture.md`](../plans/install-capture.md).
+[`install-capture.md`](../reference/install-capture.md).
 
 ---
 
@@ -1301,7 +1301,7 @@ each needs its own answer when its third value arrives.
 
 *The standing question for the worst of the class: what is the plan for installers that just do
 whatever — and for things we can't lock at all?* **Ruled** ([OQ-PD10](#decision-ledger)) and
-**built**: slices one to seven of [`install-capture.md`](../plans/install-capture.md) landed
+**built**: slices one to seven of [`install-capture.md`](../reference/install-capture.md) landed
 2026-09-04 (merge `18524ff9`), `macos-user`'s recording half among them. The problem and the move
 below are as designed on 2026-08-24; [*As built*](#as-built-2026-09-04) records where building it
 corrected the design, each correction dated and ruled.
@@ -1413,7 +1413,7 @@ unreachable member, and capture is its answer.
 
 *What building slices one to seven corrected about the design above, and the traps that came with
 it. Each item is a decision an implementer would otherwise re-derive; the per-slice narrative is
-[`install-capture.md`](../plans/install-capture.md)'s.*
+[`install-capture.md`](../reference/install-capture.md)'s.*
 
 **Materialize is REFLINK, and the CAS is MOUNTED** (slice four). The hardlink half of the original
 verb cannot work from where [§5.2](#52-a2--lazy-install-from-a-launcher-the-status-quo) requires materialize to happen — inside the jail, from
@@ -1557,7 +1557,7 @@ let it materialize the previous entry and record it as a fresh capture, which wo
 `/Users/_yolojail` denied for the duration, and the manifest's relocation record (`refScan`,
 `relocatable`, `absoluteRefs` in `internal/capture/manifest.go`, scanned by `relocate.go`).
 `yolo capture <bin>` is wired to that backend (hand-off H1 of
-[`install-capture.md`](../plans/install-capture.md), landed 2026-09-04), and the recording half was
+[`install-capture.md`](../reference/install-capture.md), landed 2026-09-04), and the recording half was
 **MEASURED on hardware 2026-09-11** — the capture profile loaded, the vendor installer ran, and an
 entry landed in the machine store
 ([M4](provisioner-sets.md#15-what-a-mac-session-should-measure)).
@@ -1566,7 +1566,7 @@ into a home other than the one it was captured under has every recorded referenc
 refuses before writing anything when a reference cannot be rewritten (measured on Linux only). A
 capture on that backend is still a recorded artefact nobody materializes, because no launch there
 is told where the store is, and the sandbox could not read it if it were — hand-off H4 of
-[`install-capture.md`](../plans/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it),
+[`install-capture.md`](../reference/install-capture.md#hand-offs--what-is-not-wired-and-the-exact-line-that-wires-it),
 which needs a ruling. That is also why the auto-capture trigger sits below the `macos-user`
 return.
 
@@ -1838,7 +1838,7 @@ nothing about a normal launch; slice four (materialize from the launcher) is whe
 and the slice that pays; slice seven (auto-capture on a miss, [OQ-PD18](#decision-ledger)) is what
 makes there be anything to pay with; slice six is `macos-user`'s RECORDING half only. What building
 it corrected about the design, and the traps it found, are recorded once, in [§6.3](#63-installers-that-just-do-whatever-capture-the-install-then-treat-the-capture-as-the-package)'s
-*As built*; the per-slice narrative is [`install-capture.md`](../plans/install-capture.md)'s.
+*As built*; the per-slice narrative is [`install-capture.md`](../reference/install-capture.md)'s.
 
 **In parallel, pay the enum tolerance** ([§6.2](#62-pay-the-enum-tolerance-before-the-next-mechanism-arrives)) — **PAID** (`0a4d241c`), while no one
 needed it, which was the point.

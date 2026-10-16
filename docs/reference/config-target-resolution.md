@@ -34,8 +34,14 @@ home, and one home the retired `assert` wrote into whose key is unset
 (`TestAnOwnedHomesHostFileIsABaselineFromTheApplyToTheBoot`,
 `TestAHomeAssertedIntoBeforeTheRetirementStaysABaselineToTheBoot`, `internal/cli/run`).
 
-**UNMEASURED:** the fifth disposition through a *real launch*: no test has a container runtime
-bind a managed home's file, and no Mac has run the `macos-user` label. See
+The `macos-user` label passed on a Mac through the scheduled job on 2026-10-03
+([gap 1](#where-this-does-not-reach)). The render-mark parity and its rulings
+([NS-D3](#ns-d3), [NS-D9](#ns-d9), [NS-D10](#ns-d10)) moved in on 2026-10-16 from the notch-scoped
+config contributions design, whose posture lists are in
+[`pack-system.md`](pack-system.md#posture-lists).
+
+**UNMEASURED:** the fifth disposition through a *real container launch*: no test has a container
+runtime bind a managed home's file. See
 [Where this does not reach](#where-this-does-not-reach).
 
 > [!IMPORTANT]
@@ -454,10 +460,14 @@ four-field report, so a managed home's host file composed into the sandbox as a 
 one backend on which a host-only entry `yolo host apply` wrote reached a jail. It now computes
 the label with the container launcher's own predicate and emits the same wire
 ([How it travels](#how-it-travels);
-[NS-D3](../design/notch-scoped-config-contributions.md#10-decision-ledger)). Pinned by
+[NS-D3](#ns-d3)). Pinned by
 `TestMacosUserLaunchLabelsAHostFileYoloHasRendered`, through a real `Run()` of that arm, and by
 `TestHostLayerReportCarriesTheRenderLabel`, which reads the plan's wire back through the boot's
-own reader. No Mac has run it.
+own reader. MEASURED on a Mac by `TestMacosUserComposesARenderedHostFileAsABaseline`
+(`integration/macosuserrendermark_test.go`), which the scheduled `macos-user.yml` job runs: it
+launches once with no mark, where the user's own key must reach the sandbox's `settings.json`,
+then plants the home's mark and launches again, where the key must not. It asserts bytes, not a
+log line, and passed on the job's 2026-10-03 run.
 
 **2. Closed below a real launch: one managed home through both halves.**
 `TestAnOwnedHomesHostFileIsABaselineFromTheApplyToTheBoot` (`internal/cli/run`) runs a host
@@ -541,6 +551,9 @@ and its original anchor, because they are cited from code comments across `inter
 | <a id="oq-cr6"></a>[`OQ-CR6`](#oq-cr6) | **The staged copy, never the destination; no staged copy means the layer is reported UNAVAILABLE. And where the bytes are yolo's own render they are a BASELINE, never a layer** | Reading the destination feeds yolo's previous output back in as the user's input. Delivering a managed home's file as a baseline rather than withholding it keeps what the jail actually wants — *how does what I have differ from what the host has* — while giving up only host-side provenance, which a jail has no business reporting. ⚠ **The discriminator is the MARK, not the posture**: while an absent `host_management` was `assert`, a posture test would have stopped every default install's jail composing its user's own settings, and since the `assert` retirement moved the DEFAULT to `none` instead, a posture test would launder the keys `assert` left in a home whose key is unset ([Retiring `assert`](#ruled-2026-09-20-not-built-retiring-assert)). Nothing in this row is retracted by it. |
 | <a id="oq-cr7"></a>[`OQ-CR7`](#oq-cr7) | **`diff` reports the captured divergence and nothing else, and keeps its name.** Per-key provenance moves to `ls` | Decided on the verb's **subject**, not on the defect: provenance is a fact about the render and would read identically before and after the wipe `diff` measures against. The name was never the problem — the second block was. |
 | <a id="oq-cr8"></a>[`OQ-CR8`](#oq-cr8) | **A jail does read the host's own config file, for surfaces that declare it** — settled twice elsewhere, and kept here on [P7](#principles) | It was ruled *retired* in favour of a local pack once and **reversed** later, never implemented in between, and the reversal is what is built. The substantive reason the reversal never gave it is [P7](#principles): this layer is the onboarding path, so adopting yolo costs no migration. Reopening means arguing against that. The narrow coverage is deliberate: two surfaces declare a host layer and a third has to argue for itself. |
+| <a id="ns-d3"></a>**NS-D3** (notch-scoped) — `macos-user` computes the render label with the container launcher's own `hostLayerIsRender` in `buildMacosCtxTree`, carries it on `macosuser.HostContext`, and marshals `entrypoint.HostLayerWire` | One predicate keeps one home a baseline on every backend. Without it `macos-user` was the one backend where a host-only entry `yolo host apply` wrote reached a jail, as "the user's". The fix is parity, never a sanitizer of the host bytes in the jail ([`ns-oq-2`](pack-system.md#ns-oq-2)). |
+| <a id="ns-d9"></a>**NS-D9** (notch-scoped) — `TestMacosUserDeliversHostBytesByCopy` hides the machine's host-render mark (`privateHostProvenance`) | With the label on `macos-user`, the self-hosted Mac's own mark would drop the test's hand-written file for a reason that is not the one it measures. |
+| <a id="ns-d10"></a>**NS-D10** (notch-scoped) — the one-home test of both halves is an in-process chain in `internal/cli/run`, not an integration test | The integration harness links the machine's state dir into every isolated home, so a real `yolo host apply --assert` there would write host-render state into the machine's own store. The runtime's bind is the one step the chain copies by hand. |
 
 <a id="ruled-2026-09-20-not-built-retiring-assert"></a>
 

@@ -1,6 +1,6 @@
 package run
 
-// attachskewbriefing_test.go pins SK-D15 (docs/design/attach-skew-and-contract-guardrails.md,
+// attachskewbriefing_test.go pins SK-D15 (docs/reference/attach-skew.md,
 // OQ-SK4): an attach that goes ahead under YOLO_ALLOW_ATTACH_SKEW names the skew in the briefing
 // it refreshes, and says on stderr whether a briefing carries it; an attach that needs nothing it
 // lacks writes no section, and nothing outside attachExisting's refresh can carry one.

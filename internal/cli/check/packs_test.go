@@ -560,7 +560,7 @@ func TestSectionPacksShippedSetHasNoAgentNameCollision(t *testing.T) {
 }
 
 // A pi folder holding none of the names the shipped pi pack's slot expects is a WARNING at
-// `yolo check`, over the selected set (docs/design/pack-pi-resources.md PR-D4): the launch still
+// `yolo check`, over the selected set (docs/reference/pack-system.md PR-D4): the launch still
 // delivers and lists it, so check must not fail, and must not be silent either.
 func TestSectionPacksWarnsAboutAPiFolderPiCannotLoad(t *testing.T) {
 	for _, tc := range []struct {

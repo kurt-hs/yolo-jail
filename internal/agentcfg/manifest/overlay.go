@@ -137,7 +137,7 @@ var postureOverlaySchemaFields = map[string]bool{"agent": true, "name": true, "p
 
 // DecodePostureOverlay decodes one entry of an autonomy posture's `config` that names a surface
 // its own pack does not declare — a POSTURE OVERLAY, the term
-// docs/design/notch-scoped-config-contributions.md coins for OQ-3's build (NS-D19) — into the
+// docs/reference/pack-system.md coins for notch-scoped OQ-3's build (NS-D19) — into the
 // patch it spells and the single layer map the compose engine folds (agentcfg.Overlay.Data).
 //
 // The entry keeps the posture `config` schema, a surface DTO, so an author writes a patch on

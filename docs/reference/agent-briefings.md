@@ -156,7 +156,7 @@ conditional sections that appear only when their data exists. Emission order, fr
    into a jail that could not receive what the entry delivers: the version the jail was
    launched with, each contract tag it lacks, what else differs, what was withheld (names only)
    and the restart that ends it. The next entry's refresh drops it
-   ([`SK-D15`](../design/attach-skew-and-contract-guardrails.md#decision-ledger)). An Apple
+   ([`SK-D15`](attach-skew.md#why-its-this-way)). An Apple
    Container jail never shows it, since its briefing is the copy its launch made.
 4. **Handoff** — conditional, when a fresh handover pointer is carried this launch.
 5. **Environment** — workspace, home, OS, the network paragraph, the two port sections, and

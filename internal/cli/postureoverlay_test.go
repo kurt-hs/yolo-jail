@@ -1,7 +1,7 @@
 package cli
 
 // postureoverlay_test.go pins the POSTURE OVERLAY (OQ-3's build,
-// docs/design/notch-scoped-config-contributions.md NS-D19 to NS-D24) through the verbs a user
+// docs/reference/pack-system.md NS-D19 to NS-D24) through the verbs a user
 // runs — `yolo host apply`, `yolo config render` and `yolo config ls` — each at the notch it
 // describes. Every test runs the real verb over a real file:// pack in a temp HOME, so each
 // fails if its verb stops handing its own notch's autonomy bit to packoverlay.Collect, or if
