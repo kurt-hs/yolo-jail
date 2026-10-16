@@ -165,7 +165,7 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 	}
 	packs := rows["macos.state.packs"]
 	for _, want := range []string{"per-launch immutable guest trees", "exact retained path printed by the launch",
-		"`ls -la -- <exact-path>`", "`chmod -R u+w -- <exact-path> && rm -rf -- <exact-path>`", "yolo macos-teardown"} {
+		"`ls -la -- <exact-path>`", "`chmod -R -- u+w <exact-path> && rm -rf -- <exact-path>`", "yolo macos-teardown"} {
 		if !strings.Contains(packs.Note, want) {
 			t.Errorf("the packs row does not name %q: %s", want, packs.Note)
 		}
@@ -179,7 +179,7 @@ func TestTheMacosUserSectionListsTheStateDirAndTheHomesStores(t *testing.T) {
 		"macos.state.home-overlay": macosuser.StagedHomeOverlay("<cname>", stateDir),
 		"macos.state.ctx":          macosuser.StagedCtxRoot("<cname>", stateDir),
 	} {
-		want := "`chmod -R u+w -- " + tree + " && rm -rf -- " + tree + "`"
+		want := "`chmod -R -- u+w " + tree + " && rm -rf -- " + tree + "`"
 		if !strings.Contains(rows[key].Note, want) {
 			t.Errorf("%s does not name the unseal-then-remove %s: %s", key, want, rows[key].Note)
 		}
