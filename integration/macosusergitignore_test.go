@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 )
 
 // THE HOST'S GLOBAL GITIGNORE APPLIES IN THE macos-user SANDBOX (docs/reference/git-identity.md):
@@ -52,7 +54,8 @@ func TestMacosUserGlobalGitignoreAppliesInTheSandbox(t *testing.T) {
 		t.Errorf("the CONTROL failed: x.kept is ignored too, so the probe above says nothing about "+
 			"the gitignore.\n%s", r.stdout)
 	}
-	if !strings.HasPrefix(got["excludes"], "/var/yolo-jail/ctx/") {
-		t.Errorf("the sandbox's core.excludesFile is %q, want the staged copy under /var/yolo-jail/ctx", got["excludes"])
+	if !strings.HasPrefix(got["excludes"], macosuser.StateDir()+"/ctx/") {
+		t.Errorf("the sandbox's core.excludesFile is %q, want the staged copy under %s/ctx", got["excludes"],
+			macosuser.StateDir())
 	}
 }

@@ -18,7 +18,7 @@ import (
 func refusedOnThisMac(t *testing.T) (hand string) {
 	t.Helper()
 	nativeFloorFixture(t)
-	withMac(t, macSetup{terminal: true})
+	withMac(t, macSetup{})
 	withFloorPlatform(t, "darwin")
 	return filepath.Join(stubBins(t, "nativecli"), "nativecli")
 }

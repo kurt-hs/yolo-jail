@@ -28,7 +28,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	runtimepkg "github.com/mschulkind-oss/yolo-jail/internal/runtime"
-	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
 // hostfloor.go wires the HOST AGENT FLOOR (internal/hostfloor,
@@ -190,7 +189,7 @@ func wireFloorBuild(f *hostfloor.Floor, store *capture.Store, out io.Writer) {
 	}
 	f.BuildActUnavailable = func(bin, does string) string {
 		if f.GOOS == "darwin" {
-			return macBuildBlocked(hostFloorMacProbes(), bin, does)
+			return macBuildBlocked(hostFloorMacProbes(), does)
 		}
 		if f.CaptureUnavailable != nil {
 			if why := f.CaptureUnavailable(); why != "" {
@@ -228,7 +227,7 @@ func wireFloorCapture(f *hostfloor.Floor, out io.Writer) {
 	}
 	f.CaptureActUnavailable = func(bin, does string) string {
 		if f.GOOS == "darwin" {
-			return macCaptureBlocked(hostFloorMacProbes(), bin, does)
+			return macCaptureBlocked(hostFloorMacProbes(), does)
 		}
 		return linuxCaptureBlocked(f.GOOS, does)
 	}
@@ -236,7 +235,7 @@ func wireFloorCapture(f *hostfloor.Floor, out io.Writer) {
 		switch {
 		case f.GOOS == "darwin":
 			return "the macos-user sandbox account runs its installer once, in a throwaway home under " +
-				"Seatbelt; sudo may ask for your password"
+				"Seatbelt"
 		case chooseCaptureArm(f.GOOS, "").host():
 			return "with no container runtime here, its installer runs once on this host, confined by " +
 				"Landlock to a throwaway home; jails capture their own"
@@ -262,16 +261,16 @@ func linuxCaptureBlocked(goos, does string) string {
 }
 
 // macCaptureProbes is what the floor's Mac capture predicate reads off the machine: the macos-user
-// capture act's own refusals (macosuser.RunCapturePlan's order), and whether its sudo can be asked.
+// capture act's own refusals (macosuser.RunCapturePlan's order), and the setup's privilege facts.
 type macCaptureProbes struct {
 	Geteuid           func() int
 	Which             func(name string) bool
 	SandboxUserExists func() bool
-	// StdinIsTerminal reports whether sudo can ask for a password on this launch's terminal.
-	StdinIsTerminal func() bool
-	// SudoWithoutPassword reports whether `sudo -n true` succeeds: credentials sudo already holds,
-	// or a rule that asks for none. Asked only with no terminal.
-	SudoWithoutPassword func() bool
+	// Privilege is the first of the one-time setup's privilege facts — the staging root and the
+	// run-as rule the act crosses into the sandbox account through — that does not hold, or false
+	// when all do (macosuser.PrivilegeUnmet). The rule asks for no password, so whether this launch
+	// has a terminal is no part of it.
+	Privilege func() (macosuser.Precondition, bool)
 }
 
 // hostFloorMacProbes is the machine's answers. A var so a test can stand a Mac in on any OS.
@@ -281,30 +280,27 @@ var hostFloorMacProbes = func() macCaptureProbes {
 		Geteuid:           d.Geteuid,
 		Which:             d.Which,
 		SandboxUserExists: d.SandboxUserExists,
-		StdinIsTerminal:   func() bool { return tty.IsTerminalFile(os.Stdin) },
-		SudoWithoutPassword: func() bool {
-			cmd := exec.Command("sudo", "-n", "true")
-			cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
-			return cmd.Run() == nil
+		Privilege: func() (macosuser.Precondition, bool) {
+			return macosuser.PrivilegeUnmet(macosuser.RealLaunchProbes())
 		},
 	}
 }
 
 // macCaptureBlocked is a Mac floor's CaptureActUnavailable: why the macos-user capture act cannot
-// capture bin here now, with its step, or "" when it can. Each refusal is one RunCapturePlan would
+// capture here now, with its step, or "" when it can. Each refusal is one RunCapturePlan would
 // make after the jail's preparation began, asked here first so the floor says it as no floor entry —
 // the launch then runs the PATH copy (OQ-HE11) — rather than failing an install.
-func macCaptureBlocked(p macCaptureProbes, bin, does string) string {
+func macCaptureBlocked(p macCaptureProbes, does string) string {
 	return macActBlocked(p, macActWords{act: "a capture", confines: "a capture's installer",
-		runsAs: "a capture on a Mac runs its installer as"}, bin, does)
+		runsAs: "a capture on a Mac runs its installer as"}, does)
 }
 
 // macBuildBlocked is a Mac floor's BuildActUnavailable: why the macos-user fork-build act
-// (macosuser.RunForkBuildAct, FP-D24) cannot build bin here now, with its step, or "" when it can —
+// (macosuser.RunForkBuildAct, FP-D24) cannot build here now, with its step, or "" when it can —
 // the capture act's own refusals, since the build is that act running a build line.
-func macBuildBlocked(p macCaptureProbes, bin, does string) string {
+func macBuildBlocked(p macCaptureProbes, does string) string {
 	return macActBlocked(p, macActWords{act: "a fork's build", confines: "a fork's build",
-		runsAs: "a fork's build on a Mac runs as"}, bin, does)
+		runsAs: "a fork's build on a Mac runs as"}, does)
 }
 
 // macActWords is how a refusal of macActBlocked names its act: the act ("a capture"), what Seatbelt
@@ -312,23 +308,34 @@ func macBuildBlocked(p macCaptureProbes, bin, does string) string {
 type macActWords struct{ act, confines, runsAs string }
 
 // macActBlocked is the macos-user capture act's refusals, asked before it runs, in w's words.
-func macActBlocked(p macCaptureProbes, w macActWords, bin, does string) string {
+func macActBlocked(p macCaptureProbes, w macActWords, does string) string {
 	switch {
 	case p.Geteuid() == 0:
-		return "yolo is running as root, and " + w.act + " on a Mac runs as your own user, asking for sudo " +
-			"itself at each step that needs it — run `yolo host` without sudo, and it " + does
+		return "yolo is running as root, and " + w.act + " on a Mac runs as your own user and needs no " +
+			"root — run `yolo host` without sudo, and it " + does
 	case !p.Which("sandbox-exec"):
 		return "sandbox-exec (Apple Seatbelt), which confines " + w.confines + " on a Mac, is not on PATH " +
 			"— put /usr/bin back on it, and the next `yolo host` launch " + does
 	case !p.SandboxUserExists():
 		return "the sandbox account " + macosuser.SandboxUser + ", which " + w.runsAs + ", does not exist " +
 			"— run the one-time setup, `yolo macos-setup`, and the next `yolo host` launch " + does
-	case !p.StdinIsTerminal() && !p.SudoWithoutPassword():
-		return w.act + " on a Mac asks for sudo, and this launch has no terminal to ask on — run " +
-			"`YOLO_RUNTIME=macos-user yolo capture " + bin + "` once in a terminal, and every later " +
-			"`yolo host` launch uses its result"
+	}
+	if c, unmet := p.Privilege(); unmet {
+		return w.act + " on a Mac runs as the sandbox account through the one-time setup's sudo rule, which " +
+			"this Mac does not have (" + c.Unmet("") + ") — " + clauseOf(c.Fix("")) + ", and the next `yolo host` " +
+			"launch " + does
 	}
 	return ""
+}
+
+// clauseOf makes a precondition's Fix, written as its own sentence, read as a clause inside the
+// floor's sentence: its first letter lowercased and its closing period dropped.
+func clauseOf(s string) string {
+	s = strings.TrimSuffix(strings.TrimSpace(s), ".")
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // floorForkBuild is the build a floor program of a fork asks for: the fork as its pack declares it,

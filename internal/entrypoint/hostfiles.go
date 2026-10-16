@@ -217,7 +217,7 @@ func stageHostFile(e *Env, entry config.HostFileEntry, layout DarwinHomeLayout, 
 // (run's copyCtxTreeConfined) and recorded at HostFileDirModesPath beside its copy.
 //
 // A RECORD, because the staged copy cannot carry them: macosuser.StageCtxCommands makes the staged
-// tree root-owned and its contents `a+rX`, so the sandbox account can read them, and a 0600
+// tree host-owned and sealed `a-w,a+rX`, so the sandbox account can read but not write it, and a 0600
 // private key arrives there 0644. A container needs none: its boot copy (copyTree) reads the bits off the read-only
 // bind of the source itself, and the bootstrap here creates each file with the recorded bits so
 // the two backends leave one home alike.
@@ -257,7 +257,7 @@ func readHostFileDirModes(slug string) HostFileDirModes {
 //
 // EVERYTHING ELSE IS copyTree'S RULE: the copy merges into a tree the user and the agent also
 // edit, so a file or directory that cannot be written is skipped and the rest goes on, only what
-// src holds is touched, and a file that is already there keeps its mode. src is the root-owned
+// src holds is touched, and a file that is already there keeps its mode. src is the sealed
 // staged tree the host CLI copied confined to the source (run's copyCtxTreeConfined), so it holds
 // directories and regular files and nothing else; anything else found there is skipped.
 func copyTreeBeneath(src, dest, label string, modes HostFileDirModes) error {
@@ -467,7 +467,7 @@ func HostFileSurface(entry config.HostFileEntry) manifest.Surface {
 //     nothing there (the host source does not exist, or this launch delivered no
 //     host bytes) yields nil and the surface falls back to defaults<managed. ⚠ That
 //     parenthetical named macos-user until 2026-09-13, when DP-L1 gave it a copy into
-//     a root-owned tree hostUserPath resolves through; a FILE source arrives there
+//     a sealed staged tree hostUserPath resolves through; a FILE source arrives there
 //     like anywhere else now;
 //   - a content entry uses the inline literal verbatim (HasContent distinguishes
 //     an explicit empty file from an absent one);

@@ -16,8 +16,8 @@ import (
 //
 // The Linux gate reproduces the wipe with the real layout code for every shipped pack
 // (internal/entrypoint/darwinoverlaystate_test.go). What it cannot reach, and this can: the
-// destination list surviving the root-owned `sudo cp -R` staging, the bootstrap reading it
-// as the sandbox user from /var/yolo-jail, and the install's symlink containment check
+// destination list surviving the host-owned, sealed staging, the bootstrap reading it
+// as the sandbox user from the staging root (macosuser.StateDir()), and the install's symlink containment check
 // resolving the REAL /Users/_yolojail and /Users/Shared paths without refusing them.
 //
 // THE PACK IS omp, not pi, on purpose: it has pi's layout — a `scope: workspace` state dir

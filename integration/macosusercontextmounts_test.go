@@ -17,7 +17,7 @@ import (
 // CONTEXT MOUNTS ON A REAL macos-user LAUNCH (docs/design/context-mounts.md §4 steps 4-5): the
 // probes §4 lists that need the sandbox ACCOUNT, which macosuserseatbelt_test.go's policy suite
 // does not have — the DAC preflight asked as _yolojail, a launch that delivers a read-only and
-// a read-write mount through $YOLO_CONTEXT_DIR, the root-owned link the agent cannot replace,
+// a read-write mount through $YOLO_CONTEXT_DIR, the sealed staged link the agent cannot replace,
 // and the two measurements OQ-CX8 (CX-D5) waits on. All behind requireMacosUser, so they run on
 // the scheduled macos-user.yml job and skip everywhere else.
 //
@@ -57,15 +57,17 @@ func ctxSourceUnder(t *testing.T, parent string, mode os.FileMode) string {
 	return resolved
 }
 
-// runPreflight runs one DAC preflight argv with `sudo -n` (the gate proved it cannot prompt)
-// and reports whether the kernel granted the access.
+// runPreflight runs one DAC preflight argv as the plan built it — through the one run-as rule,
+// already carrying `-n` — and reports whether the kernel granted the access.
 func runPreflight(t *testing.T, argv []string) bool {
 	t.Helper()
-	if len(argv) == 0 || argv[0] != "sudo" {
-		t.Fatalf("a preflight argv that does not start with sudo: %v", argv)
+	if len(argv) == 0 || argv[0] != "/usr/bin/sudo" {
+		t.Fatalf("a preflight argv that does not start with /usr/bin/sudo: %v", argv)
 	}
-	full := append([]string{"sudo", "-n"}, argv[1:]...)
-	return runQuiet(30*time.Second, full...)
+	if p := macosuser.RunAsArgvProblems("preflight", argv); len(p) > 0 {
+		t.Fatalf("a preflight argv off the run-as rule's shape: %v", p)
+	}
+	return runQuiet(30*time.Second, argv...)
 }
 
 // THE DAC PREFLIGHT, asked of the kernel as the sandbox account (§3.5): a source the sandbox
@@ -130,8 +132,8 @@ func TestMacosUserDeliversContextMountsThroughTheContextDir(t *testing.T) {
 			t.Errorf("%s|%s, want %s.\nfull output:\n%s", key, got[key], want, r.stdout)
 		}
 	}
-	if !strings.HasPrefix(got["ctx-dir"], "/var/yolo-jail/ctx/") {
-		t.Errorf("$YOLO_CONTEXT_DIR is %q, want the root-owned context dir", got["ctx-dir"])
+	if !strings.HasPrefix(got["ctx-dir"], macosuser.StateDir()+"/ctx/") {
+		t.Errorf("$YOLO_CONTEXT_DIR is %q, want the staged context dir under %s/ctx", got["ctx-dir"], macosuser.StateDir())
 	}
 	if !strings.Contains(r.combined(), "Read-write mount:") {
 		t.Errorf("the read-write mount was not disclosed on the launch stream:\n%s", r.combined())
@@ -210,8 +212,8 @@ func TestMacosUserContextVolumesAndPrivacyDirsMeasurement(t *testing.T) {
 
 // A PACK'S SINGLE-FILE `mount` IS COPIED INTO THE CONTEXT DIR (context-mounts.md CX-D25): from the
 // user's home, which no link reaches on this backend, to the grant's own path under
-// $YOLO_CONTEXT_DIR, root-owned. The sandbox reads it and cannot write, replace or delete it —
-// the root-owned tree outside the profile's writable set is the read-only half, with no rule of
+// $YOLO_CONTEXT_DIR, host-owned and sealed. The sandbox reads it and cannot write, replace or delete
+// it — the sealed tree outside the profile's writable set is the read-only half, with no rule of
 // its own.
 func TestMacosUserCopiesAPackFileMountIntoTheContextDir(t *testing.T) {
 	requireMacosUser(t)

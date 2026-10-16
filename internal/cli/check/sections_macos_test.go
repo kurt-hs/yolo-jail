@@ -44,7 +44,11 @@ func newMacMachine(t *testing.T) macMachine {
 		},
 		Exec: func(argv []string, _ string, _ []string, _ time.Duration) ExecResult {
 			execs = append(execs, strings.Join(argv, " "))
-			return ExecResult{Ran: true, RC: 0} // `id _yolojail` and the ACL probe both pass
+			return ExecResult{Ran: true, RC: 0} // `id _yolojail`, the run-as probe and the ACL probe pass
+		},
+		// The staging root as `yolo macos-setup` leaves it: this user's, 0755, no access list.
+		MacosStagingRoot: func(string) macosuser.StagingRootFacts {
+			return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
 		},
 		RepoRoot: func() (reporoot.Resolution, bool) {
 			return reporoot.Resolution{Root: repo, Source: reporoot.FromEnv}, true
@@ -109,11 +113,14 @@ func TestTheMacosUserSectionFailsEachConditionTheLaunchRefuses(t *testing.T) {
 		macosuser.PreconditionMacOS: {
 			breakIt: func(m *macMachine) { m.opts.IsMacOS = false },
 			fix:     []string{"use 'podman' or 'container' on this host"},
-			skipped: []string{"the sandbox user", "the workspace's sharing"},
+			skipped: []string{"the sandbox user", "the staging directory", "the run-as rule", "the workspace's sharing"},
 		},
 		macosuser.PreconditionNotRoot: {
 			breakIt: func(m *macMachine) { m.opts.Geteuid = func() int { return 0 } },
 			fix:     []string{"Run `yolo` as your normal user"},
+			// As root the user's own staging root reads as another account's; its owner row
+			// would send them to delete it.
+			skipped: []string{"the staging directory's owner", "the staging directory's safety"},
 		},
 		macosuser.PreconditionSeatbelt: {
 			breakIt: func(m *macMachine) {
@@ -124,13 +131,43 @@ func TestTheMacosUserSectionFailsEachConditionTheLaunchRefuses(t *testing.T) {
 		macosuser.PreconditionSandboxUser: {
 			breakIt: func(m *macMachine) { m.failExec("id " + macosuser.SandboxUser) },
 			fix:     []string{"yolo macos-setup"},
-			skipped: []string{"the sandbox home", "the workspace's sharing"},
+			skipped: []string{"the sandbox home", "the run-as rule", "the workspace's sharing"},
 		},
 		macosuser.PreconditionSandboxHome: {
 			breakIt: func(m *macMachine) {
 				m.opts.PathIsDir = func(p string) bool { return p != macosuser.SandboxHome() }
 			},
 			fix: []string{"yolo macos-setup"},
+		},
+		macosuser.PreconditionStagingRoot: {
+			breakIt: func(m *macMachine) {
+				m.opts.MacosStagingRoot = func(string) macosuser.StagingRootFacts { return macosuser.StagingRootFacts{} }
+			},
+			fix:     []string{"yolo macos-setup"},
+			skipped: []string{"the staging directory's owner", "the staging directory's safety"},
+		},
+		macosuser.PreconditionStagingRootOwner: {
+			breakIt: func(m *macMachine) {
+				m.opts.MacosStagingRoot = func(string) macosuser.StagingRootFacts {
+					return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 602, Mode: 0o755}
+				}
+			},
+			fix:     []string{"yolo macos-teardown", "sudo rm -rf /Users/Shared/yolo-staged"},
+			skipped: []string{"the staging directory's safety"},
+		},
+		macosuser.PreconditionStagingRootSafe: {
+			breakIt: func(m *macMachine) {
+				m.opts.MacosStagingRoot = func(string) macosuser.StagingRootFacts {
+					return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755, HasACL: true}
+				}
+			},
+			fix: []string{"yolo macos-setup"},
+		},
+		macosuser.PreconditionRunAsGrant: {
+			// Through the check's Exec seam, the same argv the launch runs: delete that wiring and
+			// this case passes the row.
+			breakIt: func(m *macMachine) { m.failExec("/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true") },
+			fix:     []string{"yolo macos-setup", "/etc/sudoers.d/yolo-jail"},
 		},
 		macosuser.PreconditionNeutralGround: {
 			breakIt:   func(*macMachine) {},

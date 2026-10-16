@@ -34,6 +34,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/banner"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -151,6 +152,10 @@ type Options struct {
 	// os.Stat that reports a directory.
 	Geteuid   func() int
 	PathIsDir func(string) bool
+	// MacosStagingRoot observes the macos-user staging root without following a link, for the
+	// launch's three staging-root preconditions. nil => the launch's own probe
+	// (macosuser.RealLaunchProbes().StagingRoot).
+	MacosStagingRoot func(path string) macosuser.StagingRootFacts
 	// Machine is platform.machine() (x86_64 / aarch64). "" => derived.
 	Machine string
 	// Workspace is the directory whose yolo-jail.jsonc is validated. "" => cwd.
@@ -293,6 +298,9 @@ func fillDefaults(o *Options) {
 			fi, err := os.Stat(p)
 			return err == nil && fi.IsDir()
 		}
+	}
+	if o.MacosStagingRoot == nil {
+		o.MacosStagingRoot = macosuser.RealLaunchProbes().StagingRoot
 	}
 	if o.RepoRoot == nil {
 		o.RepoRoot = func() (reporoot.Resolution, bool) { return resolveRepoRoot(o.Getenv) }

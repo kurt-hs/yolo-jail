@@ -1112,82 +1112,147 @@ func notApplicableOnMacosUser(key, section, what string) Store {
 	}
 }
 
-// SectionMacosUser is the macos-user backend's own storage outside the state dir: the root-owned
-// dir every launch stages its copies into, and the sandbox account's machine-tier stores.
+// SectionMacosUser is the macos-user backend's own storage outside the state dir: the host-owned
+// staging root every launch stages its copies into, and the sandbox account's machine-tier stores.
 const SectionMacosUser = "macos-user sandbox account"
 
-// macosUserStores inventories that storage, one row per child of the root-owned state dir and one
-// per machine-tier store of the sandbox home. NOTHING IN YOLO RECLAIMS ANY OF IT, so every row is
+// SectionMacosUserLegacy is the root-owned dir an older yolo staged into, listed only when present.
+const SectionMacosUserLegacy = "macos-user legacy state (older yolo)"
+
+// macosUserStores inventories that storage: one row per child of the staging root, one per
+// machine-tier store of the sandbox home and, when an older yolo left it, one per child of the
+// legacy state dir in a section of its own. NOTHING IN YOLO RECLAIMS ANY OF IT, so every row is
 // the user's to decide about and its note says how.
 //
-// IT RUNS NO sudo. The state dir is root-owned and world-readable except env/, which is 0700 and
-// reads as unknown, naming the `sudo du -sh` that measures it; a figure this command could only
-// get as root is not one it may obtain on its own. The sandbox home is read as the host user,
-// who is in the sandbox account's group, and ONLY the named stores are walked: the whole home is
-// not this command's to walk (its other directories are links into each workspace, and macOS
-// guards a home's contents with TCC prompts).
+// IT RUNS NO sudo. The staging root is the host user's, so every row there is measurable and every
+// command it names runs as that user. The legacy dir is root-owned and world-readable except
+// env/, which is 0700 and is never read: it is unknown, naming the `sudo du -sh` that measures it,
+// and the sudo commands a legacy row names are for the user to run by hand. The sandbox home is
+// read as the host user, who is in the sandbox account's group, and ONLY the named stores are
+// walked: the whole home is not this command's to walk (its other directories are links into each
+// workspace, and macOS guards a home's contents with TCC prompts).
 //
-// Neither root on a Mac is one absent row naming `yolo macos-setup`; not a Mac is no rows.
+// Neither the staging root nor the home on a Mac is one absent row naming `yolo macos-setup`; not
+// a Mac is no rows.
 func macosUserStores(o Options) []Store {
-	stateDir, home, ok := o.MacosUser()
-	if !ok {
+	roots := o.MacosUser()
+	if !roots.OK {
 		return nil
 	}
-	state, stateExists := macosUserStateRows(o, stateDir)
+	stateDir, home := roots.StateDir, roots.Home
+	state, stateExists := macosUserStateRows(o, stateDir, stagingFlavor)
 	homeRows, homeExists := macosUserHomeRows(o, home)
+	var rows []Store
 	if !stateExists && !homeExists {
-		return []Store{{
+		rows = []Store{{
 			Key: "macos.absent", Section: SectionMacosUser, Name: "(no sandbox account)", Path: stateDir,
 			Sizing: SizingAbsent, Reclaimer: none(), Verdict: VerdictHuman,
 			Note: "neither " + stateDir + " nor " + home + " exists, so this Mac has no macos-user " +
 				"backend set up; `yolo macos-setup` creates the account it runs as",
 		}}
+	} else {
+		rows = append(state, homeRows...)
 	}
-	return append(state, homeRows...)
+	if roots.LegacyDir != "" {
+		legacy, _ := macosUserStateRows(o, roots.LegacyDir, legacyFlavor(roots.LegacyDir))
+		rows = append(rows, legacy...)
+	}
+	return rows
 }
 
-// macosUserPerWorkspaceLeaves names the state dir's children whose entries are keyed by a
-// workspace or launch: what each copy is, its useful count label, and a safe exact-path
-// removal command when one exists. A nil remove means paths are retained by identity and no
+// macosUserFlavor is what differs between the two roots macosUserStateRows lists: the host-owned
+// staging root a launch writes today and the root-owned dir an older yolo wrote.
+type macosUserFlavor struct {
+	section, keyPrefix string
+	// owned is how a note names the root's owner, "host-owned" or "root-owned".
+	owned string
+	// removeTree, removeFiles and inspect spell the manual commands a note names. Each path is
+	// literal, NEVER A GLOB: the user's own shell expands a glob before the command runs, and the
+	// legacy env/ is a dir only root can list, where a pattern matches nothing (zsh, macOS's
+	// default shell, refuses with "no matches found"; bash hands rm the literal pattern, which
+	// -f then ignores with exit 0).
+	removeTree  func(path string) string
+	removeFiles func(paths ...string) string
+	inspect     func(path string) string
+	// unknown is the sentence an unreadable row ends with.
+	unknown func(path string) string
+	// skipWalk names children this command must not read at all.
+	skipWalk map[string]bool
+	// suffix ends every row's note.
+	suffix string
+	// legacy is the dir no launch writes any more, so no row there says a launch replaces it.
+	legacy bool
+}
+
+// stagingFlavor is the host-owned staging root (PL-1, PL-2). A per-launch tree there is sealed
+// 0555, which blocks its owner's rm as well, so a tree's removal unseals it first.
+var stagingFlavor = macosUserFlavor{
+	section: SectionMacosUser, keyPrefix: "macos.state.", owned: "host-owned",
+	removeTree: func(p string) string { return "chmod -R u+w -- " + p + " && rm -rf -- " + p },
+	removeFiles: func(ps ...string) string {
+		return "rm -f -- " + strings.Join(ps, " ")
+	},
+	inspect: func(p string) string { return "ls -la -- " + p },
+	unknown: func(p string) string {
+		return "not readable as this user, though yolo makes the staging root this user's; `ls -ld " + p +
+			"` shows its owner and mode"
+	},
+}
+
+// legacyFlavor is the root-owned dir an older yolo staged into (PL-8). Nothing in yolo removes it
+// or reads its env/, and a launch no longer writes there.
+func legacyFlavor(dir string) macosUserFlavor {
+	return macosUserFlavor{
+		section: SectionMacosUserLegacy, keyPrefix: "macos.legacy.", owned: "root-owned", legacy: true,
+		removeTree: func(p string) string { return "sudo rm -rf " + p },
+		removeFiles: func(ps ...string) string {
+			return "sudo rm -f " + strings.Join(ps, " ")
+		},
+		inspect:  func(p string) string { return "sudo ls -la -- " + p },
+		unknown:  sudoDu,
+		skipWalk: map[string]bool{"env": true},
+		suffix: ". A launch no longer writes " + dir + "; an older yolo's still-running sessions may, " +
+			"so end them first, and nothing in yolo removes it",
+	}
+}
+
+// macosUserPerWorkspaceLeaves names the staged dirs' children whose entries are keyed by a
+// workspace or launch: what each copy is, its useful count label, and a safe exact-path removal
+// command when one exists. A nil remove means paths are retained by identity and no
 // workspace-wide removal is safe to recommend.
-//
-// THE REMOVAL NAMES EACH PATH LITERALLY, NEVER A GLOB. The user's own shell expands a glob before
-// sudo runs, and env/ is a dir only root can list (SandboxEnvDirCommands makes it 0700), so a
-// pattern there matches nothing: zsh, macOS's default shell, refuses with "no matches found", and
-// bash hands rm the literal pattern, which -f then ignores with exit 0.
 var macosUserPerWorkspaceLeaves = map[string]struct {
 	what       string
 	countLabel string
-	remove     func(stateDir string) string
+	remove     func(f macosUserFlavor, stateDir string) string
 }{
 	"packs": {"per-launch immutable guest trees and legacy workspace trees", "entries", nil},
-	"home-overlay": {"each workspace's staged skills and briefings", "workspaces", func(sd string) string {
-		return "sudo rm -rf " + macosuser.StagedHomeOverlay(cnamePlaceholder, sd)
+	"home-overlay": {"each workspace's staged skills and briefings", "workspaces", func(f macosUserFlavor, sd string) string {
+		return f.removeTree(macosuser.StagedHomeOverlay(cnamePlaceholder, sd))
 	}},
-	"ctx": {"each workspace's staged context tree (its /ctx)", "workspaces", func(sd string) string {
-		return "sudo rm -rf " + macosuser.StagedCtxRoot(cnamePlaceholder, sd)
+	"ctx": {"each workspace's staged context tree (its /ctx)", "workspaces", func(f macosUserFlavor, sd string) string {
+		return f.removeTree(macosuser.StagedCtxRoot(cnamePlaceholder, sd))
 	}},
-	"env": {"each workspace's session environment files", "", func(sd string) string {
-		return "sudo rm -f " + macosuser.SandboxEnvFile(cnamePlaceholder, sd) + " " +
-			macosuser.SandboxDaemonEnvFile(cnamePlaceholder, sd)
+	"env": {"each workspace's session environment files", "", func(f macosUserFlavor, sd string) string {
+		return f.removeFiles(macosuser.SandboxEnvFile(cnamePlaceholder, sd),
+			macosuser.SandboxDaemonEnvFile(cnamePlaceholder, sd))
 	}},
 }
 
 // cnamePlaceholder stands for a workspace's container name in a command a note prints.
 const cnamePlaceholder = "<cname>"
 
-// macosUserStateRows is one row per child of the root-owned state dir, plus one for its loose
-// files (the per-workspace Seatbelt profiles). exists is false only when the dir is absent.
-func macosUserStateRows(o Options, stateDir string) (rows []Store, exists bool) {
+// macosUserStateRows is one row per child of a staged dir, plus one for its loose files (the
+// per-workspace Seatbelt profiles), in f's section. exists is false only when the dir is absent.
+func macosUserStateRows(o Options, stateDir string, f macosUserFlavor) (rows []Store, exists bool) {
 	entries, err := os.ReadDir(stateDir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, false
 	}
 	teardown := "`yolo macos-teardown` does not remove it"
 	if err != nil {
-		s := Store{Key: "macos.state", Section: SectionMacosUser, Name: stateDir, Path: stateDir,
+		s := Store{Key: strings.TrimSuffix(f.keyPrefix, "."), Section: f.section, Name: stateDir, Path: stateDir,
 			Sizing: SizingUnknown, Reason: err.Error(), Reclaimer: none(), Verdict: VerdictHuman,
-			Note: "the root-owned dir every macos-user launch stages into; " + sudoDu(stateDir)}
+			Note: "the " + f.owned + " dir macos-user launches stage into; " + f.unknown(stateDir) + f.suffix}
 		return []Store{s}, true
 	}
 	var loose int64
@@ -1207,47 +1272,69 @@ func macosUserStateRows(o Options, stateDir string) (rows []Store, exists bool) 
 			continue
 		}
 		path := filepath.Join(stateDir, name)
-		s := Store{Key: "macos.state." + name, Section: SectionMacosUser, Name: path + "/", Path: path,
+		s := Store{Key: f.keyPrefix + name, Section: f.section, Name: path + "/", Path: path,
 			Verdict: VerdictHuman}
-		sizeRootOwned(&s, path, o)
+		if f.skipWalk[name] {
+			s.Sizing, s.Reason = SizingUnknown, "readable by root alone; not read"
+		} else {
+			sizeRootOwned(&s, path, o)
+		}
 		leaf, perWorkspace := macosUserPerWorkspaceLeaves[name]
 		switch {
 		case perWorkspace:
 			if leaf.remove == nil {
 				s.Reclaimer = Reclaimer{Detail: "no automatic reclaimer; a guest consumer may still hold a launch tree"}
-				s.Note = leaf.what + ", root-owned. A tree is retained after a pack writer or guest consumer is dispatched because yolo cannot prove all writers, readers and restart capability ended; yolo does not reclaim it. Use the exact " +
-					"retained path printed by the launch and inspect it with `sudo ls -la -- <exact-path>` " +
-					"before any manual removal; " + teardown
+				s.Note = leaf.what + ", " + f.owned + ". A tree is retained after a pack writer or guest consumer is dispatched because yolo cannot prove all writers, readers and restart capability ended; yolo does not reclaim it. Use the exact " +
+					"retained path printed by the launch and inspect it with `" + f.inspect("<exact-path>") + "` " +
+					"before any manual removal (`" + f.removeTree("<exact-path>") + "`); " + teardown
+			} else if f.legacy {
+				s.Reclaimer = Reclaimer{Detail: "no reclaimer; no launch writes here any more"}
+				s.Note = leaf.what + ", " + f.owned + ", left by an older yolo. Each workspace's copy stays until " +
+					"you remove it: `" + leaf.remove(f, stateDir) + "`; " + teardown
 			} else {
 				s.Reclaimer = Reclaimer{Detail: "a launch replaces its own workspace's copy; nothing removes another's"}
-				s.Note = leaf.what + ", root-owned and replaced in place by that workspace's next launch. A " +
-					"workspace you no longer launch keeps its copy until you remove it: `" + leaf.remove(stateDir) +
+				s.Note = leaf.what + ", " + f.owned + " and replaced in place by that workspace's next launch. A " +
+					"workspace you no longer launch keeps its copy until you remove it: `" + leaf.remove(f, stateDir) +
 					"`; " + teardown
 			}
-			if n, ok := countEntries(path); ok && leaf.countLabel != "" {
+			if f.skipWalk[name] {
+				// Counting is reading: the dir's entries are root's to list.
+			} else if n, ok := countEntries(path); ok && leaf.countLabel != "" {
 				s.Count, s.CountLabel = n, leaf.countLabel
 			}
+		case name == "bin" && f.legacy:
+			s.Reclaimer = Reclaimer{Detail: "no reclaimer; no launch writes here any more"}
+			s.Note = "the yolo binaries an older yolo staged, " + f.owned + "; remove them with `" +
+				f.removeTree(path) + "`; " + teardown
 		case name == "bin":
 			s.Reclaimer = Reclaimer{Detail: "every launch replaces it"}
-			s.Note = "the staged yolo binary and the sandbox's own yolo binaries, one copy for the " +
+			s.Note = "the staged yolo binary and the sandbox's own yolo binaries, " + f.owned + ", one copy for the " +
 				"machine that every launch replaces; " + teardown
+		case f.legacy:
+			s.Reclaimer = none()
+			s.Note = f.owned + ", left by an older yolo; remove it with `" + f.removeTree(path) + "`; " + teardown
 		default:
 			s.Reclaimer = none()
-			s.Note = "root-owned, under the dir every macos-user launch stages into; " + teardown
+			s.Note = f.owned + ", under the dir macos-user launches stage into; " + teardown
 		}
 		if s.Sizing == SizingUnknown {
-			s.Note += ". " + sudoDu(path)
+			s.Note += ". " + f.unknown(path)
 		}
+		s.Note += f.suffix
 		rows = append(rows, s)
 	}
 	if looseFiles > 0 {
+		detail := "a launch rewrites its own workspace's profile"
+		if f.legacy {
+			detail = "no reclaimer; no launch writes here any more"
+		}
 		rows = append(rows, Store{
-			Key: "macos.state._files", Section: SectionMacosUser, Name: stateDir + "/ (loose files)", Path: stateDir,
+			Key: f.keyPrefix + "_files", Section: f.section, Name: stateDir + "/ (loose files)", Path: stateDir,
 			Sizing: SizingMeasured, Bytes: loose, Files: looseFiles, Count: profiles, CountLabel: "profiles",
-			Reclaimer: Reclaimer{Detail: "a launch rewrites its own workspace's profile"}, Verdict: VerdictHuman,
-			Note: "the per-workspace Seatbelt profiles (profile-<cname>.sb), one per workspace launched; " +
-				"a workspace you no longer launch keeps its own until you remove it: `sudo rm " +
-				filepath.Join(stateDir, "profile-<cname>.sb") + "`; " + teardown,
+			Reclaimer: Reclaimer{Detail: detail}, Verdict: VerdictHuman,
+			Note: "the per-workspace Seatbelt profiles (profile-<cname>.sb), " + f.owned + ", one per workspace launched; " +
+				"a workspace you no longer launch keeps its own until you remove it: `" +
+				f.removeFiles(filepath.Join(stateDir, "profile-<cname>.sb")) + "`; " + teardown + f.suffix,
 		})
 	}
 	return rows, true

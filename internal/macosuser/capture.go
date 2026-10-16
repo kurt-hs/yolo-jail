@@ -8,7 +8,7 @@ package macosuser
 // # The shape, and the two things that make it different from a launch
 //
 //	prepare    a throwaway staging tree on NEUTRAL GROUND, shared-group ACLs
-//	stage      the yolo binary + this launch's pack trees into the root-owned state dir
+//	stage      the yolo binary + this launch's pack trees into the host-owned staging root
 //	profile    SeatbeltCaptureProfile over the staging tree — the shared home is DENIED
 //	bootstrap  `darwin-bootstrap` into the STAGING HOME, so the generated launcher exists there
 //	drive      `capture-run` under sandbox-exec, HOME=<staging>, running that launcher
@@ -52,8 +52,8 @@ package macosuser
 // STILL NOT MEASURED: the MATERIALIZE half. Its rewrite (install-capture.md hand-off H2,
 // internal/capture/rewrite.go) is built and measured on Linux against temp dirs standing in for
 // this backend's two homes. Since hand-off H4 a launch here reaches it: the host CLI picks each
-// selected installer program's entry, the launch stages a root-owned copy of it under the state
-// dir (StagedCapturesRoot, StageCaptureCommands), and the bootstrap bakes that store into the
+// selected installer program's entry, the launch stages a sealed, host-owned copy of it under the staging
+// root (StagedCapturesRoot, StageCaptureCommands), and the bootstrap bakes that store into the
 // generated launcher, whose `_try_materialize` hands it to `capture-materialize`; and a launch
 // auto-captures what the store lacks (internal/cli/run/autocapture.go). No Mac has run that
 // path. Podman-in-podman cannot exercise this backend at all, so no nested jail will ever cover
@@ -195,13 +195,18 @@ type CapturePlan struct {
 	Seatbelt    string
 	StagedDir   string
 	StagedYolo  string
-	// PackRoot is the root-owned staged pack tree the bootstrap renders from, or "".
+	// PackRoot is the sealed staged pack tree the bootstrap renders from, or "".
 	PackRoot string
-	// PrepareCommands provision the staging tree (sudo); StageCommands stage the binary and
-	// the pack trees; CleanupCommands remove what the capture leaves behind.
+	// PrepareCommands provision the staging tree; StageCommands stage the binary and the pack
+	// trees; CleanupCommands remove what the capture leaves behind. All three run as the host
+	// user, never under sudo (docs/design/macos-user-privilege-lifecycle-plan.md, task 6).
 	PrepareCommands [][]string
 	StageCommands   [][]string
 	CleanupCommands [][]string
+	// ScratchGuestCommands are PL-7's fallback for the staging tree: when the host cannot remove
+	// it, the sandbox account, which owns what the installer wrote, makes it writable and removes
+	// it through the one run-as rule, and the host then removes the rest (removeCaptureScratch).
+	ScratchGuestCommands [][]string
 	// BootstrapArgv generates the STAGING HOME's shims, launchers and pack surfaces.
 	BootstrapArgv []string
 	// DriverArgv runs `yolo internal capture-run` under sandbox-exec as the sandbox user.
@@ -347,7 +352,8 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 		CleanupCommands: append(append(append(CaptureCleanupCommands(stagingRoot, profilePath),
 			SandboxEnvRemoveCommands(envFile)...), SandboxEnvRemoveCommands(caBundleFile)...),
 			SandboxEnvRemoveCommands(caExtrasFile)...),
-		BootstrapArgv: DarwinBootstrapArgv(stagedYolo, stagingHome, bootstrapEnv, ""),
+		ScratchGuestCommands: CaptureScratchGuestCommands(stagingRoot),
+		BootstrapArgv:        DarwinBootstrapArgv(stagedYolo, stagingHome, bootstrapEnv, ""),
 		DriverArgv: CaptureDriverArgv(stagedYolo, stagingHome, outDir, opts.Bin, profilePath,
 			envFile, darwinPrefix),
 		EnvFile:              envFile,
@@ -368,7 +374,10 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 
 // CaptureStagingCommands provision the throwaway staging tree: a clean root owned by the
 // invoking user with the sandbox group's inheriting ACLs, holding an empty home and an empty out
-// dir.
+// dir. The invoking user runs them, never root: the capture root is theirs (`yolo macos-setup`
+// gives it to them, and captureGatesPass refuses one that is not), it is made 0755 explicitly
+// rather than left to their umask, and the leaves are put in the sandbox group with
+// /usr/bin/chgrp, which a non-root owner may do because setup made them a member of it.
 //
 // It STARTS BY DELETING. A staging tree left by a killed capture would merge into this one, and
 // the driver's baseline walk would then file the dead run's files as this installer's — the same
@@ -380,24 +389,37 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 // proto-entry (and to chmod it read-only at admit) over files the sandbox uid created.
 func CaptureStagingCommands(stagingRoot, hostUser string) [][]string {
 	cmds := [][]string{{rmBin, "-rf", stagingRoot}}
+	cmds = append(cmds, categoryDirCommands(filepath.Dir(stagingRoot))...)
 	cmds = append(cmds, SharedRootProvisionCommands(stagingRoot, hostUser)...)
 	for _, leaf := range []string{CaptureStagingHome(stagingRoot), CaptureStagingOut(stagingRoot)} {
-		cmds = append(cmds, []string{"mkdir", "-p", leaf})
-		if hostUser != "" {
-			cmds = append(cmds, []string{"chown", hostUser + ":" + SandboxGroup, leaf})
-		}
-		cmds = append(cmds, []string{"chmod", "2770", leaf})
+		cmds = append(cmds, captureLeafCommands(leaf)...)
 	}
 	return cmds
+}
+
+// chgrpBin puts a staging leaf in the sandbox group. A non-root `chown user:group` does the same
+// only because the user is in the group; chgrp says what it does.
+const chgrpBin = "/usr/bin/chgrp"
+
+// captureLeafCommands make one leaf of a staging tree: the invoking user's, in the sandbox group,
+// setgid, so both can write it.
+func captureLeafCommands(leaf string) [][]string {
+	return [][]string{
+		{mkdirBin, "-p", leaf},
+		{chgrpBin, SandboxGroup, leaf},
+		{chmodBin, "2770", leaf},
+	}
 }
 
 // CaptureCleanupCommands remove what a capture leaves on the machine: the whole staging tree
 // (a bootstrapped home plus everything the installer wrote that was not delta) and the
 // per-capture Seatbelt profile.
 //
-// Under sudo because the tree's contents are the sandbox uid's. Best-effort at the call site:
-// a capture that succeeded must not be reported as failed because its litter could not be swept,
-// and the next capture of the same program clears the same paths anyway.
+// As the host user, never under sudo. The tree's contents are the sandbox uid's, but the shared
+// group's inherited ACE lets the host remove them; where an installer stripped that ACE from files
+// it wrote, RunCaptureCleanup falls back to ScratchGuestCommands (PL-7). Best-effort at the call
+// site: a capture that succeeded must not be reported as failed because its litter could not be
+// swept, and the next capture of the same program clears the same paths anyway.
 func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 	return [][]string{
 		{rmBin, "-rf", stagingRoot},
@@ -405,10 +427,57 @@ func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 	}
 }
 
+// CaptureScratchGuestCommands are PL-7's guest pass over a staging tree
+// (docs/design/macos-user-privilege-lifecycle-plan.md): as the sandbox account, through the one
+// run-as rule, give the owner write on everything it owns, then remove what it can. It cannot
+// remove the tree's root, which is the host's; the host's own removal, run again after this,
+// takes the rest. The sandbox account owns what the installer wrote, so this needs no root.
+func CaptureScratchGuestCommands(stagingRoot string) [][]string {
+	return [][]string{
+		RunAsSandboxArgv(nil, chmodBin, "-R", "u+w", "--", stagingRoot),
+		RunAsSandboxArgv(nil, rmBin, "-rf", "--", stagingRoot),
+	}
+}
+
+// isCaptureScratchClear reports whether cmd is the host's removal of the staging tree, the one
+// removal PL-7 backs with the guest pass.
+func isCaptureScratchClear(cmd []string, stagingRoot string) bool {
+	return len(cmd) == 3 && cmd[0] == rmBin && cmd[1] == "-rf" && cmd[2] == stagingRoot
+}
+
+// removeCaptureScratch removes a staging tree per PL-7: as the host; on failure, the guest pass
+// through the rule, then as the host again. The guest pass's own status is not asked: it cannot
+// remove the host-owned root, so it fails whenever it does its job, and the host's second try is
+// the answer.
+func removeCaptureScratch(deps Deps, plan CapturePlan) bool {
+	clear := []string{rmBin, "-rf", plan.StagingRoot}
+	if deps.Run(clear) == 0 {
+		return true
+	}
+	for _, cmd := range plan.ScratchGuestCommands {
+		_ = deps.Run(cmd)
+	}
+	return deps.Run(clear) == 0
+}
+
+// staleCaptureFileCommands remove, as the host, the files this capture is about to write: its
+// profile, env file and CA files. They are keyed by the program (or the build), so an earlier
+// capture whose cleanup failed leaves files at exactly these paths, and Deps.WriteHostFile is an
+// exclusive create that refuses to replace one.
+func (p CapturePlan) staleCaptureFileCommands() [][]string {
+	var cmds [][]string
+	for _, f := range []string{p.ProfilePath, p.EnvFile, p.CABundleFile, p.CAExtrasFile} {
+		if f != "" {
+			cmds = append(cmds, []string{rmBin, "-f", f})
+		}
+	}
+	return cmds
+}
+
 // CaptureDriverArgv builds the argv that runs the capture driver as the sandbox user, inside the
 // narrowed Seatbelt profile:
 //
-//	sudo --user=_yolojail /usr/bin/env -i HOME=<staging> … \
+//	/usr/bin/sudo -n --user=_yolojail /usr/bin/env -i HOME=<staging> … \
 //	  /usr/bin/sandbox-exec -f <profile> -- \
 //	  <stagedYolo> internal capture-run --home=<staging> --out=<out> --scan-content-refs -- \
 //	  /usr/bin/env YOLO_INSTALL_ONLY=1 <bin>
@@ -432,7 +501,8 @@ func CaptureCleanupCommands(stagingRoot, profilePath string) [][]string {
 // against macOS path_helper, because path_helper never runs on this argv.
 func CaptureDriverArgv(stagedYolo, stagingHome, outDir, bin, profilePath, envFile string,
 	pathPrefix []string) []string {
-	out := []string{"sudo", "--user=" + SandboxUser, "/usr/bin/env", "-i"}
+	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
+	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
@@ -499,7 +569,7 @@ func capturePlanProblems(plan CapturePlan) []string {
 		}
 	}
 	// The out dir must not be inside a capture surface of the staging home. The driver
-	// refuses this at run time; catching it here names it before a sudo has run.
+	// refuses this at run time; catching it here names it before anything has run.
 	for _, s := range paths.HomeSurfaces() {
 		surface := filepath.Join(plan.StagingHome, filepath.FromSlash(s.HomeRel))
 		if plan.OutDir == surface || strings.HasPrefix(plan.OutDir, surface+"/") {
@@ -515,12 +585,37 @@ func capturePlanProblems(plan CapturePlan) []string {
 	// so a deny before the allow is no deny at all).
 	problems = append(problems, captureProfileProblems(plan.Seatbelt)...)
 
-	// The staged yolo must live under the root-owned state dir, and BOTH self-execs must run
+	// THE ONE RUN-AS RULE (docs/design/macos-user-privilege-lifecycle-plan.md, task 6): every
+	// crossing into the sandbox account is the rule's shape, and nothing the host runs (prepare,
+	// stage, cleanup) is a sudo at all. A crossing off the shape prompts or fails under the
+	// narrowed grant; a host step under sudo is a root act the ruling removed.
+	for _, c := range []struct {
+		name string
+		argv []string
+	}{{"capture bootstrap", plan.BootstrapArgv}, {"capture driver", plan.DriverArgv}} {
+		problems = append(problems, RunAsArgvProblems(c.name, c.argv)...)
+	}
+	for _, cmd := range plan.ScratchGuestCommands {
+		problems = append(problems, RunAsArgvProblems("capture scratch guest pass", cmd)...)
+	}
+	for _, group := range []struct {
+		name string
+		cmds [][]string
+	}{{"prepare", plan.PrepareCommands}, {"stage", plan.StageCommands}, {"cleanup", plan.CleanupCommands}} {
+		for _, cmd := range group.cmds {
+			if runsSudo(cmd) {
+				problems = append(problems, "a capture "+group.name+" command runs sudo ("+
+					shquote.JoinDisplay(cmd)+"); the host user runs it, in a tree it owns")
+			}
+		}
+	}
+
+	// The staged yolo must live under the host-owned staging root, and BOTH self-execs must run
 	// THAT path — the same B2 rule a launch has, for the same reason: a binary the sandbox
 	// could rewrite is a sandbox that chooses its own launch code.
 	if !strings.HasPrefix(plan.StagedYolo, plan.StagedDir+"/") {
 		problems = append(problems,
-			"staged yolo "+plan.StagedYolo+" is not under the root-owned state dir "+
+			"staged yolo "+plan.StagedYolo+" is not under the host-owned staging root "+
 				plan.StagedDir+"; the sandbox could rewrite its own capture binary")
 	}
 	// The driver argv is under the same two-sided env-file contract a launch's argvs are
@@ -543,7 +638,7 @@ func capturePlanProblems(plan CapturePlan) []string {
 	}
 	if plan.EnvFile != "" && !strings.HasPrefix(plan.EnvFile, plan.StagedDir+"/") {
 		problems = append(problems,
-			"session env file "+plan.EnvFile+" is not under the root-owned state dir "+
+			"session env file "+plan.EnvFile+" is not under the host-owned staging root "+
 				plan.StagedDir+"; the sandbox could rewrite the environment it is launched with")
 	}
 
@@ -612,7 +707,7 @@ func capturePlanProblems(plan CapturePlan) []string {
 	if plan.PackRoot != "" {
 		if !strings.HasPrefix(plan.PackRoot, plan.StagedDir+"/") {
 			problems = append(problems,
-				"staged pack root "+plan.PackRoot+" is not under the root-owned state dir "+
+				"staged pack root "+plan.PackRoot+" is not under the host-owned staging root "+
 					plan.StagedDir+"; the sandbox could rewrite a pack manifest")
 		}
 		if !stagesPackTreeAt(plan.StageCommands, plan.PackRoot) {
@@ -692,19 +787,25 @@ func containsArgPair(argv []string, a, b, c string) bool {
 // that move and not before it.
 //
 // The gates are RunMacosUser's, in its order and for its reasons: fail closed before any
-// subprocess when we cannot run here, and refuse under sudo because the launch self-escalates
-// and running as root misassigns the identity the staging tree is chowned to.
+// subprocess when we cannot run here, refuse under sudo because running as root misassigns the
+// identity the staging tree belongs to, and refuse where the one-time setup's run-as rule or
+// staging root is missing, as a launch does.
 func RunCapturePlan(deps Deps, plan CapturePlan) int {
 	return runCaptureSteps(deps, plan, CapturePlanInvariants(plan), nil)
 }
 
 // runCaptureSteps is RunCapturePlan with the plan's violations computed by its caller — an
 // installer's (CapturePlanInvariants) or a fork's build's (ForkBuildPlanInvariants) — and the
-// commands asUser run as the INVOKING user, never under sudo, between the staging and the profile:
-// a fork's build copies its checkout into the staging tree there (ForkBuildPlan.SourceCommands).
+// commands asUser run between the staging and the profile: a fork's build copies its checkout into
+// the staging tree there (ForkBuildPlan.SourceCommands).
+//
+// EVERY STEP BUT THE CROSSINGS RUNS AS THE INVOKING USER, never under sudo
+// (docs/design/macos-user-privilege-lifecycle-plan.md, task 6): the staging tree and the capture
+// root are theirs, and so is the staging root the binary, packs, profile and env files go in. Only
+// the bootstrap and the driver cross into the sandbox account, through the one run-as rule.
 func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]string) int {
 	out := printer{w: deps.Out, color: deps.Color}
-	if !captureGatesPass(deps, out) {
+	if !captureGatesPass(deps, out, filepath.Dir(plan.StagingRoot)) {
 		return 1
 	}
 	if len(problems) > 0 {
@@ -719,8 +820,7 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 	defer func() {
 		finishPackTree(deps, out, plan.PackRoot, packTreeOwned, packTreeWriterDispatched, packConsumerDispatched)
 	}()
-	out.printf("[dim]Preparing the capture sandbox at %s — sudo may prompt once.[/dim]",
-		plan.StagingRoot)
+	out.printf("[dim]Preparing the capture sandbox at %s.[/dim]", plan.StagingRoot)
 	for _, group := range [][2]any{
 		{"prepare the capture staging tree", plan.PrepareCommands},
 		{"stage the capture binary and packs", plan.StageCommands},
@@ -729,7 +829,20 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 			if isPackTreeWriterCommand(cmd, plan.PackRoot) {
 				packTreeWriterDispatched = true
 			}
-			if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+			// The clear of a tree a killed capture left: the host's removal, backed by PL-7's
+			// guest pass, so files an installer stripped the shared ACE from cannot wedge every
+			// later capture of the program.
+			if isCaptureScratchClear(cmd, plan.StagingRoot) {
+				if !removeCaptureScratch(deps, plan) {
+					out.printf("[bold red]Could not clear the capture staging tree %s[/bold red], left by an "+
+						"earlier capture. Neither you nor %s could remove it; remove it as an administrator "+
+						"(`sudo rm -rf -- %s`), then run the capture again.", plan.StagingRoot, SandboxUser,
+						shquote.QuoteDisplay(plan.StagingRoot))
+					return 1
+				}
+				continue
+			}
+			if deps.Run(cmd) != 0 {
 				if isPackTreeReservationCommand(cmd, plan.PackRoot) {
 					printPackTreeReservationFailure(out, plan.PackRoot)
 				} else {
@@ -750,7 +863,16 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 			return 1
 		}
 	}
-	if !deps.InstallRootFile(plan.ProfilePath, plan.Seatbelt, "0444") {
+	// A stale profile, env or CA file at this capture's paths is an earlier capture's whose cleanup
+	// failed; the host write below is an exclusive create, so it goes first.
+	for _, cmd := range plan.staleCaptureFileCommands() {
+		if deps.Run(cmd) != 0 {
+			out.printf("[bold red]Could not remove a file an earlier capture left (%s).[/bold red] "+
+				"Remove it yourself, then run the capture again.", shquote.JoinDisplay(cmd))
+			return 1
+		}
+	}
+	if !deps.WriteHostFile(plan.ProfilePath, plan.Seatbelt, 0o444) {
 		out.printf("[bold red]Could not write the capture Seatbelt profile %s[/bold red]",
 			plan.ProfilePath)
 		return 1
@@ -782,7 +904,12 @@ func runCaptureSteps(deps Deps, plan CapturePlan, problems []string, asUser [][]
 // captureGatesPass is RunCapturePlan's gates, in its order: fail closed, before any subprocess, where
 // a capture cannot run here, saying why on out. A fork's build asks them before its toolchain's nix
 // build too (RunForkBuildAct), so a machine that would refuse the build never pays for that first.
-func captureGatesPass(deps Deps, out printer) bool {
+//
+// After the account, the setup's privilege facts, in the launch's words (PrivilegeUnmet): the
+// run-as rule every crossing goes through and the staging root the binary and files are written
+// to. Then captureRoot, the directory the staging tree is made in, which the host creates when it
+// is absent and must otherwise own.
+func captureGatesPass(deps Deps, out printer, captureRoot string) bool {
 	if !deps.IsMacOS() {
 		out.print("[bold red]`yolo capture` on the macos-user backend requires macOS.[/bold red] " +
 			"Capture on a container backend instead.")
@@ -790,8 +917,9 @@ func captureGatesPass(deps Deps, out printer) bool {
 	}
 	if deps.Geteuid() == 0 {
 		out.print("[bold red]Don't run `yolo capture` under sudo for the macos-user " +
-			"backend.[/bold red]  It escalates each step itself; running as root would own " +
-			"the staging tree as root and the sandbox user could not write it.")
+			"backend.[/bold red]  It runs as you and crosses into the sandbox account through the " +
+			"one-time setup's rule; running as root would own the staging tree as root and the " +
+			"sandbox user could not write it.")
 		return false
 	}
 	if !deps.Which("sandbox-exec") {
@@ -804,18 +932,80 @@ func captureGatesPass(deps Deps, out printer) bool {
 			"Run the one-time setup first (`yolo macos-setup`).", SandboxUser)
 		return false
 	}
-	return true
+	if c, unmet := PrivilegeUnmet(deps.launchProbes()); unmet {
+		out.print(c.Refusal(""))
+		return false
+	}
+	return captureRootUsable(deps, out, captureRoot)
 }
 
-// RunCaptureCleanup runs a plan's cleanup commands, best-effort, and reports nothing.
-//
-// Best-effort is the whole contract: a capture that succeeded must not be reported as failed
-// because a `rm -rf` under sudo did not take, and the next capture of the same program clears
-// the same paths before it starts.
-func RunCaptureCleanup(deps Deps, plan CapturePlan) {
-	for _, cmd := range plan.CleanupCommands {
-		_ = deps.Run(append([]string{"sudo"}, cmd...))
+// captureRootUsable judges the capture root as the staging root is judged (JudgeStagingRoot): the
+// host makes the staging tree in it, so it must be the host's, writable by no one else, with no
+// access list. Absent is fine: the prepare commands create it, 0755. A root another account owns
+// is what captures before the one-rule contract left (root's), which `yolo macos-setup` hands over.
+func captureRootUsable(deps Deps, out printer, captureRoot string) bool {
+	f := StagingRootFacts{Err: errNoStagingRootProbe}
+	if deps.StagingRootFacts != nil {
+		f = deps.StagingRootFacts(captureRoot)
 	}
+	switch JudgeStagingRoot(f, deps.Geteuid()) {
+	case StagingRootOK, StagingRootAbsent:
+		return true
+	case StagingRootUnknown:
+		out.printf("[bold red]Refusing the capture: %s could not be inspected[/bold red] (%s). "+
+			"Look at it with `ls -lde %s`; if it is not yours, run [bold]yolo macos-setup[/bold] as your "+
+			"normal admin user; it gives the directory to you.", captureRoot, errStr(f.Err),
+			shquote.QuoteDisplay(captureRoot))
+		return false
+	}
+	out.printf("[bold red]Refusing the capture: %s belongs to another account or is not safe.[/bold red] "+
+		"Run [bold]yolo macos-setup[/bold] as your normal admin user; it gives the directory to you.",
+		captureRoot)
+	return false
+}
+
+// captureRootOf is the capture root an act stages under: override, or CaptureRootDefault().
+func captureRootOf(override string) string {
+	if override == "" {
+		return CaptureRootDefault()
+	}
+	return override
+}
+
+// RunCaptureCleanup runs a plan's cleanup commands as the host user, best-effort, and warns about
+// what it could not remove.
+//
+// The staging tree goes per PL-7 (removeCaptureScratch): the host's removal, then on failure the
+// sandbox account's own pass through the run-as rule, then the host's again. Never root.
+// Best-effort is the whole contract: a capture that succeeded must not be reported as failed
+// because its scratch could not be removed, so a failure is a warning naming what is left, and
+// the next capture of the same program clears the same paths before it starts.
+func RunCaptureCleanup(deps Deps, plan CapturePlan) {
+	var left []string
+	for _, cmd := range plan.CleanupCommands {
+		if isCaptureScratchClear(cmd, plan.StagingRoot) {
+			if !removeCaptureScratch(deps, plan) {
+				left = append(left, plan.StagingRoot)
+			}
+			continue
+		}
+		if deps.Run(cmd) != 0 && len(cmd) > 0 {
+			left = append(left, cmd[len(cmd)-1])
+		}
+	}
+	if len(left) == 0 {
+		return
+	}
+	out := printer{w: deps.Out, color: deps.Color}
+	out.printf("[yellow]Warning: could not remove what the capture left behind:[/yellow] %s\n"+
+		"The capture itself is unaffected, and the next capture of %s clears its staging tree first. "+
+		"To remove them now, run [bold]rm -rf -- %s[/bold]; if that is refused, an administrator "+
+		"removes them with `sudo rm -rf`.", strings.Join(left, ", "), plan.Bin, shquote.JoinDisplay(left))
+}
+
+// runsSudo reports whether cmd runs sudo, by any spelling: on PATH or by absolute path.
+func runsSudo(cmd []string) bool {
+	return len(cmd) > 0 && filepath.Base(cmd[0]) == filepath.Base(sudoBin)
 }
 
 // PrintCapturePlan renders a CapturePlan for a dry run. Plain text, like PrintPlan, and for the
@@ -841,43 +1031,64 @@ func PrintCapturePlan(w io.Writer, plan CapturePlan, problems []string) {
 	if plan.EnvFile == "" {
 		p.print("env file:    [dim]none — this capture composed no environment[/dim]")
 	} else {
-		p.printf("env file:    %s [dim](0600, root-owned, read by %s only)[/dim]",
+		p.printf("env file:    %s [dim](0600, yours, read by %s only)[/dim]",
 			plan.EnvFile, SandboxUser)
 		p.printf("  [dim]sets, values not shown:[/dim] %s",
 			strings.Join(SandboxEnvFileKeys(plan.EnvFileContent), ", "))
 	}
 	p.print("")
-	p.print("[bold]── privileged commands (run via sudo) ──[/bold]")
-	for _, cmd := range append(append(append([][]string{}, plan.PrepareCommands...),
-		plan.StageCommands...), plan.EnvFileCommands...) {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
+	// WHAT THE CAPTURE DOES AS YOU, with no sudo, in the order it runs (PrintPlan's shape,
+	// docs/design/macos-user-privilege-lifecycle-plan.md task 6): the staging tree and the files
+	// are the host user's, so nothing here can ask for a password.
+	p.print("[bold]── as you (no sudo) ──[/bold]")
+	for _, cmd := range append(append([][]string{}, plan.PrepareCommands...), plan.StageCommands...) {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	p.print("  [dim]clearing what an earlier capture may have left at the paths it writes:[/dim]")
+	for _, cmd := range plan.staleCaptureFileCommands() {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	p.printf("  write %s  [dim](0444, content never on argv)[/dim]", shquote.QuoteDisplay(plan.ProfilePath))
+	for _, cmd := range plan.EnvFileCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
 	}
 	if plan.EnvFile != "" {
-		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, shquote.QuoteDisplay(plan.EnvFile))
-		p.printf("  sudo %s 0600 %s", chmodBin, shquote.QuoteDisplay(plan.EnvFile))
+		p.printf("  write %s  [dim](0600, content never on argv)[/dim]", shquote.QuoteDisplay(plan.EnvFile))
 	}
 	for _, cmd := range plan.EnvFileGrantCommands {
-		p.print("  sudo " + shquote.JoinDisplay(cmd))
+		p.print("  " + shquote.JoinDisplay(cmd))
 	}
 	for _, f := range plan.caTrustFilePlans() {
 		for _, cmd := range f.dir {
-			p.print("  sudo " + shquote.JoinDisplay(cmd))
+			p.print("  " + shquote.JoinDisplay(cmd))
 		}
-		p.printf("  sudo %s %s  [dim](content on stdin, never argv)[/dim]", teeBin, shquote.QuoteDisplay(f.path))
-		p.printf("  sudo %s 0600 %s", chmodBin, shquote.QuoteDisplay(f.path))
+		p.printf("  write %s  [dim](0600, content never on argv)[/dim]", shquote.QuoteDisplay(f.path))
 		for _, cmd := range f.grant {
-			p.print("  sudo " + shquote.JoinDisplay(cmd))
+			p.print("  " + shquote.JoinDisplay(cmd))
 		}
 	}
 	p.print("")
 	p.print("[bold]── capture Seatbelt profile ──[/bold]")
 	p.print(strings.TrimRight(plan.Seatbelt, "\n"))
 	p.print("")
-	p.print("[bold]── bootstrap argv (staging home) ──[/bold]")
+	// THE CROSSINGS, each the whole argv: the one-time setup's rule (RunAsSandboxArgv), `-n`
+	// included, so none prompts.
+	p.printf("[bold]── as %s (the one-time setup's sudo rule, no password) ──[/bold]", SandboxUser)
+	p.print("  [dim]bootstrap (staging home):[/dim]")
 	p.print("  " + shquote.JoinDisplay(plan.BootstrapArgv))
-	p.print("")
-	p.print("[bold]── capture driver argv ──[/bold]")
+	p.print("  [dim]capture driver:[/dim]")
 	p.print("  " + shquote.JoinDisplay(plan.DriverArgv))
+	p.print("")
+	// The cleanup, after the move into the store, best-effort: a failure warns and never fails the
+	// capture. The guest pass runs only when your removal of the staging tree fails (PL-7).
+	p.print("[bold]── cleanup, as you (best-effort) ──[/bold]")
+	for _, cmd := range plan.CleanupCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
+	p.printf("  [dim]if the staging tree resists, as %s, then as you again:[/dim]", SandboxUser)
+	for _, cmd := range plan.ScratchGuestCommands {
+		p.print("  " + shquote.JoinDisplay(cmd))
+	}
 	p.print("")
 	if len(problems) > 0 {
 		p.print("[bold red]plan invariant violations:[/bold red]")
@@ -922,8 +1133,13 @@ func RunCaptureAct(deps Deps, opts CaptureOptions, dest string, dryRun bool) int
 		opts.HostUser = deps.HostUser()
 	}
 	// The TLS trust a launch would compose, when the capture has a tool profile to compose it from
-	// (cabundle.go). A read of the host, so never in a dry run.
+	// (cabundle.go). A read of the host, so never in a dry run, and after the gates, as a fork's
+	// build asks them before its toolchain: a Mac whose setup would refuse the capture refuses it
+	// before any work.
 	if !dryRun {
+		if !captureGatesPass(deps, out, captureRootOf(opts.CaptureRoot)) {
+			return 1
+		}
 		opts.CATrust = ComposeCATrust(deps, opts.Darwin)
 	}
 	plan := BuildCapturePlan(opts)
@@ -1130,19 +1346,15 @@ func forkToolchainHead(opts ForkBuildOptions) string {
 // in it.
 func ForkBuildStagingCommands(stagingRoot, hostUser string) [][]string {
 	cmds := CaptureStagingCommands(stagingRoot, hostUser)
-	src := ForkBuildSourceDir(stagingRoot)
-	cmds = append(cmds, []string{"mkdir", "-p", src})
-	if hostUser != "" {
-		cmds = append(cmds, []string{"chown", hostUser + ":" + SandboxGroup, src})
-	}
-	return append(cmds, []string{"chmod", "2770", src})
+	return append(cmds, captureLeafCommands(ForkBuildSourceDir(stagingRoot))...)
 }
 
 // ForkBuildDriverArgv is CaptureDriverArgv for a fork's build: the same account, environment,
 // profile and capture driver, around `env YOLO_BYPASS_SHIMS=1 /bin/bash -c <ForkBuildScript>`.
 func ForkBuildDriverArgv(stagedYolo, stagingHome, outDir, srcDir, toolchainFile, toolchainHead, build,
 	profilePath, envFile string, pathPrefix []string) []string {
-	out := []string{"sudo", "--user=" + SandboxUser, "/usr/bin/env", "-i"}
+	// The crossing is the one run-as rule (RunAsSandboxArgv): `-n`, so it never prompts.
+	out := RunAsSandboxArgv(nil, "-i")
 	out = append(out, sandboxEnvPairs(stagingHome, SandboxUser,
 		SandboxPath(stagingHome, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
@@ -1213,13 +1425,13 @@ func ForkBuildPlanInvariants(plan ForkBuildPlan) []string {
 				"; the build line would run in an empty directory")
 	}
 	for _, cmd := range plan.SourceCommands {
-		if len(cmd) > 0 && cmd[0] == "sudo" {
+		if runsSudo(cmd) {
 			problems = append(problems,
 				"the checkout is copied under sudo ("+shquote.JoinDisplay(cmd)+"); a copy made as root "+
 					"leaves files the sandbox account cannot write")
 		}
 	}
-	if !commandsInclude(plan.PrepareCommands, []string{"mkdir", "-p", plan.SrcDir}) {
+	if !commandsInclude(plan.PrepareCommands, []string{mkdirBin, "-p", plan.SrcDir}) {
 		problems = append(problems,
 			"the prepare commands never make "+plan.SrcDir+"; the checkout's copy would have nowhere to land")
 	}
@@ -1275,7 +1487,7 @@ func RunForkBuildAct(deps Deps, opts ForkBuildOptions, dest, toolchainDest strin
 	if !dryRun {
 		// The gates before the toolchain: its nix build can take half an hour on a machine where no
 		// launch has built the floor yet, and a machine with no sandbox account would refuse after it.
-		if !captureGatesPass(deps, out) {
+		if !captureGatesPass(deps, out, captureRootOf(opts.CaptureRoot)) {
 			return 1
 		}
 		d, rc := materializeForkToolchain(deps, out, opts)

@@ -10,24 +10,23 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/testsupport"
 )
 
-// A DRY RUN IS READ TO CHECK WHAT WILL RUN AS ROOT, so each privileged command it prints has to
-// read back as the argv the launch will execute. A Mac workspace is often under a path with a
-// space in it ("My Projects"), and the argvs carry ACE strings with spaces of their own; joined
-// with bare spaces, one argument read as several and the plan showed commands that were not the
-// ones it would run.
+// A DRY RUN IS READ TO CHECK WHAT WILL RUN, AS YOU AND AS THE SANDBOX ACCOUNT, so each command it
+// prints has to read back as the argv the launch will execute. A Mac workspace is often under a
+// path with a space in it ("My Projects"), and the argvs carry ACE strings with spaces of their
+// own; joined with bare spaces, one argument read as several and the plan showed commands that
+// were not the ones it would run. And since a launch runs no root sudo (the one-time setup's rule
+// runs commands as the sandbox account alone), the plan prints none: no line opens with `sudo`.
 func TestPrintPlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	plan := BuildRunPlan("/Users/Jane Doe/My Projects/proj", jsonx.NewOrderedMap(), nil,
 		[]string{"claude"}, "/usr/local/bin/yolo", "", HomeOverlay{}, HostContext{},
 		jsonx.NewOrderedMap(), nil, nil)
 	var want [][]string
 	for _, cmds := range [][][]string{plan.StageCommands, plan.EnvFileCommands, plan.EnvFileGrantCommands} {
-		for _, c := range cmds {
-			want = append(want, append([]string{"sudo"}, c...))
-		}
+		want = append(want, cmds...)
 	}
-	want = append(want, append([]string{"sudo"}, plan.BootstrapArgv[1:]...), plan.BootstrapArgv, plan.LaunchArgv)
+	want = append(want, plan.BootstrapArgv, plan.LaunchArgv)
 	if len(plan.ProvisionArgv) > 1 {
-		want = append(want, append([]string{"sudo"}, plan.ProvisionArgv[1:]...), plan.ProvisionArgv)
+		want = append(want, plan.ProvisionArgv)
 	}
 	if len(plan.JailDaemonArgv) > 0 {
 		want = append(want, plan.JailDaemonArgv)
@@ -46,17 +45,25 @@ func TestPrintPlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 			t.Errorf("the dry run prints no line that reads back as %q:\n%s", argv, buf.String())
 		}
 	}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "sudo ") {
+			t.Errorf("the dry run prints a root sudo: %q", line)
+		}
+	}
+	if !strings.Contains(buf.String(), "write "+plan.EnvFile) && !strings.Contains(buf.String(), "write '"+plan.EnvFile+"'") {
+		t.Errorf("the dry run does not name the env file's host write:\n%s", buf.String())
+	}
 }
 
-// The capture's dry run prints its privileged commands the same way, for the same reader.
+// The capture's dry run prints its commands the same way, for the same reader, and like the
+// launch's it prints no root sudo: a capture runs as the host user and crosses into the sandbox
+// account only through the one-time setup's rule.
 func TestPrintCapturePlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	plan := BuildCapturePlan(testCaptureOptions())
 	var want [][]string
 	for _, cmds := range [][][]string{plan.PrepareCommands, plan.StageCommands, plan.EnvFileCommands,
-		plan.EnvFileGrantCommands} {
-		for _, c := range cmds {
-			want = append(want, append([]string{"sudo"}, c...))
-		}
+		plan.EnvFileGrantCommands, plan.CleanupCommands, plan.ScratchGuestCommands} {
+		want = append(want, cmds...)
 	}
 	want = append(want, plan.BootstrapArgv, plan.DriverArgv)
 	if !slices.ContainsFunc(want, func(argv []string) bool {
@@ -71,6 +78,16 @@ func TestPrintCapturePlanSpellsEachPrivilegedCommandAsItsArgv(t *testing.T) {
 	for _, argv := range want {
 		if !slices.ContainsFunc(printed, func(got []string) bool { return slices.Equal(got, argv) }) {
 			t.Errorf("the capture dry run prints no line that reads back as %q:\n%s", argv, buf.String())
+		}
+	}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "sudo ") {
+			t.Errorf("the capture dry run prints a root sudo: %q", line)
+		}
+	}
+	for _, p := range []string{plan.ProfilePath, plan.EnvFile} {
+		if !strings.Contains(buf.String(), "write "+p) && !strings.Contains(buf.String(), "write '"+p+"'") {
+			t.Errorf("the capture dry run does not name the host write of %s:\n%s", p, buf.String())
 		}
 	}
 }

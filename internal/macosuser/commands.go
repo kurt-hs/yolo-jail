@@ -1,9 +1,14 @@
 package macosuser
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/storage"
 )
 
@@ -19,6 +24,28 @@ func MacosSetup(deps Deps) int {
 	if rc := refuseIfRoot(deps); rc != 0 {
 		return rc
 	}
+
+	// 0. ENROLLMENT, BEFORE ANYTHING IS CREATED (task 7 of
+	// docs/design/macos-user-privilege-lifecycle-plan.md; OQ-MP10 in
+	// docs/design/macos-user-privilege-lifecycle.md). One host user per Mac: the rule and the
+	// staging root are this user's or nobody's, so a name that cannot go into a sudo rule, a
+	// squatted root and a second user's root are refused before the first sudo, and a second
+	// user's rule at the first.
+	hostUser := deps.HostUser()
+	rule, err := SudoersRule(hostUser)
+	if err != nil {
+		out.printf("[bold red]Your user name %s cannot be written into a sudo rule safely.[/bold red] "+
+			"The macos-user backend supports names of letters, digits, '_', '.' and '-'.", hostUser)
+		return 1
+	}
+	if rc := refuseForeignEnrollment(deps, out); rc != 0 {
+		return rc
+	}
+	if rc := refuseAnotherUsersRule(deps, out, hostUser); rc != 0 {
+		return rc
+	}
+	out.printf("• Granting %s one standing right: run commands as %s, never as root, without a "+
+		"password (%s). Launches then start and stop with no prompt.", hostUser, SandboxUser, SudoersFile)
 
 	// 1. Account — create if missing, otherwise reuse (idempotent).
 	if deps.SandboxUserExists() {
@@ -43,7 +70,7 @@ func MacosSetup(deps Deps) int {
 			out.printf("• Sandbox home [bold]%s[/bold] is missing — reprovisioning it "+
 				"(the account record itself is left alone).", SandboxHome())
 			for _, cmd := range ProvisionHomeCommands() {
-				if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+				if deps.Run(rootArgv(cmd)) != 0 {
 					out.printf("[bold red]✗ setup step failed:[/bold red] %s",
 						strings.Join(cmd, " "))
 					return 1
@@ -52,12 +79,11 @@ func MacosSetup(deps Deps) int {
 			out.printf("  [green]reprovisioned[/green] %s.", SandboxHome())
 		}
 	} else {
-		hostUser := deps.HostUser()
 		uid := NextFreeID(deps.TakenIDs(), sandboxMinID)
 		out.printf("• Creating sandbox user [bold]%s[/bold] (uid %d); "+
 			"you may be prompted for your admin password by sudo.", SandboxUser, uid)
 		for _, cmd := range CreateUserCommands(uid, uid, hostUser) {
-			if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+			if deps.Run(rootArgv(cmd)) != 0 {
 				out.printf("[bold red]✗ setup step failed:[/bold red] %s", strings.Join(cmd, " "))
 				return 1
 			}
@@ -77,8 +103,8 @@ func MacosSetup(deps Deps) int {
 	out.printf("• Provisioning shared root [bold]%s[/bold] "+
 		"(setgid + inheriting ACL, group _yolojail, no other-access) — "+
 		"projects created under it are shared automatically, no per-run walk.", SharedRootDefault())
-	for _, cmd := range SharedRootProvisionCommands("", deps.HostUser()) {
-		if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+	for _, cmd := range SharedRootProvisionCommands("", hostUser) {
+		if deps.Run(rootArgv(cmd)) != 0 {
 			out.printf("[bold red]✗ setup step failed:[/bold red] %s", strings.Join(cmd, " "))
 			return 1
 		}
@@ -106,6 +132,23 @@ func MacosSetup(deps Deps) int {
 			"Re-run `yolo macos-fix-permissions` to see which.[/yellow]")
 	} else {
 		out.print("  [green]done[/green]")
+	}
+
+	// 1d. The staging root and the capture root become the host user's own (PL-6), then the rule
+	// is installed, then the files older sessions left are removed (PL-8), and last the rule is
+	// proved with an empty credential cache. Setup declares ready only after that proof.
+	if rc := ensureHostOwnedRoot(deps, out, StagingRoot(), hostUser, false); rc != 0 {
+		return rc
+	}
+	if rc := ensureHostOwnedRoot(deps, out, CaptureRootDefault(), hostUser, true); rc != 0 {
+		return rc
+	}
+	if rc := installSudoersRule(deps, out, rule); rc != 0 {
+		return rc
+	}
+	sweepLegacySessions(deps, out)
+	if rc := proveRunAsGrant(deps, out); rc != 0 {
+		return rc
 	}
 
 	// 2. Readiness checks — report each; neither fatal to setup. No interpreter
@@ -167,8 +210,7 @@ func MacosSetup(deps Deps) int {
 			"yolo-jail.jsonc (or YOLO_RUNTIME=macos-user), then from that "+
 			"directory run [bold]yolo run --dry-run[/bold] to preview, or "+
 			"[bold]yolo[/bold] to launch.\n"+
-			"[dim]sudo will prompt per run — that's expected (we don't change "+
-			"your sudo policy).[/dim]", SharedRootDefault())
+			"Launches start and stop with no password from now on.", SharedRootDefault())
 
 	}
 	// NAME THE RETROFIT, and do it OUTSIDE the verdict branches — it belongs on
@@ -203,13 +245,22 @@ func MacosTeardown(deps Deps) int {
 		return rc
 	}
 	if !deps.SandboxUserExists() {
+		// An account removed by hand leaves this user's enrollment behind (PL-3: the enrolled
+		// user is whoever owns the staging root), and this command is the remedy setup's
+		// second-user refusal names, so it still removes the rule and the root it owns.
+		if JudgeStagingRoot(rootFacts(deps, StagingRoot()), deps.Geteuid()) == StagingRootOK {
+			out.printf("Sandbox user '%s' does not exist; removing your enrollment.", SandboxUser)
+			removeEnrollment(deps, out)
+			return 0
+		}
 		out.printf("Sandbox user '%s' does not exist — nothing to do.", SandboxUser)
 		return 0
 	}
 	for _, cmd := range DeleteUserCommands(deps.HostUser()) {
-		deps.Run(append([]string{"sudo"}, cmd...))
+		deps.Run(rootArgv(cmd))
 	}
 	out.printf("[green]✓ Removed sandbox user '%s'.[/green]", SandboxUser)
+	removeEnrollment(deps, out)
 	// One line about what survives the account, because it is not obvious: an ACL
 	// names a UUID, so the grants naming this account outlive it and go inert. Not
 	// stripped here — a teardown is often temporary, and walking every workspace to
@@ -294,4 +345,315 @@ func refuseIfRoot(deps Deps) int {
 		return 1
 	}
 	return 0
+}
+
+// accountNameOfUID names the account a uid belongs to, "" when it cannot. primaryGroupOf names a
+// user's primary group, "" when it cannot. Variables so a test can name its fixture's accounts;
+// production asks the directory service (real.go).
+var (
+	accountNameOfUID = accountNameOfUIDReal
+	primaryGroupOf   = primaryGroupOfReal
+)
+
+// The administrator act G0's tools, by absolute path (point 4 of the 2026-10-15 walkthrough in
+// docs/design/macos-user-privilege-lifecycle.md).
+const (
+	visudoBin = "/usr/sbin/visudo"
+	grepBin   = "/usr/bin/grep"
+	trueBin   = "/usr/bin/true"
+)
+
+// firstHumanUID is the lowest uid macOS gives an account a person logs in to.
+const firstHumanUID = 501
+
+// rootArgv is cmd run as root through sudo, which only the administrator act G0 (setup and
+// teardown) does; every routine sudo is RunAsSandboxArgv's.
+func rootArgv(cmd []string) []string { return append([]string{sudoBin}, cmd...) }
+
+// rootFacts asks deps about a root, a nil probe being one that could not look.
+func rootFacts(deps Deps, path string) StagingRootFacts {
+	if deps.StagingRootFacts == nil {
+		return StagingRootFacts{Err: errors.New("no probe for " + path)}
+	}
+	return deps.StagingRootFacts(path)
+}
+
+// ownerName is how a refusal names the account owning a root.
+func ownerName(uid uint32) string {
+	if name := accountNameOfUID(uid); name != "" {
+		return name
+	}
+	if uid == 0 {
+		return "root"
+	}
+	return "uid " + strconv.FormatUint(uint64(uid), 10)
+}
+
+// refuseForeignEnrollment refuses, before any sudo, a staging root or capture root setup must not
+// adopt. A staging root another person's account owns is that person's enrollment (one user per
+// Mac); one any other account owns, the sandbox account first among them, is a squat, because
+// whoever owns it controls what the sandbox reads. The capture root may be root's, which captures
+// before the one-rule contract left behind: setup gives that one back (ensureHostOwnedRoot).
+func refuseForeignEnrollment(deps Deps, out printer) int {
+	euid := deps.Geteuid()
+	for _, c := range []struct {
+		path       string
+		rootMayOwn bool
+	}{{StagingRoot(), false}, {CaptureRootDefault(), true}} {
+		f := rootFacts(deps, c.path)
+		switch JudgeStagingRoot(f, euid) {
+		case StagingRootAbsent, StagingRootOK:
+			continue
+		case StagingRootUnknown:
+			out.printf("[bold red]Could not inspect %s (%v).[/bold red] Setup does not stage into what "+
+				"it cannot see. Inspect it with `ls -le %s`, then run [bold]yolo macos-setup[/bold] again.",
+				c.path, f.Err, c.path)
+			return 1
+		case StagingRootUnsafe:
+			if !f.IsSymlink && f.IsDir {
+				continue // this user's directory, its mode or access list reset below
+			}
+			out.printf("[bold red]%s is a symbolic link or not a directory.[/bold red] Setup does not "+
+				"stage through it. Inspect it with `ls -le %s`, remove it with `sudo rm -rf %s`, then "+
+				"run [bold]yolo macos-setup[/bold] again.", c.path, c.path, c.path)
+			return 1
+		case StagingRootForeign:
+			if c.rootMayOwn && f.UID == 0 && f.IsDir {
+				continue
+			}
+			name := accountNameOfUID(f.UID)
+			if c.path == StagingRoot() && f.UID >= firstHumanUID && name != SandboxUser {
+				refuseSecondUser(out, ownerName(f.UID))
+				return 1
+			}
+			out.printf("[bold red]%s already exists and belongs to %s, not to you.[/bold red] Setup "+
+				"does not adopt it: whoever owns it controls what the sandbox reads. Inspect it with "+
+				"`ls -leR %s`, remove it with `sudo rm -rf %s`, then run [bold]yolo macos-setup[/bold] "+
+				"again.", c.path, ownerName(f.UID), c.path, c.path)
+			return 1
+		}
+	}
+	return 0
+}
+
+// refuseSecondUser prints the one-user-per-Mac refusal, naming the enrolled user.
+func refuseSecondUser(out printer, name string) {
+	out.printf("[bold red]This Mac's macos-user backend is set up for another macOS user (%s).[/bold red] "+
+		"One user per Mac. That user runs [bold]yolo macos-teardown[/bold], then you run "+
+		"[bold]yolo macos-setup[/bold]. If that account is gone, an administrator runs "+
+		"`sudo rm -f %s && sudo rm -rf %s`, then you run [bold]yolo macos-setup[/bold].",
+		name, SudoersFile, StagingRoot())
+}
+
+// refuseAnotherUsersRule asks whether the installed rule is this user's, through sudo because the
+// file is 0440 root (PL-3): grep exits 0 for this user's rule and 2 when there is no file, and
+// setup goes on for both; 1 is a file without this user's rule, which is another user's
+// enrollment. ⚠ sudo also exits 1 when it could not authenticate, so a 1 is read as grep's only
+// once `sudo -n` shows sudo did run (the credentials just given are cached).
+func refuseAnotherUsersRule(deps Deps, out printer, user string) int {
+	ours := user + " ALL=(" + SandboxUser + ") NOPASSWD: " + envBin
+	if deps.Run(rootArgv([]string{grepBin, "-qxF", "-e", ours, SudoersFile})) != 1 {
+		return 0
+	}
+	if deps.Run([]string{sudoBin, "-n", trueBin}) != 0 {
+		out.printf("[bold red]✗ sudo did not run the check of %s, so nothing was changed.[/bold red] "+
+			"Run [bold]yolo macos-setup[/bold] again and give your admin password when sudo asks.",
+			SudoersFile)
+		return 1
+	}
+	refuseSecondUser(out, "named in "+SudoersFile)
+	return 1
+}
+
+// ensureHostOwnedRoot makes path a 0755 directory the host user owns with no access list (PL-6):
+// created as the host user when absent (/Users/Shared is 1777, and a plain mkdir fails rather
+// than adopt one a squatter made in between), given back with sudo when rootMayOwn and root owns
+// it, and its mode and access list reset either way. refuseForeignEnrollment has already refused
+// every other owner.
+func ensureHostOwnedRoot(deps Deps, out printer, path, user string, rootMayOwn bool) int {
+	f := rootFacts(deps, path)
+	var cmds [][]string
+	switch {
+	case !f.Exists:
+		cmds = append(cmds, []string{mkdirBin, "-m", categoryDirMode, path})
+	case rootMayOwn && f.UID == 0:
+		owner := user
+		if g := primaryGroupOf(user); g != "" {
+			owner += ":" + g
+		}
+		cmds = append(cmds, rootArgv([]string{chownBin, owner, path}))
+	}
+	cmds = append(cmds, []string{chmodBin, categoryDirMode, path}, []string{chmodBin, "-N", path})
+	for _, cmd := range cmds {
+		if deps.Run(cmd) != 0 {
+			out.printf("[bold red]✗ setup step failed:[/bold red] %s", shquote.JoinDisplay(cmd))
+			return 1
+		}
+	}
+	out.printf("• [bold]%s[/bold] is yours, mode %s, with no access list.", path, categoryDirMode)
+	return 0
+}
+
+// installSudoersRule installs rule as SudoersFile (PL-4): written as the host into a temporary
+// file, copied by root under the inert staging name, owned root:wheel 0440, checked by visudo,
+// renamed into place, and the whole configuration checked again. Anything that fails leaves no
+// rule behind.
+func installSudoersRule(deps Deps, out printer, rule string) int {
+	stepFailed := func(cmd []string) int {
+		out.printf("[bold red]✗ setup step failed:[/bold red] %s", shquote.JoinDisplay(cmd))
+		return 1
+	}
+	rejected := func() int {
+		out.print("[bold red]✗ visudo rejected the rule, so nothing was installed[/bold red] and your " +
+			"sudo configuration is unchanged:\n(visudo's output is above)\nThis is a yolo bug; report " +
+			"it at https://github.com/mschulkind-oss/yolo-jail/issues with that output.")
+		return 1
+	}
+	dir, err := os.MkdirTemp("", "yolo-sudoers-")
+	if err != nil {
+		out.printf("[bold red]✗ setup step failed:[/bold red] could not make a temporary directory (%v)", err)
+		return 1
+	}
+	defer os.RemoveAll(dir)
+	tmp := filepath.Join(dir, "yolo-jail")
+	if !deps.WriteHostFile(tmp, rule, 0o644) {
+		out.printf("[bold red]✗ setup step failed:[/bold red] could not write %s", tmp)
+		return 1
+	}
+	dropStaged := rootArgv([]string{rmBin, "-f", SudoersStagingFile})
+	for _, cmd := range [][]string{
+		rootArgv([]string{cpBin, tmp, SudoersStagingFile}),
+		rootArgv([]string{chownBin, "root:wheel", SudoersStagingFile}),
+		rootArgv([]string{chmodBin, "0440", SudoersStagingFile}),
+	} {
+		if deps.Run(cmd) != 0 {
+			deps.Run(dropStaged)
+			return stepFailed(cmd)
+		}
+	}
+	if deps.Run(rootArgv([]string{visudoBin, "-c", "-q", "-f", SudoersStagingFile})) != 0 {
+		deps.Run(dropStaged)
+		return rejected()
+	}
+	if mv := rootArgv([]string{mvBin, "-f", SudoersStagingFile, SudoersFile}); deps.Run(mv) != 0 {
+		deps.Run(dropStaged)
+		return stepFailed(mv)
+	}
+	if deps.Run(rootArgv([]string{visudoBin, "-c", "-q"})) != 0 {
+		deps.Run(rootArgv([]string{rmBin, "-f", SudoersFile}))
+		return rejected()
+	}
+	out.printf("• Installed [bold]%s[/bold]; visudo accepts it.", SudoersFile)
+	return 0
+}
+
+// sweepLegacySessions is the administrator's half of PL-8: for each session record this user's
+// launches kept because an older yolo's session left root-owned files in LegacyStateDir, and only
+// once that session has ended (its record is free), it removes those exact five files with sudo,
+// then the record. The launch sweep (sweepGoneSessions) decides the same way and keeps what is
+// left here. A live session, a session with no legacy profile, and the legacy guest trees are
+// never touched: `yolo stores` lists those trees, with the command that removes them.
+func sweepLegacySessions(deps Deps, out printer) {
+	if deps.SessionRecordDir != nil && deps.PathExists != nil {
+		if dir := deps.SessionRecordDir(); dir != "" {
+			sweepLegacyRecords(deps, out, dir)
+		}
+	}
+	if deps.PathIsDir != nil && deps.PathIsDir(LegacyStateDir()) {
+		out.printf("[dim]%s, from an older yolo, stays: sessions it started may still use it. "+
+			"`yolo stores` lists what it holds, with the command that removes it.[/dim]", LegacyStateDir())
+	}
+}
+
+func sweepLegacyRecords(deps Deps, out printer, dir string) {
+	matches, err := filepath.Glob(filepath.Join(dir, "*"+sessionRecordSuffix))
+	if err != nil {
+		return
+	}
+	removed := 0
+	for _, path := range matches {
+		key := strings.TrimSuffix(filepath.Base(path), sessionRecordSuffix)
+		if _, _, ok := parseSessionKey(key); !ok {
+			continue
+		}
+		f, state := claimGoneSessionRecord(path)
+		if state != sessionGone {
+			continue
+		}
+		if !deps.PathExists(SessionProfilePath(key, LegacyStateDir())) {
+			_ = f.Close() // this yolo's own session: the launch sweep's
+			continue
+		}
+		argv := rootArgv(append([]string{rmBin, "-f"}, SessionFilePaths(key, LegacyStateDir())...))
+		if deps.Run(argv) != 0 {
+			out.printf("[yellow]Warning: could not remove the files an older yolo's session left in "+
+				"%s[/yellow] (`%s` failed). Run [bold]yolo macos-setup[/bold] again, or that command.",
+				LegacyStateDir(), shquote.JoinDisplay(argv))
+			_ = f.Close()
+			continue
+		}
+		_ = os.Remove(path)
+		_ = f.Close()
+		removed++
+	}
+	if removed > 0 {
+		out.printf("• Removed the root-owned files of %d ended session(s) an older yolo left in %s.",
+			removed, LegacyStateDir())
+	}
+}
+
+// proveRunAsGrant is readiness probe G2 as the setup principal, after `sudo -k`: the credentials
+// setup just used would otherwise satisfy `sudo -n` through the admin's own broad rule and hide a
+// rule sudo never reads. Through deps.Run, not deps.RunAsGrant, so the order is the one recorded.
+func proveRunAsGrant(deps Deps, out printer) int {
+	deps.Run([]string{sudoBin, "-k"})
+	if deps.Run(RunAsGrantProbeArgv()) != 0 {
+		out.printf("[bold red]✗ The rule is installed, but sudo still asks for a password to run as "+
+			"%s.[/bold red] Check that /etc/sudoers reads /private/etc/sudoers.d (`sudo grep -n "+
+			"includedir /etc/sudoers`); a managed Mac may block it, and then your administrator has to "+
+			"allow the rule. Run [bold]yolo macos-setup[/bold] again afterwards.", SandboxUser)
+		return 1
+	}
+	out.printf("• `%s` runs with no password and an empty sudo cache.",
+		strings.Join(RunAsGrantProbeArgv(), " "))
+	return 0
+}
+
+// removeEnrollment is teardown's undo of setup's enrollment (PL-5): the rule, with sudo, then the
+// staging root, as the host user, when it is this user's. The legacy state dir is left, as setup
+// leaves it.
+func removeEnrollment(deps Deps, out printer) {
+	rm := rootArgv([]string{rmBin, "-f", SudoersFile})
+	if deps.Run(rm) != 0 {
+		out.printf("[yellow]Could not remove %s[/yellow]; remove it with `%s`.", SudoersFile,
+			shquote.JoinDisplay(rm))
+	} else {
+		out.printf("[green]✓ Removed the run-as rule %s.[/green]", SudoersFile)
+	}
+	root := StagingRoot()
+	f := rootFacts(deps, root)
+	switch {
+	case !f.Exists && f.Err == nil:
+	case f.Err == nil && f.IsDir && !f.IsSymlink && f.UID == uint32(deps.Geteuid()):
+		ok := true
+		for _, cmd := range removeSealedCommands(root) {
+			if deps.Run(cmd) != 0 {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out.printf("[green]✓ Removed the staging directory %s.[/green]", root)
+		} else {
+			out.printf("[yellow]Could not remove %s[/yellow]; remove it with `%s -R u+w %s && %s -rf %s`.",
+				root, chmodBin, root, rmBin, root)
+		}
+	default:
+		out.printf("[yellow]%s is not yours, so teardown left it.[/yellow] An administrator inspects it "+
+			"with `ls -leR %s` and removes it with `sudo rm -rf %s`.", root, root, root)
+	}
+	if deps.PathIsDir != nil && deps.PathIsDir(LegacyStateDir()) {
+		out.printf("[dim]%s, from an older yolo, is left; `yolo stores` lists it, with the command "+
+			"that removes it.[/dim]", LegacyStateDir())
+	}
 }

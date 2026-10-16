@@ -81,10 +81,14 @@ section, are marked "not yolo's", and are never summed into yolo's own footprint
 or offered for reclaim. The section also explains every store yolo did NOT alias
 and why.
 
-On a Mac, a macos-user section lists that backend's own storage: the root-owned
-copies each launch stages under /var/yolo-jail, and the sandbox account's mise
-store and cache. Nothing in yolo reclaims them; each row says whether a safe
-reclaimer exists and how to inspect or recover the bytes.
+On a Mac, a macos-user section lists that backend's own storage: the copies
+each launch stages under /Users/Shared/yolo-staged, which are yours, and the
+sandbox account's mise store and cache. When an older yolo left the root-owned
+/var/yolo-jail behind, a second section lists it with the sudo commands that
+remove it by hand; a launch no longer writes there, but an older yolo's
+still-running sessions may, so end them first. Nothing in yolo reclaims any of
+it; each row says whether a safe reclaimer exists and how to inspect or recover
+the bytes.
 
 Sizes are apparent sizes (the sum of file sizes), and each store's walk is
 bounded to 60s: a store that runs out of budget reports what it had summed so
@@ -197,12 +201,23 @@ type Options struct {
 	// between — the decision is a pure function of the host's filesystem and
 	// platform, so there is no stamp to go stale and no writer to name.
 	HostCAS func() []hostcas.Disposition
-	// MacosUser names the macos-user backend's two roots outside the state dir: the root-owned
-	// dir every launch stages into, and the sandbox account's home. ok is false where there is no
-	// such backend (not macOS), and the section is then left out. nil => macosuser.StateDir(),
-	// macosuser.SandboxHome() and paths.IsMacOS. Injected by tests, which point both at temp
-	// dirs on any platform.
-	MacosUser func() (stateDir, home string, ok bool)
+	// MacosUser names the macos-user backend's roots outside the state dir (MacosUserRoots says
+	// which). nil => macosUserRoots. Injected by tests, which point every root at temp dirs on
+	// any platform.
+	MacosUser func() MacosUserRoots
+}
+
+// MacosUserRoots is the macos-user backend's storage outside yolo's state dir.
+type MacosUserRoots struct {
+	// StateDir is the host-owned staging root every launch stages into (macosuser.StateDir()).
+	StateDir string
+	// LegacyDir is the root-owned dir an older yolo staged into (macosuser.LegacyStateDir()). A
+	// launch no longer writes it and nothing in yolo removes it; it is listed only when present.
+	LegacyDir string
+	// Home is the sandbox account's home (macosuser.SandboxHome()).
+	Home string
+	// OK is false where there is no such backend (not macOS), and the sections are left out.
+	OK bool
 }
 
 // ParseArgs turns `yolo stores`'s argv into Options. args is the dispatched
@@ -359,16 +374,18 @@ func Run(o Options) int {
 	return 0
 }
 
-// macosUserRoots is Options.MacosUser's production answer: the macos-user backend's root-owned
-// state dir and the sandbox account's home, on macOS only.
+// macosUserRoots is Options.MacosUser's production answer: the macos-user backend's host-owned
+// staging root, the root-owned dir an older yolo staged into, and the sandbox account's home, on
+// macOS only.
 //
 // A VARIABLE FOR ONE REASON, the one paths.HostSingletonDir states: this package's TestMain points
 // it at nothing (macosuserrows_test.go), so a test that leaves the seam nil can never walk a
 // developer Mac's real sandbox account and report its mise store as a fixture's row, which is the
 // failure inventory_test.go's HostCAS pin measured for the host cache. Nothing in production
 // writes it.
-var macosUserRoots = func() (stateDir, home string, ok bool) {
-	return macosuser.StateDir(), macosuser.SandboxHome(), paths.IsMacOS
+var macosUserRoots = func() MacosUserRoots {
+	return MacosUserRoots{StateDir: macosuser.StateDir(), LegacyDir: macosuser.LegacyStateDir(),
+		Home: macosuser.SandboxHome(), OK: paths.IsMacOS}
 }
 
 // realProbeExec runs one container-runtime query, capturing stdout and honoring

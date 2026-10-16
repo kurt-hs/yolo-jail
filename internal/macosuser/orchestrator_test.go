@@ -57,9 +57,9 @@ func mockDeps(rec *[]string) Deps {
 			}
 			return 42
 		},
-		InstallRootFile: func(path, content, mode string) bool {
+		WriteHostFile: func(path, content string, mode os.FileMode) bool {
 			if rec != nil {
-				*rec = append(*rec, "install:"+path)
+				*rec = append(*rec, "write:"+path)
 			}
 			return true
 		},
@@ -73,7 +73,15 @@ func mockDeps(rec *[]string) Deps {
 		TakenIDs:          func() map[int]struct{} { return map[int]struct{}{} },
 		SetRandomPassword: func() bool { return true },
 		PathIsDir:         func(string) bool { return true },
-		PathExists:        func(string) bool { return true },
+		// Nothing an older yolo left: the only path a launch asks about is a legacy session's
+		// profile (sweepGoneSessions, PL-8), and a Mac set up by this yolo has none.
+		PathExists: func(string) bool { return false },
+		// The staging root as `yolo macos-setup` leaves it (this user's, 0755, no access list),
+		// and the setup's run-as rule in place.
+		StagingRootFacts: func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		},
+		RunAsGrant: func() bool { return true },
 		// Discarded unless a test reads it: every launch prints, and a production Deps always
 		// has a writer.
 		Out: io.Discard,
@@ -125,12 +133,6 @@ func fixtureStateDeps(t *testing.T, state string, rec *[]string, fail func([]str
 			strings.Contains(joined, "internal darwin-provision") {
 			return 0
 		}
-		if len(argv) > 0 && argv[0] == "sudo" {
-			argv = argv[1:]
-			if len(argv) > 0 && argv[0] == "-n" {
-				argv = argv[1:]
-			}
-		}
 		if len(argv) == 0 {
 			return 0
 		}
@@ -168,6 +170,54 @@ func writeFixturePackTree(t *testing.T, body string, suffix ...string) string {
 	return root
 }
 
+// AN UNUSED RESERVED PACK TREE IS REMOVED AS THE HOST USER, and the tree is SEALED (0555
+// directories, 0444 files), which blocks its owner's rm too, so the removal unseals it first. The
+// argvs run for real: as root this jail ignores the modes, so run the package's tests once as an
+// unprivileged uid to see the unseal matter. A removal that fails names the commands, no sudo.
+func TestAnUnusedReservedPackTreeIsUnsealedAndRemovedAsTheHost(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "packs", "yolo-proj.tree")
+	inner := filepath.Join(root, "local", "bin")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "hello"), []byte("x"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{inner, filepath.Dir(inner), root} {
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unsealOnCleanup(t, filepath.Dir(root))
+	var ran []string
+	d := mockDeps(nil)
+	d.Run = func(argv []string) int {
+		ran = append(ran, strings.Join(argv, " "))
+		if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+			t.Logf("%v: %v\n%s", argv, err, out)
+			return 1
+		}
+		return 0
+	}
+	var out bytes.Buffer
+	finishPackTree(d, printer{w: &out}, root, true, false, false)
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Errorf("the unused reserved tree survived its removal (%v); ran:\n%s\n%s", err,
+			strings.Join(ran, "\n"), out.String())
+	}
+	if len(ran) != 2 || !strings.Contains(ran[0], unsealScriptName) || ran[1] != rmBin+" -rf -- "+root {
+		t.Errorf("the removal is not the unseal then `rm -rf --`, as the host:\n%s", strings.Join(ran, "\n"))
+	}
+
+	out.Reset()
+	d.Run = func([]string) int { return 1 }
+	finishPackTree(d, printer{w: &out}, root, true, false, false)
+	if !strings.Contains(out.String(), "Could not remove unused reserved guest pack tree") ||
+		!strings.Contains(out.String(), chmodBin+" -R u+w -- "+root) || strings.Contains(out.String(), "sudo") {
+		t.Errorf("a failed removal does not name the host's commands:\n%s", out.String())
+	}
+}
+
 // TestRunMacosUserPackTreeOwnershipBoundaries checks the actual call site: an exclusive
 // reservation establishes ownership, but only before any pack writer is dispatched can that
 // owned tree be removed. Writer or consumer dispatch requires conservative exact-path retention.
@@ -175,6 +225,7 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "project")
 	cname := cnameFor(workspace)
 	state := t.TempDir()
+	unsealOnCleanup(t, state) // the staged pack trees are sealed
 	hostA := writeFixturePackTree(t, "#!/bin/sh\necho A\n")
 	sibling := StagedPackTreeRoot(cname, hostA, state)
 	legacy := StagedPackRoot(cname, state)
@@ -192,11 +243,11 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		owned := StagedPackTreeRoot(cname, hostB, state)
 		var rec []string
 		d := fixtureStateDeps(t, state, &rec, func(argv []string) bool {
-			if len(argv) < 5 || argv[0] != "sudo" || argv[1] != cpBin || argv[2] != "-R" ||
-				!strings.Contains(argv[3], hostB) {
+			if len(argv) < 4 || argv[0] != cpBin || argv[1] != "-R" ||
+				!strings.Contains(argv[2], hostB) {
 				return false
 			}
-			privateRoot := strings.ReplaceAll(argv[4], stateDir, state)
+			privateRoot := strings.ReplaceAll(argv[3], stateDir, state)
 			if err := os.WriteFile(filepath.Join(privateRoot, "partial-copy"), []byte("writer may still be active"), 0o644); err != nil {
 				t.Errorf("write partial fixture payload: %v", err)
 			}
@@ -236,8 +287,9 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		}
 		var rec []string
 		d := fixtureStateDeps(t, state, &rec, func(argv []string) bool {
-			return len(argv) == 3 && argv[0] == "sudo" && argv[1] == mkdirBin && argv[2] ==
+			return len(argv) == 2 && argv[0] == mkdirBin && argv[1] ==
 				StagedPackTreeRoot(cname, hostC, "")
+
 		})
 		var out bytes.Buffer
 		d.Out = &out
@@ -252,11 +304,11 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 		if !strings.Contains(out.String(), "Could not reserve guest pack tree") ||
 			!strings.Contains(out.String(), StagedPackTreeRoot(cname, hostC, "")) ||
 			!strings.Contains(out.String(), "fresh invocation") ||
-			!strings.Contains(out.String(), "sudo ls -la --") || !strings.Contains(out.String(), "Do not remove") {
+			!strings.Contains(out.String(), "`ls -la --") || !strings.Contains(out.String(), "Do not remove") {
 			t.Errorf("reservation refusal omitted safe retry/inspection guidance: %s", out.String())
 		}
 		for _, call := range rec {
-			if strings.Contains(call, "sudo "+rmBin+" -rf -- "+StagedPackTreeRoot(cname, hostC, "")) {
+			if strings.Contains(call, rmBin+" -rf -- "+StagedPackTreeRoot(cname, hostC, "")) {
 				t.Errorf("the existing collision was removed: %s", call)
 			}
 		}
@@ -293,7 +345,7 @@ func TestRunMacosUserPackTreeOwnershipBoundaries(t *testing.T) {
 				t.Errorf("the retained path was not disclosed: %s", out.String())
 			}
 			for _, call := range rec {
-				if strings.Contains(call, "sudo "+rmBin+" -rf -- "+StagedPackTreeRoot(cname, hostD, "")) {
+				if strings.Contains(call, rmBin+" -rf -- "+StagedPackTreeRoot(cname, hostD, "")) {
 					t.Errorf("post-consumer tree was removed: %s", call)
 				}
 			}
@@ -451,12 +503,12 @@ func TestRunHappyPathLaunches(t *testing.T) {
 	// Must install profile + bootstrap, stage entrypoint (3 cmds), run
 	// bootstrap, launch under proxy.
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(joined, "install:/var/yolo-jail/profile-") {
+	if !strings.Contains(joined, "write:/Users/Shared/yolo-staged/profile-") {
 		t.Error("profile not installed")
 	}
 	// No `--login`: it rewrote every forwarded command (see
 	// TestNeitherArgvForwardsThroughSudoLogin), and sudo execve's the argv without it.
-	if !strings.Contains(joined, "proxy:sudo --set-home --user=_yolojail") {
+	if !strings.Contains(joined, "proxy:/usr/bin/sudo -n --set-home --user=_yolojail") {
 		t.Errorf("proxy launch missing:\n%s", joined)
 	}
 }
@@ -514,10 +566,10 @@ func TestMacosSetupCreatesWhenMissing(t *testing.T) {
 		t.Errorf("rc = %d", rc)
 	}
 	joined := strings.Join(rec, "\n")
-	if !strings.Contains(joined, "run:sudo dscl . -create /Users/_yolojail") {
+	if !strings.Contains(joined, "run:/usr/bin/sudo /usr/bin/dscl . -create /Users/_yolojail") {
 		t.Errorf("user creation not run:\n%s", joined)
 	}
-	if !strings.Contains(joined, "run:sudo mkdir -p /Users/Shared/yolo") {
+	if !strings.Contains(joined, "run:/usr/bin/sudo /bin/mkdir -p /Users/Shared/yolo") {
 		t.Error("shared root not provisioned")
 	}
 }
@@ -545,9 +597,9 @@ func TestMacosSetupReprovisionsAMissingHome(t *testing.T) {
 	}
 	joined := strings.Join(rec, "\n")
 	for _, want := range []string{
-		"run:sudo createhomedir -c -u _yolojail",
-		"run:sudo chown -R _yolojail:_yolojail /Users/_yolojail",
-		"run:sudo chmod 750 /Users/_yolojail",
+		"run:/usr/bin/sudo /usr/sbin/createhomedir -c -u _yolojail",
+		"run:/usr/bin/sudo /usr/sbin/chown -R _yolojail:_yolojail /Users/_yolojail",
+		"run:/usr/bin/sudo /bin/chmod 750 /Users/_yolojail",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q:\n%s", want, joined)
@@ -654,6 +706,7 @@ func TestMacosTeardownNoUser(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
 	d.SandboxUserExists = func() bool { return false }
+	d.StagingRootFacts = func(string) StagingRootFacts { return StagingRootFacts{} } // never enrolled
 	var buf bytes.Buffer
 	d.Out = &buf
 	if rc := MacosTeardown(d); rc != 0 {
@@ -661,6 +714,29 @@ func TestMacosTeardownNoUser(t *testing.T) {
 	}
 	if len(rec) != 0 {
 		t.Errorf("nothing to delete: %v", rec)
+	}
+}
+
+// An account removed by hand leaves the enrollment behind, and teardown is the remedy setup's
+// second-user refusal names, so it must still remove the rule and the staging root it owns.
+func TestMacosTeardownWithNoAccountStillRemovesThisUsersEnrollment(t *testing.T) {
+	var rec []string
+	d := mockDeps(&rec)
+	d.SandboxUserExists = func() bool { return false }
+	d.Geteuid = func() int { return 501 }
+	d.StagingRootFacts = func(string) StagingRootFacts {
+		return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+	}
+	var buf bytes.Buffer
+	d.Out = &buf
+	if rc := MacosTeardown(d); rc != 0 {
+		t.Errorf("rc = %d", rc)
+	}
+	if recAt(rec, "run:/usr/bin/sudo "+rmBin+" -f "+SudoersFile) < 0 {
+		t.Errorf("the rule was not removed:\n%s", strings.Join(rec, "\n"))
+	}
+	if recAt(rec, "run:"+rmBin+" -rf -- "+StagingRoot()) < 0 && recAt(rec, "run:"+rmBin+" -rf "+StagingRoot()) < 0 {
+		t.Errorf("the staging root was not removed:\n%s", strings.Join(rec, "\n"))
 	}
 }
 
@@ -880,7 +956,7 @@ func TestABootstrapFailureNamesTheBootLog(t *testing.T) {
 	envInstall, boot := -1, -1
 	for i, r := range rec {
 		switch {
-		case envInstall < 0 && strings.HasPrefix(r, "install:"+stateDir+"/"+sandboxEnvLeaf+"/"):
+		case envInstall < 0 && strings.HasPrefix(r, "write:"+stateDir+"/"+sandboxEnvLeaf+"/"):
 			envInstall = i
 		case boot < 0 && strings.Contains(r, "internal darwin-bootstrap"):
 			boot = i

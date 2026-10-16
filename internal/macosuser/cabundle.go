@@ -327,27 +327,27 @@ func caTrustFiles(envFile, bundleFile, bundle, extrasFile, extras string) []sess
 	return out
 }
 
-// installCATrustFiles writes a session's CA files root-owned 0600, each with the sandbox
-// account's read ACE: the env file's installer, with messages of its own. A failure refuses the
+// installCATrustFiles writes a session's CA files as the host user, 0600, each with the sandbox
+// account's read ACE, and runs no sudo: the env file's installer, with messages of its own. A failure refuses the
 // launch, as the env file's does: its variables already name these files, and a bundle that is
 // not there, or that the sandbox cannot read, breaks every TLS client in the sandbox rather than
 // narrowing it. Each refusal names the next step (caTrustRetry).
 func installCATrustFiles(deps Deps, out printer, files []sessionFilePlan) bool {
 	for _, f := range files {
 		for _, cmd := range f.dir {
-			if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+			if deps.Run(cmd) != 0 {
 				out.printf("[bold red]Could not prepare the session environment directory "+
 					"(%s).[/bold red] %s", strings.Join(cmd, " "), caTrustRetry)
 				return false
 			}
 		}
-		if !deps.InstallRootFile(f.path, f.content, "0600") {
+		if !deps.WriteHostFile(f.path, f.content, 0o600) {
 			out.printf("[bold red]Could not write the session's CA bundle %s.[/bold red] %s",
 				f.path, caTrustRetry)
 			return false
 		}
 		for _, cmd := range f.grant {
-			if deps.Run(append([]string{"sudo"}, cmd...)) != 0 {
+			if deps.Run(cmd) != 0 {
 				out.printf("[bold red]Could not grant %s read on %s (%s).[/bold red] %s",
 					SandboxUser, f.path, strings.Join(cmd, " "), caTrustRetry)
 				return false
@@ -359,7 +359,7 @@ func installCATrustFiles(deps Deps, out printer, files []sessionFilePlan) bool {
 
 // caTrustRetry is the next step every refusal of installCATrustFiles names.
 const caTrustRetry = "The sandbox's TLS variables name this file, so the launch stops here; run it " +
-	"again, and if this repeats, `yolo run --dry-run` prints every privileged command."
+	"again, and if this repeats, `yolo run --dry-run` prints every command it runs."
 
 // printCATrust is the launch's disclosure of what it trusts for TLS in the sandbox, read off the
 // plan, so the variables it names are the ones the env file really sets. follows is the bundle

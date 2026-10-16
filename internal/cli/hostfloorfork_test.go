@@ -583,7 +583,7 @@ func withMacForkFloor(t *testing.T) *floortest.Dist {
 		return f
 	}
 	t.Cleanup(func() { newHostFloor = orig })
-	withMac(t, macSetup{account: true, terminal: true})
+	withMac(t, macSetup{account: true, privilege: true})
 	return dist
 }
 

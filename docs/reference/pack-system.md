@@ -3706,7 +3706,7 @@ longer waits for the other launch's staging.
   plugin `lsp_servers` renders, and the config-driven parts of the briefing still do, as before.
   None of that is read by the jail's binaries, so it is not pack-contract skew.
 - **macos-user copies each run's host pack tree into a unique guest sibling**,
-  `/var/yolo-jail/packs/<cname>.<host-tree-leaf>`. `macosuser.StagedPackTreeRoot` derives the suffix
+  `/Users/Shared/yolo-staged/packs/<cname>.<host-tree-leaf>`. `macosuser.StagedPackTreeRoot` derives the suffix
   from that run's staged host-tree leaf; `macosuser.StagePackCommands` reserves the destination
   exclusively and copies into it before guest consumers start. It never merges with or replaces
   an existing destination, and the legacy workspace-keyed tree is untouched. The bootstrap

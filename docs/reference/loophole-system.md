@@ -1045,7 +1045,7 @@ only place the values themselves are stated.
 | Sources, in precedence order | `pack` < `config` | `loopholes.SourcePack`, `SourceConfig` |
 | Retired discovery directory (named only by the migration notice) | `~/.local/share/yolo-jail/loopholes/` | `loopholes.RetiredUserLoopholesDir` |
 | Module-dir mount point in the jail | `/etc/yolo-jail/loopholes/<name>` | `loopholedecl.JailLoopholeDir` |
-| The module dir in the `macos-user` sandbox (added 2026-10-04) | under `/var/yolo-jail/packs/`, keyed by the jail name and this launch's host pack-tree leaf, at the module's path relative to that host tree | `macosuser.StagedPackTreeRoot`; placed by `run.placeModuleDirsInGuest` |
+| The module dir in the `macos-user` sandbox (added 2026-10-04) | under `/Users/Shared/yolo-staged/packs/`, keyed by the jail name and this launch's host pack-tree leaf, at the module's path relative to that host tree | `macosuser.StagedPackTreeRoot`; placed by `run.placeModuleDirsInGuest` |
 | Binary tokens (added 2026-09-30) | `{binary:<name>}` (host), `{jail_binary:<name>}` (container) | `loopholedecl.TokenBinary`, `TokenJailBinary`; substituted in `internal/loopholes/load.go` |
 | A jail binary's mount point (added 2026-09-30) | `/etc/yolo-jail/loophole-binaries/<loophole>/<name>` | `loopholedecl.JailBinaryPath` |
 | The downloaded-binary cache, and a build's mode (added 2026-09-30) | `<global storage>/pack-binaries/<sha256>/<name>`, `0555` | `paths.PackBinariesDir`, `packbin.Path` |

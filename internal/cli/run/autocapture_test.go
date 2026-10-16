@@ -316,6 +316,10 @@ func setUpMacProbes() macosuser.LaunchProbes {
 		SandboxUserExists: func() bool { return true },
 		PathIsDir:         func(string) bool { return true },
 		RunBash:           func(string) int { return 0 },
+		StagingRoot: func(string) macosuser.StagingRootFacts {
+			return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		},
+		RunAsGrant: func() bool { return true },
 	}
 }
 
@@ -338,6 +342,22 @@ func TestAMacosUserLaunchTheBackendWillRefuseAutoCapturesNothing(t *testing.T) {
 			p.RunBash = func(string) int { return 1 }
 		}},
 		{"not macOS", func(p *macosuser.LaunchProbes) { p.IsMacOS = func() bool { return false } }},
+		{"the staging root is missing", func(p *macosuser.LaunchProbes) {
+			p.StagingRoot = func(string) macosuser.StagingRootFacts { return macosuser.StagingRootFacts{} }
+		}},
+		{"another account owns the staging root", func(p *macosuser.LaunchProbes) {
+			p.StagingRoot = func(string) macosuser.StagingRootFacts {
+				return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 602, Mode: 0o755}
+			}
+		}},
+		{"the staging root is writable by others", func(p *macosuser.LaunchProbes) {
+			p.StagingRoot = func(string) macosuser.StagingRootFacts {
+				return macosuser.StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o775}
+			}
+		}},
+		{"sudo cannot run commands as the sandbox account without a password", func(p *macosuser.LaunchProbes) {
+			p.RunAsGrant = func() bool { return false }
+		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			installerLaunchHome(t)

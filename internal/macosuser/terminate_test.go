@@ -3,9 +3,10 @@ package macosuser
 // terminate_test.go pins what RunMacosUser does once the launch's signal arm says a signal is
 // ending it (Deps.Ending; internal/cli/run's macosuserarm.go): it returns that status at the next
 // step boundary, so every deferred teardown runs — never the next step and never the session —
-// and its teardown's removals run `sudo -n`, since the terminal that could answer a password prompt
-// may be gone. And what it does with the hook the pipeline hands it for the session's start, and
-// with the account home's hold. Each test fails if the orchestrator's call site is deleted.
+// and its teardown's removals run as the host user with no sudo at all, so none can wait on a
+// password prompt for a terminal that may be gone. And what it does with the hook the pipeline
+// hands it for the session's start, and with the account home's hold. Each test fails if the
+// orchestrator's call site is deleted.
 
 import (
 	"bytes"
@@ -38,7 +39,7 @@ func recAt(rec []string, want string) int {
 }
 
 // A SIGNAL DURING THE BOOTSTRAP ENDS THE LAUNCH AT THE BOUNDARY AFTER IT: 143, no provisioning
-// stage and no session, and the teardown removes the env file and the profile non-interactively.
+// stage and no session, and the teardown removes the env file and the profile as the host user.
 func TestASignalDuringTheBootstrapEndsTheLaunchThroughItsTeardown(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
@@ -77,8 +78,8 @@ func TestASignalDuringTheBootstrapEndsTheLaunchThroughItsTeardown(t *testing.T) 
 	}
 	key := launchedSessionKey(t, rec, o.Workspace)
 	for _, file := range []string{SandboxEnvFile(key, ""), profilePathFor(key)} {
-		if recAt(rec, "run:sudo -n "+rmBin+" -f "+file) < 0 {
-			t.Errorf("the teardown did not remove %s with `sudo -n`:\n%s", file, strings.Join(rec, "\n"))
+		if recAt(rec, "run:"+rmBin+" -f "+file) < 0 {
+			t.Errorf("the teardown did not remove %s as the host:\n%s", file, strings.Join(rec, "\n"))
 		}
 	}
 	if strings.Contains(buf.String(), "entrypoint bootstrap failed") {
@@ -118,28 +119,44 @@ func TestASignalWhileTheSupervisorStartsStopsItAndSweepsItsEnvFile(t *testing.T)
 		t.Errorf("the teardown never stopped the supervisor:\n%s", strings.Join(rec, "\n"))
 	}
 	key := launchedSessionKey(t, rec, ws)
-	if recAt(rec, "run:sudo -n "+rmBin+" -f "+SandboxDaemonEnvFile(key, "")) < 0 {
-		t.Errorf("the daemons' env file was not swept with `sudo -n`:\n%s", strings.Join(rec, "\n"))
+	if recAt(rec, "run:"+rmBin+" -f "+SandboxDaemonEnvFile(key, "")) < 0 {
+		t.Errorf("the daemons' env file was not swept as the host:\n%s", strings.Join(rec, "\n"))
 	}
 	if recAt(rec, "proxy:") >= 0 || started != 0 {
 		t.Errorf("the session (or its start hook, %d) ran after the signal:\n%s", started, strings.Join(rec, "\n"))
 	}
 }
 
-// WITHOUT A SIGNAL the teardown is unchanged: plain `sudo`, which may still prompt on the terminal
-// the session leaves, and no `-n` anywhere.
-func TestAnUnsignaledTeardownKeepsPlainSudo(t *testing.T) {
+// A LAUNCH RUNS NO ROOT SUDO: every per-launch file is written and removed by the host user, and
+// the only sudo argvs left are crossings into the sandbox account, each exactly the one-time
+// setup's rule (docs/design/macos-user-privilege-lifecycle-plan.md, task 5). So no step, signaled
+// or not, can stop at a password prompt.
+func TestALaunchRunsNoRootSudoAndEveryCrossingIsTheRule(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
-	endingAfter(&d)
 	if rc := RunMacosUser(d, newOpts("/Users/Shared/yolo/proj")); rc != 42 {
 		t.Fatalf("rc = %d, want the session's 42", rc)
 	}
-	if i := recAt(rec, "sudo -n"); i >= 0 {
-		t.Errorf("an unsignaled launch ran `sudo -n`: %s", rec[i])
+	for _, r := range rec {
+		argv, ok := strings.CutPrefix(r, "run:")
+		if !ok {
+			argv, ok = strings.CutPrefix(r, "proxy:")
+		}
+		if !ok {
+			continue
+		}
+		words := strings.Fields(argv)
+		if len(words) > 0 && strings.HasSuffix(words[0], "sudo") {
+			if p := RunAsArgvProblems("t", words); len(p) > 0 {
+				t.Errorf("%s: %v", r, p)
+			}
+		}
 	}
-	if recAt(rec, "run:sudo "+rmBin+" -f ") < 0 {
-		t.Errorf("the teardown removed nothing:\n%s", strings.Join(rec, "\n"))
+	if recAt(rec, "write:"+StagingRoot()+"/profile-") < 0 {
+		t.Errorf("the profile was not written as the host:\n%s", strings.Join(rec, "\n"))
+	}
+	if recAt(rec, "run:"+rmBin+" -f "+StagingRoot()+"/env/") < 0 {
+		t.Errorf("the teardown did not remove the env files as the host:\n%s", strings.Join(rec, "\n"))
 	}
 }
 
@@ -161,7 +178,7 @@ func TestABuildTheSignalStoppedIsNotReportedAsFailed(t *testing.T) {
 	if strings.Contains(buf.String(), "Could not materialize") {
 		t.Errorf("a build the signal stopped was reported as a package failure:\n%s", buf.String())
 	}
-	if recAt(rec, "install:") >= 0 {
+	if recAt(rec, "write:") >= 0 {
 		t.Errorf("the launch went on to install its profile:\n%s", strings.Join(rec, "\n"))
 	}
 }
@@ -257,7 +274,7 @@ func TestTheAccountHomeHoldGatesTheBuildAndSpansTheSession(t *testing.T) {
 		t.Fatalf("rc = %d, want the refusal's 1\n%s", rc, buf.String())
 	}
 	for _, r := range rec {
-		if r == "materialize" || strings.HasPrefix(r, "install:") || strings.HasPrefix(r, "run:") {
+		if r == "materialize" || strings.HasPrefix(r, "write:") || strings.HasPrefix(r, "run:") {
 			t.Errorf("a refused hold went on to %s", r)
 		}
 	}
@@ -287,7 +304,7 @@ func TestTheAccountHomeHoldGatesTheBuildAndSpansTheSession(t *testing.T) {
 		t.Error("the account home's hold outlived the launch")
 	}
 	if rel, rm := recAt(rec, "released"), slices.IndexFunc(rec, func(r string) bool {
-		return strings.HasPrefix(r, "run:sudo "+rmBin)
+		return strings.HasPrefix(r, "run:"+rmBin)
 	}); rel < 0 || rm < 0 || rel < rm {
 		t.Errorf("the hold must be released after the teardown's removals (released at %d, first removal at %d):\n%s",
 			rel, rm, strings.Join(rec, "\n"))
@@ -341,7 +358,7 @@ func TestASignalDuringTheGuestBinariesBuildEndsTheLaunch(t *testing.T) {
 				t.Errorf("a build the signal ended was reported as one that failed:\n%s", buf.String())
 			}
 			if i := slices.IndexFunc(rec, func(r string) bool {
-				return strings.HasPrefix(r, "install:") || strings.HasPrefix(r, "run:sudo")
+				return strings.HasPrefix(r, "write:") || strings.HasPrefix(r, "run:")
 			}); i >= 0 {
 				t.Errorf("the launch went on past the guest binaries to %s", rec[i])
 			}
@@ -413,7 +430,7 @@ func TestASignalDuringProvisioningNeverStartsTheSupervisorOrTheSession(t *testin
 // cause that is not the cause. Each row fails one step after flipping the ending.
 func TestAStepTheSignalMadeFailReturnsTheSignalsStatus(t *testing.T) {
 	type failAt struct {
-		install func(path string) bool // InstallRootFile of path fails
+		install func(path string) bool // WriteHostFile of path fails
 		run     func(argv []string) bool
 	}
 	ws := "/Users/Shared/yolo/proj"
@@ -430,8 +447,8 @@ func TestAStepTheSignalMadeFailReturnsTheSignalsStatus(t *testing.T) {
 		ca    bool   // the fixture with a keychain CA, so the CA files are written
 	}{
 		{"profile", failAt{install: func(p string) bool { return strings.HasSuffix(p, ".sb") }}, "Could not write Seatbelt profile", false},
-		{"stage", failAt{run: joined("/var/yolo-jail/bin/yolo.new")}, "Could not stage entrypoint", false},
-		{"env dir", failAt{run: joined("/bin/chmod 0700 /var/yolo-jail/env")}, "Could not prepare the session environment directory", false},
+		{"stage", failAt{run: joined("/Users/Shared/yolo-staged/bin/yolo.new")}, "Could not stage entrypoint", false},
+		{"env dir", failAt{run: joined("/bin/chmod 0700 /Users/Shared/yolo-staged/env")}, "Could not prepare the session environment directory", false},
 		{"env file", failAt{install: envFile}, "Could not write the session environment file", false},
 		{"env grant", failAt{run: func(argv []string) bool {
 			return slices.ContainsFunc(argv, envFile) && slices.Contains(argv, "+a")
@@ -449,8 +466,8 @@ func TestAStepTheSignalMadeFailReturnsTheSignalsStatus(t *testing.T) {
 			flip := endingAfter(&d)
 			hit := false
 			if tc.at.install != nil {
-				install := d.InstallRootFile
-				d.InstallRootFile = func(path, content, mode string) bool {
+				install := d.WriteHostFile
+				d.WriteHostFile = func(path, content string, mode os.FileMode) bool {
 					ok := install(path, content, mode)
 					if !hit && tc.at.install(path) {
 						hit = true
@@ -623,8 +640,8 @@ func TestASignalAtTheContextPreflightIsNotARefusal(t *testing.T) {
 	}
 }
 
-// THE HOLD IS ASKED BEFORE THE CONTEXT PREFLIGHT: it runs no sudo, so a launch the hold refuses
-// never prompts for the preflight's password.
+// THE HOLD IS ASKED BEFORE THE CONTEXT PREFLIGHT: it crosses into nothing, so a launch the hold
+// refuses never runs the preflight's crossings into the sandbox account.
 func TestARefusedHoldRunsNoContextPreflight(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
@@ -641,7 +658,8 @@ func TestARefusedHoldRunsNoContextPreflight(t *testing.T) {
 	if i := recAt(rec, "run:"); i >= 0 {
 		t.Errorf("a launch the hold refused ran %s first", rec[i])
 	}
-	if strings.Contains(buf.String(), "sudo may prompt") {
-		t.Errorf("a launch the hold refused announced a sudo prompt:\n%s", buf.String())
+	if strings.Contains(buf.String(), "context mount source(s)") {
+		t.Errorf("a launch the hold refused announced the context preflight:\n%s", buf.String())
 	}
+
 }

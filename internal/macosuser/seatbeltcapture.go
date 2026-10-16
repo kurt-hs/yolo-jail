@@ -22,7 +22,7 @@ package macosuser
 //
 // A capture must not touch it. What it needs instead is a FRESH, ENUMERABLE, KERNEL-BOUNDED
 // write surface, and this backend already has the control point for one: the Seatbelt profile
-// is generated fresh per session (SeatbeltProfile, installed root-owned at SessionProfilePath),
+// is generated fresh per session (SeatbeltProfile, written host-owned 0444 at SessionProfilePath),
 // so a capture can carry a different profile without changing anything about how a launch
 // works. This is that profile.
 //
@@ -147,7 +147,8 @@ func SeatbeltCaptureProfile(stagingRoot string) string {
 		ancestors +
 		stagingClause +
 		"    (literal \"/Users\")\n" +
-		"    (literal \"/Users/Shared\"))\n" +
+		"    (literal \"/Users/Shared\")\n" +
+		stagingRootReadClause() + ")\n" +
 		"\n" +
 		";; --- Keychains: System.keychain is world-readable (0644) on stock macOS ---\n" +
 		"(deny file-read* (subpath \"/Library/Keychains\"))\n" +

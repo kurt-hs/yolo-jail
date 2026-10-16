@@ -255,7 +255,9 @@ jobs:
       # run must not silently add a system account to somebody's Mac — so it is an
       # explicit step here, where the machine is ephemeral and the mutation is
       # therefore free. Idempotent; creates `_yolojail` (hidden, random password, no
-      # login shell) plus the shared root at /Users/Shared/yolo.
+      # login shell), the shared root at /Users/Shared/yolo, the host-owned staging root
+      # at /Users/Shared/yolo-staged, and the one sudo rule /etc/sudoers.d/yolo-jail that
+      # runs commands as _yolojail, never as root (docs/design/macos-user-privilege-lifecycle-plan.md).
       #
       # NOT under sudo: `macos-setup` refuses to run as root (it would assign the
       # shared-workspace ACL to root), and calls sudo itself for the steps that need
@@ -360,7 +362,8 @@ jobs:
       #
       # TWO GATES ARE BEHIND THAT ONE FILTER, and the difference is worth knowing when
       # reading a result. The LAUNCH gate needs the account the step above creates, the
-      # shared root, and passwordless sudo; it starts real jails and builds a native nix
+      # shared root, and the run-as rule that step installs (`/usr/bin/sudo -n
+      # --user=_yolojail /usr/bin/env /usr/bin/true` passes); it starts real jails and builds a native nix
       # closure, which is where this job's time goes. The SEATBELT gate
       # (integration/macosuserseatbelt_test.go) needs `sandbox-exec` and a writable
       # /Users/Shared: it writes the profile BuildRunPlan would install, runs commands
@@ -382,7 +385,7 @@ jobs:
           # which is why the declaration lives here and not in the test binary.
           #
           # So this job goes RED, naming the reason, when `_yolojail` is missing, when
-          # sudo would prompt, when the tests were renamed out of the filter above —
+          # sudo would prompt to run as it, when the tests were renamed out of the filter above —
           # every way of arriving at "nothing was exercised". See
           # integration/macosusergate_test.go for the mechanism and its own tests
           # (which run on Linux, under -short, on every push).
@@ -403,6 +406,75 @@ jobs:
       #
       # No teardown either. The runner is ephemeral, and removing the account would
       # delete the evidence any post-mortem step would want to look at.
+
+      # PASSWORDLESS START AND STOP, MEASURED (docs/design/macos-user-privilege-lifecycle-plan.md,
+      # task 9). Every step above ran with this runner's blanket passwordless sudo, which would
+      # pass a launch that still needed root. These two steps take that away and leave only the
+      # rule `yolo macos-setup` installed, then run the launch tests that need nothing more. They
+      # are LAST: after the first, no root sudo works on this runner, so nothing after them may
+      # need root.
+      #
+      # THE BLANKET RULE MUST BE IN A FILE THAT CAN BE MOVED ASIDE. Nobody has looked at where a
+      # hosted macOS runner keeps it, so the step prints every NOPASSWD grant first and moves aside
+      # only files under /etc/sudoers.d carrying a `NOPASSWD: ALL` rule, never yolo's own. The
+      # FIRST RUN of this step is what says whether that was enough. If the grant is in
+      # /etc/sudoers itself, the step fails naming that, and editing the main file is a
+      # reviewer's choice, not this step's.
+      #
+      # ONE sudo INVOCATION does the moving, because its own effect removes the permission it
+      # runs under: after the first mv no further sudo works, so the moving, the evidence copy and
+      # `visudo -c` all happen inside one root shell. The moved files are kept under /var/tmp for
+      # the log, not deleted.
+      #
+      # `sudo -k` before each probe: a cached credential would pass `sudo -n` through a broad rule
+      # and hide a missing one (the plan's Traps).
+      #
+      # `!cancelled()`, so a red test in the step above does not also cost this measurement.
+      - name: Narrow sudo to the enrolled rule
+        id: narrow
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          echo "Every NOPASSWD grant before narrowing:"
+          sudo grep -rn NOPASSWD /etc/sudoers /etc/sudoers.d || true
+          sudo /bin/sh -c '
+            set -u
+            aside=/var/tmp/yolo-sudoers-moved-aside
+            mkdir -p "$aside"
+            for f in /etc/sudoers.d/*; do
+              [ -f "$f" ] || continue
+              [ "$f" = /etc/sudoers.d/yolo-jail ] && continue
+              if grep -Eq "NOPASSWD:[[:space:]]*ALL([[:space:]]|$)" "$f"; then
+                mv -f "$f" "$aside/" && echo "moved aside: $f -> $aside/"
+              fi
+            done
+            ls -le "$aside"
+            visudo -c
+          ' || { echo "::error::moving the blanket rule aside, or visudo -c after it, failed"; exit 1; }
+          sudo -k
+          if sudo -n true 2>/dev/null; then
+            echo "::error::root sudo still passwordless; the blanket rule is in /etc/sudoers itself — editing the main file is a reviewer's choice"
+            exit 1
+          fi
+          echo "root sudo now needs a password"
+          /usr/bin/sudo -n -l 2>&1 || true
+          sudo -k
+          if ! /usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true; then
+            echo "::error::the run-as rule does not hold once root sudo is narrowed (/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true failed); did 'Create the sandbox account' install /etc/sudoers.d/yolo-jail?"
+            exit 1
+          fi
+          echo "the run-as rule holds: sudo runs commands as _yolojail with no password"
+
+      # The launch tests that must hold with root sudo out of reach. YOLO_TEST_MACOS_USER_NARROW_SUDO
+      # declares that this step narrowed it, so TestMacosUserPasswordlessStartAndExit runs rather
+      # than skipping (it skips everywhere else, where a broad rule would pass it vacuously), and
+      # YOLO_TEST_MACOS_USER makes a run in which all three skipped exit non-zero, as above.
+      - name: macos-user passwordless start and exit (sudo narrowed to the rule)
+        if: ${{ !cancelled() && steps.narrow.outcome == 'success' }}
+        run: go test -count=1 -timeout 0 -v -run '^TestMacosUser(PasswordlessStartAndExit|TheGuestCannotWriteTheStagingRoot|TerminateEndsTheSessionThroughItsTeardown)$' ./integration
+        env:
+          YOLO_TEST_MACOS_USER: "1"
+          YOLO_TEST_MACOS_USER_NARROW_SUDO: "1"
 
   # REAL VENDOR INSTALLS ON darwin: OQ-CI7, ruled 2026-10-05 as the doc's option (c)
   # (docs/reference/agent-install-in-ci.md#OQ-CI7). darwin is the one platform whose

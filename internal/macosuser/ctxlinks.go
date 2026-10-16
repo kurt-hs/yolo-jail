@@ -24,7 +24,7 @@ import (
 // THE LINK IS ONLY A NAME (§3.3). Seatbelt judges the TARGET of every access, for an absolute
 // link and a relative one alike (measured on hardware 2026-09-13, declaration-parity.md §6.1
 // probe 1), so an agent that plants its own link anywhere it may write gains nothing, and no
-// rule here relies on the link for confinement: the link being root-owned keeps the NAME
+// rule here relies on the link for confinement: the link sitting in a sealed tree keeps the NAME
 // honest, and the profile's rules on the resolved source are the whole access decision.
 //
 // THREE GATES, each answering a different question, in the order a launch asks them:
@@ -141,7 +141,8 @@ type ContextSiting struct {
 	SharedRoot string
 	// SandboxHome is the sandbox account's own home.
 	SandboxHome string
-	// StateDirs are every spelling of yolo's root-owned state dir, which holds the context dir.
+	// StateDirs are every spelling of yolo's staging root, which holds the context dir, and of the
+	// root-owned state dir older yolo staged into, where a session it started may still run.
 	StateDirs []string
 	// WritableRoots are the places the profile lets the sandbox write besides the workspace
 	// and its own home — the profile's own list (profileWritableRoots), not a copy of it.
@@ -164,11 +165,12 @@ func DarwinContextSiting() ContextSiting {
 		DataVolume:       "/System/Volumes/Data",
 		SharedRoot:       SharedRootDefault(),
 		SandboxHome:      SandboxHome(),
-		StateDirs:        []string{stateDir, "/private" + stateDir},
-		WritableRoots:    append([]string(nil), profileWritableRoots...),
-		VolumesRoot:      "/Volumes",
-		BootVolume:       bootVolume,
-		PrivacyDirs:      []string{"Desktop", "Documents", "Downloads", "Library/Mobile Documents"},
+		StateDirs: []string{stateDir, "/System/Volumes/Data" + stateDir,
+			legacyStateDir, "/private" + legacyStateDir},
+		WritableRoots: append([]string(nil), profileWritableRoots...),
+		VolumesRoot:   "/Volumes",
+		BootVolume:    bootVolume,
+		PrivacyDirs:   []string{"Desktop", "Documents", "Downloads", "Library/Mobile Documents"},
 	}
 }
 
@@ -347,7 +349,7 @@ func siteAgainst(links []ContextLink, i int, occupied []string, fold bool) strin
 // copy has (Dest, Source as the host resolved it, Named, Pack; never RW, never Dir).
 //
 // DESTINATION RULES ONLY, because the source is never opened by the sandbox: the bytes land in
-// the root-owned tree, so where the source sits, which rules 2-10 of SiteContextLinks judge, is
+// the sealed staged tree, so where the source sits, which rules 2-10 of SiteContextLinks judge, is
 // not this backend's question for a copy. What is judged is where the copy lands:
 //
 //  1. under /ctx, as a link must be;
@@ -429,7 +431,7 @@ func SiteContextCopies(s ContextSiting, copies, links []ContextLink, occupied []
 // THE DIFFERENCES FROM A CONTEXT MOUNT, each a decision (cache-relocation.md's ledger):
 //
 //   - The link is in the SANDBOX HOME, at a path the key itself fixes (~/.cache/<subdir>), not
-//     a name in the root-owned context dir. The link is still only a name: an agent can replace
+//     a name in the sealed context dir. The link is still only a name: an agent can replace
 //     it with one of its own, which opens nothing, because the profile names the target.
 //   - Every relocation is READ-WRITE, and the target need NOT sit under the shared root. A
 //     cache is the sandbox's own bytes, so the shared root's rule for a context source — that a
@@ -605,7 +607,8 @@ type CacheRelocationProbe struct {
 	Relocation CacheRelocation
 	// Access is "read", "search", "write", or "write under the sandbox profile".
 	Access string
-	// Argv is the whole command, `sudo` included; it exits 0 when the access is granted.
+	// Argv is the whole command, the run-as crossing included; it exits 0 when the access is
+	// granted.
 	Argv []string
 }
 
@@ -613,17 +616,16 @@ type CacheRelocationProbe struct {
 const cacheRelocationProfileAccess = "write under the sandbox profile"
 
 // CacheRelocationPreflight is the DAC preflight for every relocation: read, search and write on
-// the target, each asked of access(2) as `user` (SandboxUser when ""), which weighs the ACLs as
-// well as the mode bits. ContextPreflight's shape for a read-write directory source.
-func CacheRelocationPreflight(relocs []CacheRelocation, user string) []CacheRelocationProbe {
-	if user == "" {
-		user = SandboxUser
-	}
+// the target, each asked of access(2) as SandboxUser, which weighs the ACLs as well as the mode
+// bits. ContextPreflight's shape for a read-write directory source, and its crossing: through
+// /usr/bin/env, the one command the run-as rule names. The second parameter is unused, the rule
+// naming one account.
+func CacheRelocationPreflight(relocs []CacheRelocation, _ string) []CacheRelocationProbe {
 	var out []CacheRelocationProbe
 	for _, r := range relocs {
 		for _, a := range [][2]string{{"read", "-r"}, {"search", "-x"}, {"write", "-w"}} {
 			out = append(out, CacheRelocationProbe{Relocation: r, Access: a[0],
-				Argv: []string{"sudo", "--user=" + user, testBin, a[1], r.Target}})
+				Argv: RunAsSandboxArgv(nil, testBin, a[1], r.Target)})
 		}
 	}
 	return out
@@ -649,12 +651,12 @@ func CacheRelocationWriteProbe(r CacheRelocation, profilePath, sessionID, user s
 		user = SandboxUser
 	}
 	home := SandboxHome()
-	return CacheRelocationProbe{Relocation: r, Access: cacheRelocationProfileAccess, Argv: []string{
-		"sudo", "--user=" + user, "/usr/bin/env", "-i", "HOME=" + home, "USER=" + user,
+	return CacheRelocationProbe{Relocation: r, Access: cacheRelocationProfileAccess, Argv: RunAsSandboxArgv(nil,
+		"-i", "HOME="+home, "USER="+user,
 		"PATH=/usr/bin:/bin", "/usr/bin/sandbox-exec", "-f", profilePath, "--",
-		"/bin/sh", "-c", `: > "$1" && exec ` + rmBin + ` -f "$1"`, "sh",
+		"/bin/sh", "-c", `: > "$1" && exec `+rmBin+` -f "$1"`, "sh",
 		CacheRelocationProbeFile(r.Target, sessionID),
-	}}
+	)}
 }
 
 // CacheRelocationRefusalMessage is the launch's message for the relocation probes that failed,
@@ -819,26 +821,28 @@ type ContextProbe struct {
 	Link ContextLink
 	// Access is "read", "search" or "write".
 	Access string
-	// Argv is the whole command, `sudo` included: `/bin/test` exits 0 when the access is
-	// granted, and it asks access(2), which weighs the ACLs as well as the mode bits.
+	// Argv is the whole command, the run-as crossing included: `/bin/test` exits 0 when the
+	// access is granted, and it asks access(2), which weighs the ACLs as well as the mode bits.
 	Argv []string
 }
 
 // ContextPreflight is the DAC preflight (§3.5): read for every source, search for a
-// directory, and write for a read-write one, each asked as `user` (SandboxUser when "").
+// directory, and write for a read-write one, each asked as SandboxUser. The second parameter is
+// unused, the run-as rule naming one account.
+//
+// ⚠ THROUGH /usr/bin/env, NEVER `sudo … /bin/test` DIRECTLY: the run-as rule names
+// /usr/bin/env alone, so a bare /bin/test would not match it, and every context mount would be
+// refused with a remedy about permissions rather than the missing rule.
 //
 // THE ROOT OF THE SOURCE ONLY, not the subtree: a 0700 subdirectory fails when the agent opens
 // it, which the briefing states (§3.5's stated delta). Asking access(2) of the source also asks
 // it of every ancestor, since the lookup needs search on each, so a home that is not
 // traversable fails here too.
-func ContextPreflight(links []ContextLink, user string) []ContextProbe {
-	if user == "" {
-		user = SandboxUser
-	}
+func ContextPreflight(links []ContextLink, _ string) []ContextProbe {
 	var out []ContextProbe
 	add := func(l ContextLink, access, flag string) {
 		out = append(out, ContextProbe{Link: l, Access: access,
-			Argv: []string{"sudo", "--user=" + user, testBin, flag, l.Source}})
+			Argv: RunAsSandboxArgv(nil, testBin, flag, l.Source)})
 	}
 	for _, l := range links {
 		add(l, "read", "-r")
@@ -872,13 +876,13 @@ func ContextPreflightRefusal(failed []ContextProbe, step string) string {
 // StageContextDirCommands stages the context dir for this launch: the composed tree when the
 // host CLI composed one (StageCtxCommands), an empty directory otherwise
 // (StageEmptyCtxCommands), and then, inside the same `.new` directory and before the swap, one
-// root-owned link per delivered context mount.
+// link per delivered context mount.
 //
-// THE LINKS COME AFTER THE RECURSIVE chmod, and that order is the point: a `chmod -R` over a
+// THE LINKS COME AFTER THE RECURSIVE SEAL, and that order is the point: a `chmod -R` over a
 // tree that already held a link to a host source could follow it into the user's own files
-// (BSD chmod's default is not to, and nothing here should depend on that). Each parent
-// directory a link needs is made and opened to the sandbox explicitly, because root's umask
-// under sudo is the invoking user's, which need not be 022.
+// (BSD chmod's default is not to, and nothing here should depend on that). So the sealed tree is
+// opened only where a link goes, non-recursively — the `.new` root and each parent directory a
+// link needs — and each is sealed again, one directory at a time, once the links are in.
 //
 // ⚠ `ln -s` INTO AN EXISTING DIRECTORY CREATES THE LINK INSIDE IT (BSD ln has no -T), which is
 // one of the reasons SiteContextLinks refuses a link at, inside or around another link or a path
@@ -893,14 +897,26 @@ func StageContextDirCommands(hostCtxTree string, links []ContextLink, cname, sd 
 	if len(links) == 0 {
 		return base
 	}
-	tmp := StagedCtxRoot(cname, sd) + ".new"
-	// Both stagers end with `rm -rf <dst>` then `mv -f <tmp> <dst>`; the links go in front.
-	head, swap := base[:len(base)-2], base[len(base)-2:]
+	dst := StagedCtxRoot(cname, sd)
+	tmp := dst + ".new"
+	// Both stagers end with the sealed removal of <dst> then `mv -f <tmp> <dst>`; the links go
+	// in front.
+	n := len(removeSealedCommands(dst)) + 1
+	head, swap := base[:len(base)-n], base[len(base)-n:]
 	out := append(append([][]string{}, head...), contextLinkCommands(tmp, links)...)
 	return append(out, swap...)
 }
 
-// contextLinkCommands makes each link's parents (top-down, each opened a+rx) and then the links.
+// openDirScriptName is the $0 of openDirScript, so `ps` and a failure name it.
+const openDirScriptName = "yolo-open-dir"
+
+// openDirScript gives the owner write on one sealed directory ($1), not recursively, when it is a
+// real directory; an absent path needs nothing (mkdir -p makes it) and a link is never followed.
+var openDirScript = `if [ -d "$1" ] && [ ! -L "$1" ]; then exec ` + chmodBin + ` u+w -- "$1"; fi`
+
+// contextLinkCommands opens the sealed `.new` root, makes each link's parents (top-down), makes
+// the links, then seals each parent 0555 and closes the root's owner write again: the root keeps
+// the mode its stager gave it (0500 plus the sandbox's ACE, or 0555 when empty).
 func contextLinkCommands(tmp string, links []ContextLink) [][]string {
 	parents := map[string]bool{}
 	for _, l := range links {
@@ -918,16 +934,21 @@ func contextLinkCommands(tmp string, links []ContextLink) [][]string {
 	}
 	// Top-down: a parent sorts before its children because it is a prefix of them.
 	sort.Strings(dirs)
-	var out [][]string
+	out := [][]string{{chmodBin, "u+w", tmp}}
 	for _, d := range dirs {
-		out = append(out, []string{mkdirBin, "-p", tmp + "/" + d}, []string{chmodBin, "755", tmp + "/" + d})
+		out = append(out,
+			[]string{shBin, "-c", openDirScript, openDirScriptName, tmp + "/" + d},
+			[]string{mkdirBin, "-p", tmp + "/" + d})
 	}
 	for _, l := range links {
 		if rel := l.Rel(); rel != "" {
 			out = append(out, []string{lnBin, "-s", l.Source, tmp + "/" + rel})
 		}
 	}
-	return out
+	for _, d := range dirs {
+		out = append(out, []string{chmodBin, sealedBinaryMode, tmp + "/" + d})
+	}
+	return append(out, []string{chmodBin, "u-w", tmp})
 }
 
 // stagesContextLink reports whether the stage commands make l's link at its path under the
@@ -996,7 +1017,7 @@ func contextLinkProblems(plan RunPlan) []string {
 			need = append(need, "-w")
 		}
 		for _, flag := range need {
-			argv := []string{"sudo", "--user=" + SandboxUser, testBin, flag, l.Source}
+			argv := RunAsSandboxArgv(nil, testBin, flag, l.Source)
 			if !asked[strings.Join(argv, "\x00")] {
 				problems = append(problems, name+" is not checked by the DAC preflight ("+
 					strings.Join(argv, " ")+"); a source "+SandboxUser+" cannot reach would "+

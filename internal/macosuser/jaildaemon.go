@@ -19,11 +19,11 @@ package macosuser
 //     declared `cmd` runs exactly as declared: the supervisor resolves `yolo-jaild` on the
 //     sandbox PATH (SandboxPath carries GuestBinDir), with no argv[0] rewrite and no
 //     generated shim.
-//   - OQ-DP9 — the daemons run CONFINED: the supervisor's argv is sudo → env -i →
+//   - OQ-DP9 — the daemons run CONFINED: the supervisor's argv is the run-as rule → env -i →
 //     sandbox-exec -f <the session profile> → the env-file reader → `yolo-jaild supervise`,
 //     the same four layers the agent and the provisioning stage run under, as the sandbox
 //     account. Callers authenticate with the launch's caller tokens (NC-D2), which reach the
-//     supervisor in a root-owned 0600 file only that account is granted read on — this
+//     supervisor in a host-owned 0600 file only that account is granted read on — this
 //     backend has no network isolation, so the file's ownership and ACE are the boundary.
 //
 // # The loophole clients the agent runs (the same ruling, one step over)
@@ -151,7 +151,7 @@ func guestClientPhrase(clients []GuestClient) string {
 	return strings.Join(parts, ", ")
 }
 
-// GuestBinDir is the root-owned directory holding every binary the sandbox runs of yolo's
+// GuestBinDir is the staging-root directory holding every binary the sandbox runs of yolo's
 // own: <stateDir>/bin. StagedYoloPath is in it too, so the one PATH entry SandboxPath derives
 // from StagedYoloPath resolves both `yolo` and `yolo-jaild`.
 func GuestBinDir(sd string) string {
@@ -174,23 +174,24 @@ func PrebuiltGuestBinDir(root string) string {
 	return filepath.Join(root, "bin", "darwin-"+goruntime.GOARCH)
 }
 
-// StageGuestBinaryCommands returns the sudo argv that stage each GuestBinaries member from
-// srcDir into GuestBinDir, the StageBinaryCommands shape per binary: copy to a temp name,
-// `a+rX`, then an atomic rename — a FRESH INODE, because macOS caches Mach-O code signatures
-// per vnode and an in-place overwrite gets the next exec SIGKILLed. Root-owned, so the
-// sandbox can execute and cannot rewrite what its supervisor or its agent runs. nil for an
-// empty srcDir, which is a launch with no jail daemon to run and no guest client's endpoint.
+// StageGuestBinaryCommands returns the argv, run as the host user, that stage each GuestBinaries
+// member from srcDir into GuestBinDir, the StageBinaryCommands shape per binary: copy to a temp
+// name, seal it 0555, then an atomic rename — a FRESH INODE, because macOS caches Mach-O code
+// signatures per vnode and an in-place overwrite gets the next exec SIGKILLed. Sealed and the
+// host user's, so the sandbox can execute and cannot rewrite what its supervisor or its agent
+// runs. nil for an empty srcDir, which is a launch with no jail daemon to run and no guest
+// client's endpoint.
 func StageGuestBinaryCommands(srcDir, sd string) [][]string {
 	if srcDir == "" {
 		return nil
 	}
-	cmds := [][]string{{mkdirBin, "-p", GuestBinDir(sd)}}
+	cmds := categoryDirCommands(GuestBinDir(sd))
 	for _, name := range GuestBinaries {
 		dst := GuestBinaryPath(name, sd)
 		tmp := dst + ".new"
 		cmds = append(cmds,
 			[]string{cpBin, "-f", filepath.Join(srcDir, name), tmp},
-			[]string{chmodBin, "a+rX", tmp},
+			[]string{chmodBin, sealedBinaryMode, tmp},
 			[]string{mvBin, "-f", tmp, dst},
 		)
 	}
@@ -343,17 +344,16 @@ func WithSupervisorLog(logPath string, argv []string) []string {
 	return append([]string{sandboxEnvShell, "-c", supervisorLogWrapper, supervisorLogWrapperName, logPath}, argv...)
 }
 
-// JailDaemonArgv builds the supervisor's argv: `sudo -n --set-home --user=<sb> /usr/bin/env -i
+// JailDaemonArgv builds the supervisor's argv: `/usr/bin/sudo -n --set-home --user=<sb> /usr/bin/env -i
 // <the closed identity list> /usr/bin/sandbox-exec -f <profile> -- <the log wrapper> <logPath>
 // <env-file reader> <GuestBinDir>/yolo-jaild supervise`.
 //
 // LaunchArgv's shape, deliberately — the plan's Reuse note: sandboxEnvPairs for the closed
 // `env -i` list (so no composed value is on this argv either), ExecWithEnvFile for the
-// composed environment, and the same sandbox-exec profile the agent runs under. What differs
-// is `-n`: this starts in the background beside the agent's terminal, so a sudo whose
-// credential cache had expired must FAIL rather than prompt on a tty the agent is about to
-// own. The staging steps a moment earlier ran sudo, so the cache is warm on every launch
-// that gets here.
+// composed environment, the same sandbox-exec profile the agent runs under, and the same
+// crossing (RunAsSandboxArgv): `-n` through the run-as rule, which never prompts. That matters
+// most here, since this starts in the background beside the agent's terminal, where a prompt
+// would land on a tty the agent is about to own; a missing rule FAILS instead.
 //
 // The supervisor is named by ABSOLUTE path, the one word of this argv yolo decides; the
 // daemons it starts are the payload's argvs verbatim, resolved on the PATH this argv sets.
@@ -364,14 +364,7 @@ func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix
 	if home == "" {
 		home = SandboxHome()
 	}
-	out := []string{
-		"sudo",
-		"-n",
-		"--set-home",
-		"--user=" + user,
-		"/usr/bin/env",
-		"-i",
-	}
+	out := RunAsSandboxArgv([]string{"--set-home"}, "-i")
 	out = append(out, sandboxEnvPairs(home, user, SandboxPath(home, pathPrefix), envFile)...)
 	out = append(out, "/usr/bin/sandbox-exec", "-f", profilePath, "--")
 	out = append(out, WithSupervisorLog(logPath,
@@ -379,9 +372,9 @@ func JailDaemonArgv(profilePath, envFile, logPath, user, home string, pathPrefix
 	return out
 }
 
-// sessionFilePlan is one more root-owned file a session writes beside its env file, installable
+// sessionFilePlan is one more host-owned file a session writes beside its env file, installable
 // through installSandboxEnvFile, the one installer the session file and the capture's file
-// already share: 0700 directory first, content on stdin through `sudo tee`, the sandbox's read
+// already share: 0700 directory first, content written by the host (WriteHostFile), the sandbox's read
 // ACE after. The daemon env file is one, and the CA files are the others (cabundle.go).
 type sessionFilePlan struct {
 	path, content string
@@ -426,7 +419,7 @@ type Background struct {
 // hung start — and never on the stop, which is untouched.
 //
 // WHY THE BOUND IS SHORT. The chain in front of the line is six execs, none of which does I/O
-// worth the name: a sudo whose credential cache the staging steps warmed a moment earlier, env,
+// worth the name: a sudo matching the run-as rule with no password to ask, env,
 // sandbox-exec compiling a profile of a few dozen rules, two /bin/sh wrappers, and a Go binary
 // that parses one env var and writes the line before it starts anything. Every failure it is
 // meant to catch (a sudo -n refusal, a sandbox-exec denial, an exec or env-file failure) EXITS,

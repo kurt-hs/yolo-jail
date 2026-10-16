@@ -26,6 +26,11 @@ package integration
 // (homedaemons_test.go has the inventory). So the same cleanup also stops the daemons that
 // run under the launch's HOME, and waits for them to exit, before that HOME is removed.
 //
+// AND SO ARE THE PREPARATION WORKERS. A host launch whose packs declare a program leaves the
+// preparation scheduler and a shared-demand worker running under the test's HOME
+// (preparationworkers_test.go has the inventory, and CI run 38856922948 the failure), so the
+// same cleanup stops those too, the same way.
+//
 // THE THIRD IS THE JAIL'S KEEPER (docs/design/jail-lifetime-last-session-wins.md §9). A fresh
 // launch spawns it detached, and it ends the jail once the last session is gone. A session that
 // quits waits for that teardown, but one this suite kills (a background run's cancel, at its
@@ -90,6 +95,15 @@ func awaitDetachedWriters(t *testing.T, dir, home string) {
 				t.Errorf("host daemons this test's launch ran under %s were still alive %s after "+
 					"it, past the upstream deadline a detached daemon is bounded by, and were "+
 					"killed: %s", home, homeDaemonBound, strings.Join(left, ", "))
+			}
+			workers, err := stopHomePreparationWorkers(home)
+			if len(workers) > 0 {
+				t.Logf("stopped the preparation processes left running under this test's HOME %s: %s",
+					home, strings.Join(workers, ", "))
+			}
+			if err != nil {
+				t.Errorf("stopping the preparation processes this test's launch left running "+
+					"under %s: %v", home, err)
 			}
 		}
 		if err := run.WaitForScratchRemovers(dir, detachedWriterWait); err != nil {
