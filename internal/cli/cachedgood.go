@@ -319,7 +319,7 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	// THE SOURCE IDENTITY: a fork's repository and subdirectory; a BUILT EXTENSION's (an npm source
 	// among them, which no address parse reads) is the build source its receipt records,
 	// packsrc.BuildSource of the source as declared.
-	sameSource := func(string) bool { return false }
+	var sameSource func(string) bool
 	if f.IsTree() {
 		want := packsrc.BuildSource(f.Source)
 		sameSource = func(source string) bool { return source == want }
