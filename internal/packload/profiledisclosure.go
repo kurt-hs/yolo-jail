@@ -4,8 +4,10 @@ package packload
 // (docs/reference/providers.md#what-the-launch-checks-and-prints; docs/plans/notch-convergence.md
 // item 13, row A7): one line per DISTINCT profile name the launch selects, naming the packs that
 // DECLARE it and, for each agent the profile table keys to that name, the provider its selection
-// resolved to and HOW that agent reaches it at this notch; then one warning line per agent the
-// selection reaches nothing for, or delivers no credential to, each naming why and the fix.
+// resolved to and HOW that agent reaches it at this notch; then ONE warning line naming every
+// agent the selection reaches nothing for, with why and the fix for each (OQ-PP3, answered by
+// docs/design/active-provider-sets.md OQ-AP3: a bare `-p X` names, on one launch line, each agent
+// it does not reach, and never refuses), and one line per agent it delivers no credential to.
 //
 // WHY PER AGENT. The line used to name every selected pack as having RECEIVED the name, which
 // was true (the table reaches every pack's derive whole) and told nobody anything: measured on
@@ -60,10 +62,32 @@ type ProfileDisclosureInput struct {
 }
 
 // ProfileReach is one agent's answer: the provider its selection resolved to, how the agent
-// reaches it here (Route, "" when it reaches nothing), and the warnings, each a whole line.
+// reaches it here (Route, "" when it reaches nothing), why the selection reaches nothing for it
+// with the next step (Unreached, "" when it reaches something), and its other warnings, each a
+// whole line.
 type ProfileReach struct {
 	Agent, Provider, Route string
-	Warnings               []string
+	// Profile is the selected name this answer is for.
+	Profile string
+	// Unreached is the clause after "reaches nothing for <agent>: ", kept apart from Warnings so
+	// ProfileDisclosure.Warnings names every unreached agent of one profile on one line.
+	Unreached string
+	Warnings  []string
+}
+
+// Lines is this agent's warning lines on their own: its "reaches nothing" line first, if any,
+// then its other warnings.
+func (r ProfileReach) Lines() []string {
+	var out []string
+	if r.Unreached != "" {
+		out = append(out, unreachedLine(r.Profile, r.Agent, r.Unreached))
+	}
+	return append(out, r.Warnings...)
+}
+
+// unreachedLine is the "reaches nothing" line for one agent.
+func unreachedLine(profile, agent, why string) string {
+	return fmt.Sprintf("Warning: profile %q reaches nothing for %s: %s", profile, agent, why)
 }
 
 // ProfileDisclosure is one selected profile name: the selected packs that declare it, whether
@@ -104,9 +128,32 @@ func (d ProfileDisclosure) Detail() string {
 // Line is the whole line, unstyled.
 func (d ProfileDisclosure) Line() string { return d.Head() + " " + d.Detail() }
 
-// Warnings is every agent's warning lines, in agent order.
+// Warnings is the disclosure's warning lines: first ONE line naming every agent the selection
+// reaches nothing for, each with why and its next step (OQ-PP3: a bare `-p X` names, on one
+// launch line, each agent it does not reach), then every agent's other warnings, in agent order.
 func (d ProfileDisclosure) Warnings() []string {
 	var out []string
+	var unreached []ProfileReach
+	for _, a := range d.Agents {
+		if a.Unreached != "" {
+			unreached = append(unreached, a)
+		}
+	}
+	switch len(unreached) {
+	case 0:
+	case 1:
+		out = append(out, unreachedLine(d.Name, unreached[0].Agent, unreached[0].Unreached))
+	default:
+		names := make([]string, len(unreached))
+		whys := make([]string, len(unreached))
+		for i, a := range unreached {
+			names[i] = a.Agent
+			whys[i] = fmt.Sprintf("For %s: %s.", a.Agent, a.Unreached)
+		}
+		list := strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+		out = append(out, fmt.Sprintf("Warning: profile %q reaches nothing for %s. %s",
+			d.Name, list, strings.Join(whys, " ")))
+	}
 	for _, a := range d.Agents {
 		out = append(out, a.Warnings...)
 	}
@@ -181,7 +228,7 @@ func ProfileDisclosures(in ProfileDisclosureInput) []ProfileDisclosure {
 // claims reaches the agent at this notch, the line says so and names the fix, where the
 // pre-flight would stay silent and the agent would start without one.
 func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach {
-	r := ProfileReach{Agent: agent}
+	r := ProfileReach{Agent: agent, Profile: profile}
 	owner := binOwner(in.Packs, agent)
 	if owner == nil {
 		r.Route = "not in this launch: no selected pack installs " + agent
@@ -190,8 +237,7 @@ func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach
 	r.Provider = ProviderFor(in.Resolved, profile)
 	quoted := strconv.Quote(profile)
 	if r.Provider == "" {
-		r.Warnings = append(r.Warnings, fmt.Sprintf("Warning: profile %s resolves to no provider "+
-			"for %s, so it reaches nothing for %s: give the profile a `provider`", quoted, agent, agent))
+		r.Unreached = fmt.Sprintf("it resolves to no provider for %s; give the profile a `provider`", agent)
 		return r
 	}
 	// The provider as this profile sees it for this agent: an address composed for a via profile
@@ -200,10 +246,9 @@ func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach
 	via, _ := in.Resolved[profile].ViaFor(agent)
 	entry := EndpointsForProfile(providerEntry(in.Providers, r.Provider), via)
 	if entry == nil {
-		r.Warnings = append(r.Warnings, fmt.Sprintf("Warning: profile %s selects provider %q for "+
-			"%s, and this launch's provider table does not hold it, so it reaches nothing for %s: "+
-			"select a pack that ships it, or declare it under `providers`", quoted, r.Provider,
-			agent, agent))
+		r.Unreached = fmt.Sprintf("it selects provider %q for %s, which this launch's provider "+
+			"table does not hold; select a pack that ships it, or declare it under `providers`",
+			r.Provider, agent)
 		return r
 	}
 	// A PROVIDER THE AGENT HAS BUILT IN (BuiltInProviderFor; docs/design/pi-codex-provider-
@@ -216,12 +261,11 @@ func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach
 	// protocol resolution below like any catalogued provider.
 	if own, builtIn := BuiltInProviderFor(in.Packs, agent, r.Provider); builtIn && !own.YoloList {
 		if own.ID == "" {
-			r.Warnings = append(r.Warnings, fmt.Sprintf("Warning: profile %s reaches nothing for %s: "+
-				"%s has a provider of its own named %q for another plan and none for this "+
-				"profile's, and yolo writes no model entry over a provider an agent has built in, "+
-				"so nothing this profile configures reaches %s's own client. Select a profile whose "+
-				"provider %s reaches (`-p %s=<name>`), or none for %s", quoted, agent, agent,
-				r.Provider, agent, agent, agent, agent))
+			r.Unreached = fmt.Sprintf("%s has a provider of its own named %q for another plan and "+
+				"none for this profile's, and yolo writes no model entry over a provider an agent "+
+				"has built in, so nothing this profile configures reaches %s's own client. Select a "+
+				"profile whose provider %s reaches (`-p %s=<name>`), or none for %s", agent,
+				r.Provider, agent, agent, agent, agent)
 			return r
 		}
 		r.Route = fmt.Sprintf("through its own %q client, with its own model list", own.ID)
@@ -244,8 +288,7 @@ func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach
 		r.Route = fmt.Sprintf("through pack %q's via route", via)
 	case err != nil:
 		first, _, _ := strings.Cut(err.Error(), "\n")
-		r.Warnings = append(r.Warnings, fmt.Sprintf("Warning: profile %s reaches nothing for %s: %s",
-			quoted, agent, first))
+		r.Unreached = first
 	case res.Protocol != "":
 		r.Route = fmt.Sprintf("on its %q endpoint", res.Protocol)
 	case hasEndpoint(entry):
@@ -257,13 +300,12 @@ func profileReach(in ProfileDisclosureInput, agent, profile string) ProfileReach
 		if in.Deselect != nil {
 			none += ": " + in.Deselect(agent, profile)
 		}
-		r.Warnings = append(r.Warnings, fmt.Sprintf("Warning: profile %s reaches nothing for %s: "+
-			"provider %q names no endpoint, only platform %q, and no selected pack gives %s a "+
-			"client of that platform (a pack binds a platform by shipping a provider of it, "+
-			"needing a pack that does, or declaring its program's switch or region for it), so "+
-			"nothing this profile configures reaches %s's own client. Select a profile whose "+
-			"provider %s reaches (`-p %s=<name>`), or %s", quoted, agent, r.Provider,
-			platform, agent, agent, agent, agent, none))
+		r.Unreached = fmt.Sprintf("provider %q names no endpoint, only platform %q, and no "+
+			"selected pack gives %s a client of that platform (a pack binds a platform by shipping "+
+			"a provider of it, needing a pack that does, or declaring its program's switch or "+
+			"region for it), so nothing this profile configures reaches %s's own client. Select a "+
+			"profile whose provider %s reaches (`-p %s=<name>`), or %s", r.Provider, platform,
+			agent, agent, agent, agent, none)
 	default:
 		r.Route = "on its own client, which the provider re-points nowhere (it names no endpoint)"
 	}
