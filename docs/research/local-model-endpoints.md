@@ -8,7 +8,7 @@ side, and which yolo machinery would carry the config.
 
 **Status:** findings gathered 2026-08-20; audited 2026-08-23 (OQ IDs given the
 `LM` prefix; findings NOT re-gathered). **BUILT 2026-09-17** as `packs/llamacpp`,
-under [OQ-LM1](#oq-lm1)'s *mode, not a parallel key* — so [Part 3](#part-3--the-yolo-side-what-would-carry-this)
+under [OQ-LM1](#decision-ledger)'s *mode, not a parallel key* — so [Part 3](#part-3--the-yolo-side-what-would-carry-this)
 and [Part 4](#part-4--what-it-would-actually-take) are history rather than a plan, and each
 carries a warning saying so. Re-verified against installed CLIs on 2026-09-17: pi
 **0.85.1** still emits `supportsUsageInStreaming` and derives `contextWindow` from
@@ -19,8 +19,8 @@ source; copilot 1.0.48 matches, though this doc omits three real vars it sets
 **One measured gap the build could not close from its own files:** `packs/pi/derive.lua`
 emits no `compat` block, and pi's auto-detection for an unknown loopback URL yields the
 INVERSE of pi's own llama.cpp provider flags — so that derive needs a `compat` block
-before the pi smoke test can pass. **Six open questions await a ruling** —
-see [Open Questions](#open-questions). Read §"Fast-moving — verify before
+before the pi smoke test can pass. **All six questions are ruled** (recorded 2026-09-14) —
+see the [Decision Ledger](#decision-ledger). Read §"Fast-moving — verify before
 building" first: this is the shortest-half-life doc in `docs/research/`, and
 several of its claims are expected to be stale within three months of the gather
 date. **Partial re-verification 2026-09-02**: the **pi** and **opencode**
@@ -84,7 +84,7 @@ Companion docs: [`pack-system.md`](../reference/pack-system.md)
   2026-09-17. `providers`/`profiles`, per-agent derives, and a loopback
   `base_url` already triggering an implicit host forward
   (`internal/cli/run/providerlocal.go`) are all shipped. This was written as
-  greenfield on 2026-08-20 and was overtaken; [OQ-LM1](#oq-lm1) then ruled local
+  greenfield on 2026-08-20 and was overtaken; [OQ-LM1](#decision-ledger) then ruled local
   endpoints INTO that system as a mode, so the greenfield designs below were never
   built and should not be.
 - **The universal tool-calling fallback is gone from llama.cpp** (PR
@@ -154,7 +154,7 @@ Knobs worth knowing:
 | `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` | Alias resolution — **the practical knob** |
 | `ANTHROPIC_SMALL_FAST_MODEL` | **Deprecated**, superseded by `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` | Suppresses bootstrap/feature-flag/telemetry calls to `api.anthropic.com` |
-| `ANTHROPIC_UNIX_SOCKET` | **Undocumented.** Routes the API fetch over a unix socket instead of TCP `[verified from source: 2.1.220, fn Ih, 2026-08-20]` — potentially a cheaper jail wiring than TCP. (This cell pointed at [`OQ-LM5`](#oq-lm5) — the ship-order question — which is a dangling cross-ref left by the 2026-08-23 id minting; no open question covers the socket.) |
+| `ANTHROPIC_UNIX_SOCKET` | **Undocumented.** Routes the API fetch over a unix socket instead of TCP `[verified from source: 2.1.220, fn Ih, 2026-08-20]` — potentially a cheaper jail wiring than TCP. (This cell pointed at [`OQ-LM5`](#decision-ledger) — the ship-order question — which is a dangling cross-ref left by the 2026-08-23 id minting; no open question covers the socket.) |
 
 > [!WARNING]
 > **Scope trap.** There are two settings-`env` application passes
@@ -600,7 +600,7 @@ is a runtime file no yolo surface covers: it lives under `$XDG_STATE_HOME`, the
 TUI rewrites it on every interactive model switch, and while an explicit config
 `model` beats it, the moment that key is dropped the agent silently reverts to
 its last interactive choice. It is the same two-writers shape
-[OQ-LM6](#oq-lm6) worries about, on the *selection* axis rather than the
+[OQ-LM6](#decision-ledger) worries about, on the *selection* axis rather than the
 definition one — except that here the second writer is the agent itself, so no
 mount-level gate can close it.
 
@@ -849,7 +849,7 @@ accepts a path ending in `.sock` for a Unix socket.
 > Its premise (*"Prior art in this repo: none … Nothing configures a model or a
 > provider today"*) was true on 2026-08-20 and is not now: the provider/profile
 > system shipped, and the same `rg` matched 65 files on 2026-09-17.
-> [OQ-LM1](#oq-lm1) ruled local endpoints are a **MODE** inside that system, so the
+> [OQ-LM1](#decision-ledger) ruled local endpoints are a **MODE** inside that system, so the
 > "six mechanical edits" below and [Part 4](#part-4--what-it-would-actually-take)'s Option 2
 > describe a surface that was deliberately not built. **What shipped instead is
 > `packs/llamacpp`** — one `kind: "provider"`, one `kind: "profile"`, one
@@ -866,7 +866,7 @@ accepts a path ending in `.sock` for a Unix socket.
 | **Pack `launch` kind** `kinds.go:100-101` | Injects flags after a binary at launch; **keyed by `bin`, so genuinely per-agent** | Partly | Static literals in `pack.json` |
 | **`env_sources`** `internal/config/envsources.go:58-85` | Ordered dotenv files → `~/.config/yolo-user-env.sh`, sourced by `.bashrc` and hydrated into the entrypoint's env | **Works today** | Jail-wide, untyped, no per-agent scoping, no provenance |
 | **`host_files`** `internal/config/hostfiles.go:73-75` | Brings any host file in as a composed surface. **`yolo config-ref` names `~/.pi/agent/models.json` as its own example** | **Yes — the zero-code answer today** | Hand-written per agent in each native dialect; N agents = N maintained blobs |
-| **`network.forward_host_ports`** `internal/cli/run/hostports.go` | Host↔jail port hop over a bind-mounted Unix socket | **Yes — the transport answer** | Requires `socat` both sides; no scope gate (see [OQ-LM4](#oq-lm4)) |
+| **`network.forward_host_ports`** `internal/cli/run/hostports.go` | Host↔jail port hop over a bind-mounted Unix socket | **Yes — the transport answer** | Requires `socat` both sides; no scope gate (see [OQ-LM4](#decision-ledger)) |
 | **Loophole** `internal/loopholedecl` | Manifest-declared host daemon, per-jail token, pinned TLS, typed settings, approval | **Overkill for transport; right for policy** | Only transport is `loopback-tls`; **no agent's HTTP client speaks that**, so it needs a *baked* jail-side shim — a core change, not a pack |
 
 ### The layer model, and the precedent that constrains this
@@ -1130,172 +1130,36 @@ Carry these forward; do not build on them without re-checking.
 
 ---
 
-## Open Questions
+## Decision Ledger
 
-> IDs use the `LM` prefix (minted 2026-08-23; the only other `OQ-LM*` in the
-> repo is in `docs/plans/roadmap.md`, which points back at these). They were bare numeric ids until then, which collided with the
-> the nine questions in `docs/design/agent-auth-modes.md` (deleted 2026-10-16) — the very doc [OQ-LM1](#oq-lm1) is
-> about. Nothing outside this file cited the old spellings.
+All six questions were ruled by the maintainer and recorded on 2026-09-14. The ids carry the `LM`
+prefix, minted 2026-08-23 so they would not collide with another doc's bare numbers.
 
-1. <a id="oq-lm1"></a>✅ **OQ-LM1: Is `llm_endpoints` the thin version of B3, or a
-   competing design?** the since-deleted `docs/design/agent-auth-modes.md` argued (now [`bedrock-plumbing.md`'s P1](../design/bedrock-plumbing.md#1-verdict-and-principles)) that **a
-   mode is a bundle** (credential + env + model IDs) and that splitting them is
-   exactly how a real switch silently half-lands — that document was written from
-   a measured Bedrock→Teams miss. A bare `{base_url, model}` key re-creates that
-   bug for local models. **This is the framing question**: it decides whether
-   anything in Part 4 is a new config surface at all, and every other question
-   here inherits its answer.
+| ID | Ruling / Decision | Date | Settled in | Built |
+| :--- | :--- | :--- | :--- | :--- |
+| OQ-LM1 | **A mode, not a parallel key.** Local endpoints reuse the provider and profile framing rather than an `llm_endpoints` surface beside it. A mode is a bundle (credential, env and model ids together), and splitting them is how a switch half-lands silently; a bare `{base_url, model}` key would re-create that for local models. Every other question here inherits this | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | ✅ `packs/llamacpp` (2026-09-17): one provider, one profile, one profile-gated env, pinned by `internal/packdecl/llamacpppack_test.go` |
+| OQ-LM2 | **`requires_env`-style gating, matching the MCP precedent:** an endpoint drops when its key is absent rather than half-configuring. And document that a local endpoint normally needs no key at all: every agent here accepts a dummy against a local llama-server, so the key path exists for the hosted case, the only one where a real secret is at stake | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | Partly: `packs/llamacpp` names no key variable (`TestLlamacppNamesNoCredentialVariable`); a hosted endpoint's key is a user `api_key_env_name`, which the credential pre-flight requires rather than dropping the endpoint |
+| OQ-LM3 | **User-scope only.** A workspace `yolo-jail.jsonc` is a file the agent inside the jail can rewrite, and repointing an agent's inference at an attacker-chosen URL from a file that agent controls is the one answer that cannot be revised later without a breaking config change. Follows `scope: "user"` on journal's `full` setting | 2026-09-14 | [Part 3](#part-3--the-yolo-side-what-would-carry-this) | ✅ `config.validateProviderCredentialScope` refuses a workspace provider address, since widened to every credential-routing provider field ([NC-D63](../plans/notch-convergence.md#NC-D63)) |
+| OQ-LM4 | **No scope gate on `forward_host_ports`, and it is deliberately not treated as a hole.** *"I think we don't need it, we have the config diff confirmation already and this isn't a high risk."* The config-change approval ([`config-safety.md`](../reference/config-safety.md)) shows the workspace config's diff and asks y/N, so an agent adding an entry cannot reach a launch without a human seeing the line. ⚠ This is why it differs from [OQ-LM3](#decision-ledger): repointing inference is total and silent, while forwarding a loopback port is visible in the diff and bounded by what listens on that port | 2026-09-14 | [Mechanism verdict table](#mechanism-verdict-table) | — nothing to build |
+| OQ-LM5 | **Both at once:** the recipe (Option 1) and the build (Option 2) are not sequenced. ⚠ The smoke test still applies: nothing in this doc has been exercised against a live server, so the recipe half carries one manual run per agent whatever order the build half lands in | 2026-09-14 | [Part 4](#part-4--what-it-would-actually-take) | Partly: the build half is `packs/llamacpp`; no per-agent run against a live server is recorded here |
+| OQ-LM6 | **Two writers for one path are a fatal error, not a merge and not a precedence rule.** *"I don't want weird recursive loops or anything in our resolution. I don't see a use case for this."* A pack surface and a `host_files` entry at one destination is a config that cannot be satisfied, so it is refused where the collision is detectable instead of choosing a winner. Config claims are keyed by `agent/name`, not by path, which is why the collision is representable at all; on the maintainer's own machine `~/.pi/agent/models.json` is already pack-managed and mounted `:ro`, so this is what stops that config being corrupted | 2026-09-14 | [the notes below](#the-two-writers-refusal-as-built) | ✅ 2026-09-22: `config.SurfaceCollisions`; the launch refuses with one line per colliding entry naming both remedies (drop the entry, or deselect the pack) |
 
-   <!-- vantage: question id=OQ-LM1 leaning="Make local endpoints a mode, reusing the existing framing, rather than a parallel key that will need reconciling later." -->
+### The two-writers refusal, as built
 
-   _Leaning:_ make local endpoints a **mode**, reusing the existing framing,
-   rather than a parallel key that will need reconciling later.
+**Why it is not only in `checkHostFiles`, which is where a reader looks first.** Config
+validation reserves the surfaces of the selected packs it can resolve (`selectedSurfacePaths`),
+but a configured pack whose tree is not in the store yet resolves there as nothing, and the launch
+fetches it afterwards. So the refusal also lives where the packs are already loaded, which is the
+first point every collision is detectable.
 
-   **Answer:**
-   > **RULED: a MODE, not a parallel key.** Local endpoints reuse the existing framing rather
-   > than adding an `llm_endpoints` surface beside it. A mode is a bundle — credential, env and
-   > model IDs together — and `agent-auth-modes.md` was written from a measured Bedrock→Teams
-   > miss where splitting them let a switch half-land silently. A bare `{base_url, model}` key
-   > re-creates that bug for local models. Every other question here inherits this.
+**The asymmetry with every other `host_files` failure is deliberate.** A missing SOURCE is a
+warning and degrades to the defaults layer — the feature working. Two writers for one
+destination is a config that cannot be satisfied, so it is fatal.
 
-2. <a id="oq-lm2"></a>✅ **OQ-LM2: Where does the API key live?** Options:
-   `env_sources` (today's answer — jail-wide, no provenance); an `api_key_env`
-   reference the derive emits for the agent to resolve; or a `requires_env`-style
-   gate that drops the endpoint when the key is absent (`mcp.go:136-175`). A raw
-   key in `yolo-jail.jsonc` would put a secret in a repo-tracked,
-   **agent-editable** file. Note that for a purely local llama-server the answer
-   may be "there is no key" — every agent here accepts a dummy. **Decides whether
-   this feature can ever carry a hosted (non-local) endpoint**, since that is the
-   only case where a real secret is at stake.
-
-   <!-- vantage: question id=OQ-LM2 leaning="`requires_env`-style gating, matching the MCP precedent; and document that local endpoints normally need no key at all." -->
-
-   _Leaning:_ `requires_env`-style gating, matching the MCP precedent; and
-   document that local endpoints normally need no key at all.
-
-   **Answer:**
-   > **RULED: `requires_env`-style gating, matching the MCP precedent** (`mcp.go`) — the
-   > endpoint drops when the key is absent rather than half-configuring. And **document that a
-   > local endpoint normally needs no key at all**: every agent here accepts a dummy against a
-   > local llama-server, so the key path exists for the hosted case, which is the only one where
-   > a real secret is at stake.
-
-3. <a id="oq-lm3"></a>✅ **OQ-LM3: Config scope — can a workspace config repoint
-   inference?** `mcp_servers` has no scope gate, so an `llm_endpoints` clone would
-   be settable from a workspace `yolo-jail.jsonc` — **a file the agent inside the
-   jail can rewrite**. Repointing an agent's inference at an attacker-chosen URL
-   from a file that agent controls is a real hazard. Compare the deliberate
-   `scope: "user"` on journal's `full` setting
-   (`packs/journal/loopholes/journal/manifest.jsonc:84-97`). **This is the
-   security-closure question** — it is the one answer that cannot be revised
-   later without a breaking config change.
-
-   <!-- vantage: question id=OQ-LM3 leaning="User-scope only. The blast radius of getting this wrong is total." -->
-
-   _Leaning:_ **user-scope only.** The blast radius of getting this wrong is
-   total.
-
-   **Answer:**
-   > **RULED: user-scope only.** A workspace `yolo-jail.jsonc` is a file the agent inside the
-   > jail can rewrite, and repointing an agent's inference at an attacker-chosen URL from a file
-   > that agent controls is the one answer that cannot be revised later without a breaking config
-   > change. Follows `scope: "user"` on journal's `full` setting.
-
-4. <a id="oq-lm4"></a>✅ **OQ-LM4: Is `forward_host_ports` missing a scope gate
-   today?** No scope gate was found (`internal/config/validate.go:479-496`), so a
-   workspace config can forward an arbitrary host `127.0.0.1` port into the jail.
-   This looks like a pre-existing hole **independent of this feature** and may
-   deserve its own fix regardless of what happens here. Answering it decides
-   whether [OQ-LM3](#oq-lm3)'s ruling is sufficient or merely closes one of two doors.
-
-   <!-- vantage: question id=OQ-LM4 leaning="File it separately; do not couple it to this work." -->
-
-   _Leaning:_ file separately; do not couple it to this work.
-
-   **Answer:**
-   > **RULED: NO scope gate is needed, and this is deliberately NOT treated as a hole.**
-   > *"I think we don't need it, we have the config diff confirmation already and this isn't a
-   > high risk."*
-   >
-   > The control that already covers it is the config-change approval
-   > ([`config-safety.md`](../reference/config-safety.md)): a fresh launch shows a unified diff
-   > of the WORKSPACE config and prompts y/N, refuses outright with no terminal, and takes
-   > `--accept-config-changes` as the one per-launch opt-in. The agent-editable file is exactly
-   > the file that prompt covers, so an agent adding a `forward_host_ports` entry cannot reach a
-   > launch without a human seeing the line.
-   >
-   > ⚠ **This is the one place this doc's framing differs from [OQ-LM3](#oq-lm3), and the
-   > difference is the point.** `llm_endpoints` is user-scope because repointing INFERENCE is
-   > total and silent; forwarding a loopback port is neither — it is visible in the diff and
-   > bounded by what is listening on that port. Scope gating everything that touches the host
-   > would be cheaper to write than to justify, and this one does not clear the bar.
-
-5. <a id="oq-lm5"></a>✅ **OQ-LM5: Ship order — recipe first, or build the
-   source?** Option 1 is honestly available this afternoon and de-risks Option 2.
-   Option 2 is what the prism exists for. They are not mutually exclusive, but
-   they compete for the same attention. Blocks nothing technically; it is purely
-   a sequencing call on the maintainer's own attention.
-
-   <!-- vantage: question id=OQ-LM5 leaning="Option 1 now, with one manual smoke test per agent, since nothing in this doc has been exercised against a live server — then Option 2 once the per-agent configs are proven." -->
-
-   _Leaning:_ Option 1 now — with one manual smoke test per agent, since
-   **nothing in this doc has been exercised against a live server** — then Option
-   2 once the per-agent configs are proven.
-
-   **Answer:**
-   > **RULED: both at once**, not Option 1 then Option 2. They were framed as competing for
-   > the same attention and they are not being sequenced. ⚠ The smoke test still applies —
-   > nothing in this doc has been exercised against a live server, so the recipe half carries one
-   > manual run per agent whatever order the build half lands in.
-
-6. <a id="oq-lm6"></a>✅ **OQ-LM6: Who owns five `derive.lua` blocks, and what
-   about the path collision?** Each agent pack needs its own projection. Two
-   specific snags: config claims are keyed by `agent/name`, **not by path**
-   (`internal/packload/footprint.go:231`), and a configured pack's surface path is
-   unreserved against `host_files` (`internal/config/hostfiles.go:704-708`) — so
-   if a pack starts owning `~/.pi/agent/models.json`, an existing `host_files`
-   entry at that path silently becomes a **second writer**. Worse, on this
-   maintainer's own machine that exact path is **already pack-managed and mounted
-   `:ro`** by the `matt-local` dotfiles pack. **This is the blocker on Option 2**:
-   a two-writers bug here corrupts a working config on the maintainer's daily
-   driver.
-
-   <!-- vantage: question id=OQ-LM6 leaning="Resolve the two-writers question before shipping, not after." -->
-
-   _Leaning:_ resolve the two-writers question before shipping, not after.
-
-   **Answer:**
-   > **RULED: a FATAL ERROR, not a merge and not a precedence rule.** *"I don't want weird
-   > recursive loops or anything in our resolution. I don't see a use case for this."*
-   >
-   > Two writers for one path is refused at the point the collision is detectable, rather than
-   > resolved. There is no use case for a pack surface and a `host_files` entry owning the same
-   > destination, so the config is wrong and says so instead of picking a winner quietly.
-   >
-   > ⚠ This makes the unreserved path a REFUSAL rather than a silent second writer — config
-   > claims are keyed by `agent/name` and not by path (`packload/footprint.go`), which is why the
-   > collision is representable at all. The maintainer's own machine already has
-   > `~/.pi/agent/models.json` pack-managed and mounted `:ro`, so this ruling is what stops that
-   > working config being corrupted.
-
-   ✅ **BUILT 2026-09-22.** `config.SurfaceCollisions` is the predicate and the launch refuses on
-   it, with a non-zero exit and one line per colliding entry naming both remedies (drop the entry,
-   or deselect the pack) and choosing no winner.
-
-   **Why it is not in `checkHostFiles`, which is where a reader looks first.** Config validation
-   *cannot* resolve a configured pack's surfaces — it would need the pack store, so a filesystem
-   read failing for reasons unrelated to the config would fail the config. `builtinSurfacePaths`
-   therefore covers EMBEDDED packs only and now says so out loud, pointing here. The refusal lives
-   where the packs are already loaded, which is the first point the collision is detectable.
-
-   **The asymmetry with every other `host_files` failure is deliberate.** A missing SOURCE is a
-   warning and degrades to the defaults layer — the feature working. Two writers for one
-   destination is a config that cannot be satisfied, so it is fatal.
-
-   ⚠ **What is NOT pinned:** the predicate has unit tests and so does the surface collector, but the
-   wiring between them sits on a path that needs a real container to reach, so deleting the
-   `SurfaceCollisions` call from the launch would leave the unit gate green. That is integration
-   territory and is recorded rather than papered over.
+⚠ **What is NOT pinned:** the predicate has unit tests and so does the surface collector, but the
+wiring between them sits on a path that needs a real container to reach, so deleting the
+`SurfaceCollisions` call from the launch would leave the unit gate green. That is integration
+territory and is recorded rather than papered over.
 
 ---
 

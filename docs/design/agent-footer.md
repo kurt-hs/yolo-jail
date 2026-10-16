@@ -50,7 +50,7 @@ Can every agent's footer tell me what this session is billed through and whether
 away anything it already shows? Bedrock cost is a later design ([Later](#later-cost-and-failover-a-separate-design)).
 
 **Reads with:** [`providers.md`](../reference/providers.md#profiles-and-options) (what a provider and a profile are);
-[`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#OQ-BR11)) and
+[`bedrock-plumbing.md`](bedrock-plumbing.md) (the everything profile, [OQ-BR11](bedrock-plumbing.md#decision-ledger)) and
 [`wire-bridge-gateway.md`](wire-bridge-gateway.md) (the bridge signer [OQ-BR10](wire-bridge-gateway.md#OQ-BR10) and
 subscription failover [OQ-BR17](wire-bridge-gateway.md#OQ-BR17));
 [`confinement.md`](../../userguide/guides/confinement.md) (the three notches; `guest` launches on macOS since 2026-10-04) and [`environment-manager-plan.md`](../plans/environment-manager-plan.md) Phase 7 (why `guest` was unbuilt, and what it still owes).

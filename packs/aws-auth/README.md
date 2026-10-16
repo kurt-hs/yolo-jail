@@ -59,7 +59,7 @@ Not started: the aws-auth jail daemon, because no agent's selected provider is o
 
 The gate is the provider, not the profile's name: a profile of your own over `bedrock`, and a
 provider of your own that declares `"platform": "aws-bedrock"`, get the pointer as `-p bedrock`
-does ([`OQ-BR8`](../../docs/design/providers-and-profiles-redesign.md#OQ-BR8)).
+does ([`OQ-BR8`](../../docs/design/providers-and-profiles-redesign.md#8-decision-ledger)).
 
 **The same config serves `yolo host`.** With `"profile": {"pi": "bedrock"}` added (or
 `yolo host -p bedrock -- pi`), `yolo host -- pi` starts the host service if it is not running,

@@ -124,7 +124,7 @@ serves:
 - **It does not build the guest notch.** Every "one composer" here takes the notch as an input, so
   guest becomes one more value when env-manager Phase 7 lands.
 - **It does not re-rule questions other docs own.** Where the right merge depends on one, the item
-  is gated on that question by link: [`OQ-ES5`](../design/credential-sources-separation.md#OQ-ES5)'s
+  is gated on that question by link: [`OQ-ES5`](../design/credential-sources-separation.md#10-decision-ledger)'s
   jail half, [`OQ-AS3`](../research/agent-safehouse.md#OQ-AS3),
   [`OQ-HC1`](../reference/host-agent-environment.md#oq-hc1),
   [`OQ-HC3`](../reference/host-agent-environment.md#oq-hc3) and

@@ -649,7 +649,7 @@ set only there. With aws-auth off and no region in the shell or the config, such
 `default`'s region, and is refused when `default` has none, until the provider's `region`, an
 exported `AWS_REGION` or `AWS_PROFILE`, or `[default]`'s `region` names one, or the launch sets
 `YOLO_ALLOW_MISSING_PROVIDERS=1`. That refusal is the region pre-flight's
-([OQ-BR6](bedrock-plumbing.md#OQ-BR6)), independent of the doorway.
+([OQ-BR6](bedrock-plumbing.md#decision-ledger)), independent of the doorway.
 
 > [!NOTE]
 > **What the tests prove, and what they do not.** There is no network namespace at the host, so

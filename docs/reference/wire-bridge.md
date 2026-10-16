@@ -963,7 +963,7 @@ receives a token that is good only against this launch's bridge.
   first request, and claude's launcher ensures it: claude's env derive emits
   `YOLO_AUTH_PRELAUNCH_CLAUDE_LOGIN=1` whenever claude's selected provider is `openai-codex` and
   its anthropic address resolves, keyed on the provider rather than on a profile named `codex`
-  ([`OQ-BR8`](../design/providers-and-profiles-redesign.md#OQ-BR8)), and the launcher then asks the
+  ([`OQ-BR8`](../design/providers-and-profiles-redesign.md#8-decision-ledger)), and the launcher then asks the
   credential service for that token view before claude starts, writing no file, and starts the
   OpenAI login at a terminal when there is none, as the codex and pi launchers do
   ([ES-D28](../design/credential-sources-separation.md#10-decision-ledger)).
