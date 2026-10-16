@@ -226,7 +226,7 @@ func TestRevertedConfigReusesItsOwnImageInsteadOfReloading(t *testing.T) {
 	}
 }
 
-// The storage-lifecycle §1 root is registered for the store path we run against
+// The image-retention.md "A GC is safe at any moment" root is registered for the store path we run against
 // on the fresh-load path and the already-loaded self-heal path, but NOT on the
 // degraded "Using existing"/cached-tar fallbacks (currentPath is unknown there,
 // so there is no store path to root).

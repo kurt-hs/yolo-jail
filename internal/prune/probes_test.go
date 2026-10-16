@@ -671,7 +671,7 @@ func TestPruneOldImagesUnion(t *testing.T) {
 		// THE RULING'S PERMANENCE, and nothing else asserts it. A `<none>` row
 		// that predates the label has no ownership evidence and never will:
 		// yolo leaves it alone forever, and `yolo stores` is where the user
-		// hears about it (disk-levers-and-backfill.md §5.5). This fails if the
+		// hears about it (disk-footprint.md "`yolo stores`"). This fails if the
 		// query is ever widened — a dropped filter value, `-a`, `dangling=true`
 		// — because machineImagesRunner answers an unfiltered query with the
 		// whole store.

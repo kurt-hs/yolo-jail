@@ -81,8 +81,8 @@ projects' commits quoted in research (opencode, the boundary broker); **git *tre
 (`kubernetes/kubernetes`' `master:hack` in
 the deleted `agent-config-distribution.md`), which fail `^{commit}`
 by construction rather than by rot; and **podman image IDs** in
-[`minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) and
-[`disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md), which are not git objects at
+the since-deleted design docs `minimal-disk-footprint.md` and `disk-levers-and-backfill.md`
+(now [`disk-footprint.md`](../reference/disk-footprint.md)), which are not git objects at
 all. The last two are why the check prints a hex string it cannot classify instead of calling one a
 defect.
 
@@ -309,10 +309,10 @@ Neither is fixable by editing the regex alone, because each rests on a conventio
 not settled.
 
 **It counts 💬 only, so a 🔒 question is invisible.**
-[`minimal-disk-footprint.md`](../design/minimal-disk-footprint.md) states in its own header that
-[`OQ-DF4`](../design/minimal-disk-footprint.md#112-open-questions) is its **only live question**
-and that it is blocked on a measurement rather than undecided. The question is written
-`4. 🔒 **…**`, so the regex scores that file **zero** and the doc does not appear in the output at
+The since-deleted `minimal-disk-footprint.md` stated in its own header that
+[`OQ-DF4`](../reference/disk-footprint.md#why-its-this-way) was its **only live question**
+and that it was blocked on a measurement rather than undecided. The question was written
+`4. 🔒 **…**`, so the regex scored that file **zero** and the doc did not appear in the output at
 all. A check whose stated purpose is *every live open question is countable* cannot be blind to the
 marker that means **live, but blocked**. — **The convention question:** is 🔒 a state a *question*
 can be in, in which case the regex adds it and the corpus-wide count goes up? Or is 🔒 reserved for

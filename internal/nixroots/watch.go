@@ -11,7 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/logstamp"
 )
 
-// watch.go is the ROOT WATCHER (a term coined in docs/design/in-jail-nix-roots.md §5, option
+// watch.go is the ROOT WATCHER (a term coined in docs/reference/in-jail-nix-roots.md "The root watcher", option
 // C): an in-jail daemon watching a read-only bind of the host's /nix/var/nix/gcroots/auto.
 // Every indirect root any client asks the host's daemon for appears there as an entry whose
 // target is the path STRING the client sent. For an entry naming a link that exists in THIS

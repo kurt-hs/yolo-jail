@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The translation rule of in-jail-nix-roots.md §4, one row per clause: longest destination
+// The translation rule of in-jail-nix-roots.md "Translated roots and the host path map", one row per clause: longest destination
 // wins, whole path components only, a mask stops translation for everything under it, and a
 // path under no mount does not translate.
 func TestTranslateTakesTheLongestMountAndStopsAtAMask(t *testing.T) {

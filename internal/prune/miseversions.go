@@ -17,7 +17,7 @@ import (
 
 // miseversions.go reclaims the shared mise tool store's UNUSED VERSIONS: the installed versions no
 // jail on this machine has used for 30 days, once they total 1 GiB, offered at a launch and
-// automatic once the user says yes — docs/design/minimal-disk-footprint.md OQ-DF4, ruled
+// automatic once the user says yes — docs/reference/disk-footprint.md OQ-DF4, ruled
 // 2026-10-05 (option A). The store is <state>/mise on the host, bound at /mise in every jail, and
 // `yolo stores` listed it as reclaimed by nothing.
 //

@@ -36,7 +36,7 @@ func TestAutoReapOldImagesWiring(t *testing.T) {
 	// and only the veto's own image needed protecting; OQ-LS3 removed the count,
 	// so every survivor here has to be somebody's current image — which is why
 	// there are three pointers. id-current is deliberately the OLDEST (a
-	// week-old still-running jail, the exact minimal-disk-footprint.md §3.3
+	// week-old still-running jail, the exact disk-footprint.md "Ledger C"
 	// scenario the CreatedAt sort got wrong).
 	const (
 		newest  = "/nix/store/4444-ws-newest"

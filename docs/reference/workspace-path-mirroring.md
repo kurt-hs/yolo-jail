@@ -1299,7 +1299,7 @@ a close call rather than a clear no.
 > **Ruled 2026-10-15 ([`OQ-WP8`](#OQ-WP8), option A): accept the no.** The maintainer adopted this
 > section's verdict as written. Each crossing that bites gets its own targeted fix, as `-trimpath`,
 > the worktree `--lock` ([`DS-D10`](../design/durable-scratch-space.md#DS-D10)) and the host-spelled nix root
-> ([`in-jail-nix-roots.md`](../design/in-jail-nix-roots.md)) did.
+> ([`in-jail-nix-roots.md`](in-jail-nix-roots.md)) did.
 
 **No — and now for a reason that does not depend on churn, on the workspace being the only
 space that moves, or on any revisitable backend decision.**

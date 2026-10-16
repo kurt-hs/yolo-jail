@@ -11,7 +11,7 @@ import (
 )
 
 // TestAJailRecordsTheToolVersionsItUses is the end-to-end half of OQ-DF4's use record
-// (docs/design/minimal-disk-footprint.md; internal/miseuse): a real jail's main process writes,
+// (docs/reference/disk-footprint.md; internal/miseuse): a real jail's main process writes,
 // into the shared tool store, a record naming its workspace and what that workspace uses, without
 // any session asking it to. The host's sweep of unused tool versions judges nothing but these
 // records, so a jail that stopped writing one would leave the sweep waiting forever — or, once a

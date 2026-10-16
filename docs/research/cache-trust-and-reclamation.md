@@ -102,7 +102,7 @@ the lookup and matching content. uv/pip have index-keyed buckets too.
 Concurrent-write compatibility is not protection against an adversarial writer.
 
 **The existing exception is Pants `lmdb_store` alone**, under
-[the 2026-09-08 ruling](../design/disk-levers-and-backfill.md#111-decision-ledger).
+[the 2026-09-08 ruling](../reference/disk-footprint.md#why-its-this-way).
 It is writable host-tool storage, gated on Linux Podman, matching OS/architecture,
 presence, writability, no relocation of its segment, and an empty host store only when
 it does not hide a warm private copy. An empty host store with nothing warm to hide still aliases.
@@ -149,10 +149,10 @@ therefore differs from the existing courtesy locks and session-file sweeps.
 
 ## Prior rulings constrain the proposal
 
-- [OQ-DF4](../design/minimal-disk-footprint.md#111-decision-ledger), **2026-10-05**:
+- [OQ-DF4](../reference/disk-footprint.md#why-its-this-way), **2026-10-05**:
   policy, no budget key; the residual shared mise versions join offered cleanup.
   Duplicated private working sets are a new cost, not evidence that this ruling chose a cap.
-- [OQ-BF1/BF2](../design/disk-levers-and-backfill.md#111-decision-ledger), **2026-09-08**:
+- [OQ-BF1/BF2](../reference/disk-footprint.md#why-its-this-way), **2026-09-08**:
   offered age purge, automatic only after consent; heavy re-fetch remains opt-in.
 - [Cache relocation's three held questions](../plans/cache-relocation.md#open-questions)
   concern automation, host reflection and broader sharing, not a default isolation mechanism.

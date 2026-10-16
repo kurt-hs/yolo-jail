@@ -215,7 +215,7 @@ func memoizedImageLoad(key imageLoadKey, opts image.AutoLoadOptions, confirm fun
 // (→ AutoLoadImage's no-op) when this launch has no root the host would honor.
 //
 // The registration goes through gcRooter: nix-store on the host, and in a jail the
-// translated root (docs/design/in-jail-nix-roots.md NR-D2). A jail's own
+// translated root (docs/reference/in-jail-nix-roots.md NR-D2). A jail's own
 // `nix-store --add-root` is pruned as stale by the host daemon, because it sends the
 // jail's spelling of the link, so a jail used to get nil here; it still does when its
 // launcher stated no host path map.
@@ -232,7 +232,7 @@ func (o *Options) rootImageFn() func(string) {
 }
 
 // rootCopierFn registers the image copier's out-link as a translated root in a jail
-// (docs/design/in-jail-nix-roots.md NR-D2), or is nil. On the host nix's own
+// (docs/reference/in-jail-nix-roots.md NR-D2), or is nil. On the host nix's own
 // `--out-link` registration is the copier's root already; in a jail that registration
 // carries the jail's spelling of the link, which the host daemon prunes as stale, and a
 // jail whose launcher stated no host path map has no root the host would honor at all.

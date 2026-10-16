@@ -19,7 +19,7 @@ import (
 )
 
 // registry.go is a workspace's MANAGED ROOTS (a term coined in
-// docs/design/in-jail-nix-roots.md §4.1): links yolo owns, one per link a jail asked nix to
+// docs/reference/in-jail-nix-roots.md "Managed roots"): links yolo owns, one per link a jail asked nix to
 // root, each pointing at the same store path and registered with the host's daemon under the
 // host's spelling. The user's own link (`/workspace/result`, a profile generation) is never
 // touched; the managed link beside it is what the host's GC honors, and RELEASING a root is

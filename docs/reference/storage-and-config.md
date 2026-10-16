@@ -286,7 +286,7 @@ One more writable bind is shared, and it is not yolo's storage at all: a recogni
 aliased into the jail at the path the jail's own copy of the tool uses. Content addressing
 is what makes a shared writer safe there — a blob whose digest does not match its key is
 rejected. The gates and the reasoning are in
-[`disk-levers-and-backfill.md`](../design/disk-levers-and-backfill.md#111-decision-ledger).
+[`disk-footprint.md`](disk-footprint.md#host-cas-aliasing).
 
 What the host CLI does guard:
 

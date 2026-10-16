@@ -3,7 +3,7 @@ package run
 import "github.com/mschulkind-oss/yolo-jail/internal/miseuse"
 
 // markMiseUseRecording starts the mise use record's clock (internal/miseuse.SinceName; a term
-// coined for docs/design/minimal-disk-footprint.md OQ-DF4): the first HOST launch to bind the
+// coined for docs/reference/disk-footprint.md OQ-DF4): the first HOST launch to bind the
 // shared tool store marks, in it, the moment from which the host's launches run jails that record
 // which tool versions they use. The host's sweep of unused versions judges nothing until that
 // mark is 30 days old, since a version used before it was never recorded (DF-D5).

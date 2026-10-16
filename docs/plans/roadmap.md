@@ -207,7 +207,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [macos-user's item 2 twin](runbooks/macos-user-manual-checks.md#2-seatbelt-is-actually-applied);
     [the color pass's Group B](cli-visual-polish.md); [the unit suite's clock waits](test-suite-speed.md#retaken-2026-10-01-and-which-targets-hold);
     [the Bedrock user-guide recipes](../design/bedrock-plumbing.md#12-what-i-would-build-in-order); [the disk levers'
-    re-measure](../design/disk-levers-and-backfill.md); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).
+    re-measure](../reference/disk-footprint.md#owed-measurements); and the pi guide's line on [a package the refresh missed](../design/pi-extension-lifecycle.md).
 33. Verify [the exact-commit release gate](../reference/release-process.md) before the next publication request,
     because offline fixtures do not prove live Actions or publisher permissions. What the 2026-10-05 and 2026-10-06
     builds still owe: read the first scheduled macos-user nightly with [the vendor
@@ -261,7 +261,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     on a rootless host, which releases [`yolo host -- claude` joining the shared login](../reference/claude-oauth-interposition.md),
     and records one browser login and one shared expiry for [the OpenAI service](../reference/agent-credentials.md#openai-measured).
 42. A real rootless Linux host, which a nested jail is not, clears [a real reboot](../design/podman-reboot-readiness.md#testing-and-the-real-host-check),
-    [a low-space collection with a jail up](storage-lifecycle.md), [the keeper's scope move and logout](../design/jail-lifetime-last-session-wins.md#8-what-done-looks-like),
+    [a low-space collection with a jail up](../reference/image-retention.md#owed-host-steps), [the keeper's scope move and logout](../design/jail-lifetime-last-session-wins.md#8-what-done-looks-like),
     and HD-R1's first launch once item 2 lands.
 43. One live agent session per check, which no test may start: [the footer](../design/agent-footer.md#21-as-built),
     [Claude's LSP plugin](../reference/mcp-configuration.md#lsp-claudes-route-is-a-generated-plugin), [the via route](../design/wire-bridge-gateway.md#41-how-it-is-built),
@@ -283,7 +283,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     and [the runner Mac's published-ports change](runbooks/mac-actions-runner.md).
 46. A live `llama-server` and one manual turn per agent clear [the `llamacpp` provider](../../packs/llamacpp/README.md),
     whose spellings have never met a server; copilot is the one to try first.
-47. The mise use record's first 30-day window gives [the disk footprint's re-measure](../design/minimal-disk-footprint.md)
+47. The mise use record's first 30-day window gives [the disk footprint's re-measure](../reference/disk-footprint.md#owed-measurements)
     its first offer to check, on the host.
 48. Nix dropping Intel Macs, when nixpkgs 26.05's security fixes stop on 2026-12-31, brings back [what replaces the
     Intel macOS runner](../research/macos-support-matrix.md#OQ-MX1), deferred until then.
@@ -308,7 +308,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
   which blocks nothing, and [JD-4](../design/jail-daemon-on-macos-user-plan.md#decision-ledger), a maintainer follow-up.
 - **With no id at all:** [Go comments citing sections by number](README.md#the-dangling-n-citations-in-go-comments),
   [check 2's two marker conventions](README.md#check-2-has-two-known-errors-and-a-convention-question-under-each),
-  [the storage lifecycle's `min-free` values](storage-lifecycle.md#open-questions), the unruled half of
+  [the storage lifecycle's `min-free` values](../reference/image-retention.md#owed-host-steps), the unruled half of
   [OQ-ST2](../reference/pack-system.md#OQ-ST2) on user-reserved skill children, and whether a bare `-p` whose
   packs install no CLI should say it selects nothing (`checkProfileTargets`, `internal/cli/run/packs.go`).
 

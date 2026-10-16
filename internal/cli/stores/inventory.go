@@ -198,7 +198,7 @@ func Inventory(o Options) Report {
 
 // aliasStores inventories L9's host-CAS aliases — one row per recognised
 // content-addressed host cache, aliased or not
-// (docs/design/disk-levers-and-backfill.md OQ-BF10).
+// (docs/reference/disk-footprint.md OQ-BF10).
 //
 // IT IS ITS OWN SECTION, AND THAT IS THE ANTI-DOUBLE-COUNT. These bytes belong
 // to the HOST USER, not to yolo, so they must never join the shared-cache
@@ -457,7 +457,7 @@ func stateStores(o Options, cacheRows []Store) []Store {
 }
 
 // miseRow fills the shared mise tool store's row: its reclaimer, and what that reclaimer would
-// do now (docs/design/minimal-disk-footprint.md OQ-DF4, ruled 2026-10-05). It asks the same
+// do now (docs/reference/disk-footprint.md OQ-DF4, ruled 2026-10-05). It asks the same
 // judgement `yolo prune` acts on — every jail's use record against the running jails — and
 // deletes nothing.
 //
@@ -621,7 +621,7 @@ type podmanImage struct {
 // yolo's own tagged images, the untagged rows nothing reclaims, and everything
 // else, which is not yolo's at all.
 //
-// THE UNTAGGED ROW IS THE POINT (minimal-disk-footprint.md OQ-DF3 REACH, ruled
+// THE UNTAGGED ROW IS THE POINT (disk-footprint.md OQ-DF3 REACH, ruled
 // 2026-09-08): rows that predate the provenance label are left alone
 // PERMANENTLY, and surfaced HERE as a class nothing reclaims — the count, the
 // bytes, why yolo declines, and that `podman image prune` is the user's to run.

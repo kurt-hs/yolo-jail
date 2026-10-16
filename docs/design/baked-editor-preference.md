@@ -183,7 +183,7 @@ pre-authenticated, which nothing in a jail makes true. Both say it is not signed
 | :--- | :--- |
 | **R1.** Copilot's ctrl-g stops working for a user who set nothing. | [OQ-ED1](#OQ-ED1) is exactly this question. Whatever it rules, the launch says once that no editor is configured — the failure must not be a keystroke that silently does nothing. |
 | **R2.** A user's muscle-memory `vi` breaks. | The aliases going is the visible half of the change and belongs in release notes. `vi` resolving to nothing is a clearer signal than `vi` silently being a different editor. |
-| **R3.** The image rebuild lands on everyone at once. | It is one rebuild, and the image moves for any `flake.nix` change already. The image gets smaller, which is the direction [`minimal-disk-footprint.md`](minimal-disk-footprint.md) wants. |
+| **R3.** The image rebuild lands on everyone at once. | It is one rebuild, and the image moves for any `flake.nix` change already. The image gets smaller, which is the direction [`disk-footprint.md`](../reference/disk-footprint.md) wants. |
 | **R4.** `macos-user` loses an editor it only just gained. | That backend's floor exists so the backend is usable at all; an editor is not part of that claim. The exclusion machinery it already has is where a carve-out would go if one is wanted. |
 | **R5.** The change is made and nothing fails when the removal is reverted. | The done-conditions in [§6](#6-what-done-looks-like) are observable states of a fresh jail, not test names. |
 

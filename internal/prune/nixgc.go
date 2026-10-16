@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Bounded, rooting-aware nix store GC (storage-lifecycle §3). This is the ONLY
+// Bounded, rooting-aware nix store GC (image-retention.md "The store GC's refusal"). This is the ONLY
 // place in the codebase that ever invokes `nix store gc`, and it is opt-in
 // (--nix-gc, default OFF) and host-only for good reason:
 //

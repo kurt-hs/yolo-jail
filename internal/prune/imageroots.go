@@ -18,7 +18,7 @@ import (
 const ImageRootRetention = 7 * 24 * time.Hour
 
 // PruneOrphanImageRoots reaps durable per-image GC roots (BUILD_DIR/roots/<sha16>,
-// created host-side by image.RegisterImageRoot — storage-lifecycle §1) that no
+// created host-side by image.RegisterImageRoot — image-retention.md "A GC is safe at any moment") that no
 // longer pin a needed image closure, so a subsequent nix GC can reclaim the
 // store paths behind them. It NEVER deletes a store path itself — only the
 // gcroot symlink — so the reclaim is deferred to `nix store gc` (§3) or the
@@ -38,7 +38,7 @@ const ImageRootRetention = 7 * 24 * time.Hour
 // a rebuild, never a running jail — is false for exactly that root on
 // podman/Linux, where the host /nix/store is bind-mounted over the jail's own and
 // every /bin/* resolves through it: a jail up longer than the horizon lost its
-// root to age, and the next GC broke it (storage-lifecycle.md, 2026-07-22). With
+// root to age, and the next GC broke it (image-retention.md "A GC is safe at any moment", 2026-07-22). With
 // this rule a plain `nix-collect-garbage` on any schedule is safe for every jail
 // yolo can map to a root. It is the rule the install-prefix roots already had
 // (prefixroots.go, OQ-BF4), for the same reason: a running jail executes from it.

@@ -1,6 +1,6 @@
 // Package hostcas decides whether a launch ALIASES a host content-addressed
 // cache into the jail, instead of letting the jail pool a second copy of the
-// same bytes — lever L9 of docs/design/disk-levers-and-backfill.md, ruled there
+// same bytes — lever L9 of docs/reference/disk-footprint.md, ruled there
 // as OQ-BF10 on 2026-09-08.
 //
 // It is a THIRD DISPOSITION, and that is why it lives in its own package rather

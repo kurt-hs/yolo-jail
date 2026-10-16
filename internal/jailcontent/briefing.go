@@ -184,7 +184,7 @@ type BriefingInput struct {
 	// mounts (run.hostNixMounted), so the line it gates appears exactly where the hazard
 	// it states exists: every root the jail asks for is recorded under the jail's spelling
 	// of the out-link, which the host daemon resolves on the HOST filesystem and deletes
-	// as stale (docs/design/in-jail-nix-roots.md §2). macos-user shares the host's
+	// as stale (docs/reference/in-jail-nix-roots.md "Why a jail-spelled root is lost"). macos-user shares the host's
 	// filesystem, so its roots are real and it never sets this.
 	HostNix bool
 

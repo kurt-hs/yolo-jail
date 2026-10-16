@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// THE HOUSEKEEPING SLOT ON A MAC (disk-levers-and-backfill.md, the macos-user slot): a macos-user
+// THE HOUSEKEEPING SLOT ON A MAC (disk-footprint.md, the macos-user slot): a macos-user
 // launch reaps the retired loophole-state generations past the newest three while its session
 // runs, and says so in <workspace>/.yolo/housekeeping.log.
 //
