@@ -16,7 +16,7 @@ import (
 // launchcheck.go is this daemon's answer to the LAUNCH CHECK (internal/hostservice's
 // launchcheck.go coins the term and states the protocol): design §8's "profile configured, no
 // SSO session ever established → the launch warns with the `aws sso login` command and
-// proceeds", and the lapsed session beside it (docs/design/sso-backed-bedrock.md SSO-D1).
+// proceeds", and the lapsed session beside it (docs/reference/agent-credentials.md SSO-D1).
 //
 // # Where the answer comes from, cheapest first
 //

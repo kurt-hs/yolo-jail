@@ -397,7 +397,7 @@ func TestHostOpensTheAWSDoorwayForEveryBedrockAgent(t *testing.T) {
 // launch passes that AWS_PROFILE through untouched beside the pointer and refuses nothing: the
 // OQ-SSO8 check declares no override for AWS_PROFILE, and it lets a static pair through beside
 // it. Which credential claude then uses is its SDK's chain order, MEASURED from its published
-// binary (sso-backed-bedrock.md §11): env, SSO, ini, process, token file, and the container
+// binary (docs/reference/agent-credentials.md#sso-chain-order): env, SSO, ini, process, token file, and the container
 // pointer last, so a resolvable profile is used before the pointer is ever asked.
 func TestHostClaudeKeepsItsOwnAWSProfileBesideTheDoorway(t *testing.T) {
 	l := runDoorwayLaunch(t, bedrockDoorwayConfig("claude", true),

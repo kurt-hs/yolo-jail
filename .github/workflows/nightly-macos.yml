@@ -50,7 +50,7 @@ jobs:
       # image only five are x86_64-linux; the rest come from the host `pkgs` and
       # build natively on darwin.
       #
-      # The push was release-gated until 2026-09-13 and `handoff-cachix-cache.md`
+      # The push was release-gated until 2026-09-13 and the deleted `handoff-cachix-cache.md`
       # called that a "scope caveat worth keeping" without ever stating a reason —
       # it was how the first push was scoped, and nobody revisited it. The cache
       # consequently held v0.8.0's closure and nothing newer, so HEAD's `nix-ld`

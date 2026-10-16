@@ -110,6 +110,26 @@ type Contribution struct {
 	// Refused without `patches`: a plain fork's pin moves only by `yolo pack update` (FP-D18),
 	// and following an upstream is the patched mode's opt-in, not a dial on a plain fork.
 	Follow string `json:"follow,omitempty"`
+	// PatchBranch is a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6): a git repository and a branch,
+	// written as a source address with `?ref=` (`git+https://github.com/you/pi?ref=patches`, or
+	// `git+file:///abs/path?ref=patches` for a local repository), whose commit graph is merged against
+	// the upstream candidate instead of replaying a `patches` series. It opts in to the patched
+	// mode exactly as `patches` does, on a fork's program and on a `files` extension, and `follow`
+	// reads beside it as beside a series.
+	//
+	// THE BRANCH'S ANCESTRY MUST INCLUDE THE UPSTREAM'S: the patch branch is a branch of the upstream (or
+	// of a fork of it) that merges the upstream in, never a rebased copy, so its merge base with the
+	// upstream is a real commit. Each check fetches it with the upstream and resolves the branch to
+	// a commit; the advance asks `git merge-tree --write-tree` (git 2.40 or newer, the replay's
+	// floor) whether that commit merges cleanly into each candidate, builds the merged tree of the
+	// newest that does, and keys the build on the upstream commit and the patch branch's commit, so a moved
+	// branch is a new build. A conflict is refused, naming the conflicting paths and the merge that
+	// repairs it in the patch branch repository; yolo never writes the patch branch.
+	//
+	// NEVER BESIDE `patches` (PF-D87): one contribution names one of them, and a manifest naming
+	// both is refused at its decode. Keep `patch_branch` for a branch merged against upstream, or `patches`
+	// for a `git format-patch` series. Two contributions of one pack may each use a different one.
+	PatchBranch string `json:"patch_branch,omitempty"`
 	// Fallback is an UNMODIFIED EXTENSION's raw list entry (docs/design/pi-extension-store-builds.md
 	// §4.3, XB-D7): the string the agent installs itself, in its own grammar (`npm:pi-web-access`,
 	// `git:github.com/o/r@<commit>`), which takes the place of the tree's list entry in this pack's
@@ -346,7 +366,7 @@ type Contribution struct {
 	// the design, docs/reference/extension-point-principle.md). IGNORED BY `yolo host apply`, by
 	// ruling (OQ-WS5): it never writes a workspace's skills into a real home. `yolo host --
 	// <agent>` reads it for one in-workspace link at the agent's first path
-	// (docs/design/workspace-skills.md WS-D20, internal/cli/hostworkspaceskills.go).
+	// (docs/reference/agent-briefings.md WS-D20, internal/cli/hostworkspaceskills.go).
 	ProjectDirs []string `json:"project_dirs,omitempty"`
 	// Register makes a `files` SLOT a REGISTERING one: core appends one entry per tree that lands
 	// in the slot to an array in a surface the slot's own pack declares, attributed to the pack
@@ -642,7 +662,7 @@ type Contribution struct {
 	Vars map[string]string `json:"vars,omitempty"`
 	// OverriddenBy names what, delivered into the same jail, makes a consumer IGNORE these
 	// vars: a launch that would carry both is refused, because the agent would silently use
-	// the other thing (docs/design/sso-backed-bedrock.md OQ-SSO8). `env` only. The shape,
+	// the other thing (docs/reference/agent-credentials.md OQ-SSO8). `env` only. The shape,
 	// its rules and why the pack declares it rather than core are EnvOverride's doc
 	// (envoverride.go).
 	OverriddenBy []EnvOverride `json:"overridden_by,omitempty"`
@@ -835,7 +855,14 @@ type Contribution struct {
 	// `vendor`, the maker of the id declared here, which the wire bridge routes on;
 	// only a vendor the user's own entry declares describes the user's id
 	// (packload.dropRepointedVendors).
-	ModelOptions map[string]map[string]string `json:"model_options,omitempty"`
+	//
+	// A fact written as JSON null is a TOMBSTONE (docs/design/model-lists-and-pickers.md
+	// ML-D10): the model has no such fact, whatever a layer below says, pi's own catalog
+	// included, where leaving the fact out inherits it. It is carried through the composed
+	// table as a null under `model_options.<alias>`, and each derive reads it as ctx.tombstone.
+	// `extends` names the user's `model_facts` entry this model's routes share (OQ-ML5); the
+	// composition lays those shared facts under this alias's own.
+	ModelOptions ModelFacts `json:"model_options,omitempty"`
 	// Options is the profile surface the provider DECLARES (docs/reference/providers.md,
 	// OQ-CS4): a FLAT map of option name to default value, read exactly like its neighbour
 	// Models — no `kind`, no `values`, no wrapper object. The flat form is the ruling (that
@@ -854,7 +881,7 @@ type Contribution struct {
 	Options map[string]OptionDefault `json:"options,omitempty"`
 
 	// Capabilities are the NAMED JOBS an AUTHENTICATION SOURCE performs for itself —
-	// agent-auth-modes.md §6.1 clause 1, "Agents / Modes declare native capabilities in
+	// mcp-configuration.md's capability-driven MCP delivery; first designed as "Agents / Modes declare native capabilities in
 	// pack.json or provider blocks". An authentication source is the credential-and-
 	// endpoint mode an agent runs under for a launch (docs/reference/
 	// mcp-configuration.md#authentication-source), and this is the field it says
@@ -921,7 +948,7 @@ type Contribution struct {
 	// launch says so in one line naming both fixes (a `-p` over a provider of the platform, or
 	// removing the key; docs/design/providers-and-profiles-redesign.md PP-D1). A switch the
 	// agent's own derive wrote there at `yolo host apply` is yolo's: the line says so, and the
-	// next apply that stops asserting it removes it (docs/design/host-computed-layer.md HC-D25).
+	// next apply that stops asserting it removes it (docs/reference/host-agent-environment.md HC-D25).
 	// See PlatformSwitch.
 	//
 	// A PACK FACT because core knows no agent's settings file or variable (OQ-CS8): the pack
@@ -1013,6 +1040,19 @@ type Contribution struct {
 	// the program adds a provider, and until its pack names the new one yolo writes over it
 	// (the design's R3).
 	BuiltInProviders *BuiltInProviders `json:"built_in_providers,omitempty"`
+	// ReadsSharedModels declares that this program reads the SHARED FORM of a model file: a
+	// top-level `sharedModels` holding a model's facts once, and a model row saying `extends`
+	// to use them (docs/design/model-lists-and-pickers.md OQ-ML5, ML-D11). Core reads it for
+	// each derive's ctx.reads_shared_models (packload.ReadsSharedModels), and a derive writes
+	// the shared form only when it is true; otherwise it writes every row with its facts in
+	// full. The form is a downstream pi build's: stock pi (1.0.1, measured) accepts both keys
+	// and ignores them, so a row relying on them silently gets pi's generic sizes, which is why
+	// the default is full rows and why the pack that ships a pi build reading the form, not
+	// core, is the one that says so.
+	//
+	// A PACK FACT for `built_in_providers`' reason: what a binary reads is that binary's fact,
+	// and core names no agent. ON `program` ALONE.
+	ReadsSharedModels bool `json:"reads_shared_models,omitempty"`
 
 	// --- adapter (docs/reference/protocol-resolution.md#the-three-declarations, OQ-PR1) ---
 	// Adapts is the protocol PAIR this contribution converts, and Address is where the
@@ -1435,7 +1475,7 @@ func (m *Manifest) InstallContributions() []Install {
 			in.Produces = append([]string(nil), c.Produces...)
 			// A patched fork's series directory and follow rule ride along, so every reader of
 			// the program can tell a patched fork from a plain one (Install.IsPatchedFork).
-			in.Patches, in.Follow = c.Patches, c.Follow
+			in.Patches, in.Follow, in.PatchBranch = c.Patches, c.Follow, c.PatchBranch
 		}
 		out = append(out, in)
 	}
@@ -1890,7 +1930,7 @@ type ProviderContribution struct {
 	// see the field's own comment on Contribution.
 	RegionFile   *RegionFile
 	Models       map[string]string
-	ModelOptions map[string]map[string]string
+	ModelOptions ModelFacts
 	// Options is the profile surface this provider declares — the key set a profile for
 	// it may carry, with each option's default. The profile-schema owner (OQ-CS4); see
 	// the field's own comment on Contribution for why it is flat and what null means.
@@ -2930,6 +2970,7 @@ func (m *Manifest) validateContributions() []string {
 	problems = append(problems, m.validateSingleAutonomy()...)
 	problems = append(problems, m.validateServicePointers()...)
 	problems = append(problems, m.validatePatchedOwnerKeys()...)
+	problems = append(problems, m.validatePatchBranchOrSeries()...)
 	problems = append(problems, m.validateDescribes()...)
 	problems = append(problems, m.validateStateScopes()...)
 	problems = append(problems, m.validateHookStates()...)
@@ -3940,6 +3981,14 @@ func validateContribution(label string, c Contribution) []string {
 				"installs holds several providers in one session, so only \"program\" has an agent "+
 				"to declare it for", label, c.Kind))
 	}
+	// `reads_shared_models` is program's alone, for `built_in_providers`' reason: it says what
+	// the program reads, so only a kind that installs one has a program to say it of.
+	if c.ReadsSharedModels && c.Kind != KindProgram {
+		problems = append(problems, fmt.Sprintf(
+			"%s: kind %q does not take \"reads_shared_models\" — it declares that the PROGRAM this "+
+				"contribution installs reads a model file's shared form, so only \"program\" has a "+
+				"program to declare it for", label, c.Kind))
+	}
 	// `model_catalog` is an npm program's alone: its entries are relative to the directory npm
 	// installs the program's package into, so no other kind, and no other via, has that
 	// directory for them to name a file in.
@@ -4352,7 +4401,7 @@ func validateContribution(label string, c Contribution) []string {
 					problems = append(problems, fmt.Sprintf(
 						"%s: env var %q names %q in a contribution with no gate, which every "+
 							"process of the jail receives — a caller token is delivered only to the "+
-							"agents whose selection reaches it (provider-credential-scope.md OQ-CN7), "+
+							"agents whose selection reaches it (providers.md OQ-CN7), "+
 							"so declare the \"platform\" (or \"profile\") it serves",
 						label, k, loopholedecl.TokenCallerToken))
 				case v != loopholedecl.TokenCallerToken:
@@ -4430,9 +4479,9 @@ func validateContribution(label string, c Contribution) []string {
 			if len(facts) == 0 {
 				problems = append(problems, fmt.Sprintf("%s: model_options.%s has no facts", label, alias))
 			}
-			if v, has := facts["vendor"]; has && !ValidModelVendor(v) {
+			if v, has := facts["vendor"]; has && v != nil && !ValidModelVendor(*v) {
 				problems = append(problems, fmt.Sprintf("%s: model_options.%s.vendor %q is not one lowercase "+
-					"token naming the model's maker, such as \"anthropic\" or \"openai\"", label, alias, v))
+					"token naming the model's maker, such as \"anthropic\" or \"openai\"", label, alias, *v))
 			}
 		}
 		// The option NAMES are the one thing here worth checking: they are the key set
@@ -4822,7 +4871,7 @@ func validateAutonomyPosture(label string, p *AutonomyPosture) []string {
 // protocol is in play.
 const ProviderAddressConflictMessage = "base_url and endpoints are both set — base_url is " +
 	"the single-protocol shorthand and cannot be combined with it; move the URL into " +
-	"endpoints, under the protocol it speaks (zai-plumbing.md §5)"
+	"endpoints, under the protocol it speaks (protocol-resolution.md)"
 
 // endpointURLProblems is the ONE rule for every address a manifest ships — a provider's
 // `endpoints.<protocol>.base_url` and an adapter's `address`. One function rather than two

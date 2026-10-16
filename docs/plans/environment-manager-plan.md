@@ -2,7 +2,7 @@
 title: "Environment-manager implementation plan"
 status: accepted
 stage: DECIDED
-next: "Measure 7.1 on a Mac: dispatch macos-user.yml for TestMacosUserGuestNotchLaunchesTheSandbox and record the run in the Phase 7 box; 7.2 (Linux guest) still waits on user-stories Q7"
+next: "Record 7.1's Mac measurement in the Phase 7 box: TestMacosUserGuestNotchLaunchesTheSandbox passed on the scheduled macos-user job on 2026-10-11 (run 38143926912) and 2026-10-15; 7.2 (Linux guest) still waits on user-stories Q7"
 depends-on:
   - ../design/environment-manager-user-stories.md
 ---

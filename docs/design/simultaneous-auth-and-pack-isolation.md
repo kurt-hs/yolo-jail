@@ -14,7 +14,7 @@ summary: "An active Pi profile set is enforced by a Pi extension yolo ships, whi
 is ruled ([OQ-PAS2](#OQ-PAS2): an extension yolo ships, never a Pi fork) and built as
 [`yolo-provider-policy.js`](../../packs/pi/extensions/yolo-provider-policy.js) ([PAS-D1](#decision-ledger)).
 It was measured inside stock npm Pi 1.0.1's own runtime and yolo's Pi 1.0.4 build, offline, with no model called.
-The [startup flag repair](pi-launch-selection-flags.md) remains separate and does not restrict calls.
+The [startup flag repair](model-lists-and-pickers.md#1411-pis-provider-flag-travels-only-with-an-explicit-model-built-2026-10-07) remains separate and does not restrict calls.
 
 > **In short.** An active profile set must deny normal supported Pi calls to other providers even
 > with saved credentials. With no active profile, preserve Pi's native behavior and login files.

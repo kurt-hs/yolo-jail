@@ -13,7 +13,7 @@ import (
 // (docs/design/bedrock-plumbing.md OQ-BR9, ruled 2026-09-29: one `bedrock` pack pulls in the
 // provider, and every agent pack that binds Bedrock `needs` it, so `"packs": ["codex"]` alone
 // gets `-p bedrock`). The `bedrock` pack in turn NEEDS aws-auth, unconditionally, the way it
-// was packs/claude's need when the provider was claude's (docs/design/sso-backed-bedrock.md §12
+// was packs/claude's need when the provider was claude's (the SSO design's build
 // step 5, moved to packs/bedrock by bedrock-plumbing.md BR-D15): the credential service belongs
 // with the provider it serves, so a codex-only selection gets it too. Selecting it changes
 // nothing observable on its own: the pointer is gated on the provider's platform and the
@@ -53,7 +53,7 @@ func TestBedrockNeedsAWSAuth(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("packs/bedrock declares no need on aws-auth (needs = %+v) — "+
-			"docs/design/bedrock-plumbing.md BR-D15, which moved sso-backed-bedrock.md §12 step 5 "+
+			"docs/design/bedrock-plumbing.md BR-D15, which moved the SSO design's §12 step 5 "+
 			"here", bedrock.Decl.DeclaredNeeds())
 	}
 }

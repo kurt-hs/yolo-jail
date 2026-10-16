@@ -1,7 +1,7 @@
 package entrypoint
 
-// pi_openai_auth_hostlaunch_test.go pins the message fix of docs/design/host-computed-layer.md
-// §8.1 item 3: when pi's delivered OpenAI extension cannot reach yolo's shared login because
+// pi_openai_auth_hostlaunch_test.go pins the message fix of docs/reference/host-agent-environment.md
+// (item 3 of the measured host pi findings): when pi's delivered OpenAI extension cannot reach yolo's shared login because
 // no route is set and it runs OUTSIDE a jail — pi started directly or from an IDE on the host —
 // the error tells the user to launch pi through `yolo host -- pi`. Before, it said only
 // "openai-auth-client: YOLO_SERVICE_OPENAI_AUTH_BROKER_ENDPOINT is not set", naming a jail's

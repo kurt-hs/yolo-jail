@@ -1395,7 +1395,7 @@ func TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialSta
 	}{{name: "bash helper interpreter boundary", forbidSh: true}, {name: "initial complete"}, {name: "partial upload", fail: "upload"}, {name: "ambiguous draft creation", fail: "create"}, {name: "existing release", fail: "exists"}, {name: "invalid inert artifact", fail: "artifact"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			version := "9.8.7-rc.1"
-			assets, err := expectedReleaseAssets(root, sha, version, filepath.Join(root, ".goreleaser.yaml"))
+			assets, err := expectedReleaseAssets(root, sha, version, pinnedTargetConfig(t, root, sha))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1418,7 +1418,7 @@ func TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialSta
 				}
 			}
 			state := t.TempDir()
-			if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\ncase \"$*\" in\n *ls-remote*) printf '%s\\trefs/tags/v9.8.7-rc.1\\n' \"$RELEASE_SHA\";;\n *rev-parse*) echo \"$RELEASE_SHA\";;\n cat-file*|show*|ls-tree*) exec \"$REAL_GIT\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
+			if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\ncase \"$*\" in\n *ls-remote*) printf '%s\\trefs/tags/v9.8.7-rc.1\\n' \"$RELEASE_SHA\";;\n *rev-parse*) echo \"$RELEASE_SHA\";;\n cat-file*|show*|ls-tree*) [ \"$(pwd -P)\" = \"$GITHUB_WORKSPACE\" ] || { echo \"git $* ran in $(pwd -P), not the --repo-root $GITHUB_WORKSPACE\" >&2; exit 97; }; cd \"$REAL_ROOT\" && exec \"$REAL_GIT\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\ncase \"$*\" in\n *validate-assets*) shift 2; exec \"$HELPER\" \"$@\";;\n *) exit 0;;\nesac\n"), 0o755); err != nil {
@@ -1444,7 +1444,16 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
-			env := []string{"GITHUB_WORKSPACE=" + root, "RELEASE_VERSION=" + version, "RELEASE_SHA=" + sha, "RELEASE_ASSETS_DIR=" + dir, "RELEASE_NOTES_FILE=" + notes, "HELPER=" + helper, "STATE=" + state, "FAIL=" + tc.fail, "REAL_GIT=" + realGit}
+			// The trusted checkout holds the pinned target's own release config
+			// (pinnedTargetConfig), so the working tree's config can move; git reads the
+			// target's blobs from the real repository, but only when the helper asks from
+			// the --repo-root it was given (the fake git checks its cwd, so a wrong root
+			// still fails here).
+			workspace, err := filepath.EvalSymlinks(filepath.Dir(pinnedTargetConfig(t, root, sha)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := []string{"GITHUB_WORKSPACE=" + workspace, "REAL_ROOT=" + root, "RELEASE_VERSION=" + version, "RELEASE_SHA=" + sha, "RELEASE_ASSETS_DIR=" + dir, "RELEASE_NOTES_FILE=" + notes, "HELPER=" + helper, "STATE=" + state, "FAIL=" + tc.fail, "REAL_GIT=" + realGit}
 			out, e := runScript(t, root, "tools/release-wiring/publish-release.sh", bin, trace, env...)
 			if (e == nil) != (tc.fail == "") {
 				t.Fatalf("upload result=%v output=%s trace=%v", e, out, readTrace(t, trace))
@@ -1662,11 +1671,22 @@ func TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill(t *te
 					t.Fatal(e)
 				}
 			}
-			out, e := runScript(t, root, filepath.Join(repositoryRoot(t), "tools/release-wiring/update-homebrew.sh"), bin, trace, "VERSION=9.8.7", "RELEASE_TAG=v9.8.7", "HOMEBREW_TAP_TOKEN=offline-tap-token")
+			out, e := runScript(t, root, filepath.Join(repositoryRoot(t), "tools/release-wiring/update-homebrew.sh"), bin, trace, "VERSION=9.8.7", "RELEASE_TAG=v9.8.7", "RELEASE_SHA="+testSHA, "HOMEBREW_TAP_TOKEN=offline-tap-token")
 			if e != nil {
 				t.Fatalf("formula generation failed: %v %s", e, out)
 			}
 			formula := readFile(t, filepath.Join(root, "tap/Formula/yolo-jail.rb"))
+			// The tag's tarball has no .git, so the release commit reaches the Homebrew binary
+			// and its bundle's stamp only through the formula (OQ-DA2, 2026-10-16).
+			// And a release names the hash in its version string too ("hashes are _actually_
+			// immutable"): <version>+g<hash12>, in the binary, the bundle and the formula's test.
+			if !strings.Contains(formula, "internal/version.GitCommit="+testSHA[:12]) ||
+				!strings.Contains(formula, `"COMMIT" => "`+testSHA[:12]+`"`) ||
+				!strings.Contains(formula, "internal/version.buildVersion=#{version}+g"+testSHA[:12]) ||
+				!strings.Contains(formula, `"VERSION" => "#{version}+g`+testSHA[:12]+`"`) ||
+				!strings.Contains(formula, `assert_equal "yolo-jail #{version}+g`+testSHA[:12]+`"`) {
+				t.Fatalf("%s formula does not stamp the release commit into the binary and the bundle:\n%s", id, formula)
+			}
 			lines := readTrace(t, trace)
 			if traceIndex(lines, "FORBIDDEN yolo") >= 0 || !strings.Contains(formula, "The first `yolo` run in a workspace") {
 				t.Fatalf("%s formula executed literal caveat command or lost backticks: trace=%v formula=%s", id, lines, formula)

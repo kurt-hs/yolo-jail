@@ -108,7 +108,7 @@ type launchLog struct {
 // the tee could not reach: it composes its own writer three packages away, in
 // internal/cli/commands.go out of macosuser.RealDeps, and that writer was os.Stdout — so
 // a macos-user launch left a log holding this header and the trailer with the whole
-// launch missing between them (docs/plans/handoff-macos-user-open-threads.md §7). A
+// launch missing between them (docs/plans/runbooks/macos-user-manual-checks.md, "Launch output reaches the launch log"). A
 // PUBLISHED writer rather than an argument because the same RealDeps builds the deps for
 // `yolo macos-setup` and its three siblings, which have no pipeline to take one from and
 // must keep printing to the process; nothing publishes on their path. The undo rides on

@@ -71,7 +71,7 @@ func TestAServiceServedAddressNamesItsServicesCallerToken(t *testing.T) {
 // The real claude derive, over a bridged provider: ANTHROPIC_AUTH_TOKEN is the bridge's caller
 // token, never the provider's key, and the "local" dummy — never absent — when the launch
 // hydrated no token, since an absent ANTHROPIC_AUTH_TOKEN sends claude's saved login's OAuth
-// bearer to the base URL (docs/design/agent-auth-modes.md §8.1).
+// bearer to the base URL (docs/reference/wire-bridge.md, "Caller authentication").
 func TestClaudeSendsTheBridgesCallerTokenNeverItsLoginOrTheProvidersKey(t *testing.T) {
 	claude, vendor := realClaudePack(t),
 		providerPack(t, `,"endpoints":{"openai":{"base_url":"https://vendor.example/v1"}}`)

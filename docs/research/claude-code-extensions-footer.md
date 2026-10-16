@@ -226,7 +226,7 @@ reference:124).
   (INFERRED). The plugin is delivered by `yolo host apply`, as yolo's LSP plugin is
   ([at the host](../reference/mcp-configuration.md#at-the-host-yolo-host-apply-writes-it)).
 - **Another agent reading the same folder.** Copilot also reads `~/.claude/skills` for skills
-  ([workspace-skills.md:125](../design/workspace-skills.md#L125)). Whether it would load a hooks module there, or
+  ([where each agent reads skills](../reference/agent-briefings.md#where-each-agent-reads-skills)). Whether it would load a hooks module there, or
   stumble on `modules`, is UNMEASURED.
 - **Early-access churn.** Shapes may move between releases (types:4). The pack installs Claude unpinned, so a
   break would reach every jail at once (INFERRED).

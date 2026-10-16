@@ -322,7 +322,7 @@ the key's mutation lock. Dispatch is marked before attempting guest exec.
 
 Run the front door as the intended **normal admin user**, never by prefixing the whole
 command with sudo, preserving the [public setup guidance](../../userguide/guides/macos.md#L194-L199)
-and [native runbook audience](../plans/runbooks/mac-macos-user-e2e.md#L6-L19). The future
+and the native runbook's audience note (the deleted `mac-macos-user-e2e.md`). The future
 `yolo macos-setup` reports the new standing authority and calls a separately admin-authorized
 installation act. The routine sudo rule cannot invoke that act or enroll a new principal.
 A managed/restricted installation that denies authorization is unsupported until its

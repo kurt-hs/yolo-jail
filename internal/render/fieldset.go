@@ -125,7 +125,7 @@ var refusalReasons = map[packdecl.Kind]string{
 	// one whose host half the origin gate refuses (a fetched pack's, HS-D27).
 	//
 	// `blocked-tool` sat here too, saying "off-container yolo owns no PATH entry to put one in".
-	// That stopped being true of `yolo host --` on 2026-09-29, when HE-D1 had it compose the
+	// That stopped being true of `yolo host --` on 2026-09-29, when HE-D16 had it compose the
 	// child's PATH, and the kind is honored at the host since 2026-10-04 (HE-D11): HostFields
 	// lists it, and `yolo host --` delivers it (hostAtLaunch).
 	//
@@ -228,7 +228,7 @@ var hostAtLaunch = map[packdecl.Kind]string{
 	packdecl.KindEnv: "env vars apply to a process yolo starts: `yolo host -- <program>` " +
 		"delivers them to that process only, and `yolo host env` prints them. `yolo host apply` " +
 		"starts none, and setting them for your whole session would mean editing your shell rc",
-	// docs/design/host-launch-environment.md HE-D11: `yolo host -- <program>` applies blocked
+	// docs/reference/host-agent-environment.md HE-D11: `yolo host -- <program>` applies blocked
 	// tools and `yolo host apply` blocks nothing, since it starts no process, which is env's case.
 	packdecl.KindBlockedTool: "a blocker is a shim first on the PATH of a process yolo starts: " +
 		"`yolo host -- <program>` puts them first on that program's PATH, for that process only. " +
@@ -417,7 +417,7 @@ func HostFields() FieldSet {
 		// mcp is honored and built for provider's reason, one table over: `yolo host apply`
 		// composes each selected pack's entry under your own `mcp_servers`, joined to your home,
 		// and every surface's derive renders the composed table (cli's composeHostInputs). It
-		// revises HC-D6 and HC-D16 (docs/design/host-computed-layer.md), whose reason — the
+		// revises HC-D6 and HC-D16 (docs/reference/host-agent-environment.md), whose reason — the
 		// wrapper and the npm prefix only a jail has — the host floor answered: a pack's program
 		// is installed in it, and a pack's wrapper is a `files` tree written into the home. A
 		// fetched pack's entry is left out and named there, its command being host code (HC-D26).

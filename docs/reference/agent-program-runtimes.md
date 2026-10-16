@@ -57,7 +57,7 @@ still does not, the launch **refuses**: the jail does not start.
 
 **Reads with:** [`pack-system.md`](pack-system.md) (the `program` contribution kind),
 [`macos-user-provisioning.md`](macos-user-provisioning.md) (the stage, its failure policy, and
-the package floor), [`../research/tool-provisioning.md`](../research/tool-provisioning.md) (every
+the package floor), [`tool-provisioning.md`](tool-provisioning.md) (every
 other Node-resolution layer, and why there are several),
 [`../design/program-delivery.md`](../design/program-delivery.md) (the launcher and its evergreen
 update), [`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md) (why the image has one node by

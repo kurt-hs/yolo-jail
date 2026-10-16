@@ -32,7 +32,7 @@ import (
 //
 // The merge is per FIELD, not per provider: a user who wants z.ai with one more model
 // alias overrides `models.fast` and keeps the pack's endpoints, which is the whole point
-// of shipping the facts (zai-plumbing.md §7 — "overrides, not authoring"). Objects merge
+// of shipping the facts (packs/zai/README.md — overrides, not authoring). Objects merge
 // recursively; every other value replaces. A null user entry DROPS the provider outright,
 // the same convention the `providers` config key already has for a null entry — and a null
 // NESTED in an entry is a delete too, at every depth (see mergeUnder), so an alias can be
@@ -131,7 +131,7 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 		// The adapter pass runs on EVERY return, not only the one with a user layer: a
 		// launch whose providers are entirely pack-shipped is the common bridged case, and
 		// an early return that skipped it would leave exactly that launch unresolved.
-		liftModelFacts(out)
+		liftModelFacts(out, cfg.modelFacts)
 		adaptEndpoints(out, packs, cfg)
 		reportPresence()
 		return orderedOrNil(out), nil
@@ -189,7 +189,7 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 	// address reads — each agent's derive, and the adapter's own daemon deciding where to
 	// listen. Below the user layer so an explicit `endpoints.<protocol>.base_url` always
 	// wins: an adapter fills a hole, and a user who wrote an address did not leave one.
-	liftModelFacts(out)
+	liftModelFacts(out, cfg.modelFacts)
 	adaptEndpoints(out, packs, cfg)
 	reportPresence()
 	return orderedOrNil(out), nil
@@ -209,7 +209,19 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 //
 // This is the ONE lowering site. A string alias is left untouched (the shorthand), and a
 // provider whose objects declare only `id` gets no `model_options` key at all.
-func liftModelFacts(providers *jsonx.OrderedMap) {
+//
+// A FACT WRITTEN AS NULL IS A TOMBSTONE (docs/design/model-lists-and-pickers.md ML-D10), and it
+// is LOWERED AS A NULL, never dropped: it reaches each derive as ctx.tombstone and means "this
+// model has no such fact", where leaving the fact out inherits it from the layer below (a pack's
+// facts, the shared facts, an agent's own catalog). So a user's facts overlay a pack's one key at
+// a time with the null kept (overlayFacts), not through mergeUnder, whose null deletes.
+//
+// SHARED FACTS (OQ-ML5): an alias whose facts carry `extends` gets the named `model_facts`
+// entry laid UNDER its own facts, so the order is the route's own value, then the shared facts;
+// a tombstone works at either layer. The shared facts also ride the entry once per name as
+// `model_shared.<name>`, in the same flat vocabulary, for a derive that writes them once
+// (packs/pi's shared form, ML-D11).
+func liftModelFacts(providers, shared *jsonx.OrderedMap) {
 	if providers == nil {
 		return
 	}
@@ -269,7 +281,7 @@ func liftModelFacts(providers *jsonx.OrderedMap) {
 			}
 			if prior, ok := lifted.Get(alias); ok {
 				if defaults, ok := prior.(*jsonx.OrderedMap); ok {
-					mergeUnder(defaults, facts)
+					overlayFacts(defaults, facts)
 					continue
 				}
 			}
@@ -277,10 +289,66 @@ func liftModelFacts(providers *jsonx.OrderedMap) {
 		}
 		if lifted != nil {
 			entry.Set("model_options", lifted)
+			layShared(entry, lifted, shared)
 		}
 		if routing != nil {
 			entry.Set("model_routing", routing)
 		}
+	}
+}
+
+// WithModelFacts hands ComposeProviders the user's top-level `model_facts`: facts written once
+// and shared by every route of one model, each route's object-form entry naming them with
+// `extends` (docs/design/model-lists-and-pickers.md OQ-ML5, ML-D12). liftModelFacts lays them
+// under the route's own facts. A caller that composes for no derive may leave it out: the
+// route's own facts and its `extends` still lower, and nothing is laid under them.
+func WithModelFacts(facts *jsonx.OrderedMap) ComposeOption {
+	return func(o *composeOpts) { o.modelFacts = facts }
+}
+
+// overlayFacts sets every fact of src over dst, a null included: both are one alias's FLAT
+// facts, and a null there is a tombstone to carry (ML-D10), never a key to delete.
+func overlayFacts(dst, src *jsonx.OrderedMap) {
+	for _, k := range src.Keys() {
+		v, _ := src.Get(k)
+		dst.Set(k, v)
+	}
+}
+
+// layShared lays each `extends` alias's shared facts under its own (liftModelFacts' OQ-ML5
+// half) and records the shared facts it used as entry's `model_shared`. A name `shared` does
+// not hold leaves the alias's own facts as they are: config validation refuses that pointer,
+// and a caller that handed no shared facts composes for no derive (WithModelFacts).
+func layShared(entry, lifted, shared *jsonx.OrderedMap) {
+	if shared == nil {
+		return
+	}
+	var used *jsonx.OrderedMap
+	for _, alias := range lifted.Keys() {
+		own := childMap(lifted, alias)
+		if own == nil {
+			continue
+		}
+		name, _ := stringAt(own, "extends")
+		if name == "" {
+			continue
+		}
+		src := childMap(shared, name)
+		if src == nil {
+			continue
+		}
+		base := flattenModelFacts(src)
+		if used == nil {
+			used = jsonx.NewOrderedMap()
+		}
+		if _, seen := used.Get(name); !seen {
+			used.Set(name, flattenModelFacts(src))
+		}
+		overlayFacts(base, own)
+		lifted.Set(alias, base)
+	}
+	if used != nil {
+		entry.Set("model_shared", used)
 	}
 }
 
@@ -291,8 +359,12 @@ func liftModelFacts(providers *jsonx.OrderedMap) {
 // object omits stays out, keeping the map additive.
 func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 	facts := jsonx.NewOrderedMap()
+	// A fact the object writes as null is a TOMBSTONE (ML-D10) and lowers as a null under every
+	// option it would have lowered to (`cost` is four): liftModelFacts' rule.
 	if v, ok := obj.Get("reasoning"); ok {
-		if b, isBool := v.(bool); isBool {
+		if v == nil {
+			facts.Set("reasoning", nil)
+		} else if b, isBool := v.(bool); isBool {
 			if b {
 				facts.Set("reasoning", "true")
 			} else {
@@ -301,7 +373,9 @@ func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 		}
 	}
 	if v, ok := obj.Get("input"); ok {
-		if list, isList := v.([]any); isList {
+		if v == nil {
+			facts.Set("input", nil)
+		} else if list, isList := v.([]any); isList {
 			parts := make([]string, 0, len(list))
 			for _, item := range list {
 				if s, isString := item.(string); isString {
@@ -313,14 +387,19 @@ func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 			}
 		}
 	}
+	costOptions := []struct{ key, option string }{
+		{"input", "cost_input"},
+		{"output", "cost_output"},
+		{"cache_read", "cost_cache_read"},
+		{"cache_write", "cost_cache_write"},
+	}
 	if v, ok := obj.Get("cost"); ok {
-		if cost, isMap := v.(*jsonx.OrderedMap); isMap {
-			for _, row := range []struct{ key, option string }{
-				{"input", "cost_input"},
-				{"output", "cost_output"},
-				{"cache_read", "cost_cache_read"},
-				{"cache_write", "cost_cache_write"},
-			} {
+		if v == nil {
+			for _, row := range costOptions {
+				facts.Set(row.option, nil)
+			}
+		} else if cost, isMap := v.(*jsonx.OrderedMap); isMap {
+			for _, row := range costOptions {
 				if rate, has := cost.Get(row.key); has {
 					facts.Set(row.option, numberString(rate))
 				}
@@ -329,7 +408,11 @@ func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 	}
 	for _, key := range []string{"context_window", "max_tokens"} {
 		if v, ok := obj.Get(key); ok {
-			facts.Set(key, numberString(v))
+			if v == nil {
+				facts.Set(key, nil)
+			} else {
+				facts.Set(key, numberString(v))
+			}
 		}
 	}
 	for _, key := range []string{"name", "description"} {
@@ -346,8 +429,16 @@ func flattenModelFacts(obj *jsonx.OrderedMap) *jsonx.OrderedMap {
 	// The pi CATALOG base a variant row inherits from (docs/reference/providers.md §"Per-model
 	// OpenRouter routing"): a string, so it rides the same flat map the derives read.
 	if v, ok := obj.Get("base"); ok {
-		if s, isString := v.(string); isString && s != "" {
+		if v == nil {
+			facts.Set("base", nil)
+		} else if s, isString := v.(string); isString && s != "" {
 			facts.Set("base", s)
+		}
+	}
+	// The shared facts this route's model takes (OQ-ML5): liftModelFacts lays them under these.
+	if v, ok := obj.Get("extends"); ok {
+		if s, isString := v.(string); isString && s != "" {
+			facts.Set("extends", s)
 		}
 	}
 	return facts
@@ -1060,8 +1151,20 @@ func shippedProviderEntry(prov packdecl.ProviderContribution) *jsonx.OrderedMap 
 		sort.Strings(aliases)
 		for _, alias := range aliases {
 			facts := jsonx.NewOrderedMap()
-			for _, key := range sortedMapKeys(prov.ModelOptions[alias]) {
-				facts.Set(key, prov.ModelOptions[alias][key])
+			row := prov.ModelOptions[alias]
+			keys := make([]string, 0, len(row))
+			for key := range row {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				// A null fact is the pack's TOMBSTONE (ML-D10), carried as a null so a derive
+				// reads it as a removal rather than as a fact the pack never wrote.
+				if v := row[key]; v != nil {
+					facts.Set(key, *v)
+				} else {
+					facts.Set(key, nil)
+				}
 			}
 			options.Set(alias, facts)
 		}

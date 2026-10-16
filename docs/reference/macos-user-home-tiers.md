@@ -677,7 +677,7 @@ What is still one-per-machine, each deliberate or named:
 > and it is the same state a human gets by deleting the workspace they last launched. It is also
 > why no `macos-user` test may run concurrently with another — the package's no-`t.Parallel()`
 > rule is what holds that. The suite is not idempotent about it
-> ([`handoff-macos-user-open-threads.md`](../plans/handoff-macos-user-open-threads.md#2-the-twin-suite-poisons-itself-in-test-order--a-persistent-mac-only)).
+> ([the runbook's open thread](../plans/runbooks/macos-user-manual-checks.md#the-twin-suite-is-not-idempotent-on-a-persistent-mac)).
 
 ## What is measured, and by what
 

@@ -192,17 +192,6 @@ class FrontDoor(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertTrue(self.ran(calls, "go", "test", "-short", "-run", "^(TestReadsDoc|TestScansSource)$", "./c"))
 
-    def test_the_specimen_document_is_not_markdown_checked(self):
-        # Its findings are deliberate specimens of the checker's rules, which it says must not
-        # be linked away; checking it would fail every edit to it.
-        self.verified()
-        self.write("docs/research/vantage-check-0.5.9-findings.md", "# Specimens\n\n`§4.3b`\n")
-        self.commit("specimen doc")
-        rc, out, calls = self.done()
-        self.assertEqual(rc, 0, out)
-        self.assertEqual(self.ran(calls, "vantage-check.sh"), [])
-        self.assertIn("specimen", out)
-
     def test_a_scanning_test_runs_on_every_change(self):
         # What a scanning test reads moves with ordinary edits (a new doc citation in Go source
         # makes the citation test read that doc), so a recorded read set cannot select it.

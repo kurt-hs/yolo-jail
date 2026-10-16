@@ -2,7 +2,7 @@ package run
 
 // envoverrides.go is the NINTH bespoke launch pre-flight: a jail that would carry a
 // pack's env contribution AND something that pack declares overrides it is refused before
-// it starts (packdecl.EnvOverride; docs/design/sso-backed-bedrock.md, OQ-SSO8).
+// it starts (packdecl.EnvOverride; docs/reference/agent-credentials.md, OQ-SSO8).
 //
 // The rule and its wording are packload.EnvOverrideRefusal's, not this file's, because
 // `yolo check` predicts the same refusal (internal/cli/check/envoverrides.go) and the two

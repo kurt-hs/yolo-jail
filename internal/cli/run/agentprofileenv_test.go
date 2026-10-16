@@ -313,7 +313,7 @@ func TestAssembleEmitsCodexBridgeProfileEnv(t *testing.T) {
 		"ANTHROPIC_AUTH_TOKEN")
 	// ANTHROPIC_AUTH_TOKEN is the wire bridge's per-launch caller token (WB-D18): without it
 	// claude sends its saved Claude login's OAuth bearer to this loopback address
-	// (agent-auth-modes.md §8.1), and the bridge refuses a caller that does not carry it.
+	// (wire-bridge.md, "Caller authentication"), and the bridge refuses a caller that does not carry it.
 	token := la.o.callerTokens["YOLO_SERVICE_WIRE_BRIDGE_TOKEN"]
 	if len(token) != 64 {
 		t.Fatalf("the launch minted no wire-bridge caller token: %q", la.o.callerTokens)
@@ -421,7 +421,6 @@ func TestAssembleEmitsLocalLLMClaudeEnv(t *testing.T) {
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.8-27b",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.8-27b",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.8-27b",
-		"ANTHROPIC_MODEL=qwen3.8-27b",
 		"ANTHROPIC_SMALL_FAST_MODEL=qwen3.8-27b",
 		"API_TIMEOUT_MS=1800000",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW=180224",
@@ -479,7 +478,6 @@ func TestAssembleEmitsKiloClaudeEnv(t *testing.T) {
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek/deepseek-v4.1-flash[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek/deepseek-v4.1-flash[1m]",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek/deepseek-v4.1-flash[1m]",
-		"ANTHROPIC_MODEL=deepseek/deepseek-v4.1-flash[1m]",
 		"ANTHROPIC_SMALL_FAST_MODEL=deepseek/deepseek-v4.1-flash[1m]",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW=1048576",
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",

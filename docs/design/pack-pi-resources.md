@@ -14,7 +14,7 @@ summary: "A content pack that ships pi extensions today writes one `files` entry
 `register` and `expects` decode on a `files` slot, `packs/pi` declares the slot at
 `.pi/agent/yolo-packs`, and core lists each landed tree in pi's `packages` at both notches. The
 [Decision Ledger](#decision-ledger) records the implementation decisions, and
-[the plan](pack-pi-resources-plan.md) where each part landed and what was checked. Not checked:
+the deleted build plan (`pack-pi-resources-plan.md`, in git history) where each part landed and what was checked. Not checked:
 pi itself loading a listed folder, since no test starts pi. pi's behavior read from `@earendil-works/pi-coding-agent`
 0.87.1 as installed in this jail (`dist/core/package-manager.js`, `dist/core/pi-manifest.js`,
 `dist/core/extensions/loader.js`, `docs/packages.md`, `docs/settings.md`, `docs/extensions.md`); yolo
@@ -52,7 +52,7 @@ The rest follows from it.
 entry pointing at a folder laid out like a pi package.
 
 **Reads with:**
-- [`pack-pi-resources-plan.md`](pack-pi-resources-plan.md): the build record, saying where each
+- The build record, `pack-pi-resources-plan.md`, deleted 2026-10-16 (git history keeps it), said where each
   part landed and how it was verified.
 - [`pi-pack-extensions.md`](pi-pack-extensions.md): the slot architecture (D) this builds on, and
   whose "pi does nothing (auto-discovery)" this doc corrects ([§2.2](#22-what-the-slot-design-got-wrong-about-pi)).
@@ -120,7 +120,7 @@ Four more facts decide the design:
   needs no `node_modules`, which is true of all seven of the maintainer's. They load from
   read-only files, which is already proven: today's seven are `:ro` mounts.
 - **Update.** `pi update --extensions` touches only `npm:` and `git:` sources, so a local package
-  never fetches and never contends for the refresh lock ([`pi-git-extension-caching.md`](pi-git-extension-caching.md)).
+  never fetches and never contends for the refresh lock ([the held store](pi-extension-store-builds.md#the-held-store)).
 
 **The maintainer's pack, read against this table.** Each of its seven files works because each is
 mounted as a *top-level* file in `~/.pi/agent/extensions/`. Moving them into a subdirectory stops
@@ -249,7 +249,7 @@ Both notches do the same thing:
 | The user deletes a registration in the jail | Captured as a removal and kept removed, which is `config-list`'s rule, not a new one |
 | The addressed agent's pack is not selected | The existing orphan report for an addressed `files` contribution. Nothing is registered, because no pack owns the surface |
 | The tree ships `skills/` | pi loads them for pi only. `pack lint` notes that the `skills` kind reaches every agent, the recommended route |
-| Refresh | A new or removed registration changes `settings.json`, so the [`due_on_change`](pi-git-extension-caching.md) refresh runs once. Local packages are never fetched |
+| Refresh | A new or removed registration changes `settings.json`, so the [`due_on_change`](../reference/pack-system.md#program) refresh runs once. Local packages are never fetched |
 | macos-user and Apple Container | The tree takes the `files` row of [`settings-per-setup.md`](../../userguide/reference/settings-per-setup.md#what-a-pack-can-contribute-per-setup): a directory is bound read-only on Apple Container as on podman, and copied in protected on macos-user. The entry is a config-list entry, which the one surface loop renders on every backend. Neither backend was run for this build |
 
 **Forbidden.** Registration never writes through `computed` and never replaces the array. Core

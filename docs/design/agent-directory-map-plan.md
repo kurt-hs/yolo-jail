@@ -167,7 +167,7 @@ import-cycle worry in [§2](#2-the-evaluator) did not arise: `internal/cli/run` 
 ## 8. Check before relying on it
 
 - Whether claude's `skills/.trash` and `skills/.staging` are siblings of `synced/` or inside it.
-  The bundle and [`synced-skill-trees.md` §2.3](synced-skill-trees.md#23-reserved-siblings)
+  The bundle and [`pack-system.md`'s record of the sync root](../reference/pack-system.md#sync-root-reserved-siblings)
   disagree. This must be measured before the claude slice.
 - Whether copilot 1.0.48's `config.json` migration loops against yolo's strict JSON `rmw` decode.
   Measure it in a scratch home before the copilot slice, and possibly before anything else.

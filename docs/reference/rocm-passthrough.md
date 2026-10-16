@@ -33,8 +33,7 @@ defaults to `nvidia` — so every pre-existing config keeps working untouched.
 | Config shape and the vendor-exclusivity rules | `internal/config` (`knownGPUKeys`, `validate.go`) |
 | Diagnostics | `internal/cli/check` (`sectionGPUAmd`, `checkDeviceNode`, `checkRocmEnumeration`) |
 
-**Reads with:** [`../research/rocm-gpu-jail-findings.md`](../research/rocm-gpu-jail-findings.md)
-(the hardware findings and the downstream execution-provider work),
+**Reads with:**
 [`../guides/USER_GUIDE.md`](../../userguide/README.md) (the user-facing GPU section, including the
 image steer).
 
@@ -169,6 +168,10 @@ with a finite cap, which is the common default. Clamping to the host ceiling lif
 > older ROCm userspace, and current ROCm runs real compute at an 8 MB cap — verified down to 64 KB.
 > The warning was factually wrong and it nudged users toward an unlimited-locked-memory DoS vector
 > for zero functional benefit. Keep the clamp; do not restore the advice.
+>
+> The symptom that advice answered, on the ROCm 7.1.1 userspace of June 2026, was
+> `AMDKFD_IOC_CREATE_QUEUE` failing with `EINVAL` and HIP then segfaulting in its cleanup. The
+> remedy is a newer ROCm userspace (7.2.4 passed at the 8 MB cap), not a larger cap.
 
 ## Diagnostics
 
@@ -185,12 +188,10 @@ comparing its owning GID against the caller's groups, so the report distinguishe
 group but this process has not picked it up"* — remedy: a fresh login — from *"you are not in the
 group"* — remedy: add yourself.
 
-> [!WARNING]
-> **The AMD section's two in-jail guards are load-bearing, and its NVIDIA twin does not have
-> them.** Inside a jail, the module check and the device-node checks report skipped-because-managed
-> -by-host rather than failing on host facts an in-jail process cannot see. `sectionGPUNvidia` has
-> no such guard and does fail on them. **This section is the reference for fixing that twin, not
-> the thing that needs fixing** — do not "unify" the two by removing these guards.
+The AMD section's in-jail guards are load-bearing. Inside a jail, its module check and device-node
+checks report skipped-because-managed-by-host rather than failing on host facts an in-jail process
+cannot see, and `sectionGPUNvidia` does the same with one host-fact line. Do not remove these guards
+when the two sections are touched.
 
 ## Security surface
 

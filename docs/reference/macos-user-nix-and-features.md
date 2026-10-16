@@ -46,8 +46,9 @@ implemented as a container flag or a bind mount has no host to attach to.
 | The inert-feature reports | `internal/cli/run` (`loopholeinert.go`), `internal/macosuser` (`orchestrator.go`) |
 | The jail daemons: which the sandbox runs, their supervisor's argv, env file, start and stop | `internal/loopholes` (`JailDaemonsRunIn`), `internal/cli/run` (`jailDaemonsFor`, `jaildaemondecline.go`), `internal/macosuser` (`jaildaemon.go`: `GuestBinaries`, `GuestBinDir`, `startJailDaemons`; `RunPlan.JailDaemonArgv`) |
 
-**Reads with:** [`nix-across-backends.md`](nix-across-backends.md) (the same split from nix's
-side), [`../design/backend-parity.md`](../design/backend-parity.md) (the sweep this backend's
+**Reads with:** [`image-staging-vs-baking.md`](image-staging-vs-baking.md) (the container
+backends' side of the same nix split: the image, its rebuild rule and the macOS Linux builder),
+[`../design/backend-parity.md`](../design/backend-parity.md) (the sweep this backend's
 warnings came out of, and the census that would make a silent drop unwritable),
 [`macos-no-vm-direction.md`](macos-no-vm-direction.md) (why the backend exists),
 [`../design/macos-user-build-step-threat-model.md`](../design/macos-user-build-step-threat-model.md)
@@ -115,7 +116,50 @@ ripgrep. The floor joined the profile after this doc's verified commit, which is
 "`packages:` only" reading was true once and is not now.
 
 There is therefore **no Linux builder and no image download** in this backend's launch. Those
-exist only for the container runtimes.
+exist only for the container runtimes
+([the macOS Linux builder](image-staging-vs-baking.md#the-macos-linux-builder-for-a-linux-reader)).
+
+**The product is a buildEnv, deliberately not a devShell.** A devShell's `print-dev-env` would
+dump an entire stdenv toolchain (clang, GNU coreutils, sed, grep, make) onto the agent's PATH
+*ahead of* the host userland. A buildEnv contains only what was asked for, which is the whole
+point: the sandbox gets what the config and the floor name and nothing else.
+
+**The floor is the image's own core list, minus two kinds of exclusion.** It is `flake.nix`'s
+`coreFloorNames`, the list the container image bakes as its core, less
+`noncontainerFloorUnbuildable` (`iptables`, which has no darwin build, derived by evaluation
+rather than guessed) and `noncontainerFloorPolicy` (the GNU userland, excluded by policy because
+this backend's proposition is *"your Mac, confined"*). A package that is neither buildable nor
+excluded is a **fatal** in the flake, never a silent skip. Only the floor's half is restated in
+Go, in `internal/darwinpkg/floor.go`, held to the flake by a drift gate that parses it.
+
+Two things still differ from a container jail's floor:
+
+- **Delivery.** The floor is a nix profile on PATH rather than a composed filesystem, so
+  `/bin/<tool>` is not a path that resolves here, and an absolute-path assumption (a
+  blocked-tool rule naming `/bin/rg`, an MCP wrapper with an absolute path) still breaks.
+- **Contents.** The image's `fullPackages` list (chromium, the toolchain (`gcc`, `gnumake`,
+  `binutils`), `podman`, `nix`, `tmux`, `fzf`, `bat`, `htop`, `strace`, `lsof`, `openssh` and the
+  network tools among them) is read by the image variants and by `yoloImageExtras`, and by no
+  non-container attr. Those tools are **absent** here, not delivered differently: `packages:` is
+  the only way to get one. `fullPackages` has no Go mirror, so read the flake for which half a
+  name falls in.
+
+> [!WARNING]
+> **Do not add a second materialization path for a new notch.** `yoloNoncontainerProfile` and
+> `yoloNoncontainerPackages` are named for the axis rather than for macos-user because every
+> notch *below* `jail` needs them: "below jail" means "no baked image", and the tool closure has
+> to come from somewhere. A Linux `guest` notch is the next consumer and needs the identical
+> mechanism ([`../design/provisioner-sets.md`](../design/provisioner-sets.md)).
+
+**The GC root is the build's own out-link.** The build runs with `--out-link`, so nix creates
+the root as part of the build it is already running. The image path instead builds with
+`--no-link` and roots the printed path in a second step, which leaves a window where a
+concurrent garbage collection could take a just-built closure; the out-link form has no such
+window.
+
+**There is no rebuild trigger, because there is nothing to reload.** Every launch runs the
+build, and nix answers from its own store when nothing changed. There is no image to diff and no
+load step to skip.
 
 ### The two invocations
 
@@ -173,6 +217,11 @@ as a command that mysteriously does not exist.
 > trick: nix stays green and the CLI decides. Entries excluded by a `platforms` declaration are
 > already gone before the build, so what remains is by construction a package declared for
 > *this* platform and not delivered.
+
+Its automated twin, `TestMacosUserAPackageWithNoDarwinBuildAbortsTheLaunch`
+(`integration/macosuserunavailablepackage_test.go`), runs on the scheduled `macos-user.yml` job and
+passed there on 2026-10-03 (run 37121866798), for both the declared package and the same package
+marked `platforms: ["linux"]`.
 
 ### Requirements
 
@@ -612,8 +661,7 @@ unusable, is unmeasured. The policy suite's `undeclared_device_ioctl_refused` an
 
 ⚠ **This section said "no loophole host service starts here" and that is RETRACTED (2026-09-18).**
 The heading still stands — each shipped loophole really is mostly moot natively, for the
-reasons listed below — and an incoming link names it
-([`macos-revival-and-distribution-plan.md`](../plans/macos-revival-and-distribution-plan.md)).
+reasons listed below.
 It described an arm that returned from `Run()` above the spawn boundary, and that stopped being
 true when the lifecycle was generalised on 2026-09-17: this backend now goes through the same
 `startLoopholesDisclosed` wrapper a container launch does, starts **every** admitted host
@@ -783,7 +831,8 @@ only place the values themselves are stated.
 | Neutral shared workspace root | `/Users/Shared/yolo` | `macosuser.SharedRootDefault` |
 | Root-owned state dir for the staged binary and pack tree | under the sandbox state root, named per session | `macosuser.BuildRunPlan` (`StagedDir`, `StagedYolo`, `PackRoot`) |
 | Nix build target | `.#packages.<system>.yoloNoncontainerProfile` — the non-container **floor** plus the declared `packages:`, for the system `NativeSystem()` reports rather than a hardcoded double. The declared-alone `yoloNoncontainerPackages` is the *container* store-delivery path's attr, not this one | `darwinpkg.FloorProfileAttr` (`ProfileAttr` is the other), `darwinpkg.NativeSystem`, floor list in `darwinpkg/floor.go` |
-| Skip-list eval, and its bound | the darwin-unavailable list, timeout-bounded, non-fatal | `darwinpkg.skippedNames` |
+| Skip-list eval, and its bound | the darwin-unavailable list, `yoloUnavailablePackages.<system>`, timeout-bounded, non-fatal | `darwinpkg.skippedNames` |
+| Native profile GC root | `<global storage>/build/package-roots/packages`, the build's `--out-link` | `darwinpkg.ProfileRootLink` |
 | PATH additions from the profile | `<out>/bin`, plus `PKG_CONFIG_PATH=<out>/lib/pkgconfig` when present | `darwinpkg.ProfilePaths` |
 | Content-overlay wire var | `YOLO_DARWIN_HOME_OVERLAY` | `internal/cli/run/macoshomeoverlay.go`, `entrypoint.InstallHomeOverlay` |
 | Pack tree wire var | `YOLO_PACK_ROOT`, baked onto the bootstrap argv; since 2026-10-04 also in the session env file, with `YOLO_DARWIN_WORKSPACE`, when packs were staged, so an in-sandbox `yolo programs` reads this jail | `macosuser.BuildRunPlan`, asserted by `PlanInvariants`; read in the sandbox by `entrypoint.JailEnvFromOS` |
@@ -834,6 +883,9 @@ drifts from its owner is worse than no mirror.
 | :--- | :--- | :--- |
 | `A1` | The config-change approval prompt is called on the macos-user arm itself, not hoisted above the dispatch | This is the backend where the nix build runs **unconfined as the invoking user**, so it is the worst place to lose that gate. The arm is the right call site because the container arm gates the fresh-launch path only, and this backend has no attach. |
 | `A2` | A declared package with no darwin build is **fatal**, raised host-side after a green eval | The old warn-and-skip masked a typo and a genuinely-unavailable package with one message, and either way the jail started without a tool the user declared. Erroring inside the eval was the objection; erroring after it keeps nix green and lets the CLI decide. |
+| — | The product is a **buildEnv, not a devShell** | `print-dev-env` is the obvious way to "get a nix environment", and it puts a whole stdenv toolchain ahead of the host userland on the agent's PATH. |
+| — | **`--out-link` roots the native build**; the image path roots separately | Making the two consistent by moving the native path to `--no-link` plus a separate root would reintroduce the window in which a garbage collection takes the closure before it is rooted. |
+| — | **The flake filters unavailable packages** instead of erroring, and **`platforms` filters before the build**, not after | Erroring inside nix aborts the whole evaluation, losing every package that does build. Filtering by `platforms` after the build would need a second list of absences that are expected, kept in sync with the first; filtering first leaves every name in the skip list a real problem ([`A2`](#why-its-this-way)). |
 | `A3` | The relocatable-shared-root config key is **not implemented**, and the plan-invariant message no longer advertises it | The default is the OS-blessed neutral location and satisfies the requirement. A knob that names nothing is worse than no knob, and implementing it needs agreement at two separate places. |
 | `#39` mirror | Per-workspace **homes** are refused; the per-workspace **tier** is a symlink layout ([`OQ-HT4`](macos-user-home-tiers.md#oq-ht4)) | `HOME` never moves, so the declared `scope: machine` directory never moves either and the `shared_credentials` hook's output is byte-identical here. Each `scope: workspace` directory is a symlink into `<workspace>/.yolo/home` — the same sidecar podman binds — so both tiers are restored explicitly, which is what the refusal always asked for. |
 | <a id="jd-1"></a>`JD-1` | **The guest set is `yolo-jaild`, `yolo-serial` and `yolo-ps`**, one list in three spellings that tests pin together, staged whole when the launch runs a jail daemon or its session env carries an endpoint one of the two clients reads. *Amended 2026-10-04, an implementation decision taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible:* it applies [`OQ-DP8`](../design/declaration-parity.md#OQ-DP8)'s "if you would have run it in the jail container, you run it on the guest" to the clients | `yolo-jaild` is the supervisor and every in-jail daemon; the two clients belong to the loopholes that run on a Mac (`serial`, and `host-processes` since its BSD arm). `yolo` is staged from the running host binary, the bootstrap is `yolo internal darwin-bootstrap` rather than `yolo-entrypoint`, and `yolo-cglimit` and `yolo-journalctl` belong to Linux-only loopholes. The trigger is each client's own endpoint variable (`macosuser.GuestClients`), so a checkout launch builds `.#guestPrefix` only when something in the sandbox will run it. Adding a binary to one spelling and not the others ships a guest that cannot run what it declares. |

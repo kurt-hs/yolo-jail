@@ -473,6 +473,7 @@ The keys the tables above leave out. Most of them do the same thing on every set
 | `runtime` — which setup a launch uses | works | works — without it, yolo picks Apple Container when it is installed | works — the Mac default | works — only this key or `YOLO_RUNTIME` picks it |
 | `confinement` — how confined the agent is | works — `jail`, the default, launches; `guest` and `host` refuse the launch and say what to use instead | works — the same | works — the same | works — the same |
 | `required_capabilities` — what the jail must be able to do | works — a capability nothing in your config or its packs provides refuses the launch | works — the same | works — the same | works — the same |
+| `model_facts` — facts a model shares across its providers | works | works | works | works |
 | `adapters` — where an adapted provider is reached | works | works | works | works — except for a helper the launch starts itself, which uses the port that launch picked |
 | `loopholes` — turn a pack's host service on or off | works | works — a Linux-only one is named and skipped[^lh-linux] | absent, warns — only the OpenAI login service starts, the jail cannot reach it, and the launch names each one it skips[^lh-ac] | works — every one starts, and the launch names each in-jail half the sandbox declines[^theone] |
 | `brokered` — more repositories for the GitHub host service in one project | works | works | absent, warns — the GitHub host service does not start here, and the launch names it[^lh-ac] | works |

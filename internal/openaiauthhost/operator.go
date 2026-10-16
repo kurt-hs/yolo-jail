@@ -17,7 +17,7 @@ package openaiauthhost
 // # It is a HIDDEN verb today, and that is a gap rather than a decision
 //
 // `yolo internal openai-auth <status|import|logout>` is one registry row away from being
-// `yolo openai-auth`, and openai-auth-broker-plan.md's step 11 is right that logout is a thing
+// `yolo openai-auth`, and the OpenAI broker plan's step 11 (deleted 2026-10-16) was right that logout is a thing
 // users type — a hidden path is not where a destructive, machine-wide operation should be
 // discovered. What it costs is three shared tables in internal/cli (the dispatch registry, the
 // `--help` list, the subcommand-usage map) plus the self-documenting-CLI standard's tests, and

@@ -354,7 +354,7 @@ func TestSettingsFileNameIsSpelledOnce(t *testing.T) {
 }
 
 // TestSettingDiscloseDecodesOnABool pins OQ-SSO10's vocabulary
-// (docs/design/sso-backed-bedrock.md): a bool declaration may carry a `disclose`
+// (docs/reference/agent-credentials.md): a bool declaration may carry a `disclose`
 // sentence, which the launch prints whenever the resolved value is true. Absent is
 // the common case and decodes to "".
 func TestSettingDiscloseDecodesOnABool(t *testing.T) {

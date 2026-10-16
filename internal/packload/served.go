@@ -201,7 +201,7 @@ func (s ServedDaemons) WithListen(listen map[string]string) ServedDaemons {
 
 // WithInherited returns s serving each daemon in pointers by INHERITANCE: a nested launch that
 // shares the launching jail's loopback takes that daemon's pointer from the launching jail's
-// environment (loopholedecl.ParentJailInheritance; docs/design/sso-backed-bedrock.md SSO-D2) and
+// environment (loopholedecl.ParentJailInheritance; docs/reference/agent-credentials.md SSO-D2) and
 // runs neither of its daemons. pointers maps a daemon's name to the value of each variable it
 // carries. A pack `env` pointer `served_by` such a daemon is delivered with the inherited value in
 // place of its declared one, and one naming a variable pointers does not carry is withheld. nil

@@ -219,8 +219,8 @@ func TestEveryShippedPacksHostFilesAreHonored(t *testing.T) {
 // under a different name.
 //
 // The exact-match `want` is also what pins `--no-auto-update` GONE: the flag is dropped, so a
-// jail's copilot polls for its own updates again (docs/plans/native-installer-migration.md,
-// the Blockers bullet's option A).
+// jail's copilot polls for its own updates again (docs/design/program-delivery.md#OQ-NI1,
+// option A).
 func TestCopilotFlagsInjectFromItsRealDeclaration(t *testing.T) {
 	packs := loadAll(t)
 

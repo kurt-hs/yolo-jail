@@ -11,7 +11,7 @@ import (
 
 // unsharedir_test.go covers the unshare_directory hook: undoing the link a shared_directory
 // hook left behind, once a pack stops sharing that directory
-// (docs/design/pi-git-extension-caching.md §3.5 — c402dd43's `.pi/agent/git` ->
+// (docs/reference/pack-system.md, the `unshare_directory` hook — c402dd43's `.pi/agent/git` ->
 // `.pi-shared-git` link). It must remove exactly that link and nothing else: never follow it,
 // never touch its target, a real directory, or a link to anywhere else.
 

@@ -1,7 +1,7 @@
 package cli
 
 // confighostproviderdoc_test.go pins config-ref's host-notch provider text to what host apply
-// does (docs/design/host-computed-layer.md §6.7 item 5): since OQ-HC1 `yolo host apply` composes
+// does (docs/reference/host-agent-environment.md HC-D3): since OQ-HC1 `yolo host apply` composes
 // the providers table and runs the derives over it, so `provider` is no longer a kind that does
 // not apply at the host, and the paragraph saying what a host apply computes names every surface
 // that carries provider facts.

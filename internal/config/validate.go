@@ -1274,6 +1274,7 @@ func ValidateProviderSection(config *jsonx.OrderedMap) (errors []string, warning
 
 // validateProviderEntries is validateProviders' shape half: every `providers.<name>` entry.
 func validateProviderEntries(config *jsonx.OrderedMap, errs, warns *[]string) {
+	sharedNames := validateModelFacts(config, errs)
 	v, present := config.Get(providersKey)
 	if !present || v == nil {
 		return
@@ -1363,7 +1364,7 @@ func validateProviderEntries(config *jsonx.OrderedMap, errs, warns *[]string) {
 						add(errs, path+".models."+alias+": expected a model id string or an object")
 						continue
 					}
-					validateModelEntry(entry, path+".models."+alias, errs)
+					validateModelEntry(entry, path+".models."+alias, sharedNames, errs)
 				}
 			}
 		}
@@ -1406,7 +1407,13 @@ func validateProviderRegion(v any, path string, errs *[]string) {
 // here — `input` against a closed vocabulary, `cost` rates non-negative,
 // `context_window`/`max_tokens` positive — and only its interpretation is left alone. The
 // two surfaces differ on purpose (see knownModelKeys in config.go).
-func validateModelEntry(entry *jsonx.OrderedMap, path string, errs *[]string) {
+//
+// A fact written as null is a TOMBSTONE (docs/design/model-lists-and-pickers.md ML-D10), accepted
+// at every fact and carried to the derives as a removal (packload.liftModelFacts). `extends`
+// names the top-level `model_facts` entry this model's routes share (OQ-ML5); sharedNames is
+// that map's names, and a name it does not hold is refused, since the row would silently lose
+// every fact it meant to share.
+func validateModelEntry(entry *jsonx.OrderedMap, path string, sharedNames map[string]bool, errs *[]string) {
 	reportUnknownKeys(entry, knownModelKeys, path, errs)
 	id, hasID := entry.Get("id")
 	switch {
@@ -1417,6 +1424,55 @@ func validateModelEntry(entry *jsonx.OrderedMap, path string, errs *[]string) {
 			add(errs, path+".id: expected a non-empty string")
 		}
 	}
+	if v, ok := entry.Get("extends"); ok {
+		switch s, isString := asStr(v); {
+		case !isString || s == "":
+			add(errs, path+".extends: expected the name of a `model_facts` entry, the facts this "+
+				"model's routes share")
+		case !sharedNames[s]:
+			add(errs, fmt.Sprintf("%s.extends: names %q, which config.model_facts does not declare — "+
+				"declare it there, or remove `extends`", path, s))
+		}
+	}
+	validateModelFactValues(entry, path, errs)
+}
+
+// validateModelFacts checks the top-level `model_facts` map (docs/design/model-lists-and-pickers.md
+// OQ-ML5): each entry the facts a model's routes share, in the object-form model entry's
+// vocabulary minus what only a route can say (`id`, `vendor`, `openrouter_routing`, `extends`),
+// a null fact being a tombstone (ML-D10). It returns the declared names, for `extends`.
+func validateModelFacts(config *jsonx.OrderedMap, errs *[]string) map[string]bool {
+	names := map[string]bool{}
+	v, present := config.Get(modelFactsKey)
+	if !present || v == nil {
+		return names
+	}
+	facts, ok := asMap(v)
+	if !ok {
+		add(errs, "config."+modelFactsKey+": expected an object")
+		return names
+	}
+	for _, name := range facts.Keys() {
+		path := "config." + modelFactsKey + "." + name
+		ev, _ := facts.Get(name)
+		if ev == nil {
+			continue // null deletes the entry, the merge-patch convention
+		}
+		entry, ok := asMap(ev)
+		if !ok {
+			add(errs, path+": expected an object")
+			continue
+		}
+		names[name] = true
+		reportUnknownKeys(entry, knownSharedModelKeys, path, errs)
+		validateModelFactValues(entry, path, errs)
+	}
+	return names
+}
+
+// validateModelFactValues is the per-fact shape check one model entry and one `model_facts`
+// entry share: a null skips, being a tombstone (ML-D10).
+func validateModelFactValues(entry *jsonx.OrderedMap, path string, errs *[]string) {
 	for _, key := range []string{"name", "description"} {
 		if v, ok := entry.Get(key); ok && v != nil {
 			if s, isString := asStr(v); !isString || s == "" {
@@ -1537,6 +1593,9 @@ func nonNegativeNumber(v any) bool {
 
 // providersKey is the top-level config key validateProviders reads.
 const providersKey = "providers"
+
+// modelFactsKey is the top-level map of the facts a model's routes share (validateModelFacts).
+const modelFactsKey = "model_facts"
 
 // validateProviderCredentialScope refuses, at workspace scope, every provider field that
 // decides where a credential goes (docs/plans/notch-convergence.md OQ-NC6, ruled 2026-09-28,

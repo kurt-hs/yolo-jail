@@ -15,7 +15,7 @@ import (
 // Claude Code >= 2.1.200 treats a credentials file carrying ONLY the token trio
 // (accessToken/refreshToken/expiresAt) as NOT LOGGED IN: the subscription itself lives in
 // subscriptionType / rateLimitTier, so an OAuth credential stripped of those keys is a valid
-// token that the tool refuses to use (docs/design/agent-auth-modes.md §3 — it is also why
+// token that the tool refuses to use (docs/reference/claude-oauth-interposition.md, "Where the file actually is" — it is also why
 // apiKeyHelper cannot carry a subscription: an API key has no entitlement metadata slot).
 //
 // Preservation used to have TWO independent guards. The jail entrypoint's shared_credentials
