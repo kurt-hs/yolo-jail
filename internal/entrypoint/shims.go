@@ -725,7 +725,7 @@ func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, rec
 		"__YOLO_EXEC_PREFIX__", token,
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(launchFlagSplices(flags), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, true)...)...)...)
+	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, true)...)...)...)
 	return strings.Split(r.Replace(npmLauncherTemplate), token)
 }
 
@@ -822,7 +822,7 @@ func nativeAgentLauncher(pack string, inst *packdecl.Install, stampDir, receipts
 		"__YOLO_EXEC_PREFIX__", "",
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(launchFlagSplices(flags), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, false)...)...)...)
+	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, false)...)...)...)
 	return r.Replace(nativeLauncherTemplate)
 }
 
@@ -1607,7 +1607,15 @@ _update() {
         local vrc=0
         _bounded "$REAL_BIN" "${UPDATE_VERB[@]}" >&2 || vrc=$?
         touch "$STAMP"
-        if [ "$vrc" != 0 ]; then _say_not_updated update "$vrc"; fi
+        if [ "$vrc" != 0 ]; then
+            # Update mode says its own outcome and exits non-zero; a Ctrl-C runs what is installed
+            # (PD-NF4). A launch's failed verb is classified by its upstream (PD-NF3).
+            if [ "${YOLO_PACK_UPDATE:-}" = "1" ] || [ "$_YOLO_INTERRUPTED" = 1 ]; then
+                _say_not_updated update "$vrc"
+            else
+                _yolo_failed_act "$vrc" "its update ($BIN ${UPDATE_VERB[*]})" _yolo_registry_reachable
+            fi
+        fi
         return "$vrc"
     fi
     INSTALLED=$(_installed_version)
@@ -1623,8 +1631,15 @@ _update() {
     # to come back with nothing useful, and every one of them means "unknown", never "same".
     LATEST=$(YOLO_BYPASS_SHIMS=1 npm view "$PKG" version 2>/dev/null || true)
     if [ -z "$LATEST" ]; then
-        echo "  ⚠ $BIN: could not ask the npm registry for a newer version — leaving $INSTALLED in place." >&2
-        return 1
+        if [ "${YOLO_PACK_UPDATE:-}" = "1" ]; then
+            echo "  ⚠ $BIN: could not ask the npm registry for a newer version — leaving $INSTALLED in place." >&2
+            return 1
+        fi
+        # A LAUNCH that could not ask is not a failure (PD-NF1): nothing says a newer version
+        # exists. It runs what is installed, says so, and stamps, so an offline hour asks once.
+        echo "  $BIN: could not ask the npm registry for a newer version — running the installed $INSTALLED." >&2
+        touch "$STAMP"
+        return 0
     fi
     if [ "$INSTALLED" = "$LATEST" ]; then
         echo "  $BIN $INSTALLED is already current." >&2
@@ -1632,7 +1647,16 @@ _update() {
         return 0
     fi
     echo "  Updating $BIN $INSTALLED → $LATEST..." >&2
-    _do_install
+    local irc=0
+    _do_install || irc=$?
+    # A NEWER VERSION WAS FOUND and did not install: the launch refuses (PD-NF1) at its call site,
+    # outside the lock and the shield. A Ctrl-C is the user's own hatch (PD-NF4).
+    if [ "$irc" != 0 ] && [ "${YOLO_PACK_UPDATE:-}" != "1" ] && [ "$_YOLO_INTERRUPTED" != 1 ]; then
+        _YOLO_FAIL_HEAD="$BIN $INSTALLED → $LATEST: installing the newer version failed"
+        _YOLO_FAIL_FACT="npm install -g $SPEC exited with an error (its output is above)."
+        _YOLO_FAIL_VER="$INSTALLED"
+    fi
+    return "$irc"
 }
 
 if [ "${YOLO_PACK_UPDATE:-}" = "1" ]; then
@@ -1695,8 +1719,20 @@ elif [ "$PINNED" = "1" ]; then
     # a range it never compares equal, so polling would reinstall every hour forever. The
     # one thing that can legitimately move this binary is the DECLARATION, so that is what
     # we compare, offline.
+    #
+    # A MOVED DECLARATION THAT DOES NOT INSTALL REFUSES, offline included (PD-NF6): the declaration
+    # is a known target, and yolo needs no registry to know the installed version is not it. An
+    # agent_updates hold runs what is installed instead, saying so; the hatch does too.
     if [ "$(cat "$SPEC_FILE" 2>/dev/null || true)" != "$SPEC" ]; then
-        _do_install || true
+        if ! _do_install && [ -x "$REAL_BIN" ]; then
+            _was=$(_resolved_version)
+            if [ "$UPDATES_ENABLED" != "1" ]; then
+                echo "  ⚠ $BIN: installing $SPEC, which its pack now declares, failed — running the installed ${_was:-version}, as this jail's agent_updates holds it." >&2
+            else
+                _yolo_update_refused "" "$BIN ${_was:-(installed)} → $SPEC: installing the version its pack declares failed" \
+                    "The pack declares $SPEC, and npm install -g $SPEC exited with an error (its output is above)." "$_was"
+            fi
+        fi
     fi
 elif _update_due; then
     # EVERGREEN (§3.5, OQ-PD12). This branch used to be _poll_and_report: an hourly
@@ -1710,8 +1746,10 @@ elif _update_due; then
     # nobody present" — is answered differently now rather than ignored: the trigger is the
     # user's OWN invocation of the agent, so there is always somebody present, and it is
     # the person who just typed the program's name. A failure here is scoped to that
-    # command and never to the jail.
+    # command and never to the jail: a newer version that did not install STOPS that command
+    # (PD-NF1), which _yolo_refuse_failed says and exits with, and the next invocation retries.
     _locked_update || true
+    _yolo_refuse_failed "$STAMP"
 fi
 
 # --- transitive MCP server refresh (§3.5, OQ-PD12a) ---------------------------------
@@ -1731,12 +1769,18 @@ fi
 #
 # "|| true": a server that could not be installed is REPORTED (the subcommand says so, and
 # exits non-zero), and the agent still runs. Its own binary is present and runnable, and
-# refusing to start it because one server failed to fetch would be the worse outcome.
+# refusing to start it because one server failed to fetch would be the worse outcome. The one
+# status that stops it is UPDATE_REFUSED: a server whose NEWER version did not install (PD-NF1).
 _refresh_servers() {
+    local rc=0
     command -v yolo >/dev/null 2>&1 || return 0
     YOLO_BYPASS_SHIMS=1 yolo internal refresh-servers \
         --home="$HOME" --npm="$SERVERS_NPM" \
-        --updates="$UPDATES_ENABLED" >&2 || true
+        --updates="$UPDATES_ENABLED" --bin="$BIN" >&2 || rc=$?
+    # UPDATE_REFUSED is a server whose NEWER version did not install (PD-NF1): the subcommand has
+    # said the refusal, and the command stops. Any other status is advisory, as above.
+    if [ "$rc" = "$UPDATE_REFUSED" ]; then exit "$UPDATE_REFUSED"; fi
+    return 0
 }
 
 if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then
@@ -1895,6 +1939,10 @@ LOCK_DIR="$HOME/.local/.yolo-update.lock"
 # What a receipt calls the act that wrote the bytes. The install paths leave it alone; the
 # update path flips it, so a reconcile can tell a cold install from an evergreen refresh.
 _ACT=install
+# 1 once an update could not download its installer, which is "could not check", not a failure
+# (PD-NF3); _YOLO_INSTALL_WHY is what a failed installer run did, for the refusal's fact.
+_YOLO_UNCHECKED=0
+_YOLO_INSTALL_WHY=""
 
 # --- re-entry ----------------------------------------------------------------------
 # B2 PUT THE LAUNCH DIR AHEAD OF THE INSTALL PREFIXES, so a BARE-NAME call of this program
@@ -2162,8 +2210,9 @@ _run_without_terminal() {
 # the bottom of this script never runs there, and without a status "yolo pack update"
 # reports success for a refresh that installed nothing.
 #
-# The launch path drops it explicitly ("|| true") rather than by accident: there a failed
-# install is not the verdict, because a failed UPGRADE still leaves a working binary to run.
+# The cold launch path drops it explicitly ("|| true") rather than by accident: there the -x test
+# at the bottom is the verdict. A failed UPGRADE still leaves a working binary, but a launch does
+# not quietly run it: _update classifies the failure, and its call site refuses (PD-NF1).
 _run_installer() {
     if [ "$_ACT" = update ]; then
         echo "  Updating $BIN (re-running its installer — the pack declares no verb)..." >&2
@@ -2184,6 +2233,9 @@ _run_installer() {
         echo "    (no network, or the endpoint moved — nothing was changed on disk.)" >&2
         rm -f "$script"
         touch "$STAMP"
+        # An UPDATE that could not fetch its installer could not check for a newer version, which
+        # is not a failure of the update (PD-NF1, PD-NF3): the launch runs what is installed.
+        _YOLO_UNCHECKED=1
         return 1
     fi
     # Only a body that looks like a script reaches bash; see _installer_body_kind, which
@@ -2209,6 +2261,7 @@ _run_installer() {
         fi
         rm -f "$script"
         touch "$STAMP"
+        _YOLO_INSTALL_WHY="its installer URL ($URL) did not serve a shell script (${why%.})"
         return 1
     fi
     local irc=0
@@ -2227,6 +2280,14 @@ _run_installer() {
     # _shielded, so its Ctrl-C ends this launcher instead, there being nothing to run.
     if [ "$_YOLO_INTERRUPTED" = 1 ]; then
         return 130
+    fi
+    # AN UPDATE THE INSTALLER SAID FAILED did not update, whatever it left: the program on disk is
+    # the version it was meant to replace, which a receipt must not vouch for and a launch must not
+    # quietly run (PD-NF1). A cold install keeps the landing-path test below, there being no
+    # previous version to confuse with the new.
+    if [ "$_ACT" = update ] && [ "$irc" != 0 ]; then
+        _YOLO_INSTALL_WHY="its installer ($URL) exited with status $irc (its output is above)"
+        return "$irc"
     fi
     # A receipt only for a run that LEFT SOMETHING, and the same test is the status. An
     # installer can fail loudly (exit 1, nothing downloaded) or quietly (exit 0, the binary
@@ -2290,11 +2351,23 @@ _update() {
     fi
     if [ "$rc" = 0 ]; then
         _prune_versions
-    elif [ "$_YOLO_MISPLACED" != 1 ]; then
+    elif [ "$_YOLO_MISPLACED" = 1 ]; then
         # An installer that reported success and took the program away did not FAIL: the line
         # for what it did is _say_misplaced's, at either end of this script, and "running the
         # installed version" would name one that is gone.
+        :
+    elif [ "${YOLO_PACK_UPDATE:-}" = "1" ] || [ "$_YOLO_INTERRUPTED" = 1 ]; then
+        # Update mode says its outcome and exits non-zero; a Ctrl-C runs what is installed (PD-NF4).
         _say_not_updated update "$rc"
+    elif [ "$_YOLO_UNCHECKED" = 1 ]; then
+        echo "  $BIN: could not download its installer to check for a newer version — running the installed version." >&2
+    elif [ "$HAS_UPDATE_VERB" = "1" ]; then
+        # The vendor's verb has no version query: its upstream decides (PD-NF3).
+        _yolo_failed_act "$rc" "its update ($BIN ${UPDATE_VERB[*]})" _yolo_url_reachable "$URL"
+    else
+        # The installer was fetched, so its upstream answered: the re-run's failure refuses.
+        _YOLO_FAIL_HEAD="$BIN: re-running its installer to update it failed"
+        _YOLO_FAIL_FACT="${_YOLO_INSTALL_WHY:-its installer ($URL) failed (its output is above)}."
     fi
     return "$rc"
 }
@@ -2394,7 +2467,9 @@ elif [ "$_YOLO_PROBE" = "1" ]; then
 elif [ "${` + InstallOnlyEnv + `:-}" != "1" ] && _update_due; then
     # Never in install-only mode: the readiness act asks only that the program be present, and
     # a refresh stays the invocation's (OQ-PD12a). A capture's home is cold, so it never got here.
+    # A failed update whose upstream answered STOPS the command (PD-NF1); the next one retries.
     _locked_update || true
+    _yolo_refuse_failed "$STAMP"
 fi
 # Whatever ran above, or nothing: see _locked_prune.
 _locked_prune || true
@@ -2434,12 +2509,18 @@ fi
 #
 # "|| true": a server that could not be installed is REPORTED (the subcommand says so, and
 # exits non-zero), and the agent still runs. Its own binary is present and runnable, and
-# refusing to start it because one server failed to fetch would be the worse outcome.
+# refusing to start it because one server failed to fetch would be the worse outcome. The one
+# status that stops it is UPDATE_REFUSED: a server whose NEWER version did not install (PD-NF1).
 _refresh_servers() {
+    local rc=0
     command -v yolo >/dev/null 2>&1 || return 0
     YOLO_BYPASS_SHIMS=1 yolo internal refresh-servers \
         --home="$HOME" --npm="$SERVERS_NPM" \
-        --updates="$UPDATES_ENABLED" >&2 || true
+        --updates="$UPDATES_ENABLED" --bin="$BIN" >&2 || rc=$?
+    # UPDATE_REFUSED is a server whose NEWER version did not install (PD-NF1): the subcommand has
+    # said the refusal, and the command stops. Any other status is advisory, as above.
+    if [ "$rc" = "$UPDATE_REFUSED" ]; then exit "$UPDATE_REFUSED"; fi
+    return 0
 }
 
 if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then

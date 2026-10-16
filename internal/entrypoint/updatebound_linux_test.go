@@ -211,7 +211,9 @@ func TestAnUpdateThatSwitchesItsTerminalToRawModeFinishesAndTheAgentStarts(t *te
 
 // THE BOUND HOLDS FOR A PROGRAM THAT OUTLIVES SIGTERM. GNU timeout without -k sends SIGTERM and
 // waits for good; the launcher must instead kill it after UPDATE_GRACE, say the update timed out,
-// and run the installed version.
+// and run the installed version. Its upstream cannot be reached here (a dead registry, a closed
+// installer host), so the timeout could not check for a newer version and the installed version
+// runs (PD-NF3); a timeout whose upstream answers refuses (TestATimedOutUpdateWhoseUpstreamAnswersRefuses).
 func TestAnUpdateThatIgnoresSIGTERMIsKilledAfterTheGrace(t *testing.T) {
 	for _, tpl := range []struct {
 		name string
@@ -220,8 +222,8 @@ func TestAnUpdateThatIgnoresSIGTERMIsKilledAfterTheGrace(t *testing.T) {
 		for _, mode := range boundModes(t) {
 			t.Run(tpl.name+"/"+mode.name, func(t *testing.T) {
 				p := newBoundProbe(t, boundProbeOpts{npm: tpl.npm, verb: []string{"install"},
-					behave: ignoresTerm, timeout: 2, grace: 2})
-				l := startUnderPty(t, p, pathFor(t, mode.detached))
+					behave: ignoresTerm, timeout: 2, grace: 2, installerURL: silentHost(t)})
+				l := startUnderPty(t, p, deadRegistryDir(t)+":"+pathFor(t, mode.detached))
 				took := l.wait(t, 45*time.Second)
 				out := l.output()
 				t.Logf("the launcher printed:\n%s", out)
@@ -354,4 +356,19 @@ func TestCtrlCDuringAnInstallerUpdateRunsTheInstalledVersionAndRecordsNothing(t 
 			}
 		})
 	}
+}
+
+// deadRegistryDir is fakeRegistryDir for a cell whose environment it cannot add to (a launch under
+// a pty is given a fixed one): its npm's `ping` always fails, a registry that cannot be reached.
+func deadRegistryDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "deadregistry")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npm := "#!/bin/bash\nif [ \"${1:-}\" = ping ]; then exit 1; fi\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "npm"), []byte(npm), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

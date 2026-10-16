@@ -1,5 +1,12 @@
 package entrypoint
 
+import (
+	"strconv"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+)
+
 // updatebound.go is the launchers' UPDATE BOUND: how every UPDATE ACT — a pack's declared update
 // verb and its pre-launch refresh — is run, in all three launcher templates (npm, native and the
 // fork's source launcher), so that one cannot hang the command the user typed nor take the
@@ -130,7 +137,8 @@ _shielded() {
 }
 
 # _say_not_updated WHAT RC is the one line an update act that did not succeed gets: interrupted,
-# timed out, or failed with RC, then what happens next. A launch goes on with what is installed.
+# timed out, or failed with RC, then what happens next. A launch reaches it only for a Ctrl-C
+# (PD-NF4), and goes on with what is installed; its other failures are _yolo_failed_act's.
 # Update mode ("yolo pack update", YOLO_PACK_UPDATE=1) runs nothing, so it says the installed
 # version stays and how to retry, where it said it was running it.
 _say_not_updated() {
@@ -146,4 +154,144 @@ _say_not_updated() {
         echo "  ⚠ $BIN: $1 failed (status $2) — $next" >&2
     fi
 }
+
+# --- no quiet fallback to an older version (program-delivery.md PD-NF1, PD-NF2) --------------
+# When yolo found a newer version of this program and installing it failed, the command STOPS
+# and lists the hatches; it never quietly runs the older installed version. Not a failure: an
+# upstream that could not be reached at all (nothing says a newer version exists), a Ctrl-C at
+# the act (PD-NF4), a busy update lock (PD-NF5), and an agent_updates hold.
+#
+# UPDATE_REFUSED is the status of that stop: 75, sysexits' EX_TEMPFAIL ("try again later"),
+# distinct from 1 (nothing to run), 124 (a timeout) and 128+N (a signal), so a caller can tell "an
+# update failed and nothing ran" from the program's own status (UpdateRefusedStatus).
+UPDATE_REFUSED=__YOLO_UPDATE_REFUSED__
+# How long a probe of the program's upstream may take, in seconds (PD-NF3).
+PROBE_TIMEOUT=10
+# The declaring pack's name, which the hatch's value may name as well as the bin.
+_YOLO_HATCH_PACK=__YOLO_HATCH_PACK__
+# The refusal's "Start anyway:" block, rendered in Go (patchrecovery.Section) at generation, so the
+# refusal needs no yolo on PATH. Its label names "the installed version"; a refusal that knows the
+# version puts it there.
+_YOLO_HATCH_SECTION=__YOLO_HATCH_SECTION__
+# What an update act that failed left for its call site to refuse with, outside the act's lock and
+# shield: the ERROR line's text, the fact under it, and the installed version when it is known.
+# Empty when the act succeeded, could not check, or was interrupted.
+_YOLO_FAIL_HEAD=""
+_YOLO_FAIL_FACT=""
+_YOLO_FAIL_VER=""
+
+# _yolo_use_installed: 0 when the user's ` + patchrecovery.UseInstalledEnv + ` covers this program —
+# "1", or a comma-separated name equal to its bin or its pack (patchrecovery.Parse's grammar). Read
+# from the RUNTIME environment, never baked: the hatch is the command's, typed in front of it here or
+# in front of "yolo" on the host, which forwards it (container -e, the macos-user session env file).
+_yolo_use_installed() {
+    local v="${` + patchrecovery.UseInstalledEnv + `:-}"
+    v="${v//[[:space:]]/}"
+    [ -n "$v" ] || return 1
+    [ "$v" = 1 ] && return 0
+    case ",$v," in *",$BIN,"*) return 0 ;; esac
+    if [ -n "$_YOLO_HATCH_PACK" ]; then
+        case ",$v," in *",$_YOLO_HATCH_PACK,"*) return 0 ;; esac
+    fi
+    return 1
+}
+
+# _yolo_registry_reachable probes the npm registry this jail's npm is configured for, bounded by
+# PROBE_TIMEOUT: 1 when it could not be reached, 0 when it answered or there is no npm here to ask
+# with (no probe target known, which PD-NF3 treats as reachable). "npm ping", not "npm view" of a
+# package: a package the registry does not have is a registry that answered.
+_yolo_registry_reachable() {
+    command -v npm >/dev/null 2>&1 || return 0
+    YOLO_BYPASS_SHIMS=1 npm ping --fetch-retries=0 --fetch-timeout="$((PROBE_TIMEOUT * 1000))" </dev/null >/dev/null 2>&1
+}
+
+# _yolo_url_reachable URL probes an installer's host, bounded by PROBE_TIMEOUT: a HEAD with no -f, so
+# ANY HTTP answer (a 405 for HEAD included) is "reachable" and only no answer at all is not. 0 with no
+# URL or no curl: no probe target known.
+_yolo_url_reachable() {
+    [ -n "${1:-}" ] || return 0
+    command -v curl >/dev/null 2>&1 || return 0
+    YOLO_BYPASS_SHIMS=1 curl -sSI -o /dev/null --max-time "$PROBE_TIMEOUT" "$1" </dev/null >/dev/null 2>&1
+}
+
+# _yolo_failed_act RC WHAT PROBE... classifies an update act that has NO version query and failed
+# with RC (PD-NF3): a vendor's update verb, an installer re-run, a pre-launch refresh. Such an act
+# cannot say whether upstream had a newer version, so its upstream is probed (PROBE..., a command)
+# AFTER the failure: unreachable is "could not check" and the installed version runs, said in one
+# line; reachable, or no probe known, leaves _YOLO_FAIL_HEAD for the call site to refuse with. After
+# the failure rather than before every act: an act that succeeds costs no probe, and a failed act
+# whose upstream answers is the case the ruling stops on either way.
+_yolo_failed_act() {
+    local rc="$1" what="$2" reached=0 how
+    shift 2
+    "$@" || reached=$?
+    if [ "$_YOLO_INTERRUPTED" = 1 ]; then
+        echo "  ⚠ $BIN: $what interrupted (Ctrl-C) — running what is installed." >&2
+        return 0
+    fi
+    how="failed (status $rc)"
+    if [ "$rc" = 124 ]; then how="timed out after ${UPDATE_TIMEOUT}s"; fi
+    if [ "$reached" != 0 ]; then
+        echo "  $BIN: $what $how, and its upstream could not be reached to check for a newer version — running what is installed." >&2
+        return 0
+    fi
+    _YOLO_FAIL_HEAD="$BIN: $what $how"
+    _YOLO_FAIL_FACT="Its upstream answered, so a newer version may be waiting; the update's output is above."
+}
+
+# _yolo_update_refused STAMP HEAD FACT [VERSION] is the refusal: the ERROR line, the fact, Repair:,
+# then Start anyway: with the hatch, and exit UPDATE_REFUSED without running the program. STAMP (may
+# be empty) is the act's throttle stamp, removed so the next invocation retries the act rather than
+# quietly running what is installed for an hour. When the hatch covers this program it says one line
+# instead and returns, the stamp kept: the user chose the installed version for this throttle period.
+_yolo_update_refused() {
+    local stamp="$1" head="$2" fact="$3" ver="${4:-}" s="$_YOLO_HATCH_SECTION"
+    if _yolo_use_installed; then
+        echo "  ⚠ $head — running the installed version${ver:+ $ver}, as ` + patchrecovery.UseInstalledEnv + ` asks." >&2
+        return 0
+    fi
+    if [ -n "$stamp" ]; then rm -f "$stamp" 2>/dev/null || true; fi
+    if [ -n "$ver" ]; then s="${s/the installed version/the installed $ver}"; fi
+    {
+        echo "yolo: ERROR: $head"
+        echo "  $fact"
+        echo ""
+        echo "Repair:"
+        echo "  fix what stopped it (its output is above), then run $BIN again, which retries the update:"
+        echo "    $BIN"
+        printf '%s' "$s"
+    } >&2
+    exit "$UPDATE_REFUSED"
+}
+
+# _yolo_refuse_failed STAMP refuses with what a failed act left, if it left anything.
+_yolo_refuse_failed() {
+    [ -n "$_YOLO_FAIL_HEAD" ] || return 0
+    _yolo_update_refused "$1" "$_YOLO_FAIL_HEAD" "$_YOLO_FAIL_FACT" "$_YOLO_FAIL_VER"
+}
 `
+
+// UpdateRefusedStatus is the status a generated launcher exits with when it refuses to run the
+// installed version of a program whose newer version failed to install (docs/design/program-delivery.md
+// PD-NF1): EX_TEMPFAIL, distinct from the launchers' 1, 124 and 128+N. `yolo internal refresh-servers`
+// exits with it for an MCP server's refusal, and the launchers pass it through.
+const UpdateRefusedStatus = 75
+
+// useInstalledLabel is the hatch line's label; the shell puts the installed version in place of its
+// last word when it knows it.
+const useInstalledLabel = "run the installed version"
+
+// UseInstalledHatches is the refusal's hatch list for one program: its bin in front of its bin.
+func UseInstalledHatches(bin, command string) []patchrecovery.Hatch {
+	return []patchrecovery.Hatch{{Env: patchrecovery.UseInstalledEnv, Value: bin, Command: command, Label: useInstalledLabel}}
+}
+
+// useInstalledSplices renders the refusal's baked values for one launcher: the pack its hatch may
+// name, the "Start anyway:" block (no color: a launcher cannot ask the terminal), and the status.
+func useInstalledSplices(bin, pack string) []string {
+	return []string{
+		"__YOLO_HATCH_PACK__", shquote.Quote(pack),
+		"__YOLO_HATCH_SECTION__", shquote.Quote(patchrecovery.Section(patchrecovery.StartAnyway, UseInstalledHatches(bin, bin), false)),
+		"__YOLO_UPDATE_REFUSED__", strconv.Itoa(UpdateRefusedStatus),
+	}
+}
