@@ -175,6 +175,31 @@ func TestCachedGoodNamingAnExtensionReachesTheTreeArm(t *testing.T) {
 	}
 }
 
+// A SINGLE `<pack>/<name>` CACHED-GOOD KEY COVERING NOTHING SELECTED warns and goes on, as every
+// hatch's unmatched name does (§8.5): a hatch left in a shell profile never stops a workspace that
+// does not select the pack it names. Red with selectCachedGood refusing an exact-key typo.
+func TestASingleCachedGoodKeyCoveringNothingWarnsAndLaunches(t *testing.T) {
+	treeLaunchHome(t, true)
+	var got []string
+	slotRan := false
+	_, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.Getenv = cachedGoodEnv("otherpack/other")
+		o.BuildSlot = func(req BuildSlotRequest) (map[string]entrypoint.ForkDelivery, map[string]TreeDelivery) {
+			slotRan = true
+			if req.Trees != nil {
+				got = req.Trees.CachedGood
+			}
+			return nil, nil
+		}
+	})
+	if strings.Contains(printed, "Refusing cached-good recovery") || !slotRan || len(got) != 0 {
+		t.Errorf("an unmatched single key refused or selected something (slot ran %v, keys %q):\n%s", slotRan, got, printed)
+	}
+	if !strings.Contains(printed, "Warning: YOLO_USE_CACHED_GOOD names otherpack/other, which matches no patched build here") {
+		t.Errorf("no unmatched-name warning:\n%s", printed)
+	}
+}
+
 // A CACHED-GOOD NAME COVERING NOTHING, among names that cover something, warns and goes on.
 func TestCachedGoodWarnsForANameCoveringNothing(t *testing.T) {
 	treeLaunchHome(t, true)

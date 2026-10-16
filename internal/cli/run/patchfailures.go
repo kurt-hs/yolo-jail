@@ -130,9 +130,12 @@ func (o *Options) refusePatchFailures(rt string) bool {
 			out.print("")
 		}
 		continuing := f.runs != "" && !f.unneeded && bypass.Covers(f.subject)
+		// Nothing of it to run and the missing-program hatch set: the launch starts without it, which
+		// refuseMissingBuilds' warning line says.
+		startsWithout := f.runs == "" && !f.unneeded && o.Getenv(paths.AllowMissingProgramsEnv) != ""
 		b := f.bypass
-		if continuing {
-			// The hatch is already set: no list, one line under the block instead.
+		if continuing || startsWithout {
+			// The hatch is already set: no list, one line instead.
 			b = packsrc.PatchBypass{}
 		}
 		_, _ = io.WriteString(out.rt.W, f.failure.Render(f.label, f.recipe, b, out.rt.Color))
