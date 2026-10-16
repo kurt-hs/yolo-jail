@@ -41,7 +41,7 @@ type loopholeDaemon struct {
 	// daemon the launch check (launchcheck.go). Set by markLaunchCheck. hostWide marks an
 	// ATTACH's handle whose jail fronts a machine-wide copy an older yolo left running (since
 	// HD-R1 retired `host_daemon.scope: "host"` no launch starts one); runAttachLaunchChecks sets
-	// it, and a fresh launch's handle never has it (HD-D21).
+	// it, and a fresh launch's handle never has it (a fresh launch only names such a copy, HD-D26).
 	launchCheck   bool
 	hasJailDaemon bool
 	hostWide      bool

@@ -101,11 +101,10 @@ const (
 
 // runLaunchChecks asks every started daemon that is due one (see the file comment) and prints
 // the answers in the order the daemons started. A fresh launch first names each older yolo's
-// machine-wide copy of a loophole it started (noteOlderHostWideCopies). It refuses nothing, so it
-// always returns nil; the result is kept only because startPlannedLoopholes returns it beside the
-// startup refusal, which is the one refusal left on that path.
+// machine-wide copy of a loophole it started (noteOlderHostWideCopies). It refuses nothing: the
+// coexistence decision (HD-D26) leaves that copy serving the jails its yolo launched.
 func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload []loopholes.JailDaemonSpec,
-	entry launchCheckEntry) *olderDaemonRefusal {
+	entry launchCheckEntry) {
 	if entry == freshLaunchCheck {
 		o.noteOlderHostWideCopies(started)
 	}
@@ -173,7 +172,6 @@ func (o *Options) runLaunchChecks(rt string, started []loopholeDaemon, payload [
 			out.print("[dim]loophole " + h.name + ": " + richtext.Escape(launchCheckText(n)) + "[/dim]")
 		}
 	}
-	return nil
 }
 
 // olderHostWideAlive reports whether the loophole called name still has a machine-wide copy an
@@ -186,11 +184,10 @@ func olderHostWideAlive(name string) bool {
 	return broker.BrokerIsAlive(deps) && broker.LegacyCopyServesHome(deps, paths.Home())
 }
 
-// olderDaemonRefusal is the refusal startPlannedLoopholes returns beside its handles. Since the
-// owner's coexistence decision (2026-10-16) an older yolo's machine-wide copy refuses nothing, so
-// the one refusal it carries is an opted-in daemon's startup refusal; the name is the one the
-// keeper and packloopholes.go still spell.
-type olderDaemonRefusal struct {
+// servicesRefusal is the refusal startPlannedLoopholes returns beside its handles. Since the
+// owner's coexistence decision (2026-10-16, HD-D26) an older yolo's machine-wide copy refuses
+// nothing, so the one refusal it carries is an opted-in daemon's startup refusal.
+type servicesRefusal struct {
 	startup *hostStartupRefusal
 }
 
@@ -251,13 +248,13 @@ func olderHostWideCopyLine(name string) string {
 }
 
 // text is the refusal after its headline: the startup refusal's own words.
-func (r *olderDaemonRefusal) text() string {
+func (r *servicesRefusal) text() string {
 	return r.startup.Error()
 }
 
 // markup is the refusal as the launch stream prints it; headline names who refuses ("Refusing this
 // launch", "Refusing the macos-user launch").
-func (r *olderDaemonRefusal) markup(headline string) string {
+func (r *servicesRefusal) markup(headline string) string {
 	return "[bold red]" + richtext.Escape(headline+": "+r.text()) + "[/bold red]"
 }
 

@@ -252,7 +252,7 @@ type Options struct {
 	crossingLabel svcendpoint.CrossingLabel
 	// startupRefusal is an attempt-specific fatal configuration refusal captured while a per-jail
 	// service was starting. The lifecycle caller returns it through the same unwind boundary as
-	// olderDaemonRefusal, while never treating historical log text as evidence.
+	// servicesRefusal, while never treating historical log text as evidence.
 	startupRefusal *hostStartupRefusal
 	// startupOutcomes holds this launch's owner-local evidence and is never serialized to a keeper.
 	startupOutcomes   []hostservice.StartupOutcome

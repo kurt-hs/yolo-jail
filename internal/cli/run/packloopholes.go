@@ -915,11 +915,11 @@ func (o *Options) logPackJailCodeItems(packs []*packload.Pack) {
 // a started daemon says will fail for this launch prints here or nowhere. payload is the
 // launch's composed jail-daemon payload (jailDaemonsFor), which says whose jail daemon this
 // launch serves, and which of the jail daemons it names the jail runs. The refusal beside the
-// handles is a host-wide daemon older than this yolo's (olderDaemonRefusal, launchcheck.go):
+// handles is a host-wide daemon older than this yolo's (servicesRefusal, launchcheck.go):
 // non-nil, the caller prints it and refuses the launch, unwinding those handles as it does on any
 // other refusal.
 func (o *Options) startLoopholesDisclosed(cname, rt string, cfg *jsonx.OrderedMap,
-	packs []*packload.Pack, payload []loopholes.JailDaemonSpec) ([]loopholeDaemon, *olderDaemonRefusal) {
+	packs []*packload.Pack, payload []loopholes.JailDaemonSpec) ([]loopholeDaemon, *servicesRefusal) {
 	o.discloseLoopholes(rt, cfg, packs, payload)
 	return o.startPlannedLoopholes(cname, rt, cfg, payload)
 }
@@ -979,10 +979,11 @@ func (o *Options) discloseLoopholes(rt string, cfg *jsonx.OrderedMap, packs []*p
 // startPlannedLoopholes is the spawn boundary's second half: the host services themselves, and the
 // launch check once they are up. Its callers are startLoopholesDisclosed, below its disclosure, and
 // the keeper, which starts only what the launch disclosed from its plan (keeper.go's checkPlan
-// refuses anything else first). The refusal for a host-wide daemon older than this yolo comes back
-// beside the handles: the services stay up until the caller unwinds them.
+// refuses anything else first). A started daemon's startup refusal comes back beside the handles:
+// the services stay up until the caller unwinds them. An older yolo's machine-wide copy refuses
+// nothing (the coexistence decision, HD-D26): runLaunchChecks names it in one line.
 func (o *Options) startPlannedLoopholes(cname, rt string, cfg *jsonx.OrderedMap,
-	payload []loopholes.JailDaemonSpec) ([]loopholeDaemon, *olderDaemonRefusal) {
+	payload []loopholes.JailDaemonSpec) ([]loopholeDaemon, *servicesRefusal) {
 	// Each daemon's readiness wait is bounded at seconds and they run one after
 	// another, so a slow host service can hold the launch for several of them: the
 	// start gets a progress line (silent when the services answer promptly, which
@@ -993,13 +994,11 @@ func (o *Options) startPlannedLoopholes(cname, rt string, cfg *jsonx.OrderedMap,
 		return true
 	})
 	if o.startupRefusal != nil {
-		return started, &olderDaemonRefusal{startup: o.startupRefusal}
+		return started, &servicesRefusal{startup: o.startupRefusal}
 	}
-	refused := o.runLaunchChecks(rt, started, payload, freshLaunchCheck)
-	if refused == nil {
-		// OQ-HD9's at-launch catch-up of Claude's shared login, before the agent runs and only for
-		// a launch that goes on (claudelogincatchup.go).
-		o.catchUpClaudeLogin(started)
-	}
-	return started, refused
+	o.runLaunchChecks(rt, started, payload, freshLaunchCheck)
+	// OQ-HD9's at-launch catch-up of Claude's shared login, before the agent runs and only for a
+	// launch that goes on (claudelogincatchup.go).
+	o.catchUpClaudeLogin(started)
+	return started, nil
 }

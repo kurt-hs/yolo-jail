@@ -44,7 +44,7 @@ import (
 // (IsUnknownLaunchCheck) as a daemon that lacks the check rather than as a check that merely
 // failed: from a launch's own copy, a manifest declaring a check its program lacks; through an
 // attach's front into a jail an older yolo launched, that yolo's machine-wide copy, whose stop
-// the line names (internal/cli/run/launchcheck.go; OQ-HD11, HD-D5 and HD-D21 in
+// the line names (internal/cli/run/launchcheck.go; OQ-HD11, HD-D5 and HD-D26 in
 // docs/design/host-daemon-ownership.md).
 //
 // First consumer: packs/aws-auth, whose daemon answers with the mint failure that would fail
