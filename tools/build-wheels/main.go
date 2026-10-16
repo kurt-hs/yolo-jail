@@ -200,10 +200,10 @@ func repoRoot() string {
 	return wd
 }
 
-// gitCommit returns the short HEAD hash, or "" if git is unavailable (the
+// gitCommit returns HEAD's hash in 12 digits, or "" if git is unavailable (the
 // Python builder likewise tolerated a missing commit and dropped the -X flag).
 func gitCommit(root string) string {
-	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd := exec.Command("git", "rev-parse", "--short=12", "HEAD")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -212,15 +212,24 @@ func gitCommit(root string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// stampLdflags is the -ldflags a wheel's binaries carry. A release names its commit:
+// the version string is <version>+g<commit>, the form goreleaser and the Homebrew
+// formula stamp (OQ-DA2, ruled 2026-10-16), while the wheel's own version stays the
+// plain release version. With no commit known, both stamps fall back to the version.
+func stampLdflags(version, commit string) string {
+	if commit == "" {
+		return "-s -w -X " + versionPkg + ".buildVersion=" + version
+	}
+	return "-s -w -X " + versionPkg + ".buildVersion=" + version + "+g" + commit +
+		" -X " + versionPkg + ".GitCommit=" + commit
+}
+
 // compileBinaries cross-compiles every host binary for one platform and returns
 // script-name -> bytes. The ldflags set is the retired Python builder's, kept
 // when the wheels were checked byte for byte against it: no -trimpath, unlike
 // scripts/build-go.sh and the flake's hermetic build.
 func compileBinaries(version, goos, goarch, goBinary, commit, tmpDir, root string) (map[string][]byte, error) {
-	ldflags := "-s -w -X " + versionPkg + ".buildVersion=" + version
-	if commit != "" {
-		ldflags += " -X " + versionPkg + ".GitCommit=" + commit
-	}
+	ldflags := stampLdflags(version, commit)
 
 	out := map[string][]byte{}
 	for _, b := range binaries {
