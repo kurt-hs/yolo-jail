@@ -71,10 +71,10 @@ activation rulings [OQ-PC2](#OQ-PC2) bears on), [`manifest-language.md`](manifes
   implied contributions ([§5.1](#51-two-expansion-points-both-already-there)).
 - **Written form**: the same contributions spelled out in `pack.json`, as today.
 - **Use read** and **authoring read**: terms coined by
-  [PF-D68](patched-forks.md#PF-D68). A use read is one a launch or host verb acts on, and it skips
+  [PF-D68](../reference/patched-forks.md#PF-D68). A use read is one a launch or host verb acts on, and it skips
   what it cannot read; an authoring read (`yolo pack lint`, `yolo pack footprint`) refuses it.
 - **The skip**: a launch's skipping, and naming, of a contribution holding a kind, a `via` or a
-  field its yolo does not know, instead of refusing the pack ([PF-D68](patched-forks.md#PF-D68)).
+  field its yolo does not know, instead of refusing the pack ([PF-D68](../reference/patched-forks.md#PF-D68)).
   `yolo features` lists it as `skips-unreadable-contributions`. It is on `main` since 2026-10-05
   and in no release yet.
 - **Slot**, **addressed tree**, **landing** and **registration**: as
@@ -86,7 +86,7 @@ activation rulings [OQ-PC2](#OQ-PC2) bears on), [`manifest-language.md`](manifes
   or a briefing or skills destination's `agent`. An `agents` entry outside it fails the launch
   ([BA-P3](../reference/agent-briefings.md#ba-p3)).
 - **Patched extension**: a `files` contribution with `source` and `patches`, built from an
-  upstream with a series replayed ([`patched-extensions.md`](patched-extensions.md#1-defined-terms)).
+  upstream with a series replayed ([`pi-extensions.md`](../reference/pi-extensions.md#1-defined-terms)).
 - **Posture**: one side of an `autonomy` contribution, `autonomous` (every jail) or `guarded` (the
   host). It may carry config patches and list entries for that side.
 - **Notch**: where an agent runs, a jail or the user's own home on the host.
@@ -125,9 +125,9 @@ Two kinds of older yolo read a pack differently.
 
 **A yolo with the skip.** Its use read and the jail's tolerant read **skip** a contribution
 holding a kind, a `via` or a field they do not know, and name the skip in one line. They keep a
-restricting kind without the field ([PF-D69](patched-forks.md#PF-D69)), and they ignore a
+restricting kind without the field ([PF-D69](../reference/patched-forks.md#PF-D69)), and they ignore a
 pack-wide field they do not know and name it. They **refuse** a missing required field, a
-malformed value, or a combination they validate as wrong. [PF-D68](patched-forks.md#PF-D68):
+malformed value, or a combination they validate as wrong. [PF-D68](../reference/patched-forks.md#PF-D68):
 *"What no newer yolo makes readable stays a problem: … a missing required field."* A refusal fails
 every launch on that host, which is the first of the maintainer's patch-series requests over again.
 
@@ -166,7 +166,7 @@ So the obvious spelling of a convention, leaving a field out, is the one spellin
    conventions need it.
 
 Each convention also gets a `yolo features` name in the commit that builds it, by
-[PF-D71](patched-forks.md#PF-D71)'s rule, so a host can be asked before a pack relies on it.
+[PF-D71](../reference/patched-forks.md#PF-D71)'s rule, so a host can be asked before a pack relies on it.
 
 > [!NOTE]
 > This rule bears on [OQ-M1](manifest-language.md#OQ-M1). Its per-kind defaults for `into`,
@@ -206,11 +206,11 @@ exists is its open question's to decide.
 **The rule, as proposed.** A registering slot registers every patched extension whose `into` is a
 **direct child** of the slot, as it registers an addressed tree landed at `<slot>/<pack>`. If the
 contributing pack writes any list entry that loads the tree (`loadsTree`,
-[PPX-D36](patched-extensions.md#PPX-D36)), that entry replaces the registration
+[PPX-D36](../reference/pi-extensions.md#PPX-D36)), that entry replaces the registration
 ([PC-D2](#PC-D2)). Whether this exists is [OQ-PC3](#OQ-PC3).
 
 It covers patched extensions only, on purpose. On a yolo without C1, the patched-tree lint names
-a patched extension nothing loads ([PPX-D10](patched-extensions.md#PPX-D10)), but nothing names a
+a patched extension nothing loads ([PPX-D10](../reference/pi-extensions.md#PPX-D10)), but nothing names a
 plain tree. A plain tree written into the slot would be delivered and never loaded, with no line,
 which [P4](#p4) forbids. A plain `files` contribution, a tree or a single file, takes route C's
 addressed form, which the slot registers.
@@ -288,17 +288,17 @@ as loaded, never through destination resolution: the launch's block for its patc
 `yolo host -- pi`, the fork pins and `yolo capture`. A registration added only at destination
 resolution reaches `yolo host apply`'s render and none of them. `yolo host -- pi` would then start
 pi with a `packages` entry naming a tree nothing built, the failure
-[PPX-D18](patched-extensions.md#PPX-D18) exists to stop. So C1 expands at the selection's rewrite
+[PPX-D18](../reference/pi-extensions.md#PPX-D18) exists to stop. So C1 expands at the selection's rewrite
 ([§5.1](#51-two-expansion-points-both-already-there)).
 
-**The launch's refusal.** [PPX-D40](patched-extensions.md#PPX-D40)'s refusal for a tree with no
+**The launch's refusal.** [PPX-D40](../reference/pi-extensions.md#PPX-D40)'s refusal for a tree with no
 build offers dropping "the list entry" as a way back. Under C1 the entry may be implied, so the
 refusal names the implied registration and its two ways off: a written entry the pack controls,
 such as one in a posture list for one notch only ([PC-D2](#PC-D2)), or an `into` outside the slot.
 
 **On an older yolo.** A yolo with patched extensions but without C1 builds and mounts the tree,
 nothing registers it, and the patched-tree lint names the entry to add
-([PPX-D10](patched-extensions.md#PPX-D10)). Degraded, and named. A release through v0.11.1 knows
+([PPX-D10](../reference/pi-extensions.md#PPX-D10)). Degraded, and named. A release through v0.11.1 knows
 no patched extension and refuses `patches`, whichever `into` it names.
 
 **Core's text.** The patch-series guide, `config-ref`'s `files` entry, and the missing-`into`
@@ -547,7 +547,7 @@ go once every host reads the convention. It is never a warning, and the exit sta
 | C1: a written entry of the contributing pack loads it (any list, any posture) | That entry alone. No registration |
 | C1: a tree lands deeper than a direct child of the slot | Not registered. `yolo pack lint` and `yolo check` warn, naming the direct-child form. Never refused ([PC-D3](#PC-D3)) |
 | C1: a plain `files` contribution is written into the slot | Not registered. Lint names route C's addressed form |
-| C1: the tree has no build at this notch | The registration counts as a written entry would, and [PPX-D18](patched-extensions.md#PPX-D18) and [PPX-D40](patched-extensions.md#PPX-D40) decide. The refusal names the implied registration and its ways off ([§4.1](#41-c1-a-patched-extension-in-pis-package-folder-loads-with-no-list-entry)) |
+| C1: the tree has no build at this notch | The registration counts as a written entry would, and [PPX-D18](../reference/pi-extensions.md#PPX-D18) and [PPX-D40](../reference/pi-extensions.md#PPX-D40) decide. The refusal names the implied registration and its ways off ([§4.1](#41-c1-a-patched-extension-in-pis-package-folder-loads-with-no-list-entry)) |
 | C1: no registering slot is selected | Nothing is registered, and the patched-tree lint fires, naming the entry `~/<into>` and no agent ([PC-D4](#PC-D4)) |
 | C1: a tree's landing equals another pack's addressed landing | Refused at the launch, naming both packs, by the check over resolved landings C1 adds. Nothing compares them today |
 | C1: the pack is dropped | The registration goes with it, at both notches: `config-list`'s rule ([pack-system.md, pi packages](../reference/pack-system.md#pi-registration-cases)) |
@@ -718,7 +718,7 @@ to overrule. A decision under an open question applies only if that question is 
 | ID | Decision | Why it holds | Built |
 | :--- | :--- | :--- | :--- |
 | <a id="PC-D1"></a>PC-D1 | **Withdrawn in review, 2026-10-05: now [OQ-PC3](#OQ-PC3).** It registered a written `into` directly in a registering slot as an implementation decision. That amends [`pi-pack-extensions.md`](pi-pack-extensions.md)'s [OQ-4](pi-pack-extensions.md#10-decision-ledger), [OQ-6](pi-pack-extensions.md#10-decision-ledger) and [invariant 2](pi-pack-extensions.md#8-invariants-and-failure-modes), and [BA-P4](../reference/agent-briefings.md#ba-p4) | A ledger decision may not override a ruling | — |
-| <a id="PC-D2"></a>PC-D2 | Under [OQ-PC3](#OQ-PC3) A: a written list entry of the **contributing pack** that loads a tree (`loadsTree`, [PPX-D36](patched-extensions.md#PPX-D36)), in any list or posture, replaces that tree's registration | [P5](#p5); `owningAgentPack` reads only the contributing pack's lists; lets a monorepo tree and a guarded-only tree live in the folder | — |
+| <a id="PC-D2"></a>PC-D2 | Under [OQ-PC3](#OQ-PC3) A: a written list entry of the **contributing pack** that loads a tree (`loadsTree`, [PPX-D36](../reference/pi-extensions.md#PPX-D36)), in any list or posture, replaces that tree's registration | [P5](#p5); `owningAgentPack` reads only the contributing pack's lists; lets a monorepo tree and a guarded-only tree live in the folder | — |
 | <a id="PC-D3"></a>PC-D3 | Under [OQ-PC3](#OQ-PC3) A: a tree deeper than a direct child of a registering slot is not registered; lint and `yolo check` warn, naming the direct-child form; never refused | A deeper tree can sit inside another pack's landing, and a new refusal on a use read refuses a launch | — |
 | <a id="PC-D4"></a>PC-D4 | The patched-tree lint names the list from the `register` of a registering slot the selected packs declare (the shipped packs, at `yolo pack lint`), not pi's surface. With none selected it names the entry `~/<into>` and no agent. The missing-`into` refusal gives no agent's path. Needs no ruling, and rides the [pi packages](../reference/pack-system.md#pi-packages) build | [P2](#p2): core's text names pi today, at `patchedtrees.go:199` and in the missing-`into` refusal's example in `patchedext.go` | — |
 | <a id="PC-D5"></a>PC-D5 | **Withdrawn in review, 2026-10-05: the posture spelling is handed to [OQ-M1](manifest-language.md#OQ-M1)** ([§7](#7-considered-and-not-proposed)) | It is syntax, and review found it reverses [PF-D69](patched-forks.md#PF-D69)'s premise for `guarded` on an older host | — |
@@ -731,7 +731,7 @@ to overrule. A decision under an open question applies only if that question is 
 | <a id="PC-D12"></a>PC-D12 | C1 and C2 expand at the selection's rewrite, beside `packload.ApplyForks`, wherever it runs; C3 at the pack load; `briefing/<agent>/` inside `GovernedSources`, from the vocabulary the rewrite records on the pack. Every expansion records the written declaration as `origDecl`, and each place gets a test that fails when its call is deleted | The readers of a selection take it as loaded, not resolved ([§5.1](#51-two-expansion-points-both-already-there)), and `ApplyForks` is already the one rewrite every assembled selection passes | — |
 | <a id="PC-D13"></a>PC-D13 | Under [OQ-PC1](#OQ-PC1) A or B: the opt-in is `"conventions": <n>`. A build reading an `n` above its highest applies its highest and names the rest in one line, never refuses. Each level gets a `yolo features` name | The use read refuses a malformed value, so a build that read `2` as malformed would refuse every launch, against [P3](#p3) | — |
 | <a id="PC-D14"></a>PC-D14 | Under [OQ-PC1](#OQ-PC1) A or B: `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` inside `briefing/<agent>/` is refused in a pack that opted in. In a pack that did not, the folder stays unread | [OQ-PB2](../reference/pack-system.md#oq-pb2) refuses those names as a source at any depth, and the load's check reads only the files directly inside `briefing/` today; opt-in only, so an upgrade refuses no existing pack | — |
-| <a id="PC-D15"></a>PC-D15 | A `shared_credentials` or `shared_directory` hook whose `at` is not one of its pack's machine-scope `state` dirs is refused by every host read of the manifest (`yolo pack lint`, `yolo check`, a launch's use read), through the predicate and the sentence the boot's hook step uses (`packdecl.Manifest.DeclaresMachineState`, `packdecl.Manifest.UndeclaredHookStateProblem`). The sentence names the next step for this pack: change the scope of the workspace `state` already at that path, or else add the machine `state` line. A path one pack declares as `state` at both scopes is refused too (`validateStateScopes`), since its two binds share one destination and podman refuses the container. `unshare_directory` is exempt: it undoes a link into a dir the pack no longer declares. The jail's tolerant decode does not run either check, so the boot's own refusal at the hook step stays where it was. **The refusal is wider than the boot's**: the use read runs on every launch, so a `yolo host` launch and a sealed build jail, which never run the hook step and used to accept such a pack, refuse it now | Every jail launch of this pack fails at the hook step, so the host refusal moves that failure to where it is cheap to fix. Refusing the launches that skip the hook step as well is accepted because a manifest's validity is not per notch: every other check in `Manifest.Validate` refuses a contribution on every use read, including notches that never read that contribution. The pack is wrong on its face, and the fix is the one manifest edit the refusal names. A machine `state` skipped as version skew on a use read leaves its hook refused on the host as the boot would refuse it; skipping the hook with it, as [PF-D76](patched-forks.md#PF-D76) skips an adapter, is not built | 2026-10-06 |
+| <a id="PC-D15"></a>PC-D15 | A `shared_credentials` or `shared_directory` hook whose `at` is not one of its pack's machine-scope `state` dirs is refused by every host read of the manifest (`yolo pack lint`, `yolo check`, a launch's use read), through the predicate and the sentence the boot's hook step uses (`packdecl.Manifest.DeclaresMachineState`, `packdecl.Manifest.UndeclaredHookStateProblem`). The sentence names the next step for this pack: change the scope of the workspace `state` already at that path, or else add the machine `state` line. A path one pack declares as `state` at both scopes is refused too (`validateStateScopes`), since its two binds share one destination and podman refuses the container. `unshare_directory` is exempt: it undoes a link into a dir the pack no longer declares. The jail's tolerant decode does not run either check, so the boot's own refusal at the hook step stays where it was. **The refusal is wider than the boot's**: the use read runs on every launch, so a `yolo host` launch and a sealed build jail, which never run the hook step and used to accept such a pack, refuse it now | Every jail launch of this pack fails at the hook step, so the host refusal moves that failure to where it is cheap to fix. Refusing the launches that skip the hook step as well is accepted because a manifest's validity is not per notch: every other check in `Manifest.Validate` refuses a contribution on every use read, including notches that never read that contribution. The pack is wrong on its face, and the fix is the one manifest edit the refusal names. A machine `state` skipped as version skew on a use read leaves its hook refused on the host as the boot would refuse it; skipping the hook with it, as [PF-D76](../reference/patched-forks.md#PF-D76) skips an adapter, is not built | 2026-10-06 |
 
 ## Appendix A: counts
 

@@ -1,7 +1,7 @@
 package cli
 
 // patchedseriescheck_test.go pins `yolo pack series check` (patchedseriescheck.go;
-// docs/design/patched-forks.md PF-D65) through the verb itself, against a real local upstream: in a
+// docs/reference/patched-forks.md PF-D65) through the verb itself, against a real local upstream: in a
 // jail, with no pack store or check record of the host's, it reaches the verdict `yolo pack status`
 // reads on the host for the same series — the newest version that does not take it, and the member
 // and the paths that stop it (PF-D81: no older fit is a launch's) — and it writes nothing in the pack, nothing in

@@ -1,6 +1,6 @@
 package run
 
-// patchedtrees_test.go pins the launch's half of a PATCHED EXTENSION (docs/design/patched-extensions.md
+// patchedtrees_test.go pins the launch's half of a PATCHED EXTENSION (docs/reference/pi-extensions.md
 // §8.1, §9, §11; PPX-D7, PPX-D8, PPX-D18) at its call sites, from Run's own entry point: a fresh
 // launch runs the tree arm in the fork slot with the copy root beside its pack tree, mounts the copy
 // it gets back read-only at `into` and never the pack's own staged tree there, hands the jail

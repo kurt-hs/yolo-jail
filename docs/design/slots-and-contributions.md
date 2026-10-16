@@ -74,7 +74,7 @@ owner segment survives, and a pack's own declarations take its identity, [SC-D3]
 [`agent-briefings.md`](../reference/agent-briefings.md#audiences-what-varies-per-destination) (the `agent`/`agents` mechanism this splits
 apart), [`stringly-typed-references-principle.md`](../reference/stringly-typed-references-principle.md)
 (what a name may reference), [`pi-pack-extensions.md`](pi-pack-extensions.md) (the concrete
-case, and the bug that forced this), [`pi-extension-lifecycle.md`](pi-extension-lifecycle.md) (the sibling fetch axis),
+case, and the bug that forced this), [`pi-extensions.md`](../reference/pi-extensions.md#17-the-pre-launch-refresh) (the sibling fetch axis),
 [`manifest-language.md`](manifest-language.md) (the
 sibling concern — the manifest's *surface*, or how many bytes say one fact).
 

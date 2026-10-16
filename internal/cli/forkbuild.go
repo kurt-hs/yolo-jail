@@ -257,7 +257,7 @@ type forkBuild struct {
 	Fork     packload.Fork
 	Commit   string
 	Platform string
-	// Series is a PATCHED fork's series as its act read it, once (docs/design/patched-forks.md
+	// Series is a PATCHED fork's series as its act read it, once (docs/reference/patched-forks.md
 	// §3.2): the bytes the build replays and whose digest its recipe carries. nil for a plain fork.
 	Series *packsrc.Series
 	// Entry is the walk's list entry a patched build is of (its commit, and the version tag its
@@ -1082,7 +1082,7 @@ func buildForkUnderLock(b forkBuild, mode buildMode, store *capture.Store, pr ri
 // the same key another launch is running, and then uses that build (FP-D1). It never fails the
 // launch: a failed build is its fork's reason, printed by the fork's launcher in the jail (§9).
 //
-// A PATCHED fork gets its ADVANCE instead (patchedadvance.go; docs/design/patched-forks.md §6,
+// A PATCHED fork gets its ADVANCE instead (patchedadvance.go; docs/reference/patched-forks.md §6,
 // §7): its upstream checked, its series replayed and the newest fit built, the good build moved
 // once that build is admitted, and the good build handed, which the request's Hand records.
 //
@@ -1438,7 +1438,7 @@ func buildJailArgv(f packload.Fork, build string) []string {
 	return forkBuildJailArgv(build)
 }
 
-// treeBuildJailArgv is a PATCHED EXTENSION's build jail command (docs/design/patched-extensions.md
+// treeBuildJailArgv is a PATCHED EXTENSION's build jail command (docs/reference/pi-extensions.md
 // §7.1, PPX-D5): capture-run, as a fork's, around a script that writes the toolchain record first —
 // the image's identity and the version of the image's own node and npm, which the build runs with
 // (PF-D39 reads the record's absence as a jail that never ran its build line) — then runs the
@@ -1471,7 +1471,7 @@ func treeBuildJailArgv(build, name string) []string {
 	}
 }
 
-// treeAdmitProblem is a PATCHED EXTENSION's admit (docs/design/patched-extensions.md §7.1, PPX-D5),
+// treeAdmitProblem is a PATCHED EXTENSION's admit (docs/reference/pi-extensions.md §7.1, PPX-D5),
 // "" when the build may be admitted. Beside the empty-delta refusal captureStaged makes, and the link
 // check every build gets (linksIntoTheBuild), three checks, each one a failed build:
 //

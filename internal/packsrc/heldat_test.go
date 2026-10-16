@@ -1,6 +1,6 @@
 package packsrc
 
-// heldat_test.go pins CheckRecord.HeldAt (patchcheck.go; docs/design/patched-forks.md §8's held
+// heldat_test.go pins CheckRecord.HeldAt (patchcheck.go; docs/reference/patched-forks.md §8's held
 // suffix): what holds the newest candidate back, read offline — the first entry the walk reaches
 // that a conflict or a failed build of the series as it stands stops, the last check's problem, or
 // nothing when the first entry may still fit.

@@ -1,6 +1,6 @@
 package packdecl
 
-// patchbranch_test.go pins the manifest half of a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6,
+// patchbranch_test.go pins the manifest half of a PATCH BRANCH (docs/reference/patched-forks.md §3.5, OQ-PFK6,
 // PF-D87): `patch_branch` accepted in place of `patches` on a fork's program and on a `files` extension,
 // its address checked as a source's, the pair refused at the strict decode naming the owner key,
 // both fields and which to keep, and two contributions of one pack, one with each, accepted.

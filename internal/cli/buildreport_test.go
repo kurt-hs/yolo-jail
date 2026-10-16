@@ -1,6 +1,6 @@
 package cli
 
-// buildreport_test.go pins a jail launch's build report (buildreport.go, docs/design/patched-forks.md
+// buildreport_test.go pins a jail launch's build report (buildreport.go, docs/reference/patched-forks.md
 // PF-D79): a successful build is its start line, its disclosure line and its result line on the
 // terminal, and everything its build jail printed is in launch.log and the build's own log; the
 // nested launch's warnings stay on the terminal; a failed build prints its last lines and its log

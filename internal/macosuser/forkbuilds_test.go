@@ -10,7 +10,7 @@ import (
 )
 
 // THE FORK DECISIONS REACH THE BOOTSTRAP (docs/design/forked-programs-as-packs.md FP-D3,
-// docs/design/patched-forks.md §9): the bootstrap generates the sandbox's launcher for a forked
+// docs/reference/patched-forks.md §9): the bootstrap generates the sandbox's launcher for a forked
 // program, which bakes its bin's decision, so the reason the launch composed for each fork — this
 // backend delivers none, and a container backend does — is relayed from the launch env, and nothing
 // is when the launch carried no fork.

@@ -23,7 +23,7 @@ import (
 // identity — OQ-FP2's record, which is on the receipt and never in the capture manifest, whose
 // invariant is that nothing about the producing run is in it). A PATCHED fork's build adds five
 // more, additive as FP-D8 lets the schema grow: `fork`, `series`, `tree`, `tag` and `version`
-// (docs/design/patched-forks.md §6.3).
+// (docs/reference/patched-forks.md §6.3).
 
 // ReceiptKindBuild is a fork build's receipt kind.
 const ReceiptKindBuild = "build"
@@ -49,7 +49,7 @@ type BuildReceipt struct {
 	Recipe string
 	// Toolchain is the image identity of the jail the build ran in, "" when it could not be read.
 	Toolchain string
-	// Fork, Series, Tree, Tag and Version are a PATCHED fork's build's (docs/design/patched-forks.md
+	// Fork, Series, Tree, Tag and Version are a PATCHED fork's build's (docs/reference/patched-forks.md
 	// §6.3, PF-D7), and a plain fork's build writes none of them: the fork key ("<pack>/<bin>"),
 	// which a patched build's selection keys on in place of its source, so no plain fork's query
 	// and no other fork's selects it; the series digest; the PATCHED TREE (the git tree object

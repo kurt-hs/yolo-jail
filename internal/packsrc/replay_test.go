@@ -1,6 +1,6 @@
 package packsrc
 
-// replay_test.go pins the REPLAY and the newest-fit walk (replay.go; docs/design/patched-forks.md
+// replay_test.go pins the REPLAY and the newest-fit walk (replay.go; docs/reference/patched-forks.md
 // §5, §6.4) against a real blobless mirror: the cases the design measured — a member whose
 // context moved upstream applies, an edit between the members' lines conflicts at the first, a
 // member already upstream is clean — the walk stopping at the newest fit, the base that does not

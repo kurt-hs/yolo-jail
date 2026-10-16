@@ -1,7 +1,7 @@
 package cli
 
 // features.go is `yolo features`: what this build of yolo can read in a pack, one capability per
-// line (docs/design/patched-forks.md PF-D71). It exists because a version string cannot answer
+// line (docs/reference/patched-forks.md PF-D71). It exists because a version string cannot answer
 // that question — two different builds can print the same one — and the only other probe was
 // linting a scratch pack on each host.
 

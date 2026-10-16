@@ -162,7 +162,7 @@ func pinForkDeclarationsContext(ctx context.Context, pr richtext.Printer, errw i
 		fmt.Fprintf(errw, "yolo pack: writing %s: %v\n", lockPath, err)
 		return 1
 	}
-	// THE PATCHED FORKS (docs/design/patched-forks.md §8.3), after the fork lock is released — the
+	// THE PATCHED FORKS (docs/reference/patched-forks.md §8.3), after the fork lock is released — the
 	// fork lock comes before a check record's lock, and nothing here holds both: update checks and
 	// replays every one, install those with no good build.
 	if checkTrees {

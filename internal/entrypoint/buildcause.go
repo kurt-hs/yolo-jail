@@ -2,7 +2,7 @@ package entrypoint
 
 // buildcause.go is a MISSING BUILD'S CAUSE as the host's build act states it, for every reader of
 // it: the launch's refusal of a missing patched build (internal/cli/run's missingbuilds.go,
-// docs/design/patched-extensions.md PPX-D40, patched-forks.md PF-D77), its warnings, and the jail's
+// docs/reference/pi-extensions.md PPX-D40, patched-forks.md PF-D77), its warnings, and the jail's
 // launcher gate (treeGateFor), which is handed it in YOLO_PATCHED_TREES. A BUILD CAUSE (a term
 // coined here) is the cause alone, in plain words and with no extension key in it, so several
 // builds that failed one way share one and are said once with the list of what they left without

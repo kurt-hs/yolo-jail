@@ -1,6 +1,6 @@
 package run
 
-// treenotch.go is a jail launch's half of PPX-D35 (docs/design/patched-extensions.md): a patched
+// treenotch.go is a jail launch's half of PPX-D35 (docs/reference/pi-extensions.md): a patched
 // extension whose list entry reaches no jail — the owning agent pack's entry naming it is in a
 // guarded posture list, which reaches the host alone — is built, copied and mounted in no jail. The
 // launch's block still names it (patchedTreeLine), and the tree arm, the mount, YOLO_PATCHED_TREES,

@@ -1,7 +1,7 @@
 package packload
 
 // duplicateloads.go is the DUPLICATE-LOAD LINT (a term coined here) for a patched extension
-// (docs/design/patched-extensions.md PPX-D34): one list that loads an extension's built tree from
+// (docs/reference/pi-extensions.md PPX-D34): one list that loads an extension's built tree from
 // `~/<into>` and loads the same package again from a remote entry.
 //
 // pi tells packages apart by source, and names a local folder `local:<path>`, so an extension's old

@@ -330,7 +330,7 @@ type unresolvedPack struct {
 	ManifestProblems []string `json:"manifest_problems,omitempty"`
 	// Skipped are the pack's contributions this yolo cannot read (packload.Pack.SkewNotes, without
 	// the prefix): the pack resolves and a launch runs it without them, saying so, but `yolo host
-	// apply --assert` renders nothing while they are skipped (docs/design/patched-forks.md PF-D70).
+	// apply --assert` renders nothing while they are skipped (docs/reference/patched-forks.md PF-D70).
 	// The fix is a newer yolo, or a field's spelling. Empty for every other record.
 	Skipped []string `json:"skipped_contributions,omitempty"`
 	// Implicit is config.PackEntry.Implicit: the conventional local pack, which no `packs` list

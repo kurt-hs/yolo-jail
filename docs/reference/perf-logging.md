@@ -270,7 +270,7 @@ Two sinks are wired by the run pipeline:
   launch has no notice at all** (`Options.subLaunch`, the suppressed capture-store
   mount that makes a launch one): its stream is its parent launch's record, which
   shows the build as one progress line, and its file still records every span
-  ([`patched-forks.md` PF-D79](../design/patched-forks.md#PF-D79)).
+  ([`patched-forks.md` PF-D79](patched-forks.md#PF-D79)).
 
 **The report** renders the completed events in the same register as the
 entrypoint's boot log — elapsed-since-start, `+delta` from the previous line, the
@@ -852,7 +852,7 @@ timing at all: `yolo host --timing -- true` was refused as a jail-launch flag, a
   are in a workspace's file.
 - **`yolo host --` spans every stage before its hand-over:** `host.pack_refresh`,
   `host.capability_gate`, `host.apply_gate` (which includes the check and advance of a [patched
-  extension](../design/patched-extensions.md) the program loads), `host.compose`, `host.preflight`,
+  extension](pi-extensions.md) the program loads), `host.compose`, `host.preflight`,
   `host.resolve_target` (which includes a first launch's floor install), `host.model_menu`,
   `host.openai_prelaunch`, and `host.services_start` when the launch starts a service or a
   doorway; then the `host.handover` mark. The table, or the quiet line, prints before

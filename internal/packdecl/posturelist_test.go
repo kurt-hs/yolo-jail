@@ -137,7 +137,7 @@ func TestPostureListEmptyAddIsANoOp(t *testing.T) {
 // problem, and a malformed one is refused there too — both builds understand a list with no
 // "add". And the property the design's skew row rests on (§4.5): a posture field THIS build
 // does not know is dropped by the tolerant decoder, never a problem and never a skip of the
-// autonomy contribution, which only restricts (docs/design/patched-forks.md PF-D69). That is what
+// autonomy contribution, which only restricts (docs/reference/patched-forks.md PF-D69). That is what
 // an entrypoint older than `lists` does with `lists` — the entry renders nowhere, which fails
 // closed. Since PF-D68 the drop is named rather than silent.
 func TestPostureListTolerantPath(t *testing.T) {

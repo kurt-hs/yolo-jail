@@ -1,7 +1,7 @@
 package packsrc
 
 // replay.go is a patched fork's REPLAY and the NEWEST-FIT WALK over it
-// (docs/design/patched-forks.md §5, §6.4; PF-D6, PF-D10, PF-D18): the series made into commits at
+// (docs/reference/patched-forks.md §5, §6.4; PF-D6, PF-D10, PF-D18): the series made into commits at
 // its base, then those commits picked onto each entry of the walk's list, newest first, until one
 // takes the whole series cleanly.
 //
@@ -71,7 +71,7 @@ var replayMinGit = [2]int{2, 40}
 
 // GitTooOldError is the replay's refusal of a git older than replayMinGit, before it runs anything:
 // the walk returns it. It is its own type so a caller names updating git as
-// the next step, where a retry would meet the same git (docs/design/patched-forks.md PF-D58).
+// the next step, where a retry would meet the same git (docs/reference/patched-forks.md PF-D58).
 type GitTooOldError struct {
 	// Have is the git this host runs, as `git version` names it.
 	Have string

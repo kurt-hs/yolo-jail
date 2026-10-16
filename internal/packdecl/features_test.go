@@ -1,6 +1,6 @@
 package packdecl
 
-// features_test.go pins the list `yolo features` prints (docs/design/patched-forks.md PF-D71): the
+// features_test.go pins the list `yolo features` prints (docs/reference/patched-forks.md PF-D71): the
 // kinds and vias derived from their closed sets, and each named capability backed by code that
 // reads it, so a name cannot outlive the capability it promises.
 

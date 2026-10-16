@@ -351,12 +351,12 @@ const JailBackendEnv = "YOLO_JAIL_BACKEND"
 // script to read it, the way every other value there is baked.
 //
 // The same variable keeps a launch going past its refusal of a missing patched build
-// (docs/design/patched-extensions.md PPX-D40, internal/cli/run's missingbuilds.go), so one
+// (docs/reference/pi-extensions.md PPX-D40, internal/cli/run's missingbuilds.go), so one
 // hatch covers every program a launch cannot deliver. That refusal reads it host-side,
 // before any jail exists.
 const AllowMissingProgramsEnv = "YOLO_ALLOW_MISSING_PROGRAMS"
 
-// AllowPatchFailuresEnv is the patch-application failure's bypass (docs/design/patched-forks.md
+// AllowPatchFailuresEnv is the patch-application failure's bypass (docs/reference/patched-forks.md
 // PF-D81): set to 1 in front of a foreground launch, it runs an intact admitted build in place of a
 // patch series that fails to apply, skipping that subject's advance. It admits no failed or
 // partially patched build, and it does not start a launch that has no admitted build to run.
@@ -974,7 +974,7 @@ const hostTreesLeaf = "host-trees"
 
 // HostTreesDir returns $HOME/.local/share/yolo-jail/host-trees — where `yolo host apply` keeps its
 // versioned copies of each patched extension's good build, one directory per build, that the
-// owned link at `~/<into>` names (docs/design/patched-extensions.md §8.3, PPX-D11).
+// owned link at `~/<into>` names (docs/reference/pi-extensions.md §8.3, PPX-D11).
 //
 // ⚠ NO JAIL MOUNTS IT, IN ANY MODE, for HostFloorDir's reason in another form: the host's agent
 // loads these trees and runs their code with the user's full authority, so a copy a jail could

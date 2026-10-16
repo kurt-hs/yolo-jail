@@ -1,7 +1,7 @@
 package entrypoint
 
 // buildreceipt_test.go pins a fork build's receipt fields round trip (buildreceipt.go;
-// docs/design/forked-programs-as-packs.md FP-D8, docs/design/patched-forks.md §6.3): a PATCHED
+// docs/design/forked-programs-as-packs.md FP-D8, docs/reference/patched-forks.md §6.3): a PATCHED
 // build's fork, series, tree, tag and version are written and read back, and a plain build writes
 // none of them, so a plain fork's line is what it was.
 

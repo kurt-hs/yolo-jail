@@ -93,7 +93,7 @@ package run
 // machine-scope directories are channels the build does not need. And the jail is told it is a
 // sealed build (entrypoint.SealedBuildEnv), so its boot renders no pack-declared surface and runs no
 // pack hook: it runs no agent, and the narrowing can leave a pack's surface for another pack's agent
-// under a home directory no bind makes writable (docs/design/patched-extensions.md PPX-D41).
+// under a home directory no bind makes writable (docs/reference/pi-extensions.md PPX-D41).
 
 import (
 	"os"
@@ -185,7 +185,7 @@ func sealedStores(workspace string) (cacheDir, miseDir string, err error) {
 // fork's or a patched extension's build jail, whose packs are a subset of the user's chosen by the
 // build act, not a selection anybody typed.
 //
-// THE SEAL MUST NOT TRIP OVER ITS OWN NARROWING (docs/design/patched-extensions.md PPX-D39). Some
+// THE SEAL MUST NOT TRIP OVER ITS OWN NARROWING (docs/reference/pi-extensions.md PPX-D39). Some
 // launch gates ask whether a name one pack writes is provided by ANOTHER selected pack, and the
 // narrowing is what drops that other pack, so asked of a build jail they refuse a config the user's
 // own launches accept. The first launch with patched extensions met one: pack matt's briefing named

@@ -10,7 +10,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// sealedbuild_test.go pins PPX-D41 (docs/design/patched-extensions.md; sealedbuild.go) at the boot
+// sealedbuild_test.go pins PPX-D41 (docs/reference/pi-extensions.md; sealedbuild.go) at the boot
 // step that renders pack surfaces: a sealed build jail renders no pack-declared surface and runs no
 // pack hook, so a contributing pack that declares its own surface under a directory only a pack the
 // seal dropped makes writable no longer refuses the build jail's boot. The maintainer's first launch

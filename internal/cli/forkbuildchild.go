@@ -3,7 +3,7 @@ package cli
 // forkbuildchild.go runs a fork's BUILD JAIL as a CHILD yolo process, `yolo internal
 // fork-build-jail`, for every build a jail launch runs (buildreport.go) and for the one build a
 // Ctrl-C must end without ending its launch, a patched advance's while a good build serves, at
-// `yolo host` too (docs/design/patched-forks.md §7, PF-D25, PF-D79).
+// `yolo host` too (docs/reference/patched-forks.md §7, PF-D25, PF-D79).
 //
 // WHY A CHILD. A build jail is a whole launch, run through the same pipeline (runCaptureJail), and
 // a launch run in this process installs signal arms of its own whose exit ends the process

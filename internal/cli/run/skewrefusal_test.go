@@ -1,7 +1,7 @@
 package run
 
 // skewrefusal_test.go pins two readings of a pack holding a contribution this yolo cannot read
-// (docs/design/patched-forks.md PF-D68, PF-D75): a pack the use read still refuses names what it
+// (docs/reference/patched-forks.md PF-D68, PF-D75): a pack the use read still refuses names what it
 // skipped before the refusal, since the problem may be one only the skip left; and an attach reads a
 // tree with no record (one an older launch staged) as the launch reads a pack, so a skip there is a
 // note, not a refused attach.

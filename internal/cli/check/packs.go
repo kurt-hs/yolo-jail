@@ -193,7 +193,7 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 				r.fail(prob, "the launch refuses this pack until it is fixed.\n"+packFixNote(e))
 			}
 			// A contribution this yolo cannot read is a WARNING, not a failure: the launch runs the
-			// pack without it and says so (docs/design/patched-forks.md PF-D68), so check passing
+			// pack without it and says so (docs/reference/patched-forks.md PF-D68), so check passing
 			// is the launch's own answer. Graded, so the summary counts what a launch will skip.
 			if res.Pack != nil {
 				for _, note := range res.Pack.SkewNotes {

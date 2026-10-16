@@ -211,7 +211,7 @@ func unresolvedPackGroups(list []unresolvedPack) []remedyGroup {
 		})
 	}
 	if len(skewed) > 0 {
-		// docs/design/patched-forks.md PF-D70: the pack resolves and a launch runs it without
+		// docs/reference/patched-forks.md PF-D70: the pack resolves and a launch runs it without
 		// what this yolo cannot read, but a real home is never rendered around the hole, which
 		// would retire what an earlier render of the skipped contribution wrote.
 		out = append(out, remedyGroup{

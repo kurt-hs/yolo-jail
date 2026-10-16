@@ -1,6 +1,6 @@
 package packdecl
 
-// dependentskip_test.go pins PF-D76 (docs/design/patched-forks.md): when a read skips a contribution
+// dependentskip_test.go pins PF-D76 (docs/reference/patched-forks.md): when a read skips a contribution
 // this yolo cannot read, a readable sibling that cannot work without it is skipped too, with its own
 // note, rather than failing a check that needs the skipped one present. The case is wire-bridge's
 // shape: an adapter whose `adapts.from_platforms` is reached through the pack's own service, beside

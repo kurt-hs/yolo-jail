@@ -1,7 +1,7 @@
 package packsrc
 
 // seriesprobe_test.go pins the SERIES PROBE `yolo pack lint --online` asks of a scratch store
-// (seriesprobe.go; docs/design/patched-forks.md PF-D64): the forced check's answer, a tagless
+// (seriesprobe.go; docs/reference/patched-forks.md PF-D64): the forced check's answer, a tagless
 // branch told apart from what the check says of it, and the series replayed at its own base.
 
 import (

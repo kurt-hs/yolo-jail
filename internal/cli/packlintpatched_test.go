@@ -1,7 +1,7 @@
 package cli
 
 // packlintpatched_test.go pins `yolo pack lint` on a PATCHED EXTENSION
-// (docs/design/patched-extensions.md §8.2, PPX-D10): a pack whose only content is a series and the
+// (docs/reference/pi-extensions.md §8.2, PPX-D10): a pack whose only content is a series and the
 // declaration lints clean — its series directory is content the pack ships, not content nothing
 // reads — and the one lint names the list entry to add while no entry names the tree.
 

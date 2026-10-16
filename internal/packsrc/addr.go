@@ -95,7 +95,7 @@ func Parse(raw string) (Addr, error) {
 }
 
 // BuildSource is a git source with no ref: `git+<repository>`, then `//<subdir>` for a
-// subdirectory source — the identity of a PATCHED fork's build (docs/design/patched-forks.md §6.3,
+// subdirectory source — the identity of a PATCHED fork's build (docs/reference/patched-forks.md §6.3,
 // PF-D7), which names the repository and subdirectory and never the ref, so a hold moved from
 // `?ref=main` to `?ref=v1.0.1` names the same build. It is a record, not an address: Parse refuses
 // it, as it refuses any git source with no `?ref=`, so no source as written can equal it. raw as

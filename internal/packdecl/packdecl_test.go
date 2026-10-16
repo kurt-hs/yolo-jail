@@ -24,7 +24,7 @@ import (
 // around it. A field the entrypoint cannot use is a degraded jail; a field it refuses to read
 // is no jail at all.
 //
-// THE DEGRADATION IS THE CONTRIBUTION, AND IT IS NAMED (docs/design/patched-forks.md PF-D68,
+// THE DEGRADATION IS THE CONTRIBUTION, AND IT IS NAMED (docs/reference/patched-forks.md PF-D68,
 // PF-D69). This test used to pin an unknown field IGNORED in silence, its contribution rendered
 // with half its declaration. That half can be one validation refuses (a patched extension's
 // `files` with no `patches` has no `from`), which is no jail again, or one that renders

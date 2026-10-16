@@ -202,7 +202,7 @@ func TestAPatchFailureBelowAppleContainersReadOnlyFloorStillRefuses(t *testing.T
 	}
 }
 
-// A PATCH BRANCH THAT DOES NOT MERGE refuses in its own words (docs/design/patched-forks.md §3.5):
+// A PATCH BRANCH THAT DOES NOT MERGE refuses in its own words (docs/reference/patched-forks.md §3.5):
 // the ERROR names the branch and the merge that repairs it, and the refusal's Repair line says to push
 // the merged branch, not that a launch builds a repaired series.
 func TestAPatchBranchThatDoesNotMergeRefusesInItsOwnWords(t *testing.T) {

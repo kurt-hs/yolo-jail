@@ -1,7 +1,7 @@
 package cli
 
 // patchedhost_test.go pins what a PATCHED fork's step 2 leaves at the host's edge of the jail
-// launch (docs/design/patched-forks.md PF-D38): the child build jail is this very binary and never a
+// launch (docs/reference/patched-forks.md PF-D38): the child build jail is this very binary and never a
 // test binary. What the host floor does with a patched fork (step 4) is hostfloorpatched_test.go's.
 
 import (

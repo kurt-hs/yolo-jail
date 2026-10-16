@@ -83,11 +83,11 @@ type Contribution struct {
 	// misses one stores nothing: an exit status of 0 with no program is a failed build (§9).
 	Produces []string `json:"produces,omitempty"`
 	// ON `files`, `source`, `patches`, `follow`, `build` and `produces` make a PATCHED EXTENSION
-	// (docs/design/patched-extensions.md, PPX-D1; patchedext.go): `source` and `patches` in place of
+	// (docs/reference/pi-extensions.md, PPX-D1; patchedext.go): `source` and `patches` in place of
 	// `from`, `build` optional, and `produces` paths relative to the built tree rather than the
 	// home. Beside `patches` only: without a series they are refused there as everywhere else.
 	//
-	// Patches makes the fork a PATCHED FORK (docs/design/patched-forks.md, PF-D1): a clean
+	// Patches makes the fork a PATCHED FORK (docs/reference/patched-forks.md, PF-D1): a clean
 	// pack-relative directory holding a `git format-patch --base` series, which yolo replays
 	// onto the upstream `source` names instead of building a fork repository. Its presence is
 	// the opt-in: `source` then names the UPSTREAM, with `?ref=` a branch to follow or a tag or
@@ -110,7 +110,7 @@ type Contribution struct {
 	// Refused without `patches`: a plain fork's pin moves only by `yolo pack update` (FP-D18),
 	// and following an upstream is the patched mode's opt-in, not a dial on a plain fork.
 	Follow string `json:"follow,omitempty"`
-	// PatchBranch is a PATCH BRANCH (docs/design/patched-forks.md §3.5, OQ-PFK6): a git repository and a branch,
+	// PatchBranch is a PATCH BRANCH (docs/reference/patched-forks.md §3.5, OQ-PFK6): a git repository and a branch,
 	// written as a source address with `?ref=` (`git+https://github.com/you/pi?ref=patches`, or
 	// `git+file:///abs/path?ref=patches` for a local repository), whose commit graph is merged against
 	// the upstream candidate instead of replaying a `patches` series. It opts in to the patched
@@ -144,7 +144,7 @@ type Contribution struct {
 	// ForkRoot is NOT a manifest field either: the fork rewrite sets it beside ForkedBy, naming
 	// the fork pack's root directory, so a reader of the base's program can read a PATCHED fork's
 	// series (Patches is relative to it) with no pack loader of its own — the host floor, which is
-	// handed programs and not packs (docs/design/patched-forks.md §9). Never serialized: it is a
+	// handed programs and not packs (docs/reference/patched-forks.md §9). Never serialized: it is a
 	// host path, and a jail repeats the rewrite against its own tree.
 	ForkRoot string `json:"-"`
 
@@ -4272,7 +4272,7 @@ func validateContribution(label string, c Contribution) []string {
 		switch {
 		case c.IsBuiltTree():
 			// A BUILT TREE (patchedext.go): a patched extension, `source` and `patches` in place of
-			// `from` (docs/design/patched-extensions.md §4), or an unmodified one, `source` alone
+			// `from` (docs/reference/pi-extensions.md §4), or an unmodified one, `source` alone
 			// (docs/design/pi-extension-store-builds.md §4.1), landing at the `into` it names.
 			problems = append(problems, builtTreeProblems(label, c)...)
 		case c.Agent != "":

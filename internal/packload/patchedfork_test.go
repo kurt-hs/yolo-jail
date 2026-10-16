@@ -1,6 +1,6 @@
 package packload
 
-// patchedfork_test.go pins the pack-set half of a PATCHED fork (docs/design/patched-forks.md): the
+// patchedfork_test.go pins the pack-set half of a PATCHED fork (docs/reference/patched-forks.md): the
 // fork carries its series and follow rule and its pack's root, the rewrite hands both to the base's
 // program, the footprint names the series, and no pinner — the launch's, the host floor's or
 // `yolo capture`'s, all through PinForks — ever pins one (PF-D16).

@@ -172,7 +172,7 @@ func ResolvePack(entry PackEntry, spec ResolvePackSpec) (ResolvedPack, error) {
 	}
 	// A USE READ (packload.LoadDirForUse): every notch and verb acts on what this resolves, so a
 	// contribution this build cannot read is skipped and named in Pack.SkewNotes rather than
-	// failing the pack (docs/design/patched-forks.md PF-D68). Each caller says so its own way.
+	// failing the pack (docs/reference/patched-forks.md PF-D68). Each caller says so its own way.
 	out.Pack, out.Problems = packload.LoadDirForUse(loadFrom, entry.Name)
 	if out.Pack != nil && len(out.Problems) > 0 && len(out.Pack.SkewNotes) > 0 {
 		// A REFUSED PACK SAYS WHAT WAS SKIPPED TOO (PF-D75): every caller's refusal prints Problems

@@ -20,7 +20,7 @@ import (
 // prelaunch.go is the HOST half of a program's PRE-LAUNCH REFRESH (packdecl.Refresh, a term coined
 // for that field): the argv a launcher runs the installed program with, before exec'ing it, to bring
 // what the program manages beside itself up to date. Pi's `update --extensions` is the case that
-// bought it (docs/design/pi-extension-lifecycle.md §3.2). The jail's launchers run it
+// bought it (docs/reference/pi-extensions.md §17.2). The jail's launchers run it
 // (internal/entrypoint's prelaunchrefresh.go); `yolo host -- pi` did not, so at the host pi's
 // extensions stayed as old as the user's last hand-run update, and pi kept showing its "Package
 // Updates Available" box there (docs/reference/host-agent-environment.md HP-D19).

@@ -1,6 +1,6 @@
 package packdecl
 
-// skew_test.go pins the USE READ (DecodeForUse, docs/design/patched-forks.md PF-D68 and PF-D69):
+// skew_test.go pins the USE READ (DecodeForUse, docs/reference/patched-forks.md PF-D68 and PF-D69):
 // strict about everything this build knows, as Decode is, but a contribution holding a kind, a
 // `via` or a field this build does not know is skipped and named rather than refusing the pack —
 // unless its kind only restricts, which is kept without the field.

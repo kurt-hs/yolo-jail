@@ -35,7 +35,7 @@ package cli
 // (run.LaunchLogOnly), each line marked with the build's key, and to the build's own log,
 // <workspace>/.yolo/build-<slug>.log, rewritten by the first build of the key a launch runs and added
 // to by every later one, so a fit's failure that names it still finds its output there once the
-// series' base has been built after it (docs/design/patched-forks.md PF-D79, PF-D23).
+// series' base has been built after it (docs/reference/patched-forks.md PF-D79, PF-D23).
 
 import (
 	"context"

@@ -98,7 +98,7 @@ type Pack struct {
 	// or kept without a field, because this build does not know its kind, its `via` or a
 	// field it holds, and one per pack-wide field ignored, each naming the pack
 	// (docs/reference/loophole-system.md#strict-and-tolerant-and-why-both,
-	// docs/design/patched-forks.md PF-D68).
+	// docs/reference/patched-forks.md PF-D68).
 	// NOT problems — a problem fails the boot (A12) and the launch, and surviving exactly
 	// that is why the skip exists — but never silent either: the boot path and the launch
 	// report each one, so a degraded jail (a contribution this build cannot render) is
@@ -997,7 +997,7 @@ func LoadDir(root, name string) (*Pack, []string) {
 // is, but a contribution holding a kind, a `via` or a field this build does not know is skipped
 // and reported in Pack.SkewNotes instead of failing the pack, so a pack written for a newer yolo
 // degrades a launch on this host rather than refusing every one of them
-// (docs/design/patched-forks.md PF-D68).
+// (docs/reference/patched-forks.md PF-D68).
 //
 // The skip is never silent, and that is the caller's half: a launch prints each note as a
 // disclosure line, `yolo check` grades it as a warning, and `yolo host apply --assert` refuses it

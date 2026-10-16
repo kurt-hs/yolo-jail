@@ -44,7 +44,7 @@ import (
 // docs/reference/stringly-typed-references-principle.md#r5-place-the-gate-where-the-reference-is-decidable-and-the-failure-is-actionable:
 // move the gate, do not lower the severity). A fork's or a patched extension's build jail does not
 // ask at all: the seal narrows its selection to the building pack, which is what drops the agent a
-// name belongs to (cli/run's selectionNarrowed, docs/design/patched-extensions.md PPX-D39).
+// name belongs to (cli/run's selectionNarrowed, docs/reference/pi-extensions.md PPX-D39).
 func AgentAudienceProblems(packs []*Pack) []string {
 	have := AgentNames(packs)
 	known := map[string]bool{}

@@ -77,7 +77,7 @@ func runInternal(args []string) int {
 		return runBackgroundAdvance(args[1:])
 	case forkBuildJailVerb:
 		// A fork's build jail as a child of the launch that staged it, so a Ctrl-C ends the build
-		// and not the launch (forkbuildchild.go; docs/design/patched-forks.md PF-D25). Hidden: its
+		// and not the launch (forkbuildchild.go; docs/reference/patched-forks.md PF-D25). Hidden: its
 		// caller is a patched fork's advance.
 		return runForkBuildJail(args[1:], os.Stdout, os.Stderr)
 	case "config-dump":

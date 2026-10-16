@@ -15,6 +15,11 @@ is a folder of `git format-patch` files, made with `--base` so it records the up
 was written against. The **good build** is the last build of your series that yolo built and
 checked on this machine; it is what runs until a newer one is built.
 
+How it works, and why, is in the
+[patched forks reference](https://github.com/mschulkind-oss/yolo-jail/blob/main/docs/reference/patched-forks.md)
+and, for pi extensions, the
+[pi extensions reference](https://github.com/mschulkind-oss/yolo-jail/blob/main/docs/reference/pi-extensions.md).
+
 ## Patch a program
 
 Export your changes from a checkout of your fork, naming the upstream commit they start from:

@@ -92,7 +92,7 @@ type receipt struct {
 	Recipe    string
 	Toolchain string
 	// Fork, Series, Tree, Tag and Version are written by a PATCHED fork's build alone
-	// (docs/design/patched-forks.md §6.3, PF-D7, PF-D36): the fork key its selection keys on, the
+	// (docs/reference/patched-forks.md §6.3, PF-D7, PF-D36): the fork key its selection keys on, the
 	// series digest, the patched tree, and the version tag of the upstream commit it was built at.
 	Fork    string
 	Series  string

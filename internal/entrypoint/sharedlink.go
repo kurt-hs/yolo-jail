@@ -99,7 +99,7 @@ var sharedFileNode = sharedNode{
 
 // sharedTreeNode is the DIRECTORY payload: a whole home subdirectory replaced by a symlink
 // to the pack's machine-scope dir, so every workspace on the machine reads and writes ONE
-// store instead of N drifting copies (docs/design/pi-extension-lifecycle.md §3.1, OQ-1 —
+// store instead of N drifting copies (docs/reference/pi-extensions.md §17.1, OQ-1 —
 // where the load-bearing reason is cross-jail version drift rather than disk).
 //
 // THE SHARED SIDE IS THE DECLARED DIRECTORY ITSELF, not a child of it. A file payload joins
@@ -257,7 +257,7 @@ func copyTreeIntoShared(local, shared string) error {
 
 // sharedCopyStaleAfter is how long a marker may exist before it is read as a CRASHED copy
 // rather than a live one. It is the stale-lock interval the design already specified for
-// this directory (pi-extension-lifecycle.md §3.3, STALE_LOCK = 600s).
+// this directory (pi-extensions.md §17.3, STALE_LOCK = 600s).
 //
 // Two situations produce a marker and only age separates them: another launch copying right
 // now, and a launch that died mid-copy leaving a partial tree. Treating the first as the

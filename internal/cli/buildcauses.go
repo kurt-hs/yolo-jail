@@ -1,6 +1,6 @@
 package cli
 
-// buildcauses.go is ONE CAUSE, ONCE for a jail launch's builds (docs/design/patched-extensions.md
+// buildcauses.go is ONE CAUSE, ONCE for a jail launch's builds (docs/reference/pi-extensions.md
 // PPX-D42): the maintainer's first launch with patched extensions ran four build jails sealed to his
 // one pack, each refused at its boot by the same file, and each relay said so in full, then the jail
 // said it again for each extension. So a build report keeps two things for the rest of its act:

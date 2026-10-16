@@ -1,6 +1,6 @@
 package cli
 
-// hosttrees.go is a PATCHED EXTENSION at the host notch (docs/design/patched-extensions.md §8.3,
+// hosttrees.go is a PATCHED EXTENSION at the host notch (docs/reference/pi-extensions.md §8.3,
 // §11; PPX-D11, PPX-D18): the check and the advance before the render, the render's arm for a
 // tree, and the stop a host launch of the owning agent gets when nothing serves.
 //
@@ -785,7 +785,7 @@ func hostTreeLinkSlug(dest string) string {
 	return strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
 }
 
-// revertHostTreeLinks is the revert's arm for PATCHED EXTENSIONS (docs/design/patched-extensions.md
+// revertHostTreeLinks is the revert's arm for PATCHED EXTENSIONS (docs/reference/pi-extensions.md
 // §8.3, PPX-D31): every link the `files` ownership record names that points into the host's
 // versioned copies are deleted only in this explicit confirmed cleanup. observe reports the links,
 // retained generations and running-session warning without writing. The caller prints that warning

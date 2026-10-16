@@ -1,7 +1,7 @@
 package cli
 
 // patchedfork_test.go pins the explicit acts on a PATCHED fork (patchedfork.go;
-// docs/design/patched-forks.md §8.3, PF-D12, PF-D16) through the verbs themselves, against a real
+// docs/reference/patched-forks.md §8.3, PF-D12, PF-D16) through the verbs themselves, against a real
 // local upstream repository: `yolo pack update` checks the upstream and reports whether the series
 // replays at the candidate, with the conflict message and the newest fit when it does not; it
 // records each outcome, writes no fork-lock entry and drops a plain fork's entry left under the

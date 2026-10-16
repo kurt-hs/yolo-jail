@@ -1,6 +1,6 @@
 package packdecl
 
-// patchedfork_test.go pins the manifest half of a PATCHED fork (docs/design/patched-forks.md §3.1,
+// patchedfork_test.go pins the manifest half of a PATCHED fork (docs/reference/patched-forks.md §3.1,
 // PF-D1 to PF-D3, PF-D7): `patches` and `follow` accepted on a fork and refused everywhere else
 // with the declaration that reads them named, their grammar, the recipe that gains the series
 // digest for a patched fork only, and the strict decode's next step for an unknown field.

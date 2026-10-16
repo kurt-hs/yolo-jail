@@ -1267,7 +1267,7 @@ func runRun(args []string) int {
 	// Wire the fork build trigger (docs/design/forked-programs-as-packs.md OQ-FP4, FP-D1): every
 	// selected fork the store holds no build of at its pin is built now, in a sealed jail, and the
 	// jail is handed each fork's store key; a patched fork's advance runs here too
-	// (docs/design/patched-forks.md §7). Fourth seam of the same shape, and on the launch path
+	// (docs/reference/patched-forks.md §7). Fourth seam of the same shape, and on the launch path
 	// only for AutoCapture's reason: the build jail runs from NewDefaultOptions, never from here.
 	//
 	// EVERY LINE ON THE LAUNCH STREAM, stderr teed into launch.log: the builds' lines are launch
@@ -1277,7 +1277,7 @@ func runRun(args []string) int {
 		stream := launchBuildStream(req.Stderr)
 		return buildForksForLaunch(req, stream, stream, colorForWriter(os.Stderr))
 	}
-	// And the TREE ARM beside it (docs/design/patched-extensions.md §6.1, §8.1): each patched
+	// And the TREE ARM beside it (docs/reference/pi-extensions.md §6.1, §8.1): each patched
 	// extension's advance and the per-launch copy its jail mounts, on the launch path only for the
 	// same reason.
 	opts.BuildTrees = func(req run.TreeBuildRequest) map[string]run.TreeDelivery {
