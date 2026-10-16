@@ -10,8 +10,9 @@
 //   - stop ends every copy of a name, waiting out a request in flight (the daemon's own upstream
 //     deadline) before it kills, and names what the jails it served must do next; with
 //     --host-wide it ends only the machine-wide copy an older yolo left (StopHostWide), the
-//     upgrade's step, which a launch refuses until the user takes (HD-D21) and after which the
-//     jails that copy served are launched again with their own;
+//     upgrade's optional last step, once the jails that copy served have ended or been launched
+//     again with their own (HD-D18; a launch beside the copy proceeds, by the owner's coexistence
+//     decision of 2026-10-16);
 //   - restart restarts nothing: a jail's daemon restarts with the jail (§6, mode 2), so it says
 //     how to relaunch, and that stop is there for the copies running now;
 //   - logs tails the one log every copy appends to.
@@ -154,10 +155,10 @@ func PrintStatus(deps CLIDeps, name string) int {
 		if i.HostWide {
 			out.printf("  host-wide, left by an older yolo: pid %s, socket %s, %s",
 				pidList(i.PIDs), i.Socket, mark)
-			out.printf("    [dim]It serves only the jails that yolo launched, and a launch of this "+
-				"yolo refuses while it runs: stop it with `%s`, which leaves every jail's own copy "+
-				"running, then launch those jails again with this yolo, which gives each its own.[/dim]",
-				StopHostWideCommand(i.Name))
+			out.printf("    [dim]It still serves the jails that yolo launched and is left running "+
+				"beside this yolo's, sharing their credential lock; nothing needs doing. Once those "+
+				"jails have ended, `%s` ends it and leaves every jail's own copy running (a reboot "+
+				"ends it too).[/dim]", StopHostWideCommand(i.Name))
 			continue
 		}
 		out.printf("  jail %s: pid %s, socket %s, %s", i.Jail, pidList(i.PIDs), i.Socket, mark)
@@ -283,16 +284,17 @@ func Stop(deps CLIDeps, name string) int {
 // HostWideFlag is stop's flag for acting on an older yolo's host-wide copy alone.
 const HostWideFlag = "--host-wide"
 
-// StopHostWideCommand is the upgrade's last step for name, as status, `yolo check` and the
-// changelog spell it: stop the host-wide copy an older yolo left, and nothing else.
+// StopHostWideCommand is the upgrade's optional last step for name, as a launch, status, `yolo
+// check` and the changelog spell it: stop the host-wide copy an older yolo left, and nothing else,
+// once the jails it serves have ended.
 func StopHostWideCommand(name string) string {
 	return "yolo " + HostDaemonVerb + " stop " + HostWideFlag + " " + name
 }
 
 // StopHostWide ends the machine-wide copy of name an older yolo left, and NOTHING ELSE: no jail's
-// own copy and no straggler. It is the upgrade's step, which a launch refuses until the user takes
-// (HD-D21); a jail already relaunched by then runs its own copy, and Stop, which ends every copy,
-// would cut it off.
+// own copy and no straggler. It is the upgrade's optional last step, taken once the jails that
+// copy served have ended or been launched again (HD-D18); a jail relaunched by then runs its own
+// copy, and Stop, which ends every copy, would cut it off.
 // Always exits 0, like Stop.
 func StopHostWide(deps CLIDeps, name string) int {
 	out := newPrinter(deps)

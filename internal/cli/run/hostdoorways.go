@@ -462,14 +462,10 @@ func (d *HostDoorways) Start(cfg *jsonx.OrderedMap, workspace, agent string, std
 		stopServices()
 		return nil, func() {}, lines, o.startupRefusal
 	}
-	// AN OLDER YOLO'S MACHINE-WIDE COPY OF A SERVICE THIS LAUNCH STARTED REFUSES IT TOO (HD-D21), as
-	// it refuses a jail launch: it works on the same credential without the record this launch's
-	// copy shares. This notch asks no launch check, so it takes the refusal alone
-	// (olderHostWideRefusal).
-	if refused := olderHostWideRefusal(handles); refused != nil {
-		stopServices()
-		return nil, func() {}, nil, errors.New(refused.text())
-	}
+	// AN OLDER YOLO'S MACHINE-WIDE COPY OF A SERVICE THIS LAUNCH STARTED IS NAMED AND LEFT RUNNING,
+	// as a jail launch names it (the owner's coexistence decision, 2026-10-16, superseding HD-D21's
+	// refusal). This notch asks no launch check, so it prints the line alone.
+	o.noteOlderHostWideCopies(handles)
 	// The two routes a doorway reaches its host daemon by (doorwayInput's, for macos-user): the
 	// endpoint file of each host service this session published, and the private socket of the
 	// OpenAI service this session started, when it started one.

@@ -420,11 +420,10 @@ func (k *keeper) run() int {
 	if guard != nil {
 		guard.Close()
 	}
-	// A HOST-WIDE DAEMON OLDER THAN THIS YOLO REFUSES THE LAUNCH, before the container (OQ-HD11,
-	// HD-D5, launchcheck.go): its agents would start without the launch check promised to them, or
-	// with a daemon that fails every request. The unwind closes this jail's fronts and leaves the
-	// daemon running for the jails using it. A key at macos-user is refused the same way, before it
-	// holds anything.
+	// A HOST SERVICE'S STARTUP REFUSAL REFUSES THE LAUNCH, before the container. An older yolo's
+	// machine-wide copy no longer does: the launch check names it in one line and the launch goes
+	// on (launchcheck.go). The unwind closes this jail's fronts. A key at macos-user is refused the
+	// same way, before it holds anything.
 	if refused != nil {
 		lead := "Refusing this launch"
 		if p.Notch != "" {

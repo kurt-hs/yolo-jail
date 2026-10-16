@@ -1,17 +1,17 @@
 package run
 
-// launchcheckrefusal_test.go pins OQ-HD11's refusal as HD-D21 keeps it under HD-R1
-// (docs/design/host-daemon-ownership.md) THROUGH Run(): the one host-wide daemon that can still
-// exist is a machine-wide copy an older yolo left running through the upgrade, and while it is
-// alive a fresh launch on either arm that starts host services REFUSES, naming its stop. A fresh
-// launch's own copy that lacks the check keeps the yellow line, and an attach never refuses
-// (HD-D5 (1)). No launch stops the older copy itself.
+// launchcheckrefusal_test.go pins, THROUGH Run(), what a launch does beside the one host-wide
+// daemon that can still exist under HD-R1 (docs/design/host-daemon-ownership.md): a machine-wide
+// copy an older yolo left running through the upgrade. By the owner's coexistence decision
+// (2026-10-16, superseding HD-D21's refusal) that copy keeps serving the jails its yolo launched
+// and a fresh launch on either arm PROCEEDS beside it, printing one line that names it and its
+// optional later stop, and stopping nothing. A fresh launch's own copy that lacks the check keeps
+// the yellow line, and an attach keeps its line too (HD-D5 (1)).
 //
 // Each test drives a whole launch, not the boundary launchcheck_test.go drives, so deleting the
-// refusal at one call site fails the test for that site: the keeper's (the container arm) or the
+// line at one call site fails the test for that site: the keeper's (the container arm) or the
 // macos-user arm's. Each has a control beside it, the same launch with no older copy running,
-// which proceeds; without it the refusal tests would pass on a harness that never reached the
-// check at all.
+// which says nothing of one.
 //
 // The daemon is launchcheck_test.go's fixture: each launch spawns its own copy, a relay to the
 // handler served at launchCheckFixtureSocket, and leaveAnOlderCopyRunning stands up the older
@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/broker"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -127,18 +128,22 @@ func containerLaunch(t *testing.T, handler hostservice.Handler,
 	return stdout.String() + stderr.String(), rc, err == nil
 }
 
-// TestAFreshContainerLaunchRefusesBesideAnOlderYolosCopy is the container arm, whose host services
-// its keeper starts: with an older yolo's machine-wide copy alive, the keeper refuses before the
-// container, and the launch exits 1.
-func TestAFreshContainerLaunchRefusesBesideAnOlderYolosCopy(t *testing.T) {
-	out, rc, ran := containerLaunch(t, answersTheCheck, anOlderCopy)
-	if ran {
-		t.Errorf("the launch started its container beside an older yolo's machine-wide copy:\n%s", out)
+// TestAFreshContainerLaunchProceedsBesideAnOlderYolosCopy is the container arm, whose host
+// services its keeper starts: with an older yolo's machine-wide copy alive, the keeper says so in
+// one line, still asks its own copy the check, and starts the container; the older copy is still
+// running afterwards.
+func TestAFreshContainerLaunchProceedsBesideAnOlderYolosCopy(t *testing.T) {
+	out, _, ran := containerLaunch(t, answersTheCheck, anOlderCopy)
+	if !ran {
+		t.Errorf("the launch did not start its container beside an older yolo's machine-wide copy:\n%s", out)
 	}
-	if rc != 1 {
-		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
+	if strings.Contains(out, "Refusing") {
+		t.Errorf("the launch refused beside an older yolo's machine-wide copy:\n%s", out)
 	}
-	assertTheOlderCopyRefusal(t, out, "Refusing this launch")
+	if !strings.Contains(out, controlNote) {
+		t.Errorf("the launch did not ask its own copy the check:\n%s", out)
+	}
+	assertTheOlderCopyLine(t, out)
 	assertTheOlderCopyWasNotStopped(t)
 }
 
@@ -155,6 +160,7 @@ func TestAFreshContainerLaunchProceedsPastADaemonThatAnswers(t *testing.T) {
 	if strings.Contains(out, "Refusing") {
 		t.Errorf("a launch whose daemon answers the check refused:\n%s", out)
 	}
+	assertNoOlderCopyLine(t, out)
 }
 
 // TestAFreshContainerLaunchWarnsWhenItsOwnDaemonLacksTheCheck: the daemon a fresh launch asks is
@@ -197,17 +203,18 @@ func macosUserLaunchAgainst(t *testing.T, handler hostservice.Handler,
 	return stdout.String() + stderr.String(), rc, started
 }
 
-// TestAMacosUserLaunchRefusesBesideAnOlderYolosCopy is the arm that starts its own host services:
-// it refuses before the sandboxed command runs.
-func TestAMacosUserLaunchRefusesBesideAnOlderYolosCopy(t *testing.T) {
+// TestAMacosUserLaunchProceedsBesideAnOlderYolosCopy is the arm that starts its own host
+// services: it says so in one line and runs the sandboxed command.
+func TestAMacosUserLaunchProceedsBesideAnOlderYolosCopy(t *testing.T) {
 	out, rc, started := macosUserLaunchAgainst(t, answersTheCheck, anOlderCopy)
-	if started {
-		t.Errorf("the macos-user launch ran its command beside an older yolo's machine-wide copy:\n%s", out)
+	if !started || rc != 0 {
+		t.Errorf("the macos-user launch did not run its command beside an older yolo's machine-wide "+
+			"copy (rc %d):\n%s", rc, out)
 	}
-	if rc != 1 {
-		t.Errorf("Run() = %d, want 1 for a refused launch:\n%s", rc, out)
+	if strings.Contains(out, "Refusing") {
+		t.Errorf("the macos-user launch refused beside an older yolo's machine-wide copy:\n%s", out)
 	}
-	assertTheOlderCopyRefusal(t, out, "Refusing the macos-user launch")
+	assertTheOlderCopyLine(t, out)
 	assertTheOlderCopyWasNotStopped(t)
 }
 
@@ -220,6 +227,7 @@ func TestAMacosUserLaunchProceedsPastADaemonThatAnswers(t *testing.T) {
 	if !started || rc != 0 {
 		t.Errorf("a launch whose daemon answers the check did not run its command (rc %d):\n%s", rc, out)
 	}
+	assertNoOlderCopyLine(t, out)
 }
 
 // attachAgainst runs an attach into a running jail whose launch published a front to the fixture
@@ -272,9 +280,9 @@ func attachAgainst(t *testing.T, handler hostservice.Handler, prep ...func(*test
 }
 
 // TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy is HD-D5 (1) through Run(): an attach
-// starts nothing, and refusing it would leave the running jail as it is, so beside an older yolo's
-// copy that does not answer the check it prints the yellow line naming that copy's stop and the
-// relaunch, delivers its channel and enters the jail.
+// starts nothing, so beside an older yolo's copy that does not answer the check it prints the
+// yellow line naming the relaunch and, after it, that copy's optional stop, delivers its channel
+// and enters the jail.
 func TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy(t *testing.T) {
 	r := attachAgainst(t, olderThanTheCheck, anOlderCopy)
 	out := r.stdout + r.stderr
@@ -288,10 +296,15 @@ func TestAnAttachKeepsTheLineAndEntersBesideAnOlderYolosCopy(t *testing.T) {
 		t.Errorf("the attach did not deliver its channel (%v)", err)
 	}
 	for _, want := range []string{"loophole " + launchCheckFixtureName + ": this jail was launched by an older yolo",
-		"launch it again with this yolo"} {
+		"launch it again with this yolo", broker.StopHostWideCommand(launchCheckFixtureName)} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the attach does not say %q:\n%s", want, out)
 		}
+	}
+	// The coexistence order: relaunch first, and the stop only once the older yolo's jails ended.
+	if i, j := strings.Index(out, "launch it again with this yolo"),
+		strings.Index(out, broker.StopHostWideCommand(launchCheckFixtureName)); i < 0 || j < i {
+		t.Errorf("the attach line names the stop before the relaunch:\n%s", out)
 	}
 	assertTheOlderCopyWasNotStopped(t)
 }

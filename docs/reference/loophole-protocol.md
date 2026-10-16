@@ -491,21 +491,21 @@ launch waits for the answer. The daemon answers within it, from what it already 
 enough, and clamps it to a cap whoever sends it. A non-zero exit, a malformed answer or no answer
 within the budget plus a short margin prints one dim line saying the daemon could not be asked.
 
-**One fact refuses a fresh launch, and no answer does**: a machine-wide copy of a daemon this
-launch starts, left running by a yolo older than
-[`HD-R1`](../design/host-daemon-ownership.md#HD-R1), which gives each jail its own. It works on
-the same credential as this launch's copy without the record this yolo's copies share, so the
-launch stops before the jail starts, names `yolo host-daemon stop --host-wide <name>`, and says
-that the jails the older yolo launched lose that service until they are launched again. No launch
-stops the older copy itself ([`HD-D21`](../design/host-daemon-ownership.md#HD-D21), which keeps
-[OQ-HD11](../design/host-daemon-ownership.md#OQ-HD11)'s refusal for the one host-wide daemon that
-can still exist).
+**A machine-wide copy an older yolo left running does not refuse a fresh launch either.** A yolo
+older than [`HD-R1`](../design/host-daemon-ownership.md#HD-R1), which gives each jail its own
+copy, may have left a machine-wide copy of a daemon this launch starts running through the upgrade,
+serving the jails it launched. The launch leaves it running and proceeds, printing one dim line
+that names it, says it takes the same credential lock as this jail's own copy, and names
+`yolo host-daemon stop --host-wide <name>` as the cleanup once those jails have ended (a reboot
+also ends it). No launch stops the older copy itself
+([`HD-D14`](../design/host-daemon-ownership.md#HD-D14)).
 
 The daemon a fresh launch asks is always the copy it just started, so a daemon that answers
 `unknown action:` naming `launch-check` has a manifest declaring a check its program does not
 answer: the line says that and names no command. An attach never refuses. Entering a jail an older
 yolo launched, it reaches that yolo's machine-wide copy, and when that copy gives the same answer
-the line names its stop and launching the jail again.
+the line names launching the jail again and then, once no jail the older yolo launched is left,
+that copy's stop.
 
 The first daemon to declare it is `aws-auth`
 ([`agent-credentials.md`](agent-credentials.md#when-the-sso-session-lapses)).
