@@ -340,7 +340,7 @@ func TestPiDeriveWritesTheSelectionPair(t *testing.T) {
 		{
 			// The gate is the catalog's, not "any endpoint pi's registry can name": pi
 			// speaks anthropic-messages, but an endpoints-only provider with no openai
-			// endpoint names no URL for the protocol pi resolves to (zai-plumbing.md §5,
+			// endpoint names no URL for the protocol pi resolves to (providers.md OQ-Z6,
 			// pinned by providerderive_test.go), so it is no catalog row — and a
 			// defaultProvider naming a dropped row is the half-selection the shared gate
 			// makes unrepresentable.

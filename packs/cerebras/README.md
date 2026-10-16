@@ -1,6 +1,7 @@
 # `cerebras` — the official pack that ships Cerebras as a provider
 
-The second purely-declarative pack after `zai` ([reference](../../docs/reference/cerebras-pack-and-copilot-delivery.md)):
+The second purely-declarative pack after `zai` (which agents it can reach, and why:
+[provider reach](../../docs/reference/providers.md#provider-reach-which-agents-a-provider-can-reach-at-all)):
 Cerebras's service facts as one `kind: "provider"` contribution, plus the `kind:
 "profile"` selection over them — and, since the wire bridge shipped, a top-level
 `needs` entry (the first in any shipped pack). The pack installs **no CLI**. Cerebras
@@ -24,12 +25,15 @@ the bridge's loopback URL itself, which asserted a fact only the bridge could ma
 strict schemas, 64K context free / 128K paid, ~1500 tok/s). `gpt-oss-120b` is
 deliberately absent: Cerebras's own docs warn it "may invoke tools it wasn't given" and
 its live capability flag has `parallel_tool_calls: false` — a model that invents tool
-calls has no tier in an agent, not even the fast one. Want it anyway? `providers` is a
+calls has no tier in an agent, not even the fast one
+([D-1](../../docs/reference/providers.md#reach-d-1)). Want it anyway? `providers` is a
 merged-scope key: add `"cerebras": {"models": {"oss": "gpt-oss-120b"}}` in user config
 and it lands in every catalog beside the pack's alias.
 
 Free-tier note: 5 req/min / 30K tok/min / 1M tokens-day is thin for an agent loop; the
-Developer tier lifts it to 300 req/min / 150K tok/min for this model.
+Developer tier lifts it to 300 req/min / 150K tok/min for this model. This README states the
+limits because a free tier that cannot sustain an agent loop must say so where you choose the
+pack ([OQ-3](../../docs/reference/providers.md#reach-oq-3)).
 
 ## The user's entire setup
 
@@ -60,10 +64,10 @@ Then `yolo -p cerebras` (or the persistent spelling, `"profile": "cerebras"`, in
 |---|---|---|
 | pi | **no catalog entry**: `cerebras` is one of pi's own providers, so pi runs it on its own client and model list, reading `CEREBRAS_API_KEY` ([OQ-3](../../docs/design/pi-codex-provider-shadowing.md#OQ-3)). A selected profile writes `defaultProvider = "cerebras"` and `enabledModels = ["cerebras/*"]` | its derive, reading the agent's own providers from `packs/pi` |
 | opencode | **no catalog entry**, for the same reason: opencode's own `cerebras` reads `CEREBRAS_API_KEY`. A selected profile writes `enabled_providers = ["cerebras"]`, and opencode picks the model. Cerebras's own integrations index lists OpenCode as a supported client. | its derive, reading the agent's own providers from `packs/opencode` |
-| copilot | BYOK env routed through the wire bridge: `COPILOT_PROVIDER_BASE_URL` at the adapter's declared address, `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_MODEL=qwen-3.8-27b`, `COPILOT_PROVIDER_API_KEY` — its derive prefers the anthropic endpoint of any provider declaring one (D-3), and the bridge speaks that wire | the copilot pack's env derive; the bridge from its `needs`-joined pack |
+| copilot | BYOK env routed through the wire bridge: `COPILOT_PROVIDER_BASE_URL` at the adapter's declared address, `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_MODEL=qwen-3.8-27b`, `COPILOT_PROVIDER_API_KEY` — its derive prefers the anthropic endpoint of any provider declaring one ([D-3](../../docs/reference/providers.md#reach-d-3)), and the bridge speaks that wire | the copilot pack's env derive; the bridge from its `needs`-joined pack |
 | claude | routed at the bridge's declared address, the key as `ANTHROPIC_AUTH_TOKEN`, auto-compact sized to the 64K window — Cerebras has no native Anthropic-compatible endpoint, so the pairing resolves through the `wire-bridge` pack's `openai → anthropic` adaptation, joined automatically through this pack's `needs` entry. Without that pack the launch REFUSES rather than composing an address nothing serves | its derive, reading `YOLO_PROVIDERS`; the address from the adapter's own declaration |
-| codex | **nothing — no entry and no selection** | codex speaks `responses` only and the bridge translates exactly one pair, anthropic ↔ chat-completions — codex-on-cerebras stays unwireable ([wire-bridge.md](../../docs/reference/wire-bridge.md)) |
-| agy | **nothing, ever** | Google-locked: its only custom-endpoint hook speaks the Gemini protocol (design doc's audit table) |
+| codex | **nothing — no entry and no selection** | codex speaks `responses` only, and every route the bridge translates starts from Anthropic Messages, so nothing turns codex's Responses into chat completions: codex-on-cerebras stays unwireable ([provider reach](../../docs/reference/providers.md#provider-reach-which-agents-a-provider-can-reach-at-all)) |
+| agy | **nothing, ever** | Google-locked: its only custom-endpoint hook speaks the Gemini protocol ([provider reach](../../docs/reference/providers.md#provider-reach-which-agents-a-provider-can-reach-at-all)) |
 
 A launch in which some agent's profile selects cerebras and that never hydrates
 `CEREBRAS_API_KEY` **refuses outright** (the credential preflight demands the key of a
@@ -101,7 +105,7 @@ composes the loopback URL is the launch that stages the listener answering on it
 
 ```console
 $ yolo pack lint packs/cerebras     # claims + the strict manifest read
-$ yolo pack footprint cerebras      # the claims: the provider (two endpoints, the key
+$ yolo pack footprint cerebras      # the claims: the provider (its endpoint, the key
                                     # by name), the selection over it, and the need
 $ CEREBRAS_API_KEY=x yolo -p cerebras -- pi --version
 ```

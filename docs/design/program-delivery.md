@@ -2067,7 +2067,9 @@ does not allow, or a vendor-compatibility hold, which would be an exception P6 d
 - **Where the pin came from.** `git log -S'oh-omp@0.15.3' -- packs` finds one commit, `e0d62605`
   (2026-09-15, *"feat: add OMP and Codex Claude bridge"*), whose message has no body. Its design was
   `docs/design/omp-and-codex-claude-profile.md`. That design was deleted the same day, when it
-  graduated into [the OMP reference](../reference/omp-and-codex-claude-profile.md) (`a5015f15`),
+  graduated into an OMP reference (`a5015f15`), itself folded on 2026-10-16 into
+  [oh-omp's catalog](../reference/providers.md#oh-omps-catalog) and
+  [the Codex Responses route](../reference/wire-bridge.md#the-codex-responses-route),
   so it is read from history (`git show a5015f15^:docs/design/omp-and-codex-claude-profile.md`).
   Its first question asked which OMP distribution the pack installs from. Its leaning was *"Use
   OMP's official package-manager distribution, pinned by its package version; yolo should not

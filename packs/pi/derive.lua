@@ -24,7 +24,7 @@ local piDialect = {
 -- NO default, and an absent api is a composition error that deletes the provider from the
 -- model list (pi-coding-agent/dist/core/provider-composer.js:48-52), so leaving the field
 -- out is not an option the way it is for an agent with a default of its own. The openai
--- route is the one the packs ship for openai-speaking agents (zai-plumbing.md §5), so it
+-- route is the one the packs ship for openai-speaking agents (providers.md, provider reach), so it
 -- is what an undeclared endpoint means here.
 local function piAPI(canonical)
   if canonical == nil then
