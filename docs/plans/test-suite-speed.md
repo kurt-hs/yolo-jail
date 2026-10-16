@@ -161,7 +161,31 @@ Neither numeric target was reached, and the run cannot establish an idle-target 
 > [!NOTE]
 > An earlier attempt is excluded from these measurements: two capture tests failed because the runner's restrictive inherited umask made copied test fixtures mode `0700` instead of the intended `0755`. The runner was corrected to set the test process umask to `022`, and both focused capture tests passed before this completed retake. This was a fixture-permission measurement-harness defect, not evidence of a product regression.
 
+### `internal/cli` on the maintainer's Mac is git-spawn-bound (2026-10-16)
 
+The maintainer's Mac (Apple Git 2.50.1, no Homebrew git) timed `internal/cli` out at the 20-minute
+package limit (the lab report `docs/lab-reports/2026-10-16-macos-user-pi-refusal.md`, written on
+the Mac), while CI's macOS runner passes under it.
+
+**MEASURED on Linux, 2026-10-16**: `go test -short -count=1 ./internal/cli` takes 170 s for 2347
+tests. No test takes more than 4.1 s, and only 22 take 1 s or more (39 s together). With `git` on
+`PATH` replaced by a logging wrapper, the package started **48,536 `git` processes**, spread across
+572 tests: the 100 heaviest hold 45% of them, so no handful of tests is the cost. Most are the
+product's own patched-fork replay (`rev-parse`, `rev-list`, `am`, `merge-tree`, `commit-tree`), not
+fixture setup.
+
+**INFERRED from the lab report's two timings:** the two tests it names take 45.9 s and 29.8 s on
+the Mac, and start 1468 and 837 `git` processes on Linux, so each start costs about 31 to 36 ms
+there. 48,536 starts at that cost is about 25 minutes, past the limit. Unmeasured: whether the cost
+is the `/usr/bin/git` xcrun shim, which CI's Homebrew git skips, or per-exec scanning. To tell them
+apart on the Mac, time 100 runs of `/usr/bin/git --version` against 100 of
+`"$(xcrun --find git)" --version`.
+
+So shortening real waits cannot fix this: the background-advance tests are not waiting, they are
+starting `git`. The levers are fewer `git` starts per replay (a launch on the Mac pays the same
+cost), a cheaper `git` on darwin, or running `git`-heavy tests in parallel. Each needs a ruling.
+The one wait cut made: `TestAppleListingQueryIsBounded` sets the `container ls` bound
+(`appleListingBound`) to 100 ms instead of waiting out 2 s.
 
 **A flake seen once in four unit runs**, the second:
 `TestEnvOverrideRefusesTheMacosUserLaunch` failed with `Refusing the macos-user launch: the
