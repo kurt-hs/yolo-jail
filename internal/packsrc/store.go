@@ -298,7 +298,20 @@ func gitLabel(args []string) string {
 //     the first time it reads that worktree's index, and the daemon outlives the command. The
 //     checkout into a pack tree reads one, so each materialized pack left a resident daemon
 //     watching a tree nothing edits, after yolo had exited (measured with git 2.55 on Linux).
-var storeGitConfig = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false"}
+//   - maintenance.auto=false and gc.auto=0: NO DETACHED MAINTENANCE. After a fetch, git runs
+//     `git maintenance run --auto --detach` (`git gc --auto` before git 2.29), which starts a
+//     new session and keeps running after the fetch, and yolo, have returned. Measured with
+//     git 2.55: every fetch into a mirror started one, with nothing in the user's config
+//     asking for it. In the store that run is outside everything a store run is held to: the
+//     mirror's lock, which keeps a gc out of a mirror a replay borrows objects from
+//     (replay.go), the budget's timeout, and a Detached run's process-group kill, which its
+//     own setsid escapes. The store's mirrors are yolo's to keep, so it is never wanted.
+var storeGitConfig = []string{
+	"-c", "core.hooksPath=" + os.DevNull,
+	"-c", "core.fsmonitor=false",
+	"-c", "maintenance.auto=false",
+	"-c", "gc.auto=0",
+}
 
 // gitCmd builds the git command for one store run: the store's git, the environment
 // hygiene, and — when Detached — a new session whose whole process group the budget's

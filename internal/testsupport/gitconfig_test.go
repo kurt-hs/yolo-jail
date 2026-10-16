@@ -1,6 +1,7 @@
 package testsupport
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -242,4 +243,73 @@ func TestArmGitConfigTripwireFailsACommitThatReadsIt(t *testing.T) {
 	if out, err := commitIn(t, HermeticGitEnv(env)); err != nil {
 		t.Errorf("a commit under HermeticGitEnv read the tripwire: %v\n%s", err, out)
 	}
+}
+
+// A FIXTURE'S GIT LEAVES NO DETACHED MAINTENANCE BEHIND. A commit starts
+// `git maintenance run --auto --detach` by default, which outlives it and can still be writing
+// into the test's t.TempDir() when cleanup removes it (macOS CI: "TempDir RemoveAll cleanup: …
+// .git: directory not empty"). git's trace2 event stream records every git process a run
+// starts, the detached one included, its start event coming before it detaches. The control
+// commit, with no configuration but HermeticGitEnv's file settings, must start one, or this git
+// starts none and the assertion proves nothing. Its repository is removed best-effort, since
+// the maintenance it starts is the very race this test is about.
+func TestHermeticGitEnvLeavesNoDetachedMaintenance(t *testing.T) {
+	requireGitConfigEnv(t)
+	base := machineEnv(os.Environ(), append([]string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+		"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_TRACE2_EVENT"}, gitStateEnv...),
+		[]string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"})
+
+	control, err := os.MkdirTemp("", "yolo-maintenance-control-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(control) })
+	if runs := maintenanceRunsOfCommit(t, control, base); len(runs) == 0 {
+		t.Skip("this git starts no auto maintenance after a commit")
+	}
+
+	if runs := maintenanceRunsOfCommit(t, t.TempDir(), HermeticGitEnv(base)); len(runs) > 0 {
+		t.Errorf("a commit under HermeticGitEnv started background maintenance: %q", runs)
+	}
+}
+
+// maintenanceRunsOfCommit commits one file in a new repository at dir under env and returns
+// the argv of every maintenance or gc process git's trace2 event stream records for it.
+func maintenanceRunsOfCommit(t *testing.T, dir string, env []string) []string {
+	t.Helper()
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	env = append(env, "GIT_TRACE2_EVENT="+trace)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@e",
+			"-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Dir, cmd.Env = dir, env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("f\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-qm", "c")
+	body, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatalf("no trace2 events recorded: %v", err)
+	}
+	var runs []string
+	for line := range strings.Lines(string(body)) {
+		var ev struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Event != "start" || len(ev.Argv) == 0 {
+			continue
+		}
+		if slices.Contains(ev.Argv[1:], "maintenance") || slices.Contains(ev.Argv[1:], "gc") {
+			runs = append(runs, strings.Join(ev.Argv, " "))
+		}
+	}
+	return runs
 }

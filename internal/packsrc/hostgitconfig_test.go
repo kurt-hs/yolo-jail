@@ -1,6 +1,7 @@
 package packsrc
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,6 +198,51 @@ func TestStoreStartsNoFsmonitorDaemon(t *testing.T) {
 	}
 }
 
+// THE STORE STARTS NO DETACHED MAINTENANCE. A fetch runs `git maintenance run --auto
+// --detach` afterwards by default, which outlives the fetch, the mirror's lock and yolo, and
+// on macOS's CI runner wrote into a test's repository after the test returned. git's trace2
+// event stream records every git process the store's runs start, the detached one included
+// (its start event comes before it detaches), so none may be a maintenance or gc run.
+func TestStoreStartsNoDetachedMaintenance(t *testing.T) {
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	exerciseStore(t, append(os.Environ(), "GIT_TRACE2_EVENT="+trace))
+	body, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatalf("no trace2 events recorded, so nothing was checked: %v", err)
+	}
+	if got := maintenanceRuns(t, body); len(got) > 0 {
+		t.Errorf("the store's git started background maintenance: %q", got)
+	}
+}
+
+// maintenanceRuns is every git process in a trace2 event stream that ran maintenance or gc,
+// as its argv. It fails the test if the stream records no git process at all.
+func maintenanceRuns(t *testing.T, events []byte) []string {
+	t.Helper()
+	var runs []string
+	starts := 0
+	for line := range strings.Lines(string(events)) {
+		var ev struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Event != "start" || len(ev.Argv) == 0 {
+			continue
+		}
+		starts++
+		for _, a := range ev.Argv[1:] {
+			if a == "maintenance" || a == "gc" {
+				runs = append(runs, strings.Join(ev.Argv, " "))
+				break
+			}
+		}
+	}
+	if starts == 0 {
+		t.Fatal("the trace2 stream records no git process")
+	}
+	return runs
+}
+
 // storeConfigOverrides is every `-c` setting in argv, as key=value.
 func storeConfigOverrides(argv []string) []string {
 	var out []string
@@ -227,6 +273,11 @@ func TestGitCmdTurnsHooksAndFsmonitorOff(t *testing.T) {
 		}
 		if !slices.Contains(storeConfigOverrides(argv), "core.fsmonitor=false") {
 			t.Errorf("git %v may start an fsmonitor daemon: argv %q", tc.args, argv)
+		}
+		for _, kv := range []string{"maintenance.auto=false", "gc.auto=0"} {
+			if !slices.Contains(storeConfigOverrides(argv), kv) {
+				t.Errorf("git %v may start detached maintenance, lacking %s: argv %q", tc.args, kv, argv)
+			}
 		}
 	}
 }
