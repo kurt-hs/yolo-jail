@@ -18,6 +18,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/nixchildren"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/perf"
 	"github.com/mschulkind-oss/yolo-jail/internal/perside"
@@ -363,6 +364,14 @@ func MacosSandboxEnv(deps Deps, cfg *jsonx.OrderedMap) *jsonx.OrderedMap {
 	}
 	if v := deps.Getenv(paths.NoProgramReadinessEnv); v != "" {
 		env.Set(paths.NoProgramReadinessEnv, v)
+	}
+	// The launchers' update hatch (docs/design/program-delivery.md PD-NF2) crosses for the same
+	// reason, into the session's env file, which every sandboxed argv sources: the launcher that
+	// refuses to run an installed version after a failed update reads it at run time, from the
+	// environment of the command the user typed. Per session, so one command's hatch does not
+	// reach another terminal's.
+	if v := deps.Getenv(patchrecovery.UseInstalledEnv); v != "" {
+		env.Set(patchrecovery.UseInstalledEnv, v)
 	}
 	for _, pair := range [][2]string{{"YOLO_GIT_NAME", "user.name"}, {"YOLO_GIT_EMAIL", "user.email"}} {
 		if val, ok := deps.GitConfig(pair[1]); ok && val != "" {

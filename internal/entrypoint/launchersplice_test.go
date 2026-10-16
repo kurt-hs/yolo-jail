@@ -504,10 +504,12 @@ func TestLaunchersQuoteTheBinNameAndStampDir(t *testing.T) {
 		stamps := filepath.Join(home, hostileValue("-stampdir"))
 		npmBin := filepath.Join(home, ".npm-global", "bin")
 		seedInstalled(t, npmBin, bin)
+		// UNPINNED with a fresh stamp: nothing is due, so no npm is reached. A pinned package with
+		// no recorded spec reinstalls (a moved declaration), which is not this cell.
 		seedFreshStamp(t, stamps, bin)
 
 		body := npmAgentLauncher("probe",
-			&packdecl.Install{Kind: "npm", Bin: bin, Package: "pkg@1.0.0"},
+			&packdecl.Install{Kind: "npm", Bin: bin, Package: "pkg"},
 			stamps, filepath.Join(home, "ws", ".yolo", "receipts.jsonl"), true, launcherServers{}, nil)
 		out, rc := runLauncher(t, home, "launcher", body, filepath.Join(home, "nonexistent-bin"))
 		if rc != 0 || !strings.Contains(out, "LAUNCHED") {

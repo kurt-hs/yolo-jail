@@ -62,7 +62,7 @@ func TestProgramRefreshPhasePerfAtForegroundAndDetachedCalls(t *testing.T) {
 					p = newTimingProbe(t, false, false)
 				}
 				sink := programPerfFile(t, p.home)
-				stdout, _ := p.run(t, "", "FAKE_REFRESH_RC="+rc)
+				stdout, _ := p.run(t, "", "FAKE_REFRESH_RC="+rc, registryDownEnv)
 				if mode == "detached" {
 					waitForJobs(t, p, 1)
 				}
@@ -136,7 +136,7 @@ func TestProgramPhasePerfAppendFailureIsSilent(t *testing.T) {
 	if err := os.Symlink("/proc/version", filepath.Join(p.home, ".yolo-perf.log")); err != nil {
 		t.Fatal(err)
 	}
-	stdout, stderr := p.run(t, "", "FAKE_REFRESH_RC=3")
+	stdout, stderr := p.run(t, "", "FAKE_REFRESH_RC=3", registryDownEnv)
 	if !strings.Contains(stdout, "RAN") || !strings.Contains(stderr, "status 3") || strings.Contains(stderr, ".yolo-perf.log") {
 		t.Fatalf("append failure changed refresh streams: %s %s", stdout, stderr)
 	}

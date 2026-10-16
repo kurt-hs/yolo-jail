@@ -184,11 +184,13 @@ func TestEveryLauncherTemplateCarriesTheOneUpdateBound(t *testing.T) {
 			Refresh: refresh}, ForkDelivery{Key: "k"}, "/stamps", "/keys", "/receipts.jsonl", "", true,
 			launcherServers{}, nil), ""),
 	}
+	// The fragment as each generator splices it: its refusal values are the program's (useInstalledSplices).
+	packOf := map[string]string{"npm": "probe", "native": "probe", "source": ""}
 	for name, body := range rendered {
 		if n := strings.Count(body, "\n_bounded() {"); n != 1 {
 			t.Errorf("the %s launcher defines _bounded %d times, want once", name, n)
 		}
-		if !strings.Contains(body, updateBoundShellFn) {
+		if !strings.Contains(body, strings.NewReplacer(useInstalledSplices("tool", packOf[name])...).Replace(updateBoundShellFn)) {
 			t.Errorf("the %s launcher does not carry updateBoundShellFn whole", name)
 		}
 		if !strings.Contains(body, `_shielded '_stop_refresh_heartbeat; _drop_refresh_lock'`) {
