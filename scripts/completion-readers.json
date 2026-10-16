@@ -1896,7 +1896,6 @@
 "internal/wirebridged",
 "packs/**",
 "scripts",
-"scripts/__pycache__",
 "tools/**",
 "userguide/**"
 ]
@@ -2922,6 +2921,7 @@
 "docs/reference/self-documenting-cli.md",
 "docs/reference/storage-and-config.md",
 "docs/reference/stringly-typed-references-principle.md",
+"docs/reference/tool-provisioning.md",
 "docs/reference/wire-bridge.md",
 "docs/reference/workspace-path-mirroring.md",
 "docs/reference/zai-plumbing.md",
@@ -3273,8 +3273,7 @@
 "internal/wirebridge",
 "internal/wirebridged",
 "packs/**",
-"scripts",
-"scripts/__pycache__"
+"scripts"
 ]
 },
 {
@@ -5071,6 +5070,7 @@
 "internal/agentcfg/retiredlayer_test.go",
 "internal/agentcfg/selection_test.go",
 "internal/agentcfg/selectionclear_stateful_test.go",
+"internal/agentcfg/selectiontrigger_test.go",
 "internal/agentcfg/staterender_list_test.go",
 "internal/agentcfg/staterender_test.go",
 "internal/agentcfg/zz_probe2_test.go",
@@ -5443,6 +5443,7 @@
 "internal/cli/hostmalformedprofile_test.go",
 "internal/cli/hostmanagementgate_test.go",
 "internal/cli/hostmissingprovider_test.go",
+"internal/cli/hostmodelfacts_test.go",
 "internal/cli/hostmodelmenu_test.go",
 "internal/cli/hostmodelroles_test.go",
 "internal/cli/hostopenaiauth_test.go",
@@ -5552,6 +5553,7 @@
 "internal/cli/patchedfetchretry_test.go",
 "internal/cli/patchedfork_test.go",
 "internal/cli/patchedhost_test.go",
+"internal/cli/patchedpatchbranch_test.go",
 "internal/cli/patchedrace_test.go",
 "internal/cli/patchedrecipe_test.go",
 "internal/cli/patchedrekey_test.go",
@@ -5869,6 +5871,7 @@
 "internal/cli/run/misereclaim_test.go",
 "internal/cli/run/misestoreprose_test.go",
 "internal/cli/run/missingbuilds_test.go",
+"internal/cli/run/modelfacts_test.go",
 "internal/cli/run/modelroles_test.go",
 "internal/cli/run/mountsentinel_test.go",
 "internal/cli/run/narrowselection_test.go",
