@@ -22,9 +22,9 @@ func TestSetupInstallsTheRuleThenProvesItWithAnEmptyCache(t *testing.T) {
 		t.Fatalf("rc = %d", rc)
 	}
 	order := []string{
-		"run:/usr/bin/sudo /usr/sbin/visudo -c -q -f /etc/sudoers.d/.yolo-jail.new",
+		"run:/usr/bin/sudo /usr/sbin/visudo -c -f /etc/sudoers.d/.yolo-jail.new",
 		"run:/usr/bin/sudo /bin/mv -f /etc/sudoers.d/.yolo-jail.new /etc/sudoers.d/yolo-jail",
-		"run:/usr/bin/sudo /usr/sbin/visudo -c -q",
+		"run:/usr/bin/sudo /usr/sbin/visudo -c",
 		"run:/usr/bin/sudo -k",
 		"run:/usr/bin/sudo -n --user=_yolojail /usr/bin/env /usr/bin/true",
 	}
@@ -98,7 +98,7 @@ func grepRun(rec *[]string, grepRC, rootRC int) func([]string) int {
 		joined := strings.Join(argv, " ")
 		*rec = append(*rec, "run:"+joined)
 		switch {
-		case strings.HasPrefix(joined, "/usr/bin/sudo /usr/bin/grep -qxF"):
+		case strings.HasPrefix(joined, "/usr/bin/sudo /usr/bin/grep -s -qxF"):
 			return grepRC
 		case joined == "/usr/bin/sudo -n /usr/bin/true":
 			return rootRC
@@ -118,7 +118,7 @@ func TestSetupRefusesWhenTheInstalledRuleNamesAnotherUser(t *testing.T) {
 	if rc := MacosSetup(d); rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
-	if i := slices.Index(rec, "run:/usr/bin/sudo /usr/bin/grep -qxF -e matt ALL=(_yolojail) "+
+	if i := slices.Index(rec, "run:/usr/bin/sudo /usr/bin/grep -s -qxF -e matt ALL=(_yolojail) "+
 		"NOPASSWD: /usr/bin/env /etc/sudoers.d/yolo-jail"); i < 0 {
 		t.Errorf("the existing rule was not asked about:\n%s", strings.Join(rec, "\n"))
 	}
@@ -176,7 +176,7 @@ func TestSetupStagesExactlyTheRuleUnderTheInertName(t *testing.T) {
 		"run:/usr/bin/sudo /bin/cp " + tmp + " /etc/sudoers.d/.yolo-jail.new",
 		"run:/usr/bin/sudo /usr/sbin/chown root:wheel /etc/sudoers.d/.yolo-jail.new",
 		"run:/usr/bin/sudo /bin/chmod 0440 /etc/sudoers.d/.yolo-jail.new",
-		"run:/usr/bin/sudo /usr/sbin/visudo -c -q -f /etc/sudoers.d/.yolo-jail.new",
+		"run:/usr/bin/sudo /usr/sbin/visudo -c -f /etc/sudoers.d/.yolo-jail.new",
 	}
 	last := -1
 	for _, w := range order {
@@ -199,7 +199,7 @@ func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 	d.Run = func(argv []string) int {
 		joined := strings.Join(argv, " ")
 		rec = append(rec, "run:"+joined)
-		if joined == "/usr/bin/sudo /usr/sbin/visudo -c -q -f "+SudoersStagingFile {
+		if joined == "/usr/bin/sudo /usr/sbin/visudo -c -f "+SudoersStagingFile {
 			return 1
 		}
 		return 0
@@ -214,11 +214,149 @@ func TestSetupInstallsNothingWhenVisudoRejectsTheRule(t *testing.T) {
 		t.Errorf("the rejected staging file was not removed:\n%s", strings.Join(rec, "\n"))
 	}
 	out := buf.String()
-	if !strings.Contains(out, "✗ visudo rejected the rule, so nothing was installed and your sudo "+
-		"configuration is unchanged:") ||
-		!strings.Contains(out, "This is a yolo bug; report it at "+
-			"https://github.com/mschulkind-oss/yolo-jail/issues with that output.") {
-		t.Errorf("visudo refusal:\n%s", out)
+	rule, _ := SudoersRule("matt")
+	for _, want := range []string{
+		"✗ visudo rejected the rule file on its own, so nothing was installed and your sudo " +
+			"configuration is unchanged.",
+		"visudo's reason is above",
+		rule,
+		"This is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("visudo refusal lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// wholeCheckRun is mockDeps' Run with the whole-configuration check (`visudo -c`) answering
+// withRule while the rule is in place and withoutRule once setup has removed it again.
+func wholeCheckRun(rec *[]string, withRule, withoutRule int) func([]string) int {
+	installed := false
+	return func(argv []string) int {
+		joined := strings.Join(argv, " ")
+		*rec = append(*rec, "run:"+joined)
+		switch joined {
+		case "/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile:
+			installed = true
+		case "/usr/bin/sudo /bin/rm -f " + SudoersFile:
+			installed = false
+		case "/usr/bin/sudo /usr/sbin/visudo -c":
+			if installed {
+				return withRule
+			}
+			return withoutRule
+		}
+		return 0
+	}
+}
+
+// inOrder fails t unless every entry of want appears in rec, in order (repeats allowed).
+func inOrder(t *testing.T, rec, want []string) {
+	t.Helper()
+	last := -1
+	for _, w := range want {
+		i := slices.Index(rec[last+1:], w)
+		if i < 0 {
+			t.Fatalf("%q missing or out of order:\n%s", w, strings.Join(rec, "\n"))
+		}
+		last += 1 + i
+	}
+}
+
+// The rule passes on its own but the whole configuration fails with it in place, and fails again
+// once setup has removed it: the configuration was already broken, which is not yolo's bug.
+func TestSetupBlamesTheExistingConfigWhenItFailsWithoutTheRuleToo(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	d.Run = wholeCheckRun(&rec, 1, 1)
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d", rc)
+	}
+	inOrder(t, rec, []string{
+		"run:/usr/bin/sudo /bin/mv -f " + SudoersStagingFile + " " + SudoersFile,
+		"run:/usr/bin/sudo /usr/sbin/visudo -c",
+		"run:/usr/bin/sudo /bin/rm -f " + SudoersFile,
+		"run:/usr/bin/sudo /usr/sbin/visudo -c",
+	})
+	if recAt(rec, "-n --user=_yolojail") >= 0 {
+		t.Errorf("went on after the whole-configuration check failed:\n%s", strings.Join(rec, "\n"))
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"✗ Your sudo configuration fails visudo's check even without yolo's rule",
+		"removed " + SudoersFile + " again",
+		"`sudo visudo -c`",
+		"yolo macos-setup",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("refusal lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "yolo bug") {
+		t.Errorf("called a pre-existing sudo problem a yolo bug:\n%s", out)
+	}
+}
+
+// The whole configuration fails only with the rule in place: that IS yolo's bug.
+func TestSetupCallsItAYoloBugWhenOnlyTheRuleBreaksTheConfig(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	d.Run = wholeCheckRun(&rec, 1, 0)
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d", rc)
+	}
+	out := buf.String()
+	rule, _ := SudoersRule("matt")
+	for _, want := range []string{
+		"✗ visudo rejected your sudo configuration with yolo's rule in place",
+		"removed " + SudoersFile + " again, and without it visudo accepts the configuration",
+		rule,
+		"This is a yolo bug; report it at https://github.com/mschulkind-oss/yolo-jail/issues",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("refusal lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// When the removal of a rule the whole check rejected fails, the rule is still in place: setup
+// says so and names the command that removes it.
+func TestSetupNamesTheRemovalWhenItCannotTakeTheRuleBackOut(t *testing.T) {
+	var rec []string
+	var buf bytes.Buffer
+	d := mockDeps(&rec)
+	d.Out = &buf
+	inner := wholeCheckRun(&rec, 1, 0)
+	d.Run = func(argv []string) int {
+		if strings.Join(argv, " ") == "/usr/bin/sudo /bin/rm -f "+SudoersFile {
+			rec = append(rec, "run:"+strings.Join(argv, " "))
+			return 1
+		}
+		return inner(argv)
+	}
+	if rc := MacosSetup(d); rc != 1 {
+		t.Fatalf("rc = %d", rc)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "is still installed") ||
+		!strings.Contains(out, "`/usr/bin/sudo /bin/rm -f "+SudoersFile+"`") {
+		t.Errorf("refusal does not name the removal:\n%s", out)
+	}
+}
+
+// A first run has no rule file: the existing-rule check must not print grep's complaint about it.
+func TestSetupAsksAboutTheExistingRuleSilently(t *testing.T) {
+	var rec []string
+	d := mockDeps(&rec)
+	if rc := MacosSetup(d); rc != 0 {
+		t.Fatalf("rc = %d", rc)
+	}
+	if recAt(rec, "/usr/bin/grep -s -qxF") < 0 {
+		t.Errorf("the existing-rule grep is not silenced with -s:\n%s", strings.Join(rec, "\n"))
 	}
 }
 
