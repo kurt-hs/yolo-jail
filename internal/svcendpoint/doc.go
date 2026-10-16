@@ -58,7 +58,7 @@
 //
 //   - the TOKEN frame (token.go:97-127) is CLIENT→SERVER, pre-auth, and is
 //     consumed and DISCARDED — its bytes never become part of the payload;
-//   - the connection PREAMBLE (preamble.go, docs/design/broker-as-a-pack.md §5.5)
+//   - the connection PREAMBLE (preamble.go, docs/reference/loophole-transport.md, "The connection preamble")
 //     is HOST→DAEMON, post-auth, written once at connection open, and is the only
 //     thing yolo ever ADDS to a stream.
 //

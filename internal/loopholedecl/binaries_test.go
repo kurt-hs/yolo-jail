@@ -1,6 +1,6 @@
 package loopholedecl_test
 
-// The `binaries` key and its two tokens (binaries.go; docs/design/broker-as-a-pack.md BP-D1):
+// The `binaries` key and its two tokens (binaries.go; docs/reference/pack-binaries.md BP-D1):
 // an executable a loophole ships as a download pinned by sha256. The refusals are the schema's
 // whole value here — a download with no digest, a token in the wrong half or in a field nothing
 // substitutes, a name nothing declares — so each is pinned by the words that name its fix.

@@ -185,7 +185,7 @@ func TestMacosUserBareClaudeOpensTheOpenAIDoorwayOutsideAndDeclinesTheRestByName
 
 // A pack SERVICE's jail_daemon that publishes an endpoint file is declined by name, with the
 // reason: the file's path is a container one the sandbox has no counterpart of
-// (docs/design/jail-daemon-on-macos-user-plan.md JD-9).
+// (docs/reference/macos-user-provisioning.md JD-9).
 func TestMacosUserDeclinesAServiceJailDaemonByName(t *testing.T) {
 	home := packHome(t)
 	ws := t.TempDir()

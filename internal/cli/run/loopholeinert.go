@@ -266,7 +266,7 @@ func platformInertLines(packs []*packload.Pack, cfg *jsonx.OrderedMap) []string 
 		lines = append(lines, inertLineFor(packOf[note.Name], note))
 	}
 	// A declared build not fetched yet (loopholes.BinaryInertNotes, the binary axis): the
-	// launch never fetches (docs/design/broker-as-a-pack.md BP-D1), so without this line a
+	// launch never fetches (docs/reference/pack-binaries.md BP-D1), so without this line a
 	// loophole the user switched on would simply not run, with nothing said. The producer
 	// skips what the platform producer above already reported.
 	for _, note := range loopholes.BinaryInertNotes(resolved) {

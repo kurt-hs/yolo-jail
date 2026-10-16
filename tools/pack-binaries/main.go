@@ -1,4 +1,4 @@
-// Command pack-binaries is the PIN TOOL of docs/design/broker-as-a-pack.md §14: the one program
+// Command pack-binaries is the PIN TOOL of docs/reference/pack-binaries.md, "The release matrix": the one program
 // that builds every official build of a pack-shipped binary, writes its url and sha256 into the
 // manifest, and checks them.
 //

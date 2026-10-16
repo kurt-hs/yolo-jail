@@ -3,7 +3,7 @@ package cli
 // packbinaries.go is `yolo pack install`'s DOWNLOAD STEP: every build of a declared loophole
 // binary (internal/loopholedecl's binaries.go) the selected packs need on this machine, fetched,
 // verified against the sha256 its manifest pins, and cached by digest with its exec bit set
-// (internal/packbin; docs/design/broker-as-a-pack.md BP-D1).
+// (internal/packbin; docs/reference/pack-binaries.md BP-D1).
 //
 // THIS IS THE ONLY FETCH. A launch reads the cache and never downloads (§3.1: "at `pack
 // install`, never at launch"), and says `yolo pack install` when a build it needs is missing
@@ -43,7 +43,7 @@ var packBinaryFetcher = func() packbin.Fetcher {
 // fromSourceHint is the next step after an official pack's build could not be fetched — a
 // digest that does not match, or a file that is not there — when this yolo was installed from a
 // checkout ("" otherwise). Between releases main pins ITS OWN build of each official program,
-// while each url still names the last release (docs/design/broker-as-a-pack.md BP-D15): for a
+// while each url still names the last release (docs/reference/pack-binaries.md BP-D15): for a
 // program the tree has changed, the release's file is expected not to match, and for one added
 // since, no release has a file at all (BP-D29). Either way the tree's build is what this yolo's
 // manifests pin, and `just install` in that checkout builds it into the cache with no download.

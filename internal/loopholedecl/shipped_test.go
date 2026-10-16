@@ -15,7 +15,7 @@ import (
 // IT USED TO RECORD WHICH EMBED, with an empty value meaning `bundled_loopholes/`. That
 // was the sprint's whole subject: the channel was emptied one conversion at a time and
 // `claude-oauth-broker` was the last one out on 2026-08-19
-// (docs/design/broker-as-a-pack.md OQ-BP4), so every value now names a pack and the
+// (docs/reference/loophole-system.md OQ-BP4), so every value now names a pack and the
 // bundled reader is gone with the choice it recorded.
 //
 // The broker's row is the one to read twice: `claude`, the AGENT pack, not a
@@ -40,7 +40,7 @@ var shippedManifestHome = map[string]string{
 	"aws-auth":            "aws-auth",
 	"github-broker":       "github",
 	// A throwaway that exists to EXERCISE the pack-shipped jail-binary path rather than to
-	// serve a user (docs/design/broker-as-a-pack.md §10 step two). It belongs in this table
+	// serve a user (docs/reference/pack-binaries.md, "A pack's own tree cannot carry an executable"). It belongs in this table
 	// for the table's own reason — every shipped loophole gets the decode bar and the field
 	// pins — and the experiment is worth MORE covered, since what it measures is a delivery
 	// gap that the manifest half must not also have.
@@ -334,7 +334,7 @@ func TestShippedBrokerFields(t *testing.T) {
 	// because a half-applied edit to any one of them is silent everywhere else.
 	//
 	// publishes:"socket" replaced the per-jail broker relay
-	// (docs/design/broker-as-a-pack.md §7): the daemon binds a socket and yolo runs the
+	// (docs/reference/loophole-system.md, "The per-jail relay is gone"): the daemon binds a socket and yolo runs the
 	// jail's front over it. Flipping it back to the default would make yolo wait for an
 	// endpoint file this daemon never writes. `detach` is what keeps a refresh in flight
 	// when its jail ends (docs/design/host-daemon-ownership.md §1.3): dropping it would

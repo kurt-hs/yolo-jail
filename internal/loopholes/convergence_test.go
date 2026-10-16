@@ -418,7 +418,7 @@ func TestPackageLevelRuntimeSurfacesHonorNoPackRecord(t *testing.T) {
 // It used to be asserted over a SourceBundled record on RuntimeArgsFor and
 // ManifestHostDaemonSpecs — "this is what keeps `audio` and the broker working through the
 // package-level functions". Both halves of that premise are gone as of 2026-08-19: the
-// bundled channel is retired (docs/design/broker-as-a-pack.md OQ-BP4), so SourcePack and
+// bundled channel is retired (docs/reference/loophole-system.md OQ-BP4), so SourcePack and
 // SourceConfig are the whole population, and BOTH runtime surfaces drop a config record
 // before the gate is consulted (TestRuntimeArgsSkipConfigBacked — a config entry
 // contributes no binds, devices or intercepts by construction).
@@ -519,7 +519,7 @@ func TestActiveExcludesEnabledButUnmetRequirements(t *testing.T) {
 //
 // It used to also have to remember `IncludeBundled: true`, whose zero value is false — the
 // flag all six call sites had to set and any new one would forget. That channel is retired
-// (docs/design/broker-as-a-pack.md OQ-BP4), which removes the trap rather than the
+// (docs/reference/loophole-system.md OQ-BP4), which removes the trap rather than the
 // convergence: reading the recorded modules instead of PackModules() passed in by the
 // caller is still the property, because a launch that validated against one set and
 // mounted another is the disagreement this type exists to make unrepresentable.

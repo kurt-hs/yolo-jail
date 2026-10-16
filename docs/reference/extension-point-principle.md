@@ -28,13 +28,13 @@ this one is about *who does the designing*.
 
 **Where the open case lives:** the pack-shipped **binary** capability is this principle's live test
 case — designed as a *general* capability before its first consumer needed it. Its questions are
-recorded in [`../design/broker-as-a-pack.md`](../design/broker-as-a-pack.md#decision-ledger). Two were
+recorded in [`pack-binaries.md`](pack-binaries.md#why-its-this-way). Two were
 settled there on 2026-09-30:
-[`OQ-BP5`](../design/broker-as-a-pack.md#decision-ledger) (is a declared *build step* allowed as well? No:
+[`OQ-BP5`](pack-binaries.md#OQ-BP5) (is a declared *build step* allowed as well? No:
 a digest-pinned download only) and
-[`OQ-BP6`](../design/broker-as-a-pack.md#decision-ledger) (may a *fetched* pack ship a **host-side**
+[`OQ-BP6`](pack-binaries.md#OQ-BP6) (may a *fetched* pack ship a **host-side**
 binary? Yes, disclosed). The third was settled on 2026-10-05:
-[`OQ-BP7`](../design/broker-as-a-pack.md#decision-ledger) (between releases, does main pin the last
+[`OQ-BP7`](pack-binaries.md#OQ-BP7) (between releases, does main pin the last
 release's build of an official binary, or its own? Its own, built and installed with the tree).
 This page settles none of them.
 

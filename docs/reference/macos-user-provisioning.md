@@ -25,6 +25,9 @@ covers:
   - internal/cli/run/run.go
   - internal/cli/run/flock.go
   - internal/cli/run/loopholeinert.go
+  - internal/cli/run/macosuserguestdaemons.go
+  - internal/macosuser/capture.go
+  - internal/loopholes/guestrun.go
   - .github/workflows/macos-user.yml
 tags: [macos-user, provisioning, packages, mise, floor, stage, backend-parity]
 summary: "macos-user provisions itself with a native nix floor and a Seatbelt-confined stage. The stage now also runs the declared-program readiness act when the host cannot prove a selected program present, using the same generated bootstrap and install-only launcher as container jails. This authority records what each path delivers, the current fixture tests and the native Mac verification still pending."
@@ -42,7 +45,7 @@ updated on 2026-09-30 for [AR-L3](agent-program-runtimes.md#ar-l3),
 [PS-D1](../design/provisioner-sets.md#PS-D1), read from code and unit tests only. The per-session
 file names, the liveness record and the CA files were added on 2026-10-04
 ([`<session>`](#the-session-key), [PS-D10](../design/provisioner-sets.md#PS-D10)), read from code and
-unit tests only. Program readiness joined the same stage on 2026-10-06 ([JR-D2](../design/jail-notch-readiness.md#JR-D2)); permanent fixture-based tests run in the macOS CI job, but a green native run and manual hardware verification are still pending.
+unit tests only. The [guest pack tree](#the-guest-pack-tree--one-per-launch-never-replaced) and the JD rows were added on 2026-10-16, checked against `8e65f3444`, when the jail-daemon plan graduated here; its native behavior is UNMEASURED. Program readiness joined the same stage on 2026-10-06 ([JR-D2](../design/jail-notch-readiness.md#JR-D2)); permanent fixture-based tests run in the macOS CI job, but a green native run and manual hardware verification are still pending.
 
 A container jail gets its tools from two places: an image **floor** that exists before any
 config asks for anything, and an imperative **stage** that runs inside the jail before the
@@ -547,6 +550,73 @@ tier otherwise.
 > collision that is real is mise's **config**, and it is closed by the `config` sidecar
 > symlink.
 
+## The guest pack tree — one per launch, never replaced
+
+A container launch mounts its own staged pack tree; the sandbox cannot mount, so each
+macos-user launch **copies** its tree into the staging root for the guest to read. Three terms,
+each defined here:
+
+- **Host pack tree** — the immutable copy of the selected packs one launch stages on the host
+  ([the pack-tree layout](pack-system.md#oq-pk2)). Its unique directory leaf is the **tree id**,
+  which is not a content digest and not the workspace name.
+- **Guest pack tree** — the sealed copy of that host pack tree this launch's bootstrap, session
+  and module-dir jail daemons read, at `<staging root>/packs/<cname>.<tree-id>`. It is not the
+  shared guest binary prefix, the home overlay, the context tree or the capture store.
+- **Holder** — any process still reading, executing or able to restart from a guest pack tree,
+  a supervisor and its descendants included. A launcher, the workspace keeper or a record alone is
+  not the complete set.
+
+**One calculation serves every reader** ([JD-10](#JD-10)). Staging, the run and capture plans,
+the bootstrap's and session's `YOLO_PACK_ROOT`, and the argv of every module-dir jail daemon
+(`{jail_loophole_dir}`, resolved per backend by `run.placeModuleDirsInGuest`) derive the
+destination from the exact host pack tree the pipeline supplied (`macosuser.StagedPackTreeRoot`).
+A module keeps its path relative to the tree, and a launch with no packs stages nothing and never
+falls back to an older tree. Plan builders are pure: they create no directory, and `--dry-run`
+creates no guest tree.
+
+**Create once, never replace or merge.** Staging reserves the destination with an exclusive
+`mkdir`, copies into it, and seals it readable by every account and writable by none, keeping
+each file's existing exec bit; it finishes before any guest consumer starts, and yolo never edits
+it afterwards. An existing destination is a staging failure, never something to delete, adopt or
+overwrite: the refusal names the exact path, says to retry as a fresh invocation so yolo stages a
+new tree id, and to inspect it with `ls -la -- <path>`, and says not to remove it. So a later
+launch that changes or drops a module cannot change an earlier launch's bytes or its daemons'
+restart target.
+
+**Cleanup: unknown keeps the bytes.** The tree is this launch's, never the keeper's, and no age
+rule, process scan or sweep collects it.
+
+| State | What happens |
+| :--- | :--- |
+| No host tree, or no destination created | Nothing to remove |
+| The exclusive reservation fails | The existing destination is untouched and not this launch's |
+| Reserved; no writer and no guest consumer dispatched | Unsealed and removed on the launch's return path |
+| A copy or seal writer was dispatched | Retained and disclosed: a returned status does not prove the writer stopped |
+| The bootstrap or another guest consumer was dispatched | Retained and disclosed on every return, ordinary completion included |
+| Removal before any dispatch fails | Retained; the message names the exact path and the exact unseal-and-remove command, and the launch's exit status is unchanged |
+
+There is **no complete post-consumer proof that no holder remains**: neither the sudo launcher's
+status nor the supervisor's stop shows every guest reader and restart capability ended. That is
+why retention follows any dispatch. The [liveness record](#the-session-key) still sweeps the
+session's env, profile and CA files; it proves the launcher ended, not the guest's processes,
+and it removes no guest tree. Capture follows the same rule: each capture gets its own tree, and
+its plan treats a nil environment as empty and adds `YOLO_PACK_ROOT` to a copy, leaving the
+caller's map unchanged. Trees written by an older yolo under the [legacy state dir](#the-legacy-sweep)
+are neither read nor replaced by this path.
+
+> [!WARNING]
+> **One guest copy per launch costs retained disk**, and unknown post-consumer liveness can keep
+> one indefinitely. That is the trade for never changing or deleting live module bytes; content
+> deduplication and automatic crash collection are not built. Do not "fix" it with a reusable
+> workspace tree or an age-based sweep: either reintroduces a later launch rewriting an earlier
+> one's restart target.
+
+**What the guest declines** is a separate rule, [JD-9](#JD-9), stated with the full decline list
+in [the jail-daemon reference](macos-user-nix-and-features.md#the-jail-daemons-run-in-the-sandbox):
+a Linux executable, a `{jail_binary:}` path ([BP-D6](pack-binaries.md#BP-D6)), a module directory
+outside the tree, and the JD-9 shapes are declined; everything else in a module-dir jail daemon
+runs from this tree.
+
 ## What each imperative config key delivers here
 
 | Config key | Container | macos-user | Told? |
@@ -692,6 +762,18 @@ banner reaching the briefing is covered end to end by
 `TestMacosUserAFailingProvisioningStageDoesNotAbortTheLaunch`, which asserts the evidence — the
 marker in the log and the red console line — before the verdict.
 
+### The guest pack tree is unmeasured natively
+
+**UNMEASURED:** [JD-10](#JD-10)'s guest pack tree is implemented and passes the source and
+parent gates, but no native macOS run has exercised it; the full integration gate skips every
+native macos-user test. What a native run still has to show: the tree's ownership and modes,
+Seatbelt execution from it, the collision refusal, and two overlapping launches A and B with
+distinct trees, where B changes and then drops a module while A's daemon reads and restarts from
+A's original bytes, and a later capture touches neither tree. The earlier single-session evidence
+covers only the original daemon start. `TestMacosUserRunsAModuleDirJailDaemonInTheGuest` is the
+Mac test for the module-dir shape, not yet run on hardware. The native proof is on
+[the roadmap](../plans/roadmap.md).
+
 ### The one unmeasured claim — what a first stage costs
 
 **Nobody has recorded what a first macos-user launch costs when it has a stage to run**, and
@@ -734,6 +816,9 @@ Rulings a future change would otherwise undo, kept with the IDs source comments 
 | <a id="oq-p3"></a>[`OQ-P3`](#oq-p3) — the container's own partition: mise **data** machine-wide with `MISE_DATA_DIR` set **explicitly**; config, the npm prefix and `~/.local` per-workspace | The unset default lands inside the per-workspace `~/.local` symlink, so the machine tier has to be *named* to stay the machine tier. A per-workspace store is rejected twice over — podman has none, and it inverts podman's partition. Apple Container's per-workspace disk ([OQ-MB1](../research/macos-backend-performance.md#OQ-MB1), 2026-10-05) is no precedent: a disk image attaches to one VM at a time, and a directory here does not. Cited by `macosuser/macosuser.go` and `macosuser/misedatadir_test.go`. |
 | <a id="oq-p4"></a>[`OQ-P4`](#oq-p4) — the stage runs **unconditionally, before the agent**, never on demand | The config can change between launches and the jail must reflect it. The lazy launchers cover agent CLIs and neither `mise_tools` nor `lsp_servers`, so triggering off them would leave one config with tools absent here and present on podman — a second dialect of *"when are my tools there"*. The skip rule already delivers on-demand's only benefit. |
 | <a id="oq-p5"></a>[`OQ-P5`](#oq-p5) — **wire** the two LSP install variables; do not restore the retired warning | A warning is what you leave when the gap stays; this one did not have to. Both variables now cross into the bootstrap env **and** the session env file, from the one recipe table both backends share. |
+| <a id="JD-4"></a>`JD-4` — **the wire bridge keeps its host half on macos-user**; whether its jail daemon should move into the guest is **a maintainer follow-up, not decided** | Its jail daemon publishes at `/run/yolo-services`, which the guest has no counterpart of, and the bridge is already served launch-owned (NC-D65). Moving it would retire that host half. As built the guest declines it, now by JD-9's rule (a). Open, and owned by the maintainer: [the roadmap](../plans/roadmap.md) carries it. |
+| <a id="JD-9"></a>`JD-9` — **the one guest rule for a pack service's daemon**: declined only when (a) the service serves a protocol adaptation and this launch admits its host half, or (b) it declares an `endpoint`; everything else runs confined in the guest. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | (a) is the wire bridge, whose admitted host half already serves its address; (b) is a file under `/run/yolo-services`, a container path with no sandbox counterpart. Everything else follows [`OQ-DP8`](../design/declaration-parity.md#decision-ledger)'s *"if you would have run it in the jail container, you run it on the guest"*, with confinement preferred: a worker declaring both halves runs its jail half here and its host half is not started. The old rule declined every service's daemon, which ran most of them nowhere. Built in `loopholes.JailDaemonsRunIn` over `launchservice.ServiceJailDaemons`, read by the launch and `yolo check`. |
+| <a id="JD-10"></a>`JD-10` — **each launch's `{jail_loophole_dir}` resolves into its own sealed guest pack tree**, keyed by the host pack tree's leaf, exclusively reserved, never replaced, and retained after any writer or consumer dispatch. *Implementation decision under the maintainer's 2026-10-04 delegation; reversible.* | A reusable workspace tree let a later launch change or drop the module an earlier launch's daemon restarts from. No current artifact proves dispatched writers or guest consumers ended, so retention is the only safe default. The keeper, privileges, keychain behavior and the decline rules are unchanged. Native behavior is [unmeasured](#the-guest-pack-tree-is-unmeasured-natively). |
 | **P1** — a backend either provides a mechanism or **refuses it out loud** | Rendering the config for a mechanism that does nothing is the failure this whole mechanism exists to end, and it has produced an instance per imperative key on this backend. |
 | **P2** — the declarative path is the one that composes | `packages:` works here precisely because nix needs nothing pre-installed. Every imperative installer assumes a runtime something else put there — which is why the floor has to exist before the stage can. |
 | **P3** — convergence beats a second dialect | Two ways to say "install neovim" depending on backend is a tax on every user and every doc. One mechanism on every backend; only the primitive enforcing the boundary may differ. |

@@ -135,7 +135,7 @@ const (
 // OFFICIAL PACK embed into the binary with go:embed, and a staged official pack is
 // materialized from that embed, so a binary reads its own copy and never a newer one.
 // (This paragraph used to say the same of `bundled_loopholes/`, whose embed is retired —
-// docs/design/broker-as-a-pack.md OQ-BP4 — and named BundledLoopholesDir's repo-checkout
+// docs/reference/loophole-system.md OQ-BP4 — and named BundledLoopholesDir's repo-checkout
 // preference as the lone exception. That preference is gone with the function.) For
 // FETCHED packs' manifests, written by third parties and updated independently of the
 // binary, it is real and unclosable from inside this package.

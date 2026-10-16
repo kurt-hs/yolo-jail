@@ -171,7 +171,7 @@ func Listen(publishPath, advertiseHost string) (*Listener, error) {
 // relay consumed the first frame off the wire itself to stamp a jail_id into it,
 // so a preamble in front would have been stamped INSTEAD of the request and every
 // jail's Claude OAuth refresh would have failed. The broker conversion deleted the
-// relay and its parse together (docs/design/broker-as-a-pack.md §7) — the preamble
+// relay and its parse together (docs/reference/loophole-system.md, "The per-jail relay is gone") — the preamble
 // is what replaced them. The knob stays, for a config-declared daemon yolo did not
 // write (internal/loopholes' discover.go defaults it OFF for those), but no yolo
 // daemon sets it.

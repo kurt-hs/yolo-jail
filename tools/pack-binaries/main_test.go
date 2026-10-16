@@ -19,7 +19,7 @@ import (
 )
 
 // The tool's tests run over a FIXTURE CHECKOUT, because no official pack declares a binary yet
-// (docs/design/broker-as-a-pack.md §14.4): a module named like this one, with a packs tree
+// (docs/reference/pack-binaries.md, "The release matrix"): a module named like this one, with a packs tree
 // holding one loophole whose host daemon runs `toold`, a cmd/toold, and a goreleaser config
 // whose `yolo` build ships to two platforms. The go on PATH stands in for the pinned toolchain,
 // which a test must not download; fetchToolchain has its own test with a stub.

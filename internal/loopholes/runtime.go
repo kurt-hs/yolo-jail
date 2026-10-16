@@ -534,7 +534,7 @@ func runtimeArgsWith(loopholes []*Loophole, runtime string, gate *Set, specs []J
 			// the pack-binary cache (binaries.go) at the path `{jail_binary:<name>}` resolved
 			// to. The file carries its exec bit from the cache, which is how a pack whose own
 			// tree cannot (an embedded one reads back 0444) still ships a program
-			// (docs/design/broker-as-a-pack.md BP-D1). Never the cache directory: the host runs
+			// (docs/reference/pack-binaries.md BP-D1). Never the cache directory: the host runs
 			// host daemons' builds from it (paths.PackBinariesDir).
 			for _, n := range m.BinaryNeeds() {
 				if !n.Jail || !n.HasBuild {

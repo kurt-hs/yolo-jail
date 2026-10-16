@@ -25,7 +25,7 @@ import (
 // internal/loopholes' own tests.
 //
 // It used to point BundledLoopholesDir at an empty temp dir. With that channel retired
-// (docs/design/broker-as-a-pack.md OQ-BP4), the source that would otherwise leak in is the
+// (docs/reference/loophole-system.md OQ-BP4), the source that would otherwise leak in is the
 // PACK-MODULE RECORD — including this package's own lazily-registered resolver, which
 // reads the developer's real user config — so that is what has to be emptied.
 //

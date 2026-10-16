@@ -52,7 +52,7 @@ type relayDouble struct {
 // relay's front opted OUT of the preamble, so this double was preamble-bearing
 // where production was not. THE DIFFERENCE IS GONE: the relay is deleted and the
 // broker sits behind an ordinary preamble-bearing front
-// (docs/design/broker-as-a-pack.md §7), which is exactly what this double already
+// (docs/reference/loophole-system.md, "The per-jail relay is gone"), which is exactly what this double already
 // modelled. It cost these tests nothing either way, for the property they exist to
 // check: the preamble is host→daemon only, so the CLIENT — which is all of this
 // package — cannot see, forge or suppress it. The terminator needed no change for

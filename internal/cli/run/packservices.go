@@ -19,7 +19,7 @@ package run
 // it is whether the launch would admit it (launchservice.AdmitServiceHosts), because on
 // macos-user that decides where the jail daemon goes: declined when its admitted host half
 // serves an adaptation instead, run in the guest otherwise (loopholes.JailDaemonsRunIn;
-// docs/design/jail-daemon-on-macos-user-plan.md JD-9). A service's `platforms`, `serves` and
+// docs/reference/macos-user-provisioning.md JD-9). A service's `platforms`, `serves` and
 // `settings` are still declared, carried and unread, with no consumer in the tree yet.
 
 import (

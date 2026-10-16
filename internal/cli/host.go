@@ -3562,7 +3562,7 @@ func serviceHasJailDaemon(packs []*packload.Pack, service string) bool {
 
 // macosUserGuestRuns reports whether a macos-user launch of packs runs service's jail daemon in
 // its sandbox: the launch's own composer, admission and split
-// (docs/design/jail-daemon-on-macos-user-plan.md JD-9), so the refusal and the launch agree.
+// (docs/reference/macos-user-provisioning.md JD-9), so the refusal and the launch agree.
 func macosUserGuestRuns(packs []*packload.Pack, service string) bool {
 	specs, _ := launchservice.AdmitServiceHosts(packs, launchservice.ServiceJailDaemons(packs))
 	runs, _ := loopholes.JailDaemonsRunIn("macos-user", specs)

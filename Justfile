@@ -58,7 +58,7 @@ install:
     # below: NOTHING IS DOWNLOADED but the pinned Go toolchain, once, into the module cache —
     # and when even that cannot be fetched, a go on PATH reporting the pinned version seeds
     # instead, re-pinning nothing (BP-D26)
-    # (docs/design/broker-as-a-pack.md BP-D15, OQ-BP7 ruled 2026-10-05: "it has to be built all
+    # (docs/reference/pack-binaries.md BP-D15, OQ-BP7 ruled 2026-10-05: "it has to be built all
     # together, installed all together"). So a from-source or forked tree's jail runs that tree's
     # programs. --repin: a program this tree changed since its pin is re-pinned first (the
     # sha256 of each build this machine made, and no other platform's, urls kept; BP-D30), so
@@ -459,7 +459,7 @@ format:
 # Quality checks (interactive use)
 check: format lint test-fast check-pack-binaries
 
-# WHAT MAIN PINS BETWEEN RELEASES IS ITS OWN BUILD (docs/design/broker-as-a-pack.md BP-D15, OQ-BP7
+# WHAT MAIN PINS BETWEEN RELEASES IS ITS OWN BUILD (docs/reference/pack-binaries.md BP-D15, OQ-BP7
 # ruled 2026-10-05). Each official pack program is rebuilt with the release recipe and its digest
 # compared with the manifest's; a url may still name any earlier release, which the release's own
 # pin rewrites. A refusal names the binary, the platform, both digests and `just
@@ -509,7 +509,7 @@ done:
     @python3 scripts/completion-check.py
 
 # Each official pack binary is built with the release recipe, and its sha256 is written into its
-# loophole manifest in place (docs/design/broker-as-a-pack.md BP-D9). WITH A VERSION it writes
+# loophole manifest in place (docs/reference/pack-binaries.md BP-D9). WITH A VERSION it writes
 # each release url too, and a release goes: rename the changelog section, run this, commit both,
 # `just release VERSION`. WITHOUT ONE it writes the digests alone and keeps each url — what main
 # pins between releases, and the fix `just check-ci` names when a change moved a program

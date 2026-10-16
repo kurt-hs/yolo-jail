@@ -56,7 +56,7 @@
 //     says daemons must not trust. NOTHING YOLO SHIPS IS ON THAT PATH ANY MORE:
 //     the broker singleton was its last user, reached through a relay that stamped
 //     the field in-payload, and the broker conversion moved it to ServeFrontedUnix
-//     when that relay was deleted (docs/design/broker-as-a-pack.md §7). The
+//     when that relay was deleted (docs/reference/loophole-system.md, "The per-jail relay is gone"). The
 //     fallback stays for a host-to-host caller of ServeUnix, where no jail
 //     boundary was crossed and there is nothing for yolo to assert.
 //

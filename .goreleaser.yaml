@@ -35,7 +35,7 @@ before:
     - scripts/stage-source-bundle.sh bundle/share/yolo-jail
     # Build every official pack binary with the release recipe, refuse unless each is the
     # digest the tagged tree pins, and write the verified builds into bundle/pack-binaries as
-    # this release's own files (docs/design/broker-as-a-pack.md BP-D8, BP-D9). A refusal fails
+    # this release's own files (docs/reference/pack-binaries.md BP-D8, BP-D9). A refusal fails
     # this hook, so nothing is published and the Homebrew job, which needs this run's success,
     # does not run. OUTSIDE dist/ for the bundle's reason above; with no official binary it
     # stages nothing, and the globs below match nothing.

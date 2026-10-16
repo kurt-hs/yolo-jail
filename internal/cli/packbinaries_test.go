@@ -1,6 +1,6 @@
 package cli
 
-// `yolo pack install`'s download step (packbinaries.go; docs/design/broker-as-a-pack.md BP-D1).
+// `yolo pack install`'s download step (packbinaries.go; docs/reference/pack-binaries.md BP-D1).
 // The builds are served by a local TLS server, and the pack is a local one under a temp HOME, so
 // nothing here touches the network or the real home.
 //

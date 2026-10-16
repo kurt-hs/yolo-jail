@@ -30,7 +30,7 @@ import (
 // host-dependent.
 //
 // A LAZY PACK-MODULE RESOLVER, for two reasons that used not to apply. Pack modules,
-// because `bundled_loopholes/` is retired (docs/design/broker-as-a-pack.md OQ-BP4) and a
+// because `bundled_loopholes/` is retired (docs/reference/loophole-system.md OQ-BP4) and a
 // pack contribution is the only module source left — which also means every fixture here
 // is read through the PACK-SHIPPED SUBSET, so a manifest declaring `jail_env` or the
 // default `publishes: "endpoint"` now vanishes instead of loading. Lazy, because the
@@ -182,7 +182,7 @@ func TestRunPathSurfacesSeeARecordedPackLoophole(t *testing.T) {
 // could only ever find yolo's own bundled record. That reservation had to be retired in
 // the same commit the manifest moved into `packs/claude` — a pack claiming a reserved name
 // fails the pre-flight FATALLY, so leaving it would have refused every claude user's launch
-// (docs/design/broker-as-a-pack.md §6.1).
+// (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack").
 //
 // What protects the lookup now is the pre-flight's OTHER half, which is stronger for the
 // case that actually matters: loophole names are sole-owned ACROSS PACKS, so once

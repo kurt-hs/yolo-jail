@@ -23,7 +23,7 @@ package loopholes
 //
 // A PACK SERVICE'S DAEMON RUNS IN THE GUEST unless that host half serves it instead or it
 // publishes a container endpoint file (the one guest rule,
-// docs/design/jail-daemon-on-macos-user-plan.md JD-9): a jail_daemon-only service, one whose
+// docs/reference/macos-user-provisioning.md JD-9): a jail_daemon-only service, one whose
 // host half the launch does not admit, and a pure worker (packdecl's word for a service that
 // publishes no endpoint) serving no adaptation, whose host half therefore has no job here, all
 // run confined, as a container runs them. And a loophole's daemon whose argv names its module
@@ -100,7 +100,7 @@ func JailDaemonsRunIn(rt string, specs []JailDaemonSpec) ([]JailDaemonSpec, []De
 //   - A daemon whose argv names a CONTAINER PATH the guest has no copy of: the loophole mount of
 //     a module directory the composer did not record (ModuleDir), or of another loophole; or a
 //     JAIL BINARY's container path (loopholedecl.JailBinaryPath, what `{jail_binary:<name>}`
-//     resolves to), a container bind the sandbox never receives (broker-as-a-pack.md BP-D6).
+//     resolves to), a container bind the sandbox never receives (pack-binaries.md BP-D6).
 //     A container has both, so the reason names it.
 //
 // EVERY DECLINE THAT LEAVES THE DAEMON RUNNING NOWHERE NAMES THE NEXT STEP

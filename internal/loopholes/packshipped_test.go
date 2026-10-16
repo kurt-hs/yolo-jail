@@ -356,7 +356,7 @@ func TestDiscoveryAppliesTheSubsetToAPackModule(t *testing.T) {
 	// a BUNDLED loophole to show the subset is pack-SCOPED rather than universal. There is
 	// no non-pack source that reads a manifest off disk any more — the hand-placed user
 	// dir went with OQ-LP10 and `bundled_loopholes/` with OQ-BP4
-	// (docs/design/broker-as-a-pack.md) — so every module manifest yolo reads is judged by
+	// (docs/reference/loophole-system.md, OQ-BP4) — so every module manifest yolo reads is judged by
 	// the subset, and a control asserting otherwise would have to invent a source.
 	//
 	// What survives of it is the loader-level statement, which is where the scoping
