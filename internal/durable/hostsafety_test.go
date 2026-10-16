@@ -174,8 +174,10 @@ func TestTheRemovalAdviceRefusesADirtyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	git := func(args ...string) error {
+		// maintenance.auto/gc.auto: no detached maintenance outliving git into t.TempDir's cleanup.
 		cmd := exec.Command("git", append([]string{"-C", ws, "-c", "user.name=t", "-c", "user.email=t@t",
-			"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"}, args...)...)
+			"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main",
+			"-c", "maintenance.auto=false", "-c", "gc.auto=0"}, args...)...)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 		return cmd.Run()
 	}

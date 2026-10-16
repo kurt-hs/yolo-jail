@@ -298,7 +298,53 @@ func gitLabel(args []string) string {
 //     the first time it reads that worktree's index, and the daemon outlives the command. The
 //     checkout into a pack tree reads one, so each materialized pack left a resident daemon
 //     watching a tree nothing edits, after yolo had exited (measured with git 2.55 on Linux).
-var storeGitConfig = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false"}
+//   - maintenance.auto=false and gc.auto=0: NO DETACHED MAINTENANCE. After a fetch, git runs
+//     `git maintenance run --auto --detach` (`git gc --auto` before git 2.29), which starts a
+//     new session and keeps running after the fetch, and yolo, have returned. Measured with
+//     git 2.55: every fetch into a mirror started one, with nothing in the user's config
+//     asking for it. In the store that run is outside everything a store run is held to: the
+//     mirror's lock, which keeps a gc out of a mirror a replay borrows objects from
+//     (replay.go), the budget's timeout, and a Detached run's process-group kill, which its
+//     own setsid escapes. The store's mirrors are yolo's to keep, so it is never wanted.
+//
+// The compaction that background run did is autoGC's, in the foreground.
+var storeGitConfig = []string{
+	"-c", "core.hooksPath=" + os.DevNull,
+	"-c", "core.fsmonitor=false",
+	"-c", "maintenance.auto=false",
+	"-c", "gc.auto=0",
+}
+
+// storeGCConfig is autoGC's: storeGitConfig without gc.auto=0, so the user's gc.auto or git's
+// default threshold decides whether there is anything to do, and with gc.autoDetach=false, so
+// `gc --auto` does its work before it exits instead of daemonizing (git's default).
+var storeGCConfig = []string{
+	"-c", "core.hooksPath=" + os.DevNull,
+	"-c", "core.fsmonitor=false",
+	"-c", "maintenance.auto=false",
+	"-c", "gc.autoDetach=false",
+}
+
+// autoGC COMPACTS A MIRROR AFTER A FETCH, in the foreground: `git gc --auto`, which repacks
+// only past gc.auto's loose-object threshold or gc.autoPackLimit's pack count, and is otherwise a
+// quick no-op. It is what a fetch's own automatic maintenance did before storeGitConfig turned
+// that off for running detached, outside everything a store run is held to.
+//
+// The caller holds the mirror's lock, which is what keeps this gc away from a replay: WalkSeries
+// holds the same lock from before its scratch repository borrows the mirror's objects until after
+// that repository is removed (its deferred remove runs before its deferred unlock). It runs last,
+// after the fetch step's tags are restored, so no object a restored tag needs is unreachable to it.
+//
+// ITS OWN BUDGET of the store's Timeout, so a long repack cannot spend the budget of the
+// resolution and checkout that follow it. BEST-EFFORT: a gc that fails or runs out of time leaves
+// the mirror as the fetch left it, which every later run reads the same way, so its error is
+// dropped rather than failing the fetch; the next fetch's gc tries again.
+func (s *Store) autoGC(mirror string) {
+	b, cancel := s.newBudget()
+	defer cancel()
+	cmd := s.gitCmdWith(b.ctx, storeGCConfig, mirror, "gc", "--auto", "--quiet")
+	_ = cmd.Run()
+}
 
 // gitCmd builds the git command for one store run: the store's git, the environment
 // hygiene, and — when Detached — a new session whose whole process group the budget's
@@ -315,7 +361,13 @@ var storeGitConfig = []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.
 //
 // Every run also carries storeGitConfig, ahead of its own arguments.
 func (s *Store) gitCmd(ctx context.Context, dir string, args ...string) *exec.Cmd {
-	pre := append([]string{}, storeGitConfig...)
+	return s.gitCmdWith(ctx, storeGitConfig, dir, args...)
+}
+
+// gitCmdWith is gitCmd with config in place of storeGitConfig: autoGC's one run, the only one
+// that may not carry gc.auto=0.
+func (s *Store) gitCmdWith(ctx context.Context, config []string, dir string, args ...string) *exec.Cmd {
+	pre := append([]string{}, config...)
 	if dir != "" {
 		gitDir := dir
 		if abs, err := filepath.Abs(dir); err == nil {
@@ -449,6 +501,7 @@ func (s *Store) Sync(a Addr) (string, error) {
 	if ferr == nil {
 		s.writeStamp(a, time.Now())
 		s.fetchPinnedCommits(b, mirror, []Addr{a})
+		s.autoGC(mirror)
 	}
 	commit, err := s.resolveCommit(mirror, a)
 	if err == nil {
@@ -475,7 +528,9 @@ func mirrorExists(mirror string) bool {
 //
 // explicit is false for a launch-time fetch, which also turns automatic gc off for the
 // fetch: refreshMirror puts back every tag the fetch moved or pruned, and a gc inside the
-// fetch could otherwise drop the objects a tag it is about to restore still needs.
+// fetch could otherwise drop the objects a tag it is about to restore still needs. Every
+// store run carries gc.auto=0 now as well (storeGitConfig); the mirror's gc is autoGC's,
+// after the tags are back.
 func (s *Store) fetchMirror(b budget, a Addr, explicit bool) error {
 	mirror := s.mirrorPath(a.Repo)
 	if err := os.MkdirAll(filepath.Dir(mirror), 0o755); err != nil {

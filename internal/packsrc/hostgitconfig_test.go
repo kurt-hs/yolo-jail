@@ -1,6 +1,7 @@
 package packsrc
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,6 +198,99 @@ func TestStoreStartsNoFsmonitorDaemon(t *testing.T) {
 	}
 }
 
+// THE STORE STARTS NO DETACHED MAINTENANCE. A fetch runs `git maintenance run --auto
+// --detach` afterwards by default, which outlives the fetch, the mirror's lock and yolo, and
+// on macOS's CI runner wrote into a test's repository after the test returned. git's trace2
+// event stream records every git process the store's runs start, the detached one included
+// (its start event comes before it detaches), so none may be a maintenance or gc run.
+func TestStoreStartsNoDetachedMaintenance(t *testing.T) {
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	exerciseStore(t, append(os.Environ(), "GIT_TRACE2_EVENT="+trace))
+	body, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatalf("no trace2 events recorded, so nothing was checked: %v", err)
+	}
+	if _, got := maintenanceRuns(t, body); len(got) > 0 {
+		t.Errorf("the store's git started background maintenance: %q", got)
+	}
+}
+
+// A FETCH STILL COMPACTS THE MIRROR, IN THE FOREGROUND. With the fetch's own maintenance off,
+// autoGC's `git gc --auto` is the mirror's only compaction. Its thresholds are the user's here,
+// set so the second fetch's pack crosses gc.autoPackLimit: the refresh must leave the mirror in
+// one pack by the time it returns, with the gc having run as a store run (it reads
+// gc.autoDetach=false on its command line, so it did its work before exiting) and no maintenance
+// started.
+func TestAFetchCompactsTheMirrorInTheForeground(t *testing.T) {
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	env := append(storeGlobalConfig(t, "[gc]\n\tautoPackLimit = 1\n[fetch]\n\tunpackLimit = 1\n"),
+		"GIT_TRACE2_EVENT="+trace)
+	f := newRefreshFixture(t)
+	f.store.Env = env
+	pack := RefreshPack{Name: "p", Source: f.source("main")}
+	if o := f.refresh(t, true, pack)[0]; o.Err != nil || o.FetchErr != nil {
+		t.Fatalf("first refresh: %+v", o)
+	}
+	commitFile(t, f.repo, "two", "2")
+	if o := f.refresh(t, true, pack)[0]; o.Err != nil || o.FetchErr != nil || !o.Fetched {
+		t.Fatalf("second refresh: %+v", o)
+	}
+	packs, err := filepath.Glob(filepath.Join(f.store.mirrorPath(mustParse(t, f.source("main")).Repo),
+		"objects", "pack", "*.pack"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) != 1 {
+		t.Errorf("the mirror holds %d packs after the refresh returned, want them compacted into one: %q", len(packs), packs)
+	}
+	body, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcs, other := maintenanceRuns(t, body)
+	if len(gcs) == 0 {
+		t.Error("no foreground `gc --auto` ran after the fetches")
+	}
+	if len(other) > 0 {
+		t.Errorf("background maintenance or a detaching gc ran: %q", other)
+	}
+}
+
+// maintenanceRuns sorts every git process in a trace2 event stream whose subcommand is gc or
+// maintenance, as its argv: a gc whose command line sets gc.autoDetach=false is foreground (it
+// does its work before exiting); any other, and every maintenance run, may detach. A gc's own
+// children (`rerere gc`, repack) are neither. It fails the test if the stream records no git
+// process at all.
+func maintenanceRuns(t *testing.T, events []byte) (foreground, background []string) {
+	t.Helper()
+	starts := 0
+	for line := range strings.Lines(string(events)) {
+		var ev struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Event != "start" || len(ev.Argv) == 0 {
+			continue
+		}
+		starts++
+		run := strings.Join(ev.Argv, " ")
+		switch gitLabel(ev.Argv[1:]) {
+		case "maintenance":
+			background = append(background, run)
+		case "gc":
+			if slices.Contains(storeConfigOverrides(ev.Argv), "gc.autoDetach=false") {
+				foreground = append(foreground, run)
+			} else {
+				background = append(background, run)
+			}
+		}
+	}
+	if starts == 0 {
+		t.Fatal("the trace2 stream records no git process")
+	}
+	return foreground, background
+}
+
 // storeConfigOverrides is every `-c` setting in argv, as key=value.
 func storeConfigOverrides(argv []string) []string {
 	var out []string
@@ -227,6 +321,11 @@ func TestGitCmdTurnsHooksAndFsmonitorOff(t *testing.T) {
 		}
 		if !slices.Contains(storeConfigOverrides(argv), "core.fsmonitor=false") {
 			t.Errorf("git %v may start an fsmonitor daemon: argv %q", tc.args, argv)
+		}
+		for _, kv := range []string{"maintenance.auto=false", "gc.auto=0"} {
+			if !slices.Contains(storeConfigOverrides(argv), kv) {
+				t.Errorf("git %v may start detached maintenance, lacking %s: argv %q", tc.args, kv, argv)
+			}
 		}
 	}
 }
