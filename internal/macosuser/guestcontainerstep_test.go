@@ -57,7 +57,7 @@ func TestGuestContextPreflightRefusalNamesTheJailNotch(t *testing.T) {
 		var buf bytes.Buffer
 		d.Out = &buf
 		d.Run = func(argv []string) int {
-			if len(argv) > 0 && argv[0] == "sudo" && strings.Contains(strings.Join(argv, " "), testBin) {
+			if len(argv) > 0 && argv[0] == "/usr/bin/sudo" && strings.Contains(strings.Join(argv, " "), testBin) {
 				return 1 // the sandbox account cannot reach the source
 			}
 			return 0

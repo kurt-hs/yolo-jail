@@ -24,7 +24,7 @@ func TestDarwinContextSitingListsTheResolvedSpellingOfEveryPlace(t *testing.T) {
 		for _, p := range list {
 			resolved, err := filepath.EvalSymlinks(p)
 			if err != nil {
-				// /var/yolo-jail exists only once a launch staged something; its parent says.
+				// A state dir exists only once a launch staged something; its parent says.
 				parent, perr := filepath.EvalSymlinks(filepath.Dir(p))
 				if perr != nil {
 					t.Errorf("%s %s: %v", what, p, err)

@@ -38,7 +38,7 @@ func TestTheMacosUserSeamDefaultsToTheBackendsOwnRoots(t *testing.T) {
 		t.Errorf("production roots = (%q, %q, %v), want (%q, %q, %v)", stateDir, home, ok,
 			macosuser.StateDir(), macosuser.SandboxHome(), paths.IsMacOS)
 	}
-	if stateDir != "/var/yolo-jail" || home != "/Users/_yolojail" {
+	if stateDir != "/Users/Shared/yolo-staged" || home != "/Users/_yolojail" {
 		t.Errorf("the roots moved to %q and %q; the section's notes name them", stateDir, home)
 	}
 	called := false
