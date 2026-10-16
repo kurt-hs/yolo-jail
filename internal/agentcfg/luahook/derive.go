@@ -91,6 +91,13 @@ type DeriveCtx struct {
 	// because that is all a selection key is; nested tables (claude's `env`) never cross.
 	Saved map[string]string
 
+	// SavedTrigger is the selection trigger the surface's selection record holds from the last
+	// render (agentcfg.SelectionTriggerKey), exposed as ctx.saved_trigger; "" when none is
+	// recorded. A derive whose trigger has parts reads it to tell WHICH part changed: claude's
+	// writes the new profile's model when only the profile's `model` moved, and the previous
+	// model's equivalent when the provider or route did (model-lists-and-pickers.md MM-D44).
+	SavedTrigger string
+
 	// ActiveSet is the agent's whole ACTIVE SET (docs/design/active-provider-sets.md §4.3: the
 	// ordered list of profiles one agent runs on for one launch, a term that doc coins), exposed
 	// as ctx.active_set: one table per entry, in set order, with the entry's profile_name, the
@@ -704,6 +711,7 @@ func buildDeriveCtxTable(L *lua.LState, ctx *DeriveCtx, sentinel, emptyArr *lua.
 		L.SetField(saved, k, lua.LString(ctx.Saved[k]))
 	}
 	L.SetField(t, "saved", saved)
+	L.SetField(t, "saved_trigger", lua.LString(ctx.SavedTrigger))
 	// ctx.active_set, always a list: one table per entry of the agent's active set, in order,
 	// each with the fields ctx carries for the primary (profile_name, the selected provider as
 	// `provider`, its row's `platform`, the option map as `profile`, and its profile's

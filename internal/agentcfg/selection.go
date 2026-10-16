@@ -57,15 +57,16 @@ const SelectionKey = "selection"
 // SelectionTriggerKey is the reserved entry of a selection body that carries its TRIGGER, a
 // term coined here (docs/design/model-lists-and-pickers.md MM-D43): a string naming the
 // choice whose change, and only whose change, makes the selection a NEW one that outranks a
-// user's edit. claude's settings derive emits its selected provider there, because the value
-// it selects (claude's saved `model`) is computed from the file's own current value, so it
-// moves whenever the user picks another model, and "a new value outranks a stale edit" would
+// user's edit. claude's settings derive emits its provider, route and profile model there,
+// because the value it selects (claude's saved `model`) is computed from the file's own
+// current value, so it moves whenever the user picks another model, and "a new value outranks a stale edit" would
 // then write over every pick. Under a trigger:
 //
 //	trigger unchanged    a user's value stands, and a key the user removed stays removed;
 //	                     yolo's own unedited value still moves with the selection
 //	trigger changed      every selected value is written, over a user's edit too
-//	no trigger recorded  read as unchanged (an upgrade cannot know the previous choice)
+//	no trigger recorded  read as a change (an upgrade or a first render cannot know the
+//	                     previous choice; a value valid on the new one is its own equivalent)
 //
 // A key the selection stops naming is cleared by the ordinary rule, trigger or not: only while
 // the file holds what yolo wrote. The trigger is never lifted into the file; it is kept in the
@@ -218,7 +219,7 @@ func ApplySelectionReport(selection, file, record map[string]any, hostOwned map[
 	// it is not a file key, so it is never lifted, cleared or compared with the file.
 	trigger, triggered := selection[SelectionTriggerKey]
 	prevTrigger, hadTrigger := record[SelectionTriggerKey]
-	triggerMoved := triggered && hadTrigger && !sameScalar(trigger, prevTrigger)
+	triggerMoved := triggered && (!hadTrigger || !sameScalar(trigger, prevTrigger))
 	selection = withoutKey(selection, SelectionTriggerKey)
 	record = withoutKey(record, SelectionTriggerKey)
 

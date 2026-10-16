@@ -449,6 +449,7 @@ func deriveCtx(e *Env, surface manifest.Surface, sel surfaceSelection, tables ma
 		SelectedProvider:   sel.Provider,
 		Profile:            activeProfileOptions(e, sel.Profile),
 		Saved:              savedSurfaceStrings(e, surface),
+		SavedTrigger:       savedSelectionTrigger(e, surface),
 		ActiveSet:          sel.ActiveSet,
 		NativeCapabilities: sel.NativeCapabilities,
 		BuiltInProviders:   sel.BuiltInProviders,
@@ -486,6 +487,16 @@ func savedSurfaceStrings(e *Env, surface manifest.Surface) map[string]string {
 		}
 	}
 	return out
+}
+
+// savedSelectionTrigger is the trigger the surface's selection record holds
+// (luahook.DeriveCtx.SavedTrigger), "" when there is no home, no record, or no string trigger.
+func savedSelectionTrigger(e *Env, surface manifest.Surface) string {
+	if e == nil || e.Home == "" {
+		return ""
+	}
+	s, _ := readSelectionRecord(e, surface.Agent, surface.Name)[agentcfg.SelectionTriggerKey].(string)
+	return s
 }
 
 // unknownDeriveAPINote is the skew line for one `yolo.<name>` this build does not know,

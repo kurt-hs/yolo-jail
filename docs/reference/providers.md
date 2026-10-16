@@ -1088,15 +1088,25 @@ promoting the line to the terminal is a change at `noteSelectionClears` alone.
 > the previous model's equivalent on the new provider, matched by claude's tier word (`opus`,
 > `sonnet`, `haiku`), else the new provider's default
 > ([OQ-MM3](../design/model-lists-and-pickers.md#OQ-MM3),
-> [MM-D43](../design/model-lists-and-pickers.md#MM-D43)). The selection carries the provider as
-> its **trigger** (a term coined in `agentcfg.SelectionTriggerKey`: the value whose change, and
-> only whose change, makes the selection a new choice). So while the provider stays the same a
-> `/model` pick of yours stands, and so does choosing claude's Default, which removes the key.
-> When the new provider has no equivalent and no default, the derive selects nothing, and the
-> ordinary clear above applies: the value goes only while it still holds what yolo wrote. No
-> per-launch `ANTHROPIC_MODEL` competes with the saved value any more; it is set only on a
-> profile's `pin_model` opt-in. The per-tier variables are process environment rebuilt on every
-> launch, so a deselect simply stops emitting them. The picker keys in `claude/settings`
+> [MM-D43](../design/model-lists-and-pickers.md#MM-D43)). The selection carries a **trigger** (a
+> term coined in `agentcfg.SelectionTriggerKey`: the value whose change, and only whose change,
+> makes the selection a new choice): the provider, whether claude reaches it through the wire
+> bridge, and the profile's `model` and `pin_model`
+> ([MM-D44](../design/model-lists-and-pickers.md#MM-D44)). So while those stay the same a
+> `/model` pick of yours stands, and so does choosing claude's Default, which removes the key. A
+> launch with no recorded trigger, the first after an upgrade included, reads as a change; a
+> value valid on the provider is its own equivalent, so only a stale one is replaced. On claude's
+> own login that includes a full claude id such as `claude-opus-5-5[1m]`, so a value your host
+> `settings.json` supplies stands, at a jail and at `yolo host apply`, and is never shortened to
+> its tier word. When the new provider has no equivalent and no default, the derive selects
+> nothing, and the ordinary clear above applies: the value goes only while it still holds what
+> yolo wrote, and a Bedrock-only id you picked still leaves with Bedrock through the provider
+> keys. No per-launch `ANTHROPIC_MODEL` competes with the saved value any more; it is set only on
+> a profile's `pin_model` opt-in. The per-tier variables are process environment rebuilt on every
+> launch, so a deselect simply stops emitting them, except on claude's own Bedrock client, where
+> the tiers a list names by alias (and every tier under an `only`) are also written into
+> `settings.json`'s `env` block beside `CLAUDE_CODE_USE_BEDROCK`, so a bare `claude` keeps them;
+> off Bedrock the provider keys drop those. The picker keys in `claude/settings`
 > (`availableModels`, `modelPicker`) are ordinary computed keys, re-asserted every boot, and leave
 > with the profile for the same reason. At `yolo host apply`, whose `rmw` write re-reads your real
 > file, a computed key the derive stops asserting leaves by the computed-leaf clear
