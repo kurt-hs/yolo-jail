@@ -681,7 +681,8 @@ Repair:
     tool
 
 Start anyway:
-  YOLO_USE_INSTALLED=tool tool    run the installed 1.0.0
+  YOLO_USE_INSTALLED=tool tool            in this jail: run the installed 1.0.0
+  YOLO_USE_INSTALLED=tool yolo -- tool    from the host: run the installed 1.0.0
 ```
 
 A launcher's refusal exits 75 and runs nothing; the act's throttle stamp is removed, so the next
