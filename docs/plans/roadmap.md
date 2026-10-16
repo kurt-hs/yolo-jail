@@ -266,7 +266,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [a Kilo session](../design/gateway-provider-packs.md), [the restart prompt](../design/attach-skew-and-contract-guardrails.md),
     [pi loading a pack's folder](../design/pack-pi-resources.md), [host Chrome from `yolo host -- claude` and under
     macos-user](../design/mcp-presets-removal.md#13-what-i-would-build-in-order), and [codex, opencode and pi on
-    Bedrock](../design/bedrock-plumbing.md#8-behaviour-this-design-fixes) under SSO. Check [Pi launch selection](../design/pi-launch-selection-flags.md)
+    Bedrock](../design/bedrock-plumbing.md#8-behaviour-this-design-fixes) under SSO. Check [Pi launch selection](../design/model-lists-and-pickers.md#1411-pis-provider-flag-travels-only-with-an-explicit-model-built-2026-10-07)
     and [simultaneous native authentication](../design/simultaneous-auth-and-pack-isolation.md) in a live session;
     launch arguments and source inspection do not establish authentication isolation.
 44. A human with the cloud account clears [a Bedrock API key or static key pair](../design/bedrock-plumbing.md#64-the-credential-three-are-supported),
