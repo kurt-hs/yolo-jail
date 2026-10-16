@@ -465,13 +465,9 @@ type scratch struct {
 	fetch func(oids []string)
 }
 
-// newScratch makes a scratch repository borrowing mirror's objects, run by the git binary gitBin.
-func newScratch(gitBin, mirror string, b budget) (*scratch, error) {
-	return newScratchOf(gitBin, b, mirror)
-}
-
-// newScratchOf is newScratch borrowing every mirror's objects: the upstream's, and a carry's
-// (carry.go), whose commits and files live in a mirror of their own.
+// newScratchOf makes a scratch repository borrowing every mirror's objects, run by the git binary
+// gitBin: the upstream's, and a carry's (carry.go), whose commits and files live in a mirror of
+// their own.
 func newScratchOf(gitBin string, b budget, mirrors ...string) (*scratch, error) {
 	dir, err := os.MkdirTemp("", "yolo-patched-replay-")
 	if err != nil {
