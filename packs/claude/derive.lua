@@ -518,8 +518,10 @@ end
 -- THE LIST BESIDE CLAUDE'S OWN ROWS (docs/design/model-lists-and-pickers.md OQ-MM1, ruled
 -- 2026-10-15, A; MM-D1, MM-D2). On claude's own Bedrock client a list no `only` narrowed is an
 -- `add`: its rows are appended to claude's built-in picker rows (replaceBuiltInOptions: false),
--- nothing is refused, and only the tiers the list names by alias are pinned, so the retained
--- built-in rows and the haiku-tier background traffic keep resolving as claude resolves them.
+-- and nothing is refused. The tier pins are the env derive's provider branch's, unchanged by the
+-- ruling: the list's default entry or the profile's `model` pins the Opus tier, and Sonnet and
+-- Haiku fall back to it where the list names no alias of theirs (the owner, 2026-10-16: "keep
+-- today's behavior"). That entry is also the saved model a provider change writes (MM-D43).
 -- addRows is that list as claude can use it (onlyRows: the Anthropic entries natively), {} when
 -- this is not that case.
 local function addRows(ctx, p)
@@ -527,42 +529,12 @@ local function addRows(ctx, p)
   return onlyRows(ctx, p)
 end
 
--- aliasTierPins pins each tier the list names by alias to that id (tierAlias, MM-D17), and no
--- other tier, with the entry's name and description: MM-D2's "beside claude's own rows".
-local function aliasTierPins(ctx, p, out, rows)
-  local spell = routedSpelling(ctx, p)
-  local byId = {}
-  for _, r in ipairs(rows) do byId[r.id] = byId[r.id] or r end
-  for _, tier in ipairs(claudeTiers) do
-    local id = tierAlias(p.models, tier, function(id) return byId[spell(id)] ~= nil end)
-    if id then
-      local e = byId[spell(id)]
-      local var = "ANTHROPIC_DEFAULT_" .. tier.var .. "_MODEL"
-      out[var] = e.id
-      out[var .. "_NAME"] = e.name
-      out[var .. "_DESCRIPTION"] = e.description
-    end
-  end
-end
-
 -- listPins is what the env derive's provider branch hands back: the `only` rendering where an
--- `only` narrowed the list and claude reaches the provider; beside claude's own rows on its own
--- Bedrock client, the alias tiers alone; and otherwise MM-D2's remaining pins on a routed
--- provider (completeRoutedTiers).
+-- `only` narrowed the list and claude reaches the provider, and otherwise MM-D2's remaining pins
+-- on a routed provider (completeRoutedTiers).
 local function listPins(ctx, p, out)
   if listOnly(p) and (claudeBedrock(ctx, p) or routedProvider(ctx, p)) then
     return applyOnlyPins(ctx, p, out)
-  end
-  local added = addRows(ctx, p)
-  if #added > 0 then
-    for _, tier in ipairs(claudeTiers) do
-      local var = "ANTHROPIC_DEFAULT_" .. tier.var .. "_MODEL"
-      out[var], out[var .. "_NAME"], out[var .. "_DESCRIPTION"] = nil, nil, nil
-    end
-    out.ANTHROPIC_SMALL_FAST_MODEL = nil
-    aliasTierPins(ctx, p, out, added)
-    out.ANTHROPIC_SMALL_FAST_MODEL = out.ANTHROPIC_DEFAULT_HAIKU_MODEL
-    return out
   end
   return completeRoutedTiers(ctx, p, out)
 end
@@ -827,8 +799,8 @@ yolo.derive("claude", "settings", function(ctx)
     end
   end
   -- A LIST THAT ONLY ADDS, on claude's own Bedrock client (OQ-MM1, ruled 2026-10-15, A): its
-  -- rows appended beside claude's built-in rows, no allowlist, and the tiers it names by alias
-  -- pinned in this file's `env` block beside CLAUDE_CODE_USE_BEDROCK (addRows, aliasTierPins).
+  -- rows appended beside claude's built-in rows, and no allowlist (addRows). The tier pins stay
+  -- the env derive's, as before the ruling (the owner, 2026-10-16: "keep today's behavior").
   local added = addRows(ctx, selectedP)
   if #added > 0 then
     local options = {}
@@ -836,7 +808,6 @@ yolo.derive("claude", "settings", function(ctx)
       table.insert(options, { model = r.id, label = r.name or r.wire, description = r.description })
     end
     out.modelPicker = { options = options, replaceBuiltInOptions = false }
-    aliasTierPins(ctx, selectedP, env, added)
   end
   -- THE SAVED MODEL, written once per provider change (savedModelFor; MM-D43). The selected
   -- provider is the trigger ("" for claude's own login), so the value's own movement, which

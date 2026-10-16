@@ -380,9 +380,9 @@ func TestClaudeUnderAnOnlyOnItsOwnBedrockClient(t *testing.T) {
 
 // A LIST THAT ONLY ADDS SITS BESIDE CLAUDE'S OWN ROWS on its own Bedrock client (OQ-MM1, ruled
 // 2026-10-15, A; MM-D1, MM-D2): the list's Anthropic rows are appended to claude's built-in
-// picker rows, nothing is refused, and only the tiers the list names by alias are pinned, in
-// settings.json's `env` block and the launched process alike, so the retained built-in rows keep
-// resolving as claude resolves them.
+// picker rows and nothing is refused. The tier pins stay where they were before the ruling, in
+// the launched process alone (the owner, 2026-10-16: "keep today's behavior"), so none goes in
+// settings.json's `env` block.
 func TestClaudeAppendsAListThatOnlyAddsBesideItsOwnMenu(t *testing.T) {
 	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
 	    {"id":"global.anthropic.claude-opus-5-5","vendor":"anthropic","alias":"opus","name":"Claude Opus 5.5"},
@@ -399,19 +399,55 @@ func TestClaudeAppendsAListThatOnlyAddsBesideItsOwnMenu(t *testing.T) {
 		}
 	}
 	settingsEnv, _ := got.settings["env"].(map[string]any)
-	if settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" ||
-		got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "global.anthropic.claude-opus-5-5" {
-		t.Errorf("opus pin = %v in settings, %q in the process, want the list's opus alias in both",
-			settingsEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"], got.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-	}
-	for _, tier := range []string{"SONNET", "HAIKU", "FABLE"} {
-		k := "ANTHROPIC_DEFAULT_" + tier + "_MODEL"
+	for _, k := range claudeTierVars {
 		if v, set := settingsEnv[k]; set {
-			t.Errorf("settings env %s = %v, want it unpinned: the list names no %s alias", k, v, tier)
+			t.Errorf("settings env %s = %v, want no tier pin in the file for a list that only adds", k, v)
 		}
-		if v, set := got.env[k]; set {
-			t.Errorf("process env %s = %q, want it unpinned: the list names no %s alias", k, v, tier)
-		}
+	}
+}
+
+// THE LIST'S DEFAULT STILL PINS THE OPUS TIER beside claude's own rows on its Bedrock client, as
+// before OQ-MM1 (the owner, 2026-10-16: "keep today's behavior"): a list naming its model
+// `default` and no `opus` pins Opus to it, with Sonnet and Haiku taking their own aliases or
+// falling back to it, and a profile's `model` does the same. That entry is ALSO the saved model
+// this first launch on the provider writes (MM-D43), and no per-launch ANTHROPIC_MODEL is set.
+func TestClaudeNativeBedrockDefaultPinsOpusAndIsTheSavedModel(t *testing.T) {
+	const opus = "us.anthropic.claude-opus-5-6"
+	const sonnet = "us.anthropic.claude-sonnet-5"
+	company := companyModelsPack(t, `{"kind":"models","provider":"bedrock","add":[
+	    {"id":"`+opus+`","vendor":"anthropic","alias":"default"},
+	    {"id":"`+sonnet+`","vendor":"anthropic","alias":"sonnet"}]}`)
+	packs := append(testPacksForAgent(t, "claude", "bedrock"), company)
+	for _, tc := range []struct {
+		name     string
+		profiles map[string]packload.UserProfile
+		profile  string
+		start    string
+	}{
+		{"the list's default", nil, "bedrock", opus},
+		{"a profile's model", map[string]packload.UserProfile{
+			"bedrock-sonnet": {Provider: "bedrock", Options: map[string]string{"model": sonnet}}}, "bedrock-sonnet", sonnet},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderClaudeModels(t, packs, nil, tc.profiles, tc.profile)
+			want := map[string]string{
+				"ANTHROPIC_DEFAULT_OPUS_MODEL":   tc.start,
+				"ANTHROPIC_DEFAULT_SONNET_MODEL": sonnet,
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL":  tc.start,
+				"ANTHROPIC_SMALL_FAST_MODEL":     tc.start,
+			}
+			for k, v := range want {
+				if got.env[k] != v {
+					t.Errorf("%s = %q, want %q, as before OQ-MM1", k, got.env[k], v)
+				}
+			}
+			if v, set := got.env["ANTHROPIC_MODEL"]; set {
+				t.Errorf("ANTHROPIC_MODEL = %q, want no per-launch start pin (MM-D43)", v)
+			}
+			if got.settings["model"] != tc.start {
+				t.Errorf("settings model = %v, want %s, the saved model this launch writes", got.settings["model"], tc.start)
+			}
+		})
 	}
 }
 
