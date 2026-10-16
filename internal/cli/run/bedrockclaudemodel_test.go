@@ -14,10 +14,7 @@ import (
 // docs/design/model-lists-and-pickers.md MM-D32), and claude's own Bedrock client can call
 // Anthropic's alone, so claude's env derive picks among the entries whose `vendor` is anthropic.
 // With no model named it pins none, because Claude Code starts on an Anthropic model of its own
-// there, a valid session yolo does not steer (OQ-ML2). A supplied list sits beside claude's own
-// Bedrock rows (model-lists-and-pickers.md OQ-MM1), so only the tiers it names by alias are
-// pinned, and the model a profile names is the saved model a provider change writes (MM-D43),
-// never a per-launch ANTHROPIC_MODEL. Driven through the assembled launch
+// there, a valid session yolo does not steer (OQ-ML2). Driven through the assembled launch
 // channel, so it fails if the derive's call site moves.
 
 // bedrockSuppliedList is a Bedrock list of two makers in the user's object form, each entry
@@ -78,18 +75,17 @@ func TestClaudeOnBedrockStartsOnlyOnAnAnthropicModel(t *testing.T) {
 		// Bedrock default; a supplied list naming no `default` pins nothing either.
 		{"no list pins nothing", nil, "", nil},
 		{"a supplied list pins nothing", bedrockSuppliedList(), "", nil},
-		// A profile naming an entry claude can call makes it the saved model, not a tier pin:
-		// the list names no tier alias, and claude's own rows keep their tiers.
-		{"a profile naming the Anthropic entry", bedrockSuppliedList(), `{"bedrock": {"provider": "bedrock", "model": "` + opus + `"}}`, nil},
+		// A profile naming an entry claude can call gets it, on every tier.
+		{"a profile naming the Anthropic entry", bedrockSuppliedList(), `{"bedrock": {"provider": "bedrock", "model": "` + opus + `"}}`, pinned(opus)},
 		// A profile naming an entry of another maker is skipped rather than sent: Messages
 		// serves Claude only, so claude would start on a model it cannot call.
 		{"a profile naming the OpenAI entry", bedrockSuppliedList(), `{"bedrock": {"provider": "bedrock", "model": "` + sol + `"}}`, nil},
 		// With no list naming its maker, a profile's id is passed through as written, the
 		// user's own literal: yolo knows no maker it was not told.
 		{"a profile's id no list holds", nil, `{"bedrock": {"provider": "bedrock", "model": "` + sol + `"}}`, pinned(sol)},
-		// The user's `default` alias is a default entry, not a tier alias: it pins no tier
-		// either way, and names the saved model when claude can call it.
-		{"a user default claude can call", userDefault(opus), "", nil},
+		// The user's `default` alias steers it when it names a model claude can call, which
+		// is the configuration opting in; one naming another maker's model does not.
+		{"a user default claude can call", userDefault(opus), "", pinned(opus)},
 		{"a user default of another maker", userDefault(sol), "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,7 +117,7 @@ func TestClaudeOnBedrockStartsOnlyOnAnAnthropicModel(t *testing.T) {
 //     endpoint the user gave it, and claude's own client composes its URL from the region, so
 //     under the native profile no ANTHROPIC_BASE_URL (and no bridge caller token) is written;
 //   - a tier alias the user names on the provider is held to the makers claude can call, so a
-//     `sonnet` naming an OpenAI id pins nothing, and the tier stays claude's own;
+//     `sonnet` naming an OpenAI id leaves that tier on the pinned Anthropic model;
 //   - a profile routed through the bridge, on a provider named by region alone, runs claude's own
 //     Bedrock client at the bridge's adapter address, which the launch composed for the via, with
 //     its signing skipped (OQ-MM6), and pins the profile's model of any maker, which the bridge
@@ -153,16 +149,18 @@ func TestClaudeOnBedrockTakesNothingItsOwnClientCannotUse(t *testing.T) {
 		}
 	})
 
-	t.Run("a tier alias of another maker pins nothing", func(t *testing.T) {
+	t.Run("a tier alias of another maker leaves the tier on the pinned model", func(t *testing.T) {
 		models := bedrockSuppliedList()
 		models.Set("sonnet", sol)
 		models.Set("haiku", sol)
 		la := assembleWithPacksAssembled(t, bedrockRegionOnly(models), packs,
 			withProfile(`{"bedrock": {"provider": "bedrock", "model": "`+opus+`"}}`))
 		got := la.channelEnv(t, claudeModelKeys...)
-		if len(got) != 0 {
-			t.Errorf("claude's model env = %q, want nothing: no tier alias names a model claude's own "+
-				"Bedrock client can call, and the profile's model is the saved model, not a pin", got)
+		slices.Sort(got)
+		want := []string{"ANTHROPIC_DEFAULT_HAIKU_MODEL=" + opus, "ANTHROPIC_DEFAULT_OPUS_MODEL=" + opus,
+			"ANTHROPIC_DEFAULT_SONNET_MODEL=" + opus, "ANTHROPIC_SMALL_FAST_MODEL=" + opus}
+		if !slices.Equal(got, want) {
+			t.Errorf("claude's model env = %q, want every tier on %s", got, opus)
 		}
 	})
 

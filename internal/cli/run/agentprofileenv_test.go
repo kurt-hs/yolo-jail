@@ -227,12 +227,9 @@ func TestAssembleEmitsProfileEnvForBedrock(t *testing.T) {
 		"CLAUDE_CODE_USE_BEDROCK", "AWS_REGION",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL")
-	// No ANTHROPIC_DEFAULT_OPUS_MODEL: the user's list sits beside claude's own Bedrock rows and
-	// names no `opus` alias, so only the sonnet and haiku tiers it names are pinned
-	// (docs/design/model-lists-and-pickers.md OQ-MM1, MM-D2); its `default` entry is the saved
-	// model a provider change writes instead (MM-D43).
 	want := []string{
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL=us.anthropic.haiku",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL=us.anthropic.opus",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL=us.anthropic.sonnet",
 		"AWS_REGION=us-east-1",
 		"CLAUDE_CODE_USE_BEDROCK=1",
@@ -247,15 +244,14 @@ func TestAssembleEmitsProfileEnvForBedrock(t *testing.T) {
 	}
 }
 
-// The OPTION half, on the same real derive: the profile's own `model` value names the list's
-// default entry, which on claude's own Bedrock client is the saved model a provider change
-// writes (docs/design/model-lists-and-pickers.md MM-D43), never a tier pin: the list sits
-// beside claude's own rows, so only the tiers it names by alias are pinned (OQ-MM1, MM-D2), and
-// the option reaches none of them. The user entry is the SAME NAME as the shipped profile,
+// The OPTION half, on the same real derive: the profile's own `model` value names the
+// alias, and the id under it is what ANTHROPIC_DEFAULT_OPUS_MODEL carries — not the
+// provider's declared default. The user entry is the SAME NAME as the shipped profile,
 // which is §5.2's "customize the pack's own profile" case: the pack's provider stands and
 // the user's option rides on top. Sonnet and haiku keep their own aliases — they are
-// Claude's routing names, not a selection surface.
-func TestAssembleKeepsTheProfileOptionOffClaudesOwnTiers(t *testing.T) {
+// Claude's routing names, not a selection surface, so a `model` option must not reach
+// them.
+func TestAssembleEmitsTheAliasTheProfileOptionNames(t *testing.T) {
 	la := assembleWithConfigAssembled(t, bedrockConfig(), func() {
 		writeProfilesAtHome(t, `{"bedrock": {"provider": "bedrock", "model": "fast"}}`)
 	})
@@ -263,6 +259,7 @@ func TestAssembleKeepsTheProfileOptionOffClaudesOwnTiers(t *testing.T) {
 		"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL")
 	want := []string{
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL=us.anthropic.haiku",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL=us.anthropic.fast",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL=us.anthropic.sonnet",
 	}
 	if len(got) != len(want) {
