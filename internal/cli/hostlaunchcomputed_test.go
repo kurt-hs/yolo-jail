@@ -1,17 +1,18 @@
 package cli
 
-// hostpisubagents_test.go pins MM-D42 at the host notch (docs/design/model-lists-and-pickers.md):
-// an explicit `yolo host -p <profile> -- pi` hands pi-subagents the CHILD MODEL POLICY the -p's
-// profile composes (the settings derive's `subagents` block: defaultProvider, defaultModel,
-// agentOverrides and modelScope), for that process alone, as `--subagents-model-settings <json>`,
-// and never writes it into ~/.pi/agent/settings.json. Every cell runs hostMain to the exec over the
-// SHIPPED pi pack, so the pack's declaration, the derive and the host step are asked through the
-// front door. The flag ships behind YOLO_PI_SUBAGENTS_MODEL_SETTINGS=1 until pi-subagents reads
-// it, since pi 1.0.1 exits over an extension flag no extension registers.
+// hostlaunchcomputed_test.go pins the `launch_computed` pack kind at the host notch
+// (docs/reference/pack-system.md#launch_computed): an explicit `yolo host -p <profile> -- <bin>`
+// hands the program a COMPUTED key its derive composes for the -p's profile, for that process
+// alone, as the argv words its pack declares, and never writes it into the program's file. yolo
+// ships no such declaration (the maintainer's ruling of 2026-10-16, MM-D42 in
+// docs/design/model-lists-and-pickers.md), so these cells declare one in a TEST PACK: a local copy
+// of the shipped pi pack, selected under the name "pi" in its place, with a neutral flag and
+// opt-in added. pi's derive composes the computed `subagents` block the flag carries. Every cell
+// runs hostMain to the exec, so the declaration, the derive and the host step are asked through
+// the front door.
 
 import (
 	"encoding/json"
-	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,18 +21,57 @@ import (
 	"testing"
 )
 
-var updatePiSubagentsGolden = flag.Bool("update-pi-subagents-golden", false,
-	"rewrite internal/cli/testdata/pi-subagents-model-settings.golden.json from the launch")
+// piSubagentsOptIn is the variable the test pack gates its flag behind.
+const piSubagentsOptIn = "T_CHILD_POLICY_ON"
 
-// piSubagentsOptIn is the variable the shipped pi pack gates the flag behind.
-const piSubagentsOptIn = "YOLO_PI_SUBAGENTS_MODEL_SETTINGS"
+// piSubagentsFlag is the test pack's flag word.
+const piSubagentsFlag = "--child-policy"
 
-// piSubagentsFlag is the flag's word.
-const piSubagentsFlag = "--subagents-model-settings"
+// shippedPiPackDir is the tree's pi pack, resolved before any cell moves the working directory.
+var shippedPiPackDir, _ = filepath.Abs(filepath.Join("..", "..", "packs", "pi"))
+
+// launchComputedPackDir is a copy of the shipped pi pack with a launch_computed block for pi
+// handing the derive's `subagents` key as piSubagentsFlag behind piSubagentsOptIn: what a user's
+// own pack declares, since yolo's declares none.
+func launchComputedPackDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "pi-with-computed")
+	if err := os.CopyFS(dir, os.DirFS(shippedPiPackDir)); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(dir, "pack.json")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "launch_computed") {
+		t.Fatal("the shipped pi pack declares launch_computed again; the fixture would double it")
+	}
+	if !strings.HasPrefix(string(data), "{\n") {
+		t.Fatal("the shipped pi pack.json no longer opens with a line of its own")
+	}
+	block := "{\n  \"launch_computed\": {\"pi\": [{\"key\": \"subagents\", \"argv\": [\"" + piSubagentsFlag +
+		"\", \"{value}\"], \"opt_in\": \"" + piSubagentsOptIn + "\"}]},\n"
+	if err := os.WriteFile(manifest, []byte(block+string(data)[2:]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// withComputedPack rewrites cfg's bare "pi" pack, its last, into the test pack under the name pi.
+func withComputedPack(t *testing.T, cfg string) string {
+	t.Helper()
+	src, _ := json.Marshal(launchComputedPackDir(t))
+	out := strings.Replace(cfg, `"pi"]`, `{"source": `+string(src)+`, "name": "pi"}]`, 1)
+	if out == cfg {
+		t.Fatalf("no bare pi pack to replace in %s", cfg)
+	}
+	return out
+}
 
 // piSubagentsCodexCfg configures openrouter as pi's profile, with openai-auth's codex profile
 // selectable by -p.
-const piSubagentsCodexCfg = `{"packs": ["claude", "pi", "openrouter", "openai-auth"], ` +
+const piSubagentsCodexCfg = `{"packs": ["claude", "openrouter", "openai-auth", "pi"], ` +
 	`"profile": {"pi": "openrouter"}, "env_sources": [{"OPENROUTER_API_KEY": "tok-router"}]}`
 
 // piSubagentsAcmeCfg is one user provider with two profiles over it whose role pins differ, the
@@ -43,6 +83,30 @@ const piSubagentsAcmeCfg = `{"packs": ["claude", "pi"], ` +
 	`"acme-a": {"provider": "acme", "subagents": {"roles": {"worker": "fast"}}}, ` +
 	`"acme-b": {"provider": "acme", "subagents": {"default": "fast", "roles": {"worker": "default", "scout": "fast"}}}}, ` +
 	`"profile": {"pi": "acme-a"}, "env_sources": [{"ACME_KEY": "tok-acme"}]}`
+
+// THE SHIPPED PI PACK HANDS NO COMPUTED FLAG (the maintainer's ruling of 2026-10-16: "yolo
+// shouldn't depend on my custom pi fork in any way, or even know it exists"). The same -p that
+// hands the test pack's flag hands the shipped pack's pi its selection alone, says nothing of a
+// held flag.
+func TestHostShippedPiHandsNoComputedFlag(t *testing.T) {
+	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+	run := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
+	if len(run.argv) < 3 || run.argv[1] != "--provider" || run.argv[2] != "openai-codex" {
+		t.Fatalf("the parent must still move onto codex: %q\n%s", run.argv, run.errs)
+	}
+	for _, w := range run.argv {
+		if strings.HasPrefix(w, "{") {
+			t.Errorf("the shipped pi pack handed a computed JSON word: %q", run.argv)
+		}
+	}
+	for _, not := range []string{"subagents as this launch composes it", "composes its own subagents"} {
+		if strings.Contains(run.errs, not) {
+			t.Errorf("the launch speaks of a computed flag the shipped pack does not declare (%q):\n%s", not, run.errs)
+		}
+	}
+	unchanged()
+}
 
 // piSettingsFixture writes a settings.json holding the CONFIGURED profile's child policy, and an
 // auth.json, as `yolo host apply` and a login would leave them, and returns a check that both are
@@ -80,7 +144,7 @@ func subagentsWord(argv []string) (string, bool) {
 // block is a computed key no launch selection carried. Now it is handed as the codex profile's
 // policy, all of it on openai-codex and none of it on openrouter.
 func TestHostPiCodexOverConfiguredOpenRouterHandsItsChildPolicy(t *testing.T) {
-	home := hostGateHome(t, piSubagentsCodexCfg, map[string]string{piSubagentsOptIn: "1"})
+	home := hostGateHome(t, withComputedPack(t, piSubagentsCodexCfg), map[string]string{piSubagentsOptIn: "1"})
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"openrouter","subagents":{"defaultProvider":"openrouter",`+
 		`"modelScope":{"enforce":true,"strict":true,"allow":["openrouter/*"]}}}`)
 	run := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi", "--continue")
@@ -129,7 +193,7 @@ func TestHostPiCodexOverConfiguredOpenRouterHandsItsChildPolicy(t *testing.T) {
 // hands pi no flag it would exit over, and says why its children keep the file's policy, naming the
 // variable that turns the handoff on.
 func TestHostPiChildPolicyWaitsOnItsOptIn(t *testing.T) {
-	home := hostGateHome(t, piSubagentsCodexCfg, nil)
+	home := hostGateHome(t, withComputedPack(t, piSubagentsCodexCfg), nil)
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 	run := hostSelectionRun(t, home, []string{"-p", "pi=codex"}, "pi")
 	if _, ok := subagentsWord(run.argv); ok {
@@ -139,7 +203,7 @@ func TestHostPiChildPolicyWaitsOnItsOptIn(t *testing.T) {
 		t.Errorf("the parent must still move onto codex: %q\n%s", run.argv, run.errs)
 	}
 	for _, want := range []string{"composes its own subagents for pi", piSubagentsOptIn + "=1",
-		"keeps the subagents its own config holds (~/.pi/agent/settings.json)", "MM-D42"} {
+		"keeps the subagents its own config holds (~/.pi/agent/settings.json)", "pack-system.md#launch_computed"} {
 		if !strings.Contains(run.errs, want) {
 			t.Errorf("the launch must say %q:\n%s", want, run.errs)
 		}
@@ -149,15 +213,9 @@ func TestHostPiChildPolicyWaitsOnItsOptIn(t *testing.T) {
 
 // TWO PROFILES ON ONE PROVIDER, DIFFERENT ROLES: the parent selection agrees, so only the child
 // policy is handed, and a model the user picked in pi since `yolo host apply` stands; each profile
-// hands its own; an agreeing -p hands nothing. The acme-b bytes are the golden the Pi side decodes.
+// hands its own; an agreeing -p hands nothing.
 func TestHostPiSameProviderProfilesHandTheirOwnRoles(t *testing.T) {
-	// The package directory, before hostGateHome moves the working directory into a temp dir.
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	golden := filepath.Join(wd, "testdata", "pi-subagents-model-settings.golden.json")
-	home := hostGateHome(t, piSubagentsAcmeCfg, map[string]string{piSubagentsOptIn: "1"})
+	home := hostGateHome(t, withComputedPack(t, piSubagentsAcmeCfg), map[string]string{piSubagentsOptIn: "1"})
 	unchanged := piSettingsFixture(t, home, `{"theme":"native"}`)
 
 	b := hostSelectionRun(t, home, []string{"-p", "pi=acme-b"}, "pi")
@@ -166,19 +224,8 @@ func TestHostPiSameProviderProfilesHandTheirOwnRoles(t *testing.T) {
 		t.Fatalf("-p acme-b over configured acme-a handed %q, want only %s and its policy\n%s",
 			b.argv, piSubagentsFlag, b.errs)
 	}
-	if *updatePiSubagentsGolden {
-		writeFile(t, golden, word+"\n")
-	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatalf("%v (run with -update-pi-subagents-golden to write it)", err)
-	}
-	if word != strings.TrimSuffix(string(want), "\n") {
-		t.Errorf("%s bytes changed; the Pi side decodes the golden:\n got %s\nwant %s", piSubagentsFlag, word, want)
-	}
-
 	// The configured profile's own roles, from the other side.
-	hostGateHome(t, strings.Replace(piSubagentsAcmeCfg, `"profile": {"pi": "acme-a"}`, `"profile": {"pi": "acme-b"}`, 1),
+	hostGateHome(t, withComputedPack(t, strings.Replace(piSubagentsAcmeCfg, `"profile": {"pi": "acme-a"}`, `"profile": {"pi": "acme-b"}`, 1)),
 		map[string]string{piSubagentsOptIn: "1"})
 	a := hostSelectionRun(t, "", []string{"-p", "pi=acme-a"}, "pi")
 	aWord, ok := subagentsWord(a.argv)
@@ -205,7 +252,7 @@ func TestHostPiSameProviderProfilesHandTheirOwnRoles(t *testing.T) {
 // WHAT DOES NOT CHANGE: no -p keeps today's argv exactly, opt-in or not; a declared subcommand
 // runs as typed; and YOLO_NO_LAUNCH_FLAGS=1 skips the child policy with the rest of the selection.
 func TestHostPiChildPolicyLeavesTheUnmovedLaunchAlone(t *testing.T) {
-	home := hostGateHome(t, piSubagentsCodexCfg, map[string]string{piSubagentsOptIn: "1"})
+	home := hostGateHome(t, withComputedPack(t, piSubagentsCodexCfg), map[string]string{piSubagentsOptIn: "1"})
 	unchanged := piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 	if bare := hostSelectionRun(t, home, nil, "pi", "--continue"); !reflect.DeepEqual(bare.argv, []string{"pi", "--continue"}) {
 		t.Errorf("with no -p pi got %q, want its own argv\n%s", bare.argv, bare.errs)

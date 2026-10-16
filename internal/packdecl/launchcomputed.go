@@ -3,10 +3,11 @@ package packdecl
 // launchcomputed.go is the LAUNCH COMPUTED FLAG declaration — a term coined here (2026-10-15) for
 // a top-level key of a program's config-surface COMPUTED layer, outside the reserved `selection`
 // namespace, that one `yolo host -p` launch hands the program as argv words instead of the file
-// `yolo host apply` writes for the configured profile alone. pi's is pi-subagents' `subagents`
-// block, the child model policy the settings derive composes per profile
-// (docs/design/model-lists-and-pickers.md MM-D42): a `-p` that moves the parent session by its
-// launch selection (MM-D30) must move the children's defaults and restrictions with it.
+// `yolo host apply` writes for the configured profile alone, so a `-p` that moves the program's
+// session by its launch selection (docs/design/model-lists-and-pickers.md MM-D30) can move a
+// per-profile block its derive composes with it (docs/reference/pack-system.md#launch_computed).
+// No shipped pack declares one (MM-D42, amended 2026-10-16); the kind is for any pack declaring
+// the program, a user's own included, whose program reads such a flag.
 //
 // It EXTENDS the program's launch selection (LaunchSelection): the same surface, the same
 // derive run, the same comparison with the configured profile, the same subcommand rule, the same
@@ -16,7 +17,7 @@ package packdecl
 // whose selection agrees with the configured profile's but whose computed key differs hands that
 // key alone, so a model the user picked in the program since `yolo host apply` stands.
 //
-// PACK-WIDE, keyed by the program's bin (`"launch_computed": {"pi": [...]}`), the place
+// PACK-WIDE, keyed by the program's bin (`"launch_computed": {"tool": [...]}`), the place
 // model_list_check and provider_keys took for the same reason: a new field inside a `program`
 // contribution makes an older yolo's tolerant reader skip the WHOLE program, while it ignores an
 // unknown top-level key (packs/releasedecode_test.go measures both).
@@ -29,10 +30,10 @@ import (
 
 // LaunchComputedFlag is one computed key a program's launch hands as argv (see the file comment).
 type LaunchComputedFlag struct {
-	// Key is the top-level key of the launch selection's surface's computed layer: `subagents`.
+	// Key is the top-level key of the launch selection's surface's computed layer: `policy`.
 	Key string `json:"key"`
 	// Argv is the words, one holding LaunchSelectionValue, which becomes the key's value as one
-	// word of compact JSON: `["--subagents-model-settings", "{value}"]`.
+	// word of compact JSON: `["--policy", "{value}"]`.
 	Argv []string `json:"argv"`
 	// OptIn, when set, names a variable the launch's environment must set to "1" before the
 	// flag is handed. A release of the program that does not read the flag refuses the launch

@@ -128,7 +128,7 @@ type Manifest struct {
 
 	// LaunchComputedByBin are, per program bin, the computed keys of its launch selection's
 	// surface that one `yolo host -p` launch hands as argv words (launchcomputed.go;
-	// docs/design/model-lists-and-pickers.md MM-D42). Pack-wide, like provider_keys, for the same
+	// docs/reference/pack-system.md#launch_computed). Pack-wide, like provider_keys, for the same
 	// reason; projected onto the program's LaunchSelection.Computed.
 	LaunchComputedByBin map[string][]LaunchComputedFlag `json:"launch_computed,omitempty"`
 
