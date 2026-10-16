@@ -118,7 +118,7 @@ func parseSurfaceIdentity(cmd, identity string, errw io.Writer) (agent, surface 
 // The guard's whole argument is the clause above — a file yolo does not own. Under `own` the
 // user has declared that yolo DOES own these files: they are derived output, the host render
 // composes them whole, and truncating one to its pure render is not data loss but the
-// operation working (docs/design/config-ownership-and-promotion.md §6.1).
+// operation working (docs/reference/config-ownership.md#the-host-notch-under-own).
 //
 // It is LOAD-BEARING rather than parity. ComposeStateful's adoption is safe against reset
 // ONLY because reset also truncates the surface to its pure render: without that, reset →
@@ -128,7 +128,7 @@ func parseSurfaceIdentity(cmd, identity string, errw io.Writer) (agent, surface 
 //
 // # `own` answers it for CAPTURE too — OQ-CO3, ruled yes-under-own 2026-09-10
 //
-// ([OQ-CO3](docs/design/config-ownership-and-promotion.md#13-decision-ledger).)
+// ([OQ-CO3](../../docs/reference/config-ownership.md#oq-co3).)
 //
 // Capture's premise is the G2 PRIVACY defect — a credential copied out of a real file into the
 // WORKSPACE sidecar tree, which a jail reads and git plausibly commits. Under `own` that is not
@@ -382,8 +382,8 @@ func surfaceIdentity(agent, surface string) string {
 // comparison `config diff` prints and `config promote` acts on.
 //
 // IT IS DATA BECAUSE IT HAS TWO CONSUMERS NOW. The comparison used to exist only as
-// formatted lines, and promote needs the same answer as a decision: §5.2 step 2 of
-// docs/design/config-ownership-and-promotion.md drops every REDUNDANT key before
+// formatted lines, and promote needs the same answer as a decision: step 2 of
+// docs/reference/config-ownership.md#what-promote-does drops every REDUNDANT key before
 // classifying anything, and a second implementation of "is this capture identical to what
 // yolo wrote?" is precisely the shape that made this comparison wrong for TOML surfaces
 // until readLastRenderKeys' codec fix — one reader corrected, another left to drift. So
@@ -940,7 +940,7 @@ func holdOwnedHostLock(t configTarget, cmd, what, identity string, errw io.Write
 //     over a non-empty file is a first migration, and a first migration over bytes is an
 //     ADOPTION — so it spent OQ-CO7's one-per-surface adoption archive on a copy of yolo's
 //     own render, announced it as "the file as yolo found it", and left the next genuine
-//     adoption with no net at all. Measured 2026-09-12 (§6.3.3, D1).
+//     adoption with no net at all. Measured 2026-09-12 (config-ownership.md#the-adoption-archive, D1).
 //   - "Cannot tell an edit from yolo's own output" is the reason captureSurfaceAt declines to
 //     act with no baseline. Reset used to create exactly that state and then hand it to the
 //     boot render, which has no such guard.

@@ -26,7 +26,7 @@ tags: [host, apply, render, staleness, approvals, wrappers]
 > [!IMPORTANT]
 > **"Active host management" means `own`.** `host_management` has two values since the `assert`
 > retirement (ruled 2026-09-20, built 2026-10-05 as
-> [OQ-CO14](../design/config-ownership-and-promotion.md#oq-co14) ruled): `none`, which is also the
+> [OQ-CO14](config-ownership.md#oq-co14) ruled): `none`, which is also the
 > unset answer, and `own`. So the `HostManagementNone` early return is the default path — a
 > machine that never declared ownership never reaches the survey at all, which is the silence the
 > gate's own comment describes as correct there — and a config still saying `"assert"` is refused

@@ -30,7 +30,7 @@ sibling docs and plans — do not renumber them.
 >
 > | Story defect | Verdict, verified 2026-08-23 | Evidence |
 > |---|---|---|
-> | **Story 1 Gap 1** — the `host` layer reads an undeclared file | **NARROWED since** (re-checked 2026-09-24). It was *worse* than the story said on 2026-08-23; the hardcoded map is gone (2026-09-09) and the declaration moved onto the surface with a fail-closed read ([`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger), 2026-09-12). What is left: `describe` still names no host layer | `manifest.Surface.ReadsHost` is the predicate and `config ls` derives its `host` column from it (`internal/cli/configls.go`) |
+> | **Story 1 Gap 1** — the `host` layer reads an undeclared file | **NARROWED since** (re-checked 2026-09-24). It was *worse* than the story said on 2026-08-23; the hardcoded map is gone (2026-09-09) and the declaration moved onto the surface with a fail-closed read ([`OQ-CO10`](../reference/config-ownership.md#oq-co10), 2026-09-12). What is left: `describe` still names no host layer | `manifest.Surface.ReadsHost` is the predicate and `config ls` derives its `host` column from it (`internal/cli/configls.go`) |
 > | **Story 1 Gap 2** — capture outranks the definition | **PARTLY LIVE**; the story overstates it, and `--sealed` now catches it | Real order at [`compose.go`](../../internal/agentcfg/compose.go): capture loses to `computed`/`managed`. `applySealed` refuses on outstanding captures (`internal/cli/apply.go`) |
 > | **Story 1 Gap 3** — `yolo-jail.local.jsonc` | **STILL LIVE** as an input; now refused by `--sealed` | `config.WorkspaceLocalConfigName`, auto-merged in `internal/config/load.go`; refused in `applySealed` (`internal/cli/apply.go`) |
 > | **Story 2 step 3** — macos-user renders 0 surfaces (**G3**) | **FIXED 2026-08-12** (`a39628ad`) | packs staged *above* the backend dispatch (`stageRunPacks`, `internal/cli/run/run.go`); `YOLO_PACK_ROOT` set in `buildBootstrapEnv` (`internal/macosuser/runplan.go`); tests `internal/cli/run/packstagedispatch_test.go` |
@@ -39,7 +39,7 @@ sibling docs and plans — do not renumber them.
 >
 > **The one thing that had NOT shipped on 2026-08-23, and that the stories most depend on, has
 > since shipped:** `yolo config promote` (plan Phase 5.3) landed 2026-09-12, designed in
-> [`config-ownership-and-promotion.md` §5](config-ownership-and-promotion.md#5-promotion--the-way-out-of-capture).
+> [`config-ownership.md`](../reference/config-ownership.md#promotion).
 > It declares a captured key into the conventional local pack and clears only that key, and
 > `--sealed`'s refusal now names both `yolo config promote` and `yolo config reset`. So the user's
 > remedy is no longer only "discard it". Q1 is still open (see there).
@@ -131,7 +131,7 @@ when the definition does not bind. If yolo's answer to "is this the environment 
    > **GONE since 2026-09-09**: the `LAYERS` column now derives from `Surface.HasHostLayer`, so a
    > pack surface with a host layer is shown as having one. And since 2026-09-12 the declaration is
    > on the surface itself (`manifest.Surface.ReadsHost`; `HostSource` is derived from it) and the
-   > read fails closed ([`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)).
+   > read fails closed ([`OQ-CO10`](../reference/config-ownership.md#oq-co10)).
    > `yolo describe` (`internal/cli/describe.go`) still never mentions a host layer: its only
    > `host` strings are the confinement *notch*, an unrelated concept. That is what is left of
    > "nothing surfaces that the environment has a machine-shaped input".
@@ -139,7 +139,7 @@ when the definition does not bind. If yolo's answer to "is this the environment 
    > The standing decision this used to collide with is **gone the other way**:
    > [OQ-3](yolo-as-environment-manager.md#9-decision-ledger) — *retire the read-in `host` layer,
    > express personal settings as a local pack* (2026-08-01) — was **REVERSED 2026-09-12** by
-   > [`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger), which ruled the layer
+   > [`OQ-CO11`](../reference/config-ownership.md#oq-co11), which ruled the layer
    > **stays**: deciding its binding, failure direction and coverage is deciding that it exists.
    > So the layer is permanent and the display gap it caused is closed; what remains of this
    > story's complaint is `yolo describe`, which still never mentions a host layer.
@@ -553,7 +553,7 @@ right, and this story is the argument for not announcing three notches until G3 
 >   ([`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger), answered 2026-09-30). And the posture the host renders under
 >   is now the user-scope `host_management` key (`none`/`assert`/`own`), whose `assert` value was
 >   retired by ruling on 2026-09-20 and is not yet out of the code
->   ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
+>   ([the retired `assert` there](../reference/config-ownership.md#the-retired-assert)).
 > - **`guest`** — no longer renders zero on macOS (G3), but Phase 7 is still unbuilt: its mode
 >   policy is explicitly `UndecidedModes(...)` in `internal/render/modes.go`, naming Phase 7, and
 >   Linux `guest` is a *profile constant*
@@ -962,7 +962,7 @@ jail at all, and killing it would break the feature packs exist to provide.
 > - The **`host` layer** row was under a standing decision to be *removed*, not reported: design
 >   doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) / plan [OQ-3](../plans/environment-manager-plan.md#decision-ledger) resolved 2026-08-01 to retire the read-in layer in favour of a local
 >   pack. **That decision was REVERSED 2026-09-12** by
->   [`OQ-CO10`/`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger): the layer stays,
+>   [`OQ-CO10`/`OQ-CO11`](../reference/config-ownership.md#oq-co10): the layer stays,
 >   declared on the surface and read fail-closed ([`OQ-EM2`](yolo-as-environment-manager.md#9-decision-ledger)).
 >   So the row stands as written — a declared impurity — and its *report* half is what is owed.
 
@@ -1029,9 +1029,9 @@ docs and plans — do not renumber, do not delete.**
    _Re-checked 2026-09-24:_ **the promotion path is built, and a sibling design adopted this
    leaning — but as a principle, not as a ruling on this question.** `yolo config promote` shipped
    2026-09-12 (`internal/cli/configpromote.go`), and `applySealed` now names it beside `reset`.
-   [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#1-the-verdict-and-the-principles-it-rests-on)'s
+   [`config-ownership.md`](../reference/config-ownership.md#principles)'s
    P3, *"Capture is a staging area, not a terminal layer"*, says it adopts this leaning. What it
-   did not do is move capture in the stack: [its §7](config-ownership-and-promotion.md#7-what-this-does-not-propose) keeps the precedence order as it is, so a
+   did not do is move capture in the stack: [its what it does not license](../reference/config-ownership.md#what-this-does-not-license) keeps the precedence order as it is, so a
    captured value still outranks every declared layer below `computed`/`managed` until someone
    promotes or resets it. So the question is narrower rather than closed: **is "promotable, and
    refused by `--sealed`" enough, or must capture stop winning at all?**

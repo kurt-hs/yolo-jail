@@ -1,8 +1,8 @@
 package entrypoint
 
 // hostassertbaseline_test.go pins THE BYTES a pre-retirement `assert` apply left on a home —
-// the starting state of §11's "switching to `own` keeps every key and value" criterion
-// (docs/design/config-ownership-and-promotion.md §11), and, since the `assert` retirement
+// the starting state of config-ownership.md's "switching to `own` keeps every key and value" criterion
+// (docs/reference/config-ownership.md#keys-and-values-invariance), and, since the `assert` retirement
 // (OQ-CO14), the state every home yolo asserted into is LEFT IN: the unset key is `none` now,
 // and the ruling leaves such a file exactly as `assert` last rendered it.
 //
@@ -12,12 +12,12 @@ package entrypoint
 // the bytes it leaves are the `assert` baseline below, stated in full.
 //
 // It stays a BYTE golden even though the criterion asks for keys and values (OQ-CO12), and
-// that is not an oversight: §11's LAST bullet was a separate, unrelaxed requirement — a host
+// that is not an oversight: the design's last criterion bullet was a separate, unrelaxed requirement — a host
 // apply under `assert` leaves an undeclared key byte-identical — and this file is what measured
 // it. The criterion that moved governs the SWITCH.
 //
-// Why a byte golden rather than key assertions. §11's criterion is a claim about the FILE, and
-// the class it has to catch is the one §6.3.1 measured on the engine as it then stood: adoption
+// Why a byte golden rather than key assertions. config-ownership.md's keys-and-values criterion is a claim about the FILE, and
+// the class it has to catch is the one adoption section (config-ownership.md#adoption-is-capture-then-regenerate) measured on the engine as it then stood: adoption
 // (`ComposeStateful`'s first-migration branch) dropped every leaf under a top-level object the
 // pure render holds, wholesale, while `rmw` DEEP-MERGES the same object and keeps it
 // (`applyRMWLayer`). So a user's `permissions.ask` sitting beside yolo's managed
@@ -29,7 +29,7 @@ package entrypoint
 // shared leaf-level `narrowOverlay` — so this golden and its `own` twin agree. What the golden
 // does NOT establish is the criterion in general: it is one JSON fixture whose keys are already
 // in the order a composing encoder emits, so it cannot see the axes on which a home that is not
-// changes anyway. Those are hostownedkeysandvalues_test.go's, and §11 lists them.
+// changes anyway. Those are hostownedkeysandvalues_test.go's, and the reference lists them.
 //
 // The fixture surface declares NO mode, i.e. `stateful` (manifest.Surface.ResolvedMode's
 // default), because that was the coercion case: `assert` ran `rmw` alone and rendered a surface
@@ -53,7 +53,7 @@ import (
 )
 
 // adoptionBaselinePack owns one JSON surface whose `managed` layer is an OBJECT with a single
-// leaf — the `permissions.defaultMode` shape §6.3.1 names — so the file can hold a sibling leaf
+// leaf — the `permissions.defaultMode` shape adoption section names — so the file can hold a sibling leaf
 // under the same parent that yolo does not declare.
 func adoptionBaselinePack(t *testing.T) *packload.Pack {
 	t.Helper()
@@ -73,7 +73,7 @@ func adoptionBaselinePack(t *testing.T) *packload.Pack {
 
 // assertBaselineHome seeds a home with a pre-existing agent-written file and applies once as the
 // retired `assert` did, so what comes back is a home yolo ASSERTED INTO before the retirement —
-// the state §11's criterion is about, and OQ-CO14's face 2. The seeded file carries both classes
+// the state config-ownership.md's keys-and-values criterion is about, and OQ-CO14's face 2. The seeded file carries both classes
 // that have to survive: an undeclared top-level key (`apiKeyHelper`) and an undeclared LEAF under
 // a declared object (`permissions.ask`).
 func assertBaselineHome(t *testing.T) (home, path string) {
@@ -108,7 +108,7 @@ func seedAdoptionHome(t *testing.T) (home, path string) {
 }
 
 // THE BASELINE. These exact bytes are what an `assert` home holds — and keeps, since the
-// retirement leaves it alone; §11's criterion is that
+// retirement leaves it alone; config-ownership.md's keys-and-values criterion is that
 // switching it to `own` keeps every key and value in them, and for THIS fixture — canonical on
 // every axis the criterion leaves free — that is the same as keeping the bytes. Written out in
 // full rather than computed, so
@@ -139,7 +139,7 @@ func TestTheRetiredAssertLeftTheAdoptionBaseline(t *testing.T) {
 	}
 	if string(got) != assertBaselineBytes {
 		t.Errorf("the `assert` baseline moved.\n got:\n%s\nwant:\n%s\n\nThis is the file "+
-			"docs/design/config-ownership-and-promotion.md §11 says an `own` render must "+
+			"docs/reference/config-ownership.md#keys-and-values-invariance says an `own` render must "+
 			"reproduce — and since this fixture is already canonical, byte for byte. If it moved, "+
 			"either the rmw arm changed (it still runs for every `rmw`-declared surface an owned "+
 			"host renders) or renderAsRetiredAssert no longer renders what `assert` did — fix "+

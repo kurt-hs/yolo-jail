@@ -1,7 +1,7 @@
 package packload
 
 // surfacehostlayer_test.go pins the restructure OQ-CO10 rules
-// (docs/design/config-ownership-and-promotion.md §5.1.1): a config surface's host layer is
+// (docs/reference/config-ownership.md#the-read-in-host-layer): a config surface's host layer is
 // declared ON THE SURFACE, and the binding between the declaration, the mount the launcher
 // emits and the path the jail reads is one expression rather than a string match.
 

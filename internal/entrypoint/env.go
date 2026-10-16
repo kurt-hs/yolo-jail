@@ -83,7 +83,7 @@ type Env struct {
 
 	// hostOwnership is the user's DECLARED `host_management` contract, carried here so
 	// renderTarget() can hand it to render.Host — the host notch's mode census is a function
-	// of it (docs/design/config-ownership-and-promotion.md §4.1, render.HostOwnership).
+	// of it (docs/reference/config-ownership.md#the-host_management-key, render.HostOwnership).
 	//
 	// Meaningful only alongside hostTarget. It is NOT read from config here: this package
 	// renders, the CLI resolves the user's declaration, and every host entry takes it as a

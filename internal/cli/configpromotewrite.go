@@ -1,20 +1,20 @@
 package cli
 
-// configpromotewrite.go is §10 step 5 of docs/design/config-ownership-and-promotion.md: the
+// configpromotewrite.go is the promote write half (docs/reference/config-ownership.md#what-promote-does): the
 // WRITE half of `yolo config promote` — resolving a destination, declaring the keys there,
 // and resetting them out of the capture overlay so the value is declared in exactly one
 // place.
 //
 // # Steps 5 and 6 are ONE logical write
 //
-// §5.2: "if any part fails the whole promotion is abandoned with nothing changed: a
+// config-ownership.md#what-promote-does: "if any part fails the whole promotion is abandoned with nothing changed: a
 // half-promoted key is declared AND captured, which is the double-declaration the verb
 // exists to end". There is no transaction across two files, so the substitute is a
 // pre-image per file and a rollback that restores every one of them — which is exactly the
 // contract agentcfg.DeleteOverlayKeys returns its pre-image for, and why the manifest write
 // keeps its own.
 //
-// # §5.2 step 7 (record the move in the destination's provenance) is NOT built
+// # Step 7 of config-ownership.md#what-promote-does (record the move in the destination's provenance) is NOT built
 //
 // Nothing in the tree carries per-pack provenance, and the two ways to invent it are both
 // worse than the gap. A field on the contribution would have to be added to packdecl's
@@ -29,7 +29,7 @@ package cli
 //
 // A `pack.jsonc` is refused because promotion rewrites the manifest through a JSON encoder
 // and would silently drop every comment in it. A fetched pack is refused because it is not
-// the user's file to edit (§5.1). Both name what they found.
+// the user's file to edit (config-ownership.md#promotion). Both name what they found.
 
 import (
 	"fmt"
@@ -111,7 +111,7 @@ func resolvePromoteDest(to string, errw io.Writer) (promoteDest, int) {
 }
 
 // refuseRetiredPromoteHost refuses `--to host`, which was retired with `host_management:
-// "assert"` (config-ownership-and-promotion.md §4.5 step 4, built with OQ-CO14). It wrote a key
+// "assert"` (docs/reference/config-ownership.md#the-retired-assert step 4, built with OQ-CO14). It wrote a key
 // into the surface's own real-home file, which is legal under neither value left: at `none`
 // yolo writes nothing into the home, and at `own` the file is derived output the next apply
 // composes over. With no contract to exist in, the destination is dissolved rather than
@@ -151,7 +151,7 @@ func resolvePromotePack(name string, errw io.Writer) (promoteDest, int) {
 				"config-overlay folds after every shipped pack.\n", name)
 			return promoteDest{}, 1
 		case !e.IsLocal():
-			// §5.1: refused for a fetched pack — not the user's file to edit. The store's
+			// config-ownership.md#promotion: refused for a fetched pack — not the user's file to edit. The store's
 			// tree is keyed by COMMIT and never rewritten in place, so a write would not be
 			// overwritten so much as abandoned: the next time the pin moves (a launch's hourly
 			// refresh of a branch, or an explicit install/update), resolution reads a
@@ -192,7 +192,7 @@ func refusePromoteManifestForm(d promoteDest, errw io.Writer) int {
 	return 1
 }
 
-// applyPromotion is §5.2 steps 5-6: declare the promotable keys at the destination and
+// applyPromotion is steps 5-6 of config-ownership.md#what-promote-does: declare the promotable keys at the destination and
 // reset exactly those keys out of the capture overlay.
 //
 // WITHOUT promoteFlagAccept IT WRITES NOTHING and says what it would have written. The
@@ -215,7 +215,7 @@ func refusePromoteManifestForm(d promoteDest, errw io.Writer) int {
 func applyPromotion(plan promotePlan, o promoteOptions, pr richtext.Printer, errw io.Writer) int {
 	moves := promotableCount(plan)
 	if moves == 0 {
-		// §5.6's no-ops: no captures, or every captured key redundant. Exit 0 — nothing is
+		// config-ownership.md#degenerate-inputs's no-ops: no captures, or every captured key redundant. Exit 0 — nothing is
 		// wrong, and the report above already named what was found.
 		pr.Printf("[dim]Nothing to promote for %s%s.[/dim]", plan.Agent, surfaceSuffix(o.surface))
 		return 0
@@ -440,7 +440,7 @@ var promoteWriteFile = func(dst captureFile, data []byte) error {
 }
 
 // readIfPresent reads a file, reporting whether it existed. An absent file is not an error
-// — it is the §5.6 case where the destination has no manifest and one is created.
+// — it is the config-ownership.md#degenerate-inputs case where the destination has no manifest and one is created.
 func readIfPresent(path string) ([]byte, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -452,7 +452,7 @@ func readIfPresent(path string) ([]byte, bool, error) {
 	return data, true, nil
 }
 
-// decodePackManifest decodes the destination manifest, or scaffolds one (§5.6: "destination
+// decodePackManifest decodes the destination manifest, or scaffolds one (config-ownership.md#degenerate-inputs: "destination
 // pack has no pack.json — one is created with the pack's name").
 //
 // Decoded with jsonx rather than encoding/json so the user's own key ORDER survives the
@@ -550,7 +550,7 @@ func declareOverlayKeys(decl *jsonx.OrderedMap, surface string, keys map[string]
 }
 
 // promoteMergeValue deep-merges a promoted value over what the destination already
-// declares, the promoted side winning (§5.6: "deep-merged; the promoted value wins").
+// declares, the promoted side winning (config-ownership.md#degenerate-inputs: "deep-merged; the promoted value wins").
 //
 // DEEP, not replace, and the capture overlay's own shape is why: a capture is a merge
 // PATCH, so the value for an object key holds only the leaves that changed. Replacing would

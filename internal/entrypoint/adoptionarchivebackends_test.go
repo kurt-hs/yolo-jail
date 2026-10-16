@@ -1,7 +1,7 @@
 package entrypoint
 
 // adoptionarchivebackends_test.go measures the two things OQ-CO7's adoption archive
-// (docs/design/config-ownership-and-promotion.md §6.3.3) claims about the JAIL notch that
+// (docs/reference/config-ownership.md#the-adoption-archive) claims about the JAIL notch that
 // adoptionarchive_test.go's fixtures cannot state, because both are properties of the boot the
 // container path and the macos-user path do NOT share:
 //

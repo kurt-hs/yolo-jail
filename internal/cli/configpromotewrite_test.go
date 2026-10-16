@@ -40,7 +40,7 @@ func overlayKeysOf(t *testing.T, w *promoteWorld, agent, name string) map[string
 
 // THE WHOLE POINT OF THE VERB, end to end: a key captured in a jail becomes a DECLARED key
 // in the conventional local pack — which needs no `packs` entry and renders at every notch
-// — and stops being captured, so the value is declared in exactly one place (§5.2 steps
+// — and stops being captured, so the value is declared in exactly one place (config-ownership.md#what-promote-does steps
 // 5-6).
 //
 // The three things this pins beyond "it wrote something" are the ones the design argues
@@ -166,7 +166,7 @@ func TestPromoteWithoutAcceptWritesNothing(t *testing.T) {
 	}
 }
 
-// §5.6: a destination that already declares the key DEEP-MERGES, the promoted value wins,
+// config-ownership.md#degenerate-inputs: a destination that already declares the key DEEP-MERGES, the promoted value wins,
 // and the pack's own sibling keys survive.
 //
 // Deep rather than replace, because a capture is a merge PATCH: it holds only the leaves
@@ -204,7 +204,7 @@ func TestPromoteDeepMergesIntoAnExistingContribution(t *testing.T) {
 	}
 }
 
-// §5.1: a FETCHED pack is refused — it is not the user's file to edit, and its commit-keyed
+// config-ownership.md#promotion: a FETCHED pack is refused — it is not the user's file to edit, and its commit-keyed
 // store tree is left behind the next time its pin moves. A pack yolo SHIPS is
 // refused separately, because its manifest is inside the binary and the reason differs.
 func TestPromoteRefusesPackDestinationsItMustNotWrite(t *testing.T) {
@@ -254,7 +254,7 @@ func TestPromoteRefusesAJsoncManifest(t *testing.T) {
 	}
 }
 
-// §5.2: steps 5-7 are ONE logical write — "if any part fails the whole promotion is
+// config-ownership.md#what-promote-does: steps 5-7 are ONE logical write — "if any part fails the whole promotion is
 // abandoned with nothing changed: a half-promoted key is declared AND captured".
 //
 // The reset is what fails here, because that is the order the writes happen in and the only
@@ -320,7 +320,7 @@ func TestPromoteRollbackRestoresAnExistingManifestVerbatim(t *testing.T) {
 	}
 }
 
-// `--to host` is RETIRED with host_management "assert" (config-ownership-and-promotion.md §4.5
+// `--to host` is RETIRED with host_management "assert" (docs/reference/config-ownership.md#the-retired-assert
 // step 4, built with OQ-CO14): it wrote a key into the surface's own real-home file, which is
 // legal under neither value left, so the destination is dissolved and refused by name under
 // every contract — the plan included, since a plan for a destination that cannot exist is a
@@ -360,7 +360,7 @@ func TestPromoteToHostIsRetiredByName(t *testing.T) {
 }
 
 // A promotion of a key that is not promotable writes nothing at all — the refusals in the
-// plan are refusals, not warnings (§5.4: "refused BY NAME with the losing layer, never
+// plan are refusals, not warnings (config-ownership.md#precedence--promotion-moves-a-key-down-the-stack: "refused BY NAME with the losing layer, never
 // promoted with a warning").
 func TestPromoteWritesNothingWhenEveryKeyIsHeld(t *testing.T) {
 	w := newPromoteWorld(t, `["claude"]`)

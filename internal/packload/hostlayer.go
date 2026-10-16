@@ -17,7 +17,7 @@ package packload
 // The read was fail-open for that reason, and it cost a real bug: a pack named `my_pack`
 // had its file mounted at /ctx/host-my_pack/ while the entrypoint read /ctx/host-my_5fpack/
 // (2026-09-05), and the surface composed in silence while the launch banner still printed
-// the grant. OQ-CO10 (docs/design/config-ownership-and-promotion.md) rules the read fails
+// the grant. OQ-CO10 (docs/reference/config-ownership.md) rules the read fails
 // closed, which is only answerable with the one fact the launcher has and the jail does not:
 // what it delivered.
 //

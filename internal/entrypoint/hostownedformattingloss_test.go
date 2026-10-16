@@ -3,12 +3,12 @@ package entrypoint
 // hostownedformattingloss_test.go pins the ONE disclosure that survives OQ-CO12 for a TOML
 // surface's comments, because the criterion no longer can.
 //
-// THE SITUATION, stated plainly. §11's criterion is KEYS AND VALUES since
-// [OQ-CO12](../../docs/design/config-ownership-and-promotion.md) — and a comment is neither a
+// THE SITUATION, stated plainly. config-ownership.md's keys-and-values criterion is KEYS AND VALUES since
+// [OQ-CO12](../../docs/reference/config-ownership.md) — and a comment is neither a
 // key nor a value, so comment destruction is CONFORMANT and no criterion test will ever fail
 // for it again. That is deliberate: `own` composes the whole file through the surface's codec
 // and codec.TOML has no comment channel, while teaching it one would put rmw's formatting
-// knowledge into the capture path. What §11 offers in exchange is that the switch "is never
+// knowledge into the capture path. What the reference offers in exchange is that the switch "is never
 // silent on any axis", and for comments the ONLY thing holding that up is
 // HostRenderResult.Formatting:
 //
@@ -93,7 +93,7 @@ func TestSwitchingToOwnDisclosesThatCommentsWillNotSurvive(t *testing.T) {
 	if len(r.Formatting) == 0 {
 		t.Fatalf("the owned render would destroy every comment in this file and said "+
 			"nothing.\n\nHostRenderResult.Formatting is the LAST disclosure this loss has: "+
-			"OQ-CO12 made comment destruction conformant under §11's keys-and-values "+
+			"OQ-CO12 made comment destruction conformant under config-ownership.md's keys-and-values "+
 			"criterion, so no criterion test fails for it, and WouldChange cannot tell the "+
 			"user a comment went rather than a key moving. If hostFormattingLosses has gone "+
 			"back to running the rmw simulation for every mechanism, it is answering with "+

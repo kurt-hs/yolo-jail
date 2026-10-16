@@ -327,7 +327,7 @@ func TestLiteralNullsStayOutOfThePureRender(t *testing.T) {
 	}
 }
 
-// ── dropNullLeaves: the OTHER bug in §11's table, and a different mechanism ───────────────
+// ── dropNullLeaves: the OTHER bug in config-ownership.md's keys-and-values table, and a different mechanism ───────────────
 //
 // An object the user wrote EMPTY reaches the overlay and folds through unharmed once this
 // stops eating it. An object this function's own recursion empties is residue and still goes.
@@ -353,7 +353,7 @@ func TestDropNullLeavesKeepsAnAlreadyEmptyObject(t *testing.T) {
 // `assignment to entry in nil map` — on the boot render path. The one producer is a `managed`
 // block holding a typed-nil map (enforceValue deep-copies it to nil), which encoding/json never
 // yields, so no shipped surface reaches it
-// (docs/design/config-ownership-and-promotion.md §11, live residue item 4). The fix allocates
+// (found verifying OQ-CO12, fixed 2026-09-25). The fix allocates
 // and writes the map back; the managed floor still wins every key it names, and it names none.
 func TestLiteralNullsReinstateUnderATypedNilMap(t *testing.T) {
 	cfg, res := composeWith(t, Inputs{

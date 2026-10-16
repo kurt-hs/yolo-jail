@@ -2300,7 +2300,7 @@ never recorded and never removed.
 **Where no host apply renders** — `host_management` is `"none"`, which is also the unset key, on a
 home an earlier yolo wrote into — that apply refuses, so the line names removing the key by hand,
 or `yolo host apply --revert`, which takes out the values yolo's records say it wrote, this one
-included ([CO-D16](../design/config-ownership-and-promotion.md#CO-D16)). ⚠ Switching such a home
+included ([CO-D16](config-ownership.md#CO-D16)). ⚠ Switching such a home
 straight to `"own"` with claude already off Bedrock does not remove it either: the first owned
 apply adopts the file as it finds it, and the switch becomes a captured key of yours.
 

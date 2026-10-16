@@ -1,7 +1,7 @@
 package cli
 
 // adoptionarchiveslot_test.go is OQ-CO7's D1 end to end, across the two packages that own the
-// halves of it (docs/design/config-ownership-and-promotion.md §6.3.3): `yolo config reset`
+// halves of it (docs/reference/config-ownership.md#the-adoption-archive): `yolo config reset`
 // lives here, the adoption archive lives in internal/entrypoint, and the defect was the
 // sentence between them — reset destroyed the one record saying the file on disk was yolo's
 // own output, and the next render therefore read the file it had just written as the user's.

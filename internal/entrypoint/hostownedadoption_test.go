@@ -1,13 +1,13 @@
 package entrypoint
 
-// hostownedadoption_test.go is the BYTE-INVARIANT case of §11's criterion, measured: switching
+// hostownedadoption_test.go is the BYTE-INVARIANT case of config-ownership.md's keys-and-values criterion, measured: switching
 // a home yolo asserted into under the retired `host_management: assert` to `own` changes nothing
-// in the file (docs/design/config-ownership-and-promotion.md §11, §6.3.1). The switch is the one
+// in the file (docs/reference/config-ownership.md#keys-and-values-invariance and #adoption-is-capture-then-regenerate). The switch is the one
 // OQ-CO14 leaves such a home: its unset key reads as `none` and the file stays as `assert` left
 // it, until the user writes `own`.
 //
 // ⚠ BYTE INVARIANCE IS NO LONGER THE CRITERION — it is a STRONGER property this one fixture
-// happens to have, and keeping it asserted here is the point. OQ-CO12 relaxed §11 to
+// happens to have, and keeping it asserted here is the point. OQ-CO12 relaxed the keys-and-values criterion to
 // keys-and-values, which hostownedkeysandvalues_test.go states over fixtures that are not
 // canonical. This fixture IS canonical (key-sorted JSON, no comments), so the two contracts
 // have nothing left to disagree about except a dropped key — which makes a byte comparison the
@@ -18,7 +18,7 @@ package entrypoint
 // It is the SAME FIXTURE hostassertbaseline_test.go pins, and that is the whole method. That
 // file states the bytes an `assert` home holds (built by renderAsRetiredAssert); this one
 // renders the identical pack into the identical home under `own` and compares. Two fixtures could each be right about
-// their own notch while the switch between them lost a key — which is exactly the defect §6.3.1
+// their own notch while the switch between them lost a key — which is exactly the defect config-ownership.md's adoption section
 // measured, so the criterion has to be one home crossing one boundary.
 //
 // ⚠ WHAT THE FIXTURE DELIBERATELY DOES AND DOES NOT COVER. It carries the case the criterion is
@@ -50,7 +50,7 @@ import (
 )
 
 // THE BYTE-INVARIANT CASE. A home yolo asserted into is switched to `own`, and the file
-// does not move — not "keeps its keys", not "still parses": the same bytes. §11 asks for less
+// does not move — not "keeps its keys", not "still parses": the same bytes. the reference asks for less
 // than this (keys and values, OQ-CO12); this fixture delivers more, and the surplus is what
 // catches a dropped leaf without having to name the leaf.
 //
@@ -90,7 +90,7 @@ func TestSwitchingToOwnKeepsACanonicalFileByteIdentical(t *testing.T) {
 		t.Errorf("switching to `own` changed the file.\nbefore:\n%s\nafter:\n%s\n\n"+
 			"This fixture is canonical on every axis OQ-CO12 made conformant — already "+
 			"key-sorted JSON, no comments — so a byte diff here is a KEY OR VALUE that moved, "+
-			"which §11 still forbids. Do not answer it by weakening this comparison to the "+
+			"which the keys-and-values criterion still forbids. Do not answer it by weakening this comparison to the "+
 			"ruled keys-and-values one: hostownedkeysandvalues_test.go already states that, "+
 			"over fixtures built to exercise it. If the diff is a LEAF under a declared "+
 			"object, adoption has gone back to dropping whole top-level subtrees "+
@@ -170,7 +170,7 @@ func TestOwnedObserveReportsUnchangedAndWritesNothing(t *testing.T) {
 }
 
 // THE CAPTURE STORE, after a real owned apply: the three capture files live in the host store
-// and the provenance record stays where `assert` wrote it (§6.2's two directories, two
+// and the provenance record stays where `assert` wrote it (config-ownership.md#the-host-capture-store's two directories, two
 // lifetimes). The selection record is absent because this surface writes no selection — the
 // one of the three that is written only on demand.
 func TestOwnedRenderWritesTheHostCaptureStore(t *testing.T) {
@@ -224,7 +224,7 @@ func TestOwnedRenderWritesTheHostCaptureStore(t *testing.T) {
 	perms, _ := overlay["permissions"].(map[string]any)
 	if perms == nil || perms["ask"] == nil {
 		t.Errorf("the adopted overlay does not hold the undeclared LEAF under a declared "+
-			"object — that is §6.3.1's drop, and the file above only looks right until the "+
+			"object — that is the adoption drop (config-ownership.md#adoption-is-capture-then-regenerate), and the file above only looks right until the "+
 			"next render:\n%s", data)
 	}
 

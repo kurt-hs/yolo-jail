@@ -1752,7 +1752,7 @@ the jail: the user simply has not created it.
 > a **basename match** between the grant and the surface path, until 2026-09-12; that half is
 > a field on the surface now — `"readsHost": true` — and naming one of your own surfaces in a
 > `reads-host` contribution is refused with the migration
-> ([`OQ-CO10`](../design/config-ownership-and-promotion.md#13-decision-ledger)). What the kind still serves is the user's `host_files` key, whose entries carry
+> ([`OQ-CO10`](config-ownership.md#oq-co10)). What the kind still serves is the user's `host_files` key, whose entries carry
 > arbitrary host files that have no mirrored twin in the jail and so genuinely need a
 > declared path.
 
@@ -2302,7 +2302,7 @@ defaults < host < workspace < config-overlay < config-list < capture-overlay < l
   any config declaring it. The slot is kept rather than deleted because
   [`OQ-PK1`](#oq-pk1), which packs a workspace config may declare, is the open question that
   decides whether a workspace may declare such keys at all. Whoever gives it a producer also owns
-  [`OQ-CO8`](../design/config-ownership-and-promotion.md#13-decision-ledger)'s condition: a
+  [`OQ-CO8`](config-ownership.md#oq-co8)'s condition: a
   workspace config is writable from inside the jail, so this layer must never reach a real home.
 - **`config-overlay`** carries the keys OTHER packs contribute to a surface this one owns, in
   the one pack order (later wins): `packs`-list order, then the packs a `needs` pulled in, then
@@ -2609,9 +2609,9 @@ deletes it whole.
 
 > [!NOTE]
 > **The `host_management` value `"assert"` is retired** (ruled 2026-09-20, built with
-> [`OQ-CO14`](../design/config-ownership-and-promotion.md#oq-co14), ruled 2026-10-05). `none` and
+> [`OQ-CO14`](config-ownership.md#oq-co14), ruled 2026-10-05). `none` and
 > `own` remain, `none` is the default, and a config still saying `"assert"` is refused by name
-> ([`config-ownership-and-promotion.md`](../design/config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
+> ([`config-ownership.md`](config-ownership.md#the-retired-assert)).
 > A home it wrote into keeps its files and its provenance record, so the records above still
 > describe it. The `--assert` flag on `yolo host apply` is a different thing, and the ruling keeps
 > it.
@@ -2756,7 +2756,7 @@ records per-entry additions and removals relative to the last render (`ListRecor
   promote is the step the retirement of `host_management: "assert"` relies on: the maintainer's
   reason for that ruling was *"shouldn't they just be a single promote away from having their
   configs managed correctly?"*
-  ([`config-ownership-and-promotion.md` §4.5](../design/config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
+  ([`config-ownership.md`](config-ownership.md#the-retired-assert)).
   Under (a), a user whose only edits are `pi install`s is never one promote away. Not (c), which
   reopens a ruling to cover the rarer half.
 
@@ -3008,7 +3008,7 @@ The contract:
   layer, declared or not, so a table there that a derive means only to assert leaves of is
   regenerated whole in a jail while the host merges it. No shipped `rmw` surface returns such a
   table; what `rmw` should do with one awaits a ruling
-  ([the residual](../design/config-ownership-and-promotion.md#built-2026-09-25--what-shipped)).
+  ([the residual](config-ownership.md#in-full-tables)).
   Shipped derives reach the sentinel through a local guard so an older entrypoint, whose `ctx`
   lacks it, still runs them. The reverse pairing is not covered: a newer entrypoint handed an
   older derive (the packs are staged from the host binary) sees no declaration at all. That
@@ -3016,7 +3016,7 @@ The contract:
   the only refusal of it is the launch-time check comparing the binary's commit stamp with that
   tree's `HEAD` (`version.SourceSkew`, overruled by `YOLO_ALLOW_SOURCE_SKEW=1`, and silent for
   uncommitted changes)
-  ([`CO13`](../design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided)).
+  ([`CO13`](config-ownership.md#co13)).
 - It runs in the sandboxed Lua VM, and it must be deterministic.
 
 The VM (`luahook.GopherLuaVM`, pure-Go gopher-lua, vendored so the hermetic image build works
@@ -4152,7 +4152,7 @@ in the config-overlay comments (R2, R3) it means the R1–R5 table below, never
 | <a id="st-r"></a>[**ST-R**](#st-r) (synced skill trees) — **a home an earlier apply damaged gets a report, and no offer to put the tree back** | The same move is a tidy-up for one user and data loss for another, and nothing yolo can read distinguishes them, so the move is the user's ([above](#a-home-an-earlier-apply-already-took-from)). |
 | <a id="oq-st1"></a>[**ST1**](#oq-st1) (synced skill trees, 2026-09-20) — ~~which pack owns a snapshotted skill?~~ **DISSOLVED.** There is no snapshot, so nothing is copied into a pack and nothing owns a copy | This was the central ruling of the design's deleted snapshot, which would have copied the sync root into a pack. The source heals itself and a copy does not ([the sync root](#sync-root-two-roots)), so the design dropped the snapshot and the question with it. |
 | <a id="oq-st4"></a>[**ST4**](#oq-st4) (synced skill trees, 2026-09-20) — ~~does drift ever do more than report?~~ **DISSOLVED.** There is no drift report | yolo holds no copy of the tree, so there is nothing to compare against. |
-| <a id="st5"></a><a id="oq-st5"></a>[**ST5**](#st5) (synced skill trees, *implementation decision*, 2026-09-30, answering [OQ-ST5](#oq-st5): what a regenerated table does with keys yolo did not write) — **in a table its derive declares in full (`ctx.in_full`), a key the derive did not write is dropped at a first-migration adoption, and the adoption archive is the way back** — option (c), which is the tree's behavior since [`CO13`](../design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided) was built. Nothing to build: `dropComputedTables` takes a declared table whole and `entrypoint.archiveAdoption` copies the file first | On a first migration nothing records what an earlier yolo wrote, so that key is as likely yolo's own stale output as the user's. Option (a) would keep a removed MCP server and make the declaration inert at adoption; option (b) would refuse over yolo's own leftovers. What a user can feel is which tables are declared, and the contested class, the provider catalogs, is [`OQ-CO16`](../design/config-ownership-and-promotion.md#OQ-CO16)'s. Filed with the synced skill trees design because the question was filed there; it belongs to the config-ownership axis. |
+| <a id="st5"></a><a id="oq-st5"></a>[**ST5**](#st5) (synced skill trees, *implementation decision*, 2026-09-30, answering [OQ-ST5](#oq-st5): what a regenerated table does with keys yolo did not write) — **in a table its derive declares in full (`ctx.in_full`), a key the derive did not write is dropped at a first-migration adoption, and the adoption archive is the way back** — option (c), which is the tree's behavior since [`CO13`](config-ownership.md#co13) was built. Nothing to build: `dropComputedTables` takes a declared table whole and `entrypoint.archiveAdoption` copies the file first | On a first migration nothing records what an earlier yolo wrote, so that key is as likely yolo's own stale output as the user's. Option (a) would keep a removed MCP server and make the declaration inert at adoption; option (b) would refuse over yolo's own leftovers. What a user can feel is which tables are declared, and the contested class, the provider catalogs, is [`OQ-CO16`](config-ownership.md#OQ-CO16)'s. Filed with the synced skill trees design because the question was filed there; it belongs to the config-ownership axis. |
 | <a id="st-transition"></a>[**The transition is a notice**](#st-transition) (synced skill trees, ruled 2026-09-20) — yolo fences, says so on a non-empty reserved child, and copies, moves and tracks nothing | A snapshot verb with a drift report was designed and deleted: the population needing it is probably nobody, and a mechanism nobody needs is a standing obligation. A user who wants that content in a jail copies it into a pack of their own. |
 | **[OQ-PK2](#oq-pk2)** — one immutable pack tree per launch, plus a notice on attach; built 2026-09-26 | An attach that re-staged handed a running jail pack contracts its binaries may not read (v0.10.0 cannot boot on this tree's claude and pi), and left a live jail inconsistent after a changed-config attach. |
 | **WB-D9..D12** — `needs` names an embedded pack, resolves before staging, joins user selection, and always prints | A fetched pack needs-ing another would make selection a supply-chain channel; a silent join is the one forbidden behavior. |
