@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -76,6 +77,45 @@ func TestAPatchFailureWithABuildToRunRefusesTheLaunch(t *testing.T) {
 		}
 		if strings.Contains(printed, "Continuing with") {
 			t.Errorf("args %q: the refused launch says it continues:\n%s", args, printed)
+		}
+	}
+}
+
+// A FAILED NEWER BUILD REFUSES THE LAUNCH TOO (OQ-PPX3, 2026-10-16): the slot hands the build failure
+// beside the good build, and the launch prints its block — the build's error, the retry under
+// Repair:, the hatches the advance decided under Start anyway: — and stops before the image, as for a
+// patch failure. Red with Run's refusePatchFailures call deleted, which boots on the older build.
+func TestAFailedNewerBuildRefusesTheLaunch(t *testing.T) {
+	patchedLaunchHome(t)
+	imaged := false
+	argv, printed := fakePodmanLaunch(t, func(o *Options) {
+		o.BuildForks = func(ForkBuildRequest) map[string]entrypoint.ForkDelivery {
+			return map[string]entrypoint.ForkDelivery{"tool": {Key: "k-good", Runs: "v1.1.0 (0a1b2c3d) + 1 patch",
+				PatchFailure: &packsrc.PatchFailure{Owner: "forkpack/tool", Kind: packsrc.PatchFailureBuild,
+					Target: packsrc.ListEntry{Commit: pfCommit, Tag: "v1.2.0"}, Detail: "the capture jail exited 2",
+					Retry: "yolo capture tool"},
+				Recovery: []patchrecovery.Hatch{
+					{Env: patchrecovery.AllowPatchFailuresEnv, Value: "forkpack/tool", Command: "yolo", Label: "run v1.1.0 (0a1b2c3d) + 1 patch"},
+					{Env: patchrecovery.UseCachedGoodEnv, Value: "forkpack/tool", Command: "yolo", Label: "run the last good build v1.1.0 (0a1b2c3d) + 1 patch"},
+				}}}
+		}
+		o.autoLoad = func(image.AutoLoadOptions) image.LoadResult {
+			imaged = true
+			return image.LoadResult{OK: true, Ref: goldenImageRef}
+		}
+	})
+	if argv != nil || imaged {
+		t.Fatalf("the launch went on to the image (%v) or the container (%v):\n%s", imaged, argv != nil, printed)
+	}
+	for _, w := range []string{
+		"ERROR: fork forkpack/tool: the build failed at upstream v1.2.0 (c5c0f6bd)\n",
+		"  Build: the capture jail exited 2\n\nRepair:\n",
+		"    yolo capture tool\n",
+		"\nStart anyway:\n  YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo    run v1.1.0 (0a1b2c3d) + 1 patch\n",
+		"  YOLO_USE_CACHED_GOOD=forkpack/tool yolo         run the last good build",
+	} {
+		if !strings.Contains(printed, w) {
+			t.Errorf("the launch lacks %q:\n%s", w, printed)
 		}
 	}
 }

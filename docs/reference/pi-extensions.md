@@ -211,7 +211,7 @@ claims on one path. Validation is static; the series' contents are read at each 
 | [PF-D5](patched-forks.md#PF-D5) | Generalized: the triggers are [§6.1](#61-where-the-check-runs)'s |
 | [PF-D6](patched-forks.md#PF-D6), [D18](patched-forks.md#PF-D18) | Unchanged: the replay, its config regime, the blob prefetch |
 | [PF-D7](patched-forks.md#PF-D7) | Generalized: the recipe and the selection are [§7.2](#72-identity-and-selection)'s |
-| [PF-D8](patched-forks.md#PF-D8) | Unchanged: the ratchet, its compare-and-swap and its disclosure line ([OQ-PPX1](#why-its-this-way)) |
+| [PF-D8](patched-forks.md#PF-D8) | Unchanged: the ratchet, its compare-and-swap and its disclosure line ([OQ-PPX1](#why-its-this-way)); a newer build that fails stops the act, as for a fork ([OQ-PPX3](#OQ-PPX3)) |
 | [PF-D9](patched-forks.md#PF-D9), [PF-D10](patched-forks.md#PF-D10) | Unchanged, keyed by the extension key; every advance takes the newest fit |
 | [PF-D12](patched-forks.md#PF-D12) | Generalized: `yolo capture <pack>/<name>` builds; `yolo pack update`, `install` and `status` act on the extension key ([PPX-D28](#PPX-D28)) |
 | [PF-D16](patched-forks.md#PF-D16) | Its principle holds (the good build is machine-local); nothing is pinned in `packs.lock.json` ([PPX-D19](#PPX-D19)) |
@@ -283,8 +283,9 @@ which extension it builds (`YOLO_TREE_BUILD`, [PPX-D30](#PPX-D30)).
   program route's relocation cannot rescue it: relocation rewrites one home prefix into another, and
   a tree also moves within the home. A scan that did not run counts as a reference.
 
-Each failure is a failed build with [PF-D9](patched-forks.md#PF-D9)'s back-off, and the good build
-serves.
+Each failure is a failed build with [PF-D9](patched-forks.md#PF-D9)'s back-off. While a good build
+is on this machine it stops the launch, which runs that build only under a recovery hatch or an
+`agent_updates` hold ([OQ-PPX3](#OQ-PPX3)).
 
 ### 7.2 Identity and selection
 
@@ -388,8 +389,8 @@ listed only in a guarded posture list, the step that works ([PPX-D38](#PPX-D38))
 | Failure | What serves | Said, with the next step |
 | :--- | :--- | :--- |
 | A newer upstream does not replay | nothing new: the operation stops by default, and `YOLO_ALLOW_PATCH_FAILURES` mounts the good build for that launch ([PF-D81](patched-forks.md#PF-D81)); the other hatches are in [§9.1](#91-recovery-hatches-for-an-extension) | the error block, whose recipe rebases the series and whose hatch list names the extension's key |
-| A newer upstream replays but does not build | the good build ([PPX-D14](#PPX-D14)) | the held suffix, naming `yolo pack status` |
-| A `produces` path is missing, the tree names the build's home, or the delta has strays | the good build; a failed build with back-off | the paths, and the build line as the fix |
+| A newer upstream replays but does not build | nothing new: the act stops, its good build included, unless a recovery hatch is set ([OQ-PPX3](#OQ-PPX3), [§9.1](#91-recovery-hatches-for-an-extension)); inside the back-off every launch stops again with no rebuild | the error block: the build's error, `yolo capture <pack>/<name>` under `Repair:`, and the hatches, `YOLO_USE_CACHED_GOOD` among them at a jail launch |
+| A `produces` path is missing, the tree names the build's home, or the delta has strays | as the row above: a failed build with back-off, which stops the act | the paths, and the build line as the fix |
 | The entry was reaped between the lookup and the copy, or during it | the partial copy removed and the record re-read once; else rebuilt | as a first build |
 | The per-launch copy fails (a full disk) | nothing for this launch; the store is untouched | the error and the extension |
 | Nothing serves | nothing: a fresh launch refuses before booting ([PPX-D40](#PPX-D40)) | see below |
@@ -433,8 +434,9 @@ that fails while a good build exists refuses too, unless a recovery hatch is set
 **Two departures from the held store's rule**
 ([OQ-2](../design/pi-extension-store-builds.md#OQ-2) there): a launch that waited for another takes
 that launch's result, failure included ([PF-D17](patched-forks.md#PF-D17)), and a failed build is
-backed off while a good build serves ([PF-D9](patched-forks.md#PF-D9)). Without them, a build that
-keeps failing would cost every fresh launch a rebuild.
+backed off while a good build is here ([PF-D9](patched-forks.md#PF-D9)): inside the back-off a launch
+stops on the recorded failure without building it again ([OQ-PPX3](#OQ-PPX3)). Without them, a
+build that keeps failing would cost every fresh launch a rebuild.
 
 ### 9.1 Recovery hatches for an extension
 
@@ -755,7 +757,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 
 | ID | Ruling |
 | :--- | :--- |
-| <a id="OQ-PPX3"></a>[OQ-PPX3](#OQ-PPX3) | **The maintainer's ruling, 2026-10-16, correcting the reading recorded under [PPX-D40](#PPX-D40):** a build that fails is fatal even while a last good build exists; yolo never falls back to an older build on its own, because a warning can be missed. Only a recovery hatch the user sets runs an older build ([§9.1](#91-recovery-hatches-for-an-extension): `YOLO_USE_CACHED_GOOD`, `YOLO_ALLOW_PATCH_FAILURES`, `YOLO_ALLOW_OLDER_UPSTREAM`), or an `agent_updates` hold the user declared. *"if a build fails, we don't want to automatically roll back to some other version because warnings may be missed but if the escape hatch is used it should be able to go back. None of this happens without one of the escape hatches selected."* Applies to patched forks and patched extensions alike ([OQ-PBR6](patched-forks.md#why-its-this-way)). **Not built:** today a newer build that fails while the good build serves keeps serving it with a warning ([PPX-D14](#PPX-D14), [`patched-forks.md` PF-D8](patched-forks.md#PF-D8)). |
+| <a id="OQ-PPX3"></a>[OQ-PPX3](#OQ-PPX3) | **The maintainer's ruling, 2026-10-16, correcting the reading recorded under [PPX-D40](#PPX-D40):** a build that fails is fatal even while a last good build exists; yolo never falls back to an older build on its own, because a warning can be missed. Only a recovery hatch the user sets runs an older build ([§9.1](#91-recovery-hatches-for-an-extension): `YOLO_USE_CACHED_GOOD`, `YOLO_ALLOW_PATCH_FAILURES`, `YOLO_ALLOW_OLDER_UPSTREAM`), or an `agent_updates` hold the user declared. *"if a build fails, we don't want to automatically roll back to some other version because warnings may be missed but if the escape hatch is used it should be able to go back. None of this happens without one of the escape hatches selected."* Applies to patched forks and patched extensions alike ([OQ-PBR6](patched-forks.md#why-its-this-way)). **Built:** a newer build that fails while a good build of the series as it stands is here stops every act that would run it — a fresh jail launch, `yolo host -- <bin>`, `yolo host apply`, a next-launch delivery after the background advance recorded the failure — with the patch failure's one refusal shape, until the back-off ends and a launch builds it again, or a newer release passes it by. Supersedes [PPX-D14](#PPX-D14) and [`patched-forks.md` PF-D8](patched-forks.md#PF-D8)'s serving half. |
 | <a id="PPX-D1"></a>PPX-D1 | A patched extension is a `files` contribution with `source` and a series in place of `from`; there is no new kind; `from`, `fork_of`, `agent` and `agents` are refused beside `source` |
 | <a id="PPX-D2"></a>PPX-D2 | The extension key is `<pack>/<last segment of into>`, unique per pack across its patched extensions and its patched programs' bins; every record, lock, selection, message and explicit act uses it |
 | <a id="PPX-D3"></a>PPX-D3 | `into` is required and may not land on PATH, for any pack; `build` is optional and the sealed jail runs either way; `produces` is optional and tree-relative |
@@ -769,7 +771,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D11"></a>PPX-D11 | The Linux host renders a patched extension as a host-private versioned copy and an owned link swapped by rename, after the check and the advance and before the launch gate's comparison; the previous version is kept until the next move |
 | <a id="PPX-D12"></a>PPX-D12 | The owning agent pack's launchers act on a patched extension's reason, only at a notch its entry reaches. Its "the jail launch is never refused" is superseded by [PPX-D40](#PPX-D40); the launchers' half stands |
 | <a id="PPX-D13"></a>PPX-D13 | Checks of different extension keys run concurrently, except two naming one upstream repository, which serialize on its mirror lock; lines print in declaration order. Since 2026-10-05 the launch checks and builds them at once in its slot's pool ([XB-D56](../design/pi-extension-store-builds.md#XB-D56)) |
-| <a id="PPX-D14"></a>PPX-D14 | A newer upstream that does not build leaves the good build serving (for one that does not apply, [PF-D81](patched-forks.md#PF-D81)) |
+| <a id="PPX-D14"></a>PPX-D14 | A newer upstream that does not build leaves the good build serving (for one that does not apply, [PF-D81](patched-forks.md#PF-D81)). **Superseded by [OQ-PPX3](#OQ-PPX3), 2026-10-16:** it stops the act, and the good build runs only under a recovery hatch or an `agent_updates` hold |
 | <a id="PPX-D15"></a>PPX-D15 | The footprint marks a patched extension for review, naming its source, ref, follow rule, series, build and landing; no flag hides its launch, move or held lines |
 | <a id="PPX-D16"></a>PPX-D16 | A series member that adds a path the upstream ignores at the base is said once, naming `build`. Not built ([§16](#16-unbuilt-and-unmeasured)) |
 | <a id="PPX-D17"></a>PPX-D17 | The check record is per extension key, never per declaration |
@@ -795,7 +797,7 @@ adjust later."*), and remain his to overrule once he has tested a build.
 | <a id="PPX-D37"></a>PPX-D37 | A patched extension's series is read by the same reader as a patched fork's, and its errors name the extension's own remedies, never "declare a plain fork instead" |
 | <a id="PPX-D38"></a>PPX-D38 | On a host that builds no tree for itself (a macOS host), a tree listed only in a guarded posture list reaches no notch that has it, and each line says so with the step that works: move the entry to a `config-list`, or drop it |
 | <a id="PPX-D39"></a>PPX-D39 | The seal does not trip over its own narrowing: a build jail whose selection the seal narrowed runs none of the launch gates that ask whether another selected pack provides what one names (an `agents` selector, a `supersedes` capability, a via route, a required capability), and the seal carries the base of every fork the contributing pack declares, down the chain. A build jail that stops before its build line is relayed with its own last lines. Found at the maintainer's first real launch |
-| <a id="PPX-D40"></a>PPX-D40 | The maintainer's ruling in review of [OQ-PPX3](#OQ-PPX3), 2026-10-05: *"if a build fails, of course that's fatal. we should offer solutions and workarounds when that happens for happy path, but it's fatal"*. A fresh jail launch refuses before booting when a patched extension a selected pack needs has no build to deliver at a notch that builds trees, whatever the command, decided where the trees are, before the image step, naming the ways back; `YOLO_ALLOW_MISSING_PROGRAMS` launches anyway, and since [PBR-R8](patched-forks.md#PBR-R8) `YOLO_SKIP_EXTENSIONS` starts the owning agent without it. Supersedes [PPX-D12](#PPX-D12)'s "never refused". The reading of "a build fails" awaits confirmation ([OQ-PPX3](#OQ-PPX3)); a patch failure is fatal even with a good build ([PF-D81](patched-forks.md#PF-D81)) |
+| <a id="PPX-D40"></a>PPX-D40 | The maintainer's ruling in review of [OQ-PPX3](#OQ-PPX3), 2026-10-05: *"if a build fails, of course that's fatal. we should offer solutions and workarounds when that happens for happy path, but it's fatal"*. A fresh jail launch refuses before booting when a patched extension a selected pack needs has no build to deliver at a notch that builds trees, whatever the command, decided where the trees are, before the image step, naming the ways back; `YOLO_ALLOW_MISSING_PROGRAMS` launches anyway, and since [PBR-R8](patched-forks.md#PBR-R8) `YOLO_SKIP_EXTENSIONS` starts the owning agent without it. Supersedes [PPX-D12](#PPX-D12)'s "never refused". The reading of "a build fails" was settled by [OQ-PPX3](#OQ-PPX3) on 2026-10-16: a newer build that fails is fatal even with a good build, as a patch failure is ([PF-D81](patched-forks.md#PF-D81)) |
 | <a id="PPX-D41"></a>PPX-D41 | A sealed build jail renders no pack-declared surface and runs no pack hook, a patched extension's and a fork's alike, told by `YOLO_SEALED_BUILD=1` read before the user's env is hydrated, so only the launcher can make a boot a sealed build. Found at the maintainer's launch: a pack surface under a directory only a dropped pack made writable refused every build jail at boot |
 | <a id="PPX-D42"></a>PPX-D42 | A refused boot writes its structured cause (`boot-refusal.json`) and the host reads it rather than parse prose; each **build cause** is said once, with every build it left without; one config refusal at boot stops the later builds sealed the same way; a read-only path under a directory the user's own jail makes writable is yolo's bug, said so with where to report it. Found when one file's refusal was relayed four times in unreadable form |
 | <a id="PPX-D43"></a>PPX-D43 | Superseded 2026-10-06 by [PPX-D40](#PPX-D40) and deleted: a host-side line, keyed on the command's base name, warning that the program would not start |
