@@ -46,7 +46,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/outfmt"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packoverlay"
@@ -513,7 +512,6 @@ func classifyPromoteSurface(t configTarget, s manifest.Surface, o promoteOptions
 		}
 		return ps
 	}
-	m, _ := overlay.(*jsonx.OrderedMap)
 
 	// THE DESTINATION CHECK IS PER SURFACE, so it is asked once and answered on every key
 	// rather than being rediscovered per key. It is a fact about whether this surface can
@@ -538,7 +536,10 @@ func classifyPromoteSurface(t configTarget, s manifest.Surface, o promoteOptions
 	}
 
 	for _, st := range states {
-		v, _ := m.Get(st.Key)
+		// The NARROWED value, never the overlay's raw one: a null the last render holds is a
+		// null the user added, and declaring it in a pack would delete the key
+		// (dropRenderedNulls).
+		v := st.value
 		if unowned {
 			ps.Keys = append(ps.Keys, promoteKey{
 				Key: st.Key, Disposition: promotionNoPackOwner, value: v,

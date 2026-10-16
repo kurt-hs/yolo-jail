@@ -402,8 +402,12 @@ type overlayKeyState struct {
 	// and the one promote drops rather than declaring a value the layers already produce.
 	Redundant bool
 	// Deleted reports a null tombstone: the key was deleted in-jail, and the capture is the
-	// record of that deletion rather than of a value.
+	// record of that deletion rather than of a value. Never true for a null the last render
+	// holds (dropRenderedNulls).
 	Deleted bool
+	// value is the captured value with every null the last render holds removed — the value
+	// promote declares. It differs from the overlay's raw value only by those nulls.
+	value any
 }
 
 // overlayKeyStates compares a decoded capture overlay against the last-render baseline,
@@ -416,15 +420,89 @@ func overlayKeyStates(overlay any, baseline map[string]string) ([]overlayKeyStat
 	}
 	states := make([]overlayKeyState, 0, m.Len())
 	for _, k := range sortedKeys(m) {
-		v, _ := m.Get(k)
+		raw, _ := m.Get(k)
+		v, emptied := dropRenderedNulls(raw, baseline[k])
 		got := oneLineJSON(v)
 		states = append(states, overlayKeyState{
-			Key: k, Value: got, Was: baseline[k],
-			Redundant: v != nil && baseline[k] == got,
-			Deleted:   v == nil,
+			Key: k, Value: got, Was: baseline[k], value: v,
+			// A tombstone at a key the last render holds as `null` is a null the user ADDED,
+			// so the capture is the last render's own value: redundant, never a deletion.
+			Redundant: emptied || (v != nil && baseline[k] == got),
+			Deleted:   v == nil && !emptied,
 		})
 	}
 	return states, true
+}
+
+// dropRenderedNulls narrows one captured top-level value against the last render's value for
+// the same key (one-line JSON, "" for absent), removing every null leaf whose keypath the
+// last render HOLDS as a literal `null`. emptied reports that nothing captured is left.
+//
+// WHY THE LAST RENDER DECIDES IT (config-ownership.md#CO-D20). Inside the overlay — a merge
+// patch — mergeDiff spells a key the file gained as `"k": null` and a key the user deleted
+// with the same token. The render tells them apart: agentcfg.Inputs.LiteralNulls reinstates
+// every null the file holds, so an added null is IN last_render as `null`, while a genuine
+// deletion tombstone deletes its key and leaves it absent (only `computed`/`managed` outrank
+// the overlay, and a patch layer can never set a null). So a null leaf matched by a rendered
+// null is a record of the file, never a deletion, and `diff` and `promote` both drop it here —
+// the one reader they share — rather than promote writing it into a pack's config-overlay,
+// where it would delete the key at every notch.
+func dropRenderedNulls(captured any, renderedJSON string) (narrowed any, emptied bool) {
+	if renderedJSON == "" {
+		return captured, false
+	}
+	rendered, err := jsonx.Decode([]byte(renderedJSON))
+	if err != nil {
+		return captured, false
+	}
+	if captured == nil {
+		if rendered == nil {
+			return nil, true
+		}
+		return nil, false
+	}
+	out, changed := dropRenderedNullLeaves(captured, rendered)
+	if om, ok := out.(*jsonx.OrderedMap); ok && changed && om.Len() == 0 {
+		return out, true
+	}
+	return out, false
+}
+
+// dropRenderedNullLeaves is dropRenderedNulls' recursion over objects. A child that the
+// narrowing empties is dropped with its nulls; a child that was empty to begin with is the
+// user's own `{}` and is kept.
+func dropRenderedNullLeaves(captured, rendered any) (any, bool) {
+	cm, cok := captured.(*jsonx.OrderedMap)
+	rm, rok := rendered.(*jsonx.OrderedMap)
+	if !cok || !rok {
+		return captured, false
+	}
+	out := jsonx.NewOrderedMap()
+	changed := false
+	for _, k := range cm.Keys() {
+		cv, _ := cm.Get(k)
+		rv, has := rm.Get(k)
+		if !has {
+			out.Set(k, cv)
+			continue
+		}
+		if cv == nil && rv == nil {
+			changed = true
+			continue
+		}
+		nv, ch := dropRenderedNullLeaves(cv, rv)
+		if ch {
+			changed = true
+			if nm, ok := nv.(*jsonx.OrderedMap); ok && nm.Len() == 0 {
+				continue
+			}
+		}
+		out.Set(k, nv)
+	}
+	if !changed {
+		return captured, false
+	}
+	return out, true
 }
 
 // overlayDiffLines renders one line per captured key: the key, the captured value,

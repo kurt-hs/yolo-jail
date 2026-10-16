@@ -468,15 +468,13 @@ func Compose(in Inputs) (*Result, error) {
 	// an overlay an older yolo already polluted, which is why the tombstone is left in
 	// the sidecar rather than swept: removing durable state deserves its own argument.
 	//
-	// ⚠ THE TOMBSTONE IS INERT FOR THE RENDER AND NOT FOR THE REPORT, and this comment
-	// claimed both until it was measured on 2026-09-12. `yolo config diff` and
-	// `yolo config promote` read the sidecar directly, share configdiff.go's one
-	// definition `Deleted: v == nil`, and so call a key the file HOLDS a deletion —
-	// promote then offers to write that null into a pack's config-overlay, where it
-	// becomes a real tombstone at every notch. Recorded as a known gap in
-	// docs/reference/config-ownership.md#known-gaps; the fix is provable (a keypath
-	// in Inputs.LiteralNulls means the file HOLDS the key, so it can never be a genuine
-	// deletion record) and only its placement is unruled.
+	// ⚠ THE TOMBSTONE IS INERT FOR THE RENDER, AND THE REPORT HAS TO BE TOLD. `yolo config
+	// diff` and `yolo config promote` read the sidecar directly, and until 2026-10-16 called
+	// a key the file HOLDS a deletion, promote then writing that null into a pack's
+	// config-overlay as a real tombstone at every notch. Their shared reader
+	// (configdiff.go's overlayKeyStates) now drops every null leaf the last render holds as
+	// `null` — this reinstatement is what puts it there — so neither reports one
+	// (docs/reference/config-ownership.md#CO-D20).
 	overlayIdx := -1
 	for i, l := range preLayers {
 		if l.name == layerOverlay {
