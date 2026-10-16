@@ -937,7 +937,7 @@ func hostLaunch(flags hostExecFlags, profile string, cmd []string, out, errw, ra
 	for _, line := range launch.workerNotes {
 		fmt.Fprintf(errw, "yolo host: %s\n", line)
 	}
-	// THE WORKSPACE SKILLS LINK (OQ-WS5's B; docs/design/workspace-skills.md WS-D19 to WS-D23,
+	// THE WORKSPACE SKILLS LINK (OQ-WS5's B; docs/reference/agent-briefings.md WS-D19 to WS-D23,
 	// hostworkspaceskills.go) is the launch's LAST write, made just before each hand-over below:
 	// after every pre-flight, the prelaunch and every launch-owned service and doorway, so a
 	// launch refused at any of them — a bridge that cannot bind included — writes nothing into

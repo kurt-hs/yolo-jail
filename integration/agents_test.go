@@ -452,10 +452,10 @@ func TestProjectDirsNotTextNamesDeclaredRows(t *testing.T) {
 
 const (
 	copilotCompressed = "copilot 1.0.88 ships its JavaScript compressed inside one executable, so no path " +
-		"in it is text; the row is 1.0.48's strings (docs/design/workspace-skills.md §2.1)"
+		"in it is text; the row is 1.0.48's strings (docs/reference/agent-briefings.md, where each agent reads skills)"
 	opencodeHomeOnly = "opencode names it only as a home dir (`~/.claude/skills`, `~/.agents/skills`); its " +
 		"project walk is built from segments, and the row is its documented project search " +
-		"(docs/design/workspace-skills.md §2.1)"
+		"(docs/reference/agent-briefings.md, where each agent reads skills)"
 )
 
 // seedRefreshSeen returns shell that marks the pack's due_on_change content as already
