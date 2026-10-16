@@ -2,8 +2,8 @@
 title: "Plan: passwordless macos-user start and stop, through one run-as-_yolojail rule"
 date: 2026-10-15
 status: accepted
-stage: DECIDED
-next: "Build task 1 (the contract in internal/macosuser/privilege.go); tasks 2, 3 and 4 follow in parallel"
+stage: BUILT
+next: "Push the lane branch and run `gh workflow run macos-user.yml` (task 9's narrow-sudo step is the first measurement); then the owner's Mac check, which needs its own authorization"
 depends-on:
   - macos-user-privilege-lifecycle.md#OQ-MP10
 tags: [plan, macos-user, privileges, sudo, lifecycle]
@@ -12,9 +12,12 @@ summary: "Code-grounded hand-off for OQ-MP10's reduced grant: every root sudo on
 
 # Plan: passwordless macos-user start and stop
 
-**Status:** 2026-10-15. Completed against the tree, written against `4d0214a14`. Nothing is
-built. Passwordless startup is **UNMEASURED** until [task 9](#task-9--integration-and-the-narrow-sudo-ci-step)
-runs on macOS CI and the [owner's check](#the-owners-mac) runs on a real Mac.
+**Status:** 2026-10-15. Completed against the tree, written against `4d0214a14`.
+**2026-10-16: tasks 1 to 10 are built on the lane branch, not yet merged to main.** The decisions
+the build took beyond this plan are [PL-10 onward](#implementation-decisions-taken-here).
+Nothing was measured: passwordless startup is **UNMEASURED** until
+[task 9](#task-9--integration-and-the-narrow-sudo-ci-step)'s step runs on macOS CI and the
+[owner's check](#the-owners-mac) runs on a real Mac.
 
 **Design:** [`macos-user-privilege-lifecycle.md`](macos-user-privilege-lifecycle.md), the ruling
 in [OQ-MP10](macos-user-privilege-lifecycle.md#OQ-MP10) and
@@ -69,6 +72,15 @@ Mechanism choices the ruling leaves open, decided for the build. Each is reversi
 | PL-7 | Capture scratch cleanup runs as the host user. On failure it runs `/bin/chmod -R u+w` and `/bin/rm -rf` **as `_yolojail` through the rule**, then the host's `rm -rf` again. A failure stays a warning. | The design's open [capture-scratch gap](macos-user-privilege-lifecycle.md#automatic-capture-has-the-same-boundary-not-a-root-scratch-walker): a vendor installer may strip the inherited ACE from files it owns. Running as the files' owner needs no root. |
 | PL-8 | Legacy session files: a launch's sweep that claims a gone record whose legacy profile `/var/yolo-jail/profile-<key>.sb` exists keeps the record and warns once per launch, naming `yolo macos-setup`. Setup (the admin act) removes those exact five legacy paths with `sudo` for claimable records. Legacy trees under `/var/yolo-jail` are never removed by yolo; `yolo stores` lists them with the manual command. | The design's [existing-state rules](macos-user-privilege-lifecycle.md#administrator-setup-and-existing-state): no routine root removal, administrator repair of exact targets only after the old sessions end, and guest trees retained. |
 | PL-9 | `sudo` itself is invoked as `/usr/bin/sudo`. | Point 4's absolute-path rule; a PATH-shadowed `sudo` would make the run-as audit in task 9 meaningless. |
+| PL-10 | `staging-root-owner` also requires `not-root`. | Under `sudo`, the user's own staging root reads as another account's, and that row's remedy would delete it. |
+| PL-11 | Setup runs its enrollment checks, the check of the installed rule included, before the account steps. | A refusal then comes before any account, root or rule is made. The staging-root and capture-root refusals come before any `sudo`; the rule check is setup's first. |
+| PL-12 | Setup reads a rule check's exit 1 as another user's rule only after `/usr/bin/sudo -n /usr/bin/true` succeeds. | `sudo` also exits 1 when it cannot authenticate, which `grep`'s "no match" cannot be told apart from. |
+| PL-13 | Setup repairs a staging or capture root the host user owns but that is unsafe (wrong mode or an access list) with its two `chmod`s, rather than refusing. A link or a non-directory is still refused. | The repair is the one `staging-root-safe`'s remedy names, and it needs no root. |
+| PL-14 | Setup reads an owner's name and the host user's primary group with `/usr/bin/id`, not `os/user`. | Go's pure `os/user` reads `/etc/passwd`, which a Mac's accounts are not in. |
+| PL-15 | A staged capture entry is sealed with its top left owner-writable, renamed into `entries/`, then its top sealed. Context links are made after the recursive seal, in parents opened one at a time, which are then sealed again. | A rename into another parent needs write on the moved directory itself, and a link cannot be made in a `0555` directory. Opening only the parents keeps a recursive `chmod` from meeting a link. |
+| PL-16 | The integration Seatbelt registry claims the `staging-root-read-allow` marker, with two runtime cases: a read of the staging root allowed, and a write refused by the write deny. | The registry must name every marker the profile carries, with a runtime case or a written reason why none can run (a Linux test enforces it); the write case shows the read allow grants nothing more. |
+| PL-17 | Integration fixture cleanup removes a workspace as `_yolojail` through the rule before falling back to root `sudo`. | The narrow-sudo step takes root `sudo` away, and `_yolojail` owns what it made. |
+| PL-18 | The narrow-sudo CI step moves aside every `/etc/sudoers.d` file granting `NOPASSWD: ALL`, except yolo's own, in one `sudo` invocation, and fails naming the reviewer's choice if root `sudo` is still passwordless, the blanket rule then living in `/etc/sudoers` itself. | After the first move, no further `sudo` works; editing the main file is the reviewer's choice ([task 9](#task-9--integration-and-the-narrow-sudo-ci-step)). |
 
 ## Map
 
@@ -956,9 +968,13 @@ Needs the owner's explicit authorization ([what may happen next](macos-user-priv
 it installs the rule on a real machine. On a Mac set up by an older yolo, with one old session
 left running in another terminal:
 
-1. `yolo macos-setup`: one password prompt; the verdict names the rule; the old session keeps
+1. `yolo macos-setup`: one password prompt; it reports installing the rule, and its ready
+   verdict ends "Launches start and stop with no password from now on."; the old session keeps
    running.
 2. `sudo -k; yolo check --no-build`: the four new rows pass.
+
+The [runbook](../plans/runbooks/mac-macos-user-e2e.md#8-passwordless-start-and-stop-the-owners-check)
+carries this check as run, with each row's exact text.
 3. `sudo -k; yolo -- /bin/sh -c 'id -un' </dev/null`: prints `_yolojail`, no prompt.
 4. In a project with a pack whose program installs by capture: `sudo -k; yolo capture <bin>`:
    no prompt.
