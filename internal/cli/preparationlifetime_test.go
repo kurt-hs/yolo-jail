@@ -18,11 +18,11 @@ func TestPreparationOutputRecipeEditCancelsPausedChild(t *testing.T) {
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	stubPreparationWorkerStart(t)
 	started, cancelled := make(chan struct{}), make(chan struct{})
-	var once sync.Once
+	var once, cancelOnce sync.Once
 	pf.child = func(ctx context.Context, _ forkBuild) int {
 		once.Do(func() { close(started) })
 		<-ctx.Done()
-		close(cancelled)
+		cancelOnce.Do(func() { close(cancelled) }) // a stale child may be started again before the tick records the edit
 		return 1
 	}
 	_, _ = pf.launch(t, "podman", nil)
@@ -53,10 +53,23 @@ func TestPreparationOutputRecipeEditCancelsPausedChild(t *testing.T) {
 		<-done
 		t.Fatal("output-only recipe edit did not cancel stale child")
 	}
+	// TWO OBSERVERS CANCEL THE CHILD: the scheduler's tick refresh, and the shared worker's demand
+	// monitor, which polls every sharedDemandPoll and may see the edit first. So the cancel does not
+	// mean the tick has recorded the new generation yet; stopping the scheduler then cuts that refresh
+	// short. Wait for the record the tick writes, then stop.
+	var state preparationState
+	var i int
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		state, err = loadPreparationState()
+		i = preparationRecordIndex(state, poolKeyA, "podman", patchedTestPlatform)
+		if err == nil && i >= 0 && state.Subscriptions[i].Generation > before.Generation || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	stop()
 	<-done
-	state, err := loadPreparationState()
-	i := preparationRecordIndex(state, poolKeyA, "podman", patchedTestPlatform)
 	if err != nil || i < 0 || state.Subscriptions[i].Generation <= before.Generation || state.Subscriptions[i].ServingEntry != "" {
 		t.Fatalf("stale admission survived recipe edit: before=%+v state=%+v err=%v", before, state, err)
 	}
