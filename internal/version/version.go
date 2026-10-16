@@ -22,7 +22,8 @@ import (
 var buildVersion = ""
 
 // GitCommit is the short commit hash stamped into release builds via
-// -ldflags -X (goreleaser's {{.ShortCommit}}, scripts/build-go.sh). Empty for
+// -ldflags -X (goreleaser's {{.ShortCommit}}, scripts/build-go.sh, and every flake
+// build, whose flake.nix buildStamp carries 12 hex digits). Empty for
 // unstamped builds. Not part of any user-facing byte contract yet — carried
 // for release forensics until the post-cutover CLI surface pass surfaces it.
 var GitCommit = ""
