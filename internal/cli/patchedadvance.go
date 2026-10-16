@@ -1008,7 +1008,7 @@ func (a *advance) withRecovery(r advanceResult) advanceResult {
 // cachedGoodLabel names the older recorded good build cached-good recovery (PF-D82) would run for a
 // patched fork with no build of its current recipe to serve, "" when there is none it could run.
 func (a *advance) cachedGoodLabel() string {
-	if a.f.Into != "" || a.rec == nil || a.rec.Good == nil {
+	if a.rec == nil || a.rec.Good == nil {
 		return ""
 	}
 	if _, _, why := validateCachedGood(a.f, a.o.platform, a.rec.Good); why != "" {
