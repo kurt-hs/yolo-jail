@@ -17,6 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Claude keeps your `/model` choice across launches. When you switch providers, yolo picks the same tier on the new one, or its default, once.
 - **macOS (macos-user) launches no longer ask for a password.** Run `yolo macos-setup` once after upgrading: it asks for your admin password and installs one sudo rule that runs commands only as the sandbox account, never as root. The backend now supports one macOS user per Mac. See [the macOS guide](userguide/guides/macos.md).
 - **Each jail now runs its own credential services** for Claude, OpenAI and AWS logins, started and ended with it. An older yolo's machine-wide service is left running for the jails it started; once they end, stop it with `yolo host-daemon stop --host-wide <name>`, or reboot. See [host services](userguide/guides/host-services.md).
+- **A patched fork or pi extension whose newer build fails now stops the launch** instead of quietly running the last good build. To run that build anyway, launch with `YOLO_USE_CACHED_GOOD=<name> yolo`.
 
 ### Added
 
@@ -41,13 +42,13 @@ your patches, or start pi without an extension. See [Patch series](userguide/gui
 
 ### Fixed
 
-- Claude on Kilo no longer assumes every model has a 1M-token context, which made it compact too late on smaller models; set `context_window` on the profile for a 1M model.
+- Claude on Kilo no longer assumes a 1M-token context, which compacted too late on smaller models; set `context_window` for a 1M model.
 - `yolo --update` on a patched fork now waits while another yolo process is building it, instead of failing.
 - On Apple Container, `yolo check` no longer sends you to the Claude broker's log for an expired login; it points you at the jail's network.
 - A patched fork with nothing built no longer keeps refusing for an hour after a fetch failed because the network wasn't up yet; the next launch fetches again, and the refusal names the network.
 - A bare `-p` that some agents can't use now names them all on one line, with the fix for each.
 - `yolo config promote` no longer turns a `null` you set in an agent's config into a deletion in your pack, and `yolo config diff` no longer reports it as deleted.
-- A launch refused while it prepared a patched build no longer leaves a background `nix eval` running for up to two minutes after it exits.
+- A launch refused while it prepared a patched build no longer leaves a background `nix eval` running after it exits.
 - A patch series that stopped applying no longer keeps refusing after upstream releases a version it applies to.
 - With `agent_updates` off, a patched fork or extension now keeps running its good build even after a newer version failed.
 

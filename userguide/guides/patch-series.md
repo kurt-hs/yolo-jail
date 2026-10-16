@@ -7,8 +7,8 @@ hand yolo the upstream and your changes, and yolo keeps them current:
 - it checks the upstream for new versions, at most once an hour, at a launch;
 - it applies your patches to the newest version;
 - it builds the result in a sealed jail and runs it;
-- when a new version does not take your patches, it stops and tells you which patch stopped it,
-  how to fix it, and how to run the last build that worked meanwhile.
+- when a new version does not take your patches, or does not build with them, it stops and tells
+  you what stopped it, how to fix it, and how to run the last build that worked meanwhile.
 
 This works for a program a pack installs, such as `pi`, and for a pi extension. A **patch series**
 is a folder of `git format-patch` files, made with `--base` so it records the upstream commit it
@@ -197,7 +197,7 @@ its own.
 - **One Ctrl-C stops the whole wait**: every patched program and extension starts on its good build,
   and one with no build yet is left out and says so; if a pack you selected needs it, the launch
   then stops before the jail starts, as for any missing build below. When the time runs out, that
-  build counts as failed and the jail starts on the good build.
+  build counts as failed, and the launch stops as for any failed build below.
 - **An attach** to a running jail says which build that jail was handed.
 - In a jail, a pi extension's folder is read-only, and each launch gets its own copy of the good
   build.
@@ -287,9 +287,28 @@ holds it too.
 
 ## When a build fails
 
-- **A build of a new version fails:** the good build keeps running, the failure is said once with
-  the build's last lines and where its whole output is, and yolo tries again after a wait.
-  `yolo capture` retries at once.
+- **A build of a new version fails:** the command stops, even though your good build is still on
+  your machine. yolo never falls back to an older build by itself, since a warning is easy to
+  miss. The error names the version and the build's error, with the build's last lines and where
+  its whole output is, then `yolo capture` to retry and the ways to start anyway
+  ([When a build breaks](#when-a-build-breaks)): `YOLO_USE_CACHED_GOOD=pi-mine/pi yolo` runs your
+  good build for that launch. Every launch stops the same way until yolo tries the build again
+  after a wait, `yolo capture` retries it, or upstream releases a newer version.
+
+  ```text
+  ERROR: fork pi-mine/pi: the build failed at upstream v1.0.2 (cd32f772)
+    Build: the capture jail exited 1 — nothing was stored
+
+  Repair:
+    read the build's output, and once upstream or the build recipe is fixed, retry it:
+      yolo capture pi
+
+  Start anyway:
+    YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo    run v1.0.0 (a13d35a7) + 7 patches
+    YOLO_USE_CACHED_GOOD=pi-mine/pi yolo         run the last good build v1.0.0 (a13d35a7) + 7 patches
+    YOLO_SKIP_PATCHES=pi-mine/pi yolo            run upstream without the patches
+  ```
+
 - **Your own edit fails:** if you change the series, `build` or `produces` and the result does not
   build, yolo tries your series on its base version. If that fails too, nothing is left to run.
 - **Nothing to run:** when a patched program, or a pi extension a pack loads, has no build at all,
@@ -324,9 +343,9 @@ matches nothing here only prints a warning, so one left in your shell profile do
 
 | Command | What you get |
 | :--- | :--- |
-| `YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo` | Runs the last good build of your current patches, skipping the new version. |
+| `YOLO_ALLOW_PATCH_FAILURES=pi-mine/pi yolo` | Runs the last good build of your current patches, skipping the new version that does not apply or does not build. |
 | `YOLO_ALLOW_OLDER_UPSTREAM=pi-mine/pi yolo` | Tries your patches on older upstream releases, newest first, and runs the first one that builds. It says which version it picked, and keeps it on later launches until upstream releases something newer. |
-| `YOLO_USE_CACHED_GOOD=pi-mine/pi yolo` | Runs the last good build of your previous patches, for one fresh launch: useful when your own edit is what broke. It does not include that edit. |
+| `YOLO_USE_CACHED_GOOD=pi-mine/pi yolo` | Runs the last good build yolo recorded, for one fresh launch, without checking or building anything: after a new version failed to build, or when your own edit is what broke. It does not include that edit. |
 | `YOLO_SKIP_PATCHES=pi-mine/pi yolo` | Runs the upstream program or extension with none of your patches, built and kept separately, so your own good build is untouched. |
 | `YOLO_SKIP_EXTENSIONS=mine/ext-a yolo` | Starts pi without that extension. |
 | `YOLO_ALLOW_MISSING_PROGRAMS=1 yolo` | Starts the jail without a patched program that has no build. The shell works; the program does not. |

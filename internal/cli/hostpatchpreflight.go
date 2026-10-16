@@ -59,6 +59,7 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	ctx := withActInterrupt(context.Background(), act)
 	missingHatch := os.Getenv(paths.AllowMissingProgramsEnv) != ""
 	var stopped []string
+	series := false // one of them is a series that does not apply, not only a newer build that failed
 	for _, p := range progs {
 		if !p.Install.IsPatchedFork() || floor.OutsideTheFloor(p) {
 			continue
@@ -77,16 +78,19 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 			continue
 		}
 		stopped = append(stopped, "fork "+p.Install.ForkedBy+"/"+p.Bin())
+		series = series || failure.Kind != packsrc.PatchFailureBuild
 	}
 	if deferred && hostTreesBuild() {
 		for _, f := range packload.PatchedTrees(packs) {
-			if !f.DeliveredAtHost() || currentPatchFailure(f) == nil {
+			pf := currentPatchFailure(f)
+			if !f.DeliveredAtHost() || pf == nil {
 				continue
 			}
 			if entry, _, _ := hostTreeServing(f); entry != nil && (allowPatchFailures(f) || patchedForkHold(f) != "") {
 				continue // the bypass, or a hold (§6.3): the render links the good build, as it does for an advance's
 			}
 			stopped = append(stopped, f.Label())
+			series = series || pf.Kind != packsrc.PatchFailureBuild
 		}
 	}
 	if len(stopped) == 0 {
@@ -94,6 +98,11 @@ func hostPatchPreflight(errw io.Writer, packs []*packload.Pack, verb, command, t
 	}
 	if !deferred {
 		_, _ = io.Copy(errw, &said)
+	}
+	if !series {
+		fmt.Fprintf(errw, "yolo host: refusing %s: the newer build of %s failed; nothing was written\n",
+			verb, entrypoint.JoinAnd(stopped))
+		return false
 	}
 	fmt.Fprintf(errw, "yolo host: refusing %s: the patch series of %s %s not apply; nothing was written\n",
 		verb, entrypoint.JoinAnd(stopped), plural(len(stopped), "does", "do"))

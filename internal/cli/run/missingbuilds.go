@@ -9,9 +9,10 @@ package run
 // TO DELIVER for a patched fork it selects, or for a patched extension a selected agent pack loads,
 // refuses, whatever its command: yolo never reads the command line (HP-DIR2). "Nothing to deliver"
 // is no good build on this machine once the slot is done — the first build failed, never ran its
-// build line, was skipped for another build's cause, or the user's failed edit leaves none — and
-// never a NEWER build that failed while a good build serves, which the slot's own lines hold as
-// a warning. A patched extension is needed when its owning agent pack's list entry reaches a jail
+// build line, was skipped for another build's cause, or the user's failed edit leaves none. A
+// NEWER build that failed while a good build is here is not missing: the slot hands that failure
+// beside the good build, and patchfailures.go refuses it as it does a patch failure (OQ-PPX3, the
+// maintainer's ruling of 2026-10-16). A patched extension is needed when its owning agent pack's list entry reaches a jail
 // (packload.Fork.ListedInJail), the condition on which that pack's launchers would stop
 // (patchedTreesWire's Stop, PPX-D18), which stay as the backstop for an attach and a nested launch.
 //
@@ -46,6 +47,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -101,7 +103,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 			}
 			if d, ok := o.forkDelivered[p.Fork.Bin]; ok && d.Key == "" {
 				out = append(out, missingBuild{label: "fork " + p.Fork.Key(), key: p.Fork.Key(), capture: p.Fork.CaptureArg(),
-					reason: patchFailureReason(d.Reason, d.PatchFailure != nil), cause: d.Cause, unsaid: d.Unsaid,
+					reason: patchFailureReason(d.Reason, d.PatchFailure), cause: d.Cause, unsaid: d.Unsaid,
 					needed: true, patchFailure: d.PatchFailure != nil, recovery: d.Recovery})
 			}
 		}
@@ -117,7 +119,7 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 			}
 			if d, ok := o.treeDelivered[f.Key()]; ok && d.Dir == "" && !d.Skipped {
 				out = append(out, missingBuild{label: f.Label(), key: f.Key(), capture: f.CaptureArg(),
-					reason: patchFailureReason(d.Reason, d.PatchFailure != nil), cause: d.Cause,
+					reason: patchFailureReason(d.Reason, d.PatchFailure), cause: d.Cause,
 					unsaid: d.Unsaid, owner: f.Owner, needed: f.Owner != "" && f.ListedInJail, patchFailure: d.PatchFailure != nil,
 					recovery: d.Recovery})
 			}
@@ -126,14 +128,17 @@ func (o *Options) missingBuilds(rt string) []missingBuild {
 	return out
 }
 
-// patchFailureReason is a missing build's reason when its cause is a patch failure, whose error
-// block the launch printed just above (patchfailures.go): a pointer to it, so the target and the
-// patch are said once.
-func patchFailureReason(reason string, patchFailure bool) string {
-	if patchFailure {
-		return "its patch series does not apply (the ERROR above)"
+// patchFailureReason is a missing build's reason when its cause is a patch failure, or a failed
+// newer build (OQ-PPX3), whose error block the launch printed just above (patchfailures.go): a
+// pointer to it, so the target and the patch are said once.
+func patchFailureReason(reason string, pf *packsrc.PatchFailure) string {
+	switch {
+	case pf == nil:
+		return reason
+	case pf.Kind == packsrc.PatchFailureBuild:
+		return "its newer build failed (the ERROR above)"
 	}
-	return reason
+	return "its patch series does not apply (the ERROR above)"
 }
 
 // refuseMissingBuilds is the refusal, said before the image step: true when this launch refuses.
