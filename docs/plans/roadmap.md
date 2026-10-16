@@ -118,7 +118,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     [item 1's twin](runbooks/macos-user-manual-checks.md#1-the-privilege-transition),
     [DP-B6](../design/declaration-parity.md), [the footer](../design/agent-footer.md#what-i-would-build-in-order), [the
     build sandbox](../design/macos-user-build-step-threat-model.md), [the context mounts](../design/context-mounts.md#4-staging-and-the-tests-that-pin-each-piece),
-    [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../research/macos-layer-reusing-image-delivery.md), [the login
+    [Cachix](../reference/image-staging-vs-baking.md#the-binary-cache), [the in-VM copier](../reference/image-staging-vs-baking.md#the-first-load), [the login
     seed](../design/base-home-legacy-state.md) and [the storage classes](../design/durable-scratch-space.md).
 
     Build [the bounded privilege lifecycle](../design/macos-user-privilege-lifecycle.md) from
@@ -215,7 +215,8 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     rule the silent drops [the setup census](../design/backend-parity.md#42-what-was-built-2026-10-05-and-what-it-found)
     found; graduate into system docs [config ownership](../design/config-ownership-and-promotion.md), [pi's package
     folder](../design/pack-pi-resources.md), [the extension model defaults](../research/extension-model-defaults.md), and
-    [`packages` attribute paths](../design/package-nested-attribute-paths.md) once a Mac has run a dotted entry.
+    run a dotted `packages` entry on a `macos-user` launch, the one
+    [UNMEASURED half of the attribute-path resolver](../reference/image-staging-vs-baking.md#what-a-packages-entry-names).
 34. Rulings nothing shipped waits on. Gating one later step: [the host-file permission asymmetry](BACKLOG.md#E2) with
     [its host-side twin](pack-host-management-plan.md), [the skills fan-out](BACKLOG.md#OQ-S4), [sharing a claimed
     generic name](../design/credential-sources-separation.md#OQ-ES6), [the pack-file conventions](../design/pack-conventions.md),

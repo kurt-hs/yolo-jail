@@ -30,7 +30,11 @@ arms were **measured at their launch call site on 2026-09-25**, both passing at 
 Container on an arm64 Mac, Podman Machine on an Intel runner) — see
 [Archive destinations](#archive-destinations). The rootless store naming of issue #47 is
 measured by CI's rootless runners only, which a nested jail cannot stand in for
-([the store the copy writes](#the-store-the-copy-writes)).
+([the store the copy writes](#the-store-the-copy-writes)). The sections on [what a `packages` entry names](#what-a-packages-entry-names),
+[when no flake is found](#when-no-flake-is-found), [which channels ship a
+flake](#which-channels-ship-a-flake) and [the first load](#the-first-load) were added on
+2026-10-16, checked against `8e65f3444`. UNMEASURED: a dotted `packages` entry on a `macos-user`
+launch.
 
 A container jail runs on two things a launch assembles separately. The **image** is a nix-built
 OCI image holding nixpkgs tools, the FHS link farm and `/etc` — and, of yolo's own code, nothing
@@ -422,6 +426,59 @@ commit its jail was built from, and trips the gate once the tree's HEAD moves th
 path: inside a jail, launch a nested jail with the by-path binary `just build-go` writes,
 `/workspace/dist-go/linux-<arch>/yolo`, which is stamped with the current HEAD.
 
+### When no flake is found
+
+**A missing flake source refuses the launch**, on every backend. `reporoot.Resolve` is one pure
+resolver that `yolo run` and `yolo check` both call, so they agree on where the flake is, inside
+and outside a jail and in every directory. When all three sources miss, a container launch exits 1
+with `Cannot find yolo-jail repo root.`, saying it will not launch on a possibly-stale cached
+image and naming the two fixes: reinstall so the bundle ships with the binary (`just install`), or
+set `YOLO_REPO_ROOT`. The message says the working directory is never consulted, because standing
+in a checkout is the fix a user would otherwise try. `macos-user` refuses the same way in its own
+arm, because every launch there builds the non-container floor from this flake, even with an
+empty `packages:`. `--dry-run` alone is exempt: it materializes nothing.
+
+> [!WARNING]
+> **Do not reintroduce a degraded launch for a missing flake.** An earlier arm treated it as
+> non-fatal and ran whatever image was already loaded or cached, which silently ran an image
+> that may not match the config. That is the same failure [a failed build is
+> fatal](#a-failed-build-is-fatal) refuses. `SkipBuild` survives on `AutoLoadOptions` as a
+> dormant seam the unit tests construct, and the run path never sets it.
+
+> [!WARNING]
+> **Do not bring back a cwd step or the `repo_path` key.** A cwd walk made one binary build from a
+> live tree in one directory and an install-time snapshot in the next, with a banner that could
+> not tell them apart, and was the one way the two halves above could disagree by accident.
+> `repo_path`, a user-config pointer at a checkout, is retired: `validateRepoPath` still accepts
+> the key, so an old config launches, and warns that it is ignored. A developer who wants live
+> source says so with `YOLO_REPO_ROOT`.
+
+### Which channels ship a flake
+
+Every supported install resolves a buildable flake with no checkout, because the bundle is only
+the two flake files and prebuilt binaries, and the flake's prebuilt short-circuit builds from it
+with no Go toolchain and no source. A git flake sees tracked files only and the repository never
+commits `bin/`, so an in-repo build always compiles from `goSrc`, while a `path:` flake, a bundle,
+sees `bin/linux-<arch>/` and copies.
+
+| Channel | Where its bundle sits | Resolved by |
+| :--- | :--- | :--- |
+| Homebrew tap | `prefix/share/yolo-jail`, staged by the formula running `scripts/stage-source-bundle.sh`; `tap-install.yml` checks the published formula finds it | the bundle beside the binary (`<exe>/../share/yolo-jail`) |
+| GitHub release archive | `share/yolo-jail/` beside `yolo`, staged by goreleaser's before-hook | the bundle beside the binary (`<exe>/share/yolo-jail`) |
+| From source, `just install` | a new generation under the state dir, with the stable `flake-bundle` link swapped to it ([`storage-and-config.md`](storage-and-config.md)) | the staged bundle, in every directory, the checkout included |
+| Inside a jail | the [mounted prefix](#the-mounted-prefix), `/opt/yolo-jail/share/yolo-jail` | the bundle beside the binary, exactly as on a host |
+| PyPI wheel | none: `tools/build-wheels` wraps the `yolo` binary alone | nothing, so a wheel-only install needs `YOLO_REPO_ROOT` or another channel |
+
+**`just install` asks the binary where to stage**, `yolo internal bundle-dir`, rather than
+computing a path from `$GOBIN`. The staging script `rm -rf`s its destination, and the arithmetic
+once resolved `GOBIN=~/.local/bin` to the whole state directory. The script also refuses to remove
+a non-empty directory that is not already a bundle. A local install stages the native arch only;
+a shipped bundle carries both Linux arches and the flake picks one at evaluation.
+
+[The binary cache](#the-binary-cache) composes with the bundle and does not replace it: a
+substituted image still needs the local flake evaluated to know which store paths to fetch. No
+jail image is published to an OCI registry.
+
 ## What the image bakes
 
 What must be image content is what is needed before any yolo code runs, or what must resolve on
@@ -547,6 +604,122 @@ refuses when its skip list is non-empty, matching `macos-user`'s
 [A2](macos-user-nix-and-features.md#why-its-this-way): a typo and a package with no build
 are indistinguishable from the skip list, and either way the jail would start without a tool the
 user declared.
+
+### What a `packages` entry names
+
+**A `packages` entry is a nixpkgs attribute path, and it installs what
+`nix build nixpkgs#<entry>` builds** against the flake's pinned nixpkgs. A dotted entry is not
+yolo syntax: `strace` is a top-level package, `gtk4.dev` one of its outputs,
+`rocmPackages.clr` a member of a package collection, `gst_all_1.gstreamer.dev` a member's
+output. The same resolver serves every backend: the image, the
+[store-delivered](#store-delivered-packages) profiles and the non-container `buildEnv` that
+`macos-user` builds. A **package collection** here is an attribute set in nixpkgs that is not
+itself a derivation, such as `rocmPackages`, `xorg` or `python3Packages`: it groups packages and
+has nothing of its own to install.
+
+<a id="package-principles"></a>Three principles hold it in place:
+
+- **P1. One syntax, and it is Nix's.** A user who can spell an entry for `nix build` can spell it
+  here, quoting a name with punctuation as the Nix language does, and yolo never reinterprets or
+  renames a name, not even where nixpkgs deprecates one.
+- **P2. Preserve the `/lib` farm contract.** Adding a library, or its `.dev` output for headers,
+  links its shared libraries into `/lib` for `dlopen()` by soname
+  ([`mise-node-dynamic-linking.md`](mise-node-dynamic-linking.md)). This is why a runtime
+  `nix shell` is no substitute for a `packages` entry: a library outside `/lib` is invisible to
+  every non-nix binary that loads by soname.
+- **P3. Collection refusals are actionable.** A bare collection is refused by name, with
+  members sampled and one written out as an entry the user could use instead.
+
+**The resolver yields a base derivation and the selected outputs, not one value.** In
+`flake.nix` (`packageAttrPath`, `splitPackageAttr`) each entry, a string or an object's `name`,
+is parsed into names on its dots (a quoted name is one name, dots included) and walked from the
+nixpkgs root one name at a time, testing `?` before each read: a missing attribute is an abort
+`tryEval` cannot catch, and the walk never forces the value it ends on. The value reached is then
+classified:
+
+- **not found:** refused on the image path, skipped on the non-container path;
+- **found and not a derivation:** the collection or non-package refusal below;
+- **found and an output of its parent:** the base is the parent and the output is the last name;
+- **any other derivation:** its own base, with no output selected.
+
+The image contents take the selected outputs of the base (a `.dev` output brings its propagated
+closure's `.dev` outputs too), so the image always holds exactly the value the path names. The
+`/lib` farm and the header closure read the **base**: `lib.getLib` is a no-op on a value that
+already selects an output, so `getLib gtk4.dev` would be headers with no `libgtk-4.so`, and every
+binary built against those headers would fail to start.
+
+| Entry | Base | Outputs | Image gets | `/lib` farm gets |
+| :--- | :--- | :--- | :--- | :--- |
+| `strace` | `strace` | default | `strace` | `getLib strace` |
+| `gtk4.dev` | `gtk4` | `dev` | `gtk4.dev` and its propagated `.dev` outputs | `getLib gtk4` and its propagated libraries |
+| `rocmPackages.clr` | `rocmPackages.clr` | default | `clr` | `getLib clr` |
+| `rocmPackages.clr.icd` | `rocmPackages.clr` | `icd` | `clr.icd` | `getLib clr` |
+| `texlivePackages.abc.texsource` | the separate texsource derivation | default | that derivation's `out` | `getLib` of it |
+
+> [!WARNING]
+> **The last name being in the parent's `outputs` is not evidence that the path names an
+> output** ([NP-D1](#why-its-this-way)). A path's last name can be both one of its parent's
+> outputs and an attribute that is not that output: `texsource` is in `abc`'s `outputs`, and
+> `texlivePackages.abc.texsource` is a different, fixed-output derivation that `abc` takes as an
+> input. The test is Nix's own marker on the value reached: `outputSpecified`, with `outputName`
+> equal to the last name, under a parent derivation that lists that output. Reading the last name
+> as an output instead makes `abc` the base, links `abc`'s default output into `/lib` in place of
+> the texsource derivation, and installs a different store path from `nix build`
+> ([OQ-NP1](#why-its-this-way)). Measured 2026-10-01 over the pin then current, no top-level
+> derivation collides this way and every collision one level down but one is a
+> `texlivePackages.<pkg>.texsource` path; `integration/packagecollection_test.go` compares the
+> texsource case against `nix build --dry-run`'s own answer.
+
+**The grammar `yolo check` enforces** (`packageNameRe`, `internal/config`) is a subset of what
+`nix build` parses: names separated by single dots, each letters, digits, `_` and `-`, or quoted
+as Nix quotes it (`nerd-fonts."m+"`, `rubyPackages."http_parser.rb"`); no empty name, no leading
+or trailing dot, no unclosed or empty quotes. Every entry it accepts means what Nix means. The
+subset is deliberate ([NP-D3](#why-its-this-way)): unquoted Nix also takes `nerd-fonts.m+`, but
+the quoted spelling covers every package name measured. The refusal names the shapes it takes,
+the `nix build` spelling it mirrors, and `nix search nixpkgs <name>` as the way to find a path.
+
+**An object's `name` is the same attribute path** in every object form, pinned (`nixpkgs`) and
+version-override (`version`, `url`, `hash`) included, each against its own nixpkgs
+([NP-D2](#why-its-this-way)). That is what makes the `macos-user` refusal's advice,
+`{"name": "<pkg>", "platforms": ["linux"]}`, work for every string entry. An object whose `name`
+selects an output and that also lists `outputs` is refused, naming the one spelling that says it
+once (`{"name": "gtk4", "outputs": ["dev","out"]}`).
+
+**The non-container path** (`yoloNoncontainerPackages`, `noncontainerResolved`) runs the same walk
+and split against the flake's own `system`, with three differences:
+
+- **an unknown entry is skipped, not fatal, in the flake**, with a warning naming the missing step
+  (`nixpkgs.rocmPackages has no attribute "nosuch"`); the `macos-user` launch then refuses
+  host-side, as it does for any skipped package;
+- **a collection, a non-package or an object naming an output twice is fatal**, raised outside the
+  `tryEval` around platform availability, which would otherwise relabel a config error as
+  `no <system> build`;
+- **a skip names the entry as written** (`cudaPackages.libcublas.dev`, not its base), so the
+  refusal's `{"name": …}` advice can be filled in verbatim ([NP-D6](#why-its-this-way)). The
+  non-container floor drops its own copy of the **base** a user declared (`gtk4` for `gtk4.dev`).
+
+**The refusals** each name the entry as written and say what to do:
+
+| Case | Path | Says |
+| :--- | :--- | :--- |
+| A name is missing (`missingPackageError`) | image: abort; non-container: skip | which step failed, the outputs when that step is a derivation, and `nix search nixpkgs <name>` |
+| A bare collection (`nonPackageError`) | both: abort | three sampled members, one written as an entry with the `nix build` it mirrors, and the `nix eval … --apply builtins.attrNames` that lists them all |
+| A large set with no package among the names scanned | both: abort | what was seen, and the same listing command; never "holds no packages" |
+| A set holding no packages at all (`lib`) | both: abort | remove the entry |
+| An object whose `name` selects an output and which lists `outputs` | both: abort | the one spelling that says it once |
+
+The member sample is an early-exit scan, bounded in [Current values](#current-values), and "holds
+no packages" is said only of a set scanned whole. A fixed window is not enough: the first names of
+`python3Packages` are removed aliases that throw, so a short window found no member in a set of
+thousands of packages.
+
+What this does not do: no Nix expressions, function calls or overrides in `yolo-jail.jsonc` (the
+attribute-path grammar is all of Nix it accepts), and no abolition of the collection guard.
+
+**UNMEASURED: the non-container resolution on a Mac.** Its Linux evaluation is tested
+(`integration/packagecollection_test.go`, evaluation only, every compared store path read from
+`nix build --dry-run` against the pin) and a nested podman jail booted one entry of every shape on
+2026-10-06, but no `macos-user` launch with a dotted entry has run.
 
 ### A failed build is fatal
 
@@ -1049,11 +1222,11 @@ Both loaders read an `oci-archive` by extracting it and copying from the resulti
 that copy asks the destination for each blob **before** opening its file. So a blob the destination
 already holds does not need to be in the archive at all, as long as the manifest still names it.
 That is the **delta archive**: its manifest names every layer, and its `blobs/` holds only the
-layers outside the **present set** (the layer digests the destination already holds). Both terms
-were coined in
-[the research that ruled it](../research/macos-layer-reusing-image-delivery.md#terms)
-([`OQ-LR1`](../research/macos-layer-reusing-image-delivery.md#decision-ledger)). A docker-archive cannot carry one, because its reader refuses a tarball with a layer
-file missing, which is why podman on macOS moved off it.
+layers outside the **present set** (the layer digests the destination already holds). Both terms,
+and **placeholder seeding** below, were coined in the 2026-09-24 research this section absorbed;
+none is a standard term, and a delta archive is not a "diff" or "thin" image in any OCI sense
+([`OQ-LR1`](#why-its-this-way)). A docker-archive cannot carry one, because its reader refuses a
+tarball with a layer file missing, which is why podman on macOS moved off it.
 
 The existing copier writes one through **placeholder seeding** (`deltaarchive.go`):
 
@@ -1084,11 +1257,12 @@ what makes the failure rule one mechanism and not two:
 The placeholder behavior is pinned against the real `.#imageCopier` by
 `TestPlaceholderSeedingIsHonoredByTheRealCopier`, and the retry against a real remote podman by
 `TestArchiveDeltaRetryRecoversAnOverClaim` (both in `integration/archivedelta_test.go`). The
-research's alternative, the "robust variant", writes the full layout and deletes the present blobs
+placeholder trick depends on containers/image's OCI layout destination treating any existing file
+at a blob's path as present (a bare `os.Stat`). The alternative, the "robust variant", writes the full layout and deletes the present blobs
 before tarring. It relies on nothing in the copier, but it pays a full local write on every
 delivery, which is most of what the delta removes. It is the fallback if that pin ever goes red.
 
-**Apple Container's present set is yolo's own delivery record** ([`OQ-LR3`](../research/macos-layer-reusing-image-delivery.md#decision-ledger)). After a successful load,
+**Apple Container's present set is yolo's own delivery record** ([`OQ-LR3`](#why-its-this-way)). After a successful load,
 `image-delivery/<key>.delivered.json` records the ref and the layer digests just delivered. Only
 yolo writes these records: they sit in the state directory beside the attempt directories, outside
 every jail mount. A record
@@ -1101,13 +1275,12 @@ different answers.
 
 The "one retry" rule rests, on this backend, on a premise that was UNMEASURED until
 2026-09-25: that `container image load` exits nonzero when a manifest names a blob neither the
-archive nor its content store holds. The research read that in Apple Container's import code
-(SOURCED), and `TestMacArchiveFailClosedOnAppleContainer` measured it on `container` 1.1.0: exit
+archive nor its content store holds. It was first read in Apple Container's import code, and `TestMacArchiveFailClosedOnAppleContainer` measured it on `container` 1.1.0: exit
 1, no image left (results below). If it
 exited 0 instead, an over-claim would leave an image that inspects as present and fails at
 `container run`, and no retry would fire. An over-claim is narrow here, because a record is written
 only after a load of exactly those layers under exactly that content ref, and `just load` loads
-`yolo-jail:latest`, never a content ref. The Mac commands include the check.
+`yolo-jail:latest`, never a content ref.
 
 **The launch reports what was sent.** The archive arm prints the exact split and the archive's
 real size, for example
@@ -1117,8 +1290,9 @@ archive)`. After a retry it describes the archive that landed, not the one plann
 **MEASURED 2026-09-24, Linux only.** The run used nested rootful podman 5.8.6 as a **remote**
 client (`CONTAINER_HOST` at a private `podman system service`), skopeo 1.24.0 from `.#imageCopier`,
 and the real `AutoLoadImage` macOS-podman arm. The image pair was `.#ociImage` with
-`YOLO_EXTRA_PACKAGES` empty (A, 91 layers) and `["hello"]` (B, 92 layers). The research ran the
-same shape.
+`YOLO_EXTRA_PACKAGES` empty (A, 91 layers) and `["hello"]` (B, 92 layers). B has exactly two
+layers A lacks, the `packages:` tier and the top layer: the recurring case of a `packages:`
+change making a new image.
 
 | Delivery | The previous arm: `docker-archive` + `podman load -i` | The delta arm |
 | :--- | :--- | :--- |
@@ -1126,7 +1300,7 @@ same shape.
 | B into a store holding A | 10.1 s (write 6.7 s, load 3.3 s), 3,447,376,384 B | **1.9 / 1.8 s**, a 27 MB archive: 2 layers sent, 90 reused |
 
 B loaded under `localhost/yolo-jail:<key>` from the layout's ref annotation. It has the same image
-ID as the docker-archive path (`41685f1d…`) and the research's manifest digest (`c7382a44…`), and
+ID as the docker-archive path (`41685f1d…`) and the full layout's manifest digest (`c7382a44…`), and
 `podman run … hello` printed `Hello, world!`. The first load is about 3.5 s slower here, the
 layout-plus-tar pass. On a Mac the first load is dominated by the 3.45 GB upload, which is
 unchanged.
@@ -1156,10 +1330,7 @@ That answers the three questions this section left open for Apple Container:
    and the load together, so B's 19.4 s is the whole delta delivery, not the unpack alone.
 
 On the Intel podman machine, A's first delivery is the full 3.2 GB upload into the VM, and it
-dominates the launch. The same job's [`OQ-LR2`](../research/macos-layer-reusing-image-delivery.md#decision-ledger) step
-([the research](../research/macos-layer-reusing-image-delivery.md)) timed a cold
-`podman load` of A at 14 min 6 s uncompressed and 13 min 49 s from a 1.1 GB gzip archive, one
-sample each.
+dominates the launch; [the first load](#the-first-load) has what was measured about it.
 
 **`.#imageCopier` has now been built on x86_64-darwin.** This section said no CI job built it
 there, where it is a **different skopeo** (the darwin nixpkgs input resolves an older minor,
@@ -1167,6 +1338,65 @@ under the same `nix:` patch). The nightly's `archive-delivery-macos` job realize
 `macArchiveRealize` (`integration/macarchivedelivery_test.go`), and on run `36128365198` it
 substituted 56 paths and built one derivation in 2 min 28 s. The two podman launches above ran
 through it.
+
+**Apple Container still unpacks every layer for every new image.** After a load, its images
+service builds a fresh ext4 snapshot from all of the manifest's layers, one block file per image
+manifest, and no step starts from the previous image's snapshot. A `packages:` change is a new
+manifest, so the delta archive saves the archive write, the tar extraction and the blob ingest on
+that backend, and the unpack of the whole image stays. How much of B's delivery that unpack is
+has not been isolated. Where the content store and snapshots live: on the Mac, managed by the
+images service; only the container runs in a VM.
+
+> [!WARNING]
+> **The routes a maintainer would reach for instead, and why not.**
+>
+> - **`podman pull oci:<dir>`** is refused by the remote client macOS podman always is: the API's
+>   pull endpoint accepts `docker://` references only. Run inside the VM through
+>   `podman machine ssh` it works and reuses layers, but only into one machine chosen by name, and
+>   for podman only.
+> - **A local read-only registry** works on both backends, and is the shortlisted fallback should
+>   a future `container image load` refuse a layout with missing blobs. It adds a listener that
+>   every local process (and, on Podman Machine, every container in the VM, running jails included,
+>   through `host.containers.internal`) can reach while it is up, and a pull by tag trusts whatever
+>   manifest the port serves; only a pull by digest closes that. The delta archive opens no
+>   listener.
+> - **Compressing the archive** is orthogonal to reuse, and lost as a first-load lever
+>   ([the first load](#the-first-load)).
+> - **A containers-storage store on a shared mount, or writing into Apple Container's content
+>   store directly**: the first needs c/storage's Linux-only overlay driver written from macOS, the
+>   second an internal on-disk layout with no stability promise.
+> - **A registry yolo serves straight from the nix store** would send the fewest bytes, but needs
+>   nix2container's layer writer as a Go dependency that `internal/image` deliberately avoids.
+
+##### The first load
+
+**No delivery change helps a first load, and none is built.** CI's macOS runners start with an
+empty runtime store every job, so their first `podman load` is a cost layer reuse cannot touch;
+reuse pays on a machine that keeps its store between launches. By [`OQ-LR2`](#why-its-this-way)
+the first load is improved only where a candidate measurably wins, and none did:
+
+- **A gzip archive** (fewer bytes to upload, CPU paid) was even with the uncompressed archive in
+  the first sample and slower in each of the three nightly samples after it.
+- **The Linux copier run inside the Podman Machine VM** (`podman machine ssh -- [podman unshare
+  --] <copier> copy nix:<image.json> containers-storage:<ref>`, where `/nix` is shared with the
+  VM): its first completed run, the 2026-10-02 dispatched macOS nightly, took about twice as long
+  as the archive path. Earlier attempts failed on the rootless-store fault of issue #47, then once
+  stopped after `Writing manifest to image destination` without returning.
+- **A first load read over virtiofs** (`podman machine ssh -- podman pull oci:<layout>`) was
+  never measured.
+
+On Linux the step after `Writing manifest to image destination` takes about a tenth of a second of
+a cold copy (measured 2026-10-01, rootful), so an in-VM copy that prints it and runs on was stopped
+in its last step, or its ssh session never returned. The rootless half and the VM are unmeasured.
+
+The measurement still runs, measurement only, in `nightly-macos.yml`'s `archive-delivery-macos`
+job, in the step named for [`OQ-LR2`](#why-its-this-way): `TestMacArchiveFirstLoadCompressionOnPodman` and
+`TestMacArchiveFirstLoadInVMCopierOnPodman` (`integration/macarchivedelivery_test.go`). Each
+reports its time in the job's step summary, and the in-VM one logs a line naming the question
+id followed by `IN-VM COPIER:`, with the argv and output. The in-VM copier runs under its own deadline
+and, when it reaches it, is sent SIGQUIT so the goroutine dump names where it waited. No
+delivery code depends on either test, and their argv is the Linux delivery's own
+(`image.DeliveryCopyArgv`), so a flag the Linux path gains reaches the candidate too.
 
 #### The image-copy lock
 
@@ -1587,6 +1817,14 @@ ones cited from sibling docs and code comments and are never renumbered.
 | OQ-IP2 | The **Linux-builder-on-macOS gap is filed separately**, not coupled to the identity fix. Only the identity was on the critical path, and coupling would have kept the instrument dark until both landed. A Mac that cannot offload a Linux build still cannot *build* an image — it can now *verify* one it was handed. | 2026-09-12 |
 | OQ-IP3 | **Accept the one-time mismatch** when the identity's spelling changed; no dual-spelling window. A compatibility window is a second code path guarding a cost paid once. What was added instead is `identityHint`, which recognises the old shape and never accepts it. | 2026-09-12 |
 | OQ-IP4 | **Ask the runtime before building** — a stock *tag*, not a trust signal. The build was unconditional and [OQ-IP1](#why-its-this-way) did not reach it, because the launcher compared nothing at all. The tag carries a claim the launch verifies against its own evaluation, so nothing is suppressed and no new environment variable exists. | 2026-09-13 |
+| OQ-LR1 | **Build the delta archive for both Mac backends**, inside `deliverViaArchive`, with the empty present set as the full archive and the single retry — a parameter of the one mechanism, never a second transport. It was built on the ruling, and the Mac runs verify it rather than gate it. Graduated from the 2026-09-24 layer-reuse research. | 2026-09-24 |
+| OQ-LR2 | **Improve the first load only where a candidate measurably wins.** The gzip archive and the in-VM copier were measured on the Mac runners and neither won, so no first-load delivery code exists; the nightly measurement is not a delivery path. | 2026-09-24 |
+| OQ-LR3 | Delegated and decided: **Apple Container's present set is yolo's own record** of the image it last delivered, counted only while `container image inspect` still finds that ref. It parses no Apple Container output, and a wrong answer costs one retry with an empty set. | 2026-09-24 |
+| OQ-NP1 | Ruled (C), under delegation: **a dotted `packages` entry installs what `nix build nixpkgs#<path>` builds**, so a path whose last name is both an output and a different attribute resolves to the attribute. Rejected: the output winning on the last name, which installs a different store path from `nix build`, and refusing the ambiguous path, which refuses what Nix builds. Renamed from the first question of the package attribute-path design, because this table already uses that id. | 2026-10-05 |
+| NP-D1 | *Implementation decision.* "Is an output of its parent" is Nix's marker on the value reached (`outputSpecified`, `outputName` equal to the last name, a parent listing it), never the last name's membership in the parent's `outputs` ([what a `packages` entry names](#what-a-packages-entry-names)). | 2026-10-06 |
+| NP-D2 | *Implementation decision.* An object's `name` is the same attribute path in every object form, so the `macos-user` refusal's `{"name": …}` advice works for every string entry; a `name` that selects an output plus an `outputs` list is refused. | 2026-10-06 |
+| NP-D3 | *Implementation decision.* The grammar takes Nix's quoted names and keeps unquoted names to letters, digits, `_` and `-`: a subset of Nix's grammar that spells every package measured. | 2026-10-06 |
+| NP-D6 | *Implementation decision.* A non-container skip names the entry as written, not its base, so the refusal's advice can be filled in verbatim; the floor's de-duplication still keys on the base. | 2026-10-06 |
 
 ## Current values
 
@@ -1640,5 +1878,7 @@ values themselves are stated.
 | `packages:` into the flake | `YOLO_EXTRA_PACKAGES` (JSON), read with `builtins.getEnv` | `image.AutoLoadOptions.ExtraPackages`; `extraPackages` (`flake.nix`) |
 | Image reap on the launch path | every image except each workspace's current one, at most once per 24 h, opt out with `YOLO_NO_AUTO_IMAGE_REAP` | `prune.ReadCurrentImagePointers`, `prune.AutoReapInterval`; `autoReapOptOutEnv` (`internal/cli/run/autoreapimages.go`) |
 | Binary-cache substituter | `yolo-jail.cachix.org` | `nixConfig` (`flake.nix`) |
+| `packages` entry grammar | dotted names, each `[a-zA-Z0-9_-]+` or `"…"` quoted | `packageNameRe` (`internal/config/config.go`); `packageAttrPath` (`flake.nix`) |
+| Collection member sample | three members, scanning at most 500 names | `cap` in `nonPackageError` (`flake.nix`) |
 
 **2026-10-13 implementation under the workspace-scope and stock-image reuse rulings:** config-declared baked packages now use the complete launch-input record above, rather than treating the stock identity alone as their key. Workspace scope and build-failure policy are unchanged.

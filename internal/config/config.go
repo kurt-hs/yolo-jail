@@ -292,7 +292,7 @@ var (
 	// `nix build nixpkgs#<path>`: names separated by single dots, each one letters,
 	// digits, '_' and '-', or quoted the way Nix quotes the rest (`nerd-fonts."m+"`,
 	// `rubyPackages."http_parser.rb"`). A string `packages` entry and an object's
-	// `name` are both one (docs/design/package-nested-attribute-paths.md, OQ-1), and
+	// `name` are both one (docs/reference/image-staging-vs-baking.md, OQ-NP1), and
 	// flake.nix's packageAttrPath parses exactly this shape.
 	packageNameRe   = regexp.MustCompile(`^(?:[a-zA-Z0-9_-]+|"[^"]+")(?:\.(?:[a-zA-Z0-9_-]+|"[^"]+"))*$`)
 	packageOutputRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)

@@ -197,7 +197,7 @@ install:
     # checkout-less case any more — it is the from-source developer's only
     # delivery path, and the reason `just install` has to be re-run after a commit
     # that changes the image (version.SourceSkew refuses the mismatch). See
-    # internal/reporoot.Resolve and docs/research/repo-root-and-distribution.md.
+    # internal/reporoot.Resolve and docs/reference/image-staging-vs-baking.md.
 
 # Install yolo CLI and prime the Claude OAuth broker state. Safe to re-run.
 deploy: install
@@ -297,7 +297,7 @@ build-image-minimal:
 # containers-storage. Its images service runs on the Mac and keeps blobs in a
 # content store there, whose only ways in are `container image load` and `pull`,
 # so there is nothing to negotiate blobs with and the whole image crosses as one
-# file (docs/research/macos-layer-reusing-image-delivery.md). The file is removed
+# file (docs/reference/image-staging-vs-baking.md, "The delta archive"). The file is removed
 # afterwards — a leftover is what makes the NEXT copy fail, since skopeo will not
 # write over an existing archive.
 load: build-image

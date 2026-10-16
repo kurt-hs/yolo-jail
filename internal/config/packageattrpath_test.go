@@ -6,7 +6,7 @@ import (
 )
 
 // A `packages` entry is a nixpkgs ATTRIBUTE PATH and installs what
-// `nix build nixpkgs#<entry>` builds (docs/design/package-nested-attribute-paths.md, OQ-1
+// `nix build nixpkgs#<entry>` builds (docs/reference/image-staging-vs-baking.md, OQ-NP1
 // ruled (C) 2026-10-05). So `yolo check` must let through every path Nix can walk: a
 // collection member, a member's output, and the texlive shape whose last name collides with
 // one of its parent's outputs. Until that ruling the pattern allowed one dot, which made

@@ -365,7 +365,7 @@
           p != null && builtins.isAttrs p && (p ? outPath);
 
         # ── `packages` entries are nixpkgs ATTRIBUTE PATHS ─────────────────
-        # docs/design/package-nested-attribute-paths.md, OQ-1 ruled (C) on
+        # docs/reference/image-staging-vs-baking.md, OQ-NP1 ruled (C) on
         # 2026-10-05: an entry installs what `nix build nixpkgs#<entry>`
         # builds.  Nix reaches that value by plain attribute access, one name
         # at a time, and so does this — no name is ever reinterpreted:

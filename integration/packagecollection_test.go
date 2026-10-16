@@ -84,7 +84,7 @@ func TestPackagesEntryNamingACollectionIsRefusedByName(t *testing.T) {
 }
 
 // A collection refusal names the fix, and the fix is now to name a member: a `packages`
-// entry is a nixpkgs attribute path (docs/design/package-nested-attribute-paths.md, OQ-1).
+// entry is a nixpkgs attribute path (docs/reference/image-staging-vs-baking.md, OQ-NP1).
 // The message used to say the opposite — "A collection member is NOT selectable from
 // `packages`" — which this design falsified. python3Packages is here because its first 49
 // names are removed aliases that throw (measured 2026-10-06): the old fixed window of 40

@@ -31,7 +31,7 @@
 # compiling. goSrc (go.mod/vendor/cmd/internal/…) is never forced, so it need
 # not ship. This is why the bundle is "two files and a binary" and not the
 # ~11 MB tracked tree the old git-archive bundle shipped. See
-# docs/research/repo-root-and-distribution.md.
+# docs/reference/image-staging-vs-baking.md ("Which channels ship a flake").
 #
 # goprobe is EXCLUDED — it is a dev-only deployment tripwire that must never
 # reach a runtime PATH. The shippable set is SHIPPED_BINARIES below, the same

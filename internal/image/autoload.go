@@ -1097,7 +1097,7 @@ func (o *AutoLoadOptions) pointLatestAt(contentRef string) {
 // containers-storage copy; the BACKEND decides, before anything runs.
 //
 // IT NOW GETS THE LAYER REUSE, through the archive rather than despite it
-// (deltaarchive.go; docs/research/macos-layer-reusing-image-delivery.md, OQ-LR1).
+// (deltaarchive.go; docs/reference/image-staging-vs-baking.md, OQ-LR1).
 // present is the set of layer digests the destination already holds — podman's
 // own answer on macOS, yolo's delivery record on Apple Container — and the
 // archive leaves those blobs out while its manifest still names them. Both

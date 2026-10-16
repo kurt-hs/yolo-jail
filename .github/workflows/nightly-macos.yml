@@ -881,7 +881,7 @@ jobs:
   # before launching, so the check holds on a machine that is not empty either.
   #
   # WHY A SEPARATE JOB. The first delivery is a full 3.45 GB `podman load` — 10–33 min on this
-  # runner (docs/research/macos-layer-reusing-image-delivery.md) — and OQ-LR2's measurement adds
+  # runner (docs/reference/image-staging-vs-baking.md#the-first-load) — and OQ-LR2's measurement adds
   # two more cold loads and one cold in-VM copy. On a shard that would sit on top of the 15–22 min preload inside a
   # 75-minute budget that was raised once already; here it is the whole job, capped per step.
   #
