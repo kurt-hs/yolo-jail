@@ -186,7 +186,7 @@ func patchedTreeLine(f packload.Fork) (string, bool) {
 	head := f.Label() + ": ~/" + strings.TrimSuffix(f.Into, "/") + what + f.Source
 	series, err := f.ReadSeries()
 	if err == nil && series.Unresolved() {
-		return head + " + the carry " + f.Carry + " — not fetched on this machine yet; the next fresh launch " +
+		return head + " + the patch branch " + f.PatchBranch + " — not fetched on this machine yet; the next fresh launch " +
 			"fetches and builds it, or `yolo pack update` fetches it now", true
 	}
 	if err != nil {

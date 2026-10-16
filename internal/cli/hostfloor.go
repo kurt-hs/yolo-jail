@@ -341,7 +341,7 @@ func floorForkBuild(p hostfloor.Program, commit string) forkBuild {
 		// Patches and Follow too, so a patched fork reads as one to the pinner, which never pins it
 		// (packload.PinForks, PF-D16); and the fork pack's root, which its series is read from.
 		Fork: packload.Fork{Pack: in.ForkedBy, Base: p.Pack, Bin: in.Bin, Source: in.Source, Build: in.Build,
-			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, Carry: in.Carry,
+			Produces: in.Produces, Platforms: in.Platforms, Patches: in.Patches, Follow: in.Follow, PatchBranch: in.PatchBranch,
 			Root: in.ForkRoot},
 		Commit:   commit,
 		Platform: hostFloorCapturePlatform(),

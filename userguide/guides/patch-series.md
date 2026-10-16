@@ -95,15 +95,15 @@ pi's `packages` list that makes pi load it:
 Use the extension's **key**, `<pack>/<name>` (here `subagents-mine/pi-subagents`, the last part of
 `into`), wherever a command below takes a program's name.
 
-## Merge a branch instead of a series
+## Keep your patches on a branch
 
 If you keep your changes on a branch that you merge the upstream into, name that branch as a
-`carry` in place of `patches`. yolo merges it into each new upstream version and builds the result:
+`patch_branch` in place of `patches`. yolo merges it into each new upstream version and builds the result:
 
 ```json
 { "kind": "program", "bin": "pi", "via": "source", "fork_of": "pi",
   "source": "git+https://github.com/earendil-works/pi?ref=main",
-  "carry": "git+https://github.com/you/pi?ref=carry",
+  "patch_branch": "git+https://github.com/you/pi?ref=patches",
   "build": "npm ci && npm run build && npm install -g \"$(npm pack --silent)\"",
   "produces": [".npm-global/bin/pi", ".npm-global/lib/node_modules/pi-fork"] }
 ```
@@ -114,9 +114,9 @@ If you keep your changes on a branch that you merge the upstream into, name that
   branch, the next check rebuilds. `yolo pack update` checks now.
 - **When the branch does not merge**, the launch stops and names the conflicting files. It also
   prints the `git merge` commands that fix the branch.
-- **A `files` extension takes `carry` the same way.** One contribution names `patches` or
-  `carry`, never both.
-- **`yolo pack status`** shows the carry's commit and how many releases it is behind.
+- **A `files` extension takes `patch_branch` the same way.** One contribution names `patches` or
+  `patch_branch`, never both.
+- **`yolo pack status`** shows the patch branch's commit and how many releases it is behind.
 
 ## Build a pi extension as it is
 

@@ -1506,7 +1506,7 @@ author's to move; nothing touches one.
 An opaque tree the pack owns outright, bind-mounted `:ro` at `into` in the jail. `from` is
 required and honored **on a contribution**: there is no conventional location for an opaque tree,
 so the declaration is the only thing that can name it. A **built tree** names an upstream `source`
-in place of `from`: a patched extension, with a `patches` series or a `carry` branch
+in place of `from`: a patched extension, with a `patches` series or a `patch_branch`
 ([`patched-extensions.md` §4](../design/patched-extensions.md#4-the-declaration)), or an unmodified
 extension, with none, from a git address or `npm:<name>[@<spec>]` and an optional `fallback`
 ([`pi-extension-store-builds.md` §4.1](../design/pi-extension-store-builds.md#41-the-declaration)).

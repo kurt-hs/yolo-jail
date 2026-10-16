@@ -595,9 +595,9 @@ func newAdvance(f packload.Fork, o advanceOptions) (*advance, *advanceResult) {
 			a.packs = &local
 		}
 	}
-	// A CARRY NO CHECK HAS RESOLVED YET (docs/design/patched-forks.md §3.5) reads as the unresolved
-	// carry: its check fetches and resolves it, and the advance takes the resolved series once that
-	// check has run (carryResolved). Until then it stands for nothing a build carries.
+	// A PATCH BRANCH NO CHECK HAS RESOLVED YET (docs/design/patched-forks.md §3.5) reads as the unresolved
+	// patch branch: its check fetches and resolves it, and the advance takes the resolved series once that
+	// check has run (patchBranchResolved). Until then it stands for nothing a build carries.
 	series, err := f.ReadSeriesFrom(a.packs)
 	if err != nil {
 		// THE SERIES CANNOT BE READ (§8.1): nothing serves under PF-D23, since the manifest's recipe
@@ -1056,16 +1056,16 @@ func (a *advance) lockHeldSkip(err error) bool {
 // entry, or the floor's installed copy (PF-D55).
 func (a *advance) serves() bool { return a.serving != nil || a.installed != nil }
 
-// carryResolved takes a CARRY's series as the check just recorded it (docs/design/patched-forks.md
+// patchBranchResolved takes a PATCH BRANCH's series as the check just recorded it (docs/design/patched-forks.md
 // §3.5), and reports whether that moved it: a branch that moved, or one the advance started without
-// (packsrc.UnresolvedCarrySeries). The recipe follows the carry's commit, and what serves is again
+// (packsrc.UnresolvedPatchBranchSeries). The recipe follows the patch branch's commit, and what serves is again
 // only a build of that recipe, as for an edited series (PF-D23). False for a patch series, and when
 // the record names nothing newer than the advance read.
-func (a *advance) carryResolved() bool {
-	if a.f.Carry == "" || a.rec == nil {
+func (a *advance) patchBranchResolved() bool {
+	if a.f.PatchBranch == "" || a.rec == nil {
 		return false
 	}
-	s, err := packsrc.CarrySeries(a.f.Carry, a.f.Source, a.rec)
+	s, err := packsrc.PatchBranchSeries(a.f.PatchBranch, a.f.Source, a.rec)
 	if err != nil || s.Digest == a.series.Digest {
 		return false
 	}
@@ -1285,8 +1285,8 @@ func (a *advance) run() advanceResult {
 			}
 		}
 		a.rec = res.Record
-		if a.carryResolved() {
-			// A MOVED OR NEWLY RESOLVED CARRY is an edit of what is applied, as an edited series is.
+		if a.patchBranchResolved() {
+			// A MOVED OR NEWLY RESOLVED PATCH BRANCH is an edit of what is applied, as an edited series is.
 			edited = good != nil && good.Recipe != a.recipe
 		}
 		found := a.rec.Check
@@ -2521,28 +2521,28 @@ func (a *advance) takes(e packsrc.ListEntry) string {
 }
 
 // applyingIts is the first build's account of what it applies: "replaying its N patches", or
-// "merging its carry <ref>@<commit>" (docs/design/patched-forks.md §3.5).
+// "merging its patch branch <ref>@<commit>" (docs/design/patched-forks.md §3.5).
 func (a *advance) applyingIts() string {
-	if a.series.Carry != nil {
+	if a.series.PatchBranch != nil {
 		return "merging its " + run.SeriesWhat(a.series)
 	}
 	return "replaying its " + run.PatchCount(a.series.Len())
 }
 
-// carryLabel is a carry's label for the good build's record, "" for a patch series.
-func carryLabel(s *packsrc.Series) string {
-	if s == nil || s.Carry == nil {
+// patchBranchLabel is a patch branch's label for the good build's record, "" for a patch series.
+func patchBranchLabel(s *packsrc.Series) string {
+	if s == nil || s.PatchBranch == nil {
 		return ""
 	}
-	return s.Carry.Label()
+	return s.PatchBranch.Label()
 }
 
 // editedSeries is the move line's account of an edited recipe: the series' count and digest for a
-// patched build, the carry's commit for a carry, nothing for an unmodified one, whose series cannot
+// patched build, the patch branch's commit for a patch branch, nothing for an unmodified one, whose series cannot
 // change.
 func (a *advance) editedSeries(b forkBuild) string {
-	if b.Series.Carry != nil {
-		return ", the carry " + b.Series.Carry.Label()
+	if b.Series.PatchBranch != nil {
+		return ", the patch branch " + b.Series.PatchBranch.Label()
 	}
 	if b.Series.Len() == 0 {
 		return ", the edited build"
@@ -2671,7 +2671,7 @@ func (a *advance) finish(built *capture.Entry, b forkBuild, seq int64, failure *
 				default:
 					read := r.Read
 					r.Good = &packsrc.GoodBuild{Commit: b.Commit, Tag: b.Entry.Tag, Version: b.Entry.Version,
-						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(), Carry: carryLabel(b.Series),
+						Series: b.Series.Digest, Recipe: b.recipe(), Tree: a.builtTree(built), Patches: b.Series.Len(), PatchBranch: patchBranchLabel(b.Series),
 						Seq: seq, Read: &read, Entry: built.Key, At: patchedNow().Unix()}
 					dropBuildFailure(r, b.Commit)
 					moved, changed = true, true
