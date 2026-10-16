@@ -260,7 +260,8 @@ type Floor struct {
 	// ResolveCapture finds the capture store's entry for bin on this host's platform, the same
 	// selection a jail's materialize makes. nil => this host has no capture store.
 	ResolveCapture func(bin string) (*capture.Entry, error)
-	// Capture runs `yolo capture <bin>`, filling the store. nil => this host cannot capture.
+	// Capture runs `yolo capture <bin>`, filling the store. nil => this host cannot capture. An error
+	// wrapping ErrCaptureBusy says another capture of bin holds its lock, which checked nothing.
 	Capture func(bin string) error
 	// CaptureUnavailable says why this machine cannot boot a capture or build JAIL right now ("" when
 	// it can): a Linux fork's build and a patched fork's advance each boot one, so a host with no

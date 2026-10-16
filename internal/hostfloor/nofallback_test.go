@@ -8,6 +8,7 @@ package hostfloor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,6 +172,34 @@ func TestARecaptureFailingWithItsUpstreamReachableRefuses(t *testing.T) {
 	e.clk.t = e.clk.t.Add(10 * time.Minute)
 	if _, _, _ = e.ensure(); e.captures != 2 {
 		t.Errorf("the next launch did not retry the refused capture (%d captures)", e.captures)
+	}
+}
+
+// PD-NF5 for a capture: another `yolo capture` of the program holds its lock, so this launch checked
+// nothing. The installed version runs with a line saying so, never the refusal however reachable the
+// upstream, and the stamp is put back, so the launch after it looks again.
+func TestABusyCaptureLockIsNotAFailedUpdate(t *testing.T) {
+	e := newEvergreenWorld(t)
+	e.capturing = func(string) error { return fmt.Errorf("`yolo capture claude` exited 75: %w", ErrCaptureBusy) }
+	probes := 0
+	e.floor.ProbeUpstream = func(context.Context, string) error { probes++; return nil }
+	e.clk.t = e.clk.t.Add(25 * time.Hour)
+	st, outcome, err := e.ensure()
+	if err != nil || outcome == Updated {
+		t.Fatalf("a busy capture lock: %s %v, want the installed version kept\n%s", outcome, err, e.out)
+	}
+	if st.Record == nil || st.Record.Version != "2.1.267" {
+		t.Errorf("a busy lock moved the record: %+v", st.Record)
+	}
+	if !strings.Contains(e.out.String(), "claude: another `yolo capture claude` is in progress; running the installed 2.1.267") {
+		t.Errorf("the busy line was not said:\n%s", e.out)
+	}
+	if probes != 0 {
+		t.Errorf("a busy lock is no failure to judge, yet the upstream was probed %d times", probes)
+	}
+	e.clk.t = e.clk.t.Add(10 * time.Minute)
+	if _, _, _ = e.ensure(); e.captures != 2 {
+		t.Errorf("the next launch did not look again (%d captures)", e.captures)
 	}
 }
 

@@ -25,6 +25,10 @@ import (
 // it runs what is installed and says it could not check (PD-NF3: where the act itself is the check,
 // a capture or a refresh, a bounded probe of the program's upstream tells the two apart).
 
+// ErrCaptureBusy is what Floor.Capture wraps when another `yolo capture` of the program holds its
+// lock: not a failed update (PD-NF5), since nothing was checked, so the installed version runs.
+var ErrCaptureBusy = errors.New("another capture of it is in progress")
+
 // UpdateRefusal is the error Ensure and the pre-launch refresh return for a failed update the
 // hatch does not cover. The refusal block (Render) is already printed on the floor's Out when a
 // caller sees it; Error is the one-line form for a caller's list.

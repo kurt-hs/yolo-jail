@@ -220,6 +220,9 @@ func wireFloorCapture(f *hostfloor.Floor, out io.Writer) {
 		} else {
 			rc = hostFloorCaptureAct([]string{bin}, out, out, false)
 		}
+		if rc == captureBusyStatus {
+			return fmt.Errorf("`yolo capture %s` exited %d: %w", bin, rc, hostfloor.ErrCaptureBusy)
+		}
 		if rc != 0 {
 			return fmt.Errorf("`yolo capture %s` exited %d", bin, rc)
 		}
