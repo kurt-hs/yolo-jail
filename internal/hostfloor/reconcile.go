@@ -21,7 +21,7 @@ import (
 // StaleCopyStep is the next step for the copies the floor still holds of bins it no longer keeps
 // (Reconcile's removals), under the declared host-management mode. Only an OWNED host's
 // `yolo host apply --assert` runs Reconcile: under "none", the unset default since the `assert`
-// retirement (docs/design/config-ownership-and-promotion.md OQ-CO14), that apply writes nothing
+// retirement (docs/reference/config-ownership.md OQ-CO14), that apply writes nothing
 // and removes nothing, so the step there is the removal by hand, of the paths Reconcile removes
 // (the launcher, the record and the install dir), with the owned route named after it.
 func (f *Floor) StaleCopyStep(owned bool, bins ...string) string {

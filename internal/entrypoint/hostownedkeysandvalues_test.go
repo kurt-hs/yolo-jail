@@ -1,8 +1,8 @@
 package entrypoint
 
-// hostownedkeysandvalues_test.go is §11's success criterion AS RULED: the `assert` -> `own`
+// hostownedkeysandvalues_test.go is config-ownership.md's keys-and-values success criterion AS RULED: the `assert` -> `own`
 // switch is invariant in KEYS AND VALUES, not in bytes
-// (docs/design/config-ownership-and-promotion.md §11, OQ-CO12).
+// (docs/reference/config-ownership.md#keys-and-values-invariance, OQ-CO12).
 //
 // ⚠ IT IS NOT hostownedadoption_test.go's TEST WITH A WEAKER COMPARATOR, and reading it that
 // way is how the relaxation becomes untestable. That file's fixture is already canonical —
@@ -166,7 +166,7 @@ func TestSwitchingToOwnPreservesKeysAndValues(t *testing.T) {
 			axis: "JSON key order (the fixture is unsorted so the case measures the switch, " +
 				"not a no-op)",
 			// OQ-CO12's SECOND bug, and a DIFFERENT mechanism from the one above
-			// despite sitting beside it in §11's table: `{}` reaches the overlay and
+			// despite sitting beside it in the keys-and-values measurements: `{}` reaches the overlay and
 			// folds through perfectly well — it was dropNullLeaves that ate it, unable
 			// to tell an object the user wrote empty from one its own recursion had
 			// emptied.
@@ -219,8 +219,8 @@ ask = ["Bash(rm:*)"]
 			before, after := decodeWith(t, tc.codec, asserted), decodeWith(t, tc.codec, owned)
 			if !reflect.DeepEqual(before, after) {
 				t.Errorf("switching to `own` changed the surface's KEYS OR VALUES.\n"+
-					"assert:\n%s\nown:\n%s\n\ndocs/design/config-ownership-and-promotion.md "+
-					"§11 requires keys-and-values invariance across this switch (OQ-CO12). A "+
+					"assert:\n%s\nown:\n%s\n\ndocs/reference/config-ownership.md#keys-and-values-invariance "+
+					"requires keys-and-values invariance across this switch (OQ-CO12). A "+
 					"reformat is conformant; a key or a value that moved is not. If the diff "+
 					"is a LEAF under a declared object, adoption has gone back to dropping "+
 					"whole top-level subtrees (dropComputedTables' second bullet says why "+

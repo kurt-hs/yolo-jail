@@ -76,7 +76,7 @@ func TestHostApplyClearsTheBedrockSwitchItWroteWhenClaudeLeavesBedrock(t *testin
 //
 // The first case is the rmw arm's alone, because the record is what tells the two apart: a
 // `stateful` adoption seeds its capture from the file's difference from the pure render
-// (config-ownership-and-promotion.md §6.3.1), and a value the user wrote that equals the one the
+// (docs/reference/config-ownership.md#adoption-is-capture-then-regenerate), and a value the user wrote that equals the one the
 // derive writes is no difference, so recomposing without the leaf drops it. A value the user
 // CHANGED is a difference either mechanism keeps.
 func TestHostApplyKeepsABedrockSwitchTheUserWrote(t *testing.T) {

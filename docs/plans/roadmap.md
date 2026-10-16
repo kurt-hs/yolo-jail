@@ -139,7 +139,7 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     which holds what [its broad reading](../design/pi-codex-provider-shadowing.md#65-what-the-build-decided) left in place, and [what `-p`
     names](../design/providers-and-profiles-redesign.md), which the provider reference's rewrite waits on.
 17. [Notch convergence's held items](notch-convergence.md) — `env_sources` waits on item 13, the one `rmw` rule on [a
-    table not declared in full](../design/config-ownership-and-promotion.md#OQ-CO15) (rule [OQ-CO16](../design/config-ownership-and-promotion.md#OQ-CO16)
+    table not declared in full](../reference/config-ownership.md#OQ-CO15) (rule [OQ-CO16](../reference/config-ownership.md#OQ-CO16)
     with it), and `yolo host -- claude` joining the shared login on the credential view's measures, below.
 18. [Rule the provisioner's remaining calls](../design/provisioner-sets.md), corporate-CA trust first — it shipped on its
     leanings under delegation (PS-D10, reversible), so a ruling confirms or undoes what every macos-user launch now does.
@@ -357,7 +357,7 @@ and the credential store are items 11 and 20, and storage relocation and OrbStac
 | 14 — which packs a workspace config may declare | D | [OQ-PK1](../reference/pack-system.md#OQ-PK1); the `mcp_presets` retirement follows it. **Maintainer**. |
 | 15 — the slot split's migration window | D | [OQ-D6](../design/slots-and-contributions.md#OQ-D6), then the manifest language and the slots' other calls. **Maintainer**. |
 | 16 — provider rulings | D | Does the natively-implements rule reach a pack-declared list ([OQ-4](../design/pi-codex-provider-shadowing.md#OQ-4)), and what does `-p` name? **Maintainer**. |
-| 17 — notch convergence's held items | D | The one `rmw` rule ([OQ-CO15](../design/config-ownership-and-promotion.md#OQ-CO15)/[OQ-CO16](../design/config-ownership-and-promotion.md#OQ-CO16)). **Maintainer**. `env_sources` waits on item 13; the shared-login credential view is X (a human session). |
+| 17 — notch convergence's held items | D | The one `rmw` rule ([OQ-CO15](../reference/config-ownership.md#OQ-CO15)/[OQ-CO16](../reference/config-ownership.md#OQ-CO16)). **Maintainer**. `env_sources` waits on item 13; the shared-login credential view is X (a human session). |
 | 18 — the provisioner's remaining calls | D | Corporate-CA trust first; it shipped on leanings under delegation (PS-D10, reversible). **Maintainer**. |
 | 19 — what the environment manager promises at each notch | D | Q1b (`yolo check --at`) and Q7 (the Linux guest notch). **Maintainer**. |
 | 20 — the keychain from a jail | D | Keychain scope, unlock and migration, which settles Copilot's machine-wide login. **Maintainer**. |

@@ -333,8 +333,8 @@ func TestKindDecodeAgreement(t *testing.T) {
 // `nan`, and nothing else. The scalar encoder used to append `.0` to any FormatFloat
 // result with no `.eE` in it, so a surface file holding `infinite = inf` decoded to +Inf
 // and was written back as `infinite = +Inf.0` — invalid TOML, which the next `own` render
-// then refused to rewrite (docs/design/config-ownership-and-promotion.md §11, live residue
-// item 6). Round-tripped through Decode on purpose: the bytes must be TOML this codec can
+// then refused to rewrite (found verifying OQ-CO12, fixed
+// 2026-09-25). Round-tripped through Decode on purpose: the bytes must be TOML this codec can
 // read back, not merely a string the test agrees with.
 func TestTOMLNonFiniteFloats(t *testing.T) {
 	for _, tc := range []struct {

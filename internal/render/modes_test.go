@@ -269,7 +269,7 @@ func TestModesIsAFunctionOfTheNotchAlone(t *testing.T) {
 	// reversing two of the three decisions that function's own doc comment enumerates. `own`
 	// then had a sole composing mechanism, so Mechanism's since-deleted fallback coerced BOTH
 	// `rmw` and `computed` to `stateful` — and a credential-shaped `rmw` surface composed into
-	// the host capture store, which is the §6.2 privacy harm bullet one refuses in as many
+	// the host capture store, which is the privacy harm bullet one (config-ownership.md#the-host-capture-store) refuses in as many
 	// words. With the fallback gone the same deletion makes `rmw` undecided, which this table
 	// still catches.
 	wantMechanism := map[HostOwnership]map[string]string{
@@ -336,7 +336,7 @@ func TestHostWithNoContractIsUndecided(t *testing.T) {
 
 // THE OWNED HOST KEEPS A CAPTURE STORE, and no other contract keeps one — the
 // directory half of the same declaration the census is the mechanism half of
-// (config-ownership-and-promotion.md §6.2). Resolved through the Target so the writer and
+// (docs/reference/config-ownership.md#the-host-capture-store). Resolved through the Target so the writer and
 // every reader have one definition; asserted here so a hand-built path elsewhere has
 // something to disagree with.
 func TestHostCaptureStoreIsOwnOnly(t *testing.T) {
@@ -344,7 +344,7 @@ func TestHostCaptureStoreIsOwnOnly(t *testing.T) {
 	if got, want := owned.SidecarDir(), "/home/me/.local/share/yolo-jail/host-capture"; got != want {
 		t.Errorf("owned host capture store is %q, want %q", got, want)
 	}
-	// The provenance record does NOT move into it: two directories, two lifetimes (§6.2).
+	// The provenance record does NOT move into it: two directories, two lifetimes (config-ownership.md#the-host-capture-store).
 	if got, want := owned.ProvenanceDir(),
 		"/home/me/.local/share/yolo-jail/host-provenance"; got != want {
 		t.Errorf("owned host provenance dir is %q, want %q — the record stays where the "+
@@ -396,7 +396,7 @@ func TestHostSelectionRecordIsTheCaptureStoresOnly(t *testing.T) {
 // THE STORE'S MODES, and the measured reason the directory is not 0600. A directory's execute
 // bit is the right to resolve a name inside it, so 0600 leaves even the owner unable to open
 // any file in the store while `ls` still works — the failure this assertion exists to keep
-// out (config-ownership-and-promotion.md §6.2).
+// out (docs/reference/config-ownership.md#the-host-capture-store).
 func TestHostCaptureStoreIsTraversableAndPrivate(t *testing.T) {
 	owned := Host("/home/me", nil, OwnershipOwn)
 	if got := owned.SidecarDirMode(); got != 0o700 {
@@ -410,7 +410,7 @@ func TestHostCaptureStoreIsTraversableAndPrivate(t *testing.T) {
 	jail := Jail("/home/agent", "/workspace", nil)
 	if jail.SidecarDirMode() != 0o755 || jail.SidecarFileMode() != 0o644 {
 		t.Errorf("the jail's sidecar modes moved (%O/%O) — tightening them is a separate "+
-			"ruling (§6.2 lists it for the roadmap), not a side effect of the host store",
+			"ruling (config-ownership.md#known-gaps records it), not a side effect of the host store",
 			jail.SidecarDirMode(), jail.SidecarFileMode())
 	}
 }

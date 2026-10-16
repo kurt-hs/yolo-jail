@@ -545,7 +545,7 @@ and no port is published today either way.
    *"Only an EXPLICIT host is warned: bridge is genuinely honored on this backend … so warning
    on the default would be noise on every launch"* — whose logic here forbids even the warning,
    because the unhonorable value is the default.
-   [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger) settled the general case in
+   [`OQ-CO10`](../reference/config-ownership.md#oq-co10) settled the general case in
    the same direction: on macos-user an unsupported mechanism reports `unsupported` and is not
    refused (the since-deleted `run.(*Options).noteMacosUserHostByteGaps` said so: *"a launch is
    not refused for what the backend cannot do"*).

@@ -95,7 +95,7 @@ type Inputs struct {
 
 	// ComputedInFull names the top-level keys of Computed whose table the derive DECLARED it
 	// regenerates in full — the ctx.in_full sentinel (luahook.DeriveOutput.InFull; CO13,
-	// docs/design/config-ownership-and-promotion.md). It never folds and never reaches the
+	// docs/reference/config-ownership.md). It never folds and never reaches the
 	// file: it is read by exactly one decision, what a first migration's adoption may claim
 	// under such a table as yolo's own previous output (dropComputedTables). A key not named
 	// here is a table the derive only asserts LEAVES of, whatever its size. nil = none.
@@ -124,8 +124,8 @@ type Inputs struct {
 	// tombstone to survive a boot (§3.4). So a layer carrying `k: null` removes
 	// k; it can never produce it. A file the user wrote holding `"k": null`
 	// therefore had no representation at all, and switching a home to `own`
-	// silently deleted the key (docs/design/config-ownership-and-promotion.md
-	// §11, OQ-CO12). The two meanings genuinely collide inside a merge patch, so
+	// silently deleted the key (docs/reference/config-ownership.md#keys-and-values-invariance,
+	// OQ-CO12). The two meanings genuinely collide inside a merge patch, so
 	// the value that is not a patch is carried outside it.
 	//
 	// WHO FILLS IT: ComposeStateful, from the DECODED CURRENT FILE, on every
@@ -453,7 +453,7 @@ func Compose(in Inputs) (*Result, error) {
 	//     `theme: "system"` keeps the null under `assert` — rmw fills a default only
 	//     where the key is ABSENT, and a null-valued key is present — and became
 	//     `"system"` under `own`. That is a VALUE changing across the switch, which
-	//     §11's criterion forbids in the form OQ-CO12 ruled it. The control settles
+	//     config-ownership.md's keys-and-values criterion forbids in the form OQ-CO12 ruled it. The control settles
 	//     it: the same file holding `"theme": "dark"` keeps "dark", because the capture
 	//     overlay outranks `defaults`. A null must fold where a non-null does or the
 	//     two disagree for no reason but the sidecar's inability to spell one.
@@ -473,8 +473,8 @@ func Compose(in Inputs) (*Result, error) {
 	// `yolo config promote` read the sidecar directly, share configdiff.go's one
 	// definition `Deleted: v == nil`, and so call a key the file HOLDS a deletion —
 	// promote then offers to write that null into a pack's config-overlay, where it
-	// becomes a real tombstone at every notch. Recorded as live residue in
-	// docs/design/config-ownership-and-promotion.md §11; the fix is provable (a keypath
+	// becomes a real tombstone at every notch. Recorded as a known gap in
+	// docs/reference/config-ownership.md#known-gaps; the fix is provable (a keypath
 	// in Inputs.LiteralNulls means the file HOLDS the key, so it can never be a genuine
 	// deletion record) and only its placement is unruled.
 	overlayIdx := -1

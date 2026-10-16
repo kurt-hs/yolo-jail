@@ -18,7 +18,7 @@ package agentcfg
 // internal/entrypoint/hostownednullprecedence_test.go: a file holding `"theme": null` against
 // a pack whose `defaults` says `"system"` keeps the null under `assert` and took the default
 // under `own`, so a VALUE changed across the switch that
-// docs/design/config-ownership-and-promotion.md §11 (OQ-CO12) says keeps every value.
+// docs/reference/config-ownership.md#keys-and-values-invariance (OQ-CO12) says keeps every value.
 //
 // The two halves of the fix are independently mutable and this file kills both: narrow the
 // evidence set back to "every layer but the overlay" (Compose's overlayIdx) and the

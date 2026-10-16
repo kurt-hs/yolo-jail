@@ -1,14 +1,14 @@
 package cli
 
 // hostmanagementgate.go is the `host_management` REFUSAL: the one place the declared
-// ownership contract (docs/design/config-ownership-and-promotion.md §4) stops a host apply.
+// ownership contract (docs/reference/config-ownership.md#the-host_management-key) stops a host apply.
 //
 // # What the key decides here, and what it deliberately does not
 //
 // It selects the MODE the host notch renders in — `unrendered` at `none`, whole-file
 // `stateful` (plus a pack's own `rmw`) at `own` — and this file is the half of that which
 // needs no render engine: at `none` there is no rendered host surface at all, so the command
-// that would write one refuses and names the key that decided it (§4.1). `none` is also the
+// that would write one refuses and names the key that decided it (config-ownership.md#the-host_management-key). `none` is also the
 // UNSET state since the `assert` retirement (OQ-CO14), so this refusal is what a user who never
 // wrote the key now meets — with no prompt or notice at upgrade, only here, at the act.
 //
@@ -19,7 +19,7 @@ package cli
 // spelling it gets config.HostManagementRetired's targeted refusal instead (OQ-CO14 face 1),
 // above every stage, exactly where `none`'s goes.
 //
-// > THE KEY ENABLES THE MECHANISM. IT DOES NOT GRANT THE APPROVAL (§4.4).
+// > THE KEY ENABLES THE MECHANISM. IT DOES NOT GRANT THE APPROVAL (config-ownership.md#invariants).
 //
 // That is host_apply_on_launch's ruling, and it holds identically: `own` selects the mode, it
 // does not pre-authorize the writes that mode performs. Every confirmation an apply runs today
@@ -28,7 +28,7 @@ package cli
 //
 // # `own` no longer refuses, and the refusal it replaced said why
 //
-// Until §10's last build step landed, `own` refused here: whole-file composition at the host
+// Until whole-file composition at the host notch landed, `own` refused here: whole-file composition at the host
 // notch did not exist, and silently rendering `rmw` instead would have told a user who
 // declared their file DERIVED that it is derived while it still held bytes existing nowhere
 // else — the exact inference P1 exists to end. It is built now (render.HostOwnedModes, and

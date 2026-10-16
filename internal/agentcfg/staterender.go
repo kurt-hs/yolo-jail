@@ -195,8 +195,7 @@ type StatefulOutput struct {
 	// operand, so a caller wanting it had to re-run Compose — a second render of
 	// the same surface, free to disagree with this one. The caller is
 	// entrypoint.archiveAdoption, whose gate has to tell "bytes present" from
-	// "bytes yolo wrote" (OQ-CO7, docs/design/config-ownership-and-promotion.md
-	// §6.3.3); it is a report, never an input to anything here.
+	// "bytes yolo wrote" (OQ-CO7, docs/reference/config-ownership.md#the-adoption-archive); it is a report, never an input to anything here.
 	PureBytes []byte
 
 	// ListCaptureJSON is what to write to the list-capture sidecar, or nil when this
@@ -556,7 +555,7 @@ func ComposeStateful(in StatefulInputs) (*StatefulOutput, error) {
 	// and is the exact engine `yolo config render` uses (§6).
 	base.Overlay = overlay
 	// THE ONE VALUE THE OVERLAY CANNOT CARRY, read off the file instead
-	// (literalnull.go; docs/design/config-ownership-and-promotion.md §11, OQ-CO12).
+	// (literalnull.go; docs/reference/config-ownership.md#keys-and-values-invariance, OQ-CO12).
 	// Read on BOTH branches, not only on adoption: the mark lives in the file
 	// rather than in a sidecar, so every render has to re-read it or the second
 	// one drops what the first put back.
@@ -628,7 +627,7 @@ func decodeKind(c codec.Codec, kind codec.Kind, data []byte) (any, bool) {
 // dropComputedTables removes from an adopted first-migration residue every
 // top-level key the COMPUTED layer holds as a NON-EMPTY OBJECT that its derive DECLARED
 // it regenerates in full (inFull — the ctx.in_full sentinel, CO13,
-// docs/design/config-ownership-and-promotion.md). The bet it makes is that what sits
+// docs/reference/config-ownership.md). The bet it makes is that what sits
 // under such a key on disk is yolo's own output from a previous boot rather than agent
 // state; last_render — which normally disambiguates the two — is exactly what a first
 // migration is missing, so the derive's declaration is what the bet rests on.
@@ -658,7 +657,7 @@ func decodeKind(c codec.Codec, kind codec.Kind, data []byte) (any, bool) {
 // whether a lower layer also contributes. So the derive that knows says so.
 //
 // AN EMPTY COMPUTED TABLE ASSERTS NOTHING, SO IT DROPS NOTHING, declared or not — the
-// 2026-09-20 ruling (§6.3.1), which predates the declaration and is not superseded by it.
+// 2026-09-20 ruling (docs/reference/config-ownership.md#adoption-is-capture-then-regenerate), which predates the declaration and is not superseded by it.
 // The whole bet rests on the leaves yolo regenerated; `{}` regenerated none, so there is
 // nothing it can claim to be the previous output OF, and the drop would be an unbacked
 // deletion of the user's own data. It is `mise use -g neovim` on a jail with no
@@ -816,7 +815,7 @@ func dropOverriddenKeys(m, owner map[string]any) map[string]any {
 // subtree does not survive as a meaningless {}.
 //
 // ⚠ AN OBJECT THAT WAS ALREADY EMPTY IS KEPT, and the difference is the whole of
-// §11's first measured bug (docs/design/config-ownership-and-promotion.md §11,
+// the first bug the keys-and-values criterion measured (docs/reference/config-ownership.md#keys-and-values-invariance,
 // OQ-CO12): `{}` on the way IN is a value the user wrote — `"mcpServers": {}` is
 // "explicitly none", which an absent key does not say — while `{}` on the way OUT
 // is this function's own residue. Conflating them deleted the user's key on every

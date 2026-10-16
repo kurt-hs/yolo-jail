@@ -781,7 +781,7 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 // looking healthy, with a config file the agent has no way to tell from the human's. That
 // shipped as a real bug (a pack whose staged directory name was escaped had its file
 // mounted at one /ctx path and read at another) and OQ-CO10
-// (docs/design/config-ownership-and-promotion.md) rules the read closed.
+// (docs/reference/config-ownership.md) rules the read closed.
 //
 // FAILING CLOSED IS NOT "AN ABSENT FILE IS AN ERROR". An absent file is the common,
 // correct case — most users have no ~/.pi/agent/settings.json — and refusing a launch for
@@ -851,7 +851,7 @@ func hostSurfaceBytes(e *Env, surface manifest.Surface) ([]byte, error) {
 		"this file to %s and it cannot be read there: %w.\nRefusing rather than composing "+
 		"%s without the host layer — the result would be a config file that looks correct "+
 		"and is missing the user's own settings (OQ-CO10, "+
-		"docs/design/config-ownership-and-promotion.md)",
+		"docs/reference/config-ownership.md)",
 		surface.Agent, surface.Name, src, err, surface.Path)
 }
 

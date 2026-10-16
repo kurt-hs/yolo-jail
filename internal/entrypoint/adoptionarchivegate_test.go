@@ -2,7 +2,7 @@ package entrypoint
 
 // adoptionarchivegate_test.go measures the two things OQ-CO7's gate has to be able to TELL
 // APART, each of which it could not until 2026-09-12 and each of which cost the net
-// (docs/design/config-ownership-and-promotion.md §6.3.3, defects D1 and D2):
+// (docs/reference/config-ownership.md#the-adoption-archive, defects D1 and D2):
 //
 //  1. "bytes present" vs "bytes YOLO WROTE". A first migration over a non-empty file is an
 //     adoption, and the file is not necessarily the user's: a home yolo has already rendered,

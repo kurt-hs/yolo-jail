@@ -173,7 +173,7 @@ is the derive's `ctx.in_full(t)` sentinel, carried beside the layer as
 `agentcfg.Inputs.ComputedInFull`; an MCP table, a provider catalog and `mise`'s `[tools]` are
 declared, while claude's `env` is not — yolo asserts one variable there and owns none of the
 rest, so a table not declared in full is left to the second pass and keeps the agent's own leaves
-([`CO13`](../design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided)).
+([`CO13`](config-ownership.md#co13)).
 An empty computed table drops nothing, declared or not. Second, *leaf-level*:
 the shared pass both branches run strips every individual key a higher-ranking layer — computed,
 then managed — would override anyway (`narrowOverlay`, built on `dropOverriddenKeys`). Managed
@@ -243,7 +243,7 @@ meaning — *delete this key* — so a config file the user wrote holding `"apiK
 **no representation in the layer stack at all**: put it in the overlay and the fold deletes the
 key instead of producing it. `mergeDiff`'s docstring has said so since it was written. The cost
 went unnoticed until a whole-file composing notch existed to pay it: under
-[`host_management: own`](../design/config-ownership-and-promotion.md#11-success-criteria) the
+[`host_management: own`](config-ownership.md#keys-and-values-invariance) the
 composed file simply lacked the key, and no loss field named the deletion.
 
 The fix does not give `null` a second meaning anywhere. `ComposeStateful` reads the marked
@@ -266,7 +266,7 @@ losing half is the case that matters for the user, and it shipped backwards for 
 (2026-09-12): a file holding `"theme": null` against a pack whose `defaults` says `"system"` kept
 the null under `assert` (the rmw arm, which the retired `assert` ran for every surface) — rmw fills a default only where the key is **absent**, and a null-valued
 key is present — and took the default under `own`. That is a value changing across a switch that
-[§11](../design/config-ownership-and-promotion.md#11-success-criteria) says keeps every value.
+[keys-and-values invariance](config-ownership.md#keys-and-values-invariance) says keeps every value.
 The control settles the direction: the same file holding `"theme": "dark"` keeps `"dark"`, because
 the capture overlay outranks `defaults`. A null has to fold where a non-null does, or the two
 disagree for no reason except which of them the sidecar happens to be able to hold.

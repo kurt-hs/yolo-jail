@@ -1,7 +1,7 @@
 package agentcfg
 
 // promote.go is the ENGINE side of `yolo config promote`
-// (docs/design/config-ownership-and-promotion.md §5): the two questions the CLI cannot
+// (docs/reference/config-ownership.md#promotion): the two questions the CLI cannot
 // answer without the capture overlay's own reader, exported so the verb cannot grow a
 // second one.
 //
@@ -11,7 +11,7 @@ package agentcfg
 // state (absent, empty, undecodable, wrong shape — staterender.go's §3.3 handling). A
 // caller that decoded it itself would be a second reader of a format whose whole
 // correctness argument is that it has one — which is exactly the defect
-// docs/design/config-ownership-and-promotion.md §5.2 was written against, one layer up.
+// docs/reference/config-ownership.md#what-promote-does was written against, one layer up.
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ import (
 
 // DeadOverlayKeys reports the TOP-LEVEL captured keys that a higher-ranking layer
 // overrides ENTIRELY, so promoting them could not help: they do not reach the file where
-// they already sit, and the destination is strictly lower in the fold (§5.4).
+// they already sit, and the destination is strictly lower in the fold (docs/reference/config-ownership.md#precedence--promotion-moves-a-key-down-the-stack).
 //
 // # It is narrowOverlay, asked a different question
 //
@@ -37,7 +37,7 @@ import (
 // captured key dead where it sits, and the sidecar will not be canonicalized until the
 // next boot. Promote reads the sidecar in between, so it has to ask the question itself.
 //
-// (§5.2 named a second dead class — a key the Lua `transform` rewrote, which narrowOverlay
+// (the design named a second dead class — a key the Lua `transform` rewrote, which narrowOverlay
 // never saw because its signature takes only the two owner layers. That class is EMPTY as
 // of the transform's removal (docs/reference/pack-system.md#oq-lt1): the transform step is gone from Compose, so
 // nothing folds above the overlay but `computed` and `managed`, and both are parameters
@@ -111,7 +111,7 @@ func DeadOverlayKeys(kind codec.Kind, overlayJSON []byte, computed, managed any)
 // boot that must not break on a mangled home and wrong for a write that must not lie.)
 //
 // A key not present is simply not in `removed`; it is the caller's business whether that is
-// an error (`--keys` naming a key nothing captured is, §5.6).
+// an error (`--keys` naming a key nothing captured is; docs/reference/config-ownership.md#degenerate-inputs).
 func DeleteOverlayKeys(overlayJSON []byte, keys []string) (updated, preImage []byte, removed []string, err error) {
 	if len(bytes.TrimSpace(overlayJSON)) == 0 {
 		return nil, nil, nil, fmt.Errorf("agentcfg: overlay sidecar is empty — there are no captured keys to remove")

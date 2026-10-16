@@ -1,5 +1,5 @@
 -- in_full declares a table this derive regenerates in full — ctx.in_full, the CO13 sentinel
--- (docs/design/config-ownership-and-promotion.md). A table returned WITHOUT it is one this
+-- (docs/reference/config-ownership.md). A table returned WITHOUT it is one this
 -- derive only asserts leaves of, and yolo claims nothing under it but those leaves. The
 -- fallback is for an entrypoint older than the sentinel, which treated every non-empty
 -- table as regenerated in full anyway.
@@ -755,7 +755,7 @@ end)
 -- asserting simply stops being written, and a leaf neither this derive nor a lower
 -- layer supplies is already absent. The tombstone could only ever reach past yolo's
 -- own output to the user's, which is the one thing it must not do
--- (docs/design/config-ownership-and-promotion.md §6.3.1).
+-- (docs/reference/config-ownership.md#adoption-is-capture-then-regenerate).
 --
 -- Both tables are therefore EMPTY rather than tombstoned when nothing is configured,
 -- which also keeps the adoption drop off them: an empty computed table asserts no

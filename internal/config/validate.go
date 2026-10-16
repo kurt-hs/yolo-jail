@@ -547,10 +547,10 @@ func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs 
 }
 
 // validateHostManagement shape-checks the `host_management` ownership declaration
-// (docs/design/config-ownership-and-promotion.md §4.2).
+// (docs/reference/config-ownership.md#invariants).
 //
 // A string rather than a boolean, though it has two values since `assert` was retired
-// (config-ownership-and-promotion.md §4.5, OQ-CO14): a config still spelling `"assert"` is
+// (docs/reference/config-ownership.md#the-retired-assert, OQ-CO14): a config still spelling `"assert"` is
 // refused with a message of its own (hostManagementProblem), which a boolean could not have
 // told apart from a typo. The accepted set comes from KnownHostManagements, so the schema and
 // the message cannot drift.

@@ -135,7 +135,7 @@ type Surface struct {
 	// ignored the directory, bound the first of two same-named surfaces, and — the reason
 	// it is gone — un-bound SILENTLY when the match stopped holding, leaving a surface
 	// whose author declared a host layer composing without one
-	// (docs/design/config-ownership-and-promotion.md OQ-CO10).
+	// (docs/reference/config-ownership.md OQ-CO10).
 	//
 	// The `reads-host` KIND stays, for the user's `host_files` key: those carry arbitrary
 	// host files that have no mirrored twin, so they are genuinely not derivable and

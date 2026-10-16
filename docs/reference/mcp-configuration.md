@@ -479,7 +479,7 @@ the rulings are [AM-R1 and AM-R2](../design/agent-directory-map.md#13-decision-l
 - **It is merged into, never replaced.** pi writes this file too: `pi mcp add` and
   `pi mcp remove`, and `/mcp`'s enable, disable and exposure changes. So the surface is
   `stateful` and its table is not declared in full
-  ([CO13](../design/config-ownership-and-promotion.md#co13--how-a-derive-says-it-fills-a-computed-table-in-full--decided)).
+  ([CO13](config-ownership.md#co13)).
   The first boot adopts the servers and top-level settings it finds there as yours; a server or
   setting you change later is captured and survives the next boot; a server yolo stops
   configuring leaves. For a field yolo writes in one of its own servers, the config wins.
@@ -938,8 +938,8 @@ host's `mcp.json` server table ([OQ-MC1](#OQ-MC1)), and what yolo does about an 
 leftover `mcp-adapter.json` at the host ([OQ-MC2](#OQ-MC2)). [OQ-MC1](#OQ-MC1) no longer holds a fix: both
 faults it names arise under `host_management: assert`, the emptied entry directly and `--revert`
 because it runs under no other value (`hostRevertRefusal`). `assert` is ruled retired
-([§4.5 there](../design/config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)),
-and since [`OQ-CO14`](../design/config-ownership-and-promotion.md#oq-co14) was ruled on 2026-10-05
+([the retired `assert` there](config-ownership.md#the-retired-assert)),
+and since [`OQ-CO14`](config-ownership.md#oq-co14) was ruled on 2026-10-05
 nothing holds the retirement's build, which ends both. Also not ruled: whether
 `~/.config/mcp/mcp.json` is still written now that pi-subagents 0.74.0 runs `mcp:` tools from pi's
 own client, and whether yolo does anything for a pi-mcp-adapter user beyond saying the two clients

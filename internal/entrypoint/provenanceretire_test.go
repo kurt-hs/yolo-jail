@@ -18,7 +18,7 @@ package entrypoint
 // WHERE THIS RUNS NOW: an owned host (`host_management: "own"`), for a surface its pack
 // DECLARES `rmw`. The retired `assert` ran every surface through the rmw arm; what survives it
 // is the arm itself, which an owned host still runs and records for an rmw declaration
-// (render.HostOwnedModes; docs/design/config-ownership-and-promotion.md §4.5.2 names
+// (render.HostOwnedModes; docs/reference/config-ownership.md#the-retired-assert names
 // `retireUnclaimed` and its use of the previous record as live there). So every owner fixture
 // here declares `rmw` (rmwAcmeOwner, bareAcmePack): a `stateful` declaration under `own`
 // composes the whole file instead, and never reaches the pass these tests pin.

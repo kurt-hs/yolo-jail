@@ -8,18 +8,17 @@ package entrypoint
 // The resolved decisions this encodes (env-manager plan OQ-1..4, host-render-target.md
 // §6.3, §6.6):
 //   - THE MECHANISM IS THE DECLARED CONTRACT'S, not this file's. `host_management` selects
-//     it (config-ownership-and-promotion.md §4.1) and render's census states it per contract;
+//     it (docs/reference/config-ownership.md#the-host_management-key) and render's census states it per contract;
 //     the loop below ASKS — ModeSet.Mechanism, per surface — rather than calling one writer
 //     unconditionally as it once did. Under `own` it is `stateful` — whole-file composition
-//     with the capture store §6.2 specifies — except for a surface its pack declares `rmw`,
+//     with the capture store config-ownership.md#the-host-capture-store specifies — except for a surface its pack declares `rmw`,
 //     which is PURE RMW: yolo regenerates only the keys it declares (managed + dynamic tables)
 //     and leaves every key the agent wrote, with no whole-file compose and so no capture
 //     overlay (OQ-4). Under `none` nothing composes at all. The retired `assert` (OQ-CO14) ran
 //     rmw for every surface; the hardcoded call was unsafe precisely because it would have
 //     gone on doing that after the census said otherwise.
 //     ⚠ "So no --revert" USED TO FOLLOW HERE, and it does not: that inference was the
-//     resolved OQ-1, REVERSED on 2026-09-11 (docs/design/config-ownership-and-promotion.md
-//     §10 step 3). A revert needs to know which keys are yolo's, not a capture overlay, and
+//     resolved OQ-1, REVERSED on 2026-09-11 (docs/reference/config-ownership.md#revert). A revert needs to know which keys are yolo's, not a capture overlay, and
 //     the per-key record below is exactly that. hostrevert.go is the verb, and it consumes
 //     that record rather than any sidecar this mode lacks.
 //   - PROVENANCE IS STILL RECORDED. "No sidecars" covers the two CAPTURE sidecars
@@ -164,7 +163,7 @@ type HostRenderResult struct {
 	// whole file.
 	//
 	// ⚠ UNDER `own` IT IS THE ONLY DISCLOSURE THIS LOSS HAS, which is why the branch is
-	// load-bearing rather than a nicety. §11's criterion has been KEYS AND VALUES since
+	// load-bearing rather than a nicety. config-ownership.md's keys-and-values criterion has been KEYS AND VALUES since
 	// OQ-CO12 and a comment is neither, so comment destruction is CONFORMANT and no criterion
 	// test fails for it; `WouldChange` reports a byte moved in the same word it uses for a
 	// re-sorted key; and `Archived` is written on the WRITE, never in the dry run that is
@@ -198,11 +197,11 @@ type HostRenderResult struct {
 	// Populated in both postures, from the file as it stands BEFORE any write, so the observe
 	// preview and the assert run cannot disagree about it. A skipped or refused surface is not
 	// a written destination and is always false: a render that will not happen cannot be a
-	// change that is pending (§4.4's cannot-determine class).
+	// change that is pending (the cannot-determine class in config-ownership.md#invariants).
 	WouldChange bool
 	// Archived is where this render copied the PRE-EXISTING file before ADOPTING it — the
 	// one-time archive OQ-CO7 rules, written once per surface per home
-	// (§6.3.3, entrypoint/adoptionarchive.go). Empty for every render that adopted nothing:
+	// (config-ownership.md#the-adoption-archive, entrypoint/adoptionarchive.go). Empty for every render that adopted nothing:
 	// an rmw render (rmw asserts keys and adopts no file), a surface with no file yet, a
 	// steady-state owned render, and a second adoption of a surface already archived.
 	//
@@ -724,7 +723,7 @@ func renderHostPlans(e *Env, p *packload.Pack, plans []surfacePlan, observe bool
 			// `in sync` rather than `would render` when nothing would change. The unconditional
 			// "would render" was the honest report of a render that could not tell the two apart;
 			// now that it can, a dry-run over an already-applied home must not read as a list of
-			// pending writes (§10 step 1). The two kinds that share this struct — `briefing` and
+			// pending writes. The two kinds that share this struct — `briefing` and
 			// `files` — already said `unchanged` for their own no-op, so this is one vocabulary
 			// across all three rather than a new word.
 			action := "would render"
@@ -767,13 +766,13 @@ func renderHostPlans(e *Env, p *packload.Pack, plans []surfacePlan, observe bool
 		// ADOPTION IS THE FIRST RENDER'S OWN BEHAVIOUR and needs no SEEDING here.
 		// ComposeStateful reads "no trusted last_render" as a first migration and seeds the
 		// overlay from the file it finds, so the first owned render reproduces every key the
-		// file holds that yolo does not declare (§6.3.1). That branch exists because seeding
+		// file holds that yolo does not declare (config-ownership.md#adoption-is-capture-then-regenerate). That branch exists because seeding
 		// an EMPTY overlay was a shipped data-loss bug; it is why this arm can be reached on
 		// a home full of hand-written config without a guard of its own.
 		//
 		// THE ONE GUARD IT IS OWED, and it is BUILT (OQ-CO7, 2026-09-12): one archive at
 		// adoption — the pre-existing file copied once into the archive subsystem, as a
-		// `config` bucket beside the ones that already ship (§6.3.3). The copy is made by the
+		// `config` bucket beside the ones that already ship (config-ownership.md#the-adoption-archive). The copy is made by the
 		// shared writer (entrypoint.archiveAdoption, run from persistStatefulSurface), so the
 		// jail's own firstMigration gets the same net from the same line rather than from a
 		// second implementation here. It covers the deep-merged leaf adoption drops, which
@@ -953,12 +952,12 @@ func hostListConflict(e *Env, mechanism string, s manifest.Surface, path string,
 // owned render on an adopted home is the case that matters, and it answers "no change"
 // precisely when adoption reproduced the file BYTE FOR BYTE.
 //
-// ⚠ THAT IS STRICTER THAN §11's CRITERION, since OQ-CO12 relaxed the criterion to keys and
+// ⚠ THAT IS STRICTER THAN THE REFERENCE'S CRITERION, since OQ-CO12 relaxed the criterion to keys and
 // values and left byte layout conformant. The gap is deliberate and must not be closed by
 // teaching this predicate to decode: the question here is "would an apply alter the file?",
 // and re-sorting a user's JSON keys or dropping their TOML comments ALTERS IT — a predicate
 // that answered "no change" to that would suppress the one disclosure the switch still makes
-// (§11's warning: `WouldChange` is true on every conformant axis, so the switch is never
+// (config-ownership.md's warning: `WouldChange` is true on every conformant axis, so the switch is never
 // silent). The criterion and this predicate answer different questions and are allowed to
 // disagree; what they may never do is disagree about a KEY.
 //
@@ -1035,12 +1034,12 @@ func hostRMWRefusal(s manifest.Surface, path string) *rmwRefusedError {
 // A file that cannot be read, decoded, or encoded is a surface the render REFUSES (see
 // hostRMWRefusal, which the caller runs first), and a refusal is not a pending change. So
 // every error here returns false rather than defaulting to true: a gate that cannot prove its
-// condition does not fire (§4.4).
+// condition does not fire (config-ownership.md#invariants).
 //
 // The provenance record is deliberately NOT part of the answer. It is yolo's own bookkeeping
 // under the state dir, not one of the destinations this predicate is about, so a first-ever
 // apply into a home whose files already hold exactly what the packs declare correctly reports
-// nothing to change (§4.1's "zero stored state on the render side").
+// nothing to change (config-ownership.md#the-host_management-key: "zero stored state on the render side").
 func hostSurfaceWouldChange(e *Env, s manifest.Surface, path string, computed map[string]any,
 	contribs *surfaceContribs) bool {
 	s = agentcfg.SubstituteWorkspace(s, e.WorkspaceDir())
@@ -1129,8 +1128,8 @@ func hostFormattingLosses(e *Env, mechanism string, s manifest.Surface, path str
 	// one render that drops all of them.
 	//
 	// ⚠ THAT SILENCE IS WHAT MAKES THE LOSS LAUNDERABLE, which is why this is not cosmetic.
-	// §11's criterion is KEYS AND VALUES since OQ-CO12, and a comment is neither — so
-	// comment destruction is CONFORMANT and no test will ever fail for it again. What §11
+	// config-ownership.md's keys-and-values criterion is KEYS AND VALUES since OQ-CO12, and a comment is neither — so
+	// comment destruction is CONFORMANT and no test will ever fail for it again. What the reference
 	// offers in exchange is that the switch "is never silent on any axis", and the only
 	// thing left holding that up for comments is this field: `WouldChange` says a byte
 	// changed, in the same undifferentiated word it uses for a re-sorted key, and `Archived`
@@ -1211,7 +1210,7 @@ func hostProvenanceExists(e *Env, s manifest.Surface) bool {
 //     last server's removal regenerates it empty instead of leaving it as the file held it.
 //
 // A KEY IS A TABLE ONLY IF THE DERIVE DECLARED IT IN FULL (ctx.in_full, CO13 —
-// docs/design/config-ownership-and-promotion.md). The rule used to be "every object-valued
+// docs/reference/config-ownership.md). The rule used to be "every object-valued
 // key the derive produces", and the sentinel probe makes that rule over-claim by
 // construction: fed a non-empty live table, claude/settings' derive always produced a
 // non-empty `env`, so every rmw apply cleared the user's real env block and rewrote it
@@ -1225,7 +1224,7 @@ func hostProvenanceExists(e *Env, s manifest.Surface) bool {
 // the shipped packs that changes nothing (claude/config's derive returns only the declared
 // mcpServers, and copilot/config has no producer), but a pack's rmw surface returning a table
 // NOT declared in full would be merged here and regenerated whole in a jail. What rmw should do
-// with one is an open ruling (docs/design/config-ownership-and-promotion.md, "Built
+// with one is an open ruling (docs/reference/config-ownership.md, "Built
 // 2026-09-25 — what shipped").
 //
 // The alternative was a SHAPE heuristic ("an object whose values are all objects is a
