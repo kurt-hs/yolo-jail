@@ -80,7 +80,7 @@ Mechanism choices the ruling leaves open, decided for the build. Each is reversi
 | PL-15 | A staged capture entry is sealed with its top left owner-writable, renamed into `entries/`, then its top sealed. Context links are made after the recursive seal, in parents opened one at a time, which are then sealed again. | A rename into another parent needs write on the moved directory itself, and a link cannot be made in a `0555` directory. Opening only the parents keeps a recursive `chmod` from meeting a link. |
 | PL-16 | The integration Seatbelt registry claims the `staging-root-read-allow` marker, with two runtime cases: a read of the staging root allowed, and a write refused by the write deny. | The registry must name every marker the profile carries, with a runtime case or a written reason why none can run (a Linux test enforces it); the write case shows the read allow grants nothing more. |
 | PL-17 | Integration fixture cleanup removes a workspace as `_yolojail` through the rule before falling back to root `sudo`. | The narrow-sudo step takes root `sudo` away, and `_yolojail` owns what it made. |
-| PL-18 | The narrow-sudo CI step moves aside every `/etc/sudoers.d` file granting `NOPASSWD: ALL`, except yolo's own, in one `sudo` invocation, and fails naming the reviewer's choice if root `sudo` is still passwordless, the blanket rule then living in `/etc/sudoers` itself. | After the first move, no further `sudo` works; editing the main file is the reviewer's choice ([task 9](#task-9--integration-and-the-narrow-sudo-ci-step)). |
+| PL-18 | The narrow-sudo CI step, in one `sudo` invocation, moves aside every `/etc/sudoers.d` file granting `NOPASSWD: ALL` except yolo's own, and in `/etc/sudoers` comments out only the `NOPASSWD: ALL` lines for `%admin` or the runner user, adding the stock macOS `%admin ALL = (ALL) ALL` after each `%admin` one. The edited `/etc/sudoers` is checked with `visudo -c -f` before it is installed by one rename, and everything is restored if the final `visudo -c` fails. | After the first change, no further `sudo` works. The hosted runner keeps the `%admin` grant in `/etc/sudoers` itself (run 38913640055), and the maintainer approved editing it on this ephemeral runner (2026-10-16) ([task 9](#task-9--integration-and-the-narrow-sudo-ci-step)). |
 
 ## Map
 
@@ -918,9 +918,8 @@ file in flux. Every task runs `just format` before its commit and stages only it
     `sudo -k; ! sudo -n true`; then a step running
     `go test -count=1 -timeout 0 -v -run '^TestMacosUser(PasswordlessStartAndExit|TheGuestCannotWriteTheStagingRoot|TerminateEndsTheSessionThroughItsTeardown)$' ./integration`
     with `YOLO_TEST_MACOS_USER=1` and `YOLO_TEST_MACOS_USER_NARROW_SUDO=1`. Both steps are last:
-    nothing after them may need root. **Stop and report** if the runner's rule is not in a file
-    that can be moved aside (for example inside `/etc/sudoers` itself with no `sudoers.d` entry):
-    editing the main file is a choice for the reviewer.
+    nothing after them may need root. The runner's `%admin` rule turned out to live in
+    `/etc/sudoers` itself, so the step also comments out that line, as PL-18 records.
 - **Gates:** `go test -short ./integration` on Linux (compile and the gate's table tests); then
   `gh workflow run macos-user.yml` on the pushed branch is the measurement, which the owner
   triggers (pushing is the human's).
