@@ -731,6 +731,15 @@ it. The Claude broker removes its `--end-with-pid` socket before an in-flight re
 where the OpenAI broker deliberately removes it after. Found 2026-10-16 by the review of the
 Claude broker's SIGTERM-order fix.
 
+### <a id="printed-format-patch-prefixes"></a>🔧 **Other printed `git format-patch` commands pass no prefix flags**
+
+The rebase recipe now passes `--src-prefix=a/ --dst-prefix=b/`, because some gits read any
+`format.noprefix` as true. Other commands yolo prints or documents for exporting a series do not:
+the patch-failure block's `git format-patch --base=…` (which also has no `-o` and no range),
+`yolo config-ref`'s, `contributes.go`'s, the patch-series guide's and `pi-extensions.md`'s. A user
+with `format.noprefix` or `diff.noprefix` set exports a series `git am` rejects. Found 2026-10-16
+by the review of the recipe fix.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
