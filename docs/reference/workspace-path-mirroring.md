@@ -2,7 +2,7 @@
 title: "Should the jail mount the workspace at the host's own path?"
 date: 2026-09-04
 status: accepted
-stage: GRADUATED
+stage: CURRENT
 verified: 2026-10-15
 tags: [mounts, paths, backends, macos-user, state-separation, trust]
 summary: "Two questions, one verdict. Mirroring just the workspace is a good idea not worth the churn. MAXIMAL mirroring — jail user, home, workspace and toolchain store all matching the host — is mechanically expressible and churn is not the objection; it fails because you can mirror a path NAME but not its CONTENT, so a cross-boundary reference resolves to an ABI-incompatible artifact instead of failing loudly, the credential boundary loses its cheapest signal, and macos-user cannot express the mirrored home. The two arguments expected to carry it (capture relocation, notch portability) come back negative. Ruled no on 2026-10-15 (OQ-WP8): no maximal mirroring; each crossing gets a targeted fix. Kept as an evergreen reference because the idea keeps coming back (OQ-WP7); the only goal was removing friction (OQ-WP10)."
