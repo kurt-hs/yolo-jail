@@ -778,6 +778,40 @@ func (r *CheckRecord) conflictedUnder(commit, series string) bool {
 	return false
 }
 
+// CurrentBuildFailure is the FAILED NEWER BUILD the record holds for a check of in, the series
+// digest and recipe asked for now and this yolo (OQ-PPX3), as a PatchFailure of Kind
+// PatchFailureBuild, with the outcome it was read from; nil when there is none. It is current only
+// while a good build of this series and recipe is recorded — with none, nothing serves, and the
+// missing build is the launch's refusal already — and the walk-back hold does not hold, and only
+// for the first candidate the walk would reach (a recorded conflict of this series passes over an
+// entry, as passedBy reads it): a newer release passes the failure by, as it does a patch failure.
+// The yolo matters because a build failure is keyed by it: another yolo builds the candidate again.
+// Whether a back-off still holds is the caller's to decide.
+func (r *CheckRecord) CurrentBuildFailure(in CheckInputs, series, recipe, yolo string) (*PatchFailure, *EntryOutcome) {
+	if r == nil || r.Owner == "" || !r.Answers(in) || r.Good == nil || r.Good.Series != series ||
+		r.Good.Recipe != recipe || r.WalkBackHolds(in, series) != nil {
+		return nil, nil
+	}
+	for _, e := range r.Candidates(in) {
+		if r.conflictedUnder(e.Commit, series) {
+			continue
+		}
+		if e.Commit == r.Good.Commit {
+			return nil, nil
+		}
+		for i := range r.Outcomes {
+			o := r.Outcomes[i]
+			if o.Kind == OutcomeBuildFailed && o.Commit == e.Commit && o.Series == series && o.Recipe == recipe &&
+				o.Yolo == yolo {
+				return &PatchFailure{Owner: r.Owner, Inputs: in, Series: series, Target: e, Kind: PatchFailureBuild,
+					Detail: o.Error, Seq: r.Seq}, &o
+			}
+		}
+		return nil, nil
+	}
+	return nil, nil
+}
+
 func successfulCheck(r *CheckRecord) bool {
 	return r != nil && r.Check != nil && r.Check.Seq == r.Seq &&
 		r.Check.FetchErr == "" && r.Check.Problem == ""

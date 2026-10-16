@@ -29,6 +29,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
+	"github.com/mschulkind-oss/yolo-jail/internal/patchrecovery"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -540,10 +541,25 @@ func TestTheFloorsCopyOfTheGoodBuildServesWhenItsStoreEntryIsGone(t *testing.T) 
 		t.Errorf("past the hour without a newer upstream unexpectedly launched %d build children", fx.child)
 	}
 
+	// A NEWER UPSTREAM THAT FAILS STOPS `yolo host -- tool` (OQ-PPX3): the floor's copy runs only under
+	// a hatch, or an `agent_updates` hold.
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "")
 	v13 := fx.commit(t, "v1.3.0", map[int]string{14: "fourteen", 20: "twenty"})
 	fx.later(2 * time.Hour)
 	beforeAdvance := advanceCalls
-	out := assertServes("a newer upstream that fails", 2)
+	refuses := func(when string, wantBuilds int) string {
+		t.Helper()
+		rc, target, out := fx.hostLaunch(t)
+		if rc != 1 || target != "" || len(fx.builds) != wantBuilds {
+			t.Fatalf("%s: rc=%d target=%q builds=%d, want a refusal after %d builds\n%s", when, rc, target,
+				len(fx.builds), wantBuilds, out)
+		}
+		if rec := floorRecord(t, "tool"); rec.Revision != v11 {
+			t.Errorf("%s: the floor runs %s, want its copy of v1.1.0 kept", when, rec.Version)
+		}
+		return out
+	}
+	out := refuses("a newer upstream that fails", 2)
 	if advanceCalls-beforeAdvance != 1 {
 		t.Errorf("one due host launch resolved %d floor advances, want exactly one", advanceCalls-beforeAdvance)
 	}
@@ -556,15 +572,21 @@ func TestTheFloorsCopyOfTheGoodBuildServesWhenItsStoreEntryIsGone(t *testing.T) 
 	for _, w := range []string{
 		"upstream moved — v1.3.0 (" + shortSHA(v13) + ") is newer than the good build " + label11,
 		"`yolo host` waits for it, at most 20m0s, and a Ctrl-C starts tool on the good build " + label11 + " + 2 patches instead",
-		"still running " + label11 + " + 2 patches",
-		"`yolo capture tool` retries it now; `yolo host -- tool` retries it after",
+		"the build failed at upstream v1.3.0 (" + shortSHA(v13) + ")",
+		"YOLO_ALLOW_PATCH_FAILURES=forkpack/tool yolo host -- tool ",
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("the failed build lacks %q:\n%s", w, out)
 		}
 	}
+	if strings.Contains(out, "still running "+label11) {
+		t.Errorf("the refusal says the older build runs:\n%s", out)
+	}
 	fx.later(10 * time.Minute)
-	assertServes("inside the back-off", 2)
+	refuses("inside the back-off", 2)
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "forkpack/tool")
+	assertServes("the hatch set", 2)
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "")
 	fx.writeUserConfig(t, `,"agent_updates":{"forkpack":false}`)
 	fx.later(2 * time.Hour)
 	assertServes("held by agent_updates", 2)

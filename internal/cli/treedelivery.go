@@ -363,7 +363,15 @@ func servingTreeOf(f packload.Fork, o advanceOptions, floor string, probeLegacy 
 	if patch.State == "failure" && patch.Failure != nil {
 		a.patchFailure = patch.Failure
 		a.reportPatchFailure(patch.Failure, a.patchFailureText(patch.Failure))
-		delivery := entrypoint.ForkDelivery{PatchFailure: patch.Failure}
+		// THE HATCH LIST, the advance's one authority (recoveryHatches), minus the walk-back: this read
+		// builds nothing, so YOLO_ALLOW_OLDER_UPSTREAM would not get it running.
+		var recovery []patchrecovery.Hatch
+		for _, h := range a.recoveryHatches() {
+			if h.Env != patchrecovery.AllowOlderUpstreamEnv {
+				recovery = append(recovery, h)
+			}
+		}
+		delivery := entrypoint.ForkDelivery{PatchFailure: patch.Failure, Recovery: recovery}
 		result := advanceResult{delivery: delivery, patchFailure: patch.Failure, failed: true}
 		if a.serving != nil {
 			delivery.Key = a.serving.Key

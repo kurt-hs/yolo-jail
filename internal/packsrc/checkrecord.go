@@ -50,6 +50,26 @@ type PatchFailure struct {
 	Detail string      `json:"detail,omitempty"`
 	Log    string      `json:"log,omitempty"`
 	Seq    int64       `json:"seq,omitempty"`
+	// Retry is a build failure's retry command (`yolo capture <arg>`), which its error block's Repair
+	// names. Never recorded: a build failure is read from the record's outcomes, never kept here.
+	Retry string `json:"-"`
+}
+
+// PatchFailureBuild is the Kind of a FAILED NEWER BUILD (OQ-PPX3, the maintainer's ruling of
+// 2026-10-16): the newest candidate took the series but its build failed while a good build of the
+// series as it stands is on this machine. It is never written to CheckRecord.PatchFailure:
+// CurrentBuildFailure reads it from the record's outcomes, and it rides the refusal a patch failure
+// does, so no act falls back to the older build unless a recovery hatch or an `agent_updates` hold
+// says so.
+const PatchFailureBuild = "build"
+
+// Summary is the few words a refusal's last line names f by, after the error block said it whole:
+// "patch application failure", or "newer build failure" for a PatchFailureBuild.
+func (f *PatchFailure) Summary() string {
+	if f != nil && f.Kind == PatchFailureBuild {
+		return "newer build failure"
+	}
+	return "patch application failure"
 }
 
 func (f *PatchFailure) Error() string {
@@ -57,6 +77,12 @@ func (f *PatchFailure) Error() string {
 		return ""
 	}
 	// The target's label already carries its commit (ListEntry.Label), so it is said once.
+	if f.Kind == PatchFailureBuild {
+		if f.Detail == "" {
+			return "the build failed at upstream " + f.Target.Label()
+		}
+		return fmt.Sprintf("the build failed at upstream %s: %s", f.Target.Label(), f.Detail)
+	}
 	if f.Member == "" {
 		return "patch application failed at " + f.Target.Label()
 	}

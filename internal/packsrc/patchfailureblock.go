@@ -95,12 +95,17 @@ func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchByp
 	if recipe.PatchBranchRepo != "" {
 		what, member = "patch branch does not merge into", "Patch branch"
 	}
+	if f.Kind == PatchFailureBuild {
+		what = "the build failed at"
+	}
 	head := fmt.Sprintf("ERROR: %s: %s upstream %s (%s)", label, what, target, shortCommit(f.Target.Commit))
 	b.WriteString(richtext.Render("[bold red]"+richtext.Escape(head)+"[/bold red]", color) + "\n")
 	if f.Member != "" {
 		fmt.Fprintf(&b, "  %s: %s\n", member, PrintableFailureText(f.Member))
 	}
 	switch f.Kind {
+	case PatchFailureBuild:
+		fmt.Fprintf(&b, "  Build: %s\n", PrintableFailureText(f.Detail))
 	case "conflict":
 		if len(f.Paths) > 0 {
 			fmt.Fprintf(&b, "  Conflict: %s\n", PrintableFailureText(strings.Join(f.Paths, ", ")))
@@ -117,17 +122,25 @@ func (f *PatchFailure) Render(label string, recipe RebaseRecipe, bypass PatchByp
 			fmt.Fprintf(&b, "  Log: %s\n", PrintableFailureText(f.Log))
 		}
 	}
-	b.WriteString("\n" + richtext.Render("[bold]Repair:[/bold]", color) + "\n")
-	if f.Kind == "base" {
-		fmt.Fprintf(&b, "  re-export the series: git format-patch --base=%s\n", f.Target.Commit)
-	} else {
-		for _, l := range recipe.Lines(f.Target) {
-			b.WriteString("  " + l + "\n")
-		}
-	}
 	key := bypass.Key
 	if key == "" {
 		key = strings.TrimPrefix(strings.TrimPrefix(label, "fork "), "extension ")
+	}
+	b.WriteString("\n" + richtext.Render("[bold]Repair:[/bold]", color) + "\n")
+	switch f.Kind {
+	case PatchFailureBuild:
+		retry := f.Retry
+		if retry == "" {
+			retry = "yolo capture " + key
+		}
+		b.WriteString("  read the build's output, and once upstream or the build recipe is fixed, retry it:\n")
+		b.WriteString("    " + retry + "\n")
+	case "base":
+		fmt.Fprintf(&b, "  re-export the series: git format-patch --base=%s\n", f.Target.Commit)
+	default:
+		for _, l := range recipe.Lines(f.Target) {
+			b.WriteString("  " + l + "\n")
+		}
 	}
 	switch hatches := bypass.List(key); {
 	case bypass.Unneeded:

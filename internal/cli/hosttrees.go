@@ -179,6 +179,7 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		return false
 	}
 	var stopped []string
+	series := false // one of them is a series that does not apply, not only a newer build that failed
 	for i, r := range results {
 		if trees[i].Upstream && bin == "" && r.delivery.Key != "" {
 			// YOLO_SKIP_PATCHES at `yolo host apply --assert`: the disclosure line (a launch's is
@@ -190,12 +191,18 @@ func advanceHostTrees(errw io.Writer, color bool, bin string, act *run.ActInterr
 		}
 		if r.patchFailure != nil && !r.bypassed || freshUpdate && r.failed {
 			stopped = append(stopped, trees[i].Label())
+			series = series || r.patchFailure != nil && r.patchFailure.Kind != packsrc.PatchFailureBuild
 		}
 	}
 	if len(stopped) == 0 {
 		return true
 	}
 	if freshUpdate {
+		return false
+	}
+	if !series {
+		fmt.Fprintf(errw, "yolo host: refusing: the newer build of %s failed (the ERROR above); nothing was written.\n",
+			entrypoint.JoinAnd(stopped))
 		return false
 	}
 	fmt.Fprintf(errw, "yolo host: refusing: the patch series of %s %s not apply (the ERROR above); nothing was written.\n",
