@@ -111,7 +111,7 @@ type Options struct {
 	Stdin io.Reader
 	// PodmanReadiness is the podman readiness gate's seams (podmanready.go): the attempt
 	// runner, its clock and its sleep. A zero field takes the real one. check runs the SAME
-	// gate as a launch (PR-D6 of docs/design/podman-reboot-readiness.md), so the two cannot
+	// gate as a launch (PR-D6 of docs/reference/podman-readiness.md), so the two cannot
 	// disagree about whether podman is up.
 	PodmanReadiness yoloruntime.ReadySeams
 	// IsTTYStderr reports whether Stderr is a terminal: the gate's progress line redraws in

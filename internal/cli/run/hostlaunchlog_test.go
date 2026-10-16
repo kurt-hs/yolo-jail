@@ -97,7 +97,7 @@ func globLines(want, got string) bool {
 	return true
 }
 
-// THE REDACTOR NAMES A PROJECT, AND ONLY A PROJECT, `<cwd>` (podman-reboot-readiness.md PR-D26):
+// THE REDACTOR NAMES A PROJECT, AND ONLY A PROJECT, `<cwd>` (podman-readiness.md PR-D26):
 // the directory the command ran in, or a path under it, in either spelling a line gives it, while a
 // sibling sharing its prefix is left whole. Run from the root, the home or a directory above the
 // home, a launch's directory names no project, and rewriting it would hide every path under the

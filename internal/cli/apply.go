@@ -10,7 +10,7 @@ package cli
 // differs by notch:
 //   - jail: provision (build image, stage packs, render config, install every program the
 //     selected packs declare) then exit. That is the launch `yolo -- true` performs, and the
-//     verb runs exactly that launch (JR-D1, docs/design/jail-notch-readiness.md) rather than
+//     verb runs exactly that launch (JR-D1, docs/reference/program-readiness.md) rather than
 //     a second provisioner beside it; `--dry-run` prints the description instead.
 //   - host: render the applicable config into the real home. That is Phase 4
 //     (`yolo host apply`), gated on the host-render work; here it is recognized and routed
@@ -202,7 +202,7 @@ func applyMain(args []string, out, errw io.Writer, color bool, stdin io.Reader) 
 			return describeMain(nil, out, errw, color)
 		}
 		// THE JAIL NOTCH'S READINESS ACT IS THE LAUNCH, with no target (JR-D1,
-		// docs/design/jail-notch-readiness.md): the same path `yolo -- true` takes, never a
+		// docs/reference/program-readiness.md): the same path `yolo -- true` takes, never a
 		// second provisioner, now that the launch installs every program a selected pack
 		// declares (OQ-JR1). An attach is the one launch that provisions nothing, so it is said
 		// before the launch rather than left to be inferred from its banner.

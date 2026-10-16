@@ -1,7 +1,7 @@
 package runtime
 
 // podmanmachine.go is macOS's podman probe, the PATIENT ONE-SHOT (a term coined here, and
-// ledgered as PR-D24 of docs/design/podman-reboot-readiness.md): ONE `podman info --format
+// ledgered as PR-D24 of docs/reference/podman-readiness.md): ONE `podman info --format
 // json`, run by the readiness gate's own attempt runner, never killed, waited for up to the
 // gate's budget (PodmanReadyBudget), and never retried. Its result is a ReadyResult, so the
 // launch and `yolo check` render it with the gate's own view (podmanreadyview.go) and say the

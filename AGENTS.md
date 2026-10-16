@@ -424,8 +424,9 @@ live, so edits are visible on the host instantly — there is no sync step.
   in `~/.yolo/bin/launch/` run install-only, so agent CLIs are installed before the command runs.
   **A program it cannot install STOPS the launch**, offline included; `YOLO_ALLOW_MISSING_PROGRAMS=1`
   on the host is the hatch the refusal names, and the integration suite turns the act off with
-  `YOLO_NO_PROGRAM_READINESS=1` ([`OQ-JR1`](docs/design/jail-notch-readiness.md#9-decision-ledger),
-  [`readiness.go`](internal/entrypoint/readiness.go); not yet on macos-user, `JR-D2`). The launchers
+  `YOLO_NO_PROGRAM_READINESS=1` ([`OQ-JR1`](docs/reference/program-readiness.md#OQ-JR1),
+  [`readiness.go`](internal/entrypoint/readiness.go); on macos-user when its host cannot prove a
+  declared program present, [`JR-D2`](docs/reference/program-readiness.md#JR-D2)). The launchers
   still refresh at invocation and still install what a skipped act left. **It installs no language
   server**: `lsp_servers` only renders config (Claude's generated plugin, Copilot's projection), so a
   configured `command` must already resolve on `PATH`
@@ -625,7 +626,7 @@ release is fixed by the next one. What the script cannot judge is who the sectio
    never `--amend` a landed commit. ⚠ `just check-ci` is a WHOLE-TREE gate, so during a fan-out it
    reports other agents' in-flight files as your failure; land from a clean worktree.
 5. End of task: commit, then `just done` green. It is **change-aware and read-only**
-   ([`change-aware-completion.md`](docs/design/change-aware-completion.md)): it refuses a dirty tree
+   ([`change-aware-completion.md`](docs/reference/change-aware-completion.md)): it refuses a dirty tree
    before any check, then runs only what the commits since the last verified ancestor reach — lint
    for the changed Go packages and their importers, short tests for the changed packages alone (the
    importer closure's tests are CI's), the tests recorded as reading a changed file, and the checks

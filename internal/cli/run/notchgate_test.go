@@ -568,7 +568,7 @@ func TestMacosUserRuntimeAtTheJailNotchStillLaunches(t *testing.T) {
 
 // TestMacosGuestLaunchTellsTheSessionItsNotch: the guest launch sets config.NotchEnv to "guest" in
 // the launch env the backend layers into the session (EMP-D4), from the config and from `--at
-// guest` alike, so the agent footer can name the guest notch (docs/design/agent-footer.md §1.2)
+// guest` alike, so the agent footer can name the guest notch (docs/reference/agent-footer.md, "The notch")
 // and the backend's own messages can name a step that fits it. A jail-notch macos-user launch sets
 // nothing: YOLO_VERSION alone already says jail. Deleting the arm's Set fails the first two.
 func TestMacosGuestLaunchTellsTheSessionItsNotch(t *testing.T) {

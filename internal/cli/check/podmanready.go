@@ -10,7 +10,7 @@ import (
 )
 
 // podmanready.go is `yolo check`'s half of the podman READINESS GATE
-// (docs/design/podman-reboot-readiness.md, a term coined there): the same gate a launch runs,
+// (docs/reference/podman-readiness.md, a term coined there): the same gate a launch runs,
 // with the same budget and the same progress line (PR-D6), asked ONCE per check. Every podman
 // question check asks on Linux reads its answer — the Container Runtime section's liveness,
 // the runtime resolution Merged Configuration and the later sections use, the image delivery

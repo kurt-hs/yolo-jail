@@ -1238,7 +1238,7 @@ func autoCaptureEnvForSuite() []string {
 }
 
 // readinessEnvForSuite decides whether the launches this suite makes run the jail's readiness
-// act (docs/design/jail-notch-readiness.md, OQ-JR1), and returns the env entries that say so.
+// act (docs/reference/program-readiness.md, OQ-JR1), and returns the env entries that say so.
 //
 // THE SAME GATE AS autoCaptureEnvForSuite, FOR THE SAME COST, through the front door this time:
 // the readiness act installs every program a selected pack declares before the command runs, so

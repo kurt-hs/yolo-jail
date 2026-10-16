@@ -57,7 +57,7 @@ func hostClaudeStatusCommand(t *testing.T, home string) string {
 		t.Fatalf("Claude settings do not parse: %v\n%s", err, raw)
 	}
 	if settings.StatusLine.Type != "command" || !strings.Contains(settings.StatusLine.Command, "yolo internal footer") {
-		t.Fatalf("host apply filled statusLine = %+v, want yolo's footer command (build item 6)", settings.StatusLine)
+		t.Fatalf("host apply filled statusLine = %+v, want yolo's footer command (the host profile read)", settings.StatusLine)
 	}
 	return settings.StatusLine.Command
 }
@@ -121,7 +121,7 @@ func hostFooterRun(t *testing.T, command string) (line, stderr string) {
 	return strings.TrimRight(string(out), "\n"), string(errOut)
 }
 
-// TestHostClaudeFooterNamesTheConfigsProfile is build item 6 of docs/design/agent-footer.md:
+// TestHostClaudeFooterNamesTheConfigsProfile pins docs/reference/agent-footer.md's host read:
 // `yolo host apply` fills host Claude's statusLine, and that command, run at the host, says
 // `· host` and names the profile the user config selects (OQ-FT6: env first, else the user
 // config's selection). It fails if the internal footer arm stops handing the renderer the host
@@ -174,7 +174,7 @@ func TestHostFooterStaysSilentOnABrokenPackSet(t *testing.T) {
 }
 
 // TestHostFooterChecksNoFetchedPackOut: the host profile read runs on every status-line refresh,
-// so it may not write into the pack store (docs/design/agent-footer.md §2.1). A fetched pack
+// so it may not write into the pack store (docs/reference/agent-footer.md, "The host's profile read"). A fetched pack
 // whose tree is already checked out is read where it sits; one whose tree is gone is skipped,
 // never checked out again, and the footer under-claims the profile only that pack declares.
 func TestHostFooterChecksNoFetchedPackOut(t *testing.T) {

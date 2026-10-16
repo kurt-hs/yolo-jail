@@ -1,7 +1,7 @@
 package integration
 
 // readiness_test.go is the container-level proof of the jail's readiness act
-// (docs/design/jail-notch-readiness.md, OQ-JR1): a launch installs every program a selected pack
+// (docs/reference/program-readiness.md, OQ-JR1): a launch installs every program a selected pack
 // declares before its command runs, and STOPS when one cannot be installed, unless the launch
 // sets the hatch. The unit tier runs the bootstrap against a fake npm; only a launch proves the
 // real launchers, the real stage wrapper and the container's exit status carry it to the host,
@@ -89,7 +89,7 @@ const readinessProbe = `if [ -x "$HOME/.local/bin/` + readinessBin + `" ]; then 
 	`echo "installs=$(wc -l < "$HOME/.local/readiness-installs" 2>/dev/null || echo 0)"; ` +
 	`echo "runs=$(wc -l < "$HOME/.local/readiness-runs" 2>/dev/null || echo 0)"`
 
-// §7 items 1 and 2: a fresh workspace's launch installs the declared program before the command,
+// docs/reference/program-readiness.md, "What 'ready' means": a fresh workspace's launch installs the declared program before the command,
 // without running it, and a second launch of the same home installs nothing and says nothing.
 func TestALaunchInstallsTheDeclaredProgramsBeforeItsCommand(t *testing.T) {
 	requireJail(t)

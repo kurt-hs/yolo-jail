@@ -1,7 +1,7 @@
 package check
 
 // podmanready_test.go pins `yolo check`'s use of the podman readiness gate (podmanready.go):
-// the same gate a launch runs (PR-D6 of docs/design/podman-reboot-readiness.md), asked once,
+// the same gate a launch runs (PR-D6 of docs/reference/podman-readiness.md), asked once,
 // and read by every section that needs podman's answer on Linux. Each test fails if check
 // keeps a `podman info` of its own.
 

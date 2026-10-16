@@ -1,6 +1,6 @@
 package runtime
 
-// podmanready.go is the READINESS GATE of docs/design/podman-reboot-readiness.md: the step
+// podmanready.go is the READINESS GATE of docs/reference/podman-readiness.md: the step
 // of runtime selection that waits, within one fixed budget, for `podman info --format json`
 // to answer, and whose successful answer is the launch's PODMAN FACTS (both terms are coined
 // in that doc). The launch (internal/cli/run) and `yolo check` (internal/cli/check) both call
@@ -55,7 +55,7 @@ func backoffFor(n int) time.Duration {
 	return podmanReadyBackoff[len(podmanReadyBackoff)-1]
 }
 
-// retryFloorCap bounds the RETRY FLOOR (PR-D22 of podman-reboot-readiness.md; the term is
+// retryFloorCap bounds the RETRY FLOOR (PR-D22 of podman-readiness.md; the term is
 // coined there): the gate starts a retry only when what is left of the budget after the
 // backoff is longer than the floor, which is how long podman took to give the early answer
 // being retried, capped at this. An attempt started with less than that left is one that
@@ -209,7 +209,7 @@ func (r ReadyResult) Last() Attempt {
 // WaitForPodman is the readiness gate. It runs argv until one attempt answers, an answer
 // cannot clear on its own, the budget ends (no retry fits in what is left, or the last
 // attempt is still running), or the user interrupts; see the file comment for the rules and
-// podman-reboot-readiness.md for why each one is there.
+// podman-readiness.md for why each one is there.
 //
 // Elapsed time is the larger of the clock's reading and the sum of the backoffs the gate
 // slept, so a clock that does not move (a test's frozen seam) still ends the loop.

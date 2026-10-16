@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// THE AGENT FOOTER'S NOTCH ON macos-user — docs/design/agent-footer.md OQ-FT13, build item 7.
+// THE AGENT FOOTER'S NOTCH ON macos-user — docs/reference/agent-footer.md OQ-FT13, "What has and has not been observed".
 //
 // WHAT IT SETTLES. A macos-user session is at the jail notch, so its launch sets the marker
 // every container launch sets, YOLO_VERSION, in the session env file

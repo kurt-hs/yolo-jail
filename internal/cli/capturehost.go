@@ -790,7 +790,7 @@ func runCaptureJail(workspace, bin string, argv []string, seal *captureSeal, s c
 	// to attach to in practice; saying so makes it true by construction rather than by luck.
 	// (The internal seam that replaced the removed --new flag.)
 	opts.NeverAttach = true
-	// NO READINESS ACT IN A CAPTURE OR BUILD JAIL (docs/design/jail-notch-readiness.md). This
+	// NO READINESS ACT IN A CAPTURE OR BUILD JAIL (docs/reference/program-readiness.md). This
 	// jail's command IS the install: a capture diffs the home across the installer, and a fork's
 	// build jail runs the build that produces the program. An act that installed every declared
 	// program first left the capture's delta empty ("installer left nothing"), and refused the

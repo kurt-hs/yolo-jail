@@ -1,7 +1,7 @@
-// yolo's segment in opencode's prompt row (docs/design/agent-footer.md §2): a TUI plugin that
+// yolo's segment in opencode's prompt row (docs/reference/agent-footer.md, "Each agent's adapter"): a TUI plugin that
 // adds one text element, `yolo: <notch>`, at the right end of the row where opencode's prompt
 // names the model and its provider. It shows the notch alone because that row already names
-// the provider (§2's table). It adds and never replaces (DIR-FT2): both slots it fills are
+// the provider ("Each agent's adapter"'s table). It adds and never replaces (DIR-FT2): both slots it fills are
 // APPEND slots, which keep the host's own content and add a plugin's after it, while opencode's
 // `replace` and `single_winner` slots put a plugin's content where opencode's own was.
 //

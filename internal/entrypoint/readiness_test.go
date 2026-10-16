@@ -1,6 +1,6 @@
 package entrypoint
 
-// readiness_test.go RUNS the jail's readiness act (readiness.go; docs/design/jail-notch-readiness.md,
+// readiness_test.go RUNS the jail's readiness act (readiness.go; docs/reference/program-readiness.md,
 // OQ-JR1): the bootstrap a boot generates, over the launchers the same boot wrote, against a fake
 // `npm`. Running it is the point, as for the Node floor beside it: a text assertion on the template
 // passes for a script whose refusal never reaches the stage's status.
@@ -162,7 +162,7 @@ func TestReadinessInstallsADeclaredProgramBeforeTheCommandRuns(t *testing.T) {
 	}
 }
 
-// A second boot of the same home installs nothing and says nothing (the design's §7 item 2).
+// A second boot of the same home installs nothing and says nothing (docs/reference/program-readiness.md, "What 'ready' means").
 func TestAWarmHomeInstallsNothingAndSaysNothing(t *testing.T) {
 	h := newReadyHome(t, map[string]string{readyPack: readyManifest}, nil)
 	if rc, out, _ := h.run(t); rc != 0 {
@@ -329,7 +329,7 @@ func TestACaptureJailsReadinessIsOffAndSaysWhy(t *testing.T) {
 }
 
 // A jail whose packs declare no program runs no readiness act and prints nothing for one (the
-// design's §7 item 3).
+// reference's "How the act runs": no call, no output).
 func TestAJailWithNoProgramsHasNoReadinessAct(t *testing.T) {
 	h := newReadyHome(t, map[string]string{"plain": `{"name": "plain", "contributes": []}`}, nil)
 	if got := readinessChecks(h.e); got != "" {

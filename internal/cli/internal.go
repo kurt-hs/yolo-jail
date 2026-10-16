@@ -42,7 +42,7 @@ func runInternal(args []string) int {
 	}
 	switch args[0] {
 	case "footer":
-		// The agent footer's one renderer (docs/design/agent-footer.md §2), run by the
+		// The agent footer's one renderer (docs/reference/agent-footer.md, "The renderer"), run by the
 		// status-line command each agent pack writes into its agent's settings. Hidden
 		// because its caller is a pack's command string, not a person. It never exits
 		// non-zero and never writes to stderr: an agent shows a failing status command's

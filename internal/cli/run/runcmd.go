@@ -435,7 +435,7 @@ type Options struct {
 	// LookPath resolves an executable on PATH (shutil.which). nil => real.
 	LookPath func(string) (string, bool)
 	// PodmanReadiness is the podman readiness gate's seams (podmanready.go,
-	// docs/design/podman-reboot-readiness.md): the attempt runner, its clock, its sleep and
+	// docs/reference/podman-readiness.md): the attempt runner, its clock, its sleep and
 	// its interrupt. A zero field takes the real one; the attempt runner is never o.Exec,
 	// whose kill-at-timeout is exactly what the gate exists to avoid.
 	PodmanReadiness runtime.ReadySeams
@@ -1200,7 +1200,7 @@ func (o *Options) inJail() bool {
 // did when the call waited for it: its pipes stay open and are read to their end in the
 // background, what arrives after the return discarded. Closing them instead would make its next
 // write fail, and the SIGPIPE that raises kills a program that does not handle it, such as the
-// rootless podman docs/design/podman-reboot-readiness.md finds finishing the post-boot refresh
+// rootless podman docs/reference/podman-readiness.md finds finishing the post-boot refresh
 // after its parent was killed; killed mid-refresh, it leaves the next podman call to start the
 // refresh over. Reading on costs a goroutine and a descriptor per stream for as long as the
 // grandchild holds it. A killed child that cannot die within the grace (one stuck in the

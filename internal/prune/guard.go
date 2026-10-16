@@ -1,7 +1,7 @@
 package prune
 
 // Guard brackets ONE deletion of a pass that shares its stores with other work
-// (docs/design/podman-reboot-readiness.md OQ-PR2). It takes the caller's lock, runs recheck,
+// (docs/reference/podman-readiness.md OQ-PR2). It takes the caller's lock, runs recheck,
 // runs del only if recheck still says the item may go, releases the lock, and reports whether
 // del ran. A pass takes the lock per deletion and releases it between deletions, so whatever
 // else waits for the lock — a launch's image re-inspect-and-record — waits at most one

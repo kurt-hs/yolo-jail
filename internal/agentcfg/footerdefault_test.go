@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// The agent footer's adapters sit in each agent pack's DEFAULTS (docs/design/agent-footer.md
+// The agent footer's adapters sit in each agent pack's DEFAULTS (docs/reference/agent-footer.md
 // OQ-FT1), and layers merge per key. These tests compose the real surfaces to pin what that
-// buys (§3): a user's own statusLine — from the host file or from an in-jail edit — replaces
+// buys ("How a user's own footer survives"): a user's own statusLine — from the host file or from an in-jail edit — replaces
 // every key yolo wrote, and agy's stack flag is the one key that deliberately reaches a
 // user's statusLine too.
 
@@ -52,7 +52,7 @@ func TestAgyFooterStacksWithAUsersStatusLineUntilTheySayNot(t *testing.T) {
 	if got["command"] != "~/agy-line.sh" {
 		t.Errorf("agy composed command = %v, want the user's", got["command"])
 	}
-	// DIR-FT2 applied to the user's footer too (§3): agy's own line stays beside theirs.
+	// DIR-FT2 applied to the user's footer too ("How a user's own footer survives"): agy's own line stays beside theirs.
 	if got["stack_with_default"] != true {
 		t.Errorf("agy composed stack_with_default = %v, want true beside a user's statusLine", got["stack_with_default"])
 	}
@@ -64,7 +64,7 @@ func TestAgyFooterStacksWithAUsersStatusLineUntilTheySayNot(t *testing.T) {
 	}
 }
 
-// TestOpencodeFooterPluginYieldsToTheUsersPluginList is §3's rule for opencode's adapter, whose
+// TestOpencodeFooterPluginYieldsToTheUsersPluginList is "How a user's own footer survives"'s rule for opencode's adapter, whose
 // footer key is tui.jsonc's `plugin` list. A list replaces wholesale in the merge (it is not an
 // object), so a `plugin` list of the user's own IN THAT FILE replaces yolo's entry, exactly as a
 // user's statusLine replaces yolo's command; keeping both means listing yolo's spec in theirs. A

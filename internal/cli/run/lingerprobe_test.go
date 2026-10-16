@@ -496,7 +496,7 @@ func TestInputBeforeTheDeathWritesNothing(t *testing.T) {
 }
 
 // The podman facts ride the readiness gate's `podman info`, the launch's only one
-// (docs/design/podman-reboot-readiness.md PR-D5, PR-D10): noted when runtime selection
+// (docs/reference/podman-readiness.md PR-D5, PR-D10): noted when runtime selection
 // answers, and read from there by the host-loopback decision, which asks podman nothing.
 func TestPodmanFactsAreRecordedFromTheReadinessGatesAnswer(t *testing.T) {
 	o := quietRecordingOptions(t, t.TempDir(), t.TempDir())
