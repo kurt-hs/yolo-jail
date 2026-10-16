@@ -10,7 +10,7 @@ import (
 // launchwriter_test.go pins the seam that puts this backend's half of the launch stream
 // into <workspace>/.yolo/launch.log: the run pipeline publishes the writer its tee is
 // installed on, and RealDeps resolves Out from it
-// (docs/plans/handoff-macos-user-open-threads.md §7).
+// (docs/plans/runbooks/macos-user-manual-checks.md, "Launch output reaches the launch log").
 //
 // The END-TO-END pin — a line this backend printed, in the file, after a real Run — is
 // TestTheMacosUserBackendPrintsIntoTheLaunchLog in internal/cli/run, because that is

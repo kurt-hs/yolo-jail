@@ -13,8 +13,7 @@ import (
 )
 
 // RUNBOOK ITEM 1'S TWIN: WHOSE SANDBOX A LAUNCH STARTS, AND WHERE
-// (docs/plans/runbooks/macos-user-manual-checks.md item 1, §0.5;
-// docs/plans/handoff-macos-user-open-threads.md §3).
+// (docs/plans/runbooks/macos-user-manual-checks.md item 1, §0.5).
 //
 // THE GAP. Every other launch test behind the gate asks what a sandbox can see or do, and none
 // asks whose it is. So the scheduled macos-user job started sandboxes every night without ever

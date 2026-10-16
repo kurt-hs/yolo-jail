@@ -2095,7 +2095,7 @@ func errStr(err error) string {
 // launch stream reached a terminal and nothing else: the dry-run plan, the Seatbelt
 // profile, the three argvs, every `not enforced on macos-user` warning and every setup
 // and teardown line, with the log holding that launch's header and trailer and nothing
-// between them (docs/plans/handoff-macos-user-open-threads.md §7). A launch has no quiet
+// between them (docs/plans/runbooks/macos-user-manual-checks.md, "Launch output reaches the launch log"). A launch has no quiet
 // mode by ruling and answers "too much on the terminal" by pointing at the file
 // (OQ-RO3), which is half a bargain when a backend's disclosures never reach it — the
 // pack read/exec banners among them, and those are the whole trust boundary.
