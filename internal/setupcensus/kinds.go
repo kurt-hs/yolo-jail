@@ -156,7 +156,7 @@ var kinds = map[packdecl.Kind]Entry{
 		PodmanMac: honored("the same binds (packhostgrants.go)"),
 		AppleContainer: honoredBy("materialized into ws_state and named by YOLO_CTX_ROOT " +
 			"(acMaterialize; backend-parity.md §5 #3)"),
-		MacosUser: honoredBy("copied into a root-owned tree under /var/yolo-jail " +
+		MacosUser: honoredBy("copied into a host-owned read-only tree under /Users/Shared/yolo-staged " +
 			"(internal/cli/run macosctxtree.go, macosuser.StageCtxCommands)"),
 	},
 	packdecl.KindMount: {

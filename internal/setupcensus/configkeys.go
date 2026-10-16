@@ -152,7 +152,7 @@ var configKeys = map[string]Entry{
 			"helpers.go), where the agent can write it, and a directory source binds read-only " +
 			"from 1.1.0 (roBindsUnsupported); the entrypoint's write (entrypoint hostfiles.go) " +
 			"lands in wsState"),
-		MacosUser: honoredBy("a file source is copied into a root-owned tree (macosctxtree.go, " +
+		MacosUser: honoredBy("a file source is copied into a host-owned read-only tree (macosctxtree.go, " +
 			"macosuser.StageCtxCommands) that YOLO_CTX_ROOT names, and the darwin bootstrap runs " +
 			"the same configure_host_files step"),
 		Guide: []string{
