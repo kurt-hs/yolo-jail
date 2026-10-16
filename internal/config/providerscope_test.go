@@ -1,6 +1,6 @@
 package config
 
-// providerscope_test.go pins OQ-LM3 (docs/research/local-model-endpoints.md): a provider
+// providerscope_test.go pins OQ-LM3 (docs/reference/providers.md#oq-lm3): a provider
 // ADDRESS is user-scope only; and its widening by notch-convergence OQ-NC6 (ruled 2026-09-28,
 // NC-D63): every provider field that decides where a credential goes is user-scope only —
 // the endpoints map, api_key_env_name, and a null that removes a provider or the whole key.

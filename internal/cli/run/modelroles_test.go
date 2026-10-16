@@ -1,6 +1,6 @@
 package run
 
-// modelroles_test.go pins the role environment (docs/research/extension-model-defaults.md
+// modelroles_test.go pins the role environment (docs/reference/providers.md#oq-xm4
 // OQ-XM4) at the container vehicle: each agent's own env file, written by deliverChannel from the
 // real composePackChannel over the shipped packs, carries YOLO_MODEL_<ROLE> for ITS provider, and
 // removes a role another agent's file sets that its own provider does not name, so a child one

@@ -2,12 +2,12 @@ package luahook
 
 // modelfor.go is yolo.model_for, the one derive helper that is not a registration: it
 // resolves a tier alias for the SELECTED provider to `provider/id`
-// (docs/research/extension-model-defaults.md, OQ-XM1, ruled 2026-09-28).
+// (docs/reference/providers.md#oq-xm1, ruled 2026-09-28).
 //
 // It exists so a derive stops re-implementing the alias lookup by hand, and so an ADAPTER
 // PACK (a pack whose only job is to render yolo's resolved aliases into one extension's own
-// config file, a term that research doc coins) can be about ten lines of Lua. It names no
-// agent and no extension.
+// config file, a term docs/research/extension-model-defaults.md coined) can be about ten
+// lines of Lua. It names no agent and no extension.
 
 import (
 	"fmt"

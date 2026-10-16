@@ -1,7 +1,7 @@
 package luahook
 
 // modelfor_test.go pins yolo.model_for, the derive helper that resolves a tier alias for the
-// SELECTED provider to `provider/id` (docs/research/extension-model-defaults.md OQ-XM1), and
+// SELECTED provider to `provider/id` (docs/reference/providers.md#oq-xm1), and
 // the fourth conventional alias, `frontier` (OQ-XM2).
 //
 // Each case runs a script through the production VM, so deleting the helper's registration

@@ -1,7 +1,7 @@
 package config
 
 // hostfilesurface_test.go covers the two-writers refusal OQ-LM6 ruled
-// (docs/research/local-model-endpoints.md): a host_files entry at a path a selected pack also
+// (docs/reference/providers.md#oq-lm6): a host_files entry at a path a selected pack also
 // composes is a FATAL config error, not a merge and not a precedence rule.
 //
 // The case that matters is a CONFIGURED pack whose tree validation could not resolve yet (a

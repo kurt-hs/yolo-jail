@@ -1,6 +1,6 @@
 package packload
 
-// modelroles_test.go pins the role environment (OQ-XM4, docs/research/extension-model-defaults.md)
+// modelroles_test.go pins the role environment (OQ-XM4, docs/reference/providers.md#oq-xm4)
 // through the credential gate, ScopeCredentials, whose AgentDelivery.Shape is what every vehicle
 // delivers: the per-agent env file, the macos-user session and the host exec. Deleting the
 // ModelRoleVars call from AgentEnv fails every test here.
