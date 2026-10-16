@@ -706,6 +706,7 @@ func TestMacosTeardownNoUser(t *testing.T) {
 	var rec []string
 	d := mockDeps(&rec)
 	d.SandboxUserExists = func() bool { return false }
+	d.StagingRootFacts = func(string) StagingRootFacts { return StagingRootFacts{} } // never enrolled
 	var buf bytes.Buffer
 	d.Out = &buf
 	if rc := MacosTeardown(d); rc != 0 {
@@ -713,6 +714,29 @@ func TestMacosTeardownNoUser(t *testing.T) {
 	}
 	if len(rec) != 0 {
 		t.Errorf("nothing to delete: %v", rec)
+	}
+}
+
+// An account removed by hand leaves the enrollment behind, and teardown is the remedy setup's
+// second-user refusal names, so it must still remove the rule and the staging root it owns.
+func TestMacosTeardownWithNoAccountStillRemovesThisUsersEnrollment(t *testing.T) {
+	var rec []string
+	d := mockDeps(&rec)
+	d.SandboxUserExists = func() bool { return false }
+	d.Geteuid = func() int { return 501 }
+	d.StagingRootFacts = func(string) StagingRootFacts {
+		return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+	}
+	var buf bytes.Buffer
+	d.Out = &buf
+	if rc := MacosTeardown(d); rc != 0 {
+		t.Errorf("rc = %d", rc)
+	}
+	if recAt(rec, "run:/usr/bin/sudo "+rmBin+" -f "+SudoersFile) < 0 {
+		t.Errorf("the rule was not removed:\n%s", strings.Join(rec, "\n"))
+	}
+	if recAt(rec, "run:"+rmBin+" -rf -- "+StagingRoot()) < 0 && recAt(rec, "run:"+rmBin+" -rf "+StagingRoot()) < 0 {
+		t.Errorf("the staging root was not removed:\n%s", strings.Join(rec, "\n"))
 	}
 }
 
