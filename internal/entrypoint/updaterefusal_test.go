@@ -340,3 +340,32 @@ func TestALauncherPassesAServerRefusalOn(t *testing.T) {
 		}
 	}
 }
+
+// A HATCHED REFUSAL LEAVES NOTHING BEHIND: a failed update the hatch ran past must not hand its head
+// to a later act in the same run, so a pre-launch refresh that then could not check says only that,
+// rather than repeating the update's failure as its own.
+func TestAHatchedRefusalLeavesNoHeadForTheNextAct(t *testing.T) {
+	fn := strings.NewReplacer(useInstalledSplices("tool", "probe")...).Replace(updateBoundShellFn)
+	script := "BIN=tool\nUPDATE_TIMEOUT=60\n" + fn + `
+_YOLO_FAIL_HEAD="tool 1.0.0 → 9.9.9: the first act failed"
+_YOLO_FAIL_FACT="its output is above."
+_YOLO_FAIL_VER=1.0.0
+_yolo_refuse_failed ""
+_yolo_failed_act 3 "the second act" false
+_yolo_refuse_failed ""
+echo "END:[$_YOLO_FAIL_HEAD][$_YOLO_FAIL_FACT][$_YOLO_FAIL_VER]"
+`
+	cmd := exec.Command("bash", "-c", script)
+	cmd.Env = append(os.Environ(), "YOLO_USE_INSTALLED=tool")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the hatched run must not refuse (%v):\n%s", err, out)
+	}
+	if n := strings.Count(string(out), "the first act failed"); n != 1 {
+		t.Errorf("the first act's failure must be said once, said %d times:\n%s", n, out)
+	}
+	if !strings.Contains(string(out), "tool: the second act failed (status 3), and its upstream could not be reached") ||
+		!strings.Contains(string(out), "END:[][][]") {
+		t.Errorf("the second act must speak for itself and leave nothing set:\n%s", out)
+	}
+}

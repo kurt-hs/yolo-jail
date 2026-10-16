@@ -264,10 +264,14 @@ _yolo_update_refused() {
     exit "$UPDATE_REFUSED"
 }
 
-# _yolo_refuse_failed STAMP refuses with what a failed act left, if it left anything.
+# _yolo_refuse_failed STAMP refuses with what a failed act left, if it left anything. What it left is
+# consumed here: when the hatch runs past the refusal, a later act in the same run must not find this
+# act's failure and say it again as its own.
 _yolo_refuse_failed() {
     [ -n "$_YOLO_FAIL_HEAD" ] || return 0
-    _yolo_update_refused "$1" "$_YOLO_FAIL_HEAD" "$_YOLO_FAIL_FACT" "$_YOLO_FAIL_VER"
+    local head="$_YOLO_FAIL_HEAD" fact="$_YOLO_FAIL_FACT" ver="$_YOLO_FAIL_VER"
+    _YOLO_FAIL_HEAD="" _YOLO_FAIL_FACT="" _YOLO_FAIL_VER=""
+    _yolo_update_refused "$1" "$head" "$fact" "$ver"
 }
 `
 
