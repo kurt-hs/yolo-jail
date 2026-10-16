@@ -227,6 +227,13 @@ user config:
 }
 ```
 
+**A failed update stops the agent, it does not quietly run the old one.** When yolo finds a newer
+release and cannot install it, the agent does not start: yolo says what failed and how to retry,
+and gives the command that runs the version you already have, such as
+`YOLO_USE_INSTALLED=claude claude` inside a jail or `YOLO_USE_INSTALLED=claude yolo -- claude` from
+your shell. Offline is not a failure: when yolo cannot reach the release server at all, it starts
+the installed version and says it could not check.
+
 This controls yolo's updater only. An agent with its own updater runs it on its own schedule:
 Claude Code, Copilot and Antigravity (`agy`) all do, so `agent_updates: false` does not freeze
 them, and yolo cannot tell you which version of any of them ran. To freeze Copilot too, add
@@ -236,7 +243,7 @@ them, and yolo cannot tell you which version of any of them ran. To freeze Copil
 **Pi's extensions update when you start pi**, before it opens, at most once an hour. To have pi
 start at once instead, set `"agent_updates": { "pi": "next-launch" }`: the update then runs in the
 background while you work, and your next launch of pi uses it. yolo names the update's log as pi
-starts, and tells you at a later launch if the update failed or did not finish. New extensions in
+starts, and tries a failed update again in front of pi at the next launch, stopping if it fails again. New extensions in
 your pi settings still install before pi opens. On Podman, the same setting also controls extensions
 a pack declares for yolo to build: with `"next-launch"`, a fresh launch starts with its last good
 build or fallback and tries any due update in the background. A later launch can use the new build

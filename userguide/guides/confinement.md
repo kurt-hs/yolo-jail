@@ -89,7 +89,8 @@ in `~/.local/share/yolo-jail/host-floor`:
   you start it, unless `agent_updates` freezes that pack. It says when it is checking for a newer
   version, so a slow package registry is not a launch that hangs saying nothing. An agent with its
   own installer is captured again once its capture is a day old, and the floor moves only to a newer
-  release, never back to an older one.
+  release, never back to an older one. If a newer release fails to install, the launch stops and
+  gives the command that runs the installed one: `YOLO_USE_INSTALLED=<agent> yolo host -- <agent>`.
 - **What it cannot hold yet.** On a Mac before `yolo macos-setup`, yolo has no copy of an agent with
   its own installer, and the launch stops and names that step. The same happens on Linux for an
   installer agent on a machine with neither a container runtime nor Landlock to capture it with. On
