@@ -74,6 +74,12 @@ func mockDeps(rec *[]string) Deps {
 		SetRandomPassword: func() bool { return true },
 		PathIsDir:         func(string) bool { return true },
 		PathExists:        func(string) bool { return true },
+		// The staging root as `yolo macos-setup` leaves it (this user's, 0755, no access list),
+		// and the setup's run-as rule in place.
+		StagingRootFacts: func(string) StagingRootFacts {
+			return StagingRootFacts{Exists: true, IsDir: true, UID: 501, Mode: 0o755}
+		},
+		RunAsGrant: func() bool { return true },
 		// Discarded unless a test reads it: every launch prints, and a production Deps always
 		// has a writer.
 		Out: io.Discard,
