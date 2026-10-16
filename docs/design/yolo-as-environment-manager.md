@@ -13,9 +13,9 @@ depends-on:
 the code 2026-08-23 — most of it is now implemented.** The vision is unchanged and the verbs are
 real: `apply`, `apply --at host`, `apply --sealed`, `describe`, `check-deps` and the `confinement`
 key all ship (env-manager plan Phases 0–6, 8, 9). **No live question remains** (since
-2026-09-30): [`OQ-EM2`](#OQ-EM2) is closed by
+2026-09-30): [`OQ-EM2`](#9-decision-ledger) is closed by
 [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)
-(the `host` layer stays), and [`OQ-EM1`](#OQ-EM1), whether the elevation-class batching around the
+(the `host` layer stays), and [`OQ-EM1`](#9-decision-ledger), whether the elevation-class batching around the
 shipped confirm-gated install is still owed, is answered no by
 [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5). Two parts are unbuilt, so work is owed:
 [§3.4](#34-check-becomes-is-this-description-satisfiable-here)'s `check --at <notch>` (re-checked
@@ -32,7 +32,7 @@ this batteries-included approach — the jail is not the novel thing, it is what
 it. Maybe we redescribe ourselves as an agentic development environment describer that can
 describe a jail."*
 
-**Needs your ruling:** nothing. [OQ-EM1](#OQ-EM1) was found answered on 2026-09-30.
+**Needs your ruling:** nothing. [OQ-EM1](#9-decision-ledger) was found answered on 2026-09-30.
 
 > **Refresh note (2026-07-30).** Two verbs this doc proposed as future now partly exist:
 > **`yolo config dump`** ships (the canonical computed-config dump this doc folds into
@@ -60,10 +60,10 @@ describe a jail."*
 > | [§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails) retire the read-in `host` layer ([`OQ-3`](#9-decision-ledger)) | n/a | **REVERSED 2026-09-12** — the ledger below strikes [`OQ-3`](#9-decision-ledger) through, and this row contradicted it for five days. `HostSource` at `internal/agentcfg/manifest/manifest.go` is not residue of an unbuilt retirement; it is the IMPLEMENTATION of the ruling that replaced it (`cc674ac1`, *"a surface declares its own host layer, and the read fails closed"*). Nothing is owed here |
 > | [§3.4](#34-check-becomes-is-this-description-satisfiable-here) `check --at <notch>` naming inert keys | ❌ | `yolo check` takes no `--at`; the flag parses on `apply`, on a launch (`yolo --at <notch> -- <cmd>`, judged by `run.refuseUnbuiltNotch`) and on the `config` verbs |
 > | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) declare-once / check-once / manifest handoff | ✅ | `internal/depcheck/`, `yolo check-deps` (`internal/cli/checkdeps.go`) |
-> | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) offer-to-run behind a batched confirm | ⚠ **partly** — it ships in `apply`, unbatched | `applyhostdepgate.go` offers the install at `yolo host apply --assert` behind ONE prompt. `yolo check-deps` still never installs — it is the probe half by design, and says so. The elevation-class batching is not built and is not owed ([`OQ-EM1`](#OQ-EM1), answered 2026-09-30) |
+> | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) offer-to-run behind a batched confirm | ⚠ **partly** — it ships in `apply`, unbatched | `applyhostdepgate.go` offers the install at `yolo host apply --assert` behind ONE prompt. `yolo check-deps` still never installs — it is the probe half by design, and says so. The elevation-class batching is not built and is not owed ([`OQ-EM1`](#9-decision-ledger), answered 2026-09-30) |
 > | [§4](#4-confinement-a-dial-with-three-notches) the `confinement` dial | ✅ | `internal/config/confinement.go` |
 > | [§4.0](#40-why-the-middle-notch-is-not-called-sandbox) composable primitives underneath the presets | ✅ | `internal/render/confinement.go` |
-> | [§4.1](#41-the-escape-valve-which-is-the-actual-user-story) `install` below `jail` **confirm-gated** | ✅ **since 2026-09-12**, at `yolo host apply --assert` | `HostFields` honors `program` and `applyhostdepgate.go` gates it: the commands print, one prompt covers the set, a decline is FATAL. Two deviations from this section's spelling, both ruled: **no TTY gate** (silence is NO instead) and one prompt rather than one per elevation class — see **[`OQ-EM1`](#OQ-EM1)** |
+> | [§4.1](#41-the-escape-valve-which-is-the-actual-user-story) `install` below `jail` **confirm-gated** | ✅ **since 2026-09-12**, at `yolo host apply --assert` | `HostFields` honors `program` and `applyhostdepgate.go` gates it: the commands print, one prompt covers the set, a decline is FATAL. Two deviations from this section's spelling, both ruled: **no TTY gate** (silence is NO instead) and one prompt rather than one per elevation class — see **[`OQ-EM1`](#9-decision-ledger)** |
 > | [§4.2](#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) autonomy as a confinement policy | ✅ | the `autonomy` kind; `describe` prints it (`printConfinementVector`, `internal/cli/describe.go`) |
 > | [§5](#5-packs-are-the-batteries-and-the-batteries-are-data) pack kinds refused by name off-container | ✅ | The apply names every inapplicable kind in its tier-1 line (`notchInapplicable`, reading `FieldSet.Honors` plus `HostUnimplemented`) and points at `yolo config-ref` for the per-kind reason, which a drift test keeps readable. ⚠ `FieldSet.Refuse`'s own reason strings have no production caller — what ships is the census, not that printer |
 > | [§6](#6-the-environment-describes-itself-to-its-own-agent) the briefing states the notch | ✅ | `confinementHeader`, `internal/jailcontent/briefing.go` |
@@ -321,7 +321,7 @@ $ yolo apply --sealed
 > [`OQ-3`](#9-decision-ledger), and that ruling was reversed by
 > [`OQ-CO10`/`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger): the declaration moved
 > onto the surface (`manifest.Surface.ReadsHost`), the read fails closed, and coverage is a visible
-> per-surface yes/no. Read it as the case that was weighed, not as the plan; [`OQ-EM2`](#OQ-EM2)
+> per-surface yes/no. Read it as the case that was weighed, not as the plan; [`OQ-EM2`](#9-decision-ledger)
 > records the outcome.
 
 One Declared-impure row is different from the rest, and a reviewer was right to flag it: the
@@ -900,7 +900,7 @@ Worth stating plainly, because a reframing this size invites scope creep:
 Settled rulings, compacted. The reasoning lives in the section named in the last column; this
 table exists so a citation resolves without reading the argument. **IDs are an API** — the `OQ-N`
 spellings are the [implementation plan](../plans/environment-manager-plan.md)'s and are cited from
-there and from `BACKLOG.md`; the `OQ-EM` spellings are this doc's own and start at [§10](#10-open-questions).
+there and from `BACKLOG.md`; the `OQ-EM` spellings are this doc's own.
 
 | ID | Ruling / Decision | Date | Settled in | Built? |
 | :--- | :--- | :--- | :--- | :--- |
@@ -911,13 +911,13 @@ there and from `BACKLOG.md`; the `OQ-EM` spellings are this doc's own and start 
 | — | Sealing is a **host-side** check; it needs no container | 2026-07-31 | [§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails) | ✅ |
 | — | Sealing (input closure) and dep-checking (environment sufficiency) are two guarantees, not one — they split the moment the toolchain leaves the image | 2026-07-31 | [§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails) | ✅ two verbs |
 | — | Three notches on the surface, **composable primitives underneath** — presets, not monoliths | 2026-07-31 | [§4.0](#40-why-the-middle-notch-is-not-called-sandbox) | ✅ `internal/render/confinement.go` |
-| OQ-3 | ~~Retire the read-in `host` layer; express personal settings as a **local pack** instead~~ **REVERSED 2026-09-12** — never implemented, and now superseded: [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#13-decision-ledger)'s [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger) ruled that **the layer stays**, because deciding its binding, failure direction and coverage decides that it exists. The declaration moved onto the surface and the read fails closed ([`internal/packload`](../../internal/packload), [`internal/agentcfg/manifest`](../../internal/agentcfg/manifest)) | 2026-08-01; reversed 2026-09-12 | [§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails); see [`OQ-EM2`](#10-open-questions) |
+| OQ-3 | ~~Retire the read-in `host` layer; express personal settings as a **local pack** instead~~ **REVERSED 2026-09-12** — never implemented, and now superseded: [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#13-decision-ledger)'s [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger) ruled that **the layer stays**, because deciding its binding, failure direction and coverage decides that it exists. The declaration moved onto the surface and the read fails closed ([`internal/packload`](../../internal/packload), [`internal/agentcfg/manifest`](../../internal/agentcfg/manifest)) | 2026-08-01; reversed 2026-09-12 | [§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails); see [`OQ-EM2`](#9-decision-ledger) |
 | OQ-4 | ~~On the host notch, pure `rmw` — yolo rewrites only the keys it declares; no whole-file compose, no capture overlay~~ **REVERSED 2026-09-12** — `rmw` is now the `assert` value of the user-scope `host_management` key, and `own` composes the whole file with a host capture store. The mechanism claim still holds for `assert`; what changed is that it is no longer the host notch's only mode ([`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#13-decision-ledger), [`OQ-CO3`](config-ownership-and-promotion.md#13-decision-ledger)). ⚠ **And `assert` itself was retired by ruling on 2026-09-20** ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)): two values remain, `none` becomes the default, and the build and its migration ([`OQ-CO14`](config-ownership-and-promotion.md#oq-co14)) are still owed — so pure `rmw` on the host is headed out entirely | 2026-08-01; reversed 2026-09-12 | [§4.2](#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) / plan [§4.2](#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) | ⚠ reversed, and the reversal is built |
 | OQ-11 | A pack encodes its two autonomy postures as a dedicated `autonomy` **kind**, not a `when:` discriminator — so a bypass key cannot be left in the unconditional half by accident | 2026-08-01 | [§4.2](#42-agent-autonomy-is-a-confinement-policy-not-baked-pack-config) | ✅ |
 | OQ-8 | The dep-checker boundary is a **declared schema** a third-party doctor can read, not an importable Go package | 2026-08-01 | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) | ✅ `install_hints` + `internal/depcheck/` |
-| OQ-EM2 | **The read-in `host` layer STAYS, disclosed per surface** — answered on the config-ownership axis rather than here ([`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)), which supersedes [`OQ-3`](#9-decision-ledger). The cost the question rested on is gone too: the hand-maintained `surfaceHasHostLayer` map was deleted 2026-09-09 and both provenance columns are derived | 2026-09-11 | [§10](#10-open-questions) | ✅ `manifest.Surface.ReadsHost` is the predicate, `packload.SurfaceHostFile` derives the `/ctx` path, and the read fails closed |
-| OQ-9 | Offer-to-run confirms are **batched by elevation class**, `sudo` first, never per-command | 2026-08-01 | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) | ⚠ **a consumer exists since 2026-09-12, and it reverses half of this row.** `yolo host apply --assert`'s dependency gate ([`internal/cli/applyhostdepgate.go`](../../internal/cli/applyhostdepgate.go)) offers the install behind **one** prompt listing every missing dependency — not one per elevation class — and **a decline is FATAL at the prompt**, where this row's *"the manifest is still the floor"* made it non-fatal. [`../reference/report-tiers.md`](../reference/report-tiers.md#why-its-this-way) [`OQ-RO6`](../reference/report-tiers.md#why-its-this-way)/[`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) rule that reversal for this verb and state the reason: an `--assert`'s promise is a ready environment. The elevation-class batching itself is unbuilt, and since 2026-09-30 is not owed ([`OQ-EM1`](#OQ-EM1)) |
-| OQ-EM1 | **No elevation-class batching and no second prompt; plan Phase 4.3 shrinks to the disclosure that already ships**, each install's exact command printed above the one prompt, so a `sudo` is visible before the answer. Answered by [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5) (2026-09-29), where the maintainer rejected asking again for what a selected pack declares: *"If pi is going to be available, it's because you've already configured that pack in your config file. You've acknowledged this already. We don't have to ask again … certainly not the second time."* | 2026-09-30 | [§10](#10-open-questions) | ✅ nothing to build |
+| OQ-EM2 | **The read-in `host` layer STAYS, disclosed per surface** — answered on the config-ownership axis rather than here ([`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger)/[`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger)), which supersedes [`OQ-3`](#9-decision-ledger). The cost the question rested on is gone too: the hand-maintained `surfaceHasHostLayer` map was deleted 2026-09-09 and both provenance columns are derived | 2026-09-11 | [§10.2](#102-why-the-host-read-in-layer-stays) | ✅ `manifest.Surface.ReadsHost` is the predicate, `packload.SurfaceHostFile` derives the `/ctx` path, and the read fails closed |
+| OQ-9 | Offer-to-run confirms are **batched by elevation class**, `sudo` first, never per-command | 2026-08-01 | [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest) | ⚠ **a consumer exists since 2026-09-12, and it reverses half of this row.** `yolo host apply --assert`'s dependency gate ([`internal/cli/applyhostdepgate.go`](../../internal/cli/applyhostdepgate.go)) offers the install behind **one** prompt listing every missing dependency — not one per elevation class — and **a decline is FATAL at the prompt**, where this row's *"the manifest is still the floor"* made it non-fatal. [`../reference/report-tiers.md`](../reference/report-tiers.md#why-its-this-way) [`OQ-RO6`](../reference/report-tiers.md#why-its-this-way)/[`OQ-RO7`](../reference/report-tiers.md#why-its-this-way) rule that reversal for this verb and state the reason: an `--assert`'s promise is a ready environment. The elevation-class batching itself is unbuilt, and since 2026-09-30 is not owed ([`OQ-EM1`](#9-decision-ledger)) |
+| OQ-EM1 | **No elevation-class batching and no second prompt; plan Phase 4.3 shrinks to the disclosure that already ships**, each install's exact command printed above the one prompt, so a `sudo` is visible before the answer. Answered by [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5) (2026-09-29), where the maintainer rejected asking again for what a selected pack declares: *"If pi is going to be available, it's because you've already configured that pack in your config file. You've acknowledged this already. We don't have to ask again … certainly not the second time."* | 2026-09-30 | [§10.1](#101-what-shipped-for-program-below-jail) | ✅ nothing to build |
 
 > [!WARNING]
 > **A trap this ledger exists to preserve: an unsealed `describe --hash` is worse than no hash.**
@@ -932,114 +932,61 @@ there and from `BACKLOG.md`; the `OQ-EM` spellings are this doc's own and start 
 > break the feature packs exist to provide; the rule is *no **un**declared input* ([§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails)). [`OQ-3`](#9-decision-ledger)
 > proposed retiring that particular layer for a different reason — the read-in/write-out loop —
 > not because impurity is disqualifying, and that proposal was itself reversed on 2026-09-12
-> ([`OQ-EM2`](#OQ-EM2)): a declared, enumerable, fail-closed host layer satisfies the rule.
+> ([`OQ-EM2`](#9-decision-ledger)): a declared, enumerable, fail-closed host layer satisfies the rule.
 
 ---
 
 ## 10. Open Questions
 
-**Both closed.** Both were created by a gap between this doc and the shipped tree rather
-than by anything undecided in the design, and **neither was closed here**: a sibling design closed
-[`OQ-EM2`](#OQ-EM2), and a later ruling in another doc answered [`OQ-EM1`](#OQ-EM1) on 2026-09-30.
-The wider set of live questions this design raised — capture-vs-closure
+**None open.** [`OQ-EM1`](#9-decision-ledger) and [`OQ-EM2`](#9-decision-ledger) are
+[§9](#9-decision-ledger) rows, and neither was closed here: both came from a gap between this doc
+and the shipped tree, a sibling design closed [OQ-EM2](#9-decision-ledger), and a later ruling in another doc answered
+[OQ-EM1](#9-decision-ledger) on 2026-09-30. The wider set of live questions this design raised — capture-vs-closure
 (**Q1**), shortfall-as-success (**Q2**), briefing stamping (**Q4**), a confinement floor for an
 org (**Q5**), the exposure view (**Q6**), Linux `guest` (**Q7**) — live in
 [environment-manager-user-stories.md](environment-manager-user-stories.md), by id. They are
 **not** duplicated here.
 
-<a id="oq-em1-background"></a>**Background to [OQ-EM1](#OQ-EM1), below: what shipped.**
+### 10.1 What shipped for `program` below `jail`
 
-**The confirm-gated rule is the shipped rule, so the doc-vs-code contradiction this question was
-opened for is gone.** `render.HostFields()` honors `program` — *"honored but confirm-gated by the
-caller"* — and `isProbedDep` reads that `Honors` answer, so the census is load-bearing rather
-than decorative; `applyhostdepgate.go` is the caller: on `--assert` a missing declared
-dependency prints its exact install command, one prompt covers the set, a decline is FATAL at the
-prompt with nothing written, and an install that leaves the binary missing counts as a decline.
-`refusalReasons`' *"install is refused below jail"* string is now unreachable — both FieldSets
-honor `program`, so `Refuse` returns `""` for it, and `Refuse` has no production caller
-regardless. The threat-model
-pass [§8](#8-what-this-costs) asked for is [`OQ-6`](../plans/environment-manager-plan.md#blocks-phase-43-confirm-gated-install)/[`OQ-7`](../plans/environment-manager-plan.md#blocks-phase-43-confirm-gated-install), resolved 2026-08-01, and the shape that shipped is
-ruled in [`../reference/report-tiers.md`](../reference/report-tiers.md#the-dependency-rule)'s
-dependency rule.
+**The confirm-gated rule is the shipped rule.** `render.HostFields()` honors `program` —
+*"honored but confirm-gated by the caller"* — and `isProbedDep` reads that `Honors` answer, so the
+census is load-bearing rather than decorative; `applyhostdepgate.go` is the caller: on `--assert` a
+missing declared dependency prints its exact install command, one prompt covers the set, a decline
+is FATAL at the prompt with nothing written, and an install that leaves the binary missing counts
+as a decline. `refusalReasons`' *"install is refused below jail"* string is unreachable — both
+FieldSets honor `program`, so `Refuse` returns `""` for it, and `Refuse` has no production caller
+regardless. The threat-model pass [§8](#8-what-this-costs) asked for is
+[`OQ-6`](../plans/environment-manager-plan.md#decision-ledger)/[`OQ-7`](../plans/environment-manager-plan.md#decision-ledger),
+resolved 2026-08-01, and the shape that shipped is ruled in
+[`../reference/report-tiers.md`](../reference/report-tiers.md#the-dependency-rule)'s dependency
+rule.
 
-**Two deviations from [§4.1](#41-the-escape-valve-which-is-the-actual-user-story)'s spelling, and the first is a correction rather than a gap.**
-*There is no TTY gate*: `promptYesNo` reads a nil or EOF stdin as NO by contract, which delivers
-the fail-closed CI outcome [§4.1](#41-the-escape-valve-which-is-the-actual-user-story) wanted, and the dependency rule ruled that a terminal
-test is deliberately NOT added — a piped `y` installs, and what protects the user is that the
-commands print above the prompt whether it is answered or not. (Testing for a terminal is the
-intuitive reading of "TTY-only" and it was ruled against.) *And there is one prompt, not one per
-elevation class*: [`OQ-7`](../plans/environment-manager-plan.md#blocks-phase-43-confirm-gated-install)'s category-(a)/(b) split still has no consumer
-([`OQ-9`](#9-decision-ledger)'s ledger row carries that half).
+**Two deviations from [§4.1](#41-the-escape-valve-which-is-the-actual-user-story)'s spelling, and
+the first is a correction rather than a gap.** *There is no TTY gate*: `promptYesNo` reads a nil
+or EOF stdin as NO by contract, which delivers the fail-closed CI outcome
+[§4.1](#41-the-escape-valve-which-is-the-actual-user-story) wanted, and the dependency rule ruled
+that a terminal test is deliberately NOT added — a piped `y` installs, and what protects the user
+is that the commands print above the prompt whether it is answered or not. (Testing for a terminal
+is the intuitive reading of "TTY-only" and it was ruled against.) *And there is one prompt, not one
+per elevation class*: [`OQ-7`](../plans/environment-manager-plan.md#decision-ledger)'s
+category-(a)/(b) split has no consumer, and by [`OQ-EM1`](#9-decision-ledger) none is owed — a
+selected pack's declaration is the user's acknowledgment, so yolo does not ask a second time, and
+plan Phase 4.3 shrinks to the disclosure that already ships.
 
-1. ✅ <a id="OQ-EM1"></a>**OQ-EM1: `program` below `jail` — is the elevation-class batching still owed?** [§4.1](#41-the-escape-valve-which-is-the-actual-user-story) and [§5](#5-packs-are-the-batteries-and-the-batteries-are-data) of this doc
-   revised the original rule from *"`install` is never honored below `jail`, refused by name"* to
-   *"confirm-gated, TTY-only, command shown, permission-bounded"*, and [§8](#8-what-this-costs) flagged it as needing a
-   threat-model pass before shipping.
+### 10.2 Why the `host` read-in layer stays
 
-   What shipped, and how it differs from
-   [§4.1](#41-the-escape-valve-which-is-the-actual-user-story)'s spelling, is
-   [in the background above](#oq-em1-background).
-
-   **What is left to decide:** whether that batching — and with it the `sudo`-first ordering — is
-   still worth building now that one prompt ships and works, or whether plan Phase 4.3 shrinks to
-   nothing. [§3.5](#35-dependency-provisioning-declare-once-check-once-hand-off-with-a-manifest)'s offer-to-run has its foundation either way: the prompt, the printed
-   commands and the re-probe all exist.
-
-   _Leaning:_ leave one prompt as it is, and let Phase 4.3 shrink to elevation **disclosure**
-   rather than a second confirm. A decline is fatal for the whole set, so splitting the approval
-   in two cannot produce a partially-provisioned host worth having — and the commands print above
-   the prompt already, so a `sudo` is visible before the answer. The part of [`OQ-7`](../plans/environment-manager-plan.md#blocks-phase-43-confirm-gated-install) worth
-   keeping is ordering `sudo` first, so the OS password prompt arrives at the front.
-
-   <!-- vantage: question id=OQ-EM1 -->
-
-   **Answer:**
-   > Answered by [`OQ-HP5`](host-tool-provisioning.md#OQ-HP5) (2026-09-29): no. The maintainer
-   > ruled against asking again for what a selected pack declares: *"why is yolo even asking if you
-   > want to install this? If pi is going to be available, it's because you've already configured
-   > that pack in your config file. You've acknowledged this already. We don't have to ask again …
-   > certainly not the second time."* So there is no per-elevation-class prompt, and Phase 4.3
-   > shrinks to the disclosure that already ships: the commands print above the prompt, `sudo`
-   > included. The one prompt the dependency rule keeps is unchanged by this answer. Recorded
-   > 2026-09-30.
-
-<a id="oq-em2-background"></a>**Background to [OQ-EM2](#OQ-EM2), below.**
-
-**The cost this question was built on is gone with it.** It rested on `host` provenance being
-displayed from a hand-maintained two-entry map (`surfaceHasHostLayer`) rather than from the
-per-surface declaration the boot render reads; that map was **deleted** on 2026-09-09 and both
-columns are derived — `manifest.Surface.ReadsHost` is the predicate and `packload.SurfaceHostFile`
-derives the `/ctx` path both halves evaluate
+`--sealed`'s rule is *no **un**declared input* ([§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails)),
+and a declared, enumerable, fail-closed host layer satisfies it, so removing it was never traded
+against disclosure ([`OQ-EM2`](#9-decision-ledger)). The cost that once argued for retirement is
+gone too: `host` provenance used to be displayed from a hand-maintained two-entry map
+(`surfaceHasHostLayer`) rather than from the per-surface declaration the boot render reads; that
+map was **deleted** on 2026-09-09 and both columns are derived — `manifest.Surface.ReadsHost` is
+the predicate and `packload.SurfaceHostFile` derives the `/ctx` path both halves evaluate
 ([`host-render-target.md`](host-render-target.md#0-the-one-paragraph-version)'s postscript, item
-1). So no surface takes a machine-shaped input that `config ls` cannot show.
-
-2. ✅ <a id="OQ-EM2"></a>**OQ-EM2: is retiring the `host` read-in layer ([`OQ-3`](#9-decision-ledger)) still the plan?**
-   **No — the layer stays, and the disclosure this question asked for shipped instead.** Answered
-   by [`config-ownership-and-promotion.md`](config-ownership-and-promotion.md#13-decision-ledger)
-   rather than here, in two rulings on 2026-09-11:
-   [`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger) supersedes
-   [`OQ-3`](#9-decision-ledger) (deciding a mechanism's binding, failure direction and coverage
-   decides that it exists — asking in the same breath whether to delete it is incoherent), and
-   [`OQ-CO10`](config-ownership-and-promotion.md#13-decision-ledger) moved the declaration onto the
-   surface, made the read fail CLOSED, and made coverage a visible per-surface yes/no.
-
-   [Why the cost it was built on is gone too](#oq-em2-background) is above.
-
-   <!-- vantage: question id=OQ-EM2 -->
-
-   **Answer:**
-   > **The layer stays, disclosed per surface.** Retirement is off the table, not deferred:
-   > `--sealed`'s rule is *no **un**declared input* ([§3.3](#33-apply---sealed-the-definition-binds-or-the-apply-fails)), and a declared, enumerable,
-   > fail-closed host layer satisfies it — which is why the question of removing it dissolved rather
-   > than being traded against disclosure. Rule anything further on this axis beside
-   > [`CO13`](config-ownership-and-promotion.md#13-decision-ledger), not here.
-
-   ⚠ **Pointer updated 2026-09-25.** `CO13` was decided on 2026-09-20 and built on 2026-09-25,
-   so it is no longer a place to rule anything. The config-ownership design's open questions
-   are [its Decision Ledger](config-ownership-and-promotion.md#13-decision-ledger)'s `OPEN`
-   rows ([`OQ-CO14`](config-ownership-and-promotion.md#oq-co14), [`OQ-CO15`](config-ownership-and-promotion.md#OQ-CO15),
-   [`OQ-CO16`](config-ownership-and-promotion.md#OQ-CO16) as of that date), and a further question on this axis
-   is filed there.
+1). So no surface takes a machine-shaped input that `config ls` cannot show. A further question on
+this axis is filed in [the config-ownership design's ledger](config-ownership-and-promotion.md#13-decision-ledger),
+not here.
 
 ---
 

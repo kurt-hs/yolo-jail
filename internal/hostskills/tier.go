@@ -1,5 +1,5 @@
 // Package hostskills delivers a pack's skills into a REAL home, and — through the same layer
-// writer — into a jail's staging dir (ComposeInto, docs/plans/notch-convergence.md#OQ-NC11).
+// writer — into a jail's staging dir (ComposeInto, docs/plans/notch-convergence.md#7-decision-ledger).
 //
 // In a jail, `jailcontent.PrepareSkills` composes the packs' layers with ComposeInto into a
 // scratch dir yolo owns outright, fills what is left with the built-ins and the workspace, and

@@ -237,7 +237,7 @@ func (p *Pack) ResolveDestinations(set []*Pack) Destinations {
 	// the jail had already given it one, addressed to the pack's skills audience
 	// (run.jailSkillSources). Without this the jail delivered the mod while `yolo host apply`
 	// wrote nothing and said nothing, which the parity ruling forbids
-	// (docs/plans/notch-convergence.md#OQ-NC11).
+	// (docs/plans/notch-convergence.md#7-decision-ledger).
 	//
 	// Only the destinations the pack does not ALREADY reach are synthesized. A destination
 	// another source of this pack reaches carries the plugin on that source's layer, and a

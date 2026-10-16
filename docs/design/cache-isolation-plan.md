@@ -449,7 +449,7 @@ rows.
 | [OQ-CI1](cache-isolation.md#OQ-CI1) **A**, workspace | A fixed `w` under each `<ws-key>` | Age classes in an inactive scope | None |
 | [OQ-CI1](cache-isolation.md#OQ-CI1) **B**, per launch | The attempt id. A container restart and every attach of that container reuse it (T5; attach joins the running container) | An inactive scope's classified bytes may go whole. Opaque bytes still hold. | [Design §3](cache-isolation.md#3-the-recommended-scope-and-identity) warm restart, [§8](cache-isolation.md#8-costs-alternatives-and-observable-completion) completion list |
 | [OQ-CI2](cache-isolation.md#OQ-CI2) **A**, policy | — | Existing offer and consent | None |
-| [OQ-CI2](cache-isolation.md#OQ-CI2) **B**, guarantee | — | Needs a follow-up design. The tree has no storage-quota mechanism (only `cpu.max` in `cgd`), and rootless podman and macos-user have no unprivileged per-directory quota (upstream knowledge). | Revisit [OQ-DF4](minimal-disk-footprint.md#OQ-DF4) |
+| [OQ-CI2](cache-isolation.md#OQ-CI2) **B**, guarantee | — | Needs a follow-up design. The tree has no storage-quota mechanism (only `cpu.max` in `cgd`), and rootless podman and macos-user have no unprivileged per-directory quota (upstream knowledge). | Revisit [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger) |
 
 ## Safe rollout and promotion
 

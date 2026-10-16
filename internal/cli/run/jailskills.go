@@ -1,6 +1,6 @@
 package run
 
-// jailskills.go is the run pipeline's half of OQ-NC11 (docs/plans/notch-convergence.md#OQ-NC11,
+// jailskills.go is the run pipeline's half of OQ-NC11 (docs/plans/notch-convergence.md#7-decision-ledger,
 // ruled 2026-09-28 by parity): it fills the jail's skills sources with what the host's layer
 // writer needs to deliver them as the host does, and runs the host's collision refusal as a
 // launch pre-flight.
@@ -27,7 +27,7 @@ import (
 // out: a manifest and hooks/, with no skills/ folder at all. It used to ride the pack's sources
 // instead, so a pack with none delivered its plugin to no jail while `yolo host apply` wrote it
 // whole (docs/research/claude-code-mods-management.md, G10), the notch asymmetry the parity ruling
-// removed (docs/plans/notch-convergence.md#OQ-NC11). Its audience is the pack's skills audience
+// removed (docs/plans/notch-convergence.md#7-decision-ledger). Its audience is the pack's skills audience
 // (packload.Pack.SkillsAudience), and jailcontent.SkillPlan folds the record into the pack's one
 // layer, so a pack that does have sources composes exactly as before.
 func jailSkillSources(p *packload.Pack, sources []packload.SkillsSource) []jailcontent.PackSkillSource {

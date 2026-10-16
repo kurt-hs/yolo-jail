@@ -500,6 +500,6 @@ ordinary `just done` unreachable. CAC-D7 to CAC-D17 record what was built and wh
 from CAC-D1 to CAC-D6.
 
 The owner confirmed [CAC-D7](#CAC-D7) on 2026-10-09 ("yes to D7"). The speed plan's answered
-[OQ-TS1](../plans/test-suite-speed.md#OQ-TS1) and [OQ-TS3](../plans/test-suite-speed.md#OQ-TS3), and open
+[OQ-TS1](../plans/test-suite-speed.md#decision-ledger) and [OQ-TS3](../plans/test-suite-speed.md#decision-ledger), and open
 [OQ-TS2](../plans/test-suite-speed.md#OQ-TS2) and [OQ-TS4](../plans/test-suite-speed.md#OQ-TS4), stay in their
 own source. None is duplicated or silently answered here.

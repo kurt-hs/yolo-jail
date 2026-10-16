@@ -550,7 +550,7 @@ right, and this story is the argument for not announcing three notches until G3 
 >   2026-09-24:* the confirm-gated install this bullet called unbuilt **shipped 2026-09-12** —
 >   `yolo host apply --assert` offers a missing declared dependency's install behind one prompt
 >   (`internal/cli/applyhostdepgate.go`); the elevation-class batching is not owed
->   ([`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1), answered 2026-09-30). And the posture the host renders under
+>   ([`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger), answered 2026-09-30). And the posture the host renders under
 >   is now the user-scope `host_management` key (`none`/`assert`/`own`), whose `assert` value was
 >   retired by ruling on 2026-09-20 and is not yet out of the code
 >   ([§4.5 there](config-ownership-and-promotion.md#45-retiring-assert--the-two-value-key)).
@@ -925,7 +925,7 @@ row is **not** a refusal any more. `render.HostFields` honors `program`, and
 (`internal/cli/applyhostdepgate.go`) — the design doc's
 [§4.1](yolo-as-environment-manager.md#41-the-escape-valve-which-is-the-actual-user-story)
 *confirm-gated* position, shipped 2026-09-12. `FieldSet.Refuse`'s "install is refused below jail"
-string is unreachable. What is left is [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1).
+string is unreachable. What is left is [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger).
 
 ### The closure: what is in the definition, and what escapes it
 
@@ -960,10 +960,10 @@ jail at all, and killing it would break the feature packs exist to provide.
 >   It remains an **undeclared** input, which is what the row is actually for, so the tier is
 >   right and the parenthetical is not.
 > - The **`host` layer** row was under a standing decision to be *removed*, not reported: design
->   doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) / plan [OQ-3](../plans/environment-manager-plan.md#blocks-phase-4-host-render) resolved 2026-08-01 to retire the read-in layer in favour of a local
+>   doc [§3.3](yolo-as-environment-manager.md#33-apply---sealed-the-definition-binds-or-the-apply-fails) / plan [OQ-3](../plans/environment-manager-plan.md#decision-ledger) resolved 2026-08-01 to retire the read-in layer in favour of a local
 >   pack. **That decision was REVERSED 2026-09-12** by
 >   [`OQ-CO10`/`OQ-CO11`](config-ownership-and-promotion.md#13-decision-ledger): the layer stays,
->   declared on the surface and read fail-closed ([`OQ-EM2`](yolo-as-environment-manager.md#OQ-EM2)).
+>   declared on the surface and read fail-closed ([`OQ-EM2`](yolo-as-environment-manager.md#9-decision-ledger)).
 >   So the row stands as written — a declared impurity — and its *report* half is what is owed.
 
 ### What goes into the description hash
@@ -1089,7 +1089,7 @@ docs and plans — do not renumber, do not delete.**
    the rule is [`report-tiers.md`'s dependency rule](../reference/report-tiers.md#the-dependency-rule)).
    `yolo check-deps` still only probes. So this question now decides only whether the inert-key
    handoff also belongs in `check --at <notch>`; what is left of the elevation batching is
-   [`OQ-EM1`](yolo-as-environment-manager.md#OQ-EM1).
+   [`OQ-EM1`](yolo-as-environment-manager.md#9-decision-ledger).
 
    **Answer:**
    > _(empty — fill in when decided)_

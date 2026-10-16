@@ -1,7 +1,7 @@
 package hostskills
 
 // composeinto.go is the JAIL's entry into this package's one layer writer
-// (docs/plans/notch-convergence.md#OQ-NC11, item 25).
+// (docs/plans/notch-convergence.md#7-decision-ledger, item 25).
 //
 // The jail used to copy every pack's skills flat with a copier of its own
 // (jailcontent.copySkillSubdirs, deleted), so a namespaced pack's skill was `/<skill>` in a jail and

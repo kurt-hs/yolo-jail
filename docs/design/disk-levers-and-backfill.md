@@ -34,7 +34,7 @@ labelled **MEASURED** / **NOT MEASURED** in the manner of the measurements behin
 
 **The short version.** The maintainer's two questions are one distinction. **Steady-state
 retention** — stopping new growth — is mostly shipped: C3 stopped the tars, C8 stopped the
-per-commit image rebuild, [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) gave the podman reaper a
+per-commit image rebuild, [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) gave the podman reaper a
 trigger. **Backfill** — the bytes already on disk from before each fix — is the larger number on
 this machine today and nothing addresses it: **~49 GiB** of cache files older than the
 30-day rule that `yolo prune` would already purge, **~52.7 GB** of podman images the shipped reaper has never
@@ -44,7 +44,7 @@ collector has ever visited, because **nothing on this machine ever runs `nix sto
 not the daemon (`min-free = 0`) and not yolo (opt-in, human-typed). [§3](#3-the-levers-ranked) ranks the
 levers by measured bytes and by effort. [§5](#5-the-shape-measure-late-offer-early-delete-in-the-slot)
 proposes the disposition: **automatic** where a reaper's evidence is complete and regeneration is
-cheap (the same footing [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) already ruled for images), **offered while non-zero** ([OQ-BF1](#OQ-BF1)) where the
+cheap (the same footing [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already ruled for images), **offered while non-zero** ([OQ-BF1](#OQ-BF1)) where the
 evidence is partial, the store is shared, or the re-fetch is expensive — and in both cases a
 first pass over a backlog is a **one-time event per store per machine**, remembered, that must
 never delay a launch.
@@ -55,7 +55,7 @@ to a store nobody has measured yet.
 
 **Scope note — why this is a sibling and not more sections in [`minimal-disk-footprint.md`](minimal-disk-footprint.md).**
 That doc owns the *mechanism* for the three copies of a loaded image (Ledgers A, B, C), and its
-open questions [OQ-DF2](minimal-disk-footprint.md#OQ-DF2)/[OQ-DF3](minimal-disk-footprint.md#OQ-DF3)/[OQ-DF4](minimal-disk-footprint.md#OQ-DF4)
+open questions [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger)/[OQ-DF3](minimal-disk-footprint.md#111-decision-ledger)/[OQ-DF4](minimal-disk-footprint.md#111-decision-ledger)
 stay its. Its [§8](minimal-disk-footprint.md#8-what-this-does-not-cover) explicitly declines the host
 `/nix/store` beyond yolo's roots, the per-workspace overlays and the uncovered cache subdirs —
 which is most of what the maintainer's second question is about. Three things put the material
@@ -70,7 +70,7 @@ and defers.
 **Reads with:**
 
 - [`minimal-disk-footprint.md`](minimal-disk-footprint.md) — the three ledgers, invariants P1–P7, and the
-  [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) ruling whose automatic-on-launch disposition this doc
+  [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) ruling whose automatic-on-launch disposition this doc
   either extends or distinguishes, per store.
 - [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) — the [cost model](../reference/image-staging-vs-baking.md#cost-model)
   (the layer-chain and time measurements), [store-delivered packages](../reference/image-staging-vs-baking.md#store-delivered-packages)
@@ -103,7 +103,7 @@ Four principles, numbered so [§5](#5-the-shape-measure-late-offer-early-delete-
 **P1. Backfill and steady state get separate dispositions, decided per store.** One is "delete a
 superseded artifact you can prove is superseded, daily"; the other is "delete tens of gigabytes,
 once, most of it older than your own records." [§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition)
-says why the [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) precedent transfers to some stores and not to others.
+says why the [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) precedent transfers to some stores and not to others.
 
 **P2. A backfill pass is a one-time event per store per machine, and it is remembered.** Once the
 backlog is gone the steady-state reaper owns the store; the pass never recurs, and its outcome —
@@ -176,7 +176,7 @@ is what "the shipped reaper does not reclaim the whole backlog" actually means:
   rows show 91.3 kB unique each *today*, but they are re-stream twins of four of the fourteen
   (`639f5cb6836b`, `ba3cb2623615`, `b375bfe47a73`, `8bed182f126f`, each 91.3 kB unique / 3.565 GB
   shared): once the tagged twins go, **the nameless rows become the last holders of a 3.565 GB
-  chain**. [OQ-DF3](minimal-disk-footprint.md#OQ-DF3)'s REACH half is therefore worth ~3.5 GB on this machine, but only *after* the
+  chain**. [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger)'s REACH half is therefore worth ~3.5 GB on this machine, but only *after* the
   tagged pass — before it, the same rows look free.
 - Estimate, not a measurement (an `--apply` was out of bounds): the store lands near **29 GB**
   and the first pass frees **≈ 24 GB** of 52.73. `podman system df -v` cannot express layers
@@ -481,7 +481,7 @@ turns on.
 | # | Lever | Kind | Bytes here (dated 2026-09-06) | What it costs to pull | State |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | L1 | **Run the cache age-purge that already exists** (`PurgeCacheByAge`, 30 d) on the host `GLOBAL_CACHE`; add `nce` to the default list | both | **49.34 GiB** covered + **1.86 GiB** `nce`; steady state unbounded today | a trigger, not a reaper: the walk over ~369 k files is the expensive part (minutes; NOT MEASURED precisely); regeneration is a **re-download of unknown size** (pants 39 GiB). ⚠ The bytes are a THIRD-PARTY build cache yolo pools ([§2.5](#25-does-anything-ever-read-it-back--reuse-per-store) Class C) | reaper shipped 2026-07-22; offered at launch since 2026-09-08 ([OQ-BF1](#OQ-BF1), `3a08a829`) |
-| L2 | **Let the shipped image reap run** — the first `AutoReapOldImages` pass against the backlog | backfill (steady state shipped) | **≈ 24 GB** of 52.73 here; ~3.5 GB more behind the `<none>` rows ([OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH) | zero code; the cost is **time on the launch path** — fourteen `rmi -f` of multi-GB images before the container starts (NOT MEASURED; see [§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | shipped 2026-09-06; runs in the housekeeping slot since 2026-09-08 ([OQ-BF5](#OQ-BF5), `65ae67c6`) |
+| L2 | **Let the shipped image reap run** — the first `AutoReapOldImages` pass against the backlog | backfill (steady state shipped) | **≈ 24 GB** of 52.73 here; ~3.5 GB more behind the `<none>` rows ([OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH) | zero code; the cost is **time on the launch path** — fourteen `rmi -f` of multi-GB images before the container starts (NOT MEASURED; see [§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | shipped 2026-09-06; runs in the housekeeping slot since 2026-09-08 ([OQ-BF5](#OQ-BF5), `65ae67c6`) |
 | L3 | **Delete yolo's own superseded store outputs** — named `nix store delete` of unrooted `*-install-prefix` / `*-go-0-dev` paths, never a blanket GC | both | **≥ 28.8 GB**; +0.43 GB/day | new mechanism; **prerequisite: per-jail durable prefix roots** ([OQ-BF4](#OQ-BF4)) or nix's liveness check is the only veto and its view of containers is unestablished; host-only | built 2026-09-08 ([OQ-BF3](#OQ-BF3), `2a49467d`) |
 | L4 | **`ImageCacheKeep` → 0 where the runtime streams** (podman) | backfill | **≈ 20.6 GB** (10.7 host + 9.9 nested) | one constant, one predicate on the runtime; regeneration = a build; the fallback reader `newestTars` keeps working on whatever exists | knob is [`minimal-disk-footprint.md`](minimal-disk-footprint.md)'s ([OQ-DF1](minimal-disk-footprint.md#112-open-questions) already ruled "keep zero" for the writer) |
 | L5 | **C6 — a stable layer chain** ([OQ-6](../reference/image-staging-vs-baking.md#why-its-this-way)) | steady state | lowers the LRU floor from ~10 × 2.7 GB to ~10 × (trailing layers); saves ~17.6 s of podman write per image that still rebuilds | a `flake.nix` change against an already-loaded base ref; Apple Container unproven | re-priced down for storage by C8 and up as the floor-setter, then **built 2026-09-09** as layer-aware delivery (C9: nix2container, a three-tier layer plan, a negotiating `skopeo copy` — [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md#delivering-into-the-runtime)) |
@@ -501,7 +501,7 @@ automatic one; **L3** last, behind its prerequisite. L5 and L6 are image-staging
 
 ## 4. Why backfill and steady state do not share a disposition
 
-[OQ-DF3](minimal-disk-footprint.md#OQ-DF3) ruled the image reap **automatic** on the launch path,
+[OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) ruled the image reap **automatic** on the launch path,
 debounced to 24 h, with `YOLO_NO_AUTO_IMAGE_REAP=1` as the opt-out. That is the precedent, and the
 question is whether a one-time pass over a 38–53 GB backlog is the same kind of act. Three
 differences say it is not always, and each one is a test an implementer can apply to a store this
@@ -527,7 +527,7 @@ doc has not seen:
    *before* the container starts. A steady-state pass can afford to sit in front of the launch; a
    backfill pass cannot, or the first launch after an upgrade is the slow one.
 
-So the rule is P3/P4, and the [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) disposition transfers exactly
+So the rule is P3/P4, and the [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) disposition transfers exactly
 where its three properties hold — complete evidence, bounded regeneration, seconds of work — and
 has to be replaced by an **offer** where they do not. The image backlog itself passes all three
 except the third, which is why [§5.3](#53-triggers-defaults-and-the-post-launch-slot) moves the
@@ -568,14 +568,14 @@ that needs a TTY runs there — by then the TTY is the container's.
 
 | Store | Tier | Why (P3/P4 test) | First pass over the backfill | Steady state after |
 | :--- | :--- | :--- | :--- | :--- |
-| Tagged podman images | **automatic** (already ruled, [OQ-DF3](minimal-disk-footprint.md#OQ-DF3)) | evidence complete (sentinel veto); regeneration = a load | the shipped pass, **moved into the slot** ([§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | unchanged |
+| Tagged podman images | **automatic** (already ruled, [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger)) | evidence complete (sentinel veto); regeneration = a load | the shipped pass, **moved into the slot** ([§5.3](#53-triggers-defaults-and-the-post-launch-slot)) | unchanged |
 | Image tars on a streaming runtime | **automatic** | evidence complete (the runtime streams; a tar is one-shot, P3 of minimal-disk); regeneration = a build | `keep=0` on the first pass takes all of it | zero tars |
 | Superseded vendor versions (A7) | **automatic** | evidence complete (the live symlink, per workspace); regeneration = a vendor download of one build, which the launcher does anyway | `_prune_versions` at every launcher invocation, keep 2 | unchanged |
 | Agent staging, loophole state, captures | **automatic** | tri-state gated already; kilobytes to hundreds of MB | in the slot | in the slot |
 | yolo's own unrooted store outputs | **automatic, gated on [OQ-BF4](#OQ-BF4)**; until then **offered** | evidence complete only once every running jail's prefix has a durable root; nix's own liveness check is the second veto; regeneration = a `nix build` | first pass deletes every unrooted `*-install-prefix` / `*-go-0-dev` by name (`nix store delete`, which refuses a live path) | per launch, in the slot, host-only |
 | Cache age-purge (host `GLOBAL_CACHE`) | **offered while non-zero, then automatic** ([OQ-BF1](#OQ-BF1)) | evidence complete (mtime) but regeneration is an unbounded re-fetch — P4 | a prompt with the measured size; **y** deletes in the slot and enables the steady state; **n** asks again in 7 d; **never** opts the class out. The prompt returns whenever the class is ≥ 1 GiB again and no answer stands — this cache grows by normal use, so an offer shown once and retired would be the same trigger defect one level up | automatic, 30 d, in the slot, once consented |
-| Unused mise tool versions (the shared tool store) | **offered while ≥ 1 GiB, then automatic** ([OQ-DF4](minimal-disk-footprint.md#OQ-DF4), ruled 2026-10-05) | evidence: every jail's [use record](minimal-disk-footprint.md#113-the-mise-use-record-as-built), declining whenever it cannot answer; regeneration is a re-download for a workspace that returns to an old version — P4 | the same prompt, naming the largest versions; **y** removes them in the slot and enables the steady state | automatic, versions no jail used for 30 d, in the slot, host-only, once consented |
-| `<none>` podman rows | **offered** until [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH is ruled — ruled NARROW 2026-09-08: a row carrying yolo's owner label is reaped with the tagged ones; a row older than the label is left alone permanently and surfaced by `yolo stores` | evidence partial (no tag); the store is shared with non-yolo images | the offer names the count and the chain bytes they hold; acceptance is a `podman rmi` of the listed IDs, never `image prune` | the automatic reap for labelled rows; nothing for pre-label rows, by ruling |
+| Unused mise tool versions (the shared tool store) | **offered while ≥ 1 GiB, then automatic** ([OQ-DF4](minimal-disk-footprint.md#111-decision-ledger), ruled 2026-10-05) | evidence: every jail's [use record](minimal-disk-footprint.md#113-the-mise-use-record-as-built), declining whenever it cannot answer; regeneration is a re-download for a workspace that returns to an old version — P4 | the same prompt, naming the largest versions; **y** removes them in the slot and enables the steady state | automatic, versions no jail used for 30 d, in the slot, host-only, once consented |
+| `<none>` podman rows | **offered** until [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH is ruled — ruled NARROW 2026-09-08: a row carrying yolo's owner label is reaped with the tagged ones; a row older than the label is left alone permanently and surfaced by `yolo stores` | evidence partial (no tag); the store is shared with non-yolo images | the offer names the count and the chain bytes they hold; acceptance is a `podman rmi` of the listed IDs, never `image prune` | the automatic reap for labelled rows; nothing for pre-label rows, by ruling |
 | Worktrees | **never** | not yolo's bytes | none | none |
 
 The offer has one shape for every offered class, so a user learns it once — and it is the shape a
@@ -689,7 +689,7 @@ attempt was refused for liveness.
 > [!NOTE]
 > **BUILT 2026-09-08 — `internal/cli/stores`.** `yolo stores [--json] [--age] [--no-record]`,
 > registered in the CLI dispatch table, with [OQ-BF9](#OQ-BF9)'s bounded sample ledger at
-> `<state>/stores/<store>.samples` and the [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) REACH
+> `<state>/stores/<store>.samples` and the [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) REACH
 > warning row (untagged podman rows: count, bytes, why yolo declines, and that `podman image
 > prune` is the user's to run). Two deviations from the plan's file map, both forced: the engine
 > lives in the command's own package rather than `internal/prune/stores.go` (that package was
@@ -767,7 +767,7 @@ Observable, on a machine that upgrades onto this:
 
 | # | Alternative | Verdict |
 | :--- | :--- | :--- |
-| A1 | **Everything automatic, the [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) way, backfill included.** | **Rejected for the offered classes.** [§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition) item 2: a 39 GiB re-fetch is not a bounded regeneration, and item 1: `<none>` rows have no evidence. Adopted for every class that passes P3. |
+| A1 | **Everything automatic, the [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) way, backfill included.** | **Rejected for the offered classes.** [§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition) item 2: a 39 GiB re-fetch is not a bounded regeneration, and item 1: `<none>` rows have no evidence. Adopted for every class that passes P3. |
 | A2 | **Everything offered — `yolo prune` prints the backlog and a human types `--apply`.** | **Rejected.** It is the hint, measured at 404 GiB and 33 days ([`minimal-disk-footprint.md`](minimal-disk-footprint.md) [§1.1](minimal-disk-footprint.md#11-what-a-human-noticing-is-worth-measured)); an offer that is a printed line is A1 of that doc under a new name. A *prompt* is different in kind: it stops the launch until answered. |
 | A3 | **Automatic once, then off** — a single upgrade-time sweep. | **Rejected as the whole answer, adopted as P2's shape.** The one-time property is right (a backfill does not recur); "then off" is wrong, because the steady-state reaper must keep running or the backlog re-forms. |
 | A4 | **A bounded `nix store gc --max N` on the launch path** ([`../plans/storage-lifecycle.md`](../plans/storage-lifecycle.md) [§3](../plans/storage-lifecycle.md#3-bounded-rooting-aware-store-gc-in-yolo-prune--after-1-and-2), made automatic). | **Rejected in favour of named `nix store delete`.** A GC collects *everything* unrooted up to N bytes, including the user's own dead paths — the "reaches beyond its own artifacts" shape P6 refuses. Deleting yolo's own output names is narrower, and nix refuses a live path either way. |
@@ -796,7 +796,7 @@ Observable, on a machine that upgrades onto this:
   This doc only re-priced C6 as the floor-setter.
 - **What it does not buy:** the ~65 GB of *live* cache on this host, the device's non-yolo growth
   ([`minimal-disk-footprint.md`](minimal-disk-footprint.md) [§2.4](minimal-disk-footprint.md#24-re-measured-2026-09-02--the-backlog-is-gone-here-and-the-device-kept-filling-anyway)),
-  and the host's `min-free`. Those are a budget ([OQ-DF4](minimal-disk-footprint.md#OQ-DF4)) or a human.
+  and the host's `min-free`. Those are a budget ([OQ-DF4](minimal-disk-footprint.md#111-decision-ledger)) or a human.
 
 ---
 
@@ -818,12 +818,12 @@ Observable, on a machine that upgrades onto this:
 ## 9. What this does NOT cover
 
 - **Which component deletes Ledger B's remaining tars on Apple Container**, and the write-path
-  versus launch-path question generally — [OQ-DF2](minimal-disk-footprint.md#OQ-DF2), answered
+  versus launch-path question generally — [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger), answered
   2026-09-08. This doc says *whether* the first pass is automatic; that one says *who*. The Apple
   Container half is moot since C9: that backend now writes a temporary archive the launch removes.
-- **The reach into `<none>` rows** — [OQ-DF3](minimal-disk-footprint.md#OQ-DF3). Priced here (~3.5 GB
+- **The reach into `<none>` rows** — [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger). Priced here (~3.5 GB
   after the tagged pass), ruled there.
-- **A byte budget** — [OQ-DF4](minimal-disk-footprint.md#OQ-DF4). The ~65 GB of live cache on this host is
+- **A byte budget** — [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger). The ~65 GB of live cache on this host is
   its problem, not a backfill.
 - **The host's `min-free`** — P5; `yolo check` warns and must not edit.
 - **Agent logs and transcripts, browser profiles** — durable user data, excluded as in
@@ -888,10 +888,10 @@ verdict.
 | [OQ-BF3](#OQ-BF3) | **Yes, once [OQ-BF4](#OQ-BF4) roots every running jail's prefix:** delete unrooted `*-yolo-jail-install-prefix` / `*-yolo-jail-go-0-dev` by name in the slot, host-only, never a blanket gc, never `--ignore-liveness`. Offer the same set until BF4 lands. Go-build outputs are garbage the moment the prefix exists | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§3](#3-the-levers-ranked) L3 | ✅ `2a49467d` |
 | [OQ-BF4](#OQ-BF4) | **Yes — a durable root per prefix store path, registered at launch, gated on `!inJail`, held while a container is running from it.** A bug fix, not a disposition: today a long-running jail's pid1 binary is rooted by nothing. **Neither** the load sentinel's LRU (it cannot answer liveness) **nor** an age cutoff (the policy [OQ-LS1](../reference/image-retention.md#why-its-this-way) ruled for image closures, which would reap a long-running jail's own binaries). One test separates them: can losing it cost only a rebuild? | 2026-09-08 | [§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding), [§8](#8-risks) R7 | ✅ `8768db9d` |
 | [OQ-BF5](#OQ-BF5) | **Move the image reap into the housekeeping slot, and take the machine-wide housekeeping lock in the same change** — in both the load-and-record step and the pass. The lock is not a follow-up: the slot widens the window the race already has | 2026-09-08 | [§5.1](#51-the-housekeeping-slot), [§5.4](#54-one-writer-concurrency-failure) | ✅ `65ae67c6` |
-| [OQ-BF6](#OQ-BF6) | **`ImageCacheKeep` 0 on podman, unchanged at 3 on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#OQ-DF2) names the component that deletes on success. Zero retained tars is not zero tars readable — the fallback READER survives | 2026-09-08 | [§3](#3-the-levers-ranked) L4, [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `a9a7dbb0` |
+| [OQ-BF6](#OQ-BF6) | **`ImageCacheKeep` 0 on podman, unchanged at 3 on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger) names the component that deletes on success. Zero retained tars is not zero tars readable — the fallback READER survives | 2026-09-08 | [§3](#3-the-levers-ranked) L4, [§5.3](#53-triggers-defaults-and-the-post-launch-slot) | ✅ `a9a7dbb0` |
 | [OQ-BF7](#OQ-BF7) | **Retired from the question list — an outage with one measured cause needs a fix, not a disposition.** Shipped as a **refusal** (`prefixUnreachableFromVM`), not as staging or baking. Its claimed coupling to BF3/BF4 is discharged: under the refusal there is no third place for the prefix to live | 2026-09-08 | [§11.2](#112-the-questions-as-argued) [OQ-BF7](#OQ-BF7) | ✅ `6a855b6d` |
 | [OQ-BF8](#OQ-BF8) | **Dissolved — the premise is being removed.** Liveness moves to `podman ps` ([`image-retention.md`](../reference/image-retention.md)), so the LRU stops being retention and the cap needs no derivation. It is **not** deleted: it keeps its MRU role for GC roots and the load diagnosis, and whether that half survives was [OQ-LS1](../reference/image-retention.md#why-its-this-way) — since ruled (see [§11.2](#112-the-questions-as-argued) [OQ-BF8](#OQ-BF8)) | 2026-09-08 | [§2.2](#22-the-image-reap-priced-against-this-store) | n/a — dissolved |
-| [OQ-BF9](#OQ-BF9) | **Yes — one dated line per store per run, default on, `--no-record` to opt out, `yolo stores` the single writer, bounded to 30 samples per store.** Unblocks [OQ-DF4](minimal-disk-footprint.md#OQ-DF4), which has been waiting for a first sample; rule this first | 2026-09-08 | [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ `e85e0690` |
+| [OQ-BF9](#OQ-BF9) | **Yes — one dated line per store per run, default on, `--no-record` to opt out, `yolo stores` the single writer, bounded to 30 samples per store.** Unblocks [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger), which has been waiting for a first sample; rule this first | 2026-09-08 | [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ `e85e0690` |
 | [OQ-BF10](#OQ-BF10) | **Content-addressed stores only — and the reason is injection, not size.** A path-keyed store like `named_caches` lets a jail write content the host tool reads because of where it sits; a CAS rejects a blob that does not match its digest. Gated on matching OS and arch, writable, never on macOS. Scope stops here pending a post-implementation storage analysis | 2026-09-08 | [§11.2](#112-the-questions-as-argued) [OQ-BF10](#OQ-BF10) | ✅ `hostcas.Plan`, pinned by `TestPlanGates` and `TestPathKeyedStoresAreNeverRecognised` |
 | <a id="BF-D1"></a>BF-D1 | *Implementation decision* (BF-D1 is an id coined here). **L7 is built as `_locked_prune`, called once on the native launcher's launch path after the install-or-update branch, whatever that branch did.** Three choices L7 left open: it runs under a frozen `agent_updates` policy too, since the prune moves no version (the live build and one rollback target stay) and a frozen launcher carries no update branch to prune from; it takes the install-prefix lock and, when another writer holds it, deletes nothing and says nothing, since an update in another shell writes the same version directory and prunes on its own success; and it counts the directory's entries with shell builtins first, so a workspace with at most `KEEP_VERSIONS` entries, the steady state, pays no subprocess on the path of every command. It never fails the command: a delete it cannot make is reported and the program still starts, since the launcher runs under `set -e` and this is the prune's first caller outside an `||` list (found by the review, 2026-10-01). `yolo pack update`'s mode is unchanged: it exits before the launch path and prunes on its update's success, as before | 2026-10-01 | [§3](#3-the-levers-ranked) L7, [§10](#10-sequencing--what-i-would-build-in-order) step 2 | ✅ 2026-10-01 (`_locked_prune` in [`shims.go`](../../internal/entrypoint/shims.go); `TestVersionPruneRunsWhenNoUpdateIsDue`, `TestVersionPruneRunsUnderAFrozenUpdatePolicy`, `TestVersionPruneYieldsToAWriterHoldingTheLock`, `TestTheEveryInvocationPruneReleasesTheLock`, `TestAnEveryInvocationPruneThatCannotDeleteStillLaunches` in [`versionprune_test.go`](../../internal/entrypoint/versionprune_test.go); in a real launch, `TestTheClaudeLauncherPrunesSupersededVersionsWithNoUpdate` in [`integration/versionprune_test.go`](../../integration/versionprune_test.go), revert-checked against the call site) |
 | <a id="BF-D2"></a>BF-D2 | *Implementation decision* (BF-D2 is an id coined here), taken under the maintainer's 2026-10-04 delegation ("make them and build it … adjust later"); reversible. **On `macos-user`, `yolo prune` asks no container runtime, and `yolo stores` lists that backend's own storage.** The backend runs no container, so both commands used to address their probes to a binary named `macos-user`: `yolo prune` declined its image sweep and exited 1, and `yolo ps` could not list anything. Eight choices. (1) Its running jails are its host-services SESSIONS. A session, a term the code coined, is one macos-user invocation of yolo, or one `yolo host` launch that opens a doorway: one command and the host services started for it, from launch to teardown. Every launch that starts a sandbox already holds an exclusive lock on its own session dir until its teardown, so the held locks are the registry, read with a shared non-blocking probe that removes nothing (`runtime.ListSessions`), and each session now writes a record of its notch, workspace and container name beside its lock before the lock takes its name. No keeper and no new file outside the session dir. (2) Each container-only prune section prints one not-applicable line naming `YOLO_RUNTIME=container yolo prune`, which is never a decline, so the command exits 0; the workspaces it tracks come from the session records. (3) Every agent-staging sweep, under every runtime and in the housekeeping slot, keeps the staging names whose `paths.JailShortHash` is the key of a live or starting session (`prune.SessionStagingNames`). That hazard is INFERRED from the code, not measured: a container runtime's sweep on the same Mac would read a live session's staging as an orphan once it was an hour old. (4) `yolo stores` runs no `sudo`: `env/` is root's and 0700, so it reads as unknown and names `sudo du -sh`; of the sandbox home only the mise store and `~/.cache` are walked. A removal a note names spells each path, never a glob: the user's own shell expands a glob before `sudo` runs, and in `env/`, which only root can list, it matches nothing (found by the review). (5) The session listing reads only the session dirs this user owns, and skips a symlink at a session's name. The base is the machine-wide `/tmp`, and another account's session dir is 0700 with a lock this user cannot open, so it could only list as unknown: a "starting or unknown" row in `yolo ps` and a name every staging sweep keeps, while nothing this user's yolo does depends on another account's sessions. A link is not a session's dir, and following one would read another directory's lock and record. (6) Every staging sweep declines, deleting nothing, when the session listing cannot run, by the same tri-state rule as a container runtime that cannot be asked: a listing that failed and one that found no sessions are different answers, and only the second may let a session's staging go. (7) The workspace durable dirs section of `yolo stores` is not extended to macos-user, so on that runtime it lists none. The session records could name the workspaces of the sessions running now, but [DS-D22](durable-scratch-space.md#DS-D22) already records that the section covers only workspaces with a running jail and names the launch line and `yolo check` as the views that never miss one; the same partial view on a second backend is left for that decision to widen. (8) On macos-user the `/nix/store` rows for install prefixes and Go builds keep their reclaimer, the superseded-store-output pass, and name its trigger as a container runtime's: a container launch's [post-launch slot](#53-triggers-defaults-and-the-post-launch-slot) and `YOLO_RUNTIME=container yolo prune --apply`. That pass asks a container runtime which prefix each running jail executes, so macos-user's own `yolo prune` prints it as not applicable and a macos-user launch runs no post-launch slot. The verdict stays yolo's, because a container runtime on the same Mac runs the pass; with none, nothing does, and the row's note says so (found by the review). The same rule covers every other row whose pass macos-user's `yolo prune` prints as not applicable: the cached image tarballs, the interrupted image deliveries, the containers tracking dir and the image and prefix GC roots under `build/` keep their reclaimer and name `YOLO_RUNTIME=container yolo prune --apply` as the trigger. The tarball row names the keep of each container runtime that runs its sweep, and `build/`'s note adds that macos-user's own prune still sweeps the dangling out-links there (found by the second review). Reclaimers for these stores stay unbuilt ([§9](#9-what-this-does-not-cover)) | 2026-10-04 | [§9](#9-what-this-does-not-cover), [§5.5](#55-yolo-stores--the-inventory-including-what-nothing-reclaims) | ✅ 2026-10-04 (`TestPsOnMacosUserListsItsLiveSessions`, `TestPruneOnMacosUserAsksNoRuntimeAndExitsZero`, `TestAContainerRuntimesStagingSweepKeepsALiveMacosUserSession`, `TestHousekeepingKeepsALiveMacosUserSessionsStaging`, `TestTheMacosUserSectionListsTheStateDirAndTheHomesStores`, `TestListSessionsLeavesOutAnotherAccountsSessions`, `TestAStagingSweepDeclinesWhenTheSessionsCannotBeListed`, `TestHousekeepingDeclinesTheStagingSweepWhenTheSessionsCannotBeListed`, `TestContainerOnlySectionsSayTheyDoNotApplyOnMacosUser`, `TestMacosUserRowsNameTheRuntimeThatRunsTheirPass`, `TestAListingIsNotReadAsAHolderByAnotherListing`; on a Mac, `TestMacosUserPsListsItsLiveSession` and `TestMacosUserStoresListsTheSandboxAccount`) |
@@ -907,7 +907,7 @@ row cannot carry them.
 1. ✅ <a id="OQ-BF1"></a>**[OQ-BF1](#OQ-BF1) — RULED 2026-09-08: is the two-tier disposition right — automatic where P3
    holds, offered where P4 does — or does "offer to clean up" mean every backfill is offered?** This is the closure
    question for the whole doc: it decides whether the first pass over the podman backlog and the
-   dead tars runs on its own (as [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) already lets the steady state do) or
+   dead tars runs on its own (as [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already lets the steady state do) or
    waits for a prompt like the cache purge does. It also decides the offer's shape — a prompt with
    `y / n (7 d) / never`, TTY only, non-TTY prints and skips.
 
@@ -916,7 +916,7 @@ row cannot carry them.
    _Leaning:_ **Two tiers.** Automatic where the veto is the one that already protects live state
    and regeneration is a build or a load; offered once, with the size, where the re-fetch is
    unbounded or the evidence is partial. Offering everything is inconsistent with what
-   [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) already allows daily; automating everything re-fetches 39 GiB of `pants` without asking.
+   [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) already allows daily; automating everything re-fetches 39 GiB of `pants` without asking.
 
    **Answer:** (2026-09-08)
    > **Two tiers — and the offered tier is offered whenever the class has reclaimable bytes, not
@@ -1081,7 +1081,7 @@ row cannot carry them.
    > follow-up.** Moving the pass without it converts a race that currently needs two launches in
    > the same second into one with a much wider window, because the slot is where the pass now
    > spends its time. This also discharges the placement half of
-   > [OQ-DF3](minimal-disk-footprint.md#OQ-DF3)'s TRIGGER — the trigger stays the launch, the
+   > [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger)'s TRIGGER — the trigger stays the launch, the
    > moment moves — and it is why that ruling's ledger row records the placement as revised rather
    > than reversed.
 
@@ -1089,18 +1089,18 @@ row cannot carry them.
    machine (host and nested) is kept by a `3` that predates C3; [OQ-DF1](minimal-disk-footprint.md#112-open-questions)
    ruled "keep zero" for the *writer* and left the *reaper's* default alone. The knob is
    [`minimal-disk-footprint.md`](minimal-disk-footprint.md)'s and the component that runs it is
-   [OQ-DF2](minimal-disk-footprint.md#OQ-DF2)'s; this question only asks whether the number follows the ruling.
+   [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger)'s; this question only asks whether the number follows the ruling.
 
    <!-- vantage: question id=OQ-BF6 -->
 
-   _Leaning:_ **Yes — 0 on podman, unchanged on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#OQ-DF2)
+   _Leaning:_ **Yes — 0 on podman, unchanged on Apple Container** until [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger)
    rules its component. Automatic under P3: the tar is one-shot, regeneration is a build, the
    evidence is the runtime itself.
 
    **Answer:** (2026-09-08)
    > **"Yes: 0 on podman (nothing writes a tar there and the fallback reader `newestTars` keeps
    > working on whatever exists), unchanged at 3 on Apple Container until
-   > [OQ-DF2](minimal-disk-footprint.md#OQ-DF2) names the component that deletes on success.
+   > [OQ-DF2](minimal-disk-footprint.md#111-decision-ledger) names the component that deletes on success.
    > Automatic under P3: the tar is one-shot (minimal-disk P3), regeneration is a build, the
    > evidence is the runtime itself."**
    >
@@ -1256,7 +1256,7 @@ row cannot carry them.
    > line per store per run, thirty samples retained.
    >
    > **It unblocks a question in another doc**, which is worth recording because that doc has been
-   > waiting on exactly this: [OQ-DF4](minimal-disk-footprint.md#OQ-DF4) ("a stated number or only
+   > waiting on exactly this: [OQ-DF4](minimal-disk-footprint.md#111-decision-ledger) ("a stated number or only
    > a policy?") held itself open pending a re-measurement that nothing could take, since a rate
    > needs two dated samples and nothing had ever taken the first. This ledger is that instrument.
    > **Rule this before DF4**, in that order.
@@ -1377,7 +1377,7 @@ are authoritative.
 | :--- | :--- | :--- |
 | `image-staging` [OQ-5](../reference/image-staging-vs-baking.md#why-its-this-way) | The tar backlog is a **bug**; minimal disk is the goal; yolo **may** delete without `--apply`. | Licenses the automatic tier at all; the offered tier is this doc's refinement for classes that ruling did not measure. |
 | `minimal-disk` [OQ-DF1](minimal-disk-footprint.md#112-open-questions) | *"Stream, keep zero tars."* | L4's number is that ruling applied to the reaper's default ([OQ-BF6](#OQ-BF6)). |
-| `minimal-disk` [OQ-DF3](minimal-disk-footprint.md#OQ-DF3) (NUMBER + TRIGGER) | `keep=2`, automatic on the launch path, debounced 24 h, `YOLO_NO_AUTO_IMAGE_REAP=1`. The count has since been deleted by [`OQ-LS3`](../reference/image-retention.md#why-its-this-way); the trigger stands, in the housekeeping slot. | The precedent P3 generalises and P4 distinguishes ([§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition)); its REACH half was ruled NARROW there on 2026-09-08. |
+| `minimal-disk` [OQ-DF3](minimal-disk-footprint.md#111-decision-ledger) (NUMBER + TRIGGER) | `keep=2`, automatic on the launch path, debounced 24 h, `YOLO_NO_AUTO_IMAGE_REAP=1`. The count has since been deleted by [`OQ-LS3`](../reference/image-retention.md#why-its-this-way); the trigger stands, in the housekeeping slot. | The precedent P3 generalises and P4 distinguishes ([§4](#4-why-backfill-and-steady-state-do-not-share-a-disposition)); its REACH half was ruled NARROW there on 2026-09-08. |
 | `image-staging` [OQ-8](../reference/image-staging-vs-baking.md#why-its-this-way) (C8) | yolo's binaries are delivered by mount; the out-link is the prefix's GC root, keyed by checkout. | The store-garbage finding ([§2.3](#23-yolos-own-store-outputs-are-never-collected--the-c8-finding)) and [OQ-BF4](#OQ-BF4). |
 | [`agent-cli-copies.md`](../reference/agent-cli-copies.md#the-v-axis-prune) A7 | Keep-newest-2 over the vendor's version dir, run by the act that installed the new one. | L7 widens the trigger, not the rule. |
 | `program-delivery` [OQ-PD17](program-delivery.md#decision-ledger) | Capture store reap is the complement of the resolver; K = 1; no age floor. | L8 gives it a trigger, not a policy. |
